@@ -15,6 +15,7 @@
   "dependencies": {
     "@calendar/app-state": "workspace:*",
     "@calendar/core": "workspace:*",
+    "@calendar/google": "workspace:*",
     "effect": "catalog:",
     "react": "catalog:",
     "react-dom": "catalog:"

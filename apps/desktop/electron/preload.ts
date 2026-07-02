@@ -1,6 +1,7 @@
-import { contextBridge } from 'electron';
+import { contextBridge, ipcRenderer } from 'electron';
 
-// Placeholder bridge — becomes the effect rpc MessagePort transport in M3.
+// The renderer's only door into the main process: one Schema-validated
+// invoke channel (see packages/core/src/backend.ts). No ad-hoc IPC.
 contextBridge.exposeInMainWorld('calendarBridge', {
-  ping: () => 'pong',
+  invoke: (method: string, payload: unknown) => ipcRenderer.invoke('backend', method, payload),
 });

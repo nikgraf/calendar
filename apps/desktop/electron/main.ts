@@ -1,6 +1,7 @@
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { app, BrowserWindow } from 'electron';
+import { startBackendHost } from './backendHost.ts';
 
 const rootPath = fileURLToPath(new URL('..', import.meta.url));
 
@@ -38,6 +39,7 @@ app.on('window-all-closed', () => {
 
 await app.whenReady();
 
+startBackendHost();
 createWindow();
 
 app.on('activate', () => {

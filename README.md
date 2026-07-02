@@ -1,0 +1,44 @@
+# Calendar
+
+A Fantastical-style Google Calendar client: iOS (Expo) + macOS (Electron), client-only, built on Effect v4. See `AGENTS.md` for architecture.
+
+## Setup
+
+```sh
+pnpm install
+```
+
+### Google OAuth (required for sign-in)
+
+Create a Google Cloud project once, then:
+
+1. **APIs & Services → Library**: enable the *Google Calendar API*.
+2. **APIs & Services → OAuth consent screen**: External, Testing mode; add yourself (and any other test users). Scopes: `calendar.readonly`, `calendar.events`, plus `openid email profile`.
+3. **Credentials → Create credentials → OAuth client ID**:
+   - Type **Desktop app** → used by the macOS app. Note client ID + secret.
+   - Type **iOS** (bundle id `com.nikgraf.calendar`) → used by the iOS app. Note client ID.
+4. Configure the desktop app, either via env vars:
+   ```sh
+   export GOOGLE_DESKTOP_CLIENT_ID="....apps.googleusercontent.com"
+   export GOOGLE_DESKTOP_CLIENT_SECRET="..."
+   ```
+   or by creating `apps/desktop/google-oauth.local.json` (gitignored):
+   ```json
+   { "clientId": "....apps.googleusercontent.com", "clientSecret": "..." }
+   ```
+
+The desktop client secret is not confidential (RFC 8252) but stays out of git anyway.
+
+## Development
+
+```sh
+# Desktop: renderer dev server + app (two terminals)
+pnpm --filter @calendar/desktop dev
+pnpm --filter @calendar/desktop dev:app
+
+# iOS simulator (dev client)
+pnpm --filter @calendar/ios ios
+
+# Quality gates
+pnpm test && pnpm check && pnpm typecheck
+```

@@ -13,3 +13,4 @@ coverage/
 apps/ios/.expo/
 apps/ios/ios/
 apps/ios/android/
+google-oauth.local.json
