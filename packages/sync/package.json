@@ -1,0 +1,21 @@
+{
+  "name": "@calendar/sync",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./*": "./src/*.ts"
+  },
+  "dependencies": {
+    "@calendar/core": "workspace:*",
+    "@calendar/db": "workspace:*",
+    "@calendar/google": "workspace:*",
+    "effect": "catalog:"
+  },
+  "devDependencies": {
+    "@effect/vitest": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}

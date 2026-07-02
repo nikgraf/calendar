@@ -1,0 +1,15 @@
+node_modules/
+dist/
+dist-electron/
+out/
+coverage/
+*.tsbuildinfo
+.DS_Store
+.env
+.env.*
+!.env.example
+
+# Expo / native (continuous native generation — prebuild output stays untracked)
+apps/ios/.expo/
+apps/ios/ios/
+apps/ios/android/

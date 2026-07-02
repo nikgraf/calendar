@@ -1,0 +1,20 @@
+{
+  "name": "@calendar/db",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./*": "./src/*.ts"
+  },
+  "dependencies": {
+    "@calendar/core": "workspace:*",
+    "effect": "catalog:"
+  },
+  "devDependencies": {
+    "@effect/sql-sqlite-node": "catalog:",
+    "@effect/vitest": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}

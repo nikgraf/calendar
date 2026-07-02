@@ -1,0 +1,18 @@
+{
+  "expo": {
+    "name": "Calendar",
+    "slug": "calendar",
+    "version": "0.0.1",
+    "orientation": "portrait",
+    "scheme": "calendar",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "experiments": {
+      "reactCompiler": true
+    },
+    "ios": {
+      "bundleIdentifier": "com.nikgraf.calendar",
+      "supportsTablet": false
+    }
+  }
+}

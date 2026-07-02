@@ -1,0 +1,26 @@
+{
+  "name": "calendar",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "check": "vp check",
+    "dev:desktop": "pnpm --filter @calendar/desktop dev",
+    "fix": "vp check --fix",
+    "ios": "pnpm --filter @calendar/ios ios",
+    "test": "vp test",
+    "typecheck": "pnpm --recursive --parallel exec tsc --noEmit"
+  },
+  "devDependencies": {
+    "@nkzw/oxlint-config": "^1.2.1",
+    "typescript": "catalog:",
+    "vite": "catalog:",
+    "vite-plus": "catalog:",
+    "vitest": "catalog:"
+  },
+  "engines": {
+    "node": ">=24.0.0",
+    "pnpm": ">=11.0.0"
+  },
+  "packageManager": "pnpm@11.5.1"
+}

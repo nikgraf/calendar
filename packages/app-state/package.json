@@ -1,0 +1,22 @@
+{
+  "name": "@calendar/app-state",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./*": "./src/*.ts"
+  },
+  "dependencies": {
+    "@calendar/core": "workspace:*",
+    "@effect/atom-react": "catalog:",
+    "effect": "catalog:"
+  },
+  "devDependencies": {
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  },
+  "peerDependencies": {
+    "react": "catalog:"
+  }
+}

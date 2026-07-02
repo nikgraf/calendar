@@ -1,0 +1,54 @@
+packages:
+  - packages/*
+  - apps/*
+
+nodeLinker: hoisted
+blockExoticSubdeps: false
+
+catalog:
+  effect: 4.0.0-beta.93
+  '@effect/atom-react': 4.0.0-beta.93
+  '@effect/platform-node': 4.0.0-beta.93
+  '@effect/sql-sqlite-node': 4.0.0-beta.93
+  '@effect/sql-sqlite-react-native': 4.0.0-beta.93
+  '@effect/vitest': 4.0.0-beta.93
+  '@js-temporal/polyfill': ^0.5.1
+  react: ^19.2.7
+  react-dom: ^19.2.7
+  rrule-temporal: ^1.6.0
+  typescript: ^6.0.3
+  vite: npm:@voidzero-dev/vite-plus-core@^0.2.2
+  vite-plus: ^0.2.2
+  vitest: 4.1.9
+
+onlyBuiltDependencies:
+  - '@swc/core'
+  - '@tailwindcss/oxide'
+  - better-sqlite3
+  - electron
+  - unrs-resolver
+
+overrides:
+  vite: 'catalog:'
+  vitest: 'catalog:'
+
+minimumReleaseAgeExclude:
+  - '@effect/atom-react@4.0.0-beta.93'
+  - '@effect/sql-sqlite-node@4.0.0-beta.93'
+  - '@effect/vitest@4.0.0-beta.93'
+  - '@voidzero-dev/vite-plus-core@0.2.2'
+  - '@voidzero-dev/vite-plus-darwin-arm64@0.2.2'
+  - '@voidzero-dev/vite-plus-darwin-x64@0.2.2'
+  - '@voidzero-dev/vite-plus-linux-arm64-gnu@0.2.2'
+  - '@voidzero-dev/vite-plus-linux-arm64-musl@0.2.2'
+  - '@voidzero-dev/vite-plus-linux-x64-gnu@0.2.2'
+  - '@voidzero-dev/vite-plus-linux-x64-musl@0.2.2'
+  - '@voidzero-dev/vite-plus-win32-arm64-msvc@0.2.2'
+  - '@voidzero-dev/vite-plus-win32-x64-msvc@0.2.2'
+  - effect@4.0.0-beta.93
+  - rrule-temporal@1.6.0
+  - vite-plus@0.2.2
+
+allowBuilds:
+  better-sqlite3: true
+  msgpackr-extract: false
