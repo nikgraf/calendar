@@ -35,7 +35,21 @@ export default defineConfig({
           'typescript/no-require-imports': 'off',
         },
       },
+      {
+        files: ['apps/desktop/electron/**'],
+        rules: {
+          // Electron main logs to stdout by design.
+          'no-console': 'off',
+        },
+      },
     ],
+  },
+  resolve: {
+    alias: {
+      // The root better-sqlite3 is compiled for Electron's ABI; tests run
+      // under system Node and use this Node-ABI copy instead.
+      'better-sqlite3': 'better-sqlite3-node',
+    },
   },
   test: {
     include: [
@@ -43,5 +57,11 @@ export default defineConfig({
       'packages/*/__tests__/**/*.test.{ts,tsx}',
       'apps/desktop/electron/**/*.test.ts',
     ],
+    server: {
+      deps: {
+        // Must be processed by vite so the better-sqlite3 alias applies.
+        inline: ['@effect/sql-sqlite-node'],
+      },
+    },
   },
 });

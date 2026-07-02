@@ -32,11 +32,11 @@ export type GoogleRequestError =
   | TokenRefreshError;
 
 export interface ListEventsParams {
-  readonly maxResults?: number;
-  readonly pageToken?: string;
-  readonly syncToken?: string;
-  readonly timeMax?: string;
-  readonly timeMin?: string;
+  readonly maxResults?: number | undefined;
+  readonly pageToken?: string | undefined;
+  readonly syncToken?: string | undefined;
+  readonly timeMax?: string | undefined;
+  readonly timeMin?: string | undefined;
 }
 
 export interface GoogleCalendarClientShape {

@@ -46,8 +46,13 @@ export function AccountsView() {
     await refresh();
   };
 
+  const toggleCalendar = async (accountId: string, calendarId: string, isVisible: boolean) => {
+    await Effect.runPromise(backend.setCalendarVisible({ accountId, calendarId, isVisible }));
+    await refresh();
+  };
+
   return (
-    <div className="mx-auto flex h-screen max-w-2xl flex-col gap-6 overflow-y-auto p-10">
+    <div className="flex flex-col gap-6">
       <header className="flex items-center justify-between">
         <h1 className="text-2xl font-semibold">Accounts</h1>
         <button
@@ -95,6 +100,17 @@ export function AccountsView() {
                   className="flex items-center gap-2 text-sm"
                   key={`${calendar.accountId}:${calendar.id}`}
                 >
+                  <input
+                    checked={calendar.isVisible}
+                    onChange={(changeEvent) =>
+                      void toggleCalendar(
+                        calendar.accountId,
+                        calendar.id,
+                        changeEvent.target.checked,
+                      )
+                    }
+                    type="checkbox"
+                  />
                   <span
                     className="inline-block size-3 rounded-full"
                     style={{ backgroundColor: calendar.colorHex }}

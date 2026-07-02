@@ -1,16 +1,26 @@
 import { randomUUID } from 'node:crypto';
-import { Account, handleBackendInvoke, type BackendHandlers } from '@calendar/core';
+import { join } from 'node:path';
+import { Account, assembleWindow, handleBackendInvoke, type BackendHandlers } from '@calendar/core';
+import {
+  AccountRepo,
+  CalendarRepo,
+  DATA_KEY,
+  EventRepo,
+  migrationsLoader,
+  reposLayer,
+} from '@calendar/db';
 import {
   GoogleCalendarClient,
   GoogleOAuthConfig,
-  mapGcalCalendar,
   TokenManager,
   TokenStore,
 } from '@calendar/google';
-import { ipcMain } from 'electron';
+import { SyncEngine } from '@calendar/sync';
+import { SqliteClient, SqliteMigrator } from '@effect/sql-sqlite-node';
+import { app, BrowserWindow, ipcMain } from 'electron';
 import { Data, Effect, Layer, ManagedRuntime } from 'effect';
 import { FetchHttpClient } from 'effect/unstable/http';
-import { AccountsStore } from './accountsFile.ts';
+import { layer as reactivityLayer, Reactivity } from 'effect/unstable/reactivity/Reactivity';
 import { runGoogleSignIn } from './auth/loopbackFlow.ts';
 import { loadOAuthConfig } from './oauthConfig.ts';
 import { safeStorageTokenStore } from './tokens/safeStorageStore.ts';
@@ -20,30 +30,41 @@ class OAuthNotConfiguredError extends Data.TaggedError('OAuthNotConfiguredError'
 }> {}
 
 /**
- * Builds the main-process backend: the full Layer stack and the AppBackend
- * handler map, exposed to the renderer over the single 'backend' IPC channel.
+ * Builds the main-process backend: SQLite + repos + Google client + sync
+ * engine, exposed to the renderer over the single 'backend' IPC channel.
+ * Data changes are pushed to every window via 'backend:changed'.
  */
 export const startBackendHost = (): void => {
+  console.log('[backend] starting host');
   const oauth = loadOAuthConfig();
 
-  const baseLayer = Layer.mergeAll(
-    AccountsStore.layer,
+  const platformLayer = Layer.mergeAll(
     safeStorageTokenStore,
     FetchHttpClient.layer,
+    GoogleOAuthConfig.layer({
+      clientId: oauth?.clientId ?? 'unconfigured',
+      ...(oauth?.clientSecret ? { clientSecret: oauth.clientSecret } : {}),
+    }),
   );
-  const googleLayer = Layer.mergeAll(
-    TokenManager.layer,
-    GoogleCalendarClient.layer.pipe(Layer.provide(TokenManager.layer)),
-  ).pipe(
-    Layer.provide(baseLayer),
-    Layer.provide(
-      GoogleOAuthConfig.layer({
-        clientId: oauth?.clientId ?? 'unconfigured',
-        ...(oauth?.clientSecret ? { clientSecret: oauth.clientSecret } : {}),
+
+  const dbLayer = reposLayer.pipe(
+    Layer.provideMerge(Layer.effectDiscard(SqliteMigrator.run({ loader: migrationsLoader }))),
+    Layer.provideMerge(
+      SqliteClient.layer({
+        filename: join(app.getPath('userData'), 'calendar.db'),
       }),
     ),
+    Layer.provideMerge(reactivityLayer),
   );
-  const runtime = ManagedRuntime.make(Layer.provideMerge(googleLayer, baseLayer));
+
+  const appLayer = SyncEngine.layer.pipe(
+    Layer.provideMerge(GoogleCalendarClient.layer),
+    Layer.provideMerge(TokenManager.layer),
+    Layer.provideMerge(dbLayer),
+    Layer.provideMerge(platformLayer),
+  );
+
+  const runtime = ManagedRuntime.make(appLayer);
 
   const requireOAuth = Effect.suspend(() =>
     oauth
@@ -59,17 +80,18 @@ export const startBackendHost = (): void => {
   );
 
   const handlers: BackendHandlers<
-    AccountsStore | GoogleCalendarClient | TokenManager | TokenStore
+    AccountRepo | CalendarRepo | EventRepo | SyncEngine | TokenManager | TokenStore
   > = {
     addAccount: () =>
       Effect.gen(function* () {
         const config = yield* requireOAuth;
-        const accounts = yield* AccountsStore;
+        const accountRepo = yield* AccountRepo;
         const tokenStore = yield* TokenStore;
+        const engine = yield* SyncEngine;
 
         const result = yield* runGoogleSignIn(config.clientId);
-        const existing = (yield* accounts.list()).find(
-          (account) => account.email === result.profile.email,
+        const existing = (yield* accountRepo.list()).find(
+          (candidate) => candidate.email === result.profile.email,
         );
         const account = new Account({
           avatarUrl: result.profile.avatarUrl,
@@ -80,51 +102,72 @@ export const startBackendHost = (): void => {
           status: 'ok',
         });
         yield* tokenStore.set(account.id, result.tokens);
-        yield* accounts.add(account);
+        yield* accountRepo.upsert(account);
+        // Populate calendars/events in the background.
+        yield* Effect.forkDetach(engine.syncAll());
         return account;
+      }),
+
+    getEventsInRange: ({ rangeEndUtc, rangeStartUtc }) =>
+      Effect.gen(function* () {
+        const events = yield* EventRepo;
+        const window = yield* events.getWindow(rangeStartUtc, rangeEndUtc);
+        return assembleWindow(window, rangeStartUtc, rangeEndUtc);
       }),
 
     listAccounts: () =>
       Effect.gen(function* () {
-        const accounts = yield* AccountsStore;
-        return yield* accounts.list();
+        const accountRepo = yield* AccountRepo;
+        return yield* accountRepo.list();
       }),
 
     listCalendars: ({ accountId }) =>
       Effect.gen(function* () {
-        const accounts = yield* AccountsStore;
-        const client = yield* GoogleCalendarClient;
-        const all = yield* accounts.list();
-        const selected = accountId ? all.filter((account) => account.id === accountId) : all;
-
-        const results = [];
-        for (const account of selected) {
-          const page = yield* client.listCalendars({ accountId: account.id });
-          for (const entry of page.items ?? []) {
-            if (entry.deleted) {
-              continue;
-            }
-            results.push(
-              mapGcalCalendar(entry, {
-                accountId: account.id,
-                colorFromId: () => undefined,
-              }),
-            );
-          }
-        }
-        return results;
+        const calendarRepo = yield* CalendarRepo;
+        return yield* calendarRepo.list(accountId);
       }),
 
     removeAccount: ({ accountId }) =>
       Effect.gen(function* () {
-        const accounts = yield* AccountsStore;
+        const accountRepo = yield* AccountRepo;
         const tokenStore = yield* TokenStore;
         yield* tokenStore.remove(accountId);
-        yield* accounts.remove(accountId);
+        yield* accountRepo.remove(accountId);
+      }),
+
+    setCalendarVisible: ({ accountId, calendarId, isVisible }) =>
+      Effect.gen(function* () {
+        const calendarRepo = yield* CalendarRepo;
+        yield* calendarRepo.setVisible(accountId, calendarId, isVisible);
+      }),
+
+    syncNow: () =>
+      Effect.gen(function* () {
+        const engine = yield* SyncEngine;
+        yield* engine.syncAll();
       }),
   };
 
   ipcMain.handle('backend', (_event, method: string, payload: unknown) =>
     runtime.runPromise(handleBackendInvoke(handlers, method, payload)),
   );
+
+  // Push data-change notifications to every window, and start the scheduler.
+  runtime
+    .runPromise(
+      Effect.gen(function* () {
+        const reactivity = yield* Reactivity;
+        reactivity.registerUnsafe([DATA_KEY], () => {
+          for (const window of BrowserWindow.getAllWindows()) {
+            window.webContents.send('backend:changed');
+          }
+        });
+        const engine = yield* SyncEngine;
+        yield* engine.start();
+        console.log('[backend] runtime ready, scheduler started');
+      }),
+    )
+    .catch((error: unknown) => {
+      console.error('[backend] bootstrap failed:', error);
+    });
 };

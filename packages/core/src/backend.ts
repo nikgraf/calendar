@@ -1,5 +1,5 @@
 import { Cause, Effect, Schema } from 'effect';
-import { Account, CalendarInfo } from './types.ts';
+import { Account, CalendarInfo, EventRecord } from './types.ts';
 
 /**
  * The platform seam: every UI talks to the backend exclusively through this
@@ -11,6 +11,14 @@ export const backendMethods = {
   addAccount: {
     payload: Schema.Void,
     success: Account,
+  },
+  /** Materialized (recurrence-expanded) events of visible calendars. */
+  getEventsInRange: {
+    payload: Schema.Struct({
+      rangeEndUtc: Schema.Number,
+      rangeStartUtc: Schema.Number,
+    }),
+    success: Schema.Array(EventRecord),
   },
   listAccounts: {
     payload: Schema.Void,
@@ -24,6 +32,19 @@ export const backendMethods = {
   },
   removeAccount: {
     payload: Schema.Struct({ accountId: Schema.String }),
+    success: Schema.Void,
+  },
+  setCalendarVisible: {
+    payload: Schema.Struct({
+      accountId: Schema.String,
+      calendarId: Schema.String,
+      isVisible: Schema.Boolean,
+    }),
+    success: Schema.Void,
+  },
+  /** Kicks a sync pass; resolves when the pass completes. */
+  syncNow: {
+    payload: Schema.Void,
     success: Schema.Void,
   },
 } as const;
@@ -47,6 +68,8 @@ export class BackendError extends Schema.ErrorClass<BackendError>('core/BackendE
 /** What the preload bridge exposes to the renderer. */
 export interface BackendTransport {
   readonly invoke: (method: string, payload: unknown) => Promise<unknown>;
+  /** Fires when backend data changed; returns an unsubscribe function. */
+  readonly onChanged?: (listener: () => void) => () => void;
 }
 
 const encodedResult = Schema.Struct({
@@ -117,9 +140,12 @@ export const makeBackendClient = (transport: BackendTransport): BackendClient =>
 
   return {
     addAccount: method('addAccount'),
+    getEventsInRange: method('getEventsInRange'),
     listAccounts: method('listAccounts'),
     listCalendars: method('listCalendars'),
     removeAccount: method('removeAccount'),
+    setCalendarVisible: method('setCalendarVisible'),
+    syncNow: method('syncNow'),
   };
 };
 

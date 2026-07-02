@@ -6,13 +6,15 @@ A Fantastical-style Google Calendar client: iOS (Expo) + macOS (Electron), clien
 
 ```sh
 pnpm install
+# native modules must match Electron's ABI (rerun after Electron upgrades):
+pnpm --filter @calendar/desktop rebuild:native
 ```
 
 ### Google OAuth (required for sign-in)
 
 Create a Google Cloud project once, then:
 
-1. **APIs & Services → Library**: enable the *Google Calendar API*.
+1. **APIs & Services → Library**: enable the _Google Calendar API_.
 2. **APIs & Services → OAuth consent screen**: External, Testing mode; add yourself (and any other test users). Scopes: `calendar.readonly`, `calendar.events`, plus `openid email profile`.
 3. **Credentials → Create credentials → OAuth client ID**:
    - Type **Desktop app** → used by the macOS app. Note client ID + secret.

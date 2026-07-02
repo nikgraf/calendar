@@ -37,13 +37,16 @@ app.on('window-all-closed', () => {
   }
 });
 
-await app.whenReady();
+// Electron emits 'ready' only after the main module finishes evaluating, so
+// top-level-awaiting whenReady() deadlocks the app. Promise chain required.
+// eslint-disable-next-line unicorn/prefer-top-level-await
+void app.whenReady().then(() => {
+  startBackendHost();
+  createWindow();
 
-startBackendHost();
-createWindow();
-
-app.on('activate', () => {
-  if (BrowserWindow.getAllWindows().length === 0) {
-    createWindow();
-  }
+  app.on('activate', () => {
+    if (BrowserWindow.getAllWindows().length === 0) {
+      createWindow();
+    }
+  });
 });
