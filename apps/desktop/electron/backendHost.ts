@@ -1,13 +1,13 @@
 import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
-import { Account, assembleWindow, handleBackendInvoke, type BackendHandlers } from '@calendar/core';
+import { Account, handleBackendInvoke, type BackendHandlers } from '@calendar/core';
 import {
   AccountRepo,
   CalendarRepo,
   DATA_KEY,
   EventRepo,
-  migrationsLoader,
   reposLayer,
+  runMigrations,
 } from '@calendar/db';
 import {
   GoogleCalendarClient,
@@ -15,8 +15,8 @@ import {
   TokenManager,
   TokenStore,
 } from '@calendar/google';
-import { SyncEngine } from '@calendar/sync';
-import { SqliteClient, SqliteMigrator } from '@effect/sql-sqlite-node';
+import { commonBackendHandlers, SyncEngine } from '@calendar/sync';
+import { SqliteClient } from '@effect/sql-sqlite-node';
 import { app, BrowserWindow, ipcMain } from 'electron';
 import { Data, Effect, Layer, ManagedRuntime } from 'effect';
 import { FetchHttpClient } from 'effect/unstable/http';
@@ -48,7 +48,7 @@ export const startBackendHost = (): void => {
   );
 
   const dbLayer = reposLayer.pipe(
-    Layer.provideMerge(Layer.effectDiscard(SqliteMigrator.run({ loader: migrationsLoader }))),
+    Layer.provideMerge(Layer.effectDiscard(runMigrations)),
     Layer.provideMerge(
       SqliteClient.layer({
         filename: join(app.getPath('userData'), 'calendar.db'),
@@ -82,6 +82,8 @@ export const startBackendHost = (): void => {
   const handlers: BackendHandlers<
     AccountRepo | CalendarRepo | EventRepo | SyncEngine | TokenManager | TokenStore
   > = {
+    ...commonBackendHandlers,
+
     addAccount: () =>
       Effect.gen(function* () {
         const config = yield* requireOAuth;
@@ -106,45 +108,6 @@ export const startBackendHost = (): void => {
         // Populate calendars/events in the background.
         yield* Effect.forkDetach(engine.syncAll());
         return account;
-      }),
-
-    getEventsInRange: ({ rangeEndUtc, rangeStartUtc }) =>
-      Effect.gen(function* () {
-        const events = yield* EventRepo;
-        const window = yield* events.getWindow(rangeStartUtc, rangeEndUtc);
-        return assembleWindow(window, rangeStartUtc, rangeEndUtc);
-      }),
-
-    listAccounts: () =>
-      Effect.gen(function* () {
-        const accountRepo = yield* AccountRepo;
-        return yield* accountRepo.list();
-      }),
-
-    listCalendars: ({ accountId }) =>
-      Effect.gen(function* () {
-        const calendarRepo = yield* CalendarRepo;
-        return yield* calendarRepo.list(accountId);
-      }),
-
-    removeAccount: ({ accountId }) =>
-      Effect.gen(function* () {
-        const accountRepo = yield* AccountRepo;
-        const tokenStore = yield* TokenStore;
-        yield* tokenStore.remove(accountId);
-        yield* accountRepo.remove(accountId);
-      }),
-
-    setCalendarVisible: ({ accountId, calendarId, isVisible }) =>
-      Effect.gen(function* () {
-        const calendarRepo = yield* CalendarRepo;
-        yield* calendarRepo.setVisible(accountId, calendarId, isVisible);
-      }),
-
-    syncNow: () =>
-      Effect.gen(function* () {
-        const engine = yield* SyncEngine;
-        yield* engine.syncAll();
       }),
   };
 

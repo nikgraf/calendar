@@ -144,7 +144,8 @@ const make: Effect.Effect<
       );
     });
 
-  const secretField = config.clientSecret ? { client_secret: config.clientSecret } : {};
+  const withSecret = (form: Record<string, string>): Record<string, string> =>
+    config.clientSecret ? { ...form, client_secret: config.clientSecret } : form;
 
   const refresh = (
     accountId: string,
@@ -152,12 +153,11 @@ const make: Effect.Effect<
   ): Effect.Effect<TokenSet, ReauthRequiredError | TokenRefreshError> =>
     Effect.gen(function* () {
       const response = yield* postToken(
-        {
+        withSecret({
           client_id: config.clientId,
           grant_type: 'refresh_token',
           refresh_token: tokens.refreshToken,
-          ...secretField,
-        },
+        }),
         (message) => new TokenRefreshError({ accountId, message }),
       ).pipe(
         Effect.catchIf(
@@ -180,14 +180,13 @@ const make: Effect.Effect<
     exchangeCode: ({ code, codeVerifier, redirectUri }) =>
       Effect.gen(function* () {
         const response = yield* postToken(
-          {
+          withSecret({
             client_id: config.clientId,
             code,
             code_verifier: codeVerifier,
             grant_type: 'authorization_code',
             redirect_uri: redirectUri,
-            ...secretField,
-          },
+          }),
           (message) => new TokenRefreshError({ accountId: 'new-account', message }),
         );
         if (!response.refresh_token) {

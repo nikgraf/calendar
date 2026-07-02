@@ -3,8 +3,8 @@ import {
   AccountRepo,
   CalendarRepo,
   EventRepo,
-  migrationsLoader,
   reposLayer,
+  runMigrations,
   SyncStateRepo,
 } from '@calendar/db';
 import {
@@ -15,7 +15,7 @@ import {
   type GcalEventsPage,
   type GoogleCalendarClientShape,
 } from '@calendar/google';
-import { SqliteClient, SqliteMigrator } from '@effect/sql-sqlite-node';
+import { SqliteClient } from '@effect/sql-sqlite-node';
 import { expect, it } from '@effect/vitest';
 import { Effect, Layer } from 'effect';
 import { TestClock } from 'effect/testing';
@@ -76,7 +76,7 @@ const stubClient = (
 const engineLayer = (client: GoogleCalendarClientShape) =>
   SyncEngine.layer.pipe(
     Layer.provideMerge(reposLayer),
-    Layer.provideMerge(Layer.effectDiscard(SqliteMigrator.run({ loader: migrationsLoader }))),
+    Layer.provideMerge(Layer.effectDiscard(runMigrations)),
     Layer.provideMerge(SqliteClient.layer({ filename: ':memory:' })),
     Layer.provideMerge(reactivityLayer),
     Layer.provideMerge(Layer.succeed(GoogleCalendarClient, client)),

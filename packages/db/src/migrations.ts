@@ -1,9 +1,9 @@
 import { Effect } from 'effect';
-import { SqlClient } from 'effect/unstable/sql';
+import { SqlClient } from 'effect/unstable/sql/SqlClient';
 import type { ResolvedMigration } from 'effect/unstable/sql/Migrator';
 
 const init = Effect.gen(function* () {
-  const sql = yield* SqlClient.SqlClient;
+  const sql = yield* SqlClient;
 
   yield* sql`
     CREATE TABLE accounts (

@@ -13,6 +13,13 @@
     "ios": {
       "bundleIdentifier": "com.nikgraf.calendar",
       "supportsTablet": false
+    },
+    "plugins": [
+      "expo-web-browser",
+      "expo-secure-store"
+    ],
+    "extra": {
+      "googleIosClientId": ""
     }
   }
 }

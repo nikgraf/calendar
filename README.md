@@ -31,6 +31,10 @@ Create a Google Cloud project once, then:
 
 The desktop client secret is not confidential (RFC 8252) but stays out of git anyway.
 
+For iOS, set the client id in `apps/ios/app.json` under `expo.extra.googleIosClientId`
+and add the reversed client id (`com.googleusercontent.apps.<id>`) to `expo.scheme`,
+then re-run `pnpm --filter @calendar/ios prebuild`.
+
 ## Development
 
 ```sh

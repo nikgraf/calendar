@@ -150,6 +150,38 @@ export const makeBackendClient = (transport: BackendTransport): BackendClient =>
 };
 
 /**
+ * In-process client: wraps handlers directly (no serialization hop) — used on
+ * iOS where the backend runs inside the app.
+ */
+export const makeDirectBackendClient = <R>(
+  handlers: BackendHandlers<R>,
+  run: <A>(effect: Effect.Effect<A, unknown, R>) => Promise<A>,
+): BackendClient => {
+  const method = <M extends BackendMethodName>(name: M) => {
+    return (payload: BackendPayload<M>): Effect.Effect<BackendSuccess<M>, BackendError> =>
+      Effect.tryPromise({
+        catch: (error) => {
+          const tag =
+            typeof error === 'object' && error !== null && '_tag' in error
+              ? String((error as { _tag: unknown })._tag)
+              : 'UnknownError';
+          return new BackendError({ message: String(error), tag });
+        },
+        try: () => run(handlers[name](payload as never)),
+      }) as Effect.Effect<BackendSuccess<M>, BackendError>;
+  };
+  return {
+    addAccount: method('addAccount'),
+    getEventsInRange: method('getEventsInRange'),
+    listAccounts: method('listAccounts'),
+    listCalendars: method('listCalendars'),
+    removeAccount: method('removeAccount'),
+    setCalendarVisible: method('setCalendarVisible'),
+    syncNow: method('syncNow'),
+  };
+};
+
+/**
  * Host-side handler map: the backend implements each method as an Effect;
  * `handleBackendInvoke` encodes results/errors into the wire format.
  */

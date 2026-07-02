@@ -1,15 +1,15 @@
 import { Account, CalendarInfo, EventRecord, plainDateToUtcMs } from '@calendar/core';
-import { SqliteClient, SqliteMigrator } from '@effect/sql-sqlite-node';
+import { SqliteClient } from '@effect/sql-sqlite-node';
 import { expect, it } from '@effect/vitest';
 import { Effect, Layer } from 'effect';
 import { layer as reactivityLayer } from 'effect/unstable/reactivity/Reactivity';
 import { describe } from 'vitest';
-import { migrationsLoader } from './migrations.ts';
+import { runMigrations } from './migrate.ts';
 import { AccountRepo, CalendarRepo, EventRepo, reposLayer } from './repos.ts';
 
 const freshDbLayer = () =>
   reposLayer.pipe(
-    Layer.provideMerge(Layer.effectDiscard(SqliteMigrator.run({ loader: migrationsLoader }))),
+    Layer.provideMerge(Layer.effectDiscard(runMigrations)),
     Layer.provideMerge(SqliteClient.layer({ filename: ':memory:' })),
     Layer.provideMerge(reactivityLayer),
   );
