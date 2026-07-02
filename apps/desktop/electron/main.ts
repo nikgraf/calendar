@@ -1,3 +1,4 @@
+import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { app, BrowserWindow } from 'electron';
@@ -22,6 +23,20 @@ const createWindow = () => {
   });
 
   window.once('ready-to-show', () => window.show());
+
+  // Debug/e2e hook: CALENDAR_CAPTURE=/path.png captures the window shortly
+  // after load and quits.
+  const capturePath = process.env.CALENDAR_CAPTURE;
+  if (capturePath) {
+    window.webContents.once('did-finish-load', () => {
+      setTimeout(() => {
+        void window.webContents.capturePage().then((image) => {
+          writeFileSync(capturePath, image.toPNG());
+          app.quit();
+        });
+      }, 1500);
+    });
+  }
 
   const rendererUrl = process.env.ELECTRON_RENDERER_URL;
   if (rendererUrl) {

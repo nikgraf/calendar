@@ -1,7 +1,10 @@
 export * from './backend.ts';
+export * from './layout/allDayLane.ts';
+export * from './layout/dayGrid.ts';
 export * from './recurrence/expand.ts';
 export * from './recurrence/window.ts';
 export * from './time/convert.ts';
+export * from './time/ranges.ts';
 export * from './time/temporal.ts';
 export * from './types.ts';
 
