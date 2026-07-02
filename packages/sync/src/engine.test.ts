@@ -22,6 +22,7 @@ import { TestClock } from 'effect/testing';
 import { layer as reactivityLayer } from 'effect/unstable/reactivity/Reactivity';
 import { describe } from 'vitest';
 import { SyncEngine } from './engine.ts';
+import { EventMutations } from './mutations.ts';
 
 const calendarListPage: GcalCalendarListPage = {
   items: [
@@ -75,6 +76,7 @@ const stubClient = (
 
 const engineLayer = (client: GoogleCalendarClientShape) =>
   SyncEngine.layer.pipe(
+    Layer.provideMerge(EventMutations.layer),
     Layer.provideMerge(reposLayer),
     Layer.provideMerge(Layer.effectDiscard(runMigrations)),
     Layer.provideMerge(SqliteClient.layer({ filename: ':memory:' })),

@@ -27,11 +27,15 @@ export function WeekView({
   colorOf,
   days,
   events,
+  onEventClick,
+  onSlotClick,
   timeZone,
 }: {
   colorOf: ColorLookup;
   days: ReadonlyArray<Temporal.PlainDate>;
   events: ReadonlyArray<EventRecord>;
+  onEventClick: (event: EventRecord) => void;
+  onSlotClick: (date: Temporal.PlainDate, hour: number) => void;
   timeZone: string;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -117,8 +121,9 @@ export function WeekView({
               const color = colorOf(event);
               return (
                 <div
-                  className="absolute truncate rounded px-1.5 text-xs leading-5"
+                  className="absolute cursor-pointer truncate rounded px-1.5 text-xs leading-5"
                   key={span.id}
+                  onClick={() => onEventClick(event)}
                   style={{
                     backgroundColor: color,
                     color: chipTextColor(color),
@@ -180,7 +185,15 @@ export function WeekView({
             const nowFraction = (nowMs - range.startUtc) / (range.endUtc - range.startUtc);
 
             return (
-              <div className="relative border-l border-neutral-100" key={day.toString()}>
+              <div
+                className="relative border-l border-neutral-100"
+                key={day.toString()}
+                onClick={(clickEvent) => {
+                  const bounds = clickEvent.currentTarget.getBoundingClientRect();
+                  const hour = Math.floor((clickEvent.clientY - bounds.top) / HOUR_HEIGHT);
+                  onSlotClick(day, Math.min(Math.max(hour, 0), 23));
+                }}
+              >
                 {/* Hour lines */}
                 {Array.from({ length: 24 }, (_, index) => (
                   <div
@@ -196,8 +209,12 @@ export function WeekView({
                   const compact = box.height * 24 * HOUR_HEIGHT < 28;
                   return (
                     <div
-                      className="absolute overflow-hidden rounded-md px-1.5 py-0.5"
+                      className="absolute cursor-pointer overflow-hidden rounded-md px-1.5 py-0.5"
                       key={box.id}
+                      onClick={(clickEvent) => {
+                        clickEvent.stopPropagation();
+                        onEventClick(event);
+                      }}
                       style={{
                         backgroundColor: color,
                         color: chipTextColor(color),

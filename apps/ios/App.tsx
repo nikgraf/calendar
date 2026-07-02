@@ -5,6 +5,7 @@ import { Pressable, SafeAreaView, StatusBar, StyleSheet, Text, View } from 'reac
 import { backendClient, onBackendChanged, startSync } from './src/backend.ts';
 import { DayTimeline } from './src/ui/DayTimeline.tsx';
 import { MonthGrid } from './src/ui/MonthGrid.tsx';
+import { EventEditSheet, type EditSeed } from './src/ui/EventEditSheet.tsx';
 import { SettingsSheet } from './src/ui/SettingsSheet.tsx';
 import { palette } from './src/ui/theme.ts';
 import { WeekStrip } from './src/ui/WeekStrip.tsx';
@@ -18,6 +19,7 @@ function CalendarScreen() {
   const [view, setView] = useState<ViewKind>('day');
   const [focused, setFocused] = useState(() => Temporal.Now.plainDateISO(timeZone));
   const [showSettings, setShowSettings] = useState(false);
+  const [editSeed, setEditSeed] = useState<EditSeed | null>(null);
 
   useEffect(() => {
     startSync();
@@ -84,6 +86,9 @@ function CalendarScreen() {
           <Pressable onPress={() => step(1)} style={styles.navButton}>
             <Text style={styles.navLabel}>›</Text>
           </Pressable>
+          <Pressable onPress={() => setEditSeed({ initialDate: focused })} style={styles.navButton}>
+            <Text style={styles.addLabel}>＋</Text>
+          </Pressable>
           <Pressable onPress={() => setShowSettings(true)} style={styles.navButton}>
             <Text style={styles.navLabel}>⚙</Text>
           </Pressable>
@@ -107,7 +112,13 @@ function CalendarScreen() {
       {view === 'day' ? (
         <>
           <WeekStrip days={weekDays} onSelect={setFocused} selected={focused} timeZone={timeZone} />
-          <DayTimeline colorOf={colorOf} date={focused} events={events} timeZone={timeZone} />
+          <DayTimeline
+            colorOf={colorOf}
+            date={focused}
+            events={events}
+            onEventPress={(event) => setEditSeed({ event, initialDate: focused })}
+            timeZone={timeZone}
+          />
         </>
       ) : (
         <MonthGrid
@@ -122,6 +133,12 @@ function CalendarScreen() {
         />
       )}
 
+      <EventEditSheet
+        calendars={calendars}
+        onClose={() => setEditSeed(null)}
+        seed={editSeed}
+        timeZone={timeZone}
+      />
       <SettingsSheet onClose={() => setShowSettings(false)} visible={showSettings} />
     </SafeAreaView>
   );
@@ -136,6 +153,11 @@ export function App() {
 }
 
 const styles = StyleSheet.create({
+  addLabel: {
+    color: '#2563eb',
+    fontSize: 18,
+    fontWeight: '600',
+  },
   header: {
     alignItems: 'center',
     flexDirection: 'row',

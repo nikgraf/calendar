@@ -9,6 +9,7 @@ import {
 } from '@calendar/google';
 import { Clock, Context, Effect, Layer, Schedule, Semaphore } from 'effect';
 import type { SqlError } from 'effect/unstable/sql/SqlError';
+import { EventMutations } from './mutations.ts';
 
 const CALENDAR_LIST_SCOPE = 'calendarList';
 const INITIAL_WINDOW_MS = 365 * 24 * 60 * 60 * 1000; // 12 months back
@@ -73,8 +74,9 @@ export interface SyncEngineShape {
 const make: Effect.Effect<
   SyncEngineShape,
   never,
-  AccountRepo | CalendarRepo | EventRepo | GoogleCalendarClient | SyncStateRepo
+  AccountRepo | CalendarRepo | EventMutations | EventRepo | GoogleCalendarClient | SyncStateRepo
 > = Effect.gen(function* () {
+  const mutations = yield* EventMutations;
   const client = yield* GoogleCalendarClient;
   const accountRepo = yield* AccountRepo;
   const calendarRepo = yield* CalendarRepo;
@@ -262,6 +264,8 @@ const make: Effect.Effect<
     gate
       .withPermits(1)(
         Effect.gen(function* () {
+          // Push local edits first to minimise conflicts with the pull below.
+          yield* mutations.processPendingOps();
           const accounts = yield* accountRepo.list();
           for (const account of accounts) {
             if (account.status !== 'ok') {
@@ -297,6 +301,6 @@ export class SyncEngine extends Context.Service<SyncEngine, SyncEngineShape>()('
   static readonly layer: Layer.Layer<
     SyncEngine,
     never,
-    AccountRepo | CalendarRepo | EventRepo | GoogleCalendarClient | SyncStateRepo
+    AccountRepo | CalendarRepo | EventMutations | EventRepo | GoogleCalendarClient | SyncStateRepo
   > = Layer.effect(SyncEngine)(make);
 }

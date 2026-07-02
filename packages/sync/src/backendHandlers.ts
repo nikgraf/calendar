@@ -3,10 +3,12 @@ import { AccountRepo, CalendarRepo, EventRepo } from '@calendar/db';
 import { TokenStore } from '@calendar/google';
 import { Effect } from 'effect';
 import { SyncEngine } from './engine.ts';
+import { EventMutations } from './mutations.ts';
 
 export type CommonBackendServices =
   | AccountRepo
   | CalendarRepo
+  | EventMutations
   | EventRepo
   | SyncEngine
   | TokenStore;
@@ -16,6 +18,18 @@ export type CommonBackendServices =
  * (the OAuth code-acquisition step differs) on top of these.
  */
 export const commonBackendHandlers: Omit<BackendHandlers<CommonBackendServices>, 'addAccount'> = {
+  createEvent: (draft) =>
+    Effect.gen(function* () {
+      const mutations = yield* EventMutations;
+      return yield* mutations.createEvent(draft);
+    }),
+
+  deleteEvent: (params) =>
+    Effect.gen(function* () {
+      const mutations = yield* EventMutations;
+      yield* mutations.deleteEvent(params);
+    }),
+
   getEventsInRange: ({ rangeEndUtc, rangeStartUtc }) =>
     Effect.gen(function* () {
       const events = yield* EventRepo;
@@ -53,5 +67,11 @@ export const commonBackendHandlers: Omit<BackendHandlers<CommonBackendServices>,
     Effect.gen(function* () {
       const engine = yield* SyncEngine;
       yield* engine.syncAll();
+    }),
+
+  updateEvent: (params) =>
+    Effect.gen(function* () {
+      const mutations = yield* EventMutations;
+      yield* mutations.updateEvent(params);
     }),
 };

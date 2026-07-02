@@ -12,7 +12,12 @@ import {
   TokenStore,
   GoogleCalendarClient,
 } from '@calendar/google';
-import { commonBackendHandlers, SyncEngine, type CommonBackendServices } from '@calendar/sync';
+import {
+  commonBackendHandlers,
+  EventMutations,
+  SyncEngine,
+  type CommonBackendServices,
+} from '@calendar/sync';
 import { layer as sqliteLayer } from '@effect/sql-sqlite-react-native/SqliteClient';
 import Constants from 'expo-constants';
 import { deleteItemAsync, getItemAsync, setItemAsync } from 'expo-secure-store';
@@ -63,6 +68,7 @@ const platformLayer = Layer.mergeAll(
 );
 
 const appLayer = SyncEngine.layer.pipe(
+  Layer.provideMerge(EventMutations.layer),
   Layer.provideMerge(GoogleCalendarClient.layer),
   Layer.provideMerge(TokenManager.layer),
   Layer.provideMerge(dbLayer),

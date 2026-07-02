@@ -7,10 +7,38 @@ import { Account, CalendarInfo, EventRecord } from './types.ts';
  * from the main process over a preload bridge. Payloads and results cross the
  * bridge in encoded form, so both sides stay validated.
  */
+export const EventDraft = Schema.Struct({
+  accountId: Schema.String,
+  calendarId: Schema.String,
+  description: Schema.optional(Schema.String),
+  /** All-day drafts use dates; timed drafts use epochs + zone. */
+  endDate: Schema.optional(Schema.String),
+  endUtc: Schema.Number,
+  isAllDay: Schema.Boolean,
+  location: Schema.optional(Schema.String),
+  startDate: Schema.optional(Schema.String),
+  startTimeZone: Schema.optional(Schema.String),
+  startUtc: Schema.Number,
+  title: Schema.String,
+});
+export type EventDraft = Schema.Schema.Type<typeof EventDraft>;
+
 export const backendMethods = {
   addAccount: {
     payload: Schema.Void,
     success: Account,
+  },
+  createEvent: {
+    payload: EventDraft,
+    success: EventRecord,
+  },
+  deleteEvent: {
+    payload: Schema.Struct({
+      accountId: Schema.String,
+      calendarId: Schema.String,
+      eventId: Schema.String,
+    }),
+    success: Schema.Void,
   },
   /** Materialized (recurrence-expanded) events of visible calendars. */
   getEventsInRange: {
@@ -45,6 +73,24 @@ export const backendMethods = {
   /** Kicks a sync pass; resolves when the pass completes. */
   syncNow: {
     payload: Schema.Void,
+    success: Schema.Void,
+  },
+  updateEvent: {
+    payload: Schema.Struct({
+      accountId: Schema.String,
+      calendarId: Schema.String,
+      changes: Schema.Struct({
+        description: Schema.optional(Schema.String),
+        endDate: Schema.optional(Schema.String),
+        endUtc: Schema.optional(Schema.Number),
+        isAllDay: Schema.optional(Schema.Boolean),
+        location: Schema.optional(Schema.String),
+        startDate: Schema.optional(Schema.String),
+        startUtc: Schema.optional(Schema.Number),
+        title: Schema.optional(Schema.String),
+      }),
+      eventId: Schema.String,
+    }),
     success: Schema.Void,
   },
 } as const;
@@ -140,12 +186,15 @@ export const makeBackendClient = (transport: BackendTransport): BackendClient =>
 
   return {
     addAccount: method('addAccount'),
+    createEvent: method('createEvent'),
+    deleteEvent: method('deleteEvent'),
     getEventsInRange: method('getEventsInRange'),
     listAccounts: method('listAccounts'),
     listCalendars: method('listCalendars'),
     removeAccount: method('removeAccount'),
     setCalendarVisible: method('setCalendarVisible'),
     syncNow: method('syncNow'),
+    updateEvent: method('updateEvent'),
   };
 };
 
@@ -172,12 +221,15 @@ export const makeDirectBackendClient = <R>(
   };
   return {
     addAccount: method('addAccount'),
+    createEvent: method('createEvent'),
+    deleteEvent: method('deleteEvent'),
     getEventsInRange: method('getEventsInRange'),
     listAccounts: method('listAccounts'),
     listCalendars: method('listCalendars'),
     removeAccount: method('removeAccount'),
     setCalendarVisible: method('setCalendarVisible'),
     syncNow: method('syncNow'),
+    updateEvent: method('updateEvent'),
   };
 };
 

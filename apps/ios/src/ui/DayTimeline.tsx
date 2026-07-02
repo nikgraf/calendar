@@ -1,7 +1,7 @@
 import { useNow } from '@calendar/app-state';
 import { dayRange, layoutDayColumn, Temporal, type EventRecord } from '@calendar/core';
 import { useEffect, useRef } from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { chipTextColor, palette } from './theme.ts';
 
 const HOUR_HEIGHT = 56;
@@ -16,11 +16,13 @@ export function DayTimeline({
   colorOf,
   date,
   events,
+  onEventPress,
   timeZone,
 }: {
   colorOf: (event: EventRecord) => string;
   date: Temporal.PlainDate;
   events: ReadonlyArray<EventRecord>;
+  onEventPress: (event: EventRecord) => void;
   timeZone: string;
 }) {
   const scrollRef = useRef<ScrollView>(null);
@@ -94,8 +96,9 @@ export function DayTimeline({
               const color = colorOf(event);
               const height = Math.max(box.height * 24 * HOUR_HEIGHT, 22);
               return (
-                <View
+                <Pressable
                   key={box.id}
+                  onPress={() => onEventPress(event)}
                   style={[
                     styles.eventBlock,
                     {
@@ -121,7 +124,7 @@ export function DayTimeline({
                       {formatTime(event.startUtc, timeZone)} – {formatTime(event.endUtc, timeZone)}
                     </Text>
                   ) : null}
-                </View>
+                </Pressable>
               );
             })}
 

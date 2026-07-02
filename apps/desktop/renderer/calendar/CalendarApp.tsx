@@ -9,6 +9,7 @@ import {
 import { useAccounts, useCalendars, useEventsInRange } from '@calendar/app-state';
 import { useMemo, useState } from 'react';
 import { AccountsView } from '../AccountsView.tsx';
+import { EventEditor, type EditorSeed } from './EventEditor.tsx';
 import { makeColorLookup } from './colors.ts';
 import { MonthView } from './MonthView.tsx';
 import { Sidebar } from './Sidebar.tsx';
@@ -59,6 +60,7 @@ export function CalendarApp() {
   const [view, setView] = useState<ViewKind>('week');
   const [focused, setFocused] = useState(() => Temporal.Now.plainDateISO(timeZone));
   const [showSettings, setShowSettings] = useState(false);
+  const [editorSeed, setEditorSeed] = useState<EditorSeed | null>(null);
 
   const range = useMemo(() => rangeFor(view, focused, timeZone), [view, focused, timeZone]);
   const events = useEventsInRange(range.startUtc, range.endUtc);
@@ -143,6 +145,14 @@ export function CalendarApp() {
             ))}
           </div>
           <button
+            className="rounded-md bg-blue-600 px-3 py-1 text-sm font-medium text-white hover:bg-blue-500"
+            onClick={() => setEditorSeed({ initialDate: focused, initialHour: 9 })}
+            style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
+            type="button"
+          >
+            +
+          </button>
+          <button
             className="rounded-md px-2 py-1 text-neutral-500 hover:bg-neutral-100"
             onClick={() => setShowSettings(true)}
             style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
@@ -165,9 +175,25 @@ export function CalendarApp() {
             yearMonth={Temporal.PlainYearMonth.from(focused)}
           />
         ) : (
-          <WeekView colorOf={colorOf} days={days} events={events} timeZone={timeZone} />
+          <WeekView
+            colorOf={colorOf}
+            days={days}
+            events={events}
+            onEventClick={(event) => setEditorSeed({ event, initialDate: focused })}
+            onSlotClick={(date, hour) => setEditorSeed({ initialDate: date, initialHour: hour })}
+            timeZone={timeZone}
+          />
         )}
       </div>
+
+      {editorSeed ? (
+        <EventEditor
+          calendars={calendars}
+          onClose={() => setEditorSeed(null)}
+          seed={editorSeed}
+          timeZone={timeZone}
+        />
+      ) : null}
 
       {showSettings ? (
         <div

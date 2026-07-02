@@ -15,7 +15,7 @@ import {
   TokenManager,
   TokenStore,
 } from '@calendar/google';
-import { commonBackendHandlers, SyncEngine } from '@calendar/sync';
+import { commonBackendHandlers, EventMutations, SyncEngine } from '@calendar/sync';
 import { SqliteClient } from '@effect/sql-sqlite-node';
 import { app, BrowserWindow, ipcMain } from 'electron';
 import { Data, Effect, Layer, ManagedRuntime } from 'effect';
@@ -58,6 +58,7 @@ export const startBackendHost = (): void => {
   );
 
   const appLayer = SyncEngine.layer.pipe(
+    Layer.provideMerge(EventMutations.layer),
     Layer.provideMerge(GoogleCalendarClient.layer),
     Layer.provideMerge(TokenManager.layer),
     Layer.provideMerge(dbLayer),
@@ -80,7 +81,7 @@ export const startBackendHost = (): void => {
   );
 
   const handlers: BackendHandlers<
-    AccountRepo | CalendarRepo | EventRepo | SyncEngine | TokenManager | TokenStore
+    AccountRepo | CalendarRepo | EventMutations | EventRepo | SyncEngine | TokenManager | TokenStore
   > = {
     ...commonBackendHandlers,
 
