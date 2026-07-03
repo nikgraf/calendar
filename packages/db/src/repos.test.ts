@@ -2,8 +2,10 @@ import { Account, CalendarInfo, EventRecord, plainDateToUtcMs } from '@calendar/
 import { SqliteClient } from '@effect/sql-sqlite-node';
 import { expect, it } from '@effect/vitest';
 import { Effect, Layer } from 'effect';
+import { Reactivity } from 'effect/unstable/reactivity/Reactivity';
 import { layer as reactivityLayer } from 'effect/unstable/reactivity/Reactivity';
 import { describe } from 'vitest';
+import { EVENTS_KEY } from './keys.ts';
 import { runMigrations } from './migrate.ts';
 import { AccountRepo, CalendarRepo, EventRepo, reposLayer } from './repos.ts';
 
@@ -108,6 +110,28 @@ describe('repos', () => {
       expect(window.singles.map((event) => event.id).sort()).toEqual(['evt-1', 'master-1__ovr']);
       expect(window.masters.map((event) => event.id)).toEqual(['master-1']);
       expect(window.overrides.map((event) => event.id)).toEqual(['master-1__ovr']);
+    }).pipe(Effect.provide(freshDbLayer())),
+  );
+
+  it.effect('event mutations invalidate the coarse events key', () =>
+    Effect.gen(function* () {
+      const calendars = yield* CalendarRepo;
+      const events = yield* EventRepo;
+      const reactivity = yield* Reactivity;
+      let invalidations = 0;
+      reactivity.registerUnsafe([EVENTS_KEY], () => {
+        invalidations += 1;
+      });
+
+      yield* calendars.upsertMany([calendar()]);
+      expect(invalidations).toBe(0); // calendar upserts don't touch events
+
+      yield* events.upsertMany([timedEvent()]);
+      yield* calendars.setVisible('acc-1', 'cal-1', false);
+      yield* events.deleteEvent('acc-1', 'cal-1', 'evt-1');
+      // Consecutive invalidations may coalesce within a scheduler tick; the
+      // guarantee is that event/visibility mutations reach EVENTS_KEY at all.
+      expect(invalidations).toBeGreaterThanOrEqual(2);
     }).pipe(Effect.provide(freshDbLayer())),
   );
 

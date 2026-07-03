@@ -4,8 +4,8 @@ import { Account, handleBackendInvoke, type BackendHandlers } from '@calendar/co
 import {
   AccountRepo,
   CalendarRepo,
-  DATA_KEY,
   EventRepo,
+  forwardingReactivity,
   reposLayer,
   runMigrations,
 } from '@calendar/db';
@@ -20,7 +20,6 @@ import { SqliteClient } from '@effect/sql-sqlite-node';
 import { app, BrowserWindow, ipcMain } from 'electron';
 import { Data, Effect, Layer, ManagedRuntime } from 'effect';
 import { FetchHttpClient } from 'effect/unstable/http';
-import { layer as reactivityLayer, Reactivity } from 'effect/unstable/reactivity/Reactivity';
 import { runGoogleSignIn } from './auth/loopbackFlow.ts';
 import { loadOAuthConfig } from './oauthConfig.ts';
 import { safeStorageTokenStore } from './tokens/safeStorageStore.ts';
@@ -54,7 +53,13 @@ export const startBackendHost = (): void => {
         filename: join(app.getPath('userData'), 'calendar.db'),
       }),
     ),
-    Layer.provideMerge(reactivityLayer),
+    Layer.provideMerge(
+      forwardingReactivity((keys) => {
+        for (const window of BrowserWindow.getAllWindows()) {
+          window.webContents.send('backend:invalidated', keys);
+        }
+      }),
+    ),
   );
 
   const appLayer = SyncEngine.layer.pipe(
@@ -116,16 +121,10 @@ export const startBackendHost = (): void => {
     runtime.runPromise(handleBackendInvoke(handlers, method, payload)),
   );
 
-  // Push data-change notifications to every window, and start the scheduler.
+  // Start the scheduler; invalidation forwarding is wired into the layer.
   runtime
     .runPromise(
       Effect.gen(function* () {
-        const reactivity = yield* Reactivity;
-        reactivity.registerUnsafe([DATA_KEY], () => {
-          for (const window of BrowserWindow.getAllWindows()) {
-            window.webContents.send('backend:changed');
-          }
-        });
         const engine = yield* SyncEngine;
         yield* engine.start();
         console.log('[backend] runtime ready, scheduler started');

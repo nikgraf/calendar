@@ -1,6 +1,5 @@
 import type { Account, CalendarInfo } from '@calendar/core';
-import { useBackend } from '@calendar/app-state';
-import { Effect } from 'effect';
+import { useBackendMutations } from '@calendar/app-state';
 
 export function Sidebar({
   accounts,
@@ -11,16 +10,14 @@ export function Sidebar({
   calendars: ReadonlyArray<CalendarInfo>;
   onOpenSettings: () => void;
 }) {
-  const { client } = useBackend();
+  const { setCalendarVisible } = useBackendMutations();
 
   const toggle = (calendar: CalendarInfo) => {
-    void Effect.runPromise(
-      client.setCalendarVisible({
-        accountId: calendar.accountId,
-        calendarId: calendar.id,
-        isVisible: !calendar.isVisible,
-      }),
-    );
+    void setCalendarVisible({
+      accountId: calendar.accountId,
+      calendarId: calendar.id,
+      isVisible: !calendar.isVisible,
+    });
   };
 
   return (

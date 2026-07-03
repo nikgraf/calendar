@@ -5,7 +5,7 @@ import {
   type BackendClient,
   type BackendHandlers,
 } from '@calendar/core';
-import { AccountRepo, reposLayer, runMigrations, DATA_KEY } from '@calendar/db';
+import { AccountRepo, forwardingReactivity, reposLayer, runMigrations } from '@calendar/db';
 import {
   GoogleOAuthConfig,
   TokenManager,
@@ -23,7 +23,6 @@ import Constants from 'expo-constants';
 import { deleteItemAsync, getItemAsync, setItemAsync } from 'expo-secure-store';
 import { Data, Effect, Layer, ManagedRuntime, Schema } from 'effect';
 import { FetchHttpClient } from 'effect/unstable/http';
-import { layer as reactivityLayer, Reactivity } from 'effect/unstable/reactivity/Reactivity';
 import { signInWithGoogle } from './googleAuth.ts';
 
 class OAuthNotConfiguredError extends Data.TaggedError('OAuthNotConfiguredError')<{
@@ -55,10 +54,26 @@ const secureTokenStore: Layer.Layer<TokenStore> = Layer.succeed(TokenStore, {
     ),
 });
 
+const invalidationListeners = new Set<(keys: ReadonlyArray<unknown>) => void>();
+
+/** Streams backend invalidation keys to the UI atom runtime (in-process). */
+export const subscribeInvalidations = (
+  listener: (keys: ReadonlyArray<unknown>) => void,
+): (() => void) => {
+  invalidationListeners.add(listener);
+  return () => invalidationListeners.delete(listener);
+};
+
 const dbLayer = reposLayer.pipe(
   Layer.provideMerge(Layer.effectDiscard(runMigrations)),
   Layer.provideMerge(sqliteLayer({ filename: 'calendar.db' })),
-  Layer.provideMerge(reactivityLayer),
+  Layer.provideMerge(
+    forwardingReactivity((keys) => {
+      for (const listener of invalidationListeners) {
+        listener(keys);
+      }
+    }),
+  ),
 );
 
 const platformLayer = Layer.mergeAll(
@@ -131,17 +146,6 @@ const handlers: BackendHandlers<CommonBackendServices | TokenManager> = {
 export const backendClient: BackendClient = makeDirectBackendClient(handlers, (effect) =>
   runtime.runPromise(effect),
 );
-
-export const onBackendChanged = (listener: () => void): (() => void) => {
-  let unregister: (() => void) | undefined;
-  void runtime.runPromise(
-    Effect.gen(function* () {
-      const reactivity = yield* Reactivity;
-      unregister = reactivity.registerUnsafe([DATA_KEY], listener);
-    }),
-  );
-  return () => unregister?.();
-};
 
 export const startSync = (): void => {
   void runtime.runPromise(

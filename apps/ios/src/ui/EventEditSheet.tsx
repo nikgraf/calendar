@@ -1,4 +1,4 @@
-import { useBackend } from '@calendar/app-state';
+import { useBackendMutations } from '@calendar/app-state';
 import {
   plainDateToUtcMs,
   Temporal,
@@ -6,7 +6,6 @@ import {
   type CalendarInfo,
   type EventRecord,
 } from '@calendar/core';
-import { Effect } from 'effect';
 import { useState } from 'react';
 import {
   Modal,
@@ -39,7 +38,7 @@ export function EventEditSheet({
   seed: EditSeed | null;
   timeZone: string;
 }) {
-  const { client } = useBackend();
+  const mutations = useBackendMutations();
   const existing = seed?.event;
   const isRecurring = Boolean(existing && (existing.recurrence || existing.recurringEventId));
   const writable = calendars.filter(
@@ -104,23 +103,19 @@ export function EventEditSheet({
         return;
       }
       await (existing
-        ? Effect.runPromise(
-            client.updateEvent({
-              accountId,
-              calendarId,
-              changes: { isAllDay, title: title.trim(), ...times },
-              eventId: existing.id,
-            }),
-          )
-        : Effect.runPromise(
-            client.createEvent({
-              accountId,
-              calendarId,
-              isAllDay,
-              title: title.trim(),
-              ...times,
-            }),
-          ));
+        ? mutations.updateEvent({
+            accountId,
+            calendarId,
+            changes: { isAllDay, title: title.trim(), ...times },
+            eventId: existing.id,
+          })
+        : mutations.createEvent({
+            accountId,
+            calendarId,
+            isAllDay,
+            title: title.trim(),
+            ...times,
+          }));
       onClose();
     } catch (error) {
       setError(String(error));
@@ -132,13 +127,11 @@ export function EventEditSheet({
       return;
     }
     try {
-      await Effect.runPromise(
-        client.deleteEvent({
-          accountId: existing.accountId,
-          calendarId: existing.calendarId,
-          eventId: existing.id,
-        }),
-      );
+      await mutations.deleteEvent({
+        accountId: existing.accountId,
+        calendarId: existing.calendarId,
+        eventId: existing.id,
+      });
       onClose();
     } catch (error) {
       setError(String(error));

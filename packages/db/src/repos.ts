@@ -10,7 +10,7 @@ import { Context, Effect, Layer, Schema } from 'effect';
 import { Reactivity } from 'effect/unstable/reactivity/Reactivity';
 import { SqlClient } from 'effect/unstable/sql/SqlClient';
 import type { SqlError } from 'effect/unstable/sql/SqlError';
-import { ACCOUNTS_KEY, CALENDARS_KEY, DATA_KEY, eventsKey } from './keys.ts';
+import { ACCOUNTS_KEY, CALENDARS_KEY, EVENTS_KEY, eventsKey } from './keys.ts';
 import {
   accountFromRow,
   calendarFromRow,
@@ -44,7 +44,7 @@ const makeAccountRepo: Effect.Effect<AccountRepoShape, never, Reactivity | SqlCl
     const sql = yield* SqlClient;
     const reactivity = yield* Reactivity;
     const invalidating = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
-      reactivity.mutation([ACCOUNTS_KEY, DATA_KEY], effect);
+      reactivity.mutation([ACCOUNTS_KEY], effect);
 
     return {
       list: () =>
@@ -114,7 +114,7 @@ const makeCalendarRepo: Effect.Effect<CalendarRepoShape, never, Reactivity | Sql
     const sql = yield* SqlClient;
     const reactivity = yield* Reactivity;
     const invalidating = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
-      reactivity.mutation([CALENDARS_KEY, DATA_KEY], effect);
+      reactivity.mutation([CALENDARS_KEY], effect);
 
     return {
       list: (accountId) =>
@@ -261,7 +261,7 @@ const makeEventRepo: Effect.Effect<EventRepoShape, never, Reactivity | SqlClient
     return {
       deleteEvent: (accountId, calendarId, eventId) =>
         reactivity.mutation(
-          [eventsKey(calendarId), DATA_KEY],
+          [EVENTS_KEY, eventsKey(calendarId)],
           Effect.asVoid(
             sql`DELETE FROM events WHERE account_id = ${accountId}
               AND calendar_id = ${calendarId} AND id = ${eventId}`,
@@ -269,7 +269,7 @@ const makeEventRepo: Effect.Effect<EventRepoShape, never, Reactivity | SqlClient
         ),
       deleteStale: (accountId, calendarId, syncedAt) =>
         reactivity.mutation(
-          [eventsKey(calendarId), DATA_KEY],
+          [EVENTS_KEY, eventsKey(calendarId)],
           Effect.asVoid(
             sql`DELETE FROM events WHERE account_id = ${accountId}
               AND calendar_id = ${calendarId} AND sync_status = 'synced'
@@ -313,7 +313,7 @@ const makeEventRepo: Effect.Effect<EventRepoShape, never, Reactivity | SqlClient
           };
         }),
       upsertMany: (events) => {
-        const keys = [...new Set(events.map((event) => eventsKey(event.calendarId))), DATA_KEY];
+        const keys = [EVENTS_KEY, ...new Set(events.map((event) => eventsKey(event.calendarId)))];
         return reactivity.mutation(keys, Effect.forEach(events, upsertOne, { discard: true }));
       },
     };
@@ -339,16 +339,13 @@ export interface PendingOpRepoShape {
   readonly removeForEvent: (calendarId: string, eventId: string) => Effect.Effect<void, SqlError>;
 }
 
-const makePendingOpRepo: Effect.Effect<PendingOpRepoShape, never, Reactivity | SqlClient> =
-  Effect.gen(function* () {
+const makePendingOpRepo: Effect.Effect<PendingOpRepoShape, never, SqlClient> = Effect.gen(
+  function* () {
     const sql = yield* SqlClient;
-    const reactivity = yield* Reactivity;
 
     return {
       enqueue: (op) =>
-        reactivity.mutation(
-          [DATA_KEY],
-          Effect.asVoid(sql`
+        Effect.asVoid(sql`
           INSERT INTO pending_ops (id, account_id, calendar_id, kind, event_id,
                                    payload, base_etag, attempts, next_attempt_at,
                                    last_error, created_at)
@@ -358,7 +355,6 @@ const makePendingOpRepo: Effect.Effect<PendingOpRepoShape, never, Reactivity | S
                   ${op.baseEtag ?? null}, ${op.attempts}, ${op.nextAttemptAt},
                   ${op.lastError ?? null}, ${op.createdAt})
         `),
-        ),
       listAll: () =>
         Effect.map(sql<PendingOpRow>`SELECT * FROM pending_ops ORDER BY created_at`, (rows) =>
           rows.map(pendingOpFromRow),
@@ -382,12 +378,13 @@ const makePendingOpRepo: Effect.Effect<PendingOpRepoShape, never, Reactivity | S
             AND event_id = ${eventId}`,
         ),
     };
-  });
+  },
+);
 
 export class PendingOpRepo extends Context.Service<PendingOpRepo, PendingOpRepoShape>()(
   'db/PendingOpRepo',
 ) {
-  static readonly layer: Layer.Layer<PendingOpRepo, never, Reactivity | SqlClient> =
+  static readonly layer: Layer.Layer<PendingOpRepo, never, SqlClient> =
     Layer.effect(PendingOpRepo)(makePendingOpRepo);
 }
 

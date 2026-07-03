@@ -20,10 +20,9 @@
 Both were deliberately deferred during the initial build and have clean
 upgrade paths:
 
-- [ ] Migrate UI state/data flow to `@effect/atom-react` — `packages/app-state`
-      currently uses plain shared React hooks over the `AppBackend` contract;
-      atoms would subscribe to Reactivity keys directly instead of the coarse
-      `data` change signal
+- [x] Migrate UI state/data flow to `@effect/atom-react` — done: atoms
+      subscribe to fine-grained Reactivity keys (`accounts`/`calendars`/
+      `events`); backend invalidations flow through a forwarding bridge
 - [ ] Replace the hand-rolled Schema-typed IPC bridge
       (`packages/core/src/backend.ts`) with `effect/unstable/rpc`
       (RpcGroup + MessagePort transport in Electron; would also give the

@@ -10,7 +10,7 @@ Effect v4 (beta, all `effect*` packages pinned to one version) is the foundation
 - `packages/google` — TokenStore/TokenManager services, GoogleCalendarClient over `effect/unstable/http`, Schedule-based retry.
 - `packages/db` — `@effect/sql` migrations + repository services with Schema row codecs; Reactivity keys (`accounts`, `calendars`, `events:<calendarId>`) for invalidation.
 - `packages/sync` — SyncEngine service: per-account sync fibers, pending-op queue, typed sync errors.
-- `packages/app-state` — `@effect/atom-react` atoms shared by both UIs.
+- `packages/app-state` — shared atoms (`makeBackendAtoms`): reads subscribe to Reactivity keys (`accounts`/`calendars`/`events`), mutations are `runtime.fn` atoms invalidating those keys; backend-side invalidations arrive through the forwarding bridge (`packages/db/src/reactivityForward.ts` → IPC on desktop, in-process on iOS). React consumes them via `@effect/atom-react`.
 - `apps/desktop` — Electron: backend Layer stack in main, effect rpc over a preload MessagePort bridge to the renderer (React DOM + Tailwind v4 + React Compiler). Forge for packaging, tsdown builds main/preload, vite-plus (`vp`) serves the renderer.
 - `apps/ios` — Expo dev client; in-process runtime (no rpc hop), `@effect/sql-sqlite-react-native` (op-sqlite), RN renderers on the shared layout engine.
 

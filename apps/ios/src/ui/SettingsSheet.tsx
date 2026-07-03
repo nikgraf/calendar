@@ -1,11 +1,10 @@
-import { useAccounts, useBackend, useCalendars } from '@calendar/app-state';
-import { Effect } from 'effect';
+import { useAccounts, useBackendMutations, useCalendars } from '@calendar/app-state';
 import { useState } from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { palette } from './theme.ts';
 
 export function SettingsSheet({ onClose, visible }: { onClose: () => void; visible: boolean }) {
-  const { client } = useBackend();
+  const mutations = useBackendMutations();
   const accounts = useAccounts();
   const calendars = useCalendars();
   const [busy, setBusy] = useState(false);
@@ -15,7 +14,7 @@ export function SettingsSheet({ onClose, visible }: { onClose: () => void; visib
     setBusy(true);
     setError(null);
     try {
-      await Effect.runPromise(client.addAccount(undefined));
+      await mutations.addAccount(undefined);
     } catch (error) {
       setError(String(error));
     } finally {
@@ -51,11 +50,7 @@ export function SettingsSheet({ onClose, visible }: { onClose: () => void; visib
                     {account.status === 'reauth_required' ? ' — sign in again' : ''}
                   </Text>
                 </View>
-                <Pressable
-                  onPress={() =>
-                    void Effect.runPromise(client.removeAccount({ accountId: account.id }))
-                  }
-                >
+                <Pressable onPress={() => void mutations.removeAccount({ accountId: account.id })}>
                   <Text style={styles.remove}>Remove</Text>
                 </Pressable>
               </View>
@@ -65,13 +60,11 @@ export function SettingsSheet({ onClose, visible }: { onClose: () => void; visib
                   <Pressable
                     key={calendar.id}
                     onPress={() =>
-                      void Effect.runPromise(
-                        client.setCalendarVisible({
-                          accountId: calendar.accountId,
-                          calendarId: calendar.id,
-                          isVisible: !calendar.isVisible,
-                        }),
-                      )
+                      void mutations.setCalendarVisible({
+                        accountId: calendar.accountId,
+                        calendarId: calendar.id,
+                        isVisible: !calendar.isVisible,
+                      })
                     }
                     style={styles.calendarRow}
                   >

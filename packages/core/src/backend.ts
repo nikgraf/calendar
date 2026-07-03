@@ -114,8 +114,8 @@ export class BackendError extends Schema.ErrorClass<BackendError>('core/BackendE
 /** What the preload bridge exposes to the renderer. */
 export interface BackendTransport {
   readonly invoke: (method: string, payload: unknown) => Promise<unknown>;
-  /** Fires when backend data changed; returns an unsubscribe function. */
-  readonly onChanged?: (listener: () => void) => () => void;
+  /** Streams backend invalidation keys; returns an unsubscribe function. */
+  readonly onInvalidated?: (listener: (keys: ReadonlyArray<unknown>) => void) => () => void;
 }
 
 const encodedResult = Schema.Struct({

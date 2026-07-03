@@ -1,16 +1,21 @@
-import { BackendProvider } from '@calendar/app-state';
+import { BackendProvider, makeBackendAtoms, useBackendInvalidations } from '@calendar/app-state';
 import { CalendarApp } from './calendar/CalendarApp.tsx';
 import { backend } from './backend.ts';
 
-const backendValue = {
-  client: backend,
-  onChanged: window.calendarBridge.onChanged,
-};
+const backendAtoms = makeBackendAtoms(backend);
+
+const subscribeInvalidations = (listener: (keys: ReadonlyArray<unknown>) => void) =>
+  window.calendarBridge.onInvalidated?.(listener) ?? (() => {});
+
+function Bridge() {
+  useBackendInvalidations(subscribeInvalidations);
+  return <CalendarApp />;
+}
 
 export function App() {
   return (
-    <BackendProvider value={backendValue}>
-      <CalendarApp />
+    <BackendProvider atoms={backendAtoms}>
+      <Bridge />
     </BackendProvider>
   );
 }

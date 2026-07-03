@@ -1,89 +1,95 @@
-import type { Account, BackendClient, CalendarInfo, EventRecord } from '@calendar/core';
-import { Effect } from 'effect';
+import type { Account, CalendarInfo, EventRecord } from '@calendar/core';
+import { RegistryContext, useAtomSet, useAtomValue } from '@effect/atom-react';
+import { Option } from 'effect';
+import { AsyncResult } from 'effect/unstable/reactivity';
 import {
   createContext,
   createElement,
-  useCallback,
   useContext,
   useEffect,
+  useMemo,
   useState,
   type ReactNode,
 } from 'react';
+import { rangeKey, type BackendAtoms } from './atoms.ts';
 
-export interface BackendContextValue {
-  readonly client: BackendClient;
-  /** Data-change subscription; returns an unsubscribe function. */
-  readonly onChanged?: ((listener: () => void) => () => void) | undefined;
-}
-
-const BackendContext = createContext<BackendContextValue | null>(null);
+const AtomsContext = createContext<BackendAtoms | null>(null);
 
 export const BackendProvider = ({
+  atoms,
   children,
-  value,
 }: {
+  atoms: BackendAtoms;
   children: ReactNode;
-  value: BackendContextValue;
-}) => createElement(BackendContext.Provider, { value }, children);
+}) => createElement(AtomsContext.Provider, { value: atoms }, children);
 
-export const useBackend = (): BackendContextValue => {
-  const context = useContext(BackendContext);
-  if (!context) {
-    throw new Error('useBackend requires a BackendProvider');
+export const useBackendAtoms = (): BackendAtoms => {
+  const atoms = useContext(AtomsContext);
+  if (!atoms) {
+    throw new Error('useBackendAtoms requires a BackendProvider');
   }
-  return context;
+  return atoms;
 };
 
-/** Runs a backend query, reloading on data changes. */
-const useBackendQuery = <A>(
-  run: (client: BackendClient) => Effect.Effect<A, unknown>,
-  initial: A,
-): A => {
-  const { client, onChanged } = useBackend();
-  const [value, setValue] = useState<A>(initial);
-
-  const reload = useCallback(() => {
-    Effect.runPromise(run(client) as Effect.Effect<A, never>).then(setValue, () => {
-      // Query failures leave the previous value in place; surfacing
-      // connection problems is the caller's concern.
-    });
-  }, [client, run]);
-
-  useEffect(() => {
-    reload();
-    return onChanged?.(reload) ?? undefined;
-  }, [reload, onChanged]);
-
-  return value;
+/**
+ * Binds backend-side invalidation keys into the atom runtime for the lifetime
+ * of the component (mount once near the app root).
+ */
+export const useBackendInvalidations = (
+  subscribe: (listener: (keys: ReadonlyArray<unknown>) => void) => () => void,
+): void => {
+  const atoms = useBackendAtoms();
+  const registry = useContext(RegistryContext);
+  useEffect(() => atoms.bindInvalidations(registry, subscribe), [atoms, registry, subscribe]);
 };
 
-const NO_EVENTS: ReadonlyArray<EventRecord> = [];
-const NO_CALENDARS: ReadonlyArray<CalendarInfo> = [];
-const NO_ACCOUNTS: ReadonlyArray<Account> = [];
+/** Unwraps AsyncResult list atoms: previous success during refetch, [] initially. */
+const unwrapList = <A>(
+  result: AsyncResult.AsyncResult<ReadonlyArray<A>, unknown>,
+): ReadonlyArray<A> => Option.getOrElse(AsyncResult.value(result), (): ReadonlyArray<A> => []);
+
+export const useAccounts = (): ReadonlyArray<Account> =>
+  unwrapList(useAtomValue(useBackendAtoms().accounts));
+
+export const useCalendars = (): ReadonlyArray<CalendarInfo> =>
+  unwrapList(useAtomValue(useBackendAtoms().calendars));
 
 export const useEventsInRange = (
   rangeStartUtc: number,
   rangeEndUtc: number,
-): ReadonlyArray<EventRecord> =>
-  useBackendQuery(
-    useCallback(
-      (client) => client.getEventsInRange({ rangeEndUtc, rangeStartUtc }),
-      [rangeEndUtc, rangeStartUtc],
-    ),
-    NO_EVENTS,
-  );
+): ReadonlyArray<EventRecord> => {
+  const atoms = useBackendAtoms();
+  return unwrapList(useAtomValue(atoms.eventsInRange(rangeKey(rangeStartUtc, rangeEndUtc))));
+};
 
-export const useCalendars = (): ReadonlyArray<CalendarInfo> =>
-  useBackendQuery(
-    useCallback((client) => client.listCalendars({}), []),
-    NO_CALENDARS,
-  );
+/** Promise-returning mutation callbacks; each invalidates its reactivity keys. */
+export const useBackendMutations = () => {
+  const { mutations } = useBackendAtoms();
+  const addAccount = useAtomSet(mutations.addAccount, { mode: 'promise' });
+  const createEvent = useAtomSet(mutations.createEvent, { mode: 'promise' });
+  const deleteEvent = useAtomSet(mutations.deleteEvent, { mode: 'promise' });
+  const removeAccount = useAtomSet(mutations.removeAccount, {
+    mode: 'promise',
+  });
+  const setCalendarVisible = useAtomSet(mutations.setCalendarVisible, {
+    mode: 'promise',
+  });
+  const syncNow = useAtomSet(mutations.syncNow, { mode: 'promise' });
+  const updateEvent = useAtomSet(mutations.updateEvent, { mode: 'promise' });
 
-export const useAccounts = (): ReadonlyArray<Account> =>
-  useBackendQuery(
-    useCallback((client) => client.listAccounts(undefined), []),
-    NO_ACCOUNTS,
+  return useMemo(
+    () => ({
+      addAccount,
+      createEvent,
+      deleteEvent,
+      removeAccount,
+      setCalendarVisible,
+      syncNow,
+      updateEvent,
+    }),
+    [addAccount, createEvent, deleteEvent, removeAccount, setCalendarVisible, syncNow, updateEvent],
   );
+};
 
 /** The current time, updated every `intervalMs` (drives now-indicators). */
 export const useNow = (intervalMs = 60_000): number => {

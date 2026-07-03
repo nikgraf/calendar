@@ -1,54 +1,23 @@
-import type { Account, CalendarInfo } from '@calendar/core';
-import { Effect } from 'effect';
-import { useCallback, useEffect, useState } from 'react';
-import { backend } from './backend.ts';
+import { useAccounts, useBackendMutations, useCalendars } from '@calendar/app-state';
+import { useState } from 'react';
 
 export function AccountsView() {
-  const [accounts, setAccounts] = useState<ReadonlyArray<Account>>([]);
-  const [calendars, setCalendars] = useState<ReadonlyArray<CalendarInfo>>([]);
+  const accounts = useAccounts();
+  const calendars = useCalendars();
+  const mutations = useBackendMutations();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  const refresh = useCallback(async () => {
-    try {
-      const loadedAccounts = await Effect.runPromise(backend.listAccounts(undefined));
-      setAccounts(loadedAccounts);
-      setCalendars(
-        loadedAccounts.length > 0 ? await Effect.runPromise(backend.listCalendars({})) : [],
-      );
-      setError(null);
-    } catch (error) {
-      setError(String(error));
-    }
-  }, []);
-
-  useEffect(() => {
-    // All setState calls happen after awaits — no synchronous cascade.
-    // eslint-disable-next-line react-hooks-js/set-state-in-effect
-    void refresh();
-  }, [refresh]);
 
   const addAccount = async () => {
     setBusy(true);
     setError(null);
     try {
-      await Effect.runPromise(backend.addAccount(undefined));
-      await refresh();
+      await mutations.addAccount(undefined);
     } catch (error) {
       setError(String(error));
     } finally {
       setBusy(false);
     }
-  };
-
-  const removeAccount = async (accountId: string) => {
-    await Effect.runPromise(backend.removeAccount({ accountId }));
-    await refresh();
-  };
-
-  const toggleCalendar = async (accountId: string, calendarId: string, isVisible: boolean) => {
-    await Effect.runPromise(backend.setCalendarVisible({ accountId, calendarId, isVisible }));
-    await refresh();
   };
 
   return (
@@ -97,7 +66,7 @@ export function AccountsView() {
             </div>
             <button
               className="text-sm text-red-600 hover:underline"
-              onClick={() => void removeAccount(account.id)}
+              onClick={() => void mutations.removeAccount({ accountId: account.id })}
               type="button"
             >
               Remove
@@ -114,11 +83,11 @@ export function AccountsView() {
                   <input
                     checked={calendar.isVisible}
                     onChange={(changeEvent) =>
-                      void toggleCalendar(
-                        calendar.accountId,
-                        calendar.id,
-                        changeEvent.target.checked,
-                      )
+                      void mutations.setCalendarVisible({
+                        accountId: calendar.accountId,
+                        calendarId: calendar.id,
+                        isVisible: changeEvent.target.checked,
+                      })
                     }
                     type="checkbox"
                   />

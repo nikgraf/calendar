@@ -6,6 +6,9 @@ settings:
 
 catalogs:
   default:
+    '@effect/atom-react':
+      specifier: 4.0.0-beta.93
+      version: 4.0.0-beta.93
     '@effect/sql-sqlite-node':
       specifier: 4.0.0-beta.93
       version: 4.0.0-beta.93
@@ -207,6 +210,12 @@ importers:
       '@calendar/core':
         specifier: workspace:*
         version: link:../core
+      '@calendar/db':
+        specifier: workspace:*
+        version: link:../db
+      '@effect/atom-react':
+        specifier: 'catalog:'
+        version: 4.0.0-beta.93(effect@4.0.0-beta.93)(react@19.2.7)(scheduler@0.27.0)
       effect:
         specifier: 'catalog:'
         version: 4.0.0-beta.93
@@ -689,6 +698,13 @@ packages:
 
   '@blazediff/core@1.9.1':
     resolution: {integrity: sha512-ehg3jIkYKulZh+8om/O25vkvSsXXwC+skXmyA87FFx6A/45eqOkZsBltMw/TVteb0mloiGT8oGRTcjRAz66zaA==}
+
+  '@effect/atom-react@4.0.0-beta.93':
+    resolution: {integrity: sha512-43FOYozhZT+VIQBH5LVAbabhdjGCuxGKdVTeUnkMp5NY+/g3nDLcAyAkNYn99G3+XDbqFvJaqmNJP7NLF5+WFg==}
+    peerDependencies:
+      effect: ^4.0.0-beta.93
+      react: ^19.2.4
+      scheduler: '*'
 
   '@effect/sql-sqlite-node@4.0.0-beta.93':
     resolution: {integrity: sha512-vbrKxueuKubQ6YqVKvX3SBVHKKeUtmZT7dmqwkwz6gs1/M1YYYb9S3Y5DNDReLnwnQUuwDm/kyKRJ3B/NNlb9A==}
@@ -5710,6 +5726,12 @@ snapshots:
       '@babel/helper-validator-identifier': 8.0.2
 
   '@blazediff/core@1.9.1': {}
+
+  '@effect/atom-react@4.0.0-beta.93(effect@4.0.0-beta.93)(react@19.2.7)(scheduler@0.27.0)':
+    dependencies:
+      effect: 4.0.0-beta.93
+      react: 19.2.7
+      scheduler: 0.27.0
 
   '@effect/sql-sqlite-node@4.0.0-beta.93(effect@4.0.0-beta.93)':
     dependencies:

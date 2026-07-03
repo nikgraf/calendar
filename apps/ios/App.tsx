@@ -1,8 +1,14 @@
-import { BackendProvider, useCalendars, useEventsInRange } from '@calendar/app-state';
+import {
+  BackendProvider,
+  makeBackendAtoms,
+  useBackendInvalidations,
+  useCalendars,
+  useEventsInRange,
+} from '@calendar/app-state';
 import { dayRange, monthGridRange, Temporal, weekStart, type EventRecord } from '@calendar/core';
 import { useEffect, useMemo, useState } from 'react';
 import { Pressable, SafeAreaView, StatusBar, StyleSheet, Text, View } from 'react-native';
-import { backendClient, onBackendChanged, startSync } from './src/backend.ts';
+import { backendClient, startSync, subscribeInvalidations } from './src/backend.ts';
 import { DayTimeline } from './src/ui/DayTimeline.tsx';
 import { MonthGrid } from './src/ui/MonthGrid.tsx';
 import { EventEditSheet, type EditSeed } from './src/ui/EventEditSheet.tsx';
@@ -10,7 +16,7 @@ import { SettingsSheet } from './src/ui/SettingsSheet.tsx';
 import { palette } from './src/ui/theme.ts';
 import { WeekStrip } from './src/ui/WeekStrip.tsx';
 
-const backendValue = { client: backendClient, onChanged: onBackendChanged };
+const backendAtoms = makeBackendAtoms(backendClient);
 
 type ViewKind = 'day' | 'month';
 
@@ -21,6 +27,7 @@ function CalendarScreen() {
   const [showSettings, setShowSettings] = useState(false);
   const [editSeed, setEditSeed] = useState<EditSeed | null>(null);
 
+  useBackendInvalidations(subscribeInvalidations);
   useEffect(() => {
     startSync();
   }, []);
@@ -146,7 +153,7 @@ function CalendarScreen() {
 
 export function App() {
   return (
-    <BackendProvider value={backendValue}>
+    <BackendProvider atoms={backendAtoms}>
       <CalendarScreen />
     </BackendProvider>
   );

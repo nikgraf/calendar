@@ -9,6 +9,8 @@
   },
   "dependencies": {
     "@calendar/core": "workspace:*",
+    "@calendar/db": "workspace:*",
+    "@effect/atom-react": "catalog:",
     "effect": "catalog:"
   },
   "devDependencies": {
