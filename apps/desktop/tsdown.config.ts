@@ -3,16 +3,18 @@ import { defineConfig } from 'tsdown';
 // Electron main is ESM ("type": "module" → .js); the preload must be CommonJS
 // because sandboxed preload scripts cannot use ESM.
 //
-// better-sqlite3 exists twice: the root copy is compiled for Electron's ABI
-// (see rebuild:native), while better-sqlite3-node keeps the system-Node ABI
-// for vitest (aliased in the root vite config).
+// The main bundle inlines all workspace/npm deps so the packaged app needs no
+// node_modules besides better-sqlite3 (native, Electron ABI — copied in by the
+// forge packageAfterCopy hook; see rebuild:native for the ABI story).
 export default [
   defineConfig({
     entry: { main: 'electron/main.ts' },
-    external: ['electron'],
+    external: ['electron', 'better-sqlite3'],
     format: 'esm',
+    noExternal: [/^(?!electron$|better-sqlite3$)/],
     outDir: 'dist-electron',
     platform: 'node',
+    shims: true,
   }),
   defineConfig({
     entry: { preload: 'electron/preload.ts' },

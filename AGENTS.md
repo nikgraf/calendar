@@ -21,7 +21,9 @@ Rules of thumb: I/O, orchestration, and validation are Effect (services + Layers
 - `pnpm check` / `pnpm fix` — lint + format (Oxlint/Oxfmt via vite-plus)
 - `pnpm test` — vitest (via vite-plus); Effect code uses `@effect/vitest` with TestClock
 - `pnpm typecheck` — `tsc --noEmit` in every workspace package
-- `pnpm dev:desktop` — renderer dev server + tsdown watch + Electron
+- `pnpm dev:desktop` — renderer dev server (pair with `pnpm --filter @calendar/desktop dev:app`)
 - `pnpm ios` — Expo run on iOS simulator
+- `pnpm --filter @calendar/desktop rebuild:native` — rebuild better-sqlite3 for Electron's ABI (the aliased better-sqlite3-node copy keeps the Node ABI for vitest)
+- `pnpm --filter @calendar/desktop package:app` — unsigned .app via Forge (signing/notarization activate via APPLE\_\* env vars)
 
 The full product plan lives in the repo owner's plan file; milestone tracking in session tasks.

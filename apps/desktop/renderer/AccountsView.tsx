@@ -82,7 +82,18 @@ export function AccountsView() {
           <div className="flex items-center justify-between">
             <div>
               <p className="font-medium">{account.displayName ?? account.email}</p>
-              <p className="text-sm text-neutral-500">{account.email}</p>
+              <p className="text-sm text-neutral-500">
+                {account.email}
+                {account.status === 'reauth_required' ? (
+                  <button
+                    className="ml-2 text-blue-600 hover:underline"
+                    onClick={() => void addAccount()}
+                    type="button"
+                  >
+                    Sign in again
+                  </button>
+                ) : null}
+              </p>
             </div>
             <button
               className="text-sm text-red-600 hover:underline"

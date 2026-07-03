@@ -29,6 +29,9 @@ onlyBuiltDependencies:
   - unrs-resolver
 
 overrides:
+  # yauzl 2.x silently kills the process under modern Node during
+  # electron-packager's zip extraction (same fix as codiff).
+  'extract-zip>yauzl': ^3.4.0
   vite: 'catalog:'
   vitest: 'catalog:'
 
