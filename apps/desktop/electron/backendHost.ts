@@ -1,11 +1,12 @@
 import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
-import { Account, handleBackendInvoke, type BackendHandlers } from '@calendar/core';
+import { Account, AppBackendRpcs, type BackendHandlers } from '@calendar/core';
 import {
   AccountRepo,
   CalendarRepo,
   EventRepo,
   forwardingReactivity,
+  makeInvalidationBus,
   reposLayer,
   runMigrations,
 } from '@calendar/db';
@@ -15,13 +16,20 @@ import {
   TokenManager,
   TokenStore,
 } from '@calendar/google';
-import { commonBackendHandlers, EventMutations, SyncEngine } from '@calendar/sync';
+import {
+  commonBackendHandlers,
+  EventMutations,
+  makeAppBackendLayer,
+  SyncEngine,
+} from '@calendar/sync';
 import { SqliteClient } from '@effect/sql-sqlite-node';
-import { app, BrowserWindow, ipcMain } from 'electron';
+import { app } from 'electron';
 import { Data, Effect, Layer, ManagedRuntime } from 'effect';
 import { FetchHttpClient } from 'effect/unstable/http';
+import { RpcSerialization, RpcServer } from 'effect/unstable/rpc';
 import { runGoogleSignIn } from './auth/loopbackFlow.ts';
 import { loadOAuthConfig } from './oauthConfig.ts';
+import { rpcServerProtocol } from './rpcProtocol.ts';
 import { safeStorageTokenStore } from './tokens/safeStorageStore.ts';
 
 class OAuthNotConfiguredError extends Data.TaggedError('OAuthNotConfiguredError')<{
@@ -29,13 +37,14 @@ class OAuthNotConfiguredError extends Data.TaggedError('OAuthNotConfiguredError'
 }> {}
 
 /**
- * Builds the main-process backend: SQLite + repos + Google client + sync
- * engine, exposed to the renderer over the single 'backend' IPC channel.
- * Data changes are pushed to every window via 'backend:changed'.
+ * Hosts the backend in the main process: SQLite + repos + Google client +
+ * sync engine, served to renderers as the AppBackend rpc group over the
+ * 'rpc' IPC channel — including the typed invalidations stream.
  */
 export const startBackendHost = (): void => {
   console.log('[backend] starting host');
   const oauth = loadOAuthConfig();
+  const invalidations = makeInvalidationBus();
 
   const platformLayer = Layer.mergeAll(
     safeStorageTokenStore,
@@ -53,13 +62,7 @@ export const startBackendHost = (): void => {
         filename: join(app.getPath('userData'), 'calendar.db'),
       }),
     ),
-    Layer.provideMerge(
-      forwardingReactivity((keys) => {
-        for (const window of BrowserWindow.getAllWindows()) {
-          window.webContents.send('backend:invalidated', keys);
-        }
-      }),
-    ),
+    Layer.provideMerge(forwardingReactivity(invalidations.publish)),
   );
 
   const appLayer = SyncEngine.layer.pipe(
@@ -69,8 +72,6 @@ export const startBackendHost = (): void => {
     Layer.provideMerge(dbLayer),
     Layer.provideMerge(platformLayer),
   );
-
-  const runtime = ManagedRuntime.make(appLayer);
 
   const requireOAuth = Effect.suspend(() =>
     oauth
@@ -117,17 +118,29 @@ export const startBackendHost = (): void => {
       }),
   };
 
-  ipcMain.handle('backend', (_event, method: string, payload: unknown) =>
-    runtime.runPromise(handleBackendInvoke(handlers, method, payload)),
+  const rpcLayer = RpcServer.layer(AppBackendRpcs, {
+    disableFatalDefects: true,
+  }).pipe(
+    Layer.provide(
+      makeAppBackendLayer({
+        handlers,
+        subscribeInvalidations: invalidations.subscribe,
+      }),
+    ),
+    Layer.provide(rpcServerProtocol),
+    Layer.provide(RpcSerialization.layerNdjson),
+    Layer.provide(appLayer),
   );
 
-  // Start the scheduler; invalidation forwarding is wired into the layer.
+  const runtime = ManagedRuntime.make(Layer.provideMerge(rpcLayer, appLayer));
+
+  // Building the runtime starts the rpc server; then start the scheduler.
   runtime
     .runPromise(
       Effect.gen(function* () {
         const engine = yield* SyncEngine;
         yield* engine.start();
-        console.log('[backend] runtime ready, scheduler started');
+        console.log('[backend] runtime ready, rpc server + scheduler started');
       }),
     )
     .catch((error: unknown) => {

@@ -1,3 +1,4 @@
+export * from './invalidationBus.ts';
 export * from './keys.ts';
 export * from './migrate.ts';
 export * from './reactivityForward.ts';

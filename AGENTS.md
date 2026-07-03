@@ -6,12 +6,12 @@ A Fantastical-style Google Calendar client: iOS app (Expo SDK 57, React Native) 
 
 Effect v4 (beta, all `effect*` packages pinned to one version) is the foundation for all non-UI code:
 
-- `packages/core` — Schema domain models, tagged errors, Temporal time helpers (`@js-temporal/polyfill`), rrule-temporal recurrence expansion, pure layout engine, the `AppBackend` rpc group (the platform seam).
+- `packages/core` — Schema domain models, tagged errors, Temporal time helpers (`@js-temporal/polyfill`), rrule-temporal recurrence expansion, pure layout engine, and `AppBackendRpcs` — the effect rpc group that is the platform seam (request/response methods + a `stream: true` invalidations rpc).
 - `packages/google` — TokenStore/TokenManager services, GoogleCalendarClient over `effect/unstable/http`, Schedule-based retry.
 - `packages/db` — `@effect/sql` migrations + repository services with Schema row codecs; Reactivity keys (`accounts`, `calendars`, `events:<calendarId>`) for invalidation.
 - `packages/sync` — SyncEngine service: per-account sync fibers, pending-op queue, typed sync errors.
 - `packages/app-state` — shared atoms (`makeBackendAtoms`): reads subscribe to Reactivity keys (`accounts`/`calendars`/`events`), mutations are `runtime.fn` atoms invalidating those keys; backend-side invalidations arrive through the forwarding bridge (`packages/db/src/reactivityForward.ts` → IPC on desktop, in-process on iOS). React consumes them via `@effect/atom-react`.
-- `apps/desktop` — Electron: backend Layer stack in main, effect rpc over a preload MessagePort bridge to the renderer (React DOM + Tailwind v4 + React Compiler). Forge for packaging, tsdown builds main/preload, vite-plus (`vp`) serves the renderer.
+- `apps/desktop` — Electron: backend Layer stack in main, served as an effect RpcServer over a preload frame channel (`duplexServerProtocol`/`duplexClientProtocol` in `packages/sync/src/rpcDuplex.ts`, ndjson serialization); the renderer holds an RpcClient that structurally satisfies `BackendClient`, and invalidation keys arrive as a typed rpc stream. Forge for packaging, tsdown builds main/preload, vite-plus (`vp`) serves the renderer.
 - `apps/ios` — Expo dev client; in-process runtime (no rpc hop), `@effect/sql-sqlite-react-native` (op-sqlite), RN renderers on the shared layout engine.
 
 Rules of thumb: I/O, orchestration, and validation are Effect (services + Layers, no thrown exceptions in shared code); pure math (layout, recurrence) and React components are plain TS. Shared packages ship raw TS source via `exports: ./src/index.ts` — no build step.

@@ -1,7 +1,12 @@
-import { assembleWindow, type BackendHandlers } from '@calendar/core';
+import {
+  AppBackendRpcs,
+  assembleWindow,
+  mapToBackendError,
+  type BackendHandlers,
+} from '@calendar/core';
 import { AccountRepo, CalendarRepo, EventRepo } from '@calendar/db';
 import { TokenStore } from '@calendar/google';
-import { Effect } from 'effect';
+import { Effect, Queue, Stream } from 'effect';
 import { SyncEngine } from './engine.ts';
 import { EventMutations } from './mutations.ts';
 
@@ -75,3 +80,38 @@ export const commonBackendHandlers: Omit<BackendHandlers<CommonBackendServices>,
       yield* mutations.updateEvent(params);
     }),
 };
+
+/**
+ * Builds the AppBackend rpc handlers layer from platform pieces: the full
+ * handler record (common + platform addAccount) and the invalidation feed.
+ * Handler errors are normalized to the declared BackendError schema so they
+ * cross the rpc boundary as typed failures instead of defects.
+ */
+export const makeAppBackendLayer = <R>(options: {
+  readonly handlers: BackendHandlers<R>;
+  readonly subscribeInvalidations: (listener: (keys: ReadonlyArray<string>) => void) => () => void;
+}) =>
+  AppBackendRpcs.toLayer({
+    addAccount: () => mapToBackendError(options.handlers.addAccount(undefined)),
+    createEvent: (payload) => mapToBackendError(options.handlers.createEvent(payload)),
+    deleteEvent: (payload) => mapToBackendError(options.handlers.deleteEvent(payload)),
+    getEventsInRange: (payload) => mapToBackendError(options.handlers.getEventsInRange(payload)),
+    invalidations: () =>
+      Stream.callback<ReadonlyArray<string>>((queue) =>
+        Effect.acquireRelease(
+          Effect.sync(() =>
+            options.subscribeInvalidations((keys) => {
+              Queue.offerUnsafe(queue, keys);
+            }),
+          ),
+          (unsubscribe) => Effect.sync(() => unsubscribe()),
+        ),
+      ),
+    listAccounts: () => mapToBackendError(options.handlers.listAccounts(undefined)),
+    listCalendars: (payload) => mapToBackendError(options.handlers.listCalendars(payload)),
+    removeAccount: (payload) => mapToBackendError(options.handlers.removeAccount(payload)),
+    setCalendarVisible: (payload) =>
+      mapToBackendError(options.handlers.setCalendarVisible(payload)),
+    syncNow: () => mapToBackendError(options.handlers.syncNow(undefined)),
+    updateEvent: (payload) => mapToBackendError(options.handlers.updateEvent(payload)),
+  });

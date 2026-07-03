@@ -23,7 +23,9 @@ upgrade paths:
 - [x] Migrate UI state/data flow to `@effect/atom-react` — done: atoms
       subscribe to fine-grained Reactivity keys (`accounts`/`calendars`/
       `events`); backend invalidations flow through a forwarding bridge
-- [ ] Replace the hand-rolled Schema-typed IPC bridge
-      (`packages/core/src/backend.ts`) with `effect/unstable/rpc`
-      (RpcGroup + MessagePort transport in Electron; would also give the
-      change-notification stream a typed protocol)
+- [x] Replace the hand-rolled Schema-typed IPC bridge with
+      `effect/unstable/rpc` — done: `AppBackendRpcs` RpcGroup in core,
+      custom duplex protocols over the Electron IPC frame channel
+      (`packages/sync/src/rpcDuplex.ts`; a MessagePort transport is a
+      drop-in duplex swap), and the invalidation stream is a typed
+      `stream: true` rpc
