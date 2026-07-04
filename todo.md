@@ -60,10 +60,11 @@
       `powerMonitor` resume/unlock and window focus; iOS on `AppState`
       returning to active. Debounced to one kick per 15s; syncAll is
       semaphore-serialized so overlapping kicks are safe.
-- [ ] DST-aware drag/series math — `moveEventTimes` shifts absolute ms, so
-      dragging an event across a DST boundary shifts its wall time by an
-      hour; same for series-scope delta shifts. Fix is doing the arithmetic
-      in the event's zone via Temporal.
+- [x] DST-aware drag/series math — done: `moveEventTimes` does wall-clock
+      arithmetic in the event's zone (a 09:00 event dragged across the
+      spring-forward day stays at 09:00; absolute duration preserved), and
+      series-scope edits apply the occurrence's wall-clock delta via
+      `applyWallClockDelta` instead of raw ms.
 - [ ] `eventsInRange` atom-family growth — the family is keyed by
       `${start}:${end}` and never evicted, so long navigation sessions
       accumulate atoms/subscriptions. Worth checking `Atom.family` eviction
