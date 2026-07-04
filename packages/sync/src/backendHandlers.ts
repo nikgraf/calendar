@@ -4,7 +4,7 @@ import {
   mapToBackendError,
   type BackendHandlers,
 } from '@calendar/core';
-import { AccountRepo, CalendarRepo, EventRepo } from '@calendar/db';
+import { AccountRepo, CalendarRepo, EventRepo, PendingOpRepo } from '@calendar/db';
 import { TokenStore } from '@calendar/google';
 import { Effect, Queue, Stream } from 'effect';
 import { SyncEngine } from './engine.ts';
@@ -15,6 +15,7 @@ export type CommonBackendServices =
   | CalendarRepo
   | EventMutations
   | EventRepo
+  | PendingOpRepo
   | SyncEngine
   | TokenStore;
 
@@ -41,6 +42,12 @@ export const commonBackendHandlers: Omit<BackendHandlers<CommonBackendServices>,
       yield* mutations.deleteRecurring(params);
     }),
 
+  discardPendingOp: ({ opId }) =>
+    Effect.gen(function* () {
+      const pendingOps = yield* PendingOpRepo;
+      yield* pendingOps.remove(opId);
+    }),
+
   getEventsInRange: ({ rangeEndUtc, rangeStartUtc }) =>
     Effect.gen(function* () {
       const events = yield* EventRepo;
@@ -58,6 +65,23 @@ export const commonBackendHandlers: Omit<BackendHandlers<CommonBackendServices>,
     Effect.gen(function* () {
       const calendarRepo = yield* CalendarRepo;
       return yield* calendarRepo.list(accountId);
+    }),
+
+  listPendingOps: () =>
+    Effect.gen(function* () {
+      const pendingOps = yield* PendingOpRepo;
+      const ops = yield* pendingOps.listAll();
+      return ops.map((op) => ({
+        attempts: op.attempts,
+        calendarId: op.calendarId,
+        createdAt: op.createdAt,
+        eventId: op.eventId,
+        id: op.id,
+        kind: op.kind,
+        nextAttemptAt: op.nextAttemptAt,
+        ...(op.lastError === undefined ? {} : { lastError: op.lastError }),
+        ...(op.payload?.title === undefined ? {} : { title: op.payload.title }),
+      }));
     }),
 
   removeAccount: ({ accountId }) =>
@@ -114,6 +138,7 @@ export const makeAppBackendLayer = <R>(options: {
     createEvent: (payload) => mapToBackendError(options.handlers.createEvent(payload)),
     deleteEvent: (payload) => mapToBackendError(options.handlers.deleteEvent(payload)),
     deleteRecurring: (payload) => mapToBackendError(options.handlers.deleteRecurring(payload)),
+    discardPendingOp: (payload) => mapToBackendError(options.handlers.discardPendingOp(payload)),
     getEventsInRange: (payload) => mapToBackendError(options.handlers.getEventsInRange(payload)),
     invalidations: () =>
       Stream.callback<ReadonlyArray<string>>((queue) =>
@@ -128,6 +153,7 @@ export const makeAppBackendLayer = <R>(options: {
       ),
     listAccounts: () => mapToBackendError(options.handlers.listAccounts(undefined)),
     listCalendars: (payload) => mapToBackendError(options.handlers.listCalendars(payload)),
+    listPendingOps: () => mapToBackendError(options.handlers.listPendingOps(undefined)),
     removeAccount: (payload) => mapToBackendError(options.handlers.removeAccount(payload)),
     respondToEvent: (payload) => mapToBackendError(options.handlers.respondToEvent(payload)),
     setCalendarVisible: (payload) =>

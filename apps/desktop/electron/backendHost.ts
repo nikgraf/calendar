@@ -7,6 +7,7 @@ import {
   EventRepo,
   forwardingReactivity,
   makeInvalidationBus,
+  PendingOpRepo,
   reposLayer,
   runMigrations,
 } from '@calendar/db';
@@ -87,7 +88,14 @@ export const startBackendHost = (): void => {
   );
 
   const handlers: BackendHandlers<
-    AccountRepo | CalendarRepo | EventMutations | EventRepo | SyncEngine | TokenManager | TokenStore
+    | AccountRepo
+    | CalendarRepo
+    | EventMutations
+    | EventRepo
+    | PendingOpRepo
+    | SyncEngine
+    | TokenManager
+    | TokenStore
   > = {
     ...commonBackendHandlers,
 

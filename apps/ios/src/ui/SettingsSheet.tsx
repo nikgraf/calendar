@@ -1,4 +1,4 @@
-import { useAccounts, useBackendMutations, useCalendars } from '@calendar/app-state';
+import { useAccounts, useBackendMutations, useCalendars, usePendingOps } from '@calendar/app-state';
 import { useState } from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { palette } from './theme.ts';
@@ -7,6 +7,7 @@ export function SettingsSheet({ onClose, visible }: { onClose: () => void; visib
   const mutations = useBackendMutations();
   const accounts = useAccounts();
   const calendars = useCalendars();
+  const pendingOps = usePendingOps();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -39,6 +40,25 @@ export function SettingsSheet({ onClose, visible }: { onClose: () => void; visib
 
         <ScrollView contentContainerStyle={styles.content}>
           {error ? <Text style={styles.error}>{error}</Text> : null}
+
+          {pendingOps.length > 0 ? (
+            <View style={styles.pendingCard}>
+              <Text style={styles.pendingTitle}>
+                {pendingOps.length} unsynced {pendingOps.length === 1 ? 'change' : 'changes'}
+              </Text>
+              {pendingOps.map((op) => (
+                <View key={op.id} style={styles.pendingRow}>
+                  <Text numberOfLines={1} style={styles.pendingLabel}>
+                    {op.kind} · {op.title ?? op.eventId}
+                    {op.attempts > 0 ? ` — retrying (${op.attempts}×)` : ''}
+                  </Text>
+                  <Pressable onPress={() => void mutations.discardPendingOp({ opId: op.id })}>
+                    <Text style={styles.pendingDiscard}>Discard</Text>
+                  </Pressable>
+                </View>
+              ))}
+            </View>
+          ) : null}
 
           {accounts.map((account) => (
             <View key={account.id} style={styles.accountCard}>
@@ -176,6 +196,34 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: 16,
     paddingVertical: 14,
+  },
+  pendingCard: {
+    backgroundColor: '#fef3c7',
+    borderRadius: 10,
+    marginBottom: 14,
+    padding: 12,
+  },
+  pendingDiscard: {
+    color: '#dc2626',
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  pendingLabel: {
+    color: '#92400e',
+    flex: 1,
+    fontSize: 13,
+  },
+  pendingRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 8,
+    paddingVertical: 3,
+  },
+  pendingTitle: {
+    color: '#92400e',
+    fontSize: 14,
+    fontWeight: '700',
+    marginBottom: 4,
   },
   remove: {
     color: '#dc2626',

@@ -1,6 +1,6 @@
 import { Account, Attendee, CalendarInfo, EventRecord } from '@calendar/core';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { launchApp, readEvents, type App } from './harness.ts';
+import { launchApp, readEvents, readPendingOpsCount, type App } from './harness.ts';
 
 const HOUR_MS = 60 * 60 * 1000;
 const HOUR_HEIGHT = 48;
@@ -421,6 +421,25 @@ describe('calendar desktop e2e', () => {
         .responseStatus,
     ).toBe('accepted');
     await cdp.clickButtonWithText('Cancel');
+  });
+
+  it('surfaces unsynced changes and discards a stuck op', async () => {
+    const { cdp } = app;
+    // Every mutation in this suite queued an op (no Google API available).
+    const count = await readPendingOpsCount(app.userDataDir);
+    expect(count).toBeGreaterThan(0);
+    await cdp.waitFor(`document.body.textContent.includes('unsynced change')`);
+    await cdp.eval(
+      `[...document.querySelectorAll('button')].find(b => b.textContent?.includes('unsynced change'))?.click()`,
+    );
+    await cdp.clickButtonWithText('Discard');
+    const deadline = Date.now() + 10_000;
+    let after = await readPendingOpsCount(app.userDataDir);
+    while (after !== count - 1 && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      after = await readPendingOpsCount(app.userDataDir);
+    }
+    expect(after).toBe(count - 1);
   });
 
   it('opens and closes the accounts modal', async () => {

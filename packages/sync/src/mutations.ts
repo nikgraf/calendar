@@ -10,6 +10,7 @@ import {
   type RsvpResponse,
 } from '@calendar/core';
 import { AccountRepo, EventRepo, PendingOpRepo } from '@calendar/db';
+import { CONFLICT_NOTICE_KEY } from '@calendar/db/keys';
 import {
   generateEventId,
   GoogleCalendarClient,
@@ -17,6 +18,7 @@ import {
   toGcalEventInput,
 } from '@calendar/google';
 import { Clock, Context, Data, Effect, Layer, Semaphore } from 'effect';
+import { Reactivity } from 'effect/unstable/reactivity/Reactivity';
 import type { SqlError } from 'effect/unstable/sql/SqlError';
 
 export class EventNotFoundError extends Data.TaggedError('EventNotFoundError')<{
@@ -102,8 +104,9 @@ const retryDelayMs = (attempts: number): number => Math.min(30_000 * 2 ** attemp
 const make: Effect.Effect<
   EventMutationsShape,
   never,
-  AccountRepo | EventRepo | GoogleCalendarClient | PendingOpRepo
+  AccountRepo | EventRepo | GoogleCalendarClient | PendingOpRepo | Reactivity
 > = Effect.gen(function* () {
+  const reactivity = yield* Reactivity;
   const accountRepo = yield* AccountRepo;
   const eventRepo = yield* EventRepo;
   const pendingOpRepo = yield* PendingOpRepo;
@@ -276,9 +279,9 @@ const make: Effect.Effect<
       }
     }).pipe(
       Effect.catchTags({
-        // The local optimistic copy stays until the next sync pass replaces
-        // it with the server's version: server wins in v1.
-        ConflictError: () => Effect.succeed('done' as const),
+        // Server wins: drop the op, tell the UI the edit was overridden.
+        ConflictError: () =>
+          Effect.as(Effect.ignore(reactivity.invalidate([CONFLICT_NOTICE_KEY])), 'done' as const),
         GoogleApiError: (error) =>
           // 409 on insert = the idempotent create already landed.
           error.status === 409 ? Effect.succeed('done' as const) : Effect.succeed('retry' as const),
@@ -728,6 +731,6 @@ export class EventMutations extends Context.Service<EventMutations, EventMutatio
   static readonly layer: Layer.Layer<
     EventMutations,
     never,
-    AccountRepo | EventRepo | GoogleCalendarClient | PendingOpRepo
+    AccountRepo | EventRepo | GoogleCalendarClient | PendingOpRepo | Reactivity
   > = Layer.effect(EventMutations)(make);
 }

@@ -21,6 +21,7 @@ const makeStubClient = () => {
     createEvent: () => fail('not stubbed'),
     deleteEvent: () => fail('not stubbed'),
     deleteRecurring: () => fail('not stubbed'),
+    discardPendingOp: () => Effect.void,
     getEventsInRange: () =>
       Effect.sync(() => {
         calls.events += 1;
@@ -32,6 +33,7 @@ const makeStubClient = () => {
         return [account];
       }),
     listCalendars: () => Effect.succeed([]),
+    listPendingOps: () => Effect.succeed([]),
     removeAccount: () => Effect.void,
     respondToEvent: () => Effect.void,
     setCalendarVisible: () =>

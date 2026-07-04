@@ -4,7 +4,14 @@ import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { CalendarInfo, EventRecord, Account } from '@calendar/core';
-import { AccountRepo, CalendarRepo, EventRepo, reposLayer, runMigrations } from '@calendar/db';
+import {
+  AccountRepo,
+  CalendarRepo,
+  EventRepo,
+  PendingOpRepo,
+  reposLayer,
+  runMigrations,
+} from '@calendar/db';
 import { SqliteClient } from '@effect/sql-sqlite-node';
 import { Effect, Layer } from 'effect';
 import { layer as reactivityLayer } from 'effect/unstable/reactivity/Reactivity';
@@ -40,6 +47,19 @@ export const seedDatabase = async (userDataDir: string, seed: SeedData): Promise
       }
       yield* calendars.upsertMany(seed.calendars);
       yield* events.upsertMany(seed.events);
+    }).pipe(Effect.provide(dbLayer)),
+  );
+};
+
+export const readPendingOpsCount = async (userDataDir: string): Promise<number> => {
+  const dbLayer = reposLayer.pipe(
+    Layer.provideMerge(SqliteClient.layer({ filename: join(userDataDir, 'calendar.db') })),
+    Layer.provideMerge(reactivityLayer),
+  );
+  return Effect.runPromise(
+    Effect.gen(function* () {
+      const ops = yield* (yield* PendingOpRepo).listAll();
+      return ops.length;
     }).pipe(Effect.provide(dbLayer)),
   );
 };

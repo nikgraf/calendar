@@ -1,5 +1,6 @@
 import type { Account, CalendarInfo } from '@calendar/core';
 import { useBackendMutations } from '@calendar/app-state';
+import { SyncStatus } from './SyncStatus.tsx';
 
 export function Sidebar({
   accounts,
@@ -57,6 +58,7 @@ export function Sidebar({
           <p className="px-2 py-4 text-sm text-neutral-400">No accounts connected.</p>
         ) : null}
       </div>
+      <SyncStatus />
       <button
         className="m-3 rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm hover:bg-neutral-100"
         onClick={onOpenSettings}

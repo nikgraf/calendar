@@ -45,11 +45,11 @@
 
 ## Robustness
 
-- [ ] Surface failed/pending ops — `PendingOp` retries with backoff but
-      failures are invisible (`markFailed` with 'transient failure'). A small
-      "N unsynced changes" indicator plus a way to see/discard a stuck op
-      would prevent silent data divergence. Same for 412 server-wins: it
-      currently discards your edit with no toast.
+- [x] Surface failed/pending ops — done: reactive `OPS_KEY` on the op
+      queue, `listPendingOps`/`discardPendingOp` rpcs, "N unsynced changes"
+      panel in the desktop sidebar and iOS settings (per-op discard, retry
+      count). 412 server-wins now broadcasts `notice:conflict` over the
+      invalidation stream and the desktop shows a toast.
 - [ ] Re-auth flow when a refresh token dies — `Account.status` can go to
       error, but there's no "Reconnect" affordance in
       AccountsView/SettingsSheet that re-runs OAuth for the existing account.

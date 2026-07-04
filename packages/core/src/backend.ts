@@ -44,6 +44,20 @@ export type RecurringScope = Schema.Schema.Type<typeof RecurringScope>;
 export const RsvpResponse = Schema.Literals(['accepted', 'declined', 'tentative']);
 export type RsvpResponse = Schema.Schema.Type<typeof RsvpResponse>;
 
+/** Queue entry surfaced to the UI (payload stripped; title pulled out). */
+export const PendingOpSummary = Schema.Struct({
+  attempts: Schema.Number,
+  calendarId: Schema.String,
+  createdAt: Schema.Number,
+  eventId: Schema.String,
+  id: Schema.String,
+  kind: Schema.Literals(['create', 'delete', 'rsvp', 'update']),
+  lastError: Schema.optional(Schema.String),
+  nextAttemptAt: Schema.Number,
+  title: Schema.optional(Schema.String),
+});
+export type PendingOpSummary = Schema.Schema.Type<typeof PendingOpSummary>;
+
 /** Wire format of a failed backend call. */
 export class BackendError extends Schema.ErrorClass<BackendError>('core/BackendError')({
   message: Schema.String,
@@ -65,6 +79,10 @@ export class AppBackendRpcs extends RpcGroup.make(
       eventId: Schema.String,
     },
   }),
+  Rpc.make('discardPendingOp', {
+    error: BackendError,
+    payload: { opId: Schema.String },
+  }),
   Rpc.make('deleteRecurring', {
     error: BackendError,
     payload: {
@@ -84,6 +102,10 @@ export class AppBackendRpcs extends RpcGroup.make(
     /** Server-push stream of invalidated Reactivity key batches. */
     stream: true,
     success: Schema.Array(Schema.String),
+  }),
+  Rpc.make('listPendingOps', {
+    error: BackendError,
+    success: Schema.Array(PendingOpSummary),
   }),
   Rpc.make('listAccounts', {
     error: BackendError,
@@ -143,8 +165,10 @@ export type BackendMethodName =
   | 'createEvent'
   | 'deleteEvent'
   | 'deleteRecurring'
+  | 'discardPendingOp'
   | 'getEventsInRange'
   | 'listAccounts'
+  | 'listPendingOps'
   | 'listCalendars'
   | 'removeAccount'
   | 'respondToEvent'
@@ -224,9 +248,11 @@ export const makeDirectBackendClient = <R>(
     createEvent: method('createEvent'),
     deleteEvent: method('deleteEvent'),
     deleteRecurring: method('deleteRecurring'),
+    discardPendingOp: method('discardPendingOp'),
     getEventsInRange: method('getEventsInRange'),
     listAccounts: method('listAccounts'),
     listCalendars: method('listCalendars'),
+    listPendingOps: method('listPendingOps'),
     removeAccount: method('removeAccount'),
     respondToEvent: method('respondToEvent'),
     setCalendarVisible: method('setCalendarVisible'),

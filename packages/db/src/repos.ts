@@ -10,7 +10,7 @@ import { Context, Effect, Layer, Schema } from 'effect';
 import { Reactivity } from 'effect/unstable/reactivity/Reactivity';
 import { SqlClient } from 'effect/unstable/sql/SqlClient';
 import type { SqlError } from 'effect/unstable/sql/SqlError';
-import { ACCOUNTS_KEY, CALENDARS_KEY, EVENTS_KEY, eventsKey } from './keys.ts';
+import { ACCOUNTS_KEY, CALENDARS_KEY, EVENTS_KEY, eventsKey, OPS_KEY } from './keys.ts';
 import {
   accountFromRow,
   calendarFromRow,
@@ -351,13 +351,17 @@ export interface PendingOpRepoShape {
   readonly removeForEvent: (calendarId: string, eventId: string) => Effect.Effect<void, SqlError>;
 }
 
-const makePendingOpRepo: Effect.Effect<PendingOpRepoShape, never, SqlClient> = Effect.gen(
-  function* () {
+const makePendingOpRepo: Effect.Effect<PendingOpRepoShape, never, Reactivity | SqlClient> =
+  Effect.gen(function* () {
     const sql = yield* SqlClient;
+    const reactivity = yield* Reactivity;
+    const invalidating = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+      reactivity.mutation([OPS_KEY], effect);
 
     return {
       enqueue: (op) =>
-        Effect.asVoid(sql`
+        invalidating(
+          Effect.asVoid(sql`
           INSERT INTO pending_ops (id, account_id, calendar_id, kind, event_id,
                                    payload, base_etag, attempts, next_attempt_at,
                                    last_error, created_at)
@@ -367,6 +371,7 @@ const makePendingOpRepo: Effect.Effect<PendingOpRepoShape, never, SqlClient> = E
                   ${op.baseEtag ?? null}, ${op.attempts}, ${op.nextAttemptAt},
                   ${op.lastError ?? null}, ${op.createdAt})
         `),
+        ),
       listAll: () =>
         Effect.map(sql<PendingOpRow>`SELECT * FROM pending_ops ORDER BY created_at`, (rows) =>
           rows.map(pendingOpFromRow),
@@ -378,27 +383,31 @@ const makePendingOpRepo: Effect.Effect<PendingOpRepoShape, never, SqlClient> = E
           (rows) => rows.map(pendingOpFromRow),
         ),
       markFailed: (opId, attempts, nextAttemptAt, lastError) =>
-        Effect.asVoid(
-          sql`UPDATE pending_ops SET attempts = ${attempts},
-            next_attempt_at = ${nextAttemptAt}, last_error = ${lastError}
-            WHERE id = ${opId}`,
+        invalidating(
+          Effect.asVoid(
+            sql`UPDATE pending_ops SET attempts = ${attempts},
+              next_attempt_at = ${nextAttemptAt}, last_error = ${lastError}
+              WHERE id = ${opId}`,
+          ),
         ),
-      remove: (opId) => Effect.asVoid(sql`DELETE FROM pending_ops WHERE id = ${opId}`),
+      remove: (opId) =>
+        invalidating(Effect.asVoid(sql`DELETE FROM pending_ops WHERE id = ${opId}`)),
       // RSVP ops survive content-edit coalescing; stray ones resolve as
       // no-ops through the NotFound path after a delete.
       removeForEvent: (calendarId, eventId) =>
-        Effect.asVoid(
-          sql`DELETE FROM pending_ops WHERE calendar_id = ${calendarId}
-            AND event_id = ${eventId} AND kind != 'rsvp'`,
+        invalidating(
+          Effect.asVoid(
+            sql`DELETE FROM pending_ops WHERE calendar_id = ${calendarId}
+              AND event_id = ${eventId} AND kind != 'rsvp'`,
+          ),
         ),
     };
-  },
-);
+  });
 
 export class PendingOpRepo extends Context.Service<PendingOpRepo, PendingOpRepoShape>()(
   'db/PendingOpRepo',
 ) {
-  static readonly layer: Layer.Layer<PendingOpRepo, never, SqlClient> =
+  static readonly layer: Layer.Layer<PendingOpRepo, never, Reactivity | SqlClient> =
     Layer.effect(PendingOpRepo)(makePendingOpRepo);
 }
 
