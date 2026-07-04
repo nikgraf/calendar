@@ -9,8 +9,11 @@ import {
 import { useNow } from '@calendar/app-state';
 import { useEffect, useRef } from 'react';
 import { chipTextColor, type ColorLookup } from './colors.ts';
+import { useEventDrag } from './useEventDrag.ts';
 
 const HOUR_HEIGHT = 48;
+const GUTTER_WIDTH = 64;
+const MINUTE_MS = 60 * 1000;
 
 const formatTime = (epochMs: number, timeZone: string): string =>
   Temporal.Instant.fromEpochMilliseconds(epochMs)
@@ -39,8 +42,16 @@ export function WeekView({
   timeZone: string;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
+  const gridRef = useRef<HTMLDivElement>(null);
   const today = Temporal.Now.plainDateISO(timeZone);
   const nowMs = useNow();
+  const drag = useEventDrag({
+    dayCount: days.length,
+    gridRef,
+    gutterWidth: GUTTER_WIDTH,
+    hourHeight: HOUR_HEIGHT,
+    onClick: onEventClick,
+  });
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: 7.5 * HOUR_HEIGHT });
@@ -145,6 +156,7 @@ export function WeekView({
       <div className="min-h-0 flex-1 overflow-y-scroll" ref={scrollRef}>
         <div
           className="relative grid"
+          ref={gridRef}
           style={{
             gridTemplateColumns: `64px repeat(${days.length}, 1fr)`,
             height: 24 * HOUR_HEIGHT,
@@ -189,6 +201,9 @@ export function WeekView({
                 className="relative border-l border-neutral-100"
                 key={day.toString()}
                 onClick={(clickEvent) => {
+                  if (drag.consumeSuppressedClick()) {
+                    return;
+                  }
                   const bounds = clickEvent.currentTarget.getBoundingClientRect();
                   const hour = Math.floor((clickEvent.clientY - bounds.top) / HOUR_HEIGHT);
                   onSlotClick(day, Math.min(Math.max(hour, 0), 23));
@@ -206,21 +221,40 @@ export function WeekView({
                 {boxes.map((box) => {
                   const event = eventsById.get(box.id)!;
                   const color = colorOf(event);
-                  const compact = box.height * 24 * HOUR_HEIGHT < 28;
+                  const dragging = drag.preview?.eventKey === box.id ? drag.preview : null;
+                  const moveMinutes = dragging?.mode === 'move' ? dragging.deltaMinutes : 0;
+                  const resizeMinutes = dragging?.mode === 'resize' ? dragging.deltaMinutes : 0;
+                  const deltaDays = dragging?.mode === 'move' ? dragging.deltaDays : 0;
+                  const dayMinutes = 24 * 60;
+                  const topMinutes = box.top * dayMinutes + moveMinutes;
+                  const heightMinutes = Math.max(box.height * dayMinutes + resizeMinutes, 15);
+                  const previewStart = event.startUtc + moveMinutes * MINUTE_MS;
+                  const previewEnd =
+                    dragging?.mode === 'resize'
+                      ? Math.max(
+                          event.endUtc + resizeMinutes * MINUTE_MS,
+                          event.startUtc + 15 * MINUTE_MS,
+                        )
+                      : event.endUtc + moveMinutes * MINUTE_MS;
+                  const compact = (heightMinutes / 60) * HOUR_HEIGHT < 28;
+                  const draggable = !event.recurringEventId && !event.recurrence;
                   return (
                     <div
-                      className="absolute cursor-pointer overflow-hidden rounded-md px-1.5 py-0.5"
+                      className={`absolute touch-none overflow-hidden rounded-md px-1.5 py-0.5 select-none ${
+                        draggable ? 'cursor-grab' : 'cursor-pointer'
+                      } ${dragging ? 'z-20 opacity-90 shadow-lg ring-2 ring-white/60' : ''}`}
                       key={box.id}
-                      onClick={(clickEvent) => {
-                        clickEvent.stopPropagation();
-                        onEventClick(event);
-                      }}
+                      onPointerDown={(pointerEvent) =>
+                        drag.onPointerDown(event, box.id, pointerEvent, 'move')
+                      }
+                      onPointerMove={drag.onPointerMove}
+                      onPointerUp={drag.onPointerUp}
                       style={{
                         backgroundColor: color,
                         color: chipTextColor(color),
-                        height: `max(${box.height * 100}%, 14px)`,
-                        left: `calc(${box.left * 100}% + 1px)`,
-                        top: `${box.top * 100}%`,
+                        height: `max(${(heightMinutes / dayMinutes) * 100}%, 14px)`,
+                        left: `calc(${(box.left + deltaDays) * 100}% + 1px)`,
+                        top: `${(topMinutes / dayMinutes) * 100}%`,
                         width: `calc(${box.width * 100}% - 3px)`,
                       }}
                       title={`${event.title} · ${formatTime(event.startUtc, timeZone)}`}
@@ -228,10 +262,18 @@ export function WeekView({
                       <p className="truncate text-xs leading-4 font-medium">{event.title}</p>
                       {compact ? null : (
                         <p className="truncate text-[10px] opacity-80">
-                          {formatTime(event.startUtc, timeZone)} –{' '}
-                          {formatTime(event.endUtc, timeZone)}
+                          {formatTime(dragging ? previewStart : event.startUtc, timeZone)} –{' '}
+                          {formatTime(dragging ? previewEnd : event.endUtc, timeZone)}
                         </p>
                       )}
+                      {draggable ? (
+                        <div
+                          className="absolute right-0 bottom-0 left-0 h-2 cursor-ns-resize"
+                          onPointerDown={(pointerEvent) =>
+                            drag.onPointerDown(event, box.id, pointerEvent, 'resize')
+                          }
+                        />
+                      ) : null}
                     </div>
                   );
                 })}

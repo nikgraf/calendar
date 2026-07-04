@@ -1,16 +1,138 @@
-import { useNow } from '@calendar/app-state';
-import { dayRange, layoutDayColumn, Temporal, type EventRecord } from '@calendar/core';
+import { useBackendMutations, useNow } from '@calendar/app-state';
+import {
+  dayRange,
+  layoutDayColumn,
+  moveEventTimes,
+  resizeEventEnd,
+  Temporal,
+  type EventRecord,
+} from '@calendar/core';
 import { useEffect, useRef } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, View, type DimensionValue } from 'react-native';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import Animated, {
+  runOnJS,
+  useAnimatedStyle,
+  useSharedValue,
+  withTiming,
+} from 'react-native-reanimated';
 import { chipTextColor, palette } from './theme.ts';
 
 const HOUR_HEIGHT = 56;
+const SNAP_PX = HOUR_HEIGHT / 4; // 15 minutes
+const pxToMinutes = (px: number) => (px / HOUR_HEIGHT) * 60;
 
 const formatTime = (epochMs: number, timeZone: string): string =>
   Temporal.Instant.fromEpochMilliseconds(epochMs)
     .toZonedDateTimeISO(timeZone)
     .toPlainTime()
     .toLocaleString('en-US', { hour: 'numeric', minute: '2-digit' });
+
+function DraggableEventBlock({
+  color,
+  event,
+  height,
+  left,
+  onCommitMove,
+  onCommitResize,
+  onPress,
+  timeZone,
+  top,
+  width,
+}: {
+  color: string;
+  event: EventRecord;
+  height: number;
+  left: DimensionValue;
+  onCommitMove: (deltaMinutes: number) => void;
+  onCommitResize: (deltaMinutes: number) => void;
+  onPress: () => void;
+  timeZone: string;
+  top: number;
+  width: DimensionValue;
+}) {
+  const translateY = useSharedValue(0);
+  const extraHeight = useSharedValue(0);
+  const lifted = useSharedValue(0);
+  const draggable = !event.recurringEventId && !event.recurrence;
+
+  const commitMove = (translationPx: number) => {
+    translateY.value = 0;
+    lifted.value = 0;
+    const deltaMinutes = pxToMinutes(translationPx);
+    if (Math.round(deltaMinutes / 15) !== 0) {
+      onCommitMove(deltaMinutes);
+    }
+  };
+  const commitResize = (translationPx: number) => {
+    extraHeight.value = 0;
+    const deltaMinutes = pxToMinutes(translationPx);
+    if (Math.round(deltaMinutes / 15) !== 0) {
+      onCommitResize(deltaMinutes);
+    }
+  };
+
+  const movePan = Gesture.Pan()
+    .enabled(draggable)
+    .activateAfterLongPress(250)
+    .onStart(() => {
+      lifted.value = withTiming(1, { duration: 120 });
+    })
+    .onUpdate((update) => {
+      translateY.value = Math.round(update.translationY / SNAP_PX) * SNAP_PX;
+    })
+    .onEnd((end) => {
+      runOnJS(commitMove)(end.translationY);
+    })
+    .onFinalize(() => {
+      lifted.value = withTiming(0, { duration: 120 });
+    });
+
+  const resizePan = Gesture.Pan()
+    .enabled(draggable)
+    .onUpdate((update) => {
+      extraHeight.value = Math.round(update.translationY / SNAP_PX) * SNAP_PX;
+    })
+    .onEnd((end) => {
+      runOnJS(commitResize)(end.translationY);
+    });
+
+  const animatedStyle = useAnimatedStyle(() => ({
+    height: Math.max(height - 2 + extraHeight.value, SNAP_PX),
+    shadowOpacity: lifted.value * 0.3,
+    transform: [{ translateY: translateY.value }, { scale: 1 + lifted.value * 0.02 }],
+    zIndex: translateY.value !== 0 || lifted.value > 0 ? 10 : 0,
+  }));
+
+  return (
+    <GestureDetector gesture={movePan}>
+      <Animated.View
+        style={[
+          styles.eventBlock,
+          { backgroundColor: color, left, top, width },
+          styles.eventShadow,
+          animatedStyle,
+        ]}
+      >
+        <Pressable onPress={onPress} style={styles.eventPressable}>
+          <Text numberOfLines={1} style={[styles.eventTitle, { color: chipTextColor(color) }]}>
+            {event.title}
+          </Text>
+          {height > 34 ? (
+            <Text numberOfLines={1} style={[styles.eventTime, { color: chipTextColor(color) }]}>
+              {formatTime(event.startUtc, timeZone)} – {formatTime(event.endUtc, timeZone)}
+            </Text>
+          ) : null}
+        </Pressable>
+        {draggable ? (
+          <GestureDetector gesture={resizePan}>
+            <View style={styles.resizeHandle} />
+          </GestureDetector>
+        ) : null}
+      </Animated.View>
+    </GestureDetector>
+  );
+}
 
 export function DayTimeline({
   colorOf,
@@ -27,6 +149,16 @@ export function DayTimeline({
 }) {
   const scrollRef = useRef<ScrollView>(null);
   const nowMs = useNow();
+  const { updateEvent } = useBackendMutations();
+
+  const commitChange = (event: EventRecord, changes: { endUtc?: number; startUtc?: number }) => {
+    void updateEvent({
+      accountId: event.accountId,
+      calendarId: event.calendarId,
+      changes,
+      eventId: event.id,
+    });
+  };
   const range = dayRange(date, timeZone);
   const isToday = Temporal.PlainDate.compare(date, Temporal.Now.plainDateISO(timeZone)) === 0;
 
@@ -93,38 +225,24 @@ export function DayTimeline({
           <View style={styles.eventsArea}>
             {boxes.map((box) => {
               const event = byId.get(box.id)!;
-              const color = colorOf(event);
-              const height = Math.max(box.height * 24 * HOUR_HEIGHT, 22);
               return (
-                <Pressable
+                <DraggableEventBlock
+                  color={colorOf(event)}
+                  event={event}
+                  height={Math.max(box.height * 24 * HOUR_HEIGHT, 22)}
                   key={box.id}
+                  left={`${box.left * 100}%` as DimensionValue}
+                  onCommitMove={(deltaMinutes) =>
+                    commitChange(event, moveEventTimes(event, deltaMinutes))
+                  }
+                  onCommitResize={(deltaMinutes) =>
+                    commitChange(event, resizeEventEnd(event, deltaMinutes))
+                  }
                   onPress={() => onEventPress(event)}
-                  style={[
-                    styles.eventBlock,
-                    {
-                      backgroundColor: color,
-                      height: height - 2,
-                      left: `${box.left * 100}%`,
-                      top: box.top * 24 * HOUR_HEIGHT,
-                      width: `${box.width * 100}%`,
-                    },
-                  ]}
-                >
-                  <Text
-                    numberOfLines={1}
-                    style={[styles.eventTitle, { color: chipTextColor(color) }]}
-                  >
-                    {event.title}
-                  </Text>
-                  {height > 34 ? (
-                    <Text
-                      numberOfLines={1}
-                      style={[styles.eventTime, { color: chipTextColor(color) }]}
-                    >
-                      {formatTime(event.startUtc, timeZone)} – {formatTime(event.endUtc, timeZone)}
-                    </Text>
-                  ) : null}
-                </Pressable>
+                  timeZone={timeZone}
+                  top={box.top * 24 * HOUR_HEIGHT}
+                  width={`${box.width * 100}%` as DimensionValue}
+                />
               );
             })}
 
@@ -162,9 +280,12 @@ const styles = StyleSheet.create({
   },
   eventBlock: {
     borderRadius: 6,
+    position: 'absolute',
+  },
+  eventPressable: {
+    flex: 1,
     paddingHorizontal: 6,
     paddingVertical: 2,
-    position: 'absolute',
   },
   eventsArea: {
     bottom: 0,
@@ -172,6 +293,11 @@ const styles = StyleSheet.create({
     position: 'absolute',
     right: 8,
     top: 0,
+  },
+  eventShadow: {
+    shadowColor: '#000000',
+    shadowOffset: { height: 4, width: 0 },
+    shadowRadius: 8,
   },
   eventTime: {
     fontSize: 11,
@@ -217,6 +343,13 @@ const styles = StyleSheet.create({
     position: 'absolute',
     right: 0,
     zIndex: 10,
+  },
+  resizeHandle: {
+    bottom: 0,
+    height: 16,
+    left: 0,
+    position: 'absolute',
+    right: 0,
   },
   scroll: {
     flex: 1,

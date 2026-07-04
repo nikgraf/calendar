@@ -8,6 +8,7 @@ import {
 import { dayRange, monthGridRange, Temporal, weekStart, type EventRecord } from '@calendar/core';
 import { useEffect, useMemo, useState } from 'react';
 import { Pressable, SafeAreaView, StatusBar, StyleSheet, Text, View } from 'react-native';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { backendClient, startSync, subscribeInvalidations } from './src/backend.ts';
 import { DayTimeline } from './src/ui/DayTimeline.tsx';
 import { MonthGrid } from './src/ui/MonthGrid.tsx';
@@ -153,13 +154,19 @@ function CalendarScreen() {
 
 export function App() {
   return (
-    <BackendProvider atoms={backendAtoms}>
-      <CalendarScreen />
-    </BackendProvider>
+    <GestureHandlerRootView style={styles.root}>
+      <BackendProvider atoms={backendAtoms}>
+        <CalendarScreen />
+      </BackendProvider>
+    </GestureHandlerRootView>
   );
 }
 
 const styles = StyleSheet.create({
+  root: {
+    flex: 1,
+  },
+  // eslint-disable-next-line perfectionist/sort-objects -- root first for clarity
   addLabel: {
     color: '#2563eb',
     fontSize: 18,

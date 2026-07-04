@@ -10,8 +10,11 @@
 - [ ] Native iOS date/time pickers in the event editor
       (`@react-native-community/datetimepicker` — replaces the text inputs;
       requires a prebuild)
-- [ ] Drag-to-move / drag-to-resize events (reanimated + gesture-handler on
-      iOS, pointer events on desktop)
+- [x] Drag-to-move / drag-to-resize events — done: pointer-event drag on
+      desktop (move across days + resize, 15-min snap, Escape cancels,
+      click-through preserved), long-press pan + resize handle on iOS via
+      gesture-handler/reanimated; shared snap math in core/time/dragMath.ts.
+      Out of v1 scope: all-day chips, month view, recurring events
 - [ ] Recurring-event editing (single-instance overrides first, then
       this-and-following / whole series)
 
