@@ -118,14 +118,8 @@ const waitForEvent = async (
 
 /** Clicks the nth element matching the selector. */
 const clickNth = async (selector: string, index: number): Promise<void> => {
-  const point = await app.cdp.waitFor<string>(`(() => {
-    const el = document.querySelectorAll(${JSON.stringify(selector)})[${index}];
-    if (!el) return '';
-    const r = el.getBoundingClientRect();
-    return JSON.stringify({ x: Math.floor(r.x + r.width / 2), y: Math.floor(r.y) + 8 });
-  })()`);
-  const { x, y } = JSON.parse(point) as { x: number; y: number };
-  await app.cdp.click(x, y);
+  const point = await app.cdp.locate(selector, { index });
+  await app.cdp.click(point.x, point.y);
 };
 
 /** Types into the editor's title field, React-style. */
