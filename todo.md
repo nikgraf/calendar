@@ -50,9 +50,12 @@
       panel in the desktop sidebar and iOS settings (per-op discard, retry
       count). 412 server-wins now broadcasts `notice:conflict` over the
       invalidation stream and the desktop shows a toast.
-- [ ] Re-auth flow when a refresh token dies — `Account.status` can go to
-      error, but there's no "Reconnect" affordance in
-      AccountsView/SettingsSheet that re-runs OAuth for the existing account.
+- [x] Re-auth flow when a refresh token dies — done: ops hitting a 401 now
+      flag the account `reauth_required` (and stay queued for after the
+      reconnect); iOS settings gets a tappable "Session expired — reconnect"
+      running OAuth for the same account (stable id by email); desktop
+      already had the AccountsView button, sidebar hint now reads as a
+      warning.
 - [ ] Sync on wake/focus — the ~90s poll doesn't fire immediately when the
       laptop wakes or the app regains focus (`powerMonitor` on Electron,
       `AppState` on iOS). Cheap, and it's when staleness is most visible.
