@@ -143,3 +143,23 @@ describe('backend atoms', () => {
     expect(atoms.eventsInRange(key)).not.toBe(atoms.eventsInRange(rangeKey(2000, 3000)));
   });
 });
+
+describe('eventsInRange LRU', () => {
+  it('memoizes per key and evicts the least-recently-used range', () => {
+    const { client } = makeStubClient();
+    const atoms = makeBackendAtoms(client);
+    const first = atoms.eventsInRange('0:100');
+    expect(atoms.eventsInRange('0:100')).toBe(first);
+
+    // Fill the cache past its limit while touching the first key midway.
+    for (let index = 0; index < 20; index += 1) {
+      atoms.eventsInRange(`${index}:a`);
+    }
+    expect(atoms.eventsInRange('0:100')).toBe(first);
+    for (let index = 0; index < 40; index += 1) {
+      atoms.eventsInRange(`${index}:b`);
+    }
+    // Now it has been evicted: a fresh atom object is created.
+    expect(atoms.eventsInRange('0:100')).not.toBe(first);
+  });
+});
