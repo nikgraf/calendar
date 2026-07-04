@@ -65,10 +65,10 @@
 
 ## Infrastructure
 
-- [ ] CI — nothing runs the gate automatically. GitHub Actions with
-      `pnpm check && typecheck && test`, plus the e2e suite on a macOS
-      runner (it needs the built Electron app but no display tricks on
-      macOS).
+- [x] CI — done: `.github/workflows/ci.yml` with a `gate` job (ubuntu:
+      check + typecheck + unit tests) and an `e2e` job (macos-14:
+      electron-rebuild, desktop build, CDP e2e suite) on pushes to main
+      and PRs.
 - [ ] Electron auto-update — pairs with the signing todo;
       `update-electron-app` + a Forge publisher is little work once
       notarization exists.
