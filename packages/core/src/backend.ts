@@ -41,6 +41,9 @@ export const UpdateEventChanges = Schema.Struct({
 export const RecurringScope = Schema.Literals(['following', 'instance', 'series']);
 export type RecurringScope = Schema.Schema.Type<typeof RecurringScope>;
 
+export const RsvpResponse = Schema.Literals(['accepted', 'declined', 'tentative']);
+export type RsvpResponse = Schema.Schema.Type<typeof RsvpResponse>;
+
 /** Wire format of a failed backend call. */
 export class BackendError extends Schema.ErrorClass<BackendError>('core/BackendError')({
   message: Schema.String,
@@ -95,6 +98,15 @@ export class AppBackendRpcs extends RpcGroup.make(
     error: BackendError,
     payload: { accountId: Schema.String },
   }),
+  Rpc.make('respondToEvent', {
+    error: BackendError,
+    payload: {
+      accountId: Schema.String,
+      calendarId: Schema.String,
+      eventId: Schema.String,
+      response: RsvpResponse,
+    },
+  }),
   Rpc.make('setCalendarVisible', {
     error: BackendError,
     payload: {
@@ -135,6 +147,7 @@ export type BackendMethodName =
   | 'listAccounts'
   | 'listCalendars'
   | 'removeAccount'
+  | 'respondToEvent'
   | 'setCalendarVisible'
   | 'syncNow'
   | 'updateEvent'
@@ -215,6 +228,7 @@ export const makeDirectBackendClient = <R>(
     listAccounts: method('listAccounts'),
     listCalendars: method('listCalendars'),
     removeAccount: method('removeAccount'),
+    respondToEvent: method('respondToEvent'),
     setCalendarVisible: method('setCalendarVisible'),
     syncNow: method('syncNow'),
     updateEvent: method('updateEvent'),

@@ -384,10 +384,12 @@ const makePendingOpRepo: Effect.Effect<PendingOpRepoShape, never, SqlClient> = E
             WHERE id = ${opId}`,
         ),
       remove: (opId) => Effect.asVoid(sql`DELETE FROM pending_ops WHERE id = ${opId}`),
+      // RSVP ops survive content-edit coalescing; stray ones resolve as
+      // no-ops through the NotFound path after a delete.
       removeForEvent: (calendarId, eventId) =>
         Effect.asVoid(
           sql`DELETE FROM pending_ops WHERE calendar_id = ${calendarId}
-            AND event_id = ${eventId}`,
+            AND event_id = ${eventId} AND kind != 'rsvp'`,
         ),
     };
   },

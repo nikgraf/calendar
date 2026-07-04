@@ -68,6 +68,12 @@ export const commonBackendHandlers: Omit<BackendHandlers<CommonBackendServices>,
       yield* accountRepo.remove(accountId);
     }),
 
+  respondToEvent: (params) =>
+    Effect.gen(function* () {
+      const mutations = yield* EventMutations;
+      yield* mutations.respondToEvent(params);
+    }),
+
   setCalendarVisible: ({ accountId, calendarId, isVisible }) =>
     Effect.gen(function* () {
       const calendarRepo = yield* CalendarRepo;
@@ -123,6 +129,7 @@ export const makeAppBackendLayer = <R>(options: {
     listAccounts: () => mapToBackendError(options.handlers.listAccounts(undefined)),
     listCalendars: (payload) => mapToBackendError(options.handlers.listCalendars(payload)),
     removeAccount: (payload) => mapToBackendError(options.handlers.removeAccount(payload)),
+    respondToEvent: (payload) => mapToBackendError(options.handlers.respondToEvent(payload)),
     setCalendarVisible: (payload) =>
       mapToBackendError(options.handlers.setCalendarVisible(payload)),
     syncNow: () => mapToBackendError(options.handlers.syncNow(undefined)),

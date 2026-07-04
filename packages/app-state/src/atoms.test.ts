@@ -33,6 +33,7 @@ const makeStubClient = () => {
       }),
     listCalendars: () => Effect.succeed([]),
     removeAccount: () => Effect.void,
+    respondToEvent: () => Effect.void,
     setCalendarVisible: () =>
       Effect.sync(() => {
         calls.setVisible += 1;

@@ -74,6 +74,9 @@ export const useBackendMutations = () => {
   const removeAccount = useAtomSet(mutations.removeAccount, {
     mode: 'promise',
   });
+  const respondToEvent = useAtomSet(mutations.respondToEvent, {
+    mode: 'promise',
+  });
   const setCalendarVisible = useAtomSet(mutations.setCalendarVisible, {
     mode: 'promise',
   });
@@ -90,6 +93,7 @@ export const useBackendMutations = () => {
       deleteEvent,
       deleteRecurring,
       removeAccount,
+      respondToEvent,
       setCalendarVisible,
       syncNow,
       updateEvent,
@@ -101,6 +105,7 @@ export const useBackendMutations = () => {
       deleteEvent,
       deleteRecurring,
       removeAccount,
+      respondToEvent,
       setCalendarVisible,
       syncNow,
       updateEvent,

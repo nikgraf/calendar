@@ -1,4 +1,4 @@
-import { useBackendMutations } from '@calendar/app-state';
+import { useAccounts, useBackendMutations } from '@calendar/app-state';
 import {
   buildRecurrenceRule,
   plainDateToUtcMs,
@@ -8,6 +8,7 @@ import {
   type EventRecord,
   type RecurrenceFrequency,
   type RecurringScope,
+  type RsvpResponse,
 } from '@calendar/core';
 import { useState } from 'react';
 import {
@@ -21,6 +22,12 @@ import {
   View,
 } from 'react-native';
 import { palette } from './theme.ts';
+
+const RSVPS: ReadonlyArray<{ label: string; value: RsvpResponse }> = [
+  { label: 'Accept', value: 'accepted' },
+  { label: 'Maybe', value: 'tentative' },
+  { label: 'Decline', value: 'declined' },
+];
 
 const REPEATS: ReadonlyArray<{ label: string; value: RecurrenceFrequency | 'none' }> = [
   { label: 'None', value: 'none' },
@@ -56,8 +63,15 @@ export function EventEditSheet({
   timeZone: string;
 }) {
   const mutations = useBackendMutations();
+  const accounts = useAccounts();
   const existing = seed?.event;
   const isRecurring = Boolean(existing && (existing.recurrence || existing.recurringEventId));
+  const ownEmail = accounts
+    .find((account) => account.id === existing?.accountId)
+    ?.email.toLowerCase();
+  const ownAttendee = existing?.attendees?.find(
+    (attendee) => attendee.isSelf === true || attendee.email.toLowerCase() === ownEmail,
+  );
   const writable = calendars.filter(
     (calendar) => calendar.accessRole === 'owner' || calendar.accessRole === 'writer',
   );
@@ -87,6 +101,7 @@ export function EventEditSheet({
   const [repeat, setRepeat] = useState<RecurrenceFrequency | 'none'>('none');
   const [repeatInterval, setRepeatInterval] = useState('1');
   const [repeatCount, setRepeatCount] = useState('');
+  const [rsvp, setRsvp] = useState(ownAttendee?.responseStatus);
   const [error, setError] = useState<string | null>(null);
 
   const save = async () => {
@@ -160,6 +175,24 @@ export function EventEditSheet({
               ...times,
             }));
       onClose();
+    } catch (error) {
+      setError(String(error));
+    }
+  };
+
+  const respond = async (response: RsvpResponse) => {
+    if (!existing) {
+      return;
+    }
+    setRsvp(response);
+    try {
+      // RSVP applies to the whole series when opened from an instance.
+      await mutations.respondToEvent({
+        accountId: existing.accountId,
+        calendarId: existing.calendarId,
+        eventId: existing.recurringEventId ?? existing.id,
+        response,
+      });
     } catch (error) {
       setError(String(error));
     }
@@ -340,6 +373,26 @@ export function EventEditSheet({
             {existing?.attendees?.length ? (
               <>
                 <Text style={styles.label}>Invitees</Text>
+                {ownAttendee ? (
+                  <View style={styles.scopeRow}>
+                    {RSVPS.map((option) => (
+                      <Pressable
+                        key={option.value}
+                        onPress={() => void respond(option.value)}
+                        style={[styles.scopeChip, rsvp === option.value && styles.scopeChipActive]}
+                      >
+                        <Text
+                          style={[
+                            styles.scopeLabel,
+                            rsvp === option.value && styles.scopeLabelActive,
+                          ]}
+                        >
+                          {option.label}
+                        </Text>
+                      </Pressable>
+                    ))}
+                  </View>
+                ) : null}
                 {existing.attendees.map((attendee) => (
                   <Text key={attendee.email} style={styles.attendee}>
                     {attendee.displayName ?? attendee.email} · {attendee.responseStatus}

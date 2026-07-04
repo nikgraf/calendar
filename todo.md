@@ -30,10 +30,12 @@
       keep the series on DTSTART's weekday/day-of-month), optional
       `recurrence` on `EventDraft`, repeat pickers in both editors
       (create mode). Custom BYDAY combinations stay out of scope for now.
-- [ ] RSVP on invitations — attendees render read-only in both editors.
-      Accept/decline/maybe is a PATCH updating your own attendee
-      `responseStatus`, so it fits the existing op queue with almost no new
-      machinery.
+- [x] RSVP on invitations — done: `respondToEvent` rpc + dedicated `rsvp`
+      op kind sending an attendees-only patch (no If-Match — a response
+      shouldn't lose to unrelated content edits), own entry matched via
+      `isSelf`/account email, RSVPs survive content-edit coalescing.
+      Accept/Maybe/Decline buttons in both editors; responding from a
+      recurring instance answers for the whole series.
 - [ ] "Join meeting" detection — parse `conferenceData`/`hangoutLink`/
       Zoom/Meet URLs in location/description and show a join button on the
       block and in the editor. Very cheap, very Fantastical.

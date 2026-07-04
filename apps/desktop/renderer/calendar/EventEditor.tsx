@@ -1,4 +1,4 @@
-import { useBackendMutations } from '@calendar/app-state';
+import { useAccounts, useBackendMutations } from '@calendar/app-state';
 import {
   buildRecurrenceRule,
   plainDateToUtcMs,
@@ -9,8 +9,15 @@ import {
   type EventRecord,
   type RecurrenceFrequency,
   type RecurringScope,
+  type RsvpResponse,
 } from '@calendar/core';
 import { useState } from 'react';
+
+const RSVP_OPTIONS: ReadonlyArray<{ label: string; value: RsvpResponse }> = [
+  { label: 'Accept', value: 'accepted' },
+  { label: 'Maybe', value: 'tentative' },
+  { label: 'Decline', value: 'declined' },
+];
 
 const REPEAT_OPTIONS: ReadonlyArray<{ label: string; value: RecurrenceFrequency | 'none' }> = [
   { label: 'Does not repeat', value: 'none' },
@@ -56,8 +63,15 @@ export function EventEditor({
   timeZone: string;
 }) {
   const mutations = useBackendMutations();
+  const accounts = useAccounts();
   const existing = seed.event;
   const isRecurring = Boolean(existing && (existing.recurrence || existing.recurringEventId));
+  const ownEmail = accounts
+    .find((account) => account.id === existing?.accountId)
+    ?.email.toLowerCase();
+  const ownAttendee = existing?.attendees?.find(
+    (attendee) => attendee.isSelf === true || attendee.email.toLowerCase() === ownEmail,
+  );
   const writable = calendars.filter(
     (calendar) => calendar.accessRole === 'owner' || calendar.accessRole === 'writer',
   );
@@ -88,6 +102,7 @@ export function EventEditor({
   );
   const [location, setLocation] = useState(existing?.location ?? '');
   const [scope, setScope] = useState<RecurringScope>('instance');
+  const [rsvp, setRsvp] = useState(ownAttendee?.responseStatus);
   const [repeat, setRepeat] = useState<RecurrenceFrequency | 'none'>('none');
   const [repeatInterval, setRepeatInterval] = useState('1');
   const [repeatEnds, setRepeatEnds] = useState<'after' | 'never' | 'on'>('never');
@@ -169,6 +184,24 @@ export function EventEditor({
         await mutations.createEvent(draft);
       }
       onClose();
+    } catch (error) {
+      setError(String(error));
+    }
+  };
+
+  const respond = async (response: RsvpResponse) => {
+    if (!existing) {
+      return;
+    }
+    setRsvp(response);
+    try {
+      // RSVP applies to the whole series when opened from an instance.
+      await mutations.respondToEvent({
+        accountId: existing.accountId,
+        calendarId: existing.calendarId,
+        eventId: existing.recurringEventId ?? existing.id,
+        response,
+      });
     } catch (error) {
       setError(String(error));
     }
@@ -373,6 +406,24 @@ export function EventEditor({
           {existing?.attendees?.length ? (
             <div className="rounded-lg border border-neutral-200 bg-white p-3">
               <p className="mb-1 text-xs font-medium text-neutral-400 uppercase">Invitees</p>
+              {ownAttendee ? (
+                <div className="mb-2 flex gap-1">
+                  {RSVP_OPTIONS.map((option) => (
+                    <button
+                      className={`flex-1 rounded-md border px-2 py-1 text-xs font-medium ${
+                        rsvp === option.value
+                          ? 'border-blue-600 bg-blue-600 text-white'
+                          : 'border-neutral-200 text-neutral-600 hover:bg-neutral-100'
+                      }`}
+                      key={option.value}
+                      onClick={() => void respond(option.value)}
+                      type="button"
+                    >
+                      {option.label}
+                    </button>
+                  ))}
+                </div>
+              ) : null}
               {existing.attendees.map((attendee) => (
                 <p className="text-sm" key={attendee.email}>
                   {attendee.displayName ?? attendee.email}

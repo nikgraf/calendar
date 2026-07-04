@@ -86,7 +86,7 @@ export class PendingOp extends Schema.Class<PendingOp>('PendingOp')({
   createdAt: Schema.Number,
   eventId: Schema.String,
   id: Schema.String,
-  kind: Schema.Literals(['create', 'delete', 'update']),
+  kind: Schema.Literals(['create', 'delete', 'rsvp', 'update']),
   lastError: Schema.optional(Schema.String),
   nextAttemptAt: Schema.Number,
   /** Snapshot of the event to send (create/update). */

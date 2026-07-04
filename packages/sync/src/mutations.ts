@@ -1,4 +1,5 @@
 import {
+  Attendee,
   EventRecord,
   googleInstanceId,
   PendingOp,
@@ -6,8 +7,9 @@ import {
   truncateRecurrence,
   type EventDraft,
   type RecurringScope,
+  type RsvpResponse,
 } from '@calendar/core';
-import { EventRepo, PendingOpRepo } from '@calendar/db';
+import { AccountRepo, EventRepo, PendingOpRepo } from '@calendar/db';
 import {
   generateEventId,
   GoogleCalendarClient,
@@ -29,6 +31,11 @@ export class EventNotFoundError extends Data.TaggedError('EventNotFoundError')<{
 export class RecurringEditUnsupportedError extends Data.TaggedError(
   'RecurringEditUnsupportedError',
 )<{ readonly eventId: string }> {}
+
+/** The signed-in account is not on the event's guest list. */
+export class NotAttendeeError extends Data.TaggedError('NotAttendeeError')<{
+  readonly eventId: string;
+}> {}
 
 export interface UpdateEventParams {
   readonly accountId: string;
@@ -73,6 +80,13 @@ export interface EventMutationsShape {
   ) => Effect.Effect<void, RecurringEditError>;
   /** Drains due pending ops (serialized); safe to call concurrently. */
   readonly processPendingOps: () => Effect.Effect<void>;
+  /** Updates the caller's own attendee responseStatus (series-wide). */
+  readonly respondToEvent: (params: {
+    readonly accountId: string;
+    readonly calendarId: string;
+    readonly eventId: string;
+    readonly response: RsvpResponse;
+  }) => Effect.Effect<void, EventNotFoundError | NotAttendeeError | SqlError>;
   readonly updateEvent: (params: UpdateEventParams) => Effect.Effect<void, RecurringEditError>;
   readonly updateRecurring: (
     params: UpdateRecurringParams,
@@ -88,8 +102,9 @@ const retryDelayMs = (attempts: number): number => Math.min(30_000 * 2 ** attemp
 const make: Effect.Effect<
   EventMutationsShape,
   never,
-  EventRepo | GoogleCalendarClient | PendingOpRepo
+  AccountRepo | EventRepo | GoogleCalendarClient | PendingOpRepo
 > = Effect.gen(function* () {
+  const accountRepo = yield* AccountRepo;
   const eventRepo = yield* EventRepo;
   const pendingOpRepo = yield* PendingOpRepo;
   const client = yield* GoogleCalendarClient;
@@ -206,6 +221,34 @@ const make: Effect.Effect<
             calendarId: op.calendarId,
             eventId: op.eventId,
           });
+          return 'done' as const;
+        }
+        case 'rsvp': {
+          if (!op.payload?.attendees) {
+            return 'done' as const;
+          }
+          // Attendees-only patch, no If-Match: an RSVP should not lose to
+          // unrelated content edits on the server copy.
+          const response = yield* client.patchEvent({
+            accountId: op.accountId,
+            calendarId: op.calendarId,
+            event: {
+              attendees: op.payload.attendees.map((attendee) => ({
+                email: attendee.email,
+                responseStatus: attendee.responseStatus,
+              })),
+            },
+            eventId: op.eventId,
+          });
+          const synced = mapGcalEvent(response, {
+            accountId: op.accountId,
+            calendarId: op.calendarId,
+            defaultTimeZone: op.payload.startTimeZone ?? 'UTC',
+            syncedAt: yield* Clock.currentTimeMillis,
+          });
+          if (synced) {
+            yield* eventRepo.upsertMany([synced]);
+          }
           return 'done' as const;
         }
         case 'update': {
@@ -433,6 +476,51 @@ const make: Effect.Effect<
 
     processPendingOps,
 
+    respondToEvent: ({ accountId, calendarId, eventId, response }) =>
+      Effect.gen(function* () {
+        const existing = yield* eventRepo.getById(accountId, calendarId, eventId);
+        if (!existing) {
+          return yield* Effect.fail(new EventNotFoundError({ eventId }));
+        }
+        const accounts = yield* accountRepo.list();
+        const ownEmail = accounts.find((account) => account.id === accountId)?.email.toLowerCase();
+        const isOwn = (attendee: Attendee) =>
+          attendee.isSelf === true || attendee.email.toLowerCase() === ownEmail;
+        if (!existing.attendees?.some(isOwn)) {
+          return yield* Effect.fail(new NotAttendeeError({ eventId }));
+        }
+        const now = yield* Clock.currentTimeMillis;
+        const merged = new EventRecord({
+          ...existing,
+          attendees: existing.attendees.map((attendee) =>
+            isOwn(attendee) ? new Attendee({ ...attendee, responseStatus: response }) : attendee,
+          ),
+          syncStatus: 'pending',
+          updatedAt: now,
+        });
+        yield* eventRepo.upsertMany([merged]);
+        // Only the latest response needs to reach Google.
+        const queued = yield* opsForEvent(calendarId, eventId);
+        for (const op of queued) {
+          if (op.kind === 'rsvp') {
+            yield* pendingOpRepo.remove(op.id);
+          }
+        }
+        yield* enqueueAndKick(
+          new PendingOp({
+            accountId,
+            attempts: 0,
+            calendarId,
+            createdAt: now,
+            eventId,
+            id: generateEventId(),
+            kind: 'rsvp',
+            nextAttemptAt: 0,
+            payload: merged,
+          }),
+        );
+      }),
+
     updateEvent: ({ accountId, calendarId, changes, eventId }) =>
       Effect.gen(function* () {
         const existing = yield* eventRepo.getById(accountId, calendarId, eventId);
@@ -640,6 +728,6 @@ export class EventMutations extends Context.Service<EventMutations, EventMutatio
   static readonly layer: Layer.Layer<
     EventMutations,
     never,
-    EventRepo | GoogleCalendarClient | PendingOpRepo
+    AccountRepo | EventRepo | GoogleCalendarClient | PendingOpRepo
   > = Layer.effect(EventMutations)(make);
 }

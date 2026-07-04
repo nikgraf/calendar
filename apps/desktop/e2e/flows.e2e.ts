@@ -1,4 +1,4 @@
-import { Account, CalendarInfo, EventRecord } from '@calendar/core';
+import { Account, Attendee, CalendarInfo, EventRecord } from '@calendar/core';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { launchApp, readEvents, type App } from './harness.ts';
 
@@ -66,6 +66,16 @@ const seed = {
     timedEvent('evt-gym', 'cal-personal', 'Gym session', todayAt(15), todayAt(16)),
     timedEvent('evt-daily', 'cal-work', 'Daily sync', todayAt(7), todayAt(7, 30), {
       recurrence: ['RRULE:FREQ=DAILY;COUNT=14'],
+    }),
+    timedEvent('evt-review', 'cal-work', 'Design review', todayAt(13), todayAt(14), {
+      attendees: [
+        new Attendee({
+          email: 'organizer@example.com',
+          isOrganizer: true,
+          responseStatus: 'accepted',
+        }),
+        new Attendee({ email: 'e2e@nikgraf.com', responseStatus: 'needsAction' }),
+      ],
     }),
   ],
 };
@@ -390,6 +400,28 @@ describe('calendar desktop e2e', () => {
     expect(master!.recurrence).toEqual(['RRULE:FREQ=DAILY;COUNT=5']);
     // The optimistic master expands into instances right away.
     await cdp.waitFor(`document.querySelectorAll('[title^="Yoga flow"]').length > 1`);
+  });
+
+  it('accepts an invitation through the RSVP buttons', async () => {
+    const { cdp } = app;
+    const block = await cdp.locate('[title^="Design review"]');
+    await cdp.click(block.x, block.y);
+    await cdp.waitFor(`document.body.textContent.includes('Invitees')`);
+    await cdp.clickButtonWithText('Accept');
+
+    const updated = await waitForEvent(
+      (event) =>
+        event.id === 'evt-review' &&
+        event.attendees?.find((attendee) => attendee.email === 'e2e@nikgraf.com')
+          ?.responseStatus === 'accepted',
+    );
+    expect(updated).toBeDefined();
+    // The organizer's entry stays untouched.
+    expect(
+      updated!.attendees!.find((attendee) => attendee.email === 'organizer@example.com')!
+        .responseStatus,
+    ).toBe('accepted');
+    await cdp.clickButtonWithText('Cancel');
   });
 
   it('opens and closes the accounts modal', async () => {

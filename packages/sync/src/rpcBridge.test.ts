@@ -46,6 +46,7 @@ const stubHandlers: BackendHandlers = {
   listAccounts: () => Effect.succeed([account]),
   listCalendars: () => Effect.succeed([]),
   removeAccount: () => Effect.void,
+  respondToEvent: () => Effect.void,
   setCalendarVisible: () => Effect.void,
   syncNow: notStubbed,
   updateEvent: () => Effect.void,
