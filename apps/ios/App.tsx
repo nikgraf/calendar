@@ -7,9 +7,9 @@ import {
 } from '@calendar/app-state';
 import { dayRange, monthGridRange, Temporal, weekStart, type EventRecord } from '@calendar/core';
 import { useEffect, useMemo, useState } from 'react';
-import { Pressable, SafeAreaView, StatusBar, StyleSheet, Text, View } from 'react-native';
+import { AppState, Pressable, SafeAreaView, StatusBar, StyleSheet, Text, View } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
-import { backendClient, startSync, subscribeInvalidations } from './src/backend.ts';
+import { backendClient, kickSync, startSync, subscribeInvalidations } from './src/backend.ts';
 import { DayTimeline } from './src/ui/DayTimeline.tsx';
 import { MonthGrid } from './src/ui/MonthGrid.tsx';
 import { EventEditSheet, type EditSeed } from './src/ui/EventEditSheet.tsx';
@@ -31,6 +31,12 @@ function CalendarScreen() {
   useBackendInvalidations(subscribeInvalidations);
   useEffect(() => {
     startSync();
+    const subscription = AppState.addEventListener('change', (state) => {
+      if (state === 'active') {
+        kickSync();
+      }
+    });
+    return () => subscription.remove();
   }, []);
 
   const range = useMemo(

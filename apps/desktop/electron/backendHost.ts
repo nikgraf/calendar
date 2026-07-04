@@ -24,7 +24,7 @@ import {
   SyncEngine,
 } from '@calendar/sync';
 import { SqliteClient } from '@effect/sql-sqlite-node';
-import { app } from 'electron';
+import { app, powerMonitor } from 'electron';
 import { Data, Effect, Layer, ManagedRuntime } from 'effect';
 import { FetchHttpClient } from 'effect/unstable/http';
 import { RpcSerialization, RpcServer } from 'effect/unstable/rpc';
@@ -154,4 +154,29 @@ export const startBackendHost = (): void => {
     .catch((error: unknown) => {
       console.error('[backend] bootstrap failed:', error);
     });
+
+  // The steady-state poll misses the moments staleness is most visible:
+  // right after wake, unlock, or refocusing the window. Kick immediately
+  // then (syncAll is semaphore-serialized, so extra kicks are safe).
+  let lastKickAt = 0;
+  const kickSync = () => {
+    const now = Date.now();
+    if (now - lastKickAt < 15_000) {
+      return;
+    }
+    lastKickAt = now;
+    runtime
+      .runPromise(
+        Effect.gen(function* () {
+          const engine = yield* SyncEngine;
+          yield* engine.syncAll();
+        }),
+      )
+      .catch(() => {
+        // Transient failures are retried by the regular schedule.
+      });
+  };
+  powerMonitor.on('resume', kickSync);
+  powerMonitor.on('unlock-screen', kickSync);
+  app.on('browser-window-focus', kickSync);
 };
