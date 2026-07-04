@@ -212,6 +212,12 @@ export interface EventRepoShape {
     rangeStartUtc: number,
     rangeEndUtc: number,
   ) => Effect.Effect<EventWindow, SqlError>;
+  /** Exception rows belonging to a recurring master. */
+  readonly listOverrides: (
+    accountId: string,
+    calendarId: string,
+    masterId: string,
+  ) => Effect.Effect<ReadonlyArray<EventRecord>, SqlError>;
   readonly upsertMany: (events: ReadonlyArray<EventRecord>) => Effect.Effect<void, SqlError>;
 }
 
@@ -312,6 +318,12 @@ const makeEventRepo: Effect.Effect<EventRepoShape, never, Reactivity | SqlClient
             singles: singles.map(eventFromRow),
           };
         }),
+      listOverrides: (accountId, calendarId, masterId) =>
+        Effect.map(
+          sql<EventRow>`SELECT * FROM events WHERE account_id = ${accountId}
+            AND calendar_id = ${calendarId} AND recurring_event_id = ${masterId}`,
+          (rows) => rows.map(eventFromRow),
+        ),
       upsertMany: (events) => {
         const keys = [EVENTS_KEY, ...new Set(events.map((event) => eventsKey(event.calendarId)))];
         return reactivity.mutation(keys, Effect.forEach(events, upsertOne, { discard: true }));

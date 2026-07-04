@@ -92,6 +92,42 @@ const eventEnd = async (title: string): Promise<number> => {
   return events.find((event) => event.title === title)!.endUtc;
 };
 
+/** Polls the app database until the predicate matches; returns the match. */
+const waitForEvent = async (
+  predicate: (event: EventRecord) => boolean,
+): Promise<EventRecord | undefined> => {
+  const deadline = Date.now() + 10_000;
+  for (;;) {
+    const match = (await readEvents(app.userDataDir)).find(predicate);
+    if (match || Date.now() > deadline) {
+      return match;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 300));
+  }
+};
+
+/** Clicks the nth element matching the selector. */
+const clickNth = async (selector: string, index: number): Promise<void> => {
+  const point = await app.cdp.waitFor<string>(`(() => {
+    const el = document.querySelectorAll(${JSON.stringify(selector)})[${index}];
+    if (!el) return '';
+    const r = el.getBoundingClientRect();
+    return JSON.stringify({ x: Math.floor(r.x + r.width / 2), y: Math.floor(r.y) + 8 });
+  })()`);
+  const { x, y } = JSON.parse(point) as { x: number; y: number };
+  await app.cdp.click(x, y);
+};
+
+/** Types into the editor's title field, React-style. */
+const setEditorTitle = async (title: string): Promise<void> => {
+  await app.cdp.eval(`(() => {
+    const input = document.querySelector('input[placeholder="Title"]');
+    const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+    setter.call(input, ${JSON.stringify(title)});
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+  })()`);
+};
+
 describe('calendar desktop e2e', () => {
   it('renders the seeded week: sidebar, calendars, events', async () => {
     const { cdp } = app;
@@ -212,19 +248,89 @@ describe('calendar desktop e2e', () => {
     await cdp.mouse('mouseReleased', from.x, from.y + 50);
     await new Promise((resolve) => setTimeout(resolve, 800));
     expect(await eventStart('Gym session')).toBe(before);
+    // The abandoned release must not fall through to a slot click.
+    expect(await cdp.eval<boolean>(`document.body.textContent.includes('New event')`)).toBe(false);
   });
 
-  it('refuses to drag recurring instances and shows the notice', async () => {
+  it('drags a recurring instance into a single-instance override', async () => {
     const { cdp } = app;
-    const before = await eventStart('Daily sync');
     const from = await cdp.locate('[title^="Daily sync"]');
     await cdp.drag(from, { x: from.x, y: from.y + 2 * HOUR_HEIGHT });
-    await new Promise((resolve) => setTimeout(resolve, 800));
-    expect(await eventStart('Daily sync')).toBe(before);
 
-    await cdp.click(from.x, from.y);
-    await cdp.waitFor(`document.body.textContent.includes('Editing recurring events')`);
-    await cdp.clickButtonWithText('Cancel');
+    const override = await waitForEvent(
+      (event) => event.recurringEventId === 'evt-daily' && event.startUtc === todayAt(9),
+    );
+    expect(override).toBeDefined();
+    expect(override!.id).toContain('evt-daily_');
+    // The master itself stays untouched.
+    const events = await readEvents(app.userDataDir);
+    expect(events.find((event) => event.id === 'evt-daily')!.startUtc).toBe(todayAt(7));
+  });
+
+  it('edits a single occurrence through the editor scope selector', async () => {
+    const { cdp } = app;
+    // First matching block is the override created by the drag test.
+    await clickNth('[title^="Daily sync"]', 0);
+    await cdp.waitFor(`document.body.textContent.includes('This and following')`);
+    await setEditorTitle('Daily sync (solo)');
+    await cdp.clickButtonWithText('Save');
+
+    const override = await waitForEvent((event) => event.title === 'Daily sync (solo)');
+    expect(override).toBeDefined();
+    expect(override!.recurringEventId).toBe('evt-daily');
+    const events = await readEvents(app.userDataDir);
+    expect(events.find((event) => event.id === 'evt-daily')!.title).toBe('Daily sync');
+  });
+
+  it('renames the whole series with the All events scope', async () => {
+    const { cdp } = app;
+    // Second matching block is a generated (non-override) instance.
+    await clickNth('[title^="Daily sync"]', 1);
+    await cdp.waitFor(`document.body.textContent.includes('All events')`);
+    await cdp.clickButtonWithText('All events');
+    await setEditorTitle('Daily standup');
+    await cdp.clickButtonWithText('Save');
+
+    const master = await waitForEvent(
+      (event) => event.id === 'evt-daily' && event.title === 'Daily standup',
+    );
+    expect(master).toBeDefined();
+    expect(master!.startUtc).toBe(todayAt(7));
+    // The detached override keeps its own title.
+    await cdp.waitFor(`!!document.querySelector('[title^="Daily sync (solo)"]')`);
+  });
+
+  it('splits the series with this-and-following', async () => {
+    const { cdp } = app;
+    const block = await cdp.locate('[title^="Daily standup"]');
+    await cdp.click(block.x, block.y);
+    await cdp.waitFor(`document.body.textContent.includes('This and following')`);
+    await cdp.clickButtonWithText('This and following');
+    await setEditorTitle('Daily standup v2');
+    await cdp.clickButtonWithText('Save');
+
+    const newMaster = await waitForEvent(
+      (event) => event.title === 'Daily standup v2' && event.recurrence !== undefined,
+    );
+    expect(newMaster).toBeDefined();
+    // Split at the 2nd occurrence: 1 of 14 consumed by the old master.
+    expect(newMaster!.recurrence).toEqual(['RRULE:FREQ=DAILY;COUNT=13']);
+    expect(newMaster!.startUtc).toBe(todayAt(7) + 24 * HOUR_MS);
+    const events = await readEvents(app.userDataDir);
+    const truncated = events.find((event) => event.id === 'evt-daily');
+    expect(truncated!.recurrence?.[0]).toContain('UNTIL=');
+  });
+
+  it('deletes a single occurrence of a series', async () => {
+    const { cdp } = app;
+    const block = await cdp.locate('[title^="Daily standup v2"]');
+    await cdp.click(block.x, block.y);
+    await cdp.waitFor(`document.body.textContent.includes('This event')`);
+    await cdp.clickButtonWithText('Delete');
+    // The occurrence vanishes; its master survives.
+    await cdp.waitFor(`!document.querySelector('[title^="Daily standup v2"]')`);
+    const events = await readEvents(app.userDataDir);
+    expect(events.some((event) => event.title === 'Daily standup v2')).toBe(true);
   });
 
   it('toggles calendar visibility from the sidebar', async () => {

@@ -74,11 +74,13 @@ const buildAtoms = (client: BackendClient) => {
     addAccount: mutation('addAccount', [ACCOUNTS_KEY, CALENDARS_KEY, EVENTS_KEY]),
     createEvent: mutation('createEvent', [EVENTS_KEY]),
     deleteEvent: mutation('deleteEvent', [EVENTS_KEY]),
+    deleteRecurring: mutation('deleteRecurring', [EVENTS_KEY]),
     removeAccount: mutation('removeAccount', [ACCOUNTS_KEY, CALENDARS_KEY, EVENTS_KEY]),
     setCalendarVisible: mutation('setCalendarVisible', [CALENDARS_KEY, EVENTS_KEY]),
     // The backend invalidates through the bridge as sync data lands.
     syncNow: mutation('syncNow', []),
     updateEvent: mutation('updateEvent', [EVENTS_KEY]),
+    updateRecurring: mutation('updateRecurring', [EVENTS_KEY]),
   };
 
   /** The runtime's own Reactivity — the bridge target for backend keys. */

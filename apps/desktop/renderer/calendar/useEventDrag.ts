@@ -23,8 +23,9 @@ interface DragOrigin {
   readonly startClientY: number;
 }
 
-const isDraggable = (event: EventRecord): boolean =>
-  !event.isAllDay && !event.recurringEventId && !event.recurrence;
+// Recurring instances are draggable too — a drag commits a single-instance
+// override, like Fantastical. Only all-day chips stay fixed.
+const isDraggable = (event: EventRecord): boolean => !event.isAllDay && !event.recurrence;
 
 /**
  * Pointer-event drag for week/day event blocks: vertical movement shifts
@@ -45,7 +46,7 @@ export const useEventDrag = ({
   hourHeight: number;
   onClick: (event: EventRecord) => void;
 }) => {
-  const { updateEvent } = useBackendMutations();
+  const { updateEvent, updateRecurring } = useBackendMutations();
   const [preview, setPreview] = useState<DragPreview | null>(null);
   const originRef = useRef<DragOrigin | null>(null);
   // Suppresses the day column's slot-click that follows a drag's pointerup.
@@ -54,6 +55,11 @@ export const useEventDrag = ({
   useEffect(() => {
     const onKeyDown = (keyEvent: KeyboardEvent) => {
       if (keyEvent.key === 'Escape' && originRef.current) {
+        // The abandoned pointerup still emits a click — keep it from
+        // falling through to the day column's slot-click.
+        if (originRef.current.active) {
+          suppressClickRef.current = true;
+        }
         originRef.current = null;
         setPreview(null);
       }
@@ -158,12 +164,23 @@ export const useEventDrag = ({
       origin.mode === 'move'
         ? moveEventTimes(origin.event, deltaMinutes, deltaDays)
         : resizeEventEnd(origin.event, deltaMinutes);
-    void updateEvent({
-      accountId: origin.event.accountId,
-      calendarId: origin.event.calendarId,
-      changes,
-      eventId: origin.event.id,
-    });
+    if (origin.event.recurringEventId) {
+      void updateRecurring({
+        accountId: origin.event.accountId,
+        calendarId: origin.event.calendarId,
+        changes,
+        masterId: origin.event.recurringEventId,
+        originalStartUtc: origin.event.originalStartUtc ?? origin.event.startUtc,
+        scope: 'instance',
+      });
+    } else {
+      void updateEvent({
+        accountId: origin.event.accountId,
+        calendarId: origin.event.calendarId,
+        changes,
+        eventId: origin.event.id,
+      });
+    }
   };
 
   /** True exactly once after a pointerup that should not become a slot click. */

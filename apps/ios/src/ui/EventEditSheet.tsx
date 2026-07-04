@@ -5,6 +5,7 @@ import {
   toZonedDateTime,
   type CalendarInfo,
   type EventRecord,
+  type RecurringScope,
 } from '@calendar/core';
 import { useState } from 'react';
 import {
@@ -18,6 +19,12 @@ import {
   View,
 } from 'react-native';
 import { palette } from './theme.ts';
+
+const SCOPES: ReadonlyArray<{ label: string; value: RecurringScope }> = [
+  { label: 'This event', value: 'instance' },
+  { label: 'This + following', value: 'following' },
+  { label: 'All events', value: 'series' },
+];
 
 export interface EditSeed {
   readonly event?: EventRecord;
@@ -66,6 +73,7 @@ export function EventEditSheet({
   const [endTime, setEndTime] = useState(
     existing && !existing.isAllDay ? timeString(existing.endUtc, timeZone) : '10:00',
   );
+  const [scope, setScope] = useState<RecurringScope>('instance');
   const [error, setError] = useState<string | null>(null);
 
   const save = async () => {
@@ -102,20 +110,29 @@ export function EventEditSheet({
         setError('End must be after start.');
         return;
       }
-      await (existing
-        ? mutations.updateEvent({
+      await (existing && isRecurring && existing.recurringEventId
+        ? mutations.updateRecurring({
             accountId,
             calendarId,
-            changes: { isAllDay, title: title.trim(), ...times },
-            eventId: existing.id,
+            changes: { title: title.trim(), ...times },
+            masterId: existing.recurringEventId,
+            originalStartUtc: existing.originalStartUtc ?? existing.startUtc,
+            scope,
           })
-        : mutations.createEvent({
-            accountId,
-            calendarId,
-            isAllDay,
-            title: title.trim(),
-            ...times,
-          }));
+        : existing
+          ? mutations.updateEvent({
+              accountId,
+              calendarId,
+              changes: { isAllDay, title: title.trim(), ...times },
+              eventId: existing.id,
+            })
+          : mutations.createEvent({
+              accountId,
+              calendarId,
+              isAllDay,
+              title: title.trim(),
+              ...times,
+            }));
       onClose();
     } catch (error) {
       setError(String(error));
@@ -127,11 +144,19 @@ export function EventEditSheet({
       return;
     }
     try {
-      await mutations.deleteEvent({
-        accountId: existing.accountId,
-        calendarId: existing.calendarId,
-        eventId: existing.id,
-      });
+      await (isRecurring && existing.recurringEventId
+        ? mutations.deleteRecurring({
+            accountId: existing.accountId,
+            calendarId: existing.calendarId,
+            masterId: existing.recurringEventId,
+            originalStartUtc: existing.originalStartUtc ?? existing.startUtc,
+            scope,
+          })
+        : mutations.deleteEvent({
+            accountId: existing.accountId,
+            calendarId: existing.calendarId,
+            eventId: existing.id,
+          }));
       onClose();
     } catch (error) {
       setError(String(error));
@@ -151,102 +176,111 @@ export function EventEditSheet({
             <Text style={styles.cancel}>Cancel</Text>
           </Pressable>
           <Text style={styles.title}>{existing ? 'Edit Event' : 'New Event'}</Text>
-          {isRecurring ? (
-            <View style={styles.saveSpacer} />
-          ) : (
-            <Pressable onPress={() => void save()}>
-              <Text style={styles.save}>Save</Text>
-            </Pressable>
-          )}
+          <Pressable onPress={() => void save()}>
+            <Text style={styles.save}>Save</Text>
+          </Pressable>
         </View>
 
         <ScrollView contentContainerStyle={styles.content}>
           {error ? <Text style={styles.error}>{error}</Text> : null}
           {isRecurring ? (
-            <Text style={styles.notice}>Editing recurring events isn’t supported yet.</Text>
-          ) : (
-            <>
-              <TextInput
-                autoFocus={!existing}
-                onChangeText={setTitle}
-                placeholder="Title"
-                style={styles.input}
-                value={title}
-              />
-
-              <Text style={styles.label}>Calendar</Text>
-              {writable.map((calendar) => {
-                const key = `${calendar.accountId}:${calendar.id}`;
-                const selected = key === calendarKey;
-                return (
-                  <Pressable
-                    disabled={Boolean(existing)}
-                    key={key}
-                    onPress={() => setCalendarKey(key)}
-                    style={styles.calendarRow}
+            <View style={styles.scopeRow}>
+              {SCOPES.map((option) => (
+                <Pressable
+                  key={option.value}
+                  onPress={() => setScope(option.value)}
+                  style={[styles.scopeChip, scope === option.value && styles.scopeChipActive]}
+                >
+                  <Text
+                    style={[styles.scopeLabel, scope === option.value && styles.scopeLabelActive]}
                   >
-                    <View style={[styles.swatch, { backgroundColor: calendar.colorHex }]} />
-                    <Text style={[styles.calendarName, selected && styles.calendarSelected]}>
-                      {calendar.summary}
-                    </Text>
-                    {selected ? <Text style={styles.check}>✓</Text> : null}
-                  </Pressable>
-                );
-              })}
-
-              <View style={styles.switchRow}>
-                <Text style={styles.label}>All-day</Text>
-                <Switch onValueChange={setIsAllDay} value={isAllDay} />
-              </View>
-
-              <Text style={styles.label}>Date (YYYY-MM-DD)</Text>
-              <TextInput
-                autoCapitalize="none"
-                onChangeText={setDate}
-                style={styles.input}
-                value={date}
-              />
-              {isAllDay ? null : (
-                <View style={styles.timesRow}>
-                  <View style={styles.timeField}>
-                    <Text style={styles.label}>Start (HH:MM)</Text>
-                    <TextInput
-                      autoCapitalize="none"
-                      onChangeText={setStartTime}
-                      style={styles.input}
-                      value={startTime}
-                    />
-                  </View>
-                  <View style={styles.timeField}>
-                    <Text style={styles.label}>End (HH:MM)</Text>
-                    <TextInput
-                      autoCapitalize="none"
-                      onChangeText={setEndTime}
-                      style={styles.input}
-                      value={endTime}
-                    />
-                  </View>
-                </View>
-              )}
-
-              {existing?.attendees?.length ? (
-                <>
-                  <Text style={styles.label}>Invitees</Text>
-                  {existing.attendees.map((attendee) => (
-                    <Text key={attendee.email} style={styles.attendee}>
-                      {attendee.displayName ?? attendee.email} · {attendee.responseStatus}
-                    </Text>
-                  ))}
-                </>
-              ) : null}
-
-              {existing ? (
-                <Pressable onPress={() => void remove()} style={styles.deleteButton}>
-                  <Text style={styles.deleteLabel}>Delete Event</Text>
+                    {option.label}
+                  </Text>
                 </Pressable>
-              ) : null}
-            </>
-          )}
+              ))}
+            </View>
+          ) : null}
+          <>
+            <TextInput
+              autoFocus={!existing}
+              onChangeText={setTitle}
+              placeholder="Title"
+              style={styles.input}
+              value={title}
+            />
+
+            <Text style={styles.label}>Calendar</Text>
+            {writable.map((calendar) => {
+              const key = `${calendar.accountId}:${calendar.id}`;
+              const selected = key === calendarKey;
+              return (
+                <Pressable
+                  disabled={Boolean(existing)}
+                  key={key}
+                  onPress={() => setCalendarKey(key)}
+                  style={styles.calendarRow}
+                >
+                  <View style={[styles.swatch, { backgroundColor: calendar.colorHex }]} />
+                  <Text style={[styles.calendarName, selected && styles.calendarSelected]}>
+                    {calendar.summary}
+                  </Text>
+                  {selected ? <Text style={styles.check}>✓</Text> : null}
+                </Pressable>
+              );
+            })}
+
+            <View style={styles.switchRow}>
+              <Text style={styles.label}>All-day</Text>
+              <Switch onValueChange={setIsAllDay} value={isAllDay} />
+            </View>
+
+            <Text style={styles.label}>Date (YYYY-MM-DD)</Text>
+            <TextInput
+              autoCapitalize="none"
+              onChangeText={setDate}
+              style={styles.input}
+              value={date}
+            />
+            {isAllDay ? null : (
+              <View style={styles.timesRow}>
+                <View style={styles.timeField}>
+                  <Text style={styles.label}>Start (HH:MM)</Text>
+                  <TextInput
+                    autoCapitalize="none"
+                    onChangeText={setStartTime}
+                    style={styles.input}
+                    value={startTime}
+                  />
+                </View>
+                <View style={styles.timeField}>
+                  <Text style={styles.label}>End (HH:MM)</Text>
+                  <TextInput
+                    autoCapitalize="none"
+                    onChangeText={setEndTime}
+                    style={styles.input}
+                    value={endTime}
+                  />
+                </View>
+              </View>
+            )}
+
+            {existing?.attendees?.length ? (
+              <>
+                <Text style={styles.label}>Invitees</Text>
+                {existing.attendees.map((attendee) => (
+                  <Text key={attendee.email} style={styles.attendee}>
+                    {attendee.displayName ?? attendee.email} · {attendee.responseStatus}
+                  </Text>
+                ))}
+              </>
+            ) : null}
+
+            {existing ? (
+              <Pressable onPress={() => void remove()} style={styles.deleteButton}>
+                <Text style={styles.deleteLabel}>Delete Event</Text>
+              </Pressable>
+            ) : null}
+          </>
         </ScrollView>
       </View>
     </Modal>
@@ -344,8 +378,29 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '700',
   },
-  saveSpacer: {
-    width: 44,
+  scopeChip: {
+    borderColor: palette.border,
+    borderRadius: 16,
+    borderWidth: 1,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+  },
+  scopeChipActive: {
+    backgroundColor: '#2563eb',
+    borderColor: '#2563eb',
+  },
+  scopeLabel: {
+    color: palette.textMuted,
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  scopeLabelActive: {
+    color: '#ffffff',
+  },
+  scopeRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 14,
   },
   swatch: {
     borderRadius: 4,

@@ -15,8 +15,13 @@
       click-through preserved), long-press pan + resize handle on iOS via
       gesture-handler/reanimated; shared snap math in core/time/dragMath.ts.
       Out of v1 scope: all-day chips, month view, recurring events
-- [ ] Recurring-event editing (single-instance overrides first, then
-      this-and-following / whole series)
+- [x] Recurring-event editing — done: `updateRecurring`/`deleteRecurring`
+      rpcs with scope `instance` (exception rows under Google's canonical
+      `master_basetime` instance id, cancelled tombstones for deletes),
+      `series` (delta-shifted master patch), and `following` (RRULE UNTIL
+      truncation + new master with recomputed COUNT; later overrides
+      cancelled). Scope picker in both editors; dragging a recurring
+      instance commits a single-instance override.
 
 ## Deferred architecture upgrades
 

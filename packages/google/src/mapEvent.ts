@@ -119,6 +119,7 @@ export const toGcalEventInput = (event: EventRecord): GcalEventInput => ({
       },
   id: event.id,
   location: event.location,
+  recurrence: event.recurrence,
   start: event.isAllDay
     ? { date: event.startDate }
     : {

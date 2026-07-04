@@ -68,6 +68,9 @@ export const useBackendMutations = () => {
   const addAccount = useAtomSet(mutations.addAccount, { mode: 'promise' });
   const createEvent = useAtomSet(mutations.createEvent, { mode: 'promise' });
   const deleteEvent = useAtomSet(mutations.deleteEvent, { mode: 'promise' });
+  const deleteRecurring = useAtomSet(mutations.deleteRecurring, {
+    mode: 'promise',
+  });
   const removeAccount = useAtomSet(mutations.removeAccount, {
     mode: 'promise',
   });
@@ -76,18 +79,33 @@ export const useBackendMutations = () => {
   });
   const syncNow = useAtomSet(mutations.syncNow, { mode: 'promise' });
   const updateEvent = useAtomSet(mutations.updateEvent, { mode: 'promise' });
+  const updateRecurring = useAtomSet(mutations.updateRecurring, {
+    mode: 'promise',
+  });
 
   return useMemo(
     () => ({
       addAccount,
       createEvent,
       deleteEvent,
+      deleteRecurring,
       removeAccount,
       setCalendarVisible,
       syncNow,
       updateEvent,
+      updateRecurring,
     }),
-    [addAccount, createEvent, deleteEvent, removeAccount, setCalendarVisible, syncNow, updateEvent],
+    [
+      addAccount,
+      createEvent,
+      deleteEvent,
+      deleteRecurring,
+      removeAccount,
+      setCalendarVisible,
+      syncNow,
+      updateEvent,
+      updateRecurring,
+    ],
   );
 };
 

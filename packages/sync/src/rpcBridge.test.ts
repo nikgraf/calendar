@@ -41,6 +41,7 @@ const stubHandlers: BackendHandlers = {
   addAccount: notStubbed,
   createEvent: notStubbed,
   deleteEvent: () => Effect.void,
+  deleteRecurring: () => Effect.void,
   getEventsInRange: () => Effect.succeed([]),
   listAccounts: () => Effect.succeed([account]),
   listCalendars: () => Effect.succeed([]),
@@ -48,6 +49,7 @@ const stubHandlers: BackendHandlers = {
   setCalendarVisible: () => Effect.void,
   syncNow: notStubbed,
   updateEvent: () => Effect.void,
+  updateRecurring: () => Effect.void,
 };
 
 const makeHarness = () => {

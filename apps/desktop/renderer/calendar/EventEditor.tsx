@@ -6,8 +6,15 @@ import {
   type CalendarInfo,
   type EventDraft,
   type EventRecord,
+  type RecurringScope,
 } from '@calendar/core';
 import { useState } from 'react';
+
+const SCOPES: ReadonlyArray<{ label: string; value: RecurringScope }> = [
+  { label: 'This event', value: 'instance' },
+  { label: 'This and following', value: 'following' },
+  { label: 'All events', value: 'series' },
+];
 
 export interface EditorSeed {
   /** Existing event (edit mode) or a prefilled slot (create mode). */
@@ -70,6 +77,7 @@ export function EventEditor({
       : `${String((seed.initialHour ?? 9) + 1).padStart(2, '0')}:00`,
   );
   const [location, setLocation] = useState(existing?.location ?? '');
+  const [scope, setScope] = useState<RecurringScope>('instance');
   const [error, setError] = useState<string | null>(null);
 
   const save = async () => {
@@ -95,7 +103,20 @@ export function EventEditor({
         setError('End must be after start.');
         return;
       }
-      if (existing) {
+      if (existing && isRecurring && existing.recurringEventId) {
+        await mutations.updateRecurring({
+          accountId,
+          calendarId,
+          changes: {
+            location: location || undefined,
+            title: title.trim(),
+            ...times,
+          },
+          masterId: existing.recurringEventId,
+          originalStartUtc: existing.originalStartUtc ?? existing.startUtc,
+          scope,
+        });
+      } else if (existing) {
         await mutations.updateEvent({
           accountId,
           calendarId,
@@ -129,11 +150,21 @@ export function EventEditor({
       return;
     }
     try {
-      await mutations.deleteEvent({
-        accountId: existing.accountId,
-        calendarId: existing.calendarId,
-        eventId: existing.id,
-      });
+      if (isRecurring && existing.recurringEventId) {
+        await mutations.deleteRecurring({
+          accountId: existing.accountId,
+          calendarId: existing.calendarId,
+          masterId: existing.recurringEventId,
+          originalStartUtc: existing.originalStartUtc ?? existing.startUtc,
+          scope,
+        });
+      } else {
+        await mutations.deleteEvent({
+          accountId: existing.accountId,
+          calendarId: existing.calendarId,
+          eventId: existing.id,
+        });
+      }
       onClose();
     } catch (error) {
       setError(String(error));
@@ -153,94 +184,110 @@ export function EventEditor({
       >
         <h2 className="mb-4 text-lg font-semibold">{existing ? 'Edit event' : 'New event'}</h2>
 
-        {isRecurring ? (
-          <p className="mb-4 rounded-lg bg-amber-50 p-3 text-sm text-amber-800">
-            Editing recurring events isn’t supported yet.
-          </p>
-        ) : (
-          <div className="flex flex-col gap-3">
-            {error ? (
-              <p className="rounded-lg bg-red-50 p-2 text-sm text-red-700">{error}</p>
-            ) : null}
-            <input
-              autoFocus
-              className={field}
-              onChange={(changeEvent) => setTitle(changeEvent.target.value)}
-              placeholder="Title"
-              value={title}
-            />
-            <select
-              className={field}
-              disabled={Boolean(existing)}
-              onChange={(changeEvent) => setCalendarKey(changeEvent.target.value)}
-              value={calendarKey}
+        <div className="flex flex-col gap-3">
+          {error ? <p className="rounded-lg bg-red-50 p-2 text-sm text-red-700">{error}</p> : null}
+          {isRecurring ? (
+            <div
+              aria-label="Apply to"
+              className="flex rounded-lg border border-neutral-200 bg-white p-0.5"
+              role="radiogroup"
             >
-              {writable.map((calendar) => (
-                <option
-                  key={`${calendar.accountId}:${calendar.id}`}
-                  value={`${calendar.accountId}:${calendar.id}`}
+              {SCOPES.map((option) => (
+                <button
+                  aria-checked={scope === option.value}
+                  className={`flex-1 rounded-md px-2 py-1 text-xs font-medium ${
+                    scope === option.value
+                      ? 'bg-blue-600 text-white'
+                      : 'text-neutral-600 hover:bg-neutral-100'
+                  }`}
+                  key={option.value}
+                  onClick={() => setScope(option.value)}
+                  role="radio"
+                  type="button"
                 >
-                  {calendar.summary}
-                </option>
+                  {option.label}
+                </button>
               ))}
-            </select>
-            <label className="flex items-center gap-2 text-sm">
-              <input
-                checked={isAllDay}
-                onChange={(changeEvent) => setIsAllDay(changeEvent.target.checked)}
-                type="checkbox"
-              />
-              All-day
-            </label>
-            <div className="flex gap-2">
-              <input
-                className={field}
-                onChange={(changeEvent) => setDate(changeEvent.target.value)}
-                type="date"
-                value={date}
-              />
-              {isAllDay ? null : (
-                <>
-                  <input
-                    className={field}
-                    onChange={(changeEvent) => setStartTime(changeEvent.target.value)}
-                    type="time"
-                    value={startTime}
-                  />
-                  <input
-                    className={field}
-                    onChange={(changeEvent) => setEndTime(changeEvent.target.value)}
-                    type="time"
-                    value={endTime}
-                  />
-                </>
-              )}
             </div>
+          ) : null}
+          <input
+            autoFocus
+            className={field}
+            onChange={(changeEvent) => setTitle(changeEvent.target.value)}
+            placeholder="Title"
+            value={title}
+          />
+          <select
+            className={field}
+            disabled={Boolean(existing)}
+            onChange={(changeEvent) => setCalendarKey(changeEvent.target.value)}
+            value={calendarKey}
+          >
+            {writable.map((calendar) => (
+              <option
+                key={`${calendar.accountId}:${calendar.id}`}
+                value={`${calendar.accountId}:${calendar.id}`}
+              >
+                {calendar.summary}
+              </option>
+            ))}
+          </select>
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              checked={isAllDay}
+              onChange={(changeEvent) => setIsAllDay(changeEvent.target.checked)}
+              type="checkbox"
+            />
+            All-day
+          </label>
+          <div className="flex gap-2">
             <input
               className={field}
-              onChange={(changeEvent) => setLocation(changeEvent.target.value)}
-              placeholder="Location (optional)"
-              value={location}
+              onChange={(changeEvent) => setDate(changeEvent.target.value)}
+              type="date"
+              value={date}
             />
-            {existing?.attendees?.length ? (
-              <div className="rounded-lg border border-neutral-200 bg-white p-3">
-                <p className="mb-1 text-xs font-medium text-neutral-400 uppercase">Invitees</p>
-                {existing.attendees.map((attendee) => (
-                  <p className="text-sm" key={attendee.email}>
-                    {attendee.displayName ?? attendee.email}
-                    <span className="ml-1 text-xs text-neutral-400">
-                      {attendee.responseStatus}
-                      {attendee.isOrganizer ? ' · organizer' : ''}
-                    </span>
-                  </p>
-                ))}
-              </div>
-            ) : null}
+            {isAllDay ? null : (
+              <>
+                <input
+                  className={field}
+                  onChange={(changeEvent) => setStartTime(changeEvent.target.value)}
+                  type="time"
+                  value={startTime}
+                />
+                <input
+                  className={field}
+                  onChange={(changeEvent) => setEndTime(changeEvent.target.value)}
+                  type="time"
+                  value={endTime}
+                />
+              </>
+            )}
           </div>
-        )}
+          <input
+            className={field}
+            onChange={(changeEvent) => setLocation(changeEvent.target.value)}
+            placeholder="Location (optional)"
+            value={location}
+          />
+          {existing?.attendees?.length ? (
+            <div className="rounded-lg border border-neutral-200 bg-white p-3">
+              <p className="mb-1 text-xs font-medium text-neutral-400 uppercase">Invitees</p>
+              {existing.attendees.map((attendee) => (
+                <p className="text-sm" key={attendee.email}>
+                  {attendee.displayName ?? attendee.email}
+                  <span className="ml-1 text-xs text-neutral-400">
+                    {attendee.responseStatus}
+                    {attendee.isOrganizer ? ' · organizer' : ''}
+                  </span>
+                </p>
+              ))}
+            </div>
+          ) : null}
+        </div>
 
         <div className="mt-5 flex items-center justify-between">
-          {existing && !isRecurring ? (
+          {existing ? (
             <button
               className="text-sm text-red-600 hover:underline"
               onClick={() => void remove()}
@@ -259,15 +306,13 @@ export function EventEditor({
             >
               Cancel
             </button>
-            {isRecurring ? null : (
-              <button
-                className="rounded-lg bg-blue-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-blue-500"
-                onClick={() => void save()}
-                type="button"
-              >
-                Save
-              </button>
-            )}
+            <button
+              className="rounded-lg bg-blue-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-blue-500"
+              onClick={() => void save()}
+              type="button"
+            >
+              Save
+            </button>
           </div>
         </div>
       </div>

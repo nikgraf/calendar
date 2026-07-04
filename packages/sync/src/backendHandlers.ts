@@ -35,6 +35,12 @@ export const commonBackendHandlers: Omit<BackendHandlers<CommonBackendServices>,
       yield* mutations.deleteEvent(params);
     }),
 
+  deleteRecurring: (params) =>
+    Effect.gen(function* () {
+      const mutations = yield* EventMutations;
+      yield* mutations.deleteRecurring(params);
+    }),
+
   getEventsInRange: ({ rangeEndUtc, rangeStartUtc }) =>
     Effect.gen(function* () {
       const events = yield* EventRepo;
@@ -79,6 +85,12 @@ export const commonBackendHandlers: Omit<BackendHandlers<CommonBackendServices>,
       const mutations = yield* EventMutations;
       yield* mutations.updateEvent(params);
     }),
+
+  updateRecurring: (params) =>
+    Effect.gen(function* () {
+      const mutations = yield* EventMutations;
+      yield* mutations.updateRecurring(params);
+    }),
 };
 
 /**
@@ -95,6 +107,7 @@ export const makeAppBackendLayer = <R>(options: {
     addAccount: () => mapToBackendError(options.handlers.addAccount(undefined)),
     createEvent: (payload) => mapToBackendError(options.handlers.createEvent(payload)),
     deleteEvent: (payload) => mapToBackendError(options.handlers.deleteEvent(payload)),
+    deleteRecurring: (payload) => mapToBackendError(options.handlers.deleteRecurring(payload)),
     getEventsInRange: (payload) => mapToBackendError(options.handlers.getEventsInRange(payload)),
     invalidations: () =>
       Stream.callback<ReadonlyArray<string>>((queue) =>
@@ -114,4 +127,5 @@ export const makeAppBackendLayer = <R>(options: {
       mapToBackendError(options.handlers.setCalendarVisible(payload)),
     syncNow: () => mapToBackendError(options.handlers.syncNow(undefined)),
     updateEvent: (payload) => mapToBackendError(options.handlers.updateEvent(payload)),
+    updateRecurring: (payload) => mapToBackendError(options.handlers.updateRecurring(payload)),
   });

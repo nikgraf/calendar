@@ -54,7 +54,8 @@ function DraggableEventBlock({
   const translateY = useSharedValue(0);
   const extraHeight = useSharedValue(0);
   const lifted = useSharedValue(0);
-  const draggable = !event.recurringEventId && !event.recurrence;
+  // Recurring instances drag too — the commit becomes a single-instance override.
+  const draggable = !event.recurrence;
 
   const commitMove = (translationPx: number) => {
     translateY.value = 0;
@@ -149,15 +150,26 @@ export function DayTimeline({
 }) {
   const scrollRef = useRef<ScrollView>(null);
   const nowMs = useNow();
-  const { updateEvent } = useBackendMutations();
+  const { updateEvent, updateRecurring } = useBackendMutations();
 
   const commitChange = (event: EventRecord, changes: { endUtc?: number; startUtc?: number }) => {
-    void updateEvent({
-      accountId: event.accountId,
-      calendarId: event.calendarId,
-      changes,
-      eventId: event.id,
-    });
+    if (event.recurringEventId) {
+      void updateRecurring({
+        accountId: event.accountId,
+        calendarId: event.calendarId,
+        changes,
+        masterId: event.recurringEventId,
+        originalStartUtc: event.originalStartUtc ?? event.startUtc,
+        scope: 'instance',
+      });
+    } else {
+      void updateEvent({
+        accountId: event.accountId,
+        calendarId: event.calendarId,
+        changes,
+        eventId: event.id,
+      });
+    }
   };
   const range = dayRange(date, timeZone);
   const isToday = Temporal.PlainDate.compare(date, Temporal.Now.plainDateISO(timeZone)) === 0;

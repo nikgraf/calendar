@@ -36,6 +36,9 @@ export const UpdateEventChanges = Schema.Struct({
   title: Schema.optional(Schema.String),
 });
 
+export const RecurringScope = Schema.Literals(['following', 'instance', 'series']);
+export type RecurringScope = Schema.Schema.Type<typeof RecurringScope>;
+
 /** Wire format of a failed backend call. */
 export class BackendError extends Schema.ErrorClass<BackendError>('core/BackendError')({
   message: Schema.String,
@@ -55,6 +58,16 @@ export class AppBackendRpcs extends RpcGroup.make(
       accountId: Schema.String,
       calendarId: Schema.String,
       eventId: Schema.String,
+    },
+  }),
+  Rpc.make('deleteRecurring', {
+    error: BackendError,
+    payload: {
+      accountId: Schema.String,
+      calendarId: Schema.String,
+      masterId: Schema.String,
+      originalStartUtc: Schema.Number,
+      scope: RecurringScope,
     },
   }),
   Rpc.make('getEventsInRange', {
@@ -98,19 +111,32 @@ export class AppBackendRpcs extends RpcGroup.make(
       eventId: Schema.String,
     },
   }),
+  Rpc.make('updateRecurring', {
+    error: BackendError,
+    payload: {
+      accountId: Schema.String,
+      calendarId: Schema.String,
+      changes: UpdateEventChanges,
+      masterId: Schema.String,
+      originalStartUtc: Schema.Number,
+      scope: RecurringScope,
+    },
+  }),
 ) {}
 
 export type BackendMethodName =
   | 'addAccount'
   | 'createEvent'
   | 'deleteEvent'
+  | 'deleteRecurring'
   | 'getEventsInRange'
   | 'listAccounts'
   | 'listCalendars'
   | 'removeAccount'
   | 'setCalendarVisible'
   | 'syncNow'
-  | 'updateEvent';
+  | 'updateEvent'
+  | 'updateRecurring';
 
 /** Payload/success types per method, derived from the rpc group. */
 type RpcByTag<Tag extends string> = Extract<
@@ -182,6 +208,7 @@ export const makeDirectBackendClient = <R>(
     addAccount: method('addAccount'),
     createEvent: method('createEvent'),
     deleteEvent: method('deleteEvent'),
+    deleteRecurring: method('deleteRecurring'),
     getEventsInRange: method('getEventsInRange'),
     listAccounts: method('listAccounts'),
     listCalendars: method('listCalendars'),
@@ -189,5 +216,6 @@ export const makeDirectBackendClient = <R>(
     setCalendarVisible: method('setCalendarVisible'),
     syncNow: method('syncNow'),
     updateEvent: method('updateEvent'),
+    updateRecurring: method('updateRecurring'),
   };
 };

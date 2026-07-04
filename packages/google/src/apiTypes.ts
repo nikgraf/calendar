@@ -92,6 +92,7 @@ export interface GcalEventInput {
   };
   readonly id?: string | undefined;
   readonly location?: string | undefined;
+  readonly recurrence?: ReadonlyArray<string> | undefined;
   readonly start: {
     date?: string | undefined;
     dateTime?: string | undefined;

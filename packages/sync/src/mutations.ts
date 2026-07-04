@@ -1,4 +1,12 @@
-import { EventRecord, PendingOp, type EventDraft } from '@calendar/core';
+import {
+  EventRecord,
+  googleInstanceId,
+  PendingOp,
+  remainingRecurrence,
+  truncateRecurrence,
+  type EventDraft,
+  type RecurringScope,
+} from '@calendar/core';
 import { EventRepo, PendingOpRepo } from '@calendar/db';
 import {
   generateEventId,
@@ -13,7 +21,11 @@ export class EventNotFoundError extends Data.TaggedError('EventNotFoundError')<{
   readonly eventId: string;
 }> {}
 
-/** Recurring series editing is out of scope for v1. */
+/**
+ * Raised when a plain edit targets a recurring master/override (those go
+ * through updateRecurring/deleteRecurring) or a recurring edit targets a
+ * non-recurring event.
+ */
 export class RecurringEditUnsupportedError extends Data.TaggedError(
   'RecurringEditUnsupportedError',
 )<{ readonly eventId: string }> {}
@@ -34,19 +46,41 @@ export interface UpdateEventParams {
   readonly eventId: string;
 }
 
+/** Identifies one occurrence of a recurring series and the edit's reach. */
+export interface RecurringTargetParams {
+  readonly accountId: string;
+  readonly calendarId: string;
+  readonly masterId: string;
+  readonly originalStartUtc: number;
+  readonly scope: RecurringScope;
+}
+
+export interface UpdateRecurringParams extends RecurringTargetParams {
+  readonly changes: UpdateEventParams['changes'];
+}
+
+type RecurringEditError = EventNotFoundError | RecurringEditUnsupportedError | SqlError;
+
 export interface EventMutationsShape {
   readonly createEvent: (draft: EventDraft) => Effect.Effect<EventRecord, SqlError>;
   readonly deleteEvent: (params: {
     readonly accountId: string;
     readonly calendarId: string;
     readonly eventId: string;
-  }) => Effect.Effect<void, EventNotFoundError | RecurringEditUnsupportedError | SqlError>;
+  }) => Effect.Effect<void, RecurringEditError>;
+  readonly deleteRecurring: (
+    params: RecurringTargetParams,
+  ) => Effect.Effect<void, RecurringEditError>;
   /** Drains due pending ops (serialized); safe to call concurrently. */
   readonly processPendingOps: () => Effect.Effect<void>;
-  readonly updateEvent: (
-    params: UpdateEventParams,
-  ) => Effect.Effect<void, EventNotFoundError | RecurringEditUnsupportedError | SqlError>;
+  readonly updateEvent: (params: UpdateEventParams) => Effect.Effect<void, RecurringEditError>;
+  readonly updateRecurring: (
+    params: UpdateRecurringParams,
+  ) => Effect.Effect<void, RecurringEditError>;
 }
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+const isoDate = (epochMs: number): string => new Date(epochMs).toISOString().slice(0, 10);
 
 /** Backoff for transient op failures: 30s · 2^attempts, capped at 30min. */
 const retryDelayMs = (attempts: number): number => Math.min(30_000 * 2 ** attempts, 30 * 60 * 1000);
@@ -70,6 +104,76 @@ const make: Effect.Effect<
     Effect.gen(function* () {
       yield* pendingOpRepo.enqueue(op);
       yield* Effect.forkDetach(processPendingOps());
+    });
+
+  const loadMaster = (accountId: string, calendarId: string, masterId: string) =>
+    Effect.gen(function* () {
+      const master = yield* eventRepo.getById(accountId, calendarId, masterId);
+      if (!master) {
+        return yield* Effect.fail(new EventNotFoundError({ eventId: masterId }));
+      }
+      const recurrence = master.recurrence;
+      if (!recurrence || recurrence.length === 0) {
+        return yield* Effect.fail(new RecurringEditUnsupportedError({ eventId: masterId }));
+      }
+      return { master, recurrence };
+    });
+
+  /** The occurrence as it would render, keyed by its Google instance id. */
+  const projectInstance = (master: EventRecord, originalStartUtc: number, now: number) => {
+    const durationDays =
+      master.isAllDay && master.startDate && master.endDate
+        ? Math.round((Date.parse(master.endDate) - Date.parse(master.startDate)) / DAY_MS)
+        : 0;
+    return new EventRecord({
+      ...master,
+      endDate: master.isAllDay ? isoDate(originalStartUtc + durationDays * DAY_MS) : undefined,
+      endUtc:
+        originalStartUtc +
+        (master.isAllDay ? durationDays * DAY_MS : master.endUtc - master.startUtc),
+      etag: null,
+      id: googleInstanceId(master.id, originalStartUtc, master.isAllDay),
+      originalStartUtc,
+      recurrence: undefined,
+      recurringEventId: master.id,
+      startDate: master.isAllDay ? isoDate(originalStartUtc) : undefined,
+      startUtc: originalStartUtc,
+      syncedAt: 0,
+      syncStatus: 'pending',
+      updatedAt: now,
+    });
+  };
+
+  /** Drops override rows at/after the split and cancels them remotely. */
+  const dropOverridesFrom = (
+    accountId: string,
+    calendarId: string,
+    masterId: string,
+    fromOriginalStartUtc: number,
+    now: number,
+  ) =>
+    Effect.gen(function* () {
+      const overrides = yield* eventRepo.listOverrides(accountId, calendarId, masterId);
+      for (const override of overrides) {
+        if ((override.originalStartUtc ?? override.startUtc) < fromOriginalStartUtc) {
+          continue;
+        }
+        yield* pendingOpRepo.removeForEvent(calendarId, override.id);
+        yield* eventRepo.deleteEvent(accountId, calendarId, override.id);
+        yield* enqueueAndKick(
+          new PendingOp({
+            accountId,
+            attempts: 0,
+            baseEtag: override.etag ?? undefined,
+            calendarId,
+            createdAt: now,
+            eventId: override.id,
+            id: generateEventId(),
+            kind: 'delete',
+            nextAttemptAt: 0,
+          }),
+        );
+      }
     });
 
   const applyOp = (op: PendingOp): Effect.Effect<'done' | 'retry', never> =>
@@ -241,6 +345,91 @@ const make: Effect.Effect<
         }
       }),
 
+    deleteRecurring: ({ accountId, calendarId, masterId, originalStartUtc, scope }) =>
+      Effect.gen(function* () {
+        const { master, recurrence } = yield* loadMaster(accountId, calendarId, masterId);
+        const now = yield* Clock.currentTimeMillis;
+
+        if (scope === 'instance') {
+          // A cancelled override shadows the generated occurrence locally;
+          // deleting the instance id cancels it server-side.
+          const instanceId = googleInstanceId(masterId, originalStartUtc, master.isAllDay);
+          const existing = yield* eventRepo.getById(accountId, calendarId, instanceId);
+          const tombstone = new EventRecord({
+            ...(existing ?? projectInstance(master, originalStartUtc, now)),
+            status: 'cancelled',
+            syncStatus: 'pending',
+            updatedAt: now,
+          });
+          yield* eventRepo.upsertMany([tombstone]);
+          yield* pendingOpRepo.removeForEvent(calendarId, instanceId);
+          yield* enqueueAndKick(
+            new PendingOp({
+              accountId,
+              attempts: 0,
+              baseEtag: existing?.etag ?? undefined,
+              calendarId,
+              createdAt: now,
+              eventId: instanceId,
+              id: generateEventId(),
+              kind: 'delete',
+              nextAttemptAt: 0,
+            }),
+          );
+          return;
+        }
+
+        if (scope === 'series' || originalStartUtc <= master.startUtc) {
+          // Deleting the master cascades to its exceptions server-side.
+          const overrides = yield* eventRepo.listOverrides(accountId, calendarId, masterId);
+          for (const override of overrides) {
+            yield* pendingOpRepo.removeForEvent(calendarId, override.id);
+            yield* eventRepo.deleteEvent(accountId, calendarId, override.id);
+          }
+          yield* pendingOpRepo.removeForEvent(calendarId, masterId);
+          yield* eventRepo.deleteEvent(accountId, calendarId, masterId);
+          yield* enqueueAndKick(
+            new PendingOp({
+              accountId,
+              attempts: 0,
+              baseEtag: master.etag ?? undefined,
+              calendarId,
+              createdAt: now,
+              eventId: masterId,
+              id: generateEventId(),
+              kind: 'delete',
+              nextAttemptAt: 0,
+            }),
+          );
+          return;
+        }
+
+        // this-and-following: end the series just before the occurrence.
+        const truncated = new EventRecord({
+          ...master,
+          recurrence: truncateRecurrence(recurrence, originalStartUtc, master.isAllDay),
+          syncStatus: 'pending',
+          updatedAt: now,
+        });
+        yield* eventRepo.upsertMany([truncated]);
+        yield* pendingOpRepo.removeForEvent(calendarId, masterId);
+        yield* enqueueAndKick(
+          new PendingOp({
+            accountId,
+            attempts: 0,
+            baseEtag: master.etag ?? undefined,
+            calendarId,
+            createdAt: now,
+            eventId: masterId,
+            id: generateEventId(),
+            kind: 'update',
+            nextAttemptAt: 0,
+            payload: truncated,
+          }),
+        );
+        yield* dropOverridesFrom(accountId, calendarId, masterId, originalStartUtc, now);
+      }),
+
     processPendingOps,
 
     updateEvent: ({ accountId, calendarId, changes, eventId }) =>
@@ -281,6 +470,161 @@ const make: Effect.Effect<
             kind: hasCreate ? 'create' : 'update',
             nextAttemptAt: 0,
             payload: merged,
+          }),
+        );
+      }),
+
+    updateRecurring: ({ accountId, calendarId, changes, masterId, originalStartUtc, scope }) =>
+      Effect.gen(function* () {
+        const { master, recurrence } = yield* loadMaster(accountId, calendarId, masterId);
+        const now = yield* Clock.currentTimeMillis;
+        const defined = Object.fromEntries(
+          Object.entries(changes).filter(([, value]) => value !== undefined),
+        );
+
+        if (scope === 'instance') {
+          // Materialize (or update) the exception under its instance id; the
+          // patch on that id creates the exception server-side.
+          const instanceId = googleInstanceId(masterId, originalStartUtc, master.isAllDay);
+          const existing = yield* eventRepo.getById(accountId, calendarId, instanceId);
+          const merged = new EventRecord({
+            ...(existing ?? projectInstance(master, originalStartUtc, now)),
+            ...defined,
+            originalStartUtc,
+            recurrence: undefined,
+            recurringEventId: masterId,
+            syncStatus: 'pending',
+            updatedAt: now,
+          });
+          yield* eventRepo.upsertMany([merged]);
+          yield* pendingOpRepo.removeForEvent(calendarId, instanceId);
+          yield* enqueueAndKick(
+            new PendingOp({
+              accountId,
+              attempts: 0,
+              baseEtag: existing?.etag ?? undefined,
+              calendarId,
+              createdAt: now,
+              eventId: instanceId,
+              id: generateEventId(),
+              kind: 'update',
+              nextAttemptAt: 0,
+              payload: merged,
+            }),
+          );
+          return;
+        }
+
+        const duration =
+          changes.startUtc !== undefined && changes.endUtc !== undefined
+            ? changes.endUtc - changes.startUtc
+            : master.endUtc - master.startUtc;
+
+        if (scope === 'series' || originalStartUtc <= master.startUtc) {
+          // Time edits shift the master (and thus every occurrence) by the
+          // occurrence's delta; all-day masters only take non-time fields.
+          const delta =
+            !master.isAllDay && changes.startUtc !== undefined
+              ? changes.startUtc - originalStartUtc
+              : 0;
+          const startUtc = master.startUtc + delta;
+          const merged = new EventRecord({
+            ...master,
+            description: changes.description ?? master.description,
+            endUtc: master.isAllDay ? master.endUtc : startUtc + duration,
+            location: changes.location ?? master.location,
+            startUtc: master.isAllDay ? master.startUtc : startUtc,
+            syncStatus: 'pending',
+            title: changes.title ?? master.title,
+            updatedAt: now,
+          });
+          yield* eventRepo.upsertMany([merged]);
+          yield* pendingOpRepo.removeForEvent(calendarId, masterId);
+          yield* enqueueAndKick(
+            new PendingOp({
+              accountId,
+              attempts: 0,
+              baseEtag: master.etag ?? undefined,
+              calendarId,
+              createdAt: now,
+              eventId: masterId,
+              id: generateEventId(),
+              kind: 'update',
+              nextAttemptAt: 0,
+              payload: merged,
+            }),
+          );
+          return;
+        }
+
+        // this-and-following: truncate the old series before the occurrence
+        // and start a new master at the (possibly re-timed) occurrence.
+        const newRecurrence = remainingRecurrence(
+          {
+            endDate: master.endDate,
+            endUtc: master.endUtc,
+            id: master.id,
+            isAllDay: master.isAllDay,
+            recurrence,
+            startDate: master.startDate,
+            startTimeZone: master.startTimeZone ?? 'UTC',
+            startUtc: master.startUtc,
+          },
+          originalStartUtc,
+        );
+        const truncated = new EventRecord({
+          ...master,
+          recurrence: truncateRecurrence(recurrence, originalStartUtc, master.isAllDay),
+          syncStatus: 'pending',
+          updatedAt: now,
+        });
+        yield* eventRepo.upsertMany([truncated]);
+        yield* pendingOpRepo.removeForEvent(calendarId, masterId);
+        yield* enqueueAndKick(
+          new PendingOp({
+            accountId,
+            attempts: 0,
+            baseEtag: master.etag ?? undefined,
+            calendarId,
+            createdAt: now,
+            eventId: masterId,
+            id: generateEventId(),
+            kind: 'update',
+            nextAttemptAt: 0,
+            payload: truncated,
+          }),
+        );
+        yield* dropOverridesFrom(accountId, calendarId, masterId, originalStartUtc, now);
+
+        const projected = projectInstance(master, originalStartUtc, now);
+        const startUtc =
+          !master.isAllDay && changes.startUtc !== undefined
+            ? changes.startUtc
+            : projected.startUtc;
+        const newMaster = new EventRecord({
+          ...projected,
+          ...defined,
+          endUtc: master.isAllDay ? projected.endUtc : startUtc + duration,
+          etag: null,
+          id: generateEventId(),
+          originalStartUtc: undefined,
+          recurrence: newRecurrence,
+          recurringEventId: undefined,
+          startUtc,
+          syncedAt: 0,
+        });
+        yield* eventRepo.upsertMany([newMaster]);
+        yield* enqueueAndKick(
+          new PendingOp({
+            accountId,
+            attempts: 0,
+            calendarId,
+            createdAt: now,
+            eventId: newMaster.id,
+            id: generateEventId(),
+            kind: 'create',
+            nextAttemptAt: 0,
+            payload: newMaster,
           }),
         );
       }),

@@ -20,6 +20,7 @@ const makeStubClient = () => {
     addAccount: () => fail('not stubbed'),
     createEvent: () => fail('not stubbed'),
     deleteEvent: () => fail('not stubbed'),
+    deleteRecurring: () => fail('not stubbed'),
     getEventsInRange: () =>
       Effect.sync(() => {
         calls.events += 1;
@@ -38,6 +39,7 @@ const makeStubClient = () => {
       }),
     syncNow: () => Effect.void,
     updateEvent: () => fail('not stubbed'),
+    updateRecurring: () => fail('not stubbed'),
   };
   return { calls, client };
 };

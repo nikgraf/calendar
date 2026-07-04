@@ -237,7 +237,7 @@ export function WeekView({
                         )
                       : event.endUtc + moveMinutes * MINUTE_MS;
                   const compact = (heightMinutes / 60) * HOUR_HEIGHT < 28;
-                  const draggable = !event.recurringEventId && !event.recurrence;
+                  const draggable = !event.recurrence;
                   return (
                     <div
                       className={`absolute touch-none overflow-hidden rounded-md px-1.5 py-0.5 select-none ${
