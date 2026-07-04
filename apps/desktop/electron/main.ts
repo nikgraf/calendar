@@ -2,6 +2,7 @@ import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { app, BrowserWindow, shell } from 'electron';
+import { updateElectronApp } from 'update-electron-app';
 import { startBackendHost } from './backendHost.ts';
 
 const rootPath = fileURLToPath(new URL('..', import.meta.url));
@@ -9,6 +10,17 @@ const rootPath = fileURLToPath(new URL('..', import.meta.url));
 // E2E hook: an isolated profile keeps test runs away from the real data.
 if (process.env.CALENDAR_USERDATA) {
   app.setPath('userData', process.env.CALENDAR_USERDATA);
+}
+
+// Auto-update from GitHub releases. Only meaningful in packaged builds and
+// once releases are published from a public repo with a signed app —
+// update-electron-app is a no-op otherwise, so it is safe to always wire.
+if (app.isPackaged) {
+  try {
+    updateElectronApp({ repo: 'nikgraf/calendar', updateInterval: '1 hour' });
+  } catch {
+    // Missing signature/releases must never break app startup.
+  }
 }
 
 const createWindow = () => {
