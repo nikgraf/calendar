@@ -1,10 +1,12 @@
 import { useBackendMutations } from '@calendar/app-state';
 import {
+  buildRecurrenceRule,
   plainDateToUtcMs,
   Temporal,
   toZonedDateTime,
   type CalendarInfo,
   type EventRecord,
+  type RecurrenceFrequency,
   type RecurringScope,
 } from '@calendar/core';
 import { useState } from 'react';
@@ -19,6 +21,14 @@ import {
   View,
 } from 'react-native';
 import { palette } from './theme.ts';
+
+const REPEATS: ReadonlyArray<{ label: string; value: RecurrenceFrequency | 'none' }> = [
+  { label: 'None', value: 'none' },
+  { label: 'Daily', value: 'daily' },
+  { label: 'Weekly', value: 'weekly' },
+  { label: 'Monthly', value: 'monthly' },
+  { label: 'Yearly', value: 'yearly' },
+];
 
 const SCOPES: ReadonlyArray<{ label: string; value: RecurringScope }> = [
   { label: 'This event', value: 'instance' },
@@ -74,6 +84,9 @@ export function EventEditSheet({
     existing && !existing.isAllDay ? timeString(existing.endUtc, timeZone) : '10:00',
   );
   const [scope, setScope] = useState<RecurringScope>('instance');
+  const [repeat, setRepeat] = useState<RecurrenceFrequency | 'none'>('none');
+  const [repeatInterval, setRepeatInterval] = useState('1');
+  const [repeatCount, setRepeatCount] = useState('');
   const [error, setError] = useState<string | null>(null);
 
   const save = async () => {
@@ -130,6 +143,19 @@ export function EventEditSheet({
               accountId,
               calendarId,
               isAllDay,
+              recurrence:
+                repeat === 'none'
+                  ? undefined
+                  : [
+                      buildRecurrenceRule(
+                        {
+                          count: repeatCount ? Number(repeatCount) || undefined : undefined,
+                          freq: repeat,
+                          interval: Number(repeatInterval) || 1,
+                        },
+                        isAllDay,
+                      ),
+                    ],
               title: title.trim(),
               ...times,
             }));
@@ -233,6 +259,53 @@ export function EventEditSheet({
               <Text style={styles.label}>All-day</Text>
               <Switch onValueChange={setIsAllDay} value={isAllDay} />
             </View>
+
+            {existing ? null : (
+              <>
+                <Text style={styles.label}>Repeat</Text>
+                <View style={styles.scopeRow}>
+                  {REPEATS.map((option) => (
+                    <Pressable
+                      key={option.value}
+                      onPress={() => setRepeat(option.value)}
+                      style={[styles.scopeChip, repeat === option.value && styles.scopeChipActive]}
+                    >
+                      <Text
+                        style={[
+                          styles.scopeLabel,
+                          repeat === option.value && styles.scopeLabelActive,
+                        ]}
+                      >
+                        {option.label}
+                      </Text>
+                    </Pressable>
+                  ))}
+                </View>
+                {repeat === 'none' ? null : (
+                  <View style={styles.timesRow}>
+                    <View style={styles.timeField}>
+                      <Text style={styles.label}>Every (n)</Text>
+                      <TextInput
+                        keyboardType="number-pad"
+                        onChangeText={setRepeatInterval}
+                        style={styles.input}
+                        value={repeatInterval}
+                      />
+                    </View>
+                    <View style={styles.timeField}>
+                      <Text style={styles.label}>Ends after (blank = never)</Text>
+                      <TextInput
+                        keyboardType="number-pad"
+                        onChangeText={setRepeatCount}
+                        placeholder="occurrences"
+                        style={styles.input}
+                        value={repeatCount}
+                      />
+                    </View>
+                  </View>
+                )}
+              </>
+            )}
 
             <Text style={styles.label}>Date (YYYY-MM-DD)</Text>
             <TextInput

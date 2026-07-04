@@ -1,14 +1,24 @@
 import { useBackendMutations } from '@calendar/app-state';
 import {
+  buildRecurrenceRule,
   plainDateToUtcMs,
   Temporal,
   toZonedDateTime,
   type CalendarInfo,
   type EventDraft,
   type EventRecord,
+  type RecurrenceFrequency,
   type RecurringScope,
 } from '@calendar/core';
 import { useState } from 'react';
+
+const REPEAT_OPTIONS: ReadonlyArray<{ label: string; value: RecurrenceFrequency | 'none' }> = [
+  { label: 'Does not repeat', value: 'none' },
+  { label: 'Daily', value: 'daily' },
+  { label: 'Weekly', value: 'weekly' },
+  { label: 'Monthly', value: 'monthly' },
+  { label: 'Yearly', value: 'yearly' },
+];
 
 const SCOPES: ReadonlyArray<{ label: string; value: RecurringScope }> = [
   { label: 'This event', value: 'instance' },
@@ -78,6 +88,11 @@ export function EventEditor({
   );
   const [location, setLocation] = useState(existing?.location ?? '');
   const [scope, setScope] = useState<RecurringScope>('instance');
+  const [repeat, setRepeat] = useState<RecurrenceFrequency | 'none'>('none');
+  const [repeatInterval, setRepeatInterval] = useState('1');
+  const [repeatEnds, setRepeatEnds] = useState<'after' | 'never' | 'on'>('never');
+  const [repeatCount, setRepeatCount] = useState('10');
+  const [repeatUntil, setRepeatUntil] = useState('');
   const [error, setError] = useState<string | null>(null);
 
   const save = async () => {
@@ -134,6 +149,20 @@ export function EventEditor({
           calendarId,
           isAllDay,
           location: location || undefined,
+          recurrence:
+            repeat === 'none'
+              ? undefined
+              : [
+                  buildRecurrenceRule(
+                    {
+                      count: repeatEnds === 'after' ? Number(repeatCount) || 1 : undefined,
+                      freq: repeat,
+                      interval: Number(repeatInterval) || 1,
+                      untilDate: repeatEnds === 'on' && repeatUntil ? repeatUntil : undefined,
+                    },
+                    isAllDay,
+                  ),
+                ],
           title: title.trim(),
           ...times,
         };
@@ -270,6 +299,77 @@ export function EventEditor({
             placeholder="Location (optional)"
             value={location}
           />
+          {existing ? null : (
+            <>
+              <div className="flex gap-2">
+                <select
+                  aria-label="Repeat"
+                  className={field}
+                  onChange={(changeEvent) =>
+                    setRepeat(changeEvent.target.value as RecurrenceFrequency | 'none')
+                  }
+                  value={repeat}
+                >
+                  {REPEAT_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+                {repeat === 'none' ? null : (
+                  <label className="flex items-center gap-1 text-sm whitespace-nowrap">
+                    every
+                    <input
+                      aria-label="Repeat interval"
+                      className={`${field} w-14`}
+                      min={1}
+                      onChange={(changeEvent) => setRepeatInterval(changeEvent.target.value)}
+                      type="number"
+                      value={repeatInterval}
+                    />
+                  </label>
+                )}
+              </div>
+              {repeat === 'none' ? null : (
+                <div className="flex gap-2">
+                  <select
+                    aria-label="Repeat ends"
+                    className={field}
+                    onChange={(changeEvent) =>
+                      setRepeatEnds(changeEvent.target.value as 'after' | 'never' | 'on')
+                    }
+                    value={repeatEnds}
+                  >
+                    <option value="never">Never ends</option>
+                    <option value="after">Ends after</option>
+                    <option value="on">Ends on date</option>
+                  </select>
+                  {repeatEnds === 'after' ? (
+                    <label className="flex items-center gap-1 text-sm whitespace-nowrap">
+                      <input
+                        aria-label="Occurrence count"
+                        className={`${field} w-16`}
+                        min={1}
+                        onChange={(changeEvent) => setRepeatCount(changeEvent.target.value)}
+                        type="number"
+                        value={repeatCount}
+                      />
+                      times
+                    </label>
+                  ) : null}
+                  {repeatEnds === 'on' ? (
+                    <input
+                      aria-label="Repeat until"
+                      className={field}
+                      onChange={(changeEvent) => setRepeatUntil(changeEvent.target.value)}
+                      type="date"
+                      value={repeatUntil}
+                    />
+                  ) : null}
+                </div>
+              )}
+            </>
+          )}
           {existing?.attendees?.length ? (
             <div className="rounded-lg border border-neutral-200 bg-white p-3">
               <p className="mb-1 text-xs font-medium text-neutral-400 uppercase">Invitees</p>

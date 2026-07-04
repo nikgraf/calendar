@@ -357,6 +357,41 @@ describe('calendar desktop e2e', () => {
     expect(events.some((event) => event.title === 'Coffee chat (moved)')).toBe(false);
   });
 
+  it('creates a recurring event through the repeat picker', async () => {
+    const { cdp } = app;
+    // A free slot: Gym column (today), 3 hours above the block.
+    const block = await cdp.locate('[title^="Gym session"]');
+    await cdp.click(block.x, block.y - 3 * HOUR_HEIGHT);
+    await cdp.waitFor(`document.body.textContent.includes('New event')`);
+    await setEditorTitle('Yoga flow');
+    // Pick "Daily", ending after 5 occurrences.
+    await cdp.eval(`(() => {
+      const setSelect = (label, value) => {
+        const select = document.querySelector('select[aria-label="' + label + '"]');
+        const setter = Object.getOwnPropertyDescriptor(window.HTMLSelectElement.prototype, 'value').set;
+        setter.call(select, value);
+        select.dispatchEvent(new Event('change', { bubbles: true }));
+      };
+      setSelect('Repeat', 'daily');
+      setSelect('Repeat ends', 'after');
+    })()`);
+    await cdp.eval(`(() => {
+      const input = document.querySelector('input[aria-label="Occurrence count"]');
+      const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+      setter.call(input, '5');
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    })()`);
+    await cdp.clickButtonWithText('Save');
+
+    const master = await waitForEvent(
+      (event) => event.title === 'Yoga flow' && event.recurrence !== undefined,
+    );
+    expect(master).toBeDefined();
+    expect(master!.recurrence).toEqual(['RRULE:FREQ=DAILY;COUNT=5']);
+    // The optimistic master expands into instances right away.
+    await cdp.waitFor(`document.querySelectorAll('[title^="Yoga flow"]').length > 1`);
+  });
+
   it('opens and closes the accounts modal', async () => {
     const { cdp } = app;
     await cdp.eval(

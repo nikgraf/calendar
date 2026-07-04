@@ -287,6 +287,7 @@ const make: Effect.Effect<
           id: generateEventId(),
           isAllDay: draft.isAllDay,
           location: draft.location,
+          recurrence: draft.recurrence,
           startDate: draft.startDate,
           startTimeZone: draft.startTimeZone,
           startUtc: draft.startUtc,

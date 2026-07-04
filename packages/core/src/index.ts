@@ -1,6 +1,7 @@
 export * from './backend.ts';
 export * from './layout/allDayLane.ts';
 export * from './layout/dayGrid.ts';
+export * from './recurrence/build.ts';
 export * from './recurrence/editing.ts';
 export * from './recurrence/expand.ts';
 export * from './recurrence/window.ts';

@@ -23,6 +23,60 @@
       cancelled). Scope picker in both editors; dragging a recurring
       instance commits a single-instance override.
 
+## Features
+
+- [x] Create recurring events — done: `buildRecurrenceRule` in core
+      (freq + interval + end-after-count / end-on-date; RFC 5545 defaults
+      keep the series on DTSTART's weekday/day-of-month), optional
+      `recurrence` on `EventDraft`, repeat pickers in both editors
+      (create mode). Custom BYDAY combinations stay out of scope for now.
+- [ ] RSVP on invitations — attendees render read-only in both editors.
+      Accept/decline/maybe is a PATCH updating your own attendee
+      `responseStatus`, so it fits the existing op queue with almost no new
+      machinery.
+- [ ] "Join meeting" detection — parse `conferenceData`/`hangoutLink`/
+      Zoom/Meet URLs in location/description and show a join button on the
+      block and in the editor. Very cheap, very Fantastical.
+
+## Robustness
+
+- [ ] Surface failed/pending ops — `PendingOp` retries with backoff but
+      failures are invisible (`markFailed` with 'transient failure'). A small
+      "N unsynced changes" indicator plus a way to see/discard a stuck op
+      would prevent silent data divergence. Same for 412 server-wins: it
+      currently discards your edit with no toast.
+- [ ] Re-auth flow when a refresh token dies — `Account.status` can go to
+      error, but there's no "Reconnect" affordance in
+      AccountsView/SettingsSheet that re-runs OAuth for the existing account.
+- [ ] Sync on wake/focus — the ~90s poll doesn't fire immediately when the
+      laptop wakes or the app regains focus (`powerMonitor` on Electron,
+      `AppState` on iOS). Cheap, and it's when staleness is most visible.
+- [ ] DST-aware drag/series math — `moveEventTimes` shifts absolute ms, so
+      dragging an event across a DST boundary shifts its wall time by an
+      hour; same for series-scope delta shifts. Fix is doing the arithmetic
+      in the event's zone via Temporal.
+- [ ] `eventsInRange` atom-family growth — the family is keyed by
+      `${start}:${end}` and never evicted, so long navigation sessions
+      accumulate atoms/subscriptions. Worth checking `Atom.family` eviction
+      options or normalizing keys to week boundaries (which also enables
+      prefetching week±1 for instant navigation).
+
+## Infrastructure
+
+- [ ] CI — nothing runs the gate automatically. GitHub Actions with
+      `pnpm check && typecheck && test`, plus the e2e suite on a macOS
+      runner (it needs the built Electron app but no display tricks on
+      macOS).
+- [ ] Electron auto-update — pairs with the signing todo;
+      `update-electron-app` + a Forge publisher is little work once
+      notarization exists.
+- [ ] iOS e2e via Maestro — the gap we noted when building the desktop
+      suite; gestures and the scope picker are only unit-covered on iOS.
+- [ ] Renderer error boundary + a log file — one uncaught render error
+      currently white-screens the window; and there's no persisted log to
+      debug a failed sync after the fact (Effect's Logger to a rotating
+      file in userData would do).
+
 ## Deferred architecture upgrades
 
 Both were deliberately deferred during the initial build and have clean

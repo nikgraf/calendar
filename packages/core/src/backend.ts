@@ -18,6 +18,8 @@ export const EventDraft = Schema.Struct({
   endUtc: Schema.Number,
   isAllDay: Schema.Boolean,
   location: Schema.optional(Schema.String),
+  /** RFC 5545 lines (RRULE/...) to create the event as a recurring master. */
+  recurrence: Schema.optional(Schema.Array(Schema.String)),
   startDate: Schema.optional(Schema.String),
   startTimeZone: Schema.optional(Schema.String),
   startUtc: Schema.Number,

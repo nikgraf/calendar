@@ -76,6 +76,33 @@ const listOps = Effect.gen(function* () {
 });
 
 describe('EventMutations recurring scopes', () => {
+  it.effect('createEvent with recurrence writes a master and syncs the rule', () =>
+    Effect.gen(function* () {
+      yield* seedMaster;
+      const mutations = yield* EventMutations;
+      const record = yield* mutations.createEvent({
+        accountId: 'acc-1',
+        calendarId: 'cal-1',
+        endUtc: Date.parse('2026-07-10T10:00:00Z'),
+        isAllDay: false,
+        recurrence: ['RRULE:FREQ=WEEKLY;INTERVAL=2'],
+        startTimeZone: 'UTC',
+        startUtc: Date.parse('2026-07-10T09:00:00Z'),
+        title: 'Biweekly',
+      });
+      expect(record.recurrence).toEqual(['RRULE:FREQ=WEEKLY;INTERVAL=2']);
+
+      const events = yield* EventRepo;
+      const window = yield* events.getWindow(0, plainDateToUtcMs('2030-01-01'));
+      expect(window.masters.some((event) => event.id === record.id)).toBe(true);
+
+      const ops = yield* listOps;
+      const create = ops.find((op) => op.eventId === record.id);
+      expect(create?.kind).toBe('create');
+      expect(create?.payload?.recurrence).toEqual(['RRULE:FREQ=WEEKLY;INTERVAL=2']);
+    }).pipe(Effect.provide(testLayer)),
+  );
+
   it.effect('instance update materializes an override under the Google instance id', () =>
     Effect.gen(function* () {
       yield* seedMaster;
