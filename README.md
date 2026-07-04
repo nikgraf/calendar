@@ -47,4 +47,7 @@ pnpm --filter @calendar/ios ios
 
 # Quality gates
 pnpm test && pnpm check && pnpm typecheck
+
+# Desktop e2e (build first)
+pnpm --filter @calendar/desktop build && pnpm test:e2e
 ```

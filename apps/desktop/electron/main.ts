@@ -6,6 +6,11 @@ import { startBackendHost } from './backendHost.ts';
 
 const rootPath = fileURLToPath(new URL('..', import.meta.url));
 
+// E2E hook: an isolated profile keeps test runs away from the real data.
+if (process.env.CALENDAR_USERDATA) {
+  app.setPath('userData', process.env.CALENDAR_USERDATA);
+}
+
 const createWindow = () => {
   const window = new BrowserWindow({
     height: 800,

@@ -9,7 +9,8 @@
     "fix": "vp check --fix",
     "ios": "pnpm --filter @calendar/ios ios",
     "test": "vp test",
-    "typecheck": "pnpm --recursive --parallel exec tsc --noEmit"
+    "typecheck": "pnpm --recursive --parallel exec tsc --noEmit",
+    "test:e2e": "E2E=1 vp test"
   },
   "devDependencies": {
     "@nkzw/oxlint-config": "^1.2.1",

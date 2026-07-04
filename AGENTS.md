@@ -20,6 +20,7 @@ Rules of thumb: I/O, orchestration, and validation are Effect (services + Layers
 
 - `pnpm check` / `pnpm fix` — lint + format (Oxlint/Oxfmt via vite-plus)
 - `pnpm test` — vitest (via vite-plus); Effect code uses `@effect/vitest` with TestClock
+- `pnpm test:e2e` — desktop e2e suite (`apps/desktop/e2e/`): launches the built Electron app with an isolated profile (`CALENDAR_USERDATA`) and drives it over CDP — covers rendering, view switching, editor CRUD, drag move/resize/cancel, recurring guard, visibility toggles. Requires `pnpm --filter @calendar/desktop build` first
 - `pnpm typecheck` — `tsc --noEmit` in every workspace package
 - `pnpm dev:desktop` — renderer dev server (pair with `pnpm --filter @calendar/desktop dev:app`)
 - `pnpm ios` — Expo run on iOS simulator

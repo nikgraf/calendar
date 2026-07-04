@@ -4,5 +4,5 @@
     "lib": ["es2023", "dom", "dom.iterable"],
     "types": ["node", "vite-plus/client"]
   },
-  "include": ["electron", "renderer", "tsdown.config.ts", "vite.config.ts"]
+  "include": ["e2e", "electron", "renderer", "tsdown.config.ts", "vite.config.ts"]
 }
