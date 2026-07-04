@@ -76,6 +76,7 @@ const seed = {
         }),
         new Attendee({ email: 'e2e@nikgraf.com', responseStatus: 'needsAction' }),
       ],
+      location: 'https://us02web.zoom.us/j/8881234567?pwd=e2e',
     }),
   ],
 };
@@ -401,6 +402,10 @@ describe('calendar desktop e2e', () => {
     const block = await cdp.locate('[title^="Design review"]');
     await cdp.click(block.x, block.y);
     await cdp.waitFor(`document.body.textContent.includes('Invitees')`);
+    // The zoom link in the location surfaces as a Join button.
+    await cdp.waitFor(
+      `[...document.querySelectorAll('button')].some(b => b.textContent?.trim() === 'Join meeting')`,
+    );
     await cdp.clickButtonWithText('Accept');
 
     const updated = await waitForEvent(

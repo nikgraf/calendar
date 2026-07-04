@@ -85,7 +85,15 @@ const init = Effect.gen(function* () {
     )`;
 });
 
+const addHangoutLink = Effect.gen(function* () {
+  const sql = yield* SqlClient;
+  yield* sql`ALTER TABLE events ADD COLUMN hangout_link TEXT`;
+});
+
 // The third tuple element is a *loader* whose result is the migration effect.
-export const migrations: ReadonlyArray<ResolvedMigration> = [[1, 'init', Effect.succeed(init)]];
+export const migrations: ReadonlyArray<ResolvedMigration> = [
+  [1, 'init', Effect.succeed(init)],
+  [2, 'add-hangout-link', Effect.succeed(addHangoutLink)],
+];
 
 export const migrationsLoader = Effect.succeed(migrations);

@@ -64,6 +64,7 @@ export interface EventRow {
   readonly recurring_event_id: string | null;
   readonly original_start_utc: number | null;
   readonly attendees: string | null;
+  readonly hangout_link: string | null;
   readonly organizer_email: string | null;
   readonly sync_status: string;
   readonly updated_at: number;
@@ -83,6 +84,7 @@ export const eventFromRow = (row: EventRow): EventRecord =>
     endDate: row.end_date ?? undefined,
     endUtc: row.end_utc,
     etag: row.etag,
+    hangoutLink: row.hangout_link ?? undefined,
     id: row.id,
     isAllDay: row.is_all_day === 1,
     location: row.location ?? undefined,
@@ -110,6 +112,7 @@ export const eventToRow = (event: EventRecord): EventRow => ({
   end_date: event.endDate ?? null,
   end_utc: event.endUtc,
   etag: event.etag,
+  hangout_link: event.hangoutLink ?? null,
   id: event.id,
   is_all_day: event.isAllDay ? 1 : 0,
   location: event.location ?? null,

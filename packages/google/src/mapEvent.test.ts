@@ -116,6 +116,41 @@ describe('mapGcalCalendar', () => {
   });
 });
 
+describe('meeting links', () => {
+  it('maps hangoutLink and falls back to the video entry point', () => {
+    const base = {
+      end: { dateTime: '2026-07-04T11:00:00Z' },
+      id: 'e1',
+      start: { dateTime: '2026-07-04T10:00:00Z', timeZone: 'UTC' },
+      status: 'confirmed',
+      summary: 'Call',
+    };
+    const context = {
+      accountId: 'a',
+      calendarId: 'c',
+      defaultTimeZone: 'UTC',
+      syncedAt: 1,
+    };
+    expect(
+      mapGcalEvent({ ...base, hangoutLink: 'https://meet.google.com/abc' }, context)?.hangoutLink,
+    ).toBe('https://meet.google.com/abc');
+    expect(
+      mapGcalEvent(
+        {
+          ...base,
+          conferenceData: {
+            entryPoints: [
+              { entryPointType: 'phone', uri: 'tel:+1' },
+              { entryPointType: 'video', uri: 'https://meet.google.com/xyz' },
+            ],
+          },
+        },
+        context,
+      )?.hangoutLink,
+    ).toBe('https://meet.google.com/xyz');
+  });
+});
+
 describe('toGcalEventInput', () => {
   it('round-trips a timed event through the input shape', () => {
     const record = mapGcalEvent(
