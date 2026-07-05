@@ -3,6 +3,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { launchApp, readEvents, readPendingOpsCount, type App } from './harness.ts';
 
 const HOUR_MS = 60 * 60 * 1000;
+const DAY_MS = 24 * HOUR_MS;
 const HOUR_HEIGHT = 48;
 
 /** Today at the given UTC hour. */
@@ -10,6 +11,15 @@ const todayAt = (hour: number, minute = 0): number => {
   const now = new Date();
   return Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), hour, minute);
 };
+
+// The daily series starts three days back so several instances are visible
+// in the current week no matter which weekday the suite runs on. All seeded
+// hours sit mid-day UTC, so local (CI: UTC, dev: CET/CEST) and UTC dates
+// agree and the Monday computed here matches the rendered week.
+const dailyStart = todayAt(7) - 3 * DAY_MS;
+const mondayAt7 = todayAt(7) - ((new Date().getUTCDay() + 6) % 7) * DAY_MS;
+/** Start of the earliest daily-series instance inside the rendered week. */
+const firstVisibleDaily = Math.max(dailyStart, mondayAt7);
 
 const account = new Account({
   createdAt: 1,
@@ -64,8 +74,9 @@ const seed = {
   events: [
     timedEvent('evt-standup', 'cal-work', 'Standup meeting', todayAt(9), todayAt(10)),
     timedEvent('evt-gym', 'cal-personal', 'Gym session', todayAt(15), todayAt(16)),
-    timedEvent('evt-daily', 'cal-work', 'Daily sync', todayAt(7), todayAt(7, 30), {
+    timedEvent('evt-daily', 'cal-work', 'Daily sync', dailyStart, dailyStart + 30 * 60 * 1000, {
       recurrence: ['RRULE:FREQ=DAILY;COUNT=14'],
+      startTimeZone: 'UTC',
     }),
     timedEvent('evt-review', 'cal-work', 'Design review', todayAt(13), todayAt(14), {
       attendees: [
@@ -262,14 +273,15 @@ describe('calendar desktop e2e', () => {
     const from = await cdp.locate('[title^="Daily sync"]');
     await cdp.drag(from, { x: from.x, y: from.y + 2 * HOUR_HEIGHT });
 
+    const expected = firstVisibleDaily + 2 * HOUR_MS;
     const override = await waitForEvent(
-      (event) => event.recurringEventId === 'evt-daily' && event.startUtc === todayAt(9),
+      (event) => event.recurringEventId === 'evt-daily' && event.startUtc === expected,
     );
     expect(override).toBeDefined();
     expect(override!.id).toContain('evt-daily_');
     // The master itself stays untouched.
     const events = await readEvents(app.userDataDir);
-    expect(events.find((event) => event.id === 'evt-daily')!.startUtc).toBe(todayAt(7));
+    expect(events.find((event) => event.id === 'evt-daily')!.startUtc).toBe(dailyStart);
   });
 
   it('edits a single occurrence through the editor scope selector', async () => {
@@ -300,7 +312,7 @@ describe('calendar desktop e2e', () => {
       (event) => event.id === 'evt-daily' && event.title === 'Daily standup',
     );
     expect(master).toBeDefined();
-    expect(master!.startUtc).toBe(todayAt(7));
+    expect(master!.startUtc).toBe(dailyStart);
     // The detached override keeps its own title.
     await cdp.waitFor(`!!document.querySelector('[title^="Daily sync (solo)"]')`);
   });
@@ -318,9 +330,12 @@ describe('calendar desktop e2e', () => {
       (event) => event.title === 'Daily standup v2' && event.recurrence !== undefined,
     );
     expect(newMaster).toBeDefined();
-    // Split at the 2nd occurrence: 1 of 14 consumed by the old master.
-    expect(newMaster!.recurrence).toEqual(['RRULE:FREQ=DAILY;COUNT=13']);
-    expect(newMaster!.startUtc).toBe(todayAt(7) + 24 * HOUR_MS);
+    // The split lands on the 2nd visible instance; earlier occurrences stay
+    // with the truncated master.
+    const splitStart = firstVisibleDaily + DAY_MS;
+    const consumed = (splitStart - dailyStart) / DAY_MS;
+    expect(newMaster!.recurrence).toEqual([`RRULE:FREQ=DAILY;COUNT=${14 - consumed}`]);
+    expect(newMaster!.startUtc).toBe(splitStart);
     const events = await readEvents(app.userDataDir);
     const truncated = events.find((event) => event.id === 'evt-daily');
     expect(truncated!.recurrence?.[0]).toContain('UNTIL=');
@@ -328,12 +343,17 @@ describe('calendar desktop e2e', () => {
 
   it('deletes a single occurrence of a series', async () => {
     const { cdp } = app;
+    const countBefore = await cdp.eval<number>(
+      `document.querySelectorAll('[title^="Daily standup v2"]').length`,
+    );
     const block = await cdp.locate('[title^="Daily standup v2"]');
     await cdp.click(block.x, block.y);
     await cdp.waitFor(`document.body.textContent.includes('This event')`);
     await cdp.clickButtonWithText('Delete');
-    // The occurrence vanishes; its master survives.
-    await cdp.waitFor(`!document.querySelector('[title^="Daily standup v2"]')`);
+    // One occurrence vanishes; the master survives.
+    await cdp.waitFor(
+      `document.querySelectorAll('[title^="Daily standup v2"]').length === ${countBefore - 1}`,
+    );
     const events = await readEvents(app.userDataDir);
     expect(events.some((event) => event.title === 'Daily standup v2')).toBe(true);
   });
@@ -393,8 +413,9 @@ describe('calendar desktop e2e', () => {
     );
     expect(master).toBeDefined();
     expect(master!.recurrence).toEqual(['RRULE:FREQ=DAILY;COUNT=5']);
-    // The optimistic master expands into instances right away.
-    await cdp.waitFor(`document.querySelectorAll('[title^="Yoga flow"]').length > 1`);
+    // The optimistic master expands right away; late-week runs may only
+    // have one in-window instance, so assert presence rather than count.
+    await cdp.waitFor(`document.querySelectorAll('[title^="Yoga flow"]').length >= 1`);
   });
 
   it('accepts an invitation through the RSVP buttons', async () => {
