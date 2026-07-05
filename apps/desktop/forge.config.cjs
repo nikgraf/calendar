@@ -64,5 +64,14 @@ module.exports = {
         }
       : {}),
   },
+  publishers: [
+    {
+      config: {
+        draft: true,
+        repository: { name: 'calendar', owner: 'nikgraf' },
+      },
+      name: '@electron-forge/publisher-github',
+    },
+  ],
   rebuildConfig: {},
 };

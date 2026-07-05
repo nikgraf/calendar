@@ -75,9 +75,11 @@
       check + typecheck + unit tests) and an `e2e` job (macos-14:
       electron-rebuild, desktop build, CDP e2e suite) on pushes to main
       and PRs.
-- [ ] Electron auto-update — pairs with the signing todo;
-      `update-electron-app` + a Forge publisher is little work once
-      notarization exists.
+- [x] Electron auto-update — done: `update-electron-app` runs in packaged
+      builds (GitHub releases, 1h interval) and the Forge GitHub publisher
+      is configured (draft releases). Becomes fully active once the app is
+      signed/notarized and releases are published (public repo or fed
+      token); a no-op until then.
 - [ ] iOS e2e via Maestro — the gap we noted when building the desktop
       suite; gestures and the scope picker are only unit-covered on iOS.
 - [ ] Renderer error boundary + a log file — one uncaught render error
