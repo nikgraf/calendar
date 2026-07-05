@@ -156,14 +156,20 @@ export class Cdp {
     }
   }
 
-  /** Center-ish point of the first element matching the selector. */
+  /**
+   * Center-ish point of the first element matching the selector. Scrolls the
+   * element into the middle of its container first — on CI the week grid can
+   * land scrolled differently, leaving early-morning blocks under the sticky
+   * header where mouse events would hit the header instead.
+   */
   async locate(
     selector: string,
-    options: { atBottom?: boolean } = {},
+    options: { atBottom?: boolean; index?: number } = {},
   ): Promise<{ x: number; y: number }> {
     const point = await this.waitFor<string>(`(() => {
-      const el = document.querySelector(${JSON.stringify(selector)});
+      const el = document.querySelectorAll(${JSON.stringify(selector)})[${options.index ?? 0}];
       if (!el) return '';
+      el.scrollIntoView({ block: 'center', inline: 'nearest' });
       const r = el.getBoundingClientRect();
       return JSON.stringify({
         x: Math.floor(r.x + r.width / 2),
