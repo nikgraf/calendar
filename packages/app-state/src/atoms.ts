@@ -53,11 +53,14 @@ const buildAtoms = (client: BackendClient) => {
     )
     .pipe(Atom.withReactivity([OPS_KEY]));
 
-  const eventsInRange = Atom.family((key: string) => {
-    const [start, end] = key.split(':', 2);
-    const rangeStartUtc = Number(start);
-    const rangeEndUtc = Number(end);
-    return runtime
+  // Bounded LRU instead of Atom.family: the family memoizes per key
+  // forever, so months of navigation would accumulate range atoms. The cap
+  // comfortably exceeds what is ever mounted at once; an evicted range that
+  // is revisited simply refetches.
+  const RANGE_CACHE_LIMIT = 32;
+  const rangeAtoms = new Map<string, ReturnType<typeof makeRangeAtom>>();
+  const makeRangeAtom = (rangeStartUtc: number, rangeEndUtc: number) =>
+    runtime
       .atom(
         Effect.gen(function* () {
           const backend = yield* AppBackend;
@@ -65,7 +68,25 @@ const buildAtoms = (client: BackendClient) => {
         }),
       )
       .pipe(Atom.withReactivity([EVENTS_KEY, CALENDARS_KEY]));
-  });
+  const eventsInRange = (key: string) => {
+    const cached = rangeAtoms.get(key);
+    if (cached) {
+      // Re-insert to refresh recency.
+      rangeAtoms.delete(key);
+      rangeAtoms.set(key, cached);
+      return cached;
+    }
+    const [start, end] = key.split(':', 2);
+    const atom = makeRangeAtom(Number(start), Number(end));
+    rangeAtoms.set(key, atom);
+    if (rangeAtoms.size > RANGE_CACHE_LIMIT) {
+      const oldest = rangeAtoms.keys().next().value;
+      if (oldest !== undefined) {
+        rangeAtoms.delete(oldest);
+      }
+    }
+    return atom;
+  };
 
   const mutation = <M extends keyof BackendClient>(
     method: M,
