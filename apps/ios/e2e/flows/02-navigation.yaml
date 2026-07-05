@@ -1,0 +1,15 @@
+appId: com.nikgraf.calendar
+name: View switching and date navigation
+---
+- launchApp
+- tapOn: 'Month'
+# Month view titles are "July 2026"-style.
+- assertVisible:
+    text: '.* 20\d\d'
+- tapOn: 'Day'
+- tapOn:
+    id: 'nav-next'
+- tapOn:
+    id: 'nav-prev'
+- tapOn: 'Today'
+- assertVisible: 'Day'
