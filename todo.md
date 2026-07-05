@@ -86,10 +86,11 @@
       `pnpm test:e2e:ios` runs them. Needs the Maestro CLI + dev-client on
       a simulator with Metro running; gesture (drag) flows remain future
       work — Maestro can't synthesize long-press pans reliably.
-- [ ] Renderer error boundary + a log file — one uncaught render error
-      currently white-screens the window; and there's no persisted log to
-      debug a failed sync after the fact (Effect's Logger to a rotating
-      file in userData would do).
+- [x] Renderer error boundary + a log file — done: ErrorBoundary with a
+      reload screen around the renderer root (errors forwarded to main via
+      a `logError` preload channel); `userData/logs/main.log` with 1 MB
+      rotation tees console.warn/error (where Effect's default logger
+      writes) plus fatal process events and renderer errors.
 
 ## Deferred architecture upgrades
 

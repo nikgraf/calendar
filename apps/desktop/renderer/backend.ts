@@ -7,6 +7,7 @@ import type { RpcClientError } from 'effect/unstable/rpc/RpcClientError';
 declare global {
   interface Window {
     calendarBridge: {
+      logError?: (text: string) => void;
       onRpcMessage: (listener: (data: string | Uint8Array) => void) => () => void;
       rpcSend: (data: string | Uint8Array) => void;
     };

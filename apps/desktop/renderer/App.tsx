@@ -2,6 +2,7 @@ import { BackendProvider, makeBackendAtoms, useBackendInvalidations } from '@cal
 import { CONFLICT_NOTICE_KEY } from '@calendar/db/keys';
 import { useEffect, useState } from 'react';
 import { CalendarApp } from './calendar/CalendarApp.tsx';
+import { ErrorBoundary } from './ErrorBoundary.tsx';
 import { backend, subscribeInvalidations } from './backend.ts';
 
 const backendAtoms = makeBackendAtoms(backend);
@@ -48,8 +49,10 @@ function Bridge() {
 
 export function App() {
   return (
-    <BackendProvider atoms={backendAtoms}>
-      <Bridge />
-    </BackendProvider>
+    <ErrorBoundary>
+      <BackendProvider atoms={backendAtoms}>
+        <Bridge />
+      </BackendProvider>
+    </ErrorBoundary>
   );
 }
