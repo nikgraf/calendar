@@ -36,9 +36,12 @@
       `isSelf`/account email, RSVPs survive content-edit coalescing.
       Accept/Maybe/Decline buttons in both editors; responding from a
       recurring instance answers for the whole series.
-- [ ] "Join meeting" detection — parse `conferenceData`/`hangoutLink`/
-      Zoom/Meet URLs in location/description and show a join button on the
-      block and in the editor. Very cheap, very Fantastical.
+- [x] "Join meeting" detection — done: `hangoutLink` mapped from Google
+      (`hangoutLink` or the conferenceData video entry point, new
+      `hangout_link` column via migration 2), `meetingUrl()` in core also
+      scans location/description for Meet/Zoom/Teams/Webex/Whereby URLs;
+      Join button in both editors (desktop opens via the system browser
+      through a window-open handler, iOS via `Linking`).
 
 ## Robustness
 

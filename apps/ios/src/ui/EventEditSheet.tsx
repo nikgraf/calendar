@@ -1,6 +1,7 @@
 import { useAccounts, useBackendMutations } from '@calendar/app-state';
 import {
   buildRecurrenceRule,
+  meetingUrl,
   plainDateToUtcMs,
   Temporal,
   toZonedDateTime,
@@ -12,6 +13,7 @@ import {
 } from '@calendar/core';
 import { useState } from 'react';
 import {
+  Linking,
   Modal,
   Pressable,
   ScrollView,
@@ -72,6 +74,7 @@ export function EventEditSheet({
   const ownAttendee = existing?.attendees?.find(
     (attendee) => attendee.isSelf === true || attendee.email.toLowerCase() === ownEmail,
   );
+  const joinUrl = existing ? meetingUrl(existing) : undefined;
   const writable = calendars.filter(
     (calendar) => calendar.accessRole === 'owner' || calendar.accessRole === 'writer',
   );
@@ -242,6 +245,11 @@ export function EventEditSheet({
 
         <ScrollView contentContainerStyle={styles.content}>
           {error ? <Text style={styles.error}>{error}</Text> : null}
+          {joinUrl ? (
+            <Pressable onPress={() => void Linking.openURL(joinUrl)} style={styles.joinButton}>
+              <Text style={styles.joinLabel}>Join meeting</Text>
+            </Pressable>
+          ) : null}
           {isRecurring ? (
             <View style={styles.scopeRow}>
               {SCOPES.map((option) => (
@@ -484,6 +492,18 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     paddingHorizontal: 12,
     paddingVertical: 10,
+  },
+  joinButton: {
+    alignItems: 'center',
+    backgroundColor: '#16a34a',
+    borderRadius: 10,
+    marginBottom: 12,
+    paddingVertical: 10,
+  },
+  joinLabel: {
+    color: '#ffffff',
+    fontSize: 15,
+    fontWeight: '700',
   },
   label: {
     color: palette.textMuted,

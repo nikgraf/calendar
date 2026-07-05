@@ -16,11 +16,24 @@ export const GcalAttendee = Schema.Struct({
   self: Schema.optional(Schema.Boolean),
 });
 
+const GcalConferenceData = Schema.Struct({
+  entryPoints: Schema.optional(
+    Schema.Array(
+      Schema.Struct({
+        entryPointType: Schema.optional(Schema.String),
+        uri: Schema.optional(Schema.String),
+      }),
+    ),
+  ),
+});
+
 export const GcalEvent = Schema.Struct({
   attendees: Schema.optional(Schema.Array(GcalAttendee)),
+  conferenceData: Schema.optional(GcalConferenceData),
   description: Schema.optional(Schema.String),
   end: Schema.optional(GcalTime),
   etag: Schema.optional(Schema.String),
+  hangoutLink: Schema.optional(Schema.String),
   id: Schema.String,
   location: Schema.optional(Schema.String),
   organizer: Schema.optional(

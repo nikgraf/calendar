@@ -1,7 +1,7 @@
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { app, BrowserWindow } from 'electron';
+import { app, BrowserWindow, shell } from 'electron';
 import { startBackendHost } from './backendHost.ts';
 
 const rootPath = fileURLToPath(new URL('..', import.meta.url));
@@ -28,6 +28,15 @@ const createWindow = () => {
   });
 
   window.once('ready-to-show', () => window.show());
+
+  // Renderer window.open (e.g. the Join-meeting button) goes to the system
+  // browser; no in-app popups.
+  window.webContents.setWindowOpenHandler(({ url }) => {
+    if (url.startsWith('https://')) {
+      void shell.openExternal(url);
+    }
+    return { action: 'deny' };
+  });
 
   // Debug/e2e hook: CALENDAR_CAPTURE=/path.png captures the window shortly
   // after load and quits.

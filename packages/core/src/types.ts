@@ -55,6 +55,8 @@ export class EventRecord extends Schema.Class<EventRecord>('EventRecord')({
   endDate: Schema.optional(Schema.String),
   endUtc: Schema.Number,
   etag: Schema.NullOr(Schema.String),
+  /** Video-call link from Google's conferenceData/hangoutLink. */
+  hangoutLink: Schema.optional(Schema.String),
   /** Google event id (base32hex; client-generated for local creates). */
   id: Schema.String,
   isAllDay: Schema.Boolean,

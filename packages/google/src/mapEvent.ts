@@ -56,6 +56,10 @@ export const mapGcalEvent = (
         }),
     );
 
+  const videoEntry = event.conferenceData?.entryPoints?.find(
+    (entry) => entry.entryPointType === 'video' && entry.uri,
+  );
+
   return new EventRecord({
     accountId: context.accountId,
     attendees: attendees && attendees.length > 0 ? attendees : undefined,
@@ -64,6 +68,7 @@ export const mapGcalEvent = (
     endDate: event.end?.date,
     endUtc,
     etag: event.etag ?? null,
+    hangoutLink: event.hangoutLink ?? videoEntry?.uri,
     id: event.id,
     isAllDay,
     location: event.location,

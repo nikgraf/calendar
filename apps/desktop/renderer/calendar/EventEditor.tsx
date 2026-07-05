@@ -1,6 +1,7 @@
 import { useAccounts, useBackendMutations } from '@calendar/app-state';
 import {
   buildRecurrenceRule,
+  meetingUrl,
   plainDateToUtcMs,
   Temporal,
   toZonedDateTime,
@@ -72,6 +73,7 @@ export function EventEditor({
   const ownAttendee = existing?.attendees?.find(
     (attendee) => attendee.isSelf === true || attendee.email.toLowerCase() === ownEmail,
   );
+  const joinUrl = existing ? meetingUrl(existing) : undefined;
   const writable = calendars.filter(
     (calendar) => calendar.accessRole === 'owner' || calendar.accessRole === 'writer',
   );
@@ -244,7 +246,18 @@ export function EventEditor({
         className="w-[420px] rounded-2xl bg-neutral-50 p-6 shadow-2xl"
         onClick={(clickEvent) => clickEvent.stopPropagation()}
       >
-        <h2 className="mb-4 text-lg font-semibold">{existing ? 'Edit event' : 'New event'}</h2>
+        <div className="mb-4 flex items-center justify-between">
+          <h2 className="text-lg font-semibold">{existing ? 'Edit event' : 'New event'}</h2>
+          {joinUrl ? (
+            <button
+              className="rounded-lg bg-green-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-green-500"
+              onClick={() => window.open(joinUrl, '_blank', 'noopener')}
+              type="button"
+            >
+              Join meeting
+            </button>
+          ) : null}
+        </div>
 
         <div className="flex flex-col gap-3">
           {error ? <p className="rounded-lg bg-red-50 p-2 text-sm text-red-700">{error}</p> : null}
