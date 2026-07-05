@@ -65,10 +65,12 @@ export function SettingsSheet({ onClose, visible }: { onClose: () => void; visib
               <View style={styles.accountHeader}>
                 <View style={styles.accountInfo}>
                   <Text style={styles.accountName}>{account.displayName ?? account.email}</Text>
-                  <Text style={styles.accountEmail}>
-                    {account.email}
-                    {account.status === 'reauth_required' ? ' — sign in again' : ''}
-                  </Text>
+                  <Text style={styles.accountEmail}>{account.email}</Text>
+                  {account.status === 'reauth_required' ? (
+                    <Pressable disabled={busy} onPress={() => void addAccount()}>
+                      <Text style={styles.reconnect}>Session expired — reconnect</Text>
+                    </Pressable>
+                  ) : null}
                 </View>
                 <Pressable onPress={() => void mutations.removeAccount({ accountId: account.id })}>
                   <Text style={styles.remove}>Remove</Text>
@@ -224,6 +226,12 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '700',
     marginBottom: 4,
+  },
+  reconnect: {
+    color: '#d97706',
+    fontSize: 13,
+    fontWeight: '600',
+    marginTop: 2,
   },
   remove: {
     color: '#dc2626',

@@ -291,6 +291,13 @@ const make: Effect.Effect<
             yield* eventRepo.deleteEvent(op.accountId, op.calendarId, op.eventId);
             return 'done' as const;
           }),
+        // Keep the op; flag the account so the UI offers a reconnect and
+        // the queue drains after the user signs in again.
+        ReauthRequiredError: () =>
+          Effect.as(
+            Effect.ignore(accountRepo.setStatus(op.accountId, 'reauth_required')),
+            'retry' as const,
+          ),
         SyncTokenExpiredError: () => Effect.succeed('done' as const),
       }),
       Effect.catchCause(() => Effect.succeed('retry' as const)),

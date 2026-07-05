@@ -29,7 +29,9 @@ export function Sidebar({
           <section className="mb-3" key={account.id}>
             <p className="px-2 py-1 text-[11px] font-medium tracking-wide text-neutral-400 uppercase">
               {account.email}
-              {account.status === 'reauth_required' ? ' — sign in again' : ''}
+              {account.status === 'reauth_required' ? (
+                <span className="text-amber-600"> — sign in again</span>
+              ) : null}
             </p>
             {calendars
               .filter((calendar) => calendar.accountId === account.id)

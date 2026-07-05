@@ -1,9 +1,17 @@
-import { CalendarInfo, plainDateToUtcMs, type EventDraft } from '@calendar/core';
-import { CalendarRepo, EventRepo, PendingOpRepo, reposLayer, runMigrations } from '@calendar/db';
+import { Account, CalendarInfo, plainDateToUtcMs, type EventDraft } from '@calendar/core';
+import {
+  AccountRepo,
+  CalendarRepo,
+  EventRepo,
+  PendingOpRepo,
+  reposLayer,
+  runMigrations,
+} from '@calendar/db';
 import {
   ApiUnavailableError,
   ConflictError,
   GoogleCalendarClient,
+  ReauthRequiredError,
   type GcalEvent,
   type GoogleCalendarClientShape,
 } from '@calendar/google';
@@ -36,6 +44,10 @@ const mutationsLayer = (client: GoogleCalendarClientShape) =>
   );
 
 const seedCalendar = Effect.gen(function* () {
+  const accounts = yield* AccountRepo;
+  yield* accounts.upsert(
+    new Account({ createdAt: 1, email: 'nik@nikgraf.com', id: 'acc-1', status: 'ok' }),
+  );
   const calendars = yield* CalendarRepo;
   yield* calendars.upsertMany([
     new CalendarInfo({
@@ -174,6 +186,23 @@ describe('EventMutations', () => {
 
       const ops = yield* (yield* PendingOpRepo).listAll();
       expect(ops).toHaveLength(0);
+    }).pipe(Effect.provide(mutationsLayer(client)));
+  });
+
+  it.effect('a 401 during an op flags the account and keeps the op queued', () => {
+    const client = stubClient({
+      insertEvent: () => Effect.fail(new ReauthRequiredError({ accountId: 'acc-1' })),
+    });
+    return Effect.gen(function* () {
+      yield* seedCalendar;
+      const mutations = yield* EventMutations;
+      yield* mutations.createEvent(draft);
+      yield* mutations.processPendingOps();
+
+      const accounts = yield* (yield* AccountRepo).list();
+      expect(accounts[0]!.status).toBe('reauth_required');
+      const ops = yield* (yield* PendingOpRepo).listAll();
+      expect(ops).toHaveLength(1);
     }).pipe(Effect.provide(mutationsLayer(client)));
   });
 
