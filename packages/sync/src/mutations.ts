@@ -1,4 +1,5 @@
 import {
+  applyWallClockDelta,
   Attendee,
   EventRecord,
   googleInstanceId,
@@ -621,12 +622,18 @@ const make: Effect.Effect<
 
         if (scope === 'series' || originalStartUtc <= master.startUtc) {
           // Time edits shift the master (and thus every occurrence) by the
-          // occurrence's delta; all-day masters only take non-time fields.
-          const delta =
+          // occurrence's wall-clock delta — immune to DST offset differences
+          // between the occurrence's date and the series start. All-day
+          // masters only take non-time fields.
+          const startUtc =
             !master.isAllDay && changes.startUtc !== undefined
-              ? changes.startUtc - originalStartUtc
-              : 0;
-          const startUtc = master.startUtc + delta;
+              ? applyWallClockDelta(
+                  master.startUtc,
+                  master.startTimeZone ?? 'UTC',
+                  originalStartUtc,
+                  changes.startUtc,
+                )
+              : master.startUtc;
           const merged = new EventRecord({
             ...master,
             description: changes.description ?? master.description,
