@@ -1,4 +1,4 @@
-import type { Account, CalendarInfo, EventRecord } from '@calendar/core';
+import type { Account, CalendarInfo, EventRecord, PendingOpSummary } from '@calendar/core';
 import { RegistryContext, useAtomSet, useAtomValue } from '@effect/atom-react';
 import { Option } from 'effect';
 import { AsyncResult } from 'effect/unstable/reactivity';
@@ -54,6 +54,10 @@ export const useAccounts = (): ReadonlyArray<Account> =>
 export const useCalendars = (): ReadonlyArray<CalendarInfo> =>
   unwrapList(useAtomValue(useBackendAtoms().calendars));
 
+/** Queue of local changes not yet acknowledged by Google. */
+export const usePendingOps = (): ReadonlyArray<PendingOpSummary> =>
+  unwrapList(useAtomValue(useBackendAtoms().pendingOps));
+
 export const useEventsInRange = (
   rangeStartUtc: number,
   rangeEndUtc: number,
@@ -69,6 +73,9 @@ export const useBackendMutations = () => {
   const createEvent = useAtomSet(mutations.createEvent, { mode: 'promise' });
   const deleteEvent = useAtomSet(mutations.deleteEvent, { mode: 'promise' });
   const deleteRecurring = useAtomSet(mutations.deleteRecurring, {
+    mode: 'promise',
+  });
+  const discardPendingOp = useAtomSet(mutations.discardPendingOp, {
     mode: 'promise',
   });
   const removeAccount = useAtomSet(mutations.removeAccount, {
@@ -92,6 +99,7 @@ export const useBackendMutations = () => {
       createEvent,
       deleteEvent,
       deleteRecurring,
+      discardPendingOp,
       removeAccount,
       respondToEvent,
       setCalendarVisible,
@@ -104,6 +112,7 @@ export const useBackendMutations = () => {
       createEvent,
       deleteEvent,
       deleteRecurring,
+      discardPendingOp,
       removeAccount,
       respondToEvent,
       setCalendarVisible,

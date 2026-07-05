@@ -1,4 +1,4 @@
-import { ACCOUNTS_KEY, CALENDARS_KEY, EVENTS_KEY } from '@calendar/db/keys';
+import { ACCOUNTS_KEY, CALENDARS_KEY, EVENTS_KEY, OPS_KEY } from '@calendar/db/keys';
 import type { BackendClient, BackendPayload, BackendSuccess } from '@calendar/core';
 import { Context, Effect, Layer } from 'effect';
 import { Atom, AsyncResult, Reactivity, type AtomRegistry } from 'effect/unstable/reactivity';
@@ -20,6 +20,7 @@ export interface BackendAtoms {
   readonly calendars: ReturnType<typeof buildAtoms>['calendars'];
   readonly eventsInRange: ReturnType<typeof buildAtoms>['eventsInRange'];
   readonly mutations: ReturnType<typeof buildAtoms>['mutations'];
+  readonly pendingOps: ReturnType<typeof buildAtoms>['pendingOps'];
 }
 
 const buildAtoms = (client: BackendClient) => {
@@ -42,6 +43,15 @@ const buildAtoms = (client: BackendClient) => {
       }),
     )
     .pipe(Atom.withReactivity([CALENDARS_KEY]));
+
+  const pendingOps = runtime
+    .atom(
+      Effect.gen(function* () {
+        const backend = yield* AppBackend;
+        return yield* backend.listPendingOps(undefined);
+      }),
+    )
+    .pipe(Atom.withReactivity([OPS_KEY]));
 
   const eventsInRange = Atom.family((key: string) => {
     const [start, end] = key.split(':', 2);
@@ -75,6 +85,7 @@ const buildAtoms = (client: BackendClient) => {
     createEvent: mutation('createEvent', [EVENTS_KEY]),
     deleteEvent: mutation('deleteEvent', [EVENTS_KEY]),
     deleteRecurring: mutation('deleteRecurring', [EVENTS_KEY]),
+    discardPendingOp: mutation('discardPendingOp', [OPS_KEY]),
     removeAccount: mutation('removeAccount', [ACCOUNTS_KEY, CALENDARS_KEY, EVENTS_KEY]),
     respondToEvent: mutation('respondToEvent', [EVENTS_KEY]),
     setCalendarVisible: mutation('setCalendarVisible', [CALENDARS_KEY, EVENTS_KEY]),
@@ -108,7 +119,7 @@ const buildAtoms = (client: BackendClient) => {
     };
   };
 
-  return { accounts, bindInvalidations, calendars, eventsInRange, mutations };
+  return { accounts, bindInvalidations, calendars, eventsInRange, mutations, pendingOps };
 };
 
 /** Builds the app's atom bundle around a platform BackendClient. Call once. */
