@@ -56,9 +56,10 @@
       running OAuth for the same account (stable id by email); desktop
       already had the AccountsView button, sidebar hint now reads as a
       warning.
-- [ ] Sync on wake/focus — the ~90s poll doesn't fire immediately when the
-      laptop wakes or the app regains focus (`powerMonitor` on Electron,
-      `AppState` on iOS). Cheap, and it's when staleness is most visible.
+- [x] Sync on wake/focus — done: Electron kicks `syncAll` on
+      `powerMonitor` resume/unlock and window focus; iOS on `AppState`
+      returning to active. Debounced to one kick per 15s; syncAll is
+      semaphore-serialized so overlapping kicks are safe.
 - [ ] DST-aware drag/series math — `moveEventTimes` shifts absolute ms, so
       dragging an event across a DST boundary shifts its wall time by an
       hour; same for series-scope delta shifts. Fix is doing the arithmetic

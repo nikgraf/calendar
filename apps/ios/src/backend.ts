@@ -155,3 +155,24 @@ export const startSync = (): void => {
     }),
   );
 };
+
+// Immediate refresh when the app returns to the foreground; syncAll is
+// semaphore-serialized so overlapping kicks are safe.
+let lastKickAt = 0;
+export const kickSync = (): void => {
+  const now = Date.now();
+  if (now - lastKickAt < 15_000) {
+    return;
+  }
+  lastKickAt = now;
+  runtime
+    .runPromise(
+      Effect.gen(function* () {
+        const engine = yield* SyncEngine;
+        yield* engine.syncAll();
+      }),
+    )
+    .catch(() => {
+      // Transient failures are retried by the regular schedule.
+    });
+};
