@@ -98,6 +98,12 @@ export const commonBackendHandlers: Omit<BackendHandlers<CommonBackendServices>,
       yield* mutations.respondToEvent(params);
     }),
 
+  setCalendarColor: (params) =>
+    Effect.gen(function* () {
+      const mutations = yield* EventMutations;
+      yield* mutations.setCalendarColor(params);
+    }),
+
   setCalendarVisible: ({ accountId, calendarId, isVisible }) =>
     Effect.gen(function* () {
       const calendarRepo = yield* CalendarRepo;
@@ -156,6 +162,7 @@ export const makeAppBackendLayer = <R>(options: {
     listPendingOps: () => mapToBackendError(options.handlers.listPendingOps(undefined)),
     removeAccount: (payload) => mapToBackendError(options.handlers.removeAccount(payload)),
     respondToEvent: (payload) => mapToBackendError(options.handlers.respondToEvent(payload)),
+    setCalendarColor: (payload) => mapToBackendError(options.handlers.setCalendarColor(payload)),
     setCalendarVisible: (payload) =>
       mapToBackendError(options.handlers.setCalendarVisible(payload)),
     syncNow: () => mapToBackendError(options.handlers.syncNow(undefined)),

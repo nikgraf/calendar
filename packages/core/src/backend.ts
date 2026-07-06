@@ -51,7 +51,7 @@ export const PendingOpSummary = Schema.Struct({
   createdAt: Schema.Number,
   eventId: Schema.String,
   id: Schema.String,
-  kind: Schema.Literals(['create', 'delete', 'rsvp', 'update']),
+  kind: Schema.Literals(['calendarColor', 'create', 'delete', 'rsvp', 'update']),
   lastError: Schema.optional(Schema.String),
   nextAttemptAt: Schema.Number,
   title: Schema.optional(Schema.String),
@@ -129,6 +129,14 @@ export class AppBackendRpcs extends RpcGroup.make(
       response: RsvpResponse,
     },
   }),
+  Rpc.make('setCalendarColor', {
+    error: BackendError,
+    payload: {
+      accountId: Schema.String,
+      calendarId: Schema.String,
+      colorHex: Schema.String,
+    },
+  }),
   Rpc.make('setCalendarVisible', {
     error: BackendError,
     payload: {
@@ -172,6 +180,7 @@ export type BackendMethodName =
   | 'listCalendars'
   | 'removeAccount'
   | 'respondToEvent'
+  | 'setCalendarColor'
   | 'setCalendarVisible'
   | 'syncNow'
   | 'updateEvent'
@@ -255,6 +264,7 @@ export const makeDirectBackendClient = <R>(
     listPendingOps: method('listPendingOps'),
     removeAccount: method('removeAccount'),
     respondToEvent: method('respondToEvent'),
+    setCalendarColor: method('setCalendarColor'),
     setCalendarVisible: method('setCalendarVisible'),
     syncNow: method('syncNow'),
     updateEvent: method('updateEvent'),

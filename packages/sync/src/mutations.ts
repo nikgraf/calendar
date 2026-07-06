@@ -1,8 +1,10 @@
 import {
   applyWallClockDelta,
   Attendee,
+  contrastingTextColor,
   EventRecord,
   googleInstanceId,
+  normalizeHexColor,
   PendingOp,
   remainingRecurrence,
   truncateRecurrence,
@@ -10,11 +12,12 @@ import {
   type RecurringScope,
   type RsvpResponse,
 } from '@calendar/core';
-import { AccountRepo, EventRepo, PendingOpRepo } from '@calendar/db';
+import { AccountRepo, CalendarRepo, EventRepo, PendingOpRepo } from '@calendar/db';
 import { CONFLICT_NOTICE_KEY } from '@calendar/db/keys';
 import {
   generateEventId,
   GoogleCalendarClient,
+  mapGcalCalendar,
   mapGcalEvent,
   toGcalEventInput,
 } from '@calendar/google';
@@ -39,6 +42,13 @@ export class RecurringEditUnsupportedError extends Data.TaggedError(
 export class NotAttendeeError extends Data.TaggedError('NotAttendeeError')<{
   readonly eventId: string;
 }> {}
+
+export class InvalidColorError extends Data.TaggedError('InvalidColorError')<{
+  readonly colorHex: string;
+}> {}
+
+/** Sentinel eventId keying calendar-color ops for coalescing. */
+export const CALENDAR_COLOR_EVENT_ID = '__calendar_color__';
 
 export interface UpdateEventParams {
   readonly accountId: string;
@@ -90,6 +100,12 @@ export interface EventMutationsShape {
     readonly eventId: string;
     readonly response: RsvpResponse;
   }) => Effect.Effect<void, EventNotFoundError | NotAttendeeError | SqlError>;
+  /** Recolors a calendar locally and writes it back to Google. */
+  readonly setCalendarColor: (params: {
+    readonly accountId: string;
+    readonly calendarId: string;
+    readonly colorHex: string;
+  }) => Effect.Effect<void, InvalidColorError | SqlError>;
   readonly updateEvent: (params: UpdateEventParams) => Effect.Effect<void, RecurringEditError>;
   readonly updateRecurring: (
     params: UpdateRecurringParams,
@@ -105,10 +121,11 @@ const retryDelayMs = (attempts: number): number => Math.min(30_000 * 2 ** attemp
 const make: Effect.Effect<
   EventMutationsShape,
   never,
-  AccountRepo | EventRepo | GoogleCalendarClient | PendingOpRepo | Reactivity
+  AccountRepo | CalendarRepo | EventRepo | GoogleCalendarClient | PendingOpRepo | Reactivity
 > = Effect.gen(function* () {
   const reactivity = yield* Reactivity;
   const accountRepo = yield* AccountRepo;
+  const calendarRepo = yield* CalendarRepo;
   const eventRepo = yield* EventRepo;
   const pendingOpRepo = yield* PendingOpRepo;
   const client = yield* GoogleCalendarClient;
@@ -198,6 +215,28 @@ const make: Effect.Effect<
   const applyOp = (op: PendingOp): Effect.Effect<'done' | 'retry', never> =>
     Effect.gen(function* () {
       switch (op.kind) {
+        case 'calendarColor': {
+          if (!op.colorHex) {
+            return 'done' as const;
+          }
+          // The response echoes the final colors; upserting it self-heals
+          // the case where a pull overwrote the optimistic value while
+          // this op sat in backoff. upsertMany never touches is_visible.
+          const entry = yield* client.patchCalendarListEntry({
+            accountId: op.accountId,
+            backgroundColor: op.colorHex,
+            calendarId: op.calendarId,
+            foregroundColor: contrastingTextColor(op.colorHex),
+          });
+          yield* calendarRepo.upsertMany([
+            mapGcalCalendar(entry, {
+              accountId: op.accountId,
+              colorFromId: () => undefined,
+              previousVisibility: undefined,
+            }),
+          ]);
+          return 'done' as const;
+        }
         case 'create': {
           if (!op.payload) {
             return 'done' as const;
@@ -284,8 +323,13 @@ const make: Effect.Effect<
         ConflictError: () =>
           Effect.as(Effect.ignore(reactivity.invalidate([CONFLICT_NOTICE_KEY])), 'done' as const),
         GoogleApiError: (error) =>
-          // 409 on insert = the idempotent create already landed.
-          error.status === 409 ? Effect.succeed('done' as const) : Effect.succeed('retry' as const),
+          // 409 on insert = the idempotent create already landed. Other
+          // 4xx are permanent (e.g. a rejected color patch) — retrying a
+          // bad request forever would pin the queue.
+          error.status === 409 ||
+          (error.status >= 400 && error.status < 500 && error.status !== 429)
+            ? Effect.succeed('done' as const)
+            : Effect.succeed('retry' as const),
         NotFoundError: () =>
           Effect.gen(function* () {
             // Deleted remotely — drop the local copy too.
@@ -532,6 +576,37 @@ const make: Effect.Effect<
         );
       }),
 
+    setCalendarColor: ({ accountId, calendarId, colorHex }) =>
+      Effect.gen(function* () {
+        const normalized = normalizeHexColor(colorHex);
+        if (!normalized) {
+          return yield* Effect.fail(new InvalidColorError({ colorHex }));
+        }
+        yield* calendarRepo.setColor(accountId, calendarId, normalized);
+        // Only the latest color needs to reach Google — scoped by account:
+        // the same shared calendar id can exist under several accounts.
+        const queued = yield* opsForEvent(calendarId, CALENDAR_COLOR_EVENT_ID);
+        for (const op of queued) {
+          if (op.accountId === accountId) {
+            yield* pendingOpRepo.remove(op.id);
+          }
+        }
+        const now = yield* Clock.currentTimeMillis;
+        yield* enqueueAndKick(
+          new PendingOp({
+            accountId,
+            attempts: 0,
+            calendarId,
+            colorHex: normalized,
+            createdAt: now,
+            eventId: CALENDAR_COLOR_EVENT_ID,
+            id: generateEventId(),
+            kind: 'calendarColor',
+            nextAttemptAt: 0,
+          }),
+        );
+      }),
+
     updateEvent: ({ accountId, calendarId, changes, eventId }) =>
       Effect.gen(function* () {
         const existing = yield* eventRepo.getById(accountId, calendarId, eventId);
@@ -745,6 +820,6 @@ export class EventMutations extends Context.Service<EventMutations, EventMutatio
   static readonly layer: Layer.Layer<
     EventMutations,
     never,
-    AccountRepo | EventRepo | GoogleCalendarClient | PendingOpRepo | Reactivity
+    AccountRepo | CalendarRepo | EventRepo | GoogleCalendarClient | PendingOpRepo | Reactivity
   > = Layer.effect(EventMutations)(make);
 }

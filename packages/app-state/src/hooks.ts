@@ -84,6 +84,9 @@ export const useBackendMutations = () => {
   const respondToEvent = useAtomSet(mutations.respondToEvent, {
     mode: 'promise',
   });
+  const setCalendarColor = useAtomSet(mutations.setCalendarColor, {
+    mode: 'promise',
+  });
   const setCalendarVisible = useAtomSet(mutations.setCalendarVisible, {
     mode: 'promise',
   });
@@ -102,6 +105,7 @@ export const useBackendMutations = () => {
       discardPendingOp,
       removeAccount,
       respondToEvent,
+      setCalendarColor,
       setCalendarVisible,
       syncNow,
       updateEvent,
@@ -115,6 +119,7 @@ export const useBackendMutations = () => {
       discardPendingOp,
       removeAccount,
       respondToEvent,
+      setCalendarColor,
       setCalendarVisible,
       syncNow,
       updateEvent,

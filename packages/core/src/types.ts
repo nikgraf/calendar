@@ -85,10 +85,12 @@ export class PendingOp extends Schema.Class<PendingOp>('PendingOp')({
   /** If-Match etag captured when the op was enqueued (update/delete). */
   baseEtag: Schema.optional(Schema.String),
   calendarId: Schema.String,
+  /** New calendar color for kind 'calendarColor' (lowercase #rrggbb). */
+  colorHex: Schema.optional(Schema.String),
   createdAt: Schema.Number,
   eventId: Schema.String,
   id: Schema.String,
-  kind: Schema.Literals(['create', 'delete', 'rsvp', 'update']),
+  kind: Schema.Literals(['calendarColor', 'create', 'delete', 'rsvp', 'update']),
   lastError: Schema.optional(Schema.String),
   nextAttemptAt: Schema.Number,
   /** Snapshot of the event to send (create/update). */

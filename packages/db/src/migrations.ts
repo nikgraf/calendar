@@ -90,10 +90,16 @@ const addHangoutLink = Effect.gen(function* () {
   yield* sql`ALTER TABLE events ADD COLUMN hangout_link TEXT`;
 });
 
+const addPendingOpColorHex = Effect.gen(function* () {
+  const sql = yield* SqlClient;
+  yield* sql`ALTER TABLE pending_ops ADD COLUMN color_hex TEXT`;
+});
+
 // The third tuple element is a *loader* whose result is the migration effect.
 export const migrations: ReadonlyArray<ResolvedMigration> = [
   [1, 'init', Effect.succeed(init)],
   [2, 'add-hangout-link', Effect.succeed(addHangoutLink)],
+  [3, 'add-pending-op-color-hex', Effect.succeed(addPendingOpColorHex)],
 ];
 
 export const migrationsLoader = Effect.succeed(migrations);

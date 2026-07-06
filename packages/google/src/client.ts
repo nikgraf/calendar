@@ -1,6 +1,7 @@
 import { Context, Effect, Layer, Schema } from 'effect';
 import { HttpClient, HttpClientRequest, type HttpClientResponse } from 'effect/unstable/http';
 import {
+  GcalCalendarListEntry,
   GcalCalendarListPage,
   GcalColors,
   GcalEvent,
@@ -62,6 +63,12 @@ export interface GoogleCalendarClientShape {
     readonly calendarId: string;
     readonly params: ListEventsParams;
   }) => Effect.Effect<GcalEventsPage, GoogleRequestError>;
+  readonly patchCalendarListEntry: (params: {
+    readonly accountId: string;
+    readonly backgroundColor: string;
+    readonly calendarId: string;
+    readonly foregroundColor: string;
+  }) => Effect.Effect<GcalCalendarListEntry, GoogleRequestError>;
   readonly patchEvent: (params: {
     readonly accountId: string;
     readonly baseEtag?: string | undefined;
@@ -271,6 +278,19 @@ const make: Effect.Effect<GoogleCalendarClientShape, never, HttpClient.HttpClien
             ),
           ),
           GcalEventsPage,
+          { calendarId },
+        ),
+
+      patchCalendarListEntry: ({ accountId, backgroundColor, calendarId, foregroundColor }) =>
+        requestJson(
+          accountId,
+          HttpClientRequest.patch(
+            `${BASE_URL}/users/me/calendarList/${encodeURIComponent(calendarId)}`,
+          ).pipe(
+            HttpClientRequest.setUrlParam('colorRgbFormat', 'true'),
+            HttpClientRequest.bodyJsonUnsafe({ backgroundColor, foregroundColor }),
+          ),
+          GcalCalendarListEntry,
           { calendarId },
         ),
 

@@ -1,4 +1,5 @@
 import { useAccounts, useBackendMutations, useCalendars, usePendingOps } from '@calendar/app-state';
+import { CALENDAR_PALETTE } from '@calendar/core';
 import { useState } from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { palette } from './theme.ts';
@@ -10,6 +11,8 @@ export function SettingsSheet({ onClose, visible }: { onClose: () => void; visib
   const pendingOps = usePendingOps();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /** `${accountId}:${calendarId}` of the row with the palette expanded. */
+  const [colorPickerFor, setColorPickerFor] = useState<string | null>(null);
 
   const addAccount = async () => {
     setBusy(true);
@@ -49,7 +52,8 @@ export function SettingsSheet({ onClose, visible }: { onClose: () => void; visib
               {pendingOps.map((op) => (
                 <View key={op.id} style={styles.pendingRow}>
                   <Text numberOfLines={1} style={styles.pendingLabel}>
-                    {op.kind} · {op.title ?? op.eventId}
+                    {op.kind === 'calendarColor' ? 'color' : op.kind} ·{' '}
+                    {op.kind === 'calendarColor' ? op.calendarId : (op.title ?? op.eventId)}
                     {op.attempts > 0 ? ` — retrying (${op.attempts}×)` : ''}
                   </Text>
                   <Pressable onPress={() => void mutations.discardPendingOp({ opId: op.id })}>
@@ -78,34 +82,77 @@ export function SettingsSheet({ onClose, visible }: { onClose: () => void; visib
               </View>
               {calendars
                 .filter((calendar) => calendar.accountId === account.id)
-                .map((calendar) => (
-                  <Pressable
-                    key={calendar.id}
-                    onPress={() =>
-                      void mutations.setCalendarVisible({
-                        accountId: calendar.accountId,
-                        calendarId: calendar.id,
-                        isVisible: !calendar.isVisible,
-                      })
-                    }
-                    style={styles.calendarRow}
-                  >
-                    <View
-                      style={[
-                        styles.swatch,
-                        {
-                          backgroundColor: calendar.isVisible ? calendar.colorHex : 'transparent',
-                          borderColor: calendar.colorHex,
-                        },
-                      ]}
-                    />
-                    <Text
-                      style={[styles.calendarName, !calendar.isVisible && styles.calendarHidden]}
-                    >
-                      {calendar.summary}
-                    </Text>
-                  </Pressable>
-                ))}
+                .map((calendar) => {
+                  const rowKey = `${calendar.accountId}:${calendar.id}`;
+                  return (
+                    <View key={calendar.id}>
+                      <View style={styles.calendarRow}>
+                        <Pressable
+                          onPress={() =>
+                            setColorPickerFor((current) => (current === rowKey ? null : rowKey))
+                          }
+                          testID={`calendar-color-${calendar.id}`}
+                        >
+                          <View
+                            style={[
+                              styles.swatch,
+                              {
+                                backgroundColor: calendar.isVisible
+                                  ? calendar.colorHex
+                                  : 'transparent',
+                                borderColor: calendar.colorHex,
+                              },
+                            ]}
+                          />
+                        </Pressable>
+                        <Pressable
+                          onPress={() =>
+                            void mutations.setCalendarVisible({
+                              accountId: calendar.accountId,
+                              calendarId: calendar.id,
+                              isVisible: !calendar.isVisible,
+                            })
+                          }
+                          style={styles.calendarToggle}
+                        >
+                          <Text
+                            style={[
+                              styles.calendarName,
+                              !calendar.isVisible && styles.calendarHidden,
+                            ]}
+                          >
+                            {calendar.summary}
+                          </Text>
+                        </Pressable>
+                      </View>
+                      {colorPickerFor === rowKey ? (
+                        <View style={styles.paletteRow}>
+                          {CALENDAR_PALETTE.map((hex) => (
+                            <Pressable
+                              key={hex}
+                              onPress={() => {
+                                setColorPickerFor(null);
+                                void mutations.setCalendarColor({
+                                  accountId: calendar.accountId,
+                                  calendarId: calendar.id,
+                                  colorHex: hex,
+                                });
+                              }}
+                            >
+                              <View
+                                style={[
+                                  styles.paletteSwatch,
+                                  { backgroundColor: hex },
+                                  hex === calendar.colorHex && styles.paletteSelected,
+                                ]}
+                              />
+                            </Pressable>
+                          ))}
+                        </View>
+                      ) : null}
+                    </View>
+                  );
+                })}
             </View>
           ))}
 
@@ -175,6 +222,9 @@ const styles = StyleSheet.create({
     gap: 8,
     paddingVertical: 5,
   },
+  calendarToggle: {
+    flex: 1,
+  },
   container: {
     backgroundColor: palette.background,
     flex: 1,
@@ -198,6 +248,24 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: 16,
     paddingVertical: 14,
+  },
+  paletteRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    paddingBottom: 8,
+    paddingLeft: 22,
+  },
+  paletteSelected: {
+    borderColor: '#2563eb',
+    borderWidth: 2,
+  },
+  paletteSwatch: {
+    borderColor: 'transparent',
+    borderRadius: 5,
+    borderWidth: 2,
+    height: 20,
+    width: 20,
   },
   pendingCard: {
     backgroundColor: '#fef3c7',

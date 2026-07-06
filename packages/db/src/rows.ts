@@ -142,6 +142,7 @@ export interface PendingOpRow {
   readonly next_attempt_at: number;
   readonly last_error: string | null;
   readonly created_at: number;
+  readonly color_hex: string | null;
 }
 
 export const pendingOpFromRow = (row: PendingOpRow): PendingOp =>
@@ -150,6 +151,7 @@ export const pendingOpFromRow = (row: PendingOpRow): PendingOp =>
     attempts: row.attempts,
     baseEtag: row.base_etag ?? undefined,
     calendarId: row.calendar_id,
+    colorHex: row.color_hex ?? undefined,
     createdAt: row.created_at,
     eventId: row.event_id,
     id: row.id,

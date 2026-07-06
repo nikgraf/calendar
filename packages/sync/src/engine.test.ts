@@ -71,6 +71,7 @@ const stubClient = (
     }
     return Effect.succeed(next);
   },
+  patchCalendarListEntry: () => Effect.die('unexpected calendarList patch'),
   patchEvent: () => Effect.die('not used'),
 });
 
