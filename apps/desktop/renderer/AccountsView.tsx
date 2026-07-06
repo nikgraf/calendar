@@ -1,5 +1,6 @@
 import { useAccounts, useBackendMutations, useCalendars } from '@calendar/app-state';
 import { useState } from 'react';
+import { PrivacySection } from './PrivacySection.tsx';
 
 export function AccountsView() {
   const accounts = useAccounts();
@@ -104,6 +105,8 @@ export function AccountsView() {
           </ul>
         </section>
       ))}
+
+      <PrivacySection />
     </div>
   );
 }

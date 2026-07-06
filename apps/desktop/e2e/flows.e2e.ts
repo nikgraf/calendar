@@ -1,6 +1,6 @@
 import { Account, Attendee, CalendarInfo, EventRecord } from '@calendar/core';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { launchApp, readEvents, readPendingOpsCount, type App } from './harness.ts';
+import { launchApp, readEvents, readPendingOpsCount, readSettings, type App } from './harness.ts';
 
 const HOUR_MS = 60 * 60 * 1000;
 const DAY_MS = 24 * HOUR_MS;
@@ -467,6 +467,44 @@ describe('calendar desktop e2e', () => {
       after = await readPendingOpsCount(app.userDataDir);
     }
     expect(after).toBeLessThan(count);
+  });
+
+  it('controls screen-sharing privacy from the settings modal', async () => {
+    const { cdp } = app;
+    await cdp.eval(
+      `[...document.querySelectorAll('button')].find(b => b.title === 'Accounts')?.click()`,
+    );
+    await cdp.waitFor(`document.body.textContent.includes('Add Google Account')`);
+
+    // Hidden is the default and nothing is persisted yet.
+    await cdp.waitFor(
+      `[...document.querySelectorAll('[role="radio"]')].some(b => b.textContent === 'Hidden' && b.getAttribute('aria-checked') === 'true')`,
+    );
+    expect(readSettings(app.userDataDir)['screenPrivacy']).toBeUndefined();
+
+    // Always visible persists.
+    await cdp.clickButtonWithText('Always visible');
+    const deadline = Date.now() + 10_000;
+    while (readSettings(app.userDataDir)['screenPrivacy'] !== 'visible' && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 200));
+    }
+    expect(readSettings(app.userDataDir)['screenPrivacy']).toBe('visible');
+
+    // The 10-minute pause is runtime-only: mode stays hidden on disk.
+    await cdp.clickButtonWithText('Hidden');
+    await cdp.clickButtonWithText('Visible for 10 min');
+    const state = await cdp.eval<{ mode: string; visibleUntil?: number }>(
+      `window.calendarBridge.privacyGet()`,
+    );
+    expect(state.mode).toBe('hidden');
+    expect(state.visibleUntil).toBeGreaterThan(Date.now());
+    await cdp.waitFor(`document.body.textContent.includes('min left')`);
+    expect(readSettings(app.userDataDir)['screenPrivacy']).toBe('hidden');
+
+    // Back to the default for the remaining flows.
+    await cdp.clickButtonWithText('Hidden');
+    await cdp.click(20, 400);
+    await cdp.waitFor(`!document.body.textContent.includes('Add Google Account')`);
   });
 
   it('opens and closes the accounts modal', async () => {
