@@ -1,9 +1,10 @@
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { app, BrowserWindow, shell } from 'electron';
+import { app, BrowserWindow, ipcMain, shell } from 'electron';
 import { updateElectronApp } from 'update-electron-app';
 import { startBackendHost } from './backendHost.ts';
+import { initFileLogging, logRendererError } from './log.ts';
 
 const rootPath = fileURLToPath(new URL('..', import.meta.url));
 
@@ -11,6 +12,11 @@ const rootPath = fileURLToPath(new URL('..', import.meta.url));
 if (process.env.CALENDAR_USERDATA) {
   app.setPath('userData', process.env.CALENDAR_USERDATA);
 }
+
+initFileLogging(app.getPath('userData'));
+ipcMain.on('renderer-error', (_event, text: unknown) => {
+  logRendererError(String(text));
+});
 
 // Auto-update from GitHub releases. Only meaningful in packaged builds and
 // once releases are published from a public repo with a signed app —
