@@ -88,7 +88,7 @@ function CalendarScreen() {
           {title}
         </Text>
         <View style={styles.headerActions}>
-          <Pressable onPress={() => step(-1)} style={styles.navButton}>
+          <Pressable onPress={() => step(-1)} style={styles.navButton} testID="nav-prev">
             <Text style={styles.navLabel}>‹</Text>
           </Pressable>
           <Pressable
@@ -97,13 +97,21 @@ function CalendarScreen() {
           >
             <Text style={styles.todayLabel}>Today</Text>
           </Pressable>
-          <Pressable onPress={() => step(1)} style={styles.navButton}>
+          <Pressable onPress={() => step(1)} style={styles.navButton} testID="nav-next">
             <Text style={styles.navLabel}>›</Text>
           </Pressable>
-          <Pressable onPress={() => setEditSeed({ initialDate: focused })} style={styles.navButton}>
+          <Pressable
+            onPress={() => setEditSeed({ initialDate: focused })}
+            style={styles.navButton}
+            testID="add-event"
+          >
             <Text style={styles.addLabel}>＋</Text>
           </Pressable>
-          <Pressable onPress={() => setShowSettings(true)} style={styles.navButton}>
+          <Pressable
+            onPress={() => setShowSettings(true)}
+            style={styles.navButton}
+            testID="open-settings"
+          >
             <Text style={styles.navLabel}>⚙</Text>
           </Pressable>
         </View>

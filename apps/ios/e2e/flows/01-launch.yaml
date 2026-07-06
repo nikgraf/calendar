@@ -1,0 +1,7 @@
+appId: com.nikgraf.calendar
+name: App launches to the day view
+---
+- launchApp
+- assertVisible: 'Today'
+- assertVisible: 'Day'
+- assertVisible: 'Month'

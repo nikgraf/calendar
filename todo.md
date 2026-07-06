@@ -80,8 +80,12 @@
       is configured (draft releases). Becomes fully active once the app is
       signed/notarized and releases are published (public repo or fed
       token); a no-op until then.
-- [ ] iOS e2e via Maestro — the gap we noted when building the desktop
-      suite; gestures and the scope picker are only unit-covered on iOS.
+- [x] iOS e2e via Maestro — done: four flows in `apps/ios/e2e/flows/`
+      (launch, view switching/navigation, new-event sheet incl. repeat
+      picker, accounts sheet) with testIDs on the icon-only header buttons;
+      `pnpm test:e2e:ios` runs them. Needs the Maestro CLI + dev-client on
+      a simulator with Metro running; gesture (drag) flows remain future
+      work — Maestro can't synthesize long-press pans reliably.
 - [ ] Renderer error boundary + a log file — one uncaught render error
       currently white-screens the window; and there's no persisted log to
       debug a failed sync after the fact (Effect's Logger to a rotating

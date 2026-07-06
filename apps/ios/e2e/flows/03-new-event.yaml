@@ -1,0 +1,12 @@
+appId: com.nikgraf.calendar
+name: New-event sheet opens with the repeat picker
+---
+- launchApp
+- tapOn:
+    id: 'add-event'
+- assertVisible: 'New Event'
+- assertVisible: 'Repeat'
+- tapOn: 'Daily'
+- assertVisible: 'Every (n)'
+- tapOn: 'Cancel'
+- assertVisible: 'Today'

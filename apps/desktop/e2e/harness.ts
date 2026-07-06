@@ -306,9 +306,15 @@ export const launchApp = async (seed?: SeedData): Promise<App> => {
     cdp,
     stop: async () => {
       cdp.close();
+      // Wait for the process to actually exit — deleting the profile while
+      // Electron flushes it races into ENOTEMPTY on slower CI runners.
+      const exited = new Promise<void>((resolve) => {
+        child.once('exit', () => resolve());
+        setTimeout(resolve, 3000);
+      });
       child.kill();
-      await sleep(300);
-      rmSync(userDataDir, { force: true, recursive: true });
+      await exited;
+      rmSync(userDataDir, { force: true, maxRetries: 5, recursive: true, retryDelay: 200 });
     },
     userDataDir,
   };

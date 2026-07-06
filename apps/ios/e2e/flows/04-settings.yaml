@@ -1,0 +1,10 @@
+appId: com.nikgraf.calendar
+name: Accounts sheet opens and closes
+---
+- launchApp
+- tapOn:
+    id: 'open-settings'
+- assertVisible: 'Accounts'
+- assertVisible: 'Add Google Account'
+- tapOn: 'Done'
+- assertVisible: 'Today'
