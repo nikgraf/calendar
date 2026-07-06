@@ -1,5 +1,5 @@
 import { spawn, type ChildProcess } from 'node:child_process';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -49,6 +49,17 @@ export const seedDatabase = async (userDataDir: string, seed: SeedData): Promise
       yield* events.upsertMany(seed.events);
     }).pipe(Effect.provide(dbLayer)),
   );
+};
+
+export const readSettings = (userDataDir: string): Record<string, unknown> => {
+  try {
+    return JSON.parse(readFileSync(join(userDataDir, 'settings.json'), 'utf8')) as Record<
+      string,
+      unknown
+    >;
+  } catch {
+    return {};
+  }
 };
 
 export const readPendingOpsCount = async (userDataDir: string): Promise<number> => {

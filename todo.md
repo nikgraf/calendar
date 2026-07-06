@@ -43,6 +43,12 @@
       Join button in both editors (desktop opens via the system browser
       through a window-open handler, iOS via `Linking`).
 
+- [x] Screen-sharing privacy — done: the desktop window is excluded from
+      screen shares/recordings by default (`setContentProtection`, macOS
+      `NSWindowSharingNone`); Privacy section in the settings modal offers
+      Hidden / Visible for 10 min (runtime-only, fails closed on restart) /
+      Always visible (persisted in `userData/settings.json`).
+
 ## Robustness
 
 - [x] Surface failed/pending ops — done: reactive `OPS_KEY` on the op

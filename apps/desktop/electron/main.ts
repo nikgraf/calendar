@@ -5,6 +5,7 @@ import { app, BrowserWindow, ipcMain, shell } from 'electron';
 import { updateElectronApp } from 'update-electron-app';
 import { startBackendHost } from './backendHost.ts';
 import { initFileLogging, logRendererError } from './log.ts';
+import { initPrivacy, registerPrivacyWindow } from './privacy.ts';
 
 const rootPath = fileURLToPath(new URL('..', import.meta.url));
 
@@ -14,6 +15,7 @@ if (process.env.CALENDAR_USERDATA) {
 }
 
 initFileLogging(app.getPath('userData'));
+initPrivacy(app.getPath('userData'));
 ipcMain.on('renderer-error', (_event, text: unknown) => {
   logRendererError(String(text));
 });
@@ -46,6 +48,12 @@ const createWindow = () => {
   });
 
   window.once('ready-to-show', () => window.show());
+
+  // Hidden from screen shares by default; the CALENDAR_CAPTURE debug hook
+  // needs an unprotected window or its screenshot comes out black.
+  if (!process.env.CALENDAR_CAPTURE) {
+    registerPrivacyWindow(window);
+  }
 
   // Renderer window.open (e.g. the Join-meeting button) goes to the system
   // browser; no in-app popups.

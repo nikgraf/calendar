@@ -4,11 +4,19 @@ import { Context, Effect, Fiber, Layer, ManagedRuntime, Stream } from 'effect';
 import { RpcClient, RpcSerialization } from 'effect/unstable/rpc';
 import type { RpcClientError } from 'effect/unstable/rpc/RpcClientError';
 
+export interface PrivacyState {
+  readonly mode: 'hidden' | 'visible';
+  readonly visibleUntil?: number;
+}
+
 declare global {
   interface Window {
     calendarBridge: {
       logError?: (text: string) => void;
+      onPrivacyChanged: (listener: (state: PrivacyState) => void) => () => void;
       onRpcMessage: (listener: (data: string | Uint8Array) => void) => () => void;
+      privacyGet: () => Promise<PrivacyState>;
+      privacySet: (choice: 'hidden' | 'pause10m' | 'visible') => Promise<PrivacyState>;
       rpcSend: (data: string | Uint8Array) => void;
     };
   }
