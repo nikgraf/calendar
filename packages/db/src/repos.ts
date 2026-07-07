@@ -100,6 +100,11 @@ export interface CalendarRepoShape {
     accountId: string,
     keepIds: ReadonlyArray<string>,
   ) => Effect.Effect<void, SqlError>;
+  readonly setColor: (
+    accountId: string,
+    calendarId: string,
+    colorHex: string,
+  ) => Effect.Effect<void, SqlError>;
   readonly setVisible: (
     accountId: string,
     calendarId: string,
@@ -140,6 +145,13 @@ const makeCalendarRepo: Effect.Effect<CalendarRepoShape, never, Reactivity | Sql
               ? sql`DELETE FROM calendars WHERE account_id = ${accountId}`
               : sql`DELETE FROM calendars WHERE account_id = ${accountId}
                   AND id NOT IN ${sql.in(keepIds)}`,
+          ),
+        ),
+      setColor: (accountId, calendarId, colorHex) =>
+        invalidating(
+          Effect.asVoid(
+            sql`UPDATE calendars SET color_hex = ${colorHex}
+              WHERE account_id = ${accountId} AND id = ${calendarId}`,
           ),
         ),
       setVisible: (accountId, calendarId, isVisible) =>
@@ -364,12 +376,12 @@ const makePendingOpRepo: Effect.Effect<PendingOpRepoShape, never, Reactivity | S
           Effect.asVoid(sql`
           INSERT INTO pending_ops (id, account_id, calendar_id, kind, event_id,
                                    payload, base_etag, attempts, next_attempt_at,
-                                   last_error, created_at)
+                                   last_error, created_at, color_hex)
           VALUES (${op.id}, ${op.accountId}, ${op.calendarId}, ${op.kind},
                   ${op.eventId},
                   ${op.payload ? JSON.stringify(eventPayloadJson(op.payload)) : null},
                   ${op.baseEtag ?? null}, ${op.attempts}, ${op.nextAttemptAt},
-                  ${op.lastError ?? null}, ${op.createdAt})
+                  ${op.lastError ?? null}, ${op.createdAt}, ${op.colorHex ?? null})
         `),
         ),
       listAll: () =>

@@ -1,6 +1,14 @@
 import { Account, Attendee, CalendarInfo, EventRecord } from '@calendar/core';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { launchApp, readEvents, readPendingOpsCount, readSettings, type App } from './harness.ts';
+import {
+  launchApp,
+  readCalendars,
+  readEvents,
+  readPendingOps,
+  readPendingOpsCount,
+  readSettings,
+  type App,
+} from './harness.ts';
 
 const HOUR_MS = 60 * 60 * 1000;
 const DAY_MS = 24 * HOUR_MS;
@@ -442,6 +450,37 @@ describe('calendar desktop e2e', () => {
         .responseStatus,
     ).toBe('accepted');
     await cdp.clickButtonWithText('Cancel');
+  });
+
+  it('recolors a calendar through the sidebar picker', async () => {
+    const { cdp } = app;
+    const point = await cdp.locate('[aria-label="Change color: Personal"]');
+    await cdp.click(point.x, point.y);
+    await cdp.waitFor(`!!document.querySelector('[aria-label="Set color #16a765"]')`);
+    const swatch = await cdp.locate('[aria-label="Set color #16a765"]');
+    await cdp.click(swatch.x, swatch.y);
+
+    const deadline = Date.now() + 10_000;
+    let personal = (await readCalendars(app.userDataDir)).find(
+      (calendar) => calendar.summary === 'Personal',
+    );
+    while (personal?.colorHex !== '#16a765' && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      personal = (await readCalendars(app.userDataDir)).find(
+        (calendar) => calendar.summary === 'Personal',
+      );
+    }
+    expect(personal?.colorHex).toBe('#16a765');
+    // A write-back op is queued (no Google API in e2e) with the new color.
+    const colorOps = (await readPendingOps(app.userDataDir)).filter(
+      (op) => op.kind === 'calendarColor',
+    );
+    expect(colorOps).toHaveLength(1);
+    expect(colorOps[0]!.colorHex).toBe('#16a765');
+    // The event chip repaints from the calendars atom.
+    await cdp.waitFor(
+      `(() => { const el = document.querySelector('[title^="Gym session"]'); return el && getComputedStyle(el).backgroundColor === 'rgb(22, 167, 101)'; })()`,
+    );
   });
 
   it('surfaces unsynced changes and discards a stuck op', async () => {

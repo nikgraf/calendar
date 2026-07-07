@@ -62,6 +62,30 @@ export const readSettings = (userDataDir: string): Record<string, unknown> => {
   }
 };
 
+export const readCalendars = async (userDataDir: string): Promise<ReadonlyArray<CalendarInfo>> => {
+  const dbLayer = reposLayer.pipe(
+    Layer.provideMerge(SqliteClient.layer({ filename: join(userDataDir, 'calendar.db') })),
+    Layer.provideMerge(reactivityLayer),
+  );
+  return Effect.runPromise(
+    Effect.gen(function* () {
+      return yield* (yield* CalendarRepo).list();
+    }).pipe(Effect.provide(dbLayer)),
+  );
+};
+
+export const readPendingOps = async (userDataDir: string) => {
+  const dbLayer = reposLayer.pipe(
+    Layer.provideMerge(SqliteClient.layer({ filename: join(userDataDir, 'calendar.db') })),
+    Layer.provideMerge(reactivityLayer),
+  );
+  return Effect.runPromise(
+    Effect.gen(function* () {
+      return yield* (yield* PendingOpRepo).listAll();
+    }).pipe(Effect.provide(dbLayer)),
+  );
+};
+
 export const readPendingOpsCount = async (userDataDir: string): Promise<number> => {
   const dbLayer = reposLayer.pipe(
     Layer.provideMerge(SqliteClient.layer({ filename: join(userDataDir, 'calendar.db') })),

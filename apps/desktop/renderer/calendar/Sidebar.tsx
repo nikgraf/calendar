@@ -1,5 +1,6 @@
 import type { Account, CalendarInfo } from '@calendar/core';
 import { useBackendMutations } from '@calendar/app-state';
+import { CalendarColorButton } from './CalendarColorButton.tsx';
 import { SyncStatus } from './SyncStatus.tsx';
 
 export function Sidebar({
@@ -36,23 +37,23 @@ export function Sidebar({
             {calendars
               .filter((calendar) => calendar.accountId === account.id)
               .map((calendar) => (
-                <button
-                  className="flex w-full items-center gap-2 rounded-md px-2 py-1 text-left text-sm hover:bg-neutral-200/60"
+                <div
+                  className="flex w-full items-center gap-2 rounded-md px-2 py-1 hover:bg-neutral-200/60"
                   key={calendar.id}
-                  onClick={() => toggle(calendar)}
-                  type="button"
                 >
-                  <span
-                    className="inline-flex size-3.5 shrink-0 items-center justify-center rounded"
-                    style={{
-                      backgroundColor: calendar.isVisible ? calendar.colorHex : 'transparent',
-                      border: `2px solid ${calendar.colorHex}`,
-                    }}
-                  />
-                  <span className={`truncate ${calendar.isVisible ? '' : 'text-neutral-400'}`}>
-                    {calendar.summary}
-                  </span>
-                </button>
+                  <CalendarColorButton calendar={calendar} />
+                  <button
+                    className="min-w-0 flex-1 text-left text-sm"
+                    onClick={() => toggle(calendar)}
+                    type="button"
+                  >
+                    <span
+                      className={`block truncate ${calendar.isVisible ? '' : 'text-neutral-400'}`}
+                    >
+                      {calendar.summary}
+                    </span>
+                  </button>
+                </div>
               ))}
           </section>
         ))}

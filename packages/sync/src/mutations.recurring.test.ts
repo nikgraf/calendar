@@ -14,6 +14,7 @@ const stubClient: GoogleCalendarClientShape = {
   insertEvent: () => Effect.die('unexpected insert'),
   listCalendars: () => Effect.succeed({ items: [] }),
   listEvents: () => Effect.succeed({ items: [] }),
+  patchCalendarListEntry: () => Effect.die('unexpected calendarList patch'),
   patchEvent: () => Effect.die('unexpected patch'),
 };
 

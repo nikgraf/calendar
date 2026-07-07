@@ -36,6 +36,7 @@ const makeStubClient = () => {
     listPendingOps: () => Effect.succeed([]),
     removeAccount: () => Effect.void,
     respondToEvent: () => Effect.void,
+    setCalendarColor: () => Effect.void,
     setCalendarVisible: () =>
       Effect.sync(() => {
         calls.setVisible += 1;

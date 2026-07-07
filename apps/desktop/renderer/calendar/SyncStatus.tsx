@@ -2,6 +2,7 @@ import { useBackendMutations, usePendingOps } from '@calendar/app-state';
 import { useState } from 'react';
 
 const KIND_LABEL = {
+  calendarColor: 'Color',
   create: 'Create',
   delete: 'Delete',
   rsvp: 'RSVP',
@@ -32,7 +33,8 @@ export function SyncStatus() {
           {ops.map((op) => (
             <li className="flex items-center gap-2 px-3 py-1.5" key={op.id}>
               <span className="min-w-0 flex-1 truncate">
-                {KIND_LABEL[op.kind]} · {op.title ?? op.eventId}
+                {KIND_LABEL[op.kind]} ·{' '}
+                {op.kind === 'calendarColor' ? op.calendarId : (op.title ?? op.eventId)}
                 {op.attempts > 0 ? (
                   <span className="text-xs text-amber-700"> — retrying ({op.attempts}×)</span>
                 ) : null}

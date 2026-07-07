@@ -48,6 +48,53 @@
       `NSWindowSharingNone`); Privacy section in the settings modal offers
       Hidden / Visible for 10 min (runtime-only, fails closed on restart) /
       Always visible (persisted in `userData/settings.json`).
+- [ ] Sync Google Tasks — show tasks with due dates alongside events and
+      let them be checked off. Feasible via the separate Google Tasks API
+      (`tasks.googleapis.com`: task lists → tasks with `due`, `status`,
+      `notes`; complete via `tasks.patch`). Needs the additional
+      `auth/tasks` OAuth scope (re-consent), a local `tasks` table, and a
+      poll using `updatedMin` (the Tasks API has no syncTokens). Rendered
+      as chips in the all-day lane with a completion checkbox. Known API
+      limits to design around: `due` is date-only (the time portion is
+      discarded), and recurrence rules are NOT exposed — Google
+      materializes the next occurrence of a repeating task server-side
+      when the current one is completed, so repeating tasks "just work"
+      but can't be expanded locally like event RRULEs.
+- [x] Per-calendar colors — done: swatch in the desktop sidebar opens a
+      picker (Google's 24-color palette + native color input; palette
+      chips on iOS settings); optimistic local update, then write-back via
+      `calendarList.patch?colorRgbFormat=true` through a new
+      `calendarColor` op kind (account-scoped coalescing, response upsert
+      self-heals a backoff-window pull overwrite, invalid hex rejected,
+      4xx dropped instead of retried forever). Custom colors round-trip:
+      `mapGcalCalendar` already prefers `backgroundColor` over `colorId`.
+- [ ] Invitation autocomplete from device contacts (macOS/iOS) —
+      prerequisite for both autocomplete items: the editors currently
+      render attendees read-only, so attendee add/remove + Google's
+      `sendUpdates` param on patch/insert must land first. iOS is easy:
+      `expo-contacts` (permission prompt + prebuild). macOS is medium:
+      Electron has no contacts API, so a native module
+      (`node-mac-contacts`) in the main process plus the
+      `com.apple.security.personal-information.addressbook` entitlement
+      and a Contacts permission prompt — ties into the signing/
+      notarization follow-up.
+- [ ] Invitation autocomplete from Google contacts — feasible via the
+      People API: `people.connections.list` (saved contacts) plus
+      `otherContacts.list` ("people you've emailed" — this is what powers
+      Google Calendar's own suggestions). Needs `contacts.readonly` +
+      `contacts.other.readonly` scopes (re-consent) and the People API
+      enabled in the GCP project. Cache per-account locally and merge
+      with device contacts into one ranked typeahead.
+- [ ] Show contact birthdays — likely the cheapest of the batch: Google
+      exposes a built-in read-only Birthdays calendar
+      (`addressbook#contacts@group.v.calendar.google.com`) through the
+      normal calendarList, so if it's enabled in Google Calendar it may
+      already sync today. Work: verify it survives our sync (annual
+      recurrence, `eventType: 'birthday'`, read-only — the editor must
+      not offer edits), give it a 🎂 chip style, and expose it as a
+      toggleable calendar. Optional extension later: merge birthdays from
+      device contacts (`expo-contacts` exposes them) for people not in
+      Google contacts.
 
 ## Robustness
 

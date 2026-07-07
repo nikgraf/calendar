@@ -109,6 +109,7 @@ const buildAtoms = (client: BackendClient) => {
     discardPendingOp: mutation('discardPendingOp', [OPS_KEY]),
     removeAccount: mutation('removeAccount', [ACCOUNTS_KEY, CALENDARS_KEY, EVENTS_KEY]),
     respondToEvent: mutation('respondToEvent', [EVENTS_KEY]),
+    setCalendarColor: mutation('setCalendarColor', [CALENDARS_KEY]),
     setCalendarVisible: mutation('setCalendarVisible', [CALENDARS_KEY, EVENTS_KEY]),
     // The backend invalidates through the bridge as sync data lands.
     syncNow: mutation('syncNow', []),
