@@ -29,3 +29,9 @@ Rules of thumb: I/O, orchestration, and validation are Effect (services + Layers
 - `pnpm --filter @calendar/desktop package:app` — unsigned .app via Forge (signing/notarization activate via APPLE\_\* env vars)
 
 The full product plan lives in the repo owner's plan file; milestone tracking in session tasks.
+
+## Deep docs
+
+Start with `CLAUDE.md` (rules + map), then `docs/architecture.md`,
+`docs/effect-v4-notes.md`, and `docs/google-sync-and-testing.md`.
+`todo.md` is the roadmap and decision log.

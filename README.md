@@ -2,6 +2,10 @@
 
 A Fantastical-style Google Calendar client: iOS (Expo) + macOS (Electron), client-only, built on Effect v4. See `AGENTS.md` for architecture.
 
+**Docs:** `docs/architecture.md` (data flow, op queue, recurring model),
+`docs/effect-v4-notes.md` (Effect v4 beta gotchas),
+`docs/google-sync-and-testing.md` (verified API semantics, testing).
+
 **Privacy note:** the desktop window is hidden from screen shares and
 recordings by default — see the Privacy section in Settings (Hidden /
 Visible for 10 min / Always visible).
