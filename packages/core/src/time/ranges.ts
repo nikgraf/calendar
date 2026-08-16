@@ -15,6 +15,16 @@ export const dayRange = (date: Temporal.PlainDate, timeZone: string): UtcRange =
   startUtc: startOfDayMs(date, timeZone),
 });
 
+/** [start of `start`, start of `start + dayCount` days) — a rolling multi-day window. */
+export const daySpanRange = (
+  start: Temporal.PlainDate,
+  dayCount: number,
+  timeZone: string,
+): UtcRange => ({
+  endUtc: startOfDayMs(start.add({ days: dayCount }), timeZone),
+  startUtc: startOfDayMs(start, timeZone),
+});
+
 /** Monday-based week containing `date`. */
 export const weekStart = (date: Temporal.PlainDate): Temporal.PlainDate =>
   date.subtract({ days: date.dayOfWeek - 1 });

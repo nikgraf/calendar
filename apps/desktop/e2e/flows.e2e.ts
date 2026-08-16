@@ -187,6 +187,48 @@ describe('calendar desktop e2e', () => {
     await cdp.waitFor(`!!document.querySelector('[title^="Standup meeting"]')`);
   });
 
+  it('navigates days with a horizontal trackpad scroll', async () => {
+    const { cdp } = app;
+    const h1 = `(document.querySelector('h1')?.textContent ?? '')`;
+    const scrollTop = `Math.round(document.querySelector('.overflow-y-scroll')?.scrollTop ?? -1)`;
+    // A sustained swipe: enough total deltaX to pan past a full day column
+    // (day view columns are viewport-wide), with intra-gesture event gaps.
+    const wheelBurst = async (point: { x: number; y: number }): Promise<void> => {
+      for (let index = 0; index < 12; index += 1) {
+        await cdp.wheel(point.x, point.y, 240, 0);
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      }
+    };
+
+    await cdp.clickButtonWithText('day');
+    await cdp.waitFor(`!!document.querySelector('[title^="Standup meeting"]')`);
+    const point = await cdp.locate('.overflow-y-scroll');
+
+    // Vertical control: scrolls the grid, never navigates.
+    const dayTitle = await cdp.eval<string>(h1);
+    const scrollBefore = await cdp.eval<number>(scrollTop);
+    await cdp.wheel(point.x, point.y, 0, 120);
+    await cdp.waitFor(`${scrollTop} !== ${scrollBefore}`);
+    expect(await cdp.eval<string>(h1)).toBe(dayTitle);
+
+    // Day view: horizontal pan crosses into another day.
+    await wheelBurst(point);
+    await cdp.waitFor(`${h1} !== ${JSON.stringify(dayTitle)}`);
+
+    await cdp.clickButtonWithText('Today');
+    await cdp.clickButtonWithText('week');
+    const weekTitle = await cdp.waitFor<string>(h1);
+
+    // Week view: horizontal pan slides the rolling 7-day window.
+    await wheelBurst(point);
+    await cdp.waitFor(`${h1} !== ${JSON.stringify(weekTitle)}`);
+
+    // Today snaps back to the Monday-based week.
+    await cdp.clickButtonWithText('Today');
+    await cdp.waitFor(`${h1} === ${JSON.stringify(weekTitle)}`);
+    await cdp.waitFor(`!!document.querySelector('[title^="Standup meeting"]')`);
+  });
+
   it('creates an event through the slot-click editor', async () => {
     const { cdp } = app;
     // A free slot: same column as Standup, 3 hours below its block.
@@ -223,8 +265,12 @@ describe('calendar desktop e2e', () => {
     const { cdp } = app;
     const before = await eventStart('Standup meeting');
     const from = await cdp.locate('[title^="Standup meeting"]');
+    // The day strip is all equal-width day columns (buffer included).
     const dayWidth = await cdp.eval<number>(
-      `(document.querySelector('.relative.grid')?.getBoundingClientRect().width - 64) / 7`,
+      `(() => {
+        const strip = document.querySelector('.relative.grid');
+        return strip.getBoundingClientRect().width / strip.children.length;
+      })()`,
     );
     // Down 2 hours, right 1 day.
     await cdp.drag(from, {

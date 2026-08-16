@@ -68,6 +68,21 @@
       self-heals a backoff-window pull overwrite, invalid hex rejected,
       4xx dropped instead of retried forever). Custom colors round-trip:
       `mapGcalCalendar` already prefers `backgroundColor` over `colorId`.
+- [x] Horizontal trackpad scroll pans days (desktop day/week) — done:
+      continuous pan that follows the fingers 1:1, then eases to the
+      nearest day when the wheel goes quiet (Nik rejected discrete-step
+      snapping). Day columns render inside a clipped viewport as a wider
+      strip (±`PAN_BUFFER_DAYS` buffer columns, fetch range extended to
+      match) translated by a `--pan-x` CSS var written imperatively — no
+      React render per wheel event. Pure pan machine in
+      `core/gestures/wheelPan.ts` (axis lock per gesture, commit-on-day-
+      crossing with `compensate()` re-anchoring in a pre-paint layout
+      effect, snap-rounding on release); native non-passive listener
+      (React's delegated onWheel is passive, preventDefault needs it).
+      Week view is a rolling 7-day window via nullable `weekWindowStart` —
+      Today/view switches snap back to the Monday week, ‹ › keep ±7d.
+      `useEventsInRangeStable` holds the previous range's events while a
+      new range atom loads so panning never flashes empty.
 - [ ] Invitation autocomplete from device contacts (macOS/iOS) —
       prerequisite for both autocomplete items: the editors currently
       render attendees read-only, so attendee add/remove + Google's
