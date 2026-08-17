@@ -193,12 +193,7 @@ describe('calendar desktop e2e', () => {
     const scrollTop = `Math.round(document.querySelector('.overflow-y-scroll')?.scrollTop ?? -1)`;
     // A sustained swipe: enough total deltaX to pan past a full day column
     // (day view columns are viewport-wide), with intra-gesture event gaps.
-    const wheelBurst = async (point: { x: number; y: number }): Promise<void> => {
-      for (let index = 0; index < 12; index += 1) {
-        await cdp.wheel(point.x, point.y, 240, 0);
-        await new Promise((resolve) => setTimeout(resolve, 20));
-      }
-    };
+    const burst = { count: 12, deltaX: 240 };
 
     await cdp.clickButtonWithText('day');
     await cdp.waitFor(`!!document.querySelector('[title^="Standup meeting"]')`);
@@ -212,7 +207,7 @@ describe('calendar desktop e2e', () => {
     expect(await cdp.eval<string>(h1)).toBe(dayTitle);
 
     // Day view: horizontal pan crosses into another day.
-    await wheelBurst(point);
+    await cdp.wheelBurst('.overflow-y-scroll', burst);
     await cdp.waitFor(`${h1} !== ${JSON.stringify(dayTitle)}`);
 
     await cdp.clickButtonWithText('Today');
@@ -220,7 +215,7 @@ describe('calendar desktop e2e', () => {
     const weekTitle = await cdp.waitFor<string>(h1);
 
     // Week view: horizontal pan slides the rolling 7-day window.
-    await wheelBurst(point);
+    await cdp.wheelBurst('.overflow-y-scroll', burst);
     await cdp.waitFor(`${h1} !== ${JSON.stringify(weekTitle)}`);
 
     // Today snaps back to the Monday-based week.
@@ -336,6 +331,14 @@ describe('calendar desktop e2e', () => {
     // The master itself stays untouched.
     const events = await readEvents(app.userDataDir);
     expect(events.find((event) => event.id === 'evt-daily')!.startUtc).toBe(dailyStart);
+    // Wait for the override block to render at its new time — the next test
+    // clicks it, and a point computed before the re-render goes stale.
+    await cdp.waitFor(`(() => {
+      const fmt = new Intl.DateTimeFormat('en-US', { hour: 'numeric', minute: '2-digit' })
+        .format(new Date(${expected}));
+      return [...document.querySelectorAll('[title^="Daily sync"]')]
+        .some((el) => el.title.includes(fmt));
+    })()`);
   });
 
   it('edits a single occurrence through the editor scope selector', async () => {
@@ -397,6 +400,9 @@ describe('calendar desktop e2e', () => {
 
   it('deletes a single occurrence of a series', async () => {
     const { cdp } = app;
+    // The previous test asserts the split in the db; wait for the renamed
+    // blocks to render before counting them.
+    await cdp.waitFor(`document.querySelectorAll('[title^="Daily standup v2"]').length > 0`);
     const countBefore = await cdp.eval<number>(
       `document.querySelectorAll('[title^="Daily standup v2"]').length`,
     );
