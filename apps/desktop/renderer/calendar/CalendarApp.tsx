@@ -1,12 +1,12 @@
 import {
-  dayRange,
+  daySpanRange,
   monthGridRange,
+  PAN_BUFFER_DAYS,
   Temporal,
-  weekRange,
   weekStart,
   type UtcRange,
 } from '@calendar/core';
-import { useAccounts, useCalendars, useEventsInRange } from '@calendar/app-state';
+import { useAccounts, useCalendars, useEventsInRangeStable } from '@calendar/app-state';
 import { useMemo, useState } from 'react';
 import { AccountsView } from '../AccountsView.tsx';
 import { EventEditor, type EditorSeed } from './EventEditor.tsx';
@@ -17,10 +17,21 @@ import { WeekView } from './WeekView.tsx';
 
 type ViewKind = 'day' | 'month' | 'week';
 
-const rangeFor = (view: ViewKind, focused: Temporal.PlainDate, timeZone: string): UtcRange => {
+const rangeFor = (
+  view: ViewKind,
+  focused: Temporal.PlainDate,
+  windowStart: Temporal.PlainDate,
+  timeZone: string,
+): UtcRange => {
   switch (view) {
+    // Day/week ranges include the pan buffer columns so panning reveals
+    // already-loaded days.
     case 'day': {
-      return dayRange(focused, timeZone);
+      return daySpanRange(
+        focused.subtract({ days: PAN_BUFFER_DAYS }),
+        1 + 2 * PAN_BUFFER_DAYS,
+        timeZone,
+      );
     }
     case 'month': {
       return monthGridRange(
@@ -30,12 +41,20 @@ const rangeFor = (view: ViewKind, focused: Temporal.PlainDate, timeZone: string)
       );
     }
     case 'week': {
-      return weekRange(focused, timeZone);
+      return daySpanRange(
+        windowStart.subtract({ days: PAN_BUFFER_DAYS }),
+        7 + 2 * PAN_BUFFER_DAYS,
+        timeZone,
+      );
     }
   }
 };
 
-const titleFor = (view: ViewKind, focused: Temporal.PlainDate): string => {
+const titleFor = (
+  view: ViewKind,
+  focused: Temporal.PlainDate,
+  windowStart: Temporal.PlainDate,
+): string => {
   if (view === 'month') {
     return focused.toLocaleString('en-US', { month: 'long', year: 'numeric' });
   }
@@ -47,7 +66,7 @@ const titleFor = (view: ViewKind, focused: Temporal.PlainDate): string => {
       year: 'numeric',
     });
   }
-  const start = weekStart(focused);
+  const start = windowStart;
   const end = start.add({ days: 6 });
   const sameMonth = start.month === end.month;
   return sameMonth
@@ -59,11 +78,21 @@ export function CalendarApp() {
   const timeZone = Temporal.Now.timeZoneId();
   const [view, setView] = useState<ViewKind>('week');
   const [focused, setFocused] = useState(() => Temporal.Now.plainDateISO(timeZone));
+  // Week view's rolling window anchor; null = Monday-snapped week (default).
+  // Only wheel navigation sets it — Today and view switches reset it.
+  const [weekWindowStart, setWeekWindowStart] = useState<Temporal.PlainDate | null>(null);
   const [showSettings, setShowSettings] = useState(false);
   const [editorSeed, setEditorSeed] = useState<EditorSeed | null>(null);
 
-  const range = useMemo(() => rangeFor(view, focused, timeZone), [view, focused, timeZone]);
-  const events = useEventsInRange(range.startUtc, range.endUtc);
+  const windowStart = useMemo(
+    () => weekWindowStart ?? weekStart(focused),
+    [weekWindowStart, focused],
+  );
+  const range = useMemo(
+    () => rangeFor(view, focused, windowStart, timeZone),
+    [view, focused, windowStart, timeZone],
+  );
+  const events = useEventsInRangeStable(range.startUtc, range.endUtc);
   const calendars = useCalendars();
   const accounts = useAccounts();
   const colorOf = useMemo(() => makeColorLookup(calendars), [calendars]);
@@ -74,15 +103,32 @@ export function CalendarApp() {
         ? current.add({ months: direction })
         : current.add({ days: direction * (view === 'week' ? 7 : 1) }),
     );
+    if (view === 'week') {
+      setWeekWindowStart((current) => current?.add({ days: 7 * direction }) ?? null);
+    }
+  };
+
+  // Pan commits: whole days crossed while wheel-panning. In week view the
+  // rolling window and `focused` shift together, keeping focused inside
+  // the visible days.
+  const panByDays = (dayCount: number) => {
+    if (view === 'week') {
+      setWeekWindowStart(windowStart.add({ days: dayCount }));
+    }
+    setFocused((current) => current.add({ days: dayCount }));
+  };
+
+  const switchView = (kind: ViewKind) => {
+    setWeekWindowStart(null);
+    setView(kind);
   };
 
   const days = useMemo(() => {
     if (view === 'day') {
       return [focused];
     }
-    const start = weekStart(focused);
-    return Array.from({ length: 7 }, (_, index) => start.add({ days: index }));
-  }, [view, focused]);
+    return Array.from({ length: 7 }, (_, index) => windowStart.add({ days: index }));
+  }, [view, focused, windowStart]);
 
   return (
     <div className="flex h-screen bg-white text-neutral-900">
@@ -97,7 +143,7 @@ export function CalendarApp() {
           className="flex shrink-0 items-center gap-3 border-b border-neutral-200 px-4 py-2.5"
           style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}
         >
-          <h1 className="min-w-56 text-lg font-semibold">{titleFor(view, focused)}</h1>
+          <h1 className="min-w-56 text-lg font-semibold">{titleFor(view, focused, windowStart)}</h1>
           <div
             className="flex items-center gap-1"
             style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
@@ -111,7 +157,10 @@ export function CalendarApp() {
             </button>
             <button
               className="rounded-md px-2 py-1 text-sm hover:bg-neutral-100"
-              onClick={() => setFocused(Temporal.Now.plainDateISO(timeZone))}
+              onClick={() => {
+                setFocused(Temporal.Now.plainDateISO(timeZone));
+                setWeekWindowStart(null);
+              }}
               type="button"
             >
               Today
@@ -137,7 +186,7 @@ export function CalendarApp() {
                     : 'text-neutral-500 hover:text-neutral-800'
                 }`}
                 key={kind}
-                onClick={() => setView(kind)}
+                onClick={() => switchView(kind)}
                 type="button"
               >
                 {kind}
@@ -169,7 +218,7 @@ export function CalendarApp() {
             events={events}
             onSelectDay={(date) => {
               setFocused(date);
-              setView('day');
+              switchView('day');
             }}
             timeZone={timeZone}
             yearMonth={Temporal.PlainYearMonth.from(focused)}
@@ -180,6 +229,7 @@ export function CalendarApp() {
             days={days}
             events={events}
             onEventClick={(event) => setEditorSeed({ event, initialDate: focused })}
+            onNavigate={panByDays}
             onSlotClick={(date, hour) => setEditorSeed({ initialDate: date, initialHour: hour })}
             timeZone={timeZone}
           />

@@ -2,17 +2,18 @@ import {
   dayRange,
   layoutAllDayLane,
   layoutDayColumn,
+  PAN_BUFFER_DAYS,
   Temporal,
   utcMsToPlainDate,
   type EventRecord,
 } from '@calendar/core';
 import { useNow } from '@calendar/app-state';
-import { useEffect, useRef } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { chipTextColor, type ColorLookup } from './colors.ts';
 import { useEventDrag } from './useEventDrag.ts';
+import { useWheelPan } from './useWheelPan.ts';
 
 const HOUR_HEIGHT = 48;
-const GUTTER_WIDTH = 64;
 const MINUTE_MS = 60 * 1000;
 
 const formatTime = (epochMs: number, timeZone: string): string =>
@@ -31,6 +32,7 @@ export function WeekView({
   days,
   events,
   onEventClick,
+  onNavigate,
   onSlotClick,
   timeZone,
 }: {
@@ -38,19 +40,50 @@ export function WeekView({
   days: ReadonlyArray<Temporal.PlainDate>;
   events: ReadonlyArray<EventRecord>;
   onEventClick: (event: EventRecord) => void;
+  onNavigate: (dayCount: number) => void;
   onSlotClick: (date: Temporal.PlainDate, hour: number) => void;
   timeZone: string;
 }) {
+  const rootRef = useRef<HTMLDivElement>(null);
+  const viewportRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const gridRef = useRef<HTMLDivElement>(null);
   const today = Temporal.Now.plainDateISO(timeZone);
   const nowMs = useNow();
+
+  // The pan strip renders buffer columns on both sides of the visible days
+  // so horizontal panning reveals fully drawn neighbours.
+  const bufferedDays = useMemo(
+    () =>
+      Array.from({ length: days.length + 2 * PAN_BUFFER_DAYS }, (_, index) =>
+        days[0]!.add({ days: index - PAN_BUFFER_DAYS }),
+      ),
+    [days],
+  );
+  // Strips are (buffered/visible)× as wide as their clipped viewport and
+  // sit shifted left by the leading buffer; `--pan-x` (set imperatively by
+  // useWheelPan on the root) adds the live gesture offset.
+  const stripStyle = {
+    transform: `translateX(calc(${-(PAN_BUFFER_DAYS / bufferedDays.length) * 100}% + var(--pan-x, 0px)))`,
+    width: `${(bufferedDays.length / days.length) * 100}%`,
+  };
+
   const drag = useEventDrag({
-    dayCount: days.length,
+    dayCount: bufferedDays.length,
     gridRef,
-    gutterWidth: GUTTER_WIDTH,
+    gutterWidth: 0,
     hourHeight: HOUR_HEIGHT,
     onClick: onEventClick,
+  });
+
+  useWheelPan({
+    // Mid-drag day jumps would corrupt the drop target.
+    enabled: drag.preview === null,
+    firstDay: days[0]!,
+    onCommitDays: onNavigate,
+    rootRef,
+    viewportRef,
+    visibleDayCount: days.length,
   });
 
   useEffect(() => {
@@ -62,14 +95,14 @@ export function WeekView({
 
   const { placed: allDayPlaced, rowCount } = layoutAllDayLane(
     allDayEvents.map((event) => {
-      const startIndex = event.startDate ? dayIndexOf(event.startDate, days) : -1;
+      const startIndex = event.startDate ? dayIndexOf(event.startDate, bufferedDays) : -1;
       const endIso = event.endDate ?? utcMsToPlainDate(event.endUtc);
       const endDate = Temporal.PlainDate.from(endIso);
-      const first = days[0]!;
+      const first = bufferedDays[0]!;
       return {
         endDayIndex:
-          Temporal.PlainDate.compare(endDate, days.at(-1)!) > 0
-            ? days.length
+          Temporal.PlainDate.compare(endDate, bufferedDays.at(-1)!) > 0
+            ? bufferedDays.length
             : Math.max(first.until(endDate).days, 0),
         id: `${event.calendarId}:${event.id}`,
         startDayIndex:
@@ -78,92 +111,93 @@ export function WeekView({
             : startIndex,
       };
     }),
-    days.length,
+    bufferedDays.length,
   );
   const allDayById = new Map(
     allDayEvents.map((event) => [`${event.calendarId}:${event.id}`, event]),
   );
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
+    <div className="flex min-h-0 flex-1 flex-col" ref={rootRef}>
       {/* Day headers */}
-      <div
-        className="grid shrink-0 border-b border-neutral-200 bg-white pr-3"
-        style={{ gridTemplateColumns: `64px repeat(${days.length}, 1fr)` }}
-      >
-        <div />
-        {days.map((day) => {
-          const isToday = Temporal.PlainDate.compare(day, today) === 0;
-          return (
-            <div
-              className="flex items-baseline gap-1.5 border-l border-neutral-100 px-2 py-2"
-              key={day.toString()}
-            >
-              <span className="text-xs font-medium text-neutral-400 uppercase">
-                {day.toLocaleString('en-US', { weekday: 'short' })}
-              </span>
-              <span
-                className={`text-sm font-semibold ${
-                  isToday
-                    ? 'flex size-6 items-center justify-center rounded-full bg-red-500 text-white'
-                    : 'text-neutral-700'
-                }`}
-              >
-                {day.day}
-              </span>
-            </div>
-          );
-        })}
+      <div className="flex shrink-0 border-b border-neutral-200 bg-white pr-3">
+        <div className="w-16 shrink-0" />
+        <div className="min-w-0 flex-1 overflow-hidden">
+          <div
+            className="grid"
+            style={{
+              ...stripStyle,
+              gridTemplateColumns: `repeat(${bufferedDays.length}, 1fr)`,
+            }}
+          >
+            {bufferedDays.map((day) => {
+              const isToday = Temporal.PlainDate.compare(day, today) === 0;
+              return (
+                <div
+                  className="flex items-baseline gap-1.5 border-l border-neutral-100 px-2 py-2"
+                  key={day.toString()}
+                >
+                  <span className="text-xs font-medium text-neutral-400 uppercase">
+                    {day.toLocaleString('en-US', { weekday: 'short' })}
+                  </span>
+                  <span
+                    className={`text-sm font-semibold ${
+                      isToday
+                        ? 'flex size-6 items-center justify-center rounded-full bg-red-500 text-white'
+                        : 'text-neutral-700'
+                    }`}
+                  >
+                    {day.day}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
       </div>
 
       {/* All-day lane */}
       {rowCount > 0 ? (
         <div
-          className="relative grid shrink-0 border-b border-neutral-200 bg-white pr-3"
-          style={{
-            gridTemplateColumns: `64px repeat(${days.length}, 1fr)`,
-            height: rowCount * 24 + 8,
-          }}
+          className="flex shrink-0 border-b border-neutral-200 bg-white pr-3"
+          style={{ height: rowCount * 24 + 8 }}
         >
-          <div className="py-1 pr-2 text-right text-[10px] text-neutral-400">all-day</div>
-          <div className="relative" style={{ gridColumn: `2 / span ${days.length}` }}>
-            {allDayPlaced.map((span) => {
-              const event = allDayById.get(span.id)!;
-              const color = colorOf(event);
-              return (
-                <div
-                  className="absolute cursor-pointer truncate rounded px-1.5 text-xs leading-5"
-                  key={span.id}
-                  onClick={() => onEventClick(event)}
-                  style={{
-                    backgroundColor: color,
-                    color: chipTextColor(color),
-                    left: `calc(${(span.startDayIndex / days.length) * 100}% + 2px)`,
-                    top: span.row * 24 + 4,
-                    width: `calc(${((span.endDayIndex - span.startDayIndex) / days.length) * 100}% - 4px)`,
-                  }}
-                  title={event.title}
-                >
-                  {event.title}
-                </div>
-              );
-            })}
+          <div className="w-16 shrink-0 py-1 pr-2 text-right text-[10px] text-neutral-400">
+            all-day
+          </div>
+          <div className="min-w-0 flex-1 overflow-hidden">
+            <div className="relative h-full" style={stripStyle}>
+              {allDayPlaced.map((span) => {
+                const event = allDayById.get(span.id)!;
+                const color = colorOf(event);
+                return (
+                  <div
+                    className="absolute cursor-pointer truncate rounded px-1.5 text-xs leading-5"
+                    key={span.id}
+                    onClick={() => onEventClick(event)}
+                    style={{
+                      backgroundColor: color,
+                      color: chipTextColor(color),
+                      left: `calc(${(span.startDayIndex / bufferedDays.length) * 100}% + 2px)`,
+                      top: span.row * 24 + 4,
+                      width: `calc(${((span.endDayIndex - span.startDayIndex) / bufferedDays.length) * 100}% - 4px)`,
+                    }}
+                    title={event.title}
+                  >
+                    {event.title}
+                  </div>
+                );
+              })}
+            </div>
           </div>
         </div>
       ) : null}
 
       {/* Timed grid */}
       <div className="min-h-0 flex-1 overflow-y-scroll" ref={scrollRef}>
-        <div
-          className="relative grid"
-          ref={gridRef}
-          style={{
-            gridTemplateColumns: `64px repeat(${days.length}, 1fr)`,
-            height: 24 * HOUR_HEIGHT,
-          }}
-        >
+        <div className="flex" style={{ height: 24 * HOUR_HEIGHT }}>
           {/* Hour gutter */}
-          <div className="relative">
+          <div className="relative w-16 shrink-0">
             {Array.from({ length: 23 }, (_, index) => (
               <span
                 className="absolute right-2 -translate-y-1/2 text-[10px] text-neutral-400"
@@ -177,119 +211,132 @@ export function WeekView({
             ))}
           </div>
 
-          {days.map((day) => {
-            const range = dayRange(day, timeZone);
-            const boxes = layoutDayColumn(
-              timedEvents
-                .filter((event) => event.startUtc < range.endUtc && event.endUtc > range.startUtc)
-                .map((event) => ({
-                  endUtc: event.endUtc,
-                  id: `${event.calendarId}:${event.id}`,
-                  startUtc: event.startUtc,
-                })),
-              range.startUtc,
-              range.endUtc,
-            );
-            const eventsById = new Map(
-              timedEvents.map((event) => [`${event.calendarId}:${event.id}`, event]),
-            );
-            const isToday = Temporal.PlainDate.compare(day, today) === 0;
-            const nowFraction = (nowMs - range.startUtc) / (range.endUtc - range.startUtc);
+          <div className="min-w-0 flex-1 overflow-hidden" ref={viewportRef}>
+            <div
+              className="relative grid h-full"
+              ref={gridRef}
+              style={{
+                ...stripStyle,
+                gridTemplateColumns: `repeat(${bufferedDays.length}, 1fr)`,
+              }}
+            >
+              {bufferedDays.map((day) => {
+                const range = dayRange(day, timeZone);
+                const boxes = layoutDayColumn(
+                  timedEvents
+                    .filter(
+                      (event) => event.startUtc < range.endUtc && event.endUtc > range.startUtc,
+                    )
+                    .map((event) => ({
+                      endUtc: event.endUtc,
+                      id: `${event.calendarId}:${event.id}`,
+                      startUtc: event.startUtc,
+                    })),
+                  range.startUtc,
+                  range.endUtc,
+                );
+                const eventsById = new Map(
+                  timedEvents.map((event) => [`${event.calendarId}:${event.id}`, event]),
+                );
+                const isToday = Temporal.PlainDate.compare(day, today) === 0;
+                const nowFraction = (nowMs - range.startUtc) / (range.endUtc - range.startUtc);
 
-            return (
-              <div
-                className="relative border-l border-neutral-100"
-                key={day.toString()}
-                onClick={(clickEvent) => {
-                  if (drag.consumeSuppressedClick()) {
-                    return;
-                  }
-                  const bounds = clickEvent.currentTarget.getBoundingClientRect();
-                  const hour = Math.floor((clickEvent.clientY - bounds.top) / HOUR_HEIGHT);
-                  onSlotClick(day, Math.min(Math.max(hour, 0), 23));
-                }}
-              >
-                {/* Hour lines */}
-                {Array.from({ length: 24 }, (_, index) => (
+                return (
                   <div
-                    className="absolute right-0 left-0 border-t border-neutral-100"
-                    key={index}
-                    style={{ top: index * HOUR_HEIGHT }}
-                  />
-                ))}
-
-                {boxes.map((box) => {
-                  const event = eventsById.get(box.id)!;
-                  const color = colorOf(event);
-                  const dragging = drag.preview?.eventKey === box.id ? drag.preview : null;
-                  const moveMinutes = dragging?.mode === 'move' ? dragging.deltaMinutes : 0;
-                  const resizeMinutes = dragging?.mode === 'resize' ? dragging.deltaMinutes : 0;
-                  const deltaDays = dragging?.mode === 'move' ? dragging.deltaDays : 0;
-                  const dayMinutes = 24 * 60;
-                  const topMinutes = box.top * dayMinutes + moveMinutes;
-                  const heightMinutes = Math.max(box.height * dayMinutes + resizeMinutes, 15);
-                  const previewStart = event.startUtc + moveMinutes * MINUTE_MS;
-                  const previewEnd =
-                    dragging?.mode === 'resize'
-                      ? Math.max(
-                          event.endUtc + resizeMinutes * MINUTE_MS,
-                          event.startUtc + 15 * MINUTE_MS,
-                        )
-                      : event.endUtc + moveMinutes * MINUTE_MS;
-                  const compact = (heightMinutes / 60) * HOUR_HEIGHT < 28;
-                  const draggable = !event.recurrence;
-                  return (
-                    <div
-                      className={`absolute touch-none overflow-hidden rounded-md px-1.5 py-0.5 select-none ${
-                        draggable ? 'cursor-grab' : 'cursor-pointer'
-                      } ${dragging ? 'z-20 opacity-90 shadow-lg ring-2 ring-white/60' : ''}`}
-                      key={box.id}
-                      onPointerDown={(pointerEvent) =>
-                        drag.onPointerDown(event, box.id, pointerEvent, 'move')
+                    className="relative border-l border-neutral-100"
+                    key={day.toString()}
+                    onClick={(clickEvent) => {
+                      if (drag.consumeSuppressedClick()) {
+                        return;
                       }
-                      onPointerMove={drag.onPointerMove}
-                      onPointerUp={drag.onPointerUp}
-                      style={{
-                        backgroundColor: color,
-                        color: chipTextColor(color),
-                        height: `max(${(heightMinutes / dayMinutes) * 100}%, 14px)`,
-                        left: `calc(${(box.left + deltaDays) * 100}% + 1px)`,
-                        top: `${(topMinutes / dayMinutes) * 100}%`,
-                        width: `calc(${box.width * 100}% - 3px)`,
-                      }}
-                      title={`${event.title} · ${formatTime(event.startUtc, timeZone)}`}
-                    >
-                      <p className="truncate text-xs leading-4 font-medium">{event.title}</p>
-                      {compact ? null : (
-                        <p className="truncate text-[10px] opacity-80">
-                          {formatTime(dragging ? previewStart : event.startUtc, timeZone)} –{' '}
-                          {formatTime(dragging ? previewEnd : event.endUtc, timeZone)}
-                        </p>
-                      )}
-                      {draggable ? (
-                        <div
-                          className="absolute right-0 bottom-0 left-0 h-2 cursor-ns-resize"
-                          onPointerDown={(pointerEvent) =>
-                            drag.onPointerDown(event, box.id, pointerEvent, 'resize')
-                          }
-                        />
-                      ) : null}
-                    </div>
-                  );
-                })}
-
-                {/* Now indicator */}
-                {isToday && nowFraction >= 0 && nowFraction <= 1 ? (
-                  <div
-                    className="absolute right-0 left-0 z-10 border-t-2 border-red-500"
-                    style={{ top: `${nowFraction * 100}%` }}
+                      const bounds = clickEvent.currentTarget.getBoundingClientRect();
+                      const hour = Math.floor((clickEvent.clientY - bounds.top) / HOUR_HEIGHT);
+                      onSlotClick(day, Math.min(Math.max(hour, 0), 23));
+                    }}
                   >
-                    <span className="absolute -top-[5px] -left-1 size-2 rounded-full bg-red-500" />
+                    {/* Hour lines */}
+                    {Array.from({ length: 24 }, (_, index) => (
+                      <div
+                        className="absolute right-0 left-0 border-t border-neutral-100"
+                        key={index}
+                        style={{ top: index * HOUR_HEIGHT }}
+                      />
+                    ))}
+
+                    {boxes.map((box) => {
+                      const event = eventsById.get(box.id)!;
+                      const color = colorOf(event);
+                      const dragging = drag.preview?.eventKey === box.id ? drag.preview : null;
+                      const moveMinutes = dragging?.mode === 'move' ? dragging.deltaMinutes : 0;
+                      const resizeMinutes = dragging?.mode === 'resize' ? dragging.deltaMinutes : 0;
+                      const deltaDays = dragging?.mode === 'move' ? dragging.deltaDays : 0;
+                      const dayMinutes = 24 * 60;
+                      const topMinutes = box.top * dayMinutes + moveMinutes;
+                      const heightMinutes = Math.max(box.height * dayMinutes + resizeMinutes, 15);
+                      const previewStart = event.startUtc + moveMinutes * MINUTE_MS;
+                      const previewEnd =
+                        dragging?.mode === 'resize'
+                          ? Math.max(
+                              event.endUtc + resizeMinutes * MINUTE_MS,
+                              event.startUtc + 15 * MINUTE_MS,
+                            )
+                          : event.endUtc + moveMinutes * MINUTE_MS;
+                      const compact = (heightMinutes / 60) * HOUR_HEIGHT < 28;
+                      const draggable = !event.recurrence;
+                      return (
+                        <div
+                          className={`absolute touch-none overflow-hidden rounded-md px-1.5 py-0.5 select-none ${
+                            draggable ? 'cursor-grab' : 'cursor-pointer'
+                          } ${dragging ? 'z-20 opacity-90 shadow-lg ring-2 ring-white/60' : ''}`}
+                          key={box.id}
+                          onPointerDown={(pointerEvent) =>
+                            drag.onPointerDown(event, box.id, pointerEvent, 'move')
+                          }
+                          onPointerMove={drag.onPointerMove}
+                          onPointerUp={drag.onPointerUp}
+                          style={{
+                            backgroundColor: color,
+                            color: chipTextColor(color),
+                            height: `max(${(heightMinutes / dayMinutes) * 100}%, 14px)`,
+                            left: `calc(${(box.left + deltaDays) * 100}% + 1px)`,
+                            top: `${(topMinutes / dayMinutes) * 100}%`,
+                            width: `calc(${box.width * 100}% - 3px)`,
+                          }}
+                          title={`${event.title} · ${formatTime(event.startUtc, timeZone)}`}
+                        >
+                          <p className="truncate text-xs leading-4 font-medium">{event.title}</p>
+                          {compact ? null : (
+                            <p className="truncate text-[10px] opacity-80">
+                              {formatTime(dragging ? previewStart : event.startUtc, timeZone)} –{' '}
+                              {formatTime(dragging ? previewEnd : event.endUtc, timeZone)}
+                            </p>
+                          )}
+                          {draggable ? (
+                            <div
+                              className="absolute right-0 bottom-0 left-0 h-2 cursor-ns-resize"
+                              onPointerDown={(pointerEvent) =>
+                                drag.onPointerDown(event, box.id, pointerEvent, 'resize')
+                              }
+                            />
+                          ) : null}
+                        </div>
+                      );
+                    })}
+
+                    {/* Now indicator */}
+                    {isToday && nowFraction >= 0 && nowFraction <= 1 ? (
+                      <div
+                        className="absolute right-0 left-0 z-10 border-t-2 border-red-500"
+                        style={{ top: `${nowFraction * 100}%` }}
+                      >
+                        <span className="absolute -top-[5px] -left-1 size-2 rounded-full bg-red-500" />
+                      </div>
+                    ) : null}
                   </div>
-                ) : null}
-              </div>
-            );
-          })}
+                );
+              })}
+            </div>
+          </div>
         </div>
       </div>
     </div>

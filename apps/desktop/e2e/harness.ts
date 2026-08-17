@@ -250,6 +250,18 @@ export class Cdp {
     });
   }
 
+  /** Dispatches a trackpad-style wheel event at the given point. */
+  async wheel(x: number, y: number, deltaX: number, deltaY: number): Promise<void> {
+    await this.send('Input.dispatchMouseEvent', {
+      deltaX,
+      deltaY,
+      pointerType: 'mouse',
+      type: 'mouseWheel',
+      x,
+      y,
+    });
+  }
+
   async click(x: number, y: number): Promise<void> {
     await this.mouse('mousePressed', x, y);
     await this.mouse('mouseReleased', x, y);

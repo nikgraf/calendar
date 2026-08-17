@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildMonthGrid, dayRange, weekRange, weekStart } from './ranges.ts';
+import { buildMonthGrid, dayRange, daySpanRange, weekRange, weekStart } from './ranges.ts';
 import { Temporal } from './temporal.ts';
 
 describe('ranges', () => {
@@ -19,6 +19,19 @@ describe('ranges', () => {
     const range = weekRange(Temporal.PlainDate.from('2026-07-02'), 'Europe/Vienna');
     expect(range.startUtc).toBe(Date.parse('2026-06-28T22:00:00Z')); // Mon 00:00 CEST
     expect(range.endUtc).toBe(Date.parse('2026-07-05T22:00:00Z'));
+  });
+
+  it('daySpanRange spans dayCount local days from an arbitrary start', () => {
+    // Rolling window anchored mid-week (Wednesday), not snapped to Monday.
+    const range = daySpanRange(Temporal.PlainDate.from('2026-07-01'), 7, 'Europe/Vienna');
+    expect(range.startUtc).toBe(Date.parse('2026-06-30T22:00:00Z')); // Wed 00:00 CEST
+    expect(range.endUtc).toBe(Date.parse('2026-07-07T22:00:00Z'));
+  });
+
+  it('daySpanRange covers DST-transition spans correctly', () => {
+    // Europe/Vienna DST starts 2026-03-29: 7 days = 167 hours.
+    const range = daySpanRange(Temporal.PlainDate.from('2026-03-26'), 7, 'Europe/Vienna');
+    expect((range.endUtc - range.startUtc) / (60 * 60 * 1000)).toBe(167);
   });
 
   it('buildMonthGrid pads to full Monday-based weeks', () => {

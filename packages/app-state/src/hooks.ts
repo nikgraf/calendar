@@ -66,6 +66,26 @@ export const useEventsInRange = (
   return unwrapList(useAtomValue(atoms.eventsInRange(rangeKey(rangeStartUtc, rangeEndUtc))));
 };
 
+/**
+ * Like `useEventsInRange`, but keeps returning the previous range's events
+ * while a brand-new range atom is still loading — continuous navigation
+ * (panning across days) never flashes an empty grid between ranges.
+ */
+export const useEventsInRangeStable = (
+  rangeStartUtc: number,
+  rangeEndUtc: number,
+): ReadonlyArray<EventRecord> => {
+  const atoms = useBackendAtoms();
+  const result = useAtomValue(atoms.eventsInRange(rangeKey(rangeStartUtc, rangeEndUtc)));
+  const value = AsyncResult.value(result);
+  const [previous, setPrevious] = useState<ReadonlyArray<EventRecord>>([]);
+  if (Option.isSome(value) && value.value !== previous) {
+    // Render-phase state adjustment (the React "derive from props" pattern).
+    setPrevious(value.value);
+  }
+  return Option.isSome(value) ? value.value : previous;
+};
+
 /** Promise-returning mutation callbacks; each invalidates its reactivity keys. */
 export const useBackendMutations = () => {
   const { mutations } = useBackendAtoms();
