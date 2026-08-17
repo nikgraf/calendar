@@ -27,6 +27,7 @@ Rules of thumb: I/O, orchestration, and validation are Effect (services + Layers
 - `pnpm ios` — Expo run on iOS simulator
 - `pnpm --filter @calendar/desktop rebuild:native` — rebuild better-sqlite3 for Electron's ABI (the aliased better-sqlite3-node copy keeps the Node ABI for vitest)
 - `pnpm --filter @calendar/desktop package:app` — unsigned .app via Forge (signing/notarization activate via APPLE\_\* env vars)
+- CI ships a signed+notarized arm64 testing zip on every main push (Actions artifact) — see `docs/distribution.md`
 
 The full product plan lives in the repo owner's plan file; milestone tracking in session tasks.
 
