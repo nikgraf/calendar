@@ -23,7 +23,9 @@ export class ErrorBoundary extends Component<{ children: ReactNode }, State> {
     return (
       <div className="flex h-screen flex-col items-center justify-center gap-3 bg-neutral-50">
         <p className="text-lg font-semibold">Something went wrong.</p>
-        <p className="max-w-md truncate text-sm text-neutral-500">{String(this.state.error)}</p>
+        <p className="max-w-md select-text truncate text-sm text-neutral-500">
+          {String(this.state.error)}
+        </p>
         <button
           className="rounded-lg bg-blue-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-blue-500"
           onClick={() => window.location.reload()}

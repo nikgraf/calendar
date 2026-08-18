@@ -36,7 +36,7 @@ export function AccountsView() {
       </header>
 
       {error ? (
-        <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm whitespace-pre-wrap text-red-700">
+        <div className="select-text rounded-lg border border-red-200 bg-red-50 p-3 text-sm whitespace-pre-wrap text-red-700">
           {error}
         </div>
       ) : null}
@@ -51,8 +51,8 @@ export function AccountsView() {
         <section className="rounded-xl border border-neutral-200 bg-white p-4" key={account.id}>
           <div className="flex items-center justify-between">
             <div>
-              <p className="font-medium">{account.displayName ?? account.email}</p>
-              <p className="text-sm text-neutral-500">
+              <p className="select-text font-medium">{account.displayName ?? account.email}</p>
+              <p className="select-text text-sm text-neutral-500">
                 {account.email}
                 {account.status === 'reauth_required' ? (
                   <button

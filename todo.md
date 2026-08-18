@@ -46,6 +46,10 @@
       Join button in both editors (desktop opens via the system browser
       through a window-open handler, iOS via `Linking`).
 
+- [x] Native text selection (desktop) — body-level `user-select: none`;
+      re-enabled for inputs/textareas/contenteditable plus copy-worthy
+      read-only text (error messages, account emails, invitee list).
+      UI chrome (headers, labels, day numbers, buttons) is unselectable.
 - [x] Screen-sharing privacy — done: the desktop window is excluded from
       screen shares/recordings by default (`setContentProtection`, macOS
       `NSWindowSharingNone`); Privacy section in the settings modal offers

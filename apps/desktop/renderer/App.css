@@ -1,1 +1,13 @@
 @import 'tailwindcss';
+
+/* Native-app feel: UI text is not selectable… */
+body {
+  user-select: none;
+}
+
+/* …except where the user edits or needs to copy text. */
+input,
+textarea,
+[contenteditable='true'] {
+  user-select: text;
+}
