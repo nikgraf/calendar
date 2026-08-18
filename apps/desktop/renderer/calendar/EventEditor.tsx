@@ -260,7 +260,9 @@ export function EventEditor({
         </div>
 
         <div className="flex flex-col gap-3">
-          {error ? <p className="rounded-lg bg-red-50 p-2 text-sm text-red-700">{error}</p> : null}
+          {error ? (
+            <p className="select-text rounded-lg bg-red-50 p-2 text-sm text-red-700">{error}</p>
+          ) : null}
           {isRecurring ? (
             <div
               aria-label="Apply to"
@@ -438,7 +440,7 @@ export function EventEditor({
                 </div>
               ) : null}
               {existing.attendees.map((attendee) => (
-                <p className="text-sm" key={attendee.email}>
+                <p className="select-text text-sm" key={attendee.email}>
                   {attendee.displayName ?? attendee.email}
                   <span className="ml-1 text-xs text-neutral-400">
                     {attendee.responseStatus}
