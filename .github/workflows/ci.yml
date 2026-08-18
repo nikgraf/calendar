@@ -116,13 +116,13 @@ jobs:
         run: pnpm --filter @calendar/desktop make
       - name: Verify signature, notarization, staple
         run: |
-          APP="apps/desktop/out/Calendar-darwin-arm64/Calendar.app"
+          APP="apps/desktop/out/Solunivo-darwin-arm64/Solunivo.app"
           codesign --verify --deep --strict --verbose=2 "$APP"
           spctl --assess --type execute -vv "$APP"
           xcrun stapler validate "$APP"
       - uses: actions/upload-artifact@v4
         with:
-          name: Calendar-testing-${{ env.SHORT_SHA }}
+          name: Solunivo-testing-${{ env.SHORT_SHA }}
           path: apps/desktop/out/make/zip/darwin/arm64/*.zip
           retention-days: 14
           if-no-files-found: error

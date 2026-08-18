@@ -24,7 +24,7 @@ export function Sidebar({
 
   return (
     <aside className="flex w-60 shrink-0 flex-col border-r border-neutral-200 bg-neutral-50">
-      <div className="px-4 pt-10 pb-2 text-sm font-semibold">Calendar</div>
+      <div className="px-4 pt-10 pb-2 text-sm font-semibold">Solunivo</div>
       <div className="min-h-0 flex-1 overflow-y-auto px-2">
         {accounts.map((account) => (
           <section className="mb-3" key={account.id}>

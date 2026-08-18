@@ -14,10 +14,10 @@ rebuild + lipo); artifact-only distribution (no GitHub releases, no auto-update
 
 `CFBundleVersion` is stamped with the short commit SHA (`BUILD_VERSION` →
 `packagerConfig.buildVersion` in `apps/desktop/forge.config.cjs`). Check it via
-Finder's Get Info on Calendar.app, or:
+Finder's Get Info on Solunivo.app, or:
 
 ```
-defaults read /Applications/Calendar.app/Contents/Info.plist CFBundleVersion
+defaults read /Applications/Solunivo.app/Contents/Info.plist CFBundleVersion
 ```
 
 ## One-time secret setup (repo admin)
@@ -44,9 +44,9 @@ The same four `APPLE_*` variables activate signing/notarization for local
 
 1. Open the repo's **Actions** tab → latest green `CI` run on `main` (requires
    repo read access).
-2. Download the `Calendar-testing-<sha>` artifact.
+2. Download the `Solunivo-testing-<sha>` artifact.
 3. Unzip twice (the artifact download wraps the maker zip), then drag
-   `Calendar.app` to `/Applications`. It's notarized and stapled — no
+   `Solunivo.app` to `/Applications`. It's notarized and stapled — no
    Gatekeeper hoops, first launch just works.
 
 ## Manual rebuild
