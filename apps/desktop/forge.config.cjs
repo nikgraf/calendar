@@ -39,12 +39,12 @@ module.exports = {
     },
   ],
   packagerConfig: {
-    appBundleId: 'com.nikgraf.calendar',
+    appBundleId: 'com.solunivo.desktop',
     asar: false,
     // CFBundleVersion; CI sets the short commit SHA so testers can identify
     // builds. Undefined locally — packager skips it.
     buildVersion: process.env.BUILD_VERSION,
-    executableName: 'calendar',
+    executableName: 'solunivo',
     ignore: [
       /^\/electron(?:$|\/)/,
       /^\/renderer(?:$|\/)/,
@@ -56,7 +56,7 @@ module.exports = {
       /^\/google-oauth\.local\.json$/,
       /^\/node_modules(?:$|\/)/,
     ],
-    name: 'Calendar',
+    name: 'Solunivo',
     ...(osxNotarize ? { osxNotarize } : {}),
     ...(process.env.APPLE_SIGNING_IDENTITY
       ? {

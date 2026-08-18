@@ -2,6 +2,15 @@
 
 ## Follow-ups
 
+- [x] App name — decided: **Solunivo** (no trademark hits, solunivo.com
+      purchased; latent sol+luna+novo reading). Renamed product surfaces:
+      packager name/executable, bundle ids (desktop com.solunivo.desktop,
+      iOS com.solunivo.app), window/OAuth-page titles, sidebar brand,
+      core appName, CI artifact + verify paths, docs. Internal @calendar/\*
+      package scopes and the GitHub repo name intentionally kept. NOTE:
+      the Google Cloud iOS OAuth client must be recreated for the new
+      bundle id before iOS sign-in works again; packaged-app userData
+      moves (Application Support/Solunivo) so testers re-auth.
 - [ ] Real app icons (macOS .icns / Assets.car, iOS app icon set)
 - [ ] Signing/notarization for the macOS app — CI `testing-build` job +
       `docs/distribution.md` are merged (signed+notarized arm64 zip artifact

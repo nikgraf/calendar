@@ -24,7 +24,7 @@ export class AuthFlowError extends Data.TaggedError('AuthFlowError')<{
 }> {}
 
 const CLOSING_PAGE = `<!doctype html><meta charset="utf-8">
-<title>Calendar</title>
+<title>Solunivo</title>
 <body style="font-family: system-ui; display: grid; place-items: center; height: 90vh">
   <p>Signed in — you can close this tab and return to Calendar.</p>
   <script>setTimeout(() => window.close(), 1500)</script>

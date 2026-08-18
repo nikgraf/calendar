@@ -1,17 +1,17 @@
 {
   "expo": {
-    "name": "Calendar",
-    "slug": "calendar",
+    "name": "Solunivo",
+    "slug": "solunivo",
     "version": "0.0.1",
     "orientation": "portrait",
-    "scheme": "calendar",
+    "scheme": "solunivo",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "experiments": {
       "reactCompiler": true
     },
     "ios": {
-      "bundleIdentifier": "com.nikgraf.calendar",
+      "bundleIdentifier": "com.solunivo.app",
       "supportsTablet": false
     },
     "plugins": ["expo-web-browser", "expo-secure-store"],
