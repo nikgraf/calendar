@@ -3,7 +3,27 @@ packages:
   - apps/*
 
 nodeLinker: hoisted
-blockExoticSubdeps: false
+
+# Supply-chain guards: newly published versions must be at least 2 days old
+# before they resolve, package trust levels can't silently downgrade, and
+# non-registry (git/url) subdeps are blocked for fresh resolutions —
+# lockfile-pinned entries (@electron/node-gyp's git tarball) stay allowed.
+minimumReleaseAge: 2880 # 2 days
+trustPolicy: no-downgrade
+# Legacy transitive pins that predate their packages' provenance — they
+# register as trust downgrades without being ones. Audit when bumped.
+trustPolicyExclude:
+  - semver@5.7.2
+  - semver@6.3.1
+  - undici-types@6.21.0
+  - '@octokit/endpoint@9.0.6'
+  - effect@4.0.0-beta.93
+  - '@effect/atom-react@4.0.0-beta.93'
+  - '@effect/platform-node@4.0.0-beta.93'
+  - '@effect/sql-sqlite-node@4.0.0-beta.93'
+  - '@effect/sql-sqlite-react-native@4.0.0-beta.93'
+  - '@effect/vitest@4.0.0-beta.93'
+blockExoticSubdeps: true
 
 catalog:
   effect: 4.0.0-beta.93
