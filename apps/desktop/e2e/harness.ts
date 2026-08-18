@@ -212,24 +212,46 @@ export class Cdp {
   }
 
   /**
-   * Center-ish point of the first element matching the selector. Scrolls the
-   * element into the middle of its container first — on CI the week grid can
+   * Center-ish point of the nth *interactable* element matching the selector.
+   * Skips elements outside the horizontal viewport — the week grid renders
+   * clipped pan-buffer day columns whose blocks precede the visible ones in
+   * DOM order, so raw indexing would target unclickable coordinates. Scrolls
+   * the element into the middle of its container — on CI the week grid can
    * land scrolled differently, leaving early-morning blocks under the sticky
-   * header where mouse events would hit the header instead.
+   * header — and hit-tests the final point so transient overlays retry
+   * instead of clicking through to the wrong element.
    */
   async locate(
     selector: string,
     options: { atBottom?: boolean; index?: number } = {},
   ): Promise<{ x: number; y: number }> {
     const point = await this.waitFor<string>(`(() => {
-      const el = document.querySelectorAll(${JSON.stringify(selector)})[${options.index ?? 0}];
+      const horizontallyVisible = (el) => {
+        const r = el.getBoundingClientRect();
+        const centerX = r.x + r.width / 2;
+        if (centerX < 0 || centerX > window.innerWidth) return false;
+        // Clipped by any overflow ancestor (e.g. the pan-buffer day columns
+        // hidden behind the week grid's viewport)?
+        for (let a = el.parentElement; a; a = a.parentElement) {
+          if (getComputedStyle(a).overflowX !== 'visible') {
+            const ar = a.getBoundingClientRect();
+            if (centerX < ar.x || centerX > ar.x + ar.width) return false;
+          }
+        }
+        return true;
+      };
+      const visible = [...document.querySelectorAll(${JSON.stringify(selector)})].filter(
+        horizontallyVisible,
+      );
+      const el = visible[${options.index ?? 0}];
       if (!el) return '';
       el.scrollIntoView({ block: 'center', inline: 'nearest' });
       const r = el.getBoundingClientRect();
-      return JSON.stringify({
-        x: Math.floor(r.x + r.width / 2),
-        y: ${options.atBottom ? 'Math.floor(r.bottom) - 3' : 'Math.floor(r.y) + 8'},
-      });
+      const x = Math.floor(r.x + r.width / 2);
+      const y = ${options.atBottom ? 'Math.floor(r.bottom) - 3' : 'Math.floor(r.y) + 8'};
+      const hit = document.elementFromPoint(x, y);
+      if (!hit || !(el === hit || el.contains(hit) || hit.contains(el))) return '';
+      return JSON.stringify({ x, y });
     })()`);
     return JSON.parse(point) as { x: number; y: number };
   }
@@ -250,7 +272,13 @@ export class Cdp {
     });
   }
 
-  /** Dispatches a trackpad-style wheel event at the given point. */
+  /**
+   * Dispatches a single trackpad-style wheel event at the given point via
+   * the native input pipeline (real scrolling side effects). Do NOT use for
+   * bursts: after a few dozen synthetic mouseWheel dispatches Chromium's
+   * input pipeline stops acknowledging them and the CDP call hangs forever —
+   * use wheelBurst for gesture streams instead.
+   */
   async wheel(x: number, y: number, deltaX: number, deltaY: number): Promise<void> {
     await this.send('Input.dispatchMouseEvent', {
       deltaX,
@@ -260,6 +288,34 @@ export class Cdp {
       x,
       y,
     });
+  }
+
+  /**
+   * Fires a stream of JS-synthesized wheel events at the first element
+   * matching the selector — a trackpad gesture as the app's non-passive
+   * wheel listener sees it. Untrusted events skip native scrolling, which is
+   * exactly what makes them hang-proof (no input-pipeline ACKs involved).
+   */
+  async wheelBurst(
+    selector: string,
+    options: { count: number; deltaX: number; deltaY?: number; gapMs?: number },
+  ): Promise<void> {
+    await this.eval(`(async () => {
+      const target = document.querySelector(${JSON.stringify(selector)});
+      if (!target) throw new Error('wheelBurst: no element for selector');
+      const rect = target.getBoundingClientRect();
+      for (let index = 0; index < ${options.count}; index += 1) {
+        target.dispatchEvent(new WheelEvent('wheel', {
+          bubbles: true,
+          cancelable: true,
+          clientX: Math.floor(rect.x + rect.width / 2),
+          clientY: Math.floor(rect.y + rect.height / 2),
+          deltaX: ${options.deltaX},
+          deltaY: ${options.deltaY ?? 0},
+        }));
+        await new Promise((resolve) => setTimeout(resolve, ${options.gapMs ?? 20}));
+      }
+    })()`);
   }
 
   async click(x: number, y: number): Promise<void> {
