@@ -8,7 +8,7 @@ import {
   type EventRecord,
 } from '@calendar/core';
 import { useNow } from '@calendar/app-state';
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { chipTextColor, type ColorLookup } from './colors.ts';
 import { useEventDrag } from './useEventDrag.ts';
 import { useWheelPan } from './useWheelPan.ts';
@@ -90,6 +90,23 @@ export function WeekView({
     scrollRef.current?.scrollTo({ top: 7.5 * HOUR_HEIGHT });
   }, []);
 
+  // Header and all-day rows pad their right edge by the timed scroller's
+  // actual scrollbar width (0 for macOS overlay scrollbars) so all three
+  // sections share one viewport width — hardcoded padding would skew the
+  // column widths and misalign headers from the grid.
+  const [scrollbarWidth, setScrollbarWidth] = useState(0);
+  useLayoutEffect(() => {
+    const scroller = scrollRef.current;
+    if (!scroller) {
+      return;
+    }
+    const measure = () => setScrollbarWidth(scroller.offsetWidth - scroller.clientWidth);
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(scroller);
+    return () => observer.disconnect();
+  }, []);
+
   const allDayEvents = events.filter((event) => event.isAllDay);
   const timedEvents = events.filter((event) => !event.isAllDay);
 
@@ -120,7 +137,10 @@ export function WeekView({
   return (
     <div className="flex min-h-0 flex-1 flex-col" ref={rootRef}>
       {/* Day headers */}
-      <div className="flex shrink-0 border-b border-neutral-200 bg-white pr-3">
+      <div
+        className="flex shrink-0 border-b border-neutral-200 bg-white"
+        style={{ paddingRight: scrollbarWidth }}
+      >
         <div className="w-16 shrink-0" />
         <div className="min-w-0 flex-1 overflow-hidden">
           <div
@@ -134,7 +154,9 @@ export function WeekView({
               const isToday = Temporal.PlainDate.compare(day, today) === 0;
               return (
                 <div
-                  className="flex items-baseline gap-1.5 border-l border-neutral-100 px-2 py-2"
+                  // Fixed height: the today-circle is taller than plain text,
+                  // and a header that resizes while panning shifts the grid.
+                  className="flex h-10 items-center gap-1.5 border-l border-neutral-100 px-2"
                   key={day.toString()}
                 >
                   <span className="text-xs font-medium text-neutral-400 uppercase">
@@ -156,42 +178,42 @@ export function WeekView({
         </div>
       </div>
 
-      {/* All-day lane */}
-      {rowCount > 0 ? (
-        <div
-          className="flex shrink-0 border-b border-neutral-200 bg-white pr-3"
-          style={{ height: rowCount * 24 + 8 }}
-        >
-          <div className="w-16 shrink-0 py-1 pr-2 text-right text-[10px] text-neutral-400">
-            all-day
-          </div>
-          <div className="min-w-0 flex-1 overflow-hidden">
-            <div className="relative h-full" style={stripStyle}>
-              {allDayPlaced.map((span) => {
-                const event = allDayById.get(span.id)!;
-                const color = colorOf(event);
-                return (
-                  <div
-                    className="absolute cursor-pointer truncate rounded px-1.5 text-xs leading-5"
-                    key={span.id}
-                    onClick={() => onEventClick(event)}
-                    style={{
-                      backgroundColor: color,
-                      color: chipTextColor(color),
-                      left: `calc(${(span.startDayIndex / bufferedDays.length) * 100}% + 2px)`,
-                      top: span.row * 24 + 4,
-                      width: `calc(${((span.endDayIndex - span.startDayIndex) / bufferedDays.length) * 100}% - 4px)`,
-                    }}
-                    title={event.title}
-                  >
-                    {event.title}
-                  </div>
-                );
-              })}
-            </div>
+      {/* All-day lane — always rendered (empty row when no all-day events) so
+          the timed grid never jumps vertically while panning across weeks
+          where the lane would otherwise mount/unmount. */}
+      <div
+        className="flex shrink-0 border-b border-neutral-200 bg-white"
+        style={{ height: Math.max(rowCount, 1) * 24 + 8, paddingRight: scrollbarWidth }}
+      >
+        <div className="w-16 shrink-0 py-1 pr-2 text-right text-[10px] text-neutral-400">
+          all-day
+        </div>
+        <div className="min-w-0 flex-1 overflow-hidden">
+          <div className="relative h-full" style={stripStyle}>
+            {allDayPlaced.map((span) => {
+              const event = allDayById.get(span.id)!;
+              const color = colorOf(event);
+              return (
+                <div
+                  className="absolute cursor-pointer truncate rounded px-1.5 text-xs leading-5"
+                  key={span.id}
+                  onClick={() => onEventClick(event)}
+                  style={{
+                    backgroundColor: color,
+                    color: chipTextColor(color),
+                    left: `calc(${(span.startDayIndex / bufferedDays.length) * 100}% + 2px)`,
+                    top: span.row * 24 + 4,
+                    width: `calc(${((span.endDayIndex - span.startDayIndex) / bufferedDays.length) * 100}% - 4px)`,
+                  }}
+                  title={event.title}
+                >
+                  {event.title}
+                </div>
+              );
+            })}
           </div>
         </div>
-      ) : null}
+      </div>
 
       {/* Timed grid */}
       <div className="min-h-0 flex-1 overflow-y-scroll" ref={scrollRef}>
