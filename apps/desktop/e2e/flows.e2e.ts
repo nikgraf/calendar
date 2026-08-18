@@ -82,6 +82,13 @@ const seed = {
   events: [
     timedEvent('evt-standup', 'cal-work', 'Standup meeting', todayAt(9), todayAt(10)),
     timedEvent('evt-gym', 'cal-personal', 'Gym session', todayAt(15), todayAt(16)),
+    // All-day event today: panning across it must not change the lane height.
+    timedEvent('evt-offsite', 'cal-work', 'Team offsite', todayAt(0), todayAt(0) + DAY_MS, {
+      endDate: new Date(todayAt(0) + DAY_MS).toISOString().slice(0, 10),
+      isAllDay: true,
+      startDate: new Date(todayAt(0)).toISOString().slice(0, 10),
+      startTimeZone: undefined,
+    }),
     timedEvent('evt-daily', 'cal-work', 'Daily sync', dailyStart, dailyStart + 30 * 60 * 1000, {
       recurrence: ['RRULE:FREQ=DAILY;COUNT=14'],
       startTimeZone: 'UTC',
@@ -222,6 +229,41 @@ describe('calendar desktop e2e', () => {
     await cdp.clickButtonWithText('Today');
     await cdp.waitFor(`${h1} === ${JSON.stringify(weekTitle)}`);
     await cdp.waitFor(`!!document.querySelector('[title^="Standup meeting"]')`);
+  });
+
+  it('keeps the grid vertically stable and header-aligned while panning', async () => {
+    const { cdp } = app;
+    // The all-day lane always renders (empty row when no all-day events).
+    await cdp.waitFor(`document.body.textContent.includes('all-day')`);
+    await cdp.waitFor(`!!document.querySelector('[title="Team offsite"]')`);
+
+    // Panning across weeks with/without the all-day event (and away from the
+    // today-circle header) must not move the timed grid vertically. Restore
+    // the view before asserting so a failure can't cascade into later tests.
+    const gridY = `Math.round(document.querySelector('.overflow-y-scroll').getBoundingClientRect().y)`;
+    const yBefore = await cdp.eval<number>(gridY);
+    await cdp.wheelBurst('.overflow-y-scroll', { count: 12, deltaX: 240 });
+    const yForward = await cdp.eval<number>(gridY);
+    await cdp.wheelBurst('.overflow-y-scroll', { count: 12, deltaX: -240 });
+    const yBack = await cdp.eval<number>(gridY);
+    await cdp.clickButtonWithText('Today');
+    await cdp.waitFor(`!!document.querySelector('[title^="Standup meeting"]')`);
+    expect(yForward).toBe(yBefore);
+    expect(yBack).toBe(yBefore);
+
+    // Day-header columns sit exactly over the body's day columns.
+    const maxDrift = await cdp.eval<number>(`(() => {
+      const header = document.querySelector('.overflow-hidden > .grid:not(.relative)');
+      const body = document.querySelector('.relative.grid');
+      let max = 0;
+      for (const index of [0, 3, 6, 9]) {
+        const headerX = header.children[index].getBoundingClientRect().x;
+        const bodyX = body.children[index].getBoundingClientRect().x;
+        max = Math.max(max, Math.abs(headerX - bodyX));
+      }
+      return max;
+    })()`);
+    expect(maxDrift).toBeLessThanOrEqual(1);
   });
 
   it('creates an event through the slot-click editor', async () => {
