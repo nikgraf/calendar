@@ -3,9 +3,12 @@
 ## Follow-ups
 
 - [ ] Real app icons (macOS .icns / Assets.car, iOS app icon set)
-- [ ] Signing/notarization for the macOS app — already env-gated in
-      `apps/desktop/forge.config.cjs` (`APPLE_SIGNING_IDENTITY`, `APPLE_ID`,
-      `APPLE_PASSWORD`, `APPLE_TEAM_ID`); needs Apple credentials
+- [ ] Signing/notarization for the macOS app — CI `testing-build` job +
+      `docs/distribution.md` are merged (signed+notarized arm64 zip artifact
+      on every main push; decision: no universal build, artifact-only, no
+      auto-update while the repo is private). Open until the six secrets
+      from docs/distribution.md are added to repo settings and the first
+      `testing-build` run goes green
 - [ ] EAS build / TestFlight distribution for the iOS app
 - [ ] Native iOS date/time pickers in the event editor
       (`@react-native-community/datetimepicker` — replaces the text inputs;

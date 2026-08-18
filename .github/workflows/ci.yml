@@ -4,6 +4,8 @@ on:
   push:
     branches: [main]
   pull_request:
+  # Manual reruns of the testing build (Actions → CI → Run workflow).
+  workflow_dispatch:
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
@@ -43,3 +45,87 @@ jobs:
       - run: pnpm --filter @calendar/desktop rebuild:native
       - run: pnpm --filter @calendar/desktop build
       - run: pnpm test:e2e
+
+  # Signed + notarized arm64 zip on every push to main, downloadable as an
+  # Actions artifact for team-internal testing. Secret setup and tester
+  # instructions: docs/distribution.md. Not gated on e2e — merge protection
+  # already required it on the PR.
+  testing-build:
+    name: macOS testing build (signed + notarized)
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    needs: gate
+    runs-on: macos-14
+    timeout-minutes: 30
+    steps:
+      # Forge silently degrades to an unsigned build when the APPLE_* env is
+      # missing — fail loudly instead of shipping a misleading artifact.
+      - name: Ensure signing secrets are configured
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          MACOS_CERTIFICATE_P12: ${{ secrets.MACOS_CERTIFICATE_P12 }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+        run: |
+          missing=0
+          for name in APPLE_ID APPLE_PASSWORD APPLE_SIGNING_IDENTITY APPLE_TEAM_ID \
+                      MACOS_CERTIFICATE_P12 MACOS_CERTIFICATE_PASSWORD; do
+            if [ -z "${!name}" ]; then
+              echo "::error::secret ${name} is not set (see docs/distribution.md)"
+              missing=1
+            fi
+          done
+          exit "$missing"
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - name: Import Developer ID certificate into a temporary keychain
+        env:
+          MACOS_CERTIFICATE_P12: ${{ secrets.MACOS_CERTIFICATE_P12 }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+        run: |
+          KEYCHAIN_PATH="$RUNNER_TEMP/signing.keychain-db"
+          KEYCHAIN_PASSWORD="$(uuidgen)"
+          echo "$MACOS_CERTIFICATE_P12" | base64 --decode > "$RUNNER_TEMP/certificate.p12"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security import "$RUNNER_TEMP/certificate.p12" -k "$KEYCHAIN_PATH" \
+            -P "$MACOS_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: \
+            -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH" > /dev/null
+          security list-keychains -d user -s "$KEYCHAIN_PATH" login.keychain-db
+          rm "$RUNNER_TEMP/certificate.p12"
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @calendar/desktop rebuild:native
+      - name: Compute short SHA
+        run: echo "SHORT_SHA=${GITHUB_SHA::7}" >> "$GITHUB_ENV"
+      # make = vp build + tsdown + electron-forge make: packages, signs,
+      # notarizes + staples (packager runs @electron/notarize), then zips.
+      - name: Build, sign, notarize, zip
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          BUILD_VERSION: ${{ env.SHORT_SHA }}
+        run: pnpm --filter @calendar/desktop make
+      - name: Verify signature, notarization, staple
+        run: |
+          APP="apps/desktop/out/Calendar-darwin-arm64/Calendar.app"
+          codesign --verify --deep --strict --verbose=2 "$APP"
+          spctl --assess --type execute -vv "$APP"
+          xcrun stapler validate "$APP"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Calendar-testing-${{ env.SHORT_SHA }}
+          path: apps/desktop/out/make/zip/darwin/arm64/*.zip
+          retention-days: 14
+          if-no-files-found: error
+      - name: Remove temporary keychain
+        if: always()
+        run: security delete-keychain "$RUNNER_TEMP/signing.keychain-db" || true

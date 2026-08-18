@@ -41,6 +41,9 @@ module.exports = {
   packagerConfig: {
     appBundleId: 'com.nikgraf.calendar',
     asar: false,
+    // CFBundleVersion; CI sets the short commit SHA so testers can identify
+    // builds. Undefined locally — packager skips it.
+    buildVersion: process.env.BUILD_VERSION,
     executableName: 'calendar',
     ignore: [
       /^\/electron(?:$|\/)/,
@@ -58,6 +61,10 @@ module.exports = {
     ...(process.env.APPLE_SIGNING_IDENTITY
       ? {
           osxSign: {
+            // Packager defaults this to true, demoting per-file codesign
+            // failures to warnings that resurface as confusing notarization
+            // errors — fail at the signing step instead.
+            continueOnError: false,
             hardenedRuntime: true,
             identity: process.env.APPLE_SIGNING_IDENTITY,
           },
