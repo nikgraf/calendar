@@ -202,33 +202,52 @@ describe('calendar desktop e2e', () => {
     // (day view columns are viewport-wide), with intra-gesture event gaps.
     const burst = { count: 12, deltaX: 240 };
 
-    await cdp.clickButtonWithText('day');
-    await cdp.waitFor(`!!document.querySelector('[title^="Standup meeting"]')`);
-    const point = await cdp.locate('.overflow-y-scroll');
+    // A failure mid-test would leave the view panned weeks away and cascade
+    // through every later test — always restore Today + week view.
+    try {
+      await cdp.clickButtonWithText('day');
+      await cdp.waitFor(`!!document.querySelector('[title^="Standup meeting"]')`);
+      const point = await cdp.locate('.overflow-y-scroll');
 
-    // Vertical control: scrolls the grid, never navigates.
-    const dayTitle = await cdp.eval<string>(h1);
-    const scrollBefore = await cdp.eval<number>(scrollTop);
-    await cdp.wheel(point.x, point.y, 0, 120);
-    await cdp.waitFor(`${scrollTop} !== ${scrollBefore}`);
-    expect(await cdp.eval<string>(h1)).toBe(dayTitle);
+      // Vertical control: scrolls the grid, never navigates.
+      const dayTitle = await cdp.eval<string>(h1);
+      const scrollBefore = await cdp.eval<number>(scrollTop);
+      await cdp.wheel(point.x, point.y, 0, 120);
+      await cdp.waitFor(`${scrollTop} !== ${scrollBefore}`);
+      expect(await cdp.eval<string>(h1)).toBe(dayTitle);
 
-    // Day view: horizontal pan crosses into another day.
-    await cdp.wheelBurst('.overflow-y-scroll', burst);
-    await cdp.waitFor(`${h1} !== ${JSON.stringify(dayTitle)}`);
+      // Day view: horizontal pan crosses into another day.
+      await cdp.wheelBurst('.overflow-y-scroll', burst);
+      await cdp.waitFor(`${h1} !== ${JSON.stringify(dayTitle)}`);
 
-    await cdp.clickButtonWithText('Today');
-    await cdp.clickButtonWithText('week');
-    const weekTitle = await cdp.waitFor<string>(h1);
+      await cdp.clickButtonWithText('Today');
+      await cdp.clickButtonWithText('week');
+      const weekTitle = await cdp.waitFor<string>(h1);
 
-    // Week view: horizontal pan slides the rolling 7-day window.
-    await cdp.wheelBurst('.overflow-y-scroll', burst);
-    await cdp.waitFor(`${h1} !== ${JSON.stringify(weekTitle)}`);
+      // Week view: horizontal pan slides the rolling 7-day window.
+      await cdp.wheelBurst('.overflow-y-scroll', burst);
+      await cdp.waitFor(`${h1} !== ${JSON.stringify(weekTitle)}`);
 
-    // Today snaps back to the Monday-based week.
-    await cdp.clickButtonWithText('Today');
-    await cdp.waitFor(`${h1} === ${JSON.stringify(weekTitle)}`);
-    await cdp.waitFor(`!!document.querySelector('[title^="Standup meeting"]')`);
+      // No axis dead-lock: a diagonal burst pans days AND scrolls the grid in
+      // the same gesture (vertical deltas are applied manually while panning).
+      // Scroll upward — the earlier vertical control left scrollTop at max.
+      const scrollMid = await cdp.eval<number>(scrollTop);
+      const midTitle = await cdp.eval<string>(h1);
+      await cdp.wheelBurst('.overflow-y-scroll', { count: 12, deltaX: 240, deltaY: -20 });
+      await cdp.waitFor(`${scrollTop} !== ${scrollMid}`);
+      await cdp.waitFor(`${h1} !== ${JSON.stringify(midTitle)}`);
+
+      // Today snaps back to the Monday-based week.
+      await cdp.clickButtonWithText('Today');
+      await cdp.waitFor(`${h1} === ${JSON.stringify(weekTitle)}`);
+    } finally {
+      // Unconditional restore for the rest of the suite.
+      await cdp.clickButtonWithText('Today');
+      await cdp.clickButtonWithText('week');
+      await cdp
+        .waitFor(`!!document.querySelector('[title^="Standup meeting"]')`)
+        .catch(() => undefined);
+    }
   });
 
   it('keeps the grid vertically stable and header-aligned while panning', async () => {

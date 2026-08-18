@@ -19,6 +19,7 @@ export const useWheelPan = ({
   firstDay,
   onCommitDays,
   rootRef,
+  scrollerRef,
   viewportRef,
   visibleDayCount,
 }: {
@@ -28,6 +29,11 @@ export const useWheelPan = ({
   onCommitDays: (dayCount: number) => void;
   /** Gets the wheel listener and the `--pan-x` variable. */
   rootRef: RefObject<HTMLElement | null>;
+  /**
+   * Vertical scroller: consumed (prevented) pan events apply their deltaY
+   * here manually, so diagonal gestures scroll both dimensions at once.
+   */
+  scrollerRef: RefObject<HTMLElement | null>;
   /** Clipped strip container; its width / visibleDayCount = day width. */
   viewportRef: RefObject<HTMLElement | null>;
   visibleDayCount: number;
@@ -124,6 +130,12 @@ export const useWheelPan = ({
           return;
         }
         event.preventDefault();
+        // preventDefault kills native scrolling for this event, so apply its
+        // vertical component by hand — diagonal pans scroll both dimensions.
+        const deltaY = wheelDeltaToPx(event.deltaY, event.deltaMode);
+        if (deltaY !== 0 && scrollerRef.current) {
+          scrollerRef.current.scrollTop += deltaY;
+        }
         cancelSettle();
         setVar(result.offsetPx);
         if (result.commitDays !== 0) {
