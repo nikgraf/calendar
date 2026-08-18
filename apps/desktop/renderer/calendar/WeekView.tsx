@@ -82,6 +82,7 @@ export function WeekView({
     firstDay: days[0]!,
     onCommitDays: onNavigate,
     rootRef,
+    scrollerRef: scrollRef,
     viewportRef,
     visibleDayCount: days.length,
   });

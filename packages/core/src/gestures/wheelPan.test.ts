@@ -4,16 +4,47 @@ import { createWheelPan, wheelDeltaToPx } from './wheelPan.ts';
 const DAY = 100;
 
 describe('wheelPan', () => {
-  it('locks the axis on the first event of a gesture', () => {
+  it('builds intent before consuming small horizontal deltas', () => {
     const pan = createWheelPan();
-    // Vertical first event: the whole gesture scrolls, even if later
-    // events drift horizontally.
-    expect(pan.feed(10, 80, DAY, 0).consumed).toBe(false);
-    expect(pan.feed(90, 5, DAY, 16).consumed).toBe(false);
-    // After the gesture gap a new gesture can lock horizontal.
-    expect(pan.feed(90, 5, DAY, 400).consumed).toBe(true);
-    // ...and stays horizontal for vertical-drifting events in the gesture.
-    expect(pan.feed(5, 90, DAY, 416).consumed).toBe(true);
+    expect(pan.feed(6, 0, DAY, 0).consumed).toBe(false);
+    const engaged = pan.feed(6, 0, DAY, 16);
+    expect(engaged.consumed).toBe(true);
+    // The run-up is applied, not dropped — no dead zone at pan start.
+    expect(engaged.offsetPx).toBe(-12);
+  });
+
+  it('vertical-dominant events pass through and reset intent', () => {
+    const pan = createWheelPan();
+    expect(pan.feed(6, 0, DAY, 0).consumed).toBe(false);
+    expect(pan.feed(5, 80, DAY, 16).consumed).toBe(false);
+    // Intent was reset — 6px alone stays under the threshold.
+    expect(pan.feed(6, 0, DAY, 32).consumed).toBe(false);
+    expect(pan.feed(6, 0, DAY, 48).consumed).toBe(true);
+  });
+
+  it('consumes vertical-dominant events while panning (2D gestures)', () => {
+    const pan = createWheelPan();
+    expect(pan.feed(60, 0, DAY, 0).consumed).toBe(true);
+    // Mid-pan vertical movement stays consumed (the caller scrolls manually)
+    // and its horizontal component keeps feeding the offset.
+    const diagonal = pan.feed(2, 80, DAY, 16);
+    expect(diagonal.consumed).toBe(true);
+    expect(diagonal.offsetPx).toBe(-62);
+  });
+
+  it('needs fresh intent after release', () => {
+    const pan = createWheelPan();
+    expect(pan.feed(60, 0, DAY, 0).consumed).toBe(true);
+    pan.release(DAY);
+    expect(pan.feed(6, 0, DAY, 16).consumed).toBe(false);
+    expect(pan.feed(6, 0, DAY, 32).consumed).toBe(true);
+  });
+
+  it('a gesture gap clears accumulated intent', () => {
+    const pan = createWheelPan();
+    expect(pan.feed(6, 0, DAY, 0).consumed).toBe(false);
+    // > gestureGapMs later: the stale 6px run-up is gone.
+    expect(pan.feed(6, 0, DAY, 400).consumed).toBe(false);
   });
 
   it('tracks the offset 1:1 against deltaX', () => {
@@ -80,7 +111,7 @@ describe('wheelPan', () => {
     expect(pan.offset()).toBe(-12);
   });
 
-  it('reset clears offset, pending, and axis', () => {
+  it('reset clears offset, pending, and pan state', () => {
     const pan = createWheelPan();
     pan.feed(120, 0, DAY, 0);
     pan.reset();
