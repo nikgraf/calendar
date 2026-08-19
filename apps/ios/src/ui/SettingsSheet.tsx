@@ -1,7 +1,16 @@
 import { useAccounts, useBackendMutations, useCalendars, usePendingOps } from '@calendar/app-state';
 import { CALENDAR_PALETTE } from '@calendar/core';
+import {
+  channel as updatesChannel,
+  createdAt as updateCreatedAt,
+  fetchUpdateAsync,
+  isEnabled as updatesEnabled,
+  reloadAsync,
+  setUpdateRequestHeadersOverride,
+  updateId,
+} from 'expo-updates';
 import { useState } from 'react';
-import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { palette } from './theme.ts';
 
 export function SettingsSheet({ onClose, visible }: { onClose: () => void; visible: boolean }) {
@@ -165,9 +174,88 @@ export function SettingsSheet({ onClose, visible }: { onClose: () => void; visib
               {busy ? 'Waiting for Google…' : 'Add Google Account'}
             </Text>
           </Pressable>
+
+          <PrPreviewSection />
         </ScrollView>
       </View>
     </Modal>
+  );
+}
+
+/**
+ * Internal-testing helper: loads a pull request's OTA update channel
+ * (published by CI as `pr-<number>`) into this installed build via the
+ * expo-updates request-header override, and switches back to main. Only
+ * meaningful in update-enabled (TestFlight) builds — dev clients load from
+ * Metro and show a hint instead.
+ */
+function PrPreviewSection() {
+  const [channelInput, setChannelInput] = useState('');
+  const [status, setStatus] = useState<string | null>(null);
+  const [switching, setSwitching] = useState(false);
+
+  const switchTo = async (channel: string | null) => {
+    setSwitching(true);
+    setStatus(null);
+    try {
+      setUpdateRequestHeadersOverride(channel ? { 'expo-channel-name': channel } : null);
+      const result = await fetchUpdateAsync();
+      if (result.isNew) {
+        await reloadAsync();
+        return;
+      }
+      setStatus(
+        channel
+          ? `Override set for ${channel}. No update fetched yet — force-quit and reopen the app.`
+          : 'Back on the main channel. Force-quit and reopen to be sure.',
+      );
+    } catch (error) {
+      setStatus(String(error));
+    } finally {
+      setSwitching(false);
+    }
+  };
+
+  return (
+    <View style={styles.previewCard}>
+      <Text style={styles.previewTitle}>PR preview</Text>
+      <Text style={styles.previewMeta}>
+        channel {updatesChannel ?? 'none'} · update {updateId ? updateId.slice(0, 8) : 'embedded'}
+        {updateCreatedAt ? ` · ${updateCreatedAt.toLocaleString()}` : ''}
+      </Text>
+      {updatesEnabled ? (
+        <>
+          <TextInput
+            autoCapitalize="none"
+            autoCorrect={false}
+            editable={!switching}
+            onChangeText={setChannelInput}
+            placeholder="pr-123"
+            style={styles.previewInput}
+            value={channelInput}
+          />
+          <View style={styles.previewButtons}>
+            <Pressable
+              disabled={switching || channelInput.trim() === ''}
+              onPress={() => void switchTo(channelInput.trim())}
+              style={[styles.previewLoad, switching && styles.addBusy]}
+            >
+              <Text style={styles.previewLoadLabel}>
+                {switching ? 'Switching…' : 'Load PR channel'}
+              </Text>
+            </Pressable>
+            <Pressable disabled={switching} onPress={() => void switchTo(null)}>
+              <Text style={styles.previewReset}>Back to main</Text>
+            </Pressable>
+          </View>
+        </>
+      ) : (
+        <Text style={styles.previewMeta}>
+          Updates are disabled in this build (dev client loads from Metro).
+        </Text>
+      )}
+      {status ? <Text style={styles.previewStatus}>{status}</Text> : null}
+    </View>
   );
 }
 
@@ -294,6 +382,59 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '700',
     marginBottom: 4,
+  },
+  previewButtons: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 14,
+    marginTop: 8,
+  },
+  previewCard: {
+    backgroundColor: '#ffffff',
+    borderColor: palette.border,
+    borderRadius: 12,
+    borderWidth: StyleSheet.hairlineWidth,
+    marginTop: 16,
+    padding: 12,
+  },
+  previewInput: {
+    borderColor: palette.border,
+    borderRadius: 8,
+    borderWidth: StyleSheet.hairlineWidth,
+    fontSize: 14,
+    marginTop: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+  },
+  previewLoad: {
+    backgroundColor: '#2563eb',
+    borderRadius: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+  },
+  previewLoadLabel: {
+    color: '#ffffff',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  previewMeta: {
+    color: palette.textMuted,
+    fontSize: 12,
+    marginTop: 2,
+  },
+  previewReset: {
+    color: '#2563eb',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  previewStatus: {
+    color: palette.textMuted,
+    fontSize: 12,
+    marginTop: 8,
+  },
+  previewTitle: {
+    fontSize: 15,
+    fontWeight: '600',
   },
   reconnect: {
     color: '#d97706',

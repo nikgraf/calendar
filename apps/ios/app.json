@@ -10,6 +10,12 @@
     "experiments": {
       "reactCompiler": true
     },
+    "runtimeVersion": {
+      "policy": "fingerprint"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/EAS_PROJECT_ID_PLACEHOLDER"
+    },
     "ios": {
       "bundleIdentifier": "com.solunivo.app",
       "supportsTablet": false

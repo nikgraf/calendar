@@ -18,7 +18,17 @@
       auto-update while the repo is private). Open until the six secrets
       from docs/distribution.md are added to repo settings and the first
       `testing-build` run goes green
-- [ ] EAS build / TestFlight distribution for the iOS app
+- [x] EAS build / TestFlight distribution for the iOS app — done: EAS
+      Build+Submit on every main push (fire-and-forget from ubuntu CI) plus
+      per-PR OTA preview channels (pr-<n>, ~30s) with an in-app channel
+      switcher (Settings → PR preview, expo-updates header override);
+      `testflight` PR label ships a real build for native changes
+      (fingerprint runtimeVersion keeps incompatible OTA updates away).
+      Decisions: single bundle id (one install per device — platform
+      constraint), no per-PR TestFlight builds by default (cost/latency).
+      Open until Nik: eas init + first interactive build (placeholders in
+      app.json/eas.json), EXPO_TOKEN secret, ASC internal testers, new
+      Google iOS OAuth client. See docs/distribution.md.
 - [ ] Native iOS date/time pickers in the event editor
       (`@react-native-community/datetimepicker` — replaces the text inputs;
       requires a prebuild)
