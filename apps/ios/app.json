@@ -18,12 +18,12 @@
     },
     "ios": {
       "bundleIdentifier": "com.solunivo.app",
-      "supportsTablet": false
+      "supportsTablet": false,
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
-    "plugins": [
-      "expo-web-browser",
-      "expo-secure-store"
-    ],
+    "plugins": ["expo-web-browser", "expo-secure-store"],
     "extra": {
       "googleIosClientId": "",
       "eas": {
@@ -31,6 +31,8 @@
       }
     },
     "owner": "naisho-gmbh",
-    "android": {}
+    "android": {
+      "package": "com.solunivo.app"
+    }
   }
 }
