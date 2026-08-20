@@ -10,13 +10,29 @@
     "experiments": {
       "reactCompiler": true
     },
+    "runtimeVersion": {
+      "policy": "fingerprint"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/a4112fca-bb35-4553-a6c2-0b425ca98e98"
+    },
     "ios": {
       "bundleIdentifier": "com.solunivo.app",
-      "supportsTablet": false
+      "supportsTablet": false,
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "plugins": ["expo-web-browser", "expo-secure-store"],
     "extra": {
-      "googleIosClientId": ""
+      "googleIosClientId": "",
+      "eas": {
+        "projectId": "a4112fca-bb35-4553-a6c2-0b425ca98e98"
+      }
+    },
+    "owner": "naisho-gmbh",
+    "android": {
+      "package": "com.solunivo.app"
     }
   }
 }

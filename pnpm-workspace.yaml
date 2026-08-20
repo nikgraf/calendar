@@ -49,6 +49,9 @@ onlyBuiltDependencies:
   - unrs-resolver
 
 overrides:
+  # @electron/rebuild pins @electron/node-gyp to a git SHA; the registry
+  # publishes the same fork, and blockExoticSubdeps forbids git subdeps.
+  '@electron/node-gyp': 10.2.0-electron.2
   # yauzl 2.x silently kills the process under modern Node during
   # electron-packager's zip extraction (same fix as codiff).
   'extract-zip>yauzl': ^3.4.0
@@ -75,4 +78,6 @@ minimumReleaseAgeExclude:
 
 allowBuilds:
   better-sqlite3: true
+  # Optional native tracing inside eas-cli; the JS stub fallback is fine.
+  dtrace-provider: false
   msgpackr-extract: false

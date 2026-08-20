@@ -1,0 +1,152 @@
+name: iOS
+
+# TestFlight builds via EAS on every main push (and on the `testflight` PR
+# label, for native changes), plus a per-PR OTA preview update on every PR
+# push. Setup + tester flow: docs/distribution.md. Separate workflow file so
+# `labeled` events don't re-trigger or cancel the main CI's gate/e2e.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    types: [opened, synchronize, reopened, labeled]
+  workflow_dispatch:
+
+concurrency:
+  group: ios-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Kicks off the cloud build and returns (--no-wait): the ~20-minute build
+  # and the TestFlight submission run on EAS; status lives in the EAS
+  # dashboard and arrives by email.
+  testflight:
+    name: TestFlight build (EAS)
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Ensure EXPO_TOKEN is configured
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: |
+          if [ -z "$EXPO_TOKEN" ]; then
+            echo "::error::secret EXPO_TOKEN is not set (see docs/distribution.md)"
+            exit 1
+          fi
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Build, then submit to TestFlight (on EAS infrastructure)
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        working-directory: apps/ios
+        run: |
+          pnpm exec eas build --platform ios --profile testflight \
+            --non-interactive --no-wait --auto-submit \
+            --message "main ${GITHUB_SHA::7}"
+
+  # JS-only preview: publishes the PR's bundle to OTA channel pr-<number>
+  # (~30s). Load it on-device via Settings → PR preview. Skips quietly while
+  # EXPO_TOKEN is absent so agent PRs aren't blocked before setup.
+  preview-update:
+    name: PR preview update (EAS)
+    if: >-
+      github.event_name == 'pull_request' &&
+      github.event.action != 'labeled' &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - name: Check for EXPO_TOKEN
+        id: token
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: |
+          if [ -n "$EXPO_TOKEN" ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "EXPO_TOKEN not set — skipping preview publish"
+          fi
+      - if: steps.token.outputs.present == 'true'
+        uses: actions/checkout@v4
+      - if: steps.token.outputs.present == 'true'
+        uses: pnpm/action-setup@v4
+      - if: steps.token.outputs.present == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - if: steps.token.outputs.present == 'true'
+        run: pnpm install --frozen-lockfile
+      - name: Publish OTA update to channel pr-${{ github.event.number }}
+        if: steps.token.outputs.present == 'true'
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+        working-directory: apps/ios
+        run: |
+          pnpm exec eas update --branch "pr-${{ github.event.number }}" \
+            --non-interactive --message "$PR_TITLE @ ${HEAD_SHA:0:7}"
+      - name: Upsert PR comment with the preview channel
+        if: steps.token.outputs.present == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          MARKER="<!-- ios-preview -->"
+          BODY="$MARKER
+          📱 **iOS preview**: channel \`pr-${{ github.event.number }}\` @ ${HEAD_SHA:0:7} — on your phone: Settings → PR preview → enter the channel → Load. Native changes need a real build instead: add the \`testflight\` label."
+          EXISTING=$(gh api "repos/${{ github.repository }}/issues/${{ github.event.number }}/comments" \
+            --jq ".[] | select(.body | startswith(\"$MARKER\")) | .id" | head -1)
+          if [ -n "$EXISTING" ]; then
+            gh api -X PATCH "repos/${{ github.repository }}/issues/comments/$EXISTING" -f body="$BODY" > /dev/null
+          else
+            gh api "repos/${{ github.repository }}/issues/${{ github.event.number }}/comments" -f body="$BODY" > /dev/null
+          fi
+
+  # Full TestFlight build from a PR branch, for PRs that change native code
+  # (new pods, config plugins — anything the OTA fingerprint can't cover).
+  # Trigger by adding the `testflight` label. The build ships on channel
+  # `main`; switch to the PR's OTA channel in-app after installing.
+  testflight-pr:
+    name: TestFlight build for PR (label)
+    if: >-
+      github.event_name == 'pull_request' &&
+      github.event.action == 'labeled' &&
+      github.event.label.name == 'testflight'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Ensure EXPO_TOKEN is configured
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: |
+          if [ -z "$EXPO_TOKEN" ]; then
+            echo "::error::secret EXPO_TOKEN is not set (see docs/distribution.md)"
+            exit 1
+          fi
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Build, then submit to TestFlight (on EAS infrastructure)
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        working-directory: apps/ios
+        run: |
+          pnpm exec eas build --platform ios --profile testflight \
+            --non-interactive --no-wait --auto-submit \
+            --message "PR #${{ github.event.number }} ${GITHUB_SHA::7}"

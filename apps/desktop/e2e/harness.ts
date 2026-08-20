@@ -196,16 +196,27 @@ export class Cdp {
     return result.result.value;
   }
 
-  /** Polls an expression until it is truthy; returns its value. */
+  /**
+   * Polls an expression until it is truthy; returns its value. Evaluation
+   * errors count as "not ready yet" and keep polling: during boot the page
+   * can still be about:blank, where `document.body` is null and the very
+   * first eval throws — a hard throw there would kill the whole run.
+   */
   async waitFor<T>(expression: string, timeoutMs = 15_000): Promise<T> {
     const deadline = Date.now() + timeoutMs;
+    let lastError = '';
     for (;;) {
-      const value = await this.eval<T>(expression);
-      if (value) {
-        return value;
+      try {
+        const value = await this.eval<T>(expression);
+        if (value) {
+          return value;
+        }
+        lastError = '';
+      } catch (error) {
+        lastError = ` (last error: ${String(error).slice(0, 120)})`;
       }
       if (Date.now() > deadline) {
-        throw new Error(`waitFor timed out: ${expression.slice(0, 120)}`);
+        throw new Error(`waitFor timed out: ${expression.slice(0, 120)}${lastError}`);
       }
       await sleep(150);
     }

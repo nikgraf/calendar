@@ -65,3 +65,61 @@ useful after adding/rotating secrets.
   secret for the duration of the job and is deleted in an `always()` step.
 - Notarization adds ~2–10 minutes; the job timeout is 30.
 - Builds currently ship the stock Electron icon (see the app-icons todo).
+
+# iOS: TestFlight + per-PR previews
+
+Every push to `main` triggers the `iOS` workflow (`.github/workflows/ios.yml`),
+which kicks off an **EAS Build** (Expo's cloud — handles signing) and
+auto-submits to **TestFlight** (`--no-wait`: CI returns immediately; build +
+submission status live in the EAS dashboard / email). Every PR push publishes
+an **OTA preview update** to channel `pr-<number>` in ~30s and comments the
+channel name on the PR.
+
+## Platform constraint: one install per bundle id
+
+iOS allows one installed copy of `com.solunivo.app`. You can't have several
+PR builds side by side. Instead:
+
+- **JS/TS changes (almost all agent PRs)** — keep the installed TestFlight
+  build and switch channels in-app: **Settings → PR preview** → enter
+  `pr-<number>` (from the PR comment) → Load. "Back to main" returns to the
+  main channel. If no update loads immediately, force-quit and reopen.
+- **Native changes** (new native deps, config plugins, Expo SDK bumps) change
+  the update **fingerprint** (`runtimeVersion.policy: fingerprint`), so OTA
+  previews from such PRs are invisible to the installed build — deliberately,
+  they'd crash it. Add the **`testflight` label** to the PR: CI ships a real
+  TestFlight build; install it (replaces the current one), then load the PR
+  channel in-app.
+- TestFlight itself also lets you switch between any processed builds
+  (TestFlight app → Previous Builds).
+
+## One-time setup (Nik)
+
+1. Expo account: `pnpm exec eas login` in `apps/ios`, then `eas init` (writes
+   the project id into app.json) and `eas update:configure` (replaces
+   `EAS_PROJECT_ID_PLACEHOLDER` in `updates.url`).
+2. App Store Connect: run the first `eas build --profile testflight`
+   interactively — EAS creates + stores the distribution cert and an ASC API
+   key; `eas submit` can create the ASC app for `com.solunivo.app`. Put the
+   ASC app id into `eas.json` → `submit.testflight` (replaces
+   `ASC_APP_ID_PLACEHOLDER`).
+3. Repo secret **`EXPO_TOKEN`** (expo.dev → Account settings → Access
+   tokens). Until it exists, the main/label jobs fail loudly and the PR
+   preview job skips quietly.
+4. Google OAuth: the iOS client must match bundle id `com.solunivo.app`
+   (see README) — sign-in in TestFlight builds needs it.
+5. TestFlight internal testing: add yourself (and teammates) as internal
+   testers in App Store Connect — internal builds need no Apple review.
+
+## Costs / quotas
+
+- EAS free tier: ~30 cloud builds/month; OTA updates are effectively free at
+  this scale. Main merges + occasional `testflight` labels fit comfortably;
+  the per-PR path costs no builds at all.
+- The CI jobs run on ubuntu (cheap); the actual iOS builds run on EAS.
+
+## Local development
+
+Unchanged (`pnpm --filter @calendar/ios ios` dev client; updates are disabled
+in dev builds — the PR-preview section shows a hint instead). After adding
+`expo-updates` (or other native modules), rebuild the dev client once.

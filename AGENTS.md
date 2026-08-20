@@ -36,3 +36,5 @@ The full product plan lives in the repo owner's plan file; milestone tracking in
 Start with `CLAUDE.md` (rules + map), then `docs/architecture.md`,
 `docs/effect-v4-notes.md`, and `docs/google-sync-and-testing.md`.
 `todo.md` is the roadmap and decision log.
+
+- iOS: every main push ships a TestFlight build via EAS; every PR gets an OTA preview channel `pr-<n>` (commented on the PR) loadable via Settings → PR preview on-device — see `docs/distribution.md`
