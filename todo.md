@@ -26,9 +26,11 @@
       (fingerprint runtimeVersion keeps incompatible OTA updates away).
       Decisions: single bundle id (one install per device — platform
       constraint), no per-PR TestFlight builds by default (cost/latency).
-      Open until Nik: eas init + first interactive build (placeholders in
-      app.json/eas.json), EXPO_TOKEN secret, ASC internal testers, new
-      Google iOS OAuth client. See docs/distribution.md.
+      Open until Nik: first interactive build, EXPO_TOKEN secret, ASC
+      internal testers. See docs/distribution.md. Note: the OAuth consent
+      screen is in Testing, where refresh tokens expire after 7 days —
+      publish to Production before adding outside testers, or they hit a
+      weekly forced re-sign-in.
 - [ ] Native iOS date/time pickers in the event editor
       (`@react-native-community/datetimepicker` — replaces the text inputs;
       requires a prebuild)
