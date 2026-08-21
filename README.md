@@ -50,8 +50,10 @@ then re-run `pnpm --filter @calendar/ios prebuild`.
 pnpm --filter @calendar/desktop dev
 pnpm --filter @calendar/desktop dev:app
 
-# iOS simulator (dev client)
-pnpm --filter @calendar/ios ios
+# iOS simulator dev client: build on EAS, install, then run Metro
+# (cd apps/ios && pnpm exec eas build -p ios --profile development-simulator)
+# (cd apps/ios && pnpm exec eas build:run -p ios --latest)
+pnpm --filter @calendar/ios start
 
 # Quality gates
 pnpm test && pnpm check && pnpm typecheck
