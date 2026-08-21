@@ -118,8 +118,41 @@ PR builds side by side. Instead:
   the per-PR path costs no builds at all.
 - The CI jobs run on ubuntu (cheap); the actual iOS builds run on EAS.
 
-## Local development
+## Simulator dev client (EAS build — preferred)
 
-Unchanged (`pnpm --filter @calendar/ios ios` dev client; updates are disabled
-in dev builds — the PR-preview section shows a hint instead). After adding
-`expo-updates` (or other native modules), rebuild the dev client once.
+Build in the cloud, download, install:
+
+```sh
+cd apps/ios
+pnpm exec eas build --platform ios --profile development-simulator
+pnpm exec eas build:run --platform ios --latest   # downloads + installs on a booted simulator
+pnpm --filter @calendar/ios start                 # Metro, then open the app
+```
+
+No Xcode toolchain, no signing (simulator builds are unsigned), and the
+artifact is a URL anyone on the team — or an agent — can install from. Costs
+one build from the EAS quota. `build:run` picks a booted simulator; the
+downloaded `.tar.gz` also works by extracting and dragging the `.app` in.
+
+**Rebuild the dev client only when native code changes** (a new native module,
+config plugin, or Expo SDK bump). JS-only changes reload over Metro. Adding
+`expo-updates` was exactly such a case — a dev client built before it would
+crash on the settings screen.
+
+Updates are disabled in dev builds, so **Settings → PR preview** shows
+"Updates are disabled in this build" instead of channel controls. That is the
+quickest way to confirm a rebuild picked up `expo-updates`.
+
+Maestro e2e (`pnpm test:e2e:ios`) runs against this dev client, so install a
+fresh one before those flows after a native change.
+
+### Local Xcode build (fallback)
+
+```sh
+pnpm --filter @calendar/ios prebuild   # regenerate ios/ + install pods
+pnpm --filter @calendar/ios ios        # expo run:ios — compiles locally, boots the simulator
+```
+
+Useful for debugging native code or working offline. First compile takes
+~10-20 minutes. `apps/ios/ios/` is generated and gitignored — if it gets into
+a weird state, rerun prebuild with `--clean`.
