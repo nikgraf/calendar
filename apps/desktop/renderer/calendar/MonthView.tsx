@@ -1,4 +1,4 @@
-import { buildMonthGrid, dayRange, Temporal, type EventRecord } from '@calendar/core';
+import { buildMonthGrid, eventsOnDay, Temporal, type EventRecord } from '@calendar/core';
 import { chipTextColor, type ColorLookup } from './colors.ts';
 
 const MAX_CHIPS = 3;
@@ -19,12 +19,8 @@ export function MonthView({
   const today = Temporal.Now.plainDateISO(timeZone);
   const weeks = buildMonthGrid(yearMonth, today);
 
-  const eventsForDay = (date: Temporal.PlainDate): Array<EventRecord> => {
-    const range = dayRange(date, timeZone);
-    return events
-      .filter((event) => event.startUtc < range.endUtc && event.endUtc > range.startUtc)
-      .sort((a, b) => Number(b.isAllDay) - Number(a.isAllDay) || a.startUtc - b.startUtc);
-  };
+  const eventsForDay = (date: Temporal.PlainDate): Array<EventRecord> =>
+    eventsOnDay(events, date, timeZone);
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">

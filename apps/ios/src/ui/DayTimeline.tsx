@@ -1,6 +1,7 @@
 import { useBackendMutations, useNow } from '@calendar/app-state';
 import {
   dayRange,
+  eventsOnDay,
   layoutDayColumn,
   moveEventTimes,
   resizeEventEnd,
@@ -175,9 +176,7 @@ function DayColumn({
 }) {
   const range = dayRange(date, timeZone);
   const isToday = Temporal.PlainDate.compare(date, Temporal.Now.plainDateISO(timeZone)) === 0;
-  const timed = events.filter(
-    (event) => !event.isAllDay && event.startUtc < range.endUtc && event.endUtc > range.startUtc,
-  );
+  const timed = eventsOnDay(events, date, timeZone).filter((event) => !event.isAllDay);
   const boxes = layoutDayColumn(
     timed.map((event) => ({
       endUtc: event.endUtc,
@@ -234,10 +233,7 @@ function AllDayColumn({
   timeZone: string;
   width: number;
 }) {
-  const range = dayRange(date, timeZone);
-  const allDay = events.filter(
-    (event) => event.isAllDay && event.startUtc < range.endUtc && event.endUtc > range.startUtc,
-  );
+  const allDay = eventsOnDay(events, date, timeZone).filter((event) => event.isAllDay);
   return (
     <View style={[styles.allDayColumn, { width }]}>
       {allDay.map((event) => {

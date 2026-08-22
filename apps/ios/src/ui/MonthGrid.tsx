@@ -1,4 +1,4 @@
-import { buildMonthGrid, dayRange, Temporal, type EventRecord } from '@calendar/core';
+import { buildMonthGrid, eventsOnDay, Temporal, type EventRecord } from '@calendar/core';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { palette } from './theme.ts';
 
@@ -20,10 +20,7 @@ export function MonthGrid({
   const today = Temporal.Now.plainDateISO(timeZone);
   const weeks = buildMonthGrid(yearMonth, today);
 
-  const eventsForDay = (date: Temporal.PlainDate) => {
-    const range = dayRange(date, timeZone);
-    return events.filter((event) => event.startUtc < range.endUtc && event.endUtc > range.startUtc);
-  };
+  const eventsForDay = (date: Temporal.PlainDate) => eventsOnDay(events, date, timeZone);
 
   return (
     <View style={styles.container}>

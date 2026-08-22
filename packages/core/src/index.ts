@@ -1,6 +1,7 @@
 export * from './backend.ts';
 export * from './layout/allDayLane.ts';
 export * from './layout/dayGrid.ts';
+export * from './layout/dayMembership.ts';
 export * from './color.ts';
 export * from './gestures/wheelPan.ts';
 export * from './meeting.ts';
