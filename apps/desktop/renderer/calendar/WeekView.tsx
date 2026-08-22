@@ -1,4 +1,5 @@
 import {
+  bufferedDays,
   dayRange,
   layoutAllDayLane,
   layoutDayColumn,
@@ -53,23 +54,17 @@ export function WeekView({
 
   // The pan strip renders buffer columns on both sides of the visible days
   // so horizontal panning reveals fully drawn neighbours.
-  const bufferedDays = useMemo(
-    () =>
-      Array.from({ length: days.length + 2 * PAN_BUFFER_DAYS }, (_, index) =>
-        days[0]!.add({ days: index - PAN_BUFFER_DAYS }),
-      ),
-    [days],
-  );
+  const strip = useMemo(() => bufferedDays(days[0]!, days.length, PAN_BUFFER_DAYS), [days]);
   // Strips are (buffered/visible)× as wide as their clipped viewport and
   // sit shifted left by the leading buffer; `--pan-x` (set imperatively by
   // useWheelPan on the root) adds the live gesture offset.
   const stripStyle = {
-    transform: `translateX(calc(${-(PAN_BUFFER_DAYS / bufferedDays.length) * 100}% + var(--pan-x, 0px)))`,
-    width: `${(bufferedDays.length / days.length) * 100}%`,
+    transform: `translateX(calc(${-(PAN_BUFFER_DAYS / strip.length) * 100}% + var(--pan-x, 0px)))`,
+    width: `${(strip.length / days.length) * 100}%`,
   };
 
   const drag = useEventDrag({
-    dayCount: bufferedDays.length,
+    dayCount: strip.length,
     gridRef,
     gutterWidth: 0,
     hourHeight: HOUR_HEIGHT,
@@ -113,14 +108,14 @@ export function WeekView({
 
   const { placed: allDayPlaced, rowCount } = layoutAllDayLane(
     allDayEvents.map((event) => {
-      const startIndex = event.startDate ? dayIndexOf(event.startDate, bufferedDays) : -1;
+      const startIndex = event.startDate ? dayIndexOf(event.startDate, strip) : -1;
       const endIso = event.endDate ?? utcMsToPlainDate(event.endUtc);
       const endDate = Temporal.PlainDate.from(endIso);
-      const first = bufferedDays[0]!;
+      const first = strip[0]!;
       return {
         endDayIndex:
-          Temporal.PlainDate.compare(endDate, bufferedDays.at(-1)!) > 0
-            ? bufferedDays.length
+          Temporal.PlainDate.compare(endDate, strip.at(-1)!) > 0
+            ? strip.length
             : Math.max(first.until(endDate).days, 0),
         id: `${event.calendarId}:${event.id}`,
         startDayIndex:
@@ -129,7 +124,7 @@ export function WeekView({
             : startIndex,
       };
     }),
-    bufferedDays.length,
+    strip.length,
   );
   const allDayById = new Map(
     allDayEvents.map((event) => [`${event.calendarId}:${event.id}`, event]),
@@ -148,10 +143,10 @@ export function WeekView({
             className="grid"
             style={{
               ...stripStyle,
-              gridTemplateColumns: `repeat(${bufferedDays.length}, 1fr)`,
+              gridTemplateColumns: `repeat(${strip.length}, 1fr)`,
             }}
           >
-            {bufferedDays.map((day) => {
+            {strip.map((day) => {
               const isToday = Temporal.PlainDate.compare(day, today) === 0;
               return (
                 <div
@@ -202,9 +197,9 @@ export function WeekView({
                   style={{
                     backgroundColor: color,
                     color: chipTextColor(color),
-                    left: `calc(${(span.startDayIndex / bufferedDays.length) * 100}% + 2px)`,
+                    left: `calc(${(span.startDayIndex / strip.length) * 100}% + 2px)`,
                     top: span.row * 24 + 4,
-                    width: `calc(${((span.endDayIndex - span.startDayIndex) / bufferedDays.length) * 100}% - 4px)`,
+                    width: `calc(${((span.endDayIndex - span.startDayIndex) / strip.length) * 100}% - 4px)`,
                   }}
                   title={event.title}
                 >
@@ -240,10 +235,10 @@ export function WeekView({
               ref={gridRef}
               style={{
                 ...stripStyle,
-                gridTemplateColumns: `repeat(${bufferedDays.length}, 1fr)`,
+                gridTemplateColumns: `repeat(${strip.length}, 1fr)`,
               }}
             >
-              {bufferedDays.map((day) => {
+              {strip.map((day) => {
                 const range = dayRange(day, timeZone);
                 const boxes = layoutDayColumn(
                   timedEvents

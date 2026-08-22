@@ -1,8 +1,11 @@
 import { useBackendMutations, useNow } from '@calendar/app-state';
 import {
+  bufferedDays,
+  DAY_SWIPE_BUFFER,
   dayRange,
   eventsOnDay,
   layoutDayColumn,
+  swipeSnapDecision,
   moveEventTimes,
   resizeEventEnd,
   Temporal,
@@ -26,11 +29,6 @@ const GUTTER_WIDTH = 56;
 const EDGE_INSET = 8;
 /** Lane is always rendered at this height so swiping never shifts the grid. */
 const ALL_DAY_HEIGHT = 34;
-/** Neighbour days drawn on each side so a swipe reveals real content. */
-const SWIPE_BUFFER_DAYS = 1;
-/** Fraction of a day width past which a release advances the day. */
-const SWIPE_COMMIT_FRACTION = 0.25;
-const SWIPE_COMMIT_VELOCITY = 500;
 const pxToMinutes = (px: number) => (px / HOUR_HEIGHT) * 60;
 
 /**
@@ -295,13 +293,7 @@ export function DayTimeline({
     }
   };
 
-  const days = useMemo(
-    () =>
-      Array.from({ length: 1 + 2 * SWIPE_BUFFER_DAYS }, (_, index) =>
-        date.add({ days: index - SWIPE_BUFFER_DAYS }),
-      ),
-    [date],
-  );
+  const days = useMemo(() => bufferedDays(date, 1, DAY_SWIPE_BUFFER), [date]);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ animated: false, y: 7.5 * HOUR_HEIGHT });
@@ -328,11 +320,8 @@ export function DayTimeline({
         setShared(panX, withTiming(0, { duration: 160 }));
         return;
       }
-      const direction = end.translationX < 0 ? 1 : -1;
-      const advance =
-        Math.abs(end.translationX) > columnWidth * SWIPE_COMMIT_FRACTION ||
-        (Math.abs(end.velocityX) > SWIPE_COMMIT_VELOCITY && Math.abs(end.translationX) > 8);
-      if (advance) {
+      const direction = swipeSnapDecision(end.translationX, end.velocityX, columnWidth);
+      if (direction !== 0) {
         setShared(
           panX,
           withTiming(-direction * columnWidth, { duration: 180 }, (finished) => {

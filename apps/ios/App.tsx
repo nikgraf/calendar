@@ -6,7 +6,8 @@ import {
   useEventsInRangeStable,
 } from '@calendar/app-state';
 import {
-  daySpanRange,
+  bufferedRange,
+  DAY_SWIPE_BUFFER,
   monthGridRange,
   Temporal,
   weekStart,
@@ -48,8 +49,8 @@ function CalendarScreen() {
   const range = useMemo(
     () =>
       view === 'day'
-        ? // One neighbour day each side so a swipe reveals loaded content.
-          daySpanRange(focused.subtract({ days: 1 }), 3, timeZone)
+        ? // Matches the strip DayTimeline renders, so a swipe reveals loaded days.
+          bufferedRange(focused, 1, DAY_SWIPE_BUFFER, timeZone)
         : monthGridRange(
             Temporal.PlainYearMonth.from(focused),
             Temporal.Now.plainDateISO(timeZone),
