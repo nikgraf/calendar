@@ -64,13 +64,16 @@ export function QuickAddBar({
   };
 
   if (available !== true) {
-    return null;
+    // The marker still renders so e2e can distinguish "checked, no model"
+    // from "not checked yet" instead of racing the mount.
+    return available === false ? <View testID="quick-add-state" /> : null;
   }
 
   return (
-    <View style={styles.container}>
+    <View style={styles.container} testID="quick-add-state">
       <View style={styles.row}>
         <TextInput
+          accessibilityLabel="Describe an event to add"
           editable={!busy}
           onChangeText={setPhrase}
           onSubmitEditing={() => void submit()}
@@ -84,6 +87,8 @@ export function QuickAddBar({
           <ActivityIndicator style={styles.spinner} />
         ) : (
           <Pressable
+            accessibilityLabel="Add the described event"
+            accessibilityRole="button"
             disabled={phrase.trim() === ''}
             onPress={() => void submit()}
             style={[styles.button, phrase.trim() === '' && styles.buttonDisabled]}

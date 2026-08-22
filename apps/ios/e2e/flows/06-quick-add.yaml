@@ -7,8 +7,14 @@ name: Quick add turns a phrase into a prefilled editor
 - extendedWaitUntil:
     visible: 'Today'
     timeout: 60000
-# The bar only renders where an on-device model exists, so skip the rest
-# of the flow on hardware without Apple Intelligence.
+# The bar renders only after an async availability check resolves, so wait
+# for the marker the app emits either way before deciding to skip —
+# checking `quick-add-input` directly would race the mount and report a
+# silent pass on hardware that does have a model.
+- extendedWaitUntil:
+    visible:
+      id: 'quick-add-state'
+    timeout: 30000
 - runFlow:
     when:
       visible:
