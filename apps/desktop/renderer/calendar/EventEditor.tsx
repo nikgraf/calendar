@@ -140,7 +140,8 @@ export function EventEditor({
           accountId,
           calendarId,
           changes: {
-            location: location || undefined,
+            // Empty string clears the field; undefined would read as "unchanged".
+            location: location.trim(),
             title: title.trim(),
             ...times,
           },
@@ -154,7 +155,8 @@ export function EventEditor({
           calendarId,
           changes: {
             isAllDay,
-            location: location || undefined,
+            // Empty string clears the field; undefined would read as "unchanged".
+            location: location.trim(),
             title: title.trim(),
             ...times,
           },
@@ -165,7 +167,7 @@ export function EventEditor({
           accountId,
           calendarId,
           isAllDay,
-          location: location || undefined,
+          location: location.trim() || undefined,
           recurrence:
             repeat === 'none'
               ? undefined

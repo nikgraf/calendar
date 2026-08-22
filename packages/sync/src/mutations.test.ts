@@ -158,6 +158,61 @@ describe('EventMutations', () => {
     }).pipe(Effect.provide(mutationsLayer(client)));
   });
 
+  it.effect('an empty location clears the field and reaches the patch body', () => {
+    const patched: Array<Record<string, unknown>> = [];
+    const client = stubClient({
+      insertEvent: ({ event }) =>
+        Effect.succeed({
+          end: event.end as GcalEvent['end'],
+          etag: '"server-1"',
+          id: event.id ?? 'x',
+          location: event.location,
+          start: event.start as GcalEvent['start'],
+          status: 'confirmed',
+          summary: event.summary,
+        }),
+      patchEvent: ({ event }) => {
+        patched.push(event as Record<string, unknown>);
+        return Effect.succeed({
+          end: event.end as GcalEvent['end'],
+          etag: '"server-2"',
+          id: 'e',
+          location: event.location,
+          start: event.start as GcalEvent['start'],
+          status: 'confirmed',
+          summary: event.summary,
+        });
+      },
+    });
+    return Effect.gen(function* () {
+      yield* seedCalendar;
+      const mutations = yield* EventMutations;
+      const record = yield* mutations.createEvent({ ...draft, location: 'Room 1' });
+      yield* mutations.processPendingOps();
+
+      // Undefined means "unchanged" — the location must survive.
+      yield* mutations.updateEvent({
+        accountId: 'acc-1',
+        calendarId: 'cal-1',
+        changes: { title: 'Kept' },
+        eventId: record.id,
+      });
+      expect((yield* eventsNow)[0]!.location).toBe('Room 1');
+
+      // An empty string is an explicit clear.
+      yield* mutations.updateEvent({
+        accountId: 'acc-1',
+        calendarId: 'cal-1',
+        changes: { location: '' },
+        eventId: record.id,
+      });
+      expect((yield* eventsNow)[0]!.location).toBe('');
+
+      yield* mutations.processPendingOps();
+      expect(patched.at(-1)?.location).toBe('');
+    }).pipe(Effect.provide(mutationsLayer(client)));
+  });
+
   it.effect('drops the op on 412 conflict (server wins)', () => {
     const client = stubClient({
       insertEvent: ({ event }) =>
