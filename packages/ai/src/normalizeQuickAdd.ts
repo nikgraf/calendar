@@ -33,6 +33,20 @@ const DATE = /^\d{4}-\d{2}-\d{2}$/;
  * phrase that never mentioned one.
  */
 const PLACEHOLDERS = new Set(['-', 'n/a', 'na', 'none', 'null', 'tbd', 'unknown', 'unspecified']);
+const FREQUENCIES = new Set<RecurrenceFrequency>(['daily', 'monthly', 'weekly', 'yearly']);
+
+/** A real calendar date, not merely a date-shaped string ('2026-02-30'). */
+const realDate = (value: string | undefined): string | undefined => {
+  if (!value || !DATE.test(value)) {
+    return undefined;
+  }
+  try {
+    Temporal.PlainDate.from(value, { overflow: 'reject' });
+    return value;
+  } catch {
+    return undefined;
+  }
+};
 
 const meaningfulText = (value: string | undefined): string | undefined => {
   const text = value?.trim();
@@ -69,18 +83,28 @@ const addHour = (time: string): string => {
  */
 export const normalizeQuickAdd = (
   parse: QuickAddParse,
-  { referenceDate, timeZone }: { referenceDate: string; timeZone: string },
+  {
+    fallbackDate,
+    referenceDate,
+    timeZone,
+  }: {
+    /**
+     * Used when the phrase named no date — the day the user is looking at,
+     * which is not necessarily today. `referenceDate` stays the anchor for
+     * relative phrases like "tomorrow".
+     */
+    fallbackDate?: string | undefined;
+    referenceDate: string;
+    timeZone: string;
+  },
 ): QuickAddResult => {
   const title = meaningfulText(parse.title);
   if (!title) {
     return { kind: 'rejected', reason: 'No event title was recognised.' };
   }
 
-  const date = parse.date?.trim();
-  const resolvedDate = date && DATE.test(date) ? date : referenceDate;
-  try {
-    Temporal.PlainDate.from(resolvedDate);
-  } catch {
+  const resolvedDate = realDate(parse.date?.trim()) ?? realDate(fallbackDate) ?? referenceDate;
+  if (!realDate(resolvedDate)) {
     return { kind: 'rejected', reason: 'That date could not be understood.' };
   }
 
@@ -93,6 +117,14 @@ export const normalizeQuickAdd = (
   // "lunch at 1" is a complete thought.
   const resolvedEnd =
     !isAllDay && endTime && endTime > resolvedStart ? endTime : addHour(resolvedStart);
+  if (!isAllDay && resolvedEnd <= resolvedStart) {
+    // Only reachable in the final minute of the day: the editor puts start
+    // and end on one date, so nothing after 23:59 can be expressed.
+    return {
+      kind: 'rejected',
+      reason: 'That would end after midnight — pick an earlier time.',
+    };
+  }
 
   const fields = {
     calendarKey: 'placeholder:placeholder',
@@ -110,8 +142,10 @@ export const normalizeQuickAdd = (
   const count = parse.recurrence?.count;
   // "Repeats once" is not a repeat: models attach one to phrases like
   // "next Tuesday", which names a single day.
-  const freq = count === 1 ? undefined : parse.recurrence?.freq;
-  const untilDate = parse.recurrence?.untilDate;
+  const location = meaningfulText(parse.location);
+  const parsedFreq = parse.recurrence?.freq;
+  const freq = count === 1 || !parsedFreq || !FREQUENCIES.has(parsedFreq) ? undefined : parsedFreq;
+  const untilDate = realDate(parse.recurrence?.untilDate);
   const recurrence = freq
     ? {
         ...(typeof count === 'number' && count > 1 ? { count } : {}),
@@ -119,7 +153,7 @@ export const normalizeQuickAdd = (
         ...(typeof parse.recurrence?.interval === 'number'
           ? { interval: parse.recurrence.interval }
           : {}),
-        ...(untilDate && DATE.test(untilDate) ? { untilDate } : {}),
+        ...(untilDate ? { untilDate } : {}),
       }
     : undefined;
 
@@ -129,7 +163,7 @@ export const normalizeQuickAdd = (
       date: resolvedDate,
       endTime: resolvedEnd,
       isAllDay,
-      ...(meaningfulText(parse.location) ? { location: meaningfulText(parse.location)! } : {}),
+      ...(location ? { location } : {}),
       ...(recurrence ? { recurrence } : {}),
       startTime: resolvedStart,
       title,

@@ -10,12 +10,13 @@ import { buildQuickAddPrompt, QUICK_ADD_JSON_SCHEMA, type QuickAddParse } from '
 export const parseQuickAdd = async (
   model: LanguageModel,
   {
-    calendarNames,
+    fallbackDate,
     phrase,
     referenceDate,
     timeZone,
   }: {
-    calendarNames?: ReadonlyArray<string> | undefined;
+    /** Day to use when the phrase states none — usually the focused day. */
+    fallbackDate?: string | undefined;
     phrase: string;
     referenceDate: string;
     timeZone: string;
@@ -32,7 +33,7 @@ export const parseQuickAdd = async (
   try {
     raw = await model.generateJson({
       jsonSchema: QUICK_ADD_JSON_SCHEMA,
-      prompt: buildQuickAddPrompt({ calendarNames, phrase, referenceDate, timeZone }),
+      prompt: buildQuickAddPrompt({ phrase, referenceDate, timeZone }),
     });
   } catch {
     // A model that errors or times out must not lose what the user typed.
@@ -41,5 +42,5 @@ export const parseQuickAdd = async (
   if (typeof raw !== 'object' || raw === null) {
     return { kind: 'rejected', reason: "That couldn't be read — try rephrasing." };
   }
-  return normalizeQuickAdd(raw as QuickAddParse, { referenceDate, timeZone });
+  return normalizeQuickAdd(raw as QuickAddParse, { fallbackDate, referenceDate, timeZone });
 };

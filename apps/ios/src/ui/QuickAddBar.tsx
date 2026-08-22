@@ -1,5 +1,5 @@
 import { parseQuickAdd, type LanguageModel } from '@calendar/ai';
-import { Temporal, type CalendarInfo } from '@calendar/core';
+import { Temporal } from '@calendar/core';
 import type { EventEditorPrefill } from '@calendar/app-state';
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
@@ -11,12 +11,12 @@ import { palette } from './theme.ts';
  * on-device model exists, leaving the manual `＋` flow untouched.
  */
 export function QuickAddBar({
-  calendars,
+  focusedDate,
   model,
   onParsed,
   timeZone,
 }: {
-  calendars: ReadonlyArray<CalendarInfo>;
+  focusedDate: Temporal.PlainDate;
   model: LanguageModel;
   onParsed: (prefill: EventEditorPrefill) => void;
   timeZone: string;
@@ -43,7 +43,9 @@ export function QuickAddBar({
     setError(null);
     try {
       const result = await parseQuickAdd(model, {
-        calendarNames: calendars.map((calendar) => calendar.summary),
+        // Undated phrases land on the day being viewed; relative ones still
+        // resolve against today.
+        fallbackDate: focusedDate.toString(),
         phrase,
         referenceDate: Temporal.Now.plainDateISO(timeZone).toString(),
         timeZone,

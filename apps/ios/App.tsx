@@ -141,7 +141,7 @@ function CalendarScreen() {
       {view === 'day' ? (
         <>
           <QuickAddBar
-            calendars={calendars}
+            focusedDate={focused}
             model={appleLanguageModel}
             onParsed={(prefill) => setEditSeed({ initialDate: focused, prefill })}
             timeZone={timeZone}

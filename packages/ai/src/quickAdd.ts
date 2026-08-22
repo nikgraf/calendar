@@ -64,12 +64,10 @@ const upcomingDays = (referenceDate: string): string =>
  * deterministically and the same phrase can be replayed in tests.
  */
 export const buildQuickAddPrompt = ({
-  calendarNames = [],
   phrase,
   referenceDate,
   timeZone,
 }: {
-  calendarNames?: ReadonlyArray<string> | undefined;
   phrase: string;
   /** `YYYY-MM-DD` — "today" from the user's point of view. */
   referenceDate: string;
@@ -87,7 +85,6 @@ export const buildQuickAddPrompt = ({
     'out of it ("Lunch with Sarah next Tuesday at 1pm" has the title',
     '"Lunch with Sarah"). The phrase may be in any language; the title keeps',
     'its original language.',
-    calendarNames.length > 0 ? `Known calendars: ${calendarNames.join(', ')}.` : '',
     `Phrase: ${phrase}`,
   ]
     .filter(Boolean)

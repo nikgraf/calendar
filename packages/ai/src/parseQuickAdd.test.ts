@@ -139,6 +139,68 @@ describe('parseQuickAdd', () => {
     expect(prefill.recurrence).toBeUndefined();
   });
 
+  it('rejects a date-shaped string that is not a real date', async () => {
+    // '2026-02-30' passes a regex but is not a day; it used to reach Google
+    // as UNTIL=20260230T235959Z and come back a 400.
+    const prefill = await prefillOf({
+      recurrence: { freq: 'weekly', untilDate: '2026-02-30' },
+      startTime: '09:00',
+      title: 'Standup',
+    });
+    expect(prefill.recurrence).toEqual({ freq: 'weekly' });
+
+    // An impossible event date falls back to the visible day rather than
+    // dead-ending: the editor shows the date, so the user can correct it.
+    const result = await parseQuickAdd(fakeModel({ date: '2026-02-30', title: 'x' }), {
+      fallbackDate: '2026-09-05',
+      phrase: 'x',
+      ...CONTEXT,
+    });
+    expect(result).toMatchObject({ prefill: { date: '2026-09-05' } });
+  });
+
+  it('drops a frequency the rule builder does not understand', async () => {
+    // Apple's guided decoding enforces the enum, but the seam exists for
+    // providers that will not.
+    const prefill = await prefillOf({
+      recurrence: { freq: 'fortnightly' as never },
+      startTime: '09:00',
+      title: 'Standup',
+    });
+    expect(prefill.recurrence).toBeUndefined();
+  });
+
+  it('explains the midnight limit instead of blaming the phrase', async () => {
+    const result = await parseQuickAdd(fakeModel({ startTime: '23:59', title: 'Call mom' }), {
+      phrase: 'call mom at 11:59pm',
+      ...CONTEXT,
+    });
+    expect(result).toEqual({
+      kind: 'rejected',
+      reason: 'That would end after midnight — pick an earlier time.',
+    });
+  });
+
+  it('falls back to the day being viewed, not today', async () => {
+    // Swiped to September, typed "lunch at 1pm": the event belongs on the
+    // visible day, while "tomorrow" still anchors on today.
+    const result = await parseQuickAdd(fakeModel({ startTime: '13:00', title: 'Lunch' }), {
+      fallbackDate: '2026-09-05',
+      phrase: 'lunch at 1pm',
+      ...CONTEXT,
+    });
+    expect(result).toMatchObject({ prefill: { date: '2026-09-05' } });
+  });
+
+  it('ignores an unusable fallback day', async () => {
+    const result = await parseQuickAdd(fakeModel({ startTime: '13:00', title: 'Lunch' }), {
+      fallbackDate: 'not-a-date',
+      phrase: 'lunch at 1pm',
+      ...CONTEXT,
+    });
+    expect(result).toMatchObject({ prefill: { date: '2026-08-22' } });
+  });
+
   it('rejects an empty phrase without calling the model', async () => {
     const model = fakeModel({ title: 'unused' });
     const result = await parseQuickAdd(model, { phrase: '   ', ...CONTEXT });
@@ -173,17 +235,12 @@ describe('parseQuickAdd', () => {
     ).rejects.toThrow(ModelUnavailableError);
   });
 
-  it('grounds the prompt with the reference date, zone and calendars', async () => {
+  it('grounds the prompt with the reference date and zone', async () => {
     const model = fakeModel({ title: 'x' });
-    await parseQuickAdd(model, {
-      calendarNames: ['Work', 'Personal'],
-      phrase: 'lunch tomorrow',
-      ...CONTEXT,
-    });
+    await parseQuickAdd(model, { phrase: 'lunch tomorrow', ...CONTEXT });
     const [prompt] = model.prompts;
     expect(prompt).toContain('2026-08-22');
     expect(prompt).toContain('Europe/Vienna');
-    expect(prompt).toContain('Work, Personal');
     expect(prompt).toContain('lunch tomorrow');
   });
 
