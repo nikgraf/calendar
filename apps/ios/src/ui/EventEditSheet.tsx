@@ -61,12 +61,12 @@ export function EventEditSheet({
 }: {
   calendars: ReadonlyArray<CalendarInfo>;
   onClose: () => void;
-  seed: EditSeed | null;
+  seed: EditSeed;
   timeZone: string;
 }) {
   const mutations = useBackendMutations();
   const accounts = useAccounts();
-  const existing = seed?.event;
+  const existing = seed.event;
   const isRecurring = Boolean(existing && (existing.recurrence || existing.recurringEventId));
   const ownEmail = accounts
     .find((account) => account.id === existing?.accountId)
@@ -92,7 +92,7 @@ export function EventEditSheet({
     existing
       ? (existing.startDate ??
           toZonedDateTime(existing.startUtc, timeZone).toPlainDate().toString())
-      : (seed?.initialDate.toString() ?? ''),
+      : seed.initialDate.toString(),
   );
   const [startTime, setStartTime] = useState(
     existing && !existing.isAllDay ? timeString(existing.startUtc, timeZone) : '09:00',
@@ -226,12 +226,7 @@ export function EventEditSheet({
   };
 
   return (
-    <Modal
-      animationType="slide"
-      onRequestClose={onClose}
-      presentationStyle="pageSheet"
-      visible={seed !== null}
-    >
+    <Modal animationType="slide" onRequestClose={onClose} presentationStyle="pageSheet" visible>
       <View style={styles.container}>
         <View style={styles.header}>
           <Pressable onPress={onClose}>

@@ -165,12 +165,17 @@ function CalendarScreen() {
         />
       )}
 
-      <EventEditSheet
-        calendars={calendars}
-        onClose={() => setEditSeed(null)}
-        seed={editSeed}
-        timeZone={timeZone}
-      />
+      {/* Keyed + conditionally mounted: the sheet seeds its form fields from
+          `seed` in useState initializers, which only run on mount. */}
+      {editSeed ? (
+        <EventEditSheet
+          calendars={calendars}
+          key={editSeed.event?.id ?? `new:${editSeed.initialDate.toString()}`}
+          onClose={() => setEditSeed(null)}
+          seed={editSeed}
+          timeZone={timeZone}
+        />
+      ) : null}
       <SettingsSheet onClose={() => setShowSettings(false)} visible={showSettings} />
     </SafeAreaView>
   );
