@@ -1,5 +1,5 @@
 import { Account, Attendee, CalendarInfo, EventRecord } from '@calendar/core';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import {
   launchApp,
   readCalendars,
@@ -112,6 +112,13 @@ let app: App;
 beforeAll(async () => {
   app = await launchApp(seed);
 }, 60_000);
+
+// Capture diagnostics for whatever failed before the app is torn down.
+afterEach(async (context) => {
+  if (context.task.result?.state === 'fail') {
+    await app?.dump(context.task.name);
+  }
+});
 
 afterAll(async () => {
   await app?.stop();
