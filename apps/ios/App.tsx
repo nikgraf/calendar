@@ -3,9 +3,15 @@ import {
   makeBackendAtoms,
   useBackendInvalidations,
   useCalendars,
-  useEventsInRange,
+  useEventsInRangeStable,
 } from '@calendar/app-state';
-import { dayRange, monthGridRange, Temporal, weekStart, type EventRecord } from '@calendar/core';
+import {
+  daySpanRange,
+  monthGridRange,
+  Temporal,
+  weekStart,
+  type EventRecord,
+} from '@calendar/core';
 import { useEffect, useMemo, useState } from 'react';
 import { AppState, Pressable, SafeAreaView, StatusBar, StyleSheet, Text, View } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
@@ -42,7 +48,8 @@ function CalendarScreen() {
   const range = useMemo(
     () =>
       view === 'day'
-        ? dayRange(focused, timeZone)
+        ? // One neighbour day each side so a swipe reveals loaded content.
+          daySpanRange(focused.subtract({ days: 1 }), 3, timeZone)
         : monthGridRange(
             Temporal.PlainYearMonth.from(focused),
             Temporal.Now.plainDateISO(timeZone),
@@ -50,7 +57,9 @@ function CalendarScreen() {
           ),
     [view, focused, timeZone],
   );
-  const events = useEventsInRange(range.startUtc, range.endUtc);
+  // Stable variant: keeps the previous days' events while a new range loads,
+  // so swiping never flashes an empty grid.
+  const events = useEventsInRangeStable(range.startUtc, range.endUtc);
   const calendars = useCalendars();
 
   const colorOf = useMemo(() => {
@@ -84,7 +93,7 @@ function CalendarScreen() {
     <SafeAreaView style={styles.safeArea}>
       <StatusBar barStyle="dark-content" />
       <View style={styles.header}>
-        <Text numberOfLines={1} style={styles.title}>
+        <Text numberOfLines={1} style={styles.title} testID="day-title">
           {title}
         </Text>
         <View style={styles.headerActions}>
@@ -139,6 +148,7 @@ function CalendarScreen() {
             date={focused}
             events={events}
             onEventPress={(event) => setEditSeed({ event, initialDate: focused })}
+            onNavigate={step}
             timeZone={timeZone}
           />
         </>

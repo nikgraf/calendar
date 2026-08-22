@@ -1,4 +1,4 @@
-appId: com.nikgraf.calendar
+appId: com.solunivo.app
 name: Accounts sheet opens and closes
 ---
 - launchApp

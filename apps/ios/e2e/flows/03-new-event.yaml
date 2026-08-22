@@ -1,4 +1,4 @@
-appId: com.nikgraf.calendar
+appId: com.solunivo.app
 name: New-event sheet opens with the repeat picker
 ---
 - launchApp
