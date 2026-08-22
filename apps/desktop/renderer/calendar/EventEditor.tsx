@@ -1,18 +1,10 @@
-import { useAccounts, useBackendMutations } from '@calendar/app-state';
+import { useEventEditorModel, type EventEditorSeed } from '@calendar/app-state';
 import {
-  buildRecurrenceRule,
-  meetingUrl,
-  plainDateToUtcMs,
-  Temporal,
-  toZonedDateTime,
   type CalendarInfo,
-  type EventDraft,
-  type EventRecord,
   type RecurrenceFrequency,
   type RecurringScope,
   type RsvpResponse,
 } from '@calendar/core';
-import { useState } from 'react';
 
 const RSVP_OPTIONS: ReadonlyArray<{ label: string; value: RsvpResponse }> = [
   { label: 'Accept', value: 'accepted' },
@@ -34,23 +26,8 @@ const SCOPES: ReadonlyArray<{ label: string; value: RecurringScope }> = [
   { label: 'All events', value: 'series' },
 ];
 
-export interface EditorSeed {
-  /** Existing event (edit mode) or a prefilled slot (create mode). */
-  readonly event?: EventRecord;
-  readonly initialDate: Temporal.PlainDate;
-  readonly initialHour?: number;
-}
-
-const toDateInput = (epochMs: number, timeZone: string): string =>
-  toZonedDateTime(epochMs, timeZone).toPlainDate().toString();
-
-const toTimeInput = (epochMs: number, timeZone: string): string =>
-  toZonedDateTime(epochMs, timeZone).toPlainTime().toString({ smallestUnit: 'minute' });
-
-const combine = (date: string, time: string, timeZone: string): number =>
-  Temporal.PlainDate.from(date)
-    .toZonedDateTime({ plainTime: Temporal.PlainTime.from(time), timeZone })
-    .toInstant().epochMilliseconds;
+/** Existing event (edit mode) or a prefilled slot (create mode). */
+export type EditorSeed = EventEditorSeed;
 
 export function EventEditor({
   calendars,
@@ -63,179 +40,44 @@ export function EventEditor({
   seed: EditorSeed;
   timeZone: string;
 }) {
-  const mutations = useBackendMutations();
-  const accounts = useAccounts();
-  const existing = seed.event;
-  const isRecurring = Boolean(existing && (existing.recurrence || existing.recurringEventId));
-  const ownEmail = accounts
-    .find((account) => account.id === existing?.accountId)
-    ?.email.toLowerCase();
-  const ownAttendee = existing?.attendees?.find(
-    (attendee) => attendee.isSelf === true || attendee.email.toLowerCase() === ownEmail,
-  );
-  const joinUrl = existing ? meetingUrl(existing) : undefined;
-  const writable = calendars.filter(
-    (calendar) => calendar.accessRole === 'owner' || calendar.accessRole === 'writer',
-  );
-
-  const [title, setTitle] = useState(existing?.title ?? '');
-  const [calendarKey, setCalendarKey] = useState(
-    existing
-      ? `${existing.accountId}:${existing.calendarId}`
-      : writable[0]
-        ? `${writable[0].accountId}:${writable[0].id}`
-        : '',
-  );
-  const [isAllDay, setIsAllDay] = useState(existing?.isAllDay ?? false);
-  const [date, setDate] = useState(
-    existing
-      ? (existing.startDate ?? toDateInput(existing.startUtc, timeZone))
-      : seed.initialDate.toString(),
-  );
-  const [startTime, setStartTime] = useState(
-    existing && !existing.isAllDay
-      ? toTimeInput(existing.startUtc, timeZone)
-      : `${String(seed.initialHour ?? 9).padStart(2, '0')}:00`,
-  );
-  const [endTime, setEndTime] = useState(
-    existing && !existing.isAllDay
-      ? toTimeInput(existing.endUtc, timeZone)
-      : `${String((seed.initialHour ?? 9) + 1).padStart(2, '0')}:00`,
-  );
-  const [location, setLocation] = useState(existing?.location ?? '');
-  const [scope, setScope] = useState<RecurringScope>('instance');
-  const [rsvp, setRsvp] = useState(ownAttendee?.responseStatus);
-  const [repeat, setRepeat] = useState<RecurrenceFrequency | 'none'>('none');
-  const [repeatInterval, setRepeatInterval] = useState('1');
-  const [repeatEnds, setRepeatEnds] = useState<'after' | 'never' | 'on'>('never');
-  const [repeatCount, setRepeatCount] = useState('10');
-  const [repeatUntil, setRepeatUntil] = useState('');
-  const [error, setError] = useState<string | null>(null);
-
-  const save = async () => {
-    const [accountId, calendarId] = calendarKey.split(':', 2);
-    if (!accountId || !calendarId || !title.trim()) {
-      setError('A title and calendar are required.');
-      return;
-    }
-    try {
-      const times = isAllDay
-        ? {
-            endDate: Temporal.PlainDate.from(date).add({ days: 1 }).toString(),
-            endUtc: plainDateToUtcMs(Temporal.PlainDate.from(date).add({ days: 1 }).toString()),
-            startDate: date,
-            startUtc: plainDateToUtcMs(date),
-          }
-        : {
-            endUtc: combine(date, endTime, timeZone),
-            startTimeZone: timeZone,
-            startUtc: combine(date, startTime, timeZone),
-          };
-      if (!isAllDay && times.endUtc <= times.startUtc) {
-        setError('End must be after start.');
-        return;
-      }
-      if (existing && isRecurring && existing.recurringEventId) {
-        await mutations.updateRecurring({
-          accountId,
-          calendarId,
-          changes: {
-            // Empty string clears the field; undefined would read as "unchanged".
-            location: location.trim(),
-            title: title.trim(),
-            ...times,
-          },
-          masterId: existing.recurringEventId,
-          originalStartUtc: existing.originalStartUtc ?? existing.startUtc,
-          scope,
-        });
-      } else if (existing) {
-        await mutations.updateEvent({
-          accountId,
-          calendarId,
-          changes: {
-            isAllDay,
-            // Empty string clears the field; undefined would read as "unchanged".
-            location: location.trim(),
-            title: title.trim(),
-            ...times,
-          },
-          eventId: existing.id,
-        });
-      } else {
-        const draft: EventDraft = {
-          accountId,
-          calendarId,
-          isAllDay,
-          location: location.trim() || undefined,
-          recurrence:
-            repeat === 'none'
-              ? undefined
-              : [
-                  buildRecurrenceRule(
-                    {
-                      count: repeatEnds === 'after' ? Number(repeatCount) || 1 : undefined,
-                      freq: repeat,
-                      interval: Number(repeatInterval) || 1,
-                      untilDate: repeatEnds === 'on' && repeatUntil ? repeatUntil : undefined,
-                    },
-                    isAllDay,
-                  ),
-                ],
-          title: title.trim(),
-          ...times,
-        };
-        await mutations.createEvent(draft);
-      }
-      onClose();
-    } catch (error) {
-      setError(String(error));
-    }
-  };
-
-  const respond = async (response: RsvpResponse) => {
-    if (!existing) {
-      return;
-    }
-    setRsvp(response);
-    try {
-      // RSVP applies to the whole series when opened from an instance.
-      await mutations.respondToEvent({
-        accountId: existing.accountId,
-        calendarId: existing.calendarId,
-        eventId: existing.recurringEventId ?? existing.id,
-        response,
-      });
-    } catch (error) {
-      setError(String(error));
-    }
-  };
-
-  const remove = async () => {
-    if (!existing) {
-      return;
-    }
-    try {
-      if (isRecurring && existing.recurringEventId) {
-        await mutations.deleteRecurring({
-          accountId: existing.accountId,
-          calendarId: existing.calendarId,
-          masterId: existing.recurringEventId,
-          originalStartUtc: existing.originalStartUtc ?? existing.startUtc,
-          scope,
-        });
-      } else {
-        await mutations.deleteEvent({
-          accountId: existing.accountId,
-          calendarId: existing.calendarId,
-          eventId: existing.id,
-        });
-      }
-      onClose();
-    } catch (error) {
-      setError(String(error));
-    }
-  };
+  const {
+    calendarKey,
+    date,
+    endTime,
+    error,
+    existing,
+    isAllDay,
+    isRecurring,
+    joinUrl,
+    location,
+    ownAttendee,
+    remove,
+    repeat,
+    repeatCount,
+    repeatEnds,
+    repeatInterval,
+    repeatUntil,
+    respond,
+    rsvp,
+    save,
+    scope,
+    setCalendarKey,
+    setDate,
+    setEndTime,
+    setIsAllDay,
+    setLocation,
+    setRepeat,
+    setRepeatCount,
+    setRepeatEnds,
+    setRepeatInterval,
+    setRepeatUntil,
+    setScope,
+    setStartTime,
+    setTitle,
+    startTime,
+    title,
+    writableCalendars: writable,
+  } = useEventEditorModel({ calendars, onClose, seed, timeZone });
 
   const field = 'w-full rounded-lg border border-neutral-200 bg-white px-3 py-1.5 text-sm';
 

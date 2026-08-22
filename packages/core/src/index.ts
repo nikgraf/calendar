@@ -3,6 +3,7 @@ export * from './layout/allDayLane.ts';
 export * from './layout/dayGrid.ts';
 export * from './layout/dayMembership.ts';
 export * from './color.ts';
+export * from './editor/eventDraft.ts';
 export * from './gestures/wheelPan.ts';
 export * from './meeting.ts';
 export * from './recurrence/build.ts';
