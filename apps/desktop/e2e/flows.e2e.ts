@@ -676,4 +676,21 @@ describe('calendar desktop e2e', () => {
     await cdp.click(20, 400);
     await cdp.waitFor(`!document.body.textContent.includes('Add Google Account')`);
   });
+  it('moves an event even when no pointermove is delivered', async () => {
+    const { cdp } = app;
+    // A press and release with nothing in between: the browser coalescing
+    // moves under load produced exactly this, silently turning the drag into
+    // a click that opened the editor.
+    const before = await eventStart('Gym session');
+    const from = await cdp.locate('[title^="Gym session"]');
+    await cdp.mouse('mousePressed', from.x, from.y);
+    await cdp.mouse('mouseReleased', from.x, from.y + HOUR_HEIGHT);
+
+    const expected = before + HOUR_MS;
+    const moved = await waitForEvent(
+      (event) => event.title === 'Gym session' && event.startUtc === expected,
+    );
+    expect(moved?.startUtc).toBe(expected);
+    expect(await cdp.eval<boolean>(`document.body.textContent.includes('Edit event')`)).toBe(false);
+  });
 });

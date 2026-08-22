@@ -145,7 +145,15 @@ export const useEventDrag = ({
     if (!origin || origin.pointerId !== domEvent.pointerId) {
       return;
     }
-    if (!origin.active) {
+    // `active` is only ever set from pointermove, and moves can be missed
+    // entirely — the browser coalesces them under load, and a fast flick can
+    // land press and release in one frame. Judge by the release distance so
+    // such a gesture still moves the event instead of silently becoming a
+    // click that opens the editor.
+    const movedFar =
+      Math.hypot(domEvent.clientX - origin.startClientX, domEvent.clientY - origin.startClientY) >=
+      DRAG_THRESHOLD_PX;
+    if (!origin.active && !movedFar) {
       setPreview(null);
       if (origin.mode === 'move') {
         onClick(origin.event);
