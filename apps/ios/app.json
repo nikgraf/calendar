@@ -23,10 +23,20 @@
       "bundleIdentifier": "com.solunivo.app",
       "supportsTablet": false,
       "infoPlist": {
-        "ITSAppUsesNonExemptEncryption": false
+        "ITSAppUsesNonExemptEncryption": false,
+        "NSSpeechRecognitionUsageDescription": "Solunivo transcribes what you say into an event entirely on this device."
       }
     },
-    "plugins": ["expo-web-browser", "expo-secure-store"],
+    "plugins": [
+      "expo-web-browser",
+      "expo-secure-store",
+      [
+        "expo-audio",
+        {
+          "microphonePermission": "Solunivo uses the microphone to turn what you say into an event. Audio is transcribed on your device and never uploaded."
+        }
+      ]
+    ],
     "extra": {
       "googleIosClientId": "930599242270-8u8i4aqpc4hc93ga3vn1g9lsfor4t3o0.apps.googleusercontent.com",
       "eas": {

@@ -1,7 +1,13 @@
-import { parseQuickAdd, type LanguageModel } from '@calendar/ai';
+import { parseQuickAdd, type LanguageModel, type SpeechToText } from '@calendar/ai';
 import { Temporal } from '@calendar/core';
 import type { EventEditorPrefill } from '@calendar/app-state';
 import { useEffect, useState } from 'react';
+import {
+  IOSOutputFormat,
+  requestRecordingPermissionsAsync,
+  setAudioModeAsync,
+  useAudioRecorder,
+} from 'expo-audio';
 import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { palette } from './theme.ts';
 
@@ -10,21 +16,49 @@ import { palette } from './theme.ts';
  * confirms — nothing is written by the model. Hidden entirely when no
  * on-device model exists, leaving the manual `＋` flow untouched.
  */
+/**
+ * Linear PCM in a .wav container, not the m4a preset: the transcription
+ * API writes the bytes to an extension-less temp file and opens it with
+ * AVAudioFile, so the container has to be recognisable from its header.
+ */
+const WAV_RECORDING = {
+  android: { audioEncoder: 'default', outputFormat: 'default' },
+  bitRate: 256_000,
+  extension: '.wav',
+  ios: {
+    audioQuality: 96,
+    linearPCMBitDepth: 16,
+    linearPCMIsBigEndian: false,
+    linearPCMIsFloat: false,
+    outputFormat: IOSOutputFormat.LINEARPCM,
+  },
+  numberOfChannels: 1,
+  sampleRate: 16_000,
+  web: {},
+} as const;
+
+type VoiceState = 'idle' | 'preparing' | 'recording' | 'transcribing';
+
 export function QuickAddBar({
   focusedDate,
   model,
   onParsed,
+  speech,
   timeZone,
 }: {
   focusedDate: Temporal.PlainDate;
   model: LanguageModel;
   onParsed: (prefill: EventEditorPrefill) => void;
+  speech: SpeechToText;
   timeZone: string;
 }) {
   const [available, setAvailable] = useState<boolean | null>(null);
+  const [voiceAvailable, setVoiceAvailable] = useState(false);
+  const [voice, setVoice] = useState<VoiceState>('idle');
   const [phrase, setPhrase] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const recorder = useAudioRecorder(WAV_RECORDING);
 
   useEffect(() => {
     let cancelled = false;
@@ -38,7 +72,22 @@ export function QuickAddBar({
     };
   }, [model]);
 
-  const submit = async () => {
+  useEffect(() => {
+    let cancelled = false;
+    void speech.isSupported().then((value) => {
+      if (!cancelled) {
+        setVoiceAvailable(value);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [speech]);
+
+  const submit = async (text: string = phrase) => {
+    if (!text.trim()) {
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
@@ -46,7 +95,7 @@ export function QuickAddBar({
         // Undated phrases land on the day being viewed; relative ones still
         // resolve against today.
         fallbackDate: focusedDate.toString(),
-        phrase,
+        phrase: text,
         referenceDate: Temporal.Now.plainDateISO(timeZone).toString(),
         timeZone,
       });
@@ -60,6 +109,55 @@ export function QuickAddBar({
       setError('On-device model unavailable.');
     } finally {
       setBusy(false);
+    }
+  };
+
+  const startRecording = async () => {
+    setError(null);
+    try {
+      const permission = await requestRecordingPermissionsAsync();
+      if (!permission.granted) {
+        // A refusal is a choice, not a failure: typing still works.
+        setError('Microphone access is off — you can still type.');
+        return;
+      }
+      setVoice('preparing');
+      try {
+        // First run installs the locale's models; later runs return at once.
+        // Failure here means this device cannot transcribe at all.
+        await speech.prepare();
+      } catch {
+        setVoiceAvailable(false);
+        setVoice('idle');
+        setError('Dictation is unavailable on this device.');
+        return;
+      }
+      await setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true });
+      await recorder.prepareToRecordAsync();
+      recorder.record();
+      setVoice('recording');
+    } catch {
+      setVoice('idle');
+      setError('Could not start recording.');
+    }
+  };
+
+  const stopRecording = async () => {
+    setVoice('transcribing');
+    try {
+      await recorder.stop();
+      const uri = recorder.uri;
+      const text = uri ? await speech.transcribeFile(uri) : undefined;
+      if (!text) {
+        setError("Didn't catch that — try again.");
+        return;
+      }
+      setPhrase(text);
+      await submit(text);
+    } catch {
+      setError('Could not transcribe that.');
+    } finally {
+      setVoice('idle');
     }
   };
 
@@ -83,7 +181,19 @@ export function QuickAddBar({
           testID="quick-add-input"
           value={phrase}
         />
-        {busy ? (
+        {voiceAvailable && !busy && voice !== 'transcribing' ? (
+          <Pressable
+            accessibilityLabel={voice === 'recording' ? 'Stop dictating' : 'Dictate an event'}
+            accessibilityRole="button"
+            disabled={voice === 'preparing'}
+            onPress={() => void (voice === 'recording' ? stopRecording() : startRecording())}
+            style={[styles.mic, voice === 'recording' && styles.micRecording]}
+            testID="quick-add-mic"
+          >
+            <Text style={styles.micLabel}>{voice === 'recording' ? '■' : '🎙'}</Text>
+          </Pressable>
+        ) : null}
+        {busy || voice === 'transcribing' || voice === 'preparing' ? (
           <ActivityIndicator style={styles.spinner} />
         ) : (
           <Pressable
@@ -98,6 +208,13 @@ export function QuickAddBar({
           </Pressable>
         )}
       </View>
+      {voice === 'preparing' ? (
+        <Text style={styles.hint}>Preparing dictation…</Text>
+      ) : voice === 'recording' ? (
+        <Text style={styles.hint}>Listening — tap ■ when finished.</Text>
+      ) : voice === 'transcribing' ? (
+        <Text style={styles.hint}>Transcribing…</Text>
+      ) : null}
       {error ? <Text style={styles.error}>{error}</Text> : null}
     </View>
   );
@@ -129,6 +246,11 @@ const styles = StyleSheet.create({
     fontSize: 12,
     marginTop: 6,
   },
+  hint: {
+    color: palette.textMuted,
+    fontSize: 12,
+    marginTop: 6,
+  },
   input: {
     borderColor: palette.border,
     borderRadius: 8,
@@ -137,6 +259,20 @@ const styles = StyleSheet.create({
     fontSize: 14,
     paddingHorizontal: 10,
     paddingVertical: 8,
+  },
+  mic: {
+    borderColor: palette.border,
+    borderRadius: 8,
+    borderWidth: StyleSheet.hairlineWidth,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+  },
+  micLabel: {
+    fontSize: 15,
+  },
+  micRecording: {
+    backgroundColor: '#fee2e2',
+    borderColor: '#dc2626',
   },
   row: {
     alignItems: 'center',

@@ -12,12 +12,11 @@
       bundle id before iOS sign-in works again; packaged-app userData
       moves (Application Support/Solunivo) so testers re-auth.
 - [ ] Real app icons (macOS .icns / Assets.car, iOS app icon set)
-- [ ] Signing/notarization for the macOS app — CI `testing-build` job +
-      `docs/distribution.md` are merged (signed+notarized arm64 zip artifact
-      on every main push; decision: no universal build, artifact-only, no
-      auto-update while the repo is private). Open until the six secrets
-      from docs/distribution.md are added to repo settings and the first
-      `testing-build` run goes green
+- [x] Signing/notarization for the macOS app — done: the `testing-build` job
+      ships a signed + notarized arm64 zip artifact on every main push and has
+      been green since the secrets landed. Decisions: no universal build,
+      artifact-only, no auto-update while the repo is private. See
+      `docs/distribution.md`.
 - [x] EAS build / TestFlight distribution for the iOS app — done: EAS
       Build+Submit on every main push (fire-and-forget from ubuntu CI) plus
       per-PR OTA preview channels (pr-<n>, ~30s) with an in-app channel
@@ -77,9 +76,16 @@ desktop waits on a helper binary (below).
       offline, pure and testable. Both platforms.
 - [ ] Capture from text or photo — paste an email (desktop) or share a
       screenshot/poster (iOS share sheet, using image input) → extracted event(s).
-- [ ] Voice capture — ships with quick add on iOS; reaches desktop with the helper
-      binary, since macOS 26 exposes the same speech API. Siri/App Intent entry
-      point later.
+- [x] Voice capture (iOS) — done: mic in the quick-add bar records WAV/LPCM
+      (`expo-audio`), transcribes on device via `SpeechAnalyzer` and feeds the
+      transcript straight into the same parser; the recording file is deleted
+      immediately. Availability is decided by attempting `prepare()` (which installs
+      the locale's assets) rather than by the platform's readiness flag, because that
+      flag is false until assets exist — gating on it would hide dictation on a
+      capable device that had simply never used it. Reaches desktop with the helper
+      binary, since macOS 26 exposes the same API. Siri/App Intent entry point later.
+      NOTE: the simulator has no speech assets, so dictation self-disables there —
+      the transcript path needs a TestFlight check on a real device.
 - [ ] Day briefing (iOS-first) — a short generated summary of the day; a widget or
       Live Activity candidate once it earns its place.
 - [ ] Ask your calendar — start with SQLite FTS5, which honestly covers most recall;
