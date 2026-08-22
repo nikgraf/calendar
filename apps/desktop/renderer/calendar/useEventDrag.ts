@@ -36,13 +36,11 @@ const isDraggable = (event: EventRecord): boolean => !event.isAllDay && !event.r
 export const useEventDrag = ({
   dayCount,
   gridRef,
-  gutterWidth,
   hourHeight,
   onClick,
 }: {
   dayCount: number;
   gridRef: RefObject<HTMLDivElement | null>;
-  gutterWidth: number;
   hourHeight: number;
   onClick: (event: EventRecord) => void;
 }) => {
@@ -74,7 +72,7 @@ export const useEventDrag = ({
       return { deltaDays: 0, deltaMinutes };
     }
     const grid = gridRef.current?.getBoundingClientRect();
-    const dayWidth = grid ? (grid.width - gutterWidth) / dayCount : 0;
+    const dayWidth = grid ? grid.width / dayCount : 0;
     const deltaDays = dayWidth > 0 ? Math.round((clientX - origin.startClientX) / dayWidth) : 0;
     return { deltaDays, deltaMinutes };
   };

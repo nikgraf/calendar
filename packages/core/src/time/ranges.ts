@@ -29,14 +29,6 @@ export const daySpanRange = (
 export const weekStart = (date: Temporal.PlainDate): Temporal.PlainDate =>
   date.subtract({ days: date.dayOfWeek - 1 });
 
-export const weekRange = (date: Temporal.PlainDate, timeZone: string): UtcRange => {
-  const start = weekStart(date);
-  return {
-    endUtc: startOfDayMs(start.add({ days: 7 }), timeZone),
-    startUtc: startOfDayMs(start, timeZone),
-  };
-};
-
 export interface MonthGridDay {
   readonly date: Temporal.PlainDate;
   readonly inMonth: boolean;

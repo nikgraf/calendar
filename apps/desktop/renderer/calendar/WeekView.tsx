@@ -66,7 +66,6 @@ export function WeekView({
   const drag = useEventDrag({
     dayCount: strip.length,
     gridRef,
-    gutterWidth: 0,
     hourHeight: HOUR_HEIGHT,
     onClick: onEventClick,
   });

@@ -7,11 +7,11 @@ import {
 } from '@calendar/app-state';
 import {
   bufferedRange,
+  makeColorLookup,
   DAY_SWIPE_BUFFER,
   monthGridRange,
   Temporal,
   weekStart,
-  type EventRecord,
 } from '@calendar/core';
 import { useEffect, useMemo, useState } from 'react';
 import { AppState, Pressable, SafeAreaView, StatusBar, StyleSheet, Text, View } from 'react-native';
@@ -63,12 +63,7 @@ function CalendarScreen() {
   const events = useEventsInRangeStable(range.startUtc, range.endUtc);
   const calendars = useCalendars();
 
-  const colorOf = useMemo(() => {
-    const byKey = new Map(
-      calendars.map((calendar) => [`${calendar.accountId}:${calendar.id}`, calendar.colorHex]),
-    );
-    return (event: EventRecord) => byKey.get(`${event.accountId}:${event.calendarId}`) ?? '#4285f4';
-  }, [calendars]);
+  const colorOf = useMemo(() => makeColorLookup(calendars), [calendars]);
 
   const weekDays = useMemo(() => {
     const start = weekStart(focused);

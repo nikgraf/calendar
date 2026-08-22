@@ -17,5 +17,3 @@ export * from './time/dragMath.ts';
 export * from './time/ranges.ts';
 export * from './time/temporal.ts';
 export * from './types.ts';
-
-export const appName = 'Solunivo';

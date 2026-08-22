@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildMonthGrid, dayRange, daySpanRange, weekRange, weekStart } from './ranges.ts';
+import { buildMonthGrid, dayRange, daySpanRange, weekStart } from './ranges.ts';
 import { Temporal } from './temporal.ts';
 
 describe('ranges', () => {
@@ -13,12 +13,6 @@ describe('ranges', () => {
     // Europe/Vienna DST starts 2026-03-29: the day is only 23 hours long.
     const range = dayRange(Temporal.PlainDate.from('2026-03-29'), 'Europe/Vienna');
     expect((range.endUtc - range.startUtc) / (60 * 60 * 1000)).toBe(23);
-  });
-
-  it('weekRange spans exactly 7 local days', () => {
-    const range = weekRange(Temporal.PlainDate.from('2026-07-02'), 'Europe/Vienna');
-    expect(range.startUtc).toBe(Date.parse('2026-06-28T22:00:00Z')); // Mon 00:00 CEST
-    expect(range.endUtc).toBe(Date.parse('2026-07-05T22:00:00Z'));
   });
 
   it('daySpanRange spans dayCount local days from an arbitrary start', () => {

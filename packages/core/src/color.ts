@@ -45,3 +45,21 @@ export const normalizeHexColor = (input: string): string | undefined => {
   const value = input.trim().toLowerCase();
   return /^#[0-9a-f]{6}$/.test(value) ? value : undefined;
 };
+
+/** `accountId:calendarId` — the key both apps use to look calendars up. */
+export const calendarKey = (calendar: { accountId: string; id: string }): string =>
+  `${calendar.accountId}:${calendar.id}`;
+
+/** `calendarId:eventId` — stable across accounts, used for React keys. */
+export const eventKey = (event: { calendarId: string; id: string }): string =>
+  `${event.calendarId}:${event.id}`;
+
+export type ColorLookup = (event: { accountId: string; calendarId: string }) => string;
+
+/** Maps an event to its calendar's color, falling back to Google's blue. */
+export const makeColorLookup = (
+  calendars: ReadonlyArray<{ accountId: string; colorHex: string; id: string }>,
+): ColorLookup => {
+  const byKey = new Map(calendars.map((calendar) => [calendarKey(calendar), calendar.colorHex]));
+  return (event) => byKey.get(`${event.accountId}:${event.calendarId}`) ?? '#4285f4';
+};

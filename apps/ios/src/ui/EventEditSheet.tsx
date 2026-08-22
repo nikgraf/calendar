@@ -383,13 +383,6 @@ const styles = StyleSheet.create({
     marginBottom: 4,
     textTransform: 'uppercase',
   },
-  notice: {
-    backgroundColor: '#fef3c7',
-    borderRadius: 10,
-    color: '#92400e',
-    fontSize: 14,
-    padding: 12,
-  },
   save: {
     color: '#2563eb',
     fontSize: 16,
