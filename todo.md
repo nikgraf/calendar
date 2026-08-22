@@ -47,6 +47,55 @@
       cancelled). Scope picker in both editors; dragging a recurring
       instance commits a single-instance override.
 
+## AI features
+
+Decision: **on-device models only** — no data leaves the device, no API keys, no
+per-request cost, works offline. This matches the app's existing posture (client-only,
+screen-share protection, tokens outside SQLite). Apple's Foundation Models (~3B,
+iOS/macOS 26) handle extraction and classification well but not multi-step reasoning,
+so the rule throughout is: **the model parses intent, deterministic code does the
+work** — which also keeps the valuable logic in `packages/*` where it is unit-testable
+with a fake provider.
+
+Platform notes: iOS reaches the models through `@react-native-ai/apple` (structured
+JSON output, embeddings, transcription; RN 0.80+ and the new architecture, both
+already in place). Speech is `SpeechAnalyzer`/`SpeechTranscriber`, on-device on **iOS
+26 and macOS 26**, ahead of Whisper Small on accuracy, installing per-locale assets on
+first use. Electron has no on-device path yet — Foundation Models is Swift-only — so
+desktop waits on a helper binary (below).
+
+- [ ] Natural-language quick add — "lunch with Sarah tue 1pm at Figlmüller, monthly"
+      → a prefilled editor to confirm (never an auto-save). Parser output maps onto
+      the existing `buildEventTimes`/`validateEventDraft`/`buildRecurrenceRule`
+      helpers, so it reuses the whole save path. iOS first (text + dictation);
+      desktop follows via a ⌘K bar once the helper below exists. A local model also
+      handles German phrasing ("nächsten Dienstag um halb drei"), which hand-written
+      date grammars generally do not.
+- [ ] Find a time — "90 min of focus this week, mornings" → ranked free slots. The
+      model only parses the constraint sentence; a deterministic solver over
+      `EventRepo.getWindow` + `assembleWindow` finds and ranks the gaps, so it is
+      offline, pure and testable. Both platforms.
+- [ ] Capture from text or photo — paste an email (desktop) or share a
+      screenshot/poster (iOS share sheet, using image input) → extracted event(s).
+- [ ] Voice capture — ships with quick add on iOS; reaches desktop with the helper
+      binary, since macOS 26 exposes the same speech API. Siri/App Intent entry
+      point later.
+- [ ] Day briefing (iOS-first) — a short generated summary of the day; a widget or
+      Live Activity candidate once it earns its place.
+- [ ] Ask your calendar — start with SQLite FTS5, which honestly covers most recall;
+      add on-device embeddings only if fuzzy recall proves necessary.
+- [ ] Week planning / rescheduling assistant (desktop) — "make room for 3h of deep
+      work" proposes a _diff_ of moves to approve, executed through the existing op
+      queue so it stays inspectable and undoable. Most ambitious, and the weakest fit
+      for a 3B model: keep the solving deterministic.
+- [ ] Invite triage (desktop) — summarize a backlog of invitations, suggest
+      accept/decline.
+- [ ] Desktop model runtime (prerequisite for everything desktop-side) — one signed
+      Swift helper exposing both Foundation Models and `SpeechAnalyzer` over stdio,
+      versus bundling a GGUF. Note the nested-binary signing (`osxSign` runs with
+      `continueOnError: false`, so an unsigned helper fails the build outright) and
+      the extra CI step to build it.
+
 ## Features
 
 - [x] Create recurring events — done: `buildRecurrenceRule` in core
