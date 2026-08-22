@@ -1,4 +1,4 @@
-import { buildRecurrenceRule, Temporal, validateEventDraft } from '@calendar/core';
+import { Temporal, validateEventDraft, type RecurrenceFrequency } from '@calendar/core';
 import type { QuickAddParse } from './quickAdd.ts';
 
 /** Editor prefill: exactly the fields the shared editor model seeds from. */
@@ -7,8 +7,16 @@ export interface QuickAddPrefill {
   readonly endTime: string;
   readonly isAllDay: boolean;
   readonly location?: string;
-  /** RFC 5545 RRULE line, when the phrase asked for a repeat. */
-  readonly recurrence?: string;
+  /**
+   * Recurrence as the editor's own fields, not a built RRULE — the editor
+   * shows them and builds the rule itself on save.
+   */
+  readonly recurrence?: {
+    readonly count?: number;
+    readonly freq: RecurrenceFrequency;
+    readonly interval?: number;
+    readonly untilDate?: string;
+  };
   readonly startTime: string;
   readonly title: string;
 }
@@ -19,6 +27,17 @@ export type QuickAddResult =
 
 const TIME = /^(\d{1,2}):(\d{2})$/;
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
+/**
+ * Small models fill optional string fields with placeholders instead of
+ * omitting them — an observed run wrote "unknown" into location for a
+ * phrase that never mentioned one.
+ */
+const PLACEHOLDERS = new Set(['-', 'n/a', 'na', 'none', 'null', 'tbd', 'unknown', 'unspecified']);
+
+const meaningfulText = (value: string | undefined): string | undefined => {
+  const text = value?.trim();
+  return text && !PLACEHOLDERS.has(text.toLowerCase()) ? text : undefined;
+};
 
 const normalizeTime = (value: string | undefined): string | undefined => {
   const match = value?.trim().match(TIME);
@@ -52,7 +71,7 @@ export const normalizeQuickAdd = (
   parse: QuickAddParse,
   { referenceDate, timeZone }: { referenceDate: string; timeZone: string },
 ): QuickAddResult => {
-  const title = parse.title?.trim();
+  const title = meaningfulText(parse.title);
   if (!title) {
     return { kind: 'rejected', reason: 'No event title was recognised.' };
   }
@@ -88,20 +107,20 @@ export const normalizeQuickAdd = (
     return { kind: 'rejected', reason: invalid };
   }
 
-  const freq = parse.recurrence?.freq;
+  const count = parse.recurrence?.count;
+  // "Repeats once" is not a repeat: models attach one to phrases like
+  // "next Tuesday", which names a single day.
+  const freq = count === 1 ? undefined : parse.recurrence?.freq;
+  const untilDate = parse.recurrence?.untilDate;
   const recurrence = freq
-    ? buildRecurrenceRule(
-        {
-          count: parse.recurrence?.count,
-          freq,
-          interval: parse.recurrence?.interval,
-          untilDate:
-            parse.recurrence?.untilDate && DATE.test(parse.recurrence.untilDate)
-              ? parse.recurrence.untilDate
-              : undefined,
-        },
-        isAllDay,
-      )
+    ? {
+        ...(typeof count === 'number' && count > 1 ? { count } : {}),
+        freq,
+        ...(typeof parse.recurrence?.interval === 'number'
+          ? { interval: parse.recurrence.interval }
+          : {}),
+        ...(untilDate && DATE.test(untilDate) ? { untilDate } : {}),
+      }
     : undefined;
 
   return {
@@ -110,7 +129,7 @@ export const normalizeQuickAdd = (
       date: resolvedDate,
       endTime: resolvedEnd,
       isAllDay,
-      ...(parse.location?.trim() ? { location: parse.location.trim() } : {}),
+      ...(meaningfulText(parse.location) ? { location: meaningfulText(parse.location)! } : {}),
       ...(recurrence ? { recurrence } : {}),
       startTime: resolvedStart,
       title,

@@ -1,4 +1,4 @@
-import type { RecurrenceFrequency } from '@calendar/core';
+import { Temporal, type RecurrenceFrequency } from '@calendar/core';
 
 /** What the model is asked to extract from one phrase. */
 export interface QuickAddParse {
@@ -43,6 +43,21 @@ export const QUICK_ADD_JSON_SCHEMA = {
   type: 'object',
 } as const;
 
+/** Days of dated weekdays given to the model to choose from. */
+const CALENDAR_HINT_DAYS = 14;
+
+/**
+ * A dated weekday list the model can look up instead of computing. Small
+ * models get relative-date arithmetic wrong often enough to matter: an
+ * observed "next Tuesday" landed on a Thursday before this existed.
+ */
+const upcomingDays = (referenceDate: string): string =>
+  Array.from({ length: CALENDAR_HINT_DAYS }, (_, index) => {
+    const date = Temporal.PlainDate.from(referenceDate).add({ days: index });
+    const weekday = date.toLocaleString('en-US', { weekday: 'short' });
+    return `${weekday} ${date.toString()}${index === 0 ? ' (today)' : ''}`;
+  }).join(', ');
+
 /**
  * Builds the extraction prompt. The reference date and zone are injected
  * rather than assumed, so relative phrases ("next Tuesday") resolve
@@ -63,10 +78,15 @@ export const buildQuickAddPrompt = ({
   [
     'Extract calendar event details from the phrase.',
     `Today is ${referenceDate} in time zone ${timeZone}.`,
-    'Resolve relative dates ("tomorrow", "next Tuesday") against that date.',
-    'Use 24-hour HH:MM times. Omit fields the phrase does not state —',
-    'never invent a location or a time.',
-    'The phrase may be in any language; the title keeps its original language.',
+    'Resolve relative dates ("tomorrow", "next Tuesday") by picking from',
+    `this list, never by computing: ${upcomingDays(referenceDate)}.`,
+    'Use 24-hour HH:MM times: 1pm is 13:00, 12pm is 12:00, midnight is 00:00.',
+    'Omit fields the phrase does not state — never invent a location, a time,',
+    'or a repeat, and never write placeholders like "unknown".',
+    'The title is only what the event is: leave date, time and location words',
+    'out of it ("Lunch with Sarah next Tuesday at 1pm" has the title',
+    '"Lunch with Sarah"). The phrase may be in any language; the title keeps',
+    'its original language.',
     calendarNames.length > 0 ? `Known calendars: ${calendarNames.join(', ')}.` : '',
     `Phrase: ${phrase}`,
   ]

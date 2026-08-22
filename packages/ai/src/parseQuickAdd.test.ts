@@ -91,15 +91,15 @@ describe('parseQuickAdd', () => {
     expect((await prefillOf({ startTime: '09:00', title: 'Standup' })).date).toBe('2026-08-22');
   });
 
-  it('builds an RRULE from a recurrence', async () => {
+  it('carries a recurrence through as editor fields', async () => {
     const prefill = await prefillOf({
       recurrence: { count: 5, freq: 'weekly', interval: 2 },
       startTime: '10:00',
       title: 'Retro',
     });
-    expect(prefill.recurrence).toContain('FREQ=WEEKLY');
-    expect(prefill.recurrence).toContain('INTERVAL=2');
-    expect(prefill.recurrence).toContain('COUNT=5');
+    // The editor's own fields, so the user sees and can adjust them before
+    // the existing save path builds the RRULE.
+    expect(prefill.recurrence).toEqual({ count: 5, freq: 'weekly', interval: 2 });
   });
 
   it('ignores junk the model invented instead of trusting the schema', async () => {
@@ -113,7 +113,30 @@ describe('parseQuickAdd', () => {
     });
     expect(prefill.date).toBe('2026-08-22');
     expect(prefill.isAllDay).toBe(true);
-    expect(prefill.recurrence).not.toContain('UNTIL');
+    expect(prefill.recurrence).toEqual({ freq: 'daily' });
+  });
+
+  it('drops placeholder strings the model invents', async () => {
+    // Observed on device: "unknown" written into a location the phrase
+    // never mentioned.
+    const prefill = await prefillOf({ location: 'unknown', startTime: '09:00', title: 'Standup' });
+    expect(prefill.location).toBeUndefined();
+    expect(
+      await parseQuickAdd(fakeModel({ location: 'N/A', title: 'none' }), {
+        phrase: 'x',
+        ...CONTEXT,
+      }),
+    ).toMatchObject({ kind: 'rejected' });
+  });
+
+  it('drops a repeat that only happens once', async () => {
+    // Also observed: "next Tuesday" came back as a weekly repeat, count 1.
+    const prefill = await prefillOf({
+      recurrence: { count: 1, freq: 'weekly' },
+      startTime: '13:00',
+      title: 'Lunch',
+    });
+    expect(prefill.recurrence).toBeUndefined();
   });
 
   it('rejects an empty phrase without calling the model', async () => {
@@ -162,5 +185,14 @@ describe('parseQuickAdd', () => {
     expect(prompt).toContain('Europe/Vienna');
     expect(prompt).toContain('Work, Personal');
     expect(prompt).toContain('lunch tomorrow');
+  });
+
+  it('hands the model a dated weekday list rather than asking it to count', async () => {
+    const model = fakeModel({ title: 'x' });
+    await parseQuickAdd(model, { phrase: 'lunch next tuesday', ...CONTEXT });
+    const [prompt] = model.prompts;
+    // 2026-08-22 is a Saturday, so the next Tuesday is the 25th.
+    expect(prompt).toContain('Sat 2026-08-22 (today)');
+    expect(prompt).toContain('Tue 2026-08-25');
   });
 });

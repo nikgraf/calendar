@@ -10,6 +10,7 @@
     "test:e2e": "maestro test e2e/flows"
   },
   "dependencies": {
+    "@calendar/ai": "workspace:*",
     "@calendar/app-state": "workspace:*",
     "@calendar/core": "workspace:*",
     "@calendar/db": "workspace:*",
@@ -17,6 +18,7 @@
     "@calendar/sync": "workspace:*",
     "@effect/sql-sqlite-react-native": "catalog:",
     "@op-engineering/op-sqlite": "15.0.4",
+    "@react-native-ai/apple": "^0.12.0",
     "effect": "catalog:",
     "expo": "~57.0.14",
     "expo-auth-session": "~57.0.1",

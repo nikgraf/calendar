@@ -17,11 +17,32 @@ import { useState } from 'react';
 import { useAccounts } from './hooks.ts';
 import { useBackendMutations } from './hooks.ts';
 
+/**
+ * Fields a parsed phrase can prefill. Structural on purpose so app-state
+ * stays independent of the AI package.
+ */
+export interface EventEditorPrefill {
+  readonly date: string;
+  readonly endTime: string;
+  readonly isAllDay: boolean;
+  readonly location?: string;
+  readonly recurrence?: {
+    readonly count?: number;
+    readonly freq: RecurrenceFrequency;
+    readonly interval?: number;
+    readonly untilDate?: string;
+  };
+  readonly startTime: string;
+  readonly title: string;
+}
+
 /** What an editor is opened with: an existing event, or a prefilled slot. */
 export interface EventEditorSeed {
   readonly event?: EventRecord;
   readonly initialDate: Temporal.PlainDate;
   readonly initialHour?: number;
+  /** Quick-add result: the user reviews it before anything is written. */
+  readonly prefill?: EventEditorPrefill;
 }
 
 export type RepeatEnds = 'after' | 'never' | 'on';
@@ -62,7 +83,8 @@ export const useEventEditorModel = ({
     (calendar) => calendar.accessRole === 'owner' || calendar.accessRole === 'writer',
   );
 
-  const [title, setTitle] = useState(existing?.title ?? '');
+  const prefill = seed.prefill;
+  const [title, setTitle] = useState(existing?.title ?? prefill?.title ?? '');
   const [calendarKey, setCalendarKey] = useState(
     existing
       ? `${existing.accountId}:${existing.calendarId}`
@@ -70,31 +92,35 @@ export const useEventEditorModel = ({
         ? `${writableCalendars[0].accountId}:${writableCalendars[0].id}`
         : '',
   );
-  const [isAllDay, setIsAllDay] = useState(existing?.isAllDay ?? false);
+  const [isAllDay, setIsAllDay] = useState(existing?.isAllDay ?? prefill?.isAllDay ?? false);
   const [date, setDate] = useState(
     existing
       ? (existing.startDate ??
           toZonedDateTime(existing.startUtc, timeZone).toPlainDate().toString())
-      : seed.initialDate.toString(),
+      : (prefill?.date ?? seed.initialDate.toString()),
   );
   const [startTime, setStartTime] = useState(
     existing && !existing.isAllDay
       ? timeString(existing.startUtc, timeZone)
-      : pad(seed.initialHour ?? 9),
+      : (prefill?.startTime ?? pad(seed.initialHour ?? 9)),
   );
   const [endTime, setEndTime] = useState(
     existing && !existing.isAllDay
       ? timeString(existing.endUtc, timeZone)
-      : pad((seed.initialHour ?? 9) + 1),
+      : (prefill?.endTime ?? pad((seed.initialHour ?? 9) + 1)),
   );
-  const [location, setLocation] = useState(existing?.location ?? '');
+  const [location, setLocation] = useState(existing?.location ?? prefill?.location ?? '');
   const [scope, setScope] = useState<RecurringScope>('instance');
   const [rsvp, setRsvp] = useState(ownAttendee?.responseStatus);
-  const [repeat, setRepeat] = useState<RecurrenceFrequency | 'none'>('none');
-  const [repeatInterval, setRepeatInterval] = useState('1');
-  const [repeatEnds, setRepeatEnds] = useState<RepeatEnds>('never');
-  const [repeatCount, setRepeatCount] = useState('10');
-  const [repeatUntil, setRepeatUntil] = useState('');
+  const [repeat, setRepeat] = useState<RecurrenceFrequency | 'none'>(
+    prefill?.recurrence?.freq ?? 'none',
+  );
+  const [repeatInterval, setRepeatInterval] = useState(String(prefill?.recurrence?.interval ?? 1));
+  const [repeatEnds, setRepeatEnds] = useState<RepeatEnds>(
+    prefill?.recurrence?.count ? 'after' : prefill?.recurrence?.untilDate ? 'on' : 'never',
+  );
+  const [repeatCount, setRepeatCount] = useState(String(prefill?.recurrence?.count ?? 10));
+  const [repeatUntil, setRepeatUntil] = useState(prefill?.recurrence?.untilDate ?? '');
   const [error, setError] = useState<string | null>(null);
 
   const save = async () => {
