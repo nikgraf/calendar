@@ -1,0 +1,28 @@
+appId: com.solunivo.app
+name: Quick add turns a phrase into a prefilled editor
+---
+- launchApp
+# The app re-bundles from Metro on a cold dev-client launch; wait for the
+# calendar shell rather than racing it.
+- extendedWaitUntil:
+    visible: 'Today'
+    timeout: 60000
+# The bar only renders where an on-device model exists, so skip the rest
+# of the flow on hardware without Apple Intelligence.
+- runFlow:
+    when:
+      visible:
+        id: 'quick-add-input'
+    commands:
+      - tapOn:
+          id: 'quick-add-input'
+      - inputText: 'Lunch with Sarah next Tuesday at 1pm'
+      - tapOn:
+          id: 'quick-add-submit'
+      # Generation runs locally and takes a few seconds.
+      - extendedWaitUntil:
+          visible: 'New Event'
+          timeout: 60000
+      # The phrase must have filled the form, not just opened it.
+      - assertVisible: 'Lunch with Sarah'
+      - tapOn: 'Cancel'
