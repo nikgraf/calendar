@@ -1,0 +1,20 @@
+appId: com.solunivo.app
+name: Swiping the timeline changes days
+---
+- launchApp
+- tapOn: 'Day'
+# The header shows the focused day, e.g. "Fri, August 21".
+- assertVisible:
+    id: 'day-timeline'
+- copyTextFrom:
+    id: 'day-title'
+- swipe:
+    id: 'day-timeline'
+    direction: LEFT
+# A left swipe moves forward a day, so the header must change.
+- assertNotVisible: '${maestro.copiedText}'
+- swipe:
+    id: 'day-timeline'
+    direction: RIGHT
+# Swiping back returns to the original day.
+- assertVisible: '${maestro.copiedText}'

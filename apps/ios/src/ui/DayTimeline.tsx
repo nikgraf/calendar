@@ -7,7 +7,7 @@ import {
   Temporal,
   type EventRecord,
 } from '@calendar/core';
-import { useEffect, useRef } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View, type DimensionValue } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
@@ -15,19 +15,38 @@ import Animated, {
   useAnimatedStyle,
   useSharedValue,
   withTiming,
+  type SharedValue,
 } from 'react-native-reanimated';
 import { chipTextColor, palette } from './theme.ts';
 
 const HOUR_HEIGHT = 56;
 const SNAP_PX = HOUR_HEIGHT / 4; // 15 minutes
+const GUTTER_WIDTH = 56;
+const EDGE_INSET = 8;
+/** Lane is always rendered at this height so swiping never shifts the grid. */
+const ALL_DAY_HEIGHT = 34;
+/** Neighbour days drawn on each side so a swipe reveals real content. */
+const SWIPE_BUFFER_DAYS = 1;
+/** Fraction of a day width past which a release advances the day. */
+const SWIPE_COMMIT_FRACTION = 0.25;
+const SWIPE_COMMIT_VELOCITY = 500;
 const pxToMinutes = (px: number) => (px / HOUR_HEIGHT) * 60;
+
+/**
+ * Writes a shared value from a worklet or callback. Going through a helper
+ * keeps the write off a hook-owned local, which the React Compiler treats as
+ * immutable.
+ */
+const setShared = (shared: SharedValue<number>, value: number) => {
+  'worklet';
+  shared.value = value;
+};
 
 const formatTime = (epochMs: number, timeZone: string): string =>
   Temporal.Instant.fromEpochMilliseconds(epochMs)
     .toZonedDateTimeISO(timeZone)
     .toPlainTime()
     .toLocaleString('en-US', { hour: 'numeric', minute: '2-digit' });
-
 function DraggableEventBlock({
   color,
   event,
@@ -134,23 +153,131 @@ function DraggableEventBlock({
     </GestureDetector>
   );
 }
+/** One day's timed events, sized against that day's own range. */
+function DayColumn({
+  colorOf,
+  date,
+  events,
+  nowMs,
+  onCommit,
+  onEventPress,
+  timeZone,
+  width,
+}: {
+  colorOf: (event: EventRecord) => string;
+  date: Temporal.PlainDate;
+  events: ReadonlyArray<EventRecord>;
+  nowMs: number;
+  onCommit: (event: EventRecord, changes: { endUtc?: number; startUtc?: number }) => void;
+  onEventPress: (event: EventRecord) => void;
+  timeZone: string;
+  width: number;
+}) {
+  const range = dayRange(date, timeZone);
+  const isToday = Temporal.PlainDate.compare(date, Temporal.Now.plainDateISO(timeZone)) === 0;
+  const timed = events.filter(
+    (event) => !event.isAllDay && event.startUtc < range.endUtc && event.endUtc > range.startUtc,
+  );
+  const boxes = layoutDayColumn(
+    timed.map((event) => ({
+      endUtc: event.endUtc,
+      id: `${event.calendarId}:${event.id}`,
+      startUtc: event.startUtc,
+    })),
+    range.startUtc,
+    range.endUtc,
+  );
+  const byId = new Map(timed.map((event) => [`${event.calendarId}:${event.id}`, event]));
+  const nowFraction = (nowMs - range.startUtc) / (range.endUtc - range.startUtc);
+
+  return (
+    <View style={[styles.dayColumn, { width }]}>
+      {boxes.map((box) => {
+        const event = byId.get(box.id)!;
+        return (
+          <DraggableEventBlock
+            color={colorOf(event)}
+            event={event}
+            height={Math.max(box.height * 24 * HOUR_HEIGHT, 22)}
+            key={box.id}
+            left={`${box.left * 100}%` as DimensionValue}
+            onCommitMove={(deltaMinutes) => onCommit(event, moveEventTimes(event, deltaMinutes))}
+            onCommitResize={(deltaMinutes) => onCommit(event, resizeEventEnd(event, deltaMinutes))}
+            onPress={() => onEventPress(event)}
+            timeZone={timeZone}
+            top={box.top * 24 * HOUR_HEIGHT}
+            width={`${box.width * 100}%` as DimensionValue}
+          />
+        );
+      })}
+
+      {isToday && nowFraction >= 0 && nowFraction <= 1 ? (
+        <View style={[styles.nowLine, { top: nowFraction * 24 * HOUR_HEIGHT }]}>
+          <View style={styles.nowDot} />
+        </View>
+      ) : null}
+    </View>
+  );
+}
+
+/** One day's all-day chips, laid out in a single fixed-height row. */
+function AllDayColumn({
+  colorOf,
+  date,
+  events,
+  timeZone,
+  width,
+}: {
+  colorOf: (event: EventRecord) => string;
+  date: Temporal.PlainDate;
+  events: ReadonlyArray<EventRecord>;
+  timeZone: string;
+  width: number;
+}) {
+  const range = dayRange(date, timeZone);
+  const allDay = events.filter(
+    (event) => event.isAllDay && event.startUtc < range.endUtc && event.endUtc > range.startUtc,
+  );
+  return (
+    <View style={[styles.allDayColumn, { width }]}>
+      {allDay.map((event) => {
+        const color = colorOf(event);
+        return (
+          <View
+            key={`${event.calendarId}:${event.id}`}
+            style={[styles.allDayChip, { backgroundColor: color }]}
+          >
+            <Text numberOfLines={1} style={[styles.allDayText, { color: chipTextColor(color) }]}>
+              {event.title}
+            </Text>
+          </View>
+        );
+      })}
+    </View>
+  );
+}
 
 export function DayTimeline({
   colorOf,
   date,
   events,
   onEventPress,
+  onNavigate,
   timeZone,
 }: {
   colorOf: (event: EventRecord) => string;
   date: Temporal.PlainDate;
   events: ReadonlyArray<EventRecord>;
   onEventPress: (event: EventRecord) => void;
+  /** Swipe committed a day change: +1 forward, -1 back. */
+  onNavigate: (direction: 1 | -1) => void;
   timeZone: string;
 }) {
   const scrollRef = useRef<ScrollView>(null);
   const nowMs = useNow();
   const { updateEvent, updateRecurring } = useBackendMutations();
+  const [columnWidth, setColumnWidth] = useState(0);
+  const panX = useSharedValue(0);
 
   const commitChange = (event: EventRecord, changes: { endUtc?: number; startUtc?: number }) => {
     if (event.recurringEventId) {
@@ -171,117 +298,141 @@ export function DayTimeline({
       });
     }
   };
-  const range = dayRange(date, timeZone);
-  const isToday = Temporal.PlainDate.compare(date, Temporal.Now.plainDateISO(timeZone)) === 0;
+
+  const days = useMemo(
+    () =>
+      Array.from({ length: 1 + 2 * SWIPE_BUFFER_DAYS }, (_, index) =>
+        date.add({ days: index - SWIPE_BUFFER_DAYS }),
+      ),
+    [date],
+  );
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ animated: false, y: 7.5 * HOUR_HEIGHT });
   }, []);
 
-  const allDay = events.filter(
-    (event) => event.isAllDay && event.startUtc < range.endUtc && event.endUtc > range.startUtc,
-  );
-  const timed = events.filter(
-    (event) => !event.isAllDay && event.startUtc < range.endUtc && event.endUtc > range.startUtc,
-  );
-  const boxes = layoutDayColumn(
-    timed.map((event) => ({
-      endUtc: event.endUtc,
-      id: `${event.calendarId}:${event.id}`,
-      startUtc: event.startUtc,
-    })),
-    range.startUtc,
-    range.endUtc,
-  );
-  const byId = new Map(timed.map((event) => [`${event.calendarId}:${event.id}`, event]));
-  const nowFraction = (nowMs - range.startUtc) / (range.endUtc - range.startUtc);
+  // Re-centre once the new day has rendered — resetting in the same tick as the
+  // state update would briefly show the wrong day. Also clears a stray offset
+  // when the date changes from outside (Today, chevrons, week strip).
+  useLayoutEffect(() => {
+    setShared(panX, 0);
+  }, [date, panX]);
+
+  const swipe = Gesture.Pan()
+    // Only clearly horizontal movement pans; vertical stays with the ScrollView,
+    // and event blocks win the arena via their long-press activation.
+    .activeOffsetX([-15, 15])
+    .failOffsetY([-12, 12])
+    .onUpdate((update) => {
+      // One day per gesture, like Apple's calendar.
+      setShared(panX, Math.max(-columnWidth, Math.min(columnWidth, update.translationX)));
+    })
+    .onEnd((end) => {
+      if (columnWidth === 0) {
+        setShared(panX, withTiming(0, { duration: 160 }));
+        return;
+      }
+      const direction = end.translationX < 0 ? 1 : -1;
+      const advance =
+        Math.abs(end.translationX) > columnWidth * SWIPE_COMMIT_FRACTION ||
+        (Math.abs(end.velocityX) > SWIPE_COMMIT_VELOCITY && Math.abs(end.translationX) > 8);
+      if (advance) {
+        setShared(
+          panX,
+          withTiming(-direction * columnWidth, { duration: 180 }, (finished) => {
+            if (finished) {
+              runOnJS(onNavigate)(direction);
+            }
+          }),
+        );
+      } else {
+        setShared(panX, withTiming(0, { duration: 160 }));
+      }
+    });
+
+  const stripStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: -columnWidth + panX.value }],
+  }));
 
   return (
-    <View style={styles.container}>
-      {allDay.length > 0 ? (
-        <View style={styles.allDayLane}>
-          {allDay.map((event) => {
-            const color = colorOf(event);
-            return (
-              <View
-                key={`${event.calendarId}:${event.id}`}
-                style={[styles.allDayChip, { backgroundColor: color }]}
-              >
-                <Text
-                  numberOfLines={1}
-                  style={[styles.allDayText, { color: chipTextColor(color) }]}
-                >
-                  {event.title}
+    <View style={styles.container} testID="day-timeline">
+      <View style={styles.allDayLane}>
+        <View style={styles.gutterSpacer} />
+        <View style={styles.stripViewport}>
+          <Animated.View style={[styles.strip, stripStyle]}>
+            {days.map((day) => (
+              <AllDayColumn
+                colorOf={colorOf}
+                date={day}
+                events={events}
+                key={day.toString()}
+                timeZone={timeZone}
+                width={columnWidth}
+              />
+            ))}
+          </Animated.View>
+        </View>
+      </View>
+
+      <GestureDetector gesture={swipe}>
+        <ScrollView ref={scrollRef} style={styles.scroll}>
+          <View style={{ height: 24 * HOUR_HEIGHT }}>
+            {Array.from({ length: 24 }, (_, hour) => (
+              <View key={hour} style={[styles.hourRow, { top: hour * HOUR_HEIGHT }]}>
+                <Text style={styles.hourLabel}>
+                  {hour === 0
+                    ? ''
+                    : new Temporal.PlainTime(hour).toLocaleString('en-US', {
+                        hour: 'numeric',
+                      })}
                 </Text>
+                <View style={styles.hourLine} />
               </View>
-            );
-          })}
-        </View>
-      ) : null}
+            ))}
 
-      <ScrollView ref={scrollRef} style={styles.scroll}>
-        <View style={{ height: 24 * HOUR_HEIGHT }}>
-          {Array.from({ length: 24 }, (_, hour) => (
-            <View key={hour} style={[styles.hourRow, { top: hour * HOUR_HEIGHT }]}>
-              <Text style={styles.hourLabel}>
-                {hour === 0
-                  ? ''
-                  : new Temporal.PlainTime(hour).toLocaleString('en-US', {
-                      hour: 'numeric',
-                    })}
-              </Text>
-              <View style={styles.hourLine} />
+            <View
+              onLayout={(layout) => setColumnWidth(layout.nativeEvent.layout.width)}
+              style={styles.eventsArea}
+            >
+              <Animated.View style={[styles.strip, stripStyle]}>
+                {days.map((day) => (
+                  <DayColumn
+                    colorOf={colorOf}
+                    date={day}
+                    events={events}
+                    key={day.toString()}
+                    nowMs={nowMs}
+                    onCommit={commitChange}
+                    onEventPress={onEventPress}
+                    timeZone={timeZone}
+                    width={columnWidth}
+                  />
+                ))}
+              </Animated.View>
             </View>
-          ))}
-
-          <View style={styles.eventsArea}>
-            {boxes.map((box) => {
-              const event = byId.get(box.id)!;
-              return (
-                <DraggableEventBlock
-                  color={colorOf(event)}
-                  event={event}
-                  height={Math.max(box.height * 24 * HOUR_HEIGHT, 22)}
-                  key={box.id}
-                  left={`${box.left * 100}%` as DimensionValue}
-                  onCommitMove={(deltaMinutes) =>
-                    commitChange(event, moveEventTimes(event, deltaMinutes))
-                  }
-                  onCommitResize={(deltaMinutes) =>
-                    commitChange(event, resizeEventEnd(event, deltaMinutes))
-                  }
-                  onPress={() => onEventPress(event)}
-                  timeZone={timeZone}
-                  top={box.top * 24 * HOUR_HEIGHT}
-                  width={`${box.width * 100}%` as DimensionValue}
-                />
-              );
-            })}
-
-            {isToday && nowFraction >= 0 && nowFraction <= 1 ? (
-              <View style={[styles.nowLine, { top: nowFraction * 24 * HOUR_HEIGHT }]}>
-                <View style={styles.nowDot} />
-              </View>
-            ) : null}
           </View>
-        </View>
-      </ScrollView>
+        </ScrollView>
+      </GestureDetector>
     </View>
   );
 }
-
 const styles = StyleSheet.create({
   allDayChip: {
     borderRadius: 6,
-    marginBottom: 3,
+    flexShrink: 1,
     paddingHorizontal: 8,
     paddingVertical: 3,
+  },
+  allDayColumn: {
+    flexDirection: 'row',
+    gap: 4,
+    paddingVertical: 4,
   },
   allDayLane: {
     borderBottomColor: palette.border,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
+    flexDirection: 'row',
+    height: ALL_DAY_HEIGHT,
   },
   allDayText: {
     fontSize: 13,
@@ -289,6 +440,9 @@ const styles = StyleSheet.create({
   },
   container: {
     flex: 1,
+  },
+  dayColumn: {
+    height: 24 * HOUR_HEIGHT,
   },
   eventBlock: {
     borderRadius: 6,
@@ -301,9 +455,10 @@ const styles = StyleSheet.create({
   },
   eventsArea: {
     bottom: 0,
-    left: 56,
+    left: GUTTER_WIDTH,
+    overflow: 'hidden',
     position: 'absolute',
-    right: 8,
+    right: EDGE_INSET,
     top: 0,
   },
   eventShadow: {
@@ -318,6 +473,9 @@ const styles = StyleSheet.create({
   eventTitle: {
     fontSize: 13,
     fontWeight: '600',
+  },
+  gutterSpacer: {
+    width: GUTTER_WIDTH,
   },
   hourLabel: {
     color: palette.textFaint,
@@ -365,5 +523,13 @@ const styles = StyleSheet.create({
   },
   scroll: {
     flex: 1,
+  },
+  strip: {
+    flexDirection: 'row',
+  },
+  stripViewport: {
+    flex: 1,
+    marginRight: EDGE_INSET,
+    overflow: 'hidden',
   },
 });
