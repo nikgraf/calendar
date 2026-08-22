@@ -21,11 +21,16 @@ describe('appleSpeech without the native module', () => {
     await expect(appleSpeech.isSupported()).resolves.toBe(false);
   });
 
-  it('fails prepare and transcribe rather than crashing the app', async () => {
+  it('reports unsupported rather than crashing the app', async () => {
     const { appleSpeech } = await import('./appleSpeech.ts');
-    await expect(appleSpeech.prepare()).rejects.toThrow(/not built into this app/);
-    await expect(appleSpeech.transcribeFile('file:///tmp/x.wav')).rejects.toThrow(
-      /not built into this app/,
-    );
+    const { SpeechUnsupportedError } = await import('@calendar/ai');
+    await expect(appleSpeech.prepare()).rejects.toBeInstanceOf(SpeechUnsupportedError);
+    await expect(appleSpeech.startRecording()).rejects.toBeInstanceOf(SpeechUnsupportedError);
+  });
+
+  it('stopping or cancelling without a recording is harmless', async () => {
+    const { appleSpeech } = await import('./appleSpeech.ts');
+    await expect(appleSpeech.stopRecording()).resolves.toBeUndefined();
+    await expect(appleSpeech.cancelRecording()).resolves.toBeUndefined();
   });
 });

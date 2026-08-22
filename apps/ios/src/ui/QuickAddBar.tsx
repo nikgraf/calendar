@@ -1,13 +1,13 @@
-import { parseQuickAdd, type LanguageModel, type SpeechToText } from '@calendar/ai';
+import {
+  MicrophoneDeniedError,
+  parseQuickAdd,
+  SpeechUnsupportedError,
+  type LanguageModel,
+  type SpeechToText,
+} from '@calendar/ai';
 import { Temporal } from '@calendar/core';
 import type { EventEditorPrefill } from '@calendar/app-state';
 import { useEffect, useState } from 'react';
-import {
-  IOSOutputFormat,
-  requestRecordingPermissionsAsync,
-  setAudioModeAsync,
-  useAudioRecorder,
-} from 'expo-audio';
 import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { palette } from './theme.ts';
 
@@ -16,26 +16,8 @@ import { palette } from './theme.ts';
  * confirms — nothing is written by the model. Hidden entirely when no
  * on-device model exists, leaving the manual `＋` flow untouched.
  */
-/**
- * Linear PCM in a .wav container, not the m4a preset: the transcription
- * API writes the bytes to an extension-less temp file and opens it with
- * AVAudioFile, so the container has to be recognisable from its header.
- */
-const WAV_RECORDING = {
-  android: { audioEncoder: 'default', outputFormat: 'default' },
-  bitRate: 256_000,
-  extension: '.wav',
-  ios: {
-    audioQuality: 96,
-    linearPCMBitDepth: 16,
-    linearPCMIsBigEndian: false,
-    linearPCMIsFloat: false,
-    outputFormat: IOSOutputFormat.LINEARPCM,
-  },
-  numberOfChannels: 1,
-  sampleRate: 16_000,
-  web: {},
-} as const;
+/** A forgotten recording stops itself rather than running until the app dies. */
+const MAX_RECORDING_MS = 60_000;
 
 type VoiceState = 'idle' | 'preparing' | 'recording' | 'transcribing';
 
@@ -58,7 +40,6 @@ export function QuickAddBar({
   const [phrase, setPhrase] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const recorder = useAudioRecorder(WAV_RECORDING);
 
   useEffect(() => {
     let cancelled = false;
@@ -114,40 +95,40 @@ export function QuickAddBar({
 
   const startRecording = async () => {
     setError(null);
+    setVoice('preparing');
     try {
-      const permission = await requestRecordingPermissionsAsync();
-      if (!permission.granted) {
-        // A refusal is a choice, not a failure: typing still works.
-        setError('Microphone access is off — you can still type.');
-        return;
-      }
-      setVoice('preparing');
-      try {
-        // First run installs the locale's models; later runs return at once.
-        // Failure here means this device cannot transcribe at all.
-        await speech.prepare();
-      } catch {
-        setVoiceAvailable(false);
-        setVoice('idle');
-        setError('Dictation is unavailable on this device.');
-        return;
-      }
-      await setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true });
-      await recorder.prepareToRecordAsync();
-      recorder.record();
-      setVoice('recording');
-    } catch {
+      // Prepare first: asking for the microphone before knowing dictation
+      // can run would extract a permanent permission for nothing.
+      await speech.prepare();
+    } catch (error) {
       setVoice('idle');
-      setError('Could not start recording.');
+      if (error instanceof SpeechUnsupportedError) {
+        setVoiceAvailable(false);
+        setError('Dictation is unavailable on this device.');
+      } else {
+        // Installing the locale's models needs the network, so a failure
+        // here is often transient — keep the mic and let them retry.
+        setError("Couldn't set up dictation — try again.");
+      }
+      return;
+    }
+    try {
+      await speech.startRecording();
+      setVoice('recording');
+    } catch (error) {
+      setVoice('idle');
+      setError(
+        error instanceof MicrophoneDeniedError
+          ? 'Microphone access is off — you can still type.'
+          : 'Could not start recording.',
+      );
     }
   };
 
   const stopRecording = async () => {
     setVoice('transcribing');
     try {
-      await recorder.stop();
-      const uri = recorder.uri;
-      const text = uri ? await speech.transcribeFile(uri) : undefined;
+      const text = await speech.stopRecording();
       if (!text) {
         setError("Didn't catch that — try again.");
         return;
@@ -160,6 +141,26 @@ export function QuickAddBar({
       setVoice('idle');
     }
   };
+
+  // Stop a forgotten recording, and never leave one running when the bar
+  // goes away (switching to Month view unmounts it).
+  useEffect(() => {
+    if (voice !== 'recording') {
+      return;
+    }
+    const timer = setTimeout(() => void stopRecording(), MAX_RECORDING_MS);
+    return () => {
+      clearTimeout(timer);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- restart the cap per recording
+  }, [voice]);
+
+  useEffect(
+    () => () => {
+      void speech.cancelRecording();
+    },
+    [speech],
+  );
 
   if (available !== true) {
     // The marker still renders so e2e can distinguish "checked, no model"
@@ -199,9 +200,12 @@ export function QuickAddBar({
           <Pressable
             accessibilityLabel="Add the described event"
             accessibilityRole="button"
-            disabled={phrase.trim() === ''}
+            disabled={phrase.trim() === '' || voice === 'recording'}
             onPress={() => void submit()}
-            style={[styles.button, phrase.trim() === '' && styles.buttonDisabled]}
+            style={[
+              styles.button,
+              (phrase.trim() === '' || voice === 'recording') && styles.buttonDisabled,
+            ]}
             testID="quick-add-submit"
           >
             <Text style={styles.buttonLabel}>Add</Text>

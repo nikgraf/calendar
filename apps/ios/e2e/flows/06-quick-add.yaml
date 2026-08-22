@@ -32,14 +32,8 @@ name: Quick add turns a phrase into a prefilled editor
       # The phrase must have filled the form, not just opened it.
       - assertVisible: 'Lunch with Sarah'
       - tapOn: 'Cancel'
-      # Dictation itself cannot be exercised here: Maestro cannot inject
-      # audio, and the simulator has no speech assets, so the mic hides
-      # itself after prepare() fails. Assert only that it is offered where
-      # the module exists; the transcript path is a device check.
-      - runFlow:
-          when:
-            visible:
-              id: 'quick-add-mic'
-          commands:
-            - assertVisible:
-                id: 'quick-add-mic'
+      # Dictation is deliberately not asserted here: Maestro cannot inject
+      # audio and simulators carry no speech assets, so the mic disables
+      # itself once prepare() fails. Gating an assertion on the mic being
+      # visible would pass whether or not it rendered — the transcript path
+      # is verified on a real device instead.

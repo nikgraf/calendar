@@ -8,7 +8,19 @@ export interface TranscriptSegment {
  * desktop helper can implement the same shape later (macOS 26 exposes the
  * same speech API as iOS 26).
  */
+/** The device or locale cannot transcribe at all — stop offering it. */
+export class SpeechUnsupportedError extends Error {
+  override readonly name = 'SpeechUnsupportedError';
+}
+
+/** The user declined the microphone; typing still works. */
+export class MicrophoneDeniedError extends Error {
+  override readonly name = 'MicrophoneDeniedError';
+}
+
 export interface SpeechToText {
+  /** Abandons a recording without transcribing it, deleting the audio. */
+  readonly cancelRecording: () => Promise<void>;
   /**
    * Whether transcription is worth offering at all — the native module is
    * present. Deliberately not "ready to run": the platform reports
@@ -24,8 +36,15 @@ export interface SpeechToText {
    * callers should show progress rather than appearing to hang.
    */
   readonly prepare: () => Promise<void>;
-  /** Recorded audio file → text, or undefined when nothing was said. */
-  readonly transcribeFile: (uri: string) => Promise<string | undefined>;
+  /**
+   * Starts recording, asking for the microphone if needed. Throws
+   * MicrophoneDeniedError when refused. Owning recording here keeps every
+   * native import — and the audio-session and temp-file lifecycle — behind
+   * one lazily loaded module.
+   */
+  readonly startRecording: () => Promise<void>;
+  /** Stops, transcribes, cleans up. Undefined when nothing was said. */
+  readonly stopRecording: () => Promise<string | undefined>;
 }
 
 /**
