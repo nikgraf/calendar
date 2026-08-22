@@ -230,6 +230,22 @@ importers:
         specifier: 'catalog:'
         version: 6.0.3
 
+  packages/ai:
+    dependencies:
+      '@calendar/core':
+        specifier: workspace:*
+        version: link:../core
+      effect:
+        specifier: 'catalog:'
+        version: 4.0.0-beta.93
+    devDependencies:
+      typescript:
+        specifier: 'catalog:'
+        version: 6.0.3
+      vitest:
+        specifier: 4.1.9
+        version: 4.1.9(@types/node@26.1.0)(@vitest/browser-preview@4.1.9)(@voidzero-dev/vite-plus-core@0.2.2(@types/node@26.1.0)(jiti@2.7.0)(terser@5.48.0)(typescript@6.0.3)(yaml@2.9.0))
+
   packages/app-state:
     dependencies:
       '@calendar/core':

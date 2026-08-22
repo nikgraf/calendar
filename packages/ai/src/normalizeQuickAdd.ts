@@ -1,0 +1,119 @@
+import { buildRecurrenceRule, Temporal, validateEventDraft } from '@calendar/core';
+import type { QuickAddParse } from './quickAdd.ts';
+
+/** Editor prefill: exactly the fields the shared editor model seeds from. */
+export interface QuickAddPrefill {
+  readonly date: string;
+  readonly endTime: string;
+  readonly isAllDay: boolean;
+  readonly location?: string;
+  /** RFC 5545 RRULE line, when the phrase asked for a repeat. */
+  readonly recurrence?: string;
+  readonly startTime: string;
+  readonly title: string;
+}
+
+export type QuickAddResult =
+  | { readonly kind: 'parsed'; readonly prefill: QuickAddPrefill }
+  | { readonly kind: 'rejected'; readonly reason: string };
+
+const TIME = /^(\d{1,2}):(\d{2})$/;
+const DATE = /^\d{4}-\d{2}-\d{2}$/;
+
+const normalizeTime = (value: string | undefined): string | undefined => {
+  const match = value?.trim().match(TIME);
+  if (!match) {
+    return undefined;
+  }
+  const hour = Number(match[1]);
+  const minute = Number(match[2]);
+  if (hour > 23 || minute > 59) {
+    return undefined;
+  }
+  return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+};
+
+const addHour = (time: string): string => {
+  const [hour, minute] = time.split(':').map(Number) as [number, number];
+  // Clamp instead of spilling into the next day: the editor works on one date.
+  return hour >= 23
+    ? '23:59'
+    : `${String(hour + 1).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+};
+
+/**
+ * Turns raw model output into a prefill the editor can open, or rejects it.
+ *
+ * The model is trusted only for extraction; every value is re-checked here,
+ * because a schema-shaped answer can still be nonsense (23:70, a title of
+ * whitespace, an end before its start).
+ */
+export const normalizeQuickAdd = (
+  parse: QuickAddParse,
+  { referenceDate, timeZone }: { referenceDate: string; timeZone: string },
+): QuickAddResult => {
+  const title = parse.title?.trim();
+  if (!title) {
+    return { kind: 'rejected', reason: 'No event title was recognised.' };
+  }
+
+  const date = parse.date?.trim();
+  const resolvedDate = date && DATE.test(date) ? date : referenceDate;
+  try {
+    Temporal.PlainDate.from(resolvedDate);
+  } catch {
+    return { kind: 'rejected', reason: 'That date could not be understood.' };
+  }
+
+  const startTime = normalizeTime(parse.startTime);
+  const endTime = normalizeTime(parse.endTime);
+  // No usable time at all means the phrase described a whole day.
+  const isAllDay = parse.isAllDay === true || !startTime;
+  const resolvedStart = isAllDay ? '00:00' : startTime!;
+  // A missing or backwards end becomes a one-hour event rather than an error:
+  // "lunch at 1" is a complete thought.
+  const resolvedEnd =
+    !isAllDay && endTime && endTime > resolvedStart ? endTime : addHour(resolvedStart);
+
+  const fields = {
+    calendarKey: 'placeholder:placeholder',
+    date: resolvedDate,
+    endTime: resolvedEnd,
+    isAllDay,
+    startTime: resolvedStart,
+    title,
+  };
+  const invalid = validateEventDraft(fields, timeZone);
+  if (invalid) {
+    return { kind: 'rejected', reason: invalid };
+  }
+
+  const freq = parse.recurrence?.freq;
+  const recurrence = freq
+    ? buildRecurrenceRule(
+        {
+          count: parse.recurrence?.count,
+          freq,
+          interval: parse.recurrence?.interval,
+          untilDate:
+            parse.recurrence?.untilDate && DATE.test(parse.recurrence.untilDate)
+              ? parse.recurrence.untilDate
+              : undefined,
+        },
+        isAllDay,
+      )
+    : undefined;
+
+  return {
+    kind: 'parsed',
+    prefill: {
+      date: resolvedDate,
+      endTime: resolvedEnd,
+      isAllDay,
+      ...(parse.location?.trim() ? { location: parse.location.trim() } : {}),
+      ...(recurrence ? { recurrence } : {}),
+      startTime: resolvedStart,
+      title,
+    },
+  };
+};
