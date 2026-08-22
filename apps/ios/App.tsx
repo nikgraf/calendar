@@ -6,11 +6,12 @@ import {
   useEventsInRangeStable,
 } from '@calendar/app-state';
 import {
-  daySpanRange,
+  bufferedRange,
+  makeColorLookup,
+  DAY_SWIPE_BUFFER,
   monthGridRange,
   Temporal,
   weekStart,
-  type EventRecord,
 } from '@calendar/core';
 import { useEffect, useMemo, useState } from 'react';
 import { AppState, Pressable, SafeAreaView, StatusBar, StyleSheet, Text, View } from 'react-native';
@@ -48,8 +49,8 @@ function CalendarScreen() {
   const range = useMemo(
     () =>
       view === 'day'
-        ? // One neighbour day each side so a swipe reveals loaded content.
-          daySpanRange(focused.subtract({ days: 1 }), 3, timeZone)
+        ? // Matches the strip DayTimeline renders, so a swipe reveals loaded days.
+          bufferedRange(focused, 1, DAY_SWIPE_BUFFER, timeZone)
         : monthGridRange(
             Temporal.PlainYearMonth.from(focused),
             Temporal.Now.plainDateISO(timeZone),
@@ -62,12 +63,7 @@ function CalendarScreen() {
   const events = useEventsInRangeStable(range.startUtc, range.endUtc);
   const calendars = useCalendars();
 
-  const colorOf = useMemo(() => {
-    const byKey = new Map(
-      calendars.map((calendar) => [`${calendar.accountId}:${calendar.id}`, calendar.colorHex]),
-    );
-    return (event: EventRecord) => byKey.get(`${event.accountId}:${event.calendarId}`) ?? '#4285f4';
-  }, [calendars]);
+  const colorOf = useMemo(() => makeColorLookup(calendars), [calendars]);
 
   const weekDays = useMemo(() => {
     const start = weekStart(focused);
@@ -165,12 +161,17 @@ function CalendarScreen() {
         />
       )}
 
-      <EventEditSheet
-        calendars={calendars}
-        onClose={() => setEditSeed(null)}
-        seed={editSeed}
-        timeZone={timeZone}
-      />
+      {/* Keyed + conditionally mounted: the sheet seeds its form fields from
+          `seed` in useState initializers, which only run on mount. */}
+      {editSeed ? (
+        <EventEditSheet
+          calendars={calendars}
+          key={editSeed.event?.id ?? `new:${editSeed.initialDate.toString()}`}
+          onClose={() => setEditSeed(null)}
+          seed={editSeed}
+          timeZone={timeZone}
+        />
+      ) : null}
       <SettingsSheet onClose={() => setShowSettings(false)} visible={showSettings} />
     </SafeAreaView>
   );

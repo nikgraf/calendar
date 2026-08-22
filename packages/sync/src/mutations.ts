@@ -116,7 +116,8 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 const isoDate = (epochMs: number): string => new Date(epochMs).toISOString().slice(0, 10);
 
 /** Backoff for transient op failures: 30s · 2^attempts, capped at 30min. */
-const retryDelayMs = (attempts: number): number => Math.min(30_000 * 2 ** attempts, 30 * 60 * 1000);
+export const retryDelayMs = (attempts: number): number =>
+  Math.min(30_000 * 2 ** attempts, 30 * 60 * 1000);
 
 const make: Effect.Effect<
   EventMutationsShape,

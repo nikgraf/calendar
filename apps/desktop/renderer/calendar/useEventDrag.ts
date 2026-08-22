@@ -36,13 +36,11 @@ const isDraggable = (event: EventRecord): boolean => !event.isAllDay && !event.r
 export const useEventDrag = ({
   dayCount,
   gridRef,
-  gutterWidth,
   hourHeight,
   onClick,
 }: {
   dayCount: number;
   gridRef: RefObject<HTMLDivElement | null>;
-  gutterWidth: number;
   hourHeight: number;
   onClick: (event: EventRecord) => void;
 }) => {
@@ -74,7 +72,7 @@ export const useEventDrag = ({
       return { deltaDays: 0, deltaMinutes };
     }
     const grid = gridRef.current?.getBoundingClientRect();
-    const dayWidth = grid ? (grid.width - gutterWidth) / dayCount : 0;
+    const dayWidth = grid ? grid.width / dayCount : 0;
     const deltaDays = dayWidth > 0 ? Math.round((clientX - origin.startClientX) / dayWidth) : 0;
     return { deltaDays, deltaMinutes };
   };
@@ -145,7 +143,15 @@ export const useEventDrag = ({
     if (!origin || origin.pointerId !== domEvent.pointerId) {
       return;
     }
-    if (!origin.active) {
+    // `active` is only ever set from pointermove, and moves can be missed
+    // entirely — the browser coalesces them under load, and a fast flick can
+    // land press and release in one frame. Judge by the release distance so
+    // such a gesture still moves the event instead of silently becoming a
+    // click that opens the editor.
+    const movedFar =
+      Math.hypot(domEvent.clientX - origin.startClientX, domEvent.clientY - origin.startClientY) >=
+      DRAG_THRESHOLD_PX;
+    if (!origin.active && !movedFar) {
       setPreview(null);
       if (origin.mode === 'move') {
         onClick(origin.event);

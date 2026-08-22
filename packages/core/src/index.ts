@@ -1,7 +1,11 @@
 export * from './backend.ts';
 export * from './layout/allDayLane.ts';
 export * from './layout/dayGrid.ts';
+export * from './layout/dayMembership.ts';
+export * from './layout/dayStrip.ts';
 export * from './color.ts';
+export * from './editor/eventDraft.ts';
+export * from './gestures/swipeSnap.ts';
 export * from './gestures/wheelPan.ts';
 export * from './meeting.ts';
 export * from './recurrence/build.ts';
@@ -13,5 +17,3 @@ export * from './time/dragMath.ts';
 export * from './time/ranges.ts';
 export * from './time/temporal.ts';
 export * from './types.ts';
-
-export const appName = 'Solunivo';

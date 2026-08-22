@@ -1,5 +1,5 @@
 import { Account, Attendee, CalendarInfo, EventRecord } from '@calendar/core';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import {
   launchApp,
   readCalendars,
@@ -112,6 +112,13 @@ let app: App;
 beforeAll(async () => {
   app = await launchApp(seed);
 }, 60_000);
+
+// Capture diagnostics for whatever failed before the app is torn down.
+afterEach(async (context) => {
+  if (context.task.result?.state === 'fail') {
+    await app?.dump(context.task.name);
+  }
+});
 
 afterAll(async () => {
   await app?.stop();
@@ -668,5 +675,22 @@ describe('calendar desktop e2e', () => {
     // Close by clicking the overlay backdrop.
     await cdp.click(20, 400);
     await cdp.waitFor(`!document.body.textContent.includes('Add Google Account')`);
+  });
+  it('moves an event even when no pointermove is delivered', async () => {
+    const { cdp } = app;
+    // A press and release with nothing in between: the browser coalescing
+    // moves under load produced exactly this, silently turning the drag into
+    // a click that opened the editor.
+    const before = await eventStart('Gym session');
+    const from = await cdp.locate('[title^="Gym session"]');
+    await cdp.mouse('mousePressed', from.x, from.y);
+    await cdp.mouse('mouseReleased', from.x, from.y + HOUR_HEIGHT);
+
+    const expected = before + HOUR_MS;
+    const moved = await waitForEvent(
+      (event) => event.title === 'Gym session' && event.startUtc === expected,
+    );
+    expect(moved?.startUtc).toBe(expected);
+    expect(await cdp.eval<boolean>(`document.body.textContent.includes('Edit event')`)).toBe(false);
   });
 });

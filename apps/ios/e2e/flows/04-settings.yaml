@@ -2,6 +2,11 @@ appId: com.solunivo.app
 name: Accounts sheet opens and closes
 ---
 - launchApp
+# The app re-bundles from Metro on a cold dev-client launch; wait for the
+# calendar shell rather than racing it.
+- extendedWaitUntil:
+    visible: 'Today'
+    timeout: 60000
 - tapOn:
     id: 'open-settings'
 - assertVisible: 'Accounts'

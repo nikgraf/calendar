@@ -2,6 +2,11 @@ appId: com.solunivo.app
 name: View switching and date navigation
 ---
 - launchApp
+# The app re-bundles from Metro on a cold dev-client launch; wait for the
+# calendar shell rather than racing it.
+- extendedWaitUntil:
+    visible: 'Today'
+    timeout: 60000
 - tapOn: 'Month'
 # Month view titles are "July 2026"-style.
 - assertVisible:

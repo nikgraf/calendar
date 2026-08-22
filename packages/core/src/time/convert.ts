@@ -6,9 +6,6 @@ export type EpochMs = number;
 export const toZonedDateTime = (epochMs: EpochMs, timeZone: string): Temporal.ZonedDateTime =>
   Temporal.Instant.fromEpochMilliseconds(epochMs).toZonedDateTimeISO(timeZone);
 
-export const toEpochMs = (zonedDateTime: Temporal.ZonedDateTime): EpochMs =>
-  zonedDateTime.toInstant().epochMilliseconds;
-
 /** UTC midnight of an ISO date ('2026-07-02'). Used to index all-day events. */
 export const plainDateToUtcMs = (isoDate: string): EpochMs =>
   Temporal.PlainDate.from(isoDate).toZonedDateTime({ timeZone: 'UTC' }).toInstant()

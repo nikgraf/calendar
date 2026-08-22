@@ -2,6 +2,11 @@ appId: com.solunivo.app
 name: App launches to the day view
 ---
 - launchApp
+# The app re-bundles from Metro on a cold dev-client launch; wait for the
+# calendar shell rather than racing it.
+- extendedWaitUntil:
+    visible: 'Today'
+    timeout: 60000
 - assertVisible: 'Today'
 - assertVisible: 'Day'
 - assertVisible: 'Month'

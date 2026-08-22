@@ -58,16 +58,8 @@ export const useCalendars = (): ReadonlyArray<CalendarInfo> =>
 export const usePendingOps = (): ReadonlyArray<PendingOpSummary> =>
   unwrapList(useAtomValue(useBackendAtoms().pendingOps));
 
-export const useEventsInRange = (
-  rangeStartUtc: number,
-  rangeEndUtc: number,
-): ReadonlyArray<EventRecord> => {
-  const atoms = useBackendAtoms();
-  return unwrapList(useAtomValue(atoms.eventsInRange(rangeKey(rangeStartUtc, rangeEndUtc))));
-};
-
 /**
- * Like `useEventsInRange`, but keeps returning the previous range's events
+ * Returns a range's events, keeping the previous range's events on screen
  * while a brand-new range atom is still loading — continuous navigation
  * (panning across days) never flashes an empty grid between ranges.
  */

@@ -1,5 +1,5 @@
 import {
-  daySpanRange,
+  bufferedRange,
   monthGridRange,
   PAN_BUFFER_DAYS,
   Temporal,
@@ -27,11 +27,7 @@ const rangeFor = (
     // Day/week ranges include the pan buffer columns so panning reveals
     // already-loaded days.
     case 'day': {
-      return daySpanRange(
-        focused.subtract({ days: PAN_BUFFER_DAYS }),
-        1 + 2 * PAN_BUFFER_DAYS,
-        timeZone,
-      );
+      return bufferedRange(focused, 1, PAN_BUFFER_DAYS, timeZone);
     }
     case 'month': {
       return monthGridRange(
@@ -41,11 +37,7 @@ const rangeFor = (
       );
     }
     case 'week': {
-      return daySpanRange(
-        windowStart.subtract({ days: PAN_BUFFER_DAYS }),
-        7 + 2 * PAN_BUFFER_DAYS,
-        timeZone,
-      );
+      return bufferedRange(windowStart, 7, PAN_BUFFER_DAYS, timeZone);
     }
   }
 };

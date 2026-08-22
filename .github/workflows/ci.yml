@@ -45,6 +45,15 @@ jobs:
       - run: pnpm --filter @calendar/desktop rebuild:native
       - run: pnpm --filter @calendar/desktop build
       - run: pnpm test:e2e
+      - name: Upload e2e diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-diagnostics-${{ github.run_attempt }}
+          path: |
+            apps/desktop/e2e-artifacts/
+          retention-days: 7
+          if-no-files-found: ignore
 
   # Signed + notarized arm64 zip on every push to main, downloadable as an
   # Actions artifact for team-internal testing. Secret setup and tester

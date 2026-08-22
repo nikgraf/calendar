@@ -2,11 +2,18 @@ appId: com.solunivo.app
 name: New-event sheet opens with the repeat picker
 ---
 - launchApp
+# The app re-bundles from Metro on a cold dev-client launch; wait for the
+# calendar shell rather than racing it.
+- extendedWaitUntil:
+    visible: 'Today'
+    timeout: 60000
 - tapOn:
     id: 'add-event'
 - assertVisible: 'New Event'
-- assertVisible: 'Repeat'
+# styles.label applies textTransform: uppercase, so the rendered text is REPEAT.
+- assertVisible: 'REPEAT'
 - tapOn: 'Daily'
-- assertVisible: 'Every (n)'
+# Assertions are regexes — the parentheses must be escaped.
+- assertVisible: 'EVERY \(N\)'
 - tapOn: 'Cancel'
 - assertVisible: 'Today'

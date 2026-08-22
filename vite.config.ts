@@ -56,11 +56,7 @@ export default defineConfig({
   test: {
     include: process.env['E2E']
       ? ['apps/desktop/e2e/**/*.e2e.ts']
-      : [
-          'packages/*/src/**/*.test.{ts,tsx}',
-          'packages/*/__tests__/**/*.test.{ts,tsx}',
-          'apps/desktop/electron/**/*.test.ts',
-        ],
+      : ['packages/*/src/**/*.test.{ts,tsx}', 'apps/desktop/electron/**/*.test.ts'],
     server: {
       deps: {
         // Must be processed by vite so the better-sqlite3 alias applies.

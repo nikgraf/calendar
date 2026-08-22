@@ -10,6 +10,7 @@ import {
 import {
   ApiUnavailableError,
   ConflictError,
+  GoogleApiError,
   GoogleCalendarClient,
   ReauthRequiredError,
   type GcalEvent,
@@ -158,6 +159,61 @@ describe('EventMutations', () => {
     }).pipe(Effect.provide(mutationsLayer(client)));
   });
 
+  it.effect('an empty location clears the field and reaches the patch body', () => {
+    const patched: Array<Record<string, unknown>> = [];
+    const client = stubClient({
+      insertEvent: ({ event }) =>
+        Effect.succeed({
+          end: event.end as GcalEvent['end'],
+          etag: '"server-1"',
+          id: event.id ?? 'x',
+          location: event.location,
+          start: event.start as GcalEvent['start'],
+          status: 'confirmed',
+          summary: event.summary,
+        }),
+      patchEvent: ({ event }) => {
+        patched.push(event as Record<string, unknown>);
+        return Effect.succeed({
+          end: event.end as GcalEvent['end'],
+          etag: '"server-2"',
+          id: 'e',
+          location: event.location,
+          start: event.start as GcalEvent['start'],
+          status: 'confirmed',
+          summary: event.summary,
+        });
+      },
+    });
+    return Effect.gen(function* () {
+      yield* seedCalendar;
+      const mutations = yield* EventMutations;
+      const record = yield* mutations.createEvent({ ...draft, location: 'Room 1' });
+      yield* mutations.processPendingOps();
+
+      // Undefined means "unchanged" — the location must survive.
+      yield* mutations.updateEvent({
+        accountId: 'acc-1',
+        calendarId: 'cal-1',
+        changes: { title: 'Kept' },
+        eventId: record.id,
+      });
+      expect((yield* eventsNow)[0]!.location).toBe('Room 1');
+
+      // An empty string is an explicit clear.
+      yield* mutations.updateEvent({
+        accountId: 'acc-1',
+        calendarId: 'cal-1',
+        changes: { location: '' },
+        eventId: record.id,
+      });
+      expect((yield* eventsNow)[0]!.location).toBe('');
+
+      yield* mutations.processPendingOps();
+      expect(patched.at(-1)?.location).toBe('');
+    }).pipe(Effect.provide(mutationsLayer(client)));
+  });
+
   it.effect('drops the op on 412 conflict (server wins)', () => {
     const client = stubClient({
       insertEvent: ({ event }) =>
@@ -206,6 +262,47 @@ describe('EventMutations', () => {
       expect(ops).toHaveLength(1);
     }).pipe(Effect.provide(mutationsLayer(client)));
   });
+
+  it.effect('drops permanently-rejected ops but keeps transient failures queued', () =>
+    Effect.gen(function* () {
+      const attempt = (status: number) =>
+        Effect.gen(function* () {
+          const mutations = yield* EventMutations;
+          const record = yield* mutations.createEvent({
+            ...draft,
+            title: `evt-${status}`,
+          });
+          yield* mutations.processPendingOps();
+          const remaining = (yield* (yield* PendingOpRepo).listAll()).filter(
+            (op) => op.eventId === record.id,
+          );
+          return remaining;
+        }).pipe(
+          Effect.provide(
+            mutationsLayer(
+              stubClient({
+                insertEvent: () => Effect.fail(new GoogleApiError({ message: 'boom', status })),
+              }),
+            ),
+          ),
+        );
+
+      // 4xx (except 429) are the app's fault and would pin the queue forever.
+      for (const status of [400, 403, 404]) {
+        expect(yield* attempt(status), `status ${status}`).toHaveLength(0);
+      }
+      // 409 means the idempotent create already landed.
+      expect(yield* attempt(409)).toHaveLength(0);
+      // Server-side and rate-limit failures must be retried.
+      for (const status of [429, 500, 503]) {
+        const remaining = yield* attempt(status);
+        expect(remaining, `status ${status}`).toHaveLength(1);
+        expect(remaining[0]!.attempts).toBe(1);
+        // Backed off rather than hammered.
+        expect(remaining[0]!.nextAttemptAt).toBeGreaterThan(0);
+      }
+    }),
+  );
 
   it.effect('deleting a never-synced event needs no server op', () => {
     const client = stubClient({});

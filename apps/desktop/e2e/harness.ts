@@ -1,5 +1,5 @@
 import { spawn, type ChildProcess } from 'node:child_process';
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -159,6 +159,7 @@ export class Cdp {
           });
           const cdp = new Cdp(ws);
           await cdp.send('Runtime.enable');
+          await cdp.send('Page.enable');
           return cdp;
         }
       } catch {
@@ -383,6 +384,7 @@ export class Cdp {
 
 export interface App {
   readonly cdp: Cdp;
+  readonly dump: (label: string) => Promise<void>;
   readonly stop: () => Promise<void>;
   readonly userDataDir: string;
 }
@@ -405,12 +407,18 @@ export const launchApp = async (seed?: SeedData): Promise<App> => {
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
-  child.stderr?.on('data', (chunk: Buffer) => {
+  // Keep everything the app writes: on a red run the only other signal is a
+  // bare vitest timeout. Bootstrap failures are also surfaced immediately.
+  const appLog: Array<string> = [];
+  const record = (stream: string) => (chunk: Buffer) => {
     const text = chunk.toString();
+    appLog.push(`[${stream}] ${text}`);
     if (text.includes('bootstrap failed')) {
       console.error('[e2e app]', text);
     }
-  });
+  };
+  child.stdout?.on('data', record('out'));
+  child.stderr?.on('data', record('err'));
 
   const cdp = await Cdp.connect(port);
   // Wait for the calendar shell to render.
@@ -418,6 +426,25 @@ export const launchApp = async (seed?: SeedData): Promise<App> => {
 
   return {
     cdp,
+    /** Screenshot + DOM + app log, for CI to upload when a test fails. */
+    dump: async (label: string) => {
+      const dir = join(import.meta.dirname, '..', 'e2e-artifacts');
+      mkdirSync(dir, { recursive: true });
+      const safe = label.replaceAll(/[^a-z0-9]+/gi, '-').slice(0, 80);
+      writeFileSync(join(dir, `${safe}.log`), appLog.join(''));
+      try {
+        const html = await cdp.eval<string>('document.body.outerHTML');
+        writeFileSync(join(dir, `${safe}.html`), html);
+        const shot = (await cdp.send('Page.captureScreenshot')) as { data?: string };
+        if (shot.data) {
+          writeFileSync(join(dir, `${safe}.png`), Buffer.from(shot.data, 'base64'));
+        }
+      } catch (error) {
+        // A dead renderer is exactly when the log above matters most — record
+        // why the richer artifacts couldn't be captured instead of hiding it.
+        writeFileSync(join(dir, `${safe}.dump-error.txt`), String(error));
+      }
+    },
     stop: async () => {
       cdp.close();
       // Wait for the process to actually exit — deleting the profile while

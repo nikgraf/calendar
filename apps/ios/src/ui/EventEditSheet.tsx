@@ -1,21 +1,15 @@
-import { useAccounts, useBackendMutations } from '@calendar/app-state';
+import { useEventEditorModel, type EventEditorSeed } from '@calendar/app-state';
 import {
-  buildRecurrenceRule,
-  meetingUrl,
-  plainDateToUtcMs,
-  Temporal,
-  toZonedDateTime,
   type CalendarInfo,
-  type EventRecord,
   type RecurrenceFrequency,
   type RecurringScope,
   type RsvpResponse,
 } from '@calendar/core';
-import { useState } from 'react';
 import {
   Linking,
   Modal,
   Pressable,
+  SafeAreaView,
   ScrollView,
   StyleSheet,
   Switch,
@@ -45,13 +39,7 @@ const SCOPES: ReadonlyArray<{ label: string; value: RecurringScope }> = [
   { label: 'All events', value: 'series' },
 ];
 
-export interface EditSeed {
-  readonly event?: EventRecord;
-  readonly initialDate: Temporal.PlainDate;
-}
-
-const timeString = (epochMs: number, timeZone: string): string =>
-  toZonedDateTime(epochMs, timeZone).toPlainTime().toString({ smallestUnit: 'minute' });
+export type EditSeed = EventEditorSeed;
 
 export function EventEditSheet({
   calendars,
@@ -61,178 +49,53 @@ export function EventEditSheet({
 }: {
   calendars: ReadonlyArray<CalendarInfo>;
   onClose: () => void;
-  seed: EditSeed | null;
+  seed: EditSeed;
   timeZone: string;
 }) {
-  const mutations = useBackendMutations();
-  const accounts = useAccounts();
-  const existing = seed?.event;
-  const isRecurring = Boolean(existing && (existing.recurrence || existing.recurringEventId));
-  const ownEmail = accounts
-    .find((account) => account.id === existing?.accountId)
-    ?.email.toLowerCase();
-  const ownAttendee = existing?.attendees?.find(
-    (attendee) => attendee.isSelf === true || attendee.email.toLowerCase() === ownEmail,
-  );
-  const joinUrl = existing ? meetingUrl(existing) : undefined;
-  const writable = calendars.filter(
-    (calendar) => calendar.accessRole === 'owner' || calendar.accessRole === 'writer',
-  );
-
-  const [title, setTitle] = useState(existing?.title ?? '');
-  const [calendarKey, setCalendarKey] = useState(
-    existing
-      ? `${existing.accountId}:${existing.calendarId}`
-      : writable[0]
-        ? `${writable[0].accountId}:${writable[0].id}`
-        : '',
-  );
-  const [isAllDay, setIsAllDay] = useState(existing?.isAllDay ?? false);
-  const [date, setDate] = useState(
-    existing
-      ? (existing.startDate ??
-          toZonedDateTime(existing.startUtc, timeZone).toPlainDate().toString())
-      : (seed?.initialDate.toString() ?? ''),
-  );
-  const [startTime, setStartTime] = useState(
-    existing && !existing.isAllDay ? timeString(existing.startUtc, timeZone) : '09:00',
-  );
-  const [endTime, setEndTime] = useState(
-    existing && !existing.isAllDay ? timeString(existing.endUtc, timeZone) : '10:00',
-  );
-  const [scope, setScope] = useState<RecurringScope>('instance');
-  const [repeat, setRepeat] = useState<RecurrenceFrequency | 'none'>('none');
-  const [repeatInterval, setRepeatInterval] = useState('1');
-  const [repeatCount, setRepeatCount] = useState('');
-  const [rsvp, setRsvp] = useState(ownAttendee?.responseStatus);
-  const [error, setError] = useState<string | null>(null);
-
-  const save = async () => {
-    const [accountId, calendarId] = calendarKey.split(':', 2);
-    if (!accountId || !calendarId || !title.trim()) {
-      setError('A title and calendar are required.');
-      return;
-    }
-    try {
-      const parsedDate = Temporal.PlainDate.from(date);
-      const times = isAllDay
-        ? {
-            endDate: parsedDate.add({ days: 1 }).toString(),
-            endUtc: plainDateToUtcMs(parsedDate.add({ days: 1 }).toString()),
-            startDate: parsedDate.toString(),
-            startUtc: plainDateToUtcMs(parsedDate.toString()),
-          }
-        : {
-            endUtc: parsedDate
-              .toZonedDateTime({
-                plainTime: Temporal.PlainTime.from(endTime),
-                timeZone,
-              })
-              .toInstant().epochMilliseconds,
-            startTimeZone: timeZone,
-            startUtc: parsedDate
-              .toZonedDateTime({
-                plainTime: Temporal.PlainTime.from(startTime),
-                timeZone,
-              })
-              .toInstant().epochMilliseconds,
-          };
-      if (!isAllDay && times.endUtc <= times.startUtc) {
-        setError('End must be after start.');
-        return;
-      }
-      await (existing && isRecurring && existing.recurringEventId
-        ? mutations.updateRecurring({
-            accountId,
-            calendarId,
-            changes: { title: title.trim(), ...times },
-            masterId: existing.recurringEventId,
-            originalStartUtc: existing.originalStartUtc ?? existing.startUtc,
-            scope,
-          })
-        : existing
-          ? mutations.updateEvent({
-              accountId,
-              calendarId,
-              changes: { isAllDay, title: title.trim(), ...times },
-              eventId: existing.id,
-            })
-          : mutations.createEvent({
-              accountId,
-              calendarId,
-              isAllDay,
-              recurrence:
-                repeat === 'none'
-                  ? undefined
-                  : [
-                      buildRecurrenceRule(
-                        {
-                          count: repeatCount ? Number(repeatCount) || undefined : undefined,
-                          freq: repeat,
-                          interval: Number(repeatInterval) || 1,
-                        },
-                        isAllDay,
-                      ),
-                    ],
-              title: title.trim(),
-              ...times,
-            }));
-      onClose();
-    } catch (error) {
-      setError(String(error));
-    }
-  };
-
-  const respond = async (response: RsvpResponse) => {
-    if (!existing) {
-      return;
-    }
-    setRsvp(response);
-    try {
-      // RSVP applies to the whole series when opened from an instance.
-      await mutations.respondToEvent({
-        accountId: existing.accountId,
-        calendarId: existing.calendarId,
-        eventId: existing.recurringEventId ?? existing.id,
-        response,
-      });
-    } catch (error) {
-      setError(String(error));
-    }
-  };
-
-  const remove = async () => {
-    if (!existing) {
-      return;
-    }
-    try {
-      await (isRecurring && existing.recurringEventId
-        ? mutations.deleteRecurring({
-            accountId: existing.accountId,
-            calendarId: existing.calendarId,
-            masterId: existing.recurringEventId,
-            originalStartUtc: existing.originalStartUtc ?? existing.startUtc,
-            scope,
-          })
-        : mutations.deleteEvent({
-            accountId: existing.accountId,
-            calendarId: existing.calendarId,
-            eventId: existing.id,
-          }));
-      onClose();
-    } catch (error) {
-      setError(String(error));
-    }
-  };
+  const {
+    calendarKey,
+    date,
+    endTime,
+    error,
+    existing,
+    isAllDay,
+    isRecurring,
+    joinUrl,
+    location,
+    ownAttendee,
+    remove,
+    repeat,
+    repeatCount,
+    repeatInterval,
+    respond,
+    rsvp,
+    save,
+    scope,
+    setCalendarKey,
+    setDate,
+    setEndTime,
+    setIsAllDay,
+    setLocation,
+    setRepeat,
+    setRepeatCount,
+    setRepeatInterval,
+    setScope,
+    setStartTime,
+    setTitle,
+    startTime,
+    title,
+    writableCalendars: writable,
+  } = useEventEditorModel({ calendars, onClose, seed, timeZone });
 
   return (
     <Modal
       animationType="slide"
       onRequestClose={onClose}
-      presentationStyle="pageSheet"
-      visible={seed !== null}
+      presentationStyle="overFullScreen"
+      visible
     >
-      <View style={styles.container}>
+      {/* overFullScreen draws under the status bar; inset it ourselves. */}
+      <SafeAreaView style={styles.container}>
         <View style={styles.header}>
           <Pressable onPress={onClose}>
             <Text style={styles.cancel}>Cancel</Text>
@@ -378,6 +241,14 @@ export function EventEditSheet({
               </View>
             )}
 
+            <Text style={styles.label}>Location</Text>
+            <TextInput
+              onChangeText={setLocation}
+              placeholder="Add a location"
+              style={styles.input}
+              value={location}
+            />
+
             {existing?.attendees?.length ? (
               <>
                 <Text style={styles.label}>Invitees</Text>
@@ -416,7 +287,7 @@ export function EventEditSheet({
             ) : null}
           </>
         </ScrollView>
-      </View>
+      </SafeAreaView>
     </Modal>
   );
 }
@@ -511,13 +382,6 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     marginBottom: 4,
     textTransform: 'uppercase',
-  },
-  notice: {
-    backgroundColor: '#fef3c7',
-    borderRadius: 10,
-    color: '#92400e',
-    fontSize: 14,
-    padding: 12,
   },
   save: {
     color: '#2563eb',

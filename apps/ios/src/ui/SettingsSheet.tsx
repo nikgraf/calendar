@@ -10,7 +10,16 @@ import {
   updateId,
 } from 'expo-updates';
 import { useState } from 'react';
-import { Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import {
+  Modal,
+  Pressable,
+  SafeAreaView,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
 import { palette } from './theme.ts';
 
 export function SettingsSheet({ onClose, visible }: { onClose: () => void; visible: boolean }) {
@@ -39,10 +48,11 @@ export function SettingsSheet({ onClose, visible }: { onClose: () => void; visib
     <Modal
       animationType="slide"
       onRequestClose={onClose}
-      presentationStyle="pageSheet"
+      presentationStyle="overFullScreen"
       visible={visible}
     >
-      <View style={styles.container}>
+      {/* overFullScreen draws under the status bar; inset it ourselves. */}
+      <SafeAreaView style={styles.container}>
         <View style={styles.header}>
           <Text style={styles.title}>Accounts</Text>
           <Pressable onPress={onClose}>
@@ -177,7 +187,7 @@ export function SettingsSheet({ onClose, visible }: { onClose: () => void; visib
 
           <PrPreviewSection />
         </ScrollView>
-      </View>
+      </SafeAreaView>
     </Modal>
   );
 }
