@@ -16,6 +16,7 @@ import {
   Linking,
   Modal,
   Pressable,
+  SafeAreaView,
   ScrollView,
   StyleSheet,
   Switch,
@@ -226,8 +227,14 @@ export function EventEditSheet({
   };
 
   return (
-    <Modal animationType="slide" onRequestClose={onClose} presentationStyle="pageSheet" visible>
-      <View style={styles.container}>
+    <Modal
+      animationType="slide"
+      onRequestClose={onClose}
+      presentationStyle="overFullScreen"
+      visible
+    >
+      {/* overFullScreen draws under the status bar; inset it ourselves. */}
+      <SafeAreaView style={styles.container}>
         <View style={styles.header}>
           <Pressable onPress={onClose}>
             <Text style={styles.cancel}>Cancel</Text>
@@ -411,7 +418,7 @@ export function EventEditSheet({
             ) : null}
           </>
         </ScrollView>
-      </View>
+      </SafeAreaView>
     </Modal>
   );
 }

@@ -2,6 +2,11 @@ appId: com.solunivo.app
 name: Swiping the timeline changes days
 ---
 - launchApp
+# The app re-bundles from Metro on a cold dev-client launch; wait for the
+# calendar shell rather than racing it.
+- extendedWaitUntil:
+    visible: 'Today'
+    timeout: 60000
 - tapOn: 'Day'
 # The header shows the focused day, e.g. "Fri, August 21".
 - assertVisible:
