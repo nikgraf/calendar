@@ -17,7 +17,9 @@ import { useEffect, useMemo, useState } from 'react';
 import { AppState, Pressable, SafeAreaView, StatusBar, StyleSheet, Text, View } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { backendClient, kickSync, startSync, subscribeInvalidations } from './src/backend.ts';
+import { appleLanguageModel } from './src/appleModel.ts';
 import { DayTimeline } from './src/ui/DayTimeline.tsx';
+import { QuickAddBar } from './src/ui/QuickAddBar.tsx';
 import { MonthGrid } from './src/ui/MonthGrid.tsx';
 import { EventEditSheet, type EditSeed } from './src/ui/EventEditSheet.tsx';
 import { SettingsSheet } from './src/ui/SettingsSheet.tsx';
@@ -138,6 +140,12 @@ function CalendarScreen() {
 
       {view === 'day' ? (
         <>
+          <QuickAddBar
+            focusedDate={focused}
+            model={appleLanguageModel}
+            onParsed={(prefill) => setEditSeed({ initialDate: focused, prefill })}
+            timeZone={timeZone}
+          />
           <WeekStrip days={weekDays} onSelect={setFocused} selected={focused} timeZone={timeZone} />
           <DayTimeline
             colorOf={colorOf}

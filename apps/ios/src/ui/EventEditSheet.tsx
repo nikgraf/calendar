@@ -33,6 +33,12 @@ const REPEATS: ReadonlyArray<{ label: string; value: RecurrenceFrequency | 'none
   { label: 'Yearly', value: 'yearly' },
 ];
 
+const REPEAT_ENDS: ReadonlyArray<{ label: string; value: 'after' | 'never' | 'on' }> = [
+  { label: 'Never', value: 'never' },
+  { label: 'After', value: 'after' },
+  { label: 'On date', value: 'on' },
+];
+
 const SCOPES: ReadonlyArray<{ label: string; value: RecurringScope }> = [
   { label: 'This event', value: 'instance' },
   { label: 'This + following', value: 'following' },
@@ -66,7 +72,9 @@ export function EventEditSheet({
     remove,
     repeat,
     repeatCount,
+    repeatEnds,
     repeatInterval,
+    repeatUntil,
     respond,
     rsvp,
     save,
@@ -78,7 +86,9 @@ export function EventEditSheet({
     setLocation,
     setRepeat,
     setRepeatCount,
+    setRepeatEnds,
     setRepeatInterval,
+    setRepeatUntil,
     setScope,
     setStartTime,
     setTitle,
@@ -197,17 +207,57 @@ export function EventEditSheet({
                       />
                     </View>
                     <View style={styles.timeField}>
-                      <Text style={styles.label}>Ends after (blank = never)</Text>
-                      <TextInput
-                        keyboardType="number-pad"
-                        onChangeText={setRepeatCount}
-                        placeholder="occurrences"
-                        style={styles.input}
-                        value={repeatCount}
-                      />
+                      <Text style={styles.label}>Ends</Text>
+                      <View style={styles.scopeRow}>
+                        {REPEAT_ENDS.map((option) => (
+                          <Pressable
+                            key={option.value}
+                            onPress={() => setRepeatEnds(option.value)}
+                            style={[
+                              styles.scopeChip,
+                              repeatEnds === option.value && styles.scopeChipActive,
+                            ]}
+                          >
+                            <Text
+                              style={[
+                                styles.scopeLabel,
+                                repeatEnds === option.value && styles.scopeLabelActive,
+                              ]}
+                            >
+                              {option.label}
+                            </Text>
+                          </Pressable>
+                        ))}
+                      </View>
                     </View>
                   </View>
                 )}
+
+                {repeat !== 'none' && repeatEnds === 'after' ? (
+                  <>
+                    <Text style={styles.label}>Occurrences</Text>
+                    <TextInput
+                      keyboardType="number-pad"
+                      onChangeText={setRepeatCount}
+                      placeholder="10"
+                      style={styles.input}
+                      value={repeatCount}
+                    />
+                  </>
+                ) : null}
+
+                {repeat !== 'none' && repeatEnds === 'on' ? (
+                  <>
+                    <Text style={styles.label}>Ends on (YYYY-MM-DD)</Text>
+                    <TextInput
+                      autoCapitalize="none"
+                      onChangeText={setRepeatUntil}
+                      placeholder="2026-12-31"
+                      style={styles.input}
+                      value={repeatUntil}
+                    />
+                  </>
+                ) : null}
               </>
             )}
 
