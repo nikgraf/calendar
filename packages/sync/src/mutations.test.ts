@@ -10,6 +10,7 @@ import {
 import {
   ApiUnavailableError,
   ConflictError,
+  GoogleApiError,
   GoogleCalendarClient,
   ReauthRequiredError,
   type GcalEvent,
@@ -261,6 +262,47 @@ describe('EventMutations', () => {
       expect(ops).toHaveLength(1);
     }).pipe(Effect.provide(mutationsLayer(client)));
   });
+
+  it.effect('drops permanently-rejected ops but keeps transient failures queued', () =>
+    Effect.gen(function* () {
+      const attempt = (status: number) =>
+        Effect.gen(function* () {
+          const mutations = yield* EventMutations;
+          const record = yield* mutations.createEvent({
+            ...draft,
+            title: `evt-${status}`,
+          });
+          yield* mutations.processPendingOps();
+          const remaining = (yield* (yield* PendingOpRepo).listAll()).filter(
+            (op) => op.eventId === record.id,
+          );
+          return remaining;
+        }).pipe(
+          Effect.provide(
+            mutationsLayer(
+              stubClient({
+                insertEvent: () => Effect.fail(new GoogleApiError({ message: 'boom', status })),
+              }),
+            ),
+          ),
+        );
+
+      // 4xx (except 429) are the app's fault and would pin the queue forever.
+      for (const status of [400, 403, 404]) {
+        expect(yield* attempt(status), `status ${status}`).toHaveLength(0);
+      }
+      // 409 means the idempotent create already landed.
+      expect(yield* attempt(409)).toHaveLength(0);
+      // Server-side and rate-limit failures must be retried.
+      for (const status of [429, 500, 503]) {
+        const remaining = yield* attempt(status);
+        expect(remaining, `status ${status}`).toHaveLength(1);
+        expect(remaining[0]!.attempts).toBe(1);
+        // Backed off rather than hammered.
+        expect(remaining[0]!.nextAttemptAt).toBeGreaterThan(0);
+      }
+    }),
+  );
 
   it.effect('deleting a never-synced event needs no server op', () => {
     const client = stubClient({});
