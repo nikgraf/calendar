@@ -5,6 +5,7 @@ import {
   useBackendMutations,
   useCalendars,
   useEventsInRangeStable,
+  useTaskLists,
   useTasksInRangeStable,
 } from '@calendar/app-state';
 import {
@@ -12,6 +13,7 @@ import {
   DAY_SWIPE_BUFFER,
   makeColorLookup,
   monthGridRange,
+  type TaskRecord,
   Temporal,
   utcMsToPlainDate,
   weekStart,
@@ -40,6 +42,7 @@ function CalendarScreen() {
   const [focused, setFocused] = useState(() => Temporal.Now.plainDateISO(timeZone));
   const [showSettings, setShowSettings] = useState(false);
   const [editSeed, setEditSeed] = useState<EditSeed | null>(null);
+  const [editTask, setEditTask] = useState<TaskRecord | null>(null);
 
   useBackendInvalidations(subscribeInvalidations);
   useEffect(() => {
@@ -73,6 +76,7 @@ function CalendarScreen() {
     utcMsToPlainDate(range.endUtc),
   );
   const mutations = useBackendMutations();
+  const taskLists = useTaskLists();
   const calendars = useCalendars();
 
   const colorOf = useMemo(() => makeColorLookup(calendars), [calendars]);
@@ -164,6 +168,7 @@ function CalendarScreen() {
             events={events}
             onEventPress={(event) => setEditSeed({ event, initialDate: focused })}
             onNavigate={step}
+            onTaskPress={(task) => setEditTask(task)}
             onToggleTask={(task) =>
               void mutations.completeTask({
                 accountId: task.accountId,
@@ -191,12 +196,21 @@ function CalendarScreen() {
 
       {/* Keyed + conditionally mounted: the sheet seeds its form fields from
           `seed` in useState initializers, which only run on mount. */}
-      {editSeed ? (
+      {editSeed || editTask ? (
         <EventEditSheet
           calendars={calendars}
-          key={editSeed.event?.id ?? `new:${editSeed.initialDate.toString()}`}
-          onClose={() => setEditSeed(null)}
-          seed={editSeed}
+          key={
+            editTask
+              ? `task:${editTask.id}`
+              : (editSeed?.event?.id ?? `new:${editSeed?.initialDate.toString()}`)
+          }
+          onClose={() => {
+            setEditSeed(null);
+            setEditTask(null);
+          }}
+          seed={editSeed ?? { initialDate: focused }}
+          task={editTask ?? undefined}
+          taskLists={taskLists}
           timeZone={timeZone}
         />
       ) : null}
