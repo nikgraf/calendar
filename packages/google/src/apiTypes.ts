@@ -116,3 +116,38 @@ export interface GcalEventInput {
   };
   readonly summary: string;
 }
+
+export const GcalTaskList = Schema.Struct({
+  id: Schema.String,
+  title: Schema.optional(Schema.String),
+  updated: Schema.optional(Schema.String),
+});
+export type GcalTaskList = Schema.Schema.Type<typeof GcalTaskList>;
+
+export const GcalTaskListsPage = Schema.Struct({
+  items: Schema.optional(Schema.Array(GcalTaskList)),
+  nextPageToken: Schema.optional(Schema.String),
+});
+export type GcalTaskListsPage = Schema.Schema.Type<typeof GcalTaskListsPage>;
+
+export const GcalTask = Schema.Struct({
+  completed: Schema.optional(Schema.String),
+  deleted: Schema.optional(Schema.Boolean),
+  due: Schema.optional(Schema.String),
+  hidden: Schema.optional(Schema.Boolean),
+  id: Schema.String,
+  notes: Schema.optional(Schema.String),
+  parent: Schema.optional(Schema.String),
+  position: Schema.optional(Schema.String),
+  status: Schema.optional(Schema.String),
+  title: Schema.optional(Schema.String),
+  updated: Schema.optional(Schema.String),
+  webViewLink: Schema.optional(Schema.String),
+});
+export type GcalTask = Schema.Schema.Type<typeof GcalTask>;
+
+export const GcalTasksPage = Schema.Struct({
+  items: Schema.optional(Schema.Array(GcalTask)),
+  nextPageToken: Schema.optional(Schema.String),
+});
+export type GcalTasksPage = Schema.Schema.Type<typeof GcalTasksPage>;

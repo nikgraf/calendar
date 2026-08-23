@@ -41,3 +41,11 @@ export class GoogleApiError extends Data.TaggedError('GoogleApiError')<{
   readonly message: string;
   readonly status: number;
 }> {}
+
+/**
+ * 403 naming an insufficient OAuth scope — the token was granted without a
+ * scope this call needs. Refreshing cannot fix it; only re-consent can.
+ */
+export class InsufficientScopeError extends Data.TaggedError('InsufficientScopeError')<{
+  readonly message: string;
+}> {}

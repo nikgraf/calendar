@@ -4,5 +4,7 @@ export * from './errors.ts';
 export * from './eventId.ts';
 export * from './mapEvent.ts';
 export * from './oauth/pkce.ts';
+export * from './requestCore.ts';
+export * from './tasksClient.ts';
 export * from './oauth/tokenManager.ts';
 export * from './oauth/tokenStore.ts';

@@ -143,6 +143,15 @@ desktop waits on a helper binary (below).
       materializes the next occurrence of a repeating task server-side
       when the current one is completed, so repeating tasks "just work"
       but can't be expanded locally like event RRULEs.
+- [ ] Tasks: create/edit/delete from the app (v1 of Google Tasks sync is
+      read + check-off only; insert/patch/delete via the same op queue)
+- [ ] Tasks: subtask hierarchy — render `parent`/`position` indentation
+      and keep ordering via `tasks.move`
+- [ ] Tasks: month-view presence (dots or counts for days with due tasks)
+- [ ] Tasks: detail sheet on chip tap (notes, list name, open-in-Google
+      via `webViewLink`); v1 leaves the chip body non-interactive
+- [ ] Tasks: iOS Maestro flow for the all-day lane (needs task-chip
+      testIDs and the signed-in guard pattern from 07-create-event)
 - [x] Per-calendar colors — done: swatch in the desktop sidebar opens a
       picker (Google's 24-color palette + native color input; palette
       chips on iOS settings); optimistic local update, then write-back via

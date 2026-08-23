@@ -1,5 +1,5 @@
-import { Context, Effect, Layer, Schema } from 'effect';
-import { HttpClient, HttpClientRequest, type HttpClientResponse } from 'effect/unstable/http';
+import { Context, Effect, Layer } from 'effect';
+import { HttpClient, HttpClientRequest } from 'effect/unstable/http';
 import {
   GcalCalendarListEntry,
   GcalCalendarListPage,
@@ -8,29 +8,12 @@ import {
   GcalEventsPage,
   type GcalEventInput,
 } from './apiTypes.ts';
-import {
-  ApiUnavailableError,
-  ConflictError,
-  GoogleApiError,
-  NotFoundError,
-  RateLimitedError,
-  ReauthRequiredError,
-  SyncTokenExpiredError,
-  TokenRefreshError,
-} from './errors.ts';
 import { TokenManager } from './oauth/tokenManager.ts';
+import { definedParams, makeRequestCore, type GoogleRequestError } from './requestCore.ts';
 
 const BASE_URL = 'https://www.googleapis.com/calendar/v3';
 
-export type GoogleRequestError =
-  | ApiUnavailableError
-  | ConflictError
-  | GoogleApiError
-  | NotFoundError
-  | RateLimitedError
-  | ReauthRequiredError
-  | SyncTokenExpiredError
-  | TokenRefreshError;
+export type { GoogleRequestError } from './requestCore.ts';
 
 export interface ListEventsParams {
   readonly maxResults?: number | undefined;
@@ -78,136 +61,9 @@ export interface GoogleCalendarClientShape {
   }) => Effect.Effect<GcalEvent, GoogleRequestError>;
 }
 
-type StatusError = GoogleRequestError;
-
-const definedParams = (
-  params: Record<string, number | string | undefined>,
-): Record<string, string> =>
-  Object.fromEntries(
-    Object.entries(params)
-      .filter(([, value]) => value !== undefined)
-      .map(([key, value]) => [key, String(value)]),
-  );
-
-const retryAfterMs = (response: HttpClientResponse.HttpClientResponse): number | undefined => {
-  const header = (response.headers as Record<string, string | undefined>)['retry-after'];
-  const seconds = header ? Number(header) : Number.NaN;
-  return Number.isFinite(seconds) ? seconds * 1000 : undefined;
-};
-
 const make: Effect.Effect<GoogleCalendarClientShape, never, HttpClient.HttpClient | TokenManager> =
   Effect.gen(function* () {
-    const http = yield* HttpClient.HttpClient;
-    const tokens = yield* TokenManager;
-
-    const executeAuthed = (
-      accountId: string,
-      request: HttpClientRequest.HttpClientRequest,
-    ): Effect.Effect<
-      HttpClientResponse.HttpClientResponse,
-      ApiUnavailableError | ReauthRequiredError | TokenRefreshError
-    > =>
-      Effect.gen(function* () {
-        const send = (token: string) =>
-          http
-            .execute(HttpClientRequest.setHeader(request, 'authorization', `Bearer ${token}`))
-            .pipe(
-              Effect.catchCause((cause) =>
-                Effect.fail(new ApiUnavailableError({ cause: String(cause) })),
-              ),
-            );
-
-        const token = yield* tokens.getAccessToken(accountId);
-        const response = yield* send(token);
-        if (response.status !== 401) {
-          return response;
-        }
-        // Stale access token: force a refresh and retry exactly once.
-        yield* tokens.invalidateAccessToken(accountId);
-        const freshToken = yield* tokens.getAccessToken(accountId);
-        const retried = yield* send(freshToken);
-        if (retried.status === 401) {
-          return yield* Effect.fail(new ReauthRequiredError({ accountId }));
-        }
-        return retried;
-      });
-
-    const failForStatus = (
-      response: HttpClientResponse.HttpClientResponse,
-      context: { readonly calendarId?: string; readonly eventId?: string },
-    ): Effect.Effect<never, StatusError> =>
-      Effect.gen(function* () {
-        const status = response.status;
-        if (status === 410) {
-          return yield* Effect.fail(
-            new SyncTokenExpiredError({ calendarId: context.calendarId ?? '' }),
-          );
-        }
-        if (status === 404) {
-          return yield* Effect.fail(
-            new NotFoundError({
-              resource: context.eventId ?? context.calendarId ?? 'resource',
-            }),
-          );
-        }
-        if (status === 412) {
-          return yield* Effect.fail(
-            new ConflictError({
-              calendarId: context.calendarId ?? '',
-              eventId: context.eventId ?? '',
-            }),
-          );
-        }
-        if (status === 429) {
-          return yield* Effect.fail(new RateLimitedError({ retryAfterMs: retryAfterMs(response) }));
-        }
-        const body = yield* response.json.pipe(Effect.catchCause(() => Effect.succeed(null)));
-        if (status === 403 && JSON.stringify(body ?? '').includes('ateLimitExceeded')) {
-          return yield* Effect.fail(new RateLimitedError({ retryAfterMs: retryAfterMs(response) }));
-        }
-        if (status >= 500) {
-          return yield* Effect.fail(new ApiUnavailableError({ cause: `http ${status}`, status }));
-        }
-        return yield* Effect.fail(
-          new GoogleApiError({
-            message: JSON.stringify(body ?? 'unknown error'),
-            status,
-          }),
-        );
-      });
-
-    const requestJson = <A, I>(
-      accountId: string,
-      request: HttpClientRequest.HttpClientRequest,
-      schema: Schema.Codec<A, I>,
-      context: { readonly calendarId?: string; readonly eventId?: string } = {},
-    ): Effect.Effect<A, StatusError> =>
-      Effect.gen(function* () {
-        const response = yield* executeAuthed(accountId, request);
-        if (response.status >= 400) {
-          return yield* failForStatus(response, context);
-        }
-        const body = yield* response.json.pipe(
-          Effect.catchCause(() =>
-            Effect.fail(
-              new GoogleApiError({
-                message: 'non-JSON response body',
-                status: response.status,
-              }),
-            ),
-          ),
-        );
-        return yield* Schema.decodeUnknownEffect(schema)(body).pipe(
-          Effect.catchCause((cause) =>
-            Effect.fail(
-              new GoogleApiError({
-                message: `unexpected payload: ${String(cause)}`,
-                status: response.status,
-              }),
-            ),
-          ),
-        );
-      });
+    const { executeAuthed, failForStatus, requestJson } = yield* makeRequestCore;
 
     const eventsUrl = (calendarId: string, suffix = ''): string =>
       `${BASE_URL}/calendars/${encodeURIComponent(calendarId)}/events${suffix}`;
