@@ -160,8 +160,10 @@ const buildAtoms = (client: BackendClient) => {
     ]),
     completeTask: mutation('completeTask', [TASKS_KEY]),
     createEvent: mutation('createEvent', [EVENTS_KEY]),
+    createTask: mutation('createTask', [TASKS_KEY]),
     deleteEvent: mutation('deleteEvent', [EVENTS_KEY]),
     deleteRecurring: mutation('deleteRecurring', [EVENTS_KEY]),
+    deleteTask: mutation('deleteTask', [TASKS_KEY]),
     discardPendingOp: mutation('discardPendingOp', [OPS_KEY]),
     removeAccount: mutation('removeAccount', [
       ACCOUNTS_KEY,
@@ -178,6 +180,7 @@ const buildAtoms = (client: BackendClient) => {
     syncNow: mutation('syncNow', []),
     updateEvent: mutation('updateEvent', [EVENTS_KEY]),
     updateRecurring: mutation('updateRecurring', [EVENTS_KEY]),
+    updateTask: mutation('updateTask', [TASKS_KEY]),
   };
 
   /** The runtime's own Reactivity — the bridge target for backend keys. */
