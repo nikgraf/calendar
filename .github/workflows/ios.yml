@@ -97,7 +97,7 @@ jobs:
             # Manual runs are the rebuild escape hatch — never skip them.
             echo "workflow_dispatch: building unconditionally"
           else
-            LOCAL=$(npx expo-updates fingerprint:generate --platform ios | jq -r '.hash') || LOCAL=""
+            LOCAL=$(npx expo-updates fingerprint:generate --platform ios | jq -r '.hash // empty') || LOCAL=""
             LATEST=$(pnpm exec eas build:list --platform ios --status finished \
               --channel main --limit 1 --json --non-interactive \
               | jq -r '.[0].runtime.version // empty') || LATEST=""
