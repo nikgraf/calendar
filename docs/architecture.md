@@ -26,7 +26,7 @@ AppBackendRpcs handlers                  (packages/sync/src/backendHandlers.ts)
 EventMutations / repos                   (packages/sync/src/mutations.ts,
   │                                       packages/db/src/repos.ts)
   ▼
-SQLite (better-sqlite3 / op-sqlite)
+SQLite (node:sqlite / op-sqlite)
 ```
 
 Invalidation path (backend → UI): repo mutations invalidate Reactivity keys

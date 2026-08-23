@@ -9,7 +9,6 @@
     "dev": "vp dev --host 127.0.0.1",
     "dev:app": "tsdown && ELECTRON_RENDERER_URL=http://127.0.0.1:5173 electron .",
     "make": "vp build && tsdown && electron-forge make",
-    "rebuild:native": "electron-rebuild -f -w better-sqlite3 -m ../..",
     "package:app": "vp build && tsdown && electron-forge package",
     "start": "vp build && tsdown && electron ."
   },

@@ -9,9 +9,9 @@ import { defineConfig } from 'tsdown';
 export default [
   defineConfig({
     entry: { main: 'electron/main.ts' },
-    external: ['electron', 'better-sqlite3'],
+    external: ['electron'],
     format: 'esm',
-    noExternal: [/^(?!electron$|better-sqlite3$)/],
+    noExternal: [/^(?!electron$)/],
     outDir: 'dist-electron',
     platform: 'node',
     shims: true,

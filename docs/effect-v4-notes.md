@@ -87,6 +87,11 @@ on the custom rpc protocol); everything else held.
 
 - `SqlClient` deep import: `effect/unstable/sql/SqlClient` (the barrel
   re-exports `Migrator`, which Metro cannot parse — see below).
+- `@effect/sql-sqlite-node` switched from better-sqlite3 to Node's
+  built-in `node:sqlite` somewhere on the rc line — silently, via the
+  version bump. It removed every Electron-ABI concern (electron-rebuild,
+  the Node-ABI test twin, native build allowances) but also broke the
+  Forge packaging copy list, which nothing before `make` exercises.
 - Effect's `Migrator` uses a dynamic-import glob
   (`__rewriteRelativeImportExtension`) that **Metro cannot parse** → the
   repo has a hand-rolled `runMigrations` (`packages/db/src/migrate.ts`)

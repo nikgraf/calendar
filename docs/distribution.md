@@ -6,9 +6,11 @@ as a GitHub Actions artifact. Retention is 14 days — a fresh build lands on
 every merge, so testers should always grab a recent one.
 
 Decisions behind this setup: arm64-only (no universal build — Intel Macs are
-out of the target group, and universal would need a dual-arch `better-sqlite3`
-rebuild + lipo); artifact-only distribution (no GitHub releases, no auto-update
-— the repo is private, so `update-electron-app` stays a harmless no-op).
+out of the target group; since the sqlite driver moved to `node:sqlite`
+there is no native-module obstacle either way, so this is purely a
+target-audience call); artifact-only distribution (no GitHub releases, no
+auto-update — the repo is private, so `update-electron-app` stays a
+harmless no-op).
 
 ## Identifying a build
 

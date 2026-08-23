@@ -40,9 +40,6 @@ jobs:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      # The app loads better-sqlite3 inside Electron; unit/e2e harness code
-      # uses the better-sqlite3-node twin, so only the app copy is rebuilt.
-      - run: pnpm --filter @calendar/desktop rebuild:native
       - run: pnpm --filter @calendar/desktop build
       - run: pnpm test:e2e
       - name: Upload e2e diagnostics
@@ -110,7 +107,6 @@ jobs:
           security list-keychains -d user -s "$KEYCHAIN_PATH" login.keychain-db
           rm "$RUNNER_TEMP/certificate.p12"
       - run: pnpm install --frozen-lockfile
-      - run: pnpm --filter @calendar/desktop rebuild:native
       - name: Compute short SHA
         run: echo "SHORT_SHA=${GITHUB_SHA::7}" >> "$GITHUB_ENV"
       # make = vp build + tsdown + electron-forge make: packages, signs,
