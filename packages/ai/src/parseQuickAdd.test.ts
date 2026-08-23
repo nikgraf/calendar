@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { LanguageModel } from './model.ts';
+import type { LanguageModel, ModelStatus } from './model.ts';
 import { ModelUnavailableError } from './model.ts';
 import { parseQuickAdd } from './parseQuickAdd.ts';
 import type { QuickAddParse } from './quickAdd.ts';
@@ -9,7 +9,7 @@ const CONTEXT = { referenceDate: '2026-08-22', timeZone: 'Europe/Vienna' };
 /** A model that replays a fixed extraction, recording the prompt it saw. */
 const fakeModel = (
   parse: QuickAddParse | (() => never),
-  { available = true }: { available?: boolean } = {},
+  { status = 'ready' }: { status?: ModelStatus } = {},
 ): LanguageModel & { prompts: Array<string> } => {
   const prompts: Array<string> = [];
   return {
@@ -17,8 +17,8 @@ const fakeModel = (
       prompts.push(prompt);
       return typeof parse === 'function' ? parse() : parse;
     },
-    isAvailable: async () => available,
     prompts,
+    status: async () => status,
   };
 };
 
@@ -228,7 +228,7 @@ describe('parseQuickAdd', () => {
 
   it('signals unavailability distinctly, so callers can hide the feature', async () => {
     await expect(
-      parseQuickAdd(fakeModel({ title: 'x' }, { available: false }), {
+      parseQuickAdd(fakeModel({ title: 'x' }, { status: 'unavailable' }), {
         phrase: 'lunch tomorrow',
         ...CONTEXT,
       }),
