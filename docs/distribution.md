@@ -69,11 +69,35 @@ useful after adding/rotating secrets.
 # iOS: TestFlight + per-PR previews
 
 Every push to `main` triggers the `iOS` workflow (`.github/workflows/ios.yml`),
-which kicks off an **EAS Build** (Expo's cloud — handles signing) and
-auto-submits to **TestFlight** (`--no-wait`: CI returns immediately; build +
-submission status live in the EAS dashboard / email). Every PR push publishes
-an **OTA preview update** to channel `pr-<number>` in ~30s and comments the
-channel name on the PR.
+which is **fingerprint-gated**: the `decide` job computes the commit's native
+fingerprint (`npx expo-updates fingerprint:generate`) and compares it against
+the `runtime.version` of the latest finished main-channel build
+(`eas build:list`). With `runtimeVersion.policy: fingerprint` those are the
+same hash, so equality means an OTA update reaches every install of the
+latest build.
+
+- **Unchanged** (JS/TS/docs-only merges — most of them): publishes
+  `eas update --branch main` in ~30s; installed TestFlight builds load it
+  on next launch. No cloud build, no build number.
+- **Changed** (native deps, config plugins, SDK bumps): a full EAS build
+  and TestFlight submit, as before.
+- **Fail toward building**: if the fingerprint or the build lookup errors,
+  the workflow builds and emits a warning — a wasted build is visible and
+  cheap; a wrongly skipped one strands testers on a stale binary silently.
+- `workflow_dispatch` always builds — the manual rebuild escape hatch.
+
+Two comparison caveats, both fail-safe. The baseline is the latest
+_finished_ build, not "what testers run": installs still on an older
+fingerprint silently stop receiving updates until they install the newer
+build (and a finished build whose TestFlight submission failed already
+failed CI loudly, so it can't go unnoticed). And `testflight`-label builds
+from PR branches also land on channel `main`, so an unmerged native PR's
+label build shifts the baseline — JS-only merges then full-build until
+that PR merges, after which its merge ships as an OTA on top of the label
+build instead of rebuilding.
+
+Every PR push publishes an **OTA preview update** to channel `pr-<number>`
+in ~30s and comments the channel name on the PR.
 
 ## Platform constraint: one install per bundle id
 
@@ -114,8 +138,8 @@ PR builds side by side. Instead:
 ## Costs / quotas
 
 - EAS free tier: ~30 cloud builds/month; OTA updates are effectively free at
-  this scale. Main merges + occasional `testflight` labels fit comfortably;
-  the per-PR path costs no builds at all.
+  this scale. The fingerprint gate means main merges only consume builds on
+  native changes; JS-only merges and the per-PR path cost no builds at all.
 - The CI jobs run on ubuntu (cheap); the actual iOS builds run on EAS.
 
 ## Simulator dev client (EAS build — preferred)
