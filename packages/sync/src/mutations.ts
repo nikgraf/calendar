@@ -328,14 +328,25 @@ const make: Effect.Effect<
           // Swap the temp id for the server one everywhere it can appear:
           // the row itself and any ops queued behind this create
           // (processPendingOps drains oldest-first, so they run after).
-          yield* taskRepo.replaceId(op.accountId, op.taskListId, op.eventId, inserted.id);
+          // Remove-then-upsert rather than UPDATE ... SET id: a concurrent
+          // poll may already have upserted the server row, and a PK
+          // conflict here would retry the op — re-running an insert the
+          // Tasks API cannot deduplicate (ids are server-assigned, unlike
+          // events). The same non-idempotency means a crash between the
+          // insert response and op removal can duplicate a task; that
+          // window is accepted, this one is not.
           yield* pendingOpRepo.rewriteEventId(op.accountId, op.taskListId, op.eventId, inserted.id);
           const insertedRecord = mapGcalTask(inserted, {
             accountId: op.accountId,
             taskListId: op.taskListId,
           });
           if (insertedRecord) {
+            yield* taskRepo.removeTask(op.accountId, op.taskListId, op.eventId);
             yield* taskRepo.upsertTasks([insertedRecord], yield* Clock.currentTimeMillis);
+          } else {
+            // Unreachable in practice (a just-inserted task is never a
+            // tombstone) — keep the row addressable under the server id.
+            yield* taskRepo.replaceId(op.accountId, op.taskListId, op.eventId, inserted.id);
           }
           return 'done' as const;
         }
@@ -509,8 +520,13 @@ const make: Effect.Effect<
           const due = yield* pendingOpRepo.listDue(now);
           for (const queuedOp of due) {
             // Re-read: an earlier op in this drain may have rewritten this
-            // one (createTask swaps a temp task id into queued followers).
-            const op = (yield* pendingOpRepo.getById(queuedOp.id)) ?? queuedOp;
+            // one (createTask swaps a temp task id into queued followers) —
+            // or the user may have discarded it, in which case skip rather
+            // than resurrect the stale snapshot.
+            const op = yield* pendingOpRepo.getById(queuedOp.id);
+            if (!op) {
+              continue;
+            }
             const outcome = yield* applyOp(op);
             if (outcome === 'done') {
               yield* pendingOpRepo.remove(op.id);

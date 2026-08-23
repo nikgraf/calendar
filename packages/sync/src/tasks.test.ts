@@ -357,6 +357,55 @@ describe('completeTask', () => {
     }).pipe(Effect.provide(testLayer(client)));
   });
 
+  it.effect('create tolerates the server row arriving via a pull first', () => {
+    let inserts = 0;
+    const client: GoogleTasksClientShape = tasksClient({
+      insertTask: ({ task }) => {
+        inserts += 1;
+        return Effect.succeed({
+          due: task.due,
+          id: 'server-race',
+          status: 'needsAction',
+          title: task.title,
+        });
+      },
+    });
+    return Effect.gen(function* () {
+      yield* seedTasks;
+      const mutations = yield* EventMutations;
+      const repo = yield* TaskRepo;
+      const temp = yield* mutations.createTask({
+        accountId: 'acc-1',
+        dueDate: '2026-08-30',
+        taskListId: 'list-1',
+        title: 'Racy',
+      });
+      // A poll upserts the server copy while the temp row still exists —
+      // the old UPDATE-based swap would PK-conflict here and retry the
+      // non-idempotent insert.
+      yield* repo.upsertTasks(
+        [
+          new TaskRecord({
+            accountId: 'acc-1',
+            dueDate: '2026-08-30',
+            id: 'server-race',
+            listId: 'list-1',
+            status: 'needsAction',
+            title: 'Racy',
+            updatedAt: 200,
+          }),
+        ],
+        200,
+      );
+      yield* mutations.processPendingOps();
+      expect(inserts).toBe(1);
+      const window = yield* repo.getWindow('2026-08-24', '2026-08-31');
+      const ids = window.map((row) => row.id);
+      expect(ids.filter((id) => id === 'server-race')).toHaveLength(1);
+      expect(ids.some((id) => id === temp.id)).toBe(false);
+    }).pipe(Effect.provide(testLayer(client)));
+  });
+
   it.effect('edits fold into a still-queued create', () => {
     const inserts: Array<string> = [];
     const client: GoogleTasksClientShape = tasksClient({
