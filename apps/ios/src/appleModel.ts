@@ -35,6 +35,27 @@ const withTimeout = async <T>(work: Promise<T>, ms: number): Promise<T> => {
 };
 
 /**
+ * Refines an `unavailable` status with Apple's actual reason
+ * (deviceNotEligible / appleIntelligenceNotEnabled / modelNotReady).
+ * Exported for tests; the provider is the only production caller.
+ */
+export const availabilityDetailFrom = (
+  module: typeof import('@react-native-ai/apple') | undefined,
+): string => {
+  if (!module) {
+    return 'missing-module';
+  }
+  try {
+    // The method comes from our pnpm patch, so a binary built before it
+    // (an old dev client running newer JS from Metro) does not have it.
+    const api = module.AppleFoundationModels as { availabilityStatus?: () => string };
+    return typeof api.availabilityStatus === 'function' ? api.availabilityStatus() : 'unknown';
+  } catch {
+    return 'unknown';
+  }
+};
+
+/**
  * Apple's on-device Foundation Models as the app's LanguageModel. Nothing
  * leaves the device and there is no per-request cost; the framework needs
  * iOS 26 on Apple Intelligence hardware, so `status` gates every entry
@@ -82,4 +103,5 @@ export const appleLanguageModel: LanguageModel = {
       return 'unavailable';
     }
   },
+  statusDetail: async (): Promise<string> => availabilityDetailFrom(loadModule()),
 };

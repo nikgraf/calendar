@@ -46,6 +46,9 @@ overrides:
   vite: npm:@voidzero-dev/vite-plus-core@^0.2.2
   vitest: 4.1.9
 
+patchedDependencies:
+  '@react-native-ai/apple': f1b4b43d757a86e9c871907fb2058fdae30e7c75dbb10994ca176bf1524a446d
+
 importers:
 
   .:
@@ -179,7 +182,7 @@ importers:
         version: 15.0.4(react-native@0.86.0(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.86.0(@babel/core@7.29.7(supports-color@8.1.1))(supports-color@8.1.1))(@types/react@19.2.17)(react@19.2.7)(supports-color@8.1.1))(react@19.2.7)
       '@react-native-ai/apple':
         specifier: ^0.12.0
-        version: 0.12.0(react-native@0.86.0(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.86.0(@babel/core@7.29.7(supports-color@8.1.1))(supports-color@8.1.1))(@types/react@19.2.17)(react@19.2.7)(supports-color@8.1.1))
+        version: 0.12.0(patch_hash=f1b4b43d757a86e9c871907fb2058fdae30e7c75dbb10994ca176bf1524a446d)(react-native@0.86.0(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.86.0(@babel/core@7.29.7(supports-color@8.1.1))(supports-color@8.1.1))(@types/react@19.2.17)(react@19.2.7)(supports-color@8.1.1))
       effect:
         specifier: 'catalog:'
         version: 4.0.0-beta.93
@@ -8694,7 +8697,7 @@ snapshots:
     dependencies:
       quansync: 1.0.0
 
-  '@react-native-ai/apple@0.12.0(react-native@0.86.0(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.86.0(@babel/core@7.29.7(supports-color@8.1.1))(supports-color@8.1.1))(@types/react@19.2.17)(react@19.2.7)(supports-color@8.1.1))':
+  '@react-native-ai/apple@0.12.0(patch_hash=f1b4b43d757a86e9c871907fb2058fdae30e7c75dbb10994ca176bf1524a446d)(react-native@0.86.0(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.86.0(@babel/core@7.29.7(supports-color@8.1.1))(supports-color@8.1.1))(@types/react@19.2.17)(react@19.2.7)(supports-color@8.1.1))':
     dependencies:
       '@ai-sdk/provider': 3.0.15
       '@ai-sdk/provider-utils': 4.0.46(zod@4.4.3)

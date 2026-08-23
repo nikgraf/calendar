@@ -33,6 +33,14 @@ export interface LanguageModel {
    * can explain the gap instead of silently dropping AI entry points.
    */
   readonly status: () => Promise<ModelStatus>;
+  /**
+   * Platform-specific refinement of an `unavailable` status — e.g. Apple
+   * distinguishes "not enabled" from "still downloading" from "device not
+   * eligible". A short machine-readable token; consumers must treat
+   * unknown values as a generic unavailable. Optional because not every
+   * platform can say more than the status.
+   */
+  readonly statusDetail?: () => Promise<string>;
 }
 
 export class ModelUnavailableError extends Error {

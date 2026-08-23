@@ -81,3 +81,6 @@ allowBuilds:
   # Optional native tracing inside eas-cli; the JS stub fallback is fine.
   dtrace-provider: false
   msgpackr-extract: false
+
+patchedDependencies:
+  '@react-native-ai/apple': patches/@react-native-ai__apple.patch

@@ -16,6 +16,11 @@ describe('appleLanguageModel without the native module', () => {
     await expect(appleLanguageModel.status()).resolves.toBe('missing-module');
   });
 
+  it('reports missing-module as the detail too', async () => {
+    const { appleLanguageModel } = await import('./appleModel.ts');
+    await expect(appleLanguageModel.statusDetail?.()).resolves.toBe('missing-module');
+  });
+
   it('fails the generate call rather than crashing the app', async () => {
     const { appleLanguageModel } = await import('./appleModel.ts');
     await expect(appleLanguageModel.generateJson({ jsonSchema: {}, prompt: 'x' })).rejects.toThrow(

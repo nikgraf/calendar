@@ -1,0 +1,78 @@
+diff --git a/ios/AppleLLM.mm b/ios/AppleLLM.mm
+index 04ef22f6654dccb110722e6f9d4864a84035ef8f..487cf12896744df60c596333970dd879ce548962 100644
+--- a/ios/AppleLLM.mm
++++ b/ios/AppleLLM.mm
+@@ -174,5 +174,9 @@ - (nonnull NSNumber *)isAvailable {
+   return @([_llm isAvailable]);
+ }
+ 
++- (nonnull NSString *)availabilityStatus {
++  return [_llm availabilityStatus];
++}
++
+ 
+ @end
+diff --git a/ios/AppleLLMImpl.swift b/ios/AppleLLMImpl.swift
+index 7cb71f1e69bf1c719a5d470ee0d58d098e119c90..94be9aa74726a1c4ecc9a5972652c8ab4010e53d 100644
+--- a/ios/AppleLLMImpl.swift
++++ b/ios/AppleLLMImpl.swift
+@@ -33,6 +33,35 @@ public class AppleLLMImpl: NSObject {
+ #endif
+   }
+ 
++  @objc
++  public func availabilityStatus() -> String {
++#if canImport(FoundationModels)
++    if #available(iOS 26, *) {
++      switch SystemLanguageModel.default.availability {
++      case .available:
++        return "available"
++      case .unavailable(let reason):
++        switch reason {
++        case .deviceNotEligible:
++          return "deviceNotEligible"
++        case .appleIntelligenceNotEnabled:
++          return "appleIntelligenceNotEnabled"
++        case .modelNotReady:
++          return "modelNotReady"
++        @unknown default:
++          return "unavailable"
++        }
++      @unknown default:
++        return "unavailable"
++      }
++    } else {
++      return "osTooOld"
++    }
++#else
++    return "notLinked"
++#endif
++  }
++
+   @objc
+   public func generateText(
+     _ messages: [[String: Any]],
+diff --git a/lib/typescript/NativeAppleLLM.d.ts b/lib/typescript/NativeAppleLLM.d.ts
+index 0ace148317247c92b1cdf29e22de0c15a518f44c..005dfde08ce9c7f11deb3c863956fca7472ee5fe 100644
+--- a/lib/typescript/NativeAppleLLM.d.ts
++++ b/lib/typescript/NativeAppleLLM.d.ts
+@@ -25,6 +25,7 @@ export type StreamErrorEvent = {
+ };
+ export interface Spec extends TurboModule {
+     isAvailable(): boolean;
++    availabilityStatus(): string;
+     generateText(messages: AppleMessage[], options: AppleGenerationOptions): Promise<({
+         type: 'text';
+         text: string;
+diff --git a/src/NativeAppleLLM.ts b/src/NativeAppleLLM.ts
+index eebd9ae8572096b0aba5755cebd6b7112623e1a5..0423b1212d6e953ded54e21fe3ed140c85274beb 100644
+--- a/src/NativeAppleLLM.ts
++++ b/src/NativeAppleLLM.ts
+@@ -35,6 +35,7 @@ export type StreamErrorEvent = {
+ 
+ export interface Spec extends TurboModule {
+   isAvailable(): boolean
++  availabilityStatus(): string
+   generateText(
+     messages: AppleMessage[],
+     options: AppleGenerationOptions

@@ -282,13 +282,21 @@ function PrPreviewSection() {
  */
 function DiagnosticsSection() {
   const [modelStatus, setModelStatus] = useState<ModelStatus | 'checking…'>('checking…');
+  const [modelDetail, setModelDetail] = useState<string | null>(null);
   const [dictation, setDictation] = useState('checking…');
 
   useEffect(() => {
     let cancelled = false;
-    void appleLanguageModel.status().then((value) => {
+    void appleLanguageModel.status().then(async (value) => {
+      // The refined reason (Apple's .unavailable(reason)) is the line that
+      // actually answers "why" — the status alone could not.
+      const reason =
+        value === 'unavailable' && appleLanguageModel.statusDetail
+          ? await appleLanguageModel.statusDetail()
+          : null;
       if (!cancelled) {
         setModelStatus(value);
+        setModelDetail(reason);
       }
     });
     void appleSpeech
@@ -314,6 +322,7 @@ function DiagnosticsSection() {
       <Text style={styles.previewMeta}>iOS {String(Platform.Version)}</Text>
       <Text style={styles.previewMeta} testID="diagnostics-model">
         on-device model: {modelStatus}
+        {modelDetail ? ` (${modelDetail})` : ''}
       </Text>
       <Text style={styles.previewMeta}>dictation: {dictation}</Text>
       <Text style={styles.previewMeta}>

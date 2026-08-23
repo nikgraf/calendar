@@ -31,6 +31,14 @@ const UNAVAILABLE_NOTICE =
   'Quick add needs Apple Intelligence. Switch it on in Settings → Apple Intelligence & Siri; ' +
   'its models can take a while to download after that.';
 
+/** The reason-specific messages a statusDetail can unlock. */
+const NOTICES: Record<string, string> = {
+  appleIntelligenceNotEnabled: UNAVAILABLE_NOTICE,
+  modelNotReady:
+    'Apple Intelligence is still preparing its on-device models. Leave the phone on power ' +
+    'and Wi-Fi for a while, then retry.',
+};
+
 /** A forgotten recording stops itself rather than running until the app dies. */
 const MAX_RECORDING_MS = 60_000;
 
@@ -59,6 +67,7 @@ export function QuickAddBar({
   timeZone: string;
 }) {
   const [status, setStatus] = useState<ModelStatus | null>(null);
+  const [detail, setDetail] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
   const [checking, setChecking] = useState(false);
   const [voiceAvailable, setVoiceAvailable] = useState(false);
@@ -73,9 +82,12 @@ export function QuickAddBar({
       setChecking(true);
       void model
         .status()
-        .then((value) => {
+        .then(async (value) => {
+          const reason =
+            value === 'unavailable' && model.statusDetail ? await model.statusDetail() : null;
           if (!cancelled) {
             setStatus(value);
+            setDetail(reason);
           }
         })
         .finally(() => {
@@ -215,12 +227,16 @@ export function QuickAddBar({
   }
 
   if (status !== 'ready') {
-    // A build without the framework, or an OS too old for it, gives the
-    // user nothing to act on, so stay out of the way. Otherwise say why
-    // the bar is empty: the silence is what made this hard to diagnose.
-    // Dictation stays hidden either way — a transcript still needs the
-    // model to become an event.
-    if (status === 'missing-module' || iosMajorVersion() < MODEL_MIN_IOS) {
+    // A build without the framework, an OS too old for it, or hardware
+    // that will never run it gives the user nothing to act on, so stay
+    // out of the way. Otherwise say why the bar is empty: the silence is
+    // what made this hard to diagnose. Dictation stays hidden either way
+    // — a transcript still needs the model to become an event.
+    if (
+      status === 'missing-module' ||
+      iosMajorVersion() < MODEL_MIN_IOS ||
+      detail === 'deviceNotEligible'
+    ) {
       // The marker still renders so e2e can distinguish "checked, no
       // model" from "not checked yet" instead of racing the mount.
       return <View testID="quick-add-state" />;
@@ -228,7 +244,7 @@ export function QuickAddBar({
     return (
       <View style={styles.container} testID="quick-add-state">
         <View style={styles.row}>
-          <Text style={styles.notice}>{UNAVAILABLE_NOTICE}</Text>
+          <Text style={styles.notice}>{(detail && NOTICES[detail]) ?? UNAVAILABLE_NOTICE}</Text>
           <Pressable
             accessibilityLabel="Check for the on-device model again"
             accessibilityRole="button"
