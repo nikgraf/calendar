@@ -18,6 +18,7 @@ import { AppState, Pressable, SafeAreaView, StatusBar, StyleSheet, Text, View } 
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { backendClient, kickSync, startSync, subscribeInvalidations } from './src/backend.ts';
 import { appleLanguageModel } from './src/appleModel.ts';
+import { appleSpeech } from './src/appleSpeech.ts';
 import { DayTimeline } from './src/ui/DayTimeline.tsx';
 import { QuickAddBar } from './src/ui/QuickAddBar.tsx';
 import { MonthGrid } from './src/ui/MonthGrid.tsx';
@@ -144,6 +145,7 @@ function CalendarScreen() {
             focusedDate={focused}
             model={appleLanguageModel}
             onParsed={(prefill) => setEditSeed({ initialDate: focused, prefill })}
+            speech={appleSpeech}
             timeZone={timeZone}
           />
           <WeekStrip days={weekDays} onSelect={setFocused} selected={focused} timeZone={timeZone} />

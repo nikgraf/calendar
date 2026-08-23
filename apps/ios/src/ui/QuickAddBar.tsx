@@ -1,4 +1,11 @@
-import { parseQuickAdd, type LanguageModel, type ModelStatus } from '@calendar/ai';
+import {
+  MicrophoneDeniedError,
+  parseQuickAdd,
+  SpeechUnsupportedError,
+  type LanguageModel,
+  type ModelStatus,
+  type SpeechToText,
+} from '@calendar/ai';
 import { Temporal } from '@calendar/core';
 import type { EventEditorPrefill } from '@calendar/app-state';
 import { useEffect, useState } from 'react';
@@ -24,9 +31,14 @@ const UNAVAILABLE_NOTICE =
   'Quick add needs Apple Intelligence. Switch it on in Settings → Apple Intelligence & Siri; ' +
   'its models can take a while to download after that.';
 
+/** A forgotten recording stops itself rather than running until the app dies. */
+const MAX_RECORDING_MS = 60_000;
+
+type VoiceState = 'idle' | 'preparing' | 'recording' | 'transcribing';
+
 /**
- * Natural-language capture: a phrase becomes a prefilled editor the user
- * confirms — nothing is written by the model.
+ * Natural-language capture, typed or dictated: a phrase becomes a
+ * prefilled editor the user confirms — nothing is written by the model.
  *
  * With no model the bar used to vanish without a word, which is how a
  * phone with Apple Intelligence switched on still showed nothing and left
@@ -37,16 +49,20 @@ export function QuickAddBar({
   focusedDate,
   model,
   onParsed,
+  speech,
   timeZone,
 }: {
   focusedDate: Temporal.PlainDate;
   model: LanguageModel;
   onParsed: (prefill: EventEditorPrefill) => void;
+  speech: SpeechToText;
   timeZone: string;
 }) {
   const [status, setStatus] = useState<ModelStatus | null>(null);
   const [attempt, setAttempt] = useState(0);
   const [checking, setChecking] = useState(false);
+  const [voiceAvailable, setVoiceAvailable] = useState(false);
+  const [voice, setVoice] = useState<VoiceState>('idle');
   const [phrase, setPhrase] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -83,7 +99,22 @@ export function QuickAddBar({
     };
   }, [attempt, model]);
 
-  const submit = async () => {
+  useEffect(() => {
+    let cancelled = false;
+    void speech.isSupported().then((value) => {
+      if (!cancelled) {
+        setVoiceAvailable(value);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [speech]);
+
+  const submit = async (text: string = phrase) => {
+    if (!text.trim()) {
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
@@ -91,7 +122,7 @@ export function QuickAddBar({
         // Undated phrases land on the day being viewed; relative ones still
         // resolve against today.
         fallbackDate: focusedDate.toString(),
-        phrase,
+        phrase: text,
         referenceDate: Temporal.Now.plainDateISO(timeZone).toString(),
         timeZone,
       });
@@ -108,6 +139,75 @@ export function QuickAddBar({
     }
   };
 
+  const startRecording = async () => {
+    setError(null);
+    setVoice('preparing');
+    try {
+      // Prepare first: asking for the microphone before knowing dictation
+      // can run would extract a permanent permission for nothing.
+      await speech.prepare();
+    } catch (error) {
+      setVoice('idle');
+      if (error instanceof SpeechUnsupportedError) {
+        setVoiceAvailable(false);
+        setError('Dictation is unavailable on this device.');
+      } else {
+        // Installing the locale's models needs the network, so a failure
+        // here is often transient — keep the mic and let them retry.
+        setError("Couldn't set up dictation — try again.");
+      }
+      return;
+    }
+    try {
+      await speech.startRecording();
+      setVoice('recording');
+    } catch (error) {
+      setVoice('idle');
+      setError(
+        error instanceof MicrophoneDeniedError
+          ? 'Microphone access is off — you can still type.'
+          : 'Could not start recording.',
+      );
+    }
+  };
+
+  const stopRecording = async () => {
+    setVoice('transcribing');
+    try {
+      const text = await speech.stopRecording();
+      if (!text) {
+        setError("Didn't catch that — try again.");
+        return;
+      }
+      setPhrase(text);
+      await submit(text);
+    } catch {
+      setError('Could not transcribe that.');
+    } finally {
+      setVoice('idle');
+    }
+  };
+
+  // Stop a forgotten recording, and never leave one running when the bar
+  // goes away (switching to Month view unmounts it).
+  useEffect(() => {
+    if (voice !== 'recording') {
+      return;
+    }
+    const timer = setTimeout(() => void stopRecording(), MAX_RECORDING_MS);
+    return () => {
+      clearTimeout(timer);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- restart the cap per recording
+  }, [voice]);
+
+  useEffect(
+    () => () => {
+      void speech.cancelRecording();
+    },
+    [speech],
+  );
+
   if (status === null) {
     // Nothing decided yet — rendering a marker now would let e2e read a
     // pending check as a settled answer.
@@ -118,6 +218,8 @@ export function QuickAddBar({
     // A build without the framework, or an OS too old for it, gives the
     // user nothing to act on, so stay out of the way. Otherwise say why
     // the bar is empty: the silence is what made this hard to diagnose.
+    // Dictation stays hidden either way — a transcript still needs the
+    // model to become an event.
     if (status === 'missing-module' || iosMajorVersion() < MODEL_MIN_IOS) {
       // The marker still renders so e2e can distinguish "checked, no
       // model" from "not checked yet" instead of racing the mount.
@@ -156,21 +258,43 @@ export function QuickAddBar({
           testID="quick-add-input"
           value={phrase}
         />
-        {busy ? (
+        {voiceAvailable && !busy && voice !== 'transcribing' ? (
+          <Pressable
+            accessibilityLabel={voice === 'recording' ? 'Stop dictating' : 'Dictate an event'}
+            accessibilityRole="button"
+            disabled={voice === 'preparing'}
+            onPress={() => void (voice === 'recording' ? stopRecording() : startRecording())}
+            style={[styles.mic, voice === 'recording' && styles.micRecording]}
+            testID="quick-add-mic"
+          >
+            <Text style={styles.micLabel}>{voice === 'recording' ? '■' : '🎙'}</Text>
+          </Pressable>
+        ) : null}
+        {busy || voice === 'transcribing' || voice === 'preparing' ? (
           <ActivityIndicator style={styles.spinner} />
         ) : (
           <Pressable
             accessibilityLabel="Add the described event"
             accessibilityRole="button"
-            disabled={phrase.trim() === ''}
+            disabled={phrase.trim() === '' || voice === 'recording'}
             onPress={() => void submit()}
-            style={[styles.button, phrase.trim() === '' && styles.buttonDisabled]}
+            style={[
+              styles.button,
+              (phrase.trim() === '' || voice === 'recording') && styles.buttonDisabled,
+            ]}
             testID="quick-add-submit"
           >
             <Text style={styles.buttonLabel}>Add</Text>
           </Pressable>
         )}
       </View>
+      {voice === 'preparing' ? (
+        <Text style={styles.hint}>Preparing dictation…</Text>
+      ) : voice === 'recording' ? (
+        <Text style={styles.hint}>Listening — tap ■ when finished.</Text>
+      ) : voice === 'transcribing' ? (
+        <Text style={styles.hint}>Transcribing…</Text>
+      ) : null}
       {error ? <Text style={styles.error}>{error}</Text> : null}
     </View>
   );
@@ -202,6 +326,11 @@ const styles = StyleSheet.create({
     fontSize: 12,
     marginTop: 6,
   },
+  hint: {
+    color: palette.textMuted,
+    fontSize: 12,
+    marginTop: 6,
+  },
   input: {
     borderColor: palette.border,
     borderRadius: 8,
@@ -210,6 +339,20 @@ const styles = StyleSheet.create({
     fontSize: 14,
     paddingHorizontal: 10,
     paddingVertical: 8,
+  },
+  mic: {
+    borderColor: palette.border,
+    borderRadius: 8,
+    borderWidth: StyleSheet.hairlineWidth,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+  },
+  micLabel: {
+    fontSize: 15,
+  },
+  micRecording: {
+    backgroundColor: '#fee2e2',
+    borderColor: '#dc2626',
   },
   notice: {
     color: palette.textMuted,

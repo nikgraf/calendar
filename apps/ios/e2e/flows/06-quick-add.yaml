@@ -32,3 +32,8 @@ name: Quick add turns a phrase into a prefilled editor
       # The phrase must have filled the form, not just opened it.
       - assertVisible: 'Lunch with Sarah'
       - tapOn: 'Cancel'
+      # Dictation is deliberately not asserted here: Maestro cannot inject
+      # audio and simulators carry no speech assets, so the mic disables
+      # itself once prepare() fails. Gating an assertion on the mic being
+      # visible would pass whether or not it rendered — the transcript path
+      # is verified on a real device instead.

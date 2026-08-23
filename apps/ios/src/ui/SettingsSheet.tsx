@@ -23,6 +23,7 @@ import {
   View,
 } from 'react-native';
 import { appleLanguageModel } from '../appleModel.ts';
+import { appleSpeech } from '../appleSpeech.ts';
 import { palette } from './theme.ts';
 
 export function SettingsSheet({ onClose, visible }: { onClose: () => void; visible: boolean }) {
@@ -281,6 +282,7 @@ function PrPreviewSection() {
  */
 function DiagnosticsSection() {
   const [modelStatus, setModelStatus] = useState<ModelStatus | 'checking…'>('checking…');
+  const [dictation, setDictation] = useState('checking…');
 
   useEffect(() => {
     let cancelled = false;
@@ -289,6 +291,18 @@ function DiagnosticsSection() {
         setModelStatus(value);
       }
     });
+    void appleSpeech
+      .isSupported()
+      .then((value) => {
+        if (!cancelled) {
+          setDictation(value ? 'supported' : 'unsupported');
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setDictation('unsupported');
+        }
+      });
     return () => {
       cancelled = true;
     };
@@ -301,6 +315,7 @@ function DiagnosticsSection() {
       <Text style={styles.previewMeta} testID="diagnostics-model">
         on-device model: {modelStatus}
       </Text>
+      <Text style={styles.previewMeta}>dictation: {dictation}</Text>
       <Text style={styles.previewMeta}>
         {/* Hermes ships without it; a "missing" here explains any failure
             to save an event, since ids are generated from it. */}
