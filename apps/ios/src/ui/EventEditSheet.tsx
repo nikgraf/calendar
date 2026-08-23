@@ -218,6 +218,7 @@ export function EventEditSheet({
                   key={key}
                   onPress={() => taskModel.setListKey(key)}
                   style={styles.calendarRow}
+                  testID="task-list-option"
                 >
                   <Text style={[styles.calendarName, selected && styles.calendarSelected]}>
                     {list.title}

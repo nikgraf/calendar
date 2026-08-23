@@ -164,8 +164,15 @@ desktop waits on a helper binary (below).
 - [x] Tasks: detail sheet on chip tap — done as part of task
       create/edit/delete: the chip body opens the shared editor in task
       mode (notes, list, due, delete, open-in-Google via `webViewLink`).
-- [ ] Tasks: iOS Maestro flow for the all-day lane (needs task-chip
-      testIDs and the signed-in guard pattern from 07-create-event)
+- [x] Tasks: iOS Maestro flow for the all-day lane — done:
+      `08-task-lane.yaml` creates a task via the editor toggle, asserts
+      the chip renders, toggles the checkbox twice (restores state),
+      opens the editor from the chip body, deletes. Targets the created
+      chip via Maestro's regex ids matching the temp `local-.*` id, so it
+      is deterministic even on accounts with real tasks — and traceless
+      server-side because deleting an unpushed create sends nothing.
+      No-ops without a tasks-enabled account (`task-list-option` guard,
+      same shape as 06/07).
 - [x] Per-calendar colors — done: swatch in the desktop sidebar opens a
       picker (Google's 24-color palette + native color input; palette
       chips on iOS settings); optimistic local update, then write-back via
@@ -254,9 +261,10 @@ desktop waits on a helper binary (below).
       is configured (draft releases). Becomes fully active once the app is
       signed/notarized and releases are published (public repo or fed
       token); a no-op until then.
-- [x] iOS e2e via Maestro — done: four flows in `apps/ios/e2e/flows/`
-      (launch, view switching/navigation, new-event sheet incl. repeat
-      picker, accounts sheet) with testIDs on the icon-only header buttons;
+- [x] iOS e2e via Maestro — done: eight flows in `apps/ios/e2e/flows/`
+      (launch, navigation, new-event sheet, accounts sheet, day swipe,
+      quick add, create-event save path, task lane) with testIDs on the
+      icon-only header buttons;
       `pnpm test:e2e:ios` runs them. Needs the Maestro CLI + dev-client on
       a simulator with Metro running; gesture (drag) flows remain future
       work — Maestro can't synthesize long-press pans reliably.

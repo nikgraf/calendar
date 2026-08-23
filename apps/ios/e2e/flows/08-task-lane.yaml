@@ -1,0 +1,67 @@
+appId: com.solunivo.app
+name: Task chips render in the all-day lane and round-trip the editor
+---
+- launchApp
+# The app re-bundles from Metro on a cold dev-client launch; wait for the
+# calendar shell rather than racing it.
+- extendedWaitUntil:
+    visible: 'Today'
+    timeout: 60000
+- tapOn:
+    id: 'add-event'
+- assertVisible: 'New Event'
+# The Event | Task toggle only exists in create mode.
+- assertVisible:
+    id: 'mode-task'
+- tapOn:
+    id: 'mode-task'
+- assertVisible: 'New Task'
+# Saving needs a task list, which needs a signed-in account whose token
+# carries the tasks scope. Everywhere else the flow is a no-op rather
+# than a false failure — the same shape as 06/07.
+- runFlow:
+    when:
+      visible:
+        id: 'task-list-option'
+    commands:
+      - tapOn:
+          id: 'task-title'
+      # Named so a leftover is recognisable if cleanup ever fails. The due
+      # day defaults to the focused day, so the chip lands on today.
+      - inputText: 'Solunivo e2e task — delete me'
+      - tapOn:
+          id: 'event-save'
+      - extendedWaitUntil:
+          notVisible: 'New Task'
+          timeout: 20000
+      # Maestro ids are regexes: an unpushed create has a local- temp id,
+      # which targets OUR chip even among real (server-id) tasks.
+      - extendedWaitUntil:
+          visible:
+            id: 'task-chip-local-.*'
+          timeout: 10000
+      # Check it off and back on — exercises the toggle pressable while
+      # leaving the account unchanged even if the delete below fails.
+      - tapOn:
+          id: 'task-chip-toggle-local-.*'
+      - tapOn:
+          id: 'task-chip-toggle-local-.*'
+      # The chip body opens the shared editor in task mode.
+      - tapOn:
+          id: 'task-chip-body-local-.*'
+      - assertVisible: 'Edit Task'
+      - tapOn:
+          id: 'task-delete'
+      # Deleting an unpushed create sends nothing to Google — traceless.
+      - extendedWaitUntil:
+          notVisible:
+            id: 'task-chip-local-.*'
+          timeout: 20000
+- runFlow:
+    when:
+      notVisible:
+        id: 'task-list-option'
+    commands:
+      # No tasks-enabled account: leave the sheet as we found it.
+      - tapOn: 'Cancel'
+      - assertVisible: 'Today'

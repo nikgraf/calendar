@@ -252,10 +252,19 @@ function AllDayColumn({
             testID={`task-chip-${task.id}`}
           >
             {/* Side-by-side Pressables — no nested-press arbitration. */}
-            <Pressable hitSlop={8} onPress={() => onToggleTask(task)}>
+            <Pressable
+              hitSlop={8}
+              onPress={() => onToggleTask(task)}
+              testID={`task-chip-toggle-${task.id}`}
+            >
               <Text style={styles.taskCheckbox}>{done ? '☑' : '☐'}</Text>
             </Pressable>
-            <Pressable hitSlop={4} onPress={() => onTaskPress(task)} style={styles.taskBody}>
+            <Pressable
+              hitSlop={4}
+              onPress={() => onTaskPress(task)}
+              style={styles.taskBody}
+              testID={`task-chip-body-${task.id}`}
+            >
               <Text
                 numberOfLines={1}
                 style={[styles.allDayText, styles.taskText, done && styles.taskTextDone]}
