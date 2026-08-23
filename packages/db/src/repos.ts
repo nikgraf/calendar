@@ -403,12 +403,14 @@ const makePendingOpRepo: Effect.Effect<PendingOpRepoShape, never, Reactivity | S
           Effect.asVoid(sql`
           INSERT INTO pending_ops (id, account_id, calendar_id, kind, event_id,
                                    payload, base_etag, attempts, next_attempt_at,
-                                   last_error, created_at, color_hex)
+                                   last_error, created_at, color_hex,
+                                   task_list_id, task_status)
           VALUES (${op.id}, ${op.accountId}, ${op.calendarId}, ${op.kind},
                   ${op.eventId},
                   ${op.payload ? JSON.stringify(eventPayloadJson(op.payload)) : null},
                   ${op.baseEtag ?? null}, ${op.attempts}, ${op.nextAttemptAt},
-                  ${op.lastError ?? null}, ${op.createdAt}, ${op.colorHex ?? null})
+                  ${op.lastError ?? null}, ${op.createdAt}, ${op.colorHex ?? null},
+                  ${op.taskListId ?? null}, ${op.taskStatus ?? null})
         `),
         ),
       listAll: () =>

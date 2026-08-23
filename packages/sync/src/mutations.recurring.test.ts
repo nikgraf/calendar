@@ -1,6 +1,11 @@
 import { CalendarInfo, EventRecord, plainDateToUtcMs } from '@calendar/core';
 import { CalendarRepo, EventRepo, PendingOpRepo, reposLayer, runMigrations } from '@calendar/db';
-import { GoogleCalendarClient, type GoogleCalendarClientShape } from '@calendar/google';
+import {
+  GoogleCalendarClient,
+  type GoogleCalendarClientShape,
+  GoogleTasksClient,
+  type GoogleTasksClientShape,
+} from '@calendar/google';
 import { SqliteClient } from '@effect/sql-sqlite-node';
 import { expect, it } from '@effect/vitest';
 import { Effect, Layer } from 'effect';
@@ -18,12 +23,19 @@ const stubClient: GoogleCalendarClientShape = {
   patchEvent: () => Effect.die('unexpected patch'),
 };
 
+const stubTasksClient: GoogleTasksClientShape = {
+  listTaskLists: () => Effect.die('tasks not used in this test'),
+  listTasks: () => Effect.die('tasks not used in this test'),
+  patchTask: () => Effect.die('tasks not used in this test'),
+};
+
 const testLayer = EventMutations.layer.pipe(
   Layer.provideMerge(reposLayer),
   Layer.provideMerge(Layer.effectDiscard(runMigrations)),
   Layer.provideMerge(SqliteClient.layer({ filename: ':memory:' })),
   Layer.provideMerge(reactivityLayer),
   Layer.provideMerge(Layer.succeed(GoogleCalendarClient, stubClient)),
+  Layer.provideMerge(Layer.succeed(GoogleTasksClient, stubTasksClient)),
 );
 
 const master = new EventRecord({

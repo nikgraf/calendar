@@ -10,11 +10,13 @@ import {
 import {
   ApiUnavailableError,
   ConflictError,
+  type GcalEvent,
   GoogleApiError,
   GoogleCalendarClient,
-  ReauthRequiredError,
-  type GcalEvent,
   type GoogleCalendarClientShape,
+  GoogleTasksClient,
+  type GoogleTasksClientShape,
+  ReauthRequiredError,
 } from '@calendar/google';
 import { SqliteClient } from '@effect/sql-sqlite-node';
 import { expect, it } from '@effect/vitest';
@@ -36,6 +38,12 @@ const stubClient = (overrides: ClientOverrides): GoogleCalendarClientShape => ({
   ...overrides,
 });
 
+const stubTasksClient: GoogleTasksClientShape = {
+  listTaskLists: () => Effect.die('tasks not used in this test'),
+  listTasks: () => Effect.die('tasks not used in this test'),
+  patchTask: () => Effect.die('tasks not used in this test'),
+};
+
 const mutationsLayer = (client: GoogleCalendarClientShape) =>
   EventMutations.layer.pipe(
     Layer.provideMerge(reposLayer),
@@ -43,6 +51,7 @@ const mutationsLayer = (client: GoogleCalendarClientShape) =>
     Layer.provideMerge(SqliteClient.layer({ filename: ':memory:' })),
     Layer.provideMerge(reactivityLayer),
     Layer.provideMerge(Layer.succeed(GoogleCalendarClient, client)),
+    Layer.provideMerge(Layer.succeed(GoogleTasksClient, stubTasksClient)),
   );
 
 const seedCalendar = Effect.gen(function* () {

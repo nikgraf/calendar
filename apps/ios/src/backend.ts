@@ -9,6 +9,7 @@ import { AccountRepo, forwardingReactivity, reposLayer, runMigrations } from '@c
 import {
   GoogleCalendarClient,
   GoogleOAuthConfig,
+  GoogleTasksClient,
   TASKS_SCOPE,
   TokenManager,
   TokenStore,
@@ -86,6 +87,7 @@ const platformLayer = Layer.mergeAll(
 const appLayer = SyncEngine.layer.pipe(
   Layer.provideMerge(EventMutations.layer),
   Layer.provideMerge(GoogleCalendarClient.layer),
+  Layer.provideMerge(GoogleTasksClient.layer),
   Layer.provideMerge(TokenManager.layer),
   Layer.provideMerge(dbLayer),
   Layer.provideMerge(platformLayer),

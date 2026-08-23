@@ -2,23 +2,26 @@ import {
   applyWallClockDelta,
   Attendee,
   contrastingTextColor,
+  type EventDraft,
   EventRecord,
   googleInstanceId,
   normalizeHexColor,
   PendingOp,
-  remainingRecurrence,
-  truncateRecurrence,
-  type EventDraft,
   type RecurringScope,
+  remainingRecurrence,
   type RsvpResponse,
+  type TaskRecord,
+  truncateRecurrence,
 } from '@calendar/core';
-import { AccountRepo, CalendarRepo, EventRepo, PendingOpRepo } from '@calendar/db';
+import { AccountRepo, CalendarRepo, EventRepo, PendingOpRepo, TaskRepo } from '@calendar/db';
 import { CONFLICT_NOTICE_KEY } from '@calendar/db/keys';
 import {
   generateEventId,
   GoogleCalendarClient,
+  GoogleTasksClient,
   mapGcalCalendar,
   mapGcalEvent,
+  mapGcalTask,
   toGcalEventInput,
 } from '@calendar/google';
 import { Clock, Context, Data, Effect, Layer, Semaphore } from 'effect';
@@ -45,6 +48,10 @@ export class NotAttendeeError extends Data.TaggedError('NotAttendeeError')<{
 
 export class InvalidColorError extends Data.TaggedError('InvalidColorError')<{
   readonly colorHex: string;
+}> {}
+
+export class TaskNotFoundError extends Data.TaggedError('TaskNotFoundError')<{
+  readonly taskId: string;
 }> {}
 
 /** Sentinel eventId keying calendar-color ops for coalescing. */
@@ -82,6 +89,13 @@ export interface UpdateRecurringParams extends RecurringTargetParams {
 type RecurringEditError = EventNotFoundError | RecurringEditUnsupportedError | SqlError;
 
 export interface EventMutationsShape {
+  /** Toggles a task's completion locally and writes it back to Google. */
+  readonly completeTask: (params: {
+    readonly accountId: string;
+    readonly status: TaskRecord['status'];
+    readonly taskId: string;
+    readonly taskListId: string;
+  }) => Effect.Effect<void, SqlError | TaskNotFoundError>;
   readonly createEvent: (draft: EventDraft) => Effect.Effect<EventRecord, SqlError>;
   readonly deleteEvent: (params: {
     readonly accountId: string;
@@ -122,7 +136,14 @@ export const retryDelayMs = (attempts: number): number =>
 const make: Effect.Effect<
   EventMutationsShape,
   never,
-  AccountRepo | CalendarRepo | EventRepo | GoogleCalendarClient | PendingOpRepo | Reactivity
+  | AccountRepo
+  | CalendarRepo
+  | EventRepo
+  | GoogleCalendarClient
+  | GoogleTasksClient
+  | PendingOpRepo
+  | Reactivity
+  | TaskRepo
 > = Effect.gen(function* () {
   const reactivity = yield* Reactivity;
   const accountRepo = yield* AccountRepo;
@@ -130,6 +151,8 @@ const make: Effect.Effect<
   const eventRepo = yield* EventRepo;
   const pendingOpRepo = yield* PendingOpRepo;
   const client = yield* GoogleCalendarClient;
+  const tasksClient = yield* GoogleTasksClient;
+  const taskRepo = yield* TaskRepo;
   const gate = Semaphore.makeUnsafe(1);
 
   const opsForEvent = (calendarId: string, eventId: string) =>
@@ -238,6 +261,29 @@ const make: Effect.Effect<
           ]);
           return 'done' as const;
         }
+        case 'completeTask': {
+          if (!op.taskListId || !op.taskStatus) {
+            return 'done' as const;
+          }
+          // The response echoes the final task; upserting it self-heals a
+          // backoff-window pull overwrite, and for repeating tasks Google
+          // materializes the next occurrence server-side on completion —
+          // the following poll picks that up.
+          const response = yield* tasksClient.patchTask({
+            accountId: op.accountId,
+            status: op.taskStatus,
+            taskId: op.eventId,
+            taskListId: op.taskListId,
+          });
+          const synced = mapGcalTask(response, {
+            accountId: op.accountId,
+            taskListId: op.taskListId,
+          });
+          if (synced) {
+            yield* taskRepo.upsertTasks([synced], yield* Clock.currentTimeMillis);
+          }
+          return 'done' as const;
+        }
         case 'create': {
           if (!op.payload) {
             return 'done' as const;
@@ -334,7 +380,13 @@ const make: Effect.Effect<
         NotFoundError: () =>
           Effect.gen(function* () {
             // Deleted remotely — drop the local copy too.
-            yield* eventRepo.deleteEvent(op.accountId, op.calendarId, op.eventId);
+            if (op.kind === 'completeTask') {
+              if (op.taskListId) {
+                yield* taskRepo.removeTask(op.accountId, op.taskListId, op.eventId);
+              }
+            } else {
+              yield* eventRepo.deleteEvent(op.accountId, op.calendarId, op.eventId);
+            }
             return 'done' as const;
           }),
         // Keep the op; flag the account so the UI offers a reconnect and
@@ -373,6 +425,44 @@ const make: Effect.Effect<
       .pipe(Effect.catchCause(() => Effect.void));
 
   const shape: EventMutationsShape = {
+    completeTask: ({ accountId, status, taskId, taskListId }) =>
+      Effect.gen(function* () {
+        const window = yield* taskRepo.listLists(accountId);
+        if (!window.some((list) => list.id === taskListId)) {
+          return yield* Effect.fail(new TaskNotFoundError({ taskId }));
+        }
+        const now = yield* Clock.currentTimeMillis;
+        yield* taskRepo.setStatus({
+          accountId,
+          completedAt: status === 'completed' ? now : undefined,
+          listId: taskListId,
+          status,
+          taskId,
+        });
+        // Only the latest toggle needs to reach Google.
+        const queued = yield* opsForEvent(taskListId, taskId);
+        for (const op of queued) {
+          if (op.accountId === accountId && op.kind === 'completeTask') {
+            yield* pendingOpRepo.remove(op.id);
+          }
+        }
+        yield* enqueueAndKick(
+          new PendingOp({
+            accountId,
+            attempts: 0,
+            // Op identity reuses the event columns as opaque ids, like
+            // calendarColor's sentinel does.
+            calendarId: taskListId,
+            createdAt: now,
+            eventId: taskId,
+            id: generateEventId(),
+            kind: 'completeTask',
+            nextAttemptAt: 0,
+            taskListId,
+            taskStatus: status,
+          }),
+        );
+      }),
     createEvent: (draft) =>
       Effect.gen(function* () {
         const now = yield* Clock.currentTimeMillis;
@@ -821,6 +911,13 @@ export class EventMutations extends Context.Service<EventMutations, EventMutatio
   static readonly layer: Layer.Layer<
     EventMutations,
     never,
-    AccountRepo | CalendarRepo | EventRepo | GoogleCalendarClient | PendingOpRepo | Reactivity
+    | AccountRepo
+    | CalendarRepo
+    | EventRepo
+    | GoogleCalendarClient
+    | GoogleTasksClient
+    | PendingOpRepo
+    | Reactivity
+    | TaskRepo
   > = Layer.effect(EventMutations)(make);
 }

@@ -8,12 +8,14 @@ import {
   SyncStateRepo,
 } from '@calendar/db';
 import {
-  GoogleCalendarClient,
-  ReauthRequiredError,
-  SyncTokenExpiredError,
   type GcalCalendarListPage,
   type GcalEventsPage,
+  GoogleCalendarClient,
   type GoogleCalendarClientShape,
+  GoogleTasksClient,
+  type GoogleTasksClientShape,
+  ReauthRequiredError,
+  SyncTokenExpiredError,
 } from '@calendar/google';
 import { SqliteClient } from '@effect/sql-sqlite-node';
 import { expect, it } from '@effect/vitest';
@@ -75,6 +77,13 @@ const stubClient = (
   patchEvent: () => Effect.die('not used'),
 });
 
+/** Accounts here have tasksEnabled=false, so tasks calls must not happen. */
+const stubTasksClient: GoogleTasksClientShape = {
+  listTaskLists: () => Effect.die('tasks not enabled in this test'),
+  listTasks: () => Effect.die('tasks not enabled in this test'),
+  patchTask: () => Effect.die('tasks not enabled in this test'),
+};
+
 const engineLayer = (client: GoogleCalendarClientShape) =>
   SyncEngine.layer.pipe(
     Layer.provideMerge(EventMutations.layer),
@@ -83,6 +92,7 @@ const engineLayer = (client: GoogleCalendarClientShape) =>
     Layer.provideMerge(SqliteClient.layer({ filename: ':memory:' })),
     Layer.provideMerge(reactivityLayer),
     Layer.provideMerge(Layer.succeed(GoogleCalendarClient, client)),
+    Layer.provideMerge(Layer.succeed(GoogleTasksClient, stubTasksClient)),
   );
 
 const seedAccount = Effect.gen(function* () {

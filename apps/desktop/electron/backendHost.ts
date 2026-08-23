@@ -14,6 +14,7 @@ import {
 import {
   GoogleCalendarClient,
   GoogleOAuthConfig,
+  GoogleTasksClient,
   TASKS_SCOPE,
   TokenManager,
   TokenStore,
@@ -70,6 +71,7 @@ export const startBackendHost = (): void => {
   const appLayer = SyncEngine.layer.pipe(
     Layer.provideMerge(EventMutations.layer),
     Layer.provideMerge(GoogleCalendarClient.layer),
+    Layer.provideMerge(GoogleTasksClient.layer),
     Layer.provideMerge(TokenManager.layer),
     Layer.provideMerge(dbLayer),
     Layer.provideMerge(platformLayer),

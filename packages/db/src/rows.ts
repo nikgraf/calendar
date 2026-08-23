@@ -198,6 +198,8 @@ export interface PendingOpRow {
   readonly last_error: string | null;
   readonly created_at: number;
   readonly color_hex: string | null;
+  readonly task_list_id: string | null;
+  readonly task_status: string | null;
 }
 
 export const pendingOpFromRow = (row: PendingOpRow): PendingOp =>
@@ -216,6 +218,8 @@ export const pendingOpFromRow = (row: PendingOpRow): PendingOp =>
     payload: row.payload
       ? Schema.decodeUnknownSync(EventRecord)(JSON.parse(row.payload))
       : undefined,
+    taskListId: row.task_list_id ?? undefined,
+    taskStatus: (row.task_status ?? undefined) as PendingOp['taskStatus'],
   });
 
 export interface SyncStateRow {

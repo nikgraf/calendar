@@ -1,9 +1,12 @@
 import { EventRecord, eventsScope, SyncState, Temporal, type Account } from '@calendar/core';
-import { AccountRepo, CalendarRepo, EventRepo, SyncStateRepo } from '@calendar/db';
+import { AccountRepo, CalendarRepo, EventRepo, SyncStateRepo, TaskRepo } from '@calendar/db';
 import {
   GoogleCalendarClient,
+  GoogleTasksClient,
   mapGcalCalendar,
   mapGcalEvent,
+  mapGcalTask,
+  mapGcalTaskList,
   type GcalEvent,
   type GoogleRequestError,
 } from '@calendar/google';
@@ -12,7 +15,10 @@ import type { SqlError } from 'effect/unstable/sql/SqlError';
 import { EventMutations } from './mutations.ts';
 
 const CALENDAR_LIST_SCOPE = 'calendarList';
+const tasksScope = (taskListId: string): string => `tasks:${taskListId}`;
 const INITIAL_WINDOW_MS = 365 * 24 * 60 * 60 * 1000; // 12 months back
+/** updatedMin has no tombstone guarantees forever — reconcile fully daily. */
+const TASKS_FULL_PASS_INTERVAL_MS = 24 * 60 * 60 * 1000;
 export const SYNC_INTERVAL = '90 seconds';
 
 type SyncError = GoogleRequestError | SqlError;
@@ -74,13 +80,22 @@ export interface SyncEngineShape {
 const make: Effect.Effect<
   SyncEngineShape,
   never,
-  AccountRepo | CalendarRepo | EventMutations | EventRepo | GoogleCalendarClient | SyncStateRepo
+  | AccountRepo
+  | CalendarRepo
+  | EventMutations
+  | EventRepo
+  | GoogleCalendarClient
+  | GoogleTasksClient
+  | SyncStateRepo
+  | TaskRepo
 > = Effect.gen(function* () {
   const mutations = yield* EventMutations;
   const client = yield* GoogleCalendarClient;
+  const tasksClient = yield* GoogleTasksClient;
   const accountRepo = yield* AccountRepo;
   const calendarRepo = yield* CalendarRepo;
   const eventRepo = yield* EventRepo;
+  const taskRepo = yield* TaskRepo;
   const syncStateRepo = yield* SyncStateRepo;
   const gate = Semaphore.makeUnsafe(1);
 
@@ -251,6 +266,97 @@ const make: Effect.Effect<
       );
     });
 
+  const syncTaskLists = (account: Account): Effect.Effect<void, SyncError> =>
+    Effect.gen(function* () {
+      const now = yield* Clock.currentTimeMillis;
+      const keptIds: Array<string> = [];
+      let pageToken: string | undefined;
+      do {
+        const page = yield* withTransientRetry(
+          tasksClient.listTaskLists({ accountId: account.id, pageToken }),
+        );
+        const upserts = (page.items ?? []).map((entry) => {
+          keptIds.push(entry.id);
+          return mapGcalTaskList(entry, { accountId: account.id });
+        });
+        yield* taskRepo.upsertLists(upserts, now);
+        pageToken = page.nextPageToken;
+      } while (pageToken !== undefined);
+      // No syncToken/updatedMin on tasklists — every pass is full.
+      yield* taskRepo.removeListsMissing(account.id, keptIds);
+    });
+
+  const syncTasks = (account: Account, taskListId: string): Effect.Effect<void, SyncError> =>
+    Effect.gen(function* () {
+      const scope = tasksScope(taskListId);
+      const state = yield* syncStateRepo.get(account.id, scope);
+      const passStartedAt = yield* Clock.currentTimeMillis;
+      // The RFC 3339 updatedMin watermark lives in the sync_token column.
+      const watermark = state?.syncToken ?? null;
+      const fullPass =
+        watermark === null ||
+        (state?.lastFullSyncAt ?? 0) < passStartedAt - TASKS_FULL_PASS_INTERVAL_MS;
+
+      let pageToken: string | undefined;
+      do {
+        const page = yield* withTransientRetry(
+          tasksClient.listTasks({
+            accountId: account.id,
+            params: {
+              pageToken,
+              updatedMin: fullPass ? undefined : (watermark ?? undefined),
+            },
+            taskListId,
+          }),
+        );
+        const upserts = [];
+        const deletions: Array<string> = [];
+        for (const item of page.items ?? []) {
+          const record = mapGcalTask(item, { accountId: account.id, taskListId });
+          if (record) {
+            upserts.push(record);
+          } else {
+            deletions.push(item.id);
+          }
+        }
+        yield* taskRepo.upsertTasks(upserts, passStartedAt);
+        yield* taskRepo.removeTasksByIds(account.id, taskListId, deletions);
+        pageToken = page.nextPageToken;
+      } while (pageToken !== undefined);
+
+      if (fullPass) {
+        // Rows not touched by this pass no longer exist upstream; pending
+        // local completions were just re-upserted, so nothing is lost.
+        yield* taskRepo.deleteStale(account.id, taskListId, passStartedAt);
+      }
+
+      yield* syncStateRepo.set(
+        new SyncState({
+          accountId: account.id,
+          lastFullSyncAt: fullPass ? passStartedAt : (state?.lastFullSyncAt ?? null),
+          lastSyncAt: passStartedAt,
+          scope,
+          status: 'idle',
+          // Captured before the first request so nothing updated mid-pass
+          // slips between watermarks.
+          syncToken: new Date(passStartedAt).toISOString(),
+        }),
+      );
+    });
+
+  const syncAccountTasks = (account: Account): Effect.Effect<void, SyncError> =>
+    Effect.gen(function* () {
+      yield* syncTaskLists(account);
+      const lists = yield* taskRepo.listLists(account.id);
+      yield* Effect.forEach(lists, (list) => syncTasks(account, list.id), { discard: true });
+    }).pipe(
+      // The token was granted without the tasks scope after all (stale
+      // flag, consent revoked): disable rather than fail the account.
+      Effect.catchTag('InsufficientScopeError', () =>
+        Effect.orDie(accountRepo.setTasksEnabled(account.id, false)),
+      ),
+    );
+
   const syncAccount = (account: Account): Effect.Effect<void, SyncError> =>
     Effect.gen(function* () {
       yield* syncCalendarList(account);
@@ -258,6 +364,9 @@ const make: Effect.Effect<
       yield* Effect.forEach(calendars, (calendar) => syncEvents(account, calendar.id), {
         discard: true,
       });
+      if (account.tasksEnabled) {
+        yield* syncAccountTasks(account);
+      }
     });
 
   const syncAll = (): Effect.Effect<void> =>
@@ -301,6 +410,13 @@ export class SyncEngine extends Context.Service<SyncEngine, SyncEngineShape>()('
   static readonly layer: Layer.Layer<
     SyncEngine,
     never,
-    AccountRepo | CalendarRepo | EventMutations | EventRepo | GoogleCalendarClient | SyncStateRepo
+    | AccountRepo
+    | CalendarRepo
+    | EventMutations
+    | EventRepo
+    | GoogleCalendarClient
+    | GoogleTasksClient
+    | SyncStateRepo
+    | TaskRepo
   > = Layer.effect(SyncEngine)(make);
 }

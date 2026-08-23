@@ -8,9 +8,11 @@ import {
   runMigrations,
 } from '@calendar/db';
 import {
-  GoogleCalendarClient,
   type GcalEventInput,
+  GoogleCalendarClient,
   type GoogleCalendarClientShape,
+  GoogleTasksClient,
+  type GoogleTasksClientShape,
 } from '@calendar/google';
 import { SqliteClient } from '@effect/sql-sqlite-node';
 import { expect, it } from '@effect/vitest';
@@ -18,6 +20,12 @@ import { Effect, Layer } from 'effect';
 import { layer as reactivityLayer } from 'effect/unstable/reactivity/Reactivity';
 import { describe } from 'vitest';
 import { EventMutations } from './mutations.ts';
+
+const stubTasksClient: GoogleTasksClientShape = {
+  listTaskLists: () => Effect.die('tasks not used in this test'),
+  listTasks: () => Effect.die('tasks not used in this test'),
+  patchTask: () => Effect.die('tasks not used in this test'),
+};
 
 const makeLayer = (overrides: Partial<GoogleCalendarClientShape>) =>
   EventMutations.layer.pipe(
@@ -37,6 +45,7 @@ const makeLayer = (overrides: Partial<GoogleCalendarClientShape>) =>
         ...overrides,
       }),
     ),
+    Layer.provideMerge(Layer.succeed(GoogleTasksClient, stubTasksClient)),
   );
 
 const invited = new EventRecord({
