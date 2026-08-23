@@ -25,7 +25,8 @@ name: Saving a new event writes it to the day
           id: 'event-title'
       # Named so a leftover is recognisable: this writes to the real
       # Google account the device is signed into, and is deleted below.
-      - inputText: 'Solunivo e2e — delete me'
+      # ASCII only — unicode through XCTest typing is a known flaky spot.
+      - inputText: 'Solunivo e2e event to delete'
       - tapOn:
           id: 'event-save'
       # The sheet closes only after the whole create path ran, id
@@ -34,14 +35,15 @@ name: Saving a new event writes it to the day
       - extendedWaitUntil:
           notVisible: 'New Event'
           timeout: 20000
-      - assertVisible: 'Solunivo e2e'
+      # Maestro patterns match the whole string, so use the exact title.
+      - assertVisible: 'Solunivo e2e event to delete'
       # Clean up, so repeated runs don't pile up in a real calendar.
-      - tapOn: 'Solunivo e2e'
+      - tapOn: 'Solunivo e2e event to delete'
       - assertVisible: 'Edit Event'
       - tapOn:
           id: 'event-delete'
       - extendedWaitUntil:
-          notVisible: 'Solunivo e2e'
+          notVisible: 'Solunivo e2e event to delete'
           timeout: 20000
 - runFlow:
     when:

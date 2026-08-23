@@ -26,36 +26,36 @@ name: Task chips render in the all-day lane and round-trip the editor
     commands:
       - tapOn:
           id: 'task-title'
-      # Named so a leftover is recognisable if cleanup ever fails. The due
-      # day defaults to the focused day, so the chip lands on today.
-      - inputText: 'Solunivo e2e task — delete me'
+      # Distinctive full title: it is the flow's handle for every later
+      # selector, because the chip's testID swaps from the local- temp id
+      # to the server id the moment the createTask op pushes — ids are
+      # unstable mid-flow, the title is not. ASCII only: unicode through
+      # XCTest typing is a known flaky spot.
+      - inputText: 'Solunivo e2e task to delete'
       - tapOn:
           id: 'event-save'
       - extendedWaitUntil:
           notVisible: 'New Task'
           timeout: 20000
-      # Maestro ids are regexes: an unpushed create has a local- temp id,
-      # which targets OUR chip even among real (server-id) tasks.
       - extendedWaitUntil:
-          visible:
-            id: 'task-chip-local-.*'
+          visible: 'Solunivo e2e task to delete'
           timeout: 10000
-      # Check it off and back on — exercises the toggle pressable while
-      # leaving the account unchanged even if the delete below fails.
-      - tapOn:
-          id: 'task-chip-toggle-local-.*'
-      - tapOn:
-          id: 'task-chip-toggle-local-.*'
-      # The chip body opens the shared editor in task mode.
-      - tapOn:
-          id: 'task-chip-body-local-.*'
+      # Check it off and back on via the labeled checkbox — exercises the
+      # toggle while leaving the account unchanged even if the delete
+      # below fails.
+      - tapOn: 'Toggle Solunivo e2e task to delete'
+      - tapOn: 'Toggle Solunivo e2e task to delete'
+      # The chip title sits inside the body pressable: tapping it opens
+      # the shared editor in task mode. (The full-title pattern cannot
+      # match the "Toggle …"-prefixed checkbox label.)
+      - tapOn: 'Solunivo e2e task to delete'
       - assertVisible: 'Edit Task'
       - tapOn:
           id: 'task-delete'
-      # Deleting an unpushed create sends nothing to Google — traceless.
+      # Deleting an unpushed create sends nothing to Google; a pushed one
+      # deletes server-side — either way the account ends clean.
       - extendedWaitUntil:
-          notVisible:
-            id: 'task-chip-local-.*'
+          notVisible: 'Solunivo e2e task to delete'
           timeout: 20000
 - runFlow:
     when:

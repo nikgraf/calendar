@@ -251,8 +251,14 @@ function AllDayColumn({
             style={[styles.allDayChip, styles.taskChip, done && styles.taskChipDone]}
             testID={`task-chip-${task.id}`}
           >
-            {/* Side-by-side Pressables — no nested-press arbitration. */}
+            {/* Side-by-side Pressables — no nested-press arbitration. The
+                labels double as stable e2e handles: a created task's id
+                swaps from local- to the server id as soon as its op
+                pushes, so id-based selectors go stale mid-flow — the
+                title does not. */}
             <Pressable
+              accessibilityLabel={`Toggle ${task.title}`}
+              accessibilityRole="button"
               hitSlop={8}
               onPress={() => onToggleTask(task)}
               testID={`task-chip-toggle-${task.id}`}
