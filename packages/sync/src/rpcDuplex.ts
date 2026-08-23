@@ -68,6 +68,10 @@ export const duplexServerProtocol = (
               }
             }),
           supportsAck: true,
+          // Frame transports preserve message boundaries, so server-pushed
+          // notification frames deliver fine — same as effect's own socket
+          // and worker protocols.
+          supportsNotifications: true,
           supportsSpanPropagation: false,
           supportsTransferables: false,
         };
