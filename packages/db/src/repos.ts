@@ -388,6 +388,13 @@ export interface PendingOpRepoShape {
   ) => Effect.Effect<void, SqlError>;
   readonly remove: (opId: string) => Effect.Effect<void, SqlError>;
   readonly removeForEvent: (calendarId: string, eventId: string) => Effect.Effect<void, SqlError>;
+  /** Re-keys queued ops after a server-assigned id replaces a temp id. */
+  readonly rewriteEventId: (
+    accountId: string,
+    calendarId: string,
+    oldEventId: string,
+    newEventId: string,
+  ) => Effect.Effect<void, SqlError>;
 }
 
 const makePendingOpRepo: Effect.Effect<PendingOpRepoShape, never, Reactivity | SqlClient> =
@@ -404,13 +411,15 @@ const makePendingOpRepo: Effect.Effect<PendingOpRepoShape, never, Reactivity | S
           INSERT INTO pending_ops (id, account_id, calendar_id, kind, event_id,
                                    payload, base_etag, attempts, next_attempt_at,
                                    last_error, created_at, color_hex,
-                                   task_list_id, task_status)
+                                   task_list_id, task_status,
+                                   task_title, task_notes, task_due)
           VALUES (${op.id}, ${op.accountId}, ${op.calendarId}, ${op.kind},
                   ${op.eventId},
                   ${op.payload ? JSON.stringify(eventPayloadJson(op.payload)) : null},
                   ${op.baseEtag ?? null}, ${op.attempts}, ${op.nextAttemptAt},
                   ${op.lastError ?? null}, ${op.createdAt}, ${op.colorHex ?? null},
-                  ${op.taskListId ?? null}, ${op.taskStatus ?? null})
+                  ${op.taskListId ?? null}, ${op.taskStatus ?? null},
+                  ${op.taskTitle ?? null}, ${op.taskNotes ?? null}, ${op.taskDue ?? null})
         `),
         ),
       listAll: () =>
@@ -440,6 +449,14 @@ const makePendingOpRepo: Effect.Effect<PendingOpRepoShape, never, Reactivity | S
           Effect.asVoid(
             sql`DELETE FROM pending_ops WHERE calendar_id = ${calendarId}
               AND event_id = ${eventId} AND kind != 'rsvp'`,
+          ),
+        ),
+      rewriteEventId: (accountId, calendarId, oldEventId, newEventId) =>
+        invalidating(
+          Effect.asVoid(
+            sql`UPDATE pending_ops SET event_id = ${newEventId}
+              WHERE account_id = ${accountId} AND calendar_id = ${calendarId}
+                AND event_id = ${oldEventId}`,
           ),
         ),
     };
@@ -502,6 +519,8 @@ export interface TaskRepoShape {
     startDate: string,
     endDate: string,
   ) => Effect.Effect<ReadonlyArray<TaskRecord>, SqlError>;
+  /** Optimistic local create (sync_status 'pending' until the push lands). */
+  readonly insertLocal: (task: TaskRecord) => Effect.Effect<void, SqlError>;
   readonly listLists: (accountId?: string) => Effect.Effect<ReadonlyArray<TaskListInfo>, SqlError>;
   readonly removeListsMissing: (
     accountId: string,
@@ -517,6 +536,13 @@ export interface TaskRepoShape {
     listId: string,
     ids: ReadonlyArray<string>,
   ) => Effect.Effect<void, SqlError>;
+  /** Swaps a temp id for the server-assigned one after createTask pushes. */
+  readonly replaceId: (
+    accountId: string,
+    listId: string,
+    tempId: string,
+    serverId: string,
+  ) => Effect.Effect<void, SqlError>;
   readonly setListVisible: (
     accountId: string,
     listId: string,
@@ -531,6 +557,17 @@ export interface TaskRepoShape {
     readonly taskId: string;
   }) => Effect.Effect<void, SqlError>;
   /** Upserts while preserving the local is_visible toggle on update. */
+  /** Optimistic edit of title/notes/due. */
+  readonly updateLocal: (params: {
+    readonly accountId: string;
+    readonly changes: {
+      readonly dueDate?: string | undefined;
+      readonly notes?: string | undefined;
+      readonly title?: string | undefined;
+    };
+    readonly listId: string;
+    readonly taskId: string;
+  }) => Effect.Effect<void, SqlError>;
   readonly upsertLists: (
     lists: ReadonlyArray<TaskListInfo>,
     syncedAt: number,
@@ -555,7 +592,8 @@ const makeTaskRepo: Effect.Effect<TaskRepoShape, never, Reactivity | SqlClient> 
         tasksMutation(
           Effect.asVoid(
             sql`DELETE FROM tasks WHERE account_id = ${accountId}
-              AND list_id = ${listId} AND synced_at < ${syncedAt}`,
+              AND list_id = ${listId} AND synced_at < ${syncedAt}
+              AND sync_status = 'synced'`,
           ),
         ),
       getWindow: (startDate, endDate) =>
@@ -568,6 +606,18 @@ const makeTaskRepo: Effect.Effect<TaskRepoShape, never, Reactivity | SqlClient> 
               AND t.due_date >= ${startDate} AND t.due_date <= ${endDate}
             ORDER BY t.due_date, t.title`,
           (rows) => rows.map(taskFromRow),
+        ),
+      insertLocal: (task) =>
+        tasksMutation(
+          Effect.asVoid(
+            sql`
+            INSERT INTO tasks (account_id, list_id, id, title, notes, status, due_date,
+                               completed_at, web_view_link, updated_at, synced_at, sync_status)
+            VALUES (${task.accountId}, ${task.listId}, ${task.id}, ${task.title},
+                    ${task.notes ?? null}, ${task.status}, ${task.dueDate ?? null},
+                    ${task.completedAt ?? null}, ${task.webViewLink ?? null},
+                    ${task.updatedAt}, ${task.updatedAt}, 'pending')`,
+          ),
         ),
       listLists: (accountId) =>
         Effect.map(
@@ -606,6 +656,13 @@ const makeTaskRepo: Effect.Effect<TaskRepoShape, never, Reactivity | SqlClient> 
                   AND list_id = ${listId} AND id IN ${sql.in(ids)}`,
               ),
             ),
+      replaceId: (accountId, listId, tempId, serverId) =>
+        tasksMutation(
+          Effect.asVoid(
+            sql`UPDATE tasks SET id = ${serverId}, sync_status = 'synced'
+              WHERE account_id = ${accountId} AND list_id = ${listId} AND id = ${tempId}`,
+          ),
+        ),
       setListVisible: (accountId, listId, isVisible) =>
         listsMutation(
           Effect.asVoid(
@@ -619,6 +676,23 @@ const makeTaskRepo: Effect.Effect<TaskRepoShape, never, Reactivity | SqlClient> 
             sql`UPDATE tasks SET status = ${status}, completed_at = ${completedAt ?? null}
               WHERE account_id = ${accountId} AND list_id = ${listId} AND id = ${taskId}`,
           ),
+        ),
+      updateLocal: ({ accountId, changes, listId, taskId }) =>
+        tasksMutation(
+          Effect.gen(function* () {
+            if (changes.title !== undefined) {
+              yield* sql`UPDATE tasks SET title = ${changes.title}
+                WHERE account_id = ${accountId} AND list_id = ${listId} AND id = ${taskId}`;
+            }
+            if (changes.notes !== undefined) {
+              yield* sql`UPDATE tasks SET notes = ${changes.notes}
+                WHERE account_id = ${accountId} AND list_id = ${listId} AND id = ${taskId}`;
+            }
+            if (changes.dueDate !== undefined) {
+              yield* sql`UPDATE tasks SET due_date = ${changes.dueDate}
+                WHERE account_id = ${accountId} AND list_id = ${listId} AND id = ${taskId}`;
+            }
+          }),
         ),
       upsertLists: (lists, syncedAt) =>
         listsMutation(
@@ -643,12 +717,14 @@ const makeTaskRepo: Effect.Effect<TaskRepoShape, never, Reactivity | SqlClient> 
             (task) =>
               sql`
               INSERT INTO tasks (account_id, list_id, id, title, notes, status, due_date,
-                                 completed_at, web_view_link, updated_at, synced_at)
+                                 completed_at, web_view_link, updated_at, synced_at,
+                                 sync_status)
               VALUES (${task.accountId}, ${task.listId}, ${task.id}, ${task.title},
                       ${task.notes ?? null}, ${task.status}, ${task.dueDate ?? null},
                       ${task.completedAt ?? null}, ${task.webViewLink ?? null},
-                      ${task.updatedAt}, ${syncedAt})
+                      ${task.updatedAt}, ${syncedAt}, 'synced')
               ON CONFLICT (account_id, list_id, id) DO UPDATE SET
+                sync_status = 'synced',
                 title = excluded.title,
                 notes = excluded.notes,
                 status = excluded.status,

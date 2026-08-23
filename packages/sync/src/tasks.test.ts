@@ -19,6 +19,16 @@ import { SyncEngine } from './engine.ts';
 import { EventMutations } from './mutations.ts';
 import { PendingOpRepo } from '@calendar/db';
 
+/** Fills the unused client methods with loud failures. */
+const tasksClient = (overrides: Partial<GoogleTasksClientShape>): GoogleTasksClientShape => ({
+  deleteTask: () => Effect.die('unexpected deleteTask'),
+  insertTask: () => Effect.die('unexpected insertTask'),
+  listTaskLists: () => Effect.die('unexpected listTaskLists'),
+  listTasks: () => Effect.die('unexpected listTasks'),
+  patchTask: () => Effect.die('unexpected patchTask'),
+  ...overrides,
+});
+
 /** Calendar sync is exercised elsewhere; keep it inert here. */
 const inertCalendarClient: GoogleCalendarClientShape = {
   deleteEvent: () => Effect.void,
@@ -74,14 +84,14 @@ describe('tasks sync', () => {
       },
       { items: [] },
     ];
-    const client: GoogleTasksClientShape = {
+    const client: GoogleTasksClientShape = tasksClient({
       listTaskLists: () => Effect.succeed(lists),
       listTasks: ({ params }) => {
         updatedMins.push(params.updatedMin);
         return Effect.succeed(pages.shift() ?? { items: [] });
       },
       patchTask: () => Effect.die('not used'),
-    };
+    });
     return Effect.gen(function* () {
       yield* seedAccount(true);
       const engine = yield* SyncEngine;
@@ -97,7 +107,7 @@ describe('tasks sync', () => {
 
   it.effect('removes tombstoned tasks on incremental polls', () => {
     let call = 0;
-    const client: GoogleTasksClientShape = {
+    const client: GoogleTasksClientShape = tasksClient({
       listTaskLists: () => Effect.succeed(lists),
       listTasks: () => {
         call += 1;
@@ -117,7 +127,7 @@ describe('tasks sync', () => {
         );
       },
       patchTask: () => Effect.die('not used'),
-    };
+    });
     return Effect.gen(function* () {
       yield* seedAccount(true);
       const engine = yield* SyncEngine;
@@ -129,11 +139,11 @@ describe('tasks sync', () => {
   });
 
   it.effect('does not touch the tasks API for accounts without the scope', () => {
-    const client: GoogleTasksClientShape = {
+    const client: GoogleTasksClientShape = tasksClient({
       listTaskLists: () => Effect.die('must not be called'),
       listTasks: () => Effect.die('must not be called'),
       patchTask: () => Effect.die('must not be called'),
-    };
+    });
     return Effect.gen(function* () {
       yield* seedAccount(false);
       const engine = yield* SyncEngine;
@@ -142,11 +152,11 @@ describe('tasks sync', () => {
   });
 
   it.effect('flips tasksEnabled off when the scope turns out to be missing', () => {
-    const client: GoogleTasksClientShape = {
+    const client: GoogleTasksClientShape = tasksClient({
       listTaskLists: () => Effect.fail(new InsufficientScopeError({ message: 'scope' })),
       listTasks: () => Effect.die('unreachable'),
       patchTask: () => Effect.die('unreachable'),
-    };
+    });
     return Effect.gen(function* () {
       yield* seedAccount(true);
       const engine = yield* SyncEngine;
@@ -186,21 +196,21 @@ describe('completeTask', () => {
 
   it.effect('writes optimistically, pushes, and upserts the response', () => {
     const patches: Array<string> = [];
-    const client: GoogleTasksClientShape = {
+    const client: GoogleTasksClientShape = tasksClient({
       listTaskLists: () => Effect.succeed(lists),
       listTasks: () => Effect.succeed({ items: [] }),
-      patchTask: ({ status, taskId }) => {
-        patches.push(`${taskId}:${status}`);
+      patchTask: ({ changes, taskId }) => {
+        patches.push(`${taskId}:${changes.status}`);
         return Effect.succeed({
           completed: '2026-08-23T10:00:00.000Z',
           due: '2026-08-30T00:00:00.000Z',
           id: taskId,
-          status,
+          status: changes.status,
           title: 'Pay rent (server copy)',
           updated: '2026-08-23T10:00:00.000Z',
         });
       },
-    };
+    });
     return Effect.gen(function* () {
       yield* seedTasks;
       const mutations = yield* EventMutations;
@@ -224,14 +234,14 @@ describe('completeTask', () => {
 
   it.effect('coalesces to the latest toggle', () => {
     const patches: Array<string> = [];
-    const client: GoogleTasksClientShape = {
+    const client: GoogleTasksClientShape = tasksClient({
       listTaskLists: () => Effect.succeed(lists),
       listTasks: () => Effect.succeed({ items: [] }),
-      patchTask: ({ status, taskId }) => {
-        patches.push(`${taskId}:${status}`);
-        return Effect.succeed({ id: taskId, status, title: 'x' });
+      patchTask: ({ changes, taskId }) => {
+        patches.push(`${taskId}:${changes.status}`);
+        return Effect.succeed({ id: taskId, status: changes.status, title: 'x' });
       },
-    };
+    });
     return Effect.gen(function* () {
       yield* seedTasks;
       const mutations = yield* EventMutations;
@@ -246,11 +256,11 @@ describe('completeTask', () => {
   });
 
   it.effect('drops the local row when Google reports the task gone', () => {
-    const client: GoogleTasksClientShape = {
+    const client: GoogleTasksClientShape = tasksClient({
       listTaskLists: () => Effect.succeed(lists),
       listTasks: () => Effect.succeed({ items: [] }),
       patchTask: () => Effect.fail(new NotFoundError({ resource: 't1' })),
-    };
+    });
     return Effect.gen(function* () {
       yield* seedTasks;
       const mutations = yield* EventMutations;
@@ -269,11 +279,11 @@ describe('completeTask', () => {
   });
 
   it.effect('drops the op and disables tasks when the scope is revoked mid-queue', () => {
-    const client: GoogleTasksClientShape = {
+    const client: GoogleTasksClientShape = tasksClient({
       listTaskLists: () => Effect.succeed(lists),
       listTasks: () => Effect.succeed({ items: [] }),
       patchTask: () => Effect.fail(new InsufficientScopeError({ message: 'scope' })),
-    };
+    });
     return Effect.gen(function* () {
       yield* seedTasks;
       const mutations = yield* EventMutations;
@@ -306,14 +316,6 @@ describe('completeTask', () => {
         }),
       );
       expect(result._tag).toBe('TaskNotFoundError');
-    }).pipe(
-      Effect.provide(
-        testLayer({
-          listTaskLists: () => Effect.die('not used'),
-          listTasks: () => Effect.die('not used'),
-          patchTask: () => Effect.die('not used'),
-        }),
-      ),
-    ),
+    }).pipe(Effect.provide(testLayer(tasksClient({})))),
   );
 });

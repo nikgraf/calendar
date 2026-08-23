@@ -126,15 +126,31 @@ export class PendingOp extends Schema.Class<PendingOp>('PendingOp')({
   createdAt: Schema.Number,
   eventId: Schema.String,
   id: Schema.String,
-  kind: Schema.Literals(['calendarColor', 'completeTask', 'create', 'delete', 'rsvp', 'update']),
+  kind: Schema.Literals([
+    'calendarColor',
+    'completeTask',
+    'create',
+    'createTask',
+    'delete',
+    'deleteTask',
+    'rsvp',
+    'update',
+    'updateTask',
+  ]),
   lastError: Schema.optional(Schema.String),
   nextAttemptAt: Schema.Number,
   /** Snapshot of the event to send (create/update). */
   payload: Schema.optional(EventRecord),
-  /** Task-list id for kind 'completeTask' (eventId carries the task id). */
+  /** Due day (YYYY-MM-DD) for kind 'createTask'/'updateTask'. */
+  taskDue: Schema.optional(Schema.String),
+  /** Task-list id for the task op kinds (eventId carries the task id). */
   taskListId: Schema.optional(Schema.String),
+  /** Notes for kind 'createTask'/'updateTask'. */
+  taskNotes: Schema.optional(Schema.String),
   /** Desired task status for kind 'completeTask'. */
   taskStatus: Schema.optional(TaskStatus),
+  /** Title for kind 'createTask'/'updateTask'. */
+  taskTitle: Schema.optional(Schema.String),
 }) {}
 
 export class SyncState extends Schema.Class<SyncState>('SyncState')({

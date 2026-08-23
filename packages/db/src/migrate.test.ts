@@ -31,6 +31,8 @@ describe('runMigrations', () => {
       expect(yield* columnsOf('events')).toContain('hangout_link');
       expect(yield* columnsOf('pending_ops')).toContain('color_hex');
       expect(yield* columnsOf('pending_ops')).toContain('task_status');
+      expect(yield* columnsOf('pending_ops')).toContain('task_due');
+      expect(yield* columnsOf('tasks')).toContain('sync_status');
       expect(yield* columnsOf('accounts')).toContain('tasks_enabled');
       expect(yield* columnsOf('tasks')).toContain('due_date');
     }).pipe(Effect.provide(sqlLayer())),
@@ -57,6 +59,9 @@ describe('runMigrations', () => {
       yield* sql`ALTER TABLE pending_ops DROP COLUMN task_list_id`;
       yield* sql`ALTER TABLE pending_ops DROP COLUMN task_status`;
       yield* sql`ALTER TABLE accounts DROP COLUMN tasks_enabled`;
+      yield* sql`ALTER TABLE pending_ops DROP COLUMN task_title`;
+      yield* sql`ALTER TABLE pending_ops DROP COLUMN task_notes`;
+      yield* sql`ALTER TABLE pending_ops DROP COLUMN task_due`;
       yield* sql`DROP TABLE tasks`;
       yield* sql`DROP TABLE task_lists`;
       expect(yield* columnsOf('events')).not.toContain('hangout_link');

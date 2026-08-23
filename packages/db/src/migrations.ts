@@ -128,12 +128,25 @@ const addTasks = Effect.gen(function* () {
   yield* sql`ALTER TABLE accounts ADD COLUMN tasks_enabled INTEGER NOT NULL DEFAULT 0`;
 });
 
+const addTaskWrites = Effect.gen(function* () {
+  const sql = yield* SqlClient;
+  // createTask/updateTask ops carry their fields in scalar columns, like
+  // color_hex and task_status before them.
+  yield* sql`ALTER TABLE pending_ops ADD COLUMN task_title TEXT`;
+  yield* sql`ALTER TABLE pending_ops ADD COLUMN task_notes TEXT`;
+  yield* sql`ALTER TABLE pending_ops ADD COLUMN task_due TEXT`;
+  // 'pending' marks optimistic local creates so a full-pass deleteStale
+  // never eats a row whose insert has not pushed yet (the events pattern).
+  yield* sql`ALTER TABLE tasks ADD COLUMN sync_status TEXT NOT NULL DEFAULT 'synced'`;
+});
+
 // The third tuple element is a *loader* whose result is the migration effect.
 export const migrations: ReadonlyArray<ResolvedMigration> = [
   [1, 'init', Effect.succeed(init)],
   [2, 'add-hangout-link', Effect.succeed(addHangoutLink)],
   [3, 'add-pending-op-color-hex', Effect.succeed(addPendingOpColorHex)],
   [4, 'add-tasks', Effect.succeed(addTasks)],
+  [5, 'add-task-writes', Effect.succeed(addTaskWrites)],
 ];
 
 export const migrationsLoader = Effect.succeed(migrations);

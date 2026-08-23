@@ -53,6 +53,7 @@ export interface TaskRow {
   readonly account_id: string;
   readonly list_id: string;
   readonly id: string;
+  readonly sync_status: string;
   readonly title: string;
   readonly notes: string | null;
   readonly status: string;
@@ -200,6 +201,9 @@ export interface PendingOpRow {
   readonly color_hex: string | null;
   readonly task_list_id: string | null;
   readonly task_status: string | null;
+  readonly task_title: string | null;
+  readonly task_notes: string | null;
+  readonly task_due: string | null;
 }
 
 export const pendingOpFromRow = (row: PendingOpRow): PendingOp =>
@@ -218,8 +222,11 @@ export const pendingOpFromRow = (row: PendingOpRow): PendingOp =>
     payload: row.payload
       ? Schema.decodeUnknownSync(EventRecord)(JSON.parse(row.payload))
       : undefined,
+    taskDue: row.task_due ?? undefined,
     taskListId: row.task_list_id ?? undefined,
+    taskNotes: row.task_notes ?? undefined,
     taskStatus: (row.task_status ?? undefined) as PendingOp['taskStatus'],
+    taskTitle: row.task_title ?? undefined,
   });
 
 export interface SyncStateRow {
