@@ -303,6 +303,153 @@ describe('completeTask', () => {
     }).pipe(Effect.provide(testLayer(client)));
   });
 
+  it.effect('create pushes, swaps the temp id, and rewrites queued ops', () => {
+    const calls: Array<string> = [];
+    const client: GoogleTasksClientShape = tasksClient({
+      insertTask: ({ task }) => {
+        calls.push(`insert:${task.title}`);
+        return Effect.succeed({
+          due: task.due,
+          id: 'server-1',
+          status: 'needsAction',
+          title: task.title,
+          updated: '2026-08-24T10:00:00.000Z',
+        });
+      },
+      patchTask: ({ changes, taskId }) => {
+        calls.push(`patch:${taskId}:${changes.status}`);
+        // Google's patch echoes the full resource, due included.
+        return Effect.succeed({
+          due: '2026-08-30T00:00:00.000Z',
+          id: taskId,
+          status: changes.status,
+          title: 'Buy milk',
+        });
+      },
+    });
+    return Effect.gen(function* () {
+      yield* seedTasks;
+      const mutations = yield* EventMutations;
+      const ops = yield* PendingOpRepo;
+      // Queue both while "offline": nothing processes until we say so.
+      const temp = yield* mutations.createTask({
+        accountId: 'acc-1',
+        dueDate: '2026-08-30',
+        taskListId: 'list-1',
+        title: 'Buy milk',
+      });
+      expect(temp.id.startsWith('local-')).toBe(true);
+      yield* mutations.completeTask({
+        accountId: 'acc-1',
+        status: 'completed',
+        taskId: temp.id,
+        taskListId: 'list-1',
+      });
+      yield* mutations.processPendingOps();
+      // The create ran first, then the completion — against the SERVER id.
+      expect(calls).toEqual(['insert:Buy milk', 'patch:server-1:completed']);
+      expect(yield* ops.listAll()).toHaveLength(0);
+      const repo = yield* TaskRepo;
+      const window = yield* repo.getWindow('2026-08-24', '2026-08-31');
+      const ids = window.map((row) => row.id);
+      expect(ids).toContain('server-1');
+      expect(ids.some((id) => id.startsWith('local-'))).toBe(false);
+    }).pipe(Effect.provide(testLayer(client)));
+  });
+
+  it.effect('edits fold into a still-queued create', () => {
+    const inserts: Array<string> = [];
+    const client: GoogleTasksClientShape = tasksClient({
+      insertTask: ({ task }) => {
+        inserts.push(`${task.title}|${task.notes ?? ''}`);
+        return Effect.succeed({ id: 'server-2', status: 'needsAction', title: task.title });
+      },
+    });
+    return Effect.gen(function* () {
+      yield* seedTasks;
+      const mutations = yield* EventMutations;
+      const temp = yield* mutations.createTask({
+        accountId: 'acc-1',
+        dueDate: '2026-08-30',
+        taskListId: 'list-1',
+        title: 'Draft',
+      });
+      yield* mutations.updateTask({
+        accountId: 'acc-1',
+        changes: { notes: 'remember the oat one', title: 'Buy milk' },
+        taskId: temp.id,
+        taskListId: 'list-1',
+      });
+      yield* mutations.processPendingOps();
+      // One insert carrying the merged fields; no patch was ever queued.
+      expect(inserts).toEqual(['Buy milk|remember the oat one']);
+    }).pipe(Effect.provide(testLayer(client)));
+  });
+
+  it.effect('update is latest-wins once the task exists upstream', () => {
+    const patches: Array<string> = [];
+    const client: GoogleTasksClientShape = tasksClient({
+      patchTask: ({ changes, taskId }) => {
+        patches.push(`${taskId}:${changes.title}`);
+        return Effect.succeed({ id: taskId, status: 'needsAction', title: changes.title });
+      },
+    });
+    return Effect.gen(function* () {
+      yield* seedTasks;
+      const mutations = yield* EventMutations;
+      const edit = (title: string) =>
+        mutations.updateTask({
+          accountId: 'acc-1',
+          changes: { title },
+          taskId: 't1',
+          taskListId: 'list-1',
+        });
+      yield* edit('First');
+      yield* edit('Second');
+      yield* mutations.processPendingOps();
+      expect(patches).toEqual(['t1:Second']);
+    }).pipe(Effect.provide(testLayer(client)));
+  });
+
+  it.effect('deleting an unpushed create cancels everything locally', () => {
+    // Every client method dies — nothing may reach Google.
+    const client = tasksClient({});
+    return Effect.gen(function* () {
+      yield* seedTasks;
+      const mutations = yield* EventMutations;
+      const temp = yield* mutations.createTask({
+        accountId: 'acc-1',
+        dueDate: '2026-08-30',
+        taskListId: 'list-1',
+        title: 'Never mind',
+      });
+      yield* mutations.deleteTask({
+        accountId: 'acc-1',
+        taskId: temp.id,
+        taskListId: 'list-1',
+      });
+      const ops = yield* PendingOpRepo;
+      expect(yield* ops.listAll()).toHaveLength(0);
+      const repo = yield* TaskRepo;
+      const window = yield* repo.getWindow('2026-08-24', '2026-08-31');
+      expect(window.some((row) => row.id === temp.id)).toBe(false);
+    }).pipe(Effect.provide(testLayer(client)));
+  });
+
+  it.effect('delete tolerates the task already being gone upstream', () => {
+    const client: GoogleTasksClientShape = tasksClient({
+      deleteTask: () => Effect.fail(new NotFoundError({ resource: 't1' })),
+    });
+    return Effect.gen(function* () {
+      yield* seedTasks;
+      const mutations = yield* EventMutations;
+      yield* mutations.deleteTask({ accountId: 'acc-1', taskId: 't1', taskListId: 'list-1' });
+      yield* mutations.processPendingOps();
+      const ops = yield* PendingOpRepo;
+      expect(yield* ops.listAll()).toHaveLength(0);
+    }).pipe(Effect.provide(testLayer(client)));
+  });
+
   it.effect('rejects unknown task lists', () =>
     Effect.gen(function* () {
       yield* seedTasks;

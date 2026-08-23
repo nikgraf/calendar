@@ -378,6 +378,7 @@ export class EventRepo extends Context.Service<EventRepo, EventRepoShape>()('db/
 
 export interface PendingOpRepoShape {
   readonly enqueue: (op: PendingOp) => Effect.Effect<void, SqlError>;
+  readonly getById: (opId: string) => Effect.Effect<PendingOp | undefined, SqlError>;
   readonly listAll: () => Effect.Effect<ReadonlyArray<PendingOp>, SqlError>;
   readonly listDue: (now: number) => Effect.Effect<ReadonlyArray<PendingOp>, SqlError>;
   readonly markFailed: (
@@ -421,6 +422,10 @@ const makePendingOpRepo: Effect.Effect<PendingOpRepoShape, never, Reactivity | S
                   ${op.taskListId ?? null}, ${op.taskStatus ?? null},
                   ${op.taskTitle ?? null}, ${op.taskNotes ?? null}, ${op.taskDue ?? null})
         `),
+        ),
+      getById: (opId) =>
+        Effect.map(sql<PendingOpRow>`SELECT * FROM pending_ops WHERE id = ${opId}`, (rows) =>
+          rows[0] ? pendingOpFromRow(rows[0]) : undefined,
         ),
       listAll: () =>
         Effect.map(sql<PendingOpRow>`SELECT * FROM pending_ops ORDER BY created_at`, (rows) =>

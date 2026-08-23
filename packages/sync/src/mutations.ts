@@ -507,7 +507,10 @@ const make: Effect.Effect<
         Effect.gen(function* () {
           const now = yield* Clock.currentTimeMillis;
           const due = yield* pendingOpRepo.listDue(now);
-          for (const op of due) {
+          for (const queuedOp of due) {
+            // Re-read: an earlier op in this drain may have rewritten this
+            // one (createTask swaps a temp task id into queued followers).
+            const op = (yield* pendingOpRepo.getById(queuedOp.id)) ?? queuedOp;
             const outcome = yield* applyOp(op);
             if (outcome === 'done') {
               yield* pendingOpRepo.remove(op.id);
