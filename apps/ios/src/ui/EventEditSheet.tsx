@@ -30,7 +30,10 @@ import { palette } from './theme.ts';
 const dateFromParts = (date: string, time?: string): Date => {
   const [year, month, day] = date.split('-').map(Number);
   const [hour, minute] = (time ?? '09:00').split(':').map(Number);
-  const parsed = new Date(year ?? 0, (month ?? 1) - 1, day ?? 1, hour ?? 9, minute ?? 0);
+  if (!year || !month || !day) {
+    return new Date();
+  }
+  const parsed = new Date(year, month - 1, day, hour ?? 9, minute ?? 0);
   return Number.isNaN(parsed.getTime()) ? new Date() : parsed;
 };
 
@@ -237,7 +240,16 @@ export function EventEditSheet({
                         {REPEAT_ENDS.map((option) => (
                           <Pressable
                             key={option.value}
-                            onPress={() => setRepeatEnds(option.value)}
+                            onPress={() => {
+                              setRepeatEnds(option.value);
+                              // The picker chip renders a date even while the
+                              // model still holds '' — seed it, or a save
+                              // would silently drop the end bound and create
+                              // an unbounded recurrence.
+                              if (option.value === 'on' && !repeatUntil) {
+                                setRepeatUntil(date);
+                              }
+                            }}
                             style={[
                               styles.scopeChip,
                               repeatEnds === option.value && styles.scopeChipActive,
@@ -302,7 +314,6 @@ export function EventEditSheet({
                   <Text style={styles.label}>Start</Text>
                   <DateTimePicker
                     display="compact"
-                    minuteInterval={5}
                     mode="time"
                     onChange={(_, picked) => picked && setStartTime(toTimeString(picked))}
                     style={styles.timePicker}
@@ -313,7 +324,6 @@ export function EventEditSheet({
                   <Text style={styles.label}>End</Text>
                   <DateTimePicker
                     display="compact"
-                    minuteInterval={5}
                     mode="time"
                     onChange={(_, picked) => picked && setEndTime(toTimeString(picked))}
                     style={styles.timePicker}
