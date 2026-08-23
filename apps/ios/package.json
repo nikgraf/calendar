@@ -19,6 +19,7 @@
     "@effect/sql-sqlite-react-native": "catalog:",
     "@op-engineering/op-sqlite": "15.0.4",
     "@react-native-ai/apple": "^0.12.0",
+    "@react-native-community/datetimepicker": "9.1.0",
     "effect": "catalog:",
     "expo": "~57.0.14",
     "expo-audio": "^57.0.4",
