@@ -1,5 +1,5 @@
-import type { Account, CalendarInfo } from '@calendar/core';
-import { useBackendMutations } from '@calendar/app-state';
+import type { Account, CalendarInfo, TaskListInfo } from '@calendar/core';
+import { useBackendMutations, useTaskLists } from '@calendar/app-state';
 import { CalendarColorButton } from './CalendarColorButton.tsx';
 import { SyncStatus } from './SyncStatus.tsx';
 
@@ -12,7 +12,16 @@ export function Sidebar({
   calendars: ReadonlyArray<CalendarInfo>;
   onOpenSettings: () => void;
 }) {
-  const { setCalendarVisible } = useBackendMutations();
+  const { addAccount, setCalendarVisible, setTaskListVisible } = useBackendMutations();
+  const taskLists = useTaskLists();
+
+  const toggleList = (list: TaskListInfo) => {
+    void setTaskListVisible({
+      accountId: list.accountId,
+      isVisible: !list.isVisible,
+      taskListId: list.id,
+    });
+  };
 
   const toggle = (calendar: CalendarInfo) => {
     void setCalendarVisible({
@@ -55,6 +64,34 @@ export function Sidebar({
                   </button>
                 </div>
               ))}
+            {taskLists
+              .filter((list) => list.accountId === account.id)
+              .map((list) => (
+                <button
+                  className="flex w-full items-center gap-2 rounded-md px-2 py-1 text-left text-sm hover:bg-neutral-200/60"
+                  key={list.id}
+                  onClick={() => toggleList(list)}
+                  type="button"
+                >
+                  <span aria-hidden className="text-xs">
+                    ✓
+                  </span>
+                  <span className={`block truncate ${list.isVisible ? '' : 'text-neutral-400'}`}>
+                    {list.title}
+                  </span>
+                </button>
+              ))}
+            {account.tasksEnabled ? null : (
+              // Tokens from before the tasks scope: re-running sign-in
+              // re-consents and upgrades the account in place.
+              <button
+                className="w-full rounded-md px-2 py-1 text-left text-xs text-neutral-400 hover:bg-neutral-200/60 hover:text-neutral-600"
+                onClick={() => void addAccount(undefined)}
+                type="button"
+              >
+                Connect Google Tasks — sign in again
+              </button>
+            )}
           </section>
         ))}
         {accounts.length === 0 ? (

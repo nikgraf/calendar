@@ -1,4 +1,11 @@
-import type { Account, CalendarInfo, EventRecord, PendingOpSummary } from '@calendar/core';
+import type {
+  Account,
+  CalendarInfo,
+  EventRecord,
+  PendingOpSummary,
+  TaskListInfo,
+  TaskRecord,
+} from '@calendar/core';
 import { RegistryContext, useAtomSet, useAtomValue } from '@effect/atom-react';
 import { Option } from 'effect';
 import { AsyncResult } from 'effect/unstable/reactivity';
@@ -78,10 +85,36 @@ export const useEventsInRangeStable = (
   return Option.isSome(value) ? value.value : previous;
 };
 
+/** Task lists across accounts (for visibility toggles + connect rows). */
+export const useTaskLists = (): ReadonlyArray<TaskListInfo> => {
+  const atoms = useBackendAtoms();
+  return unwrapList(useAtomValue(atoms.taskLists));
+};
+
+/**
+ * Tasks due inside [startDate, endDate] (inclusive 'YYYY-MM-DD' bounds),
+ * with the same keep-previous behavior as useEventsInRangeStable.
+ */
+export const useTasksInRangeStable = (
+  startDate: string,
+  endDate: string,
+): ReadonlyArray<TaskRecord> => {
+  const atoms = useBackendAtoms();
+  const result = useAtomValue(atoms.tasksInRange(`${startDate}:${endDate}`));
+  const value = AsyncResult.value(result);
+  const [previous, setPrevious] = useState<ReadonlyArray<TaskRecord>>([]);
+  if (Option.isSome(value) && value.value !== previous) {
+    // Render-phase state adjustment (the React "derive from props" pattern).
+    setPrevious(value.value);
+  }
+  return Option.isSome(value) ? value.value : previous;
+};
+
 /** Promise-returning mutation callbacks; each invalidates its reactivity keys. */
 export const useBackendMutations = () => {
   const { mutations } = useBackendAtoms();
   const addAccount = useAtomSet(mutations.addAccount, { mode: 'promise' });
+  const completeTask = useAtomSet(mutations.completeTask, { mode: 'promise' });
   const createEvent = useAtomSet(mutations.createEvent, { mode: 'promise' });
   const deleteEvent = useAtomSet(mutations.deleteEvent, { mode: 'promise' });
   const deleteRecurring = useAtomSet(mutations.deleteRecurring, {
@@ -102,6 +135,9 @@ export const useBackendMutations = () => {
   const setCalendarVisible = useAtomSet(mutations.setCalendarVisible, {
     mode: 'promise',
   });
+  const setTaskListVisible = useAtomSet(mutations.setTaskListVisible, {
+    mode: 'promise',
+  });
   const syncNow = useAtomSet(mutations.syncNow, { mode: 'promise' });
   const updateEvent = useAtomSet(mutations.updateEvent, { mode: 'promise' });
   const updateRecurring = useAtomSet(mutations.updateRecurring, {
@@ -111,6 +147,7 @@ export const useBackendMutations = () => {
   return useMemo(
     () => ({
       addAccount,
+      completeTask,
       createEvent,
       deleteEvent,
       deleteRecurring,
@@ -119,12 +156,14 @@ export const useBackendMutations = () => {
       respondToEvent,
       setCalendarColor,
       setCalendarVisible,
+      setTaskListVisible,
       syncNow,
       updateEvent,
       updateRecurring,
     }),
     [
       addAccount,
+      completeTask,
       createEvent,
       deleteEvent,
       deleteRecurring,
@@ -133,6 +172,7 @@ export const useBackendMutations = () => {
       respondToEvent,
       setCalendarColor,
       setCalendarVisible,
+      setTaskListVisible,
       syncNow,
       updateEvent,
       updateRecurring,

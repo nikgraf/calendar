@@ -5,6 +5,7 @@ export const AccessRole = Schema.Literals(['freeBusyReader', 'owner', 'reader', 
 export const EventStatus = Schema.Literals(['cancelled', 'confirmed', 'tentative']);
 export const SyncStatus = Schema.Literals(['error', 'pending', 'synced']);
 export const ResponseStatus = Schema.Literals(['accepted', 'declined', 'needsAction', 'tentative']);
+export const TaskStatus = Schema.Literals(['completed', 'needsAction']);
 
 export class Account extends Schema.Class<Account>('Account')({
   avatarUrl: Schema.optional(Schema.String),
@@ -14,6 +15,13 @@ export class Account extends Schema.Class<Account>('Account')({
   /** Stable local UUID — never the Google account id. */
   id: Schema.String,
   status: AccountStatus,
+  /**
+   * Whether this account's token was granted the Google Tasks scope.
+   * Derived from TokenSet.scopes at sign-in; false for accounts connected
+   * before the scope existed — re-running "Add Google Account" upgrades
+   * them in place.
+   */
+  tasksEnabled: Schema.Boolean,
 }) {}
 
 /** Lives ONLY in the platform TokenStore (Keychain/safeStorage), never in SQLite. */
@@ -36,6 +44,34 @@ export class CalendarInfo extends Schema.Class<CalendarInfo>('CalendarInfo')({
   isVisible: Schema.Boolean,
   summary: Schema.String,
   timeZone: Schema.String,
+}) {}
+
+export class TaskListInfo extends Schema.Class<TaskListInfo>('TaskListInfo')({
+  accountId: Schema.String,
+  /** Google task-list id, unique within an account. */
+  id: Schema.String,
+  /** Local show/hide toggle — not synced to Google. */
+  isVisible: Schema.Boolean,
+  title: Schema.String,
+}) {}
+
+export class TaskRecord extends Schema.Class<TaskRecord>('TaskRecord')({
+  accountId: Schema.String,
+  /** Epoch ms of completion; absent while the task is open. */
+  completedAt: Schema.optional(Schema.Number),
+  /**
+   * Due day as 'YYYY-MM-DD' — the Tasks API discards the time portion, so
+   * this is date-only by construction. Absent for undated tasks.
+   */
+  dueDate: Schema.optional(Schema.String),
+  /** Google task id, unique within its list. */
+  id: Schema.String,
+  listId: Schema.String,
+  notes: Schema.optional(Schema.String),
+  status: TaskStatus,
+  title: Schema.String,
+  updatedAt: Schema.Number,
+  webViewLink: Schema.optional(Schema.String),
 }) {}
 
 export class Attendee extends Schema.Class<Attendee>('Attendee')({
@@ -90,11 +126,15 @@ export class PendingOp extends Schema.Class<PendingOp>('PendingOp')({
   createdAt: Schema.Number,
   eventId: Schema.String,
   id: Schema.String,
-  kind: Schema.Literals(['calendarColor', 'create', 'delete', 'rsvp', 'update']),
+  kind: Schema.Literals(['calendarColor', 'completeTask', 'create', 'delete', 'rsvp', 'update']),
   lastError: Schema.optional(Schema.String),
   nextAttemptAt: Schema.Number,
   /** Snapshot of the event to send (create/update). */
   payload: Schema.optional(EventRecord),
+  /** Task-list id for kind 'completeTask' (eventId carries the task id). */
+  taskListId: Schema.optional(Schema.String),
+  /** Desired task status for kind 'completeTask'. */
+  taskStatus: Schema.optional(TaskStatus),
 }) {}
 
 export class SyncState extends Schema.Class<SyncState>('SyncState')({

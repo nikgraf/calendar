@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { CalendarInfo, EventRecord, Account } from '@calendar/core';
+import { Account, CalendarInfo, EventRecord, TaskListInfo, TaskRecord } from '@calendar/core';
 import {
   AccountRepo,
   CalendarRepo,
@@ -11,6 +11,7 @@ import {
   PendingOpRepo,
   reposLayer,
   runMigrations,
+  TaskRepo,
 } from '@calendar/db';
 import { SqliteClient } from '@effect/sql-sqlite-node';
 import { Effect, Layer } from 'effect';
@@ -29,6 +30,8 @@ export interface SeedData {
   readonly accounts: ReadonlyArray<Account>;
   readonly calendars: ReadonlyArray<CalendarInfo>;
   readonly events: ReadonlyArray<EventRecord>;
+  readonly taskLists?: ReadonlyArray<TaskListInfo>;
+  readonly tasks?: ReadonlyArray<TaskRecord>;
 }
 
 export const seedDatabase = async (userDataDir: string, seed: SeedData): Promise<void> => {
@@ -47,6 +50,9 @@ export const seedDatabase = async (userDataDir: string, seed: SeedData): Promise
       }
       yield* calendars.upsertMany(seed.calendars);
       yield* events.upsertMany(seed.events);
+      const tasks = yield* TaskRepo;
+      yield* tasks.upsertLists(seed.taskLists ?? [], 1);
+      yield* tasks.upsertTasks(seed.tasks ?? [], 1);
     }).pipe(Effect.provide(dbLayer)),
   );
 };
@@ -95,6 +101,18 @@ export const readPendingOpsCount = async (userDataDir: string): Promise<number> 
     Effect.gen(function* () {
       const ops = yield* (yield* PendingOpRepo).listAll();
       return ops.length;
+    }).pipe(Effect.provide(dbLayer)),
+  );
+};
+
+export const readTasks = async (userDataDir: string): Promise<ReadonlyArray<TaskRecord>> => {
+  const dbLayer = reposLayer.pipe(
+    Layer.provideMerge(SqliteClient.layer({ filename: join(userDataDir, 'calendar.db') })),
+    Layer.provideMerge(reactivityLayer),
+  );
+  return Effect.runPromise(
+    Effect.gen(function* () {
+      return yield* (yield* TaskRepo).getWindow('0000-01-01', '9999-12-31');
     }).pipe(Effect.provide(dbLayer)),
   );
 };

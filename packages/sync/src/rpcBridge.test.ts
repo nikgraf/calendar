@@ -12,6 +12,7 @@ const account = new Account({
   email: 'nik@example.com',
   id: 'acc-1',
   status: 'ok',
+  tasksEnabled: false,
 });
 
 /** In-memory frame pair connecting the client and server protocols. */
@@ -39,18 +40,22 @@ const notStubbed = () => Effect.fail(new Error('not stubbed')) as Effect.Effect<
 
 const stubHandlers: BackendHandlers = {
   addAccount: notStubbed,
+  completeTask: () => Effect.void,
   createEvent: notStubbed,
   deleteEvent: () => Effect.void,
   deleteRecurring: () => Effect.void,
   discardPendingOp: () => Effect.void,
   getEventsInRange: () => Effect.succeed([]),
+  getTasksInRange: () => Effect.succeed([]),
   listAccounts: () => Effect.succeed([account]),
   listCalendars: () => Effect.succeed([]),
   listPendingOps: () => Effect.succeed([]),
+  listTaskLists: () => Effect.succeed([]),
   removeAccount: () => Effect.void,
   respondToEvent: () => Effect.void,
   setCalendarColor: () => Effect.void,
   setCalendarVisible: () => Effect.void,
+  setTaskListVisible: () => Effect.void,
   syncNow: notStubbed,
   updateEvent: () => Effect.void,
   updateRecurring: () => Effect.void,

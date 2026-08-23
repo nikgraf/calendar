@@ -10,10 +10,13 @@ import {
   PendingOpRepo,
   reposLayer,
   runMigrations,
+  TaskRepo,
 } from '@calendar/db';
 import {
   GoogleCalendarClient,
   GoogleOAuthConfig,
+  GoogleTasksClient,
+  TASKS_SCOPE,
   TokenManager,
   TokenStore,
 } from '@calendar/google';
@@ -69,6 +72,7 @@ export const startBackendHost = (): void => {
   const appLayer = SyncEngine.layer.pipe(
     Layer.provideMerge(EventMutations.layer),
     Layer.provideMerge(GoogleCalendarClient.layer),
+    Layer.provideMerge(GoogleTasksClient.layer),
     Layer.provideMerge(TokenManager.layer),
     Layer.provideMerge(dbLayer),
     Layer.provideMerge(platformLayer),
@@ -94,6 +98,7 @@ export const startBackendHost = (): void => {
     | EventRepo
     | PendingOpRepo
     | SyncEngine
+    | TaskRepo
     | TokenManager
     | TokenStore
   > = {
@@ -117,6 +122,9 @@ export const startBackendHost = (): void => {
           email: result.profile.email,
           id: existing?.id ?? randomUUID(),
           status: 'ok',
+          // What Google actually granted, not what we asked for — a user
+          // can untick scopes on the consent screen.
+          tasksEnabled: result.tokens.scopes.includes(TASKS_SCOPE),
         });
         yield* tokenStore.set(account.id, result.tokens);
         yield* accountRepo.upsert(account);

@@ -4,7 +4,7 @@ import {
   mapToBackendError,
   type BackendHandlers,
 } from '@calendar/core';
-import { AccountRepo, CalendarRepo, EventRepo, PendingOpRepo } from '@calendar/db';
+import { AccountRepo, CalendarRepo, EventRepo, PendingOpRepo, TaskRepo } from '@calendar/db';
 import { TokenStore } from '@calendar/google';
 import { Effect, Queue, Stream } from 'effect';
 import { SyncEngine } from './engine.ts';
@@ -17,6 +17,7 @@ export type CommonBackendServices =
   | EventRepo
   | PendingOpRepo
   | SyncEngine
+  | TaskRepo
   | TokenStore;
 
 /**
@@ -24,6 +25,12 @@ export type CommonBackendServices =
  * (the OAuth code-acquisition step differs) on top of these.
  */
 export const commonBackendHandlers: Omit<BackendHandlers<CommonBackendServices>, 'addAccount'> = {
+  completeTask: (params) =>
+    Effect.gen(function* () {
+      const mutations = yield* EventMutations;
+      yield* mutations.completeTask(params);
+    }),
+
   createEvent: (draft) =>
     Effect.gen(function* () {
       const mutations = yield* EventMutations;
@@ -55,6 +62,12 @@ export const commonBackendHandlers: Omit<BackendHandlers<CommonBackendServices>,
       return assembleWindow(window, rangeStartUtc, rangeEndUtc);
     }),
 
+  getTasksInRange: ({ endDate, startDate }) =>
+    Effect.gen(function* () {
+      const taskRepo = yield* TaskRepo;
+      return yield* taskRepo.getWindow(startDate, endDate);
+    }),
+
   listAccounts: () =>
     Effect.gen(function* () {
       const accountRepo = yield* AccountRepo;
@@ -84,6 +97,12 @@ export const commonBackendHandlers: Omit<BackendHandlers<CommonBackendServices>,
       }));
     }),
 
+  listTaskLists: () =>
+    Effect.gen(function* () {
+      const taskRepo = yield* TaskRepo;
+      return yield* taskRepo.listLists();
+    }),
+
   removeAccount: ({ accountId }) =>
     Effect.gen(function* () {
       const accountRepo = yield* AccountRepo;
@@ -108,6 +127,12 @@ export const commonBackendHandlers: Omit<BackendHandlers<CommonBackendServices>,
     Effect.gen(function* () {
       const calendarRepo = yield* CalendarRepo;
       yield* calendarRepo.setVisible(accountId, calendarId, isVisible);
+    }),
+
+  setTaskListVisible: ({ accountId, isVisible, taskListId }) =>
+    Effect.gen(function* () {
+      const taskRepo = yield* TaskRepo;
+      yield* taskRepo.setListVisible(accountId, taskListId, isVisible);
     }),
 
   syncNow: () =>
@@ -141,11 +166,13 @@ export const makeAppBackendLayer = <R>(options: {
 }) =>
   AppBackendRpcs.toLayer({
     addAccount: () => mapToBackendError(options.handlers.addAccount(undefined)),
+    completeTask: (payload) => mapToBackendError(options.handlers.completeTask(payload)),
     createEvent: (payload) => mapToBackendError(options.handlers.createEvent(payload)),
     deleteEvent: (payload) => mapToBackendError(options.handlers.deleteEvent(payload)),
     deleteRecurring: (payload) => mapToBackendError(options.handlers.deleteRecurring(payload)),
     discardPendingOp: (payload) => mapToBackendError(options.handlers.discardPendingOp(payload)),
     getEventsInRange: (payload) => mapToBackendError(options.handlers.getEventsInRange(payload)),
+    getTasksInRange: (payload) => mapToBackendError(options.handlers.getTasksInRange(payload)),
     invalidations: () =>
       Stream.callback<ReadonlyArray<string>>((queue) =>
         Effect.acquireRelease(
@@ -160,11 +187,14 @@ export const makeAppBackendLayer = <R>(options: {
     listAccounts: () => mapToBackendError(options.handlers.listAccounts(undefined)),
     listCalendars: (payload) => mapToBackendError(options.handlers.listCalendars(payload)),
     listPendingOps: () => mapToBackendError(options.handlers.listPendingOps(undefined)),
+    listTaskLists: () => mapToBackendError(options.handlers.listTaskLists(undefined)),
     removeAccount: (payload) => mapToBackendError(options.handlers.removeAccount(payload)),
     respondToEvent: (payload) => mapToBackendError(options.handlers.respondToEvent(payload)),
     setCalendarColor: (payload) => mapToBackendError(options.handlers.setCalendarColor(payload)),
     setCalendarVisible: (payload) =>
       mapToBackendError(options.handlers.setCalendarVisible(payload)),
+    setTaskListVisible: (payload) =>
+      mapToBackendError(options.handlers.setTaskListVisible(payload)),
     syncNow: () => mapToBackendError(options.handlers.syncNow(undefined)),
     updateEvent: (payload) => mapToBackendError(options.handlers.updateEvent(payload)),
     updateRecurring: (payload) => mapToBackendError(options.handlers.updateRecurring(payload)),

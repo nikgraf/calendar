@@ -3,6 +3,7 @@ import { useState } from 'react';
 
 const KIND_LABEL = {
   calendarColor: 'Color',
+  completeTask: 'Task',
   create: 'Create',
   delete: 'Delete',
   rsvp: 'RSVP',

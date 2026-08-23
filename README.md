@@ -22,8 +22,8 @@ pnpm --filter @calendar/desktop rebuild:native
 
 Create a Google Cloud project once, then:
 
-1. **APIs & Services → Library**: enable the _Google Calendar API_.
-2. **APIs & Services → OAuth consent screen**: External, Testing mode; add yourself (and any other test users). Scopes: `calendar.readonly`, `calendar.events`, plus `openid email profile`.
+1. **APIs & Services → Library**: enable the _Google Calendar API_ and the _Google Tasks API_.
+2. **APIs & Services → OAuth consent screen**: External, Testing mode; add yourself (and any other test users). Scopes: `calendar.readonly`, `calendar.events`, `tasks`, plus `openid email profile`.
 3. **Credentials → Create credentials → OAuth client ID**:
    - Type **Desktop app** → used by the macOS app. Note client ID + secret.
    - Type **iOS** (bundle id `com.solunivo.app`) → used by the iOS app. Note client ID.

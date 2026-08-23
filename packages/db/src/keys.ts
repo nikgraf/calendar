@@ -12,4 +12,9 @@ export const OPS_KEY = 'pendingOps';
 /** Broadcast when a 412 conflict dropped a local edit (server wins). */
 export const CONFLICT_NOTICE_KEY = 'notice:conflict';
 
+/** Google Tasks: task rows (status/content) changed. */
+export const TASKS_KEY = 'tasks';
+/** Google Tasks: the set of task lists (or their visibility) changed. */
+export const TASKLISTS_KEY = 'taskLists';
+
 export const eventsKey = (calendarId: string): string => `events:${calendarId}`;

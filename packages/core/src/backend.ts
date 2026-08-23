@@ -1,7 +1,14 @@
 import { Cause, Effect, Schema } from 'effect';
 import { Rpc, RpcGroup } from 'effect/unstable/rpc';
 import type { RpcClientError } from 'effect/unstable/rpc/RpcClientError';
-import { Account, CalendarInfo, EventRecord } from './types.ts';
+import {
+  Account,
+  CalendarInfo,
+  EventRecord,
+  TaskListInfo,
+  TaskRecord,
+  TaskStatus,
+} from './types.ts';
 
 /**
  * The platform seam: every UI talks to the backend exclusively through this
@@ -51,7 +58,7 @@ export const PendingOpSummary = Schema.Struct({
   createdAt: Schema.Number,
   eventId: Schema.String,
   id: Schema.String,
-  kind: Schema.Literals(['calendarColor', 'create', 'delete', 'rsvp', 'update']),
+  kind: Schema.Literals(['calendarColor', 'completeTask', 'create', 'delete', 'rsvp', 'update']),
   lastError: Schema.optional(Schema.String),
   nextAttemptAt: Schema.Number,
   title: Schema.optional(Schema.String),
@@ -66,6 +73,15 @@ export class BackendError extends Schema.Error<BackendError>('core/BackendError'
 
 export class AppBackendRpcs extends RpcGroup.make(
   Rpc.make('addAccount', { error: BackendError, success: Account }),
+  Rpc.make('completeTask', {
+    error: BackendError,
+    payload: {
+      accountId: Schema.String,
+      status: TaskStatus,
+      taskId: Schema.String,
+      taskListId: Schema.String,
+    },
+  }),
   Rpc.make('createEvent', {
     error: BackendError,
     payload: EventDraft,
@@ -98,10 +114,20 @@ export class AppBackendRpcs extends RpcGroup.make(
     payload: { rangeEndUtc: Schema.Number, rangeStartUtc: Schema.Number },
     success: Schema.Array(EventRecord),
   }),
+  Rpc.make('getTasksInRange', {
+    error: BackendError,
+    /** Due-day window, inclusive 'YYYY-MM-DD' bounds (tasks are date-only). */
+    payload: { endDate: Schema.String, startDate: Schema.String },
+    success: Schema.Array(TaskRecord),
+  }),
   Rpc.make('invalidations', {
     /** Server-push stream of invalidated Reactivity key batches. */
     stream: true,
     success: Schema.Array(Schema.String),
+  }),
+  Rpc.make('listTaskLists', {
+    error: BackendError,
+    success: Schema.Array(TaskListInfo),
   }),
   Rpc.make('listPendingOps', {
     error: BackendError,
@@ -145,6 +171,14 @@ export class AppBackendRpcs extends RpcGroup.make(
       isVisible: Schema.Boolean,
     },
   }),
+  Rpc.make('setTaskListVisible', {
+    error: BackendError,
+    payload: {
+      accountId: Schema.String,
+      isVisible: Schema.Boolean,
+      taskListId: Schema.String,
+    },
+  }),
   Rpc.make('syncNow', { error: BackendError }),
   Rpc.make('updateEvent', {
     error: BackendError,
@@ -170,18 +204,22 @@ export class AppBackendRpcs extends RpcGroup.make(
 
 export type BackendMethodName =
   | 'addAccount'
+  | 'completeTask'
   | 'createEvent'
   | 'deleteEvent'
   | 'deleteRecurring'
   | 'discardPendingOp'
   | 'getEventsInRange'
+  | 'getTasksInRange'
   | 'listAccounts'
   | 'listPendingOps'
   | 'listCalendars'
+  | 'listTaskLists'
   | 'removeAccount'
   | 'respondToEvent'
   | 'setCalendarColor'
   | 'setCalendarVisible'
+  | 'setTaskListVisible'
   | 'syncNow'
   | 'updateEvent'
   | 'updateRecurring';
@@ -254,18 +292,22 @@ export const makeDirectBackendClient = <R>(
   };
   return {
     addAccount: method('addAccount'),
+    completeTask: method('completeTask'),
     createEvent: method('createEvent'),
     deleteEvent: method('deleteEvent'),
     deleteRecurring: method('deleteRecurring'),
     discardPendingOp: method('discardPendingOp'),
     getEventsInRange: method('getEventsInRange'),
+    getTasksInRange: method('getTasksInRange'),
     listAccounts: method('listAccounts'),
     listCalendars: method('listCalendars'),
     listPendingOps: method('listPendingOps'),
+    listTaskLists: method('listTaskLists'),
     removeAccount: method('removeAccount'),
     respondToEvent: method('respondToEvent'),
     setCalendarColor: method('setCalendarColor'),
     setCalendarVisible: method('setCalendarVisible'),
+    setTaskListVisible: method('setTaskListVisible'),
     syncNow: method('syncNow'),
     updateEvent: method('updateEvent'),
     updateRecurring: method('updateRecurring'),

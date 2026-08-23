@@ -3,13 +3,14 @@ import {
   bufferedDays,
   DAY_SWIPE_BUFFER,
   dayRange,
+  type EventRecord,
   eventsOnDay,
   layoutDayColumn,
-  swipeSnapDecision,
   moveEventTimes,
   resizeEventEnd,
+  swipeSnapDecision,
+  type TaskRecord,
   Temporal,
-  type EventRecord,
 } from '@calendar/core';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View, type DimensionValue } from 'react-native';
@@ -217,23 +218,49 @@ function DayColumn({
   );
 }
 
-/** One day's all-day chips, laid out in a single fixed-height row. */
+/** One day's all-day chips (events + due tasks), one fixed-height row. */
 function AllDayColumn({
   colorOf,
   date,
   events,
+  onToggleTask,
+  tasks,
   timeZone,
   width,
 }: {
   colorOf: (event: EventRecord) => string;
   date: Temporal.PlainDate;
   events: ReadonlyArray<EventRecord>;
+  onToggleTask: (task: TaskRecord) => void;
+  tasks: ReadonlyArray<TaskRecord>;
   timeZone: string;
   width: number;
 }) {
   const allDay = eventsOnDay(events, date, timeZone).filter((event) => event.isAllDay);
+  const isoDay = date.toString();
+  const due = tasks.filter((task) => task.dueDate === isoDay);
   return (
     <View style={[styles.allDayColumn, { width }]}>
+      {due.map((task) => {
+        const done = task.status === 'completed';
+        return (
+          <Pressable
+            hitSlop={6}
+            key={`task:${task.listId}:${task.id}`}
+            onPress={() => onToggleTask(task)}
+            style={[styles.allDayChip, styles.taskChip, done && styles.taskChipDone]}
+            testID={`task-chip-${task.id}`}
+          >
+            <Text style={styles.taskCheckbox}>{done ? '☑' : '☐'}</Text>
+            <Text
+              numberOfLines={1}
+              style={[styles.allDayText, styles.taskText, done && styles.taskTextDone]}
+            >
+              {task.title}
+            </Text>
+          </Pressable>
+        );
+      })}
       {allDay.map((event) => {
         const color = colorOf(event);
         return (
@@ -257,6 +284,8 @@ export function DayTimeline({
   events,
   onEventPress,
   onNavigate,
+  onToggleTask,
+  tasks,
   timeZone,
 }: {
   colorOf: (event: EventRecord) => string;
@@ -265,6 +294,8 @@ export function DayTimeline({
   onEventPress: (event: EventRecord) => void;
   /** Swipe committed a day change: +1 forward, -1 back. */
   onNavigate: (direction: 1 | -1) => void;
+  onToggleTask: (task: TaskRecord) => void;
+  tasks: ReadonlyArray<TaskRecord>;
   timeZone: string;
 }) {
   const scrollRef = useRef<ScrollView>(null);
@@ -351,6 +382,8 @@ export function DayTimeline({
                 date={day}
                 events={events}
                 key={day.toString()}
+                onToggleTask={onToggleTask}
+                tasks={tasks}
                 timeZone={timeZone}
                 width={columnWidth}
               />
@@ -516,5 +549,26 @@ const styles = StyleSheet.create({
     flex: 1,
     marginRight: EDGE_INSET,
     overflow: 'hidden',
+  },
+  taskCheckbox: {
+    color: '#525252',
+    fontSize: 12,
+  },
+  taskChip: {
+    alignItems: 'center',
+    backgroundColor: '#f5f5f5',
+    borderColor: '#d4d4d4',
+    borderWidth: StyleSheet.hairlineWidth,
+    flexDirection: 'row',
+    gap: 3,
+  },
+  taskChipDone: {
+    opacity: 0.5,
+  },
+  taskText: {
+    color: '#404040',
+  },
+  taskTextDone: {
+    textDecorationLine: 'line-through',
   },
 });

@@ -5,13 +5,9 @@ const DISCOVERY = {
   tokenEndpoint: 'https://oauth2.googleapis.com/token',
 };
 
-const SCOPES = [
-  'openid',
-  'email',
-  'profile',
-  'https://www.googleapis.com/auth/calendar.readonly',
-  'https://www.googleapis.com/auth/calendar.events',
-];
+import { GOOGLE_SCOPES } from '@calendar/google';
+
+const SCOPES = [...GOOGLE_SCOPES];
 
 /** iOS OAuth clients redirect to the reversed client id scheme. */
 const redirectUriFor = (clientId: string): string => {

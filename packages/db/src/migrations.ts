@@ -95,11 +95,45 @@ const addPendingOpColorHex = Effect.gen(function* () {
   yield* sql`ALTER TABLE pending_ops ADD COLUMN color_hex TEXT`;
 });
 
+const addTasks = Effect.gen(function* () {
+  const sql = yield* SqlClient;
+  yield* sql`
+    CREATE TABLE task_lists (
+      account_id TEXT NOT NULL,
+      id TEXT NOT NULL,
+      title TEXT NOT NULL,
+      is_visible INTEGER NOT NULL DEFAULT 1,
+      synced_at INTEGER NOT NULL,
+      PRIMARY KEY (account_id, id)
+    )`;
+  yield* sql`
+    CREATE TABLE tasks (
+      account_id TEXT NOT NULL,
+      list_id TEXT NOT NULL,
+      id TEXT NOT NULL,
+      title TEXT NOT NULL,
+      notes TEXT,
+      status TEXT NOT NULL,
+      due_date TEXT,
+      completed_at INTEGER,
+      web_view_link TEXT,
+      updated_at INTEGER NOT NULL,
+      synced_at INTEGER NOT NULL,
+      PRIMARY KEY (account_id, list_id, id)
+    )`;
+  // completeTask ops carry their state in scalar columns, like color_hex.
+  yield* sql`ALTER TABLE pending_ops ADD COLUMN task_list_id TEXT`;
+  yield* sql`ALTER TABLE pending_ops ADD COLUMN task_status TEXT`;
+  // Derived from TokenSet.scopes at sign-in; 0 for pre-Tasks accounts.
+  yield* sql`ALTER TABLE accounts ADD COLUMN tasks_enabled INTEGER NOT NULL DEFAULT 0`;
+});
+
 // The third tuple element is a *loader* whose result is the migration effect.
 export const migrations: ReadonlyArray<ResolvedMigration> = [
   [1, 'init', Effect.succeed(init)],
   [2, 'add-hangout-link', Effect.succeed(addHangoutLink)],
   [3, 'add-pending-op-color-hex', Effect.succeed(addPendingOpColorHex)],
+  [4, 'add-tasks', Effect.succeed(addTasks)],
 ];
 
 export const migrationsLoader = Effect.succeed(migrations);

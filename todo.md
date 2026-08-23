@@ -131,18 +131,31 @@ desktop waits on a helper binary (below).
       `NSWindowSharingNone`); Privacy section in the settings modal offers
       Hidden / Visible for 10 min (runtime-only, fails closed on restart) /
       Always visible (persisted in `userData/settings.json`).
-- [ ] Sync Google Tasks — show tasks with due dates alongside events and
-      let them be checked off. Feasible via the separate Google Tasks API
-      (`tasks.googleapis.com`: task lists → tasks with `due`, `status`,
-      `notes`; complete via `tasks.patch`). Needs the additional
-      `auth/tasks` OAuth scope (re-consent), a local `tasks` table, and a
-      poll using `updatedMin` (the Tasks API has no syncTokens). Rendered
-      as chips in the all-day lane with a completion checkbox. Known API
-      limits to design around: `due` is date-only (the time portion is
-      discarded), and recurrence rules are NOT exposed — Google
-      materializes the next occurrence of a repeating task server-side
-      when the current one is completed, so repeating tasks "just work"
-      but can't be expanded locally like event RRULEs.
+- [x] Sync Google Tasks — done: task lists + tasks poll on `updatedMin`
+      (watermark in sync_state.sync_token, captured pre-pass; tombstones
+      via showDeleted; daily full pass + deleteStale because tombstones
+      expire), `completeTask` op through the queue (optimistic setStatus,
+      latest-wins coalescing, response upsert — which also picks up the
+      server-materialized next occurrence of repeating tasks), chips with
+      checkboxes in both all-day lanes, per-list visibility toggles.
+      Decisions: separate GoogleTasksClient service (request core
+      extracted; scope-insufficient 403 now maps to
+      InsufficientScopeError instead of being silently dropped);
+      `auth/tasks` scope added to the now-shared scope list — existing
+      accounts re-consent by re-running "Add Google Account" (in-place
+      upgrade), gated per account via `tasksEnabled` derived from granted
+      scopes, so calendar-only tokens keep syncing untouched. `due` is
+      date-only → date-string storage/query end to end. Out of v1: see
+      the "Tasks:" follow-ups above.
+- [ ] Tasks: create/edit/delete from the app (v1 of Google Tasks sync is
+      read + check-off only; insert/patch/delete via the same op queue)
+- [ ] Tasks: subtask hierarchy — render `parent`/`position` indentation
+      and keep ordering via `tasks.move`
+- [ ] Tasks: month-view presence (dots or counts for days with due tasks)
+- [ ] Tasks: detail sheet on chip tap (notes, list name, open-in-Google
+      via `webViewLink`); v1 leaves the chip body non-interactive
+- [ ] Tasks: iOS Maestro flow for the all-day lane (needs task-chip
+      testIDs and the signed-in guard pattern from 07-create-event)
 - [x] Per-calendar colors — done: swatch in the desktop sidebar opens a
       picker (Google's 24-color palette + native color input; palette
       chips on iOS settings); optimistic local update, then write-back via

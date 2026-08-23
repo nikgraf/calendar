@@ -1,4 +1,11 @@
-import { ACCOUNTS_KEY, CALENDARS_KEY, EVENTS_KEY, OPS_KEY } from '@calendar/db/keys';
+import {
+  ACCOUNTS_KEY,
+  CALENDARS_KEY,
+  EVENTS_KEY,
+  OPS_KEY,
+  TASKLISTS_KEY,
+  TASKS_KEY,
+} from '@calendar/db/keys';
 import type { BackendClient, BackendPayload, BackendSuccess } from '@calendar/core';
 import { Context, Effect, Layer } from 'effect';
 import { Atom, AsyncResult, Reactivity, type AtomRegistry } from 'effect/unstable/reactivity';
@@ -21,6 +28,8 @@ export interface BackendAtoms {
   readonly eventsInRange: ReturnType<typeof buildAtoms>['eventsInRange'];
   readonly mutations: ReturnType<typeof buildAtoms>['mutations'];
   readonly pendingOps: ReturnType<typeof buildAtoms>['pendingOps'];
+  readonly taskLists: ReturnType<typeof buildAtoms>['taskLists'];
+  readonly tasksInRange: ReturnType<typeof buildAtoms>['tasksInRange'];
 }
 
 const buildAtoms = (client: BackendClient) => {
@@ -88,6 +97,46 @@ const buildAtoms = (client: BackendClient) => {
     return atom;
   };
 
+  const taskLists = runtime
+    .atom(
+      Effect.gen(function* () {
+        const backend = yield* AppBackend;
+        return yield* backend.listTaskLists(undefined);
+      }),
+    )
+    .pipe(Atom.withReactivity([TASKLISTS_KEY]));
+
+  // Same bounded-LRU shape as eventsInRange; keys are date strings because
+  // task due days are date-only.
+  const taskRangeAtoms = new Map<string, ReturnType<typeof makeTaskRangeAtom>>();
+  const makeTaskRangeAtom = (startDate: string, endDate: string) =>
+    runtime
+      .atom(
+        Effect.gen(function* () {
+          const backend = yield* AppBackend;
+          return yield* backend.getTasksInRange({ endDate, startDate });
+        }),
+      )
+      .pipe(Atom.withReactivity([TASKS_KEY, TASKLISTS_KEY]));
+  const tasksInRange = (key: string) => {
+    const cached = taskRangeAtoms.get(key);
+    if (cached) {
+      taskRangeAtoms.delete(key);
+      taskRangeAtoms.set(key, cached);
+      return cached;
+    }
+    const [start, end] = key.split(':', 2);
+    const atom = makeTaskRangeAtom(start ?? '', end ?? '');
+    taskRangeAtoms.set(key, atom);
+    if (taskRangeAtoms.size > RANGE_CACHE_LIMIT) {
+      const oldest = taskRangeAtoms.keys().next().value;
+      if (oldest !== undefined) {
+        taskRangeAtoms.delete(oldest);
+      }
+    }
+    return atom;
+  };
+
   const mutation = <M extends keyof BackendClient>(
     method: M,
     reactivityKeys: ReadonlyArray<string>,
@@ -102,15 +151,29 @@ const buildAtoms = (client: BackendClient) => {
     );
 
   const mutations = {
-    addAccount: mutation('addAccount', [ACCOUNTS_KEY, CALENDARS_KEY, EVENTS_KEY]),
+    addAccount: mutation('addAccount', [
+      ACCOUNTS_KEY,
+      CALENDARS_KEY,
+      EVENTS_KEY,
+      TASKS_KEY,
+      TASKLISTS_KEY,
+    ]),
+    completeTask: mutation('completeTask', [TASKS_KEY]),
     createEvent: mutation('createEvent', [EVENTS_KEY]),
     deleteEvent: mutation('deleteEvent', [EVENTS_KEY]),
     deleteRecurring: mutation('deleteRecurring', [EVENTS_KEY]),
     discardPendingOp: mutation('discardPendingOp', [OPS_KEY]),
-    removeAccount: mutation('removeAccount', [ACCOUNTS_KEY, CALENDARS_KEY, EVENTS_KEY]),
+    removeAccount: mutation('removeAccount', [
+      ACCOUNTS_KEY,
+      CALENDARS_KEY,
+      EVENTS_KEY,
+      TASKS_KEY,
+      TASKLISTS_KEY,
+    ]),
     respondToEvent: mutation('respondToEvent', [EVENTS_KEY]),
     setCalendarColor: mutation('setCalendarColor', [CALENDARS_KEY]),
     setCalendarVisible: mutation('setCalendarVisible', [CALENDARS_KEY, EVENTS_KEY]),
+    setTaskListVisible: mutation('setTaskListVisible', [TASKLISTS_KEY, TASKS_KEY]),
     // The backend invalidates through the bridge as sync data lands.
     syncNow: mutation('syncNow', []),
     updateEvent: mutation('updateEvent', [EVENTS_KEY]),
@@ -141,7 +204,16 @@ const buildAtoms = (client: BackendClient) => {
     };
   };
 
-  return { accounts, bindInvalidations, calendars, eventsInRange, mutations, pendingOps };
+  return {
+    accounts,
+    bindInvalidations,
+    calendars,
+    eventsInRange,
+    mutations,
+    pendingOps,
+    taskLists,
+    tasksInRange,
+  };
 };
 
 /** Builds the app's atom bundle around a platform BackendClient. Call once. */

@@ -11,13 +11,8 @@ import { Data, Effect } from 'effect';
 
 const AUTH_ENDPOINT = 'https://accounts.google.com/o/oauth2/v2/auth';
 
-export const GOOGLE_SCOPES = [
-  'openid',
-  'email',
-  'profile',
-  'https://www.googleapis.com/auth/calendar.readonly',
-  'https://www.googleapis.com/auth/calendar.events',
-];
+export { GOOGLE_SCOPES } from '@calendar/google';
+import { GOOGLE_SCOPES } from '@calendar/google';
 
 export class AuthFlowError extends Data.TaggedError('AuthFlowError')<{
   readonly reason: string;

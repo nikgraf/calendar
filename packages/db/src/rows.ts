@@ -1,4 +1,13 @@
-import { Account, Attendee, CalendarInfo, EventRecord, PendingOp, SyncState } from '@calendar/core';
+import {
+  Account,
+  Attendee,
+  CalendarInfo,
+  EventRecord,
+  PendingOp,
+  SyncState,
+  TaskListInfo,
+  TaskRecord,
+} from '@calendar/core';
 import { Schema } from 'effect';
 
 /* eslint-disable perfectionist/sort-interfaces -- rows mirror column order */
@@ -10,6 +19,7 @@ export interface AccountRow {
   readonly avatar_url: string | null;
   readonly status: string;
   readonly created_at: number;
+  readonly tasks_enabled: number;
 }
 
 export const accountFromRow = (row: AccountRow): Account =>
@@ -20,6 +30,51 @@ export const accountFromRow = (row: AccountRow): Account =>
     email: row.email,
     id: row.id,
     status: row.status as 'ok' | 'reauth_required',
+    tasksEnabled: row.tasks_enabled === 1,
+  });
+
+export interface TaskListRow {
+  readonly account_id: string;
+  readonly id: string;
+  readonly title: string;
+  readonly is_visible: number;
+  readonly synced_at: number;
+}
+
+export const taskListFromRow = (row: TaskListRow): TaskListInfo =>
+  new TaskListInfo({
+    accountId: row.account_id,
+    id: row.id,
+    isVisible: row.is_visible === 1,
+    title: row.title,
+  });
+
+export interface TaskRow {
+  readonly account_id: string;
+  readonly list_id: string;
+  readonly id: string;
+  readonly title: string;
+  readonly notes: string | null;
+  readonly status: string;
+  readonly due_date: string | null;
+  readonly completed_at: number | null;
+  readonly web_view_link: string | null;
+  readonly updated_at: number;
+  readonly synced_at: number;
+}
+
+export const taskFromRow = (row: TaskRow): TaskRecord =>
+  new TaskRecord({
+    accountId: row.account_id,
+    completedAt: row.completed_at ?? undefined,
+    dueDate: row.due_date ?? undefined,
+    id: row.id,
+    listId: row.list_id,
+    notes: row.notes ?? undefined,
+    status: row.status as TaskRecord['status'],
+    title: row.title,
+    updatedAt: row.updated_at,
+    webViewLink: row.web_view_link ?? undefined,
   });
 
 export interface CalendarRow {
@@ -143,6 +198,8 @@ export interface PendingOpRow {
   readonly last_error: string | null;
   readonly created_at: number;
   readonly color_hex: string | null;
+  readonly task_list_id: string | null;
+  readonly task_status: string | null;
 }
 
 export const pendingOpFromRow = (row: PendingOpRow): PendingOp =>
@@ -161,6 +218,8 @@ export const pendingOpFromRow = (row: PendingOpRow): PendingOp =>
     payload: row.payload
       ? Schema.decodeUnknownSync(EventRecord)(JSON.parse(row.payload))
       : undefined,
+    taskListId: row.task_list_id ?? undefined,
+    taskStatus: (row.task_status ?? undefined) as PendingOp['taskStatus'],
   });
 
 export interface SyncStateRow {

@@ -30,6 +30,9 @@ describe('runMigrations', () => {
       expect(yield* appliedIds).toEqual(migrations.map(([id]) => id));
       expect(yield* columnsOf('events')).toContain('hangout_link');
       expect(yield* columnsOf('pending_ops')).toContain('color_hex');
+      expect(yield* columnsOf('pending_ops')).toContain('task_status');
+      expect(yield* columnsOf('accounts')).toContain('tasks_enabled');
+      expect(yield* columnsOf('tasks')).toContain('due_date');
     }).pipe(Effect.provide(sqlLayer())),
   );
 
@@ -51,12 +54,18 @@ describe('runMigrations', () => {
       yield* sql`DELETE FROM effect_sql_migrations WHERE migration_id > 1`;
       yield* sql`ALTER TABLE events DROP COLUMN hangout_link`;
       yield* sql`ALTER TABLE pending_ops DROP COLUMN color_hex`;
+      yield* sql`ALTER TABLE pending_ops DROP COLUMN task_list_id`;
+      yield* sql`ALTER TABLE pending_ops DROP COLUMN task_status`;
+      yield* sql`ALTER TABLE accounts DROP COLUMN tasks_enabled`;
+      yield* sql`DROP TABLE tasks`;
+      yield* sql`DROP TABLE task_lists`;
       expect(yield* columnsOf('events')).not.toContain('hangout_link');
 
       yield* runMigrations;
       expect(yield* appliedIds).toEqual(migrations.map(([id]) => id));
       expect(yield* columnsOf('events')).toContain('hangout_link');
       expect(yield* columnsOf('pending_ops')).toContain('color_hex');
+      expect(yield* columnsOf('tasks')).toContain('due_date');
     }).pipe(Effect.provide(sqlLayer())),
   );
 });
