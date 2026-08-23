@@ -1,9 +1,12 @@
 name: iOS
 
-# TestFlight builds via EAS on every main push (and on the `testflight` PR
-# label, for native changes), plus a per-PR OTA preview update on every PR
-# push. Setup + tester flow: docs/distribution.md. Separate workflow file so
-# `labeled` events don't re-trigger or cancel the main CI's gate/e2e.
+# Publishing on main is fingerprint-gated: a push whose native fingerprint
+# matches the latest TestFlight build ships as an OTA update (~30s); only a
+# changed fingerprint (new pods, config plugins, SDK bumps) costs a full EAS
+# build + TestFlight submit. PRs get an OTA preview on every push, and the
+# `testflight` label forces a real build from a PR branch. Setup + tester
+# flow: docs/distribution.md. Separate workflow file so `labeled` events
+# don't re-trigger or cancel the main CI's gate/e2e.
 
 on:
   push:
@@ -59,14 +62,66 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm test
 
-  # Waits for the cloud build so a failed build or submission fails CI —
-  # --no-wait would go green the moment the build is queued.
-  testflight:
-    name: TestFlight build (EAS)
+  # Build only when necessary: with runtimeVersion.policy "fingerprint",
+  # a build's runtime version IS the hash of everything native, so
+  # comparing the pushed commit's fingerprint against the latest finished
+  # main build answers "would an OTA update reach installed builds?".
+  # Errors fail toward building — a wrong "build" wastes one build, a
+  # wrong "skip" strands testers on a stale binary without any signal.
+  decide:
+    name: Decide build vs OTA update
     needs: [preflight, verify]
     if: >-
       needs.preflight.outputs.has_token == 'true' &&
       (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    outputs:
+      needs_build: ${{ steps.compare.outputs.needs_build }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - id: compare
+        name: Compare fingerprint against the latest main build
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        working-directory: apps/ios
+        run: |
+          NEEDS_BUILD=true
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            # Manual runs are the rebuild escape hatch — never skip them.
+            echo "workflow_dispatch: building unconditionally"
+          else
+            LOCAL=$(npx expo-updates fingerprint:generate --platform ios | jq -r '.hash') || LOCAL=""
+            LATEST=$(pnpm exec eas build:list --platform ios --status finished \
+              --channel main --limit 1 --json --non-interactive \
+              | jq -r '.[0].runtime.version // empty') || LATEST=""
+            if [ -n "$LOCAL" ] && [ -n "$LATEST" ]; then
+              echo "local fingerprint:  $LOCAL"
+              echo "latest main build:  $LATEST"
+              if [ "$LOCAL" = "$LATEST" ]; then
+                NEEDS_BUILD=false
+              fi
+            else
+              echo "::warning::Fingerprint comparison failed (local='$LOCAL', latest='$LATEST') — building to be safe"
+            fi
+          fi
+          echo "needs_build=$NEEDS_BUILD" >> "$GITHUB_OUTPUT"
+
+  # Waits for the cloud build so a failed build or submission fails CI —
+  # --no-wait would go green the moment the build is queued.
+  testflight:
+    name: TestFlight build (EAS)
+    needs: [preflight, verify, decide]
+    if: >-
+      needs.preflight.outputs.has_token == 'true' &&
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch') &&
+      needs.decide.outputs.needs_build == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
@@ -85,6 +140,33 @@ jobs:
           pnpm exec eas build --platform ios --profile testflight \
             --non-interactive --auto-submit \
             --message "main ${GITHUB_SHA::7}"
+
+  # The fingerprint-unchanged path: installed TestFlight builds pick the
+  # update up on next launch, the same mechanism as the PR previews.
+  main-update:
+    name: OTA update to main (EAS)
+    needs: [preflight, verify, decide]
+    if: >-
+      needs.preflight.outputs.has_token == 'true' &&
+      github.event_name == 'push' &&
+      needs.decide.outputs.needs_build == 'false'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Publish OTA update to channel main
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        working-directory: apps/ios
+        run: |
+          pnpm exec eas update --branch main \
+            --non-interactive --message "main ${GITHUB_SHA::7}"
 
   # JS-only preview: publishes the PR's bundle to OTA channel pr-<number>
   # (~30s). Load it on-device via Settings → PR preview. Skips quietly while
