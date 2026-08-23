@@ -17,21 +17,14 @@ trustPolicyExclude:
   - semver@6.3.1
   - undici-types@6.21.0
   - '@octokit/endpoint@9.0.6'
-  - effect@4.0.0-beta.93
-  - '@effect/atom-react@4.0.0-beta.93'
-  - '@effect/platform-node@4.0.0-beta.93'
-  - '@effect/sql-sqlite-node@4.0.0-beta.93'
-  - '@effect/sql-sqlite-react-native@4.0.0-beta.93'
-  - '@effect/vitest@4.0.0-beta.93'
 blockExoticSubdeps: true
 
 catalog:
-  effect: 4.0.0-beta.93
-  '@effect/atom-react': 4.0.0-beta.93
-  '@effect/platform-node': 4.0.0-beta.93
-  '@effect/sql-sqlite-node': 4.0.0-beta.93
-  '@effect/sql-sqlite-react-native': 4.0.0-beta.93
-  '@effect/vitest': 4.0.0-beta.93
+  effect: 4.0.0-rc.111
+  '@effect/atom-react': 4.0.0-rc.111
+  '@effect/sql-sqlite-node': 4.0.0-rc.111
+  '@effect/sql-sqlite-react-native': 4.0.0-rc.111
+  '@effect/vitest': 4.0.0-rc.111
   '@js-temporal/polyfill': ^0.5.1
   react: ^19.2.7
   react-dom: ^19.2.7
@@ -59,9 +52,6 @@ overrides:
   vitest: 'catalog:'
 
 minimumReleaseAgeExclude:
-  - '@effect/atom-react@4.0.0-beta.93'
-  - '@effect/sql-sqlite-node@4.0.0-beta.93'
-  - '@effect/vitest@4.0.0-beta.93'
   - '@voidzero-dev/vite-plus-core@0.2.2'
   - '@voidzero-dev/vite-plus-darwin-arm64@0.2.2'
   - '@voidzero-dev/vite-plus-darwin-x64@0.2.2'
@@ -71,10 +61,8 @@ minimumReleaseAgeExclude:
   - '@voidzero-dev/vite-plus-linux-x64-musl@0.2.2'
   - '@voidzero-dev/vite-plus-win32-arm64-msvc@0.2.2'
   - '@voidzero-dev/vite-plus-win32-x64-msvc@0.2.2'
-  - effect@4.0.0-beta.93
   - rrule-temporal@1.6.0
   - vite-plus@0.2.2
-  - '@effect/sql-sqlite-react-native@4.0.0-beta.93'
 
 allowBuilds:
   better-sqlite3: true

@@ -1,9 +1,11 @@
 # Effect v4 (beta) notes
 
-The repo pins every `effect*` package to **4.0.0-beta.93** via the pnpm
-catalog. v4 is a substantial break from v3 and the beta is thinly
+The repo pins every `effect*` package to **4.0.0-rc.111** via the pnpm
+catalog. v4 is a substantial break from v3 and the pre-releases are thinly
 documented — this is the catalog of differences and traps we hit while
-building, each as symptom → cause → fix.
+building, each as symptom → cause → fix. The beta.93 → rc.111 bump cost
+exactly two code changes (`Schema.ErrorClass` rename, `supportsNotifications`
+on the custom rpc protocol); everything else held.
 
 ## API renames / removals
 
@@ -34,8 +36,10 @@ building, each as symptom → cause → fix.
 - Lives at `effect/Schema`. `Schema.Literals` takes an **array**
   (`Schema.Literals(['a', 'b'])`). Decoding via
   `Schema.decodeUnknownEffect` / `decodeUnknownSync`, encoding via
-  `Schema.encodeSync`. Error classes: `Schema.ErrorClass` /
-  `Schema.TaggedErrorClass`; plain tagged errors via `Data.TaggedError`.
+  `Schema.encodeSync`. Error classes: `Schema.Error` / `Schema.TaggedError`
+  (renamed from `ErrorClass` / `TaggedErrorClass` in beta.104; the JS
+  `Error` instance schema is `Schema.ErrorInstance`); plain tagged errors
+  via `Data.TaggedError`.
 - `Schema.Class` instances spread cleanly (`new X({ ...existing, field })`)
   — used everywhere for record updates.
 - With `exactOptionalPropertyTypes`, building values for
@@ -65,7 +69,10 @@ building, each as symptom → cause → fix.
 …)`; payloads may be struct-field records or Schemas; streams via
   `stream: true`.
 - Custom transports implement `RpcServer.Protocol` / `RpcClient.Protocol`
-  with `Protocol.make` (`withRun` / `withRunClient`) — see
+  with `Protocol.make` (`withRun` / `withRunClient`) — see below. Server
+  protocol records need `supportsNotifications` (added ~rc.108): `true` for
+  any transport that preserves message boundaries and supports server push
+  (buffered/unframed HTTP is the case that can't). See
   `packages/sync/src/rpcDuplex.ts` for the Electron IPC duplex pair.
   Routing: track requestId→clientId from `'Request'` frames; `'Exit'`
   deletes; everything else broadcasts.

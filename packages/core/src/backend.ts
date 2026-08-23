@@ -59,7 +59,7 @@ export const PendingOpSummary = Schema.Struct({
 export type PendingOpSummary = Schema.Schema.Type<typeof PendingOpSummary>;
 
 /** Wire format of a failed backend call. */
-export class BackendError extends Schema.ErrorClass<BackendError>('core/BackendError')({
+export class BackendError extends Schema.Error<BackendError>('core/BackendError')({
   message: Schema.String,
   tag: Schema.String,
 }) {}
