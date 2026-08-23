@@ -62,6 +62,7 @@ describe('runMigrations', () => {
       yield* sql`ALTER TABLE pending_ops DROP COLUMN task_title`;
       yield* sql`ALTER TABLE pending_ops DROP COLUMN task_notes`;
       yield* sql`ALTER TABLE pending_ops DROP COLUMN task_due`;
+      yield* sql`ALTER TABLE pending_ops DROP COLUMN dispatched_at`;
       yield* sql`DROP TABLE tasks`;
       yield* sql`DROP TABLE task_lists`;
       expect(yield* columnsOf('events')).not.toContain('hangout_link');

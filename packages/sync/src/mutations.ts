@@ -316,6 +316,47 @@ const make: Effect.Effect<
           if (!op.taskListId || !op.taskTitle) {
             return 'done' as const;
           }
+          // A set dispatch stamp means an earlier attempt's insert may
+          // have landed without us seeing the response (crash, dropped
+          // connection). tasks.insert is not idempotent — ids are
+          // server-assigned — so verify before inserting again: adopt an
+          // exact field match updated since the stamp instead of creating
+          // a duplicate. A false adopt needs an identical task created in
+          // the same window elsewhere (and is benign); a miss is merely
+          // the old behavior.
+          if (op.dispatchedAt !== undefined) {
+            const page = yield* tasksClient.listTasks({
+              accountId: op.accountId,
+              params: { updatedMin: new Date(op.dispatchedAt - 60_000).toISOString() },
+              taskListId: op.taskListId,
+            });
+            const match = (page.items ?? []).filter(
+              (candidate) =>
+                !candidate.deleted &&
+                candidate.title === op.taskTitle &&
+                (candidate.due?.slice(0, 10) ?? undefined) === op.taskDue &&
+                (candidate.notes ?? undefined) === op.taskNotes,
+            );
+            const adopted = match.length === 1 ? match[0] : undefined;
+            if (adopted) {
+              yield* pendingOpRepo.rewriteEventId(
+                op.accountId,
+                op.taskListId,
+                op.eventId,
+                adopted.id,
+              );
+              const adoptedRecord = mapGcalTask(adopted, {
+                accountId: op.accountId,
+                taskListId: op.taskListId,
+              });
+              if (adoptedRecord) {
+                yield* taskRepo.removeTask(op.accountId, op.taskListId, op.eventId);
+                yield* taskRepo.upsertTasks([adoptedRecord], yield* Clock.currentTimeMillis);
+              }
+              return 'done' as const;
+            }
+          }
+          yield* pendingOpRepo.markDispatched(op.id, yield* Clock.currentTimeMillis);
           const inserted = yield* tasksClient.insertTask({
             accountId: op.accountId,
             task: {

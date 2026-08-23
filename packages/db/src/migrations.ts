@@ -135,6 +135,10 @@ const addTaskWrites = Effect.gen(function* () {
   yield* sql`ALTER TABLE pending_ops ADD COLUMN task_title TEXT`;
   yield* sql`ALTER TABLE pending_ops ADD COLUMN task_notes TEXT`;
   yield* sql`ALTER TABLE pending_ops ADD COLUMN task_due TEXT`;
+  // Stamped before a non-idempotent network call (tasks.insert has
+  // server-assigned ids): a re-run with the stamp set verifies against
+  // the server before inserting again.
+  yield* sql`ALTER TABLE pending_ops ADD COLUMN dispatched_at INTEGER`;
   // 'pending' marks optimistic local creates so a full-pass deleteStale
   // never eats a row whose insert has not pushed yet (the events pattern).
   yield* sql`ALTER TABLE tasks ADD COLUMN sync_status TEXT NOT NULL DEFAULT 'synced'`;

@@ -2,13 +2,14 @@ import { Account, TaskListInfo, TaskRecord } from '@calendar/core';
 import { AccountRepo, reposLayer, TaskRepo } from '@calendar/db';
 import { runMigrations } from '@calendar/db';
 import {
+  ApiUnavailableError,
+  type GcalTasksPage,
   GoogleCalendarClient,
+  type GoogleCalendarClientShape,
   GoogleTasksClient,
+  type GoogleTasksClientShape,
   InsufficientScopeError,
   NotFoundError,
-  type GcalTasksPage,
-  type GoogleCalendarClientShape,
-  type GoogleTasksClientShape,
 } from '@calendar/google';
 import { SqliteClient } from '@effect/sql-sqlite-node';
 import { expect, it } from '@effect/vitest';
@@ -403,6 +404,95 @@ describe('completeTask', () => {
       const ids = window.map((row) => row.id);
       expect(ids.filter((id) => id === 'server-race')).toHaveLength(1);
       expect(ids.some((id) => id === temp.id)).toBe(false);
+    }).pipe(Effect.provide(testLayer(client)));
+  });
+
+  it.effect('a retry after a dispatched-but-lost insert adopts, not duplicates', () => {
+    let attempts = 0;
+    const client: GoogleTasksClientShape = tasksClient({
+      insertTask: ({ task }) => {
+        attempts += 1;
+        // The first request "lands" on Google but the response is lost.
+        return attempts === 1
+          ? Effect.fail(new ApiUnavailableError({ cause: 'connection dropped' }))
+          : Effect.die('a second insert would duplicate the task');
+      },
+      listTasks: ({ params }) =>
+        Effect.succeed(
+          // On the verify pass the task the first request created is there.
+          params.updatedMin
+            ? {
+                items: [
+                  {
+                    due: '2026-08-30T00:00:00.000Z',
+                    id: 'server-landed',
+                    status: 'needsAction',
+                    title: 'Pay insurance',
+                    updated: '2026-08-24T10:00:00.000Z',
+                  },
+                ],
+              }
+            : { items: [] },
+        ),
+    });
+    return Effect.gen(function* () {
+      yield* seedTasks;
+      const mutations = yield* EventMutations;
+      yield* mutations.createTask({
+        accountId: 'acc-1',
+        dueDate: '2026-08-30',
+        taskListId: 'list-1',
+        title: 'Pay insurance',
+      });
+      // First drain: dispatch stamped, insert "fails" after landing.
+      yield* mutations.processPendingOps();
+      const ops = yield* PendingOpRepo;
+      const [pending] = yield* ops.listAll();
+      expect(pending?.dispatchedAt).toBeDefined();
+      // Backoff would delay the retry; force it due and drain again.
+      yield* ops.markFailed(pending!.id, pending!.attempts, 0, 'test');
+      yield* mutations.processPendingOps();
+      expect(attempts).toBe(1);
+      expect(yield* ops.listAll()).toHaveLength(0);
+      const repo = yield* TaskRepo;
+      const window = yield* repo.getWindow('2026-08-24', '2026-08-31');
+      expect(window.some((row) => row.id === 'server-landed')).toBe(true);
+    }).pipe(Effect.provide(testLayer(client)));
+  });
+
+  it.effect('a dispatched retry with no server match inserts normally', () => {
+    let attempts = 0;
+    const client: GoogleTasksClientShape = tasksClient({
+      insertTask: ({ task }) => {
+        attempts += 1;
+        return attempts === 1
+          ? Effect.fail(new ApiUnavailableError({ cause: 'connection dropped' }))
+          : Effect.succeed({
+              due: task.due,
+              id: 'server-fresh',
+              status: 'needsAction',
+              title: task.title,
+            });
+      },
+      // The first request never landed: nothing to adopt.
+      listTasks: () => Effect.succeed({ items: [] }),
+    });
+    return Effect.gen(function* () {
+      yield* seedTasks;
+      const mutations = yield* EventMutations;
+      yield* mutations.createTask({
+        accountId: 'acc-1',
+        dueDate: '2026-08-30',
+        taskListId: 'list-1',
+        title: 'Pay insurance',
+      });
+      yield* mutations.processPendingOps();
+      const ops = yield* PendingOpRepo;
+      const [pending] = yield* ops.listAll();
+      yield* ops.markFailed(pending!.id, pending!.attempts, 0, 'test');
+      yield* mutations.processPendingOps();
+      expect(attempts).toBe(2);
+      expect(yield* ops.listAll()).toHaveLength(0);
     }).pipe(Effect.provide(testLayer(client)));
   });
 

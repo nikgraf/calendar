@@ -124,6 +124,13 @@ export class PendingOp extends Schema.Class<PendingOp>('PendingOp')({
   /** New calendar color for kind 'calendarColor' (lowercase #rrggbb). */
   colorHex: Schema.optional(Schema.String),
   createdAt: Schema.Number,
+  /**
+   * Set just before a non-idempotent network call (createTask). A re-run
+   * that finds it set must verify with the server before inserting again
+   * — the first request may have landed even though we never saw the
+   * response.
+   */
+  dispatchedAt: Schema.optional(Schema.Number),
   eventId: Schema.String,
   id: Schema.String,
   kind: Schema.Literals([

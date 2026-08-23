@@ -204,6 +204,7 @@ export interface PendingOpRow {
   readonly task_title: string | null;
   readonly task_notes: string | null;
   readonly task_due: string | null;
+  readonly dispatched_at: number | null;
 }
 
 export const pendingOpFromRow = (row: PendingOpRow): PendingOp =>
@@ -214,6 +215,7 @@ export const pendingOpFromRow = (row: PendingOpRow): PendingOp =>
     calendarId: row.calendar_id,
     colorHex: row.color_hex ?? undefined,
     createdAt: row.created_at,
+    dispatchedAt: row.dispatched_at ?? undefined,
     eventId: row.event_id,
     id: row.id,
     kind: row.kind as PendingOp['kind'],

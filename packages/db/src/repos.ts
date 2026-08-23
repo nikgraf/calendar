@@ -381,6 +381,8 @@ export interface PendingOpRepoShape {
   readonly getById: (opId: string) => Effect.Effect<PendingOp | undefined, SqlError>;
   readonly listAll: () => Effect.Effect<ReadonlyArray<PendingOp>, SqlError>;
   readonly listDue: (now: number) => Effect.Effect<ReadonlyArray<PendingOp>, SqlError>;
+  /** Persists the pre-network stamp for non-idempotent calls. */
+  readonly markDispatched: (opId: string, at: number) => Effect.Effect<void, SqlError>;
   readonly markFailed: (
     opId: string,
     attempts: number,
@@ -413,14 +415,15 @@ const makePendingOpRepo: Effect.Effect<PendingOpRepoShape, never, Reactivity | S
                                    payload, base_etag, attempts, next_attempt_at,
                                    last_error, created_at, color_hex,
                                    task_list_id, task_status,
-                                   task_title, task_notes, task_due)
+                                   task_title, task_notes, task_due, dispatched_at)
           VALUES (${op.id}, ${op.accountId}, ${op.calendarId}, ${op.kind},
                   ${op.eventId},
                   ${op.payload ? JSON.stringify(eventPayloadJson(op.payload)) : null},
                   ${op.baseEtag ?? null}, ${op.attempts}, ${op.nextAttemptAt},
                   ${op.lastError ?? null}, ${op.createdAt}, ${op.colorHex ?? null},
                   ${op.taskListId ?? null}, ${op.taskStatus ?? null},
-                  ${op.taskTitle ?? null}, ${op.taskNotes ?? null}, ${op.taskDue ?? null})
+                  ${op.taskTitle ?? null}, ${op.taskNotes ?? null}, ${op.taskDue ?? null},
+                  ${op.dispatchedAt ?? null})
         `),
         ),
       getById: (opId) =>
@@ -436,6 +439,10 @@ const makePendingOpRepo: Effect.Effect<PendingOpRepoShape, never, Reactivity | S
           sql<PendingOpRow>`SELECT * FROM pending_ops
             WHERE next_attempt_at <= ${now} ORDER BY created_at`,
           (rows) => rows.map(pendingOpFromRow),
+        ),
+      markDispatched: (opId, at) =>
+        invalidating(
+          Effect.asVoid(sql`UPDATE pending_ops SET dispatched_at = ${at} WHERE id = ${opId}`),
         ),
       markFailed: (opId, attempts, nextAttemptAt, lastError) =>
         invalidating(
