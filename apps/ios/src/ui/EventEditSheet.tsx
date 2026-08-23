@@ -111,7 +111,7 @@ export function EventEditSheet({
             <Text style={styles.cancel}>Cancel</Text>
           </Pressable>
           <Text style={styles.title}>{existing ? 'Edit Event' : 'New Event'}</Text>
-          <Pressable onPress={() => void save()}>
+          <Pressable onPress={() => void save()} testID="event-save">
             <Text style={styles.save}>Save</Text>
           </Pressable>
         </View>
@@ -146,6 +146,7 @@ export function EventEditSheet({
               onChangeText={setTitle}
               placeholder="Title"
               style={styles.input}
+              testID="event-title"
               value={title}
             />
 
@@ -159,6 +160,7 @@ export function EventEditSheet({
                   key={key}
                   onPress={() => setCalendarKey(key)}
                   style={styles.calendarRow}
+                  testID="calendar-option"
                 >
                   <View style={[styles.swatch, { backgroundColor: calendar.colorHex }]} />
                   <Text style={[styles.calendarName, selected && styles.calendarSelected]}>
@@ -331,7 +333,11 @@ export function EventEditSheet({
             ) : null}
 
             {existing ? (
-              <Pressable onPress={() => void remove()} style={styles.deleteButton}>
+              <Pressable
+                onPress={() => void remove()}
+                style={styles.deleteButton}
+                testID="event-delete"
+              >
                 <Text style={styles.deleteLabel}>Delete Event</Text>
               </Pressable>
             ) : null}

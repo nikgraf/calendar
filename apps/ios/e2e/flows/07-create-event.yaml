@@ -1,0 +1,53 @@
+appId: com.solunivo.app
+name: Saving a new event writes it to the day
+---
+- launchApp
+# The app re-bundles from Metro on a cold dev-client launch; wait for the
+# calendar shell rather than racing it.
+- extendedWaitUntil:
+    visible: 'Today'
+    timeout: 60000
+- tapOn:
+    id: 'add-event'
+- assertVisible: 'New Event'
+# Saving needs a writable calendar, so this runs only where an account is
+# signed in. Everywhere else the flow is a no-op rather than a false
+# failure — the same shape as the quick-add flow.
+- runFlow:
+    when:
+      visible:
+        id: 'calendar-option'
+    commands:
+      - tapOn:
+          id: 'calendar-option'
+          index: 0
+      - tapOn:
+          id: 'event-title'
+      # Named so a leftover is recognisable: this writes to the real
+      # Google account the device is signed into, and is deleted below.
+      - inputText: 'Solunivo e2e — delete me'
+      - tapOn:
+          id: 'event-save'
+      # The sheet closes only after the whole create path ran, id
+      # generation included — that is the step that used to die with
+      # "Property 'crypto' doesn't exist" on a release build.
+      - extendedWaitUntil:
+          notVisible: 'New Event'
+          timeout: 20000
+      - assertVisible: 'Solunivo e2e'
+      # Clean up, so repeated runs don't pile up in a real calendar.
+      - tapOn: 'Solunivo e2e'
+      - assertVisible: 'Edit Event'
+      - tapOn:
+          id: 'event-delete'
+      - extendedWaitUntil:
+          notVisible: 'Solunivo e2e'
+          timeout: 20000
+- runFlow:
+    when:
+      notVisible:
+        id: 'calendar-option'
+    commands:
+      # No account: leave the sheet as we found it.
+      - tapOn: 'Cancel'
+      - assertVisible: 'Today'
