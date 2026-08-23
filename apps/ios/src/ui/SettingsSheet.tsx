@@ -1,4 +1,5 @@
 import { useAccounts, useBackendMutations, useCalendars, usePendingOps } from '@calendar/app-state';
+import type { ModelStatus } from '@calendar/ai';
 import { CALENDAR_PALETTE } from '@calendar/core';
 import {
   channel as updatesChannel,
@@ -9,9 +10,10 @@ import {
   setUpdateRequestHeadersOverride,
   updateId,
 } from 'expo-updates';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   Modal,
+  Platform,
   Pressable,
   SafeAreaView,
   ScrollView,
@@ -20,6 +22,8 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import { appleLanguageModel } from '../appleModel.ts';
+import { appleSpeech } from '../appleSpeech.ts';
 import { palette } from './theme.ts';
 
 export function SettingsSheet({ onClose, visible }: { onClose: () => void; visible: boolean }) {
@@ -186,6 +190,7 @@ export function SettingsSheet({ onClose, visible }: { onClose: () => void; visib
           </Pressable>
 
           <PrPreviewSection />
+          <DiagnosticsSection />
         </ScrollView>
       </SafeAreaView>
     </Modal>
@@ -265,6 +270,57 @@ function PrPreviewSection() {
         </Text>
       )}
       {status ? <Text style={styles.previewStatus}>{status}</Text> : null}
+    </View>
+  );
+}
+
+/**
+ * What the device actually reports, read from the device. The quick-add
+ * bar hid itself on a phone whose owner had Apple Intelligence switched
+ * on, and answering "why" meant downloading the shipped IPA and reading
+ * its linked frameworks — this is the cheaper version of that.
+ */
+function DiagnosticsSection() {
+  const [modelStatus, setModelStatus] = useState<ModelStatus | 'checking…'>('checking…');
+  const [dictation, setDictation] = useState('checking…');
+
+  useEffect(() => {
+    let cancelled = false;
+    void appleLanguageModel.status().then((value) => {
+      if (!cancelled) {
+        setModelStatus(value);
+      }
+    });
+    void appleSpeech
+      .isSupported()
+      .then((value) => {
+        if (!cancelled) {
+          setDictation(value ? 'supported' : 'unsupported');
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setDictation('unsupported');
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  return (
+    <View style={styles.previewCard} testID="diagnostics">
+      <Text style={styles.previewTitle}>Diagnostics</Text>
+      <Text style={styles.previewMeta}>iOS {String(Platform.Version)}</Text>
+      <Text style={styles.previewMeta} testID="diagnostics-model">
+        on-device model: {modelStatus}
+      </Text>
+      <Text style={styles.previewMeta}>dictation: {dictation}</Text>
+      <Text style={styles.previewMeta}>
+        {/* Hermes ships without it; a "missing" here explains any failure
+            to save an event, since ids are generated from it. */}
+        web crypto: {typeof globalThis.crypto?.getRandomValues === 'function' ? 'ok' : 'missing'}
+      </Text>
     </View>
   );
 }

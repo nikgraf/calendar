@@ -1,4 +1,4 @@
-import type { LanguageModel } from '@calendar/ai';
+import type { LanguageModel, ModelStatus } from '@calendar/ai';
 
 /** Give up rather than leaving the UI stuck behind a stalled generation. */
 const GENERATE_TIMEOUT_MS = 30_000;
@@ -37,8 +37,8 @@ const withTimeout = async <T>(work: Promise<T>, ms: number): Promise<T> => {
 /**
  * Apple's on-device Foundation Models as the app's LanguageModel. Nothing
  * leaves the device and there is no per-request cost; the framework needs
- * iOS 26 on Apple Intelligence hardware, so `isAvailable` gates every
- * entry point rather than letting calls fail.
+ * iOS 26 on Apple Intelligence hardware, so `status` gates every entry
+ * point rather than letting calls fail.
  */
 export const appleLanguageModel: LanguageModel = {
   generateJson: async ({ jsonSchema, prompt }) => {
@@ -68,15 +68,18 @@ export const appleLanguageModel: LanguageModel = {
     }
     return JSON.parse(text) as unknown;
   },
-  isAvailable: async () => {
+  status: async (): Promise<ModelStatus> => {
     const module = loadModule();
     if (!module) {
-      return false;
+      return 'missing-module';
     }
     try {
-      return module.AppleFoundationModels.isAvailable();
+      return module.AppleFoundationModels.isAvailable() ? 'ready' : 'unavailable';
     } catch {
-      return false;
+      // The module is here but refuses to answer — closer to a system
+      // that is not ready than to a build without the framework, and the
+      // difference matters to what the UI is able to tell the user.
+      return 'unavailable';
     }
   },
 };

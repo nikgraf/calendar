@@ -2,6 +2,21 @@ import { describe, expect, it } from 'vitest';
 import { generateEventId, isValidEventId } from './eventId.ts';
 
 describe('eventId', () => {
+  it('names the missing polyfill instead of dying on a bare ReferenceError', () => {
+    // Hermes has no Web Crypto. Without a polyfill this used to reach the
+    // user as `Cause([Die(ReferenceError: Property 'crypto' doesn't exist)])`
+    // when saving an event on a real device.
+    const original = globalThis.crypto;
+    try {
+      Object.defineProperty(globalThis, 'crypto', { configurable: true, value: undefined });
+      expect(() => generateEventId()).toThrow(/Web Crypto polyfill/);
+    } finally {
+      Object.defineProperty(globalThis, 'crypto', { configurable: true, value: original });
+    }
+    // Still works once the platform provides it.
+    expect(isValidEventId(generateEventId())).toBe(true);
+  });
+
   it('generates ids Google accepts', () => {
     for (let index = 0; index < 200; index += 1) {
       const id = generateEventId();
