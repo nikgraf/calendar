@@ -19,6 +19,13 @@ const tasksScope = (taskListId: string): string => `tasks:${taskListId}`;
 const INITIAL_WINDOW_MS = 365 * 24 * 60 * 60 * 1000; // 12 months back
 /** updatedMin has no tombstone guarantees forever — reconcile fully daily. */
 const TASKS_FULL_PASS_INTERVAL_MS = 24 * 60 * 60 * 1000;
+/**
+ * The watermark comes from the local clock but filters Google's `updated`
+ * stamps: local time running ahead would open a blind window between the
+ * two. Rewinding a minute closes it; re-reading the overlap is harmless
+ * because upserts are idempotent.
+ */
+const WATERMARK_LAG_MS = 60_000;
 export const SYNC_INTERVAL = '90 seconds';
 
 type SyncError = GoogleRequestError | SqlError;
@@ -338,8 +345,8 @@ const make: Effect.Effect<
           scope,
           status: 'idle',
           // Captured before the first request so nothing updated mid-pass
-          // slips between watermarks.
-          syncToken: new Date(passStartedAt).toISOString(),
+          // slips between watermarks; rewound to absorb clock skew.
+          syncToken: new Date(passStartedAt - WATERMARK_LAG_MS).toISOString(),
         }),
       );
     });

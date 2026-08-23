@@ -377,6 +377,15 @@ const make: Effect.Effect<
           (error.status >= 400 && error.status < 500 && error.status !== 429)
             ? Effect.succeed('done' as const)
             : Effect.succeed('retry' as const),
+        // The scope vanished after the op was queued (consent revoked, or
+        // the enable flag was stale): this push can never succeed, so
+        // retrying would pin the queue forever. Drop it and disable tasks
+        // for the account — the connect row reappears in the UI.
+        InsufficientScopeError: () =>
+          Effect.as(
+            Effect.ignore(accountRepo.setTasksEnabled(op.accountId, false)),
+            'done' as const,
+          ),
         NotFoundError: () =>
           Effect.gen(function* () {
             // Deleted remotely — drop the local copy too.

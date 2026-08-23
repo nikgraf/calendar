@@ -268,6 +268,31 @@ describe('completeTask', () => {
     }).pipe(Effect.provide(testLayer(client)));
   });
 
+  it.effect('drops the op and disables tasks when the scope is revoked mid-queue', () => {
+    const client: GoogleTasksClientShape = {
+      listTaskLists: () => Effect.succeed(lists),
+      listTasks: () => Effect.succeed({ items: [] }),
+      patchTask: () => Effect.fail(new InsufficientScopeError({ message: 'scope' })),
+    };
+    return Effect.gen(function* () {
+      yield* seedTasks;
+      const mutations = yield* EventMutations;
+      yield* mutations.completeTask({
+        accountId: 'acc-1',
+        status: 'completed',
+        taskId: 't1',
+        taskListId: 'list-1',
+      });
+      yield* mutations.processPendingOps();
+      // Not retried forever: the op is gone and the account is flagged.
+      const ops = yield* PendingOpRepo;
+      expect(yield* ops.listAll()).toHaveLength(0);
+      const accounts = yield* AccountRepo;
+      const [account] = yield* accounts.list();
+      expect(account?.tasksEnabled).toBe(false);
+    }).pipe(Effect.provide(testLayer(client)));
+  });
+
   it.effect('rejects unknown task lists', () =>
     Effect.gen(function* () {
       yield* seedTasks;
