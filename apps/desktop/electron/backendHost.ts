@@ -10,6 +10,7 @@ import {
   PendingOpRepo,
   reposLayer,
   runMigrations,
+  TaskRepo,
 } from '@calendar/db';
 import {
   GoogleCalendarClient,
@@ -97,6 +98,7 @@ export const startBackendHost = (): void => {
     | EventRepo
     | PendingOpRepo
     | SyncEngine
+    | TaskRepo
     | TokenManager
     | TokenStore
   > = {

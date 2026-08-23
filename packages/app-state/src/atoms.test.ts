@@ -19,6 +19,7 @@ const makeStubClient = () => {
   const calls = { accounts: 0, events: 0, setVisible: 0 };
   const client: BackendClient = {
     addAccount: () => fail('not stubbed'),
+    completeTask: () => Effect.void,
     createEvent: () => fail('not stubbed'),
     deleteEvent: () => fail('not stubbed'),
     deleteRecurring: () => fail('not stubbed'),
@@ -28,6 +29,7 @@ const makeStubClient = () => {
         calls.events += 1;
         return [] as ReadonlyArray<EventRecord>;
       }),
+    getTasksInRange: () => Effect.succeed([]),
     listAccounts: () =>
       Effect.sync(() => {
         calls.accounts += 1;
@@ -35,6 +37,7 @@ const makeStubClient = () => {
       }),
     listCalendars: () => Effect.succeed([]),
     listPendingOps: () => Effect.succeed([]),
+    listTaskLists: () => Effect.succeed([]),
     removeAccount: () => Effect.void,
     respondToEvent: () => Effect.void,
     setCalendarColor: () => Effect.void,
@@ -42,6 +45,7 @@ const makeStubClient = () => {
       Effect.sync(() => {
         calls.setVisible += 1;
       }),
+    setTaskListVisible: () => Effect.void,
     syncNow: () => Effect.void,
     updateEvent: () => fail('not stubbed'),
     updateRecurring: () => fail('not stubbed'),
