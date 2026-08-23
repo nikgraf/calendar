@@ -17,7 +17,33 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import { palette } from './theme.ts';
+
+/**
+ * The editor model stores wall-clock strings (YYYY-MM-DD / HH:MM) shared
+ * with desktop; the native pickers speak JS Date. On iOS the editor's
+ * zone is the device zone, so local-time Dates round-trip exactly.
+ * Degenerate strings fall back to today 09:00 — a picker must never
+ * receive an Invalid Date.
+ */
+const dateFromParts = (date: string, time?: string): Date => {
+  const [year, month, day] = date.split('-').map(Number);
+  const [hour, minute] = (time ?? '09:00').split(':').map(Number);
+  if (!year || !month || !day) {
+    return new Date();
+  }
+  const parsed = new Date(year, month - 1, day, hour ?? 9, minute ?? 0);
+  return Number.isNaN(parsed.getTime()) ? new Date() : parsed;
+};
+
+const pad2 = (value: number) => String(value).padStart(2, '0');
+
+const toDateString = (value: Date): string =>
+  `${value.getFullYear()}-${pad2(value.getMonth() + 1)}-${pad2(value.getDate())}`;
+
+const toTimeString = (value: Date): string =>
+  `${pad2(value.getHours())}:${pad2(value.getMinutes())}`;
 
 const RSVPS: ReadonlyArray<{ label: string; value: RsvpResponse }> = [
   { label: 'Accept', value: 'accepted' },
@@ -214,7 +240,16 @@ export function EventEditSheet({
                         {REPEAT_ENDS.map((option) => (
                           <Pressable
                             key={option.value}
-                            onPress={() => setRepeatEnds(option.value)}
+                            onPress={() => {
+                              setRepeatEnds(option.value);
+                              // The picker chip renders a date even while the
+                              // model still holds '' — seed it, or a save
+                              // would silently drop the end bound and create
+                              // an unbounded recurrence.
+                              if (option.value === 'on' && !repeatUntil) {
+                                setRepeatUntil(date);
+                              }
+                            }}
                             style={[
                               styles.scopeChip,
                               repeatEnds === option.value && styles.scopeChipActive,
@@ -250,44 +285,49 @@ export function EventEditSheet({
 
                 {repeat !== 'none' && repeatEnds === 'on' ? (
                   <>
-                    <Text style={styles.label}>Ends on (YYYY-MM-DD)</Text>
-                    <TextInput
-                      autoCapitalize="none"
-                      onChangeText={setRepeatUntil}
-                      placeholder="2026-12-31"
-                      style={styles.input}
-                      value={repeatUntil}
-                    />
+                    <View style={styles.pickerRow}>
+                      <Text style={styles.label}>Ends on</Text>
+                      <DateTimePicker
+                        display="compact"
+                        mode="date"
+                        onChange={(_, picked) => picked && setRepeatUntil(toDateString(picked))}
+                        value={dateFromParts(repeatUntil || date)}
+                      />
+                    </View>
                   </>
                 ) : null}
               </>
             )}
 
-            <Text style={styles.label}>Date (YYYY-MM-DD)</Text>
-            <TextInput
-              autoCapitalize="none"
-              onChangeText={setDate}
-              style={styles.input}
-              value={date}
-            />
+            <View style={styles.pickerRow} testID="event-date">
+              <Text style={styles.label}>Date</Text>
+              <DateTimePicker
+                display="compact"
+                mode="date"
+                onChange={(_, picked) => picked && setDate(toDateString(picked))}
+                value={dateFromParts(date)}
+              />
+            </View>
             {isAllDay ? null : (
               <View style={styles.timesRow}>
-                <View style={styles.timeField}>
-                  <Text style={styles.label}>Start (HH:MM)</Text>
-                  <TextInput
-                    autoCapitalize="none"
-                    onChangeText={setStartTime}
-                    style={styles.input}
-                    value={startTime}
+                <View style={styles.timeField} testID="event-start">
+                  <Text style={styles.label}>Start</Text>
+                  <DateTimePicker
+                    display="compact"
+                    mode="time"
+                    onChange={(_, picked) => picked && setStartTime(toTimeString(picked))}
+                    style={styles.timePicker}
+                    value={dateFromParts(date, startTime)}
                   />
                 </View>
-                <View style={styles.timeField}>
-                  <Text style={styles.label}>End (HH:MM)</Text>
-                  <TextInput
-                    autoCapitalize="none"
-                    onChangeText={setEndTime}
-                    style={styles.input}
-                    value={endTime}
+                <View style={styles.timeField} testID="event-end">
+                  <Text style={styles.label}>End</Text>
+                  <DateTimePicker
+                    display="compact"
+                    mode="time"
+                    onChange={(_, picked) => picked && setEndTime(toTimeString(picked))}
+                    style={styles.timePicker}
+                    value={dateFromParts(date, endTime)}
                   />
                 </View>
               </View>
@@ -439,6 +479,11 @@ const styles = StyleSheet.create({
     marginBottom: 4,
     textTransform: 'uppercase',
   },
+  pickerRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
   save: {
     color: '#2563eb',
     fontSize: 16,
@@ -481,6 +526,9 @@ const styles = StyleSheet.create({
   },
   timeField: {
     flex: 1,
+  },
+  timePicker: {
+    alignSelf: 'flex-start',
   },
   timesRow: {
     flexDirection: 'row',
