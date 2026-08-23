@@ -1,12 +1,13 @@
 import {
   bufferedDays,
   dayRange,
+  type EventRecord,
   layoutAllDayLane,
   layoutDayColumn,
   PAN_BUFFER_DAYS,
+  type TaskRecord,
   Temporal,
   utcMsToPlainDate,
-  type EventRecord,
 } from '@calendar/core';
 import { useNow } from '@calendar/app-state';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
@@ -35,6 +36,8 @@ export function WeekView({
   onEventClick,
   onNavigate,
   onSlotClick,
+  onToggleTask,
+  tasks,
   timeZone,
 }: {
   colorOf: ColorLookup;
@@ -43,6 +46,8 @@ export function WeekView({
   onEventClick: (event: EventRecord) => void;
   onNavigate: (dayCount: number) => void;
   onSlotClick: (date: Temporal.PlainDate, hour: number) => void;
+  onToggleTask: (task: TaskRecord) => void;
+  tasks: ReadonlyArray<TaskRecord>;
   timeZone: string;
 }) {
   const rootRef = useRef<HTMLDivElement>(null);
@@ -105,24 +110,39 @@ export function WeekView({
   const allDayEvents = events.filter((event) => event.isAllDay);
   const timedEvents = events.filter((event) => !event.isAllDay);
 
+  // Tasks join the same lane as one-day spans so they pack into shared
+  // rows with all-day events and the lane height stays consistent.
+  const taskSpans = tasks.flatMap((task) => {
+    if (!task.dueDate) {
+      return [];
+    }
+    const index = dayIndexOf(task.dueDate, strip);
+    return index === -1
+      ? []
+      : [{ endDayIndex: index + 1, id: `task:${task.listId}:${task.id}`, startDayIndex: index }];
+  });
+  const taskById = new Map(tasks.map((task) => [`task:${task.listId}:${task.id}`, task]));
+
   const { placed: allDayPlaced, rowCount } = layoutAllDayLane(
-    allDayEvents.map((event) => {
-      const startIndex = event.startDate ? dayIndexOf(event.startDate, strip) : -1;
-      const endIso = event.endDate ?? utcMsToPlainDate(event.endUtc);
-      const endDate = Temporal.PlainDate.from(endIso);
-      const first = strip[0]!;
-      return {
-        endDayIndex:
-          Temporal.PlainDate.compare(endDate, strip.at(-1)!) > 0
-            ? strip.length
-            : Math.max(first.until(endDate).days, 0),
-        id: `${event.calendarId}:${event.id}`,
-        startDayIndex:
-          startIndex === -1 && event.startDate
-            ? Math.min(first.until(Temporal.PlainDate.from(event.startDate)).days, 0)
-            : startIndex,
-      };
-    }),
+    taskSpans.concat(
+      allDayEvents.map((event) => {
+        const startIndex = event.startDate ? dayIndexOf(event.startDate, strip) : -1;
+        const endIso = event.endDate ?? utcMsToPlainDate(event.endUtc);
+        const endDate = Temporal.PlainDate.from(endIso);
+        const first = strip[0]!;
+        return {
+          endDayIndex:
+            Temporal.PlainDate.compare(endDate, strip.at(-1)!) > 0
+              ? strip.length
+              : Math.max(first.until(endDate).days, 0),
+          id: `${event.calendarId}:${event.id}`,
+          startDayIndex:
+            startIndex === -1 && event.startDate
+              ? Math.min(first.until(Temporal.PlainDate.from(event.startDate)).days, 0)
+              : startIndex,
+        };
+      }),
+    ),
     strip.length,
   );
   const allDayById = new Map(
@@ -186,6 +206,37 @@ export function WeekView({
         <div className="min-w-0 flex-1 overflow-hidden">
           <div className="relative h-full" style={stripStyle}>
             {allDayPlaced.map((span) => {
+              const task = taskById.get(span.id);
+              if (task) {
+                const done = task.status === 'completed';
+                return (
+                  <div
+                    className={`absolute flex items-center gap-1 truncate rounded border border-neutral-300 bg-neutral-50 px-1 text-xs leading-5 text-neutral-700 ${done ? 'opacity-50' : ''}`}
+                    key={span.id}
+                    style={{
+                      left: `calc(${(span.startDayIndex / strip.length) * 100}% + 2px)`,
+                      top: span.row * 24 + 4,
+                      width: `calc(${((span.endDayIndex - span.startDayIndex) / strip.length) * 100}% - 4px)`,
+                    }}
+                    title={task.title}
+                  >
+                    <button
+                      aria-label={
+                        done ? `Reopen task ${task.title}` : `Complete task ${task.title}`
+                      }
+                      className="shrink-0 cursor-pointer"
+                      onClick={(mouse) => {
+                        mouse.stopPropagation();
+                        onToggleTask(task);
+                      }}
+                      type="button"
+                    >
+                      {done ? '☑' : '☐'}
+                    </button>
+                    <span className={`truncate ${done ? 'line-through' : ''}`}>{task.title}</span>
+                  </div>
+                );
+              }
               const event = allDayById.get(span.id)!;
               const color = colorOf(event);
               return (

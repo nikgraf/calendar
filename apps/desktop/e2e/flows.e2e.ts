@@ -1,13 +1,21 @@
-import { Account, Attendee, CalendarInfo, EventRecord } from '@calendar/core';
+import {
+  Account,
+  Attendee,
+  CalendarInfo,
+  EventRecord,
+  TaskListInfo,
+  TaskRecord,
+} from '@calendar/core';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import {
+  type App,
   launchApp,
   readCalendars,
   readEvents,
   readPendingOps,
   readPendingOpsCount,
   readSettings,
-  type App,
+  readTasks,
 } from './harness.ts';
 
 const HOUR_MS = 60 * 60 * 1000;
@@ -34,7 +42,7 @@ const account = new Account({
   email: 'e2e@nikgraf.com',
   id: 'acc-e2e',
   status: 'ok',
-  tasksEnabled: false,
+  tasksEnabled: true,
 });
 
 const calendar = (id: string, summary: string, colorHex: string) =>
@@ -104,6 +112,20 @@ const seed = {
         new Attendee({ email: 'e2e@nikgraf.com', responseStatus: 'needsAction' }),
       ],
       location: 'https://us02web.zoom.us/j/8881234567?pwd=e2e',
+    }),
+  ],
+  taskLists: [
+    new TaskListInfo({ accountId: 'acc-e2e', id: 'list-e2e', isVisible: true, title: 'My Tasks' }),
+  ],
+  tasks: [
+    new TaskRecord({
+      accountId: 'acc-e2e',
+      dueDate: new Date(todayAt(0)).toISOString().slice(0, 10),
+      id: 'task-rent',
+      listId: 'list-e2e',
+      status: 'needsAction',
+      title: 'Pay rent',
+      updatedAt: 1,
     }),
   ],
 };
@@ -264,19 +286,21 @@ describe('calendar desktop e2e', () => {
     await cdp.waitFor(`document.body.textContent.includes('all-day')`);
     await cdp.waitFor(`!!document.querySelector('[title="Team offsite"]')`);
 
-    // Panning across weeks with/without the all-day event (and away from the
-    // today-circle header) must not move the timed grid vertically. Restore
-    // the view before asserting so a failure can't cascade into later tests.
+    // The lane's height follows its window's row count (task chips share
+    // the rows), so a forward pan may legitimately resize it. What must
+    // hold: the lane never unmounts mid-pan (the original regression), and
+    // a round trip restores the exact geometry — no cumulative drift.
     const gridY = `Math.round(document.querySelector('.overflow-y-scroll').getBoundingClientRect().y)`;
     const yBefore = await cdp.eval<number>(gridY);
     await cdp.wheelBurst('.overflow-y-scroll', { count: 12, deltaX: 240 });
-    const yForward = await cdp.eval<number>(gridY);
+    await cdp.waitFor(`document.body.textContent.includes('all-day')`);
     await cdp.wheelBurst('.overflow-y-scroll', { count: 12, deltaX: -240 });
     const yBack = await cdp.eval<number>(gridY);
     await cdp.clickButtonWithText('Today');
     await cdp.waitFor(`!!document.querySelector('[title^="Standup meeting"]')`);
-    expect(yForward).toBe(yBefore);
+    const yToday = await cdp.eval<number>(gridY);
     expect(yBack).toBe(yBefore);
+    expect(yToday).toBe(yBefore);
 
     // Day-header columns sit exactly over the body's day columns.
     const maxDrift = await cdp.eval<number>(`(() => {
@@ -571,6 +595,26 @@ describe('calendar desktop e2e', () => {
         .responseStatus,
     ).toBe('accepted');
     await cdp.clickButtonWithText('Cancel');
+  });
+
+  it('checks a task off from its all-day chip', async () => {
+    const { cdp } = app;
+    // The chip renders in the all-day lane with the checkbox leading.
+    const checkbox = await cdp.locate('[title="Pay rent"] button');
+    await cdp.click(checkbox.x, checkbox.y);
+
+    await cdp.waitFor(
+      `document.querySelector('[title="Pay rent"]')?.textContent?.includes('☑') === true`,
+    );
+    // The optimistic write landed and the write-back op is queued.
+    await expect
+      .poll(async () => {
+        const tasks = await readTasks(app.userDataDir);
+        return tasks.find((task) => task.id === 'task-rent')?.status;
+      })
+      .toBe('completed');
+    const ops = await readPendingOps(app.userDataDir);
+    expect(ops.some((op) => op.kind === 'completeTask' && op.eventId === 'task-rent')).toBe(true);
   });
 
   it('recolors a calendar through the sidebar picker', async () => {

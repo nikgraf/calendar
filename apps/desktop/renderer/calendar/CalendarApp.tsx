@@ -3,10 +3,17 @@ import {
   monthGridRange,
   PAN_BUFFER_DAYS,
   Temporal,
-  weekStart,
+  utcMsToPlainDate,
   type UtcRange,
+  weekStart,
 } from '@calendar/core';
-import { useAccounts, useCalendars, useEventsInRangeStable } from '@calendar/app-state';
+import {
+  useAccounts,
+  useBackendMutations,
+  useCalendars,
+  useEventsInRangeStable,
+  useTasksInRangeStable,
+} from '@calendar/app-state';
 import { useMemo, useState } from 'react';
 import { AccountsView } from '../AccountsView.tsx';
 import { EventEditor, type EditorSeed } from './EventEditor.tsx';
@@ -85,6 +92,12 @@ export function CalendarApp() {
     [view, focused, windowStart, timeZone],
   );
   const events = useEventsInRangeStable(range.startUtc, range.endUtc);
+  // Tasks are date-only; the same fetched window expressed as day strings.
+  const tasks = useTasksInRangeStable(
+    utcMsToPlainDate(range.startUtc),
+    utcMsToPlainDate(range.endUtc),
+  );
+  const { completeTask } = useBackendMutations();
   const calendars = useCalendars();
   const accounts = useAccounts();
   const colorOf = useMemo(() => makeColorLookup(calendars), [calendars]);
@@ -223,6 +236,15 @@ export function CalendarApp() {
             onEventClick={(event) => setEditorSeed({ event, initialDate: focused })}
             onNavigate={panByDays}
             onSlotClick={(date, hour) => setEditorSeed({ initialDate: date, initialHour: hour })}
+            onToggleTask={(task) =>
+              void completeTask({
+                accountId: task.accountId,
+                status: task.status === 'completed' ? 'needsAction' : 'completed',
+                taskId: task.id,
+                taskListId: task.listId,
+              })
+            }
+            tasks={tasks}
             timeZone={timeZone}
           />
         )}

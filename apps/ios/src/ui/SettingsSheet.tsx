@@ -1,4 +1,10 @@
-import { useAccounts, useBackendMutations, useCalendars, usePendingOps } from '@calendar/app-state';
+import {
+  useAccounts,
+  useBackendMutations,
+  useCalendars,
+  usePendingOps,
+  useTaskLists,
+} from '@calendar/app-state';
 import type { ModelStatus } from '@calendar/ai';
 import { CALENDAR_PALETTE } from '@calendar/core';
 import {
@@ -31,6 +37,7 @@ export function SettingsSheet({ onClose, visible }: { onClose: () => void; visib
   const accounts = useAccounts();
   const calendars = useCalendars();
   const pendingOps = usePendingOps();
+  const taskLists = useTaskLists();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   /** `${accountId}:${calendarId}` of the row with the palette expanded. */
@@ -75,8 +82,12 @@ export function SettingsSheet({ onClose, visible }: { onClose: () => void; visib
               {pendingOps.map((op) => (
                 <View key={op.id} style={styles.pendingRow}>
                   <Text numberOfLines={1} style={styles.pendingLabel}>
-                    {op.kind === 'calendarColor' ? 'color' : op.kind} ·{' '}
-                    {op.kind === 'calendarColor' ? op.calendarId : (op.title ?? op.eventId)}
+                    {op.kind === 'calendarColor'
+                      ? 'color'
+                      : op.kind === 'completeTask'
+                        ? 'task'
+                        : op.kind}{' '}
+                    · {op.kind === 'calendarColor' ? op.calendarId : (op.title ?? op.eventId)}
                     {op.attempts > 0 ? ` — retrying (${op.attempts}×)` : ''}
                   </Text>
                   <Pressable onPress={() => void mutations.discardPendingOp({ opId: op.id })}>
@@ -176,6 +187,33 @@ export function SettingsSheet({ onClose, visible }: { onClose: () => void; visib
                     </View>
                   );
                 })}
+              {taskLists
+                .filter((list) => list.accountId === account.id)
+                .map((list) => (
+                  <Pressable
+                    key={list.id}
+                    onPress={() =>
+                      void mutations.setTaskListVisible({
+                        accountId: list.accountId,
+                        isVisible: !list.isVisible,
+                        taskListId: list.id,
+                      })
+                    }
+                    style={styles.calendarToggle}
+                    testID={`task-list-${list.id}`}
+                  >
+                    <Text style={[styles.calendarName, !list.isVisible && styles.calendarHidden]}>
+                      ✓ {list.title}
+                    </Text>
+                  </Pressable>
+                ))}
+              {account.tasksEnabled ? null : (
+                // Tokens from before the tasks scope: re-running sign-in
+                // re-consents and upgrades the account in place.
+                <Pressable disabled={busy} onPress={() => void addAccount()}>
+                  <Text style={styles.reconnect}>Connect Google Tasks — sign in again</Text>
+                </Pressable>
+              )}
             </View>
           ))}
 

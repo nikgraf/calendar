@@ -2,15 +2,18 @@ import {
   BackendProvider,
   makeBackendAtoms,
   useBackendInvalidations,
+  useBackendMutations,
   useCalendars,
   useEventsInRangeStable,
+  useTasksInRangeStable,
 } from '@calendar/app-state';
 import {
   bufferedRange,
-  makeColorLookup,
   DAY_SWIPE_BUFFER,
+  makeColorLookup,
   monthGridRange,
   Temporal,
+  utcMsToPlainDate,
   weekStart,
 } from '@calendar/core';
 import { useEffect, useMemo, useState } from 'react';
@@ -64,6 +67,12 @@ function CalendarScreen() {
   // Stable variant: keeps the previous days' events while a new range loads,
   // so swiping never flashes an empty grid.
   const events = useEventsInRangeStable(range.startUtc, range.endUtc);
+  // Tasks are date-only; the same fetched window expressed as day strings.
+  const tasks = useTasksInRangeStable(
+    utcMsToPlainDate(range.startUtc),
+    utcMsToPlainDate(range.endUtc),
+  );
+  const mutations = useBackendMutations();
   const calendars = useCalendars();
 
   const colorOf = useMemo(() => makeColorLookup(calendars), [calendars]);
@@ -155,6 +164,15 @@ function CalendarScreen() {
             events={events}
             onEventPress={(event) => setEditSeed({ event, initialDate: focused })}
             onNavigate={step}
+            onToggleTask={(task) =>
+              void mutations.completeTask({
+                accountId: task.accountId,
+                status: task.status === 'completed' ? 'needsAction' : 'completed',
+                taskId: task.id,
+                taskListId: task.listId,
+              })
+            }
+            tasks={tasks}
             timeZone={timeZone}
           />
         </>
