@@ -14,6 +14,7 @@ import {
 import {
   GoogleCalendarClient,
   GoogleOAuthConfig,
+  TASKS_SCOPE,
   TokenManager,
   TokenStore,
 } from '@calendar/google';
@@ -117,6 +118,9 @@ export const startBackendHost = (): void => {
           email: result.profile.email,
           id: existing?.id ?? randomUUID(),
           status: 'ok',
+          // What Google actually granted, not what we asked for — a user
+          // can untick scopes on the consent screen.
+          tasksEnabled: result.tokens.scopes.includes(TASKS_SCOPE),
         });
         yield* tokenStore.set(account.id, result.tokens);
         yield* accountRepo.upsert(account);

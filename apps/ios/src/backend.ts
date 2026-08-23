@@ -7,10 +7,11 @@ import {
 } from '@calendar/core';
 import { AccountRepo, forwardingReactivity, reposLayer, runMigrations } from '@calendar/db';
 import {
+  GoogleCalendarClient,
   GoogleOAuthConfig,
+  TASKS_SCOPE,
   TokenManager,
   TokenStore,
-  GoogleCalendarClient,
 } from '@calendar/google';
 import {
   commonBackendHandlers,
@@ -135,6 +136,9 @@ const handlers: BackendHandlers<CommonBackendServices | TokenManager> = {
         email: result.profile.email,
         id: existing?.id ?? generateUuid(),
         status: 'ok',
+        // What Google actually granted, not what we asked for — a user
+        // can untick scopes on the consent screen.
+        tasksEnabled: result.tokens.scopes.includes(TASKS_SCOPE),
       });
       yield* tokenStore.set(account.id, result.tokens);
       yield* accountRepo.upsert(account);

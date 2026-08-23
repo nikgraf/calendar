@@ -93,6 +93,7 @@ const seedAccount = Effect.gen(function* () {
       email: 'nik@example.com',
       id: 'acc-1',
       status: 'ok',
+      tasksEnabled: false,
     }),
   );
 });

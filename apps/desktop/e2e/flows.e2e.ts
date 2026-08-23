@@ -34,6 +34,7 @@ const account = new Account({
   email: 'e2e@nikgraf.com',
   id: 'acc-e2e',
   status: 'ok',
+  tasksEnabled: false,
 });
 
 const calendar = (id: string, summary: string, colorHex: string) =>

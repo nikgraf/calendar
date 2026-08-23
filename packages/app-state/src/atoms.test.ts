@@ -10,6 +10,7 @@ const account = new Account({
   email: 'nik@example.com',
   id: 'acc-1',
   status: 'ok',
+  tasksEnabled: false,
 });
 
 const fail = (message: string) => Effect.fail(new BackendError({ message, tag: 'Stub' }));

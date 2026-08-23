@@ -12,6 +12,7 @@ const account = new Account({
   email: 'nik@example.com',
   id: 'acc-1',
   status: 'ok',
+  tasksEnabled: false,
 });
 
 /** In-memory frame pair connecting the client and server protocols. */

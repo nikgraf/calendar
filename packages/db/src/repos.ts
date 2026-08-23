@@ -1,16 +1,26 @@
 import {
-  EventRecord as EventRecordSchema,
   type Account,
   type CalendarInfo,
   type EventRecord,
+  EventRecord as EventRecordSchema,
   type PendingOp,
   type SyncState,
+  TaskListInfo,
+  TaskRecord,
 } from '@calendar/core';
 import { Context, Effect, Layer, Schema } from 'effect';
 import { Reactivity } from 'effect/unstable/reactivity/Reactivity';
 import { SqlClient } from 'effect/unstable/sql/SqlClient';
 import type { SqlError } from 'effect/unstable/sql/SqlError';
-import { ACCOUNTS_KEY, CALENDARS_KEY, EVENTS_KEY, eventsKey, OPS_KEY } from './keys.ts';
+import {
+  ACCOUNTS_KEY,
+  CALENDARS_KEY,
+  EVENTS_KEY,
+  eventsKey,
+  OPS_KEY,
+  TASKLISTS_KEY,
+  TASKS_KEY,
+} from './keys.ts';
 import {
   accountFromRow,
   calendarFromRow,
@@ -23,6 +33,10 @@ import {
   type EventRow,
   type PendingOpRow,
   type SyncStateRow,
+  taskFromRow,
+  taskListFromRow,
+  type TaskListRow,
+  type TaskRow,
 } from './rows.ts';
 
 /** PendingOp payloads are stored as encoded EventRecord JSON. */
@@ -36,6 +50,8 @@ export interface AccountRepoShape {
     accountId: string,
     status: Account['status'],
   ) => Effect.Effect<void, SqlError>;
+  /** Flipped off when a tasks call reports the scope was never granted. */
+  readonly setTasksEnabled: (accountId: string, enabled: boolean) => Effect.Effect<void, SqlError>;
   readonly upsert: (account: Account) => Effect.Effect<void, SqlError>;
 }
 
@@ -55,6 +71,8 @@ const makeAccountRepo: Effect.Effect<AccountRepoShape, never, Reactivity | SqlCl
         invalidating(
           Effect.gen(function* () {
             yield* sql`DELETE FROM events WHERE account_id = ${accountId}`;
+            yield* sql`DELETE FROM tasks WHERE account_id = ${accountId}`;
+            yield* sql`DELETE FROM task_lists WHERE account_id = ${accountId}`;
             yield* sql`DELETE FROM calendars WHERE account_id = ${accountId}`;
             yield* sql`DELETE FROM pending_ops WHERE account_id = ${accountId}`;
             yield* sql`DELETE FROM sync_state WHERE account_id = ${accountId}`;
@@ -65,17 +83,26 @@ const makeAccountRepo: Effect.Effect<AccountRepoShape, never, Reactivity | SqlCl
         invalidating(
           Effect.asVoid(sql`UPDATE accounts SET status = ${status} WHERE id = ${accountId}`),
         ),
+      setTasksEnabled: (accountId, enabled) =>
+        invalidating(
+          Effect.asVoid(
+            sql`UPDATE accounts SET tasks_enabled = ${enabled ? 1 : 0} WHERE id = ${accountId}`,
+          ),
+        ),
       upsert: (account) =>
         invalidating(
           Effect.asVoid(sql`
-          INSERT INTO accounts (id, email, display_name, avatar_url, status, created_at)
+          INSERT INTO accounts (id, email, display_name, avatar_url, status, created_at,
+                                tasks_enabled)
           VALUES (${account.id}, ${account.email}, ${account.displayName ?? null},
-                  ${account.avatarUrl ?? null}, ${account.status}, ${account.createdAt})
+                  ${account.avatarUrl ?? null}, ${account.status}, ${account.createdAt},
+                  ${account.tasksEnabled ? 1 : 0})
           ON CONFLICT (id) DO UPDATE SET
             email = excluded.email,
             display_name = excluded.display_name,
             avatar_url = excluded.avatar_url,
-            status = excluded.status
+            status = excluded.status,
+            tasks_enabled = excluded.tasks_enabled
         `),
         ),
     };
@@ -461,9 +488,189 @@ export class SyncStateRepo extends Context.Service<SyncStateRepo, SyncStateRepoS
     Layer.effect(SyncStateRepo)(makeSyncStateRepo);
 }
 
+export interface TaskRepoShape {
+  /** Deletes synced tasks of the list not touched since syncedAt (full pass). */
+  readonly deleteStale: (
+    accountId: string,
+    listId: string,
+    syncedAt: number,
+  ) => Effect.Effect<void, SqlError>;
+  /** Tasks with a due day inside [startDate, endDate], visible lists only. */
+  readonly getWindow: (
+    startDate: string,
+    endDate: string,
+  ) => Effect.Effect<ReadonlyArray<TaskRecord>, SqlError>;
+  readonly listLists: (accountId?: string) => Effect.Effect<ReadonlyArray<TaskListInfo>, SqlError>;
+  readonly removeListsMissing: (
+    accountId: string,
+    keepIds: ReadonlyArray<string>,
+  ) => Effect.Effect<void, SqlError>;
+  readonly removeTask: (
+    accountId: string,
+    listId: string,
+    taskId: string,
+  ) => Effect.Effect<void, SqlError>;
+  readonly removeTasksByIds: (
+    accountId: string,
+    listId: string,
+    ids: ReadonlyArray<string>,
+  ) => Effect.Effect<void, SqlError>;
+  readonly setListVisible: (
+    accountId: string,
+    listId: string,
+    isVisible: boolean,
+  ) => Effect.Effect<void, SqlError>;
+  /** Optimistic completion toggle; the response upsert self-heals later. */
+  readonly setStatus: (params: {
+    readonly accountId: string;
+    readonly completedAt: number | undefined;
+    readonly listId: string;
+    readonly status: TaskRecord['status'];
+    readonly taskId: string;
+  }) => Effect.Effect<void, SqlError>;
+  /** Upserts while preserving the local is_visible toggle on update. */
+  readonly upsertLists: (
+    lists: ReadonlyArray<TaskListInfo>,
+    syncedAt: number,
+  ) => Effect.Effect<void, SqlError>;
+  readonly upsertTasks: (
+    tasks: ReadonlyArray<TaskRecord>,
+    syncedAt: number,
+  ) => Effect.Effect<void, SqlError>;
+}
+
+const makeTaskRepo: Effect.Effect<TaskRepoShape, never, Reactivity | SqlClient> = Effect.gen(
+  function* () {
+    const sql = yield* SqlClient;
+    const reactivity = yield* Reactivity;
+    const tasksMutation = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+      reactivity.mutation([TASKS_KEY], effect);
+    const listsMutation = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+      reactivity.mutation([TASKLISTS_KEY, TASKS_KEY], effect);
+
+    return {
+      deleteStale: (accountId, listId, syncedAt) =>
+        tasksMutation(
+          Effect.asVoid(
+            sql`DELETE FROM tasks WHERE account_id = ${accountId}
+              AND list_id = ${listId} AND synced_at < ${syncedAt}`,
+          ),
+        ),
+      getWindow: (startDate, endDate) =>
+        Effect.map(
+          sql<TaskRow>`
+            SELECT t.* FROM tasks t
+            JOIN task_lists l ON l.account_id = t.account_id AND l.id = t.list_id
+            WHERE l.is_visible = 1
+              AND t.due_date IS NOT NULL
+              AND t.due_date >= ${startDate} AND t.due_date <= ${endDate}
+            ORDER BY t.due_date, t.title`,
+          (rows) => rows.map(taskFromRow),
+        ),
+      listLists: (accountId) =>
+        Effect.map(
+          accountId === undefined
+            ? sql<TaskListRow>`SELECT * FROM task_lists ORDER BY account_id, title`
+            : sql<TaskListRow>`SELECT * FROM task_lists WHERE account_id = ${accountId} ORDER BY title`,
+          (rows) => rows.map(taskListFromRow),
+        ),
+      removeListsMissing: (accountId, keepIds) =>
+        listsMutation(
+          Effect.gen(function* () {
+            if (keepIds.length === 0) {
+              yield* sql`DELETE FROM tasks WHERE account_id = ${accountId}`;
+              yield* sql`DELETE FROM task_lists WHERE account_id = ${accountId}`;
+              return;
+            }
+            yield* sql`DELETE FROM tasks WHERE account_id = ${accountId}
+              AND list_id NOT IN ${sql.in(keepIds)}`;
+            yield* sql`DELETE FROM task_lists WHERE account_id = ${accountId}
+              AND id NOT IN ${sql.in(keepIds)}`;
+          }),
+        ),
+      removeTask: (accountId, listId, taskId) =>
+        tasksMutation(
+          Effect.asVoid(
+            sql`DELETE FROM tasks WHERE account_id = ${accountId}
+              AND list_id = ${listId} AND id = ${taskId}`,
+          ),
+        ),
+      removeTasksByIds: (accountId, listId, ids) =>
+        ids.length === 0
+          ? Effect.void
+          : tasksMutation(
+              Effect.asVoid(
+                sql`DELETE FROM tasks WHERE account_id = ${accountId}
+                  AND list_id = ${listId} AND id IN ${sql.in(ids)}`,
+              ),
+            ),
+      setListVisible: (accountId, listId, isVisible) =>
+        listsMutation(
+          Effect.asVoid(
+            sql`UPDATE task_lists SET is_visible = ${isVisible ? 1 : 0}
+              WHERE account_id = ${accountId} AND id = ${listId}`,
+          ),
+        ),
+      setStatus: ({ accountId, completedAt, listId, status, taskId }) =>
+        tasksMutation(
+          Effect.asVoid(
+            sql`UPDATE tasks SET status = ${status}, completed_at = ${completedAt ?? null}
+              WHERE account_id = ${accountId} AND list_id = ${listId} AND id = ${taskId}`,
+          ),
+        ),
+      upsertLists: (lists, syncedAt) =>
+        listsMutation(
+          Effect.forEach(
+            lists,
+            (list) =>
+              sql`
+              INSERT INTO task_lists (account_id, id, title, is_visible, synced_at)
+              VALUES (${list.accountId}, ${list.id}, ${list.title},
+                      ${list.isVisible ? 1 : 0}, ${syncedAt})
+              ON CONFLICT (account_id, id) DO UPDATE SET
+                title = excluded.title,
+                synced_at = excluded.synced_at
+            `,
+            { discard: true },
+          ),
+        ),
+      upsertTasks: (tasks, syncedAt) =>
+        tasksMutation(
+          Effect.forEach(
+            tasks,
+            (task) =>
+              sql`
+              INSERT INTO tasks (account_id, list_id, id, title, notes, status, due_date,
+                                 completed_at, web_view_link, updated_at, synced_at)
+              VALUES (${task.accountId}, ${task.listId}, ${task.id}, ${task.title},
+                      ${task.notes ?? null}, ${task.status}, ${task.dueDate ?? null},
+                      ${task.completedAt ?? null}, ${task.webViewLink ?? null},
+                      ${task.updatedAt}, ${syncedAt})
+              ON CONFLICT (account_id, list_id, id) DO UPDATE SET
+                title = excluded.title,
+                notes = excluded.notes,
+                status = excluded.status,
+                due_date = excluded.due_date,
+                completed_at = excluded.completed_at,
+                web_view_link = excluded.web_view_link,
+                updated_at = excluded.updated_at,
+                synced_at = excluded.synced_at
+            `,
+            { discard: true },
+          ),
+        ),
+    };
+  },
+);
+
+export class TaskRepo extends Context.Service<TaskRepo, TaskRepoShape>()('db/TaskRepo') {
+  static readonly layer: Layer.Layer<TaskRepo, never, Reactivity | SqlClient> =
+    Layer.effect(TaskRepo)(makeTaskRepo);
+}
+
 /** All repositories, ready to sit on a SqlClient + Reactivity. */
 export const reposLayer: Layer.Layer<
-  AccountRepo | CalendarRepo | EventRepo | PendingOpRepo | SyncStateRepo,
+  AccountRepo | CalendarRepo | EventRepo | PendingOpRepo | SyncStateRepo | TaskRepo,
   never,
   Reactivity | SqlClient
 > = Layer.mergeAll(
@@ -472,4 +679,5 @@ export const reposLayer: Layer.Layer<
   EventRepo.layer,
   PendingOpRepo.layer,
   SyncStateRepo.layer,
+  TaskRepo.layer,
 );

@@ -48,7 +48,13 @@ const mutationsLayer = (client: GoogleCalendarClientShape) =>
 const seedCalendar = Effect.gen(function* () {
   const accounts = yield* AccountRepo;
   yield* accounts.upsert(
-    new Account({ createdAt: 1, email: 'nik@nikgraf.com', id: 'acc-1', status: 'ok' }),
+    new Account({
+      createdAt: 1,
+      email: 'nik@nikgraf.com',
+      id: 'acc-1',
+      status: 'ok',
+      tasksEnabled: false,
+    }),
   );
   const calendars = yield* CalendarRepo;
   yield* calendars.upsertMany([

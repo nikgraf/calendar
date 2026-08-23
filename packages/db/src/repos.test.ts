@@ -21,6 +21,7 @@ const account = new Account({
   email: 'nik@example.com',
   id: 'acc-1',
   status: 'ok',
+  tasksEnabled: false,
 });
 
 const calendar = (overrides: Partial<CalendarInfo> = {}): CalendarInfo =>
