@@ -75,8 +75,8 @@ invariants.
   them).
 - `getWindow` joins visible calendars: tests asserting through it must
   seed a calendar row, not just events.
-- Tests run on Node against `better-sqlite3-node` (vite alias); the app's
-  root `better-sqlite3` stays Electron-ABI.
+- The SQLite driver is Node's built-in `node:sqlite` (same in tests,
+  Electron, and CI) — no ABI split, no alias twin.
 
 ### Desktop e2e (`pnpm test:e2e`, apps/desktop/e2e/)
 
@@ -110,9 +110,8 @@ Flakiness lessons (each caused a real CI failure — keep them enforced):
 ### CI (.github/workflows/ci.yml)
 
 - `gate` (ubuntu): check + typecheck + unit tests.
-- `e2e` (macos-14): `rebuild:native` → desktop build → e2e suite. GUI
-  Electron runs fine on macOS runners; content protection does not affect
-  CDP automation.
+- `e2e` (macos-14): desktop build → e2e suite. GUI Electron runs fine on
+  macOS runners; content protection does not affect CDP automation.
 
 ### iOS e2e (Maestro, apps/ios/e2e/flows/)
 

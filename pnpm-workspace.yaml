@@ -37,7 +37,6 @@ catalog:
 onlyBuiltDependencies:
   - '@swc/core'
   - '@tailwindcss/oxide'
-  - better-sqlite3
   - electron
   - unrs-resolver
 
@@ -65,7 +64,6 @@ minimumReleaseAgeExclude:
   - vite-plus@0.2.2
 
 allowBuilds:
-  better-sqlite3: true
   # Optional native tracing inside eas-cli; the JS stub fallback is fine.
   dtrace-provider: false
   msgpackr-extract: false

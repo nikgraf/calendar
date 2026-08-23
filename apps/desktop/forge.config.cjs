@@ -13,10 +13,10 @@ const osxNotarize =
     : undefined;
 
 // The main bundle inlines everything except these packages; they are copied
-// into the packaged app (better-sqlite3 is native and carries its runtime
-// deps; effect is left external because its self-referencing imports defeat
-// the bundler).
-const RUNTIME_PACKAGES = ['effect', 'better-sqlite3', 'bindings', 'file-uri-to-path'];
+// into the packaged app. effect stays external because its self-referencing
+// imports defeat the bundler. (better-sqlite3 left this list when
+// @effect/sql-sqlite-node moved to node:sqlite in effect 4.0.0-rc.)
+const RUNTIME_PACKAGES = ['effect'];
 
 /** @type {import('@electron-forge/shared-types').ForgeConfig} */
 module.exports = {
@@ -27,6 +27,10 @@ module.exports = {
         await mkdir(join(buildPath, 'node_modules', name), { recursive: true });
         await cp(join(rootModules, name), join(buildPath, 'node_modules', name), {
           dereference: true,
+          // Nested .bin dirs hold symlinks into the hoisted store — some
+          // dangling (effect@rc ships one for uuid), and dereference:true
+          // dies on those. The packaged app never execs .bin anyway.
+          filter: (source) => !source.includes(`${'node_modules'}/.bin`),
           recursive: true,
         });
       }

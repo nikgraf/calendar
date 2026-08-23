@@ -45,9 +45,9 @@ offline-tolerant pending-op queue.
 - Electron main: never top-level-await `app.whenReady()` — 'ready' fires
   only after module evaluation, so it deadlocks. Promise-chain it
   (`apps/desktop/electron/main.ts`).
-- Root `better-sqlite3` is Electron-ABI (`pnpm --filter @calendar/desktop
-rebuild:native` after installs); tests use the `better-sqlite3-node`
-  twin through vite `resolve.alias`. Never let a Node-ABI copy shadow it.
+- Desktop SQLite is Node's built-in `node:sqlite` (via
+  `@effect/sql-sqlite-node` since effect 4.0.0-rc) — no native module, no
+  Electron-ABI rebuilds. The whole better-sqlite3 apparatus is retired.
 - Oxlint enforces alphabetically sorted object keys/interface members —
   write literals sorted or `vp check` fails.
 - Window-level concerns (screen privacy, logging, open-external) use plain

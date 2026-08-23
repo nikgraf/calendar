@@ -46,13 +46,6 @@ export default defineConfig({
       },
     ],
   },
-  resolve: {
-    alias: {
-      // The root better-sqlite3 is compiled for Electron's ABI; tests run
-      // under system Node and use this Node-ABI copy instead.
-      'better-sqlite3': 'better-sqlite3-node',
-    },
-  },
   test: {
     include: process.env['E2E']
       ? ['apps/desktop/e2e/**/*.e2e.ts']
@@ -61,12 +54,6 @@ export default defineConfig({
           'apps/desktop/electron/**/*.test.ts',
           'apps/ios/src/**/*.test.ts',
         ],
-    server: {
-      deps: {
-        // Must be processed by vite so the better-sqlite3 alias applies.
-        inline: ['@effect/sql-sqlite-node'],
-      },
-    },
     testTimeout: process.env['E2E'] ? 60_000 : 5000,
   },
 });
