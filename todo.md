@@ -147,13 +147,23 @@ desktop waits on a helper binary (below).
       scopes, so calendar-only tokens keep syncing untouched. `due` is
       date-only → date-string storage/query end to end. Out of v1: see
       the "Tasks:" follow-ups above.
-- [ ] Tasks: create/edit/delete from the app (v1 of Google Tasks sync is
-      read + check-off only; insert/patch/delete via the same op queue)
+- [x] Tasks: create/edit/delete from the app — done: both editors gained
+      an Event | Task toggle (create) and open in task mode from a chip
+      tap (edit/delete, incl. "Open in Google Tasks"). New op kinds
+      createTask/updateTask/deleteTask; the Tasks API assigns ids
+      server-side, so creates live under a temp local- id that the push
+      swaps everywhere (row + queued ops; oldest-first draining makes
+      the order safe). Edits fold into a still-queued create; deleting
+      an unpushed create sends nothing. tasks.sync_status keeps the
+      daily full-pass reconcile from eating unpushed local rows. Due
+      date required (no task-list view yet); list fixed after create
+      (moving needs tasks.move).
 - [ ] Tasks: subtask hierarchy — render `parent`/`position` indentation
       and keep ordering via `tasks.move`
 - [ ] Tasks: month-view presence (dots or counts for days with due tasks)
-- [ ] Tasks: detail sheet on chip tap (notes, list name, open-in-Google
-      via `webViewLink`); v1 leaves the chip body non-interactive
+- [x] Tasks: detail sheet on chip tap — done as part of task
+      create/edit/delete: the chip body opens the shared editor in task
+      mode (notes, list, due, delete, open-in-Google via `webViewLink`).
 - [ ] Tasks: iOS Maestro flow for the all-day lane (needs task-chip
       testIDs and the signed-in guard pattern from 07-create-event)
 - [x] Per-calendar colors — done: swatch in the desktop sidebar opens a

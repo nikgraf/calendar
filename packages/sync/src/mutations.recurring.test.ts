@@ -24,6 +24,8 @@ const stubClient: GoogleCalendarClientShape = {
 };
 
 const stubTasksClient: GoogleTasksClientShape = {
+  deleteTask: () => Effect.die('tasks not used in this test'),
+  insertTask: () => Effect.die('tasks not used in this test'),
   listTaskLists: () => Effect.die('tasks not used in this test'),
   listTasks: () => Effect.die('tasks not used in this test'),
   patchTask: () => Effect.die('tasks not used in this test'),

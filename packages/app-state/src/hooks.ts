@@ -115,8 +115,10 @@ export const useBackendMutations = () => {
   const { mutations } = useBackendAtoms();
   const addAccount = useAtomSet(mutations.addAccount, { mode: 'promise' });
   const completeTask = useAtomSet(mutations.completeTask, { mode: 'promise' });
+  const createTask = useAtomSet(mutations.createTask, { mode: 'promise' });
   const createEvent = useAtomSet(mutations.createEvent, { mode: 'promise' });
   const deleteEvent = useAtomSet(mutations.deleteEvent, { mode: 'promise' });
+  const deleteTask = useAtomSet(mutations.deleteTask, { mode: 'promise' });
   const deleteRecurring = useAtomSet(mutations.deleteRecurring, {
     mode: 'promise',
   });
@@ -143,14 +145,17 @@ export const useBackendMutations = () => {
   const updateRecurring = useAtomSet(mutations.updateRecurring, {
     mode: 'promise',
   });
+  const updateTask = useAtomSet(mutations.updateTask, { mode: 'promise' });
 
   return useMemo(
     () => ({
       addAccount,
       completeTask,
       createEvent,
+      createTask,
       deleteEvent,
       deleteRecurring,
+      deleteTask,
       discardPendingOp,
       removeAccount,
       respondToEvent,
@@ -160,13 +165,16 @@ export const useBackendMutations = () => {
       syncNow,
       updateEvent,
       updateRecurring,
+      updateTask,
     }),
     [
       addAccount,
       completeTask,
       createEvent,
+      createTask,
       deleteEvent,
       deleteRecurring,
+      deleteTask,
       discardPendingOp,
       removeAccount,
       respondToEvent,
@@ -176,6 +184,7 @@ export const useBackendMutations = () => {
       syncNow,
       updateEvent,
       updateRecurring,
+      updateTask,
     ],
   );
 };

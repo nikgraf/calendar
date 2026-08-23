@@ -37,6 +37,12 @@ export const commonBackendHandlers: Omit<BackendHandlers<CommonBackendServices>,
       return yield* mutations.createEvent(draft);
     }),
 
+  createTask: (params) =>
+    Effect.gen(function* () {
+      const mutations = yield* EventMutations;
+      return yield* mutations.createTask(params);
+    }),
+
   deleteEvent: (params) =>
     Effect.gen(function* () {
       const mutations = yield* EventMutations;
@@ -47,6 +53,12 @@ export const commonBackendHandlers: Omit<BackendHandlers<CommonBackendServices>,
     Effect.gen(function* () {
       const mutations = yield* EventMutations;
       yield* mutations.deleteRecurring(params);
+    }),
+
+  deleteTask: (params) =>
+    Effect.gen(function* () {
+      const mutations = yield* EventMutations;
+      yield* mutations.deleteTask(params);
     }),
 
   discardPendingOp: ({ opId }) =>
@@ -152,6 +164,12 @@ export const commonBackendHandlers: Omit<BackendHandlers<CommonBackendServices>,
       const mutations = yield* EventMutations;
       yield* mutations.updateRecurring(params);
     }),
+
+  updateTask: (params) =>
+    Effect.gen(function* () {
+      const mutations = yield* EventMutations;
+      yield* mutations.updateTask(params);
+    }),
 };
 
 /**
@@ -168,8 +186,10 @@ export const makeAppBackendLayer = <R>(options: {
     addAccount: () => mapToBackendError(options.handlers.addAccount(undefined)),
     completeTask: (payload) => mapToBackendError(options.handlers.completeTask(payload)),
     createEvent: (payload) => mapToBackendError(options.handlers.createEvent(payload)),
+    createTask: (payload) => mapToBackendError(options.handlers.createTask(payload)),
     deleteEvent: (payload) => mapToBackendError(options.handlers.deleteEvent(payload)),
     deleteRecurring: (payload) => mapToBackendError(options.handlers.deleteRecurring(payload)),
+    deleteTask: (payload) => mapToBackendError(options.handlers.deleteTask(payload)),
     discardPendingOp: (payload) => mapToBackendError(options.handlers.discardPendingOp(payload)),
     getEventsInRange: (payload) => mapToBackendError(options.handlers.getEventsInRange(payload)),
     getTasksInRange: (payload) => mapToBackendError(options.handlers.getTasksInRange(payload)),
@@ -198,4 +218,5 @@ export const makeAppBackendLayer = <R>(options: {
     syncNow: () => mapToBackendError(options.handlers.syncNow(undefined)),
     updateEvent: (payload) => mapToBackendError(options.handlers.updateEvent(payload)),
     updateRecurring: (payload) => mapToBackendError(options.handlers.updateRecurring(payload)),
+    updateTask: (payload) => mapToBackendError(options.handlers.updateTask(payload)),
   });

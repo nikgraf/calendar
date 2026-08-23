@@ -14,6 +14,8 @@ import { describe } from 'vitest';
 import { CALENDAR_COLOR_EVENT_ID, EventMutations } from './mutations.ts';
 
 const stubTasksClient: GoogleTasksClientShape = {
+  deleteTask: () => Effect.die('tasks not used in this test'),
+  insertTask: () => Effect.die('tasks not used in this test'),
   listTaskLists: () => Effect.die('tasks not used in this test'),
   listTasks: () => Effect.die('tasks not used in this test'),
   patchTask: () => Effect.die('tasks not used in this test'),

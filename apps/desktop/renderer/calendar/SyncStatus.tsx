@@ -5,9 +5,12 @@ const KIND_LABEL = {
   calendarColor: 'Color',
   completeTask: 'Task',
   create: 'Create',
+  createTask: 'New task',
   delete: 'Delete',
+  deleteTask: 'Delete task',
   rsvp: 'RSVP',
   update: 'Update',
+  updateTask: 'Edit task',
 } as const;
 
 /** Sidebar indicator for local changes Google has not acknowledged yet. */

@@ -105,6 +105,30 @@ describe('TaskRepo', () => {
     }).pipe(Effect.provide(freshDbLayer())),
   );
 
+  it.effect('deleteStale spares unpushed local creates', () =>
+    Effect.gen(function* () {
+      const repo = yield* TaskRepo;
+      yield* repo.upsertLists([list()], 100);
+      yield* repo.insertLocal(task({ id: 'local-abc', updatedAt: 50 }));
+      // A full pass at t=200 must not eat the pending row.
+      yield* repo.deleteStale('acc-1', 'list-1', 200);
+      const window = yield* repo.getWindow('2026-08-24', '2026-08-31');
+      expect(window.map((row) => row.id)).toEqual(['local-abc']);
+    }).pipe(Effect.provide(freshDbLayer())),
+  );
+
+  it.effect('replaceId swaps a temp id and marks the row synced', () =>
+    Effect.gen(function* () {
+      const repo = yield* TaskRepo;
+      yield* repo.upsertLists([list()], 100);
+      yield* repo.insertLocal(task({ id: 'local-abc' }));
+      yield* repo.replaceId('acc-1', 'list-1', 'local-abc', 'server-9');
+      // Now a synced row: deleteStale applies again.
+      yield* repo.deleteStale('acc-1', 'list-1', 9_999_999_999_999);
+      expect(yield* repo.getWindow('2026-08-24', '2026-08-31')).toHaveLength(0);
+    }).pipe(Effect.provide(freshDbLayer())),
+  );
+
   it.effect('removeListsMissing drops vanished lists and their tasks', () =>
     Effect.gen(function* () {
       const repo = yield* TaskRepo;

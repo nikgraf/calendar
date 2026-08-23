@@ -58,7 +58,17 @@ export const PendingOpSummary = Schema.Struct({
   createdAt: Schema.Number,
   eventId: Schema.String,
   id: Schema.String,
-  kind: Schema.Literals(['calendarColor', 'completeTask', 'create', 'delete', 'rsvp', 'update']),
+  kind: Schema.Literals([
+    'calendarColor',
+    'completeTask',
+    'create',
+    'createTask',
+    'delete',
+    'deleteTask',
+    'rsvp',
+    'update',
+    'updateTask',
+  ]),
   lastError: Schema.optional(Schema.String),
   nextAttemptAt: Schema.Number,
   title: Schema.optional(Schema.String),
@@ -87,12 +97,31 @@ export class AppBackendRpcs extends RpcGroup.make(
     payload: EventDraft,
     success: EventRecord,
   }),
+  Rpc.make('createTask', {
+    error: BackendError,
+    payload: {
+      accountId: Schema.String,
+      dueDate: Schema.String,
+      notes: Schema.optional(Schema.String),
+      taskListId: Schema.String,
+      title: Schema.String,
+    },
+    success: TaskRecord,
+  }),
   Rpc.make('deleteEvent', {
     error: BackendError,
     payload: {
       accountId: Schema.String,
       calendarId: Schema.String,
       eventId: Schema.String,
+    },
+  }),
+  Rpc.make('deleteTask', {
+    error: BackendError,
+    payload: {
+      accountId: Schema.String,
+      taskId: Schema.String,
+      taskListId: Schema.String,
     },
   }),
   Rpc.make('discardPendingOp', {
@@ -200,13 +229,28 @@ export class AppBackendRpcs extends RpcGroup.make(
       scope: RecurringScope,
     },
   }),
+  Rpc.make('updateTask', {
+    error: BackendError,
+    payload: {
+      accountId: Schema.String,
+      changes: Schema.Struct({
+        dueDate: Schema.optional(Schema.String),
+        notes: Schema.optional(Schema.String),
+        title: Schema.optional(Schema.String),
+      }),
+      taskId: Schema.String,
+      taskListId: Schema.String,
+    },
+  }),
 ) {}
 
 export type BackendMethodName =
   | 'addAccount'
   | 'completeTask'
   | 'createEvent'
+  | 'createTask'
   | 'deleteEvent'
+  | 'deleteTask'
   | 'deleteRecurring'
   | 'discardPendingOp'
   | 'getEventsInRange'
@@ -222,7 +266,8 @@ export type BackendMethodName =
   | 'setTaskListVisible'
   | 'syncNow'
   | 'updateEvent'
-  | 'updateRecurring';
+  | 'updateRecurring'
+  | 'updateTask';
 
 /** Payload/success types per method, derived from the rpc group. */
 type RpcByTag<Tag extends string> = Extract<
@@ -294,8 +339,10 @@ export const makeDirectBackendClient = <R>(
     addAccount: method('addAccount'),
     completeTask: method('completeTask'),
     createEvent: method('createEvent'),
+    createTask: method('createTask'),
     deleteEvent: method('deleteEvent'),
     deleteRecurring: method('deleteRecurring'),
+    deleteTask: method('deleteTask'),
     discardPendingOp: method('discardPendingOp'),
     getEventsInRange: method('getEventsInRange'),
     getTasksInRange: method('getTasksInRange'),
@@ -311,5 +358,6 @@ export const makeDirectBackendClient = <R>(
     syncNow: method('syncNow'),
     updateEvent: method('updateEvent'),
     updateRecurring: method('updateRecurring'),
+    updateTask: method('updateTask'),
   };
 };

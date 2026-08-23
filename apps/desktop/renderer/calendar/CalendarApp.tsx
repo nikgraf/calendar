@@ -2,6 +2,7 @@ import {
   bufferedRange,
   monthGridRange,
   PAN_BUFFER_DAYS,
+  type TaskRecord,
   Temporal,
   utcMsToPlainDate,
   type UtcRange,
@@ -12,6 +13,7 @@ import {
   useBackendMutations,
   useCalendars,
   useEventsInRangeStable,
+  useTaskLists,
   useTasksInRangeStable,
 } from '@calendar/app-state';
 import { useMemo, useState } from 'react';
@@ -82,6 +84,7 @@ export function CalendarApp() {
   const [weekWindowStart, setWeekWindowStart] = useState<Temporal.PlainDate | null>(null);
   const [showSettings, setShowSettings] = useState(false);
   const [editorSeed, setEditorSeed] = useState<EditorSeed | null>(null);
+  const [editTask, setEditTask] = useState<TaskRecord | null>(null);
 
   const windowStart = useMemo(
     () => weekWindowStart ?? weekStart(focused),
@@ -98,6 +101,7 @@ export function CalendarApp() {
     utcMsToPlainDate(range.endUtc),
   );
   const { completeTask } = useBackendMutations();
+  const taskLists = useTaskLists();
   const calendars = useCalendars();
   const accounts = useAccounts();
   const colorOf = useMemo(() => makeColorLookup(calendars), [calendars]);
@@ -236,6 +240,7 @@ export function CalendarApp() {
             onEventClick={(event) => setEditorSeed({ event, initialDate: focused })}
             onNavigate={panByDays}
             onSlotClick={(date, hour) => setEditorSeed({ initialDate: date, initialHour: hour })}
+            onTaskClick={(task) => setEditTask(task)}
             onToggleTask={(task) =>
               void completeTask({
                 accountId: task.accountId,
@@ -250,11 +255,17 @@ export function CalendarApp() {
         )}
       </div>
 
-      {editorSeed ? (
+      {editorSeed || editTask ? (
         <EventEditor
           calendars={calendars}
-          onClose={() => setEditorSeed(null)}
-          seed={editorSeed}
+          key={editTask ? `task:${editTask.id}` : (editorSeed?.event?.id ?? 'new')}
+          onClose={() => {
+            setEditorSeed(null);
+            setEditTask(null);
+          }}
+          seed={editorSeed ?? { initialDate: focused }}
+          task={editTask ?? undefined}
+          taskLists={taskLists}
           timeZone={timeZone}
         />
       ) : null}

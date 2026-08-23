@@ -10,7 +10,7 @@ import {
   type RecurringScope,
   remainingRecurrence,
   type RsvpResponse,
-  type TaskRecord,
+  TaskRecord,
   truncateRecurrence,
 } from '@calendar/core';
 import { AccountRepo, CalendarRepo, EventRepo, PendingOpRepo, TaskRepo } from '@calendar/db';
@@ -52,6 +52,10 @@ export class InvalidColorError extends Data.TaggedError('InvalidColorError')<{
 
 export class TaskNotFoundError extends Data.TaggedError('TaskNotFoundError')<{
   readonly taskId: string;
+}> {}
+
+export class TaskListNotFoundError extends Data.TaggedError('TaskListNotFoundError')<{
+  readonly taskListId: string;
 }> {}
 
 /** Sentinel eventId keying calendar-color ops for coalescing. */
@@ -97,6 +101,14 @@ export interface EventMutationsShape {
     readonly taskListId: string;
   }) => Effect.Effect<void, SqlError | TaskNotFoundError>;
   readonly createEvent: (draft: EventDraft) => Effect.Effect<EventRecord, SqlError>;
+  /** Creates a task optimistically under a temp id; the push swaps ids. */
+  readonly createTask: (params: {
+    readonly accountId: string;
+    readonly dueDate: string;
+    readonly notes?: string | undefined;
+    readonly taskListId: string;
+    readonly title: string;
+  }) => Effect.Effect<TaskRecord, SqlError | TaskListNotFoundError>;
   readonly deleteEvent: (params: {
     readonly accountId: string;
     readonly calendarId: string;
@@ -105,6 +117,11 @@ export interface EventMutationsShape {
   readonly deleteRecurring: (
     params: RecurringTargetParams,
   ) => Effect.Effect<void, RecurringEditError>;
+  readonly deleteTask: (params: {
+    readonly accountId: string;
+    readonly taskId: string;
+    readonly taskListId: string;
+  }) => Effect.Effect<void, SqlError>;
   /** Drains due pending ops (serialized); safe to call concurrently. */
   readonly processPendingOps: () => Effect.Effect<void>;
   /** Updates the caller's own attendee responseStatus (series-wide). */
@@ -124,6 +141,17 @@ export interface EventMutationsShape {
   readonly updateRecurring: (
     params: UpdateRecurringParams,
   ) => Effect.Effect<void, RecurringEditError>;
+  /** Edits title/notes/due optimistically and patches Google. */
+  readonly updateTask: (params: {
+    readonly accountId: string;
+    readonly changes: {
+      readonly dueDate?: string | undefined;
+      readonly notes?: string | undefined;
+      readonly title?: string | undefined;
+    };
+    readonly taskId: string;
+    readonly taskListId: string;
+  }) => Effect.Effect<void, SqlError>;
 }
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -271,7 +299,7 @@ const make: Effect.Effect<
           // the following poll picks that up.
           const response = yield* tasksClient.patchTask({
             accountId: op.accountId,
-            status: op.taskStatus,
+            changes: { status: op.taskStatus },
             taskId: op.eventId,
             taskListId: op.taskListId,
           });
@@ -281,6 +309,85 @@ const make: Effect.Effect<
           });
           if (synced) {
             yield* taskRepo.upsertTasks([synced], yield* Clock.currentTimeMillis);
+          }
+          return 'done' as const;
+        }
+        case 'createTask': {
+          if (!op.taskListId || !op.taskTitle) {
+            return 'done' as const;
+          }
+          // A set dispatch stamp means an earlier attempt's insert may
+          // have landed without us seeing the response (crash, dropped
+          // connection). tasks.insert is not idempotent — ids are
+          // server-assigned — so verify before inserting again: adopt an
+          // exact field match updated since the stamp instead of creating
+          // a duplicate. A false adopt needs an identical task created in
+          // the same window elsewhere (and is benign); a miss is merely
+          // the old behavior.
+          if (op.dispatchedAt !== undefined) {
+            const page = yield* tasksClient.listTasks({
+              accountId: op.accountId,
+              params: { updatedMin: new Date(op.dispatchedAt - 60_000).toISOString() },
+              taskListId: op.taskListId,
+            });
+            const match = (page.items ?? []).filter(
+              (candidate) =>
+                !candidate.deleted &&
+                candidate.title === op.taskTitle &&
+                (candidate.due?.slice(0, 10) ?? undefined) === op.taskDue &&
+                (candidate.notes ?? undefined) === op.taskNotes,
+            );
+            const adopted = match.length === 1 ? match[0] : undefined;
+            if (adopted) {
+              yield* pendingOpRepo.rewriteEventId(
+                op.accountId,
+                op.taskListId,
+                op.eventId,
+                adopted.id,
+              );
+              const adoptedRecord = mapGcalTask(adopted, {
+                accountId: op.accountId,
+                taskListId: op.taskListId,
+              });
+              if (adoptedRecord) {
+                yield* taskRepo.removeTask(op.accountId, op.taskListId, op.eventId);
+                yield* taskRepo.upsertTasks([adoptedRecord], yield* Clock.currentTimeMillis);
+              }
+              return 'done' as const;
+            }
+          }
+          yield* pendingOpRepo.markDispatched(op.id, yield* Clock.currentTimeMillis);
+          const inserted = yield* tasksClient.insertTask({
+            accountId: op.accountId,
+            task: {
+              title: op.taskTitle,
+              ...(op.taskDue ? { due: `${op.taskDue}T00:00:00.000Z` } : {}),
+              ...(op.taskNotes ? { notes: op.taskNotes } : {}),
+            },
+            taskListId: op.taskListId,
+          });
+          // Swap the temp id for the server one everywhere it can appear:
+          // the row itself and any ops queued behind this create
+          // (processPendingOps drains oldest-first, so they run after).
+          // Remove-then-upsert rather than UPDATE ... SET id: a concurrent
+          // poll may already have upserted the server row, and a PK
+          // conflict here would retry the op — re-running an insert the
+          // Tasks API cannot deduplicate (ids are server-assigned, unlike
+          // events). The same non-idempotency means a crash between the
+          // insert response and op removal can duplicate a task; that
+          // window is accepted, this one is not.
+          yield* pendingOpRepo.rewriteEventId(op.accountId, op.taskListId, op.eventId, inserted.id);
+          const insertedRecord = mapGcalTask(inserted, {
+            accountId: op.accountId,
+            taskListId: op.taskListId,
+          });
+          if (insertedRecord) {
+            yield* taskRepo.removeTask(op.accountId, op.taskListId, op.eventId);
+            yield* taskRepo.upsertTasks([insertedRecord], yield* Clock.currentTimeMillis);
+          } else {
+            // Unreachable in practice (a just-inserted task is never a
+            // tombstone) — keep the row addressable under the server id.
+            yield* taskRepo.replaceId(op.accountId, op.taskListId, op.eventId, inserted.id);
           }
           return 'done' as const;
         }
@@ -310,6 +417,17 @@ const make: Effect.Effect<
             baseEtag: op.baseEtag,
             calendarId: op.calendarId,
             eventId: op.eventId,
+          });
+          return 'done' as const;
+        }
+        case 'deleteTask': {
+          if (!op.taskListId) {
+            return 'done' as const;
+          }
+          yield* tasksClient.deleteTask({
+            accountId: op.accountId,
+            taskId: op.eventId,
+            taskListId: op.taskListId,
           });
           return 'done' as const;
         }
@@ -363,6 +481,29 @@ const make: Effect.Effect<
           }
           return 'done' as const;
         }
+        case 'updateTask': {
+          if (!op.taskListId) {
+            return 'done' as const;
+          }
+          const patched = yield* tasksClient.patchTask({
+            accountId: op.accountId,
+            changes: {
+              ...(op.taskDue === undefined ? {} : { due: `${op.taskDue}T00:00:00.000Z` }),
+              ...(op.taskNotes === undefined ? {} : { notes: op.taskNotes }),
+              ...(op.taskTitle === undefined ? {} : { title: op.taskTitle }),
+            },
+            taskId: op.eventId,
+            taskListId: op.taskListId,
+          });
+          const patchedRecord = mapGcalTask(patched, {
+            accountId: op.accountId,
+            taskListId: op.taskListId,
+          });
+          if (patchedRecord) {
+            yield* taskRepo.upsertTasks([patchedRecord], yield* Clock.currentTimeMillis);
+          }
+          return 'done' as const;
+        }
       }
     }).pipe(
       Effect.catchTags({
@@ -388,8 +529,10 @@ const make: Effect.Effect<
           ),
         NotFoundError: () =>
           Effect.gen(function* () {
-            // Deleted remotely — drop the local copy too.
-            if (op.kind === 'completeTask') {
+            // Deleted remotely — drop the local copy too. (For deleteTask
+            // this is simply "already gone".)
+            const taskKinds = ['completeTask', 'createTask', 'deleteTask', 'updateTask'];
+            if (taskKinds.includes(op.kind)) {
               if (op.taskListId) {
                 yield* taskRepo.removeTask(op.accountId, op.taskListId, op.eventId);
               }
@@ -416,7 +559,15 @@ const make: Effect.Effect<
         Effect.gen(function* () {
           const now = yield* Clock.currentTimeMillis;
           const due = yield* pendingOpRepo.listDue(now);
-          for (const op of due) {
+          for (const queuedOp of due) {
+            // Re-read: an earlier op in this drain may have rewritten this
+            // one (createTask swaps a temp task id into queued followers) —
+            // or the user may have discarded it, in which case skip rather
+            // than resurrect the stale snapshot.
+            const op = yield* pendingOpRepo.getById(queuedOp.id);
+            if (!op) {
+              continue;
+            }
             const outcome = yield* applyOp(op);
             if (outcome === 'done') {
               yield* pendingOpRepo.remove(op.id);
@@ -507,6 +658,47 @@ const make: Effect.Effect<
             kind: 'create',
             nextAttemptAt: 0,
             payload: record,
+          }),
+        );
+        return record;
+      }),
+
+    createTask: ({ accountId, dueDate, notes, taskListId, title }) =>
+      Effect.gen(function* () {
+        const lists = yield* taskRepo.listLists(accountId);
+        if (!lists.some((list) => list.id === taskListId)) {
+          return yield* Effect.fail(new TaskListNotFoundError({ taskListId }));
+        }
+        const now = yield* Clock.currentTimeMillis;
+        // The Tasks API assigns ids server-side (no client ids like
+        // events): a temp id keeps the optimistic row addressable until
+        // the push swaps it.
+        const tempId = `local-${generateEventId()}`;
+        const record = new TaskRecord({
+          accountId,
+          dueDate,
+          id: tempId,
+          listId: taskListId,
+          ...(notes === undefined ? {} : { notes }),
+          status: 'needsAction',
+          title,
+          updatedAt: now,
+        });
+        yield* taskRepo.insertLocal(record);
+        yield* enqueueAndKick(
+          new PendingOp({
+            accountId,
+            attempts: 0,
+            calendarId: taskListId,
+            createdAt: now,
+            eventId: tempId,
+            id: generateEventId(),
+            kind: 'createTask',
+            nextAttemptAt: 0,
+            ...(dueDate === undefined ? {} : { taskDue: dueDate }),
+            taskListId,
+            ...(notes === undefined ? {} : { taskNotes: notes }),
+            taskTitle: title,
           }),
         );
         return record;
@@ -627,6 +819,41 @@ const make: Effect.Effect<
           }),
         );
         yield* dropOverridesFrom(accountId, calendarId, masterId, originalStartUtc, now);
+      }),
+
+    deleteTask: ({ accountId, taskId, taskListId }) =>
+      Effect.gen(function* () {
+        yield* taskRepo.removeTask(accountId, taskListId, taskId);
+        // Everything queued for this task is moot now — and if its create
+        // never pushed, the task never existed upstream: no server op.
+        const queued = yield* opsForEvent(taskListId, taskId);
+        let unsentCreate = false;
+        for (const queuedOp of queued) {
+          if (queuedOp.accountId !== accountId) {
+            continue;
+          }
+          if (queuedOp.kind === 'createTask') {
+            unsentCreate = true;
+          }
+          yield* pendingOpRepo.remove(queuedOp.id);
+        }
+        if (unsentCreate) {
+          return;
+        }
+        const now = yield* Clock.currentTimeMillis;
+        yield* enqueueAndKick(
+          new PendingOp({
+            accountId,
+            attempts: 0,
+            calendarId: taskListId,
+            createdAt: now,
+            eventId: taskId,
+            id: generateEventId(),
+            kind: 'deleteTask',
+            nextAttemptAt: 0,
+            taskListId,
+          }),
+        );
       }),
 
     processPendingOps,
@@ -906,6 +1133,53 @@ const make: Effect.Effect<
             kind: 'create',
             nextAttemptAt: 0,
             payload: newMaster,
+          }),
+        );
+      }),
+
+    updateTask: ({ accountId, changes, taskId, taskListId }) =>
+      Effect.gen(function* () {
+        yield* taskRepo.updateLocal({ accountId, changes, listId: taskListId, taskId });
+        const now = yield* Clock.currentTimeMillis;
+        const queued = yield* opsForEvent(taskListId, taskId);
+        const pendingCreate = queued.find(
+          (queuedOp) => queuedOp.accountId === accountId && queuedOp.kind === 'createTask',
+        );
+        if (pendingCreate) {
+          // The create hasn't pushed: fold the edit into it instead of
+          // patching a task Google has never seen.
+          yield* pendingOpRepo.remove(pendingCreate.id);
+          yield* enqueueAndKick(
+            new PendingOp({
+              ...pendingCreate,
+              id: generateEventId(),
+              ...(changes.dueDate === undefined ? {} : { taskDue: changes.dueDate }),
+              ...(changes.notes === undefined ? {} : { taskNotes: changes.notes }),
+              ...(changes.title === undefined ? {} : { taskTitle: changes.title }),
+            }),
+          );
+          return;
+        }
+        // Latest wins: a newer edit supersedes queued ones.
+        for (const queuedOp of queued) {
+          if (queuedOp.accountId === accountId && queuedOp.kind === 'updateTask') {
+            yield* pendingOpRepo.remove(queuedOp.id);
+          }
+        }
+        yield* enqueueAndKick(
+          new PendingOp({
+            accountId,
+            attempts: 0,
+            calendarId: taskListId,
+            createdAt: now,
+            eventId: taskId,
+            id: generateEventId(),
+            kind: 'updateTask',
+            nextAttemptAt: 0,
+            ...(changes.dueDate === undefined ? {} : { taskDue: changes.dueDate }),
+            taskListId,
+            ...(changes.notes === undefined ? {} : { taskNotes: changes.notes }),
+            ...(changes.title === undefined ? {} : { taskTitle: changes.title }),
           }),
         );
       }),

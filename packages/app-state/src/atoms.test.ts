@@ -21,8 +21,10 @@ const makeStubClient = () => {
     addAccount: () => fail('not stubbed'),
     completeTask: () => Effect.void,
     createEvent: () => fail('not stubbed'),
+    createTask: () => fail('not stubbed'),
     deleteEvent: () => fail('not stubbed'),
     deleteRecurring: () => fail('not stubbed'),
+    deleteTask: () => Effect.void,
     discardPendingOp: () => Effect.void,
     getEventsInRange: () =>
       Effect.sync(() => {
@@ -49,6 +51,7 @@ const makeStubClient = () => {
     syncNow: () => Effect.void,
     updateEvent: () => fail('not stubbed'),
     updateRecurring: () => fail('not stubbed'),
+    updateTask: () => Effect.void,
   };
   return { calls, client };
 };

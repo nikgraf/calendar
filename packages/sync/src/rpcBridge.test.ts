@@ -42,8 +42,10 @@ const stubHandlers: BackendHandlers = {
   addAccount: notStubbed,
   completeTask: () => Effect.void,
   createEvent: notStubbed,
+  createTask: notStubbed,
   deleteEvent: () => Effect.void,
   deleteRecurring: () => Effect.void,
+  deleteTask: () => Effect.void,
   discardPendingOp: () => Effect.void,
   getEventsInRange: () => Effect.succeed([]),
   getTasksInRange: () => Effect.succeed([]),
@@ -59,6 +61,7 @@ const stubHandlers: BackendHandlers = {
   syncNow: notStubbed,
   updateEvent: () => Effect.void,
   updateRecurring: () => Effect.void,
+  updateTask: () => Effect.void,
 };
 
 const makeHarness = () => {

@@ -1,9 +1,11 @@
-import { useEventEditorModel, type EventEditorSeed } from '@calendar/app-state';
+import { useEventEditorModel, useTaskEditorModel, type EventEditorSeed } from '@calendar/app-state';
 import {
   type CalendarInfo,
   type RecurrenceFrequency,
   type RecurringScope,
   type RsvpResponse,
+  type TaskListInfo,
+  type TaskRecord,
 } from '@calendar/core';
 import {
   Linking,
@@ -17,6 +19,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import { useState } from 'react';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { palette } from './theme.ts';
 
@@ -77,13 +80,25 @@ export function EventEditSheet({
   calendars,
   onClose,
   seed,
+  task,
+  taskLists,
   timeZone,
 }: {
   calendars: ReadonlyArray<CalendarInfo>;
   onClose: () => void;
   seed: EditSeed;
+  /** Present when the sheet was opened from a task chip (task edit mode). */
+  task?: TaskRecord | undefined;
+  taskLists: ReadonlyArray<TaskListInfo>;
   timeZone: string;
 }) {
+  // Create mode offers an Event | Task toggle; a chip tap fixes the mode.
+  const [mode, setMode] = useState<'event' | 'task'>(task ? 'task' : 'event');
+  const taskModel = useTaskEditorModel({
+    onClose,
+    seed: { existing: task, initialDate: seed.initialDate.toString() },
+    taskLists,
+  });
   const {
     calendarKey,
     date,
@@ -136,226 +151,186 @@ export function EventEditSheet({
           <Pressable onPress={onClose}>
             <Text style={styles.cancel}>Cancel</Text>
           </Pressable>
-          <Text style={styles.title}>{existing ? 'Edit Event' : 'New Event'}</Text>
-          <Pressable onPress={() => void save()} testID="event-save">
+          <Text style={styles.title}>
+            {mode === 'task'
+              ? task
+                ? 'Edit Task'
+                : 'New Task'
+              : existing
+                ? 'Edit Event'
+                : 'New Event'}
+          </Text>
+          <Pressable
+            onPress={() => void (mode === 'task' ? taskModel.save() : save())}
+            testID="event-save"
+          >
             <Text style={styles.save}>Save</Text>
           </Pressable>
         </View>
 
-        <ScrollView contentContainerStyle={styles.content}>
-          {error ? <Text style={styles.error}>{error}</Text> : null}
-          {joinUrl ? (
-            <Pressable onPress={() => void Linking.openURL(joinUrl)} style={styles.joinButton}>
-              <Text style={styles.joinLabel}>Join meeting</Text>
-            </Pressable>
-          ) : null}
-          {isRecurring ? (
-            <View style={styles.scopeRow}>
-              {SCOPES.map((option) => (
-                <Pressable
-                  key={option.value}
-                  onPress={() => setScope(option.value)}
-                  style={[styles.scopeChip, scope === option.value && styles.scopeChipActive]}
-                >
-                  <Text
-                    style={[styles.scopeLabel, scope === option.value && styles.scopeLabelActive]}
-                  >
-                    {option.label}
-                  </Text>
-                </Pressable>
-              ))}
-            </View>
-          ) : null}
-          <>
+        {!existing && !task ? (
+          <View style={styles.modeRow}>
+            {(['event', 'task'] as const).map((option) => (
+              <Pressable
+                key={option}
+                onPress={() => setMode(option)}
+                style={[styles.scopeChip, mode === option && styles.scopeChipActive]}
+                testID={`mode-${option}`}
+              >
+                <Text style={[styles.scopeLabel, mode === option && styles.scopeLabelActive]}>
+                  {option === 'event' ? 'Event' : 'Task'}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+        ) : null}
+
+        {mode === 'task' ? (
+          <ScrollView contentContainerStyle={styles.content}>
+            {taskModel.error ? <Text style={styles.error}>{taskModel.error}</Text> : null}
             <TextInput
-              autoFocus={!existing}
-              onChangeText={setTitle}
+              autoFocus={!task}
+              onChangeText={taskModel.setTitle}
               placeholder="Title"
               style={styles.input}
-              testID="event-title"
-              value={title}
+              testID="task-title"
+              value={taskModel.title}
             />
 
-            <Text style={styles.label}>Calendar</Text>
-            {writable.map((calendar) => {
-              const key = `${calendar.accountId}:${calendar.id}`;
-              const selected = key === calendarKey;
+            <View style={styles.pickerRow}>
+              <Text style={styles.label}>Due</Text>
+              <DateTimePicker
+                display="compact"
+                mode="date"
+                onChange={(_, picked) => picked && taskModel.setDueDate(toDateString(picked))}
+                value={dateFromParts(taskModel.dueDate)}
+              />
+            </View>
+
+            <Text style={styles.label}>List</Text>
+            {taskModel.taskLists.map((list) => {
+              const key = `${list.accountId}:${list.id}`;
+              const selected = key === taskModel.listKey;
               return (
                 <Pressable
-                  disabled={Boolean(existing)}
+                  // The list is fixed after create — moving needs tasks.move.
+                  disabled={Boolean(task)}
                   key={key}
-                  onPress={() => setCalendarKey(key)}
+                  onPress={() => taskModel.setListKey(key)}
                   style={styles.calendarRow}
-                  testID="calendar-option"
                 >
-                  <View style={[styles.swatch, { backgroundColor: calendar.colorHex }]} />
                   <Text style={[styles.calendarName, selected && styles.calendarSelected]}>
-                    {calendar.summary}
+                    {list.title}
                   </Text>
                   {selected ? <Text style={styles.check}>✓</Text> : null}
                 </Pressable>
               );
             })}
 
-            <View style={styles.switchRow}>
-              <Text style={styles.label}>All-day</Text>
-              <Switch onValueChange={setIsAllDay} value={isAllDay} />
-            </View>
-
-            {existing ? null : (
-              <>
-                <Text style={styles.label}>Repeat</Text>
-                <View style={styles.scopeRow}>
-                  {REPEATS.map((option) => (
-                    <Pressable
-                      key={option.value}
-                      onPress={() => setRepeat(option.value)}
-                      style={[styles.scopeChip, repeat === option.value && styles.scopeChipActive]}
-                    >
-                      <Text
-                        style={[
-                          styles.scopeLabel,
-                          repeat === option.value && styles.scopeLabelActive,
-                        ]}
-                      >
-                        {option.label}
-                      </Text>
-                    </Pressable>
-                  ))}
-                </View>
-                {repeat === 'none' ? null : (
-                  <View style={styles.timesRow}>
-                    <View style={styles.timeField}>
-                      <Text style={styles.label}>Every (n)</Text>
-                      <TextInput
-                        keyboardType="number-pad"
-                        onChangeText={setRepeatInterval}
-                        style={styles.input}
-                        value={repeatInterval}
-                      />
-                    </View>
-                    <View style={styles.timeField}>
-                      <Text style={styles.label}>Ends</Text>
-                      <View style={styles.scopeRow}>
-                        {REPEAT_ENDS.map((option) => (
-                          <Pressable
-                            key={option.value}
-                            onPress={() => {
-                              setRepeatEnds(option.value);
-                              // The picker chip renders a date even while the
-                              // model still holds '' — seed it, or a save
-                              // would silently drop the end bound and create
-                              // an unbounded recurrence.
-                              if (option.value === 'on' && !repeatUntil) {
-                                setRepeatUntil(date);
-                              }
-                            }}
-                            style={[
-                              styles.scopeChip,
-                              repeatEnds === option.value && styles.scopeChipActive,
-                            ]}
-                          >
-                            <Text
-                              style={[
-                                styles.scopeLabel,
-                                repeatEnds === option.value && styles.scopeLabelActive,
-                              ]}
-                            >
-                              {option.label}
-                            </Text>
-                          </Pressable>
-                        ))}
-                      </View>
-                    </View>
-                  </View>
-                )}
-
-                {repeat !== 'none' && repeatEnds === 'after' ? (
-                  <>
-                    <Text style={styles.label}>Occurrences</Text>
-                    <TextInput
-                      keyboardType="number-pad"
-                      onChangeText={setRepeatCount}
-                      placeholder="10"
-                      style={styles.input}
-                      value={repeatCount}
-                    />
-                  </>
-                ) : null}
-
-                {repeat !== 'none' && repeatEnds === 'on' ? (
-                  <>
-                    <View style={styles.pickerRow}>
-                      <Text style={styles.label}>Ends on</Text>
-                      <DateTimePicker
-                        display="compact"
-                        mode="date"
-                        onChange={(_, picked) => picked && setRepeatUntil(toDateString(picked))}
-                        value={dateFromParts(repeatUntil || date)}
-                      />
-                    </View>
-                  </>
-                ) : null}
-              </>
-            )}
-
-            <View style={styles.pickerRow} testID="event-date">
-              <Text style={styles.label}>Date</Text>
-              <DateTimePicker
-                display="compact"
-                mode="date"
-                onChange={(_, picked) => picked && setDate(toDateString(picked))}
-                value={dateFromParts(date)}
-              />
-            </View>
-            {isAllDay ? null : (
-              <View style={styles.timesRow}>
-                <View style={styles.timeField} testID="event-start">
-                  <Text style={styles.label}>Start</Text>
-                  <DateTimePicker
-                    display="compact"
-                    mode="time"
-                    onChange={(_, picked) => picked && setStartTime(toTimeString(picked))}
-                    style={styles.timePicker}
-                    value={dateFromParts(date, startTime)}
-                  />
-                </View>
-                <View style={styles.timeField} testID="event-end">
-                  <Text style={styles.label}>End</Text>
-                  <DateTimePicker
-                    display="compact"
-                    mode="time"
-                    onChange={(_, picked) => picked && setEndTime(toTimeString(picked))}
-                    style={styles.timePicker}
-                    value={dateFromParts(date, endTime)}
-                  />
-                </View>
-              </View>
-            )}
-
-            <Text style={styles.label}>Location</Text>
+            <Text style={styles.label}>Notes</Text>
             <TextInput
-              onChangeText={setLocation}
-              placeholder="Add a location"
-              style={styles.input}
-              value={location}
+              multiline
+              numberOfLines={3}
+              onChangeText={taskModel.setNotes}
+              placeholder="Add notes"
+              style={[styles.input, styles.notesInput]}
+              value={taskModel.notes}
             />
 
-            {existing?.attendees?.length ? (
-              <>
-                <Text style={styles.label}>Invitees</Text>
-                {ownAttendee ? (
+            {task?.webViewLink ? (
+              <Pressable onPress={() => void Linking.openURL(task.webViewLink ?? '')}>
+                <Text style={styles.webLink}>Open in Google Tasks</Text>
+              </Pressable>
+            ) : null}
+
+            {task ? (
+              <Pressable
+                onPress={() => void taskModel.remove()}
+                style={styles.deleteButton}
+                testID="task-delete"
+              >
+                <Text style={styles.deleteLabel}>Delete Task</Text>
+              </Pressable>
+            ) : null}
+          </ScrollView>
+        ) : (
+          <ScrollView contentContainerStyle={styles.content}>
+            {error ? <Text style={styles.error}>{error}</Text> : null}
+            {joinUrl ? (
+              <Pressable onPress={() => void Linking.openURL(joinUrl)} style={styles.joinButton}>
+                <Text style={styles.joinLabel}>Join meeting</Text>
+              </Pressable>
+            ) : null}
+            {isRecurring ? (
+              <View style={styles.scopeRow}>
+                {SCOPES.map((option) => (
+                  <Pressable
+                    key={option.value}
+                    onPress={() => setScope(option.value)}
+                    style={[styles.scopeChip, scope === option.value && styles.scopeChipActive]}
+                  >
+                    <Text
+                      style={[styles.scopeLabel, scope === option.value && styles.scopeLabelActive]}
+                    >
+                      {option.label}
+                    </Text>
+                  </Pressable>
+                ))}
+              </View>
+            ) : null}
+            <>
+              <TextInput
+                autoFocus={!existing}
+                onChangeText={setTitle}
+                placeholder="Title"
+                style={styles.input}
+                testID="event-title"
+                value={title}
+              />
+
+              <Text style={styles.label}>Calendar</Text>
+              {writable.map((calendar) => {
+                const key = `${calendar.accountId}:${calendar.id}`;
+                const selected = key === calendarKey;
+                return (
+                  <Pressable
+                    disabled={Boolean(existing)}
+                    key={key}
+                    onPress={() => setCalendarKey(key)}
+                    style={styles.calendarRow}
+                    testID="calendar-option"
+                  >
+                    <View style={[styles.swatch, { backgroundColor: calendar.colorHex }]} />
+                    <Text style={[styles.calendarName, selected && styles.calendarSelected]}>
+                      {calendar.summary}
+                    </Text>
+                    {selected ? <Text style={styles.check}>✓</Text> : null}
+                  </Pressable>
+                );
+              })}
+
+              <View style={styles.switchRow}>
+                <Text style={styles.label}>All-day</Text>
+                <Switch onValueChange={setIsAllDay} value={isAllDay} />
+              </View>
+
+              {existing ? null : (
+                <>
+                  <Text style={styles.label}>Repeat</Text>
                   <View style={styles.scopeRow}>
-                    {RSVPS.map((option) => (
+                    {REPEATS.map((option) => (
                       <Pressable
                         key={option.value}
-                        onPress={() => void respond(option.value)}
-                        style={[styles.scopeChip, rsvp === option.value && styles.scopeChipActive]}
+                        onPress={() => setRepeat(option.value)}
+                        style={[
+                          styles.scopeChip,
+                          repeat === option.value && styles.scopeChipActive,
+                        ]}
                       >
                         <Text
                           style={[
                             styles.scopeLabel,
-                            rsvp === option.value && styles.scopeLabelActive,
+                            repeat === option.value && styles.scopeLabelActive,
                           ]}
                         >
                           {option.label}
@@ -363,26 +338,170 @@ export function EventEditSheet({
                       </Pressable>
                     ))}
                   </View>
-                ) : null}
-                {existing.attendees.map((attendee) => (
-                  <Text key={attendee.email} style={styles.attendee}>
-                    {attendee.displayName ?? attendee.email} · {attendee.responseStatus}
-                  </Text>
-                ))}
-              </>
-            ) : null}
+                  {repeat === 'none' ? null : (
+                    <View style={styles.timesRow}>
+                      <View style={styles.timeField}>
+                        <Text style={styles.label}>Every (n)</Text>
+                        <TextInput
+                          keyboardType="number-pad"
+                          onChangeText={setRepeatInterval}
+                          style={styles.input}
+                          value={repeatInterval}
+                        />
+                      </View>
+                      <View style={styles.timeField}>
+                        <Text style={styles.label}>Ends</Text>
+                        <View style={styles.scopeRow}>
+                          {REPEAT_ENDS.map((option) => (
+                            <Pressable
+                              key={option.value}
+                              onPress={() => {
+                                setRepeatEnds(option.value);
+                                // The picker chip renders a date even while the
+                                // model still holds '' — seed it, or a save
+                                // would silently drop the end bound and create
+                                // an unbounded recurrence.
+                                if (option.value === 'on' && !repeatUntil) {
+                                  setRepeatUntil(date);
+                                }
+                              }}
+                              style={[
+                                styles.scopeChip,
+                                repeatEnds === option.value && styles.scopeChipActive,
+                              ]}
+                            >
+                              <Text
+                                style={[
+                                  styles.scopeLabel,
+                                  repeatEnds === option.value && styles.scopeLabelActive,
+                                ]}
+                              >
+                                {option.label}
+                              </Text>
+                            </Pressable>
+                          ))}
+                        </View>
+                      </View>
+                    </View>
+                  )}
 
-            {existing ? (
-              <Pressable
-                onPress={() => void remove()}
-                style={styles.deleteButton}
-                testID="event-delete"
-              >
-                <Text style={styles.deleteLabel}>Delete Event</Text>
-              </Pressable>
-            ) : null}
-          </>
-        </ScrollView>
+                  {repeat !== 'none' && repeatEnds === 'after' ? (
+                    <>
+                      <Text style={styles.label}>Occurrences</Text>
+                      <TextInput
+                        keyboardType="number-pad"
+                        onChangeText={setRepeatCount}
+                        placeholder="10"
+                        style={styles.input}
+                        value={repeatCount}
+                      />
+                    </>
+                  ) : null}
+
+                  {repeat !== 'none' && repeatEnds === 'on' ? (
+                    <>
+                      <View style={styles.pickerRow}>
+                        <Text style={styles.label}>Ends on</Text>
+                        <DateTimePicker
+                          display="compact"
+                          mode="date"
+                          onChange={(_, picked) => picked && setRepeatUntil(toDateString(picked))}
+                          value={dateFromParts(repeatUntil || date)}
+                        />
+                      </View>
+                    </>
+                  ) : null}
+                </>
+              )}
+
+              <View style={styles.pickerRow} testID="event-date">
+                <Text style={styles.label}>Date</Text>
+                <DateTimePicker
+                  display="compact"
+                  mode="date"
+                  onChange={(_, picked) => picked && setDate(toDateString(picked))}
+                  value={dateFromParts(date)}
+                />
+              </View>
+              {isAllDay ? null : (
+                <View style={styles.timesRow}>
+                  <View style={styles.timeField} testID="event-start">
+                    <Text style={styles.label}>Start</Text>
+                    <DateTimePicker
+                      display="compact"
+                      mode="time"
+                      onChange={(_, picked) => picked && setStartTime(toTimeString(picked))}
+                      style={styles.timePicker}
+                      value={dateFromParts(date, startTime)}
+                    />
+                  </View>
+                  <View style={styles.timeField} testID="event-end">
+                    <Text style={styles.label}>End</Text>
+                    <DateTimePicker
+                      display="compact"
+                      mode="time"
+                      onChange={(_, picked) => picked && setEndTime(toTimeString(picked))}
+                      style={styles.timePicker}
+                      value={dateFromParts(date, endTime)}
+                    />
+                  </View>
+                </View>
+              )}
+
+              <Text style={styles.label}>Location</Text>
+              <TextInput
+                onChangeText={setLocation}
+                placeholder="Add a location"
+                style={styles.input}
+                value={location}
+              />
+
+              {existing?.attendees?.length ? (
+                <>
+                  <Text style={styles.label}>Invitees</Text>
+                  {ownAttendee ? (
+                    <View style={styles.scopeRow}>
+                      {RSVPS.map((option) => (
+                        <Pressable
+                          key={option.value}
+                          onPress={() => void respond(option.value)}
+                          style={[
+                            styles.scopeChip,
+                            rsvp === option.value && styles.scopeChipActive,
+                          ]}
+                        >
+                          <Text
+                            style={[
+                              styles.scopeLabel,
+                              rsvp === option.value && styles.scopeLabelActive,
+                            ]}
+                          >
+                            {option.label}
+                          </Text>
+                        </Pressable>
+                      ))}
+                    </View>
+                  ) : null}
+                  {existing.attendees.map((attendee) => (
+                    <Text key={attendee.email} style={styles.attendee}>
+                      {attendee.displayName ?? attendee.email} · {attendee.responseStatus}
+                    </Text>
+                  ))}
+                </>
+              ) : null}
+
+              {existing ? (
+                <Pressable
+                  onPress={() => void remove()}
+                  style={styles.deleteButton}
+                  testID="event-delete"
+                >
+                  <Text style={styles.deleteLabel}>Delete Event</Text>
+                </Pressable>
+              ) : null}
+            </>
+          </ScrollView>
+        )}
       </SafeAreaView>
     </Modal>
   );
@@ -479,6 +598,16 @@ const styles = StyleSheet.create({
     marginBottom: 4,
     textTransform: 'uppercase',
   },
+  modeRow: {
+    flexDirection: 'row',
+    gap: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+  },
+  notesInput: {
+    minHeight: 72,
+    textAlignVertical: 'top',
+  },
   pickerRow: {
     alignItems: 'center',
     flexDirection: 'row',
@@ -537,5 +666,10 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 17,
     fontWeight: '700',
+  },
+  webLink: {
+    color: '#2563eb',
+    fontSize: 14,
+    marginTop: 4,
   },
 });

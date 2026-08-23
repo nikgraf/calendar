@@ -36,6 +36,7 @@ export function WeekView({
   onEventClick,
   onNavigate,
   onSlotClick,
+  onTaskClick,
   onToggleTask,
   tasks,
   timeZone,
@@ -46,6 +47,7 @@ export function WeekView({
   onEventClick: (event: EventRecord) => void;
   onNavigate: (dayCount: number) => void;
   onSlotClick: (date: Temporal.PlainDate, hour: number) => void;
+  onTaskClick: (task: TaskRecord) => void;
   onToggleTask: (task: TaskRecord) => void;
   tasks: ReadonlyArray<TaskRecord>;
   timeZone: string;
@@ -211,8 +213,9 @@ export function WeekView({
                 const done = task.status === 'completed';
                 return (
                   <div
-                    className={`absolute flex items-center gap-1 truncate rounded border border-neutral-300 bg-neutral-50 px-1 text-xs leading-5 text-neutral-700 ${done ? 'opacity-50' : ''}`}
+                    className={`absolute flex cursor-pointer items-center gap-1 truncate rounded border border-neutral-300 bg-neutral-50 px-1 text-xs leading-5 text-neutral-700 ${done ? 'opacity-50' : ''}`}
                     key={span.id}
+                    onClick={() => onTaskClick(task)}
                     style={{
                       left: `calc(${(span.startDayIndex / strip.length) * 100}% + 2px)`,
                       top: span.row * 24 + 4,

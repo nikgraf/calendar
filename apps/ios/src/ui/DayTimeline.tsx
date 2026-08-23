@@ -223,6 +223,7 @@ function AllDayColumn({
   colorOf,
   date,
   events,
+  onTaskPress,
   onToggleTask,
   tasks,
   timeZone,
@@ -231,6 +232,7 @@ function AllDayColumn({
   colorOf: (event: EventRecord) => string;
   date: Temporal.PlainDate;
   events: ReadonlyArray<EventRecord>;
+  onTaskPress: (task: TaskRecord) => void;
   onToggleTask: (task: TaskRecord) => void;
   tasks: ReadonlyArray<TaskRecord>;
   timeZone: string;
@@ -244,21 +246,24 @@ function AllDayColumn({
       {due.map((task) => {
         const done = task.status === 'completed';
         return (
-          <Pressable
-            hitSlop={6}
+          <View
             key={`task:${task.listId}:${task.id}`}
-            onPress={() => onToggleTask(task)}
             style={[styles.allDayChip, styles.taskChip, done && styles.taskChipDone]}
             testID={`task-chip-${task.id}`}
           >
-            <Text style={styles.taskCheckbox}>{done ? '☑' : '☐'}</Text>
-            <Text
-              numberOfLines={1}
-              style={[styles.allDayText, styles.taskText, done && styles.taskTextDone]}
-            >
-              {task.title}
-            </Text>
-          </Pressable>
+            {/* Side-by-side Pressables — no nested-press arbitration. */}
+            <Pressable hitSlop={8} onPress={() => onToggleTask(task)}>
+              <Text style={styles.taskCheckbox}>{done ? '☑' : '☐'}</Text>
+            </Pressable>
+            <Pressable hitSlop={4} onPress={() => onTaskPress(task)} style={styles.taskBody}>
+              <Text
+                numberOfLines={1}
+                style={[styles.allDayText, styles.taskText, done && styles.taskTextDone]}
+              >
+                {task.title}
+              </Text>
+            </Pressable>
+          </View>
         );
       })}
       {allDay.map((event) => {
@@ -284,6 +289,7 @@ export function DayTimeline({
   events,
   onEventPress,
   onNavigate,
+  onTaskPress,
   onToggleTask,
   tasks,
   timeZone,
@@ -294,6 +300,7 @@ export function DayTimeline({
   onEventPress: (event: EventRecord) => void;
   /** Swipe committed a day change: +1 forward, -1 back. */
   onNavigate: (direction: 1 | -1) => void;
+  onTaskPress: (task: TaskRecord) => void;
   onToggleTask: (task: TaskRecord) => void;
   tasks: ReadonlyArray<TaskRecord>;
   timeZone: string;
@@ -382,6 +389,7 @@ export function DayTimeline({
                 date={day}
                 events={events}
                 key={day.toString()}
+                onTaskPress={onTaskPress}
                 onToggleTask={onToggleTask}
                 tasks={tasks}
                 timeZone={timeZone}
@@ -549,6 +557,9 @@ const styles = StyleSheet.create({
     flex: 1,
     marginRight: EDGE_INSET,
     overflow: 'hidden',
+  },
+  taskBody: {
+    flexShrink: 1,
   },
   taskCheckbox: {
     color: '#525252',

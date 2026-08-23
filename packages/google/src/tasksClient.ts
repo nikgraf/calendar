@@ -9,6 +9,14 @@ const BASE_URL = 'https://tasks.googleapis.com/tasks/v1';
 
 export type TaskWireStatus = 'completed' | 'needsAction';
 
+/** Fields we write on insert/patch. `due: null` clears the date (patch). */
+export interface TaskWriteChanges {
+  readonly due?: string | null | undefined;
+  readonly notes?: string | undefined;
+  readonly status?: TaskWireStatus | undefined;
+  readonly title?: string | undefined;
+}
+
 export interface ListTasksParams {
   readonly pageToken?: string | undefined;
   /** RFC 3339 watermark; omitted on a full pass. */
@@ -16,6 +24,16 @@ export interface ListTasksParams {
 }
 
 export interface GoogleTasksClientShape {
+  readonly deleteTask: (params: {
+    readonly accountId: string;
+    readonly taskId: string;
+    readonly taskListId: string;
+  }) => Effect.Effect<void, GoogleRequestError>;
+  readonly insertTask: (params: {
+    readonly accountId: string;
+    readonly task: { readonly due?: string; readonly notes?: string; readonly title: string };
+    readonly taskListId: string;
+  }) => Effect.Effect<GcalTask, GoogleRequestError>;
   readonly listTaskLists: (params: {
     readonly accountId: string;
     readonly pageToken?: string | undefined;
@@ -27,7 +45,7 @@ export interface GoogleTasksClientShape {
   }) => Effect.Effect<GcalTasksPage, GoogleRequestError>;
   readonly patchTask: (params: {
     readonly accountId: string;
-    readonly status: TaskWireStatus;
+    readonly changes: TaskWriteChanges;
     readonly taskId: string;
     readonly taskListId: string;
   }) => Effect.Effect<GcalTask, GoogleRequestError>;
@@ -35,12 +53,31 @@ export interface GoogleTasksClientShape {
 
 const make: Effect.Effect<GoogleTasksClientShape, never, HttpClient.HttpClient | TokenManager> =
   Effect.gen(function* () {
-    const { requestJson } = yield* makeRequestCore;
+    const { executeAuthed, failForStatus, requestJson } = yield* makeRequestCore;
 
     const tasksUrl = (taskListId: string, suffix = ''): string =>
       `${BASE_URL}/lists/${encodeURIComponent(taskListId)}/tasks${suffix}`;
 
     return {
+      deleteTask: ({ accountId, taskId, taskListId }) =>
+        Effect.gen(function* () {
+          const response = yield* executeAuthed(
+            accountId,
+            HttpClientRequest.delete(tasksUrl(taskListId, `/${encodeURIComponent(taskId)}`)),
+          );
+          if (response.status >= 400) {
+            return yield* failForStatus(response, { calendarId: taskListId, eventId: taskId });
+          }
+        }),
+
+      insertTask: ({ accountId, task, taskListId }) =>
+        requestJson(
+          accountId,
+          HttpClientRequest.post(tasksUrl(taskListId)).pipe(HttpClientRequest.bodyJsonUnsafe(task)),
+          GcalTask,
+          { calendarId: taskListId },
+        ),
+
       listTaskLists: ({ accountId, pageToken }) =>
         requestJson(
           accountId,
@@ -73,14 +110,15 @@ const make: Effect.Effect<GoogleTasksClientShape, never, HttpClient.HttpClient |
           { calendarId: taskListId },
         ),
 
-      patchTask: ({ accountId, status, taskId, taskListId }) =>
+      patchTask: ({ accountId, changes, taskId, taskListId }) =>
         requestJson(
           accountId,
           HttpClientRequest.patch(tasksUrl(taskListId, `/${encodeURIComponent(taskId)}`)).pipe(
             // Un-completing must clear the completion timestamp explicitly;
-            // JSON null is Google's clear-this-field convention.
+            // JSON null is Google's clear-this-field convention (same for
+            // clearing due).
             HttpClientRequest.bodyJsonUnsafe(
-              status === 'completed' ? { status } : { completed: null, status },
+              changes.status === 'needsAction' ? { ...changes, completed: null } : changes,
             ),
           ),
           GcalTask,
