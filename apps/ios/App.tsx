@@ -25,6 +25,7 @@ import { backendClient, kickSync, startSync, subscribeInvalidations } from './sr
 import { appleLanguageModel } from './src/appleModel.ts';
 import { appleSpeech } from './src/appleSpeech.ts';
 import { DayTimeline } from './src/ui/DayTimeline.tsx';
+import { makeFindSlots } from './src/findTime.ts';
 import { QuickAddBar } from './src/ui/QuickAddBar.tsx';
 import { MonthGrid } from './src/ui/MonthGrid.tsx';
 import { EventEditSheet, type EditSeed } from './src/ui/EventEditSheet.tsx';
@@ -77,6 +78,10 @@ function CalendarScreen() {
   );
   const mutations = useBackendMutations();
   const taskLists = useTaskLists();
+  const findSlots = useMemo(
+    () => makeFindSlots(appleLanguageModel, backendClient, timeZone),
+    [timeZone],
+  );
   const calendars = useCalendars();
 
   const colorOf = useMemo(() => makeColorLookup(calendars), [calendars]);
@@ -155,6 +160,7 @@ function CalendarScreen() {
       {view === 'day' ? (
         <>
           <QuickAddBar
+            findSlots={findSlots}
             focusedDate={focused}
             model={appleLanguageModel}
             onParsed={(prefill) => setEditSeed({ initialDate: focused, prefill })}

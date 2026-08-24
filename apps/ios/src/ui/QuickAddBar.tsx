@@ -6,7 +6,7 @@ import {
   type ModelStatus,
   type SpeechToText,
 } from '@calendar/ai';
-import { Temporal } from '@calendar/core';
+import { Temporal, type FreeSlot } from '@calendar/core';
 import type { EventEditorPrefill } from '@calendar/app-state';
 import { useEffect, useState } from 'react';
 import {
@@ -14,6 +14,7 @@ import {
   AppState,
   Platform,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -31,6 +32,14 @@ const UNAVAILABLE_NOTICE =
   'Quick add needs Apple Intelligence. Switch it on in Settings → Apple Intelligence & Siri; ' +
   'its models can take a while to download after that.';
 
+const slotLabel = (slot: FreeSlot): string => {
+  const day = Temporal.PlainDate.from(slot.date).toLocaleString('en-US', {
+    day: 'numeric',
+    weekday: 'short',
+  });
+  return `${day} · ${slot.startTime}–${slot.endTime}`;
+};
+
 /** A forgotten recording stops itself rather than running until the app dies. */
 const MAX_RECORDING_MS = 60_000;
 
@@ -45,19 +54,33 @@ type VoiceState = 'idle' | 'preparing' | 'recording' | 'transcribing';
  * no way to tell why. It now explains itself wherever the user could
  * plausibly act, and hides only where they could not.
  */
+export interface FoundSlots {
+  readonly slots: ReadonlyArray<FreeSlot>;
+  readonly title?: string | undefined;
+}
+
 export function QuickAddBar({
+  findSlots,
   focusedDate,
   model,
   onParsed,
   speech,
   timeZone,
 }: {
+  /**
+   * The find-a-time pipeline (parse → fetch events → solve), owned by the
+   * app so the bar stays platform-dumb. Resolves to a rejection reason
+   * string instead of slots when the phrase couldn't be read.
+   */
+  findSlots: (phrase: string) => Promise<FoundSlots | { readonly reason: string }>;
   focusedDate: Temporal.PlainDate;
   model: LanguageModel;
   onParsed: (prefill: EventEditorPrefill) => void;
   speech: SpeechToText;
   timeZone: string;
 }) {
+  const [mode, setMode] = useState<'add' | 'find'>('add');
+  const [found, setFound] = useState<FoundSlots | null>(null);
   const [status, setStatus] = useState<ModelStatus | null>(null);
   const [attempt, setAttempt] = useState(0);
   const [checking, setChecking] = useState(false);
@@ -117,7 +140,21 @@ export function QuickAddBar({
     }
     setBusy(true);
     setError(null);
+    setFound(null);
     try {
+      if (mode === 'find') {
+        const result = await findSlots(text);
+        if ('reason' in result) {
+          setError(result.reason);
+          return;
+        }
+        if (result.slots.length === 0) {
+          setError('No free slots match — widen the window?');
+          return;
+        }
+        setFound(result);
+        return;
+      }
       const result = await parseQuickAdd(model, {
         // Undated phrases land on the day being viewed; relative ones still
         // resolve against today.
@@ -137,6 +174,18 @@ export function QuickAddBar({
     } finally {
       setBusy(false);
     }
+  };
+
+  const pickSlot = (slot: FreeSlot) => {
+    setFound(null);
+    setPhrase('');
+    onParsed({
+      date: slot.date,
+      endTime: slot.endTime,
+      isAllDay: false,
+      startTime: slot.startTime,
+      title: found?.title ?? '',
+    });
   };
 
   const startRecording = async () => {
@@ -247,12 +296,31 @@ export function QuickAddBar({
   return (
     <View style={styles.container} testID="quick-add-state">
       <View style={styles.row}>
+        <Pressable
+          accessibilityLabel={
+            mode === 'find' ? 'Switch back to quick add' : 'Switch to finding a free time'
+          }
+          accessibilityRole="button"
+          onPress={() => {
+            setMode(mode === 'find' ? 'add' : 'find');
+            setError(null);
+            setFound(null);
+          }}
+          style={[styles.mic, mode === 'find' && styles.modeActive]}
+          testID="find-time-mode"
+        >
+          <Text style={styles.micLabel}>⏱</Text>
+        </Pressable>
         <TextInput
-          accessibilityLabel="Describe an event to add"
+          accessibilityLabel={
+            mode === 'find' ? 'Describe the time you need' : 'Describe an event to add'
+          }
           editable={!busy}
           onChangeText={setPhrase}
           onSubmitEditing={() => void submit()}
-          placeholder="Lunch with Sarah tomorrow at 1"
+          placeholder={
+            mode === 'find' ? '90 min focus this week, mornings' : 'Lunch with Sarah tomorrow at 1'
+          }
           returnKeyType="go"
           style={styles.input}
           testID="quick-add-input"
@@ -284,7 +352,7 @@ export function QuickAddBar({
             ]}
             testID="quick-add-submit"
           >
-            <Text style={styles.buttonLabel}>Add</Text>
+            <Text style={styles.buttonLabel}>{mode === 'find' ? 'Find' : 'Add'}</Text>
           </Pressable>
         )}
       </View>
@@ -296,6 +364,20 @@ export function QuickAddBar({
         <Text style={styles.hint}>Transcribing…</Text>
       ) : null}
       {error ? <Text style={styles.error}>{error}</Text> : null}
+      {found ? (
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.slotRow}>
+          {found.slots.map((slot, index) => (
+            <Pressable
+              key={`${slot.date}T${slot.startTime}`}
+              onPress={() => pickSlot(slot)}
+              style={styles.slotChip}
+              testID={`find-time-slot-${index}`}
+            >
+              <Text style={styles.slotLabel}>{slotLabel(slot)}</Text>
+            </Pressable>
+          ))}
+        </ScrollView>
+      ) : null}
     </View>
   );
 }
@@ -354,6 +436,10 @@ const styles = StyleSheet.create({
     backgroundColor: '#fee2e2',
     borderColor: '#dc2626',
   },
+  modeActive: {
+    backgroundColor: '#dbeafe',
+    borderColor: '#2563eb',
+  },
   notice: {
     color: palette.textMuted,
     flex: 1,
@@ -364,6 +450,22 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     flexDirection: 'row',
     gap: 8,
+  },
+  slotChip: {
+    backgroundColor: '#eff6ff',
+    borderColor: '#bfdbfe',
+    borderRadius: 8,
+    borderWidth: StyleSheet.hairlineWidth,
+    marginRight: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  slotLabel: {
+    color: '#1d4ed8',
+    fontSize: 13,
+  },
+  slotRow: {
+    marginTop: 8,
   },
   spinner: {
     paddingHorizontal: 18,

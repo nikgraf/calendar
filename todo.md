@@ -70,10 +70,20 @@ desktop waits on a helper binary (below).
       desktop follows via a ⌘K bar once the helper below exists. A local model also
       handles German phrasing ("nächsten Dienstag um halb drei"), which hand-written
       date grammars generally do not.
-- [ ] Find a time — "90 min of focus this week, mornings" → ranked free slots. The
-      model only parses the constraint sentence; a deterministic solver over
-      `EventRepo.getWindow` + `assembleWindow` finds and ranks the gaps, so it is
-      offline, pure and testable. Both platforms.
+- [x] Find a time (iOS) — done: a ⏱ mode in the quick-add bar; the model
+      only parses the constraint sentence (`parseFindTime`, mirroring the
+      quick-add stack: dated-weekday prompt list, vocabulary anchors like
+      "mornings" → 08:00–12:00, placeholder stripping, normalize/reject),
+      and the pure `findFreeSlots` solver in core does the work over the
+      already-assembled `getEventsInRange` window — wall-clock daily
+      bounds (DST-correct), all-day events don't block, no past slots,
+      one chronological slot per gap, capped at 10. Tapping a slot chip
+      prefills the editor via the existing EventEditorPrefill path.
+      Decisions: chronological ranking v1 (constraints are the
+      preference language), window defaults to the coming week, duration
+      required. Desktop follows via the helper binary below — parser and
+      solver are already shared; the ⌘K bar then carries quick add AND
+      find-a-time.
 - [ ] Capture from text or photo — paste an email (desktop) or share a
       screenshot/poster (iOS share sheet, using image input) → extracted event(s).
 - [x] Voice capture (iOS) — done: mic in the quick-add bar records WAV/LPCM
