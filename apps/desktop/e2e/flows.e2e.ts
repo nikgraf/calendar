@@ -600,47 +600,72 @@ describe('calendar desktop e2e', () => {
   it('creates, renames, and deletes a task through the editor', async () => {
     const { cdp } = app;
     // A free slot opens the editor; the toggle switches it to task mode.
-    // Anchor on a mid-week block — the first "Standup" match can sit in a
-    // clipped buffer column, which would put the new task's due day
-    // outside the visible strip.
+    // The slot is FOUND by hit-testing, not computed from an anchor
+    // offset: a fixed offset is secretly date-dependent — the recurring
+    // fixture occupies different hours per weekday, and this test's
+    // original anchor-minus-4h broke on its first Monday run. Scan the
+    // Design-review column (mid-week, never a clipped buffer column) for
+    // a point that lands on the bare grid.
     const anchor = await cdp.locate('[title^="Design review"]');
-    await cdp.click(anchor.x, anchor.y - 4 * HOUR_HEIGHT);
+    const free = await cdp.eval<{ x: number; y: number } | null>(`(() => {
+      const scroller = document.querySelector('.overflow-y-scroll');
+      const bounds = scroller.getBoundingClientRect();
+      const x = ${anchor.x};
+      for (let y = bounds.top + 12; y < bounds.bottom - 12; y += ${HOUR_HEIGHT} / 4) {
+        const hit = document.elementFromPoint(x, y);
+        if (hit && !hit.closest('[title]')) {
+          return { x, y };
+        }
+      }
+      return null;
+    })()`);
+    expect(free, 'a free grid cell in the Design-review column').not.toBeNull();
+    await cdp.click(free!.x, free!.y);
     await cdp.waitFor(`document.body.textContent.includes('New event')`);
-    await cdp.clickButtonWithText('Task');
-    await cdp.waitFor(`document.body.textContent.includes('New task')`);
-    await setEditorTitle('Water plants');
-    await cdp.clickButtonWithText('Save');
-    await cdp.waitFor(`!!document.querySelector('[title="Water plants"]')`);
-    await expect
-      .poll(async () => {
-        const tasks = await readTasks(app.userDataDir);
-        return tasks.find((row) => row.title === 'Water plants')?.id.startsWith('local-');
-      })
-      .toBe(true);
-    const ops = await readPendingOps(app.userDataDir);
-    expect(ops.some((op) => op.kind === 'createTask')).toBe(true);
+    try {
+      await cdp.clickButtonWithText('Task');
+      await cdp.waitFor(`document.body.textContent.includes('New task')`);
+      await setEditorTitle('Water plants');
+      await cdp.clickButtonWithText('Save');
+      await cdp.waitFor(`!!document.querySelector('[title="Water plants"]')`);
+      await expect
+        .poll(async () => {
+          const tasks = await readTasks(app.userDataDir);
+          return tasks.find((row) => row.title === 'Water plants')?.id.startsWith('local-');
+        })
+        .toBe(true);
+      const ops = await readPendingOps(app.userDataDir);
+      expect(ops.some((op) => op.kind === 'createTask')).toBe(true);
 
-    // Chip body opens task edit; rename.
-    const chip = await cdp.locate('[title="Water plants"]');
-    // Click the body, away from the leading checkbox.
-    await cdp.click(chip.x + 40, chip.y);
-    await cdp.waitFor(`document.body.textContent.includes('Edit task')`);
-    await setEditorTitle('Water the plants');
-    await cdp.clickButtonWithText('Save');
-    await cdp.waitFor(`!!document.querySelector('[title="Water the plants"]')`);
+      // Chip body opens task edit; rename.
+      const chip = await cdp.locate('[title="Water plants"]');
+      // Click the body, away from the leading checkbox.
+      await cdp.click(chip.x + 40, chip.y);
+      await cdp.waitFor(`document.body.textContent.includes('Edit task')`);
+      await setEditorTitle('Water the plants');
+      await cdp.clickButtonWithText('Save');
+      await cdp.waitFor(`!!document.querySelector('[title="Water the plants"]')`);
 
-    // Delete from the same sheet.
-    const renamed = await cdp.locate('[title="Water the plants"]');
-    await cdp.click(renamed.x + 40, renamed.y);
-    await cdp.waitFor(`document.body.textContent.includes('Edit task')`);
-    await cdp.clickButtonWithText('Delete');
-    await cdp.waitFor(`!document.querySelector('[title="Water the plants"]')`);
-    await expect
-      .poll(async () => {
-        const tasks = await readTasks(app.userDataDir);
-        return tasks.some((row) => row.title === 'Water the plants');
-      })
-      .toBe(false);
+      // Delete from the same sheet.
+      const renamed = await cdp.locate('[title="Water the plants"]');
+      await cdp.click(renamed.x + 40, renamed.y);
+      await cdp.waitFor(`document.body.textContent.includes('Edit task')`);
+      await cdp.clickButtonWithText('Delete');
+      await cdp.waitFor(`!document.querySelector('[title="Water the plants"]')`);
+      await expect
+        .poll(async () => {
+          const tasks = await readTasks(app.userDataDir);
+          return tasks.some((row) => row.title === 'Water the plants');
+        })
+        .toBe(false);
+    } finally {
+      // A failure above must not strand an open sheet for later tests.
+      await cdp
+        .eval(
+          `[...document.querySelectorAll('button')].find((b) => b.textContent?.trim() === 'Cancel')?.click()`,
+        )
+        .catch(() => undefined);
+    }
   });
 
   it('checks a task off from its all-day chip', async () => {
