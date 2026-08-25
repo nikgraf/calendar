@@ -27,6 +27,10 @@ EventMutations / repos                   (packages/sync/src/mutations.ts,
   │                                       packages/db/src/repos.ts)
   ▼
 SQLite (node:sqlite / op-sqlite)
+
+AI (desktop): renderer → preload IPC → main → Swift helper
+(apps/desktop/helper, Foundation Models + SpeechAnalyzer over stdio
+JSON); iOS reaches the same models via @react-native-ai/apple.
 ```
 
 Invalidation path (backend → UI): repo mutations invalidate Reactivity keys

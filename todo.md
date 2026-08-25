@@ -63,13 +63,11 @@ already in place). Speech is `SpeechAnalyzer`/`SpeechTranscriber`, on-device on 
 first use. Electron has no on-device path yet — Foundation Models is Swift-only — so
 desktop waits on a helper binary (below).
 
-- [ ] Natural-language quick add — "lunch with Sarah tue 1pm at Figlmüller, monthly"
-      → a prefilled editor to confirm (never an auto-save). Parser output maps onto
-      the existing `buildEventTimes`/`validateEventDraft`/`buildRecurrenceRule`
-      helpers, so it reuses the whole save path. iOS first (text + dictation);
-      desktop follows via a ⌘K bar once the helper below exists. A local model also
-      handles German phrasing ("nächsten Dienstag um halb drei"), which hand-written
-      date grammars generally do not.
+- [x] Natural-language quick add — done on BOTH platforms: iOS text +
+      dictation in the quick-add bar (shipped earlier), desktop via the
+      ⌘K command bar on the helper runtime (below). One shared parser
+      (`parseQuickAdd`), one prefilled-editor hand-off, never an
+      auto-save.
 - [x] Find a time (iOS) — done: a ⏱ mode in the quick-add bar; the model
       only parses the constraint sentence (`parseFindTime`, mirroring the
       quick-add stack: dated-weekday prompt list, vocabulary anchors like
@@ -93,7 +91,8 @@ desktop waits on a helper binary (below).
       the locale's assets) rather than by the platform's readiness flag, because that
       flag is false until assets exist — gating on it would hide dictation on a
       capable device that had simply never used it. Reaches desktop with the helper
-      binary, since macOS 26 exposes the same API. Siri/App Intent entry point later.
+      binary, since macOS 26 exposes the same API — which it now has: desktop
+      dictation ships in the ⌘K bar via the helper. Siri/App Intent entry point later.
       NOTE: the simulator has no speech assets, so dictation self-disables there —
       the transcript path needs a TestFlight check on a real device.
 - [ ] Day briefing (iOS-first) — a short generated summary of the day; a widget or
@@ -106,11 +105,24 @@ desktop waits on a helper binary (below).
       for a 3B model: keep the solving deterministic.
 - [ ] Invite triage (desktop) — summarize a backlog of invitations, suggest
       accept/decline.
-- [ ] Desktop model runtime (prerequisite for everything desktop-side) — one signed
-      Swift helper exposing both Foundation Models and `SpeechAnalyzer` over stdio,
-      versus bundling a GGUF. Note the nested-binary signing (`osxSign` runs with
-      `continueOnError: false`, so an unsigned helper fails the build outright) and
-      the extra CI step to build it.
+- [x] Desktop model runtime — done: one Swift helper
+      (`apps/desktop/helper/`, SPM) exposing Foundation Models AND
+      SpeechAnalyzer over a newline-JSON stdio protocol (status /
+      generateJson via runtime-built DynamicGenerationSchema at temp 0 /
+      prepareSpeech / transcribe). Weak-linked + #available-guarded, so
+      the binary runs on any macOS and reports unavailable below 26.
+      Main spawns it lazily (crash restart w/ backoff, request timeout),
+      renderer reaches it over plain preload IPC (window-level concern —
+      not the rpc seam); `desktopLanguageModel`/`desktopSpeech` implement
+      the shared seams, with the renderer owning the microphone
+      (getUserMedia → 16 kHz LPCM WAV, the iOS shape). Packaged via
+      extraResource; `make`/`package:app` build it first; testing-build
+      CI moved to macos-26 (only image with the SDK), e2e to macos-15
+      (macos-14 deprecated). The ⌘K bar (quick add + find-a-time +
+      dictation) is the proof feature. Swift 6 gotchas recorded in the
+      helper commit: top-level code is MainActor-isolated (detach the
+      per-request Task or the semaphore deadlocks), own-and-return
+      accumulators across tasks.
 
 ## Features
 

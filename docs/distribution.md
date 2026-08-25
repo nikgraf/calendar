@@ -1,6 +1,8 @@
 # Desktop distribution: macOS testing builds
 
-Every push to `main` runs the `testing-build` job in `.github/workflows/ci.yml`,
+Every push to `main` runs the `testing-build` job in `.github/workflows/ci.yml`
+(on `macos-26` — the Swift model helper needs the macOS 26 SDK; the packaged
+app still runs on older macOS with the model reporting unavailable),
 producing a **signed + notarized, Apple Silicon (arm64)** zip of the desktop app
 as a GitHub Actions artifact. Retention is 14 days — a fresh build lands on
 every merge, so testers should always grab a recent one.
