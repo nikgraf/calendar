@@ -76,6 +76,11 @@ const ensureHelper = (): Helper | null => {
   // blocks the child if anything (framework warnings included) writes.
   const spawned = spawn(binary, [], { stdio: ['pipe', 'pipe', 'ignore'] });
   child = spawned;
+  // A write racing the child's death emits 'error' on stdin; unhandled,
+  // that is an uncaught exception in the MAIN process. The exit handler
+  // already fails pending requests, so swallowing here is correct — the
+  // racing request resolves via its timeout at worst.
+  spawned.stdin.on('error', () => undefined);
   createInterface({ input: spawned.stdout }).on('line', (line) => {
     let parsed: { error?: string; id?: number; result?: unknown };
     try {
