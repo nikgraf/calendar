@@ -16,12 +16,13 @@ import {
   useTaskLists,
   useTasksInRangeStable,
 } from '@calendar/app-state';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { AccountsView } from '../AccountsView.tsx';
 import { EventEditor, type EditorSeed } from './EventEditor.tsx';
 import { makeColorLookup } from './colors.ts';
 import { MonthView } from './MonthView.tsx';
 import { Sidebar } from './Sidebar.tsx';
+import { CommandBar } from './CommandBar.tsx';
 import { WeekView } from './WeekView.tsx';
 
 type ViewKind = 'day' | 'month' | 'week';
@@ -85,6 +86,7 @@ export function CalendarApp() {
   const [showSettings, setShowSettings] = useState(false);
   const [editorSeed, setEditorSeed] = useState<EditorSeed | null>(null);
   const [editTask, setEditTask] = useState<TaskRecord | null>(null);
+  const [commandBarOpen, setCommandBarOpen] = useState(false);
 
   const windowStart = useMemo(
     () => weekWindowStart ?? weekStart(focused),
@@ -105,6 +107,20 @@ export function CalendarApp() {
   const calendars = useCalendars();
   const accounts = useAccounts();
   const colorOf = useMemo(() => makeColorLookup(calendars), [calendars]);
+
+  useEffect(() => {
+    const onKeyDown = (key: KeyboardEvent) => {
+      if ((key.metaKey || key.ctrlKey) && key.key.toLowerCase() === 'k') {
+        key.preventDefault();
+        setCommandBarOpen((open) => !open);
+      }
+      if (key.key === 'Escape') {
+        setCommandBarOpen(false);
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, []);
 
   const step = (direction: 1 | -1) => {
     setFocused((current) =>
@@ -254,6 +270,16 @@ export function CalendarApp() {
           />
         )}
       </div>
+
+      {commandBarOpen ? (
+        <CommandBar
+          onClose={() => setCommandBarOpen(false)}
+          onParsed={(prefill) =>
+            setEditorSeed({ initialDate: Temporal.PlainDate.from(prefill.date), prefill })
+          }
+          timeZone={timeZone}
+        />
+      ) : null}
 
       {editorSeed || editTask ? (
         <EventEditor
