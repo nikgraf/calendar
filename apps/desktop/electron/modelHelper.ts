@@ -23,7 +23,7 @@ interface PendingRequest {
 
 const helperPath = (): string | null => {
   const candidates = app.isPackaged
-    ? [join(process.resourcesPath, 'helper', 'solunivo-model-helper')]
+    ? [join(process.resourcesPath, 'solunivo-model-helper')]
     : [
         // Dev: the SPM build output, either configuration.
         join(__dirname, '..', 'helper', '.build', 'release', 'solunivo-model-helper'),
