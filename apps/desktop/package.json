@@ -13,6 +13,7 @@
     "start": "vp build && tsdown && electron ."
   },
   "dependencies": {
+    "@calendar/ai": "workspace:*",
     "@calendar/app-state": "workspace:*",
     "@calendar/core": "workspace:*",
     "@calendar/db": "workspace:*",
