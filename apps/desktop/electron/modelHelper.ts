@@ -1,4 +1,5 @@
-import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
+import { spawn, type ChildProcessByStdio } from 'node:child_process';
+import type { Readable, Writable } from 'node:stream';
 import { createInterface } from 'node:readline';
 import { app, ipcMain, systemPreferences } from 'electron';
 import { join } from 'node:path';
@@ -11,7 +12,19 @@ import { existsSync } from 'node:fs';
  * calendar data, so they stay off the rpc seam by design.
  */
 
-const REQUEST_TIMEOUT_MS = 120_000;
+/**
+ * Per-method budgets: status must fail fast (a hung helper must not stall
+ * the bar's availability check), generation and transcription get the
+ * model-scale budget, and prepareSpeech legitimately downloads locale
+ * assets for minutes on first use.
+ */
+const TIMEOUTS_MS: Record<string, number> = {
+  generateJson: 120_000,
+  prepareSpeech: 600_000,
+  status: 10_000,
+  transcribe: 120_000,
+};
+const DEFAULT_TIMEOUT_MS = 120_000;
 /** Crash-looping helpers back off instead of burning CPU. */
 const RESTART_BACKOFF_MS = 5000;
 
@@ -32,7 +45,9 @@ const helperPath = (): string | null => {
   return candidates.find((candidate) => existsSync(candidate)) ?? null;
 };
 
-let child: ChildProcessWithoutNullStreams | null = null;
+type Helper = ChildProcessByStdio<Writable, Readable, null>;
+
+let child: Helper | null = null;
 let lastSpawnFailedAt = 0;
 let nextRequestId = 1;
 const pending = new Map<number, PendingRequest>();
@@ -45,7 +60,7 @@ const failAllPending = (message: string) => {
   pending.clear();
 };
 
-const ensureHelper = (): ChildProcessWithoutNullStreams | null => {
+const ensureHelper = (): Helper | null => {
   if (child) {
     return child;
   }
@@ -57,7 +72,9 @@ const ensureHelper = (): ChildProcessWithoutNullStreams | null => {
     lastSpawnFailedAt = Date.now();
     return null;
   }
-  const spawned = spawn(binary, [], { stdio: ['pipe', 'pipe', 'pipe'] });
+  // stderr ignored deliberately: an unread pipe fills its buffer and
+  // blocks the child if anything (framework warnings included) writes.
+  const spawned = spawn(binary, [], { stdio: ['pipe', 'pipe', 'ignore'] });
   child = spawned;
   createInterface({ input: spawned.stdout }).on('line', (line) => {
     let parsed: { error?: string; id?: number; result?: unknown };
@@ -105,7 +122,7 @@ const call = (method: string, params?: Record<string, unknown>): Promise<unknown
     const timer = setTimeout(() => {
       pending.delete(id);
       reject(new Error('model helper timed out'));
-    }, REQUEST_TIMEOUT_MS);
+    }, TIMEOUTS_MS[method] ?? DEFAULT_TIMEOUT_MS);
     pending.set(id, { reject, resolve, timer });
     helper.stdin.write(`${JSON.stringify({ id, method, ...(params ? { params } : {}) })}\n`);
   });

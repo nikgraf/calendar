@@ -60,12 +60,17 @@ enum JSONValue: Decodable, Sendable {
   }
 }
 
+let emitLock = NSLock()
+
 func emit(_ payload: [String: Any]) {
   guard let data = try? JSONSerialization.data(withJSONObject: payload),
     let line = String(data: data, encoding: .utf8)
   else { return }
+  // Requests run concurrently; the write is the only shared resource.
+  emitLock.lock()
   print(line)
   fflush(stdout)
+  emitLock.unlock()
 }
 
 func emitResult(_ id: Int, _ result: Any) {
@@ -267,8 +272,12 @@ func handleTranscribe(_ id: Int, _ params: [String: JSONValue]) async {
   emitError(id, HelperError.unavailable("macOS 26 required").message)
 }
 
-// Serial request loop: requests are independent, but ordering keeps the
-// protocol simple and the model is effectively serial anyway.
+// Concurrent request loop: a slow method (prepareSpeech downloading
+// locale assets can take minutes) must not stall a status check or a
+// generation queued behind it. Each request runs in its own detached
+// task with its own session; responses correlate by id, and emit's lock
+// keeps concurrent writes line-atomic. (Detached also matters for a
+// second reason: top-level code is MainActor-isolated.)
 while let line = readLine(strippingNewline: true) {
   guard !line.isEmpty else { continue }
   guard let data = line.data(using: .utf8),
@@ -278,9 +287,6 @@ while let line = readLine(strippingNewline: true) {
     continue
   }
   let params = request.params ?? [:]
-  let semaphore = DispatchSemaphore(value: 0)
-  // Detached: top-level code is MainActor-isolated, and blocking that actor
-  // on the semaphore would deadlock an inheriting Task.
   Task.detached {
     switch request.method {
     case "status": handleStatus(request.id)
@@ -289,7 +295,5 @@ while let line = readLine(strippingNewline: true) {
     case "transcribe": await handleTranscribe(request.id, params)
     default: emitError(request.id, "unknown method: \(request.method)")
     }
-    semaphore.signal()
   }
-  semaphore.wait()
 }
