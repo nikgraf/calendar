@@ -6,6 +6,7 @@ import { updateElectronApp } from 'update-electron-app';
 import { startBackendHost } from './backendHost.ts';
 import { initFileLogging, logRendererError } from './log.ts';
 import { initPrivacy, registerPrivacyWindow } from './privacy.ts';
+import { registerModelHelper } from './modelHelper.ts';
 
 const rootPath = fileURLToPath(new URL('..', import.meta.url));
 
@@ -97,6 +98,7 @@ app.on('window-all-closed', () => {
 // eslint-disable-next-line unicorn/prefer-top-level-await
 void app.whenReady().then(() => {
   startBackendHost();
+  registerModelHelper();
   createWindow();
 
   app.on('activate', () => {

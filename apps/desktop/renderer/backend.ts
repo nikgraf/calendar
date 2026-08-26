@@ -13,6 +13,13 @@ declare global {
   interface Window {
     calendarBridge: {
       logError?: (text: string) => void;
+      modelGenerate: (schema: unknown, prompt: string) => Promise<{ json: string }>;
+      modelPrepareSpeech: (locale: string) => Promise<{ denied?: boolean; prepared?: boolean }>;
+      modelStatus: () => Promise<{ detail?: string; status: string }>;
+      modelTranscribe: (
+        audioBase64: string,
+        locale: string,
+      ) => Promise<{ segments: ReadonlyArray<{ text: string }> }>;
       onPrivacyChanged: (listener: (state: PrivacyState) => void) => () => void;
       onRpcMessage: (listener: (data: string | Uint8Array) => void) => () => void;
       privacyGet: () => Promise<PrivacyState>;

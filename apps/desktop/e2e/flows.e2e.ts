@@ -668,6 +668,27 @@ describe('calendar desktop e2e', () => {
     }
   });
 
+  it('opens the command bar on Cmd-K and closes it on Escape', async () => {
+    const { cdp } = app;
+    // Synthesize Cmd-K via the app's own handler (CDP key events don't
+    // carry macOS meta reliably) — the listener is on window.
+    await cdp.eval(
+      `window.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', metaKey: true }))`,
+    );
+    // Present in BOTH bar states: on a helper-less CI runner the bar
+    // explains unavailability; on a dev machine it shows the input. Either
+    // way the overlay mounts — assert something stable to each.
+    await cdp.waitFor(
+      `document.body.textContent.includes('on-device model is unavailable') ||
+       !!document.querySelector('input[placeholder="Lunch with Sarah tomorrow at 1"]')`,
+    );
+    await cdp.eval(`window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))`);
+    await cdp.waitFor(
+      `!document.body.textContent.includes('on-device model is unavailable') &&
+       !document.querySelector('input[placeholder="Lunch with Sarah tomorrow at 1"]')`,
+    );
+  });
+
   it('checks a task off from its all-day chip', async () => {
     const { cdp } = app;
     // The chip renders in the all-day lane with the checkbox leading.

@@ -45,10 +45,19 @@ module.exports = {
   packagerConfig: {
     appBundleId: 'com.solunivo.desktop',
     asar: false,
+    // The Swift model helper (Foundation Models + SpeechAnalyzer over
+    // stdio) rides in Resources; osx-sign signs Mach-O binaries it finds
+    // in the bundle, and the CI verify step codesign-checks it explicitly.
+    extraResource: ['helper/.build/release/solunivo-model-helper'],
     // CFBundleVersion; CI sets the short commit SHA so testers can identify
     // builds. Undefined locally — packager skips it.
     buildVersion: process.env.BUILD_VERSION,
     executableName: 'solunivo',
+    extendInfo: {
+      NSMicrophoneUsageDescription:
+        'Solunivo uses the microphone to turn what you say into an event. ' +
+        'Audio is transcribed on your device and never uploaded.',
+    },
     ignore: [
       /^\/electron(?:$|\/)/,
       /^\/renderer(?:$|\/)/,

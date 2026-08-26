@@ -4,6 +4,12 @@ import { contextBridge, ipcRenderer } from 'electron';
 // carrying the AppBackend rpc protocol (see packages/core/src/backend.ts).
 contextBridge.exposeInMainWorld('calendarBridge', {
   logError: (text: string) => ipcRenderer.send('renderer-error', text),
+  modelGenerate: (schema: unknown, prompt: string) =>
+    ipcRenderer.invoke('model:generate', schema, prompt),
+  modelPrepareSpeech: (locale: string) => ipcRenderer.invoke('model:prepare-speech', locale),
+  modelStatus: () => ipcRenderer.invoke('model:status'),
+  modelTranscribe: (audioBase64: string, locale: string) =>
+    ipcRenderer.invoke('model:transcribe', audioBase64, locale),
   onPrivacyChanged: (listener: (state: unknown) => void) => {
     const wrapped = (_event: unknown, state: unknown) => listener(state);
     ipcRenderer.on('privacy:changed', wrapped);

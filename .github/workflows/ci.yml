@@ -30,7 +30,9 @@ jobs:
 
   e2e:
     name: Desktop e2e (Electron, CDP)
-    runs-on: macos-14
+    # macos-15: macos-14 images are deprecated; e2e needs no macOS 26 SDK
+    # (the helper is availability-guarded and e2e never invokes the model).
+    runs-on: macos-15
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
@@ -60,7 +62,10 @@ jobs:
     name: macOS testing build (signed + notarized)
     if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     needs: gate
-    runs-on: macos-14
+    # macos-26: the Swift model helper needs the macOS 26 SDK
+    # (FoundationModels/SpeechAnalyzer). Runtime stays guarded, so the
+    # packaged app still runs on older macOS with the model unavailable.
+    runs-on: macos-26
     timeout-minutes: 30
     steps:
       # Forge silently degrades to an unsigned build when the APPLE_* env is

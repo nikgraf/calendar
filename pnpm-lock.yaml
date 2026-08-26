@@ -71,6 +71,9 @@ importers:
 
   apps/desktop:
     dependencies:
+      '@calendar/ai':
+        specifier: workspace:*
+        version: link:../../packages/ai
       '@calendar/app-state':
         specifier: workspace:*
         version: link:../../packages/app-state

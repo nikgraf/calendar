@@ -6,13 +6,15 @@
   "main": "dist-electron/main.mjs",
   "scripts": {
     "build": "vp build && tsdown",
+    "build:helper": "swift build -c release --package-path helper",
     "dev": "vp dev --host 127.0.0.1",
     "dev:app": "tsdown && ELECTRON_RENDERER_URL=http://127.0.0.1:5173 electron .",
-    "make": "vp build && tsdown && electron-forge make",
-    "package:app": "vp build && tsdown && electron-forge package",
+    "make": "pnpm build:helper && vp build && tsdown && electron-forge make",
+    "package:app": "pnpm build:helper && vp build && tsdown && electron-forge package",
     "start": "vp build && tsdown && electron ."
   },
   "dependencies": {
+    "@calendar/ai": "workspace:*",
     "@calendar/app-state": "workspace:*",
     "@calendar/core": "workspace:*",
     "@calendar/db": "workspace:*",
