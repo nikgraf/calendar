@@ -1,10 +1,21 @@
 import type { LanguageModel } from '@calendar/ai';
-import { EventRecord, plainDateToUtcMs, type BackendClient } from '@calendar/core';
+import { EventRecord, plainDateToUtcMs, Temporal, type BackendClient } from '@calendar/core';
 import { Effect } from 'effect';
 import { describe, expect, it } from 'vitest';
 import { makeFindSlots } from './findTime.ts';
 
 const TZ = 'Europe/Vienna';
+
+// The pipeline bakes nowUtc = Date.now(), so fixed test dates DECAY: the
+// original 2026-08-25 window fell into the past a day after this file was
+// written and broke main's gate. Everything is tomorrow-relative now, and
+// busy times are built from Vienna WALL CLOCK (not UTC-offset literals),
+// so the assertions also survive DST flips.
+const tomorrow = Temporal.Now.plainDateISO(TZ).add({ days: 1 });
+const dayAfter = tomorrow.add({ days: 1 });
+const atWallClock = (date: Temporal.PlainDate, hour: number): number =>
+  date.toZonedDateTime({ plainTime: new Temporal.PlainTime(hour, 0), timeZone: TZ }).toInstant()
+    .epochMilliseconds;
 
 const model = (parse: unknown): LanguageModel => ({
   generateJson: async () => parse,
@@ -24,15 +35,15 @@ const backendWith = (
     },
   }) as unknown as BackendClient;
 
-const busyEvent = (startIso: string, endIso: string) =>
+const busyEvent = (startUtc: number, endUtc: number) =>
   new EventRecord({
     accountId: 'a',
     calendarId: 'c',
-    endUtc: Date.parse(endIso),
+    endUtc,
     etag: null,
-    id: startIso,
+    id: `${startUtc}`,
     isAllDay: false,
-    startUtc: Date.parse(startIso),
+    startUtc,
     status: 'confirmed',
     syncedAt: 0,
     syncStatus: 'synced',
@@ -56,11 +67,12 @@ describe('makeFindSlots', () => {
       model({
         durationMinutes: 60,
         title: 'focus',
-        windowEndDate: '2026-08-25',
-        windowStartDate: '2026-08-25',
+        windowEndDate: tomorrow.toString(),
+        windowStartDate: tomorrow.toString(),
       }),
       backendWith(() =>
-        Effect.succeed([busyEvent('2026-08-25T06:00:00Z', '2026-08-25T09:00:00Z')]),
+        // Busy 08:00–11:00 Vienna wall clock tomorrow.
+        Effect.succeed([busyEvent(atWallClock(tomorrow, 8), atWallClock(tomorrow, 11))]),
       ),
       TZ,
     );
@@ -69,21 +81,24 @@ describe('makeFindSlots', () => {
       throw new Error(result.reason);
     }
     expect(result.title).toBe('focus');
-    // Vienna is UTC+2: busy 08:00–11:00 local, so the first slot is 11:00.
-    expect(result.slots[0]).toMatchObject({ date: '2026-08-25', startTime: '11:00' });
+    expect(result.slots[0]).toMatchObject({ date: tomorrow.toString(), startTime: '11:00' });
   });
 
   it('pads the fetch window a day past the local date bounds', async () => {
     const calls: Array<{ rangeEndUtc: number; rangeStartUtc: number }> = [];
     const find = makeFindSlots(
-      model({ durationMinutes: 60, windowEndDate: '2026-08-26', windowStartDate: '2026-08-25' }),
+      model({
+        durationMinutes: 60,
+        windowEndDate: dayAfter.toString(),
+        windowStartDate: tomorrow.toString(),
+      }),
       backendWith(() => Effect.succeed([]), calls),
       TZ,
     );
     await find('an hour');
     const day = 24 * 60 * 60 * 1000;
-    expect(calls[0]?.rangeStartUtc).toBe(plainDateToUtcMs('2026-08-25') - day);
-    expect(calls[0]?.rangeEndUtc).toBe(plainDateToUtcMs('2026-08-26') + 2 * day);
+    expect(calls[0]?.rangeStartUtc).toBe(plainDateToUtcMs(tomorrow.toString()) - day);
+    expect(calls[0]?.rangeEndUtc).toBe(plainDateToUtcMs(dayAfter.toString()) + 2 * day);
   });
 
   it('maps a backend failure to a human reason, not a crash', async () => {
