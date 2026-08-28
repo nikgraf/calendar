@@ -3,7 +3,8 @@ import { expect, it } from '@effect/vitest';
 import { Effect } from 'effect';
 import { SqlClient } from 'effect/unstable/sql/SqlClient';
 import { describe } from 'vitest';
-import { runMigrations } from './migrate.ts';
+import type { ResolvedMigration } from 'effect/unstable/sql/Migrator';
+import { runMigrations, runMigrationsWith } from './migrate.ts';
 import { migrations } from './migrations.ts';
 
 const sqlLayer = () => SqliteClient.layer({ filename: ':memory:' });
@@ -72,6 +73,68 @@ describe('runMigrations', () => {
       expect(yield* columnsOf('events')).toContain('hangout_link');
       expect(yield* columnsOf('pending_ops')).toContain('color_hex');
       expect(yield* columnsOf('tasks')).toContain('due_date');
+    }).pipe(Effect.provide(sqlLayer())),
+  );
+
+  it.effect('rolls back a failing migration atomically and retries it next run', () =>
+    Effect.gen(function* () {
+      const sql = yield* SqlClient;
+      const broken: ResolvedMigration = [
+        6,
+        'partial-failure',
+        Effect.succeed(
+          Effect.gen(function* () {
+            yield* sql`CREATE TABLE half_done (id TEXT PRIMARY KEY)`;
+            yield* sql`THIS IS NOT SQL`;
+          }),
+        ),
+      ];
+      const result = yield* Effect.result(runMigrationsWith([...migrations, broken]));
+      expect(result._tag).toBe('Failure');
+
+      // The failed migration left nothing behind: neither its first
+      // statement nor a bookkeeping row survived the rollback.
+      const tables = yield* sql<{
+        name: string;
+      }>`SELECT name FROM sqlite_master WHERE name = 'half_done'`;
+      expect(tables.length).toBe(0);
+      expect(yield* appliedIds).toEqual(migrations.map(([id]) => id));
+
+      // A later run with the migration fixed applies it cleanly.
+      const fixed: ResolvedMigration = [
+        6,
+        'partial-failure',
+        Effect.succeed(
+          Effect.gen(function* () {
+            yield* sql`CREATE TABLE half_done (id TEXT PRIMARY KEY)`;
+          }),
+        ),
+      ];
+      yield* runMigrationsWith([...migrations, fixed]);
+      expect(yield* appliedIds).toEqual([...migrations.map(([id]) => id), 6]);
+    }).pipe(Effect.provide(sqlLayer())),
+  );
+
+  it.effect('dies on duplicate migration ids', () =>
+    Effect.gen(function* () {
+      const dup: ResolvedMigration = [1, 'dup-of-init', Effect.succeed(Effect.void)];
+      const defect: unknown = yield* runMigrationsWith([...migrations, dup]).pipe(
+        Effect.catchDefect((d) => Effect.succeed<unknown>(d)),
+      );
+      expect(String(defect)).toContain('Duplicate migration id 1');
+    }).pipe(Effect.provide(sqlLayer())),
+  );
+
+  it.effect('dies when the database is ahead of the build (downgrade guard)', () =>
+    Effect.gen(function* () {
+      const sql = yield* SqlClient;
+      yield* runMigrations;
+      yield* sql`INSERT INTO effect_sql_migrations (migration_id, name) VALUES (99, 'from-the-future')`;
+      const defect: unknown = yield* runMigrations.pipe(
+        Effect.catchDefect((d) => Effect.succeed<unknown>(d)),
+      );
+      expect(String(defect)).toContain('Database is ahead of this build');
+      expect(String(defect)).toContain('99');
     }).pipe(Effect.provide(sqlLayer())),
   );
 });

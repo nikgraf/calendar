@@ -326,10 +326,11 @@ same PR; these are the code/infra improvements worth their own tasks).
        call sites swallow errors (worst: drag reschedule in
        `useEventDrag` never reverts visibly on failure). A shared
        `useMutationWithError` wrapper + toast; iOS parity below.
-2. [ ] Transactional migrations — `packages/db/src/migrate.ts` runs each
-       migration's statements + the bookkeeping row without a
-       transaction; a mid-migration failure bricks the DB into a
-       retry-forever state. Also add duplicate-id and downgrade guards.
+2. [x] Transactional migrations — done: each migration + bookkeeping row
+       commits in one `sql.withTransaction` (mid-failure rolls back to
+       the last applied migration and retries next launch); duplicate-id
+       and downgrade guards die loudly. Runner parameterized for tests
+       (`runMigrationsWith`).
 3. [ ] PR-only unsigned `package:app` smoke job (macos-26) — packaging
        broke twice post-merge (#36's ENOENT, the `.bin` symlink); the
        env-gated signing makes an unsigned smoke secrets-free and cheap.
