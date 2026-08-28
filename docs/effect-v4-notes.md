@@ -1,4 +1,4 @@
-# Effect v4 (beta) notes
+# Effect v4 (pre-release) notes
 
 The repo pins every `effect*` package to **4.0.0-rc.111** via the pnpm
 catalog. v4 is a substantial break from v3 and the pre-releases are thinly

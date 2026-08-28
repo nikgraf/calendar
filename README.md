@@ -2,9 +2,14 @@
 
 A Fantastical-style Google Calendar client: iOS (Expo) + macOS (Electron), client-only, built on Effect v4. See `AGENTS.md` for architecture.
 
-**Docs:** `docs/architecture.md` (data flow, op queue, recurring model),
-`docs/effect-v4-notes.md` (Effect v4 beta gotchas),
-`docs/google-sync-and-testing.md` (verified API semantics, testing).
+- Day/week/month views with 1:1 drag gestures, recurring-event editing (this/following/all), per-calendar colors, offline-tolerant pending-op queue.
+- Google Tasks: all-day task lane, create/edit/complete/delete, two-way sync.
+- On-device AI (Apple Foundation Models, no cloud): quick-add natural language parsing, "find a time" slot suggestions, and dictation — ⌘K bar on macOS, quick-add bar on iOS.
+
+**Docs:** `docs/architecture.md` (data flow, op queue, recurring model, AI layer),
+`docs/effect-v4-notes.md` (Effect v4 pre-release gotchas),
+`docs/google-sync-and-testing.md` (verified API semantics, testing),
+`docs/distribution.md` (CI builds, TestFlight, EAS updates).
 
 **Privacy note:** the desktop window is hidden from screen shares and
 recordings by default — see the Privacy section in Settings (Hidden /
@@ -12,18 +17,31 @@ Visible for 10 min / Always visible).
 
 ## Setup
 
+Prerequisites: Node ≥ 24, pnpm ≥ 11 (`corepack enable`).
+
 ```sh
 pnpm install
-# native modules must match Electron's ABI (rerun after Electron upgrades):
-pnpm --filter @calendar/desktop rebuild:native
 ```
+
+SQLite is Node's built-in `node:sqlite` on desktop and op-sqlite on iOS —
+there is no native-module rebuild step.
+
+Optional, for the desktop AI features (quick-add parsing, find-a-time,
+dictation): build the Swift model helper once (requires Xcode with the
+macOS 26 SDK; Apple Silicon with Apple Intelligence enabled at runtime):
+
+```sh
+pnpm --filter @calendar/desktop build:helper
+```
+
+Without it the app runs fine — AI affordances show an "unavailable" notice.
 
 ### Google OAuth (required for sign-in)
 
 Create a Google Cloud project once, then:
 
 1. **APIs & Services → Library**: enable the _Google Calendar API_ and the _Google Tasks API_.
-2. **APIs & Services → OAuth consent screen**: External, Testing mode; add yourself (and any other test users). Scopes: `calendar.readonly`, `calendar.events`, `tasks`, plus `openid email profile`.
+2. **APIs & Services → OAuth consent screen**: External, Testing mode; add yourself (and any other test users). Scopes: see `packages/google/src/oauth/scopes.ts` — the single source of truth (`calendar.readonly`, `calendar.events`, `tasks`, plus `openid email profile`).
 3. **Credentials → Create credentials → OAuth client ID**:
    - Type **Desktop app** → used by the macOS app. Note client ID + secret.
    - Type **iOS** (bundle id `com.solunivo.app`) → used by the iOS app. Note client ID.

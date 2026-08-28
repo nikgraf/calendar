@@ -57,10 +57,25 @@ invariants.
 - Sync: incremental via syncTokens; 410 → drop token, full resync,
   `deleteStale`. The special birthday/holiday calendars flow through the
   normal calendarList.
-- **Google Tasks** (planned feature) is a separate API with no syncTokens
-  (poll `updatedMin`), date-only `due` values, and **no recurrence
-  exposure** — Google materializes the next occurrence of a repeating task
-  when the current one completes.
+
+### Google Tasks (shipped)
+
+- Separate API with no syncTokens: we poll with an `updatedMin` watermark
+  (stored per account in `sync_state`, advanced to now−60s for clock
+  skew) + `showCompleted/showHidden/showDeleted` so completions and
+  deletions arrive as tombstones; a daily full pass catches anything a
+  watermark can miss, then `deleteStale` (only `sync_status='synced'`
+  rows).
+- `due` is **date-only** (RFC 3339 with a meaningless time part) and
+  there is **no recurrence exposure** — Google materializes the next
+  occurrence of a repeating task when the current one completes.
+- **Task ids are server-assigned** — creates are NOT idempotent (no
+  client-id trick like events). See architecture.md for the temp-id +
+  adopt-before-retry protocol.
+- Completing sets `status: 'completed'` (Google also sets `hidden`);
+  un-completing must clear `completed` via `status: 'needsAction'`.
+- A 403 insufficient-scope (grants that predate the tasks scope) disables
+  tasks for the account instead of retrying.
 
 ## Testing conventions
 
@@ -69,10 +84,22 @@ invariants.
 - Layer recipe: `EventMutations.layer` + `reposLayer` +
   `Layer.effectDiscard(runMigrations)` +
   `SqliteClient.layer({ filename: ':memory:' })` + reactivity layer +
-  `Layer.succeed(GoogleCalendarClient, stub)`.
-- The stubbed `GoogleCalendarClientShape` is a **complete record** — every
-  new client method must be added to every stub (typecheck enumerates
-  them).
+  `Layer.succeed(GoogleCalendarClient, stub)` (+
+  `Layer.succeed(GoogleTasksClient, tasksStub)` where tasks are
+  exercised).
+- The stubbed `GoogleCalendarClientShape` / `GoogleTasksClientShape` are
+  **complete records** — every new client method must be added to every
+  stub (typecheck enumerates them).
+- AI pipelines never hit a real model in tests: the provider seams take a
+  fake `ModelProvider`/`SpeechProvider` returning canned JSON, so
+  prompt-building, normalization, and error paths are fully unit-tested
+  (see `packages/ai/*.test.ts` and the app-side `findTime.test.ts`
+  twins).
+- **Date-independence is a hard rule for every test involving "now"**:
+  inject the clock (`nowUtc` parameter) or build dates relative to today
+  with wall-clock times via Temporal in an explicit zone — never pinned
+  dates or UTC-offset literals. Three CI breakages came from tests that
+  passed on the day they were written and decayed.
 - `getWindow` joins visible calendars: tests asserting through it must
   seed a calendar row, not just events.
 - The SQLite driver is Node's built-in `node:sqlite` (same in tests,
@@ -107,14 +134,29 @@ Flakiness lessons (each caused a real CI failure — keep them enforced):
 - Tests share one app instance and run in file order — later tests must
   tolerate earlier tests' data (relative assertions, unique titles).
 
-### CI (.github/workflows/ci.yml)
+### CI (.github/workflows/ci.yml + ios.yml)
 
 - `gate` (ubuntu): check + typecheck + unit tests.
-- `e2e` (macos-14): desktop build → e2e suite. GUI Electron runs fine on
+- `e2e` (macos-15): desktop build → e2e suite. GUI Electron runs fine on
   macOS runners; content protection does not affect CDP automation.
+- `testing-build` (macos-26, main only): signed + notarized arm64 zip
+  incl. the Swift model helper — macos-26 is the only runner image with
+  the FoundationModels SDK. See docs/distribution.md.
+- `ios.yml` (main + PRs): fingerprint-gated — TestFlight build when the
+  native fingerprint changed, otherwise `eas update`; PRs get a `pr-<n>`
+  preview channel.
+- Log lines may stringify effect causes containing HTTP requests; effect
+  redacts auth headers (`"authorization":<redacted>` — verified), so
+  tokens cannot leak into CI logs this way.
 
 ### iOS e2e (Maestro, apps/ios/e2e/flows/)
 
-Text/testID-based flows (launch, navigation, editor, settings). Maestro
-cannot synthesize long-press pans, so gesture behavior is covered by unit
-tests on the shared math instead.
+Text/testID-based flows (8: launch, navigation, new-event sheet,
+settings, day swipe, quick-add, create event, task lane). Maestro cannot
+synthesize long-press pans, so gesture behavior is covered by unit tests
+on the shared math instead. Selector gotchas (each caused a real
+failure): Maestro text selectors are **whole-string regexes** — prefix
+text does not match, and regex metacharacters in titles must be escaped;
+never select by `local-…` task ids (the op push swaps them to server ids
+mid-flow) — select by title/label text; avoid non-ASCII punctuation in
+typed text (XCTest typing flakiness).

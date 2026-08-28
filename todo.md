@@ -7,10 +7,10 @@
       packager name/executable, bundle ids (desktop com.solunivo.desktop,
       iOS com.solunivo.app), window/OAuth-page titles, sidebar brand,
       core appName, CI artifact + verify paths, docs. Internal @calendar/\*
-      package scopes and the GitHub repo name intentionally kept. NOTE:
-      the Google Cloud iOS OAuth client must be recreated for the new
-      bundle id before iOS sign-in works again; packaged-app userData
-      moves (Application Support/Solunivo) so testers re-auth.
+      package scopes and the GitHub repo name intentionally kept. The
+      Google Cloud iOS OAuth client was recreated for the new bundle id
+      (#23); packaged-app userData moved (Application Support/Solunivo)
+      so testers re-authed once.
 - [ ] Real app icons (macOS .icns / Assets.car, iOS app icon set)
 - [x] Signing/notarization for the macOS app — done: the `testing-build` job
       ships a signed + notarized arm64 zip artifact on every main push and has
@@ -25,14 +25,17 @@
       (fingerprint runtimeVersion keeps incompatible OTA updates away).
       Decisions: single bundle id (one install per device — platform
       constraint), no per-PR TestFlight builds by default (cost/latency).
-      Open until Nik: first interactive build, EXPO_TOKEN secret, ASC
-      internal testers. See docs/distribution.md. Note: the OAuth consent
+      One-time setup (first interactive build, EXPO_TOKEN secret, ASC
+      app) is complete and the pipeline has shipped builds + OTA updates.
+      See docs/distribution.md. Note: the OAuth consent
       screen is in Testing, where refresh tokens expire after 7 days —
       publish to Production before adding outside testers, or they hit a
       weekly forced re-sign-in.
-- [ ] Native iOS date/time pickers in the event editor
-      (`@react-native-community/datetimepicker` — replaces the text inputs;
-      requires a prebuild)
+- [x] Native iOS date/time pickers in the event editor — done (#33):
+      `@react-native-community/datetimepicker` inline date + spinner time
+      pickers replace the text inputs (event editor + task due date);
+      repeat-until seeds on switching Ends→on so it can't silently stay
+      unbounded.
 - [x] Drag-to-move / drag-to-resize events — done: pointer-event drag on
       desktop (move across days + resize, 15-min snap, Escape cancels,
       click-through preserved), long-press pan + resize handle on iOS via
@@ -275,14 +278,17 @@ desktop waits on a helper binary (below).
 ## Infrastructure
 
 - [x] CI — done: `.github/workflows/ci.yml` with a `gate` job (ubuntu:
-      check + typecheck + unit tests) and an `e2e` job (macos-14:
-      electron-rebuild, desktop build, CDP e2e suite) on pushes to main
-      and PRs.
+      check + typecheck + unit tests), an `e2e` job (macos-15: desktop
+      build, CDP e2e suite — no native rebuilds since node:sqlite), and a
+      `testing-build` job (macos-26: signed+notarized zip) on pushes to
+      main and PRs; `.github/workflows/ios.yml` handles fingerprint-gated
+      iOS publishing.
 - [x] Electron auto-update — done: `update-electron-app` runs in packaged
       builds (GitHub releases, 1h interval) and the Forge GitHub publisher
-      is configured (draft releases). Becomes fully active once the app is
-      signed/notarized and releases are published (public repo or fed
-      token); a no-op until then.
+      is configured (draft releases). Signing/notarization is done; the
+      remaining blocker is that the repo is private — update.electronjs.org
+      only serves public repos, so this stays a no-op until the repo goes
+      public or a token-fed feed replaces it.
 - [x] iOS e2e via Maestro — done: eight flows in `apps/ios/e2e/flows/`
       (launch, navigation, new-event sheet, accounts sheet, day swipe,
       quick add, create-event save path, task lane) with testIDs on the
