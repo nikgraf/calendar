@@ -1,4 +1,4 @@
-import { useBackendMutations } from '@calendar/app-state';
+import { useGuardedMutations } from '@calendar/app-state';
 import { CALENDAR_PALETTE, type CalendarInfo } from '@calendar/core';
 import { useEffect, useState } from 'react';
 
@@ -8,7 +8,7 @@ import { useEffect, useState } from 'react';
  * container cannot clip it.
  */
 export function CalendarColorButton({ calendar }: { calendar: CalendarInfo }) {
-  const { setCalendarColor } = useBackendMutations();
+  const { setCalendarColor } = useGuardedMutations();
   const [anchor, setAnchor] = useState<{ x: number; y: number } | null>(null);
 
   useEffect(() => {

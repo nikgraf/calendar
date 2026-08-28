@@ -1,4 +1,9 @@
-import { useAccounts, useBackendMutations, useCalendars } from '@calendar/app-state';
+import {
+  useAccounts,
+  useBackendMutations,
+  useCalendars,
+  useGuardedMutations,
+} from '@calendar/app-state';
 import { useState } from 'react';
 import { PrivacySection } from './PrivacySection.tsx';
 
@@ -6,6 +11,7 @@ export function AccountsView() {
   const accounts = useAccounts();
   const calendars = useCalendars();
   const mutations = useBackendMutations();
+  const guarded = useGuardedMutations();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -67,7 +73,7 @@ export function AccountsView() {
             </div>
             <button
               className="text-sm text-red-600 hover:underline"
-              onClick={() => void mutations.removeAccount({ accountId: account.id })}
+              onClick={() => void guarded.removeAccount({ accountId: account.id })}
               type="button"
             >
               Remove
@@ -84,7 +90,7 @@ export function AccountsView() {
                   <input
                     checked={calendar.isVisible}
                     onChange={(changeEvent) =>
-                      void mutations.setCalendarVisible({
+                      void guarded.setCalendarVisible({
                         accountId: calendar.accountId,
                         calendarId: calendar.id,
                         isVisible: changeEvent.target.checked,

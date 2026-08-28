@@ -1,4 +1,4 @@
-import { useBackendMutations, useNow } from '@calendar/app-state';
+import { useGuardedMutations, useNow } from '@calendar/app-state';
 import {
   bufferedDays,
   DAY_SWIPE_BUFFER,
@@ -322,7 +322,7 @@ export function DayTimeline({
 }) {
   const scrollRef = useRef<ScrollView>(null);
   const nowMs = useNow();
-  const { updateEvent, updateRecurring } = useBackendMutations();
+  const { updateEvent, updateRecurring } = useGuardedMutations();
   const [columnWidth, setColumnWidth] = useState(0);
   const panX = useSharedValue(0);
 

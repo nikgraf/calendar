@@ -1,4 +1,10 @@
-import { BackendProvider, makeBackendAtoms, useBackendInvalidations } from '@calendar/app-state';
+import {
+  BackendProvider,
+  makeBackendAtoms,
+  type MutationNotice,
+  subscribeMutationNotices,
+  useBackendInvalidations,
+} from '@calendar/app-state';
 import { CONFLICT_NOTICE_KEY } from '@calendar/db/keys';
 import { useEffect, useState } from 'react';
 import { CalendarApp } from './calendar/CalendarApp.tsx';
@@ -37,12 +43,36 @@ function ConflictToast() {
   );
 }
 
+/** Transient banner for failed fire-and-forget mutations (mutationGuard). */
+function MutationNoticeToast() {
+  const [notice, setNotice] = useState<MutationNotice | null>(null);
+  useEffect(() => subscribeMutationNotices(setNotice), []);
+  useEffect(() => {
+    if (!notice) {
+      return;
+    }
+    const timer = setTimeout(() => setNotice(null), 6000);
+    return () => clearTimeout(timer);
+  }, [notice]);
+
+  if (!notice) {
+    return null;
+  }
+  return (
+    <div className="fixed bottom-16 left-1/2 z-40 -translate-x-1/2 rounded-lg bg-red-700 px-4 py-2 text-sm text-white shadow-lg">
+      <div>Couldn&rsquo;t {notice.action} — the change was not applied.</div>
+      {notice.detail ? <div className="mt-0.5 text-xs opacity-80">{notice.detail}</div> : null}
+    </div>
+  );
+}
+
 function Bridge() {
   useBackendInvalidations(subscribeInvalidations);
   return (
     <>
       <CalendarApp />
       <ConflictToast />
+      <MutationNoticeToast />
     </>
   );
 }
