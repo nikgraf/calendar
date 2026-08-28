@@ -10,9 +10,9 @@ import {
 } from '@calendar/core';
 import {
   useAccounts,
-  useBackendMutations,
   useCalendars,
   useEventsInRangeStable,
+  useGuardedMutations,
   useTaskLists,
   useTasksInRangeStable,
 } from '@calendar/app-state';
@@ -102,7 +102,7 @@ export function CalendarApp() {
     utcMsToPlainDate(range.startUtc),
     utcMsToPlainDate(range.endUtc),
   );
-  const { completeTask } = useBackendMutations();
+  const { completeTask } = useGuardedMutations();
   const taskLists = useTaskLists();
   const calendars = useCalendars();
   const accounts = useAccounts();

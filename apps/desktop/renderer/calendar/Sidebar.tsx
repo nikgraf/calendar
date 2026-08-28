@@ -1,5 +1,5 @@
 import type { Account, CalendarInfo, TaskListInfo } from '@calendar/core';
-import { useBackendMutations, useTaskLists } from '@calendar/app-state';
+import { useGuardedMutations, useTaskLists } from '@calendar/app-state';
 import { CalendarColorButton } from './CalendarColorButton.tsx';
 import { SyncStatus } from './SyncStatus.tsx';
 
@@ -12,7 +12,7 @@ export function Sidebar({
   calendars: ReadonlyArray<CalendarInfo>;
   onOpenSettings: () => void;
 }) {
-  const { addAccount, setCalendarVisible, setTaskListVisible } = useBackendMutations();
+  const { addAccount, setCalendarVisible, setTaskListVisible } = useGuardedMutations();
   const taskLists = useTaskLists();
 
   const toggleList = (list: TaskListInfo) => {

@@ -1,4 +1,4 @@
-import { useBackendMutations } from '@calendar/app-state';
+import { useGuardedMutations } from '@calendar/app-state';
 import { moveEventTimes, resizeEventEnd, snapMinutes, type EventRecord } from '@calendar/core';
 import { useEffect, useRef, useState, type RefObject } from 'react';
 
@@ -44,7 +44,7 @@ export const useEventDrag = ({
   hourHeight: number;
   onClick: (event: EventRecord) => void;
 }) => {
-  const { updateEvent, updateRecurring } = useBackendMutations();
+  const { updateEvent, updateRecurring } = useGuardedMutations();
   const [preview, setPreview] = useState<DragPreview | null>(null);
   const originRef = useRef<DragOrigin | null>(null);
   // Suppresses the day column's slot-click that follows a drag's pointerup.

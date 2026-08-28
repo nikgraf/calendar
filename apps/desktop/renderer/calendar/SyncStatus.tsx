@@ -1,4 +1,4 @@
-import { useBackendMutations, usePendingOps } from '@calendar/app-state';
+import { useGuardedMutations, usePendingOps } from '@calendar/app-state';
 import { useState } from 'react';
 
 const KIND_LABEL = {
@@ -16,7 +16,7 @@ const KIND_LABEL = {
 /** Sidebar indicator for local changes Google has not acknowledged yet. */
 export function SyncStatus() {
   const ops = usePendingOps();
-  const { discardPendingOp } = useBackendMutations();
+  const { discardPendingOp } = useGuardedMutations();
   const [open, setOpen] = useState(false);
 
   if (ops.length === 0) {

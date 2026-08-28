@@ -1,6 +1,7 @@
 import {
   useAccounts,
   useBackendMutations,
+  useGuardedMutations,
   useCalendars,
   usePendingOps,
   useTaskLists,
@@ -31,9 +32,11 @@ import {
 import { appleLanguageModel } from '../appleModel.ts';
 import { appleSpeech } from '../appleSpeech.ts';
 import { palette } from './theme.ts';
+import { MutationNoticeToast } from './Toast.tsx';
 
 export function SettingsSheet({ onClose, visible }: { onClose: () => void; visible: boolean }) {
   const mutations = useBackendMutations();
+  const guarded = useGuardedMutations();
   const accounts = useAccounts();
   const calendars = useCalendars();
   const pendingOps = usePendingOps();
@@ -90,7 +93,7 @@ export function SettingsSheet({ onClose, visible }: { onClose: () => void; visib
                     · {op.kind === 'calendarColor' ? op.calendarId : (op.title ?? op.eventId)}
                     {op.attempts > 0 ? ` — retrying (${op.attempts}×)` : ''}
                   </Text>
-                  <Pressable onPress={() => void mutations.discardPendingOp({ opId: op.id })}>
+                  <Pressable onPress={() => void guarded.discardPendingOp({ opId: op.id })}>
                     <Text style={styles.pendingDiscard}>Discard</Text>
                   </Pressable>
                 </View>
@@ -110,7 +113,7 @@ export function SettingsSheet({ onClose, visible }: { onClose: () => void; visib
                     </Pressable>
                   ) : null}
                 </View>
-                <Pressable onPress={() => void mutations.removeAccount({ accountId: account.id })}>
+                <Pressable onPress={() => void guarded.removeAccount({ accountId: account.id })}>
                   <Text style={styles.remove}>Remove</Text>
                 </Pressable>
               </View>
@@ -141,7 +144,7 @@ export function SettingsSheet({ onClose, visible }: { onClose: () => void; visib
                         </Pressable>
                         <Pressable
                           onPress={() =>
-                            void mutations.setCalendarVisible({
+                            void guarded.setCalendarVisible({
                               accountId: calendar.accountId,
                               calendarId: calendar.id,
                               isVisible: !calendar.isVisible,
@@ -166,7 +169,7 @@ export function SettingsSheet({ onClose, visible }: { onClose: () => void; visib
                               key={hex}
                               onPress={() => {
                                 setColorPickerFor(null);
-                                void mutations.setCalendarColor({
+                                void guarded.setCalendarColor({
                                   accountId: calendar.accountId,
                                   calendarId: calendar.id,
                                   colorHex: hex,
@@ -193,7 +196,7 @@ export function SettingsSheet({ onClose, visible }: { onClose: () => void; visib
                   <Pressable
                     key={list.id}
                     onPress={() =>
-                      void mutations.setTaskListVisible({
+                      void guarded.setTaskListVisible({
                         accountId: list.accountId,
                         isVisible: !list.isVisible,
                         taskListId: list.id,
@@ -230,6 +233,9 @@ export function SettingsSheet({ onClose, visible }: { onClose: () => void; visib
           <PrPreviewSection />
           <DiagnosticsSection />
         </ScrollView>
+        {/* RN Modals cover the root screen's toast, so this sheet mounts
+            its own listener for failures triggered from inside it. */}
+        <MutationNoticeToast />
       </SafeAreaView>
     </Modal>
   );

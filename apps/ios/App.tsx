@@ -1,8 +1,8 @@
 import {
   BackendProvider,
+  useGuardedMutations,
   makeBackendAtoms,
   useBackendInvalidations,
-  useBackendMutations,
   useCalendars,
   useEventsInRangeStable,
   useTaskLists,
@@ -30,6 +30,7 @@ import { QuickAddBar } from './src/ui/QuickAddBar.tsx';
 import { MonthGrid } from './src/ui/MonthGrid.tsx';
 import { EventEditSheet, type EditSeed } from './src/ui/EventEditSheet.tsx';
 import { SettingsSheet } from './src/ui/SettingsSheet.tsx';
+import { MutationNoticeToast } from './src/ui/Toast.tsx';
 import { palette } from './src/ui/theme.ts';
 import { WeekStrip } from './src/ui/WeekStrip.tsx';
 
@@ -76,7 +77,7 @@ function CalendarScreen() {
     utcMsToPlainDate(range.startUtc),
     utcMsToPlainDate(range.endUtc),
   );
-  const mutations = useBackendMutations();
+  const mutations = useGuardedMutations();
   const taskLists = useTaskLists();
   const findSlots = useMemo(
     () => makeFindSlots(appleLanguageModel, backendClient, timeZone),
@@ -221,6 +222,7 @@ function CalendarScreen() {
         />
       ) : null}
       <SettingsSheet onClose={() => setShowSettings(false)} visible={showSettings} />
+      <MutationNoticeToast />
     </SafeAreaView>
   );
 }

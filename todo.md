@@ -322,10 +322,13 @@ upgrade paths:
 Ranked backlog from a full-project audit (docs drift was fixed in the
 same PR; these are the code/infra improvements worth their own tasks).
 
-1. [ ] Surface mutation failures in the UI — ~20 `void mutation(...)`
-       call sites swallow errors (worst: drag reschedule in
-       `useEventDrag` never reverts visibly on failure). A shared
-       `useMutationWithError` wrapper + toast; iOS parity below.
+1. [x] Surface mutation failures in the UI — done: `useGuardedMutations`
+       (packages/app-state/src/mutationGuard.ts) wraps fire-and-forget
+       mutations so failures publish a MutationNotice instead of
+       vanishing as unhandled rejections; both apps render it as a toast
+       (desktop App.tsx, iOS ui/Toast.tsx — also mounted inside the
+       Settings modal, which covers the root toast). Editors with inline
+       error UI keep using `useBackendMutations`.
 2. [x] Transactional migrations — done: each migration + bookkeeping row
        commits in one `sql.withTransaction` (mid-failure rolls back to
        the last applied migration and retries next launch); duplicate-id
