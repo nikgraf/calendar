@@ -114,3 +114,9 @@ on the custom rpc protocol); everything else held.
   (`Missing internal slot calendar-id`): `packages/core/src/time/intl-compat.ts`
   patches `Intl.DateTimeFormat.prototype.resolvedOptions` to include
   `calendar`/`numberingSystem`.
+
+## `Effect.dieMessage` is gone
+
+Symptom: `TypeError: yield* (intermediate value)... is not iterable` at the
+call site (the undefined import is invoked, then yield\*ed). v4 ships only
+`Effect.die` — use `Effect.die(new Error('…'))`.
