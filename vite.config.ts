@@ -51,9 +51,9 @@ export default defineConfig({
       ? ['apps/desktop/e2e/**/*.e2e.ts']
       : [
           'packages/*/src/**/*.test.{ts,tsx}',
-          'apps/desktop/electron/**/*.test.ts',
-          'apps/desktop/renderer/**/*.test.ts',
-          'apps/ios/src/**/*.test.ts',
+          'apps/desktop/electron/**/*.test.{ts,tsx}',
+          'apps/desktop/renderer/**/*.test.{ts,tsx}',
+          'apps/ios/src/**/*.test.{ts,tsx}',
         ],
     testTimeout: process.env['E2E'] ? 60_000 : 5000,
   },

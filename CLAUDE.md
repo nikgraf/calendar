@@ -1,26 +1,35 @@
 # CLAUDE.md
 
-Client-only Google Calendar client (no backend): Expo iOS app + Electron
-macOS app over a shared, Effect-v4-first TypeScript core. Data syncs
-directly against the Google Calendar REST API with syncToken polling and an
-offline-tolerant pending-op queue.
+Client-only Google Calendar + Tasks client (no backend): Expo iOS app +
+Electron macOS app over a shared, Effect-v4-first TypeScript core. Data
+syncs directly against the Google Calendar/Tasks REST APIs with syncToken
+(events) and updatedMin-watermark (tasks) polling plus an offline-tolerant
+pending-op queue. On-device AI (Apple Foundation Models + SpeechAnalyzer)
+powers quick-add parsing, find-a-time, and dictation.
 
 ## Monorepo map
 
 - `packages/core` — domain types (Schema classes), rpc contract
   (`backend.ts`), recurrence math (expand/build/edit), drag/time math,
   meeting-link + color helpers. Pure; no IO.
-- `packages/db` — SQLite repos (accounts/calendars/events/pending_ops/
-  sync_state), custom migration runner, Reactivity keys + invalidation
-  forwarding.
-- `packages/google` — REST client (TokenManager auth), Gcal↔domain mapping,
-  OAuth token stores.
-- `packages/sync` — `EventMutations` (op queue + optimistic writes),
-  `SyncEngine` (poll/push/pull), backend rpc handlers, duplex rpc protocols.
+- `packages/db` — SQLite repos (accounts/calendars/events/tasks/task_lists/
+  pending_ops/sync_state), custom migration runner, Reactivity keys +
+  invalidation forwarding.
+- `packages/google` — REST clients for Calendar and Tasks (TokenManager
+  auth), Gcal↔domain mapping, OAuth token stores.
+- `packages/sync` — `EventMutations` (op queue + optimistic writes, event
+  and task op kinds), `SyncEngine` (poll/push/pull; tasks watermark sync),
+  backend rpc handlers, duplex rpc protocols.
+- `packages/ai` — model-provider seam (`ModelProvider`/`SpeechProvider`
+  interfaces), quick-add + find-time prompt/normalize/parse pipelines.
+  Pure; platform adapters live in the apps.
 - `packages/app-state` — `@effect/atom-react` atoms + React hooks
-  (`useBackendMutations`, `useEventsInRange`, …).
+  (`useBackendMutations`, `useEventsInRangeStable`, …).
 - `apps/desktop` — Electron (Forge, vite, tsdown main bundle); rpc over an
-  IPC frame channel. `apps/ios` — Expo dev client; zero-hop direct backend.
+  IPC frame channel; Swift model helper (`helper/`, Foundation Models +
+  SpeechAnalyzer over stdio, supervised by `electron/modelHelper.ts`).
+  `apps/ios` — Expo dev client; zero-hop direct backend; @react-native-ai/apple
+  for on-device model access.
 
 ## Commands (gate must be green before any commit)
 
@@ -50,8 +59,9 @@ offline-tolerant pending-op queue.
   Electron-ABI rebuilds. The whole better-sqlite3 apparatus is retired.
 - Oxlint enforces alphabetically sorted object keys/interface members —
   write literals sorted or `vp check` fails.
-- Window-level concerns (screen privacy, logging, open-external) use plain
-  preload IPC; calendar data goes through the typed rpc seam only.
+- Window-level concerns (screen privacy, logging, open-external, and the
+  four `model:*` AI-helper channels) use plain preload IPC; calendar data
+  goes through the typed rpc seam only.
 - Secrets: `google-oauth.local.json` is gitignored — never commit OAuth
   client config. Tokens live only in TokenStore (Keychain/safeStorage),
   never in SQLite.
@@ -69,5 +79,7 @@ offline-tolerant pending-op queue.
 - `docs/effect-v4-notes.md` — the v4-beta gotcha catalog (symptom → fix).
 - `docs/google-sync-and-testing.md` — verified Google API semantics +
   testing conventions and flakiness lessons.
+- `docs/distribution.md` — CI build/signing pipeline, TestFlight, EAS
+  updates, fingerprint-gated iOS publishing.
 - `AGENTS.md` — command reference. `todo.md` — roadmap and decision log
   (done-entries record design decisions).

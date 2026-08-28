@@ -3,9 +3,11 @@ import { defineConfig } from 'tsdown';
 // Electron main is ESM ("type": "module" → .js); the preload must be CommonJS
 // because sandboxed preload scripts cannot use ESM.
 //
-// The main bundle inlines all workspace/npm deps so the packaged app needs no
-// node_modules besides better-sqlite3 (native, Electron ABI — copied in by the
-// forge packageAfterCopy hook; see rebuild:native for the ABI story).
+// The main bundle inlines all workspace/npm deps so the packaged app needs
+// no node_modules besides `effect` (left external for its self-referencing
+// imports; copied in by the forge packageAfterCopy hook). SQLite is Node's
+// built-in node:sqlite — no native modules since the better-sqlite3
+// retirement (#36).
 export default [
   defineConfig({
     entry: { main: 'electron/main.ts' },

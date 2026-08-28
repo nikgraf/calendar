@@ -7,9 +7,15 @@ on:
   # Manual reruns of the testing build (Actions → CI → Run workflow).
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  # PR pushes supersede each other; main pushes must all complete — a
+  # cancelled testing-build ships no artifact, and a cancelled EAS
+  # publish silently strands testers on old JS.
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   gate:

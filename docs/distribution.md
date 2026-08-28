@@ -26,7 +26,9 @@ defaults read /Applications/Solunivo.app/Contents/Info.plist CFBundleVersion
 
 ## One-time secret setup (repo admin)
 
-The job fails loudly until all six secrets exist under
+The job fails loudly (a dedicated `::error` preflight step — Forge would
+otherwise silently degrade to an unsigned build) until all six secrets
+exist under
 **GitHub → repo Settings → Secrets and variables → Actions**:
 
 | Secret                       | Value                                                                                                                                          |
@@ -43,6 +45,15 @@ certificate at developer.apple.com → Certificates if none exists yet.
 
 The same four `APPLE_*` variables activate signing/notarization for local
 `pnpm --filter @calendar/desktop make` runs — the forge config is env-gated.
+
+## Known limitation: no OAuth config in the artifact
+
+The desktop OAuth client id/secret come from env vars or the gitignored
+`google-oauth.local.json` — neither is baked into CI builds, so a
+downloaded testing build cannot complete Google sign-in yet. Testers can
+inspect the UI; full use requires a local dev setup (or a future decision
+to embed the non-confidential RFC 8252 desktop client config in the
+build).
 
 ## Installing a testing build (testers)
 
@@ -89,6 +100,10 @@ latest build.
   the workflow builds and emits a warning — a wasted build is visible and
   cheap; a wrongly skipped one strands testers on a stale binary silently.
 - `workflow_dispatch` always builds — the manual rebuild escape hatch.
+- ios.yml runs its own `verify` job (same lint/typecheck/test gate as
+  ci.yml) rather than depending across workflows — GitHub can't `needs:`
+  a job in another workflow file; the duplication is the price of keeping
+  iOS publishing self-contained.
 
 Two comparison caveats, both fail-safe. The baseline is the latest
 _finished_ build, not "what testers run": installs still on an older
@@ -121,19 +136,24 @@ PR builds side by side. Instead:
 - TestFlight itself also lets you switch between any processed builds
   (TestFlight app → Previous Builds).
 
-## One-time setup (Nik)
+## One-time setup (done — kept for re-setup)
+
+All of this is complete: the EAS project id is in `app.json`, the ASC app
+id (`6803542567`) is in `eas.json`, `EXPO_TOKEN` is set, and the first
+TestFlight build has shipped. If credentials ever need recreating:
 
 1. Expo account: `pnpm exec eas login` in `apps/ios`, then `eas init` (writes
-   the project id into app.json) and `eas update:configure` (replaces
-   `EAS_PROJECT_ID_PLACEHOLDER` in `updates.url`).
+   the project id into app.json) and `eas update:configure` (fills
+   `updates.url`).
 2. App Store Connect: run the first `eas build --profile testflight`
    interactively — EAS creates + stores the distribution cert and an ASC API
    key; `eas submit` can create the ASC app for `com.solunivo.app`. Put the
-   ASC app id into `eas.json` → `submit.testflight` (replaces
-   `ASC_APP_ID_PLACEHOLDER`).
+   ASC app id into `eas.json` → `submit.testflight`.
 3. Repo secret **`EXPO_TOKEN`** (expo.dev → Account settings → Access
-   tokens). Until it exists, the main/label jobs fail loudly and the PR
-   preview job skips quietly.
+   tokens). Until it exists, a `preflight` job emits a `::warning` and
+   **every publishing job skips quietly** — deliberate, so agent PRs
+   aren't blocked before setup, but it means a missing/expired token
+   shows up as skipped jobs, not red ones.
 4. Google OAuth: the iOS client must match bundle id `com.solunivo.app`
    (see README) — sign-in in TestFlight builds needs it.
 5. TestFlight internal testing: add yourself (and teammates) as internal

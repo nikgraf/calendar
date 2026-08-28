@@ -1,14 +1,15 @@
 # Architecture
 
-Client-only: both apps talk directly to the Google Calendar REST API. There
-is no server of ours; all state lives in a local SQLite database per device
-and reconciles against Google.
+Client-only: both apps talk directly to the Google Calendar and Google
+Tasks REST APIs. There is no server of ours; all state lives in a local
+SQLite database per device and reconciles against Google.
 
 ## Data flow
 
 ```
 React UI (desktop renderer / iOS)
-  │  useAccounts / useCalendars / useEventsInRange / usePendingOps
+  │  useAccounts / useCalendars / useEventsInRangeStable / usePendingOps
+  │  useTaskLists / useTasksInRangeStable / useNow
   │  useBackendMutations()               (packages/app-state/src/hooks.ts)
   ▼
 @effect/atom-react atoms                 (packages/app-state/src/atoms.ts)
@@ -28,14 +29,22 @@ EventMutations / repos                   (packages/sync/src/mutations.ts,
   ▼
 SQLite (node:sqlite / op-sqlite)
 
-AI (desktop): renderer → preload IPC → main → Swift helper
-(apps/desktop/helper, Foundation Models + SpeechAnalyzer over stdio
-JSON); iOS reaches the same models via @react-native-ai/apple.
+AI (all on-device, no cloud): prompts, JSON schemas, normalization, and
+parsing live in packages/ai behind provider seams; the pure findSlots
+solver (packages/core/src/scheduling/) computes free slots from the
+already-synced local events. Desktop: renderer → preload IPC
+(model:status / model:generate / model:prepare-speech / model:transcribe)
+→ main → Swift helper child process (apps/desktop/helper, Foundation
+Models + SpeechAnalyzer over newline-JSON stdio; spawned lazily and
+supervised with restart backoff by apps/desktop/electron/modelHelper.ts).
+iOS reaches the same models via @react-native-ai/apple. Dictation audio
+is captured by the UI layer (renderer getUserMedia → 16kHz WAV) and only
+transcribed natively.
 ```
 
 Invalidation path (backend → UI): repo mutations invalidate Reactivity keys
-(`accounts`, `calendars`, `events`, `pendingOps`, plus `notice:conflict` as
-a broadcast-only signal). `forwardingReactivity`
+(`accounts`, `calendars`, `events`, `pendingOps`, `tasks`, `taskLists`,
+plus `notice:conflict` as a broadcast-only signal). `forwardingReactivity`
 (packages/db/src/reactivityForward.ts) decorates the backend Reactivity to
 also publish every key to an in-process invalidation bus
 (packages/db/src/invalidationBus.ts); the bus feeds the `stream: true`
@@ -56,6 +65,10 @@ oldest-first). Kinds:
 | `delete`        | event id / instance id        | —                       | events.delete                                      |
 | `rsvp`          | event id                      | EventRecord (attendees) | events.patch, attendees-only body, **no If-Match** |
 | `calendarColor` | `__calendar_color__` sentinel | `colorHex`              | calendarList.patch?colorRgbFormat=true             |
+| `createTask`    | temp `local-…` id             | title/notes/due         | tasks.insert (NOT idempotent — see below)          |
+| `updateTask`    | task id                       | title/notes/due         | tasks.patch                                        |
+| `completeTask`  | task id                       | completed flag          | tasks.patch (status + hidden reset)                |
+| `deleteTask`    | task id                       | —                       | tasks.delete (404/410 = already gone)              |
 
 Rules that keep the queue correct:
 
@@ -72,6 +85,17 @@ Rules that keep the queue correct:
 - **401**: the op stays queued, the account is flagged `reauth_required`;
   reconnecting (same account id, resolved by email) resets status and the
   queue drains.
+- **Task creates are not idempotent**: Google assigns task ids
+  server-side, so a `createTask` writes a temp `local-…` row that is
+  swapped for the server task on success (`rewriteEventId` renames the
+  queued op; the row is remove+upsert, never an id UPDATE — a concurrent
+  pull may already have inserted the server row). Before retrying a
+  `createTask` that was already **dispatched** (`dispatched_at` stamp),
+  the drain first lists recent tasks and adopts a match — otherwise a
+  crash between insert and ack would duplicate the task.
+- The drain loop re-reads each op by id before dispatching: a missing row
+  means the user discarded it (skip), and coalescing rewrites stay
+  visible.
 - The op queue is surfaced in the UI (`listPendingOps`/`discardPendingOp`
   rpcs, "N unsynced changes" panel). `PendingOpSummary` in core/backend.ts
   has its **own kind literal** — extend it whenever a kind is added.
@@ -89,6 +113,15 @@ Rules that keep the queue correct:
   protected by sync_status).
 - Cancelled events arrive as tombstones and are kept as `status:
 'cancelled'` rows when they shadow recurring instances.
+- **Tasks** (per account, when the `tasks` scope is granted): task lists
+  always sync as a full pass (they are few); tasks pull incrementally via
+  an `updatedMin` watermark stored in `sync_state` — advanced to "now
+  minus 60s" (clock-skew lag) and queried with
+  `showCompleted/showHidden/showDeleted` so completions and deletions
+  arrive as tombstones. A daily full pass runs `deleteStale` (only rows
+  with `sync_status='synced'` — pending local writes are protected). A
+  403 with the insufficient-scope reason flips `tasksEnabled` off instead
+  of retrying forever (older grants without the Tasks scope).
 
 ## Recurring events
 
@@ -116,8 +149,12 @@ Rules that keep the queue correct:
   (renderer errors → `userData/logs/main.log`, 1 MB rotation),
   `privacyGet/Set` (screen-capture protection, default hidden), and the
   window-open handler (Join-meeting → system browser).
-- Auto-update (`update-electron-app` + Forge GitHub publisher) is wired but
-  inert until the app is signed and releases exist.
+- Auto-update (`update-electron-app` + Forge GitHub publisher) is wired
+  but inert: builds are signed now, so the remaining blocker is that the
+  repo (and thus Releases) is private — update.electronjs.org only serves
+  public repos.
+- Views: day/week (time grid with wheel-pan on desktop, swipe paging on
+  iOS), month grid, and an all-day lane that also hosts the task rows.
 - Time is Temporal everywhere (`@js-temporal/polyfill` via
   `packages/core/src/time/temporal.ts`); Hermes needs the `Intl.resolvedOptions` shim in
   `packages/core/src/time/intl-compat.ts`.

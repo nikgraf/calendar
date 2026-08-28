@@ -154,12 +154,17 @@ export const backendClient: BackendClient = makeDirectBackendClient(handlers, (e
 );
 
 export const startSync = (): void => {
-  void runtime.runPromise(
-    Effect.gen(function* () {
-      const engine = yield* SyncEngine;
-      yield* engine.start();
-    }),
-  );
+  runtime
+    .runPromise(
+      Effect.gen(function* () {
+        const engine = yield* SyncEngine;
+        yield* engine.start();
+      }),
+    )
+    .catch(() => {
+      // Same reasoning as kickSync: a failed start must not surface as an
+      // unhandled rejection; the engine logs its own failures.
+    });
 };
 
 // Immediate refresh when the app returns to the foreground; syncAll is
