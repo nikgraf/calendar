@@ -30,7 +30,8 @@ import { QuickAddBar } from './src/ui/QuickAddBar.tsx';
 import { MonthGrid } from './src/ui/MonthGrid.tsx';
 import { EventEditSheet, type EditSeed } from './src/ui/EventEditSheet.tsx';
 import { SettingsSheet } from './src/ui/SettingsSheet.tsx';
-import { MutationNoticeToast } from './src/ui/Toast.tsx';
+import { ConflictToast, MutationNoticeToast } from './src/ui/Toast.tsx';
+import { ErrorBoundary } from './src/ui/ErrorBoundary.tsx';
 import { palette } from './src/ui/theme.ts';
 import { WeekStrip } from './src/ui/WeekStrip.tsx';
 
@@ -222,6 +223,7 @@ function CalendarScreen() {
         />
       ) : null}
       <SettingsSheet onClose={() => setShowSettings(false)} visible={showSettings} />
+      <ConflictToast />
       <MutationNoticeToast />
     </SafeAreaView>
   );
@@ -230,9 +232,11 @@ function CalendarScreen() {
 export function App() {
   return (
     <GestureHandlerRootView style={styles.root}>
-      <BackendProvider atoms={backendAtoms}>
-        <CalendarScreen />
-      </BackendProvider>
+      <ErrorBoundary>
+        <BackendProvider atoms={backendAtoms}>
+          <CalendarScreen />
+        </BackendProvider>
+      </ErrorBoundary>
     </GestureHandlerRootView>
   );
 }

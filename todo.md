@@ -361,11 +361,13 @@ same PR; these are the code/infra improvements worth their own tasks).
        and the handler layer are 5 hand-maintained parallel lists; derive
        them from the `AppBackendRpcs` group so adding a method is one
        edit.
-10. [ ] Housekeeping batch — split `packages/sync/src/mutations.ts`
-        (1206 lines: event ops / task ops / drain) and `EventEditSheet`
-        (676); iOS parity for ErrorBoundary + ConflictToast (a 412
-        server-wins is currently silent data loss on iPhone); `packages/ai`
-        errors → `Data.TaggedError`; unify editor labels; dedup the
-        app-state LRU helpers; main-process `uncaughtException` should
-        exit after logging; iOS `app.json` updates: set
-        `checkAutomatically` + a fallback timeout.
+10. [x] Housekeeping batch (the structural half) — done: mutations.ts
+        split into mutationTypes/applyOp/taskMutations + a 644-line core;
+        EventEditSheet split into shell + EventEditForm/TaskEditForm +
+        editSheetShared; iOS ErrorBoundary + ConflictToast parity (a 412
+        server-wins was silent data loss on iPhone).
+11. [ ] Housekeeping leftovers — `packages/ai` errors →
+        `Data.TaggedError`; unify editor labels; dedup the app-state LRU
+        helpers; main-process `uncaughtException` should exit after
+        logging; iOS `app.json` updates: set `checkAutomatically` + a
+        fallback timeout.

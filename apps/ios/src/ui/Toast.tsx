@@ -1,6 +1,8 @@
 import { type MutationNotice, subscribeMutationNotices } from '@calendar/app-state';
+import { CONFLICT_NOTICE_KEY } from '@calendar/db/keys';
 import { useEffect, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
+import { subscribeInvalidations } from '../backend.ts';
 
 /**
  * Transient banner for failed fire-and-forget mutations (mutationGuard).
@@ -32,6 +34,40 @@ export function MutationNoticeToast() {
   );
 }
 
+/**
+ * Transient banner for 412 server-wins: the local edit was discarded.
+ * Parity with the desktop ConflictToast — without it, a conflict on
+ * iPhone was silent data loss.
+ */
+export function ConflictToast() {
+  const [visible, setVisible] = useState(false);
+  useEffect(
+    () =>
+      subscribeInvalidations((keys) => {
+        if (keys.includes(CONFLICT_NOTICE_KEY)) {
+          setVisible(true);
+        }
+      }),
+    [],
+  );
+  useEffect(() => {
+    if (!visible) {
+      return;
+    }
+    const timer = setTimeout(() => setVisible(false), 6000);
+    return () => clearTimeout(timer);
+  }, [visible]);
+
+  if (!visible) {
+    return null;
+  }
+  return (
+    <View pointerEvents="none" style={[styles.toast, styles.info]}>
+      <Text style={styles.text}>An edit was overridden by a newer version from Google.</Text>
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   detail: {
     color: '#ffffffcc',
@@ -41,6 +77,9 @@ const styles = StyleSheet.create({
   },
   error: {
     backgroundColor: '#b91c1c',
+  },
+  info: {
+    backgroundColor: '#171717',
   },
   text: {
     color: '#ffffff',
