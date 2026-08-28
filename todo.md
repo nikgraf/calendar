@@ -316,3 +316,52 @@ upgrade paths:
       (`packages/sync/src/rpcDuplex.ts`; a MessagePort transport is a
       drop-in duplex swap), and the invalidation stream is a typed
       `stream: true` rpc
+
+## Project review (2026-08-28)
+
+Ranked backlog from a full-project audit (docs drift was fixed in the
+same PR; these are the code/infra improvements worth their own tasks).
+
+1. [ ] Surface mutation failures in the UI — ~20 `void mutation(...)`
+       call sites swallow errors (worst: drag reschedule in
+       `useEventDrag` never reverts visibly on failure). A shared
+       `useMutationWithError` wrapper + toast; iOS parity below.
+2. [ ] Transactional migrations — `packages/db/src/migrate.ts` runs each
+       migration's statements + the bookkeeping row without a
+       transaction; a mid-migration failure bricks the DB into a
+       retry-forever state. Also add duplicate-id and downgrade guards.
+3. [ ] PR-only unsigned `package:app` smoke job (macos-26) — packaging
+       broke twice post-merge (#36's ENOENT, the `.bin` symlink); the
+       env-gated signing makes an unsigned smoke secrets-free and cheap.
+4. [ ] Dedup the findTime pipeline (`apps/desktop/renderer/ai/findTime.ts`
+       and `apps/ios/src/findTime.ts` are byte-identical → move into
+       `packages/ai`); extract a shared `useQuickAddModel` — QuickAddBar
+       and CommandBar re-implement one state machine and have already
+       diverged (MicrophoneDeniedError is handled in different phases →
+       wrong copy on iOS).
+5. [ ] Test the untested load-bearing pure code — `assembleWindow`
+       (every rendered event flows through it; zero direct tests) and
+       the editor models (~386 shared untested lines).
+6. [ ] Harden the model IPC + helper supervision — validate/size-cap
+       `model:*` inputs in main, kill the helper child on request
+       timeout (a wedged process currently stays wedged), add a
+       `will-navigate` guard + CSP to the renderer.
+7. [ ] CI structure — extract the duplicated gate into a `workflow_call`
+       reusable workflow (ci.yml + ios.yml run it twice per merge), pin
+       third-party actions to SHAs, path-filter docs-only PRs, cache
+       `helper/.build` (testing-build's 30-min budget is tight cold).
+8. [ ] DB robustness — index `pending_ops (next_attempt_at, created_at)`
+   - LIMIT in `listDue`; atomic temp-file+rename writes and an
+     availability guard in the desktop safeStorage token store.
+9. [ ] Derive the rpc plumbing — `BackendMethodName`, the direct client,
+       and the handler layer are 5 hand-maintained parallel lists; derive
+       them from the `AppBackendRpcs` group so adding a method is one
+       edit.
+10. [ ] Housekeeping batch — split `packages/sync/src/mutations.ts`
+        (1206 lines: event ops / task ops / drain) and `EventEditSheet`
+        (676); iOS parity for ErrorBoundary + ConflictToast (a 412
+        server-wins is currently silent data loss on iPhone); `packages/ai`
+        errors → `Data.TaggedError`; unify editor labels; dedup the
+        app-state LRU helpers; main-process `uncaughtException` should
+        exit after logging; iOS `app.json` updates: set
+        `checkAutomatically` + a fallback timeout.
