@@ -47,7 +47,8 @@ module.exports = {
     asar: false,
     // The Swift model helper (Foundation Models + SpeechAnalyzer over
     // stdio) rides in Resources; osx-sign signs Mach-O binaries it finds
-    // in the bundle, and the CI verify step codesign-checks it explicitly.
+    // in the bundle, and CI's codesign --verify --deep covers it via the
+    // resource seal.
     extraResource: ['helper/.build/release/solunivo-model-helper'],
     // CFBundleVersion; CI sets the short commit SHA so testers can identify
     // builds. Undefined locally — packager skips it.
@@ -68,6 +69,14 @@ module.exports = {
       /^\/vite\.config\./,
       /^\/google-oauth\.local\.json$/,
       /^\/node_modules(?:$|\/)/,
+      // Never ship: Swift sources + 68MB of SPM build objects (the built
+      // binary already rides in Resources via extraResource), the e2e
+      // harness, and e2e-artifacts — local test runs leave calendar
+      // SCREENSHOTS there, and a make after that would hand them out.
+      /^\/helper(?:$|\/)/,
+      /^\/e2e(?:$|\/)/,
+      /^\/e2e-artifacts(?:$|\/)/,
+      /^\/\.gitignore$/,
     ],
     name: 'Solunivo',
     ...(osxNotarize ? { osxNotarize } : {}),

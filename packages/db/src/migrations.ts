@@ -152,5 +152,3 @@ export const migrations: ReadonlyArray<ResolvedMigration> = [
   [4, 'add-tasks', Effect.succeed(addTasks)],
   [5, 'add-task-writes', Effect.succeed(addTaskWrites)],
 ];
-
-export const migrationsLoader = Effect.succeed(migrations);
