@@ -263,6 +263,9 @@ importers:
 
   packages/app-state:
     dependencies:
+      '@calendar/ai':
+        specifier: workspace:*
+        version: link:../ai
       '@calendar/core':
         specifier: workspace:*
         version: link:../core
