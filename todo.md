@@ -334,9 +334,10 @@ same PR; these are the code/infra improvements worth their own tasks).
        the last applied migration and retries next launch); duplicate-id
        and downgrade guards die loudly. Runner parameterized for tests
        (`runMigrationsWith`).
-3. [ ] PR-only unsigned `package:app` smoke job (macos-26) — packaging
-       broke twice post-merge (#36's ENOENT, the `.bin` symlink); the
-       env-gated signing makes an unsigned smoke secrets-free and cheap.
+3. [x] PR-only unsigned `package:app` smoke job — done: `package-smoke`
+       in ci.yml (macos-26, needs gate) packages unsigned and asserts the
+       .app exists, the model helper landed in Resources, and none of
+       helper/e2e/e2e-artifacts leaked into the bundle.
 4. [ ] Dedup the findTime pipeline (`apps/desktop/renderer/ai/findTime.ts`
        and `apps/ios/src/findTime.ts` are byte-identical → move into
        `packages/ai`); extract a shared `useQuickAddModel` — QuickAddBar
