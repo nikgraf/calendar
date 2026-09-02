@@ -32,6 +32,35 @@ export interface BackendAtoms {
   readonly tasksInRange: ReturnType<typeof buildAtoms>['tasksInRange'];
 }
 
+/**
+ * The UI-runtime Reactivity keys each mutation invalidates — the single
+ * source for which mutation atoms exist (the atoms record is derived from
+ * these entries). Keys chosen per method; syncNow is empty because the
+ * backend invalidates through the bridge as sync data lands.
+ */
+const MUTATION_REACTIVITY = {
+  addAccount: [ACCOUNTS_KEY, CALENDARS_KEY, EVENTS_KEY, TASKS_KEY, TASKLISTS_KEY],
+  completeTask: [TASKS_KEY],
+  createEvent: [EVENTS_KEY],
+  createTask: [TASKS_KEY],
+  deleteEvent: [EVENTS_KEY],
+  deleteRecurring: [EVENTS_KEY],
+  deleteTask: [TASKS_KEY],
+  discardPendingOp: [OPS_KEY],
+  removeAccount: [ACCOUNTS_KEY, CALENDARS_KEY, EVENTS_KEY, TASKS_KEY, TASKLISTS_KEY],
+  respondToEvent: [EVENTS_KEY],
+  setCalendarColor: [CALENDARS_KEY],
+  setCalendarVisible: [CALENDARS_KEY, EVENTS_KEY],
+  setTaskListVisible: [TASKLISTS_KEY, TASKS_KEY],
+  syncNow: [],
+  updateEvent: [EVENTS_KEY],
+  updateRecurring: [EVENTS_KEY],
+  updateTask: [TASKS_KEY],
+} satisfies Partial<Record<keyof BackendClient, ReadonlyArray<string>>>;
+
+type MutationName = keyof typeof MUTATION_REACTIVITY;
+const mutationNames = Object.keys(MUTATION_REACTIVITY) as ReadonlyArray<MutationName>;
+
 const buildAtoms = (client: BackendClient) => {
   const runtime = Atom.runtime(Layer.succeed(AppBackend, client));
 
@@ -150,38 +179,9 @@ const buildAtoms = (client: BackendClient) => {
       { reactivityKeys },
     );
 
-  const mutations = {
-    addAccount: mutation('addAccount', [
-      ACCOUNTS_KEY,
-      CALENDARS_KEY,
-      EVENTS_KEY,
-      TASKS_KEY,
-      TASKLISTS_KEY,
-    ]),
-    completeTask: mutation('completeTask', [TASKS_KEY]),
-    createEvent: mutation('createEvent', [EVENTS_KEY]),
-    createTask: mutation('createTask', [TASKS_KEY]),
-    deleteEvent: mutation('deleteEvent', [EVENTS_KEY]),
-    deleteRecurring: mutation('deleteRecurring', [EVENTS_KEY]),
-    deleteTask: mutation('deleteTask', [TASKS_KEY]),
-    discardPendingOp: mutation('discardPendingOp', [OPS_KEY]),
-    removeAccount: mutation('removeAccount', [
-      ACCOUNTS_KEY,
-      CALENDARS_KEY,
-      EVENTS_KEY,
-      TASKS_KEY,
-      TASKLISTS_KEY,
-    ]),
-    respondToEvent: mutation('respondToEvent', [EVENTS_KEY]),
-    setCalendarColor: mutation('setCalendarColor', [CALENDARS_KEY]),
-    setCalendarVisible: mutation('setCalendarVisible', [CALENDARS_KEY, EVENTS_KEY]),
-    setTaskListVisible: mutation('setTaskListVisible', [TASKLISTS_KEY, TASKS_KEY]),
-    // The backend invalidates through the bridge as sync data lands.
-    syncNow: mutation('syncNow', []),
-    updateEvent: mutation('updateEvent', [EVENTS_KEY]),
-    updateRecurring: mutation('updateRecurring', [EVENTS_KEY]),
-    updateTask: mutation('updateTask', [TASKS_KEY]),
-  };
+  const mutations = Object.fromEntries(
+    mutationNames.map((name) => [name, mutation(name, MUTATION_REACTIVITY[name])]),
+  ) as { [M in MutationName]: ReturnType<typeof mutation<M>> };
 
   /** The runtime's own Reactivity — the bridge target for backend keys. */
   const reactivityAccessor = runtime.atom(
