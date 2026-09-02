@@ -8,6 +8,7 @@
     "./*": "./src/*.ts"
   },
   "dependencies": {
+    "@calendar/ai": "workspace:*",
     "@calendar/core": "workspace:*",
     "@calendar/db": "workspace:*",
     "@effect/atom-react": "catalog:",

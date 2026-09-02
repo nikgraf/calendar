@@ -1,8 +1,8 @@
-import type { LanguageModel } from '@calendar/ai';
+import type { LanguageModel } from './model.ts';
 import { EventRecord, plainDateToUtcMs, Temporal, type BackendClient } from '@calendar/core';
 import { Effect } from 'effect';
 import { describe, expect, it } from 'vitest';
-import { makeFindSlots } from './findTime.ts';
+import { makeFindSlots } from './findTimePipeline.ts';
 
 const TZ = 'Europe/Vienna';
 
@@ -51,7 +51,7 @@ const busyEvent = (startUtc: number, endUtc: number) =>
     updatedAt: 0,
   });
 
-describe('makeFindSlots', () => {
+describe('makeFindSlots (shared pipeline)', () => {
   it('passes parse rejections through as reasons', async () => {
     const find = makeFindSlots(
       model({}),

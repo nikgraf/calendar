@@ -337,12 +337,12 @@ same PR; these are the code/infra improvements worth their own tasks).
 3. [ ] PR-only unsigned `package:app` smoke job (macos-26) — packaging
        broke twice post-merge (#36's ENOENT, the `.bin` symlink); the
        env-gated signing makes an unsigned smoke secrets-free and cheap.
-4. [ ] Dedup the findTime pipeline (`apps/desktop/renderer/ai/findTime.ts`
-       and `apps/ios/src/findTime.ts` are byte-identical → move into
-       `packages/ai`); extract a shared `useQuickAddModel` — QuickAddBar
-       and CommandBar re-implement one state machine and have already
-       diverged (MicrophoneDeniedError is handled in different phases →
-       wrong copy on iOS).
+4. [x] Dedup the findTime pipeline + quick-add state machine — done:
+       `makeFindSlots` lives in `packages/ai/src/findTimePipeline.ts`
+       (one test, no twins); `useQuickAddModel`
+       (packages/app-state/src/quickAddModel.ts) owns mode/submit/slot
+       pick/dictation for both bars, and checks MicrophoneDeniedError in
+       BOTH speech phases — the divergence that showed the wrong copy.
 5. [ ] Test the untested load-bearing pure code — `assembleWindow`
        (every rendered event flows through it; zero direct tests) and
        the editor models (~386 shared untested lines).

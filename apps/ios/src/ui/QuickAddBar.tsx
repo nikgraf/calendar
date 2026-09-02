@@ -1,13 +1,11 @@
 import {
-  MicrophoneDeniedError,
-  parseQuickAdd,
-  SpeechUnsupportedError,
+  type FindTimeOutcome,
   type LanguageModel,
   type ModelStatus,
   type SpeechToText,
 } from '@calendar/ai';
 import { Temporal, type FreeSlot } from '@calendar/core';
-import type { EventEditorPrefill } from '@calendar/app-state';
+import { useQuickAddModel, type EventEditorPrefill } from '@calendar/app-state';
 import { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
@@ -40,11 +38,6 @@ const slotLabel = (slot: FreeSlot): string => {
   return `${day} · ${slot.startTime}–${slot.endTime}`;
 };
 
-/** A forgotten recording stops itself rather than running until the app dies. */
-const MAX_RECORDING_MS = 60_000;
-
-type VoiceState = 'idle' | 'preparing' | 'recording' | 'transcribing';
-
 /**
  * Natural-language capture, typed or dictated: a phrase becomes a
  * prefilled editor the user confirms — nothing is written by the model.
@@ -54,11 +47,6 @@ type VoiceState = 'idle' | 'preparing' | 'recording' | 'transcribing';
  * no way to tell why. It now explains itself wherever the user could
  * plausibly act, and hides only where they could not.
  */
-export interface FoundSlots {
-  readonly slots: ReadonlyArray<FreeSlot>;
-  readonly title?: string | undefined;
-}
-
 export function QuickAddBar({
   findSlots,
   focusedDate,
@@ -72,23 +60,40 @@ export function QuickAddBar({
    * app so the bar stays platform-dumb. Resolves to a rejection reason
    * string instead of slots when the phrase couldn't be read.
    */
-  findSlots: (phrase: string) => Promise<FoundSlots | { readonly reason: string }>;
+  findSlots: (phrase: string) => Promise<FindTimeOutcome | { readonly reason: string }>;
   focusedDate: Temporal.PlainDate;
   model: LanguageModel;
   onParsed: (prefill: EventEditorPrefill) => void;
   speech: SpeechToText;
   timeZone: string;
 }) {
-  const [mode, setMode] = useState<'add' | 'find'>('add');
-  const [found, setFound] = useState<FoundSlots | null>(null);
   const [status, setStatus] = useState<ModelStatus | null>(null);
   const [attempt, setAttempt] = useState(0);
   const [checking, setChecking] = useState(false);
-  const [voiceAvailable, setVoiceAvailable] = useState(false);
-  const [voice, setVoice] = useState<VoiceState>('idle');
-  const [phrase, setPhrase] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const {
+    busy,
+    error,
+    found,
+    mode,
+    phrase,
+    pickSlot,
+    setMode,
+    setPhrase,
+    startRecording,
+    stopRecording,
+    submit,
+    voice,
+    voiceAvailable,
+  } = useQuickAddModel({
+    // Undated phrases land on the day being viewed; relative ones still
+    // resolve against today.
+    fallbackDate: focusedDate.toString(),
+    findSlots,
+    model,
+    onPrefill: onParsed,
+    speech,
+    timeZone,
+  });
 
   useEffect(() => {
     let cancelled = false;
@@ -121,141 +126,6 @@ export function QuickAddBar({
       subscription.remove();
     };
   }, [attempt, model]);
-
-  useEffect(() => {
-    let cancelled = false;
-    void speech.isSupported().then((value) => {
-      if (!cancelled) {
-        setVoiceAvailable(value);
-      }
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [speech]);
-
-  const submit = async (text: string = phrase) => {
-    if (!text.trim()) {
-      return;
-    }
-    setBusy(true);
-    setError(null);
-    setFound(null);
-    try {
-      if (mode === 'find') {
-        const result = await findSlots(text);
-        if ('reason' in result) {
-          setError(result.reason);
-          return;
-        }
-        if (result.slots.length === 0) {
-          setError('No free slots match — widen the window?');
-          return;
-        }
-        setFound(result);
-        return;
-      }
-      const result = await parseQuickAdd(model, {
-        // Undated phrases land on the day being viewed; relative ones still
-        // resolve against today.
-        fallbackDate: focusedDate.toString(),
-        phrase: text,
-        referenceDate: Temporal.Now.plainDateISO(timeZone).toString(),
-        timeZone,
-      });
-      if (result.kind === 'rejected') {
-        setError(result.reason);
-        return;
-      }
-      setPhrase('');
-      onParsed(result.prefill);
-    } catch {
-      setError('On-device model unavailable.');
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const pickSlot = (slot: FreeSlot) => {
-    setFound(null);
-    setPhrase('');
-    onParsed({
-      date: slot.date,
-      endTime: slot.endTime,
-      isAllDay: false,
-      startTime: slot.startTime,
-      title: found?.title ?? '',
-    });
-  };
-
-  const startRecording = async () => {
-    setError(null);
-    setVoice('preparing');
-    try {
-      // Prepare first: asking for the microphone before knowing dictation
-      // can run would extract a permanent permission for nothing.
-      await speech.prepare();
-    } catch (error) {
-      setVoice('idle');
-      if (error instanceof SpeechUnsupportedError) {
-        setVoiceAvailable(false);
-        setError('Dictation is unavailable on this device.');
-      } else {
-        // Installing the locale's models needs the network, so a failure
-        // here is often transient — keep the mic and let them retry.
-        setError("Couldn't set up dictation — try again.");
-      }
-      return;
-    }
-    try {
-      await speech.startRecording();
-      setVoice('recording');
-    } catch (error) {
-      setVoice('idle');
-      setError(
-        error instanceof MicrophoneDeniedError
-          ? 'Microphone access is off — you can still type.'
-          : 'Could not start recording.',
-      );
-    }
-  };
-
-  const stopRecording = async () => {
-    setVoice('transcribing');
-    try {
-      const text = await speech.stopRecording();
-      if (!text) {
-        setError("Didn't catch that — try again.");
-        return;
-      }
-      setPhrase(text);
-      await submit(text);
-    } catch {
-      setError('Could not transcribe that.');
-    } finally {
-      setVoice('idle');
-    }
-  };
-
-  // Stop a forgotten recording, and never leave one running when the bar
-  // goes away (switching to Month view unmounts it).
-  useEffect(() => {
-    if (voice !== 'recording') {
-      return;
-    }
-    const timer = setTimeout(() => void stopRecording(), MAX_RECORDING_MS);
-    return () => {
-      clearTimeout(timer);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- restart the cap per recording
-  }, [voice]);
-
-  useEffect(
-    () => () => {
-      void speech.cancelRecording();
-    },
-    [speech],
-  );
 
   if (status === null) {
     // Nothing decided yet — rendering a marker now would let e2e read a
@@ -301,11 +171,7 @@ export function QuickAddBar({
             mode === 'find' ? 'Switch back to quick add' : 'Switch to finding a free time'
           }
           accessibilityRole="button"
-          onPress={() => {
-            setMode(mode === 'find' ? 'add' : 'find');
-            setError(null);
-            setFound(null);
-          }}
+          onPress={() => setMode(mode === 'find' ? 'add' : 'find')}
           style={[styles.mic, mode === 'find' && styles.modeActive]}
           testID="find-time-mode"
         >
