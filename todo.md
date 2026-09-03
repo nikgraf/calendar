@@ -338,7 +338,7 @@ same PR; these are the code/infra improvements worth their own tasks).
        in ci.yml (macos-26, needs gate) packages unsigned and asserts the
        .app exists, the model helper landed in Resources, and none of
        helper/e2e/e2e-artifacts leaked into the bundle.
-4. [ ] Dedup the findTime pipeline (`apps/desktop/renderer/ai/findTime.ts`
+4. [x] Dedup the findTime pipeline + quick-add state machine — done:
        and `apps/ios/src/findTime.ts` are byte-identical → move into
        `packages/ai`); extract a shared `useQuickAddModel` — QuickAddBar
        and CommandBar re-implement one state machine and have already
@@ -358,10 +358,13 @@ same PR; these are the code/infra improvements worth their own tasks).
 8. [ ] DB robustness — index `pending_ops (next_attempt_at, created_at)`
    - LIMIT in `listDue`; atomic temp-file+rename writes and an
      availability guard in the desktop safeStorage token store.
-9. [ ] Derive the rpc plumbing — `BackendMethodName`, the direct client,
-       and the handler layer are 5 hand-maintained parallel lists; derive
-       them from the `AppBackendRpcs` group so adding a method is one
-       edit.
+9. [x] Derive the rpc plumbing — done: `BackendMethodName` is
+       `Exclude<RpcGroup.Rpcs<…>['_tag'], 'invalidations'>`,
+       `backendMethodNames` reads the group's runtime request map, and the
+       direct client / handler layer / mutation atoms are built from it
+       (atoms from a single `MUTATION_REACTIVITY` keys map). Adding a
+       method = the Rpc.make, its handler, and a keys entry — everything
+       else follows or type-errors.
 10. [x] Housekeeping batch (the structural half) — done: mutations.ts
         split into mutationTypes/applyOp/taskMutations + a 644-line core;
         EventEditSheet split into shell + EventEditForm/TaskEditForm +

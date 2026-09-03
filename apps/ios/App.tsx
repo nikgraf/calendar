@@ -24,8 +24,9 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { backendClient, kickSync, startSync, subscribeInvalidations } from './src/backend.ts';
 import { appleLanguageModel } from './src/appleModel.ts';
 import { appleSpeech } from './src/appleSpeech.ts';
+import { makeFindSlots } from '@calendar/ai';
 import { DayTimeline } from './src/ui/DayTimeline.tsx';
-import { makeFindSlots } from './src/findTime.ts';
+
 import { QuickAddBar } from './src/ui/QuickAddBar.tsx';
 import { MonthGrid } from './src/ui/MonthGrid.tsx';
 import { EventEditSheet, type EditSeed } from './src/ui/EventEditSheet.tsx';

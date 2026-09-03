@@ -1,8 +1,13 @@
 import {
   AppBackendRpcs,
   assembleWindow,
+  backendMethodNames,
   mapToBackendError,
+  type BackendError,
   type BackendHandlers,
+  type BackendMethodName,
+  type BackendPayload,
+  type BackendSuccess,
 } from '@calendar/core';
 import { AccountRepo, CalendarRepo, EventRepo, PendingOpRepo, TaskRepo } from '@calendar/db';
 import { TokenStore } from '@calendar/google';
@@ -181,18 +186,23 @@ export const commonBackendHandlers: Omit<BackendHandlers<CommonBackendServices>,
 export const makeAppBackendLayer = <R>(options: {
   readonly handlers: BackendHandlers<R>;
   readonly subscribeInvalidations: (listener: (keys: ReadonlyArray<string>) => void) => () => void;
-}) =>
-  AppBackendRpcs.toLayer({
-    addAccount: () => mapToBackendError(options.handlers.addAccount(undefined)),
-    completeTask: (payload) => mapToBackendError(options.handlers.completeTask(payload)),
-    createEvent: (payload) => mapToBackendError(options.handlers.createEvent(payload)),
-    createTask: (payload) => mapToBackendError(options.handlers.createTask(payload)),
-    deleteEvent: (payload) => mapToBackendError(options.handlers.deleteEvent(payload)),
-    deleteRecurring: (payload) => mapToBackendError(options.handlers.deleteRecurring(payload)),
-    deleteTask: (payload) => mapToBackendError(options.handlers.deleteTask(payload)),
-    discardPendingOp: (payload) => mapToBackendError(options.handlers.discardPendingOp(payload)),
-    getEventsInRange: (payload) => mapToBackendError(options.handlers.getEventsInRange(payload)),
-    getTasksInRange: (payload) => mapToBackendError(options.handlers.getTasksInRange(payload)),
+}) => {
+  // Request/response methods are all the same shape — normalize errors and
+  // delegate. Derived from the group so adding an rpc means adding only its
+  // handler (BackendHandlers stays exhaustively typed); the cast reassembles
+  // the per-method entries into the mapped record.
+  const methods = Object.fromEntries(
+    backendMethodNames.map((name) => [
+      name,
+      (payload: never) => mapToBackendError(options.handlers[name](payload)),
+    ]),
+  ) as {
+    [M in BackendMethodName]: (
+      payload: BackendPayload<M>,
+    ) => Effect.Effect<BackendSuccess<M>, BackendError, R>;
+  };
+  return AppBackendRpcs.toLayer({
+    ...methods,
     invalidations: () =>
       Stream.callback<ReadonlyArray<string>>((queue) =>
         Effect.acquireRelease(
@@ -204,19 +214,5 @@ export const makeAppBackendLayer = <R>(options: {
           (unsubscribe) => Effect.sync(() => unsubscribe()),
         ),
       ),
-    listAccounts: () => mapToBackendError(options.handlers.listAccounts(undefined)),
-    listCalendars: (payload) => mapToBackendError(options.handlers.listCalendars(payload)),
-    listPendingOps: () => mapToBackendError(options.handlers.listPendingOps(undefined)),
-    listTaskLists: () => mapToBackendError(options.handlers.listTaskLists(undefined)),
-    removeAccount: (payload) => mapToBackendError(options.handlers.removeAccount(payload)),
-    respondToEvent: (payload) => mapToBackendError(options.handlers.respondToEvent(payload)),
-    setCalendarColor: (payload) => mapToBackendError(options.handlers.setCalendarColor(payload)),
-    setCalendarVisible: (payload) =>
-      mapToBackendError(options.handlers.setCalendarVisible(payload)),
-    setTaskListVisible: (payload) =>
-      mapToBackendError(options.handlers.setTaskListVisible(payload)),
-    syncNow: () => mapToBackendError(options.handlers.syncNow(undefined)),
-    updateEvent: (payload) => mapToBackendError(options.handlers.updateEvent(payload)),
-    updateRecurring: (payload) => mapToBackendError(options.handlers.updateRecurring(payload)),
-    updateTask: (payload) => mapToBackendError(options.handlers.updateTask(payload)),
   });
+};

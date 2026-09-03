@@ -1,4 +1,5 @@
-import { parseFindTime, type LanguageModel } from '@calendar/ai';
+import { parseFindTime } from './findTime.ts';
+import type { LanguageModel } from './model.ts';
 import { Effect } from 'effect';
 import {
   findFreeSlots,
@@ -16,8 +17,9 @@ export interface FindTimeOutcome {
 /**
  * The whole find-a-time pipeline: the model parses the constraint
  * sentence, the backend supplies the assembled event window, and the pure
- * solver does the work. Owned by the app layer so the bar stays
- * platform-dumb and each stage stays independently testable.
+ * solver does the work. Shared by the desktop ⌘K bar and the iOS quick-add
+ * bar (it was a byte-identical twin in each app until it moved here); the
+ * bars stay platform-dumb and each stage stays independently testable.
  */
 export const makeFindSlots =
   (model: LanguageModel, backend: BackendClient, timeZone: string) =>

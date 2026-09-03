@@ -244,30 +244,20 @@ export class AppBackendRpcs extends RpcGroup.make(
   }),
 ) {}
 
-export type BackendMethodName =
-  | 'addAccount'
-  | 'completeTask'
-  | 'createEvent'
-  | 'createTask'
-  | 'deleteEvent'
-  | 'deleteTask'
-  | 'deleteRecurring'
-  | 'discardPendingOp'
-  | 'getEventsInRange'
-  | 'getTasksInRange'
-  | 'listAccounts'
-  | 'listPendingOps'
-  | 'listCalendars'
-  | 'listTaskLists'
-  | 'removeAccount'
-  | 'respondToEvent'
-  | 'setCalendarColor'
-  | 'setCalendarVisible'
-  | 'setTaskListVisible'
-  | 'syncNow'
-  | 'updateEvent'
-  | 'updateRecurring'
-  | 'updateTask';
+/**
+ * Every request/response method tag, derived from the rpc group — adding an
+ * Rpc.make above is the single edit; the stream rpc (`invalidations`) is
+ * platform wiring, not a method.
+ */
+export type BackendMethodName = Exclude<
+  RpcGroup.Rpcs<typeof AppBackendRpcs>['_tag'],
+  'invalidations'
+>;
+
+/** The same list at runtime (drives the derived client/handler records). */
+export const backendMethodNames: ReadonlyArray<BackendMethodName> = [
+  ...AppBackendRpcs.requests.keys(),
+].filter((tag): tag is BackendMethodName => tag !== 'invalidations');
 
 /** Payload/success types per method, derived from the rpc group. */
 type RpcByTag<Tag extends string> = Extract<
@@ -335,29 +325,9 @@ export const makeDirectBackendClient = <R>(
           run(mapToBackendError(handlers[name](payload as never))) as Promise<BackendSuccess<M>>,
       });
   };
-  return {
-    addAccount: method('addAccount'),
-    completeTask: method('completeTask'),
-    createEvent: method('createEvent'),
-    createTask: method('createTask'),
-    deleteEvent: method('deleteEvent'),
-    deleteRecurring: method('deleteRecurring'),
-    deleteTask: method('deleteTask'),
-    discardPendingOp: method('discardPendingOp'),
-    getEventsInRange: method('getEventsInRange'),
-    getTasksInRange: method('getTasksInRange'),
-    listAccounts: method('listAccounts'),
-    listCalendars: method('listCalendars'),
-    listPendingOps: method('listPendingOps'),
-    listTaskLists: method('listTaskLists'),
-    removeAccount: method('removeAccount'),
-    respondToEvent: method('respondToEvent'),
-    setCalendarColor: method('setCalendarColor'),
-    setCalendarVisible: method('setCalendarVisible'),
-    setTaskListVisible: method('setTaskListVisible'),
-    syncNow: method('syncNow'),
-    updateEvent: method('updateEvent'),
-    updateRecurring: method('updateRecurring'),
-    updateTask: method('updateTask'),
-  };
+  // Derived record: per-method types are guaranteed by `method` itself; the
+  // cast only reassembles them into the mapped BackendClient shape.
+  return Object.fromEntries(
+    backendMethodNames.map((name) => [name, method(name)]),
+  ) as BackendClient;
 };
