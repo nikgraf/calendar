@@ -22,5 +22,8 @@ contextBridge.exposeInMainWorld('calendarBridge', {
   },
   privacyGet: () => ipcRenderer.invoke('privacy:get'),
   privacySet: (choice: string) => ipcRenderer.invoke('privacy:set', choice),
+  remindersListLists: () => ipcRenderer.invoke('reminders:list-lists'),
+  remindersRequestAccess: () => ipcRenderer.invoke('reminders:request-access'),
+  remindersStatus: () => ipcRenderer.invoke('reminders:status'),
   rpcSend: (data: string | Uint8Array) => ipcRenderer.send('rpc', data),
 });

@@ -24,6 +24,8 @@
       "supportsTablet": false,
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
+        "NSRemindersFullAccessUsageDescription": "Solunivo shows your Reminders next to your calendar and lets you edit them here. Nothing leaves your device.",
+        "NSRemindersUsageDescription": "Solunivo shows your Reminders next to your calendar and lets you edit them here. Nothing leaves your device.",
         "NSSpeechRecognitionUsageDescription": "Solunivo transcribes what you say into an event entirely on this device."
       }
     },

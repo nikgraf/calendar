@@ -17,6 +17,7 @@ import {
   setUpdateRequestHeadersOverride,
   updateId,
 } from 'expo-updates';
+import { Effect } from 'effect';
 import { useEffect, useState } from 'react';
 import {
   Modal,
@@ -31,6 +32,7 @@ import {
 } from 'react-native';
 import { appleLanguageModel } from '../appleModel.ts';
 import { appleSpeech } from '../appleSpeech.ts';
+import { iosRemindersClient } from '../remindersClient.ts';
 import { palette } from './theme.ts';
 import { MutationNoticeToast } from './Toast.tsx';
 
@@ -324,9 +326,36 @@ function PrPreviewSection() {
  * on, and answering "why" meant downloading the shipped IPA and reading
  * its linked frameworks — this is the cheaper version of that.
  */
+const describeReminders = async (): Promise<string> => {
+  const status = await Effect.runPromise(
+    iosRemindersClient.status().pipe(Effect.orElseSucceed(() => 'unavailable' as const)),
+  );
+  if (status !== 'fullAccess') {
+    return status;
+  }
+  const lists = await Effect.runPromise(
+    iosRemindersClient.listLists().pipe(Effect.orElseSucceed(() => [])),
+  );
+  return `fullAccess (${String(lists.length)} lists)`;
+};
+
 function DiagnosticsSection() {
   const [modelStatus, setModelStatus] = useState<ModelStatus | 'checking…'>('checking…');
   const [dictation, setDictation] = useState('checking…');
+  const [reminders, setReminders] = useState('checking…');
+  const [remindersBusy, setRemindersBusy] = useState(false);
+
+  const requestReminders = async () => {
+    setRemindersBusy(true);
+    try {
+      await Effect.runPromise(
+        iosRemindersClient.requestAccess().pipe(Effect.orElseSucceed(() => false)),
+      );
+      setReminders(await describeReminders());
+    } finally {
+      setRemindersBusy(false);
+    }
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -347,6 +376,11 @@ function DiagnosticsSection() {
           setDictation('unsupported');
         }
       });
+    void describeReminders().then((text) => {
+      if (!cancelled) {
+        setReminders(text);
+      }
+    });
     return () => {
       cancelled = true;
     };
@@ -360,6 +394,18 @@ function DiagnosticsSection() {
         on-device model: {modelStatus}
       </Text>
       <Text style={styles.previewMeta}>dictation: {dictation}</Text>
+      <Text style={styles.previewMeta} testID="diagnostics-reminders">
+        reminders: {reminders}
+      </Text>
+      {reminders === 'notDetermined' || reminders === 'denied' ? (
+        <Pressable disabled={remindersBusy} onPress={() => void requestReminders()}>
+          <Text style={styles.reconnect}>
+            {reminders === 'denied'
+              ? 'Reminders access is off — check again after allowing it in Settings'
+              : 'Allow access to Reminders'}
+          </Text>
+        </Pressable>
+      ) : null}
       <Text style={styles.previewMeta}>
         {/* Hermes ships without it; a "missing" here explains any failure
             to save an event, since ids are generated from it. */}

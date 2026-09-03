@@ -1,0 +1,1 @@
+../../../../../packages/reminders/swift/RemindersBridge.swift

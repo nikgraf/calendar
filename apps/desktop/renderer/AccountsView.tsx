@@ -6,6 +6,7 @@ import {
 } from '@calendar/app-state';
 import { useState } from 'react';
 import { PrivacySection } from './PrivacySection.tsx';
+import { RemindersSection } from './RemindersSection.tsx';
 
 export function AccountsView() {
   const accounts = useAccounts();
@@ -112,6 +113,7 @@ export function AccountsView() {
         </section>
       ))}
 
+      <RemindersSection />
       <PrivacySection />
     </div>
   );

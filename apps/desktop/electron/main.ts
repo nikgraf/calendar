@@ -7,6 +7,7 @@ import { startBackendHost } from './backendHost.ts';
 import { initFileLogging, logRendererError } from './log.ts';
 import { initPrivacy, registerPrivacyWindow } from './privacy.ts';
 import { registerModelHelper } from './modelHelper.ts';
+import { registerRemindersIpc } from './remindersIpc.ts';
 
 const rootPath = fileURLToPath(new URL('..', import.meta.url));
 
@@ -99,6 +100,7 @@ app.on('window-all-closed', () => {
 void app.whenReady().then(() => {
   startBackendHost();
   registerModelHelper();
+  registerRemindersIpc();
   createWindow();
 
   app.on('activate', () => {
