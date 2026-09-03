@@ -1,5 +1,8 @@
 import { useEventEditorModel, useTaskEditorModel, type EventEditorSeed } from '@calendar/app-state';
 import { useState } from 'react';
+import { ReminderEditorForm } from './ReminderEditorForm.tsx';
+import { TaskEditorForm } from './TaskEditorForm.tsx';
+import { REPEAT_OPTIONS } from './taskEditorOptions.ts';
 import {
   type CalendarInfo,
   type RecurrenceFrequency,
@@ -13,14 +16,6 @@ const RSVP_OPTIONS: ReadonlyArray<{ label: string; value: RsvpResponse }> = [
   { label: 'Accept', value: 'accepted' },
   { label: 'Maybe', value: 'tentative' },
   { label: 'Decline', value: 'declined' },
-];
-
-const REPEAT_OPTIONS: ReadonlyArray<{ label: string; value: RecurrenceFrequency | 'none' }> = [
-  { label: 'Does not repeat', value: 'none' },
-  { label: 'Daily', value: 'daily' },
-  { label: 'Weekly', value: 'weekly' },
-  { label: 'Monthly', value: 'monthly' },
-  { label: 'Yearly', value: 'yearly' },
 ];
 
 const SCOPES: ReadonlyArray<{ label: string; value: RecurringScope }> = [
@@ -109,7 +104,9 @@ export function EventEditor({
           <h2 className="text-lg font-semibold">
             {mode === 'task'
               ? task
-                ? 'Edit task'
+                ? taskModel.provider === 'apple'
+                  ? 'Edit reminder'
+                  : 'Edit task'
                 : 'New task'
               : existing
                 ? 'Edit event'
@@ -144,95 +141,14 @@ export function EventEditor({
         ) : null}
 
         {mode === 'task' ? (
-          <div className="flex flex-col gap-3">
-            {taskModel.error ? (
-              <p className="select-text rounded-lg bg-red-50 p-2 text-sm text-red-700">
-                {taskModel.error}
-              </p>
-            ) : null}
-            <input
-              autoFocus={!task}
-              className={field}
-              onChange={(input) => taskModel.setTitle(input.target.value)}
-              placeholder="Title"
-              value={taskModel.title}
-            />
-            <label className="text-xs font-medium text-neutral-500">
-              Due
-              <input
-                className={`${field} mt-1`}
-                onChange={(input) => taskModel.setDueDate(input.target.value)}
-                placeholder="YYYY-MM-DD"
-                value={taskModel.dueDate}
-              />
-            </label>
-            <label className="text-xs font-medium text-neutral-500">
-              List
-              <select
-                className={`${field} mt-1`}
-                // The list is fixed after create — moving needs tasks.move.
-                disabled={Boolean(task)}
-                onChange={(input) => taskModel.setListKey(input.target.value)}
-                value={taskModel.listKey}
-              >
-                {taskModel.taskLists.map((list) => (
-                  <option
-                    key={`${list.accountId}:${list.id}`}
-                    value={`${list.accountId}:${list.id}`}
-                  >
-                    {list.title}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="text-xs font-medium text-neutral-500">
-              Notes
-              <textarea
-                className={`${field} mt-1 min-h-16`}
-                onChange={(input) => taskModel.setNotes(input.target.value)}
-                placeholder="Add notes"
-                value={taskModel.notes}
-              />
-            </label>
-            {task?.webViewLink ? (
-              <button
-                className="self-start text-sm text-blue-600 hover:underline"
-                onClick={() => window.open(task.webViewLink ?? '', '_blank', 'noopener')}
-                type="button"
-              >
-                Open in Google Tasks
-              </button>
-            ) : null}
-            <div className="mt-2 flex items-center justify-between">
-              {task ? (
-                <button
-                  className="text-sm text-red-600 hover:underline"
-                  onClick={() => void taskModel.remove()}
-                  type="button"
-                >
-                  Delete
-                </button>
-              ) : (
-                <span />
-              )}
-              <div className="flex gap-2">
-                <button
-                  className="rounded-lg px-3 py-1.5 text-sm hover:bg-neutral-200"
-                  onClick={onClose}
-                  type="button"
-                >
-                  Cancel
-                </button>
-                <button
-                  className="rounded-lg bg-blue-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-blue-500"
-                  onClick={() => void taskModel.save()}
-                  type="button"
-                >
-                  Save
-                </button>
-              </div>
-            </div>
-          </div>
+          // The selected list's provider picks the form: a Reminders list
+          // exposes time/priority/alert/repeat/URL and can move; a Google
+          // list gets the plain title/date/notes form.
+          taskModel.provider === 'apple' ? (
+            <ReminderEditorForm onClose={onClose} task={task} taskModel={taskModel} />
+          ) : (
+            <TaskEditorForm onClose={onClose} task={task} taskModel={taskModel} />
+          )
         ) : (
           <>
             <div className="flex flex-col gap-3">

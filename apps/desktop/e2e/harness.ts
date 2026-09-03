@@ -421,6 +421,9 @@ export const launchApp = async (seed?: SeedData): Promise<App> => {
   const child: ChildProcess = spawn(electronPath, [appDir, `--remote-debugging-port=${port}`], {
     env: {
       ...process.env,
+      // Seeded Apple rows must not be replaced by (or prompt for) the
+      // developer's real Reminders — see remindersClient.ts.
+      CALENDAR_REMINDERS: 'off',
       CALENDAR_USERDATA: userDataDir,
     },
     stdio: ['ignore', 'pipe', 'pipe'],

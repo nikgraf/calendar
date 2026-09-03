@@ -104,6 +104,13 @@ export function CalendarApp() {
   );
   const { completeTask } = useGuardedMutations();
   const taskLists = useTaskLists();
+  /** Reminders lists carry a color; Google lists render neutral. */
+  const listColorOf = useMemo(() => {
+    const colors = new Map(
+      taskLists.map((list) => [`${list.accountId}:${list.id}`, list.colorHex]),
+    );
+    return (task: TaskRecord) => colors.get(`${task.accountId}:${task.listId}`);
+  }, [taskLists]);
   const calendars = useCalendars();
   const accounts = useAccounts();
   const colorOf = useMemo(() => makeColorLookup(calendars), [calendars]);
@@ -253,6 +260,7 @@ export function CalendarApp() {
             colorOf={colorOf}
             days={days}
             events={events}
+            listColorOf={listColorOf}
             onEventClick={(event) => setEditorSeed({ event, initialDate: focused })}
             onNavigate={panByDays}
             onSlotClick={(date, hour) => setEditorSeed({ initialDate: date, initialHour: hour })}

@@ -5,6 +5,7 @@ import {
   layoutAllDayLane,
   layoutDayColumn,
   PAN_BUFFER_DAYS,
+  taskChipLabel,
   type TaskRecord,
   Temporal,
   utcMsToPlainDate,
@@ -33,6 +34,7 @@ export function WeekView({
   colorOf,
   days,
   events,
+  listColorOf,
   onEventClick,
   onNavigate,
   onSlotClick,
@@ -44,6 +46,7 @@ export function WeekView({
   colorOf: ColorLookup;
   days: ReadonlyArray<Temporal.PlainDate>;
   events: ReadonlyArray<EventRecord>;
+  listColorOf: (task: TaskRecord) => string | undefined;
   onEventClick: (event: EventRecord) => void;
   onNavigate: (dayCount: number) => void;
   onSlotClick: (date: Temporal.PlainDate, hour: number) => void;
@@ -217,6 +220,11 @@ export function WeekView({
                     key={span.id}
                     onClick={() => onTaskClick(task)}
                     style={{
+                      // Reminders lists have colors; a left accent tells
+                      // them apart from Google tasks without recoloring.
+                      ...(listColorOf(task)
+                        ? { borderLeftColor: listColorOf(task), borderLeftWidth: 3 }
+                        : {}),
                       left: `calc(${(span.startDayIndex / strip.length) * 100}% + 2px)`,
                       top: span.row * 24 + 4,
                       width: `calc(${((span.endDayIndex - span.startDayIndex) / strip.length) * 100}% - 4px)`,
@@ -236,7 +244,9 @@ export function WeekView({
                     >
                       {done ? '☑' : '☐'}
                     </button>
-                    <span className={`truncate ${done ? 'line-through' : ''}`}>{task.title}</span>
+                    <span className={`truncate ${done ? 'line-through' : ''}`}>
+                      {taskChipLabel(task)}
+                    </span>
                   </div>
                 );
               }
