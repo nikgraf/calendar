@@ -23,13 +23,19 @@ powers quick-add parsing, find-a-time, and dictation.
 - `packages/ai` — model-provider seam (`ModelProvider`/`SpeechProvider`
   interfaces), quick-add + find-time prompt/normalize/parse pipelines.
   Pure; platform adapters live in the apps.
+- `packages/reminders` — Apple Reminders seam: the `RemindersClient`
+  service, the JSON protocol shared with both native bridges, EventKit
+  ↔ `TaskRecord` mapping, and an in-memory fake for tests. The one Swift
+  source (`swift/RemindersBridge.swift`) is symlinked into the desktop
+  helper and the iOS Expo module.
 - `packages/app-state` — `@effect/atom-react` atoms + React hooks
   (`useBackendMutations`, `useEventsInRangeStable`, …).
 - `apps/desktop` — Electron (Forge, vite, tsdown main bundle); rpc over an
-  IPC frame channel; Swift model helper (`helper/`, Foundation Models +
-  SpeechAnalyzer over stdio, supervised by `electron/modelHelper.ts`).
-  `apps/ios` — Expo dev client; zero-hop direct backend; @react-native-ai/apple
-  for on-device model access.
+  IPC frame channel; Swift helper (`helper/`, Foundation Models +
+  SpeechAnalyzer + EventKit `reminders.*` over stdio; process owned by
+  `electron/helperProcess.ts`). `apps/ios` — Expo dev client; zero-hop
+  direct backend; @react-native-ai/apple for on-device model access;
+  local Expo module `modules/solunivo-reminders` for EventKit.
 
 ## Commands (gate must be green before any commit)
 
@@ -59,9 +65,17 @@ powers quick-add parsing, find-a-time, and dictation.
   Electron-ABI rebuilds. The whole better-sqlite3 apparatus is retired.
 - Oxlint enforces alphabetically sorted object keys/interface members —
   write literals sorted or `vp check` fails.
-- Window-level concerns (screen privacy, logging, open-external, and the
-  four `model:*` AI-helper channels) use plain preload IPC; calendar data
-  goes through the typed rpc seam only.
+- Window-level concerns (screen privacy, logging, open-external, the four
+  `model:*` AI-helper channels, and the `reminders:*` permission channels)
+  use plain preload IPC; calendar data — reminders included — goes
+  through the typed rpc seam only.
+- Tasks are provider-dispatched: Google lists go through the pending-op
+  queue (server-assigned ids, temp-id/adopt protocol); Apple lists write
+  EventKit synchronously and mirror the result. Reminders-only fields on
+  a Google list fail with `UnsupportedForProviderError` — never drop
+  them silently.
+- The e2e harness sets `CALENDAR_REMINDERS=off`: seeded Apple rows must
+  never be replaced by a real EventKit sync or trigger a TCC prompt.
 - Secrets: `google-oauth.local.json` is gitignored — never commit OAuth
   client config. Tokens live only in TokenStore (Keychain/safeStorage),
   never in SQLite.

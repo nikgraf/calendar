@@ -77,6 +77,40 @@ invariants.
 - A 403 insufficient-scope (grants that predate the tasks scope) disables
   tasks for the account instead of retrying.
 
+## Verified Apple Reminders (EventKit) semantics
+
+- **Access**: `requestFullAccessToReminders` (macOS 14 / iOS 17+);
+  `authorizationStatus(for: .reminder)` distinguishes fullAccess /
+  writeOnly / denied / restricted / notDetermined. Access can be revoked
+  in System Settings at any time — treat every pass's status check as the
+  account's health, not the initial grant.
+- **The helper is a bare executable**, so its usage strings ride in an
+  embedded `__TEXT,__info_plist` (Package.swift `-sectcreate`); the app's
+  Info.plist carries them too (forge `extendInfo`). Verified: both the
+  dev Electron binary and the packaged .app obtain full access through
+  the helper child and read the user's lists.
+- **Ids**: `calendarItemIdentifier` is stable enough for a mirror but can
+  change after an iCloud sync — the windowed full replace makes that a
+  delete + reinsert, never a stale row. Ids are server-assigned: no
+  client-side idempotency trick, hence no queue.
+- **Due**: `dueDateComponents` with no hour ⇒ all-day (`dueDate` only);
+  with hour/minute ⇒ timed (`dueTime` 'HH:MM' in the device zone). The
+  bridge keeps `startDateComponents == dueDateComponents`, as the
+  Reminders app does.
+- **Priority**: EventKit 0…9; the Reminders app shows 1–4 high, 5 medium,
+  6–9 low. We keep the buckets and write back 1/5/9/0.
+- **Alarms**: only relative-offset alarms are surfaced (minutes, ≤ 0 =
+  before/at); absolute-date alarms are preserved untouched by writes.
+- **Recurrence**: freq/interval/count|until round-trip through
+  `TaskRecurrence`; by-day / positional / multiple rules come back as
+  `{ unsupported: true }`, the form shows them read-only, and writes
+  never overwrite them.
+- **Fetch**: `predicateForIncompleteReminders(withDueDateStarting:ending:)`
+  ∪ `predicateForCompletedReminders(withCompletionDateStarting:ending:)`
+  — completed reminders are found by completion date, so an old
+  completion whose due day sits in the window is not shown (the
+  Reminders app hides completed by default anyway).
+
 ## Testing conventions
 
 ### Unit tests (`vp test`, @effect/vitest)
@@ -93,8 +127,13 @@ invariants.
 - AI pipelines never hit a real model in tests: the provider seams take a
   fake `ModelProvider`/`SpeechProvider` returning canned JSON, so
   prompt-building, normalization, and error paths are fully unit-tested
-  (see `packages/ai/*.test.ts` and the app-side `findTime.test.ts`
-  twins).
+  (see `packages/ai/*.test.ts` and `findTimePipeline.test.ts`).
+- Reminders never hit EventKit in tests: `makeFakeRemindersClient`
+  (`packages/reminders/src/fake.ts`) is an in-memory store with the
+  bridge's semantics (server-assigned ids, null clears, list moves,
+  windowed listing, switchable authorization); sync/mutation tests read
+  `fake.state` to assert what EventKit "saw". Every other layer recipe
+  provides `unavailableRemindersClient('test')`.
 - **Date-independence is a hard rule for every test involving "now"**:
   inject the clock (`nowUtc` parameter) or build dates relative to today
   with wall-clock times via Temporal in an explicit zone — never pinned
@@ -133,6 +172,11 @@ Flakiness lessons (each caused a real CI failure — keep them enforced):
   dispatch; `<select>` likewise (`HTMLSelectElement` prototype setter).
 - Tests share one app instance and run in file order — later tests must
   tolerate earlier tests' data (relative assertions, unique titles).
+- The harness launches the app with `CALENDAR_REMINDERS=off`, which makes
+  the desktop RemindersClient unavailable: `reminders.e2e.ts` seeds an
+  Apple account/list/reminder straight into SQLite and asserts the chip
+  and form; a real EventKit sync would replace those rows (and prompt for
+  access on a developer's Mac).
 
 ### CI (.github/workflows/ci.yml + ios.yml)
 
@@ -153,8 +197,10 @@ Flakiness lessons (each caused a real CI failure — keep them enforced):
 
 ### iOS e2e (Maestro, apps/ios/e2e/flows/)
 
-Text/testID-based flows (8: launch, navigation, new-event sheet,
-settings, day swipe, quick-add, create event, task lane). Maestro cannot
+Text/testID-based flows (9: launch, navigation, new-event sheet,
+settings, day swipe, quick-add, create event, task lane, reminders form —
+the last gated on a connected Reminders list, so it is a no-op until the
+simulator has one). Maestro cannot
 synthesize long-press pans, so gesture behavior is covered by unit tests
 on the shared math instead. Selector gotchas (each caused a real
 failure): Maestro text selectors are **whole-string regexes** — prefix

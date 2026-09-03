@@ -382,11 +382,25 @@ same PR; these are the code/infra improvements worth their own tasks).
 - Research Siri Calendar integration
   - Ask ChatGPT (deepresearch) about flows that exist
 - Design for add flow (insert and prefill the input form, important: pick the correct calendar)
-- Apple Reminders integration
-  - The idea is personal reminders can be there
+- [x] Apple Reminders integration — done: personal reminders sit next to
+      Google Tasks in the all-day lane. Decisions: EventKit via the
+      existing Swift helper on macOS and a local Expo module on iOS (one
+      shared Swift source; expo-calendar rejected — no priority, no
+      all-day/timed distinction); a synthetic `apple-reminders` account
+      with provider-dispatched mutations (no pending-op queue — EventKit
+      is local); per-provider forms (Google: title/day/notes/fixed list;
+      Reminders: time, priority, alert, repeat, URL, movable list); timed
+      reminders render in the lane with a time prefix. See
+      docs/architecture.md + docs/google-sync-and-testing.md.
   - Google Tasks still make sense when working with Gmail
-  - Allow to convert Reminder to Google task and the other way around -> how to design missing capabilities in each of them
-  - Different template for Google Task and Reminder
+  - [ ] Convert a Reminder ↔ Google Task (create in target + delete in
+        source, with a "these fields will be lost" confirmation for the
+        capabilities each side lacks)
+  - [ ] Reminders follow-ups: quick-add/⌘K creating reminders, undated
+        reminders (needs a list view), subtasks/flags/tags, location
+        alarms, multiple editable alarms, by-day/positional recurrence
+        editing, timed reminders in the time grid, creating/deleting
+        Reminders lists, an EKEventStoreChanged push instead of polling
 - Morning briefing made with AI
   - Weather during the day and what to wear (also take other locations into account and especially weather changes)
   - Get an overview over the most important meetings
