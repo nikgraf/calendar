@@ -1,0 +1,60 @@
+appId: com.solunivo.app
+name: The Reminders form shows its extra fields and round-trips create/delete
+---
+# Runs only when an Apple Reminders list is connected on the simulator
+# (Settings → Connect Apple Reminders, then allow the prompt). Without one
+# the flow is a no-op, like flow 08 without a tasks-enabled account.
+- launchApp
+- extendedWaitUntil:
+    visible: 'Today'
+    timeout: 60000
+- tapOn:
+    id: 'add-event'
+- assertVisible: 'New Event'
+- tapOn:
+    id: 'mode-task'
+- assertVisible: 'New Task'
+# Pick the first Reminders list: its rows carry a color swatch, but the
+# stable handle is the list title. 'Reminders' is the default list name.
+- runFlow:
+    when:
+      visible: 'Reminders'
+    commands:
+      - tapOn: 'Reminders'
+      # The form morphed: Reminders-only controls are on screen.
+      - assertVisible:
+          id: 'reminder-timed'
+      - assertVisible:
+          id: 'reminder-priority-high'
+      - tapOn:
+          id: 'reminder-priority-high'
+      - tapOn:
+          id: 'reminder-timed'
+      - assertVisible:
+          id: 'reminder-time'
+      - tapOn:
+          id: 'task-title'
+      # ASCII only: unicode through XCTest typing is a known flaky spot.
+      - inputText: 'Solunivo e2e reminder to delete'
+      - tapOn:
+          id: 'event-save'
+      - extendedWaitUntil:
+          notVisible: 'New Task'
+          timeout: 20000
+      # The chip leads with the time and the priority marker.
+      - extendedWaitUntil:
+          visible: '.*!!! Solunivo e2e reminder to delete'
+          timeout: 10000
+      - tapOn: '.*Solunivo e2e reminder to delete'
+      - assertVisible: 'Edit Reminder'
+      - tapOn:
+          id: 'task-delete'
+      - extendedWaitUntil:
+          notVisible: 'Edit Reminder'
+          timeout: 20000
+- runFlow:
+    when:
+      notVisible: 'Reminders'
+    commands:
+      - tapOn: 'Cancel'
+      - assertVisible: 'Today'

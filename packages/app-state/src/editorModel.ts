@@ -16,11 +16,14 @@ import {
 import { useState } from 'react';
 import { useAccounts } from './hooks.ts';
 import { useBackendMutations } from './hooks.ts';
+import { useRepeatState } from './repeatState.ts';
 
 /**
  * Fields a parsed phrase can prefill. Structural on purpose so app-state
  * stays independent of the AI package.
  */
+export type { RepeatEnds } from './repeatState.ts';
+
 export interface EventEditorPrefill {
   readonly date: string;
   readonly endTime: string;
@@ -44,8 +47,6 @@ export interface EventEditorSeed {
   /** Quick-add result: the user reviews it before anything is written. */
   readonly prefill?: EventEditorPrefill;
 }
-
-export type RepeatEnds = 'after' | 'never' | 'on';
 
 const pad = (hour: number): string => `${String(hour).padStart(2, '0')}:00`;
 
@@ -112,15 +113,7 @@ export const useEventEditorModel = ({
   const [location, setLocation] = useState(existing?.location ?? prefill?.location ?? '');
   const [scope, setScope] = useState<RecurringScope>('instance');
   const [rsvp, setRsvp] = useState(ownAttendee?.responseStatus);
-  const [repeat, setRepeat] = useState<RecurrenceFrequency | 'none'>(
-    prefill?.recurrence?.freq ?? 'none',
-  );
-  const [repeatInterval, setRepeatInterval] = useState(String(prefill?.recurrence?.interval ?? 1));
-  const [repeatEnds, setRepeatEnds] = useState<RepeatEnds>(
-    prefill?.recurrence?.count ? 'after' : prefill?.recurrence?.untilDate ? 'on' : 'never',
-  );
-  const [repeatCount, setRepeatCount] = useState(String(prefill?.recurrence?.count ?? 10));
-  const [repeatUntil, setRepeatUntil] = useState(prefill?.recurrence?.untilDate ?? '');
+  const { toSpec: repeatSpec, ...repeatState } = useRepeatState(prefill?.recurrence);
   const [error, setError] = useState<string | null>(null);
 
   const save = async () => {
@@ -165,20 +158,10 @@ export const useEventEditorModel = ({
           calendarId,
           isAllDay,
           location: location.trim() || undefined,
-          recurrence:
-            repeat === 'none'
-              ? undefined
-              : [
-                  buildRecurrenceRule(
-                    {
-                      count: repeatEnds === 'after' ? Number(repeatCount) || 1 : undefined,
-                      freq: repeat,
-                      interval: Number(repeatInterval) || 1,
-                      untilDate: repeatEnds === 'on' && repeatUntil ? repeatUntil : undefined,
-                    },
-                    isAllDay,
-                  ),
-                ],
+          recurrence: (() => {
+            const spec = repeatSpec();
+            return spec ? [buildRecurrenceRule(spec, isAllDay)] : undefined;
+          })(),
           title: title.trim(),
           ...times,
         };
@@ -246,11 +229,7 @@ export const useEventEditorModel = ({
     location,
     ownAttendee,
     remove,
-    repeat,
-    repeatCount,
-    repeatEnds,
-    repeatInterval,
-    repeatUntil,
+    ...repeatState,
     respond,
     rsvp,
     save,
@@ -260,11 +239,6 @@ export const useEventEditorModel = ({
     setEndTime,
     setIsAllDay,
     setLocation,
-    setRepeat,
-    setRepeatCount,
-    setRepeatEnds,
-    setRepeatInterval,
-    setRepeatUntil,
     setScope,
     setStartTime,
     setTitle,

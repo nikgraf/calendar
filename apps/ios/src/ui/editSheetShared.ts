@@ -115,6 +115,11 @@ export const sheetStyles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 14,
   },
+  hint: {
+    color: palette.textMuted,
+    fontSize: 13,
+    marginTop: 4,
+  },
   input: {
     backgroundColor: '#ffffff',
     borderColor: palette.border,

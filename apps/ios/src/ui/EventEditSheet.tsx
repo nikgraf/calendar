@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { Modal, Pressable, SafeAreaView, Text, View } from 'react-native';
 import { sheetStyles as styles } from './editSheetShared.ts';
 import { EventEditForm } from './EventEditForm.tsx';
+import { ReminderEditForm } from './ReminderEditForm.tsx';
 import { TaskEditForm } from './TaskEditForm.tsx';
 
 export type EditSeed = EventEditorSeed;
@@ -54,7 +55,9 @@ export function EventEditSheet({
           <Text style={styles.title}>
             {mode === 'task'
               ? task
-                ? 'Edit Task'
+                ? taskModel.provider === 'apple'
+                  ? 'Edit Reminder'
+                  : 'Edit Task'
                 : 'New Task'
               : eventModel.existing
                 ? 'Edit Event'
@@ -86,7 +89,14 @@ export function EventEditSheet({
         ) : null}
 
         {mode === 'task' ? (
-          <TaskEditForm task={task} taskModel={taskModel} />
+          // The selected list's provider picks the form: a Reminders list
+          // exposes time/priority/alert/repeat/URL and can move; a Google
+          // list gets the plain title/date/notes form.
+          taskModel.provider === 'apple' ? (
+            <ReminderEditForm task={task} taskModel={taskModel} />
+          ) : (
+            <TaskEditForm task={task} taskModel={taskModel} />
+          )
         ) : (
           <EventEditForm model={eventModel} />
         )}

@@ -48,6 +48,20 @@ export function SettingsSheet({ onClose, visible }: { onClose: () => void; visib
   /** `${accountId}:${calendarId}` of the row with the palette expanded. */
   const [colorPickerFor, setColorPickerFor] = useState<string | null>(null);
 
+  const connectReminders = async () => {
+    setError(null);
+    const result = await Effect.runPromise(
+      Effect.tryPromise(() => mutations.connectReminders(undefined)).pipe(
+        Effect.orElseSucceed(() => ({ granted: false })),
+      ),
+    );
+    if (!result.granted) {
+      setError(
+        'Reminders access was not granted. Allow it in Settings › Privacy & Security › Reminders, then try again.',
+      );
+    }
+  };
+
   const addAccount = async () => {
     setBusy(true);
     setError(null);
@@ -108,11 +122,22 @@ export function SettingsSheet({ onClose, visible }: { onClose: () => void; visib
               <View style={styles.accountHeader}>
                 <View style={styles.accountInfo}>
                   <Text style={styles.accountName}>{account.displayName ?? account.email}</Text>
-                  <Text style={styles.accountEmail}>{account.email}</Text>
+                  {account.provider === 'apple' ? (
+                    <Text style={styles.accountEmail}>This device</Text>
+                  ) : (
+                    <Text style={styles.accountEmail}>{account.email}</Text>
+                  )}
                   {account.status === 'reauth_required' ? (
-                    <Pressable disabled={busy} onPress={() => void addAccount()}>
-                      <Text style={styles.reconnect}>Session expired — reconnect</Text>
-                    </Pressable>
+                    account.provider === 'apple' ? (
+                      <Text style={styles.reconnect}>
+                        Reminders access is off — allow it in Settings › Privacy & Security ›
+                        Reminders; it reconnects on its own.
+                      </Text>
+                    ) : (
+                      <Pressable disabled={busy} onPress={() => void addAccount()}>
+                        <Text style={styles.reconnect}>Session expired — reconnect</Text>
+                      </Pressable>
+                    )
                   ) : null}
                 </View>
                 <Pressable onPress={() => void guarded.removeAccount({ accountId: account.id })}>
@@ -210,9 +235,12 @@ export function SettingsSheet({ onClose, visible }: { onClose: () => void; visib
                     <Text style={[styles.calendarName, !list.isVisible && styles.calendarHidden]}>
                       ✓ {list.title}
                     </Text>
+                    {list.colorHex ? (
+                      <View style={[styles.swatch, { backgroundColor: list.colorHex }]} />
+                    ) : null}
                   </Pressable>
                 ))}
-              {account.tasksEnabled ? null : (
+              {account.tasksEnabled || account.provider !== 'google' ? null : (
                 // Tokens from before the tasks scope: re-running sign-in
                 // re-consents and upgrades the account in place.
                 <Pressable disabled={busy} onPress={() => void addAccount()}>
@@ -231,6 +259,15 @@ export function SettingsSheet({ onClose, visible }: { onClose: () => void; visib
               {busy ? 'Waiting for Google…' : 'Add Google Account'}
             </Text>
           </Pressable>
+          {accounts.some((account) => account.provider === 'apple') ? null : (
+            <Pressable
+              onPress={() => void connectReminders()}
+              style={[styles.addButton, styles.addSecondary]}
+              testID="connect-reminders"
+            >
+              <Text style={styles.addLabel}>Connect Apple Reminders</Text>
+            </Pressable>
+          )}
 
           <PrPreviewSection />
           <DiagnosticsSection />
@@ -453,6 +490,10 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     fontSize: 15,
     fontWeight: '600',
+  },
+  addSecondary: {
+    backgroundColor: '#171717',
+    marginTop: 8,
   },
   calendarHidden: {
     color: palette.textFaint,

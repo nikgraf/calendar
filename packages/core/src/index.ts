@@ -13,6 +13,7 @@ export * from './recurrence/editing.ts';
 export * from './recurrence/expand.ts';
 export * from './recurrence/window.ts';
 export * from './scheduling/findSlots.ts';
+export * from './taskLabel.ts';
 export * from './time/convert.ts';
 export * from './time/dragMath.ts';
 export * from './time/ranges.ts';
