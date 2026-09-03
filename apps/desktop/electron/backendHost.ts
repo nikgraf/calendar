@@ -33,6 +33,8 @@ import { FetchHttpClient } from 'effect/unstable/http';
 import { RpcSerialization, RpcServer } from 'effect/unstable/rpc';
 import { runGoogleSignIn } from './auth/loopbackFlow.ts';
 import { loadOAuthConfig } from './oauthConfig.ts';
+import { RemindersClient } from '@calendar/reminders';
+import { desktopRemindersLayer } from './remindersClient.ts';
 import { rpcServerProtocol } from './rpcProtocol.ts';
 import { safeStorageTokenStore } from './tokens/safeStorageStore.ts';
 
@@ -73,6 +75,7 @@ export const startBackendHost = (): void => {
     Layer.provideMerge(EventMutations.layer),
     Layer.provideMerge(GoogleCalendarClient.layer),
     Layer.provideMerge(GoogleTasksClient.layer),
+    Layer.provideMerge(desktopRemindersLayer),
     Layer.provideMerge(TokenManager.layer),
     Layer.provideMerge(dbLayer),
     Layer.provideMerge(platformLayer),
@@ -97,6 +100,7 @@ export const startBackendHost = (): void => {
     | EventMutations
     | EventRepo
     | PendingOpRepo
+    | RemindersClient
     | SyncEngine
     | TaskRepo
     | TokenManager
@@ -121,6 +125,7 @@ export const startBackendHost = (): void => {
           displayName: result.profile.displayName,
           email: result.profile.email,
           id: existing?.id ?? randomUUID(),
+          provider: 'google',
           status: 'ok',
           // What Google actually granted, not what we asked for — a user
           // can untick scopes on the consent screen.

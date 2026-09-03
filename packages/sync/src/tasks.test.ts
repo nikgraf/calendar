@@ -11,6 +11,7 @@ import {
   InsufficientScopeError,
   NotFoundError,
 } from '@calendar/google';
+import { RemindersClient, unavailableRemindersClient } from '@calendar/reminders';
 import { SqliteClient } from '@effect/sql-sqlite-node';
 import { expect, it } from '@effect/vitest';
 import { Effect, Layer } from 'effect';
@@ -48,6 +49,7 @@ const testLayer = (tasksClient: GoogleTasksClientShape) =>
     Layer.provideMerge(Layer.effectDiscard(runMigrations)),
     Layer.provideMerge(SqliteClient.layer({ filename: ':memory:' })),
     Layer.provideMerge(reactivityLayer),
+    Layer.provideMerge(Layer.succeed(RemindersClient, unavailableRemindersClient('test'))),
     Layer.provideMerge(Layer.succeed(GoogleCalendarClient, inertCalendarClient)),
     Layer.provideMerge(Layer.succeed(GoogleTasksClient, tasksClient)),
   );
@@ -60,6 +62,7 @@ const seedAccount = (tasksEnabled: boolean) =>
         createdAt: 1,
         email: 'nik@nikgraf.com',
         id: 'acc-1',
+        provider: 'google',
         status: 'ok',
         tasksEnabled,
       }),
@@ -176,7 +179,15 @@ describe('completeTask', () => {
     yield* seedAccount(true);
     const repo = yield* TaskRepo;
     yield* repo.upsertLists(
-      [new TaskListInfo({ accountId: 'acc-1', id: 'list-1', isVisible: true, title: 'My Tasks' })],
+      [
+        new TaskListInfo({
+          accountId: 'acc-1',
+          id: 'list-1',
+          isVisible: true,
+          provider: 'google',
+          title: 'My Tasks',
+        }),
+      ],
       100,
     );
     yield* repo.upsertTasks(
@@ -186,6 +197,7 @@ describe('completeTask', () => {
           dueDate: '2026-08-30',
           id: 't1',
           listId: 'list-1',
+          provider: 'google',
           status: 'needsAction',
           title: 'Pay rent',
           updatedAt: 100,
@@ -391,6 +403,7 @@ describe('completeTask', () => {
             dueDate: '2026-08-30',
             id: 'server-race',
             listId: 'list-1',
+            provider: 'google',
             status: 'needsAction',
             title: 'Racy',
             updatedAt: 200,

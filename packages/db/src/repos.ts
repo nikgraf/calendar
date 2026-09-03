@@ -28,13 +28,14 @@ import {
   eventToRow,
   pendingOpFromRow,
   syncStateFromRow,
+  taskFromRow,
+  taskJsonColumns,
+  taskListFromRow,
   type AccountRow,
   type CalendarRow,
   type EventRow,
   type PendingOpRow,
   type SyncStateRow,
-  taskFromRow,
-  taskListFromRow,
   type TaskListRow,
   type TaskRow,
 } from './rows.ts';
@@ -93,16 +94,17 @@ const makeAccountRepo: Effect.Effect<AccountRepoShape, never, Reactivity | SqlCl
         invalidating(
           Effect.asVoid(sql`
           INSERT INTO accounts (id, email, display_name, avatar_url, status, created_at,
-                                tasks_enabled)
+                                tasks_enabled, provider)
           VALUES (${account.id}, ${account.email}, ${account.displayName ?? null},
                   ${account.avatarUrl ?? null}, ${account.status}, ${account.createdAt},
-                  ${account.tasksEnabled ? 1 : 0})
+                  ${account.tasksEnabled ? 1 : 0}, ${account.provider})
           ON CONFLICT (id) DO UPDATE SET
             email = excluded.email,
             display_name = excluded.display_name,
             avatar_url = excluded.avatar_url,
             status = excluded.status,
-            tasks_enabled = excluded.tasks_enabled
+            tasks_enabled = excluded.tasks_enabled,
+            provider = excluded.provider
         `),
         ),
     };
@@ -533,6 +535,11 @@ export interface TaskRepoShape {
   ) => Effect.Effect<ReadonlyArray<TaskRecord>, SqlError>;
   /** Optimistic local create (sync_status 'pending' until the push lands). */
   readonly insertLocal: (task: TaskRecord) => Effect.Effect<void, SqlError>;
+  /** Ids of every task row in a list (mirror reconciliation for local providers). */
+  readonly listIds: (
+    accountId: string,
+    listId: string,
+  ) => Effect.Effect<ReadonlyArray<string>, SqlError>;
   readonly listLists: (accountId?: string) => Effect.Effect<ReadonlyArray<TaskListInfo>, SqlError>;
   readonly removeListsMissing: (
     accountId: string,
@@ -568,18 +575,27 @@ export interface TaskRepoShape {
     readonly status: TaskRecord['status'];
     readonly taskId: string;
   }) => Effect.Effect<void, SqlError>;
-  /** Upserts while preserving the local is_visible toggle on update. */
-  /** Optimistic edit of title/notes/due. */
+  /**
+   * Optimistic edit. `undefined` leaves a field alone; `null` clears the
+   * Reminders-only fields; `listId` in changes moves the row (Reminders).
+   */
   readonly updateLocal: (params: {
     readonly accountId: string;
     readonly changes: {
+      readonly alarms?: ReadonlyArray<number> | null | undefined;
       readonly dueDate?: string | undefined;
+      readonly dueTime?: string | null | undefined;
+      readonly listId?: string | undefined;
       readonly notes?: string | undefined;
+      readonly priority?: TaskRecord['priority'] | null | undefined;
+      readonly recurrence?: TaskRecord['recurrence'] | null | undefined;
       readonly title?: string | undefined;
+      readonly url?: string | null | undefined;
     };
     readonly listId: string;
     readonly taskId: string;
   }) => Effect.Effect<void, SqlError>;
+  /** Upserts while preserving the local is_visible toggle on update. */
   readonly upsertLists: (
     lists: ReadonlyArray<TaskListInfo>,
     syncedAt: number,
@@ -611,12 +627,12 @@ const makeTaskRepo: Effect.Effect<TaskRepoShape, never, Reactivity | SqlClient> 
       getWindow: (startDate, endDate) =>
         Effect.map(
           sql<TaskRow>`
-            SELECT t.* FROM tasks t
+            SELECT t.*, l.provider AS list_provider FROM tasks t
             JOIN task_lists l ON l.account_id = t.account_id AND l.id = t.list_id
             WHERE l.is_visible = 1
               AND t.due_date IS NOT NULL
               AND t.due_date >= ${startDate} AND t.due_date <= ${endDate}
-            ORDER BY t.due_date, t.title`,
+            ORDER BY t.due_date, t.due_time IS NULL, t.due_time, t.title`,
           (rows) => rows.map(taskFromRow),
         ),
       insertLocal: (task) =>
@@ -624,12 +640,22 @@ const makeTaskRepo: Effect.Effect<TaskRepoShape, never, Reactivity | SqlClient> 
           Effect.asVoid(
             sql`
             INSERT INTO tasks (account_id, list_id, id, title, notes, status, due_date,
-                               completed_at, web_view_link, updated_at, synced_at, sync_status)
+                               completed_at, web_view_link, updated_at, synced_at, sync_status,
+                               due_time, priority, url, alarms, recurrence)
             VALUES (${task.accountId}, ${task.listId}, ${task.id}, ${task.title},
                     ${task.notes ?? null}, ${task.status}, ${task.dueDate ?? null},
                     ${task.completedAt ?? null}, ${task.webViewLink ?? null},
-                    ${task.updatedAt}, ${task.updatedAt}, 'pending')`,
+                    ${task.updatedAt}, ${task.updatedAt}, 'pending',
+                    ${task.dueTime ?? null}, ${task.priority ?? null}, ${task.url ?? null},
+                    ${taskJsonColumns(task).alarms}, ${taskJsonColumns(task).recurrence})`,
           ),
+        ),
+      listIds: (accountId, listId) =>
+        Effect.map(
+          sql<{
+            id: string;
+          }>`SELECT id FROM tasks WHERE account_id = ${accountId} AND list_id = ${listId}`,
+          (rows) => rows.map((row) => row.id),
         ),
       listLists: (accountId) =>
         Effect.map(
@@ -704,6 +730,34 @@ const makeTaskRepo: Effect.Effect<TaskRepoShape, never, Reactivity | SqlClient> 
               yield* sql`UPDATE tasks SET due_date = ${changes.dueDate}
                 WHERE account_id = ${accountId} AND list_id = ${listId} AND id = ${taskId}`;
             }
+            if (changes.dueTime !== undefined) {
+              yield* sql`UPDATE tasks SET due_time = ${changes.dueTime}
+                WHERE account_id = ${accountId} AND list_id = ${listId} AND id = ${taskId}`;
+            }
+            if (changes.priority !== undefined) {
+              yield* sql`UPDATE tasks SET priority = ${changes.priority}
+                WHERE account_id = ${accountId} AND list_id = ${listId} AND id = ${taskId}`;
+            }
+            if (changes.url !== undefined) {
+              yield* sql`UPDATE tasks SET url = ${changes.url}
+                WHERE account_id = ${accountId} AND list_id = ${listId} AND id = ${taskId}`;
+            }
+            if (changes.alarms !== undefined) {
+              const encoded = changes.alarms === null ? null : JSON.stringify(changes.alarms);
+              yield* sql`UPDATE tasks SET alarms = ${encoded}
+                WHERE account_id = ${accountId} AND list_id = ${listId} AND id = ${taskId}`;
+            }
+            if (changes.recurrence !== undefined) {
+              const encoded =
+                changes.recurrence === null ? null : JSON.stringify(changes.recurrence);
+              yield* sql`UPDATE tasks SET recurrence = ${encoded}
+                WHERE account_id = ${accountId} AND list_id = ${listId} AND id = ${taskId}`;
+            }
+            if (changes.listId !== undefined && changes.listId !== listId) {
+              // A move: the primary key includes list_id, so this is the whole change.
+              yield* sql`UPDATE tasks SET list_id = ${changes.listId}
+                WHERE account_id = ${accountId} AND list_id = ${listId} AND id = ${taskId}`;
+            }
           }),
         ),
       upsertLists: (lists, syncedAt) =>
@@ -712,12 +766,16 @@ const makeTaskRepo: Effect.Effect<TaskRepoShape, never, Reactivity | SqlClient> 
             lists,
             (list) =>
               sql`
-              INSERT INTO task_lists (account_id, id, title, is_visible, synced_at)
+              INSERT INTO task_lists (account_id, id, title, is_visible, synced_at, provider,
+                                      color_hex)
               VALUES (${list.accountId}, ${list.id}, ${list.title},
-                      ${list.isVisible ? 1 : 0}, ${syncedAt})
+                      ${list.isVisible ? 1 : 0}, ${syncedAt}, ${list.provider},
+                      ${list.colorHex ?? null})
               ON CONFLICT (account_id, id) DO UPDATE SET
                 title = excluded.title,
-                synced_at = excluded.synced_at
+                synced_at = excluded.synced_at,
+                provider = excluded.provider,
+                color_hex = excluded.color_hex
             `,
             { discard: true },
           ),
@@ -730,11 +788,13 @@ const makeTaskRepo: Effect.Effect<TaskRepoShape, never, Reactivity | SqlClient> 
               sql`
               INSERT INTO tasks (account_id, list_id, id, title, notes, status, due_date,
                                  completed_at, web_view_link, updated_at, synced_at,
-                                 sync_status)
+                                 sync_status, due_time, priority, url, alarms, recurrence)
               VALUES (${task.accountId}, ${task.listId}, ${task.id}, ${task.title},
                       ${task.notes ?? null}, ${task.status}, ${task.dueDate ?? null},
                       ${task.completedAt ?? null}, ${task.webViewLink ?? null},
-                      ${task.updatedAt}, ${syncedAt}, 'synced')
+                      ${task.updatedAt}, ${syncedAt}, 'synced',
+                      ${task.dueTime ?? null}, ${task.priority ?? null}, ${task.url ?? null},
+                      ${taskJsonColumns(task).alarms}, ${taskJsonColumns(task).recurrence})
               ON CONFLICT (account_id, list_id, id) DO UPDATE SET
                 sync_status = 'synced',
                 title = excluded.title,
@@ -744,7 +804,12 @@ const makeTaskRepo: Effect.Effect<TaskRepoShape, never, Reactivity | SqlClient> 
                 completed_at = excluded.completed_at,
                 web_view_link = excluded.web_view_link,
                 updated_at = excluded.updated_at,
-                synced_at = excluded.synced_at
+                synced_at = excluded.synced_at,
+                due_time = excluded.due_time,
+                priority = excluded.priority,
+                url = excluded.url,
+                alarms = excluded.alarms,
+                recurrence = excluded.recurrence
             `,
             { discard: true },
           ),

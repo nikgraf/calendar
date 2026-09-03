@@ -9,6 +9,7 @@ const account = new Account({
   createdAt: 1,
   email: 'nik@example.com',
   id: 'acc-1',
+  provider: 'google',
   status: 'ok',
   tasksEnabled: false,
 });
@@ -20,6 +21,7 @@ const makeStubClient = () => {
   const client: BackendClient = {
     addAccount: () => fail('not stubbed'),
     completeTask: () => Effect.void,
+    connectReminders: () => fail('not stubbed'),
     createEvent: () => fail('not stubbed'),
     createTask: () => fail('not stubbed'),
     deleteEvent: () => fail('not stubbed'),

@@ -29,6 +29,7 @@ export const mapGcalTask = (
     id: task.id,
     listId: context.taskListId,
     ...(task.notes ? { notes: task.notes } : {}),
+    provider: 'google',
     status,
     title: task.title ?? '(untitled)',
     updatedAt: task.updated ? Temporal.Instant.from(task.updated).epochMilliseconds : 0,
@@ -45,5 +46,6 @@ export const mapGcalTaskList = (
     id: list.id,
     // Pull-side default; upsertLists preserves an existing local toggle.
     isVisible: true,
+    provider: 'google',
     title: list.title ?? '(untitled list)',
   });

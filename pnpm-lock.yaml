@@ -394,6 +394,9 @@ importers:
       '@calendar/google':
         specifier: workspace:*
         version: link:../google
+      '@calendar/reminders':
+        specifier: workspace:*
+        version: link:../reminders
       effect:
         specifier: 'catalog:'
         version: 4.0.0-rc.111

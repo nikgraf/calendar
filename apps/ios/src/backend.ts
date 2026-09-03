@@ -26,6 +26,7 @@ import { deleteItemAsync, getItemAsync, setItemAsync } from 'expo-secure-store';
 import { Data, Effect, Layer, ManagedRuntime, Schema } from 'effect';
 import { FetchHttpClient } from 'effect/unstable/http';
 import { signInWithGoogle } from './googleAuth.ts';
+import { iosRemindersLayer } from './remindersClient.ts';
 
 class OAuthNotConfiguredError extends Data.TaggedError('OAuthNotConfiguredError')<{
   readonly message: string;
@@ -88,6 +89,7 @@ const appLayer = SyncEngine.layer.pipe(
   Layer.provideMerge(EventMutations.layer),
   Layer.provideMerge(GoogleCalendarClient.layer),
   Layer.provideMerge(GoogleTasksClient.layer),
+  Layer.provideMerge(iosRemindersLayer),
   Layer.provideMerge(TokenManager.layer),
   Layer.provideMerge(dbLayer),
   Layer.provideMerge(platformLayer),
@@ -137,6 +139,7 @@ const handlers: BackendHandlers<CommonBackendServices | TokenManager> = {
         displayName: result.profile.displayName,
         email: result.profile.email,
         id: existing?.id ?? generateUuid(),
+        provider: 'google',
         status: 'ok',
         // What Google actually granted, not what we asked for — a user
         // can untick scopes on the consent screen.

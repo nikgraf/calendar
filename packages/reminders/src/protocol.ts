@@ -79,10 +79,10 @@ export interface ReminderWrite {
   readonly priority?: number | undefined;
   readonly recurrence?:
     | {
-        readonly count?: number;
+        readonly count?: number | undefined;
         readonly freq: string;
         readonly interval: number;
-        readonly untilDate?: string;
+        readonly untilDate?: string | undefined;
       }
     | null
     | undefined;

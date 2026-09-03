@@ -20,6 +20,7 @@ const account = new Account({
   createdAt: 1,
   email: 'nik@example.com',
   id: 'acc-1',
+  provider: 'google',
   status: 'ok',
   tasksEnabled: false,
 });

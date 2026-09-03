@@ -41,6 +41,7 @@ const account = new Account({
   createdAt: 1,
   email: 'e2e@nikgraf.com',
   id: 'acc-e2e',
+  provider: 'google',
   status: 'ok',
   tasksEnabled: true,
 });
@@ -115,7 +116,13 @@ const seed = {
     }),
   ],
   taskLists: [
-    new TaskListInfo({ accountId: 'acc-e2e', id: 'list-e2e', isVisible: true, title: 'My Tasks' }),
+    new TaskListInfo({
+      accountId: 'acc-e2e',
+      id: 'list-e2e',
+      isVisible: true,
+      provider: 'google',
+      title: 'My Tasks',
+    }),
   ],
   tasks: [
     new TaskRecord({
@@ -123,6 +130,7 @@ const seed = {
       dueDate: new Date(todayAt(0)).toISOString().slice(0, 10),
       id: 'task-rent',
       listId: 'list-e2e',
+      provider: 'google',
       status: 'needsAction',
       title: 'Pay rent',
       updatedAt: 1,

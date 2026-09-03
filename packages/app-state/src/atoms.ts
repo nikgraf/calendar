@@ -41,6 +41,7 @@ export interface BackendAtoms {
 const MUTATION_REACTIVITY = {
   addAccount: [ACCOUNTS_KEY, CALENDARS_KEY, EVENTS_KEY, TASKS_KEY, TASKLISTS_KEY],
   completeTask: [TASKS_KEY],
+  connectReminders: [ACCOUNTS_KEY, TASKLISTS_KEY, TASKS_KEY],
   createEvent: [EVENTS_KEY],
   createTask: [TASKS_KEY],
   deleteEvent: [EVENTS_KEY],

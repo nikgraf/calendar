@@ -19,6 +19,7 @@ const list = (overrides: Partial<TaskListInfo> = {}): TaskListInfo =>
     accountId: 'acc-1',
     id: 'list-1',
     isVisible: true,
+    provider: 'google',
     title: 'My Tasks',
     ...overrides,
   });
@@ -29,6 +30,7 @@ const task = (overrides: Partial<TaskRecord> = {}): TaskRecord =>
     dueDate: '2026-08-30',
     id: 'task-1',
     listId: 'list-1',
+    provider: 'google',
     status: 'needsAction',
     title: 'Pay rent',
     updatedAt: 100,
@@ -138,6 +140,75 @@ describe('TaskRepo', () => {
       expect(yield* repo.listLists('acc-1')).toHaveLength(1);
       const window = yield* repo.getWindow('2026-08-24', '2026-08-31');
       expect(window.map((row) => row.listId)).toEqual(['list-1']);
+    }).pipe(Effect.provide(freshDbLayer())),
+  );
+  it.effect('orders timed reminders first and joins the list provider + color', () =>
+    Effect.gen(function* () {
+      const repo = yield* TaskRepo;
+      yield* repo.upsertLists([list({ colorHex: '#ff0000', id: 'list-a', provider: 'apple' })], 1);
+      yield* repo.upsertTasks(
+        [
+          task({ dueDate: '2030-01-02', id: 'allday', listId: 'list-a', title: 'A' }),
+          task({
+            alarms: [-15],
+            dueDate: '2030-01-02',
+            dueTime: '09:00',
+            id: 'timed',
+            listId: 'list-a',
+            priority: 'high',
+            title: 'Z',
+            url: 'https://example.com',
+          }),
+        ],
+        1,
+      );
+      const rows = yield* repo.getWindow('2030-01-01', '2030-01-03');
+      expect(rows.map((row) => row.id)).toEqual(['timed', 'allday']);
+      expect(rows[0]).toMatchObject({
+        alarms: [-15],
+        dueTime: '09:00',
+        priority: 'high',
+        provider: 'apple',
+        url: 'https://example.com',
+      });
+      expect(rows[1]?.provider).toBe('apple');
+      const lists = yield* repo.listLists('acc-1');
+      expect(lists[0]).toMatchObject({ colorHex: '#ff0000', provider: 'apple' });
+    }).pipe(Effect.provide(freshDbLayer())),
+  );
+
+  it.effect('updateLocal moves a row between lists and null clears reminder fields', () =>
+    Effect.gen(function* () {
+      const repo = yield* TaskRepo;
+      yield* repo.upsertLists(
+        [list({ id: 'list-a', provider: 'apple' }), list({ id: 'list-b', provider: 'apple' })],
+        1,
+      );
+      yield* repo.upsertTasks(
+        [
+          task({
+            dueDate: '2030-01-02',
+            dueTime: '09:00',
+            id: 'r1',
+            listId: 'list-a',
+            priority: 'low',
+            recurrence: { freq: 'daily', interval: 1 },
+          }),
+        ],
+        1,
+      );
+      yield* repo.updateLocal({
+        accountId: 'acc-1',
+        changes: { dueTime: null, listId: 'list-b', priority: null, recurrence: null },
+        listId: 'list-a',
+        taskId: 'r1',
+      });
+      const rows = yield* repo.getWindow('2030-01-01', '2030-01-03');
+      expect(rows.length).toBe(1);
+      expect(rows[0]?.listId).toBe('list-b');
+      expect(rows[0]?.dueTime).toBeUndefined();
+      expect(rows[0]?.priority).toBeUndefined();
+      expect(rows[0]?.recurrence).toBeUndefined();
     }).pipe(Effect.provide(freshDbLayer())),
   );
 });

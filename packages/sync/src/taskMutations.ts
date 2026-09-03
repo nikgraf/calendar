@@ -91,6 +91,7 @@ export const makeTaskMutations = (deps: TaskMutationDeps): TaskMutations => {
           id: tempId,
           listId: taskListId,
           ...(notes === undefined ? {} : { notes }),
+          provider: 'google',
           status: 'needsAction',
           title,
           updatedAt: now,
@@ -152,7 +153,14 @@ export const makeTaskMutations = (deps: TaskMutationDeps): TaskMutations => {
 
     updateTask: ({ accountId, changes, taskId, taskListId }) =>
       Effect.gen(function* () {
-        yield* taskRepo.updateLocal({ accountId, changes, listId: taskListId, taskId });
+        // Google knows title/notes/due only; the dispatcher already rejected
+        // Reminders-only fields, so this narrows rather than drops.
+        yield* taskRepo.updateLocal({
+          accountId,
+          changes: { dueDate: changes.dueDate, notes: changes.notes, title: changes.title },
+          listId: taskListId,
+          taskId,
+        });
         const now = yield* Clock.currentTimeMillis;
         const queued = yield* opsForEvent(taskListId, taskId);
         const pendingCreate = queued.find(

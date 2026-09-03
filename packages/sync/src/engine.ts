@@ -10,6 +10,12 @@ import {
   type GcalEvent,
   type GoogleRequestError,
 } from '@calendar/google';
+import {
+  mapReminder,
+  mapReminderList,
+  RemindersClient,
+  type RemindersError,
+} from '@calendar/reminders';
 import { Clock, Context, Effect, Layer, Schedule, Semaphore } from 'effect';
 import type { SqlError } from 'effect/unstable/sql/SqlError';
 import { EventMutations } from './mutations.ts';
@@ -20,6 +26,12 @@ const INITIAL_WINDOW_MS = 365 * 24 * 60 * 60 * 1000; // 12 months back
 /** updatedMin has no tombstone guarantees forever — reconcile fully daily. */
 const TASKS_FULL_PASS_INTERVAL_MS = 24 * 60 * 60 * 1000;
 /**
+ * Reminders mirror window: EventKit is local, so every pass is a full
+ * replace of this window (rows outside it are not displayable anyway).
+ */
+const REMINDERS_PAST_DAYS = 90;
+const REMINDERS_FUTURE_DAYS = 365;
+/**
  * The watermark comes from the local clock but filters Google's `updated`
  * stamps: local time running ahead would open a blind window between the
  * two. Rewinding a minute closes it; re-reading the overlap is harmless
@@ -28,7 +40,7 @@ const TASKS_FULL_PASS_INTERVAL_MS = 24 * 60 * 60 * 1000;
 const WATERMARK_LAG_MS = 60_000;
 export const SYNC_INTERVAL = '90 seconds';
 
-type SyncError = GoogleRequestError | SqlError;
+type SyncError = GoogleRequestError | RemindersError | SqlError;
 
 /** Retries rate limits and transient availability failures with backoff. */
 const withTransientRetry = <A, E extends { readonly _tag: string }, R>(
@@ -93,6 +105,7 @@ const make: Effect.Effect<
   | EventRepo
   | GoogleCalendarClient
   | GoogleTasksClient
+  | RemindersClient
   | SyncStateRepo
   | TaskRepo
 > = Effect.gen(function* () {
@@ -103,6 +116,7 @@ const make: Effect.Effect<
   const calendarRepo = yield* CalendarRepo;
   const eventRepo = yield* EventRepo;
   const taskRepo = yield* TaskRepo;
+  const remindersClient = yield* RemindersClient;
   const syncStateRepo = yield* SyncStateRepo;
   const gate = Semaphore.makeUnsafe(1);
 
@@ -364,6 +378,69 @@ const make: Effect.Effect<
       ),
     );
 
+  /**
+   * The Apple account: lists + a windowed full replace of reminders. Access
+   * can be revoked at any time in System Settings, so the status check
+   * doubles as the account's health: no access flags it, access regained
+   * (even without pressing Connect again) heals it.
+   */
+  const syncReminders = (account: Account): Effect.Effect<void, SyncError> =>
+    Effect.gen(function* () {
+      const authorization = yield* remindersClient
+        .status()
+        .pipe(Effect.orElseSucceed(() => 'unavailable' as const));
+      if (authorization !== 'fullAccess') {
+        if (account.status === 'ok') {
+          yield* accountRepo.setStatus(account.id, 'reauth_required');
+        }
+        return;
+      }
+      if (account.status !== 'ok') {
+        yield* accountRepo.setStatus(account.id, 'ok');
+      }
+      const now = yield* Clock.currentTimeMillis;
+      const lists = yield* remindersClient.listLists();
+      yield* taskRepo.upsertLists(
+        lists.map((list) => mapReminderList(list, account.id)),
+        now,
+      );
+      yield* taskRepo.removeListsMissing(
+        account.id,
+        lists.map((list) => list.id),
+      );
+      const today = Temporal.Now.plainDateISO();
+      const reminders = yield* remindersClient.list({
+        endDate: today.add({ days: REMINDERS_FUTURE_DAYS }).toString(),
+        startDate: today.subtract({ days: REMINDERS_PAST_DAYS }).toString(),
+      });
+      yield* taskRepo.upsertTasks(
+        reminders.map((reminder) => mapReminder(reminder, account.id)),
+        now,
+      );
+      // Full replace: anything mirrored that EventKit no longer returned
+      // (deleted, moved out of the window, or moved to another list) goes.
+      // Reconciled by id rather than by synced_at so two passes inside one
+      // clock tick cannot keep a stale row alive.
+      const fetched = new Set(reminders.map((reminder) => `${reminder.listId}/${reminder.id}`));
+      yield* Effect.forEach(
+        lists,
+        (list) =>
+          Effect.gen(function* () {
+            const ids = yield* taskRepo.listIds(account.id, list.id);
+            yield* taskRepo.removeTasksByIds(
+              account.id,
+              list.id,
+              ids.filter((id) => !fetched.has(`${list.id}/${id}`)),
+            );
+          }),
+        { discard: true },
+      );
+    }).pipe(
+      Effect.catchTag('RemindersAccessError', () =>
+        Effect.orDie(accountRepo.setStatus(account.id, 'reauth_required')),
+      ),
+    );
+
   const syncAccount = (account: Account): Effect.Effect<void, SyncError> =>
     Effect.gen(function* () {
       yield* syncCalendarList(account);
@@ -384,6 +461,17 @@ const make: Effect.Effect<
           yield* mutations.processPendingOps();
           const accounts = yield* accountRepo.list();
           for (const account of accounts) {
+            if (account.provider === 'apple') {
+              // Always attempted: the status check is what heals a
+              // revoked-then-restored grant, so a flagged account must
+              // not be skipped.
+              yield* syncReminders(account).pipe(
+                Effect.catchCause((cause) =>
+                  Effect.logWarning('reminders sync failed', { cause: String(cause) }),
+                ),
+              );
+              continue;
+            }
             if (account.status !== 'ok') {
               continue;
             }
@@ -423,6 +511,7 @@ export class SyncEngine extends Context.Service<SyncEngine, SyncEngineShape>()('
     | EventRepo
     | GoogleCalendarClient
     | GoogleTasksClient
+    | RemindersClient
     | SyncStateRepo
     | TaskRepo
   > = Layer.effect(SyncEngine)(make);

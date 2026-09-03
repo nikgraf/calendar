@@ -64,6 +64,7 @@ describe('runMigrations', () => {
       yield* sql`ALTER TABLE pending_ops DROP COLUMN task_notes`;
       yield* sql`ALTER TABLE pending_ops DROP COLUMN task_due`;
       yield* sql`ALTER TABLE pending_ops DROP COLUMN dispatched_at`;
+      yield* sql`ALTER TABLE accounts DROP COLUMN provider`;
       yield* sql`DROP TABLE tasks`;
       yield* sql`DROP TABLE task_lists`;
       expect(yield* columnsOf('events')).not.toContain('hangout_link');
@@ -80,7 +81,7 @@ describe('runMigrations', () => {
     Effect.gen(function* () {
       const sql = yield* SqlClient;
       const broken: ResolvedMigration = [
-        6,
+        7,
         'partial-failure',
         Effect.succeed(
           Effect.gen(function* () {
@@ -102,7 +103,7 @@ describe('runMigrations', () => {
 
       // A later run with the migration fixed applies it cleanly.
       const fixed: ResolvedMigration = [
-        6,
+        7,
         'partial-failure',
         Effect.succeed(
           Effect.gen(function* () {
@@ -111,7 +112,7 @@ describe('runMigrations', () => {
         ),
       ];
       yield* runMigrationsWith([...migrations, fixed]);
-      expect(yield* appliedIds).toEqual([...migrations.map(([id]) => id), 6]);
+      expect(yield* appliedIds).toEqual([...migrations.map(([id]) => id), 7]);
     }).pipe(Effect.provide(sqlLayer())),
   );
 

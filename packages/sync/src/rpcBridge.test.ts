@@ -11,6 +11,7 @@ const account = new Account({
   createdAt: 1,
   email: 'nik@example.com',
   id: 'acc-1',
+  provider: 'google',
   status: 'ok',
   tasksEnabled: false,
 });
@@ -41,6 +42,7 @@ const notStubbed = () => Effect.fail(new Error('not stubbed')) as Effect.Effect<
 const stubHandlers: BackendHandlers = {
   addAccount: notStubbed,
   completeTask: () => Effect.void,
+  connectReminders: () => Effect.succeed({ granted: false }),
   createEvent: notStubbed,
   createTask: notStubbed,
   deleteEvent: () => Effect.void,

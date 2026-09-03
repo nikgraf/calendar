@@ -20,6 +20,7 @@ export interface AccountRow {
   readonly status: string;
   readonly created_at: number;
   readonly tasks_enabled: number;
+  readonly provider: string;
 }
 
 export const accountFromRow = (row: AccountRow): Account =>
@@ -29,6 +30,7 @@ export const accountFromRow = (row: AccountRow): Account =>
     displayName: row.display_name ?? undefined,
     email: row.email,
     id: row.id,
+    provider: row.provider === 'apple' ? 'apple' : 'google',
     status: row.status as 'ok' | 'reauth_required',
     tasksEnabled: row.tasks_enabled === 1,
   });
@@ -39,13 +41,17 @@ export interface TaskListRow {
   readonly title: string;
   readonly is_visible: number;
   readonly synced_at: number;
+  readonly provider: string;
+  readonly color_hex: string | null;
 }
 
 export const taskListFromRow = (row: TaskListRow): TaskListInfo =>
   new TaskListInfo({
     accountId: row.account_id,
+    colorHex: row.color_hex ?? undefined,
     id: row.id,
     isVisible: row.is_visible === 1,
+    provider: row.provider === 'apple' ? 'apple' : 'google',
     title: row.title,
   });
 
@@ -62,21 +68,69 @@ export interface TaskRow {
   readonly web_view_link: string | null;
   readonly updated_at: number;
   readonly synced_at: number;
+  readonly due_time: string | null;
+  readonly priority: string | null;
+  readonly url: string | null;
+  readonly alarms: string | null;
+  readonly recurrence: string | null;
+  /** Joined from task_lists.provider by getWindow; plain SELECTs leave it absent (= google). */
+  readonly list_provider?: string | null;
 }
 
-export const taskFromRow = (row: TaskRow): TaskRecord =>
-  new TaskRecord({
+const parseJson = (text: string | null): unknown => {
+  if (text === null) {
+    return undefined;
+  }
+  try {
+    return JSON.parse(text) as unknown;
+  } catch {
+    return undefined;
+  }
+};
+
+const isPriority = (value: string | null): value is TaskRecord['priority'] & string =>
+  value === 'high' || value === 'medium' || value === 'low';
+
+export const taskFromRow = (row: TaskRow): TaskRecord => {
+  const alarms = parseJson(row.alarms);
+  const recurrence = parseJson(row.recurrence) as
+    | { readonly freq?: string; readonly unsupported?: boolean }
+    | undefined;
+  const unsupported = recurrence?.unsupported === true;
+  return new TaskRecord({
     accountId: row.account_id,
+    ...(Array.isArray(alarms) ? { alarms: alarms as ReadonlyArray<number> } : {}),
     completedAt: row.completed_at ?? undefined,
     dueDate: row.due_date ?? undefined,
+    dueTime: row.due_time ?? undefined,
     id: row.id,
     listId: row.list_id,
     notes: row.notes ?? undefined,
+    ...(isPriority(row.priority) ? { priority: row.priority } : {}),
+    provider: row.list_provider === 'apple' ? 'apple' : 'google',
+    ...(recurrence && !unsupported && recurrence.freq
+      ? { recurrence: recurrence as TaskRecord['recurrence'] }
+      : {}),
+    ...(unsupported ? { recurrenceUnsupported: true as const } : {}),
     status: row.status as TaskRecord['status'],
     title: row.title,
     updatedAt: row.updated_at,
+    url: row.url ?? undefined,
     webViewLink: row.web_view_link ?? undefined,
   });
+};
+
+/** Column encoding for the JSON task fields (shared by insert + upsert). */
+export const taskJsonColumns = (
+  task: TaskRecord,
+): { alarms: string | null; recurrence: string | null } => ({
+  alarms: task.alarms === undefined ? null : JSON.stringify(task.alarms),
+  recurrence: task.recurrenceUnsupported
+    ? JSON.stringify({ unsupported: true })
+    : task.recurrence === undefined
+      ? null
+      : JSON.stringify(task.recurrence),
+});
 
 export interface CalendarRow {
   readonly account_id: string;

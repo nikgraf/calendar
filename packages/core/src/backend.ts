@@ -6,7 +6,9 @@ import {
   CalendarInfo,
   EventRecord,
   TaskListInfo,
+  TaskPriority,
   TaskRecord,
+  TaskRecurrence,
   TaskStatus,
 } from './types.ts';
 
@@ -97,14 +99,25 @@ export class AppBackendRpcs extends RpcGroup.make(
     payload: EventDraft,
     success: EventRecord,
   }),
+  /** Apple Reminders: asks for EventKit access; on grant, the synthetic account exists afterwards. */
+  Rpc.make('connectReminders', {
+    error: BackendError,
+    success: Schema.Struct({ granted: Schema.Boolean }),
+  }),
   Rpc.make('createTask', {
     error: BackendError,
     payload: {
       accountId: Schema.String,
+      // The fields after `dueDate` are Reminders-only; Google lists reject them.
+      alarms: Schema.optional(Schema.Array(Schema.Number)),
       dueDate: Schema.String,
+      dueTime: Schema.optional(Schema.String),
       notes: Schema.optional(Schema.String),
+      priority: Schema.optional(TaskPriority),
+      recurrence: Schema.optional(TaskRecurrence),
       taskListId: Schema.String,
       title: Schema.String,
+      url: Schema.optional(Schema.String),
     },
     success: TaskRecord,
   }),
@@ -233,10 +246,18 @@ export class AppBackendRpcs extends RpcGroup.make(
     error: BackendError,
     payload: {
       accountId: Schema.String,
+      // Reminders-only fields use null to clear; `moveToListId` moves the
+      // reminder to another list (Google lists are fixed after create).
       changes: Schema.Struct({
+        alarms: Schema.optional(Schema.NullOr(Schema.Array(Schema.Number))),
         dueDate: Schema.optional(Schema.String),
+        dueTime: Schema.optional(Schema.NullOr(Schema.String)),
+        moveToListId: Schema.optional(Schema.String),
         notes: Schema.optional(Schema.String),
+        priority: Schema.optional(Schema.NullOr(TaskPriority)),
+        recurrence: Schema.optional(Schema.NullOr(TaskRecurrence)),
         title: Schema.optional(Schema.String),
+        url: Schema.optional(Schema.NullOr(Schema.String)),
       }),
       taskId: Schema.String,
       taskListId: Schema.String,
