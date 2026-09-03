@@ -60,6 +60,42 @@ jobs:
           retention-days: 7
           if-no-files-found: ignore
 
+  # PR-only unsigned packaging smoke: Forge packaging broke twice with
+  # failures only a real package run reveals (a retired native module's
+  # ENOENT in #36, a dangling .bin symlink in the copy hook) — and both
+  # surfaced post-merge because PRs never packaged. Signing is env-gated,
+  # so with no APPLE_* env this needs no secrets. macos-26: build:helper
+  # needs the macOS 26 SDK (same as testing-build).
+  package-smoke:
+    name: Packaging smoke (unsigned .app)
+    if: github.event_name == 'pull_request'
+    needs: gate
+    runs-on: macos-26
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @calendar/desktop package:app
+      - name: Verify packaged contents
+        run: |
+          APP="apps/desktop/out/Solunivo-darwin-arm64/Solunivo.app"
+          test -d "$APP" || { echo "::error::packaged app missing"; exit 1; }
+          test -x "$APP/Contents/Resources/solunivo-model-helper" \
+            || { echo "::error::model helper missing from Resources"; exit 1; }
+          # Regression check for the ignore-list fix: never ship Swift build
+          # objects, e2e source, or local e2e screenshots inside the app.
+          for banned in helper e2e e2e-artifacts; do
+            if [ -e "$APP/Contents/Resources/app/$banned" ]; then
+              echo "::error::packaged app contains $banned/ — forge ignore list regressed"
+              exit 1
+            fi
+          done
+
   # Signed + notarized arm64 zip on every push to main, downloadable as an
   # Actions artifact for team-internal testing. Secret setup and tester
   # instructions: docs/distribution.md. Not gated on e2e — merge protection

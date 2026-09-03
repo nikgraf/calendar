@@ -334,15 +334,16 @@ same PR; these are the code/infra improvements worth their own tasks).
        the last applied migration and retries next launch); duplicate-id
        and downgrade guards die loudly. Runner parameterized for tests
        (`runMigrationsWith`).
-3. [ ] PR-only unsigned `package:app` smoke job (macos-26) — packaging
-       broke twice post-merge (#36's ENOENT, the `.bin` symlink); the
-       env-gated signing makes an unsigned smoke secrets-free and cheap.
+3. [x] PR-only unsigned `package:app` smoke job — done: `package-smoke`
+       in ci.yml (macos-26, needs gate) packages unsigned and asserts the
+       .app exists, the model helper landed in Resources, and none of
+       helper/e2e/e2e-artifacts leaked into the bundle.
 4. [x] Dedup the findTime pipeline + quick-add state machine — done:
-       `makeFindSlots` lives in `packages/ai/src/findTimePipeline.ts`
-       (one test, no twins); `useQuickAddModel`
-       (packages/app-state/src/quickAddModel.ts) owns mode/submit/slot
-       pick/dictation for both bars, and checks MicrophoneDeniedError in
-       BOTH speech phases — the divergence that showed the wrong copy.
+       and `apps/ios/src/findTime.ts` are byte-identical → move into
+       `packages/ai`); extract a shared `useQuickAddModel` — QuickAddBar
+       and CommandBar re-implement one state machine and have already
+       diverged (MicrophoneDeniedError is handled in different phases →
+       wrong copy on iOS).
 5. [ ] Test the untested load-bearing pure code — `assembleWindow`
        (every rendered event flows through it; zero direct tests) and
        the editor models (~386 shared untested lines).

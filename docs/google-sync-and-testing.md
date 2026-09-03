@@ -139,6 +139,8 @@ Flakiness lessons (each caused a real CI failure — keep them enforced):
 - `gate` (ubuntu): check + typecheck + unit tests.
 - `e2e` (macos-15): desktop build → e2e suite. GUI Electron runs fine on
   macOS runners; content protection does not affect CDP automation.
+- `package-smoke` (macos-26, PRs only): unsigned `package:app` + packaged-
+  contents assertions — packaging failures used to surface only post-merge.
 - `testing-build` (macos-26, main only): signed + notarized arm64 zip
   incl. the Swift model helper — macos-26 is the only runner image with
   the FoundationModels SDK. See docs/distribution.md.
