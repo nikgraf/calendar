@@ -375,3 +375,56 @@ same PR; these are the code/infra improvements worth their own tasks).
         helpers; main-process `uncaughtException` should exit after
         logging; iOS `app.json` updates: set `checkAutomatically` + a
         fallback timeout.
+
+## Product ideas
+
+- Logo desgin (see notes todo with most important take aways)
+- Research Siri Calendar integration
+  - Ask ChatGPT (deepresearch) about flows that exist
+- Design for add flow (insert and prefill the input form, important: pick the correct calendar)
+- Apple Reminders integration
+  - The idea is personal reminders can be there
+  - Google Tasks still make sense when working with Gmail
+  - Allow to convert Reminder to Google task and the other way around -> how to design missing capabilities in each of them
+  - Different template for Google Task and Reminder
+- Morning briefing made with AI
+  - Weather during the day and what to wear (also take other locations into account and especially weather changes)
+  - Get an overview over the most important meetings
+  - AI can understand how busy the day will be and judge what to do with reminders e.g. move to another day
+    - allow to choose if you want an easy or focus day to help you guide
+    - allow to go through reminders yourself (easyly adept the changes) and allow to prioretize what's important and what not based
+- Evening briefling
+  - Caputure one to two sentenced about the day
+    - where to store it? encrypted in google or apple notes?
+  - Caputure one to two sentenced about the day (what was good, what did you achieve)
+  - Caputure one to two sentenced about the day (what was bad)
+- Week briefing
+  - What was accomplished
+- Personal Dashboard: Pull in data from manu sources
+  - Strava
+  - Weather (also show on the day?)
+  - Food tracking (nutrition data + macros)
+  - Garmin data e.g. body battery
+  - Birthdays
+    - Custom reminders for birthdays
+      - standard per birthday e.g. 1 week before, 1 day before, on the day
+      - change and overwrite it per person
+  - Different views:
+    - Business view(s) with certain selected calendar
+      - What can other people see e.g. impersonation of a colleage
+    - Personal dashboard view shows everything
+      - allow to block time
+- API for OpenClaw/Hermes to interact with (CalDir inspired https://caldir.org/)
+- Server mode that doesn't run the GUI?
+- Habit builder (setup as remiders?)
+- Linux support (AI support?)
+- Android support (what does Android offer as local AI?)
+- Integration with Microsoft Calendar (more relevant for Windows)
+- Windows support (Copilot support?)
+- Special sync
+  - same event in multiple calendar (how do they get identified?)
+    - special feature: automatically sync those e.g. meetup event gets synced to family calendar
+    - special feature: add in one calendar as normal even, but show in others as blocked or only share certain information
+- Manage conflicts with a choice. Currently: **412 Conflict**: server wins — the op is dropped and `notice:conflict`
+  is broadcast; the desktop shows a toast. The next pull replaces the local
+  copy.
