@@ -149,10 +149,21 @@ private let dayFormatter: DateFormatter = {
 private func pad2(_ value: Int) -> String { value < 10 ? "0\(value)" : "\(value)" }
 
 private func dueStrings(_ components: DateComponents?) -> (date: String?, time: String?) {
-  guard let c = components, let y = c.year, let m = c.month, let d = c.day else {
+  guard var c = components, let y = c.year, let m = c.month, let d = c.day else {
     return (nil, nil)
   }
-  let date = "\(y)-\(pad2(m))-\(pad2(d))"
+  // A timed reminder created in another zone carries that zone in its
+  // components; the protocol speaks device-local wall clock, so convert.
+  // All-day components have no zone semantics and stay as written.
+  if c.hour != nil, let zone = c.timeZone, zone.identifier != TimeZone.current.identifier,
+    let instant = Calendar.current.date(from: c)
+  {
+    c = Calendar.current.dateComponents(in: TimeZone.current, from: instant)
+  }
+  let year = c.year ?? y
+  let month = c.month ?? m
+  let day = c.day ?? d
+  let date = "\(year)-\(pad2(month))-\(pad2(day))"
   guard let h = c.hour else { return (date, nil) }
   return (date, "\(pad2(h)):\(pad2(c.minute ?? 0))")
 }
@@ -291,12 +302,21 @@ actor RemindersBridge {
   }
 
   func requestAccess() async -> Bool {
+    let granted: Bool
     if #available(iOS 17, macOS 14, *) {
-      return (try? await store.requestFullAccessToReminders()) ?? false
+      granted = (try? await store.requestFullAccessToReminders()) ?? false
+    } else {
+      granted = await withCheckedContinuation { continuation in
+        store.requestAccess(to: .reminder) { ok, _ in continuation.resume(returning: ok) }
+      }
     }
-    return await withCheckedContinuation { continuation in
-      store.requestAccess(to: .reminder) { granted, _ in continuation.resume(returning: granted) }
+    if granted {
+      // The store was created before the grant (the pre-prompt status
+      // call); a store instantiated without access can keep answering
+      // with no calendars until reset.
+      store.reset()
     }
+    return granted
   }
 
   private func requireAccess() throws {
