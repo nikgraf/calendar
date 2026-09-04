@@ -1,5 +1,9 @@
 import { Effect } from 'effect';
-import { RemindersAccessError, type RemindersClientShape } from './client.ts';
+import {
+  RemindersAccessError,
+  type RemindersClientShape,
+  RemindersRequestError,
+} from './client.ts';
 import type { ReminderJson, ReminderListJson, RemindersAuthorization } from './protocol.ts';
 
 /**
@@ -51,13 +55,25 @@ export const makeFakeRemindersClient = (
     reminders: new Map((initial.reminders ?? []).map((reminder) => [reminder.id, reminder])),
   };
 
-  const guard = <A>(method: string, run: () => A): Effect.Effect<A, RemindersAccessError> =>
+  const guard = <A>(
+    method: string,
+    run: () => A,
+  ): Effect.Effect<A, RemindersAccessError | RemindersRequestError> =>
     Effect.suspend(() => {
       state.calls.push(method);
       if (state.authorization !== 'fullAccess') {
         return Effect.fail(new RemindersAccessError({ authorization: state.authorization }));
       }
-      return Effect.succeed(run());
+      // A thrown bridge error (notFound, …) reaches the real client as a
+      // rejected promise → RemindersRequestError; mirror that here.
+      return Effect.try({
+        catch: (error) =>
+          new RemindersRequestError({
+            message: error instanceof Error ? error.message : String(error),
+            method,
+          }),
+        try: run,
+      });
     });
 
   const find = (id: string): ReminderJson => {

@@ -60,7 +60,16 @@ export const makeReminderMutations = (deps: ReminderMutationDeps): TaskMutations
 
     deleteTask: ({ accountId, taskId, taskListId }) =>
       Effect.gen(function* () {
-        yield* remindersClient.delete({ id: taskId });
+        // Already gone in Reminders.app (deleted between two passes): the
+        // user's intent is met — drop the stale mirror row, like the
+        // Google path does on NotFoundError.
+        yield* remindersClient
+          .delete({ id: taskId })
+          .pipe(
+            Effect.catchTag('RemindersRequestError', (error) =>
+              error.message.startsWith('notFound') ? Effect.void : Effect.fail(error),
+            ),
+          );
         yield* taskRepo.removeTask(accountId, taskListId, taskId);
       }).pipe(flagAccessLoss(accountId)),
 
