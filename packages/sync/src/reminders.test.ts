@@ -12,6 +12,7 @@ import { expect, it } from '@effect/vitest';
 import { Effect, Layer } from 'effect';
 import { TestClock } from 'effect/testing';
 import { layer as reactivityLayer } from 'effect/unstable/reactivity/Reactivity';
+import { SqlClient } from 'effect/unstable/sql/SqlClient';
 import { describe } from 'vitest';
 import { SyncEngine } from './engine.ts';
 import { EventMutations } from './mutations.ts';
@@ -51,6 +52,7 @@ const testLayer = (fake: ReturnType<typeof makeFakeRemindersClient>) =>
 const today = Temporal.Now.plainDateISO();
 const tomorrow = today.add({ days: 1 }).toString();
 const farFuture = today.add({ years: 2 }).toString();
+const longAgo = today.subtract({ years: 1 }).toString();
 
 const appleAccount = new Account({
   createdAt: 1,
@@ -106,13 +108,33 @@ const fakeWith = (overrides: Parameters<typeof makeFakeRemindersClient>[0] = {})
         title: 'Renew passport',
         updatedAt: 10,
       },
+      {
+        alarms: [],
+        completed: true,
+        completedAt: 5,
+        dueDate: longAgo,
+        id: 'rem-old-done',
+        listId: 'list-b',
+        priority: 0,
+        title: 'Filed taxes',
+        updatedAt: 10,
+      },
+      {
+        alarms: [],
+        completed: false,
+        id: 'rem-undated',
+        listId: 'list-a',
+        priority: 0,
+        title: 'Someday',
+        updatedAt: 10,
+      },
     ],
     ...overrides,
   });
 
 const windowRows = Effect.gen(function* () {
   const taskRepo = yield* TaskRepo;
-  return yield* taskRepo.getWindow(today.subtract({ days: 1 }).toString(), farFuture);
+  return yield* taskRepo.getWindow(longAgo, farFuture);
 });
 
 describe('reminders sync', () => {
@@ -130,17 +152,21 @@ describe('reminders sync', () => {
       ]);
 
       const rows = yield* windowRows;
-      // The far-future reminder is outside the mirror window.
-      expect(rows.map((row) => row.id)).toEqual(['rem-timed', 'rem-allday']);
-      expect(rows[0]).toMatchObject({
+      // Due-day order, timed first within a day; undated never appears.
+      expect(rows.map((row) => row.id)).toEqual([
+        'rem-old-done',
+        'rem-timed',
+        'rem-allday',
+        'rem-far',
+      ]);
+      expect(rows[1]).toMatchObject({
         alarms: [-15],
         dueTime: '09:00',
         priority: 'high',
         provider: 'apple',
       });
-      expect(rows[1]?.dueTime).toBeUndefined();
-      // Google Tasks was never consulted for the Apple account.
-      expect(fake.state.calls).toContain('list');
+      expect(rows[2]?.dueTime).toBeUndefined();
+      expect(fake.state.calls).toContain('snapshot');
     }).pipe(Effect.provide(testLayer(fake)));
   });
 
@@ -156,48 +182,109 @@ describe('reminders sync', () => {
       yield* TestClock.adjust('1 minute');
       yield* engine.syncAll();
       const rows = yield* windowRows;
-      expect(rows.map((row) => row.id)).toEqual(['rem-timed']);
+      expect(rows.map((row) => row.id)).not.toContain('rem-allday');
+      expect(rows.map((row) => row.id)).toContain('rem-timed');
     }).pipe(Effect.provide(testLayer(fake)));
   });
 
-  it.effect(
-    'a row mirrored during the pass, or due outside the window, survives reconciliation',
-    () => {
-      const fake = fakeWith();
-      return Effect.gen(function* () {
-        yield* seedApple();
-        const taskRepo = yield* TaskRepo;
-        const stale = (id: string, dueDate: string, syncedAt: number) =>
-          taskRepo.upsertTasks(
-            [
-              {
-                accountId: APPLE_REMINDERS_ACCOUNT_ID,
-                dueDate,
-                id,
-                listId: 'list-a',
-                provider: 'apple',
-                status: 'needsAction',
-                title: id,
-                updatedAt: 1,
-              },
-            ],
-            syncedAt,
-          );
-        // Mirrored long ago and no longer in EventKit → removed.
-        yield* stale('gone', tomorrow, 1);
-        // Mirrored "just now" (a concurrent create): newer than the pass → kept.
-        yield* stale('fresh', tomorrow, Date.now() + 10_000);
-        // Outside the fetched window: not this pass's business → kept.
-        yield* stale('far', farFuture, 1);
-        yield* TestClock.adjust('1 hour');
-        yield* (yield* SyncEngine).syncAll();
-        const ids = (yield* windowRows).map((row) => row.id);
-        expect(ids).not.toContain('gone');
-        expect(ids).toContain('fresh');
-        expect(ids).toContain('far');
-      }).pipe(Effect.provide(testLayer(fake)));
-    },
-  );
+  it.effect('a row mirrored during the pass survives; a stale unseen one is removed', () => {
+    const fake = fakeWith();
+    return Effect.gen(function* () {
+      yield* seedApple();
+      const taskRepo = yield* TaskRepo;
+      const stale = (id: string, syncedAt: number) =>
+        taskRepo.upsertTasks(
+          [
+            {
+              accountId: APPLE_REMINDERS_ACCOUNT_ID,
+              dueDate: tomorrow,
+              id,
+              listId: 'list-a',
+              provider: 'apple',
+              status: 'needsAction',
+              title: id,
+              updatedAt: 1,
+            },
+          ],
+          syncedAt,
+        );
+      // Mirrored long ago and no longer in EventKit → removed.
+      yield* stale('gone', 1);
+      // Mirrored "just now" (a concurrent create): newer than the pass → kept.
+      yield* stale('fresh', Date.now() + 10_000);
+      yield* TestClock.adjust('1 hour');
+      yield* (yield* SyncEngine).syncAll();
+      const ids = (yield* windowRows).map((row) => row.id);
+      expect(ids).not.toContain('gone');
+      expect(ids).toContain('fresh');
+    }).pipe(Effect.provide(testLayer(fake)));
+  });
+
+  it.effect('the mirror is complete: far-future, long-ago completed, and undated reminders', () => {
+    const fake = fakeWith();
+    return Effect.gen(function* () {
+      yield* seedApple();
+      yield* (yield* SyncEngine).syncAll();
+      const ids = (yield* windowRows).map((row) => row.id);
+      // Two years out and completed a year ago both show on their due day.
+      expect(ids).toContain('rem-far');
+      expect(ids).toContain('rem-old-done');
+      // Undated: mirrored (for the future list view) but not in a due window.
+      expect(ids).not.toContain('rem-undated');
+      const sql = yield* SqlClient;
+      const undated = yield* sql<{
+        n: number;
+      }>`SELECT COUNT(*) AS n FROM tasks WHERE id = 'rem-undated'`;
+      expect(undated[0]?.n).toBe(1);
+    }).pipe(Effect.provide(testLayer(fake)));
+  });
+
+  it.effect('a delta pass ships only rows changed since the last pass', () => {
+    const fake = fakeWith();
+    return Effect.gen(function* () {
+      yield* seedApple();
+      const engine = yield* SyncEngine;
+      // it.effect starts the TestClock at 0; the seeded updatedAt stamps (10)
+      // must sit *before* the first pass's stamp for the delta to mean anything.
+      yield* TestClock.adjust('1 hour');
+      yield* engine.syncAll();
+      yield* TestClock.adjust('1 hour');
+      // The fake filters `changed` by updatedAt ≥ changedSince − 60 s, so a
+      // reminder edited "now" (TestClock now) is in, the untouched ones out.
+      const now = yield* Effect.clockWith((clock) => clock.currentTimeMillis);
+      fake.state.reminders.set('rem-allday', {
+        ...fake.state.reminders.get('rem-allday')!,
+        title: 'Water the plants',
+        updatedAt: now,
+      });
+      const before = fake.state.calls.filter((call) => call === 'snapshot').length;
+      yield* engine.syncAll();
+      expect(fake.state.calls.filter((call) => call === 'snapshot').length).toBe(before + 1);
+      const rows = yield* windowRows;
+      expect(rows.find((row) => row.id === 'rem-allday')?.title).toBe('Water the plants');
+      expect(rows.find((row) => row.id === 'rem-timed')?.title).toBe('Call mom');
+    }).pipe(Effect.provide(testLayer(fake)));
+  });
+
+  it.effect('a snapshot id with no local row forces one full pass', () => {
+    const fake = fakeWith();
+    return Effect.gen(function* () {
+      yield* seedApple();
+      const engine = yield* SyncEngine;
+      // it.effect starts the TestClock at 0; the seeded updatedAt stamps (10)
+      // must sit *before* the first pass's stamp for the delta to mean anything.
+      yield* TestClock.adjust('1 hour');
+      yield* engine.syncAll();
+      yield* TestClock.adjust('1 hour');
+      const sql = yield* SqlClient;
+      yield* sql`DELETE FROM tasks WHERE id = 'rem-timed'`;
+      const before = fake.state.calls.filter((call) => call === 'snapshot').length;
+      yield* engine.syncAll();
+      // delta pass + the full repeat
+      expect(fake.state.calls.filter((call) => call === 'snapshot').length).toBe(before + 2);
+      expect((yield* windowRows).some((row) => row.id === 'rem-timed')).toBe(true);
+    }).pipe(Effect.provide(testLayer(fake)));
+  });
 
   it.effect('an unavailable bridge is skipped, never mistaken for a revoked grant', () => {
     const fake = fakeWith({ authorization: 'unavailable' });
@@ -223,7 +310,7 @@ describe('reminders sync', () => {
       fake.state.authorization = 'fullAccess';
       yield* engine.syncAll();
       expect((yield* accounts.list())[0]?.status).toBe('ok');
-      expect((yield* windowRows).length).toBe(2);
+      expect((yield* windowRows).length).toBe(4);
     }).pipe(Effect.provide(testLayer(fake)));
   });
 });

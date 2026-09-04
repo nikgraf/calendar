@@ -110,15 +110,6 @@ export const makeFakeRemindersClient = (
         find(id);
         state.reminders.delete(id);
       }),
-    list: ({ endDate, startDate }) =>
-      guard('list', () =>
-        [...state.reminders.values()].filter(
-          (reminder) =>
-            reminder.dueDate !== undefined &&
-            reminder.dueDate >= startDate &&
-            reminder.dueDate <= endDate,
-        ),
-      ),
     listLists: () => guard('listLists', () => [...state.lists.values()]),
     requestAccess: () =>
       Effect.sync(() => {
@@ -142,6 +133,15 @@ export const makeFakeRemindersClient = (
         }
         state.reminders.set(id, next);
         return next;
+      }),
+    snapshot: ({ changedSince }) =>
+      guard('snapshot', () => {
+        const all = [...state.reminders.values()];
+        const floor = changedSince === undefined ? undefined : changedSince - 60_000;
+        return {
+          changed: floor === undefined ? all : all.filter((r) => r.updatedAt >= floor),
+          ids: all.map((r) => ({ id: r.id, listId: r.listId })),
+        };
       }),
     status: () =>
       Effect.sync(() => {

@@ -93,17 +93,26 @@ export interface ReminderWrite {
 export const StatusResult = Schema.Struct({ authorization: RemindersAuthorization });
 export const RequestAccessResult = Schema.Struct({ granted: Schema.Boolean });
 export const ListListsResult = Schema.Struct({ lists: Schema.Array(ReminderListJson) });
-export const ListResult = Schema.Struct({ reminders: Schema.Array(ReminderJson) });
+/**
+ * The complete snapshot: every reminder's (listId, id) — the source of
+ * truth for removals — plus full rows only for reminders modified since
+ * the caller's `changedSince` (all rows when it is absent).
+ */
+export const SnapshotResult = Schema.Struct({
+  changed: Schema.Array(ReminderJson),
+  ids: Schema.Array(Schema.Struct({ id: Schema.String, listId: Schema.String })),
+});
+export type SnapshotResult = typeof SnapshotResult.Type;
 export const ReminderResult = Schema.Struct({ reminder: ReminderJson });
 
 /** Method names as the native sides dispatch them. */
 export const REMINDERS_METHODS = {
   create: 'reminders.create',
   delete: 'reminders.delete',
-  list: 'reminders.list',
   listLists: 'reminders.listLists',
   requestAccess: 'reminders.requestAccess',
   setCompleted: 'reminders.setCompleted',
+  snapshot: 'reminders.snapshot',
   status: 'reminders.status',
   update: 'reminders.update',
 } as const;

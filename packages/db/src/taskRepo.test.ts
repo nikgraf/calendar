@@ -3,6 +3,7 @@ import { SqliteClient } from '@effect/sql-sqlite-node';
 import { expect, it } from '@effect/vitest';
 import { Effect, Layer } from 'effect';
 import { layer as reactivityLayer } from 'effect/unstable/reactivity/Reactivity';
+import { SqlClient } from 'effect/unstable/sql/SqlClient';
 import { describe } from 'vitest';
 import { runMigrations } from './migrate.ts';
 import { reposLayer, TaskRepo } from './repos.ts';
@@ -209,6 +210,90 @@ describe('TaskRepo', () => {
       expect(rows[0]?.dueTime).toBeUndefined();
       expect(rows[0]?.priority).toBeUndefined();
       expect(rows[0]?.recurrence).toBeUndefined();
+    }).pipe(Effect.provide(freshDbLayer())),
+  );
+  it.effect(
+    'replaceMirror: newer wins, stale unseen rows go, fresh unseen rows stay, visibility kept',
+    () =>
+      Effect.gen(function* () {
+        const repo = yield* TaskRepo;
+        yield* repo.upsertLists([list({ id: 'list-a', provider: 'apple' })], 1);
+        yield* repo.setListVisible('acc-1', 'list-a', false);
+        yield* repo.upsertTasks(
+          [
+            task({ id: 'unchanged', listId: 'list-a', title: 'old', updatedAt: 5 }),
+            task({ id: 'local-newer', listId: 'list-a', title: 'mine', updatedAt: 50 }),
+            task({ id: 'gone-stale', listId: 'list-a', updatedAt: 5 }),
+            task({ dueDate: undefined, id: 'gone-undated', listId: 'list-a', updatedAt: 5 }),
+          ],
+          1,
+        );
+        // Mirrored by a concurrent write-through *after* the pass stamp.
+        yield* repo.upsertTasks([task({ id: 'fresh', listId: 'list-a', updatedAt: 5 })], 1000);
+        const result = yield* repo.replaceMirror({
+          accountId: 'acc-1',
+          changed: [
+            task({ id: 'unchanged', listId: 'list-a', title: 'new', updatedAt: 6 }),
+            task({ id: 'local-newer', listId: 'list-a', title: 'theirs', updatedAt: 40 }),
+            task({ id: 'added', listId: 'list-a', updatedAt: 7 }),
+          ],
+          ids: [
+            { id: 'unchanged', listId: 'list-a' },
+            { id: 'local-newer', listId: 'list-a' },
+            { id: 'added', listId: 'list-a' },
+          ],
+          lists: [list({ colorHex: '#00ff00', id: 'list-a', provider: 'apple', title: 'Renamed' })],
+          syncedAt: 500,
+        });
+        expect(result.needsFull).toBe(false);
+        const lists = yield* repo.listLists('acc-1');
+        // Renamed + recolored, but the local hide toggle survived.
+        expect(lists[0]).toMatchObject({ colorHex: '#00ff00', isVisible: false, title: 'Renamed' });
+        yield* repo.setListVisible('acc-1', 'list-a', true);
+        const rows = yield* repo.getWindow('2000-01-01', '2099-12-31');
+        const byId = new Map(rows.map((row) => [row.id, row]));
+        expect(byId.get('unchanged')?.title).toBe('new');
+        expect(byId.get('local-newer')?.title).toBe('mine');
+        expect(byId.has('added')).toBe(true);
+        expect(byId.has('gone-stale')).toBe(false);
+        expect(byId.has('fresh')).toBe(true);
+        const sql = yield* SqlClient;
+        const undated = yield* sql<{
+          n: number;
+        }>`SELECT COUNT(*) AS n FROM tasks WHERE id = 'gone-undated'`;
+        expect(undated[0]?.n).toBe(0);
+      }).pipe(Effect.provide(freshDbLayer())),
+  );
+
+  it.effect('replaceMirror handles thousands of ids and flags a missing row', () =>
+    Effect.gen(function* () {
+      const repo = yield* TaskRepo;
+      yield* repo.upsertLists([list({ id: 'list-a', provider: 'apple' })], 1);
+      const ids = Array.from({ length: 2500 }, (_, index) => ({
+        id: `r${String(index)}`,
+        listId: 'list-a',
+      }));
+      const changed = ids.map((entry) => task({ id: entry.id, listId: 'list-a', updatedAt: 1 }));
+      const full = yield* repo.replaceMirror({
+        accountId: 'acc-1',
+        changed,
+        ids,
+        lists: [list({ id: 'list-a', provider: 'apple' })],
+        syncedAt: 10,
+      });
+      expect(full.needsFull).toBe(false);
+      expect((yield* repo.getWindow('2000-01-01', '2099-12-31')).length).toBe(2500);
+      // A delta pass whose id list names a row we do not have → needsFull.
+      const sql = yield* SqlClient;
+      yield* sql`DELETE FROM tasks WHERE id = 'r7'`;
+      const delta = yield* repo.replaceMirror({
+        accountId: 'acc-1',
+        changed: [],
+        ids,
+        lists: [list({ id: 'list-a', provider: 'apple' })],
+        syncedAt: 20,
+      });
+      expect(delta.needsFull).toBe(true);
     }).pipe(Effect.provide(freshDbLayer())),
   );
 });

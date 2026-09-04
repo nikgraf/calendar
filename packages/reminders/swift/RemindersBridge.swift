@@ -281,7 +281,6 @@ actor RemindersBridge {
   static let shared = RemindersBridge()
 
   private let store = EKEventStore()
-
   // MARK: Access
 
   func status() -> String {
@@ -349,34 +348,21 @@ actor RemindersBridge {
     }
   }
 
-  func list(startDate: String, endDate: String) async throws -> [ReminderDTO] {
+  /// The complete mirror snapshot: every reminder's (list, id) so the
+  /// caller can reconcile removals exactly, plus full rows only for
+  /// reminders modified since `changedSince` (epoch ms; nil = all rows,
+  /// i.e. the first pass or a rebuild). EventKit is local — one fetch of
+  /// everything is cheap; what is not cheap is shipping every row over
+  /// the bridge each pass, hence the delta.
+  func snapshot(changedSince: Double?) async throws -> (ids: [(listId: String, id: String)], changed: [ReminderDTO]) {
     try requireAccess()
-    guard let startParts = parseDay(startDate), let endParts = parseDay(endDate) else {
-      throw RemindersBridgeError.badRequest("startDate/endDate must be YYYY-MM-DD")
-    }
-    let calendar = Calendar.current
-    guard
-      let start = calendar.date(
-        from: DateComponents(year: startParts.year, month: startParts.month, day: startParts.day)),
-      let endDay = calendar.date(
-        from: DateComponents(year: endParts.year, month: endParts.month, day: endParts.day)),
-      let end = calendar.date(byAdding: .day, value: 1, to: endDay)
-    else {
-      throw RemindersBridgeError.badRequest("unparseable window")
-    }
-    let incomplete = store.predicateForIncompleteReminders(
-      withDueDateStarting: start, ending: end, calendars: nil)
-    let completed = store.predicateForCompletedReminders(
-      withCompletionDateStarting: start, ending: end, calendars: nil)
-    let open = await fetch(incomplete)
-    let done = await fetch(completed)
-    var seen = Set<String>()
-    var merged: [ReminderDTO] = []
-    for dto in open + done where !seen.contains(dto.id) {
-      seen.insert(dto.id)
-      merged.append(dto)
-    }
-    return merged
+    let all = await fetch(store.predicateForReminders(in: nil))
+    let ids = all.map { (listId: $0.listId, id: $0.id) }
+    guard let since = changedSince else { return (ids, all) }
+    // Same clock-skew lag as the Google watermark: re-reading the overlap
+    // is harmless (upserts only apply when strictly newer).
+    let floor = Int(since) - 60_000
+    return (ids, all.filter { $0.updatedAt >= floor })
   }
 
   private func find(_ id: String) throws -> EKReminder {
@@ -524,10 +510,13 @@ enum RemindersDispatch {
       return ["granted": await bridge.requestAccess()]
     case "reminders.listLists":
       return ["lists": try await bridge.listLists().map { $0.toDictionary() }]
-    case "reminders.list":
-      guard let start = params["startDate"] as? String, let end = params["endDate"] as? String
-      else { throw RemindersBridgeError.badRequest("startDate and endDate required") }
-      return ["reminders": try await bridge.list(startDate: start, endDate: end).map { $0.toDictionary() }]
+    case "reminders.snapshot":
+      let since: Double? = (params["changedSince"] as? Double) ?? (params["changedSince"] as? Int).map(Double.init)
+      let result = try await bridge.snapshot(changedSince: since)
+      return [
+        "changed": result.changed.map { $0.toDictionary() },
+        "ids": result.ids.map { ["id": $0.id, "listId": $0.listId] },
+      ]
     case "reminders.create":
       guard let listId = params["listId"] as? String else {
         throw RemindersBridgeError.badRequest("listId required")

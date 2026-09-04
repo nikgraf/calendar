@@ -1,7 +1,6 @@
 import { Context, Data, Effect, Schema } from 'effect';
 import {
   ListListsResult,
-  ListResult,
   type ReminderJson,
   type ReminderListJson,
   type RemindersAuthorization,
@@ -9,6 +8,7 @@ import {
   type ReminderWrite,
   REMINDERS_METHODS,
   RequestAccessResult,
+  SnapshotResult,
   StatusResult,
 } from './protocol.ts';
 
@@ -62,11 +62,6 @@ export interface RemindersClientShape {
     readonly reminder: ReminderWrite;
   }) => Effect.Effect<ReminderJson, RemindersError>;
   readonly delete: (params: { readonly id: string }) => Effect.Effect<void, RemindersError>;
-  /** Incomplete reminders due in the window ∪ reminders completed in it. */
-  readonly list: (params: {
-    readonly endDate: string;
-    readonly startDate: string;
-  }) => Effect.Effect<ReadonlyArray<ReminderJson>, RemindersError>;
   readonly listLists: () => Effect.Effect<ReadonlyArray<ReminderListJson>, RemindersError>;
   /** Triggers the OS prompt when undetermined; resolves to the outcome. */
   readonly requestAccess: () => Effect.Effect<boolean, RemindersError>;
@@ -74,6 +69,13 @@ export interface RemindersClientShape {
     readonly completed: boolean;
     readonly id: string;
   }) => Effect.Effect<ReminderJson, RemindersError>;
+  /**
+   * Every reminder's (listId, id) plus full rows for those modified since
+   * `changedSince` (epoch ms; omit for everything). See SnapshotResult.
+   */
+  readonly snapshot: (params: {
+    readonly changedSince?: number | undefined;
+  }) => Effect.Effect<SnapshotResult, RemindersError>;
   readonly status: () => Effect.Effect<RemindersAuthorization, RemindersError>;
   readonly update: (params: {
     readonly changes: ReminderWrite & { readonly listId?: string | undefined };
@@ -133,11 +135,6 @@ export const makeRemindersClient = (
         (r) => r.reminder,
       ),
     delete: ({ id }) => Effect.asVoid(call(REMINDERS_METHODS.delete, Schema.Unknown, { id })),
-    list: ({ endDate, startDate }) =>
-      Effect.map(
-        call(REMINDERS_METHODS.list, ListResult, { endDate, startDate }),
-        (r) => r.reminders,
-      ),
     listLists: () => Effect.map(call(REMINDERS_METHODS.listLists, ListListsResult), (r) => r.lists),
     requestAccess: () =>
       Effect.map(call(REMINDERS_METHODS.requestAccess, RequestAccessResult), (r) => r.granted),
@@ -145,6 +142,12 @@ export const makeRemindersClient = (
       Effect.map(
         call(REMINDERS_METHODS.setCompleted, ReminderResult, { completed, id }),
         (r) => r.reminder,
+      ),
+    snapshot: ({ changedSince }) =>
+      call(
+        REMINDERS_METHODS.snapshot,
+        SnapshotResult,
+        changedSince === undefined ? {} : { changedSince },
       ),
     status: () => Effect.map(call(REMINDERS_METHODS.status, StatusResult), (r) => r.authorization),
     update: ({ changes, id }) =>
@@ -166,10 +169,10 @@ export const unavailableRemindersClient = (reason: string): RemindersClientShape
   return {
     create: () => fail(),
     delete: () => fail(),
-    list: () => fail(),
     listLists: () => fail(),
     requestAccess: () => fail(),
     setCompleted: () => fail(),
+    snapshot: () => fail(),
     status: () => Effect.succeed('unavailable' as const),
     update: () => fail(),
   };

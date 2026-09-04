@@ -541,31 +541,10 @@ export interface TaskRepoShape {
   /** Optimistic local create (sync_status 'pending' until the push lands). */
   readonly insertLocal: (task: TaskRecord) => Effect.Effect<void, SqlError>;
   readonly listLists: (accountId?: string) => Effect.Effect<ReadonlyArray<TaskListInfo>, SqlError>;
-  /** (listId, id) → updatedAt for every mirrored row of an account — cheap change detection. */
-  readonly listStamps: (
-    accountId: string,
-  ) => Effect.Effect<
-    ReadonlyArray<{ readonly id: string; readonly listId: string; readonly updatedAt: number }>,
-    SqlError
-  >;
   readonly removeListsMissing: (
     accountId: string,
     keepIds: ReadonlyArray<string>,
   ) => Effect.Effect<void, SqlError>;
-  /**
-   * Mirror reconciliation for local providers: drops rows of the list
-   * that this pass did not see, but only inside the window it fetched
-   * and only rows older than the pass (`synced_at < syncedBefore`) — a
-   * row a concurrent mutation just mirrored is newer and survives.
-   */
-  readonly removeMirrorStale: (params: {
-    readonly accountId: string;
-    readonly keepIds: ReadonlyArray<string>;
-    readonly listId: string;
-    readonly syncedBefore: number;
-    readonly windowEnd: string;
-    readonly windowStart: string;
-  }) => Effect.Effect<void, SqlError>;
   readonly removeTask: (
     accountId: string,
     listId: string,
@@ -583,6 +562,24 @@ export interface TaskRepoShape {
     tempId: string,
     serverId: string,
   ) => Effect.Effect<void, SqlError>;
+  /**
+   * Apple mirror reconciliation, one transaction, one invalidation: lists
+   * upserted (local visibility kept) and pruned; every snapshot (list, id)
+   * staged in a temp table (row by row — iOS's SQLite may cap bound
+   * variables at 999); `changed` rows upserted only when strictly newer
+   * than what is stored (a write-through that landed after the fetch
+   * wins); rows absent from the snapshot deleted, but only when older than
+   * `syncedAt` (a row a concurrent mutation just mirrored is newer and
+   * survives). `needsFull` reports a snapshot id with no row and no
+   * changed entry — the caller repeats without `changedSince`.
+   */
+  readonly replaceMirror: (params: {
+    readonly accountId: string;
+    readonly changed: ReadonlyArray<TaskRecord>;
+    readonly ids: ReadonlyArray<{ readonly id: string; readonly listId: string }>;
+    readonly lists: ReadonlyArray<TaskListInfo>;
+    readonly syncedAt: number;
+  }) => Effect.Effect<{ readonly needsFull: boolean }, SqlError>;
   readonly setListVisible: (
     accountId: string,
     listId: string,
@@ -636,6 +633,50 @@ const makeTaskRepo: Effect.Effect<TaskRepoShape, never, Reactivity | SqlClient> 
     const listsMutation = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
       reactivity.mutation([TASKLISTS_KEY, TASKS_KEY], effect);
 
+    /** One task row upsert; `newerOnly` adds the write-through guard. */
+    const upsertTaskRow = (task: TaskRecord, syncedAt: number, newerOnly: boolean) => {
+      const json = taskJsonColumns(task);
+      const guard = newerOnly ? sql`WHERE excluded.updated_at > tasks.updated_at` : sql``;
+      return sql`
+              INSERT INTO tasks (account_id, list_id, id, title, notes, status, due_date,
+                                 completed_at, web_view_link, updated_at, synced_at,
+                                 sync_status, due_time, priority, url, alarms, recurrence)
+              VALUES (${task.accountId}, ${task.listId}, ${task.id}, ${task.title},
+                      ${task.notes ?? null}, ${task.status}, ${task.dueDate ?? null},
+                      ${task.completedAt ?? null}, ${task.webViewLink ?? null},
+                      ${task.updatedAt}, ${syncedAt}, 'synced',
+                      ${task.dueTime ?? null}, ${task.priority ?? null}, ${task.url ?? null},
+                      ${json.alarms}, ${json.recurrence})
+              ON CONFLICT (account_id, list_id, id) DO UPDATE SET
+                sync_status = 'synced',
+                title = excluded.title,
+                notes = excluded.notes,
+                status = excluded.status,
+                due_date = excluded.due_date,
+                completed_at = excluded.completed_at,
+                web_view_link = excluded.web_view_link,
+                updated_at = excluded.updated_at,
+                synced_at = excluded.synced_at,
+                due_time = excluded.due_time,
+                priority = excluded.priority,
+                url = excluded.url,
+                alarms = excluded.alarms,
+                recurrence = excluded.recurrence
+              ${guard}`;
+    };
+
+    const upsertListRow = (list: TaskListInfo, syncedAt: number) => sql`
+              INSERT INTO task_lists (account_id, id, title, is_visible, synced_at, provider,
+                                      color_hex)
+              VALUES (${list.accountId}, ${list.id}, ${list.title},
+                      ${list.isVisible ? 1 : 0}, ${syncedAt}, ${list.provider},
+                      ${list.colorHex ?? null})
+              ON CONFLICT (account_id, id) DO UPDATE SET
+                title = excluded.title,
+                synced_at = excluded.synced_at,
+                provider = excluded.provider,
+                color_hex = excluded.color_hex`;
+
     return {
       deleteStale: (accountId, listId, syncedAt) =>
         tasksMutation(
@@ -678,13 +719,7 @@ const makeTaskRepo: Effect.Effect<TaskRepoShape, never, Reactivity | SqlClient> 
             : sql<TaskListRow>`SELECT * FROM task_lists WHERE account_id = ${accountId} ORDER BY title`,
           (rows) => rows.map(taskListFromRow),
         ),
-      listStamps: (accountId) =>
-        Effect.map(
-          sql<{ id: string; list_id: string; updated_at: number }>`
-            SELECT id, list_id, updated_at FROM tasks WHERE account_id = ${accountId}`,
-          (rows) =>
-            rows.map((row) => ({ id: row.id, listId: row.list_id, updatedAt: row.updated_at })),
-        ),
+
       removeListsMissing: (accountId, keepIds) =>
         listsMutation(
           Effect.gen(function* () {
@@ -699,21 +734,7 @@ const makeTaskRepo: Effect.Effect<TaskRepoShape, never, Reactivity | SqlClient> 
               AND id NOT IN ${sql.in(keepIds)}`;
           }),
         ),
-      removeMirrorStale: ({ accountId, keepIds, listId, syncedBefore, windowEnd, windowStart }) =>
-        tasksMutation(
-          keepIds.length === 0
-            ? Effect.asVoid(
-                sql`DELETE FROM tasks WHERE account_id = ${accountId} AND list_id = ${listId}
-                  AND synced_at < ${syncedBefore}
-                  AND due_date >= ${windowStart} AND due_date <= ${windowEnd}`,
-              )
-            : Effect.asVoid(
-                sql`DELETE FROM tasks WHERE account_id = ${accountId} AND list_id = ${listId}
-                  AND synced_at < ${syncedBefore}
-                  AND due_date >= ${windowStart} AND due_date <= ${windowEnd}
-                  AND id NOT IN ${sql.in(keepIds)}`,
-              ),
-        ),
+
       removeTask: (accountId, listId, taskId) =>
         tasksMutation(
           Effect.asVoid(
@@ -735,6 +756,50 @@ const makeTaskRepo: Effect.Effect<TaskRepoShape, never, Reactivity | SqlClient> 
           Effect.asVoid(
             sql`UPDATE tasks SET id = ${serverId}, sync_status = 'synced'
               WHERE account_id = ${accountId} AND list_id = ${listId} AND id = ${tempId}`,
+          ),
+        ),
+      replaceMirror: ({ accountId, changed, ids, lists, syncedAt }) =>
+        listsMutation(
+          sql.withTransaction(
+            Effect.gen(function* () {
+              yield* Effect.forEach(lists, (list) => upsertListRow(list, syncedAt), {
+                discard: true,
+              });
+              const listIds = lists.map((list) => list.id);
+              if (listIds.length === 0) {
+                yield* sql`DELETE FROM tasks WHERE account_id = ${accountId}`;
+                yield* sql`DELETE FROM task_lists WHERE account_id = ${accountId}`;
+              } else {
+                yield* sql`DELETE FROM tasks WHERE account_id = ${accountId}
+                  AND list_id NOT IN ${sql.in(listIds)}`;
+                yield* sql`DELETE FROM task_lists WHERE account_id = ${accountId}
+                  AND id NOT IN ${sql.in(listIds)}`;
+              }
+              yield* sql`CREATE TEMP TABLE IF NOT EXISTS mirror_snapshot (
+                list_id TEXT NOT NULL, id TEXT NOT NULL, PRIMARY KEY (list_id, id))`;
+              yield* sql`DELETE FROM mirror_snapshot`;
+              // Row by row inside the transaction: no statement ever carries
+              // more than a couple of bound variables.
+              yield* Effect.forEach(
+                ids,
+                (entry) =>
+                  sql`INSERT OR IGNORE INTO mirror_snapshot (list_id, id)
+                    VALUES (${entry.listId}, ${entry.id})`,
+                { discard: true },
+              );
+              yield* Effect.forEach(changed, (task) => upsertTaskRow(task, syncedAt, true), {
+                discard: true,
+              });
+              yield* sql`DELETE FROM tasks WHERE account_id = ${accountId}
+                AND synced_at < ${syncedAt}
+                AND NOT EXISTS (SELECT 1 FROM mirror_snapshot s
+                                WHERE s.list_id = tasks.list_id AND s.id = tasks.id)`;
+              const missing = yield* sql<{ n: number }>`
+                SELECT COUNT(*) AS n FROM mirror_snapshot s
+                WHERE NOT EXISTS (SELECT 1 FROM tasks t WHERE t.account_id = ${accountId}
+                                  AND t.list_id = s.list_id AND t.id = s.id)`;
+              return { needsFull: (missing[0]?.n ?? 0) > 0 };
+            }),
           ),
         ),
       setListVisible: (accountId, listId, isVisible) =>
@@ -798,57 +863,13 @@ const makeTaskRepo: Effect.Effect<TaskRepoShape, never, Reactivity | SqlClient> 
         ),
       upsertLists: (lists, syncedAt) =>
         listsMutation(
-          Effect.forEach(
-            lists,
-            (list) =>
-              sql`
-              INSERT INTO task_lists (account_id, id, title, is_visible, synced_at, provider,
-                                      color_hex)
-              VALUES (${list.accountId}, ${list.id}, ${list.title},
-                      ${list.isVisible ? 1 : 0}, ${syncedAt}, ${list.provider},
-                      ${list.colorHex ?? null})
-              ON CONFLICT (account_id, id) DO UPDATE SET
-                title = excluded.title,
-                synced_at = excluded.synced_at,
-                provider = excluded.provider,
-                color_hex = excluded.color_hex
-            `,
-            { discard: true },
-          ),
+          Effect.forEach(lists, (list) => upsertListRow(list, syncedAt), { discard: true }),
         ),
       upsertTasks: (tasks, syncedAt) =>
         tasksMutation(
-          Effect.forEach(
-            tasks,
-            (task) =>
-              sql`
-              INSERT INTO tasks (account_id, list_id, id, title, notes, status, due_date,
-                                 completed_at, web_view_link, updated_at, synced_at,
-                                 sync_status, due_time, priority, url, alarms, recurrence)
-              VALUES (${task.accountId}, ${task.listId}, ${task.id}, ${task.title},
-                      ${task.notes ?? null}, ${task.status}, ${task.dueDate ?? null},
-                      ${task.completedAt ?? null}, ${task.webViewLink ?? null},
-                      ${task.updatedAt}, ${syncedAt}, 'synced',
-                      ${task.dueTime ?? null}, ${task.priority ?? null}, ${task.url ?? null},
-                      ${taskJsonColumns(task).alarms}, ${taskJsonColumns(task).recurrence})
-              ON CONFLICT (account_id, list_id, id) DO UPDATE SET
-                sync_status = 'synced',
-                title = excluded.title,
-                notes = excluded.notes,
-                status = excluded.status,
-                due_date = excluded.due_date,
-                completed_at = excluded.completed_at,
-                web_view_link = excluded.web_view_link,
-                updated_at = excluded.updated_at,
-                synced_at = excluded.synced_at,
-                due_time = excluded.due_time,
-                priority = excluded.priority,
-                url = excluded.url,
-                alarms = excluded.alarms,
-                recurrence = excluded.recurrence
-            `,
-            { discard: true },
-          ),
+          Effect.forEach(tasks, (task) => upsertTaskRow(task, syncedAt, false), {
+            discard: true,
+          }),
         ),
     };
   },

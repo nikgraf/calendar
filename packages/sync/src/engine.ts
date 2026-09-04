@@ -25,12 +25,8 @@ const tasksScope = (taskListId: string): string => `tasks:${taskListId}`;
 const INITIAL_WINDOW_MS = 365 * 24 * 60 * 60 * 1000; // 12 months back
 /** updatedMin has no tombstone guarantees forever — reconcile fully daily. */
 const TASKS_FULL_PASS_INTERVAL_MS = 24 * 60 * 60 * 1000;
-/**
- * Reminders mirror window: EventKit is local, so every pass is a full
- * replace of this window (rows outside it are not displayable anyway).
- */
-const REMINDERS_PAST_DAYS = 90;
-const REMINDERS_FUTURE_DAYS = 365;
+/** sync_state scope for the Apple mirror: lastSyncAt is the delta stamp. */
+const REMINDERS_SCOPE = 'reminders';
 /**
  * The watermark comes from the local clock but filters Google's `updated`
  * stamps: local time running ahead would open a blind window between the
@@ -384,6 +380,15 @@ const make: Effect.Effect<
    * doubles as the account's health: no access flags it, access regained
    * (even without pressing Connect again) heals it.
    */
+  /**
+   * The Apple account: SQLite holds the latest complete EventKit snapshot.
+   * The bridge returns every reminder's (list, id) plus full rows only for
+   * what changed since the last pass (stamp in sync_state 'reminders'),
+   * and TaskRepo.replaceMirror reconciles in one transaction. The 90 s
+   * pass is the correctness mechanism; a change notification only makes
+   * it sooner. Access can be revoked at any time in System Settings, so
+   * the status check doubles as the account's health.
+   */
   const syncReminders = (account: Account): Effect.Effect<void, SyncError> =>
     Effect.gen(function* () {
       const authorization = yield* remindersClient
@@ -406,65 +411,55 @@ const make: Effect.Effect<
       if (account.status !== 'ok') {
         yield* accountRepo.setStatus(account.id, 'ok');
       }
-      // Stamped before the fetch: every row this pass writes carries it,
-      // and so does anything a concurrent mutation mirrors meanwhile —
-      // only rows older than the pass are candidates for removal.
+      const state = yield* syncStateRepo.get(account.id, REMINDERS_SCOPE);
+      // Stamped before the fetch: anything a concurrent mutation mirrors
+      // meanwhile is newer and survives reconciliation.
       const passStartedAt = yield* Clock.currentTimeMillis;
-      const lists = yield* remindersClient.listLists();
-      // Write only what changed: every upsert invalidates the task views,
-      // and this pass runs every 90 s whether or not anything moved.
-      const knownLists = new Map(
-        (yield* taskRepo.listLists(account.id)).map((list) => [list.id, list]),
+      const lists = (yield* remindersClient.listLists()).map((list) =>
+        mapReminderList(list, account.id),
       );
-      const changedLists = lists
-        .map((list) => mapReminderList(list, account.id))
-        .filter((list) => {
-          const known = knownLists.get(list.id);
-          return !known || known.title !== list.title || known.colorHex !== list.colorHex;
-        });
-      if (changedLists.length > 0) {
-        yield* taskRepo.upsertLists(changedLists, passStartedAt);
-      }
-      yield* taskRepo.removeListsMissing(
-        account.id,
-        lists.map((list) => list.id),
-      );
-      const today = Temporal.Now.plainDateISO();
-      const windowStart = today.subtract({ days: REMINDERS_PAST_DAYS }).toString();
-      const windowEnd = today.add({ days: REMINDERS_FUTURE_DAYS }).toString();
-      const reminders = yield* remindersClient.list({ endDate: windowEnd, startDate: windowStart });
-      const stamps = new Map(
-        (yield* taskRepo.listStamps(account.id)).map((row) => [
-          `${row.listId}/${row.id}`,
-          row.updatedAt,
-        ]),
-      );
-      const changed = reminders.filter(
-        (reminder) => stamps.get(`${reminder.listId}/${reminder.id}`) !== reminder.updatedAt,
-      );
-      if (changed.length > 0) {
-        yield* taskRepo.upsertTasks(
-          changed.map((reminder) => mapReminder(reminder, account.id)),
-          passStartedAt,
-        );
-      }
-      // Full replace *within the fetched window*: a mirrored reminder due
-      // outside it (created here, far in the future) is simply not this
-      // pass's business and stays until a pass covers its day.
-      yield* Effect.forEach(
-        lists,
-        (list) =>
-          taskRepo.removeMirrorStale({
+      const pass = (changedSince: number | undefined) =>
+        Effect.gen(function* () {
+          const fetchStart = yield* Clock.currentTimeMillis;
+          const snapshot = yield* remindersClient.snapshot({ changedSince });
+          const applyStart = yield* Clock.currentTimeMillis;
+          const result = yield* taskRepo.replaceMirror({
             accountId: account.id,
-            keepIds: reminders
-              .filter((reminder) => reminder.listId === list.id)
-              .map((reminder) => reminder.id),
-            listId: list.id,
-            syncedBefore: passStartedAt,
-            windowEnd,
-            windowStart,
-          }),
-        { discard: true },
+            changed: snapshot.changed.map((reminder) => mapReminder(reminder, account.id)),
+            ids: snapshot.ids,
+            lists,
+            syncedAt: passStartedAt,
+          });
+          const done = yield* Clock.currentTimeMillis;
+          // The numbers that decide whether hybrid retention is ever needed.
+          yield* Effect.logDebug('reminders snapshot', {
+            applyMs: done - applyStart,
+            changed: snapshot.changed.length,
+            delta: changedSince !== undefined,
+            fetchMs: applyStart - fetchStart,
+            ids: snapshot.ids.length,
+            lists: lists.length,
+          });
+          return result;
+        });
+      const changedSince = state?.lastSyncAt ?? undefined;
+      let full = changedSince === undefined;
+      const result = yield* pass(changedSince);
+      if (result.needsFull && !full) {
+        // A snapshot id with no local row and no changed entry (rebuild,
+        // lost row): fetch everything once.
+        full = true;
+        yield* pass(undefined);
+      }
+      yield* syncStateRepo.set(
+        new SyncState({
+          accountId: account.id,
+          lastFullSyncAt: full ? passStartedAt : (state?.lastFullSyncAt ?? null),
+          lastSyncAt: passStartedAt,
+          scope: REMINDERS_SCOPE,
+          status: 'idle',
+          syncToken: null,
+        }),
       );
     }).pipe(
       Effect.catchTag('RemindersAccessError', () =>
