@@ -70,7 +70,16 @@ export const useTaskEditorModel = ({
   const [dueTime, setDueTime] = useState(existing?.dueTime ?? '09:00');
   const [priority, setPriority] = useState<TaskPriority | undefined>(existing?.priority);
   const [url, setUrl] = useState(existing?.url ?? '');
-  const [alarm, setAlarm] = useState<number | undefined>(existing?.alarms?.[0]);
+  // The form edits the FIRST relative alert; any further alerts the user
+  // set in Reminders.app ride along untouched, and `alarms` is only sent
+  // when the alert actually changed (a full replace would wipe them).
+  const initialAlarms = existing?.alarms ?? [];
+  const [alarm, setAlarm] = useState<number | undefined>(initialAlarms[0]);
+  const alarmChanged = alarm !== initialAlarms[0];
+  const alarmsToWrite = (): ReadonlyArray<number> => [
+    ...(alarm === undefined ? [] : [alarm]),
+    ...initialAlarms.slice(1),
+  ];
   const { toSpec: repeatSpec, ...repeatState } = useRepeatState(existing?.recurrence);
   const [error, setError] = useState<string | null>(null);
 
@@ -108,7 +117,9 @@ export const useTaskEditorModel = ({
             title: title.trim(),
             ...(provider === 'apple'
               ? {
-                  alarms: alarm === undefined ? null : [alarm],
+                  ...(alarmChanged
+                    ? { alarms: alarmsToWrite().length === 0 ? null : alarmsToWrite() }
+                    : {}),
                   dueTime: timed ? dueTime : null,
                   ...(taskListId !== existing.listId ? { moveToListId: taskListId } : {}),
                   priority: priority ?? null,
