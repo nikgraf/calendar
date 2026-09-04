@@ -199,6 +199,16 @@ describe('reminders sync', () => {
     },
   );
 
+  it.effect('an unavailable bridge is skipped, never mistaken for a revoked grant', () => {
+    const fake = fakeWith({ authorization: 'unavailable' });
+    return Effect.gen(function* () {
+      yield* seedApple();
+      yield* (yield* SyncEngine).syncAll();
+      expect((yield* (yield* AccountRepo).list())[0]?.status).toBe('ok');
+      expect(fake.state.calls).not.toContain('listLists');
+    }).pipe(Effect.provide(testLayer(fake)));
+  });
+
   it.effect('no access flags the account, restored access heals it without reconnecting', () => {
     const fake = fakeWith({ authorization: 'denied' });
     return Effect.gen(function* () {

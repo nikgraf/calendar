@@ -389,6 +389,14 @@ const make: Effect.Effect<
       const authorization = yield* remindersClient
         .status()
         .pipe(Effect.orElseSucceed(() => 'unavailable' as const));
+      if (authorization === 'unavailable') {
+        // No bridge (helper missing/crashed, old dev client, e2e's
+        // CALENDAR_REMINDERS=off): nothing to say about the TCC grant, so
+        // leave the account alone rather than send the user to System
+        // Settings for a problem that is not there.
+        yield* Effect.logDebug('reminders bridge unavailable; skipping pass');
+        return;
+      }
       if (authorization !== 'fullAccess') {
         if (account.status === 'ok') {
           yield* accountRepo.setStatus(account.id, 'reauth_required');
