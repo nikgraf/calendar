@@ -381,13 +381,16 @@ function DiagnosticsSection() {
   const [dictation, setDictation] = useState('checking…');
   const [reminders, setReminders] = useState('checking…');
   const [remindersBusy, setRemindersBusy] = useState(false);
+  const mutations = useBackendMutations();
 
   const requestReminders = async () => {
     setRemindersBusy(true);
     try {
-      await Effect.runPromise(
-        iosRemindersClient.requestAccess().pipe(Effect.orElseSucceed(() => false)),
-      );
+      // The rpc, not the bare permission ask: a grant alone creates no
+      // account and syncs nothing.
+      const result = await mutations.connectReminders(undefined);
+      setReminders(result.granted ? await describeReminders() : 'denied');
+    } catch {
       setReminders(await describeReminders());
     } finally {
       setRemindersBusy(false);

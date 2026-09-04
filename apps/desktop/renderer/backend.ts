@@ -24,8 +24,6 @@ declare global {
       onRpcMessage: (listener: (data: string | Uint8Array) => void) => () => void;
       privacyGet: () => Promise<PrivacyState>;
       privacySet: (choice: 'hidden' | 'pause10m' | 'visible') => Promise<PrivacyState>;
-      remindersListLists: () => Promise<ReadonlyArray<{ id: string; title: string }>>;
-      remindersRequestAccess: () => Promise<boolean>;
       remindersStatus: () => Promise<string>;
       rpcSend: (data: string | Uint8Array) => void;
     };
