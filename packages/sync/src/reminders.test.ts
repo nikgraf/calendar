@@ -10,6 +10,7 @@ import { makeFakeRemindersClient, RemindersClient } from '@calendar/reminders';
 import { SqliteClient } from '@effect/sql-sqlite-node';
 import { expect, it } from '@effect/vitest';
 import { Effect, Layer } from 'effect';
+import { TestClock } from 'effect/testing';
 import { layer as reactivityLayer } from 'effect/unstable/reactivity/Reactivity';
 import { describe } from 'vitest';
 import { SyncEngine } from './engine.ts';
@@ -150,9 +151,61 @@ describe('reminders sync', () => {
       const engine = yield* SyncEngine;
       yield* engine.syncAll();
       fake.state.reminders.delete('rem-allday');
+      // Reconciliation only touches rows older than the pass (it.effect runs
+      // on a TestClock, so time has to move on explicitly).
+      yield* TestClock.adjust('1 minute');
       yield* engine.syncAll();
       const rows = yield* windowRows;
       expect(rows.map((row) => row.id)).toEqual(['rem-timed']);
+    }).pipe(Effect.provide(testLayer(fake)));
+  });
+
+  it.effect(
+    'a row mirrored during the pass, or due outside the window, survives reconciliation',
+    () => {
+      const fake = fakeWith();
+      return Effect.gen(function* () {
+        yield* seedApple();
+        const taskRepo = yield* TaskRepo;
+        const stale = (id: string, dueDate: string, syncedAt: number) =>
+          taskRepo.upsertTasks(
+            [
+              {
+                accountId: APPLE_REMINDERS_ACCOUNT_ID,
+                dueDate,
+                id,
+                listId: 'list-a',
+                provider: 'apple',
+                status: 'needsAction',
+                title: id,
+                updatedAt: 1,
+              },
+            ],
+            syncedAt,
+          );
+        // Mirrored long ago and no longer in EventKit → removed.
+        yield* stale('gone', tomorrow, 1);
+        // Mirrored "just now" (a concurrent create): newer than the pass → kept.
+        yield* stale('fresh', tomorrow, Date.now() + 10_000);
+        // Outside the fetched window: not this pass's business → kept.
+        yield* stale('far', farFuture, 1);
+        yield* TestClock.adjust('1 hour');
+        yield* (yield* SyncEngine).syncAll();
+        const ids = (yield* windowRows).map((row) => row.id);
+        expect(ids).not.toContain('gone');
+        expect(ids).toContain('fresh');
+        expect(ids).toContain('far');
+      }).pipe(Effect.provide(testLayer(fake)));
+    },
+  );
+
+  it.effect('an unavailable bridge is skipped, never mistaken for a revoked grant', () => {
+    const fake = fakeWith({ authorization: 'unavailable' });
+    return Effect.gen(function* () {
+      yield* seedApple();
+      yield* (yield* SyncEngine).syncAll();
+      expect((yield* (yield* AccountRepo).list())[0]?.status).toBe('ok');
+      expect(fake.state.calls).not.toContain('listLists');
     }).pipe(Effect.provide(testLayer(fake)));
   });
 
@@ -268,6 +321,25 @@ describe('reminder mutations', () => {
       expect(yield* (yield* PendingOpRepo).listAll()).toEqual([]);
     }).pipe(Effect.provide(testLayer(fake)));
   });
+
+  it.effect(
+    'deleting a reminder that is already gone in EventKit still drops the mirror row',
+    () => {
+      const fake = fakeWith();
+      return Effect.gen(function* () {
+        yield* seedApple();
+        yield* (yield* SyncEngine).syncAll();
+        fake.state.reminders.delete('rem-allday');
+        const mutations = yield* EventMutations;
+        yield* mutations.deleteTask({
+          accountId: APPLE_REMINDERS_ACCOUNT_ID,
+          taskId: 'rem-allday',
+          taskListId: 'list-a',
+        });
+        expect((yield* windowRows).some((task) => task.id === 'rem-allday')).toBe(false);
+      }).pipe(Effect.provide(testLayer(fake)));
+    },
+  );
 
   it.effect('losing access mid-write flags the account', () => {
     const fake = fakeWith();

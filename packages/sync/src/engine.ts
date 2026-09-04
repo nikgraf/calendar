@@ -398,40 +398,42 @@ const make: Effect.Effect<
       if (account.status !== 'ok') {
         yield* accountRepo.setStatus(account.id, 'ok');
       }
-      const now = yield* Clock.currentTimeMillis;
+      // Stamped before the fetch: every row this pass writes carries it,
+      // and so does anything a concurrent mutation mirrors meanwhile —
+      // only rows older than the pass are candidates for removal.
+      const passStartedAt = yield* Clock.currentTimeMillis;
       const lists = yield* remindersClient.listLists();
       yield* taskRepo.upsertLists(
         lists.map((list) => mapReminderList(list, account.id)),
-        now,
+        passStartedAt,
       );
       yield* taskRepo.removeListsMissing(
         account.id,
         lists.map((list) => list.id),
       );
       const today = Temporal.Now.plainDateISO();
-      const reminders = yield* remindersClient.list({
-        endDate: today.add({ days: REMINDERS_FUTURE_DAYS }).toString(),
-        startDate: today.subtract({ days: REMINDERS_PAST_DAYS }).toString(),
-      });
+      const windowStart = today.subtract({ days: REMINDERS_PAST_DAYS }).toString();
+      const windowEnd = today.add({ days: REMINDERS_FUTURE_DAYS }).toString();
+      const reminders = yield* remindersClient.list({ endDate: windowEnd, startDate: windowStart });
       yield* taskRepo.upsertTasks(
         reminders.map((reminder) => mapReminder(reminder, account.id)),
-        now,
+        passStartedAt,
       );
-      // Full replace: anything mirrored that EventKit no longer returned
-      // (deleted, moved out of the window, or moved to another list) goes.
-      // Reconciled by id rather than by synced_at so two passes inside one
-      // clock tick cannot keep a stale row alive.
-      const fetched = new Set(reminders.map((reminder) => `${reminder.listId}/${reminder.id}`));
+      // Full replace *within the fetched window*: a mirrored reminder due
+      // outside it (created here, far in the future) is simply not this
+      // pass's business and stays until a pass covers its day.
       yield* Effect.forEach(
         lists,
         (list) =>
-          Effect.gen(function* () {
-            const ids = yield* taskRepo.listIds(account.id, list.id);
-            yield* taskRepo.removeTasksByIds(
-              account.id,
-              list.id,
-              ids.filter((id) => !fetched.has(`${list.id}/${id}`)),
-            );
+          taskRepo.removeMirrorStale({
+            accountId: account.id,
+            keepIds: reminders
+              .filter((reminder) => reminder.listId === list.id)
+              .map((reminder) => reminder.id),
+            listId: list.id,
+            syncedBefore: passStartedAt,
+            windowEnd,
+            windowStart,
           }),
         { discard: true },
       );

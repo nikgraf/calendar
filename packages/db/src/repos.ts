@@ -535,16 +535,25 @@ export interface TaskRepoShape {
   ) => Effect.Effect<ReadonlyArray<TaskRecord>, SqlError>;
   /** Optimistic local create (sync_status 'pending' until the push lands). */
   readonly insertLocal: (task: TaskRecord) => Effect.Effect<void, SqlError>;
-  /** Ids of every task row in a list (mirror reconciliation for local providers). */
-  readonly listIds: (
-    accountId: string,
-    listId: string,
-  ) => Effect.Effect<ReadonlyArray<string>, SqlError>;
   readonly listLists: (accountId?: string) => Effect.Effect<ReadonlyArray<TaskListInfo>, SqlError>;
   readonly removeListsMissing: (
     accountId: string,
     keepIds: ReadonlyArray<string>,
   ) => Effect.Effect<void, SqlError>;
+  /**
+   * Mirror reconciliation for local providers: drops rows of the list
+   * that this pass did not see, but only inside the window it fetched
+   * and only rows older than the pass (`synced_at < syncedBefore`) — a
+   * row a concurrent mutation just mirrored is newer and survives.
+   */
+  readonly removeMirrorStale: (params: {
+    readonly accountId: string;
+    readonly keepIds: ReadonlyArray<string>;
+    readonly listId: string;
+    readonly syncedBefore: number;
+    readonly windowEnd: string;
+    readonly windowStart: string;
+  }) => Effect.Effect<void, SqlError>;
   readonly removeTask: (
     accountId: string,
     listId: string,
@@ -650,13 +659,6 @@ const makeTaskRepo: Effect.Effect<TaskRepoShape, never, Reactivity | SqlClient> 
                     ${taskJsonColumns(task).alarms}, ${taskJsonColumns(task).recurrence})`,
           ),
         ),
-      listIds: (accountId, listId) =>
-        Effect.map(
-          sql<{
-            id: string;
-          }>`SELECT id FROM tasks WHERE account_id = ${accountId} AND list_id = ${listId}`,
-          (rows) => rows.map((row) => row.id),
-        ),
       listLists: (accountId) =>
         Effect.map(
           accountId === undefined
@@ -677,6 +679,21 @@ const makeTaskRepo: Effect.Effect<TaskRepoShape, never, Reactivity | SqlClient> 
             yield* sql`DELETE FROM task_lists WHERE account_id = ${accountId}
               AND id NOT IN ${sql.in(keepIds)}`;
           }),
+        ),
+      removeMirrorStale: ({ accountId, keepIds, listId, syncedBefore, windowEnd, windowStart }) =>
+        tasksMutation(
+          keepIds.length === 0
+            ? Effect.asVoid(
+                sql`DELETE FROM tasks WHERE account_id = ${accountId} AND list_id = ${listId}
+                  AND synced_at < ${syncedBefore}
+                  AND due_date >= ${windowStart} AND due_date <= ${windowEnd}`,
+              )
+            : Effect.asVoid(
+                sql`DELETE FROM tasks WHERE account_id = ${accountId} AND list_id = ${listId}
+                  AND synced_at < ${syncedBefore}
+                  AND due_date >= ${windowStart} AND due_date <= ${windowEnd}
+                  AND id NOT IN ${sql.in(keepIds)}`,
+              ),
         ),
       removeTask: (accountId, listId, taskId) =>
         tasksMutation(
