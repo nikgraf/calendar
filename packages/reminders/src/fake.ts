@@ -1,5 +1,6 @@
 import { Effect } from 'effect';
 import {
+  changesFromSubscription,
   RemindersAccessError,
   type RemindersClientShape,
   RemindersRequestError,
@@ -15,6 +16,8 @@ import type { ReminderJson, ReminderListJson, RemindersAuthorization } from './p
 export interface FakeRemindersState {
   authorization: RemindersAuthorization;
   readonly calls: Array<string>;
+  /** Simulates EKEventStoreChanged. */
+  readonly emitChange: () => void;
   readonly lists: Map<string, ReminderListJson>;
   nextId: number;
   readonly reminders: Map<string, ReminderJson>;
@@ -47,9 +50,15 @@ export const makeFakeRemindersClient = (
     readonly reminders?: ReadonlyArray<ReminderJson>;
   } = {},
 ): { readonly client: RemindersClientShape; readonly state: FakeRemindersState } => {
+  const changeListeners = new Set<() => void>();
   const state: FakeRemindersState = {
     authorization: initial.authorization ?? 'fullAccess',
     calls: [],
+    emitChange: () => {
+      for (const listener of changeListeners) {
+        listener();
+      }
+    },
     lists: new Map((initial.lists ?? []).map((list) => [list.id, list])),
     nextId: 1,
     reminders: new Map((initial.reminders ?? []).map((reminder) => [reminder.id, reminder])),
@@ -85,6 +94,12 @@ export const makeFakeRemindersClient = (
   };
 
   const client: RemindersClientShape = {
+    changes: changesFromSubscription((listener) => {
+      changeListeners.add(listener);
+      return () => {
+        changeListeners.delete(listener);
+      };
+    }),
     create: ({ listId, reminder }) =>
       guard('create', () => {
         const id = `rem-${String(state.nextId++)}`;

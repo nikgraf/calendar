@@ -501,3 +501,28 @@ describe('reminder mutations', () => {
     }).pipe(Effect.provide(testLayer(fake)));
   });
 });
+
+describe('reminders change push', () => {
+  it.effect('a change notification runs a reminders pass without waiting for the schedule', () => {
+    const fake = fakeWith();
+    return Effect.gen(function* () {
+      yield* seedApple();
+      const engine = yield* SyncEngine;
+      yield* TestClock.adjust('1 hour');
+      yield* engine.start();
+      yield* TestClock.adjust('1 millis');
+      const afterStart = fake.state.calls.filter((call) => call === 'snapshot').length;
+      expect(afterStart).toBe(1);
+      // A burst (iCloud sync, our own write-throughs) collapses into one pass.
+      fake.state.emitChange();
+      fake.state.emitChange();
+      fake.state.emitChange();
+      yield* TestClock.adjust('1 second');
+      yield* TestClock.adjust('1 millis');
+      expect(fake.state.calls.filter((call) => call === 'snapshot').length).toBe(afterStart + 1);
+      // Quiet: nothing runs until the 90 s schedule.
+      yield* TestClock.adjust('10 seconds');
+      expect(fake.state.calls.filter((call) => call === 'snapshot').length).toBe(afterStart + 1);
+    }).pipe(Effect.provide(testLayer(fake)));
+  });
+});

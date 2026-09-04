@@ -288,6 +288,14 @@ func handleTranscribe(_ id: Int, _ params: [String: JSONValue]) async {
   emitError(id, HelperError.unavailable("macOS 26 required").message)
 }
 
+// Unsolicited lines: {"event": name} with no id. The supervisor routes
+// them to subscribers instead of a pending request.
+Task.detached {
+  await RemindersBridge.shared.observeChanges {
+    emit(["event": "reminders.changed"])
+  }
+}
+
 // Concurrent request loop: a slow method (prepareSpeech downloading
 // locale assets can take minutes) must not stall a status check or a
 // generation queued behind it. Each request runs in its own detached

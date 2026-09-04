@@ -281,6 +281,19 @@ actor RemindersBridge {
   static let shared = RemindersBridge()
 
   private let store = EKEventStore()
+  private var changeObserver: NSObjectProtocol?
+
+  /// Calls `handler` whenever EventKit's database changes (any app, any
+  /// item type — including our own write-throughs, which the caller's
+  /// diff then finds unchanged). Latency only: the periodic pass stays
+  /// the correctness mechanism, because this reaches a live observer only.
+  func observeChanges(_ handler: @escaping @Sendable () -> Void) {
+    if changeObserver != nil { return }
+    changeObserver = NotificationCenter.default.addObserver(
+      forName: .EKEventStoreChanged, object: store, queue: nil
+    ) { _ in handler() }
+  }
+
   // MARK: Access
 
   func status() -> String {

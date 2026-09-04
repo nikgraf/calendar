@@ -1,11 +1,12 @@
 import {
+  changesFromSubscription,
   makeRemindersClient,
   RemindersClient,
   type RemindersClientShape,
   unavailableRemindersClient,
 } from '@calendar/reminders';
 import { Layer } from 'effect';
-import { callHelper, helperAvailable } from './helperProcess.ts';
+import { callHelper, helperAvailable, onHelperEvent } from './helperProcess.ts';
 
 /**
  * RemindersClient over the Swift helper: every `reminders.*` method is one
@@ -20,7 +21,10 @@ export const desktopRemindersClient: RemindersClientShape =
   process.env['CALENDAR_REMINDERS'] === 'off'
     ? unavailableRemindersClient('disabled by CALENDAR_REMINDERS=off')
     : helperAvailable()
-      ? makeRemindersClient((method, params) => callHelper(method, params))
+      ? makeRemindersClient(
+          (method, params) => callHelper(method, params),
+          changesFromSubscription((listener) => onHelperEvent('reminders.changed', listener)),
+        )
       : unavailableRemindersClient('helper binary missing — run build:helper');
 
 export const desktopRemindersLayer: Layer.Layer<RemindersClient> = Layer.succeed(

@@ -1,4 +1,5 @@
 import {
+  changesFromSubscription,
   makeRemindersClient,
   RemindersClient,
   type RemindersClientShape,
@@ -15,7 +16,13 @@ import { loadRemindersModule } from '../modules/solunivo-reminders/index.ts';
 const native = loadRemindersModule();
 
 export const iosRemindersClient: RemindersClientShape = native
-  ? makeRemindersClient((method, params) => native.invoke(method, params))
+  ? makeRemindersClient(
+      (method, params) => native.invoke(method, params),
+      changesFromSubscription((listener) => {
+        const subscription = native.addListener('remindersChanged', listener);
+        return () => subscription.remove();
+      }),
+    )
   : unavailableRemindersClient('reminders module not in this build — rebuild the dev client');
 
 export const iosRemindersLayer: Layer.Layer<RemindersClient> = Layer.succeed(

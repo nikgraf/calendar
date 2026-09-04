@@ -16,7 +16,7 @@ import {
   RemindersClient,
   type RemindersError,
 } from '@calendar/reminders';
-import { Clock, Context, Effect, Layer, Schedule, Semaphore } from 'effect';
+import { Clock, Context, Effect, Layer, Schedule, Semaphore, Stream } from 'effect';
 import type { SqlError } from 'effect/unstable/sql/SqlError';
 import { EventMutations } from './mutations.ts';
 
@@ -27,6 +27,8 @@ const INITIAL_WINDOW_MS = 365 * 24 * 60 * 60 * 1000; // 12 months back
 const TASKS_FULL_PASS_INTERVAL_MS = 24 * 60 * 60 * 1000;
 /** sync_state scope for the Apple mirror: lastSyncAt is the delta stamp. */
 const REMINDERS_SCOPE = 'reminders';
+/** EKEventStoreChanged arrives in bursts (iCloud sync, our own writes). */
+const REMINDERS_CHANGE_DEBOUNCE = '1 second';
 /**
  * The watermark comes from the local clock but filters Google's `updated`
  * stamps: local time running ahead would open a blind window between the
@@ -521,8 +523,40 @@ const make: Effect.Effect<
         ),
       );
 
+  /**
+   * Reminders-only pass for change notifications. Same gate as syncAll:
+   * a change arriving during a pass waits for it, and the debounce turns
+   * an iCloud burst (or our own write-throughs, which also fire it) into
+   * one delta pass.
+   */
+  const syncRemindersOnly = (): Effect.Effect<void> =>
+    gate
+      .withPermits(1)(
+        Effect.gen(function* () {
+          const accounts = yield* accountRepo.list();
+          for (const account of accounts) {
+            if (account.provider === 'apple') {
+              yield* syncReminders(account);
+            }
+          }
+        }),
+      )
+      .pipe(
+        Effect.catchCause((cause) =>
+          Effect.logWarning('reminders change pass failed', { cause: String(cause) }),
+        ),
+      );
+
   const start = (): Effect.Effect<void> =>
-    Effect.asVoid(Effect.forkDetach(Effect.repeat(syncAll(), Schedule.spaced(SYNC_INTERVAL))));
+    Effect.gen(function* () {
+      yield* Effect.forkDetach(Effect.repeat(syncAll(), Schedule.spaced(SYNC_INTERVAL)));
+      yield* Effect.forkDetach(
+        remindersClient.changes.pipe(
+          Stream.debounce(REMINDERS_CHANGE_DEBOUNCE),
+          Stream.runForEach(() => syncRemindersOnly()),
+        ),
+      );
+    });
 
   return { start, syncAll };
 });

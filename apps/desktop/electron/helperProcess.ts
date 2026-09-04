@@ -64,6 +64,17 @@ let child: Helper | null = null;
 let lastSpawnFailedAt = 0;
 let nextRequestId = 1;
 const pending = new Map<number, PendingRequest>();
+/** Subscribers to the helper's unsolicited `{"event": name}` lines. */
+const eventListeners = new Map<string, Set<() => void>>();
+
+export const onHelperEvent = (name: string, listener: () => void): (() => void) => {
+  const listeners = eventListeners.get(name) ?? new Set<() => void>();
+  listeners.add(listener);
+  eventListeners.set(name, listeners);
+  return () => {
+    listeners.delete(listener);
+  };
+};
 
 const failAllPending = (message: string) => {
   for (const [, request] of pending) {
@@ -95,10 +106,16 @@ const ensureHelper = (): Helper | null => {
   // racing request resolves via its timeout at worst.
   spawned.stdin.on('error', () => undefined);
   createInterface({ input: spawned.stdout }).on('line', (line) => {
-    let parsed: { error?: string; id?: number; result?: unknown };
+    let parsed: { error?: string; event?: string; id?: number; result?: unknown };
     try {
       parsed = JSON.parse(line) as typeof parsed;
     } catch {
+      return;
+    }
+    if (parsed.id === undefined && typeof parsed.event === 'string') {
+      for (const listener of eventListeners.get(parsed.event) ?? []) {
+        listener();
+      }
       return;
     }
     const request = parsed.id === undefined ? undefined : pending.get(parsed.id);

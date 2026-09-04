@@ -1,6 +1,10 @@
 import { requireNativeModule } from 'expo-modules-core';
 
 interface SolunivoRemindersNative {
+  readonly addListener: (
+    event: 'remindersChanged',
+    listener: () => void,
+  ) => { readonly remove: () => void };
   readonly invoke: (method: string, params?: Record<string, unknown>) => Promise<unknown>;
 }
 

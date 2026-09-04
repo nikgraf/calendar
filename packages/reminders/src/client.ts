@@ -1,4 +1,4 @@
-import { Context, Data, Effect, Schema } from 'effect';
+import { Context, Data, Effect, Queue, Schema, Stream } from 'effect';
 import {
   ListListsResult,
   type ReminderJson,
@@ -50,6 +50,21 @@ const isAuthorization = (value: string): value is RemindersAuthorization =>
  * "FunctionCallException: … → Caused by: RemindersBridgeError: <message>",
  * so take the last "Caused by:" segment and strip the exception name.
  */
+/** A `changes` stream from a subscribe/unsubscribe pair (helper event, module emitter). */
+export const changesFromSubscription = (
+  subscribe: (listener: () => void) => () => void,
+): Stream.Stream<void> =>
+  Stream.callback<void>((queue) =>
+    Effect.acquireRelease(
+      Effect.sync(() =>
+        subscribe(() => {
+          Queue.offerUnsafe(queue, undefined);
+        }),
+      ),
+      (unsubscribe) => Effect.sync(() => unsubscribe()),
+    ),
+  );
+
 export const bridgeMessage = (raw: string): string => {
   const causedBy = raw.lastIndexOf('Caused by:');
   const inner = causedBy === -1 ? raw : raw.slice(causedBy + 'Caused by:'.length);
@@ -57,6 +72,12 @@ export const bridgeMessage = (raw: string): string => {
 };
 
 export interface RemindersClientShape {
+  /**
+   * Fires whenever EventKit's database changed (any app, any item) — a
+   * latency hint for the sync engine, not a correctness mechanism: it
+   * reaches a live observer only. Empty where there is no bridge.
+   */
+  readonly changes: Stream.Stream<void>;
   readonly create: (params: {
     readonly listId: string;
     readonly reminder: ReminderWrite;
@@ -94,6 +115,7 @@ export class RemindersClient extends Context.Service<RemindersClient, RemindersC
  */
 export const makeRemindersClient = (
   invoke: (method: string, params?: Record<string, unknown>) => Promise<unknown>,
+  changes: Stream.Stream<void> = Stream.empty,
 ): RemindersClientShape => {
   const call = <A, I>(
     method: string,
@@ -129,6 +151,7 @@ export const makeRemindersClient = (
     );
 
   return {
+    changes,
     create: ({ listId, reminder }) =>
       Effect.map(
         call(REMINDERS_METHODS.create, ReminderResult, { listId, reminder }),
@@ -167,6 +190,7 @@ export const unavailableRemindersClient = (reason: string): RemindersClientShape
   const fail = <A>(): Effect.Effect<A, RemindersError> =>
     Effect.fail(new RemindersUnavailableError({ message: reason }));
   return {
+    changes: Stream.empty,
     create: () => fail(),
     delete: () => fail(),
     listLists: () => fail(),
