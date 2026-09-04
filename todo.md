@@ -397,10 +397,19 @@ same PR; these are the code/infra improvements worth their own tasks).
         source, with a "these fields will be lost" confirmation for the
         capabilities each side lacks)
   - [ ] Reminders follow-ups: quick-add/⌘K creating reminders, undated
-        reminders (needs a list view), subtasks/flags/tags, location
-        alarms, multiple editable alarms, by-day/positional recurrence
-        editing, timed reminders in the time grid, creating/deleting
-        Reminders lists, an EKEventStoreChanged push instead of polling
+        reminders in the UI (they are mirrored; needs a list view),
+        subtasks/flags/tags, location alarms, multiple editable alarms,
+        by-day/positional recurrence editing, timed reminders in the time
+        grid, creating/deleting Reminders lists
+  - [x] Complete mirror + EKEventStoreChanged push — done: no date
+        window (paging 1.5 years ahead reads locally, like Google Tasks);
+        id-list + delta protocol keeps the bridge payload proportional to
+        change; transactional snapshot reconciliation (newer wins,
+        stamp-guarded removal, no giant NOT IN); the notification is
+        latency, the 90 s pass is correctness.
+- [ ] Events: the 12-months-back floor — browsing further back shows
+      nothing (deleteStale prunes older rows on each full re-pass);
+      on-demand backfill or a larger floor
 - Morning briefing made with AI
   - Weather during the day and what to wear (also take other locations into account and especially weather changes)
   - Get an overview over the most important meetings

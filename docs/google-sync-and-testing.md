@@ -90,7 +90,7 @@ invariants.
   dev Electron binary and the packaged .app obtain full access through
   the helper child and read the user's lists.
 - **Ids**: `calendarItemIdentifier` is stable enough for a mirror but can
-  change after an iCloud sync — the windowed full replace makes that a
+  change after an iCloud sync — the snapshot reconciliation makes that a
   delete + reinsert, never a stale row. Ids are server-assigned: no
   client-side idempotency trick, hence no queue. Deleting something
   Reminders.app already deleted answers notFound — treated as done.
@@ -114,11 +114,23 @@ invariants.
   `TaskRecurrence`; by-day / positional / multiple rules come back as
   `{ unsupported: true }`, the form shows them read-only, and writes
   never overwrite them.
-- **Fetch**: `predicateForIncompleteReminders(withDueDateStarting:ending:)`
-  ∪ `predicateForCompletedReminders(withCompletionDateStarting:ending:)`
-  — completed reminders are found by completion date, so an old
-  completion whose due day sits in the window is not shown (the
-  Reminders app hides completed by default anyway).
+- **Fetch**: one `predicateForReminders(in: nil)` — every reminder, open
+  and completed, dated and undated. EventKit is local, so the fetch is
+  cheap; the cost is the bridge payload on desktop, so `reminders.snapshot`
+  returns all (listId, id) pairs plus full rows only for reminders whose
+  `lastModifiedDate` ≥ `changedSince − 60 s` (the Google watermark's skew
+  lag; re-reading the overlap is harmless — upserts apply only when
+  strictly newer). Measured on a 9-reminder database: full 3.2 KB, idle
+  delta 0.9 KB. The engine logs `reminders snapshot` at debug level with
+  ids/changed/lists counts and fetch/apply ms; if a large completed
+  archive ever makes a pass measurably expensive, the fallback is hybrid
+  retention (all open, recent completed) — not built.
+- **Change push**: `EKEventStoreChanged` fires for any EventKit change,
+  including our own write-throughs and iCloud bursts; the engine
+  debounces it (1 s) and runs a reminders-only delta pass under the sync
+  gate, so bursts coalesce into one pass. It only reaches a live observer
+  (the helper child can be respawned; iOS is suspended in the
+  background), which is why the 90 s pass stays.
 
 ## Testing conventions
 

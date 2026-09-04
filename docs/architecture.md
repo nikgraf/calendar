@@ -141,19 +141,26 @@ Rules that keep the queue correct:
   403 with the insufficient-scope reason flips `tasksEnabled` off instead
   of retrying forever (older grants without the Tasks scope).
 - **Apple Reminders** (the synthetic `apple-reminders` account, created by
-  the `connectReminders` rpc after the EventKit prompt): `syncReminders`
-  checks authorization first — anything but full access flags the
-  account `reauth_required` and stops; access regained flips it back
-  without reconnecting, which is why the Apple account is attempted on
-  every pass regardless of status. Lists (with colors) are a full pass;
-  reminders are a windowed full replace (today −90d … +365d, incomplete
-  due in the window ∪ completed in the window): rows the pass did not see
-  are removed only inside that window and only when older than the pass
-  (`synced_at < passStartedAt`), so a reminder mirrored by a concurrent
-  mutation, or one due beyond the window, survives. Only changed rows are
-  written (compared on `updatedAt`), so an idle pass invalidates nothing.
-  An unavailable bridge (no helper, old dev client, e2e) is skipped, not
-  mistaken for revoked access.
+  the `connectReminders` rpc after the EventKit prompt): SQLite holds the
+  latest **complete** EventKit snapshot — open and completed, dated and
+  undated (undated rows are stored for the future list view; `getWindow`
+  excludes them), so paging any distance ahead or back reads locally,
+  like Google Tasks. `syncReminders` checks authorization first — no
+  access flags the account, access regained heals it without
+  reconnecting; an _unavailable_ bridge is skipped, not mistaken for a
+  revoked grant. The bridge's `reminders.snapshot({ changedSince })`
+  returns every reminder's (list, id) plus full rows only for what
+  changed since the last pass (stamp in `sync_state` scope `reminders`),
+  and `TaskRepo.replaceMirror` reconciles in one transaction: ids staged
+  in a temp table row by row (iOS's SQLite may cap bound variables at
+  999), changed rows upserted only when strictly newer than what is
+  stored (a write-through that landed after the fetch wins), rows absent
+  from the snapshot removed only when older than the pass stamp (a row a
+  concurrent mutation just mirrored survives). `EKEventStoreChanged`
+  (helper event line / Expo module event) runs a debounced reminders-only
+  pass under the same gate — latency only; the 90 s pass is the
+  correctness mechanism, because the notification reaches a live
+  observer only.
 
 ## Recurring events
 
