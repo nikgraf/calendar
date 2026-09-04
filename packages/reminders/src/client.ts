@@ -44,6 +44,18 @@ const AUTHORIZATIONS: ReadonlySet<string> = new Set([
 const isAuthorization = (value: string): value is RemindersAuthorization =>
   AUTHORIZATIONS.has(value);
 
+/**
+ * The bridge's own message, whatever the transport wrapped around it. The
+ * helper emits it verbatim; expo-modules-core rethrows it as
+ * "FunctionCallException: … → Caused by: RemindersBridgeError: <message>",
+ * so take the last "Caused by:" segment and strip the exception name.
+ */
+export const bridgeMessage = (raw: string): string => {
+  const causedBy = raw.lastIndexOf('Caused by:');
+  const inner = causedBy === -1 ? raw : raw.slice(causedBy + 'Caused by:'.length);
+  return inner.replace(/^\s*RemindersBridgeError:\s*/, '').trim();
+};
+
 export interface RemindersClientShape {
   readonly create: (params: {
     readonly listId: string;
@@ -88,7 +100,7 @@ export const makeRemindersClient = (
   ): Effect.Effect<A, RemindersError> =>
     Effect.tryPromise({
       catch: (error): RemindersError => {
-        const message = error instanceof Error ? error.message : String(error);
+        const message = bridgeMessage(error instanceof Error ? error.message : String(error));
         // The native sides prefix access failures (see RemindersBridgeError)
         // so they surface as the typed error the sync engine acts on.
         if (message.startsWith('accessDenied: ')) {
