@@ -92,7 +92,16 @@ invariants.
 - **Ids**: `calendarItemIdentifier` is stable enough for a mirror but can
   change after an iCloud sync — the windowed full replace makes that a
   delete + reinsert, never a stale row. Ids are server-assigned: no
-  client-side idempotency trick, hence no queue.
+  client-side idempotency trick, hence no queue. Deleting something
+  Reminders.app already deleted answers notFound — treated as done.
+- **Errors cross Expo as an envelope**: expo-modules-core rethrows a Swift
+  throw as `FunctionCallException … → Caused by: RemindersBridgeError:
+<message>`; the client unwraps the last `Caused by:` segment before
+  matching the `accessDenied:` / `notFound:` prefixes (the helper sends
+  the message verbatim).
+- **Store lifetime**: the `EKEventStore` is created by the pre-prompt
+  status call and `reset()` after a successful grant — a store created
+  without access can keep answering with no calendars.
 - **Due**: `dueDateComponents` with no hour ⇒ all-day (`dueDate` only);
   with hour/minute ⇒ timed (`dueTime` 'HH:MM' in the device zone). The
   bridge keeps `startDateComponents == dueDateComponents`, as the

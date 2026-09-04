@@ -147,8 +147,13 @@ Rules that keep the queue correct:
   without reconnecting, which is why the Apple account is attempted on
   every pass regardless of status. Lists (with colors) are a full pass;
   reminders are a windowed full replace (today −90d … +365d, incomplete
-  due in the window ∪ completed in the window) reconciled by id, never by
-  `synced_at`, so two passes in one clock tick cannot keep a stale row.
+  due in the window ∪ completed in the window): rows the pass did not see
+  are removed only inside that window and only when older than the pass
+  (`synced_at < passStartedAt`), so a reminder mirrored by a concurrent
+  mutation, or one due beyond the window, survives. Only changed rows are
+  written (compared on `updatedAt`), so an idle pass invalidates nothing.
+  An unavailable bridge (no helper, old dev client, e2e) is skipped, not
+  mistaken for revoked access.
 
 ## Recurring events
 
