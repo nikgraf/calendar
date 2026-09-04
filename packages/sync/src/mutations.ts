@@ -190,10 +190,7 @@ const make: Effect.Effect<
 
   /** Google lists go through the pending-op queue; Reminders lists hit EventKit directly. */
   const providerOf = (accountId: string) =>
-    Effect.map(
-      accountRepo.list(),
-      (accounts) => accounts.find((account) => account.id === accountId)?.provider ?? 'google',
-    );
+    Effect.map(accountRepo.get(accountId), (account) => account?.provider ?? 'google');
   const REMINDER_ONLY_FIELDS = [
     'alarms',
     'dueTime',

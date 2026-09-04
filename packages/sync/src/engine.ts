@@ -411,10 +411,20 @@ const make: Effect.Effect<
       // only rows older than the pass are candidates for removal.
       const passStartedAt = yield* Clock.currentTimeMillis;
       const lists = yield* remindersClient.listLists();
-      yield* taskRepo.upsertLists(
-        lists.map((list) => mapReminderList(list, account.id)),
-        passStartedAt,
+      // Write only what changed: every upsert invalidates the task views,
+      // and this pass runs every 90 s whether or not anything moved.
+      const knownLists = new Map(
+        (yield* taskRepo.listLists(account.id)).map((list) => [list.id, list]),
       );
+      const changedLists = lists
+        .map((list) => mapReminderList(list, account.id))
+        .filter((list) => {
+          const known = knownLists.get(list.id);
+          return !known || known.title !== list.title || known.colorHex !== list.colorHex;
+        });
+      if (changedLists.length > 0) {
+        yield* taskRepo.upsertLists(changedLists, passStartedAt);
+      }
       yield* taskRepo.removeListsMissing(
         account.id,
         lists.map((list) => list.id),
@@ -423,10 +433,21 @@ const make: Effect.Effect<
       const windowStart = today.subtract({ days: REMINDERS_PAST_DAYS }).toString();
       const windowEnd = today.add({ days: REMINDERS_FUTURE_DAYS }).toString();
       const reminders = yield* remindersClient.list({ endDate: windowEnd, startDate: windowStart });
-      yield* taskRepo.upsertTasks(
-        reminders.map((reminder) => mapReminder(reminder, account.id)),
-        passStartedAt,
+      const stamps = new Map(
+        (yield* taskRepo.listStamps(account.id)).map((row) => [
+          `${row.listId}/${row.id}`,
+          row.updatedAt,
+        ]),
       );
+      const changed = reminders.filter(
+        (reminder) => stamps.get(`${reminder.listId}/${reminder.id}`) !== reminder.updatedAt,
+      );
+      if (changed.length > 0) {
+        yield* taskRepo.upsertTasks(
+          changed.map((reminder) => mapReminder(reminder, account.id)),
+          passStartedAt,
+        );
+      }
       // Full replace *within the fetched window*: a mirrored reminder due
       // outside it (created here, far in the future) is simply not this
       // pass's business and stays until a pass covers its day.

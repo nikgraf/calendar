@@ -45,6 +45,7 @@ const eventPayloadJson = (event: EventRecord): unknown =>
   Schema.encodeSync(EventRecordSchema)(event);
 
 export interface AccountRepoShape {
+  readonly get: (accountId: string) => Effect.Effect<Account | undefined, SqlError>;
   readonly list: () => Effect.Effect<ReadonlyArray<Account>, SqlError>;
   readonly remove: (accountId: string) => Effect.Effect<void, SqlError>;
   readonly setStatus: (
@@ -64,6 +65,10 @@ const makeAccountRepo: Effect.Effect<AccountRepoShape, never, Reactivity | SqlCl
       reactivity.mutation([ACCOUNTS_KEY], effect);
 
     return {
+      get: (accountId) =>
+        Effect.map(sql<AccountRow>`SELECT * FROM accounts WHERE id = ${accountId}`, (rows) =>
+          rows[0] ? accountFromRow(rows[0]) : undefined,
+        ),
       list: () =>
         Effect.map(sql<AccountRow>`SELECT * FROM accounts ORDER BY created_at`, (rows) =>
           rows.map(accountFromRow),
@@ -536,6 +541,13 @@ export interface TaskRepoShape {
   /** Optimistic local create (sync_status 'pending' until the push lands). */
   readonly insertLocal: (task: TaskRecord) => Effect.Effect<void, SqlError>;
   readonly listLists: (accountId?: string) => Effect.Effect<ReadonlyArray<TaskListInfo>, SqlError>;
+  /** (listId, id) → updatedAt for every mirrored row of an account — cheap change detection. */
+  readonly listStamps: (
+    accountId: string,
+  ) => Effect.Effect<
+    ReadonlyArray<{ readonly id: string; readonly listId: string; readonly updatedAt: number }>,
+    SqlError
+  >;
   readonly removeListsMissing: (
     accountId: string,
     keepIds: ReadonlyArray<string>,
@@ -665,6 +677,13 @@ const makeTaskRepo: Effect.Effect<TaskRepoShape, never, Reactivity | SqlClient> 
             ? sql<TaskListRow>`SELECT * FROM task_lists ORDER BY account_id, title`
             : sql<TaskListRow>`SELECT * FROM task_lists WHERE account_id = ${accountId} ORDER BY title`,
           (rows) => rows.map(taskListFromRow),
+        ),
+      listStamps: (accountId) =>
+        Effect.map(
+          sql<{ id: string; list_id: string; updated_at: number }>`
+            SELECT id, list_id, updated_at FROM tasks WHERE account_id = ${accountId}`,
+          (rows) =>
+            rows.map((row) => ({ id: row.id, listId: row.list_id, updatedAt: row.updated_at })),
         ),
       removeListsMissing: (accountId, keepIds) =>
         listsMutation(

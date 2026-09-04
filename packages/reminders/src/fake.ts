@@ -59,7 +59,7 @@ export const makeFakeRemindersClient = (
     method: string,
     run: () => A,
   ): Effect.Effect<A, RemindersAccessError | RemindersRequestError> =>
-    Effect.suspend(() => {
+    Effect.suspend((): Effect.Effect<A, RemindersAccessError | RemindersRequestError> => {
       state.calls.push(method);
       if (state.authorization !== 'fullAccess') {
         return Effect.fail(new RemindersAccessError({ authorization: state.authorization }));
