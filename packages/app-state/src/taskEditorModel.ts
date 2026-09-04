@@ -83,6 +83,13 @@ export const useTaskEditorModel = ({
   const { toSpec: repeatSpec, ...repeatState } = useRepeatState(existing?.recurrence);
   const [error, setError] = useState<string | null>(null);
 
+  // Editing: a reminder can only move within its own account (and a Google
+  // task cannot move at all), so the picker never offers the other
+  // provider's lists. Creating: every list, since the choice decides the
+  // provider.
+  const offeredLists = existing
+    ? taskLists.filter((list) => list.accountId === existing.accountId)
+    : taskLists;
   const selectedList = taskLists.find((list) => listKeyOf(list.accountId, list.id) === listKey);
   const provider: TaskProvider = existing?.provider ?? selectedList?.provider ?? 'google';
   /** Reminders can move between lists; Google Tasks cannot (needs tasks.move). */
@@ -197,7 +204,7 @@ export const useTaskEditorModel = ({
     setTimed,
     setTitle,
     setUrl,
-    taskLists,
+    taskLists: offeredLists,
     timed,
     title,
     url,
