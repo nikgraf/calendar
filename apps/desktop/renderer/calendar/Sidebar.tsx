@@ -1,5 +1,6 @@
 import type { Account, CalendarInfo, TaskListInfo } from '@calendar/core';
-import { useGuardedMutations, useTaskLists } from '@calendar/app-state';
+import { useBackendMutations, useGuardedMutations, useTaskLists } from '@calendar/app-state';
+import { useState } from 'react';
 import { CalendarColorButton } from './CalendarColorButton.tsx';
 import { SyncStatus } from './SyncStatus.tsx';
 
@@ -12,9 +13,26 @@ export function Sidebar({
   calendars: ReadonlyArray<CalendarInfo>;
   onOpenSettings: () => void;
 }) {
-  const { addAccount, connectReminders, setCalendarVisible, setTaskListVisible } =
-    useGuardedMutations();
+  const { addAccount, setCalendarVisible, setTaskListVisible } = useGuardedMutations();
+  // Raw, not guarded: a refused grant resolves (granted: false) rather than
+  // rejecting, and the user needs to hear about it.
+  const { connectReminders } = useBackendMutations();
+  const [connectNote, setConnectNote] = useState<string | null>(null);
   const taskLists = useTaskLists();
+
+  const connect = async () => {
+    setConnectNote(null);
+    try {
+      const result = await connectReminders(undefined);
+      if (!result.granted) {
+        setConnectNote(
+          'Reminders access was not granted — allow it in System Settings › Privacy & Security › Reminders.',
+        );
+      }
+    } catch (error) {
+      setConnectNote(String(error));
+    }
+  };
 
   const toggleList = (list: TaskListInfo) => {
     void setTaskListVisible({
@@ -116,12 +134,13 @@ export function Sidebar({
         {accounts.some((account) => account.provider === 'apple') ? null : (
           <button
             className="w-full rounded-md px-2 py-1 text-left text-xs text-neutral-400 hover:bg-neutral-200/60 hover:text-neutral-600"
-            onClick={() => void connectReminders(undefined)}
+            onClick={() => void connect()}
             type="button"
           >
             Connect Apple Reminders
           </button>
         )}
+        {connectNote ? <p className="px-2 py-1 text-xs text-amber-700">{connectNote}</p> : null}
       </div>
       <SyncStatus />
       <button
