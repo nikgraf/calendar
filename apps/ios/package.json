@@ -7,7 +7,7 @@
     "ios": "expo run:ios",
     "prebuild": "expo prebuild --platform ios",
     "start": "expo start",
-    "test:e2e": "maestro test e2e/flows"
+    "test:e2e": "maestro test --exclude-tags ci-bootstrap,ci-reminders e2e/flows"
   },
   "dependencies": {
     "@calendar/ai": "workspace:*",

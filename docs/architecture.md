@@ -160,7 +160,11 @@ Rules that keep the queue correct:
   (helper event line / Expo module event) runs a debounced reminders-only
   pass under the same gate — latency only; the 90 s pass is the
   correctness mechanism, because the notification reaches a live
-  observer only.
+  observer only. The helper reads stdin on a background thread and runs
+  `dispatchMain()` on its main thread: EventKit posts the notification on
+  the main queue, and a main thread blocked in `readLine()` never
+  delivered it — the change push was silently dead on desktop until the
+  real-EventKit e2e asserted it.
   - **Writes are EventKit-first and EventKit is the truth.** Once the
     store has committed, a failing SQLite mirror write is logged, not
     raised: the editor would otherwise show an error for a reminder that

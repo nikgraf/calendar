@@ -1,0 +1,67 @@
+appId: com.solunivo.app
+name: Bootstrap the dev client onto Metro (CI only)
+tags:
+  - ci
+  - ci-bootstrap
+---
+# CI installs a fresh EAS dev client, which opens on its launcher screen.
+# Point it at the runner's Metro through the development-client URL once;
+# afterwards the dev client reopens the last server by itself, so every
+# other flow can `launchApp` normally. iOS confirms a scheme URL opened
+# from outside with "Open in Solunivo?" — one alert per openurl, and they
+# stack, so drain them in a loop. expo-dev-menu's onboarding sheet, its
+# menu-at-launch and its floating button are switched off by
+# prepare-simulator.sh (UserDefaults) before the app ever starts; the
+# guards below only matter on a simulator prepared by hand.
+# 127.0.0.1, not localhost: on a GitHub runner the simulator resolved
+# localhost to IPv6 and never reached Metro ("Failed to load app").
+- openLink: 'solunivo://expo-development-client/?url=http%3A%2F%2F127.0.0.1%3A8081'
+- repeat:
+    while:
+      visible: 'Open'
+    commands:
+      - tapOn: 'Open'
+# The dev launcher gives each request 10 s; on a loaded runner the first
+# attempt can still miss that even with the bundle warm. Its error screen
+# offers "Reload" — retry a few times, each against a warmer Metro, the
+# way a person would.
+- repeat:
+    times: 6
+    commands:
+      - extendedWaitUntil:
+          visible: 'Today|There was a problem loading the project|Toggle performance monitor|Continue|Error loading app|http://127\.0\.0\.1:8081'
+          timeout: 60000
+      # "Reload" and "Go home" exist on both the launcher's error screen and
+      # the dev menu sheet, and the error view lingers in the accessibility
+      # tree behind the loaded app — so each guard keys on text unique to
+      # its screen, never on those two buttons.
+      - runFlow:
+          when:
+            visible: 'Error loading app'
+          commands:
+            - tapOn: 'OK'
+      - runFlow:
+          when:
+            visible: 'http://127\.0\.0\.1:8081'
+          commands:
+            - tapOn: 'http://127\.0\.0\.1:8081'
+      - runFlow:
+          when:
+            visible: 'There was a problem loading the project'
+          commands:
+            - tapOn: 'Reload'
+      - runFlow:
+          when:
+            visible: 'Continue'
+          commands:
+            - tapOn: 'Continue'
+      - runFlow:
+          when:
+            visible: 'Toggle performance monitor'
+          commands:
+            - tapOn:
+                point: '50%,15%'
+- extendedWaitUntil:
+    visible: 'Today'
+    timeout: 60000
+- assertNotVisible: 'Toggle performance monitor'

@@ -49,6 +49,10 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @calendar/desktop build
+      # `require('electron')` downloads the binary lazily when dist/ is
+      # missing; two spec files doing that at once raced into a broken
+      # install. Fetch it once, up front.
+      - run: pnpm --filter @calendar/desktop exec electron --version
       - run: pnpm test:e2e
       - name: Upload e2e diagnostics
         if: failure()
@@ -57,6 +61,171 @@ jobs:
           name: e2e-diagnostics-${{ github.run_attempt }}
           path: |
             apps/desktop/e2e-artifacts/
+          retention-days: 7
+          if-no-files-found: ignore
+
+  # Real EventKit on the desktop: the Swift helper against the runner's own
+  # Reminders database. The per-user TCC grant is seeded by script (not an
+  # Apple-supported interface — see the script header), then a probe
+  # requires the helper to answer fullAccess before the suite runs; if a
+  # new runner image breaks the seed the job goes red rather than green
+  # while testing nothing. macos-26: build:helper needs the macOS 26 SDK.
+  e2e-reminders:
+    name: Desktop e2e (real Reminders via helper)
+    needs: gate
+    runs-on: macos-26
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @calendar/desktop build:helper
+      - run: pnpm --filter @calendar/desktop build
+      - run: pnpm --filter @calendar/desktop exec electron --version
+      - name: Pre-grant Reminders to the helper (TCC)
+        run: bash apps/desktop/e2e/ci/grant-reminders-tcc.sh apps/desktop/helper/.build/release/solunivo-model-helper
+      - name: Probe helper access
+        run: bash apps/desktop/e2e/ci/probe-helper-access.sh apps/desktop/helper/.build/release/solunivo-model-helper
+      - run: E2E=1 CALENDAR_E2E_REMINDERS=real pnpm exec vp test run apps/desktop/e2e/remindersReal.e2e.ts
+      - name: Upload e2e diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-reminders-diagnostics-${{ github.run_attempt }}
+          path: |
+            apps/desktop/e2e-artifacts/
+          retention-days: 7
+          if-no-files-found: ignore
+
+  # Real EventKit on iOS: Maestro drives the dev client on a simulator whose
+  # Reminders grant is pre-seeded (simctl privacy, supported). CI never
+  # compiles the app: the dev client is the EAS development-simulator
+  # build for this commit's native fingerprint, kept in the Actions cache
+  # so a JS-only push downloads nothing (a new fingerprint fetches, or
+  # first requests, one EAS build). Metro on the runner serves the JS.
+  ios-e2e:
+    name: iOS e2e (Maestro, real Reminders)
+    needs: gate
+    runs-on: macos-26
+    timeout-minutes: 45
+    env:
+      CI: 1
+      EXPO_NO_TELEMETRY: 1
+      EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Require EXPO_TOKEN
+        run: |
+          if [ -z "$EXPO_TOKEN" ]; then
+            echo "::error::EXPO_TOKEN is not set — the dev client comes from EAS"
+            exit 1
+          fi
+      - id: fingerprint
+        name: Native fingerprint
+        working-directory: apps/ios
+        run: |
+          HASH=$(npx expo-updates fingerprint:generate --platform ios | jq -r '.hash // empty')
+          test -n "$HASH" || { echo "::error::fingerprint generation failed"; exit 1; }
+          echo "fingerprint: $HASH"
+          echo "hash=$HASH" >> "$GITHUB_OUTPUT"
+      - id: devclient
+        name: Restore the dev client for this fingerprint
+        uses: actions/cache@v4
+        with:
+          path: apps/ios/build/devclient
+          # No restore-keys: a build for another fingerprint is never valid.
+          key: ios-devclient-${{ steps.fingerprint.outputs.hash }}
+      - name: Fetch the dev client from EAS
+        if: steps.devclient.outputs.cache-hit != 'true'
+        working-directory: apps/ios
+        run: bash e2e/ci/fetch-dev-client.sh "${{ steps.fingerprint.outputs.hash }}"
+      - name: Boot a simulator, install, pre-grant Reminders
+        run: bash apps/ios/e2e/ci/prepare-simulator.sh apps/ios/build/devclient/Solunivo.app
+      - name: Install Maestro
+        run: |
+          curl -fsSL "https://get.maestro.mobile.dev" | bash
+          echo "$HOME/.maestro/bin" >> "$GITHUB_PATH"
+      - name: Pin the runtime version for Metro
+        # After the fingerprint step (an explicit runtimeVersion would change
+        # the fingerprint): with the fingerprint policy Expo CLI re-runs a
+        # full project fingerprint for every manifest request, which on this
+        # runner outlasts the dev launcher's 10 s request timeout.
+        working-directory: apps/ios
+        run: cp e2e/ci/app.config.ci.cjs app.config.js
+      - name: Start Metro
+        working-directory: apps/ios
+        env:
+          EXPO_RUNTIME_VERSION_PIN: ${{ steps.fingerprint.outputs.hash }}
+        run: |
+          nohup pnpm exec expo start --port 8081 > "$RUNNER_TEMP/metro.log" 2>&1 &
+          for _ in $(seq 1 60); do
+            curl -fsS http://127.0.0.1:8081/status >/dev/null 2>&1 && break
+            sleep 2
+          done
+          curl -fsS http://127.0.0.1:8081/status
+          # Warm the bundle before the dev client asks for it: a cold first
+          # bundle on a small runner outlasts the dev client's request
+          # timeout ("Failed to load app … The request timed out"). The
+          # manifest names the exact bundle URL (transform options
+          # included), so this request and the client's share Metro's cache.
+          BUNDLE_URL=$(curl -fsS -H 'expo-platform: ios' http://127.0.0.1:8081/ | jq -r '.launchAsset.url')
+          echo "warming $BUNDLE_URL"
+          time curl -fsS -o /dev/null --max-time 900 "$BUNDLE_URL"
+          grep -a "Bundled" "$RUNNER_TEMP/metro.log" | tail -1
+      - name: Simulator ↔ Metro diagnostics
+        # Independent of the app: what Metro listens on, and whether Safari
+        # inside the simulator can load Metro's status page at all (the
+        # screenshot lands in the failure artifact).
+        run: |
+          lsof -nP -iTCP:8081 -sTCP:LISTEN || true
+          # Manifest latency as the dev launcher sees it (its budget is 10 s
+          # per request): three requests, cold to warm.
+          for _ in 1 2 3; do
+            /usr/bin/time -p curl -sS -o /dev/null -H 'expo-platform: ios' \
+              -H 'expo-runtime-version: ${{ steps.fingerprint.outputs.hash }}' \
+              -H 'expo-protocol-version: 1' -H 'expo-api-version: 1' \
+              -H 'expo-updates-environment: DEVELOPMENT' http://127.0.0.1:8081/ 2>&1 | grep real
+          done
+          xcrun simctl openurl "$SIMULATOR_UDID" "http://127.0.0.1:8081/status"
+          sleep 10
+          xcrun simctl io "$SIMULATOR_UDID" screenshot "$RUNNER_TEMP/safari-metro-status.png"
+      - name: Open the dev client on Metro
+        # The launcher screen otherwise waits for a server choice; the first
+        # bundle takes a while, which the flows' 60 s "Today" wait covers.
+        run: |
+          curl -sS -o /dev/null -H 'expo-platform: ios' http://127.0.0.1:8081/ || true
+          xcrun simctl openurl "$SIMULATOR_UDID" "solunivo://expo-development-client/?url=http%3A%2F%2F127.0.0.1%3A8081"
+      # Two invocations: Maestro runs a directory's flows in a
+      # non-deterministic order (config.yaml executionOrder is not
+      # honored — mobile-dev-inc/maestro#2231), and the bootstrap must
+      # come first. Every other flow is independent of the ones before it.
+      - name: Bootstrap the dev client onto Metro
+        working-directory: apps/ios
+        run: maestro test --device "$SIMULATOR_UDID" e2e/flows/00-devclient-bootstrap.yaml
+      - name: Maestro flows
+        working-directory: apps/ios
+        # MODELLESS: the runner's simulator has no usable on-device model
+        # (see 06-quick-add.yaml).
+        run: maestro test --include-tags ci --exclude-tags ci-bootstrap -e MODELLESS=1 --device "$SIMULATOR_UDID" e2e/flows
+      - name: Upload Maestro diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-e2e-diagnostics-${{ github.run_attempt }}
+          path: |
+            ~/.maestro/tests/
+            ${{ runner.temp }}/metro.log
+            ${{ runner.temp }}/*.png
           retention-days: 7
           if-no-files-found: ignore
 

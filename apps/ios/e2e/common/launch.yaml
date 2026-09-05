@@ -1,0 +1,57 @@
+appId: com.solunivo.app
+name: Launch the app and wait for a settled shell (shared preamble)
+---
+# The app re-bundles from Metro on a cold dev-client launch; wait for the
+# calendar shell rather than racing it. The dev client reopens the last
+# server on its own, but with a 10 s request budget — on a loaded runner
+# that occasionally fails and it falls back to its launcher home (the
+# server under "Recently opened") or to its error screen ("Reload").
+# Recover from either until the shell is there.
+- launchApp
+- repeat:
+    times: 6
+    while:
+      notVisible: 'Today'
+    commands:
+      - extendedWaitUntil:
+          visible: "Today|There was a problem loading the project|http://(127\\.0\\.0\\.1|localhost):8081|Continue|Toggle performance monitor|Error loading app"
+          timeout: 60000
+      # Guards key on text unique to each screen: "Reload"/"Go home" exist
+      # on both the error screen and the dev menu, and the error view
+      # lingers in the accessibility tree behind the loaded app.
+      - runFlow:
+          when:
+            visible: 'Error loading app'
+          commands:
+            - tapOn: 'OK'
+      - runFlow:
+          when:
+            visible: 'There was a problem loading the project'
+          commands:
+            - tapOn: 'Reload'
+      - runFlow:
+          when:
+            visible: "http://(127\\.0\\.0\\.1|localhost):8081"
+          commands:
+            - tapOn: "http://(127\\.0\\.0\\.1|localhost):8081"
+      - runFlow:
+          when:
+            visible: 'Continue'
+          commands:
+            - tapOn: 'Continue'
+      - runFlow:
+          when:
+            visible: 'Toggle performance monitor'
+          commands:
+            - tapOn:
+                point: '50%,15%'
+- extendedWaitUntil:
+    visible: 'Today'
+    timeout: 60000
+# React Native's SafeAreaView applies the top inset a beat after the
+# first paint: "Today" is already visible while the header still sits
+# under the status bar, so an id tap taken right away lands ~60 pt too
+# high (it hit the status bar on every flow). Wait for the layout to stop
+# moving before anything taps.
+- waitForAnimationToEnd:
+    timeout: 5000

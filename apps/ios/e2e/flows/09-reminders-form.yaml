@@ -1,16 +1,18 @@
 appId: com.solunivo.app
 name: The Reminders form shows its extra fields and round-trips create/delete
+tags:
+  - ci
 ---
 # Runs only when an Apple Reminders list is connected on the simulator
 # (Settings → Connect Apple Reminders, then allow the prompt). Without one
 # the flow is a no-op, like flow 08 without a tasks-enabled account.
-- launchApp
-- extendedWaitUntil:
-    visible: 'Today'
-    timeout: 60000
+- runFlow: ../common/launch.yaml
 - tapOn:
     id: 'add-event'
 - assertVisible: 'New Event'
+# The sheet slides in; on a slow runner a tap taken mid-animation misses.
+- waitForAnimationToEnd:
+    timeout: 5000
 - tapOn:
     id: 'mode-task'
 - assertVisible: 'New Task'
@@ -18,9 +20,9 @@ name: The Reminders form shows its extra fields and round-trips create/delete
 # stable handle is the list title. 'Reminders' is the default list name.
 - runFlow:
     when:
-      visible: 'Reminders'
+      visible: 'Reminders.*'
     commands:
-      - tapOn: 'Reminders'
+      - tapOn: 'Reminders.*'
       # The form morphed: Reminders-only controls are on screen.
       - assertVisible:
           id: 'reminder-timed'
@@ -45,16 +47,21 @@ name: The Reminders form shows its extra fields and round-trips create/delete
       - extendedWaitUntil:
           visible: '.*!!! Solunivo e2e reminder to delete'
           timeout: 10000
-      - tapOn: '.*Solunivo e2e reminder to delete'
+      # Anchored to the time prefix: a bare ".*title" also matches the
+      # checkbox's "Toggle <title>" label and toggles completion instead.
+      - tapOn: '[0-9]+:[0-9]+ !!! Solunivo e2e reminder to delete'
       - assertVisible: 'Edit Reminder'
       - tapOn:
           id: 'task-delete'
       - extendedWaitUntil:
           notVisible: 'Edit Reminder'
           timeout: 20000
+# Keyed on the sheet still being open (see 08): after the branch above
+# closed it, "no Reminders list visible" would be true for the wrong
+# reason and the Cancel tap would fail.
 - runFlow:
     when:
-      notVisible: 'Reminders'
+      visible: 'New Task'
     commands:
       - tapOn: 'Cancel'
       - assertVisible: 'Today'

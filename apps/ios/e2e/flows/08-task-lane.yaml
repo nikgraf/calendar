@@ -1,15 +1,15 @@
 appId: com.solunivo.app
 name: Task chips render in the all-day lane and round-trip the editor
+tags:
+  - ci
 ---
-- launchApp
-# The app re-bundles from Metro on a cold dev-client launch; wait for the
-# calendar shell rather than racing it.
-- extendedWaitUntil:
-    visible: 'Today'
-    timeout: 60000
+- runFlow: ../common/launch.yaml
 - tapOn:
     id: 'add-event'
 - assertVisible: 'New Event'
+# The sheet slides in; on a slow runner a tap taken mid-animation misses.
+- waitForAnimationToEnd:
+    timeout: 5000
 # The Event | Task toggle only exists in create mode.
 - assertVisible:
     id: 'mode-task'
@@ -49,7 +49,9 @@ name: Task chips render in the all-day lane and round-trip the editor
       # the shared editor in task mode. (The full-title pattern cannot
       # match the "Toggle …"-prefixed checkbox label.)
       - tapOn: 'Solunivo e2e task to delete'
-      - assertVisible: 'Edit Task'
+      # The first list may be a Google list or, once Reminders is
+      # connected, the Apple one — either editor is the right outcome.
+      - assertVisible: 'Edit (Task|Reminder)'
       - tapOn:
           id: 'task-delete'
       # Deleting an unpushed create sends nothing to Google; a pushed one
@@ -57,10 +59,12 @@ name: Task chips render in the all-day lane and round-trip the editor
       - extendedWaitUntil:
           notVisible: 'Solunivo e2e task to delete'
           timeout: 20000
+# The fallback keys on the sheet still being open, not on the list rows:
+# after the branch above the sheet is closed, so "no list rows" would be
+# true for the wrong reason and the Cancel tap would fail.
 - runFlow:
     when:
-      notVisible:
-        id: 'task-list-option'
+      visible: 'New Task'
     commands:
       # No tasks-enabled account: leave the sheet as we found it.
       - tapOn: 'Cancel'

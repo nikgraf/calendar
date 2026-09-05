@@ -1,19 +1,31 @@
 appId: com.solunivo.app
 name: New-event sheet opens with the repeat picker
+tags:
+  - ci
 ---
-- launchApp
-# The app re-bundles from Metro on a cold dev-client launch; wait for the
-# calendar shell rather than racing it.
-- extendedWaitUntil:
-    visible: 'Today'
-    timeout: 60000
+- runFlow: ../common/launch.yaml
 - tapOn:
     id: 'add-event'
 - assertVisible: 'New Event'
+# The sheet slides in; on a slow runner a tap taken mid-animation misses.
+- waitForAnimationToEnd:
+    timeout: 5000
 # styles.label applies textTransform: uppercase, so the rendered text is REPEAT.
 - assertVisible: 'REPEAT'
-- tapOn: 'Daily'
-# Assertions are regexes — the parentheses must be escaped.
+# Tap until the interval row appears: on the runner the sheet's content
+# still shifted (its own inset) after the animation-end wait, so the
+# first tap landed above the chip. Assertions are regexes — the
+# parentheses must be escaped.
+- repeat:
+    times: 4
+    while:
+      notVisible: 'EVERY \(N\)'
+    commands:
+      - tapOn: 'Daily'
+      - extendedWaitUntil:
+          visible: 'EVERY \(N\)'
+          timeout: 3000
+          optional: true
 - assertVisible: 'EVERY \(N\)'
 - tapOn: 'Cancel'
 - assertVisible: 'Today'

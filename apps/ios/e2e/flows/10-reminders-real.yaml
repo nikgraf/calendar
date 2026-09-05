@@ -1,0 +1,80 @@
+appId: com.solunivo.app
+name: Real Reminders on CI - connect, create through EventKit, delete
+tags:
+  - ci
+  - ci-reminders
+---
+# The strict sibling of flow 09, for CI only: the simulator's Reminders
+# grant is pre-seeded (simctl privacy), so every step must succeed —
+# there is no "no account connected" escape hatch here. Locally run it
+# only on a simulator prepared the same way (apps/ios/e2e/ci/).
+- runFlow: ../common/launch.yaml
+
+# Connect: the grant is already answered, so no prompt appears and the
+# synthetic Apple account shows up in the accounts list.
+- tapOn:
+    id: 'open-settings'
+- assertVisible: 'Accounts'
+- tapOn:
+    id: 'connect-reminders'
+- extendedWaitUntil:
+    visible: 'Apple Reminders'
+    timeout: 20000
+- tapOn: 'Done'
+- assertVisible: 'Today'
+
+# Create through EventKit. The list picker shows the mirrored lists; the
+# first pass after connecting has to land first, hence the wait. Rows are
+# found by id: their label is title + swatch + check mark, which a
+# whole-string text selector never matches.
+- tapOn:
+    id: 'add-event'
+- assertVisible: 'New Event'
+# The sheet slides in; on a slow runner a tap taken mid-animation misses.
+- waitForAnimationToEnd:
+    timeout: 5000
+- tapOn:
+    id: 'mode-task'
+- assertVisible: 'New Task'
+- extendedWaitUntil:
+    visible:
+      id: 'task-list-option'
+    timeout: 30000
+- tapOn:
+    id: 'task-list-option'
+- assertVisible:
+    id: 'reminder-timed'
+- tapOn:
+    id: 'reminder-priority-high'
+- tapOn:
+    id: 'reminder-timed'
+- assertVisible:
+    id: 'reminder-time'
+- tapOn:
+    id: 'task-title'
+- inputText: 'Solunivo ci reminder'
+- tapOn:
+    id: 'event-save'
+- extendedWaitUntil:
+    notVisible: 'New Task'
+    timeout: 20000
+# The chip carries the time and the priority marker: the row came back
+# from EventKit with a real identifier and was mirrored.
+- extendedWaitUntil:
+    visible: '.*!!! Solunivo ci reminder'
+    timeout: 10000
+
+# Delete through EventKit; the write-through removes the mirror row, so
+# a broken reminders.delete would leave the chip on screen. The body's
+# text starts with the time: a bare ".*title" would also match the
+# checkbox's "Toggle <title>" label and toggle completion instead.
+- tapOn: '[0-9]+:[0-9]+ !!! Solunivo ci reminder'
+- assertVisible: 'Edit Reminder'
+- tapOn:
+    id: 'task-delete'
+- extendedWaitUntil:
+    notVisible: 'Edit Reminder'
+    timeout: 20000
+- extendedWaitUntil:
+    notVisible: '.*Solunivo ci reminder'
+    timeout: 10000

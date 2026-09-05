@@ -302,13 +302,28 @@ Task.detached {
 // task with its own session; responses correlate by id, and emit's lock
 // keeps concurrent writes line-atomic. (Detached also matters for a
 // second reason: top-level code is MainActor-isolated.)
-while let line = readLine(strippingNewline: true) {
-  guard !line.isEmpty else { continue }
+//
+// stdin is read on its own thread and the main thread runs the dispatch
+// main queue: EventKit delivers EKEventStoreChanged on the main queue,
+// so a main thread blocked in readLine() would never fire the change
+// observer above — the change push was silently dead until the real-
+// EventKit e2e asserted it. EOF on stdin means the supervisor is gone.
+let stdinReader = Thread {
+  while let line = readLine(strippingNewline: true) {
+    handleLine(line)
+  }
+  exit(0)
+}
+stdinReader.start()
+dispatchMain()
+
+func handleLine(_ line: String) {
+  guard !line.isEmpty else { return }
   guard let data = line.data(using: .utf8),
     let request = try? JSONDecoder().decode(Request.self, from: data)
   else {
     emit(["error": "unparseable request", "id": -1])
-    continue
+    return
   }
   let params = request.params ?? [:]
   Task.detached {
