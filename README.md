@@ -3,7 +3,7 @@
 A Fantastical-style Google Calendar client: iOS (Expo) + macOS (Electron), client-only, built on Effect v4. See `AGENTS.md` for architecture.
 
 - Day/week/month views with 1:1 drag gestures, recurring-event editing (this/following/all), per-calendar colors, offline-tolerant pending-op queue.
-- Google Tasks: all-day task lane, create/edit/complete/delete, two-way sync.
+- Google Tasks and Apple Reminders side by side in the all-day task lane: create/edit/complete/delete, two-way sync, and a form that fits each — Reminders add due time, priority, alerts, repeat, URL, and moving between lists.
 - On-device AI (Apple Foundation Models, no cloud): quick-add natural language parsing, "find a time" slot suggestions, and dictation — ⌘K bar on macOS, quick-add bar on iOS.
 
 **Docs:** `docs/architecture.md` (data flow, op queue, recurring model, AI layer),
@@ -35,6 +35,8 @@ pnpm --filter @calendar/desktop build:helper
 ```
 
 Without it the app runs fine — AI affordances show an "unavailable" notice.
+The same helper hosts the Apple Reminders bridge (EventKit); Settings →
+Apple Reminders asks for access and connects the device's lists.
 
 ### Google OAuth (required for sign-in)
 

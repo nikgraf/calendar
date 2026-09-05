@@ -115,6 +115,7 @@ export const useBackendMutations = () => {
   const { mutations } = useBackendAtoms();
   const addAccount = useAtomSet(mutations.addAccount, { mode: 'promise' });
   const completeTask = useAtomSet(mutations.completeTask, { mode: 'promise' });
+  const connectReminders = useAtomSet(mutations.connectReminders, { mode: 'promise' });
   const createTask = useAtomSet(mutations.createTask, { mode: 'promise' });
   const createEvent = useAtomSet(mutations.createEvent, { mode: 'promise' });
   const deleteEvent = useAtomSet(mutations.deleteEvent, { mode: 'promise' });
@@ -151,6 +152,7 @@ export const useBackendMutations = () => {
     () => ({
       addAccount,
       completeTask,
+      connectReminders,
       createEvent,
       createTask,
       deleteEvent,
@@ -170,6 +172,7 @@ export const useBackendMutations = () => {
     [
       addAccount,
       completeTask,
+      connectReminders,
       createEvent,
       createTask,
       deleteEvent,

@@ -1,0 +1,9 @@
+{
+  "name": "solunivo-reminders",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Apple Reminders (EventKit) bridge for Solunivo — local Expo module",
+  "license": "UNLICENSED",
+  "author": "Nik Graf",
+  "main": "index.ts"
+}

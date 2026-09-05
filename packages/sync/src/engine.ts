@@ -10,7 +10,13 @@ import {
   type GcalEvent,
   type GoogleRequestError,
 } from '@calendar/google';
-import { Clock, Context, Effect, Layer, Schedule, Semaphore } from 'effect';
+import {
+  mapReminder,
+  mapReminderList,
+  RemindersClient,
+  type RemindersError,
+} from '@calendar/reminders';
+import { Clock, Context, Effect, Layer, Schedule, Semaphore, Stream } from 'effect';
 import type { SqlError } from 'effect/unstable/sql/SqlError';
 import { EventMutations } from './mutations.ts';
 
@@ -19,6 +25,10 @@ const tasksScope = (taskListId: string): string => `tasks:${taskListId}`;
 const INITIAL_WINDOW_MS = 365 * 24 * 60 * 60 * 1000; // 12 months back
 /** updatedMin has no tombstone guarantees forever — reconcile fully daily. */
 const TASKS_FULL_PASS_INTERVAL_MS = 24 * 60 * 60 * 1000;
+/** sync_state scope for the Apple mirror: lastSyncAt is the delta stamp. */
+const REMINDERS_SCOPE = 'reminders';
+/** EKEventStoreChanged arrives in bursts (iCloud sync, our own writes). */
+const REMINDERS_CHANGE_DEBOUNCE = '1 second';
 /**
  * The watermark comes from the local clock but filters Google's `updated`
  * stamps: local time running ahead would open a blind window between the
@@ -28,7 +38,7 @@ const TASKS_FULL_PASS_INTERVAL_MS = 24 * 60 * 60 * 1000;
 const WATERMARK_LAG_MS = 60_000;
 export const SYNC_INTERVAL = '90 seconds';
 
-type SyncError = GoogleRequestError | SqlError;
+type SyncError = GoogleRequestError | RemindersError | SqlError;
 
 /** Retries rate limits and transient availability failures with backoff. */
 const withTransientRetry = <A, E extends { readonly _tag: string }, R>(
@@ -93,6 +103,7 @@ const make: Effect.Effect<
   | EventRepo
   | GoogleCalendarClient
   | GoogleTasksClient
+  | RemindersClient
   | SyncStateRepo
   | TaskRepo
 > = Effect.gen(function* () {
@@ -103,6 +114,7 @@ const make: Effect.Effect<
   const calendarRepo = yield* CalendarRepo;
   const eventRepo = yield* EventRepo;
   const taskRepo = yield* TaskRepo;
+  const remindersClient = yield* RemindersClient;
   const syncStateRepo = yield* SyncStateRepo;
   const gate = Semaphore.makeUnsafe(1);
 
@@ -364,6 +376,105 @@ const make: Effect.Effect<
       ),
     );
 
+  /**
+   * The Apple account: lists + a windowed full replace of reminders. Access
+   * can be revoked at any time in System Settings, so the status check
+   * doubles as the account's health: no access flags it, access regained
+   * (even without pressing Connect again) heals it.
+   */
+  /**
+   * The Apple account: SQLite holds the latest complete EventKit snapshot.
+   * The bridge returns every reminder's (list, id) plus full rows only for
+   * what changed since the last pass (stamp in sync_state 'reminders'),
+   * and TaskRepo.replaceMirror reconciles in one transaction. The 90 s
+   * pass is the correctness mechanism; a change notification only makes
+   * it sooner. Access can be revoked at any time in System Settings, so
+   * the status check doubles as the account's health.
+   */
+  const syncReminders = (account: Account): Effect.Effect<void, SyncError> =>
+    Effect.gen(function* () {
+      const authorization = yield* remindersClient
+        .status()
+        .pipe(Effect.orElseSucceed(() => 'unavailable' as const));
+      if (authorization === 'unavailable') {
+        // No bridge (helper missing/crashed, old dev client, e2e's
+        // CALENDAR_REMINDERS=off): nothing to say about the TCC grant, so
+        // leave the account alone rather than send the user to System
+        // Settings for a problem that is not there.
+        yield* Effect.logDebug('reminders bridge unavailable; skipping pass');
+        return;
+      }
+      if (authorization !== 'fullAccess') {
+        if (account.status === 'ok') {
+          yield* accountRepo.setStatus(account.id, 'reauth_required');
+        }
+        return;
+      }
+      if (account.status !== 'ok') {
+        yield* accountRepo.setStatus(account.id, 'ok');
+      }
+      const state = yield* syncStateRepo.get(account.id, REMINDERS_SCOPE);
+      // Stamped before the fetch: anything a concurrent mutation mirrors
+      // meanwhile is newer and survives reconciliation.
+      const passStartedAt = yield* Clock.currentTimeMillis;
+      const lists = (yield* remindersClient.listLists()).map((list) =>
+        mapReminderList(list, account.id),
+      );
+      const pass = (changedSince: number | undefined) =>
+        Effect.gen(function* () {
+          const fetchStart = yield* Clock.currentTimeMillis;
+          const snapshot = yield* remindersClient.snapshot({ changedSince });
+          const applyStart = yield* Clock.currentTimeMillis;
+          const result = yield* taskRepo.replaceMirror({
+            accountId: account.id,
+            changed: snapshot.changed.map((reminder) => mapReminder(reminder, account.id)),
+            ids: snapshot.ids,
+            lists,
+            syncedAt: passStartedAt,
+          });
+          const done = yield* Clock.currentTimeMillis;
+          // The numbers that decide whether hybrid retention is ever needed.
+          yield* Effect.logDebug('reminders snapshot', {
+            applyMs: done - applyStart,
+            changed: snapshot.changed.length,
+            delta: changedSince !== undefined,
+            fetchMs: applyStart - fetchStart,
+            ids: snapshot.ids.length,
+            lists: lists.length,
+          });
+          return result;
+        });
+      const changedSince = state?.lastSyncAt ?? undefined;
+      let full = changedSince === undefined;
+      const result = yield* pass(changedSince);
+      if (result.skipped) {
+        // Removed while the snapshot was in flight: nothing was written,
+        // and a stamp now would outlive its account.
+        yield* Effect.logDebug('reminders account removed mid-pass; nothing written');
+        return;
+      }
+      if (result.needsFull && !full) {
+        // A snapshot id with no local row and no changed entry (rebuild,
+        // lost row): fetch everything once.
+        full = true;
+        yield* pass(undefined);
+      }
+      yield* syncStateRepo.set(
+        new SyncState({
+          accountId: account.id,
+          lastFullSyncAt: full ? passStartedAt : (state?.lastFullSyncAt ?? null),
+          lastSyncAt: passStartedAt,
+          scope: REMINDERS_SCOPE,
+          status: 'idle',
+          syncToken: null,
+        }),
+      );
+    }).pipe(
+      Effect.catchTag('RemindersAccessError', () =>
+        Effect.orDie(accountRepo.setStatus(account.id, 'reauth_required')),
+      ),
+    );
+
   const syncAccount = (account: Account): Effect.Effect<void, SyncError> =>
     Effect.gen(function* () {
       yield* syncCalendarList(account);
@@ -384,6 +495,17 @@ const make: Effect.Effect<
           yield* mutations.processPendingOps();
           const accounts = yield* accountRepo.list();
           for (const account of accounts) {
+            if (account.provider === 'apple') {
+              // Always attempted: the status check is what heals a
+              // revoked-then-restored grant, so a flagged account must
+              // not be skipped.
+              yield* syncReminders(account).pipe(
+                Effect.catchCause((cause) =>
+                  Effect.logWarning('reminders sync failed', { cause: String(cause) }),
+                ),
+              );
+              continue;
+            }
             if (account.status !== 'ok') {
               continue;
             }
@@ -407,8 +529,40 @@ const make: Effect.Effect<
         ),
       );
 
+  /**
+   * Reminders-only pass for change notifications. Same gate as syncAll:
+   * a change arriving during a pass waits for it, and the debounce turns
+   * an iCloud burst (or our own write-throughs, which also fire it) into
+   * one delta pass.
+   */
+  const syncRemindersOnly = (): Effect.Effect<void> =>
+    gate
+      .withPermits(1)(
+        Effect.gen(function* () {
+          const accounts = yield* accountRepo.list();
+          for (const account of accounts) {
+            if (account.provider === 'apple') {
+              yield* syncReminders(account);
+            }
+          }
+        }),
+      )
+      .pipe(
+        Effect.catchCause((cause) =>
+          Effect.logWarning('reminders change pass failed', { cause: String(cause) }),
+        ),
+      );
+
   const start = (): Effect.Effect<void> =>
-    Effect.asVoid(Effect.forkDetach(Effect.repeat(syncAll(), Schedule.spaced(SYNC_INTERVAL))));
+    Effect.gen(function* () {
+      yield* Effect.forkDetach(Effect.repeat(syncAll(), Schedule.spaced(SYNC_INTERVAL)));
+      yield* Effect.forkDetach(
+        remindersClient.changes.pipe(
+          Stream.debounce(REMINDERS_CHANGE_DEBOUNCE),
+          Stream.runForEach(() => syncRemindersOnly()),
+        ),
+      );
+    });
 
   return { start, syncAll };
 });
@@ -423,6 +577,7 @@ export class SyncEngine extends Context.Service<SyncEngine, SyncEngineShape>()('
     | EventRepo
     | GoogleCalendarClient
     | GoogleTasksClient
+    | RemindersClient
     | SyncStateRepo
     | TaskRepo
   > = Layer.effect(SyncEngine)(make);

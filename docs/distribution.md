@@ -185,7 +185,9 @@ downloaded `.tar.gz` also works by extracting and dragging the `.app` in.
 **Rebuild the dev client only when native code changes** (a new native module,
 config plugin, or Expo SDK bump). JS-only changes reload over Metro. Adding
 `expo-updates` was exactly such a case — a dev client built before it would
-crash on the settings screen.
+crash on the settings screen. The local Expo module for Apple Reminders
+(`apps/ios/modules/solunivo-reminders`) is another: an older client reports
+Reminders as "unavailable" in Diagnostics until rebuilt.
 
 Updates are disabled in dev builds, so **Settings → PR preview** shows
 "Updates are disabled in this build" instead of channel controls. That is the

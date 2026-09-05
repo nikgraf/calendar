@@ -144,6 +144,30 @@ const addTaskWrites = Effect.gen(function* () {
   yield* sql`ALTER TABLE tasks ADD COLUMN sync_status TEXT NOT NULL DEFAULT 'synced'`;
 });
 
+const addReminders = Effect.gen(function* () {
+  const sql = yield* SqlClient;
+  // Provider discriminator: 'google' (OAuth accounts) or 'apple' (the one
+  // synthetic Reminders account). Existing rows are all Google.
+  yield* sql`ALTER TABLE accounts ADD COLUMN provider TEXT NOT NULL DEFAULT 'google'`;
+  yield* sql`ALTER TABLE task_lists ADD COLUMN provider TEXT NOT NULL DEFAULT 'google'`;
+  yield* sql`ALTER TABLE task_lists ADD COLUMN color_hex TEXT`;
+  // Reminders capabilities Google Tasks lack — NULL for Google rows.
+  yield* sql`ALTER TABLE tasks ADD COLUMN due_time TEXT`;
+  yield* sql`ALTER TABLE tasks ADD COLUMN priority TEXT`;
+  yield* sql`ALTER TABLE tasks ADD COLUMN url TEXT`;
+  // JSON: number[] of minute offsets / a TaskRecurrence (or {"unsupported":true}).
+  yield* sql`ALTER TABLE tasks ADD COLUMN alarms TEXT`;
+  yield* sql`ALTER TABLE tasks ADD COLUMN recurrence TEXT`;
+});
+
+const addTaskListReadOnly = Effect.gen(function* () {
+  const sql = yield* SqlClient;
+  // EKCalendar.allowsContentModifications — 1 for lists EventKit will not
+  // let us write (a read-only CalDAV/Exchange source). Google lists and
+  // existing rows are writable.
+  yield* sql`ALTER TABLE task_lists ADD COLUMN read_only INTEGER NOT NULL DEFAULT 0`;
+});
+
 // The third tuple element is a *loader* whose result is the migration effect.
 export const migrations: ReadonlyArray<ResolvedMigration> = [
   [1, 'init', Effect.succeed(init)],
@@ -151,4 +175,6 @@ export const migrations: ReadonlyArray<ResolvedMigration> = [
   [3, 'add-pending-op-color-hex', Effect.succeed(addPendingOpColorHex)],
   [4, 'add-tasks', Effect.succeed(addTasks)],
   [5, 'add-task-writes', Effect.succeed(addTaskWrites)],
+  [6, 'add-reminders', Effect.succeed(addReminders)],
+  [7, 'add-task-list-read-only', Effect.succeed(addTaskListReadOnly)],
 ];

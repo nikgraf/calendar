@@ -77,6 +77,61 @@ invariants.
 - A 403 insufficient-scope (grants that predate the tasks scope) disables
   tasks for the account instead of retrying.
 
+## Verified Apple Reminders (EventKit) semantics
+
+- **Access**: `requestFullAccessToReminders` (macOS 14 / iOS 17+);
+  `authorizationStatus(for: .reminder)` distinguishes fullAccess /
+  writeOnly / denied / restricted / notDetermined. Access can be revoked
+  in System Settings at any time — treat every pass's status check as the
+  account's health, not the initial grant.
+- **The helper is a bare executable**, so its usage strings ride in an
+  embedded `__TEXT,__info_plist` (Package.swift `-sectcreate`); the app's
+  Info.plist carries them too (forge `extendInfo`). Verified: both the
+  dev Electron binary and the packaged .app obtain full access through
+  the helper child and read the user's lists.
+- **Ids**: `calendarItemIdentifier` is stable enough for a mirror but can
+  change after an iCloud sync — the snapshot reconciliation makes that a
+  delete + reinsert, never a stale row. Ids are server-assigned: no
+  client-side idempotency trick, hence no queue. Deleting something
+  Reminders.app already deleted answers notFound — treated as done.
+- **Errors cross Expo as an envelope**: expo-modules-core rethrows a Swift
+  throw as `FunctionCallException … → Caused by: RemindersBridgeError:
+<message>`; the client unwraps the last `Caused by:` segment before
+  matching the `accessDenied:` / `notFound:` prefixes (the helper sends
+  the message verbatim).
+- **Store lifetime**: the `EKEventStore` is created by the pre-prompt
+  status call and `reset()` after a successful grant — a store created
+  without access can keep answering with no calendars.
+- **Due**: `dueDateComponents` with no hour ⇒ all-day (`dueDate` only);
+  with hour/minute ⇒ timed (`dueTime` 'HH:MM' in the device zone). The
+  bridge keeps `startDateComponents == dueDateComponents`, as the
+  Reminders app does.
+- **Priority**: EventKit 0…9; the Reminders app shows 1–4 high, 5 medium,
+  6–9 low. We keep the buckets and write back 1/5/9/0.
+- **Alarms**: only relative-offset alarms are surfaced (minutes, ≤ 0 =
+  before/at); absolute-date alarms are preserved untouched by writes.
+- **Recurrence**: freq/interval/count|until round-trip through
+  `TaskRecurrence`; by-day / positional / multiple rules come back as
+  `{ unsupported: true }`, the form shows them read-only, and writes
+  never overwrite them.
+- **Fetch**: one `predicateForReminders(in: nil)` — every reminder, open
+  and completed, dated and undated. EventKit is local, so the fetch is
+  cheap; the cost is the bridge payload on desktop, so `reminders.snapshot`
+  returns all (listId, id) pairs plus full rows only for reminders whose
+  `lastModifiedDate` ≥ `changedSince − 60 s` (the Google watermark's skew
+  lag; re-reading the overlap is harmless — upserts apply only when
+  strictly newer). Measured on a 9-reminder database: full 3.2 KB, idle
+  delta 0.9 KB. The engine logs `reminders snapshot` at debug level with
+  ids/changed/lists counts and fetch/apply ms; if a large completed
+  archive ever makes a pass measurably expensive, the fallback is hybrid
+  retention (all open, recent completed) — not built.
+- **Change push**: `EKEventStoreChanged` fires for any EventKit change,
+  including our own write-throughs and iCloud bursts; the engine
+  debounces it (1 s) and runs a reminders-only delta pass under the sync
+  gate, so bursts coalesce into one pass. It only reaches a live observer
+  (the helper child can be respawned; iOS is suspended in the
+  background), which is why the 90 s pass stays.
+
 ## Testing conventions
 
 ### Unit tests (`vp test`, @effect/vitest)
@@ -93,8 +148,13 @@ invariants.
 - AI pipelines never hit a real model in tests: the provider seams take a
   fake `ModelProvider`/`SpeechProvider` returning canned JSON, so
   prompt-building, normalization, and error paths are fully unit-tested
-  (see `packages/ai/*.test.ts` and the app-side `findTime.test.ts`
-  twins).
+  (see `packages/ai/*.test.ts` and `findTimePipeline.test.ts`).
+- Reminders never hit EventKit in tests: `makeFakeRemindersClient`
+  (`packages/reminders/src/fake.ts`) is an in-memory store with the
+  bridge's semantics (server-assigned ids, null clears, list moves,
+  windowed listing, switchable authorization); sync/mutation tests read
+  `fake.state` to assert what EventKit "saw". Every other layer recipe
+  provides `unavailableRemindersClient('test')`.
 - **Date-independence is a hard rule for every test involving "now"**:
   inject the clock (`nowUtc` parameter) or build dates relative to today
   with wall-clock times via Temporal in an explicit zone — never pinned
@@ -133,6 +193,11 @@ Flakiness lessons (each caused a real CI failure — keep them enforced):
   dispatch; `<select>` likewise (`HTMLSelectElement` prototype setter).
 - Tests share one app instance and run in file order — later tests must
   tolerate earlier tests' data (relative assertions, unique titles).
+- The harness launches the app with `CALENDAR_REMINDERS=off`, which makes
+  the desktop RemindersClient unavailable: `reminders.e2e.ts` seeds an
+  Apple account/list/reminder straight into SQLite and asserts the chip
+  and form; a real EventKit sync would replace those rows (and prompt for
+  access on a developer's Mac).
 
 ### CI (.github/workflows/ci.yml + ios.yml)
 
@@ -153,8 +218,10 @@ Flakiness lessons (each caused a real CI failure — keep them enforced):
 
 ### iOS e2e (Maestro, apps/ios/e2e/flows/)
 
-Text/testID-based flows (8: launch, navigation, new-event sheet,
-settings, day swipe, quick-add, create event, task lane). Maestro cannot
+Text/testID-based flows (9: launch, navigation, new-event sheet,
+settings, day swipe, quick-add, create event, task lane, reminders form —
+the last gated on a connected Reminders list, so it is a no-op until the
+simulator has one). Maestro cannot
 synthesize long-press pans, so gesture behavior is covered by unit tests
 on the shared math instead. Selector gotchas (each caused a real
 failure): Maestro text selectors are **whole-string regexes** — prefix

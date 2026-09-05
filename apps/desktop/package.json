@@ -19,6 +19,7 @@
     "@calendar/core": "workspace:*",
     "@calendar/db": "workspace:*",
     "@calendar/google": "workspace:*",
+    "@calendar/reminders": "workspace:*",
     "@calendar/sync": "workspace:*",
     "@effect/sql-sqlite-node": "catalog:",
     "effect": "catalog:",

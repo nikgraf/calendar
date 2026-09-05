@@ -58,6 +58,14 @@ module.exports = {
       NSMicrophoneUsageDescription:
         'Solunivo uses the microphone to turn what you say into an event. ' +
         'Audio is transcribed on your device and never uploaded.',
+      // The helper child does the EventKit work, but TCC attributes its
+      // prompt to the responsible app when launched from the bundle.
+      NSRemindersFullAccessUsageDescription:
+        'Solunivo shows your Reminders next to your calendar and lets you ' +
+        'edit them here. Nothing leaves your Mac.',
+      NSRemindersUsageDescription:
+        'Solunivo shows your Reminders next to your calendar and lets you ' +
+        'edit them here. Nothing leaves your Mac.',
     },
     ignore: [
       /^\/electron(?:$|\/)/,

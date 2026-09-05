@@ -382,11 +382,44 @@ same PR; these are the code/infra improvements worth their own tasks).
 - Research Siri Calendar integration
   - Ask ChatGPT (deepresearch) about flows that exist
 - Design for add flow (insert and prefill the input form, important: pick the correct calendar)
-- Apple Reminders integration
-  - The idea is personal reminders can be there
+- [x] Apple Reminders integration — done: personal reminders sit next to
+      Google Tasks in the all-day lane. Decisions: EventKit via the
+      existing Swift helper on macOS and a local Expo module on iOS (one
+      shared Swift source; expo-calendar rejected — no priority, no
+      all-day/timed distinction); a synthetic `apple-reminders` account
+      with provider-dispatched mutations (no pending-op queue — EventKit
+      is local); per-provider forms (Google: title/day/notes/fixed list;
+      Reminders: time, priority, alert, repeat, URL, movable list); timed
+      reminders render in the lane with a time prefix. See
+      docs/architecture.md + docs/google-sync-and-testing.md.
   - Google Tasks still make sense when working with Gmail
-  - Allow to convert Reminder to Google task and the other way around -> how to design missing capabilities in each of them
-  - Different template for Google Task and Reminder
+  - [ ] Convert a Reminder ↔ Google Task (create in target + delete in
+        source, with a "these fields will be lost" confirmation for the
+        capabilities each side lacks)
+  - [ ] Reminders follow-ups: quick-add/⌘K creating reminders, undated
+        reminders in the UI (they are mirrored; needs a list view),
+        subtasks/flags/tags, location alarms, multiple editable alarms,
+        by-day/positional recurrence editing, timed reminders in the time
+        grid, creating/deleting Reminders lists
+  - [x] Complete mirror + EKEventStoreChanged push — done: no date
+        window (paging 1.5 years ahead reads locally, like Google Tasks);
+        id-list + delta protocol keeps the bridge payload proportional to
+        change; transactional snapshot reconciliation (newer wins,
+        stamp-guarded removal, no giant NOT IN); the notification is
+        latency, the 90 s pass is correctness.
+  - [x] Review round 2 fixes — done: Save sends only dirty fields
+        (diffed against the opening snapshot, both providers); a mirror
+        write failing after EventKit committed is logged, not raised (a
+        retry would duplicate); mirror INSERTs are guarded on the account
+        row so removal cannot be undone by an in-flight pass (Google had
+        the same race); Gregorian wire dates; `boundedInt` before every
+        native conversion; read-only lists carried as
+        `TaskListInfo.readOnly` and opened as viewers. Decision: EventKit
+        enforces read-only — no mutation-layer error, the rare slip
+        surfaces as saveFailed.
+- [ ] Events: the 12-months-back floor — browsing further back shows
+      nothing (deleteStale prunes older rows on each full re-pass);
+      on-demand backfill or a larger floor
 - Morning briefing made with AI
   - Weather during the day and what to wear (also take other locations into account and especially weather changes)
   - Get an overview over the most important meetings

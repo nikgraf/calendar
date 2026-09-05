@@ -1,11 +1,12 @@
-import { CalendarInfo } from '@calendar/core';
-import { CalendarRepo, PendingOpRepo, reposLayer, runMigrations } from '@calendar/db';
+import { Account, CalendarInfo } from '@calendar/core';
+import { AccountRepo, CalendarRepo, PendingOpRepo, reposLayer, runMigrations } from '@calendar/db';
 import {
   GoogleCalendarClient,
   type GoogleCalendarClientShape,
   GoogleTasksClient,
   type GoogleTasksClientShape,
 } from '@calendar/google';
+import { RemindersClient, unavailableRemindersClient } from '@calendar/reminders';
 import { SqliteClient } from '@effect/sql-sqlite-node';
 import { expect, it } from '@effect/vitest';
 import { Effect, Layer } from 'effect';
@@ -21,12 +22,31 @@ const stubTasksClient: GoogleTasksClientShape = {
   patchTask: () => Effect.die('tasks not used in this test'),
 };
 
+/** Mirror rows are only written while their account exists — seed the ones tests use. */
+const seedAccounts = Effect.gen(function* () {
+  const accounts = yield* AccountRepo;
+  for (const id of ['acc-1', 'acc-2']) {
+    yield* accounts.upsert(
+      new Account({
+        createdAt: 1,
+        email: `${id}@example.com`,
+        id,
+        provider: 'google',
+        status: 'ok',
+        tasksEnabled: true,
+      }),
+    );
+  }
+});
+
 const makeLayer = (overrides: Partial<GoogleCalendarClientShape>) =>
   EventMutations.layer.pipe(
+    Layer.provideMerge(Layer.effectDiscard(seedAccounts)),
     Layer.provideMerge(reposLayer),
     Layer.provideMerge(Layer.effectDiscard(runMigrations)),
     Layer.provideMerge(SqliteClient.layer({ filename: ':memory:' })),
     Layer.provideMerge(reactivityLayer),
+    Layer.provideMerge(Layer.succeed(RemindersClient, unavailableRemindersClient('test'))),
     Layer.provideMerge(
       Layer.succeed(GoogleCalendarClient, {
         deleteEvent: () => Effect.void,

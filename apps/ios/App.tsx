@@ -81,6 +81,13 @@ function CalendarScreen() {
   );
   const mutations = useGuardedMutations();
   const taskLists = useTaskLists();
+  /** Reminders lists carry a color; Google lists render neutral. */
+  const listColorOf = useMemo(() => {
+    const colors = new Map(
+      taskLists.map((list) => [`${list.accountId}:${list.id}`, list.colorHex]),
+    );
+    return (task: TaskRecord) => colors.get(`${task.accountId}:${task.listId}`);
+  }, [taskLists]);
   const findSlots = useMemo(
     () => makeFindSlots(appleLanguageModel, backendClient, timeZone),
     [timeZone],
@@ -175,6 +182,7 @@ function CalendarScreen() {
             colorOf={colorOf}
             date={focused}
             events={events}
+            listColorOf={listColorOf}
             onEventPress={(event) => setEditSeed({ event, initialDate: focused })}
             onNavigate={step}
             onTaskPress={(task) => setEditTask(task)}

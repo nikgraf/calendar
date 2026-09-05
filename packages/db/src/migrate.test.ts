@@ -64,6 +64,7 @@ describe('runMigrations', () => {
       yield* sql`ALTER TABLE pending_ops DROP COLUMN task_notes`;
       yield* sql`ALTER TABLE pending_ops DROP COLUMN task_due`;
       yield* sql`ALTER TABLE pending_ops DROP COLUMN dispatched_at`;
+      yield* sql`ALTER TABLE accounts DROP COLUMN provider`;
       yield* sql`DROP TABLE tasks`;
       yield* sql`DROP TABLE task_lists`;
       expect(yield* columnsOf('events')).not.toContain('hangout_link');
@@ -79,8 +80,10 @@ describe('runMigrations', () => {
   it.effect('rolls back a failing migration atomically and retries it next run', () =>
     Effect.gen(function* () {
       const sql = yield* SqlClient;
+      // One past the last real migration, whatever that is today.
+      const nextId = (migrations.at(-1)?.[0] ?? 0) + 1;
       const broken: ResolvedMigration = [
-        6,
+        nextId,
         'partial-failure',
         Effect.succeed(
           Effect.gen(function* () {
@@ -102,7 +105,7 @@ describe('runMigrations', () => {
 
       // A later run with the migration fixed applies it cleanly.
       const fixed: ResolvedMigration = [
-        6,
+        nextId,
         'partial-failure',
         Effect.succeed(
           Effect.gen(function* () {
@@ -111,7 +114,7 @@ describe('runMigrations', () => {
         ),
       ];
       yield* runMigrationsWith([...migrations, fixed]);
-      expect(yield* appliedIds).toEqual([...migrations.map(([id]) => id), 6]);
+      expect(yield* appliedIds).toEqual([...migrations.map(([id]) => id), nextId]);
     }).pipe(Effect.provide(sqlLayer())),
   );
 

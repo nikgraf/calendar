@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Embedded into the helper binary (__TEXT,__info_plist) so TCC has a
+	     usage description to show even when the prompt is attributed to the
+	     helper process rather than the app bundle. -->
+	<key>CFBundleIdentifier</key>
+	<string>com.solunivo.desktop.helper</string>
+	<key>CFBundleName</key>
+	<string>Solunivo Helper</string>
+	<key>CFBundleShortVersionString</key>
+	<string>1.0</string>
+	<key>NSRemindersFullAccessUsageDescription</key>
+	<string>Solunivo shows your Reminders next to your calendar and lets you edit them here. Nothing leaves your Mac.</string>
+	<key>NSRemindersUsageDescription</key>
+	<string>Solunivo shows your Reminders next to your calendar and lets you edit them here. Nothing leaves your Mac.</string>
+</dict>
+</plist>

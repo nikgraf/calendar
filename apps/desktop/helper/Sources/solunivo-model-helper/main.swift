@@ -3,7 +3,8 @@
 // Protocol: newline-delimited JSON, one request per line in, one response
 // per line out. {"id","method","params"} -> {"id","result"} | {"id","error"}.
 // Methods: status | generateJson {schema,prompt} | prepareSpeech {locale} |
-// transcribe {audioBase64,locale}. Version 1.
+// transcribe {audioBase64,locale} | reminders.* (see RemindersBridge.swift,
+// shared with the iOS Expo module). Version 2.
 import Foundation
 
 #if canImport(FoundationModels)
@@ -57,6 +58,21 @@ enum JSONValue: Decodable, Sendable {
   var arrayValue: [JSONValue]? {
     if case .array(let value) = self { return value }
     return nil
+  }
+
+  /// Foundation-flavoured value (NSNull for null) for code that takes
+  /// plain JSON dictionaries — the reminders bridge is shared with the
+  /// Expo module, which hands it `[String: Any]`.
+  var anyValue: Any {
+    switch self {
+    case .array(let items): return items.map { $0.anyValue }
+    case .bool(let value): return value
+    case .null: return NSNull()
+    case .number(let value):
+      return value.rounded() == value && abs(value) < 1e15 ? Int(value) : value
+    case .object(let fields): return fields.mapValues { $0.anyValue }
+    case .string(let value): return value
+    }
   }
 }
 
@@ -272,6 +288,14 @@ func handleTranscribe(_ id: Int, _ params: [String: JSONValue]) async {
   emitError(id, HelperError.unavailable("macOS 26 required").message)
 }
 
+// Unsolicited lines: {"event": name} with no id. The supervisor routes
+// them to subscribers instead of a pending request.
+Task.detached {
+  await RemindersBridge.shared.observeChanges {
+    emit(["event": "reminders.changed"])
+  }
+}
+
 // Concurrent request loop: a slow method (prepareSpeech downloading
 // locale assets can take minutes) must not stall a status check or a
 // generation queued behind it. Each request runs in its own detached
@@ -293,6 +317,16 @@ while let line = readLine(strippingNewline: true) {
     case "generateJson": await handleGenerate(request.id, params)
     case "prepareSpeech": await handlePrepareSpeech(request.id, params)
     case "transcribe": await handleTranscribe(request.id, params)
+    case let method where method.hasPrefix("reminders."):
+      do {
+        let result = try await RemindersDispatch.invoke(
+          method: method, params: params.mapValues { $0.anyValue })
+        emitResult(request.id, result)
+      } catch let error as RemindersBridgeError {
+        emitError(request.id, error.message)
+      } catch {
+        emitError(request.id, "reminders failed: \(error.localizedDescription)")
+      }
     default: emitError(request.id, "unknown method: \(request.method)")
     }
   }

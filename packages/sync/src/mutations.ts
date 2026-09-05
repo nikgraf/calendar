@@ -11,6 +11,7 @@ import {
 import { AccountRepo, CalendarRepo, EventRepo, PendingOpRepo, TaskRepo } from '@calendar/db';
 import { CONFLICT_NOTICE_KEY } from '@calendar/db/keys';
 import { generateEventId, GoogleCalendarClient, GoogleTasksClient } from '@calendar/google';
+import { RemindersClient } from '@calendar/reminders';
 import { Clock, Context, Effect, Layer, Semaphore } from 'effect';
 import { Reactivity } from 'effect/unstable/reactivity/Reactivity';
 import { makeApplyOp } from './applyOp.ts';
@@ -22,7 +23,9 @@ import {
   NotAttendeeError,
   RecurringEditUnsupportedError,
   retryDelayMs,
+  UnsupportedForProviderError,
 } from './mutationTypes.ts';
+import { makeReminderMutations } from './reminderMutations.ts';
 import { makeTaskMutations } from './taskMutations.ts';
 
 export * from './mutationTypes.ts';
@@ -40,9 +43,11 @@ const make: Effect.Effect<
   | GoogleTasksClient
   | PendingOpRepo
   | Reactivity
+  | RemindersClient
   | TaskRepo
 > = Effect.gen(function* () {
   const reactivity = yield* Reactivity;
+  const remindersClient = yield* RemindersClient;
   const accountRepo = yield* AccountRepo;
   const calendarRepo = yield* CalendarRepo;
   const eventRepo = yield* EventRepo;
@@ -175,12 +180,61 @@ const make: Effect.Effect<
       )
       .pipe(Effect.catchCause(() => Effect.void));
 
-  const taskMutations = makeTaskMutations({
+  const googleTasks = makeTaskMutations({
     enqueueAndKick,
     opsForEvent,
     pendingOpRepo,
     taskRepo,
   });
+  const reminders = makeReminderMutations({ accountRepo, remindersClient, taskRepo });
+
+  /** Google lists go through the pending-op queue; Reminders lists hit EventKit directly. */
+  const providerOf = (accountId: string) =>
+    Effect.map(accountRepo.get(accountId), (account) => account?.provider ?? 'google');
+  const REMINDER_ONLY_FIELDS = [
+    'alarms',
+    'dueTime',
+    'moveToListId',
+    'priority',
+    'recurrence',
+    'url',
+  ] as const;
+  const rejectReminderFields = (
+    fields: Partial<Record<(typeof REMINDER_ONLY_FIELDS)[number], unknown>>,
+  ) =>
+    Effect.gen(function* () {
+      for (const field of REMINDER_ONLY_FIELDS) {
+        if (fields[field] !== undefined) {
+          return yield* Effect.fail(new UnsupportedForProviderError({ field, provider: 'google' }));
+        }
+      }
+    });
+
+  const taskMutations: Pick<
+    EventMutationsShape,
+    'completeTask' | 'createTask' | 'deleteTask' | 'updateTask'
+  > = {
+    completeTask: (params) =>
+      Effect.flatMap(providerOf(params.accountId), (provider) =>
+        provider === 'apple' ? reminders.completeTask(params) : googleTasks.completeTask(params),
+      ),
+    createTask: (params) =>
+      Effect.flatMap(providerOf(params.accountId), (provider) =>
+        provider === 'apple'
+          ? reminders.createTask(params)
+          : Effect.andThen(rejectReminderFields(params), googleTasks.createTask(params)),
+      ),
+    deleteTask: (params) =>
+      Effect.flatMap(providerOf(params.accountId), (provider) =>
+        provider === 'apple' ? reminders.deleteTask(params) : googleTasks.deleteTask(params),
+      ),
+    updateTask: (params) =>
+      Effect.flatMap(providerOf(params.accountId), (provider) =>
+        provider === 'apple'
+          ? reminders.updateTask(params)
+          : Effect.andThen(rejectReminderFields(params.changes), googleTasks.updateTask(params)),
+      ),
+  };
 
   const shape: EventMutationsShape = {
     ...taskMutations,
@@ -639,6 +693,7 @@ export class EventMutations extends Context.Service<EventMutations, EventMutatio
     | GoogleTasksClient
     | PendingOpRepo
     | Reactivity
+    | RemindersClient
     | TaskRepo
   > = Layer.effect(EventMutations)(make);
 }

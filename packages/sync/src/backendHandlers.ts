@@ -1,4 +1,6 @@
 import {
+  Account,
+  APPLE_REMINDERS_ACCOUNT_ID,
   AppBackendRpcs,
   assembleWindow,
   backendMethodNames,
@@ -11,7 +13,8 @@ import {
 } from '@calendar/core';
 import { AccountRepo, CalendarRepo, EventRepo, PendingOpRepo, TaskRepo } from '@calendar/db';
 import { TokenStore } from '@calendar/google';
-import { Effect, Queue, Stream } from 'effect';
+import { RemindersClient } from '@calendar/reminders';
+import { Clock, Effect, Queue, Stream } from 'effect';
 import { SyncEngine } from './engine.ts';
 import { EventMutations } from './mutations.ts';
 
@@ -21,6 +24,7 @@ export type CommonBackendServices =
   | EventMutations
   | EventRepo
   | PendingOpRepo
+  | RemindersClient
   | SyncEngine
   | TaskRepo
   | TokenStore;
@@ -34,6 +38,38 @@ export const commonBackendHandlers: Omit<BackendHandlers<CommonBackendServices>,
     Effect.gen(function* () {
       const mutations = yield* EventMutations;
       yield* mutations.completeTask(params);
+    }),
+
+  // Asks EventKit (the OS prompt when undetermined); on grant the synthetic
+  // Apple account appears and a sync fills its lists. Denied leaves no trace
+  // — the Settings row keeps offering the ask.
+  connectReminders: () =>
+    Effect.gen(function* () {
+      const remindersClient = yield* RemindersClient;
+      const granted = yield* remindersClient
+        .requestAccess()
+        .pipe(Effect.orElseSucceed(() => false));
+      if (!granted) {
+        return { granted: false };
+      }
+      const accountRepo = yield* AccountRepo;
+      const existing = (yield* accountRepo.list()).find(
+        (account) => account.id === APPLE_REMINDERS_ACCOUNT_ID,
+      );
+      yield* accountRepo.upsert(
+        new Account({
+          createdAt: existing?.createdAt ?? (yield* Clock.currentTimeMillis),
+          displayName: 'Apple Reminders',
+          email: '',
+          id: APPLE_REMINDERS_ACCOUNT_ID,
+          provider: 'apple',
+          status: 'ok',
+          tasksEnabled: true,
+        }),
+      );
+      const engine = yield* SyncEngine;
+      yield* Effect.forkDetach(engine.syncAll());
+      return { granted: true };
     }),
 
   createEvent: (draft) =>
@@ -123,8 +159,12 @@ export const commonBackendHandlers: Omit<BackendHandlers<CommonBackendServices>,
   removeAccount: ({ accountId }) =>
     Effect.gen(function* () {
       const accountRepo = yield* AccountRepo;
-      const tokenStore = yield* TokenStore;
-      yield* tokenStore.remove(accountId);
+      const account = (yield* accountRepo.list()).find((candidate) => candidate.id === accountId);
+      if (account?.provider !== 'apple') {
+        // The Apple account holds no tokens; its data is the cascade below.
+        const tokenStore = yield* TokenStore;
+        yield* tokenStore.remove(accountId);
+      }
       yield* accountRepo.remove(accountId);
     }),
 

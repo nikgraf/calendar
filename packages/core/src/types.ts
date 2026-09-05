@@ -6,6 +6,22 @@ export const EventStatus = Schema.Literals(['cancelled', 'confirmed', 'tentative
 export const SyncStatus = Schema.Literals(['error', 'pending', 'synced']);
 export const ResponseStatus = Schema.Literals(['accepted', 'declined', 'needsAction', 'tentative']);
 export const TaskStatus = Schema.Literals(['completed', 'needsAction']);
+/** Which system a task list (and its tasks) lives in. */
+export const TaskProvider = Schema.Literals(['apple', 'google']);
+export type TaskProvider = typeof TaskProvider.Type;
+/** Reminders priority buckets (EventKit's 0…9 collapses to these). */
+export const TaskPriority = Schema.Literals(['high', 'low', 'medium']);
+export type TaskPriority = typeof TaskPriority.Type;
+/** The recurrence subset a Reminders rule round-trips through (see RecurrenceRuleSpec). */
+export const TaskRecurrence = Schema.Struct({
+  count: Schema.optional(Schema.Number),
+  freq: Schema.Literals(['daily', 'monthly', 'weekly', 'yearly']),
+  interval: Schema.Number,
+  untilDate: Schema.optional(Schema.String),
+});
+export type TaskRecurrence = typeof TaskRecurrence.Type;
+/** The one synthetic account that owns Apple Reminders lists on a device. */
+export const APPLE_REMINDERS_ACCOUNT_ID = 'apple-reminders';
 
 export class Account extends Schema.Class<Account>('Account')({
   avatarUrl: Schema.optional(Schema.String),
@@ -14,6 +30,8 @@ export class Account extends Schema.Class<Account>('Account')({
   email: Schema.String,
   /** Stable local UUID — never the Google account id. */
   id: Schema.String,
+  /** 'google' accounts sign in via OAuth; the single 'apple' account is the device's Reminders. */
+  provider: TaskProvider,
   status: AccountStatus,
   /**
    * Whether this account's token was granted the Google Tasks scope.
@@ -48,29 +66,47 @@ export class CalendarInfo extends Schema.Class<CalendarInfo>('CalendarInfo')({
 
 export class TaskListInfo extends Schema.Class<TaskListInfo>('TaskListInfo')({
   accountId: Schema.String,
-  /** Google task-list id, unique within an account. */
+  /** Reminders lists carry a color; Google lists do not. */
+  colorHex: Schema.optional(Schema.String),
+  /** Task-list id, unique within an account (Google id / EK calendar identifier). */
   id: Schema.String,
-  /** Local show/hide toggle — not synced to Google. */
+  /** Local show/hide toggle — not synced. */
   isVisible: Schema.Boolean,
+  provider: TaskProvider,
+  /** Reminders only: EventKit refuses writes to this list (subscribed/shared read-only source). */
+  readOnly: Schema.optional(Schema.Boolean),
   title: Schema.String,
 }) {}
 
 export class TaskRecord extends Schema.Class<TaskRecord>('TaskRecord')({
   accountId: Schema.String,
+  /** Reminders only: alarm offsets in minutes relative to the due time (≤ 0 = before/at). */
+  alarms: Schema.optional(Schema.Array(Schema.Number)),
   /** Epoch ms of completion; absent while the task is open. */
   completedAt: Schema.optional(Schema.Number),
   /**
-   * Due day as 'YYYY-MM-DD' — the Tasks API discards the time portion, so
-   * this is date-only by construction. Absent for undated tasks.
+   * Due day as 'YYYY-MM-DD'. Google Tasks are date-only by construction;
+   * Reminders may add `dueTime`. Absent for undated tasks.
    */
   dueDate: Schema.optional(Schema.String),
-  /** Google task id, unique within its list. */
+  /** Reminders only: 'HH:MM' in the device zone when the reminder is timed. */
+  dueTime: Schema.optional(Schema.String),
+  /** Task id, unique within its list. */
   id: Schema.String,
   listId: Schema.String,
   notes: Schema.optional(Schema.String),
+  /** Reminders only; absent = no priority. */
+  priority: Schema.optional(TaskPriority),
+  provider: TaskProvider,
+  /** Reminders only: the editable repeat rule, when expressible. */
+  recurrence: Schema.optional(TaskRecurrence),
+  /** Reminders only: a repeat rule exists that the app cannot express (by-day, positional…) — never overwritten. */
+  recurrenceUnsupported: Schema.optional(Schema.Literal(true)),
   status: TaskStatus,
   title: Schema.String,
   updatedAt: Schema.Number,
+  /** Reminders only. */
+  url: Schema.optional(Schema.String),
   webViewLink: Schema.optional(Schema.String),
 }) {}
 

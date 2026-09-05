@@ -3,8 +3,12 @@ import type {
   EventRecord,
   RecurringScope,
   RsvpResponse,
+  TaskPriority,
+  TaskProvider,
   TaskRecord,
+  TaskRecurrence,
 } from '@calendar/core';
+import type { RemindersError } from '@calendar/reminders';
 import { Data, type Effect } from 'effect';
 import type { SqlError } from 'effect/unstable/sql/SqlError';
 
@@ -37,6 +41,30 @@ export class TaskNotFoundError extends Data.TaggedError('TaskNotFoundError')<{
 export class TaskListNotFoundError extends Data.TaggedError('TaskListNotFoundError')<{
   readonly taskListId: string;
 }> {}
+
+/** A Reminders-only field (time, priority, url, alarms, recurrence, move) sent to a Google list. */
+export class UnsupportedForProviderError extends Data.TaggedError('UnsupportedForProviderError')<{
+  readonly field: string;
+  readonly provider: TaskProvider;
+}> {}
+
+/**
+ * updateTask changes: `undefined` leaves a field alone; `null` clears a
+ * Reminders-only field; `moveToListId` moves a reminder to another list.
+ */
+export interface TaskWriteChanges {
+  readonly alarms?: ReadonlyArray<number> | null | undefined;
+  readonly dueDate?: string | undefined;
+  readonly dueTime?: string | null | undefined;
+  readonly moveToListId?: string | undefined;
+  readonly notes?: string | undefined;
+  readonly priority?: TaskPriority | null | undefined;
+  readonly recurrence?: TaskRecurrence | null | undefined;
+  readonly title?: string | undefined;
+  readonly url?: string | null | undefined;
+}
+
+export type TaskProviderError = RemindersError | UnsupportedForProviderError;
 
 /** Sentinel eventId keying calendar-color ops for coalescing. */
 export const CALENDAR_COLOR_EVENT_ID = '__calendar_color__';
@@ -73,22 +101,30 @@ export interface UpdateRecurringParams extends RecurringTargetParams {
 type RecurringEditError = EventNotFoundError | RecurringEditUnsupportedError | SqlError;
 
 export interface EventMutationsShape {
-  /** Toggles a task's completion locally and writes it back to Google. */
+  /** Toggles a task's completion locally and writes it back (Google queue / EventKit). */
   readonly completeTask: (params: {
     readonly accountId: string;
     readonly status: TaskRecord['status'];
     readonly taskId: string;
     readonly taskListId: string;
-  }) => Effect.Effect<void, SqlError | TaskNotFoundError>;
+  }) => Effect.Effect<void, SqlError | TaskNotFoundError | TaskProviderError>;
   readonly createEvent: (draft: EventDraft) => Effect.Effect<EventRecord, SqlError>;
-  /** Creates a task optimistically under a temp id; the push swaps ids. */
+  /**
+   * Google: optimistic temp-id row + queued insert (ids are server-assigned).
+   * Apple: written to EventKit synchronously; the returned record is final.
+   */
   readonly createTask: (params: {
     readonly accountId: string;
+    readonly alarms?: ReadonlyArray<number> | undefined;
     readonly dueDate: string;
+    readonly dueTime?: string | undefined;
     readonly notes?: string | undefined;
+    readonly priority?: TaskPriority | undefined;
+    readonly recurrence?: TaskRecurrence | undefined;
     readonly taskListId: string;
     readonly title: string;
-  }) => Effect.Effect<TaskRecord, SqlError | TaskListNotFoundError>;
+    readonly url?: string | undefined;
+  }) => Effect.Effect<TaskRecord, SqlError | TaskListNotFoundError | TaskProviderError>;
   readonly deleteEvent: (params: {
     readonly accountId: string;
     readonly calendarId: string;
@@ -101,7 +137,7 @@ export interface EventMutationsShape {
     readonly accountId: string;
     readonly taskId: string;
     readonly taskListId: string;
-  }) => Effect.Effect<void, SqlError>;
+  }) => Effect.Effect<void, SqlError | TaskProviderError>;
   /** Drains due pending ops (serialized); safe to call concurrently. */
   readonly processPendingOps: () => Effect.Effect<void>;
   /** Updates the caller's own attendee responseStatus (series-wide). */
@@ -121,17 +157,13 @@ export interface EventMutationsShape {
   readonly updateRecurring: (
     params: UpdateRecurringParams,
   ) => Effect.Effect<void, RecurringEditError>;
-  /** Edits title/notes/due optimistically and patches Google. */
+  /** Edits a task; Google gets title/notes/due, Reminders the full field set. */
   readonly updateTask: (params: {
     readonly accountId: string;
-    readonly changes: {
-      readonly dueDate?: string | undefined;
-      readonly notes?: string | undefined;
-      readonly title?: string | undefined;
-    };
+    readonly changes: TaskWriteChanges;
     readonly taskId: string;
     readonly taskListId: string;
-  }) => Effect.Effect<void, SqlError>;
+  }) => Effect.Effect<void, SqlError | TaskProviderError>;
 }
 
 /** Backoff for transient op failures: 30s · 2^attempts, capped at 30min. */

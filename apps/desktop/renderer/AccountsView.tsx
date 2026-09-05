@@ -6,6 +6,7 @@ import {
 } from '@calendar/app-state';
 import { useState } from 'react';
 import { PrivacySection } from './PrivacySection.tsx';
+import { RemindersSection } from './RemindersSection.tsx';
 
 export function AccountsView() {
   const accounts = useAccounts();
@@ -59,15 +60,21 @@ export function AccountsView() {
             <div>
               <p className="select-text font-medium">{account.displayName ?? account.email}</p>
               <p className="select-text text-sm text-neutral-500">
-                {account.email}
+                {account.provider === 'apple' ? 'This Mac' : account.email}
                 {account.status === 'reauth_required' ? (
-                  <button
-                    className="ml-2 text-blue-600 hover:underline"
-                    onClick={() => void addAccount()}
-                    type="button"
-                  >
-                    Sign in again
-                  </button>
+                  account.provider === 'apple' ? (
+                    <span className="ml-2 text-amber-600">
+                      Access off — allow Reminders in System Settings › Privacy & Security.
+                    </span>
+                  ) : (
+                    <button
+                      className="ml-2 text-blue-600 hover:underline"
+                      onClick={() => void addAccount()}
+                      type="button"
+                    >
+                      Sign in again
+                    </button>
+                  )
                 ) : null}
               </p>
             </div>
@@ -112,6 +119,7 @@ export function AccountsView() {
         </section>
       ))}
 
+      <RemindersSection />
       <PrivacySection />
     </div>
   );

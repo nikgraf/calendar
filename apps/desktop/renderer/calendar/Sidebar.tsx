@@ -1,5 +1,6 @@
 import type { Account, CalendarInfo, TaskListInfo } from '@calendar/core';
-import { useGuardedMutations, useTaskLists } from '@calendar/app-state';
+import { useBackendMutations, useGuardedMutations, useTaskLists } from '@calendar/app-state';
+import { useState } from 'react';
 import { CalendarColorButton } from './CalendarColorButton.tsx';
 import { SyncStatus } from './SyncStatus.tsx';
 
@@ -13,7 +14,25 @@ export function Sidebar({
   onOpenSettings: () => void;
 }) {
   const { addAccount, setCalendarVisible, setTaskListVisible } = useGuardedMutations();
+  // Raw, not guarded: a refused grant resolves (granted: false) rather than
+  // rejecting, and the user needs to hear about it.
+  const { connectReminders } = useBackendMutations();
+  const [connectNote, setConnectNote] = useState<string | null>(null);
   const taskLists = useTaskLists();
+
+  const connect = async () => {
+    setConnectNote(null);
+    try {
+      const result = await connectReminders(undefined);
+      if (!result.granted) {
+        setConnectNote(
+          'Reminders access was not granted — allow it in System Settings › Privacy & Security › Reminders.',
+        );
+      }
+    } catch (error) {
+      setConnectNote(String(error));
+    }
+  };
 
   const toggleList = (list: TaskListInfo) => {
     void setTaskListVisible({
@@ -38,9 +57,11 @@ export function Sidebar({
         {accounts.map((account) => (
           <section className="mb-3" key={account.id}>
             <p className="select-text px-2 py-1 text-[11px] font-medium tracking-wide text-neutral-400 uppercase">
-              {account.email}
+              {account.provider === 'apple' ? 'Apple Reminders' : account.email}
               {account.status === 'reauth_required' ? (
-                <span className="text-amber-600"> — sign in again</span>
+                <span className="text-amber-600">
+                  {account.provider === 'apple' ? ' — access off' : ' — sign in again'}
+                </span>
               ) : null}
             </p>
             {calendars
@@ -73,15 +94,28 @@ export function Sidebar({
                   onClick={() => toggleList(list)}
                   type="button"
                 >
-                  <span aria-hidden className="text-xs">
-                    ✓
-                  </span>
+                  {list.colorHex ? (
+                    <span
+                      aria-hidden
+                      className="h-2.5 w-2.5 shrink-0 rounded-full"
+                      style={{ backgroundColor: list.colorHex }}
+                    />
+                  ) : (
+                    <span aria-hidden className="text-xs">
+                      ✓
+                    </span>
+                  )}
                   <span className={`block truncate ${list.isVisible ? '' : 'text-neutral-400'}`}>
                     {list.title}
                   </span>
                 </button>
               ))}
-            {account.tasksEnabled ? null : (
+            {account.provider === 'apple' && account.status === 'reauth_required' ? (
+              <p className="px-2 py-1 text-xs text-neutral-400">
+                Allow Reminders in System Settings › Privacy & Security — it reconnects on its own.
+              </p>
+            ) : null}
+            {account.tasksEnabled || account.provider !== 'google' ? null : (
               // Tokens from before the tasks scope: re-running sign-in
               // re-consents and upgrades the account in place.
               <button
@@ -97,6 +131,16 @@ export function Sidebar({
         {accounts.length === 0 ? (
           <p className="px-2 py-4 text-sm text-neutral-400">No accounts connected.</p>
         ) : null}
+        {accounts.some((account) => account.provider === 'apple') ? null : (
+          <button
+            className="w-full rounded-md px-2 py-1 text-left text-xs text-neutral-400 hover:bg-neutral-200/60 hover:text-neutral-600"
+            onClick={() => void connect()}
+            type="button"
+          >
+            Connect Apple Reminders
+          </button>
+        )}
+        {connectNote ? <p className="px-2 py-1 text-xs text-amber-700">{connectNote}</p> : null}
       </div>
       <SyncStatus />
       <button

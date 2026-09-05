@@ -17,6 +17,7 @@ import {
   setUpdateRequestHeadersOverride,
   updateId,
 } from 'expo-updates';
+import { Effect } from 'effect';
 import { useEffect, useState } from 'react';
 import {
   Modal,
@@ -31,6 +32,7 @@ import {
 } from 'react-native';
 import { appleLanguageModel } from '../appleModel.ts';
 import { appleSpeech } from '../appleSpeech.ts';
+import { iosRemindersClient } from '../remindersClient.ts';
 import { palette } from './theme.ts';
 import { MutationNoticeToast } from './Toast.tsx';
 
@@ -45,6 +47,20 @@ export function SettingsSheet({ onClose, visible }: { onClose: () => void; visib
   const [error, setError] = useState<string | null>(null);
   /** `${accountId}:${calendarId}` of the row with the palette expanded. */
   const [colorPickerFor, setColorPickerFor] = useState<string | null>(null);
+
+  const connectReminders = async () => {
+    setError(null);
+    const result = await Effect.runPromise(
+      Effect.tryPromise(() => mutations.connectReminders(undefined)).pipe(
+        Effect.orElseSucceed(() => ({ granted: false })),
+      ),
+    );
+    if (!result.granted) {
+      setError(
+        'Reminders access was not granted. Allow it in Settings › Privacy & Security › Reminders, then try again.',
+      );
+    }
+  };
 
   const addAccount = async () => {
     setBusy(true);
@@ -106,11 +122,22 @@ export function SettingsSheet({ onClose, visible }: { onClose: () => void; visib
               <View style={styles.accountHeader}>
                 <View style={styles.accountInfo}>
                   <Text style={styles.accountName}>{account.displayName ?? account.email}</Text>
-                  <Text style={styles.accountEmail}>{account.email}</Text>
+                  {account.provider === 'apple' ? (
+                    <Text style={styles.accountEmail}>This device</Text>
+                  ) : (
+                    <Text style={styles.accountEmail}>{account.email}</Text>
+                  )}
                   {account.status === 'reauth_required' ? (
-                    <Pressable disabled={busy} onPress={() => void addAccount()}>
-                      <Text style={styles.reconnect}>Session expired — reconnect</Text>
-                    </Pressable>
+                    account.provider === 'apple' ? (
+                      <Text style={styles.reconnect}>
+                        Reminders access is off — allow it in Settings › Privacy & Security ›
+                        Reminders; it reconnects on its own.
+                      </Text>
+                    ) : (
+                      <Pressable disabled={busy} onPress={() => void addAccount()}>
+                        <Text style={styles.reconnect}>Session expired — reconnect</Text>
+                      </Pressable>
+                    )
                   ) : null}
                 </View>
                 <Pressable onPress={() => void guarded.removeAccount({ accountId: account.id })}>
@@ -208,9 +235,12 @@ export function SettingsSheet({ onClose, visible }: { onClose: () => void; visib
                     <Text style={[styles.calendarName, !list.isVisible && styles.calendarHidden]}>
                       ✓ {list.title}
                     </Text>
+                    {list.colorHex ? (
+                      <View style={[styles.swatch, { backgroundColor: list.colorHex }]} />
+                    ) : null}
                   </Pressable>
                 ))}
-              {account.tasksEnabled ? null : (
+              {account.tasksEnabled || account.provider !== 'google' ? null : (
                 // Tokens from before the tasks scope: re-running sign-in
                 // re-consents and upgrades the account in place.
                 <Pressable disabled={busy} onPress={() => void addAccount()}>
@@ -229,6 +259,15 @@ export function SettingsSheet({ onClose, visible }: { onClose: () => void; visib
               {busy ? 'Waiting for Google…' : 'Add Google Account'}
             </Text>
           </Pressable>
+          {accounts.some((account) => account.provider === 'apple') ? null : (
+            <Pressable
+              onPress={() => void connectReminders()}
+              style={[styles.addButton, styles.addSecondary]}
+              testID="connect-reminders"
+            >
+              <Text style={styles.addLabel}>Connect Apple Reminders</Text>
+            </Pressable>
+          )}
 
           <PrPreviewSection />
           <DiagnosticsSection />
@@ -324,9 +363,39 @@ function PrPreviewSection() {
  * on, and answering "why" meant downloading the shipped IPA and reading
  * its linked frameworks — this is the cheaper version of that.
  */
+const describeReminders = async (): Promise<string> => {
+  const status = await Effect.runPromise(
+    iosRemindersClient.status().pipe(Effect.orElseSucceed(() => 'unavailable' as const)),
+  );
+  if (status !== 'fullAccess') {
+    return status;
+  }
+  const lists = await Effect.runPromise(
+    iosRemindersClient.listLists().pipe(Effect.orElseSucceed(() => [])),
+  );
+  return `fullAccess (${String(lists.length)} lists)`;
+};
+
 function DiagnosticsSection() {
   const [modelStatus, setModelStatus] = useState<ModelStatus | 'checking…'>('checking…');
   const [dictation, setDictation] = useState('checking…');
+  const [reminders, setReminders] = useState('checking…');
+  const [remindersBusy, setRemindersBusy] = useState(false);
+  const mutations = useBackendMutations();
+
+  const requestReminders = async () => {
+    setRemindersBusy(true);
+    try {
+      // The rpc, not the bare permission ask: a grant alone creates no
+      // account and syncs nothing.
+      const result = await mutations.connectReminders(undefined);
+      setReminders(result.granted ? await describeReminders() : 'denied');
+    } catch {
+      setReminders(await describeReminders());
+    } finally {
+      setRemindersBusy(false);
+    }
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -347,6 +416,11 @@ function DiagnosticsSection() {
           setDictation('unsupported');
         }
       });
+    void describeReminders().then((text) => {
+      if (!cancelled) {
+        setReminders(text);
+      }
+    });
     return () => {
       cancelled = true;
     };
@@ -360,6 +434,18 @@ function DiagnosticsSection() {
         on-device model: {modelStatus}
       </Text>
       <Text style={styles.previewMeta}>dictation: {dictation}</Text>
+      <Text style={styles.previewMeta} testID="diagnostics-reminders">
+        reminders: {reminders}
+      </Text>
+      {reminders === 'notDetermined' || reminders === 'denied' ? (
+        <Pressable disabled={remindersBusy} onPress={() => void requestReminders()}>
+          <Text style={styles.reconnect}>
+            {reminders === 'denied'
+              ? 'Reminders access is off — check again after allowing it in Settings'
+              : 'Allow access to Reminders'}
+          </Text>
+        </Pressable>
+      ) : null}
       <Text style={styles.previewMeta}>
         {/* Hermes ships without it; a "missing" here explains any failure
             to save an event, since ids are generated from it. */}
@@ -407,6 +493,10 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     fontSize: 15,
     fontWeight: '600',
+  },
+  addSecondary: {
+    backgroundColor: '#171717',
+    marginTop: 8,
   },
   calendarHidden: {
     color: palette.textFaint,

@@ -1,4 +1,4 @@
-import { Account, CalendarInfo, EventRecord, plainDateToUtcMs } from '@calendar/core';
+import { Account, CalendarInfo, EventRecord, plainDateToUtcMs, SyncState } from '@calendar/core';
 import { SqliteClient } from '@effect/sql-sqlite-node';
 import { expect, it } from '@effect/vitest';
 import { Effect, Layer } from 'effect';
@@ -7,10 +7,28 @@ import { layer as reactivityLayer } from 'effect/unstable/reactivity/Reactivity'
 import { describe } from 'vitest';
 import { EVENTS_KEY } from './keys.ts';
 import { runMigrations } from './migrate.ts';
-import { AccountRepo, CalendarRepo, EventRepo, reposLayer } from './repos.ts';
+import { AccountRepo, CalendarRepo, EventRepo, reposLayer, SyncStateRepo } from './repos.ts';
+
+/** Mirror rows are only written while their account exists — seed the ones tests use. */
+const seedAccounts = Effect.gen(function* () {
+  const accounts = yield* AccountRepo;
+  for (const id of ['acc-1', 'acc-2']) {
+    yield* accounts.upsert(
+      new Account({
+        createdAt: 1,
+        email: `${id}@example.com`,
+        id,
+        provider: 'google',
+        status: 'ok',
+        tasksEnabled: true,
+      }),
+    );
+  }
+});
 
 const freshDbLayer = () =>
-  reposLayer.pipe(
+  Layer.effectDiscard(seedAccounts).pipe(
+    Layer.provideMerge(reposLayer),
     Layer.provideMerge(Layer.effectDiscard(runMigrations)),
     Layer.provideMerge(SqliteClient.layer({ filename: ':memory:' })),
     Layer.provideMerge(reactivityLayer),
@@ -20,6 +38,7 @@ const account = new Account({
   createdAt: 1,
   email: 'nik@example.com',
   id: 'acc-1',
+  provider: 'google',
   status: 'ok',
   tasksEnabled: false,
 });
@@ -61,10 +80,42 @@ describe('repos', () => {
       const repo = yield* AccountRepo;
       yield* repo.upsert(account);
       yield* repo.setStatus('acc-1', 'reauth_required');
-      const listed = yield* repo.list();
-      expect(listed).toHaveLength(1);
-      expect(listed[0]!.email).toBe('nik@example.com');
-      expect(listed[0]!.status).toBe('reauth_required');
+      const listed = (yield* repo.list()).find((candidate) => candidate.id === 'acc-1');
+      expect(listed?.email).toBe('nik@example.com');
+      expect(listed?.status).toBe('reauth_required');
+    }).pipe(Effect.provide(freshDbLayer())),
+  );
+
+  it.effect('rows and sync state are never written for a removed account', () =>
+    Effect.gen(function* () {
+      // A sync pass that finishes after the user removed the account must
+      // not recreate what remove() deleted — later passes would never
+      // touch those rows again.
+      const accounts = yield* AccountRepo;
+      const calendars = yield* CalendarRepo;
+      const events = yield* EventRepo;
+      const syncState = yield* SyncStateRepo;
+      yield* calendars.upsertMany([calendar()]);
+      yield* events.upsertMany([timedEvent()]);
+      yield* accounts.remove('acc-1');
+      yield* calendars.upsertMany([calendar()]);
+      yield* events.upsertMany([timedEvent()]);
+      yield* syncState.set(
+        new SyncState({
+          accountId: 'acc-1',
+          lastFullSyncAt: 1,
+          lastSyncAt: 1,
+          scope: 'calendars',
+          status: 'idle',
+          syncToken: 'tok',
+        }),
+      );
+      expect(yield* calendars.list('acc-1')).toEqual([]);
+      expect((yield* events.getWindow(0, Number.MAX_SAFE_INTEGER)).singles).toEqual([]);
+      expect(yield* syncState.get('acc-1', 'calendars')).toBeNull();
+      // The other account is untouched by the guard.
+      yield* calendars.upsertMany([calendar({ accountId: 'acc-2' })]);
+      expect(yield* calendars.list('acc-2')).toHaveLength(1);
     }).pipe(Effect.provide(freshDbLayer())),
   );
 

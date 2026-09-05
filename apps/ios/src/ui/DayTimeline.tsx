@@ -9,6 +9,7 @@ import {
   moveEventTimes,
   resizeEventEnd,
   swipeSnapDecision,
+  taskChipLabel,
   type TaskRecord,
   Temporal,
 } from '@calendar/core';
@@ -223,6 +224,7 @@ function AllDayColumn({
   colorOf,
   date,
   events,
+  listColorOf,
   onTaskPress,
   onToggleTask,
   tasks,
@@ -232,6 +234,7 @@ function AllDayColumn({
   colorOf: (event: EventRecord) => string;
   date: Temporal.PlainDate;
   events: ReadonlyArray<EventRecord>;
+  listColorOf: (task: TaskRecord) => string | undefined;
   onTaskPress: (task: TaskRecord) => void;
   onToggleTask: (task: TaskRecord) => void;
   tasks: ReadonlyArray<TaskRecord>;
@@ -245,10 +248,18 @@ function AllDayColumn({
     <View style={[styles.allDayColumn, { width }]}>
       {due.map((task) => {
         const done = task.status === 'completed';
+        const listColor = listColorOf(task);
         return (
           <View
             key={`task:${task.listId}:${task.id}`}
-            style={[styles.allDayChip, styles.taskChip, done && styles.taskChipDone]}
+            style={[
+              styles.allDayChip,
+              styles.taskChip,
+              // Reminders lists have colors; a left accent tells them apart
+              // from Google tasks without recoloring the whole chip.
+              listColor ? { borderLeftColor: listColor, borderLeftWidth: 3 } : null,
+              done && styles.taskChipDone,
+            ]}
             testID={`task-chip-${task.id}`}
           >
             {/* Side-by-side Pressables — no nested-press arbitration. The
@@ -275,7 +286,7 @@ function AllDayColumn({
                 numberOfLines={1}
                 style={[styles.allDayText, styles.taskText, done && styles.taskTextDone]}
               >
-                {task.title}
+                {taskChipLabel(task)}
               </Text>
             </Pressable>
           </View>
@@ -302,6 +313,7 @@ export function DayTimeline({
   colorOf,
   date,
   events,
+  listColorOf,
   onEventPress,
   onNavigate,
   onTaskPress,
@@ -312,6 +324,7 @@ export function DayTimeline({
   colorOf: (event: EventRecord) => string;
   date: Temporal.PlainDate;
   events: ReadonlyArray<EventRecord>;
+  listColorOf: (task: TaskRecord) => string | undefined;
   onEventPress: (event: EventRecord) => void;
   /** Swipe committed a day change: +1 forward, -1 back. */
   onNavigate: (direction: 1 | -1) => void;
@@ -404,6 +417,7 @@ export function DayTimeline({
                 date={day}
                 events={events}
                 key={day.toString()}
+                listColorOf={listColorOf}
                 onTaskPress={onTaskPress}
                 onToggleTask={onToggleTask}
                 tasks={tasks}

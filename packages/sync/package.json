@@ -11,6 +11,7 @@
     "@calendar/core": "workspace:*",
     "@calendar/db": "workspace:*",
     "@calendar/google": "workspace:*",
+    "@calendar/reminders": "workspace:*",
     "effect": "catalog:"
   },
   "devDependencies": {

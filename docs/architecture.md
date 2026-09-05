@@ -1,8 +1,9 @@
 # Architecture
 
 Client-only: both apps talk directly to the Google Calendar and Google
-Tasks REST APIs. There is no server of ours; all state lives in a local
-SQLite database per device and reconciles against Google.
+Tasks REST APIs, and to Apple Reminders through EventKit. There is no
+server of ours; all state lives in a local SQLite database per device and
+reconciles against Google / EventKit.
 
 ## Data flow
 
@@ -40,6 +41,16 @@ supervised with restart backoff by apps/desktop/electron/modelHelper.ts).
 iOS reaches the same models via @react-native-ai/apple. Dictation audio
 is captured by the UI layer (renderer getUserMedia → 16kHz WAV) and only
 transcribed natively.
+
+Apple Reminders: RemindersClient (packages/reminders) speaks one JSON
+protocol to two native bridges built from a single Swift source —
+desktop: backend (main) → helperProcess.callHelper('reminders.*') → Swift
+helper → EventKit; iOS: backend → local Expo module → EventKit. Reads
+are mirrored into the tasks table by the sync pass; writes go to EventKit
+first and mirror the returned reminder (no pending op — EventKit is local
+and synchronous). The permission ask (`reminders:*` preload IPC on
+desktop, the Settings diagnostics row on iOS) is a window-level concern;
+reminder rows only ever cross the rpc seam.
 ```
 
 Invalidation path (backend → UI): repo mutations invalidate Reactivity keys
@@ -85,6 +96,13 @@ Rules that keep the queue correct:
 - **401**: the op stays queued, the account is flagged `reauth_required`;
   reconnecting (same account id, resolved by email) resets status and the
   queue drains.
+- **Provider dispatch**: `completeTask/createTask/deleteTask/updateTask`
+  look up the account's provider. Google lists take the queue path
+  below; Apple lists call EventKit synchronously via `reminderMutations`
+  and write the result through (`upsertTasks`), so a created reminder has
+  its real id from the start. Reminders-only fields (time, priority, url,
+  alarms, recurrence, `moveToListId`) on a Google list fail with
+  `UnsupportedForProviderError`.
 - **Task creates are not idempotent**: Google assigns task ids
   server-side, so a `createTask` writes a temp `local-…` row that is
   swapped for the server task on success (`rewriteEventId` renames the
@@ -122,6 +140,52 @@ Rules that keep the queue correct:
   with `sync_status='synced'` — pending local writes are protected). A
   403 with the insufficient-scope reason flips `tasksEnabled` off instead
   of retrying forever (older grants without the Tasks scope).
+- **Apple Reminders** (the synthetic `apple-reminders` account, created by
+  the `connectReminders` rpc after the EventKit prompt): SQLite holds the
+  latest **complete** EventKit snapshot — open and completed, dated and
+  undated (undated rows are stored for the future list view; `getWindow`
+  excludes them), so paging any distance ahead or back reads locally,
+  like Google Tasks. `syncReminders` checks authorization first — no
+  access flags the account, access regained heals it without
+  reconnecting; an _unavailable_ bridge is skipped, not mistaken for a
+  revoked grant. The bridge's `reminders.snapshot({ changedSince })`
+  returns every reminder's (list, id) plus full rows only for what
+  changed since the last pass (stamp in `sync_state` scope `reminders`),
+  and `TaskRepo.replaceMirror` reconciles in one transaction: ids staged
+  in a temp table row by row (iOS's SQLite may cap bound variables at
+  999), changed rows upserted only when strictly newer than what is
+  stored (a write-through that landed after the fetch wins), rows absent
+  from the snapshot removed only when older than the pass stamp (a row a
+  concurrent mutation just mirrored survives). `EKEventStoreChanged`
+  (helper event line / Expo module event) runs a debounced reminders-only
+  pass under the same gate — latency only; the 90 s pass is the
+  correctness mechanism, because the notification reaches a live
+  observer only.
+  - **Writes are EventKit-first and EventKit is the truth.** Once the
+    store has committed, a failing SQLite mirror write is logged, not
+    raised: the editor would otherwise show an error for a reminder that
+    exists and a retried Save would create it twice; our own write fires
+    `EKEventStoreChanged`, so the delta pass restores the row anyway.
+  - **Save sends only what changed** (`taskEditorChanges`, both
+    providers): the diff is against the values the form opened with, so
+    an edit made in Reminders.app while the form was open is never
+    overwritten by a stale unchanged field. An empty diff closes without
+    a write.
+  - **Read-only lists** (`EKCalendar.allowsContentModifications` false →
+    `TaskListInfo.readOnly`) are never a create/move target and open as a
+    viewer. EventKit stays the enforcement — no mutation-layer error.
+  - **Wire dates are Gregorian** whatever the device calendar: the bridge
+    stamps one explicit Gregorian calendar on written components and
+    resolves read components in their own calendar before formatting.
+    Every JSON number is range-checked (`boundedInt`) before a native
+    conversion — `Int(someDouble)` traps outside Int's range.
+- **Account removal vs. an in-flight pass** (both providers): every mirror
+  INSERT (calendars, events, task lists, tasks, sync_state) is
+  `INSERT … SELECT … WHERE EXISTS (SELECT 1 FROM accounts WHERE id = ?)`,
+  so a pass that finishes after `accountRepo.remove` writes nothing —
+  without it the finishing pass recreated rows no later pass would ever
+  touch. `replaceMirror` reports `skipped` and the engine ends the pass
+  without stamping sync_state; removal itself is one transaction.
 
 ## Recurring events
 
@@ -154,7 +218,14 @@ Rules that keep the queue correct:
   repo (and thus Releases) is private — update.electronjs.org only serves
   public repos.
 - Views: day/week (time grid with wheel-pan on desktop, swipe paging on
-  iOS), month grid, and an all-day lane that also hosts the task rows.
+  iOS), month grid, and an all-day lane that also hosts the task rows —
+  timed reminders lead with their time and priority marker
+  (`taskChipLabel`) rather than moving into the time grid.
+- The task editor forks on the selected list's provider
+  (`useTaskEditorModel.provider`): Google gets title/day/notes with a
+  fixed list; Reminders get time, priority, alert, repeat (shared
+  `useRepeatState`), URL, and a movable list. Both platforms keep the
+  same testIDs/labels on the shared controls.
 - Time is Temporal everywhere (`@js-temporal/polyfill` via
   `packages/core/src/time/temporal.ts`); Hermes needs the `Intl.resolvedOptions` shim in
   `packages/core/src/time/intl-compat.ts`.

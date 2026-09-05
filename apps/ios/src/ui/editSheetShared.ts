@@ -115,6 +115,11 @@ export const sheetStyles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 14,
   },
+  hint: {
+    color: palette.textMuted,
+    fontSize: 13,
+    marginTop: 4,
+  },
   input: {
     backgroundColor: '#ffffff',
     borderColor: palette.border,
@@ -158,6 +163,14 @@ export const sheetStyles = StyleSheet.create({
     alignItems: 'center',
     flexDirection: 'row',
     justifyContent: 'space-between',
+  },
+  readOnly: {
+    opacity: 0.6,
+  },
+  readOnlyNote: {
+    color: '#6b7280',
+    fontSize: 13,
+    marginBottom: 8,
   },
   save: {
     color: '#2563eb',
