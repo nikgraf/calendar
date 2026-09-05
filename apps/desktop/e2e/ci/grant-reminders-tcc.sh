@@ -17,7 +17,9 @@
 set -euo pipefail
 
 HELPER="${1:?path to solunivo-model-helper}"
-HELPER=$(cd "$(dirname "$HELPER")" && pwd)/$(basename "$HELPER")
+# The real path: SwiftPM's .build/release is a symlink, and tccd records
+# the resolved binary_path (.build/arm64-apple-macosx/release/…).
+HELPER=$(python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$HELPER")
 DB="$HOME/Library/Application Support/com.apple.TCC/TCC.db"
 
 echo "--- access table schema on $(sw_vers -productVersion)"
@@ -54,13 +56,18 @@ grant "com.solunivo.desktop.helper" 0 csreq
 [ -n "$SIGNING_ID" ] && grant "$SIGNING_ID" 0 csreq
 grant "$HELPER" 1 csreq
 grant "com.github.Electron" 0 none
-# The runner's responsible processes (paths seen on GitHub images).
+# The runner's responsible process. tccd's attribution on a GitHub
+# macos-26 image (from its own log): responsible={identifier=a.out,
+# responsible_path=/opt/hca/hosted-compute-agent}, accessing=the helper —
+# and a decision for a bare accessor is keyed on the responsible process.
+# Older images used the provisioner paths; all of them are seeded.
+grant "a.out" 0 none
 for RESPONSIBLE in \
+  /opt/hca/hosted-compute-agent \
   /opt/off/opt/runner/provisioner/provisioner \
   /usr/local/opt/runner/provisioner/provisioner \
   "$HOME/actions-runner/bin/Runner.Worker" \
-  "$HOME/actions-runner/bin/Runner.Listener" \
-  /bin/bash /bin/sh /bin/zsh; do
+  "$HOME/actions-runner/bin/Runner.Listener"; do
   grant "$RESPONSIBLE" 1 none
 done
 

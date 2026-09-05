@@ -20,7 +20,8 @@ if [ "$STATUS" != "fullAccess" ]; then
     WHERE service LIKE '%Reminders%' OR last_modified > strftime('%s','now') - 600" || true
   echo "--- tccd log (last 5 minutes, Reminders)"
   sudo log show --last 5m --predicate 'subsystem == "com.apple.TCC"' 2>/dev/null \
-    | grep -i "reminders\|solunivo\|helper" | tail -40 || true
+    | grep -a "kTCCServiceReminders\|solunivo-model-helper\|AUTHREQ_RESULT\|AUTHREQ_PROMPT" \
+    | grep -av "AddressBook\|contactsd\|com.apple.mds" | tail -60 || true
   echo "::error::helper reports '${STATUS:-no answer}', expected fullAccess — the TCC seed did not take on this image"
   exit 1
 fi
