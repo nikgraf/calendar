@@ -32,10 +32,18 @@ export function ReminderEditorForm({
   taskModel: ReturnType<typeof useTaskEditorModel>;
 }) {
   return (
-    <div className="flex flex-col gap-3">
+    <fieldset className="flex flex-col gap-3" disabled={taskModel.readOnly}>
       {taskModel.error ? (
         <p className="select-text rounded-lg bg-red-50 p-2 text-sm text-red-700">
           {taskModel.error}
+        </p>
+      ) : null}
+      {taskModel.readOnly ? (
+        <p
+          className="rounded-lg bg-neutral-100 p-2 text-sm text-neutral-600"
+          data-testid="task-read-only"
+        >
+          This list is read-only in Reminders.
         </p>
       ) : null}
       <input
@@ -233,7 +241,7 @@ export function ReminderEditorForm({
         />
       </label>
       <div className="mt-2 flex items-center justify-between">
-        {task ? (
+        {task && !taskModel.readOnly ? (
           <button
             className="text-sm text-red-600 hover:underline"
             onClick={() => void taskModel.remove()}
@@ -252,15 +260,17 @@ export function ReminderEditorForm({
           >
             Cancel
           </button>
-          <button
-            className="rounded-lg bg-blue-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-blue-500"
-            onClick={() => void taskModel.save()}
-            type="button"
-          >
-            Save
-          </button>
+          {taskModel.readOnly ? null : (
+            <button
+              className="rounded-lg bg-blue-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-blue-500"
+              onClick={() => void taskModel.save()}
+              type="button"
+            >
+              Save
+            </button>
+          )}
         </div>
       </div>
-    </div>
+    </fieldset>
   );
 }

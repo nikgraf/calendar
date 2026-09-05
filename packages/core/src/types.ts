@@ -73,6 +73,8 @@ export class TaskListInfo extends Schema.Class<TaskListInfo>('TaskListInfo')({
   /** Local show/hide toggle — not synced. */
   isVisible: Schema.Boolean,
   provider: TaskProvider,
+  /** Reminders only: EventKit refuses writes to this list (subscribed/shared read-only source). */
+  readOnly: Schema.optional(Schema.Boolean),
   title: Schema.String,
 }) {}
 

@@ -63,12 +63,16 @@ export function EventEditSheet({
                 ? 'Edit Event'
                 : 'New Event'}
           </Text>
-          <Pressable
-            onPress={() => void (mode === 'task' ? taskModel.save() : eventModel.save())}
-            testID="event-save"
-          >
-            <Text style={styles.save}>Save</Text>
-          </Pressable>
+          {mode === 'task' && taskModel.readOnly ? (
+            <View />
+          ) : (
+            <Pressable
+              onPress={() => void (mode === 'task' ? taskModel.save() : eventModel.save())}
+              testID="event-save"
+            >
+              <Text style={styles.save}>Save</Text>
+            </Pressable>
+          )}
         </View>
 
         {!eventModel.existing && !task ? (

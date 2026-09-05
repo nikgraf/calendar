@@ -164,6 +164,14 @@ export const sheetStyles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
   },
+  readOnly: {
+    opacity: 0.6,
+  },
+  readOnlyNote: {
+    color: '#6b7280',
+    fontSize: 13,
+    marginBottom: 8,
+  },
   save: {
     color: '#2563eb',
     fontSize: 16,

@@ -43,6 +43,7 @@ export interface TaskListRow {
   readonly synced_at: number;
   readonly provider: string;
   readonly color_hex: string | null;
+  readonly read_only: number;
 }
 
 export const taskListFromRow = (row: TaskListRow): TaskListInfo =>
@@ -52,6 +53,7 @@ export const taskListFromRow = (row: TaskListRow): TaskListInfo =>
     id: row.id,
     isVisible: row.is_visible === 1,
     provider: row.provider === 'apple' ? 'apple' : 'google',
+    ...(row.read_only === 1 ? { readOnly: true } : {}),
     title: row.title,
   });
 

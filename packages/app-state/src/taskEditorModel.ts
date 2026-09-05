@@ -2,7 +2,7 @@ import type { TaskListInfo, TaskPriority, TaskProvider, TaskRecord } from '@cale
 import { useState } from 'react';
 import { useBackendMutations } from './hooks.ts';
 import { repeatNumberError, useRepeatState } from './repeatState.ts';
-import { taskEditorChanges, type TaskEditorValues } from './taskEditorChanges.ts';
+import { offeredTaskLists, taskEditorChanges, type TaskEditorValues } from './taskEditorChanges.ts';
 
 export interface TaskEditorSeed {
   /** Present when editing; absent for create. */
@@ -95,20 +95,27 @@ export const useTaskEditorModel = ({
   );
   const [error, setError] = useState<string | null>(null);
 
-  // Editing: a reminder can only move within its own account (and a Google
-  // task cannot move at all), so the picker never offers the other
-  // provider's lists. Creating: every list, since the choice decides the
-  // provider.
-  const offeredLists = existing
-    ? taskLists.filter((list) => list.accountId === existing.accountId)
-    : taskLists;
+  const offeredLists = offeredTaskLists(taskLists, existing);
   const selectedList = taskLists.find((list) => listKeyOf(list.accountId, list.id) === listKey);
   const provider: TaskProvider = existing?.provider ?? selectedList?.provider ?? 'google';
   /** Reminders can move between lists; Google Tasks cannot (needs tasks.move). */
   const canMoveList = provider === 'apple';
   const recurrenceUnsupported = existing?.recurrenceUnsupported === true;
+  /** The task sits in a list EventKit will not let us write: the form is a viewer. */
+  const readOnly =
+    existing !== undefined &&
+    taskLists.some(
+      (list) =>
+        list.readOnly === true &&
+        list.accountId === existing.accountId &&
+        list.id === existing.listId,
+    );
 
   const save = async () => {
+    if (readOnly) {
+      setError('This list is read-only in Reminders.');
+      return;
+    }
     const [accountId, taskListId] = listKey.split(':', 2);
     if (!title.trim() || !accountId || !taskListId) {
       setError('A title and task list are required.');
@@ -190,7 +197,7 @@ export const useTaskEditorModel = ({
   };
 
   const remove = async () => {
-    if (!existing) {
+    if (!existing || readOnly) {
       return;
     }
     try {
@@ -216,6 +223,7 @@ export const useTaskEditorModel = ({
     notes,
     priority,
     provider,
+    readOnly,
     recurrenceUnsupported,
     remove,
     ...repeatState,

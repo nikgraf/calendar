@@ -1,5 +1,55 @@
+import { TaskListInfo, TaskRecord } from '@calendar/core';
 import { describe, expect, it } from 'vitest';
-import { taskEditorChanges, type TaskEditorValues } from './taskEditorChanges.ts';
+import { offeredTaskLists, taskEditorChanges, type TaskEditorValues } from './taskEditorChanges.ts';
+
+const listInfo = (overrides: Partial<TaskListInfo>) =>
+  new TaskListInfo({
+    accountId: 'apple-reminders',
+    id: 'l',
+    isVisible: true,
+    provider: 'apple',
+    title: 'List',
+    ...overrides,
+  });
+
+const lists = [
+  listInfo({ id: 'apple-rw' }),
+  listInfo({ id: 'apple-ro', readOnly: true }),
+  listInfo({ accountId: 'google-1', id: 'google', provider: 'google' }),
+];
+
+const reminderIn = (listId: string) =>
+  new TaskRecord({
+    accountId: 'apple-reminders',
+    id: 'r',
+    listId,
+    provider: 'apple',
+    status: 'needsAction',
+    title: 'Dentist',
+    updatedAt: 1,
+  });
+
+describe('offeredTaskLists', () => {
+  it('creating offers every writable list of every provider', () => {
+    expect(offeredTaskLists(lists, undefined).map((list) => list.id)).toEqual([
+      'apple-rw',
+      'google',
+    ]);
+  });
+
+  it('editing offers the own account only, never a read-only target', () => {
+    expect(offeredTaskLists(lists, reminderIn('apple-rw')).map((list) => list.id)).toEqual([
+      'apple-rw',
+    ]);
+  });
+
+  it('a task already in a read-only list still sees where it lives', () => {
+    expect(offeredTaskLists(lists, reminderIn('apple-ro')).map((list) => list.id)).toEqual([
+      'apple-rw',
+      'apple-ro',
+    ]);
+  });
+});
 
 const initial: TaskEditorValues = {
   alarm: -15,

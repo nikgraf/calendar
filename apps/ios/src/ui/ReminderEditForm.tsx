@@ -32,8 +32,14 @@ export function ReminderEditForm({
   taskModel: ReturnType<typeof useTaskEditorModel>;
 }) {
   return (
-    <ScrollView contentContainerStyle={styles.content}>
+    <ScrollView
+      contentContainerStyle={[styles.content, taskModel.readOnly && styles.readOnly]}
+      pointerEvents={taskModel.readOnly ? 'none' : 'auto'}
+    >
       {taskModel.error ? <Text style={styles.error}>{taskModel.error}</Text> : null}
+      {taskModel.readOnly ? (
+        <Text style={styles.readOnlyNote}>This list is read-only in Reminders.</Text>
+      ) : null}
       <TextInput
         autoFocus={!task}
         onChangeText={taskModel.setTitle}
@@ -229,7 +235,7 @@ export function ReminderEditForm({
         </Pressable>
       ) : null}
 
-      {task ? (
+      {task && !taskModel.readOnly ? (
         <Pressable
           onPress={() => void taskModel.remove()}
           style={styles.deleteButton}

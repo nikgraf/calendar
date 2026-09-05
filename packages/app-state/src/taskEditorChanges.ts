@@ -1,4 +1,28 @@
-import type { TaskPriority, TaskProvider, TaskRecurrence } from '@calendar/core';
+import type {
+  TaskListInfo,
+  TaskPriority,
+  TaskProvider,
+  TaskRecord,
+  TaskRecurrence,
+} from '@calendar/core';
+
+/**
+ * The lists the editor's picker offers. Editing: a reminder can only move
+ * within its own account (and a Google task cannot move at all), so the
+ * other provider's lists never appear. Creating: every list, since the
+ * choice decides the provider. Read-only lists (EventKit refuses writes)
+ * are never a target — except the list the task is already in, so the
+ * picker can still show where it lives.
+ */
+export const offeredTaskLists = (
+  taskLists: ReadonlyArray<TaskListInfo>,
+  existing: TaskRecord | undefined,
+): ReadonlyArray<TaskListInfo> =>
+  taskLists.filter(
+    (list) =>
+      (existing ? list.accountId === existing.accountId : true) &&
+      (!list.readOnly || (existing?.listId === list.id && existing.accountId === list.accountId)),
+  );
 
 /** The editor's fields in their submitted form (trimmed, timed-or-not resolved). */
 export interface TaskEditorValues {

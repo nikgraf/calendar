@@ -37,6 +37,8 @@ export const mapReminderList = (list: ReminderListJson, accountId: string): Task
     // Pull-side default; upsertLists preserves an existing local toggle.
     isVisible: true,
     provider: 'apple',
+    // EventKit refuses saves into such a list; keep it out of the pickers.
+    ...(list.allowsModifications ? {} : { readOnly: true }),
     title: list.title,
   });
 

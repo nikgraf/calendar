@@ -687,16 +687,17 @@ const makeTaskRepo: Effect.Effect<TaskRepoShape, never, Reactivity | SqlClient> 
 
     const upsertListRow = (list: TaskListInfo, syncedAt: number) => sql`
               INSERT INTO task_lists (account_id, id, title, is_visible, synced_at, provider,
-                                      color_hex)
+                                      color_hex, read_only)
               SELECT ${list.accountId}, ${list.id}, ${list.title},
                      ${list.isVisible ? 1 : 0}, ${syncedAt}, ${list.provider},
-                     ${list.colorHex ?? null}
+                     ${list.colorHex ?? null}, ${list.readOnly ? 1 : 0}
               ${accountGuard(sql, list.accountId)}
               ON CONFLICT (account_id, id) DO UPDATE SET
                 title = excluded.title,
                 synced_at = excluded.synced_at,
                 provider = excluded.provider,
-                color_hex = excluded.color_hex`;
+                color_hex = excluded.color_hex,
+                read_only = excluded.read_only`;
 
     return {
       deleteStale: (accountId, listId, syncedAt) =>

@@ -160,6 +160,14 @@ const addReminders = Effect.gen(function* () {
   yield* sql`ALTER TABLE tasks ADD COLUMN recurrence TEXT`;
 });
 
+const addTaskListReadOnly = Effect.gen(function* () {
+  const sql = yield* SqlClient;
+  // EKCalendar.allowsContentModifications — 1 for lists EventKit will not
+  // let us write (a read-only CalDAV/Exchange source). Google lists and
+  // existing rows are writable.
+  yield* sql`ALTER TABLE task_lists ADD COLUMN read_only INTEGER NOT NULL DEFAULT 0`;
+});
+
 // The third tuple element is a *loader* whose result is the migration effect.
 export const migrations: ReadonlyArray<ResolvedMigration> = [
   [1, 'init', Effect.succeed(init)],
@@ -168,4 +176,5 @@ export const migrations: ReadonlyArray<ResolvedMigration> = [
   [4, 'add-tasks', Effect.succeed(addTasks)],
   [5, 'add-task-writes', Effect.succeed(addTaskWrites)],
   [6, 'add-reminders', Effect.succeed(addReminders)],
+  [7, 'add-task-list-read-only', Effect.succeed(addTaskListReadOnly)],
 ];

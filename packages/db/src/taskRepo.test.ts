@@ -283,6 +283,16 @@ describe('TaskRepo', () => {
       }).pipe(Effect.provide(freshDbLayer())),
   );
 
+  it.effect('a read-only list round-trips its flag and can become writable again', () =>
+    Effect.gen(function* () {
+      const repo = yield* TaskRepo;
+      yield* repo.upsertLists([list({ id: 'ro', provider: 'apple', readOnly: true })], 1);
+      expect((yield* repo.listLists('acc-1'))[0]?.readOnly).toBe(true);
+      yield* repo.upsertLists([list({ id: 'ro', provider: 'apple' })], 2);
+      expect((yield* repo.listLists('acc-1'))[0]?.readOnly).toBeUndefined();
+    }).pipe(Effect.provide(freshDbLayer())),
+  );
+
   it.effect('replaceMirror after the account was removed writes nothing and says so', () =>
     Effect.gen(function* () {
       const repo = yield* TaskRepo;

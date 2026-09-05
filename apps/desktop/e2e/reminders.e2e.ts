@@ -33,6 +33,15 @@ const seed = {
       provider: 'apple',
       title: 'Reminders',
     }),
+    new TaskListInfo({
+      accountId: APPLE_REMINDERS_ACCOUNT_ID,
+      colorHex: '#0000ff',
+      id: 'ek-list-ro',
+      isVisible: true,
+      provider: 'apple',
+      readOnly: true,
+      title: 'Subscribed',
+    }),
   ],
   tasks: [
     new TaskRecord({
@@ -46,6 +55,16 @@ const seed = {
       provider: 'apple',
       status: 'needsAction',
       title: 'Call mom',
+      updatedAt: 1,
+    }),
+    new TaskRecord({
+      accountId: APPLE_REMINDERS_ACCOUNT_ID,
+      dueDate: isoToday,
+      id: 'ek-rem-ro',
+      listId: 'ek-list-ro',
+      provider: 'apple',
+      status: 'needsAction',
+      title: 'Bin day',
       updatedAt: 1,
     }),
   ],
@@ -91,6 +110,28 @@ describe('Apple Reminders UI', () => {
         priorityHigh: 'High',
         timed: true,
         timeValue: '14:00',
+      });
+    } finally {
+      await cdp.clickButtonWithText('Cancel');
+    }
+  });
+
+  it('a reminder in a read-only list opens as a viewer: note shown, no Save, no Delete', async () => {
+    const { cdp } = app;
+    const chip = await cdp.locate('[title="Bin day"]');
+    await cdp.click(chip.x + 40, chip.y);
+    try {
+      await cdp.waitFor(`!!document.querySelector('[data-testid="task-read-only"]')`);
+      const facts = await cdp.waitFor<string>(`JSON.stringify({
+        buttons: [...document.querySelectorAll('button')].map(b => b.textContent?.trim())
+          .filter(t => t === 'Save' || t === 'Delete'),
+        listDisabled: document.querySelector('select[aria-label="Reminders list"]')?.matches(':disabled'),
+        note: document.querySelector('[data-testid="task-read-only"]')?.textContent,
+      })`);
+      expect(JSON.parse(facts)).toEqual({
+        buttons: [],
+        listDisabled: true,
+        note: 'This list is read-only in Reminders.',
       });
     } finally {
       await cdp.clickButtonWithText('Cancel');

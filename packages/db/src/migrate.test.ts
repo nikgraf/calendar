@@ -80,8 +80,10 @@ describe('runMigrations', () => {
   it.effect('rolls back a failing migration atomically and retries it next run', () =>
     Effect.gen(function* () {
       const sql = yield* SqlClient;
+      // One past the last real migration, whatever that is today.
+      const nextId = (migrations.at(-1)?.[0] ?? 0) + 1;
       const broken: ResolvedMigration = [
-        7,
+        nextId,
         'partial-failure',
         Effect.succeed(
           Effect.gen(function* () {
@@ -103,7 +105,7 @@ describe('runMigrations', () => {
 
       // A later run with the migration fixed applies it cleanly.
       const fixed: ResolvedMigration = [
-        7,
+        nextId,
         'partial-failure',
         Effect.succeed(
           Effect.gen(function* () {
@@ -112,7 +114,7 @@ describe('runMigrations', () => {
         ),
       ];
       yield* runMigrationsWith([...migrations, fixed]);
-      expect(yield* appliedIds).toEqual([...migrations.map(([id]) => id), 7]);
+      expect(yield* appliedIds).toEqual([...migrations.map(([id]) => id), nextId]);
     }).pipe(Effect.provide(sqlLayer())),
   );
 

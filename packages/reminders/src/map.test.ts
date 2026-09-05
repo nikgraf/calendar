@@ -98,6 +98,15 @@ describe('mapReminderList', () => {
       provider: 'apple',
       title: 'Groceries',
     });
+    expect(list.readOnly).toBeUndefined();
+  });
+
+  it('marks a list EventKit will not let us write as read-only', () => {
+    const list = mapReminderList(
+      { allowsModifications: false, id: 'l', title: 'Subscribed' },
+      'apple-reminders',
+    );
+    expect(list.readOnly).toBe(true);
   });
 });
 
