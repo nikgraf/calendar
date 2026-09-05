@@ -14,8 +14,10 @@ import {
 } from '@calendar/db';
 import {
   GoogleCalendarClient,
+  GooglePeopleClient,
   GoogleOAuthConfig,
   GoogleTasksClient,
+  grantsContacts,
   TASKS_SCOPE,
   TokenManager,
   TokenStore,
@@ -76,6 +78,7 @@ export const startBackendHost = (): void => {
     Layer.provideMerge(EventMutations.layer),
     Layer.provideMerge(GoogleCalendarClient.layer),
     Layer.provideMerge(GoogleTasksClient.layer),
+    Layer.provideMerge(GooglePeopleClient.layer),
     Layer.provideMerge(desktopRemindersLayer),
     Layer.provideMerge(desktopContactsLayer),
     Layer.provideMerge(TokenManager.layer),
@@ -123,6 +126,7 @@ export const startBackendHost = (): void => {
         );
         const account = new Account({
           avatarUrl: result.profile.avatarUrl,
+          contactsEnabled: grantsContacts(result.tokens.scopes),
           createdAt: Date.now(),
           displayName: result.profile.displayName,
           email: result.profile.email,

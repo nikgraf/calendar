@@ -6,6 +6,7 @@ import { describe, expect, it } from 'vitest';
 import { makeBackendAtoms, rangeKey } from './atoms.ts';
 
 const account = new Account({
+  contactsEnabled: false,
   createdAt: 1,
   email: 'nik@example.com',
   id: 'acc-1',

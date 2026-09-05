@@ -1,7 +1,9 @@
 import {
   type Account,
   type CalendarInfo,
+  type Contact,
   type EventRecord,
+  type GoogleContact,
   EventRecord as EventRecordSchema,
   type PendingOp,
   type SyncState,
@@ -15,6 +17,7 @@ import type { SqlError } from 'effect/unstable/sql/SqlError';
 import {
   ACCOUNTS_KEY,
   CALENDARS_KEY,
+  CONTACTS_KEY,
   EVENTS_KEY,
   eventsKey,
   OPS_KEY,
@@ -24,6 +27,7 @@ import {
 import {
   accountFromRow,
   calendarFromRow,
+  contactFromRow,
   eventFromRow,
   eventToRow,
   pendingOpFromRow,
@@ -33,6 +37,7 @@ import {
   taskListFromRow,
   type AccountRow,
   type CalendarRow,
+  type ContactRow,
   type EventRow,
   type PendingOpRow,
   type SyncStateRow,
@@ -48,6 +53,11 @@ export interface AccountRepoShape {
   readonly get: (accountId: string) => Effect.Effect<Account | undefined, SqlError>;
   readonly list: () => Effect.Effect<ReadonlyArray<Account>, SqlError>;
   readonly remove: (accountId: string) => Effect.Effect<void, SqlError>;
+  /** Flipped off when a People call reports the scopes were never granted. */
+  readonly setContactsEnabled: (
+    accountId: string,
+    enabled: boolean,
+  ) => Effect.Effect<void, SqlError>;
   readonly setStatus: (
     accountId: string,
     status: Account['status'],
@@ -92,6 +102,7 @@ const makeAccountRepo: Effect.Effect<AccountRepoShape, never, Reactivity | SqlCl
           sql.withTransaction(
             Effect.gen(function* () {
               yield* sql`DELETE FROM events WHERE account_id = ${accountId}`;
+              yield* sql`DELETE FROM contacts WHERE account_id = ${accountId}`;
               yield* sql`DELETE FROM tasks WHERE account_id = ${accountId}`;
               yield* sql`DELETE FROM task_lists WHERE account_id = ${accountId}`;
               yield* sql`DELETE FROM calendars WHERE account_id = ${accountId}`;
@@ -99,6 +110,12 @@ const makeAccountRepo: Effect.Effect<AccountRepoShape, never, Reactivity | SqlCl
               yield* sql`DELETE FROM sync_state WHERE account_id = ${accountId}`;
               yield* sql`DELETE FROM accounts WHERE id = ${accountId}`;
             }),
+          ),
+        ),
+      setContactsEnabled: (accountId, enabled) =>
+        invalidating(
+          Effect.asVoid(
+            sql`UPDATE accounts SET contacts_enabled = ${enabled ? 1 : 0} WHERE id = ${accountId}`,
           ),
         ),
       setStatus: (accountId, status) =>
@@ -115,17 +132,19 @@ const makeAccountRepo: Effect.Effect<AccountRepoShape, never, Reactivity | SqlCl
         invalidating(
           Effect.asVoid(sql`
           INSERT INTO accounts (id, email, display_name, avatar_url, status, created_at,
-                                tasks_enabled, provider)
+                                tasks_enabled, provider, contacts_enabled)
           VALUES (${account.id}, ${account.email}, ${account.displayName ?? null},
                   ${account.avatarUrl ?? null}, ${account.status}, ${account.createdAt},
-                  ${account.tasksEnabled ? 1 : 0}, ${account.provider})
+                  ${account.tasksEnabled ? 1 : 0}, ${account.provider},
+                  ${account.contactsEnabled ? 1 : 0})
           ON CONFLICT (id) DO UPDATE SET
             email = excluded.email,
             display_name = excluded.display_name,
             avatar_url = excluded.avatar_url,
             status = excluded.status,
             tasks_enabled = excluded.tasks_enabled,
-            provider = excluded.provider
+            provider = excluded.provider,
+            contacts_enabled = excluded.contacts_enabled
         `),
         ),
     };
@@ -909,14 +928,133 @@ export class TaskRepo extends Context.Service<TaskRepo, TaskRepoShape>()('db/Tas
     Layer.effect(TaskRepo)(makeTaskRepo);
 }
 
+export interface ContactRepoShape {
+  /** Incremental sync tombstones: every email row of those persons goes. */
+  readonly deleteByResourceNames: (
+    accountId: string,
+    resourceNames: ReadonlyArray<string>,
+  ) => Effect.Effect<void, SqlError>;
+  readonly listByAccount: (accountId: string) => Effect.Effect<ReadonlyArray<Contact>, SqlError>;
+  /** Full pass: one transaction swaps the whole tier (saved / other) for the account. */
+  readonly replaceTier: (params: {
+    readonly accountId: string;
+    readonly contacts: ReadonlyArray<GoogleContact>;
+    readonly isOther: boolean;
+    readonly syncedAt: number;
+  }) => Effect.Effect<void, SqlError>;
+  /**
+   * Candidates for the typeahead: email prefix, name substring, or email
+   * substring. Coarse on purpose — ranking happens in core, on the merged
+   * device + Google list.
+   */
+  readonly search: (
+    query: string,
+    limit: number,
+  ) => Effect.Effect<ReadonlyArray<Contact>, SqlError>;
+  readonly upsertMany: (
+    contacts: ReadonlyArray<GoogleContact>,
+    syncedAt: number,
+  ) => Effect.Effect<void, SqlError>;
+}
+
+/** LIKE wildcards in user input would widen the match; escape them. */
+const escapeLike = (text: string): string => text.replaceAll(/[\\%_]/g, String.raw`\$&`);
+
+const makeContactRepo: Effect.Effect<ContactRepoShape, never, Reactivity | SqlClient> = Effect.gen(
+  function* () {
+    const sql = yield* SqlClient;
+    const reactivity = yield* Reactivity;
+    const mutation = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+      reactivity.mutation([CONTACTS_KEY], effect);
+
+    const upsertRow = (contact: GoogleContact, syncedAt: number) => sql`
+      INSERT INTO contacts (account_id, resource_name, email_lower, email, display_name,
+                            is_other, synced_at)
+      SELECT ${contact.accountId}, ${contact.resourceName}, ${contact.email.toLowerCase()},
+             ${contact.email}, ${contact.displayName ?? null}, ${contact.isOther ? 1 : 0},
+             ${syncedAt}
+      ${accountGuard(sql, contact.accountId)}
+      ON CONFLICT (account_id, resource_name, email_lower) DO UPDATE SET
+        email = excluded.email,
+        display_name = excluded.display_name,
+        is_other = excluded.is_other,
+        synced_at = excluded.synced_at
+    `;
+
+    return {
+      deleteByResourceNames: (accountId, resourceNames) =>
+        resourceNames.length === 0
+          ? Effect.void
+          : mutation(
+              Effect.forEach(
+                resourceNames,
+                (resourceName) =>
+                  sql`DELETE FROM contacts
+                      WHERE account_id = ${accountId} AND resource_name = ${resourceName}`,
+                { discard: true },
+              ),
+            ),
+      listByAccount: (accountId) =>
+        Effect.map(
+          sql<ContactRow>`SELECT * FROM contacts WHERE account_id = ${accountId}
+                          ORDER BY resource_name, email_lower`,
+          (rows) => rows.map(contactFromRow),
+        ),
+      replaceTier: ({ accountId, contacts, isOther, syncedAt }) =>
+        mutation(
+          sql.withTransaction(
+            Effect.gen(function* () {
+              yield* sql`DELETE FROM contacts
+                         WHERE account_id = ${accountId} AND is_other = ${isOther ? 1 : 0}`;
+              yield* Effect.forEach(contacts, (contact) => upsertRow(contact, syncedAt), {
+                discard: true,
+              });
+            }),
+          ),
+        ),
+      search: (query, limit) => {
+        const needle = escapeLike(query.trim().toLowerCase());
+        if (needle === '') {
+          return Effect.succeed([]);
+        }
+        return Effect.map(
+          sql<ContactRow>`SELECT * FROM contacts
+            WHERE email_lower LIKE ${`${needle}%`} ESCAPE '\\'
+               OR lower(display_name) LIKE ${`%${needle}%`} ESCAPE '\\'
+               OR email_lower LIKE ${`%${needle}%`} ESCAPE '\\'
+            ORDER BY is_other, display_name IS NULL, display_name, email_lower
+            LIMIT ${limit}`,
+          (rows) => rows.map(contactFromRow),
+        );
+      },
+      upsertMany: (contacts, syncedAt) =>
+        contacts.length === 0
+          ? Effect.void
+          : mutation(
+              Effect.forEach(contacts, (contact) => upsertRow(contact, syncedAt), {
+                discard: true,
+              }),
+            ),
+    };
+  },
+);
+
+export class ContactRepo extends Context.Service<ContactRepo, ContactRepoShape>()(
+  'db/ContactRepo',
+) {
+  static readonly layer: Layer.Layer<ContactRepo, never, Reactivity | SqlClient> =
+    Layer.effect(ContactRepo)(makeContactRepo);
+}
+
 /** All repositories, ready to sit on a SqlClient + Reactivity. */
 export const reposLayer: Layer.Layer<
-  AccountRepo | CalendarRepo | EventRepo | PendingOpRepo | SyncStateRepo | TaskRepo,
+  AccountRepo | CalendarRepo | ContactRepo | EventRepo | PendingOpRepo | SyncStateRepo | TaskRepo,
   never,
   Reactivity | SqlClient
 > = Layer.mergeAll(
   AccountRepo.layer,
   CalendarRepo.layer,
+  ContactRepo.layer,
   EventRepo.layer,
   PendingOpRepo.layer,
   SyncStateRepo.layer,

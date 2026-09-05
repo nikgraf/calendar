@@ -147,6 +147,18 @@ Rules that keep the queue correct:
   with `sync_status='synced'` — pending local writes are protected). A
   403 with the insufficient-scope reason flips `tasksEnabled` off instead
   of retrying forever (older grants without the Tasks scope).
+- **Google contacts** (per account, when both People API contacts scopes
+  are granted — `contactsEnabled`): two tiers, saved contacts
+  (`people.connections.list`) and "other contacts" (`otherContacts.list`,
+  people you've emailed — what Google Calendar's own suggestions use),
+  each on its own sync token in `sync_state` (`contacts:connections`,
+  `contacts:other`) and its own `is_other` rows in the `contacts` table
+  (one row per person × email). Incremental passes apply upserts and
+  tombstones page by page; a full pass (first run, or an expired token:
+  410, or People's 400 `EXPIRED_SYNC_TOKEN`) collects everything and
+  `ContactRepo.replaceTier` swaps the tier in one transaction. An
+  insufficient-scope 403 flips `contactsEnabled` off, like tasks. Device
+  contacts never enter SQLite (see `DeviceContacts` below).
 - **Apple Reminders** (the synthetic `apple-reminders` account, created by
   the `connectReminders` rpc after the EventKit prompt): SQLite holds the
   latest **complete** EventKit snapshot — open and completed, dated and

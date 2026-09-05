@@ -1,13 +1,30 @@
-import { EventRecord, eventsScope, SyncState, Temporal, type Account } from '@calendar/core';
-import { AccountRepo, CalendarRepo, EventRepo, SyncStateRepo, TaskRepo } from '@calendar/db';
+import {
+  EventRecord,
+  eventsScope,
+  type GoogleContact,
+  SyncState,
+  Temporal,
+  type Account,
+} from '@calendar/core';
+import {
+  AccountRepo,
+  CalendarRepo,
+  ContactRepo,
+  EventRepo,
+  SyncStateRepo,
+  TaskRepo,
+} from '@calendar/db';
 import {
   GoogleCalendarClient,
+  GooglePeopleClient,
   GoogleTasksClient,
   mapGcalCalendar,
   mapGcalEvent,
   mapGcalTask,
   mapGcalTaskList,
+  mapPersonContacts,
   type GcalEvent,
+  type GcalPeoplePage,
   type GoogleRequestError,
 } from '@calendar/google';
 import {
@@ -27,6 +44,11 @@ const INITIAL_WINDOW_MS = 365 * 24 * 60 * 60 * 1000; // 12 months back
 const TASKS_FULL_PASS_INTERVAL_MS = 24 * 60 * 60 * 1000;
 /** sync_state scope for the Apple mirror: lastSyncAt is the delta stamp. */
 const REMINDERS_SCOPE = 'reminders';
+/** People API tiers, each on its own sync token (scope) and cache rows (is_other). */
+const CONTACT_TIERS: ReadonlyArray<{ readonly isOther: boolean; readonly scope: string }> = [
+  { isOther: false, scope: 'contacts:connections' },
+  { isOther: true, scope: 'contacts:other' },
+];
 /** EKEventStoreChanged arrives in bursts (iCloud sync, our own writes). */
 const REMINDERS_CHANGE_DEBOUNCE = '1 second';
 /**
@@ -99,9 +121,11 @@ const make: Effect.Effect<
   never,
   | AccountRepo
   | CalendarRepo
+  | ContactRepo
   | EventMutations
   | EventRepo
   | GoogleCalendarClient
+  | GooglePeopleClient
   | GoogleTasksClient
   | RemindersClient
   | SyncStateRepo
@@ -110,8 +134,10 @@ const make: Effect.Effect<
   const mutations = yield* EventMutations;
   const client = yield* GoogleCalendarClient;
   const tasksClient = yield* GoogleTasksClient;
+  const peopleClient = yield* GooglePeopleClient;
   const accountRepo = yield* AccountRepo;
   const calendarRepo = yield* CalendarRepo;
+  const contactRepo = yield* ContactRepo;
   const eventRepo = yield* EventRepo;
   const taskRepo = yield* TaskRepo;
   const remindersClient = yield* RemindersClient;
@@ -377,6 +403,105 @@ const make: Effect.Effect<
     );
 
   /**
+   * One People API tier (saved contacts or "other contacts") for one
+   * account. Incremental passes ride the tier's sync token and apply
+   * upserts + tombstones page by page; a full pass (no token, or the
+   * token expired) collects everything first and swaps the tier in one
+   * transaction, so a failure mid-way leaves the old cache usable.
+   */
+  const syncContactTier = (
+    account: Account,
+    tier: (typeof CONTACT_TIERS)[number],
+  ): Effect.Effect<void, SyncError> =>
+    Effect.gen(function* () {
+      const state = yield* syncStateRepo.get(account.id, tier.scope);
+      const passStartedAt = yield* Clock.currentTimeMillis;
+      const list = tier.isOther ? peopleClient.listOtherContacts : peopleClient.listConnections;
+      const persons = (page: GcalPeoplePage) =>
+        (tier.isOther ? page.otherContacts : page.connections) ?? [];
+
+      const runPass = (syncToken: string | null): Effect.Effect<string | null, SyncError> =>
+        Effect.gen(function* () {
+          let pageToken: string | undefined;
+          let nextSyncToken: string | null = null;
+          const collected: Array<GoogleContact> = [];
+          do {
+            const page = yield* withTransientRetry(
+              list({
+                accountId: account.id,
+                pageToken,
+                syncToken: syncToken ?? undefined,
+              }),
+            );
+            const upserts: Array<GoogleContact> = [];
+            const deleted: Array<string> = [];
+            for (const person of persons(page)) {
+              if (person.metadata?.deleted) {
+                deleted.push(person.resourceName);
+              } else {
+                upserts.push(
+                  ...mapPersonContacts(person, { accountId: account.id, isOther: tier.isOther }),
+                );
+              }
+            }
+            if (syncToken) {
+              // A person whose emails changed drops the stale rows too.
+              yield* contactRepo.deleteByResourceNames(account.id, [
+                ...deleted,
+                ...new Set(upserts.map((contact) => contact.resourceName)),
+              ]);
+              yield* contactRepo.upsertMany(upserts, passStartedAt);
+            } else {
+              collected.push(...upserts);
+            }
+            pageToken = page.nextPageToken;
+            nextSyncToken = page.nextSyncToken ?? nextSyncToken;
+          } while (pageToken !== undefined);
+          if (!syncToken) {
+            yield* contactRepo.replaceTier({
+              accountId: account.id,
+              contacts: collected,
+              isOther: tier.isOther,
+              syncedAt: passStartedAt,
+            });
+          }
+          return nextSyncToken;
+        });
+
+      const hadToken = state?.syncToken ?? null;
+      let fullPass = hadToken === null;
+      const nextSyncToken = yield* runPass(hadToken).pipe(
+        Effect.catchTag('SyncTokenExpiredError', () => {
+          fullPass = true;
+          return runPass(null);
+        }),
+      );
+      yield* syncStateRepo.set(
+        new SyncState({
+          accountId: account.id,
+          lastFullSyncAt: fullPass ? passStartedAt : (state?.lastFullSyncAt ?? null),
+          lastSyncAt: passStartedAt,
+          scope: tier.scope,
+          status: 'idle',
+          syncToken: nextSyncToken,
+        }),
+      );
+    });
+
+  const syncContacts = (account: Account): Effect.Effect<void, SyncError> =>
+    Effect.forEach(CONTACT_TIERS, (tier) => syncContactTier(account, tier), {
+      discard: true,
+    }).pipe(
+      // Granted without the contacts scopes after all (stale flag, consent
+      // revoked): disable rather than fail the account. A 403 for a People
+      // API that is not enabled in the GCP project is a plain
+      // GoogleApiError and stays visible in the logs instead.
+      Effect.catchTag('InsufficientScopeError', () =>
+        Effect.orDie(accountRepo.setContactsEnabled(account.id, false)),
+      ),
+    );
+
+  /**
    * The Apple account: lists + a windowed full replace of reminders. Access
    * can be revoked at any time in System Settings, so the status check
    * doubles as the account's health: no access flags it, access regained
@@ -485,6 +610,9 @@ const make: Effect.Effect<
       if (account.tasksEnabled) {
         yield* syncAccountTasks(account);
       }
+      if (account.contactsEnabled) {
+        yield* syncContacts(account);
+      }
     });
 
   const syncAll = (): Effect.Effect<void> =>
@@ -573,9 +701,11 @@ export class SyncEngine extends Context.Service<SyncEngine, SyncEngineShape>()('
     never,
     | AccountRepo
     | CalendarRepo
+    | ContactRepo
     | EventMutations
     | EventRepo
     | GoogleCalendarClient
+    | GooglePeopleClient
     | GoogleTasksClient
     | RemindersClient
     | SyncStateRepo

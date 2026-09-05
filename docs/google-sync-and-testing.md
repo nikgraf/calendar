@@ -87,6 +87,24 @@ invariants.
 - A 403 insufficient-scope (grants that predate the tasks scope) disables
   tasks for the account instead of retrying.
 
+### Google People API (contacts cache)
+
+- Two endpoints, two scopes: `people/me/connections` with
+  `personFields=names,emailAddresses` needs `contacts.readonly`;
+  `otherContacts` needs `contacts.other.readonly` and only accepts a
+  `readMask` of names/emailAddresses/phoneNumbers. Both are _sensitive_
+  scopes: existing accounts stay `contacts_enabled=0` until "Add Google
+  Account" is re-run (in-place upgrade, same as tasks), and the People
+  API must be enabled in the GCP project — a disabled API answers 403
+  `SERVICE_DISABLED`, which is a plain `GoogleApiError` (logged, flag
+  left on), not the scope error that disables contacts.
+- `requestSyncToken=true` returns `nextSyncToken` on the last page;
+  incremental lists return tombstones as persons with
+  `metadata.deleted: true`. Sync tokens expire after ~7 days; the People
+  API reports that as **400 with `EXPIRED_SYNC_TOKEN`** (Calendar uses 410) — `GooglePeopleClient` folds both into `SyncTokenExpiredError`.
+- `pageSize` max is 1000; the cache holds one row per (person, email),
+  lowercased email for identity, original casing for display.
+
 ## Verified Apple Reminders (EventKit) semantics
 
 - **Access**: `requestFullAccessToReminders` (macOS 14 / iOS 17+);

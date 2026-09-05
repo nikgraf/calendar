@@ -58,6 +58,7 @@ export const commonBackendHandlers: Omit<BackendHandlers<CommonBackendServices>,
       );
       yield* accountRepo.upsert(
         new Account({
+          contactsEnabled: false,
           createdAt: existing?.createdAt ?? (yield* Clock.currentTimeMillis),
           displayName: 'Apple Reminders',
           email: '',

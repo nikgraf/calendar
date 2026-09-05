@@ -8,6 +8,7 @@ import {
   runMigrations,
 } from '@calendar/db';
 import {
+  ApiUnavailableError,
   GoogleCalendarClient,
   type GoogleCalendarClientShape,
   GoogleTasksClient,
@@ -21,8 +22,11 @@ import { layer as reactivityLayer } from 'effect/unstable/reactivity/Reactivity'
 import { describe } from 'vitest';
 import { EventMutations } from './mutations.ts';
 
+// Deletes fail transiently so queued ops stay observable: enqueueAndKick
+// forks the drain, and a delete that succeeds could be removed before the
+// test lists the queue.
 const stubClient: GoogleCalendarClientShape = {
-  deleteEvent: () => Effect.void,
+  deleteEvent: () => Effect.fail(new ApiUnavailableError({ cause: 'offline' })),
   getColors: () => Effect.succeed({ calendar: {} }),
   insertEvent: () => Effect.die('unexpected insert'),
   listCalendars: () => Effect.succeed({ items: [] }),
@@ -45,6 +49,7 @@ const seedAccounts = Effect.gen(function* () {
   for (const id of ['acc-1', 'acc-2']) {
     yield* accounts.upsert(
       new Account({
+        contactsEnabled: false,
         createdAt: 1,
         email: `${id}@example.com`,
         id,

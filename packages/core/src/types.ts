@@ -25,6 +25,13 @@ export const APPLE_REMINDERS_ACCOUNT_ID = 'apple-reminders';
 
 export class Account extends Schema.Class<Account>('Account')({
   avatarUrl: Schema.optional(Schema.String),
+  /**
+   * Whether this account's token was granted the People API contacts
+   * scopes (saved contacts + "other contacts"). Like tasksEnabled: derived
+   * at sign-in, flipped off when a call reports the scope missing, and
+   * upgraded in place by re-running "Add Google Account".
+   */
+  contactsEnabled: Schema.Boolean,
   createdAt: Schema.Number,
   displayName: Schema.optional(Schema.String),
   email: Schema.String,
@@ -40,6 +47,33 @@ export class Account extends Schema.Class<Account>('Account')({
    * them in place.
    */
   tasksEnabled: Schema.Boolean,
+}) {}
+
+/** Where a typeahead suggestion came from. */
+export const ContactSource = Schema.Literals(['device', 'google']);
+export type ContactSource = typeof ContactSource.Type;
+
+/** One suggestion for the invitee typeahead: a person + one email address. */
+export class Contact extends Schema.Class<Contact>('Contact')({
+  /** Google contacts only: the account whose address book holds it. */
+  accountId: Schema.optional(Schema.String),
+  displayName: Schema.optional(Schema.String),
+  email: Schema.String,
+  /** Stable across syncs: `google:<accountId>:<resourceName>:<email>` / `device:<contactId>:<email>`. */
+  id: Schema.String,
+  /** Google "other contacts" (people you've emailed) rank below saved ones. */
+  isOtherContact: Schema.optional(Schema.Boolean),
+  source: ContactSource,
+}) {}
+
+/** A People API contact as cached in SQLite, one row per email address. */
+export class GoogleContact extends Schema.Class<GoogleContact>('GoogleContact')({
+  accountId: Schema.String,
+  displayName: Schema.optional(Schema.String),
+  email: Schema.String,
+  isOther: Schema.Boolean,
+  /** `people/c…` or `otherContacts/c…` — the People API's stable id. */
+  resourceName: Schema.String,
 }) {}
 
 /** Lives ONLY in the platform TokenStore (Keychain/safeStorage), never in SQLite. */

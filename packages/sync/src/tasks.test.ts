@@ -6,6 +6,8 @@ import {
   type GcalTasksPage,
   GoogleCalendarClient,
   type GoogleCalendarClientShape,
+  GooglePeopleClient,
+  type GooglePeopleClientShape,
   GoogleTasksClient,
   type GoogleTasksClientShape,
   InsufficientScopeError,
@@ -42,6 +44,12 @@ const inertCalendarClient: GoogleCalendarClientShape = {
   patchEvent: () => Effect.die('not used'),
 };
 
+/** Contacts sync is exercised in contacts.test.ts; keep it inert here. */
+const inertPeopleClient: GooglePeopleClientShape = {
+  listConnections: () => Effect.die('people not used in this test'),
+  listOtherContacts: () => Effect.die('people not used in this test'),
+};
+
 const testLayer = (tasksClient: GoogleTasksClientShape) =>
   SyncEngine.layer.pipe(
     Layer.provideMerge(EventMutations.layer),
@@ -52,6 +60,7 @@ const testLayer = (tasksClient: GoogleTasksClientShape) =>
     Layer.provideMerge(Layer.succeed(RemindersClient, unavailableRemindersClient('test'))),
     Layer.provideMerge(Layer.succeed(GoogleCalendarClient, inertCalendarClient)),
     Layer.provideMerge(Layer.succeed(GoogleTasksClient, tasksClient)),
+    Layer.provideMerge(Layer.succeed(GooglePeopleClient, inertPeopleClient)),
   );
 
 const seedAccount = (tasksEnabled: boolean) =>
@@ -59,6 +68,7 @@ const seedAccount = (tasksEnabled: boolean) =>
     const accounts = yield* AccountRepo;
     yield* accounts.upsert(
       new Account({
+        contactsEnabled: false,
         createdAt: 1,
         email: 'nik@nikgraf.com',
         id: 'acc-1',

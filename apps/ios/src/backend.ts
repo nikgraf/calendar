@@ -8,8 +8,10 @@ import {
 import { AccountRepo, forwardingReactivity, reposLayer, runMigrations } from '@calendar/db';
 import {
   GoogleCalendarClient,
+  GooglePeopleClient,
   GoogleOAuthConfig,
   GoogleTasksClient,
+  grantsContacts,
   TASKS_SCOPE,
   TokenManager,
   TokenStore,
@@ -90,6 +92,7 @@ const appLayer = SyncEngine.layer.pipe(
   Layer.provideMerge(EventMutations.layer),
   Layer.provideMerge(GoogleCalendarClient.layer),
   Layer.provideMerge(GoogleTasksClient.layer),
+  Layer.provideMerge(GooglePeopleClient.layer),
   Layer.provideMerge(iosRemindersLayer),
   Layer.provideMerge(iosContactsLayer),
   Layer.provideMerge(TokenManager.layer),
@@ -137,6 +140,7 @@ const handlers: BackendHandlers<CommonBackendServices | TokenManager> = {
       );
       const account = new Account({
         avatarUrl: result.profile.avatarUrl,
+        contactsEnabled: grantsContacts(result.tokens.scopes),
         createdAt: Date.now(),
         displayName: result.profile.displayName,
         email: result.profile.email,

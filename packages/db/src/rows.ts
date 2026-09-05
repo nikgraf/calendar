@@ -2,6 +2,7 @@ import {
   Account,
   Attendee,
   CalendarInfo,
+  Contact,
   EventRecord,
   PendingOp,
   SyncState,
@@ -21,11 +22,13 @@ export interface AccountRow {
   readonly created_at: number;
   readonly tasks_enabled: number;
   readonly provider: string;
+  readonly contacts_enabled: number;
 }
 
 export const accountFromRow = (row: AccountRow): Account =>
   new Account({
     avatarUrl: row.avatar_url ?? undefined,
+    contactsEnabled: row.contacts_enabled === 1,
     createdAt: row.created_at,
     displayName: row.display_name ?? undefined,
     email: row.email,
@@ -33,6 +36,26 @@ export const accountFromRow = (row: AccountRow): Account =>
     provider: row.provider === 'apple' ? 'apple' : 'google',
     status: row.status as 'ok' | 'reauth_required',
     tasksEnabled: row.tasks_enabled === 1,
+  });
+
+export interface ContactRow {
+  readonly account_id: string;
+  readonly resource_name: string;
+  readonly email_lower: string;
+  readonly email: string;
+  readonly display_name: string | null;
+  readonly is_other: number;
+  readonly synced_at: number;
+}
+
+export const contactFromRow = (row: ContactRow): Contact =>
+  new Contact({
+    accountId: row.account_id,
+    displayName: row.display_name ?? undefined,
+    email: row.email,
+    id: `google:${row.account_id}:${row.resource_name}:${row.email_lower}`,
+    isOtherContact: row.is_other === 1,
+    source: 'google',
   });
 
 export interface TaskListRow {

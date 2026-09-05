@@ -8,6 +8,7 @@ import { makeAppBackendLayer } from './backendHandlers.ts';
 import { duplexClientProtocol, duplexServerProtocol, type RpcFrame } from './rpcDuplex.ts';
 
 const account = new Account({
+  contactsEnabled: false,
   createdAt: 1,
   email: 'nik@example.com',
   id: 'acc-1',
