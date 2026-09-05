@@ -242,6 +242,33 @@ private func frequency(named name: String) -> EKRecurrenceFrequency? {
   }
 }
 
+/// A JSON number as an Int within `range`, or nil. JSON carries any
+/// double; `Int(someDouble)` traps on values outside Int's range (1e20,
+/// infinity), which would take the helper — or the iOS app — down with
+/// it. Callers turn nil into `badRequest`.
+private func boundedInt(_ value: Any?, _ range: ClosedRange<Int>) -> Int? {
+  let whole: Int?
+  if let n = value as? Int {
+    whole = n
+  } else if let d = value as? Double, d.isFinite, d.rounded() == d {
+    whole = Int(exactly: d)
+  } else {
+    whole = nil
+  }
+  guard let whole, range.contains(whole) else { return nil }
+  return whole
+}
+
+/// Bounds for the numbers a ReminderWrite carries.
+private enum Bounds {
+  static let priority = 0...9
+  /// Relative alarm offsets in minutes: a year either side is far beyond
+  /// what Reminders.app itself offers.
+  static let alarmMinutes = -527_040...527_040
+  static let interval = 1...999
+  static let count = 1...999
+}
+
 private func reminderDTO(_ reminder: EKReminder) -> ReminderDTO {
   let due = dueStrings(reminder.dueDateComponents)
   let relativeAlarms = (reminder.alarms ?? [])
@@ -386,10 +413,11 @@ actor RemindersBridge {
     try requireAccess()
     let all = await fetch(store.predicateForReminders(in: nil))
     let ids = all.map { (listId: $0.listId, id: $0.id) }
-    guard let since = changedSince else { return (ids, all) }
+    guard let since = changedSince, since.isFinite else { return (ids, all) }
     // Same clock-skew lag as the Google watermark: re-reading the overlap
-    // is harmless (upserts only apply when strictly newer).
-    let floor = Int(since) - 60_000
+    // is harmless (upserts only apply when strictly newer). Clamped: an
+    // absurd stamp degrades to "everything", never to a trap.
+    let floor = Int(min(max(since, 0), 1e15)) - 60_000
     return (ids, all.filter { $0.updatedAt >= floor })
   }
 
@@ -410,10 +438,11 @@ actor RemindersBridge {
     if changes.keys.contains("url") {
       reminder.url = (changes["url"] as? String).flatMap { URL(string: $0) }
     }
-    if let priority = changes["priority"] as? Int {
-      reminder.priority = max(0, min(9, priority))
-    } else if let priority = changes["priority"] as? Double {
-      reminder.priority = max(0, min(9, Int(priority)))
+    if let raw = changes["priority"], !(raw is NSNull) {
+      guard let priority = boundedInt(raw, Bounds.priority) else {
+        throw RemindersBridgeError.badRequest("priority must be an integer 0…9")
+      }
+      reminder.priority = priority
     }
     if changes.keys.contains("dueDate") || changes.keys.contains("dueTime") {
       let existing = dueStrings(reminder.dueDateComponents)
@@ -435,24 +464,28 @@ actor RemindersBridge {
     }
     if changes.keys.contains("alarms") {
       let absolute = (reminder.alarms ?? []).filter { $0.absoluteDate != nil }
-      let offsets = (changes["alarms"] as? [Any])?.compactMap { value -> Int? in
-        if let n = value as? Int { return n }
-        if let d = value as? Double { return Int(d) }
-        return nil
+      let offsets = try (changes["alarms"] as? [Any] ?? []).map { value -> Int in
+        guard let minutes = boundedInt(value, Bounds.alarmMinutes) else {
+          throw RemindersBridgeError.badRequest("alarms must be integer minutes within a year")
+        }
+        return minutes
       }
       reminder.alarms =
-        absolute + (offsets ?? []).map { EKAlarm(relativeOffset: TimeInterval($0 * 60)) }
+        absolute + offsets.map { EKAlarm(relativeOffset: TimeInterval($0 * 60)) }
     }
     if changes.keys.contains("recurrence") {
       if let spec = changes["recurrence"] as? [String: Any] {
         if spec["unsupported"] as? Bool == true {
           // Never overwrite a rule we couldn't express.
         } else if let freqName = spec["freq"] as? String, let freq = frequency(named: freqName) {
-          let interval = max(1, (spec["interval"] as? Int) ?? Int((spec["interval"] as? Double) ?? 1))
+          guard let interval = boundedInt(spec["interval"] ?? 1, Bounds.interval) else {
+            throw RemindersBridgeError.badRequest("recurrence.interval must be an integer 1…999")
+          }
           var end: EKRecurrenceEnd? = nil
-          if let count = (spec["count"] as? Int) ?? (spec["count"] as? Double).map({ Int($0) }),
-            count > 0
-          {
+          if let rawCount = spec["count"], !(rawCount is NSNull) {
+            guard let count = boundedInt(rawCount, Bounds.count) else {
+              throw RemindersBridgeError.badRequest("recurrence.count must be an integer 1…999")
+            }
             end = EKRecurrenceEnd(occurrenceCount: count)
           } else if let until = spec["untilDate"] as? String, let untilDate = dayFormatter.date(from: until) {
             end = EKRecurrenceEnd(end: untilDate)

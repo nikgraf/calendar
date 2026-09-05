@@ -1,7 +1,7 @@
 import type { TaskListInfo, TaskPriority, TaskProvider, TaskRecord } from '@calendar/core';
 import { useState } from 'react';
 import { useBackendMutations } from './hooks.ts';
-import { useRepeatState } from './repeatState.ts';
+import { repeatNumberError, useRepeatState } from './repeatState.ts';
 import { taskEditorChanges, type TaskEditorValues } from './taskEditorChanges.ts';
 
 export interface TaskEditorSeed {
@@ -125,6 +125,17 @@ export const useTaskEditorModel = ({
     if (provider === 'apple' && url.trim() && !URL.canParse(url.trim())) {
       setError('The URL is not valid.');
       return;
+    }
+    if (provider === 'apple' && repeatState.repeat !== 'none') {
+      const invalid =
+        repeatNumberError(repeatState.repeatInterval, 'The repeat interval') ??
+        (repeatState.repeatEnds === 'after'
+          ? repeatNumberError(repeatState.repeatCount, 'The occurrence count')
+          : undefined);
+      if (invalid) {
+        setError(invalid);
+        return;
+      }
     }
     try {
       if (existing && initial) {

@@ -3,6 +3,28 @@ import { useState } from 'react';
 
 export type RepeatEnds = 'after' | 'never' | 'on';
 
+/** Interval and occurrence count are small positive integers on both backends. */
+export const REPEAT_NUMBER_MAX = 999;
+
+/**
+ * The interval / count fields are free text; the rule wants a positive
+ * integer. Anything else (empty, "3.5", "1e20") reads as 1 rather than
+ * reaching a backend — EventKit converts these with trapping casts.
+ */
+export const parseRepeatNumber = (text: string): number => {
+  const value = Number.parseInt(text, 10);
+  if (!Number.isFinite(value) || value < 1) {
+    return 1;
+  }
+  return Math.min(REPEAT_NUMBER_MAX, value);
+};
+
+/** The validation message for a repeat number the form should refuse, or undefined. */
+export const repeatNumberError = (text: string, label: string): string | undefined =>
+  /^\d+$/.test(text.trim()) && Number(text) >= 1 && Number(text) <= REPEAT_NUMBER_MAX
+    ? undefined
+    : `${label} must be a whole number between 1 and ${String(REPEAT_NUMBER_MAX)}.`;
+
 /**
  * The repeat-rule form state shared by the event editor (RRULE for
  * Google) and the Reminders form (EKRecurrenceRule) — same chips, same
@@ -32,9 +54,9 @@ export const useRepeatState = (
     repeat === 'none'
       ? undefined
       : {
-          ...(repeatEnds === 'after' ? { count: Number(repeatCount) || 1 } : {}),
+          ...(repeatEnds === 'after' ? { count: parseRepeatNumber(repeatCount) } : {}),
           freq: repeat,
-          interval: Number(repeatInterval) || 1,
+          interval: parseRepeatNumber(repeatInterval),
           ...(repeatEnds === 'on' && repeatUntil ? { untilDate: repeatUntil } : {}),
         };
 
