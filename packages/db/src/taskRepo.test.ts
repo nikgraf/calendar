@@ -1,4 +1,4 @@
-import { TaskListInfo, TaskRecord } from '@calendar/core';
+import { Account, TaskListInfo, TaskRecord } from '@calendar/core';
 import { SqliteClient } from '@effect/sql-sqlite-node';
 import { expect, it } from '@effect/vitest';
 import { Effect, Layer } from 'effect';
@@ -6,10 +6,28 @@ import { layer as reactivityLayer } from 'effect/unstable/reactivity/Reactivity'
 import { SqlClient } from 'effect/unstable/sql/SqlClient';
 import { describe } from 'vitest';
 import { runMigrations } from './migrate.ts';
-import { reposLayer, TaskRepo } from './repos.ts';
+import { AccountRepo, reposLayer, TaskRepo } from './repos.ts';
+
+/** Mirror rows are only written while their account exists — seed the ones tests use. */
+const seedAccounts = Effect.gen(function* () {
+  const accounts = yield* AccountRepo;
+  for (const id of ['acc-1', 'acc-2']) {
+    yield* accounts.upsert(
+      new Account({
+        createdAt: 1,
+        email: `${id}@example.com`,
+        id,
+        provider: 'google',
+        status: 'ok',
+        tasksEnabled: true,
+      }),
+    );
+  }
+});
 
 const freshDbLayer = () =>
-  reposLayer.pipe(
+  Layer.effectDiscard(seedAccounts).pipe(
+    Layer.provideMerge(reposLayer),
     Layer.provideMerge(Layer.effectDiscard(runMigrations)),
     Layer.provideMerge(SqliteClient.layer({ filename: ':memory:' })),
     Layer.provideMerge(reactivityLayer),
@@ -263,6 +281,26 @@ describe('TaskRepo', () => {
         }>`SELECT COUNT(*) AS n FROM tasks WHERE id = 'gone-undated'`;
         expect(undated[0]?.n).toBe(0);
       }).pipe(Effect.provide(freshDbLayer())),
+  );
+
+  it.effect('replaceMirror after the account was removed writes nothing and says so', () =>
+    Effect.gen(function* () {
+      const repo = yield* TaskRepo;
+      const accounts = yield* AccountRepo;
+      const appleList = list({ id: 'list-a', provider: 'apple' });
+      yield* repo.upsertLists([appleList], 1);
+      yield* accounts.remove('acc-1');
+      const result = yield* repo.replaceMirror({
+        accountId: 'acc-1',
+        changed: [task({ id: 'r1', listId: 'list-a', updatedAt: 1 })],
+        ids: [{ id: 'r1', listId: 'list-a' }],
+        lists: [appleList],
+        syncedAt: 10,
+      });
+      expect(result).toEqual({ needsFull: false, skipped: true });
+      expect(yield* repo.listLists('acc-1')).toEqual([]);
+      expect(yield* repo.getWindow('2000-01-01', '2099-12-31')).toEqual([]);
+    }).pipe(Effect.provide(freshDbLayer())),
   );
 
   it.effect('replaceMirror handles thousands of ids and flags a missing row', () =>

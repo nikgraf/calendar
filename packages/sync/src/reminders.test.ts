@@ -1,5 +1,12 @@
 import { Account, APPLE_REMINDERS_ACCOUNT_ID, Temporal } from '@calendar/core';
-import { AccountRepo, PendingOpRepo, reposLayer, runMigrations, TaskRepo } from '@calendar/db';
+import {
+  AccountRepo,
+  PendingOpRepo,
+  reposLayer,
+  runMigrations,
+  SyncStateRepo,
+  TaskRepo,
+} from '@calendar/db';
 import {
   GoogleCalendarClient,
   type GoogleCalendarClientShape,
@@ -9,7 +16,7 @@ import {
 import { makeFakeRemindersClient, RemindersClient } from '@calendar/reminders';
 import { SqliteClient } from '@effect/sql-sqlite-node';
 import { expect, it } from '@effect/vitest';
-import { Effect, Layer } from 'effect';
+import { Deferred, Effect, Fiber, Layer } from 'effect';
 import { TestClock } from 'effect/testing';
 import { layer as reactivityLayer } from 'effect/unstable/reactivity/Reactivity';
 import { SqlClient } from 'effect/unstable/sql/SqlClient';
@@ -190,6 +197,36 @@ describe('reminders sync', () => {
       expect(rows.map((row) => row.id)).not.toContain('rem-allday');
       expect(rows.map((row) => row.id)).toContain('rem-timed');
     }).pipe(Effect.provide(testLayer(fake)));
+  });
+
+  it.effect('removing the account while a snapshot is in flight leaves nothing behind', () => {
+    const fake = fakeWith();
+    const gate = Deferred.makeUnsafe<void>();
+    const entered = Deferred.makeUnsafe<void>();
+    // The bridge answers only once the test lets it — removal lands in
+    // between, and the finishing pass must not recreate what it deleted.
+    const client = {
+      ...fake.client,
+      snapshot: (params: { readonly changedSince?: number | undefined }) =>
+        Effect.gen(function* () {
+          yield* Deferred.succeed(entered, undefined);
+          yield* Deferred.await(gate);
+          return yield* fake.client.snapshot(params);
+        }),
+    };
+    return Effect.gen(function* () {
+      yield* seedApple();
+      const engine = yield* SyncEngine;
+      const pass = yield* Effect.forkChild(engine.syncAll());
+      yield* Deferred.await(entered);
+      yield* (yield* AccountRepo).remove(APPLE_REMINDERS_ACCOUNT_ID);
+      yield* Deferred.succeed(gate, undefined);
+      yield* Fiber.join(pass);
+      const taskRepo = yield* TaskRepo;
+      expect(yield* taskRepo.listLists(APPLE_REMINDERS_ACCOUNT_ID)).toEqual([]);
+      expect(yield* windowRows).toEqual([]);
+      expect(yield* (yield* SyncStateRepo).get(APPLE_REMINDERS_ACCOUNT_ID, 'reminders')).toBeNull();
+    }).pipe(Effect.provide(testLayer({ ...fake, client })));
   });
 
   it.effect('a row mirrored during the pass survives; a stale unseen one is removed', () => {

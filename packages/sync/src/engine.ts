@@ -447,6 +447,12 @@ const make: Effect.Effect<
       const changedSince = state?.lastSyncAt ?? undefined;
       let full = changedSince === undefined;
       const result = yield* pass(changedSince);
+      if (result.skipped) {
+        // Removed while the snapshot was in flight: nothing was written,
+        // and a stamp now would outlive its account.
+        yield* Effect.logDebug('reminders account removed mid-pass; nothing written');
+        return;
+      }
       if (result.needsFull && !full) {
         // A snapshot id with no local row and no changed entry (rebuild,
         // lost row): fetch everything once.

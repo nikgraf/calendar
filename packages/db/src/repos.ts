@@ -57,6 +57,17 @@ export interface AccountRepoShape {
   readonly upsert: (account: Account) => Effect.Effect<void, SqlError>;
 }
 
+/**
+ * The WHERE clause of every mirror INSERT: a row is written only while its
+ * account exists. A sync pass can finish after the user removed the
+ * account (the fetch was in flight); without this its upserts would
+ * recreate lists, rows and sync state that no later pass cleans up. The
+ * SELECT form is what lets an INSERT carry a WHERE (and SQLite needs a
+ * WHERE there anyway to parse the ON CONFLICT clause that follows).
+ */
+const accountGuard = (sql: SqlClient, accountId: string) =>
+  sql`WHERE EXISTS (SELECT 1 FROM accounts WHERE id = ${accountId})`;
+
 const makeAccountRepo: Effect.Effect<AccountRepoShape, never, Reactivity | SqlClient> = Effect.gen(
   function* () {
     const sql = yield* SqlClient;
@@ -73,17 +84,22 @@ const makeAccountRepo: Effect.Effect<AccountRepoShape, never, Reactivity | SqlCl
         Effect.map(sql<AccountRow>`SELECT * FROM accounts ORDER BY created_at`, (rows) =>
           rows.map(accountFromRow),
         ),
+      // One transaction: a sync pass finishing meanwhile sees either the
+      // whole account or none of it — and its row writes are guarded on
+      // the account row (see accountGuard), so nothing comes back.
       remove: (accountId) =>
         invalidating(
-          Effect.gen(function* () {
-            yield* sql`DELETE FROM events WHERE account_id = ${accountId}`;
-            yield* sql`DELETE FROM tasks WHERE account_id = ${accountId}`;
-            yield* sql`DELETE FROM task_lists WHERE account_id = ${accountId}`;
-            yield* sql`DELETE FROM calendars WHERE account_id = ${accountId}`;
-            yield* sql`DELETE FROM pending_ops WHERE account_id = ${accountId}`;
-            yield* sql`DELETE FROM sync_state WHERE account_id = ${accountId}`;
-            yield* sql`DELETE FROM accounts WHERE id = ${accountId}`;
-          }),
+          sql.withTransaction(
+            Effect.gen(function* () {
+              yield* sql`DELETE FROM events WHERE account_id = ${accountId}`;
+              yield* sql`DELETE FROM tasks WHERE account_id = ${accountId}`;
+              yield* sql`DELETE FROM task_lists WHERE account_id = ${accountId}`;
+              yield* sql`DELETE FROM calendars WHERE account_id = ${accountId}`;
+              yield* sql`DELETE FROM pending_ops WHERE account_id = ${accountId}`;
+              yield* sql`DELETE FROM sync_state WHERE account_id = ${accountId}`;
+              yield* sql`DELETE FROM accounts WHERE id = ${accountId}`;
+            }),
+          ),
         ),
       setStatus: (accountId, status) =>
         invalidating(
@@ -203,10 +219,11 @@ const makeCalendarRepo: Effect.Effect<CalendarRepoShape, never, Reactivity | Sql
               sql`
               INSERT INTO calendars (account_id, id, summary, color_hex, access_role,
                                      is_primary, is_visible, time_zone)
-              VALUES (${calendar.accountId}, ${calendar.id}, ${calendar.summary},
-                      ${calendar.colorHex}, ${calendar.accessRole},
-                      ${calendar.isPrimary ? 1 : 0}, ${calendar.isVisible ? 1 : 0},
-                      ${calendar.timeZone})
+              SELECT ${calendar.accountId}, ${calendar.id}, ${calendar.summary},
+                     ${calendar.colorHex}, ${calendar.accessRole},
+                     ${calendar.isPrimary ? 1 : 0}, ${calendar.isVisible ? 1 : 0},
+                     ${calendar.timeZone}
+              ${accountGuard(sql, calendar.accountId)}
               ON CONFLICT (account_id, id) DO UPDATE SET
                 summary = excluded.summary,
                 color_hex = excluded.color_hex,
@@ -280,13 +297,14 @@ const makeEventRepo: Effect.Effect<EventRepoShape, never, Reactivity | SqlClient
                           end_date, start_time_zone, recurrence, recurring_event_id,
                           original_start_utc, attendees, organizer_email, sync_status,
                           updated_at, synced_at)
-      VALUES (${row.account_id}, ${row.calendar_id}, ${row.id}, ${row.etag},
-              ${row.status}, ${row.title}, ${row.location}, ${row.description},
-              ${row.is_all_day}, ${row.start_utc}, ${row.end_utc}, ${row.start_date},
-              ${row.end_date}, ${row.start_time_zone}, ${row.recurrence},
-              ${row.recurring_event_id}, ${row.original_start_utc}, ${row.attendees},
-              ${row.organizer_email}, ${row.sync_status}, ${row.updated_at},
-              ${row.synced_at})
+      SELECT ${row.account_id}, ${row.calendar_id}, ${row.id}, ${row.etag},
+             ${row.status}, ${row.title}, ${row.location}, ${row.description},
+             ${row.is_all_day}, ${row.start_utc}, ${row.end_utc}, ${row.start_date},
+             ${row.end_date}, ${row.start_time_zone}, ${row.recurrence},
+             ${row.recurring_event_id}, ${row.original_start_utc}, ${row.attendees},
+             ${row.organizer_email}, ${row.sync_status}, ${row.updated_at},
+             ${row.synced_at}
+      ${accountGuard(sql, row.account_id)}
       ON CONFLICT (account_id, calendar_id, id) DO UPDATE SET
         etag = excluded.etag,
         status = excluded.status,
@@ -507,8 +525,9 @@ const makeSyncStateRepo: Effect.Effect<SyncStateRepoShape, never, SqlClient> = E
         Effect.asVoid(sql`
         INSERT INTO sync_state (account_id, scope, sync_token, last_full_sync_at,
                                 last_sync_at, status)
-        VALUES (${state.accountId}, ${state.scope}, ${state.syncToken},
-                ${state.lastFullSyncAt}, ${state.lastSyncAt}, ${state.status})
+        SELECT ${state.accountId}, ${state.scope}, ${state.syncToken},
+               ${state.lastFullSyncAt}, ${state.lastSyncAt}, ${state.status}
+        ${accountGuard(sql, state.accountId)}
         ON CONFLICT (account_id, scope) DO UPDATE SET
           sync_token = excluded.sync_token,
           last_full_sync_at = excluded.last_full_sync_at,
@@ -579,7 +598,7 @@ export interface TaskRepoShape {
     readonly ids: ReadonlyArray<{ readonly id: string; readonly listId: string }>;
     readonly lists: ReadonlyArray<TaskListInfo>;
     readonly syncedAt: number;
-  }) => Effect.Effect<{ readonly needsFull: boolean }, SqlError>;
+  }) => Effect.Effect<{ readonly needsFull: boolean; readonly skipped: boolean }, SqlError>;
   readonly setListVisible: (
     accountId: string,
     listId: string,
@@ -641,12 +660,13 @@ const makeTaskRepo: Effect.Effect<TaskRepoShape, never, Reactivity | SqlClient> 
               INSERT INTO tasks (account_id, list_id, id, title, notes, status, due_date,
                                  completed_at, web_view_link, updated_at, synced_at,
                                  sync_status, due_time, priority, url, alarms, recurrence)
-              VALUES (${task.accountId}, ${task.listId}, ${task.id}, ${task.title},
-                      ${task.notes ?? null}, ${task.status}, ${task.dueDate ?? null},
-                      ${task.completedAt ?? null}, ${task.webViewLink ?? null},
-                      ${task.updatedAt}, ${syncedAt}, 'synced',
-                      ${task.dueTime ?? null}, ${task.priority ?? null}, ${task.url ?? null},
-                      ${json.alarms}, ${json.recurrence})
+              SELECT ${task.accountId}, ${task.listId}, ${task.id}, ${task.title},
+                     ${task.notes ?? null}, ${task.status}, ${task.dueDate ?? null},
+                     ${task.completedAt ?? null}, ${task.webViewLink ?? null},
+                     ${task.updatedAt}, ${syncedAt}, 'synced',
+                     ${task.dueTime ?? null}, ${task.priority ?? null}, ${task.url ?? null},
+                     ${json.alarms}, ${json.recurrence}
+              ${accountGuard(sql, task.accountId)}
               ON CONFLICT (account_id, list_id, id) DO UPDATE SET
                 sync_status = 'synced',
                 title = excluded.title,
@@ -668,9 +688,10 @@ const makeTaskRepo: Effect.Effect<TaskRepoShape, never, Reactivity | SqlClient> 
     const upsertListRow = (list: TaskListInfo, syncedAt: number) => sql`
               INSERT INTO task_lists (account_id, id, title, is_visible, synced_at, provider,
                                       color_hex)
-              VALUES (${list.accountId}, ${list.id}, ${list.title},
-                      ${list.isVisible ? 1 : 0}, ${syncedAt}, ${list.provider},
-                      ${list.colorHex ?? null})
+              SELECT ${list.accountId}, ${list.id}, ${list.title},
+                     ${list.isVisible ? 1 : 0}, ${syncedAt}, ${list.provider},
+                     ${list.colorHex ?? null}
+              ${accountGuard(sql, list.accountId)}
               ON CONFLICT (account_id, id) DO UPDATE SET
                 title = excluded.title,
                 synced_at = excluded.synced_at,
@@ -794,11 +815,18 @@ const makeTaskRepo: Effect.Effect<TaskRepoShape, never, Reactivity | SqlClient> 
                 AND synced_at < ${syncedAt}
                 AND NOT EXISTS (SELECT 1 FROM mirror_snapshot s
                                 WHERE s.list_id = tasks.list_id AND s.id = tasks.id)`;
+              const owner = yield* sql<{ n: number }>`
+                SELECT COUNT(*) AS n FROM accounts WHERE id = ${accountId}`;
+              if ((owner[0]?.n ?? 0) === 0) {
+                // Removed while the snapshot was in flight: the guarded
+                // upserts above wrote nothing, and there is nothing to keep.
+                return { needsFull: false, skipped: true };
+              }
               const missing = yield* sql<{ n: number }>`
                 SELECT COUNT(*) AS n FROM mirror_snapshot s
                 WHERE NOT EXISTS (SELECT 1 FROM tasks t WHERE t.account_id = ${accountId}
                                   AND t.list_id = s.list_id AND t.id = s.id)`;
-              return { needsFull: (missing[0]?.n ?? 0) > 0 };
+              return { needsFull: (missing[0]?.n ?? 0) > 0, skipped: false };
             }),
           ),
         ),
