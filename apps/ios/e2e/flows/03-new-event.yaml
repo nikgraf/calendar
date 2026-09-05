@@ -12,8 +12,20 @@ tags:
     timeout: 5000
 # styles.label applies textTransform: uppercase, so the rendered text is REPEAT.
 - assertVisible: 'REPEAT'
-- tapOn: 'Daily'
-# Assertions are regexes — the parentheses must be escaped.
+# Tap until the interval row appears: on the runner the sheet's content
+# still shifted (its own inset) after the animation-end wait, so the
+# first tap landed above the chip. Assertions are regexes — the
+# parentheses must be escaped.
+- repeat:
+    times: 4
+    while:
+      notVisible: 'EVERY \(N\)'
+    commands:
+      - tapOn: 'Daily'
+      - extendedWaitUntil:
+          visible: 'EVERY \(N\)'
+          timeout: 3000
+          optional: true
 - assertVisible: 'EVERY \(N\)'
 - tapOn: 'Cancel'
 - assertVisible: 'Today'
