@@ -173,6 +173,15 @@ jobs:
           echo "warming $BUNDLE_URL"
           time curl -fsS -o /dev/null --max-time 900 "$BUNDLE_URL"
           grep -a "Bundled" "$RUNNER_TEMP/metro.log" | tail -1
+      - name: Simulator ↔ Metro diagnostics
+        # Independent of the app: what Metro listens on, and whether Safari
+        # inside the simulator can load Metro's status page at all (the
+        # screenshot lands in the failure artifact).
+        run: |
+          lsof -nP -iTCP:8081 -sTCP:LISTEN || true
+          xcrun simctl openurl "$SIMULATOR_UDID" "http://127.0.0.1:8081/status"
+          sleep 10
+          xcrun simctl io "$SIMULATOR_UDID" screenshot "$RUNNER_TEMP/safari-metro-status.png"
       - name: Open the dev client on Metro
         # The launcher screen otherwise waits for a server choice; the first
         # bundle takes a while, which the flows' 60 s "Today" wait covers.
@@ -195,6 +204,7 @@ jobs:
           path: |
             ~/.maestro/tests/
             ${{ runner.temp }}/metro.log
+            ${{ runner.temp }}/*.png
           retention-days: 7
           if-no-files-found: ignore
 

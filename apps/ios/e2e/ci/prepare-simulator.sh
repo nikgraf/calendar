@@ -15,6 +15,14 @@ UDID=$(xcrun simctl list devices available -j | jq -r '
 test -n "$UDID" || { echo "::error::no available iPhone simulator"; exit 1; }
 echo "Simulator: $UDID"
 
+# The application firewall sees the simulated app, not Simulator.app, and
+# drops its connections to a host dev server (timeouts, never refusals);
+# the runner has no one to click "Allow". Off for the job's lifetime.
+if [ -n "${CI:-}" ]; then
+  sudo /usr/libexec/ApplicationFirewall/socketfilterfw --getglobalstate || true
+  sudo /usr/libexec/ApplicationFirewall/socketfilterfw --setglobalstate off || true
+fi
+
 xcrun simctl boot "$UDID" 2>/dev/null || true
 xcrun simctl bootstatus "$UDID" -b
 xcrun simctl install "$UDID" "$APP"
