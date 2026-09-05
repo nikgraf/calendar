@@ -274,7 +274,12 @@ regexes: a list row's label is title + swatch + check mark, so rows are
 picked by `id: task-list-option`; a chip body is tapped by its full text
 (`[0-9]+:[0-9]+ !!! <title>` for a timed reminder), because `.*<title>`
 also matches the checkbox's "Toggle <title>" label and toggles
-completion instead of opening the editor. Every flow starts with `runFlow: ../common/launch.yaml`
+completion instead of opening the editor. Flows that open the edit sheet `waitForAnimationToEnd` before tapping
+inside it (a tap taken mid-slide missed on the runner), and the
+quick-add flow accepts the bar's "couldn't be read" outcome: a CI
+simulator passes the model availability check yet cannot generate,
+so the prefilled editor is asserted only where a model answers.
+Every flow starts with `runFlow: ../common/launch.yaml`
 (launch, wait for "Today", `waitForAnimationToEnd`): React Native's
 SafeAreaView applies the top inset a beat after the first paint, so an id
 tap taken as soon as "Today" is visible lands ~60 pt too high — in the

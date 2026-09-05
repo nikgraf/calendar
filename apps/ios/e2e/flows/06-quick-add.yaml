@@ -22,13 +22,27 @@ tags:
       - inputText: 'Lunch with Sarah next Tuesday at 1pm'
       - tapOn:
           id: 'quick-add-submit'
-      # Generation runs locally and takes a few seconds.
+      # Generation runs locally and takes a few seconds. A simulator whose
+      # host has no usable model (CI runners: Apple Intelligence is not
+      # enabled) passes the availability check and then fails to
+      # generate — the bar shows its "couldn't be read" copy. Either
+      # outcome proves the bar, submit and error path; the prefilled
+      # editor is asserted wherever a model actually answers.
       - extendedWaitUntil:
-          visible: 'New Event'
+          visible: 'New Event|That couldn.t be read.*'
           timeout: 60000
-      # The phrase must have filled the form, not just opened it.
-      - assertVisible: 'Lunch with Sarah'
-      - tapOn: 'Cancel'
+      - runFlow:
+          when:
+            visible: 'New Event'
+          commands:
+            # The phrase must have filled the form, not just opened it.
+            - assertVisible: 'Lunch with Sarah'
+            - tapOn: 'Cancel'
+      - runFlow:
+          when:
+            visible: 'That couldn.t be read.*'
+          commands:
+            - assertVisible: 'Today'
       # Dictation is deliberately not asserted here: Maestro cannot inject
       # audio and simulators carry no speech assets, so the mic disables
       # itself once prepare() fails. Gating an assertion on the mic being

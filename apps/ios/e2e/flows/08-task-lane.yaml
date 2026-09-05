@@ -7,6 +7,9 @@ tags:
 - tapOn:
     id: 'add-event'
 - assertVisible: 'New Event'
+# The sheet slides in; on a slow runner a tap taken mid-animation misses.
+- waitForAnimationToEnd:
+    timeout: 5000
 # The Event | Task toggle only exists in create mode.
 - assertVisible:
     id: 'mode-task'

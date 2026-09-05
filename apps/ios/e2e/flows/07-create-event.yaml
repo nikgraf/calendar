@@ -7,6 +7,9 @@ tags:
 - tapOn:
     id: 'add-event'
 - assertVisible: 'New Event'
+# The sheet slides in; on a slow runner a tap taken mid-animation misses.
+- waitForAnimationToEnd:
+    timeout: 5000
 # Saving needs a writable calendar, so this runs only where an account is
 # signed in. Everywhere else the flow is a no-op rather than a false
 # failure — the same shape as the quick-add flow.
