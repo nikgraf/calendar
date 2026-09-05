@@ -14,8 +14,14 @@ name: Launch the app and wait for a settled shell (shared preamble)
       notVisible: 'Today'
     commands:
       - extendedWaitUntil:
-          visible: "Today|Reload|http://(127\\.0\\.0\\.1|localhost):8081|Continue|Go home"
+          visible: "Today|Reload|http://(127\\.0\\.0\\.1|localhost):8081|Continue|Go home|Error loading app"
           timeout: 60000
+      # A failed reopen from the launcher home raises an alert first.
+      - runFlow:
+          when:
+            visible: 'Error loading app'
+          commands:
+            - tapOn: 'OK'
       - runFlow:
           when:
             visible: 'Reload'
