@@ -1,6 +1,7 @@
 import type { AccountRepoShape, TaskRepoShape } from '@calendar/db';
 import { mapReminder, type RemindersClientShape, toReminderWrite } from '@calendar/reminders';
 import { Clock, Effect } from 'effect';
+import type { SqlError } from 'effect/unstable/sql/SqlError';
 import type { EventMutationsShape } from './mutationTypes.ts';
 
 /**
@@ -8,6 +9,13 @@ import type { EventMutationsShape } from './mutationTypes.ts';
  * synchronous, so there is no optimistic row and no pending op: each call
  * writes EventKit first and mirrors the returned reminder into SQLite —
  * the same row the sync pass would produce, just earlier.
+ *
+ * Once EventKit has committed, the write has happened whatever the mirror
+ * does: a SQLite failure after that is logged, not raised. Raising it
+ * would show the editor an error for a reminder that exists, and a
+ * retried Save would create it a second time. Our own EventKit write
+ * fires EKEventStoreChanged, so the debounced delta pass restores the
+ * missed row within about a second anyway.
  */
 export interface ReminderMutationDeps {
   readonly accountRepo: AccountRepoShape;
@@ -19,6 +27,15 @@ type TaskMutations = Pick<
   EventMutationsShape,
   'completeTask' | 'createTask' | 'deleteTask' | 'updateTask'
 >;
+
+/** A mirror write after a committed EventKit change: best effort, never fatal. */
+const mirror = (method: string, write: Effect.Effect<void, SqlError>): Effect.Effect<void> =>
+  Effect.catchTag(write, 'SqlError', (error) =>
+    Effect.logWarning('reminders mirror write failed; the next pass repairs it', {
+      error: error.message,
+      method,
+    }),
+  );
 
 export const makeReminderMutations = (deps: ReminderMutationDeps): TaskMutations => {
   const { accountRepo, remindersClient, taskRepo } = deps;
@@ -43,7 +60,10 @@ export const makeReminderMutations = (deps: ReminderMutationDeps): TaskMutations
           id: taskId,
         });
         const now = yield* Clock.currentTimeMillis;
-        yield* taskRepo.upsertTasks([mapReminder(reminder, accountId)], now);
+        yield* mirror(
+          'completeTask',
+          taskRepo.upsertTasks([mapReminder(reminder, accountId)], now),
+        );
       }).pipe(flagAccessLoss(accountId)),
 
     createTask: ({ accountId, taskListId, ...fields }) =>
@@ -54,7 +74,7 @@ export const makeReminderMutations = (deps: ReminderMutationDeps): TaskMutations
         });
         const record = mapReminder(reminder, accountId);
         const now = yield* Clock.currentTimeMillis;
-        yield* taskRepo.upsertTasks([record], now);
+        yield* mirror('createTask', taskRepo.upsertTasks([record], now));
         return record;
       }).pipe(flagAccessLoss(accountId)),
 
@@ -70,7 +90,7 @@ export const makeReminderMutations = (deps: ReminderMutationDeps): TaskMutations
               error.message.startsWith('notFound') ? Effect.void : Effect.fail(error),
             ),
           );
-        yield* taskRepo.removeTask(accountId, taskListId, taskId);
+        yield* mirror('deleteTask', taskRepo.removeTask(accountId, taskListId, taskId));
       }).pipe(flagAccessLoss(accountId)),
 
     updateTask: ({ accountId, changes, taskId, taskListId }) =>
@@ -84,12 +104,17 @@ export const makeReminderMutations = (deps: ReminderMutationDeps): TaskMutations
           id: taskId,
         });
         const now = yield* Clock.currentTimeMillis;
-        if (moveToListId !== undefined && moveToListId !== taskListId) {
-          // The primary key includes the list: drop the old row, the upsert
-          // below writes the new one.
-          yield* taskRepo.removeTask(accountId, taskListId, taskId);
-        }
-        yield* taskRepo.upsertTasks([mapReminder(reminder, accountId)], now);
+        yield* mirror(
+          'updateTask',
+          Effect.gen(function* () {
+            if (moveToListId !== undefined && moveToListId !== taskListId) {
+              // The primary key includes the list: drop the old row, the
+              // upsert below writes the new one.
+              yield* taskRepo.removeTask(accountId, taskListId, taskId);
+            }
+            yield* taskRepo.upsertTasks([mapReminder(reminder, accountId)], now);
+          }),
+        );
       }).pipe(flagAccessLoss(accountId)),
   };
 };

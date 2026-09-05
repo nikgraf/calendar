@@ -13,6 +13,7 @@ import { Effect, Layer } from 'effect';
 import { TestClock } from 'effect/testing';
 import { layer as reactivityLayer } from 'effect/unstable/reactivity/Reactivity';
 import { SqlClient } from 'effect/unstable/sql/SqlClient';
+import { SqlError, UnknownError } from 'effect/unstable/sql/SqlError';
 import { describe } from 'vitest';
 import { SyncEngine } from './engine.ts';
 import { EventMutations } from './mutations.ts';
@@ -36,9 +37,13 @@ const inertTasksClient: GoogleTasksClientShape = {
   patchTask: () => Effect.die('unexpected patchTask'),
 };
 
-const testLayer = (fake: ReturnType<typeof makeFakeRemindersClient>) =>
+const testLayer = (
+  fake: ReturnType<typeof makeFakeRemindersClient>,
+  overrides: Layer.Layer<never, never, TaskRepo> = Layer.empty,
+) =>
   SyncEngine.layer.pipe(
     Layer.provideMerge(EventMutations.layer),
+    Layer.provideMerge(overrides),
     Layer.provideMerge(reposLayer),
     Layer.provideMerge(Layer.effectDiscard(runMigrations)),
     Layer.provideMerge(SqliteClient.layer({ filename: ':memory:' })),
@@ -352,6 +357,48 @@ describe('reminder mutations', () => {
       });
       expect(yield* (yield* PendingOpRepo).listAll()).toEqual([]);
     }).pipe(Effect.provide(testLayer(fake)));
+  });
+
+  it.effect('a mirror write that fails after EventKit committed is not an error', () => {
+    const fake = fakeWith();
+    // The first upsert after setup fails (disk full, a lock): EventKit has
+    // the reminder, so the mutation must still succeed — a raised error
+    // would have the user press Save again and create a second one.
+    let failNextUpsert = false;
+    const flakyTaskRepo = Layer.effect(TaskRepo)(
+      Effect.map(TaskRepo, (real) => ({
+        ...real,
+        upsertTasks: (tasks, syncedAt) => {
+          if (failNextUpsert) {
+            failNextUpsert = false;
+            return Effect.fail(
+              new SqlError({ reason: new UnknownError({ cause: new Error('SQLITE_FULL') }) }),
+            );
+          }
+          return real.upsertTasks(tasks, syncedAt);
+        },
+      })),
+    );
+    return Effect.gen(function* () {
+      yield* seedApple();
+      const engine = yield* SyncEngine;
+      yield* engine.syncAll();
+      const mutations = yield* EventMutations;
+      failNextUpsert = true;
+      const created = yield* mutations.createTask({
+        accountId: APPLE_REMINDERS_ACCOUNT_ID,
+        dueDate: tomorrow,
+        taskListId: 'list-b',
+        title: 'Buy milk',
+      });
+      expect(fake.state.calls.filter((call) => call === 'create')).toHaveLength(1);
+      expect(fake.state.reminders.get(created.id)?.title).toBe('Buy milk');
+      // Not mirrored yet …
+      expect((yield* windowRows).some((task) => task.id === created.id)).toBe(false);
+      // … until the next pass (in production the change push runs it).
+      yield* engine.syncAll();
+      expect((yield* windowRows).some((task) => task.id === created.id)).toBe(true);
+    }).pipe(Effect.provide(testLayer(fake, flakyTaskRepo)));
   });
 
   it.effect('updateTask can move between lists and clear reminder fields', () => {
