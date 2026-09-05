@@ -158,7 +158,12 @@ Rules that keep the queue correct:
   410, or People's 400 `EXPIRED_SYNC_TOKEN`) collects everything and
   `ContactRepo.replaceTier` swaps the tier in one transaction. An
   insufficient-scope 403 flips `contactsEnabled` off, like tasks. Device
-  contacts never enter SQLite (see `DeviceContacts` below).
+  contacts never enter SQLite: `DeviceContacts` (packages/sync) holds the
+  bridge snapshot in memory, refreshed on change notifications, when
+  stale, and after `connectContacts`. The `searchContacts` rpc asks
+  `ContactRepo.search` for coarse candidates, adds the device list, and
+  `rankContacts` (core) produces one deduped, ranked list for the
+  combobox; the UI holds a bounded LRU of query atoms on `CONTACTS_KEY`.
 - **Apple Reminders** (the synthetic `apple-reminders` account, created by
   the `connectReminders` rpc after the EventKit prompt): SQLite holds the
   latest **complete** EventKit snapshot — open and completed, dated and

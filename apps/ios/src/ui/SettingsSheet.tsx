@@ -32,6 +32,7 @@ import {
 } from 'react-native';
 import { appleLanguageModel } from '../appleModel.ts';
 import { appleSpeech } from '../appleSpeech.ts';
+import { iosContactsClient } from '../contactsClient.ts';
 import { iosRemindersClient } from '../remindersClient.ts';
 import { palette } from './theme.ts';
 import { MutationNoticeToast } from './Toast.tsx';
@@ -376,8 +377,14 @@ const describeReminders = async (): Promise<string> => {
   return `fullAccess (${String(lists.length)} lists)`;
 };
 
+const describeContacts = (): Promise<string> =>
+  Effect.runPromise(
+    iosContactsClient.status().pipe(Effect.orElseSucceed(() => 'unavailable' as const)),
+  );
+
 function DiagnosticsSection() {
   const [modelStatus, setModelStatus] = useState<ModelStatus | 'checking…'>('checking…');
+  const [contacts, setContacts] = useState('checking…');
   const [dictation, setDictation] = useState('checking…');
   const [reminders, setReminders] = useState('checking…');
   const [remindersBusy, setRemindersBusy] = useState(false);
@@ -421,6 +428,11 @@ function DiagnosticsSection() {
         setReminders(text);
       }
     });
+    void describeContacts().then((text) => {
+      if (!cancelled) {
+        setContacts(text);
+      }
+    });
     return () => {
       cancelled = true;
     };
@@ -443,6 +455,25 @@ function DiagnosticsSection() {
             {reminders === 'denied'
               ? 'Reminders access is off — check again after allowing it in Settings'
               : 'Allow access to Reminders'}
+          </Text>
+        </Pressable>
+      ) : null}
+      <Text style={styles.previewMeta} testID="diagnostics-contacts">
+        contacts: {contacts}
+      </Text>
+      {contacts === 'notDetermined' || contacts === 'denied' ? (
+        <Pressable
+          onPress={() =>
+            void mutations
+              .connectContacts(undefined)
+              .then(describeContacts, describeContacts)
+              .then(setContacts)
+          }
+        >
+          <Text style={styles.reconnect}>
+            {contacts === 'denied'
+              ? 'Contacts access is off — check again after allowing it in Settings'
+              : 'Allow access to Contacts'}
           </Text>
         </Pressable>
       ) : null}

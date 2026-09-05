@@ -1,0 +1,30 @@
+appId: com.solunivo.app
+name: The invitee field turns a typed address into a chip
+tags:
+  - ci
+---
+- runFlow: ../common/launch.yaml
+- tapOn:
+    id: 'add-event'
+- assertVisible: 'New Event'
+- waitForAnimationToEnd:
+    timeout: 5000
+# The field sits below the location row; scroll it into view first.
+- scrollUntilVisible:
+    element:
+      id: 'invitee-input'
+    direction: DOWN
+    timeout: 10000
+- tapOn:
+    id: 'invitee-input'
+- inputText: 'bob@example.com'
+# Return turns the address into a chip; the input clears.
+- pressKey: Enter
+- extendedWaitUntil:
+    visible:
+      id: 'invitee-chip'
+    timeout: 5000
+- assertVisible: 'bob@example.com'
+# Nothing is saved: leave the sheet as we found it.
+- tapOn: 'Cancel'
+- assertVisible: 'Today'

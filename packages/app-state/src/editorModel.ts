@@ -1,10 +1,12 @@
 import {
   buildRecurrenceRule,
   buildEventTimes,
+  emailKey,
   meetingUrl,
   toZonedDateTime,
   validateEventDraft,
   type Attendee,
+  type AttendeeInput,
   type CalendarInfo,
   type EventDraft,
   type EventRecord,
@@ -111,10 +113,39 @@ export const useEventEditorModel = ({
       : (prefill?.endTime ?? pad((seed.initialHour ?? 9) + 1)),
   );
   const [location, setLocation] = useState(existing?.location ?? prefill?.location ?? '');
+  // The guest list as the editor shows it; `attendeesDirty` keeps an
+  // untouched list out of the update (undefined = unchanged upstream).
+  const [attendees, setAttendees] = useState<ReadonlyArray<AttendeeInput>>(() =>
+    (existing?.attendees ?? []).map((attendee) => ({
+      displayName: attendee.displayName,
+      email: attendee.email,
+    })),
+  );
+  const [attendeesDirty, setAttendeesDirty] = useState(false);
   const [scope, setScope] = useState<RecurringScope>('instance');
   const [rsvp, setRsvp] = useState(ownAttendee?.responseStatus);
   const { toSpec: repeatSpec, ...repeatState } = useRepeatState(prefill?.recurrence);
   const [error, setError] = useState<string | null>(null);
+
+  const addAttendee = (input: AttendeeInput): boolean => {
+    const key = emailKey(input.email);
+    if (key === '' || attendees.some((attendee) => emailKey(attendee.email) === key)) {
+      return false;
+    }
+    setAttendees([...attendees, { displayName: input.displayName, email: input.email.trim() }]);
+    setAttendeesDirty(true);
+    return true;
+  };
+
+  const removeAttendee = (email: string) => {
+    const key = emailKey(email);
+    setAttendees(attendees.filter((attendee) => emailKey(attendee.email) !== key));
+    setAttendeesDirty(true);
+  };
+
+  /** Server facts for a chip (response, organizer) — only for guests already on the event. */
+  const attendeeStatus = (email: string): Attendee | undefined =>
+    existing?.attendees?.find((attendee) => emailKey(attendee.email) === emailKey(email));
 
   const save = async () => {
     const fields = { calendarKey, date, endTime, isAllDay, startTime, title };
@@ -131,6 +162,7 @@ export const useEventEditorModel = ({
           accountId,
           calendarId,
           changes: {
+            ...(attendeesDirty ? { attendees } : {}),
             // Empty string clears the field; undefined would read as "unchanged".
             location: location.trim(),
             title: title.trim(),
@@ -145,6 +177,7 @@ export const useEventEditorModel = ({
           accountId,
           calendarId,
           changes: {
+            ...(attendeesDirty ? { attendees } : {}),
             isAllDay,
             location: location.trim(),
             title: title.trim(),
@@ -155,6 +188,7 @@ export const useEventEditorModel = ({
       } else {
         const draft: EventDraft = {
           accountId,
+          ...(attendees.length > 0 ? { attendees } : {}),
           calendarId,
           isAllDay,
           location: location.trim() || undefined,
@@ -218,6 +252,9 @@ export const useEventEditorModel = ({
   };
 
   return {
+    addAttendee,
+    attendees,
+    attendeeStatus,
     calendarKey,
     date,
     endTime,
@@ -229,6 +266,7 @@ export const useEventEditorModel = ({
     location,
     ownAttendee,
     remove,
+    removeAttendee,
     ...repeatState,
     respond,
     rsvp,

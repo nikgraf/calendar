@@ -22,6 +22,7 @@ const makeStubClient = () => {
   const client: BackendClient = {
     addAccount: () => fail('not stubbed'),
     completeTask: () => Effect.void,
+    connectContacts: () => fail('not stubbed'),
     connectReminders: () => fail('not stubbed'),
     createEvent: () => fail('not stubbed'),
     createTask: () => fail('not stubbed'),
@@ -45,6 +46,7 @@ const makeStubClient = () => {
     listTaskLists: () => Effect.succeed([]),
     removeAccount: () => Effect.void,
     respondToEvent: () => Effect.void,
+    searchContacts: () => Effect.succeed([]),
     setCalendarColor: () => Effect.void,
     setCalendarVisible: () =>
       Effect.sync(() => {

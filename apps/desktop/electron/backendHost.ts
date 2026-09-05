@@ -4,6 +4,7 @@ import { Account, AppBackendRpcs, type BackendHandlers } from '@calendar/core';
 import {
   AccountRepo,
   CalendarRepo,
+  ContactRepo,
   EventRepo,
   forwardingReactivity,
   makeInvalidationBus,
@@ -24,6 +25,7 @@ import {
 } from '@calendar/google';
 import {
   commonBackendHandlers,
+  DeviceContacts,
   EventMutations,
   makeAppBackendLayer,
   SyncEngine,
@@ -36,6 +38,7 @@ import { RpcSerialization, RpcServer } from 'effect/unstable/rpc';
 import { runGoogleSignIn } from './auth/loopbackFlow.ts';
 import { loadOAuthConfig } from './oauthConfig.ts';
 import { RemindersClient } from '@calendar/reminders';
+import { ContactsClient } from '@calendar/contacts';
 import { desktopContactsLayer } from './contactsClient.ts';
 import { desktopRemindersLayer } from './remindersClient.ts';
 import { rpcServerProtocol } from './rpcProtocol.ts';
@@ -80,6 +83,7 @@ export const startBackendHost = (): void => {
     Layer.provideMerge(GoogleTasksClient.layer),
     Layer.provideMerge(GooglePeopleClient.layer),
     Layer.provideMerge(desktopRemindersLayer),
+    Layer.provideMerge(DeviceContacts.layer),
     Layer.provideMerge(desktopContactsLayer),
     Layer.provideMerge(TokenManager.layer),
     Layer.provideMerge(dbLayer),
@@ -102,6 +106,9 @@ export const startBackendHost = (): void => {
   const handlers: BackendHandlers<
     | AccountRepo
     | CalendarRepo
+    | ContactRepo
+    | ContactsClient
+    | DeviceContacts
     | EventMutations
     | EventRepo
     | PendingOpRepo

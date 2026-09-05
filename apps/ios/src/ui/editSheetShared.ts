@@ -83,6 +83,39 @@ export const sheetStyles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '700',
   },
+  chip: {
+    alignItems: 'center',
+    backgroundColor: '#f5f5f5',
+    borderRadius: 8,
+    flexDirection: 'row',
+    gap: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+  chipDot: {
+    borderRadius: 3,
+    height: 6,
+    width: 6,
+  },
+  chipLabel: {
+    color: palette.text,
+    fontSize: 14,
+  },
+  chipMeta: {
+    color: palette.textFaint,
+    fontSize: 12,
+  },
+  chipRemove: {
+    color: palette.textMuted,
+    fontSize: 16,
+    paddingHorizontal: 2,
+  },
+  chipRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    marginBottom: 8,
+  },
   container: {
     backgroundColor: palette.background,
     flex: 1,
@@ -200,6 +233,28 @@ export const sheetStyles = StyleSheet.create({
     flexDirection: 'row',
     gap: 8,
     marginBottom: 14,
+  },
+  suggestion: {
+    borderBottomColor: palette.border,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  suggestionMeta: {
+    color: palette.textMuted,
+    fontSize: 13,
+  },
+  suggestions: {
+    backgroundColor: '#ffffff',
+    borderColor: palette.border,
+    borderRadius: 10,
+    borderWidth: StyleSheet.hairlineWidth,
+    marginBottom: 12,
+    marginTop: -6,
+  },
+  suggestionTitle: {
+    color: palette.text,
+    fontSize: 16,
   },
   swatch: {
     borderRadius: 4,

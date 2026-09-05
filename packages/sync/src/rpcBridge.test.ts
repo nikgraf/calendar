@@ -43,6 +43,7 @@ const notStubbed = () => Effect.fail(new Error('not stubbed')) as Effect.Effect<
 const stubHandlers: BackendHandlers = {
   addAccount: notStubbed,
   completeTask: () => Effect.void,
+  connectContacts: () => Effect.succeed({ granted: false }),
   connectReminders: () => Effect.succeed({ granted: false }),
   createEvent: notStubbed,
   createTask: notStubbed,
@@ -58,6 +59,7 @@ const stubHandlers: BackendHandlers = {
   listTaskLists: () => Effect.succeed([]),
   removeAccount: () => Effect.void,
   respondToEvent: () => Effect.void,
+  searchContacts: () => Effect.succeed([]),
   setCalendarColor: () => Effect.void,
   setCalendarVisible: () => Effect.void,
   setTaskListVisible: () => Effect.void,

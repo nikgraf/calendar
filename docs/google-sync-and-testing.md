@@ -230,7 +230,10 @@ Flakiness lessons (each caused a real CI failure — keep them enforced):
   which is `describe.skipIf` unless `CALENDAR_E2E_REMINDERS=real`.
 - `CALENDAR_CONTACTS=off` does the same for the address book bridge
   (`launchApp(seed, { contacts: 'real' })` to opt in; nothing does yet).
-  Contact suggestions in e2e come from seeded Google contact rows.
+  `contacts.e2e.ts` seeds Google contact rows (`SeedData.contacts`) and
+  drives the combobox through `input[aria-label="Invitees"]`: value
+  setter + `input` event to type, synthetic `keydown` for ArrowDown /
+  Enter, `[role="option"]` rows and `[data-invitee]` chips to assert.
 
 ### CI (.github/workflows/ci.yml + ios.yml)
 

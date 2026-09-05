@@ -221,23 +221,37 @@ desktop waits on a helper binary (below).
       Today/view switches snap back to the Monday week, ‹ › keep ±7d.
       `useEventsInRangeStable` holds the previous range's events while a
       new range atom loads so panning never flashes empty.
-- [ ] Invitation autocomplete from device contacts (macOS/iOS) —
-      prerequisite for both autocomplete items: the editors currently
-      render attendees read-only, so attendee add/remove + Google's
-      `sendUpdates` param on patch/insert must land first. iOS is easy:
-      `expo-contacts` (permission prompt + prebuild). macOS is medium:
-      Electron has no contacts API, so a native module
-      (`node-mac-contacts`) in the main process plus the
-      `com.apple.security.personal-information.addressbook` entitlement
-      and a Contacts permission prompt — ties into the signing/
-      notarization follow-up.
-- [ ] Invitation autocomplete from Google contacts — feasible via the
-      People API: `people.connections.list` (saved contacts) plus
-      `otherContacts.list` ("people you've emailed" — this is what powers
-      Google Calendar's own suggestions). Needs `contacts.readonly` +
-      `contacts.other.readonly` scopes (re-consent) and the People API
-      enabled in the GCP project. Cache per-account locally and merge
-      with device contacts into one ranked typeahead.
+- [x] Attendee add/remove — done: `attendees` (replacement list) on
+      `EventDraft`/`UpdateEventChanges`, `mergeAttendees` in core keeps
+      server facts for retained guests, `toGcalEventInput` emits the list
+      (undefined = untouched, [] = clear), and every insert/patch of a
+      record with attendees sends `sendUpdates=all` — decided: always
+      notify, never ask. Organizer chip is not removable.
+- [x] Invitation autocomplete from device contacts (macOS/iOS) — done
+      via the Swift helper / an Expo module, not `node-mac-contacts` or
+      `expo-contacts`: `packages/contacts` mirrors the reminders seam
+      read-only (`contacts.status/requestAccess/snapshot`, one
+      `ContactsBridge.swift` over CNContactStore symlinked into both
+      hosts). The backend holds the snapshot in memory (`DeviceContacts`,
+      refreshed on CNContactStoreDidChange and when stale) — nothing
+      written to SQLite. No sandbox entitlement needed (hardened runtime
+      only); `NSContactsUsageDescription` in the helper's embedded plist,
+      forge `extendInfo`, and app.json. Permission ask lives inline in the
+      combobox (first focus) plus a Settings section; e2e runs with
+      `CALENDAR_CONTACTS=off`, real-contacts stays untested in CI.
+- [x] Invitation autocomplete from Google contacts — done: cached, not
+      live. `GooglePeopleClient` lists saved contacts and "other
+      contacts" with sync tokens (People reports expiry as 400
+      `EXPIRED_SYNC_TOKEN`, folded into `SyncTokenExpiredError`); the
+      engine keeps both tiers per account in a `contacts` table (one row
+      per person × email, tier replaced atomically on full passes).
+      `contactsEnabled` mirrors `tasksEnabled` — existing accounts
+      re-consent via "Add Google Account"; the People API must be enabled
+      in the GCP project. One `searchContacts` rpc merges SQLite + device
+      rows through `rankContacts` (prefix > substring, saved/device >
+      other, dedupe by email) behind a hand-rolled combobox on both
+      platforms (chips, ArrowUp/Down/Enter, comma/blur accept typed
+      addresses, Backspace removes the last chip).
 - [ ] Show contact birthdays — likely the cheapest of the batch: Google
       exposes a built-in read-only Birthdays calendar
       (`addressbook#contacts@group.v.calendar.google.com`) through the

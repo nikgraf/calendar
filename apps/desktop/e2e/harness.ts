@@ -3,10 +3,18 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { Account, CalendarInfo, EventRecord, TaskListInfo, TaskRecord } from '@calendar/core';
+import {
+  Account,
+  CalendarInfo,
+  EventRecord,
+  GoogleContact,
+  TaskListInfo,
+  TaskRecord,
+} from '@calendar/core';
 import {
   AccountRepo,
   CalendarRepo,
+  ContactRepo,
   EventRepo,
   PendingOpRepo,
   reposLayer,
@@ -29,6 +37,8 @@ const require = createRequire(import.meta.url);
 export interface SeedData {
   readonly accounts: ReadonlyArray<Account>;
   readonly calendars: ReadonlyArray<CalendarInfo>;
+  /** Google People cache rows — the typeahead's only source with CALENDAR_CONTACTS=off. */
+  readonly contacts?: ReadonlyArray<GoogleContact>;
   readonly events: ReadonlyArray<EventRecord>;
   readonly taskLists?: ReadonlyArray<TaskListInfo>;
   readonly tasks?: ReadonlyArray<TaskRecord>;
@@ -53,6 +63,7 @@ export const seedDatabase = async (userDataDir: string, seed: SeedData): Promise
       const tasks = yield* TaskRepo;
       yield* tasks.upsertLists(seed.taskLists ?? [], 1);
       yield* tasks.upsertTasks(seed.tasks ?? [], 1);
+      yield* (yield* ContactRepo).upsertMany(seed.contacts ?? [], 1);
     }).pipe(Effect.provide(dbLayer)),
   );
 };

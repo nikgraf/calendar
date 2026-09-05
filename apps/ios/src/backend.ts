@@ -18,6 +18,7 @@ import {
 } from '@calendar/google';
 import {
   commonBackendHandlers,
+  DeviceContacts,
   EventMutations,
   SyncEngine,
   type CommonBackendServices,
@@ -94,6 +95,7 @@ const appLayer = SyncEngine.layer.pipe(
   Layer.provideMerge(GoogleTasksClient.layer),
   Layer.provideMerge(GooglePeopleClient.layer),
   Layer.provideMerge(iosRemindersLayer),
+  Layer.provideMerge(DeviceContacts.layer),
   Layer.provideMerge(iosContactsLayer),
   Layer.provideMerge(TokenManager.layer),
   Layer.provideMerge(dbLayer),

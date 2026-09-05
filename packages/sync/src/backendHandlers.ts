@@ -10,17 +10,33 @@ import {
   type BackendMethodName,
   type BackendPayload,
   type BackendSuccess,
+  rankContacts,
 } from '@calendar/core';
-import { AccountRepo, CalendarRepo, EventRepo, PendingOpRepo, TaskRepo } from '@calendar/db';
+import { ContactsClient } from '@calendar/contacts';
+import {
+  AccountRepo,
+  CalendarRepo,
+  ContactRepo,
+  EventRepo,
+  PendingOpRepo,
+  TaskRepo,
+} from '@calendar/db';
 import { TokenStore } from '@calendar/google';
 import { RemindersClient } from '@calendar/reminders';
 import { Clock, Effect, Queue, Stream } from 'effect';
+import { DeviceContacts } from './deviceContacts.ts';
 import { SyncEngine } from './engine.ts';
 import { EventMutations } from './mutations.ts';
+
+/** Suggestions shown at once; the repo is asked for a few times that before ranking. */
+const DEFAULT_SEARCH_LIMIT = 8;
 
 export type CommonBackendServices =
   | AccountRepo
   | CalendarRepo
+  | ContactRepo
+  | ContactsClient
+  | DeviceContacts
   | EventMutations
   | EventRepo
   | PendingOpRepo
@@ -38,6 +54,19 @@ export const commonBackendHandlers: Omit<BackendHandlers<CommonBackendServices>,
     Effect.gen(function* () {
       const mutations = yield* EventMutations;
       yield* mutations.completeTask(params);
+    }),
+
+  // Asks for Contacts access (the OS prompt when undetermined) and loads
+  // the address book into the typeahead cache on grant. A refusal resolves
+  // to false rather than failing, like connectReminders.
+  connectContacts: () =>
+    Effect.gen(function* () {
+      const contactsClient = yield* ContactsClient;
+      const granted = yield* contactsClient.requestAccess().pipe(Effect.orElseSucceed(() => false));
+      if (granted) {
+        yield* (yield* DeviceContacts).refresh();
+      }
+      return { granted };
     }),
 
   // Asks EventKit (the OS prompt when undetermined); on grant the synthetic
@@ -173,6 +202,14 @@ export const commonBackendHandlers: Omit<BackendHandlers<CommonBackendServices>,
     Effect.gen(function* () {
       const mutations = yield* EventMutations;
       yield* mutations.respondToEvent(params);
+    }),
+
+  searchContacts: ({ limit, query }) =>
+    Effect.gen(function* () {
+      const take = limit ?? DEFAULT_SEARCH_LIMIT;
+      const google = yield* (yield* ContactRepo).search(query, take * 4);
+      const device = yield* (yield* DeviceContacts).list();
+      return rankContacts(query, [...google, ...device], take);
     }),
 
   setCalendarColor: (params) =>

@@ -4,6 +4,7 @@ import type { RpcClientError } from 'effect/unstable/rpc/RpcClientError';
 import {
   Account,
   CalendarInfo,
+  Contact,
   EventRecord,
   TaskListInfo,
   TaskPriority,
@@ -110,6 +111,11 @@ export class AppBackendRpcs extends RpcGroup.make(
     payload: EventDraft,
     success: EventRecord,
   }),
+  /** Device contacts: asks for Contacts access (the OS prompt when undetermined). */
+  Rpc.make('connectContacts', {
+    error: BackendError,
+    success: Schema.Struct({ granted: Schema.Boolean }),
+  }),
   /** Apple Reminders: asks for EventKit access; on grant, the synthetic account exists afterwards. */
   Rpc.make('connectReminders', {
     error: BackendError,
@@ -207,6 +213,12 @@ export class AppBackendRpcs extends RpcGroup.make(
       eventId: Schema.String,
       response: RsvpResponse,
     },
+  }),
+  /** Invitee typeahead: device + cached Google contacts, ranked, deduped by email. */
+  Rpc.make('searchContacts', {
+    error: BackendError,
+    payload: { limit: Schema.optional(Schema.Number), query: Schema.String },
+    success: Schema.Array(Contact),
   }),
   Rpc.make('setCalendarColor', {
     error: BackendError,

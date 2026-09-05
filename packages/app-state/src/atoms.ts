@@ -1,6 +1,7 @@
 import {
   ACCOUNTS_KEY,
   CALENDARS_KEY,
+  CONTACTS_KEY,
   EVENTS_KEY,
   OPS_KEY,
   TASKLISTS_KEY,
@@ -25,6 +26,7 @@ export interface BackendAtoms {
     subscribe: (listener: (keys: ReadonlyArray<unknown>) => void) => () => void,
   ) => () => void;
   readonly calendars: ReturnType<typeof buildAtoms>['calendars'];
+  readonly contactsSearch: ReturnType<typeof buildAtoms>['contactsSearch'];
   readonly eventsInRange: ReturnType<typeof buildAtoms>['eventsInRange'];
   readonly mutations: ReturnType<typeof buildAtoms>['mutations'];
   readonly pendingOps: ReturnType<typeof buildAtoms>['pendingOps'];
@@ -41,6 +43,7 @@ export interface BackendAtoms {
 const MUTATION_REACTIVITY = {
   addAccount: [ACCOUNTS_KEY, CALENDARS_KEY, EVENTS_KEY, TASKS_KEY, TASKLISTS_KEY],
   completeTask: [TASKS_KEY],
+  connectContacts: [CONTACTS_KEY],
   connectReminders: [ACCOUNTS_KEY, TASKLISTS_KEY, TASKS_KEY],
   createEvent: [EVENTS_KEY],
   createTask: [TASKS_KEY],
@@ -167,6 +170,37 @@ const buildAtoms = (client: BackendClient) => {
     return atom;
   };
 
+  // Typeahead queries: the same bounded LRU, keyed `${limit}:${query}`.
+  // CONTACTS_KEY re-runs an open query when a sync pass or a grant lands.
+  const searchAtoms = new Map<string, ReturnType<typeof makeSearchAtom>>();
+  const makeSearchAtom = (query: string, limit: number) =>
+    runtime
+      .atom(
+        Effect.gen(function* () {
+          const backend = yield* AppBackend;
+          return yield* backend.searchContacts({ limit, query });
+        }),
+      )
+      .pipe(Atom.withReactivity([CONTACTS_KEY]));
+  const contactsSearch = (key: string) => {
+    const cached = searchAtoms.get(key);
+    if (cached) {
+      searchAtoms.delete(key);
+      searchAtoms.set(key, cached);
+      return cached;
+    }
+    const separator = key.indexOf(':');
+    const atom = makeSearchAtom(key.slice(separator + 1), Number(key.slice(0, separator)));
+    searchAtoms.set(key, atom);
+    if (searchAtoms.size > RANGE_CACHE_LIMIT) {
+      const oldest = searchAtoms.keys().next().value;
+      if (oldest !== undefined) {
+        searchAtoms.delete(oldest);
+      }
+    }
+    return atom;
+  };
+
   const mutation = <M extends keyof BackendClient>(
     method: M,
     reactivityKeys: ReadonlyArray<string>,
@@ -212,6 +246,7 @@ const buildAtoms = (client: BackendClient) => {
     accounts,
     bindInvalidations,
     calendars,
+    contactsSearch,
     eventsInRange,
     mutations,
     pendingOps,
