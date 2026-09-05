@@ -1,0 +1,36 @@
+appId: com.solunivo.app
+name: Bootstrap the dev client onto Metro (CI only)
+tags:
+  - ci
+  - ci-bootstrap
+---
+# CI installs a fresh EAS dev client, which opens on its launcher screen.
+# Point it at the runner's Metro through the development-client URL once;
+# afterwards the dev client reopens the last server by itself, so every
+# other flow can `launchApp` normally. iOS confirms a scheme URL opened
+# from outside with "Open in Solunivo?" — one alert per openurl, and they
+# stack, so drain them in a loop. expo-dev-menu's onboarding sheet, its
+# menu-at-launch and its floating button are switched off by
+# prepare-simulator.sh (UserDefaults) before the app ever starts; the
+# guards below only matter on a simulator prepared by hand.
+- openLink: 'solunivo://expo-development-client/?url=http%3A%2F%2Flocalhost%3A8081'
+- repeat:
+    while:
+      visible: 'Open'
+    commands:
+      - tapOn: 'Open'
+- runFlow:
+    when:
+      visible: 'Continue'
+    commands:
+      - tapOn: 'Continue'
+- runFlow:
+    when:
+      visible: 'Go home'
+    commands:
+      - tapOn:
+          point: '50%,15%'
+- extendedWaitUntil:
+    visible: 'Today'
+    timeout: 120000
+- assertNotVisible: 'Go home'

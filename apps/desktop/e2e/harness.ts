@@ -105,6 +105,30 @@ export const readPendingOpsCount = async (userDataDir: string): Promise<number> 
   );
 };
 
+export const readAccounts = async (userDataDir: string): Promise<ReadonlyArray<Account>> => {
+  const dbLayer = reposLayer.pipe(
+    Layer.provideMerge(SqliteClient.layer({ filename: join(userDataDir, 'calendar.db') })),
+    Layer.provideMerge(reactivityLayer),
+  );
+  return Effect.runPromise(
+    Effect.gen(function* () {
+      return yield* (yield* AccountRepo).list();
+    }).pipe(Effect.provide(dbLayer)),
+  );
+};
+
+export const readTaskLists = async (userDataDir: string): Promise<ReadonlyArray<TaskListInfo>> => {
+  const dbLayer = reposLayer.pipe(
+    Layer.provideMerge(SqliteClient.layer({ filename: join(userDataDir, 'calendar.db') })),
+    Layer.provideMerge(reactivityLayer),
+  );
+  return Effect.runPromise(
+    Effect.gen(function* () {
+      return yield* (yield* TaskRepo).listLists();
+    }).pipe(Effect.provide(dbLayer)),
+  );
+};
+
 export const readTasks = async (userDataDir: string): Promise<ReadonlyArray<TaskRecord>> => {
   const dbLayer = reposLayer.pipe(
     Layer.provideMerge(SqliteClient.layer({ filename: join(userDataDir, 'calendar.db') })),
@@ -409,7 +433,17 @@ export interface App {
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-export const launchApp = async (seed?: SeedData): Promise<App> => {
+export interface LaunchOptions {
+  /**
+   * 'off' (default): no EventKit — seeded Apple rows stay as seeded and no
+   * TCC prompt can fire on a developer's Mac. 'real': the helper is used;
+   * only for remindersReal.e2e.ts on a machine whose grant is already
+   * answered (CI seeds it, see e2e/ci/).
+   */
+  readonly reminders?: 'off' | 'real';
+}
+
+export const launchApp = async (seed?: SeedData, options: LaunchOptions = {}): Promise<App> => {
   const userDataDir = mkdtempSync(join(tmpdir(), 'calendar-e2e-'));
   if (seed) {
     await seedDatabase(userDataDir, seed);
@@ -423,7 +457,7 @@ export const launchApp = async (seed?: SeedData): Promise<App> => {
       ...process.env,
       // Seeded Apple rows must not be replaced by (or prompt for) the
       // developer's real Reminders — see remindersClient.ts.
-      CALENDAR_REMINDERS: 'off',
+      ...(options.reminders === 'real' ? {} : { CALENDAR_REMINDERS: 'off' }),
       CALENDAR_USERDATA: userDataDir,
     },
     stdio: ['ignore', 'pipe', 'pipe'],

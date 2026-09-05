@@ -196,6 +196,17 @@ quickest way to confirm a rebuild picked up `expo-updates`.
 Maestro e2e (`pnpm test:e2e:ios`) runs against this dev client, so install a
 fresh one before those flows after a native change.
 
+The same profile has a second consumer: CI's `ios-e2e` job fetches the
+`development-simulator` build whose fingerprint matches the commit
+(`eas build:list --fingerprint-hash`, then the archive URL) and keeps the
+extracted `.app` in the Actions cache keyed on that fingerprint. Only a
+commit with a **new** native fingerprint and no finished build for it
+makes CI request one (`eas build --profile development-simulator`), so
+the quota cost is one simulator build per native change — the same
+economics as the TestFlight gate. Running `eas build --profile
+development-simulator` locally after a native change means CI finds it
+ready.
+
 ### Local Xcode build (fallback)
 
 ```sh

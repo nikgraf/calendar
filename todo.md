@@ -417,6 +417,17 @@ same PR; these are the code/infra improvements worth their own tasks).
         `TaskListInfo.readOnly` and opened as viewers. Decision: EventKit
         enforces read-only — no mutation-layer error, the rare slip
         surfaces as saveFailed.
+  - [x] Real-EventKit e2e on CI, every PR + main, both required — done:
+        `ios-e2e` runs Maestro against the EAS development-simulator
+        build for the commit's fingerprint (cached in Actions; CI never
+        runs xcodebuild) with `simctl privacy grant reminders`;
+        `e2e-reminders` runs the helper against the runner's Reminders
+        with a seeded TCC grant and a hard fullAccess probe. Decisions:
+        hard failures, not skip-with-warning (a broken TCC seed must be
+        seen); the strict flow/spec are CI-only siblings of the tolerant
+        local ones. First catch: the helper's main thread sat in
+        readLine(), so EKEventStoreChanged never fired — the desktop
+        change push had never worked.
 - [ ] Events: the 12-months-back floor — browsing further back shows
       nothing (deleteStale prunes older rows on each full re-pass);
       on-demand backfill or a larger floor

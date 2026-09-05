@@ -193,11 +193,13 @@ Flakiness lessons (each caused a real CI failure — keep them enforced):
   dispatch; `<select>` likewise (`HTMLSelectElement` prototype setter).
 - Tests share one app instance and run in file order — later tests must
   tolerate earlier tests' data (relative assertions, unique titles).
-- The harness launches the app with `CALENDAR_REMINDERS=off`, which makes
-  the desktop RemindersClient unavailable: `reminders.e2e.ts` seeds an
-  Apple account/list/reminder straight into SQLite and asserts the chip
-  and form; a real EventKit sync would replace those rows (and prompt for
-  access on a developer's Mac).
+- The harness launches the app with `CALENDAR_REMINDERS=off` by default,
+  which makes the desktop RemindersClient unavailable: `reminders.e2e.ts`
+  seeds an Apple account/list/reminder straight into SQLite and asserts
+  the chip and form; a real EventKit sync would replace those rows (and
+  prompt for access on a developer's Mac). `launchApp(seed, { reminders:
+'real' })` opts a spec into the helper — only `remindersReal.e2e.ts`,
+  which is `describe.skipIf` unless `CALENDAR_E2E_REMINDERS=real`.
 
 ### CI (.github/workflows/ci.yml + ios.yml)
 
@@ -206,6 +208,28 @@ Flakiness lessons (each caused a real CI failure — keep them enforced):
   macOS runners; content protection does not affect CDP automation.
 - `package-smoke` (macos-26, PRs only): unsigned `package:app` + packaged-
   contents assertions — packaging failures used to surface only post-merge.
+- `e2e-reminders` (macos-26): the **real** EventKit path on the desktop.
+  Builds the helper, seeds the runner's per-user TCC database
+  (`apps/desktop/e2e/ci/grant-reminders-tcc.sh` — named columns so the
+  per-macOS column drift does not matter; three client identities since
+  TCC may attribute to the helper's bundle id, its path, or the
+  responsible Electron process), then `probe-helper-access.sh` requires
+  `reminders.status` = fullAccess before `remindersReal.e2e.ts` runs. The
+  seed is not an Apple-supported interface: when a new runner image
+  breaks it the job is red with the `access` schema in the log — adjust
+  the INSERT, never make the probe optional. Locally:
+  `CALENDAR_E2E_REMINDERS=real E2E=1 pnpm exec vp test run apps/desktop/e2e/remindersReal.e2e.ts`
+  (creates and deletes reminders in _your_ database).
+- `ios-e2e` (macos-26): Maestro against the **EAS** dev client. CI never
+  compiles the app — `apps/ios/e2e/ci/fetch-dev-client.sh` looks up the
+  `development-simulator` build for the commit's native fingerprint
+  (`expo-updates fingerprint:generate`, the hash `ios.yml` compares),
+  requests one only if none exists, and the extracted `.app` lives in the
+  Actions cache under that fingerprint, so JS-only pushes download
+  nothing. `prepare-simulator.sh` boots the newest iPhone, installs, and
+  pre-grants Reminders with `simctl privacy grant reminders` (supported);
+  Metro on the runner serves the commit's JS and the dev client is opened
+  on it through its `expo-development-client` URL before the flows run.
 - `testing-build` (macos-26, main only): signed + notarized arm64 zip
   incl. the Swift model helper — macos-26 is the only runner image with
   the FoundationModels SDK. See docs/distribution.md.
@@ -218,10 +242,34 @@ Flakiness lessons (each caused a real CI failure — keep them enforced):
 
 ### iOS e2e (Maestro, apps/ios/e2e/flows/)
 
-Text/testID-based flows (9: launch, navigation, new-event sheet,
-settings, day swipe, quick-add, create event, task lane, reminders form —
-the last gated on a connected Reminders list, so it is a no-op until the
-simulator has one). Maestro cannot
+Text/testID-based flows (10: launch, navigation, new-event sheet,
+settings, day swipe, quick-add, create event, task lane, reminders form,
+real reminders). Flows carry `tags`: everything is `ci`; the strict
+`10-reminders-real.yaml` is also `ci-reminders` — it connects, creates
+through EventKit and deletes with no escape hatch, so `pnpm test:e2e:ios`
+excludes it (`--exclude-tags ci-reminders`) and CI includes it on a
+simulator whose grant `prepare-simulator.sh` seeded. Flow 09 is the
+tolerant local sibling (a no-op until the simulator has a connected
+list). Maestro runs a directory's flows in a non-deterministic order and
+`config.yaml`'s `executionOrder` is not honored (maestro#2231), so CI
+runs the bootstrap as its own invocation and every other flow must be
+independent of what ran before — the real-Reminders flow connects an
+account, after which the task form defaults to the Apple list, hence
+`Edit (Task|Reminder)` in flow 08. Text selectors are whole-string
+regexes: a list row's label is title + swatch + check mark, so rows are
+picked by `id: task-list-option`; a chip body is tapped by its full text
+(`[0-9]+:[0-9]+ !!! <title>` for a timed reminder), because `.*<title>`
+also matches the checkbox's "Toggle <title>" label and toggles
+completion instead of opening the editor. Every flow starts with `runFlow: ../common/launch.yaml`
+(launch, wait for "Today", `waitForAnimationToEnd`): React Native's
+SafeAreaView applies the top inset a beat after the first paint, so an id
+tap taken as soon as "Today" is visible lands ~60 pt too high — in the
+status bar — on every flow. On CI, `prepare-simulator.sh` also switches
+expo-dev-menu's floating "Dev tools" button off through UserDefaults
+(`EXDevMenuShowFloatingActionButton`): it sits exactly over the app's
+settings gear. Maestro needs a JDK on PATH (Apple's `/usr/bin/java` stub
+is not one: `brew install openjdk`, then
+`JAVA_HOME=/opt/homebrew/opt/openjdk`). Maestro cannot
 synthesize long-press pans, so gesture behavior is covered by unit tests
 on the shared math instead. Selector gotchas (each caused a real
 failure): Maestro text selectors are **whole-string regexes** — prefix
