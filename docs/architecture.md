@@ -161,6 +161,31 @@ Rules that keep the queue correct:
   pass under the same gate — latency only; the 90 s pass is the
   correctness mechanism, because the notification reaches a live
   observer only.
+  - **Writes are EventKit-first and EventKit is the truth.** Once the
+    store has committed, a failing SQLite mirror write is logged, not
+    raised: the editor would otherwise show an error for a reminder that
+    exists and a retried Save would create it twice; our own write fires
+    `EKEventStoreChanged`, so the delta pass restores the row anyway.
+  - **Save sends only what changed** (`taskEditorChanges`, both
+    providers): the diff is against the values the form opened with, so
+    an edit made in Reminders.app while the form was open is never
+    overwritten by a stale unchanged field. An empty diff closes without
+    a write.
+  - **Read-only lists** (`EKCalendar.allowsContentModifications` false →
+    `TaskListInfo.readOnly`) are never a create/move target and open as a
+    viewer. EventKit stays the enforcement — no mutation-layer error.
+  - **Wire dates are Gregorian** whatever the device calendar: the bridge
+    stamps one explicit Gregorian calendar on written components and
+    resolves read components in their own calendar before formatting.
+    Every JSON number is range-checked (`boundedInt`) before a native
+    conversion — `Int(someDouble)` traps outside Int's range.
+- **Account removal vs. an in-flight pass** (both providers): every mirror
+  INSERT (calendars, events, task lists, tasks, sync_state) is
+  `INSERT … SELECT … WHERE EXISTS (SELECT 1 FROM accounts WHERE id = ?)`,
+  so a pass that finishes after `accountRepo.remove` writes nothing —
+  without it the finishing pass recreated rows no later pass would ever
+  touch. `replaceMirror` reports `skipped` and the engine ends the pass
+  without stamping sync_state; removal itself is one transaction.
 
 ## Recurring events
 

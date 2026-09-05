@@ -407,6 +407,16 @@ same PR; these are the code/infra improvements worth their own tasks).
         change; transactional snapshot reconciliation (newer wins,
         stamp-guarded removal, no giant NOT IN); the notification is
         latency, the 90 s pass is correctness.
+  - [x] Review round 2 fixes — done: Save sends only dirty fields
+        (diffed against the opening snapshot, both providers); a mirror
+        write failing after EventKit committed is logged, not raised (a
+        retry would duplicate); mirror INSERTs are guarded on the account
+        row so removal cannot be undone by an in-flight pass (Google had
+        the same race); Gregorian wire dates; `boundedInt` before every
+        native conversion; read-only lists carried as
+        `TaskListInfo.readOnly` and opened as viewers. Decision: EventKit
+        enforces read-only — no mutation-layer error, the rare slip
+        surfaces as saveFailed.
 - [ ] Events: the 12-months-back floor — browsing further back shows
       nothing (deleteStale prunes older rows on each full re-pass);
       on-demand backfill or a larger floor
