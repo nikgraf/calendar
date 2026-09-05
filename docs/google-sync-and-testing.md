@@ -280,7 +280,9 @@ quick-add flow accepts the bar's "couldn't be read" outcome: a CI
 simulator passes the model availability check yet cannot generate,
 so the prefilled editor is asserted only where a model answers.
 Every flow starts with `runFlow: ../common/launch.yaml`
-(launch, wait for "Today", `waitForAnimationToEnd`): React Native's
+(launch, recover the dev client if its 10 s auto-reopen fell back to
+the launcher home or its error screen, wait for "Today",
+`waitForAnimationToEnd`): React Native's
 SafeAreaView applies the top inset a beat after the first paint, so an id
 tap taken as soon as "Today" is visible lands ~60 pt too high — in the
 status bar — on every flow. On CI, `prepare-simulator.sh` also switches

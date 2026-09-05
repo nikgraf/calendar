@@ -2,8 +2,41 @@ appId: com.solunivo.app
 name: Launch the app and wait for a settled shell (shared preamble)
 ---
 # The app re-bundles from Metro on a cold dev-client launch; wait for the
-# calendar shell rather than racing it.
+# calendar shell rather than racing it. The dev client reopens the last
+# server on its own, but with a 10 s request budget — on a loaded runner
+# that occasionally fails and it falls back to its launcher home (the
+# server under "Recently opened") or to its error screen ("Reload").
+# Recover from either until the shell is there.
 - launchApp
+- repeat:
+    times: 6
+    while:
+      notVisible: 'Today'
+    commands:
+      - extendedWaitUntil:
+          visible: "Today|Reload|http://(127\\.0\\.0\\.1|localhost):8081|Continue|Go home"
+          timeout: 60000
+      - runFlow:
+          when:
+            visible: 'Reload'
+          commands:
+            - tapOn: 'Reload'
+      - runFlow:
+          when:
+            visible: "http://(127\\.0\\.0\\.1|localhost):8081"
+          commands:
+            - tapOn: "http://(127\\.0\\.0\\.1|localhost):8081"
+      - runFlow:
+          when:
+            visible: 'Continue'
+          commands:
+            - tapOn: 'Continue'
+      - runFlow:
+          when:
+            visible: 'Go home'
+          commands:
+            - tapOn:
+                point: '50%,15%'
 - extendedWaitUntil:
     visible: 'Today'
     timeout: 60000
