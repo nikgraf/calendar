@@ -15,3 +15,5 @@ apps/ios/ios/
 apps/ios/android/
 google-oauth.local.json
 apps/desktop/out/
+# CI-only overlay (apps/ios/e2e/ci/app.config.ci.js is the source)
+apps/ios/app.config.js

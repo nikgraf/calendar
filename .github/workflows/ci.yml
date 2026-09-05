@@ -155,8 +155,17 @@ jobs:
         run: |
           curl -fsSL "https://get.maestro.mobile.dev" | bash
           echo "$HOME/.maestro/bin" >> "$GITHUB_PATH"
+      - name: Pin the runtime version for Metro
+        # After the fingerprint step (an explicit runtimeVersion would change
+        # the fingerprint): with the fingerprint policy Expo CLI re-runs a
+        # full project fingerprint for every manifest request, which on this
+        # runner outlasts the dev launcher's 10 s request timeout.
+        working-directory: apps/ios
+        run: cp e2e/ci/app.config.ci.js app.config.js
       - name: Start Metro
         working-directory: apps/ios
+        env:
+          EXPO_RUNTIME_VERSION_PIN: ${{ steps.fingerprint.outputs.hash }}
         run: |
           nohup pnpm exec expo start --port 8081 > "$RUNNER_TEMP/metro.log" 2>&1 &
           for _ in $(seq 1 60); do

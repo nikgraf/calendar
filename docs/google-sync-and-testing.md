@@ -233,12 +233,16 @@ Flakiness lessons (each caused a real CI failure — keep them enforced):
   Actions cache under that fingerprint, so JS-only pushes download
   nothing. `prepare-simulator.sh` boots the newest iPhone, installs, and
   pre-grants Reminders with `simctl privacy grant reminders` (supported);
-  Metro on the runner serves the commit's JS: the workflow warms the
-  bundle first (the manifest's `launchAsset.url`, so the request shares
-  Metro's cache with the dev client's — a cold first bundle outlasted the
-  client's request timeout) and opens the dev client on `127.0.0.1`
-  (`localhost` never reached Metro from the simulator) before the flows
-  run. Two Maestro invocations: the bootstrap flow, then the rest —
+  Metro on the runner serves the commit's JS. Two things made the dev
+  launcher's 10 s request timeout bite on the runner and are handled
+  before it is opened: the bundle is warmed through the manifest's
+  `launchAsset.url` (so the request shares Metro's cache with the
+  client's), and the runtime version is pinned to the computed
+  fingerprint through a CI-only `app.config.js` overlay
+  (`e2e/ci/app.config.ci.js`, copied after the fingerprint step) —
+  with the fingerprint policy Expo CLI re-runs a full project
+  fingerprint for _every_ manifest request, ~2 s on a laptop and past
+  10 s on the runner. The dev client is opened on `127.0.0.1`. Two Maestro invocations: the bootstrap flow, then the rest —
   Maestro ignores `config.yaml` execution order (maestro#2231).
 - `testing-build` (macos-26, main only): signed + notarized arm64 zip
   incl. the Swift model helper — macos-26 is the only runner image with
