@@ -2,6 +2,7 @@ import type { TaskListInfo, TaskPriority, TaskProvider, TaskRecord } from '@cale
 import { useState } from 'react';
 import { useBackendMutations } from './hooks.ts';
 import { useRepeatState } from './repeatState.ts';
+import { taskEditorChanges, type TaskEditorValues } from './taskEditorChanges.ts';
 
 export interface TaskEditorSeed {
   /** Present when editing; absent for create. */
@@ -71,16 +72,27 @@ export const useTaskEditorModel = ({
   const [priority, setPriority] = useState<TaskPriority | undefined>(existing?.priority);
   const [url, setUrl] = useState(existing?.url ?? '');
   // The form edits the FIRST relative alert; any further alerts the user
-  // set in Reminders.app ride along untouched, and `alarms` is only sent
-  // when the alert actually changed (a full replace would wipe them).
-  const initialAlarms = existing?.alarms ?? [];
+  // set in Reminders.app ride along untouched.
+  const [initialAlarms] = useState<ReadonlyArray<number>>(() => existing?.alarms ?? []);
   const [alarm, setAlarm] = useState<number | undefined>(initialAlarms[0]);
-  const alarmChanged = alarm !== initialAlarms[0];
-  const alarmsToWrite = (): ReadonlyArray<number> => [
-    ...(alarm === undefined ? [] : [alarm]),
-    ...initialAlarms.slice(1),
-  ];
   const { toSpec: repeatSpec, ...repeatState } = useRepeatState(existing?.recurrence);
+  // What the form opened with: Save sends only the fields that differ from
+  // it (see taskEditorChanges) — captured once, not re-read from the row.
+  const [initial] = useState<TaskEditorValues | undefined>(() =>
+    existing
+      ? {
+          alarm: initialAlarms[0],
+          dueDate: existing.dueDate ?? seed.initialDate,
+          dueTime: existing.dueTime,
+          listId: existing.listId,
+          notes: existing.notes ?? '',
+          priority: existing.priority,
+          recurrence: existing.recurrence,
+          title: existing.title,
+          url: existing.url ?? '',
+        }
+      : undefined,
+  );
   const [error, setError] = useState<string | null>(null);
 
   // Editing: a reminder can only move within its own account (and a Google
@@ -115,30 +127,32 @@ export const useTaskEditorModel = ({
       return;
     }
     try {
-      if (existing) {
-        await mutations.updateTask({
-          accountId: existing.accountId,
-          changes: {
+      if (existing && initial) {
+        const changes = taskEditorChanges({
+          current: {
+            alarm,
             dueDate,
+            dueTime: timed ? dueTime : undefined,
+            listId: taskListId,
             notes: notes.trim(),
+            priority,
+            recurrence: repeatSpec(),
             title: title.trim(),
-            ...(provider === 'apple'
-              ? {
-                  ...(alarmChanged
-                    ? { alarms: alarmsToWrite().length === 0 ? null : alarmsToWrite() }
-                    : {}),
-                  dueTime: timed ? dueTime : null,
-                  ...(taskListId !== existing.listId ? { moveToListId: taskListId } : {}),
-                  priority: priority ?? null,
-                  // Never overwrite a rule the form could not show.
-                  ...(recurrenceUnsupported ? {} : { recurrence: repeatSpec() ?? null }),
-                  url: url.trim() || null,
-                }
-              : {}),
+            url: url.trim(),
           },
-          taskId: existing.id,
-          taskListId: existing.listId,
+          initial,
+          initialAlarms,
+          provider,
+          recurrenceUnsupported,
         });
+        if (Object.keys(changes).length > 0) {
+          await mutations.updateTask({
+            accountId: existing.accountId,
+            changes,
+            taskId: existing.id,
+            taskListId: existing.listId,
+          });
+        }
       } else {
         const spec = repeatSpec();
         await mutations.createTask({
