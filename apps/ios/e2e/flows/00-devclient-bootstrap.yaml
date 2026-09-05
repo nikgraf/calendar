@@ -29,8 +29,20 @@ tags:
     times: 6
     commands:
       - extendedWaitUntil:
-          visible: 'Today|Reload|Continue|Go home'
+          visible: 'Today|Reload|Continue|Go home|Error loading app|http://127\\.0\\.0\\.1:8081'
           timeout: 60000
+      # A failed load from the launcher home raises an alert first; after
+      # OK the server sits under "Recently opened".
+      - runFlow:
+          when:
+            visible: 'Error loading app'
+          commands:
+            - tapOn: 'OK'
+      - runFlow:
+          when:
+            visible: 'http://127\\.0\\.0\\.1:8081'
+          commands:
+            - tapOn: 'http://127\\.0\\.0\\.1:8081'
       - runFlow:
           when:
             visible: 'Reload'
