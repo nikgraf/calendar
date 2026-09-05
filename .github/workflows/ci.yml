@@ -188,13 +188,23 @@ jobs:
         # screenshot lands in the failure artifact).
         run: |
           lsof -nP -iTCP:8081 -sTCP:LISTEN || true
+          # Manifest latency as the dev launcher sees it (its budget is 10 s
+          # per request): three requests, cold to warm.
+          for _ in 1 2 3; do
+            /usr/bin/time -p curl -sS -o /dev/null -H 'expo-platform: ios' \
+              -H 'expo-runtime-version: ${{ steps.fingerprint.outputs.hash }}' \
+              -H 'expo-protocol-version: 1' -H 'expo-api-version: 1' \
+              -H 'expo-updates-environment: DEVELOPMENT' http://127.0.0.1:8081/ 2>&1 | grep real
+          done
           xcrun simctl openurl "$SIMULATOR_UDID" "http://127.0.0.1:8081/status"
           sleep 10
           xcrun simctl io "$SIMULATOR_UDID" screenshot "$RUNNER_TEMP/safari-metro-status.png"
       - name: Open the dev client on Metro
         # The launcher screen otherwise waits for a server choice; the first
         # bundle takes a while, which the flows' 60 s "Today" wait covers.
-        run: xcrun simctl openurl "$SIMULATOR_UDID" "solunivo://expo-development-client/?url=http%3A%2F%2F127.0.0.1%3A8081"
+        run: |
+          curl -sS -o /dev/null -H 'expo-platform: ios' http://127.0.0.1:8081/ || true
+          xcrun simctl openurl "$SIMULATOR_UDID" "solunivo://expo-development-client/?url=http%3A%2F%2F127.0.0.1%3A8081"
       # Two invocations: Maestro runs a directory's flows in a
       # non-deterministic order (config.yaml executionOrder is not
       # honored — mobile-dev-inc/maestro#2231), and the bootstrap must

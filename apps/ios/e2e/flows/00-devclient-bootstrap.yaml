@@ -21,18 +21,33 @@ tags:
       visible: 'Open'
     commands:
       - tapOn: 'Open'
-- runFlow:
-    when:
-      visible: 'Continue'
+# The dev launcher gives each request 10 s; on a loaded runner the first
+# attempt can still miss that even with the bundle warm. Its error screen
+# offers "Reload" — retry a few times, each against a warmer Metro, the
+# way a person would.
+- repeat:
+    times: 6
     commands:
-      - tapOn: 'Continue'
-- runFlow:
-    when:
-      visible: 'Go home'
-    commands:
-      - tapOn:
-          point: '50%,15%'
+      - extendedWaitUntil:
+          visible: 'Today|Reload|Continue|Go home'
+          timeout: 60000
+      - runFlow:
+          when:
+            visible: 'Reload'
+          commands:
+            - tapOn: 'Reload'
+      - runFlow:
+          when:
+            visible: 'Continue'
+          commands:
+            - tapOn: 'Continue'
+      - runFlow:
+          when:
+            visible: 'Go home'
+          commands:
+            - tapOn:
+                point: '50%,15%'
 - extendedWaitUntil:
     visible: 'Today'
-    timeout: 120000
+    timeout: 60000
 - assertNotVisible: 'Go home'
