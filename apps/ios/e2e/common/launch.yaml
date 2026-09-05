@@ -14,9 +14,11 @@ name: Launch the app and wait for a settled shell (shared preamble)
       notVisible: 'Today'
     commands:
       - extendedWaitUntil:
-          visible: "Today|Reload|http://(127\\.0\\.0\\.1|localhost):8081|Continue|Go home|Error loading app"
+          visible: "Today|There was a problem loading the project|http://(127\\.0\\.0\\.1|localhost):8081|Continue|Toggle performance monitor|Error loading app"
           timeout: 60000
-      # A failed reopen from the launcher home raises an alert first.
+      # Guards key on text unique to each screen: "Reload"/"Go home" exist
+      # on both the error screen and the dev menu, and the error view
+      # lingers in the accessibility tree behind the loaded app.
       - runFlow:
           when:
             visible: 'Error loading app'
@@ -24,7 +26,7 @@ name: Launch the app and wait for a settled shell (shared preamble)
             - tapOn: 'OK'
       - runFlow:
           when:
-            visible: 'Reload'
+            visible: 'There was a problem loading the project'
           commands:
             - tapOn: 'Reload'
       - runFlow:
@@ -39,7 +41,7 @@ name: Launch the app and wait for a settled shell (shared preamble)
             - tapOn: 'Continue'
       - runFlow:
           when:
-            visible: 'Go home'
+            visible: 'Toggle performance monitor'
           commands:
             - tapOn:
                 point: '50%,15%'

@@ -29,10 +29,12 @@ tags:
     times: 6
     commands:
       - extendedWaitUntil:
-          visible: 'Today|Reload|Continue|Go home|Error loading app|http://127\.0\.0\.1:8081'
+          visible: 'Today|There was a problem loading the project|Toggle performance monitor|Continue|Error loading app|http://127\.0\.0\.1:8081'
           timeout: 60000
-      # A failed load from the launcher home raises an alert first; after
-      # OK the server sits under "Recently opened".
+      # "Reload" and "Go home" exist on both the launcher's error screen and
+      # the dev menu sheet, and the error view lingers in the accessibility
+      # tree behind the loaded app — so each guard keys on text unique to
+      # its screen, never on those two buttons.
       - runFlow:
           when:
             visible: 'Error loading app'
@@ -45,7 +47,7 @@ tags:
             - tapOn: 'http://127\.0\.0\.1:8081'
       - runFlow:
           when:
-            visible: 'Reload'
+            visible: 'There was a problem loading the project'
           commands:
             - tapOn: 'Reload'
       - runFlow:
@@ -55,11 +57,11 @@ tags:
             - tapOn: 'Continue'
       - runFlow:
           when:
-            visible: 'Go home'
+            visible: 'Toggle performance monitor'
           commands:
             - tapOn:
                 point: '50%,15%'
 - extendedWaitUntil:
     visible: 'Today'
     timeout: 60000
-- assertNotVisible: 'Go home'
+- assertNotVisible: 'Toggle performance monitor'
