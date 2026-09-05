@@ -13,7 +13,9 @@ tags:
 # menu-at-launch and its floating button are switched off by
 # prepare-simulator.sh (UserDefaults) before the app ever starts; the
 # guards below only matter on a simulator prepared by hand.
-- openLink: 'solunivo://expo-development-client/?url=http%3A%2F%2Flocalhost%3A8081'
+# 127.0.0.1, not localhost: on a GitHub runner the simulator resolved
+# localhost to IPv6 and never reached Metro ("Failed to load app").
+- openLink: 'solunivo://expo-development-client/?url=http%3A%2F%2F127.0.0.1%3A8081'
 - repeat:
     while:
       visible: 'Open'

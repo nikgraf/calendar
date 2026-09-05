@@ -478,9 +478,18 @@ export const launchApp = async (seed?: SeedData, options: LaunchOptions = {}): P
   child.stdout?.on('data', record('out'));
   child.stderr?.on('data', record('err'));
 
-  const cdp = await Cdp.connect(port);
-  // Wait for the calendar shell to render.
-  await cdp.waitFor(`document.body.textContent.includes('Today')`);
+  let cdp: Cdp;
+  try {
+    cdp = await Cdp.connect(port);
+    // Wait for the calendar shell to render.
+    await cdp.waitFor(`document.body.textContent.includes('Today')`);
+  } catch (error) {
+    // A launch failure happens in beforeAll, where no test dump runs:
+    // the app's own output is the only clue, so put it in the run log.
+    console.error('[e2e app] launch failed; app output follows\n', appLog.join('').slice(-4000));
+    child.kill();
+    throw error;
+  }
 
   return {
     cdp,

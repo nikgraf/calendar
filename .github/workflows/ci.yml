@@ -49,6 +49,10 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @calendar/desktop build
+      # `require('electron')` downloads the binary lazily when dist/ is
+      # missing; two spec files doing that at once raced into a broken
+      # install. Fetch it once, up front.
+      - run: pnpm --filter @calendar/desktop exec electron --version
       - run: pnpm test:e2e
       - name: Upload e2e diagnostics
         if: failure()
@@ -81,6 +85,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @calendar/desktop build:helper
       - run: pnpm --filter @calendar/desktop build
+      - run: pnpm --filter @calendar/desktop exec electron --version
       - name: Pre-grant Reminders to the helper (TCC)
         run: bash apps/desktop/e2e/ci/grant-reminders-tcc.sh apps/desktop/helper/.build/release/solunivo-model-helper
       - name: Probe helper access
@@ -155,14 +160,23 @@ jobs:
         run: |
           nohup pnpm exec expo start --port 8081 > "$RUNNER_TEMP/metro.log" 2>&1 &
           for _ in $(seq 1 60); do
-            curl -fsS http://localhost:8081/status >/dev/null 2>&1 && break
+            curl -fsS http://127.0.0.1:8081/status >/dev/null 2>&1 && break
             sleep 2
           done
-          curl -fsS http://localhost:8081/status
+          curl -fsS http://127.0.0.1:8081/status
+          # Warm the bundle before the dev client asks for it: a cold first
+          # bundle on a small runner outlasts the dev client's request
+          # timeout ("Failed to load app … The request timed out"). The
+          # manifest names the exact bundle URL (transform options
+          # included), so this request and the client's share Metro's cache.
+          BUNDLE_URL=$(curl -fsS -H 'expo-platform: ios' http://127.0.0.1:8081/ | jq -r '.launchAsset.url')
+          echo "warming $BUNDLE_URL"
+          time curl -fsS -o /dev/null --max-time 900 "$BUNDLE_URL"
+          grep -a "Bundled" "$RUNNER_TEMP/metro.log" | tail -1
       - name: Open the dev client on Metro
         # The launcher screen otherwise waits for a server choice; the first
         # bundle takes a while, which the flows' 60 s "Today" wait covers.
-        run: xcrun simctl openurl "$SIMULATOR_UDID" "solunivo://expo-development-client/?url=http%3A%2F%2Flocalhost%3A8081"
+        run: xcrun simctl openurl "$SIMULATOR_UDID" "solunivo://expo-development-client/?url=http%3A%2F%2F127.0.0.1%3A8081"
       # Two invocations: Maestro runs a directory's flows in a
       # non-deterministic order (config.yaml executionOrder is not
       # honored — mobile-dev-inc/maestro#2231), and the bootstrap must

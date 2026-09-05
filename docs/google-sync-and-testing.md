@@ -211,13 +211,18 @@ Flakiness lessons (each caused a real CI failure — keep them enforced):
 - `e2e-reminders` (macos-26): the **real** EventKit path on the desktop.
   Builds the helper, seeds the runner's per-user TCC database
   (`apps/desktop/e2e/ci/grant-reminders-tcc.sh` — named columns so the
-  per-macOS column drift does not matter; three client identities since
-  TCC may attribute to the helper's bundle id, its path, or the
-  responsible Electron process), then `probe-helper-access.sh` requires
+  per-macOS column drift does not matter; every plausible client identity,
+  since TCC may attribute to the helper's signing identifier, bundle id or
+  path, to Electron, or to the runner's responsible process; bundle-id
+  rows carry the helper's compiled csreq), then `probe-helper-access.sh` requires
   `reminders.status` = fullAccess before `remindersReal.e2e.ts` runs. The
   seed is not an Apple-supported interface: when a new runner image
-  breaks it the job is red with the `access` schema in the log — adjust
-  the INSERT, never make the probe optional. Locally:
+  breaks it the job is red with the `access` schema, tccd's own rows and
+  its log lines in the output — adjust the seed to the identity tccd
+  recorded, never make the probe optional. The e2e jobs prefetch the
+  Electron binary (`electron --version`) and run spec files sequentially:
+  two Electron apps starting together on a small runner raced the lazy
+  binary download into "CDP page target not found". Locally:
   `CALENDAR_E2E_REMINDERS=real E2E=1 pnpm exec vp test run apps/desktop/e2e/remindersReal.e2e.ts`
   (creates and deletes reminders in _your_ database).
 - `ios-e2e` (macos-26): Maestro against the **EAS** dev client. CI never
@@ -228,8 +233,13 @@ Flakiness lessons (each caused a real CI failure — keep them enforced):
   Actions cache under that fingerprint, so JS-only pushes download
   nothing. `prepare-simulator.sh` boots the newest iPhone, installs, and
   pre-grants Reminders with `simctl privacy grant reminders` (supported);
-  Metro on the runner serves the commit's JS and the dev client is opened
-  on it through its `expo-development-client` URL before the flows run.
+  Metro on the runner serves the commit's JS: the workflow warms the
+  bundle first (the manifest's `launchAsset.url`, so the request shares
+  Metro's cache with the dev client's — a cold first bundle outlasted the
+  client's request timeout) and opens the dev client on `127.0.0.1`
+  (`localhost` never reached Metro from the simulator) before the flows
+  run. Two Maestro invocations: the bootstrap flow, then the rest —
+  Maestro ignores `config.yaml` execution order (maestro#2231).
 - `testing-build` (macos-26, main only): signed + notarized arm64 zip
   incl. the Swift model helper — macos-26 is the only runner image with
   the FoundationModels SDK. See docs/distribution.md.
