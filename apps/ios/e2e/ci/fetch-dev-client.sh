@@ -43,7 +43,8 @@ fi
 URL=$(pnpm exec eas build:view "$BUILD_ID" --json \
   | jq -r '.artifacts.applicationArchiveUrl // .artifacts.buildUrl // empty')
 test -n "$URL" || { echo "::error::build $BUILD_ID has no application archive"; exit 1; }
-BUILT_FP=$(pnpm exec eas build:view "$BUILD_ID" --json | jq -r '.metadata.fingerprintHash // .runtimeVersion // empty')
+# With runtimeVersion policy "fingerprint", a build's runtime version IS its fingerprint.
+BUILT_FP=$(pnpm exec eas build:view "$BUILD_ID" --json | jq -r '.runtime.version // empty')
 echo "Downloading build $BUILD_ID (fingerprint $BUILT_FP)"
 
 rm -rf "$OUT" && mkdir -p "$OUT"
