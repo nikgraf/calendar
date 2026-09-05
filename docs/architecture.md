@@ -51,6 +51,13 @@ first and mirror the returned reminder (no pending op — EventKit is local
 and synchronous). The permission ask (`reminders:*` preload IPC on
 desktop, the Settings diagnostics row on iOS) is a window-level concern;
 reminder rows only ever cross the rpc seam.
+
+Device contacts: ContactsClient (packages/contacts) is the same shape,
+read-only — `contacts.status` / `requestAccess` / `snapshot` over the
+helper stdio (macOS) or the solunivo-contacts Expo module (iOS), both
+built from swift/ContactsBridge.swift (CNContactStore). The backend
+keeps the snapshot in memory for the invitee typeahead; nothing is
+written to SQLite and nothing leaves the device.
 ```
 
 Invalidation path (backend → UI): repo mutations invalidate Reactivity keys

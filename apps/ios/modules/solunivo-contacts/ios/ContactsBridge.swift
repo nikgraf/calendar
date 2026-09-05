@@ -1,0 +1,1 @@
+../../../../../packages/contacts/swift/ContactsBridge.swift

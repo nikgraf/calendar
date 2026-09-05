@@ -1,5 +1,5 @@
 {
-  "name": "@calendar/sync",
+  "name": "@calendar/contacts",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -8,15 +8,10 @@
     "./*": "./src/*.ts"
   },
   "dependencies": {
-    "@calendar/contacts": "workspace:*",
-    "@calendar/core": "workspace:*",
-    "@calendar/db": "workspace:*",
-    "@calendar/google": "workspace:*",
     "@calendar/reminders": "workspace:*",
     "effect": "catalog:"
   },
   "devDependencies": {
-    "@effect/sql-sqlite-node": "catalog:",
     "@effect/vitest": "catalog:",
     "typescript": "catalog:",
     "vitest": "catalog:"

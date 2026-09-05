@@ -437,6 +437,8 @@ export interface App {
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 export interface LaunchOptions {
+  /** Same shape for the address book; no test needs 'real' yet. */
+  readonly contacts?: 'off' | 'real';
   /**
    * 'off' (default): no EventKit — seeded Apple rows stay as seeded and no
    * TCC prompt can fire on a developer's Mac. 'real': the helper is used;
@@ -461,6 +463,8 @@ export const launchApp = async (seed?: SeedData, options: LaunchOptions = {}): P
       // Seeded Apple rows must not be replaced by (or prompt for) the
       // developer's real Reminders — see remindersClient.ts.
       ...(options.reminders === 'real' ? {} : { CALENDAR_REMINDERS: 'off' }),
+      // Likewise the address book: no TCC prompt, no developer's contacts.
+      ...(options.contacts === 'real' ? {} : { CALENDAR_CONTACTS: 'off' }),
       CALENDAR_USERDATA: userDataDir,
     },
     stdio: ['ignore', 'pipe', 'pipe'],

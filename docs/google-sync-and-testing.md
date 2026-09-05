@@ -210,6 +210,9 @@ Flakiness lessons (each caused a real CI failure — keep them enforced):
   prompt for access on a developer's Mac). `launchApp(seed, { reminders:
 'real' })` opts a spec into the helper — only `remindersReal.e2e.ts`,
   which is `describe.skipIf` unless `CALENDAR_E2E_REMINDERS=real`.
+- `CALENDAR_CONTACTS=off` does the same for the address book bridge
+  (`launchApp(seed, { contacts: 'real' })` to opt in; nothing does yet).
+  Contact suggestions in e2e come from seeded Google contact rows.
 
 ### CI (.github/workflows/ci.yml + ios.yml)
 

@@ -34,6 +34,7 @@ import { RpcSerialization, RpcServer } from 'effect/unstable/rpc';
 import { runGoogleSignIn } from './auth/loopbackFlow.ts';
 import { loadOAuthConfig } from './oauthConfig.ts';
 import { RemindersClient } from '@calendar/reminders';
+import { desktopContactsLayer } from './contactsClient.ts';
 import { desktopRemindersLayer } from './remindersClient.ts';
 import { rpcServerProtocol } from './rpcProtocol.ts';
 import { safeStorageTokenStore } from './tokens/safeStorageStore.ts';
@@ -76,6 +77,7 @@ export const startBackendHost = (): void => {
     Layer.provideMerge(GoogleCalendarClient.layer),
     Layer.provideMerge(GoogleTasksClient.layer),
     Layer.provideMerge(desktopRemindersLayer),
+    Layer.provideMerge(desktopContactsLayer),
     Layer.provideMerge(TokenManager.layer),
     Layer.provideMerge(dbLayer),
     Layer.provideMerge(platformLayer),
