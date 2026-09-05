@@ -186,7 +186,10 @@ export class Cdp {
   }
 
   static async connect(port: number): Promise<Cdp> {
-    const deadline = Date.now() + 15_000;
+    // Generous: a cold macOS runner starting two Electron apps at once
+    // (one per spec file) took longer than 15 s to expose a page target,
+    // which failed the whole suite before a single test ran.
+    const deadline = Date.now() + 60_000;
     for (;;) {
       try {
         const targets = (await (
