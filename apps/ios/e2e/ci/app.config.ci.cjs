@@ -1,4 +1,4 @@
-// CI-only overlay, copied to apps/ios/app.config.js by the ios-e2e job
+// CI-only overlay (.cjs for the lint config), copied to apps/ios/app.config.js by the ios-e2e job
 // AFTER the native fingerprint is computed (an explicit runtimeVersion
 // would change it). With runtimeVersion.policy "fingerprint", Expo CLI
 // re-runs `expo-updates runtimeversion:resolve` — a full fingerprint of

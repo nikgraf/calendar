@@ -161,7 +161,7 @@ jobs:
         # full project fingerprint for every manifest request, which on this
         # runner outlasts the dev launcher's 10 s request timeout.
         working-directory: apps/ios
-        run: cp e2e/ci/app.config.ci.js app.config.js
+        run: cp e2e/ci/app.config.ci.cjs app.config.js
       - name: Start Metro
         working-directory: apps/ios
         env:

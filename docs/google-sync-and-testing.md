@@ -239,7 +239,7 @@ Flakiness lessons (each caused a real CI failure — keep them enforced):
   `launchAsset.url` (so the request shares Metro's cache with the
   client's), and the runtime version is pinned to the computed
   fingerprint through a CI-only `app.config.js` overlay
-  (`e2e/ci/app.config.ci.js`, copied after the fingerprint step) —
+  (`e2e/ci/app.config.ci.cjs`, copied after the fingerprint step) —
   with the fingerprint policy Expo CLI re-runs a full project
   fingerprint for _every_ manifest request, ~2 s on a laptop and past
   10 s on the runner. The dev client is opened on `127.0.0.1`. Two Maestro invocations: the bootstrap flow, then the rest —
