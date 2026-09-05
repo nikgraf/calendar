@@ -214,7 +214,9 @@ jobs:
         run: maestro test --device "$SIMULATOR_UDID" e2e/flows/00-devclient-bootstrap.yaml
       - name: Maestro flows
         working-directory: apps/ios
-        run: maestro test --include-tags ci --exclude-tags ci-bootstrap --device "$SIMULATOR_UDID" e2e/flows
+        # MODELLESS: the runner's simulator has no usable on-device model
+        # (see 06-quick-add.yaml).
+        run: maestro test --include-tags ci --exclude-tags ci-bootstrap -e MODELLESS=1 --device "$SIMULATOR_UDID" e2e/flows
       - name: Upload Maestro diagnostics
         if: failure()
         uses: actions/upload-artifact@v4

@@ -56,9 +56,12 @@ tags:
       - extendedWaitUntil:
           notVisible: 'Edit Reminder'
           timeout: 20000
+# Keyed on the sheet still being open (see 08): after the branch above
+# closed it, "no Reminders list visible" would be true for the wrong
+# reason and the Cancel tap would fail.
 - runFlow:
     when:
-      notVisible: 'Reminders.*'
+      visible: 'New Task'
     commands:
       - tapOn: 'Cancel'
       - assertVisible: 'Today'
