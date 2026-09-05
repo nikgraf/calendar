@@ -1,0 +1,16 @@
+appId: com.solunivo.app
+name: Launch the app and wait for a settled shell (shared preamble)
+---
+# The app re-bundles from Metro on a cold dev-client launch; wait for the
+# calendar shell rather than racing it.
+- launchApp
+- extendedWaitUntil:
+    visible: 'Today'
+    timeout: 60000
+# React Native's SafeAreaView applies the top inset a beat after the
+# first paint: "Today" is already visible while the header still sits
+# under the status bar, so an id tap taken right away lands ~60 pt too
+# high (it hit the status bar on every flow). Wait for the layout to stop
+# moving before anything taps.
+- waitForAnimationToEnd:
+    timeout: 5000

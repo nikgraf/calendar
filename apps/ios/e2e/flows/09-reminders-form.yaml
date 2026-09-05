@@ -1,13 +1,12 @@
 appId: com.solunivo.app
 name: The Reminders form shows its extra fields and round-trips create/delete
+tags:
+  - ci
 ---
 # Runs only when an Apple Reminders list is connected on the simulator
 # (Settings → Connect Apple Reminders, then allow the prompt). Without one
 # the flow is a no-op, like flow 08 without a tasks-enabled account.
-- launchApp
-- extendedWaitUntil:
-    visible: 'Today'
-    timeout: 60000
+- runFlow: ../common/launch.yaml
 - tapOn:
     id: 'add-event'
 - assertVisible: 'New Event'
@@ -18,9 +17,9 @@ name: The Reminders form shows its extra fields and round-trips create/delete
 # stable handle is the list title. 'Reminders' is the default list name.
 - runFlow:
     when:
-      visible: 'Reminders'
+      visible: 'Reminders.*'
     commands:
-      - tapOn: 'Reminders'
+      - tapOn: 'Reminders.*'
       # The form morphed: Reminders-only controls are on screen.
       - assertVisible:
           id: 'reminder-timed'
@@ -45,7 +44,9 @@ name: The Reminders form shows its extra fields and round-trips create/delete
       - extendedWaitUntil:
           visible: '.*!!! Solunivo e2e reminder to delete'
           timeout: 10000
-      - tapOn: '.*Solunivo e2e reminder to delete'
+      # Anchored to the time prefix: a bare ".*title" also matches the
+      # checkbox's "Toggle <title>" label and toggles completion instead.
+      - tapOn: '[0-9]+:[0-9]+ !!! Solunivo e2e reminder to delete'
       - assertVisible: 'Edit Reminder'
       - tapOn:
           id: 'task-delete'
@@ -54,7 +55,7 @@ name: The Reminders form shows its extra fields and round-trips create/delete
           timeout: 20000
 - runFlow:
     when:
-      notVisible: 'Reminders'
+      notVisible: 'Reminders.*'
     commands:
       - tapOn: 'Cancel'
       - assertVisible: 'Today'

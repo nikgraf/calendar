@@ -1,12 +1,9 @@
 appId: com.solunivo.app
 name: Saving a new event writes it to the day
+tags:
+  - ci
 ---
-- launchApp
-# The app re-bundles from Metro on a cold dev-client launch; wait for the
-# calendar shell rather than racing it.
-- extendedWaitUntil:
-    visible: 'Today'
-    timeout: 60000
+- runFlow: ../common/launch.yaml
 - tapOn:
     id: 'add-event'
 - assertVisible: 'New Event'
@@ -45,10 +42,11 @@ name: Saving a new event writes it to the day
       - extendedWaitUntil:
           notVisible: 'Solunivo e2e event to delete'
           timeout: 20000
+# Keyed on the sheet still being open (see 08): after a save the sheet is
+# closed and "no calendar rows" would be true for the wrong reason.
 - runFlow:
     when:
-      notVisible:
-        id: 'calendar-option'
+      visible: 'New Event'
     commands:
       # No account: leave the sheet as we found it.
       - tapOn: 'Cancel'

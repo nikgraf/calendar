@@ -1,12 +1,9 @@
 appId: com.solunivo.app
 name: Quick add turns a phrase into a prefilled editor
+tags:
+  - ci
 ---
-- launchApp
-# The app re-bundles from Metro on a cold dev-client launch; wait for the
-# calendar shell rather than racing it.
-- extendedWaitUntil:
-    visible: 'Today'
-    timeout: 60000
+- runFlow: ../common/launch.yaml
 # The bar renders only after an async availability check resolves, so wait
 # for the marker the app emits either way before deciding to skip —
 # checking `quick-add-input` directly would race the mount and report a
