@@ -115,6 +115,13 @@ export const mapGcalCalendar = (
 
 /** Builds the insert/patch payload from a local event record. */
 export const toGcalEventInput = (event: EventRecord): GcalEventInput => ({
+  // Undefined is dropped from the JSON body, so a record that never carried
+  // guests leaves the server list alone on patch; [] clears it.
+  attendees: event.attendees?.map((attendee) => ({
+    displayName: attendee.displayName,
+    email: attendee.email,
+    responseStatus: attendee.responseStatus,
+  })),
   description: event.description,
   end: event.isAllDay
     ? { date: event.endDate }

@@ -17,6 +17,14 @@ import {
 import { Clock, Effect } from 'effect';
 
 /**
+ * Guests get emailed about any change to an event that has guests — the
+ * decision was "always notify, never ask". Google ignores the flag when
+ * nothing guest-relevant changed and without attendees altogether.
+ */
+const sendUpdatesFor = (payload: { readonly attendees?: unknown }): 'all' | undefined =>
+  payload.attendees === undefined ? undefined : 'all';
+
+/**
  * The pending-op drain's per-op dispatch: one arm per op kind, mapping every
  * failure to 'done' (drop) or 'retry' (backoff). Split out of mutations.ts —
  * the queue-correctness rules live in docs/architecture.md.
@@ -182,6 +190,7 @@ export const makeApplyOp = (
             accountId: op.accountId,
             calendarId: op.calendarId,
             event: toGcalEventInput(op.payload),
+            sendUpdates: sendUpdatesFor(op.payload),
           });
           const synced = mapGcalEvent(response, {
             accountId: op.accountId,
@@ -252,6 +261,7 @@ export const makeApplyOp = (
             calendarId: op.calendarId,
             event: toGcalEventInput(op.payload),
             eventId: op.eventId,
+            sendUpdates: sendUpdatesFor(op.payload),
           });
           const synced = mapGcalEvent(response, {
             accountId: op.accountId,

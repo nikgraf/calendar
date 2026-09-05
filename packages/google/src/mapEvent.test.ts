@@ -1,3 +1,4 @@
+import { Attendee, EventRecord } from '@calendar/core';
 import { describe, expect, it } from 'vitest';
 import { mapGcalCalendar, mapGcalEvent, toGcalEventInput } from './mapEvent.ts';
 
@@ -186,5 +187,45 @@ describe('toGcalEventInput', () => {
     expect(input.start.date).toBe('2026-07-02');
     expect(input.end.date).toBe('2026-07-04');
     expect(input.start.dateTime).toBeUndefined();
+  });
+});
+
+describe('toGcalEventInput attendees', () => {
+  const base = mapGcalEvent(
+    {
+      end: { dateTime: '2026-07-02T15:00:00+02:00' },
+      id: 'evt1',
+      start: { dateTime: '2026-07-02T14:00:00+02:00', timeZone: 'Europe/Vienna' },
+      summary: 'Standup',
+    },
+    context,
+  )!;
+
+  it('omits the key when the record never carried guests', () => {
+    expect(toGcalEventInput(base).attendees).toBeUndefined();
+  });
+
+  it('emits email, response and display name per guest', () => {
+    const input = toGcalEventInput(
+      new EventRecord({
+        ...base,
+        attendees: [
+          new Attendee({
+            displayName: 'Alice',
+            email: 'a@example.com',
+            responseStatus: 'accepted',
+          }),
+          new Attendee({ email: 'b@example.com', responseStatus: 'needsAction' }),
+        ],
+      }),
+    );
+    expect(input.attendees).toEqual([
+      { displayName: 'Alice', email: 'a@example.com', responseStatus: 'accepted' },
+      { displayName: undefined, email: 'b@example.com', responseStatus: 'needsAction' },
+    ]);
+  });
+
+  it('emits an empty array so a patch clears the guests', () => {
+    expect(toGcalEventInput(new EventRecord({ ...base, attendees: [] })).attendees).toEqual([]);
   });
 });

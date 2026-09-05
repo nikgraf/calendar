@@ -69,17 +69,17 @@ Every mutation writes SQLite optimistically, then enqueues a `PendingOp`
 and kicks `processPendingOps` (semaphore-serialized, drains due ops
 oldest-first). Kinds:
 
-| kind            | eventId                       | payload/fields          | remote call                                        |
-| --------------- | ----------------------------- | ----------------------- | -------------------------------------------------- |
-| `create`        | client-generated id           | full EventRecord        | events.insert (idempotent — 409 = already landed)  |
-| `update`        | event id / instance id        | full EventRecord        | events.patch (If-Match when etag known)            |
-| `delete`        | event id / instance id        | —                       | events.delete                                      |
-| `rsvp`          | event id                      | EventRecord (attendees) | events.patch, attendees-only body, **no If-Match** |
-| `calendarColor` | `__calendar_color__` sentinel | `colorHex`              | calendarList.patch?colorRgbFormat=true             |
-| `createTask`    | temp `local-…` id             | title/notes/due         | tasks.insert (NOT idempotent — see below)          |
-| `updateTask`    | task id                       | title/notes/due         | tasks.patch                                        |
-| `completeTask`  | task id                       | completed flag          | tasks.patch (status + hidden reset)                |
-| `deleteTask`    | task id                       | —                       | tasks.delete (404/410 = already gone)              |
+| kind            | eventId                       | payload/fields          | remote call                                                                                            |
+| --------------- | ----------------------------- | ----------------------- | ------------------------------------------------------------------------------------------------------ |
+| `create`        | client-generated id           | full EventRecord        | events.insert (idempotent — 409 = already landed); `sendUpdates=all` when the record carries attendees |
+| `update`        | event id / instance id        | full EventRecord        | events.patch (If-Match when etag known); `sendUpdates=all` when the record carries attendees           |
+| `delete`        | event id / instance id        | —                       | events.delete                                                                                          |
+| `rsvp`          | event id                      | EventRecord (attendees) | events.patch, attendees-only body, **no If-Match**                                                     |
+| `calendarColor` | `__calendar_color__` sentinel | `colorHex`              | calendarList.patch?colorRgbFormat=true                                                                 |
+| `createTask`    | temp `local-…` id             | title/notes/due         | tasks.insert (NOT idempotent — see below)                                                              |
+| `updateTask`    | task id                       | title/notes/due         | tasks.patch                                                                                            |
+| `completeTask`  | task id                       | completed flag          | tasks.patch (status + hidden reset)                                                                    |
+| `deleteTask`    | task id                       | —                       | tasks.delete (404/410 = already gone)                                                                  |
 
 Rules that keep the queue correct:
 

@@ -3,6 +3,7 @@ import {
   Attendee,
   EventRecord,
   googleInstanceId,
+  mergeAttendees,
   normalizeHexColor,
   PendingOp,
   remainingRecurrence,
@@ -24,6 +25,7 @@ import {
   RecurringEditUnsupportedError,
   retryDelayMs,
   UnsupportedForProviderError,
+  type UpdateEventParams,
 } from './mutationTypes.ts';
 import { makeReminderMutations } from './reminderMutations.ts';
 import { makeTaskMutations } from './taskMutations.ts';
@@ -32,6 +34,24 @@ export * from './mutationTypes.ts';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const isoDate = (epochMs: number): string => new Date(epochMs).toISOString().slice(0, 10);
+
+/**
+ * The defined fields of an update, ready to spread over an EventRecord.
+ * `attendees` is the editor's replacement list and is merged against the
+ * current guests so server facts (responses, organizer) survive.
+ */
+const definedChanges = (
+  changes: UpdateEventParams['changes'],
+  currentAttendees: EventRecord['attendees'],
+): Partial<EventRecord> => {
+  const { attendees, ...rest } = changes;
+  const defined: Partial<EventRecord> = Object.fromEntries(
+    Object.entries(rest).filter(([, value]) => value !== undefined),
+  );
+  return attendees === undefined
+    ? defined
+    : { ...defined, attendees: mergeAttendees(currentAttendees, attendees) };
+};
 
 const make: Effect.Effect<
   EventMutationsShape,
@@ -243,6 +263,10 @@ const make: Effect.Effect<
         const now = yield* Clock.currentTimeMillis;
         const record = new EventRecord({
           accountId: draft.accountId,
+          // Google adds the organizer itself; the insert response fills it in.
+          attendees: draft.attendees?.length
+            ? mergeAttendees(undefined, draft.attendees)
+            : undefined,
           calendarId: draft.calendarId,
           description: draft.description,
           endDate: draft.endDate,
@@ -483,12 +507,9 @@ const make: Effect.Effect<
           return yield* Effect.fail(new RecurringEditUnsupportedError({ eventId }));
         }
         const now = yield* Clock.currentTimeMillis;
-        const defined = Object.fromEntries(
-          Object.entries(changes).filter(([, value]) => value !== undefined),
-        );
         const merged = new EventRecord({
           ...existing,
-          ...defined,
+          ...definedChanges(changes, existing.attendees),
           syncStatus: 'pending',
           updatedAt: now,
         });
@@ -519,9 +540,9 @@ const make: Effect.Effect<
       Effect.gen(function* () {
         const { master, recurrence } = yield* loadMaster(accountId, calendarId, masterId);
         const now = yield* Clock.currentTimeMillis;
-        const defined = Object.fromEntries(
-          Object.entries(changes).filter(([, value]) => value !== undefined),
-        );
+        // Guests live on the master; an exception inherits them, so merge
+        // against the master's list whichever scope is written.
+        const defined = definedChanges(changes, master.attendees);
 
         if (scope === 'instance') {
           // Materialize (or update) the exception under its instance id; the
@@ -577,6 +598,7 @@ const make: Effect.Effect<
               : master.startUtc;
           const merged = new EventRecord({
             ...master,
+            attendees: defined.attendees ?? master.attendees,
             description: changes.description ?? master.description,
             endUtc: master.isAllDay ? master.endUtc : startUtc + duration,
             location: changes.location ?? master.location,

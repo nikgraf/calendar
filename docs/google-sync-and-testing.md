@@ -28,6 +28,16 @@ invariants.
   for entries other than your own are ignored — RSVP therefore sends an
   attendees-only body and deliberately omits If-Match (a response should
   not lose to unrelated content edits).
+- **Attendee editing**: the organizer's `create`/`update` payloads carry
+  the full guest list (`attendees` on `EventDraft`/`UpdateEventChanges` is
+  a replacement list; `[]` clears, `undefined` leaves the server copy
+  alone because `bodyJsonUnsafe` drops the key). `mergeAttendees` keeps
+  the server facts (response, organizer, self) of retained emails so a
+  patch never resets an RSVP. Every insert/patch of a record that has
+  attendees sends `sendUpdates=all` — guests get emailed about time/
+  location edits too; Google ignores the flag when nothing guest-relevant
+  changed. The organizer is never added client-side: Google puts it on the
+  insert response.
 - **412 (etag mismatch)**: we use If-Match on content updates/deletes when
   an etag is known; on 412 the server wins (drop op, toast, next pull
   replaces local).

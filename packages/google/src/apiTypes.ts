@@ -98,7 +98,11 @@ export type GcalColors = Schema.Schema.Type<typeof GcalColors>;
 /** Fields we send on events.insert / events.patch. */
 export interface GcalEventInput {
   readonly attendees?:
-    | ReadonlyArray<{ readonly email: string; readonly responseStatus: string }>
+    | ReadonlyArray<{
+        readonly displayName?: string | undefined;
+        readonly email: string;
+        readonly responseStatus?: string | undefined;
+      }>
     | undefined;
   readonly description?: string | undefined;
   readonly end: {

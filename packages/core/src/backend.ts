@@ -18,8 +18,17 @@ import {
  * hop); Electron serves it from the main process over an IPC transport.
  */
 
+/** A guest as the editor names them; response status is Google's to assign. */
+export const AttendeeInput = Schema.Struct({
+  displayName: Schema.optional(Schema.String),
+  email: Schema.String,
+});
+export type AttendeeInput = Schema.Schema.Type<typeof AttendeeInput>;
+
 export const EventDraft = Schema.Struct({
   accountId: Schema.String,
+  /** Guests to invite; the organizer is added by Google on insert. */
+  attendees: Schema.optional(Schema.Array(AttendeeInput)),
   calendarId: Schema.String,
   description: Schema.optional(Schema.String),
   /** All-day drafts use dates; timed drafts use epochs + zone. */
@@ -37,6 +46,8 @@ export const EventDraft = Schema.Struct({
 export type EventDraft = Schema.Schema.Type<typeof EventDraft>;
 
 export const UpdateEventChanges = Schema.Struct({
+  /** Full replacement guest list: undefined leaves it alone, [] removes everyone. */
+  attendees: Schema.optional(Schema.Array(AttendeeInput)),
   description: Schema.optional(Schema.String),
   endDate: Schema.optional(Schema.String),
   endUtc: Schema.optional(Schema.Number),
