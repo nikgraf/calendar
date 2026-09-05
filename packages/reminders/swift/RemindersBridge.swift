@@ -146,26 +146,41 @@ private let dayFormatter: DateFormatter = {
   return f
 }()
 
+/// The wire format is ISO-8601 Gregorian whatever the device calendar is
+/// set to (Buddhist, Japanese, Hebrew …): resolving "2026-09-10" through
+/// `Calendar.current` on such a device would read 2026 as a year of that
+/// calendar. Every conversion between components and wire strings goes
+/// through this one.
+private let gregorian: Calendar = {
+  var c = Calendar(identifier: .gregorian)
+  c.timeZone = TimeZone.current
+  return c
+}()
+
 private func pad2(_ value: Int) -> String { value < 10 ? "0\(value)" : "\(value)" }
 
 private func dueStrings(_ components: DateComponents?) -> (date: String?, time: String?) {
-  guard var c = components, let y = c.year, let m = c.month, let d = c.day else {
+  guard var c = components, c.year != nil, c.month != nil, c.day != nil else {
     return (nil, nil)
   }
-  // A timed reminder created in another zone carries that zone in its
-  // components; the protocol speaks device-local wall clock, so convert.
-  // All-day components have no zone semantics and stay as written.
-  if c.hour != nil, let zone = c.timeZone, zone.identifier != TimeZone.current.identifier,
-    let instant = Calendar.current.date(from: c)
-  {
-    c = Calendar.current.dateComponents(in: TimeZone.current, from: instant)
+  // Components carry the calendar they were written with, and a timed
+  // reminder created in another zone carries that zone too; the protocol
+  // speaks Gregorian device-local wall clock. Resolve the components in
+  // their own calendar to an instant, then read that back through
+  // `gregorian`. All-day components have no zone semantics: drop any zone
+  // so they resolve at local midnight and the date stays as written.
+  let timed = c.hour != nil
+  if !timed { c.timeZone = nil }
+  var source = Calendar(identifier: c.calendar?.identifier ?? .gregorian)
+  source.timeZone = TimeZone.current
+  guard let instant = source.date(from: c) else { return (nil, nil) }
+  let local = gregorian.dateComponents([.year, .month, .day, .hour, .minute], from: instant)
+  guard let year = local.year, let month = local.month, let day = local.day else {
+    return (nil, nil)
   }
-  let year = c.year ?? y
-  let month = c.month ?? m
-  let day = c.day ?? d
   let date = "\(year)-\(pad2(month))-\(pad2(day))"
-  guard let h = c.hour else { return (date, nil) }
-  return (date, "\(pad2(h)):\(pad2(c.minute ?? 0))")
+  guard timed, let h = local.hour else { return (date, nil) }
+  return (date, "\(pad2(h)):\(pad2(local.minute ?? 0))")
 }
 
 private func parseDay(_ text: String) -> (year: Int, month: Int, day: Int)? {
@@ -183,7 +198,7 @@ private func parseTime(_ text: String) -> (hour: Int, minute: Int)? {
 private func dueComponents(date: String, time: String?) -> DateComponents? {
   guard let day = parseDay(date) else { return nil }
   var c = DateComponents()
-  c.calendar = Calendar.current
+  c.calendar = gregorian
   c.timeZone = TimeZone.current
   c.year = day.year
   c.month = day.month
