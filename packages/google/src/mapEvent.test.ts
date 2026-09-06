@@ -1,6 +1,12 @@
 import { Attendee, EventRecord } from '@calendar/core';
 import { describe, expect, it } from 'vitest';
-import { mapGcalCalendar, mapGcalEvent, toGcalEventInput } from './mapEvent.ts';
+import {
+  hasGuests,
+  mapGcalCalendar,
+  mapGcalEvent,
+  toGcalAttendees,
+  toGcalEventInput,
+} from './mapEvent.ts';
 
 const context = {
   accountId: 'acc-1',
@@ -37,9 +43,11 @@ describe('mapGcalEvent', () => {
     expect(record?.endUtc).toBe(Date.parse('2026-07-02T13:00:00Z'));
     expect(record?.startTimeZone).toBe('Europe/Vienna');
     expect(record?.etag).toBe('"e1"');
-    // Resource rooms are dropped; humans kept.
-    expect(record?.attendees).toHaveLength(1);
+    // Rooms stay (flagged) so a write-back never drops them; humans unflagged.
+    expect(record?.attendees).toHaveLength(2);
     expect(record?.attendees?.[0]?.isSelf).toBe(true);
+    expect(record?.attendees?.[0]?.isResource).toBeUndefined();
+    expect(record?.attendees?.[1]?.isResource).toBe(true);
   });
 
   it('maps an all-day event to date strings and UTC midnights', () => {
@@ -190,7 +198,7 @@ describe('toGcalEventInput', () => {
   });
 });
 
-describe('toGcalEventInput attendees', () => {
+describe('toGcalAttendees', () => {
   const base = mapGcalEvent(
     {
       end: { dateTime: '2026-07-02T15:00:00+02:00' },
@@ -201,31 +209,46 @@ describe('toGcalEventInput attendees', () => {
     context,
   )!;
 
-  it('omits the key when the record never carried guests', () => {
-    expect(toGcalEventInput(base).attendees).toBeUndefined();
+  it('never rides on the plain input and is undefined without guests', () => {
+    expect('attendees' in toGcalEventInput(base)).toBe(false);
+    expect(toGcalAttendees(base)).toBeUndefined();
+    expect(hasGuests(base)).toBe(false);
   });
 
-  it('emits email, response and display name per guest', () => {
-    const input = toGcalEventInput(
-      new EventRecord({
-        ...base,
-        attendees: [
-          new Attendee({
-            displayName: 'Alice',
-            email: 'a@example.com',
-            responseStatus: 'accepted',
-          }),
-          new Attendee({ email: 'b@example.com', responseStatus: 'needsAction' }),
-        ],
-      }),
-    );
-    expect(input.attendees).toEqual([
-      { displayName: 'Alice', email: 'a@example.com', responseStatus: 'accepted' },
-      { displayName: undefined, email: 'b@example.com', responseStatus: 'needsAction' },
+  it('emits email, response, display name and the resource flag per attendee', () => {
+    const record = new EventRecord({
+      ...base,
+      attendees: [
+        new Attendee({ displayName: 'Alice', email: 'a@example.com', responseStatus: 'accepted' }),
+        new Attendee({
+          email: 'room@resource.calendar.google.com',
+          isResource: true,
+          responseStatus: 'accepted',
+        }),
+      ],
+    });
+    expect(toGcalAttendees(record)).toEqual([
+      {
+        displayName: 'Alice',
+        email: 'a@example.com',
+        resource: undefined,
+        responseStatus: 'accepted',
+      },
+      {
+        displayName: undefined,
+        email: 'room@resource.calendar.google.com',
+        resource: true,
+        responseStatus: 'accepted',
+      },
     ]);
+    expect(hasGuests(record)).toBe(true);
+    // A room alone is nobody to notify.
+    expect(hasGuests(new EventRecord({ ...record, attendees: [record.attendees![1]!] }))).toBe(
+      false,
+    );
   });
 
   it('emits an empty array so a patch clears the guests', () => {
-    expect(toGcalEventInput(new EventRecord({ ...base, attendees: [] })).attendees).toEqual([]);
+    expect(toGcalAttendees(new EventRecord({ ...base, attendees: [] }))).toEqual([]);
   });
 });

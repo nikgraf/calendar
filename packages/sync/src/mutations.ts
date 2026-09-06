@@ -40,6 +40,15 @@ const isoDate = (epochMs: number): string => new Date(epochMs).toISOString().sli
  * `attendees` is the editor's replacement list and is merged against the
  * current guests so server facts (responses, organizer) survive.
  */
+/** Whether this edit — or a still-queued update it replaces — touched the guest list. */
+const attendeesFlag = (
+  changes: UpdateEventParams['changes'],
+  queued: ReadonlyArray<PendingOp>,
+): true | undefined =>
+  changes.attendees !== undefined || queued.some((op) => op.attendeesChanged === true)
+    ? true
+    : undefined;
+
 const definedChanges = (
   changes: UpdateEventParams['changes'],
   currentAttendees: EventRecord['attendees'],
@@ -516,7 +525,8 @@ const make: Effect.Effect<
         yield* eventRepo.upsertMany([merged]);
 
         // Coalesce: a queued create absorbs the change; otherwise a fresh
-        // update op replaces any queued update.
+        // update op replaces any queued update — and inherits its guest-list
+        // flag, since the merged record still carries that edit.
         const queued = yield* opsForEvent(calendarId, eventId);
         yield* pendingOpRepo.removeForEvent(calendarId, eventId);
         const hasCreate = queued.some((op) => op.kind === 'create');
@@ -524,6 +534,7 @@ const make: Effect.Effect<
           new PendingOp({
             accountId,
             attempts: 0,
+            attendeesChanged: hasCreate ? undefined : attendeesFlag(changes, queued),
             baseEtag: hasCreate ? undefined : (existing.etag ?? undefined),
             calendarId,
             createdAt: now,
@@ -540,8 +551,9 @@ const make: Effect.Effect<
       Effect.gen(function* () {
         const { master, recurrence } = yield* loadMaster(accountId, calendarId, masterId);
         const now = yield* Clock.currentTimeMillis;
-        // Guests live on the master; an exception inherits them, so merge
-        // against the master's list whichever scope is written.
+        // Series/following edits merge guests against the master; an
+        // instance edit merges against the occurrence's own list below —
+        // an override can carry responses the master does not.
         const defined = definedChanges(changes, master.attendees);
 
         if (scope === 'instance') {
@@ -549,9 +561,10 @@ const make: Effect.Effect<
           // patch on that id creates the exception server-side.
           const instanceId = googleInstanceId(masterId, originalStartUtc, master.isAllDay);
           const existing = yield* eventRepo.getById(accountId, calendarId, instanceId);
+          const base = existing ?? projectInstance(master, originalStartUtc, now);
           const merged = new EventRecord({
-            ...(existing ?? projectInstance(master, originalStartUtc, now)),
-            ...defined,
+            ...base,
+            ...definedChanges(changes, base.attendees),
             originalStartUtc,
             recurrence: undefined,
             recurringEventId: masterId,
@@ -559,11 +572,13 @@ const make: Effect.Effect<
             updatedAt: now,
           });
           yield* eventRepo.upsertMany([merged]);
+          const queued = yield* opsForEvent(calendarId, instanceId);
           yield* pendingOpRepo.removeForEvent(calendarId, instanceId);
           yield* enqueueAndKick(
             new PendingOp({
               accountId,
               attempts: 0,
+              attendeesChanged: attendeesFlag(changes, queued),
               baseEtag: existing?.etag ?? undefined,
               calendarId,
               createdAt: now,
@@ -608,11 +623,13 @@ const make: Effect.Effect<
             updatedAt: now,
           });
           yield* eventRepo.upsertMany([merged]);
+          const queued = yield* opsForEvent(calendarId, masterId);
           yield* pendingOpRepo.removeForEvent(calendarId, masterId);
           yield* enqueueAndKick(
             new PendingOp({
               accountId,
               attempts: 0,
+              attendeesChanged: attendeesFlag(changes, queued),
               baseEtag: master.etag ?? undefined,
               calendarId,
               createdAt: now,

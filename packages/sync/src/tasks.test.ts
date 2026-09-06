@@ -16,12 +16,22 @@ import {
 import { RemindersClient, unavailableRemindersClient } from '@calendar/reminders';
 import { SqliteClient } from '@effect/sql-sqlite-node';
 import { expect, it } from '@effect/vitest';
-import { Effect, Layer } from 'effect';
+import { Effect, Layer, Scheduler } from 'effect';
 import { layer as reactivityLayer } from 'effect/unstable/reactivity/Reactivity';
 import { describe } from 'vitest';
 import { SyncEngine } from './engine.ts';
 import { EventMutations } from './mutations.ts';
 import { PendingOpRepo } from '@calendar/db';
+
+/**
+ * Mutations fork the queue drain detached; a fiber yield between two
+ * mutations would let it push the first before the second coalesces it.
+ * The default yield cadence (2048 ops) is reached at a point that moves
+ * with every migration, so pin it: the test body runs to its own explicit
+ * processPendingOps without yielding.
+ */
+const noYield = <A, E, R>(effect: Effect.Effect<A, E, R>): Effect.Effect<A, E, R> =>
+  Effect.provideService(effect, Scheduler.MaxOpsBeforeYield, Number.MAX_SAFE_INTEGER);
 
 /** Fills the unused client methods with loud failures. */
 const tasksClient = (overrides: Partial<GoogleTasksClientShape>): GoogleTasksClientShape => ({
@@ -116,7 +126,7 @@ describe('tasks sync', () => {
       yield* engine.syncAll();
       expect(updatedMins[0]).toBeUndefined();
       expect(updatedMins[1]).toMatch(/^\d{4}-\d{2}-\d{2}T/);
-    }).pipe(Effect.provide(testLayer(client)));
+    }).pipe(noYield, Effect.provide(testLayer(client)));
   });
 
   it.effect('removes tombstoned tasks on incremental polls', () => {
@@ -149,7 +159,7 @@ describe('tasks sync', () => {
       yield* engine.syncAll();
       const repo = yield* TaskRepo;
       expect(yield* repo.getWindow('2026-08-24', '2026-08-31')).toHaveLength(0);
-    }).pipe(Effect.provide(testLayer(client)));
+    }).pipe(noYield, Effect.provide(testLayer(client)));
   });
 
   it.effect('does not touch the tasks API for accounts without the scope', () => {
@@ -162,7 +172,7 @@ describe('tasks sync', () => {
       yield* seedAccount(false);
       const engine = yield* SyncEngine;
       yield* engine.syncAll();
-    }).pipe(Effect.provide(testLayer(client)));
+    }).pipe(noYield, Effect.provide(testLayer(client)));
   });
 
   it.effect('flips tasksEnabled off when the scope turns out to be missing', () => {
@@ -180,7 +190,7 @@ describe('tasks sync', () => {
       expect(account?.tasksEnabled).toBe(false);
       // Calendar sync keeps working: status is untouched.
       expect(account?.status).toBe('ok');
-    }).pipe(Effect.provide(testLayer(client)));
+    }).pipe(noYield, Effect.provide(testLayer(client)));
   });
 });
 
@@ -252,7 +262,7 @@ describe('completeTask', () => {
       expect(row?.status).toBe('completed');
       const ops = yield* PendingOpRepo;
       expect(yield* ops.listAll()).toHaveLength(0);
-    }).pipe(Effect.provide(testLayer(client)));
+    }).pipe(noYield, Effect.provide(testLayer(client)));
   });
 
   it.effect('coalesces to the latest toggle', () => {
@@ -275,7 +285,7 @@ describe('completeTask', () => {
       yield* mutations.processPendingOps();
       // Only the last state reached Google.
       expect(patches).toEqual(['t1:needsAction']);
-    }).pipe(Effect.provide(testLayer(client)));
+    }).pipe(noYield, Effect.provide(testLayer(client)));
   });
 
   it.effect('drops the local row when Google reports the task gone', () => {
@@ -298,7 +308,7 @@ describe('completeTask', () => {
       expect(yield* repo.getWindow('2026-08-24', '2026-08-31')).toHaveLength(0);
       const ops = yield* PendingOpRepo;
       expect(yield* ops.listAll()).toHaveLength(0);
-    }).pipe(Effect.provide(testLayer(client)));
+    }).pipe(noYield, Effect.provide(testLayer(client)));
   });
 
   it.effect('drops the op and disables tasks when the scope is revoked mid-queue', () => {
@@ -323,7 +333,7 @@ describe('completeTask', () => {
       const accounts = yield* AccountRepo;
       const [account] = yield* accounts.list();
       expect(account?.tasksEnabled).toBe(false);
-    }).pipe(Effect.provide(testLayer(client)));
+    }).pipe(noYield, Effect.provide(testLayer(client)));
   });
 
   it.effect('create pushes, swaps the temp id, and rewrites queued ops', () => {
@@ -377,7 +387,7 @@ describe('completeTask', () => {
       const ids = window.map((row) => row.id);
       expect(ids).toContain('server-1');
       expect(ids.some((id) => id.startsWith('local-'))).toBe(false);
-    }).pipe(Effect.provide(testLayer(client)));
+    }).pipe(noYield, Effect.provide(testLayer(client)));
   });
 
   it.effect('create tolerates the server row arriving via a pull first', () => {
@@ -427,7 +437,7 @@ describe('completeTask', () => {
       const ids = window.map((row) => row.id);
       expect(ids.filter((id) => id === 'server-race')).toHaveLength(1);
       expect(ids.some((id) => id === temp.id)).toBe(false);
-    }).pipe(Effect.provide(testLayer(client)));
+    }).pipe(noYield, Effect.provide(testLayer(client)));
   });
 
   it.effect('a retry after a dispatched-but-lost insert adopts, not duplicates', () => {
@@ -480,7 +490,7 @@ describe('completeTask', () => {
       const repo = yield* TaskRepo;
       const window = yield* repo.getWindow('2026-08-24', '2026-08-31');
       expect(window.some((row) => row.id === 'server-landed')).toBe(true);
-    }).pipe(Effect.provide(testLayer(client)));
+    }).pipe(noYield, Effect.provide(testLayer(client)));
   });
 
   it.effect('a dispatched retry with no server match inserts normally', () => {
@@ -516,7 +526,7 @@ describe('completeTask', () => {
       yield* mutations.processPendingOps();
       expect(attempts).toBe(2);
       expect(yield* ops.listAll()).toHaveLength(0);
-    }).pipe(Effect.provide(testLayer(client)));
+    }).pipe(noYield, Effect.provide(testLayer(client)));
   });
 
   it.effect('edits fold into a still-queued create', () => {
@@ -545,7 +555,7 @@ describe('completeTask', () => {
       yield* mutations.processPendingOps();
       // One insert carrying the merged fields; no patch was ever queued.
       expect(inserts).toEqual(['Buy milk|remember the oat one']);
-    }).pipe(Effect.provide(testLayer(client)));
+    }).pipe(noYield, Effect.provide(testLayer(client)));
   });
 
   it.effect('update is latest-wins once the task exists upstream', () => {
@@ -570,7 +580,7 @@ describe('completeTask', () => {
       yield* edit('Second');
       yield* mutations.processPendingOps();
       expect(patches).toEqual(['t1:Second']);
-    }).pipe(Effect.provide(testLayer(client)));
+    }).pipe(noYield, Effect.provide(testLayer(client)));
   });
 
   it.effect('deleting an unpushed create cancels everything locally', () => {
@@ -595,7 +605,7 @@ describe('completeTask', () => {
       const repo = yield* TaskRepo;
       const window = yield* repo.getWindow('2026-08-24', '2026-08-31');
       expect(window.some((row) => row.id === temp.id)).toBe(false);
-    }).pipe(Effect.provide(testLayer(client)));
+    }).pipe(noYield, Effect.provide(testLayer(client)));
   });
 
   it.effect('delete tolerates the task already being gone upstream', () => {
@@ -609,7 +619,7 @@ describe('completeTask', () => {
       yield* mutations.processPendingOps();
       const ops = yield* PendingOpRepo;
       expect(yield* ops.listAll()).toHaveLength(0);
-    }).pipe(Effect.provide(testLayer(client)));
+    }).pipe(noYield, Effect.provide(testLayer(client)));
   });
 
   it.effect('rejects unknown task lists', () =>

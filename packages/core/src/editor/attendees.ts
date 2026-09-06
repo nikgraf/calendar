@@ -8,6 +8,8 @@ const emailKey = (email: string): string => email.trim().toLowerCase();
  * Emails already on the event keep their server-side facts (response,
  * organizer, self); newcomers start as needsAction, which is what Google
  * assigns anyway. Duplicates (by lowercased email) collapse to the first.
+ * Resource attendees (rooms) are never in the editor's list and are
+ * carried over untouched so a guest edit cannot drop a room booking.
  */
 export const mergeAttendees = (
   existing: ReadonlyArray<Attendee> | undefined,
@@ -32,6 +34,11 @@ export const mergeAttendees = (
             responseStatus: 'needsAction',
           }),
     );
+  }
+  for (const attendee of existing ?? []) {
+    if (attendee.isResource && !seen.has(emailKey(attendee.email))) {
+      merged.push(attendee);
+    }
   }
   return merged;
 };

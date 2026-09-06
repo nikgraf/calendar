@@ -101,6 +101,7 @@ export interface GcalEventInput {
     | ReadonlyArray<{
         readonly displayName?: string | undefined;
         readonly email: string;
+        readonly resource?: boolean | undefined;
         readonly responseStatus?: string | undefined;
       }>
     | undefined;

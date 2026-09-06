@@ -252,6 +252,9 @@ export const sheetStyles = StyleSheet.create({
     marginBottom: 12,
     marginTop: -6,
   },
+  suggestionStale: {
+    opacity: 0.5,
+  },
   suggestionTitle: {
     color: palette.text,
     fontSize: 16,

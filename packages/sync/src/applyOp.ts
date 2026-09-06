@@ -1,4 +1,4 @@
-import { contrastingTextColor, type PendingOp } from '@calendar/core';
+import { contrastingTextColor, type EventRecord, type PendingOp } from '@calendar/core';
 import type {
   AccountRepoShape,
   CalendarRepoShape,
@@ -11,7 +11,9 @@ import {
   type GoogleTasksClientShape,
   mapGcalCalendar,
   mapGcalEvent,
+  hasGuests,
   mapGcalTask,
+  toGcalAttendees,
   toGcalEventInput,
 } from '@calendar/google';
 import { Clock, Effect } from 'effect';
@@ -19,10 +21,11 @@ import { Clock, Effect } from 'effect';
 /**
  * Guests get emailed about any change to an event that has guests — the
  * decision was "always notify, never ask". Google ignores the flag when
- * nothing guest-relevant changed and without attendees altogether.
+ * nothing guest-relevant changed; rooms alone are nobody to notify, but
+ * a guest-list edit notifies whoever was just removed.
  */
-const sendUpdatesFor = (payload: { readonly attendees?: unknown }): 'all' | undefined =>
-  payload.attendees === undefined ? undefined : 'all';
+const sendUpdatesFor = (payload: EventRecord, attendeesChanged: boolean): 'all' | undefined =>
+  hasGuests(payload) || attendeesChanged ? 'all' : undefined;
 
 /**
  * The pending-op drain's per-op dispatch: one arm per op kind, mapping every
@@ -189,8 +192,8 @@ export const makeApplyOp = (
           const response = yield* client.insertEvent({
             accountId: op.accountId,
             calendarId: op.calendarId,
-            event: toGcalEventInput(op.payload),
-            sendUpdates: sendUpdatesFor(op.payload),
+            event: { ...toGcalEventInput(op.payload), attendees: toGcalAttendees(op.payload) },
+            sendUpdates: sendUpdatesFor(op.payload, false),
           });
           const synced = mapGcalEvent(response, {
             accountId: op.accountId,
@@ -255,13 +258,21 @@ export const makeApplyOp = (
           if (!op.payload) {
             return 'done' as const;
           }
+          // The guest list rides along only when this edit changed it:
+          // Google replaces the whole array, and our copy may lack fields
+          // we never model (optional, comment, additionalGuests).
           const response = yield* client.patchEvent({
             accountId: op.accountId,
             baseEtag: op.baseEtag,
             calendarId: op.calendarId,
-            event: toGcalEventInput(op.payload),
+            event: {
+              ...toGcalEventInput(op.payload),
+              ...(op.attendeesChanged ? { attendees: toGcalAttendees(op.payload) } : {}),
+            },
             eventId: op.eventId,
-            sendUpdates: sendUpdatesFor(op.payload),
+            // Removed guests get their cancellation too: flagged edits
+            // always notify, even when nobody is left.
+            sendUpdates: sendUpdatesFor(op.payload, op.attendeesChanged === true),
           });
           const synced = mapGcalEvent(response, {
             accountId: op.accountId,

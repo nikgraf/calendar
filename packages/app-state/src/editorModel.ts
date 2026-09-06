@@ -116,10 +116,10 @@ export const useEventEditorModel = ({
   // The guest list as the editor shows it; `attendeesDirty` keeps an
   // untouched list out of the update (undefined = unchanged upstream).
   const [attendees, setAttendees] = useState<ReadonlyArray<AttendeeInput>>(() =>
-    (existing?.attendees ?? []).map((attendee) => ({
-      displayName: attendee.displayName,
-      email: attendee.email,
-    })),
+    (existing?.attendees ?? [])
+      // Rooms are not guests: hidden here, carried over by mergeAttendees.
+      .filter((attendee) => !attendee.isResource)
+      .map((attendee) => ({ displayName: attendee.displayName, email: attendee.email })),
   );
   const [attendeesDirty, setAttendeesDirty] = useState(false);
   const [scope, setScope] = useState<RecurringScope>('instance');

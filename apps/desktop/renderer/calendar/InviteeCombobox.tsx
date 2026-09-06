@@ -70,10 +70,14 @@ export function InviteeCombobox({
   }, [open, permission]);
 
   const taken = new Set(attendees.map((attendee) => emailKey(attendee.email)));
-  const suggestions = useContactsSearch(query).filter(
-    (contact) => !taken.has(emailKey(contact.email)),
-  );
-  const highlighted = suggestions[Math.min(highlight, Math.max(suggestions.length - 1, 0))];
+  const search = useContactsSearch(query);
+  const suggestions = search.contacts.filter((contact) => !taken.has(emailKey(contact.email)));
+  // Rows still on screen for an earlier query (debounce window, or the
+  // new query loading) are visible but never keyboard-selectable.
+  const stale = search.stale || query.trim() !== text.trim();
+  const highlighted = stale
+    ? undefined
+    : suggestions[Math.min(highlight, Math.max(suggestions.length - 1, 0))];
 
   const choose = (contact: Contact) => {
     onAdd({ displayName: contact.displayName, email: contact.email });
@@ -178,16 +182,16 @@ export function InviteeCombobox({
           }}
           onFocus={() => setOpen(true)}
           onKeyDown={(keyEvent) => {
-            if (keyEvent.key === 'ArrowDown' && suggestions.length > 0) {
+            if (keyEvent.key === 'ArrowDown' && !stale && suggestions.length > 0) {
               keyEvent.preventDefault();
               setHighlight((index) => (index + 1) % suggestions.length);
-            } else if (keyEvent.key === 'ArrowUp' && suggestions.length > 0) {
+            } else if (keyEvent.key === 'ArrowUp' && !stale && suggestions.length > 0) {
               keyEvent.preventDefault();
               setHighlight((index) => (index - 1 + suggestions.length) % suggestions.length);
             } else if (keyEvent.key === 'Enter') {
               keyEvent.preventDefault();
-              // A fully typed address is explicit; the highlight may still
-              // belong to the previous query while this one loads.
+              // A fully typed address is explicit; `highlighted` is unset
+              // while the rows still belong to an earlier query.
               if (isValidEmail(text) || !showList || !highlighted) {
                 addTyped();
               } else {
@@ -220,10 +224,11 @@ export function InviteeCombobox({
         >
           {suggestions.map((contact, index) => (
             <button
-              aria-selected={index === highlight}
+              aria-selected={!stale && index === highlight}
               className={`flex w-full items-baseline gap-2 px-3 py-1.5 text-left text-sm ${
-                index === highlight ? 'bg-blue-50' : 'hover:bg-neutral-50'
+                stale ? 'opacity-50' : index === highlight ? 'bg-blue-50' : 'hover:bg-neutral-50'
               }`}
+              data-stale={stale ? 'true' : undefined}
               id={`${listId}-${index}`}
               key={contact.id}
               onClick={() => choose(contact)}

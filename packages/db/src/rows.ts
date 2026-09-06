@@ -284,12 +284,14 @@ export interface PendingOpRow {
   readonly task_notes: string | null;
   readonly task_due: string | null;
   readonly dispatched_at: number | null;
+  readonly attendees_changed: number;
 }
 
 export const pendingOpFromRow = (row: PendingOpRow): PendingOp =>
   new PendingOp({
     accountId: row.account_id,
     attempts: row.attempts,
+    attendeesChanged: row.attendees_changed === 1 ? true : undefined,
     baseEtag: row.base_etag ?? undefined,
     calendarId: row.calendar_id,
     colorHex: row.color_hex ?? undefined,

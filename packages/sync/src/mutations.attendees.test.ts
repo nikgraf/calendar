@@ -17,7 +17,7 @@ import {
 import { RemindersClient, unavailableRemindersClient } from '@calendar/reminders';
 import { SqliteClient } from '@effect/sql-sqlite-node';
 import { expect, it } from '@effect/vitest';
-import { Effect, Layer } from 'effect';
+import { Effect, Layer, Scheduler } from 'effect';
 import { layer as reactivityLayer } from 'effect/unstable/reactivity/Reactivity';
 import { describe } from 'vitest';
 import { EventMutations } from './mutations.ts';
@@ -29,6 +29,15 @@ const stubTasksClient: GoogleTasksClientShape = {
   listTasks: () => Effect.die('tasks not used in this test'),
   patchTask: () => Effect.die('tasks not used in this test'),
 };
+
+/**
+ * Mutations fork the queue drain detached; a fiber yield between two
+ * mutations would let it push the first before the second coalesces it.
+ * The default yield cadence moves with every migration, so pin it: each
+ * test body runs to its own explicit processPendingOps without yielding.
+ */
+const noYield = <A, E, R>(effect: Effect.Effect<A, E, R>): Effect.Effect<A, E, R> =>
+  Effect.provideService(effect, Scheduler.MaxOpsBeforeYield, Number.MAX_SAFE_INTEGER);
 
 interface Sent {
   readonly event: Partial<GcalEventInput>;
@@ -170,7 +179,7 @@ describe('EventMutations attendees', () => {
       expect(sent[0]!.event.attendees).toEqual([
         { displayName: 'Bob', email: 'bob@example.com', responseStatus: 'needsAction' },
       ]);
-    }).pipe(Effect.provide(makeLayer(sent)));
+    }).pipe(noYield, Effect.provide(makeLayer(sent)));
   });
 
   it.effect('a guestless create sends no attendees key and no sendUpdates', () => {
@@ -189,7 +198,7 @@ describe('EventMutations attendees', () => {
       yield* mutations.processPendingOps();
       expect(sent[0]!.sendUpdates).toBeUndefined();
       expect('attendees' in sent[0]!.event && sent[0]!.event.attendees !== undefined).toBe(false);
-    }).pipe(Effect.provide(makeLayer(sent)));
+    }).pipe(noYield, Effect.provide(makeLayer(sent)));
   });
 
   it.effect('updateEvent replaces the list but keeps responses of retained guests', () => {
@@ -228,7 +237,7 @@ describe('EventMutations attendees', () => {
         'alice@example.com',
         'carol@example.com',
       ]);
-    }).pipe(Effect.provide(makeLayer(sent)));
+    }).pipe(noYield, Effect.provide(makeLayer(sent)));
   });
 
   it.effect('an empty list clears the guests and still notifies them', () => {
@@ -244,11 +253,11 @@ describe('EventMutations attendees', () => {
       yield* mutations.processPendingOps();
       expect(sent[0]!.event.attendees).toEqual([]);
       expect(sent[0]!.sendUpdates).toBe('all');
-    }).pipe(Effect.provide(makeLayer(sent)));
+    }).pipe(noYield, Effect.provide(makeLayer(sent)));
   });
 
   it.effect(
-    'a content edit on a meeting keeps the guests and notifies; on a solo event it does not',
+    'a content edit on a meeting notifies guests but leaves the attendee array alone',
     () => {
       const sent: Array<Sent> = [];
       return Effect.gen(function* () {
@@ -266,14 +275,66 @@ describe('EventMutations attendees', () => {
         });
         yield* mutations.processPendingOps();
         const byTitle = (title: string) => sent.find((entry) => entry.event.summary === title)!;
-        expect(emails(byTitle('Planning v2').event.attendees)).toEqual([
-          'nik@nikgraf.com',
-          'alice@example.com',
-        ]);
+        // Google replaces the whole array: a title patch must not carry it,
+        // or a room (never in our copy's editor view) would be dropped.
+        expect('attendees' in byTitle('Planning v2').event).toBe(false);
         expect(byTitle('Planning v2').sendUpdates).toBe('all');
-        expect(byTitle('Solo v2').event.attendees).toBeUndefined();
+        expect('attendees' in byTitle('Solo v2').event).toBe(false);
         expect(byTitle('Solo v2').sendUpdates).toBeUndefined();
-      }).pipe(Effect.provide(makeLayer(sent)));
+      }).pipe(noYield, Effect.provide(makeLayer(sent)));
+    },
+  );
+
+  it.effect(
+    'a guest edit keeps the room booking and a later title edit keeps the guest edit',
+    () => {
+      const sent: Array<Sent> = [];
+      return Effect.gen(function* () {
+        yield* seed;
+        const events = yield* EventRepo;
+        yield* events.upsertMany([
+          new EventRecord({
+            ...meeting,
+            attendees: [
+              ...meeting.attendees!,
+              new Attendee({
+                email: 'room@resource.calendar.google.com',
+                isResource: true,
+                responseStatus: 'accepted',
+              }),
+            ],
+            id: 'evt-room',
+          }),
+        ]);
+        const mutations = yield* EventMutations;
+        yield* mutations.updateEvent({
+          ...target,
+          changes: { attendees: [{ email: 'nik@nikgraf.com' }, { email: 'bob@example.com' }] },
+          eventId: 'evt-room',
+        });
+        // Coalesces into one op that still carries the guest edit.
+        yield* mutations.updateEvent({
+          ...target,
+          changes: { title: 'Roomy' },
+          eventId: 'evt-room',
+        });
+        const ops = yield* (yield* PendingOpRepo).listAll();
+        expect(ops).toHaveLength(1);
+        expect(ops[0]!.attendeesChanged).toBe(true);
+
+        yield* mutations.processPendingOps();
+        expect(sent).toHaveLength(1);
+        expect(sent[0]!.event.summary).toBe('Roomy');
+        expect(emails(sent[0]!.event.attendees)).toEqual([
+          'nik@nikgraf.com',
+          'bob@example.com',
+          'room@resource.calendar.google.com',
+        ]);
+        expect(sent[0]!.event.attendees?.[2]).toMatchObject({
+          resource: true,
+          responseStatus: 'accepted',
+        });
+      }).pipe(noYield, Effect.provide(makeLayer(sent)));
     },
   );
 
@@ -299,6 +360,7 @@ describe('EventMutations attendees', () => {
       expect(ops.map((op) => op.kind)).toEqual(['create']);
       expect(emails(ops[0]!.payload?.attendees)).toEqual(['bob@example.com']);
     }).pipe(
+      noYield,
       Effect.provide(
         makeLayer(sent, { insertEvent: () => Effect.die('the drain must not run in this test') }),
       ),

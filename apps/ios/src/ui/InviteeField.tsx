@@ -57,9 +57,8 @@ export function InviteeField({
   }, []);
 
   const taken = new Set(attendees.map((attendee) => emailKey(attendee.email)));
-  const suggestions = useContactsSearch(text).filter(
-    (contact) => !taken.has(emailKey(contact.email)),
-  );
+  const search = useContactsSearch(text);
+  const suggestions = search.contacts.filter((contact) => !taken.has(emailKey(contact.email)));
 
   const choose = (contact: Contact) => {
     onAdd({ displayName: contact.displayName, email: contact.email });
@@ -125,7 +124,8 @@ export function InviteeField({
         onBlur={addTyped}
         onChangeText={setText}
         onSubmitEditing={() => {
-          if (suggestions[0] && !isValidEmail(text)) {
+          // Rows for an earlier query are shown dimmed, never auto-picked.
+          if (suggestions[0] && !search.stale && !isValidEmail(text)) {
             choose(suggestions[0]);
           } else {
             addTyped();
@@ -140,7 +140,11 @@ export function InviteeField({
       {text.trim() !== '' ? (
         <View style={styles.suggestions}>
           {suggestions.map((contact) => (
-            <Pressable key={contact.id} onPress={() => choose(contact)} style={styles.suggestion}>
+            <Pressable
+              key={contact.id}
+              onPress={() => choose(contact)}
+              style={[styles.suggestion, search.stale && styles.suggestionStale]}
+            >
               <Text style={styles.suggestionTitle}>{contact.displayName ?? contact.email}</Text>
               {contact.displayName ? (
                 <Text style={styles.suggestionMeta}>{contact.email}</Text>

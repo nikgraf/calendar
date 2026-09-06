@@ -183,6 +183,32 @@ describe('contacts sync', () => {
     }).pipe(Effect.provide(testLayer(client)));
   });
 
+  it.effect('a person re-sent without any email loses their cached rows', () => {
+    const client = peopleClient({
+      connections: [
+        {
+          connections: [person('people/c1', 'alice@example.com', 'Alice')],
+          nextSyncToken: 'conn-1',
+        },
+        {
+          connections: [{ names: [{ displayName: 'Alice' }], resourceName: 'people/c1' }],
+          nextSyncToken: 'conn-2',
+        },
+      ],
+      other: [{ nextSyncToken: 'other-1' }, { nextSyncToken: 'other-2' }],
+    });
+    return Effect.gen(function* () {
+      yield* seedAccount(true);
+      const engine = yield* SyncEngine;
+      yield* engine.syncAll();
+      yield* engine.syncAll();
+      expect(yield* (yield* ContactRepo).listByAccount('acc-1')).toEqual([]);
+      expect((yield* (yield* SyncStateRepo).get('acc-1', 'contacts:connections'))?.syncToken).toBe(
+        'conn-2',
+      );
+    }).pipe(Effect.provide(testLayer(client)));
+  });
+
   it.effect('an expired sync token triggers a full resync that replaces the tier', () => {
     const client = peopleClient({
       connections: [

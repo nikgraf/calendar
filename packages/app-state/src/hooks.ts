@@ -91,7 +91,10 @@ export const useEventsInRangeStable = (
  * next one loads so the dropdown never flickers empty between keystrokes.
  * An empty query yields [] without asking the backend.
  */
-export const useContactsSearch = (query: string, limit = 8): ReadonlyArray<Contact> => {
+export const useContactsSearch = (
+  query: string,
+  limit = 8,
+): { readonly contacts: ReadonlyArray<Contact>; readonly stale: boolean } => {
   const atoms = useBackendAtoms();
   const trimmed = query.trim();
   const result = useAtomValue(atoms.contactsSearch(`${String(limit)}:${trimmed}`));
@@ -102,9 +105,12 @@ export const useContactsSearch = (query: string, limit = 8): ReadonlyArray<Conta
     setPrevious(value.value);
   }
   if (trimmed === '') {
-    return [];
+    return { contacts: [], stale: false };
   }
-  return Option.isSome(value) ? value.value : previous;
+  // `stale` = the rows belong to an earlier query; show them, never select them.
+  return Option.isSome(value)
+    ? { contacts: value.value, stale: false }
+    : { contacts: previous, stale: true };
 };
 
 /** Task lists across accounts (for visibility toggles + connect rows). */

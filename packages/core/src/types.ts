@@ -148,6 +148,8 @@ export class Attendee extends Schema.Class<Attendee>('Attendee')({
   displayName: Schema.optional(Schema.String),
   email: Schema.String,
   isOrganizer: Schema.optional(Schema.Boolean),
+  /** A room/equipment booking. Never shown as a guest, always written back. */
+  isResource: Schema.optional(Schema.Boolean),
   isSelf: Schema.optional(Schema.Boolean),
   responseStatus: ResponseStatus,
 }) {}
@@ -188,6 +190,12 @@ export class EventRecord extends Schema.Class<EventRecord>('EventRecord')({
 export class PendingOp extends Schema.Class<PendingOp>('PendingOp')({
   accountId: Schema.String,
   attempts: Schema.Number,
+  /**
+   * Set on an update whose edit touched the guest list. Only then does the
+   * patch carry `attendees` — Google replaces the whole array, and a
+   * title-only patch must not rewrite guests from a possibly stale copy.
+   */
+  attendeesChanged: Schema.optional(Schema.Boolean),
   /** If-Match etag captured when the op was enqueued (update/delete). */
   baseEtag: Schema.optional(Schema.String),
   calendarId: Schema.String,

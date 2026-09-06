@@ -445,10 +445,12 @@ const make: Effect.Effect<
               }
             }
             if (syncToken) {
-              // A person whose emails changed drops the stale rows too.
+              // Every person on the page is re-sent in full: clear all of
+              // their rows first, so an address that was removed (or a
+              // person left without any) does not linger in the cache.
               yield* contactRepo.deleteByResourceNames(account.id, [
                 ...deleted,
-                ...new Set(upserts.map((contact) => contact.resourceName)),
+                ...new Set(persons(page).map((person) => person.resourceName)),
               ]);
               yield* contactRepo.upsertMany(upserts, passStartedAt);
             } else {

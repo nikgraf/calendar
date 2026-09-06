@@ -47,6 +47,23 @@ describe('mergeAttendees', () => {
     expect(merged.map((attendee) => attendee.email)).toEqual(['bob@example.com']);
   });
 
+  it('carries resource attendees over even though the editor never lists them', () => {
+    const room = new Attendee({
+      email: 'room@resource.calendar.google.com',
+      isResource: true,
+      responseStatus: 'accepted',
+    });
+    const merged = mergeAttendees([organizer, room, guest], [{ email: 'org@example.com' }]);
+    expect(merged.map((attendee) => attendee.email)).toEqual([
+      'Org@Example.com',
+      'room@resource.calendar.google.com',
+    ]);
+    expect(merged[1]?.isResource).toBe(true);
+    expect(mergeAttendees([room], []).map((attendee) => attendee.email)).toEqual([
+      'room@resource.calendar.google.com',
+    ]);
+  });
+
   it('lets the editor supply a display name for an existing guest without one', () => {
     const nameless = new Attendee({ email: 'c@example.com', responseStatus: 'declined' });
     const merged = mergeAttendees([nameless], [{ displayName: 'Carol', email: 'c@example.com' }]);

@@ -459,7 +459,8 @@ const makePendingOpRepo: Effect.Effect<PendingOpRepoShape, never, Reactivity | S
                                    payload, base_etag, attempts, next_attempt_at,
                                    last_error, created_at, color_hex,
                                    task_list_id, task_status,
-                                   task_title, task_notes, task_due, dispatched_at)
+                                   task_title, task_notes, task_due, dispatched_at,
+                                   attendees_changed)
           VALUES (${op.id}, ${op.accountId}, ${op.calendarId}, ${op.kind},
                   ${op.eventId},
                   ${op.payload ? JSON.stringify(eventPayloadJson(op.payload)) : null},
@@ -467,7 +468,7 @@ const makePendingOpRepo: Effect.Effect<PendingOpRepoShape, never, Reactivity | S
                   ${op.lastError ?? null}, ${op.createdAt}, ${op.colorHex ?? null},
                   ${op.taskListId ?? null}, ${op.taskStatus ?? null},
                   ${op.taskTitle ?? null}, ${op.taskNotes ?? null}, ${op.taskDue ?? null},
-                  ${op.dispatchedAt ?? null})
+                  ${op.dispatchedAt ?? null}, ${op.attendeesChanged ? 1 : 0})
         `),
         ),
       getById: (opId) =>
