@@ -68,7 +68,7 @@ export const changesFromSubscription = (
 export const bridgeMessage = (raw: string): string => {
   const causedBy = raw.lastIndexOf('Caused by:');
   const inner = causedBy === -1 ? raw : raw.slice(causedBy + 'Caused by:'.length);
-  return inner.replace(/^\s*RemindersBridgeError:\s*/, '').trim();
+  return inner.replace(/^\s*\w*BridgeError:\s*/, '').trim();
 };
 
 export interface RemindersClientShape {

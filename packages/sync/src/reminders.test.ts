@@ -10,6 +10,8 @@ import {
 import {
   GoogleCalendarClient,
   type GoogleCalendarClientShape,
+  GooglePeopleClient,
+  type GooglePeopleClientShape,
   GoogleTasksClient,
   type GoogleTasksClientShape,
 } from '@calendar/google';
@@ -44,6 +46,12 @@ const inertTasksClient: GoogleTasksClientShape = {
   patchTask: () => Effect.die('unexpected patchTask'),
 };
 
+/** Contacts sync is exercised in contacts.test.ts; keep it inert here. */
+const inertPeopleClient: GooglePeopleClientShape = {
+  listConnections: () => Effect.die('people not used in this test'),
+  listOtherContacts: () => Effect.die('people not used in this test'),
+};
+
 const testLayer = (
   fake: ReturnType<typeof makeFakeRemindersClient>,
   overrides: Layer.Layer<never, never, TaskRepo> = Layer.empty,
@@ -57,6 +65,7 @@ const testLayer = (
     Layer.provideMerge(reactivityLayer),
     Layer.provideMerge(Layer.succeed(GoogleCalendarClient, inertCalendarClient)),
     Layer.provideMerge(Layer.succeed(GoogleTasksClient, inertTasksClient)),
+    Layer.provideMerge(Layer.succeed(GooglePeopleClient, inertPeopleClient)),
     Layer.provideMerge(Layer.succeed(RemindersClient, fake.client)),
   );
 
@@ -67,6 +76,7 @@ const farFuture = today.add({ years: 2 }).toString();
 const longAgo = today.subtract({ years: 1 }).toString();
 
 const appleAccount = new Account({
+  contactsEnabled: false,
   createdAt: 1,
   displayName: 'Apple Reminders',
   email: '',
@@ -537,6 +547,7 @@ describe('reminder mutations', () => {
       const accounts = yield* AccountRepo;
       yield* accounts.upsert(
         new Account({
+          contactsEnabled: false,
           createdAt: 1,
           email: 'nik@nikgraf.com',
           id: 'acc-google',

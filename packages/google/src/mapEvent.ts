@@ -41,14 +41,17 @@ export const mapGcalEvent = (
     ? (event.status as 'cancelled' | 'confirmed' | 'tentative')
     : 'confirmed';
 
+  // Rooms stay in the record (flagged) so a write-back never drops them;
+  // the UI hides them.
   const attendees = event.attendees
-    ?.filter((attendee) => attendee.email && !attendee.resource)
+    ?.filter((attendee) => attendee.email)
     .map(
       (attendee) =>
         new Attendee({
           displayName: attendee.displayName,
           email: attendee.email ?? '',
           isOrganizer: attendee.organizer,
+          isResource: attendee.resource,
           isSelf: attendee.self,
           responseStatus: RESPONSE_STATUSES.has(attendee.responseStatus ?? '')
             ? (attendee.responseStatus as 'accepted' | 'declined' | 'needsAction' | 'tentative')
@@ -113,7 +116,24 @@ export const mapGcalCalendar = (
     timeZone: entry.timeZone ?? 'UTC',
   });
 
-/** Builds the insert/patch payload from a local event record. */
+/**
+ * The attendee array as Google wants it written. Sent only when an edit
+ * touched the guest list (insert, or an update flagged attendeesChanged):
+ * Google replaces the whole array, so an unrelated patch must omit it.
+ */
+export const toGcalAttendees = (event: EventRecord): GcalEventInput['attendees'] =>
+  event.attendees?.map((attendee) => ({
+    displayName: attendee.displayName,
+    email: attendee.email,
+    resource: attendee.isResource,
+    responseStatus: attendee.responseStatus,
+  }));
+
+/** Guests (not rooms) on the record — whether Google should email anyone. */
+export const hasGuests = (event: EventRecord): boolean =>
+  (event.attendees ?? []).some((attendee) => !attendee.isResource);
+
+/** Builds the insert/patch payload from a local event record (no attendees). */
 export const toGcalEventInput = (event: EventRecord): GcalEventInput => ({
   description: event.description,
   end: event.isAllDay

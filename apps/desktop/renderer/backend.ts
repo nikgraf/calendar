@@ -12,6 +12,7 @@ export interface PrivacyState {
 declare global {
   interface Window {
     calendarBridge: {
+      contactsStatus: () => Promise<string>;
       logError?: (text: string) => void;
       modelGenerate: (schema: unknown, prompt: string) => Promise<{ json: string }>;
       modelPrepareSpeech: (locale: string) => Promise<{ denied?: boolean; prepared?: boolean }>;

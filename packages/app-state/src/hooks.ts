@@ -1,6 +1,7 @@
 import type {
   Account,
   CalendarInfo,
+  Contact,
   EventRecord,
   PendingOpSummary,
   TaskListInfo,
@@ -85,6 +86,33 @@ export const useEventsInRangeStable = (
   return Option.isSome(value) ? value.value : previous;
 };
 
+/**
+ * Invitee suggestions for a query, holding the previous list while the
+ * next one loads so the dropdown never flickers empty between keystrokes.
+ * An empty query yields [] without asking the backend.
+ */
+export const useContactsSearch = (
+  query: string,
+  limit = 8,
+): { readonly contacts: ReadonlyArray<Contact>; readonly stale: boolean } => {
+  const atoms = useBackendAtoms();
+  const trimmed = query.trim();
+  const result = useAtomValue(atoms.contactsSearch(`${String(limit)}:${trimmed}`));
+  const value = AsyncResult.value(result);
+  const [previous, setPrevious] = useState<ReadonlyArray<Contact>>([]);
+  if (Option.isSome(value) && value.value !== previous) {
+    // Render-phase state adjustment (the React "derive from props" pattern).
+    setPrevious(value.value);
+  }
+  if (trimmed === '') {
+    return { contacts: [], stale: false };
+  }
+  // `stale` = the rows belong to an earlier query; show them, never select them.
+  return Option.isSome(value)
+    ? { contacts: value.value, stale: false }
+    : { contacts: previous, stale: true };
+};
+
 /** Task lists across accounts (for visibility toggles + connect rows). */
 export const useTaskLists = (): ReadonlyArray<TaskListInfo> => {
   const atoms = useBackendAtoms();
@@ -115,6 +143,7 @@ export const useBackendMutations = () => {
   const { mutations } = useBackendAtoms();
   const addAccount = useAtomSet(mutations.addAccount, { mode: 'promise' });
   const completeTask = useAtomSet(mutations.completeTask, { mode: 'promise' });
+  const connectContacts = useAtomSet(mutations.connectContacts, { mode: 'promise' });
   const connectReminders = useAtomSet(mutations.connectReminders, { mode: 'promise' });
   const createTask = useAtomSet(mutations.createTask, { mode: 'promise' });
   const createEvent = useAtomSet(mutations.createEvent, { mode: 'promise' });
@@ -152,6 +181,7 @@ export const useBackendMutations = () => {
     () => ({
       addAccount,
       completeTask,
+      connectContacts,
       connectReminders,
       createEvent,
       createTask,
@@ -172,6 +202,7 @@ export const useBackendMutations = () => {
     [
       addAccount,
       completeTask,
+      connectContacts,
       connectReminders,
       createEvent,
       createTask,

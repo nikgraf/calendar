@@ -8,6 +8,7 @@
     "./*": "./src/*.ts"
   },
   "dependencies": {
+    "@calendar/contacts": "workspace:*",
     "@calendar/core": "workspace:*",
     "@calendar/db": "workspace:*",
     "@calendar/google": "workspace:*",

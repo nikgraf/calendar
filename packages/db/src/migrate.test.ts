@@ -64,9 +64,12 @@ describe('runMigrations', () => {
       yield* sql`ALTER TABLE pending_ops DROP COLUMN task_notes`;
       yield* sql`ALTER TABLE pending_ops DROP COLUMN task_due`;
       yield* sql`ALTER TABLE pending_ops DROP COLUMN dispatched_at`;
+      yield* sql`ALTER TABLE pending_ops DROP COLUMN attendees_changed`;
       yield* sql`ALTER TABLE accounts DROP COLUMN provider`;
+      yield* sql`ALTER TABLE accounts DROP COLUMN contacts_enabled`;
       yield* sql`DROP TABLE tasks`;
       yield* sql`DROP TABLE task_lists`;
+      yield* sql`DROP TABLE contacts`;
       expect(yield* columnsOf('events')).not.toContain('hangout_link');
 
       yield* runMigrations;

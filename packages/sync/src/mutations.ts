@@ -3,6 +3,7 @@ import {
   Attendee,
   EventRecord,
   googleInstanceId,
+  mergeAttendees,
   normalizeHexColor,
   PendingOp,
   remainingRecurrence,
@@ -24,6 +25,7 @@ import {
   RecurringEditUnsupportedError,
   retryDelayMs,
   UnsupportedForProviderError,
+  type UpdateEventParams,
 } from './mutationTypes.ts';
 import { makeReminderMutations } from './reminderMutations.ts';
 import { makeTaskMutations } from './taskMutations.ts';
@@ -32,6 +34,33 @@ export * from './mutationTypes.ts';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const isoDate = (epochMs: number): string => new Date(epochMs).toISOString().slice(0, 10);
+
+/**
+ * The defined fields of an update, ready to spread over an EventRecord.
+ * `attendees` is the editor's replacement list and is merged against the
+ * current guests so server facts (responses, organizer) survive.
+ */
+/** Whether this edit — or a still-queued update it replaces — touched the guest list. */
+const attendeesFlag = (
+  changes: UpdateEventParams['changes'],
+  queued: ReadonlyArray<PendingOp>,
+): true | undefined =>
+  changes.attendees !== undefined || queued.some((op) => op.attendeesChanged === true)
+    ? true
+    : undefined;
+
+const definedChanges = (
+  changes: UpdateEventParams['changes'],
+  currentAttendees: EventRecord['attendees'],
+): Partial<EventRecord> => {
+  const { attendees, ...rest } = changes;
+  const defined: Partial<EventRecord> = Object.fromEntries(
+    Object.entries(rest).filter(([, value]) => value !== undefined),
+  );
+  return attendees === undefined
+    ? defined
+    : { ...defined, attendees: mergeAttendees(currentAttendees, attendees) };
+};
 
 const make: Effect.Effect<
   EventMutationsShape,
@@ -243,6 +272,10 @@ const make: Effect.Effect<
         const now = yield* Clock.currentTimeMillis;
         const record = new EventRecord({
           accountId: draft.accountId,
+          // Google adds the organizer itself; the insert response fills it in.
+          attendees: draft.attendees?.length
+            ? mergeAttendees(undefined, draft.attendees)
+            : undefined,
           calendarId: draft.calendarId,
           description: draft.description,
           endDate: draft.endDate,
@@ -483,19 +516,17 @@ const make: Effect.Effect<
           return yield* Effect.fail(new RecurringEditUnsupportedError({ eventId }));
         }
         const now = yield* Clock.currentTimeMillis;
-        const defined = Object.fromEntries(
-          Object.entries(changes).filter(([, value]) => value !== undefined),
-        );
         const merged = new EventRecord({
           ...existing,
-          ...defined,
+          ...definedChanges(changes, existing.attendees),
           syncStatus: 'pending',
           updatedAt: now,
         });
         yield* eventRepo.upsertMany([merged]);
 
         // Coalesce: a queued create absorbs the change; otherwise a fresh
-        // update op replaces any queued update.
+        // update op replaces any queued update — and inherits its guest-list
+        // flag, since the merged record still carries that edit.
         const queued = yield* opsForEvent(calendarId, eventId);
         yield* pendingOpRepo.removeForEvent(calendarId, eventId);
         const hasCreate = queued.some((op) => op.kind === 'create');
@@ -503,6 +534,7 @@ const make: Effect.Effect<
           new PendingOp({
             accountId,
             attempts: 0,
+            attendeesChanged: hasCreate ? undefined : attendeesFlag(changes, queued),
             baseEtag: hasCreate ? undefined : (existing.etag ?? undefined),
             calendarId,
             createdAt: now,
@@ -519,18 +551,20 @@ const make: Effect.Effect<
       Effect.gen(function* () {
         const { master, recurrence } = yield* loadMaster(accountId, calendarId, masterId);
         const now = yield* Clock.currentTimeMillis;
-        const defined = Object.fromEntries(
-          Object.entries(changes).filter(([, value]) => value !== undefined),
-        );
+        // Series/following edits merge guests against the master; an
+        // instance edit merges against the occurrence's own list below —
+        // an override can carry responses the master does not.
+        const defined = definedChanges(changes, master.attendees);
 
         if (scope === 'instance') {
           // Materialize (or update) the exception under its instance id; the
           // patch on that id creates the exception server-side.
           const instanceId = googleInstanceId(masterId, originalStartUtc, master.isAllDay);
           const existing = yield* eventRepo.getById(accountId, calendarId, instanceId);
+          const base = existing ?? projectInstance(master, originalStartUtc, now);
           const merged = new EventRecord({
-            ...(existing ?? projectInstance(master, originalStartUtc, now)),
-            ...defined,
+            ...base,
+            ...definedChanges(changes, base.attendees),
             originalStartUtc,
             recurrence: undefined,
             recurringEventId: masterId,
@@ -538,11 +572,13 @@ const make: Effect.Effect<
             updatedAt: now,
           });
           yield* eventRepo.upsertMany([merged]);
+          const queued = yield* opsForEvent(calendarId, instanceId);
           yield* pendingOpRepo.removeForEvent(calendarId, instanceId);
           yield* enqueueAndKick(
             new PendingOp({
               accountId,
               attempts: 0,
+              attendeesChanged: attendeesFlag(changes, queued),
               baseEtag: existing?.etag ?? undefined,
               calendarId,
               createdAt: now,
@@ -577,6 +613,7 @@ const make: Effect.Effect<
               : master.startUtc;
           const merged = new EventRecord({
             ...master,
+            attendees: defined.attendees ?? master.attendees,
             description: changes.description ?? master.description,
             endUtc: master.isAllDay ? master.endUtc : startUtc + duration,
             location: changes.location ?? master.location,
@@ -586,11 +623,13 @@ const make: Effect.Effect<
             updatedAt: now,
           });
           yield* eventRepo.upsertMany([merged]);
+          const queued = yield* opsForEvent(calendarId, masterId);
           yield* pendingOpRepo.removeForEvent(calendarId, masterId);
           yield* enqueueAndKick(
             new PendingOp({
               accountId,
               attempts: 0,
+              attendeesChanged: attendeesFlag(changes, queued),
               baseEtag: master.etag ?? undefined,
               calendarId,
               createdAt: now,

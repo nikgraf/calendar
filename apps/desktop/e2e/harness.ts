@@ -3,10 +3,18 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { Account, CalendarInfo, EventRecord, TaskListInfo, TaskRecord } from '@calendar/core';
+import {
+  Account,
+  CalendarInfo,
+  EventRecord,
+  GoogleContact,
+  TaskListInfo,
+  TaskRecord,
+} from '@calendar/core';
 import {
   AccountRepo,
   CalendarRepo,
+  ContactRepo,
   EventRepo,
   PendingOpRepo,
   reposLayer,
@@ -29,6 +37,8 @@ const require = createRequire(import.meta.url);
 export interface SeedData {
   readonly accounts: ReadonlyArray<Account>;
   readonly calendars: ReadonlyArray<CalendarInfo>;
+  /** Google People cache rows — the typeahead's only source with CALENDAR_CONTACTS=off. */
+  readonly contacts?: ReadonlyArray<GoogleContact>;
   readonly events: ReadonlyArray<EventRecord>;
   readonly taskLists?: ReadonlyArray<TaskListInfo>;
   readonly tasks?: ReadonlyArray<TaskRecord>;
@@ -53,6 +63,7 @@ export const seedDatabase = async (userDataDir: string, seed: SeedData): Promise
       const tasks = yield* TaskRepo;
       yield* tasks.upsertLists(seed.taskLists ?? [], 1);
       yield* tasks.upsertTasks(seed.tasks ?? [], 1);
+      yield* (yield* ContactRepo).upsertMany(seed.contacts ?? [], 1);
     }).pipe(Effect.provide(dbLayer)),
   );
 };
@@ -437,6 +448,8 @@ export interface App {
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 export interface LaunchOptions {
+  /** Same shape for the address book; no test needs 'real' yet. */
+  readonly contacts?: 'off' | 'real';
   /**
    * 'off' (default): no EventKit — seeded Apple rows stay as seeded and no
    * TCC prompt can fire on a developer's Mac. 'real': the helper is used;
@@ -461,6 +474,8 @@ export const launchApp = async (seed?: SeedData, options: LaunchOptions = {}): P
       // Seeded Apple rows must not be replaced by (or prompt for) the
       // developer's real Reminders — see remindersClient.ts.
       ...(options.reminders === 'real' ? {} : { CALENDAR_REMINDERS: 'off' }),
+      // Likewise the address book: no TCC prompt, no developer's contacts.
+      ...(options.contacts === 'real' ? {} : { CALENDAR_CONTACTS: 'off' }),
       CALENDAR_USERDATA: userDataDir,
     },
     stdio: ['ignore', 'pipe', 'pipe'],

@@ -38,6 +38,7 @@ const mondayAt7 = todayAt(7) - ((new Date().getUTCDay() + 6) % 7) * DAY_MS;
 const firstVisibleDaily = Math.max(dailyStart, mondayAt7);
 
 const account = new Account({
+  contactsEnabled: false,
   createdAt: 1,
   email: 'e2e@nikgraf.com',
   id: 'acc-e2e',

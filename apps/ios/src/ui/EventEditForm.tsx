@@ -11,10 +11,14 @@ import {
   toDateString,
   toTimeString,
 } from './editSheetShared.ts';
+import { InviteeField } from './InviteeField.tsx';
 
 /** The event half of EventEditSheet (mode === 'event'). */
 export function EventEditForm({ model }: { model: ReturnType<typeof useEventEditorModel> }) {
   const {
+    addAttendee,
+    attendees,
+    attendeeStatus,
     calendarKey,
     date,
     endTime,
@@ -26,6 +30,7 @@ export function EventEditForm({ model }: { model: ReturnType<typeof useEventEdit
     location,
     ownAttendee,
     remove,
+    removeAttendee,
     repeat,
     repeatCount,
     repeatEnds,
@@ -53,7 +58,7 @@ export function EventEditForm({ model }: { model: ReturnType<typeof useEventEdit
   } = model;
 
   return (
-    <ScrollView contentContainerStyle={styles.content}>
+    <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
       {error ? <Text style={styles.error}>{error}</Text> : null}
       {joinUrl ? (
         <Pressable onPress={() => void Linking.openURL(joinUrl)} style={styles.joinButton}>
@@ -247,33 +252,28 @@ export function EventEditForm({ model }: { model: ReturnType<typeof useEventEdit
           value={location}
         />
 
-        {existing?.attendees?.length ? (
-          <>
-            <Text style={styles.label}>Invitees</Text>
-            {ownAttendee ? (
-              <View style={styles.scopeRow}>
-                {RSVPS.map((option) => (
-                  <Pressable
-                    key={option.value}
-                    onPress={() => void respond(option.value)}
-                    style={[styles.scopeChip, rsvp === option.value && styles.scopeChipActive]}
-                  >
-                    <Text
-                      style={[styles.scopeLabel, rsvp === option.value && styles.scopeLabelActive]}
-                    >
-                      {option.label}
-                    </Text>
-                  </Pressable>
-                ))}
-              </View>
-            ) : null}
-            {existing.attendees.map((attendee) => (
-              <Text key={attendee.email} style={styles.attendee}>
-                {attendee.displayName ?? attendee.email} · {attendee.responseStatus}
-              </Text>
+        <Text style={styles.label}>Invitees</Text>
+        {ownAttendee ? (
+          <View style={styles.scopeRow}>
+            {RSVPS.map((option) => (
+              <Pressable
+                key={option.value}
+                onPress={() => void respond(option.value)}
+                style={[styles.scopeChip, rsvp === option.value && styles.scopeChipActive]}
+              >
+                <Text style={[styles.scopeLabel, rsvp === option.value && styles.scopeLabelActive]}>
+                  {option.label}
+                </Text>
+              </Pressable>
             ))}
-          </>
+          </View>
         ) : null}
+        <InviteeField
+          attendees={attendees}
+          attendeeStatus={attendeeStatus}
+          onAdd={addAttendee}
+          onRemove={removeAttendee}
+        />
 
         {existing ? (
           <Pressable
