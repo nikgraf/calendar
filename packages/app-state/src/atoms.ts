@@ -62,7 +62,7 @@ const MUTATION_REACTIVITY = {
   updateTask: [TASKS_KEY],
 } satisfies Partial<Record<keyof BackendClient, ReadonlyArray<string>>>;
 
-type MutationName = keyof typeof MUTATION_REACTIVITY;
+export type MutationName = keyof typeof MUTATION_REACTIVITY;
 const mutationNames = Object.keys(MUTATION_REACTIVITY) as ReadonlyArray<MutationName>;
 
 const buildAtoms = (client: BackendClient) => {
@@ -99,6 +99,12 @@ const buildAtoms = (client: BackendClient) => {
   // forever, so months of navigation would accumulate range atoms. The cap
   // comfortably exceeds what is ever mounted at once; an evicted range that
   // is revisited simply refetches.
+  //
+  // EVENTS_KEY only: anything that changes which events a window returns
+  // (visibility toggles, calendar removal) invalidates EVENTS_KEY on the
+  // repo side. Subscribing to CALENDARS_KEY too made every color change
+  // and every calendar-list sync pass refetch and re-expand every mounted
+  // range.
   const eventsInRange = boundedAtomCache((key) => {
     const [start, end] = key.split(':', 2);
     const rangeStartUtc = Number(start);
@@ -110,7 +116,7 @@ const buildAtoms = (client: BackendClient) => {
           return yield* backend.getEventsInRange({ rangeEndUtc, rangeStartUtc });
         }),
       )
-      .pipe(Atom.withReactivity([EVENTS_KEY, CALENDARS_KEY]));
+      .pipe(Atom.withReactivity([EVENTS_KEY]));
   });
 
   const taskLists = runtime
@@ -122,7 +128,9 @@ const buildAtoms = (client: BackendClient) => {
     )
     .pipe(Atom.withReactivity([TASKLISTS_KEY]));
 
-  // Keys are date strings because task due days are date-only.
+  // Keys are date strings because task due days are date-only. TASKS_KEY
+  // only, for the same reason as eventsInRange: list visibility and list
+  // removal invalidate TASKS_KEY on the repo side.
   const tasksInRange = boundedAtomCache((key) => {
     const [start, end] = key.split(':', 2);
     const startDate = start ?? '';
@@ -134,7 +142,7 @@ const buildAtoms = (client: BackendClient) => {
           return yield* backend.getTasksInRange({ endDate, startDate });
         }),
       )
-      .pipe(Atom.withReactivity([TASKS_KEY, TASKLISTS_KEY]));
+      .pipe(Atom.withReactivity([TASKS_KEY]));
   });
 
   // Typeahead queries, keyed `${limit}:${query}`. CONTACTS_KEY re-runs an

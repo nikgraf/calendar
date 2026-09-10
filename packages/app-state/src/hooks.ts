@@ -1,5 +1,7 @@
 import type {
   Account,
+  BackendPayload,
+  BackendSuccess,
   CalendarInfo,
   Contact,
   EventRecord,
@@ -7,9 +9,9 @@ import type {
   TaskListInfo,
   TaskRecord,
 } from '@calendar/core';
-import { RegistryContext, useAtomSet, useAtomValue } from '@effect/atom-react';
-import { Option } from 'effect';
-import { AsyncResult } from 'effect/unstable/reactivity';
+import { RegistryContext, useAtomValue } from '@effect/atom-react';
+import { Cause, Effect, Exit, Option } from 'effect';
+import { AsyncResult, AtomRegistry } from 'effect/unstable/reactivity';
 import {
   createContext,
   createElement,
@@ -19,7 +21,7 @@ import {
   useState,
   type ReactNode,
 } from 'react';
-import { rangeKey, type BackendAtoms } from './atoms.ts';
+import { type MutationName, rangeKey, type BackendAtoms } from './atoms.ts';
 
 const AtomsContext = createContext<BackendAtoms | null>(null);
 
@@ -149,89 +151,58 @@ export const useListColorLookup = (): ((task: TaskRecord) => string | undefined)
   }, [taskLists]);
 };
 
-/** Promise-returning mutation callbacks; each invalidates its reactivity keys. */
+/**
+ * Promise-returning mutation callbacks; each invalidates its reactivity keys.
+ *
+ * Built once per registry from the atoms record instead of nineteen
+ * `useAtomSet` calls: that hook mounts its atom in an effect, so every
+ * consumer (editors, sidebar, settings, drag) paid nineteen mounts and a
+ * nineteen-dependency memo. A fn atom needs no mount to be set — the
+ * registry runs it and the reactivity keys fire on completion, which is
+ * exactly what promise mode did.
+ */
 export const useBackendMutations = () => {
   const { mutations } = useBackendAtoms();
-  const addAccount = useAtomSet(mutations.addAccount, { mode: 'promise' });
-  const completeTask = useAtomSet(mutations.completeTask, { mode: 'promise' });
-  const connectContacts = useAtomSet(mutations.connectContacts, { mode: 'promise' });
-  const connectReminders = useAtomSet(mutations.connectReminders, { mode: 'promise' });
-  const createTask = useAtomSet(mutations.createTask, { mode: 'promise' });
-  const createEvent = useAtomSet(mutations.createEvent, { mode: 'promise' });
-  const deleteEvent = useAtomSet(mutations.deleteEvent, { mode: 'promise' });
-  const deleteTask = useAtomSet(mutations.deleteTask, { mode: 'promise' });
-  const deleteRecurring = useAtomSet(mutations.deleteRecurring, {
-    mode: 'promise',
-  });
-  const discardPendingOp = useAtomSet(mutations.discardPendingOp, {
-    mode: 'promise',
-  });
-  const removeAccount = useAtomSet(mutations.removeAccount, {
-    mode: 'promise',
-  });
-  const respondToEvent = useAtomSet(mutations.respondToEvent, {
-    mode: 'promise',
-  });
-  const setCalendarColor = useAtomSet(mutations.setCalendarColor, {
-    mode: 'promise',
-  });
-  const setCalendarVisible = useAtomSet(mutations.setCalendarVisible, {
-    mode: 'promise',
-  });
-  const setTaskListVisible = useAtomSet(mutations.setTaskListVisible, {
-    mode: 'promise',
-  });
-  const syncNow = useAtomSet(mutations.syncNow, { mode: 'promise' });
-  const updateEvent = useAtomSet(mutations.updateEvent, { mode: 'promise' });
-  const updateRecurring = useAtomSet(mutations.updateRecurring, {
-    mode: 'promise',
-  });
-  const updateTask = useAtomSet(mutations.updateTask, { mode: 'promise' });
-
-  return useMemo(
-    () => ({
-      addAccount,
-      completeTask,
-      connectContacts,
-      connectReminders,
-      createEvent,
-      createTask,
-      deleteEvent,
-      deleteRecurring,
-      deleteTask,
-      discardPendingOp,
-      removeAccount,
-      respondToEvent,
-      setCalendarColor,
-      setCalendarVisible,
-      setTaskListVisible,
-      syncNow,
-      updateEvent,
-      updateRecurring,
-      updateTask,
-    }),
-    [
-      addAccount,
-      completeTask,
-      connectContacts,
-      connectReminders,
-      createEvent,
-      createTask,
-      deleteEvent,
-      deleteRecurring,
-      deleteTask,
-      discardPendingOp,
-      removeAccount,
-      respondToEvent,
-      setCalendarColor,
-      setCalendarVisible,
-      setTaskListVisible,
-      syncNow,
-      updateEvent,
-      updateRecurring,
-      updateTask,
-    ],
-  );
+  const registry = useContext(RegistryContext);
+  return useMemo(() => {
+    const set =
+      <M extends MutationName>(name: M) =>
+      async (payload: BackendPayload<M>): Promise<BackendSuccess<M>> => {
+        const atom = mutations[name];
+        registry.set(atom, payload as never);
+        const result: Effect.Effect<BackendSuccess<M>, unknown> = AtomRegistry.getResult(
+          registry,
+          atom,
+          { suspendOnWaiting: true },
+        );
+        const exit = await Effect.runPromiseExit(result);
+        if (Exit.isSuccess(exit)) {
+          return exit.value;
+        }
+        throw Cause.squash(exit.cause);
+      };
+    return {
+      addAccount: set('addAccount'),
+      completeTask: set('completeTask'),
+      connectContacts: set('connectContacts'),
+      connectReminders: set('connectReminders'),
+      createEvent: set('createEvent'),
+      createTask: set('createTask'),
+      deleteEvent: set('deleteEvent'),
+      deleteRecurring: set('deleteRecurring'),
+      deleteTask: set('deleteTask'),
+      discardPendingOp: set('discardPendingOp'),
+      removeAccount: set('removeAccount'),
+      respondToEvent: set('respondToEvent'),
+      setCalendarColor: set('setCalendarColor'),
+      setCalendarVisible: set('setCalendarVisible'),
+      setTaskListVisible: set('setTaskListVisible'),
+      syncNow: set('syncNow'),
+      updateEvent: set('updateEvent'),
+      updateRecurring: set('updateRecurring'),
+      updateTask: set('updateTask'),
+    };
+  }, [mutations, registry]);
 };
 
 /** The current time, updated every `intervalMs` (drives now-indicators). */

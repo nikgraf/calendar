@@ -3,7 +3,7 @@ import { Context, Effect, Layer } from 'effect';
 import { Reactivity } from 'effect/unstable/reactivity/Reactivity';
 import { SqlClient } from 'effect/unstable/sql/SqlClient';
 import type { SqlError } from 'effect/unstable/sql/SqlError';
-import { CALENDARS_KEY } from './keys.ts';
+import { CALENDARS_KEY, EVENTS_KEY } from './keys.ts';
 import { calendarFromRow, type CalendarRow } from './rows.ts';
 import { accountGuard } from './repoShared.ts';
 
@@ -38,6 +38,11 @@ const makeCalendarRepo: Effect.Effect<CalendarRepoShape, never, Reactivity | Sql
     const reactivity = yield* Reactivity;
     const invalidating = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
       reactivity.mutation([CALENDARS_KEY], effect);
+    // Changes that alter which events a window returns (getWindow joins on
+    // is_visible and on the calendar row itself) also invalidate events, so
+    // the UI's range atoms need not watch CALENDARS_KEY.
+    const invalidatingEvents = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+      reactivity.mutation([CALENDARS_KEY, EVENTS_KEY], effect);
 
     return {
       list: (accountId) =>
@@ -50,14 +55,14 @@ const makeCalendarRepo: Effect.Effect<CalendarRepoShape, never, Reactivity | Sql
       removeByIds: (accountId, ids) =>
         ids.length === 0
           ? Effect.void
-          : invalidating(
+          : invalidatingEvents(
               Effect.asVoid(
                 sql`DELETE FROM calendars WHERE account_id = ${accountId}
                   AND id IN ${sql.in(ids)}`,
               ),
             ),
       removeMissing: (accountId, keepIds) =>
-        invalidating(
+        invalidatingEvents(
           Effect.asVoid(
             keepIds.length === 0
               ? sql`DELETE FROM calendars WHERE account_id = ${accountId}`
@@ -73,7 +78,7 @@ const makeCalendarRepo: Effect.Effect<CalendarRepoShape, never, Reactivity | Sql
           ),
         ),
       setVisible: (accountId, calendarId, isVisible) =>
-        invalidating(
+        invalidatingEvents(
           Effect.asVoid(
             sql`UPDATE calendars SET is_visible = ${isVisible ? 1 : 0}
               WHERE account_id = ${accountId} AND id = ${calendarId}`,
