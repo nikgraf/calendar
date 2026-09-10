@@ -1,3 +1,4 @@
+import { Data } from 'effect';
 /**
  * Why a model can or cannot run. A boolean conflated two very different
  * situations — "this build has no model at all" and "the model is there
@@ -35,6 +36,7 @@ export interface LanguageModel {
   readonly status: () => Promise<ModelStatus>;
 }
 
-export class ModelUnavailableError extends Error {
-  override readonly name = 'ModelUnavailableError';
-}
+/** No on-device model can run here; callers explain the gap instead of hiding the entry point. */
+export class ModelUnavailableError extends Data.TaggedError('ModelUnavailableError')<{
+  readonly message: string;
+}> {}

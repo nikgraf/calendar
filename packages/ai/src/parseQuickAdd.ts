@@ -26,7 +26,7 @@ export const parseQuickAdd = async (
     return { kind: 'rejected', reason: 'Type what you want to schedule.' };
   }
   if ((await model.status()) !== 'ready') {
-    throw new ModelUnavailableError('No on-device model is available.');
+    throw new ModelUnavailableError({ message: 'No on-device model is available.' });
   }
 
   let raw: unknown;

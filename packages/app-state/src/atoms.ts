@@ -99,10 +99,11 @@ const buildAtoms = (client: BackendClient) => {
   // forever, so months of navigation would accumulate range atoms. The cap
   // comfortably exceeds what is ever mounted at once; an evicted range that
   // is revisited simply refetches.
-  const RANGE_CACHE_LIMIT = 32;
-  const rangeAtoms = new Map<string, ReturnType<typeof makeRangeAtom>>();
-  const makeRangeAtom = (rangeStartUtc: number, rangeEndUtc: number) =>
-    runtime
+  const eventsInRange = boundedAtomCache((key) => {
+    const [start, end] = key.split(':', 2);
+    const rangeStartUtc = Number(start);
+    const rangeEndUtc = Number(end);
+    return runtime
       .atom(
         Effect.gen(function* () {
           const backend = yield* AppBackend;
@@ -110,25 +111,7 @@ const buildAtoms = (client: BackendClient) => {
         }),
       )
       .pipe(Atom.withReactivity([EVENTS_KEY, CALENDARS_KEY]));
-  const eventsInRange = (key: string) => {
-    const cached = rangeAtoms.get(key);
-    if (cached) {
-      // Re-insert to refresh recency.
-      rangeAtoms.delete(key);
-      rangeAtoms.set(key, cached);
-      return cached;
-    }
-    const [start, end] = key.split(':', 2);
-    const atom = makeRangeAtom(Number(start), Number(end));
-    rangeAtoms.set(key, atom);
-    if (rangeAtoms.size > RANGE_CACHE_LIMIT) {
-      const oldest = rangeAtoms.keys().next().value;
-      if (oldest !== undefined) {
-        rangeAtoms.delete(oldest);
-      }
-    }
-    return atom;
-  };
+  });
 
   const taskLists = runtime
     .atom(
@@ -139,11 +122,12 @@ const buildAtoms = (client: BackendClient) => {
     )
     .pipe(Atom.withReactivity([TASKLISTS_KEY]));
 
-  // Same bounded-LRU shape as eventsInRange; keys are date strings because
-  // task due days are date-only.
-  const taskRangeAtoms = new Map<string, ReturnType<typeof makeTaskRangeAtom>>();
-  const makeTaskRangeAtom = (startDate: string, endDate: string) =>
-    runtime
+  // Keys are date strings because task due days are date-only.
+  const tasksInRange = boundedAtomCache((key) => {
+    const [start, end] = key.split(':', 2);
+    const startDate = start ?? '';
+    const endDate = end ?? '';
+    return runtime
       .atom(
         Effect.gen(function* () {
           const backend = yield* AppBackend;
@@ -151,30 +135,15 @@ const buildAtoms = (client: BackendClient) => {
         }),
       )
       .pipe(Atom.withReactivity([TASKS_KEY, TASKLISTS_KEY]));
-  const tasksInRange = (key: string) => {
-    const cached = taskRangeAtoms.get(key);
-    if (cached) {
-      taskRangeAtoms.delete(key);
-      taskRangeAtoms.set(key, cached);
-      return cached;
-    }
-    const [start, end] = key.split(':', 2);
-    const atom = makeTaskRangeAtom(start ?? '', end ?? '');
-    taskRangeAtoms.set(key, atom);
-    if (taskRangeAtoms.size > RANGE_CACHE_LIMIT) {
-      const oldest = taskRangeAtoms.keys().next().value;
-      if (oldest !== undefined) {
-        taskRangeAtoms.delete(oldest);
-      }
-    }
-    return atom;
-  };
+  });
 
-  // Typeahead queries: the same bounded LRU, keyed `${limit}:${query}`.
-  // CONTACTS_KEY re-runs an open query when a sync pass or a grant lands.
-  const searchAtoms = new Map<string, ReturnType<typeof makeSearchAtom>>();
-  const makeSearchAtom = (query: string, limit: number) =>
-    runtime
+  // Typeahead queries, keyed `${limit}:${query}`. CONTACTS_KEY re-runs an
+  // open query when a sync pass or a grant lands.
+  const contactsSearch = boundedAtomCache((key) => {
+    const separator = key.indexOf(':');
+    const query = key.slice(separator + 1);
+    const limit = Number(key.slice(0, separator));
+    return runtime
       .atom(
         Effect.gen(function* () {
           const backend = yield* AppBackend;
@@ -182,24 +151,7 @@ const buildAtoms = (client: BackendClient) => {
         }),
       )
       .pipe(Atom.withReactivity([CONTACTS_KEY]));
-  const contactsSearch = (key: string) => {
-    const cached = searchAtoms.get(key);
-    if (cached) {
-      searchAtoms.delete(key);
-      searchAtoms.set(key, cached);
-      return cached;
-    }
-    const separator = key.indexOf(':');
-    const atom = makeSearchAtom(key.slice(separator + 1), Number(key.slice(0, separator)));
-    searchAtoms.set(key, atom);
-    if (searchAtoms.size > RANGE_CACHE_LIMIT) {
-      const oldest = searchAtoms.keys().next().value;
-      if (oldest !== undefined) {
-        searchAtoms.delete(oldest);
-      }
-    }
-    return atom;
-  };
+  });
 
   const mutation = <M extends keyof BackendClient>(
     method: M,
@@ -256,4 +208,34 @@ const buildAtoms = (client: BackendClient) => {
 };
 
 /** Builds the app's atom bundle around a platform BackendClient. Call once. */
+/** How many keyed atoms each bounded cache keeps before evicting the least recently used. */
+const ATOM_CACHE_LIMIT = 32;
+
+/**
+ * A keyed atom cache with LRU eviction, written once instead of three
+ * times: a hit is re-inserted to refresh its recency; a miss builds the
+ * atom and drops the oldest entry past the cap (an evicted key that is
+ * revisited simply refetches).
+ */
+const boundedAtomCache = <A>(make: (key: string) => A, limit = ATOM_CACHE_LIMIT) => {
+  const cache = new Map<string, A>();
+  return (key: string): A => {
+    const cached = cache.get(key);
+    if (cached !== undefined) {
+      cache.delete(key);
+      cache.set(key, cached);
+      return cached;
+    }
+    const atom = make(key);
+    cache.set(key, atom);
+    if (cache.size > limit) {
+      const oldest = cache.keys().next().value;
+      if (oldest !== undefined) {
+        cache.delete(oldest);
+      }
+    }
+    return atom;
+  };
+};
+
 export const makeBackendAtoms = (client: BackendClient): BackendAtoms => buildAtoms(client);

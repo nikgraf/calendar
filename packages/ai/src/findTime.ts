@@ -175,7 +175,7 @@ export const parseFindTime = async (
     return { kind: 'rejected', reason: 'Describe the time you need.' };
   }
   if ((await model.status()) !== 'ready') {
-    throw new ModelUnavailableError('No on-device model is available.');
+    throw new ModelUnavailableError({ message: 'No on-device model is available.' });
   }
   let raw: unknown;
   try {

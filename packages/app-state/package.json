@@ -15,7 +15,7 @@
     "effect": "catalog:"
   },
   "devDependencies": {
-    "@types/react": "^19.2.17",
+    "@types/react": "catalog:",
     "typescript": "catalog:",
     "vitest": "catalog:"
   },

@@ -51,6 +51,10 @@ export const initFileLogging = (userDataDir: string): void => {
   }
   process.on('uncaughtException', (error) => {
     appendLog('[fatal]', [String(error), error.stack ?? '']);
+    // Node's contract: the process is in an undefined state after this.
+    // Exit (non-zero, after the log line landed) rather than limp on;
+    // macOS relaunches nothing, the user reopens the app.
+    setTimeout(() => process.exit(1), 50);
   });
   process.on('unhandledRejection', (reason) => {
     appendLog('[rejection]', [String(reason)]);
