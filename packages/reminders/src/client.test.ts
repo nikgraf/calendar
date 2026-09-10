@@ -1,6 +1,7 @@
 import { Effect } from 'effect';
 import { describe, expect, it } from 'vitest';
-import { bridgeMessage, makeRemindersClient } from './client.ts';
+import { bridgeMessage } from '@calendar/core';
+import { makeRemindersClient } from './client.ts';
 
 describe('bridgeMessage', () => {
   it('passes the helper wire message through and unwraps the Expo exception envelope', () => {

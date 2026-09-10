@@ -309,9 +309,9 @@ importers:
 
   packages/contacts:
     dependencies:
-      '@calendar/reminders':
+      '@calendar/core':
         specifier: workspace:*
-        version: link:../reminders
+        version: link:../core
       effect:
         specifier: 'catalog:'
         version: 4.0.0-rc.111

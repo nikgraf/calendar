@@ -1,4 +1,5 @@
 export * from './backend.ts';
+export * from './bridge/subscription.ts';
 export * from './layout/allDayLane.ts';
 export * from './layout/dayGrid.ts';
 export * from './layout/dayMembership.ts';

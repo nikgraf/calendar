@@ -3,6 +3,7 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { createInterface } from 'node:readline';
 import type { Readable, Writable } from 'node:stream';
+import type { BridgeTransport } from '@calendar/core';
 import { app } from 'electron';
 
 /**
@@ -174,6 +175,22 @@ export const callHelper = (method: string, params?: Record<string, unknown>): Pr
     helper.stdin.write(`${JSON.stringify({ id, method, ...(params ? { params } : {}) })}\n`);
   });
 };
+
+/**
+ * The helper as a bridge transport for the Reminders and Contacts
+ * clients, or the reason there is none. CALENDAR_REMINDERS=off /
+ * CALENDAR_CONTACTS=off make a bridge unreachable on purpose: the e2e
+ * suite seeds Apple rows straight into SQLite and must never let a real
+ * sync (or a TCC prompt) touch a developer's data.
+ */
+export const helperTransport = (
+  killSwitch: string,
+): BridgeTransport | { readonly unavailable: string } =>
+  process.env[killSwitch] === 'off'
+    ? { unavailable: `disabled by ${killSwitch}=off` }
+    : helperAvailable()
+      ? { invoke: callHelper, subscribe: onHelperEvent }
+      : { unavailable: 'helper binary missing — run build:helper' };
 
 /** Wire once from main: kill the child when the app quits. */
 export const registerHelperLifecycle = (): void => {

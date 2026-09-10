@@ -1,6 +1,7 @@
-import { bridgeMessage } from '@calendar/reminders/client';
-import { Context, Data, Effect, Schema, Stream } from 'effect';
+import { type BridgeTransport, bridgeMessage, changesFromSubscription } from '@calendar/core';
+import { Context, Data, Effect, Layer, Schema, Stream } from 'effect';
 import {
+  CONTACTS_CHANGED_EVENT,
   CONTACTS_METHODS,
   type ContactsAuthorization,
   type DeviceContactJson,
@@ -125,3 +126,18 @@ export const unavailableContactsClient = (reason: string): ContactsClientShape =
     status: () => Effect.succeed('unavailable' as const),
   };
 };
+
+/** One layer per host — see remindersLayer for the shape. */
+export const contactsClientFrom = (
+  source: BridgeTransport | { readonly unavailable: string },
+): ContactsClientShape =>
+  'unavailable' in source
+    ? unavailableContactsClient(source.unavailable)
+    : makeContactsClient(
+        source.invoke,
+        changesFromSubscription((listener) => source.subscribe(CONTACTS_CHANGED_EVENT, listener)),
+      );
+
+export const contactsLayer = (
+  source: BridgeTransport | { readonly unavailable: string },
+): Layer.Layer<ContactsClient> => Layer.succeed(ContactsClient, contactsClientFrom(source));

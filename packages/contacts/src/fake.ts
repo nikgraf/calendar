@@ -1,4 +1,4 @@
-import { changesFromSubscription } from '@calendar/reminders/client';
+import { changesFromSubscription } from '@calendar/core';
 import { Effect } from 'effect';
 import { ContactsAccessError, type ContactsClientShape, contactsReadable } from './client.ts';
 import type { ContactsAuthorization, DeviceContactJson } from './protocol.ts';

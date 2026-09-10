@@ -1,6 +1,6 @@
+import { changesFromSubscription } from '@calendar/core';
 import { Effect } from 'effect';
 import {
-  changesFromSubscription,
   RemindersAccessError,
   type RemindersClientShape,
   RemindersRequestError,

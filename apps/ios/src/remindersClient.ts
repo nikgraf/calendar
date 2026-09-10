@@ -1,9 +1,8 @@
+import type { BridgeTransport } from '@calendar/core';
 import {
-  changesFromSubscription,
-  makeRemindersClient,
   RemindersClient,
+  remindersClientFrom,
   type RemindersClientShape,
-  unavailableRemindersClient,
 } from '@calendar/reminders';
 import { Layer } from 'effect';
 import { loadRemindersModule } from '../modules/solunivo-reminders/index.ts';
@@ -15,15 +14,19 @@ import { loadRemindersModule } from '../modules/solunivo-reminders/index.ts';
  */
 const native = loadRemindersModule();
 
-export const iosRemindersClient: RemindersClientShape = native
-  ? makeRemindersClient(
-      (method, params) => native.invoke(method, params),
-      changesFromSubscription((listener) => {
+const transport: BridgeTransport | { readonly unavailable: string } = native
+  ? {
+      invoke: (method, params) => native.invoke(method, params),
+      // The module emits one event; the transport's event name is the
+      // helper's, so map it here.
+      subscribe: (_event, listener) => {
         const subscription = native.addListener('remindersChanged', listener);
         return () => subscription.remove();
-      }),
-    )
-  : unavailableRemindersClient('reminders module not in this build — rebuild the dev client');
+      },
+    }
+  : { unavailable: 'reminders module not in this build — rebuild the dev client' };
+
+export const iosRemindersClient: RemindersClientShape = remindersClientFrom(transport);
 
 export const iosRemindersLayer: Layer.Layer<RemindersClient> = Layer.succeed(
   RemindersClient,

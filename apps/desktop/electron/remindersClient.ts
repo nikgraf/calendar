@@ -1,33 +1,15 @@
-import {
-  changesFromSubscription,
-  makeRemindersClient,
-  RemindersClient,
-  type RemindersClientShape,
-  unavailableRemindersClient,
-} from '@calendar/reminders';
+import { RemindersClient, remindersClientFrom, remindersLayer } from '@calendar/reminders';
 import { Layer } from 'effect';
-import { callHelper, helperAvailable, onHelperEvent } from './helperProcess.ts';
+import { helperTransport } from './helperProcess.ts';
 
 /**
  * RemindersClient over the Swift helper: every `reminders.*` method is one
  * stdio request. Without a helper binary (a dev checkout that never ran
  * build:helper) the client reports 'unavailable' instead of failing
- * spawn on every sync tick. CALENDAR_REMINDERS=off makes EventKit
- * unreachable on purpose: the e2e suite seeds Apple rows straight into
- * SQLite and must never let a real sync (or a TCC prompt) touch them on
- * a developer's Mac.
+ * spawn on every sync tick; see helperTransport for the kill switch.
  */
-export const desktopRemindersClient: RemindersClientShape =
-  process.env['CALENDAR_REMINDERS'] === 'off'
-    ? unavailableRemindersClient('disabled by CALENDAR_REMINDERS=off')
-    : helperAvailable()
-      ? makeRemindersClient(
-          (method, params) => callHelper(method, params),
-          changesFromSubscription((listener) => onHelperEvent('reminders.changed', listener)),
-        )
-      : unavailableRemindersClient('helper binary missing — run build:helper');
+export const desktopRemindersClient = remindersClientFrom(helperTransport('CALENDAR_REMINDERS'));
 
-export const desktopRemindersLayer: Layer.Layer<RemindersClient> = Layer.succeed(
-  RemindersClient,
-  desktopRemindersClient,
+export const desktopRemindersLayer: Layer.Layer<RemindersClient> = remindersLayer(
+  helperTransport('CALENDAR_REMINDERS'),
 );
