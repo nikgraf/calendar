@@ -2,8 +2,8 @@ import {
   EventRecord,
   eventsScope,
   type GoogleContact,
+  plainDateToUtcMs,
   SyncState,
-  Temporal,
   type Account,
 } from '@calendar/core';
 import {
@@ -18,6 +18,7 @@ import {
   GoogleCalendarClient,
   GooglePeopleClient,
   GoogleTasksClient,
+  instantMs,
   mapGcalCalendar,
   mapGcalEvent,
   mapGcalTask,
@@ -72,6 +73,14 @@ const withTransientRetry = <A, E extends { readonly _tag: string }, R>(
     while: (error) => error._tag === 'RateLimitedError' || error._tag === 'ApiUnavailableError',
   });
 
+const plainDateMs = (isoDate: string): number | undefined => {
+  try {
+    return plainDateToUtcMs(isoDate);
+  } catch {
+    return undefined;
+  }
+};
+
 /**
  * Cancelled instances of recurring events arrive without times but with
  * originalStartTime; they must be stored as tombstones so expansion drops
@@ -82,11 +91,12 @@ const cancelledOverrideTombstone = (
   context: { accountId: string; calendarId: string; syncedAt: number },
 ): EventRecord | null => {
   const original = item.originalStartTime;
+  // Tolerant like mapGcalEvent: a malformed originalStartTime skips this
+  // tombstone instead of failing the calendar's pass with a defect.
   const originalStartUtc = original?.dateTime
-    ? Temporal.Instant.from(original.dateTime).epochMilliseconds
+    ? instantMs(original.dateTime)
     : original?.date
-      ? Temporal.PlainDate.from(original.date).toZonedDateTime({ timeZone: 'UTC' }).toInstant()
-          .epochMilliseconds
+      ? plainDateMs(original.date)
       : undefined;
   if (!item.recurringEventId || originalStartUtc === undefined) {
     return null;

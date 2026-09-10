@@ -67,6 +67,19 @@ describe('mapGcalEvent', () => {
     expect(record?.startTimeZone).toBeUndefined();
   });
 
+  it('returns null for an unparsable dateTime instead of throwing', () => {
+    expect(
+      mapGcalEvent(
+        {
+          end: { dateTime: '2026-07-02T13:00:00Z' },
+          id: 'bad',
+          start: { dateTime: 'not-a-timestamp' },
+        },
+        { accountId: 'acc-1', calendarId: 'cal-1', defaultTimeZone: 'UTC', syncedAt: 0 },
+      ),
+    ).toBeNull();
+  });
+
   it('returns null for tombstones without times', () => {
     expect(mapGcalEvent({ id: 'gone', status: 'cancelled' }, context)).toBeNull();
   });

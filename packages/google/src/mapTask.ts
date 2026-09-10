@@ -1,5 +1,6 @@
-import { TaskListInfo, TaskRecord, Temporal } from '@calendar/core';
+import { TaskListInfo, TaskRecord } from '@calendar/core';
 import type { GcalTask, GcalTaskList } from './apiTypes.ts';
+import { instantMs } from './mapEvent.ts';
 
 const TASK_STATUSES = new Set(['completed', 'needsAction']);
 
@@ -19,9 +20,8 @@ export const mapGcalTask = (
   const status = TASK_STATUSES.has(task.status ?? '')
     ? (task.status as 'completed' | 'needsAction')
     : 'needsAction';
-  const completedAt = task.completed
-    ? Temporal.Instant.from(task.completed).epochMilliseconds
-    : undefined;
+  // Malformed timestamps degrade the field, not the row (see instantMs).
+  const completedAt = task.completed ? instantMs(task.completed) : undefined;
   return new TaskRecord({
     accountId: context.accountId,
     ...(completedAt === undefined ? {} : { completedAt }),
@@ -32,7 +32,7 @@ export const mapGcalTask = (
     provider: 'google',
     status,
     title: task.title ?? '(untitled)',
-    updatedAt: task.updated ? Temporal.Instant.from(task.updated).epochMilliseconds : 0,
+    updatedAt: (task.updated ? instantMs(task.updated) : undefined) ?? 0,
     ...(task.webViewLink ? { webViewLink: task.webViewLink } : {}),
   });
 };

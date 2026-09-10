@@ -4,6 +4,15 @@ import { mapGcalTask } from './mapTask.ts';
 const CONTEXT = { accountId: 'acc-1', taskListId: 'list-1' };
 
 describe('mapGcalTask', () => {
+  it('malformed completed/updated timestamps degrade the field, not the row', () => {
+    const task = mapGcalTask(
+      { completed: 'yesterday', id: 't', status: 'completed', title: 'x', updated: '??' },
+      { accountId: 'acc-1', taskListId: 'list-1' },
+    );
+    expect(task?.completedAt).toBeUndefined();
+    expect(task?.updatedAt).toBe(0);
+  });
+
   it('keeps only the date from due — the API discards the time portion', () => {
     const task = mapGcalTask(
       { due: '2026-08-30T00:00:00.000Z', id: 't1', status: 'needsAction', title: 'Pay rent' },
