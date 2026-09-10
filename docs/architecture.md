@@ -26,7 +26,7 @@ BackendClient                            (packages/core/src/backend.ts)
 AppBackendRpcs handlers                  (packages/sync/src/backendHandlers.ts)
   ▼
 EventMutations / repos                   (packages/sync/src/mutations.ts,
-  │                                       packages/db/src/repos.ts)
+  │                                       packages/db/src/*Repo.ts)
   ▼
 SQLite (node:sqlite / op-sqlite)
 

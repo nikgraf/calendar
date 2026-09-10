@@ -415,3 +415,173 @@ desktop waits on a helper binary (below).
 - [x] iOS all-day event chips open the editor (were a plain View; task
       chips beside them were pressable). VoiceOver label + testID, Maestro
       flow 12.
+
+### Backlog sweep (2026-09-11), closed items
+
+One PR (`todo/backlog-tiers`), one commit per item, tiers 1–6 of the
+2026-09-10 backlog minus PR videos and app icons.
+
+Correctness and the sync path:
+
+- [x] Permanent rejections are announced — done: a non-409 4xx drops the
+      op _and_ broadcasts `notice:dropped` (DroppedToast on both apps);
+      `markFailed` stores the real reason (`describeFailure`) so the
+      unsynced-changes list can show it; `processPendingOps` logs the
+      squashed cause instead of swallowing it. `InsufficientScopeError`
+      disables tasks only for task ops. A permanently rejected createTask
+      also removes its optimistic `local-` row.
+- [x] Tolerant row decoders — done: `pendingOpFromRow` returns `undefined`
+      for a payload that no longer decodes and the queue skips it (logged),
+      instead of throwing out of `listAll()` on every mutation. Enum
+      columns go through `oneOf` guards, not bare `as` casts. Decision: no
+      payload version tag — the schema is the tag; a row that fails it is
+      quarantined by being ignored, and the Discard UI still lists it.
+- [x] Pulls skip rows with a queued local edit — done: `upsertMany` /
+      `upsertTasks` take `{ mode: 'pull' }` and leave `pending` rows alone;
+      `setStatus`/`updateLocal` now mark tasks pending (the docs had claimed
+      it); an abandoned op hands its row back via `releaseRow`
+      (`markSynced`, or delete for a create). Documented in architecture.md.
+- [x] Local write and queue change commit in one transaction — done:
+      every coalesce-then-enqueue path runs inside `sql.withTransaction`
+      with the drain kicked after commit (`transactional` helper); a
+      rollback test drops `pending_ops` mid-mutation. Decision: the kick is
+      `Effect.suspend(forkDetach)` so a failed transaction never starts a
+      drain; the color test is pinned with `noYield` (see
+      docs/google-sync-and-testing.md).
+- [x] `truncateRecurrence` prunes RDATE — done: a this-and-following split
+      drops RDATE values at or after the split (`parseDateList`,
+      `listValueMs`), honouring the series time zone for floating values.
+- [x] Malformed timestamps degrade the row, not the pass — done:
+      `instantMs`/`plainDateMs` return `undefined` and the mapper skips
+      the row with a warning; the calendar's pass completes.
+- [x] Desktop token store — done: temp-file + rename writes,
+      `isEncryptionAvailable()` guard with a typed failure, an in-memory
+      cache so authed requests stop hitting file + Keychain, one
+      serialized read-modify-write. `makeEncryptedTokenStore(deps)` is unit
+      tested with a fake safeStorage.
+- [x] Indexes and bounds — done: migration 10 adds the `pending_ops`
+      drain index, `tasks(due_date)` and an events window index that leads
+      with the range; `listDue` pages at 200; the masters query has a lower
+      bound. `CREATE INDEX IF NOT EXISTS` because the migration test
+      re-runs against a seeded schema.
+- [x] Sync-loop nits — done in one commit: per-account `catchCause` in
+      `syncRemindersOnly`; the second full pass re-checks `skipped`;
+      `Retry-After` is honoured by the transient retry loop; every error
+      branch drains `response.json`; `DeviceContacts.list()` is
+      single-flighted and a failed snapshot retries after `FAILURE_RETRY_MS`
+      instead of caching `[]`; migrations enforce monotonic ids; an
+      undecodable 2xx drops the op instead of retrying forever.
+- [x] Electron hardening — done: a CSP via `onHeadersReceived` outside
+      dev, `will-navigate` + `setWindowOpenHandler` allow-lists on every
+      web-contents, `model:*` payloads validated and bounded, the helper is
+      killed on request timeout, `renderer-error` is capped, settings are
+      written atomically.
+- [x] Adapter drift — done: `finishAddAccount`, `makeSyncKicker`, the
+      bridge client factories (`remindersClientFrom`/`contactsClientFrom` + layers, `helperTransport(killSwitch)`) live in the packages;
+      `changesFromSubscription`/`bridgeMessage` moved to
+      `@calendar/core/bridge`. iOS gets no `CALENDAR_*=off` switch — its
+      e2e runs against the real bridges by design (flow 10).
+
+Cost, CI and distribution:
+
+- [x] Docs-only changes skip the macOS jobs — done: a `changes` job
+      classifies the push via the GitHub compare API and the macOS jobs
+      carry `if:` guards (not `paths-ignore`, which would leave required
+      checks unreported).
+- [x] One reusable gate — done: `gate.yml` (`workflow_call`) replaces the
+      duplicated steps in ci.yml and ios.yml. The check is now named
+      "Gate / Lint, typecheck, unit tests" — branch protection must be
+      pointed at it.
+- [x] Caches — done: `apps/desktop/helper/.build`, the Electron binary and
+      `~/.maestro` are cached; the hoisted `node_modules` link phase is
+      left alone (pnpm's store cache already covers the download).
+- [x] Supply chain — done: Maestro pinned to 2.10.0 with a sha256,
+      `EXPO_TOKEN` scoped to the steps that need it, `pnpm/action-setup`
+      SHA-pinned, `dependabot.yml` for actions and npm.
+- [x] Flake budget — done: `retry: 1` on the desktop e2e specs.
+- [x] Distribution — done: the testing build embeds the RFC 8252 desktop
+      OAuth client from a secret-fed `google-oauth.json`; versions start
+      at 0.1.0 on both platforms with a CHANGELOG. Crash reporting stays
+      off (privacy posture); auto-update remains blocked on the private repo.
+
+Developer workflow and tests:
+
+- [x] Tests for untested pure code — done: all-day lane packing, the
+      Google API schemas' tolerance, the Tasks client, the device contacts
+      cache, the token store, `assembleWindow`, row decoders.
+- [x] A fake Google server — done: `packages/sync/src/testing/fakeGoogle.ts`
+      behind `HttpClient.make` replays calendar/events/tasks fixtures with
+      410 sync-token expiry, tombstones, watermarks and 412; `engine.http.test.ts`
+      drives the real poll/push/pull loop through it. Engine tests must
+      `TestClock.adjust` between passes.
+- [x] Hooks and scripts — done: `vp config` installs a pre-commit hook
+      that runs `vp staged` (`vp check --fix` on staged files);
+      `test:run`, root `lint`, incremental typecheck, root `test:e2e` runs
+      the helper guard first. Note: the hook commits the whole index, so
+      split commits by staging deliberately.
+- [x] Guards for manual steps — done: `check-helper.mjs` (desktop e2e
+      against a stale/absent helper) and `check-devclient.mjs` (installed
+      dev client fingerprint ≠ working tree) warn before the suites run;
+      README notes the JDK for Maestro.
+- [x] Housekeeping leftovers — done: `packages/ai` errors are
+      `Data.TaggedError`s, one `boundedAtomCache`, `uncaughtException`
+      exits after logging, `app.json` updates get `checkAutomatically` +
+      a fallback timeout (changes the native fingerprint), a checked month
+      grid, `@types/react` from the catalog.
+
+Parity, UX and accessibility:
+
+- [x] Desktop keyboard and dialogs — done: one `Dialog` (role, focus trap
+      and restore, Escape via a window capture listener, backdrop close
+      button) wraps the editor, settings and ⌘K; shortcuts ⌘K, ⌘,, ⌘N, T,
+      ←/→; day columns and event blocks are focusable buttons. The
+      settings button keeps `title="Accounts"` — the e2e suite finds it by
+      that.
+- [x] iOS VoiceOver — done: labels on the icon-only header buttons,
+      selected state on the segment, labelled WeekStrip/MonthGrid cells.
+- [x] Quick-add divergence — done: `useModelAvailability` (re-check on
+      window focus / AppState active, Retry) shared by both bars; the
+      desktop CommandBar resolves relative dates against the viewed day.
+- [x] Invitee field parity — done: `useInviteeField` owns the debounce,
+      arrow/comma/Backspace handling and stale dimming; InviteeCombobox and
+      the iOS InviteeField are thin views over it.
+- [x] Shared-code moves — done: editor option labels, `pendingOpLabel`,
+      permission-status copy, `useCalendarNavigation`, `formatClockTime`/
+      `formatSlotLabel`, `useListColorLookup` live once in app-state/core.
+- [x] Add flow picks the right calendar — done: the editor seeds from
+      `calendarKey` when given and otherwise defaults to the last-used
+      calendar (module-level, remembered on save).
+- [x] iOS parity — done: a Week view (the timeline renders `days` visible
+      columns with a `WEEK_SWIPE_BUFFER` of seven so a swipe pages by whole
+      weeks; the week strip is the column header and tapping a day drops
+      into Day), an "N unsynced" header badge that opens Settings, an
+      all-day lane that grows to three rows with "+N more" (chips stack one
+      per row), permission copy shared with desktop, and the ErrorBoundary
+      writes the last render error to the documents directory for
+      Diagnostics to show and clear. Decision: no cross-column spanning of
+      multi-day all-day events on the phone — each column lists its own
+      day, which the per-column paging strip makes the honest choice.
+- [x] Splits — done: one repo file per table under `packages/db/src`
+      (`repos.ts` only assembles the layer), SettingsSheet → AccountCard +
+      PrPreviewSection + DiagnosticsSection, DayTimeline →
+      DraggableEventBlock + DayColumn + AllDayColumn, WeekView →
+      DayHeaders + AllDayLane + TimedEventBlock, EventEditor →
+      EventEditorForm.
+
+Performance:
+
+- [x] Drag, clock and hour lines — done: `useEventDrag` keeps only "which
+      block, which mode" in state and publishes offsets through an external
+      store; the dragged block alone subscribes (`useSyncExternalStore`),
+      so a pointermove re-renders one block. `NowIndicator` owns the minute
+      tick on both platforms. Desktop hour lines are one
+      `repeating-linear-gradient` per column.
+- [x] Month grouping — done: `groupEventsByDay` buckets a window's events
+      per ISO day in one pass; both month views and the iOS timeline read
+      from it.
+- [x] Atom fan-out — done: `eventsInRange` watches `EVENTS_KEY` only and
+      `tasksInRange` `TASKS_KEY` only; the repos invalidate those keys from
+      the operations that change a window's contents (calendar visibility
+      and removal). `useBackendMutations` builds its promise setters once
+      per registry (`registry.set` + `AtomRegistry.getResult`) instead of
+      nineteen `useAtomSet` mounts per consumer.
