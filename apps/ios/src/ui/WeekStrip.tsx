@@ -4,18 +4,24 @@ import { palette } from './theme.ts';
 
 export function WeekStrip({
   days,
+  leadingInset = 0,
   onSelect,
   selected,
   timeZone,
+  trailingInset = 0,
 }: {
   days: ReadonlyArray<Temporal.PlainDate>;
+  /** Width of the timeline's hour gutter, so week-view cells sit over their columns. */
+  leadingInset?: number;
   onSelect: (date: Temporal.PlainDate) => void;
   selected: Temporal.PlainDate;
   timeZone: string;
+  trailingInset?: number;
 }) {
   const today = Temporal.Now.plainDateISO(timeZone);
   return (
-    <View style={styles.row}>
+    <View style={[styles.row, leadingInset > 0 && styles.rowAligned]}>
+      {leadingInset > 0 ? <View style={{ width: leadingInset }} /> : null}
       {days.map((day) => {
         const isSelected = Temporal.PlainDate.compare(day, selected) === 0;
         const isToday = Temporal.PlainDate.compare(day, today) === 0;
@@ -49,6 +55,7 @@ export function WeekStrip({
           </Pressable>
         );
       })}
+      {trailingInset > 0 ? <View style={{ width: trailingInset }} /> : null}
     </View>
   );
 }
@@ -77,6 +84,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     paddingBottom: 6,
     paddingHorizontal: 4,
+  },
+  rowAligned: {
+    paddingHorizontal: 0,
   },
   selectedText: {
     color: '#ffffff',

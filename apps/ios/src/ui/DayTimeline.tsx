@@ -1,11 +1,10 @@
 import { useGuardedMutations, useNow } from '@calendar/app-state';
 import {
   bufferedDays,
-  DAY_SWIPE_BUFFER,
   dayRange,
   type EventRecord,
-  eventsOnDay,
   formatClockTime,
+  groupEventsByDay,
   layoutDayColumn,
   moveEventTimes,
   resizeEventEnd,
@@ -25,14 +24,15 @@ import Animated, {
   type SharedValue,
 } from 'react-native-reanimated';
 import { chipTextColor, palette } from './theme.ts';
-
-const HOUR_HEIGHT = 56;
-const SNAP_PX = HOUR_HEIGHT / 4; // 15 minutes
-const GUTTER_WIDTH = 56;
-const EDGE_INSET = 8;
-/** Lane is always rendered at this height so swiping never shifts the grid. */
-const ALL_DAY_HEIGHT = 34;
-const pxToMinutes = (px: number) => (px / HOUR_HEIGHT) * 60;
+import {
+  ALL_DAY_ROW_HEIGHT,
+  EDGE_INSET,
+  GUTTER_WIDTH,
+  HOUR_HEIGHT,
+  MAX_ALL_DAY_ROWS,
+  pxToMinutes,
+  SNAP_PX,
+} from './timelineLayout.ts';
 
 /**
  * Writes a shared value from a worklet or callback. Going through a helper
@@ -46,6 +46,7 @@ const setShared = (shared: SharedValue<number>, value: number) => {
 
 function DraggableEventBlock({
   color,
+  compact,
   event,
   height,
   left,
@@ -57,6 +58,8 @@ function DraggableEventBlock({
   width,
 }: {
   color: string;
+  /** Seven columns on a phone: smaller type, no time line. */
+  compact: boolean;
   event: EventRecord;
   height: number;
   left: DimensionValue;
@@ -132,10 +135,17 @@ function DraggableEventBlock({
         ]}
       >
         <Pressable onPress={onPress} style={styles.eventPressable}>
-          <Text numberOfLines={1} style={[styles.eventTitle, { color: chipTextColor(color) }]}>
+          <Text
+            numberOfLines={compact ? 2 : 1}
+            style={[
+              styles.eventTitle,
+              compact && styles.eventTitleCompact,
+              { color: chipTextColor(color) },
+            ]}
+          >
             {event.title}
           </Text>
-          {height > 34 ? (
+          {!compact && height > 34 ? (
             <Text numberOfLines={1} style={[styles.eventTime, { color: chipTextColor(color) }]}>
               {formatClockTime(event.startUtc, timeZone)} –{' '}
               {formatClockTime(event.endUtc, timeZone)}
@@ -151,11 +161,14 @@ function DraggableEventBlock({
     </GestureDetector>
   );
 }
+
 /** One day's timed events, sized against that day's own range. */
 function DayColumn({
   colorOf,
+  compact,
   date,
   events,
+  isToday,
   nowMs,
   onCommit,
   onEventPress,
@@ -163,8 +176,11 @@ function DayColumn({
   width,
 }: {
   colorOf: (event: EventRecord) => string;
+  compact: boolean;
   date: Temporal.PlainDate;
+  /** Timed events touching this day. */
   events: ReadonlyArray<EventRecord>;
+  isToday: boolean;
   nowMs: number;
   onCommit: (event: EventRecord, changes: { endUtc?: number; startUtc?: number }) => void;
   onEventPress: (event: EventRecord) => void;
@@ -172,10 +188,8 @@ function DayColumn({
   width: number;
 }) {
   const range = dayRange(date, timeZone);
-  const isToday = Temporal.PlainDate.compare(date, Temporal.Now.plainDateISO(timeZone)) === 0;
-  const timed = eventsOnDay(events, date, timeZone).filter((event) => !event.isAllDay);
   const boxes = layoutDayColumn(
-    timed.map((event) => ({
+    events.map((event) => ({
       endUtc: event.endUtc,
       id: `${event.calendarId}:${event.id}`,
       startUtc: event.startUtc,
@@ -183,16 +197,17 @@ function DayColumn({
     range.startUtc,
     range.endUtc,
   );
-  const byId = new Map(timed.map((event) => [`${event.calendarId}:${event.id}`, event]));
+  const byId = new Map(events.map((event) => [`${event.calendarId}:${event.id}`, event]));
   const nowFraction = (nowMs - range.startUtc) / (range.endUtc - range.startUtc);
 
   return (
-    <View style={[styles.dayColumn, { width }]}>
+    <View style={[styles.dayColumn, compact && styles.dayColumnCompact, { width }]}>
       {boxes.map((box) => {
         const event = byId.get(box.id)!;
         return (
           <DraggableEventBlock
             color={colorOf(event)}
+            compact={compact}
             event={event}
             height={Math.max(box.height * 24 * HOUR_HEIGHT, 22)}
             key={box.id}
@@ -216,36 +231,48 @@ function DayColumn({
   );
 }
 
-/** One day's all-day chips (events + due tasks), one fixed-height row. */
+/**
+ * One day's all-day chips (due tasks first, then events), one chip per
+ * row. Past `maxChips` the column shows the first rows and a "+N more"
+ * chip that expands the lane.
+ */
 function AllDayColumn({
   colorOf,
-  date,
+  compact,
   events,
   listColorOf,
+  maxChips,
   onEventPress,
+  onShowMore,
   onTaskPress,
   onToggleTask,
   tasks,
-  timeZone,
   width,
 }: {
   colorOf: (event: EventRecord) => string;
-  date: Temporal.PlainDate;
+  compact: boolean;
+  /** All-day events on this day. */
   events: ReadonlyArray<EventRecord>;
   listColorOf: (task: TaskRecord) => string | undefined;
+  maxChips: number;
   onEventPress: (event: EventRecord) => void;
+  onShowMore: () => void;
   onTaskPress: (task: TaskRecord) => void;
   onToggleTask: (task: TaskRecord) => void;
+  /** Tasks due on this day. */
   tasks: ReadonlyArray<TaskRecord>;
-  timeZone: string;
   width: number;
 }) {
-  const allDay = eventsOnDay(events, date, timeZone).filter((event) => event.isAllDay);
-  const isoDay = date.toString();
-  const due = tasks.filter((task) => task.dueDate === isoDay);
+  const total = tasks.length + events.length;
+  // A column that fits shows everything; one that overflows gives its
+  // last row to the "+N more" chip.
+  const limit = total > maxChips ? maxChips - 1 : total;
+  const visibleTasks = tasks.slice(0, limit);
+  const visibleEvents = events.slice(0, Math.max(limit - visibleTasks.length, 0));
+  const hidden = total - visibleTasks.length - visibleEvents.length;
   return (
     <View style={[styles.allDayColumn, { width }]}>
-      {due.map((task) => {
+      {visibleTasks.map((task) => {
         const done = task.status === 'completed';
         const listColor = listColorOf(task);
         return (
@@ -283,7 +310,12 @@ function AllDayColumn({
             >
               <Text
                 numberOfLines={1}
-                style={[styles.allDayText, styles.taskText, done && styles.taskTextDone]}
+                style={[
+                  styles.allDayText,
+                  compact && styles.allDayTextCompact,
+                  styles.taskText,
+                  done && styles.taskTextDone,
+                ]}
               >
                 {taskChipLabel(task)}
               </Text>
@@ -291,7 +323,7 @@ function AllDayColumn({
           </View>
         );
       })}
-      {allDay.map((event) => {
+      {visibleEvents.map((event) => {
         const color = colorOf(event);
         // A Pressable like the task chip body: an all-day event opens
         // its editor on the phone the way it does on desktop.
@@ -305,19 +337,46 @@ function AllDayColumn({
             style={[styles.allDayChip, { backgroundColor: color }]}
             testID="all-day-event-chip"
           >
-            <Text numberOfLines={1} style={[styles.allDayText, { color: chipTextColor(color) }]}>
+            <Text
+              numberOfLines={1}
+              style={[
+                styles.allDayText,
+                compact && styles.allDayTextCompact,
+                { color: chipTextColor(color) },
+              ]}
+            >
               {event.title}
             </Text>
           </Pressable>
         );
       })}
+      {hidden > 0 ? (
+        <Pressable
+          accessibilityLabel={`${String(hidden)} more all-day items, show all`}
+          accessibilityRole="button"
+          hitSlop={4}
+          onPress={onShowMore}
+          style={[styles.allDayChip, styles.moreChip]}
+          testID="all-day-more"
+        >
+          <Text numberOfLines={1} style={[styles.allDayText, styles.moreText]}>
+            +{hidden} more
+          </Text>
+        </Pressable>
+      ) : null}
     </View>
   );
 }
 
+/**
+ * The timed grid for one day or one week: `days` are the visible columns,
+ * `buffer` neighbours on each side stay drawn so a swipe reveals content.
+ * A swipe pages by the visible width (one day or one week).
+ */
 export function DayTimeline({
+  buffer,
   colorOf,
-  date,
+  days,
   events,
   listColorOf,
   onEventPress,
@@ -327,12 +386,13 @@ export function DayTimeline({
   tasks,
   timeZone,
 }: {
+  buffer: number;
   colorOf: (event: EventRecord) => string;
-  date: Temporal.PlainDate;
+  days: ReadonlyArray<Temporal.PlainDate>;
   events: ReadonlyArray<EventRecord>;
   listColorOf: (task: TaskRecord) => string | undefined;
   onEventPress: (event: EventRecord) => void;
-  /** Swipe committed a day change: +1 forward, -1 back. */
+  /** Swipe committed a page change: +1 forward, -1 back. */
   onNavigate: (direction: 1 | -1) => void;
   onTaskPress: (task: TaskRecord) => void;
   onToggleTask: (task: TaskRecord) => void;
@@ -342,8 +402,12 @@ export function DayTimeline({
   const scrollRef = useRef<ScrollView>(null);
   const nowMs = useNow();
   const { updateEvent, updateRecurring } = useGuardedMutations();
-  const [columnWidth, setColumnWidth] = useState(0);
+  const [pageWidth, setPageWidth] = useState(0);
+  const [expanded, setExpanded] = useState(false);
   const panX = useSharedValue(0);
+  const compact = days.length > 1;
+  const columnWidth = pageWidth / days.length;
+  const today = Temporal.Now.plainDateISO(timeZone);
 
   const commitChange = (event: EventRecord, changes: { endUtc?: number; startUtc?: number }) => {
     if (event.recurringEventId) {
@@ -365,18 +429,48 @@ export function DayTimeline({
     }
   };
 
-  const days = useMemo(() => bufferedDays(date, 1, DAY_SWIPE_BUFFER), [date]);
+  const strip = useMemo(() => bufferedDays(days[0]!, days.length, buffer), [days, buffer]);
+  // One pass over the window's events, not one filter per column.
+  const byDay = useMemo(() => groupEventsByDay(events, strip, timeZone), [events, strip, timeZone]);
+  const tasksByDay = useMemo(() => {
+    const map = new Map<string, Array<TaskRecord>>();
+    for (const task of tasks) {
+      if (task.dueDate) {
+        const bucket = map.get(task.dueDate) ?? [];
+        bucket.push(task);
+        map.set(task.dueDate, bucket);
+      }
+    }
+    return map;
+  }, [tasks]);
+
+  // The lane sizes itself to the busiest drawn day (neighbours included)
+  // so a swipe never shifts the grid; only a committed page change can.
+  const rowsNeeded = Math.max(
+    0,
+    ...strip.map((day) => {
+      const iso = day.toString();
+      return (
+        (tasksByDay.get(iso)?.length ?? 0) +
+        (byDay.get(iso) ?? []).filter((event) => event.isAllDay).length
+      );
+    }),
+  );
+  const capped = !expanded && rowsNeeded > MAX_ALL_DAY_ROWS;
+  const laneHeight = Math.max(capped ? MAX_ALL_DAY_ROWS : rowsNeeded, 1) * ALL_DAY_ROW_HEIGHT + 4;
+  const maxChips = capped ? MAX_ALL_DAY_ROWS : Number.POSITIVE_INFINITY;
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ animated: false, y: 7.5 * HOUR_HEIGHT });
   }, []);
 
-  // Re-centre once the new day has rendered — resetting in the same tick as the
-  // state update would briefly show the wrong day. Also clears a stray offset
-  // when the date changes from outside (Today, chevrons, week strip).
+  // Re-centre once the new page has rendered — resetting in the same tick as
+  // the state update would briefly show the wrong day. Also clears a stray
+  // offset when the days change from outside (Today, chevrons, week strip).
+  const firstIso = days[0]!.toString();
   useLayoutEffect(() => {
     setShared(panX, 0);
-  }, [date, panX]);
+  }, [firstIso, panX]);
 
   const swipe = Gesture.Pan()
     // Only clearly horizontal movement pans; vertical stays with the ScrollView,
@@ -384,19 +478,19 @@ export function DayTimeline({
     .activeOffsetX([-15, 15])
     .failOffsetY([-12, 12])
     .onUpdate((update) => {
-      // One day per gesture, like Apple's calendar.
-      setShared(panX, Math.max(-columnWidth, Math.min(columnWidth, update.translationX)));
+      // One page per gesture, like Apple's calendar.
+      setShared(panX, Math.max(-pageWidth, Math.min(pageWidth, update.translationX)));
     })
     .onEnd((end) => {
-      if (columnWidth === 0) {
+      if (pageWidth === 0) {
         setShared(panX, withTiming(0, { duration: 160 }));
         return;
       }
-      const direction = swipeSnapDecision(end.translationX, end.velocityX, columnWidth);
+      const direction = swipeSnapDecision(end.translationX, end.velocityX, pageWidth);
       if (direction !== 0) {
         setShared(
           panX,
-          withTiming(-direction * columnWidth, { duration: 180 }, (finished) => {
+          withTiming(-direction * pageWidth, { duration: 180 }, (finished) => {
             if (finished) {
               runOnJS(onNavigate)(direction);
             }
@@ -408,30 +502,47 @@ export function DayTimeline({
     });
 
   const stripStyle = useAnimatedStyle(() => ({
-    transform: [{ translateX: -columnWidth + panX.value }],
+    transform: [{ translateX: -buffer * columnWidth + panX.value }],
   }));
 
   return (
     <View style={styles.container} testID="day-timeline">
-      <View style={styles.allDayLane}>
-        <View style={styles.gutterSpacer} />
+      <View style={[styles.allDayLane, { height: laneHeight }]}>
+        <View style={styles.gutterSpacer}>
+          {expanded && rowsNeeded > MAX_ALL_DAY_ROWS ? (
+            <Pressable
+              accessibilityLabel="Collapse the all-day lane"
+              accessibilityRole="button"
+              hitSlop={8}
+              onPress={() => setExpanded(false)}
+            >
+              <Text style={[styles.gutterLabel, styles.gutterAction]}>less</Text>
+            </Pressable>
+          ) : (
+            <Text style={styles.gutterLabel}>all-day</Text>
+          )}
+        </View>
         <View style={styles.stripViewport}>
           <Animated.View style={[styles.strip, stripStyle]}>
-            {days.map((day) => (
-              <AllDayColumn
-                colorOf={colorOf}
-                date={day}
-                events={events}
-                key={day.toString()}
-                listColorOf={listColorOf}
-                onEventPress={onEventPress}
-                onTaskPress={onTaskPress}
-                onToggleTask={onToggleTask}
-                tasks={tasks}
-                timeZone={timeZone}
-                width={columnWidth}
-              />
-            ))}
+            {strip.map((day) => {
+              const iso = day.toString();
+              return (
+                <AllDayColumn
+                  colorOf={colorOf}
+                  compact={compact}
+                  events={(byDay.get(iso) ?? []).filter((event) => event.isAllDay)}
+                  key={iso}
+                  listColorOf={listColorOf}
+                  maxChips={maxChips}
+                  onEventPress={onEventPress}
+                  onShowMore={() => setExpanded(true)}
+                  onTaskPress={onTaskPress}
+                  onToggleTask={onToggleTask}
+                  tasks={tasksByDay.get(iso) ?? []}
+                  width={columnWidth}
+                />
+              );
+            })}
           </Animated.View>
         </View>
       </View>
@@ -453,23 +564,28 @@ export function DayTimeline({
             ))}
 
             <View
-              onLayout={(layout) => setColumnWidth(layout.nativeEvent.layout.width)}
+              onLayout={(layout) => setPageWidth(layout.nativeEvent.layout.width)}
               style={styles.eventsArea}
             >
               <Animated.View style={[styles.strip, stripStyle]}>
-                {days.map((day) => (
-                  <DayColumn
-                    colorOf={colorOf}
-                    date={day}
-                    events={events}
-                    key={day.toString()}
-                    nowMs={nowMs}
-                    onCommit={commitChange}
-                    onEventPress={onEventPress}
-                    timeZone={timeZone}
-                    width={columnWidth}
-                  />
-                ))}
+                {strip.map((day) => {
+                  const iso = day.toString();
+                  return (
+                    <DayColumn
+                      colorOf={colorOf}
+                      compact={compact}
+                      date={day}
+                      events={(byDay.get(iso) ?? []).filter((event) => !event.isAllDay)}
+                      isToday={Temporal.PlainDate.compare(day, today) === 0}
+                      key={iso}
+                      nowMs={nowMs}
+                      onCommit={commitChange}
+                      onEventPress={onEventPress}
+                      timeZone={timeZone}
+                      width={columnWidth}
+                    />
+                  );
+                })}
               </Animated.View>
             </View>
           </View>
@@ -480,31 +596,37 @@ export function DayTimeline({
 }
 const styles = StyleSheet.create({
   allDayChip: {
-    borderRadius: 6,
-    flexShrink: 1,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
+    borderRadius: 5,
+    height: ALL_DAY_ROW_HEIGHT - 4,
+    justifyContent: 'center',
+    paddingHorizontal: 6,
   },
   allDayColumn: {
-    flexDirection: 'row',
     gap: 4,
-    paddingVertical: 4,
+    paddingHorizontal: 2,
+    paddingVertical: 2,
   },
   allDayLane: {
     borderBottomColor: palette.border,
     borderBottomWidth: StyleSheet.hairlineWidth,
     flexDirection: 'row',
-    height: ALL_DAY_HEIGHT,
   },
   allDayText: {
     fontSize: 13,
     fontWeight: '500',
+  },
+  allDayTextCompact: {
+    fontSize: 11,
   },
   container: {
     flex: 1,
   },
   dayColumn: {
     height: 24 * HOUR_HEIGHT,
+  },
+  dayColumnCompact: {
+    borderLeftColor: palette.gridLine,
+    borderLeftWidth: StyleSheet.hairlineWidth,
   },
   eventBlock: {
     borderRadius: 6,
@@ -536,6 +658,20 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '600',
   },
+  eventTitleCompact: {
+    fontSize: 11,
+    lineHeight: 13,
+  },
+  gutterAction: {
+    color: '#2563eb',
+  },
+  gutterLabel: {
+    color: palette.textFaint,
+    fontSize: 10,
+    paddingRight: 12,
+    paddingTop: 6,
+    textAlign: 'right',
+  },
   gutterSpacer: {
     width: GUTTER_WIDTH,
   },
@@ -558,6 +694,13 @@ const styles = StyleSheet.create({
     left: 0,
     position: 'absolute',
     right: 0,
+  },
+  moreChip: {
+    backgroundColor: '#f5f5f5',
+  },
+  moreText: {
+    color: palette.textMuted,
+    fontSize: 11,
   },
   nowDot: {
     backgroundColor: palette.today,

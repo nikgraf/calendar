@@ -36,6 +36,7 @@ import {
 import { appleLanguageModel } from '../appleModel.ts';
 import { appleSpeech } from '../appleSpeech.ts';
 import { iosContactsClient } from '../contactsClient.ts';
+import { clearLastRenderError, readLastRenderError } from '../crashLog.ts';
 import { iosRemindersClient } from '../remindersClient.ts';
 import { palette } from './theme.ts';
 import { MutationNoticeToast } from './Toast.tsx';
@@ -388,6 +389,7 @@ function DiagnosticsSection() {
   const [dictation, setDictation] = useState('checking…');
   const [reminders, setReminders] = useState('checking…');
   const [remindersBusy, setRemindersBusy] = useState(false);
+  const [lastError, setLastError] = useState(readLastRenderError);
   const mutations = useBackendMutations();
 
   const requestReminders = async () => {
@@ -482,6 +484,26 @@ function DiagnosticsSection() {
             to save an event, since ids are generated from it. */}
         web crypto: {typeof globalThis.crypto?.getRandomValues === 'function' ? 'ok' : 'missing'}
       </Text>
+      {lastError ? (
+        <>
+          <Text
+            numberOfLines={6}
+            selectable
+            style={styles.previewMeta}
+            testID="diagnostics-last-error"
+          >
+            last render error ({lastError.at}): {lastError.detail}
+          </Text>
+          <Pressable
+            onPress={() => {
+              clearLastRenderError();
+              setLastError(null);
+            }}
+          >
+            <Text style={styles.reconnect}>Clear</Text>
+          </Pressable>
+        </>
+      ) : null}
     </View>
   );
 }

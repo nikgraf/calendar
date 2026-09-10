@@ -1,5 +1,6 @@
 import { Component, type ReactNode } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { recordRenderError } from '../crashLog.ts';
 import { palette } from './theme.ts';
 
 interface State {
@@ -19,8 +20,9 @@ export class ErrorBoundary extends Component<{ children: ReactNode }, State> {
   }
 
   override componentDidCatch(error: Error): void {
-    // No log-file bridge on iOS (unlike desktop's logError); Metro/device
-    // console is the only sink for a render crash.
+    // Persisted for Settings › Diagnostics: a TestFlight build has no Metro
+    // console, so this file is the only artifact of a render crash.
+    recordRenderError(error);
     // eslint-disable-next-line no-console
     console.error('Uncaught render error', error);
   }

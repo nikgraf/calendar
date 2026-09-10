@@ -10,6 +10,11 @@ export interface CalendarNavigationOptions {
   readonly timeZone: string;
   /** Desktop shows the long form ("Thursday, September 10, 2026"); iOS the compact one. */
   readonly titleStyle: 'compact' | 'long';
+  /**
+   * Buffer for the week strip; defaults to `dayBuffer`. Desktop pans the
+   * week by single days, iOS pages by whole weeks and needs seven.
+   */
+  readonly weekBuffer?: number;
 }
 
 const titleFor = (
@@ -32,8 +37,11 @@ const titleFor = (
       : focused.toLocaleString('en-US', { day: 'numeric', month: 'long', weekday: 'short' });
   }
   const end = windowStart.add({ days: 6 });
+  // "September 7 – 13, 2026" on desktop; the phone header truncates the
+  // long month, so compact uses "Sep 7 – 13, 2026".
+  const month = style === 'long' ? 'long' : 'short';
   return windowStart.month === end.month
-    ? `${windowStart.toLocaleString('en-US', { month: 'long' })} ${windowStart.day} – ${end.day}, ${windowStart.year}`
+    ? `${windowStart.toLocaleString('en-US', { month })} ${windowStart.day} – ${end.day}, ${windowStart.year}`
     : `${windowStart.toLocaleString('en-US', { day: 'numeric', month: 'short' })} – ${end.toLocaleString('en-US', { day: 'numeric', month: 'short' })}, ${end.year}`;
 };
 
@@ -49,6 +57,7 @@ export const useCalendarNavigation = ({
   initialView,
   timeZone,
   titleStyle,
+  weekBuffer,
 }: CalendarNavigationOptions) => {
   const [view, setView] = useState<CalendarViewKind>(initialView);
   const [focused, setFocused] = useState(() => Temporal.Now.plainDateISO(timeZone));
@@ -59,10 +68,12 @@ export const useCalendarNavigation = ({
     [weekWindowStart, focused],
   );
 
+  const buffer = view === 'week' ? (weekBuffer ?? dayBuffer) : dayBuffer;
+
   const range: UtcRange = useMemo(() => {
     switch (view) {
       case 'day':
-        return bufferedRange(focused, 1, dayBuffer, timeZone);
+        return bufferedRange(focused, 1, buffer, timeZone);
       case 'month':
         return monthGridRange(
           Temporal.PlainYearMonth.from(focused),
@@ -70,9 +81,9 @@ export const useCalendarNavigation = ({
           timeZone,
         );
       case 'week':
-        return bufferedRange(windowStart, 7, dayBuffer, timeZone);
+        return bufferedRange(windowStart, 7, buffer, timeZone);
     }
-  }, [view, focused, windowStart, dayBuffer, timeZone]);
+  }, [view, focused, windowStart, buffer, timeZone]);
 
   const days = useMemo(
     () =>
@@ -120,6 +131,8 @@ export const useCalendarNavigation = ({
   }, [timeZone]);
 
   return {
+    /** Neighbour days drawn on each side of `days` (matches `range`). */
+    buffer,
     days,
     focused,
     goToday,
