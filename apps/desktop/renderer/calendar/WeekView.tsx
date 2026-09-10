@@ -153,6 +153,11 @@ export function WeekView({
   const allDayById = new Map(
     allDayEvents.map((event) => [`${event.calendarId}:${event.id}`, event]),
   );
+  // Built once per render, not once per column: this component re-renders
+  // on every drag pointermove, and the strip is up to 11 columns wide.
+  const eventsById = new Map(
+    timedEvents.map((event) => [`${event.calendarId}:${event.id}`, event]),
+  );
 
   return (
     <div className="flex min-h-0 flex-1 flex-col" ref={rootRef}>
@@ -315,9 +320,6 @@ export function WeekView({
                     })),
                   range.startUtc,
                   range.endUtc,
-                );
-                const eventsById = new Map(
-                  timedEvents.map((event) => [`${event.calendarId}:${event.id}`, event]),
                 );
                 const isToday = Temporal.PlainDate.compare(day, today) === 0;
                 const nowFraction = (nowMs - range.startUtc) / (range.endUtc - range.startUtc);
