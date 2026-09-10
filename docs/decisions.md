@@ -59,7 +59,7 @@ design decisions it settled.
       `pnpm test:e2e:ios` runs them. Needs the Maestro CLI + dev-client on
       a simulator with Metro running; gesture (drag) flows remain future
       work — Maestro can't synthesize long-press pans reliably.
-      (Since grown to 11 flows; the count in `AGENTS.md` is the current one.)
+      (Since grown to 12 flows; the list in `AGENTS.md` is the current one.)
 - [x] Renderer error boundary + a log file — done: ErrorBoundary with a
       reload screen around the renderer root (errors forwarded to main via
       a `logError` preload channel); `userData/logs/main.log` with 1 MB
@@ -393,3 +393,25 @@ desktop waits on a helper binary (below).
       EventEditSheet split into shell + EventEditForm/TaskEditForm +
       editSheetShared; iOS ErrorBoundary + ConflictToast parity (a 412
       server-wins was silent data loss on iPhone).
+
+### Project review (2026-09-10), closed items
+
+- [x] Recurring overrides scoped to their master's account and calendar —
+      done: `EventRepo.getWindow` joins the master row on (account,
+      calendar, id) and the calendar on visibility for its override query;
+      `assembleWindow` keys shadowing by account + calendar + master id.
+      Event ids are Google-global, so two accounts on one shared calendar
+      carried same-id masters and one account's exception hid the other's
+      occurrence. First direct tests for `assembleWindow`.
+- [x] Dispatched task creates stay intact under edits — done: an edit
+      folds into a createTask only while it is undispatched (fresh attempt
+      counters); behind a dispatched create it queues as an updateTask, so
+      the retry's exact-field adopt check still matches and never inserts
+      twice. Decision: task ops still carrying a temp `local-` id wait in
+      applyOp until the create swaps it — a follower that ran first patched
+      the temp id and the 404 dropped the local row.
+- [x] WeekView builds its timed-event lookup once per render (was once per
+      column, on every drag pointermove).
+- [x] iOS all-day event chips open the editor (were a plain View; task
+      chips beside them were pressable). VoiceOver label + testID, Maestro
+      flow 12.
