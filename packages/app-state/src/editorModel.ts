@@ -43,12 +43,24 @@ export interface EventEditorPrefill {
 
 /** What an editor is opened with: an existing event, or a prefilled slot. */
 export interface EventEditorSeed {
+  /** `accountId:calendarId` to create in; wins over the remembered calendar. */
+  readonly calendarKey?: string | undefined;
   readonly event?: EventRecord;
   readonly initialDate: Temporal.PlainDate;
   readonly initialHour?: number;
   /** Quick-add result: the user reviews it before anything is written. */
   readonly prefill?: EventEditorPrefill;
 }
+
+/**
+ * The calendar the last event was created in, for this session. A new
+ * event used to default to the first writable calendar every time, so a
+ * user whose primary calendar is not first kept re-picking it.
+ */
+let lastUsedCalendarKey: string | null = null;
+export const rememberCalendar = (calendarKey: string): void => {
+  lastUsedCalendarKey = calendarKey;
+};
 
 const pad = (hour: number): string => `${String(hour).padStart(2, '0')}:00`;
 
@@ -88,13 +100,18 @@ export const useEventEditorModel = ({
 
   const prefill = seed.prefill;
   const [title, setTitle] = useState(existing?.title ?? prefill?.title ?? '');
-  const [calendarKey, setCalendarKey] = useState(
-    existing
-      ? `${existing.accountId}:${existing.calendarId}`
-      : writableCalendars[0]
-        ? `${writableCalendars[0].accountId}:${writableCalendars[0].id}`
-        : '',
-  );
+  const [calendarKey, setCalendarKey] = useState(() => {
+    if (existing) {
+      return `${existing.accountId}:${existing.calendarId}`;
+    }
+    const writableKeys = writableCalendars.map(
+      (calendar) => `${calendar.accountId}:${calendar.id}`,
+    );
+    const preferred = [seed.calendarKey, lastUsedCalendarKey].find(
+      (key): key is string => key !== undefined && key !== null && writableKeys.includes(key),
+    );
+    return preferred ?? writableKeys[0] ?? '';
+  });
   const [isAllDay, setIsAllDay] = useState(existing?.isAllDay ?? prefill?.isAllDay ?? false);
   const [date, setDate] = useState(
     existing
@@ -200,6 +217,7 @@ export const useEventEditorModel = ({
           ...times,
         };
         await mutations.createEvent(draft);
+        rememberCalendar(calendarKey);
       }
       onClose();
     } catch (error) {
