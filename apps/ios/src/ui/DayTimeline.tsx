@@ -1,4 +1,4 @@
-import { useGuardedMutations, useNow } from '@calendar/app-state';
+import { useGuardedMutations } from '@calendar/app-state';
 import {
   bufferedDays,
   type EventRecord,
@@ -70,7 +70,6 @@ export function DayTimeline({
   timeZone: string;
 }) {
   const scrollRef = useRef<ScrollView>(null);
-  const nowMs = useNow();
   const { updateEvent, updateRecurring } = useGuardedMutations();
   const [pageWidth, setPageWidth] = useState(0);
   const [expanded, setExpanded] = useState(false);
@@ -248,7 +247,6 @@ export function DayTimeline({
                       events={(byDay.get(iso) ?? []).filter((event) => !event.isAllDay)}
                       isToday={Temporal.PlainDate.compare(day, today) === 0}
                       key={iso}
-                      nowMs={nowMs}
                       onCommit={commitChange}
                       onEventPress={onEventPress}
                       timeZone={timeZone}

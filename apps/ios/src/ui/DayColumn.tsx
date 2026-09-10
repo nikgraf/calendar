@@ -8,6 +8,7 @@ import {
 } from '@calendar/core';
 import { StyleSheet, View, type DimensionValue } from 'react-native';
 import { DraggableEventBlock } from './DraggableEventBlock.tsx';
+import { NowIndicator } from './NowIndicator.tsx';
 import { palette } from './theme.ts';
 import { HOUR_HEIGHT } from './timelineLayout.ts';
 
@@ -18,7 +19,6 @@ export function DayColumn({
   date,
   events,
   isToday,
-  nowMs,
   onCommit,
   onEventPress,
   timeZone,
@@ -30,7 +30,6 @@ export function DayColumn({
   /** Timed events touching this day. */
   events: ReadonlyArray<EventRecord>;
   isToday: boolean;
-  nowMs: number;
   onCommit: (event: EventRecord, changes: { endUtc?: number; startUtc?: number }) => void;
   onEventPress: (event: EventRecord) => void;
   timeZone: string;
@@ -47,7 +46,6 @@ export function DayColumn({
     range.endUtc,
   );
   const byId = new Map(events.map((event) => [`${event.calendarId}:${event.id}`, event]));
-  const nowFraction = (nowMs - range.startUtc) / (range.endUtc - range.startUtc);
 
   return (
     <View style={[styles.dayColumn, compact && styles.dayColumnCompact, { width }]}>
@@ -71,11 +69,7 @@ export function DayColumn({
         );
       })}
 
-      {isToday && nowFraction >= 0 && nowFraction <= 1 ? (
-        <View style={[styles.nowLine, { top: nowFraction * 24 * HOUR_HEIGHT }]}>
-          <View style={styles.nowDot} />
-        </View>
-      ) : null}
+      {isToday ? <NowIndicator rangeEndUtc={range.endUtc} rangeStartUtc={range.startUtc} /> : null}
     </View>
   );
 }
@@ -87,22 +81,5 @@ const styles = StyleSheet.create({
   dayColumnCompact: {
     borderLeftColor: palette.gridLine,
     borderLeftWidth: StyleSheet.hairlineWidth,
-  },
-  nowDot: {
-    backgroundColor: palette.today,
-    borderRadius: 4,
-    height: 8,
-    left: -4,
-    position: 'absolute',
-    top: -3,
-    width: 8,
-  },
-  nowLine: {
-    backgroundColor: palette.today,
-    height: 2,
-    left: 0,
-    position: 'absolute',
-    right: 0,
-    zIndex: 10,
   },
 });

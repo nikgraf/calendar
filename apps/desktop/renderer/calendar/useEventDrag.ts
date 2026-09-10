@@ -1,17 +1,24 @@
 import { useGuardedMutations } from '@calendar/app-state';
 import { moveEventTimes, resizeEventEnd, snapMinutes, type EventRecord } from '@calendar/core';
-import { useEffect, useRef, useState, type RefObject } from 'react';
+import { useCallback, useEffect, useRef, useState, type RefObject } from 'react';
 
 const DRAG_THRESHOLD_PX = 4;
 
 export type DragMode = 'move' | 'resize';
 
+/** Which block is being dragged, and how. Changes twice per drag. */
 export interface DragPreview {
-  readonly deltaDays: number;
-  readonly deltaMinutes: number;
   readonly eventKey: string;
   readonly mode: DragMode;
 }
+
+/** The live offsets of that drag. Published per pointermove, outside React state. */
+export interface DragDeltas {
+  readonly deltaDays: number;
+  readonly deltaMinutes: number;
+}
+
+const NO_DELTAS: DragDeltas = { deltaDays: 0, deltaMinutes: 0 };
 
 interface DragOrigin {
   active: boolean;
@@ -32,6 +39,11 @@ const isDraggable = (event: EventRecord): boolean => !event.isAllDay && !event.r
  * time (15-minute snap), horizontal movement shifts days (move mode only),
  * the bottom edge resizes. Below the movement threshold a pointerup counts
  * as a click.
+ *
+ * Only `preview` (which block, which mode) is React state; the per-move
+ * offsets go through a tiny external store so the dragged block alone
+ * re-renders per pointermove — the grid used to re-lay out every column on
+ * each one.
  */
 export const useEventDrag = ({
   dayCount,
@@ -47,6 +59,25 @@ export const useEventDrag = ({
   const { updateEvent, updateRecurring } = useGuardedMutations();
   const [preview, setPreview] = useState<DragPreview | null>(null);
   const originRef = useRef<DragOrigin | null>(null);
+  const deltasRef = useRef<DragDeltas>(NO_DELTAS);
+  const listenersRef = useRef(new Set<() => void>());
+  const publishDeltas = (next: DragDeltas) => {
+    const current = deltasRef.current;
+    if (current.deltaDays === next.deltaDays && current.deltaMinutes === next.deltaMinutes) {
+      return;
+    }
+    deltasRef.current = next;
+    for (const listener of listenersRef.current) {
+      listener();
+    }
+  };
+  const subscribeDeltas = useCallback((listener: () => void) => {
+    listenersRef.current.add(listener);
+    return () => {
+      listenersRef.current.delete(listener);
+    };
+  }, []);
+  const getDeltas = useCallback(() => deltasRef.current, []);
   // Suppresses the day column's slot-click that follows a drag's pointerup.
   const suppressClickRef = useRef(false);
 
@@ -60,6 +91,7 @@ export const useEventDrag = ({
         }
         originRef.current = null;
         setPreview(null);
+        publishDeltas(NO_DELTAS);
       }
     };
     window.addEventListener('keydown', onKeyDown);
@@ -129,12 +161,11 @@ export const useEventDrag = ({
     ) {
       return;
     }
-    origin.active = true;
-    setPreview({
-      eventKey: origin.eventKey,
-      mode: origin.mode,
-      ...deltasFor(origin, domEvent.clientX, domEvent.clientY),
-    });
+    if (!origin.active) {
+      origin.active = true;
+      setPreview({ eventKey: origin.eventKey, mode: origin.mode });
+    }
+    publishDeltas(deltasFor(origin, domEvent.clientX, domEvent.clientY));
   };
 
   const onPointerUp = (domEvent: React.PointerEvent) => {
@@ -153,6 +184,7 @@ export const useEventDrag = ({
       DRAG_THRESHOLD_PX;
     if (!origin.active && !movedFar) {
       setPreview(null);
+      publishDeltas(NO_DELTAS);
       if (origin.mode === 'move') {
         onClick(origin.event);
       }
@@ -161,6 +193,7 @@ export const useEventDrag = ({
     }
     suppressClickRef.current = true;
     setPreview(null);
+    publishDeltas(NO_DELTAS);
 
     const { deltaDays, deltaMinutes } = deltasFor(origin, domEvent.clientX, domEvent.clientY);
     if (deltaMinutes === 0 && deltaDays === 0) {
@@ -198,9 +231,12 @@ export const useEventDrag = ({
 
   return {
     consumeSuppressedClick,
+    /** Current offsets; pair with `subscribeDeltas` in useSyncExternalStore. */
+    getDeltas,
     onPointerDown,
     onPointerMove,
     onPointerUp,
     preview,
+    subscribeDeltas,
   };
 };

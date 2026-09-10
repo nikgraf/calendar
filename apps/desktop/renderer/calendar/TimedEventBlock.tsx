@@ -1,10 +1,16 @@
 import { type EventRecord, formatClockTime, type PositionedBox } from '@calendar/core';
+import { useSyncExternalStore } from 'react';
 import { chipTextColor } from './colors.ts';
 import type { useEventDrag } from './useEventDrag.ts';
 
 const MINUTE_MS = 60 * 1000;
 
-/** A timed event in a day column, with its live drag/resize preview. */
+/**
+ * A timed event in a day column, with its live drag/resize preview. Only
+ * the block being dragged subscribes to the pointer offsets (the snapshot
+ * for every other block is a stable null), so a pointermove re-renders one
+ * block, not the grid.
+ */
 export function TimedEventBlock({
   box,
   color,
@@ -22,7 +28,9 @@ export function TimedEventBlock({
   onEventClick: (event: EventRecord) => void;
   timeZone: string;
 }) {
-  const dragging = drag.preview?.eventKey === box.id ? drag.preview : null;
+  const mine = drag.preview?.eventKey === box.id;
+  const deltas = useSyncExternalStore(drag.subscribeDeltas, () => (mine ? drag.getDeltas() : null));
+  const dragging = mine && deltas ? { ...drag.preview!, ...deltas } : null;
   const moveMinutes = dragging?.mode === 'move' ? dragging.deltaMinutes : 0;
   const resizeMinutes = dragging?.mode === 'resize' ? dragging.deltaMinutes : 0;
   const deltaDays = dragging?.mode === 'move' ? dragging.deltaDays : 0;

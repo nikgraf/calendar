@@ -9,16 +9,18 @@ import {
   Temporal,
   utcMsToPlainDate,
 } from '@calendar/core';
-import { useNow } from '@calendar/app-state';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { AllDayLane } from './AllDayLane.tsx';
 import { type ColorLookup } from './colors.ts';
 import { DayHeaders } from './DayHeaders.tsx';
+import { NowIndicator } from './NowIndicator.tsx';
 import { TimedEventBlock } from './TimedEventBlock.tsx';
 import { useEventDrag } from './useEventDrag.ts';
 import { useWheelPan } from './useWheelPan.ts';
 
 const HOUR_HEIGHT = 48;
+/** Hour lines as one repeating gradient (neutral-100), not 24 divs per column. */
+const HOUR_LINES = `repeating-linear-gradient(to bottom, #f5f5f5 0, #f5f5f5 1px, transparent 1px, transparent ${HOUR_HEIGHT}px)`;
 
 const dayIndexOf = (isoDate: string, days: ReadonlyArray<Temporal.PlainDate>): number => {
   const date = Temporal.PlainDate.from(isoDate);
@@ -55,7 +57,6 @@ export function WeekView({
   const scrollRef = useRef<HTMLDivElement>(null);
   const gridRef = useRef<HTMLDivElement>(null);
   const today = Temporal.Now.plainDateISO(timeZone);
-  const nowMs = useNow();
 
   // The pan strip renders buffer columns on both sides of the visible days
   // so horizontal panning reveals fully drawn neighbours.
@@ -221,7 +222,6 @@ export function WeekView({
                   range.endUtc,
                 );
                 const isToday = Temporal.PlainDate.compare(day, today) === 0;
-                const nowFraction = (nowMs - range.startUtc) / (range.endUtc - range.startUtc);
 
                 return (
                   <div
@@ -243,17 +243,10 @@ export function WeekView({
                       }
                     }}
                     role="button"
+                    // One gradient instead of 24 hour-line divs per column.
+                    style={{ backgroundImage: HOUR_LINES }}
                     tabIndex={0}
                   >
-                    {/* Hour lines */}
-                    {Array.from({ length: 24 }, (_, index) => (
-                      <div
-                        className="absolute right-0 left-0 border-t border-neutral-100"
-                        key={index}
-                        style={{ top: index * HOUR_HEIGHT }}
-                      />
-                    ))}
-
                     {boxes.map((box) => {
                       const event = eventsById.get(box.id)!;
                       return (
@@ -270,14 +263,8 @@ export function WeekView({
                       );
                     })}
 
-                    {/* Now indicator */}
-                    {isToday && nowFraction >= 0 && nowFraction <= 1 ? (
-                      <div
-                        className="absolute right-0 left-0 z-10 border-t-2 border-red-500"
-                        style={{ top: `${nowFraction * 100}%` }}
-                      >
-                        <span className="absolute -top-[5px] -left-1 size-2 rounded-full bg-red-500" />
-                      </div>
+                    {isToday ? (
+                      <NowIndicator rangeEndUtc={range.endUtc} rangeStartUtc={range.startUtc} />
                     ) : null}
                   </div>
                 );
