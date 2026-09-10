@@ -104,5 +104,6 @@ powers quick-add parsing, find-a-time, and dictation.
   testing conventions and flakiness lessons.
 - `docs/distribution.md` — CI build/signing pipeline, TestFlight, EAS
   updates, fingerprint-gated iOS publishing.
-- `AGENTS.md` — command reference. `todo.md` — roadmap and decision log
-  (done-entries record design decisions).
+- `AGENTS.md` — command reference. `todo.md` — ranked backlog (tiers by
+  impact, one PR per item). `docs/decisions.md` — decision log: every
+  shipped item's `[x]` entry with the design decisions it settled.

@@ -37,6 +37,7 @@ The full product plan lives in the repo owner's plan file; milestone tracking in
 
 Start with `CLAUDE.md` (rules + map), then `docs/architecture.md`,
 `docs/effect-v4-notes.md`, and `docs/google-sync-and-testing.md`.
-`todo.md` is the roadmap and decision log.
+`todo.md` is the ranked backlog; `docs/decisions.md` is the decision log
+(shipped items and the decisions they settled).
 
 - iOS: main pushes ship via EAS — a TestFlight build when the native fingerprint changed, otherwise an OTA update to the `main` branch; every PR gets an OTA preview channel `pr-<n>` (commented on the PR) loadable via Settings → PR preview on-device — see `docs/distribution.md`
