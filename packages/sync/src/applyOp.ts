@@ -238,7 +238,9 @@ export const makeApplyOp = (
         }
         case 'create': {
           if (!op.payload) {
-            return 'done' as const;
+            // Stored payload no longer decodes (a schema moved on): nothing
+            // to send, and the user should know the edit is gone.
+            return yield* drop(op, 'stored payload unreadable');
           }
           const response = yield* client.insertEvent({
             accountId: op.accountId,
@@ -307,7 +309,9 @@ export const makeApplyOp = (
         }
         case 'update': {
           if (!op.payload) {
-            return 'done' as const;
+            // Stored payload no longer decodes (a schema moved on): nothing
+            // to send, and the user should know the edit is gone.
+            return yield* drop(op, 'stored payload unreadable');
           }
           // The guest list rides along only when this edit changed it:
           // Google replaces the whole array, and our copy may lack fields

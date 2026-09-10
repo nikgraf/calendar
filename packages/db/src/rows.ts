@@ -34,7 +34,7 @@ export const accountFromRow = (row: AccountRow): Account =>
     email: row.email,
     id: row.id,
     provider: row.provider === 'apple' ? 'apple' : 'google',
-    status: row.status as 'ok' | 'reauth_required',
+    status: row.status === 'reauth_required' ? 'reauth_required' : 'ok',
     tasksEnabled: row.tasks_enabled === 1,
   });
 
@@ -113,6 +113,44 @@ const parseJson = (text: string | null): unknown => {
   }
 };
 
+/**
+ * Tolerant decode for a JSON column: an undecodable value degrades to
+ * `undefined` instead of throwing out of a row mapper. A throw here used
+ * to escape `listAll()` — which runs on every mutation and behind the
+ * unsynced-changes panel — so one stale payload bricked every write and
+ * the very UI that could discard it.
+ */
+const decodeOr = <A>(schema: Schema.Codec<A, unknown>, value: unknown): A | undefined => {
+  if (value === undefined) {
+    return undefined;
+  }
+  try {
+    return Schema.decodeUnknownSync(schema)(value);
+  } catch {
+    return undefined;
+  }
+};
+
+/** A column that must hold one of a few literals: unknown values take the fallback. */
+const oneOf = <T extends string>(allowed: ReadonlySet<string>, value: string, fallback: T): T =>
+  allowed.has(value) ? (value as T) : fallback;
+
+const EVENT_STATUSES: ReadonlySet<string> = new Set(['cancelled', 'confirmed', 'tentative']);
+const SYNC_STATUSES: ReadonlySet<string> = new Set(['error', 'pending', 'synced']);
+const TASK_STATUSES: ReadonlySet<string> = new Set(['completed', 'needsAction']);
+const ACCESS_ROLES: ReadonlySet<string> = new Set(['freeBusyReader', 'owner', 'reader', 'writer']);
+const OP_KINDS: ReadonlySet<string> = new Set([
+  'calendarColor',
+  'completeTask',
+  'create',
+  'createTask',
+  'delete',
+  'deleteTask',
+  'rsvp',
+  'update',
+  'updateTask',
+]);
+
 const isPriority = (value: string | null): value is TaskRecord['priority'] & string =>
   value === 'high' || value === 'medium' || value === 'low';
 
@@ -137,7 +175,7 @@ export const taskFromRow = (row: TaskRow): TaskRecord => {
       ? { recurrence: recurrence as TaskRecord['recurrence'] }
       : {}),
     ...(unsupported ? { recurrenceUnsupported: true as const } : {}),
-    status: row.status as TaskRecord['status'],
+    status: oneOf<TaskRecord['status']>(TASK_STATUSES, row.status, 'needsAction'),
     title: row.title,
     updatedAt: row.updated_at,
     url: row.url ?? undefined,
@@ -170,7 +208,7 @@ export interface CalendarRow {
 
 export const calendarFromRow = (row: CalendarRow): CalendarInfo =>
   new CalendarInfo({
-    accessRole: row.access_role as CalendarInfo['accessRole'],
+    accessRole: oneOf<CalendarInfo['accessRole']>(ACCESS_ROLES, row.access_role, 'reader'),
     accountId: row.account_id,
     colorHex: row.color_hex,
     id: row.id,
@@ -208,12 +246,15 @@ export interface EventRow {
 
 const attendeesJson = Schema.Array(Attendee);
 
+const stringArray = (value: unknown): Array<string> | undefined =>
+  Array.isArray(value) && value.every((entry) => typeof entry === 'string')
+    ? (value as Array<string>)
+    : undefined;
+
 export const eventFromRow = (row: EventRow): EventRecord =>
   new EventRecord({
     accountId: row.account_id,
-    attendees: row.attendees
-      ? Schema.decodeUnknownSync(attendeesJson)(JSON.parse(row.attendees))
-      : undefined,
+    attendees: decodeOr(attendeesJson, parseJson(row.attendees)),
     calendarId: row.calendar_id,
     description: row.description ?? undefined,
     endDate: row.end_date ?? undefined,
@@ -225,14 +266,14 @@ export const eventFromRow = (row: EventRow): EventRecord =>
     location: row.location ?? undefined,
     organizerEmail: row.organizer_email ?? undefined,
     originalStartUtc: row.original_start_utc ?? undefined,
-    recurrence: row.recurrence ? (JSON.parse(row.recurrence) as Array<string>) : undefined,
+    recurrence: stringArray(parseJson(row.recurrence)),
     recurringEventId: row.recurring_event_id ?? undefined,
     startDate: row.start_date ?? undefined,
     startTimeZone: row.start_time_zone ?? undefined,
     startUtc: row.start_utc,
-    status: row.status as EventRecord['status'],
+    status: oneOf<EventRecord['status']>(EVENT_STATUSES, row.status, 'confirmed'),
     syncedAt: row.synced_at,
-    syncStatus: row.sync_status as EventRecord['syncStatus'],
+    syncStatus: oneOf<EventRecord['syncStatus']>(SYNC_STATUSES, row.sync_status, 'synced'),
     title: row.title,
     updatedAt: row.updated_at,
   });
@@ -287,30 +328,37 @@ export interface PendingOpRow {
   readonly attendees_changed: number;
 }
 
-export const pendingOpFromRow = (row: PendingOpRow): PendingOp =>
-  new PendingOp({
-    accountId: row.account_id,
-    attempts: row.attempts,
-    attendeesChanged: row.attendees_changed === 1 ? true : undefined,
-    baseEtag: row.base_etag ?? undefined,
-    calendarId: row.calendar_id,
-    colorHex: row.color_hex ?? undefined,
-    createdAt: row.created_at,
-    dispatchedAt: row.dispatched_at ?? undefined,
-    eventId: row.event_id,
-    id: row.id,
-    kind: row.kind as PendingOp['kind'],
-    lastError: row.last_error ?? undefined,
-    nextAttemptAt: row.next_attempt_at,
-    payload: row.payload
-      ? Schema.decodeUnknownSync(EventRecord)(JSON.parse(row.payload))
-      : undefined,
-    taskDue: row.task_due ?? undefined,
-    taskListId: row.task_list_id ?? undefined,
-    taskNotes: row.task_notes ?? undefined,
-    taskStatus: (row.task_status ?? undefined) as PendingOp['taskStatus'],
-    taskTitle: row.task_title ?? undefined,
-  });
+/**
+ * Undefined for a row with an unknown op kind (nothing could apply it);
+ * an unreadable payload degrades to `payload: undefined`, which applyOp
+ * reports as a dropped change rather than crashing the queue.
+ */
+export const pendingOpFromRow = (row: PendingOpRow): PendingOp | undefined =>
+  OP_KINDS.has(row.kind)
+    ? new PendingOp({
+        accountId: row.account_id,
+        attempts: row.attempts,
+        attendeesChanged: row.attendees_changed === 1 ? true : undefined,
+        baseEtag: row.base_etag ?? undefined,
+        calendarId: row.calendar_id,
+        colorHex: row.color_hex ?? undefined,
+        createdAt: row.created_at,
+        dispatchedAt: row.dispatched_at ?? undefined,
+        eventId: row.event_id,
+        id: row.id,
+        kind: row.kind as PendingOp['kind'],
+        lastError: row.last_error ?? undefined,
+        nextAttemptAt: row.next_attempt_at,
+        payload: decodeOr(EventRecord, parseJson(row.payload)),
+        taskDue: row.task_due ?? undefined,
+        taskListId: row.task_list_id ?? undefined,
+        taskNotes: row.task_notes ?? undefined,
+        taskStatus: TASK_STATUSES.has(row.task_status ?? '')
+          ? (row.task_status as PendingOp['taskStatus'])
+          : undefined,
+        taskTitle: row.task_title ?? undefined,
+      })
+    : undefined;
 
 export interface SyncStateRow {
   readonly account_id: string;

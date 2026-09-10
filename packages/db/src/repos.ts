@@ -455,6 +455,12 @@ export interface PendingOpRepoShape {
   ) => Effect.Effect<void, SqlError>;
 }
 
+/** Rows of an unknown op kind are skipped: nothing could apply them. */
+const decodedOps = (row: PendingOpRow): Array<PendingOp> => {
+  const op = pendingOpFromRow(row);
+  return op ? [op] : [];
+};
+
 const makePendingOpRepo: Effect.Effect<PendingOpRepoShape, never, Reactivity | SqlClient> =
   Effect.gen(function* () {
     const sql = yield* SqlClient;
@@ -488,13 +494,13 @@ const makePendingOpRepo: Effect.Effect<PendingOpRepoShape, never, Reactivity | S
         ),
       listAll: () =>
         Effect.map(sql<PendingOpRow>`SELECT * FROM pending_ops ORDER BY created_at`, (rows) =>
-          rows.map(pendingOpFromRow),
+          rows.flatMap(decodedOps),
         ),
       listDue: (now) =>
         Effect.map(
           sql<PendingOpRow>`SELECT * FROM pending_ops
             WHERE next_attempt_at <= ${now} ORDER BY created_at`,
-          (rows) => rows.map(pendingOpFromRow),
+          (rows) => rows.flatMap(decodedOps),
         ),
       markDispatched: (opId, at) =>
         invalidating(
