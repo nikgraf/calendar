@@ -85,6 +85,11 @@ jobs:
         with:
           node-version: 24
           cache: pnpm
+      - name: Cache the Electron binary
+        uses: actions/cache@v4
+        with:
+          path: ~/Library/Caches/electron
+          key: electron-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @calendar/desktop build
       # `require('electron')` downloads the binary lazily when dist/ is
@@ -121,6 +126,17 @@ jobs:
         with:
           node-version: 24
           cache: pnpm
+      - name: Cache the Electron binary
+        uses: actions/cache@v4
+        with:
+          path: ~/Library/Caches/electron
+          key: electron-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+      - name: Cache the Swift helper build
+        uses: actions/cache@v4
+        with:
+          path: apps/desktop/helper/.build
+          key: helper-${{ runner.os }}-${{ hashFiles('apps/desktop/helper/Package.swift', 'apps/desktop/helper/Package.resolved', 'apps/desktop/helper/Sources/**', 'packages/reminders/swift/**', 'packages/contacts/swift/**') }}
+          restore-keys: helper-${{ runner.os }}-
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @calendar/desktop build:helper
       - run: pnpm --filter @calendar/desktop build
@@ -191,10 +207,16 @@ jobs:
         run: bash e2e/ci/fetch-dev-client.sh "${{ steps.fingerprint.outputs.hash }}"
       - name: Boot a simulator, install, pre-grant Reminders
         run: bash apps/ios/e2e/ci/prepare-simulator.sh apps/ios/build/devclient/Solunivo.app
+      - name: Cache Maestro
+        id: maestro
+        uses: actions/cache@v4
+        with:
+          path: ~/.maestro
+          key: maestro-${{ runner.os }}-latest
       - name: Install Maestro
-        run: |
-          curl -fsSL "https://get.maestro.mobile.dev" | bash
-          echo "$HOME/.maestro/bin" >> "$GITHUB_PATH"
+        if: steps.maestro.outputs.cache-hit != 'true'
+        run: curl -fsSL "https://get.maestro.mobile.dev" | bash
+      - run: echo "$HOME/.maestro/bin" >> "$GITHUB_PATH"
       - name: Pin the runtime version for Metro
         # After the fingerprint step (an explicit runtimeVersion would change
         # the fingerprint): with the fingerprint policy Expo CLI re-runs a
@@ -313,6 +335,12 @@ jobs:
         with:
           node-version: 24
           cache: pnpm
+      - name: Cache the Swift helper build
+        uses: actions/cache@v4
+        with:
+          path: apps/desktop/helper/.build
+          key: helper-${{ runner.os }}-${{ hashFiles('apps/desktop/helper/Package.swift', 'apps/desktop/helper/Package.resolved', 'apps/desktop/helper/Sources/**', 'packages/reminders/swift/**', 'packages/contacts/swift/**') }}
+          restore-keys: helper-${{ runner.os }}-
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @calendar/desktop package:app
       - name: Verify packaged contents
@@ -389,6 +417,12 @@ jobs:
             -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH" > /dev/null
           security list-keychains -d user -s "$KEYCHAIN_PATH" login.keychain-db
           rm "$RUNNER_TEMP/certificate.p12"
+      - name: Cache the Swift helper build
+        uses: actions/cache@v4
+        with:
+          path: apps/desktop/helper/.build
+          key: helper-${{ runner.os }}-${{ hashFiles('apps/desktop/helper/Package.swift', 'apps/desktop/helper/Package.resolved', 'apps/desktop/helper/Sources/**', 'packages/reminders/swift/**', 'packages/contacts/swift/**') }}
+          restore-keys: helper-${{ runner.os }}-
       - run: pnpm install --frozen-lockfile
       - name: Compute short SHA
         run: echo "SHORT_SHA=${GITHUB_SHA::7}" >> "$GITHUB_ENV"
