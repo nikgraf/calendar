@@ -388,12 +388,23 @@ const makeEventRepo: Effect.Effect<EventRepoShape, never, Reactivity | SqlClient
           AND e.status != 'cancelled'`;
 
           const masterIds = masters.map((row) => row.id);
+          // An override shadows an occurrence of the master it belongs
+          // to — the one in its own account and calendar. Event ids are
+          // Google-global, so two accounts on a shared calendar hold
+          // masters with the same id: an unscoped `IN` handed account
+          // A's exception rows to account B's master and hid B's
+          // occurrences. Same join as the other two queries keeps
+          // hidden calendars out.
           const overrides =
             masterIds.length === 0
               ? []
               : yield* sql<EventRow>`
-                SELECT * FROM events
-                WHERE recurring_event_id IN ${sql.in(masterIds)}`;
+                SELECT e.* FROM events e
+                JOIN events m ON m.account_id = e.account_id
+                  AND m.calendar_id = e.calendar_id AND m.id = e.recurring_event_id
+                JOIN calendars c ON c.account_id = e.account_id AND c.id = e.calendar_id
+                WHERE c.is_visible = 1 AND m.recurrence IS NOT NULL
+                AND e.recurring_event_id IN ${sql.in(masterIds)}`;
 
           return {
             masters: masters.map(eventFromRow),

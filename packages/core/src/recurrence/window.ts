@@ -1,6 +1,9 @@
 import { EventRecord } from '../types.ts';
 import { expandRecurringEvent } from './expand.ts';
 
+const masterKey = (accountId: string, calendarId: string, masterId: string): string =>
+  `${accountId}\u0000${calendarId}\u0000${masterId}`;
+
 /**
  * Assembles the renderable events for a range from a DB window: concrete
  * events pass through; recurring masters are expanded, with occurrences
@@ -17,13 +20,18 @@ export const assembleWindow = (
   rangeStartUtc: number,
   rangeEndUtc: number,
 ): Array<EventRecord> => {
+  // Keyed by account + calendar + master id, not master id alone: event
+  // ids are Google-global, so two accounts subscribed to one shared
+  // calendar carry masters with identical ids, and an override of one
+  // must not hide the other's occurrence.
   const shadowedByMaster = new Map<string, Set<number>>();
   for (const override of window.overrides) {
     if (override.recurringEventId !== undefined && override.originalStartUtc !== undefined) {
-      let set = shadowedByMaster.get(override.recurringEventId);
+      const key = masterKey(override.accountId, override.calendarId, override.recurringEventId);
+      let set = shadowedByMaster.get(key);
       if (!set) {
         set = new Set();
-        shadowedByMaster.set(override.recurringEventId, set);
+        shadowedByMaster.set(key, set);
       }
       set.add(override.originalStartUtc);
     }
@@ -48,7 +56,7 @@ export const assembleWindow = (
       },
       rangeStartUtc,
       rangeEndUtc,
-      shadowedByMaster.get(master.id),
+      shadowedByMaster.get(masterKey(master.accountId, master.calendarId, master.id)),
     );
     for (const instance of instances) {
       results.push(
