@@ -1,5 +1,5 @@
 import { type FindTimeOutcome, type LanguageModel, type SpeechToText } from '@calendar/ai';
-import { Temporal, type FreeSlot } from '@calendar/core';
+import { formatSlotLabel, type Temporal } from '@calendar/core';
 import {
   useModelAvailability,
   useQuickAddModel,
@@ -27,14 +27,6 @@ const iosMajorVersion = (): number => Number.parseInt(String(Platform.Version), 
 const UNAVAILABLE_NOTICE =
   'Quick add needs Apple Intelligence. Switch it on in Settings → Apple Intelligence & Siri; ' +
   'its models can take a while to download after that.';
-
-const slotLabel = (slot: FreeSlot): string => {
-  const day = Temporal.PlainDate.from(slot.date).toLocaleString('en-US', {
-    day: 'numeric',
-    weekday: 'short',
-  });
-  return `${day} · ${slot.startTime}–${slot.endTime}`;
-};
 
 /**
  * Natural-language capture, typed or dictated: a phrase becomes a
@@ -217,7 +209,7 @@ export function QuickAddBar({
               style={styles.slotChip}
               testID={`find-time-slot-${index}`}
             >
-              <Text style={styles.slotLabel}>{slotLabel(slot)}</Text>
+              <Text style={styles.slotLabel}>{formatSlotLabel(slot)}</Text>
             </Pressable>
           ))}
         </ScrollView>

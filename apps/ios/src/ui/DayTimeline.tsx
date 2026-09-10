@@ -5,6 +5,7 @@ import {
   dayRange,
   type EventRecord,
   eventsOnDay,
+  formatClockTime,
   layoutDayColumn,
   moveEventTimes,
   resizeEventEnd,
@@ -43,11 +44,6 @@ const setShared = (shared: SharedValue<number>, value: number) => {
   shared.value = value;
 };
 
-const formatTime = (epochMs: number, timeZone: string): string =>
-  Temporal.Instant.fromEpochMilliseconds(epochMs)
-    .toZonedDateTimeISO(timeZone)
-    .toPlainTime()
-    .toLocaleString('en-US', { hour: 'numeric', minute: '2-digit' });
 function DraggableEventBlock({
   color,
   event,
@@ -141,7 +137,8 @@ function DraggableEventBlock({
           </Text>
           {height > 34 ? (
             <Text numberOfLines={1} style={[styles.eventTime, { color: chipTextColor(color) }]}>
-              {formatTime(event.startUtc, timeZone)} – {formatTime(event.endUtc, timeZone)}
+              {formatClockTime(event.startUtc, timeZone)} –{' '}
+              {formatClockTime(event.endUtc, timeZone)}
             </Text>
           ) : null}
         </Pressable>

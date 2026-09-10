@@ -2,6 +2,7 @@ import {
   bufferedDays,
   dayRange,
   type EventRecord,
+  formatClockTime,
   layoutAllDayLane,
   layoutDayColumn,
   PAN_BUFFER_DAYS,
@@ -18,12 +19,6 @@ import { useWheelPan } from './useWheelPan.ts';
 
 const HOUR_HEIGHT = 48;
 const MINUTE_MS = 60 * 1000;
-
-const formatTime = (epochMs: number, timeZone: string): string =>
-  Temporal.Instant.fromEpochMilliseconds(epochMs)
-    .toZonedDateTimeISO(timeZone)
-    .toPlainTime()
-    .toLocaleString('en-US', { hour: 'numeric', minute: '2-digit' });
 
 const dayIndexOf = (isoDate: string, days: ReadonlyArray<Temporal.PlainDate>): number => {
   const date = Temporal.PlainDate.from(isoDate);
@@ -377,7 +372,7 @@ export function WeekView({
                       const draggable = !event.recurrence;
                       return (
                         <div
-                          aria-label={`${event.title}, ${formatTime(event.startUtc, timeZone)} to ${formatTime(event.endUtc, timeZone)}`}
+                          aria-label={`${event.title}, ${formatClockTime(event.startUtc, timeZone)} to ${formatClockTime(event.endUtc, timeZone)}`}
                           className={`absolute touch-none overflow-hidden rounded-md px-1.5 py-0.5 outline-none select-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
                             draggable ? 'cursor-grab' : 'cursor-pointer'
                           } ${dragging ? 'z-20 opacity-90 shadow-lg ring-2 ring-white/60' : ''}`}
@@ -404,13 +399,13 @@ export function WeekView({
                             width: `calc(${box.width * 100}% - 3px)`,
                           }}
                           tabIndex={0}
-                          title={`${event.title} · ${formatTime(event.startUtc, timeZone)}`}
+                          title={`${event.title} · ${formatClockTime(event.startUtc, timeZone)}`}
                         >
                           <p className="truncate text-xs leading-4 font-medium">{event.title}</p>
                           {compact ? null : (
                             <p className="truncate text-[10px] opacity-80">
-                              {formatTime(dragging ? previewStart : event.startUtc, timeZone)} –{' '}
-                              {formatTime(dragging ? previewEnd : event.endUtc, timeZone)}
+                              {formatClockTime(dragging ? previewStart : event.startUtc, timeZone)}{' '}
+                              – {formatClockTime(dragging ? previewEnd : event.endUtc, timeZone)}
                             </p>
                           )}
                           {draggable ? (

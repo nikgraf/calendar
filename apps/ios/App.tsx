@@ -3,16 +3,16 @@ import {
   useGuardedMutations,
   makeBackendAtoms,
   useBackendInvalidations,
+  useCalendarNavigation,
   useCalendars,
   useEventsInRangeStable,
+  useListColorLookup,
   useTaskLists,
   useTasksInRangeStable,
 } from '@calendar/app-state';
 import {
-  bufferedRange,
   DAY_SWIPE_BUFFER,
   makeColorLookup,
-  monthGridRange,
   type TaskRecord,
   Temporal,
   utcMsToPlainDate,
@@ -38,12 +38,15 @@ import { WeekStrip } from './src/ui/WeekStrip.tsx';
 
 const backendAtoms = makeBackendAtoms(backendClient);
 
-type ViewKind = 'day' | 'month';
-
 function CalendarScreen() {
   const timeZone = Temporal.Now.timeZoneId();
-  const [view, setView] = useState<ViewKind>('day');
-  const [focused, setFocused] = useState(() => Temporal.Now.plainDateISO(timeZone));
+  const { focused, goToday, range, setFocused, step, switchView, title, view } =
+    useCalendarNavigation({
+      dayBuffer: DAY_SWIPE_BUFFER,
+      initialView: 'day',
+      timeZone,
+      titleStyle: 'compact',
+    });
   const [showSettings, setShowSettings] = useState(false);
   const [editSeed, setEditSeed] = useState<EditSeed | null>(null);
   const [editTask, setEditTask] = useState<TaskRecord | null>(null);
@@ -59,18 +62,6 @@ function CalendarScreen() {
     return () => subscription.remove();
   }, []);
 
-  const range = useMemo(
-    () =>
-      view === 'day'
-        ? // Matches the strip DayTimeline renders, so a swipe reveals loaded days.
-          bufferedRange(focused, 1, DAY_SWIPE_BUFFER, timeZone)
-        : monthGridRange(
-            Temporal.PlainYearMonth.from(focused),
-            Temporal.Now.plainDateISO(timeZone),
-            timeZone,
-          ),
-    [view, focused, timeZone],
-  );
   // Stable variant: keeps the previous days' events while a new range loads,
   // so swiping never flashes an empty grid.
   const events = useEventsInRangeStable(range.startUtc, range.endUtc);
@@ -81,13 +72,7 @@ function CalendarScreen() {
   );
   const mutations = useGuardedMutations();
   const taskLists = useTaskLists();
-  /** Reminders lists carry a color; Google lists render neutral. */
-  const listColorOf = useMemo(() => {
-    const colors = new Map(
-      taskLists.map((list) => [`${list.accountId}:${list.id}`, list.colorHex]),
-    );
-    return (task: TaskRecord) => colors.get(`${task.accountId}:${task.listId}`);
-  }, [taskLists]);
+  const listColorOf = useListColorLookup();
   const findSlots = useMemo(
     () => makeFindSlots(appleLanguageModel, backendClient, timeZone),
     [timeZone],
@@ -100,21 +85,6 @@ function CalendarScreen() {
     const start = weekStart(focused);
     return Array.from({ length: 7 }, (_, index) => start.add({ days: index }));
   }, [focused]);
-
-  const title =
-    view === 'month'
-      ? focused.toLocaleString('en-US', { month: 'long', year: 'numeric' })
-      : focused.toLocaleString('en-US', {
-          day: 'numeric',
-          month: 'long',
-          weekday: 'short',
-        });
-
-  const step = (direction: 1 | -1) => {
-    setFocused((current) =>
-      view === 'month' ? current.add({ months: direction }) : current.add({ days: direction }),
-    );
-  };
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -134,11 +104,7 @@ function CalendarScreen() {
           >
             <Text style={styles.navLabel}>‹</Text>
           </Pressable>
-          <Pressable
-            accessibilityRole="button"
-            onPress={() => setFocused(Temporal.Now.plainDateISO(timeZone))}
-            style={styles.navButton}
-          >
+          <Pressable accessibilityRole="button" onPress={goToday} style={styles.navButton}>
             <Text style={styles.todayLabel}>Today</Text>
           </Pressable>
           <Pressable
@@ -177,7 +143,7 @@ function CalendarScreen() {
             accessibilityRole="button"
             accessibilityState={{ selected: view === kind }}
             key={kind}
-            onPress={() => setView(kind)}
+            onPress={() => switchView(kind)}
             style={[styles.segmentItem, view === kind && styles.segmentActive]}
           >
             <Text style={[styles.segmentLabel, view === kind && styles.segmentLabelActive]}>
@@ -224,7 +190,7 @@ function CalendarScreen() {
           events={events}
           onSelectDay={(date) => {
             setFocused(date);
-            setView('day');
+            switchView('day');
           }}
           timeZone={timeZone}
           yearMonth={Temporal.PlainYearMonth.from(focused)}

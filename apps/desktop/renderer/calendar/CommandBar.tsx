@@ -4,20 +4,12 @@ import {
   useQuickAddModel,
   type EventEditorPrefill,
 } from '@calendar/app-state';
-import { Temporal, type FreeSlot } from '@calendar/core';
+import { formatSlotLabel, type Temporal } from '@calendar/core';
 import { useEffect, useRef } from 'react';
 import { Dialog } from '../Dialog.tsx';
 import { desktopLanguageModel } from '../ai/desktopModel.ts';
 import { desktopSpeech } from '../ai/desktopSpeech.ts';
 import { backend } from '../backend.ts';
-
-const slotLabel = (slot: FreeSlot): string => {
-  const day = Temporal.PlainDate.from(slot.date).toLocaleString('en-US', {
-    day: 'numeric',
-    weekday: 'short',
-  });
-  return `${day} · ${slot.startTime}–${slot.endTime}`;
-};
 
 /**
  * The ⌘K bar: natural-language quick add and find-a-time on desktop,
@@ -176,7 +168,7 @@ export function CommandBar({
                     onClick={() => pickSlot(slot)}
                     type="button"
                   >
-                    {slotLabel(slot)}
+                    {formatSlotLabel(slot)}
                   </button>
                 ))}
               </div>

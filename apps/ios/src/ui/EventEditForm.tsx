@@ -1,12 +1,14 @@
-import type { useEventEditorModel } from '@calendar/app-state';
+import {
+  REPEAT_ENDS_OPTIONS,
+  REPEAT_OPTIONS,
+  RSVP_OPTIONS,
+  SCOPE_OPTIONS,
+  type useEventEditorModel,
+} from '@calendar/app-state';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { Linking, Pressable, ScrollView, Switch, Text, TextInput, View } from 'react-native';
 import {
   dateFromParts,
-  REPEAT_ENDS,
-  REPEATS,
-  RSVPS,
-  SCOPES,
   sheetStyles as styles,
   toDateString,
   toTimeString,
@@ -74,14 +76,14 @@ export function EventEditForm({ model }: { model: ReturnType<typeof useEventEdit
       ) : null}
       {isRecurring ? (
         <View style={styles.scopeRow}>
-          {SCOPES.map((option) => (
+          {SCOPE_OPTIONS.map((option) => (
             <Pressable
               key={option.value}
               onPress={() => setScope(option.value)}
               style={[styles.scopeChip, scope === option.value && styles.scopeChipActive]}
             >
               <Text style={[styles.scopeLabel, scope === option.value && styles.scopeLabelActive]}>
-                {option.label}
+                {option.short}
               </Text>
             </Pressable>
           ))}
@@ -127,7 +129,7 @@ export function EventEditForm({ model }: { model: ReturnType<typeof useEventEdit
           <>
             <Text style={styles.label}>Repeat</Text>
             <View style={styles.scopeRow}>
-              {REPEATS.map((option) => (
+              {REPEAT_OPTIONS.map((option) => (
                 <Pressable
                   key={option.value}
                   onPress={() => setRepeat(option.value)}
@@ -136,7 +138,7 @@ export function EventEditForm({ model }: { model: ReturnType<typeof useEventEdit
                   <Text
                     style={[styles.scopeLabel, repeat === option.value && styles.scopeLabelActive]}
                   >
-                    {option.label}
+                    {option.short}
                   </Text>
                 </Pressable>
               ))}
@@ -155,7 +157,7 @@ export function EventEditForm({ model }: { model: ReturnType<typeof useEventEdit
                 <View style={styles.timeField}>
                   <Text style={styles.label}>Ends</Text>
                   <View style={styles.scopeRow}>
-                    {REPEAT_ENDS.map((option) => (
+                    {REPEAT_ENDS_OPTIONS.map((option) => (
                       <Pressable
                         key={option.value}
                         onPress={() => {
@@ -179,7 +181,7 @@ export function EventEditForm({ model }: { model: ReturnType<typeof useEventEdit
                             repeatEnds === option.value && styles.scopeLabelActive,
                           ]}
                         >
-                          {option.label}
+                          {option.short}
                         </Text>
                       </Pressable>
                     ))}
@@ -262,14 +264,14 @@ export function EventEditForm({ model }: { model: ReturnType<typeof useEventEdit
         <Text style={styles.label}>Invitees</Text>
         {ownAttendee ? (
           <View style={styles.scopeRow}>
-            {RSVPS.map((option) => (
+            {RSVP_OPTIONS.map((option) => (
               <Pressable
                 key={option.value}
                 onPress={() => void respond(option.value)}
                 style={[styles.scopeChip, rsvp === option.value && styles.scopeChipActive]}
               >
                 <Text style={[styles.scopeLabel, rsvp === option.value && styles.scopeLabelActive]}>
-                  {option.label}
+                  {option.short}
                 </Text>
               </Pressable>
             ))}

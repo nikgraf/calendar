@@ -1,15 +1,12 @@
 import {
   REMINDER_ALARM_OPTIONS,
   REMINDER_PRIORITY_OPTIONS,
+  REPEAT_ENDS_OPTIONS,
+  REPEAT_OPTIONS,
   type useTaskEditorModel,
 } from '@calendar/app-state';
 import type { RecurrenceFrequency, TaskRecord } from '@calendar/core';
-import {
-  FIELD_CLASS,
-  LABEL_CLASS,
-  REPEAT_ENDS_OPTIONS,
-  REPEAT_OPTIONS,
-} from './taskEditorOptions.ts';
+import { FIELD_CLASS, LABEL_CLASS } from './taskEditorOptions.ts';
 
 const segment = (active: boolean) =>
   `rounded-md px-2 py-1 text-xs font-medium ${

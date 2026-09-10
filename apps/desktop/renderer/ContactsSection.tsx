@@ -1,14 +1,7 @@
-import { useAccounts, useBackendMutations } from '@calendar/app-state';
+import { contactsStatusCopy, useAccounts, useBackendMutations } from '@calendar/app-state';
 import { useEffect, useState } from 'react';
 
-const STATUS_COPY: Record<string, string> = {
-  authorized: 'Access granted — people from your address book appear as you type an invitee.',
-  denied: 'Access denied — allow Solunivo under System Settings › Privacy & Security › Contacts.',
-  limited: 'Partial access granted.',
-  notDetermined: 'Not asked yet.',
-  restricted: 'Restricted by a device policy.',
-  unavailable: 'Unavailable in this build (no helper).',
-};
+const SETTINGS_PATH = 'System Settings › Privacy & Security';
 
 /**
  * Contacts permission state + the ask, mirroring RemindersSection. The
@@ -53,7 +46,9 @@ export function ContactsSection() {
   return (
     <section className="rounded-xl border border-neutral-200 bg-white p-4">
       <h2 className="font-medium">Contacts</h2>
-      <p className="mt-1 text-sm text-neutral-500">{STATUS_COPY[status] ?? status}</p>
+      <p className="mt-1 text-sm text-neutral-500">
+        {contactsStatusCopy(status, SETTINGS_PATH) ?? status}
+      </p>
       {googleWithout.length > 0 ? (
         <p className="mt-1 text-xs text-neutral-400">
           Google contacts are not enabled for {googleWithout.map((a) => a.email).join(', ')} —

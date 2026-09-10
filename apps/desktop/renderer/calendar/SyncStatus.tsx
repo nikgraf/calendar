@@ -1,17 +1,5 @@
-import { useGuardedMutations, usePendingOps } from '@calendar/app-state';
+import { pendingOpLabel, useGuardedMutations, usePendingOps } from '@calendar/app-state';
 import { useState } from 'react';
-
-const KIND_LABEL = {
-  calendarColor: 'Color',
-  completeTask: 'Task',
-  create: 'Create',
-  createTask: 'New task',
-  delete: 'Delete',
-  deleteTask: 'Delete task',
-  rsvp: 'RSVP',
-  update: 'Update',
-  updateTask: 'Edit task',
-} as const;
 
 /** Sidebar indicator for local changes Google has not acknowledged yet. */
 export function SyncStatus() {
@@ -34,24 +22,26 @@ export function SyncStatus() {
       </button>
       {open ? (
         <ul className="max-h-48 overflow-y-auto border-t border-amber-200">
-          {ops.map((op) => (
-            <li className="flex items-center gap-2 px-3 py-1.5" key={op.id}>
-              <span className="min-w-0 flex-1 truncate">
-                {KIND_LABEL[op.kind]} ·{' '}
-                {op.kind === 'calendarColor' ? op.calendarId : (op.title ?? op.eventId)}
-                {op.attempts > 0 ? (
-                  <span className="text-xs text-amber-700"> — retrying ({op.attempts}×)</span>
-                ) : null}
-              </span>
-              <button
-                className="text-xs text-red-600 hover:underline"
-                onClick={() => void discardPendingOp({ opId: op.id })}
-                type="button"
-              >
-                Discard
-              </button>
-            </li>
-          ))}
+          {ops.map((op) => {
+            const label = pendingOpLabel(op);
+            return (
+              <li className="flex items-center gap-2 px-3 py-1.5" key={op.id}>
+                <span className="min-w-0 flex-1 truncate">
+                  {label.text}
+                  {label.retry ? (
+                    <span className="text-xs text-amber-700"> — {label.retry}</span>
+                  ) : null}
+                </span>
+                <button
+                  className="text-xs text-red-600 hover:underline"
+                  onClick={() => void discardPendingOp({ opId: op.id })}
+                  type="button"
+                >
+                  Discard
+                </button>
+              </li>
+            );
+          })}
         </ul>
       ) : null}
     </div>

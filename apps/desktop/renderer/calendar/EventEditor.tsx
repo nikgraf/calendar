@@ -1,30 +1,23 @@
-import { useEventEditorModel, useTaskEditorModel, type EventEditorSeed } from '@calendar/app-state';
+import {
+  REPEAT_ENDS_OPTIONS,
+  REPEAT_OPTIONS,
+  RSVP_OPTIONS,
+  SCOPE_OPTIONS,
+  useEventEditorModel,
+  useTaskEditorModel,
+  type EventEditorSeed,
+} from '@calendar/app-state';
 import { useState } from 'react';
 import { Dialog } from '../Dialog.tsx';
 import { InviteeCombobox } from './InviteeCombobox.tsx';
 import { ReminderEditorForm } from './ReminderEditorForm.tsx';
 import { TaskEditorForm } from './TaskEditorForm.tsx';
-import { REPEAT_OPTIONS } from './taskEditorOptions.ts';
 import {
   type CalendarInfo,
   type RecurrenceFrequency,
-  type RecurringScope,
-  type RsvpResponse,
   type TaskListInfo,
   type TaskRecord,
 } from '@calendar/core';
-
-const RSVP_OPTIONS: ReadonlyArray<{ label: string; value: RsvpResponse }> = [
-  { label: 'Accept', value: 'accepted' },
-  { label: 'Maybe', value: 'tentative' },
-  { label: 'Decline', value: 'declined' },
-];
-
-const SCOPES: ReadonlyArray<{ label: string; value: RecurringScope }> = [
-  { label: 'This event', value: 'instance' },
-  { label: 'This and following', value: 'following' },
-  { label: 'All events', value: 'series' },
-];
 
 /** Existing event (edit mode) or a prefilled slot (create mode). */
 export type EditorSeed = EventEditorSeed;
@@ -166,7 +159,7 @@ export function EventEditor({
                   className="flex rounded-lg border border-neutral-200 bg-white p-0.5"
                   role="radiogroup"
                 >
-                  {SCOPES.map((option) => (
+                  {SCOPE_OPTIONS.map((option) => (
                     <button
                       aria-checked={scope === option.value}
                       className={`flex-1 rounded-md px-2 py-1 text-xs font-medium ${
@@ -285,9 +278,11 @@ export function EventEditor({
                         }
                         value={repeatEnds}
                       >
-                        <option value="never">Never ends</option>
-                        <option value="after">Ends after</option>
-                        <option value="on">Ends on date</option>
+                        {REPEAT_ENDS_OPTIONS.map((option) => (
+                          <option key={option.value} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
                       </select>
                       {repeatEnds === 'after' ? (
                         <label className="flex items-center gap-1 text-sm whitespace-nowrap">

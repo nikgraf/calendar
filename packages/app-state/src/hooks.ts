@@ -138,6 +138,17 @@ export const useTasksInRangeStable = (
   return Option.isSome(value) ? value.value : previous;
 };
 
+/** Reminders lists carry a color; Google lists render neutral. Both lanes need this. */
+export const useListColorLookup = (): ((task: TaskRecord) => string | undefined) => {
+  const taskLists = useTaskLists();
+  return useMemo(() => {
+    const colors = new Map(
+      taskLists.map((list) => [`${list.accountId}:${list.id}`, list.colorHex]),
+    );
+    return (task: TaskRecord) => colors.get(`${task.accountId}:${task.listId}`);
+  }, [taskLists]);
+};
+
 /** Promise-returning mutation callbacks; each invalidates its reactivity keys. */
 export const useBackendMutations = () => {
   const { mutations } = useBackendAtoms();

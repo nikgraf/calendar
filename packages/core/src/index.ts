@@ -7,6 +7,7 @@ export * from './layout/dayStrip.ts';
 export * from './color.ts';
 export * from './contacts/email.ts';
 export * from './contacts/search.ts';
+export * from './format.ts';
 export * from './editor/attendees.ts';
 export * from './editor/eventDraft.ts';
 export * from './gestures/swipeSnap.ts';

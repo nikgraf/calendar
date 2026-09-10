@@ -1,6 +1,8 @@
 import {
   REMINDER_ALARM_OPTIONS,
   REMINDER_PRIORITY_OPTIONS,
+  REPEAT_ENDS_OPTIONS,
+  REPEAT_OPTIONS,
   type useTaskEditorModel,
 } from '@calendar/app-state';
 import type { TaskRecord } from '@calendar/core';
@@ -8,8 +10,6 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import { Linking, Pressable, ScrollView, Switch, Text, TextInput, View } from 'react-native';
 import {
   dateFromParts,
-  REPEAT_ENDS,
-  REPEATS,
   sheetStyles as styles,
   toDateString,
   toTimeString,
@@ -138,14 +138,14 @@ export function ReminderEditForm({
       ) : (
         <>
           <View style={styles.scopeRow}>
-            {REPEATS.map((option) => (
+            {REPEAT_OPTIONS.map((option) => (
               <Pressable
                 key={option.value}
                 onPress={() => taskModel.setRepeat(option.value)}
                 style={chip(taskModel.repeat === option.value)}
                 testID={`reminder-repeat-${option.value}`}
               >
-                <Text style={chipLabel(taskModel.repeat === option.value)}>{option.label}</Text>
+                <Text style={chipLabel(taskModel.repeat === option.value)}>{option.short}</Text>
               </Pressable>
             ))}
           </View>
@@ -163,7 +163,7 @@ export function ReminderEditForm({
               <View style={styles.timeField}>
                 <Text style={styles.label}>Ends</Text>
                 <View style={styles.scopeRow}>
-                  {REPEAT_ENDS.map((option) => (
+                  {REPEAT_ENDS_OPTIONS.map((option) => (
                     <Pressable
                       key={option.value}
                       onPress={() => {
@@ -175,7 +175,7 @@ export function ReminderEditForm({
                       style={chip(taskModel.repeatEnds === option.value)}
                     >
                       <Text style={chipLabel(taskModel.repeatEnds === option.value)}>
-                        {option.label}
+                        {option.short}
                       </Text>
                     </Pressable>
                   ))}

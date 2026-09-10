@@ -5,6 +5,9 @@ import {
   useCalendars,
   usePendingOps,
   useTaskLists,
+  contactsStatusCopy,
+  pendingOpLabel,
+  remindersStatusCopy,
 } from '@calendar/app-state';
 import type { ModelStatus } from '@calendar/ai';
 import { CALENDAR_PALETTE } from '@calendar/core';
@@ -102,13 +105,8 @@ export function SettingsSheet({ onClose, visible }: { onClose: () => void; visib
               {pendingOps.map((op) => (
                 <View key={op.id} style={styles.pendingRow}>
                   <Text numberOfLines={1} style={styles.pendingLabel}>
-                    {op.kind === 'calendarColor'
-                      ? 'color'
-                      : op.kind === 'completeTask'
-                        ? 'task'
-                        : op.kind}{' '}
-                    · {op.kind === 'calendarColor' ? op.calendarId : (op.title ?? op.eventId)}
-                    {op.attempts > 0 ? ` — retrying (${op.attempts}×)` : ''}
+                    {pendingOpLabel(op).text}
+                    {pendingOpLabel(op).retry ? ` — ${pendingOpLabel(op).retry}` : ''}
                   </Text>
                   <Pressable onPress={() => void guarded.discardPendingOp({ opId: op.id })}>
                     <Text style={styles.pendingDiscard}>Discard</Text>
@@ -382,6 +380,8 @@ const describeContacts = (): Promise<string> =>
     iosContactsClient.status().pipe(Effect.orElseSucceed(() => 'unavailable' as const)),
   );
 
+const IOS_SETTINGS_PATH = 'Settings › Privacy & Security';
+
 function DiagnosticsSection() {
   const [modelStatus, setModelStatus] = useState<ModelStatus | 'checking…'>('checking…');
   const [contacts, setContacts] = useState('checking…');
@@ -447,7 +447,7 @@ function DiagnosticsSection() {
       </Text>
       <Text style={styles.previewMeta}>dictation: {dictation}</Text>
       <Text style={styles.previewMeta} testID="diagnostics-reminders">
-        reminders: {reminders}
+        reminders: {remindersStatusCopy(reminders, IOS_SETTINGS_PATH)}
       </Text>
       {reminders === 'notDetermined' || reminders === 'denied' ? (
         <Pressable disabled={remindersBusy} onPress={() => void requestReminders()}>
@@ -459,7 +459,7 @@ function DiagnosticsSection() {
         </Pressable>
       ) : null}
       <Text style={styles.previewMeta} testID="diagnostics-contacts">
-        contacts: {contacts}
+        contacts: {contactsStatusCopy(contacts, IOS_SETTINGS_PATH)}
       </Text>
       {contacts === 'notDetermined' || contacts === 'denied' ? (
         <Pressable
