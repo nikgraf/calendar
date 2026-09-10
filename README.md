@@ -87,4 +87,7 @@ pnpm test && pnpm check && pnpm typecheck
 
 # Desktop e2e (build first)
 pnpm --filter @calendar/desktop build && pnpm test:e2e
+
+# iOS e2e (Maestro needs a JDK: brew install openjdk; dev client + Metro running)
+pnpm test:e2e:ios
 ```

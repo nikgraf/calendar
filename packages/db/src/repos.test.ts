@@ -167,6 +167,49 @@ describe('repos', () => {
     }).pipe(Effect.provide(freshDbLayer())),
   );
 
+  it.effect("overrides are scoped to their master's account and calendar", () =>
+    Effect.gen(function* () {
+      const calendars = yield* CalendarRepo;
+      const events = yield* EventRepo;
+      // Event ids are Google-global: two accounts subscribed to one
+      // shared calendar hold masters with identical ids, and a hidden
+      // calendar can carry the same series too.
+      yield* calendars.upsertMany([
+        calendar({ id: 'shared', summary: 'Team' }),
+        calendar({ accountId: 'acc-2', id: 'shared', summary: 'Team' }),
+        calendar({ id: 'cal-hidden', isVisible: false, summary: 'Hidden' }),
+      ]);
+      const series = (overrides: Partial<EventRecord>) =>
+        timedEvent({ id: 'master-1', recurrence: ['RRULE:FREQ=WEEKLY'], ...overrides });
+      const exception = (overrides: Partial<EventRecord>) =>
+        timedEvent({
+          endUtc: Date.parse('2026-07-09T16:00:00Z'),
+          id: 'master-1__ovr',
+          originalStartUtc: Date.parse('2026-07-09T12:00:00Z'),
+          recurringEventId: 'master-1',
+          startUtc: Date.parse('2026-07-09T15:00:00Z'),
+          ...overrides,
+        });
+      yield* events.upsertMany([
+        series({ calendarId: 'shared' }),
+        series({ accountId: 'acc-2', calendarId: 'shared' }),
+        series({ calendarId: 'cal-hidden' }),
+        // Only the second account moved its occurrence.
+        exception({ accountId: 'acc-2', calendarId: 'shared' }),
+        exception({ calendarId: 'cal-hidden' }),
+      ]);
+
+      const window = yield* events.getWindow(
+        Date.parse('2026-07-01T00:00:00Z'),
+        Date.parse('2026-07-31T00:00:00Z'),
+      );
+      expect(window.masters.map((event) => event.accountId).sort()).toEqual(['acc-1', 'acc-2']);
+      expect(
+        window.overrides.map((event) => `${event.accountId}/${event.calendarId}/${event.id}`),
+      ).toEqual(['acc-2/shared/master-1__ovr']);
+    }).pipe(Effect.provide(freshDbLayer())),
+  );
+
   it.effect('event mutations invalidate the coarse events key', () =>
     Effect.gen(function* () {
       const calendars = yield* CalendarRepo;

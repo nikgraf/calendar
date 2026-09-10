@@ -298,9 +298,10 @@ Flakiness lessons (each caused a real CI failure — keep them enforced):
 
 ### iOS e2e (Maestro, apps/ios/e2e/flows/)
 
-Text/testID-based flows (10: launch, navigation, new-event sheet,
-settings, day swipe, quick-add, create event, task lane, reminders form,
-real reminders). Flows carry `tags`: everything is `ci`; the strict
+Text/testID-based flows (12: dev-client bootstrap, launch, navigation,
+new-event sheet, accounts sheet, day swipe, quick-add, create event, task
+lane, reminders form, real reminders, invitees, all-day event chip).
+Flows carry `tags`: everything is `ci`; the strict
 `10-reminders-real.yaml` is also `ci-reminders` — it connects, creates
 through EventKit and deletes with no escape hatch, so `pnpm test:e2e:ios`
 excludes it (`--exclude-tags ci-reminders`) and CI includes it on a

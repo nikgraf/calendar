@@ -60,6 +60,13 @@ export const makeApplyOp = (
 
   return (op: PendingOp): Effect.Effect<'done' | 'retry', never> =>
     Effect.gen(function* () {
+      // A task op queued behind its create while that create is still in
+      // backoff: the create's id swap rewrites this op's eventId once it
+      // lands. Patching the temp id now would 404 and the NotFound arm
+      // would drop the local row — wait instead.
+      if (op.kind !== 'createTask' && op.eventId.startsWith('local-')) {
+        return 'retry' as const;
+      }
       switch (op.kind) {
         case 'calendarColor': {
           if (!op.colorHex) {

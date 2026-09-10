@@ -1,0 +1,51 @@
+appId: com.solunivo.app
+name: An all-day event chip opens its editor
+tags:
+  - ci
+---
+- runFlow: ../common/launch.yaml
+- tapOn:
+    id: 'add-event'
+- assertVisible: 'New Event'
+- waitForAnimationToEnd:
+    timeout: 5000
+# Saving needs a writable calendar, so this runs only where an account is
+# signed in; everywhere else the flow is a no-op (same shape as 07).
+- runFlow:
+    when:
+      visible:
+        id: 'calendar-option'
+    commands:
+      - tapOn:
+          id: 'calendar-option'
+          index: 0
+      - tapOn:
+          id: 'event-title'
+      # ASCII only — unicode through XCTest typing is a known flaky spot.
+      - inputText: 'Solunivo e2e all-day to delete'
+      - tapOn:
+          id: 'event-all-day'
+      - tapOn:
+          id: 'event-save'
+      - extendedWaitUntil:
+          notVisible: 'New Event'
+          timeout: 20000
+      # The chip sits in the all-day lane above the grid. It used to be a
+      # plain View — visible, but a tap did nothing on the phone.
+      - assertVisible:
+          id: 'all-day-event-chip'
+      - tapOn: 'Solunivo e2e all-day to delete'
+      - assertVisible: 'Edit Event'
+      # Clean up, so repeated runs don't pile up in a real calendar.
+      - tapOn:
+          id: 'event-delete'
+      - extendedWaitUntil:
+          notVisible: 'Solunivo e2e all-day to delete'
+          timeout: 20000
+- runFlow:
+    when:
+      visible: 'New Event'
+    commands:
+      # No account: leave the sheet as we found it.
+      - tapOn: 'Cancel'
+      - assertVisible: 'Today'

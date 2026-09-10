@@ -120,7 +120,7 @@ export function EventEditForm({ model }: { model: ReturnType<typeof useEventEdit
 
         <View style={styles.switchRow}>
           <Text style={styles.label}>All-day</Text>
-          <Switch onValueChange={setIsAllDay} value={isAllDay} />
+          <Switch onValueChange={setIsAllDay} testID="event-all-day" value={isAllDay} />
         </View>
 
         {existing ? null : (

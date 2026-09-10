@@ -166,14 +166,17 @@ export const makeTaskMutations = (deps: TaskMutationDeps): TaskMutations => {
         const pendingCreate = queued.find(
           (queuedOp) => queuedOp.accountId === accountId && queuedOp.kind === 'createTask',
         );
-        if (pendingCreate) {
+        if (pendingCreate && pendingCreate.dispatchedAt === undefined) {
           // The create hasn't pushed: fold the edit into it instead of
-          // patching a task Google has never seen.
+          // patching a task Google has never seen. Fresh attempt counters:
+          // an edit is a reason to try again now, not to inherit backoff.
           yield* pendingOpRepo.remove(pendingCreate.id);
           yield* enqueueAndKick(
             new PendingOp({
               ...pendingCreate,
+              attempts: 0,
               id: generateEventId(),
+              nextAttemptAt: 0,
               ...(changes.dueDate === undefined ? {} : { taskDue: changes.dueDate }),
               ...(changes.notes === undefined ? {} : { taskNotes: changes.notes }),
               ...(changes.title === undefined ? {} : { taskTitle: changes.title }),
@@ -181,6 +184,11 @@ export const makeTaskMutations = (deps: TaskMutationDeps): TaskMutations => {
           );
           return;
         }
+        // A dispatched create may already have landed on Google with the
+        // fields it was sent: its retry adopts the server task by matching
+        // exactly those, so it stays untouched and the edit queues behind
+        // it as a patch. The create's id swap rewrites this op's eventId,
+        // and applyOp holds a temp-id follower until then.
         // Latest wins: a newer edit supersedes queued ones.
         for (const queuedOp of queued) {
           if (queuedOp.accountId === accountId && queuedOp.kind === 'updateTask') {
