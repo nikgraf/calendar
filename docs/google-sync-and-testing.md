@@ -321,6 +321,23 @@ inside it (a tap taken mid-slide missed on the runner), and the
 quick-add flow accepts the bar's "couldn't be read" outcome: a CI
 simulator passes the model availability check yet cannot generate,
 so the prefilled editor is asserted only where a model answers.
+The bootstrap flow opens the dev client through
+`solunivo://expo-development-client/?url=…`, and iOS confirms a scheme
+URL opened from outside with an "Open in Solunivo?" alert — one per
+`simctl openurl`, and they stack (the CI step's own openurl plus the
+flow's `openLink`, more on a slow runner). `common/confirm-open.yaml`
+confirms exactly one and cancels the rest: every further "Open"
+re-delivered the same URL to the client while its first bundle was
+still starting, it re-fetched the manifest mid-load and the process
+died with SIGSEGV ~150 ms after the bundle ran (two runs that tapped
+"Open" four times failed; the runs that tapped once passed). The
+flow's recovery loop also re-sends the link when the launcher sits on
+a blank home screen (a launch request once sat in SpringBoard for a
+minute), and its waits are `optional` so one slow attempt cannot end
+the flow before the final "Today" assertion. On failure the job waits
+for the simulator's crash report (`~/Library/Logs/DiagnosticReports/
+Solunivo-*.ips`, written a minute or so after the crash) and prints
+its exception and faulting thread before uploading it.
 Every flow starts with `runFlow: ../common/launch.yaml`
 (launch, recover the dev client if its 10 s auto-reopen fell back to
 the launcher home or its error screen, wait for "Today",

@@ -7,30 +7,26 @@ tags:
 # CI installs a fresh EAS dev client, which opens on its launcher screen.
 # Point it at the runner's Metro through the development-client URL once;
 # afterwards the dev client reopens the last server by itself, so every
-# other flow can `launchApp` normally. iOS confirms a scheme URL opened
-# from outside with "Open in Solunivo?" — one alert per openurl, and they
-# stack, so drain them in a loop. expo-dev-menu's onboarding sheet, its
-# menu-at-launch and its floating button are switched off by
+# other flow can `launchApp` normally. expo-dev-menu's onboarding sheet,
+# its menu-at-launch and its floating button are switched off by
 # prepare-simulator.sh (UserDefaults) before the app ever starts; the
 # guards below only matter on a simulator prepared by hand.
 # 127.0.0.1, not localhost: on a GitHub runner the simulator resolved
 # localhost to IPv6 and never reached Metro ("Failed to load app").
 - openLink: 'solunivo://expo-development-client/?url=http%3A%2F%2F127.0.0.1%3A8081'
-- repeat:
-    while:
-      visible: 'Open'
-    commands:
-      - tapOn: 'Open'
+- runFlow: ../common/confirm-open.yaml
 # The dev launcher gives each request 10 s; on a loaded runner the first
 # attempt can still miss that even with the bundle warm. Its error screen
 # offers "Reload" — retry a few times, each against a warmer Metro, the
-# way a person would.
+# way a person would. The wait is optional so one slow attempt does not
+# end the flow: the loop keeps recovering and the final assertion decides.
 - repeat:
     times: 6
     commands:
       - extendedWaitUntil:
-          visible: 'Today|There was a problem loading the project|Toggle performance monitor|Continue|Error loading app|http://127\.0\.0\.1:8081'
+          visible: 'Today|There was a problem loading the project|Toggle performance monitor|Continue|Error loading app|http://127\.0\.0\.1:8081|Enter URL manually'
           timeout: 60000
+          optional: true
       # "Reload" and "Go home" exist on both the launcher's error screen and
       # the dev menu sheet, and the error view lingers in the accessibility
       # tree behind the loaded app — so each guard keys on text unique to
@@ -61,6 +57,17 @@ tags:
           commands:
             - tapOn:
                 point: '50%,15%'
+      # The launcher home with nothing under "Recently opened": the URL
+      # never reached the client (a launch request sat in SpringBoard for
+      # a minute on one runner, and the launcher started blank). Send the
+      # link again.
+      - runFlow:
+          when:
+            visible: 'Enter URL manually'
+            notVisible: 'Today|http://127\.0\.0\.1:8081'
+          commands:
+            - openLink: 'solunivo://expo-development-client/?url=http%3A%2F%2F127.0.0.1%3A8081'
+            - runFlow: ../common/confirm-open.yaml
 - extendedWaitUntil:
     visible: 'Today'
     timeout: 60000
