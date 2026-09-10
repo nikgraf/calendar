@@ -30,7 +30,8 @@
       See docs/distribution.md. Note: the OAuth consent
       screen is in Testing, where refresh tokens expire after 7 days —
       publish to Production before adding outside testers, or they hit a
-      weekly forced re-sign-in.
+      weekly forced re-sign-in — and Production requires Google's app
+      verification for the sensitive `contacts.*` scopes.
 - [x] Native iOS date/time pickers in the event editor — done (#33):
       `@react-native-community/datetimepicker` inline date + spinner time
       pickers replace the text inputs (event editor + task due date);
@@ -246,9 +247,10 @@ desktop waits on a helper binary (below).
       engine keeps both tiers per account in a `contacts` table (one row
       per person × email, tier replaced atomically on full passes).
       `contactsEnabled` mirrors `tasksEnabled` — existing accounts
-      re-consent via "Add Google Account"; the People API must be enabled
-      in the GCP project. One `searchContacts` rpc merges SQLite + device
-      rows through `rankContacts` (prefix > substring, saved/device >
+      re-consent via "Add Google Account"; the People API (not the
+      retired Contacts API) must be enabled in the GCP project. One
+      `searchContacts` rpc merges SQLite + device rows through
+      `rankContacts` (prefix > substring, saved/device >
       other, dedupe by email) behind a hand-rolled combobox on both
       platforms (chips, ArrowUp/Down/Enter, comma/blur accept typed
       addresses, Backspace removes the last chip).

@@ -99,9 +99,13 @@ invariants.
   `readMask` of names/emailAddresses/phoneNumbers. Both are _sensitive_
   scopes: existing accounts stay `contacts_enabled=0` until "Add Google
   Account" is re-run (in-place upgrade, same as tasks), and the People
-  API must be enabled in the GCP project — a disabled API answers 403
+  API must be enabled in the GCP project — the _People API_, not the
+  library's _Contacts API_ (the retired GData product; the `contacts.*`
+  scopes authorize People API calls). A disabled API answers 403
   `SERVICE_DISABLED`, which is a plain `GoogleApiError` (logged, flag
-  left on), not the scope error that disables contacts.
+  left on), not the scope error that disables contacts. Both scopes are
+  sensitive: Testing mode grants them to test users, Production needs
+  Google's app verification.
 - `requestSyncToken=true` returns `nextSyncToken` on the last page;
   incremental lists return tombstones as persons with
   `metadata.deleted: true`. Sync tokens expire after ~7 days; the People
