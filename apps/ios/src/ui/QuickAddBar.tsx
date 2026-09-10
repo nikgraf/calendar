@@ -1,12 +1,10 @@
-import {
-  type FindTimeOutcome,
-  type LanguageModel,
-  type ModelStatus,
-  type SpeechToText,
-} from '@calendar/ai';
+import { type FindTimeOutcome, type LanguageModel, type SpeechToText } from '@calendar/ai';
 import { Temporal, type FreeSlot } from '@calendar/core';
-import { useQuickAddModel, type EventEditorPrefill } from '@calendar/app-state';
-import { useEffect, useState } from 'react';
+import {
+  useModelAvailability,
+  useQuickAddModel,
+  type EventEditorPrefill,
+} from '@calendar/app-state';
 import {
   ActivityIndicator,
   AppState,
@@ -47,6 +45,20 @@ const slotLabel = (slot: FreeSlot): string => {
  * no way to tell why. It now explains itself wherever the user could
  * plausibly act, and hides only where they could not.
  */
+/**
+ * Apple Intelligence is switched on in Settings, which means leaving the
+ * app: re-check on the way back so the bar appears without a relaunch.
+ * Model downloads finish out of process too.
+ */
+const onAppActive = (onActive: () => void): (() => void) => {
+  const subscription = AppState.addEventListener('change', (next) => {
+    if (next === 'active') {
+      onActive();
+    }
+  });
+  return () => subscription.remove();
+};
+
 export function QuickAddBar({
   findSlots,
   focusedDate,
@@ -67,9 +79,7 @@ export function QuickAddBar({
   speech: SpeechToText;
   timeZone: string;
 }) {
-  const [status, setStatus] = useState<ModelStatus | null>(null);
-  const [attempt, setAttempt] = useState(0);
-  const [checking, setChecking] = useState(false);
+  const { checking, retry, status } = useModelAvailability(model, onAppActive);
   const {
     busy,
     error,
@@ -94,38 +104,6 @@ export function QuickAddBar({
     speech,
     timeZone,
   });
-
-  useEffect(() => {
-    let cancelled = false;
-    const check = () => {
-      setChecking(true);
-      void model
-        .status()
-        .then((value) => {
-          if (!cancelled) {
-            setStatus(value);
-          }
-        })
-        .finally(() => {
-          if (!cancelled) {
-            setChecking(false);
-          }
-        });
-    };
-    check();
-    // Apple Intelligence is switched on in Settings, which means leaving
-    // the app: re-check on the way back so the bar appears without a
-    // relaunch. Model downloads finish out of process too.
-    const subscription = AppState.addEventListener('change', (next) => {
-      if (next === 'active') {
-        check();
-      }
-    });
-    return () => {
-      cancelled = true;
-      subscription.remove();
-    };
-  }, [attempt, model]);
 
   if (status === null) {
     // Nothing decided yet — rendering a marker now would let e2e read a
@@ -152,7 +130,7 @@ export function QuickAddBar({
             accessibilityLabel="Check for the on-device model again"
             accessibilityRole="button"
             disabled={checking}
-            onPress={() => setAttempt((value) => value + 1)}
+            onPress={retry}
             style={[styles.button, checking && styles.buttonDisabled]}
             testID="quick-add-recheck"
           >

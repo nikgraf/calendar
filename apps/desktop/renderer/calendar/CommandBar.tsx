@@ -1,7 +1,12 @@
 import { makeFindSlots } from '@calendar/ai';
-import { useQuickAddModel, type EventEditorPrefill } from '@calendar/app-state';
+import {
+  useModelAvailability,
+  useQuickAddModel,
+  type EventEditorPrefill,
+} from '@calendar/app-state';
 import { Temporal, type FreeSlot } from '@calendar/core';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef } from 'react';
+import { Dialog } from '../Dialog.tsx';
 import { desktopLanguageModel } from '../ai/desktopModel.ts';
 import { desktopSpeech } from '../ai/desktopSpeech.ts';
 import { backend } from '../backend.ts';
@@ -20,16 +25,25 @@ const slotLabel = (slot: FreeSlot): string => {
  * the iOS QuickAddBar — same parsers, same editor-prefill hand-off, same
  * honesty about unavailability.
  */
+/** Re-check the model when the window regains focus (Apple Intelligence is switched on in System Settings). */
+const onWindowFocus = (onActive: () => void): (() => void) => {
+  window.addEventListener('focus', onActive);
+  return () => window.removeEventListener('focus', onActive);
+};
+
 export function CommandBar({
+  focusedDate,
   onClose,
   onParsed,
   timeZone,
 }: {
+  /** Undated phrases land on the day being viewed, like the iOS bar. */
+  focusedDate: Temporal.PlainDate;
   onClose: () => void;
   onParsed: (prefill: EventEditorPrefill) => void;
   timeZone: string;
 }) {
-  const [available, setAvailable] = useState<boolean | null>(null);
+  const { checking, retry, status } = useModelAvailability(desktopLanguageModel, onWindowFocus);
   const inputRef = useRef<HTMLInputElement>(null);
   const findSlotsRef = useRef(makeFindSlots(desktopLanguageModel, backend, timeZone));
   const {
@@ -47,6 +61,7 @@ export function CommandBar({
     voice,
     voiceAvailable,
   } = useQuickAddModel({
+    fallbackDate: focusedDate.toString(),
     findSlots: (phrase) => findSlotsRef.current(phrase),
     model: desktopLanguageModel,
     // The bar is transient on desktop: hand the prefill over and close.
@@ -59,32 +74,33 @@ export function CommandBar({
   });
 
   useEffect(() => {
-    let cancelled = false;
-    void desktopLanguageModel.status().then((status) => {
-      if (!cancelled) {
-        setAvailable(status === 'ready');
-      }
-    });
     inputRef.current?.focus();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  }, [status]);
 
   return (
-    <div
-      className="fixed inset-0 z-40 flex items-start justify-center bg-black/30 pt-28"
-      onClick={onClose}
+    <Dialog
+      align="top"
+      label="Quick add"
+      onClose={onClose}
+      panelClassName="w-[560px] rounded-2xl bg-white p-4 shadow-2xl"
+      zIndex={40}
     >
-      <div
-        className="w-[560px] rounded-2xl bg-white p-4 shadow-2xl"
-        onClick={(mouse) => mouse.stopPropagation()}
-      >
-        {available === false ? (
-          <p className="text-sm text-neutral-500">
-            The on-device model is unavailable — Solunivo&apos;s AI features need macOS 26 with
-            Apple Intelligence enabled.
-          </p>
+      <>
+        {status !== null && status !== 'ready' ? (
+          <div className="flex items-center gap-3">
+            <p className="flex-1 text-sm text-neutral-500">
+              The on-device model is unavailable — Solunivo&apos;s AI features need macOS 26 with
+              Apple Intelligence enabled.
+            </p>
+            <button
+              className="rounded-lg border border-neutral-200 px-3 py-1.5 text-sm disabled:opacity-40"
+              disabled={checking}
+              onClick={retry}
+              type="button"
+            >
+              Retry
+            </button>
+          </div>
         ) : (
           <>
             <div className="flex items-center gap-2">
@@ -167,7 +183,7 @@ export function CommandBar({
             ) : null}
           </>
         )}
-      </div>
-    </div>
+      </>
+    </Dialog>
   );
 }
