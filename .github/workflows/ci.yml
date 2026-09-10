@@ -64,21 +64,11 @@ jobs:
             echo "code=false" >> "$GITHUB_OUTPUT"
           fi
 
+  # The gate lives in gate.yml so ios.yml can run the same one (see the
+  # note there about the check name).
   gate:
-    name: Lint, typecheck, unit tests
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 24
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm check
-      - run: pnpm typecheck
-      - run: pnpm test
+    name: Gate
+    uses: ./.github/workflows/gate.yml
 
   e2e:
     name: Desktop e2e (Electron, CDP)
