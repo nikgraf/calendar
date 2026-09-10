@@ -483,6 +483,9 @@ export interface PendingOpRepoShape {
   ) => Effect.Effect<void, SqlError>;
 }
 
+/** Ops one drain pass takes on; a larger backlog continues on the next kick. */
+const DRAIN_PAGE_SIZE = 200;
+
 /** Rows of an unknown op kind are skipped: nothing could apply them. */
 const decodedOps = (row: PendingOpRow): Array<PendingOp> => {
   const op = pendingOpFromRow(row);
@@ -524,10 +527,11 @@ const makePendingOpRepo: Effect.Effect<PendingOpRepoShape, never, Reactivity | S
         Effect.map(sql<PendingOpRow>`SELECT * FROM pending_ops ORDER BY created_at`, (rows) =>
           rows.flatMap(decodedOps),
         ),
+      // Bounded: one drain handles a page; the next kick takes the rest.
       listDue: (now) =>
         Effect.map(
           sql<PendingOpRow>`SELECT * FROM pending_ops
-            WHERE next_attempt_at <= ${now} ORDER BY created_at`,
+            WHERE next_attempt_at <= ${now} ORDER BY created_at LIMIT ${DRAIN_PAGE_SIZE}`,
           (rows) => rows.flatMap(decodedOps),
         ),
       markDispatched: (opId, at) =>
