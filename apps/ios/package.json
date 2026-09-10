@@ -7,7 +7,8 @@
     "ios": "expo run:ios",
     "prebuild": "expo prebuild --platform ios",
     "start": "expo start",
-    "test:e2e": "maestro test --exclude-tags ci-bootstrap,ci-reminders e2e/flows"
+    "check:devclient": "node scripts/check-devclient.mjs",
+    "test:e2e": "node scripts/check-devclient.mjs && maestro test --exclude-tags ci-bootstrap,ci-reminders e2e/flows"
   },
   "dependencies": {
     "@calendar/ai": "workspace:*",
@@ -42,7 +43,7 @@
     "rrule-temporal": "catalog:"
   },
   "devDependencies": {
-    "@types/react": "^19.2.17",
+    "@types/react": "catalog:",
     "eas-cli": "^22.0.0",
     "typescript": "catalog:"
   }
