@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync } from 'node:fs';
+import { readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { BrowserWindow, ipcMain } from 'electron';
 
@@ -46,7 +46,11 @@ const persist = () => {
     return;
   }
   try {
-    writeFileSync(settingsPath, `${JSON.stringify({ screenPrivacy: mode }, null, 2)}\n`);
+    // Temp file + rename: a crash mid-write must not leave a truncated
+    // settings.json (which would read as "hidden" — safe, but lossy).
+    const temp = `${settingsPath}.${process.pid}.tmp`;
+    writeFileSync(temp, `${JSON.stringify({ screenPrivacy: mode }, null, 2)}\n`);
+    renameSync(temp, settingsPath);
   } catch {
     // A failed write must not break the running state.
   }

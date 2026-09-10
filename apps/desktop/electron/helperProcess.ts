@@ -162,6 +162,13 @@ export const callHelper = (method: string, params?: Record<string, unknown>): Pr
     const timer = setTimeout(() => {
       pending.delete(id);
       reject(new Error('model helper timed out'));
+      // A request that outlives its budget means a wedged helper; kill it
+      // so the next call respawns (after the restart backoff) instead of
+      // every later request timing out too. The exit handler fails the
+      // other pending requests.
+      if (child === helper) {
+        helper.kill();
+      }
     }, TIMEOUTS_MS[method] ?? DEFAULT_TIMEOUT_MS);
     pending.set(id, { reject, resolve, timer });
     helper.stdin.write(`${JSON.stringify({ id, method, ...(params ? { params } : {}) })}\n`);
