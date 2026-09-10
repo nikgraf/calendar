@@ -46,14 +46,25 @@ certificate at developer.apple.com → Certificates if none exists yet.
 The same four `APPLE_*` variables activate signing/notarization for local
 `pnpm --filter @calendar/desktop make` runs — the forge config is env-gated.
 
-## Known limitation: no OAuth config in the artifact
+## OAuth config in the artifact
 
 The desktop OAuth client id/secret come from env vars or the gitignored
-`google-oauth.local.json` — neither is baked into CI builds, so a
-downloaded testing build cannot complete Google sign-in yet. Testers can
-inspect the UI; full use requires a local dev setup (or a future decision
-to embed the non-confidential RFC 8252 desktop client config in the
-build).
+`google-oauth.local.json` for developers. For the testing build, CI
+writes `apps/desktop/google-oauth.json` from the `GOOGLE_DESKTOP_CLIENT_ID`
+and `GOOGLE_DESKTOP_CLIENT_SECRET` repository secrets before `make`
+(`loadOAuthConfig` reads it as its last source, and Forge ships it inside
+the package). Until those secrets exist the job warns and the download
+can only show the UI. The desktop client secret is not confidential
+(RFC 8252 — it is a public client), which is why embedding it is fine.
+
+## Versions
+
+Every package is `0.1.0` (`package.json`, the packager's
+CFBundleShortVersionString) and the testing build's CFBundleVersion is the
+short commit SHA; iOS build numbers come from EAS (`appVersionSource:
+remote`, auto-increment). Bump the package versions together when a
+release is worth a number; `CHANGELOG.md` collects what changed between
+bumps (the decision log in `docs/decisions.md` has the detail).
 
 ## Installing a testing build (testers)
 

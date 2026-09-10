@@ -445,6 +445,21 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Compute short SHA
         run: echo "SHORT_SHA=${GITHUB_SHA::7}" >> "$GITHUB_ENV"
+      # Without this a downloaded testing build cannot sign in at all. The
+      # desktop client secret is not confidential (RFC 8252); the file is
+      # gitignored and read by loadOAuthConfig as its last source.
+      - name: Embed the desktop OAuth client config (when the secrets exist)
+        env:
+          GOOGLE_DESKTOP_CLIENT_ID: ${{ secrets.GOOGLE_DESKTOP_CLIENT_ID }}
+          GOOGLE_DESKTOP_CLIENT_SECRET: ${{ secrets.GOOGLE_DESKTOP_CLIENT_SECRET }}
+        run: |
+          if [ -z "$GOOGLE_DESKTOP_CLIENT_ID" ]; then
+            echo "::warning::GOOGLE_DESKTOP_CLIENT_ID is not set — the testing build cannot sign in"
+            exit 0
+          fi
+          jq -n --arg id "$GOOGLE_DESKTOP_CLIENT_ID" --arg secret "$GOOGLE_DESKTOP_CLIENT_SECRET" \
+            '{clientId: $id} + (if $secret == "" then {} else {clientSecret: $secret} end)' \
+            > apps/desktop/google-oauth.json
       # make = vp build + tsdown + electron-forge make: packages, signs,
       # notarizes + staples (packager runs @electron/notarize), then zips.
       - name: Build, sign, notarize, zip
