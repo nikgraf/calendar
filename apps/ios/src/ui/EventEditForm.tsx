@@ -58,7 +58,14 @@ export function EventEditForm({ model }: { model: ReturnType<typeof useEventEdit
   } = model;
 
   return (
-    <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+    // Keyboard insets: the invitee field and its suggestions sit at the
+    // bottom of the form, under the keyboard the auto-focused title
+    // raises; without the inset they cannot be scrolled into reach.
+    <ScrollView
+      automaticallyAdjustKeyboardInsets
+      contentContainerStyle={styles.content}
+      keyboardShouldPersistTaps="handled"
+    >
       {error ? <Text style={styles.error}>{error}</Text> : null}
       {joinUrl ? (
         <Pressable onPress={() => void Linking.openURL(joinUrl)} style={styles.joinButton}>

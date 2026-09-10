@@ -226,6 +226,7 @@ jobs:
             ~/.maestro/tests/
             ${{ runner.temp }}/metro.log
             ${{ runner.temp }}/*.png
+            ~/Library/Logs/DiagnosticReports/Solunivo*.ips
           retention-days: 7
           if-no-files-found: ignore
 
