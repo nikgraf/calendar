@@ -46,6 +46,9 @@ export default defineConfig({
       },
     ],
   },
+  staged: {
+    '*': 'vp check --fix',
+  },
   test: {
     include: process.env['E2E']
       ? ['apps/desktop/e2e/**/*.e2e.ts']
