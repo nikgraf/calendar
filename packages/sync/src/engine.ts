@@ -34,7 +34,7 @@ import {
   RemindersClient,
   type RemindersError,
 } from '@calendar/reminders';
-import { Clock, Context, Effect, Layer, Schedule, Semaphore, Stream } from 'effect';
+import { Clock, Context, Duration, Effect, Layer, Schedule, Semaphore, Stream } from 'effect';
 import type { SqlError } from 'effect/unstable/sql/SqlError';
 import { EventMutations } from './mutations.ts';
 
@@ -63,15 +63,35 @@ export const SYNC_INTERVAL = '90 seconds';
 
 type SyncError = GoogleRequestError | RemindersError | SqlError;
 
-/** Retries rate limits and transient availability failures with backoff. */
+const TRANSIENT_RETRIES = 5;
+
+/**
+ * Retries rate limits and transient availability failures with jittered
+ * exponential backoff — except that a 429's Retry-After, when Google
+ * sends one, is the wait (it used to be parsed and then ignored).
+ */
 const withTransientRetry = <A, E extends { readonly _tag: string }, R>(
   effect: Effect.Effect<A, E, R>,
-): Effect.Effect<A, E, R> =>
-  Effect.retry(effect, {
-    schedule: Schedule.jittered(Schedule.exponential('1 second')),
-    times: 5,
-    while: (error) => error._tag === 'RateLimitedError' || error._tag === 'ApiUnavailableError',
-  });
+): Effect.Effect<A, E, R> => {
+  const attempt = (n: number): Effect.Effect<A, E, R> =>
+    Effect.catchIf(
+      effect,
+      (error): error is E =>
+        error._tag === 'RateLimitedError' || error._tag === 'ApiUnavailableError',
+      (error) => {
+        if (n >= TRANSIENT_RETRIES) {
+          return Effect.fail(error);
+        }
+        const retryAfterMs = (error as { readonly retryAfterMs?: number | undefined }).retryAfterMs;
+        const backoffMs = 1000 * 2 ** n * (0.5 + Math.random());
+        return Effect.andThen(
+          Effect.sleep(Duration.millis(retryAfterMs ?? backoffMs)),
+          attempt(n + 1),
+        );
+      },
+    );
+  return attempt(0);
+};
 
 const plainDateMs = (isoDate: string): number | undefined => {
   try {
@@ -594,9 +614,14 @@ const make: Effect.Effect<
       }
       if (result.needsFull && !full) {
         // A snapshot id with no local row and no changed entry (rebuild,
-        // lost row): fetch everything once.
+        // lost row): fetch everything once. The account can vanish during
+        // this pass just like the first one.
         full = true;
-        yield* pass(undefined);
+        const second = yield* pass(undefined);
+        if (second.skipped) {
+          yield* Effect.logDebug('reminders account removed mid-pass; nothing written');
+          return;
+        }
       }
       yield* syncStateRepo.set(
         new SyncState({
@@ -684,7 +709,16 @@ const make: Effect.Effect<
           const accounts = yield* accountRepo.list();
           for (const account of accounts) {
             if (account.provider === 'apple') {
-              yield* syncReminders(account);
+              // Per account, like syncAll: one failing account must not
+              // abort the pass for the rest.
+              yield* syncReminders(account).pipe(
+                Effect.catchCause((cause) =>
+                  Effect.logWarning('reminders change pass failed', {
+                    accountId: account.id,
+                    cause: String(cause),
+                  }),
+                ),
+              );
             }
           }
         }),

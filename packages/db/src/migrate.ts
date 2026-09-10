@@ -58,6 +58,21 @@ export const runMigrationsWith = (
       );
     }
 
+    // Ids must climb: the applied set is compared by id, so an entry that
+    // sorts below its predecessor would apply out of order and silently.
+    for (let index = 1; index < list.length; index += 1) {
+      const previous = list[index - 1]![0];
+      const current = list[index]![0];
+      if (current <= previous) {
+        return yield* Effect.die(
+          new Error(
+            `Migration ids must be strictly increasing: ${String(current)} follows ` +
+              `${String(previous)}.`,
+          ),
+        );
+      }
+    }
+
     for (const [id, name, load] of list) {
       if (applied.has(id)) {
         continue;

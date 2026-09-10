@@ -131,6 +131,18 @@ describe('runMigrations', () => {
     }).pipe(Effect.provide(sqlLayer())),
   );
 
+  it.effect('dies when migration ids do not climb', () =>
+    Effect.gen(function* () {
+      const nextId = (migrations.at(-1)?.[0] ?? 0) + 1;
+      const later: ResolvedMigration = [nextId + 1, 'later', Effect.succeed(Effect.void)];
+      const earlier: ResolvedMigration = [nextId, 'earlier', Effect.succeed(Effect.void)];
+      const defect: unknown = yield* runMigrationsWith([...migrations, later, earlier]).pipe(
+        Effect.catchDefect((d) => Effect.succeed<unknown>(d)),
+      );
+      expect(String(defect)).toContain('strictly increasing');
+    }).pipe(Effect.provide(sqlLayer())),
+  );
+
   it.effect('dies when the database is ahead of the build (downgrade guard)', () =>
     Effect.gen(function* () {
       const sql = yield* SqlClient;

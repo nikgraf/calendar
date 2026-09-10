@@ -394,7 +394,11 @@ export const makeApplyOp = (
           // and the UI told; it used to vanish without a trace.
           error.status === 409
             ? Effect.succeed('done' as const)
-            : error.status >= 400 && error.status < 500 && error.status !== 429
+            : (error.status >= 400 && error.status < 500 && error.status !== 429) ||
+                // A 2xx whose body did not decode is a schema bug on our
+                // side; retrying it forever at the 30-minute cap fixes
+                // nothing. The response landed, so the next pull has it.
+                (error.status >= 200 && error.status < 300)
               ? drop(op, `${error.status}: ${error.message}`)
               : Effect.succeed(retry(`${error.status}: ${error.message}`)),
         // The scope vanished after the op was queued (consent revoked, or
