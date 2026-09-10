@@ -4,6 +4,7 @@ import { runMigrations } from '@calendar/db';
 import {
   ApiUnavailableError,
   type GcalTasksPage,
+  GoogleApiError,
   GoogleCalendarClient,
   type GoogleCalendarClientShape,
   GooglePeopleClient,
@@ -645,6 +646,29 @@ describe('completeTask', () => {
       expect(attempts).toBe(2);
       expect(patches).toEqual(['server-fresh|Final']);
       expect(yield* ops.listAll()).toHaveLength(0);
+    }).pipe(noYield, Effect.provide(testLayer(client)));
+  });
+
+  it.effect('a create Google rejects for good takes its optimistic row with it', () => {
+    const client: GoogleTasksClientShape = tasksClient({
+      insertTask: () =>
+        Effect.fail(new GoogleApiError({ message: 'Invalid value for title', status: 400 })),
+    });
+    return Effect.gen(function* () {
+      yield* seedTasks;
+      const mutations = yield* EventMutations;
+      const temp = yield* mutations.createTask({
+        accountId: 'acc-1',
+        dueDate: '2026-08-30',
+        taskListId: 'list-1',
+        title: 'Rejected',
+      });
+      yield* mutations.processPendingOps();
+      expect(yield* (yield* PendingOpRepo).listAll()).toHaveLength(0);
+      // The temp row was `pending`, which deleteStale never touches: it
+      // used to render forever as a task Google never had.
+      const window = yield* (yield* TaskRepo).getWindow('2026-08-24', '2026-08-31');
+      expect(window.some((row) => row.id === temp.id)).toBe(false);
     }).pipe(noYield, Effect.provide(testLayer(client)));
   });
 

@@ -318,6 +318,23 @@ describe('EventMutations', () => {
     );
   });
 
+  it.effect('a create Google rejects for good takes its optimistic event with it', () => {
+    const client = stubClient({
+      insertEvent: () =>
+        Effect.fail(new GoogleApiError({ message: 'Invalid value for start', status: 400 })),
+    });
+    return Effect.gen(function* () {
+      yield* seedCalendar;
+      const mutations = yield* EventMutations;
+      const record = yield* mutations.createEvent(draft);
+      yield* mutations.processPendingOps();
+
+      expect(yield* (yield* PendingOpRepo).listAll()).toHaveLength(0);
+      const events = yield* EventRepo;
+      expect(yield* events.getById('acc-1', 'cal-1', record.id)).toBeNull();
+    }).pipe(Effect.provide(mutationsLayer(client)));
+  });
+
   it.effect('a transient failure records its reason on the queued op', () => {
     const client = stubClient({
       insertEvent: () => Effect.fail(new ApiUnavailableError({ cause: 'connection reset' })),

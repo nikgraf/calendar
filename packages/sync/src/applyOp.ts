@@ -83,9 +83,21 @@ export const makeApplyOp = (
     tasksClient,
   } = deps;
 
-  /** A rejection retrying cannot fix: say so, tell the UI, drop the op. */
+  /**
+   * A rejection retrying cannot fix: say so, tell the UI, drop the op. A
+   * dropped create also takes its optimistic row with it — that row is
+   * `pending`, which deleteStale never collects, so it would otherwise
+   * render forever as an event or task Google never had.
+   */
   const drop = (op: PendingOp, reason: string): Effect.Effect<ApplyOutcome> =>
     Effect.logWarning('pending op dropped', { eventId: op.eventId, kind: op.kind, reason }).pipe(
+      Effect.andThen(
+        op.kind === 'create'
+          ? Effect.ignore(eventRepo.deleteEvent(op.accountId, op.calendarId, op.eventId))
+          : op.kind === 'createTask' && op.taskListId
+            ? Effect.ignore(taskRepo.removeTask(op.accountId, op.taskListId, op.eventId))
+            : Effect.void,
+      ),
       Effect.andThen(Effect.ignore(notifyDropped)),
       Effect.as('done' as const),
     );
