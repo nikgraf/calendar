@@ -18,32 +18,45 @@ name: Launch the app and wait for a settled shell (shared preamble)
           timeout: 60000
       # Guards key on text unique to each screen: "Reload"/"Go home" exist
       # on both the error screen and the dev menu, and the error view
-      # lingers in the accessibility tree behind the loaded app.
+      # lingers in the accessibility tree behind the loaded app. Each tap
+      # is optional: the dev client reopens the last server by itself, so
+      # the launcher home its guard just saw can be gone by the time the
+      # tap runs (run 34495489966: "Downloading 100%…" 400 ms after the
+      # guard matched the recent-server row) — the loop simply re-waits.
       - runFlow:
           when:
             visible: 'Error loading app'
           commands:
-            - tapOn: 'OK'
+            - tapOn:
+                text: 'OK'
+                optional: true
       - runFlow:
           when:
             visible: 'There was a problem loading the project'
           commands:
-            - tapOn: 'Reload'
+            - tapOn:
+                text: 'Reload'
+                optional: true
       - runFlow:
           when:
             visible: "http://(127\\.0\\.0\\.1|localhost):8081"
           commands:
-            - tapOn: "http://(127\\.0\\.0\\.1|localhost):8081"
+            - tapOn:
+                text: "http://(127\\.0\\.0\\.1|localhost):8081"
+                optional: true
       - runFlow:
           when:
             visible: 'Continue'
           commands:
-            - tapOn: 'Continue'
+            - tapOn:
+                text: 'Continue'
+                optional: true
       - runFlow:
           when:
             visible: 'Toggle performance monitor'
           commands:
             - tapOn:
+                optional: true
                 point: '50%,15%'
 - extendedWaitUntil:
     visible: 'Today'

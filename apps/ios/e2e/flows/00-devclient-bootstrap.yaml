@@ -30,32 +30,43 @@ tags:
       # "Reload" and "Go home" exist on both the launcher's error screen and
       # the dev menu sheet, and the error view lingers in the accessibility
       # tree behind the loaded app — so each guard keys on text unique to
-      # its screen, never on those two buttons.
+      # its screen, never on those two buttons. Taps are optional: the
+      # screen a guard saw can move on by itself before the tap lands
+      # (see common/launch.yaml); the loop re-waits.
       - runFlow:
           when:
             visible: 'Error loading app'
           commands:
-            - tapOn: 'OK'
+            - tapOn:
+                text: 'OK'
+                optional: true
       - runFlow:
           when:
             visible: 'http://127\.0\.0\.1:8081'
           commands:
-            - tapOn: 'http://127\.0\.0\.1:8081'
+            - tapOn:
+                text: 'http://127\.0\.0\.1:8081'
+                optional: true
       - runFlow:
           when:
             visible: 'There was a problem loading the project'
           commands:
-            - tapOn: 'Reload'
+            - tapOn:
+                text: 'Reload'
+                optional: true
       - runFlow:
           when:
             visible: 'Continue'
           commands:
-            - tapOn: 'Continue'
+            - tapOn:
+                text: 'Continue'
+                optional: true
       - runFlow:
           when:
             visible: 'Toggle performance monitor'
           commands:
             - tapOn:
+                optional: true
                 point: '50%,15%'
       # The launcher home with nothing under "Recently opened": the URL
       # never reached the client (a launch request sat in SpringBoard for
