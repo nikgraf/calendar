@@ -1,13 +1,7 @@
-import { useBackendMutations, useContactsSearch } from '@calendar/app-state';
-import {
-  emailKey,
-  isValidEmail,
-  type Attendee,
-  type AttendeeInput,
-  type Contact,
-} from '@calendar/core';
+import { useInviteeField } from '@calendar/app-state';
+import { emailKey, isValidEmail, type Attendee, type AttendeeInput } from '@calendar/core';
 import { Effect } from 'effect';
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import { Pressable, Text, TextInput, View } from 'react-native';
 import { iosContactsClient } from '../contactsClient.ts';
 import { sheetStyles as styles } from './editSheetShared.ts';
@@ -19,12 +13,21 @@ const STATUS_COLOR: Record<Attendee['responseStatus'], string> = {
   tentative: '#f59e0b',
 };
 
+const contactsStatus = (): Promise<string> =>
+  Effect.runPromise(
+    iosContactsClient.status().pipe(Effect.orElseSucceed(() => 'unavailable' as const)),
+  );
+
 /**
  * Guest chips + a typeahead over device and Google contacts. Suggestions
  * render as plain pressables under the input (no FlatList inside the
  * sheet's ScrollView); the enclosing ScrollView keeps taps alive with
  * keyboardShouldPersistTaps so a suggestion tap is not eaten by the
- * keyboard dismissal. Return/blur turn a typed address into a chip.
+ * keyboard dismissal. The state machine is useInviteeField, shared with
+ * the desktop combobox: the query is debounced, rows for an earlier
+ * query show dimmed and are never auto-picked, Return/comma/blur turn a
+ * typed address into a chip, and Backspace on an empty field removes
+ * the last chip.
  */
 export function InviteeField({
   attendees,
@@ -37,53 +40,32 @@ export function InviteeField({
   onAdd: (input: AttendeeInput) => boolean;
   onRemove: (email: string) => void;
 }) {
-  const [text, setText] = useState('');
-  const [permission, setPermission] = useState<string>('unavailable');
-  const [busy, setBusy] = useState(false);
-  const mutations = useBackendMutations();
+  const {
+    acceptEnter,
+    addTyped,
+    allow,
+    busy,
+    choose,
+    loadPermission,
+    permission,
+    removeLast,
+    setText,
+    stale,
+    suggestions,
+    text,
+  } = useInviteeField({
+    attendees,
+    contactsStatus,
+    isProtected: (email) => attendeeStatus(email)?.isOrganizer === true,
+    onAdd,
+    onRemove,
+  });
 
   useEffect(() => {
-    let cancelled = false;
-    void Effect.runPromise(
-      iosContactsClient.status().pipe(Effect.orElseSucceed(() => 'unavailable' as const)),
-    ).then((status) => {
-      if (!cancelled) {
-        setPermission(status);
-      }
-    });
-    return () => {
-      cancelled = true;
-    };
+    void loadPermission();
+    // Once, on mount: the permission only changes through `allow`.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  const taken = new Set(attendees.map((attendee) => emailKey(attendee.email)));
-  const search = useContactsSearch(text);
-  const suggestions = search.contacts.filter((contact) => !taken.has(emailKey(contact.email)));
-
-  const choose = (contact: Contact) => {
-    onAdd({ displayName: contact.displayName, email: contact.email });
-    setText('');
-  };
-
-  const addTyped = () => {
-    const trimmed = text.trim();
-    if (isValidEmail(trimmed)) {
-      onAdd({ email: trimmed });
-      setText('');
-    }
-  };
-
-  const allow = async () => {
-    setBusy(true);
-    try {
-      const result = await mutations.connectContacts(undefined);
-      setPermission(result.granted ? 'authorized' : 'denied');
-    } catch {
-      setPermission('denied');
-    } finally {
-      setBusy(false);
-    }
-  };
 
   return (
     <View>
@@ -105,6 +87,7 @@ export function InviteeField({
                 ) : (
                   <Pressable
                     accessibilityLabel={`Remove ${attendee.email}`}
+                    accessibilityRole="button"
                     hitSlop={8}
                     onPress={() => onRemove(attendee.email)}
                   >
@@ -117,20 +100,27 @@ export function InviteeField({
         </View>
       ) : null}
       <TextInput
+        accessibilityLabel="Invitees"
         autoCapitalize="none"
         autoCorrect={false}
         blurOnSubmit={false}
         keyboardType="email-address"
         onBlur={addTyped}
-        onChangeText={setText}
-        onSubmitEditing={() => {
-          // Rows for an earlier query are shown dimmed, never auto-picked.
-          if (suggestions[0] && !search.stale && !isValidEmail(text)) {
-            choose(suggestions[0]);
-          } else {
-            addTyped();
+        onChangeText={(next) => {
+          // A comma accepts the address typed before it, like desktop.
+          if (next.endsWith(',') && isValidEmail(next.slice(0, -1).trim())) {
+            setText(next.slice(0, -1));
+            queueMicrotask(addTyped);
+            return;
+          }
+          setText(next);
+        }}
+        onKeyPress={({ nativeEvent }) => {
+          if (nativeEvent.key === 'Backspace') {
+            removeLast();
           }
         }}
+        onSubmitEditing={acceptEnter}
         placeholder="Add guests"
         returnKeyType="done"
         style={styles.input}
@@ -141,9 +131,10 @@ export function InviteeField({
         <View style={styles.suggestions}>
           {suggestions.map((contact) => (
             <Pressable
+              accessibilityRole="button"
               key={contact.id}
               onPress={() => choose(contact)}
-              style={[styles.suggestion, search.stale && styles.suggestionStale]}
+              style={[styles.suggestion, stale && styles.suggestionStale]}
             >
               <Text style={styles.suggestionTitle}>{contact.displayName ?? contact.email}</Text>
               {contact.displayName ? (
@@ -151,7 +142,7 @@ export function InviteeField({
               ) : null}
             </Pressable>
           ))}
-          {suggestions.length === 0 ? (
+          {suggestions.length === 0 && !stale ? (
             <Text style={styles.hint}>
               {isValidEmail(text) ? 'Tap Done to invite this address' : 'No matches'}
             </Text>
@@ -159,7 +150,7 @@ export function InviteeField({
         </View>
       ) : null}
       {permission === 'notDetermined' ? (
-        <Pressable disabled={busy} onPress={() => void allow()}>
+        <Pressable accessibilityRole="button" disabled={busy} onPress={() => void allow()}>
           <Text style={styles.webLink}>Allow access to Contacts to suggest people</Text>
         </Pressable>
       ) : null}
