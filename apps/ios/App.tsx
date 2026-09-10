@@ -31,7 +31,7 @@ import { QuickAddBar } from './src/ui/QuickAddBar.tsx';
 import { MonthGrid } from './src/ui/MonthGrid.tsx';
 import { EventEditSheet, type EditSeed } from './src/ui/EventEditSheet.tsx';
 import { SettingsSheet } from './src/ui/SettingsSheet.tsx';
-import { ConflictToast, MutationNoticeToast } from './src/ui/Toast.tsx';
+import { ConflictToast, DroppedToast, MutationNoticeToast } from './src/ui/Toast.tsx';
 import { ErrorBoundary } from './src/ui/ErrorBoundary.tsx';
 import { palette } from './src/ui/theme.ts';
 import { WeekStrip } from './src/ui/WeekStrip.tsx';
@@ -233,6 +233,7 @@ function CalendarScreen() {
       ) : null}
       <SettingsSheet onClose={() => setShowSettings(false)} visible={showSettings} />
       <ConflictToast />
+      <DroppedToast />
       <MutationNoticeToast />
     </SafeAreaView>
   );

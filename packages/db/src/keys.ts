@@ -11,6 +11,11 @@ export const EVENTS_KEY = 'events';
 export const OPS_KEY = 'pendingOps';
 /** Broadcast when a 412 conflict dropped a local edit (server wins). */
 export const CONFLICT_NOTICE_KEY = 'notice:conflict';
+/**
+ * Broadcast when Google permanently rejected a queued change (a 4xx that
+ * retrying cannot fix) and the op was discarded.
+ */
+export const DROPPED_NOTICE_KEY = 'notice:dropped';
 
 /** Google Tasks: task rows (status/content) changed. */
 export const TASKS_KEY = 'tasks';

@@ -10,10 +10,10 @@ import {
   truncateRecurrence,
 } from '@calendar/core';
 import { AccountRepo, CalendarRepo, EventRepo, PendingOpRepo, TaskRepo } from '@calendar/db';
-import { CONFLICT_NOTICE_KEY } from '@calendar/db/keys';
+import { CONFLICT_NOTICE_KEY, DROPPED_NOTICE_KEY } from '@calendar/db/keys';
 import { generateEventId, GoogleCalendarClient, GoogleTasksClient } from '@calendar/google';
 import { RemindersClient } from '@calendar/reminders';
-import { Clock, Context, Effect, Layer, Semaphore } from 'effect';
+import { Cause, Clock, Context, Effect, Layer, Semaphore } from 'effect';
 import { Reactivity } from 'effect/unstable/reactivity/Reactivity';
 import { makeApplyOp } from './applyOp.ts';
 import {
@@ -173,6 +173,7 @@ const make: Effect.Effect<
     client,
     eventRepo,
     notifyConflict: Effect.ignore(reactivity.invalidate([CONFLICT_NOTICE_KEY])),
+    notifyDropped: Effect.ignore(reactivity.invalidate([DROPPED_NOTICE_KEY])),
     pendingOpRepo,
     taskRepo,
     tasksClient,
@@ -197,17 +198,23 @@ const make: Effect.Effect<
             if (outcome === 'done') {
               yield* pendingOpRepo.remove(op.id);
             } else {
+              // The reason lands in pending_ops.last_error, which the
+              // unsynced-changes panel shows next to the retry count.
               yield* pendingOpRepo.markFailed(
                 op.id,
                 op.attempts + 1,
                 now + retryDelayMs(op.attempts),
-                'transient failure',
+                outcome.retry,
               );
             }
           }
         }),
       )
-      .pipe(Effect.catchCause(() => Effect.void));
+      .pipe(
+        Effect.catchCause((cause) =>
+          Effect.logError('pending-op drain failed', { cause: String(Cause.squash(cause)) }),
+        ),
+      );
 
   const googleTasks = makeTaskMutations({
     enqueueAndKick,
