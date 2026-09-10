@@ -300,7 +300,21 @@ export interface EventRepoShape {
     calendarId: string,
     masterId: string,
   ) => Effect.Effect<ReadonlyArray<EventRecord>, SqlError>;
-  readonly upsertMany: (events: ReadonlyArray<EventRecord>) => Effect.Effect<void, SqlError>;
+  /** Hands a row back to sync after its queued edit was abandoned. */
+  readonly markSynced: (
+    accountId: string,
+    calendarId: string,
+    eventId: string,
+  ) => Effect.Effect<void, SqlError>;
+  /**
+   * `mode: 'pull'` (sync pages) leaves rows with a queued local edit
+   * (`sync_status = 'pending'`) untouched; the default ('ack', push
+   * responses and local writes) overwrites.
+   */
+  readonly upsertMany: (
+    events: ReadonlyArray<EventRecord>,
+    options?: { readonly mode?: 'ack' | 'pull' },
+  ) => Effect.Effect<void, SqlError>;
 }
 
 const makeEventRepo: Effect.Effect<EventRepoShape, never, Reactivity | SqlClient> = Effect.gen(
@@ -308,8 +322,9 @@ const makeEventRepo: Effect.Effect<EventRepoShape, never, Reactivity | SqlClient
     const sql = yield* SqlClient;
     const reactivity = yield* Reactivity;
 
-    const upsertOne = (event: EventRecord) => {
+    const upsertOne = (event: EventRecord, mode: 'ack' | 'pull') => {
       const row = eventToRow(event);
+      const guard = mode === 'pull' ? sql`WHERE events.sync_status != 'pending'` : sql``;
       return sql`
       INSERT INTO events (account_id, calendar_id, id, etag, status, title, location,
                           description, is_all_day, start_utc, end_utc, start_date,
@@ -344,6 +359,7 @@ const makeEventRepo: Effect.Effect<EventRepoShape, never, Reactivity | SqlClient
         sync_status = excluded.sync_status,
         updated_at = excluded.updated_at,
         synced_at = excluded.synced_at
+      ${guard}
     `;
     };
 
@@ -418,9 +434,21 @@ const makeEventRepo: Effect.Effect<EventRepoShape, never, Reactivity | SqlClient
             AND calendar_id = ${calendarId} AND recurring_event_id = ${masterId}`,
           (rows) => rows.map(eventFromRow),
         ),
-      upsertMany: (events) => {
+      markSynced: (accountId, calendarId, eventId) =>
+        reactivity.mutation(
+          [EVENTS_KEY, eventsKey(calendarId)],
+          Effect.asVoid(
+            sql`UPDATE events SET sync_status = 'synced' WHERE account_id = ${accountId}
+              AND calendar_id = ${calendarId} AND id = ${eventId}`,
+          ),
+        ),
+      upsertMany: (events, options) => {
         const keys = [EVENTS_KEY, ...new Set(events.map((event) => eventsKey(event.calendarId)))];
-        return reactivity.mutation(keys, Effect.forEach(events, upsertOne, { discard: true }));
+        const mode = options?.mode ?? 'ack';
+        return reactivity.mutation(
+          keys,
+          Effect.forEach(events, (event) => upsertOne(event, mode), { discard: true }),
+        );
       },
     };
   },
@@ -597,6 +625,12 @@ export interface TaskRepoShape {
   /** Optimistic local create (sync_status 'pending' until the push lands). */
   readonly insertLocal: (task: TaskRecord) => Effect.Effect<void, SqlError>;
   readonly listLists: (accountId?: string) => Effect.Effect<ReadonlyArray<TaskListInfo>, SqlError>;
+  /** Hands a row back to sync after its queued edit was abandoned. */
+  readonly markSynced: (
+    accountId: string,
+    listId: string,
+    taskId: string,
+  ) => Effect.Effect<void, SqlError>;
   readonly removeListsMissing: (
     accountId: string,
     keepIds: ReadonlyArray<string>,
@@ -674,9 +708,15 @@ export interface TaskRepoShape {
     lists: ReadonlyArray<TaskListInfo>,
     syncedAt: number,
   ) => Effect.Effect<void, SqlError>;
+  /**
+   * `mode: 'pull'` (sync pages) leaves rows with a queued local edit
+   * (`sync_status = 'pending'`) untouched; the default ('ack', push
+   * responses and mirror writes) overwrites.
+   */
   readonly upsertTasks: (
     tasks: ReadonlyArray<TaskRecord>,
     syncedAt: number,
+    options?: { readonly mode?: 'ack' | 'pull' },
   ) => Effect.Effect<void, SqlError>;
 }
 
@@ -689,10 +729,22 @@ const makeTaskRepo: Effect.Effect<TaskRepoShape, never, Reactivity | SqlClient> 
     const listsMutation = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
       reactivity.mutation([TASKLISTS_KEY, TASKS_KEY], effect);
 
-    /** One task row upsert; `newerOnly` adds the write-through guard. */
-    const upsertTaskRow = (task: TaskRecord, syncedAt: number, newerOnly: boolean) => {
+    /**
+     * One task row upsert. 'newer' is the mirror's write-through guard;
+     * 'notPending' keeps a pull from overwriting a queued local edit.
+     */
+    const upsertTaskRow = (
+      task: TaskRecord,
+      syncedAt: number,
+      guardKind: 'newer' | 'none' | 'notPending',
+    ) => {
       const json = taskJsonColumns(task);
-      const guard = newerOnly ? sql`WHERE excluded.updated_at > tasks.updated_at` : sql``;
+      const guard =
+        guardKind === 'newer'
+          ? sql`WHERE excluded.updated_at > tasks.updated_at`
+          : guardKind === 'notPending'
+            ? sql`WHERE tasks.sync_status != 'pending'`
+            : sql``;
       return sql`
               INSERT INTO tasks (account_id, list_id, id, title, notes, status, due_date,
                                  completed_at, web_view_link, updated_at, synced_at,
@@ -779,6 +831,13 @@ const makeTaskRepo: Effect.Effect<TaskRepoShape, never, Reactivity | SqlClient> 
           (rows) => rows.map(taskListFromRow),
         ),
 
+      markSynced: (accountId, listId, taskId) =>
+        tasksMutation(
+          Effect.asVoid(
+            sql`UPDATE tasks SET sync_status = 'synced'
+              WHERE account_id = ${accountId} AND list_id = ${listId} AND id = ${taskId}`,
+          ),
+        ),
       removeListsMissing: (accountId, keepIds) =>
         listsMutation(
           Effect.gen(function* () {
@@ -846,7 +905,7 @@ const makeTaskRepo: Effect.Effect<TaskRepoShape, never, Reactivity | SqlClient> 
                     VALUES (${entry.listId}, ${entry.id})`,
                 { discard: true },
               );
-              yield* Effect.forEach(changed, (task) => upsertTaskRow(task, syncedAt, true), {
+              yield* Effect.forEach(changed, (task) => upsertTaskRow(task, syncedAt, 'newer'), {
                 discard: true,
               });
               yield* sql`DELETE FROM tasks WHERE account_id = ${accountId}
@@ -875,16 +934,21 @@ const makeTaskRepo: Effect.Effect<TaskRepoShape, never, Reactivity | SqlClient> 
               WHERE account_id = ${accountId} AND id = ${listId}`,
           ),
         ),
+      // Local writes mark the row pending: pulls skip it until the push
+      // response (or an abandoned op) hands it back.
       setStatus: ({ accountId, completedAt, listId, status, taskId }) =>
         tasksMutation(
           Effect.asVoid(
-            sql`UPDATE tasks SET status = ${status}, completed_at = ${completedAt ?? null}
+            sql`UPDATE tasks SET status = ${status}, completed_at = ${completedAt ?? null},
+              sync_status = 'pending'
               WHERE account_id = ${accountId} AND list_id = ${listId} AND id = ${taskId}`,
           ),
         ),
       updateLocal: ({ accountId, changes, listId, taskId }) =>
         tasksMutation(
           Effect.gen(function* () {
+            yield* sql`UPDATE tasks SET sync_status = 'pending'
+              WHERE account_id = ${accountId} AND list_id = ${listId} AND id = ${taskId}`;
             if (changes.title !== undefined) {
               yield* sql`UPDATE tasks SET title = ${changes.title}
                 WHERE account_id = ${accountId} AND list_id = ${listId} AND id = ${taskId}`;
@@ -931,11 +995,16 @@ const makeTaskRepo: Effect.Effect<TaskRepoShape, never, Reactivity | SqlClient> 
         listsMutation(
           Effect.forEach(lists, (list) => upsertListRow(list, syncedAt), { discard: true }),
         ),
-      upsertTasks: (tasks, syncedAt) =>
+      upsertTasks: (tasks, syncedAt, options) =>
         tasksMutation(
-          Effect.forEach(tasks, (task) => upsertTaskRow(task, syncedAt, false), {
-            discard: true,
-          }),
+          Effect.forEach(
+            tasks,
+            (task) =>
+              upsertTaskRow(task, syncedAt, options?.mode === 'pull' ? 'notPending' : 'none'),
+            {
+              discard: true,
+            },
+          ),
         ),
     };
   },

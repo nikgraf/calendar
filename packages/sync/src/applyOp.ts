@@ -84,20 +84,37 @@ export const makeApplyOp = (
   } = deps;
 
   /**
-   * A rejection retrying cannot fix: say so, tell the UI, drop the op. A
-   * dropped create also takes its optimistic row with it — that row is
-   * `pending`, which deleteStale never collects, so it would otherwise
-   * render forever as an event or task Google never had.
+   * The local row an abandoned op left `pending`: a dropped create takes
+   * its optimistic row with it (deleteStale never collects pending rows,
+   * so it would render forever as something Google never had); an
+   * abandoned edit hands its row back to sync — pulls skip pending rows,
+   * so without this the server's version could never land again.
    */
+  const releaseRow = (op: PendingOp): Effect.Effect<void> => {
+    switch (op.kind) {
+      case 'create':
+        return Effect.ignore(eventRepo.deleteEvent(op.accountId, op.calendarId, op.eventId));
+      case 'createTask':
+        return op.taskListId
+          ? Effect.ignore(taskRepo.removeTask(op.accountId, op.taskListId, op.eventId))
+          : Effect.void;
+      case 'completeTask':
+      case 'updateTask':
+        return op.taskListId
+          ? Effect.ignore(taskRepo.markSynced(op.accountId, op.taskListId, op.eventId))
+          : Effect.void;
+      case 'rsvp':
+      case 'update':
+        return Effect.ignore(eventRepo.markSynced(op.accountId, op.calendarId, op.eventId));
+      default:
+        return Effect.void;
+    }
+  };
+
+  /** A rejection retrying cannot fix: say so, tell the UI, drop the op. */
   const drop = (op: PendingOp, reason: string): Effect.Effect<ApplyOutcome> =>
     Effect.logWarning('pending op dropped', { eventId: op.eventId, kind: op.kind, reason }).pipe(
-      Effect.andThen(
-        op.kind === 'create'
-          ? Effect.ignore(eventRepo.deleteEvent(op.accountId, op.calendarId, op.eventId))
-          : op.kind === 'createTask' && op.taskListId
-            ? Effect.ignore(taskRepo.removeTask(op.accountId, op.taskListId, op.eventId))
-            : Effect.void,
-      ),
+      Effect.andThen(releaseRow(op)),
       Effect.andThen(Effect.ignore(notifyDropped)),
       Effect.as('done' as const),
     );
@@ -366,8 +383,10 @@ export const makeApplyOp = (
       }
     }).pipe(
       Effect.catchTags({
-        // Server wins: drop the op, tell the UI the edit was overridden.
-        ConflictError: () => Effect.as(Effect.ignore(notifyConflict), 'done' as const),
+        // Server wins: drop the op, tell the UI the edit was overridden,
+        // and let the next pull replace the local copy.
+        ConflictError: () =>
+          Effect.as(Effect.andThen(releaseRow(op), Effect.ignore(notifyConflict)), 'done' as const),
         GoogleApiError: (error) =>
           // 409 on insert = the idempotent create already landed. Other
           // 4xx are permanent (e.g. a rejected color patch) — retrying a

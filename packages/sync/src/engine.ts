@@ -264,7 +264,8 @@ const make: Effect.Effect<
               upserts.push(record);
             }
           }
-          yield* eventRepo.upsertMany(upserts);
+          // A pull never overwrites a row with a local edit still queued.
+          yield* eventRepo.upsertMany(upserts, { mode: 'pull' });
           yield* Effect.forEach(
             deletions,
             (eventId) => eventRepo.deleteEvent(account.id, calendarId, eventId),
@@ -374,7 +375,8 @@ const make: Effect.Effect<
             deletions.push(item.id);
           }
         }
-        yield* taskRepo.upsertTasks(upserts, passStartedAt);
+        // A pull never overwrites a row with a local edit still queued.
+        yield* taskRepo.upsertTasks(upserts, passStartedAt, { mode: 'pull' });
         yield* taskRepo.removeTasksByIds(account.id, taskListId, deletions);
         pageToken = page.nextPageToken;
       } while (pageToken !== undefined);

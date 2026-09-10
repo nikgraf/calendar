@@ -266,6 +266,60 @@ describe('completeTask', () => {
     }).pipe(noYield, Effect.provide(testLayer(client)));
   });
 
+  it.effect('a pull leaves a queued completion alone until the op is acked or abandoned', () => {
+    let patchOutcome: 'rejected' | 'transient' = 'transient';
+    const client: GoogleTasksClientShape = tasksClient({
+      listTaskLists: () => Effect.succeed(lists),
+      // The server still says needsAction on every pull.
+      listTasks: () =>
+        Effect.succeed({
+          items: [
+            {
+              due: '2026-08-30T00:00:00.000Z',
+              id: 't1',
+              status: 'needsAction',
+              title: 'Pay rent',
+              updated: '2026-08-20T00:00:00.000Z',
+            },
+          ],
+        }),
+      patchTask: () =>
+        patchOutcome === 'transient'
+          ? Effect.fail(new ApiUnavailableError({ cause: 'offline' }))
+          : Effect.fail(new GoogleApiError({ message: 'Invalid value', status: 400 })),
+    });
+    return Effect.gen(function* () {
+      yield* seedTasks;
+      const engine = yield* SyncEngine;
+      const mutations = yield* EventMutations;
+      const repo = yield* TaskRepo;
+      const status = () =>
+        Effect.map(
+          repo.getWindow('2026-08-24', '2026-08-31'),
+          (rows) => rows.find((row) => row.id === 't1')?.status,
+        );
+      yield* mutations.completeTask({
+        accountId: 'acc-1',
+        status: 'completed',
+        taskId: 't1',
+        taskListId: 'list-1',
+      });
+      yield* mutations.processPendingOps();
+      yield* engine.syncAll();
+      expect(yield* status()).toBe('completed');
+
+      patchOutcome = 'rejected';
+      const ops = yield* PendingOpRepo;
+      for (const op of yield* ops.listAll()) {
+        yield* ops.markFailed(op.id, op.attempts, 0, 'test');
+      }
+      yield* mutations.processPendingOps();
+      expect(yield* ops.listAll()).toHaveLength(0);
+      yield* engine.syncAll();
+      expect(yield* status()).toBe('needsAction');
+    }).pipe(noYield, Effect.provide(testLayer(client)));
+  });
+
   it.effect('coalesces to the latest toggle', () => {
     const patches: Array<string> = [];
     const client: GoogleTasksClientShape = tasksClient({
