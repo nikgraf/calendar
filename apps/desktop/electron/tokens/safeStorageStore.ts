@@ -1,60 +1,36 @@
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import { TokenSet } from '@calendar/core';
 import { TokenStore } from '@calendar/google';
 import { app, safeStorage } from 'electron';
-import { Effect, Layer, Schema } from 'effect';
+import { Layer } from 'effect';
+import { makeEncryptedTokenStore } from './encryptedStore.ts';
 
 const storePath = (): string => join(app.getPath('userData'), 'secure', 'tokens.json');
 
-type EncryptedBlobs = Record<string, string>;
-
-const readBlobs = (): EncryptedBlobs => {
-  try {
-    return JSON.parse(readFileSync(storePath(), 'utf8')) as EncryptedBlobs;
-  } catch {
-    return {};
-  }
-};
-
-const writeBlobs = (blobs: EncryptedBlobs): void => {
-  const path = storePath();
-  mkdirSync(dirname(path), { recursive: true });
-  writeFileSync(path, JSON.stringify(blobs));
-};
-
 /**
- * TokenSets encrypted with the OS keychain-backed key (Electron safeStorage),
- * persisted as base64 blobs in userData. Never store tokens in plaintext.
+ * Electron safeStorage-backed TokenStore. Never store tokens in plaintext.
+ * The file is replaced atomically: written to a sibling temp file, then
+ * renamed over — a crash or power loss mid-write used to truncate
+ * tokens.json and sign every account out.
  */
-const store: typeof TokenStore.Service = {
-  get: (accountId) =>
-    Effect.sync(() => {
-      const blob = readBlobs()[accountId];
-      if (!blob) {
-        return null;
-      }
+export const safeStorageTokenStore: Layer.Layer<TokenStore> = Layer.sync(TokenStore, () =>
+  makeEncryptedTokenStore({
+    decrypt: (blob) => safeStorage.decryptString(blob),
+    encrypt: (text) => safeStorage.encryptString(text),
+    isEncryptionAvailable: () => safeStorage.isEncryptionAvailable(),
+    readFile: () => {
       try {
-        const json = safeStorage.decryptString(Buffer.from(blob, 'base64'));
-        return Schema.decodeUnknownSync(TokenSet)(JSON.parse(json));
+        return readFileSync(storePath(), 'utf8');
       } catch {
         return null;
       }
-    }),
-  remove: (accountId) =>
-    Effect.sync(() => {
-      const blobs = readBlobs();
-      delete blobs[accountId];
-      writeBlobs(blobs);
-    }),
-  set: (accountId, tokens) =>
-    Effect.sync(() => {
-      const blobs = readBlobs();
-      blobs[accountId] = safeStorage
-        .encryptString(JSON.stringify(Schema.encodeSync(TokenSet)(tokens)))
-        .toString('base64');
-      writeBlobs(blobs);
-    }),
-};
-
-export const safeStorageTokenStore: Layer.Layer<TokenStore> = Layer.sync(TokenStore, () => store);
+    },
+    writeFile: (text) => {
+      const path = storePath();
+      mkdirSync(dirname(path), { recursive: true });
+      const temp = `${path}.${process.pid}.tmp`;
+      writeFileSync(temp, text, { mode: 0o600 });
+      renameSync(temp, path);
+    },
+  }),
+);
