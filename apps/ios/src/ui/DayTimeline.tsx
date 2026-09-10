@@ -225,6 +225,7 @@ function AllDayColumn({
   date,
   events,
   listColorOf,
+  onEventPress,
   onTaskPress,
   onToggleTask,
   tasks,
@@ -235,6 +236,7 @@ function AllDayColumn({
   date: Temporal.PlainDate;
   events: ReadonlyArray<EventRecord>;
   listColorOf: (task: TaskRecord) => string | undefined;
+  onEventPress: (event: EventRecord) => void;
   onTaskPress: (task: TaskRecord) => void;
   onToggleTask: (task: TaskRecord) => void;
   tasks: ReadonlyArray<TaskRecord>;
@@ -294,15 +296,22 @@ function AllDayColumn({
       })}
       {allDay.map((event) => {
         const color = colorOf(event);
+        // A Pressable like the task chip body: an all-day event opens
+        // its editor on the phone the way it does on desktop.
         return (
-          <View
+          <Pressable
+            accessibilityLabel={event.title}
+            accessibilityRole="button"
+            hitSlop={4}
             key={`${event.calendarId}:${event.id}`}
+            onPress={() => onEventPress(event)}
             style={[styles.allDayChip, { backgroundColor: color }]}
+            testID="all-day-event-chip"
           >
             <Text numberOfLines={1} style={[styles.allDayText, { color: chipTextColor(color) }]}>
               {event.title}
             </Text>
-          </View>
+          </Pressable>
         );
       })}
     </View>
@@ -418,6 +427,7 @@ export function DayTimeline({
                 events={events}
                 key={day.toString()}
                 listColorOf={listColorOf}
+                onEventPress={onEventPress}
                 onTaskPress={onTaskPress}
                 onToggleTask={onToggleTask}
                 tasks={tasks}
