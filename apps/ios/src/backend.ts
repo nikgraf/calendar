@@ -8,14 +8,17 @@ import {
 import { AccountRepo, forwardingReactivity, reposLayer, runMigrations } from '@calendar/db';
 import {
   GoogleCalendarClient,
+  GooglePeopleClient,
   GoogleOAuthConfig,
   GoogleTasksClient,
+  grantsContacts,
   TASKS_SCOPE,
   TokenManager,
   TokenStore,
 } from '@calendar/google';
 import {
   commonBackendHandlers,
+  DeviceContacts,
   EventMutations,
   SyncEngine,
   type CommonBackendServices,
@@ -26,6 +29,7 @@ import { deleteItemAsync, getItemAsync, setItemAsync } from 'expo-secure-store';
 import { Data, Effect, Layer, ManagedRuntime, Schema } from 'effect';
 import { FetchHttpClient } from 'effect/unstable/http';
 import { signInWithGoogle } from './googleAuth.ts';
+import { iosContactsLayer } from './contactsClient.ts';
 import { iosRemindersLayer } from './remindersClient.ts';
 
 class OAuthNotConfiguredError extends Data.TaggedError('OAuthNotConfiguredError')<{
@@ -89,7 +93,10 @@ const appLayer = SyncEngine.layer.pipe(
   Layer.provideMerge(EventMutations.layer),
   Layer.provideMerge(GoogleCalendarClient.layer),
   Layer.provideMerge(GoogleTasksClient.layer),
+  Layer.provideMerge(GooglePeopleClient.layer),
   Layer.provideMerge(iosRemindersLayer),
+  Layer.provideMerge(DeviceContacts.layer),
+  Layer.provideMerge(iosContactsLayer),
   Layer.provideMerge(TokenManager.layer),
   Layer.provideMerge(dbLayer),
   Layer.provideMerge(platformLayer),
@@ -135,6 +142,7 @@ const handlers: BackendHandlers<CommonBackendServices | TokenManager> = {
       );
       const account = new Account({
         avatarUrl: result.profile.avatarUrl,
+        contactsEnabled: grantsContacts(result.tokens.scopes),
         createdAt: Date.now(),
         displayName: result.profile.displayName,
         email: result.profile.email,

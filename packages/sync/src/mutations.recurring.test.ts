@@ -1,4 +1,4 @@
-import { Account, CalendarInfo, EventRecord, plainDateToUtcMs } from '@calendar/core';
+import { Account, Attendee, CalendarInfo, EventRecord, plainDateToUtcMs } from '@calendar/core';
 import {
   AccountRepo,
   CalendarRepo,
@@ -8,6 +8,7 @@ import {
   runMigrations,
 } from '@calendar/db';
 import {
+  ApiUnavailableError,
   GoogleCalendarClient,
   type GoogleCalendarClientShape,
   GoogleTasksClient,
@@ -21,8 +22,11 @@ import { layer as reactivityLayer } from 'effect/unstable/reactivity/Reactivity'
 import { describe } from 'vitest';
 import { EventMutations } from './mutations.ts';
 
+// Deletes fail transiently so queued ops stay observable: enqueueAndKick
+// forks the drain, and a delete that succeeds could be removed before the
+// test lists the queue.
 const stubClient: GoogleCalendarClientShape = {
-  deleteEvent: () => Effect.void,
+  deleteEvent: () => Effect.fail(new ApiUnavailableError({ cause: 'offline' })),
   getColors: () => Effect.succeed({ calendar: {} }),
   insertEvent: () => Effect.die('unexpected insert'),
   listCalendars: () => Effect.succeed({ items: [] }),
@@ -45,6 +49,7 @@ const seedAccounts = Effect.gen(function* () {
   for (const id of ['acc-1', 'acc-2']) {
     yield* accounts.upsert(
       new Account({
+        contactsEnabled: false,
         createdAt: 1,
         email: `${id}@example.com`,
         id,
@@ -192,6 +197,44 @@ describe('EventMutations recurring scopes', () => {
       expect(ops).toHaveLength(1);
       expect(ops[0]!.kind).toBe('delete');
       expect(ops[0]!.eventId).toBe(instanceId);
+    }).pipe(Effect.provide(testLayer)),
+  );
+
+  it.effect('instance guest edits merge against the occurrence, not the master', () =>
+    Effect.gen(function* () {
+      yield* seedMaster;
+      const events = yield* EventRepo;
+      const masterWithGuests = new EventRecord({
+        ...master,
+        attendees: [new Attendee({ email: 'guest@example.com', responseStatus: 'tentative' })],
+      });
+      yield* events.upsertMany([
+        masterWithGuests,
+        // An existing override where the guest already declined this one.
+        new EventRecord({
+          ...masterWithGuests,
+          attendees: [new Attendee({ email: 'guest@example.com', responseStatus: 'declined' })],
+          etag: '"o-1"',
+          id: instanceId,
+          originalStartUtc: target.originalStartUtc,
+          recurrence: undefined,
+          recurringEventId: 'master1',
+        }),
+      ]);
+      const mutations = yield* EventMutations;
+      yield* mutations.updateRecurring({
+        ...target,
+        changes: { attendees: [{ email: 'guest@example.com' }, { email: 'new@example.com' }] },
+        scope: 'instance',
+      });
+      const override = yield* events.getById('acc-1', 'cal-1', instanceId);
+      expect(override!.attendees!.map((attendee) => attendee.responseStatus)).toEqual([
+        'declined',
+        'needsAction',
+      ]);
+      const ops = yield* listOps;
+      expect(ops).toHaveLength(1);
+      expect(ops[0]!.attendeesChanged).toBe(true);
     }).pipe(Effect.provide(testLayer)),
   );
 

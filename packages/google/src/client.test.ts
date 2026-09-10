@@ -138,6 +138,43 @@ describe('GoogleCalendarClient', () => {
     }).pipe(Effect.provide(clientLayer([{ body: { id: 'evt1' } }], recorded)));
   });
 
+  it.effect('adds sendUpdates=all to insert and patch only when asked', () => {
+    const recorded: Array<HttpClientRequest.HttpClientRequest> = [];
+    const event = {
+      end: { dateTime: '2026-07-02T13:00:00Z' },
+      start: { dateTime: '2026-07-02T12:00:00Z' },
+      summary: 'Sync',
+    };
+    return Effect.gen(function* () {
+      const client = yield* GoogleCalendarClient;
+      yield* client.insertEvent({ accountId: 'acc', calendarId: 'primary', event });
+      yield* client.insertEvent({
+        accountId: 'acc',
+        calendarId: 'primary',
+        event,
+        sendUpdates: 'all',
+      });
+      yield* client.patchEvent({
+        accountId: 'acc',
+        calendarId: 'primary',
+        event,
+        eventId: 'evt1',
+        sendUpdates: 'all',
+      });
+      expect(params(recorded[0]!).get('sendUpdates')).toBeNull();
+      expect(params(recorded[1]!).get('sendUpdates')).toBe('all');
+      expect(recorded[2]!.method).toBe('PATCH');
+      expect(params(recorded[2]!).get('sendUpdates')).toBe('all');
+    }).pipe(
+      Effect.provide(
+        clientLayer(
+          [{ body: { id: 'a' } }, { body: { id: 'b' } }, { body: { id: 'evt1' } }],
+          recorded,
+        ),
+      ),
+    );
+  });
+
   it.effect('maps 429 with Retry-After to RateLimitedError', () =>
     Effect.gen(function* () {
       const client = yield* GoogleCalendarClient;

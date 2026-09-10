@@ -294,6 +294,9 @@ Task.detached {
   await RemindersBridge.shared.observeChanges {
     emit(["event": "reminders.changed"])
   }
+  await ContactsBridge.shared.observeChanges {
+    emit(["event": "contacts.changed"])
+  }
 }
 
 // Concurrent request loop: a slow method (prepareSpeech downloading
@@ -341,6 +344,16 @@ func handleLine(_ line: String) {
         emitError(request.id, error.message)
       } catch {
         emitError(request.id, "reminders failed: \(error.localizedDescription)")
+      }
+    case let method where method.hasPrefix("contacts."):
+      do {
+        let result = try await ContactsDispatch.invoke(
+          method: method, params: params.mapValues { $0.anyValue })
+        emitResult(request.id, result)
+      } catch let error as ContactsBridgeError {
+        emitError(request.id, error.message)
+      } catch {
+        emitError(request.id, "contacts failed: \(error.localizedDescription)")
       }
     default: emitError(request.id, "unknown method: \(request.method)")
     }

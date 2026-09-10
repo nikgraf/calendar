@@ -11,6 +11,8 @@
 	<string>Solunivo Helper</string>
 	<key>CFBundleShortVersionString</key>
 	<string>1.0</string>
+	<key>NSContactsUsageDescription</key>
+	<string>Solunivo suggests people from your Contacts when you invite someone to an event. Nothing leaves your Mac.</string>
 	<key>NSRemindersFullAccessUsageDescription</key>
 	<string>Solunivo shows your Reminders next to your calendar and lets you edit them here. Nothing leaves your Mac.</string>
 	<key>NSRemindersUsageDescription</key>

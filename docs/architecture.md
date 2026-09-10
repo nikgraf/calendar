@@ -51,6 +51,13 @@ first and mirror the returned reminder (no pending op — EventKit is local
 and synchronous). The permission ask (`reminders:*` preload IPC on
 desktop, the Settings diagnostics row on iOS) is a window-level concern;
 reminder rows only ever cross the rpc seam.
+
+Device contacts: ContactsClient (packages/contacts) is the same shape,
+read-only — `contacts.status` / `requestAccess` / `snapshot` over the
+helper stdio (macOS) or the solunivo-contacts Expo module (iOS), both
+built from swift/ContactsBridge.swift (CNContactStore). The backend
+keeps the snapshot in memory for the invitee typeahead; nothing is
+written to SQLite and nothing leaves the device.
 ```
 
 Invalidation path (backend → UI): repo mutations invalidate Reactivity keys
@@ -69,17 +76,17 @@ Every mutation writes SQLite optimistically, then enqueues a `PendingOp`
 and kicks `processPendingOps` (semaphore-serialized, drains due ops
 oldest-first). Kinds:
 
-| kind            | eventId                       | payload/fields          | remote call                                        |
-| --------------- | ----------------------------- | ----------------------- | -------------------------------------------------- |
-| `create`        | client-generated id           | full EventRecord        | events.insert (idempotent — 409 = already landed)  |
-| `update`        | event id / instance id        | full EventRecord        | events.patch (If-Match when etag known)            |
-| `delete`        | event id / instance id        | —                       | events.delete                                      |
-| `rsvp`          | event id                      | EventRecord (attendees) | events.patch, attendees-only body, **no If-Match** |
-| `calendarColor` | `__calendar_color__` sentinel | `colorHex`              | calendarList.patch?colorRgbFormat=true             |
-| `createTask`    | temp `local-…` id             | title/notes/due         | tasks.insert (NOT idempotent — see below)          |
-| `updateTask`    | task id                       | title/notes/due         | tasks.patch                                        |
-| `completeTask`  | task id                       | completed flag          | tasks.patch (status + hidden reset)                |
-| `deleteTask`    | task id                       | —                       | tasks.delete (404/410 = already gone)              |
+| kind            | eventId                       | payload/fields                   | remote call                                                                                                                      |
+| --------------- | ----------------------------- | -------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| `create`        | client-generated id           | full EventRecord                 | events.insert (idempotent — 409 = already landed); attendees included; `sendUpdates=all` when guests exist                       |
+| `update`        | event id / instance id        | EventRecord + `attendeesChanged` | events.patch (If-Match when etag known); attendees only when flagged; `sendUpdates=all` when guests exist or the list was edited |
+| `delete`        | event id / instance id        | —                                | events.delete                                                                                                                    |
+| `rsvp`          | event id                      | EventRecord (attendees)          | events.patch, attendees-only body, **no If-Match**                                                                               |
+| `calendarColor` | `__calendar_color__` sentinel | `colorHex`                       | calendarList.patch?colorRgbFormat=true                                                                                           |
+| `createTask`    | temp `local-…` id             | title/notes/due                  | tasks.insert (NOT idempotent — see below)                                                                                        |
+| `updateTask`    | task id                       | title/notes/due                  | tasks.patch                                                                                                                      |
+| `completeTask`  | task id                       | completed flag                   | tasks.patch (status + hidden reset)                                                                                              |
+| `deleteTask`    | task id                       | —                                | tasks.delete (404/410 = already gone)                                                                                            |
 
 Rules that keep the queue correct:
 
@@ -140,6 +147,23 @@ Rules that keep the queue correct:
   with `sync_status='synced'` — pending local writes are protected). A
   403 with the insufficient-scope reason flips `tasksEnabled` off instead
   of retrying forever (older grants without the Tasks scope).
+- **Google contacts** (per account, when both People API contacts scopes
+  are granted — `contactsEnabled`): two tiers, saved contacts
+  (`people.connections.list`) and "other contacts" (`otherContacts.list`,
+  people you've emailed — what Google Calendar's own suggestions use),
+  each on its own sync token in `sync_state` (`contacts:connections`,
+  `contacts:other`) and its own `is_other` rows in the `contacts` table
+  (one row per person × email). Incremental passes apply upserts and
+  tombstones page by page; a full pass (first run, or an expired token:
+  410, or People's 400 `EXPIRED_SYNC_TOKEN`) collects everything and
+  `ContactRepo.replaceTier` swaps the tier in one transaction. An
+  insufficient-scope 403 flips `contactsEnabled` off, like tasks. Device
+  contacts never enter SQLite: `DeviceContacts` (packages/sync) holds the
+  bridge snapshot in memory, refreshed on change notifications, when
+  stale, and after `connectContacts`. The `searchContacts` rpc asks
+  `ContactRepo.search` for coarse candidates, adds the device list, and
+  `rankContacts` (core) produces one deduped, ranked list for the
+  combobox; the UI holds a bounded LRU of query atoms on `CONTACTS_KEY`.
 - **Apple Reminders** (the synthetic `apple-reminders` account, created by
   the `connectReminders` rpc after the EventKit prompt): SQLite holds the
   latest **complete** EventKit snapshot — open and completed, dated and

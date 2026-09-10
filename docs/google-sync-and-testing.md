@@ -28,6 +28,20 @@ invariants.
   for entries other than your own are ignored — RSVP therefore sends an
   attendees-only body and deliberately omits If-Match (a response should
   not lose to unrelated content edits).
+- **Attendee editing**: `attendees` on `EventDraft`/`UpdateEventChanges`
+  is a replacement guest list (`[]` clears). Google **replaces the whole
+  array** on write and our copy lacks fields we never model (`optional`,
+  `comment`, `additionalGuests`), so the array rides only on inserts and
+  on updates whose op is flagged `attendeesChanged` (a coalesced later
+  edit inherits the flag); a title-only patch omits it. Rooms
+  (`resource: true`) are kept in the record flagged `isResource`, hidden
+  from the editor, and carried over by `mergeAttendees`, which also keeps
+  the server facts (response, organizer, self) of retained emails so a
+  guest edit never resets an RSVP. Inserts/patches send `sendUpdates=all`
+  when guests exist (rooms alone do not count) or the guest list was
+  edited (removed guests get their cancellation) — guests get emailed
+  about time/location edits too. The organizer is never added
+  client-side: Google puts it on the insert response.
 - **412 (etag mismatch)**: we use If-Match on content updates/deletes when
   an etag is known; on 412 the server wins (drop op, toast, next pull
   replaces local).
@@ -76,6 +90,28 @@ invariants.
   un-completing must clear `completed` via `status: 'needsAction'`.
 - A 403 insufficient-scope (grants that predate the tasks scope) disables
   tasks for the account instead of retrying.
+
+### Google People API (contacts cache)
+
+- Two endpoints, two scopes: `people/me/connections` with
+  `personFields=names,emailAddresses` needs `contacts.readonly`;
+  `otherContacts` needs `contacts.other.readonly` and only accepts a
+  `readMask` of names/emailAddresses/phoneNumbers. Both are _sensitive_
+  scopes: existing accounts stay `contacts_enabled=0` until "Add Google
+  Account" is re-run (in-place upgrade, same as tasks), and the People
+  API must be enabled in the GCP project — the _People API_, not the
+  library's _Contacts API_ (the retired GData product; the `contacts.*`
+  scopes authorize People API calls). A disabled API answers 403
+  `SERVICE_DISABLED`, which is a plain `GoogleApiError` (logged, flag
+  left on), not the scope error that disables contacts. Both scopes are
+  sensitive: Testing mode grants them to test users, Production needs
+  Google's app verification.
+- `requestSyncToken=true` returns `nextSyncToken` on the last page;
+  incremental lists return tombstones as persons with
+  `metadata.deleted: true`. Sync tokens expire after ~7 days; the People
+  API reports that as **400 with `EXPIRED_SYNC_TOKEN`** (Calendar uses 410) — `GooglePeopleClient` folds both into `SyncTokenExpiredError`.
+- `pageSize` max is 1000; the cache holds one row per (person, email),
+  lowercased email for identity, original casing for display.
 
 ## Verified Apple Reminders (EventKit) semantics
 
@@ -200,6 +236,12 @@ Flakiness lessons (each caused a real CI failure — keep them enforced):
   prompt for access on a developer's Mac). `launchApp(seed, { reminders:
 'real' })` opts a spec into the helper — only `remindersReal.e2e.ts`,
   which is `describe.skipIf` unless `CALENDAR_E2E_REMINDERS=real`.
+- `CALENDAR_CONTACTS=off` does the same for the address book bridge
+  (`launchApp(seed, { contacts: 'real' })` to opt in; nothing does yet).
+  `contacts.e2e.ts` seeds Google contact rows (`SeedData.contacts`) and
+  drives the combobox through `input[aria-label="Invitees"]`: value
+  setter + `input` event to type, synthetic `keydown` for ArrowDown /
+  Enter, `[role="option"]` rows and `[data-invitee]` chips to assert.
 
 ### CI (.github/workflows/ci.yml + ios.yml)
 
@@ -279,6 +321,23 @@ inside it (a tap taken mid-slide missed on the runner), and the
 quick-add flow accepts the bar's "couldn't be read" outcome: a CI
 simulator passes the model availability check yet cannot generate,
 so the prefilled editor is asserted only where a model answers.
+The bootstrap flow opens the dev client through
+`solunivo://expo-development-client/?url=…`, and iOS confirms a scheme
+URL opened from outside with an "Open in Solunivo?" alert — one per
+`simctl openurl`, and they stack (the CI step's own openurl plus the
+flow's `openLink`, more on a slow runner). `common/confirm-open.yaml`
+confirms exactly one and cancels the rest: every further "Open"
+re-delivered the same URL to the client while its first bundle was
+still starting, it re-fetched the manifest mid-load and the process
+died with SIGSEGV ~150 ms after the bundle ran (two runs that tapped
+"Open" four times failed; the runs that tapped once passed). The
+flow's recovery loop also re-sends the link when the launcher sits on
+a blank home screen (a launch request once sat in SpringBoard for a
+minute), and its waits are `optional` so one slow attempt cannot end
+the flow before the final "Today" assertion. On failure the job waits
+for the simulator's crash report (`~/Library/Logs/DiagnosticReports/
+Solunivo-*.ips`, written a minute or so after the crash) and prints
+its exception and faulting thread before uploading it.
 Every flow starts with `runFlow: ../common/launch.yaml`
 (launch, recover the dev client if its 10 s auto-reopen fell back to
 the launcher home or its error screen, wait for "Today",

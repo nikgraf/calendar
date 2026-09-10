@@ -1,4 +1,5 @@
 import type {
+  AttendeeInput,
   EventDraft,
   EventRecord,
   RecurringScope,
@@ -73,6 +74,8 @@ export interface UpdateEventParams {
   readonly accountId: string;
   readonly calendarId: string;
   readonly changes: {
+    /** Full replacement guest list: undefined leaves it alone, [] removes everyone. */
+    readonly attendees?: ReadonlyArray<AttendeeInput> | undefined;
     readonly description?: string | undefined;
     readonly endDate?: string | undefined;
     readonly endUtc?: number | undefined;

@@ -4,6 +4,7 @@ import { Account, AppBackendRpcs, type BackendHandlers } from '@calendar/core';
 import {
   AccountRepo,
   CalendarRepo,
+  ContactRepo,
   EventRepo,
   forwardingReactivity,
   makeInvalidationBus,
@@ -14,14 +15,17 @@ import {
 } from '@calendar/db';
 import {
   GoogleCalendarClient,
+  GooglePeopleClient,
   GoogleOAuthConfig,
   GoogleTasksClient,
+  grantsContacts,
   TASKS_SCOPE,
   TokenManager,
   TokenStore,
 } from '@calendar/google';
 import {
   commonBackendHandlers,
+  DeviceContacts,
   EventMutations,
   makeAppBackendLayer,
   SyncEngine,
@@ -34,6 +38,8 @@ import { RpcSerialization, RpcServer } from 'effect/unstable/rpc';
 import { runGoogleSignIn } from './auth/loopbackFlow.ts';
 import { loadOAuthConfig } from './oauthConfig.ts';
 import { RemindersClient } from '@calendar/reminders';
+import { ContactsClient } from '@calendar/contacts';
+import { desktopContactsLayer } from './contactsClient.ts';
 import { desktopRemindersLayer } from './remindersClient.ts';
 import { rpcServerProtocol } from './rpcProtocol.ts';
 import { safeStorageTokenStore } from './tokens/safeStorageStore.ts';
@@ -75,7 +81,10 @@ export const startBackendHost = (): void => {
     Layer.provideMerge(EventMutations.layer),
     Layer.provideMerge(GoogleCalendarClient.layer),
     Layer.provideMerge(GoogleTasksClient.layer),
+    Layer.provideMerge(GooglePeopleClient.layer),
     Layer.provideMerge(desktopRemindersLayer),
+    Layer.provideMerge(DeviceContacts.layer),
+    Layer.provideMerge(desktopContactsLayer),
     Layer.provideMerge(TokenManager.layer),
     Layer.provideMerge(dbLayer),
     Layer.provideMerge(platformLayer),
@@ -97,6 +106,9 @@ export const startBackendHost = (): void => {
   const handlers: BackendHandlers<
     | AccountRepo
     | CalendarRepo
+    | ContactRepo
+    | ContactsClient
+    | DeviceContacts
     | EventMutations
     | EventRepo
     | PendingOpRepo
@@ -121,6 +133,7 @@ export const startBackendHost = (): void => {
         );
         const account = new Account({
           avatarUrl: result.profile.avatarUrl,
+          contactsEnabled: grantsContacts(result.tokens.scopes),
           createdAt: Date.now(),
           displayName: result.profile.displayName,
           email: result.profile.email,

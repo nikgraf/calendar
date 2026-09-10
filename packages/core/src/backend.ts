@@ -4,6 +4,7 @@ import type { RpcClientError } from 'effect/unstable/rpc/RpcClientError';
 import {
   Account,
   CalendarInfo,
+  Contact,
   EventRecord,
   TaskListInfo,
   TaskPriority,
@@ -18,8 +19,17 @@ import {
  * hop); Electron serves it from the main process over an IPC transport.
  */
 
+/** A guest as the editor names them; response status is Google's to assign. */
+export const AttendeeInput = Schema.Struct({
+  displayName: Schema.optional(Schema.String),
+  email: Schema.String,
+});
+export type AttendeeInput = Schema.Schema.Type<typeof AttendeeInput>;
+
 export const EventDraft = Schema.Struct({
   accountId: Schema.String,
+  /** Guests to invite; the organizer is added by Google on insert. */
+  attendees: Schema.optional(Schema.Array(AttendeeInput)),
   calendarId: Schema.String,
   description: Schema.optional(Schema.String),
   /** All-day drafts use dates; timed drafts use epochs + zone. */
@@ -37,6 +47,8 @@ export const EventDraft = Schema.Struct({
 export type EventDraft = Schema.Schema.Type<typeof EventDraft>;
 
 export const UpdateEventChanges = Schema.Struct({
+  /** Full replacement guest list: undefined leaves it alone, [] removes everyone. */
+  attendees: Schema.optional(Schema.Array(AttendeeInput)),
   description: Schema.optional(Schema.String),
   endDate: Schema.optional(Schema.String),
   endUtc: Schema.optional(Schema.Number),
@@ -98,6 +110,11 @@ export class AppBackendRpcs extends RpcGroup.make(
     error: BackendError,
     payload: EventDraft,
     success: EventRecord,
+  }),
+  /** Device contacts: asks for Contacts access (the OS prompt when undetermined). */
+  Rpc.make('connectContacts', {
+    error: BackendError,
+    success: Schema.Struct({ granted: Schema.Boolean }),
   }),
   /** Apple Reminders: asks for EventKit access; on grant, the synthetic account exists afterwards. */
   Rpc.make('connectReminders', {
@@ -196,6 +213,12 @@ export class AppBackendRpcs extends RpcGroup.make(
       eventId: Schema.String,
       response: RsvpResponse,
     },
+  }),
+  /** Invitee typeahead: device + cached Google contacts, ranked, deduped by email. */
+  Rpc.make('searchContacts', {
+    error: BackendError,
+    payload: { limit: Schema.optional(Schema.Number), query: Schema.String },
+    success: Schema.Array(Contact),
   }),
   Rpc.make('setCalendarColor', {
     error: BackendError,

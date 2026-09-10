@@ -6,6 +6,7 @@ import { describe, expect, it } from 'vitest';
 import { makeBackendAtoms, rangeKey } from './atoms.ts';
 
 const account = new Account({
+  contactsEnabled: false,
   createdAt: 1,
   email: 'nik@example.com',
   id: 'acc-1',
@@ -21,6 +22,7 @@ const makeStubClient = () => {
   const client: BackendClient = {
     addAccount: () => fail('not stubbed'),
     completeTask: () => Effect.void,
+    connectContacts: () => fail('not stubbed'),
     connectReminders: () => fail('not stubbed'),
     createEvent: () => fail('not stubbed'),
     createTask: () => fail('not stubbed'),
@@ -44,6 +46,7 @@ const makeStubClient = () => {
     listTaskLists: () => Effect.succeed([]),
     removeAccount: () => Effect.void,
     respondToEvent: () => Effect.void,
+    searchContacts: () => Effect.succeed([]),
     setCalendarColor: () => Effect.void,
     setCalendarVisible: () =>
       Effect.sync(() => {

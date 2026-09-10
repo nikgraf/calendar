@@ -168,6 +168,34 @@ const addTaskListReadOnly = Effect.gen(function* () {
   yield* sql`ALTER TABLE task_lists ADD COLUMN read_only INTEGER NOT NULL DEFAULT 0`;
 });
 
+const addContacts = Effect.gen(function* () {
+  const sql = yield* SqlClient;
+  // Derived from TokenSet.scopes at sign-in; 0 for pre-contacts accounts.
+  yield* sql`ALTER TABLE accounts ADD COLUMN contacts_enabled INTEGER NOT NULL DEFAULT 0`;
+  // People API cache, one row per (person, email). is_other splits saved
+  // contacts from "other contacts" so each tier syncs (and is replaced)
+  // on its own sync token.
+  yield* sql`
+    CREATE TABLE contacts (
+      account_id TEXT NOT NULL,
+      resource_name TEXT NOT NULL,
+      email_lower TEXT NOT NULL,
+      email TEXT NOT NULL,
+      display_name TEXT,
+      is_other INTEGER NOT NULL DEFAULT 0,
+      synced_at INTEGER NOT NULL,
+      PRIMARY KEY (account_id, resource_name, email_lower)
+    )`;
+  yield* sql`CREATE INDEX idx_contacts_email ON contacts (email_lower)`;
+});
+
+const addPendingOpAttendeesChanged = Effect.gen(function* () {
+  const sql = yield* SqlClient;
+  // 1 when the queued update carries an edited guest list; only then does
+  // the patch include `attendees` (Google replaces the whole array).
+  yield* sql`ALTER TABLE pending_ops ADD COLUMN attendees_changed INTEGER NOT NULL DEFAULT 0`;
+});
+
 // The third tuple element is a *loader* whose result is the migration effect.
 export const migrations: ReadonlyArray<ResolvedMigration> = [
   [1, 'init', Effect.succeed(init)],
@@ -177,4 +205,6 @@ export const migrations: ReadonlyArray<ResolvedMigration> = [
   [5, 'add-task-writes', Effect.succeed(addTaskWrites)],
   [6, 'add-reminders', Effect.succeed(addReminders)],
   [7, 'add-task-list-read-only', Effect.succeed(addTaskListReadOnly)],
+  [8, 'add-contacts', Effect.succeed(addContacts)],
+  [9, 'add-pending-op-attendees-changed', Effect.succeed(addPendingOpAttendeesChanged)],
 ];

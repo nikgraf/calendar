@@ -27,6 +27,7 @@ xcrun simctl boot "$UDID" 2>/dev/null || true
 xcrun simctl bootstatus "$UDID" -b
 xcrun simctl install "$UDID" "$APP"
 xcrun simctl privacy "$UDID" grant reminders com.solunivo.app
+xcrun simctl privacy "$UDID" grant contacts com.solunivo.app
 # expo-dev-menu preferences (UserDefaults keys from DevMenuPreferences.swift):
 # no floating "Dev tools" button — it sits exactly over the app's own
 # settings gear and steals the tap — and no first-launch onboarding or

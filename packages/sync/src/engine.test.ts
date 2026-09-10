@@ -12,6 +12,8 @@ import {
   type GcalEventsPage,
   GoogleCalendarClient,
   type GoogleCalendarClientShape,
+  GooglePeopleClient,
+  type GooglePeopleClientShape,
   GoogleTasksClient,
   type GoogleTasksClientShape,
   ReauthRequiredError,
@@ -87,6 +89,12 @@ const stubTasksClient: GoogleTasksClientShape = {
   patchTask: () => Effect.die('tasks not enabled in this test'),
 };
 
+/** Contacts sync is exercised in contacts.test.ts; keep it inert here. */
+const inertPeopleClient: GooglePeopleClientShape = {
+  listConnections: () => Effect.die('people not used in this test'),
+  listOtherContacts: () => Effect.die('people not used in this test'),
+};
+
 const engineLayer = (client: GoogleCalendarClientShape) =>
   SyncEngine.layer.pipe(
     Layer.provideMerge(EventMutations.layer),
@@ -97,12 +105,14 @@ const engineLayer = (client: GoogleCalendarClientShape) =>
     Layer.provideMerge(Layer.succeed(RemindersClient, unavailableRemindersClient('test'))),
     Layer.provideMerge(Layer.succeed(GoogleCalendarClient, client)),
     Layer.provideMerge(Layer.succeed(GoogleTasksClient, stubTasksClient)),
+    Layer.provideMerge(Layer.succeed(GooglePeopleClient, inertPeopleClient)),
   );
 
 const seedAccount = Effect.gen(function* () {
   const accounts = yield* AccountRepo;
   yield* accounts.upsert(
     new Account({
+      contactsEnabled: false,
       createdAt: 1,
       email: 'nik@example.com',
       id: 'acc-1',

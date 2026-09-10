@@ -1,5 +1,6 @@
 import { useEventEditorModel, useTaskEditorModel, type EventEditorSeed } from '@calendar/app-state';
 import { useState } from 'react';
+import { InviteeCombobox } from './InviteeCombobox.tsx';
 import { ReminderEditorForm } from './ReminderEditorForm.tsx';
 import { TaskEditorForm } from './TaskEditorForm.tsx';
 import { REPEAT_OPTIONS } from './taskEditorOptions.ts';
@@ -51,6 +52,9 @@ export function EventEditor({
     taskLists,
   });
   const {
+    addAttendee,
+    attendees,
+    attendeeStatus,
     calendarKey,
     date,
     endTime,
@@ -62,6 +66,7 @@ export function EventEditor({
     location,
     ownAttendee,
     remove,
+    removeAttendee,
     repeat,
     repeatCount,
     repeatEnds,
@@ -310,38 +315,33 @@ export function EventEditor({
                   )}
                 </>
               )}
-              {existing?.attendees?.length ? (
-                <div className="rounded-lg border border-neutral-200 bg-white p-3">
-                  <p className="mb-1 text-xs font-medium text-neutral-400 uppercase">Invitees</p>
-                  {ownAttendee ? (
-                    <div className="mb-2 flex gap-1">
-                      {RSVP_OPTIONS.map((option) => (
-                        <button
-                          className={`flex-1 rounded-md border px-2 py-1 text-xs font-medium ${
-                            rsvp === option.value
-                              ? 'border-blue-600 bg-blue-600 text-white'
-                              : 'border-neutral-200 text-neutral-600 hover:bg-neutral-100'
-                          }`}
-                          key={option.value}
-                          onClick={() => void respond(option.value)}
-                          type="button"
-                        >
-                          {option.label}
-                        </button>
-                      ))}
-                    </div>
-                  ) : null}
-                  {existing.attendees.map((attendee) => (
-                    <p className="select-text text-sm" key={attendee.email}>
-                      {attendee.displayName ?? attendee.email}
-                      <span className="ml-1 text-xs text-neutral-400">
-                        {attendee.responseStatus}
-                        {attendee.isOrganizer ? ' · organizer' : ''}
-                      </span>
-                    </p>
-                  ))}
-                </div>
-              ) : null}
+              <div className="rounded-lg border border-neutral-200 bg-white p-3">
+                <p className="mb-1 text-xs font-medium text-neutral-400 uppercase">Invitees</p>
+                {ownAttendee ? (
+                  <div className="mb-2 flex gap-1">
+                    {RSVP_OPTIONS.map((option) => (
+                      <button
+                        className={`flex-1 rounded-md border px-2 py-1 text-xs font-medium ${
+                          rsvp === option.value
+                            ? 'border-blue-600 bg-blue-600 text-white'
+                            : 'border-neutral-200 text-neutral-600 hover:bg-neutral-100'
+                        }`}
+                        key={option.value}
+                        onClick={() => void respond(option.value)}
+                        type="button"
+                      >
+                        {option.label}
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
+                <InviteeCombobox
+                  attendees={attendees}
+                  attendeeStatus={attendeeStatus}
+                  onAdd={addAttendee}
+                  onRemove={removeAttendee}
+                />
+              </div>
             </div>
 
             <div className="mt-5 flex items-center justify-between">

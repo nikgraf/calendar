@@ -15,6 +15,7 @@ const seedAccounts = Effect.gen(function* () {
   for (const id of ['acc-1', 'acc-2']) {
     yield* accounts.upsert(
       new Account({
+        contactsEnabled: false,
         createdAt: 1,
         email: `${id}@example.com`,
         id,
@@ -35,6 +36,7 @@ const freshDbLayer = () =>
   );
 
 const account = new Account({
+  contactsEnabled: false,
   createdAt: 1,
   email: 'nik@example.com',
   id: 'acc-1',

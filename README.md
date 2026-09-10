@@ -4,6 +4,7 @@ A Fantastical-style Google Calendar client: iOS (Expo) + macOS (Electron), clien
 
 - Day/week/month views with 1:1 drag gestures, recurring-event editing (this/following/all), per-calendar colors, offline-tolerant pending-op queue.
 - Google Tasks and Apple Reminders side by side in the all-day task lane: create/edit/complete/delete, two-way sync, and a form that fits each — Reminders add due time, priority, alerts, repeat, URL, and moving between lists.
+- Invitee autocomplete from the device address book and Google contacts (saved contacts plus "other contacts" you've emailed, cached locally); invitations go out with `sendUpdates=all`.
 - On-device AI (Apple Foundation Models, no cloud): quick-add natural language parsing, "find a time" slot suggestions, and dictation — ⌘K bar on macOS, quick-add bar on iOS.
 
 **Docs:** `docs/architecture.md` (data flow, op queue, recurring model, AI layer),
@@ -35,15 +36,17 @@ pnpm --filter @calendar/desktop build:helper
 ```
 
 Without it the app runs fine — AI affordances show an "unavailable" notice.
-The same helper hosts the Apple Reminders bridge (EventKit); Settings →
-Apple Reminders asks for access and connects the device's lists.
+The same helper hosts the Apple Reminders bridge (EventKit) and the Contacts
+bridge (CNContactStore); Settings → Apple Reminders asks for access and
+connects the device's lists, and the invitee field offers to allow Contacts
+access the first time (read-only, names and email addresses, never stored).
 
 ### Google OAuth (required for sign-in)
 
 Create a Google Cloud project once, then:
 
-1. **APIs & Services → Library**: enable the _Google Calendar API_ and the _Google Tasks API_.
-2. **APIs & Services → OAuth consent screen**: External, Testing mode; add yourself (and any other test users). Scopes: see `packages/google/src/oauth/scopes.ts` — the single source of truth (`calendar.readonly`, `calendar.events`, `tasks`, plus `openid email profile`).
+1. **APIs & Services → Library**: enable the _Google Calendar API_, the _Google Tasks API_ and the _People API_ (invitee suggestions; a project without it answers the contacts sync with 403 `SERVICE_DISABLED`). Not the _Contacts API_ — that is the retired GData product; the People API replaced it, and the `contacts.*` scopes below authorize People API calls.
+2. **APIs & Services → OAuth consent screen**: External, Testing mode; add yourself (and any other test users). Scopes: see `packages/google/src/oauth/scopes.ts` — the single source of truth (`calendar.readonly`, `calendar.events`, `tasks`, `contacts.readonly`, `contacts.other.readonly`, plus `openid email profile`). The two `contacts.*` scopes are _sensitive_: fine in Testing mode, but moving the consent screen to Production requires Google's app verification for them.
 3. **Credentials → Create credentials → OAuth client ID**:
    - Type **Desktop app** → used by the macOS app. Note client ID + secret.
    - Type **iOS** (bundle id `com.solunivo.app`) → used by the iOS app. Note client ID.
@@ -58,6 +61,10 @@ Create a Google Cloud project once, then:
    ```
 
 The desktop client secret is not confidential (RFC 8252) but stays out of git anyway.
+
+Adding a scope later (tasks, then contacts) does not touch accounts that are
+already signed in: their tokens never carried it. Re-run **Add Google Account**
+for the same address — it re-consents and upgrades the account in place.
 
 For iOS, set the client id in `apps/ios/app.json` under `expo.extra.googleIosClientId`
 and add the reversed client id (`com.googleusercontent.apps.<id>`) to `expo.scheme`,

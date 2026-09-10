@@ -13,6 +13,7 @@ const isoToday = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart
 const seed = {
   accounts: [
     new Account({
+      contactsEnabled: false,
       createdAt: 1,
       displayName: 'Apple Reminders',
       email: '',

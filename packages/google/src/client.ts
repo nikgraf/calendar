@@ -35,6 +35,8 @@ export interface GoogleCalendarClientShape {
     readonly accountId: string;
     readonly calendarId: string;
     readonly event: GcalEventInput;
+    /** Google emails guests about the change; ignored without attendees. */
+    readonly sendUpdates?: 'all' | undefined;
   }) => Effect.Effect<GcalEvent, GoogleRequestError>;
   readonly listCalendars: (params: {
     readonly accountId: string;
@@ -58,6 +60,8 @@ export interface GoogleCalendarClientShape {
     readonly calendarId: string;
     readonly event: Partial<GcalEventInput>;
     readonly eventId: string;
+    /** Google emails guests about the change; ignored without attendees. */
+    readonly sendUpdates?: 'all' | undefined;
   }) => Effect.Effect<GcalEvent, GoogleRequestError>;
 }
 
@@ -86,10 +90,11 @@ const make: Effect.Effect<GoogleCalendarClientShape, never, HttpClient.HttpClien
       getColors: (accountId) =>
         requestJson(accountId, HttpClientRequest.get(`${BASE_URL}/colors`), GcalColors),
 
-      insertEvent: ({ accountId, calendarId, event }) =>
+      insertEvent: ({ accountId, calendarId, event, sendUpdates }) =>
         requestJson(
           accountId,
           HttpClientRequest.post(eventsUrl(calendarId)).pipe(
+            HttpClientRequest.setUrlParams(definedParams({ sendUpdates })),
             HttpClientRequest.bodyJsonUnsafe(event),
           ),
           GcalEvent,
@@ -150,10 +155,13 @@ const make: Effect.Effect<GoogleCalendarClientShape, never, HttpClient.HttpClien
           { calendarId },
         ),
 
-      patchEvent: ({ accountId, baseEtag, calendarId, event, eventId }) => {
+      patchEvent: ({ accountId, baseEtag, calendarId, event, eventId, sendUpdates }) => {
         let request = HttpClientRequest.patch(
           eventsUrl(calendarId, `/${encodeURIComponent(eventId)}`),
-        ).pipe(HttpClientRequest.bodyJsonUnsafe(event));
+        ).pipe(
+          HttpClientRequest.setUrlParams(definedParams({ sendUpdates })),
+          HttpClientRequest.bodyJsonUnsafe(event),
+        );
         if (baseEtag) {
           request = HttpClientRequest.setHeader(request, 'if-match', baseEtag);
         }

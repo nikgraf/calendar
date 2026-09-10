@@ -24,6 +24,7 @@
       "supportsTablet": false,
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
+        "NSContactsUsageDescription": "Solunivo suggests people from your Contacts when you invite someone to an event. Nothing leaves your device.",
         "NSRemindersFullAccessUsageDescription": "Solunivo shows your Reminders next to your calendar and lets you edit them here. Nothing leaves your device.",
         "NSRemindersUsageDescription": "Solunivo shows your Reminders next to your calendar and lets you edit them here. Nothing leaves your device.",
         "NSSpeechRecognitionUsageDescription": "Solunivo transcribes what you say into an event entirely on this device."

@@ -217,6 +217,30 @@ jobs:
         # MODELLESS: the runner's simulator has no usable on-device model
         # (see 06-quick-add.yaml).
         run: maestro test --include-tags ci --exclude-tags ci-bootstrap -e MODELLESS=1 --device "$SIMULATOR_UDID" e2e/flows
+      - name: Wait for a simulator crash report
+        # ReportCrash writes the .ips a minute or so after the process
+        # dies (74 s on run 34013939965); the upload step ran before it
+        # existed. Wait for one, and put its exception + crashed thread in
+        # the job log so the artifact is not the only place to look.
+        if: failure()
+        run: |
+          for _ in $(seq 1 24); do
+            ls ~/Library/Logs/DiagnosticReports/Solunivo*.ips >/dev/null 2>&1 && break
+            sleep 5
+          done
+          for f in ~/Library/Logs/DiagnosticReports/Solunivo*.ips; do
+            [ -e "$f" ] || { echo "no Solunivo crash report"; break; }
+            echo "== $f"
+            # Header line is JSON, then the report body (JSON): show the
+            # exception, termination and the faulting thread's frames.
+            tail -n +2 "$f" | jq -r '
+              "exception: \(.exception // {} | tostring)",
+              "termination: \(.termination // {} | tostring)",
+              (.threads[.faultingThread // 0] // {} | .frames // [] | .[0:25][]
+                | "  \(.imageIndex) \(.symbol // "?") + \(.imageOffset // 0)"),
+              "images:", (.usedImages // [] | to_entries[] | "  \(.key) \(.value.name // "?")")
+            ' 2>/dev/null || head -c 4000 "$f"
+          done
       - name: Upload Maestro diagnostics
         if: failure()
         uses: actions/upload-artifact@v4
@@ -226,6 +250,7 @@ jobs:
             ~/.maestro/tests/
             ${{ runner.temp }}/metro.log
             ${{ runner.temp }}/*.png
+            ~/Library/Logs/DiagnosticReports/Solunivo*.ips
           retention-days: 7
           if-no-files-found: ignore
 

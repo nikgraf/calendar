@@ -1,0 +1,27 @@
+appId: com.solunivo.app
+name: Confirm one "Open in Solunivo?" alert and cancel the rest (shared)
+---
+# iOS confirms a scheme URL opened from outside with "Open in Solunivo?"
+# — one alert per `simctl openurl`, and they stack (the CI step's own
+# openurl plus the flow's openLink, more on a runner that re-prompts).
+# Confirm exactly ONE: every further "Open" re-delivers the same URL to
+# the dev client while its first bundle is still starting, which made
+# it fetch the manifest again mid-load and took the process down with
+# SIGSEGV (runs 34013939965, 34460022505 — both tapped "Open" four
+# times; the passing runs tapped once). Cancel the leftovers: the app is
+# already launching with the URL.
+- extendedWaitUntil:
+    visible: 'Open'
+    timeout: 15000
+    optional: true
+- runFlow:
+    when:
+      visible: 'Open'
+    commands:
+      - tapOn: 'Open'
+- repeat:
+    times: 5
+    while:
+      visible: 'Cancel'
+    commands:
+      - tapOn: 'Cancel'

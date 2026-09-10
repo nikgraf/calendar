@@ -3,6 +3,7 @@ import { contextBridge, ipcRenderer } from 'electron';
 // The renderer's only door into the main process: a duplex frame channel
 // carrying the AppBackend rpc protocol (see packages/core/src/backend.ts).
 contextBridge.exposeInMainWorld('calendarBridge', {
+  contactsStatus: () => ipcRenderer.invoke('contacts:status'),
   logError: (text: string) => ipcRenderer.send('renderer-error', text),
   modelGenerate: (schema: unknown, prompt: string) =>
     ipcRenderer.invoke('model:generate', schema, prompt),

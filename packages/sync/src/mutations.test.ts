@@ -62,6 +62,7 @@ const seedCalendar = Effect.gen(function* () {
   const accounts = yield* AccountRepo;
   yield* accounts.upsert(
     new Account({
+      contactsEnabled: false,
       createdAt: 1,
       email: 'nik@nikgraf.com',
       id: 'acc-1',

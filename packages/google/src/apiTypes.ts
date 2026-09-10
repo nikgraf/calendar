@@ -98,7 +98,12 @@ export type GcalColors = Schema.Schema.Type<typeof GcalColors>;
 /** Fields we send on events.insert / events.patch. */
 export interface GcalEventInput {
   readonly attendees?:
-    | ReadonlyArray<{ readonly email: string; readonly responseStatus: string }>
+    | ReadonlyArray<{
+        readonly displayName?: string | undefined;
+        readonly email: string;
+        readonly resource?: boolean | undefined;
+        readonly responseStatus?: string | undefined;
+      }>
     | undefined;
   readonly description?: string | undefined;
   readonly end: {
@@ -151,3 +156,36 @@ export const GcalTasksPage = Schema.Struct({
   nextPageToken: Schema.optional(Schema.String),
 });
 export type GcalTasksPage = Schema.Schema.Type<typeof GcalTasksPage>;
+
+/** People API person, trimmed to the fields the contacts cache reads. */
+export const GcalPerson = Schema.Struct({
+  emailAddresses: Schema.optional(
+    Schema.Array(
+      Schema.Struct({
+        metadata: Schema.optional(Schema.Struct({ primary: Schema.optional(Schema.Boolean) })),
+        value: Schema.optional(Schema.String),
+      }),
+    ),
+  ),
+  /** `deleted: true` on incremental syncs marks a tombstone. */
+  metadata: Schema.optional(Schema.Struct({ deleted: Schema.optional(Schema.Boolean) })),
+  names: Schema.optional(
+    Schema.Array(
+      Schema.Struct({
+        displayName: Schema.optional(Schema.String),
+        metadata: Schema.optional(Schema.Struct({ primary: Schema.optional(Schema.Boolean) })),
+      }),
+    ),
+  ),
+  resourceName: Schema.String,
+});
+export type GcalPerson = Schema.Schema.Type<typeof GcalPerson>;
+
+/** people.connections.list (`connections`) and otherContacts.list (`otherContacts`) share paging. */
+export const GcalPeoplePage = Schema.Struct({
+  connections: Schema.optional(Schema.Array(GcalPerson)),
+  nextPageToken: Schema.optional(Schema.String),
+  nextSyncToken: Schema.optional(Schema.String),
+  otherContacts: Schema.optional(Schema.Array(GcalPerson)),
+});
+export type GcalPeoplePage = Schema.Schema.Type<typeof GcalPeoplePage>;

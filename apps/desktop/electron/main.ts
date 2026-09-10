@@ -7,6 +7,7 @@ import { startBackendHost } from './backendHost.ts';
 import { initFileLogging, logRendererError } from './log.ts';
 import { initPrivacy, registerPrivacyWindow } from './privacy.ts';
 import { registerModelHelper } from './modelHelper.ts';
+import { registerContactsIpc } from './contactsIpc.ts';
 import { registerRemindersIpc } from './remindersIpc.ts';
 
 const rootPath = fileURLToPath(new URL('..', import.meta.url));
@@ -101,6 +102,7 @@ void app.whenReady().then(() => {
   startBackendHost();
   registerModelHelper();
   registerRemindersIpc();
+  registerContactsIpc();
   createWindow();
 
   app.on('activate', () => {

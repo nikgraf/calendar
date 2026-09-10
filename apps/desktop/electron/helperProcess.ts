@@ -21,6 +21,9 @@ import { app } from 'electron';
  * case is the TCC prompt, which waits on the user).
  */
 const TIMEOUTS_MS: Record<string, number> = {
+  'contacts.requestAccess': 600_000,
+  'contacts.snapshot': 30_000,
+  'contacts.status': 10_000,
   generateJson: 120_000,
   prepareSpeech: 600_000,
   'reminders.create': 15_000,

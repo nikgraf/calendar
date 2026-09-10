@@ -16,5 +16,7 @@ export const CONFLICT_NOTICE_KEY = 'notice:conflict';
 export const TASKS_KEY = 'tasks';
 /** Google Tasks: the set of task lists (or their visibility) changed. */
 export const TASKLISTS_KEY = 'taskLists';
+/** Contact rows (Google People cache) changed. */
+export const CONTACTS_KEY = 'contacts';
 
 export const eventsKey = (calendarId: string): string => `events:${calendarId}`;
