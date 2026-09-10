@@ -1,0 +1,22 @@
+version: 2
+updates:
+  # Third-party actions are SHA-pinned; Dependabot moves the pins.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    labels: [dependencies]
+  # Grouped so one PR per week covers the workspace; effect stays pinned
+  # to its rc via the pnpm catalog and is left alone here.
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 3
+    groups:
+      all:
+        patterns: ['*']
+    ignore:
+      - dependency-name: 'effect'
+      - dependency-name: '@effect/*'
+    labels: [dependencies]

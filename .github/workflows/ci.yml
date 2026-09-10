@@ -80,7 +80,7 @@ jobs:
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
       - uses: actions/setup-node@v4
         with:
           node-version: 24
@@ -121,7 +121,7 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
       - uses: actions/setup-node@v4
         with:
           node-version: 24
@@ -171,16 +171,20 @@ jobs:
     env:
       CI: 1
       EXPO_NO_TELEMETRY: 1
-      EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+      # Pinned + checksum-verified below; bump both together.
+      MAESTRO_VERSION: 2.10.0
+      MAESTRO_SHA256: 29b675e10cc12080e445e9bfb2e2b4e4dfb9c0f2e30d5884120d258b5e1cd991
     steps:
       - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
       - uses: actions/setup-node@v4
         with:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - name: Require EXPO_TOKEN
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
         run: |
           if [ -z "$EXPO_TOKEN" ]; then
             echo "::error::EXPO_TOKEN is not set — the dev client comes from EAS"
@@ -203,6 +207,10 @@ jobs:
           key: ios-devclient-${{ steps.fingerprint.outputs.hash }}
       - name: Fetch the dev client from EAS
         if: steps.devclient.outputs.cache-hit != 'true'
+        # The only step that needs the token: it used to sit in the job env,
+        # next to a `curl | bash` of a third-party installer.
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
         working-directory: apps/ios
         run: bash e2e/ci/fetch-dev-client.sh "${{ steps.fingerprint.outputs.hash }}"
       - name: Boot a simulator, install, pre-grant Reminders
@@ -212,10 +220,21 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.maestro
-          key: maestro-${{ runner.os }}-latest
-      - name: Install Maestro
+          key: maestro-${{ runner.os }}-${{ env.MAESTRO_VERSION }}
+      - name: Install Maestro (pinned release, checksum verified)
+        # The same layout the official installer produces (lib/ + bin/ under
+        # ~/.maestro), without piping a remote script into bash.
         if: steps.maestro.outputs.cache-hit != 'true'
-        run: curl -fsSL "https://get.maestro.mobile.dev" | bash
+        run: |
+          set -euo pipefail
+          zip="$RUNNER_TEMP/maestro.zip"
+          curl -fsSL -o "$zip" \
+            "https://github.com/mobile-dev-inc/maestro/releases/download/cli-${MAESTRO_VERSION}/maestro.zip"
+          echo "${MAESTRO_SHA256}  $zip" | shasum -a 256 -c -
+          rm -rf "$RUNNER_TEMP/maestro-unzip" "$HOME/.maestro"
+          unzip -qo "$zip" -d "$RUNNER_TEMP/maestro-unzip"
+          mkdir -p "$HOME/.maestro"
+          cp -R "$RUNNER_TEMP/maestro-unzip/maestro/." "$HOME/.maestro/"
       - run: echo "$HOME/.maestro/bin" >> "$GITHUB_PATH"
       - name: Pin the runtime version for Metro
         # After the fingerprint step (an explicit runtimeVersion would change
@@ -330,7 +349,7 @@ jobs:
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
       - uses: actions/setup-node@v4
         with:
           node-version: 24
@@ -395,7 +414,7 @@ jobs:
           done
           exit "$missing"
       - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
       - uses: actions/setup-node@v4
         with:
           node-version: 24
