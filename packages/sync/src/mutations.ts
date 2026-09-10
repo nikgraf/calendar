@@ -15,6 +15,8 @@ import { generateEventId, GoogleCalendarClient, GoogleTasksClient } from '@calen
 import { RemindersClient } from '@calendar/reminders';
 import { Cause, Clock, Context, Effect, Layer, Semaphore } from 'effect';
 import { Reactivity } from 'effect/unstable/reactivity/Reactivity';
+import { SqlClient } from 'effect/unstable/sql/SqlClient';
+import type { SqlError } from 'effect/unstable/sql/SqlError';
 import { makeApplyOp } from './applyOp.ts';
 import {
   CALENDAR_COLOR_EVENT_ID,
@@ -73,8 +75,10 @@ const make: Effect.Effect<
   | PendingOpRepo
   | Reactivity
   | RemindersClient
+  | SqlClient
   | TaskRepo
 > = Effect.gen(function* () {
+  const sql = yield* SqlClient;
   const reactivity = yield* Reactivity;
   const remindersClient = yield* RemindersClient;
   const accountRepo = yield* AccountRepo;
@@ -91,11 +95,18 @@ const make: Effect.Effect<
       ops.filter((op) => op.calendarId === calendarId && op.eventId === eventId),
     );
 
-  const enqueueAndKick = (op: PendingOp) =>
-    Effect.gen(function* () {
-      yield* pendingOpRepo.enqueue(op);
-      yield* Effect.forkDetach(processPendingOps());
-    });
+  const enqueue = (op: PendingOp) => pendingOpRepo.enqueue(op);
+  const kick = Effect.suspend(() => Effect.forkDetach(processPendingOps()));
+  /**
+   * A mutation's local write and its queue changes (coalesce old ops,
+   * enqueue the new one) commit together: a crash between the two used
+   * to leave a `pending` row with no op behind it — an edit that never
+   * reached Google and that the next pull overwrote. The drain kicks
+   * only after the commit, so it never sees a half-written queue.
+   */
+  const transactional = <A, E, R>(
+    body: Effect.Effect<A, E, R>,
+  ): Effect.Effect<A, E | SqlError, R> => Effect.tap(sql.withTransaction(body), () => kick);
 
   const loadMaster = (accountId: string, calendarId: string, masterId: string) =>
     Effect.gen(function* () {
@@ -151,7 +162,7 @@ const make: Effect.Effect<
         }
         yield* pendingOpRepo.removeForEvent(calendarId, override.id);
         yield* eventRepo.deleteEvent(accountId, calendarId, override.id);
-        yield* enqueueAndKick(
+        yield* enqueue(
           new PendingOp({
             accountId,
             attempts: 0,
@@ -217,7 +228,7 @@ const make: Effect.Effect<
       );
 
   const googleTasks = makeTaskMutations({
-    enqueueAndKick,
+    enqueue,
     opsForEvent,
     pendingOpRepo,
     taskRepo,
@@ -252,23 +263,33 @@ const make: Effect.Effect<
   > = {
     completeTask: (params) =>
       Effect.flatMap(providerOf(params.accountId), (provider) =>
-        provider === 'apple' ? reminders.completeTask(params) : googleTasks.completeTask(params),
+        provider === 'apple'
+          ? reminders.completeTask(params)
+          : transactional(googleTasks.completeTask(params)),
       ),
     createTask: (params) =>
       Effect.flatMap(providerOf(params.accountId), (provider) =>
         provider === 'apple'
           ? reminders.createTask(params)
-          : Effect.andThen(rejectReminderFields(params), googleTasks.createTask(params)),
+          : Effect.andThen(
+              rejectReminderFields(params),
+              transactional(googleTasks.createTask(params)),
+            ),
       ),
     deleteTask: (params) =>
       Effect.flatMap(providerOf(params.accountId), (provider) =>
-        provider === 'apple' ? reminders.deleteTask(params) : googleTasks.deleteTask(params),
+        provider === 'apple'
+          ? reminders.deleteTask(params)
+          : transactional(googleTasks.deleteTask(params)),
       ),
     updateTask: (params) =>
       Effect.flatMap(providerOf(params.accountId), (provider) =>
         provider === 'apple'
           ? reminders.updateTask(params)
-          : Effect.andThen(rejectReminderFields(params.changes), googleTasks.updateTask(params)),
+          : Effect.andThen(
+              rejectReminderFields(params.changes),
+              transactional(googleTasks.updateTask(params)),
+            ),
       ),
   };
 
@@ -302,7 +323,7 @@ const make: Effect.Effect<
           updatedAt: now,
         });
         yield* eventRepo.upsertMany([record]);
-        yield* enqueueAndKick(
+        yield* enqueue(
           new PendingOp({
             accountId: draft.accountId,
             attempts: 0,
@@ -334,7 +355,7 @@ const make: Effect.Effect<
         const neverSynced = queued.some((op) => op.kind === 'create');
         if (!neverSynced) {
           const now = yield* Clock.currentTimeMillis;
-          yield* enqueueAndKick(
+          yield* enqueue(
             new PendingOp({
               accountId,
               attempts: 0,
@@ -368,7 +389,7 @@ const make: Effect.Effect<
           });
           yield* eventRepo.upsertMany([tombstone]);
           yield* pendingOpRepo.removeForEvent(calendarId, instanceId);
-          yield* enqueueAndKick(
+          yield* enqueue(
             new PendingOp({
               accountId,
               attempts: 0,
@@ -393,7 +414,7 @@ const make: Effect.Effect<
           }
           yield* pendingOpRepo.removeForEvent(calendarId, masterId);
           yield* eventRepo.deleteEvent(accountId, calendarId, masterId);
-          yield* enqueueAndKick(
+          yield* enqueue(
             new PendingOp({
               accountId,
               attempts: 0,
@@ -423,7 +444,7 @@ const make: Effect.Effect<
         });
         yield* eventRepo.upsertMany([truncated]);
         yield* pendingOpRepo.removeForEvent(calendarId, masterId);
-        yield* enqueueAndKick(
+        yield* enqueue(
           new PendingOp({
             accountId,
             attempts: 0,
@@ -472,7 +493,7 @@ const make: Effect.Effect<
             yield* pendingOpRepo.remove(op.id);
           }
         }
-        yield* enqueueAndKick(
+        yield* enqueue(
           new PendingOp({
             accountId,
             attempts: 0,
@@ -503,7 +524,7 @@ const make: Effect.Effect<
           }
         }
         const now = yield* Clock.currentTimeMillis;
-        yield* enqueueAndKick(
+        yield* enqueue(
           new PendingOp({
             accountId,
             attempts: 0,
@@ -542,7 +563,7 @@ const make: Effect.Effect<
         const queued = yield* opsForEvent(calendarId, eventId);
         yield* pendingOpRepo.removeForEvent(calendarId, eventId);
         const hasCreate = queued.some((op) => op.kind === 'create');
-        yield* enqueueAndKick(
+        yield* enqueue(
           new PendingOp({
             accountId,
             attempts: 0,
@@ -586,7 +607,7 @@ const make: Effect.Effect<
           yield* eventRepo.upsertMany([merged]);
           const queued = yield* opsForEvent(calendarId, instanceId);
           yield* pendingOpRepo.removeForEvent(calendarId, instanceId);
-          yield* enqueueAndKick(
+          yield* enqueue(
             new PendingOp({
               accountId,
               attempts: 0,
@@ -637,7 +658,7 @@ const make: Effect.Effect<
           yield* eventRepo.upsertMany([merged]);
           const queued = yield* opsForEvent(calendarId, masterId);
           yield* pendingOpRepo.removeForEvent(calendarId, masterId);
-          yield* enqueueAndKick(
+          yield* enqueue(
             new PendingOp({
               accountId,
               attempts: 0,
@@ -683,7 +704,7 @@ const make: Effect.Effect<
         });
         yield* eventRepo.upsertMany([truncated]);
         yield* pendingOpRepo.removeForEvent(calendarId, masterId);
-        yield* enqueueAndKick(
+        yield* enqueue(
           new PendingOp({
             accountId,
             attempts: 0,
@@ -717,7 +738,7 @@ const make: Effect.Effect<
           syncedAt: 0,
         });
         yield* eventRepo.upsertMany([newMaster]);
-        yield* enqueueAndKick(
+        yield* enqueue(
           new PendingOp({
             accountId,
             attempts: 0,
@@ -733,7 +754,18 @@ const make: Effect.Effect<
       }),
   };
 
-  return shape;
+  // Every queue-backed method runs inside one transaction (see
+  // `transactional`); the Reminders paths write EventKit and need none.
+  return {
+    ...shape,
+    createEvent: (draft) => transactional(shape.createEvent(draft)),
+    deleteEvent: (params) => transactional(shape.deleteEvent(params)),
+    deleteRecurring: (params) => transactional(shape.deleteRecurring(params)),
+    respondToEvent: (params) => transactional(shape.respondToEvent(params)),
+    setCalendarColor: (params) => transactional(shape.setCalendarColor(params)),
+    updateEvent: (params) => transactional(shape.updateEvent(params)),
+    updateRecurring: (params) => transactional(shape.updateRecurring(params)),
+  };
 });
 
 export class EventMutations extends Context.Service<EventMutations, EventMutationsShape>()(
@@ -750,6 +782,7 @@ export class EventMutations extends Context.Service<EventMutations, EventMutatio
     | PendingOpRepo
     | Reactivity
     | RemindersClient
+    | SqlClient
     | TaskRepo
   > = Layer.effect(EventMutations)(make);
 }

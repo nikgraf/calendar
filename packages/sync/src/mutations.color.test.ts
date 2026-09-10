@@ -9,7 +9,7 @@ import {
 import { RemindersClient, unavailableRemindersClient } from '@calendar/reminders';
 import { SqliteClient } from '@effect/sql-sqlite-node';
 import { expect, it } from '@effect/vitest';
-import { Effect, Layer } from 'effect';
+import { Effect, Layer, Scheduler } from 'effect';
 import { layer as reactivityLayer } from 'effect/unstable/reactivity/Reactivity';
 import { describe } from 'vitest';
 import { CALENDAR_COLOR_EVENT_ID, EventMutations } from './mutations.ts';
@@ -86,6 +86,14 @@ const colorOf = (accountId: string) =>
     return calendars[0]!.colorHex;
   });
 
+/**
+ * The mutation kicks the queue drain detached right after its transaction
+ * commits; a fiber yield there would let the push land before this test's
+ * "pull while queued" step. Pin the yield cadence (see tasks.test.ts).
+ */
+const noYield = <A, E, R>(effect: Effect.Effect<A, E, R>): Effect.Effect<A, E, R> =>
+  Effect.provideService(effect, Scheduler.MaxOpsBeforeYield, Number.MAX_SAFE_INTEGER);
+
 describe('EventMutations.setCalendarColor', () => {
   it.effect('updates locally, patches Google, and self-heals from the response', () => {
     const patches: Array<{ backgroundColor: string; calendarId: string; foregroundColor: string }> =
@@ -130,7 +138,7 @@ describe('EventMutations.setCalendarColor', () => {
 
       const ops = yield* (yield* PendingOpRepo).listAll();
       expect(ops).toHaveLength(0);
-    }).pipe(Effect.provide(layer));
+    }).pipe(noYield, Effect.provide(layer));
   });
 
   it.effect('coalesces per account: only the latest color op survives', () =>

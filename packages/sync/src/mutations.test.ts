@@ -23,8 +23,9 @@ import {
 import { RemindersClient, unavailableRemindersClient } from '@calendar/reminders';
 import { SqliteClient } from '@effect/sql-sqlite-node';
 import { expect, it } from '@effect/vitest';
-import { Effect, Layer } from 'effect';
+import { Effect, Exit, Layer } from 'effect';
 import { layer as reactivityLayer, type Reactivity } from 'effect/unstable/reactivity/Reactivity';
+import { SqlClient } from 'effect/unstable/sql/SqlClient';
 import { describe } from 'vitest';
 import { EventMutations } from './mutations.ts';
 
@@ -332,6 +333,44 @@ describe('EventMutations', () => {
       expect(yield* (yield* PendingOpRepo).listAll()).toHaveLength(0);
       const events = yield* EventRepo;
       expect(yield* events.getById('acc-1', 'cal-1', record.id)).toBeNull();
+    }).pipe(Effect.provide(mutationsLayer(client)));
+  });
+
+  it.effect('a failed queue write rolls the local edit back with it', () => {
+    const client = stubClient({
+      insertEvent: ({ event }) =>
+        Effect.succeed({
+          end: event.end as GcalEvent['end'],
+          etag: '"server-1"',
+          id: event.id ?? 'x',
+          start: event.start as GcalEvent['start'],
+          status: 'confirmed',
+          summary: event.summary,
+        }),
+    });
+    return Effect.gen(function* () {
+      yield* seedCalendar;
+      const mutations = yield* EventMutations;
+      const record = yield* mutations.createEvent(draft);
+      yield* mutations.processPendingOps();
+
+      // Break the queue between the local write and the enqueue: the
+      // row must not stay behind as a pending edit no op will ever push.
+      const sql = yield* SqlClient;
+      yield* sql`DROP TABLE pending_ops`;
+      const outcome = yield* Effect.exit(
+        mutations.updateEvent({
+          accountId: 'acc-1',
+          calendarId: 'cal-1',
+          changes: { title: 'Lost edit' },
+          eventId: record.id,
+        }),
+      );
+      expect(Exit.isFailure(outcome)).toBe(true);
+      const events = yield* EventRepo;
+      const row = yield* events.getById('acc-1', 'cal-1', record.id);
+      expect(row?.title).toBe(record.title);
+      expect(row?.syncStatus).toBe('synced');
     }).pipe(Effect.provide(mutationsLayer(client)));
   });
 

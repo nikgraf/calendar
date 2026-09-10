@@ -16,8 +16,8 @@ import {
  * the temp-id/adopt protocol in applyOp.ts).
  */
 export interface TaskMutationDeps {
-  /** Enqueue a pending op and kick the drain (detached). */
-  readonly enqueueAndKick: (op: PendingOp) => Effect.Effect<void, SqlError>;
+  /** Enqueue a pending op; the caller's transaction wrapper kicks the drain after commit. */
+  readonly enqueue: (op: PendingOp) => Effect.Effect<void, SqlError>;
   /** Queued ops addressed to (opaque containerId, itemId). */
   readonly opsForEvent: (
     calendarId: string,
@@ -33,7 +33,7 @@ type TaskMutations = Pick<
 >;
 
 export const makeTaskMutations = (deps: TaskMutationDeps): TaskMutations => {
-  const { enqueueAndKick, opsForEvent, pendingOpRepo, taskRepo } = deps;
+  const { enqueue, opsForEvent, pendingOpRepo, taskRepo } = deps;
   return {
     completeTask: ({ accountId, status, taskId, taskListId }) =>
       Effect.gen(function* () {
@@ -56,7 +56,7 @@ export const makeTaskMutations = (deps: TaskMutationDeps): TaskMutations => {
             yield* pendingOpRepo.remove(op.id);
           }
         }
-        yield* enqueueAndKick(
+        yield* enqueue(
           new PendingOp({
             accountId,
             attempts: 0,
@@ -97,7 +97,7 @@ export const makeTaskMutations = (deps: TaskMutationDeps): TaskMutations => {
           updatedAt: now,
         });
         yield* taskRepo.insertLocal(record);
-        yield* enqueueAndKick(
+        yield* enqueue(
           new PendingOp({
             accountId,
             attempts: 0,
@@ -136,7 +136,7 @@ export const makeTaskMutations = (deps: TaskMutationDeps): TaskMutations => {
           return;
         }
         const now = yield* Clock.currentTimeMillis;
-        yield* enqueueAndKick(
+        yield* enqueue(
           new PendingOp({
             accountId,
             attempts: 0,
@@ -171,7 +171,7 @@ export const makeTaskMutations = (deps: TaskMutationDeps): TaskMutations => {
           // patching a task Google has never seen. Fresh attempt counters:
           // an edit is a reason to try again now, not to inherit backoff.
           yield* pendingOpRepo.remove(pendingCreate.id);
-          yield* enqueueAndKick(
+          yield* enqueue(
             new PendingOp({
               ...pendingCreate,
               attempts: 0,
@@ -195,7 +195,7 @@ export const makeTaskMutations = (deps: TaskMutationDeps): TaskMutations => {
             yield* pendingOpRepo.remove(queuedOp.id);
           }
         }
-        yield* enqueueAndKick(
+        yield* enqueue(
           new PendingOp({
             accountId,
             attempts: 0,
