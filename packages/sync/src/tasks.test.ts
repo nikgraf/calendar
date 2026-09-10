@@ -529,6 +529,125 @@ describe('completeTask', () => {
     }).pipe(noYield, Effect.provide(testLayer(client)));
   });
 
+  it.effect('an edit after a dispatched-but-lost insert still adopts, then patches', () => {
+    let attempts = 0;
+    const patches: Array<string> = [];
+    const client: GoogleTasksClientShape = tasksClient({
+      insertTask: () => {
+        attempts += 1;
+        // The first request "lands" on Google but the response is lost.
+        return attempts === 1
+          ? Effect.fail(new ApiUnavailableError({ cause: 'connection dropped' }))
+          : Effect.die('a second insert would duplicate the task');
+      },
+      // On the verify pass the task is there — with the fields the insert
+      // was sent, not the edited ones.
+      listTasks: ({ params }) =>
+        Effect.succeed(
+          params.updatedMin
+            ? {
+                items: [
+                  {
+                    due: '2026-08-30T00:00:00.000Z',
+                    id: 'server-landed',
+                    status: 'needsAction',
+                    title: 'Pay insurance',
+                    updated: '2026-08-24T10:00:00.000Z',
+                  },
+                ],
+              }
+            : { items: [] },
+        ),
+      patchTask: ({ changes, taskId }) => {
+        patches.push(`${taskId}|${changes.title ?? ''}`);
+        return Effect.succeed({ id: taskId, status: 'needsAction', title: changes.title });
+      },
+    });
+    return Effect.gen(function* () {
+      yield* seedTasks;
+      const mutations = yield* EventMutations;
+      const temp = yield* mutations.createTask({
+        accountId: 'acc-1',
+        dueDate: '2026-08-30',
+        taskListId: 'list-1',
+        title: 'Pay insurance',
+      });
+      yield* mutations.processPendingOps();
+      // Edited while the create sits in backoff: the create must keep the
+      // fields it was dispatched with, or the adopt check misses and a
+      // second insert duplicates the task.
+      yield* mutations.updateTask({
+        accountId: 'acc-1',
+        changes: { title: 'Pay insurance now' },
+        taskId: temp.id,
+        taskListId: 'list-1',
+      });
+      const ops = yield* PendingOpRepo;
+      expect((yield* ops.listAll()).map((op) => op.kind)).toEqual(['createTask', 'updateTask']);
+      for (const op of yield* ops.listAll()) {
+        yield* ops.markFailed(op.id, op.attempts, 0, 'test');
+      }
+      yield* mutations.processPendingOps();
+      expect(attempts).toBe(1);
+      expect(patches).toEqual(['server-landed|Pay insurance now']);
+      expect(yield* ops.listAll()).toHaveLength(0);
+    }).pipe(noYield, Effect.provide(testLayer(client)));
+  });
+
+  it.effect('a follower behind a create in backoff waits for the id swap', () => {
+    let attempts = 0;
+    const patches: Array<string> = [];
+    const client: GoogleTasksClientShape = tasksClient({
+      insertTask: ({ task }) => {
+        attempts += 1;
+        return attempts === 1
+          ? Effect.fail(new ApiUnavailableError({ cause: 'connection dropped' }))
+          : Effect.succeed({
+              due: task.due,
+              id: 'server-fresh',
+              status: 'needsAction',
+              title: task.title,
+            });
+      },
+      // The first request never landed: nothing to adopt.
+      listTasks: () => Effect.succeed({ items: [] }),
+      patchTask: ({ changes, taskId }) => {
+        patches.push(`${taskId}|${changes.title ?? ''}`);
+        return Effect.succeed({ id: taskId, status: 'needsAction', title: changes.title });
+      },
+    });
+    return Effect.gen(function* () {
+      yield* seedTasks;
+      const mutations = yield* EventMutations;
+      const temp = yield* mutations.createTask({
+        accountId: 'acc-1',
+        dueDate: '2026-08-30',
+        taskListId: 'list-1',
+        title: 'Draft',
+      });
+      yield* mutations.processPendingOps();
+      yield* mutations.updateTask({
+        accountId: 'acc-1',
+        changes: { title: 'Final' },
+        taskId: temp.id,
+        taskListId: 'list-1',
+      });
+      // The edit is due now, the create is not: the patch must not run
+      // against the temp id (Google would 404 and the row would be dropped).
+      yield* mutations.processPendingOps();
+      expect(patches).toEqual([]);
+      const ops = yield* PendingOpRepo;
+      expect((yield* ops.listAll()).map((op) => op.kind)).toEqual(['createTask', 'updateTask']);
+      for (const op of yield* ops.listAll()) {
+        yield* ops.markFailed(op.id, op.attempts, 0, 'test');
+      }
+      yield* mutations.processPendingOps();
+      expect(attempts).toBe(2);
+      expect(patches).toEqual(['server-fresh|Final']);
+      expect(yield* ops.listAll()).toHaveLength(0);
+    }).pipe(noYield, Effect.provide(testLayer(client)));
+  });
+
   it.effect('edits fold into a still-queued create', () => {
     const inserts: Array<string> = [];
     const client: GoogleTasksClientShape = tasksClient({
