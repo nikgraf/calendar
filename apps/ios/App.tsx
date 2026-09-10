@@ -124,19 +124,35 @@ function CalendarScreen() {
           {title}
         </Text>
         <View style={styles.headerActions}>
-          <Pressable onPress={() => step(-1)} style={styles.navButton} testID="nav-prev">
+          {/* Icon-only buttons: VoiceOver read the glyphs ("‹", "＋") without labels. */}
+          <Pressable
+            accessibilityLabel={view === 'month' ? 'Previous month' : 'Previous day'}
+            accessibilityRole="button"
+            onPress={() => step(-1)}
+            style={styles.navButton}
+            testID="nav-prev"
+          >
             <Text style={styles.navLabel}>‹</Text>
           </Pressable>
           <Pressable
+            accessibilityRole="button"
             onPress={() => setFocused(Temporal.Now.plainDateISO(timeZone))}
             style={styles.navButton}
           >
             <Text style={styles.todayLabel}>Today</Text>
           </Pressable>
-          <Pressable onPress={() => step(1)} style={styles.navButton} testID="nav-next">
+          <Pressable
+            accessibilityLabel={view === 'month' ? 'Next month' : 'Next day'}
+            accessibilityRole="button"
+            onPress={() => step(1)}
+            style={styles.navButton}
+            testID="nav-next"
+          >
             <Text style={styles.navLabel}>›</Text>
           </Pressable>
           <Pressable
+            accessibilityLabel="New event"
+            accessibilityRole="button"
             onPress={() => setEditSeed({ initialDate: focused })}
             style={styles.navButton}
             testID="add-event"
@@ -144,6 +160,8 @@ function CalendarScreen() {
             <Text style={styles.addLabel}>＋</Text>
           </Pressable>
           <Pressable
+            accessibilityLabel="Settings"
+            accessibilityRole="button"
             onPress={() => setShowSettings(true)}
             style={styles.navButton}
             testID="open-settings"
@@ -156,6 +174,8 @@ function CalendarScreen() {
       <View style={styles.segment}>
         {(['day', 'month'] as const).map((kind) => (
           <Pressable
+            accessibilityRole="button"
+            accessibilityState={{ selected: view === kind }}
             key={kind}
             onPress={() => setView(kind)}
             style={[styles.segmentItem, view === kind && styles.segmentActive]}

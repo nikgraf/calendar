@@ -20,7 +20,18 @@ export function WeekStrip({
         const isSelected = Temporal.PlainDate.compare(day, selected) === 0;
         const isToday = Temporal.PlainDate.compare(day, today) === 0;
         return (
-          <Pressable key={day.toString()} onPress={() => onSelect(day)} style={styles.cell}>
+          <Pressable
+            accessibilityLabel={day.toLocaleString('en-US', {
+              day: 'numeric',
+              month: 'long',
+              weekday: 'long',
+            })}
+            accessibilityRole="button"
+            accessibilityState={{ selected: Temporal.PlainDate.compare(day, selected) === 0 }}
+            key={day.toString()}
+            onPress={() => onSelect(day)}
+            style={styles.cell}
+          >
             <Text style={styles.weekday}>{day.toLocaleString('en-US', { weekday: 'narrow' })}</Text>
             <View
               style={[

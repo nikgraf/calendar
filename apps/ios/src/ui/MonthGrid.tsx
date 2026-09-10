@@ -37,6 +37,12 @@ export function MonthGrid({
             const dayEvents = eventsForDay(date);
             return (
               <Pressable
+                accessibilityLabel={`${date.toLocaleString('en-US', {
+                  day: 'numeric',
+                  month: 'long',
+                  weekday: 'long',
+                })}, ${dayEvents.length} ${dayEvents.length === 1 ? 'event' : 'events'}`}
+                accessibilityRole="button"
                 key={date.toString()}
                 onPress={() => onSelectDay(date)}
                 style={styles.dayCell}
