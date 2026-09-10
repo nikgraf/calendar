@@ -18,6 +18,52 @@ concurrency:
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
+  # Docs-only pushes used to run every macOS job — up to ~125 wall minutes
+  # per push at the private-repo multiplier (the spending limit was hit on
+  # 2026-09-05). Classify the change once; the macOS jobs run only when
+  # code changed. A job skipped by `if:` still reports (as skipped, which
+  # branch protection accepts) — `paths-ignore` on the workflow would make
+  # a required check never report at all. Anything unclassifiable counts
+  # as code.
+  changes:
+    name: Classify changed paths
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      code: ${{ steps.classify.outputs.code }}
+    steps:
+      - id: classify
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -uo pipefail
+          files=""
+          case "${{ github.event_name }}" in
+            pull_request)
+              files=$(gh api --paginate "repos/$REPO/pulls/${{ github.event.number }}/files"                 --jq '.[].filename') || files=""
+              ;;
+            push)
+              before="${{ github.event.before }}"
+              if [ "$before" != "0000000000000000000000000000000000000000" ]; then
+                files=$(gh api "repos/$REPO/compare/${before}...${{ github.sha }}"                   --jq '.files[].filename') || files=""
+              fi
+              ;;
+          esac
+          if [ -z "$files" ]; then
+            echo "could not classify the change — treating it as code"
+            echo "code=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "$files"
+          # Docs-only: every path is Markdown or lives under docs/.
+          if echo "$files" | grep -vE '^(docs/.*|([^/]+/)*[^/]+\.md)$' > /dev/null; then
+            echo "code=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "docs-only change: the macOS jobs are skipped"
+            echo "code=false" >> "$GITHUB_OUTPUT"
+          fi
+
   gate:
     name: Lint, typecheck, unit tests
     runs-on: ubuntu-latest
@@ -36,6 +82,8 @@ jobs:
 
   e2e:
     name: Desktop e2e (Electron, CDP)
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     # macos-15: macos-14 images are deprecated; e2e needs no macOS 26 SDK
     # (the helper is availability-guarded and e2e never invokes the model).
     runs-on: macos-15
@@ -72,7 +120,8 @@ jobs:
   # while testing nothing. macos-26: build:helper needs the macOS 26 SDK.
   e2e-reminders:
     name: Desktop e2e (real Reminders via helper)
-    needs: gate
+    needs: [gate, changes]
+    if: needs.changes.outputs.code == 'true'
     runs-on: macos-26
     timeout-minutes: 30
     steps:
@@ -109,7 +158,8 @@ jobs:
   # first requests, one EAS build). Metro on the runner serves the JS.
   ios-e2e:
     name: iOS e2e (Maestro, real Reminders)
-    needs: gate
+    needs: [gate, changes]
+    if: needs.changes.outputs.code == 'true'
     runs-on: macos-26
     timeout-minutes: 45
     env:
@@ -262,8 +312,8 @@ jobs:
   # needs the macOS 26 SDK (same as testing-build).
   package-smoke:
     name: Packaging smoke (unsigned .app)
-    if: github.event_name == 'pull_request'
-    needs: gate
+    needs: [gate, changes]
+    if: github.event_name == 'pull_request' && needs.changes.outputs.code == 'true'
     runs-on: macos-26
     timeout-minutes: 25
     steps:
@@ -296,8 +346,10 @@ jobs:
   # already required it on the PR.
   testing-build:
     name: macOS testing build (signed + notarized)
-    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
-    needs: gate
+    needs: [gate, changes]
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'push' && needs.changes.outputs.code == 'true')
     # macos-26: the Swift model helper needs the macOS 26 SDK
     # (FoundationModels/SpeechAnalyzer). Runtime stays guarded, so the
     # packaged app still runs on older macOS with the model unavailable.
