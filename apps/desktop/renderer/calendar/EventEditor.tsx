@@ -1,5 +1,6 @@
 import { useEventEditorModel, useTaskEditorModel, type EventEditorSeed } from '@calendar/app-state';
 import { useState } from 'react';
+import { Dialog } from '../Dialog.tsx';
 import { InviteeCombobox } from './InviteeCombobox.tsx';
 import { ReminderEditorForm } from './ReminderEditorForm.tsx';
 import { TaskEditorForm } from './TaskEditorForm.tsx';
@@ -97,14 +98,13 @@ export function EventEditor({
   const field = 'w-full rounded-lg border border-neutral-200 bg-white px-3 py-1.5 text-sm';
 
   return (
-    <div
-      className="fixed inset-0 z-30 flex items-center justify-center bg-black/30"
-      onClick={onClose}
+    <Dialog
+      label={mode === 'task' ? 'Task editor' : 'Event editor'}
+      onClose={onClose}
+      panelClassName="w-[420px] rounded-2xl bg-neutral-50 p-6 shadow-2xl"
+      zIndex={30}
     >
-      <div
-        className="w-[420px] rounded-2xl bg-neutral-50 p-6 shadow-2xl"
-        onClick={(clickEvent) => clickEvent.stopPropagation()}
-      >
+      <>
         <div className="mb-4 flex items-center justify-between">
           <h2 className="text-lg font-semibold">
             {mode === 'task'
@@ -375,7 +375,7 @@ export function EventEditor({
             </div>
           </>
         )}
-      </div>
-    </div>
+      </>
+    </Dialog>
   );
 }

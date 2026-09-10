@@ -326,7 +326,8 @@ export function WeekView({
 
                 return (
                   <div
-                    className="relative border-l border-neutral-100"
+                    aria-label={`${day.toLocaleString('en-US', { day: 'numeric', month: 'long', weekday: 'long' })}: press Enter for a new event`}
+                    className="relative border-l border-neutral-100 outline-none focus-visible:bg-blue-50/40"
                     key={day.toString()}
                     onClick={(clickEvent) => {
                       if (drag.consumeSuppressedClick()) {
@@ -336,6 +337,14 @@ export function WeekView({
                       const hour = Math.floor((clickEvent.clientY - bounds.top) / HOUR_HEIGHT);
                       onSlotClick(day, Math.min(Math.max(hour, 0), 23));
                     }}
+                    onKeyDown={(keyEvent) => {
+                      if (keyEvent.target === keyEvent.currentTarget && keyEvent.key === 'Enter') {
+                        keyEvent.preventDefault();
+                        onSlotClick(day, 9);
+                      }
+                    }}
+                    role="button"
+                    tabIndex={0}
                   >
                     {/* Hour lines */}
                     {Array.from({ length: 24 }, (_, index) => (
@@ -368,15 +377,24 @@ export function WeekView({
                       const draggable = !event.recurrence;
                       return (
                         <div
-                          className={`absolute touch-none overflow-hidden rounded-md px-1.5 py-0.5 select-none ${
+                          aria-label={`${event.title}, ${formatTime(event.startUtc, timeZone)} to ${formatTime(event.endUtc, timeZone)}`}
+                          className={`absolute touch-none overflow-hidden rounded-md px-1.5 py-0.5 outline-none select-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
                             draggable ? 'cursor-grab' : 'cursor-pointer'
                           } ${dragging ? 'z-20 opacity-90 shadow-lg ring-2 ring-white/60' : ''}`}
                           key={box.id}
+                          onKeyDown={(keyEvent) => {
+                            if (keyEvent.key === 'Enter' || keyEvent.key === ' ') {
+                              keyEvent.preventDefault();
+                              keyEvent.stopPropagation();
+                              onEventClick(event);
+                            }
+                          }}
                           onPointerDown={(pointerEvent) =>
                             drag.onPointerDown(event, box.id, pointerEvent, 'move')
                           }
                           onPointerMove={drag.onPointerMove}
                           onPointerUp={drag.onPointerUp}
+                          role="button"
                           style={{
                             backgroundColor: color,
                             color: chipTextColor(color),
@@ -385,6 +403,7 @@ export function WeekView({
                             top: `${(topMinutes / dayMinutes) * 100}%`,
                             width: `calc(${box.width * 100}% - 3px)`,
                           }}
+                          tabIndex={0}
                           title={`${event.title} · ${formatTime(event.startUtc, timeZone)}`}
                         >
                           <p className="truncate text-xs leading-4 font-medium">{event.title}</p>

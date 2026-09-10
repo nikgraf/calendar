@@ -18,6 +18,7 @@ import {
 } from '@calendar/app-state';
 import { useEffect, useMemo, useState } from 'react';
 import { AccountsView } from '../AccountsView.tsx';
+import { Dialog } from '../Dialog.tsx';
 import { EventEditor, type EditorSeed } from './EventEditor.tsx';
 import { makeColorLookup } from './colors.ts';
 import { MonthView } from './MonthView.tsx';
@@ -115,20 +116,6 @@ export function CalendarApp() {
   const accounts = useAccounts();
   const colorOf = useMemo(() => makeColorLookup(calendars), [calendars]);
 
-  useEffect(() => {
-    const onKeyDown = (key: KeyboardEvent) => {
-      if ((key.metaKey || key.ctrlKey) && key.key.toLowerCase() === 'k') {
-        key.preventDefault();
-        setCommandBarOpen((open) => !open);
-      }
-      if (key.key === 'Escape') {
-        setCommandBarOpen(false);
-      }
-    };
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, []);
-
   const step = (direction: 1 | -1) => {
     setFocused((current) =>
       view === 'month'
@@ -154,6 +141,60 @@ export function CalendarApp() {
     setWeekWindowStart(null);
     setView(kind);
   };
+
+  const dialogOpen = commandBarOpen || editorSeed !== null || editTask !== null || showSettings;
+  useEffect(() => {
+    const isTyping = (target: EventTarget | null) => {
+      const element = target as { isContentEditable?: boolean; tagName?: string } | null;
+      return Boolean(
+        element?.isContentEditable ||
+        ['INPUT', 'SELECT', 'TEXTAREA'].includes(element?.tagName ?? ''),
+      );
+    };
+    const onKeyDown = (key: KeyboardEvent) => {
+      const command = key.metaKey || key.ctrlKey;
+      if (command && key.key.toLowerCase() === 'k') {
+        key.preventDefault();
+        setCommandBarOpen((open) => !open);
+        return;
+      }
+      if (command && key.key === ',') {
+        key.preventDefault();
+        setShowSettings(true);
+        return;
+      }
+      // The rest are single keys for the calendar itself: not while a
+      // dialog is open (they close on Escape themselves) or while typing.
+      if (dialogOpen || isTyping(key.target) || key.altKey) {
+        return;
+      }
+      // Same arithmetic as `step` below, inlined: the lint rule treats
+      // that closure as changing every render.
+      const stepBy = (direction: 1 | -1) => {
+        setFocused((current) =>
+          view === 'month'
+            ? current.add({ months: direction })
+            : current.add({ days: direction * (view === 'week' ? 7 : 1) }),
+        );
+        if (view === 'week') {
+          setWeekWindowStart((current) => current?.add({ days: 7 * direction }) ?? null);
+        }
+      };
+      if (command && key.key.toLowerCase() === 'n') {
+        key.preventDefault();
+        setEditorSeed({ initialDate: focused, initialHour: 9 });
+      } else if (!command && key.key.toLowerCase() === 't') {
+        setFocused(Temporal.Now.plainDateISO(timeZone));
+        setWeekWindowStart(null);
+      } else if (!command && key.key === 'ArrowLeft') {
+        stepBy(-1);
+      } else if (!command && key.key === 'ArrowRight') {
+        stepBy(1);
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [dialogOpen, focused, timeZone, view]);
 
   const days = useMemo(() => {
     if (view === 'day') {
@@ -181,6 +222,7 @@ export function CalendarApp() {
             style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
           >
             <button
+              aria-label={`Previous ${view}`}
               className="rounded-md px-2 py-1 text-neutral-500 hover:bg-neutral-100"
               onClick={() => step(-1)}
               type="button"
@@ -198,6 +240,7 @@ export function CalendarApp() {
               Today
             </button>
             <button
+              aria-label={`Next ${view}`}
               className="rounded-md px-2 py-1 text-neutral-500 hover:bg-neutral-100"
               onClick={() => step(1)}
               type="button"
@@ -226,6 +269,7 @@ export function CalendarApp() {
             ))}
           </div>
           <button
+            aria-label="New event"
             className="rounded-md bg-blue-600 px-3 py-1 text-sm font-medium text-white hover:bg-blue-500"
             onClick={() => setEditorSeed({ initialDate: focused, initialHour: 9 })}
             style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
@@ -234,6 +278,7 @@ export function CalendarApp() {
             +
           </button>
           <button
+            aria-label="Accounts"
             className="rounded-md px-2 py-1 text-neutral-500 hover:bg-neutral-100"
             onClick={() => setShowSettings(true)}
             style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
@@ -281,6 +326,7 @@ export function CalendarApp() {
 
       {commandBarOpen ? (
         <CommandBar
+          focusedDate={focused}
           onClose={() => setCommandBarOpen(false)}
           onParsed={(prefill) =>
             setEditorSeed({ initialDate: Temporal.PlainDate.from(prefill.date), prefill })
@@ -305,17 +351,14 @@ export function CalendarApp() {
       ) : null}
 
       {showSettings ? (
-        <div
-          className="fixed inset-0 z-20 flex items-center justify-center bg-black/30"
-          onClick={() => setShowSettings(false)}
+        <Dialog
+          label="Settings"
+          onClose={() => setShowSettings(false)}
+          panelClassName="max-h-[80vh] w-[540px] overflow-y-auto rounded-2xl bg-neutral-50 p-8 shadow-2xl"
+          zIndex={20}
         >
-          <div
-            className="max-h-[80vh] w-[540px] overflow-y-auto rounded-2xl bg-neutral-50 p-8 shadow-2xl"
-            onClick={(clickEvent) => clickEvent.stopPropagation()}
-          >
-            <AccountsView />
-          </div>
-        </div>
+          <AccountsView />
+        </Dialog>
       ) : null}
     </div>
   );
