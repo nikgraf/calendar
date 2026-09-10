@@ -1,3 +1,4 @@
+import { plainDateToUtcMs } from '../time/convert.ts';
 import { Temporal } from '../time/temporal.ts';
 import { expandRecurringEvent, type RecurrenceMaster } from './expand.ts';
 
@@ -49,18 +50,74 @@ const rewriteRule = (line: string, transform: (parts: Map<string, string>) => vo
 };
 
 /**
+ * Epoch ms of one RDATE/EXDATE value. Forms: `20260714T090000Z` (UTC),
+ * `20260714T090000` (wall clock in `TZID=` or, floating, the series
+ * zone), `20260714` (`VALUE=DATE`), and a PERIOD's `start/end` (start
+ * counts). Undefined when it does not parse — such a value is kept, never
+ * silently dropped.
+ */
+const listValueMs = (
+  value: string,
+  params: ReadonlyMap<string, string>,
+  seriesTimeZone: string,
+): number | undefined => {
+  const raw = value.split('/')[0] ?? '';
+  try {
+    if (params.get('VALUE') === 'DATE' || /^\d{8}$/.test(raw)) {
+      return plainDateToUtcMs(`${raw.slice(0, 4)}-${raw.slice(4, 6)}-${raw.slice(6, 8)}`);
+    }
+    const match = /^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})(Z?)$/.exec(raw);
+    if (!match) {
+      return undefined;
+    }
+    const iso = `${match[1]}-${match[2]}-${match[3]}T${match[4]}:${match[5]}:${match[6]}`;
+    if (match[7] === 'Z') {
+      return Temporal.Instant.from(`${iso}Z`).epochMilliseconds;
+    }
+    const zone = params.get('TZID') ?? seriesTimeZone;
+    return Temporal.PlainDateTime.from(iso).toZonedDateTime(zone).epochMilliseconds;
+  } catch {
+    return undefined;
+  }
+};
+
+/** `RDATE;TZID=…;VALUE=…:v1,v2` → params + values (the property name is not included). */
+const parseDateList = (
+  line: string,
+): { readonly params: Map<string, string>; readonly values: Array<string> } => {
+  const colon = line.indexOf(':');
+  const head = colon === -1 ? line : line.slice(0, colon);
+  const values = colon === -1 ? [] : line.slice(colon + 1).split(',');
+  const params = new Map<string, string>();
+  for (const piece of head.split(';').slice(1)) {
+    const [key, value] = piece.split('=', 2);
+    if (key && value !== undefined) {
+      params.set(key.toUpperCase(), value);
+    }
+  }
+  return { params, values };
+};
+
+/**
  * Truncates a recurrence so its last occurrence falls strictly before
  * `splitOriginalStartUtc` (UNTIL = split − 1s; any COUNT is dropped —
- * UNTIL and COUNT are mutually exclusive per RFC 5545).
+ * UNTIL and COUNT are mutually exclusive per RFC 5545). RDATE lines are
+ * pruned the same way: UNTIL only bounds the RRULE, so an explicit
+ * occurrence at or after the split would otherwise survive in the old
+ * series. EXDATE lines stay as they are (an exclusion past the split is
+ * harmless).
  */
 export const truncateRecurrence = (
   recurrence: ReadonlyArray<string>,
   splitOriginalStartUtc: number,
   isAllDay: boolean,
+  seriesTimeZone = 'UTC',
 ): Array<string> =>
-  recurrence.map((line) =>
-    line.toUpperCase().startsWith('RRULE:')
-      ? rewriteRule(line, (parts) => {
+  recurrence.flatMap((line) => {
+    const upper = line.toUpperCase();
+    if (upper.startsWith('RRULE:')) {
+      return [
+        rewriteRule(line, (parts) => {
           parts.delete('COUNT');
           parts.set(
             'UNTIL',
@@ -68,9 +125,23 @@ export const truncateRecurrence = (
               ? compactDate(splitOriginalStartUtc - 24 * 60 * 60 * 1000)
               : compactUtc(splitOriginalStartUtc - 1000),
           );
-        })
-      : line,
-  );
+        }),
+      ];
+    }
+    if (upper.startsWith('RDATE')) {
+      const { params, values } = parseDateList(line);
+      const kept = values.filter((value) => {
+        const ms = listValueMs(value, params, seriesTimeZone);
+        return ms === undefined || ms < splitOriginalStartUtc;
+      });
+      if (kept.length === 0) {
+        return [];
+      }
+      const colon = line.indexOf(':');
+      return [`${line.slice(0, colon + 1)}${kept.join(',')}`];
+    }
+    return [line];
+  });
 
 /**
  * Recurrence lines for the new master created by a this-and-following split.

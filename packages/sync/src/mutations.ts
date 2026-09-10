@@ -412,7 +412,12 @@ const make: Effect.Effect<
         // this-and-following: end the series just before the occurrence.
         const truncated = new EventRecord({
           ...master,
-          recurrence: truncateRecurrence(recurrence, originalStartUtc, master.isAllDay),
+          recurrence: truncateRecurrence(
+            recurrence,
+            originalStartUtc,
+            master.isAllDay,
+            master.startTimeZone ?? 'UTC',
+          ),
           syncStatus: 'pending',
           updatedAt: now,
         });
@@ -667,7 +672,12 @@ const make: Effect.Effect<
         );
         const truncated = new EventRecord({
           ...master,
-          recurrence: truncateRecurrence(recurrence, originalStartUtc, master.isAllDay),
+          recurrence: truncateRecurrence(
+            recurrence,
+            originalStartUtc,
+            master.isAllDay,
+            master.startTimeZone ?? 'UTC',
+          ),
           syncStatus: 'pending',
           updatedAt: now,
         });
