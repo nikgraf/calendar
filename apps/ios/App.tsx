@@ -143,7 +143,7 @@ function CalendarScreen() {
             <Text style={styles.navLabel}>›</Text>
           </Pressable>
           <Pressable
-            accessibilityLabel="New event"
+            accessibilityLabel="Add event"
             accessibilityRole="button"
             onPress={() => setEditSeed({ initialDate: focused })}
             style={styles.navButton}
