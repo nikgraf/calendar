@@ -1,5 +1,7 @@
 /** Neighbour days the mobile day view keeps drawn on each side. */
 export const DAY_SWIPE_BUFFER = 1;
+/** The mobile week view pages by whole weeks, so a full week sits on each side. */
+export const WEEK_SWIPE_BUFFER = 7;
 
 import { daySpanRange, type UtcRange } from '../time/ranges.ts';
 import { Temporal } from '../time/temporal.ts';

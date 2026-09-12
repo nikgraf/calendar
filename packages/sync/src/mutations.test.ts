@@ -3,10 +3,12 @@ import {
   AccountRepo,
   CalendarRepo,
   EventRepo,
+  forwardingReactivity,
   PendingOpRepo,
   reposLayer,
   runMigrations,
 } from '@calendar/db';
+import { DROPPED_NOTICE_KEY } from '@calendar/db/keys';
 import {
   ApiUnavailableError,
   ConflictError,
@@ -21,8 +23,9 @@ import {
 import { RemindersClient, unavailableRemindersClient } from '@calendar/reminders';
 import { SqliteClient } from '@effect/sql-sqlite-node';
 import { expect, it } from '@effect/vitest';
-import { Effect, Layer } from 'effect';
-import { layer as reactivityLayer } from 'effect/unstable/reactivity/Reactivity';
+import { Effect, Exit, Layer } from 'effect';
+import { layer as reactivityLayer, type Reactivity } from 'effect/unstable/reactivity/Reactivity';
+import { SqlClient } from 'effect/unstable/sql/SqlClient';
 import { describe } from 'vitest';
 import { EventMutations } from './mutations.ts';
 
@@ -47,12 +50,15 @@ const stubTasksClient: GoogleTasksClientShape = {
   patchTask: () => Effect.die('tasks not used in this test'),
 };
 
-const mutationsLayer = (client: GoogleCalendarClientShape) =>
+const mutationsLayer = (
+  client: GoogleCalendarClientShape,
+  reactivity: Layer.Layer<Reactivity> = reactivityLayer,
+) =>
   EventMutations.layer.pipe(
     Layer.provideMerge(reposLayer),
     Layer.provideMerge(Layer.effectDiscard(runMigrations)),
     Layer.provideMerge(SqliteClient.layer({ filename: ':memory:' })),
-    Layer.provideMerge(reactivityLayer),
+    Layer.provideMerge(reactivity),
     Layer.provideMerge(Layer.succeed(RemindersClient, unavailableRemindersClient('test'))),
     Layer.provideMerge(Layer.succeed(GoogleCalendarClient, client)),
     Layer.provideMerge(Layer.succeed(GoogleTasksClient, stubTasksClient)),
@@ -264,6 +270,123 @@ describe('EventMutations', () => {
 
       const ops = yield* (yield* PendingOpRepo).listAll();
       expect(ops).toHaveLength(0);
+    }).pipe(Effect.provide(mutationsLayer(client)));
+  });
+
+  it.effect('a permanent 4xx drops the op and broadcasts the dropped notice', () => {
+    const client = stubClient({
+      insertEvent: ({ event }) =>
+        Effect.succeed({
+          end: event.end as GcalEvent['end'],
+          etag: '"server-1"',
+          id: event.id ?? 'x',
+          start: event.start as GcalEvent['start'],
+          status: 'confirmed',
+          summary: event.summary,
+        }),
+      patchEvent: () =>
+        Effect.fail(new GoogleApiError({ message: 'Invalid value for field', status: 400 })),
+    });
+    const seen: Array<unknown> = [];
+    return Effect.gen(function* () {
+      yield* seedCalendar;
+      const mutations = yield* EventMutations;
+      const record = yield* mutations.createEvent(draft);
+      yield* mutations.processPendingOps();
+
+      yield* mutations.updateEvent({
+        accountId: 'acc-1',
+        calendarId: 'cal-1',
+        changes: { title: 'Rejected edit' },
+        eventId: record.id,
+      });
+      yield* mutations.processPendingOps();
+
+      // Dropped, not pinned in the queue — and the UI hears about it,
+      // where it used to vanish without a trace.
+      const ops = yield* (yield* PendingOpRepo).listAll();
+      expect(ops).toHaveLength(0);
+      expect(seen).toContain(DROPPED_NOTICE_KEY);
+    }).pipe(
+      Effect.provide(
+        mutationsLayer(
+          client,
+          forwardingReactivity((keys) => {
+            seen.push(...keys);
+          }),
+        ),
+      ),
+    );
+  });
+
+  it.effect('a create Google rejects for good takes its optimistic event with it', () => {
+    const client = stubClient({
+      insertEvent: () =>
+        Effect.fail(new GoogleApiError({ message: 'Invalid value for start', status: 400 })),
+    });
+    return Effect.gen(function* () {
+      yield* seedCalendar;
+      const mutations = yield* EventMutations;
+      const record = yield* mutations.createEvent(draft);
+      yield* mutations.processPendingOps();
+
+      expect(yield* (yield* PendingOpRepo).listAll()).toHaveLength(0);
+      const events = yield* EventRepo;
+      expect(yield* events.getById('acc-1', 'cal-1', record.id)).toBeNull();
+    }).pipe(Effect.provide(mutationsLayer(client)));
+  });
+
+  it.effect('a failed queue write rolls the local edit back with it', () => {
+    const client = stubClient({
+      insertEvent: ({ event }) =>
+        Effect.succeed({
+          end: event.end as GcalEvent['end'],
+          etag: '"server-1"',
+          id: event.id ?? 'x',
+          start: event.start as GcalEvent['start'],
+          status: 'confirmed',
+          summary: event.summary,
+        }),
+    });
+    return Effect.gen(function* () {
+      yield* seedCalendar;
+      const mutations = yield* EventMutations;
+      const record = yield* mutations.createEvent(draft);
+      yield* mutations.processPendingOps();
+
+      // Break the queue between the local write and the enqueue: the
+      // row must not stay behind as a pending edit no op will ever push.
+      const sql = yield* SqlClient;
+      yield* sql`DROP TABLE pending_ops`;
+      const outcome = yield* Effect.exit(
+        mutations.updateEvent({
+          accountId: 'acc-1',
+          calendarId: 'cal-1',
+          changes: { title: 'Lost edit' },
+          eventId: record.id,
+        }),
+      );
+      expect(Exit.isFailure(outcome)).toBe(true);
+      const events = yield* EventRepo;
+      const row = yield* events.getById('acc-1', 'cal-1', record.id);
+      expect(row?.title).toBe(record.title);
+      expect(row?.syncStatus).toBe('synced');
+    }).pipe(Effect.provide(mutationsLayer(client)));
+  });
+
+  it.effect('a transient failure records its reason on the queued op', () => {
+    const client = stubClient({
+      insertEvent: () => Effect.fail(new ApiUnavailableError({ cause: 'connection reset' })),
+    });
+    return Effect.gen(function* () {
+      yield* seedCalendar;
+      const mutations = yield* EventMutations;
+      yield* mutations.createEvent(draft);
+      yield* mutations.processPendingOps();
+
+      const [op] = yield* (yield* PendingOpRepo).listAll();
+      expect(op?.attempts).toBe(1);
+      expect(op?.lastError).toContain('connection reset');
     }).pipe(Effect.provide(mutationsLayer(client)));
   });
 

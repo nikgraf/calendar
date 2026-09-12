@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
-import { Account, AppBackendRpcs, type BackendHandlers } from '@calendar/core';
+import { AppBackendRpcs, type BackendHandlers } from '@calendar/core';
 import {
   AccountRepo,
   CalendarRepo,
@@ -18,8 +18,6 @@ import {
   GooglePeopleClient,
   GoogleOAuthConfig,
   GoogleTasksClient,
-  grantsContacts,
-  TASKS_SCOPE,
   TokenManager,
   TokenStore,
 } from '@calendar/google';
@@ -27,7 +25,9 @@ import {
   commonBackendHandlers,
   DeviceContacts,
   EventMutations,
+  finishAddAccount,
   makeAppBackendLayer,
+  makeSyncKicker,
   SyncEngine,
 } from '@calendar/sync';
 import { SqliteClient } from '@effect/sql-sqlite-node';
@@ -123,32 +123,8 @@ export const startBackendHost = (): void => {
     addAccount: () =>
       Effect.gen(function* () {
         const config = yield* requireOAuth;
-        const accountRepo = yield* AccountRepo;
-        const tokenStore = yield* TokenStore;
-        const engine = yield* SyncEngine;
-
         const result = yield* runGoogleSignIn(config.clientId);
-        const existing = (yield* accountRepo.list()).find(
-          (candidate) => candidate.email === result.profile.email,
-        );
-        const account = new Account({
-          avatarUrl: result.profile.avatarUrl,
-          contactsEnabled: grantsContacts(result.tokens.scopes),
-          createdAt: Date.now(),
-          displayName: result.profile.displayName,
-          email: result.profile.email,
-          id: existing?.id ?? randomUUID(),
-          provider: 'google',
-          status: 'ok',
-          // What Google actually granted, not what we asked for — a user
-          // can untick scopes on the consent screen.
-          tasksEnabled: result.tokens.scopes.includes(TASKS_SCOPE),
-        });
-        yield* tokenStore.set(account.id, result.tokens);
-        yield* accountRepo.upsert(account);
-        // Populate calendars/events in the background.
-        yield* Effect.forkDetach(engine.syncAll());
-        return account;
+        return yield* finishAddAccount(result, randomUUID);
       }),
   };
 
@@ -182,26 +158,10 @@ export const startBackendHost = (): void => {
     });
 
   // The steady-state poll misses the moments staleness is most visible:
-  // right after wake, unlock, or refocusing the window. Kick immediately
-  // then (syncAll is semaphore-serialized, so extra kicks are safe).
-  let lastKickAt = 0;
-  const kickSync = () => {
-    const now = Date.now();
-    if (now - lastKickAt < 15_000) {
-      return;
-    }
-    lastKickAt = now;
-    runtime
-      .runPromise(
-        Effect.gen(function* () {
-          const engine = yield* SyncEngine;
-          yield* engine.syncAll();
-        }),
-      )
-      .catch(() => {
-        // Transient failures are retried by the regular schedule.
-      });
-  };
+  // right after wake, unlock, or refocusing the window.
+  const kickSync = makeSyncKicker(() =>
+    runtime.runPromise(Effect.flatMap(SyncEngine, (engine) => engine.syncAll())),
+  );
   powerMonitor.on('resume', kickSync);
   powerMonitor.on('unlock-screen', kickSync);
   app.on('browser-window-focus', kickSync);

@@ -115,6 +115,11 @@ export const makeRequestCore: Effect.Effect<
   const failForStatus: RequestCore['failForStatus'] = (response, context) =>
     Effect.gen(function* () {
       const status = response.status;
+      if (status === 410 || status === 404 || status === 412 || status === 429) {
+        // These arms never read the body; drain it so the connection is
+        // released instead of waiting on a stream nobody consumes.
+        yield* Effect.ignore(response.text);
+      }
       if (status === 410) {
         return yield* Effect.fail(
           new SyncTokenExpiredError({ calendarId: context.calendarId ?? '' }),

@@ -1,3 +1,4 @@
+import { Data } from 'effect';
 /** One recognised span of speech. */
 export interface TranscriptSegment {
   readonly text: string;
@@ -9,14 +10,14 @@ export interface TranscriptSegment {
  * same speech API as iOS 26).
  */
 /** The device or locale cannot transcribe at all — stop offering it. */
-export class SpeechUnsupportedError extends Error {
-  override readonly name = 'SpeechUnsupportedError';
-}
+export class SpeechUnsupportedError extends Data.TaggedError('SpeechUnsupportedError')<{
+  readonly message: string;
+}> {}
 
 /** The user declined the microphone; typing still works. */
-export class MicrophoneDeniedError extends Error {
-  override readonly name = 'MicrophoneDeniedError';
-}
+export class MicrophoneDeniedError extends Data.TaggedError('MicrophoneDeniedError')<{
+  readonly message: string;
+}> {}
 
 export interface SpeechToText {
   /** Abandons a recording without transcribing it, deleting the audio. */

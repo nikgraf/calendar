@@ -85,10 +85,10 @@ export const desktopSpeech: SpeechToText = {
   prepare: async () => {
     const result = await window.calendarBridge.modelPrepareSpeech(navigator.language || 'en-US');
     if (result.denied) {
-      throw new MicrophoneDeniedError('Microphone access was declined.');
+      throw new MicrophoneDeniedError({ message: 'Microphone access was declined.' });
     }
     if (!result.prepared) {
-      throw new SpeechUnsupportedError('Dictation assets are unavailable.');
+      throw new SpeechUnsupportedError({ message: 'Dictation assets are unavailable.' });
     }
   },
 
@@ -99,7 +99,7 @@ export const desktopSpeech: SpeechToText = {
         audio: { channelCount: 1, sampleRate: SAMPLE_RATE },
       });
     } catch {
-      throw new MicrophoneDeniedError('Microphone access was declined.');
+      throw new MicrophoneDeniedError({ message: 'Microphone access was declined.' });
     }
     const context = new AudioContext({ sampleRate: SAMPLE_RATE });
     const workletUrl = URL.createObjectURL(

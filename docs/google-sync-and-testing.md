@@ -91,6 +91,19 @@ invariants.
 - A 403 insufficient-scope (grants that predate the tasks scope) disables
   tasks for the account instead of retrying.
 
+### Exercised end to end: the fake Google server
+
+`packages/sync/src/testing/fakeGoogle.ts` is an in-process Calendar +
+Tasks API behind effect's `HttpClient`, and `engine.http.test.ts` runs
+the real clients, request core and sync engine against it: full then
+incremental passes with sync tokens, a 410 forcing a full resync whose
+`deleteStale` drops vanished rows, cancelled tombstones, If-Match → 412
+with the server winning, client-generated event ids, the `updatedMin`
+watermark with deleted task tombstones, and server-assigned task ids.
+Before this the semantics above were documented prose only. Note: the
+engine reads `Clock`, and `it.effect` runs under `TestClock` — advance it
+between passes or `passStartedAt` never moves.
+
 ### Google People API (contacts cache)
 
 - Two endpoints, two scopes: `people/me/connections` with

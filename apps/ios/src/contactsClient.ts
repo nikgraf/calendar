@@ -1,10 +1,5 @@
-import {
-  ContactsClient,
-  type ContactsClientShape,
-  makeContactsClient,
-  unavailableContactsClient,
-} from '@calendar/contacts';
-import { changesFromSubscription } from '@calendar/reminders';
+import { ContactsClient, contactsClientFrom, type ContactsClientShape } from '@calendar/contacts';
+import type { BridgeTransport } from '@calendar/core';
 import { Layer } from 'effect';
 import { loadContactsModule } from '../modules/solunivo-contacts/index.ts';
 
@@ -15,15 +10,17 @@ import { loadContactsModule } from '../modules/solunivo-contacts/index.ts';
  */
 const native = loadContactsModule();
 
-export const iosContactsClient: ContactsClientShape = native
-  ? makeContactsClient(
-      (method, params) => native.invoke(method, params),
-      changesFromSubscription((listener) => {
+const transport: BridgeTransport | { readonly unavailable: string } = native
+  ? {
+      invoke: (method, params) => native.invoke(method, params),
+      subscribe: (_event, listener) => {
         const subscription = native.addListener('contactsChanged', listener);
         return () => subscription.remove();
-      }),
-    )
-  : unavailableContactsClient('contacts module not in this build — rebuild the dev client');
+      },
+    }
+  : { unavailable: 'contacts module not in this build — rebuild the dev client' };
+
+export const iosContactsClient: ContactsClientShape = contactsClientFrom(transport);
 
 export const iosContactsLayer: Layer.Layer<ContactsClient> = Layer.succeed(
   ContactsClient,

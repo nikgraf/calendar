@@ -1,23 +1,4 @@
-import type { RecurrenceFrequency } from '@calendar/core';
-
-/** Repeat chips shared by the event editor and the Reminders form. */
-export const REPEAT_OPTIONS: ReadonlyArray<{ label: string; value: RecurrenceFrequency | 'none' }> =
-  [
-    { label: 'Does not repeat', value: 'none' },
-    { label: 'Daily', value: 'daily' },
-    { label: 'Weekly', value: 'weekly' },
-    { label: 'Monthly', value: 'monthly' },
-    { label: 'Yearly', value: 'yearly' },
-  ];
-
-export const REPEAT_ENDS_OPTIONS: ReadonlyArray<{
-  label: string;
-  value: 'after' | 'never' | 'on';
-}> = [
-  { label: 'Never', value: 'never' },
-  { label: 'After', value: 'after' },
-  { label: 'On date', value: 'on' },
-];
+/** The option tables live in @calendar/app-state (editorOptions); only the classes stay here. */
 
 /** The shared input class of the editor dialog. */
 export const FIELD_CLASS =

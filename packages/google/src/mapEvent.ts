@@ -4,12 +4,30 @@ import { Schema } from 'effect';
 
 type GcalTimeValue = Schema.Schema.Type<typeof GcalTime>;
 
+/**
+ * RFC 3339 → epoch ms, or undefined when the string does not parse.
+ * `Temporal.Instant.from` throws synchronously; one malformed timestamp
+ * used to become a defect that failed the calendar's whole sync pass —
+ * every pass, forever.
+ */
+export const instantMs = (iso: string): number | undefined => {
+  try {
+    return Temporal.Instant.from(iso).epochMilliseconds;
+  } catch {
+    return undefined;
+  }
+};
+
 const toEpochMs = (time: GcalTimeValue | undefined): number | undefined => {
   if (time?.dateTime) {
-    return Temporal.Instant.from(time.dateTime).epochMilliseconds;
+    return instantMs(time.dateTime);
   }
   if (time?.date) {
-    return plainDateToUtcMs(time.date);
+    try {
+      return plainDateToUtcMs(time.date);
+    } catch {
+      return undefined;
+    }
   }
   return undefined;
 };

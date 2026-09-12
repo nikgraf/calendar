@@ -1,4 +1,4 @@
-import { buildMonthGrid, eventsOnDay, Temporal, type EventRecord } from '@calendar/core';
+import { buildMonthGrid, groupEventsByDay, Temporal, type EventRecord } from '@calendar/core';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { palette } from './theme.ts';
 
@@ -20,7 +20,13 @@ export function MonthGrid({
   const today = Temporal.Now.plainDateISO(timeZone);
   const weeks = buildMonthGrid(yearMonth, today);
 
-  const eventsForDay = (date: Temporal.PlainDate) => eventsOnDay(events, date, timeZone);
+  // One pass over the events, not one filter + sort per cell.
+  const byDay = groupEventsByDay(
+    events,
+    weeks.flat().map((cell) => cell.date),
+    timeZone,
+  );
+  const eventsForDay = (date: Temporal.PlainDate) => byDay.get(date.toString()) ?? [];
 
   return (
     <View style={styles.container}>
@@ -37,6 +43,12 @@ export function MonthGrid({
             const dayEvents = eventsForDay(date);
             return (
               <Pressable
+                accessibilityLabel={`${date.toLocaleString('en-US', {
+                  day: 'numeric',
+                  month: 'long',
+                  weekday: 'long',
+                })}, ${dayEvents.length} ${dayEvents.length === 1 ? 'event' : 'events'}`}
+                accessibilityRole="button"
                 key={date.toString()}
                 onPress={() => onSelectDay(date)}
                 style={styles.dayCell}

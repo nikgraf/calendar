@@ -3,13 +3,16 @@ import {
   AccountRepo,
   CalendarRepo,
   EventRepo,
+  PendingOpRepo,
   reposLayer,
   runMigrations,
   SyncStateRepo,
 } from '@calendar/db';
 import {
+  ApiUnavailableError,
   type GcalCalendarListPage,
   type GcalEventsPage,
+  GoogleApiError,
   GoogleCalendarClient,
   type GoogleCalendarClientShape,
   GooglePeopleClient,
@@ -124,6 +127,56 @@ const seedAccount = Effect.gen(function* () {
 });
 
 describe('SyncEngine', () => {
+  it.effect('a pull leaves a queued local edit alone until the op is acked or abandoned', () => {
+    let patchOutcome: 'rejected' | 'transient' = 'transient';
+    const serverCopy = { ...timedItem('evt-1', 10), summary: 'Server title' };
+    const client: GoogleCalendarClientShape = {
+      ...stubClient([
+        { items: [timedItem('evt-1', 10)], nextSyncToken: 's1' },
+        { items: [serverCopy], nextSyncToken: 's2' },
+        { items: [serverCopy], nextSyncToken: 's3' },
+      ]),
+      patchEvent: () =>
+        patchOutcome === 'transient'
+          ? Effect.fail(new ApiUnavailableError({ cause: 'offline' }))
+          : Effect.fail(new GoogleApiError({ message: 'Invalid value', status: 400 })),
+    };
+    return Effect.gen(function* () {
+      yield* seedAccount;
+      const engine = yield* SyncEngine;
+      const mutations = yield* EventMutations;
+      const events = yield* EventRepo;
+      const title = () =>
+        Effect.map(events.getById('acc-1', 'cal-1', 'evt-1'), (event) => event?.title);
+      yield* engine.syncAll();
+
+      yield* mutations.updateEvent({
+        accountId: 'acc-1',
+        calendarId: 'cal-1',
+        changes: { title: 'Local title' },
+        eventId: 'evt-1',
+      });
+      // The push fails transiently: the op stays queued, the row stays
+      // pending, and the next pull — carrying the server's own title —
+      // must not clobber the edit that is still on its way out.
+      yield* mutations.processPendingOps();
+      yield* engine.syncAll();
+      expect(yield* title()).toBe('Local title');
+
+      // Google rejects the edit for good: the row is handed back to sync
+      // and the following pull restores the server's version.
+      patchOutcome = 'rejected';
+      const ops = yield* PendingOpRepo;
+      for (const op of yield* ops.listAll()) {
+        yield* ops.markFailed(op.id, op.attempts, 0, 'test');
+      }
+      yield* mutations.processPendingOps();
+      expect(yield* ops.listAll()).toHaveLength(0);
+      yield* engine.syncAll();
+      expect(yield* title()).toBe('Server title');
+    }).pipe(Effect.provide(engineLayer(client)));
+  });
+
   it.effect('initial sync persists calendars, paged events, and sync tokens', () => {
     const calls: Array<{ syncToken?: string | undefined }> = [];
     const client = stubClient(

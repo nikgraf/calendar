@@ -5,25 +5,22 @@ import {
   layoutAllDayLane,
   layoutDayColumn,
   PAN_BUFFER_DAYS,
-  taskChipLabel,
   type TaskRecord,
   Temporal,
   utcMsToPlainDate,
 } from '@calendar/core';
-import { useNow } from '@calendar/app-state';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { chipTextColor, type ColorLookup } from './colors.ts';
+import { AllDayLane } from './AllDayLane.tsx';
+import { type ColorLookup } from './colors.ts';
+import { DayHeaders } from './DayHeaders.tsx';
+import { NowIndicator } from './NowIndicator.tsx';
+import { TimedEventBlock } from './TimedEventBlock.tsx';
 import { useEventDrag } from './useEventDrag.ts';
 import { useWheelPan } from './useWheelPan.ts';
 
 const HOUR_HEIGHT = 48;
-const MINUTE_MS = 60 * 1000;
-
-const formatTime = (epochMs: number, timeZone: string): string =>
-  Temporal.Instant.fromEpochMilliseconds(epochMs)
-    .toZonedDateTimeISO(timeZone)
-    .toPlainTime()
-    .toLocaleString('en-US', { hour: 'numeric', minute: '2-digit' });
+/** Hour lines as one repeating gradient (neutral-100), not 24 divs per column. */
+const HOUR_LINES = `repeating-linear-gradient(to bottom, #f5f5f5 0, #f5f5f5 1px, transparent 1px, transparent ${HOUR_HEIGHT}px)`;
 
 const dayIndexOf = (isoDate: string, days: ReadonlyArray<Temporal.PlainDate>): number => {
   const date = Temporal.PlainDate.from(isoDate);
@@ -60,7 +57,6 @@ export function WeekView({
   const scrollRef = useRef<HTMLDivElement>(null);
   const gridRef = useRef<HTMLDivElement>(null);
   const today = Temporal.Now.plainDateISO(timeZone);
-  const nowMs = useNow();
 
   // The pan strip renders buffer columns on both sides of the visible days
   // so horizontal panning reveals fully drawn neighbours.
@@ -161,123 +157,27 @@ export function WeekView({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col" ref={rootRef}>
-      {/* Day headers */}
-      <div
-        className="flex shrink-0 border-b border-neutral-200 bg-white"
-        style={{ paddingRight: scrollbarWidth }}
-      >
-        <div className="w-16 shrink-0" />
-        <div className="min-w-0 flex-1 overflow-hidden">
-          <div
-            className="grid"
-            style={{
-              ...stripStyle,
-              gridTemplateColumns: `repeat(${strip.length}, 1fr)`,
-            }}
-          >
-            {strip.map((day) => {
-              const isToday = Temporal.PlainDate.compare(day, today) === 0;
-              return (
-                <div
-                  // Fixed height: the today-circle is taller than plain text,
-                  // and a header that resizes while panning shifts the grid.
-                  className="flex h-10 items-center gap-1.5 border-l border-neutral-100 px-2"
-                  key={day.toString()}
-                >
-                  <span className="text-xs font-medium text-neutral-400 uppercase">
-                    {day.toLocaleString('en-US', { weekday: 'short' })}
-                  </span>
-                  <span
-                    className={`text-sm font-semibold ${
-                      isToday
-                        ? 'flex size-6 items-center justify-center rounded-full bg-red-500 text-white'
-                        : 'text-neutral-700'
-                    }`}
-                  >
-                    {day.day}
-                  </span>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      </div>
+      <DayHeaders
+        scrollbarWidth={scrollbarWidth}
+        strip={strip}
+        stripStyle={stripStyle}
+        today={today}
+      />
 
-      {/* All-day lane — always rendered (empty row when no all-day events) so
-          the timed grid never jumps vertically while panning across weeks
-          where the lane would otherwise mount/unmount. */}
-      <div
-        className="flex shrink-0 border-b border-neutral-200 bg-white"
-        style={{ height: Math.max(rowCount, 1) * 24 + 8, paddingRight: scrollbarWidth }}
-      >
-        <div className="w-16 shrink-0 py-1 pr-2 text-right text-[10px] text-neutral-400">
-          all-day
-        </div>
-        <div className="min-w-0 flex-1 overflow-hidden">
-          <div className="relative h-full" style={stripStyle}>
-            {allDayPlaced.map((span) => {
-              const task = taskById.get(span.id);
-              if (task) {
-                const done = task.status === 'completed';
-                return (
-                  <div
-                    className={`absolute flex cursor-pointer items-center gap-1 truncate rounded border border-neutral-300 bg-neutral-50 px-1 text-xs leading-5 text-neutral-700 ${done ? 'opacity-50' : ''}`}
-                    key={span.id}
-                    onClick={() => onTaskClick(task)}
-                    style={{
-                      // Reminders lists have colors; a left accent tells
-                      // them apart from Google tasks without recoloring.
-                      ...(listColorOf(task)
-                        ? { borderLeftColor: listColorOf(task), borderLeftWidth: 3 }
-                        : {}),
-                      left: `calc(${(span.startDayIndex / strip.length) * 100}% + 2px)`,
-                      top: span.row * 24 + 4,
-                      width: `calc(${((span.endDayIndex - span.startDayIndex) / strip.length) * 100}% - 4px)`,
-                    }}
-                    title={task.title}
-                  >
-                    <button
-                      aria-label={
-                        done ? `Reopen task ${task.title}` : `Complete task ${task.title}`
-                      }
-                      className="shrink-0 cursor-pointer"
-                      onClick={(mouse) => {
-                        mouse.stopPropagation();
-                        onToggleTask(task);
-                      }}
-                      type="button"
-                    >
-                      {done ? '☑' : '☐'}
-                    </button>
-                    <span className={`truncate ${done ? 'line-through' : ''}`}>
-                      {taskChipLabel(task)}
-                    </span>
-                  </div>
-                );
-              }
-              const event = allDayById.get(span.id)!;
-              const color = colorOf(event);
-              return (
-                <div
-                  className="absolute cursor-pointer truncate rounded px-1.5 text-xs leading-5"
-                  key={span.id}
-                  onClick={() => onEventClick(event)}
-                  style={{
-                    backgroundColor: color,
-                    color: chipTextColor(color),
-                    left: `calc(${(span.startDayIndex / strip.length) * 100}% + 2px)`,
-                    top: span.row * 24 + 4,
-                    width: `calc(${((span.endDayIndex - span.startDayIndex) / strip.length) * 100}% - 4px)`,
-                  }}
-                  title={event.title}
-                >
-                  {event.title}
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      </div>
+      <AllDayLane
+        allDayById={allDayById}
+        colorOf={colorOf}
+        listColorOf={listColorOf}
+        onEventClick={onEventClick}
+        onTaskClick={onTaskClick}
+        onToggleTask={onToggleTask}
+        placed={allDayPlaced}
+        rowCount={rowCount}
+        scrollbarWidth={scrollbarWidth}
+        stripLength={strip.length}
+        stripStyle={stripStyle}
+        taskById={taskById}
+      />
 
       {/* Timed grid */}
       <div className="min-h-0 flex-1 overflow-y-scroll" ref={scrollRef}>
@@ -322,11 +222,11 @@ export function WeekView({
                   range.endUtc,
                 );
                 const isToday = Temporal.PlainDate.compare(day, today) === 0;
-                const nowFraction = (nowMs - range.startUtc) / (range.endUtc - range.startUtc);
 
                 return (
                   <div
-                    className="relative border-l border-neutral-100"
+                    aria-label={`${day.toLocaleString('en-US', { day: 'numeric', month: 'long', weekday: 'long' })}: press Enter for a new event`}
+                    className="relative border-l border-neutral-100 outline-none focus-visible:bg-blue-50/40"
                     key={day.toString()}
                     onClick={(clickEvent) => {
                       if (drag.consumeSuppressedClick()) {
@@ -336,84 +236,35 @@ export function WeekView({
                       const hour = Math.floor((clickEvent.clientY - bounds.top) / HOUR_HEIGHT);
                       onSlotClick(day, Math.min(Math.max(hour, 0), 23));
                     }}
+                    onKeyDown={(keyEvent) => {
+                      if (keyEvent.target === keyEvent.currentTarget && keyEvent.key === 'Enter') {
+                        keyEvent.preventDefault();
+                        onSlotClick(day, 9);
+                      }
+                    }}
+                    role="button"
+                    // One gradient instead of 24 hour-line divs per column.
+                    style={{ backgroundImage: HOUR_LINES }}
+                    tabIndex={0}
                   >
-                    {/* Hour lines */}
-                    {Array.from({ length: 24 }, (_, index) => (
-                      <div
-                        className="absolute right-0 left-0 border-t border-neutral-100"
-                        key={index}
-                        style={{ top: index * HOUR_HEIGHT }}
-                      />
-                    ))}
-
                     {boxes.map((box) => {
                       const event = eventsById.get(box.id)!;
-                      const color = colorOf(event);
-                      const dragging = drag.preview?.eventKey === box.id ? drag.preview : null;
-                      const moveMinutes = dragging?.mode === 'move' ? dragging.deltaMinutes : 0;
-                      const resizeMinutes = dragging?.mode === 'resize' ? dragging.deltaMinutes : 0;
-                      const deltaDays = dragging?.mode === 'move' ? dragging.deltaDays : 0;
-                      const dayMinutes = 24 * 60;
-                      const topMinutes = box.top * dayMinutes + moveMinutes;
-                      const heightMinutes = Math.max(box.height * dayMinutes + resizeMinutes, 15);
-                      const previewStart = event.startUtc + moveMinutes * MINUTE_MS;
-                      const previewEnd =
-                        dragging?.mode === 'resize'
-                          ? Math.max(
-                              event.endUtc + resizeMinutes * MINUTE_MS,
-                              event.startUtc + 15 * MINUTE_MS,
-                            )
-                          : event.endUtc + moveMinutes * MINUTE_MS;
-                      const compact = (heightMinutes / 60) * HOUR_HEIGHT < 28;
-                      const draggable = !event.recurrence;
                       return (
-                        <div
-                          className={`absolute touch-none overflow-hidden rounded-md px-1.5 py-0.5 select-none ${
-                            draggable ? 'cursor-grab' : 'cursor-pointer'
-                          } ${dragging ? 'z-20 opacity-90 shadow-lg ring-2 ring-white/60' : ''}`}
+                        <TimedEventBlock
+                          box={box}
+                          color={colorOf(event)}
+                          drag={drag}
+                          event={event}
+                          hourHeight={HOUR_HEIGHT}
                           key={box.id}
-                          onPointerDown={(pointerEvent) =>
-                            drag.onPointerDown(event, box.id, pointerEvent, 'move')
-                          }
-                          onPointerMove={drag.onPointerMove}
-                          onPointerUp={drag.onPointerUp}
-                          style={{
-                            backgroundColor: color,
-                            color: chipTextColor(color),
-                            height: `max(${(heightMinutes / dayMinutes) * 100}%, 14px)`,
-                            left: `calc(${(box.left + deltaDays) * 100}% + 1px)`,
-                            top: `${(topMinutes / dayMinutes) * 100}%`,
-                            width: `calc(${box.width * 100}% - 3px)`,
-                          }}
-                          title={`${event.title} · ${formatTime(event.startUtc, timeZone)}`}
-                        >
-                          <p className="truncate text-xs leading-4 font-medium">{event.title}</p>
-                          {compact ? null : (
-                            <p className="truncate text-[10px] opacity-80">
-                              {formatTime(dragging ? previewStart : event.startUtc, timeZone)} –{' '}
-                              {formatTime(dragging ? previewEnd : event.endUtc, timeZone)}
-                            </p>
-                          )}
-                          {draggable ? (
-                            <div
-                              className="absolute right-0 bottom-0 left-0 h-2 cursor-ns-resize"
-                              onPointerDown={(pointerEvent) =>
-                                drag.onPointerDown(event, box.id, pointerEvent, 'resize')
-                              }
-                            />
-                          ) : null}
-                        </div>
+                          onEventClick={onEventClick}
+                          timeZone={timeZone}
+                        />
                       );
                     })}
 
-                    {/* Now indicator */}
-                    {isToday && nowFraction >= 0 && nowFraction <= 1 ? (
-                      <div
-                        className="absolute right-0 left-0 z-10 border-t-2 border-red-500"
-                        style={{ top: `${nowFraction * 100}%` }}
-                      >
-                        <span className="absolute -top-[5px] -left-1 size-2 rounded-full bg-red-500" />
-                      </div>
+                    {isToday ? (
+                      <NowIndicator rangeEndUtc={range.endUtc} rangeStartUtc={range.startUtc} />
                     ) : null}
                   </div>
                 );

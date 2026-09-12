@@ -46,6 +46,9 @@ export default defineConfig({
       },
     ],
   },
+  staged: {
+    '*': 'vp check --fix',
+  },
   test: {
     include: process.env['E2E']
       ? ['apps/desktop/e2e/**/*.e2e.ts']
@@ -59,6 +62,9 @@ export default defineConfig({
     // and two starting together on a small CI runner raced each other
     // (lazy Electron binary download, CPU) into "CDP page target not found".
     fileParallelism: !process.env['E2E'],
+    // One retry for the e2e specs: a runner hiccup (CDP attach, a slow
+    // first paint) used to cost a full macOS job rerun.
+    retry: process.env['E2E'] ? 1 : 0,
     testTimeout: process.env['E2E'] ? 60_000 : 5000,
   },
 });

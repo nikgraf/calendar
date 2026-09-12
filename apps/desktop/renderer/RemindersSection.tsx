@@ -1,14 +1,12 @@
-import { useAccounts, useBackendMutations, useTaskLists } from '@calendar/app-state';
+import {
+  remindersStatusCopy,
+  useAccounts,
+  useBackendMutations,
+  useTaskLists,
+} from '@calendar/app-state';
 import { useEffect, useState } from 'react';
 
-const STATUS_COPY: Record<string, string> = {
-  denied: 'Access denied — allow Solunivo under System Settings › Privacy & Security › Reminders.',
-  fullAccess: 'Access granted.',
-  notDetermined: 'Not asked yet.',
-  restricted: 'Restricted by a device policy.',
-  unavailable: 'Unavailable in this build (no helper).',
-  writeOnly: 'Write-only access — full access is needed to show reminders.',
-};
+const SETTINGS_PATH = 'System Settings › Privacy & Security';
 
 /**
  * Reminders permission state + the connect action. The permission *status*
@@ -65,7 +63,7 @@ export function RemindersSection() {
     <section className="rounded-xl border border-neutral-200 bg-white p-4">
       <h2 className="font-medium">Apple Reminders</h2>
       <p className="mt-1 text-sm text-neutral-500">
-        {connected ? 'Connected.' : (STATUS_COPY[status] ?? status)}
+        {connected ? 'Connected.' : (remindersStatusCopy(status, SETTINGS_PATH) ?? status)}
       </p>
       {connected ? (
         <p className="mt-1 text-xs text-neutral-400">

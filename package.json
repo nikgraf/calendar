@@ -1,6 +1,6 @@
 {
   "name": "calendar",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -8,9 +8,12 @@
     "dev:desktop": "pnpm --filter @calendar/desktop dev",
     "fix": "vp check --fix",
     "ios": "pnpm --filter @calendar/ios ios",
+    "lint": "vp check",
+    "prepare": "vp config --no-agent",
     "test": "vp test",
+    "test:run": "vp test run",
     "typecheck": "pnpm --recursive --parallel exec tsc --noEmit",
-    "test:e2e": "E2E=1 vp test",
+    "test:e2e": "node apps/desktop/scripts/check-helper.mjs && E2E=1 vp test",
     "test:e2e:ios": "pnpm --filter @calendar/ios test:e2e"
   },
   "devDependencies": {

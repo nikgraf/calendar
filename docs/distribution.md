@@ -46,14 +46,25 @@ certificate at developer.apple.com → Certificates if none exists yet.
 The same four `APPLE_*` variables activate signing/notarization for local
 `pnpm --filter @calendar/desktop make` runs — the forge config is env-gated.
 
-## Known limitation: no OAuth config in the artifact
+## OAuth config in the artifact
 
 The desktop OAuth client id/secret come from env vars or the gitignored
-`google-oauth.local.json` — neither is baked into CI builds, so a
-downloaded testing build cannot complete Google sign-in yet. Testers can
-inspect the UI; full use requires a local dev setup (or a future decision
-to embed the non-confidential RFC 8252 desktop client config in the
-build).
+`google-oauth.local.json` for developers. For the testing build, CI
+writes `apps/desktop/google-oauth.json` from the `GOOGLE_DESKTOP_CLIENT_ID`
+and `GOOGLE_DESKTOP_CLIENT_SECRET` repository secrets before `make`
+(`loadOAuthConfig` reads it as its last source, and Forge ships it inside
+the package). Until those secrets exist the job warns and the download
+can only show the UI. The desktop client secret is not confidential
+(RFC 8252 — it is a public client), which is why embedding it is fine.
+
+## Versions
+
+Every package is `0.1.0` (`package.json`, the packager's
+CFBundleShortVersionString) and the testing build's CFBundleVersion is the
+short commit SHA; iOS build numbers come from EAS (`appVersionSource:
+remote`, auto-increment). Bump the package versions together when a
+release is worth a number; `CHANGELOG.md` collects what changed between
+bumps (the decision log in `docs/decisions.md` has the detail).
 
 ## Installing a testing build (testers)
 
@@ -100,10 +111,10 @@ latest build.
   the workflow builds and emits a warning — a wasted build is visible and
   cheap; a wrongly skipped one strands testers on a stale binary silently.
 - `workflow_dispatch` always builds — the manual rebuild escape hatch.
-- ios.yml runs its own `verify` job (same lint/typecheck/test gate as
-  ci.yml) rather than depending across workflows — GitHub can't `needs:`
-  a job in another workflow file; the duplication is the price of keeping
-  iOS publishing self-contained.
+- ios.yml runs the same gate as ci.yml through the reusable
+  `.github/workflows/gate.yml` (`workflow_call`) — GitHub can't `needs:` a
+  job in another workflow file, so each workflow calls it; the check
+  reports as "Gate / Lint, typecheck, unit tests".
 
 Two comparison caveats, both fail-safe. The baseline is the latest
 _finished_ build, not "what testers run": installs still on an older

@@ -28,6 +28,7 @@ catalog:
   '@js-temporal/polyfill': ^0.5.1
   react: ^19.2.7
   react-dom: ^19.2.7
+  '@types/react': ^19.2.17
   rrule-temporal: ^1.6.0
   typescript: ^6.0.3
   vite: npm:@voidzero-dev/vite-plus-core@^0.2.2

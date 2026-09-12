@@ -1,4 +1,5 @@
-import { Context, Data, Effect, Queue, Schema, Stream } from 'effect';
+import { type BridgeTransport, bridgeMessage, changesFromSubscription } from '@calendar/core';
+import { Context, Data, Effect, Layer, Schema, Stream } from 'effect';
 import {
   ListListsResult,
   type ReminderJson,
@@ -43,33 +44,6 @@ const AUTHORIZATIONS: ReadonlySet<string> = new Set([
 ]);
 const isAuthorization = (value: string): value is RemindersAuthorization =>
   AUTHORIZATIONS.has(value);
-
-/**
- * The bridge's own message, whatever the transport wrapped around it. The
- * helper emits it verbatim; expo-modules-core rethrows it as
- * "FunctionCallException: … → Caused by: RemindersBridgeError: <message>",
- * so take the last "Caused by:" segment and strip the exception name.
- */
-/** A `changes` stream from a subscribe/unsubscribe pair (helper event, module emitter). */
-export const changesFromSubscription = (
-  subscribe: (listener: () => void) => () => void,
-): Stream.Stream<void> =>
-  Stream.callback<void>((queue) =>
-    Effect.acquireRelease(
-      Effect.sync(() =>
-        subscribe(() => {
-          Queue.offerUnsafe(queue, undefined);
-        }),
-      ),
-      (unsubscribe) => Effect.sync(() => unsubscribe()),
-    ),
-  );
-
-export const bridgeMessage = (raw: string): string => {
-  const causedBy = raw.lastIndexOf('Caused by:');
-  const inner = causedBy === -1 ? raw : raw.slice(causedBy + 'Caused by:'.length);
-  return inner.replace(/^\s*\w*BridgeError:\s*/, '').trim();
-};
 
 export interface RemindersClientShape {
   /**
@@ -201,3 +175,25 @@ export const unavailableRemindersClient = (reason: string): RemindersClientShape
     update: () => fail(),
   };
 };
+
+/** The helper's / module's change event for this bridge. */
+export const REMINDERS_CHANGED_EVENT = 'reminders.changed';
+
+/**
+ * One layer per host from the transport it has — or from the reason it
+ * has none (no helper binary, an older dev client, a kill switch), in
+ * which case every call reports 'unavailable' instead of failing.
+ */
+export const remindersClientFrom = (
+  source: BridgeTransport | { readonly unavailable: string },
+): RemindersClientShape =>
+  'unavailable' in source
+    ? unavailableRemindersClient(source.unavailable)
+    : makeRemindersClient(
+        source.invoke,
+        changesFromSubscription((listener) => source.subscribe(REMINDERS_CHANGED_EVENT, listener)),
+      );
+
+export const remindersLayer = (
+  source: BridgeTransport | { readonly unavailable: string },
+): Layer.Layer<RemindersClient> => Layer.succeed(RemindersClient, remindersClientFrom(source));

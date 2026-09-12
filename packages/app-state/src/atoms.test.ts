@@ -120,6 +120,40 @@ describe('backend atoms', () => {
     registry.dispose();
   });
 
+  it('a color change leaves mounted ranges alone; a visibility toggle refetches them', async () => {
+    const { calls, client } = makeStubClient();
+    const atoms = makeBackendAtoms(client);
+    const registry = AtomRegistry.make();
+    const unmount = registry.mount(atoms.eventsInRange(rangeKey(0, 1)));
+    await waitFor(() => registry.get(atoms.eventsInRange(rangeKey(0, 1))), AsyncResult.isSuccess);
+    expect(calls.events).toBe(1);
+
+    registry.set(atoms.mutations.setCalendarColor, {
+      accountId: 'acc-1',
+      calendarId: 'cal-1',
+      colorHex: '#123456',
+    });
+    await waitFor(
+      () => registry.get(atoms.mutations.setCalendarColor),
+      (result) => !AsyncResult.isInitial(result) && !AsyncResult.isWaiting(result),
+    );
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(calls.events).toBe(1);
+
+    registry.set(atoms.mutations.setCalendarVisible, {
+      accountId: 'acc-1',
+      calendarId: 'cal-1',
+      isVisible: false,
+    });
+    await waitFor(
+      () => registry.get(atoms.eventsInRange(rangeKey(0, 1))),
+      () => calls.events >= 2,
+    );
+    expect(calls.events).toBe(2);
+    unmount();
+    registry.dispose();
+  });
+
   it('bindInvalidations feeds external keys into the runtime reactivity', async () => {
     const { calls, client } = makeStubClient();
     const atoms = makeBackendAtoms(client);

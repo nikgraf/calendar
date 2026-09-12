@@ -3,3 +3,5 @@ export * from './deviceContacts.ts';
 export * from './engine.ts';
 export * from './mutations.ts';
 export * from './rpcDuplex.ts';
+export * from './addAccount.ts';
+export * from './syncKicker.ts';

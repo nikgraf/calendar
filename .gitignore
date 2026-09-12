@@ -14,6 +14,8 @@ apps/ios/.expo/
 apps/ios/ios/
 apps/ios/android/
 google-oauth.local.json
+# Written by CI from secrets for the testing build (see docs/distribution.md).
+apps/desktop/google-oauth.json
 apps/desktop/out/
 # CI-only overlay (apps/ios/e2e/ci/app.config.ci.cjs is the source)
 apps/ios/app.config.js

@@ -1,12 +1,10 @@
+import { type FindTimeOutcome, type LanguageModel, type SpeechToText } from '@calendar/ai';
+import { formatSlotLabel, type Temporal } from '@calendar/core';
 import {
-  type FindTimeOutcome,
-  type LanguageModel,
-  type ModelStatus,
-  type SpeechToText,
-} from '@calendar/ai';
-import { Temporal, type FreeSlot } from '@calendar/core';
-import { useQuickAddModel, type EventEditorPrefill } from '@calendar/app-state';
-import { useEffect, useState } from 'react';
+  useModelAvailability,
+  useQuickAddModel,
+  type EventEditorPrefill,
+} from '@calendar/app-state';
 import {
   ActivityIndicator,
   AppState,
@@ -30,14 +28,6 @@ const UNAVAILABLE_NOTICE =
   'Quick add needs Apple Intelligence. Switch it on in Settings → Apple Intelligence & Siri; ' +
   'its models can take a while to download after that.';
 
-const slotLabel = (slot: FreeSlot): string => {
-  const day = Temporal.PlainDate.from(slot.date).toLocaleString('en-US', {
-    day: 'numeric',
-    weekday: 'short',
-  });
-  return `${day} · ${slot.startTime}–${slot.endTime}`;
-};
-
 /**
  * Natural-language capture, typed or dictated: a phrase becomes a
  * prefilled editor the user confirms — nothing is written by the model.
@@ -47,6 +37,20 @@ const slotLabel = (slot: FreeSlot): string => {
  * no way to tell why. It now explains itself wherever the user could
  * plausibly act, and hides only where they could not.
  */
+/**
+ * Apple Intelligence is switched on in Settings, which means leaving the
+ * app: re-check on the way back so the bar appears without a relaunch.
+ * Model downloads finish out of process too.
+ */
+const onAppActive = (onActive: () => void): (() => void) => {
+  const subscription = AppState.addEventListener('change', (next) => {
+    if (next === 'active') {
+      onActive();
+    }
+  });
+  return () => subscription.remove();
+};
+
 export function QuickAddBar({
   findSlots,
   focusedDate,
@@ -67,9 +71,7 @@ export function QuickAddBar({
   speech: SpeechToText;
   timeZone: string;
 }) {
-  const [status, setStatus] = useState<ModelStatus | null>(null);
-  const [attempt, setAttempt] = useState(0);
-  const [checking, setChecking] = useState(false);
+  const { checking, retry, status } = useModelAvailability(model, onAppActive);
   const {
     busy,
     error,
@@ -94,38 +96,6 @@ export function QuickAddBar({
     speech,
     timeZone,
   });
-
-  useEffect(() => {
-    let cancelled = false;
-    const check = () => {
-      setChecking(true);
-      void model
-        .status()
-        .then((value) => {
-          if (!cancelled) {
-            setStatus(value);
-          }
-        })
-        .finally(() => {
-          if (!cancelled) {
-            setChecking(false);
-          }
-        });
-    };
-    check();
-    // Apple Intelligence is switched on in Settings, which means leaving
-    // the app: re-check on the way back so the bar appears without a
-    // relaunch. Model downloads finish out of process too.
-    const subscription = AppState.addEventListener('change', (next) => {
-      if (next === 'active') {
-        check();
-      }
-    });
-    return () => {
-      cancelled = true;
-      subscription.remove();
-    };
-  }, [attempt, model]);
 
   if (status === null) {
     // Nothing decided yet — rendering a marker now would let e2e read a
@@ -152,7 +122,7 @@ export function QuickAddBar({
             accessibilityLabel="Check for the on-device model again"
             accessibilityRole="button"
             disabled={checking}
-            onPress={() => setAttempt((value) => value + 1)}
+            onPress={retry}
             style={[styles.button, checking && styles.buttonDisabled]}
             testID="quick-add-recheck"
           >
@@ -239,7 +209,7 @@ export function QuickAddBar({
               style={styles.slotChip}
               testID={`find-time-slot-${index}`}
             >
-              <Text style={styles.slotLabel}>{slotLabel(slot)}</Text>
+              <Text style={styles.slotLabel}>{formatSlotLabel(slot)}</Text>
             </Pressable>
           ))}
         </ScrollView>

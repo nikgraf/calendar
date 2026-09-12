@@ -3,19 +3,21 @@ import {
   useGuardedMutations,
   makeBackendAtoms,
   useBackendInvalidations,
+  useCalendarNavigation,
   useCalendars,
   useEventsInRangeStable,
+  useListColorLookup,
+  usePendingOps,
   useTaskLists,
   useTasksInRangeStable,
 } from '@calendar/app-state';
 import {
-  bufferedRange,
   DAY_SWIPE_BUFFER,
   makeColorLookup,
-  monthGridRange,
   type TaskRecord,
   Temporal,
   utcMsToPlainDate,
+  WEEK_SWIPE_BUFFER,
   weekStart,
 } from '@calendar/core';
 import { useEffect, useMemo, useState } from 'react';
@@ -31,19 +33,26 @@ import { QuickAddBar } from './src/ui/QuickAddBar.tsx';
 import { MonthGrid } from './src/ui/MonthGrid.tsx';
 import { EventEditSheet, type EditSeed } from './src/ui/EventEditSheet.tsx';
 import { SettingsSheet } from './src/ui/SettingsSheet.tsx';
-import { ConflictToast, MutationNoticeToast } from './src/ui/Toast.tsx';
+import { ConflictToast, DroppedToast, MutationNoticeToast } from './src/ui/Toast.tsx';
 import { ErrorBoundary } from './src/ui/ErrorBoundary.tsx';
 import { palette } from './src/ui/theme.ts';
+import { EDGE_INSET, GUTTER_WIDTH } from './src/ui/timelineLayout.ts';
 import { WeekStrip } from './src/ui/WeekStrip.tsx';
 
 const backendAtoms = makeBackendAtoms(backendClient);
 
-type ViewKind = 'day' | 'month';
+const SEGMENT_LABELS = { day: 'Day', month: 'Month', week: 'Week' } as const;
 
 function CalendarScreen() {
   const timeZone = Temporal.Now.timeZoneId();
-  const [view, setView] = useState<ViewKind>('day');
-  const [focused, setFocused] = useState(() => Temporal.Now.plainDateISO(timeZone));
+  const { buffer, days, focused, goToday, range, setFocused, step, switchView, title, view } =
+    useCalendarNavigation({
+      dayBuffer: DAY_SWIPE_BUFFER,
+      initialView: 'day',
+      timeZone,
+      titleStyle: 'compact',
+      weekBuffer: WEEK_SWIPE_BUFFER,
+    });
   const [showSettings, setShowSettings] = useState(false);
   const [editSeed, setEditSeed] = useState<EditSeed | null>(null);
   const [editTask, setEditTask] = useState<TaskRecord | null>(null);
@@ -59,18 +68,6 @@ function CalendarScreen() {
     return () => subscription.remove();
   }, []);
 
-  const range = useMemo(
-    () =>
-      view === 'day'
-        ? // Matches the strip DayTimeline renders, so a swipe reveals loaded days.
-          bufferedRange(focused, 1, DAY_SWIPE_BUFFER, timeZone)
-        : monthGridRange(
-            Temporal.PlainYearMonth.from(focused),
-            Temporal.Now.plainDateISO(timeZone),
-            timeZone,
-          ),
-    [view, focused, timeZone],
-  );
   // Stable variant: keeps the previous days' events while a new range loads,
   // so swiping never flashes an empty grid.
   const events = useEventsInRangeStable(range.startUtc, range.endUtc);
@@ -81,13 +78,8 @@ function CalendarScreen() {
   );
   const mutations = useGuardedMutations();
   const taskLists = useTaskLists();
-  /** Reminders lists carry a color; Google lists render neutral. */
-  const listColorOf = useMemo(() => {
-    const colors = new Map(
-      taskLists.map((list) => [`${list.accountId}:${list.id}`, list.colorHex]),
-    );
-    return (task: TaskRecord) => colors.get(`${task.accountId}:${task.listId}`);
-  }, [taskLists]);
+  const pendingOps = usePendingOps();
+  const listColorOf = useListColorLookup();
   const findSlots = useMemo(
     () => makeFindSlots(appleLanguageModel, backendClient, timeZone),
     [timeZone],
@@ -96,25 +88,16 @@ function CalendarScreen() {
 
   const colorOf = useMemo(() => makeColorLookup(calendars), [calendars]);
 
-  const weekDays = useMemo(() => {
+  // Day view: the focused day's Monday week. Week view: the rolling window
+  // itself, so the strip doubles as the column headers.
+  const stripDays = useMemo(() => {
+    if (view === 'week') {
+      return days;
+    }
     const start = weekStart(focused);
     return Array.from({ length: 7 }, (_, index) => start.add({ days: index }));
-  }, [focused]);
-
-  const title =
-    view === 'month'
-      ? focused.toLocaleString('en-US', { month: 'long', year: 'numeric' })
-      : focused.toLocaleString('en-US', {
-          day: 'numeric',
-          month: 'long',
-          weekday: 'short',
-        });
-
-  const step = (direction: 1 | -1) => {
-    setFocused((current) =>
-      view === 'month' ? current.add({ months: direction }) : current.add({ days: direction }),
-    );
-  };
+  }, [days, focused, view]);
+  const unit = view === 'month' ? 'month' : view === 'week' ? 'week' : 'day';
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -124,19 +107,44 @@ function CalendarScreen() {
           {title}
         </Text>
         <View style={styles.headerActions}>
-          <Pressable onPress={() => step(-1)} style={styles.navButton} testID="nav-prev">
+          {/* Ambient counterpart of the desktop sidebar's SyncStatus; the
+              list itself (with Discard) lives in Settings. */}
+          {pendingOps.length > 0 ? (
+            <Pressable
+              accessibilityLabel={`${String(pendingOps.length)} unsynced ${pendingOps.length === 1 ? 'change' : 'changes'}, open settings`}
+              accessibilityRole="button"
+              onPress={() => setShowSettings(true)}
+              style={styles.pendingBadge}
+              testID="pending-badge"
+            >
+              <Text style={styles.pendingBadgeLabel}>{pendingOps.length} unsynced</Text>
+            </Pressable>
+          ) : null}
+          {/* Icon-only buttons: VoiceOver read the glyphs ("‹", "＋") without labels. */}
+          <Pressable
+            accessibilityLabel={`Previous ${unit}`}
+            accessibilityRole="button"
+            onPress={() => step(-1)}
+            style={styles.navButton}
+            testID="nav-prev"
+          >
             <Text style={styles.navLabel}>‹</Text>
           </Pressable>
-          <Pressable
-            onPress={() => setFocused(Temporal.Now.plainDateISO(timeZone))}
-            style={styles.navButton}
-          >
+          <Pressable accessibilityRole="button" onPress={goToday} style={styles.navButton}>
             <Text style={styles.todayLabel}>Today</Text>
           </Pressable>
-          <Pressable onPress={() => step(1)} style={styles.navButton} testID="nav-next">
+          <Pressable
+            accessibilityLabel={`Next ${unit}`}
+            accessibilityRole="button"
+            onPress={() => step(1)}
+            style={styles.navButton}
+            testID="nav-next"
+          >
             <Text style={styles.navLabel}>›</Text>
           </Pressable>
           <Pressable
+            accessibilityLabel="Add event"
+            accessibilityRole="button"
             onPress={() => setEditSeed({ initialDate: focused })}
             style={styles.navButton}
             testID="add-event"
@@ -144,6 +152,8 @@ function CalendarScreen() {
             <Text style={styles.addLabel}>＋</Text>
           </Pressable>
           <Pressable
+            accessibilityLabel="Settings"
+            accessibilityRole="button"
             onPress={() => setShowSettings(true)}
             style={styles.navButton}
             testID="open-settings"
@@ -154,20 +164,33 @@ function CalendarScreen() {
       </View>
 
       <View style={styles.segment}>
-        {(['day', 'month'] as const).map((kind) => (
+        {(['day', 'week', 'month'] as const).map((kind) => (
           <Pressable
+            accessibilityRole="button"
+            accessibilityState={{ selected: view === kind }}
             key={kind}
-            onPress={() => setView(kind)}
+            onPress={() => switchView(kind)}
             style={[styles.segmentItem, view === kind && styles.segmentActive]}
           >
             <Text style={[styles.segmentLabel, view === kind && styles.segmentLabelActive]}>
-              {kind === 'day' ? 'Day' : 'Month'}
+              {SEGMENT_LABELS[kind]}
             </Text>
           </Pressable>
         ))}
       </View>
 
-      {view === 'day' ? (
+      {view === 'month' ? (
+        <MonthGrid
+          colorOf={colorOf}
+          events={events}
+          onSelectDay={(date) => {
+            setFocused(date);
+            switchView('day');
+          }}
+          timeZone={timeZone}
+          yearMonth={Temporal.PlainYearMonth.from(focused)}
+        />
+      ) : (
         <>
           <QuickAddBar
             findSlots={findSlots}
@@ -177,10 +200,23 @@ function CalendarScreen() {
             speech={appleSpeech}
             timeZone={timeZone}
           />
-          <WeekStrip days={weekDays} onSelect={setFocused} selected={focused} timeZone={timeZone} />
+          <WeekStrip
+            days={stripDays}
+            leadingInset={view === 'week' ? GUTTER_WIDTH : 0}
+            onSelect={(day) => {
+              setFocused(day);
+              if (view === 'week') {
+                switchView('day');
+              }
+            }}
+            selected={focused}
+            timeZone={timeZone}
+            trailingInset={view === 'week' ? EDGE_INSET : 0}
+          />
           <DayTimeline
+            buffer={buffer}
             colorOf={colorOf}
-            date={focused}
+            days={days}
             events={events}
             listColorOf={listColorOf}
             onEventPress={(event) => setEditSeed({ event, initialDate: focused })}
@@ -198,17 +234,6 @@ function CalendarScreen() {
             timeZone={timeZone}
           />
         </>
-      ) : (
-        <MonthGrid
-          colorOf={colorOf}
-          events={events}
-          onSelectDay={(date) => {
-            setFocused(date);
-            setView('day');
-          }}
-          timeZone={timeZone}
-          yearMonth={Temporal.PlainYearMonth.from(focused)}
-        />
       )}
 
       {/* Keyed + conditionally mounted: the sheet seeds its form fields from
@@ -233,6 +258,7 @@ function CalendarScreen() {
       ) : null}
       <SettingsSheet onClose={() => setShowSettings(false)} visible={showSettings} />
       <ConflictToast />
+      <DroppedToast />
       <MutationNoticeToast />
     </SafeAreaView>
   );
@@ -278,6 +304,18 @@ const styles = StyleSheet.create({
   navLabel: {
     color: palette.textMuted,
     fontSize: 18,
+  },
+  pendingBadge: {
+    backgroundColor: '#fef3c7',
+    borderRadius: 10,
+    marginRight: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+  },
+  pendingBadgeLabel: {
+    color: '#92400e',
+    fontSize: 12,
+    fontWeight: '600',
   },
   safeArea: {
     backgroundColor: palette.background,

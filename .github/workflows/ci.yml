@@ -18,35 +18,78 @@ concurrency:
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
-  gate:
-    name: Lint, typecheck, unit tests
+  # Docs-only pushes used to run every macOS job — up to ~125 wall minutes
+  # per push at the private-repo multiplier (the spending limit was hit on
+  # 2026-09-05). Classify the change once; the macOS jobs run only when
+  # code changed. A job skipped by `if:` still reports (as skipped, which
+  # branch protection accepts) — `paths-ignore` on the workflow would make
+  # a required check never report at all. Anything unclassifiable counts
+  # as code.
+  changes:
+    name: Classify changed paths
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 5
+    outputs:
+      code: ${{ steps.classify.outputs.code }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 24
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm check
-      - run: pnpm typecheck
-      - run: pnpm test
+      - id: classify
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -uo pipefail
+          files=""
+          case "${{ github.event_name }}" in
+            pull_request)
+              files=$(gh api --paginate "repos/$REPO/pulls/${{ github.event.number }}/files"                 --jq '.[].filename') || files=""
+              ;;
+            push)
+              before="${{ github.event.before }}"
+              if [ "$before" != "0000000000000000000000000000000000000000" ]; then
+                files=$(gh api "repos/$REPO/compare/${before}...${{ github.sha }}"                   --jq '.files[].filename') || files=""
+              fi
+              ;;
+          esac
+          if [ -z "$files" ]; then
+            echo "could not classify the change — treating it as code"
+            echo "code=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "$files"
+          # Docs-only: every path is Markdown or lives under docs/.
+          if echo "$files" | grep -vE '^(docs/.*|([^/]+/)*[^/]+\.md)$' > /dev/null; then
+            echo "code=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "docs-only change: the macOS jobs are skipped"
+            echo "code=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  # The gate lives in gate.yml so ios.yml can run the same one (see the
+  # note there about the check name).
+  gate:
+    name: Gate
+    uses: ./.github/workflows/gate.yml
 
   e2e:
     name: Desktop e2e (Electron, CDP)
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     # macos-15: macos-14 images are deprecated; e2e needs no macOS 26 SDK
     # (the helper is availability-guarded and e2e never invokes the model).
     runs-on: macos-15
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
       - uses: actions/setup-node@v4
         with:
           node-version: 24
           cache: pnpm
+      - name: Cache the Electron binary
+        uses: actions/cache@v4
+        with:
+          path: ~/Library/Caches/electron
+          key: electron-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @calendar/desktop build
       # `require('electron')` downloads the binary lazily when dist/ is
@@ -72,16 +115,28 @@ jobs:
   # while testing nothing. macos-26: build:helper needs the macOS 26 SDK.
   e2e-reminders:
     name: Desktop e2e (real Reminders via helper)
-    needs: gate
+    needs: [gate, changes]
+    if: needs.changes.outputs.code == 'true'
     runs-on: macos-26
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
       - uses: actions/setup-node@v4
         with:
           node-version: 24
           cache: pnpm
+      - name: Cache the Electron binary
+        uses: actions/cache@v4
+        with:
+          path: ~/Library/Caches/electron
+          key: electron-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+      - name: Cache the Swift helper build
+        uses: actions/cache@v4
+        with:
+          path: apps/desktop/helper/.build
+          key: helper-${{ runner.os }}-${{ hashFiles('apps/desktop/helper/Package.swift', 'apps/desktop/helper/Package.resolved', 'apps/desktop/helper/Sources/**', 'packages/reminders/swift/**', 'packages/contacts/swift/**') }}
+          restore-keys: helper-${{ runner.os }}-
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @calendar/desktop build:helper
       - run: pnpm --filter @calendar/desktop build
@@ -109,22 +164,27 @@ jobs:
   # first requests, one EAS build). Metro on the runner serves the JS.
   ios-e2e:
     name: iOS e2e (Maestro, real Reminders)
-    needs: gate
+    needs: [gate, changes]
+    if: needs.changes.outputs.code == 'true'
     runs-on: macos-26
     timeout-minutes: 45
     env:
       CI: 1
       EXPO_NO_TELEMETRY: 1
-      EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+      # Pinned + checksum-verified below; bump both together.
+      MAESTRO_VERSION: 2.10.0
+      MAESTRO_SHA256: 29b675e10cc12080e445e9bfb2e2b4e4dfb9c0f2e30d5884120d258b5e1cd991
     steps:
       - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
       - uses: actions/setup-node@v4
         with:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - name: Require EXPO_TOKEN
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
         run: |
           if [ -z "$EXPO_TOKEN" ]; then
             echo "::error::EXPO_TOKEN is not set — the dev client comes from EAS"
@@ -147,14 +207,35 @@ jobs:
           key: ios-devclient-${{ steps.fingerprint.outputs.hash }}
       - name: Fetch the dev client from EAS
         if: steps.devclient.outputs.cache-hit != 'true'
+        # The only step that needs the token: it used to sit in the job env,
+        # next to a `curl | bash` of a third-party installer.
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
         working-directory: apps/ios
         run: bash e2e/ci/fetch-dev-client.sh "${{ steps.fingerprint.outputs.hash }}"
       - name: Boot a simulator, install, pre-grant Reminders
         run: bash apps/ios/e2e/ci/prepare-simulator.sh apps/ios/build/devclient/Solunivo.app
-      - name: Install Maestro
+      - name: Cache Maestro
+        id: maestro
+        uses: actions/cache@v4
+        with:
+          path: ~/.maestro
+          key: maestro-${{ runner.os }}-${{ env.MAESTRO_VERSION }}
+      - name: Install Maestro (pinned release, checksum verified)
+        # The same layout the official installer produces (lib/ + bin/ under
+        # ~/.maestro), without piping a remote script into bash.
+        if: steps.maestro.outputs.cache-hit != 'true'
         run: |
-          curl -fsSL "https://get.maestro.mobile.dev" | bash
-          echo "$HOME/.maestro/bin" >> "$GITHUB_PATH"
+          set -euo pipefail
+          zip="$RUNNER_TEMP/maestro.zip"
+          curl -fsSL -o "$zip" \
+            "https://github.com/mobile-dev-inc/maestro/releases/download/cli-${MAESTRO_VERSION}/maestro.zip"
+          echo "${MAESTRO_SHA256}  $zip" | shasum -a 256 -c -
+          rm -rf "$RUNNER_TEMP/maestro-unzip" "$HOME/.maestro"
+          unzip -qo "$zip" -d "$RUNNER_TEMP/maestro-unzip"
+          mkdir -p "$HOME/.maestro"
+          cp -R "$RUNNER_TEMP/maestro-unzip/maestro/." "$HOME/.maestro/"
+      - run: echo "$HOME/.maestro/bin" >> "$GITHUB_PATH"
       - name: Pin the runtime version for Metro
         # After the fingerprint step (an explicit runtimeVersion would change
         # the fingerprint): with the fingerprint policy Expo CLI re-runs a
@@ -262,17 +343,23 @@ jobs:
   # needs the macOS 26 SDK (same as testing-build).
   package-smoke:
     name: Packaging smoke (unsigned .app)
-    if: github.event_name == 'pull_request'
-    needs: gate
+    needs: [gate, changes]
+    if: github.event_name == 'pull_request' && needs.changes.outputs.code == 'true'
     runs-on: macos-26
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
       - uses: actions/setup-node@v4
         with:
           node-version: 24
           cache: pnpm
+      - name: Cache the Swift helper build
+        uses: actions/cache@v4
+        with:
+          path: apps/desktop/helper/.build
+          key: helper-${{ runner.os }}-${{ hashFiles('apps/desktop/helper/Package.swift', 'apps/desktop/helper/Package.resolved', 'apps/desktop/helper/Sources/**', 'packages/reminders/swift/**', 'packages/contacts/swift/**') }}
+          restore-keys: helper-${{ runner.os }}-
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @calendar/desktop package:app
       - name: Verify packaged contents
@@ -296,8 +383,10 @@ jobs:
   # already required it on the PR.
   testing-build:
     name: macOS testing build (signed + notarized)
-    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
-    needs: gate
+    needs: [gate, changes]
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'push' && needs.changes.outputs.code == 'true')
     # macos-26: the Swift model helper needs the macOS 26 SDK
     # (FoundationModels/SpeechAnalyzer). Runtime stays guarded, so the
     # packaged app still runs on older macOS with the model unavailable.
@@ -325,7 +414,7 @@ jobs:
           done
           exit "$missing"
       - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
       - uses: actions/setup-node@v4
         with:
           node-version: 24
@@ -347,9 +436,30 @@ jobs:
             -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH" > /dev/null
           security list-keychains -d user -s "$KEYCHAIN_PATH" login.keychain-db
           rm "$RUNNER_TEMP/certificate.p12"
+      - name: Cache the Swift helper build
+        uses: actions/cache@v4
+        with:
+          path: apps/desktop/helper/.build
+          key: helper-${{ runner.os }}-${{ hashFiles('apps/desktop/helper/Package.swift', 'apps/desktop/helper/Package.resolved', 'apps/desktop/helper/Sources/**', 'packages/reminders/swift/**', 'packages/contacts/swift/**') }}
+          restore-keys: helper-${{ runner.os }}-
       - run: pnpm install --frozen-lockfile
       - name: Compute short SHA
         run: echo "SHORT_SHA=${GITHUB_SHA::7}" >> "$GITHUB_ENV"
+      # Without this a downloaded testing build cannot sign in at all. The
+      # desktop client secret is not confidential (RFC 8252); the file is
+      # gitignored and read by loadOAuthConfig as its last source.
+      - name: Embed the desktop OAuth client config (when the secrets exist)
+        env:
+          GOOGLE_DESKTOP_CLIENT_ID: ${{ secrets.GOOGLE_DESKTOP_CLIENT_ID }}
+          GOOGLE_DESKTOP_CLIENT_SECRET: ${{ secrets.GOOGLE_DESKTOP_CLIENT_SECRET }}
+        run: |
+          if [ -z "$GOOGLE_DESKTOP_CLIENT_ID" ]; then
+            echo "::warning::GOOGLE_DESKTOP_CLIENT_ID is not set — the testing build cannot sign in"
+            exit 0
+          fi
+          jq -n --arg id "$GOOGLE_DESKTOP_CLIENT_ID" --arg secret "$GOOGLE_DESKTOP_CLIENT_SECRET" \
+            '{clientId: $id} + (if $secret == "" then {} else {clientSecret: $secret} end)' \
+            > apps/desktop/google-oauth.json
       # make = vp build + tsdown + electron-forge make: packages, signs,
       # notarizes + staples (packager runs @electron/notarize), then zips.
       - name: Build, sign, notarize, zip

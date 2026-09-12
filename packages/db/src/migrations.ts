@@ -196,6 +196,21 @@ const addPendingOpAttendeesChanged = Effect.gen(function* () {
   yield* sql`ALTER TABLE pending_ops ADD COLUMN attendees_changed INTEGER NOT NULL DEFAULT 0`;
 });
 
+// IF NOT EXISTS: the upgrade test rebuilds a v1 schema by dropping columns
+// and forgetting migration rows, and indexes survive that.
+const addQueueAndWindowIndexes = Effect.gen(function* () {
+  const sql = yield* SqlClient;
+  // listDue: `WHERE next_attempt_at <= ? ORDER BY created_at` had no index
+  // at all beyond the primary key.
+  yield* sql`CREATE INDEX IF NOT EXISTS idx_pending_ops_due ON pending_ops (next_attempt_at, created_at)`;
+  // TaskRepo.getWindow range-scans due_date; the complete Reminders
+  // mirror makes tasks the largest table.
+  yield* sql`CREATE INDEX IF NOT EXISTS idx_tasks_due ON tasks (due_date)`;
+  // EventRepo.getWindow never filters on calendar_id, so the
+  // (calendar_id, start_utc, end_utc) index could not serve it.
+  yield* sql`CREATE INDEX IF NOT EXISTS idx_events_window ON events (start_utc, end_utc)`;
+});
+
 // The third tuple element is a *loader* whose result is the migration effect.
 export const migrations: ReadonlyArray<ResolvedMigration> = [
   [1, 'init', Effect.succeed(init)],
@@ -207,4 +222,5 @@ export const migrations: ReadonlyArray<ResolvedMigration> = [
   [7, 'add-task-list-read-only', Effect.succeed(addTaskListReadOnly)],
   [8, 'add-contacts', Effect.succeed(addContacts)],
   [9, 'add-pending-op-attendees-changed', Effect.succeed(addPendingOpAttendeesChanged)],
+  [10, 'add-queue-and-window-indexes', Effect.succeed(addQueueAndWindowIndexes)],
 ];

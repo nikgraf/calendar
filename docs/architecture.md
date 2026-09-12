@@ -26,7 +26,7 @@ BackendClient                            (packages/core/src/backend.ts)
 AppBackendRpcs handlers                  (packages/sync/src/backendHandlers.ts)
   ▼
 EventMutations / repos                   (packages/sync/src/mutations.ts,
-  │                                       packages/db/src/repos.ts)
+  │                                       packages/db/src/*Repo.ts)
   ▼
 SQLite (node:sqlite / op-sqlite)
 
@@ -135,7 +135,12 @@ Rules that keep the queue correct:
   `calendarColor` apply upserts the patch response to self-heal that case).
 - Incremental pulls use syncTokens; a 410 forces a full resync, after which
   `deleteStale` purges rows the server no longer returns (pending rows are
-  protected by sync_status).
+  protected by sync_status). Local writes mark their row `pending`; pulls
+  upsert in `mode: 'pull'`, which skips pending rows, so a queued edit is
+  never clobbered by a page carrying the server's older copy. The push
+  response (ack upsert) or an abandoned op (`markSynced` on drop/412) hands
+  the row back. Task rows work the same way (`setStatus`/`updateLocal`
+  mark pending; `upsertTasks(…, { mode: 'pull' })`).
 - Cancelled events arrive as tombstones and are kept as `status:
 'cancelled'` rows when they shadow recurring instances.
 - **Tasks** (per account, when the `tasks` scope is granted): task lists

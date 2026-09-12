@@ -42,6 +42,42 @@ describe('recurrence editing helpers', () => {
     ]);
   });
 
+  it('prunes RDATE occurrences at or after the split, in every value form', () => {
+    expect(
+      truncateRecurrence(
+        [
+          'RRULE:FREQ=WEEKLY',
+          // UTC, wall clock in a zone, floating (series zone), and DATE.
+          'RDATE:20260707T070000Z,20260721T070000Z',
+          'RDATE;TZID=Europe/Vienna:20260708T090000,20260722T090000',
+          'RDATE:20260709T090000,20260723T090000',
+          'RDATE;VALUE=DATE:20260710,20260724',
+          'EXDATE;TZID=Europe/Vienna:20260728T090000',
+        ],
+        instant('2026-07-14T07:00:00Z'),
+        false,
+        'Europe/Vienna',
+      ),
+    ).toEqual([
+      'RRULE:FREQ=WEEKLY;UNTIL=20260714T065959Z',
+      'RDATE:20260707T070000Z',
+      'RDATE;TZID=Europe/Vienna:20260708T090000',
+      'RDATE:20260709T090000',
+      'RDATE;VALUE=DATE:20260710',
+      'EXDATE;TZID=Europe/Vienna:20260728T090000',
+    ]);
+  });
+
+  it('drops an RDATE line whose every occurrence is past the split', () => {
+    expect(
+      truncateRecurrence(
+        ['RRULE:FREQ=WEEKLY', 'RDATE:20260721T070000Z'],
+        instant('2026-07-14T07:00:00Z'),
+        false,
+      ),
+    ).toEqual(['RRULE:FREQ=WEEKLY;UNTIL=20260714T065959Z']);
+  });
+
   it('uses a DATE-valued UNTIL for all-day series', () => {
     expect(
       truncateRecurrence(['RRULE:FREQ=WEEKLY'], instant('2026-07-06T00:00:00Z'), true),

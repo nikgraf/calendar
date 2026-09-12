@@ -1,5 +1,5 @@
 import { type MutationNotice, subscribeMutationNotices } from '@calendar/app-state';
-import { CONFLICT_NOTICE_KEY } from '@calendar/db/keys';
+import { CONFLICT_NOTICE_KEY, DROPPED_NOTICE_KEY } from '@calendar/db/keys';
 import { useEffect, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { subscribeInvalidations } from '../backend.ts';
@@ -35,20 +35,20 @@ export function MutationNoticeToast() {
 }
 
 /**
- * Transient banner for 412 server-wins: the local edit was discarded.
- * Parity with the desktop ConflictToast — without it, a conflict on
- * iPhone was silent data loss.
+ * Transient banner keyed on a broadcast invalidation. Parity with the
+ * desktop NoticeToast — without it, a conflict on iPhone was silent
+ * data loss.
  */
-export function ConflictToast() {
+function NoticeToast({ message, noticeKey }: { message: string; noticeKey: string }) {
   const [visible, setVisible] = useState(false);
   useEffect(
     () =>
       subscribeInvalidations((keys) => {
-        if (keys.includes(CONFLICT_NOTICE_KEY)) {
+        if (keys.includes(noticeKey)) {
           setVisible(true);
         }
       }),
-    [],
+    [noticeKey],
   );
   useEffect(() => {
     if (!visible) {
@@ -63,8 +63,28 @@ export function ConflictToast() {
   }
   return (
     <View pointerEvents="none" style={[styles.toast, styles.info]}>
-      <Text style={styles.text}>An edit was overridden by a newer version from Google.</Text>
+      <Text style={styles.text}>{message}</Text>
     </View>
+  );
+}
+
+/** 412 server-wins: the local edit was discarded. */
+export function ConflictToast() {
+  return (
+    <NoticeToast
+      message="An edit was overridden by a newer version from Google."
+      noticeKey={CONFLICT_NOTICE_KEY}
+    />
+  );
+}
+
+/** A queued change Google permanently rejected (4xx) was discarded. */
+export function DroppedToast() {
+  return (
+    <NoticeToast
+      message="Google rejected a change and it was discarded."
+      noticeKey={DROPPED_NOTICE_KEY}
+    />
   );
 }
 

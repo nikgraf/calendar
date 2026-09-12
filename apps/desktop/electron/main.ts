@@ -1,7 +1,7 @@
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { app, BrowserWindow, ipcMain, shell } from 'electron';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+import { app, BrowserWindow, ipcMain, session, shell } from 'electron';
 import { updateElectronApp } from 'update-electron-app';
 import { startBackendHost } from './backendHost.ts';
 import { initFileLogging, logRendererError } from './log.ts';
@@ -11,6 +11,32 @@ import { registerContactsIpc } from './contactsIpc.ts';
 import { registerRemindersIpc } from './remindersIpc.ts';
 
 const rootPath = fileURLToPath(new URL('..', import.meta.url));
+const rendererUrl = process.env.ELECTRON_RENDERER_URL;
+/** Where the renderer is allowed to be: the vite dev server, or the built index. */
+const rendererOrigin = rendererUrl ?? pathToFileURL(join(rootPath, 'dist')).href;
+
+/**
+ * The renderer loads nothing remote: scripts and styles are its own
+ * bundle (Tailwind emits a stylesheet; React sets inline style
+ * attributes, hence 'unsafe-inline' for styles only), images are account
+ * avatars from Google, and every request goes over the preload IPC. Not
+ * applied against the vite dev server, whose HMR needs inline scripts
+ * and a websocket.
+ */
+const RENDERER_CSP = [
+  "default-src 'self'",
+  "script-src 'self'",
+  "style-src 'self' 'unsafe-inline'",
+  "img-src 'self' data: https:",
+  "font-src 'self' data:",
+  "connect-src 'self'",
+  "object-src 'none'",
+  "base-uri 'none'",
+  "form-action 'none'",
+  "frame-ancestors 'none'",
+].join('; ');
+/** A renderer error report is one message, not a log dump. */
+const MAX_RENDERER_ERROR_CHARS = 8000;
 
 // E2E hook: an isolated profile keeps test runs away from the real data.
 if (process.env.CALENDAR_USERDATA) {
@@ -20,7 +46,28 @@ if (process.env.CALENDAR_USERDATA) {
 initFileLogging(app.getPath('userData'));
 initPrivacy(app.getPath('userData'));
 ipcMain.on('renderer-error', (_event, text: unknown) => {
-  logRendererError(String(text));
+  logRendererError(String(text).slice(0, MAX_RENDERER_ERROR_CHARS));
+});
+
+/**
+ * Every web contents this app creates stays on its own page: a
+ * renderer-initiated navigation would hand remote content the whole
+ * preload bridge, rpc included. Links open in the system browser — any
+ * https host, since meeting links live on arbitrary domains — and never
+ * as in-app windows.
+ */
+app.on('web-contents-created', (_event, contents) => {
+  contents.on('will-navigate', (event, url) => {
+    if (!url.startsWith(rendererOrigin)) {
+      event.preventDefault();
+    }
+  });
+  contents.setWindowOpenHandler(({ url }) => {
+    if (url.startsWith('https://')) {
+      void shell.openExternal(url);
+    }
+    return { action: 'deny' };
+  });
 });
 
 // Auto-update from GitHub releases. Only meaningful in packaged builds and
@@ -58,15 +105,6 @@ const createWindow = () => {
     registerPrivacyWindow(window);
   }
 
-  // Renderer window.open (e.g. the Join-meeting button) goes to the system
-  // browser; no in-app popups.
-  window.webContents.setWindowOpenHandler(({ url }) => {
-    if (url.startsWith('https://')) {
-      void shell.openExternal(url);
-    }
-    return { action: 'deny' };
-  });
-
   // Debug/e2e hook: CALENDAR_CAPTURE=/path.png captures the window shortly
   // after load and quits.
   const capturePath = process.env.CALENDAR_CAPTURE;
@@ -81,7 +119,6 @@ const createWindow = () => {
     });
   }
 
-  const rendererUrl = process.env.ELECTRON_RENDERER_URL;
   if (rendererUrl) {
     void window.loadURL(rendererUrl);
   } else {
@@ -99,6 +136,16 @@ app.on('window-all-closed', () => {
 // top-level-awaiting whenReady() deadlocks the app. Promise chain required.
 // eslint-disable-next-line unicorn/prefer-top-level-await
 void app.whenReady().then(() => {
+  if (!rendererUrl) {
+    session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
+      callback({
+        responseHeaders: {
+          ...details.responseHeaders,
+          'Content-Security-Policy': [RENDERER_CSP],
+        },
+      });
+    });
+  }
   startBackendHost();
   registerModelHelper();
   registerRemindersIpc();

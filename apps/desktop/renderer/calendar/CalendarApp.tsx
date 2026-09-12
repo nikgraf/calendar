@@ -1,23 +1,17 @@
-import {
-  bufferedRange,
-  monthGridRange,
-  PAN_BUFFER_DAYS,
-  type TaskRecord,
-  Temporal,
-  utcMsToPlainDate,
-  type UtcRange,
-  weekStart,
-} from '@calendar/core';
+import { PAN_BUFFER_DAYS, type TaskRecord, Temporal, utcMsToPlainDate } from '@calendar/core';
 import {
   useAccounts,
+  useCalendarNavigation,
   useCalendars,
   useEventsInRangeStable,
   useGuardedMutations,
+  useListColorLookup,
   useTaskLists,
   useTasksInRangeStable,
 } from '@calendar/app-state';
 import { useEffect, useMemo, useState } from 'react';
 import { AccountsView } from '../AccountsView.tsx';
+import { Dialog } from '../Dialog.tsx';
 import { EventEditor, type EditorSeed } from './EventEditor.tsx';
 import { makeColorLookup } from './colors.ts';
 import { MonthView } from './MonthView.tsx';
@@ -25,77 +19,20 @@ import { Sidebar } from './Sidebar.tsx';
 import { CommandBar } from './CommandBar.tsx';
 import { WeekView } from './WeekView.tsx';
 
-type ViewKind = 'day' | 'month' | 'week';
-
-const rangeFor = (
-  view: ViewKind,
-  focused: Temporal.PlainDate,
-  windowStart: Temporal.PlainDate,
-  timeZone: string,
-): UtcRange => {
-  switch (view) {
-    // Day/week ranges include the pan buffer columns so panning reveals
-    // already-loaded days.
-    case 'day': {
-      return bufferedRange(focused, 1, PAN_BUFFER_DAYS, timeZone);
-    }
-    case 'month': {
-      return monthGridRange(
-        Temporal.PlainYearMonth.from(focused),
-        Temporal.Now.plainDateISO(timeZone),
-        timeZone,
-      );
-    }
-    case 'week': {
-      return bufferedRange(windowStart, 7, PAN_BUFFER_DAYS, timeZone);
-    }
-  }
-};
-
-const titleFor = (
-  view: ViewKind,
-  focused: Temporal.PlainDate,
-  windowStart: Temporal.PlainDate,
-): string => {
-  if (view === 'month') {
-    return focused.toLocaleString('en-US', { month: 'long', year: 'numeric' });
-  }
-  if (view === 'day') {
-    return focused.toLocaleString('en-US', {
-      day: 'numeric',
-      month: 'long',
-      weekday: 'long',
-      year: 'numeric',
-    });
-  }
-  const start = windowStart;
-  const end = start.add({ days: 6 });
-  const sameMonth = start.month === end.month;
-  return sameMonth
-    ? `${start.toLocaleString('en-US', { month: 'long' })} ${start.day} – ${end.day}, ${start.year}`
-    : `${start.toLocaleString('en-US', { day: 'numeric', month: 'short' })} – ${end.toLocaleString('en-US', { day: 'numeric', month: 'short' })}, ${end.year}`;
-};
-
 export function CalendarApp() {
   const timeZone = Temporal.Now.timeZoneId();
-  const [view, setView] = useState<ViewKind>('week');
-  const [focused, setFocused] = useState(() => Temporal.Now.plainDateISO(timeZone));
-  // Week view's rolling window anchor; null = Monday-snapped week (default).
-  // Only wheel navigation sets it — Today and view switches reset it.
-  const [weekWindowStart, setWeekWindowStart] = useState<Temporal.PlainDate | null>(null);
+  const { days, focused, goToday, panByDays, range, setFocused, step, switchView, title, view } =
+    useCalendarNavigation({
+      dayBuffer: PAN_BUFFER_DAYS,
+      initialView: 'week',
+      timeZone,
+      titleStyle: 'long',
+    });
   const [showSettings, setShowSettings] = useState(false);
   const [editorSeed, setEditorSeed] = useState<EditorSeed | null>(null);
   const [editTask, setEditTask] = useState<TaskRecord | null>(null);
   const [commandBarOpen, setCommandBarOpen] = useState(false);
 
-  const windowStart = useMemo(
-    () => weekWindowStart ?? weekStart(focused),
-    [weekWindowStart, focused],
-  );
-  const range = useMemo(
-    () => rangeFor(view, focused, windowStart, timeZone),
-    [view, focused, windowStart, timeZone],
-  );
   const events = useEventsInRangeStable(range.startUtc, range.endUtc);
   // Tasks are date-only; the same fetched window expressed as day strings.
   const tasks = useTasksInRangeStable(
@@ -104,63 +41,51 @@ export function CalendarApp() {
   );
   const { completeTask } = useGuardedMutations();
   const taskLists = useTaskLists();
-  /** Reminders lists carry a color; Google lists render neutral. */
-  const listColorOf = useMemo(() => {
-    const colors = new Map(
-      taskLists.map((list) => [`${list.accountId}:${list.id}`, list.colorHex]),
-    );
-    return (task: TaskRecord) => colors.get(`${task.accountId}:${task.listId}`);
-  }, [taskLists]);
+  const listColorOf = useListColorLookup();
   const calendars = useCalendars();
   const accounts = useAccounts();
   const colorOf = useMemo(() => makeColorLookup(calendars), [calendars]);
 
+  const dialogOpen = commandBarOpen || editorSeed !== null || editTask !== null || showSettings;
   useEffect(() => {
+    const isTyping = (target: EventTarget | null) => {
+      const element = target as { isContentEditable?: boolean; tagName?: string } | null;
+      return Boolean(
+        element?.isContentEditable ||
+        ['INPUT', 'SELECT', 'TEXTAREA'].includes(element?.tagName ?? ''),
+      );
+    };
     const onKeyDown = (key: KeyboardEvent) => {
-      if ((key.metaKey || key.ctrlKey) && key.key.toLowerCase() === 'k') {
+      const command = key.metaKey || key.ctrlKey;
+      if (command && key.key.toLowerCase() === 'k') {
         key.preventDefault();
         setCommandBarOpen((open) => !open);
+        return;
       }
-      if (key.key === 'Escape') {
-        setCommandBarOpen(false);
+      if (command && key.key === ',') {
+        key.preventDefault();
+        setShowSettings(true);
+        return;
+      }
+      // The rest are single keys for the calendar itself: not while a
+      // dialog is open (they close on Escape themselves) or while typing.
+      if (dialogOpen || isTyping(key.target) || key.altKey) {
+        return;
+      }
+      if (command && key.key.toLowerCase() === 'n') {
+        key.preventDefault();
+        setEditorSeed({ initialDate: focused, initialHour: 9 });
+      } else if (!command && key.key.toLowerCase() === 't') {
+        goToday();
+      } else if (!command && key.key === 'ArrowLeft') {
+        step(-1);
+      } else if (!command && key.key === 'ArrowRight') {
+        step(1);
       }
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, []);
-
-  const step = (direction: 1 | -1) => {
-    setFocused((current) =>
-      view === 'month'
-        ? current.add({ months: direction })
-        : current.add({ days: direction * (view === 'week' ? 7 : 1) }),
-    );
-    if (view === 'week') {
-      setWeekWindowStart((current) => current?.add({ days: 7 * direction }) ?? null);
-    }
-  };
-
-  // Pan commits: whole days crossed while wheel-panning. In week view the
-  // rolling window and `focused` shift together, keeping focused inside
-  // the visible days.
-  const panByDays = (dayCount: number) => {
-    if (view === 'week') {
-      setWeekWindowStart(windowStart.add({ days: dayCount }));
-    }
-    setFocused((current) => current.add({ days: dayCount }));
-  };
-
-  const switchView = (kind: ViewKind) => {
-    setWeekWindowStart(null);
-    setView(kind);
-  };
-
-  const days = useMemo(() => {
-    if (view === 'day') {
-      return [focused];
-    }
-    return Array.from({ length: 7 }, (_, index) => windowStart.add({ days: index }));
-  }, [view, focused, windowStart]);
+  }, [dialogOpen, focused, goToday, step]);
 
   return (
     <div className="flex h-screen bg-white text-neutral-900">
@@ -175,12 +100,13 @@ export function CalendarApp() {
           className="flex shrink-0 items-center gap-3 border-b border-neutral-200 px-4 py-2.5"
           style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}
         >
-          <h1 className="min-w-56 text-lg font-semibold">{titleFor(view, focused, windowStart)}</h1>
+          <h1 className="min-w-56 text-lg font-semibold">{title}</h1>
           <div
             className="flex items-center gap-1"
             style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
           >
             <button
+              aria-label={`Previous ${view}`}
               className="rounded-md px-2 py-1 text-neutral-500 hover:bg-neutral-100"
               onClick={() => step(-1)}
               type="button"
@@ -189,15 +115,13 @@ export function CalendarApp() {
             </button>
             <button
               className="rounded-md px-2 py-1 text-sm hover:bg-neutral-100"
-              onClick={() => {
-                setFocused(Temporal.Now.plainDateISO(timeZone));
-                setWeekWindowStart(null);
-              }}
+              onClick={goToday}
               type="button"
             >
               Today
             </button>
             <button
+              aria-label={`Next ${view}`}
               className="rounded-md px-2 py-1 text-neutral-500 hover:bg-neutral-100"
               onClick={() => step(1)}
               type="button"
@@ -226,6 +150,7 @@ export function CalendarApp() {
             ))}
           </div>
           <button
+            aria-label="New event"
             className="rounded-md bg-blue-600 px-3 py-1 text-sm font-medium text-white hover:bg-blue-500"
             onClick={() => setEditorSeed({ initialDate: focused, initialHour: 9 })}
             style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
@@ -234,6 +159,7 @@ export function CalendarApp() {
             +
           </button>
           <button
+            aria-label="Accounts"
             className="rounded-md px-2 py-1 text-neutral-500 hover:bg-neutral-100"
             onClick={() => setShowSettings(true)}
             style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
@@ -281,6 +207,7 @@ export function CalendarApp() {
 
       {commandBarOpen ? (
         <CommandBar
+          focusedDate={focused}
           onClose={() => setCommandBarOpen(false)}
           onParsed={(prefill) =>
             setEditorSeed({ initialDate: Temporal.PlainDate.from(prefill.date), prefill })
@@ -305,17 +232,14 @@ export function CalendarApp() {
       ) : null}
 
       {showSettings ? (
-        <div
-          className="fixed inset-0 z-20 flex items-center justify-center bg-black/30"
-          onClick={() => setShowSettings(false)}
+        <Dialog
+          label="Settings"
+          onClose={() => setShowSettings(false)}
+          panelClassName="max-h-[80vh] w-[540px] overflow-y-auto rounded-2xl bg-neutral-50 p-8 shadow-2xl"
+          zIndex={20}
         >
-          <div
-            className="max-h-[80vh] w-[540px] overflow-y-auto rounded-2xl bg-neutral-50 p-8 shadow-2xl"
-            onClick={(clickEvent) => clickEvent.stopPropagation()}
-          >
-            <AccountsView />
-          </div>
-        </div>
+          <AccountsView />
+        </Dialog>
       ) : null}
     </div>
   );

@@ -16,7 +16,7 @@ import {
   toGcalAttendees,
   toGcalEventInput,
 } from '@calendar/google';
-import { Clock, Effect } from 'effect';
+import { Cause, Clock, Effect } from 'effect';
 
 /**
  * Guests get emailed about any change to an event that has guests — the
@@ -39,33 +39,94 @@ export interface ApplyOpDeps {
   readonly eventRepo: EventRepoShape;
   /** Broadcasts the 412 server-wins notice (CONFLICT_NOTICE_KEY). */
   readonly notifyConflict: Effect.Effect<void>;
+  /** Broadcasts that a queued change was permanently rejected (DROPPED_NOTICE_KEY). */
+  readonly notifyDropped: Effect.Effect<void>;
   readonly pendingOpRepo: PendingOpRepoShape;
   readonly taskRepo: TaskRepoShape;
   readonly tasksClient: GoogleTasksClientShape;
 }
 
+/** 'done' removes the op; a retry carries the reason the queue shows the user. */
+export type ApplyOutcome = 'done' | { readonly retry: string };
+const retry = (reason: string): ApplyOutcome => ({ retry: reason });
+
+/** Tag + message (or cause) — a tagged error's own string form is just the tag. */
+const describeFailure = (value: unknown): string => {
+  if (value && typeof value === 'object') {
+    const error = value as { _tag?: string; cause?: unknown; message?: string; name?: string };
+    const tag = error._tag ?? error.name ?? 'Error';
+    const detail = error.message || (error.cause === undefined ? '' : String(error.cause));
+    return detail ? `${tag}: ${detail}` : tag;
+  }
+  return String(value);
+};
+
+const TASK_KINDS: ReadonlySet<PendingOp['kind']> = new Set([
+  'completeTask',
+  'createTask',
+  'deleteTask',
+  'updateTask',
+]);
+
 export const makeApplyOp = (
   deps: ApplyOpDeps,
-): ((op: PendingOp) => Effect.Effect<'done' | 'retry', never>) => {
+): ((op: PendingOp) => Effect.Effect<ApplyOutcome>) => {
   const {
     accountRepo,
     calendarRepo,
     client,
     eventRepo,
     notifyConflict,
+    notifyDropped,
     pendingOpRepo,
     taskRepo,
     tasksClient,
   } = deps;
 
-  return (op: PendingOp): Effect.Effect<'done' | 'retry', never> =>
+  /**
+   * The local row an abandoned op left `pending`: a dropped create takes
+   * its optimistic row with it (deleteStale never collects pending rows,
+   * so it would render forever as something Google never had); an
+   * abandoned edit hands its row back to sync — pulls skip pending rows,
+   * so without this the server's version could never land again.
+   */
+  const releaseRow = (op: PendingOp): Effect.Effect<void> => {
+    switch (op.kind) {
+      case 'create':
+        return Effect.ignore(eventRepo.deleteEvent(op.accountId, op.calendarId, op.eventId));
+      case 'createTask':
+        return op.taskListId
+          ? Effect.ignore(taskRepo.removeTask(op.accountId, op.taskListId, op.eventId))
+          : Effect.void;
+      case 'completeTask':
+      case 'updateTask':
+        return op.taskListId
+          ? Effect.ignore(taskRepo.markSynced(op.accountId, op.taskListId, op.eventId))
+          : Effect.void;
+      case 'rsvp':
+      case 'update':
+        return Effect.ignore(eventRepo.markSynced(op.accountId, op.calendarId, op.eventId));
+      default:
+        return Effect.void;
+    }
+  };
+
+  /** A rejection retrying cannot fix: say so, tell the UI, drop the op. */
+  const drop = (op: PendingOp, reason: string): Effect.Effect<ApplyOutcome> =>
+    Effect.logWarning('pending op dropped', { eventId: op.eventId, kind: op.kind, reason }).pipe(
+      Effect.andThen(releaseRow(op)),
+      Effect.andThen(Effect.ignore(notifyDropped)),
+      Effect.as('done' as const),
+    );
+
+  return (op: PendingOp): Effect.Effect<ApplyOutcome> =>
     Effect.gen(function* () {
       // A task op queued behind its create while that create is still in
       // backoff: the create's id swap rewrites this op's eventId once it
       // lands. Patching the temp id now would 404 and the NotFound arm
       // would drop the local row — wait instead.
       if (op.kind !== 'createTask' && op.eventId.startsWith('local-')) {
-        return 'retry' as const;
+        return retry('waiting for the create ahead of it to land');
       }
       switch (op.kind) {
         case 'calendarColor': {
@@ -194,7 +255,9 @@ export const makeApplyOp = (
         }
         case 'create': {
           if (!op.payload) {
-            return 'done' as const;
+            // Stored payload no longer decodes (a schema moved on): nothing
+            // to send, and the user should know the edit is gone.
+            return yield* drop(op, 'stored payload unreadable');
           }
           const response = yield* client.insertEvent({
             accountId: op.accountId,
@@ -263,7 +326,9 @@ export const makeApplyOp = (
         }
         case 'update': {
           if (!op.payload) {
-            return 'done' as const;
+            // Stored payload no longer decodes (a schema moved on): nothing
+            // to send, and the user should know the edit is gone.
+            return yield* drop(op, 'stored payload unreadable');
           }
           // The guest list rides along only when this edit changed it:
           // Google replaces the whole array, and our copy may lack fields
@@ -318,25 +383,36 @@ export const makeApplyOp = (
       }
     }).pipe(
       Effect.catchTags({
-        // Server wins: drop the op, tell the UI the edit was overridden.
-        ConflictError: () => Effect.as(Effect.ignore(notifyConflict), 'done' as const),
+        // Server wins: drop the op, tell the UI the edit was overridden,
+        // and let the next pull replace the local copy.
+        ConflictError: () =>
+          Effect.as(Effect.andThen(releaseRow(op), Effect.ignore(notifyConflict)), 'done' as const),
         GoogleApiError: (error) =>
           // 409 on insert = the idempotent create already landed. Other
           // 4xx are permanent (e.g. a rejected color patch) — retrying a
-          // bad request forever would pin the queue.
-          error.status === 409 ||
-          (error.status >= 400 && error.status < 500 && error.status !== 429)
+          // bad request forever would pin the queue, so the op is dropped
+          // and the UI told; it used to vanish without a trace.
+          error.status === 409
             ? Effect.succeed('done' as const)
-            : Effect.succeed('retry' as const),
+            : (error.status >= 400 && error.status < 500 && error.status !== 429) ||
+                // A 2xx whose body did not decode is a schema bug on our
+                // side; retrying it forever at the 30-minute cap fixes
+                // nothing. The response landed, so the next pull has it.
+                (error.status >= 200 && error.status < 300)
+              ? drop(op, `${error.status}: ${error.message}`)
+              : Effect.succeed(retry(`${error.status}: ${error.message}`)),
         // The scope vanished after the op was queued (consent revoked, or
         // the enable flag was stale): this push can never succeed, so
-        // retrying would pin the queue forever. Drop it and disable tasks
-        // for the account — the connect row reappears in the UI.
-        InsufficientScopeError: () =>
-          Effect.as(
-            Effect.ignore(accountRepo.setTasksEnabled(op.accountId, false)),
-            'done' as const,
-          ),
+        // retrying would pin the queue forever. Drop it; for a task op
+        // also disable tasks for the account — the connect row reappears
+        // in the UI. A calendar op cannot lose the tasks scope.
+        InsufficientScopeError: (error) =>
+          TASK_KINDS.has(op.kind)
+            ? Effect.as(
+                Effect.ignore(accountRepo.setTasksEnabled(op.accountId, false)),
+                'done' as const,
+              )
+            : drop(op, `insufficient scope: ${error.message}`),
         NotFoundError: () =>
           Effect.gen(function* () {
             // Deleted remotely — drop the local copy too. (For deleteTask
@@ -356,10 +432,21 @@ export const makeApplyOp = (
         ReauthRequiredError: () =>
           Effect.as(
             Effect.ignore(accountRepo.setStatus(op.accountId, 'reauth_required')),
-            'retry' as const,
+            retry('signed out — reconnect the account'),
           ),
         SyncTokenExpiredError: () => Effect.succeed('done' as const),
       }),
-      Effect.catchCause(() => Effect.succeed('retry' as const)),
+      // Anything else (network, a defect): keep the op, record why.
+      Effect.catchCause((cause) => {
+        const reason = describeFailure(Cause.squash(cause));
+        return Effect.as(
+          Effect.logWarning('pending op failed, will retry', {
+            eventId: op.eventId,
+            kind: op.kind,
+            reason,
+          }),
+          retry(reason),
+        );
+      }),
     );
 };

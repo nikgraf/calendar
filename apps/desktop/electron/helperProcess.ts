@@ -3,6 +3,7 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { createInterface } from 'node:readline';
 import type { Readable, Writable } from 'node:stream';
+import type { BridgeTransport } from '@calendar/core';
 import { app } from 'electron';
 
 /**
@@ -162,11 +163,34 @@ export const callHelper = (method: string, params?: Record<string, unknown>): Pr
     const timer = setTimeout(() => {
       pending.delete(id);
       reject(new Error('model helper timed out'));
+      // A request that outlives its budget means a wedged helper; kill it
+      // so the next call respawns (after the restart backoff) instead of
+      // every later request timing out too. The exit handler fails the
+      // other pending requests.
+      if (child === helper) {
+        helper.kill();
+      }
     }, TIMEOUTS_MS[method] ?? DEFAULT_TIMEOUT_MS);
     pending.set(id, { reject, resolve, timer });
     helper.stdin.write(`${JSON.stringify({ id, method, ...(params ? { params } : {}) })}\n`);
   });
 };
+
+/**
+ * The helper as a bridge transport for the Reminders and Contacts
+ * clients, or the reason there is none. CALENDAR_REMINDERS=off /
+ * CALENDAR_CONTACTS=off make a bridge unreachable on purpose: the e2e
+ * suite seeds Apple rows straight into SQLite and must never let a real
+ * sync (or a TCC prompt) touch a developer's data.
+ */
+export const helperTransport = (
+  killSwitch: string,
+): BridgeTransport | { readonly unavailable: string } =>
+  process.env[killSwitch] === 'off'
+    ? { unavailable: `disabled by ${killSwitch}=off` }
+    : helperAvailable()
+      ? { invoke: callHelper, subscribe: onHelperEvent }
+      : { unavailable: 'helper binary missing — run build:helper' };
 
 /** Wire once from main: kill the child when the app quits. */
 export const registerHelperLifecycle = (): void => {

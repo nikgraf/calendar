@@ -1,18 +1,15 @@
 import {
-  Account,
   makeDirectBackendClient,
   TokenSet,
   type BackendClient,
   type BackendHandlers,
 } from '@calendar/core';
-import { AccountRepo, forwardingReactivity, reposLayer, runMigrations } from '@calendar/db';
+import { forwardingReactivity, reposLayer, runMigrations } from '@calendar/db';
 import {
   GoogleCalendarClient,
   GooglePeopleClient,
   GoogleOAuthConfig,
   GoogleTasksClient,
-  grantsContacts,
-  TASKS_SCOPE,
   TokenManager,
   TokenStore,
 } from '@calendar/google';
@@ -20,6 +17,8 @@ import {
   commonBackendHandlers,
   DeviceContacts,
   EventMutations,
+  finishAddAccount,
+  makeSyncKicker,
   SyncEngine,
   type CommonBackendServices,
 } from '@calendar/sync';
@@ -127,36 +126,12 @@ const handlers: BackendHandlers<CommonBackendServices | TokenManager> = {
         );
       }
       const tokenManager = yield* TokenManager;
-      const accountRepo = yield* AccountRepo;
-      const tokenStore = yield* TokenStore;
-      const engine = yield* SyncEngine;
-
       const grant = yield* Effect.tryPromise({
         catch: (error) => new OAuthNotConfiguredError({ message: String(error) }),
         try: () => signInWithGoogle(iosClientId ?? ''),
       });
       const result = yield* tokenManager.exchangeCode(grant);
-
-      const existing = (yield* accountRepo.list()).find(
-        (candidate) => candidate.email === result.profile.email,
-      );
-      const account = new Account({
-        avatarUrl: result.profile.avatarUrl,
-        contactsEnabled: grantsContacts(result.tokens.scopes),
-        createdAt: Date.now(),
-        displayName: result.profile.displayName,
-        email: result.profile.email,
-        id: existing?.id ?? generateUuid(),
-        provider: 'google',
-        status: 'ok',
-        // What Google actually granted, not what we asked for — a user
-        // can untick scopes on the consent screen.
-        tasksEnabled: result.tokens.scopes.includes(TASKS_SCOPE),
-      });
-      yield* tokenStore.set(account.id, result.tokens);
-      yield* accountRepo.upsert(account);
-      yield* Effect.forkDetach(engine.syncAll());
-      return account;
+      return yield* finishAddAccount(result, generateUuid);
     }),
 };
 
@@ -178,23 +153,7 @@ export const startSync = (): void => {
     });
 };
 
-// Immediate refresh when the app returns to the foreground; syncAll is
-// semaphore-serialized so overlapping kicks are safe.
-let lastKickAt = 0;
-export const kickSync = (): void => {
-  const now = Date.now();
-  if (now - lastKickAt < 15_000) {
-    return;
-  }
-  lastKickAt = now;
-  runtime
-    .runPromise(
-      Effect.gen(function* () {
-        const engine = yield* SyncEngine;
-        yield* engine.syncAll();
-      }),
-    )
-    .catch(() => {
-      // Transient failures are retried by the regular schedule.
-    });
-};
+// Immediate refresh when the app returns to the foreground.
+export const kickSync = makeSyncKicker(() =>
+  runtime.runPromise(Effect.flatMap(SyncEngine, (engine) => engine.syncAll())),
+);

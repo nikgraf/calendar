@@ -1,4 +1,3 @@
-import type { RecurrenceFrequency, RecurringScope, RsvpResponse } from '@calendar/core';
 import { StyleSheet } from 'react-native';
 import { palette } from './theme.ts';
 
@@ -27,31 +26,8 @@ export const toDateString = (value: Date): string =>
 export const toTimeString = (value: Date): string =>
   `${pad2(value.getHours())}:${pad2(value.getMinutes())}`;
 
-export const RSVPS: ReadonlyArray<{ label: string; value: RsvpResponse }> = [
-  { label: 'Accept', value: 'accepted' },
-  { label: 'Maybe', value: 'tentative' },
-  { label: 'Decline', value: 'declined' },
-];
-
-export const REPEATS: ReadonlyArray<{ label: string; value: RecurrenceFrequency | 'none' }> = [
-  { label: 'None', value: 'none' },
-  { label: 'Daily', value: 'daily' },
-  { label: 'Weekly', value: 'weekly' },
-  { label: 'Monthly', value: 'monthly' },
-  { label: 'Yearly', value: 'yearly' },
-];
-
-export const REPEAT_ENDS: ReadonlyArray<{ label: string; value: 'after' | 'never' | 'on' }> = [
-  { label: 'Never', value: 'never' },
-  { label: 'After', value: 'after' },
-  { label: 'On date', value: 'on' },
-];
-
-export const SCOPES: ReadonlyArray<{ label: string; value: RecurringScope }> = [
-  { label: 'This event', value: 'instance' },
-  { label: 'This + following', value: 'following' },
-  { label: 'All events', value: 'series' },
-];
+// Option tables: REPEAT_OPTIONS, REPEAT_ENDS_OPTIONS, SCOPE_OPTIONS, RSVP_OPTIONS in
+// @calendar/app-state (editorOptions); the chips render their `short` text.
 
 export const sheetStyles = StyleSheet.create({
   attendee: {

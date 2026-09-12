@@ -5,35 +5,14 @@ import {
   useCalendars,
   usePendingOps,
   useTaskLists,
+  pendingOpLabel,
 } from '@calendar/app-state';
-import type { ModelStatus } from '@calendar/ai';
-import { CALENDAR_PALETTE } from '@calendar/core';
-import {
-  channel as updatesChannel,
-  createdAt as updateCreatedAt,
-  fetchUpdateAsync,
-  isEnabled as updatesEnabled,
-  reloadAsync,
-  setUpdateRequestHeadersOverride,
-  updateId,
-} from 'expo-updates';
 import { Effect } from 'effect';
-import { useEffect, useState } from 'react';
-import {
-  Modal,
-  Platform,
-  Pressable,
-  SafeAreaView,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from 'react-native';
-import { appleLanguageModel } from '../appleModel.ts';
-import { appleSpeech } from '../appleSpeech.ts';
-import { iosContactsClient } from '../contactsClient.ts';
-import { iosRemindersClient } from '../remindersClient.ts';
+import { useState } from 'react';
+import { Modal, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { AccountCard } from './AccountCard.tsx';
+import { DiagnosticsSection } from './DiagnosticsSection.tsx';
+import { PrPreviewSection } from './PrPreviewSection.tsx';
 import { palette } from './theme.ts';
 import { MutationNoticeToast } from './Toast.tsx';
 
@@ -46,8 +25,6 @@ export function SettingsSheet({ onClose, visible }: { onClose: () => void; visib
   const taskLists = useTaskLists();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  /** `${accountId}:${calendarId}` of the row with the palette expanded. */
-  const [colorPickerFor, setColorPickerFor] = useState<string | null>(null);
 
   const connectReminders = async () => {
     setError(null);
@@ -102,13 +79,8 @@ export function SettingsSheet({ onClose, visible }: { onClose: () => void; visib
               {pendingOps.map((op) => (
                 <View key={op.id} style={styles.pendingRow}>
                   <Text numberOfLines={1} style={styles.pendingLabel}>
-                    {op.kind === 'calendarColor'
-                      ? 'color'
-                      : op.kind === 'completeTask'
-                        ? 'task'
-                        : op.kind}{' '}
-                    · {op.kind === 'calendarColor' ? op.calendarId : (op.title ?? op.eventId)}
-                    {op.attempts > 0 ? ` — retrying (${op.attempts}×)` : ''}
+                    {pendingOpLabel(op).text}
+                    {pendingOpLabel(op).retry ? ` — ${pendingOpLabel(op).retry}` : ''}
                   </Text>
                   <Pressable onPress={() => void guarded.discardPendingOp({ opId: op.id })}>
                     <Text style={styles.pendingDiscard}>Discard</Text>
@@ -119,136 +91,14 @@ export function SettingsSheet({ onClose, visible }: { onClose: () => void; visib
           ) : null}
 
           {accounts.map((account) => (
-            <View key={account.id} style={styles.accountCard}>
-              <View style={styles.accountHeader}>
-                <View style={styles.accountInfo}>
-                  <Text style={styles.accountName}>{account.displayName ?? account.email}</Text>
-                  {account.provider === 'apple' ? (
-                    <Text style={styles.accountEmail}>This device</Text>
-                  ) : (
-                    <Text style={styles.accountEmail}>{account.email}</Text>
-                  )}
-                  {account.status === 'reauth_required' ? (
-                    account.provider === 'apple' ? (
-                      <Text style={styles.reconnect}>
-                        Reminders access is off — allow it in Settings › Privacy & Security ›
-                        Reminders; it reconnects on its own.
-                      </Text>
-                    ) : (
-                      <Pressable disabled={busy} onPress={() => void addAccount()}>
-                        <Text style={styles.reconnect}>Session expired — reconnect</Text>
-                      </Pressable>
-                    )
-                  ) : null}
-                </View>
-                <Pressable onPress={() => void guarded.removeAccount({ accountId: account.id })}>
-                  <Text style={styles.remove}>Remove</Text>
-                </Pressable>
-              </View>
-              {calendars
-                .filter((calendar) => calendar.accountId === account.id)
-                .map((calendar) => {
-                  const rowKey = `${calendar.accountId}:${calendar.id}`;
-                  return (
-                    <View key={calendar.id}>
-                      <View style={styles.calendarRow}>
-                        <Pressable
-                          onPress={() =>
-                            setColorPickerFor((current) => (current === rowKey ? null : rowKey))
-                          }
-                          testID={`calendar-color-${calendar.id}`}
-                        >
-                          <View
-                            style={[
-                              styles.swatch,
-                              {
-                                backgroundColor: calendar.isVisible
-                                  ? calendar.colorHex
-                                  : 'transparent',
-                                borderColor: calendar.colorHex,
-                              },
-                            ]}
-                          />
-                        </Pressable>
-                        <Pressable
-                          onPress={() =>
-                            void guarded.setCalendarVisible({
-                              accountId: calendar.accountId,
-                              calendarId: calendar.id,
-                              isVisible: !calendar.isVisible,
-                            })
-                          }
-                          style={styles.calendarToggle}
-                        >
-                          <Text
-                            style={[
-                              styles.calendarName,
-                              !calendar.isVisible && styles.calendarHidden,
-                            ]}
-                          >
-                            {calendar.summary}
-                          </Text>
-                        </Pressable>
-                      </View>
-                      {colorPickerFor === rowKey ? (
-                        <View style={styles.paletteRow}>
-                          {CALENDAR_PALETTE.map((hex) => (
-                            <Pressable
-                              key={hex}
-                              onPress={() => {
-                                setColorPickerFor(null);
-                                void guarded.setCalendarColor({
-                                  accountId: calendar.accountId,
-                                  calendarId: calendar.id,
-                                  colorHex: hex,
-                                });
-                              }}
-                            >
-                              <View
-                                style={[
-                                  styles.paletteSwatch,
-                                  { backgroundColor: hex },
-                                  hex === calendar.colorHex && styles.paletteSelected,
-                                ]}
-                              />
-                            </Pressable>
-                          ))}
-                        </View>
-                      ) : null}
-                    </View>
-                  );
-                })}
-              {taskLists
-                .filter((list) => list.accountId === account.id)
-                .map((list) => (
-                  <Pressable
-                    key={list.id}
-                    onPress={() =>
-                      void guarded.setTaskListVisible({
-                        accountId: list.accountId,
-                        isVisible: !list.isVisible,
-                        taskListId: list.id,
-                      })
-                    }
-                    style={styles.calendarToggle}
-                    testID={`task-list-${list.id}`}
-                  >
-                    <Text style={[styles.calendarName, !list.isVisible && styles.calendarHidden]}>
-                      ✓ {list.title}
-                    </Text>
-                    {list.colorHex ? (
-                      <View style={[styles.swatch, { backgroundColor: list.colorHex }]} />
-                    ) : null}
-                  </Pressable>
-                ))}
-              {account.tasksEnabled || account.provider !== 'google' ? null : (
-                // Tokens from before the tasks scope: re-running sign-in
-                // re-consents and upgrades the account in place.
-                <Pressable disabled={busy} onPress={() => void addAccount()}>
-                  <Text style={styles.reconnect}>Connect Google Tasks — sign in again</Text>
-                </Pressable>
-              )}
-            </View>
+            <AccountCard
+              account={account}
+              busy={busy}
+              calendars={calendars}
+              key={account.id}
+              onReconnect={() => void addAccount()}
+              taskLists={taskLists}
+            />
           ))}
 
           <Pressable
@@ -281,236 +131,7 @@ export function SettingsSheet({ onClose, visible }: { onClose: () => void; visib
   );
 }
 
-/**
- * Internal-testing helper: loads a pull request's OTA update channel
- * (published by CI as `pr-<number>`) into this installed build via the
- * expo-updates request-header override, and switches back to main. Only
- * meaningful in update-enabled (TestFlight) builds — dev clients load from
- * Metro and show a hint instead.
- */
-function PrPreviewSection() {
-  const [channelInput, setChannelInput] = useState('');
-  const [status, setStatus] = useState<string | null>(null);
-  const [switching, setSwitching] = useState(false);
-
-  const switchTo = async (channel: string | null) => {
-    setSwitching(true);
-    setStatus(null);
-    try {
-      setUpdateRequestHeadersOverride(channel ? { 'expo-channel-name': channel } : null);
-      const result = await fetchUpdateAsync();
-      if (result.isNew) {
-        await reloadAsync();
-        return;
-      }
-      setStatus(
-        channel
-          ? `Override set for ${channel}. No update fetched yet — force-quit and reopen the app.`
-          : 'Back on the main channel. Force-quit and reopen to be sure.',
-      );
-    } catch (error) {
-      setStatus(String(error));
-    } finally {
-      setSwitching(false);
-    }
-  };
-
-  return (
-    <View style={styles.previewCard}>
-      <Text style={styles.previewTitle}>PR preview</Text>
-      <Text style={styles.previewMeta}>
-        channel {updatesChannel ?? 'none'} · update {updateId ? updateId.slice(0, 8) : 'embedded'}
-        {updateCreatedAt ? ` · ${updateCreatedAt.toLocaleString()}` : ''}
-      </Text>
-      {updatesEnabled ? (
-        <>
-          <TextInput
-            autoCapitalize="none"
-            autoCorrect={false}
-            editable={!switching}
-            onChangeText={setChannelInput}
-            placeholder="pr-123"
-            style={styles.previewInput}
-            value={channelInput}
-          />
-          <View style={styles.previewButtons}>
-            <Pressable
-              disabled={switching || channelInput.trim() === ''}
-              onPress={() => void switchTo(channelInput.trim())}
-              style={[styles.previewLoad, switching && styles.addBusy]}
-            >
-              <Text style={styles.previewLoadLabel}>
-                {switching ? 'Switching…' : 'Load PR channel'}
-              </Text>
-            </Pressable>
-            <Pressable disabled={switching} onPress={() => void switchTo(null)}>
-              <Text style={styles.previewReset}>Back to main</Text>
-            </Pressable>
-          </View>
-        </>
-      ) : (
-        <Text style={styles.previewMeta}>
-          Updates are disabled in this build (dev client loads from Metro).
-        </Text>
-      )}
-      {status ? <Text style={styles.previewStatus}>{status}</Text> : null}
-    </View>
-  );
-}
-
-/**
- * What the device actually reports, read from the device. The quick-add
- * bar hid itself on a phone whose owner had Apple Intelligence switched
- * on, and answering "why" meant downloading the shipped IPA and reading
- * its linked frameworks — this is the cheaper version of that.
- */
-const describeReminders = async (): Promise<string> => {
-  const status = await Effect.runPromise(
-    iosRemindersClient.status().pipe(Effect.orElseSucceed(() => 'unavailable' as const)),
-  );
-  if (status !== 'fullAccess') {
-    return status;
-  }
-  const lists = await Effect.runPromise(
-    iosRemindersClient.listLists().pipe(Effect.orElseSucceed(() => [])),
-  );
-  return `fullAccess (${String(lists.length)} lists)`;
-};
-
-const describeContacts = (): Promise<string> =>
-  Effect.runPromise(
-    iosContactsClient.status().pipe(Effect.orElseSucceed(() => 'unavailable' as const)),
-  );
-
-function DiagnosticsSection() {
-  const [modelStatus, setModelStatus] = useState<ModelStatus | 'checking…'>('checking…');
-  const [contacts, setContacts] = useState('checking…');
-  const [dictation, setDictation] = useState('checking…');
-  const [reminders, setReminders] = useState('checking…');
-  const [remindersBusy, setRemindersBusy] = useState(false);
-  const mutations = useBackendMutations();
-
-  const requestReminders = async () => {
-    setRemindersBusy(true);
-    try {
-      // The rpc, not the bare permission ask: a grant alone creates no
-      // account and syncs nothing.
-      const result = await mutations.connectReminders(undefined);
-      setReminders(result.granted ? await describeReminders() : 'denied');
-    } catch {
-      setReminders(await describeReminders());
-    } finally {
-      setRemindersBusy(false);
-    }
-  };
-
-  useEffect(() => {
-    let cancelled = false;
-    void appleLanguageModel.status().then((value) => {
-      if (!cancelled) {
-        setModelStatus(value);
-      }
-    });
-    void appleSpeech
-      .isSupported()
-      .then((value) => {
-        if (!cancelled) {
-          setDictation(value ? 'supported' : 'unsupported');
-        }
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setDictation('unsupported');
-        }
-      });
-    void describeReminders().then((text) => {
-      if (!cancelled) {
-        setReminders(text);
-      }
-    });
-    void describeContacts().then((text) => {
-      if (!cancelled) {
-        setContacts(text);
-      }
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  return (
-    <View style={styles.previewCard} testID="diagnostics">
-      <Text style={styles.previewTitle}>Diagnostics</Text>
-      <Text style={styles.previewMeta}>iOS {String(Platform.Version)}</Text>
-      <Text style={styles.previewMeta} testID="diagnostics-model">
-        on-device model: {modelStatus}
-      </Text>
-      <Text style={styles.previewMeta}>dictation: {dictation}</Text>
-      <Text style={styles.previewMeta} testID="diagnostics-reminders">
-        reminders: {reminders}
-      </Text>
-      {reminders === 'notDetermined' || reminders === 'denied' ? (
-        <Pressable disabled={remindersBusy} onPress={() => void requestReminders()}>
-          <Text style={styles.reconnect}>
-            {reminders === 'denied'
-              ? 'Reminders access is off — check again after allowing it in Settings'
-              : 'Allow access to Reminders'}
-          </Text>
-        </Pressable>
-      ) : null}
-      <Text style={styles.previewMeta} testID="diagnostics-contacts">
-        contacts: {contacts}
-      </Text>
-      {contacts === 'notDetermined' || contacts === 'denied' ? (
-        <Pressable
-          onPress={() =>
-            void mutations
-              .connectContacts(undefined)
-              .then(describeContacts, describeContacts)
-              .then(setContacts)
-          }
-        >
-          <Text style={styles.reconnect}>
-            {contacts === 'denied'
-              ? 'Contacts access is off — check again after allowing it in Settings'
-              : 'Allow access to Contacts'}
-          </Text>
-        </Pressable>
-      ) : null}
-      <Text style={styles.previewMeta}>
-        {/* Hermes ships without it; a "missing" here explains any failure
-            to save an event, since ids are generated from it. */}
-        web crypto: {typeof globalThis.crypto?.getRandomValues === 'function' ? 'ok' : 'missing'}
-      </Text>
-    </View>
-  );
-}
-
 const styles = StyleSheet.create({
-  accountCard: {
-    backgroundColor: '#ffffff',
-    borderColor: palette.border,
-    borderRadius: 12,
-    borderWidth: StyleSheet.hairlineWidth,
-    marginBottom: 12,
-    padding: 12,
-  },
-  accountEmail: {
-    color: palette.textMuted,
-    fontSize: 13,
-  },
-  accountHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 8,
-  },
-  accountInfo: {
-    flex: 1,
-  },
-  accountName: {
-    fontSize: 15,
-    fontWeight: '600',
-  },
   addBusy: {
     opacity: 0.5,
   },
@@ -528,21 +149,6 @@ const styles = StyleSheet.create({
   addSecondary: {
     backgroundColor: '#171717',
     marginTop: 8,
-  },
-  calendarHidden: {
-    color: palette.textFaint,
-  },
-  calendarName: {
-    fontSize: 14,
-  },
-  calendarRow: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    gap: 8,
-    paddingVertical: 5,
-  },
-  calendarToggle: {
-    flex: 1,
   },
   container: {
     backgroundColor: palette.background,
@@ -567,24 +173,6 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: 16,
     paddingVertical: 14,
-  },
-  paletteRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 6,
-    paddingBottom: 8,
-    paddingLeft: 22,
-  },
-  paletteSelected: {
-    borderColor: '#2563eb',
-    borderWidth: 2,
-  },
-  paletteSwatch: {
-    borderColor: 'transparent',
-    borderRadius: 5,
-    borderWidth: 2,
-    height: 20,
-    width: 20,
   },
   pendingCard: {
     backgroundColor: '#fef3c7',
@@ -613,75 +201,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '700',
     marginBottom: 4,
-  },
-  previewButtons: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    gap: 14,
-    marginTop: 8,
-  },
-  previewCard: {
-    backgroundColor: '#ffffff',
-    borderColor: palette.border,
-    borderRadius: 12,
-    borderWidth: StyleSheet.hairlineWidth,
-    marginTop: 16,
-    padding: 12,
-  },
-  previewInput: {
-    borderColor: palette.border,
-    borderRadius: 8,
-    borderWidth: StyleSheet.hairlineWidth,
-    fontSize: 14,
-    marginTop: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-  },
-  previewLoad: {
-    backgroundColor: '#2563eb',
-    borderRadius: 8,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-  },
-  previewLoadLabel: {
-    color: '#ffffff',
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  previewMeta: {
-    color: palette.textMuted,
-    fontSize: 12,
-    marginTop: 2,
-  },
-  previewReset: {
-    color: '#2563eb',
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  previewStatus: {
-    color: palette.textMuted,
-    fontSize: 12,
-    marginTop: 8,
-  },
-  previewTitle: {
-    fontSize: 15,
-    fontWeight: '600',
-  },
-  reconnect: {
-    color: '#d97706',
-    fontSize: 13,
-    fontWeight: '600',
-    marginTop: 2,
-  },
-  remove: {
-    color: '#dc2626',
-    fontSize: 13,
-  },
-  swatch: {
-    borderRadius: 4,
-    borderWidth: 2,
-    height: 16,
-    width: 16,
   },
   title: {
     fontSize: 17,

@@ -1,0 +1,30 @@
+name: Gate
+
+# The lint + typecheck + unit-test gate as a reusable workflow: ci.yml and
+# ios.yml both call it (they were byte-identical copies — `needs:` cannot
+# cross workflows, and ios.yml is separate so `labeled` events do not
+# cancel the CI run). Note: a reusable job reports as
+# "<caller job> / <this job>" on the PR, so a branch-protection rule that
+# names the old check must be updated once.
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  gate:
+    name: Lint, typecheck, unit tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm check
+      - run: pnpm typecheck
+      - run: pnpm test

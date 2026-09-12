@@ -1,11 +1,5 @@
-import { useAccounts, useBackendMutations, useContactsSearch } from '@calendar/app-state';
-import {
-  emailKey,
-  isValidEmail,
-  type Attendee,
-  type AttendeeInput,
-  type Contact,
-} from '@calendar/core';
+import { useAccounts, useInviteeField } from '@calendar/app-state';
+import { emailKey, isValidEmail, type Attendee, type AttendeeInput } from '@calendar/core';
 import { useEffect, useId, useState } from 'react';
 
 const STATUS_DOT: Record<Attendee['responseStatus'], string> = {
@@ -15,7 +9,8 @@ const STATUS_DOT: Record<Attendee['responseStatus'], string> = {
   tentative: 'bg-amber-400',
 };
 
-const DEBOUNCE_MS = 150;
+const contactsStatus = (): Promise<string> =>
+  window.calendarBridge.contactsStatus() as Promise<string>;
 
 /**
  * Guest chips + a typeahead over device and Google contacts. Hand-rolled
@@ -23,7 +18,8 @@ const DEBOUNCE_MS = 150;
  * the input, ArrowUp/Down move the highlight, Enter takes the highlight
  * or the typed address, comma and blur take a typed address, Backspace on
  * an empty input removes the last chip, Escape closes the list without
- * closing the editor.
+ * closing the editor. The state machine is useInviteeField, shared with
+ * the iOS field.
  */
 export function InviteeCombobox({
   attendees,
@@ -36,79 +32,42 @@ export function InviteeCombobox({
   onAdd: (input: AttendeeInput) => boolean;
   onRemove: (email: string) => void;
 }) {
-  const [text, setText] = useState('');
-  const [query, setQuery] = useState('');
   const [open, setOpen] = useState(false);
-  const [highlight, setHighlight] = useState(0);
-  const [permission, setPermission] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
   const listId = useId();
-  const { connectContacts } = useBackendMutations();
   const accounts = useAccounts();
   const googleContactsEnabled = accounts.some(
     (account) => account.provider === 'google' && account.contactsEnabled,
   );
+  const {
+    acceptEnter,
+    addTyped,
+    allow,
+    busy,
+    choose,
+    highlight,
+    highlighted,
+    loadPermission,
+    moveHighlight,
+    permission,
+    removeLast,
+    setHighlight,
+    setText,
+    stale,
+    suggestions,
+    text,
+  } = useInviteeField({
+    attendees,
+    contactsStatus,
+    isProtected: (email) => attendeeStatus(email)?.isOrganizer === true,
+    onAdd,
+    onRemove,
+  });
 
   useEffect(() => {
-    const timer = setTimeout(() => setQuery(text), DEBOUNCE_MS);
-    return () => clearTimeout(timer);
-  }, [text]);
-
-  useEffect(() => {
-    if (!open || permission !== null) {
-      return;
+    if (open && permission === null) {
+      void loadPermission();
     }
-    let mounted = true;
-    void window.calendarBridge.contactsStatus().then((status) => {
-      if (mounted) {
-        setPermission(status);
-      }
-    });
-    return () => {
-      mounted = false;
-    };
-  }, [open, permission]);
-
-  const taken = new Set(attendees.map((attendee) => emailKey(attendee.email)));
-  const search = useContactsSearch(query);
-  const suggestions = search.contacts.filter((contact) => !taken.has(emailKey(contact.email)));
-  // Rows still on screen for an earlier query (debounce window, or the
-  // new query loading) are visible but never keyboard-selectable.
-  const stale = search.stale || query.trim() !== text.trim();
-  const highlighted = stale
-    ? undefined
-    : suggestions[Math.min(highlight, Math.max(suggestions.length - 1, 0))];
-
-  const choose = (contact: Contact) => {
-    onAdd({ displayName: contact.displayName, email: contact.email });
-    setText('');
-    setQuery('');
-    setHighlight(0);
-  };
-
-  const addTyped = (): boolean => {
-    const trimmed = text.trim().replace(/,$/, '');
-    if (!isValidEmail(trimmed)) {
-      return false;
-    }
-    onAdd({ email: trimmed });
-    setText('');
-    setQuery('');
-    setHighlight(0);
-    return true;
-  };
-
-  const allow = async () => {
-    setBusy(true);
-    try {
-      const result = await connectContacts(undefined);
-      setPermission(result.granted ? 'authorized' : await window.calendarBridge.contactsStatus());
-    } catch {
-      setPermission(await window.calendarBridge.contactsStatus());
-    } finally {
-      setBusy(false);
-    }
-  };
+  }, [open, permission, loadPermission]);
 
   const showList = open && (text.trim() !== '' || permission === 'notDetermined');
   const footer =
@@ -177,25 +136,22 @@ export function InviteeCombobox({
           }}
           onChange={(changeEvent) => {
             setText(changeEvent.target.value);
-            setHighlight(0);
             setOpen(true);
           }}
           onFocus={() => setOpen(true)}
           onKeyDown={(keyEvent) => {
-            if (keyEvent.key === 'ArrowDown' && !stale && suggestions.length > 0) {
+            if (keyEvent.key === 'ArrowDown') {
               keyEvent.preventDefault();
-              setHighlight((index) => (index + 1) % suggestions.length);
-            } else if (keyEvent.key === 'ArrowUp' && !stale && suggestions.length > 0) {
+              moveHighlight(1);
+            } else if (keyEvent.key === 'ArrowUp') {
               keyEvent.preventDefault();
-              setHighlight((index) => (index - 1 + suggestions.length) % suggestions.length);
+              moveHighlight(-1);
             } else if (keyEvent.key === 'Enter') {
               keyEvent.preventDefault();
-              // A fully typed address is explicit; `highlighted` is unset
-              // while the rows still belong to an earlier query.
-              if (isValidEmail(text) || !showList || !highlighted) {
-                addTyped();
+              if (showList) {
+                acceptEnter();
               } else {
-                choose(highlighted);
+                addTyped();
               }
             } else if (keyEvent.key === ',') {
               if (addTyped()) {
@@ -204,11 +160,8 @@ export function InviteeCombobox({
             } else if (keyEvent.key === 'Escape' && showList) {
               keyEvent.stopPropagation();
               setOpen(false);
-            } else if (keyEvent.key === 'Backspace' && text === '' && attendees.length > 0) {
-              const last = attendees.at(-1)!;
-              if (!attendeeStatus(last.email)?.isOrganizer) {
-                onRemove(last.email);
-              }
+            } else if (keyEvent.key === 'Backspace') {
+              removeLast();
             }
           }}
           placeholder={attendees.length === 0 ? 'Add guests' : ''}

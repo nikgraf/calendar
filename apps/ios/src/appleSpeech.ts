@@ -105,7 +105,9 @@ export const appleSpeech: SpeechToText = {
   prepare: async () => {
     const modules = load();
     if (!modules) {
-      throw new SpeechUnsupportedError('Speech recognition is not built into this app.');
+      throw new SpeechUnsupportedError({
+        message: 'Speech recognition is not built into this app.',
+      });
     }
     try {
       // Installs the locale's models; a no-op once present.
@@ -116,7 +118,7 @@ export const appleSpeech: SpeechToText = {
       // failure must stay retryable rather than hiding dictation for good.
       const message = String(error);
       if (/not supported|unsupported|unavailable/i.test(message)) {
-        throw new SpeechUnsupportedError(message);
+        throw new SpeechUnsupportedError({ message });
       }
       throw error;
     }
@@ -124,11 +126,13 @@ export const appleSpeech: SpeechToText = {
   startRecording: async () => {
     const modules = load();
     if (!modules) {
-      throw new SpeechUnsupportedError('Speech recognition is not built into this app.');
+      throw new SpeechUnsupportedError({
+        message: 'Speech recognition is not built into this app.',
+      });
     }
     const permission = await modules.audio.requestRecordingPermissionsAsync();
     if (!permission.granted) {
-      throw new MicrophoneDeniedError('Microphone access was declined.');
+      throw new MicrophoneDeniedError({ message: 'Microphone access was declined.' });
     }
     await modules.audio.setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true });
     const instance = new (

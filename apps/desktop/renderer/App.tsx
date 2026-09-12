@@ -5,7 +5,7 @@ import {
   subscribeMutationNotices,
   useBackendInvalidations,
 } from '@calendar/app-state';
-import { CONFLICT_NOTICE_KEY } from '@calendar/db/keys';
+import { CONFLICT_NOTICE_KEY, DROPPED_NOTICE_KEY } from '@calendar/db/keys';
 import { useEffect, useState } from 'react';
 import { CalendarApp } from './calendar/CalendarApp.tsx';
 import { ErrorBoundary } from './ErrorBoundary.tsx';
@@ -13,17 +13,21 @@ import { backend, subscribeInvalidations } from './backend.ts';
 
 const backendAtoms = makeBackendAtoms(backend);
 
-/** Transient banner for 412 server-wins: the local edit was discarded. */
-function ConflictToast() {
+/**
+ * Transient banner keyed on a broadcast invalidation: 412 server-wins
+ * (the local edit was discarded) and permanent rejections (Google
+ * answered a queued change with a 4xx retrying cannot fix).
+ */
+function NoticeToast({ message, noticeKey }: { message: string; noticeKey: string }) {
   const [visible, setVisible] = useState(false);
   useEffect(
     () =>
       subscribeInvalidations((keys) => {
-        if (keys.includes(CONFLICT_NOTICE_KEY)) {
+        if (keys.includes(noticeKey)) {
           setVisible(true);
         }
       }),
-    [],
+    [noticeKey],
   );
   useEffect(() => {
     if (!visible) {
@@ -38,7 +42,7 @@ function ConflictToast() {
   }
   return (
     <div className="fixed bottom-4 left-1/2 z-40 -translate-x-1/2 rounded-lg bg-neutral-900 px-4 py-2 text-sm text-white shadow-lg">
-      An edit was overridden by a newer version from Google.
+      {message}
     </div>
   );
 }
@@ -71,7 +75,14 @@ function Bridge() {
   return (
     <>
       <CalendarApp />
-      <ConflictToast />
+      <NoticeToast
+        message="An edit was overridden by a newer version from Google."
+        noticeKey={CONFLICT_NOTICE_KEY}
+      />
+      <NoticeToast
+        message="Google rejected a change and it was discarded."
+        noticeKey={DROPPED_NOTICE_KEY}
+      />
       <MutationNoticeToast />
     </>
   );

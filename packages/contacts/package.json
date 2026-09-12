@@ -8,7 +8,7 @@
     "./*": "./src/*.ts"
   },
   "dependencies": {
-    "@calendar/reminders": "workspace:*",
+    "@calendar/core": "workspace:*",
     "effect": "catalog:"
   },
   "devDependencies": {

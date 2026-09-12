@@ -70,8 +70,12 @@ export const monthGridRange = (
   timeZone: string,
 ): UtcRange => {
   const weeks = buildMonthGrid(yearMonth, today);
-  const first = weeks[0]![0]!.date;
-  const last = weeks.at(-1)![6]!.date;
+  const first = weeks[0]?.[0]?.date;
+  const last = weeks.at(-1)?.[6]?.date;
+  if (!first || !last) {
+    // buildMonthGrid always emits full 7-day weeks; make the assumption loud.
+    throw new Error(`month grid for ${yearMonth.toString()} has no full week`);
+  }
   return {
     endUtc: startOfDayMs(last.add({ days: 1 }), timeZone),
     startUtc: startOfDayMs(first, timeZone),
