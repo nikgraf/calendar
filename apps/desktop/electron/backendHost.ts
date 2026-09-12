@@ -6,6 +6,7 @@ import {
   BirthdayRepo,
   CalendarRepo,
   ContactRepo,
+  DeviceSettingsRepo,
   EventRepo,
   forwardingReactivity,
   makeInvalidationBus,
@@ -110,6 +111,7 @@ export const startBackendHost = (): void => {
     | CalendarRepo
     | ContactRepo
     | ContactsClient
+    | DeviceSettingsRepo
     | DeviceContacts
     | EventMutations
     | EventRepo

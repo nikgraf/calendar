@@ -30,6 +30,8 @@ const makeStubClient = () => {
     deleteRecurring: () => fail('not stubbed'),
     deleteTask: () => Effect.void,
     discardPendingOp: () => Effect.void,
+    getBirthdayReminderSettings: () =>
+      Effect.succeed({ enabled: false, leadDays: [0 as const], time: '09:00' }),
     getBirthdaysInRange: () => Effect.succeed([]),
     getEventsInRange: () =>
       Effect.sync(() => {
@@ -48,6 +50,7 @@ const makeStubClient = () => {
     removeAccount: () => Effect.void,
     respondToEvent: () => Effect.void,
     searchContacts: () => Effect.succeed([]),
+    setBirthdayReminderSettings: () => Effect.succeed({ notificationsGranted: true }),
     setCalendarColor: () => Effect.void,
     setCalendarVisible: () =>
       Effect.sync(() => {

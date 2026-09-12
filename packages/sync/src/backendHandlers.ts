@@ -19,6 +19,7 @@ import {
   BirthdayRepo,
   CalendarRepo,
   ContactRepo,
+  DeviceSettingsRepo,
   EventRepo,
   PendingOpRepo,
   TaskRepo,
@@ -28,6 +29,7 @@ import { RemindersClient } from '@calendar/reminders';
 import { Clock, Effect, Queue, Stream } from 'effect';
 import { loadMergedBirthdays } from './birthdays.ts';
 import { DeviceContacts } from './deviceContacts.ts';
+import { readBirthdayReminderSettings, writeBirthdayReminderSettings } from './deviceSettings.ts';
 import { SyncEngine } from './engine.ts';
 import { EventMutations } from './mutations.ts';
 
@@ -41,6 +43,7 @@ export type CommonBackendServices =
   | ContactRepo
   | ContactsClient
   | DeviceContacts
+  | DeviceSettingsRepo
   | EventMutations
   | EventRepo
   | PendingOpRepo
@@ -142,6 +145,8 @@ export const commonBackendHandlers: Omit<BackendHandlers<CommonBackendServices>,
       yield* pendingOps.remove(opId);
     }),
 
+  getBirthdayReminderSettings: () => readBirthdayReminderSettings,
+
   getBirthdaysInRange: ({ endDate, startDate }) =>
     Effect.map(loadMergedBirthdays, (records) => birthdaysInRange(records, startDate, endDate)),
 
@@ -218,6 +223,11 @@ export const commonBackendHandlers: Omit<BackendHandlers<CommonBackendServices>,
       const device = yield* (yield* DeviceContacts).list();
       return rankContacts(query, [...google, ...device], take);
     }),
+
+  // Permission and the scheduler arrive with the reminders service; until
+  // then saving is the whole story.
+  setBirthdayReminderSettings: (settings) =>
+    Effect.map(writeBirthdayReminderSettings(settings), () => ({ notificationsGranted: true })),
 
   setCalendarColor: (params) =>
     Effect.gen(function* () {

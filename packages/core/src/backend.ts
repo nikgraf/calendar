@@ -1,6 +1,7 @@
 import { Cause, Effect, Schema } from 'effect';
 import { Rpc, RpcGroup } from 'effect/unstable/rpc';
 import type { RpcClientError } from 'effect/unstable/rpc/RpcClientError';
+import { BirthdayReminderSettings } from './birthdays/reminders.ts';
 import {
   Account,
   BirthdayOccurrence,
@@ -169,6 +170,11 @@ export class AppBackendRpcs extends RpcGroup.make(
       scope: RecurringScope,
     },
   }),
+  /** Device-local birthday reminder preferences (never synced). */
+  Rpc.make('getBirthdayReminderSettings', {
+    error: BackendError,
+    success: BirthdayReminderSettings,
+  }),
   /** Contact birthdays (Google People + device) falling on days in the window, inclusive bounds. */
   Rpc.make('getBirthdaysInRange', {
     error: BackendError,
@@ -226,6 +232,16 @@ export class AppBackendRpcs extends RpcGroup.make(
     error: BackendError,
     payload: { limit: Schema.optional(Schema.Number), query: Schema.String },
     success: Schema.Array(Contact),
+  }),
+  /**
+   * Saves the device-local reminder preferences. `notificationsGranted`
+   * is false when enabling asked the OS for notification permission and
+   * the user declined — the settings are saved either way.
+   */
+  Rpc.make('setBirthdayReminderSettings', {
+    error: BackendError,
+    payload: BirthdayReminderSettings,
+    success: Schema.Struct({ notificationsGranted: Schema.Boolean }),
   }),
   Rpc.make('setCalendarColor', {
     error: BackendError,

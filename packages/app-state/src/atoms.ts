@@ -3,6 +3,7 @@ import {
   BIRTHDAYS_KEY,
   CALENDARS_KEY,
   CONTACTS_KEY,
+  deviceSettingsKey,
   EVENTS_KEY,
   OPS_KEY,
   TASKLISTS_KEY,
@@ -26,6 +27,7 @@ export interface BackendAtoms {
     registry: AtomRegistry.AtomRegistry,
     subscribe: (listener: (keys: ReadonlyArray<unknown>) => void) => () => void,
   ) => () => void;
+  readonly birthdayReminderSettings: ReturnType<typeof buildAtoms>['birthdayReminderSettings'];
   readonly birthdaysInRange: ReturnType<typeof buildAtoms>['birthdaysInRange'];
   readonly calendars: ReturnType<typeof buildAtoms>['calendars'];
   readonly contactsSearch: ReturnType<typeof buildAtoms>['contactsSearch'];
@@ -55,6 +57,7 @@ const MUTATION_REACTIVITY = {
   discardPendingOp: [OPS_KEY],
   removeAccount: [ACCOUNTS_KEY, BIRTHDAYS_KEY, CALENDARS_KEY, EVENTS_KEY, TASKS_KEY, TASKLISTS_KEY],
   respondToEvent: [EVENTS_KEY],
+  setBirthdayReminderSettings: [deviceSettingsKey('birthdayReminders')],
   setCalendarColor: [CALENDARS_KEY],
   setCalendarVisible: [CALENDARS_KEY, EVENTS_KEY],
   setTaskListVisible: [TASKLISTS_KEY, TASKS_KEY],
@@ -147,6 +150,17 @@ const buildAtoms = (client: BackendClient) => {
       .pipe(Atom.withReactivity([TASKS_KEY]));
   });
 
+  // Keyed per setting: the reminder scheduler's own bookkeeping rows never
+  // refetch this.
+  const birthdayReminderSettings = runtime
+    .atom(
+      Effect.gen(function* () {
+        const backend = yield* AppBackend;
+        return yield* backend.getBirthdayReminderSettings(undefined);
+      }),
+    )
+    .pipe(Atom.withReactivity([deviceSettingsKey('birthdayReminders')]));
+
   // Keys are date strings, like tasksInRange. BIRTHDAYS_KEY fires from the
   // Google cache writes and from a device snapshot that changed the list.
   const birthdaysInRange = boundedAtomCache((key) => {
@@ -223,6 +237,7 @@ const buildAtoms = (client: BackendClient) => {
   return {
     accounts,
     bindInvalidations,
+    birthdayReminderSettings,
     birthdaysInRange,
     calendars,
     contactsSearch,

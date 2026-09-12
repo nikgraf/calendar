@@ -2,6 +2,7 @@ import type {
   Account,
   BackendPayload,
   BirthdayOccurrence,
+  BirthdayReminderSettings,
   BackendSuccess,
   CalendarInfo,
   Contact,
@@ -161,6 +162,12 @@ export const useBirthdaysInRangeStable = (
   return Option.isSome(value) ? value.value : previous;
 };
 
+/** The device-local reminder preferences; null until the first read resolves. */
+export const useBirthdayReminderSettings = (): BirthdayReminderSettings | null => {
+  const result = useAtomValue(useBackendAtoms().birthdayReminderSettings);
+  return Option.getOrNull(AsyncResult.value(result));
+};
+
 /** Reminders lists carry a color; Google lists render neutral. Both lanes need this. */
 export const useListColorLookup = (): ((task: TaskRecord) => string | undefined) => {
   const taskLists = useTaskLists();
@@ -215,6 +222,7 @@ export const useBackendMutations = () => {
       discardPendingOp: set('discardPendingOp'),
       removeAccount: set('removeAccount'),
       respondToEvent: set('respondToEvent'),
+      setBirthdayReminderSettings: set('setBirthdayReminderSettings'),
       setCalendarColor: set('setCalendarColor'),
       setCalendarVisible: set('setCalendarVisible'),
       setTaskListVisible: set('setTaskListVisible'),
