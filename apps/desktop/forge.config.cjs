@@ -63,7 +63,8 @@ module.exports = {
       // the bundle.
       NSContactsUsageDescription:
         'Solunivo suggests people from your Contacts when you invite ' +
-        'someone to an event. Nothing leaves your Mac.',
+        'someone to an event and shows their birthdays in your calendar. ' +
+        'Nothing leaves your Mac.',
       NSRemindersFullAccessUsageDescription:
         'Solunivo shows your Reminders next to your calendar and lets you ' +
         'edit them here. Nothing leaves your Mac.',
