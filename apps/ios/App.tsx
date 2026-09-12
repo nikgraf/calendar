@@ -9,6 +9,7 @@ import {
   useListColorLookup,
   usePendingOps,
   useTaskLists,
+  useBirthdaysInRangeStable,
   useTasksInRangeStable,
 } from '@calendar/app-state';
 import {
@@ -73,6 +74,10 @@ function CalendarScreen() {
   const events = useEventsInRangeStable(range.startUtc, range.endUtc);
   // Tasks are date-only; the same fetched window expressed as day strings.
   const tasks = useTasksInRangeStable(
+    utcMsToPlainDate(range.startUtc),
+    utcMsToPlainDate(range.endUtc),
+  );
+  const birthdays = useBirthdaysInRangeStable(
     utcMsToPlainDate(range.startUtc),
     utcMsToPlainDate(range.endUtc),
   );
@@ -214,11 +219,13 @@ function CalendarScreen() {
             trailingInset={view === 'week' ? EDGE_INSET : 0}
           />
           <DayTimeline
+            birthdays={birthdays}
             buffer={buffer}
             colorOf={colorOf}
             days={days}
             events={events}
             listColorOf={listColorOf}
+            onBirthdayPress={() => undefined}
             onEventPress={(event) => setEditSeed({ event, initialDate: focused })}
             onNavigate={step}
             onTaskPress={(task) => setEditTask(task)}

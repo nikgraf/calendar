@@ -7,6 +7,7 @@ import {
   useGuardedMutations,
   useListColorLookup,
   useTaskLists,
+  useBirthdaysInRangeStable,
   useTasksInRangeStable,
 } from '@calendar/app-state';
 import { useEffect, useMemo, useState } from 'react';
@@ -36,6 +37,10 @@ export function CalendarApp() {
   const events = useEventsInRangeStable(range.startUtc, range.endUtc);
   // Tasks are date-only; the same fetched window expressed as day strings.
   const tasks = useTasksInRangeStable(
+    utcMsToPlainDate(range.startUtc),
+    utcMsToPlainDate(range.endUtc),
+  );
+  const birthdays = useBirthdaysInRangeStable(
     utcMsToPlainDate(range.startUtc),
     utcMsToPlainDate(range.endUtc),
   );
@@ -183,10 +188,12 @@ export function CalendarApp() {
           />
         ) : (
           <WeekView
+            birthdays={birthdays}
             colorOf={colorOf}
             days={days}
             events={events}
             listColorOf={listColorOf}
+            onBirthdayClick={() => undefined}
             onEventClick={(event) => setEditorSeed({ event, initialDate: focused })}
             onNavigate={panByDays}
             onSlotClick={(date, hour) => setEditorSeed({ initialDate: date, initialHour: hour })}

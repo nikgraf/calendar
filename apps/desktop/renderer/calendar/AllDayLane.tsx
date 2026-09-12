@@ -1,15 +1,26 @@
-import { type EventRecord, type PlacedSpan, taskChipLabel, type TaskRecord } from '@calendar/core';
+import {
+  BIRTHDAY_ACCENT,
+  type BirthdayOccurrence,
+  birthdayChipLabel,
+  type EventRecord,
+  type PlacedSpan,
+  taskChipLabel,
+  type TaskRecord,
+} from '@calendar/core';
 import type { CSSProperties } from 'react';
 import { chipTextColor, type ColorLookup } from './colors.ts';
 
 /**
- * Packed all-day chips (events spanning days, one-day task rows) over the
- * strip. Always rendered, even empty, so the timed grid never jumps.
+ * Packed all-day chips (events spanning days, one-day task and birthday
+ * rows) over the strip. Always rendered, even empty, so the timed grid
+ * never jumps.
  */
 export function AllDayLane({
   allDayById,
+  birthdayById,
   colorOf,
   listColorOf,
+  onBirthdayClick,
   onEventClick,
   onTaskClick,
   onToggleTask,
@@ -21,8 +32,10 @@ export function AllDayLane({
   taskById,
 }: {
   allDayById: ReadonlyMap<string, EventRecord>;
+  birthdayById: ReadonlyMap<string, BirthdayOccurrence>;
   colorOf: ColorLookup;
   listColorOf: (task: TaskRecord) => string | undefined;
+  onBirthdayClick: (birthday: BirthdayOccurrence) => void;
   onEventClick: (event: EventRecord) => void;
   onTaskClick: (task: TaskRecord) => void;
   onToggleTask: (task: TaskRecord) => void;
@@ -76,6 +89,32 @@ export function AllDayLane({
                   <span className={`truncate ${done ? 'line-through' : ''}`}>
                     {taskChipLabel(task)}
                   </span>
+                </div>
+              );
+            }
+            // Every non-task, non-birthday span is an event: the `!` below
+            // relies on this branch coming first.
+            const birthday = birthdayById.get(span.id);
+            if (birthday) {
+              const label = birthdayChipLabel(birthday);
+              return (
+                <div
+                  className="absolute cursor-pointer truncate rounded border border-neutral-300 bg-neutral-50 px-1 text-xs leading-5 text-neutral-700"
+                  data-birthday={birthday.record.id}
+                  key={span.id}
+                  onClick={() => onBirthdayClick(birthday)}
+                  style={{
+                    // Birthdays carry no calendar color: the neutral task
+                    // treatment with a fixed accent says "not an event".
+                    borderLeftColor: BIRTHDAY_ACCENT,
+                    borderLeftWidth: 3,
+                    left: `calc(${(span.startDayIndex / stripLength) * 100}% + 2px)`,
+                    top: span.row * 24 + 4,
+                    width: `calc(${((span.endDayIndex - span.startDayIndex) / stripLength) * 100}% - 4px)`,
+                  }}
+                  title={label}
+                >
+                  {label}
                 </div>
               );
             }
