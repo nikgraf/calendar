@@ -1,0 +1,50 @@
+appId: com.solunivo.app
+name: Birthday reminder settings persist on this device
+tags:
+  - ci
+---
+- runFlow: ../common/launch.yaml
+- tapOn:
+    id: 'open-settings'
+- waitForAnimationToEnd:
+    timeout: 5000
+- scrollUntilVisible:
+    element:
+      id: 'birthday-reminders'
+    direction: DOWN
+    timeout: 10000
+- assertVisible: 'Birthday reminders'
+- assertVisible:
+    id: 'birthday-device-only'
+# The chip's id carries its state ("-on" when selected). "On the day" is
+# the default; add a week ahead. The enable switch is never touched: it
+# would raise the notification permission alert on the simulator.
+- assertVisible:
+    id: 'birthday-lead-7'
+- tapOn:
+    id: 'birthday-lead-7'
+- extendedWaitUntil:
+    visible:
+      id: 'birthday-lead-7-on'
+    timeout: 5000
+- tapOn: 'Done'
+- assertVisible: 'Today'
+# Reopen: the choice was stored (device-local SQLite), not just React state.
+- tapOn:
+    id: 'open-settings'
+- waitForAnimationToEnd:
+    timeout: 5000
+- scrollUntilVisible:
+    element:
+      id: 'birthday-lead-7-on'
+    direction: DOWN
+    timeout: 10000
+# Leave the settings as found for the next flow.
+- tapOn:
+    id: 'birthday-lead-7-on'
+- extendedWaitUntil:
+    visible:
+      id: 'birthday-lead-7'
+    timeout: 5000
+- tapOn: 'Done'
+- assertVisible: 'Today'

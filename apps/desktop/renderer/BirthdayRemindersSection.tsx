@@ -37,6 +37,7 @@ export function BirthdayRemindersSection() {
       </p>
       <label className="mt-3 flex items-center gap-2 text-sm">
         <input
+          aria-label="Remind me about birthdays"
           checked={settings.enabled}
           onChange={(change) => save({ enabled: change.target.checked })}
           type="checkbox"

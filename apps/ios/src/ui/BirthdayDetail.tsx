@@ -3,11 +3,14 @@ import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { sheetStyles } from './editSheetShared.ts';
 import { palette } from './theme.ts';
 
+// Through a PlainDate in a leap year: the polyfill cannot localise a
+// PlainMonthDay ("cannot format PlainMonthDay with calendar iso8601"),
+// and 2000 keeps Feb 29 formattable.
 const monthDay = (record: { readonly day: number; readonly month: number }): string =>
-  Temporal.PlainMonthDay.from({ day: record.day, month: record.month }).toLocaleString('en-US', {
-    day: 'numeric',
-    month: 'long',
-  });
+  Temporal.PlainDate.from({ day: record.day, month: record.month, year: 2000 }).toLocaleString(
+    'en-US',
+    { day: 'numeric', month: 'long' },
+  );
 
 const countdown = (daysUntil: number, ageTurning: number | undefined): string => {
   const turns = ageTurning === undefined ? '' : ` — turns ${String(ageTurning)}`;
