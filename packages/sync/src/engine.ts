@@ -1,6 +1,7 @@
 import {
   EventRecord,
   eventsScope,
+  type GoogleBirthday,
   type GoogleContact,
   plainDateToUtcMs,
   SyncState,
@@ -8,6 +9,7 @@ import {
 } from '@calendar/core';
 import {
   AccountRepo,
+  BirthdayRepo,
   CalendarRepo,
   ContactRepo,
   EventRepo,
@@ -15,6 +17,7 @@ import {
   TaskRepo,
 } from '@calendar/db';
 import {
+  GOOGLE_BIRTHDAYS_CALENDAR_ID,
   GoogleCalendarClient,
   GooglePeopleClient,
   GoogleTasksClient,
@@ -23,6 +26,7 @@ import {
   mapGcalEvent,
   mapGcalTask,
   mapGcalTaskList,
+  mapPersonBirthday,
   mapPersonContacts,
   type GcalEvent,
   type GcalPeoplePage,
@@ -150,6 +154,7 @@ const make: Effect.Effect<
   SyncEngineShape,
   never,
   | AccountRepo
+  | BirthdayRepo
   | CalendarRepo
   | ContactRepo
   | EventMutations
@@ -166,6 +171,7 @@ const make: Effect.Effect<
   const tasksClient = yield* GoogleTasksClient;
   const peopleClient = yield* GooglePeopleClient;
   const accountRepo = yield* AccountRepo;
+  const birthdayRepo = yield* BirthdayRepo;
   const calendarRepo = yield* CalendarRepo;
   const contactRepo = yield* ContactRepo;
   const eventRepo = yield* EventRepo;
@@ -209,7 +215,10 @@ const make: Effect.Effect<
             );
             const upserts = [];
             for (const entry of page.items ?? []) {
-              if (entry.deleted) {
+              // Birthdays render from the People API (with source and
+              // year); the read-only Birthdays calendar would show every
+              // one of them twice, so it is treated as deleted upstream.
+              if (entry.deleted || entry.id === GOOGLE_BIRTHDAYS_CALENDAR_ID) {
                 deletedIds.push(entry.id);
                 continue;
               }
@@ -236,6 +245,11 @@ const make: Effect.Effect<
 
       if (state?.syncToken) {
         yield* calendarRepo.removeByIds(account.id, result.deletedIds);
+        // An install that synced the Birthdays calendar before it was
+        // skipped never gets it re-sent unchanged: drop the row once.
+        if (previousVisibility.has(GOOGLE_BIRTHDAYS_CALENDAR_ID)) {
+          yield* calendarRepo.removeByIds(account.id, [GOOGLE_BIRTHDAYS_CALENDAR_ID]);
+        }
       } else {
         // Full pass: anything not seen no longer exists upstream.
         yield* calendarRepo.removeMissing(account.id, result.keptIds);
@@ -457,6 +471,7 @@ const make: Effect.Effect<
           let pageToken: string | undefined;
           let nextSyncToken: string | null = null;
           const collected: Array<GoogleContact> = [];
+          const collectedBirthdays: Array<GoogleBirthday> = [];
           do {
             const page = yield* withTransientRetry(
               list({
@@ -466,6 +481,8 @@ const make: Effect.Effect<
               }),
             );
             const upserts: Array<GoogleContact> = [];
+            // Saved contacts only: otherContacts.list cannot return birthdays.
+            const birthdays: Array<GoogleBirthday> = [];
             const deleted: Array<string> = [];
             for (const person of persons(page)) {
               if (person.metadata?.deleted) {
@@ -474,6 +491,12 @@ const make: Effect.Effect<
                 upserts.push(
                   ...mapPersonContacts(person, { accountId: account.id, isOther: tier.isOther }),
                 );
+                const birthday = tier.isOther
+                  ? undefined
+                  : mapPersonBirthday(person, { accountId: account.id });
+                if (birthday) {
+                  birthdays.push(birthday);
+                }
               }
             }
             if (syncToken) {
@@ -485,8 +508,18 @@ const make: Effect.Effect<
                 ...new Set(persons(page).map((person) => person.resourceName)),
               ]);
               yield* contactRepo.upsertMany(upserts, passStartedAt);
+              if (!tier.isOther) {
+                // Same rule as the email rows: a re-sent person without a
+                // birthday loses the cached one.
+                yield* birthdayRepo.deleteByResourceNames(account.id, [
+                  ...deleted,
+                  ...new Set(persons(page).map((person) => person.resourceName)),
+                ]);
+                yield* birthdayRepo.upsertMany(birthdays, passStartedAt);
+              }
             } else {
               collected.push(...upserts);
+              collectedBirthdays.push(...birthdays);
             }
             pageToken = page.nextPageToken;
             nextSyncToken = page.nextSyncToken ?? nextSyncToken;
@@ -498,6 +531,13 @@ const make: Effect.Effect<
               isOther: tier.isOther,
               syncedAt: passStartedAt,
             });
+            if (!tier.isOther) {
+              yield* birthdayRepo.replaceForAccount({
+                accountId: account.id,
+                birthdays: collectedBirthdays,
+                syncedAt: passStartedAt,
+              });
+            }
           }
           return nextSyncToken;
         });
@@ -748,6 +788,7 @@ export class SyncEngine extends Context.Service<SyncEngine, SyncEngineShape>()('
     SyncEngine,
     never,
     | AccountRepo
+    | BirthdayRepo
     | CalendarRepo
     | ContactRepo
     | EventMutations
