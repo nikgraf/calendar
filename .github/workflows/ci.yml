@@ -99,7 +99,7 @@ jobs:
       - run: pnpm test:e2e
       - name: Upload e2e diagnostics
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: e2e-diagnostics-${{ github.run_attempt }}
           path: |
@@ -148,7 +148,7 @@ jobs:
       - run: E2E=1 CALENDAR_E2E_REMINDERS=real pnpm exec vp test run apps/desktop/e2e/remindersReal.e2e.ts
       - name: Upload e2e diagnostics
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: e2e-reminders-diagnostics-${{ github.run_attempt }}
           path: |
@@ -324,7 +324,7 @@ jobs:
           done
       - name: Upload Maestro diagnostics
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ios-e2e-diagnostics-${{ github.run_attempt }}
           path: |
@@ -476,7 +476,7 @@ jobs:
           codesign --verify --deep --strict --verbose=2 "$APP"
           spctl --assess --type execute -vv "$APP"
           xcrun stapler validate "$APP"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: Solunivo-testing-${{ env.SHORT_SHA }}
           path: apps/desktop/out/make/zip/darwin/arm64/*.zip
