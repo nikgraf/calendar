@@ -27,9 +27,11 @@ import {
 import { TokenStore } from '@calendar/google';
 import { RemindersClient } from '@calendar/reminders';
 import { Clock, Effect, Queue, Stream } from 'effect';
+import { BirthdayReminders } from './birthdayReminders.ts';
 import { loadMergedBirthdays } from './birthdays.ts';
 import { DeviceContacts } from './deviceContacts.ts';
 import { readBirthdayReminderSettings, writeBirthdayReminderSettings } from './deviceSettings.ts';
+import { NotificationSink } from './notificationSink.ts';
 import { SyncEngine } from './engine.ts';
 import { EventMutations } from './mutations.ts';
 
@@ -38,6 +40,7 @@ const DEFAULT_SEARCH_LIMIT = 8;
 
 export type CommonBackendServices =
   | AccountRepo
+  | BirthdayReminders
   | BirthdayRepo
   | CalendarRepo
   | ContactRepo
@@ -46,6 +49,7 @@ export type CommonBackendServices =
   | DeviceSettingsRepo
   | EventMutations
   | EventRepo
+  | NotificationSink
   | PendingOpRepo
   | RemindersClient
   | SyncEngine
@@ -224,10 +228,18 @@ export const commonBackendHandlers: Omit<BackendHandlers<CommonBackendServices>,
       return rankContacts(query, [...google, ...device], take);
     }),
 
-  // Permission and the scheduler arrive with the reminders service; until
-  // then saving is the whole story.
+  // Saves, asks the OS for notification permission when enabling on a
+  // platform that pre-schedules (iOS), and runs a reminder pass right
+  // away so the schedule reflects the new choice.
   setBirthdayReminderSettings: (settings) =>
-    Effect.map(writeBirthdayReminderSettings(settings), () => ({ notificationsGranted: true })),
+    Effect.gen(function* () {
+      yield* writeBirthdayReminderSettings(settings);
+      const sink = yield* NotificationSink;
+      const notificationsGranted =
+        settings.enabled && sink.kind === 'scheduled' ? yield* sink.ensurePermission() : true;
+      yield* Effect.forkDetach((yield* BirthdayReminders).run());
+      return { notificationsGranted };
+    }),
 
   setCalendarColor: (params) =>
     Effect.gen(function* () {

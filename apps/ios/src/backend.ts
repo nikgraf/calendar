@@ -1,5 +1,6 @@
 import {
   makeDirectBackendClient,
+  Temporal,
   TokenSet,
   type BackendClient,
   type BackendHandlers,
@@ -14,11 +15,14 @@ import {
   TokenStore,
 } from '@calendar/google';
 import {
+  BirthdayReminders,
   commonBackendHandlers,
   DeviceContacts,
   EventMutations,
   finishAddAccount,
   makeSyncKicker,
+  noopNotificationSink,
+  NotificationSink,
   SyncEngine,
   type CommonBackendServices,
 } from '@calendar/sync';
@@ -90,6 +94,7 @@ const platformLayer = Layer.mergeAll(
 
 const appLayer = SyncEngine.layer.pipe(
   Layer.provideMerge(EventMutations.layer),
+  Layer.provideMerge(BirthdayReminders.layer({ timeZone: Temporal.Now.timeZoneId() })),
   Layer.provideMerge(GoogleCalendarClient.layer),
   Layer.provideMerge(GoogleTasksClient.layer),
   Layer.provideMerge(GooglePeopleClient.layer),
@@ -99,6 +104,8 @@ const appLayer = SyncEngine.layer.pipe(
   Layer.provideMerge(TokenManager.layer),
   Layer.provideMerge(dbLayer),
   Layer.provideMerge(platformLayer),
+  // Local notifications land with expo-notifications in a later commit.
+  Layer.provideMerge(Layer.succeed(NotificationSink, noopNotificationSink)),
 );
 
 const runtime = ManagedRuntime.make(appLayer);
@@ -145,6 +152,7 @@ export const startSync = (): void => {
       Effect.gen(function* () {
         const engine = yield* SyncEngine;
         yield* engine.start();
+        yield* (yield* BirthdayReminders).start();
       }),
     )
     .catch(() => {
