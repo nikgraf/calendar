@@ -70,6 +70,8 @@ describe('runMigrations', () => {
       yield* sql`DROP TABLE tasks`;
       yield* sql`DROP TABLE task_lists`;
       yield* sql`DROP TABLE contacts`;
+      yield* sql`DROP TABLE contact_birthdays`;
+      yield* sql`DROP TABLE device_settings`;
       expect(yield* columnsOf('events')).not.toContain('hangout_link');
 
       yield* runMigrations;

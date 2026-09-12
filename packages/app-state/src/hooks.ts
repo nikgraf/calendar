@@ -1,6 +1,8 @@
 import type {
   Account,
   BackendPayload,
+  BirthdayOccurrence,
+  BirthdayReminderSettings,
   BackendSuccess,
   CalendarInfo,
   Contact,
@@ -140,6 +142,32 @@ export const useTasksInRangeStable = (
   return Option.isSome(value) ? value.value : previous;
 };
 
+/**
+ * Contact birthdays falling inside [startDate, endDate] (inclusive
+ * 'YYYY-MM-DD' bounds), with the same keep-previous behavior as
+ * useTasksInRangeStable.
+ */
+export const useBirthdaysInRangeStable = (
+  startDate: string,
+  endDate: string,
+): ReadonlyArray<BirthdayOccurrence> => {
+  const atoms = useBackendAtoms();
+  const result = useAtomValue(atoms.birthdaysInRange(`${startDate}:${endDate}`));
+  const value = AsyncResult.value(result);
+  const [previous, setPrevious] = useState<ReadonlyArray<BirthdayOccurrence>>([]);
+  if (Option.isSome(value) && value.value !== previous) {
+    // Render-phase state adjustment (the React "derive from props" pattern).
+    setPrevious(value.value);
+  }
+  return Option.isSome(value) ? value.value : previous;
+};
+
+/** The device-local reminder preferences; null until the first read resolves. */
+export const useBirthdayReminderSettings = (): BirthdayReminderSettings | null => {
+  const result = useAtomValue(useBackendAtoms().birthdayReminderSettings);
+  return Option.getOrNull(AsyncResult.value(result));
+};
+
 /** Reminders lists carry a color; Google lists render neutral. Both lanes need this. */
 export const useListColorLookup = (): ((task: TaskRecord) => string | undefined) => {
   const taskLists = useTaskLists();
@@ -194,6 +222,7 @@ export const useBackendMutations = () => {
       discardPendingOp: set('discardPendingOp'),
       removeAccount: set('removeAccount'),
       respondToEvent: set('respondToEvent'),
+      setBirthdayReminderSettings: set('setBirthdayReminderSettings'),
       setCalendarColor: set('setCalendarColor'),
       setCalendarVisible: set('setCalendarVisible'),
       setTaskListVisible: set('setTaskListVisible'),

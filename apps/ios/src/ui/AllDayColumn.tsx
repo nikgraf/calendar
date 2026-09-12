@@ -1,19 +1,28 @@
-import { type EventRecord, taskChipLabel, type TaskRecord } from '@calendar/core';
+import {
+  BIRTHDAY_ACCENT,
+  type BirthdayOccurrence,
+  birthdayChipLabel,
+  type EventRecord,
+  taskChipLabel,
+  type TaskRecord,
+} from '@calendar/core';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { chipTextColor, palette } from './theme.ts';
 import { ALL_DAY_ROW_HEIGHT } from './timelineLayout.ts';
 
 /**
- * One day's all-day chips (due tasks first, then events), one chip per
- * row. Past `maxChips` the column shows the first rows and a "+N more"
- * chip that expands the lane.
+ * One day's all-day chips (due tasks, then birthdays, then events), one
+ * chip per row. Past `maxChips` the column shows the first rows and a
+ * "+N more" chip that expands the lane.
  */
 export function AllDayColumn({
+  birthdays,
   colorOf,
   compact,
   events,
   listColorOf,
   maxChips,
+  onBirthdayPress,
   onEventPress,
   onShowMore,
   onTaskPress,
@@ -21,12 +30,15 @@ export function AllDayColumn({
   tasks,
   width,
 }: {
+  /** Birthdays falling on this day. */
+  birthdays: ReadonlyArray<BirthdayOccurrence>;
   colorOf: (event: EventRecord) => string;
   compact: boolean;
   /** All-day events on this day. */
   events: ReadonlyArray<EventRecord>;
   listColorOf: (task: TaskRecord) => string | undefined;
   maxChips: number;
+  onBirthdayPress: (birthday: BirthdayOccurrence) => void;
   onEventPress: (event: EventRecord) => void;
   onShowMore: () => void;
   onTaskPress: (task: TaskRecord) => void;
@@ -35,13 +47,17 @@ export function AllDayColumn({
   tasks: ReadonlyArray<TaskRecord>;
   width: number;
 }) {
-  const total = tasks.length + events.length;
+  const total = tasks.length + birthdays.length + events.length;
   // A column that fits shows everything; one that overflows gives its
   // last row to the "+N more" chip.
   const limit = total > maxChips ? maxChips - 1 : total;
   const visibleTasks = tasks.slice(0, limit);
-  const visibleEvents = events.slice(0, Math.max(limit - visibleTasks.length, 0));
-  const hidden = total - visibleTasks.length - visibleEvents.length;
+  const visibleBirthdays = birthdays.slice(0, Math.max(limit - visibleTasks.length, 0));
+  const visibleEvents = events.slice(
+    0,
+    Math.max(limit - visibleTasks.length - visibleBirthdays.length, 0),
+  );
+  const hidden = total - visibleTasks.length - visibleBirthdays.length - visibleEvents.length;
   return (
     <View style={[styles.allDayColumn, { width }]}>
       {visibleTasks.map((task) => {
@@ -93,6 +109,29 @@ export function AllDayColumn({
               </Text>
             </Pressable>
           </View>
+        );
+      })}
+      {visibleBirthdays.map((birthday) => {
+        const label = birthdayChipLabel(birthday);
+        // Birthdays carry no calendar color: the neutral task treatment
+        // with a fixed accent says "not an event".
+        return (
+          <Pressable
+            accessibilityLabel={label}
+            accessibilityRole="button"
+            hitSlop={4}
+            key={`birthday:${birthday.record.id}`}
+            onPress={() => onBirthdayPress(birthday)}
+            style={[styles.allDayChip, styles.taskChip, styles.birthdayChip]}
+            testID="birthday-chip"
+          >
+            <Text
+              numberOfLines={1}
+              style={[styles.allDayText, compact && styles.allDayTextCompact, styles.taskText]}
+            >
+              {label}
+            </Text>
+          </Pressable>
         );
       })}
       {visibleEvents.map((event) => {
@@ -158,6 +197,10 @@ const styles = StyleSheet.create({
   },
   allDayTextCompact: {
     fontSize: 11,
+  },
+  birthdayChip: {
+    borderLeftColor: BIRTHDAY_ACCENT,
+    borderLeftWidth: 3,
   },
   moreChip: {
     backgroundColor: '#f5f5f5',

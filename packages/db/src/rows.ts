@@ -4,6 +4,7 @@ import {
   CalendarInfo,
   Contact,
   EventRecord,
+  GoogleBirthday,
   PendingOp,
   SyncState,
   TaskListInfo,
@@ -57,6 +58,32 @@ export const contactFromRow = (row: ContactRow): Contact =>
     isOtherContact: row.is_other === 1,
     source: 'google',
   });
+
+export interface ContactBirthdayRow {
+  readonly account_id: string;
+  readonly resource_name: string;
+  readonly display_name: string;
+  readonly month: number;
+  readonly day: number;
+  readonly year: number | null;
+  readonly synced_at: number;
+}
+
+export const googleBirthdayFromRow = (row: ContactBirthdayRow): GoogleBirthday =>
+  new GoogleBirthday({
+    accountId: row.account_id,
+    day: row.day,
+    displayName: row.display_name,
+    month: row.month,
+    resourceName: row.resource_name,
+    year: row.year ?? undefined,
+  });
+
+export interface DeviceSettingRow {
+  readonly key: string;
+  readonly value: string;
+  readonly updated_at: number;
+}
 
 export interface TaskListRow {
   readonly account_id: string;

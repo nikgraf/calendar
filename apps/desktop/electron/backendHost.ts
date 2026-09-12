@@ -1,10 +1,12 @@
 import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
-import { AppBackendRpcs, type BackendHandlers } from '@calendar/core';
+import { AppBackendRpcs, type BackendHandlers, Temporal } from '@calendar/core';
 import {
   AccountRepo,
+  BirthdayRepo,
   CalendarRepo,
   ContactRepo,
+  DeviceSettingsRepo,
   EventRepo,
   forwardingReactivity,
   makeInvalidationBus,
@@ -22,12 +24,14 @@ import {
   TokenStore,
 } from '@calendar/google';
 import {
+  BirthdayReminders,
   commonBackendHandlers,
   DeviceContacts,
   EventMutations,
   finishAddAccount,
   makeAppBackendLayer,
   makeSyncKicker,
+  NotificationSink,
   SyncEngine,
 } from '@calendar/sync';
 import { SqliteClient } from '@effect/sql-sqlite-node';
@@ -40,6 +44,7 @@ import { loadOAuthConfig } from './oauthConfig.ts';
 import { RemindersClient } from '@calendar/reminders';
 import { ContactsClient } from '@calendar/contacts';
 import { desktopContactsLayer } from './contactsClient.ts';
+import { desktopNotificationSink } from './notifications.ts';
 import { desktopRemindersLayer } from './remindersClient.ts';
 import { rpcServerProtocol } from './rpcProtocol.ts';
 import { safeStorageTokenStore } from './tokens/safeStorageStore.ts';
@@ -79,6 +84,7 @@ export const startBackendHost = (): void => {
 
   const appLayer = SyncEngine.layer.pipe(
     Layer.provideMerge(EventMutations.layer),
+    Layer.provideMerge(BirthdayReminders.layer({ timeZone: Temporal.Now.timeZoneId() })),
     Layer.provideMerge(GoogleCalendarClient.layer),
     Layer.provideMerge(GoogleTasksClient.layer),
     Layer.provideMerge(GooglePeopleClient.layer),
@@ -88,6 +94,7 @@ export const startBackendHost = (): void => {
     Layer.provideMerge(TokenManager.layer),
     Layer.provideMerge(dbLayer),
     Layer.provideMerge(platformLayer),
+    Layer.provideMerge(desktopNotificationSink),
   );
 
   const requireOAuth = Effect.suspend(() =>
@@ -105,12 +112,16 @@ export const startBackendHost = (): void => {
 
   const handlers: BackendHandlers<
     | AccountRepo
+    | BirthdayReminders
+    | BirthdayRepo
     | CalendarRepo
     | ContactRepo
     | ContactsClient
+    | DeviceSettingsRepo
     | DeviceContacts
     | EventMutations
     | EventRepo
+    | NotificationSink
     | PendingOpRepo
     | RemindersClient
     | SyncEngine
@@ -150,6 +161,7 @@ export const startBackendHost = (): void => {
       Effect.gen(function* () {
         const engine = yield* SyncEngine;
         yield* engine.start();
+        yield* (yield* BirthdayReminders).start();
         console.log('[backend] runtime ready, rpc server + scheduler started');
       }),
     )

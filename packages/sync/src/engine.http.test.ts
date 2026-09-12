@@ -1,13 +1,20 @@
 import { Account } from '@calendar/core';
 import {
   AccountRepo,
+  BirthdayRepo,
+  CalendarRepo,
   EventRepo,
   PendingOpRepo,
   reposLayer,
   runMigrations,
   TaskRepo,
 } from '@calendar/db';
-import { GoogleCalendarClient, GooglePeopleClient, GoogleTasksClient } from '@calendar/google';
+import {
+  GOOGLE_BIRTHDAYS_CALENDAR_ID,
+  GoogleCalendarClient,
+  GooglePeopleClient,
+  GoogleTasksClient,
+} from '@calendar/google';
 import { RemindersClient, unavailableRemindersClient } from '@calendar/reminders';
 import { SqliteClient } from '@effect/sql-sqlite-node';
 import { expect, it } from '@effect/vitest';
@@ -43,12 +50,12 @@ const engineLayer = (google: FakeGoogle) =>
     Layer.provideMerge(google.layer),
   );
 
-const seedAccount = (tasksEnabled: boolean) =>
+const seedAccount = (tasksEnabled: boolean, contactsEnabled = false) =>
   Effect.gen(function* () {
     const accounts = yield* AccountRepo;
     yield* accounts.upsert(
       new Account({
-        contactsEnabled: false,
+        contactsEnabled,
         createdAt: 1,
         email: 'nik@example.com',
         id: 'acc-1',
@@ -80,6 +87,39 @@ const eventTitles = Effect.gen(function* () {
 });
 
 describe('SyncEngine over HTTP (fake Google)', () => {
+  it.effect('birthdays come from People, and the Birthdays calendar is never synced', () => {
+    const google = new FakeGoogle({
+      calendars: [
+        { accessRole: 'owner', id: 'cal-1', primary: true, summary: 'Personal' },
+        { accessRole: 'reader', id: GOOGLE_BIRTHDAYS_CALENDAR_ID, summary: 'Birthdays' },
+      ],
+      people: [
+        {
+          birthdays: [{ date: { day: 4, month: 3, year: 1994 } }],
+          names: [{ displayName: 'Alice Example' }],
+          resourceName: 'people/c1',
+        },
+      ],
+    });
+    return Effect.gen(function* () {
+      yield* seedAccount(false, true);
+      yield* (yield* SyncEngine).syncAll();
+      const calendars = yield* (yield* CalendarRepo).list('acc-1');
+      expect(calendars.map((calendar) => calendar.id)).toEqual(['cal-1']);
+      expect(
+        google.requests.some((request) => request.url.includes('addressbook%23contacts')),
+      ).toBe(false);
+      const birthdays = yield* (yield* BirthdayRepo).listAll();
+      expect(birthdays.map((row) => [row.displayName, row.month, row.day, row.year])).toEqual([
+        ['Alice Example', 3, 4, 1994],
+      ]);
+      const connections = google.requests.find((request) => request.url.includes('/connections'));
+      const others = google.requests.find((request) => request.url.includes('/otherContacts'));
+      expect(new URL(connections!.url).searchParams.get('personFields')).toContain('birthdays');
+      expect(new URL(others!.url).searchParams.get('readMask')).not.toContain('birthdays');
+    }).pipe(Effect.provide(engineLayer(google)));
+  });
+
   it.effect('a full pass stores the calendar and its events; the next pass is incremental', () => {
     const google = newFake();
     google.putEvent('cal-1', timed('a', 9));
