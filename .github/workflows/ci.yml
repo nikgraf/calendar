@@ -86,7 +86,7 @@ jobs:
           node-version: 24
           cache: pnpm
       - name: Cache the Electron binary
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ~/Library/Caches/electron
           key: electron-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
@@ -127,12 +127,12 @@ jobs:
           node-version: 24
           cache: pnpm
       - name: Cache the Electron binary
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ~/Library/Caches/electron
           key: electron-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
       - name: Cache the Swift helper build
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: apps/desktop/helper/.build
           key: helper-${{ runner.os }}-${{ hashFiles('apps/desktop/helper/Package.swift', 'apps/desktop/helper/Package.resolved', 'apps/desktop/helper/Sources/**', 'packages/reminders/swift/**', 'packages/contacts/swift/**') }}
@@ -200,7 +200,7 @@ jobs:
           echo "hash=$HASH" >> "$GITHUB_OUTPUT"
       - id: devclient
         name: Restore the dev client for this fingerprint
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: apps/ios/build/devclient
           # No restore-keys: a build for another fingerprint is never valid.
@@ -217,7 +217,7 @@ jobs:
         run: bash apps/ios/e2e/ci/prepare-simulator.sh apps/ios/build/devclient/Solunivo.app
       - name: Cache Maestro
         id: maestro
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ~/.maestro
           key: maestro-${{ runner.os }}-${{ env.MAESTRO_VERSION }}
@@ -355,7 +355,7 @@ jobs:
           node-version: 24
           cache: pnpm
       - name: Cache the Swift helper build
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: apps/desktop/helper/.build
           key: helper-${{ runner.os }}-${{ hashFiles('apps/desktop/helper/Package.swift', 'apps/desktop/helper/Package.resolved', 'apps/desktop/helper/Sources/**', 'packages/reminders/swift/**', 'packages/contacts/swift/**') }}
@@ -437,7 +437,7 @@ jobs:
           security list-keychains -d user -s "$KEYCHAIN_PATH" login.keychain-db
           rm "$RUNNER_TEMP/certificate.p12"
       - name: Cache the Swift helper build
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: apps/desktop/helper/.build
           key: helper-${{ runner.os }}-${{ hashFiles('apps/desktop/helper/Package.swift', 'apps/desktop/helper/Package.resolved', 'apps/desktop/helper/Sources/**', 'packages/reminders/swift/**', 'packages/contacts/swift/**') }}
