@@ -1,4 +1,10 @@
-import { PAN_BUFFER_DAYS, type TaskRecord, Temporal, utcMsToPlainDate } from '@calendar/core';
+import {
+  type BirthdayOccurrence,
+  PAN_BUFFER_DAYS,
+  type TaskRecord,
+  Temporal,
+  utcMsToPlainDate,
+} from '@calendar/core';
 import {
   useAccounts,
   useCalendarNavigation,
@@ -32,6 +38,7 @@ export function CalendarApp() {
   const [showSettings, setShowSettings] = useState(false);
   const [editorSeed, setEditorSeed] = useState<EditorSeed | null>(null);
   const [editTask, setEditTask] = useState<TaskRecord | null>(null);
+  const [viewBirthday, setViewBirthday] = useState<BirthdayOccurrence | null>(null);
   const [commandBarOpen, setCommandBarOpen] = useState(false);
 
   const events = useEventsInRangeStable(range.startUtc, range.endUtc);
@@ -51,7 +58,12 @@ export function CalendarApp() {
   const accounts = useAccounts();
   const colorOf = useMemo(() => makeColorLookup(calendars), [calendars]);
 
-  const dialogOpen = commandBarOpen || editorSeed !== null || editTask !== null || showSettings;
+  const dialogOpen =
+    commandBarOpen ||
+    editorSeed !== null ||
+    editTask !== null ||
+    viewBirthday !== null ||
+    showSettings;
   useEffect(() => {
     const isTyping = (target: EventTarget | null) => {
       const element = target as { isContentEditable?: boolean; tagName?: string } | null;
@@ -193,7 +205,7 @@ export function CalendarApp() {
             days={days}
             events={events}
             listColorOf={listColorOf}
-            onBirthdayClick={() => undefined}
+            onBirthdayClick={(birthday) => setViewBirthday(birthday)}
             onEventClick={(event) => setEditorSeed({ event, initialDate: focused })}
             onNavigate={panByDays}
             onSlotClick={(date, hour) => setEditorSeed({ initialDate: date, initialHour: hour })}
@@ -223,13 +235,21 @@ export function CalendarApp() {
         />
       ) : null}
 
-      {editorSeed || editTask ? (
+      {editorSeed || editTask || viewBirthday ? (
         <EventEditor
+          birthday={viewBirthday ?? undefined}
           calendars={calendars}
-          key={editTask ? `task:${editTask.id}` : (editorSeed?.event?.id ?? 'new')}
+          key={
+            viewBirthday
+              ? `birthday:${viewBirthday.record.id}:${viewBirthday.date}`
+              : editTask
+                ? `task:${editTask.id}`
+                : (editorSeed?.event?.id ?? 'new')
+          }
           onClose={() => {
             setEditorSeed(null);
             setEditTask(null);
+            setViewBirthday(null);
           }}
           seed={editorSeed ?? { initialDate: focused }}
           task={editTask ?? undefined}

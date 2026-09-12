@@ -13,6 +13,7 @@ import {
   useTasksInRangeStable,
 } from '@calendar/app-state';
 import {
+  type BirthdayOccurrence,
   DAY_SWIPE_BUFFER,
   makeColorLookup,
   type TaskRecord,
@@ -57,6 +58,7 @@ function CalendarScreen() {
   const [showSettings, setShowSettings] = useState(false);
   const [editSeed, setEditSeed] = useState<EditSeed | null>(null);
   const [editTask, setEditTask] = useState<TaskRecord | null>(null);
+  const [viewBirthday, setViewBirthday] = useState<BirthdayOccurrence | null>(null);
 
   useBackendInvalidations(subscribeInvalidations);
   useEffect(() => {
@@ -225,7 +227,7 @@ function CalendarScreen() {
             days={days}
             events={events}
             listColorOf={listColorOf}
-            onBirthdayPress={() => undefined}
+            onBirthdayPress={(birthday) => setViewBirthday(birthday)}
             onEventPress={(event) => setEditSeed({ event, initialDate: focused })}
             onNavigate={step}
             onTaskPress={(task) => setEditTask(task)}
@@ -245,17 +247,21 @@ function CalendarScreen() {
 
       {/* Keyed + conditionally mounted: the sheet seeds its form fields from
           `seed` in useState initializers, which only run on mount. */}
-      {editSeed || editTask ? (
+      {editSeed || editTask || viewBirthday ? (
         <EventEditSheet
+          birthday={viewBirthday ?? undefined}
           calendars={calendars}
           key={
-            editTask
-              ? `task:${editTask.id}`
-              : (editSeed?.event?.id ?? `new:${editSeed?.initialDate.toString()}`)
+            viewBirthday
+              ? `birthday:${viewBirthday.record.id}:${viewBirthday.date}`
+              : editTask
+                ? `task:${editTask.id}`
+                : (editSeed?.event?.id ?? `new:${editSeed?.initialDate.toString()}`)
           }
           onClose={() => {
             setEditSeed(null);
             setEditTask(null);
+            setViewBirthday(null);
           }}
           seed={editSeed ?? { initialDate: focused }}
           task={editTask ?? undefined}
