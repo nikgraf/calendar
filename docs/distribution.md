@@ -118,7 +118,13 @@ latest build.
 
 Native dependencies change the fingerprint: adding `expo-notifications`
 (birthday reminders, 2026-09-12) meant a new dev client for CI and a
-TestFlight build before OTA updates resumed for testers.
+TestFlight build before OTA updates resumed for testers. Its config plugin
+is auto-applied by prebuild and adds the `aps-environment` (push)
+entitlement, which the App Store profile does not carry — the first
+TestFlight build failed on exactly that. Birthday reminders are local
+notifications only, so `apps/ios/plugins/withLocalNotificationsOnly.cjs`
+(listed last in `app.json` plugins) removes the entitlement again; the
+resolved entitlements are visible with `expo config --type introspect`.
 
 Two comparison caveats, both fail-safe. The baseline is the latest
 _finished_ build, not "what testers run": installs still on an older
