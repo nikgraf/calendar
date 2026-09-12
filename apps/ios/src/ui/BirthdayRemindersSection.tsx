@@ -1,4 +1,4 @@
-import { useBirthdayReminderSettings, useGuardedMutations } from '@calendar/app-state';
+import { useBackendMutations, useBirthdayReminderSettings } from '@calendar/app-state';
 import {
   BIRTHDAY_LEAD_DAYS,
   BIRTHDAY_REMINDERS_DEVICE_ONLY,
@@ -7,6 +7,7 @@ import {
   leadDaysLabel,
 } from '@calendar/core';
 import DateTimePicker from '@react-native-community/datetimepicker';
+import { useState } from 'react';
 import { Pressable, StyleSheet, Switch, Text, View } from 'react-native';
 import { dateFromParts, toTimeString } from './editSheetShared.ts';
 import { sectionStyles } from './settingsShared.ts';
@@ -18,13 +19,22 @@ import { palette } from './theme.ts';
  */
 export function BirthdayRemindersSection() {
   const settings = useBirthdayReminderSettings();
-  const { setBirthdayReminderSettings } = useGuardedMutations();
+  const { setBirthdayReminderSettings } = useBackendMutations();
+  const [notice, setNotice] = useState<string | null>(null);
 
   if (!settings) {
     return null;
   }
   const save = (next: Partial<BirthdayReminderSettings>) =>
-    void setBirthdayReminderSettings({ ...settings, ...next });
+    void setBirthdayReminderSettings({ ...settings, ...next }).then(
+      ({ notificationsGranted }) =>
+        setNotice(
+          notificationsGranted
+            ? null
+            : 'Notifications are off — allow Solunivo under Settings › Notifications.',
+        ),
+      (error: unknown) => setNotice(String(error)),
+    );
   const toggleLead = (lead: BirthdayLeadDays) => {
     const on = settings.leadDays.includes(lead);
     save({
@@ -77,6 +87,11 @@ export function BirthdayRemindersSection() {
           value={dateFromParts('2026-01-01', settings.time)}
         />
       </View>
+      {notice ? (
+        <Text style={sectionStyles.action} testID="birthday-notifications-denied">
+          {notice}
+        </Text>
+      ) : null}
       <Text style={sectionStyles.meta} testID="birthday-device-only">
         {BIRTHDAY_REMINDERS_DEVICE_ONLY}
       </Text>

@@ -25,7 +25,13 @@ import {
 import { useEffect, useMemo, useState } from 'react';
 import { AppState, Pressable, SafeAreaView, StatusBar, StyleSheet, Text, View } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
-import { backendClient, kickSync, startSync, subscribeInvalidations } from './src/backend.ts';
+import {
+  backendClient,
+  kickSync,
+  runBirthdayReminders,
+  startSync,
+  subscribeInvalidations,
+} from './src/backend.ts';
 import { appleLanguageModel } from './src/appleModel.ts';
 import { appleSpeech } from './src/appleSpeech.ts';
 import { makeFindSlots } from '@calendar/ai';
@@ -66,6 +72,7 @@ function CalendarScreen() {
     const subscription = AppState.addEventListener('change', (state) => {
       if (state === 'active') {
         kickSync();
+        runBirthdayReminders();
       }
     });
     return () => subscription.remove();

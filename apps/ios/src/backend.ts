@@ -21,8 +21,6 @@ import {
   EventMutations,
   finishAddAccount,
   makeSyncKicker,
-  noopNotificationSink,
-  NotificationSink,
   SyncEngine,
   type CommonBackendServices,
 } from '@calendar/sync';
@@ -32,6 +30,7 @@ import { deleteItemAsync, getItemAsync, setItemAsync } from 'expo-secure-store';
 import { Data, Effect, Layer, ManagedRuntime, Schema } from 'effect';
 import { FetchHttpClient } from 'effect/unstable/http';
 import { signInWithGoogle } from './googleAuth.ts';
+import { iosNotificationSink } from './notifications.ts';
 import { iosContactsLayer } from './contactsClient.ts';
 import { iosRemindersLayer } from './remindersClient.ts';
 
@@ -104,8 +103,7 @@ const appLayer = SyncEngine.layer.pipe(
   Layer.provideMerge(TokenManager.layer),
   Layer.provideMerge(dbLayer),
   Layer.provideMerge(platformLayer),
-  // Local notifications land with expo-notifications in a later commit.
-  Layer.provideMerge(Layer.succeed(NotificationSink, noopNotificationSink)),
+  Layer.provideMerge(iosNotificationSink),
 );
 
 const runtime = ManagedRuntime.make(appLayer);
@@ -165,3 +163,12 @@ export const startSync = (): void => {
 export const kickSync = makeSyncKicker(() =>
   runtime.runPromise(Effect.flatMap(SyncEngine, (engine) => engine.syncAll())),
 );
+
+/** Refreshes the OS notification schedule now — on return to the foreground, next to kickSync. */
+export const runBirthdayReminders = (): void => {
+  runtime
+    .runPromise(Effect.flatMap(BirthdayReminders, (reminders) => reminders.run()))
+    .catch(() => {
+      // run() never fails; a runtime that is not up yet must not surface here.
+    });
+};
