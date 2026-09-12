@@ -1,4 +1,6 @@
 export * from './backend.ts';
+export * from './birthdays/label.ts';
+export * from './birthdays/model.ts';
 export * from './bridge/subscription.ts';
 export * from './layout/allDayLane.ts';
 export * from './layout/dayGrid.ts';
