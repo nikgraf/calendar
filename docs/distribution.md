@@ -116,6 +116,10 @@ latest build.
   job in another workflow file, so each workflow calls it; the check
   reports as "Gate / Lint, typecheck, unit tests".
 
+Native dependencies change the fingerprint: adding `expo-notifications`
+(birthday reminders, 2026-09-12) meant a new dev client for CI and a
+TestFlight build before OTA updates resumed for testers.
+
 Two comparison caveats, both fail-safe. The baseline is the latest
 _finished_ build, not "what testers run": installs still on an older
 fingerprint silently stop receiving updates until they install the newer

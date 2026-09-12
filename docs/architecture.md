@@ -169,6 +169,11 @@ Rules that keep the queue correct:
   `ContactRepo.search` for coarse candidates, adds the device list, and
   `rankContacts` (core) produces one deduped, ranked list for the
   combobox; the UI holds a bounded LRU of query atoms on `CONTACTS_KEY`.
+  The connections tier also asks for `birthdays` and writes
+  `contact_birthdays` (one row per contact, no email needed) under
+  `BIRTHDAYS_KEY`; `otherContacts.list` cannot return the field. Google's
+  read-only Birthdays calendar is skipped by `syncCalendarList` so a
+  birthday never renders twice.
 - **Apple Reminders** (the synthetic `apple-reminders` account, created by
   the `connectReminders` rpc after the EventKit prompt): SQLite holds the
   latest **complete** EventKit snapshot — open and completed, dated and
@@ -254,6 +259,27 @@ Rules that keep the queue correct:
   iOS), month grid, and an all-day lane that also hosts the task rows —
   timed reminders lead with their time and priority marker
   (`taskChipLabel`) rather than moving into the time grid.
+- Birthdays are a third all-day kind, not events: `getBirthdaysInRange`
+  merges the Google People cache and the device snapshot
+  (`DeviceContacts.birthdays()`, `CNContactBirthdayKey`) by folded name +
+  MM-DD (`mergeBirthdays`), expands occurrences per day (Feb 29 lands on
+  Feb 28 in common years), and both lanes draw a neutral chip with a
+  fixed pink accent (`birthdayChipLabel`). The detail view is read-only
+  and lists every source. Month views stay events-only for now.
+- Device-only data behind rpc: `device_settings` is a key/value table
+  for preferences that never sync (birthday reminders first). The
+  IPC-vs-rpc rule is about window concerns, not about where data lives —
+  SQLite is per device and never uploaded, and the consumer of these
+  settings is a backend job that runs inside both hosts.
+- Birthday reminders: `BirthdayReminders` (packages/sync) runs its own
+  60 s loop — deliberately outside the sync pass, so the engine carries
+  no notification dependency — and hands `planBirthdayReminders`' output
+  to the platform `NotificationSink`: desktop fires an Electron
+  `Notification` when one is due (last 24 h catch-up, fired keys kept in
+  `device_settings`), iOS replaces the pending expo-notifications
+  schedule with the next ≤ 60 whenever the plan changes. "The
+  notification is latency, the pass is correctness" applies.
+
 - The task editor forks on the selected list's provider
   (`useTaskEditorModel.provider`): Google gets title/day/notes with a
   fixed list; Reminders get time, priority, alert, repeat (shared

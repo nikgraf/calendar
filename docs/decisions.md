@@ -184,6 +184,31 @@ design decisions it settled.
       other, dedupe by email) behind a hand-rolled combobox on both
       platforms (chips, ArrowUp/Down/Enter, comma/blur accept typed
       addresses, Backspace removes the last chip).
+- [x] Show contact birthdays — done (2026-09-12): from the People API
+      `birthdays` field (connections only) and `CNContactBirthdayKey`
+      through the shared bridge (`contacts.birthdays`), merged per person
+      by folded name + MM-DD so someone in both address books is one
+      chip with two sources; the detail view is read-only and names each
+      source with the account email. Decisions: People, not Google's
+      read-only Birthdays calendar — that calendar is now skipped in
+      `syncCalendarList` (it would show everything twice and carries no
+      year); a person needs no email to have a birthday, so
+      `contact_birthdays` is its own table under `BIRTHDAYS_KEY` (the
+      typeahead never refetches on a birthday change); neutral chip with a
+      fixed pink accent because birthdays have no calendar color; Feb 29
+      renders on Feb 28 in common years; no cross-column spanning on the
+      phone; month views deferred to the tasks-in-month item.
+- [x] Birthday reminders — done (2026-09-12): a multi-select of lead
+      days {0, 1, 3, 7, 14} plus one delivery time, stored in the new
+      `device_settings` key/value table and shown as "stored only on this
+      device" — the first preference that never syncs. Decisions: SQLite
+      via rpc rather than a per-platform settings file (per-device and
+      never uploaded; the consumer is a backend job in both hosts);
+      `BirthdayReminders` runs its own 60 s loop outside the sync pass
+      and narrows on a `NotificationSink` — desktop fires Electron
+      notifications while running (24 h catch-up, fired keys remembered),
+      iOS pre-schedules the next ≤ 60 through expo-notifications and only
+      reschedules when the plan changed; per-person overrides deferred.
 
 ## Google Tasks
 

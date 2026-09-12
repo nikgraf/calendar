@@ -39,9 +39,11 @@ comment` for inline-playable video: 10 MB on Free plans, 100 MB paid
 
 ## Tier 2 — features (near-term, well-scoped)
 
-- [ ] Tasks in month view — cheapest item in the file: both month views
-      already have the data in scope and never receive it
-      (`CalendarApp.tsx:247-257`, `App.tsx:202-211`); dots or counts per day.
+- [ ] Tasks (and birthdays) in month view — cheapest item in the file:
+      both month views already have the data in scope and never receive
+      it (`CalendarApp.tsx:247-257`, `App.tsx:202-211`); dots or counts
+      per day. Birthdays are a second non-event kind since 2026-09-12 and
+      ride the same change.
 - [ ] Manage conflicts with a choice — today 412 means server wins: the op
       is dropped and `notice:conflict` broadcast (`applyOp.ts:315`), and the
       payload — the user's version — is deleted before anyone could offer
@@ -51,13 +53,10 @@ comment` for inline-playable video: 10 MB on Free plans, 100 MB paid
       (`engine.ts:42`) is `timeMin` on every full pass and `deleteStale`
       prunes older rows; browsing further back shows nothing. On-demand
       backfill or a larger floor.
-- [ ] Show contact birthdays — Google exposes a read-only Birthdays
-      calendar (`addressbook#contacts@group.v.calendar.google.com`) through
-      the normal calendarList, and `syncCalendarList` has no allow-list, so
-      it probably syncs already. Verify annual recurrence through
-      `expandRecurringEvent` and `eventType: 'birthday'`, make the editor
-      read-only for it, 🎂 chip style, toggleable calendar. Later: merge
-      device-contact birthdays.
+- [ ] Per-person birthday reminder overrides — the general lead times
+      landed (device-local, `device_settings`); a per-contact override
+      ("Mom: 2 weeks before as well") would sit on the same table keyed
+      by the merged record id, with the detail view as its entry point.
 - [ ] Tasks: subtask hierarchy — `parent`/`position` are decoded
       (`apiTypes.ts:139-140`) and dropped by `mapGcalTask`; `TaskRecord` has
       no such fields; `tasksClient.ts` has no `move`. Render indentation,
@@ -118,10 +117,7 @@ decision and platform notes live in `docs/decisions.md`.
   - Weather (also show on the day?)
   - Food tracking (nutrition data + macros)
   - Garmin data e.g. body battery
-  - Birthdays
-    - Custom reminders for birthdays
-      - standard per birthday e.g. 1 week before, 1 day before, on the day
-      - change and overwrite it per person
+  - Birthdays (shown since 2026-09-12; per-person reminder overrides are a Tier 2 item)
   - Different views:
     - Business view(s) with certain selected calendar
       - What can other people see e.g. impersonation of a colleage
