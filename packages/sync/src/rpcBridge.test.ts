@@ -51,6 +51,7 @@ const stubHandlers: BackendHandlers = {
   deleteRecurring: () => Effect.void,
   deleteTask: () => Effect.void,
   discardPendingOp: () => Effect.void,
+  getBirthdaysInRange: () => Effect.succeed([]),
   getEventsInRange: () => Effect.succeed([]),
   getTasksInRange: () => Effect.succeed([]),
   listAccounts: () => Effect.succeed([account]),

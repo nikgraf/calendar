@@ -3,6 +3,7 @@ import { Rpc, RpcGroup } from 'effect/unstable/rpc';
 import type { RpcClientError } from 'effect/unstable/rpc/RpcClientError';
 import {
   Account,
+  BirthdayOccurrence,
   CalendarInfo,
   Contact,
   EventRecord,
@@ -167,6 +168,12 @@ export class AppBackendRpcs extends RpcGroup.make(
       originalStartUtc: Schema.Number,
       scope: RecurringScope,
     },
+  }),
+  /** Contact birthdays (Google People + device) falling on days in the window, inclusive bounds. */
+  Rpc.make('getBirthdaysInRange', {
+    error: BackendError,
+    payload: { endDate: Schema.String, startDate: Schema.String },
+    success: Schema.Array(BirthdayOccurrence),
   }),
   Rpc.make('getEventsInRange', {
     error: BackendError,

@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import { AppBackendRpcs, type BackendHandlers } from '@calendar/core';
 import {
   AccountRepo,
+  BirthdayRepo,
   CalendarRepo,
   ContactRepo,
   EventRepo,
@@ -105,6 +106,7 @@ export const startBackendHost = (): void => {
 
   const handlers: BackendHandlers<
     | AccountRepo
+    | BirthdayRepo
     | CalendarRepo
     | ContactRepo
     | ContactsClient

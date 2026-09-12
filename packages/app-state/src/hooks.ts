@@ -1,6 +1,7 @@
 import type {
   Account,
   BackendPayload,
+  BirthdayOccurrence,
   BackendSuccess,
   CalendarInfo,
   Contact,
@@ -133,6 +134,26 @@ export const useTasksInRangeStable = (
   const result = useAtomValue(atoms.tasksInRange(`${startDate}:${endDate}`));
   const value = AsyncResult.value(result);
   const [previous, setPrevious] = useState<ReadonlyArray<TaskRecord>>([]);
+  if (Option.isSome(value) && value.value !== previous) {
+    // Render-phase state adjustment (the React "derive from props" pattern).
+    setPrevious(value.value);
+  }
+  return Option.isSome(value) ? value.value : previous;
+};
+
+/**
+ * Contact birthdays falling inside [startDate, endDate] (inclusive
+ * 'YYYY-MM-DD' bounds), with the same keep-previous behavior as
+ * useTasksInRangeStable.
+ */
+export const useBirthdaysInRangeStable = (
+  startDate: string,
+  endDate: string,
+): ReadonlyArray<BirthdayOccurrence> => {
+  const atoms = useBackendAtoms();
+  const result = useAtomValue(atoms.birthdaysInRange(`${startDate}:${endDate}`));
+  const value = AsyncResult.value(result);
+  const [previous, setPrevious] = useState<ReadonlyArray<BirthdayOccurrence>>([]);
   if (Option.isSome(value) && value.value !== previous) {
     // Render-phase state adjustment (the React "derive from props" pattern).
     setPrevious(value.value);

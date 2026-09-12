@@ -10,11 +10,13 @@ import {
   type BackendMethodName,
   type BackendPayload,
   type BackendSuccess,
+  birthdaysInRange,
   rankContacts,
 } from '@calendar/core';
 import { ContactsClient } from '@calendar/contacts';
 import {
   AccountRepo,
+  BirthdayRepo,
   CalendarRepo,
   ContactRepo,
   EventRepo,
@@ -24,6 +26,7 @@ import {
 import { TokenStore } from '@calendar/google';
 import { RemindersClient } from '@calendar/reminders';
 import { Clock, Effect, Queue, Stream } from 'effect';
+import { loadMergedBirthdays } from './birthdays.ts';
 import { DeviceContacts } from './deviceContacts.ts';
 import { SyncEngine } from './engine.ts';
 import { EventMutations } from './mutations.ts';
@@ -33,6 +36,7 @@ const DEFAULT_SEARCH_LIMIT = 8;
 
 export type CommonBackendServices =
   | AccountRepo
+  | BirthdayRepo
   | CalendarRepo
   | ContactRepo
   | ContactsClient
@@ -137,6 +141,9 @@ export const commonBackendHandlers: Omit<BackendHandlers<CommonBackendServices>,
       const pendingOps = yield* PendingOpRepo;
       yield* pendingOps.remove(opId);
     }),
+
+  getBirthdaysInRange: ({ endDate, startDate }) =>
+    Effect.map(loadMergedBirthdays, (records) => birthdaysInRange(records, startDate, endDate)),
 
   getEventsInRange: ({ rangeEndUtc, rangeStartUtc }) =>
     Effect.gen(function* () {

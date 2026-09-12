@@ -30,6 +30,7 @@ const makeStubClient = () => {
     deleteRecurring: () => fail('not stubbed'),
     deleteTask: () => Effect.void,
     discardPendingOp: () => Effect.void,
+    getBirthdaysInRange: () => Effect.succeed([]),
     getEventsInRange: () =>
       Effect.sync(() => {
         calls.events += 1;

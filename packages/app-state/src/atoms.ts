@@ -1,5 +1,6 @@
 import {
   ACCOUNTS_KEY,
+  BIRTHDAYS_KEY,
   CALENDARS_KEY,
   CONTACTS_KEY,
   EVENTS_KEY,
@@ -25,6 +26,7 @@ export interface BackendAtoms {
     registry: AtomRegistry.AtomRegistry,
     subscribe: (listener: (keys: ReadonlyArray<unknown>) => void) => () => void,
   ) => () => void;
+  readonly birthdaysInRange: ReturnType<typeof buildAtoms>['birthdaysInRange'];
   readonly calendars: ReturnType<typeof buildAtoms>['calendars'];
   readonly contactsSearch: ReturnType<typeof buildAtoms>['contactsSearch'];
   readonly eventsInRange: ReturnType<typeof buildAtoms>['eventsInRange'];
@@ -43,7 +45,7 @@ export interface BackendAtoms {
 const MUTATION_REACTIVITY = {
   addAccount: [ACCOUNTS_KEY, CALENDARS_KEY, EVENTS_KEY, TASKS_KEY, TASKLISTS_KEY],
   completeTask: [TASKS_KEY],
-  connectContacts: [CONTACTS_KEY],
+  connectContacts: [BIRTHDAYS_KEY, CONTACTS_KEY],
   connectReminders: [ACCOUNTS_KEY, TASKLISTS_KEY, TASKS_KEY],
   createEvent: [EVENTS_KEY],
   createTask: [TASKS_KEY],
@@ -51,7 +53,7 @@ const MUTATION_REACTIVITY = {
   deleteRecurring: [EVENTS_KEY],
   deleteTask: [TASKS_KEY],
   discardPendingOp: [OPS_KEY],
-  removeAccount: [ACCOUNTS_KEY, CALENDARS_KEY, EVENTS_KEY, TASKS_KEY, TASKLISTS_KEY],
+  removeAccount: [ACCOUNTS_KEY, BIRTHDAYS_KEY, CALENDARS_KEY, EVENTS_KEY, TASKS_KEY, TASKLISTS_KEY],
   respondToEvent: [EVENTS_KEY],
   setCalendarColor: [CALENDARS_KEY],
   setCalendarVisible: [CALENDARS_KEY, EVENTS_KEY],
@@ -145,6 +147,22 @@ const buildAtoms = (client: BackendClient) => {
       .pipe(Atom.withReactivity([TASKS_KEY]));
   });
 
+  // Keys are date strings, like tasksInRange. BIRTHDAYS_KEY fires from the
+  // Google cache writes and from a device snapshot that changed the list.
+  const birthdaysInRange = boundedAtomCache((key) => {
+    const [start, end] = key.split(':', 2);
+    const startDate = start ?? '';
+    const endDate = end ?? '';
+    return runtime
+      .atom(
+        Effect.gen(function* () {
+          const backend = yield* AppBackend;
+          return yield* backend.getBirthdaysInRange({ endDate, startDate });
+        }),
+      )
+      .pipe(Atom.withReactivity([BIRTHDAYS_KEY]));
+  });
+
   // Typeahead queries, keyed `${limit}:${query}`. CONTACTS_KEY re-runs an
   // open query when a sync pass or a grant lands.
   const contactsSearch = boundedAtomCache((key) => {
@@ -205,6 +223,7 @@ const buildAtoms = (client: BackendClient) => {
   return {
     accounts,
     bindInvalidations,
+    birthdaysInRange,
     calendars,
     contactsSearch,
     eventsInRange,
