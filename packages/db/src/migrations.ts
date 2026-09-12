@@ -211,6 +211,33 @@ const addQueueAndWindowIndexes = Effect.gen(function* () {
   yield* sql`CREATE INDEX IF NOT EXISTS idx_events_window ON events (start_utc, end_utc)`;
 });
 
+const addBirthdays = Effect.gen(function* () {
+  const sql = yield* SqlClient;
+  // People API birthdays (connections tier), one row per contact — a
+  // person needs no email address to have a birthday, so this is not a
+  // column on `contacts` (whose key includes the email).
+  yield* sql`
+    CREATE TABLE contact_birthdays (
+      account_id TEXT NOT NULL,
+      resource_name TEXT NOT NULL,
+      display_name TEXT NOT NULL,
+      month INTEGER NOT NULL,
+      day INTEGER NOT NULL,
+      year INTEGER,
+      synced_at INTEGER NOT NULL,
+      PRIMARY KEY (account_id, resource_name)
+    )`;
+  // Device-local preferences that never sync (birthday reminders are the
+  // first). SQLite is per device and never uploaded, so "device-local" is
+  // a property of the table, not of a separate settings file.
+  yield* sql`
+    CREATE TABLE device_settings (
+      key TEXT PRIMARY KEY NOT NULL,
+      value TEXT NOT NULL,
+      updated_at INTEGER NOT NULL
+    )`;
+});
+
 // The third tuple element is a *loader* whose result is the migration effect.
 export const migrations: ReadonlyArray<ResolvedMigration> = [
   [1, 'init', Effect.succeed(init)],
@@ -223,4 +250,5 @@ export const migrations: ReadonlyArray<ResolvedMigration> = [
   [8, 'add-contacts', Effect.succeed(addContacts)],
   [9, 'add-pending-op-attendees-changed', Effect.succeed(addPendingOpAttendeesChanged)],
   [10, 'add-queue-and-window-indexes', Effect.succeed(addQueueAndWindowIndexes)],
+  [11, 'add-birthdays', Effect.succeed(addBirthdays)],
 ];
