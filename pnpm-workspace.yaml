@@ -20,11 +20,11 @@ trustPolicyExclude:
 blockExoticSubdeps: true
 
 catalog:
-  effect: 4.0.0-rc.111
-  '@effect/atom-react': 4.0.0-rc.111
-  '@effect/sql-sqlite-node': 4.0.0-rc.111
-  '@effect/sql-sqlite-react-native': 4.0.0-rc.111
-  '@effect/vitest': 4.0.0-rc.111
+  effect: 4.0.0-rc.115
+  '@effect/atom-react': 4.0.0-rc.115
+  '@effect/sql-sqlite-node': 4.0.0-rc.115
+  '@effect/sql-sqlite-react-native': 4.0.0-rc.115
+  '@effect/vitest': 4.0.0-rc.115
   '@js-temporal/polyfill': ^0.5.1
   react: ^19.2.7
   react-dom: ^19.2.7
