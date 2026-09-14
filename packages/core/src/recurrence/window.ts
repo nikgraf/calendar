@@ -1,5 +1,5 @@
 import { EventRecord } from '../types.ts';
-import { expandRecurringEvent } from './expand.ts';
+import { type EventInstance, expandRecurringEvent } from './expand.ts';
 
 const masterKey = (accountId: string, calendarId: string, masterId: string): string =>
   `${accountId}\u0000${calendarId}\u0000${masterId}`;
@@ -19,6 +19,8 @@ export const assembleWindow = (
   },
   rangeStartUtc: number,
   rangeEndUtc: number,
+  /** Called for a master whose rule could not be expanded (it is left out). */
+  onSkip?: (master: EventRecord, error: unknown) => void,
 ): Array<EventRecord> => {
   // Keyed by account + calendar + master id, not master id alone: event
   // ids are Google-global, so two accounts subscribed to one shared
@@ -43,21 +45,29 @@ export const assembleWindow = (
     if (!master.recurrence || master.recurrence.length === 0) {
       continue;
     }
-    const instances = expandRecurringEvent(
-      {
-        endDate: master.endDate,
-        endUtc: master.endUtc,
-        id: master.id,
-        isAllDay: master.isAllDay,
-        recurrence: master.recurrence,
-        startDate: master.startDate,
-        startTimeZone: master.startTimeZone ?? 'UTC',
-        startUtc: master.startUtc,
-      },
-      rangeStartUtc,
-      rangeEndUtc,
-      shadowedByMaster.get(masterKey(master.accountId, master.calendarId, master.id)),
-    );
+    let instances: ReadonlyArray<EventInstance>;
+    try {
+      instances = expandRecurringEvent(
+        {
+          endDate: master.endDate,
+          endUtc: master.endUtc,
+          id: master.id,
+          isAllDay: master.isAllDay,
+          recurrence: master.recurrence,
+          startDate: master.startDate,
+          startTimeZone: master.startTimeZone ?? 'UTC',
+          startUtc: master.startUtc,
+        },
+        rangeStartUtc,
+        rangeEndUtc,
+        shadowedByMaster.get(masterKey(master.accountId, master.calendarId, master.id)),
+      );
+    } catch (error) {
+      // One unparseable or runaway rule must not blank the whole window;
+      // the rest of the calendar still renders and the caller can log it.
+      onSkip?.(master, error);
+      continue;
+    }
     for (const instance of instances) {
       results.push(
         new EventRecord({

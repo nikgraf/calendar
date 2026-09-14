@@ -17,6 +17,7 @@ export * from './editor/eventDraft.ts';
 export * from './gestures/swipeSnap.ts';
 export * from './gestures/wheelPan.ts';
 export * from './meeting.ts';
+export * from './recurrence/bounds.ts';
 export * from './recurrence/build.ts';
 export * from './recurrence/editing.ts';
 export * from './recurrence/expand.ts';

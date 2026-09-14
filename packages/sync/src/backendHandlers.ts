@@ -158,7 +158,14 @@ export const commonBackendHandlers: Omit<BackendHandlers<CommonBackendServices>,
     Effect.gen(function* () {
       const events = yield* EventRepo;
       const window = yield* events.getWindow(rangeStartUtc, rangeEndUtc);
-      return assembleWindow(window, rangeStartUtc, rangeEndUtc);
+      const skipped: Array<string> = [];
+      const result = assembleWindow(window, rangeStartUtc, rangeEndUtc, (master, error) =>
+        skipped.push(`${master.calendarId}/${master.id}: ${String(error)}`),
+      );
+      if (skipped.length > 0) {
+        yield* Effect.logWarning('recurring masters skipped in window', { skipped });
+      }
+      return result;
     }),
 
   getTasksInRange: ({ endDate, startDate }) =>

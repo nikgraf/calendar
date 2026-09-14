@@ -41,7 +41,15 @@ export interface EventInstance {
 const icsWallTime = (zonedDateTime: Temporal.ZonedDateTime): string =>
   zonedDateTime.toPlainDateTime().toString({ fractionalSecondDigits: 0 }).replaceAll(/[:-]/g, '');
 
-const buildRuleString = (master: RecurrenceMaster): string => {
+/**
+ * rrule-temporal throws past this many iterations. Rules without COUNT
+ * fast-forward to the window, so only very long COUNT series and
+ * pathological rules ever approach it; assembleWindow skips such a
+ * master rather than failing the whole window.
+ */
+export const EXPANSION_MAX_ITERATIONS = 10_000;
+
+export const buildRuleString = (master: RecurrenceMaster): string => {
   const dtstart = master.isAllDay
     ? `DTSTART;VALUE=DATE:${(master.startDate ?? '').replaceAll('-', '')}`
     : `DTSTART;TZID=${master.startTimeZone}:${icsWallTime(
@@ -65,7 +73,10 @@ export const expandRecurringEvent = (
   rangeEndUtc: EpochMs,
   excludeOriginalStarts?: ReadonlySet<EpochMs>,
 ): Array<EventInstance> => {
-  const rule = new RRuleTemporal({ rruleString: buildRuleString(master) });
+  const rule = new RRuleTemporal({
+    maxIterations: EXPANSION_MAX_ITERATIONS,
+    rruleString: buildRuleString(master),
+  });
 
   const durationMs = master.isAllDay ? 0 : master.endUtc - master.startUtc;
   const durationDays =

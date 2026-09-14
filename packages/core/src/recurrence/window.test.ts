@@ -163,4 +163,25 @@ describe('assembleWindow', () => {
     expect(starts).toEqual([...starts].sort((a, b) => a - b));
     expect(events[0]!.id).toBe('early');
   });
+
+  it('skips a master whose rule cannot be expanded and reports it', () => {
+    const skipped: Array<string> = [];
+    const events = assembleWindow(
+      {
+        masters: [
+          master({ id: 'runaway', recurrence: ['RRULE:FREQ=MINUTELY;COUNT=999999'] }),
+          master({ id: 'fine' }),
+        ],
+        overrides: [],
+        singles: [record({ id: 'single' })],
+      },
+      rangeStart,
+      rangeEnd,
+      (skippedMaster) => skipped.push(skippedMaster.id),
+    );
+    expect(skipped).toEqual(['runaway']);
+    expect(events.some((event) => event.id === 'single')).toBe(true);
+    expect(events.filter((event) => event.recurringEventId === 'fine')).toHaveLength(3);
+    expect(events.some((event) => event.recurringEventId === 'runaway')).toBe(false);
+  });
 });
