@@ -327,11 +327,20 @@ describe('repos', () => {
   it.effect('summarizeEvents counts calendars still on their first full list', () =>
     Effect.gen(function* () {
       const states = yield* SyncStateRepo;
+      yield* (yield* CalendarRepo).upsertMany([
+        calendar(),
+        calendar({ id: 'cal-2', summary: 'Two' }),
+        calendar({ id: 'cal-3', summary: 'Three' }),
+      ]);
       yield* states.set(syncState('calendarList', null, 'idle'));
       yield* states.set(syncState('events:cal-1', 'tok', 'idle'));
       yield* states.set(syncState('events:cal-2', null, 'syncing'));
       yield* states.set(syncState('events:cal-3', 'tok', 'syncing'));
+      // A row for a calendar that no longer exists must not count.
+      yield* states.set(syncState('events:gone', null, 'idle'));
       expect(yield* states.summarizeEvents()).toEqual([{ accountId: 'acc-1', importing: 2 }]);
+      yield* states.remove('acc-1', 'events:cal-2');
+      expect(yield* states.summarizeEvents()).toEqual([{ accountId: 'acc-1', importing: 1 }]);
     }).pipe(Effect.provide(freshDbLayer())),
   );
 });

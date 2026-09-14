@@ -53,7 +53,8 @@ describe('runMigrations', () => {
       yield* sql`INSERT INTO calendars (account_id, id, summary, color_hex, is_visible, is_primary, access_role, time_zone)
         VALUES ('acc', 'cal', 'Cal', '#000000', 1, 1, 'owner', 'UTC')`;
       yield* sql`INSERT INTO sync_state (account_id, scope, sync_token, last_full_sync_at, last_sync_at, status)
-        VALUES ('acc', 'events:cal', 'tok', 1, 1, 'idle'), ('acc', 'calendarList', 'tok2', 1, 1, 'idle')`;
+        VALUES ('acc', 'events:cal', 'tok', 1, 1, 'idle'), ('acc', 'calendarList', 'tok2', 1, 1, 'idle'),
+               ('acc', 'events:gone', 'tok3', 1, 1, 'idle')`;
       const event = (calendarId: string, id: string) => sql`
         INSERT INTO events (account_id, calendar_id, id, etag, status, title, is_all_day,
                             start_utc, end_utc, sync_status, updated_at, synced_at)

@@ -14,11 +14,20 @@ const durationMs = (master: RecurrenceMaster): number =>
         : 1) * DAY_MS
     : master.endUtc - master.startUtc;
 
-/** `20260714T090000Z` / `20260714` (UNTIL forms) → epoch ms, or undefined. */
-const untilMs = (value: string, timeZone: string): number | undefined => {
+/**
+ * `20260714T090000Z` / `20260714T090000` / `20260714` (UNTIL forms) →
+ * epoch ms, or undefined. A date-only UNTIL on a timed series means the
+ * end of that day in the series zone (rrule-temporal reads it the same
+ * way), so the bound is never earlier than the last occurrence.
+ */
+const untilMs = (value: string, timeZone: string, isAllDay: boolean): number | undefined => {
   try {
     if (/^\d{8}$/.test(value)) {
-      return plainDateToUtcMs(`${value.slice(0, 4)}-${value.slice(4, 6)}-${value.slice(6, 8)}`);
+      const date = `${value.slice(0, 4)}-${value.slice(4, 6)}-${value.slice(6, 8)}`;
+      return isAllDay
+        ? plainDateToUtcMs(date)
+        : Temporal.PlainDate.from(date).toZonedDateTime({ plainTime: '23:59:59', timeZone })
+            .epochMilliseconds;
     }
     const match = /^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})(Z?)$/.exec(value);
     if (!match) {
@@ -44,13 +53,15 @@ const untilMs = (value: string, timeZone: string): number | undefined => {
  */
 export const recurrenceEndUtc = (master: RecurrenceMaster): EpochMs | undefined => {
   const rule = master.recurrence.find((line) => line.toUpperCase().startsWith('RRULE:'));
-  if (!rule) {
+  // RDATE values may lie past UNTIL or the last COUNT occurrence; such a
+  // series counts as endless rather than risk hiding one.
+  if (!rule || master.recurrence.some((line) => line.toUpperCase().startsWith('RDATE'))) {
     return undefined;
   }
   const parts = parseRuleParts(rule);
   const until = parts.get('UNTIL');
   if (until !== undefined) {
-    const end = untilMs(until, master.startTimeZone);
+    const end = untilMs(until, master.startTimeZone, master.isAllDay);
     return end === undefined ? undefined : end + durationMs(master);
   }
   if (parts.get('COUNT') === undefined) {

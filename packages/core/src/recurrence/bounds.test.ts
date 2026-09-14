@@ -22,10 +22,14 @@ describe('recurrenceEndUtc', () => {
     expect(recurrenceEndUtc(weekly(['RRULE:FREQ=WEEKLY;BYDAY=TU;UNTIL=20260728T090000Z']))).toBe(
       instant('2026-07-28T10:00:00Z'),
     );
-    // Date-only UNTIL, wall-clock UNTIL in the series zone.
-    expect(recurrenceEndUtc(weekly(['RRULE:FREQ=WEEKLY;UNTIL=20260728']))).toBe(
-      instant('2026-07-28T00:00:00Z') + HOUR,
-    );
+    // Date-only UNTIL on a timed series: the end of that day in the
+    // series zone, so the last occurrence (20:00 that evening) still counts.
+    expect(
+      recurrenceEndUtc({
+        ...weekly(['RRULE:FREQ=WEEKLY;UNTIL=20260728']),
+        startTimeZone: 'America/Los_Angeles',
+      }),
+    ).toBe(instant('2026-07-29T06:59:59Z') + HOUR);
     expect(
       recurrenceEndUtc({
         ...weekly(['RRULE:FREQ=WEEKLY;UNTIL=20260728T090000']),
@@ -53,9 +57,15 @@ describe('recurrenceEndUtc', () => {
     ).toBe(instant('2026-07-14T00:00:00Z') + 2 * DAY);
   });
 
-  it('is undefined for endless, RDATE-only, unparseable and runaway series', () => {
+  it('is undefined for endless, RDATE, unparseable and runaway series', () => {
     expect(recurrenceEndUtc(weekly(['RRULE:FREQ=WEEKLY;BYDAY=TU']))).toBeUndefined();
     expect(recurrenceEndUtc(weekly(['RDATE:20260801T090000Z']))).toBeUndefined();
+    // An RDATE can lie past UNTIL: the bound must not hide it.
+    expect(
+      recurrenceEndUtc(
+        weekly(['RRULE:FREQ=WEEKLY;UNTIL=20260714T090000Z', 'RDATE:20260901T090000Z']),
+      ),
+    ).toBeUndefined();
     expect(recurrenceEndUtc(weekly(['RRULE:FREQ=WEEKLY;UNTIL=garbage']))).toBeUndefined();
     // Past the expansion cap the series counts as endless (safe: never skipped).
     expect(recurrenceEndUtc(weekly(['RRULE:FREQ=DAILY;COUNT=50000']))).toBeUndefined();

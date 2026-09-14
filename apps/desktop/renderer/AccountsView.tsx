@@ -5,7 +5,7 @@ import {
   useGuardedMutations,
   useSyncStatus,
 } from '@calendar/app-state';
-import { historyStatusLabel } from '@calendar/core';
+import { type Account, historyStatusLabel } from '@calendar/core';
 import { useState } from 'react';
 import { PrivacySection } from './PrivacySection.tsx';
 import { BirthdayRemindersSection } from './BirthdayRemindersSection.tsx';
@@ -15,9 +15,11 @@ import { RemindersSection } from './RemindersSection.tsx';
 export function AccountsView() {
   const accounts = useAccounts();
   const syncStatus = useSyncStatus();
-  const historyLine = (accountId: string): string | null => {
-    const status = syncStatus.find((entry) => entry.accountId === accountId);
-    return status ? historyStatusLabel(status) : null;
+  // Nothing to say for an account that cannot sync (re-auth pending):
+  // its calendars would read "importing" forever.
+  const historyLine = (account: Account): string | null => {
+    const status = syncStatus.find((entry) => entry.accountId === account.id);
+    return status && account.status === 'ok' ? historyStatusLabel(status) : null;
   };
   const calendars = useCalendars();
   const mutations = useBackendMutations();
@@ -68,9 +70,9 @@ export function AccountsView() {
           <div className="flex items-center justify-between">
             <div>
               <p className="select-text font-medium">{account.displayName ?? account.email}</p>
-              {historyLine(account.id) ? (
+              {historyLine(account) ? (
                 <p className="text-xs text-neutral-500" data-testid={`sync-history-${account.id}`}>
-                  {historyLine(account.id)}
+                  {historyLine(account)}
                 </p>
               ) : null}
               <p className="select-text text-sm text-neutral-500">

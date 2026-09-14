@@ -626,7 +626,12 @@ Performance:
       occurrence computed once at write time) bounds the masters query
       over a partial index; expansion has an iteration cap and a skipped
       master no longer blanks the window; calendars that vanish take their
-      rows with them; `listSyncStatus` shows "Importing history… N events
-      so far" / "History complete" per account. Follow-ups: RDATE-only
-      series stay unbounded, long-lived COUNT series still iterate from
-      DTSTART on every read, no per-calendar history opt-out.
+      rows and their sync_state row with them (a calendar that comes back
+      lists its history again); `listSyncStatus` shows "Importing history…
+      N events so far" / "History complete" per account, only for
+      calendars that still exist and accounts that can sync. Rode along:
+      the event INSERT had never written `hangout_link`, so meeting links
+      from Google were never persisted — fixed in the same statement.
+      Follow-ups: series with RDATE lines stay unbounded, long-lived COUNT
+      series still iterate from DTSTART on every read, no per-calendar
+      history opt-out.

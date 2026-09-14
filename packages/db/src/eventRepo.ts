@@ -163,6 +163,7 @@ const makeEventRepo: Effect.Effect<EventRepoShape, never, Reactivity | SqlClient
         Effect.map(
           sql<{ readonly account_id: string; readonly event_count: number }>`
             SELECT account_id, COUNT(*) AS event_count FROM events
+            WHERE status != 'cancelled'
             GROUP BY account_id ORDER BY account_id`,
           (rows) => rows.map((row) => ({ accountId: row.account_id, eventCount: row.event_count })),
         ),

@@ -242,12 +242,19 @@ const make: Effect.Effect<
         Effect.catchTag('SyncTokenExpiredError', () => runPass(null)),
       );
 
-      // Calendars gone upstream take their event rows with them — with the
-      // whole history synced they are no longer a rounding error.
+      // Calendars gone upstream take their event rows and their sync
+      // state with them: a calendar that comes back (unhidden in Google)
+      // must list its history again, not resume a token onto an empty table.
       const purge = (ids: ReadonlyArray<string>) =>
-        Effect.forEach(ids, (id) => eventRepo.deleteByCalendar(account.id, id), {
-          discard: true,
-        });
+        Effect.forEach(
+          ids,
+          (id) =>
+            Effect.andThen(
+              eventRepo.deleteByCalendar(account.id, id),
+              syncStateRepo.remove(account.id, eventsScope(id)),
+            ),
+          { discard: true },
+        );
       if (state?.syncToken) {
         yield* calendarRepo.removeByIds(account.id, result.deletedIds);
         yield* purge(result.deletedIds.filter((id) => previousVisibility.has(id)));

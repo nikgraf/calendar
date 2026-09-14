@@ -260,6 +260,11 @@ const addFullHistory = Effect.gen(function* () {
   // hidden by the join); one-off cleanup, the sync deletes them from now on.
   yield* sql`DELETE FROM events
     WHERE (account_id, calendar_id) NOT IN (SELECT account_id, id FROM calendars)`;
+  // Their sync_state rows too: with the token cleared, a leftover row
+  // would read as "still importing" for good.
+  yield* sql`DELETE FROM sync_state
+    WHERE scope LIKE 'events:%'
+    AND (account_id, substr(scope, 8)) NOT IN (SELECT account_id, id FROM calendars)`;
 });
 
 // The third tuple element is a *loader* whose result is the migration effect.

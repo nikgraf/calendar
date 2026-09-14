@@ -208,6 +208,9 @@ describe('SyncEngine over HTTP (fake Google)', () => {
       yield* TestClock.adjust('1 minute');
       yield* engine.syncAll();
       expect(yield* (yield* EventRepo).countByAccount()).toEqual([]);
+      // Its sync state goes too: a calendar that comes back lists its
+      // history again instead of resuming a token onto an empty table.
+      expect(yield* (yield* SyncStateRepo).get('acc-1', eventsScope('cal-1'))).toBeNull();
     }).pipe(noYield, Effect.provide(engineLayer(google)));
   });
 
