@@ -71,6 +71,7 @@ export const recurrenceEndUtc = (master: RecurrenceMaster): EpochMs | undefined 
     const occurrences = new RRuleTemporal({
       maxIterations: EXPANSION_MAX_ITERATIONS,
       rruleString: buildRuleString(master),
+      temporal: Temporal,
     }).all();
     const last = occurrences.at(-1);
     if (!last) {

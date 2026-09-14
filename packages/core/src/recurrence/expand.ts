@@ -76,6 +76,7 @@ export const expandRecurringEvent = (
   const rule = new RRuleTemporal({
     maxIterations: EXPANSION_MAX_ITERATIONS,
     rruleString: buildRuleString(master),
+    temporal: Temporal,
   });
 
   const durationMs = master.isAllDay ? 0 : master.endUtc - master.startUtc;
