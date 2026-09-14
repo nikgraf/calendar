@@ -19,3 +19,7 @@ apps/desktop/google-oauth.json
 apps/desktop/out/
 # CI-only overlay (apps/ios/e2e/ci/app.config.ci.cjs is the source)
 apps/ios/app.config.js
+
+# Claude Code: per-machine permissions and session checkpoints stay local
+.claude/settings.local.json
+.claude/RESUME.md

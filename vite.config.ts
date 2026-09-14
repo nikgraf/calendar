@@ -4,6 +4,10 @@ import { defineConfig } from 'vite-plus';
 export default defineConfig({
   fmt: {
     ignorePatterns: [
+      // Third-party agent skills stay byte-identical to their source.
+      '.agents/',
+      '.claude/',
+      '.pi/',
       'coverage/',
       'dist/',
       'dist-electron/',
@@ -18,6 +22,9 @@ export default defineConfig({
   lint: {
     extends: [nkzw],
     ignorePatterns: [
+      '.agents/',
+      '.claude/',
+      '.pi/',
       'coverage/',
       'dist/',
       'dist-electron/',
