@@ -194,6 +194,33 @@ describe('SyncEngine over HTTP (fake Google)', () => {
     }).pipe(noYield, Effect.provide(engineLayer(google)));
   });
 
+  it.effect('a calendar that arrives with a stale events scope re-lists its history', () => {
+    const google = newFake();
+    google.putEvent('cal-1', timed('a', 9));
+    return Effect.gen(function* () {
+      yield* seedAccount(false);
+      const engine = yield* SyncEngine;
+      yield* engine.syncAll();
+      // A crash between the deletes of an old removal: calendar row and
+      // events gone, the events token left behind.
+      yield* (yield* EventRepo).deleteByCalendar('acc-1', 'cal-1');
+      yield* (yield* CalendarRepo).removeByIds('acc-1', ['cal-1']);
+      expect((yield* (yield* SyncStateRepo).get('acc-1', eventsScope('cal-1')))?.syncToken).toBe(
+        'cal-1:1',
+      );
+      // Upstream still has the calendar: it comes back as new to us.
+      yield* TestClock.adjust('1 minute');
+      yield* engine.syncAll();
+      expect(yield* eventTitles).toEqual(['a:Event a']);
+      const listCalls = google.requests.filter(
+        (call) => call.method === 'GET' && call.url.includes('/calendars/cal-1/events'),
+      );
+      expect(
+        listCalls.map((call) => (call.url.includes('syncToken=') ? 'incremental' : 'full')),
+      ).toEqual(['full', 'full']);
+    }).pipe(noYield, Effect.provide(engineLayer(google)));
+  });
+
   it.effect('a calendar removed upstream takes its events with it', () => {
     const google = newFake();
     google.putEvent('cal-1', timed('a', 9));

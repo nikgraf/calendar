@@ -324,6 +324,26 @@ describe('repos', () => {
     }).pipe(Effect.provide(freshDbLayer())),
   );
 
+  it.effect('purge removes a calendar, its events and its sync state together', () =>
+    Effect.gen(function* () {
+      const calendars = yield* CalendarRepo;
+      const events = yield* EventRepo;
+      const states = yield* SyncStateRepo;
+      yield* calendars.upsertMany([calendar(), calendar({ id: 'cal-2', summary: 'Other' })]);
+      yield* events.upsertMany([
+        timedEvent({ id: 'a' }),
+        timedEvent({ calendarId: 'cal-2', id: 'b' }),
+      ]);
+      yield* states.set(syncState('events:cal-1', 'tok', 'idle'));
+      yield* states.set(syncState('events:cal-2', 'tok', 'idle'));
+      yield* calendars.purge('acc-1', ['cal-1']);
+      expect((yield* calendars.list('acc-1')).map((row) => row.id)).toEqual(['cal-2']);
+      expect(yield* events.countByAccount()).toEqual([{ accountId: 'acc-1', eventCount: 1 }]);
+      expect(yield* states.get('acc-1', 'events:cal-1')).toBeNull();
+      expect((yield* states.get('acc-1', 'events:cal-2'))?.syncToken).toBe('tok');
+    }).pipe(Effect.provide(freshDbLayer())),
+  );
+
   it.effect('summarizeEvents counts calendars still on their first full list', () =>
     Effect.gen(function* () {
       const states = yield* SyncStateRepo;

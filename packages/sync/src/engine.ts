@@ -242,33 +242,33 @@ const make: Effect.Effect<
         Effect.catchTag('SyncTokenExpiredError', () => runPass(null)),
       );
 
+      // A calendar we did not have starts from nothing: whatever events
+      // scope a partially purged predecessor left behind (a crash between
+      // the deletes) must not turn its first pass into an incremental one.
+      const arrived = result.keptIds.filter((id) => !previousVisibility.has(id));
+      yield* Effect.forEach(arrived, (id) => syncStateRepo.remove(account.id, eventsScope(id)), {
+        discard: true,
+      });
+
       // Calendars gone upstream take their event rows and their sync
-      // state with them: a calendar that comes back (unhidden in Google)
-      // must list its history again, not resume a token onto an empty table.
-      const purge = (ids: ReadonlyArray<string>) =>
-        Effect.forEach(
-          ids,
-          (id) =>
-            Effect.andThen(
-              eventRepo.deleteByCalendar(account.id, id),
-              syncStateRepo.remove(account.id, eventsScope(id)),
-            ),
-          { discard: true },
-        );
+      // state with them, in one transaction (CalendarRepo.purge): a
+      // calendar that comes back (unhidden in Google) must list its
+      // history again, not resume a token onto an empty table.
       if (state?.syncToken) {
-        yield* calendarRepo.removeByIds(account.id, result.deletedIds);
-        yield* purge(result.deletedIds.filter((id) => previousVisibility.has(id)));
+        const gone = result.deletedIds.filter((id) => previousVisibility.has(id));
         // An install that synced the Birthdays calendar before it was
         // skipped never gets it re-sent unchanged: drop the row once.
         if (previousVisibility.has(GOOGLE_BIRTHDAYS_CALENDAR_ID)) {
-          yield* calendarRepo.removeByIds(account.id, [GOOGLE_BIRTHDAYS_CALENDAR_ID]);
-          yield* purge([GOOGLE_BIRTHDAYS_CALENDAR_ID]);
+          gone.push(GOOGLE_BIRTHDAYS_CALENDAR_ID);
         }
+        yield* calendarRepo.purge(account.id, [...new Set(gone)]);
       } else {
         // Full pass: anything not seen no longer exists upstream.
         const kept = new Set(result.keptIds);
-        yield* calendarRepo.removeMissing(account.id, result.keptIds);
-        yield* purge([...previousVisibility.keys()].filter((id) => !kept.has(id)));
+        yield* calendarRepo.purge(
+          account.id,
+          [...previousVisibility.keys()].filter((id) => !kept.has(id)),
+        );
       }
 
       yield* syncStateRepo.set(

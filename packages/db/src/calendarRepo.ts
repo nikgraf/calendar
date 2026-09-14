@@ -3,12 +3,20 @@ import { Context, Effect, Layer } from 'effect';
 import { Reactivity } from 'effect/unstable/reactivity/Reactivity';
 import { SqlClient } from 'effect/unstable/sql/SqlClient';
 import type { SqlError } from 'effect/unstable/sql/SqlError';
-import { CALENDARS_KEY, EVENTS_KEY } from './keys.ts';
+import { CALENDARS_KEY, EVENTS_KEY, SYNC_STATE_KEY } from './keys.ts';
 import { calendarFromRow, type CalendarRow } from './rows.ts';
 import { accountGuard } from './repoShared.ts';
 
 export interface CalendarRepoShape {
   readonly list: (accountId?: string) => Effect.Effect<ReadonlyArray<CalendarInfo>, SqlError>;
+  /**
+   * Calendars gone upstream: their rows, their events and their events
+   * sync state go in one transaction. Partial deletion would leave a
+   * stale token behind with no calendar row left to retry the cleanup —
+   * a calendar that came back would then resume incrementally onto an
+   * empty cache and never re-list its history.
+   */
+  readonly purge: (accountId: string, ids: ReadonlyArray<string>) => Effect.Effect<void, SqlError>;
   readonly removeByIds: (
     accountId: string,
     ids: ReadonlyArray<string>,
@@ -52,6 +60,27 @@ const makeCalendarRepo: Effect.Effect<CalendarRepoShape, never, Reactivity | Sql
             : sql<CalendarRow>`SELECT * FROM calendars WHERE account_id = ${accountId} ORDER BY summary`,
           (rows) => rows.map(calendarFromRow),
         ),
+      purge: (accountId, ids) =>
+        ids.length === 0
+          ? Effect.void
+          : reactivity.mutation(
+              [CALENDARS_KEY, EVENTS_KEY, SYNC_STATE_KEY],
+              sql.withTransaction(
+                Effect.forEach(
+                  ids,
+                  (id) =>
+                    Effect.gen(function* () {
+                      yield* sql`DELETE FROM events
+                        WHERE account_id = ${accountId} AND calendar_id = ${id}`;
+                      yield* sql`DELETE FROM sync_state
+                        WHERE account_id = ${accountId} AND scope = ${`events:${id}`}`;
+                      yield* sql`DELETE FROM calendars
+                        WHERE account_id = ${accountId} AND id = ${id}`;
+                    }),
+                  { discard: true },
+                ),
+              ),
+            ),
       removeByIds: (accountId, ids) =>
         ids.length === 0
           ? Effect.void

@@ -146,8 +146,11 @@ Rules that keep the queue correct:
 - A full list of a big calendar is many 2,500-event pages: each page is
   one transaction (`EventRepo.applyPage`) with one invalidation, and the
   engine yields between pages so rpc handlers and the UI interleave.
-  Calendars that vanish upstream take their event rows with them
-  (`deleteByCalendar`); migration 12 cleaned up the ones left behind.
+  Calendars that vanish upstream take their event rows and their events
+  sync state with them in one transaction (`CalendarRepo.purge`), and a
+  calendar new to the local list has any leftover scope cleared before
+  its first pass — so a calendar that comes back always re-lists its
+  history; migration 12 cleaned up the rows left behind before this.
 - With every master ever synced in the table, `getWindow` bounds the
   recurring-masters query by a stored `recurrence_end_utc` (UNTIL, or the
   last COUNT occurrence computed once at write time; NULL = endless) over
