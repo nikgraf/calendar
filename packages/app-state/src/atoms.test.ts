@@ -46,6 +46,7 @@ const makeStubClient = () => {
       }),
     listCalendars: () => Effect.succeed([]),
     listPendingOps: () => Effect.succeed([]),
+    listSyncStatus: () => Effect.succeed([]),
     listTaskLists: () => Effect.succeed([]),
     removeAccount: () => Effect.void,
     respondToEvent: () => Effect.void,

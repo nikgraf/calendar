@@ -1,5 +1,6 @@
 import {
   Account,
+  AccountSyncStatus,
   APPLE_REMINDERS_ACCOUNT_ID,
   AppBackendRpcs,
   assembleWindow,
@@ -22,6 +23,7 @@ import {
   DeviceSettingsRepo,
   EventRepo,
   PendingOpRepo,
+  SyncStateRepo,
   TaskRepo,
 } from '@calendar/db';
 import { TokenStore } from '@calendar/google';
@@ -53,6 +55,7 @@ export type CommonBackendServices =
   | PendingOpRepo
   | RemindersClient
   | SyncEngine
+  | SyncStateRepo
   | TaskRepo
   | TokenStore;
 
@@ -201,6 +204,23 @@ export const commonBackendHandlers: Omit<BackendHandlers<CommonBackendServices>,
         ...(op.lastError === undefined ? {} : { lastError: op.lastError }),
         ...(op.payload?.title === undefined ? {} : { title: op.payload.title }),
       }));
+    }),
+
+  listSyncStatus: () =>
+    Effect.gen(function* () {
+      const accounts = yield* (yield* AccountRepo).list();
+      const summaries = yield* (yield* SyncStateRepo).summarizeEvents();
+      const counts = yield* (yield* EventRepo).countByAccount();
+      const importing = new Map(summaries.map((row) => [row.accountId, row.importing]));
+      const eventCount = new Map(counts.map((row) => [row.accountId, row.eventCount]));
+      return accounts.map(
+        (account) =>
+          new AccountSyncStatus({
+            accountId: account.id,
+            eventCount: eventCount.get(account.id) ?? 0,
+            importing: (importing.get(account.id) ?? 0) > 0,
+          }),
+      );
     }),
 
   listTaskLists: () =>

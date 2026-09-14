@@ -1,8 +1,10 @@
 import { useGuardedMutations } from '@calendar/app-state';
 import {
   type Account,
+  type AccountSyncStatus,
   CALENDAR_PALETTE,
   type CalendarInfo,
+  historyStatusLabel,
   type TaskListInfo,
 } from '@calendar/core';
 import { useState } from 'react';
@@ -16,6 +18,7 @@ export function AccountCard({
   busy,
   calendars,
   onReconnect,
+  syncStatus,
   taskLists,
 }: {
   account: Account;
@@ -24,8 +27,11 @@ export function AccountCard({
   calendars: ReadonlyArray<CalendarInfo>;
   /** Re-runs Google sign-in: re-auth, or consenting to the tasks scope. */
   onReconnect: () => void;
+  /** Events history import progress; absent until the first read resolves. */
+  syncStatus?: AccountSyncStatus | undefined;
   taskLists: ReadonlyArray<TaskListInfo>;
 }) {
+  const historyLine = syncStatus ? historyStatusLabel(syncStatus) : null;
   const guarded = useGuardedMutations();
   /** `${accountId}:${calendarId}` of the row with the palette expanded. */
   const [colorPickerFor, setColorPickerFor] = useState<string | null>(null);
@@ -40,6 +46,11 @@ export function AccountCard({
           ) : (
             <Text style={styles.email}>{account.email}</Text>
           )}
+          {historyLine ? (
+            <Text style={styles.email} testID={`sync-history-${account.id}`}>
+              {historyLine}
+            </Text>
+          ) : null}
           {account.status === 'reauth_required' ? (
             account.provider === 'apple' ? (
               <Text style={sectionStyles.action}>

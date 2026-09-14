@@ -2,6 +2,7 @@ import { Cause, Effect, Schema } from 'effect';
 import { Rpc, RpcGroup } from 'effect/unstable/rpc';
 import type { RpcClientError } from 'effect/unstable/rpc/RpcClientError';
 import { BirthdayReminderSettings } from './birthdays/reminders.ts';
+import { AccountSyncStatus } from './syncStatus.ts';
 import {
   Account,
   BirthdayOccurrence,
@@ -213,6 +214,11 @@ export class AppBackendRpcs extends RpcGroup.make(
     error: BackendError,
     payload: { accountId: Schema.optional(Schema.String) },
     success: Schema.Array(CalendarInfo),
+  }),
+  /** Events history import progress per account, for the Settings line. */
+  Rpc.make('listSyncStatus', {
+    error: BackendError,
+    success: Schema.Array(AccountSyncStatus),
   }),
   Rpc.make('removeAccount', {
     error: BackendError,

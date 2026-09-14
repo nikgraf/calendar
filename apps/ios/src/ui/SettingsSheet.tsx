@@ -4,6 +4,7 @@ import {
   useGuardedMutations,
   useCalendars,
   usePendingOps,
+  useSyncStatus,
   useTaskLists,
   pendingOpLabel,
 } from '@calendar/app-state';
@@ -23,6 +24,7 @@ export function SettingsSheet({ onClose, visible }: { onClose: () => void; visib
   const accounts = useAccounts();
   const calendars = useCalendars();
   const pendingOps = usePendingOps();
+  const syncStatus = useSyncStatus();
   const taskLists = useTaskLists();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -98,6 +100,7 @@ export function SettingsSheet({ onClose, visible }: { onClose: () => void; visib
               calendars={calendars}
               key={account.id}
               onReconnect={() => void addAccount()}
+              syncStatus={syncStatus.find((entry) => entry.accountId === account.id)}
               taskLists={taskLists}
             />
           ))}

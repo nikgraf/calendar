@@ -3,7 +3,9 @@ import {
   useBackendMutations,
   useCalendars,
   useGuardedMutations,
+  useSyncStatus,
 } from '@calendar/app-state';
+import { historyStatusLabel } from '@calendar/core';
 import { useState } from 'react';
 import { PrivacySection } from './PrivacySection.tsx';
 import { BirthdayRemindersSection } from './BirthdayRemindersSection.tsx';
@@ -12,6 +14,11 @@ import { RemindersSection } from './RemindersSection.tsx';
 
 export function AccountsView() {
   const accounts = useAccounts();
+  const syncStatus = useSyncStatus();
+  const historyLine = (accountId: string): string | null => {
+    const status = syncStatus.find((entry) => entry.accountId === accountId);
+    return status ? historyStatusLabel(status) : null;
+  };
   const calendars = useCalendars();
   const mutations = useBackendMutations();
   const guarded = useGuardedMutations();
@@ -61,6 +68,11 @@ export function AccountsView() {
           <div className="flex items-center justify-between">
             <div>
               <p className="select-text font-medium">{account.displayName ?? account.email}</p>
+              {historyLine(account.id) ? (
+                <p className="text-xs text-neutral-500" data-testid={`sync-history-${account.id}`}>
+                  {historyLine(account.id)}
+                </p>
+              ) : null}
               <p className="select-text text-sm text-neutral-500">
                 {account.provider === 'apple' ? 'This Mac' : account.email}
                 {account.status === 'reauth_required' ? (

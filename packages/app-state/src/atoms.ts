@@ -6,6 +6,7 @@ import {
   deviceSettingsKey,
   EVENTS_KEY,
   OPS_KEY,
+  SYNC_STATE_KEY,
   TASKLISTS_KEY,
   TASKS_KEY,
 } from '@calendar/db/keys';
@@ -34,6 +35,7 @@ export interface BackendAtoms {
   readonly eventsInRange: ReturnType<typeof buildAtoms>['eventsInRange'];
   readonly mutations: ReturnType<typeof buildAtoms>['mutations'];
   readonly pendingOps: ReturnType<typeof buildAtoms>['pendingOps'];
+  readonly syncStatus: ReturnType<typeof buildAtoms>['syncStatus'];
   readonly taskLists: ReturnType<typeof buildAtoms>['taskLists'];
   readonly tasksInRange: ReturnType<typeof buildAtoms>['tasksInRange'];
 }
@@ -90,6 +92,18 @@ const buildAtoms = (client: BackendClient) => {
       }),
     )
     .pipe(Atom.withReactivity([CALENDARS_KEY]));
+
+  // Refetched per imported page (EVENTS_KEY) while Settings is mounted —
+  // one COUNT per page is nothing next to the page itself — and the moment
+  // a pass finishes (SYNC_STATE_KEY).
+  const syncStatus = runtime
+    .atom(
+      Effect.gen(function* () {
+        const backend = yield* AppBackend;
+        return yield* backend.listSyncStatus(undefined);
+      }),
+    )
+    .pipe(Atom.withReactivity([ACCOUNTS_KEY, EVENTS_KEY, SYNC_STATE_KEY]));
 
   const pendingOps = runtime
     .atom(
@@ -244,6 +258,7 @@ const buildAtoms = (client: BackendClient) => {
     eventsInRange,
     mutations,
     pendingOps,
+    syncStatus,
     taskLists,
     tasksInRange,
   };

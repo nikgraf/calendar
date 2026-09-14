@@ -1,5 +1,6 @@
 import type {
   Account,
+  AccountSyncStatus,
   BackendPayload,
   BirthdayOccurrence,
   BirthdayReminderSettings,
@@ -69,6 +70,10 @@ export const useCalendars = (): ReadonlyArray<CalendarInfo> =>
 /** Queue of local changes not yet acknowledged by Google. */
 export const usePendingOps = (): ReadonlyArray<PendingOpSummary> =>
   unwrapList(useAtomValue(useBackendAtoms().pendingOps));
+
+/** Events history import progress per account. */
+export const useSyncStatus = (): ReadonlyArray<AccountSyncStatus> =>
+  unwrapList(useAtomValue(useBackendAtoms().syncStatus));
 
 /**
  * Returns a range's events, keeping the previous range's events on screen
