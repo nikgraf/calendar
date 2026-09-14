@@ -280,12 +280,13 @@ jobs:
           xcrun simctl openurl "$SIMULATOR_UDID" "http://127.0.0.1:8081/status"
           sleep 10
           xcrun simctl io "$SIMULATOR_UDID" screenshot "$RUNNER_TEMP/safari-metro-status.png"
-      - name: Open the dev client on Metro
-        # The launcher screen otherwise waits for a server choice; the first
-        # bundle takes a while, which the flows' 60 s "Today" wait covers.
-        run: |
-          curl -sS -o /dev/null -H 'expo-platform: ios' http://127.0.0.1:8081/ || true
-          xcrun simctl openurl "$SIMULATOR_UDID" "solunivo://expo-development-client/?url=http%3A%2F%2F127.0.0.1%3A8081"
+          # Leave the simulator on SpringBoard. Safari otherwise stays in
+          # front with a modal "Do you want to download 'status'?" sheet
+          # (Metro serves /status as a download), and the dev client never
+          # came up behind it: run 34851193180 confirmed the "Open in
+          # Solunivo?" alert and nothing launched. The bootstrap flow
+          # launches the client itself and hands it the server URL.
+          xcrun simctl terminate "$SIMULATOR_UDID" com.apple.mobilesafari || true
       # Two invocations: Maestro runs a directory's flows in a
       # non-deterministic order (config.yaml executionOrder is not
       # honored — mobile-dev-inc/maestro#2231), and the bootstrap must

@@ -4,11 +4,7 @@ tags:
   - ci
 ---
 - runFlow: ../common/launch.yaml
-- tapOn:
-    id: 'add-event'
-- assertVisible: 'New Event'
-- waitForAnimationToEnd:
-    timeout: 5000
+- runFlow: ../common/open-new-event.yaml
 # Saving needs a writable calendar, so this runs only where an account is
 # signed in; everywhere else the flow is a no-op (same shape as 07).
 - runFlow:

@@ -4,12 +4,7 @@ tags:
   - ci
 ---
 - runFlow: ../common/launch.yaml
-- tapOn:
-    id: 'add-event'
-- assertVisible: 'New Event'
-# The sheet slides in; on a slow runner a tap taken mid-animation misses.
-- waitForAnimationToEnd:
-    timeout: 5000
+- runFlow: ../common/open-new-event.yaml
 # styles.label applies textTransform: uppercase, so the rendered text is REPEAT.
 - assertVisible: 'REPEAT'
 # Tap until the interval row appears: on the runner the sheet's content

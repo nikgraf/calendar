@@ -1,0 +1,22 @@
+appId: com.solunivo.app
+name: Open the new-event sheet from the header "+" (shared)
+---
+# One tap normally does it. Run 34852090635 tapped the button at the
+# right coordinates and no sheet followed (the screen stayed on the day
+# view, nothing crashed); the same tap passed in the two sibling flows
+# of that run. Re-tap while the sheet is missing, the way a person would.
+- repeat:
+    times: 3
+    while:
+      notVisible: 'New Event'
+    commands:
+      - tapOn:
+          id: 'add-event'
+      - extendedWaitUntil:
+          visible: 'New Event'
+          timeout: 5000
+          optional: true
+- assertVisible: 'New Event'
+# The sheet slides in; on a slow runner a tap taken mid-animation misses.
+- waitForAnimationToEnd:
+    timeout: 5000

@@ -13,8 +13,26 @@ tags:
 # guards below only matter on a simulator prepared by hand.
 # 127.0.0.1, not localhost: on a GitHub runner the simulator resolved
 # localhost to IPv6 and never reached Metro ("Failed to load app").
-- openLink: 'solunivo://expo-development-client/?url=http%3A%2F%2F127.0.0.1%3A8081'
-- runFlow: ../common/confirm-open.yaml
+#
+# Launch the client first, then hand it the URL. Relying on the URL to
+# launch the app was not reliable on a runner: in run 34851193180 the
+# flow confirmed the "Open in Solunivo?" alert and no launch followed —
+# Safari (left in front by the diagnostics step) kept the screen with a
+# modal sheet and the job died on the final assertion. With the client
+# already running and in front, confirming the alert delivers the URL to
+# a live process (run 34860533099 on PR #63 still saw the alert; it may or
+# may not appear), so confirm-open.yaml handles it either way.
+- launchApp
+- extendedWaitUntil:
+    visible: 'Today|Enter URL manually|Recently opened'
+    timeout: 60000
+    optional: true
+- runFlow:
+    when:
+      notVisible: 'Today'
+    commands:
+      - openLink: 'solunivo://expo-development-client/?url=http%3A%2F%2F127.0.0.1%3A8081'
+      - runFlow: ../common/confirm-open.yaml
 # The dev launcher gives each request 10 s; on a loaded runner the first
 # attempt can still miss that even with the bundle warm. Its error screen
 # offers "Reload" — retry a few times, each against a warmer Metro, the
