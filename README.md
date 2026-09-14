@@ -19,7 +19,7 @@ Visible for 10 min / Always visible).
 
 ## Setup
 
-Prerequisites: Node ≥ 24, pnpm ≥ 11 (`corepack enable`).
+Prerequisites: Node ≥ 24, pnpm ≥ 12 (`corepack enable`).
 
 ```sh
 pnpm install
