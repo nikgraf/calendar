@@ -360,16 +360,15 @@ quick-add flow accepts the bar's "couldn't be read" outcome: a CI
 simulator passes the model availability check yet cannot generate,
 so the prefilled editor is asserted only where a model answers.
 The bootstrap flow `launchApp`s the dev client and only then opens
-`solunivo://expo-development-client/?url=…`: with the client in front
-iOS delivers the URL directly. A scheme URL opened while another app is
-in front goes through the "Open in Solunivo?" alert instead — one per
-`simctl openurl`, and they stack — and that path is not reliable on a
-runner: run 34851193180 confirmed the alert and no launch followed,
-because the diagnostics step had left Safari in front with a modal
-"download 'status'?" sheet (the CI step now terminates Safari after its
-screenshot, and no longer sends the URL itself). `common/confirm-open.yaml`
-stays as the safety net for the alert case and confirms exactly one,
-cancelling the rest: every further "Open" re-delivered the same URL to
+`solunivo://expo-development-client/?url=…`. Relying on the URL to
+launch the app was not reliable on a runner: run 34851193180 confirmed
+the "Open in Solunivo?" alert and no launch followed, because the
+diagnostics step had left Safari in front with a modal "download
+'status'?" sheet (the CI step now terminates Safari after its screenshot,
+and no longer sends the URL itself). With the client already running,
+confirming the alert delivers the URL to a live process; the alert may
+still appear (one per `simctl openurl`, and they stack), so
+`common/confirm-open.yaml` confirms exactly one and cancels the rest: every further "Open" re-delivered the same URL to
 the client while its first bundle was still starting, it re-fetched the
 manifest mid-load and the process died with SIGSEGV ~150 ms after the
 bundle ran (two runs that tapped "Open" four times failed; the runs that

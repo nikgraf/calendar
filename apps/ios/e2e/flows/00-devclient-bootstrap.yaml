@@ -14,15 +14,14 @@ tags:
 # 127.0.0.1, not localhost: on a GitHub runner the simulator resolved
 # localhost to IPv6 and never reached Metro ("Failed to load app").
 #
-# Launch the client first and hand it the URL while it is in front. A
-# scheme URL opened from outside (`simctl openurl`) goes through the
-# "Open in Solunivo?" alert instead, and that path is not reliable on a
-# runner: in run 34851193180 the flow confirmed the alert and no launch
-# followed — Safari (left in front by the diagnostics step) kept the
-# screen with a modal sheet and the job died on the final assertion.
-# With the app in front the URL is delivered directly and no alert
-# appears (run 34852090635 re-sent the link that way and loaded at once);
-# confirm-open.yaml stays as the safety net for the alert case.
+# Launch the client first, then hand it the URL. Relying on the URL to
+# launch the app was not reliable on a runner: in run 34851193180 the
+# flow confirmed the "Open in Solunivo?" alert and no launch followed —
+# Safari (left in front by the diagnostics step) kept the screen with a
+# modal sheet and the job died on the final assertion. With the client
+# already running and in front, confirming the alert delivers the URL to
+# a live process (run 34860533099 on PR #63 still saw the alert; it may or
+# may not appear), so confirm-open.yaml handles it either way.
 - launchApp
 - extendedWaitUntil:
     visible: 'Today|Enter URL manually|Recently opened'
