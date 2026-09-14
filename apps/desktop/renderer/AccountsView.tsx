@@ -15,11 +15,15 @@ import { RemindersSection } from './RemindersSection.tsx';
 export function AccountsView() {
   const accounts = useAccounts();
   const syncStatus = useSyncStatus();
-  // Nothing to say for an account that cannot sync (re-auth pending):
-  // its calendars would read "importing" forever.
+  // An account that cannot sync (re-auth pending) never finishes an
+  // import, so "importing" would be a lie there; what it already holds
+  // is still worth stating.
   const historyLine = (account: Account): string | null => {
     const status = syncStatus.find((entry) => entry.accountId === account.id);
-    return status && account.status === 'ok' ? historyStatusLabel(status) : null;
+    if (!status || (status.importing && account.status !== 'ok')) {
+      return null;
+    }
+    return historyStatusLabel(status);
   };
   const calendars = useCalendars();
   const mutations = useBackendMutations();

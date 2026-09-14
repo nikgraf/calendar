@@ -31,8 +31,13 @@ export function AccountCard({
   syncStatus?: AccountSyncStatus | undefined;
   taskLists: ReadonlyArray<TaskListInfo>;
 }) {
-  // Nothing to say for an account that cannot sync (re-auth pending).
-  const historyLine = syncStatus && account.status === 'ok' ? historyStatusLabel(syncStatus) : null;
+  // An account that cannot sync (re-auth pending) never finishes an
+  // import, so "importing" would be a lie there; what it already holds
+  // is still worth stating.
+  const historyLine =
+    syncStatus && !(syncStatus.importing && account.status !== 'ok')
+      ? historyStatusLabel(syncStatus)
+      : null;
   const guarded = useGuardedMutations();
   /** `${accountId}:${calendarId}` of the row with the palette expanded. */
   const [colorPickerFor, setColorPickerFor] = useState<string | null>(null);
