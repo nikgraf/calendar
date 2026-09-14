@@ -42,7 +42,7 @@ In a framework, keep the class names and structure; only the rendering syntax ch
     0 0 0 1px rgba(255, 255, 255, 0.08) inset,
     0 8px 24px rgba(0, 0, 0, 0.24),
     0 2px 6px rgba(0, 0, 0, 0.12);
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   font-size: 13px;
   line-height: 1;
   -webkit-font-smoothing: antialiased;
@@ -68,9 +68,7 @@ In a framework, keep the class names and structure; only the rendering syntax ch
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .proto-picker[data-ready] .proto-picker-highlight {
-    transition: none;
-  }
+  .proto-picker[data-ready] .proto-picker-highlight { transition: none; }
 }
 
 .proto-picker-item {
@@ -117,7 +115,7 @@ In a framework, keep the class names and structure; only the rendering syntax ch
   font-size: 14px;
 }
 
-.proto-picker[data-position='top'] {
+.proto-picker[data-position="top"] {
   bottom: auto;
   top: 24px;
 }
@@ -161,9 +159,7 @@ function moveHighlight() {
 function mount(i) {
   stage.innerHTML = '';
   // Clear first, render next frame, so entrance animations re-run.
-  requestAnimationFrame(() => {
-    stage.innerHTML = variants[i]();
-  });
+  requestAnimationFrame(() => { stage.innerHTML = variants[i](); });
 }
 
 function setActive(i) {
