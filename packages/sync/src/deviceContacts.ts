@@ -49,7 +49,7 @@ const digest = (birthdays: ReadonlyArray<BirthdayRecord>): string =>
   birthdays
     .map(
       (record) =>
-        `${record.id}:${String(record.month)}-${String(record.day)}:${String(record.year)}`,
+        `${record.id}:${record.displayName}:${String(record.month)}-${String(record.day)}:${String(record.year)}`,
     )
     .sort()
     .join('|');

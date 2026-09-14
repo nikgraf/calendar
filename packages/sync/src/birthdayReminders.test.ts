@@ -3,7 +3,7 @@ import type { PlannedNotification } from '@calendar/core';
 import { DeviceSettingsRepo, reposLayer, runMigrations } from '@calendar/db';
 import { SqliteClient } from '@effect/sql-sqlite-node';
 import { expect, it } from '@effect/vitest';
-import { Duration, Effect, Layer } from 'effect';
+import { Deferred, Duration, Effect, Fiber, Layer } from 'effect';
 import { TestClock } from 'effect/testing';
 import { layer as reactivityLayer } from 'effect/unstable/reactivity/Reactivity';
 import { describe } from 'vitest';
@@ -23,7 +23,11 @@ const immediateSink = () => {
   return { shown, sink };
 };
 
-const scheduledSink = (granted = true) => {
+const scheduledSink = (
+  granted = true,
+  onReplace: (planned: ReadonlyArray<PlannedNotification>) => Effect.Effect<void, unknown> = () =>
+    Effect.void,
+) => {
   const schedules: Array<ReadonlyArray<PlannedNotification>> = [];
   let asked = 0;
   const sink: NotificationSinkShape = {
@@ -33,7 +37,8 @@ const scheduledSink = (granted = true) => {
         return granted;
       }),
     kind: 'scheduled',
-    replaceSchedule: (planned) => Effect.sync(() => void schedules.push(planned)),
+    replaceSchedule: (planned) =>
+      Effect.andThen(onReplace(planned), () => Effect.sync(() => void schedules.push(planned))),
   };
   return { asked: () => asked, schedules, sink };
 };
@@ -116,6 +121,63 @@ describe('BirthdayReminders', () => {
       expect(scheduled.schedules[1]).toEqual([]);
     }).pipe(Effect.provide(testLayer(scheduled.sink)));
   });
+
+  it.effect('a refused schedule is retried on the next pass; a new time reschedules', () => {
+    let failOnce = true;
+    const scheduled = scheduledSink(true, () =>
+      Effect.suspend(() => {
+        if (failOnce) {
+          failOnce = false;
+          return Effect.fail(new Error('UNUserNotificationCenter refused'));
+        }
+        return Effect.void;
+      }),
+    );
+    return Effect.gen(function* () {
+      yield* enable;
+      const reminders = yield* BirthdayReminders;
+      yield* setClock('2026-03-01T12:00:00Z');
+      yield* reminders.run();
+      expect(scheduled.schedules).toHaveLength(0);
+      yield* reminders.run();
+      expect(scheduled.schedules).toHaveLength(1);
+      // Same keys, later delivery time: the OS must hear about it.
+      yield* writeBirthdayReminderSettings({ enabled: true, leadDays: [0, 1], time: '15:00' });
+      yield* reminders.run();
+      expect(scheduled.schedules).toHaveLength(2);
+      expect(scheduled.schedules[1]![0]!.fireAt).toBe(Date.parse('2026-03-03T15:00:00Z'));
+    }).pipe(Effect.provide(testLayer(scheduled.sink)));
+  });
+
+  it.effect(
+    'passes are serialized: a disabling pass is not overtaken by a slow enabled one',
+    () => {
+      const release = Effect.runSync(Deferred.make<void>());
+      let first = true;
+      const scheduled = scheduledSink(true, () =>
+        Effect.suspend(() => {
+          if (first) {
+            first = false;
+            return Deferred.await(release);
+          }
+          return Effect.void;
+        }),
+      );
+      return Effect.gen(function* () {
+        yield* enable;
+        const reminders = yield* BirthdayReminders;
+        yield* setClock('2026-03-01T12:00:00Z');
+        const slow = yield* Effect.forkChild(reminders.run());
+        yield* Effect.yieldNow;
+        yield* writeBirthdayReminderSettings({ enabled: false, leadDays: [0, 1], time: '09:00' });
+        const disabling = yield* Effect.forkChild(reminders.run());
+        yield* Effect.yieldNow;
+        yield* Deferred.succeed(release, undefined);
+        yield* Effect.all([Fiber.join(slow), Fiber.join(disabling)], { discard: true });
+        expect(scheduled.schedules.map((schedule) => schedule.length)).toEqual([2, 0]);
+      }).pipe(Effect.provide(testLayer(scheduled.sink)));
+    },
+  );
 
   it.effect('a scheduled sink without permission schedules nothing', () => {
     const scheduled = scheduledSink(false);

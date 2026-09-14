@@ -46,6 +46,9 @@ const makeSink = (notifications: typeof import('expo-notifications')): Notificat
         return (await notifications.requestPermissionsAsync()).granted;
       }).pipe(Effect.orElseSucceed(() => false)),
     kind: 'scheduled',
+    // A failure propagates: the scheduler must not remember a schedule
+    // the OS never accepted. Identifiers are stable, so a retry after a
+    // partial failure replaces rather than duplicates.
     replaceSchedule: (planned) =>
       Effect.tryPromise(async () => {
         await notifications.cancelAllScheduledNotificationsAsync();
@@ -59,11 +62,7 @@ const makeSink = (notifications: typeof import('expo-notifications')): Notificat
             },
           });
         }
-      }).pipe(
-        Effect.catchCause((cause) =>
-          Effect.logWarning('scheduling birthday reminders failed', { cause: String(cause) }),
-        ),
-      ),
+      }),
   };
 };
 

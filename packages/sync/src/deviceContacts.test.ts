@@ -7,7 +7,8 @@ import {
 import { expect, it } from '@effect/vitest';
 import { Effect, Layer } from 'effect';
 import { TestClock } from 'effect/testing';
-import { layer as reactivityLayer } from 'effect/unstable/reactivity/Reactivity';
+import { BIRTHDAYS_KEY } from '@calendar/db/keys';
+import { layer as reactivityLayer, Reactivity } from 'effect/unstable/reactivity/Reactivity';
 import { describe } from 'vitest';
 import { DeviceContacts } from './deviceContacts.ts';
 
@@ -128,6 +129,37 @@ describe('DeviceContacts', () => {
       );
     },
   );
+
+  it.effect('a renamed contact invalidates the birthdays key; an unchanged list does not', () => {
+    const { client, state } = makeFakeContactsClient({
+      birthdays: [{ contactId: 'c1', day: 4, displayName: 'Alice', month: 3 }],
+      contacts: [alice],
+    });
+    return Effect.gen(function* () {
+      const contacts = yield* DeviceContacts;
+      const reactivity = yield* Reactivity;
+      let invalidations = 0;
+      reactivity.registerUnsafe([BIRTHDAYS_KEY], () => {
+        invalidations += 1;
+      });
+      yield* contacts.birthdays();
+      expect(invalidations).toBe(1);
+      state.birthdays[0] = { ...state.birthdays[0]!, displayName: 'Alicia' };
+      yield* TestClock.adjust('6 minutes');
+      expect((yield* contacts.birthdays())[0]!.displayName).toBe('Alicia');
+      expect(invalidations).toBe(2);
+      yield* TestClock.adjust('6 minutes');
+      yield* contacts.birthdays();
+      expect(invalidations).toBe(2);
+    }).pipe(
+      Effect.provide(
+        DeviceContacts.layer.pipe(
+          Layer.provide(Layer.succeed(ContactsClient, client)),
+          Layer.provideMerge(reactivityLayer),
+        ),
+      ),
+    );
+  });
 
   it.effect('a change notification refreshes the birthdays', () => {
     const { client, state } = makeFakeContactsClient({ contacts: [alice] });

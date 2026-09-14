@@ -1,6 +1,6 @@
 import { planBirthdayReminders, type PlannedNotification, Temporal } from '@calendar/core';
 import { type AccountRepo, type BirthdayRepo, DeviceSettingsRepo } from '@calendar/db';
-import { Clock, Context, Effect, Layer, Schedule } from 'effect';
+import { Clock, Context, Effect, Layer, Schedule, Semaphore } from 'effect';
 import { loadMergedBirthdays } from './birthdays.ts';
 import type { DeviceContacts } from './deviceContacts.ts';
 import { readBirthdayReminderSettings } from './deviceSettings.ts';
@@ -53,6 +53,10 @@ const make = (options: {
   Effect.gen(function* () {
     const settingsRepo = yield* DeviceSettingsRepo;
     const sink = yield* NotificationSink;
+    // One pass at a time: the loop, a settings save and a foreground
+    // return all call run(), and a disabling pass must not be overtaken
+    // by an enabled one still handing the OS its schedule.
+    const gate = Semaphore.makeUnsafe(1);
     // The pass's own requirements, captured once so `run` is self-contained.
     const context = yield* Effect.context<
       AccountRepo | BirthdayRepo | DeviceContacts | DeviceSettingsRepo
@@ -85,7 +89,11 @@ const make = (options: {
           return;
         }
         const future = plans.filter((plan) => plan.fireAt > now).slice(0, MAX_SCHEDULED);
-        const digest = future.map((plan) => plan.key).join('|');
+        // Time and copy are part of the digest: a new delivery time or a
+        // renamed contact changes what the OS should show, not which key.
+        const digest = future
+          .map((plan) => `${plan.key}@${String(plan.fireAt)}:${plan.title}:${plan.body}`)
+          .join('|');
         if ((yield* settingsRepo.get(SCHEDULED_KEY)) === digest) {
           return;
         }
@@ -123,12 +131,14 @@ const make = (options: {
     });
 
     const run = (): Effect.Effect<void> =>
-      pass.pipe(
-        Effect.provide(context),
-        Effect.catchCause((cause) =>
-          Effect.logWarning('birthday reminders pass failed', { cause: String(cause) }),
-        ),
-      );
+      gate
+        .withPermits(1)(pass)
+        .pipe(
+          Effect.provide(context),
+          Effect.catchCause((cause) =>
+            Effect.logWarning('birthday reminders pass failed', { cause: String(cause) }),
+          ),
+        );
 
     const start = (): Effect.Effect<void> =>
       Effect.asVoid(Effect.forkDetach(Effect.repeat(run(), Schedule.spaced(RUN_INTERVAL))));

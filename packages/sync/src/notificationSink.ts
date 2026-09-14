@@ -16,10 +16,14 @@ export type NotificationSinkShape =
       /** Asks the OS when undetermined; false means the user declined. */
       readonly ensurePermission: () => Effect.Effect<boolean>;
       readonly kind: 'scheduled';
-      /** Replaces every pending notification with these. */
+      /**
+       * Replaces every pending notification with these. Must fail when the
+       * OS refused: the scheduler only records a schedule as delivered
+       * after this succeeds, and retries the whole set on the next pass.
+       */
       readonly replaceSchedule: (
         notifications: ReadonlyArray<PlannedNotification>,
-      ) => Effect.Effect<void>;
+      ) => Effect.Effect<void, unknown>;
     };
 
 export class NotificationSink extends Context.Service<NotificationSink, NotificationSinkShape>()(
