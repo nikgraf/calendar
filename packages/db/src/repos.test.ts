@@ -58,6 +58,16 @@ const calendar = (overrides: Partial<CalendarInfo> = {}): CalendarInfo =>
     ...overrides,
   });
 
+const syncState = (scope: string, syncToken: string | null, status: SyncState['status']) =>
+  new SyncState({
+    accountId: 'acc-1',
+    lastFullSyncAt: null,
+    lastSyncAt: 1,
+    scope,
+    status,
+    syncToken,
+  });
+
 const timedEvent = (overrides: Partial<EventRecord> = {}): EventRecord =>
   new EventRecord({
     accountId: 'acc-1',
@@ -245,6 +255,83 @@ describe('repos', () => {
       yield* events.deleteStale('acc-1', 'cal-1', 15);
       const window = yield* events.getWindow(0, plainDateToUtcMs('2030-01-01'));
       expect(window.singles.map((event) => event.id).sort()).toEqual(['fresh', 'pending-local']);
+    }).pipe(Effect.provide(freshDbLayer())),
+  );
+
+  it.effect('getWindow skips series that ended before the range', () =>
+    Effect.gen(function* () {
+      const calendars = yield* CalendarRepo;
+      const events = yield* EventRepo;
+      yield* calendars.upsertMany([calendar()]);
+      yield* events.upsertMany([
+        timedEvent({ id: 'endless', recurrence: ['RRULE:FREQ=WEEKLY'] }),
+        timedEvent({ id: 'ended', recurrence: ['RRULE:FREQ=WEEKLY;COUNT=2'] }),
+        timedEvent({ id: 'until', recurrence: ['RRULE:FREQ=WEEKLY;UNTIL=20260901T000000Z'] }),
+      ]);
+      const window = yield* events.getWindow(
+        Date.parse('2026-08-01T00:00:00Z'),
+        Date.parse('2026-08-31T00:00:00Z'),
+      );
+      expect(window.masters.map((event) => event.id).sort()).toEqual(['endless', 'until']);
+      const later = yield* events.getWindow(
+        Date.parse('2027-01-01T00:00:00Z'),
+        Date.parse('2027-01-31T00:00:00Z'),
+      );
+      expect(later.masters.map((event) => event.id)).toEqual(['endless']);
+    }).pipe(Effect.provide(freshDbLayer())),
+  );
+
+  it.effect(
+    'applyPage writes a page atomically and a failing page leaves the last one intact',
+    () =>
+      Effect.gen(function* () {
+        const calendars = yield* CalendarRepo;
+        const events = yield* EventRepo;
+        yield* calendars.upsertMany([calendar()]);
+        yield* events.applyPage('acc-1', 'cal-1', {
+          deletions: [],
+          mode: 'pull',
+          upserts: [timedEvent({ id: 'a' }), timedEvent({ id: 'b' })],
+        });
+        // A row whose title violates NOT NULL fails the whole second page.
+        const broken = { ...timedEvent({ id: 'c' }), title: null as unknown as string };
+        const outcome = yield* Effect.result(
+          events.applyPage('acc-1', 'cal-1', {
+            deletions: ['a'],
+            mode: 'pull',
+            upserts: [timedEvent({ id: 'd' }), broken as EventRecord],
+          }),
+        );
+        expect(outcome._tag).toBe('Failure');
+        const window = yield* events.getWindow(0, plainDateToUtcMs('2030-01-01'));
+        expect(window.singles.map((event) => event.id).sort()).toEqual(['a', 'b']);
+      }).pipe(Effect.provide(freshDbLayer())),
+  );
+
+  it.effect('deleteByCalendar spares the sibling calendar; countByAccount counts rows', () =>
+    Effect.gen(function* () {
+      const calendars = yield* CalendarRepo;
+      const events = yield* EventRepo;
+      yield* calendars.upsertMany([calendar(), calendar({ id: 'cal-2', summary: 'Other' })]);
+      yield* events.upsertMany([
+        timedEvent({ id: 'a' }),
+        timedEvent({ calendarId: 'cal-2', id: 'b' }),
+        timedEvent({ calendarId: 'cal-2', id: 'c' }),
+      ]);
+      expect(yield* events.countByAccount()).toEqual([{ accountId: 'acc-1', eventCount: 3 }]);
+      yield* events.deleteByCalendar('acc-1', 'cal-2');
+      expect(yield* events.countByAccount()).toEqual([{ accountId: 'acc-1', eventCount: 1 }]);
+    }).pipe(Effect.provide(freshDbLayer())),
+  );
+
+  it.effect('summarizeEvents counts calendars still on their first full list', () =>
+    Effect.gen(function* () {
+      const states = yield* SyncStateRepo;
+      yield* states.set(syncState('calendarList', null, 'idle'));
+      yield* states.set(syncState('events:cal-1', 'tok', 'idle'));
+      yield* states.set(syncState('events:cal-2', null, 'syncing'));
+      yield* states.set(syncState('events:cal-3', 'tok', 'syncing'));
+      expect(yield* states.summarizeEvents()).toEqual([{ accountId: 'acc-1', importing: 2 }]);
     }).pipe(Effect.provide(freshDbLayer())),
   );
 });

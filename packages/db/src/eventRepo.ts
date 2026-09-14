@@ -16,7 +16,34 @@ export interface EventWindow {
   readonly singles: ReadonlyArray<EventRecord>;
 }
 
+/** One sync page: rows to write and ids Google reported as gone, applied atomically. */
+export interface EventPage {
+  readonly deletions: ReadonlyArray<string>;
+  readonly mode: 'ack' | 'pull';
+  readonly upserts: ReadonlyArray<EventRecord>;
+}
+
 export interface EventRepoShape {
+  /**
+   * One transaction per page: a 2,500-row page as single autocommit
+   * INSERTs was the dominant cost of a full pass on both hosts, and one
+   * invalidation per page replaces one per deletion.
+   */
+  readonly applyPage: (
+    accountId: string,
+    calendarId: string,
+    page: EventPage,
+  ) => Effect.Effect<void, SqlError>;
+  /** Rows per account, for the Settings history line. */
+  readonly countByAccount: () => Effect.Effect<
+    ReadonlyArray<{ readonly accountId: string; readonly eventCount: number }>,
+    SqlError
+  >;
+  /** Everything of a calendar that no longer exists upstream. */
+  readonly deleteByCalendar: (
+    accountId: string,
+    calendarId: string,
+  ) => Effect.Effect<void, SqlError>;
   readonly deleteEvent: (
     accountId: string,
     calendarId: string,
@@ -72,14 +99,16 @@ const makeEventRepo: Effect.Effect<EventRepoShape, never, Reactivity | SqlClient
       return sql`
       INSERT INTO events (account_id, calendar_id, id, etag, status, title, location,
                           description, is_all_day, start_utc, end_utc, start_date,
-                          end_date, start_time_zone, recurrence, recurring_event_id,
-                          original_start_utc, attendees, organizer_email, sync_status,
-                          updated_at, synced_at)
+                          end_date, start_time_zone, recurrence, recurrence_end_utc,
+                          recurring_event_id, original_start_utc, attendees,
+                          hangout_link, organizer_email, sync_status, updated_at,
+                          synced_at)
       SELECT ${row.account_id}, ${row.calendar_id}, ${row.id}, ${row.etag},
              ${row.status}, ${row.title}, ${row.location}, ${row.description},
              ${row.is_all_day}, ${row.start_utc}, ${row.end_utc}, ${row.start_date},
              ${row.end_date}, ${row.start_time_zone}, ${row.recurrence},
-             ${row.recurring_event_id}, ${row.original_start_utc}, ${row.attendees},
+             ${row.recurrence_end_utc}, ${row.recurring_event_id},
+             ${row.original_start_utc}, ${row.attendees}, ${row.hangout_link},
              ${row.organizer_email}, ${row.sync_status}, ${row.updated_at},
              ${row.synced_at}
       ${accountGuard(sql, row.account_id)}
@@ -96,9 +125,11 @@ const makeEventRepo: Effect.Effect<EventRepoShape, never, Reactivity | SqlClient
         end_date = excluded.end_date,
         start_time_zone = excluded.start_time_zone,
         recurrence = excluded.recurrence,
+        recurrence_end_utc = excluded.recurrence_end_utc,
         recurring_event_id = excluded.recurring_event_id,
         original_start_utc = excluded.original_start_utc,
         attendees = excluded.attendees,
+        hangout_link = excluded.hangout_link,
         organizer_email = excluded.organizer_email,
         sync_status = excluded.sync_status,
         updated_at = excluded.updated_at,
@@ -107,7 +138,41 @@ const makeEventRepo: Effect.Effect<EventRepoShape, never, Reactivity | SqlClient
     `;
     };
 
+    const deleteOne = (accountId: string, calendarId: string, eventId: string) =>
+      sql`DELETE FROM events WHERE account_id = ${accountId}
+        AND calendar_id = ${calendarId} AND id = ${eventId}`;
+
     return {
+      applyPage: (accountId, calendarId, page) =>
+        reactivity.mutation(
+          [EVENTS_KEY, eventsKey(calendarId)],
+          sql.withTransaction(
+            Effect.gen(function* () {
+              yield* Effect.forEach(page.upserts, (event) => upsertOne(event, page.mode), {
+                discard: true,
+              });
+              yield* Effect.forEach(
+                page.deletions,
+                (eventId) => deleteOne(accountId, calendarId, eventId),
+                { discard: true },
+              );
+            }),
+          ),
+        ),
+      countByAccount: () =>
+        Effect.map(
+          sql<{ readonly account_id: string; readonly event_count: number }>`
+            SELECT account_id, COUNT(*) AS event_count FROM events
+            GROUP BY account_id ORDER BY account_id`,
+          (rows) => rows.map((row) => ({ accountId: row.account_id, eventCount: row.event_count })),
+        ),
+      deleteByCalendar: (accountId, calendarId) =>
+        reactivity.mutation(
+          [EVENTS_KEY, eventsKey(calendarId)],
+          Effect.asVoid(
+            sql`DELETE FROM events WHERE account_id = ${accountId} AND calendar_id = ${calendarId}`,
+          ),
+        ),
       deleteEvent: (accountId, calendarId, eventId) =>
         reactivity.mutation(
           [EVENTS_KEY, eventsKey(calendarId)],
@@ -140,11 +205,14 @@ const makeEventRepo: Effect.Effect<EventRepoShape, never, Reactivity | SqlClient
           AND e.start_utc < ${rangeEndUtc} AND e.end_utc > ${rangeStartUtc}
           AND e.status != 'cancelled'`;
 
+          // Series that ended before the range are left out; an override
+          // of such a series that falls in range still arrives as a single.
           const masters = yield* sql<EventRow>`
           SELECT e.* FROM events e
           JOIN calendars c ON c.account_id = e.account_id AND c.id = e.calendar_id
           WHERE c.is_visible = 1 AND e.recurrence IS NOT NULL
           AND e.start_utc < ${rangeEndUtc}
+          AND (e.recurrence_end_utc IS NULL OR e.recurrence_end_utc >= ${rangeStartUtc})
           AND e.status != 'cancelled'`;
 
           const masterIds = masters.map((row) => row.id);

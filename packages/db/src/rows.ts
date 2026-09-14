@@ -6,6 +6,7 @@ import {
   EventRecord,
   GoogleBirthday,
   PendingOp,
+  recurrenceEndUtc,
   SyncState,
   TaskListInfo,
   TaskRecord,
@@ -323,8 +324,21 @@ export const eventToRow = (event: EventRecord): EventRow => ({
   organizer_email: event.organizerEmail ?? null,
   original_start_utc: event.originalStartUtc ?? null,
   recurrence: event.recurrence ? JSON.stringify(event.recurrence) : null,
-  // Filled by the repo write path once the recurrence bound lands.
-  recurrence_end_utc: null,
+  // Computed on every write (sync pages, local edits, seeds) so the
+  // window query can skip series that ended before the range.
+  recurrence_end_utc:
+    event.recurrence && event.recurrence.length > 0
+      ? (recurrenceEndUtc({
+          endDate: event.endDate,
+          endUtc: event.endUtc,
+          id: event.id,
+          isAllDay: event.isAllDay,
+          recurrence: event.recurrence,
+          startDate: event.startDate,
+          startTimeZone: event.startTimeZone ?? 'UTC',
+          startUtc: event.startUtc,
+        }) ?? null)
+      : null,
   recurring_event_id: event.recurringEventId ?? null,
   start_date: event.startDate ?? null,
   start_time_zone: event.startTimeZone ?? null,

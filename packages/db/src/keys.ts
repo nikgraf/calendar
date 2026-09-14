@@ -35,4 +35,7 @@ export const BIRTHDAYS_KEY = 'birthdays';
  */
 export const deviceSettingsKey = (key: string): string => `deviceSettings:${key}`;
 
+/** A sync_state row changed (a pass started or finished). */
+export const SYNC_STATE_KEY = 'syncState';
+
 export const eventsKey = (calendarId: string): string => `events:${calendarId}`;
