@@ -352,24 +352,31 @@ picked by `id: task-list-option`; a chip body is tapped by its full text
 (`[0-9]+:[0-9]+ !!! <title>` for a timed reminder), because `.*<title>`
 also matches the checkbox's "Toggle <title>" label and toggles
 completion instead of opening the editor. Flows that open the edit sheet `waitForAnimationToEnd` before tapping
-inside it (a tap taken mid-slide missed on the runner), and the
+inside it (a tap taken mid-slide missed on the runner); the header "+"
+is tapped through `common/open-new-event.yaml`, which re-taps while the
+sheet is missing (run 34852090635 tapped it once at the right
+coordinates and nothing opened), and the
 quick-add flow accepts the bar's "couldn't be read" outcome: a CI
 simulator passes the model availability check yet cannot generate,
 so the prefilled editor is asserted only where a model answers.
-The bootstrap flow opens the dev client through
-`solunivo://expo-development-client/?url=…`, and iOS confirms a scheme
-URL opened from outside with an "Open in Solunivo?" alert — one per
-`simctl openurl`, and they stack (the CI step's own openurl plus the
-flow's `openLink`, more on a slow runner). `common/confirm-open.yaml`
-confirms exactly one and cancels the rest: every further "Open"
-re-delivered the same URL to the client while its first bundle was
-still starting, it re-fetched the manifest mid-load and the process
-died with SIGSEGV ~150 ms after the bundle ran (two runs that tapped
-"Open" four times failed; the runs that tapped once passed). The
-flow's recovery loop also re-sends the link when the launcher sits on
-a blank home screen (a launch request once sat in SpringBoard for a
-minute), and its waits are `optional` so one slow attempt cannot end
-the flow before the final "Today" assertion. On failure the job waits
+The bootstrap flow `launchApp`s the dev client and only then opens
+`solunivo://expo-development-client/?url=…`: with the client in front
+iOS delivers the URL directly. A scheme URL opened while another app is
+in front goes through the "Open in Solunivo?" alert instead — one per
+`simctl openurl`, and they stack — and that path is not reliable on a
+runner: run 34851193180 confirmed the alert and no launch followed,
+because the diagnostics step had left Safari in front with a modal
+"download 'status'?" sheet (the CI step now terminates Safari after its
+screenshot, and no longer sends the URL itself). `common/confirm-open.yaml`
+stays as the safety net for the alert case and confirms exactly one,
+cancelling the rest: every further "Open" re-delivered the same URL to
+the client while its first bundle was still starting, it re-fetched the
+manifest mid-load and the process died with SIGSEGV ~150 ms after the
+bundle ran (two runs that tapped "Open" four times failed; the runs that
+tapped once passed). The flow's recovery loop also re-sends the link
+when the launcher sits on a blank home screen (a launch request once sat
+in SpringBoard for a minute), and its waits are `optional` so one slow
+attempt cannot end the flow before the final "Today" assertion. On failure the job waits
 for the simulator's crash report (`~/Library/Logs/DiagnosticReports/
 Solunivo-*.ips`, written a minute or so after the crash) and prints
 its exception and faulting thread before uploading it.
