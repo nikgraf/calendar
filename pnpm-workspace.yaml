@@ -55,3 +55,5 @@ allowBuilds:
   # Optional native tracing inside eas-cli; the JS stub fallback is fine.
   dtrace-provider: false
   msgpackr-extract: false
+  # Pulled in by eas-cli 24; its postinstall only prints a notice.
+  protobufjs: false
