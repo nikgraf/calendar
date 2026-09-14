@@ -23,5 +23,16 @@ export const TASKS_KEY = 'tasks';
 export const TASKLISTS_KEY = 'taskLists';
 /** Contact rows (Google People cache) changed. */
 export const CONTACTS_KEY = 'contacts';
+/**
+ * Birthday rows changed (Google cache or the device snapshot). Separate
+ * from CONTACTS_KEY so the invitee typeahead never refetches on a birthday
+ * change and vice versa.
+ */
+export const BIRTHDAYS_KEY = 'birthdays';
+/**
+ * One device setting changed. Keyed per setting so bookkeeping writes (a
+ * reminder scheduler's fired set) never refetch the settings UI.
+ */
+export const deviceSettingsKey = (key: string): string => `deviceSettings:${key}`;
 
 export const eventsKey = (calendarId: string): string => `events:${calendarId}`;

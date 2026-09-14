@@ -107,9 +107,14 @@ between passes or `passStartedAt` never moves.
 ### Google People API (contacts cache)
 
 - Two endpoints, two scopes: `people/me/connections` with
-  `personFields=names,emailAddresses` needs `contacts.readonly`;
+  `personFields=names,emailAddresses,birthdays` needs `contacts.readonly`;
   `otherContacts` needs `contacts.other.readonly` and only accepts a
-  `readMask` of names/emailAddresses/phoneNumbers. Both are _sensitive_
+  `readMask` of names/emailAddresses/phoneNumbers (no birthdays there).
+  Changing `personFields` expires the stored sync token — People answers
+  400 `EXPIRED_SYNC_TOKEN` and the engine runs one full pass, so a field
+  added later self-heals on every install. Birthdays arrive as
+  `birthdays[].date {year?, month, day}` with `year` 0 or absent for
+  year-less dates; the primary entry wins, text-only entries are ignored. Both are _sensitive_
   scopes: existing accounts stay `contacts_enabled=0` until "Add Google
   Account" is re-run (in-place upgrade, same as tasks), and the People
   API must be enabled in the GCP project — the _People API_, not the
@@ -251,6 +256,12 @@ Flakiness lessons (each caused a real CI failure — keep them enforced):
   which is `describe.skipIf` unless `CALENDAR_E2E_REMINDERS=real`.
 - `CALENDAR_CONTACTS=off` does the same for the address book bridge
   (`launchApp(seed, { contacts: 'real' })` to opt in; nothing does yet).
+  `launchApp(seed, { contacts: { fixture } })` writes a JSON address book
+  (`CALENDAR_CONTACTS=fixture` + `CALENDAR_CONTACTS_FIXTURE=<path>`) that
+  the app serves through the in-memory fake client — `birthdays.e2e.ts`
+  uses it for device birthdays. The harness always sets
+  `CALENDAR_NOTIFICATIONS=off` so a seeded birthday with reminders on
+  never posts a real banner.
   `contacts.e2e.ts` seeds Google contact rows (`SeedData.contacts`) and
   drives the combobox through `input[aria-label="Invitees"]`: value
   setter + `input` event to type, synthetic `keydown` for ArrowDown /

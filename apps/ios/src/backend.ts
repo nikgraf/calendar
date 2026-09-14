@@ -1,5 +1,6 @@
 import {
   makeDirectBackendClient,
+  Temporal,
   TokenSet,
   type BackendClient,
   type BackendHandlers,
@@ -14,6 +15,7 @@ import {
   TokenStore,
 } from '@calendar/google';
 import {
+  BirthdayReminders,
   commonBackendHandlers,
   DeviceContacts,
   EventMutations,
@@ -28,6 +30,7 @@ import { deleteItemAsync, getItemAsync, setItemAsync } from 'expo-secure-store';
 import { Data, Effect, Layer, ManagedRuntime, Schema } from 'effect';
 import { FetchHttpClient } from 'effect/unstable/http';
 import { signInWithGoogle } from './googleAuth.ts';
+import { iosNotificationSink } from './notifications.ts';
 import { iosContactsLayer } from './contactsClient.ts';
 import { iosRemindersLayer } from './remindersClient.ts';
 
@@ -90,6 +93,7 @@ const platformLayer = Layer.mergeAll(
 
 const appLayer = SyncEngine.layer.pipe(
   Layer.provideMerge(EventMutations.layer),
+  Layer.provideMerge(BirthdayReminders.layer({ timeZone: Temporal.Now.timeZoneId() })),
   Layer.provideMerge(GoogleCalendarClient.layer),
   Layer.provideMerge(GoogleTasksClient.layer),
   Layer.provideMerge(GooglePeopleClient.layer),
@@ -99,6 +103,7 @@ const appLayer = SyncEngine.layer.pipe(
   Layer.provideMerge(TokenManager.layer),
   Layer.provideMerge(dbLayer),
   Layer.provideMerge(platformLayer),
+  Layer.provideMerge(iosNotificationSink),
 );
 
 const runtime = ManagedRuntime.make(appLayer);
@@ -145,6 +150,7 @@ export const startSync = (): void => {
       Effect.gen(function* () {
         const engine = yield* SyncEngine;
         yield* engine.start();
+        yield* (yield* BirthdayReminders).start();
       }),
     )
     .catch(() => {
@@ -157,3 +163,12 @@ export const startSync = (): void => {
 export const kickSync = makeSyncKicker(() =>
   runtime.runPromise(Effect.flatMap(SyncEngine, (engine) => engine.syncAll())),
 );
+
+/** Refreshes the OS notification schedule now — on return to the foreground, next to kickSync. */
+export const runBirthdayReminders = (): void => {
+  runtime
+    .runPromise(Effect.flatMap(BirthdayReminders, (reminders) => reminders.run()))
+    .catch(() => {
+      // run() never fails; a runtime that is not up yet must not surface here.
+    });
+};

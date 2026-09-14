@@ -1,4 +1,6 @@
 export * from './backendHandlers.ts';
+export * from './birthdayReminders.ts';
+export * from './notificationSink.ts';
 export * from './deviceContacts.ts';
 export * from './engine.ts';
 export * from './mutations.ts';

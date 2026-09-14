@@ -19,7 +19,8 @@ powers quick-add parsing, find-a-time, and dictation.
   auth), Gcal↔domain mapping, OAuth token stores.
 - `packages/sync` — `EventMutations` (op queue + optimistic writes, event
   and task op kinds), `SyncEngine` (poll/push/pull; tasks watermark sync),
-  backend rpc handlers, duplex rpc protocols.
+  backend rpc handlers, duplex rpc protocols, `BirthdayReminders` over a
+  platform `NotificationSink`.
 - `packages/ai` — model-provider seam (`ModelProvider`/`SpeechProvider`
   interfaces), quick-add + find-time prompt/normalize/parse pipelines.
   Pure; platform adapters live in the apps.
@@ -32,7 +33,8 @@ powers quick-add parsing, find-a-time, and dictation.
   reminders but read-only: `ContactsClient` (`contacts.status` /
   `requestAccess` / `snapshot`), the JSON protocol, an in-memory fake,
   and the one Swift source (`swift/ContactsBridge.swift`, CNContactStore)
-  symlinked into both native hosts. Feeds the invitee typeahead.
+  symlinked into both native hosts. Feeds the invitee typeahead and, via
+  `contacts.birthdays`, the birthday chips.
 - `packages/app-state` — `@effect/atom-react` atoms + React hooks
   (`useBackendMutations`, `useEventsInRangeStable`, …).
 - `apps/desktop` — Electron (Forge, vite, tsdown main bundle); rpc over an

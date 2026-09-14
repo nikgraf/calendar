@@ -8,8 +8,8 @@ import { Schema } from 'effect';
  * what comes back so a drift on either side fails loudly at the boundary.
  *
  * The bridge is read-only and deliberately tiny: names and email
- * addresses are all the invitee typeahead needs. No photos, no phone
- * numbers, nothing leaves the device.
+ * addresses for the invitee typeahead, birthdays for the calendar. No
+ * photos, no phone numbers, nothing leaves the device.
  */
 
 export const ContactsAuthorization = Schema.Literals([
@@ -31,6 +31,19 @@ export const DeviceContactJson = Schema.Struct({
 });
 export type DeviceContactJson = typeof DeviceContactJson.Type;
 
+/** One row per contact with a birthday; `year` is absent for year-less dates. */
+export const DeviceBirthdayJson = Schema.Struct({
+  contactId: Schema.String,
+  day: Schema.Number,
+  displayName: Schema.optional(Schema.String),
+  month: Schema.Number,
+  year: Schema.optional(Schema.Number),
+});
+export type DeviceBirthdayJson = typeof DeviceBirthdayJson.Type;
+
+export const BirthdaysResult = Schema.Struct({ birthdays: Schema.Array(DeviceBirthdayJson) });
+export type BirthdaysResult = typeof BirthdaysResult.Type;
+
 export const StatusResult = Schema.Struct({ authorization: ContactsAuthorization });
 export const RequestAccessResult = Schema.Struct({ granted: Schema.Boolean });
 /**
@@ -43,6 +56,7 @@ export type SnapshotResult = typeof SnapshotResult.Type;
 
 /** Method names as the native sides dispatch them. */
 export const CONTACTS_METHODS = {
+  birthdays: 'contacts.birthdays',
   requestAccess: 'contacts.requestAccess',
   snapshot: 'contacts.snapshot',
   status: 'contacts.status',

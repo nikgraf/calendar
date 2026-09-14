@@ -110,6 +110,13 @@ export const mapGcalEvent = (
   });
 };
 
+/**
+ * Google's read-only "Birthdays" calendar. It arrives through the normal
+ * calendarList, but birthdays render from the People API instead (with
+ * their source and year), so the sync skips this calendar entirely.
+ */
+export const GOOGLE_BIRTHDAYS_CALENDAR_ID = 'addressbook#contacts@group.v.calendar.google.com';
+
 export const mapGcalCalendar = (
   entry: GcalCalendarListEntry,
   context: {

@@ -76,6 +76,55 @@ export class GoogleContact extends Schema.Class<GoogleContact>('GoogleContact')(
   resourceName: Schema.String,
 }) {}
 
+/** Where a birthday came from; a person in both address books carries both. */
+export const BirthdaySource = Schema.Literals(['device', 'google']);
+export type BirthdaySource = typeof BirthdaySource.Type;
+
+export class BirthdaySourceRef extends Schema.Class<BirthdaySourceRef>('BirthdaySourceRef')({
+  /** Google only: the account whose address book holds the contact. */
+  accountEmail: Schema.optional(Schema.String),
+  accountId: Schema.optional(Schema.String),
+  /** `google:<accountId>:<resourceName>` / `device:<contactId>`. */
+  id: Schema.String,
+  source: BirthdaySource,
+}) {}
+
+/**
+ * One person's birthday, merged across sources. Not an event: it has no
+ * calendar, no time and no write path — the all-day lane renders it next
+ * to tasks and the detail view names its sources.
+ */
+export class BirthdayRecord extends Schema.Class<BirthdayRecord>('BirthdayRecord')({
+  day: Schema.Number,
+  displayName: Schema.String,
+  /** The first source's id — the Google one when present, so it survives device re-syncs. */
+  id: Schema.String,
+  month: Schema.Number,
+  sources: Schema.Array(BirthdaySourceRef),
+  /** Absent for year-less birthdays (the common case in address books). */
+  year: Schema.optional(Schema.Number),
+}) {}
+
+/** A birthday on one calendar day — what the range query returns. */
+export class BirthdayOccurrence extends Schema.Class<BirthdayOccurrence>('BirthdayOccurrence')({
+  /** The age turned on `date`, when the birth year is known. */
+  age: Schema.optional(Schema.Number),
+  /** 'YYYY-MM-DD'. */
+  date: Schema.String,
+  record: BirthdayRecord,
+}) {}
+
+/** A People API birthday as cached in SQLite, one row per contact. */
+export class GoogleBirthday extends Schema.Class<GoogleBirthday>('GoogleBirthday')({
+  accountId: Schema.String,
+  day: Schema.Number,
+  displayName: Schema.String,
+  month: Schema.Number,
+  /** `people/c…` — the People API's stable id. */
+  resourceName: Schema.String,
+  year: Schema.optional(Schema.Number),
+}) {}
+
 /** Lives ONLY in the platform TokenStore (Keychain/safeStorage), never in SQLite. */
 export class TokenSet extends Schema.Class<TokenSet>('TokenSet')({
   accessToken: Schema.String,

@@ -72,6 +72,10 @@ export const useGuardedMutations = () => {
       connectReminders: guardMutation('connect Apple Reminders', mutations.connectReminders),
       discardPendingOp: guardMutation('discard the change', mutations.discardPendingOp),
       removeAccount: guardMutation('remove the account', mutations.removeAccount),
+      setBirthdayReminderSettings: guardMutation(
+        'save the birthday reminders',
+        mutations.setBirthdayReminderSettings,
+      ),
       setCalendarColor: guardMutation('change the calendar color', mutations.setCalendarColor),
       setCalendarVisible: guardMutation('toggle the calendar', mutations.setCalendarVisible),
       setTaskListVisible: guardMutation('toggle the task list', mutations.setTaskListVisible),

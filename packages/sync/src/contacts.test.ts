@@ -1,5 +1,12 @@
 import { Account } from '@calendar/core';
-import { AccountRepo, ContactRepo, reposLayer, runMigrations, SyncStateRepo } from '@calendar/db';
+import {
+  AccountRepo,
+  BirthdayRepo,
+  ContactRepo,
+  reposLayer,
+  runMigrations,
+  SyncStateRepo,
+} from '@calendar/db';
 import {
   type GcalPeoplePage,
   GoogleCalendarClient,
@@ -106,6 +113,12 @@ const person = (resourceName: string, email: string, displayName?: string) => ({
 });
 
 const emails = (rows: ReadonlyArray<{ readonly email: string }>) => rows.map((row) => row.email);
+
+const withBirthday = (resourceName: string, name: string) => ({
+  birthdays: [{ date: { day: 4, month: 3 } }],
+  names: [{ displayName: name }],
+  resourceName,
+});
 
 describe('contacts sync', () => {
   it.effect('full pass caches both tiers, pages, and stores the sync tokens', () => {
@@ -231,6 +244,88 @@ describe('contacts sync', () => {
       );
     }).pipe(Effect.provide(testLayer(client)));
   });
+
+  it.effect(
+    'a full pass caches birthdays of saved contacts, email or not; other contacts never',
+    () => {
+      const client = peopleClient({
+        connections: [
+          {
+            connections: [
+              {
+                birthdays: [{ date: { day: 4, month: 3, year: 1994 } }],
+                names: [{ displayName: 'No Email' }],
+                resourceName: 'people/c1',
+              },
+              {
+                ...person('people/c2', 'bob@example.com', 'Bob'),
+                birthdays: [{ date: { day: 1, month: 1 } }],
+              },
+              person('people/c3', 'carol@example.com', 'Carol'),
+            ],
+            nextSyncToken: 'conn-1',
+          },
+        ],
+        other: [
+          {
+            nextSyncToken: 'other-1',
+            otherContacts: [
+              {
+                ...person('otherContacts/o1', 'shop@example.com', 'Shop'),
+                birthdays: [{ date: { day: 2, month: 2 } }],
+              },
+            ],
+          },
+        ],
+      });
+      return Effect.gen(function* () {
+        yield* seedAccount(true);
+        yield* (yield* SyncEngine).syncAll();
+        const rows = yield* (yield* BirthdayRepo).listAll();
+        expect(rows.map((row) => [row.resourceName, row.displayName, row.year])).toEqual([
+          ['people/c1', 'No Email', 1994],
+          ['people/c2', 'Bob', undefined],
+        ]);
+        // The emailless person is a birthday only, never a typeahead row.
+        expect(emails(yield* (yield* ContactRepo).listByAccount('acc-1')).sort()).toEqual([
+          'bob@example.com',
+          'carol@example.com',
+          'shop@example.com',
+        ]);
+      }).pipe(Effect.provide(testLayer(client)));
+    },
+  );
+
+  it.effect(
+    'an incremental pass applies birthday tombstones and drops a birthday that was removed',
+    () => {
+      const client = peopleClient({
+        connections: [
+          {
+            connections: [withBirthday('people/c1', 'Alice'), withBirthday('people/c2', 'Bob')],
+            nextSyncToken: 'conn-1',
+          },
+          {
+            connections: [
+              { metadata: { deleted: true }, resourceName: 'people/c1' },
+              { names: [{ displayName: 'Bob' }], resourceName: 'people/c2' },
+              withBirthday('people/c3', 'Carol'),
+            ],
+            nextSyncToken: 'conn-2',
+          },
+        ],
+        other: [{ nextSyncToken: 'other-1' }, { nextSyncToken: 'other-2' }],
+      });
+      return Effect.gen(function* () {
+        yield* seedAccount(true);
+        const engine = yield* SyncEngine;
+        yield* engine.syncAll();
+        yield* engine.syncAll();
+        const rows = yield* (yield* BirthdayRepo).listAll();
+        expect(rows.map((row) => row.resourceName)).toEqual(['people/c3']);
+      }).pipe(Effect.provide(testLayer(client)));
+    },
+  );
 
   it.effect('flips contactsEnabled off when the scope turns out to be missing', () => {
     const client = peopleClient({ connections: ['scope'], other: [] });

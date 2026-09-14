@@ -1,4 +1,5 @@
 import {
+  type BirthdayOccurrence,
   bufferedDays,
   dayRange,
   type EventRecord,
@@ -22,16 +23,22 @@ const HOUR_HEIGHT = 48;
 /** Hour lines as one repeating gradient (neutral-100), not 24 divs per column. */
 const HOUR_LINES = `repeating-linear-gradient(to bottom, #f5f5f5 0, #f5f5f5 1px, transparent 1px, transparent ${HOUR_HEIGHT}px)`;
 
+/** The occurrence date keys a birthday: one person recurs every year the strip crosses. */
+const birthdayKey = (birthday: BirthdayOccurrence): string =>
+  `birthday:${birthday.record.id}:${birthday.date}`;
+
 const dayIndexOf = (isoDate: string, days: ReadonlyArray<Temporal.PlainDate>): number => {
   const date = Temporal.PlainDate.from(isoDate);
   return days.findIndex((day) => Temporal.PlainDate.compare(day, date) === 0);
 };
 
 export function WeekView({
+  birthdays,
   colorOf,
   days,
   events,
   listColorOf,
+  onBirthdayClick,
   onEventClick,
   onNavigate,
   onSlotClick,
@@ -40,10 +47,12 @@ export function WeekView({
   tasks,
   timeZone,
 }: {
+  birthdays: ReadonlyArray<BirthdayOccurrence>;
   colorOf: ColorLookup;
   days: ReadonlyArray<Temporal.PlainDate>;
   events: ReadonlyArray<EventRecord>;
   listColorOf: (task: TaskRecord) => string | undefined;
+  onBirthdayClick: (birthday: BirthdayOccurrence) => void;
   onEventClick: (event: EventRecord) => void;
   onNavigate: (dayCount: number) => void;
   onSlotClick: (date: Temporal.PlainDate, hour: number) => void;
@@ -124,8 +133,18 @@ export function WeekView({
   });
   const taskById = new Map(tasks.map((task) => [`task:${task.listId}:${task.id}`, task]));
 
+  // Birthdays are one-day spans like tasks.
+  const birthdaySpans = birthdays.flatMap((birthday) => {
+    const index = dayIndexOf(birthday.date, strip);
+    return index === -1
+      ? []
+      : [{ endDayIndex: index + 1, id: birthdayKey(birthday), startDayIndex: index }];
+  });
+  const birthdayById = new Map(birthdays.map((birthday) => [birthdayKey(birthday), birthday]));
+
   const { placed: allDayPlaced, rowCount } = layoutAllDayLane(
     taskSpans.concat(
+      birthdaySpans,
       allDayEvents.map((event) => {
         const startIndex = event.startDate ? dayIndexOf(event.startDate, strip) : -1;
         const endIso = event.endDate ?? utcMsToPlainDate(event.endUtc);
@@ -166,8 +185,10 @@ export function WeekView({
 
       <AllDayLane
         allDayById={allDayById}
+        birthdayById={birthdayById}
         colorOf={colorOf}
         listColorOf={listColorOf}
+        onBirthdayClick={onBirthdayClick}
         onEventClick={onEventClick}
         onTaskClick={onTaskClick}
         onToggleTask={onToggleTask}

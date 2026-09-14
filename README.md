@@ -5,6 +5,7 @@ A Fantastical-style Google Calendar client: iOS (Expo) + macOS (Electron), clien
 - Day/week/month views with 1:1 drag gestures, recurring-event editing (this/following/all), per-calendar colors, offline-tolerant pending-op queue.
 - Google Tasks and Apple Reminders side by side in the all-day task lane: create/edit/complete/delete, two-way sync, and a form that fits each — Reminders add due time, priority, alerts, repeat, URL, and moving between lists.
 - Invitee autocomplete from the device address book and Google contacts (saved contacts plus "other contacts" you've emailed, cached locally); invitations go out with `sendUpdates=all`.
+- Contact birthdays (Google contacts and the device address book) as 🎂 chips in the all-day lane with a read-only detail naming the source, plus device-local birthday reminders (on the day / 1, 3, 7, 14 days before, at a time you pick) delivered as local notifications — on macOS while Solunivo is running, on iOS pre-scheduled.
 - On-device AI (Apple Foundation Models, no cloud): quick-add natural language parsing, "find a time" slot suggestions, and dictation — ⌘K bar on macOS, quick-add bar on iOS.
 
 **Docs:** `docs/architecture.md` (data flow, op queue, recurring model, AI layer),

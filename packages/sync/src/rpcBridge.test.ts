@@ -51,6 +51,9 @@ const stubHandlers: BackendHandlers = {
   deleteRecurring: () => Effect.void,
   deleteTask: () => Effect.void,
   discardPendingOp: () => Effect.void,
+  getBirthdayReminderSettings: () =>
+    Effect.succeed({ enabled: false, leadDays: [0 as const], time: '09:00' }),
+  getBirthdaysInRange: () => Effect.succeed([]),
   getEventsInRange: () => Effect.succeed([]),
   getTasksInRange: () => Effect.succeed([]),
   listAccounts: () => Effect.succeed([account]),
@@ -60,6 +63,7 @@ const stubHandlers: BackendHandlers = {
   removeAccount: () => Effect.void,
   respondToEvent: () => Effect.void,
   searchContacts: () => Effect.succeed([]),
+  setBirthdayReminderSettings: () => Effect.succeed({ notificationsGranted: true }),
   setCalendarColor: () => Effect.void,
   setCalendarVisible: () => Effect.void,
   setTaskListVisible: () => Effect.void,

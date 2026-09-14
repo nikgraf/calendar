@@ -6,6 +6,7 @@ import {
 } from '@calendar/app-state';
 import { useState } from 'react';
 import { PrivacySection } from './PrivacySection.tsx';
+import { BirthdayRemindersSection } from './BirthdayRemindersSection.tsx';
 import { ContactsSection } from './ContactsSection.tsx';
 import { RemindersSection } from './RemindersSection.tsx';
 
@@ -122,6 +123,7 @@ export function AccountsView() {
 
       <RemindersSection />
       <ContactsSection />
+      <BirthdayRemindersSection />
       <PrivacySection />
     </div>
   );

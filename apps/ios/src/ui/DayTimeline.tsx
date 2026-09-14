@@ -1,5 +1,6 @@
 import { useGuardedMutations } from '@calendar/app-state';
 import {
+  type BirthdayOccurrence,
   bufferedDays,
   type EventRecord,
   groupEventsByDay,
@@ -44,11 +45,13 @@ const setShared = (shared: SharedValue<number>, value: number) => {
  * A swipe pages by the visible width (one day or one week).
  */
 export function DayTimeline({
+  birthdays,
   buffer,
   colorOf,
   days,
   events,
   listColorOf,
+  onBirthdayPress,
   onEventPress,
   onNavigate,
   onTaskPress,
@@ -56,11 +59,13 @@ export function DayTimeline({
   tasks,
   timeZone,
 }: {
+  birthdays: ReadonlyArray<BirthdayOccurrence>;
   buffer: number;
   colorOf: (event: EventRecord) => string;
   days: ReadonlyArray<Temporal.PlainDate>;
   events: ReadonlyArray<EventRecord>;
   listColorOf: (task: TaskRecord) => string | undefined;
+  onBirthdayPress: (birthday: BirthdayOccurrence) => void;
   onEventPress: (event: EventRecord) => void;
   /** Swipe committed a page change: +1 forward, -1 back. */
   onNavigate: (direction: 1 | -1) => void;
@@ -112,6 +117,15 @@ export function DayTimeline({
     }
     return map;
   }, [tasks]);
+  const birthdaysByDay = useMemo(() => {
+    const map = new Map<string, Array<BirthdayOccurrence>>();
+    for (const birthday of birthdays) {
+      const bucket = map.get(birthday.date) ?? [];
+      bucket.push(birthday);
+      map.set(birthday.date, bucket);
+    }
+    return map;
+  }, [birthdays]);
 
   // The lane sizes itself to the busiest drawn day (neighbours included)
   // so a swipe never shifts the grid; only a committed page change can.
@@ -121,6 +135,7 @@ export function DayTimeline({
       const iso = day.toString();
       return (
         (tasksByDay.get(iso)?.length ?? 0) +
+        (birthdaysByDay.get(iso)?.length ?? 0) +
         (byDay.get(iso) ?? []).filter((event) => event.isAllDay).length
       );
     }),
@@ -197,12 +212,14 @@ export function DayTimeline({
               const iso = day.toString();
               return (
                 <AllDayColumn
+                  birthdays={birthdaysByDay.get(iso) ?? []}
                   colorOf={colorOf}
                   compact={compact}
                   events={(byDay.get(iso) ?? []).filter((event) => event.isAllDay)}
                   key={iso}
                   listColorOf={listColorOf}
                   maxChips={maxChips}
+                  onBirthdayPress={onBirthdayPress}
                   onEventPress={onEventPress}
                   onShowMore={() => setExpanded(true)}
                   onTaskPress={onTaskPress}

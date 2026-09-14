@@ -56,7 +56,7 @@ describe('GooglePeopleClient', () => {
       expect(page.nextSyncToken).toBe('tok-1');
       expect(recorded[0]!.url).toContain('/v1/people/me/connections');
       const query = params(recorded[0]!);
-      expect(query.get('personFields')).toBe('names,emailAddresses');
+      expect(query.get('personFields')).toBe('names,emailAddresses,birthdays');
       expect(query.get('readMask')).toBeNull();
       expect(query.get('requestSyncToken')).toBe('true');
       expect(query.get('pageSize')).toBe('1000');

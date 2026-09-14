@@ -30,6 +30,13 @@ export const CALENDAR_PALETTE: ReadonlyArray<string> = [
   '#a47ae2',
 ];
 
+/**
+ * The accent on birthday chips (palette index 21). Birthdays have no
+ * calendar and so no user color; like tasks they render as a neutral chip
+ * with an accent so they never read as an event from an unknown calendar.
+ */
+export const BIRTHDAY_ACCENT = '#f691b2';
+
 /** Black-ish or white text, whichever contrasts with the background. */
 export const contrastingTextColor = (backgroundHex: string): string => {
   const hex = backgroundHex.replace('#', '');

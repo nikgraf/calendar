@@ -1,4 +1,10 @@
-import type { GcalCalendarListEntry, GcalEvent, GcalTask, GcalTaskList } from '@calendar/google';
+import type {
+  GcalCalendarListEntry,
+  GcalEvent,
+  GcalPerson,
+  GcalTask,
+  GcalTaskList,
+} from '@calendar/google';
 import { TokenManager, type TokenManagerShape } from '@calendar/google';
 import { Effect, Layer } from 'effect';
 import { HttpClient, HttpClientResponse, type HttpClientRequest } from 'effect/unstable/http';
@@ -31,12 +37,15 @@ const wire = (entry: StoredTask): GcalTask => ({
 
 export interface FakeGoogleOptions {
   readonly calendars: ReadonlyArray<GcalCalendarListEntry>;
+  /** Saved contacts (people.connections); otherContacts is always empty. */
+  readonly people?: ReadonlyArray<GcalPerson>;
   readonly taskLists?: ReadonlyArray<GcalTaskList>;
 }
 
 export class FakeGoogle {
   readonly requests: Array<{ readonly method: string; readonly url: string }> = [];
   private readonly calendars: Array<GcalCalendarListEntry>;
+  private readonly people: Array<GcalPerson>;
   private readonly taskLists: Array<GcalTaskList>;
   private readonly events = new Map<string, Map<string, StoredEvent>>();
   private readonly versions = new Map<string, number>();
@@ -49,6 +58,7 @@ export class FakeGoogle {
 
   constructor(options: FakeGoogleOptions) {
     this.calendars = [...options.calendars];
+    this.people = [...(options.people ?? [])];
     this.taskLists = [...(options.taskLists ?? [])];
   }
 
@@ -86,6 +96,15 @@ export class FakeGoogle {
         task: { ...existing.task, deleted: true },
         updatedAt: this.now,
       });
+    }
+  }
+
+  putPerson(person: GcalPerson): void {
+    const index = this.people.findIndex((entry) => entry.resourceName === person.resourceName);
+    if (index === -1) {
+      this.people.push(person);
+    } else {
+      this.people[index] = person;
     }
   }
 
@@ -146,6 +165,16 @@ export class FakeGoogle {
         const calendarId = decodeURIComponent(match[1]!);
         const eventId = match[2] === undefined ? undefined : decodeURIComponent(match[2]);
         return this.calendarRoute(request, url, calendarId, eventId, body, reply);
+      }
+    }
+    if (url.hostname === 'people.googleapis.com') {
+      // Every pass is answered as a full one; the engine's token handling
+      // is covered by the scripted client in contacts.test.ts.
+      if (path === '/v1/people/me/connections') {
+        return reply(200, { connections: this.people, nextSyncToken: 'people-1' });
+      }
+      if (path === '/v1/otherContacts') {
+        return reply(200, { nextSyncToken: 'other-1', otherContacts: [] });
       }
     }
     if (url.hostname === 'tasks.googleapis.com') {

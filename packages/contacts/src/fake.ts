@@ -1,7 +1,7 @@
 import { changesFromSubscription } from '@calendar/core';
 import { Effect } from 'effect';
 import { ContactsAccessError, type ContactsClientShape, contactsReadable } from './client.ts';
-import type { ContactsAuthorization, DeviceContactJson } from './protocol.ts';
+import type { ContactsAuthorization, DeviceBirthdayJson, DeviceContactJson } from './protocol.ts';
 
 /**
  * In-memory ContactsClient for tests: a mutable contact list with the
@@ -10,6 +10,7 @@ import type { ContactsAuthorization, DeviceContactJson } from './protocol.ts';
  */
 export interface FakeContactsState {
   authorization: ContactsAuthorization;
+  birthdays: Array<DeviceBirthdayJson>;
   readonly calls: Array<string>;
   contacts: Array<DeviceContactJson>;
   /** Simulates CNContactStoreDidChange. */
@@ -19,12 +20,14 @@ export interface FakeContactsState {
 export const makeFakeContactsClient = (
   initial: {
     readonly authorization?: ContactsAuthorization;
+    readonly birthdays?: ReadonlyArray<DeviceBirthdayJson>;
     readonly contacts?: ReadonlyArray<DeviceContactJson>;
   } = {},
 ): { readonly client: ContactsClientShape; readonly state: FakeContactsState } => {
   const changeListeners = new Set<() => void>();
   const state: FakeContactsState = {
     authorization: initial.authorization ?? 'authorized',
+    birthdays: [...(initial.birthdays ?? [])],
     calls: [],
     contacts: [...(initial.contacts ?? [])],
     emitChange: () => {
@@ -35,6 +38,13 @@ export const makeFakeContactsClient = (
   };
 
   const client: ContactsClientShape = {
+    birthdays: () =>
+      Effect.suspend(() => {
+        state.calls.push('birthdays');
+        return contactsReadable(state.authorization)
+          ? Effect.succeed([...state.birthdays])
+          : Effect.fail(new ContactsAccessError({ authorization: state.authorization }));
+      }),
     changes: changesFromSubscription((listener) => {
       changeListeners.add(listener);
       return () => {

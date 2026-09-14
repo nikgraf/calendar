@@ -1,7 +1,13 @@
 import { useEventEditorModel, useTaskEditorModel, type EventEditorSeed } from '@calendar/app-state';
-import { type CalendarInfo, type TaskListInfo, type TaskRecord } from '@calendar/core';
+import {
+  type BirthdayOccurrence,
+  type CalendarInfo,
+  type TaskListInfo,
+  type TaskRecord,
+} from '@calendar/core';
 import { useState } from 'react';
 import { Modal, Pressable, SafeAreaView, Text, View } from 'react-native';
+import { BirthdayDetail } from './BirthdayDetail.tsx';
 import { sheetStyles as styles } from './editSheetShared.ts';
 import { EventEditForm } from './EventEditForm.tsx';
 import { ReminderEditForm } from './ReminderEditForm.tsx';
@@ -15,6 +21,7 @@ export type EditSeed = EventEditorSeed;
  * and both editor models (state must survive a mode flip).
  */
 export function EventEditSheet({
+  birthday,
   calendars,
   onClose,
   seed,
@@ -22,6 +29,8 @@ export function EventEditSheet({
   taskLists,
   timeZone,
 }: {
+  /** Present when opened from a birthday chip: a read-only detail, nothing to edit. */
+  birthday?: BirthdayOccurrence | undefined;
   calendars: ReadonlyArray<CalendarInfo>;
   onClose: () => void;
   seed: EditSeed;
@@ -31,7 +40,9 @@ export function EventEditSheet({
   timeZone: string;
 }) {
   // Create mode offers an Event | Task toggle; a chip tap fixes the mode.
-  const [mode, setMode] = useState<'event' | 'task'>(task ? 'task' : 'event');
+  const [mode, setMode] = useState<'birthday' | 'event' | 'task'>(
+    birthday ? 'birthday' : task ? 'task' : 'event',
+  );
   const taskModel = useTaskEditorModel({
     onClose,
     seed: { existing: task, initialDate: seed.initialDate.toString() },
@@ -53,17 +64,19 @@ export function EventEditSheet({
             <Text style={styles.cancel}>Cancel</Text>
           </Pressable>
           <Text style={styles.title}>
-            {mode === 'task'
-              ? task
-                ? taskModel.provider === 'apple'
-                  ? 'Edit Reminder'
-                  : 'Edit Task'
-                : 'New Task'
-              : eventModel.existing
-                ? 'Edit Event'
-                : 'New Event'}
+            {mode === 'birthday'
+              ? 'Birthday'
+              : mode === 'task'
+                ? task
+                  ? taskModel.provider === 'apple'
+                    ? 'Edit Reminder'
+                    : 'Edit Task'
+                  : 'New Task'
+                : eventModel.existing
+                  ? 'Edit Event'
+                  : 'New Event'}
           </Text>
-          {mode === 'task' && taskModel.readOnly ? (
+          {mode === 'birthday' || (mode === 'task' && taskModel.readOnly) ? (
             <View />
           ) : (
             <Pressable
@@ -75,7 +88,7 @@ export function EventEditSheet({
           )}
         </View>
 
-        {!eventModel.existing && !task ? (
+        {!eventModel.existing && !task && !birthday ? (
           <View style={styles.modeRow}>
             {(['event', 'task'] as const).map((option) => (
               <Pressable
@@ -92,7 +105,9 @@ export function EventEditSheet({
           </View>
         ) : null}
 
-        {mode === 'task' ? (
+        {mode === 'birthday' && birthday ? (
+          <BirthdayDetail occurrence={birthday} timeZone={timeZone} />
+        ) : mode === 'task' ? (
           // The selected list's provider picks the form: a Reminders list
           // exposes time/priority/alert/repeat/URL and can move; a Google
           // list gets the plain title/date/notes form.

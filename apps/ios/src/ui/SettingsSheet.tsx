@@ -11,6 +11,7 @@ import { Effect } from 'effect';
 import { useState } from 'react';
 import { Modal, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { AccountCard } from './AccountCard.tsx';
+import { BirthdayRemindersSection } from './BirthdayRemindersSection.tsx';
 import { DiagnosticsSection } from './DiagnosticsSection.tsx';
 import { PrPreviewSection } from './PrPreviewSection.tsx';
 import { palette } from './theme.ts';
@@ -120,6 +121,7 @@ export function SettingsSheet({ onClose, visible }: { onClose: () => void; visib
             </Pressable>
           )}
 
+          <BirthdayRemindersSection />
           <PrPreviewSection />
           <DiagnosticsSection />
         </ScrollView>

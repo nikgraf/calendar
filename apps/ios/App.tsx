@@ -9,9 +9,11 @@ import {
   useListColorLookup,
   usePendingOps,
   useTaskLists,
+  useBirthdaysInRangeStable,
   useTasksInRangeStable,
 } from '@calendar/app-state';
 import {
+  type BirthdayOccurrence,
   DAY_SWIPE_BUFFER,
   makeColorLookup,
   type TaskRecord,
@@ -23,7 +25,13 @@ import {
 import { useEffect, useMemo, useState } from 'react';
 import { AppState, Pressable, SafeAreaView, StatusBar, StyleSheet, Text, View } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
-import { backendClient, kickSync, startSync, subscribeInvalidations } from './src/backend.ts';
+import {
+  backendClient,
+  kickSync,
+  runBirthdayReminders,
+  startSync,
+  subscribeInvalidations,
+} from './src/backend.ts';
 import { appleLanguageModel } from './src/appleModel.ts';
 import { appleSpeech } from './src/appleSpeech.ts';
 import { makeFindSlots } from '@calendar/ai';
@@ -56,6 +64,7 @@ function CalendarScreen() {
   const [showSettings, setShowSettings] = useState(false);
   const [editSeed, setEditSeed] = useState<EditSeed | null>(null);
   const [editTask, setEditTask] = useState<TaskRecord | null>(null);
+  const [viewBirthday, setViewBirthday] = useState<BirthdayOccurrence | null>(null);
 
   useBackendInvalidations(subscribeInvalidations);
   useEffect(() => {
@@ -63,6 +72,7 @@ function CalendarScreen() {
     const subscription = AppState.addEventListener('change', (state) => {
       if (state === 'active') {
         kickSync();
+        runBirthdayReminders();
       }
     });
     return () => subscription.remove();
@@ -73,6 +83,10 @@ function CalendarScreen() {
   const events = useEventsInRangeStable(range.startUtc, range.endUtc);
   // Tasks are date-only; the same fetched window expressed as day strings.
   const tasks = useTasksInRangeStable(
+    utcMsToPlainDate(range.startUtc),
+    utcMsToPlainDate(range.endUtc),
+  );
+  const birthdays = useBirthdaysInRangeStable(
     utcMsToPlainDate(range.startUtc),
     utcMsToPlainDate(range.endUtc),
   );
@@ -214,11 +228,13 @@ function CalendarScreen() {
             trailingInset={view === 'week' ? EDGE_INSET : 0}
           />
           <DayTimeline
+            birthdays={birthdays}
             buffer={buffer}
             colorOf={colorOf}
             days={days}
             events={events}
             listColorOf={listColorOf}
+            onBirthdayPress={(birthday) => setViewBirthday(birthday)}
             onEventPress={(event) => setEditSeed({ event, initialDate: focused })}
             onNavigate={step}
             onTaskPress={(task) => setEditTask(task)}
@@ -238,17 +254,21 @@ function CalendarScreen() {
 
       {/* Keyed + conditionally mounted: the sheet seeds its form fields from
           `seed` in useState initializers, which only run on mount. */}
-      {editSeed || editTask ? (
+      {editSeed || editTask || viewBirthday ? (
         <EventEditSheet
+          birthday={viewBirthday ?? undefined}
           calendars={calendars}
           key={
-            editTask
-              ? `task:${editTask.id}`
-              : (editSeed?.event?.id ?? `new:${editSeed?.initialDate.toString()}`)
+            viewBirthday
+              ? `birthday:${viewBirthday.record.id}:${viewBirthday.date}`
+              : editTask
+                ? `task:${editTask.id}`
+                : (editSeed?.event?.id ?? `new:${editSeed?.initialDate.toString()}`)
           }
           onClose={() => {
             setEditSeed(null);
             setEditTask(null);
+            setViewBirthday(null);
           }}
           seed={editSeed ?? { initialDate: focused }}
           task={editTask ?? undefined}

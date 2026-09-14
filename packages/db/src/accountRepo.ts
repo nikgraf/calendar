@@ -3,7 +3,7 @@ import { Context, Effect, Layer } from 'effect';
 import { Reactivity } from 'effect/unstable/reactivity/Reactivity';
 import { SqlClient } from 'effect/unstable/sql/SqlClient';
 import type { SqlError } from 'effect/unstable/sql/SqlError';
-import { ACCOUNTS_KEY } from './keys.ts';
+import { ACCOUNTS_KEY, BIRTHDAYS_KEY } from './keys.ts';
 import { accountFromRow, type AccountRow } from './rows.ts';
 
 export interface AccountRepoShape {
@@ -44,11 +44,13 @@ const makeAccountRepo: Effect.Effect<AccountRepoShape, never, Reactivity | SqlCl
       // whole account or none of it — and its row writes are guarded on
       // the account row (see accountGuard), so nothing comes back.
       remove: (accountId) =>
-        invalidating(
+        reactivity.mutation(
+          [ACCOUNTS_KEY, BIRTHDAYS_KEY],
           sql.withTransaction(
             Effect.gen(function* () {
               yield* sql`DELETE FROM events WHERE account_id = ${accountId}`;
               yield* sql`DELETE FROM contacts WHERE account_id = ${accountId}`;
+              yield* sql`DELETE FROM contact_birthdays WHERE account_id = ${accountId}`;
               yield* sql`DELETE FROM tasks WHERE account_id = ${accountId}`;
               yield* sql`DELETE FROM task_lists WHERE account_id = ${accountId}`;
               yield* sql`DELETE FROM calendars WHERE account_id = ${accountId}`;

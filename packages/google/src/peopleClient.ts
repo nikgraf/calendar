@@ -9,8 +9,14 @@ import { definedParams, makeRequestCore, type GoogleRequestError } from './reque
 const BASE_URL = 'https://people.googleapis.com/v1';
 /** The API's maximum; address books rarely need a second page. */
 const PAGE_SIZE = 1000;
+/**
+ * Saved contacts carry their birthday. Changing this list expires every
+ * existing connections sync token (People answers EXPIRED_SYNC_TOKEN),
+ * which the engine already turns into one full pass.
+ */
+const CONNECTIONS_FIELDS = 'names,emailAddresses,birthdays';
 /** otherContacts.list only permits names, emailAddresses, phoneNumbers. */
-const FIELDS = 'names,emailAddresses';
+const OTHER_FIELDS = 'names,emailAddresses';
 
 /**
  * People reports an expired sync token as 400 EXPIRED_SYNC_TOKEN (the
@@ -49,6 +55,7 @@ const make: Effect.Effect<GooglePeopleClientShape, never, HttpClient.HttpClient 
     const list = (
       url: string,
       fieldsParam: 'personFields' | 'readMask',
+      fields: string,
       { accountId, pageToken, syncToken }: ListPeopleParams,
     ) =>
       requestJson(
@@ -56,7 +63,7 @@ const make: Effect.Effect<GooglePeopleClientShape, never, HttpClient.HttpClient 
         HttpClientRequest.get(url).pipe(
           HttpClientRequest.setUrlParams(
             definedParams({
-              [fieldsParam]: FIELDS,
+              [fieldsParam]: fields,
               pageSize: PAGE_SIZE,
               pageToken,
               requestSyncToken: 'true',
@@ -69,8 +76,9 @@ const make: Effect.Effect<GooglePeopleClientShape, never, HttpClient.HttpClient 
 
     return {
       listConnections: (params) =>
-        list(`${BASE_URL}/people/me/connections`, 'personFields', params),
-      listOtherContacts: (params) => list(`${BASE_URL}/otherContacts`, 'readMask', params),
+        list(`${BASE_URL}/people/me/connections`, 'personFields', CONNECTIONS_FIELDS, params),
+      listOtherContacts: (params) =>
+        list(`${BASE_URL}/otherContacts`, 'readMask', OTHER_FIELDS, params),
     };
   });
 

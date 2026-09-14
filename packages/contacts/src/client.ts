@@ -1,9 +1,11 @@
 import { type BridgeTransport, bridgeMessage, changesFromSubscription } from '@calendar/core';
 import { Context, Data, Effect, Layer, Schema, Stream } from 'effect';
 import {
+  BirthdaysResult,
   CONTACTS_CHANGED_EVENT,
   CONTACTS_METHODS,
   type ContactsAuthorization,
+  type DeviceBirthdayJson,
   type DeviceContactJson,
   RequestAccessResult,
   SnapshotResult,
@@ -44,6 +46,8 @@ export const contactsReadable = (authorization: ContactsAuthorization): boolean 
   authorization === 'authorized' || authorization === 'limited';
 
 export interface ContactsClientShape {
+  /** Every contact with a birthday, email or not. */
+  readonly birthdays: () => Effect.Effect<ReadonlyArray<DeviceBirthdayJson>, ContactsError>;
   /**
    * Fires whenever the device address book changed (any app) — a hint
    * to refetch the snapshot, not a correctness mechanism. Empty where
@@ -103,6 +107,8 @@ export const makeContactsClient = (
     );
 
   return {
+    birthdays: () =>
+      Effect.map(call(CONTACTS_METHODS.birthdays, BirthdaysResult), (r) => r.birthdays),
     changes,
     requestAccess: () =>
       Effect.map(call(CONTACTS_METHODS.requestAccess, RequestAccessResult), (r) => r.granted),
@@ -120,6 +126,7 @@ export const unavailableContactsClient = (reason: string): ContactsClientShape =
   const fail = <A>(): Effect.Effect<A, ContactsError> =>
     Effect.fail(new ContactsUnavailableError({ message: reason }));
   return {
+    birthdays: () => fail(),
     changes: Stream.empty,
     requestAccess: () => fail(),
     snapshot: () => fail(),

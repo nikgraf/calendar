@@ -10,13 +10,16 @@ import {
   type BackendMethodName,
   type BackendPayload,
   type BackendSuccess,
+  birthdaysInRange,
   rankContacts,
 } from '@calendar/core';
 import { ContactsClient } from '@calendar/contacts';
 import {
   AccountRepo,
+  BirthdayRepo,
   CalendarRepo,
   ContactRepo,
+  DeviceSettingsRepo,
   EventRepo,
   PendingOpRepo,
   TaskRepo,
@@ -24,7 +27,11 @@ import {
 import { TokenStore } from '@calendar/google';
 import { RemindersClient } from '@calendar/reminders';
 import { Clock, Effect, Queue, Stream } from 'effect';
+import { BirthdayReminders } from './birthdayReminders.ts';
+import { loadMergedBirthdays } from './birthdays.ts';
 import { DeviceContacts } from './deviceContacts.ts';
+import { readBirthdayReminderSettings, writeBirthdayReminderSettings } from './deviceSettings.ts';
+import { NotificationSink } from './notificationSink.ts';
 import { SyncEngine } from './engine.ts';
 import { EventMutations } from './mutations.ts';
 
@@ -33,12 +40,16 @@ const DEFAULT_SEARCH_LIMIT = 8;
 
 export type CommonBackendServices =
   | AccountRepo
+  | BirthdayReminders
+  | BirthdayRepo
   | CalendarRepo
   | ContactRepo
   | ContactsClient
   | DeviceContacts
+  | DeviceSettingsRepo
   | EventMutations
   | EventRepo
+  | NotificationSink
   | PendingOpRepo
   | RemindersClient
   | SyncEngine
@@ -138,6 +149,11 @@ export const commonBackendHandlers: Omit<BackendHandlers<CommonBackendServices>,
       yield* pendingOps.remove(opId);
     }),
 
+  getBirthdayReminderSettings: () => readBirthdayReminderSettings,
+
+  getBirthdaysInRange: ({ endDate, startDate }) =>
+    Effect.map(loadMergedBirthdays, (records) => birthdaysInRange(records, startDate, endDate)),
+
   getEventsInRange: ({ rangeEndUtc, rangeStartUtc }) =>
     Effect.gen(function* () {
       const events = yield* EventRepo;
@@ -210,6 +226,19 @@ export const commonBackendHandlers: Omit<BackendHandlers<CommonBackendServices>,
       const google = yield* (yield* ContactRepo).search(query, take * 4);
       const device = yield* (yield* DeviceContacts).list();
       return rankContacts(query, [...google, ...device], take);
+    }),
+
+  // Saves, asks the OS for notification permission when enabling on a
+  // platform that pre-schedules (iOS), and runs a reminder pass right
+  // away so the schedule reflects the new choice.
+  setBirthdayReminderSettings: (settings) =>
+    Effect.gen(function* () {
+      yield* writeBirthdayReminderSettings(settings);
+      const sink = yield* NotificationSink;
+      const notificationsGranted =
+        settings.enabled && sink.kind === 'scheduled' ? yield* sink.ensurePermission() : true;
+      yield* Effect.forkDetach((yield* BirthdayReminders).run());
+      return { notificationsGranted };
     }),
 
   setCalendarColor: (params) =>

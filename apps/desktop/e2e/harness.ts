@@ -7,14 +7,18 @@ import {
   Account,
   CalendarInfo,
   EventRecord,
+  GoogleBirthday,
   GoogleContact,
   TaskListInfo,
   TaskRecord,
 } from '@calendar/core';
+import type { DeviceBirthdayJson, DeviceContactJson } from '@calendar/contacts';
 import {
   AccountRepo,
+  BirthdayRepo,
   CalendarRepo,
   ContactRepo,
+  DeviceSettingsRepo,
   EventRepo,
   PendingOpRepo,
   reposLayer,
@@ -36,6 +40,8 @@ const require = createRequire(import.meta.url);
 
 export interface SeedData {
   readonly accounts: ReadonlyArray<Account>;
+  /** Google People birthday rows (the device half comes from a contacts fixture). */
+  readonly birthdays?: ReadonlyArray<GoogleBirthday>;
   readonly calendars: ReadonlyArray<CalendarInfo>;
   /** Google People cache rows — the typeahead's only source with CALENDAR_CONTACTS=off. */
   readonly contacts?: ReadonlyArray<GoogleContact>;
@@ -64,7 +70,19 @@ export const seedDatabase = async (userDataDir: string, seed: SeedData): Promise
       yield* tasks.upsertLists(seed.taskLists ?? [], 1);
       yield* tasks.upsertTasks(seed.tasks ?? [], 1);
       yield* (yield* ContactRepo).upsertMany(seed.contacts ?? [], 1);
+      yield* (yield* BirthdayRepo).upsertMany(seed.birthdays ?? [], 1);
     }).pipe(Effect.provide(dbLayer)),
+  );
+};
+
+/** One device_settings row as the app stored it (JSON), or null. */
+export const readDeviceSetting = async (userDataDir: string, key: string): Promise<unknown> => {
+  const dbLayer = reposLayer.pipe(
+    Layer.provideMerge(SqliteClient.layer({ filename: join(userDataDir, 'calendar.db') })),
+    Layer.provideMerge(reactivityLayer),
+  );
+  return Effect.runPromise(
+    Effect.flatMap(DeviceSettingsRepo, (repo) => repo.get(key)).pipe(Effect.provide(dbLayer)),
   );
 };
 
@@ -447,9 +465,19 @@ export interface App {
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
+/** A fake device address book the app loads instead of the helper (no TCC, no real data). */
+export interface ContactsFixture {
+  readonly birthdays?: ReadonlyArray<DeviceBirthdayJson>;
+  readonly contacts?: ReadonlyArray<DeviceContactJson>;
+}
+
 export interface LaunchOptions {
-  /** Same shape for the address book; no test needs 'real' yet. */
-  readonly contacts?: 'off' | 'real';
+  /**
+   * 'off' (default): no bridge at all. 'real': the helper. A fixture: the
+   * in-memory fake client seeded with these rows — the only way e2e sees
+   * device contacts or birthdays without touching a developer's address book.
+   */
+  readonly contacts?: 'off' | 'real' | { readonly fixture: ContactsFixture };
   /**
    * 'off' (default): no EventKit — seeded Apple rows stay as seeded and no
    * TCC prompt can fire on a developer's Mac. 'real': the helper is used;
@@ -464,6 +492,16 @@ export const launchApp = async (seed?: SeedData, options: LaunchOptions = {}): P
   if (seed) {
     await seedDatabase(userDataDir, seed);
   }
+  const contactsEnv: Record<string, string> =
+    options.contacts === 'real'
+      ? {}
+      : options.contacts === undefined || options.contacts === 'off'
+        ? { CALENDAR_CONTACTS: 'off' }
+        : (() => {
+            const fixturePath = join(userDataDir, 'contacts-fixture.json');
+            writeFileSync(fixturePath, JSON.stringify(options.contacts.fixture));
+            return { CALENDAR_CONTACTS: 'fixture', CALENDAR_CONTACTS_FIXTURE: fixturePath };
+          })();
 
   const electronPath = require('electron') as unknown as string;
   const appDir = join(import.meta.dirname, '..');
@@ -475,7 +513,9 @@ export const launchApp = async (seed?: SeedData, options: LaunchOptions = {}): P
       // developer's real Reminders — see remindersClient.ts.
       ...(options.reminders === 'real' ? {} : { CALENDAR_REMINDERS: 'off' }),
       // Likewise the address book: no TCC prompt, no developer's contacts.
-      ...(options.contacts === 'real' ? {} : { CALENDAR_CONTACTS: 'off' }),
+      ...contactsEnv,
+      // A seeded birthday with reminders on must never post a real banner.
+      CALENDAR_NOTIFICATIONS: 'off',
       CALENDAR_USERDATA: userDataDir,
     },
     stdio: ['ignore', 'pipe', 'pipe'],

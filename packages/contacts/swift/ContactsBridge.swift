@@ -5,9 +5,10 @@
 // The JSON shape is the contract in packages/contacts/src/protocol.ts;
 // keep the three in step.
 //
-// Read-only and minimal on purpose: names and email addresses are all
-// the invitee typeahead needs. CNContactStore is not Sendable, so every
-// touch happens inside the `ContactsBridge` actor and only DTOs leave.
+// Read-only and minimal on purpose: names and email addresses for the
+// invitee typeahead, plus birthdays for the calendar. CNContactStore is
+// not Sendable, so every touch happens inside the `ContactsBridge` actor
+// and only DTOs leave.
 import Contacts
 import Foundation
 
@@ -19,6 +20,23 @@ struct DeviceContactDTO: Sendable {
   func toDictionary() -> [String: Any] {
     var out: [String: Any] = ["contactId": contactId, "email": email]
     if let displayName { out["displayName"] = displayName }
+    return out
+  }
+}
+
+/// One row per contact with a birthday; `year` is absent for year-less
+/// dates (the common case), including Apple's 1604 placeholder year.
+struct DeviceBirthdayDTO: Sendable {
+  let contactId: String
+  let displayName: String?
+  let month: Int
+  let day: Int
+  let year: Int?
+
+  func toDictionary() -> [String: Any] {
+    var out: [String: Any] = ["contactId": contactId, "month": month, "day": day]
+    if let displayName { out["displayName"] = displayName }
+    if let year { out["year"] = year }
     return out
   }
 }
@@ -122,6 +140,44 @@ actor ContactsBridge {
   }
 }
 
+// MARK: Birthdays
+
+/// Contacts UI stores a year-less birthday with this placeholder year.
+private let yearlessPlaceholder = 1604
+
+extension ContactsBridge {
+  /// Every contact with a birthday, email or not — a birthday is worth
+  /// showing on its own. Unified, like the snapshot.
+  func birthdays() throws -> [DeviceBirthdayDTO] {
+    try requireAccess()
+    let keys: [CNKeyDescriptor] = [
+      CNContactBirthdayKey as CNKeyDescriptor,
+      CNContactOrganizationNameKey as CNKeyDescriptor,
+      CNContactFormatter.descriptorForRequiredKeys(for: .fullName),
+    ]
+    let request = CNContactFetchRequest(keysToFetch: keys)
+    request.unifyResults = true
+    var out: [DeviceBirthdayDTO] = []
+    do {
+      try store.enumerateContacts(with: request) { contact, _ in
+        guard let birthday = contact.birthday, let month = birthday.month, let day = birthday.day
+        else { return }
+        let fullName = CNContactFormatter.string(from: contact, style: .fullName)?
+          .trimmingCharacters(in: .whitespaces)
+        let organization = contact.organizationName.trimmingCharacters(in: .whitespaces)
+        let name = (fullName?.isEmpty == false) ? fullName : (organization.isEmpty ? nil : organization)
+        let year = birthday.year.flatMap { $0 > yearlessPlaceholder ? $0 : nil }
+        out.append(
+          DeviceBirthdayDTO(
+            contactId: contact.identifier, displayName: name, month: month, day: day, year: year))
+      }
+    } catch {
+      throw ContactsBridgeError.fetchFailed(error.localizedDescription)
+    }
+    return out
+  }
+}
+
 // MARK: - Method dispatch shared by both hosts
 
 enum ContactsDispatch {
@@ -136,6 +192,8 @@ enum ContactsDispatch {
       return ["granted": await bridge.requestAccess()]
     case "contacts.snapshot":
       return ["contacts": try await bridge.snapshot().map { $0.toDictionary() }]
+    case "contacts.birthdays":
+      return ["birthdays": try await bridge.birthdays().map { $0.toDictionary() }]
     default:
       throw ContactsBridgeError.badRequest("unknown contacts method: \(method)")
     }

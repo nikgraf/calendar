@@ -26,7 +26,7 @@
       "supportsTablet": false,
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
-        "NSContactsUsageDescription": "Solunivo suggests people from your Contacts when you invite someone to an event. Nothing leaves your device.",
+        "NSContactsUsageDescription": "Solunivo suggests people from your Contacts when you invite someone to an event and shows their birthdays in your calendar. Nothing leaves your device.",
         "NSRemindersFullAccessUsageDescription": "Solunivo shows your Reminders next to your calendar and lets you edit them here. Nothing leaves your device.",
         "NSRemindersUsageDescription": "Solunivo shows your Reminders next to your calendar and lets you edit them here. Nothing leaves your device.",
         "NSSpeechRecognitionUsageDescription": "Solunivo transcribes what you say into an event entirely on this device."
@@ -41,7 +41,8 @@
           "microphonePermission": "Solunivo uses the microphone to turn what you say into an event. Audio is transcribed on your device and never uploaded."
         }
       ],
-      "@react-native-community/datetimepicker"
+      "@react-native-community/datetimepicker",
+      "./plugins/withLocalNotificationsOnly.cjs"
     ],
     "extra": {
       "googleIosClientId": "930599242270-8u8i4aqpc4hc93ga3vn1g9lsfor4t3o0.apps.googleusercontent.com",

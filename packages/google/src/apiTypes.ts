@@ -159,6 +159,23 @@ export type GcalTasksPage = Schema.Schema.Type<typeof GcalTasksPage>;
 
 /** People API person, trimmed to the fields the contacts cache reads. */
 export const GcalPerson = Schema.Struct({
+  /** Connections only (otherContacts.list rejects the field). `year` is absent or 0 when unknown. */
+  birthdays: Schema.optional(
+    Schema.Array(
+      Schema.Struct({
+        date: Schema.optional(
+          Schema.Struct({
+            day: Schema.optional(Schema.Number),
+            month: Schema.optional(Schema.Number),
+            year: Schema.optional(Schema.Number),
+          }),
+        ),
+        metadata: Schema.optional(Schema.Struct({ primary: Schema.optional(Schema.Boolean) })),
+        /** Free text ("March 4") when the contact has no structured date. */
+        text: Schema.optional(Schema.String),
+      }),
+    ),
+  ),
   emailAddresses: Schema.optional(
     Schema.Array(
       Schema.Struct({
