@@ -75,6 +75,12 @@ bumps (the decision log in `docs/decisions.md` has the detail).
    `Solunivo.app` to `/Applications`. It's notarized and stapled — no
    Gatekeeper hoops, first launch just works.
 
+Schema baseline (2026-09-15): the SQLite migrations were collapsed into one
+before the first release, so a build from after that date refuses to open a
+database written by an earlier build ("Database is ahead of this build").
+Testers delete the app and reinstall once (same bundle id, so this covers
+the dev client too); on a Mac, `pnpm reset:local`.
+
 ## Manual rebuild
 
 Actions → CI → **Run workflow** (`workflow_dispatch`) rebuilds from any branch,
