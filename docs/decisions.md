@@ -635,3 +635,26 @@ Performance:
       Follow-ups: series with RDATE lines stay unbounded, long-lived COUNT
       series still iterate from DTSTART on every read, no per-calendar
       history opt-out.
+
+### Dependency sweep (2026-09-14)
+
+- [x] Upgrade every dependency to the latest version the platform accepts
+      — done (one commit per group, each droppable): vite-plus 0.3.1 with
+      vitest 4.1.11 (the workspace overrides vitest to the catalog, so it
+      must equal the version vite-plus bundles — vitest 5 is off the table
+      until vite-plus moves), tsdown 0.23, plugin-react 6.1.1,
+      oxlint-config 2 (its React Compiler immutability rule is disabled
+      in the one file that writes Reanimated shared values); TypeScript
+      7.0.2 (nothing in tsconfig needed to change); Electron 44, eas-cli
+      24; the SDK 57 patch set for iOS with react-native 0.86.3,
+      reanimated 4.5.1, worklets 0.10.1 and op-sqlite 17.2.0 (the
+      @effect/sql-sqlite-react-native peer range is >=17.1.2 <18);
+      rrule-temporal 2.2.5 with the app's Temporal namespace passed via
+      its `temporal` option; Effect rc.115 (custom rpc protocols expose
+      `codecFor`); the GitHub Actions majors; pnpm 12. Ceilings kept for
+      the next sweep: react 19.2 (RN 0.86's renderer), gesture-handler
+      2.32 / reanimated 4.5 / worklets 0.10 / react-native 0.86 /
+      datetimepicker 9.1 (what Expo SDK 57 bundles; the oracle is
+      `npx expo install --check`), op-sqlite < 18, vitest = vite-plus's.
+      Expo still lists react 19.2.3 exact and typescript ~6.0.3 as
+      "expected"; both are advisory and everything builds.
