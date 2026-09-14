@@ -238,6 +238,30 @@ const addBirthdays = Effect.gen(function* () {
     )`;
 });
 
+// Full history: the events sync no longer sends timeMin. A sync token is
+// bound to the query it was issued for (a windowed token only reports
+// changes inside that window), so every stored events token is cleared
+// and the next pass lists each calendar in full, once.
+const addFullHistory = Effect.gen(function* () {
+  const sql = yield* SqlClient;
+  yield* sql`UPDATE sync_state SET sync_token = NULL WHERE scope LIKE 'events:%'`;
+  // When a recurring series ends (UNTIL, or the last COUNT occurrence);
+  // NULL = never. Lets the window query skip series that ended before
+  // the range instead of expanding every master ever stored.
+  yield* sql`ALTER TABLE events ADD COLUMN recurrence_end_utc INTEGER`;
+  // deleteStale runs over a whole calendar after a full pass.
+  yield* sql`CREATE INDEX IF NOT EXISTS idx_events_stale
+    ON events (account_id, calendar_id, sync_status, synced_at)`;
+  // Partial: the masters query touched nearly every row through the
+  // window index and filtered `recurrence IS NOT NULL` afterwards.
+  yield* sql`CREATE INDEX IF NOT EXISTS idx_events_masters
+    ON events (start_utc, recurrence_end_utc) WHERE recurrence IS NOT NULL`;
+  // Rows of calendars that vanished upstream were never deleted (only
+  // hidden by the join); one-off cleanup, the sync deletes them from now on.
+  yield* sql`DELETE FROM events
+    WHERE (account_id, calendar_id) NOT IN (SELECT account_id, id FROM calendars)`;
+});
+
 // The third tuple element is a *loader* whose result is the migration effect.
 export const migrations: ReadonlyArray<ResolvedMigration> = [
   [1, 'init', Effect.succeed(init)],
@@ -251,4 +275,5 @@ export const migrations: ReadonlyArray<ResolvedMigration> = [
   [9, 'add-pending-op-attendees-changed', Effect.succeed(addPendingOpAttendeesChanged)],
   [10, 'add-queue-and-window-indexes', Effect.succeed(addQueueAndWindowIndexes)],
   [11, 'add-birthdays', Effect.succeed(addBirthdays)],
+  [12, 'add-full-history', Effect.succeed(addFullHistory)],
 ];

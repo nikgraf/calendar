@@ -265,6 +265,7 @@ export interface EventRow {
   readonly original_start_utc: number | null;
   readonly attendees: string | null;
   readonly hangout_link: string | null;
+  readonly recurrence_end_utc: number | null;
   readonly organizer_email: string | null;
   readonly sync_status: string;
   readonly updated_at: number;
@@ -322,6 +323,8 @@ export const eventToRow = (event: EventRecord): EventRow => ({
   organizer_email: event.organizerEmail ?? null,
   original_start_utc: event.originalStartUtc ?? null,
   recurrence: event.recurrence ? JSON.stringify(event.recurrence) : null,
+  // Filled by the repo write path once the recurrence bound lands.
+  recurrence_end_utc: null,
   recurring_event_id: event.recurringEventId ?? null,
   start_date: event.startDate ?? null,
   start_time_zone: event.startTimeZone ?? null,
