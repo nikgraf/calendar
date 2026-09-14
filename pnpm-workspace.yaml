@@ -20,20 +20,20 @@ trustPolicyExclude:
 blockExoticSubdeps: true
 
 catalog:
-  effect: 4.0.0-rc.111
-  '@effect/atom-react': 4.0.0-rc.111
-  '@effect/sql-sqlite-node': 4.0.0-rc.111
-  '@effect/sql-sqlite-react-native': 4.0.0-rc.111
-  '@effect/vitest': 4.0.0-rc.111
+  effect: 4.0.0-rc.115
+  '@effect/atom-react': 4.0.0-rc.115
+  '@effect/sql-sqlite-node': 4.0.0-rc.115
+  '@effect/sql-sqlite-react-native': 4.0.0-rc.115
+  '@effect/vitest': 4.0.0-rc.115
   '@js-temporal/polyfill': ^0.5.1
   react: ^19.2.7
   react-dom: ^19.2.7
   '@types/react': ^19.2.17
-  rrule-temporal: ^1.6.0
-  typescript: ^6.0.3
-  vite: npm:@voidzero-dev/vite-plus-core@^0.2.2
-  vite-plus: ^0.2.2
-  vitest: 4.1.9
+  rrule-temporal: ^2.2.4
+  typescript: ^7.0.2
+  vite: npm:@voidzero-dev/vite-plus-core@^0.3.1
+  vite-plus: ^0.3.1
+  vitest: 4.1.11
 
 onlyBuiltDependencies:
   - '@swc/core'
@@ -55,3 +55,5 @@ allowBuilds:
   # Optional native tracing inside eas-cli; the JS stub fallback is fine.
   dtrace-provider: false
   msgpackr-extract: false
+  # Pulled in by eas-cli 24; its postinstall only prints a notice.
+  protobufjs: false

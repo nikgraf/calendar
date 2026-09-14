@@ -1,11 +1,14 @@
 # Effect v4 (pre-release) notes
 
-The repo pins every `effect*` package to **4.0.0-rc.111** via the pnpm
+The repo pins every `effect*` package to **4.0.0-rc.115** via the pnpm
 catalog. v4 is a substantial break from v3 and the pre-releases are thinly
 documented — this is the catalog of differences and traps we hit while
 building, each as symptom → cause → fix. The beta.93 → rc.111 bump cost
 exactly two code changes (`Schema.ErrorClass` rename, `supportsNotifications`
-on the custom rpc protocol); everything else held.
+on the custom rpc protocol); rc.111 → rc.115 cost one: custom rpc protocols
+must expose `codecFor` (forward `serialization.codecFor`, as effect's own
+socket/worker protocols do) — the client failed at runtime with
+"codecFor is not a function" before the typecheck error was read.
 
 ## API renames / removals
 

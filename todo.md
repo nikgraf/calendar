@@ -51,9 +51,10 @@ comment` for inline-playable video: 10 MB on Free plans, 100 MB paid
       theirs.
 - [ ] Full-history follow-ups — RDATE-only series have no stored end
       (`recurrenceEndUtc` returns undefined), long-lived COUNT series
-      still iterate from DTSTART on every window read (rrule-temporal
-      only fast-forwards without COUNT), and there is no per-calendar
-      "keep only N years" switch should storage ever matter.
+      may still iterate from DTSTART on every window read (rrule-temporal
+      2.1 added cached plans for COUNT rules — re-measure before doing
+      anything), and there is no per-calendar "keep only N years" switch
+      should storage ever matter.
 - [ ] Per-person birthday reminder overrides — the general lead times
       landed (device-local, `device_settings`); a per-contact override
       ("Mom: 2 weeks before as well") would sit on the same table keyed
@@ -136,3 +137,6 @@ decision and platform notes live in `docs/decisions.md`.
     - special feature: automatically sync those e.g. meetup event gets synced to family calendar
     - special feature: add in one calendar as normal even, but show in others as blocked or only share certain information
 - Prefetch week±1 in the range LRU (noted when the LRU landed)
+- Next Expo SDK: takes react-native 0.87, reanimated 4.6 / worklets 0.12,
+  gesture-handler 3, react 19.3, datetimepicker 9.2 with it (all held back
+  by the 2026-09-14 dependency sweep because SDK 57 bundles the older ones)

@@ -252,7 +252,10 @@ Rules that keep the queue correct:
 ## Recurring events
 
 - Masters carry `recurrence` (raw RFC 5545 lines, no DTSTART — derived from
-  the event start in `packages/core/src/recurrence/expand.ts` via rrule-temporal).
+  the event start in `packages/core/src/recurrence/expand.ts` via rrule-temporal;
+  every `RRuleTemporal` is given the app's `Temporal` namespace through its
+  `temporal` option, so occurrences are `@js-temporal/polyfill` instances on
+  both platforms instead of native Temporal where the runtime has it).
 - The UI never sees masters directly: `assembleWindow` expands them into
   synthetic instances with id `<masterId>__<originalStartUtc>` carrying
   `recurringEventId` + `originalStartUtc`.

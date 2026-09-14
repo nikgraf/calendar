@@ -1,6 +1,6 @@
 # Solunivo
 
-A Fantastical-style Google Calendar client: iOS app (Expo SDK 57, React Native) and macOS desktop app (Electron 43, React DOM), sharing a TypeScript core. Client-only — no backend; the apps talk directly to the Google Calendar and Google Tasks REST APIs and sync via incremental sync tokens (events) / updatedMin watermarks (tasks) + polling.
+A Fantastical-style Google Calendar client: iOS app (Expo SDK 57, React Native) and macOS desktop app (Electron 44, React DOM), sharing a TypeScript core. Client-only — no backend; the apps talk directly to the Google Calendar and Google Tasks REST APIs and sync via incremental sync tokens (events) / updatedMin watermarks (tasks) + polling.
 
 ## Architecture
 

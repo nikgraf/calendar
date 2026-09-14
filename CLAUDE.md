@@ -55,7 +55,7 @@ powers quick-add parsing, find-a-time, and dictation.
 
 ## Hard rules (each learned the hard way — details in docs/)
 
-- Effect is pinned to **4.0.0-rc.111** (v4 pre-release, all `effect*` via
+- Effect is pinned to **4.0.0-rc.115** (v4 pre-release, all `effect*` via
   catalog). Use `Effect.forkChild`/`forkDetach`/`forkIn` — `Effect.fork`
   and `forkDaemon` do not exist. `Context.Service` is two-stage:
   `class X extends Context.Service<X, Shape>()('id')`. `Layer.effect` is

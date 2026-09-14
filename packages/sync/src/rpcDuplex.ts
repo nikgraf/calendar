@@ -57,6 +57,9 @@ export const duplexServerProtocol = (
 
         return {
           clientIds: Effect.sync(() => new Set(clients)),
+          // rc.115: the server derives its payload/exit codecs through the
+          // protocol, so it forwards the serialization's codecFor.
+          codecFor: serialization.codecFor,
           disconnects,
           end: (_clientId) => Effect.void,
           initialMessage: Effect.succeedNone,
@@ -113,6 +116,7 @@ export const duplexClientProtocol = (
         });
 
         return {
+          codecFor: serialization.codecFor,
           send: (clientId, request) =>
             Effect.sync(() => {
               if (request._tag === 'Request') {
