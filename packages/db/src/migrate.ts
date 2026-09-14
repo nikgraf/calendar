@@ -44,8 +44,9 @@ export const runMigrationsWith = (
     );
 
     // A database already migrated past everything this build knows about
-    // means the app binary was downgraded. Running old code against a newer
-    // schema is undefined behavior — refuse loudly instead.
+    // means the app binary was downgraded — or, before the first release,
+    // that it predates the schema baseline. Running this code against a
+    // schema it does not know is undefined behavior — refuse loudly instead.
     const latestKnown = Math.max(...ids);
     const ahead = [...applied].filter((id) => id > latestKnown);
     if (ahead.length > 0) {
@@ -53,7 +54,8 @@ export const runMigrationsWith = (
         new Error(
           `Database is ahead of this build: migration ${String(Math.max(...ahead))} is applied ` +
             `but this build only knows up to ${String(latestKnown)}. ` +
-            'Update the app instead of downgrading it.',
+            'Update the app instead of downgrading it; a database from before the ' +
+            'schema baseline is reset with `pnpm reset:local` (or by deleting the app).',
         ),
       );
     }
