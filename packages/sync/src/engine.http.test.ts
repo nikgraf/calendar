@@ -1,4 +1,4 @@
-import { Account } from '@calendar/core';
+import { Account, eventsScope } from '@calendar/core';
 import {
   AccountRepo,
   BirthdayRepo,
@@ -7,6 +7,7 @@ import {
   PendingOpRepo,
   reposLayer,
   runMigrations,
+  SyncStateRepo,
   TaskRepo,
 } from '@calendar/db';
 import {
@@ -141,7 +142,72 @@ describe('SyncEngine over HTTP (fake Google)', () => {
         (call) => call.method === 'GET' && call.url.includes('/calendars/cal-1/events'),
       );
       expect(listCalls[0]!.url).not.toContain('syncToken=');
+      // All history: the full list carries no window at all.
+      expect(listCalls[0]!.url).not.toContain('timeMin=');
       expect(listCalls[1]!.url).toContain('syncToken=cal-1%3A2');
+    }).pipe(noYield, Effect.provide(engineLayer(google)));
+  });
+
+  it.effect('the full list has no time floor: years-old events arrive, in pages', () => {
+    const google = new FakeGoogle({
+      calendars: [{ accessRole: 'owner', id: 'cal-1', primary: true, summary: 'Personal' }],
+      pageSize: 2,
+    });
+    google.putEvent('cal-1', {
+      end: { dateTime: '2019-03-04T10:00:00Z' },
+      id: 'ancient',
+      start: { dateTime: '2019-03-04T09:00:00Z' },
+      status: 'confirmed',
+      summary: 'Offsite 2019',
+    });
+    for (const [id, hour] of [
+      ['a', 9],
+      ['b', 11],
+      ['c', 13],
+      ['d', 15],
+    ] as const) {
+      google.putEvent('cal-1', timed(id, hour));
+    }
+    return Effect.gen(function* () {
+      yield* seedAccount(false);
+      const engine = yield* SyncEngine;
+      yield* engine.syncAll();
+      expect(yield* eventTitles).toEqual([
+        'a:Event a',
+        'ancient:Offsite 2019',
+        'b:Event b',
+        'c:Event c',
+        'd:Event d',
+      ]);
+      const listCalls = google.requests.filter(
+        (call) => call.method === 'GET' && call.url.includes('/calendars/cal-1/events'),
+      );
+      // Five events at two per page: three requests, the token from the last.
+      expect(listCalls).toHaveLength(3);
+      expect(listCalls.every((call) => !call.url.includes('timeMin='))).toBe(true);
+      const state = yield* (yield* SyncStateRepo).get('acc-1', eventsScope('cal-1'));
+      expect(state?.syncToken).toBe('cal-1:5');
+      expect(state?.status).toBe('idle');
+      expect(yield* (yield* SyncStateRepo).summarizeEvents()).toEqual([
+        { accountId: 'acc-1', importing: 0 },
+      ]);
+    }).pipe(noYield, Effect.provide(engineLayer(google)));
+  });
+
+  it.effect('a calendar removed upstream takes its events with it', () => {
+    const google = newFake();
+    google.putEvent('cal-1', timed('a', 9));
+    return Effect.gen(function* () {
+      yield* seedAccount(false);
+      const engine = yield* SyncEngine;
+      yield* engine.syncAll();
+      expect(yield* (yield* EventRepo).countByAccount()).toEqual([
+        { accountId: 'acc-1', eventCount: 1 },
+      ]);
+      google.removeCalendar('cal-1');
+      yield* TestClock.adjust('1 minute');
+      yield* engine.syncAll();
+      expect(yield* (yield* EventRepo).countByAccount()).toEqual([]);
     }).pipe(noYield, Effect.provide(engineLayer(google)));
   });
 
@@ -167,6 +233,8 @@ describe('SyncEngine over HTTP (fake Google)', () => {
         .filter((call) => call.method === 'GET' && call.url.includes('/events'))
         .map((call) => (call.url.includes('syncToken=') ? 'incremental' : 'full'));
       expect(statuses).toEqual(['full', 'incremental', 'full']);
+      // The resync lists the whole history again, not a window.
+      expect(google.requests.every((call) => !call.url.includes('timeMin='))).toBe(true);
     }).pipe(noYield, Effect.provide(engineLayer(google)));
   });
 
