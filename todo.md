@@ -49,10 +49,11 @@ comment` for inline-playable video: 10 MB on Free plans, 100 MB paid
       payload — the user's version — is deleted before anyone could offer
       it. Park it, make the notice name the event, offer keep-mine / take-
       theirs.
-- [ ] Events: the 12-months-back floor — `INITIAL_WINDOW_MS`
-      (`engine.ts:42`) is `timeMin` on every full pass and `deleteStale`
-      prunes older rows; browsing further back shows nothing. On-demand
-      backfill or a larger floor.
+- [ ] Full-history follow-ups — RDATE-only series have no stored end
+      (`recurrenceEndUtc` returns undefined), long-lived COUNT series
+      still iterate from DTSTART on every window read (rrule-temporal
+      only fast-forwards without COUNT), and there is no per-calendar
+      "keep only N years" switch should storage ever matter.
 - [ ] Per-person birthday reminder overrides — the general lead times
       landed (device-local, `device_settings`); a per-contact override
       ("Mom: 2 weeks before as well") would sit on the same table keyed

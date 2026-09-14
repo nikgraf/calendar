@@ -44,7 +44,6 @@ import { EventMutations } from './mutations.ts';
 
 const CALENDAR_LIST_SCOPE = 'calendarList';
 const tasksScope = (taskListId: string): string => `tasks:${taskListId}`;
-const INITIAL_WINDOW_MS = 365 * 24 * 60 * 60 * 1000; // 12 months back
 /** updatedMin has no tombstone guarantees forever — reconcile fully daily. */
 const TASKS_FULL_PASS_INTERVAL_MS = 24 * 60 * 60 * 1000;
 /** sync_state scope for the Apple mirror: lastSyncAt is the delta stamp. */
@@ -243,16 +242,33 @@ const make: Effect.Effect<
         Effect.catchTag('SyncTokenExpiredError', () => runPass(null)),
       );
 
+      // A calendar we did not have starts from nothing: whatever events
+      // scope a partially purged predecessor left behind (a crash between
+      // the deletes) must not turn its first pass into an incremental one.
+      const arrived = result.keptIds.filter((id) => !previousVisibility.has(id));
+      yield* Effect.forEach(arrived, (id) => syncStateRepo.remove(account.id, eventsScope(id)), {
+        discard: true,
+      });
+
+      // Calendars gone upstream take their event rows and their sync
+      // state with them, in one transaction (CalendarRepo.purge): a
+      // calendar that comes back (unhidden in Google) must list its
+      // history again, not resume a token onto an empty table.
       if (state?.syncToken) {
-        yield* calendarRepo.removeByIds(account.id, result.deletedIds);
+        const gone = result.deletedIds.filter((id) => previousVisibility.has(id));
         // An install that synced the Birthdays calendar before it was
         // skipped never gets it re-sent unchanged: drop the row once.
         if (previousVisibility.has(GOOGLE_BIRTHDAYS_CALENDAR_ID)) {
-          yield* calendarRepo.removeByIds(account.id, [GOOGLE_BIRTHDAYS_CALENDAR_ID]);
+          gone.push(GOOGLE_BIRTHDAYS_CALENDAR_ID);
         }
+        yield* calendarRepo.purge(account.id, [...new Set(gone)]);
       } else {
         // Full pass: anything not seen no longer exists upstream.
-        yield* calendarRepo.removeMissing(account.id, result.keptIds);
+        const kept = new Set(result.keptIds);
+        yield* calendarRepo.purge(
+          account.id,
+          [...previousVisibility.keys()].filter((id) => !kept.has(id)),
+        );
       }
 
       yield* syncStateRepo.set(
@@ -298,27 +314,29 @@ const make: Effect.Effect<
               upserts.push(record);
             }
           }
-          // A pull never overwrites a row with a local edit still queued.
-          yield* eventRepo.upsertMany(upserts, { mode: 'pull' });
-          yield* Effect.forEach(
-            deletions,
-            (eventId) => eventRepo.deleteEvent(account.id, calendarId, eventId),
-            { discard: true },
-          );
+          // One transaction per page; a pull never overwrites a row with a
+          // local edit still queued.
+          yield* eventRepo.applyPage(account.id, calendarId, { deletions, mode: 'pull', upserts });
+          // A full list of a big calendar is many pages: let rpc handlers
+          // and the UI interleave between them.
+          yield* Effect.yieldNow;
         });
 
+      // No timeMin: the first pass lists the calendar's whole history and
+      // the token it returns then covers every event ever. A token is
+      // bound to the query it was issued for, which is why a windowed one
+      // could never be widened later.
       const runPass = (syncToken: string | null): Effect.Effect<string | null, SyncError> =>
         Effect.gen(function* () {
           let pageToken: string | undefined;
           let nextSyncToken: string | null = null;
-          const timeMin = new Date(passStartedAt - INITIAL_WINDOW_MS).toISOString();
 
           do {
             const page = yield* withTransientRetry(
               client.listEvents({
                 accountId: account.id,
                 calendarId,
-                params: syncToken ? { pageToken, syncToken } : { pageToken, timeMin },
+                params: syncToken ? { pageToken, syncToken } : { pageToken },
               }),
             );
             yield* applyItems(page.items ?? []);
@@ -329,31 +347,45 @@ const make: Effect.Effect<
           return nextSyncToken;
         });
 
+      const writeState = (status: SyncState['status'], syncToken: string | null, full: boolean) =>
+        syncStateRepo.set(
+          new SyncState({
+            accountId: account.id,
+            lastFullSyncAt: full ? passStartedAt : (state?.lastFullSyncAt ?? null),
+            lastSyncAt: status === 'idle' ? passStartedAt : (state?.lastSyncAt ?? null),
+            scope,
+            status,
+            syncToken,
+          }),
+        );
+
       const hadToken = state?.syncToken ?? null;
       let fullPass = hadToken === null;
+      // 'syncing' while a full list runs: the Settings history line reads
+      // it, and a crash mid-way leaves the row honest (no token, retried).
+      if (fullPass) {
+        yield* writeState('syncing', null, false);
+      }
       const nextSyncToken = yield* runPass(hadToken).pipe(
-        Effect.catchTag('SyncTokenExpiredError', () => {
-          fullPass = true;
-          return runPass(null);
-        }),
+        Effect.catchTag('SyncTokenExpiredError', () =>
+          Effect.gen(function* () {
+            fullPass = true;
+            yield* writeState('syncing', null, false);
+            return yield* runPass(null);
+          }),
+        ),
+        // A failed full pass keeps no token (pages already written stay
+        // and are re-listed); a failed incremental one keeps its token.
+        Effect.tapError(() => writeState('error', fullPass ? null : hadToken, false)),
       );
 
       if (fullPass) {
-        // Rows not touched by this pass no longer exist upstream (or fell
-        // out of the window); local pending edits are preserved.
+        // Rows not touched by this pass no longer exist upstream; local
+        // pending edits are preserved.
         yield* eventRepo.deleteStale(account.id, calendarId, passStartedAt);
       }
 
-      yield* syncStateRepo.set(
-        new SyncState({
-          accountId: account.id,
-          lastFullSyncAt: fullPass ? passStartedAt : (state?.lastFullSyncAt ?? null),
-          lastSyncAt: passStartedAt,
-          scope,
-          status: 'idle',
-          syncToken: nextSyncToken,
-        }),
-      );
+      yield* writeState('idle', nextSyncToken, fullPass);
     });
 
   const syncTaskLists = (account: Account): Effect.Effect<void, SyncError> =>

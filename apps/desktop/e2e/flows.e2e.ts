@@ -36,6 +36,12 @@ const dailyStart = todayAt(7) - 3 * DAY_MS;
 const mondayAt7 = todayAt(7) - ((new Date().getUTCDay() + 6) % 7) * DAY_MS;
 /** Start of the earliest daily-series instance inside the rendered week. */
 const firstVisibleDaily = Math.max(dailyStart, mondayAt7);
+/** Three years back, mid-month: 36 month steps land in it whatever today's day is. */
+const YEARS_BACK = 3;
+const ancientAt = (hour: number): number => {
+  const now = new Date();
+  return Date.UTC(now.getUTCFullYear() - YEARS_BACK, now.getUTCMonth(), 15, hour);
+};
 
 const account = new Account({
   contactsEnabled: false,
@@ -104,6 +110,8 @@ const seed = {
       recurrence: ['RRULE:FREQ=DAILY;COUNT=14'],
       startTimeZone: 'UTC',
     }),
+    // Full history: nothing prunes an event this old any more.
+    timedEvent('evt-ancient', 'cal-work', 'Ancient offsite', ancientAt(10), ancientAt(11)),
     timedEvent('evt-review', 'cal-work', 'Design review', todayAt(13), todayAt(14), {
       attendees: [
         new Attendee({
@@ -231,6 +239,40 @@ describe('calendar desktop e2e', () => {
     await cdp.clickButtonWithText('Today');
     await cdp.clickButtonWithText('week');
     await cdp.waitFor(`!!document.querySelector('[title^="Standup meeting"]')`);
+  });
+
+  it('renders an event three years back in the month view', async () => {
+    const { cdp } = app;
+    await cdp.clickButtonWithText('month');
+    await cdp.waitFor(`document.body.textContent.includes('Mon')`);
+    try {
+      for (let step = 0; step < 12 * YEARS_BACK; step += 1) {
+        const before = await cdp.eval<string>(`document.querySelector('h1')?.textContent ?? ''`);
+        await cdp.clickButtonWithText('‹');
+        await cdp.waitFor(
+          `(document.querySelector('h1')?.textContent ?? '') !== ${JSON.stringify(before)}`,
+        );
+      }
+      await cdp.waitFor(`document.body.textContent.includes('Ancient offsite')`);
+    } finally {
+      await cdp.clickButtonWithText('Today');
+      await cdp.clickButtonWithText('week');
+      await cdp.waitFor(`!!document.querySelector('[title^="Standup meeting"]')`);
+    }
+  });
+
+  it('shows the history import status under the account', async () => {
+    const { cdp } = app;
+    await cdp.eval(
+      `[...document.querySelectorAll('button')].find(b => b.title === 'Accounts')?.click()`,
+    );
+    // Seeded rows and no sync_state: nothing is importing, so the line
+    // reads complete.
+    await cdp.waitFor(
+      `document.querySelector('[data-testid="sync-history-acc-e2e"]')?.textContent === 'History complete'`,
+    );
+    await cdp.click(20, 400);
+    await cdp.waitFor(`!document.body.textContent.includes('Add Google Account')`);
   });
 
   it('navigates days with a horizontal trackpad scroll', async () => {

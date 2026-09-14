@@ -16,6 +16,7 @@ const eventRow = (overrides: Partial<EventRow> = {}): EventRow => ({
   organizer_email: null,
   original_start_utc: null,
   recurrence: null,
+  recurrence_end_utc: null,
   recurring_event_id: null,
   start_date: null,
   start_time_zone: null,

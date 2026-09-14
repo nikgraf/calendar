@@ -72,6 +72,21 @@ describe('GoogleCalendarClient', () => {
     }).pipe(Effect.provide(clientLayer([{ body: { items: [] } }], recorded)));
   });
 
+  it.effect('an initial listEvents without a window sends no timeMin at all', () => {
+    const recorded: Array<HttpClientRequest.HttpClientRequest> = [];
+    return Effect.gen(function* () {
+      const client = yield* GoogleCalendarClient;
+      yield* client.listEvents({ accountId: 'acc', calendarId: 'primary', params: {} });
+      const sent = params(recorded[0]!);
+      expect(sent.get('timeMin')).toBeNull();
+      expect(sent.get('timeMax')).toBeNull();
+      expect(sent.get('syncToken')).toBeNull();
+      expect(sent.get('singleEvents')).toBe('false');
+      expect(sent.get('showDeleted')).toBe('true');
+      expect(sent.get('maxResults')).toBe('2500');
+    }).pipe(Effect.provide(clientLayer([{ body: { items: [] } }], recorded)));
+  });
+
   it.effect('sends window params (not syncToken) on initial listEvents', () => {
     const recorded: Array<HttpClientRequest.HttpClientRequest> = [];
     return Effect.gen(function* () {

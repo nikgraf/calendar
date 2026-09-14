@@ -13,6 +13,7 @@ import {
   PendingOpRepo,
   reposLayer,
   runMigrations,
+  SyncStateRepo,
   TaskRepo,
 } from '@calendar/db';
 import {
@@ -125,6 +126,7 @@ export const startBackendHost = (): void => {
     | PendingOpRepo
     | RemindersClient
     | SyncEngine
+    | SyncStateRepo
     | TaskRepo
     | TokenManager
     | TokenStore

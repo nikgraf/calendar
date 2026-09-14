@@ -69,8 +69,15 @@ invariants.
   `entryPointType === 'video'`; `meetingUrl()` in core also scans
   location/description for Meet/Zoom/Teams/Webex/Whereby URLs.
 - Sync: incremental via syncTokens; 410 → drop token, full resync,
-  `deleteStale`. The special birthday/holiday calendars flow through the
-  normal calendarList.
+  `deleteStale`. A sync token is bound to the query parameters of the list
+  that issued it: a token from a `timeMin` list only ever reports changes
+  inside that window and cannot be widened later. The events pass
+  therefore sends no `timeMin` at all (full history), and the one-time
+  migration to that behaviour cleared every stored events token so each
+  calendar re-lists once. `singleEvents=false` + `showDeleted=true` on the
+  full list; `maxResults=2500` (the API's cap) — a 50k-event calendar is
+  ~20 requests. The special birthday/holiday calendars flow through the
+  normal calendarList (the Birthdays calendar is skipped, see contacts).
 
 ### Google Tasks (shipped)
 
@@ -100,9 +107,12 @@ incremental passes with sync tokens, a 410 forcing a full resync whose
 `deleteStale` drops vanished rows, cancelled tombstones, If-Match → 412
 with the server winning, client-generated event ids, the `updatedMin`
 watermark with deleted task tombstones, and server-assigned task ids.
-Before this the semantics above were documented prose only. Note: the
-engine reads `Clock`, and `it.effect` runs under `TestClock` — advance it
-between passes or `passStartedAt` never moves.
+Before this the semantics above were documented prose only. The fake
+pages event lists (`pageSize`, default 2,500; the sync token rides only on
+the last page) and reports a removed calendar as a `deleted` calendarList
+entry on incremental passes. Note: the engine reads `Clock`, and
+`it.effect` runs under `TestClock` — advance it between passes or
+`passStartedAt` never moves.
 
 ### Google People API (contacts cache)
 

@@ -36,7 +36,8 @@ export const googleInstanceId = (
 ): string =>
   `${masterId}_${isAllDay ? compactDate(originalStartUtc) : compactUtc(originalStartUtc)}`;
 
-const rewriteRule = (line: string, transform: (parts: Map<string, string>) => void): string => {
+/** `RRULE:FREQ=WEEKLY;COUNT=10` → Map { FREQ → WEEKLY, COUNT → 10 } (keys upper-cased). */
+export const parseRuleParts = (line: string): Map<string, string> => {
   const body = line.slice('RRULE:'.length);
   const parts = new Map<string, string>();
   for (const piece of body.split(';')) {
@@ -45,6 +46,11 @@ const rewriteRule = (line: string, transform: (parts: Map<string, string>) => vo
       parts.set(key.toUpperCase(), value);
     }
   }
+  return parts;
+};
+
+const rewriteRule = (line: string, transform: (parts: Map<string, string>) => void): string => {
+  const parts = parseRuleParts(line);
   transform(parts);
   return `RRULE:${[...parts.entries()].map(([key, value]) => `${key}=${value}`).join(';')}`;
 };

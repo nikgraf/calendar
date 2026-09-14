@@ -3,7 +3,9 @@ import {
   useBackendMutations,
   useCalendars,
   useGuardedMutations,
+  useSyncStatus,
 } from '@calendar/app-state';
+import { type Account, historyStatusLabel } from '@calendar/core';
 import { useState } from 'react';
 import { PrivacySection } from './PrivacySection.tsx';
 import { BirthdayRemindersSection } from './BirthdayRemindersSection.tsx';
@@ -12,6 +14,17 @@ import { RemindersSection } from './RemindersSection.tsx';
 
 export function AccountsView() {
   const accounts = useAccounts();
+  const syncStatus = useSyncStatus();
+  // An account that cannot sync (re-auth pending) never finishes an
+  // import, so "importing" would be a lie there; what it already holds
+  // is still worth stating.
+  const historyLine = (account: Account): string | null => {
+    const status = syncStatus.find((entry) => entry.accountId === account.id);
+    if (!status || (status.importing && account.status !== 'ok')) {
+      return null;
+    }
+    return historyStatusLabel(status);
+  };
   const calendars = useCalendars();
   const mutations = useBackendMutations();
   const guarded = useGuardedMutations();
@@ -61,6 +74,11 @@ export function AccountsView() {
           <div className="flex items-center justify-between">
             <div>
               <p className="select-text font-medium">{account.displayName ?? account.email}</p>
+              {historyLine(account) ? (
+                <p className="text-xs text-neutral-500" data-testid={`sync-history-${account.id}`}>
+                  {historyLine(account)}
+                </p>
+              ) : null}
               <p className="select-text text-sm text-neutral-500">
                 {account.provider === 'apple' ? 'This Mac' : account.email}
                 {account.status === 'reauth_required' ? (

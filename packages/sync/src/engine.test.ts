@@ -59,14 +59,14 @@ const timedItem = (id: string, hour: number) => ({
 /** Scripted client: each listEvents call shifts the next page. */
 const stubClient = (
   eventPages: Array<GcalEventsPage | 'sync-token-expired' | 'reauth'>,
-  calls: Array<{ syncToken?: string | undefined }> = [],
+  calls: Array<{ syncToken?: string | undefined; timeMin?: string | undefined }> = [],
 ): GoogleCalendarClientShape => ({
   deleteEvent: () => Effect.die('not used'),
   getColors: () => Effect.succeed({ calendar: {} }),
   insertEvent: () => Effect.die('not used'),
   listCalendars: () => Effect.succeed(calendarListPage),
   listEvents: ({ params }) => {
-    calls.push({ syncToken: params.syncToken });
+    calls.push({ syncToken: params.syncToken, timeMin: params.timeMin });
     const next = eventPages.shift();
     if (next === undefined) {
       return Effect.succeed({ items: [] });
@@ -178,7 +178,7 @@ describe('SyncEngine', () => {
   });
 
   it.effect('initial sync persists calendars, paged events, and sync tokens', () => {
-    const calls: Array<{ syncToken?: string | undefined }> = [];
+    const calls: Array<{ syncToken?: string | undefined; timeMin?: string | undefined }> = [];
     const client = stubClient(
       [
         { items: [timedItem('evt-1', 10)], nextPageToken: 'page-2' },
@@ -202,11 +202,12 @@ describe('SyncEngine', () => {
       expect(state?.syncToken).toBe('evt-sync-1');
       // Initial pass sends no sync token.
       expect(calls[0]!.syncToken).toBeUndefined();
+      expect(calls[0]!.timeMin).toBeUndefined();
     }).pipe(Effect.provide(engineLayer(client)));
   });
 
   it.effect('incremental sync applies updates and cancellation tombstones', () => {
-    const calls: Array<{ syncToken?: string | undefined }> = [];
+    const calls: Array<{ syncToken?: string | undefined; timeMin?: string | undefined }> = [];
     const client = stubClient(
       [
         // Pass 1: initial.

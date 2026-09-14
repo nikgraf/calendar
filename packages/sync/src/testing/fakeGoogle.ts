@@ -37,6 +37,8 @@ const wire = (entry: StoredTask): GcalTask => ({
 
 export interface FakeGoogleOptions {
   readonly calendars: ReadonlyArray<GcalCalendarListEntry>;
+  /** Events per list page (Google's cap is 2,500); small values exercise pagination. */
+  readonly pageSize?: number;
   /** Saved contacts (people.connections); otherContacts is always empty. */
   readonly people?: ReadonlyArray<GcalPerson>;
   readonly taskLists?: ReadonlyArray<GcalTaskList>;
@@ -45,6 +47,8 @@ export interface FakeGoogleOptions {
 export class FakeGoogle {
   readonly requests: Array<{ readonly method: string; readonly url: string }> = [];
   private readonly calendars: Array<GcalCalendarListEntry>;
+  private readonly removedCalendars: Array<string> = [];
+  private readonly pageSize: number;
   private readonly people: Array<GcalPerson>;
   private readonly taskLists: Array<GcalTaskList>;
   private readonly events = new Map<string, Map<string, StoredEvent>>();
@@ -58,6 +62,7 @@ export class FakeGoogle {
 
   constructor(options: FakeGoogleOptions) {
     this.calendars = [...options.calendars];
+    this.pageSize = options.pageSize ?? 2500;
     this.people = [...(options.people ?? [])];
     this.taskLists = [...(options.taskLists ?? [])];
   }
@@ -96,6 +101,18 @@ export class FakeGoogle {
         task: { ...existing.task, deleted: true },
         updatedAt: this.now,
       });
+    }
+  }
+
+  /**
+   * The calendar disappears from calendarList: a full list no longer
+   * returns it, an incremental one reports a `deleted` entry, as Google does.
+   */
+  removeCalendar(calendarId: string): void {
+    const index = this.calendars.findIndex((entry) => entry.id === calendarId);
+    if (index !== -1) {
+      this.calendars.splice(index, 1);
+      this.removedCalendars.push(calendarId);
     }
   }
 
@@ -155,7 +172,10 @@ export class FakeGoogle {
 
     if (url.hostname === 'www.googleapis.com') {
       if (path === '/calendar/v3/users/me/calendarList') {
-        return reply(200, { items: this.calendars, nextSyncToken: 'cal-sync' });
+        const tombstones = url.searchParams.has('syncToken')
+          ? this.removedCalendars.map((id) => ({ deleted: true, id }))
+          : [];
+        return reply(200, { items: [...this.calendars, ...tombstones], nextSyncToken: 'cal-sync' });
       }
       if (path === '/calendar/v3/colors') {
         return reply(200, { calendar: {} });
@@ -203,20 +223,32 @@ export class FakeGoogle {
     if (request.method === 'GET' && eventId === undefined) {
       const syncToken = url.searchParams.get('syncToken');
       const current = this.versions.get(calendarId) ?? 0;
+      let items: Array<GcalEvent>;
       if (syncToken !== null) {
         const since = Number(syncToken.split(':')[1] ?? Number.NaN);
         if (!Number.isFinite(since) || since <= (this.expiredBelow.get(calendarId) ?? -1)) {
           return reply(410, { error: { message: 'Sync token is no longer valid' } });
         }
-        const items = [...store.values()]
+        items = [...store.values()]
           .filter((entry) => entry.version > since)
           .map((entry) => entry.event);
-        return reply(200, { items, nextSyncToken: `${calendarId}:${current}` });
+      } else {
+        // A full list: no timeMin is honoured because the engine never
+        // sends one — every event ever, like Google without a window.
+        items = [...store.values()]
+          .filter((entry) => entry.event.status !== 'cancelled')
+          .map((entry) => entry.event);
       }
-      const items = [...store.values()]
-        .filter((entry) => entry.event.status !== 'cancelled')
-        .map((entry) => entry.event);
-      return reply(200, { items, nextSyncToken: `${calendarId}:${current}` });
+      // Pages like Google: the sync token only rides on the last one.
+      const offset = Number(url.searchParams.get('pageToken') ?? 0);
+      const pageItems = items.slice(offset, offset + this.pageSize);
+      const next = offset + this.pageSize;
+      return reply(
+        200,
+        next < items.length
+          ? { items: pageItems, nextPageToken: String(next) }
+          : { items: pageItems, nextSyncToken: `${calendarId}:${current}` },
+      );
     }
     if (request.method === 'POST' && eventId === undefined) {
       const id = typeof body?.['id'] === 'string' ? body['id'] : `srv-${this.bump(calendarId)}`;
