@@ -92,3 +92,15 @@ pnpm --filter @calendar/desktop build && pnpm test:e2e
 # iOS e2e (Maestro needs a JDK: brew install openjdk; dev client + Metro running)
 pnpm test:e2e:ios
 ```
+
+### Resetting local data
+
+`pnpm reset:local` wipes everything the apps keep on this machine: the
+desktop database, tokens, logs and settings for both the dev and the
+packaged build, the safeStorage keys in the login keychain, Squirrel
+update caches, stray e2e profiles, and the iOS app on every booted
+simulator (a physical device is reset by deleting the app). It leaves
+Contacts/Reminders permissions, your Apple data and
+`google-oauth.local.json` alone. The schema was collapsed into one
+baseline on 2026-09-15; a database from before that refuses to open
+("Database is ahead of this build") until it is reset this way.
