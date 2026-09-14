@@ -486,9 +486,10 @@ Correctness and the sync path:
       tested with a fake safeStorage.
 - [x] Indexes and bounds — done: migration 10 adds the `pending_ops`
       drain index, `tasks(due_date)` and an events window index that leads
-      with the range; `listDue` pages at 200; the masters query has a lower
-      bound. `CREATE INDEX IF NOT EXISTS` because the migration test
-      re-runs against a seeded schema.
+      with the range; `listDue` pages at 200. (The masters query got its
+      lower bound only with the full-history work below — this entry
+      claimed it too early.) `CREATE INDEX IF NOT EXISTS` because the
+      migration test re-runs against a seeded schema.
 - [x] Sync-loop nits — done in one commit: per-account `catchCause` in
       `syncRemindersOnly`; the second full pass re-checks `skipped`;
       `Retry-After` is honoured by the transient retry loop; every error
@@ -610,3 +611,22 @@ Performance:
       and removal). `useBackendMutations` builds its promise setters once
       per registry (`registry.set` + `AtomRegistry.getResult`) instead of
       nineteen `useAtomSet` mounts per consumer.
+
+### Full event history (2026-09-14)
+
+- [x] Events: the 12-months-back floor — done: the events pass sends no
+      `timeMin`; a full list (first sync, 410 resync) fetches every event
+      ever and the token then covers all of them; nothing prunes by age.
+      Decisions: one unbounded first pass rather than a quick window plus
+      a background backfill — Nik chose the simpler shape (pages land
+      progressively, the Settings line explains the wait); migration 12
+      clears every stored events token because a windowed token cannot be
+      widened; each 2,500-event page is one transaction and one
+      invalidation; `recurrence_end_utc` (UNTIL, or the last COUNT
+      occurrence computed once at write time) bounds the masters query
+      over a partial index; expansion has an iteration cap and a skipped
+      master no longer blanks the window; calendars that vanish take their
+      rows with them; `listSyncStatus` shows "Importing history… N events
+      so far" / "History complete" per account. Follow-ups: RDATE-only
+      series stay unbounded, long-lived COUNT series still iterate from
+      DTSTART on every read, no per-calendar history opt-out.

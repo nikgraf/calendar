@@ -133,6 +133,27 @@ Rules that keep the queue correct:
   pulling** — that ordering is what protects optimistic local writes from
   being overwritten by a pull (ops in backoff are the one exception; the
   `calendarColor` apply upserts the patch response to self-heal that case).
+- Events sync the **whole history**: a full pass (first sync of a
+  calendar, or a 410 resync) lists the calendar with no `timeMin`, and the
+  sync token it returns then covers every event ever. A token is bound to
+  the query it was issued for — a windowed one could never be widened —
+  which is why migration 12 cleared every stored events token once.
+  Nothing prunes by age; `deleteStale` only removes rows a completed full
+  pass did not touch. The pass writes its `sync_state` row `'syncing'`
+  until the list completes (`'error'` on failure, token kept for a failed
+  incremental pass), and `listSyncStatus` turns that plus a row count into
+  the Settings "Importing history…" line.
+- A full list of a big calendar is many 2,500-event pages: each page is
+  one transaction (`EventRepo.applyPage`) with one invalidation, and the
+  engine yields between pages so rpc handlers and the UI interleave.
+  Calendars that vanish upstream take their event rows with them
+  (`deleteByCalendar`); migration 12 cleaned up the ones left behind.
+- With every master ever synced in the table, `getWindow` bounds the
+  recurring-masters query by a stored `recurrence_end_utc` (UNTIL, or the
+  last COUNT occurrence computed once at write time; NULL = endless) over
+  a partial index, so ended series are never expanded again. Expansion
+  runs under an explicit iteration cap and `assembleWindow` skips a master
+  whose rule throws instead of blanking the window (the handler logs it).
 - Incremental pulls use syncTokens; a 410 forces a full resync, after which
   `deleteStale` purges rows the server no longer returns (pending rows are
   protected by sync_status). Local writes mark their row `pending`; pulls
