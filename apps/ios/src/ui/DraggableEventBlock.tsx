@@ -1,3 +1,6 @@
+/* eslint-disable react/immutability -- Reanimated shared values are mutable
+   refs by design (`.value =` is the API); the React Compiler lint cannot tell
+   them from hook state. */
 import { type EventRecord, formatClockTime } from '@calendar/core';
 import { Pressable, StyleSheet, Text, View, type DimensionValue } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
