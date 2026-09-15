@@ -195,12 +195,15 @@ function CalendarScreen() {
 
       {view === 'month' ? (
         <MonthGrid
+          birthdays={birthdays}
           colorOf={colorOf}
           events={events}
+          listColorOf={listColorOf}
           onSelectDay={(date) => {
             setFocused(date);
             switchView('day');
           }}
+          tasks={tasks}
           timeZone={timeZone}
           yearMonth={Temporal.PlainYearMonth.from(focused)}
         />

@@ -292,7 +292,14 @@ Rules that keep the queue correct:
   MM-DD (`mergeBirthdays`), expands occurrences per day (Feb 29 lands on
   Feb 28 in common years), and both lanes draw a neutral chip with a
   fixed pink accent (`birthdayChipLabel`). The detail view is read-only
-  and lists every source. Month views stay events-only for now.
+  and lists every source. Month views show tasks and birthdays too, as
+  read-only summaries after the day's events (events keep the cap — they
+  carry the calendar's color — then birthdays, then tasks): chips on
+  desktop under the same three-chip cap, dots on iOS under the four-dot
+  cap; both cells announce the counts through `monthCellLabel` (core);
+  tapping a cell opens the day, where the full chips live. Both kinds are
+  bucketed with `groupByDate` (core), which the iOS all-day lane uses as
+  well.
 - Device-only data behind rpc: `device_settings` is a key/value table
   for preferences that never sync (birthday reminders first). The
   IPC-vs-rpc rule is about window concerns, not about where data lives —

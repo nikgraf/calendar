@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { Temporal } from '../time/temporal.ts';
 import { EventRecord } from '../types.ts';
-import { groupEventsByDay } from './dayGrouping.ts';
+import { groupByDate, groupEventsByDay } from './dayGrouping.ts';
 import { eventsOnDay } from './dayMembership.ts';
 
 const instant = (iso: string): number => Temporal.Instant.from(iso).epochMilliseconds;
@@ -68,5 +68,33 @@ describe('groupEventsByDay', () => {
     expect(grouped.get('2026-07-09')?.map((event) => event.id)).toEqual(['multi-day']);
     expect(grouped.get('2026-07-10')?.map((event) => event.id)).toEqual([]);
     expect(grouped.get('2026-07-11')?.map((event) => event.id)).toEqual(['single-all-day']);
+  });
+});
+
+describe('groupByDate', () => {
+  it('buckets by the ISO date, keeps input order, skips undated items', () => {
+    const tasks = [
+      { dueDate: '2026-07-07', title: 'second on the 7th' },
+      { dueDate: undefined, title: 'undated' },
+      { dueDate: '2026-07-06', title: 'the 6th' },
+      { dueDate: '2026-07-07', title: 'third on the 7th' },
+    ];
+    // Listed before "second" so order within a day is provably input order.
+    const grouped = groupByDate(
+      [{ dueDate: '2026-07-07', title: 'first on the 7th' }, ...tasks],
+      (task) => task.dueDate,
+    );
+    expect([...grouped.keys()]).toEqual(['2026-07-07', '2026-07-06']);
+    expect(grouped.get('2026-07-07')?.map((task) => task.title)).toEqual([
+      'first on the 7th',
+      'second on the 7th',
+      'third on the 7th',
+    ]);
+    expect(grouped.get('2026-07-06')?.map((task) => task.title)).toEqual(['the 6th']);
+    expect(grouped.has('undefined')).toBe(false);
+  });
+
+  it('returns an empty map for no items', () => {
+    expect(groupByDate([], () => '2026-01-01').size).toBe(0);
   });
 });

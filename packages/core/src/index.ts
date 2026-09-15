@@ -8,6 +8,7 @@ export * from './layout/dayGrid.ts';
 export * from './layout/dayGrouping.ts';
 export * from './layout/dayMembership.ts';
 export * from './layout/dayStrip.ts';
+export * from './layout/monthCellLabel.ts';
 export * from './color.ts';
 export * from './contacts/email.ts';
 export * from './contacts/search.ts';

@@ -27,6 +27,15 @@ const todayAt = (hour: number, minute = 0): number => {
   const now = new Date();
   return Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), hour, minute);
 };
+/**
+ * Today's *local* ISO date, for date-only records: the app places a task on
+ * the day in the machine's zone, and between local midnight and UTC
+ * midnight the UTC date is still yesterday (CI runs in UTC; dev does not).
+ */
+const todayLocalIso = (): string => {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+};
 
 // The daily series starts three days back so several instances are visible
 // in the current week no matter which weekday the suite runs on. All seeded
@@ -136,7 +145,7 @@ const seed = {
   tasks: [
     new TaskRecord({
       accountId: 'acc-e2e',
-      dueDate: new Date(todayAt(0)).toISOString().slice(0, 10),
+      dueDate: todayLocalIso(),
       id: 'task-rent',
       listId: 'list-e2e',
       provider: 'google',
@@ -223,11 +232,17 @@ describe('calendar desktop e2e', () => {
   it('switches views and navigates dates', async () => {
     const { cdp } = app;
     await cdp.clickButtonWithText('month');
-    await cdp.waitFor(`document.body.textContent.includes('+') || true`);
-    // Month view: weekday header row appears.
-    await cdp.waitFor(`document.body.textContent.includes('Mon')`);
-
-    await cdp.clickButtonWithText('day');
+    try {
+      // Month view: weekday header row appears, and today's cell announces
+      // the seeded task. The label, not the chip: today also holds several
+      // seeded events, which lead the cell and push the task into "+N more".
+      await cdp.waitFor(`document.body.textContent.includes('Mon')`);
+      await cdp.waitFor(
+        `[...document.querySelectorAll('[data-testid="month-grid"] button')].some((cell) => (cell.getAttribute('aria-label') ?? '').includes('1 task'))`,
+      );
+    } finally {
+      await cdp.clickButtonWithText('day');
+    }
     await cdp.waitFor(`!!document.querySelector('[title^="Standup meeting"]')`);
 
     const titleBefore = await cdp.eval<string>(`document.querySelector('h1')?.textContent ?? ''`);
