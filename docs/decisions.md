@@ -681,15 +681,21 @@ Performance:
       receive the tasks and birthday occurrences their hooks were already
       fetching for the grid (`monthGridRange` and the fetch range share
       one `buildMonthGrid`). Decisions: each platform keeps its month
-      idiom — desktop draws chips (task: checkbox glyph, list accent,
-      struck through when done; birthday: pink accent, `data-birthday`)
-      under the existing three-chip cap and "+N more", iOS draws dots
-      (outlined grey per task, pink per birthday) under the four-dot cap
-      and announces the counts in the cell label; items are read-only
-      summaries and the cell still opens the day, so no nested buttons on
-      desktop and no new gestures on iOS; cells list tasks, birthdays,
-      then events, the all-day lane's order; `groupByDate` in core
-      replaces the iOS lane's two hand-rolled maps and feeds both month
-      views. Desktop e2e asserts the seeded task chip and the birthday
-      chip in month view; iOS has no seed path, the navigation flow
-      stays as is.
+      idiom — desktop draws chips (task: checkbox glyph, the Reminders
+      list accent where the lane draws one, struck through when done;
+      birthday: pink accent, `data-birthday`) under the existing
+      three-chip cap and "+N more", iOS draws dots (an outlined ring per
+      task in the list color or grey, pink per birthday) under the
+      four-dot cap; both cells carry the same accessible name from
+      `monthCellLabel` ("Tuesday, September 15, 2 events, 1 task"); items
+      are read-only summaries and the cell still opens the day, so no
+      nested buttons on desktop and no new gestures on iOS; cells list the
+      day's events first, then birthdays, then tasks — events keep the cap
+      because they carry the calendar's color and a day full of tasks must
+      not hide them (the review caught tasks-first doing exactly that);
+      `groupByDate` in core replaces the iOS lane's two hand-rolled maps
+      and feeds both month views. Desktop e2e asserts the seeded task
+      chip and the birthday chip inside `[data-testid="month-grid"]`, and
+      the seeded task is due on the local date (the UTC date is yesterday
+      between local and UTC midnight); iOS has no seed path, the
+      navigation flow stays as is.

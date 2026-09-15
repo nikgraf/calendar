@@ -198,6 +198,7 @@ function CalendarScreen() {
           birthdays={birthdays}
           colorOf={colorOf}
           events={events}
+          listColorOf={listColorOf}
           onSelectDay={(date) => {
             setFocused(date);
             switchView('day');

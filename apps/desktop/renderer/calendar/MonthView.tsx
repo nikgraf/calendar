@@ -6,6 +6,7 @@ import {
   type EventRecord,
   groupByDate,
   groupEventsByDay,
+  monthCellLabel,
   taskChipLabel,
   type TaskRecord,
   Temporal,
@@ -14,9 +15,11 @@ import { chipTextColor, type ColorLookup } from './colors.ts';
 
 const MAX_CHIPS = 3;
 
-// A cell's items in the all-day lane's order: tasks, birthdays, then the
-// day's events (all-day first). Chips are read-only summaries — the cell
-// opens the day, where the full chips with toggle and editor live.
+// A cell's items: the day's events (all-day first), then birthdays, then
+// tasks. Events lead because they carry the calendar's color and are what
+// the month grid showed before; a day full of tasks must not push them
+// into "+N more". Chips are read-only summaries — the cell opens the day,
+// where the full chips with toggle and editor live.
 type CellItem =
   | { readonly birthday: BirthdayOccurrence; readonly kind: 'birthday' }
   | { readonly event: EventRecord; readonly kind: 'event' }
@@ -52,20 +55,9 @@ export function MonthView({
   );
   const tasksByDay = groupByDate(tasks, (task) => task.dueDate);
   const birthdaysByDay = groupByDate(birthdays, (birthday) => birthday.date);
-  const itemsForDay = (date: Temporal.PlainDate): ReadonlyArray<CellItem> => {
-    const iso = date.toString();
-    return [
-      ...(tasksByDay.get(iso) ?? []).map((task): CellItem => ({ kind: 'task', task })),
-      ...(birthdaysByDay.get(iso) ?? []).map((birthday): CellItem => ({
-        birthday,
-        kind: 'birthday',
-      })),
-      ...(eventsByDay.get(iso) ?? []).map((event): CellItem => ({ event, kind: 'event' })),
-    ];
-  };
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
+    <div className="flex min-h-0 flex-1 flex-col" data-testid="month-grid">
       <div className="grid shrink-0 grid-cols-7 border-b border-neutral-200 bg-white">
         {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((label) => (
           <div className="px-2 py-1.5 text-xs font-medium text-neutral-400" key={label}>
@@ -78,14 +70,27 @@ export function MonthView({
         style={{ gridTemplateRows: `repeat(${weeks.length}, 1fr)` }}
       >
         {weeks.flat().map(({ date, inMonth, isToday }) => {
-          const items = itemsForDay(date);
+          const iso = date.toString();
+          const dayEvents = eventsByDay.get(iso) ?? [];
+          const dayBirthdays = birthdaysByDay.get(iso) ?? [];
+          const dayTasks = tasksByDay.get(iso) ?? [];
+          const items: ReadonlyArray<CellItem> = [
+            ...dayEvents.map((event): CellItem => ({ event, kind: 'event' })),
+            ...dayBirthdays.map((birthday): CellItem => ({ birthday, kind: 'birthday' })),
+            ...dayTasks.map((task): CellItem => ({ kind: 'task', task })),
+          ];
           const overflow = items.length - MAX_CHIPS;
           return (
             <button
+              aria-label={monthCellLabel(date, {
+                birthdays: dayBirthdays.length,
+                events: dayEvents.length,
+                tasks: dayTasks.length,
+              })}
               className={`flex min-h-0 flex-col items-stretch gap-0.5 border-r border-b border-neutral-100 p-1 text-left ${
                 inMonth ? 'bg-white' : 'bg-neutral-50'
               } hover:bg-blue-50/40`}
-              key={date.toString()}
+              key={iso}
               onClick={() => onSelectDay(date)}
               type="button"
             >
@@ -104,16 +109,20 @@ export function MonthView({
                 if (item.kind === 'task') {
                   const { task } = item;
                   const done = task.status === 'completed';
+                  // The list accent only where the lane draws one: a
+                  // colored Reminders list. Google lists stay neutral.
+                  const listColor = listColorOf(task);
                   return (
                     <span
                       className={`truncate rounded border border-neutral-300 bg-neutral-50 px-1 text-[11px] leading-4 text-neutral-700 ${
                         done ? 'opacity-50' : ''
                       }`}
                       key={`task:${task.listId}:${task.id}`}
-                      style={{
-                        borderLeftColor: listColorOf(task) ?? '#d4d4d4',
-                        borderLeftWidth: 3,
-                      }}
+                      style={
+                        listColor === undefined
+                          ? undefined
+                          : { borderLeftColor: listColor, borderLeftWidth: 3 }
+                      }
                       title={task.title}
                     >
                       <span className={done ? 'line-through' : ''}>

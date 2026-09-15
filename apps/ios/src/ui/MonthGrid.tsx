@@ -5,25 +5,27 @@ import {
   type EventRecord,
   groupByDate,
   groupEventsByDay,
+  monthCellLabel,
   type TaskRecord,
   Temporal,
 } from '@calendar/core';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View, type ViewStyle } from 'react-native';
 import { palette } from './theme.ts';
 
 const MAX_DOTS = 4;
 
-// A cell's dots in the all-day lane's order: tasks, birthdays, then the
-// day's events. Dots are read-only summaries — the cell opens the day,
+// A cell's dots: the day's events, then birthdays, then tasks. Events lead
+// because they carry the calendar's color and are what the grid showed
+// before; there is no "+N more" here, so a day full of tasks must not
+// push them out. Dots are read-only summaries — the cell opens the day,
 // where the full chips with toggle and editor live.
-type Dot = { readonly key: string; readonly style: object };
-
-const plural = (count: number, noun: string) => `${count} ${noun}${count === 1 ? '' : 's'}`;
+type Dot = { readonly key: string; readonly style: ViewStyle };
 
 export function MonthGrid({
   birthdays,
   colorOf,
   events,
+  listColorOf,
   onSelectDay,
   tasks,
   timeZone,
@@ -32,6 +34,7 @@ export function MonthGrid({
   birthdays: ReadonlyArray<BirthdayOccurrence>;
   colorOf: (event: EventRecord) => string;
   events: ReadonlyArray<EventRecord>;
+  listColorOf: (task: TaskRecord) => string | undefined;
   onSelectDay: (date: Temporal.PlainDate) => void;
   tasks: ReadonlyArray<TaskRecord>;
   timeZone: string;
@@ -49,6 +52,15 @@ export function MonthGrid({
   const tasksByDay = groupByDate(tasks, (task) => task.dueDate);
   const birthdaysByDay = groupByDate(birthdays, (birthday) => birthday.date);
 
+  // An outlined ring, like the lane's checkbox glyph: a task is not a
+  // calendar color. The ring takes the Reminders list color where the lane
+  // draws that accent; Google lists stay neutral. Done tasks fade.
+  const taskDot = (task: TaskRecord): ViewStyle => ({
+    backgroundColor: 'transparent',
+    borderColor: task.status === 'completed' ? palette.textFaint : (listColorOf(task) ?? '#525252'),
+    borderWidth: 1,
+  });
+
   return (
     <View style={styles.container}>
       <View style={styles.weekdayRow}>
@@ -62,37 +74,30 @@ export function MonthGrid({
         <View key={weekIndex} style={styles.weekRow}>
           {week.map(({ date, inMonth, isToday }) => {
             const iso = date.toString();
-            const dayTasks = tasksByDay.get(iso) ?? [];
-            const dayBirthdays = birthdaysByDay.get(iso) ?? [];
             const dayEvents = eventsByDay.get(iso) ?? [];
+            const dayBirthdays = birthdaysByDay.get(iso) ?? [];
+            const dayTasks = tasksByDay.get(iso) ?? [];
             const dots: Array<Dot> = [
-              ...dayTasks.map((task) => ({
-                key: `task:${task.listId}:${task.id}`,
-                style: task.status === 'completed' ? styles.taskDotDone : styles.taskDot,
+              ...dayEvents.map((event) => ({
+                key: `${event.calendarId}:${event.id}`,
+                style: { backgroundColor: colorOf(event) },
               })),
               ...dayBirthdays.map((birthday) => ({
                 key: `birthday:${birthday.record.id}`,
                 style: styles.birthdayDot,
               })),
-              ...dayEvents.map((event) => ({
-                key: `${event.calendarId}:${event.id}`,
-                style: { backgroundColor: colorOf(event) },
+              ...dayTasks.map((task) => ({
+                key: `task:${task.listId}:${task.id}`,
+                style: taskDot(task),
               })),
             ];
-            // Events always announced (the label read that way before); the
-            // other kinds only when present.
-            const counts = [
-              plural(dayEvents.length, 'event'),
-              dayTasks.length > 0 ? plural(dayTasks.length, 'task') : null,
-              dayBirthdays.length > 0 ? plural(dayBirthdays.length, 'birthday') : null,
-            ].filter((part) => part !== null);
             return (
               <Pressable
-                accessibilityLabel={`${date.toLocaleString('en-US', {
-                  day: 'numeric',
-                  month: 'long',
-                  weekday: 'long',
-                })}, ${counts.join(', ')}`}
+                accessibilityLabel={monthCellLabel(date, {
+                  birthdays: dayBirthdays.length,
+                  events: dayEvents.length,
+                  tasks: dayTasks.length,
+                })}
                 accessibilityRole="button"
                 key={iso}
                 onPress={() => onSelectDay(date)}
@@ -161,18 +166,6 @@ const styles = StyleSheet.create({
   },
   outsideMonth: {
     color: palette.textFaint,
-  },
-  // Outlined, like the lane's checkbox glyph: a task is not a calendar
-  // color. Done tasks fade the way the lane's chip does.
-  taskDot: {
-    backgroundColor: 'transparent',
-    borderColor: '#525252',
-    borderWidth: 1,
-  },
-  taskDotDone: {
-    backgroundColor: 'transparent',
-    borderColor: '#a3a3a3',
-    borderWidth: 1,
   },
   todayText: {
     color: '#ffffff',
