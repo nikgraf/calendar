@@ -3,7 +3,9 @@
 # database, tokens, logs and settings (dev and packaged builds), the
 # safeStorage keys in the login keychain, Squirrel update caches, stray e2e
 # profiles, and the iOS app on every booted simulator. Run it after the
-# schema baseline (2026-09-15) or whenever a clean first launch is wanted:
+# schema baseline (2026-09-15) or whenever a clean first launch is wanted.
+# Quit the desktop app and stop Metro first: a running app rewrites its
+# database on the next tick.
 #
 #   pnpm reset:local
 #

@@ -95,7 +95,8 @@ pnpm test:e2e:ios
 
 ### Resetting local data
 
-`pnpm reset:local` wipes everything the apps keep on this machine: the
+`pnpm reset:local` (with the desktop app and Metro stopped) wipes
+everything the apps keep on this machine: the
 desktop database, tokens, logs and settings for both the dev and the
 packaged build, the safeStorage keys in the login keychain, Squirrel
 update caches, stray e2e profiles, and the iOS app on every booted
