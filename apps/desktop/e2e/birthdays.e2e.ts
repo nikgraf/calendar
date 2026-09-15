@@ -88,6 +88,14 @@ describe('contact birthdays', () => {
     expect(chips).toEqual([`🎂 Alice Example (${YEARS_AGO})`]);
   });
 
+  it('shows the birthday in the month view too', async () => {
+    const { cdp } = app;
+    await cdp.clickButtonWithText('month');
+    await cdp.waitFor(`document.querySelectorAll('[data-birthday]').length === 1`);
+    await cdp.clickButtonWithText('week');
+    await cdp.waitFor(`document.querySelectorAll('[data-birthday]').length === 1`);
+  });
+
   it('opens a read-only detail that names both sources, and closes with Escape', async () => {
     const { cdp } = app;
     const point = await cdp.locate('[data-birthday]');

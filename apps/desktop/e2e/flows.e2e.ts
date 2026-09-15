@@ -223,9 +223,10 @@ describe('calendar desktop e2e', () => {
   it('switches views and navigates dates', async () => {
     const { cdp } = app;
     await cdp.clickButtonWithText('month');
-    await cdp.waitFor(`document.body.textContent.includes('+') || true`);
-    // Month view: weekday header row appears.
+    // Month view: weekday header row appears, and today's cell carries the
+    // seeded task as a read-only chip (the same title handle as the lane).
     await cdp.waitFor(`document.body.textContent.includes('Mon')`);
+    await cdp.waitFor(`!!document.querySelector('[title="Pay rent"]')`);
 
     await cdp.clickButtonWithText('day');
     await cdp.waitFor(`!!document.querySelector('[title^="Standup meeting"]')`);

@@ -1,32 +1,68 @@
-import { buildMonthGrid, groupEventsByDay, Temporal, type EventRecord } from '@calendar/core';
+import {
+  BIRTHDAY_ACCENT,
+  type BirthdayOccurrence,
+  birthdayChipLabel,
+  buildMonthGrid,
+  type EventRecord,
+  groupByDate,
+  groupEventsByDay,
+  taskChipLabel,
+  type TaskRecord,
+  Temporal,
+} from '@calendar/core';
 import { chipTextColor, type ColorLookup } from './colors.ts';
 
 const MAX_CHIPS = 3;
 
+// A cell's items in the all-day lane's order: tasks, birthdays, then the
+// day's events (all-day first). Chips are read-only summaries — the cell
+// opens the day, where the full chips with toggle and editor live.
+type CellItem =
+  | { readonly birthday: BirthdayOccurrence; readonly kind: 'birthday' }
+  | { readonly event: EventRecord; readonly kind: 'event' }
+  | { readonly kind: 'task'; readonly task: TaskRecord };
+
 export function MonthView({
+  birthdays,
   colorOf,
   events,
+  listColorOf,
   onSelectDay,
+  tasks,
   timeZone,
   yearMonth,
 }: {
+  birthdays: ReadonlyArray<BirthdayOccurrence>;
   colorOf: ColorLookup;
   events: ReadonlyArray<EventRecord>;
+  listColorOf: (task: TaskRecord) => string | undefined;
   onSelectDay: (date: Temporal.PlainDate) => void;
+  tasks: ReadonlyArray<TaskRecord>;
   timeZone: string;
   yearMonth: Temporal.PlainYearMonth;
 }) {
   const today = Temporal.Now.plainDateISO(timeZone);
   const weeks = buildMonthGrid(yearMonth, today);
 
-  // One pass over the events, not one filter + sort per cell.
-  const byDay = groupEventsByDay(
+  // One pass over each kind, not one filter + sort per cell.
+  const eventsByDay = groupEventsByDay(
     events,
     weeks.flat().map((cell) => cell.date),
     timeZone,
   );
-  const eventsForDay = (date: Temporal.PlainDate): ReadonlyArray<EventRecord> =>
-    byDay.get(date.toString()) ?? [];
+  const tasksByDay = groupByDate(tasks, (task) => task.dueDate);
+  const birthdaysByDay = groupByDate(birthdays, (birthday) => birthday.date);
+  const itemsForDay = (date: Temporal.PlainDate): ReadonlyArray<CellItem> => {
+    const iso = date.toString();
+    return [
+      ...(tasksByDay.get(iso) ?? []).map((task): CellItem => ({ kind: 'task', task })),
+      ...(birthdaysByDay.get(iso) ?? []).map((birthday): CellItem => ({
+        birthday,
+        kind: 'birthday',
+      })),
+      ...(eventsByDay.get(iso) ?? []).map((event): CellItem => ({ event, kind: 'event' })),
+    ];
+  };
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -42,8 +78,8 @@ export function MonthView({
         style={{ gridTemplateRows: `repeat(${weeks.length}, 1fr)` }}
       >
         {weeks.flat().map(({ date, inMonth, isToday }) => {
-          const dayEvents = eventsForDay(date);
-          const overflow = dayEvents.length - MAX_CHIPS;
+          const items = itemsForDay(date);
+          const overflow = items.length - MAX_CHIPS;
           return (
             <button
               className={`flex min-h-0 flex-col items-stretch gap-0.5 border-r border-b border-neutral-100 p-1 text-left ${
@@ -64,7 +100,44 @@ export function MonthView({
               >
                 {date.day}
               </span>
-              {dayEvents.slice(0, MAX_CHIPS).map((event) => {
+              {items.slice(0, MAX_CHIPS).map((item) => {
+                if (item.kind === 'task') {
+                  const { task } = item;
+                  const done = task.status === 'completed';
+                  return (
+                    <span
+                      className={`truncate rounded border border-neutral-300 bg-neutral-50 px-1 text-[11px] leading-4 text-neutral-700 ${
+                        done ? 'opacity-50' : ''
+                      }`}
+                      key={`task:${task.listId}:${task.id}`}
+                      style={{
+                        borderLeftColor: listColorOf(task) ?? '#d4d4d4',
+                        borderLeftWidth: 3,
+                      }}
+                      title={task.title}
+                    >
+                      <span className={done ? 'line-through' : ''}>
+                        {done ? '☑' : '☐'} {taskChipLabel(task)}
+                      </span>
+                    </span>
+                  );
+                }
+                if (item.kind === 'birthday') {
+                  const { birthday } = item;
+                  const label = birthdayChipLabel(birthday);
+                  return (
+                    <span
+                      className="truncate rounded border border-neutral-300 bg-neutral-50 px-1 text-[11px] leading-4 text-neutral-700"
+                      data-birthday={birthday.record.id}
+                      key={`birthday:${birthday.record.id}:${birthday.date}`}
+                      style={{ borderLeftColor: BIRTHDAY_ACCENT, borderLeftWidth: 3 }}
+                      title={label}
+                    >
+                      {label}
+                    </span>
+                  );
+                }
+                const { event } = item;
                 const color = colorOf(event);
                 return (
                   <span
