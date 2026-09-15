@@ -10,6 +10,7 @@
     "ios": "pnpm --filter @calendar/ios ios",
     "lint": "vp check",
     "prepare": "vp config --no-agent",
+    "reset:local": "bash scripts/reset-local-data.sh",
     "test": "vp test",
     "test:run": "vp test run",
     "typecheck": "pnpm --recursive --parallel exec tsc --noEmit",

@@ -658,3 +658,19 @@ Performance:
       `npx expo install --check`), op-sqlite < 18, vitest = vite-plus's.
       Expo still lists react 19.2.3 exact and typescript ~6.0.3 as
       "expected"; both are advisory and everything builds.
+
+### Schema baseline (2026-09-15)
+
+- [x] Collapse the twelve SQLite migrations into one — done: nothing had
+      shipped, so the upgrade paths between them served nobody; one
+      migration now creates the final schema and the one-off data fixes
+      (token reset, orphan deletes) are gone with the history they fixed.
+      Decisions: the runner keeps its "ahead of this build" guard rather
+      than gaining a self-wipe — a pre-baseline database refuses to open,
+      and the message names the reset; `pnpm reset:local`
+      (`scripts/reset-local-data.sh`) wipes every local store on a Mac
+      (both desktop builds, keychain keys, Squirrel caches, booted
+      simulators) and TestFlight testers delete + reinstall once, noted in
+      `docs/distribution.md`. From here on, schema changes are appended
+      migrations again — the collapse is a one-time pre-release cleanup,
+      not a policy.

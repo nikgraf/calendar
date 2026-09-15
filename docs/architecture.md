@@ -136,8 +136,8 @@ Rules that keep the queue correct:
 - Events sync the **whole history**: a full pass (first sync of a
   calendar, or a 410 resync) lists the calendar with no `timeMin`, and the
   sync token it returns then covers every event ever. A token is bound to
-  the query it was issued for — a windowed one could never be widened —
-  which is why migration 12 cleared every stored events token once.
+  the query it was issued for — a windowed one could never be widened,
+  so a token must always come from an unbounded list.
   Nothing prunes by age; `deleteStale` only removes rows a completed full
   pass did not touch. The pass writes its `sync_state` row `'syncing'`
   until the list completes (`'error'` on failure, token kept for a failed
@@ -150,7 +150,7 @@ Rules that keep the queue correct:
   sync state with them in one transaction (`CalendarRepo.purge`), and a
   calendar new to the local list has any leftover scope cleared before
   its first pass — so a calendar that comes back always re-lists its
-  history; migration 12 cleaned up the rows left behind before this.
+  history.
 - With every master ever synced in the table, `getWindow` bounds the
   recurring-masters query by a stored `recurrence_end_utc` (UNTIL, or the
   last COUNT occurrence computed once at write time; NULL = endless) over

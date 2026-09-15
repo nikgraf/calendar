@@ -72,9 +72,8 @@ invariants.
   `deleteStale`. A sync token is bound to the query parameters of the list
   that issued it: a token from a `timeMin` list only ever reports changes
   inside that window and cannot be widened later. The events pass
-  therefore sends no `timeMin` at all (full history), and the one-time
-  migration to that behaviour cleared every stored events token so each
-  calendar re-lists once. `singleEvents=false` + `showDeleted=true` on the
+  therefore sends no `timeMin` at all (full history), and a stored token
+  is only ever one from such a list. `singleEvents=false` + `showDeleted=true` on the
   full list; `maxResults=2500` (the API's cap) — a 50k-event calendar is
   ~20 requests. The special birthday/holiday calendars flow through the
   normal calendarList (the Birthdays calendar is skipped, see contacts).

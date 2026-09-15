@@ -5,14 +5,17 @@ import { type App, launchApp, readDeviceSetting } from './harness.ts';
 // Birthdays come from two sources: a Google People row seeded into SQLite
 // and the same person in a device-contacts fixture (the harness swaps the
 // helper for the in-memory fake, so no TCC prompt and no real address
-// book). Seeded relative to today so the chip is always in view.
+// book). Seeded on today's *local* date so the chip is always in view and
+// the detail reads "Today": the app labels the occurrence in the machine's
+// zone, and between local midnight and UTC midnight the UTC date is still
+// yesterday.
 const today = new Date();
 const YEARS_AGO = 32;
 const person = {
-  day: today.getUTCDate(),
+  day: today.getDate(),
   displayName: 'Alice Example',
-  month: today.getUTCMonth() + 1,
-  year: today.getUTCFullYear() - YEARS_AGO,
+  month: today.getMonth() + 1,
+  year: today.getFullYear() - YEARS_AGO,
 };
 
 const seed = {
