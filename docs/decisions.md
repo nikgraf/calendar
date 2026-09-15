@@ -197,7 +197,7 @@ design decisions it settled.
       typeahead never refetches on a birthday change); neutral chip with a
       fixed pink accent because birthdays have no calendar color; Feb 29
       renders on Feb 28 in common years; no cross-column spanning on the
-      phone; month views deferred to the tasks-in-month item.
+      phone; month views followed on 2026-09-15 (entry below).
 - [x] Birthday reminders — done (2026-09-12): a multi-select of lead
       days {0, 1, 3, 7, 14} plus one delivery time, stored in the new
       `device_settings` key/value table and shown as "stored only on this
@@ -674,3 +674,22 @@ Performance:
       `docs/distribution.md`. From here on, schema changes are appended
       migrations again — the collapse is a one-time pre-release cleanup,
       not a policy.
+
+### Tasks and birthdays in the month views (2026-09-15)
+
+- [x] Tasks (and birthdays) in month view — done: both month views now
+      receive the tasks and birthday occurrences their hooks were already
+      fetching for the grid (`monthGridRange` and the fetch range share
+      one `buildMonthGrid`). Decisions: each platform keeps its month
+      idiom — desktop draws chips (task: checkbox glyph, list accent,
+      struck through when done; birthday: pink accent, `data-birthday`)
+      under the existing three-chip cap and "+N more", iOS draws dots
+      (outlined grey per task, pink per birthday) under the four-dot cap
+      and announces the counts in the cell label; items are read-only
+      summaries and the cell still opens the day, so no nested buttons on
+      desktop and no new gestures on iOS; cells list tasks, birthdays,
+      then events, the all-day lane's order; `groupByDate` in core
+      replaces the iOS lane's two hand-rolled maps and feeds both month
+      views. Desktop e2e asserts the seeded task chip and the birthday
+      chip in month view; iOS has no seed path, the navigation flow
+      stays as is.
