@@ -60,3 +60,29 @@ export const groupEventsByDay = (
   }
   return buckets;
 };
+
+/**
+ * Date-keyed records (tasks by `dueDate`, birthday occurrences by `date`)
+ * bucketed by their ISO day, input order kept within a day. Items without
+ * a date (undated tasks) are skipped. Shared by the iOS all-day lane and
+ * both month views, which draw each kind on exactly one day.
+ */
+export const groupByDate = <T>(
+  items: ReadonlyArray<T>,
+  dateOf: (item: T) => string | undefined,
+): ReadonlyMap<string, ReadonlyArray<T>> => {
+  const buckets = new Map<string, Array<T>>();
+  for (const item of items) {
+    const iso = dateOf(item);
+    if (iso === undefined) {
+      continue;
+    }
+    const bucket = buckets.get(iso);
+    if (bucket) {
+      bucket.push(item);
+    } else {
+      buckets.set(iso, [item]);
+    }
+  }
+  return buckets;
+};
