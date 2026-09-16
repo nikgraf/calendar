@@ -14,16 +14,16 @@ interface SlotOrigin {
   readonly column: HTMLElement;
   readonly day: Temporal.PlainDate;
   readonly pointerId: number;
-  readonly startClientX: number;
   readonly startClientY: number;
 }
 
 /**
  * Press on empty grid space and drag up or down to draw a new event's slot
  * (15-minute snap, one column); the release hands the slot to `onCreate`.
- * Below the movement threshold nothing happens here, so a plain click
- * stays the column's hour click. Presses on event blocks never arrive: the
- * blocks stop propagation in their own pointerdown (useEventDrag).
+ * Only vertical travel counts toward the threshold: a click that drifts
+ * sideways (a trackpad click often does) stays the column's hour click.
+ * Presses on event blocks never arrive: the blocks stop propagation in
+ * their own pointerdown (useEventDrag).
  */
 export const useSlotDrag = ({
   hourHeight,
@@ -48,9 +48,35 @@ export const useSlotDrag = ({
         setSelection(null);
       }
     };
+    // A release no column handled: the column the drag started in left the
+    // page mid-drag (an arrow key or "t" navigated away), so its pointer
+    // capture died with it. Column handlers run first and clear a live
+    // drag; anything still here is stale.
+    const onWindowPointerUp = () => {
+      if (originRef.current) {
+        originRef.current = null;
+        setSelection(null);
+      }
+    };
     window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
+    window.addEventListener('pointerup', onWindowPointerUp);
+    window.addEventListener('pointercancel', onWindowPointerUp);
+    return () => {
+      window.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener('pointerup', onWindowPointerUp);
+      window.removeEventListener('pointercancel', onWindowPointerUp);
+    };
   }, []);
+
+  /** Drops a drag whose column is gone; true when it did. */
+  const dropIfDetached = (origin: SlotOrigin): boolean => {
+    if (origin.column.isConnected) {
+      return false;
+    }
+    originRef.current = null;
+    setSelection(null);
+    return true;
+  };
 
   // The column rect is read per move: the grid can scroll mid-drag.
   const slotAt = (origin: SlotOrigin, clientY: number): SlotRange =>
@@ -73,21 +99,16 @@ export const useSlotDrag = ({
       column,
       day,
       pointerId: domEvent.pointerId,
-      startClientX: domEvent.clientX,
       startClientY: domEvent.clientY,
     };
   };
 
   const onPointerMove = (domEvent: React.PointerEvent) => {
     const origin = originRef.current;
-    if (!origin || origin.pointerId !== domEvent.pointerId) {
+    if (!origin || origin.pointerId !== domEvent.pointerId || dropIfDetached(origin)) {
       return;
     }
-    if (
-      !origin.active &&
-      Math.hypot(domEvent.clientX - origin.startClientX, domEvent.clientY - origin.startClientY) <
-        DRAG_THRESHOLD_PX
-    ) {
+    if (!origin.active && Math.abs(domEvent.clientY - origin.startClientY) < DRAG_THRESHOLD_PX) {
       return;
     }
     origin.active = true;
@@ -104,15 +125,13 @@ export const useSlotDrag = ({
 
   const onPointerUp = (domEvent: React.PointerEvent) => {
     const origin = originRef.current;
-    originRef.current = null;
-    if (!origin || origin.pointerId !== domEvent.pointerId) {
+    if (!origin || origin.pointerId !== domEvent.pointerId || dropIfDetached(origin)) {
       return;
     }
+    originRef.current = null;
     // Judge by the release distance too: moves can be coalesced away under
     // load, and a fast flick can land press and release in one frame.
-    const movedFar =
-      Math.hypot(domEvent.clientX - origin.startClientX, domEvent.clientY - origin.startClientY) >=
-      DRAG_THRESHOLD_PX;
+    const movedFar = Math.abs(domEvent.clientY - origin.startClientY) >= DRAG_THRESHOLD_PX;
     if (!origin.active && !movedFar) {
       return;
     }

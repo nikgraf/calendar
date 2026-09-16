@@ -486,6 +486,59 @@ describe('calendar desktop e2e', () => {
     expect(await cdp.eval<boolean>(`document.body.textContent.includes('New event')`)).toBe(false);
   });
 
+  it('keeps a click that drifts sideways an hour click', async () => {
+    const { cdp } = app;
+    // A trackpad click often slides a few pixels; sideways travel must not
+    // turn it into a drawn 15-minute slot.
+    const at = await todayGridPoint(3, 5);
+    await cdp.mouse('mousePressed', at.x, at.y);
+    for (let step = 1; step <= 3; step += 1) {
+      await cdp.mouse('mouseMoved', at.x + step * 4, at.y);
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    await cdp.mouse('mouseReleased', at.x + 12, at.y);
+    await cdp.waitFor(`document.body.textContent.includes('New event')`);
+    expect(await editorTimes()).toEqual(['03:00', '04:00']);
+    await cdp.pressEscape();
+    await cdp.waitFor(`!document.body.textContent.includes('New event')`);
+  });
+
+  it('drops a slot whose column leaves the page mid-drag', async () => {
+    const { cdp } = app;
+    const from = await todayGridPoint(4, 5);
+    await cdp.mouse('mousePressed', from.x, from.y);
+    for (let step = 1; step <= 4; step += 1) {
+      await cdp.mouse('mouseMoved', from.x, from.y + step * 10);
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    await cdp.waitFor(`!!document.querySelector('[data-testid="slot-selection"]')`);
+    try {
+      // Next week while the button is still down: today's column unmounts.
+      await cdp.send('Input.dispatchKeyEvent', {
+        code: 'ArrowRight',
+        key: 'ArrowRight',
+        type: 'rawKeyDown',
+        windowsVirtualKeyCode: 39,
+      });
+      await cdp.waitFor(`!document.querySelector('[data-testid="slot-selection"]')`);
+      await cdp.mouse('mouseReleased', from.x, from.y + 40);
+      await new Promise((resolve) => setTimeout(resolve, 800));
+      expect(await cdp.eval<boolean>(`document.body.textContent.includes('New event')`)).toBe(
+        false,
+      );
+    } finally {
+      await cdp.clickButtonWithText('Today');
+    }
+    // The stale drag is gone: a fresh one draws again.
+    const again = await todayGridPoint(4, 5);
+    await cdp.mouse('mousePressed', again.x, again.y);
+    await cdp.mouse('mouseMoved', again.x, again.y + 30);
+    await cdp.waitFor(`!!document.querySelector('[data-testid="slot-selection"]')`);
+    await cdp.pressEscape();
+    await cdp.mouse('mouseReleased', again.x, again.y + 30);
+    await cdp.waitFor(`!document.querySelector('[data-testid="slot-selection"]')`);
+  });
+
   it('drags an event to a new time and day', async () => {
     const { cdp } = app;
     const before = await eventStart('Standup meeting');
