@@ -32,10 +32,6 @@ comment` for inline-playable video: 10 MB on Free plans, 100 MB paid
       binary). PR template gains a "video attached / n.a." checkbox. Not
       possible: REST/GraphQL upload; inline playback from an Actions
       artifact or a private-repo release asset.
-- [ ] Real app icons (macOS .icns / Assets.car, iOS icon set) — nothing
-      exists: `forge.config.cjs` has no `icon`, `app.json` no `expo.icon`;
-      every artifact ships the stock Electron / Expo icon. Logo design
-      notes first (see Later).
 
 ## Tier 2 — features (near-term, well-scoped)
 
@@ -93,7 +89,6 @@ decision and platform notes live in `docs/decisions.md`.
 
 ## Later / ideas (unranked)
 
-- Logo design (see notes todo with most important take aways)
 - Research Siri Calendar integration (no App Intents anywhere yet)
   - Ask ChatGPT (deepresearch) about flows that exist
 - Morning briefing made with AI

@@ -96,7 +96,8 @@ useful after adding/rotating secrets.
 - The Developer ID cert lives only in a temporary keychain created from the
   secret for the duration of the job and is deleted in an `always()` step.
 - Notarization adds ~2–10 minutes; the job timeout is 30.
-- Builds currently ship the stock Electron icon (see the app-icons todo).
+- Builds ship the Solunivo icon from `apps/desktop/assets/icon.icns`, generated
+  from `brand/` by `pnpm brand:build` (see `brand/README.md`).
 
 # iOS: TestFlight + per-PR previews
 
@@ -111,8 +112,9 @@ latest build.
 - **Unchanged** (JS/TS/docs-only merges — most of them): publishes
   `eas update --branch main` in ~30s; installed TestFlight builds load it
   on next launch. No cloud build, no build number.
-- **Changed** (native deps, config plugins, SDK bumps): a full EAS build
-  and TestFlight submit, as before.
+- **Changed** (native deps, config plugins, SDK bumps, the app icon): a full
+  EAS build and TestFlight submit, as before. An icon change can never ship
+  as an OTA update, and a PR preview channel does not show it either.
 - **Fail toward building**: if the fingerprint or the build lookup errors,
   the workflow builds and emits a warning — a wasted build is visible and
   cheap; a wrongly skipped one strands testers on a stale binary silently.

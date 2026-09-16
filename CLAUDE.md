@@ -45,6 +45,10 @@ powers quick-add parsing, find-a-time, and dictation.
   direct backend; @react-native-ai/apple for on-device model access;
   local Expo modules `modules/solunivo-reminders` (EventKit) and
   `modules/solunivo-contacts` (CNContactStore).
+- `brand/` — SVG masters, logos, fonts and tokens; `pnpm brand:build`
+  (macOS) regenerates the committed app icons and `tokens.css`, and CI
+  fails on stale exports via `pnpm brand:check`. Edit the masters, never
+  the generated ICNS/PNG.
 
 ## Commands (gate must be green before any commit)
 
