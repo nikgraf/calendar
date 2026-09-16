@@ -215,6 +215,34 @@ const setEditorTitle = async (title: string): Promise<void> => {
   })()`);
 };
 
+/**
+ * Viewport point at a wall-clock time in today's day column, scrolled into
+ * view — for drawing slots on grid space no seeded or test event occupies.
+ */
+const todayGridPoint = async (hour: number, minute = 0): Promise<{ x: number; y: number }> => {
+  const label = new Date().toLocaleDateString('en-US', {
+    day: 'numeric',
+    month: 'long',
+    weekday: 'long',
+  });
+  return app.cdp.eval<{ x: number; y: number }>(`(() => {
+    const column = [...document.querySelectorAll('[role="button"][aria-label]')].find((element) =>
+      element.getAttribute('aria-label').startsWith(${JSON.stringify(`${label}:`)}),
+    );
+    const scroller = column.closest('.overflow-y-scroll');
+    const offset = (${hour * 60 + minute} / 60) * ${HOUR_HEIGHT};
+    scroller.scrollTop = offset - scroller.clientHeight / 2;
+    const rect = column.getBoundingClientRect();
+    return { x: Math.round(rect.left + rect.width / 2), y: Math.round(rect.top + offset) };
+  })()`);
+};
+
+/** The open event editor's start and end time fields. */
+const editorTimes = (): Promise<Array<string>> =>
+  app.cdp.eval<Array<string>>(
+    `[...document.querySelectorAll('input[type="time"]')].map((input) => input.value)`,
+  );
+
 describe('calendar desktop e2e', () => {
   it('renders the seeded week: sidebar, calendars, events', async () => {
     const { cdp } = app;
@@ -415,6 +443,49 @@ describe('calendar desktop e2e', () => {
     await cdp.waitFor(`!!document.querySelector('[title^="Coffee chat (moved)"]')`);
   });
 
+  it('creates an event by dragging a slot on empty grid space', async () => {
+    const { cdp } = app;
+    // 19:05 sits in the 19:00 quarter; 1.5 hours down reaches 20:35, which
+    // the slot extends to the next quarter.
+    const from = await todayGridPoint(19, 5);
+    await cdp.drag(from, { x: from.x, y: from.y + 1.5 * HOUR_HEIGHT });
+    await cdp.waitFor(`document.body.textContent.includes('New event')`);
+    expect(await editorTimes()).toEqual(['19:00', '20:45']);
+    await setEditorTitle('Evening run');
+    await cdp.clickButtonWithText('Save');
+    await cdp.waitFor(`!!document.querySelector('[title^="Evening run"]')`);
+    const created = await waitForEvent((event) => event.title === 'Evening run');
+    expect(created).toBeDefined();
+    expect(created!.endUtc - created!.startUtc).toBe(105 * 60 * 1000);
+  });
+
+  it('draws a slot upwards, keeping the quarter the drag started in', async () => {
+    const { cdp } = app;
+    const from = await todayGridPoint(23, 5);
+    await cdp.drag(from, { x: from.x, y: from.y - HOUR_HEIGHT });
+    await cdp.waitFor(`document.body.textContent.includes('New event')`);
+    expect(await editorTimes()).toEqual(['22:00', '23:15']);
+    await cdp.pressEscape();
+    await cdp.waitFor(`!document.body.textContent.includes('New event')`);
+  });
+
+  it('cancels drawing a slot with Escape', async () => {
+    const { cdp } = app;
+    const from = await todayGridPoint(3, 5);
+    await cdp.mouse('mousePressed', from.x, from.y);
+    for (let step = 1; step <= 5; step += 1) {
+      await cdp.mouse('mouseMoved', from.x, from.y + step * 10);
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    await cdp.waitFor(`!!document.querySelector('[data-testid="slot-selection"]')`);
+    await cdp.pressEscape();
+    await cdp.waitFor(`!document.querySelector('[data-testid="slot-selection"]')`);
+    await cdp.mouse('mouseReleased', from.x, from.y + 50);
+    await new Promise((resolve) => setTimeout(resolve, 800));
+    // The abandoned release must not fall through to the hour click either.
+    expect(await cdp.eval<boolean>(`document.body.textContent.includes('New event')`)).toBe(false);
+  });
+
   it('drags an event to a new time and day', async () => {
     const { cdp } = app;
     const before = await eventStart('Standup meeting');
@@ -431,6 +502,11 @@ describe('calendar desktop e2e', () => {
       x: Math.round(from.x + dayWidth),
       y: from.y + 2 * HOUR_HEIGHT,
     });
+    // A drag that starts on an event moves it; it never draws a new slot.
+    expect(
+      await cdp.eval<boolean>(`!!document.querySelector('[data-testid="slot-selection"]')`),
+    ).toBe(false);
+    expect(await cdp.eval<boolean>(`document.body.textContent.includes('New event')`)).toBe(false);
     const expected = before + 2 * HOUR_MS + 24 * HOUR_MS;
     await cdp.waitFor(`true`);
     const deadline = Date.now() + 10_000;
