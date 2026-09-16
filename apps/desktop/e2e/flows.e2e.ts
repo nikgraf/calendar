@@ -518,6 +518,24 @@ describe('calendar desktop e2e', () => {
     expect(moved).toBe(expected);
   });
 
+  it('lets a press through the now line reach the event under it', async () => {
+    const { cdp } = app;
+    // The line sits wherever the clock is; pin it across Gym session's
+    // resize handle, where a CI run at 15:55 UTC once found it (the locate
+    // hit-test landed on the line and the resize test timed out).
+    const handle = await cdp.locate('[title^="Gym session"]', { atBottom: true });
+    const reachesEvent = await cdp.eval<boolean>(`(() => {
+      const line = [...document.querySelectorAll('.border-red-500')].find((el) =>
+        el.className.includes('border-t-2'),
+      );
+      const column = line.parentElement;
+      line.style.top = ${handle.y} - column.getBoundingClientRect().top - 1 + 'px';
+      const hit = document.elementFromPoint(${handle.x}, ${handle.y});
+      return !!hit && !!hit.closest('[title^="Gym session"]');
+    })()`);
+    expect(reachesEvent).toBe(true);
+  });
+
   it('drags the bottom handle to resize', async () => {
     const { cdp } = app;
     const before = await eventEnd('Gym session');
