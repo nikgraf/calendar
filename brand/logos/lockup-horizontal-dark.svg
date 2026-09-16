@@ -1,0 +1,113 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="322.6896" height="72" viewBox="0 0 322.6896 72" fill="none" role="img" aria-label="Solunivo approved horizontal logo for dark backgrounds — 115% icon height"><title>Solunivo approved horizontal logo for dark backgrounds — 115% icon height</title><svg xmlns="http://www.w3.org/2000/svg" width="63.0489" height="63.0489" viewBox="0 0 1024 1024" fill="none" role="img" aria-labelledby="solunivo-number-24-title solunivo-number-24-description" x="4" y="4.4819">
+  <title id="solunivo-number-24-title">Solunivo — 24 / Inter Bold</title>
+  <desc id="solunivo-number-24-description">Solunivo compact-curl icon with an ivory face, mint fold, continuous blush backing, and 24 set in Inter Bold 700, version 4.1, converted to vector outlines. 24 hours in a day: a clear connection to time, with room for work and life.</desc>
+  <defs>
+    <linearGradient id="solunivo-number-24-base-color" x1="160" y1="0" x2="890" y2="0" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#F3D0C5" />
+      <stop offset="1" stop-color="#F3D0C5" />
+    </linearGradient>
+    <path id="solunivo-number-24-body" d="M260 84H755C868 84 927 139 927 253V743C927 859 875 916 760 919H257C139 919 76 865 76 749V253C76 139 133 84 260 84Z" />
+    <path id="solunivo-number-24-peach-face" d="M260 84H755C868 84 927 139 927 253V736C927 851 875 903 760 906H257C139 906 76 852 76 736V253C76 139 133 84 260 84Z" />
+    <path id="solunivo-number-24-mint-sheet" d="M927 483C927 611 920 717 894 785C860 867 762 907 550 907C650 907 716 850 789 761C858 682 927 570 927 483Z" />
+    <path id="solunivo-number-24-cream-face" d="M260 84H755C868 84 927 139 927 253V483C927 537 896 598 840 618C778 638 742 643 718 687C696 726 699 780 676 831C652 881 611 907 550 907H258C143 907 76 858 76 743V253C76 139 133 84 260 84Z" />
+    <path id="solunivo-number-24-curl-flap" d="M927 483C927 537 896 598 840 618C778 638 742 643 718 687C696 726 699 780 676 831C652 881 611 907 550 907C650 907 716 850 789 761C858 682 927 570 927 483Z" />
+    <path id="solunivo-number-24-crease" d="M927 483C927 537 896 598 840 618C778 638 742 643 718 687C696 726 699 780 676 831C652 881 611 907 550 907" />
+    <path id="solunivo-number-24-free-edge" d="M927 483C927 570 858 682 789 761C716 850 650 907 550 907" />
+    <clipPath id="solunivo-number-24-body-clip">
+      <use href="#solunivo-number-24-body" />
+    </clipPath>
+    <clipPath id="solunivo-number-24-peach-clip">
+      <use href="#solunivo-number-24-peach-face" />
+    </clipPath>
+    <clipPath id="solunivo-number-24-mint-clip">
+      <use href="#solunivo-number-24-mint-sheet" />
+    </clipPath>
+    <clipPath id="solunivo-number-24-cream-clip">
+      <use href="#solunivo-number-24-cream-face" />
+    </clipPath>
+    <clipPath id="solunivo-number-24-flap-clip">
+      <use href="#solunivo-number-24-curl-flap" />
+    </clipPath>
+    <linearGradient id="solunivo-number-24-mint" x1="785" y1="746" x2="875" y2="863" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#83AAA2" />
+      <stop offset=".5" stop-color="#BDD5CE" />
+      <stop offset="1" stop-color="#D1E3DB" />
+    </linearGradient>
+    <linearGradient id="solunivo-number-24-mint-fold" x1="711" y1="676" x2="813" y2="773" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#E2F0E7" />
+      <stop offset=".2" stop-color="#C4DCD3" />
+      <stop offset=".54" stop-color="#ADCAC0" />
+      <stop offset=".83" stop-color="#84A79F" />
+      <stop offset="1" stop-color="#73968C" />
+    </linearGradient>
+    <linearGradient id="solunivo-number-24-cream" x1="223" y1="122" x2="727" y2="886" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFFAE9" />
+      <stop offset=".43" stop-color="#FFF5DC" />
+      <stop offset=".8" stop-color="#FFF1D0" />
+      <stop offset="1" stop-color="#EFDCB4" />
+    </linearGradient>
+    <radialGradient id="solunivo-number-24-cream-glow" cx="0" cy="0" r="1" gradientTransform="translate(386 288) rotate(41) scale(644 572)" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFFFFF" stop-opacity=".23" />
+      <stop offset="1" stop-color="#FFFFFF" stop-opacity="0" />
+    </radialGradient>
+    <linearGradient id="solunivo-number-24-date-ink" x1="269" y1="243" x2="544" y2="569" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#79647D" />
+      <stop offset="1" stop-color="#66516E" />
+    </linearGradient>
+    <linearGradient id="solunivo-number-24-rim" x1="246" y1="93" x2="660" y2="895" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFFFFF" stop-opacity=".95" />
+      <stop offset=".45" stop-color="#FFFFFF" stop-opacity=".42" />
+      <stop offset="1" stop-color="#F7E1BA" stop-opacity=".72" />
+    </linearGradient>
+    <linearGradient id="solunivo-number-24-lip" x1="713" y1="675" x2="799" y2="775" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#F8FFF5" stop-opacity=".95" />
+      <stop offset="1" stop-color="#D1E0C8" stop-opacity=".55" />
+    </linearGradient>
+    <filter id="solunivo-number-24-shadow" x="-10%" y="-10%" width="120%" height="130%" color-interpolation-filters="sRGB">
+      <feGaussianBlur stdDeviation="11" />
+    </filter>
+    <filter id="solunivo-number-24-sheet-shadow" x="-20%" y="-20%" width="140%" height="140%" color-interpolation-filters="sRGB">
+      <feGaussianBlur stdDeviation="6" />
+    </filter>
+    <filter id="solunivo-number-24-soft-edge" x="-20%" y="-20%" width="140%" height="140%" color-interpolation-filters="sRGB">
+      <feGaussianBlur stdDeviation="2.5" />
+    </filter>
+  </defs>
+  <g id="solunivo-number-24-artwork" transform="scale(1.02073)">
+    <use href="#solunivo-number-24-body" transform="translate(0 12)" fill="#372A36" opacity=".2" filter="url(#solunivo-number-24-shadow)" />
+    <g id="solunivo-number-24-bottom-page">
+      <use href="#solunivo-number-24-body" fill="url(#solunivo-number-24-base-color)" />
+      <use href="#solunivo-number-24-body" fill="#715246" opacity=".14" />
+      <use href="#solunivo-number-24-peach-face" fill="url(#solunivo-number-24-base-color)" />
+      <use href="#solunivo-number-24-peach-face" stroke="#FFF0E9" stroke-opacity=".6" stroke-width="3" clip-path="url(#solunivo-number-24-body-clip)" />
+      <g clip-path="url(#solunivo-number-24-peach-clip)">
+        <use href="#solunivo-number-24-mint-sheet" transform="translate(1 10)" fill="#715246" opacity=".24" filter="url(#solunivo-number-24-sheet-shadow)" />
+      </g>
+    </g>
+    <g id="solunivo-number-24-revealed-mint-page">
+      <use href="#solunivo-number-24-mint-sheet" fill="url(#solunivo-number-24-mint)" />
+      <path d="M927 483C927 611 920 717 894 785C860 867 762 907 550 907" stroke="#E4F1E8" stroke-opacity=".58" stroke-width="2.5" clip-path="url(#solunivo-number-24-mint-clip)" />
+      <g clip-path="url(#solunivo-number-24-mint-clip)">
+        <use href="#solunivo-number-24-free-edge" transform="translate(7 9)" stroke="#305C55" stroke-opacity=".52" stroke-width="22" filter="url(#solunivo-number-24-sheet-shadow)" />
+        <use href="#solunivo-number-24-free-edge" transform="translate(3 4)" stroke="#345D56" stroke-opacity=".28" stroke-width="8" filter="url(#solunivo-number-24-soft-edge)" />
+      </g>
+    </g>
+    <g id="solunivo-number-24-calendar-face">
+      <use href="#solunivo-number-24-cream-face" fill="url(#solunivo-number-24-cream)" />
+      <use href="#solunivo-number-24-cream-face" fill="url(#solunivo-number-24-cream-glow)" />
+      <g clip-path="url(#solunivo-number-24-cream-clip)">
+        <use href="#solunivo-number-24-cream-face" stroke="#B4A385" stroke-opacity=".28" stroke-width="14" filter="url(#solunivo-number-24-soft-edge)" />
+        <use href="#solunivo-number-24-cream-face" stroke="url(#solunivo-number-24-rim)" stroke-width="6" />
+      </g>
+    </g>
+    <g id="solunivo-number-24-curled-underside">
+      <use href="#solunivo-number-24-curl-flap" fill="url(#solunivo-number-24-mint-fold)" />
+      <use href="#solunivo-number-24-crease" stroke="url(#solunivo-number-24-lip)" stroke-width="3.5" stroke-linecap="round" clip-path="url(#solunivo-number-24-flap-clip)" />
+      <use href="#solunivo-number-24-free-edge" stroke="#5A837B" stroke-opacity=".23" stroke-width="1.5" clip-path="url(#solunivo-number-24-flap-clip)" />
+    </g>
+    <g id="solunivo-number-24-date-24" fill="url(#solunivo-number-24-date-ink)">
+      <path id="solunivo-number-24-digit-1" d="M177.110 569.000L177.110 520.128L294.404 410.164Q316.841 388.172 328.948 371.844Q341.055 355.516 341.055 335.523Q341.055 313.308 326.504 300.535Q311.954 287.761 289.739 287.761Q266.636 287.761 252.751 301.534Q238.867 315.307 238.867 339.521L174.000 339.521Q174.000 307.310 188.773 283.429Q203.546 259.548 229.759 246.553Q255.972 233.557 290.183 233.557Q325.283 233.557 351.496 246.108Q377.709 258.660 392.260 280.652Q406.811 302.645 406.811 331.302Q406.811 349.740 399.591 367.734Q392.371 385.728 373.822 408.054Q355.272 430.380 321.284 461.481L271.301 510.797L271.301 513.241L411.254 513.241L411.254 569.000Z" />
+      <path id="solunivo-number-24-digit-2" d="M451.462 510.131L451.462 456.593L589.860 238.000L674.943 238.000L674.943 455.483L716.262 455.483L716.262 510.131L674.943 510.131L674.943 569.000L609.854 569.000L609.854 510.131ZM611.187 455.483L611.187 312.642L608.521 312.642L519.884 452.817L519.884 455.483Z" />
+    </g>
+  </g>
+</svg><g transform="translate(76.1385 12.0036) scale(0.59)"><g fill="#FFF5DC"><path d="M30.223 79.344Q17.527 79.344 9.983 73.484Q2.439 67.625 2.000 56.834L14.842 56.834Q15.281 62.596 19.627 65.403Q23.973 68.211 30.125 68.211Q36.570 68.211 40.647 65.306Q44.725 62.400 44.725 57.713Q44.725 53.465 41.111 51.292Q37.498 49.119 31.590 47.605L23.338 45.457Q14.207 43.113 9.104 38.377Q4.002 33.641 4.002 25.926Q4.002 19.480 7.469 14.671Q10.936 9.861 16.941 7.176Q22.947 4.490 30.564 4.490Q38.328 4.490 44.163 7.176Q49.998 9.861 53.318 14.598Q56.639 19.334 56.785 25.389L44.139 25.389Q43.650 20.750 39.964 18.162Q36.277 15.574 30.369 15.574Q24.217 15.574 20.701 18.284Q17.186 20.994 17.186 25.145Q17.186 28.221 19.065 30.149Q20.945 32.078 23.802 33.250Q26.658 34.422 29.588 35.154L36.375 36.912Q41.746 38.230 46.653 40.696Q51.561 43.162 54.661 47.312Q57.762 51.463 57.762 57.811Q57.762 64.207 54.490 69.065Q51.219 73.924 45.066 76.634Q38.914 79.344 30.223 79.344Z"/><path d="M91.520 79.344Q83.561 79.344 77.702 75.804Q71.843 72.264 68.644 65.940Q65.446 59.617 65.446 51.219Q65.446 42.723 68.644 36.351Q71.843 29.979 77.702 26.463Q83.561 22.947 91.520 22.947Q99.479 22.947 105.339 26.463Q111.198 29.979 114.421 36.351Q117.643 42.723 117.643 51.219Q117.643 59.617 114.421 65.940Q111.198 72.264 105.339 75.804Q99.479 79.344 91.520 79.344ZM91.520 69.041Q95.964 69.041 98.893 66.648Q101.823 64.256 103.288 60.203Q104.753 56.150 104.753 51.170Q104.753 46.141 103.288 42.088Q101.823 38.035 98.893 35.643Q95.964 33.250 91.520 33.250Q87.126 33.250 84.196 35.643Q81.266 38.035 79.826 42.088Q78.386 46.141 78.386 51.170Q78.386 56.150 79.826 60.203Q81.266 64.256 84.196 66.648Q87.126 69.041 91.520 69.041Z"/><path d="M140.123 5.467L140.123 78.221L127.427 78.221L127.427 5.467Z"/><path d="M171.000 78.904Q162.553 78.904 157.426 73.533Q152.299 68.162 152.299 58.348L152.299 23.631L164.995 23.631L164.995 56.395Q164.995 61.863 167.851 64.988Q170.707 68.113 175.688 68.113Q180.766 68.113 184.037 64.842Q187.309 61.570 187.309 55.613L187.309 23.631L200.053 23.631L200.053 78.221L187.993 78.221L187.895 67.283Q183.012 78.904 171.000 78.904Z"/><path d="M224.925 46.238L224.925 78.221L212.230 78.221L212.230 23.631L224.241 23.631L224.388 34.520Q229.271 22.947 241.282 22.947Q249.730 22.947 254.832 28.318Q259.935 33.689 259.935 43.504L259.935 78.221L247.239 78.221L247.239 45.457Q247.239 39.988 244.407 36.863Q241.575 33.738 236.595 33.738Q231.517 33.738 228.221 37.010Q224.925 40.281 224.925 46.238Z"/><path d="M272.111 78.221L272.111 23.631L284.807 23.631L284.807 78.221ZM278.459 15.916Q275.432 15.916 273.259 13.890Q271.086 11.863 271.086 8.934Q271.086 6.053 273.259 4.026Q275.432 2.000 278.459 2.000Q281.535 2.000 283.708 4.026Q285.881 6.053 285.881 8.934Q285.881 11.863 283.708 13.890Q281.535 15.916 278.459 15.916Z"/><path d="M312.462 78.221L292.149 23.631L305.723 23.631L315.684 53.318Q316.905 56.932 317.857 60.594Q318.809 64.256 319.737 67.967Q320.616 64.256 321.544 60.594Q322.471 56.932 323.692 53.318L333.604 23.631L347.081 23.631L326.671 78.221Z"/><path d="M376.201 79.344Q368.242 79.344 362.382 75.804Q356.523 72.264 353.325 65.940Q350.127 59.617 350.127 51.219Q350.127 42.723 353.325 36.351Q356.523 29.979 362.382 26.463Q368.242 22.947 376.201 22.947Q384.160 22.947 390.019 26.463Q395.879 29.979 399.101 36.351Q402.324 42.723 402.324 51.219Q402.324 59.617 399.101 65.940Q395.879 72.264 390.019 75.804Q384.160 79.344 376.201 79.344ZM376.201 69.041Q380.644 69.041 383.574 66.648Q386.504 64.256 387.968 60.203Q389.433 56.150 389.433 51.170Q389.433 46.141 387.968 42.088Q386.504 38.035 383.574 35.643Q380.644 33.250 376.201 33.250Q371.806 33.250 368.877 35.643Q365.947 38.035 364.506 42.088Q363.066 46.141 363.066 51.170Q363.066 56.150 364.506 60.203Q365.947 64.256 368.877 66.648Q371.806 69.041 376.201 69.041Z"/></g></g></svg>

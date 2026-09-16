@@ -13,6 +13,9 @@ A Fantastical-style Google Calendar client: iOS (Expo) + macOS (Electron), clien
 `docs/google-sync-and-testing.md` (verified API semantics, testing),
 `docs/distribution.md` (CI builds, TestFlight, EAS updates).
 
+**Brand:** [Brand assets and usage](brand/README.md) covers the logo, app icons,
+Inter fonts, color tokens, and `pnpm brand:build` exports.
+
 **Privacy note:** the desktop window is hidden from screen shares and
 recordings by default — see the Privacy section in Settings (Hidden /
 Visible for 10 min / Always visible).

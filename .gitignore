@@ -9,6 +9,9 @@ coverage/
 .env.*
 !.env.example
 
+# Brand studies, PNG export sets and downloadable kits are regenerated.
+output/branding/
+
 # Expo / native (continuous native generation — prebuild output stays untracked)
 apps/ios/.expo/
 apps/ios/ios/

@@ -45,6 +45,7 @@ module.exports = {
   packagerConfig: {
     appBundleId: 'com.solunivo.desktop',
     asar: false,
+    icon: join(__dirname, 'assets/icon.icns'),
     // The Swift model helper (Foundation Models + SpeechAnalyzer over
     // stdio) rides in Resources; osx-sign signs Mach-O binaries it finds
     // in the bundle, and CI's codesign --verify --deep covers it via the

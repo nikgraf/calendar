@@ -12,6 +12,7 @@ export default defineConfig({
       'dist/',
       'dist-electron/',
       'out/',
+      'output/branding/',
       'apps/desktop/out/',
       'pnpm-lock.yaml',
       'apps/ios/.expo/',
@@ -29,12 +30,19 @@ export default defineConfig({
       'dist/',
       'dist-electron/',
       'out/',
+      'output/branding/',
       'apps/desktop/out/',
       'apps/ios/.expo/',
       'apps/ios/ios/',
       'vite.config.ts.timestamp-*',
     ],
     overrides: [
+      {
+        env: {
+          browser: true,
+        },
+        files: ['brand/preview/*.js'],
+      },
       {
         env: {
           node: true,
