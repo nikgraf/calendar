@@ -250,12 +250,16 @@ try {
 
   if (!check) {
     const output = join(root, 'output/branding');
-    // A clean staging folder prevents stale alternatives entering a new kit.
+    // A clean staging folder keeps stale alternatives out of the zip; the
+    // published folder is replaced, not merged, for the same reason — a
+    // copy on top of the previous build kept renamed or removed exports.
     const archive = zipSync(await collect(kit), {
       level: 6,
       mtime: new Date('2026-01-01T00:00:00Z'),
     });
-    await cp(kit, join(output, 'solunivo-brand-kit'), { recursive: true });
+    const published = join(output, 'solunivo-brand-kit');
+    await rm(published, { force: true, recursive: true });
+    await cp(kit, published, { recursive: true });
     await write(join(output, 'solunivo-brand-kit.zip'), archive);
   }
   process.stdout.write(
