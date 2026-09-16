@@ -1,0 +1,113 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024" fill="none" role="img" aria-labelledby="solunivo-dark-24-title solunivo-dark-24-description">
+  <title id="solunivo-dark-24-title">Solunivo — proposed dark appearance</title>
+  <desc id="solunivo-dark-24-description">Same 24 compact-curl geometry with a plum face, ivory numerals, mint fold and muted blush backing. Proposed dark appearance, pending visual approval.</desc>
+  <defs>
+    <linearGradient id="solunivo-dark-24-base-color" x1="160" y1="0" x2="890" y2="0" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#986E84" />
+      <stop offset="1" stop-color="#986E84" />
+    </linearGradient>
+    <path id="solunivo-dark-24-body" d="M260 84H755C868 84 927 139 927 253V743C927 859 875 916 760 919H257C139 919 76 865 76 749V253C76 139 133 84 260 84Z" />
+    <path id="solunivo-dark-24-peach-face" d="M260 84H755C868 84 927 139 927 253V736C927 851 875 903 760 906H257C139 906 76 852 76 736V253C76 139 133 84 260 84Z" />
+    <path id="solunivo-dark-24-mint-sheet" d="M927 483C927 611 920 717 894 785C860 867 762 907 550 907C650 907 716 850 789 761C858 682 927 570 927 483Z" />
+    <path id="solunivo-dark-24-cream-face" d="M260 84H755C868 84 927 139 927 253V483C927 537 896 598 840 618C778 638 742 643 718 687C696 726 699 780 676 831C652 881 611 907 550 907H258C143 907 76 858 76 743V253C76 139 133 84 260 84Z" />
+    <path id="solunivo-dark-24-curl-flap" d="M927 483C927 537 896 598 840 618C778 638 742 643 718 687C696 726 699 780 676 831C652 881 611 907 550 907C650 907 716 850 789 761C858 682 927 570 927 483Z" />
+    <path id="solunivo-dark-24-crease" d="M927 483C927 537 896 598 840 618C778 638 742 643 718 687C696 726 699 780 676 831C652 881 611 907 550 907" />
+    <path id="solunivo-dark-24-free-edge" d="M927 483C927 570 858 682 789 761C716 850 650 907 550 907" />
+    <clipPath id="solunivo-dark-24-body-clip">
+      <use href="#solunivo-dark-24-body" />
+    </clipPath>
+    <clipPath id="solunivo-dark-24-peach-clip">
+      <use href="#solunivo-dark-24-peach-face" />
+    </clipPath>
+    <clipPath id="solunivo-dark-24-mint-clip">
+      <use href="#solunivo-dark-24-mint-sheet" />
+    </clipPath>
+    <clipPath id="solunivo-dark-24-cream-clip">
+      <use href="#solunivo-dark-24-cream-face" />
+    </clipPath>
+    <clipPath id="solunivo-dark-24-flap-clip">
+      <use href="#solunivo-dark-24-curl-flap" />
+    </clipPath>
+    <linearGradient id="solunivo-dark-24-mint" x1="785" y1="746" x2="875" y2="863" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#60877D" />
+      <stop offset=".5" stop-color="#94B9AA" />
+      <stop offset="1" stop-color="#BAD3C5" />
+    </linearGradient>
+    <linearGradient id="solunivo-dark-24-mint-fold" x1="711" y1="676" x2="813" y2="773" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#D1E7D9" />
+      <stop offset=".2" stop-color="#B4D0C0" />
+      <stop offset=".54" stop-color="#95B7A5" />
+      <stop offset=".83" stop-color="#688E7F" />
+      <stop offset="1" stop-color="#52796B" />
+    </linearGradient>
+    <linearGradient id="solunivo-dark-24-cream" x1="223" y1="122" x2="727" y2="886" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#56495F" />
+      <stop offset=".43" stop-color="#44384E" />
+      <stop offset=".8" stop-color="#392E42" />
+      <stop offset="1" stop-color="#2D2636" />
+    </linearGradient>
+    <radialGradient id="solunivo-dark-24-cream-glow" cx="0" cy="0" r="1" gradientTransform="translate(386 288) rotate(41) scale(644 572)" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFFFFF" stop-opacity=".08" />
+      <stop offset="1" stop-color="#FFFFFF" stop-opacity="0" />
+    </radialGradient>
+    <linearGradient id="solunivo-dark-24-date-ink" x1="269" y1="243" x2="544" y2="569" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFF6DE" />
+      <stop offset="1" stop-color="#EADCC7" />
+    </linearGradient>
+    <linearGradient id="solunivo-dark-24-rim" x1="246" y1="93" x2="660" y2="895" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFFFFF" stop-opacity=".3" />
+      <stop offset=".45" stop-color="#FFFFFF" stop-opacity=".1" />
+      <stop offset="1" stop-color="#9D86AB" stop-opacity=".3" />
+    </linearGradient>
+    <linearGradient id="solunivo-dark-24-lip" x1="713" y1="675" x2="799" y2="775" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#E0F2E4" stop-opacity=".95" />
+      <stop offset="1" stop-color="#A4C2B3" stop-opacity=".55" />
+    </linearGradient>
+    <filter id="solunivo-dark-24-shadow" x="-10%" y="-10%" width="120%" height="130%" color-interpolation-filters="sRGB">
+      <feGaussianBlur stdDeviation="11" />
+    </filter>
+    <filter id="solunivo-dark-24-sheet-shadow" x="-20%" y="-20%" width="140%" height="140%" color-interpolation-filters="sRGB">
+      <feGaussianBlur stdDeviation="6" />
+    </filter>
+    <filter id="solunivo-dark-24-soft-edge" x="-20%" y="-20%" width="140%" height="140%" color-interpolation-filters="sRGB">
+      <feGaussianBlur stdDeviation="2.5" />
+    </filter>
+  </defs>
+  <g id="solunivo-dark-24-artwork" transform="scale(1.02073)">
+    <use href="#solunivo-dark-24-body" transform="translate(0 12)" fill="#08070B" opacity=".2" filter="url(#solunivo-dark-24-shadow)" />
+    <g id="solunivo-dark-24-bottom-page">
+      <use href="#solunivo-dark-24-body" fill="url(#solunivo-dark-24-base-color)" />
+      <use href="#solunivo-dark-24-body" fill="#362A35" opacity=".14" />
+      <use href="#solunivo-dark-24-peach-face" fill="url(#solunivo-dark-24-base-color)" />
+      <use href="#solunivo-dark-24-peach-face" stroke="#D6ADC2" stroke-opacity=".6" stroke-width="3" clip-path="url(#solunivo-dark-24-body-clip)" />
+      <g clip-path="url(#solunivo-dark-24-peach-clip)">
+        <use href="#solunivo-dark-24-mint-sheet" transform="translate(1 10)" fill="#362A35" opacity=".24" filter="url(#solunivo-dark-24-sheet-shadow)" />
+      </g>
+    </g>
+    <g id="solunivo-dark-24-revealed-mint-page">
+      <use href="#solunivo-dark-24-mint-sheet" fill="url(#solunivo-dark-24-mint)" />
+      <path d="M927 483C927 611 920 717 894 785C860 867 762 907 550 907" stroke="#E4F1E8" stroke-opacity=".58" stroke-width="2.5" clip-path="url(#solunivo-dark-24-mint-clip)" />
+      <g clip-path="url(#solunivo-dark-24-mint-clip)">
+        <use href="#solunivo-dark-24-free-edge" transform="translate(7 9)" stroke="#305C55" stroke-opacity=".52" stroke-width="22" filter="url(#solunivo-dark-24-sheet-shadow)" />
+        <use href="#solunivo-dark-24-free-edge" transform="translate(3 4)" stroke="#345D56" stroke-opacity=".28" stroke-width="8" filter="url(#solunivo-dark-24-soft-edge)" />
+      </g>
+    </g>
+    <g id="solunivo-dark-24-calendar-face">
+      <use href="#solunivo-dark-24-cream-face" fill="url(#solunivo-dark-24-cream)" />
+      <use href="#solunivo-dark-24-cream-face" fill="url(#solunivo-dark-24-cream-glow)" />
+      <g clip-path="url(#solunivo-dark-24-cream-clip)">
+        <use href="#solunivo-dark-24-cream-face" stroke="#140F1B" stroke-opacity=".28" stroke-width="14" filter="url(#solunivo-dark-24-soft-edge)" />
+        <use href="#solunivo-dark-24-cream-face" stroke="url(#solunivo-dark-24-rim)" stroke-width="6" />
+      </g>
+    </g>
+    <g id="solunivo-dark-24-curled-underside">
+      <use href="#solunivo-dark-24-curl-flap" fill="url(#solunivo-dark-24-mint-fold)" />
+      <use href="#solunivo-dark-24-crease" stroke="url(#solunivo-dark-24-lip)" stroke-width="3.5" stroke-linecap="round" clip-path="url(#solunivo-dark-24-flap-clip)" />
+      <use href="#solunivo-dark-24-free-edge" stroke="#5A837B" stroke-opacity=".23" stroke-width="1.5" clip-path="url(#solunivo-dark-24-flap-clip)" />
+    </g>
+    <g id="solunivo-dark-24-date-24" fill="url(#solunivo-dark-24-date-ink)">
+      <path id="solunivo-dark-24-digit-1" d="M177.110 569.000L177.110 520.128L294.404 410.164Q316.841 388.172 328.948 371.844Q341.055 355.516 341.055 335.523Q341.055 313.308 326.504 300.535Q311.954 287.761 289.739 287.761Q266.636 287.761 252.751 301.534Q238.867 315.307 238.867 339.521L174.000 339.521Q174.000 307.310 188.773 283.429Q203.546 259.548 229.759 246.553Q255.972 233.557 290.183 233.557Q325.283 233.557 351.496 246.108Q377.709 258.660 392.260 280.652Q406.811 302.645 406.811 331.302Q406.811 349.740 399.591 367.734Q392.371 385.728 373.822 408.054Q355.272 430.380 321.284 461.481L271.301 510.797L271.301 513.241L411.254 513.241L411.254 569.000Z" />
+      <path id="solunivo-dark-24-digit-2" d="M451.462 510.131L451.462 456.593L589.860 238.000L674.943 238.000L674.943 455.483L716.262 455.483L716.262 510.131L674.943 510.131L674.943 569.000L609.854 569.000L609.854 510.131ZM611.187 455.483L611.187 312.642L608.521 312.642L519.884 452.817L519.884 455.483Z" />
+    </g>
+  </g>
+</svg>

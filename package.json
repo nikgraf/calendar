@@ -15,10 +15,14 @@
     "test:run": "vp test run",
     "typecheck": "pnpm --recursive --parallel exec tsc --noEmit",
     "test:e2e": "node apps/desktop/scripts/check-helper.mjs && E2E=1 vp test",
-    "test:e2e:ios": "pnpm --filter @calendar/ios test:e2e"
+    "test:e2e:ios": "pnpm --filter @calendar/ios test:e2e",
+    "brand:build": "node scripts/brand/build.mjs",
+    "brand:check": "node scripts/brand/build.mjs --check"
   },
   "devDependencies": {
     "@nkzw/oxlint-config": "^2.0.1",
+    "fflate": "0.8.2",
+    "sharp": "0.35.4",
     "tslib": "^2.8.1",
     "typescript": "catalog:",
     "vite": "catalog:",
