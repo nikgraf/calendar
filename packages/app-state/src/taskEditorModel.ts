@@ -9,6 +9,11 @@ export interface TaskEditorSeed {
   readonly existing?: TaskRecord | undefined;
   /** Default due day for creates ('YYYY-MM-DD') — usually the focused day. */
   readonly initialDate: string;
+  /**
+   * Due time for creates ('HH:MM'), from a slot drawn on the time grid.
+   * Only a Reminders list keeps it; Google Tasks are date-only.
+   */
+  readonly initialTime?: string | undefined;
 }
 
 const listKeyOf = (accountId: string, listId: string) => `${accountId}:${listId}`;
@@ -34,6 +39,12 @@ export const REMINDER_PRIORITY_OPTIONS: ReadonlyArray<{
 ];
 
 const TIME_RE = /^\d{2}:\d{2}$/;
+
+/** Whether a task form starts timed, and at what time. */
+export const seedDueTiming = (seed: TaskEditorSeed): { dueTime: string; timed: boolean } =>
+  seed.existing
+    ? { dueTime: seed.existing.dueTime ?? '09:00', timed: seed.existing.dueTime !== undefined }
+    : { dueTime: seed.initialTime ?? '09:00', timed: seed.initialTime !== undefined };
 
 /**
  * Shared editor state for the Task mode of both platforms' edit sheets —
@@ -67,8 +78,8 @@ export const useTaskEditorModel = ({
   );
   // Reminders-only state. Kept even while a Google list is selected so a
   // flip between lists in create mode does not lose what was typed.
-  const [timed, setTimed] = useState(existing?.dueTime !== undefined);
-  const [dueTime, setDueTime] = useState(existing?.dueTime ?? '09:00');
+  const [timed, setTimed] = useState(() => seedDueTiming(seed).timed);
+  const [dueTime, setDueTime] = useState(() => seedDueTiming(seed).dueTime);
   const [priority, setPriority] = useState<TaskPriority | undefined>(existing?.priority);
   const [url, setUrl] = useState(existing?.url ?? '');
   // The form edits the FIRST relative alert; any further alerts the user

@@ -48,6 +48,8 @@ export interface EventEditorSeed {
   readonly event?: EventRecord;
   readonly initialDate: Temporal.PlainDate;
   readonly initialHour?: number;
+  /** A slot drawn on the time grid (`HH:MM`); wins over `initialHour`. */
+  readonly initialTimes?: { readonly endTime: string; readonly startTime: string };
   /** Quick-add result: the user reviews it before anything is written. */
   readonly prefill?: EventEditorPrefill;
 }
@@ -63,6 +65,15 @@ export const rememberCalendar = (calendarKey: string): void => {
 };
 
 const pad = (hour: number): string => `${String(hour).padStart(2, '0')}:00`;
+
+/**
+ * The start and end a new event opens with: a quick-add result first, then
+ * a slot drawn on the grid, then the clicked hour (one hour long), then 09:00.
+ */
+export const seedTimeFields = (seed: EventEditorSeed): { endTime: string; startTime: string } => ({
+  endTime: seed.prefill?.endTime ?? seed.initialTimes?.endTime ?? pad((seed.initialHour ?? 9) + 1),
+  startTime: seed.prefill?.startTime ?? seed.initialTimes?.startTime ?? pad(seed.initialHour ?? 9),
+});
 
 const timeString = (epochMs: number, timeZone: string): string =>
   toZonedDateTime(epochMs, timeZone).toPlainTime().toString({ smallestUnit: 'minute' });
@@ -122,12 +133,12 @@ export const useEventEditorModel = ({
   const [startTime, setStartTime] = useState(
     existing && !existing.isAllDay
       ? timeString(existing.startUtc, timeZone)
-      : (prefill?.startTime ?? pad(seed.initialHour ?? 9)),
+      : seedTimeFields(seed).startTime,
   );
   const [endTime, setEndTime] = useState(
     existing && !existing.isAllDay
       ? timeString(existing.endUtc, timeZone)
-      : (prefill?.endTime ?? pad((seed.initialHour ?? 9) + 1)),
+      : seedTimeFields(seed).endTime,
   );
   const [location, setLocation] = useState(existing?.location ?? prefill?.location ?? '');
   // The guest list as the editor shows it; `attendeesDirty` keeps an
