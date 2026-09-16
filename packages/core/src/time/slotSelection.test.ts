@@ -3,6 +3,7 @@ import { minuteOfDay, slotFromDrag, slotFromHold, slotTimes } from './slotSelect
 
 const at = (hours: number, minutes = 0) => hours * 60 + minutes;
 const times = (anchor: number, current: number) => slotTimes(slotFromDrag(anchor, current));
+const hold = (anchor: number, current: number) => slotTimes(slotFromHold(anchor, current));
 
 describe('minuteOfDay', () => {
   it('maps a column offset to minutes from midnight', () => {
@@ -40,29 +41,37 @@ describe('slotFromDrag', () => {
 });
 
 describe('slotFromHold', () => {
-  it('is one hour from the pressed quarter while the finger stays in it', () => {
-    expect(slotTimes(slotFromHold(at(10, 7), at(10, 12)))).toEqual({
-      endTime: '11:00',
-      startTime: '10:00',
-    });
+  it('is one hour from the quarter the finger touched down in', () => {
+    expect(hold(at(10, 7), at(10, 7))).toEqual({ endTime: '11:00', startTime: '10:00' });
   });
 
-  it('follows the drag once the finger leaves the quarter', () => {
-    expect(slotTimes(slotFromHold(at(10, 7), at(10, 40)))).toEqual({
-      endTime: '10:45',
-      startTime: '10:00',
-    });
-    expect(slotTimes(slotFromHold(at(10, 7), at(9, 50)))).toEqual({
-      endTime: '10:15',
-      startTime: '09:45',
-    });
+  it('ignores drift across a quarter line, in either direction', () => {
+    // Touched down at 10:13 and drifted to 10:15.5: still the default hour.
+    expect(hold(at(10, 13), at(10, 15.5))).toEqual({ endTime: '11:00', startTime: '10:00' });
+    // Touched down at 10:01 and drifted up past 10:00: not 09:45.
+    expect(hold(at(10, 1), at(9, 59))).toEqual({ endTime: '11:00', startTime: '10:00' });
   });
 
-  it('stops the default hour at midnight', () => {
-    expect(slotTimes(slotFromHold(at(23, 40), at(23, 40)))).toEqual({
-      endTime: '23:59',
-      startTime: '23:30',
-    });
+  it('never shrinks below the default hour while dragging down', () => {
+    expect(hold(at(10, 7), at(10, 40))).toEqual({ endTime: '11:00', startTime: '10:00' });
+  });
+
+  it('grows the end once the finger passes the default end', () => {
+    expect(hold(at(10, 7), at(11, 20))).toEqual({ endTime: '11:30', startTime: '10:00' });
+  });
+
+  it('grows the start once the finger is a quarter above the touch-down point', () => {
+    // 10:07 − one quarter = 09:52: a minute short of it changes nothing.
+    expect(hold(at(10, 7), at(9, 53))).toEqual({ endTime: '11:00', startTime: '10:00' });
+    expect(hold(at(10, 7), at(9, 52))).toEqual({ endTime: '11:00', startTime: '09:45' });
+    expect(hold(at(10, 7), at(9, 10))).toEqual({ endTime: '11:00', startTime: '09:00' });
+  });
+
+  it('stays inside the day', () => {
+    expect(hold(at(23, 40), at(23, 40))).toEqual({ endTime: '23:59', startTime: '23:30' });
+    // 00:20 is in the 00:15 quarter; dragging above midnight stops the start there.
+    expect(hold(at(0, 20), -30)).toEqual({ endTime: '01:15', startTime: '00:00' });
+    expect(slotFromHold(at(22), at(26))).toEqual({ endMinute: 1440, startMinute: at(22) });
   });
 });
 

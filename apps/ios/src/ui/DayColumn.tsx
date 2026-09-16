@@ -83,9 +83,9 @@ export function DayColumn({
   const shownEnd = useSharedValue(-1);
 
   const clearSelection = () => setSelection(null);
-  const createSlot = (slot: SlotRange) => {
+  const createSlot = (startMinute: number, endMinute: number) => {
     setSelection(null);
-    onCreateSlot(date, slotTimes(slot));
+    onCreateSlot(date, slotTimes({ endMinute, startMinute }));
   };
 
   // Hold on empty space, then drag to stretch. A finger that moves before
@@ -95,10 +95,14 @@ export function DayColumn({
   // touch on an event never reaches it.
   const createPan = Gesture.Pan()
     .activateAfterLongPress(HOLD_TO_CREATE_MS)
+    // The anchor is where the finger touched down, not where it rests once
+    // the hold completes: the recognizer tolerates a few points of drift
+    // during the hold, which is a couple of minutes on this grid.
+    .onBegin((begin) => {
+      setShared(anchor, minuteOfDay(begin.y, HOUR_HEIGHT));
+    })
     .onStart((start) => {
-      const minute = minuteOfDay(start.y, HOUR_HEIGHT);
-      setShared(anchor, minute);
-      const slot = slotFromHold(minute, minute);
+      const slot = slotFromHold(anchor.value, minuteOfDay(start.y, HOUR_HEIGHT));
       setShared(shownStart, slot.startMinute);
       setShared(shownEnd, slot.endMinute);
       runOnJS(setSelection)(slot);
@@ -111,9 +115,11 @@ export function DayColumn({
         runOnJS(setSelection)(slot);
       }
     })
-    .onEnd((end, success) => {
-      if (success) {
-        runOnJS(createSlot)(slotFromHold(anchor.value, minuteOfDay(end.y, HOUR_HEIGHT)));
+    // Create exactly the slot on screen, not one recomputed from where the
+    // finger lifts: lifting drifts too.
+    .onEnd((_end, success) => {
+      if (success && shownStart.value >= 0) {
+        runOnJS(createSlot)(shownStart.value, shownEnd.value);
       }
     })
     .onFinalize(() => {

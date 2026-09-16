@@ -46,10 +46,14 @@ export const slotFromDrag = (
 };
 
 /**
- * The slot a press-and-hold selects on a touch screen: while the finger
- * stays in the quarter it pressed, a `defaultMinutes` slot from that
- * quarter (Apple Calendar's one-hour default); once it leaves, the dragged
- * range, as `slotFromDrag`.
+ * The slot a press-and-hold selects on a touch screen. Holding shows a
+ * `defaultMinutes` slot from the quarter the finger touched down in (Apple
+ * Calendar's one-hour default); dragging while still holding only ever
+ * grows it: down past that slot's end moves the end to the finger, and a
+ * finger at least one `step` above the touch-down point moves the start to
+ * it. Nothing smaller than that changes the slot, so the few points a
+ * finger drifts during a hold (a minute is about one point on the phone)
+ * can neither shorten the default nor shift it by a quarter.
  */
 export const slotFromHold = (
   anchorMinute: number,
@@ -58,13 +62,15 @@ export const slotFromHold = (
   defaultMinutes = 60,
 ): SlotRange => {
   'worklet';
-  const dragged = slotFromDrag(anchorMinute, currentMinute, step);
-  if (dragged.endMinute - dragged.startMinute > step) {
-    return dragged;
-  }
+  const lastStart = DAY_MINUTES - step;
+  const anchorStart = Math.min(Math.max(Math.floor(anchorMinute / step) * step, 0), lastStart);
+  const defaultEnd = Math.min(anchorStart + defaultMinutes, DAY_MINUTES);
+  const pointerEnd = Math.min(Math.ceil(currentMinute / step) * step, DAY_MINUTES);
+  const pointerStart = Math.max(Math.floor(currentMinute / step) * step, 0);
   return {
-    endMinute: Math.min(dragged.startMinute + defaultMinutes, DAY_MINUTES),
-    startMinute: dragged.startMinute,
+    endMinute: Math.max(defaultEnd, pointerEnd),
+    startMinute:
+      currentMinute <= anchorMinute - step ? Math.min(anchorStart, pointerStart) : anchorStart,
   };
 };
 
