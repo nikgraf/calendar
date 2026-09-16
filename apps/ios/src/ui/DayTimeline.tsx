@@ -3,6 +3,7 @@ import {
   type BirthdayOccurrence,
   bufferedDays,
   type EventRecord,
+  groupByDate,
   groupEventsByDay,
   swipeSnapDecision,
   type TaskRecord,
@@ -106,26 +107,11 @@ export function DayTimeline({
   const strip = useMemo(() => bufferedDays(days[0]!, days.length, buffer), [days, buffer]);
   // One pass over the window's events, not one filter per column.
   const byDay = useMemo(() => groupEventsByDay(events, strip, timeZone), [events, strip, timeZone]);
-  const tasksByDay = useMemo(() => {
-    const map = new Map<string, Array<TaskRecord>>();
-    for (const task of tasks) {
-      if (task.dueDate) {
-        const bucket = map.get(task.dueDate) ?? [];
-        bucket.push(task);
-        map.set(task.dueDate, bucket);
-      }
-    }
-    return map;
-  }, [tasks]);
-  const birthdaysByDay = useMemo(() => {
-    const map = new Map<string, Array<BirthdayOccurrence>>();
-    for (const birthday of birthdays) {
-      const bucket = map.get(birthday.date) ?? [];
-      bucket.push(birthday);
-      map.set(birthday.date, bucket);
-    }
-    return map;
-  }, [birthdays]);
+  const tasksByDay = useMemo(() => groupByDate(tasks, (task) => task.dueDate), [tasks]);
+  const birthdaysByDay = useMemo(
+    () => groupByDate(birthdays, (birthday) => birthday.date),
+    [birthdays],
+  );
 
   // The lane sizes itself to the busiest drawn day (neighbours included)
   // so a swipe never shifts the grid; only a committed page change can.

@@ -88,6 +88,23 @@ describe('contact birthdays', () => {
     expect(chips).toEqual([`🎂 Alice Example (${YEARS_AGO})`]);
   });
 
+  it('shows the birthday in the month view too', async () => {
+    const { cdp } = app;
+    await cdp.clickButtonWithText('month');
+    try {
+      await cdp.waitFor(
+        `document.querySelectorAll('[data-testid="month-grid"] [data-birthday]').length === 1`,
+      );
+    } finally {
+      // Back to the week lane whatever happened, so the next test's
+      // `[data-birthday]` is the lane chip and not a month cell.
+      await cdp.clickButtonWithText('week');
+      await cdp.waitFor(
+        `document.querySelectorAll('[data-birthday]').length === 1 && !document.querySelector('[data-testid="month-grid"]')`,
+      );
+    }
+  });
+
   it('opens a read-only detail that names both sources, and closes with Escape', async () => {
     const { cdp } = app;
     const point = await cdp.locate('[data-birthday]');

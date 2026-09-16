@@ -39,11 +39,6 @@ comment` for inline-playable video: 10 MB on Free plans, 100 MB paid
 
 ## Tier 2 — features (near-term, well-scoped)
 
-- [ ] Tasks (and birthdays) in month view — cheapest item in the file:
-      both month views already have the data in scope and never receive
-      it (`CalendarApp.tsx:247-257`, `App.tsx:202-211`); dots or counts
-      per day. Birthdays are a second non-event kind since 2026-09-12 and
-      ride the same change.
 - [ ] Manage conflicts with a choice — today 412 means server wins: the op
       is dropped and `notice:conflict` broadcast (`applyOp.ts:315`), and the
       payload — the user's version — is deleted before anyone could offer
