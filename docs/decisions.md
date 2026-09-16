@@ -732,7 +732,15 @@ Performance:
       keeps a plain drag for scrolling and swiping, so creating needs a
       300 ms hold on empty space, after which a one-hour slot appears and
       dragging while holding stretches it (Apple Calendar's hold default,
-      stretched instead of moved, by Nik's choice); both snap to 15
+      stretched instead of moved, by Nik's choice); the hold slot is
+      anchored where the finger touched down (not where it rests after the
+      hold), only grows — past the hour's end, or a full quarter above the
+      touch-down point — and the release creates exactly the slot shown,
+      because a phone minute is about one point and fingers drift (the
+      review of #69 found holds near a quarter line opening 30-minute or
+      shifted slots); desktop counts only vertical travel toward the drag
+      threshold (a sideways-drifting trackpad click stays the hour click)
+      and drops a drag whose column left the page mid-drag; both snap to 15
       minutes like the event drag and stay in the column the gesture
       started in; the quarter the gesture started in always stays part of
       the slot, so dragging up from 23:05 by an hour opens 22:00–23:15; a

@@ -279,10 +279,16 @@ Rules that keep the queue correct:
   resizes). Both commit through the op queue.
 - **Draw a new event's slot**: desktop `useSlotDrag` — press on empty
   grid space and drag up or down, release opens the editor with that start
-  and end; a press below the threshold stays the hour click. iOS
-  `DayColumn` — hold 300 ms on empty space (a one-hour slot appears), drag
-  while holding to stretch it, release opens the sheet; a drag that moves
-  before the hold completes scrolls or swipes as before. The slot stays in
+  and end; only vertical travel counts toward the 4 px threshold, so a
+  click that drifts sideways stays the hour click, and a drag whose column
+  leaves the page (an arrow key navigates mid-drag) is dropped. iOS
+  `DayColumn` — hold 300 ms on empty space (a one-hour slot appears from the
+  quarter the finger touched down in), drag while holding to grow it,
+  release opens the sheet with exactly the slot shown; a drag that moves
+  before the hold completes scrolls or swipes as before. The hold slot only
+  grows: down past the hour's end, or up once the finger is a quarter above
+  the touch-down point, so the few points a finger drifts (about a minute
+  each) never shorten it or shift it by a quarter. The slot stays in
   its column and snaps to 15 minutes; the math is shared
   (`packages/core/src/time/slotSelection.ts`: `minuteOfDay`,
   `slotFromDrag`, `slotFromHold`, `slotTimes`, worklets so iOS runs them on
