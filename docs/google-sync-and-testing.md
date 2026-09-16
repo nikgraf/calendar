@@ -373,8 +373,11 @@ manifest mid-load and the process died with SIGSEGV ~150 ms after the
 bundle ran (two runs that tapped "Open" four times failed; the runs that
 tapped once passed). The flow's recovery loop also re-sends the link
 when the launcher sits on a blank home screen (a launch request once sat
-in SpringBoard for a minute), and its waits are `optional` so one slow
-attempt cannot end the flow before the final "Today" assertion. On failure the job waits
+in SpringBoard for a minute), confirms an "Open in Solunivo?" alert that
+arrives after `confirm-open.yaml` stopped waiting (while the alert is up
+Maestro sees only the alert, so no other recovery branch can match), and
+its waits are `optional` so one slow attempt cannot end the flow before
+the final "Today" assertion. On failure the job waits
 for the simulator's crash report (`~/Library/Logs/DiagnosticReports/
 Solunivo-*.ips`, written a minute or so after the crash) and prints
 its exception and faulting thread before uploading it.
