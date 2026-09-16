@@ -362,6 +362,11 @@ jobs:
           key: helper-${{ runner.os }}-${{ hashFiles('apps/desktop/helper/Package.swift', 'apps/desktop/helper/Package.resolved', 'apps/desktop/helper/Sources/**', 'packages/reminders/swift/**', 'packages/contacts/swift/**') }}
           restore-keys: helper-${{ runner.os }}-
       - run: pnpm install --frozen-lockfile
+      # The committed app icons and tokens.css are generated from brand/;
+      # this is the only macOS job on every code PR, and the generator
+      # needs iconutil. About a second.
+      - name: Brand exports are up to date
+        run: pnpm brand:check
       - run: pnpm --filter @calendar/desktop package:app
       - name: Verify packaged contents
         run: |
