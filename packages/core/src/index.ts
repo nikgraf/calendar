@@ -29,5 +29,6 @@ export * from './taskLabel.ts';
 export * from './time/convert.ts';
 export * from './time/dragMath.ts';
 export * from './time/ranges.ts';
+export * from './time/slotSelection.ts';
 export * from './time/temporal.ts';
 export * from './types.ts';
