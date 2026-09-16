@@ -238,6 +238,7 @@ function CalendarScreen() {
             events={events}
             listColorOf={listColorOf}
             onBirthdayPress={(birthday) => setViewBirthday(birthday)}
+            onCreateSlot={(date, times) => setEditSeed({ initialDate: date, initialTimes: times })}
             onEventPress={(event) => setEditSeed({ event, initialDate: focused })}
             onNavigate={step}
             onTaskPress={(task) => setEditTask(task)}
@@ -266,7 +267,8 @@ function CalendarScreen() {
               ? `birthday:${viewBirthday.record.id}:${viewBirthday.date}`
               : editTask
                 ? `task:${editTask.id}`
-                : (editSeed?.event?.id ?? `new:${editSeed?.initialDate.toString()}`)
+                : (editSeed?.event?.id ??
+                  `new:${editSeed?.initialDate.toString()}:${editSeed?.initialTimes?.startTime ?? ''}`)
           }
           onClose={() => {
             setEditSeed(null);

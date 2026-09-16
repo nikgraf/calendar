@@ -2,15 +2,37 @@ import {
   dayRange,
   type EventRecord,
   layoutDayColumn,
+  minuteOfDay,
   moveEventTimes,
   resizeEventEnd,
+  slotFromHold,
+  type SlotRange,
+  slotTimes,
   Temporal,
 } from '@calendar/core';
-import { StyleSheet, View, type DimensionValue } from 'react-native';
+import { useState } from 'react';
+import { StyleSheet, Text, View, type DimensionValue } from 'react-native';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import { runOnJS, useSharedValue, type SharedValue } from 'react-native-reanimated';
 import { DraggableEventBlock } from './DraggableEventBlock.tsx';
 import { NowIndicator } from './NowIndicator.tsx';
 import { palette } from './theme.ts';
 import { HOUR_HEIGHT } from './timelineLayout.ts';
+
+/** Hold this long on empty space before a drag draws a slot instead of scrolling. */
+const HOLD_TO_CREATE_MS = 300;
+
+/**
+ * Writes a shared value from a gesture callback; a helper keeps the write
+ * off a hook-owned local, which the React Compiler treats as immutable.
+ */
+const setShared = (shared: SharedValue<number>, value: number) => {
+  'worklet';
+  shared.value = value;
+};
+
+const clockLabel = (time: string): string =>
+  Temporal.PlainTime.from(time).toLocaleString('en-US', { hour: 'numeric', minute: '2-digit' });
 
 /** One day's timed events, sized against that day's own range. */
 export function DayColumn({
@@ -20,6 +42,7 @@ export function DayColumn({
   events,
   isToday,
   onCommit,
+  onCreateSlot,
   onEventPress,
   timeZone,
   width,
@@ -31,6 +54,11 @@ export function DayColumn({
   events: ReadonlyArray<EventRecord>;
   isToday: boolean;
   onCommit: (event: EventRecord, changes: { endUtc?: number; startUtc?: number }) => void;
+  /** A slot drawn by holding on empty space (and dragging to stretch it). */
+  onCreateSlot: (
+    date: Temporal.PlainDate,
+    times: { readonly endTime: string; readonly startTime: string },
+  ) => void;
   onEventPress: (event: EventRecord) => void;
   timeZone: string;
   width: number;
@@ -47,8 +75,59 @@ export function DayColumn({
   );
   const byId = new Map(events.map((event) => [`${event.calendarId}:${event.id}`, event]));
 
+  // The slot being drawn. React state only changes when the snapped slot
+  // does, so a stretch re-renders this column at most once per quarter hour.
+  const [selection, setSelection] = useState<SlotRange | null>(null);
+  const anchor = useSharedValue(0);
+  const shownStart = useSharedValue(-1);
+  const shownEnd = useSharedValue(-1);
+
+  const clearSelection = () => setSelection(null);
+  const createSlot = (slot: SlotRange) => {
+    setSelection(null);
+    onCreateSlot(date, slotTimes(slot));
+  };
+
+  // Hold on empty space, then drag to stretch. A finger that moves before
+  // the hold completes fails this gesture, so the timeline scrolls and the
+  // day swipe pages exactly as before — the arrangement the event blocks'
+  // own long-press drag relies on. Blocks are drawn above this layer, so a
+  // touch on an event never reaches it.
+  const createPan = Gesture.Pan()
+    .activateAfterLongPress(HOLD_TO_CREATE_MS)
+    .onStart((start) => {
+      const minute = minuteOfDay(start.y, HOUR_HEIGHT);
+      setShared(anchor, minute);
+      const slot = slotFromHold(minute, minute);
+      setShared(shownStart, slot.startMinute);
+      setShared(shownEnd, slot.endMinute);
+      runOnJS(setSelection)(slot);
+    })
+    .onUpdate((update) => {
+      const slot = slotFromHold(anchor.value, minuteOfDay(update.y, HOUR_HEIGHT));
+      if (slot.startMinute !== shownStart.value || slot.endMinute !== shownEnd.value) {
+        setShared(shownStart, slot.startMinute);
+        setShared(shownEnd, slot.endMinute);
+        runOnJS(setSelection)(slot);
+      }
+    })
+    .onEnd((end, success) => {
+      if (success) {
+        runOnJS(createSlot)(slotFromHold(anchor.value, minuteOfDay(end.y, HOUR_HEIGHT)));
+      }
+    })
+    .onFinalize(() => {
+      setShared(shownStart, -1);
+      setShared(shownEnd, -1);
+      runOnJS(clearSelection)();
+    });
+
   return (
     <View style={[styles.dayColumn, compact && styles.dayColumnCompact, { width }]}>
+      <GestureDetector gesture={createPan}>
+        <View style={StyleSheet.absoluteFill} />
+      </GestureDetector>
+
       {boxes.map((box) => {
         const event = byId.get(box.id)!;
         return (
@@ -70,6 +149,27 @@ export function DayColumn({
       })}
 
       {isToday ? <NowIndicator rangeEndUtc={range.endUtc} rangeStartUtc={range.startUtc} /> : null}
+
+      {selection ? (
+        <View
+          pointerEvents="none"
+          style={[
+            styles.slot,
+            {
+              height: ((selection.endMinute - selection.startMinute) / 60) * HOUR_HEIGHT,
+              top: (selection.startMinute / 60) * HOUR_HEIGHT,
+            },
+          ]}
+          testID="slot-selection"
+        >
+          {compact ? null : (
+            <Text numberOfLines={1} style={styles.slotLabel}>
+              {clockLabel(slotTimes(selection).startTime)} –{' '}
+              {clockLabel(slotTimes(selection).endTime)}
+            </Text>
+          )}
+        </View>
+      ) : null}
     </View>
   );
 }
@@ -81,5 +181,21 @@ const styles = StyleSheet.create({
   dayColumnCompact: {
     borderLeftColor: palette.gridLine,
     borderLeftWidth: StyleSheet.hairlineWidth,
+  },
+  slot: {
+    backgroundColor: 'rgba(59, 130, 246, 0.15)',
+    borderColor: '#3b82f6',
+    borderRadius: 6,
+    borderWidth: 1,
+    left: 2,
+    paddingHorizontal: 4,
+    position: 'absolute',
+    right: 2,
+    zIndex: 20,
+  },
+  slotLabel: {
+    color: '#1d4ed8',
+    fontSize: 11,
+    fontWeight: '600',
   },
 });

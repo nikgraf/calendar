@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { minuteOfDay, slotFromDrag, slotTimes } from './slotSelection.ts';
+import { minuteOfDay, slotFromDrag, slotFromHold, slotTimes } from './slotSelection.ts';
 
 const at = (hours: number, minutes = 0) => hours * 60 + minutes;
 const times = (anchor: number, current: number) => slotTimes(slotFromDrag(anchor, current));
@@ -36,6 +36,33 @@ describe('slotFromDrag', () => {
     expect(slotFromDrag(at(23, 50), at(26))).toEqual({ endMinute: 1440, startMinute: at(23, 45) });
     // An anchor at midnight itself still selects the last quarter.
     expect(slotFromDrag(1440, 1440)).toEqual({ endMinute: 1440, startMinute: at(23, 45) });
+  });
+});
+
+describe('slotFromHold', () => {
+  it('is one hour from the pressed quarter while the finger stays in it', () => {
+    expect(slotTimes(slotFromHold(at(10, 7), at(10, 12)))).toEqual({
+      endTime: '11:00',
+      startTime: '10:00',
+    });
+  });
+
+  it('follows the drag once the finger leaves the quarter', () => {
+    expect(slotTimes(slotFromHold(at(10, 7), at(10, 40)))).toEqual({
+      endTime: '10:45',
+      startTime: '10:00',
+    });
+    expect(slotTimes(slotFromHold(at(10, 7), at(9, 50)))).toEqual({
+      endTime: '10:15',
+      startTime: '09:45',
+    });
+  });
+
+  it('stops the default hour at midnight', () => {
+    expect(slotTimes(slotFromHold(at(23, 40), at(23, 40)))).toEqual({
+      endTime: '23:59',
+      startTime: '23:30',
+    });
   });
 });
 

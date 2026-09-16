@@ -45,6 +45,29 @@ export const slotFromDrag = (
   };
 };
 
+/**
+ * The slot a press-and-hold selects on a touch screen: while the finger
+ * stays in the quarter it pressed, a `defaultMinutes` slot from that
+ * quarter (Apple Calendar's one-hour default); once it leaves, the dragged
+ * range, as `slotFromDrag`.
+ */
+export const slotFromHold = (
+  anchorMinute: number,
+  currentMinute: number,
+  step: number = DRAG_SNAP_MINUTES,
+  defaultMinutes = 60,
+): SlotRange => {
+  'worklet';
+  const dragged = slotFromDrag(anchorMinute, currentMinute, step);
+  if (dragged.endMinute - dragged.startMinute > step) {
+    return dragged;
+  }
+  return {
+    endMinute: Math.min(dragged.startMinute + defaultMinutes, DAY_MINUTES),
+    startMinute: dragged.startMinute,
+  };
+};
+
 const clock = (minute: number): string => {
   'worklet';
   const hours = Math.floor(minute / 60);
