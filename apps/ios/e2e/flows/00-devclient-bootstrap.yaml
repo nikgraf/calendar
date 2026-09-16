@@ -42,9 +42,21 @@ tags:
     times: 6
     commands:
       - extendedWaitUntil:
-          visible: 'Today|There was a problem loading the project|Toggle performance monitor|Continue|Error loading app|http://127\.0\.0\.1:8081|Enter URL manually'
+          visible: 'Today|There was a problem loading the project|Toggle performance monitor|Continue|Error loading app|http://127\.0\.0\.1:8081|Enter URL manually|Open'
           timeout: 60000
           optional: true
+      # The "Open in Solunivo?" alert can arrive after confirm-open.yaml's
+      # 15 s wait gave up: in run 35078237553 it showed up about 20 s after
+      # the link and sat unconfirmed through all six rounds. While it is up,
+      # Maestro sees only the alert (the launcher behind it is not in the
+      # hierarchy), so no guard below can match. Confirm it here, first;
+      # confirm-open taps "Open" once and cancels any stacked copies, and
+      # this alert is the link's first delivery, not a repeat.
+      - runFlow:
+          when:
+            visible: 'Open'
+          commands:
+            - runFlow: ../common/confirm-open.yaml
       # "Reload" and "Go home" exist on both the launcher's error screen and
       # the dev menu sheet, and the error view lingers in the accessibility
       # tree behind the loaded app — so each guard keys on text unique to
@@ -93,7 +105,7 @@ tags:
       - runFlow:
           when:
             visible: 'Enter URL manually'
-            notVisible: 'Today|http://127\.0\.0\.1:8081'
+            notVisible: 'Today|http://127\.0\.0\.1:8081|Open'
           commands:
             - openLink: 'solunivo://expo-development-client/?url=http%3A%2F%2F127.0.0.1%3A8081'
             - runFlow: ../common/confirm-open.yaml

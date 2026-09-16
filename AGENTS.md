@@ -29,6 +29,7 @@ Rules of thumb: I/O, orchestration, and validation are Effect (services + Layers
 - `pnpm ios` — Expo run on iOS simulator
 - `pnpm --filter @calendar/desktop build:helper` — build the Swift model helper (needs the macOS 26 SDK; `make`/`package:app` run it automatically)
 - `pnpm --filter @calendar/desktop package:app` — unsigned .app via Forge (signing/notarization activate via APPLE\_\* env vars); `pnpm --filter @calendar/desktop make` — zipped distributable
+- `pnpm brand:build` — regenerate the app icons (ICNS, iOS PNG), `brand/tokens/tokens.css` and the brand kit under `output/branding/` from the SVG masters in `brand/` (macOS only: needs `iconutil`); `pnpm brand:check` verifies the committed exports are current and the 50 contrast pairs pass (CI runs it in the packaging smoke job)
 - CI ships a signed+notarized arm64 testing zip on every main push (Actions artifact) — see `docs/distribution.md`
 
 The full product plan lives in the repo owner's plan file; milestone tracking in session tasks.
