@@ -13,6 +13,7 @@ import {
   TaskRecord,
 } from '@calendar/core';
 import type { DeviceBirthdayJson, DeviceContactJson } from '@calendar/contacts';
+import type { ReminderJson, ReminderListJson } from '@calendar/reminders';
 import {
   AccountRepo,
   BirthdayRepo,
@@ -471,6 +472,11 @@ export interface ContactsFixture {
   readonly contacts?: ReadonlyArray<DeviceContactJson>;
 }
 
+export interface RemindersFixture {
+  readonly lists?: ReadonlyArray<ReminderListJson>;
+  readonly reminders?: ReadonlyArray<ReminderJson>;
+}
+
 export interface LaunchOptions {
   /**
    * 'off' (default): no bridge at all. 'real': the helper. A fixture: the
@@ -479,12 +485,10 @@ export interface LaunchOptions {
    */
   readonly contacts?: 'off' | 'real' | { readonly fixture: ContactsFixture };
   /**
-   * 'off' (default): no EventKit — seeded Apple rows stay as seeded and no
-   * TCC prompt can fire on a developer's Mac. 'real': the helper is used;
-   * only for remindersReal.e2e.ts on a machine whose grant is already
-   * answered (CI seeds it, see e2e/ci/).
+   * 'off' (default): no EventKit. 'real': the helper. A fixture uses the
+   * in-memory Reminders client so mutation e2e tests never touch personal data.
    */
-  readonly reminders?: 'off' | 'real';
+  readonly reminders?: 'off' | 'real' | { readonly fixture: RemindersFixture };
 }
 
 export const launchApp = async (seed?: SeedData, options: LaunchOptions = {}): Promise<App> => {
@@ -502,6 +506,19 @@ export const launchApp = async (seed?: SeedData, options: LaunchOptions = {}): P
             writeFileSync(fixturePath, JSON.stringify(options.contacts.fixture));
             return { CALENDAR_CONTACTS: 'fixture', CALENDAR_CONTACTS_FIXTURE: fixturePath };
           })();
+  const remindersEnv: Record<string, string> =
+    options.reminders === 'real'
+      ? {}
+      : options.reminders === undefined || options.reminders === 'off'
+        ? { CALENDAR_REMINDERS: 'off' }
+        : (() => {
+            const fixturePath = join(userDataDir, 'reminders-fixture.json');
+            writeFileSync(fixturePath, JSON.stringify(options.reminders.fixture));
+            return {
+              CALENDAR_REMINDERS: 'fixture',
+              CALENDAR_REMINDERS_FIXTURE: fixturePath,
+            };
+          })();
 
   const electronPath = require('electron') as unknown as string;
   const appDir = join(import.meta.dirname, '..');
@@ -511,7 +528,7 @@ export const launchApp = async (seed?: SeedData, options: LaunchOptions = {}): P
       ...process.env,
       // Seeded Apple rows must not be replaced by (or prompt for) the
       // developer's real Reminders — see remindersClient.ts.
-      ...(options.reminders === 'real' ? {} : { CALENDAR_REMINDERS: 'off' }),
+      ...remindersEnv,
       // Likewise the address book: no TCC prompt, no developer's contacts.
       ...contactsEnv,
       // A seeded birthday with reminders on must never post a real banner.

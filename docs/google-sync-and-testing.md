@@ -392,9 +392,32 @@ expo-dev-menu's floating "Dev tools" button off through UserDefaults
 (`EXDevMenuShowFloatingActionButton`): it sits exactly over the app's
 settings gear. Maestro needs a JDK on PATH (Apple's `/usr/bin/java` stub
 is not one: `brew install openjdk`, then
-`JAVA_HOME=/opt/homebrew/opt/openjdk`). Maestro cannot
-synthesize long-press pans, so gesture behavior is covered by unit tests
-on the shared math instead. Selector gotchas (each caused a real
+`JAVA_HOME=/opt/homebrew/opt/openjdk`). Maestro does not expose a reliable
+press-hold-drag command, so the default suite checks timed/date-only
+editor transitions; unit tests cover the shared drag math. Flow 09's
+slow-swipe experiment requires an explicit opt-in:
+`maestro test -e REMINDER_DRAG_TEST=true apps/ios/e2e/flows/09-reminders-form.yaml`.
+A Reminders list must already be connected. A long swipe duration does
+not configure a stationary hold before movement, so native gesture
+activation is unverified and this experiment is excluded by default.
+If it activates, the test requires a later quarter-hour, then checks the
+same due time after an app restart and a reopened-editor save. The exact
+delta is not asserted: a [selector swipe](https://docs.maestro.dev/api-reference/commands/swipe)
+ends at a screen-relative position and cannot be combined with explicit
+start/end coordinates. This experiment does not replace a native check.
+
+Before claiming iOS reminder-drag coverage, run this manual check on a
+simulator or device with a connected Reminders list:
+
+1. In today's Day view, create a reminder due at 9:00 AM. Hold its title
+   until it lifts (at least 250 ms), move it down by one hour of grid
+   spacing, and release. It must land at 10:00 AM on the same day.
+2. Reopen the reminder editor and check its date and 10:00 AM time. Close
+   the editor, terminate and relaunch Solunivo, and check that both the
+   time-grid block and reopened editor still show that date and time.
+   Confirm the same due time in Apple Reminders, then delete the test item.
+
+Selector gotchas (each caused a real
 failure): Maestro text selectors are **whole-string regexes** — prefix
 text does not match, and regex metacharacters in titles must be escaped;
 never select by `local-…` task ids (the op push swaps them to server ids

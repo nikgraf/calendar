@@ -8,6 +8,9 @@
 export interface TimedBox {
   readonly endUtc: number;
   readonly id: string;
+  /** Optional fixed-day coordinates for wall-clock items such as reminders. */
+  readonly layoutEndMinute?: number;
+  readonly layoutStartMinute?: number;
   readonly startUtc: number;
 }
 
@@ -31,10 +34,27 @@ export const layoutDayColumn = (
 
   const sorted = [...events]
     .filter((event) => event.endUtc > dayStartUtc && event.startUtc < dayEndUtc)
-    .sort((a, b) => a.startUtc - b.startUtc || b.endUtc - a.endUtc);
+    .map((event) => {
+      const usesWallClockLayout =
+        event.layoutStartMinute !== undefined && event.layoutEndMinute !== undefined;
+      // Pack the same visual intervals we render, including on 23/25-hour days.
+      return {
+        end: usesWallClockLayout
+          ? Math.min(event.layoutEndMinute, 24 * 60) / (24 * 60)
+          : (Math.min(event.endUtc, dayEndUtc) - dayStartUtc) / dayMs,
+        id: event.id,
+        start: usesWallClockLayout
+          ? Math.max(event.layoutStartMinute, 0) / (24 * 60)
+          : (Math.max(event.startUtc, dayStartUtc) - dayStartUtc) / dayMs,
+      };
+    })
+    .sort((a, b) => a.start - b.start || b.end - a.end);
 
-  interface Placed extends TimedBox {
+  interface Placed {
     column: number;
+    end: number;
+    id: string;
+    start: number;
   }
 
   const results: Array<PositionedBox> = [];
@@ -47,13 +67,11 @@ export const layoutDayColumn = (
     }
     const columnCount = Math.max(...cluster.map((entry) => entry.column)) + 1;
     for (const entry of cluster) {
-      const start = Math.max(entry.startUtc, dayStartUtc);
-      const end = Math.min(entry.endUtc, dayEndUtc);
       results.push({
-        height: (end - start) / dayMs,
+        height: entry.end - entry.start,
         id: entry.id,
         left: entry.column / columnCount,
-        top: (start - dayStartUtc) / dayMs,
+        top: entry.start,
         width: 1 / columnCount,
       });
     }
@@ -62,19 +80,19 @@ export const layoutDayColumn = (
   };
 
   for (const event of sorted) {
-    if (event.startUtc >= clusterEnd) {
+    if (event.start >= clusterEnd) {
       flushCluster();
     }
     // Leftmost column whose events this one does not overlap.
     const occupied = new Set(
-      cluster.filter((entry) => entry.endUtc > event.startUtc).map((entry) => entry.column),
+      cluster.filter((entry) => entry.end > event.start).map((entry) => entry.column),
     );
     let column = 0;
     while (occupied.has(column)) {
       column += 1;
     }
     cluster.push({ ...event, column });
-    clusterEnd = Math.max(clusterEnd, event.endUtc);
+    clusterEnd = Math.max(clusterEnd, event.end);
   }
   flushCluster();
 

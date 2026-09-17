@@ -2,6 +2,7 @@ import {
   BIRTHDAY_ACCENT,
   type BirthdayOccurrence,
   buildMonthGrid,
+  calendarTaskKey,
   type EventRecord,
   groupByDate,
   groupEventsByDay,
@@ -87,7 +88,7 @@ export function MonthGrid({
                 style: styles.birthdayDot,
               })),
               ...dayTasks.map((task) => ({
-                key: `task:${task.listId}:${task.id}`,
+                key: calendarTaskKey(task),
                 style: taskDot(task),
               })),
             ];

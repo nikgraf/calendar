@@ -7,6 +7,8 @@ tags:
 # (Settings → Connect Apple Reminders, then allow the prompt). Without one
 # the flow is a no-op, like flow 08 without a tasks-enabled account.
 - runFlow: ../common/launch.yaml
+- tapOn: 'Today'
+- tapOn: 'Day'
 - tapOn:
     id: 'add-event'
 - assertVisible: 'New Event'
@@ -43,14 +45,98 @@ tags:
       - extendedWaitUntil:
           notVisible: 'New Task'
           timeout: 20000
-      # The chip leads with the time and the priority marker.
+      # Timed reminders live in the time grid. Their compact title keeps the
+      # priority marker while the due time is exposed by the body label.
       - extendedWaitUntil:
-          visible: '.*!!! Solunivo e2e reminder to delete'
+          visible: 'Solunivo e2e reminder to delete, due 9:00 AM'
           timeout: 10000
-      # Anchored to the time prefix: a bare ".*title" also matches the
-      # checkbox's "Toggle <title>" label and toggles completion instead.
-      - tapOn: '[0-9]+:[0-9]+ !!! Solunivo e2e reminder to delete'
+      # Experimental: Maestro's slow swipe has no configurable hold phase, so
+      # it is not a reliable substitute for the native long-press pan.
+      # Opt in with -e REMINDER_DRAG_TEST=true; see the manual gesture check
+      # in docs/google-sync-and-testing.md before claiming drag coverage.
+      - runFlow:
+          when:
+            true: ${typeof REMINDER_DRAG_TEST !== 'undefined' && REMINDER_DRAG_TEST === 'true'}
+          commands:
+            - swipe:
+                from:
+                  text: 'Solunivo e2e reminder to delete, due 9:00 AM'
+                direction: DOWN
+                duration: 3000
+            - extendedWaitUntil:
+                notVisible: 'Solunivo e2e reminder to delete, due 9:00 AM'
+                timeout: 10000
+            - extendedWaitUntil:
+                visible: 'Solunivo e2e reminder to delete, due (1[0-2]|[1-9]):(00|15|30|45) (AM|PM)'
+                timeout: 10000
+            - copyTextFrom:
+                text: 'Solunivo e2e reminder to delete, due .*'
+            - evalScript: ${output.movedReminderLabel = maestro.copiedText}
+            - assertTrue:
+                condition: ${/due (9:(15|30|45)|1[01]:(00|15|30|45)) AM$|due (1[0-2]|[1-9]):(00|15|30|45) PM$/.test(output.movedReminderLabel)}
+                label: The reminder moved later than 9 AM onto a quarter-hour
+            # A selector swipe ends relative to screen height, so its exact
+            # minute delta varies by device. Preserve the observed snapped
+            # time and require it to survive an app restart (storage read).
+            - stopApp
+            - runFlow: ../common/launch.yaml
+            - tapOn: 'Day'
+            - scrollUntilVisible:
+                element:
+                  text: '${output.movedReminderLabel}'
+                direction: DOWN
+                timeout: 10000
+            - tapOn: '${output.movedReminderLabel}'
+            - assertVisible: 'Edit Reminder'
+            - waitForAnimationToEnd:
+                timeout: 5000
+            - assertVisible:
+                id: 'reminder-time'
+            # Reopening/saving must retain the exact stored label. The native
+            # picker value itself still needs the documented manual check.
+            - tapOn:
+                id: 'event-save'
+            - extendedWaitUntil:
+                notVisible: 'Edit Reminder'
+                timeout: 10000
+            - assertVisible: '${output.movedReminderLabel}'
+      - tapOn: 'Solunivo e2e reminder to delete, due .*'
       - assertVisible: 'Edit Reminder'
+      - waitForAnimationToEnd:
+          timeout: 5000
+      # Removing the time moves the same reminder into the all-day lane.
+      - tapOn:
+          id: 'reminder-timed'
+      - tapOn:
+          id: 'event-save'
+      - extendedWaitUntil:
+          notVisible: 'Solunivo e2e reminder to delete, due .*'
+          timeout: 10000
+      - assertVisible: '!!! Solunivo e2e reminder to delete'
+      # Adding the time back returns it to the time grid.
+      - tapOn: '!!! Solunivo e2e reminder to delete'
+      - assertVisible: 'Edit Reminder'
+      - waitForAnimationToEnd:
+          timeout: 5000
+      - tapOn:
+          id: 'reminder-timed'
+      - tapOn:
+          id: 'event-save'
+      - extendedWaitUntil:
+          notVisible: 'Edit Reminder'
+          timeout: 10000
+      - scrollUntilVisible:
+          element:
+            text: 'Solunivo e2e reminder to delete, due 9:00 AM'
+          direction: UP
+          timeout: 10000
+      - extendedWaitUntil:
+          visible: 'Solunivo e2e reminder to delete, due 9:00 AM'
+          timeout: 10000
+      - tapOn: 'Solunivo e2e reminder to delete, due .*'
+      - assertVisible: 'Edit Reminder'
+      - waitForAnimationToEnd:
+          timeout: 5000
       - tapOn:
           id: 'task-delete'
       - extendedWaitUntil:

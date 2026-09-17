@@ -2,6 +2,7 @@ import {
   BIRTHDAY_ACCENT,
   type BirthdayOccurrence,
   birthdayChipLabel,
+  calendarTaskKey,
   type EventRecord,
   taskChipLabel,
   type TaskRecord,
@@ -11,7 +12,7 @@ import { chipTextColor, palette } from './theme.ts';
 import { ALL_DAY_ROW_HEIGHT } from './timelineLayout.ts';
 
 /**
- * One day's all-day chips (due tasks, then birthdays, then events), one
+ * One day's all-day chips (date-only tasks, then birthdays, then events), one
  * chip per row. Past `maxChips` the column shows the first rows and a
  * "+N more" chip that expands the lane.
  */
@@ -65,7 +66,7 @@ export function AllDayColumn({
         const listColor = listColorOf(task);
         return (
           <View
-            key={`task:${task.listId}:${task.id}`}
+            key={calendarTaskKey(task)}
             style={[
               styles.allDayChip,
               styles.taskChip,

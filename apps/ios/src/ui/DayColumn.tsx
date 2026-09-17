@@ -1,6 +1,8 @@
 import {
+  calendarTaskKey,
   dayRange,
   type EventRecord,
+  formatPlainTime,
   layoutDayColumn,
   minuteOfDay,
   moveEventTimes,
@@ -8,7 +10,9 @@ import {
   slotFromHold,
   type SlotRange,
   slotTimes,
+  type TaskRecord,
   Temporal,
+  timedTaskSlot,
 } from '@calendar/core';
 import { useState } from 'react';
 import { StyleSheet, Text, View, type DimensionValue } from 'react-native';
@@ -16,6 +20,7 @@ import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { runOnJS, useSharedValue, type SharedValue } from 'react-native-reanimated';
 import { DraggableEventBlock } from './DraggableEventBlock.tsx';
 import { NowIndicator } from './NowIndicator.tsx';
+import { TimedTaskBlock } from './TimedTaskBlock.tsx';
 import { palette } from './theme.ts';
 import { HOUR_HEIGHT } from './timelineLayout.ts';
 
@@ -31,19 +36,22 @@ const setShared = (shared: SharedValue<number>, value: number) => {
   shared.value = value;
 };
 
-const clockLabel = (time: string): string =>
-  Temporal.PlainTime.from(time).toLocaleString('en-US', { hour: 'numeric', minute: '2-digit' });
-
 /** One day's timed events, sized against that day's own range. */
 export function DayColumn({
   colorOf,
   compact,
   date,
   events,
+  isTaskReadOnly,
   isToday,
+  listColorOf,
   onCommit,
+  onCommitTask,
   onCreateSlot,
   onEventPress,
+  onTaskPress,
+  onToggleTask,
+  timedTasks,
   timeZone,
   width,
 }: {
@@ -52,28 +60,42 @@ export function DayColumn({
   date: Temporal.PlainDate;
   /** Timed events touching this day. */
   events: ReadonlyArray<EventRecord>;
+  isTaskReadOnly: (task: TaskRecord) => boolean;
   isToday: boolean;
+  listColorOf: (task: TaskRecord) => string | undefined;
   onCommit: (event: EventRecord, changes: { endUtc?: number; startUtc?: number }) => void;
+  onCommitTask: (task: TaskRecord, deltaMinutes: number) => void;
   /** A slot drawn by holding on empty space (and dragging to stretch it). */
   onCreateSlot: (
     date: Temporal.PlainDate,
     times: { readonly endTime: string; readonly startTime: string },
   ) => void;
   onEventPress: (event: EventRecord) => void;
+  onTaskPress: (task: TaskRecord) => void;
+  onToggleTask: (task: TaskRecord) => void;
+  timedTasks: ReadonlyArray<TaskRecord>;
   timeZone: string;
   width: number;
 }) {
   const range = dayRange(date, timeZone);
   const boxes = layoutDayColumn(
-    events.map((event) => ({
-      endUtc: event.endUtc,
-      id: `${event.calendarId}:${event.id}`,
-      startUtc: event.startUtc,
-    })),
+    events
+      .map((event) => ({
+        endUtc: event.endUtc,
+        id: `${event.calendarId}:${event.id}`,
+        startUtc: event.startUtc,
+      }))
+      .concat(
+        timedTasks.flatMap((task) => {
+          const slot = timedTaskSlot(task, timeZone);
+          return slot === undefined ? [] : [{ ...slot, id: calendarTaskKey(task) }];
+        }),
+      ),
     range.startUtc,
     range.endUtc,
   );
   const byId = new Map(events.map((event) => [`${event.calendarId}:${event.id}`, event]));
+  const tasksById = new Map(timedTasks.map((task) => [calendarTaskKey(task), task]));
 
   // The slot being drawn. React state only changes when the snapped slot
   // does, so a stretch re-renders this column at most once per quarter hour.
@@ -135,6 +157,24 @@ export function DayColumn({
       </GestureDetector>
 
       {boxes.map((box) => {
+        const task = tasksById.get(box.id);
+        if (task) {
+          return (
+            <TimedTaskBlock
+              compact={compact}
+              key={box.id}
+              left={`${box.left * 100}%` as DimensionValue}
+              listColor={listColorOf(task)}
+              onCommitMove={(deltaMinutes) => onCommitTask(task, deltaMinutes)}
+              onPress={() => onTaskPress(task)}
+              onToggle={() => onToggleTask(task)}
+              readOnly={isTaskReadOnly(task)}
+              task={task}
+              top={box.top * 24 * HOUR_HEIGHT}
+              width={`${box.width * 100}%` as DimensionValue}
+            />
+          );
+        }
         const event = byId.get(box.id)!;
         return (
           <DraggableEventBlock
@@ -170,8 +210,8 @@ export function DayColumn({
         >
           {compact ? null : (
             <Text numberOfLines={1} style={styles.slotLabel}>
-              {clockLabel(slotTimes(selection).startTime)} –{' '}
-              {clockLabel(slotTimes(selection).endTime)}
+              {formatPlainTime(slotTimes(selection).startTime)} –{' '}
+              {formatPlainTime(slotTimes(selection).endTime)}
             </Text>
           )}
         </View>

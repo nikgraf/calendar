@@ -1,15 +1,19 @@
 import {
   type BirthdayOccurrence,
   bufferedDays,
+  calendarTaskKey,
   dayRange,
   type EventRecord,
+  formatPlainTime,
   layoutAllDayLane,
   layoutDayColumn,
   PAN_BUFFER_DAYS,
+  partitionCalendarTasks,
   type SlotRange,
   slotTimes,
   type TaskRecord,
   Temporal,
+  timedTaskSlot,
   utcMsToPlainDate,
 } from '@calendar/core';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
@@ -18,6 +22,7 @@ import { type ColorLookup } from './colors.ts';
 import { DayHeaders } from './DayHeaders.tsx';
 import { NowIndicator } from './NowIndicator.tsx';
 import { TimedEventBlock } from './TimedEventBlock.tsx';
+import { TimedTaskBlock } from './TimedTaskBlock.tsx';
 import { useEventDrag } from './useEventDrag.ts';
 import { useSlotDrag } from './useSlotDrag.ts';
 import { useWheelPan } from './useWheelPan.ts';
@@ -30,13 +35,10 @@ const HOUR_LINES = `repeating-linear-gradient(to bottom, #f5f5f5 0, #f5f5f5 1px,
 const birthdayKey = (birthday: BirthdayOccurrence): string =>
   `birthday:${birthday.record.id}:${birthday.date}`;
 
-const clockLabel = (time: string): string =>
-  Temporal.PlainTime.from(time).toLocaleString('en-US', { hour: 'numeric', minute: '2-digit' });
-
 /** "10:00 AM – 11:30 AM", in the grid's hour-label style. */
 const slotLabel = (slot: SlotRange): string => {
   const { endTime, startTime } = slotTimes(slot);
-  return `${clockLabel(startTime)} – ${clockLabel(endTime)}`;
+  return `${formatPlainTime(startTime)} – ${formatPlainTime(endTime)}`;
 };
 
 const dayIndexOf = (isoDate: string, days: ReadonlyArray<Temporal.PlainDate>): number => {
@@ -49,6 +51,7 @@ export function WeekView({
   colorOf,
   days,
   events,
+  isTaskReadOnly,
   listColorOf,
   onBirthdayClick,
   onEventClick,
@@ -64,6 +67,7 @@ export function WeekView({
   colorOf: ColorLookup;
   days: ReadonlyArray<Temporal.PlainDate>;
   events: ReadonlyArray<EventRecord>;
+  isTaskReadOnly: (task: TaskRecord) => boolean;
   listColorOf: (task: TaskRecord) => string | undefined;
   onBirthdayClick: (birthday: BirthdayOccurrence) => void;
   onEventClick: (event: EventRecord) => void;
@@ -96,11 +100,34 @@ export function WeekView({
     width: `${(strip.length / days.length) * 100}%`,
   };
 
+  const calendarTasks = useMemo(() => partitionCalendarTasks(tasks), [tasks]);
+  const timedTaskLayout = useMemo(() => {
+    const byDay = new Map<
+      string,
+      Array<{ readonly endUtc: number; readonly id: string; readonly startUtc: number }>
+    >();
+    const byId = new Map<string, TaskRecord>();
+    for (const task of calendarTasks.timed) {
+      const slot = timedTaskSlot(task, timeZone);
+      if (slot === undefined || task.dueDate === undefined) {
+        continue;
+      }
+      const id = calendarTaskKey(task);
+      byId.set(id, task);
+      const day = byDay.get(task.dueDate) ?? [];
+      day.push({ ...slot, id });
+      byDay.set(task.dueDate, day);
+    }
+    return { byDay, byId };
+  }, [calendarTasks.timed, timeZone]);
+
   const drag = useEventDrag({
     dayCount: strip.length,
     gridRef,
     hourHeight: HOUR_HEIGHT,
-    onClick: onEventClick,
+    onEventClick,
+    onTaskClick,
+    timeZone,
   });
 
   const slot = useSlotDrag({ hourHeight: HOUR_HEIGHT, onCreate: onSlotDrag });
@@ -140,18 +167,18 @@ export function WeekView({
   const allDayEvents = events.filter((event) => event.isAllDay);
   const timedEvents = events.filter((event) => !event.isAllDay);
 
-  // Tasks join the same lane as one-day spans so they pack into shared
-  // rows with all-day events and the lane height stays consistent.
-  const taskSpans = tasks.flatMap((task) => {
+  // Date-only tasks join one-day spans in the all-day lane. Timed reminders
+  // are projected into the ordinary day-column overlap layout below.
+  const taskSpans = calendarTasks.allDay.flatMap((task) => {
     if (!task.dueDate) {
       return [];
     }
     const index = dayIndexOf(task.dueDate, strip);
     return index === -1
       ? []
-      : [{ endDayIndex: index + 1, id: `task:${task.listId}:${task.id}`, startDayIndex: index }];
+      : [{ endDayIndex: index + 1, id: calendarTaskKey(task), startDayIndex: index }];
   });
-  const taskById = new Map(tasks.map((task) => [`task:${task.listId}:${task.id}`, task]));
+  const taskById = new Map(calendarTasks.allDay.map((task) => [calendarTaskKey(task), task]));
 
   // Birthdays are one-day spans like tasks.
   const birthdaySpans = birthdays.flatMap((birthday) => {
@@ -193,7 +220,6 @@ export function WeekView({
   const eventsById = new Map(
     timedEvents.map((event) => [`${event.calendarId}:${event.id}`, event]),
   );
-
   return (
     <div className="flex min-h-0 flex-1 flex-col" ref={rootRef}>
       <DayHeaders
@@ -248,6 +274,7 @@ export function WeekView({
               }}
             >
               {strip.map((day) => {
+                const iso = day.toString();
                 const range = dayRange(day, timeZone);
                 const boxes = layoutDayColumn(
                   timedEvents
@@ -258,7 +285,8 @@ export function WeekView({
                       endUtc: event.endUtc,
                       id: `${event.calendarId}:${event.id}`,
                       startUtc: event.startUtc,
-                    })),
+                    }))
+                    .concat(timedTaskLayout.byDay.get(iso) ?? []),
                   range.startUtc,
                   range.endUtc,
                 );
@@ -272,7 +300,7 @@ export function WeekView({
                   <div
                     aria-label={`${day.toLocaleString('en-US', { day: 'numeric', month: 'long', weekday: 'long' })}: press Enter for a new event`}
                     className="relative border-l border-neutral-100 outline-none focus-visible:bg-blue-50/40"
-                    key={day.toString()}
+                    key={iso}
                     onClick={(clickEvent) => {
                       // Both flags are consumed, so neither leaks into the next click.
                       const afterMove = drag.consumeSuppressedClick();
@@ -300,6 +328,22 @@ export function WeekView({
                     tabIndex={0}
                   >
                     {boxes.map((box) => {
+                      const task = timedTaskLayout.byId.get(box.id);
+                      if (task) {
+                        return (
+                          <TimedTaskBlock
+                            box={box}
+                            drag={drag}
+                            hourHeight={HOUR_HEIGHT}
+                            key={box.id}
+                            listColor={listColorOf(task)}
+                            onTaskClick={onTaskClick}
+                            onToggleTask={onToggleTask}
+                            readOnly={isTaskReadOnly(task)}
+                            task={task}
+                          />
+                        );
+                      }
                       const event = eventsById.get(box.id)!;
                       return (
                         <TimedEventBlock

@@ -58,17 +58,16 @@ tags:
 - extendedWaitUntil:
     notVisible: 'New Task'
     timeout: 20000
-# The chip carries the time and the priority marker: the row came back
-# from EventKit with a real identifier and was mirrored.
+# The timed block came back from EventKit with a real identifier and was
+# mirrored into the time grid.
 - extendedWaitUntil:
-    visible: '.*!!! Solunivo ci reminder'
+    visible: 'Solunivo ci reminder, due .*'
     timeout: 10000
 
 # Delete through EventKit; the write-through removes the mirror row, so
-# a broken reminders.delete would leave the chip on screen. The body's
-# text starts with the time: a bare ".*title" would also match the
-# checkbox's "Toggle <title>" label and toggle completion instead.
-- tapOn: '[0-9]+:[0-9]+ !!! Solunivo ci reminder'
+# a broken reminders.delete would leave the block on screen. Target the
+# body label so the adjacent completion checkbox is never selected.
+- tapOn: 'Solunivo ci reminder, due .*'
 - assertVisible: 'Edit Reminder'
 - tapOn:
     id: 'task-delete'

@@ -184,6 +184,19 @@ export const useListColorLookup = (): ((task: TaskRecord) => string | undefined)
   }, [taskLists]);
 };
 
+/** Whether a task's list refuses mutations, keyed by account and list id. */
+export const useTaskReadOnlyLookup = (): ((task: TaskRecord) => boolean) => {
+  const taskLists = useTaskLists();
+  return useMemo(() => {
+    const readOnlyLists = new Set(
+      taskLists
+        .filter((list) => list.readOnly === true)
+        .map((list) => `${list.accountId}:${list.id}`),
+    );
+    return (task: TaskRecord) => readOnlyLists.has(`${task.accountId}:${task.listId}`);
+  }, [taskLists]);
+};
+
 /**
  * Promise-returning mutation callbacks; each invalidates its reactivity keys.
  *

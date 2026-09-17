@@ -255,15 +255,16 @@ design decisions it settled.
 
 ## Apple Reminders
 
-- [x] Apple Reminders integration — done: personal reminders sit next to
-      Google Tasks in the all-day lane. Decisions: EventKit via the
+- [x] Apple Reminders integration — done: personal reminders appear in
+      the calendar alongside Google Tasks. Decisions: EventKit via the
       existing Swift helper on macOS and a local Expo module on iOS (one
       shared Swift source; expo-calendar rejected — no priority, no
       all-day/timed distinction); a synthetic `apple-reminders` account
       with provider-dispatched mutations (no pending-op queue — EventKit
       is local); per-provider forms (Google: title/day/notes/fixed list;
-      Reminders: time, priority, alert, repeat, URL, movable list); timed
-      reminders render in the lane with a time prefix. See
+      Reminders: time, priority, alert, repeat, URL, movable list). Date-only
+      reminders render in the all-day lane; timed reminders now render as
+      compact, draggable blocks in the time grid. See
       docs/architecture.md + docs/google-sync-and-testing.md.
       Google Tasks still make sense when working with Gmail.
 - [x] Complete mirror + EKEventStoreChanged push — done: no date

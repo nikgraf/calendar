@@ -3,6 +3,7 @@ import {
   type BirthdayOccurrence,
   birthdayChipLabel,
   buildMonthGrid,
+  calendarTaskKey,
   type EventRecord,
   groupByDate,
   groupEventsByDay,
@@ -117,7 +118,7 @@ export function MonthView({
                       className={`truncate rounded border border-neutral-300 bg-neutral-50 px-1 text-[11px] leading-4 text-neutral-700 ${
                         done ? 'opacity-50' : ''
                       }`}
-                      key={`task:${task.listId}:${task.id}`}
+                      key={calendarTaskKey(task)}
                       style={
                         listColor === undefined
                           ? undefined

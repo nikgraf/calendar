@@ -10,6 +10,7 @@ import {
   usePendingOps,
   useTaskLists,
   useBirthdaysInRangeStable,
+  useTaskReadOnlyLookup,
   useTasksInRangeStable,
 } from '@calendar/app-state';
 import {
@@ -81,7 +82,7 @@ function CalendarScreen() {
   // Stable variant: keeps the previous days' events while a new range loads,
   // so swiping never flashes an empty grid.
   const events = useEventsInRangeStable(range.startUtc, range.endUtc);
-  // Tasks are date-only; the same fetched window expressed as day strings.
+  // Tasks use date bounds even when a reminder also carries a due time.
   const tasks = useTasksInRangeStable(
     utcMsToPlainDate(range.startUtc),
     utcMsToPlainDate(range.endUtc),
@@ -92,6 +93,7 @@ function CalendarScreen() {
   );
   const mutations = useGuardedMutations();
   const taskLists = useTaskLists();
+  const isTaskReadOnly = useTaskReadOnlyLookup();
   const pendingOps = usePendingOps();
   const listColorOf = useListColorLookup();
   const findSlots = useMemo(
@@ -236,6 +238,7 @@ function CalendarScreen() {
             colorOf={colorOf}
             days={days}
             events={events}
+            isTaskReadOnly={isTaskReadOnly}
             listColorOf={listColorOf}
             onBirthdayPress={(birthday) => setViewBirthday(birthday)}
             onCreateSlot={(date, times) => setEditSeed({ initialDate: date, initialTimes: times })}

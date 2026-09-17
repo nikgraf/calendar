@@ -1,6 +1,6 @@
 import { Account, APPLE_REMINDERS_ACCOUNT_ID, TaskListInfo, TaskRecord } from '@calendar/core';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { type App, launchApp } from './harness.ts';
+import { type App, launchApp, readEvents, readTasks, type RemindersFixture } from './harness.ts';
 
 // Seeded straight into SQLite: the harness launches the app with
 // CALENDAR_REMINDERS=off, so no EventKit sync can replace these rows and
@@ -9,6 +9,9 @@ import { type App, launchApp } from './harness.ts';
 // sidebar section — without a real Reminders database.
 const today = new Date();
 const isoToday = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+const tomorrow = new Date(today);
+tomorrow.setDate(tomorrow.getDate() + 1);
+const isoTomorrow = `${tomorrow.getFullYear()}-${String(tomorrow.getMonth() + 1).padStart(2, '0')}-${String(tomorrow.getDate()).padStart(2, '0')}`;
 
 const seed = {
   accounts: [
@@ -54,6 +57,7 @@ const seed = {
       listId: 'ek-list-1',
       priority: 'high',
       provider: 'apple',
+      recurrence: { freq: 'weekly', interval: 1 },
       status: 'needsAction',
       title: 'Call mom',
       updatedAt: 1,
@@ -68,34 +72,176 @@ const seed = {
       title: 'Bin day',
       updatedAt: 1,
     }),
+    new TaskRecord({
+      accountId: APPLE_REMINDERS_ACCOUNT_ID,
+      dueDate: isoToday,
+      dueTime: '11:00',
+      id: 'ek-rem-ro-timed',
+      listId: 'ek-list-ro',
+      provider: 'apple',
+      status: 'needsAction',
+      title: 'Read-only timed',
+      updatedAt: 1,
+    }),
+  ],
+};
+
+const remindersFixture: RemindersFixture = {
+  lists: [
+    {
+      allowsModifications: true,
+      colorHex: '#ff0000',
+      id: 'ek-list-1',
+      title: 'Reminders',
+    },
+    {
+      allowsModifications: false,
+      colorHex: '#0000ff',
+      id: 'ek-list-ro',
+      title: 'Subscribed',
+    },
+  ],
+  reminders: [
+    {
+      alarms: [-15],
+      completed: false,
+      dueDate: isoToday,
+      dueTime: '14:00',
+      id: 'ek-rem-1',
+      listId: 'ek-list-1',
+      priority: 1,
+      recurrence: { freq: 'weekly', interval: 1 },
+      title: 'Call mom',
+      updatedAt: 1,
+    },
+    {
+      alarms: [],
+      completed: false,
+      dueDate: isoToday,
+      id: 'ek-rem-ro',
+      listId: 'ek-list-ro',
+      priority: 0,
+      title: 'Bin day',
+      updatedAt: 1,
+    },
+    {
+      alarms: [],
+      completed: false,
+      dueDate: isoToday,
+      dueTime: '11:00',
+      id: 'ek-rem-ro-timed',
+      listId: 'ek-list-ro',
+      priority: 0,
+      title: 'Read-only timed',
+      updatedAt: 1,
+    },
   ],
 };
 
 describe('Apple Reminders UI', () => {
   let app: App;
   beforeAll(async () => {
-    app = await launchApp(seed);
+    app = await launchApp(seed, { reminders: { fixture: remindersFixture } });
   }, 60_000);
   afterAll(async () => {
     await app.stop();
   });
 
-  it('renders a timed, prioritised reminder chip and lists the Apple account', async () => {
+  it('renders timed reminders in the grid and date-only reminders in the all-day lane', async () => {
     const { cdp } = app;
-    const chip = await cdp.locate('[title="Call mom"]');
+    const chip = await cdp.locate('[data-testid="timed-task-ek-rem-1"]');
     expect(chip).toBeTruthy();
     const label = await cdp.waitFor<string>(
-      `document.querySelector('[title="Call mom"]')?.textContent ?? ''`,
+      `document.querySelector('[data-testid="timed-task-ek-rem-1"]')?.textContent ?? ''`,
     );
-    // Time first, then the Reminders-app priority marker, then the title.
-    expect(label).toContain('14:00 !!! Call mom');
+    expect(label).toContain('!!! Call mom');
+    expect(label).not.toContain('14:00');
+    const tooltip = await cdp.eval<string>(
+      `document.querySelector('[data-testid="timed-task-ek-rem-1"]')?.getAttribute('title') ?? ''`,
+    );
+    expect(tooltip).toMatch(/Call mom · 2:00 PM/i);
+    expect(await cdp.eval(`!!document.querySelector('[title="Call mom"]')`)).toBe(false);
+    expect(await cdp.locate('[title="Bin day"]')).toBeTruthy();
     const sidebar = await cdp.waitFor<string>('document.body.textContent ?? ""');
     expect(sidebar).toContain('Apple Reminders');
   });
 
+  it('completes a timed reminder from its checkbox without opening the editor', async () => {
+    const { cdp } = app;
+    const complete = await cdp.locate('button[aria-label="Complete reminder Call mom"]');
+    await cdp.click(complete.x, complete.y);
+    await expect
+      .poll(async () => (await readTasks(app.userDataDir)).find((task) => task.id === 'ek-rem-1'))
+      .toMatchObject({ status: 'completed' });
+    expect(await cdp.eval(`document.body.textContent.includes('Edit reminder')`)).toBe(false);
+
+    const reopen = await cdp.locate('button[aria-label="Reopen reminder Call mom"]');
+    await cdp.click(reopen.x, reopen.y);
+    await expect
+      .poll(async () => (await readTasks(app.userDataDir)).find((task) => task.id === 'ek-rem-1'))
+      .toMatchObject({ status: 'needsAction' });
+  });
+
+  it.each([
+    { code: 'Enter', key: 'Enter', text: '\r', windowsVirtualKeyCode: 13 },
+    { code: 'Space', key: ' ', text: ' ', windowsVirtualKeyCode: 32 },
+  ])(
+    'completes and reopens a timed reminder with $code on its checkbox',
+    async ({ text, ...key }) => {
+      const { cdp } = app;
+      const eventsBefore = await readEvents(app.userDataDir);
+      try {
+        for (const { action, status } of [
+          { action: 'Complete', status: 'completed' },
+          { action: 'Reopen', status: 'needsAction' },
+        ]) {
+          const selector = `button[aria-label="${action} reminder Call mom"]`;
+          await cdp.locate(selector);
+          await cdp.eval(`document.querySelector(${JSON.stringify(selector)})?.focus()`);
+          expect(
+            await cdp.eval(`document.activeElement?.matches(${JSON.stringify(selector)})`),
+          ).toBe(true);
+          // Include the character generated by the physical key: Chromium needs
+          // Enter's carriage return to perform the button's native activation.
+          await cdp.send('Input.dispatchKeyEvent', { ...key, text, type: 'keyDown' });
+          await cdp.send('Input.dispatchKeyEvent', { ...key, type: 'keyUp' });
+          await expect
+            .poll(async () =>
+              (await readTasks(app.userDataDir)).find((task) => task.id === 'ek-rem-1'),
+            )
+            .toMatchObject({ status });
+          expect(await cdp.eval(`document.body.textContent.includes('Edit reminder')`)).toBe(false);
+          expect(await cdp.eval(`document.body.textContent.includes('New event')`)).toBe(false);
+          expect(await cdp.eval(`!!document.querySelector('[data-testid="slot-selection"]')`)).toBe(
+            false,
+          );
+        }
+        expect(await readEvents(app.userDataDir)).toEqual(eventsBefore);
+      } finally {
+        // Keep the shared fixture ready for the editor and drag tests, even if an
+        // assertion fails between completing and reopening the reminder.
+        if (await cdp.eval(`document.body.textContent.includes('Edit reminder')`)) {
+          await cdp.clickButtonWithText('Cancel');
+        }
+        if (
+          (await readTasks(app.userDataDir)).find((task) => task.id === 'ek-rem-1')?.status ===
+          'completed'
+        ) {
+          const reopen = await cdp.locate('button[aria-label="Reopen reminder Call mom"]');
+          await cdp.click(reopen.x, reopen.y);
+          await expect
+            .poll(async () =>
+              (await readTasks(app.userDataDir)).find((task) => task.id === 'ek-rem-1'),
+            )
+            .toMatchObject({ status: 'needsAction' });
+        }
+      }
+    },
+  );
+
   it('opens the Reminders form (time, priority, movable list) instead of the Google one', async () => {
     const { cdp } = app;
-    const chip = await cdp.locate('[title="Call mom"]');
+    const chip = await cdp.locate('[data-testid="timed-task-ek-rem-1"]');
     // Skip the leading checkbox, like the task-editor test does.
     await cdp.click(chip.x + 40, chip.y);
     try {
@@ -115,6 +261,90 @@ describe('Apple Reminders UI', () => {
     } finally {
       await cdp.clickButtonWithText('Cancel');
     }
+  });
+
+  it('cancels and persists timed-reminder drags without creating an event', async () => {
+    const { cdp } = app;
+    const original = await cdp.locate('[data-testid="timed-task-ek-rem-1"]');
+    await cdp.mouse('mousePressed', original.x, original.y);
+    await cdp.mouse('mouseMoved', original.x, original.y + 48);
+    await cdp.pressEscape();
+    await cdp.mouse('mouseReleased', original.x, original.y + 48);
+    expect((await readTasks(app.userDataDir)).find((task) => task.id === 'ek-rem-1')).toMatchObject(
+      {
+        dueDate: isoToday,
+        dueTime: '14:00',
+      },
+    );
+
+    const beforeCancel = await cdp.locate('[data-testid="timed-task-ek-rem-1"]');
+    const originalTop = await cdp.eval<number>(
+      `document.querySelector('[data-testid="timed-task-ek-rem-1"]')?.getBoundingClientRect().y ?? 0`,
+    );
+    await cdp.eval(`
+      window.__timedReminderPointerId = null;
+      document.querySelector('[data-testid="timed-task-ek-rem-1"]')?.addEventListener(
+        'pointerdown',
+        event => { window.__timedReminderPointerId = event.pointerId; },
+        { once: true },
+      );
+    `);
+    await cdp.mouse('mousePressed', beforeCancel.x, beforeCancel.y);
+    await cdp.mouse('mouseMoved', beforeCancel.x, beforeCancel.y + 48);
+    await expect
+      .poll(() =>
+        cdp.eval<number>(
+          `document.querySelector('[data-testid="timed-task-ek-rem-1"]')?.getBoundingClientRect().y ?? 0`,
+        ),
+      )
+      .not.toBe(originalTop);
+    await cdp.eval(`
+      const target = document.querySelector('[data-testid="timed-task-ek-rem-1"]');
+      target?.dispatchEvent(new PointerEvent('pointercancel', {
+        bubbles: true,
+        clientX: ${beforeCancel.x},
+        clientY: ${beforeCancel.y + 48},
+        pointerId: window.__timedReminderPointerId,
+      }));
+    `);
+    await expect
+      .poll(() =>
+        cdp.eval<number>(
+          `document.querySelector('[data-testid="timed-task-ek-rem-1"]')?.getBoundingClientRect().y ?? 0`,
+        ),
+      )
+      .toBe(originalTop);
+    await cdp.mouse('mouseReleased', beforeCancel.x, beforeCancel.y + 48);
+    expect((await readTasks(app.userDataDir)).find((task) => task.id === 'ek-rem-1')).toMatchObject(
+      {
+        dueDate: isoToday,
+        dueTime: '14:00',
+      },
+    );
+
+    const dayWidth = await cdp.eval<number>(
+      `document.querySelector('[data-testid="timed-task-ek-rem-1"]')?.parentElement?.getBoundingClientRect().width ?? 0`,
+    );
+    expect(dayWidth).toBeGreaterThan(0);
+    const from = await cdp.locate('[data-testid="timed-task-ek-rem-1"]');
+    await cdp.drag(from, { x: from.x + dayWidth, y: from.y + 48 });
+    await expect
+      .poll(async () => (await readTasks(app.userDataDir)).find((task) => task.id === 'ek-rem-1'))
+      .toMatchObject({
+        dueDate: isoTomorrow,
+        dueTime: '15:00',
+        recurrence: { freq: 'weekly', interval: 1 },
+      });
+    expect(await cdp.eval(`document.body.textContent.includes('New event')`)).toBe(false);
+  });
+
+  it('does not drag a timed reminder from a read-only list', async () => {
+    const { cdp } = app;
+    const from = await cdp.locate('[data-testid="timed-task-ek-rem-ro-timed"]');
+    await cdp.drag(from, { x: from.x, y: from.y + 48 });
+    expect(
+      (await readTasks(app.userDataDir)).find((task) => task.id === 'ek-rem-ro-timed'),
+    ).toMatchObject({ dueDate: isoToday, dueTime: '11:00' });
   });
 
   it('a reminder in a read-only list opens as a viewer: note shown, no Save, no Delete', async () => {
@@ -137,5 +367,29 @@ describe('Apple Reminders UI', () => {
     } finally {
       await cdp.clickButtonWithText('Cancel');
     }
+  });
+});
+
+describe('Apple Reminders mutation failures', () => {
+  let app: App;
+  beforeAll(async () => {
+    // No bridge: the seeded row renders, while a drag write fails through the
+    // same guarded mutation path used when EventKit becomes unavailable.
+    app = await launchApp(seed);
+  }, 60_000);
+  afterAll(async () => {
+    await app.stop();
+  });
+
+  it('keeps the stored due time when a drag cannot be saved', async () => {
+    const from = await app.cdp.locate('[data-testid="timed-task-ek-rem-1"]');
+    await app.cdp.drag(from, { x: from.x, y: from.y + 48 });
+    await app.cdp.waitFor(`document.body.textContent.includes('reschedule the reminder')`);
+    expect((await readTasks(app.userDataDir)).find((task) => task.id === 'ek-rem-1')).toMatchObject(
+      {
+        dueDate: isoToday,
+        dueTime: '14:00',
+      },
+    );
   });
 });
