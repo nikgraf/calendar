@@ -103,6 +103,15 @@ module.exports = {
             continueOnError: false,
             hardenedRuntime: true,
             identity: process.env.APPLE_SIGNING_IDENTITY,
+            // TCC checks the responsible app as well as the Swift helper.
+            // Hardened runtime needs these access entitlements even though
+            // this is not a sandboxed Mac App Store build. Leave Electron's
+            // renderer/GPU/framework signing defaults intact.
+            optionsForFile: (filePath) =>
+              filePath.endsWith('/Solunivo.app') ||
+              filePath.endsWith('/Contents/Resources/solunivo-model-helper')
+                ? { entitlements: join(__dirname, 'entitlements.mac.plist') }
+                : {},
           },
         }
       : {}),
