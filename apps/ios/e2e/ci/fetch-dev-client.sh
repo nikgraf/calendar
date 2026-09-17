@@ -1,15 +1,14 @@
 #!/usr/bin/env bash
 # Fetch the EAS development-simulator build for a native fingerprint into
 # build/devclient/, requesting one first when this fingerprint has none.
-# When the cloud build quota is exhausted, compile the same dev client on
-# the macOS runner. The Actions cache keeps either result by fingerprint.
+# CI never compiles the app itself: EAS owns native builds (see
+# docs/distribution.md), and the Actions cache in ci.yml keeps the result
+# so only a changed fingerprint reaches this script at all.
 set -euo pipefail
 
 FP="${1:?native fingerprint hash}"
 OUT="build/devclient"
 PROFILE="development-simulator"
-REQUEST_LOG=$(mktemp)
-trap 'rm -f "$REQUEST_LOG"' EXIT
 
 list() {
   pnpm exec eas build:list --platform ios --build-profile "$PROFILE" \
@@ -35,21 +34,8 @@ if [ -z "$BUILD_ID" ]; then
     done
   else
     echo "No $PROFILE build for fingerprint $FP — requesting one on EAS"
-    if BUILD_JSON=$(pnpm exec eas build --platform ios --profile "$PROFILE" \
-      --non-interactive --json 2>"$REQUEST_LOG"); then
-      cat "$REQUEST_LOG" >&2
-      BUILD_ID=$(printf '%s' "$BUILD_JSON" | jq -r '.[0].id // .id // empty')
-    else
-      cat "$REQUEST_LOG" >&2
-      # Do not hide authentication, network, or cloud compilation failures.
-      grep -Fq 'has used its iOS builds from the Free plan this month' "$REQUEST_LOG" || exit 1
-      echo "::warning::EAS iOS build quota exhausted — building the simulator client on this runner"
-      rm -rf "$OUT"
-      pnpm exec expo run:ios --configuration Debug --device generic --no-bundler --output "$OUT"
-      test -d "$OUT/Solunivo.app" || { echo "::error::local build produced no Solunivo.app"; exit 1; }
-      echo "Dev client ready at $OUT/Solunivo.app"
-      exit 0
-    fi
+    BUILD_ID=$(pnpm exec eas build --platform ios --profile "$PROFILE" \
+      --non-interactive --json | jq -r '.[0].id // .id // empty')
     test -n "$BUILD_ID" || { echo "::error::eas build returned no build id"; exit 1; }
   fi
 fi
