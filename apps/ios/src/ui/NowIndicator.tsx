@@ -5,7 +5,9 @@ import { HOUR_HEIGHT } from './timelineLayout.ts';
 
 /**
  * The red "now" line in today's column. It owns the minute tick, so the
- * clock re-renders this one view instead of every column.
+ * clock re-renders this one view instead of every column. It never takes
+ * touches: a hold on the line belongs to the event (or the empty timeline)
+ * under it.
  */
 export function NowIndicator({
   rangeEndUtc,
@@ -20,7 +22,7 @@ export function NowIndicator({
     return null;
   }
   return (
-    <View style={[styles.line, { top: fraction * 24 * HOUR_HEIGHT }]}>
+    <View pointerEvents="none" style={[styles.line, { top: fraction * 24 * HOUR_HEIGHT }]}>
       <View style={styles.dot} />
     </View>
   );

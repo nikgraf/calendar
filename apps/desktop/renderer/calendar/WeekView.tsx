@@ -6,6 +6,8 @@ import {
   layoutAllDayLane,
   layoutDayColumn,
   PAN_BUFFER_DAYS,
+  type SlotRange,
+  slotTimes,
   type TaskRecord,
   Temporal,
   utcMsToPlainDate,
@@ -17,6 +19,7 @@ import { DayHeaders } from './DayHeaders.tsx';
 import { NowIndicator } from './NowIndicator.tsx';
 import { TimedEventBlock } from './TimedEventBlock.tsx';
 import { useEventDrag } from './useEventDrag.ts';
+import { useSlotDrag } from './useSlotDrag.ts';
 import { useWheelPan } from './useWheelPan.ts';
 
 const HOUR_HEIGHT = 48;
@@ -26,6 +29,15 @@ const HOUR_LINES = `repeating-linear-gradient(to bottom, #f5f5f5 0, #f5f5f5 1px,
 /** The occurrence date keys a birthday: one person recurs every year the strip crosses. */
 const birthdayKey = (birthday: BirthdayOccurrence): string =>
   `birthday:${birthday.record.id}:${birthday.date}`;
+
+const clockLabel = (time: string): string =>
+  Temporal.PlainTime.from(time).toLocaleString('en-US', { hour: 'numeric', minute: '2-digit' });
+
+/** "10:00 AM – 11:30 AM", in the grid's hour-label style. */
+const slotLabel = (slot: SlotRange): string => {
+  const { endTime, startTime } = slotTimes(slot);
+  return `${clockLabel(startTime)} – ${clockLabel(endTime)}`;
+};
 
 const dayIndexOf = (isoDate: string, days: ReadonlyArray<Temporal.PlainDate>): number => {
   const date = Temporal.PlainDate.from(isoDate);
@@ -42,6 +54,7 @@ export function WeekView({
   onEventClick,
   onNavigate,
   onSlotClick,
+  onSlotDrag,
   onTaskClick,
   onToggleTask,
   tasks,
@@ -56,6 +69,11 @@ export function WeekView({
   onEventClick: (event: EventRecord) => void;
   onNavigate: (dayCount: number) => void;
   onSlotClick: (date: Temporal.PlainDate, hour: number) => void;
+  /** A slot drawn by dragging on empty grid space. */
+  onSlotDrag: (
+    date: Temporal.PlainDate,
+    times: { readonly endTime: string; readonly startTime: string },
+  ) => void;
   onTaskClick: (task: TaskRecord) => void;
   onToggleTask: (task: TaskRecord) => void;
   tasks: ReadonlyArray<TaskRecord>;
@@ -85,9 +103,11 @@ export function WeekView({
     onClick: onEventClick,
   });
 
+  const slot = useSlotDrag({ hourHeight: HOUR_HEIGHT, onCreate: onSlotDrag });
+
   useWheelPan({
-    // Mid-drag day jumps would corrupt the drop target.
-    enabled: drag.preview === null,
+    // Mid-drag day jumps would corrupt the drop target (or the drawn slot's day).
+    enabled: drag.preview === null && slot.selection === null,
     firstDay: days[0]!,
     onCommitDays: onNavigate,
     rootRef,
@@ -243,6 +263,10 @@ export function WeekView({
                   range.endUtc,
                 );
                 const isToday = Temporal.PlainDate.compare(day, today) === 0;
+                const drawn =
+                  slot.selection && Temporal.PlainDate.compare(slot.selection.day, day) === 0
+                    ? slot.selection
+                    : null;
 
                 return (
                   <div
@@ -250,7 +274,10 @@ export function WeekView({
                     className="relative border-l border-neutral-100 outline-none focus-visible:bg-blue-50/40"
                     key={day.toString()}
                     onClick={(clickEvent) => {
-                      if (drag.consumeSuppressedClick()) {
+                      // Both flags are consumed, so neither leaks into the next click.
+                      const afterMove = drag.consumeSuppressedClick();
+                      const afterSlot = slot.consumeSuppressedClick();
+                      if (afterMove || afterSlot) {
                         return;
                       }
                       const bounds = clickEvent.currentTarget.getBoundingClientRect();
@@ -263,6 +290,10 @@ export function WeekView({
                         onSlotClick(day, 9);
                       }
                     }}
+                    onPointerCancel={slot.onPointerCancel}
+                    onPointerDown={(pointerEvent) => slot.onPointerDown(day, pointerEvent)}
+                    onPointerMove={slot.onPointerMove}
+                    onPointerUp={slot.onPointerUp}
                     role="button"
                     // One gradient instead of 24 hour-line divs per column.
                     style={{ backgroundImage: HOUR_LINES }}
@@ -286,6 +317,19 @@ export function WeekView({
 
                     {isToday ? (
                       <NowIndicator rangeEndUtc={range.endUtc} rangeStartUtc={range.startUtc} />
+                    ) : null}
+
+                    {drawn ? (
+                      <div
+                        className="pointer-events-none absolute inset-x-1 z-10 overflow-hidden rounded-md border border-blue-500 bg-blue-500/15 px-1 text-[11px] leading-4 font-medium text-blue-700"
+                        data-testid="slot-selection"
+                        style={{
+                          height: ((drawn.endMinute - drawn.startMinute) / 60) * HOUR_HEIGHT,
+                          top: (drawn.startMinute / 60) * HOUR_HEIGHT,
+                        }}
+                      >
+                        {slotLabel(drawn)}
+                      </div>
                     ) : null}
                   </div>
                 );

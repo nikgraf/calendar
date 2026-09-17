@@ -212,6 +212,7 @@ export function CalendarApp() {
             onEventClick={(event) => setEditorSeed({ event, initialDate: focused })}
             onNavigate={panByDays}
             onSlotClick={(date, hour) => setEditorSeed({ initialDate: date, initialHour: hour })}
+            onSlotDrag={(date, times) => setEditorSeed({ initialDate: date, initialTimes: times })}
             onTaskClick={(task) => setEditTask(task)}
             onToggleTask={(task) =>
               void completeTask({

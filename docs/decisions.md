@@ -723,3 +723,34 @@ Performance:
       instead of merged (renamed or removed exports used to survive
       there). An icon change alters the native fingerprint, so it reaches
       testers only through a TestFlight build, never an OTA update.
+
+### Drag to create on the time grid (2026-09-16)
+
+- [x] Draw a new event's slot on the week/day grid — done. Decisions:
+      desktop draws with a press-and-drag on empty grid space, and a plain
+      click below the 4 px threshold keeps opening the clicked hour; iOS
+      keeps a plain drag for scrolling and swiping, so creating needs a
+      300 ms hold on empty space, after which a one-hour slot appears and
+      dragging while holding stretches it (Apple Calendar's hold default,
+      stretched instead of moved, by Nik's choice); the hold slot is
+      anchored where the finger touched down (not where it rests after the
+      hold), only grows — past the hour's end, or a full quarter above the
+      touch-down point — and the release creates exactly the slot shown,
+      because a phone minute is about one point and fingers drift (the
+      review of #69 found holds near a quarter line opening 30-minute or
+      shifted slots); desktop counts only vertical travel toward the drag
+      threshold (a sideways-drifting trackpad click stays the hour click)
+      and drops a drag whose column left the page mid-drag; both snap to 15
+      minutes like the event drag and stay in the column the gesture
+      started in; the quarter the gesture started in always stays part of
+      the slot, so dragging up from 23:05 by an hour opens 22:00–23:15; a
+      slot reaching midnight ends at 23:59, because the editor is same-day
+      and rejects 24:00; a gesture that starts on an event keeps moving it
+      (desktop blocks stop propagation, iOS blocks sit above the column's
+      gesture layer); flipping the form to Task keeps the slot's start as
+      the due time, which only a Reminders list stores. Desktop e2e covers
+      dragging down, dragging up, Escape and "a drag on an event draws
+      nothing"; iOS has no Maestro flow because Maestro cannot hold and
+      then drag, so the check there is the exported bundle workletizing the
+      gesture callbacks plus a manual run. Out of scope: auto-scroll at the
+      grid's edges, slots across days, keyboard slot selection.

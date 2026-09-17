@@ -53,6 +53,7 @@ export function DayTimeline({
   events,
   listColorOf,
   onBirthdayPress,
+  onCreateSlot,
   onEventPress,
   onNavigate,
   onTaskPress,
@@ -67,6 +68,11 @@ export function DayTimeline({
   events: ReadonlyArray<EventRecord>;
   listColorOf: (task: TaskRecord) => string | undefined;
   onBirthdayPress: (birthday: BirthdayOccurrence) => void;
+  /** A slot drawn by holding on empty timeline space. */
+  onCreateSlot: (
+    date: Temporal.PlainDate,
+    times: { readonly endTime: string; readonly startTime: string },
+  ) => void;
   onEventPress: (event: EventRecord) => void;
   /** Swipe committed a page change: +1 forward, -1 back. */
   onNavigate: (direction: 1 | -1) => void;
@@ -251,6 +257,7 @@ export function DayTimeline({
                       isToday={Temporal.PlainDate.compare(day, today) === 0}
                       key={iso}
                       onCommit={commitChange}
+                      onCreateSlot={onCreateSlot}
                       onEventPress={onEventPress}
                       timeZone={timeZone}
                       width={columnWidth}

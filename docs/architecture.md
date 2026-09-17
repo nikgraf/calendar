@@ -271,6 +271,35 @@ Rules that keep the queue correct:
     cancel later overrides.
 - Dragging a recurring instance commits an instance-scope override.
 
+## Time-grid gestures
+
+- **Move and resize an event**: desktop `useEventDrag` (pointer capture,
+  4 px threshold, 15-minute snap, days by column width); iOS
+  `DraggableEventBlock` (250 ms long press, then drag; a bottom handle
+  resizes). Both commit through the op queue.
+- **Draw a new event's slot**: desktop `useSlotDrag` — press on empty
+  grid space and drag up or down, release opens the editor with that start
+  and end; only vertical travel counts toward the 4 px threshold, so a
+  click that drifts sideways stays the hour click, and a drag whose column
+  leaves the page (an arrow key navigates mid-drag) is dropped. iOS
+  `DayColumn` — hold 300 ms on empty space (a one-hour slot appears from the
+  quarter the finger touched down in), drag while holding to grow it,
+  release opens the sheet with exactly the slot shown; a drag that moves
+  before the hold completes scrolls or swipes as before. The hold slot only
+  grows: down past the hour's end, or up once the finger is a quarter above
+  the touch-down point, so the few points a finger drifts (about a minute
+  each) never shorten it or shift it by a quarter. The slot stays in
+  its column and snaps to 15 minutes; the math is shared
+  (`packages/core/src/time/slotSelection.ts`: `minuteOfDay`,
+  `slotFromDrag`, `slotFromHold`, `slotTimes`, worklets so iOS runs them on
+  the UI thread), and the editors take it as `EventEditorSeed.initialTimes`
+  (Task mode keeps the start as a Reminders due time).
+- **A gesture that starts on an event never draws a slot**: desktop blocks
+  stop propagation in their pointerdown, so the column never sees the
+  press; iOS blocks are drawn above the column's gesture layer, so the
+  touch never reaches it. Each hook suppresses the click its own release
+  would otherwise turn into an hour click.
+
 ## Platform seams
 
 - Calendar data crosses process boundaries **only** through the typed rpc

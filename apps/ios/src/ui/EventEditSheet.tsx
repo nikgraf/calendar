@@ -45,7 +45,11 @@ export function EventEditSheet({
   );
   const taskModel = useTaskEditorModel({
     onClose,
-    seed: { existing: task, initialDate: seed.initialDate.toString() },
+    seed: {
+      existing: task,
+      initialDate: seed.initialDate.toString(),
+      initialTime: seed.initialTimes?.startTime,
+    },
     taskLists,
   });
   const eventModel = useEventEditorModel({ calendars, onClose, seed, timeZone });
