@@ -497,6 +497,7 @@ jobs:
           test -x "$APP/Contents/Resources/solunivo-model-helper" \
             || { echo "::error::extracted model helper missing or not executable"; exit 1; }
           codesign --verify --deep --strict --verbose=2 "$APP"
+          bash apps/desktop/scripts/check-privacy-entitlements.sh "$APP"
           spctl --assess --type execute -vv "$APP"
           xcrun stapler validate "$APP"
       # Direct uploads use the filename as the artifact name and avoid an

@@ -96,6 +96,10 @@ useful after adding/rotating secrets.
   `spctl --assess --type execute` (expects "Notarized Developer ID"), and
   `xcrun stapler validate` against the app extracted from the exact ZIP to be
   uploaded. It also checks that the app and helper remain executable.
+- The same step checks the app and Swift helper signatures for the Address Book
+  and Calendars entitlements. Hardened runtime needs these for Contacts
+  and EventKit permission prompts, even without App Sandbox; usage
+  descriptions in Info.plist alone are insufficient.
 - The Developer ID cert lives only in a temporary keychain created from the
   secret for the duration of the job and is deleted in an `always()` step.
 - Notarization adds ~2–10 minutes; the job timeout is 30.

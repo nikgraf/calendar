@@ -165,8 +165,9 @@ design decisions it settled.
       `ContactsBridge.swift` over CNContactStore symlinked into both
       hosts). The backend holds the snapshot in memory (`DeviceContacts`,
       refreshed on CNContactStoreDidChange and when stale) — nothing
-      written to SQLite. No sandbox entitlement needed (hardened runtime
-      only); `NSContactsUsageDescription` in the helper's embedded plist,
+      written to SQLite. Hardened runtime requires the Address Book
+      entitlement on the app and helper even without App Sandbox;
+      `NSContactsUsageDescription` in the helper's embedded plist,
       forge `extendInfo`, and app.json. Permission ask lives inline in the
       combobox (first focus) plus a Settings section; e2e runs with
       `CALENDAR_CONTACTS=off`, real-contacts stays untested in CI.
