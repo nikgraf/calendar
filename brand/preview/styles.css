@@ -182,7 +182,7 @@ main,
   flex: 1;
 }
 .color-rule i:nth-child(1) {
-  background: #f3e6bd;
+  background: var(--brand-ivory);
 }
 .color-rule i:nth-child(2) {
   background: #bdd5ce;
@@ -244,7 +244,7 @@ main,
 }
 .logo-stacked {
   background: #242129;
-  color: #fff5dc;
+  color: var(--brand-ivory);
   grid-row: span 2;
 }
 .logo-stacked .tile-label {
@@ -292,7 +292,7 @@ main,
   transition: transform 120ms ease-out;
 }
 .ivory {
-  background: #fff5dc;
+  background: var(--brand-ivory);
 }
 .mint {
   background: #bdd5ce;
@@ -302,7 +302,7 @@ main,
 }
 .plum {
   background: #6b5473;
-  color: #fff5dc;
+  color: var(--brand-ivory);
 }
 .swatch-name {
   font-size: 25px;

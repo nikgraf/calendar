@@ -724,6 +724,16 @@ Performance:
       there). An icon change alters the native fingerprint, so it reaches
       testers only through a TestFlight build, never an OTA update.
 
+### Soft ivory identity (2026-09-17)
+
+- [x] Adopt the A1 soft ivory study across the brand kit and native icons.
+      Decisions: lighten the paper toward white (`#FFFAEC`), keeping the
+      mint fold, blush backing and original Inter Bold 24 placement and
+      size. The centered, smaller numeral study was not selected. Keep
+      the 115% horizontal lockup ratio. Update the flat icon, reversed
+      wordmarks, proposed dark icon's ivory numerals, palette and guide
+      to the same soft ivory; native dark switching remains a proposal.
+
 ### Drag to create on the time grid (2026-09-16)
 
 - [x] Draw a new event's slot on the week/day grid — done. Decisions:

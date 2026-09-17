@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="322.6896" height="72" viewBox="0 0 322.6896 72" fill="none" role="img" aria-label="Solunivo approved horizontal logo for light backgrounds — 115% icon height"><title>Solunivo approved horizontal logo for light backgrounds — 115% icon height</title><svg xmlns="http://www.w3.org/2000/svg" width="63.0489" height="63.0489" viewBox="0 0 1024 1024" fill="none" role="img" aria-labelledby="solunivo-number-24-title solunivo-number-24-description" x="4" y="4.4819">
   <title id="solunivo-number-24-title">Solunivo — 24 / Inter Bold</title>
-  <desc id="solunivo-number-24-description">Solunivo compact-curl icon with an ivory face, mint fold, continuous blush backing, and 24 set in Inter Bold 700, version 4.1, converted to vector outlines. 24 hours in a day: a clear connection to time, with room for work and life.</desc>
+  <desc id="solunivo-number-24-description">Solunivo compact-curl icon with a soft ivory face, mint fold, continuous blush backing, and 24 set in Inter Bold 700, version 4.1, converted to vector outlines. 24 hours in a day: a clear connection to time, with room for work and life.</desc>
   <defs>
     <linearGradient id="solunivo-number-24-base-color" x1="160" y1="0" x2="890" y2="0" gradientUnits="userSpaceOnUse">
       <stop offset="0" stop-color="#F3D0C5" />
@@ -41,10 +41,10 @@
       <stop offset="1" stop-color="#73968C" />
     </linearGradient>
     <linearGradient id="solunivo-number-24-cream" x1="223" y1="122" x2="727" y2="886" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#FFFAE9" />
-      <stop offset=".43" stop-color="#FFF5DC" />
-      <stop offset=".8" stop-color="#FFF1D0" />
-      <stop offset="1" stop-color="#EFDCB4" />
+      <stop stop-color="#FFFDF5" />
+      <stop offset=".43" stop-color="#FFFAEC" />
+      <stop offset=".8" stop-color="#FFF8E6" />
+      <stop offset="1" stop-color="#F7EDDA" />
     </linearGradient>
     <radialGradient id="solunivo-number-24-cream-glow" cx="0" cy="0" r="1" gradientTransform="translate(386 288) rotate(41) scale(644 572)" gradientUnits="userSpaceOnUse">
       <stop stop-color="#FFFFFF" stop-opacity=".23" />
@@ -57,7 +57,7 @@
     <linearGradient id="solunivo-number-24-rim" x1="246" y1="93" x2="660" y2="895" gradientUnits="userSpaceOnUse">
       <stop stop-color="#FFFFFF" stop-opacity=".95" />
       <stop offset=".45" stop-color="#FFFFFF" stop-opacity=".42" />
-      <stop offset="1" stop-color="#F7E1BA" stop-opacity=".72" />
+      <stop offset="1" stop-color="#FAF0DE" stop-opacity=".72" />
     </linearGradient>
     <linearGradient id="solunivo-number-24-lip" x1="713" y1="675" x2="799" y2="775" gradientUnits="userSpaceOnUse">
       <stop stop-color="#F8FFF5" stop-opacity=".95" />
@@ -96,7 +96,7 @@
       <use href="#solunivo-number-24-cream-face" fill="url(#solunivo-number-24-cream)" />
       <use href="#solunivo-number-24-cream-face" fill="url(#solunivo-number-24-cream-glow)" />
       <g clip-path="url(#solunivo-number-24-cream-clip)">
-        <use href="#solunivo-number-24-cream-face" stroke="#B4A385" stroke-opacity=".28" stroke-width="14" filter="url(#solunivo-number-24-soft-edge)" />
+        <use href="#solunivo-number-24-cream-face" stroke="#B7B0A3" stroke-opacity=".28" stroke-width="14" filter="url(#solunivo-number-24-soft-edge)" />
         <use href="#solunivo-number-24-cream-face" stroke="url(#solunivo-number-24-rim)" stroke-width="6" />
       </g>
     </g>
