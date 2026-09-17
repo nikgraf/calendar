@@ -476,16 +476,35 @@ jobs:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           BUILD_VERSION: ${{ env.SHORT_SHA }}
         run: pnpm --filter @calendar/desktop make
-      - name: Verify signature, notarization, staple
+      - name: Stage the testing ZIP
         run: |
-          APP="apps/desktop/out/Solunivo-darwin-arm64/Solunivo.app"
+          set -euo pipefail
+          shopt -s nullglob
+          archives=(apps/desktop/out/make/zip/darwin/arm64/*.zip)
+          if [ "${#archives[@]}" -ne 1 ]; then
+            echo "::error::expected exactly one macOS ZIP, found ${#archives[@]}"
+            exit 1
+          fi
+          cp "${archives[0]}" "$RUNNER_TEMP/Solunivo-testing-${SHORT_SHA}.zip"
+      - name: Verify the app extracted from the testing ZIP
+        run: |
+          set -euo pipefail
+          EXTRACT_DIR=$(mktemp -d "$RUNNER_TEMP/solunivo-verify.XXXXXX")
+          ditto -x -k "$RUNNER_TEMP/Solunivo-testing-${SHORT_SHA}.zip" "$EXTRACT_DIR"
+          APP="$EXTRACT_DIR/Solunivo.app"
+          test -x "$APP/Contents/MacOS/solunivo" \
+            || { echo "::error::extracted app executable missing or not executable"; exit 1; }
+          test -x "$APP/Contents/Resources/solunivo-model-helper" \
+            || { echo "::error::extracted model helper missing or not executable"; exit 1; }
           codesign --verify --deep --strict --verbose=2 "$APP"
           spctl --assess --type execute -vv "$APP"
           xcrun stapler validate "$APP"
+      # Direct uploads use the filename as the artifact name and avoid an
+      # outer ZIP that Archive Utility would need to expand first.
       - uses: actions/upload-artifact@v7
         with:
-          name: Solunivo-testing-${{ env.SHORT_SHA }}
-          path: apps/desktop/out/make/zip/darwin/arm64/*.zip
+          archive: false
+          path: ${{ runner.temp }}/Solunivo-testing-${{ env.SHORT_SHA }}.zip
           retention-days: 14
           if-no-files-found: error
       - name: Remove temporary keychain
