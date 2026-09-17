@@ -236,6 +236,13 @@ economics as the TestFlight gate. Running `eas build --profile
 development-simulator` locally after a native change means CI finds it
 ready.
 
+If EAS rejects that request because the free iOS build quota is exhausted,
+CI compiles a Debug simulator client on its macOS runner using Expo CLI's
+`run:ios --device generic --no-bundler --output build/devclient` mode. That
+binary enters the same fingerprint cache and runs the full Maestro suite.
+Other EAS errors and local compilation errors still fail the job. This
+fallback applies only to simulator tests; TestFlight publishing uses EAS.
+
 ### Local Xcode build (fallback)
 
 ```sh

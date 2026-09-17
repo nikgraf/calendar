@@ -157,17 +157,15 @@ jobs:
           if-no-files-found: ignore
 
   # Real EventKit on iOS: Maestro drives the dev client on a simulator whose
-  # Reminders grant is pre-seeded (simctl privacy, supported). CI never
-  # compiles the app: the dev client is the EAS development-simulator
-  # build for this commit's native fingerprint, kept in the Actions cache
-  # so a JS-only push downloads nothing (a new fingerprint fetches, or
-  # first requests, one EAS build). Metro on the runner serves the JS.
+  # Reminders grant is pre-seeded (simctl privacy, supported). The dev client
+  # comes from EAS, or a local build when its cloud quota is exhausted, and
+  # is cached by native fingerprint. Metro on the runner serves the JS.
   ios-e2e:
     name: iOS e2e (Maestro, real Reminders)
     needs: [gate, changes]
     if: needs.changes.outputs.code == 'true'
     runs-on: macos-26
-    timeout-minutes: 45
+    timeout-minutes: 60
     env:
       CI: 1
       EXPO_NO_TELEMETRY: 1
@@ -205,7 +203,7 @@ jobs:
           path: apps/ios/build/devclient
           # No restore-keys: a build for another fingerprint is never valid.
           key: ios-devclient-${{ steps.fingerprint.outputs.hash }}
-      - name: Fetch the dev client from EAS
+      - name: Fetch or build the dev client
         if: steps.devclient.outputs.cache-hit != 'true'
         # The only step that needs the token: it used to sit in the job env,
         # next to a `curl | bash` of a third-party installer.
