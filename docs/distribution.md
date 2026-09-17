@@ -70,10 +70,12 @@ bumps (the decision log in `docs/decisions.md` has the detail).
 
 1. Open the repo's **Actions** tab → latest green `CI` run on `main` (requires
    repo read access).
-2. Download the `Solunivo-testing-<sha>` artifact.
-3. Unzip twice (the artifact download wraps the maker zip), then drag
-   `Solunivo.app` to `/Applications`. It's notarized and stapled — no
-   Gatekeeper hoops, first launch just works.
+2. Download the `Solunivo-testing-<sha>.zip` artifact.
+3. Unzip once to get `Solunivo.app`, then drag it to `/Applications`. It's
+   notarized and stapled — no Gatekeeper hoops, first launch just works.
+
+New builds upload the app ZIP directly, without an outer artifact ZIP. Older
+artifacts named `Solunivo-testing-<sha>` still require unzipping twice.
 
 Schema baseline (2026-09-15): the SQLite migrations were collapsed into one
 before the first release, so a build from after that date refuses to open a
@@ -92,7 +94,8 @@ useful after adding/rotating secrets.
   already required e2e on the PR; a flaky e2e rerun shouldn't block builds.
 - The in-CI verification step runs `codesign --verify --deep --strict`,
   `spctl --assess --type execute` (expects "Notarized Developer ID"), and
-  `xcrun stapler validate` before uploading.
+  `xcrun stapler validate` against the app extracted from the exact ZIP to be
+  uploaded. It also checks that the app and helper remain executable.
 - The Developer ID cert lives only in a temporary keychain created from the
   secret for the duration of the job and is deleted in an `always()` step.
 - Notarization adds ~2–10 minutes; the job timeout is 30.
