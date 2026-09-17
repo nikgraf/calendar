@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024" fill="none" role="img" aria-labelledby="solunivo-dark-24-title solunivo-dark-24-description">
   <title id="solunivo-dark-24-title">Solunivo — proposed dark appearance</title>
-  <desc id="solunivo-dark-24-description">Same 24 compact-curl geometry with a plum face, ivory numerals, mint fold and muted blush backing. Proposed dark appearance, pending visual approval.</desc>
+  <desc id="solunivo-dark-24-description">Same 24 compact-curl geometry with a plum face, soft ivory numerals, mint fold and muted blush backing. Proposed dark appearance, pending visual approval.</desc>
   <defs>
     <linearGradient id="solunivo-dark-24-base-color" x1="160" y1="0" x2="890" y2="0" gradientUnits="userSpaceOnUse">
       <stop offset="0" stop-color="#986E84" />
@@ -51,8 +51,8 @@
       <stop offset="1" stop-color="#FFFFFF" stop-opacity="0" />
     </radialGradient>
     <linearGradient id="solunivo-dark-24-date-ink" x1="269" y1="243" x2="544" y2="569" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#FFF6DE" />
-      <stop offset="1" stop-color="#EADCC7" />
+      <stop stop-color="#FFFAEC" />
+      <stop offset="1" stop-color="#F7EDDA" />
     </linearGradient>
     <linearGradient id="solunivo-dark-24-rim" x1="246" y1="93" x2="660" y2="895" gradientUnits="userSpaceOnUse">
       <stop stop-color="#FFFFFF" stop-opacity=".3" />

@@ -1,6 +1,6 @@
 # Solunivo brand assets
 
-The selected identity is **24 in Inter Bold**, with an ivory face, mint curl and continuous blush backing. The horizontal logo uses **Inter SemiBold**, with the icon at **115% of the lettering’s visible height**. The palette and dark icon are proposed foundations; they are not applied to the product interface by this change.
+The selected identity is **A1 soft ivory, with 24 in Inter Bold**: a near-white paper face, mint curl and continuous blush backing. A1 retains the original numeral size and position; the centered studies are not part of the selected identity. The horizontal logo uses **Inter SemiBold**, with the icon at **115% of the lettering’s visible height**. The interface palette and dark icon remain proposed foundations.
 
 ## Where files live
 
@@ -53,7 +53,7 @@ Open `http://127.0.0.1:8765/solunivo-brand-kit/preview/`. The preview loads its 
 | One-color wordmark                | `logos/wordmark-black.svg`, `logos/wordmark-white.svg`            |
 | One-color symbol                  | `icons/solunivo-monochrome.svg`                                   |
 
-Light/dark lockup filenames describe their intended **background**. Both use the selected ivory icon. The plum-faced `icons/solunivo-dark.svg` is a separate proposed app appearance.
+Light/dark lockup filenames describe their intended **background**. Both use the selected soft ivory icon. The plum-faced `icons/solunivo-dark.svg` is a separate proposed app appearance, with soft ivory numerals.
 
 - The horizontal icon-to-lettering height ratio is **1.15:1**. Its gap is **0.33×** the visible wordmark height. Alignment uses visible artwork centers, excluding transparent canvas padding and the shadow.
 - The wordmark uses Inter SemiBold 600 with −0.013 em tracking. The outlined icon numerals use Inter Bold 700. The static 24 represents a complete day, not today’s date.
@@ -73,12 +73,14 @@ The iOS adapter deliberately checks the named SVG shapes and fails if it cannot 
 
 | Brand color | Hex       | Role                                                |
 | ----------- | --------- | --------------------------------------------------- |
-| Ivory       | `#FFF5DC` | Paper and warmth                                    |
+| Soft ivory  | `#FFFAEC` | Near-white paper with a hint of warmth              |
 | Mint        | `#BDD5CE` | Signature fold and supporting accents               |
 | Blush       | `#F3D0C5` | Continuous backing and supporting warmth            |
 | Plum        | `#6B5473` | Identity, brand text and light-theme primary action |
 
-These are flat identity colors. The icon’s other gradient stops describe light and shadow. The calendar uses neutral surfaces so event colors remain readable and user-selectable.
+These are flat identity colors. The existing `ivory` token name is retained for soft ivory; flat icons and reversed wordmarks use `#FFFAEC`. The calendar uses neutral surfaces so event colors remain readable and user-selectable.
+
+The approved A1 paper gradient uses `#FFFDF5` at 0%, `#FFFAEC` at 43%, `#FFF8E6` at 80%, and `#F7EDDA` at 100%. Its edge shade is `#B7B0A3` and the final rim highlight is `#FAF0DE`. These colors lighten the paper toward white while preserving its depth. Keep the mint fold, blush backing, plum numerals and all icon geometry unchanged when applying this treatment.
 
 | UI role                    | Light     | Dark      |
 | -------------------------- | --------- | --------- |
