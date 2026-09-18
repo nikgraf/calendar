@@ -52,6 +52,7 @@ export function SettingsSheet({ onClose, visible }: { onClose: () => void; visib
   const [reminders, setReminders] = useState('checking…');
   const refreshVersion = useRef(0);
   const contactsConnected = contacts === 'authorized' || contacts === 'limited';
+  const hasRemindersAccount = accounts.some((account) => account.provider === 'apple');
 
   const refreshPermissions = useCallback(async () => {
     const version = ++refreshVersion.current;
@@ -212,7 +213,7 @@ export function SettingsSheet({ onClose, visible }: { onClose: () => void; visib
               {connecting === 'google' ? 'Waiting for Google…' : 'Add Google Account'}
             </Text>
           </Pressable>
-          {accounts.some((account) => account.provider === 'apple') ? null : (
+          {!hasRemindersAccount || reminders === 'notDetermined' || reminders === 'writeOnly' ? (
             <Pressable
               disabled={busy}
               onPress={() => void connectDevice('reminders')}
@@ -220,10 +221,12 @@ export function SettingsSheet({ onClose, visible }: { onClose: () => void; visib
               testID="connect-reminders"
             >
               <Text style={styles.addLabel}>
-                {connecting === 'reminders' ? 'Connecting Reminders…' : 'Connect Apple Reminders'}
+                {connecting === 'reminders'
+                  ? 'Connecting Reminders…'
+                  : `${hasRemindersAccount ? 'Reconnect' : 'Connect'} Apple Reminders`}
               </Text>
             </Pressable>
-          )}
+          ) : null}
           {['denied', 'restricted', 'unavailable', 'writeOnly'].includes(reminders) ? (
             <Text style={styles.connectionStatus}>
               Reminders: {remindersStatusCopy(reminders, IOS_SETTINGS_PATH)}

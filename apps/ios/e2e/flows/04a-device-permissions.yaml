@@ -6,7 +6,7 @@ tags:
 ---
 # Run on a test install with no Apple account connected yet (before flow
 # 10). Unlike ordinary launchApp, unset does not silently pre-grant access.
-# Deny both asks so this flow also works when backend startup is failing.
+# Check denial guidance before exercising recovery with a retained account.
 - runFlow: ../common/launch.yaml
 - launchApp:
     permissions:
@@ -32,6 +32,48 @@ tags:
 - assertVisible: 'Contacts: Access denied.*'
 - assertVisible:
     id: 'open-device-settings'
+- tapOn: 'Done'
+
+# A privacy reset keeps the Apple account in our database. Its presence
+# must not hide the action that asks iOS for permission again.
+- launchApp
+- extendedWaitUntil:
+    visible: 'Today'
+    timeout: 60000
+- waitForAnimationToEnd
+- tapOn:
+    id: 'open-settings'
+- tapOn:
+    id: 'connect-reminders'
+- extendedWaitUntil:
+    visible: '^Apple Reminders$'
+    timeout: 20000
+- tapOn: 'Done'
+- launchApp:
+    permissions:
+      reminders: unset
+      contacts: allow
+- extendedWaitUntil:
+    visible: 'Today'
+    timeout: 60000
+- waitForAnimationToEnd
+- tapOn:
+    id: 'open-settings'
+- assertVisible: '^Apple Reminders$'
+- tapOn:
+    id: 'connect-reminders'
+- assertVisible: '.*would like to access your Reminders.*'
+- tapOn: 'Allow'
+- extendedWaitUntil:
+    notVisible:
+      id: 'connect-reminders'
+    timeout: 20000
+- assertVisible: '^Apple Reminders$'
+# Leave no Apple account so flow 10 still exercises the initial connection.
+- tapOn: 'Remove'
+- extendedWaitUntil:
+    notVisible: '^Apple Reminders$'
+    timeout: 20000
 - tapOn: 'Done'
 # Restore the ordinary suite's pre-granted permissions for subsequent flows.
 - launchApp
