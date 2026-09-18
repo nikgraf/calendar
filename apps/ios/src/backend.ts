@@ -1,5 +1,6 @@
 import {
   makeDirectBackendClient,
+  mapToBackendError,
   Temporal,
   TokenSet,
   type BackendClient,
@@ -31,8 +32,8 @@ import { Data, Effect, Layer, ManagedRuntime, Schema } from 'effect';
 import { FetchHttpClient } from 'effect/unstable/http';
 import { signInWithGoogle } from './googleAuth.ts';
 import { iosNotificationSink } from './notifications.ts';
-import { iosContactsLayer } from './contactsClient.ts';
-import { iosRemindersLayer } from './remindersClient.ts';
+import { iosContactsClient, iosContactsLayer } from './contactsClient.ts';
+import { iosRemindersClient, iosRemindersLayer } from './remindersClient.ts';
 
 class OAuthNotConfiguredError extends Data.TaggedError('OAuthNotConfiguredError')<{
   readonly message: string;
@@ -140,9 +141,27 @@ const handlers: BackendHandlers<CommonBackendServices | TokenManager> = {
     }),
 };
 
-export const backendClient: BackendClient = makeDirectBackendClient(handlers, (effect) =>
-  runtime.runPromise(effect),
-);
+const directClient = makeDirectBackendClient(handlers, (effect) => runtime.runPromise(effect));
+
+// Permission belongs to the device, not the database runtime. Ask first so
+// an initialization failure cannot prevent the OS prompt. After a grant,
+// the backend still provisions/syncs the account or refreshes contacts;
+// failures there must reach the UI instead of being mistaken for denial.
+export const backendClient: BackendClient = {
+  ...directClient,
+  connectContacts: () =>
+    mapToBackendError(iosContactsClient.requestAccess()).pipe(
+      Effect.flatMap((granted) =>
+        granted ? directClient.connectContacts(undefined) : Effect.succeed({ granted: false }),
+      ),
+    ),
+  connectReminders: () =>
+    mapToBackendError(iosRemindersClient.requestAccess()).pipe(
+      Effect.flatMap((granted) =>
+        granted ? directClient.connectReminders(undefined) : Effect.succeed({ granted: false }),
+      ),
+    ),
+};
 
 export const startSync = (): void => {
   runtime
