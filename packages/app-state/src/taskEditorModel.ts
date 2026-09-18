@@ -1,6 +1,6 @@
 import type { TaskListInfo, TaskPriority, TaskProvider, TaskRecord } from '@calendar/core';
 import { useState } from 'react';
-import { useBackendMutations } from './hooks.ts';
+import { useBackendMutations, useTaskReadOnlyLookup } from './hooks.ts';
 import { repeatNumberError, useRepeatState } from './repeatState.ts';
 import { offeredTaskLists, taskEditorChanges, type TaskEditorValues } from './taskEditorChanges.ts';
 
@@ -65,6 +65,7 @@ export const useTaskEditorModel = ({
   taskLists: ReadonlyArray<TaskListInfo>;
 }) => {
   const mutations = useBackendMutations();
+  const isTaskReadOnly = useTaskReadOnlyLookup();
   const existing = seed.existing;
   const [title, setTitle] = useState(existing?.title ?? '');
   const [notes, setNotes] = useState(existing?.notes ?? '');
@@ -113,14 +114,7 @@ export const useTaskEditorModel = ({
   const canMoveList = provider === 'apple';
   const recurrenceUnsupported = existing?.recurrenceUnsupported === true;
   /** The task sits in a list EventKit will not let us write: the form is a viewer. */
-  const readOnly =
-    existing !== undefined &&
-    taskLists.some(
-      (list) =>
-        list.readOnly === true &&
-        list.accountId === existing.accountId &&
-        list.id === existing.listId,
-    );
+  const readOnly = existing !== undefined && isTaskReadOnly(existing);
 
   const save = async () => {
     if (readOnly) {

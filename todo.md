@@ -63,8 +63,8 @@ comment` for inline-playable video: 10 MB on Free plans, 100 MB paid
       reminders (`QUICK_ADD_JSON_SCHEMA` is events-only); subtasks/flags/
       tags; location alarms; multiple editable alarms (`alarms` is already
       `number[]` end to end); by-day/positional recurrence editing (round-
-      trips as `{unsupported:true}`); timed reminders in the time grid;
-      creating/deleting Reminders lists (`REMINDERS_METHODS` has neither).
+      trips as `{unsupported:true}`); creating/deleting Reminders lists
+      (`REMINDERS_METHODS` has neither).
 
 ## Tier 3 — AI features
 

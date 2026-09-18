@@ -14,6 +14,7 @@ import {
   useListColorLookup,
   useTaskLists,
   useBirthdaysInRangeStable,
+  useTaskReadOnlyLookup,
   useTasksInRangeStable,
 } from '@calendar/app-state';
 import { useEffect, useMemo, useState } from 'react';
@@ -42,7 +43,7 @@ export function CalendarApp() {
   const [commandBarOpen, setCommandBarOpen] = useState(false);
 
   const events = useEventsInRangeStable(range.startUtc, range.endUtc);
-  // Tasks are date-only; the same fetched window expressed as day strings.
+  // Tasks use date bounds even when a reminder also carries a due time.
   const tasks = useTasksInRangeStable(
     utcMsToPlainDate(range.startUtc),
     utcMsToPlainDate(range.endUtc),
@@ -54,6 +55,7 @@ export function CalendarApp() {
   const { completeTask } = useGuardedMutations();
   const taskLists = useTaskLists();
   const listColorOf = useListColorLookup();
+  const isTaskReadOnly = useTaskReadOnlyLookup();
   const calendars = useCalendars();
   const accounts = useAccounts();
   const colorOf = useMemo(() => makeColorLookup(calendars), [calendars]);
@@ -207,6 +209,7 @@ export function CalendarApp() {
             colorOf={colorOf}
             days={days}
             events={events}
+            isTaskReadOnly={isTaskReadOnly}
             listColorOf={listColorOf}
             onBirthdayClick={(birthday) => setViewBirthday(birthday)}
             onEventClick={(event) => setEditorSeed({ event, initialDate: focused })}

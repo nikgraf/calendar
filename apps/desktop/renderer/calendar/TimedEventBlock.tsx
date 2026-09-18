@@ -1,5 +1,5 @@
 import { type EventRecord, formatClockTime, type PositionedBox } from '@calendar/core';
-import { useSyncExternalStore } from 'react';
+import { useCallback, useSyncExternalStore } from 'react';
 import { chipTextColor } from './colors.ts';
 import type { useEventDrag } from './useEventDrag.ts';
 
@@ -28,8 +28,14 @@ export function TimedEventBlock({
   onEventClick: (event: EventRecord) => void;
   timeZone: string;
 }) {
-  const mine = drag.preview?.eventKey === box.id;
-  const deltas = useSyncExternalStore(drag.subscribeDeltas, () => (mine ? drag.getDeltas() : null));
+  const mine = drag.preview?.itemKey === box.id;
+  const { getDeltas, subscribeDeltas } = drag;
+  const subscribe = useCallback(
+    (listener: () => void) => subscribeDeltas(box.id, listener),
+    [box.id, subscribeDeltas],
+  );
+  const snapshot = useCallback(() => (mine ? getDeltas() : null), [getDeltas, mine]);
+  const deltas = useSyncExternalStore(subscribe, snapshot);
   const dragging = mine && deltas ? { ...drag.preview!, ...deltas } : null;
   const moveMinutes = dragging?.mode === 'move' ? dragging.deltaMinutes : 0;
   const resizeMinutes = dragging?.mode === 'resize' ? dragging.deltaMinutes : 0;
@@ -58,6 +64,7 @@ export function TimedEventBlock({
           onEventClick(event);
         }
       }}
+      onPointerCancel={drag.onPointerCancel}
       onPointerDown={(pointerEvent) => drag.onPointerDown(event, box.id, pointerEvent, 'move')}
       onPointerMove={drag.onPointerMove}
       onPointerUp={drag.onPointerUp}

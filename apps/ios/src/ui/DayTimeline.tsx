@@ -5,6 +5,8 @@ import {
   type EventRecord,
   groupByDate,
   groupEventsByDay,
+  moveTimedTask,
+  partitionCalendarTasks,
   swipeSnapDecision,
   type TaskRecord,
   Temporal,
@@ -51,6 +53,7 @@ export function DayTimeline({
   colorOf,
   days,
   events,
+  isTaskReadOnly,
   listColorOf,
   onBirthdayPress,
   onCreateSlot,
@@ -66,6 +69,7 @@ export function DayTimeline({
   colorOf: (event: EventRecord) => string;
   days: ReadonlyArray<Temporal.PlainDate>;
   events: ReadonlyArray<EventRecord>;
+  isTaskReadOnly: (task: TaskRecord) => boolean;
   listColorOf: (task: TaskRecord) => string | undefined;
   onBirthdayPress: (birthday: BirthdayOccurrence) => void;
   /** A slot drawn by holding on empty timeline space. */
@@ -82,7 +86,7 @@ export function DayTimeline({
   timeZone: string;
 }) {
   const scrollRef = useRef<ScrollView>(null);
-  const { updateEvent, updateRecurring } = useGuardedMutations();
+  const { updateEvent, updateRecurring, updateTask } = useGuardedMutations();
   const [pageWidth, setPageWidth] = useState(0);
   const [expanded, setExpanded] = useState(false);
   const panX = useSharedValue(0);
@@ -110,10 +114,31 @@ export function DayTimeline({
     }
   };
 
+  const commitTaskChange = (task: TaskRecord, deltaMinutes: number) => {
+    const changes = moveTimedTask(task, timeZone, deltaMinutes);
+    if (changes === undefined) {
+      return;
+    }
+    void updateTask({
+      accountId: task.accountId,
+      changes,
+      taskId: task.id,
+      taskListId: task.listId,
+    });
+  };
+
   const strip = useMemo(() => bufferedDays(days[0]!, days.length, buffer), [days, buffer]);
   // One pass over the window's events, not one filter per column.
   const byDay = useMemo(() => groupEventsByDay(events, strip, timeZone), [events, strip, timeZone]);
-  const tasksByDay = useMemo(() => groupByDate(tasks, (task) => task.dueDate), [tasks]);
+  const calendarTasks = useMemo(() => partitionCalendarTasks(tasks), [tasks]);
+  const tasksByDay = useMemo(
+    () => groupByDate(calendarTasks.allDay, (task) => task.dueDate),
+    [calendarTasks],
+  );
+  const timedTasksByDay = useMemo(
+    () => groupByDate(calendarTasks.timed, (task) => task.dueDate),
+    [calendarTasks],
+  );
   const birthdaysByDay = useMemo(
     () => groupByDate(birthdays, (birthday) => birthday.date),
     [birthdays],
@@ -254,11 +279,17 @@ export function DayTimeline({
                       compact={compact}
                       date={day}
                       events={(byDay.get(iso) ?? []).filter((event) => !event.isAllDay)}
+                      isTaskReadOnly={isTaskReadOnly}
                       isToday={Temporal.PlainDate.compare(day, today) === 0}
                       key={iso}
+                      listColorOf={listColorOf}
                       onCommit={commitChange}
+                      onCommitTask={commitTaskChange}
                       onCreateSlot={onCreateSlot}
                       onEventPress={onEventPress}
+                      onTaskPress={onTaskPress}
+                      onToggleTask={onToggleTask}
+                      timedTasks={timedTasksByDay.get(iso) ?? []}
                       timeZone={timeZone}
                       width={columnWidth}
                     />

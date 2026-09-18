@@ -81,6 +81,7 @@ export const useGuardedMutations = () => {
       setTaskListVisible: guardMutation('toggle the task list', mutations.setTaskListVisible),
       updateEvent: guardMutation('reschedule the event', mutations.updateEvent),
       updateRecurring: guardMutation('reschedule the event', mutations.updateRecurring),
+      updateTask: guardMutation('reschedule the reminder', mutations.updateTask),
     }),
     [mutations],
   );

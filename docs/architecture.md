@@ -312,9 +312,14 @@ Rules that keep the queue correct:
   repo (and thus Releases) is private — update.electronjs.org only serves
   public repos.
 - Views: day/week (time grid with wheel-pan on desktop, swipe paging on
-  iOS), month grid, and an all-day lane that also hosts the task rows —
-  timed reminders lead with their time and priority marker
-  (`taskChipLabel`) rather than moving into the time grid.
+  iOS), month grid, and an all-day lane that hosts date-only tasks. Timed
+  Apple Reminders share the day-column overlap layout with events as compact,
+  move-only blocks; their due time is wall-clock data, not an event duration.
+  Each 22-point block reserves 30 visual minutes for overlap packing, with
+  late-night blocks clamped inside their due day. Packing uses the rendered
+  coordinates so reminders and events cannot cover one another on DST days.
+  Dragging snaps to 15 minutes, applies a Temporal wall-clock delta, and
+  updates only changed due fields through the existing task mutation.
 - Birthdays are a third all-day kind, not events: `getBirthdaysInRange`
   merges the Google People cache and the device snapshot
   (`DeviceContacts.birthdays()`, `CNContactBirthdayKey`) by folded name +

@@ -8,6 +8,13 @@ export const formatClockTime = (epochMs: number, timeZone: string): string =>
     .toPlainTime()
     .toLocaleString('en-US', { hour: 'numeric', minute: '2-digit' });
 
+/** "9:05 AM" from a wall-clock `HH:MM` value with no zone conversion. */
+export const formatPlainTime = (time: string): string =>
+  Temporal.PlainTime.from(time).toLocaleString('en-US', {
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+
 /** "Tue 14 · 09:00–10:30" — a find-a-time slot chip, identical on both bars. */
 export const formatSlotLabel = (slot: FreeSlot): string => {
   const day = Temporal.PlainDate.from(slot.date).toLocaleString('en-US', {

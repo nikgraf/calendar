@@ -15,9 +15,9 @@ export const priorityMarker = (priority: TaskRecord['priority']): string => {
 };
 
 /**
- * Chip text for the all-day task lane: a timed reminder leads with its
- * time, a prioritised one with its marker — both platforms render this
- * string so the lane reads the same everywhere.
+ * Task text for all-day lanes and month summaries. Month summaries retain a
+ * timed reminder's time prefix; timed-grid blocks use only the priority and
+ * title because their vertical position already communicates the time.
  */
 export const taskChipLabel = (task: Pick<TaskRecord, 'dueTime' | 'priority' | 'title'>): string => {
   const parts: Array<string> = [];

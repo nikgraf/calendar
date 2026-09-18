@@ -1,5 +1,12 @@
 import { useGuardedMutations } from '@calendar/app-state';
-import { moveEventTimes, resizeEventEnd, snapMinutes, type EventRecord } from '@calendar/core';
+import {
+  moveEventTimes,
+  moveTimedTask,
+  resizeEventEnd,
+  snapMinutes,
+  type EventRecord,
+  type TaskRecord,
+} from '@calendar/core';
 import { useCallback, useEffect, useRef, useState, type RefObject } from 'react';
 
 const DRAG_THRESHOLD_PX = 4;
@@ -8,7 +15,7 @@ export type DragMode = 'move' | 'resize';
 
 /** Which block is being dragged, and how. Changes twice per drag. */
 export interface DragPreview {
-  readonly eventKey: string;
+  readonly itemKey: string;
   readonly mode: DragMode;
 }
 
@@ -22,17 +29,22 @@ const NO_DELTAS: DragDeltas = { deltaDays: 0, deltaMinutes: 0 };
 
 interface DragOrigin {
   active: boolean;
-  readonly event: EventRecord;
-  readonly eventKey: string;
+  readonly itemKey: string;
   readonly mode: DragMode;
   readonly pointerId: number;
   readonly startClientX: number;
   readonly startClientY: number;
+  readonly target:
+    | { readonly event: EventRecord; readonly kind: 'event' }
+    | { readonly kind: 'task'; readonly readOnly: boolean; readonly task: TaskRecord };
 }
 
 // Recurring instances are draggable too — a drag commits a single-instance
 // override, like Fantastical. Only all-day chips stay fixed.
-const isDraggable = (event: EventRecord): boolean => !event.isAllDay && !event.recurrence;
+const isDraggable = (origin: DragOrigin): boolean =>
+  origin.target.kind === 'event'
+    ? !origin.target.event.isAllDay && !origin.target.event.recurrence
+    : !origin.target.readOnly;
 
 /**
  * Pointer-event drag for week/day event blocks: vertical movement shifts
@@ -49,32 +61,46 @@ export const useEventDrag = ({
   dayCount,
   gridRef,
   hourHeight,
-  onClick,
+  onEventClick,
+  onTaskClick,
+  timeZone,
 }: {
   dayCount: number;
   gridRef: RefObject<HTMLDivElement | null>;
   hourHeight: number;
-  onClick: (event: EventRecord) => void;
+  onEventClick: (event: EventRecord) => void;
+  onTaskClick: (task: TaskRecord) => void;
+  timeZone: string;
 }) => {
-  const { updateEvent, updateRecurring } = useGuardedMutations();
+  const { updateEvent, updateRecurring, updateTask } = useGuardedMutations();
   const [preview, setPreview] = useState<DragPreview | null>(null);
   const originRef = useRef<DragOrigin | null>(null);
   const deltasRef = useRef<DragDeltas>(NO_DELTAS);
-  const listenersRef = useRef(new Set<() => void>());
+  const activeItemKeyRef = useRef<string | null>(null);
+  const listenersRef = useRef(new Map<string, Set<() => void>>());
   const publishDeltas = (next: DragDeltas) => {
     const current = deltasRef.current;
     if (current.deltaDays === next.deltaDays && current.deltaMinutes === next.deltaMinutes) {
       return;
     }
     deltasRef.current = next;
-    for (const listener of listenersRef.current) {
+    const activeListeners =
+      activeItemKeyRef.current === null
+        ? undefined
+        : listenersRef.current.get(activeItemKeyRef.current);
+    for (const listener of activeListeners ?? []) {
       listener();
     }
   };
-  const subscribeDeltas = useCallback((listener: () => void) => {
-    listenersRef.current.add(listener);
+  const subscribeDeltas = useCallback((itemKey: string, listener: () => void) => {
+    const listeners = listenersRef.current.get(itemKey) ?? new Set<() => void>();
+    listeners.add(listener);
+    listenersRef.current.set(itemKey, listeners);
     return () => {
-      listenersRef.current.delete(listener);
+      listeners.delete(listener);
+      if (listeners.size === 0) {
+        listenersRef.current.delete(itemKey);
+      }
     };
   }, []);
   const getDeltas = useCallback(() => deltasRef.current, []);
@@ -92,6 +118,7 @@ export const useEventDrag = ({
         originRef.current = null;
         setPreview(null);
         publishDeltas(NO_DELTAS);
+        activeItemKeyRef.current = null;
       }
     };
     window.addEventListener('keydown', onKeyDown);
@@ -111,7 +138,7 @@ export const useEventDrag = ({
 
   const onPointerDown = (
     event: EventRecord,
-    eventKey: string,
+    itemKey: string,
     domEvent: React.PointerEvent,
     mode: DragMode,
   ) => {
@@ -119,17 +146,26 @@ export const useEventDrag = ({
       return;
     }
     domEvent.stopPropagation();
-    if (!isDraggable(event)) {
+    const origin: DragOrigin = {
+      active: false,
+      itemKey,
+      mode,
+      pointerId: domEvent.pointerId,
+      startClientX: domEvent.clientX,
+      startClientY: domEvent.clientY,
+      target: { event, kind: 'event' },
+    };
+    if (!isDraggable(origin)) {
       // Still allow click-through for recurring/all-day events.
       if (mode === 'move') {
         originRef.current = {
           active: false,
-          event,
-          eventKey,
+          itemKey,
           mode,
           pointerId: domEvent.pointerId,
           startClientX: domEvent.clientX,
           startClientY: domEvent.clientY,
+          target: { event, kind: 'event' },
         };
       }
       return;
@@ -137,13 +173,38 @@ export const useEventDrag = ({
     domEvent.currentTarget.setPointerCapture(domEvent.pointerId);
     originRef.current = {
       active: false,
-      event,
-      eventKey,
+      itemKey,
       mode,
       pointerId: domEvent.pointerId,
       startClientX: domEvent.clientX,
       startClientY: domEvent.clientY,
+      target: { event, kind: 'event' },
     };
+  };
+
+  const onTaskPointerDown = (
+    task: TaskRecord,
+    itemKey: string,
+    readOnly: boolean,
+    domEvent: React.PointerEvent,
+  ) => {
+    if (domEvent.button !== 0) {
+      return;
+    }
+    domEvent.stopPropagation();
+    const origin: DragOrigin = {
+      active: false,
+      itemKey,
+      mode: 'move',
+      pointerId: domEvent.pointerId,
+      startClientX: domEvent.clientX,
+      startClientY: domEvent.clientY,
+      target: { kind: 'task', readOnly, task },
+    };
+    // Capture read-only drags too: movement is discarded below, but must not
+    // fall through to the empty-grid slot gesture.
+    domEvent.currentTarget.setPointerCapture(domEvent.pointerId);
+    originRef.current = origin;
   };
 
   const onPointerMove = (domEvent: React.PointerEvent) => {
@@ -151,7 +212,7 @@ export const useEventDrag = ({
     if (!origin || origin.pointerId !== domEvent.pointerId) {
       return;
     }
-    if (!isDraggable(origin.event)) {
+    if (!isDraggable(origin)) {
       return;
     }
     if (
@@ -163,9 +224,24 @@ export const useEventDrag = ({
     }
     if (!origin.active) {
       origin.active = true;
-      setPreview({ eventKey: origin.eventKey, mode: origin.mode });
+      activeItemKeyRef.current = origin.itemKey;
+      setPreview({ itemKey: origin.itemKey, mode: origin.mode });
     }
     publishDeltas(deltasFor(origin, domEvent.clientX, domEvent.clientY));
+  };
+
+  const onPointerCancel = (domEvent: React.PointerEvent) => {
+    const origin = originRef.current;
+    if (!origin || origin.pointerId !== domEvent.pointerId) {
+      return;
+    }
+    if (origin.active) {
+      suppressClickRef.current = true;
+    }
+    originRef.current = null;
+    setPreview(null);
+    publishDeltas(NO_DELTAS);
+    activeItemKeyRef.current = null;
   };
 
   const onPointerUp = (domEvent: React.PointerEvent) => {
@@ -185,8 +261,13 @@ export const useEventDrag = ({
     if (!origin.active && !movedFar) {
       setPreview(null);
       publishDeltas(NO_DELTAS);
+      activeItemKeyRef.current = null;
       if (origin.mode === 'move') {
-        onClick(origin.event);
+        if (origin.target.kind === 'event') {
+          onEventClick(origin.target.event);
+        } else {
+          onTaskClick(origin.target.task);
+        }
       }
       suppressClickRef.current = true;
       return;
@@ -194,30 +275,50 @@ export const useEventDrag = ({
     suppressClickRef.current = true;
     setPreview(null);
     publishDeltas(NO_DELTAS);
+    activeItemKeyRef.current = null;
+
+    if (!isDraggable(origin)) {
+      return;
+    }
 
     const { deltaDays, deltaMinutes } = deltasFor(origin, domEvent.clientX, domEvent.clientY);
     if (deltaMinutes === 0 && deltaDays === 0) {
       return;
     }
+    if (origin.target.kind === 'task') {
+      const task = origin.target.task;
+      const changes = moveTimedTask(task, timeZone, deltaMinutes, deltaDays);
+      if (!changes) {
+        return;
+      }
+      void updateTask({
+        accountId: task.accountId,
+        changes,
+        taskId: task.id,
+        taskListId: task.listId,
+      });
+      return;
+    }
+    const event = origin.target.event;
     const changes =
       origin.mode === 'move'
-        ? moveEventTimes(origin.event, deltaMinutes, deltaDays)
-        : resizeEventEnd(origin.event, deltaMinutes);
-    if (origin.event.recurringEventId) {
+        ? moveEventTimes(event, deltaMinutes, deltaDays)
+        : resizeEventEnd(event, deltaMinutes);
+    if (event.recurringEventId) {
       void updateRecurring({
-        accountId: origin.event.accountId,
-        calendarId: origin.event.calendarId,
+        accountId: event.accountId,
+        calendarId: event.calendarId,
         changes,
-        masterId: origin.event.recurringEventId,
-        originalStartUtc: origin.event.originalStartUtc ?? origin.event.startUtc,
+        masterId: event.recurringEventId,
+        originalStartUtc: event.originalStartUtc ?? event.startUtc,
         scope: 'instance',
       });
     } else {
       void updateEvent({
-        accountId: origin.event.accountId,
-        calendarId: origin.event.calendarId,
+        accountId: event.accountId,
+        calendarId: event.calendarId,
         changes,
-        eventId: origin.event.id,
+        eventId: event.id,
       });
     }
   };
@@ -233,9 +334,11 @@ export const useEventDrag = ({
     consumeSuppressedClick,
     /** Current offsets; pair with `subscribeDeltas` in useSyncExternalStore. */
     getDeltas,
+    onPointerCancel,
     onPointerDown,
     onPointerMove,
     onPointerUp,
+    onTaskPointerDown,
     preview,
     subscribeDeltas,
   };
