@@ -1,4 +1,5 @@
 import {
+  calendarGroups,
   REPEAT_ENDS_OPTIONS,
   REPEAT_OPTIONS,
   RSVP_OPTIONS,
@@ -122,32 +123,31 @@ export function EventEditForm({ model }: { model: ReturnType<typeof useEventEdit
         {readOnly ? null : <Text style={styles.label}>Calendar</Text>}
         {readOnly
           ? null
-          : writable.map((calendar, index) => {
-              const key = `${calendar.accountId}:${calendar.id}`;
-              const selected = key === calendarKey;
-              const group = groupLabel(calendar, emailOf);
-              const previous = writable[index - 1];
-              return (
-                <View key={key}>
-                  {previous && groupLabel(previous, emailOf) === group ? null : (
-                    <Text style={styles.calendarGroup}>{group}</Text>
-                  )}
-                  <Pressable
-                    // Moving takes the whole series: pick "All" to move one.
-                    disabled={Boolean(existing) && !canMoveCalendar}
-                    onPress={() => setCalendarKey(key)}
-                    style={styles.calendarRow}
-                    testID="calendar-option"
-                  >
-                    <View style={[styles.swatch, { backgroundColor: calendar.colorHex }]} />
-                    <Text style={[styles.calendarName, selected && styles.calendarSelected]}>
-                      {calendar.summary}
-                    </Text>
-                    {selected ? <Text style={styles.check}>✓</Text> : null}
-                  </Pressable>
-                </View>
-              );
-            })}
+          : calendarGroups(writable, (calendar) => groupLabel(calendar, emailOf)).map((group) => (
+              <View key={group.label}>
+                <Text style={styles.calendarGroup}>{group.label}</Text>
+                {group.calendars.map((calendar) => {
+                  const key = `${calendar.accountId}:${calendar.id}`;
+                  const selected = key === calendarKey;
+                  return (
+                    <Pressable
+                      // Moving takes the whole series: pick "All" to move one.
+                      disabled={Boolean(existing) && !canMoveCalendar}
+                      key={key}
+                      onPress={() => setCalendarKey(key)}
+                      style={styles.calendarRow}
+                      testID="calendar-option"
+                    >
+                      <View style={[styles.swatch, { backgroundColor: calendar.colorHex }]} />
+                      <Text style={[styles.calendarName, selected && styles.calendarSelected]}>
+                        {calendar.summary}
+                      </Text>
+                      {selected ? <Text style={styles.check}>✓</Text> : null}
+                    </Pressable>
+                  );
+                })}
+              </View>
+            ))}
 
         <View style={styles.switchRow}>
           <Text style={styles.label}>All-day</Text>

@@ -82,6 +82,23 @@ export const seedTimeFields = (seed: EventEditorSeed): { endTime: string; startT
   startTime: seed.prefill?.startTime ?? seed.initialTimes?.startTime ?? pad(seed.initialHour ?? 9),
 });
 
+/**
+ * Calendars bucketed for a picker, in first-appearance order: per Google
+ * account, and per EventKit source for Apple ones (`labelOf` names the
+ * bucket, so each platform keeps its own wording).
+ */
+export const calendarGroups = (
+  calendars: ReadonlyArray<CalendarInfo>,
+  labelOf: (calendar: CalendarInfo) => string,
+): ReadonlyArray<{ readonly calendars: ReadonlyArray<CalendarInfo>; readonly label: string }> => {
+  const groups = new Map<string, Array<CalendarInfo>>();
+  for (const calendar of calendars) {
+    const label = labelOf(calendar);
+    groups.set(label, [...(groups.get(label) ?? []), calendar]);
+  }
+  return [...groups].map(([label, entries]) => ({ calendars: entries, label }));
+};
+
 const isWritable = (calendar: CalendarInfo | undefined): boolean =>
   calendar?.accessRole === 'owner' || calendar?.accessRole === 'writer';
 

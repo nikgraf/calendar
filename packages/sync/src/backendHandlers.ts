@@ -342,11 +342,9 @@ export const commonBackendHandlers: Omit<BackendHandlers<CommonBackendServices>,
   setCalendarVisible: ({ accountId, calendarId, isVisible }) =>
     Effect.gen(function* () {
       const calendarRepo = yield* CalendarRepo;
+      // setVisible invalidates the event views too, which is what repaints
+      // an Apple calendar's read-through events.
       yield* calendarRepo.setVisible(accountId, calendarId, isVisible);
-      if (accountId === APPLE_CALENDAR_ACCOUNT_ID) {
-        // Its events are read from EventKit, not joined from SQLite: repaint.
-        yield* (yield* AppleCalendarEvents).invalidate;
-      }
     }),
 
   setTaskListVisible: ({ accountId, isVisible, taskListId }) =>

@@ -21,6 +21,7 @@ import {
   type GcalEvent,
   GoogleApiError,
   GoogleCalendarClient,
+  NotFoundError,
   type GoogleCalendarClientShape,
   GoogleTasksClient,
 } from '@calendar/google';
@@ -215,6 +216,7 @@ const seed = (events: ReadonlyArray<EventRecord> = []) =>
     yield* (yield* CalendarRepo).upsertMany([
       calendar('acc-1', 'cal-1'),
       calendar('acc-1', 'cal-2'),
+      calendar('acc-1', 'cal-2b'),
       calendar('acc-1', 'cal-readonly'),
       calendar('acc-2', 'cal-3'),
       calendar(APPLE_CALENDAR_ACCOUNT_ID, 'ek-home', 'apple'),
@@ -437,6 +439,141 @@ describe('moveEvent across accounts and providers', () => {
         ]);
         expect(yield* rowAt('acc-1', 'cal-1', 'ser')).toBeNull();
         expect(yield* rowAt('acc-1', 'cal-1', override.id)).toBeNull();
+      }).pipe(Effect.provide(testLayer(recordingGoogle([]), apple)));
+    },
+  );
+
+  it.effect('a move the server cannot find puts the rows back instead of deleting them', () => {
+    const google = recordingGoogle([], {
+      moveEvent: () => Effect.fail(new NotFoundError({ resource: 'event' })),
+    });
+    return Effect.gen(function* () {
+      yield* seed([googleEvent()]);
+      const mutations = yield* EventMutations;
+      yield* mutations.moveEvent(move(['acc-1', 'cal-1', 'evt-a'], ['acc-1', 'cal-2']));
+      yield* mutations.processPendingOps();
+      // A 404 may be the destination calendar: the event is still where the
+      // server last had it, and an incremental pull would never resend it.
+      expect((yield* rowAt('acc-1', 'cal-1', 'evt-a'))?.syncStatus).toBe('synced');
+      expect(yield* rowAt('acc-1', 'cal-2', 'evt-a')).toBeNull();
+      expect(yield* queued).toEqual([]);
+    }).pipe(Effect.provide(testLayer(google, appleFake())));
+  });
+
+  it.effect('a second move queued behind the first keeps the rows at its own target', () => {
+    const calls: Array<Call> = [];
+    let serverUp = false;
+    const google = recordingGoogle(calls, {
+      moveEvent: ({ calendarId, destination, eventId }) =>
+        serverUp
+          ? Effect.sync(() => {
+              calls.push({ calendarId, detail: destination, kind: 'move' });
+              return {
+                end: { dateTime: new Date(base + HOUR).toISOString() },
+                etag: `"moved-${destination}"`,
+                id: eventId,
+                organizer: { email: 'nik@nikgraf.com', self: true },
+                start: { dateTime: new Date(base).toISOString() },
+                status: 'confirmed',
+                summary: 'Planning',
+              };
+            })
+          : Effect.fail(new ApiUnavailableError({ cause: 'down', status: 503 })),
+    });
+    return Effect.gen(function* () {
+      yield* seed([googleEvent()]);
+      const mutations = yield* EventMutations;
+      yield* mutations.moveEvent(move(['acc-1', 'cal-1', 'evt-a'], ['acc-1', 'cal-2']));
+      yield* mutations.moveEvent(move(['acc-1', 'cal-2', 'evt-a'], ['acc-1', 'cal-2b']));
+      serverUp = true;
+      const pending = yield* PendingOpRepo;
+      // Both moves are due now (the failed first one is in backoff).
+      for (const op of yield* pending.listAll()) {
+        yield* pending.markFailed(op.id, 0, 0, '');
+      }
+      yield* mutations.processPendingOps();
+      yield* mutations.processPendingOps();
+      expect(calls.filter((call) => call.kind === 'move').map((call) => call.detail)).toEqual([
+        'cal-2',
+        'cal-2b',
+      ]);
+      expect(yield* rowAt('acc-1', 'cal-2', 'evt-a')).toBeNull();
+      expect((yield* rowAt('acc-1', 'cal-2b', 'evt-a'))?.syncStatus).toBe('synced');
+      expect(yield* queued).toEqual([]);
+    }).pipe(Effect.provide(testLayer(google, appleFake())));
+  });
+
+  it.effect(
+    'Apple → Google moves a meeting the user organizes, never one they were invited to',
+    () => {
+      const apple = makeFakeAppleCalendarClient({
+        calendars: [
+          {
+            allowsModifications: true,
+            id: 'ek-home',
+            isDefault: true,
+            sourceTitle: 'iCloud',
+            sourceType: 'calDAV',
+            title: 'Home',
+            type: 'calDAV',
+          },
+        ],
+        events: [
+          {
+            event: {
+              attendees: [
+                { email: 'ana@example.com', isOrganizer: false, isSelf: false, status: 'accepted' },
+              ],
+              calendarId: 'ek-home',
+              endUtc: base + HOUR,
+              hasRecurrence: false,
+              id: 'ek-mine',
+              isAllDay: false,
+              isDetached: false,
+              organizerEmail: 'me@icloud.com',
+              organizerIsSelf: true,
+              startUtc: base,
+              status: 'confirmed',
+              timeZone: 'UTC',
+              title: 'My meeting',
+              updatedAt: 1,
+            },
+          },
+          {
+            event: {
+              attendees: [
+                { email: 'me@icloud.com', isOrganizer: false, isSelf: true, status: 'accepted' },
+              ],
+              calendarId: 'ek-home',
+              endUtc: base + HOUR,
+              hasRecurrence: false,
+              id: 'ek-theirs',
+              isAllDay: false,
+              isDetached: false,
+              organizerEmail: 'boss@example.com',
+              startUtc: base,
+              status: 'confirmed',
+              timeZone: 'UTC',
+              title: 'Their meeting',
+              updatedAt: 1,
+            },
+          },
+        ],
+      });
+      return Effect.gen(function* () {
+        yield* seed();
+        const mutations = yield* EventMutations;
+        const mine = move([APPLE_CALENDAR_ACCOUNT_ID, 'ek-home', 'ek-mine'], ['acc-1', 'cal-2']);
+        expect((yield* mutations.previewMove(mine)).attendees).toBe(1);
+        yield* mutations.moveEvent(mine);
+        expect(apple.state.series.has('ek-mine')).toBe(false);
+        expect((yield* queued).map((op) => op.payload?.title)).toEqual(['My meeting']);
+        const theirs = yield* Effect.flip(
+          mutations.moveEvent(
+            move([APPLE_CALENDAR_ACCOUNT_ID, 'ek-home', 'ek-theirs'], ['acc-1', 'cal-2']),
+          ),
+        );
+        expect(theirs._tag).toBe('NotOrganizerError');
       }).pipe(Effect.provide(testLayer(recordingGoogle([]), apple)));
     },
   );

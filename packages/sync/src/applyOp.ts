@@ -367,7 +367,9 @@ export const makeApplyOp = (
             defaultTimeZone: local?.startTimeZone ?? 'UTC',
             syncedAt: now,
           });
-          if (synced) {
+          // No row at the destination means the user moved it on again (or
+          // deleted it) while this op waited: those later ops own the rows now.
+          if (synced && local) {
             yield* eventRepo.upsertMany([synced]);
           }
           // Its exceptions moved with it; hand back the ones no queued edit
@@ -518,17 +520,13 @@ export const makeApplyOp = (
               if (op.taskListId) {
                 yield* taskRepo.removeTask(op.accountId, op.taskListId, op.eventId);
               }
-            } else if (op.kind === 'move' && op.targetCalendarId) {
-              // Gone before it could move: drop the rows the move re-keyed.
-              const overrides = yield* eventRepo.listOverrides(
-                op.accountId,
-                op.targetCalendarId,
-                op.eventId,
-              );
-              for (const override of overrides) {
-                yield* eventRepo.deleteEvent(op.accountId, op.targetCalendarId, override.id);
-              }
-              yield* eventRepo.deleteEvent(op.accountId, op.targetCalendarId, op.eventId);
+            } else if (op.kind === 'move') {
+              // 404 is the event *or the destination calendar* — put the
+              // rows back where the server last had them. If the event is
+              // really gone the source's next pull carries the tombstone;
+              // deleting here would hide a still-existing event until a
+              // full resync (incremental pulls never resend it).
+              yield* releaseRow(op);
             } else {
               yield* eventRepo.deleteEvent(op.accountId, op.calendarId, op.eventId);
             }

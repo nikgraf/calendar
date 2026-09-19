@@ -90,6 +90,8 @@ export const AppleEventJson = Schema.Struct({
   location: Schema.optional(Schema.String),
   occurrenceStartUtc: Schema.optional(Schema.Number),
   organizerEmail: Schema.optional(Schema.String),
+  /** The current user organizes the event; the organizer is often not in `attendees`. */
+  organizerIsSelf: Schema.optional(Schema.Boolean),
   /** All-day only. */
   startDate: Schema.optional(Schema.String),
   startUtc: Schema.Number,

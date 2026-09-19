@@ -77,6 +77,29 @@ describe('mapAppleEvent', () => {
     expect(mapAppleEvent(event({ geo }), context).geo).toBeUndefined();
   });
 
+  it('adds the organizer as self when EventKit says the user organizes', () => {
+    const record = mapAppleEvent(
+      event({
+        attendees: [
+          { email: 'ana@example.com', isOrganizer: false, isSelf: false, status: 'accepted' },
+        ],
+        organizerEmail: 'me@icloud.com',
+        organizerIsSelf: true,
+      }),
+      context,
+    );
+    expect(record.attendees?.map((a) => [a.email, a.isOrganizer, a.isSelf])).toEqual([
+      ['ana@example.com', undefined, undefined],
+      ['me@icloud.com', true, true],
+    ]);
+    // Someone else's invitation: no self entry is invented.
+    const invited = mapAppleEvent(
+      event({ attendees: [], organizerEmail: 'boss@example.com' }),
+      context,
+    );
+    expect(invited.attendees).toBeUndefined();
+  });
+
   it('carries read-only attendees and a cancelled status', () => {
     const record = mapAppleEvent(
       event({

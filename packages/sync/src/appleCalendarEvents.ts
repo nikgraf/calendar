@@ -68,8 +68,10 @@ const make: Effect.Effect<
       const events = yield* client.events({ endUtc: rangeEndUtc, startUtc: rangeStartUtc });
       const now = yield* Clock.currentTimeMillis;
       const zone = deviceTimeZone();
+      // Like Google's cancelled events (never stored), a meeting the
+      // organizer cancelled is not drawn.
       return events
-        .filter((event) => visible.has(event.calendarId))
+        .filter((event) => visible.has(event.calendarId) && event.status !== 'cancelled')
         .map((event) => mapAppleEvent(event, { deviceTimeZone: zone, now }));
     }).pipe(
       Effect.catchTag('AppleCalendarAccessError', () =>

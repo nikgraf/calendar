@@ -977,10 +977,13 @@ const make: Effect.Effect<
       for (const op of queued) {
         yield* pendingOpRepo.remove(op.id);
       }
+      // The move itself bumps the event's etag, so a re-queued edit must
+      // not send its pre-move If-Match: it would 412 and be dropped.
       const rekey = (op: PendingOp, createdAt: number) =>
         new PendingOp({
           ...op,
           attempts: 0,
+          baseEtag: undefined,
           calendarId: target.calendarId,
           createdAt,
           id: generateEventId(),
@@ -1058,7 +1061,11 @@ const make: Effect.Effect<
         return yield* transactional(googleServerMove(params));
       }
       if (route.source === 'apple' && route.target === 'apple') {
-        return yield* apple.moveWithin({ calendarId: target.calendarId, id: params.eventId });
+        return yield* apple.moveWithin({
+          accountId,
+          calendarId: target.calendarId,
+          id: params.eventId,
+        });
       }
       // Copy, then delete: a failure between the two leaves a duplicate,
       // never a lost event.

@@ -110,6 +110,8 @@ struct EventDTO: Sendable {
   let location: String?
   let occurrenceStartUtc: Double?
   let organizerEmail: String?
+  /// The current user organizes this event (EKParticipant.isCurrentUser).
+  let organizerIsSelf: Bool
   let startDate: String?
   let startUtc: Double
   let status: String
@@ -135,6 +137,7 @@ struct EventDTO: Sendable {
     if let location { out["location"] = location }
     if let occurrenceStartUtc { out["occurrenceStartUtc"] = occurrenceStartUtc }
     if let organizerEmail { out["organizerEmail"] = organizerEmail }
+    if organizerIsSelf { out["organizerIsSelf"] = true }
     if let startDate { out["startDate"] = startDate }
     if let timeZone { out["timeZone"] = timeZone }
     if let url { out["url"] = url }
@@ -417,7 +420,9 @@ private func eventDTO(_ event: EKEvent) -> EventDTO? {
     endDate: endDay, endUtc: ms(end), geo: geo, hasRecurrence: event.hasRecurrenceRules, id: id,
     isAllDay: isAllDay, isDetached: event.isDetached, location: location,
     occurrenceStartUtc: repeats ? event.occurrenceDate.map(ms) : nil,
-    organizerEmail: email(event.organizer?.url), startDate: startDay, startUtc: ms(start),
+    organizerEmail: email(event.organizer?.url),
+    organizerIsSelf: event.organizer?.isCurrentUser ?? false, startDate: startDay,
+    startUtc: ms(start),
     status: status, timeZone: isAllDay ? nil : event.timeZone?.identifier,
     title: event.title ?? "", updatedAt: ms(event.lastModifiedDate ?? event.creationDate ?? Date()),
     url: event.url?.absoluteString)

@@ -51,6 +51,7 @@ export type AppleEventMutations = Pick<
 > & {
   /** Re-homes a single event or a whole series inside the EventKit store. */
   readonly moveWithin: (params: {
+    readonly accountId: string;
     readonly calendarId: string;
     readonly id: string;
   }) => Effect.Effect<void, AppleCalendarError>;
@@ -133,8 +134,11 @@ export const makeAppleEventMutations = (deps: AppleEventMutationDeps): AppleEven
             }),
       ).pipe(thenInvalidate, flagAccessLoss(accountId)),
 
-    moveWithin: ({ calendarId, id }) =>
-      Effect.asVoid(client.move({ calendarId, id })).pipe(thenInvalidate),
+    moveWithin: ({ accountId, calendarId, id }) =>
+      Effect.asVoid(client.move({ calendarId, id })).pipe(
+        thenInvalidate,
+        flagAccessLoss(accountId),
+      ),
 
     respondToEvent: () =>
       Effect.fail(new UnsupportedForProviderError({ field: 'rsvp', provider: 'apple' })),

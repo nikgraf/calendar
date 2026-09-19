@@ -29,7 +29,9 @@ export const mapAppleCalendar = (
     isPrimary: calendar.isDefault,
     isVisible: context.previousVisibility ?? true,
     provider: 'apple',
-    sourceTitle: calendar.sourceTitle,
+    // The bridge sends '' for a source without a title: absent, so UIs
+    // can fall back with `??`.
+    sourceTitle: calendar.sourceTitle || undefined,
     summary: calendar.title === '' ? '(untitled)' : calendar.title,
     timeZone: context.deviceTimeZone,
   });
@@ -53,21 +55,36 @@ export const mapAppleEvent = (
 ): EventRecord => {
   const url = event.url?.trim();
   const isOccurrence = event.occurrenceStartUtc !== undefined;
+  const attendees = (event.attendees ?? []).map(
+    (attendee) =>
+      new Attendee({
+        ...(attendee.name === undefined ? {} : { displayName: attendee.name }),
+        email: attendee.email,
+        ...(attendee.isOrganizer ? { isOrganizer: true } : {}),
+        ...(attendee.isSelf ? { isSelf: true } : {}),
+        responseStatus: attendee.status,
+      }),
+  );
+  // EventKit usually leaves the organizer out of `attendees`; the
+  // synthetic account has no email to match against, so the organizer's
+  // own entry is what says "this is ours" (moves need that).
+  if (
+    event.organizerIsSelf &&
+    event.organizerEmail &&
+    !attendees.some((attendee) => attendee.isOrganizer && attendee.isSelf)
+  ) {
+    attendees.push(
+      new Attendee({
+        email: event.organizerEmail,
+        isOrganizer: true,
+        isSelf: true,
+        responseStatus: 'accepted',
+      }),
+    );
+  }
   const record = new EventRecord({
     accountId: APPLE_CALENDAR_ACCOUNT_ID,
-    attendees:
-      event.attendees && event.attendees.length > 0
-        ? event.attendees.map(
-            (attendee) =>
-              new Attendee({
-                ...(attendee.name === undefined ? {} : { displayName: attendee.name }),
-                email: attendee.email,
-                ...(attendee.isOrganizer ? { isOrganizer: true } : {}),
-                ...(attendee.isSelf ? { isSelf: true } : {}),
-                responseStatus: attendee.status,
-              }),
-          )
-        : undefined,
+    attendees: attendees.length > 0 ? attendees : undefined,
     calendarId: event.calendarId,
     description: event.description,
     endDate: event.isAllDay ? event.endDate : undefined,

@@ -775,10 +775,8 @@ const make: Effect.Effect<
         );
       yield* calendarRepo.upsertMany(kept);
       const keptIds = new Set(kept.map((calendar) => calendar.id));
-      yield* calendarRepo.purge(
-        account.id,
-        [...previous.keys()].filter((id) => !keptIds.has(id)),
-      );
+      const gone = [...previous.keys()].filter((id) => !keptIds.has(id));
+      yield* calendarRepo.purge(account.id, gone);
       yield* syncStateRepo.set(
         new SyncState({
           accountId: account.id,
@@ -789,8 +787,12 @@ const make: Effect.Effect<
           syncToken: null,
         }),
       );
-      // A calendar that just appeared must show its events.
-      yield* appleEvents.invalidate;
+      // A calendar that appeared or went must repaint the events it
+      // contributes; an unchanged set must not, or every 90 s pass would
+      // re-read EventKit for every open view.
+      if (gone.length > 0 || kept.some((calendar) => !previous.has(calendar.id))) {
+        yield* appleEvents.invalidate;
+      }
     }).pipe(
       Effect.catchTag('AppleCalendarAccessError', () =>
         Effect.orDie(accountRepo.setStatus(account.id, 'reauth_required')),

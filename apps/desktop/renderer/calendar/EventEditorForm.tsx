@@ -1,4 +1,5 @@
 import {
+  calendarGroups,
   REPEAT_ENDS_OPTIONS,
   REPEAT_OPTIONS,
   RSVP_OPTIONS,
@@ -19,20 +20,10 @@ import { LocationMap } from './LocationMap.tsx';
  * Repeat/Apply-to labels and the Delete/Cancel/Save buttons.
  */
 /** Calendars grouped the way the sidebar shows them: per account, Apple per source. */
-const calendarGroups = (
-  calendars: ReadonlyArray<CalendarInfo>,
-  accountLabel: (accountId: string) => string,
-): ReadonlyArray<{ readonly calendars: ReadonlyArray<CalendarInfo>; readonly label: string }> => {
-  const groups = new Map<string, Array<CalendarInfo>>();
-  for (const calendar of calendars) {
-    const label =
-      calendar.provider === 'apple'
-        ? `Apple Calendar — ${calendar.sourceTitle ?? 'On this Mac'}`
-        : accountLabel(calendar.accountId);
-    groups.set(label, [...(groups.get(label) ?? []), calendar]);
-  }
-  return [...groups].map(([label, entries]) => ({ calendars: entries, label }));
-};
+const groupLabel = (calendar: CalendarInfo, accountLabel: (accountId: string) => string): string =>
+  calendar.provider === 'apple'
+    ? `Apple Calendar — ${calendar.sourceTitle ?? 'On this Mac'}`
+    : accountLabel(calendar.accountId);
 
 export function EventEditorForm({
   model,
@@ -146,18 +137,20 @@ export function EventEditorForm({
             }
             value={calendarKey}
           >
-            {calendarGroups(writable, accountLabel).map((group) => (
-              <optgroup key={group.label} label={group.label}>
-                {group.calendars.map((calendar) => (
-                  <option
-                    key={`${calendar.accountId}:${calendar.id}`}
-                    value={`${calendar.accountId}:${calendar.id}`}
-                  >
-                    {calendar.summary}
-                  </option>
-                ))}
-              </optgroup>
-            ))}
+            {calendarGroups(writable, (calendar) => groupLabel(calendar, accountLabel)).map(
+              (group) => (
+                <optgroup key={group.label} label={group.label}>
+                  {group.calendars.map((calendar) => (
+                    <option
+                      key={`${calendar.accountId}:${calendar.id}`}
+                      value={`${calendar.accountId}:${calendar.id}`}
+                    >
+                      {calendar.summary}
+                    </option>
+                  ))}
+                </optgroup>
+              ),
+            )}
           </select>
         )}
         <label className="flex items-center gap-2 text-sm">
