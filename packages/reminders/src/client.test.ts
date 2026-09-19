@@ -53,4 +53,20 @@ describe('makeRemindersClient error mapping', () => {
       );
     }
   });
+
+  it('trusts an answered prompt over a stale notDetermined status', async () => {
+    let status = 'notDetermined';
+    const client = makeRemindersClient((method) =>
+      Promise.resolve(
+        method === 'reminders.requestAccess' ? { granted: true } : { authorization: status },
+      ),
+    );
+    expect(await Effect.runPromise(client.status())).toBe('notDetermined');
+    expect(await Effect.runPromise(client.requestAccess())).toBe(true);
+    // iOS has not written the grant yet: the answer we just got wins.
+    expect(await Effect.runPromise(client.status())).toBe('fullAccess');
+    // A definite system answer is never overridden.
+    status = 'denied';
+    expect(await Effect.runPromise(client.status())).toBe('denied');
+  });
 });

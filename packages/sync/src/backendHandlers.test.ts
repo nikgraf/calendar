@@ -14,8 +14,7 @@ import {
 } from '@calendar/reminders';
 import { SqliteClient } from '@effect/sql-sqlite-node';
 import { expect, it } from '@effect/vitest';
-import { Effect, Fiber, Layer } from 'effect';
-import { TestClock } from 'effect/testing';
+import { Effect, Layer } from 'effect';
 import { layer as reactivityLayer } from 'effect/unstable/reactivity/Reactivity';
 import { describe, vi } from 'vitest';
 import { commonBackendHandlers } from './backendHandlers.ts';
@@ -80,24 +79,6 @@ describe('connectReminders', () => {
           tasksEnabled: true,
         },
       ]);
-      expect(syncAll).toHaveBeenCalledOnce();
-    }).pipe(Effect.provide(layer));
-  });
-
-  it.effect('waits for the grant to be visible before creating the account and syncing', () => {
-    const { client, state } = makeFakeRemindersClient({ authorization: 'notDetermined' });
-    // The prompt was answered, but the status still reads notDetermined.
-    const requestAccess = vi.fn(() => Effect.succeed(true));
-    const { layer, syncAll } = remindersSetup({ ...client, requestAccess });
-    return Effect.gen(function* () {
-      const fiber = yield* Effect.forkChild(connectReminders);
-      yield* TestClock.adjust('3 seconds');
-      expect(yield* (yield* AccountRepo).list()).toEqual([]);
-      expect(syncAll).not.toHaveBeenCalled();
-      state.authorization = 'fullAccess';
-      yield* TestClock.adjust('1 second');
-      expect(yield* Fiber.join(fiber)).toEqual({ granted: true });
-      expect(yield* (yield* AccountRepo).list()).toMatchObject([{ status: 'ok' }]);
       expect(syncAll).toHaveBeenCalledOnce();
     }).pipe(Effect.provide(layer));
   });

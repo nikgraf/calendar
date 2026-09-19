@@ -124,6 +124,15 @@ export const makeRemindersClient = (
       ),
     );
 
+  // iOS records a prompt's answer a moment after the alert closes; the
+  // status read right after can still say notDetermined (20 s+ on a CI
+  // runner), which read as "the prompt never opened" and flagged a freshly
+  // granted account. Once a prompt was answered in this process, that
+  // answer is the truth until the system reports something definite.
+  let answered: RemindersAuthorization | undefined;
+  const settled = (status: RemindersAuthorization): RemindersAuthorization =>
+    status === 'notDetermined' && answered !== undefined ? answered : status;
+
   return {
     changes,
     create: ({ listId, reminder }) =>
@@ -134,7 +143,10 @@ export const makeRemindersClient = (
     delete: ({ id }) => Effect.asVoid(call(REMINDERS_METHODS.delete, Schema.Unknown, { id })),
     listLists: () => Effect.map(call(REMINDERS_METHODS.listLists, ListListsResult), (r) => r.lists),
     requestAccess: () =>
-      Effect.map(call(REMINDERS_METHODS.requestAccess, RequestAccessResult), (r) => r.granted),
+      Effect.map(call(REMINDERS_METHODS.requestAccess, RequestAccessResult), (r) => {
+        answered = r.granted ? 'fullAccess' : 'denied';
+        return r.granted;
+      }),
     setCompleted: ({ completed, id }) =>
       Effect.map(
         call(REMINDERS_METHODS.setCompleted, ReminderResult, { completed, id }),
@@ -146,7 +158,8 @@ export const makeRemindersClient = (
         SnapshotResult,
         changedSince === undefined ? {} : { changedSince },
       ),
-    status: () => Effect.map(call(REMINDERS_METHODS.status, StatusResult), (r) => r.authorization),
+    status: () =>
+      Effect.map(call(REMINDERS_METHODS.status, StatusResult), (r) => settled(r.authorization)),
     update: ({ changes, id }) =>
       Effect.map(
         call(REMINDERS_METHODS.update, ReminderResult, { changes, id }),

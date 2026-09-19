@@ -131,6 +131,12 @@ latest build.
   job in another workflow file, so each workflow calls it; the check
   reports as "Gate / Lint, typecheck, unit tests".
 
+The native bridges (`packages/*/swift`) reach the app through symlinks in
+`modules/*/ios`, which the fingerprint hashes without following: a Swift
+change alone left the runtime version unchanged, so CI tested and
+TestFlight shipped the previous binary (caught 2026-09-19, PR #78).
+`apps/ios/fingerprint.config.cjs` adds those directories as extra sources.
+
 Native dependencies change the fingerprint: adding `expo-notifications`
 (birthday reminders, 2026-09-12) meant a new dev client for CI and a
 TestFlight build before OTA updates resumed for testers. Its config plugin

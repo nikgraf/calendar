@@ -147,6 +147,15 @@ export const makeAppleCalendarClient = (
       ),
     );
 
+  // iOS records a prompt's answer a moment after the alert closes; the
+  // status read right after can still say notDetermined (20 s+ on a CI
+  // runner), which read as "the prompt never opened" and flagged a freshly
+  // granted account. Once a prompt was answered in this process, that
+  // answer is the truth until the system reports something definite.
+  let answered: CalendarAuthorization | undefined;
+  const settled = (status: CalendarAuthorization): CalendarAuthorization =>
+    status === 'notDetermined' && answered !== undefined ? answered : status;
+
   return {
     changes,
     create: ({ calendarId, event }) =>
@@ -174,14 +183,19 @@ export const makeAppleCalendarClient = (
         (r) => r.event,
       ),
     requestAccess: () =>
-      Effect.map(call(APPLE_CALENDAR_METHODS.requestAccess, RequestAccessResult), (r) => r.granted),
+      Effect.map(call(APPLE_CALENDAR_METHODS.requestAccess, RequestAccessResult), (r) => {
+        answered = r.granted ? 'fullAccess' : 'denied';
+        return r.granted;
+      }),
     series: ({ id }) => call(APPLE_CALENDAR_METHODS.series, SeriesResult, { id }),
     setColor: ({ calendarId, colorHex }) =>
       Effect.asVoid(
         call(APPLE_CALENDAR_METHODS.setColor, Schema.Unknown, { calendarId, colorHex }),
       ),
     status: () =>
-      Effect.map(call(APPLE_CALENDAR_METHODS.status, StatusResult), (r) => r.authorization),
+      Effect.map(call(APPLE_CALENDAR_METHODS.status, StatusResult), (r) =>
+        settled(r.authorization),
+      ),
     update: ({ changes, ref, span }) =>
       Effect.map(
         call(APPLE_CALENDAR_METHODS.update, EventResult, { ...refParams(ref), changes, span }),

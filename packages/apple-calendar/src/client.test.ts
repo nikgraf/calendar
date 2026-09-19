@@ -45,4 +45,16 @@ describe('makeAppleCalendarClient', () => {
     const error = await Effect.runPromise(Effect.flip(client.events({ endUtc: 1, startUtc: 0 })));
     expect(error._tag).toBe('AppleCalendarRequestError');
   });
+
+  it('trusts an answered prompt over a stale notDetermined status', async () => {
+    const client = makeAppleCalendarClient((method) =>
+      Promise.resolve(
+        method === 'calendar.requestAccess'
+          ? { granted: false }
+          : { authorization: 'notDetermined' },
+      ),
+    );
+    expect(await Effect.runPromise(client.requestAccess())).toBe(false);
+    expect(await Effect.runPromise(client.status())).toBe('denied');
+  });
 });
