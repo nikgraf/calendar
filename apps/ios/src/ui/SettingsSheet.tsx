@@ -37,8 +37,12 @@ import { palette } from './theme.ts';
 import { MutationNoticeToast } from './Toast.tsx';
 
 const IOS_SETTINGS_PATH = 'Settings › Privacy & Security';
-/** Re-reads of a permission status after a prompt was answered (~2 s in all). */
-const STATUS_SETTLE_TRIES = 10;
+/**
+ * Re-reads of a permission status after a prompt was answered (~10 s in
+ * all): iOS records the answer a moment after the alert closes, and a CI
+ * runner has shown several seconds of "notDetermined" after "Allow".
+ */
+const STATUS_SETTLE_TRIES = 40;
 const STATUS_SETTLE_MS = 200;
 type Connection = 'calendar' | 'contacts' | 'google' | 'reminders';
 

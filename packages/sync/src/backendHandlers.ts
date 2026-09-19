@@ -46,6 +46,25 @@ import { EventMutations } from './mutations.ts';
 /** Suggestions shown at once; the repo is asked for a few times that before ranking. */
 const DEFAULT_SEARCH_LIMIT = 8;
 
+/**
+ * iOS records a prompt's answer a moment after the alert closes: a status
+ * read right after a grant can still say notDetermined (20 s on a slow CI
+ * runner), and a sync pass started on that reading would flag the account
+ * it just created as "access off". Wait for the grant to be visible.
+ */
+const GRANT_SETTLE_TRIES = 120;
+const GRANT_SETTLE_STEP = '250 millis';
+const awaitGrant = <E>(status: Effect.Effect<string, E>): Effect.Effect<void> =>
+  Effect.gen(function* () {
+    for (let attempt = 0; attempt < GRANT_SETTLE_TRIES; attempt += 1) {
+      const current = yield* status.pipe(Effect.orElseSucceed(() => 'unavailable'));
+      if (current !== 'notDetermined') {
+        return;
+      }
+      yield* Effect.sleep(GRANT_SETTLE_STEP);
+    }
+  });
+
 export type CommonBackendServices =
   | AccountRepo
   | AppleCalendarClient
@@ -109,6 +128,7 @@ export const commonBackendHandlers: Omit<BackendHandlers<CommonBackendServices>,
       if (!granted) {
         return { granted: false };
       }
+      yield* awaitGrant(client.status());
       const accountRepo = yield* AccountRepo;
       const existing = yield* accountRepo.get(APPLE_CALENDAR_ACCOUNT_ID);
       yield* accountRepo.upsert(
@@ -140,6 +160,7 @@ export const commonBackendHandlers: Omit<BackendHandlers<CommonBackendServices>,
       if (!granted) {
         return { granted: false };
       }
+      yield* awaitGrant(remindersClient.status());
       const accountRepo = yield* AccountRepo;
       const existing = (yield* accountRepo.list()).find(
         (account) => account.id === APPLE_REMINDERS_ACCOUNT_ID,
