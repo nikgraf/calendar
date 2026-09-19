@@ -8,8 +8,7 @@ tags:
 # The flow is a no-op on a dev client built before the module existed
 # (the connect row still shows, but connecting reports "unavailable").
 - runFlow: ../common/launch.yaml
-- tapOn:
-    id: 'open-settings'
+- runFlow: ../common/open-settings.yaml
 - runFlow:
     when:
       visible:
@@ -29,13 +28,15 @@ tags:
       # Apple calendars are grouped under their EventKit source.
       - assertVisible: '(?i)apple calendar · .*'
       - tapOn: 'Cancel'
-      # Leave no Apple Calendar account behind for the other flows.
-      - tapOn:
-          id: 'open-settings'
+      # Leave no Apple Calendar account behind: the other flows must not
+      # find its calendars (flow 07 would start writing to it).
+      - runFlow: ../common/open-settings.yaml
       - scrollUntilVisible:
-          element: '^Apple Calendar$'
+          element:
+            id: 'remove-account-apple-calendar'
       - tapOn:
-          text: 'Remove'
-          below: '^Apple Calendar$'
-          optional: true
+          id: 'remove-account-apple-calendar'
+      - extendedWaitUntil:
+          notVisible: '^Apple Calendar$'
+          timeout: 20000
       - tapOn: 'Done'

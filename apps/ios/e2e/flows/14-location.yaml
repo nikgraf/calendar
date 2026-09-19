@@ -6,11 +6,7 @@ name: The location field suggests places and maps a picked one
 # exercises the field itself.
 ---
 - runFlow: ../common/launch.yaml
-- tapOn:
-    id: 'add-event'
-- assertVisible: 'New Event'
-- waitForAnimationToEnd:
-    timeout: 5000
+- runFlow: ../common/open-new-event.yaml
 # The auto-focused title's keyboard covers the lower fields and Maestro's
 # visibility check ignores it: dismiss it on a plain label first.
 - tapOn: 'LOCATION'

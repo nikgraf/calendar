@@ -1,0 +1,22 @@
+appId: com.solunivo.app
+name: Open the Settings sheet from the header gear (shared)
+---
+# Same failure as the "+" in open-new-event.yaml: on a slow runner a tap
+# taken right after launch reports COMPLETED and no sheet follows (CI runs
+# 35462596043 and 35457704053 sat on the day view for 20 s). Re-tap while
+# the sheet is missing, the way a person would.
+- repeat:
+    times: 3
+    while:
+      notVisible: '^Accounts$'
+    commands:
+      - tapOn:
+          id: 'open-settings'
+      - extendedWaitUntil:
+          visible: '^Accounts$'
+          timeout: 5000
+          optional: true
+- assertVisible: '^Accounts$'
+# The sheet slides in; a tap taken mid-animation misses.
+- waitForAnimationToEnd:
+    timeout: 5000

@@ -12,8 +12,7 @@ tags:
 
 # Connect: the grant is already answered, so no prompt appears and the
 # synthetic Apple account shows up in the accounts list.
-- tapOn:
-    id: 'open-settings'
+- runFlow: ../common/open-settings.yaml
 - assertVisible: 'Accounts'
 - tapOn:
     id: 'connect-reminders'
@@ -27,15 +26,8 @@ tags:
 # first pass after connecting has to land first, hence the wait. Rows are
 # found by id: their label is title + swatch + check mark, which a
 # whole-string text selector never matches.
-- tapOn:
-    id: 'add-event'
-- assertVisible: 'New Event'
-# The sheet slides in; on a slow runner a tap taken mid-animation misses.
-- waitForAnimationToEnd:
-    timeout: 5000
-- tapOn:
-    id: 'mode-task'
-- assertVisible: 'New Task'
+- runFlow: ../common/open-new-event.yaml
+- runFlow: ../common/switch-to-task.yaml
 - extendedWaitUntil:
     visible:
       id: 'task-list-option'

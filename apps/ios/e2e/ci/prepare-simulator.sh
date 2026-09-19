@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Boot the newest available iPhone simulator, install the dev client and
-# pre-grant Reminders so EventKit's prompt never appears (simctl privacy
+# pre-grant Reminders, Contacts and Calendars so no prompt appears (simctl privacy
 # is the supported way to answer TCC on a simulator). Exports
 # SIMULATOR_UDID for the Maestro step.
 set -euo pipefail
@@ -28,6 +28,7 @@ xcrun simctl bootstatus "$UDID" -b
 xcrun simctl install "$UDID" "$APP"
 xcrun simctl privacy "$UDID" grant reminders com.solunivo.app
 xcrun simctl privacy "$UDID" grant contacts com.solunivo.app
+xcrun simctl privacy "$UDID" grant calendar com.solunivo.app
 # expo-dev-menu preferences (UserDefaults keys from DevMenuPreferences.swift):
 # no floating "Dev tools" button — it sits exactly over the app's own
 # settings gear and steals the tap — and no first-launch onboarding or

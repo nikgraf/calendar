@@ -72,7 +72,10 @@ export function AccountCard({
             )
           ) : null}
         </View>
-        <Pressable onPress={() => void guarded.removeAccount({ accountId: account.id })}>
+        <Pressable
+          onPress={() => void guarded.removeAccount({ accountId: account.id })}
+          testID={`remove-account-${account.id}`}
+        >
           <Text style={styles.remove}>Remove</Text>
         </Pressable>
       </View>

@@ -9,15 +9,8 @@ tags:
 - runFlow: ../common/launch.yaml
 - tapOn: 'Today'
 - tapOn: 'Day'
-- tapOn:
-    id: 'add-event'
-- assertVisible: 'New Event'
-# The sheet slides in; on a slow runner a tap taken mid-animation misses.
-- waitForAnimationToEnd:
-    timeout: 5000
-- tapOn:
-    id: 'mode-task'
-- assertVisible: 'New Task'
+- runFlow: ../common/open-new-event.yaml
+- runFlow: ../common/switch-to-task.yaml
 # Pick the first Reminders list: its rows carry a color swatch, but the
 # stable handle is the list title. 'Reminders' is the default list name.
 - runFlow:
