@@ -36,6 +36,7 @@ const makeStubClient = () => {
     addAccount: () => fail('not stubbed'),
     clearLocationCache: () => Effect.void,
     completeTask: () => Effect.void,
+    connectAppleCalendar: () => fail('not stubbed'),
     connectContacts: () => fail('not stubbed'),
     connectReminders: () => fail('not stubbed'),
     createEvent: () => fail('not stubbed'),
@@ -67,6 +68,8 @@ const makeStubClient = () => {
         calls.snapshots.push(params);
         return { pngBase64: 'png' };
       }),
+    moveEvent: () => fail('not stubbed'),
+    previewMove: () => fail('not stubbed'),
     removeAccount: () => Effect.void,
     resolveLocation: ({ location }) =>
       Effect.sync(() => {

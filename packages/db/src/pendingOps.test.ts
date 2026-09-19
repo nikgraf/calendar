@@ -77,6 +77,41 @@ describe('PendingOpRepo', () => {
     }).pipe(Effect.provide(freshDbLayer())),
   );
 
+  it.effect('a move survives content-edit coalescing and keeps its destination', () =>
+    Effect.gen(function* () {
+      const repo = yield* PendingOpRepo;
+      yield* repo.enqueue(op('upd', { eventId: 'evt-m' }));
+      yield* repo.enqueue(
+        op('mv', { createdAt: 2, eventId: 'evt-m', kind: 'move', targetCalendarId: 'cal-2' }),
+      );
+      yield* repo.removeForEvent('cal-1', 'evt-m');
+
+      const remaining = yield* repo.listAll();
+      expect(remaining.map((entry) => entry.kind)).toEqual(['move']);
+      expect(remaining[0]?.targetCalendarId).toBe('cal-2');
+    }).pipe(Effect.provide(freshDbLayer())),
+  );
+
+  it.effect('earlierInSeries sees older ops for the series in any calendar', () =>
+    Effect.gen(function* () {
+      const repo = yield* PendingOpRepo;
+      const update = op('upd', { createdAt: 1, eventId: 'evt' });
+      const instance = op('inst', { createdAt: 2, eventId: 'evt_20260714T090000Z' });
+      const move = op('mv', { createdAt: 3, eventId: 'evt', kind: 'move' });
+      const later = op('later', { calendarId: 'cal-2', createdAt: 4, eventId: 'evt' });
+      yield* repo.enqueue(update);
+      yield* repo.enqueue(instance);
+      yield* repo.enqueue(move);
+      yield* repo.enqueue(later);
+      yield* repo.enqueue(op('other', { createdAt: 0, eventId: 'evt2' }));
+
+      expect(yield* repo.earlierInSeries(update)).toEqual([]);
+      expect(yield* repo.earlierInSeries(instance)).toEqual(['update']);
+      expect(yield* repo.earlierInSeries(move)).toEqual(['update', 'update']);
+      expect(yield* repo.earlierInSeries(later)).toEqual(['update', 'update', 'move']);
+    }).pipe(Effect.provide(freshDbLayer())),
+  );
+
   it.effect('markFailed records the attempt, backoff and error', () =>
     Effect.gen(function* () {
       const repo = yield* PendingOpRepo;

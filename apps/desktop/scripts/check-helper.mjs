@@ -1,7 +1,7 @@
 // Warns when the Swift model helper binary is missing or older than its
 // sources. `desktop build` never compiles it (that needs the macOS 26 SDK),
 // so an e2e run could silently exercise a stale helper — or none, in which
-// case Reminders/Contacts report 'unavailable' and the model is off.
+// case Reminders/Contacts/Calendar report 'unavailable' and the model is off.
 // Advisory only: exits 0 so the CDP e2e (which runs with the bridges off)
 // keeps working on a checkout that never built the helper.
 import { readdirSync, statSync } from 'node:fs';
@@ -18,6 +18,7 @@ const binary = join(root, 'helper/.build/release/solunivo-model-helper');
 const sourceRoots = [
   join(root, 'helper/Sources'),
   join(root, 'helper/Package.swift'),
+  join(root, '../../packages/apple-calendar/swift'),
   join(root, '../../packages/reminders/swift'),
   join(root, '../../packages/contacts/swift'),
   join(root, '../../packages/geo/swift'),

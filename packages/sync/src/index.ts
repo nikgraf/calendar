@@ -1,3 +1,4 @@
+export * from './appleCalendarEvents.ts';
 export * from './backendHandlers.ts';
 export * from './birthdayReminders.ts';
 export * from './notificationSink.ts';

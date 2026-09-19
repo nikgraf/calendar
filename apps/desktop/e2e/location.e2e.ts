@@ -58,6 +58,7 @@ const seed = {
       id: 'cal-work',
       isPrimary: true,
       isVisible: true,
+      provider: 'google',
       summary: 'Work',
       timeZone: 'UTC',
     }),

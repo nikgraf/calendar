@@ -1,3 +1,5 @@
+import { unavailableAppleCalendarClient } from '@calendar/apple-calendar';
+import { appleCalendarServicesLayer } from './appleCalendarEvents.ts';
 import {
   Account,
   CalendarInfo,
@@ -43,6 +45,7 @@ const stubClient = (overrides: ClientOverrides): GoogleCalendarClientShape => ({
   insertEvent: () => Effect.die('unexpected insert'),
   listCalendars: () => Effect.succeed({ items: [] }),
   listEvents: () => Effect.succeed({ items: [] }),
+  moveEvent: () => Effect.die('unexpected move'),
   patchCalendarListEntry: () => Effect.die('unexpected calendarList patch'),
   patchEvent: () => Effect.die('unexpected patch'),
   ...overrides,
@@ -61,6 +64,7 @@ const mutationsLayer = (
   reactivity: Layer.Layer<Reactivity> = reactivityLayer,
 ) =>
   EventMutations.layer.pipe(
+    Layer.provideMerge(appleCalendarServicesLayer(unavailableAppleCalendarClient('test'))),
     Layer.provideMerge(reposLayer),
     Layer.provideMerge(Layer.effectDiscard(runMigrations)),
     Layer.provideMerge(SqliteClient.layer({ filename: ':memory:' })),
@@ -92,6 +96,7 @@ const seedCalendar = Effect.gen(function* () {
       id: 'cal-1',
       isPrimary: true,
       isVisible: true,
+      provider: 'google',
       summary: 'Work',
       timeZone: 'Europe/Vienna',
     }),

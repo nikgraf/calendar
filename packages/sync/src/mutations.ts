@@ -1,12 +1,24 @@
 import {
+  AppleCalendarClient,
+  mapAppleEvent,
+  type AppleCalendarClientShape,
+} from '@calendar/apple-calendar';
+import {
   applyWallClockDelta,
   Attendee,
+  type EventDraft,
   EventRecord,
   googleInstanceId,
+  isServerMove,
   mergeAttendees,
+  meetingUrl,
+  type MoveEventParams,
+  moveLoss,
   normalizeHexColor,
   PendingOp,
   remainingRecurrence,
+  toRRuleLines,
+  toStructuredRules,
   truncateRecurrence,
   withConsistentGeo,
 } from '@calendar/core';
@@ -19,12 +31,16 @@ import { Reactivity } from 'effect/unstable/reactivity/Reactivity';
 import { SqlClient } from 'effect/unstable/sql/SqlClient';
 import type { SqlError } from 'effect/unstable/sql/SqlError';
 import { makeApplyOp } from './applyOp.ts';
+import { AppleCalendarEvents, deviceTimeZone } from './appleCalendarEvents.ts';
+import { makeAppleEventMutations } from './appleEventMutations.ts';
 import {
   CALENDAR_COLOR_EVENT_ID,
+  CalendarNotWritableError,
   EventNotFoundError,
   type EventMutationsShape,
   InvalidColorError,
   NotAttendeeError,
+  NotOrganizerError,
   RecurringEditUnsupportedError,
   retryDelayMs,
   UnsupportedForProviderError,
@@ -81,10 +97,82 @@ const definedChanges = (
     : { ...withGeo, attendees: mergeAttendees(currentAttendees, attendees) };
 };
 
+/**
+ * A guest cannot re-home an invitation: the organizer (or, for a Google
+ * secondary calendar, the calendar itself) must be us. Events without
+ * an organizer are our own.
+ */
+const ensureOrganizer = (record: EventRecord, ownEmail: string | undefined, calendarId: string) =>
+  Effect.suspend(() => {
+    const organizer = record.organizerEmail?.toLowerCase();
+    const selfOrganizes = record.attendees?.some(
+      (attendee) => attendee.isOrganizer === true && attendee.isSelf === true,
+    );
+    const ours =
+      organizer === undefined ||
+      selfOrganizes === true ||
+      organizer === ownEmail?.toLowerCase() ||
+      organizer === calendarId.toLowerCase();
+    return ours ? Effect.void : Effect.fail(new NotOrganizerError({ eventId: record.id }));
+  });
+
+interface MoveSource {
+  /** The event as a series master (occurrence ids and slots stripped). */
+  readonly master: EventRecord;
+  readonly modifiedOccurrences: number;
+  /** Apple only: the event's URL (non-meeting URLs are not on the record). */
+  readonly url: string | undefined;
+}
+
+/** The new event a copy-move creates: never guests, links carried where they fit. */
+const copyDraft = (
+  source: MoveSource,
+  target: MoveEventParams['target'],
+  targetProvider: 'apple' | 'google',
+): EventDraft => {
+  const { master } = source;
+  let description = master.description;
+  let url: string | undefined;
+  if (targetProvider === 'apple') {
+    url = master.hangoutLink ?? meetingUrl(master) ?? source.url;
+  } else {
+    const link = source.url ?? master.hangoutLink;
+    if (link && !(description ?? '').includes(link) && !(master.location ?? '').includes(link)) {
+      description = [description, link].filter(Boolean).join('\n\n');
+    }
+  }
+  // Rule parts EventKit cannot store were confirmed away (moveLoss names them).
+  const recurrence =
+    master.recurrence && targetProvider === 'apple'
+      ? toRRuleLines(
+          toStructuredRules(master.recurrence, master.isAllDay, master.startTimeZone ?? 'UTC')
+            .rules,
+          master.isAllDay,
+        )
+      : master.recurrence;
+  return {
+    accountId: target.accountId,
+    calendarId: target.calendarId,
+    ...(description ? { description } : {}),
+    ...(master.isAllDay ? { endDate: master.endDate, startDate: master.startDate } : {}),
+    endUtc: master.endUtc,
+    ...(master.geo ? { geo: master.geo } : {}),
+    isAllDay: master.isAllDay,
+    ...(master.location ? { location: master.location } : {}),
+    ...(recurrence && recurrence.length > 0 ? { recurrence } : {}),
+    ...(master.isAllDay ? {} : { startTimeZone: master.startTimeZone }),
+    startUtc: master.startUtc,
+    title: master.title,
+    ...(url ? { url } : {}),
+  };
+};
+
 const make: Effect.Effect<
   EventMutationsShape,
   never,
   | AccountRepo
+  | AppleCalendarClient
+  | AppleCalendarEvents
   | CalendarRepo
   | EventRepo
   | GoogleCalendarClient
@@ -98,6 +186,8 @@ const make: Effect.Effect<
   const sql = yield* SqlClient;
   const reactivity = yield* Reactivity;
   const remindersClient = yield* RemindersClient;
+  const appleClient: AppleCalendarClientShape = yield* AppleCalendarClient;
+  const appleEvents = yield* AppleCalendarEvents;
   const accountRepo = yield* AccountRepo;
   const calendarRepo = yield* CalendarRepo;
   const eventRepo = yield* EventRepo;
@@ -310,7 +400,7 @@ const make: Effect.Effect<
       ),
   };
 
-  const shape: EventMutationsShape = {
+  const shape: Omit<EventMutationsShape, 'moveEvent' | 'previewMove'> = {
     ...taskMutations,
     createEvent: (draft) =>
       Effect.gen(function* () {
@@ -789,16 +879,243 @@ const make: Effect.Effect<
   };
 
   // Every queue-backed method runs inside one transaction (see
-  // `transactional`); the Reminders paths write EventKit and need none.
+  // `transactional`); the EventKit paths (Reminders, Apple Calendar)
+  // write the local store synchronously and need none.
+  const google = {
+    createEvent: (draft: EventDraft) => transactional(shape.createEvent(draft)),
+    deleteEvent: (params: Parameters<EventMutationsShape['deleteEvent']>[0]) =>
+      transactional(shape.deleteEvent(params)),
+    deleteRecurring: (params: Parameters<EventMutationsShape['deleteRecurring']>[0]) =>
+      transactional(shape.deleteRecurring(params)),
+    respondToEvent: (params: Parameters<EventMutationsShape['respondToEvent']>[0]) =>
+      transactional(shape.respondToEvent(params)),
+    setCalendarColor: (params: Parameters<EventMutationsShape['setCalendarColor']>[0]) =>
+      transactional(shape.setCalendarColor(params)),
+    updateEvent: (params: Parameters<EventMutationsShape['updateEvent']>[0]) =>
+      transactional(shape.updateEvent(params)),
+    updateRecurring: (params: Parameters<EventMutationsShape['updateRecurring']>[0]) =>
+      transactional(shape.updateRecurring(params)),
+  };
+  const apple = makeAppleEventMutations({
+    accountRepo,
+    appleEvents,
+    calendarRepo,
+    client: appleClient,
+  });
+
+  // ---- moves ----
+
+  const findCalendar = (accountId: string, calendarId: string) =>
+    Effect.map(calendarRepo.list(accountId), (calendars) =>
+      calendars.find((calendar) => calendar.id === calendarId),
+    );
+
+  /** The source event as a whole (the series for a recurring one). */
+  const loadSource = (params: MoveEventParams, provider: 'apple' | 'google') =>
+    Effect.gen(function* () {
+      const { accountId, calendarId, eventId } = params;
+      if (provider === 'apple') {
+        const series = yield* appleClient.series({ id: eventId });
+        const now = yield* Clock.currentTimeMillis;
+        const mapped = mapAppleEvent(series.first, { deviceTimeZone: deviceTimeZone(), now });
+        const recurrence = toRRuleLines(series.rules, series.first.isAllDay);
+        return {
+          master: new EventRecord({
+            ...mapped,
+            id: eventId,
+            originalStartUtc: undefined,
+            recurrence: recurrence.length > 0 ? recurrence : undefined,
+            recurringEventId: undefined,
+          }),
+          modifiedOccurrences: series.detachedCount,
+          url: series.first.url,
+        } satisfies MoveSource;
+      }
+      const master = yield* eventRepo.getById(accountId, calendarId, eventId);
+      if (!master) {
+        return yield* Effect.fail(new EventNotFoundError({ eventId }));
+      }
+      if (master.recurringEventId) {
+        // One occurrence cannot leave its series; moves take the whole series.
+        return yield* Effect.fail(new RecurringEditUnsupportedError({ eventId }));
+      }
+      const overrides = master.recurrence
+        ? yield* eventRepo.listOverrides(accountId, calendarId, eventId)
+        : [];
+      return { master, modifiedOccurrences: overrides.length, url: undefined } satisfies MoveSource;
+    });
+
+  /**
+   * Google → Google inside one account: events.move keeps the id, guests,
+   * conference and exceptions. Rows are re-keyed to the target now; any
+   * queued edit of the series is re-queued *behind* the move against the
+   * target calendar (the drain holds either side back until the other
+   * lands — see applyOp), and a create that never reached Google simply
+   * becomes a create in the target.
+   */
+  const googleServerMove = (params: MoveEventParams) =>
+    Effect.gen(function* () {
+      const { accountId, calendarId, eventId, target } = params;
+      const { master } = yield* loadSource(params, 'google');
+      const account = yield* accountRepo.get(accountId);
+      yield* ensureOrganizer(master, account?.email, calendarId);
+      const now = yield* Clock.currentTimeMillis;
+      const overrides = master.recurrence
+        ? yield* eventRepo.listOverrides(accountId, calendarId, eventId)
+        : [];
+      for (const row of [master, ...overrides]) {
+        yield* eventRepo.deleteEvent(accountId, calendarId, row.id);
+        yield* eventRepo.upsertMany([
+          new EventRecord({ ...row, calendarId: target.calendarId, syncStatus: 'pending' }),
+        ]);
+      }
+      const seriesIds = new Set([master.id, ...overrides.map((row) => row.id)]);
+      const queued = (yield* pendingOpRepo.listAll()).filter(
+        (op) =>
+          op.accountId === accountId && op.calendarId === calendarId && seriesIds.has(op.eventId),
+      );
+      for (const op of queued) {
+        yield* pendingOpRepo.remove(op.id);
+      }
+      const rekey = (op: PendingOp, createdAt: number) =>
+        new PendingOp({
+          ...op,
+          attempts: 0,
+          calendarId: target.calendarId,
+          createdAt,
+          id: generateEventId(),
+          lastError: undefined,
+          nextAttemptAt: 0,
+          payload: op.payload
+            ? new EventRecord({ ...op.payload, calendarId: target.calendarId })
+            : undefined,
+        });
+      const pendingCreate = queued.find((op) => op.kind === 'create' && op.eventId === master.id);
+      if (!pendingCreate) {
+        yield* enqueue(
+          new PendingOp({
+            accountId,
+            attempts: 0,
+            calendarId,
+            createdAt: now,
+            eventId: master.id,
+            id: generateEventId(),
+            kind: 'move',
+            nextAttemptAt: 0,
+            targetCalendarId: target.calendarId,
+          }),
+        );
+      }
+      for (const op of queued) {
+        yield* enqueue(rekey(op, now + 1));
+      }
+    });
+
+  const createIn = (provider: 'apple' | 'google', draft: EventDraft) =>
+    provider === 'apple' ? apple.createEvent(draft) : shape.createEvent(draft);
+
+  const deleteFrom = (
+    provider: 'apple' | 'google',
+    params: MoveEventParams,
+    master: EventRecord,
+  ) =>
+    master.recurrence
+      ? (provider === 'apple' ? apple : shape).deleteRecurring({
+          accountId: params.accountId,
+          calendarId: params.calendarId,
+          masterId: params.eventId,
+          originalStartUtc: master.startUtc,
+          scope: 'series',
+        })
+      : (provider === 'apple' ? apple : shape).deleteEvent({
+          accountId: params.accountId,
+          calendarId: params.calendarId,
+          eventId: params.eventId,
+        });
+
+  const routeOf = (params: MoveEventParams) =>
+    Effect.gen(function* () {
+      const source = yield* providerOf(params.accountId);
+      const target = yield* providerOf(params.target.accountId);
+      return { sameAccount: params.accountId === params.target.accountId, source, target };
+    });
+
+  const moveEvent = (params: MoveEventParams) =>
+    Effect.gen(function* () {
+      const { accountId, calendarId, target } = params;
+      if (target.accountId === accountId && target.calendarId === calendarId) {
+        return;
+      }
+      const targetCalendar = yield* findCalendar(target.accountId, target.calendarId);
+      if (
+        !targetCalendar ||
+        (targetCalendar.accessRole !== 'owner' && targetCalendar.accessRole !== 'writer')
+      ) {
+        return yield* Effect.fail(new CalendarNotWritableError({ calendarId: target.calendarId }));
+      }
+      const route = yield* routeOf(params);
+      if (isServerMove(route)) {
+        return yield* transactional(googleServerMove(params));
+      }
+      if (route.source === 'apple' && route.target === 'apple') {
+        return yield* apple.moveWithin({ calendarId: target.calendarId, id: params.eventId });
+      }
+      // Copy, then delete: a failure between the two leaves a duplicate,
+      // never a lost event.
+      const source = yield* loadSource(params, route.source);
+      const account = yield* accountRepo.get(accountId);
+      yield* ensureOrganizer(source.master, account?.email, calendarId);
+      const draft = copyDraft(source, target, route.target);
+      const both = Effect.andThen(
+        createIn(route.target, draft),
+        deleteFrom(route.source, params, source.master),
+      );
+      // Google → Google across accounts: both queue writes in one transaction.
+      yield* route.source === 'google' && route.target === 'google'
+        ? transactional(both)
+        : route.target === 'google'
+          ? Effect.andThen(
+              transactional(createIn('google', draft)),
+              deleteFrom('apple', params, source.master),
+            )
+          : Effect.andThen(
+              createIn('apple', draft),
+              transactional(deleteFrom('google', params, source.master)),
+            );
+    });
+
+  const previewMove = (params: MoveEventParams) =>
+    Effect.gen(function* () {
+      const route = yield* routeOf(params);
+      if (isServerMove(route) || (route.source === 'apple' && route.target === 'apple')) {
+        return moveLoss({ isAllDay: false }, route, 0);
+      }
+      const source = yield* loadSource(params, route.source);
+      return moveLoss(source.master, route, source.modifiedOccurrences);
+    });
+
+  /** Events dispatch like tasks: by the account's provider. */
+  const byProvider =
+    <P extends { readonly accountId: string }, A, E1, E2>(
+      onApple: (params: P) => Effect.Effect<A, E1>,
+      onGoogle: (params: P) => Effect.Effect<A, E2>,
+    ) =>
+    (params: P): Effect.Effect<A, E1 | E2 | SqlError> =>
+      Effect.flatMap(providerOf(params.accountId), (provider): Effect.Effect<A, E1 | E2> =>
+        provider === 'apple' ? onApple(params) : onGoogle(params),
+      );
+
   return {
     ...shape,
-    createEvent: (draft) => transactional(shape.createEvent(draft)),
-    deleteEvent: (params) => transactional(shape.deleteEvent(params)),
-    deleteRecurring: (params) => transactional(shape.deleteRecurring(params)),
-    respondToEvent: (params) => transactional(shape.respondToEvent(params)),
-    setCalendarColor: (params) => transactional(shape.setCalendarColor(params)),
-    updateEvent: (params) => transactional(shape.updateEvent(params)),
-    updateRecurring: (params) => transactional(shape.updateRecurring(params)),
+    createEvent: byProvider(apple.createEvent, google.createEvent),
+    deleteEvent: byProvider(apple.deleteEvent, google.deleteEvent),
+    deleteRecurring: byProvider(apple.deleteRecurring, google.deleteRecurring),
+    moveEvent,
+    previewMove,
+    respondToEvent: byProvider(apple.respondToEvent, google.respondToEvent),
+    setCalendarColor: byProvider(apple.setCalendarColor, google.setCalendarColor),
+    updateEvent: byProvider(apple.updateEvent, google.updateEvent),
+    updateRecurring: byProvider(apple.updateRecurring, google.updateRecurring),
   };
 });
 
@@ -809,6 +1126,8 @@ export class EventMutations extends Context.Service<EventMutations, EventMutatio
     EventMutations,
     never,
     | AccountRepo
+    | AppleCalendarClient
+    | AppleCalendarEvents
     | CalendarRepo
     | EventRepo
     | GoogleCalendarClient

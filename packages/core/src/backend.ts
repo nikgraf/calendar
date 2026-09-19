@@ -2,6 +2,7 @@ import { Cause, Effect, Schema } from 'effect';
 import { Rpc, RpcGroup } from 'effect/unstable/rpc';
 import type { RpcClientError } from 'effect/unstable/rpc/RpcClientError';
 import { BirthdayReminderSettings } from './birthdays/reminders.ts';
+import { MoveLoss } from './editor/moveLoss.ts';
 import { PlaceSuggestion } from './geo/location.ts';
 import { AccountSyncStatus } from './syncStatus.ts';
 import {
@@ -50,6 +51,11 @@ export const EventDraft = Schema.Struct({
   startTimeZone: Schema.optional(Schema.String),
   startUtc: Schema.Number,
   title: Schema.String,
+  /**
+   * Apple calendars only: the event's URL (a Google→Apple move carries the
+   * meeting link here). Google creates ignore it.
+   */
+  url: Schema.optional(Schema.String),
 });
 export type EventDraft = Schema.Schema.Type<typeof EventDraft>;
 
@@ -88,6 +94,7 @@ export const PendingOpSummary = Schema.Struct({
     'createTask',
     'delete',
     'deleteTask',
+    'move',
     'rsvp',
     'update',
     'updateTask',
@@ -97,6 +104,15 @@ export const PendingOpSummary = Schema.Struct({
   title: Schema.optional(Schema.String),
 });
 export type PendingOpSummary = Schema.Schema.Type<typeof PendingOpSummary>;
+
+/** Source event (the master id for a series) and the calendar it moves to. */
+export const MoveEventParams = Schema.Struct({
+  accountId: Schema.String,
+  calendarId: Schema.String,
+  eventId: Schema.String,
+  target: Schema.Struct({ accountId: Schema.String, calendarId: Schema.String }),
+});
+export type MoveEventParams = Schema.Schema.Type<typeof MoveEventParams>;
 
 /** Wire format of a failed backend call. */
 export class BackendError extends Schema.Error<BackendError>('core/BackendError')({
@@ -124,6 +140,11 @@ export class AppBackendRpcs extends RpcGroup.make(
   }),
   /** Device contacts: asks for Contacts access (the OS prompt when undetermined). */
   Rpc.make('connectContacts', {
+    error: BackendError,
+    success: Schema.Struct({ granted: Schema.Boolean }),
+  }),
+  /** Apple Calendar: asks for EventKit events access; on grant, the synthetic account exists afterwards. */
+  Rpc.make('connectAppleCalendar', {
     error: BackendError,
     success: Schema.Struct({ granted: Schema.Boolean }),
   }),
@@ -243,6 +264,23 @@ export class AppBackendRpcs extends RpcGroup.make(
       width: Schema.Number,
     },
     success: Schema.Struct({ pngBase64: Schema.String }),
+  }),
+  /**
+   * Moves an event (a whole series: pass the master id) to another
+   * calendar, possibly in another account or provider. Inside one Google
+   * account this is a server move; anything else copies the event into
+   * the target and deletes the source — call `previewMove` first and
+   * confirm what that drops.
+   */
+  Rpc.make('moveEvent', {
+    error: BackendError,
+    payload: MoveEventParams,
+  }),
+  /** What `moveEvent` with the same payload would drop (guests, link, modified occurrences…). */
+  Rpc.make('previewMove', {
+    error: BackendError,
+    payload: MoveEventParams,
+    success: MoveLoss,
   }),
   Rpc.make('removeAccount', {
     error: BackendError,

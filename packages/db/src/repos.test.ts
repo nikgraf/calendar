@@ -60,6 +60,7 @@ const calendar = (overrides: Partial<CalendarInfo> = {}): CalendarInfo =>
     id: 'cal-1',
     isPrimary: true,
     isVisible: true,
+    provider: 'google',
     summary: 'Personal',
     timeZone: 'Europe/Vienna',
     ...overrides,
@@ -148,6 +149,36 @@ describe('repos', () => {
       const listed = yield* repo.list('acc-1');
       expect(listed[0]!.summary).toBe('Personal (renamed)');
       expect(listed[0]!.isVisible).toBe(false);
+    }).pipe(Effect.provide(freshDbLayer())),
+  );
+
+  it.effect("lists a calendar's provider from its account and keeps its source title", () =>
+    Effect.gen(function* () {
+      const accounts = yield* AccountRepo;
+      const repo = yield* CalendarRepo;
+      yield* accounts.upsert(
+        new Account({
+          ...account,
+          displayName: 'Apple Calendar',
+          email: '',
+          id: 'apple-calendar',
+          provider: 'apple',
+        }),
+      );
+      yield* repo.upsertMany([
+        calendar({
+          accountId: 'apple-calendar',
+          id: 'ek-1',
+          provider: 'apple',
+          sourceTitle: 'iCloud',
+        }),
+      ]);
+      yield* repo.upsertMany([calendar()]);
+      const byId = new Map((yield* repo.list()).map((entry) => [entry.id, entry]));
+      expect(byId.get('ek-1')?.provider).toBe('apple');
+      expect(byId.get('ek-1')?.sourceTitle).toBe('iCloud');
+      expect(byId.get('cal-1')?.provider).toBe('google');
+      expect(byId.get('cal-1')?.sourceTitle).toBeUndefined();
     }).pipe(Effect.provide(freshDbLayer())),
   );
 

@@ -148,6 +148,7 @@ export const mapGcalCalendar = (
     id: entry.id,
     isPrimary: entry.primary ?? false,
     isVisible: context.previousVisibility ?? entry.selected ?? true,
+    provider: 'google',
     summary: entry.summaryOverride ?? entry.summary ?? entry.id,
     timeZone: entry.timeZone ?? 'UTC',
   });

@@ -16,6 +16,7 @@
   "dependencies": {
     "@calendar/ai": "workspace:*",
     "@calendar/app-state": "workspace:*",
+    "@calendar/apple-calendar": "workspace:*",
     "@calendar/contacts": "workspace:*",
     "@calendar/core": "workspace:*",
     "@calendar/db": "workspace:*",

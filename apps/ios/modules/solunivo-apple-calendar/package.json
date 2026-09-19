@@ -1,0 +1,9 @@
+{
+  "name": "solunivo-apple-calendar",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Apple Calendar (EventKit events) bridge for Solunivo — local Expo module",
+  "license": "UNLICENSED",
+  "author": "Nik Graf",
+  "main": "index.ts"
+}
