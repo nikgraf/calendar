@@ -25,7 +25,7 @@ export function LocationsSection() {
       <h2 className="font-medium">Locations</h2>
       <p className="mt-1 text-sm text-neutral-500">
         Event locations are looked up on this Mac with Apple Maps and remembered so the editor map
-        opens instantly. Remembered places refresh every 30 days.
+        opens instantly. Remembered places refresh every two weeks.
       </p>
       <button
         className="mt-3 rounded-lg border border-neutral-200 bg-white px-3 py-1.5 text-sm hover:bg-neutral-100 disabled:opacity-50"

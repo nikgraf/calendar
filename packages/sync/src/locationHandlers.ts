@@ -15,14 +15,14 @@ const DEFAULT_PLACE_LIMIT = 6;
  * A recorded "nothing found" is trusted this long before MapKit is asked
  * again (synchronously — there is nothing to show meanwhile).
  */
-export const LOCATION_MISS_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+export const LOCATION_MISS_TTL_MS = 3 * 24 * 60 * 60 * 1000;
 /**
  * A hit older than this is still shown at once, but re-resolved in the
  * background: places open, move and close, and the text may now name a
  * different one. A place in constant use refreshes on this cadence too,
  * since every refresh restamps its row.
  */
-export const LOCATION_REFRESH_AFTER_MS = 30 * 24 * 60 * 60 * 1000;
+export const LOCATION_REFRESH_AFTER_MS = 14 * 24 * 60 * 60 * 1000;
 /** Rows kept in the cache; past this the least recently resolved go. */
 const LOCATION_CACHE_ROWS = 2000;
 

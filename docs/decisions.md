@@ -786,10 +786,13 @@ Performance:
       coordinates (`PendingOp.geoCleared`), never on unrelated edits,
       since null-for-absent-key was only verified against the fake.
       Nik then asked for cache hits to expire: places open, move and
-      close, so a hit older than 30 days is shown at once and refreshed
+      close, so a hit older than 14 days is shown at once and refreshed
       in the background (stale-while-revalidate; a place in constant use
       refreshes on the same cadence because every refresh restamps it),
-      and Settings on both platforms has "Clear location cache".
+      and Settings on both platforms has "Clear location cache". Misses
+      retry after 3 days (Nik's pick over the first 7/30: nothing in
+      Apple's guidance names a number; both stay far from the geocoder's
+      rate limit).
       The desktop map is a static `MKMapSnapshotter` image from the Swift
       helper (native look, no MapKit JS token or tile policy); iOS uses
       `expo-maps`. The desktop image is light-only until the renderer has

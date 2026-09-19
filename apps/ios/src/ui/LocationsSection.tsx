@@ -27,7 +27,7 @@ export function LocationsSection() {
       <Text style={sectionStyles.title}>Locations</Text>
       <Text style={sectionStyles.meta}>
         Event locations are looked up on this device with Apple Maps and remembered so the editor
-        map opens instantly. Remembered places refresh every 30 days.
+        map opens instantly. Remembered places refresh every two weeks.
       </Text>
       <Pressable
         disabled={state === 'busy'}
