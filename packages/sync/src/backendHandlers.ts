@@ -14,7 +14,7 @@ import {
   birthdaysInRange,
   rankContacts,
 } from '@calendar/core';
-import { ContactsClient } from '@calendar/contacts';
+import { ContactsClient, contactsReadable } from '@calendar/contacts';
 import {
   AccountRepo,
   BirthdayRepo,
@@ -72,11 +72,13 @@ export const commonBackendHandlers: Omit<BackendHandlers<CommonBackendServices>,
 
   // Asks for Contacts access (the OS prompt when undetermined) and loads
   // the address book into the typeahead cache on grant. A refusal resolves
-  // to false rather than failing, like connectReminders.
+  // to false; a failed request remains an error. iOS may already have asked
+  // before initializing the backend, so reuse an existing grant.
   connectContacts: () =>
     Effect.gen(function* () {
       const contactsClient = yield* ContactsClient;
-      const granted = yield* contactsClient.requestAccess().pipe(Effect.orElseSucceed(() => false));
+      const granted =
+        contactsReadable(yield* contactsClient.status()) || (yield* contactsClient.requestAccess());
       if (granted) {
         yield* (yield* DeviceContacts).refresh();
       }
@@ -89,9 +91,9 @@ export const commonBackendHandlers: Omit<BackendHandlers<CommonBackendServices>,
   connectReminders: () =>
     Effect.gen(function* () {
       const remindersClient = yield* RemindersClient;
-      const granted = yield* remindersClient
-        .requestAccess()
-        .pipe(Effect.orElseSucceed(() => false));
+      // An existing grant does not prompt again. Keep this call: the native
+      // bridge resets EventKit's store after a grant made in Settings.
+      const granted = yield* remindersClient.requestAccess();
       if (!granted) {
         return { granted: false };
       }

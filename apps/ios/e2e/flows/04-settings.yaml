@@ -8,5 +8,7 @@ tags:
     id: 'open-settings'
 - assertVisible: 'Accounts'
 - assertVisible: 'Add Google Account'
+- assertVisible:
+    id: 'connect-contacts|contacts-connected'
 - tapOn: 'Done'
 - assertVisible: 'Today'

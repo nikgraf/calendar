@@ -8,7 +8,7 @@
     "prebuild": "expo prebuild --platform ios",
     "start": "expo start",
     "check:devclient": "node scripts/check-devclient.mjs",
-    "test:e2e": "node scripts/check-devclient.mjs && maestro test --exclude-tags ci-bootstrap,ci-reminders e2e/flows"
+    "test:e2e": "node scripts/check-devclient.mjs && maestro test --exclude-tags ci-bootstrap,ci-reminders,ci-permissions e2e/flows"
   },
   "dependencies": {
     "@calendar/ai": "workspace:*",

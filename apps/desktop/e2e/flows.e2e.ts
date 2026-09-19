@@ -513,13 +513,20 @@ describe('calendar desktop e2e', () => {
     }
     await cdp.waitFor(`!!document.querySelector('[data-testid="slot-selection"]')`);
     try {
-      // Next week while the button is still down: today's column unmounts.
-      await cdp.send('Input.dispatchKeyEvent', {
-        code: 'ArrowRight',
-        key: 'ArrowRight',
-        type: 'rawKeyDown',
-        windowsVirtualKeyCode: 39,
-      });
+      // Two weeks while the button is still down: even Saturday/Sunday
+      // leave the next week's two-day pan buffer, so the column unmounts.
+      for (let step = 0; step < 2; step += 1) {
+        const before = await cdp.eval<string>(`document.querySelector('h1')?.textContent ?? ''`);
+        await cdp.send('Input.dispatchKeyEvent', {
+          code: 'ArrowRight',
+          key: 'ArrowRight',
+          type: 'rawKeyDown',
+          windowsVirtualKeyCode: 39,
+        });
+        await cdp.waitFor(
+          `(document.querySelector('h1')?.textContent ?? '') !== ${JSON.stringify(before)}`,
+        );
+      }
       await cdp.waitFor(`!document.querySelector('[data-testid="slot-selection"]')`);
       await cdp.mouse('mouseReleased', from.x, from.y + 40);
       await new Promise((resolve) => setTimeout(resolve, 800));

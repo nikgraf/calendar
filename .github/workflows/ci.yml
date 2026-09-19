@@ -287,18 +287,22 @@ jobs:
           # Solunivo?" alert and nothing launched. The bootstrap flow
           # launches the client itself and hands it the server URL.
           xcrun simctl terminate "$SIMULATOR_UDID" com.apple.mobilesafari || true
-      # Two invocations: Maestro runs a directory's flows in a
+      # Separate invocations: Maestro runs a directory's flows in a
       # non-deterministic order (config.yaml executionOrder is not
       # honored — mobile-dev-inc/maestro#2231), and the bootstrap must
-      # come first. Every other flow is independent of the ones before it.
+      # come first, then permission prompts before any Apple account is
+      # connected. The remaining flows do not depend on that ordering.
       - name: Bootstrap the dev client onto Metro
         working-directory: apps/ios
         run: maestro test --device "$SIMULATOR_UDID" e2e/flows/00-devclient-bootstrap.yaml
+      - name: First-time device permissions
+        working-directory: apps/ios
+        run: maestro test --device "$SIMULATOR_UDID" e2e/flows/04a-device-permissions.yaml
       - name: Maestro flows
         working-directory: apps/ios
         # MODELLESS: the runner's simulator has no usable on-device model
         # (see 06-quick-add.yaml).
-        run: maestro test --include-tags ci --exclude-tags ci-bootstrap -e MODELLESS=1 --device "$SIMULATOR_UDID" e2e/flows
+        run: maestro test --include-tags ci --exclude-tags ci-bootstrap,ci-permissions -e MODELLESS=1 --device "$SIMULATOR_UDID" e2e/flows
       - name: Wait for a simulator crash report
         # ReportCrash writes the .ips a minute or so after the process
         # dies (74 s on run 34013939965); the upload step ran before it
