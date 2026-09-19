@@ -13,6 +13,7 @@ import {
   TaskRecord,
 } from '@calendar/core';
 import type { DeviceBirthdayJson, DeviceContactJson } from '@calendar/contacts';
+import type { FakePlace } from '@calendar/geo';
 import type { ReminderJson, ReminderListJson } from '@calendar/reminders';
 import {
   AccountRepo,
@@ -472,6 +473,10 @@ export interface ContactsFixture {
   readonly contacts?: ReadonlyArray<DeviceContactJson>;
 }
 
+export interface GeoFixture {
+  readonly places: ReadonlyArray<FakePlace>;
+}
+
 export interface RemindersFixture {
   readonly lists?: ReadonlyArray<ReminderListJson>;
   readonly reminders?: ReadonlyArray<ReminderJson>;
@@ -484,6 +489,12 @@ export interface LaunchOptions {
    * device contacts or birthdays without touching a developer's address book.
    */
   readonly contacts?: 'off' | 'real' | { readonly fixture: ContactsFixture };
+  /**
+   * 'off' (default): no MapKit, so no suggestions and no map. 'real': the
+   * helper (network-dependent). A fixture: the in-memory geo client with
+   * these places and a constant map image — deterministic and offline.
+   */
+  readonly geo?: 'off' | 'real' | { readonly fixture: GeoFixture };
   /**
    * 'off' (default): no EventKit. 'real': the helper. A fixture uses the
    * in-memory Reminders client so mutation e2e tests never touch personal data.
@@ -520,6 +531,17 @@ export const launchApp = async (seed?: SeedData, options: LaunchOptions = {}): P
             };
           })();
 
+  const geoEnv: Record<string, string> =
+    options.geo === 'real'
+      ? {}
+      : options.geo === undefined || options.geo === 'off'
+        ? { CALENDAR_GEO: 'off' }
+        : (() => {
+            const fixturePath = join(userDataDir, 'geo-fixture.json');
+            writeFileSync(fixturePath, JSON.stringify(options.geo.fixture));
+            return { CALENDAR_GEO: 'fixture', CALENDAR_GEO_FIXTURE: fixturePath };
+          })();
+
   const electronPath = require('electron') as unknown as string;
   const appDir = join(import.meta.dirname, '..');
   const port = 9333 + Math.floor(Math.random() * 500);
@@ -531,6 +553,8 @@ export const launchApp = async (seed?: SeedData, options: LaunchOptions = {}): P
       ...remindersEnv,
       // Likewise the address book: no TCC prompt, no developer's contacts.
       ...contactsEnv,
+      // And MapKit: no network lookups, so no run depends on Apple's servers.
+      ...geoEnv,
       // A seeded birthday with reminders on must never post a real banner.
       CALENDAR_NOTIFICATIONS: 'off',
       CALENDAR_USERDATA: userDataDir,

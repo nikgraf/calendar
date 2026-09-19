@@ -3,6 +3,7 @@ export * from './calendarNavigation.ts';
 export * from './editorOptions.ts';
 export * from './hooks.ts';
 export * from './inviteeField.ts';
+export * from './locationField.ts';
 export * from './editorModel.ts';
 export * from './taskEditorModel.ts';
 export * from './modelAvailability.ts';
