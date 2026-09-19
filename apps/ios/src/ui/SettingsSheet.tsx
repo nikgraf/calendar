@@ -37,7 +37,7 @@ import { palette } from './theme.ts';
 import { MutationNoticeToast } from './Toast.tsx';
 
 const IOS_SETTINGS_PATH = 'Settings › Privacy & Security';
-/** Re-reads of a permission status after a refused prompt (~2 s in all). */
+/** Re-reads of a permission status after a prompt was answered (~2 s in all). */
 const STATUS_SETTLE_TRIES = 10;
 const STATUS_SETTLE_MS = 200;
 type Connection = 'calendar' | 'contacts' | 'google' | 'reminders';
@@ -135,11 +135,12 @@ export function SettingsSheet({ onClose, visible }: { onClose: () => void; visib
     } finally {
       let statuses = await refreshPermissions();
       // iOS records the answer shortly after the prompt closes: a read right
-      // after "Don't Allow" can still say notDetermined. Give it a moment
-      // before concluding the prompt never opened.
+      // after "Allow" or "Don't Allow" can still say notDetermined, which
+      // left the connect row up after a grant and reported "the prompt did
+      // not open" after a refusal. Give it a moment before trusting it.
       for (
         let attempt = 0;
-        granted === false &&
+        granted !== undefined &&
         statuses[provider] === 'notDetermined' &&
         attempt < STATUS_SETTLE_TRIES;
         attempt += 1
