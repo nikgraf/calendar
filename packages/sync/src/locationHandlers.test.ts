@@ -10,8 +10,13 @@ import { SqliteClient } from '@effect/sql-sqlite-node';
 import { expect, it } from '@effect/vitest';
 import { Effect, Layer } from 'effect';
 import { TestClock } from 'effect/testing';
+import { layer as reactivityLayer } from 'effect/unstable/reactivity/Reactivity';
 import { describe } from 'vitest';
-import { LOCATION_MISS_TTL_MS, locationHandlers } from './locationHandlers.ts';
+import {
+  LOCATION_MISS_TTL_MS,
+  LOCATION_REFRESH_AFTER_MS,
+  locationHandlers,
+} from './locationHandlers.ts';
 
 const places = [
   {
@@ -29,6 +34,7 @@ const setup = (client: GeoClientShape) =>
     LocationGeoRepo.layer.pipe(
       Layer.provideMerge(Layer.effectDiscard(runMigrations)),
       Layer.provideMerge(SqliteClient.layer({ filename: ':memory:' })),
+      Layer.provideMerge(reactivityLayer),
     ),
   );
 
@@ -107,6 +113,36 @@ describe('resolveLocation', () => {
       yield* TestClock.adjust(LOCATION_MISS_TTL_MS + 1);
       expect(yield* locationHandlers.resolveLocation({ location: 'Atlantis' })).toBeNull();
       expect(state.calls).toEqual(['resolve:Atlantis', 'resolve:Atlantis']);
+    }).pipe(Effect.provide(setup(client)));
+  });
+
+  it.effect('serves an old hit at once and refreshes it in the background', () => {
+    const { client, state } = makeFakeGeoClient({ places });
+    return Effect.gen(function* () {
+      const first = yield* locationHandlers.resolveLocation({ location });
+      expect(first?.lat).toBe(37.7823);
+
+      // The place moved (or the text now names another one).
+      state.places = [{ ...places[0]!, lat: 37.79 }];
+      yield* TestClock.adjust(LOCATION_REFRESH_AFTER_MS + 1);
+      const stale = yield* locationHandlers.resolveLocation({ location });
+      expect(stale?.lat).toBe(37.7823);
+      // Let the detached refresh run: it restamps the row with the new answer.
+      yield* Effect.forEach(Array.from({ length: 20 }), () => Effect.yieldNow, { discard: true });
+      expect(state.calls).toEqual([`resolve:${location}`, `resolve:${location}`]);
+      const fresh = yield* locationHandlers.resolveLocation({ location });
+      expect(fresh?.lat).toBe(37.79);
+      expect(state.calls).toHaveLength(2);
+    }).pipe(Effect.provide(setup(client)));
+  });
+
+  it.effect('clearLocationCache forgets every place', () => {
+    const { client, state } = makeFakeGeoClient({ places });
+    return Effect.gen(function* () {
+      yield* locationHandlers.resolveLocation({ location });
+      yield* locationHandlers.clearLocationCache(undefined);
+      yield* locationHandlers.resolveLocation({ location });
+      expect(state.calls).toEqual([`resolve:${location}`, `resolve:${location}`]);
     }).pipe(Effect.provide(setup(client)));
   });
 

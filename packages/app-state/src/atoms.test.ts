@@ -34,6 +34,7 @@ const makeStubClient = () => {
   };
   const client: BackendClient = {
     addAccount: () => fail('not stubbed'),
+    clearLocationCache: () => Effect.void,
     completeTask: () => Effect.void,
     connectContacts: () => fail('not stubbed'),
     connectReminders: () => fail('not stubbed'),

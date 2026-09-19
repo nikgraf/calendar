@@ -5,6 +5,7 @@ import {
   CONTACTS_KEY,
   deviceSettingsKey,
   EVENTS_KEY,
+  LOCATION_GEO_KEY,
   OPS_KEY,
   SYNC_STATE_KEY,
   TASKLISTS_KEY,
@@ -69,6 +70,7 @@ export interface BackendAtoms {
  */
 const MUTATION_REACTIVITY = {
   addAccount: [ACCOUNTS_KEY, CALENDARS_KEY, EVENTS_KEY, TASKS_KEY, TASKLISTS_KEY],
+  clearLocationCache: [LOCATION_GEO_KEY],
   completeTask: [TASKS_KEY],
   connectContacts: [BIRTHDAYS_KEY, CONTACTS_KEY],
   connectReminders: [ACCOUNTS_KEY, TASKLISTS_KEY, TASKS_KEY],
@@ -249,15 +251,19 @@ const buildAtoms = (client: BackendClient) => {
 
   // Coordinates for an event's location text (cached per string on the
   // backend). Keyed by the exact text; '' resolves to null locally.
+  // LOCATION_GEO_KEY re-reads when a background refresh lands or the
+  // cache is wiped, so an open editor's map follows.
   const locationGeo = boundedAtomCache((location) =>
-    runtime.atom(
-      location === ''
-        ? Effect.succeed(null)
-        : Effect.gen(function* () {
-            const backend = yield* AppBackend;
-            return yield* backend.resolveLocation({ location });
-          }),
-    ),
+    runtime
+      .atom(
+        location === ''
+          ? Effect.succeed(null)
+          : Effect.gen(function* () {
+              const backend = yield* AppBackend;
+              return yield* backend.resolveLocation({ location });
+            }),
+      )
+      .pipe(Atom.withReactivity([LOCATION_GEO_KEY])),
   );
 
   // Desktop map images, keyed by mapSnapshotKey; '' resolves to null.

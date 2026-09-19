@@ -13,9 +13,16 @@ const MIN_SEARCH_LENGTH = 3;
 const DEFAULT_PLACE_LIMIT = 6;
 /**
  * A recorded "nothing found" is trusted this long before MapKit is asked
- * again. Hits never expire: places do not move, and the key is the text.
+ * again (synchronously — there is nothing to show meanwhile).
  */
 export const LOCATION_MISS_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+/**
+ * A hit older than this is still shown at once, but re-resolved in the
+ * background: places open, move and close, and the text may now name a
+ * different one. A place in constant use refreshes on this cadence too,
+ * since every refresh restamps its row.
+ */
+export const LOCATION_REFRESH_AFTER_MS = 30 * 24 * 60 * 60 * 1000;
 /** Rows kept in the cache; past this the least recently resolved go. */
 const LOCATION_CACHE_ROWS = 2000;
 
@@ -25,7 +32,7 @@ const clamp = (value: number, min: number, max: number): number =>
 const toGeo = (place: GeoPlaceJson, location: string): GeoLocation =>
   new GeoLocation({ lat: place.lat, lng: place.lng, name: place.name, source: location });
 
-type LocationMethods = 'mapSnapshot' | 'resolveLocation' | 'searchPlaces';
+type LocationMethods = 'clearLocationCache' | 'mapSnapshot' | 'resolveLocation' | 'searchPlaces';
 
 /**
  * Place search, geocoding and map images. On-device only (MapKit through
@@ -38,6 +45,8 @@ export const locationHandlers: Pick<
   BackendHandlers<GeoClient | LocationGeoRepo>,
   LocationMethods
 > = {
+  clearLocationCache: () => Effect.flatMap(LocationGeoRepo, (cache) => cache.clear()),
+
   mapSnapshot: ({ appearance, height, lat, lng, scale, width }) =>
     Effect.gen(function* () {
       const geo = yield* GeoClient;
@@ -62,15 +71,7 @@ export const locationHandlers: Pick<
       const key = normalizeLocationKey(location);
       const now = yield* Clock.currentTimeMillis;
 
-      // A picked suggestion is a fresh, exact answer; free text may be cached.
-      if (suggestion === undefined) {
-        const cached = yield* cache.get(key);
-        if (cached && (cached.geo !== null || now - cached.resolvedAt < LOCATION_MISS_TTL_MS)) {
-          return cached.geo && new GeoLocation({ ...cached.geo, source: location });
-        }
-      }
-
-      const place = yield* geo.resolve({ query: location, suggestion }).pipe(
+      const lookup = geo.resolve({ query: location, suggestion }).pipe(
         Effect.map((result) => ({ result })),
         // No bridge or a failed lookup (offline): nothing to show, and
         // nothing cached — a transient failure must not read as "no such place".
@@ -83,13 +84,33 @@ export const locationHandlers: Pick<
           ),
         ),
       );
-      if (place === undefined) {
-        return null;
+      const store = (place: { readonly result: GeoPlaceJson | null } | undefined) =>
+        Effect.gen(function* () {
+          if (place === undefined) {
+            return null;
+          }
+          const resolved = place.result && toGeo(place.result, location);
+          yield* cache.set(key, resolved, now);
+          yield* cache.prune(now - LOCATION_MISS_TTL_MS, LOCATION_CACHE_ROWS);
+          return resolved;
+        });
+
+      // A picked suggestion is a fresh, exact answer; free text may be cached.
+      if (suggestion === undefined) {
+        const cached = yield* cache.get(key);
+        if (cached?.geo !== null && cached !== null) {
+          if (now - cached.resolvedAt > LOCATION_REFRESH_AFTER_MS) {
+            // Stale-while-revalidate: the cache write invalidates
+            // LOCATION_GEO_KEY, so an open editor re-reads the fresh answer.
+            yield* Effect.forkDetach(Effect.flatMap(lookup, store));
+          }
+          return new GeoLocation({ ...cached.geo, source: location });
+        }
+        if (cached && now - cached.resolvedAt < LOCATION_MISS_TTL_MS) {
+          return null;
+        }
       }
-      const resolved = place.result && toGeo(place.result, location);
-      yield* cache.set(key, resolved, now);
-      yield* cache.prune(now - LOCATION_MISS_TTL_MS, LOCATION_CACHE_ROWS);
-      return resolved;
+      return yield* Effect.flatMap(lookup, store);
     }),
 
   searchPlaces: ({ limit, query }) =>

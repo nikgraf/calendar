@@ -42,6 +42,7 @@ const notStubbed = () => Effect.fail(new Error('not stubbed')) as Effect.Effect<
 
 const stubHandlers: BackendHandlers = {
   addAccount: notStubbed,
+  clearLocationCache: () => Effect.void,
   completeTask: () => Effect.void,
   connectContacts: () => Effect.succeed({ granted: false }),
   connectReminders: () => Effect.succeed({ granted: false }),

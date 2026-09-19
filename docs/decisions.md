@@ -785,6 +785,11 @@ Performance:
       null-deleting PATCH is sent only by the edit that dropped the
       coordinates (`PendingOp.geoCleared`), never on unrelated edits,
       since null-for-absent-key was only verified against the fake.
+      Nik then asked for cache hits to expire: places open, move and
+      close, so a hit older than 30 days is shown at once and refreshed
+      in the background (stale-while-revalidate; a place in constant use
+      refreshes on the same cadence because every refresh restamps it),
+      and Settings on both platforms has "Clear location cache".
       The desktop map is a static `MKMapSnapshotter` image from the Swift
       helper (native look, no MapKit JS token or tile policy); iOS uses
       `expo-maps`. The desktop image is light-only until the renderer has

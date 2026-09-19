@@ -30,6 +30,7 @@ import {
 import { SqliteClient } from '@effect/sql-sqlite-node';
 import { Effect, Layer } from 'effect';
 import { layer as reactivityLayer } from 'effect/unstable/reactivity/Reactivity';
+import { SqlClient } from 'effect/unstable/sql/SqlClient';
 
 const require = createRequire(import.meta.url);
 
@@ -119,6 +120,17 @@ export const readPendingOps = async (userDataDir: string) => {
   return Effect.runPromise(
     Effect.gen(function* () {
       return yield* (yield* PendingOpRepo).listAll();
+    }).pipe(Effect.provide(dbLayer)),
+  );
+};
+
+export const readLocationGeoCount = async (userDataDir: string): Promise<number> => {
+  const dbLayer = SqliteClient.layer({ filename: join(userDataDir, 'calendar.db') });
+  return Effect.runPromise(
+    Effect.gen(function* () {
+      const sql = yield* SqlClient;
+      const rows = yield* sql<{ n: number }>`SELECT COUNT(*) AS n FROM location_geo`;
+      return rows[0]?.n ?? 0;
     }).pipe(Effect.provide(dbLayer)),
   );
 };

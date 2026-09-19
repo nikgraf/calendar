@@ -35,6 +35,9 @@ export const BIRTHDAYS_KEY = 'birthdays';
  */
 export const deviceSettingsKey = (key: string): string => `deviceSettings:${key}`;
 
+/** The on-device location geocode cache changed (a refresh landed, or it was cleared). */
+export const LOCATION_GEO_KEY = 'locationGeo';
+
 /** A sync_state row changed (a pass started or finished). */
 export const SYNC_STATE_KEY = 'syncState';
 

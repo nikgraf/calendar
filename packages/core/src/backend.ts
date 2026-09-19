@@ -106,6 +106,8 @@ export class BackendError extends Schema.Error<BackendError>('core/BackendError'
 
 export class AppBackendRpcs extends RpcGroup.make(
   Rpc.make('addAccount', { error: BackendError, success: Account }),
+  /** Wipes the on-device location geocode cache (Settings). */
+  Rpc.make('clearLocationCache', { error: BackendError }),
   Rpc.make('completeTask', {
     error: BackendError,
     payload: {

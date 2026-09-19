@@ -1,6 +1,6 @@
 import { Account, CalendarInfo, EventRecord, GeoLocation } from '@calendar/core';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { type App, launchApp, readPendingOps } from './harness.ts';
+import { type App, launchApp, readLocationGeoCount, readPendingOps } from './harness.ts';
 
 // Places come from the in-memory geo fixture (CALENDAR_GEO=fixture): the
 // typeahead, geocoding and the map image are deterministic and offline,
@@ -166,5 +166,16 @@ describe('location picker and map', () => {
     await cdp.waitFor(`!!document.querySelector('img[data-map]')`);
     await cdp.clickButtonWithText('Cancel');
     await cdp.waitFor(`!${INPUT}`);
+  });
+
+  it('clears the lookup cache from Settings', async () => {
+    const { cdp } = app;
+    // The pick above cached its place.
+    expect(await readLocationGeoCount(app.userDataDir)).toBeGreaterThan(0);
+    await cdp.clickButtonWithText('Manage accounts…');
+    await cdp.waitFor(`document.body.textContent.includes('Clear location cache')`);
+    await cdp.clickButtonWithText('Clear location cache');
+    await cdp.waitFor(`!!document.querySelector('[data-location-cache="cleared"]')`);
+    expect(await readLocationGeoCount(app.userDataDir)).toBe(0);
   });
 });

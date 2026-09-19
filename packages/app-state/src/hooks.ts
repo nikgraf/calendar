@@ -280,6 +280,7 @@ export const useBackendMutations = () => {
       };
     return {
       addAccount: set('addAccount'),
+      clearLocationCache: set('clearLocationCache'),
       completeTask: set('completeTask'),
       connectContacts: set('connectContacts'),
       connectReminders: set('connectReminders'),

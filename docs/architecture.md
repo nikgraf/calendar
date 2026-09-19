@@ -348,8 +348,11 @@ Rules that keep the queue correct:
   another client) ignores the keys; they stay on the server until the
   next pick overwrites them. Events without mirrored coordinates are
   geocoded when the editor opens (`resolveLocation`, cached per
-  normalized string in the device-local `location_geo` table, misses for
-  7 days, pruned to 2000 rows) for the map on this device only; typing
+  normalized string in the device-local `location_geo` table: misses
+  for 7 days, hits served at once and re-resolved in the background
+  once older than 30 days — the write invalidates `LOCATION_GEO_KEY`, so
+  an open editor follows — pruned to 2000 rows, wiped from Settings)
+  for the map on this device only; typing
   never geocodes — the typeahead (`searchPlaces`,
   MKLocalSearchCompleter) and a picked row do. URLs and meeting links
   are never looked up. Desktop

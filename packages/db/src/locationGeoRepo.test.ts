@@ -2,6 +2,7 @@ import { GeoLocation } from '@calendar/core';
 import { SqliteClient } from '@effect/sql-sqlite-node';
 import { expect, it } from '@effect/vitest';
 import { Effect, Layer } from 'effect';
+import { layer as reactivityLayer } from 'effect/unstable/reactivity/Reactivity';
 import { SqlClient } from 'effect/unstable/sql/SqlClient';
 import { describe } from 'vitest';
 import { LocationGeoRepo } from './locationGeoRepo.ts';
@@ -11,6 +12,7 @@ const freshDbLayer = () =>
   LocationGeoRepo.layer.pipe(
     Layer.provideMerge(Layer.effectDiscard(runMigrations)),
     Layer.provideMerge(SqliteClient.layer({ filename: ':memory:' })),
+    Layer.provideMerge(reactivityLayer),
   );
 
 const geo = new GeoLocation({ lat: 48.2, lng: 16.37, name: 'Naschmarkt', source: 'Naschmarkt' });
@@ -42,6 +44,15 @@ describe('LocationGeoRepo', () => {
       const repo = yield* LocationGeoRepo;
       yield* sql`INSERT INTO location_geo VALUES ('bad', '{"lat":1}', 5)`;
       expect(yield* repo.get('bad')).toEqual({ geo: null, resolvedAt: 5 });
+    }).pipe(Effect.provide(freshDbLayer())),
+  );
+
+  it.effect('clear empties the table', () =>
+    Effect.gen(function* () {
+      const repo = yield* LocationGeoRepo;
+      yield* repo.set('naschmarkt', geo, 10);
+      yield* repo.clear();
+      expect(yield* repo.get('naschmarkt')).toBeNull();
     }).pipe(Effect.provide(freshDbLayer())),
   );
 
