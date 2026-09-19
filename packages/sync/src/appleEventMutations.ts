@@ -64,7 +64,9 @@ const rejectGuests = (changes: UpdateEventParams['changes']) =>
 
 /** A delete of something EventKit no longer has has nothing left to do. */
 const goneIsDone = (effect: Effect.Effect<void, AppleCalendarError>) =>
-  Effect.catchIf(effect, isNotFound, () => Effect.void);
+  Effect.catchIf(effect, isNotFound, (error) =>
+    Effect.logWarning('apple calendar delete: already gone', { message: error.message }),
+  );
 
 const record = (json: Parameters<typeof mapAppleEvent>[0]) =>
   Effect.map(Clock.currentTimeMillis, (now) =>

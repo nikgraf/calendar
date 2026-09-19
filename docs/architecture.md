@@ -289,11 +289,12 @@ Rules that keep the queue correct:
   database and expands series itself; a mirror would need a window and
   could disagree with Calendar.app. `AppleCalendarEvents.eventsInRange`
   asks the bridge for exactly the range a view shows (the bridge chunks
-  EventKit's four-year predicate limit), keeps visible mirrored
-  calendars only, and memoizes up to 8 ranges. `EKEventStoreChanged`
-  (debounced 1 s), every Apple write and `setCalendarVisible` clear the
-  memo and invalidate `EVENTS_KEY`. The backend rpc stays the single
-  query surface (views, find-a-time, any future CLI/agent).
+  EventKit's four-year predicate limit) and keeps visible mirrored
+  calendars only. There is no range cache: EventKit is local and fast,
+  and a cache invites a read from before a write overwriting it.
+  `EKEventStoreChanged` (debounced 1 s), every Apple write and
+  `setCalendarVisible` invalidate `EVENTS_KEY`. The backend rpc stays the
+  single query surface (views, find-a-time, any future CLI/agent).
 - **Ids**: a single event is its `eventIdentifier`; an occurrence of a
   series is `<eventIdentifier>__<occurrenceDate>` with
   `recurringEventId`/`originalStartUtc` set — the same shape

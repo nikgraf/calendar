@@ -11,8 +11,6 @@ import { Reactivity } from 'effect/unstable/reactivity/Reactivity';
 
 /** EKEventStoreChanged arrives in bursts (iCloud sync, our own writes). */
 const CHANGE_DEBOUNCE = '1 second';
-/** Ranges kept between invalidations — the views a user flips between. */
-const MEMO_SIZE = 8;
 
 export interface AppleCalendarEventsShape {
   /**
@@ -25,7 +23,7 @@ export interface AppleCalendarEventsShape {
     rangeStartUtc: number,
     rangeEndUtc: number,
   ) => Effect.Effect<ReadonlyArray<EventRecord>>;
-  /** Forgets cached ranges and repaints event views (after a write or a store change). */
+  /** Repaints event views (after a write or a store change). */
   readonly invalidate: Effect.Effect<void>;
 }
 
@@ -36,9 +34,11 @@ export const deviceTimeZone = (): string => Temporal.Now.timeZoneId();
  * Apple events are read through, never stored: EventKit expands series
  * itself and already is a local database, so a mirror would only add a
  * window to maintain and a second copy that could disagree with
- * Calendar.app. This service is that read path plus a tiny range memo;
- * `EKEventStoreChanged` clears the memo and invalidates EVENTS_KEY, which
- * is how an edit in Calendar.app reaches the UI.
+ * Calendar.app. Every read asks EventKit, deliberately without a cache:
+ * EventKit is local and fast, and a range memo invites the race where a
+ * read that started before a write stores its stale answer after the
+ * write cleared the memo. `EKEventStoreChanged` invalidates EVENTS_KEY,
+ * which is how an edit in Calendar.app reaches the UI.
  */
 const make: Effect.Effect<
   AppleCalendarEventsShape,
@@ -49,14 +49,9 @@ const make: Effect.Effect<
   const accountRepo = yield* AccountRepo;
   const calendarRepo = yield* CalendarRepo;
   const reactivity = yield* Reactivity;
-  const memo = new Map<string, ReadonlyArray<EventRecord>>();
+  const invalidate = Effect.ignore(reactivity.invalidate([EVENTS_KEY]));
 
-  const invalidate = Effect.suspend(() => {
-    memo.clear();
-    return Effect.ignore(reactivity.invalidate([EVENTS_KEY]));
-  });
-
-  const fetch = (rangeStartUtc: number, rangeEndUtc: number) =>
+  const eventsInRange = (rangeStartUtc: number, rangeEndUtc: number) =>
     Effect.gen(function* () {
       const account = yield* accountRepo.get(APPLE_CALENDAR_ACCOUNT_ID);
       if (!account || account.status !== 'ok') {
@@ -87,26 +82,6 @@ const make: Effect.Effect<
         Effect.as(Effect.logWarning('apple calendar events unavailable', { cause }), []),
       ),
     );
-
-  const eventsInRange = (rangeStartUtc: number, rangeEndUtc: number) =>
-    Effect.suspend(() => {
-      const key = `${rangeStartUtc}:${rangeEndUtc}`;
-      const cached = memo.get(key);
-      if (cached) {
-        return Effect.succeed(cached);
-      }
-      return Effect.tap(fetch(rangeStartUtc, rangeEndUtc), (events) =>
-        Effect.sync(() => {
-          if (memo.size >= MEMO_SIZE) {
-            const oldest = memo.keys().next().value;
-            if (oldest !== undefined) {
-              memo.delete(oldest);
-            }
-          }
-          memo.set(key, events);
-        }),
-      );
-    });
 
   yield* Effect.forkDetach(
     client.changes.pipe(

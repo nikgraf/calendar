@@ -301,7 +301,7 @@ export const commonBackendHandlers: Omit<BackendHandlers<CommonBackendServices>,
       }
       yield* accountRepo.remove(accountId);
       if (accountId === APPLE_CALENDAR_ACCOUNT_ID) {
-        // Its events live in the range cache, not in the cascade.
+        // Its events are not in the cascade (never stored): repaint the views.
         yield* (yield* AppleCalendarEvents).invalidate;
       }
     }),
@@ -344,7 +344,7 @@ export const commonBackendHandlers: Omit<BackendHandlers<CommonBackendServices>,
       const calendarRepo = yield* CalendarRepo;
       yield* calendarRepo.setVisible(accountId, calendarId, isVisible);
       if (accountId === APPLE_CALENDAR_ACCOUNT_ID) {
-        // Its events are cached per range, not joined from SQLite.
+        // Its events are read from EventKit, not joined from SQLite: repaint.
         yield* (yield* AppleCalendarEvents).invalidate;
       }
     }),

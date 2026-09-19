@@ -5,6 +5,7 @@ import {
 } from '@calendar/apple-calendar';
 import { Account, APPLE_CALENDAR_ACCOUNT_ID, plainDateToUtcMs, Temporal } from '@calendar/core';
 import { AccountRepo, CalendarRepo, reposLayer, runMigrations } from '@calendar/db';
+import { EVENTS_KEY } from '@calendar/db/keys';
 import {
   GoogleCalendarClient,
   type GoogleCalendarClientShape,
@@ -16,7 +17,7 @@ import { SqliteClient } from '@effect/sql-sqlite-node';
 import { expect, it } from '@effect/vitest';
 import { Effect, Layer } from 'effect';
 import { TestClock } from 'effect/testing';
-import { layer as reactivityLayer } from 'effect/unstable/reactivity/Reactivity';
+import { layer as reactivityLayer, Reactivity } from 'effect/unstable/reactivity/Reactivity';
 import { describe } from 'vitest';
 import { AppleCalendarEvents, appleCalendarServicesLayer } from './appleCalendarEvents.ts';
 import { SyncEngine } from './engine.ts';
@@ -228,14 +229,19 @@ describe('Apple Calendar mirror and read-through', () => {
     }).pipe(Effect.provide(testLayer(fake)));
   });
 
-  it.effect('answers a repeated range from memory until EventKit changes', () => {
+  it.effect('reads EventKit on every range and repaints on a store change', () => {
     const fake = fakeWith();
     return Effect.gen(function* () {
       yield* connected;
+      const reactivity = yield* Reactivity;
+      let repaints = 0;
+      reactivity.registerUnsafe([EVENTS_KEY], () => {
+        repaints += 1;
+      });
       yield* eventsInWindow;
       yield* eventsInWindow;
-      const fetches = () => fake.state.calls.filter((call) => call === 'events').length;
-      expect(fetches()).toBe(1);
+      // No cache: a read never answers from before a write.
+      expect(fake.state.calls.filter((call) => call === 'events')).toHaveLength(2);
       // The change stream runs on a forked fiber: let it subscribe, take
       // the element, and finish the invalidation around the debounce.
       yield* settle;
@@ -243,8 +249,7 @@ describe('Apple Calendar mirror and read-through', () => {
       yield* settle;
       yield* TestClock.adjust('2 seconds');
       yield* settle;
-      yield* eventsInWindow;
-      expect(fetches()).toBe(2);
+      expect(repaints).toBe(1);
     }).pipe(Effect.provide(testLayer(fake)));
   });
 
