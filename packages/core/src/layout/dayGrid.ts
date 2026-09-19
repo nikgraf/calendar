@@ -1,17 +1,24 @@
+import { Temporal } from '../time/temporal.ts';
+
 /**
  * Day-column layout: the classic calendar packing algorithm. Overlapping
  * events form clusters; within a cluster each event takes the leftmost free
  * column, and every member's width is 1/columnCount of the cluster.
- * All coordinates are fractions (0..1) of the day window / column width.
+ * All coordinates are fractions (0..1) of the day column / column width.
+ *
+ * The column is a fixed 24-hour wall clock — the hour lines, slot clicks and
+ * drags all assume it — so boxes are placed by wall-clock minute, never by
+ * elapsed time. On a 23- or 25-hour DST day an event still sits beside its
+ * hour label, like Google Calendar's grid.
  */
 
+const DAY_MINUTES = 24 * 60;
+
 export interface TimedBox {
-  readonly endUtc: number;
+  /** Wall-clock minutes from the column's midnight; clipped to 0..1440. */
+  readonly endMinute: number;
   readonly id: string;
-  /** Optional fixed-day coordinates for wall-clock items such as reminders. */
-  readonly layoutEndMinute?: number;
-  readonly layoutStartMinute?: number;
-  readonly startUtc: number;
+  readonly startMinute: number;
 }
 
 export interface PositionedBox {
@@ -22,32 +29,44 @@ export interface PositionedBox {
   readonly width: number;
 }
 
-export const layoutDayColumn = (
-  events: ReadonlyArray<TimedBox>,
-  dayStartUtc: number,
-  dayEndUtc: number,
-): Array<PositionedBox> => {
-  const dayMs = dayEndUtc - dayStartUtc;
-  if (dayMs <= 0) {
-    return [];
+/** Wall-clock minutes of `epochMs` on `date`'s grid, clamped to that day. */
+const minuteOnDay = (epochMs: number, date: Temporal.PlainDate, timeZone: string): number => {
+  const zoned = Temporal.Instant.fromEpochMilliseconds(epochMs).toZonedDateTimeISO(timeZone);
+  const order = Temporal.PlainDate.compare(zoned.toPlainDate(), date);
+  if (order !== 0) {
+    return order < 0 ? 0 : DAY_MINUTES;
   }
+  return zoned.hour * 60 + zoned.minute + zoned.second / 60;
+};
 
-  const sorted = [...events]
-    .filter((event) => event.endUtc > dayStartUtc && event.startUtc < dayEndUtc)
-    .map((event) => {
-      const usesWallClockLayout =
-        event.layoutStartMinute !== undefined && event.layoutEndMinute !== undefined;
-      // Pack the same visual intervals we render, including on 23/25-hour days.
-      return {
-        end: usesWallClockLayout
-          ? Math.min(event.layoutEndMinute, 24 * 60) / (24 * 60)
-          : (Math.min(event.endUtc, dayEndUtc) - dayStartUtc) / dayMs,
-        id: event.id,
-        start: usesWallClockLayout
-          ? Math.max(event.layoutStartMinute, 0) / (24 * 60)
-          : (Math.max(event.startUtc, dayStartUtc) - dayStartUtc) / dayMs,
-      };
-    })
+/** Minutes since local midnight at `epochMs` — where the "now" line sits. */
+export const wallClockMinutes = (epochMs: number, timeZone: string): number => {
+  const zoned = Temporal.Instant.fromEpochMilliseconds(epochMs).toZonedDateTimeISO(timeZone);
+  return zoned.hour * 60 + zoned.minute + zoned.second / 60;
+};
+
+/** A timed event's box on `date`'s column, clipped to that day. */
+export const timedEventBox = (
+  event: { readonly endUtc: number; readonly startUtc: number },
+  id: string,
+  date: Temporal.PlainDate,
+  timeZone: string,
+): TimedBox => {
+  const startMinute = minuteOnDay(event.startUtc, date, timeZone);
+  // Inside a fall-back's repeated hour a short event can end at an earlier
+  // wall-clock minute than it starts; draw it at its start, minimum height.
+  const endMinute = Math.max(minuteOnDay(event.endUtc, date, timeZone), startMinute);
+  return { endMinute, id, startMinute };
+};
+
+export const layoutDayColumn = (boxes: ReadonlyArray<TimedBox>): Array<PositionedBox> => {
+  const sorted = boxes
+    .map((box) => ({
+      end: Math.min(box.endMinute, DAY_MINUTES) / DAY_MINUTES,
+      id: box.id,
+      start: Math.max(box.startMinute, 0) / DAY_MINUTES,
+    }))
+    .filter((box) => box.end > 0 && box.start < 1)
     .sort((a, b) => a.start - b.start || b.end - a.end);
 
   interface Placed {

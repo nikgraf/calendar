@@ -1,23 +1,18 @@
 import { describe, expect, it } from 'vitest';
 import { timedTaskSlot } from '../taskTiming.ts';
-import { dayRange } from '../time/ranges.ts';
 import { Temporal } from '../time/temporal.ts';
 import { layoutAllDayLane } from './allDayLane.ts';
-import { layoutDayColumn } from './dayGrid.ts';
-
-const HOUR = 60 * 60 * 1000;
-const DAY_START = 0;
-const DAY_END = 24 * HOUR;
+import { layoutDayColumn, timedEventBox, wallClockMinutes } from './dayGrid.ts';
 
 const box = (id: string, startHour: number, endHour: number) => ({
-  endUtc: endHour * HOUR,
+  endMinute: endHour * 60,
   id,
-  startUtc: startHour * HOUR,
+  startMinute: startHour * 60,
 });
 
 describe('layoutDayColumn', () => {
   it('gives a lone event the full width', () => {
-    const [placed] = layoutDayColumn([box('a', 9, 10)], DAY_START, DAY_END);
+    const [placed] = layoutDayColumn([box('a', 9, 10)]);
     expect(placed).toEqual({
       height: expect.closeTo(1 / 24),
       id: 'a',
@@ -28,7 +23,7 @@ describe('layoutDayColumn', () => {
   });
 
   it('splits two overlapping events into half-width columns', () => {
-    const placed = layoutDayColumn([box('a', 9, 11), box('b', 10, 12)], DAY_START, DAY_END);
+    const placed = layoutDayColumn([box('a', 9, 11), box('b', 10, 12)]);
     expect(placed.find((entry) => entry.id === 'a')).toMatchObject({
       left: 0,
       width: 0.5,
@@ -42,11 +37,7 @@ describe('layoutDayColumn', () => {
   it('reuses freed columns within a cluster', () => {
     // Equal starts sort longest-first: b(9–12) takes column 0, a(9–10)
     // column 1; when a ends, c(10–11) reuses a's freed column.
-    const placed = layoutDayColumn(
-      [box('a', 9, 10), box('b', 9, 12), box('c', 10, 11)],
-      DAY_START,
-      DAY_END,
-    );
+    const placed = layoutDayColumn([box('a', 9, 10), box('b', 9, 12), box('c', 10, 11)]);
     const byId = Object.fromEntries(placed.map((entry) => [entry.id, entry]));
     expect(byId['b']).toMatchObject({ left: 0, width: 0.5 });
     expect(byId['a']).toMatchObject({ left: 0.5, width: 0.5 });
@@ -54,73 +45,41 @@ describe('layoutDayColumn', () => {
   });
 
   it('keeps separate clusters full width', () => {
-    const placed = layoutDayColumn([box('a', 9, 10), box('b', 14, 15)], DAY_START, DAY_END);
+    const placed = layoutDayColumn([box('a', 9, 10), box('b', 14, 15)]);
     expect(placed.every((entry) => entry.width === 1)).toBe(true);
   });
 
-  it('clips events crossing the day boundary', () => {
-    const placed = layoutDayColumn([box('a', -2, 2)], DAY_START, DAY_END);
-    expect(placed[0]).toMatchObject({ height: 2 / 24, top: 0 });
+  it('clips boxes to the day and drops ones outside it', () => {
+    const placed = layoutDayColumn([box('a', -2, 2), box('before', -2, 0), box('after', 24, 25)]);
+    expect(placed).toHaveLength(1);
+    expect(placed[0]).toMatchObject({ height: 2 / 24, id: 'a', top: 0 });
   });
 
-  it('uses optional wall-clock minutes for visual coordinates', () => {
-    const springForwardDayEnd = 23 * HOUR;
-    const [placed] = layoutDayColumn(
-      [
-        {
-          ...box('reminder', 8, 8.5),
-          layoutEndMinute: 9.5 * 60,
-          layoutStartMinute: 9 * 60,
-        },
-      ],
-      DAY_START,
-      springForwardDayEnd,
-    );
-
-    expect(placed).toMatchObject({ height: expect.closeTo(0.5 / 24), top: 9 / 24 });
-  });
-
-  it.each([
-    {
-      dueDate: '2026-03-29',
-      eventEnd: '11:00',
-      eventStart: '10:00',
-      reminderTimes: ['09:30', '09:45', '10:00'],
-    },
-    {
-      dueDate: '2026-10-25',
-      eventEnd: '10:00',
-      eventStart: '09:00',
-      reminderTimes: ['10:00', '10:15', '10:30'],
-    },
-  ])(
-    'separates visually overlapping events and reminders on $dueDate',
-    ({ dueDate, eventEnd, eventStart, reminderTimes }) => {
+  it.each(['2026-03-29', '2026-10-25'])(
+    'separates an event from reminders during it on %s',
+    (dueDate) => {
       const timeZone = 'Europe/Vienna';
-      const range = dayRange(Temporal.PlainDate.from(dueDate), timeZone);
       const epoch = (time: string) =>
         Temporal.PlainDateTime.from(`${dueDate}T${time}`).toZonedDateTime(timeZone)
           .epochMilliseconds;
-      const event = { endUtc: epoch(eventEnd), id: 'event', startUtc: epoch(eventStart) };
-      const placed = layoutDayColumn(
-        [
-          ...reminderTimes.map((dueTime) => ({
-            ...timedTaskSlot({ dueDate, dueTime }, timeZone)!,
-            id: dueTime,
-          })),
-          event,
-        ],
-        range.startUtc,
-        range.endUtc,
-      );
+      const placed = layoutDayColumn([
+        ...['09:15', '09:30', '09:45'].map((dueTime) => ({
+          ...timedTaskSlot({ dueDate, dueTime })!,
+          id: dueTime,
+        })),
+        timedEventBox(
+          { endUtc: epoch('10:00'), startUtc: epoch('09:00') },
+          'event',
+          Temporal.PlainDate.from(dueDate),
+          timeZone,
+        ),
+      ]);
 
-      // Event positions retain their existing elapsed-day coordinates.
+      // The event sits beside its hour label even on a 23/25-hour day.
       const positionedEvent = placed.find((entry) => entry.id === 'event')!;
-      const dayMs = range.endUtc - range.startUtc;
-      expect(positionedEvent.top).toBeCloseTo((event.startUtc - range.startUtc) / dayMs);
-      expect(positionedEvent.height).toBeCloseTo((event.endUtc - event.startUtc) / dayMs);
+      expect(positionedEvent.top).toBeCloseTo(9 / 24);
+      expect(positionedEvent.height).toBeCloseTo(1 / 24);
       expect(placed).toHaveLength(4);
-      expect(placed[0]?.id).toBe('event');
       expect(placed.every((entry) => entry.width < 1)).toBe(true);
 
       for (const [index, entry] of placed.entries()) {
@@ -134,20 +93,69 @@ describe('layoutDayColumn', () => {
       }
     },
   );
+});
 
-  it('filters wall-clock items by their UTC day before positioning them', () => {
-    const placed = layoutDayColumn(
-      [-24, 0, 24].map((offset) => ({
-        ...box(String(offset), offset + 9, offset + 9.5),
-        layoutEndMinute: 9.5 * 60,
-        layoutStartMinute: 9 * 60,
-      })),
-      DAY_START,
-      DAY_END,
+describe('timedEventBox', () => {
+  const timeZone = 'Europe/Vienna';
+  const day = Temporal.PlainDate.from('2026-03-28');
+  const epoch = (iso: string) =>
+    Temporal.PlainDateTime.from(iso).toZonedDateTime(timeZone).epochMilliseconds;
+
+  it('places an event by its wall-clock minutes', () => {
+    expect(
+      timedEventBox(
+        { endUtc: epoch('2026-03-28T10:30'), startUtc: epoch('2026-03-28T09:15') },
+        'a',
+        day,
+        timeZone,
+      ),
+    ).toEqual({ endMinute: 10 * 60 + 30, id: 'a', startMinute: 9 * 60 + 15 });
+  });
+
+  it('clips a multi-day event to the column', () => {
+    expect(
+      timedEventBox(
+        { endUtc: epoch('2026-03-29T02:00'), startUtc: epoch('2026-03-27T22:00') },
+        'a',
+        day,
+        timeZone,
+      ),
+    ).toEqual({ endMinute: 24 * 60, id: 'a', startMinute: 0 });
+  });
+
+  it('draws the hours across spring-forward at their labels', () => {
+    // 01:30–03:30 is one elapsed hour, but spans two rows of the 24-hour grid.
+    const springDay = Temporal.PlainDate.from('2026-03-29');
+    expect(
+      timedEventBox(
+        { endUtc: epoch('2026-03-29T03:30'), startUtc: epoch('2026-03-29T01:30') },
+        'a',
+        springDay,
+        timeZone,
+      ),
+    ).toEqual({ endMinute: 3 * 60 + 30, id: 'a', startMinute: 60 + 30 });
+  });
+
+  it('never ends before it starts inside the fall-back repeated hour', () => {
+    // 02:45 (summer time) to 02:15 (winter time) is 30 elapsed minutes.
+    const fallDay = Temporal.PlainDate.from('2026-10-25');
+    const startUtc = Temporal.ZonedDateTime.from(
+      '2026-10-25T02:45:00+02:00[Europe/Vienna]',
+    ).epochMilliseconds;
+    const box = timedEventBox(
+      { endUtc: startUtc + 30 * 60 * 1000, startUtc },
+      'a',
+      fallDay,
+      timeZone,
     );
+    expect(box).toEqual({ endMinute: 2 * 60 + 45, id: 'a', startMinute: 2 * 60 + 45 });
+  });
+});
 
-    expect(placed).toHaveLength(1);
-    expect(placed[0]?.id).toBe('0');
+describe('wallClockMinutes', () => {
+  it('reads the local minute on a 23-hour day', () => {
+    const nine = Temporal.ZonedDateTime.from('2026-03-29T09:15:00+02:00[Europe/Vienna]');
+    expect(wallClockMinutes(nine.epochMilliseconds, 'Europe/Vienna')).toBe(9 * 60 + 15);
   });
 });
 

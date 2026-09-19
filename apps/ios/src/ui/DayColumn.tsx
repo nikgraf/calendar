@@ -1,6 +1,5 @@
 import {
   calendarTaskKey,
-  dayRange,
   type EventRecord,
   formatPlainTime,
   layoutDayColumn,
@@ -12,6 +11,7 @@ import {
   slotTimes,
   type TaskRecord,
   Temporal,
+  timedEventBox,
   timedTaskSlot,
 } from '@calendar/core';
 import { useState } from 'react';
@@ -77,22 +77,15 @@ export function DayColumn({
   timeZone: string;
   width: number;
 }) {
-  const range = dayRange(date, timeZone);
   const boxes = layoutDayColumn(
     events
-      .map((event) => ({
-        endUtc: event.endUtc,
-        id: `${event.calendarId}:${event.id}`,
-        startUtc: event.startUtc,
-      }))
+      .map((event) => timedEventBox(event, `${event.calendarId}:${event.id}`, date, timeZone))
       .concat(
         timedTasks.flatMap((task) => {
-          const slot = timedTaskSlot(task, timeZone);
+          const slot = timedTaskSlot(task);
           return slot === undefined ? [] : [{ ...slot, id: calendarTaskKey(task) }];
         }),
       ),
-    range.startUtc,
-    range.endUtc,
   );
   const byId = new Map(events.map((event) => [`${event.calendarId}:${event.id}`, event]));
   const tasksById = new Map(timedTasks.map((task) => [calendarTaskKey(task), task]));
@@ -194,7 +187,7 @@ export function DayColumn({
         );
       })}
 
-      {isToday ? <NowIndicator rangeEndUtc={range.endUtc} rangeStartUtc={range.startUtc} /> : null}
+      {isToday ? <NowIndicator date={date} timeZone={timeZone} /> : null}
 
       {selection ? (
         <View

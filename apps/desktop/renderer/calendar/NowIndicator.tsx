@@ -1,4 +1,5 @@
 import { useNow } from '@calendar/app-state';
+import { Temporal, wallClockMinutes } from '@calendar/core';
 
 /**
  * The red "now" line in today's column. It owns the minute tick, so the
@@ -7,18 +8,18 @@ import { useNow } from '@calendar/app-state';
  * empty grid) under it — otherwise pressing an event where the line
  * crosses it would draw a new slot instead of moving the event.
  */
-export function NowIndicator({
-  rangeEndUtc,
-  rangeStartUtc,
-}: {
-  rangeEndUtc: number;
-  rangeStartUtc: number;
-}) {
+export function NowIndicator({ date, timeZone }: { date: Temporal.PlainDate; timeZone: string }) {
   const nowMs = useNow();
-  const fraction = (nowMs - rangeStartUtc) / (rangeEndUtc - rangeStartUtc);
-  if (fraction < 0 || fraction > 1) {
+  // The column can outlive midnight until its parent re-renders.
+  if (
+    !Temporal.Instant.fromEpochMilliseconds(nowMs)
+      .toZonedDateTimeISO(timeZone)
+      .toPlainDate()
+      .equals(date)
+  ) {
     return null;
   }
+  const fraction = wallClockMinutes(nowMs, timeZone) / (24 * 60);
   return (
     <div
       className="pointer-events-none absolute right-0 left-0 z-10 border-t-2 border-red-500"
