@@ -212,7 +212,25 @@ const baseline = Effect.gen(function* () {
     )`;
 });
 
+// Structured locations. events.geo mirrors the coordinates stored in the
+// Google event's private extendedProperties (JSON GeoLocation; NULL = none
+// on the server). location_geo caches on-device geocoding per normalized
+// location string for events without server coordinates (read-only
+// calendars, events from before the feature); geo NULL there records a
+// lookup that found nothing, so it is not repeated on every open.
+const eventGeo = Effect.gen(function* () {
+  const sql = yield* SqlClient;
+  yield* sql`ALTER TABLE events ADD COLUMN geo TEXT`;
+  yield* sql`
+    CREATE TABLE location_geo (
+      location_key TEXT PRIMARY KEY NOT NULL,
+      geo TEXT,
+      resolved_at INTEGER NOT NULL
+    )`;
+});
+
 // The third tuple element is a *loader* whose result is the migration effect.
 export const migrations: ReadonlyArray<ResolvedMigration> = [
   [1, 'baseline', Effect.succeed(baseline)],
+  [2, 'event-geo', Effect.succeed(eventGeo)],
 ];

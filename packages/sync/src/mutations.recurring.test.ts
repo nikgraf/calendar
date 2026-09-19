@@ -1,4 +1,11 @@
-import { Account, Attendee, CalendarInfo, EventRecord, plainDateToUtcMs } from '@calendar/core';
+import {
+  Account,
+  Attendee,
+  CalendarInfo,
+  EventRecord,
+  GeoLocation,
+  plainDateToUtcMs,
+} from '@calendar/core';
 import {
   AccountRepo,
   CalendarRepo,
@@ -266,6 +273,43 @@ describe('EventMutations recurring scopes', () => {
       expect(ops[0]!.eventId).toBe('master1');
       expect(ops[0]!.baseEtag).toBe('"m-1"');
       expect(ops[0]!.payload?.recurrence).toEqual(['RRULE:FREQ=DAILY;COUNT=10']);
+    }).pipe(Effect.provide(testLayer)),
+  );
+
+  it.effect('series and instance edits keep, replace or drop location coordinates', () =>
+    Effect.gen(function* () {
+      yield* seedMaster;
+      const events = yield* EventRepo;
+      const mutations = yield* EventMutations;
+      const geo = new GeoLocation({ lat: 48.2, lng: 16.37, source: 'Stephansplatz 3, Wien' });
+
+      yield* mutations.updateRecurring({
+        ...target,
+        changes: { geo, location: 'Stephansplatz 3, Wien' },
+        scope: 'series',
+      });
+      expect((yield* events.getById('acc-1', 'cal-1', 'master1'))?.geo).toEqual(geo);
+
+      // A title-only edit leaves the coordinates alone.
+      yield* mutations.updateRecurring({ ...target, changes: { title: 'Mass' }, scope: 'series' });
+      expect((yield* events.getById('acc-1', 'cal-1', 'master1'))?.geo).toEqual(geo);
+
+      // An instance inherits them; moving just that occurrence drops its copy.
+      yield* mutations.updateRecurring({
+        ...target,
+        changes: { location: 'Karlskirche' },
+        scope: 'instance',
+      });
+      expect((yield* events.getById('acc-1', 'cal-1', instanceId))?.geo).toBeUndefined();
+      expect((yield* events.getById('acc-1', 'cal-1', 'master1'))?.geo).toEqual(geo);
+
+      // Changing the series location without new coordinates drops them.
+      yield* mutations.updateRecurring({
+        ...target,
+        changes: { location: 'Online' },
+        scope: 'series',
+      });
+      expect((yield* events.getById('acc-1', 'cal-1', 'master1'))?.geo).toBeUndefined();
     }).pipe(Effect.provide(testLayer)),
   );
 

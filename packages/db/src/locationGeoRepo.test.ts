@@ -1,0 +1,47 @@
+import { GeoLocation } from '@calendar/core';
+import { SqliteClient } from '@effect/sql-sqlite-node';
+import { expect, it } from '@effect/vitest';
+import { Effect, Layer } from 'effect';
+import { SqlClient } from 'effect/unstable/sql/SqlClient';
+import { describe } from 'vitest';
+import { LocationGeoRepo } from './locationGeoRepo.ts';
+import { runMigrations } from './migrate.ts';
+
+const freshDbLayer = () =>
+  LocationGeoRepo.layer.pipe(
+    Layer.provideMerge(Layer.effectDiscard(runMigrations)),
+    Layer.provideMerge(SqliteClient.layer({ filename: ':memory:' })),
+  );
+
+const geo = new GeoLocation({ lat: 48.2, lng: 16.37, name: 'Naschmarkt', source: 'Naschmarkt' });
+
+describe('LocationGeoRepo', () => {
+  it.effect('returns null for an unknown key', () =>
+    Effect.gen(function* () {
+      const repo = yield* LocationGeoRepo;
+      expect(yield* repo.get('nowhere')).toBeNull();
+    }).pipe(Effect.provide(freshDbLayer())),
+  );
+
+  it.effect('stores hits and misses, and overwrites on refresh', () =>
+    Effect.gen(function* () {
+      const repo = yield* LocationGeoRepo;
+      yield* repo.set('naschmarkt', geo, 10);
+      yield* repo.set('atlantis', null, 11);
+      expect(yield* repo.get('naschmarkt')).toEqual({ geo, resolvedAt: 10 });
+      expect(yield* repo.get('atlantis')).toEqual({ geo: null, resolvedAt: 11 });
+
+      yield* repo.set('atlantis', geo, 12);
+      expect(yield* repo.get('atlantis')).toEqual({ geo, resolvedAt: 12 });
+    }).pipe(Effect.provide(freshDbLayer())),
+  );
+
+  it.effect('reads an unreadable stored value as a miss', () =>
+    Effect.gen(function* () {
+      const sql = yield* SqlClient;
+      const repo = yield* LocationGeoRepo;
+      yield* sql`INSERT INTO location_geo VALUES ('bad', '{"lat":1}', 5)`;
+      expect(yield* repo.get('bad')).toEqual({ geo: null, resolvedAt: 5 });
+    }).pipe(Effect.provide(freshDbLayer())),
+  );
+});

@@ -27,12 +27,22 @@ const GcalConferenceData = Schema.Struct({
   ),
 });
 
+/**
+ * App-owned key/values. `private` is visible only on this calendar's copy
+ * of the event; the app stores derived location coordinates there.
+ */
+const GcalExtendedProperties = Schema.Struct({
+  private: Schema.optional(Schema.Record(Schema.String, Schema.String)),
+  shared: Schema.optional(Schema.Record(Schema.String, Schema.String)),
+});
+
 export const GcalEvent = Schema.Struct({
   attendees: Schema.optional(Schema.Array(GcalAttendee)),
   conferenceData: Schema.optional(GcalConferenceData),
   description: Schema.optional(Schema.String),
   end: Schema.optional(GcalTime),
   etag: Schema.optional(Schema.String),
+  extendedProperties: Schema.optional(GcalExtendedProperties),
   hangoutLink: Schema.optional(Schema.String),
   id: Schema.String,
   location: Schema.optional(Schema.String),
@@ -111,6 +121,13 @@ export interface GcalEventInput {
     dateTime?: string | undefined;
     timeZone?: string | undefined;
   };
+  /**
+   * Private keys only. PATCH merges keys into the stored map; a key is
+   * deleted by sending it as null.
+   */
+  readonly extendedProperties?:
+    | { readonly private?: Readonly<Record<string, string | null>> | undefined }
+    | undefined;
   readonly id?: string | undefined;
   readonly location?: string | undefined;
   readonly recurrence?: ReadonlyArray<string> | undefined;

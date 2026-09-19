@@ -1,4 +1,4 @@
-import { Attendee, EventRecord } from '@calendar/core';
+import { Attendee, EventRecord, GEO_PROPERTY_KEYS, GeoLocation } from '@calendar/core';
 import { describe, expect, it } from 'vitest';
 import {
   hasGuests,
@@ -6,6 +6,8 @@ import {
   mapGcalEvent,
   toGcalAttendees,
   toGcalEventInput,
+  toGcalGeoInsert,
+  toGcalGeoPatch,
 } from './mapEvent.ts';
 
 const context = {
@@ -263,5 +265,82 @@ describe('toGcalAttendees', () => {
 
   it('emits an empty array so a patch clears the guests', () => {
     expect(toGcalAttendees(new EventRecord({ ...base, attendees: [] }))).toEqual([]);
+  });
+});
+
+describe('location coordinates', () => {
+  const location = 'Blue Bottle Coffee, 66 Mint St, San Francisco';
+  const timed = {
+    end: { dateTime: '2026-07-02T15:00:00Z' },
+    id: 'evt-geo',
+    location,
+    start: { dateTime: '2026-07-02T14:00:00Z' },
+    summary: 'Coffee',
+  };
+  const properties = {
+    [GEO_PROPERTY_KEYS.coordinates]: '37.7823,-122.4076',
+    [GEO_PROPERTY_KEYS.name]: 'Blue Bottle Coffee',
+    [GEO_PROPERTY_KEYS.source]: location,
+  };
+
+  it('reads coordinates derived from the current location text', () => {
+    const record = mapGcalEvent({ ...timed, extendedProperties: { private: properties } }, context);
+    expect(record?.geo).toEqual(
+      new GeoLocation({
+        lat: 37.7823,
+        lng: -122.4076,
+        name: 'Blue Bottle Coffee',
+        source: location,
+      }),
+    );
+  });
+
+  it('ignores coordinates once another client changed the location', () => {
+    const record = mapGcalEvent(
+      { ...timed, extendedProperties: { private: properties }, location: 'Office' },
+      context,
+    );
+    expect(record?.geo).toBeUndefined();
+  });
+
+  it('ignores events without or with unrelated properties', () => {
+    expect(mapGcalEvent(timed, context)?.geo).toBeUndefined();
+    expect(
+      mapGcalEvent({ ...timed, extendedProperties: { private: { other: 'x' } } }, context)?.geo,
+    ).toBeUndefined();
+  });
+
+  it('inserts the keys only when there are coordinates', () => {
+    const record = mapGcalEvent(
+      { ...timed, extendedProperties: { private: properties } },
+      context,
+    )!;
+    expect(toGcalGeoInsert(record)).toEqual({ extendedProperties: { private: properties } });
+    expect(toGcalGeoInsert(new EventRecord({ ...record, geo: undefined }))).toEqual({});
+  });
+
+  it('patches the keys, or deletes them with nulls when coordinates are gone', () => {
+    const record = mapGcalEvent(
+      { ...timed, extendedProperties: { private: properties } },
+      context,
+    )!;
+    expect(toGcalGeoPatch(record)).toEqual({ extendedProperties: { private: properties } });
+    expect(toGcalGeoPatch(new EventRecord({ ...record, geo: undefined }))).toEqual({
+      extendedProperties: {
+        private: {
+          [GEO_PROPERTY_KEYS.coordinates]: null,
+          [GEO_PROPERTY_KEYS.name]: null,
+          [GEO_PROPERTY_KEYS.source]: null,
+        },
+      },
+    });
+  });
+
+  it('keeps coordinates out of the plain input shape', () => {
+    const record = mapGcalEvent(
+      { ...timed, extendedProperties: { private: properties } },
+      context,
+    )!;
+    expect(toGcalEventInput(record).extendedProperties).toBeUndefined();
   });
 });

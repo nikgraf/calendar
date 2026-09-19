@@ -7,6 +7,7 @@ import { CalendarRepo } from './calendarRepo.ts';
 import { ContactRepo } from './contactRepo.ts';
 import { DeviceSettingsRepo } from './deviceSettingsRepo.ts';
 import { EventRepo } from './eventRepo.ts';
+import { LocationGeoRepo } from './locationGeoRepo.ts';
 import { PendingOpRepo } from './pendingOpRepo.ts';
 import { SyncStateRepo } from './syncStateRepo.ts';
 import { TaskRepo } from './taskRepo.ts';
@@ -21,6 +22,7 @@ export * from './taskRepo.ts';
 export * from './contactRepo.ts';
 export * from './birthdayRepo.ts';
 export * from './deviceSettingsRepo.ts';
+export * from './locationGeoRepo.ts';
 
 export const reposLayer: Layer.Layer<
   | AccountRepo
@@ -29,6 +31,7 @@ export const reposLayer: Layer.Layer<
   | ContactRepo
   | DeviceSettingsRepo
   | EventRepo
+  | LocationGeoRepo
   | PendingOpRepo
   | SyncStateRepo
   | TaskRepo,
@@ -41,6 +44,7 @@ export const reposLayer: Layer.Layer<
   ContactRepo.layer,
   DeviceSettingsRepo.layer,
   EventRepo.layer,
+  LocationGeoRepo.layer,
   PendingOpRepo.layer,
   SyncStateRepo.layer,
   TaskRepo.layer,

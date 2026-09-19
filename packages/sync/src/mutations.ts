@@ -8,6 +8,7 @@ import {
   PendingOp,
   remainingRecurrence,
   truncateRecurrence,
+  withConsistentGeo,
 } from '@calendar/core';
 import { AccountRepo, CalendarRepo, EventRepo, PendingOpRepo, TaskRepo } from '@calendar/db';
 import { CONFLICT_NOTICE_KEY, DROPPED_NOTICE_KEY } from '@calendar/db/keys';
@@ -55,13 +56,15 @@ const definedChanges = (
   changes: UpdateEventParams['changes'],
   currentAttendees: EventRecord['attendees'],
 ): Partial<EventRecord> => {
-  const { attendees, ...rest } = changes;
+  const { attendees, geo, ...rest } = changes;
   const defined: Partial<EventRecord> = Object.fromEntries(
     Object.entries(rest).filter(([, value]) => value !== undefined),
   );
+  // null clears: an explicit undefined overrides the record's geo in the spread.
+  const withGeo = geo === undefined ? defined : { ...defined, geo: geo ?? undefined };
   return attendees === undefined
-    ? defined
-    : { ...defined, attendees: mergeAttendees(currentAttendees, attendees) };
+    ? withGeo
+    : { ...withGeo, attendees: mergeAttendees(currentAttendees, attendees) };
 };
 
 const make: Effect.Effect<
@@ -298,30 +301,35 @@ const make: Effect.Effect<
     createEvent: (draft) =>
       Effect.gen(function* () {
         const now = yield* Clock.currentTimeMillis;
-        const record = new EventRecord({
-          accountId: draft.accountId,
-          // Google adds the organizer itself; the insert response fills it in.
-          attendees: draft.attendees?.length
-            ? mergeAttendees(undefined, draft.attendees)
-            : undefined,
-          calendarId: draft.calendarId,
-          description: draft.description,
-          endDate: draft.endDate,
-          endUtc: draft.endUtc,
-          etag: null,
-          id: generateEventId(),
-          isAllDay: draft.isAllDay,
-          location: draft.location,
-          recurrence: draft.recurrence,
-          startDate: draft.startDate,
-          startTimeZone: draft.startTimeZone,
-          startUtc: draft.startUtc,
-          status: 'confirmed',
-          syncedAt: 0,
-          syncStatus: 'pending',
-          title: draft.title,
-          updatedAt: now,
-        });
+        // Every write below goes through withConsistentGeo: coordinates
+        // that no longer match the location text are never stored or pushed.
+        const record = withConsistentGeo(
+          new EventRecord({
+            accountId: draft.accountId,
+            // Google adds the organizer itself; the insert response fills it in.
+            attendees: draft.attendees?.length
+              ? mergeAttendees(undefined, draft.attendees)
+              : undefined,
+            calendarId: draft.calendarId,
+            description: draft.description,
+            endDate: draft.endDate,
+            endUtc: draft.endUtc,
+            etag: null,
+            geo: draft.geo,
+            id: generateEventId(),
+            isAllDay: draft.isAllDay,
+            location: draft.location,
+            recurrence: draft.recurrence,
+            startDate: draft.startDate,
+            startTimeZone: draft.startTimeZone,
+            startUtc: draft.startUtc,
+            status: 'confirmed',
+            syncedAt: 0,
+            syncStatus: 'pending',
+            title: draft.title,
+            updatedAt: now,
+          }),
+        );
         yield* eventRepo.upsertMany([record]);
         yield* enqueue(
           new PendingOp({
@@ -549,12 +557,14 @@ const make: Effect.Effect<
           return yield* Effect.fail(new RecurringEditUnsupportedError({ eventId }));
         }
         const now = yield* Clock.currentTimeMillis;
-        const merged = new EventRecord({
-          ...existing,
-          ...definedChanges(changes, existing.attendees),
-          syncStatus: 'pending',
-          updatedAt: now,
-        });
+        const merged = withConsistentGeo(
+          new EventRecord({
+            ...existing,
+            ...definedChanges(changes, existing.attendees),
+            syncStatus: 'pending',
+            updatedAt: now,
+          }),
+        );
         yield* eventRepo.upsertMany([merged]);
 
         // Coalesce: a queued create absorbs the change; otherwise a fresh
@@ -595,15 +605,17 @@ const make: Effect.Effect<
           const instanceId = googleInstanceId(masterId, originalStartUtc, master.isAllDay);
           const existing = yield* eventRepo.getById(accountId, calendarId, instanceId);
           const base = existing ?? projectInstance(master, originalStartUtc, now);
-          const merged = new EventRecord({
-            ...base,
-            ...definedChanges(changes, base.attendees),
-            originalStartUtc,
-            recurrence: undefined,
-            recurringEventId: masterId,
-            syncStatus: 'pending',
-            updatedAt: now,
-          });
+          const merged = withConsistentGeo(
+            new EventRecord({
+              ...base,
+              ...definedChanges(changes, base.attendees),
+              originalStartUtc,
+              recurrence: undefined,
+              recurringEventId: masterId,
+              syncStatus: 'pending',
+              updatedAt: now,
+            }),
+          );
           yield* eventRepo.upsertMany([merged]);
           const queued = yield* opsForEvent(calendarId, instanceId);
           yield* pendingOpRepo.removeForEvent(calendarId, instanceId);
@@ -644,17 +656,20 @@ const make: Effect.Effect<
                   changes.startUtc,
                 )
               : master.startUtc;
-          const merged = new EventRecord({
-            ...master,
-            attendees: defined.attendees ?? master.attendees,
-            description: changes.description ?? master.description,
-            endUtc: master.isAllDay ? master.endUtc : startUtc + duration,
-            location: changes.location ?? master.location,
-            startUtc: master.isAllDay ? master.startUtc : startUtc,
-            syncStatus: 'pending',
-            title: changes.title ?? master.title,
-            updatedAt: now,
-          });
+          const merged = withConsistentGeo(
+            new EventRecord({
+              ...master,
+              attendees: defined.attendees ?? master.attendees,
+              description: changes.description ?? master.description,
+              endUtc: master.isAllDay ? master.endUtc : startUtc + duration,
+              geo: changes.geo === undefined ? master.geo : (changes.geo ?? undefined),
+              location: changes.location ?? master.location,
+              startUtc: master.isAllDay ? master.startUtc : startUtc,
+              syncStatus: 'pending',
+              title: changes.title ?? master.title,
+              updatedAt: now,
+            }),
+          );
           yield* eventRepo.upsertMany([merged]);
           const queued = yield* opsForEvent(calendarId, masterId);
           yield* pendingOpRepo.removeForEvent(calendarId, masterId);
@@ -725,18 +740,20 @@ const make: Effect.Effect<
           !master.isAllDay && changes.startUtc !== undefined
             ? changes.startUtc
             : projected.startUtc;
-        const newMaster = new EventRecord({
-          ...projected,
-          ...defined,
-          endUtc: master.isAllDay ? projected.endUtc : startUtc + duration,
-          etag: null,
-          id: generateEventId(),
-          originalStartUtc: undefined,
-          recurrence: newRecurrence,
-          recurringEventId: undefined,
-          startUtc,
-          syncedAt: 0,
-        });
+        const newMaster = withConsistentGeo(
+          new EventRecord({
+            ...projected,
+            ...defined,
+            endUtc: master.isAllDay ? projected.endUtc : startUtc + duration,
+            etag: null,
+            id: generateEventId(),
+            originalStartUtc: undefined,
+            recurrence: newRecurrence,
+            recurringEventId: undefined,
+            startUtc,
+            syncedAt: 0,
+          }),
+        );
         yield* eventRepo.upsertMany([newMaster]);
         yield* enqueue(
           new PendingOp({

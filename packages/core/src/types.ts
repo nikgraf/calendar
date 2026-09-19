@@ -203,6 +203,21 @@ export class Attendee extends Schema.Class<Attendee>('Attendee')({
   responseStatus: ResponseStatus,
 }) {}
 
+/**
+ * Coordinates for an event's free-form `location`. Google stores only the
+ * string, so these are derived on-device (MapKit) and mirrored into the
+ * event's private extendedProperties. `source` is the exact location text
+ * they were derived from: once the text changes (here or in any other
+ * client) the coordinates are stale and discarded.
+ */
+export class GeoLocation extends Schema.Class<GeoLocation>('GeoLocation')({
+  lat: Schema.Number,
+  lng: Schema.Number,
+  /** Place name MapKit returned (e.g. "Blue Bottle Coffee"), for the map pin. */
+  name: Schema.optional(Schema.String),
+  source: Schema.String,
+}) {}
+
 export class EventRecord extends Schema.Class<EventRecord>('EventRecord')({
   accountId: Schema.String,
   attendees: Schema.optional(Schema.Array(Attendee)),
@@ -212,6 +227,8 @@ export class EventRecord extends Schema.Class<EventRecord>('EventRecord')({
   endDate: Schema.optional(Schema.String),
   endUtc: Schema.Number,
   etag: Schema.NullOr(Schema.String),
+  /** Coordinates for `location`, only while they still match it (see GeoLocation). */
+  geo: Schema.optional(GeoLocation),
   /** Video-call link from Google's conferenceData/hangoutLink. */
   hangoutLink: Schema.optional(Schema.String),
   /** Google event id (base32hex; client-generated for local creates). */

@@ -2,6 +2,7 @@ import type {
   AttendeeInput,
   EventDraft,
   EventRecord,
+  GeoLocation,
   RecurringScope,
   RsvpResponse,
   TaskPriority,
@@ -79,6 +80,8 @@ export interface UpdateEventParams {
     readonly description?: string | undefined;
     readonly endDate?: string | undefined;
     readonly endUtc?: number | undefined;
+    /** Coordinates for the location: null clears, undefined leaves them alone. */
+    readonly geo?: GeoLocation | null | undefined;
     readonly isAllDay?: boolean | undefined;
     readonly location?: string | undefined;
     readonly startDate?: string | undefined;

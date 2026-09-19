@@ -1,4 +1,12 @@
-import { Attendee, CalendarInfo, EventRecord, plainDateToUtcMs, Temporal } from '@calendar/core';
+import {
+  Attendee,
+  CalendarInfo,
+  decodeGeoProperties,
+  encodeGeoProperties,
+  EventRecord,
+  plainDateToUtcMs,
+  Temporal,
+} from '@calendar/core';
 import type { GcalCalendarListEntry, GcalEvent, GcalEventInput, GcalTime } from './apiTypes.ts';
 import { Schema } from 'effect';
 
@@ -89,6 +97,9 @@ export const mapGcalEvent = (
     endDate: event.end?.date,
     endUtc,
     etag: event.etag ?? null,
+    // Coordinates survive only while they were derived from this exact
+    // location text; an edit in another client makes them stale.
+    geo: decodeGeoProperties(event.extendedProperties?.private, event.location),
     hangoutLink: event.hangoutLink ?? videoEntry?.uri,
     id: event.id,
     isAllDay,
@@ -177,4 +188,22 @@ export const toGcalEventInput = (event: EventRecord): GcalEventInput => ({
         timeZone: event.startTimeZone,
       },
   summary: event.title,
+});
+
+/**
+ * The location coordinates for events.insert: the keys when the record
+ * has matching geo, nothing otherwise.
+ */
+export const toGcalGeoInsert = (event: EventRecord): Pick<GcalEventInput, 'extendedProperties'> => {
+  const properties = encodeGeoProperties(event.geo, { forPatch: false });
+  return Object.keys(properties).length > 0 ? { extendedProperties: { private: properties } } : {};
+};
+
+/**
+ * The location coordinates for events.patch: always present, so a record
+ * whose geo was dropped (its location changed) deletes the server keys
+ * with explicit nulls instead of leaving stale coordinates behind.
+ */
+export const toGcalGeoPatch = (event: EventRecord): Pick<GcalEventInput, 'extendedProperties'> => ({
+  extendedProperties: { private: encodeGeoProperties(event.geo, { forPatch: true }) },
 });

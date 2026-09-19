@@ -1,4 +1,4 @@
-import { Account, eventsScope } from '@calendar/core';
+import { Account, eventsScope, GEO_PROPERTY_KEYS, GeoLocation } from '@calendar/core';
 import {
   AccountRepo,
   BirthdayRepo,
@@ -145,6 +145,66 @@ describe('SyncEngine over HTTP (fake Google)', () => {
       // All history: the full list carries no window at all.
       expect(listCalls[0]!.url).not.toContain('timeMin=');
       expect(listCalls[1]!.url).toContain('syncToken=cal-1%3A2');
+    }).pipe(noYield, Effect.provide(engineLayer(google)));
+  });
+
+  it.effect('location coordinates round-trip through private extended properties', () => {
+    const google = newFake();
+    const location = 'Naschmarkt, Vienna, Austria';
+    const geo = new GeoLocation({
+      lat: 48.1977,
+      lng: 16.3616,
+      name: 'Naschmarkt',
+      source: location,
+    });
+    return Effect.gen(function* () {
+      yield* seedAccount(false);
+      const engine = yield* SyncEngine;
+      const mutations = yield* EventMutations;
+      yield* engine.syncAll();
+
+      // Picked in the editor: the insert carries the coordinates.
+      const created = yield* mutations.createEvent({
+        accountId: 'acc-1',
+        calendarId: 'cal-1',
+        endUtc: Date.parse('2026-07-02T13:00:00Z'),
+        geo,
+        isAllDay: false,
+        location,
+        startTimeZone: 'Europe/Vienna',
+        startUtc: Date.parse('2026-07-02T12:00:00Z'),
+        title: 'Lunch',
+      });
+      yield* mutations.processPendingOps();
+      expect(google.eventOf('cal-1', created.id)?.extendedProperties?.private).toEqual({
+        [GEO_PROPERTY_KEYS.coordinates]: '48.1977,16.3616',
+        [GEO_PROPERTY_KEYS.name]: 'Naschmarkt',
+        [GEO_PROPERTY_KEYS.source]: location,
+      });
+
+      // Another device reads them back.
+      yield* TestClock.adjust('1 minute');
+      yield* engine.syncAll();
+      const events = yield* EventRepo;
+      expect((yield* events.getById('acc-1', 'cal-1', created.id))?.geo).toEqual(geo);
+
+      // Another client moves the event: the stored coordinates are stale.
+      const server = google.eventOf('cal-1', created.id)!;
+      google.putEvent('cal-1', { ...server, location: 'Office' });
+      yield* TestClock.adjust('1 minute');
+      yield* engine.syncAll();
+      expect((yield* events.getById('acc-1', 'cal-1', created.id))?.geo).toBeUndefined();
+
+      // The next local edit deletes the stale keys server-side.
+      yield* mutations.updateEvent({
+        accountId: 'acc-1',
+        calendarId: 'cal-1',
+        changes: { title: 'Lunch (moved)' },
+        eventId: created.id,
+      });
+      yield* mutations.processPendingOps();
+      expect(google.eventOf('cal-1', created.id)?.extendedProperties).toBeUndefined();
+      expect(google.eventOf('cal-1', created.id)?.location).toBe('Office');
     }).pipe(noYield, Effect.provide(engineLayer(google)));
   });
 

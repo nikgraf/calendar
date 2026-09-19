@@ -9,6 +9,7 @@ import {
   CalendarInfo,
   Contact,
   EventRecord,
+  GeoLocation,
   TaskListInfo,
   TaskPriority,
   TaskRecord,
@@ -38,6 +39,8 @@ export const EventDraft = Schema.Struct({
   /** All-day drafts use dates; timed drafts use epochs + zone. */
   endDate: Schema.optional(Schema.String),
   endUtc: Schema.Number,
+  /** Coordinates for `location` (from the place picker); dropped unless they match it. */
+  geo: Schema.optional(GeoLocation),
   isAllDay: Schema.Boolean,
   location: Schema.optional(Schema.String),
   /** RFC 5545 lines (RRULE/...) to create the event as a recurring master. */
@@ -55,6 +58,8 @@ export const UpdateEventChanges = Schema.Struct({
   description: Schema.optional(Schema.String),
   endDate: Schema.optional(Schema.String),
   endUtc: Schema.optional(Schema.Number),
+  /** Coordinates for the (new) location: null clears, undefined leaves them alone. */
+  geo: Schema.optional(Schema.NullOr(GeoLocation)),
   isAllDay: Schema.optional(Schema.Boolean),
   location: Schema.optional(Schema.String),
   startDate: Schema.optional(Schema.String),
