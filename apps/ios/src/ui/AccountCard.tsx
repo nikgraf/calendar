@@ -5,6 +5,7 @@ import {
   CALENDAR_PALETTE,
   type CalendarInfo,
   historyStatusLabel,
+  isAppleCalendarAccount,
   type TaskListInfo,
 } from '@calendar/core';
 import { useState } from 'react';
@@ -60,8 +61,9 @@ export function AccountCard({
           {account.status === 'reauth_required' ? (
             account.provider === 'apple' ? (
               <Text style={sectionStyles.action}>
-                Reminders access is off — allow it in Settings › Privacy & Security › Reminders; it
-                reconnects on its own.
+                {isAppleCalendarAccount(account)
+                  ? 'Calendar access is off — allow it in Settings › Privacy & Security › Calendars; it reconnects on its own.'
+                  : 'Reminders access is off — allow it in Settings › Privacy & Security › Reminders; it reconnects on its own.'}
               </Text>
             ) : (
               <Pressable disabled={busy} onPress={onReconnect}>
@@ -82,6 +84,8 @@ export function AccountCard({
             <View key={calendar.id}>
               <View style={styles.calendarRow}>
                 <Pressable
+                  // EventKit refuses to recolor a calendar it will not let us write.
+                  disabled={calendar.provider === 'apple' && calendar.accessRole === 'reader'}
                   onPress={() =>
                     setColorPickerFor((current) => (current === rowKey ? null : rowKey))
                   }

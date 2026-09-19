@@ -1,3 +1,5 @@
+import { unavailableAppleCalendarClient } from '@calendar/apple-calendar';
+import { appleCalendarServicesLayer } from './appleCalendarEvents.ts';
 import { Account, eventsScope, plainDateToUtcMs } from '@calendar/core';
 import {
   AccountRepo,
@@ -79,6 +81,7 @@ const stubClient = (
     }
     return Effect.succeed(next);
   },
+  moveEvent: () => Effect.die('unexpected move'),
   patchCalendarListEntry: () => Effect.die('unexpected calendarList patch'),
   patchEvent: () => Effect.die('not used'),
 });
@@ -101,6 +104,7 @@ const inertPeopleClient: GooglePeopleClientShape = {
 const engineLayer = (client: GoogleCalendarClientShape) =>
   SyncEngine.layer.pipe(
     Layer.provideMerge(EventMutations.layer),
+    Layer.provideMerge(appleCalendarServicesLayer(unavailableAppleCalendarClient('test'))),
     Layer.provideMerge(reposLayer),
     Layer.provideMerge(Layer.effectDiscard(runMigrations)),
     Layer.provideMerge(SqliteClient.layer({ filename: ':memory:' })),

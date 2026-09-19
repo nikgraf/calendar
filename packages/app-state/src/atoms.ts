@@ -72,6 +72,7 @@ const MUTATION_REACTIVITY = {
   addAccount: [ACCOUNTS_KEY, CALENDARS_KEY, EVENTS_KEY, TASKS_KEY, TASKLISTS_KEY],
   clearLocationCache: [LOCATION_GEO_KEY],
   completeTask: [TASKS_KEY],
+  connectAppleCalendar: [ACCOUNTS_KEY, CALENDARS_KEY, EVENTS_KEY],
   connectContacts: [BIRTHDAYS_KEY, CONTACTS_KEY],
   connectReminders: [ACCOUNTS_KEY, TASKLISTS_KEY, TASKS_KEY],
   createEvent: [EVENTS_KEY],
@@ -80,6 +81,9 @@ const MUTATION_REACTIVITY = {
   deleteRecurring: [EVENTS_KEY],
   deleteTask: [TASKS_KEY],
   discardPendingOp: [OPS_KEY],
+  moveEvent: [EVENTS_KEY, OPS_KEY],
+  // Reads what a move would drop; changes nothing.
+  previewMove: [],
   removeAccount: [ACCOUNTS_KEY, BIRTHDAYS_KEY, CALENDARS_KEY, EVENTS_KEY, TASKS_KEY, TASKLISTS_KEY],
   // Geocodes a picked place suggestion; writes only the device-local cache.
   resolveLocation: [],

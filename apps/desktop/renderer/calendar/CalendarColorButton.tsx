@@ -38,6 +38,8 @@ export function CalendarColorButton({ calendar }: { calendar: CalendarInfo }) {
       <button
         aria-label={`Change color: ${calendar.summary}`}
         className="inline-flex size-3.5 shrink-0 items-center justify-center rounded"
+        // EventKit refuses to recolor a calendar it will not let us write.
+        disabled={calendar.provider === 'apple' && calendar.accessRole === 'reader'}
         onClick={(clickEvent) => {
           const rect = clickEvent.currentTarget.getBoundingClientRect();
           setAnchor((current) => (current ? null : { x: rect.left, y: rect.bottom + 4 }));

@@ -299,6 +299,30 @@ design decisions it settled.
       it, so a cancelled pointer that never delivers its click cannot
       swallow the user's next one.
 
+## Apple Calendar
+
+- [x] Apple Calendar calendars + events, and moving events between
+      calendars — done: the device's Calendar app calendars (every
+      EventKit source: iCloud, Exchange, On My Mac, subscribed) appear
+      next to Google, with create/update/delete, and an event can move
+      Google↔Google, Google↔Apple and Apple↔Apple. Decisions: a third
+      EventKit seam (`packages/apple-calendar`, one Swift source for the
+      helper and an Expo module) under one synthetic `apple-calendar`
+      account; skip the Birthdays calendar and sources named like a
+      connected Google account; calendars mirrored, **events read
+      through** (no local rows, no window, EventKit expands series — Nik
+      wanted neither a rolling window nor drift from Calendar.app, and the
+      backend rpc stays the one query surface for a future CLI/agent);
+      EventKit-first writes with scopes mapped to spans; guests/RSVP are
+      Google-only (hidden, and rejected by the mutation layer); moves take
+      the whole series — a server `events.move` inside one Google account,
+      EventKit's own calendar change between Apple calendars, otherwise
+      copy-then-delete that drops guests and modified occurrences **after
+      a confirmation** (`previewMove` → `moveLossSummary`); a move and the
+      edits of its series keep queue order even through backoff
+      (`earlierInSeries`, rowid tiebreak). Open: the two _(verify)_ items
+      in docs/google-sync-and-testing.md.
+
 ## AI features
 
 Decision: **on-device models only** — no data leaves the device, no API keys, no

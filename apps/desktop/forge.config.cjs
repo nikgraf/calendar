@@ -62,6 +62,14 @@ module.exports = {
       // The helper child does the EventKit/Contacts work, but TCC
       // attributes its prompt to the responsible app when launched from
       // the bundle.
+      NSCalendarsFullAccessUsageDescription:
+        'Solunivo shows the calendars from your Calendar app next to your ' +
+        'Google calendars and lets you edit their events here. Nothing ' +
+        'leaves your Mac.',
+      NSCalendarsUsageDescription:
+        'Solunivo shows the calendars from your Calendar app next to your ' +
+        'Google calendars and lets you edit their events here. Nothing ' +
+        'leaves your Mac.',
       NSContactsUsageDescription:
         'Solunivo suggests people from your Contacts when you invite ' +
         'someone to an event and shows their birthdays in your calendar. ' +

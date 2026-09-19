@@ -8,6 +8,16 @@ import { pendingOpFromRow, type PendingOpRow } from './rows.ts';
 import { eventPayloadJson } from './repoShared.ts';
 
 export interface PendingOpRepoShape {
+  /**
+   * Kinds of the ops queued before `op` for the same series — the event
+   * itself or, for a recurring one, its Google instance ids
+   * (`<masterId>_<basetime>`) — in any of the account's calendars. Moves
+   * use it to keep order: backoff lets `listDue` skip an older op, and a
+   * move must never overtake, or be overtaken by, an edit of that series.
+   */
+  readonly earlierInSeries: (
+    op: PendingOp,
+  ) => Effect.Effect<ReadonlyArray<PendingOp['kind']>, SqlError>;
   readonly enqueue: (op: PendingOp) => Effect.Effect<void, SqlError>;
   readonly getById: (opId: string) => Effect.Effect<PendingOp | undefined, SqlError>;
   readonly listAll: () => Effect.Effect<ReadonlyArray<PendingOp>, SqlError>;
@@ -48,6 +58,18 @@ const makePendingOpRepo: Effect.Effect<PendingOpRepoShape, never, Reactivity | S
       reactivity.mutation([OPS_KEY], effect);
 
     return {
+      earlierInSeries: (op) =>
+        Effect.map(
+          sql<{ readonly kind: PendingOp['kind'] }>`SELECT kind FROM pending_ops
+            WHERE account_id = ${op.accountId} AND id != ${op.id}
+              AND (event_id = ${op.eventId}
+                OR substr(event_id, 1, length(${op.eventId}) + 1) = ${op.eventId} || '_'
+                OR substr(${op.eventId}, 1, length(event_id) + 1) = event_id || '_')
+              AND (created_at < ${op.createdAt} OR (created_at = ${op.createdAt}
+                AND rowid < (SELECT rowid FROM pending_ops WHERE id = ${op.id})))
+            ORDER BY created_at, rowid`,
+          (rows) => rows.map((row) => row.kind),
+        ),
       enqueue: (op) =>
         invalidating(
           Effect.asVoid(sql`
@@ -56,7 +78,7 @@ const makePendingOpRepo: Effect.Effect<PendingOpRepoShape, never, Reactivity | S
                                    last_error, created_at, color_hex,
                                    task_list_id, task_status,
                                    task_title, task_notes, task_due, dispatched_at,
-                                   attendees_changed, geo_cleared)
+                                   attendees_changed, geo_cleared, target_calendar_id)
           VALUES (${op.id}, ${op.accountId}, ${op.calendarId}, ${op.kind},
                   ${op.eventId},
                   ${op.payload ? JSON.stringify(eventPayloadJson(op.payload)) : null},
@@ -65,7 +87,7 @@ const makePendingOpRepo: Effect.Effect<PendingOpRepoShape, never, Reactivity | S
                   ${op.taskListId ?? null}, ${op.taskStatus ?? null},
                   ${op.taskTitle ?? null}, ${op.taskNotes ?? null}, ${op.taskDue ?? null},
                   ${op.dispatchedAt ?? null}, ${op.attendeesChanged ? 1 : 0},
-                  ${op.geoCleared ? 1 : 0})
+                  ${op.geoCleared ? 1 : 0}, ${op.targetCalendarId ?? null})
         `),
         ),
       getById: (opId) =>
@@ -73,14 +95,17 @@ const makePendingOpRepo: Effect.Effect<PendingOpRepoShape, never, Reactivity | S
           rows[0] ? pendingOpFromRow(rows[0]) : undefined,
         ),
       listAll: () =>
-        Effect.map(sql<PendingOpRow>`SELECT * FROM pending_ops ORDER BY created_at`, (rows) =>
-          rows.flatMap(decodedOps),
+        Effect.map(
+          sql<PendingOpRow>`SELECT * FROM pending_ops ORDER BY created_at, rowid`,
+          (rows) => rows.flatMap(decodedOps),
         ),
       // Bounded: one drain handles a page; the next kick takes the rest.
       listDue: (now) =>
         Effect.map(
+          // rowid breaks created_at ties in insertion order (two ops of one
+          // mutation, or a fixed test clock) — order matters for moves.
           sql<PendingOpRow>`SELECT * FROM pending_ops
-            WHERE next_attempt_at <= ${now} ORDER BY created_at LIMIT ${DRAIN_PAGE_SIZE}`,
+            WHERE next_attempt_at <= ${now} ORDER BY created_at, rowid LIMIT ${DRAIN_PAGE_SIZE}`,
           (rows) => rows.flatMap(decodedOps),
         ),
       markDispatched: (opId, at) =>
@@ -98,12 +123,14 @@ const makePendingOpRepo: Effect.Effect<PendingOpRepoShape, never, Reactivity | S
       remove: (opId) =>
         invalidating(Effect.asVoid(sql`DELETE FROM pending_ops WHERE id = ${opId}`)),
       // RSVP ops survive content-edit coalescing; stray ones resolve as
-      // no-ops through the NotFound path after a delete.
+      // no-ops through the NotFound path after a delete. A queued move is
+      // never coalesced away either: a later edit targets the destination
+      // calendar and must land after the move, not replace it.
       removeForEvent: (calendarId, eventId) =>
         invalidating(
           Effect.asVoid(
             sql`DELETE FROM pending_ops WHERE calendar_id = ${calendarId}
-              AND event_id = ${eventId} AND kind != 'rsvp'`,
+              AND event_id = ${eventId} AND kind NOT IN ('rsvp', 'move')`,
           ),
         ),
       rewriteEventId: (accountId, calendarId, oldEventId, newEventId) =>

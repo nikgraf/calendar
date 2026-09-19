@@ -1,4 +1,6 @@
 import {
+  isLossy,
+  moveLossSummary,
   buildRecurrenceRule,
   buildEventTimes,
   emailKey,
@@ -21,7 +23,7 @@ import {
   type RsvpResponse,
   type Temporal,
 } from '@calendar/core';
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import { useAccounts, useBackendMutations, useLocationGeo } from './hooks.ts';
 import { useRepeatState } from './repeatState.ts';
 
@@ -80,6 +82,60 @@ export const seedTimeFields = (seed: EventEditorSeed): { endTime: string; startT
   startTime: seed.prefill?.startTime ?? seed.initialTimes?.startTime ?? pad(seed.initialHour ?? 9),
 });
 
+const isWritable = (calendar: CalendarInfo | undefined): boolean =>
+  calendar?.accessRole === 'owner' || calendar?.accessRole === 'writer';
+
+/**
+ * What the editor offers for an event, from the calendar it lives in and
+ * the one picked. Guests and RSVPs exist only on Google (EventKit cannot
+ * write attendees); an event in a calendar we cannot write opens as a
+ * viewer; and moving takes the whole series, so an occurrence-scoped edit
+ * keeps its calendar.
+ */
+export const editorCapabilities = ({
+  hasOwnAttendee,
+  isExisting,
+  isRecurring,
+  scope,
+  sourceCalendar,
+  targetCalendar,
+}: {
+  readonly hasOwnAttendee: boolean;
+  readonly isExisting: boolean;
+  readonly isRecurring: boolean;
+  readonly scope: RecurringScope;
+  readonly sourceCalendar: CalendarInfo | undefined;
+  readonly targetCalendar: CalendarInfo | undefined;
+}) => {
+  const readOnly = isExisting && sourceCalendar !== undefined && !isWritable(sourceCalendar);
+  return {
+    canInvite: (targetCalendar?.provider ?? 'google') === 'google',
+    canMoveCalendar: isExisting && !readOnly && (!isRecurring || scope === 'series'),
+    canRsvp: (sourceCalendar?.provider ?? 'google') === 'google' && hasOwnAttendee,
+    readOnly,
+  };
+};
+
+/**
+ * A promise-shaped yes/no for the move confirmation, for UIs that render
+ * it inline (desktop). `request` resolves once `answer` is called.
+ */
+export const useMoveConfirmation = () => {
+  const [pending, setPending] = useState<{
+    readonly resolve: (ok: boolean) => void;
+    readonly summary: string;
+  } | null>(null);
+  const request = useCallback(
+    (summary: string) => new Promise<boolean>((resolve) => setPending({ resolve, summary })),
+    [],
+  );
+  const answer = (ok: boolean) => {
+    pending?.resolve(ok);
+    setPending(null);
+  };
+  return { answer, pendingSummary: pending?.summary ?? null, request };
+};
+
 const timeString = (epochMs: number, timeZone: string): string =>
   toZonedDateTime(epochMs, timeZone).toPlainTime().toString({ smallestUnit: 'minute' });
 
@@ -90,11 +146,18 @@ const timeString = (epochMs: number, timeZone: string): string =>
  */
 export const useEventEditorModel = ({
   calendars,
+  confirmMove,
   onClose,
   seed,
   timeZone,
 }: {
   calendars: ReadonlyArray<CalendarInfo>;
+  /**
+   * Asked before a move that drops something (guests, the meeting link,
+   * modified occurrences…): the platform shows `summary` and resolves
+   * whether to go ahead. Moves that lose nothing are not asked about.
+   */
+  confirmMove: (summary: string) => Promise<boolean>;
   onClose: () => void;
   seed: EventEditorSeed;
   timeZone: string;
@@ -116,6 +179,9 @@ export const useEventEditorModel = ({
 
   const prefill = seed.prefill;
   const [title, setTitle] = useState(existing?.title ?? prefill?.title ?? '');
+  const originalCalendarKey = existing ? `${existing.accountId}:${existing.calendarId}` : undefined;
+  const calendarOf = (key: string | undefined) =>
+    calendars.find((calendar) => `${calendar.accountId}:${calendar.id}` === key);
   const [calendarKey, setCalendarKey] = useState(() => {
     if (existing) {
       return `${existing.accountId}:${existing.calendarId}`;
@@ -176,7 +242,22 @@ export const useEventEditorModel = ({
       .map((attendee) => ({ displayName: attendee.displayName, email: attendee.email })),
   );
   const [attendeesDirty, setAttendeesDirty] = useState(false);
-  const [scope, setScope] = useState<RecurringScope>('instance');
+  const [scope, setScopeState] = useState<RecurringScope>('instance');
+  const capabilities = editorCapabilities({
+    hasOwnAttendee: ownAttendee !== undefined,
+    isExisting: existing !== undefined,
+    isRecurring,
+    scope,
+    sourceCalendar: calendarOf(originalCalendarKey),
+    targetCalendar: calendarOf(calendarKey),
+  });
+  /** An occurrence-scoped edit cannot move: the series moves as a whole. */
+  const setScope = (next: RecurringScope) => {
+    setScopeState(next);
+    if (next !== 'series' && originalCalendarKey) {
+      setCalendarKey(originalCalendarKey);
+    }
+  };
   const [rsvp, setRsvp] = useState(ownAttendee?.responseStatus);
   const { toSpec: repeatSpec, ...repeatState } = useRepeatState(prefill?.recurrence);
   const [error, setError] = useState<string | null>(null);
@@ -229,7 +310,15 @@ export const useEventEditorModel = ({
       setError(invalid);
       return;
     }
-    const [accountId, calendarId] = calendarKey.split(':', 2) as [string, string];
+    // Edits land where the event lives now; a move (below) follows them.
+    const [accountId, calendarId] = (originalCalendarKey ?? calendarKey).split(':', 2) as [
+      string,
+      string,
+    ];
+    const moveTarget =
+      existing && calendarKey !== originalCalendarKey && capabilities.canMoveCalendar
+        ? (calendarKey.split(':', 2) as [string, string])
+        : undefined;
     const times = buildEventTimes(fields, timeZone);
     // Only coordinates the user vouched for reach Google: the event's own
     // (mirrored) ones or a picked suggestion, and only while they match the
@@ -240,6 +329,24 @@ export const useEventEditorModel = ({
       ? new GeoLocation({ ...geo, source: location.trim() })
       : undefined;
     try {
+      const move =
+        existing && moveTarget
+          ? {
+              accountId,
+              calendarId,
+              // A series moves as a whole: its master.
+              eventId: existing.recurringEventId ?? existing.id,
+              target: { accountId: moveTarget[0], calendarId: moveTarget[1] },
+            }
+          : undefined;
+      if (move) {
+        // Ask before writing anything, so "keep it here" leaves no trace.
+        const loss = await mutations.previewMove(move);
+        const summary = moveLossSummary(loss);
+        if (isLossy(loss) && summary && !(await confirmMove(summary))) {
+          return;
+        }
+      }
       if (existing && isRecurring && existing.recurringEventId) {
         await mutations.updateRecurring({
           accountId,
@@ -273,7 +380,8 @@ export const useEventEditorModel = ({
       } else {
         const draft: EventDraft = {
           accountId,
-          ...(attendees.length > 0 ? { attendees } : {}),
+          // Guests typed before switching to a calendar that cannot invite are not sent.
+          ...(attendees.length > 0 && capabilities.canInvite ? { attendees } : {}),
           calendarId,
           geo: savedGeo,
           isAllDay,
@@ -287,6 +395,10 @@ export const useEventEditorModel = ({
         };
         await mutations.createEvent(draft);
         rememberCalendar(calendarKey);
+      }
+      if (move) {
+        // Update, then move: the move carries the saved fields along.
+        await mutations.moveEvent(move);
       }
       onClose();
     } catch (error) {
@@ -343,6 +455,7 @@ export const useEventEditorModel = ({
     attendees,
     attendeeStatus,
     calendarKey,
+    ...capabilities,
     date,
     endTime,
     error,

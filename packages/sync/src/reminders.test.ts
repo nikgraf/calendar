@@ -1,3 +1,5 @@
+import { unavailableAppleCalendarClient } from '@calendar/apple-calendar';
+import { appleCalendarServicesLayer } from './appleCalendarEvents.ts';
 import { Account, APPLE_REMINDERS_ACCOUNT_ID, Temporal } from '@calendar/core';
 import {
   AccountRepo,
@@ -33,6 +35,7 @@ const inertCalendarClient: GoogleCalendarClientShape = {
   insertEvent: () => Effect.die('not used'),
   listCalendars: () => Effect.succeed({ items: [] }),
   listEvents: () => Effect.succeed({ items: [] }),
+  moveEvent: () => Effect.die('unexpected move'),
   patchCalendarListEntry: () => Effect.die('not used'),
   patchEvent: () => Effect.die('not used'),
 };
@@ -58,6 +61,7 @@ const testLayer = (
 ) =>
   SyncEngine.layer.pipe(
     Layer.provideMerge(EventMutations.layer),
+    Layer.provideMerge(appleCalendarServicesLayer(unavailableAppleCalendarClient('test'))),
     Layer.provideMerge(overrides),
     Layer.provideMerge(reposLayer),
     Layer.provideMerge(Layer.effectDiscard(runMigrations)),

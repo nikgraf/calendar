@@ -53,11 +53,17 @@ const makeCalendarRepo: Effect.Effect<CalendarRepoShape, never, Reactivity | Sql
       reactivity.mutation([CALENDARS_KEY, EVENTS_KEY], effect);
 
     return {
+      // The provider is the owning account's, joined rather than stored so
+      // it can never drift from accounts.provider.
       list: (accountId) =>
         Effect.map(
           accountId === undefined
-            ? sql<CalendarRow>`SELECT * FROM calendars ORDER BY account_id, summary`
-            : sql<CalendarRow>`SELECT * FROM calendars WHERE account_id = ${accountId} ORDER BY summary`,
+            ? sql<CalendarRow>`SELECT c.*, a.provider AS account_provider
+                FROM calendars c LEFT JOIN accounts a ON a.id = c.account_id
+                ORDER BY c.account_id, c.summary`
+            : sql<CalendarRow>`SELECT c.*, a.provider AS account_provider
+                FROM calendars c LEFT JOIN accounts a ON a.id = c.account_id
+                WHERE c.account_id = ${accountId} ORDER BY c.summary`,
           (rows) => rows.map(calendarFromRow),
         ),
       purge: (accountId, ids) =>
@@ -120,18 +126,19 @@ const makeCalendarRepo: Effect.Effect<CalendarRepoShape, never, Reactivity | Sql
             (calendar) =>
               sql`
               INSERT INTO calendars (account_id, id, summary, color_hex, access_role,
-                                     is_primary, is_visible, time_zone)
+                                     is_primary, is_visible, time_zone, source_title)
               SELECT ${calendar.accountId}, ${calendar.id}, ${calendar.summary},
                      ${calendar.colorHex}, ${calendar.accessRole},
                      ${calendar.isPrimary ? 1 : 0}, ${calendar.isVisible ? 1 : 0},
-                     ${calendar.timeZone}
+                     ${calendar.timeZone}, ${calendar.sourceTitle ?? null}
               ${accountGuard(sql, calendar.accountId)}
               ON CONFLICT (account_id, id) DO UPDATE SET
                 summary = excluded.summary,
                 color_hex = excluded.color_hex,
                 access_role = excluded.access_role,
                 is_primary = excluded.is_primary,
-                time_zone = excluded.time_zone
+                time_zone = excluded.time_zone,
+                source_title = excluded.source_title
             `,
             { discard: true },
           ),

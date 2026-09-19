@@ -10,6 +10,8 @@ import type {
   TaskRecord,
   TaskRecurrence,
 } from '@calendar/core';
+import type { AppleCalendarError } from '@calendar/apple-calendar';
+import type { MoveEventParams, MoveLoss } from '@calendar/core';
 import type { RemindersError } from '@calendar/reminders';
 import { Data, type Effect } from 'effect';
 import type { SqlError } from 'effect/unstable/sql/SqlError';
@@ -44,7 +46,11 @@ export class TaskListNotFoundError extends Data.TaggedError('TaskListNotFoundErr
   readonly taskListId: string;
 }> {}
 
-/** A Reminders-only field (time, priority, url, alarms, recurrence, move) sent to a Google list. */
+/**
+ * A field the target provider cannot store: a Reminders-only task field
+ * sent to a Google list, or on an Apple calendar event guests, an RSVP or
+ * a repeat rule EventKit cannot express (`field` names it).
+ */
 export class UnsupportedForProviderError extends Data.TaggedError('UnsupportedForProviderError')<{
   readonly field: string;
   readonly provider: TaskProvider;
@@ -67,6 +73,27 @@ export interface TaskWriteChanges {
 }
 
 export type TaskProviderError = RemindersError | UnsupportedForProviderError;
+
+/** Failures only an Apple Calendar (EventKit) event write can produce. */
+export type EventProviderError = AppleCalendarError | UnsupportedForProviderError;
+
+/** Moving needs the organizer: an invitation cannot be re-homed by a guest. */
+export class NotOrganizerError extends Data.TaggedError('NotOrganizerError')<{
+  readonly eventId: string;
+}> {}
+
+/** The move target is unknown or read-only. */
+export class CalendarNotWritableError extends Data.TaggedError('CalendarNotWritableError')<{
+  readonly calendarId: string;
+}> {}
+
+type MoveError =
+  | CalendarNotWritableError
+  | EventNotFoundError
+  | EventProviderError
+  | NotOrganizerError
+  | RecurringEditUnsupportedError
+  | SqlError;
 
 /** Sentinel eventId keying calendar-color ops for coalescing. */
 export const CALENDAR_COLOR_EVENT_ID = '__calendar_color__';
@@ -104,7 +131,11 @@ export interface UpdateRecurringParams extends RecurringTargetParams {
   readonly changes: UpdateEventParams['changes'];
 }
 
-type RecurringEditError = EventNotFoundError | RecurringEditUnsupportedError | SqlError;
+type RecurringEditError =
+  | EventNotFoundError
+  | EventProviderError
+  | RecurringEditUnsupportedError
+  | SqlError;
 
 export interface EventMutationsShape {
   /** Toggles a task's completion locally and writes it back (Google queue / EventKit). */
@@ -114,7 +145,9 @@ export interface EventMutationsShape {
     readonly taskId: string;
     readonly taskListId: string;
   }) => Effect.Effect<void, SqlError | TaskNotFoundError | TaskProviderError>;
-  readonly createEvent: (draft: EventDraft) => Effect.Effect<EventRecord, SqlError>;
+  readonly createEvent: (
+    draft: EventDraft,
+  ) => Effect.Effect<EventRecord, EventProviderError | SqlError>;
   /**
    * Google: optimistic temp-id row + queued insert (ids are server-assigned).
    * Apple: written to EventKit synchronously; the returned record is final.
@@ -144,6 +177,15 @@ export interface EventMutationsShape {
     readonly taskId: string;
     readonly taskListId: string;
   }) => Effect.Effect<void, SqlError | TaskProviderError>;
+  /**
+   * Moves an event (the whole series for a recurring one) to another
+   * calendar: a server move inside one Google account, EventKit's own
+   * calendar change between Apple calendars, otherwise a copy into the
+   * target followed by a delete of the source.
+   */
+  readonly moveEvent: (params: MoveEventParams) => Effect.Effect<void, MoveError>;
+  /** What moveEvent with these params would drop (see core moveLoss). */
+  readonly previewMove: (params: MoveEventParams) => Effect.Effect<MoveLoss, MoveError>;
   /** Drains due pending ops (serialized); safe to call concurrently. */
   readonly processPendingOps: () => Effect.Effect<void>;
   /** Updates the caller's own attendee responseStatus (series-wide). */
@@ -152,13 +194,13 @@ export interface EventMutationsShape {
     readonly calendarId: string;
     readonly eventId: string;
     readonly response: RsvpResponse;
-  }) => Effect.Effect<void, EventNotFoundError | NotAttendeeError | SqlError>;
+  }) => Effect.Effect<void, EventNotFoundError | EventProviderError | NotAttendeeError | SqlError>;
   /** Recolors a calendar locally and writes it back to Google. */
   readonly setCalendarColor: (params: {
     readonly accountId: string;
     readonly calendarId: string;
     readonly colorHex: string;
-  }) => Effect.Effect<void, InvalidColorError | SqlError>;
+  }) => Effect.Effect<void, EventProviderError | InvalidColorError | SqlError>;
   readonly updateEvent: (params: UpdateEventParams) => Effect.Effect<void, RecurringEditError>;
   readonly updateRecurring: (
     params: UpdateRecurringParams,

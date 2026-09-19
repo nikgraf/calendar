@@ -46,6 +46,14 @@ invariants.
   an etag is known; on 412 the server wins (drop op, toast, next pull
   replaces local).
 
+- **events.move** (`POST …/events/{id}/move?destination=`): re-homes an
+  event into another calendar _of the same account_, keeping its id,
+  guests, conference data and exceptions. Organizer only (403
+  `forbiddenForNonOrganizer` otherwise) and whole events only — an
+  instance id is refused. We send `sendUpdates=all` when the event has
+  guests. The fake server implements exactly this (source tombstone,
+  destination upsert, 403/400/404 arms).
+
 ### calendarList
 
 - `calendarList.patch?colorRgbFormat=true` accepts arbitrary
@@ -208,6 +216,45 @@ entry on incremental passes. Note: the engine reads `Clock`, and
   (the helper child can be respawned; iOS is suspended in the
   background), which is why the 90 s pass stays.
 
+## Apple Calendar (EventKit events) semantics
+
+Designed from Apple's EventKit documentation; the real-EventKit CI spec
+(`appleCalendarReal.e2e.ts`) asserts connect, change push, edit and
+delete through the helper. Items marked _(verify)_ are not yet asserted
+against a real store — confirm them there before relying on them more.
+
+- **Access** is its own TCC entity: `requestFullAccessToEvents` /
+  `authorizationStatus(for: .event)`, independent of the Reminders
+  grant. Same lifecycle as Reminders: `store.reset()` after a grant, the
+  status check is the account's health, `writeOnly` is not enough.
+- **Bounded queries only**: `predicateForEvents(withStart:end:calendars:)`
+  matches a four-year span at most, so the bridge chunks longer ranges
+  and de-duplicates events spanning a chunk edge by
+  (`eventIdentifier`, `occurrenceDate`). EventKit expands series itself.
+- **`eventIdentifier`** is shared by every occurrence of a series;
+  `occurrenceDate` is the occurrence's original slot, unchanged when the
+  occurrence is moved on its own. A detached occurrence keeps the
+  series identifier _(verify)_. Ids can change after an iCloud sync —
+  harmless for a read-through store (nothing to reconcile).
+- **All-day events** end at the last day's end (some sources: the next
+  midnight); the wire carries an exclusive `endDate`. A floating event
+  has no `timeZone` and reads in the device zone.
+- **Spans**: saving an occurrence with `.thisEvent` detaches it;
+  `.futureEvents` on a later occurrence ends the series there and
+  continues it as a new event; `.futureEvents` on the first occurrence
+  rewrites the whole series. Setting `event.calendar` and saving the
+  series' first occurrence with `.futureEvents` moves the series with
+  its detached occurrences _(verify)_.
+- **No attendee writes**: `EKEvent.attendees` is read-only; guests are
+  shown, never edited. The organizer is matched by email.
+- **Structured location**: `EKStructuredLocation.geoLocation` carries
+  coordinates; assigning a structured location can rewrite the location
+  text, so the bridge writes coordinates first and the text last. A new
+  place name without new coordinates drops the old ones.
+- **`EKEventStoreChanged`** fires for any EventKit change in any process
+  (reminders and events alike) and only reaches a live observer; the
+  Reminders bridge's observer and this one each react to both.
+
 ## Testing conventions
 
 ### Unit tests (`vp test`, @effect/vitest)
@@ -225,6 +272,14 @@ entry on incremental passes. Note: the engine reads `Clock`, and
   fake `ModelProvider`/`SpeechProvider` returning canned JSON, so
   prompt-building, normalization, and error paths are fully unit-tested
   (see `packages/ai/*.test.ts` and `findTimePipeline.test.ts`).
+- Apple Calendar never hits EventKit in tests: `makeFakeAppleCalendarClient`
+  (`packages/apple-calendar/src/fake.ts`) keeps series the way EventKit
+  does (master + rules, detached and deleted occurrences), expands them
+  with core's expander and implements the span semantics above, so
+  scope and move tests assert what EventKit "saw" via `fake.state`.
+  Layer recipes that build `EventMutations` provide
+  `appleCalendarServicesLayer(unavailableAppleCalendarClient('test'))`.
+  The desktop e2e reuses the fake in `CALENDAR_APPLE_CALENDAR=fixture`.
 - Reminders never hit EventKit in tests: `makeFakeRemindersClient`
   (`packages/reminders/src/fake.ts`) is an in-memory store with the
   bridge's semantics (server-assigned ids, null clears, list moves,

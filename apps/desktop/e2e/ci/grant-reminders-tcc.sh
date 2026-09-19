@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
-# Pre-grant Reminders access on a headless macOS runner by seeding the
+# Usage: grant-reminders-tcc.sh <helper> [service]  (service defaults to
+# kTCCServiceReminders; the calendar job passes kTCCServiceCalendar).
+#
+# Pre-grant Reminders (or Calendars) access on a headless macOS runner by seeding the
 # per-user TCC database. Not an Apple-supported interface: the column set
 # of `access` drifts between macOS versions (14 added pid, pid_version,
 # boot_uuid, last_reminded), so the INSERT names its columns and the
@@ -17,6 +20,7 @@
 set -euo pipefail
 
 HELPER="${1:?path to solunivo-model-helper}"
+SERVICE="${2:-kTCCServiceReminders}"
 # The real path: SwiftPM's .build/release is a symlink, and tccd records
 # the resolved binary_path (.build/arm64-apple-macosx/release/…).
 HELPER=$(python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$HELPER")
@@ -47,9 +51,9 @@ grant() {
      csreq, policy_id, indirect_object_identifier_type,
      indirect_object_identifier, indirect_object_code_identity, flags,
      last_modified)
-    VALUES ('kTCCServiceReminders', '$1', $2, 2, 4, 1,
+    VALUES ('$SERVICE', '$1', $2, 2, 4, 1,
             $csreq, NULL, 0, 'UNUSED', NULL, 0, $NOW)"
-  echo "granted kTCCServiceReminders to $1 (client_type $2, csreq ${3})"
+  echo "granted $SERVICE to $1 (client_type $2, csreq ${3})"
 }
 
 grant "com.solunivo.desktop.helper" 0 csreq
@@ -72,5 +76,5 @@ for RESPONSIBLE in \
 done
 
 sudo killall tccd 2>/dev/null || true
-echo "--- kTCCServiceReminders rows"
-sudo sqlite3 "$DB" "SELECT client, client_type, auth_value, length(csreq) FROM access WHERE service = 'kTCCServiceReminders'"
+echo "--- $SERVICE rows"
+sudo sqlite3 "$DB" "SELECT client, client_type, auth_value, length(csreq) FROM access WHERE service = '$SERVICE'"

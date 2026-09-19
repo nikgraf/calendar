@@ -1,5 +1,5 @@
 /**
- * Human-readable permission states for the two native bridges. Desktop
+ * Human-readable permission states for the native bridges. Desktop
  * had these as two STATUS_COPY tables; iOS showed the raw enum in its
  * Diagnostics card ("reminders: notDetermined"). `settingsPath` is where
  * the platform keeps the toggle: "System Settings › Privacy & Security"
@@ -38,6 +38,25 @@ export const contactsStatusCopy = (status: string, settingsPath: string): string
       return 'Restricted by a device policy.';
     case 'unavailable':
       return 'Unavailable in this build.';
+    default:
+      return status;
+  }
+};
+
+export const appleCalendarStatusCopy = (status: string, settingsPath: string): string => {
+  switch (status) {
+    case 'denied':
+      return `Access denied — allow Solunivo under ${settingsPath} › Calendars.`;
+    case 'fullAccess':
+      return 'Access granted.';
+    case 'notDetermined':
+      return 'Not asked yet.';
+    case 'restricted':
+      return 'Restricted by a device policy.';
+    case 'unavailable':
+      return 'Unavailable in this build.';
+    case 'writeOnly':
+      return 'Add-only access — full access is needed to show your calendars.';
     default:
       return status;
   }

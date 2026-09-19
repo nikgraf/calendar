@@ -4,6 +4,7 @@ import {
   useBackendMutations,
   useTaskLists,
 } from '@calendar/app-state';
+import { isAppleRemindersAccount } from '@calendar/core';
 import { useEffect, useState } from 'react';
 
 const SETTINGS_PATH = 'System Settings › Privacy & Security';
@@ -22,7 +23,7 @@ export function RemindersSection() {
   const { connectReminders } = useBackendMutations();
   const accounts = useAccounts();
   const taskLists = useTaskLists();
-  const apple = accounts.find((account) => account.provider === 'apple');
+  const apple = accounts.find(isAppleRemindersAccount);
   const lists = apple ? taskLists.filter((list) => list.accountId === apple.id) : [];
 
   useEffect(() => {

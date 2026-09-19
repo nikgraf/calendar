@@ -5,7 +5,8 @@
 // Methods: status | generateJson {schema,prompt} | prepareSpeech {locale} |
 // transcribe {audioBase64,locale} | reminders.* (see RemindersBridge.swift,
 // shared with the iOS Expo module) | contacts.* (ContactsBridge.swift) |
-// geo.* (GeoBridge.swift: MapKit place search, geocoding, map images).
+// geo.* (GeoBridge.swift: MapKit place search, geocoding, map images) |
+// calendar.* (AppleCalendarBridge.swift: EventKit calendars and events).
 // Version 2.
 import Foundation
 
@@ -299,6 +300,9 @@ Task.detached {
   await ContactsBridge.shared.observeChanges {
     emit(["event": "contacts.changed"])
   }
+  await AppleCalendarBridge.shared.observeChanges {
+    emit(["event": "calendar.changed"])
+  }
 }
 
 // Concurrent request loop: a slow method (prepareSpeech downloading
@@ -359,6 +363,16 @@ func handleLine(_ line: String) {
         emitError(request.id, error.message)
       } catch {
         emitError(request.id, "contacts failed: \(error.localizedDescription)")
+      }
+    case let method where method.hasPrefix("calendar."):
+      do {
+        let result = try await AppleCalendarDispatch.invoke(
+          method: method, params: params.mapValues { $0.anyValue })
+        emitResult(request.id, result)
+      } catch let error as AppleCalendarBridgeError {
+        emitError(request.id, error.message)
+      } catch {
+        emitError(request.id, "calendar failed: \(error.localizedDescription)")
       }
     case let method where method.hasPrefix("geo."):
       do {

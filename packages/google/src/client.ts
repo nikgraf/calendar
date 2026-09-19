@@ -48,6 +48,19 @@ export interface GoogleCalendarClientShape {
     readonly calendarId: string;
     readonly params: ListEventsParams;
   }) => Effect.Effect<GcalEventsPage, GoogleRequestError>;
+  /**
+   * events.move: re-homes an event (a whole series — instance ids are
+   * refused) into another calendar of the same account, keeping its id,
+   * guests, conference and exceptions. Organizer only.
+   */
+  readonly moveEvent: (params: {
+    readonly accountId: string;
+    readonly calendarId: string;
+    readonly destination: string;
+    readonly eventId: string;
+    /** Google emails guests about the change; ignored without attendees. */
+    readonly sendUpdates?: 'all' | undefined;
+  }) => Effect.Effect<GcalEvent, GoogleRequestError>;
   readonly patchCalendarListEntry: (params: {
     readonly accountId: string;
     readonly backgroundColor: string;
@@ -140,6 +153,16 @@ const make: Effect.Effect<GoogleCalendarClientShape, never, HttpClient.HttpClien
           ),
           GcalEventsPage,
           { calendarId },
+        ),
+
+      moveEvent: ({ accountId, calendarId, destination, eventId, sendUpdates }) =>
+        requestJson(
+          accountId,
+          HttpClientRequest.post(
+            eventsUrl(calendarId, `/${encodeURIComponent(eventId)}/move`),
+          ).pipe(HttpClientRequest.setUrlParams(definedParams({ destination, sendUpdates }))),
+          GcalEvent,
+          { calendarId, eventId },
         ),
 
       patchCalendarListEntry: ({ accountId, backgroundColor, calendarId, foregroundColor }) =>
