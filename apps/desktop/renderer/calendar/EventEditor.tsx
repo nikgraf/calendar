@@ -1,4 +1,9 @@
-import { useEventEditorModel, useTaskEditorModel, type EventEditorSeed } from '@calendar/app-state';
+import {
+  useEventEditorModel,
+  useMoveConfirmation,
+  useTaskEditorModel,
+  type EventEditorSeed,
+} from '@calendar/app-state';
 import { useState } from 'react';
 import { Dialog } from '../Dialog.tsx';
 import { BirthdayDetail } from './BirthdayDetail.tsx';
@@ -47,7 +52,14 @@ export function EventEditor({
     },
     taskLists,
   });
-  const eventModel = useEventEditorModel({ calendars, onClose, seed, timeZone });
+  const moveConfirmation = useMoveConfirmation();
+  const eventModel = useEventEditorModel({
+    calendars,
+    confirmMove: moveConfirmation.request,
+    onClose,
+    seed,
+    timeZone,
+  });
   const { existing, joinUrl } = eventModel;
 
   return (
@@ -112,7 +124,11 @@ export function EventEditor({
             <TaskEditorForm onClose={onClose} task={task} taskModel={taskModel} />
           )
         ) : (
-          <EventEditorForm model={eventModel} onClose={onClose} />
+          <EventEditorForm
+            model={eventModel}
+            moveConfirmation={moveConfirmation}
+            onClose={onClose}
+          />
         )}
       </>
     </Dialog>

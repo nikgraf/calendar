@@ -5,8 +5,9 @@ import {
   useGuardedMutations,
   useSyncStatus,
 } from '@calendar/app-state';
-import { type Account, historyStatusLabel } from '@calendar/core';
+import { type Account, historyStatusLabel, isAppleCalendarAccount } from '@calendar/core';
 import { useState } from 'react';
+import { AppleCalendarSection } from './AppleCalendarSection.tsx';
 import { PrivacySection } from './PrivacySection.tsx';
 import { BirthdayRemindersSection } from './BirthdayRemindersSection.tsx';
 import { ContactsSection } from './ContactsSection.tsx';
@@ -85,7 +86,9 @@ export function AccountsView() {
                 {account.status === 'reauth_required' ? (
                   account.provider === 'apple' ? (
                     <span className="ml-2 text-amber-600">
-                      Access off — allow Reminders in System Settings › Privacy & Security.
+                      Access off — allow{' '}
+                      {isAppleCalendarAccount(account) ? 'Calendars' : 'Reminders'} in System
+                      Settings › Privacy & Security.
                     </span>
                   ) : (
                     <button
@@ -140,6 +143,7 @@ export function AccountsView() {
         </section>
       ))}
 
+      <AppleCalendarSection />
       <RemindersSection />
       <ContactsSection />
       <BirthdayRemindersSection />

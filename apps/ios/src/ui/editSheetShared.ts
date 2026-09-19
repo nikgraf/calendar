@@ -35,6 +35,12 @@ export const sheetStyles = StyleSheet.create({
     fontSize: 14,
     paddingVertical: 2,
   },
+  calendarGroup: {
+    color: palette.textMuted,
+    fontSize: 12,
+    paddingTop: 8,
+    textTransform: 'uppercase',
+  },
   calendarName: {
     color: palette.textMuted,
     flex: 1,

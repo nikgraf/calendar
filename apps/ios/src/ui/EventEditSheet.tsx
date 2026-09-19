@@ -6,7 +6,7 @@ import {
   type TaskRecord,
 } from '@calendar/core';
 import { useState } from 'react';
-import { Modal, Pressable, SafeAreaView, Text, View } from 'react-native';
+import { Alert, Modal, Pressable, SafeAreaView, Text, View } from 'react-native';
 import { BirthdayDetail } from './BirthdayDetail.tsx';
 import { sheetStyles as styles } from './editSheetShared.ts';
 import { EventEditForm } from './EventEditForm.tsx';
@@ -14,6 +14,15 @@ import { ReminderEditForm } from './ReminderEditForm.tsx';
 import { TaskEditForm } from './TaskEditForm.tsx';
 
 export type EditSeed = EventEditorSeed;
+
+/** A move that drops something (guests, the meeting link…) asks first. */
+const confirmMove = (summary: string): Promise<boolean> =>
+  new Promise((resolve) => {
+    Alert.alert('Move event?', summary, [
+      { onPress: () => resolve(false), style: 'cancel', text: 'Keep Here' },
+      { onPress: () => resolve(true), style: 'destructive', text: 'Move' },
+    ]);
+  });
 
 /**
  * Modal shell for creating/editing events and tasks. The two forms live in
@@ -52,7 +61,7 @@ export function EventEditSheet({
     },
     taskLists,
   });
-  const eventModel = useEventEditorModel({ calendars, onClose, seed, timeZone });
+  const eventModel = useEventEditorModel({ calendars, confirmMove, onClose, seed, timeZone });
 
   return (
     <Modal
@@ -80,7 +89,9 @@ export function EventEditSheet({
                   ? 'Edit Event'
                   : 'New Event'}
           </Text>
-          {mode === 'birthday' || (mode === 'task' && taskModel.readOnly) ? (
+          {mode === 'birthday' ||
+          (mode === 'task' && taskModel.readOnly) ||
+          (mode === 'event' && eventModel.readOnly) ? (
             <View />
           ) : (
             <Pressable
