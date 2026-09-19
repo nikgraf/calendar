@@ -766,3 +766,28 @@ Performance:
       then drag, so the check there is the exported bundle workletizing the
       gesture callbacks plus a manual run. Out of scope: auto-scroll at the
       grid's edges, slots across days, keyboard slot selection.
+
+### Event locations with maps (2026-09-19)
+
+- [x] Structured locations and a map in the event editor — done.
+      Decisions: Google's `location` is free text and stays the source of
+      truth (no place ids exist in the API); coordinates are derived
+      on-device with MapKit only — no API keys, no third-party geocoder,
+      and no location permission (only CLLocationManager prompts, and it
+      is never used). One PR ships the typeahead picker, geocoding and the
+      map on both platforms. Coordinates are mirrored into the event's
+      private extendedProperties with the source text, so other devices
+      skip the lookup and an edit elsewhere visibly invalidates them.
+      The desktop map is a static `MKMapSnapshotter` image from the Swift
+      helper (native look, no MapKit JS token or tile policy); iOS uses
+      `expo-maps`. The desktop image is light-only until the renderer has
+      a dark theme (the protocol already takes an appearance). Free-text
+      lookups can land on a wrong place for nonsense text — accepted: the
+      map shows what was found, and the picker gives exact results. The
+      desktop helper's main loop moved from `dispatchMain()` to
+      `RunLoop.main.run()`, which MKLocalSearchCompleter requires.
+      Desktop e2e covers pick → map → queued coordinates, stored
+      coordinates without a lookup, and meeting links; the iOS Maestro
+      flow is local-only because it needs MapKit's network. Out of
+      scope: location-based reminder alarms, `eventType` /
+      `workingLocationProperties`, travel time.

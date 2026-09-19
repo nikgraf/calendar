@@ -35,6 +35,12 @@ powers quick-add parsing, find-a-time, and dictation.
   and the one Swift source (`swift/ContactsBridge.swift`, CNContactStore)
   symlinked into both native hosts. Feeds the invitee typeahead and, via
   `contacts.birthdays`, the birthday chips.
+- `packages/geo` — MapKit seam, same shape again: `GeoClient`
+  (`geo.search` typeahead, `geo.resolve` geocoding, `geo.snapshot` map
+  image), the JSON protocol, an in-memory fake, and one Swift source
+  (`swift/GeoBridge.swift`) symlinked into both native hosts. Google
+  stores only location text; coordinates are derived on-device and
+  mirrored into the event's private `extendedProperties`.
 - `packages/app-state` — `@effect/atom-react` atoms + React hooks
   (`useBackendMutations`, `useEventsInRangeStable`, …).
 - `apps/desktop` — Electron (Forge, vite, tsdown main bundle); rpc over an
@@ -43,8 +49,9 @@ powers quick-add parsing, find-a-time, and dictation.
   stdio; process owned by
   `electron/helperProcess.ts`). `apps/ios` — Expo dev client; zero-hop
   direct backend; @react-native-ai/apple for on-device model access;
-  local Expo modules `modules/solunivo-reminders` (EventKit) and
-  `modules/solunivo-contacts` (CNContactStore).
+  local Expo modules `modules/solunivo-reminders` (EventKit),
+  `modules/solunivo-contacts` (CNContactStore) and `modules/solunivo-geo`
+  (MapKit); `expo-maps` draws the editor map.
 - `brand/` — SVG masters, logos, fonts and tokens; `pnpm brand:build`
   (macOS) regenerates the committed app icons and `tokens.css`, and CI
   fails on stale exports via `pnpm brand:check`. Edit the masters, never
@@ -88,9 +95,17 @@ powers quick-add parsing, find-a-time, and dictation.
   EventKit synchronously and mirror the result. Reminders-only fields on
   a Google list fail with `UnsupportedForProviderError` — never drop
   them silently.
-- The e2e harness sets `CALENDAR_REMINDERS=off` and `CALENDAR_CONTACTS=off`:
-  seeded Apple rows must never be replaced by a real EventKit sync, and
-  neither bridge may trigger a TCC prompt or read a developer's data.
+- The e2e harness sets `CALENDAR_REMINDERS=off`, `CALENDAR_CONTACTS=off`
+  and `CALENDAR_GEO=off`: seeded Apple rows must never be replaced by a
+  real EventKit sync, no bridge may trigger a TCC prompt or read a
+  developer's data, and no run may depend on MapKit's network.
+- Event coordinates are only valid while `geo.source` matches the
+  location text (`geoMatches`); every local write goes through
+  `withConsistentGeo`, and every update PATCH sends the private geo keys
+  as values or nulls. Geocoding runs on demand, never during sync.
+- The desktop helper's main thread runs `RunLoop.main.run()`, not
+  `dispatchMain()`: MKLocalSearchCompleter never calls back without
+  run-loop timers.
 - Secrets: `google-oauth.local.json` is gitignored — never commit OAuth
   client config. Tokens live only in TokenStore (Keychain/safeStorage),
   never in SQLite.
