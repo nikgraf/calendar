@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { eventFromRow, type EventRow, pendingOpFromRow, type PendingOpRow } from './rows.ts';
+import { GeoLocation } from '@calendar/core';
+import {
+  eventFromRow,
+  type EventRow,
+  eventToRow,
+  pendingOpFromRow,
+  type PendingOpRow,
+} from './rows.ts';
 
 const eventRow = (overrides: Partial<EventRow> = {}): EventRow => ({
   account_id: 'acc-1',
@@ -9,6 +16,7 @@ const eventRow = (overrides: Partial<EventRow> = {}): EventRow => ({
   end_date: null,
   end_utc: 2000,
   etag: null,
+  geo: null,
   hangout_link: null,
   id: 'evt',
   is_all_day: 0,
@@ -39,6 +47,7 @@ const opRow = (overrides: Partial<PendingOpRow> = {}): PendingOpRow => ({
   created_at: 0,
   dispatched_at: null,
   event_id: 'evt',
+  geo_cleared: 0,
   id: 'op',
   kind: 'update',
   last_error: null,
@@ -81,6 +90,14 @@ describe('row decoders tolerate what the DB may hold', () => {
     expect(event.recurrence).toEqual(['RRULE:FREQ=DAILY']);
     expect(event.status).toBe('tentative');
     expect(event.syncStatus).toBe('pending');
+  });
+
+  it('eventFromRow round-trips geo and drops an unreadable value', () => {
+    const geo = { lat: 48.2, lng: 16.37, name: 'Stephansdom', source: 'Stephansplatz 3, Wien' };
+    const event = eventFromRow(eventRow({ geo: JSON.stringify(geo), location: geo.source }));
+    expect(event.geo).toEqual(new GeoLocation(geo));
+    expect(eventToRow(event).geo).toBe(JSON.stringify(geo));
+    expect(eventFromRow(eventRow({ geo: '{"lat":"north"}' })).geo).toBeUndefined();
   });
 
   it('pendingOpFromRow turns an unreadable payload into payload: undefined', () => {

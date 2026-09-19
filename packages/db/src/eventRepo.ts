@@ -102,7 +102,7 @@ const makeEventRepo: Effect.Effect<EventRepoShape, never, Reactivity | SqlClient
                           end_date, start_time_zone, recurrence, recurrence_end_utc,
                           recurring_event_id, original_start_utc, attendees,
                           hangout_link, organizer_email, sync_status, updated_at,
-                          synced_at)
+                          synced_at, geo)
       SELECT ${row.account_id}, ${row.calendar_id}, ${row.id}, ${row.etag},
              ${row.status}, ${row.title}, ${row.location}, ${row.description},
              ${row.is_all_day}, ${row.start_utc}, ${row.end_utc}, ${row.start_date},
@@ -110,7 +110,7 @@ const makeEventRepo: Effect.Effect<EventRepoShape, never, Reactivity | SqlClient
              ${row.recurrence_end_utc}, ${row.recurring_event_id},
              ${row.original_start_utc}, ${row.attendees}, ${row.hangout_link},
              ${row.organizer_email}, ${row.sync_status}, ${row.updated_at},
-             ${row.synced_at}
+             ${row.synced_at}, ${row.geo}
       ${accountGuard(sql, row.account_id)}
       ON CONFLICT (account_id, calendar_id, id) DO UPDATE SET
         etag = excluded.etag,
@@ -133,7 +133,8 @@ const makeEventRepo: Effect.Effect<EventRepoShape, never, Reactivity | SqlClient
         organizer_email = excluded.organizer_email,
         sync_status = excluded.sync_status,
         updated_at = excluded.updated_at,
-        synced_at = excluded.synced_at
+        synced_at = excluded.synced_at,
+        geo = excluded.geo
       ${guard}
     `;
     };

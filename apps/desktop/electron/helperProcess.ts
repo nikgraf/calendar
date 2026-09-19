@@ -27,6 +27,10 @@ const TIMEOUTS_MS: Record<string, number> = {
   'contacts.snapshot': 30_000,
   'contacts.status': 10_000,
   generateJson: 120_000,
+  // MapKit round-trips to Apple's servers; a slow network must not hang the editor.
+  'geo.resolve': 15_000,
+  'geo.search': 10_000,
+  'geo.snapshot': 20_000,
   prepareSpeech: 600_000,
   'reminders.create': 15_000,
   'reminders.delete': 15_000,
@@ -178,11 +182,12 @@ export const callHelper = (method: string, params?: Record<string, unknown>): Pr
 };
 
 /**
- * The helper as a bridge transport for the Reminders and Contacts
+ * The helper as a bridge transport for the Reminders, Contacts and geo
  * clients, or the reason there is none. CALENDAR_REMINDERS=off /
- * CALENDAR_CONTACTS=off make a bridge unreachable on purpose: the e2e
- * suite seeds Apple rows straight into SQLite and must never let a real
- * sync (or a TCC prompt) touch a developer's data.
+ * CALENDAR_CONTACTS=off / CALENDAR_GEO=off make a bridge unreachable on
+ * purpose: the e2e suite seeds Apple rows straight into SQLite and must
+ * never let a real sync (or a TCC prompt, or a MapKit network call)
+ * touch a developer's data or make a run depend on the network.
  */
 export const helperTransport = (
   killSwitch: string,

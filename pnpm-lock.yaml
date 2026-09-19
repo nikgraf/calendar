@@ -253,6 +253,9 @@ importers:
       '@calendar/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@calendar/geo':
+        specifier: workspace:*
+        version: link:../../packages/geo
       '@calendar/google':
         specifier: workspace:*
         version: link:../../packages/google
@@ -341,6 +344,9 @@ importers:
       '@calendar/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@calendar/geo':
+        specifier: workspace:*
+        version: link:../../packages/geo
       '@calendar/google':
         specifier: workspace:*
         version: link:../../packages/google
@@ -386,6 +392,9 @@ importers:
       expo-file-system:
         specifier: ^57.0.7
         version: 57.0.7(expo@57.0.22)(react-native@0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(supports-color@8.1.1))(@types/react@19.2.17)(react@19.2.7)(supports-color@8.1.1))
+      expo-maps:
+        specifier: ~57.0.3
+        version: 57.0.3(expo@57.0.22)(react-native@0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(supports-color@8.1.1))(@types/react@19.2.17)(react@19.2.7)(supports-color@8.1.1))(react@19.2.7)
       expo-modules-core:
         specifier: ~57.0.18
         version: 57.0.18(react-native-worklets@0.10.1(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(supports-color@8.1.1))(react-native@0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(supports-color@8.1.1))(@types/react@19.2.17)(react@19.2.7)(supports-color@8.1.1))(react@19.2.7)(supports-color@8.1.1))(react-native@0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(supports-color@8.1.1))(@types/react@19.2.17)(react@19.2.7)(supports-color@8.1.1))(react@19.2.7)
@@ -540,6 +549,25 @@ importers:
         specifier: 4.1.11
         version: 4.1.11(@types/node@26.1.0)(@vitest/browser-preview@4.1.11)(@voidzero-dev/vite-plus-core@0.3.1(@types/node@26.1.0)(jiti@2.7.0)(terser@5.48.0)(typescript@7.0.2)(yaml@2.9.0))
 
+  packages/geo:
+    dependencies:
+      '@calendar/core':
+        specifier: workspace:*
+        version: link:../core
+      effect:
+        specifier: 'catalog:'
+        version: 4.0.0-rc.115
+    devDependencies:
+      '@effect/vitest':
+        specifier: 'catalog:'
+        version: 4.0.0-rc.115(effect@4.0.0-rc.115)(vitest@4.1.11)
+      typescript:
+        specifier: 'catalog:'
+        version: 7.0.2
+      vitest:
+        specifier: 4.1.11
+        version: 4.1.11(@types/node@26.1.0)(@vitest/browser-preview@4.1.11)(@voidzero-dev/vite-plus-core@0.3.1(@types/node@26.1.0)(jiti@2.7.0)(terser@5.48.0)(typescript@7.0.2)(yaml@2.9.0))
+
   packages/google:
     dependencies:
       '@calendar/core':
@@ -589,6 +617,9 @@ importers:
       '@calendar/db':
         specifier: workspace:*
         version: link:../db
+      '@calendar/geo':
+        specifier: workspace:*
+        version: link:../geo
       '@calendar/google':
         specifier: workspace:*
         version: link:../google
@@ -4248,6 +4279,13 @@ packages:
     resolution: {integrity: sha512-pPIIcKR73OShwlWMg8H90WRzKUd2krDdKlKAwuQV1FtUwE7H3hQEFw0ePFQY9yFoGMF/77ryYwNKfI5umMcCog==}
     peerDependencies:
       expo: '*'
+
+  expo-maps@57.0.3:
+    resolution: {integrity: sha512-FYtIqDMbSUv0wIeQgH0GJiX8VT/9iayIoHWZV10aCYsOoK0Yvv4NUEQwVBSd6ZV4jfm2ZYvYS4+OVjKHvwOw6g==}
+    peerDependencies:
+      expo: '*'
+      react: '*'
+      react-native: '*'
 
   expo-modules-autolinking@57.0.13:
     resolution: {integrity: sha512-Hj5NjZRlfccazhKab+wK19leRVUr1Y/PUERaRvegIbUSkq4GVxKq6lU9QHlKQyC16MdD/VS4iwsiLivB4o7lvQ==}
@@ -11308,6 +11346,12 @@ snapshots:
     dependencies:
       expo: 57.0.22(@babel/core@7.29.7(supports-color@8.1.1))(@expo/dom-webview@57.0.1)(react-dom@19.2.7(react@19.2.7))(react-native-worklets@0.10.1(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(supports-color@8.1.1))(react-native@0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(supports-color@8.1.1))(@types/react@19.2.17)(react@19.2.7)(supports-color@8.1.1))(react@19.2.7)(supports-color@8.1.1))(react-native@0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(supports-color@8.1.1))(@types/react@19.2.17)(react@19.2.7)(supports-color@8.1.1))(react@19.2.7)(supports-color@8.1.1)(typescript@7.0.2)
       expo-json-utils: 57.0.2
+
+  expo-maps@57.0.3(expo@57.0.22)(react-native@0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(supports-color@8.1.1))(@types/react@19.2.17)(react@19.2.7)(supports-color@8.1.1))(react@19.2.7):
+    dependencies:
+      expo: 57.0.22(@babel/core@7.29.7(supports-color@8.1.1))(@expo/dom-webview@57.0.1)(react-dom@19.2.7(react@19.2.7))(react-native-worklets@0.10.1(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(supports-color@8.1.1))(react-native@0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(supports-color@8.1.1))(@types/react@19.2.17)(react@19.2.7)(supports-color@8.1.1))(react@19.2.7)(supports-color@8.1.1))(react-native@0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(supports-color@8.1.1))(@types/react@19.2.17)(react@19.2.7)(supports-color@8.1.1))(react@19.2.7)(supports-color@8.1.1)(typescript@7.0.2)
+      react: 19.2.7
+      react-native: 0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(supports-color@8.1.1))(@types/react@19.2.17)(react@19.2.7)(supports-color@8.1.1)
 
   expo-modules-autolinking@57.0.13(supports-color@8.1.1)(typescript@7.0.2):
     dependencies:

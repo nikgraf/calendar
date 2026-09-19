@@ -2,6 +2,7 @@ import { Cause, Effect, Schema } from 'effect';
 import { Rpc, RpcGroup } from 'effect/unstable/rpc';
 import type { RpcClientError } from 'effect/unstable/rpc/RpcClientError';
 import { BirthdayReminderSettings } from './birthdays/reminders.ts';
+import { PlaceSuggestion } from './geo/location.ts';
 import { AccountSyncStatus } from './syncStatus.ts';
 import {
   Account,
@@ -9,6 +10,7 @@ import {
   CalendarInfo,
   Contact,
   EventRecord,
+  GeoLocation,
   TaskListInfo,
   TaskPriority,
   TaskRecord,
@@ -38,6 +40,8 @@ export const EventDraft = Schema.Struct({
   /** All-day drafts use dates; timed drafts use epochs + zone. */
   endDate: Schema.optional(Schema.String),
   endUtc: Schema.Number,
+  /** Coordinates for `location` (from the place picker); dropped unless they match it. */
+  geo: Schema.optional(GeoLocation),
   isAllDay: Schema.Boolean,
   location: Schema.optional(Schema.String),
   /** RFC 5545 lines (RRULE/...) to create the event as a recurring master. */
@@ -55,6 +59,8 @@ export const UpdateEventChanges = Schema.Struct({
   description: Schema.optional(Schema.String),
   endDate: Schema.optional(Schema.String),
   endUtc: Schema.optional(Schema.Number),
+  /** Coordinates for the (new) location: null clears, undefined leaves them alone. */
+  geo: Schema.optional(Schema.NullOr(GeoLocation)),
   isAllDay: Schema.optional(Schema.Boolean),
   location: Schema.optional(Schema.String),
   startDate: Schema.optional(Schema.String),
@@ -100,6 +106,8 @@ export class BackendError extends Schema.Error<BackendError>('core/BackendError'
 
 export class AppBackendRpcs extends RpcGroup.make(
   Rpc.make('addAccount', { error: BackendError, success: Account }),
+  /** Wipes the on-device location geocode cache (Settings). */
+  Rpc.make('clearLocationCache', { error: BackendError }),
   Rpc.make('completeTask', {
     error: BackendError,
     payload: {
@@ -220,9 +228,35 @@ export class AppBackendRpcs extends RpcGroup.make(
     error: BackendError,
     success: Schema.Array(AccountSyncStatus),
   }),
+  /**
+   * Static map image for the event editor (desktop: MKMapSnapshotter in
+   * the Swift helper). Fails where the platform renders a live map instead.
+   */
+  Rpc.make('mapSnapshot', {
+    error: BackendError,
+    payload: {
+      appearance: Schema.Literals(['dark', 'light']),
+      height: Schema.Number,
+      lat: Schema.Number,
+      lng: Schema.Number,
+      scale: Schema.Number,
+      width: Schema.Number,
+    },
+    success: Schema.Struct({ pngBase64: Schema.String }),
+  }),
   Rpc.make('removeAccount', {
     error: BackendError,
     payload: { accountId: Schema.String },
+  }),
+  /**
+   * Coordinates for a location string, on-device and cached per string.
+   * `suggestion` is the typeahead row the user picked (resolves exactly);
+   * null when the text is not a place or nothing was found.
+   */
+  Rpc.make('resolveLocation', {
+    error: BackendError,
+    payload: { location: Schema.String, suggestion: Schema.optional(PlaceSuggestion) },
+    success: Schema.NullOr(GeoLocation),
   }),
   Rpc.make('respondToEvent', {
     error: BackendError,
@@ -238,6 +272,12 @@ export class AppBackendRpcs extends RpcGroup.make(
     error: BackendError,
     payload: { limit: Schema.optional(Schema.Number), query: Schema.String },
     success: Schema.Array(Contact),
+  }),
+  /** Location typeahead (MapKit completer); empty where there is no bridge. */
+  Rpc.make('searchPlaces', {
+    error: BackendError,
+    payload: { limit: Schema.optional(Schema.Number), query: Schema.String },
+    success: Schema.Array(PlaceSuggestion),
   }),
   /**
    * Saves the device-local reminder preferences. `notificationsGranted`

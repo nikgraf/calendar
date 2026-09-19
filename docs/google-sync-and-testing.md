@@ -65,6 +65,19 @@ invariants.
 
 ### Misc
 
+- Locations: `location` is free-form text and the only location field
+  on a regular event — no place id, no coordinates (Google's own clients
+  geocode the string too). The app mirrors coordinates it derived into
+  `extendedProperties.private` (`solunivo.geo` = `lat,lng`,
+  `solunivo.geoName`, `solunivo.geoSource` = the exact location text).
+  Limits: keys ≤ 44 chars (longer keys are silently dropped), values ≤
+  1024 chars (silently truncated — so a longer location is never
+  mirrored), ≤ 300 properties / 32 kB per event. PATCH merges private
+  keys; a key is deleted only by sending it as `null`. Private
+  properties belong to one copy of the event: an attendee's copy on a
+  calendar we cannot write never gets them, which is why a local
+  `location_geo` cache exists. The fake Google server mirrors the merge
+  and null-delete semantics.
 - Meeting links: `hangoutLink`, else `conferenceData.entryPoints[]` with
   `entryPointType === 'video'`; `meetingUrl()` in core also scans
   location/description for Meet/Zoom/Teams/Webex/Whereby URLs.

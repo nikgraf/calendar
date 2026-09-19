@@ -1,4 +1,12 @@
-import { Attendee, CalendarInfo, EventRecord, plainDateToUtcMs, Temporal } from '@calendar/core';
+import {
+  Attendee,
+  CalendarInfo,
+  decodeGeoProperties,
+  encodeGeoProperties,
+  EventRecord,
+  plainDateToUtcMs,
+  Temporal,
+} from '@calendar/core';
 import type { GcalCalendarListEntry, GcalEvent, GcalEventInput, GcalTime } from './apiTypes.ts';
 import { Schema } from 'effect';
 
@@ -89,6 +97,9 @@ export const mapGcalEvent = (
     endDate: event.end?.date,
     endUtc,
     etag: event.etag ?? null,
+    // Coordinates survive only while they were derived from this exact
+    // location text; an edit in another client makes them stale.
+    geo: decodeGeoProperties(event.extendedProperties?.private, event.location),
     hangoutLink: event.hangoutLink ?? videoEntry?.uri,
     id: event.id,
     isAllDay,
@@ -178,3 +189,26 @@ export const toGcalEventInput = (event: EventRecord): GcalEventInput => ({
       },
   summary: event.title,
 });
+
+/**
+ * The location coordinates for events.insert: the keys when the record
+ * has matching geo, nothing otherwise.
+ */
+export const toGcalGeoInsert = (event: EventRecord): Pick<GcalEventInput, 'extendedProperties'> => {
+  const properties = encodeGeoProperties(event.geo, { forPatch: false });
+  return Object.keys(properties).length > 0 ? { extendedProperties: { private: properties } } : {};
+};
+
+/**
+ * The location coordinates for events.patch: the keys when the record has
+ * matching geo, explicit nulls (deleting the server's keys) when this edit
+ * dropped them, and nothing otherwise — an unrelated edit to an event that
+ * never had coordinates must not touch extendedProperties at all.
+ */
+export const toGcalGeoPatch = (
+  event: EventRecord,
+  geoCleared: boolean,
+): Pick<GcalEventInput, 'extendedProperties'> =>
+  event.geo !== undefined || geoCleared
+    ? { extendedProperties: { private: encodeGeoProperties(event.geo, { forPatch: true }) } }
+    : {};

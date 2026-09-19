@@ -1,0 +1,1 @@
+../../../../../packages/geo/swift/GeoBridge.swift

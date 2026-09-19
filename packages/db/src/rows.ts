@@ -4,6 +4,7 @@ import {
   CalendarInfo,
   Contact,
   EventRecord,
+  GeoLocation,
   GoogleBirthday,
   PendingOp,
   recurrenceEndUtc,
@@ -85,6 +86,16 @@ export interface DeviceSettingRow {
   readonly value: string;
   readonly updated_at: number;
 }
+
+export interface LocationGeoRow {
+  readonly location_key: string;
+  readonly geo: string | null;
+  readonly resolved_at: number;
+}
+
+/** A cache row's GeoLocation, or null for a recorded miss (or an unreadable value). */
+export const locationGeoFromRow = (row: LocationGeoRow): GeoLocation | null =>
+  decodeOr(GeoLocation, parseJson(row.geo)) ?? null;
 
 export interface TaskListRow {
   readonly account_id: string;
@@ -271,6 +282,8 @@ export interface EventRow {
   readonly sync_status: string;
   readonly updated_at: number;
   readonly synced_at: number;
+  /** JSON GeoLocation; added by migration 2 (hence last). */
+  readonly geo: string | null;
 }
 
 const attendeesJson = Schema.Array(Attendee);
@@ -289,6 +302,7 @@ export const eventFromRow = (row: EventRow): EventRecord =>
     endDate: row.end_date ?? undefined,
     endUtc: row.end_utc,
     etag: row.etag,
+    geo: decodeOr(GeoLocation, parseJson(row.geo)),
     hangoutLink: row.hangout_link ?? undefined,
     id: row.id,
     isAllDay: row.is_all_day === 1,
@@ -317,6 +331,7 @@ export const eventToRow = (event: EventRecord): EventRow => ({
   end_date: event.endDate ?? null,
   end_utc: event.endUtc,
   etag: event.etag,
+  geo: event.geo ? JSON.stringify(Schema.encodeSync(GeoLocation)(event.geo)) : null,
   hangout_link: event.hangoutLink ?? null,
   id: event.id,
   is_all_day: event.isAllDay ? 1 : 0,
@@ -370,6 +385,8 @@ export interface PendingOpRow {
   readonly task_due: string | null;
   readonly dispatched_at: number | null;
   readonly attendees_changed: number;
+  /** Added by migration 2 (hence last). */
+  readonly geo_cleared: number;
 }
 
 /**
@@ -389,6 +406,7 @@ export const pendingOpFromRow = (row: PendingOpRow): PendingOp | undefined =>
         createdAt: row.created_at,
         dispatchedAt: row.dispatched_at ?? undefined,
         eventId: row.event_id,
+        geoCleared: row.geo_cleared === 1 ? true : undefined,
         id: row.id,
         kind: row.kind as PendingOp['kind'],
         lastError: row.last_error ?? undefined,

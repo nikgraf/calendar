@@ -46,6 +46,7 @@ describe('runMigrations', () => {
         'contacts',
         'device_settings',
         'events',
+        'location_geo',
         'pending_ops',
         'sync_state',
         'task_lists',
@@ -66,6 +67,28 @@ describe('runMigrations', () => {
       expect(yield* columnsOf('pending_ops')).toContain('attendees_changed');
       expect(yield* columnsOf('task_lists')).toContain('read_only');
       expect(yield* columnsOf('accounts')).toContain('contacts_enabled');
+      expect(yield* columnsOf('events')).toContain('geo');
+      expect(yield* columnsOf('pending_ops')).toContain('geo_cleared');
+    }).pipe(Effect.provide(sqlLayer())),
+  );
+
+  it.effect('upgrades a baseline database in place, keeping its rows', () =>
+    Effect.gen(function* () {
+      const sql = yield* SqlClient;
+      const baselineOnly = migrations.filter(([id]) => id === 1);
+      yield* runMigrationsWith(baselineOnly);
+      yield* sql`INSERT INTO accounts (id, email, status, created_at) VALUES ('a', 'a@x', 'ok', 1)`;
+      yield* sql`
+        INSERT INTO events (account_id, calendar_id, id, status, title, location, is_all_day,
+                            start_utc, end_utc, sync_status, updated_at, synced_at)
+        VALUES ('a', 'c', 'e', 'confirmed', 'Lunch', 'Naschmarkt', 0, 1, 2, 'synced', 1, 1)`;
+
+      yield* runMigrations;
+
+      expect(yield* appliedIds).toEqual(migrations.map(([id]) => id));
+      const rows = yield* sql<{ geo: string | null; location: string }>`
+        SELECT location, geo FROM events WHERE id = 'e'`;
+      expect(rows).toEqual([{ geo: null, location: 'Naschmarkt' }]);
     }).pipe(Effect.provide(sqlLayer())),
   );
 

@@ -29,6 +29,40 @@ interface StoredTask {
   readonly updatedAt: number;
 }
 
+type ExtendedProperties = GcalEvent['extendedProperties'];
+
+/**
+ * PATCH semantics of extendedProperties: each map merges key by key into
+ * the stored one, and a key sent as null is deleted (the only way to
+ * remove one). An empty map disappears like it does on Google.
+ */
+const mergeExtendedProperties = (
+  stored: ExtendedProperties,
+  patch: unknown,
+): ExtendedProperties => {
+  if (patch === undefined || patch === null || typeof patch !== 'object') {
+    return stored;
+  }
+  const merged: Record<string, Record<string, string>> = {};
+  for (const scope of ['private', 'shared'] as const) {
+    const next: Record<string, string> = { ...stored?.[scope] };
+    const changes = (patch as Record<string, unknown>)[scope];
+    if (changes && typeof changes === 'object') {
+      for (const [key, value] of Object.entries(changes)) {
+        if (typeof value === 'string') {
+          next[key] = value;
+        } else {
+          delete next[key];
+        }
+      }
+    }
+    if (Object.keys(next).length > 0) {
+      merged[scope] = next;
+    }
+  }
+  return Object.keys(merged).length > 0 ? merged : undefined;
+};
+
 /** A stored task on the wire: `updated` is the RFC 3339 form of its stamp. */
 const wire = (entry: StoredTask): GcalTask => ({
   ...entry.task,
@@ -268,6 +302,10 @@ export class FakeGoogle {
         this.putEvent(calendarId, {
           ...existing.event,
           ...(body as Partial<GcalEvent>),
+          extendedProperties: mergeExtendedProperties(
+            existing.event.extendedProperties,
+            body?.['extendedProperties'],
+          ),
           id: eventId,
         });
         return reply(200, this.eventOf(calendarId, eventId));

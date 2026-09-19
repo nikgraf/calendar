@@ -1,0 +1,9 @@
+{
+  "name": "solunivo-geo",
+  "version": "0.1.0",
+  "private": true,
+  "description": "MapKit place search, geocoding and map images for Solunivo — local Expo module",
+  "license": "UNLICENSED",
+  "author": "Nik Graf",
+  "main": "index.ts"
+}

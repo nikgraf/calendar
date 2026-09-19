@@ -1,4 +1,11 @@
-import { Account, CalendarInfo, EventRecord, plainDateToUtcMs, SyncState } from '@calendar/core';
+import {
+  Account,
+  CalendarInfo,
+  EventRecord,
+  GeoLocation,
+  plainDateToUtcMs,
+  SyncState,
+} from '@calendar/core';
 import { SqliteClient } from '@effect/sql-sqlite-node';
 import { expect, it } from '@effect/vitest';
 import { Effect, Layer } from 'effect';
@@ -174,6 +181,20 @@ describe('repos', () => {
       expect(window.singles.map((event) => event.id).sort()).toEqual(['evt-1', 'master-1__ovr']);
       expect(window.masters.map((event) => event.id)).toEqual(['master-1']);
       expect(window.overrides.map((event) => event.id)).toEqual(['master-1__ovr']);
+    }).pipe(Effect.provide(freshDbLayer())),
+  );
+
+  it.effect('persists and clears event coordinates', () =>
+    Effect.gen(function* () {
+      const calendars = yield* CalendarRepo;
+      const events = yield* EventRepo;
+      yield* calendars.upsertMany([calendar()]);
+      const geo = new GeoLocation({ lat: 48.2, lng: 16.37, source: 'Naschmarkt' });
+      yield* events.upsertMany([timedEvent({ geo, location: 'Naschmarkt' })]);
+      expect((yield* events.getById('acc-1', 'cal-1', 'evt-1'))?.geo).toEqual(geo);
+
+      yield* events.upsertMany([timedEvent({ location: 'Office' })]);
+      expect((yield* events.getById('acc-1', 'cal-1', 'evt-1'))?.geo).toBeUndefined();
     }).pipe(Effect.provide(freshDbLayer())),
   );
 

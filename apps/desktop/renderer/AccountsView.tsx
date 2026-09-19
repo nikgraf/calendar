@@ -10,6 +10,7 @@ import { useState } from 'react';
 import { PrivacySection } from './PrivacySection.tsx';
 import { BirthdayRemindersSection } from './BirthdayRemindersSection.tsx';
 import { ContactsSection } from './ContactsSection.tsx';
+import { LocationsSection } from './LocationsSection.tsx';
 import { RemindersSection } from './RemindersSection.tsx';
 
 export function AccountsView() {
@@ -142,6 +143,7 @@ export function AccountsView() {
       <RemindersSection />
       <ContactsSection />
       <BirthdayRemindersSection />
+      <LocationsSection />
       <PrivacySection />
     </div>
   );

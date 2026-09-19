@@ -2,7 +2,11 @@ import {
   buildRecurrenceRule,
   buildEventTimes,
   emailKey,
+  geoMatches,
+  isMappableLocation,
   meetingUrl,
+  openInMapsUrl,
+  placeSuggestionLabel,
   toZonedDateTime,
   validateEventDraft,
   type Attendee,
@@ -10,14 +14,15 @@ import {
   type CalendarInfo,
   type EventDraft,
   type EventRecord,
+  GeoLocation,
+  type PlaceSuggestion,
   type RecurrenceFrequency,
   type RecurringScope,
   type RsvpResponse,
   type Temporal,
 } from '@calendar/core';
 import { useState } from 'react';
-import { useAccounts } from './hooks.ts';
-import { useBackendMutations } from './hooks.ts';
+import { useAccounts, useBackendMutations, useLocationGeo } from './hooks.ts';
 import { useRepeatState } from './repeatState.ts';
 
 /**
@@ -140,7 +145,28 @@ export const useEventEditorModel = ({
       ? timeString(existing.endUtc, timeZone)
       : seedTimeFields(seed).endTime,
   );
-  const [location, setLocation] = useState(existing?.location ?? prefill?.location ?? '');
+  const initialLocation = existing?.location ?? prefill?.location ?? '';
+  const [location, setLocation] = useState(initialLocation);
+  // Coordinates for the location text, from the event (server-mirrored) or
+  // a picked suggestion. Never cleared on typing: they count only while
+  // geoMatches, so retyping the original text brings the map back.
+  const [geo, setGeo] = useState<GeoLocation | undefined>(existing?.geo);
+  const [picking, setPicking] = useState(false);
+  // Text the editor was opened with and has no coordinates for (an event
+  // from before this feature, another client's edit, a quick-add
+  // location): geocoded once on open. Typing never geocodes — the picker
+  // does that — so an edit away from the opening text stops the lookup.
+  const lookupLocation =
+    location === initialLocation && !geoMatches(geo, location) && isMappableLocation(location)
+      ? location
+      : '';
+  const lookup = useLocationGeo(lookupLocation);
+  const mapGeo = geoMatches(geo, location)
+    ? geo
+    : lookupLocation !== '' && geoMatches(lookup.geo ?? undefined, location)
+      ? (lookup.geo ?? undefined)
+      : undefined;
+  const mapLoading = picking || (lookupLocation !== '' && lookup.loading);
   // The guest list as the editor shows it; `attendeesDirty` keeps an
   // untouched list out of the update (undefined = unchanged upstream).
   const [attendees, setAttendees] = useState<ReadonlyArray<AttendeeInput>>(() =>
@@ -171,6 +197,27 @@ export const useEventEditorModel = ({
     setAttendeesDirty(true);
   };
 
+  /**
+   * A typeahead row was picked: its label becomes the location text and
+   * MapKit resolves that exact place. A slow answer for an older pick is
+   * harmless — coordinates only count while they match the current text.
+   */
+  const pickPlace = async (suggestion: PlaceSuggestion) => {
+    const label = placeSuggestionLabel(suggestion);
+    setLocation(label);
+    setPicking(true);
+    try {
+      const resolved = await mutations.resolveLocation({ location: label, suggestion });
+      if (resolved) {
+        setGeo(resolved);
+      }
+    } catch {
+      // No coordinates: the text is still a perfectly good location.
+    } finally {
+      setPicking(false);
+    }
+  };
+
   /** Server facts for a chip (response, organizer) — only for guests already on the event. */
   const attendeeStatus = (email: string): Attendee | undefined =>
     existing?.attendees?.find((attendee) => emailKey(attendee.email) === emailKey(email));
@@ -184,6 +231,14 @@ export const useEventEditorModel = ({
     }
     const [accountId, calendarId] = calendarKey.split(':', 2) as [string, string];
     const times = buildEventTimes(fields, timeZone);
+    // Only coordinates the user vouched for reach Google: the event's own
+    // (mirrored) ones or a picked suggestion, and only while they match the
+    // text being saved. The open-time lookup of free text stays on this
+    // device — MapKit's guess for "Room 4B" must not become every device's
+    // truth. An update sends null so stale ones are cleared.
+    const savedGeo = geoMatches(geo, location.trim())
+      ? new GeoLocation({ ...geo, source: location.trim() })
+      : undefined;
     try {
       if (existing && isRecurring && existing.recurringEventId) {
         await mutations.updateRecurring({
@@ -191,6 +246,7 @@ export const useEventEditorModel = ({
           calendarId,
           changes: {
             ...(attendeesDirty ? { attendees } : {}),
+            geo: savedGeo ?? null,
             // Empty string clears the field; undefined would read as "unchanged".
             location: location.trim(),
             title: title.trim(),
@@ -206,6 +262,7 @@ export const useEventEditorModel = ({
           calendarId,
           changes: {
             ...(attendeesDirty ? { attendees } : {}),
+            geo: savedGeo ?? null,
             isAllDay,
             location: location.trim(),
             title: title.trim(),
@@ -218,6 +275,7 @@ export const useEventEditorModel = ({
           accountId,
           ...(attendees.length > 0 ? { attendees } : {}),
           calendarId,
+          geo: savedGeo,
           isAllDay,
           location: location.trim() || undefined,
           recurrence: (() => {
@@ -293,7 +351,13 @@ export const useEventEditorModel = ({
     isRecurring,
     joinUrl,
     location,
+    /** Coordinates to map for the current text, if known. */
+    mapGeo,
+    mapLoading,
+    /** Apple Maps link for the mapped place (https: routes to Maps on macOS and iOS). */
+    mapsUrl: mapGeo ? openInMapsUrl(mapGeo) : undefined,
     ownAttendee,
+    pickPlace,
     remove,
     removeAttendee,
     ...repeatState,

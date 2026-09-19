@@ -334,6 +334,30 @@ Rules that keep the queue correct:
   tapping a cell opens the day, where the full chips live. Both kinds are
   bucketed with `groupByDate` (core), which the iOS all-day lane uses as
   well.
+- Event locations and maps: Google stores only location text, so
+  coordinates (`EventRecord.geo`: lat, lng, name, and `source`, the text
+  they came from) are derived on-device through `GeoClient` (MapKit via
+  the helper / the `solunivo-geo` Expo module) and are valid only while
+  `source` matches the location (`geoMatches`). They travel in the
+  event's private extendedProperties, so other devices skip geocoding.
+  Only coordinates the user vouched for are mirrored: the event's own or
+  a picked suggestion. A local edit that drops them (the location
+  changed) flags its queued update `geoCleared`, and only that PATCH
+  deletes the keys with nulls — an unrelated edit never touches
+  extendedProperties. A pull whose source no longer matches (edited in
+  another client) ignores the keys; they stay on the server until the
+  next pick overwrites them. Events without mirrored coordinates are
+  geocoded when the editor opens (`resolveLocation`, cached per
+  normalized string in the device-local `location_geo` table: misses
+  for 3 days, hits served at once and re-resolved in the background
+  once older than 14 days — the write invalidates `LOCATION_GEO_KEY`, so
+  an open editor follows — pruned to 2000 rows, wiped from Settings)
+  for the map on this device only; typing
+  never geocodes — the typeahead (`searchPlaces`,
+  MKLocalSearchCompleter) and a picked row do. URLs and meeting links
+  are never looked up. Desktop
+  draws a static `MKMapSnapshotter` PNG (`mapSnapshot`); iOS draws a live
+  `expo-maps` Apple Maps view (iOS 17+, else only the Open in Maps link).
 - Device-only data behind rpc: `device_settings` is a key/value table
   for preferences that never sync (birthday reminders first). The
   IPC-vs-rpc rule is about window concerns, not about where data lives —

@@ -14,6 +14,8 @@ import {
   toTimeString,
 } from './editSheetShared.ts';
 import { InviteeField } from './InviteeField.tsx';
+import { LocationField } from './LocationField.tsx';
+import { LocationMap } from './LocationMap.tsx';
 
 /** The event half of EventEditSheet (mode === 'event'). */
 export function EventEditForm({ model }: { model: ReturnType<typeof useEventEditorModel> }) {
@@ -29,7 +31,6 @@ export function EventEditForm({ model }: { model: ReturnType<typeof useEventEdit
     isAllDay,
     isRecurring,
     joinUrl,
-    location,
     ownAttendee,
     remove,
     removeAttendee,
@@ -45,7 +46,6 @@ export function EventEditForm({ model }: { model: ReturnType<typeof useEventEdit
     setDate,
     setEndTime,
     setIsAllDay,
-    setLocation,
     setRepeat,
     setRepeatCount,
     setRepeatEnds,
@@ -254,12 +254,8 @@ export function EventEditForm({ model }: { model: ReturnType<typeof useEventEdit
         )}
 
         <Text style={styles.label}>Location</Text>
-        <TextInput
-          onChangeText={setLocation}
-          placeholder="Add a location"
-          style={styles.input}
-          value={location}
-        />
+        <LocationField model={model} />
+        <LocationMap model={model} />
 
         <Text style={styles.label}>Invitees</Text>
         {ownAttendee ? (

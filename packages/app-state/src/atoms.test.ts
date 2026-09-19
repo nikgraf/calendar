@@ -1,9 +1,15 @@
-import { Account, BackendError, type BackendClient, type EventRecord } from '@calendar/core';
+import {
+  Account,
+  BackendError,
+  type BackendClient,
+  type EventRecord,
+  GeoLocation,
+} from '@calendar/core';
 import { ACCOUNTS_KEY } from '@calendar/db/keys';
 import { Effect } from 'effect';
-import { AsyncResult, AtomRegistry } from 'effect/unstable/reactivity';
+import { AsyncResult, type Atom, AtomRegistry } from 'effect/unstable/reactivity';
 import { describe, expect, it } from 'vitest';
-import { makeBackendAtoms, rangeKey } from './atoms.ts';
+import { makeBackendAtoms, mapSnapshotKey, rangeKey } from './atoms.ts';
 
 const account = new Account({
   contactsEnabled: false,
@@ -18,9 +24,17 @@ const account = new Account({
 const fail = (message: string) => Effect.fail(new BackendError({ message, tag: 'Stub' }));
 
 const makeStubClient = () => {
-  const calls = { accounts: 0, events: 0, setVisible: 0 };
+  const calls = {
+    accounts: 0,
+    events: 0,
+    places: [] as Array<string>,
+    resolved: [] as Array<string>,
+    setVisible: 0,
+    snapshots: [] as Array<unknown>,
+  };
   const client: BackendClient = {
     addAccount: () => fail('not stubbed'),
+    clearLocationCache: () => Effect.void,
     completeTask: () => Effect.void,
     connectContacts: () => fail('not stubbed'),
     connectReminders: () => fail('not stubbed'),
@@ -48,9 +62,24 @@ const makeStubClient = () => {
     listPendingOps: () => Effect.succeed([]),
     listSyncStatus: () => Effect.succeed([]),
     listTaskLists: () => Effect.succeed([]),
+    mapSnapshot: (params) =>
+      Effect.sync(() => {
+        calls.snapshots.push(params);
+        return { pngBase64: 'png' };
+      }),
     removeAccount: () => Effect.void,
+    resolveLocation: ({ location }) =>
+      Effect.sync(() => {
+        calls.resolved.push(location);
+        return new GeoLocation({ lat: 1, lng: 2, source: location });
+      }),
     respondToEvent: () => Effect.void,
     searchContacts: () => Effect.succeed([]),
+    searchPlaces: ({ query }) =>
+      Effect.sync(() => {
+        calls.places.push(query);
+        return [{ title: query }];
+      }),
     setBirthdayReminderSettings: () => Effect.succeed({ notificationsGranted: true }),
     setCalendarColor: () => Effect.void,
     setCalendarVisible: () =>
@@ -214,5 +243,39 @@ describe('eventsInRange LRU', () => {
     }
     // Now it has been evicted: a fresh atom object is created.
     expect(atoms.eventsInRange('0:100')).not.toBe(first);
+  });
+
+  it('location atoms answer empty keys locally and pass the rest through', async () => {
+    const { calls, client } = makeStubClient();
+    const atoms = makeBackendAtoms(client);
+    const registry = AtomRegistry.make();
+    const unmounts: Array<() => void> = [];
+    const settle = async <A>(atom: Atom.Atom<AsyncResult.AsyncResult<A, unknown>>): Promise<A> => {
+      unmounts.push(registry.mount(atom));
+      return AsyncResult.getOrThrow(await waitFor(() => registry.get(atom), AsyncResult.isSuccess));
+    };
+    const params = {
+      appearance: 'dark' as const,
+      height: 160,
+      lat: 48.2,
+      lng: 16.37,
+      scale: 2,
+      width: 372,
+    };
+
+    expect(await settle(atoms.placesSearch('6:'))).toEqual([]);
+    expect(await settle(atoms.placesSearch('6:naschmarkt'))).toEqual([{ title: 'naschmarkt' }]);
+    expect(await settle(atoms.locationGeo(''))).toBeNull();
+    expect((await settle(atoms.locationGeo('Naschmarkt')))?.source).toBe('Naschmarkt');
+    expect(await settle(atoms.mapSnapshot(''))).toBeNull();
+    expect(await settle(atoms.mapSnapshot(mapSnapshotKey(params)))).toBe('png');
+
+    expect(calls.places).toEqual(['naschmarkt']);
+    expect(calls.resolved).toEqual(['Naschmarkt']);
+    expect(calls.snapshots).toEqual([params]);
+    for (const unmount of unmounts) {
+      unmount();
+    }
+    registry.dispose();
   });
 });

@@ -8,13 +8,15 @@ import type {
   CalendarInfo,
   Contact,
   EventRecord,
+  GeoLocation,
   PendingOpSummary,
+  PlaceSuggestion,
   TaskListInfo,
   TaskRecord,
 } from '@calendar/core';
 import { RegistryContext, useAtomValue } from '@effect/atom-react';
 import { Cause, Effect, Exit, Option } from 'effect';
-import { AsyncResult, AtomRegistry } from 'effect/unstable/reactivity';
+import { AsyncResult, type Atom, AtomRegistry } from 'effect/unstable/reactivity';
 import {
   createContext,
   createElement,
@@ -24,7 +26,13 @@ import {
   useState,
   type ReactNode,
 } from 'react';
-import { type MutationName, rangeKey, type BackendAtoms } from './atoms.ts';
+import {
+  type BackendAtoms,
+  type MapSnapshotParams,
+  mapSnapshotKey,
+  type MutationName,
+  rangeKey,
+} from './atoms.ts';
 
 const AtomsContext = createContext<BackendAtoms | null>(null);
 
@@ -96,30 +104,73 @@ export const useEventsInRangeStable = (
 };
 
 /**
- * Invitee suggestions for a query, holding the previous list while the
- * next one loads so the dropdown never flickers empty between keystrokes.
- * An empty query yields [] without asking the backend.
+ * Typeahead rows for a query, holding the previous list while the next
+ * one loads so a dropdown never flickers empty between keystrokes. An
+ * empty query yields [] without asking the backend. `stale` = the rows
+ * belong to an earlier query: show them, never select them.
  */
-export const useContactsSearch = (
+const useStaleSearch = <A>(
+  atomFor: (key: string) => Atom.Atom<AsyncResult.AsyncResult<ReadonlyArray<A>, unknown>>,
   query: string,
-  limit = 8,
-): { readonly contacts: ReadonlyArray<Contact>; readonly stale: boolean } => {
-  const atoms = useBackendAtoms();
+  limit: number,
+): { readonly rows: ReadonlyArray<A>; readonly stale: boolean } => {
   const trimmed = query.trim();
-  const result = useAtomValue(atoms.contactsSearch(`${String(limit)}:${trimmed}`));
+  const result = useAtomValue(atomFor(`${String(limit)}:${trimmed}`));
   const value = AsyncResult.value(result);
-  const [previous, setPrevious] = useState<ReadonlyArray<Contact>>([]);
+  const [previous, setPrevious] = useState<ReadonlyArray<A>>([]);
   if (Option.isSome(value) && value.value !== previous) {
     // Render-phase state adjustment (the React "derive from props" pattern).
     setPrevious(value.value);
   }
   if (trimmed === '') {
-    return { contacts: [], stale: false };
+    return { rows: [], stale: false };
   }
-  // `stale` = the rows belong to an earlier query; show them, never select them.
   return Option.isSome(value)
-    ? { contacts: value.value, stale: false }
-    : { contacts: previous, stale: true };
+    ? { rows: value.value, stale: false }
+    : { rows: previous, stale: true };
+};
+
+/** Invitee suggestions for a query (device + Google contacts). */
+export const useContactsSearch = (
+  query: string,
+  limit = 8,
+): { readonly contacts: ReadonlyArray<Contact>; readonly stale: boolean } => {
+  const { rows, stale } = useStaleSearch(useBackendAtoms().contactsSearch, query, limit);
+  return { contacts: rows, stale };
+};
+
+/** Location typeahead rows for `query` (MapKit through the backend). */
+export const usePlacesSearch = (
+  query: string,
+  limit = 6,
+): { readonly places: ReadonlyArray<PlaceSuggestion>; readonly stale: boolean } => {
+  const { rows, stale } = useStaleSearch(useBackendAtoms().placesSearch, query, limit);
+  return { places: rows, stale };
+};
+
+/**
+ * Coordinates for location text ('' asks nothing). A failed lookup reads
+ * as "no coordinates" — a map is a nicety, never an error in the editor.
+ */
+export const useLocationGeo = (
+  location: string,
+): { readonly geo: GeoLocation | null; readonly loading: boolean } => {
+  const result = useAtomValue(useBackendAtoms().locationGeo(location));
+  return {
+    geo: AsyncResult.isSuccess(result) ? result.value : null,
+    loading: AsyncResult.isInitial(result) || (result.waiting && !AsyncResult.isFailure(result)),
+  };
+};
+
+/** A static map image (desktop), base64 PNG; null while loading, failed, or not asked. */
+export const useMapSnapshot = (
+  params: MapSnapshotParams | null,
+): { readonly loading: boolean; readonly pngBase64: string | null } => {
+  const result = useAtomValue(useBackendAtoms().mapSnapshot(params ? mapSnapshotKey(params) : ''));
+  return {
+    loading: AsyncResult.isInitial(result),
+    pngBase64: AsyncResult.isSuccess(result) ? result.value : null,
+  };
 };
 
 /** Task lists across accounts (for visibility toggles + connect rows). */
@@ -229,6 +280,7 @@ export const useBackendMutations = () => {
       };
     return {
       addAccount: set('addAccount'),
+      clearLocationCache: set('clearLocationCache'),
       completeTask: set('completeTask'),
       connectContacts: set('connectContacts'),
       connectReminders: set('connectReminders'),
@@ -239,6 +291,7 @@ export const useBackendMutations = () => {
       deleteTask: set('deleteTask'),
       discardPendingOp: set('discardPendingOp'),
       removeAccount: set('removeAccount'),
+      resolveLocation: set('resolveLocation'),
       respondToEvent: set('respondToEvent'),
       setBirthdayReminderSettings: set('setBirthdayReminderSettings'),
       setCalendarColor: set('setCalendarColor'),

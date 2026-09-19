@@ -7,8 +7,9 @@ import {
 } from '@calendar/app-state';
 import type { RecurrenceFrequency } from '@calendar/core';
 import { InviteeCombobox } from './InviteeCombobox.tsx';
-
-const field = 'w-full rounded-lg border border-neutral-200 bg-white px-3 py-1.5 text-sm';
+import { FIELD_CLASS as field } from './fieldStyles.ts';
+import { LocationCombobox } from './LocationCombobox.tsx';
+import { LocationMap } from './LocationMap.tsx';
 
 /**
  * The event half of EventEditor (mode === 'event'), extracted like the iOS
@@ -33,7 +34,6 @@ export function EventEditorForm({
     existing,
     isAllDay,
     isRecurring,
-    location,
     ownAttendee,
     remove,
     removeAttendee,
@@ -50,7 +50,6 @@ export function EventEditorForm({
     setDate,
     setEndTime,
     setIsAllDay,
-    setLocation,
     setRepeat,
     setRepeatCount,
     setRepeatEnds,
@@ -148,12 +147,8 @@ export function EventEditorForm({
             </>
           )}
         </div>
-        <input
-          className={field}
-          onChange={(changeEvent) => setLocation(changeEvent.target.value)}
-          placeholder="Location (optional)"
-          value={location}
-        />
+        <LocationCombobox model={model} />
+        <LocationMap model={model} />
         {existing ? null : (
           <>
             <div className="flex gap-2">

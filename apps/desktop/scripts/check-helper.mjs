@@ -20,6 +20,7 @@ const sourceRoots = [
   join(root, 'helper/Package.swift'),
   join(root, '../../packages/reminders/swift'),
   join(root, '../../packages/contacts/swift'),
+  join(root, '../../packages/geo/swift'),
 ];
 
 const newestMtime = (path) => {

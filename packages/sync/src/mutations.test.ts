@@ -1,4 +1,10 @@
-import { Account, CalendarInfo, plainDateToUtcMs, type EventDraft } from '@calendar/core';
+import {
+  Account,
+  CalendarInfo,
+  GeoLocation,
+  plainDateToUtcMs,
+  type EventDraft,
+} from '@calendar/core';
 import {
   AccountRepo,
   CalendarRepo,
@@ -238,6 +244,79 @@ describe('EventMutations', () => {
 
       yield* mutations.processPendingOps();
       expect(patched.at(-1)?.location).toBe('');
+    }).pipe(Effect.provide(mutationsLayer(client)));
+  });
+
+  it.effect('location coordinates follow the location text on every write', () => {
+    const client = stubClient({
+      insertEvent: ({ event }) =>
+        Effect.succeed({
+          end: event.end as GcalEvent['end'],
+          etag: '"server-1"',
+          extendedProperties: event.extendedProperties as GcalEvent['extendedProperties'],
+          id: event.id ?? 'x',
+          location: event.location,
+          start: event.start as GcalEvent['start'],
+          status: 'confirmed',
+          summary: event.summary,
+        }),
+      patchEvent: () => Effect.die('stays queued'),
+    });
+    const geo = new GeoLocation({
+      lat: 48.2,
+      lng: 16.37,
+      name: 'Naschmarkt',
+      source: 'Naschmarkt',
+    });
+    return Effect.gen(function* () {
+      yield* seedCalendar;
+      const mutations = yield* EventMutations;
+      const pendingOps = yield* PendingOpRepo;
+
+      // Coordinates that do not match the draft's location are never stored.
+      const stray = yield* mutations.createEvent({ ...draft, geo, location: 'Office' });
+      expect(stray.geo).toBeUndefined();
+
+      const record = yield* mutations.createEvent({ ...draft, geo, location: 'Naschmarkt' });
+      expect(record.geo).toEqual(geo);
+      const queued = (yield* pendingOps.listAll()).find((op) => op.eventId === record.id);
+      expect(queued?.payload?.geo).toEqual(geo);
+      // Synced, so the edits below queue as updates (a queued create
+      // absorbs edits and needs no delete flag: it sends no keys).
+      yield* mutations.processPendingOps();
+
+      const update = (changes: Parameters<typeof mutations.updateEvent>[0]['changes']) =>
+        mutations.updateEvent({
+          accountId: 'acc-1',
+          calendarId: 'cal-1',
+          changes,
+          eventId: record.id,
+        });
+      const current = Effect.map(eventsNow, (events) => events.find((e) => e.id === record.id));
+
+      const queuedFlag = Effect.map(
+        pendingOps.listAll(),
+        (ops) => ops.find((op) => op.eventId === record.id)?.geoCleared,
+      );
+
+      yield* update({ title: 'Lunch' });
+      expect((yield* current)?.geo).toEqual(geo);
+      expect(yield* queuedFlag).toBeUndefined();
+
+      // Dropping coordinates flags the queued update to delete the keys…
+      yield* update({ geo: null });
+      expect((yield* current)?.geo).toBeUndefined();
+      expect(yield* queuedFlag).toBe(true);
+      // …and a later unrelated edit that replaces that op inherits the flag.
+      yield* update({ title: 'Lunch again' });
+      expect(yield* queuedFlag).toBe(true);
+
+      yield* update({ geo, location: 'naschmarkt ' });
+      expect((yield* current)?.geo).toEqual(geo);
+
+      yield* update({ location: 'Somewhere else' });
+      expect((yield* current)?.geo).toBeUndefined();
+      expect(yield* queuedFlag).toBe(true);
     }).pipe(Effect.provide(mutationsLayer(client)));
   });
 

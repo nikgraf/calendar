@@ -28,6 +28,7 @@ import { iosRemindersClient } from '../remindersClient.ts';
 import { AccountCard } from './AccountCard.tsx';
 import { BirthdayRemindersSection } from './BirthdayRemindersSection.tsx';
 import { DiagnosticsSection } from './DiagnosticsSection.tsx';
+import { LocationsSection } from './LocationsSection.tsx';
 import { PrPreviewSection } from './PrPreviewSection.tsx';
 import { palette } from './theme.ts';
 import { MutationNoticeToast } from './Toast.tsx';
@@ -266,6 +267,7 @@ export function SettingsSheet({ onClose, visible }: { onClose: () => void; visib
           ) : null}
 
           <BirthdayRemindersSection />
+          <LocationsSection />
           <PrPreviewSection />
           <DiagnosticsSection contacts={contacts} reminders={reminders} visible={visible} />
         </ScrollView>

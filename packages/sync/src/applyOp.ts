@@ -15,6 +15,8 @@ import {
   mapGcalTask,
   toGcalAttendees,
   toGcalEventInput,
+  toGcalGeoInsert,
+  toGcalGeoPatch,
 } from '@calendar/google';
 import { Cause, Clock, Effect } from 'effect';
 
@@ -262,7 +264,11 @@ export const makeApplyOp = (
           const response = yield* client.insertEvent({
             accountId: op.accountId,
             calendarId: op.calendarId,
-            event: { ...toGcalEventInput(op.payload), attendees: toGcalAttendees(op.payload) },
+            event: {
+              ...toGcalEventInput(op.payload),
+              ...toGcalGeoInsert(op.payload),
+              attendees: toGcalAttendees(op.payload),
+            },
             sendUpdates: sendUpdatesFor(op.payload, false),
           });
           const synced = mapGcalEvent(response, {
@@ -337,8 +343,12 @@ export const makeApplyOp = (
             accountId: op.accountId,
             baseEtag: op.baseEtag,
             calendarId: op.calendarId,
+            // Location coordinates ride along as values while the record
+            // has them, as explicit nulls (deleting the keys) when this
+            // edit dropped them, and not at all otherwise.
             event: {
               ...toGcalEventInput(op.payload),
+              ...toGcalGeoPatch(op.payload, op.geoCleared === true),
               ...(op.attendeesChanged ? { attendees: toGcalAttendees(op.payload) } : {}),
             },
             eventId: op.eventId,

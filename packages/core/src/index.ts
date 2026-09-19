@@ -15,6 +15,7 @@ export * from './contacts/search.ts';
 export * from './format.ts';
 export * from './editor/attendees.ts';
 export * from './editor/eventDraft.ts';
+export * from './geo/location.ts';
 export * from './gestures/swipeSnap.ts';
 export * from './gestures/wheelPan.ts';
 export * from './meeting.ts';

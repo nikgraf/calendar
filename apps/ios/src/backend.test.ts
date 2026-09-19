@@ -37,6 +37,10 @@ vi.mock('./contactsClient.ts', async () => {
   };
   return { iosContactsClient: client, iosContactsLayer: Layer.succeed(ContactsClient, client) };
 });
+vi.mock('./geoClient.ts', async () => {
+  const { GeoClient, unavailableGeoClient } = await import('@calendar/geo');
+  return { iosGeoLayer: Layer.succeed(GeoClient, unavailableGeoClient('test')) };
+});
 vi.mock('./remindersClient.ts', async () => {
   const { makeFakeRemindersClient, RemindersClient, RemindersRequestError } =
     await import('@calendar/reminders');

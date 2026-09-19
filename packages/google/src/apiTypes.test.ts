@@ -39,6 +39,18 @@ describe('Google API schemas tolerate real payloads', () => {
     expect(event.attendees).toBeUndefined();
   });
 
+  it('decodes private and shared extended properties', () => {
+    const event = decode(GcalEvent, {
+      extendedProperties: {
+        private: { 'solunivo.geo': '48.2,16.37', 'solunivo.geoSource': 'Naschmarkt' },
+        shared: { 'other.app': 'x' },
+      },
+      id: 'evt-1',
+    });
+    expect(event.extendedProperties?.private?.['solunivo.geo']).toBe('48.2,16.37');
+    expect(event.extendedProperties?.shared?.['other.app']).toBe('x');
+  });
+
   it('decodes a cancelled tombstone that carries only id and status', () => {
     const page = decode(GcalEventsPage, {
       items: [{ id: 'gone', status: 'cancelled' }],
