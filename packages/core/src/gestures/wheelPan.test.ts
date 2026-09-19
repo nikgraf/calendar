@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createWheelPan, wheelDeltaToPx } from './wheelPan.ts';
+import { createWheelPan, isOwnPanShift, wheelDeltaToPx } from './wheelPan.ts';
 
 const DAY = 100;
 
@@ -118,6 +118,19 @@ describe('wheelPan', () => {
     expect(pan.offset()).toBe(0);
     expect(pan.pendingDays()).toBe(0);
     expect(pan.feed(0, 10, DAY, 16).consumed).toBe(false);
+  });
+
+  it('isOwnPanShift accepts only shifts the pan committed and still awaits', () => {
+    // Re-anchoring what the pan committed, all at once or in parts.
+    expect(isOwnPanShift(3, 3)).toBe(true);
+    expect(isOwnPanShift(-2, -5)).toBe(true);
+    // Nothing pending, the other direction, or further than committed: a
+    // "Today" jump landing mid-pan, which must reset instead of being
+    // compensated as a pan of that many days (the grid then sat off-screen).
+    expect(isOwnPanShift(4, 0)).toBe(false);
+    expect(isOwnPanShift(-4, 3)).toBe(false);
+    expect(isOwnPanShift(26, 3)).toBe(false);
+    expect(isOwnPanShift(0, 3)).toBe(false);
   });
 
   it('wheelDeltaToPx scales line and page delta modes', () => {

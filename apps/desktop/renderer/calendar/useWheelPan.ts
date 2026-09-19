@@ -1,4 +1,4 @@
-import { createWheelPan, Temporal, wheelDeltaToPx } from '@calendar/core';
+import { createWheelPan, isOwnPanShift, Temporal, wheelDeltaToPx } from '@calendar/core';
 import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from 'react';
 
 const GESTURE_GAP_MS = 150;
@@ -158,7 +158,10 @@ export const useWheelPan = ({
         const shiftedDays = Temporal.PlainDate.from(prev.firstIso).until(
           Temporal.PlainDate.from(firstIso),
         ).days;
-        if (prev.count !== count || (shiftedDays !== 0 && pan.pendingDays() === 0)) {
+        if (
+          prev.count !== count ||
+          (shiftedDays !== 0 && !isOwnPanShift(shiftedDays, pan.pendingDays()))
+        ) {
           cancelSettle();
           pan.reset();
           setVar(0);
