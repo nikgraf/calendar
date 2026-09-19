@@ -69,8 +69,10 @@ final class GeoSession: NSObject, MKLocalSearchCompleterDelegate {
   /// afterwards (MKLocalSearchCompletion is not Sendable, so it never rides
   /// the continuation). `false` means a newer query superseded this one.
   private var pending: CheckedContinuation<Bool, Error>?
-  /// The last completer rows by title/subtitle, so `resolve` can look up the
+  /// The last search's rows by title/subtitle, so `resolve` can look up the
   /// exact completion the user picked (MKLocalSearch.Request(completion:)).
+  /// Replaced per search: only the rows on screen can be picked, and a pick
+  /// that races a newer search falls back to a natural-language lookup.
   private var latest: [String: MKLocalSearchCompletion] = [:]
 
   override init() {
@@ -87,11 +89,20 @@ final class GeoSession: NSObject, MKLocalSearchCompleterDelegate {
     // A newer keystroke supersedes an in-flight query: its caller gets [].
     pending?.resume(returning: false)
     pending = nil
-    // Setting the same fragment again fires no delegate callback.
-    if completer.queryFragment != fragment || completer.isSearching {
+    if completer.queryFragment != fragment {
+      // Changing the fragment cancels the in-flight search (MapKit's
+      // documented behavior — the delegate reports only the newest one).
       let current = try await withCheckedThrowingContinuation { continuation in
         pending = continuation
         completer.queryFragment = fragment
+      }
+      guard current else { return [] }
+    } else if completer.isSearching {
+      // Same text, still in flight: wait for that search. Re-setting an
+      // identical fragment fires no callback, which used to park the
+      // caller until the helper timeout.
+      let current = try await withCheckedThrowingContinuation { continuation in
+        pending = continuation
       }
       guard current else { return [] }
     }
@@ -101,9 +112,7 @@ final class GeoSession: NSObject, MKLocalSearchCompleterDelegate {
         title: completion.title,
         subtitle: completion.subtitle.isEmpty ? nil : completion.subtitle)
     }
-    for (row, completion) in zip(rows, completions) {
-      latest[row.key] = completion
-    }
+    latest = Dictionary(zip(rows, completions).map { ($0.key, $1) }, uniquingKeysWith: { first, _ in first })
     return rows
   }
 

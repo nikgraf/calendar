@@ -14,7 +14,7 @@ import {
   type CalendarInfo,
   type EventDraft,
   type EventRecord,
-  type GeoLocation,
+  GeoLocation,
   type PlaceSuggestion,
   type RecurrenceFrequency,
   type RecurringScope,
@@ -231,9 +231,14 @@ export const useEventEditorModel = ({
     }
     const [accountId, calendarId] = calendarKey.split(':', 2) as [string, string];
     const times = buildEventTimes(fields, timeZone);
-    // Only coordinates for the text being saved; an update sends null to
-    // clear stale ones (the backend enforces the same rule regardless).
-    const savedGeo = geoMatches(mapGeo, location.trim()) ? mapGeo : undefined;
+    // Only coordinates the user vouched for reach Google: the event's own
+    // (mirrored) ones or a picked suggestion, and only while they match the
+    // text being saved. The open-time lookup of free text stays on this
+    // device — MapKit's guess for "Room 4B" must not become every device's
+    // truth. An update sends null so stale ones are cleared.
+    const savedGeo = geoMatches(geo, location.trim())
+      ? new GeoLocation({ ...geo, source: location.trim() })
+      : undefined;
     try {
       if (existing && isRecurring && existing.recurringEventId) {
         await mutations.updateRecurring({

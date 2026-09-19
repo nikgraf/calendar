@@ -52,6 +52,20 @@ const attendeesFlag = (
     ? true
     : undefined;
 
+/**
+ * Whether this edit — or a still-queued update it replaces — dropped the
+ * event's coordinates, so the patch must delete the server's geo keys.
+ */
+const geoClearedFlag = (
+  before: EventRecord,
+  after: EventRecord,
+  queued: ReadonlyArray<PendingOp>,
+): true | undefined =>
+  (before.geo !== undefined && after.geo === undefined) ||
+  queued.some((op) => op.geoCleared === true)
+    ? true
+    : undefined;
+
 const definedChanges = (
   changes: UpdateEventParams['changes'],
   currentAttendees: EventRecord['attendees'],
@@ -582,6 +596,7 @@ const make: Effect.Effect<
             calendarId,
             createdAt: now,
             eventId,
+            geoCleared: hasCreate ? undefined : geoClearedFlag(existing, merged, queued),
             id: generateEventId(),
             kind: hasCreate ? 'create' : 'update',
             nextAttemptAt: 0,
@@ -628,6 +643,7 @@ const make: Effect.Effect<
               calendarId,
               createdAt: now,
               eventId: instanceId,
+              geoCleared: geoClearedFlag(base, merged, queued),
               id: generateEventId(),
               kind: 'update',
               nextAttemptAt: 0,
@@ -682,6 +698,7 @@ const make: Effect.Effect<
               calendarId,
               createdAt: now,
               eventId: masterId,
+              geoCleared: geoClearedFlag(master, merged, queued),
               id: generateEventId(),
               kind: 'update',
               nextAttemptAt: 0,

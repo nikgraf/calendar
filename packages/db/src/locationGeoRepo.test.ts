@@ -44,4 +44,21 @@ describe('LocationGeoRepo', () => {
       expect(yield* repo.get('bad')).toEqual({ geo: null, resolvedAt: 5 });
     }).pipe(Effect.provide(freshDbLayer())),
   );
+
+  it.effect('prunes expired misses and the oldest rows past the cap', () =>
+    Effect.gen(function* () {
+      const repo = yield* LocationGeoRepo;
+      yield* repo.set('old-miss', null, 1);
+      yield* repo.set('fresh-miss', null, 50);
+      for (let index = 0; index < 5; index += 1) {
+        yield* repo.set(`hit-${index}`, geo, 10 + index);
+      }
+      yield* repo.prune(40, 4);
+      expect(yield* repo.get('old-miss')).toBeNull();
+      expect(yield* repo.get('fresh-miss')).not.toBeNull();
+      expect(yield* repo.get('hit-0')).toBeNull();
+      expect(yield* repo.get('hit-1')).toBeNull();
+      expect(yield* repo.get('hit-4')).not.toBeNull();
+    }).pipe(Effect.provide(freshDbLayer())),
+  );
 });

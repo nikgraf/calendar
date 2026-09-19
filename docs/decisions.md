@@ -778,6 +778,13 @@ Performance:
       map on both platforms. Coordinates are mirrored into the event's
       private extendedProperties with the source text, so other devices
       skip the lookup and an edit elsewhere visibly invalidates them.
+      Review of #77 tightened two rules: only coordinates the user
+      vouched for (a pick, or the event's own) are pushed — the lookup
+      the editor runs for free text on open is device-local, so MapKit's
+      guess for "Room 4B" never becomes every device's truth — and the
+      null-deleting PATCH is sent only by the edit that dropped the
+      coordinates (`PendingOp.geoCleared`), never on unrelated edits,
+      since null-for-absent-key was only verified against the fake.
       The desktop map is a static `MKMapSnapshotter` image from the Swift
       helper (native look, no MapKit JS token or tile policy); iOS uses
       `expo-maps`. The desktop image is light-only until the renderer has

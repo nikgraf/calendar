@@ -16,7 +16,7 @@ import type {
 } from '@calendar/core';
 import { RegistryContext, useAtomValue } from '@effect/atom-react';
 import { Cause, Effect, Exit, Option } from 'effect';
-import { AsyncResult, AtomRegistry } from 'effect/unstable/reactivity';
+import { AsyncResult, type Atom, AtomRegistry } from 'effect/unstable/reactivity';
 import {
   createContext,
   createElement,
@@ -104,55 +104,48 @@ export const useEventsInRangeStable = (
 };
 
 /**
- * Invitee suggestions for a query, holding the previous list while the
- * next one loads so the dropdown never flickers empty between keystrokes.
- * An empty query yields [] without asking the backend.
+ * Typeahead rows for a query, holding the previous list while the next
+ * one loads so a dropdown never flickers empty between keystrokes. An
+ * empty query yields [] without asking the backend. `stale` = the rows
+ * belong to an earlier query: show them, never select them.
  */
-export const useContactsSearch = (
+const useStaleSearch = <A>(
+  atomFor: (key: string) => Atom.Atom<AsyncResult.AsyncResult<ReadonlyArray<A>, unknown>>,
   query: string,
-  limit = 8,
-): { readonly contacts: ReadonlyArray<Contact>; readonly stale: boolean } => {
-  const atoms = useBackendAtoms();
+  limit: number,
+): { readonly rows: ReadonlyArray<A>; readonly stale: boolean } => {
   const trimmed = query.trim();
-  const result = useAtomValue(atoms.contactsSearch(`${String(limit)}:${trimmed}`));
+  const result = useAtomValue(atomFor(`${String(limit)}:${trimmed}`));
   const value = AsyncResult.value(result);
-  const [previous, setPrevious] = useState<ReadonlyArray<Contact>>([]);
+  const [previous, setPrevious] = useState<ReadonlyArray<A>>([]);
   if (Option.isSome(value) && value.value !== previous) {
     // Render-phase state adjustment (the React "derive from props" pattern).
     setPrevious(value.value);
   }
   if (trimmed === '') {
-    return { contacts: [], stale: false };
+    return { rows: [], stale: false };
   }
-  // `stale` = the rows belong to an earlier query; show them, never select them.
   return Option.isSome(value)
-    ? { contacts: value.value, stale: false }
-    : { contacts: previous, stale: true };
+    ? { rows: value.value, stale: false }
+    : { rows: previous, stale: true };
 };
 
-/**
- * Location typeahead rows for `query` ('' asks nothing), with the same
- * stale-rows behavior as useContactsSearch: the previous rows stay on
- * screen while the next query is in flight, flagged so nothing picks them.
- */
+/** Invitee suggestions for a query (device + Google contacts). */
+export const useContactsSearch = (
+  query: string,
+  limit = 8,
+): { readonly contacts: ReadonlyArray<Contact>; readonly stale: boolean } => {
+  const { rows, stale } = useStaleSearch(useBackendAtoms().contactsSearch, query, limit);
+  return { contacts: rows, stale };
+};
+
+/** Location typeahead rows for `query` (MapKit through the backend). */
 export const usePlacesSearch = (
   query: string,
   limit = 6,
 ): { readonly places: ReadonlyArray<PlaceSuggestion>; readonly stale: boolean } => {
-  const atoms = useBackendAtoms();
-  const trimmed = query.trim();
-  const result = useAtomValue(atoms.placesSearch(`${String(limit)}:${trimmed}`));
-  const value = AsyncResult.value(result);
-  const [previous, setPrevious] = useState<ReadonlyArray<PlaceSuggestion>>([]);
-  if (Option.isSome(value) && value.value !== previous) {
-    setPrevious(value.value);
-  }
-  if (trimmed === '') {
-    return { places: [], stale: false };
-  }
-  return Option.isSome(value)
-    ? { places: value.value, stale: false }
-    : { places: previous, stale: true };
+  const { rows, stale } = useStaleSearch(useBackendAtoms().placesSearch, query, limit);
+  return { places: rows, stale };
 };
 
 /**

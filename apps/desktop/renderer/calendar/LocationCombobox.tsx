@@ -1,7 +1,7 @@
 import { useLocationField, type useEventEditorModel } from '@calendar/app-state';
 import { useId } from 'react';
-
-const field = 'w-full rounded-lg border border-neutral-200 bg-white px-3 py-1.5 text-sm';
+import { FIELD_CLASS } from './fieldStyles.ts';
+import { SuggestionList } from './SuggestionList.tsx';
 
 /**
  * The location input with a MapKit typeahead underneath. Free text always
@@ -39,7 +39,7 @@ export function LocationCombobox({ model }: { model: ReturnType<typeof useEventE
         aria-expanded={open}
         aria-label="Location"
         autoComplete="off"
-        className={field}
+        className={FIELD_CLASS}
         onBlur={dismiss}
         onChange={(changeEvent) => setText(changeEvent.target.value)}
         onKeyDown={(keyEvent) => {
@@ -66,34 +66,25 @@ export function LocationCombobox({ model }: { model: ReturnType<typeof useEventE
         value={model.location}
       />
       {open ? (
-        <div
-          className="absolute top-full right-0 left-0 z-50 mt-1 overflow-hidden rounded-lg border border-neutral-200 bg-white shadow-xl"
-          id={listId}
-          role="listbox"
-        >
-          {suggestions.map((place, index) => (
-            <button
-              aria-selected={!stale && index === highlight}
-              className={`flex w-full flex-col px-3 py-1.5 text-left text-sm ${
-                stale ? 'opacity-50' : index === highlight ? 'bg-blue-50' : 'hover:bg-neutral-50'
-              }`}
-              data-place={place.title}
-              data-stale={stale ? 'true' : undefined}
-              id={`${listId}-${index}`}
-              key={`${place.title}\u001f${place.subtitle ?? ''}`}
-              onClick={() => (stale ? undefined : choose(place))}
-              onMouseDown={(mouseEvent) => mouseEvent.preventDefault()}
-              onMouseEnter={() => setHighlight(index)}
-              role="option"
-              type="button"
-            >
+        <SuggestionList
+          highlight={highlight}
+          // MapKit can return two rows with the same title and subtitle.
+          itemKey={(place, index) => `${index}:${place.title}`}
+          items={suggestions}
+          listId={listId}
+          onChoose={choose}
+          renderItem={(place) => (
+            <>
               <span className="truncate">{place.title}</span>
               {place.subtitle ? (
                 <span className="truncate text-xs text-neutral-400">{place.subtitle}</span>
               ) : null}
-            </button>
-          ))}
-        </div>
+            </>
+          )}
+          rowClassName="flex-col"
+          setHighlight={setHighlight}
+          stale={stale}
+        />
       ) : null}
     </div>
   );

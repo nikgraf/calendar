@@ -1,11 +1,25 @@
 import { type useEventEditorModel } from '@calendar/app-state';
 import { isMappableLocation } from '@calendar/core';
-import { AppleMaps } from 'expo-maps';
 import { Linking, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 
-/** expo-maps' Apple Maps view is SwiftUI Map, available from iOS 17. */
-const LIVE_MAP_AVAILABLE =
-  Platform.OS === 'ios' && Number.parseInt(String(Platform.Version), 10) >= 17;
+/**
+ * expo-maps' Apple Maps view is SwiftUI Map, available from iOS 17 — and
+ * its module throws at import on a binary built without the native
+ * dependency (a dev client from before this feature), so it is required
+ * lazily and a failure degrades to the link, like loadGeoModule.
+ */
+const loadAppleMaps = (): typeof import('expo-maps').AppleMaps | undefined => {
+  if (Platform.OS !== 'ios' || Number.parseInt(String(Platform.Version), 10) < 17) {
+    return undefined;
+  }
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports -- deliberate lazy load
+    return (require('expo-maps') as typeof import('expo-maps')).AppleMaps;
+  } catch {
+    return undefined;
+  }
+};
+const AppleMaps = loadAppleMaps();
 
 /**
  * A small Apple Maps view of the event's place with a marker, plus an
@@ -29,7 +43,7 @@ export function LocationMap({ model }: { model: ReturnType<typeof useEventEditor
   const open = () => void Linking.openURL(mapsUrl);
   return (
     <View style={styles.container}>
-      {LIVE_MAP_AVAILABLE ? (
+      {AppleMaps ? (
         <Pressable
           accessibilityLabel={`Open ${mapGeo.name ?? location} in Maps`}
           accessibilityRole="button"

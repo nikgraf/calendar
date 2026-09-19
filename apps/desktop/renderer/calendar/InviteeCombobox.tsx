@@ -1,6 +1,7 @@
 import { useAccounts, useInviteeField } from '@calendar/app-state';
 import { emailKey, isValidEmail, type Attendee, type AttendeeInput } from '@calendar/core';
 import { useEffect, useId, useState } from 'react';
+import { SuggestionList } from './SuggestionList.tsx';
 
 const STATUS_DOT: Record<Attendee['responseStatus'], string> = {
   accepted: 'bg-green-500',
@@ -170,26 +171,14 @@ export function InviteeCombobox({
         />
       </div>
       {showList ? (
-        <div
-          className="absolute top-full right-0 left-0 z-50 mt-1 overflow-hidden rounded-lg border border-neutral-200 bg-white shadow-xl"
-          id={listId}
-          role="listbox"
-        >
-          {suggestions.map((contact, index) => (
-            <button
-              aria-selected={!stale && index === highlight}
-              className={`flex w-full items-baseline gap-2 px-3 py-1.5 text-left text-sm ${
-                stale ? 'opacity-50' : index === highlight ? 'bg-blue-50' : 'hover:bg-neutral-50'
-              }`}
-              data-stale={stale ? 'true' : undefined}
-              id={`${listId}-${index}`}
-              key={contact.id}
-              onClick={() => choose(contact)}
-              onMouseDown={(mouseEvent) => mouseEvent.preventDefault()}
-              onMouseEnter={() => setHighlight(index)}
-              role="option"
-              type="button"
-            >
+        <SuggestionList
+          highlight={highlight}
+          itemKey={(contact) => contact.id}
+          items={suggestions}
+          listId={listId}
+          onChoose={choose}
+          renderItem={(contact) => (
+            <>
               <span>{contact.displayName ?? contact.email}</span>
               {contact.displayName ? (
                 <span className="truncate text-xs text-neutral-400">{contact.email}</span>
@@ -197,15 +186,18 @@ export function InviteeCombobox({
               <span className="ml-auto text-[10px] text-neutral-300 uppercase">
                 {contact.source === 'device' ? 'Contacts' : contact.isOtherContact ? '' : 'Google'}
               </span>
-            </button>
-          ))}
+            </>
+          )}
+          setHighlight={setHighlight}
+          stale={stale}
+        >
           {suggestions.length === 0 && text.trim() !== '' ? (
             <p className="px-3 py-1.5 text-xs text-neutral-400">
               {isValidEmail(text) ? 'Press Enter to invite this address' : 'No matches'}
             </p>
           ) : null}
           {footer}
-        </div>
+        </SuggestionList>
       ) : null}
     </div>
   );

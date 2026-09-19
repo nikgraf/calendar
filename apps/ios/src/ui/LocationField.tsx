@@ -21,7 +21,9 @@ export function LocationField({ model }: { model: ReturnType<typeof useEventEdit
       <TextInput
         accessibilityLabel="Location"
         autoCorrect={false}
-        onBlur={dismiss}
+        // Deferred: a tap on a suggestion row blurs the input first, and an
+        // immediate dismiss would unmount the row under the finger.
+        onBlur={() => setTimeout(dismiss, 200)}
         onChangeText={setText}
         onSubmitEditing={acceptEnter}
         placeholder="Add a location"

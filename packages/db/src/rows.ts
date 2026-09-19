@@ -385,6 +385,8 @@ export interface PendingOpRow {
   readonly task_due: string | null;
   readonly dispatched_at: number | null;
   readonly attendees_changed: number;
+  /** Added by migration 2 (hence last). */
+  readonly geo_cleared: number;
 }
 
 /**
@@ -404,6 +406,7 @@ export const pendingOpFromRow = (row: PendingOpRow): PendingOp | undefined =>
         createdAt: row.created_at,
         dispatchedAt: row.dispatched_at ?? undefined,
         eventId: row.event_id,
+        geoCleared: row.geo_cleared === 1 ? true : undefined,
         id: row.id,
         kind: row.kind as PendingOp['kind'],
         lastError: row.last_error ?? undefined,

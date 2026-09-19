@@ -343,12 +343,12 @@ export const makeApplyOp = (
             accountId: op.accountId,
             baseEtag: op.baseEtag,
             calendarId: op.calendarId,
-            // Location coordinates always ride along: values while they
-            // match the location, explicit nulls (deleting the keys)
-            // once an edit made them stale.
+            // Location coordinates ride along as values while the record
+            // has them, as explicit nulls (deleting the keys) when this
+            // edit dropped them, and not at all otherwise.
             event: {
               ...toGcalEventInput(op.payload),
-              ...toGcalGeoPatch(op.payload),
+              ...toGcalGeoPatch(op.payload, op.geoCleared === true),
               ...(op.attendeesChanged ? { attendees: toGcalAttendees(op.payload) } : {}),
             },
             eventId: op.eventId,

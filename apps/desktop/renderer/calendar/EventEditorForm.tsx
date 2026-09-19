@@ -7,10 +7,9 @@ import {
 } from '@calendar/app-state';
 import type { RecurrenceFrequency } from '@calendar/core';
 import { InviteeCombobox } from './InviteeCombobox.tsx';
+import { FIELD_CLASS as field } from './fieldStyles.ts';
 import { LocationCombobox } from './LocationCombobox.tsx';
 import { LocationMap } from './LocationMap.tsx';
-
-const field = 'w-full rounded-lg border border-neutral-200 bg-white px-3 py-1.5 text-sm';
 
 /**
  * The event half of EventEditor (mode === 'event'), extracted like the iOS

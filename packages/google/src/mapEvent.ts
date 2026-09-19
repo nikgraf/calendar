@@ -200,10 +200,15 @@ export const toGcalGeoInsert = (event: EventRecord): Pick<GcalEventInput, 'exten
 };
 
 /**
- * The location coordinates for events.patch: always present, so a record
- * whose geo was dropped (its location changed) deletes the server keys
- * with explicit nulls instead of leaving stale coordinates behind.
+ * The location coordinates for events.patch: the keys when the record has
+ * matching geo, explicit nulls (deleting the server's keys) when this edit
+ * dropped them, and nothing otherwise — an unrelated edit to an event that
+ * never had coordinates must not touch extendedProperties at all.
  */
-export const toGcalGeoPatch = (event: EventRecord): Pick<GcalEventInput, 'extendedProperties'> => ({
-  extendedProperties: { private: encodeGeoProperties(event.geo, { forPatch: true }) },
-});
+export const toGcalGeoPatch = (
+  event: EventRecord,
+  geoCleared: boolean,
+): Pick<GcalEventInput, 'extendedProperties'> =>
+  event.geo !== undefined || geoCleared
+    ? { extendedProperties: { private: encodeGeoProperties(event.geo, { forPatch: true }) } }
+    : {};

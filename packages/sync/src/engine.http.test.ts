@@ -188,23 +188,45 @@ describe('SyncEngine over HTTP (fake Google)', () => {
       const events = yield* EventRepo;
       expect((yield* events.getById('acc-1', 'cal-1', created.id))?.geo).toEqual(geo);
 
-      // Another client moves the event: the stored coordinates are stale.
-      const server = google.eventOf('cal-1', created.id)!;
-      google.putEvent('cal-1', { ...server, location: 'Office' });
-      yield* TestClock.adjust('1 minute');
-      yield* engine.syncAll();
-      expect((yield* events.getById('acc-1', 'cal-1', created.id))?.geo).toBeUndefined();
-
-      // The next local edit deletes the stale keys server-side.
+      // An unrelated edit leaves the keys alone (and never sends deletes).
       yield* mutations.updateEvent({
         accountId: 'acc-1',
         calendarId: 'cal-1',
-        changes: { title: 'Lunch (moved)' },
+        changes: { title: 'Lunch (late)' },
+        eventId: created.id,
+      });
+      yield* mutations.processPendingOps();
+      expect(google.eventOf('cal-1', created.id)?.extendedProperties?.private).toMatchObject({
+        [GEO_PROPERTY_KEYS.source]: location,
+      });
+
+      // Moving the event here drops the coordinates and deletes the keys.
+      yield* mutations.updateEvent({
+        accountId: 'acc-1',
+        calendarId: 'cal-1',
+        changes: { location: 'Office' },
         eventId: created.id,
       });
       yield* mutations.processPendingOps();
       expect(google.eventOf('cal-1', created.id)?.extendedProperties).toBeUndefined();
       expect(google.eventOf('cal-1', created.id)?.location).toBe('Office');
+
+      // Another client's edit makes mirrored keys stale: they are ignored
+      // on pull (and overwritten by the next pick, not deleted).
+      const server = google.eventOf('cal-1', created.id)!;
+      google.putEvent('cal-1', {
+        ...server,
+        extendedProperties: {
+          private: {
+            [GEO_PROPERTY_KEYS.coordinates]: '48.1977,16.3616',
+            [GEO_PROPERTY_KEYS.source]: location,
+          },
+        },
+        location: 'Elsewhere',
+      });
+      yield* TestClock.adjust('1 minute');
+      yield* engine.syncAll();
+      expect((yield* events.getById('acc-1', 'cal-1', created.id))?.geo).toBeUndefined();
     }).pipe(noYield, Effect.provide(engineLayer(google)));
   });
 

@@ -276,6 +276,13 @@ export class PendingOp extends Schema.Class<PendingOp>('PendingOp')({
    */
   dispatchedAt: Schema.optional(Schema.Number),
   eventId: Schema.String,
+  /**
+   * Set on an update whose edit dropped the event's coordinates (its
+   * location changed). Only then does the patch delete the private geo
+   * keys on the server — sending deletes for keys that were never there
+   * would ride on every unrelated edit.
+   */
+  geoCleared: Schema.optional(Schema.Boolean),
   id: Schema.String,
   kind: Schema.Literals([
     'calendarColor',

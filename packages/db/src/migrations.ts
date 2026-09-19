@@ -221,6 +221,8 @@ const baseline = Effect.gen(function* () {
 const eventGeo = Effect.gen(function* () {
   const sql = yield* SqlClient;
   yield* sql`ALTER TABLE events ADD COLUMN geo TEXT`;
+  // geo_cleared = 1 when the queued update must delete the server's geo keys.
+  yield* sql`ALTER TABLE pending_ops ADD COLUMN geo_cleared INTEGER NOT NULL DEFAULT 0`;
   yield* sql`
     CREATE TABLE location_geo (
       location_key TEXT PRIMARY KEY NOT NULL,

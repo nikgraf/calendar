@@ -319,13 +319,14 @@ describe('location coordinates', () => {
     expect(toGcalGeoInsert(new EventRecord({ ...record, geo: undefined }))).toEqual({});
   });
 
-  it('patches the keys, or deletes them with nulls when coordinates are gone', () => {
+  it('patches the keys, deletes them with nulls when the edit dropped them, else nothing', () => {
     const record = mapGcalEvent(
       { ...timed, extendedProperties: { private: properties } },
       context,
     )!;
-    expect(toGcalGeoPatch(record)).toEqual({ extendedProperties: { private: properties } });
-    expect(toGcalGeoPatch(new EventRecord({ ...record, geo: undefined }))).toEqual({
+    expect(toGcalGeoPatch(record, false)).toEqual({ extendedProperties: { private: properties } });
+    expect(toGcalGeoPatch(new EventRecord({ ...record, geo: undefined }), false)).toEqual({});
+    expect(toGcalGeoPatch(new EventRecord({ ...record, geo: undefined }), true)).toEqual({
       extendedProperties: {
         private: {
           [GEO_PROPERTY_KEYS.coordinates]: null,

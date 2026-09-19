@@ -248,7 +248,20 @@ describe('EventMutations', () => {
   });
 
   it.effect('location coordinates follow the location text on every write', () => {
-    const client = stubClient({ insertEvent: () => Effect.die('stays queued') });
+    const client = stubClient({
+      insertEvent: ({ event }) =>
+        Effect.succeed({
+          end: event.end as GcalEvent['end'],
+          etag: '"server-1"',
+          extendedProperties: event.extendedProperties as GcalEvent['extendedProperties'],
+          id: event.id ?? 'x',
+          location: event.location,
+          start: event.start as GcalEvent['start'],
+          status: 'confirmed',
+          summary: event.summary,
+        }),
+      patchEvent: () => Effect.die('stays queued'),
+    });
     const geo = new GeoLocation({
       lat: 48.2,
       lng: 16.37,
@@ -268,6 +281,9 @@ describe('EventMutations', () => {
       expect(record.geo).toEqual(geo);
       const queued = (yield* pendingOps.listAll()).find((op) => op.eventId === record.id);
       expect(queued?.payload?.geo).toEqual(geo);
+      // Synced, so the edits below queue as updates (a queued create
+      // absorbs edits and needs no delete flag: it sends no keys).
+      yield* mutations.processPendingOps();
 
       const update = (changes: Parameters<typeof mutations.updateEvent>[0]['changes']) =>
         mutations.updateEvent({
@@ -278,17 +294,29 @@ describe('EventMutations', () => {
         });
       const current = Effect.map(eventsNow, (events) => events.find((e) => e.id === record.id));
 
+      const queuedFlag = Effect.map(
+        pendingOps.listAll(),
+        (ops) => ops.find((op) => op.eventId === record.id)?.geoCleared,
+      );
+
       yield* update({ title: 'Lunch' });
       expect((yield* current)?.geo).toEqual(geo);
+      expect(yield* queuedFlag).toBeUndefined();
 
+      // Dropping coordinates flags the queued update to delete the keys…
       yield* update({ geo: null });
       expect((yield* current)?.geo).toBeUndefined();
+      expect(yield* queuedFlag).toBe(true);
+      // …and a later unrelated edit that replaces that op inherits the flag.
+      yield* update({ title: 'Lunch again' });
+      expect(yield* queuedFlag).toBe(true);
 
       yield* update({ geo, location: 'naschmarkt ' });
       expect((yield* current)?.geo).toEqual(geo);
 
       yield* update({ location: 'Somewhere else' });
       expect((yield* current)?.geo).toBeUndefined();
+      expect(yield* queuedFlag).toBe(true);
     }).pipe(Effect.provide(mutationsLayer(client)));
   });
 

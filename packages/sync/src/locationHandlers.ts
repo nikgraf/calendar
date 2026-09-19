@@ -16,6 +16,8 @@ const DEFAULT_PLACE_LIMIT = 6;
  * again. Hits never expire: places do not move, and the key is the text.
  */
 export const LOCATION_MISS_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+/** Rows kept in the cache; past this the least recently resolved go. */
+const LOCATION_CACHE_ROWS = 2000;
 
 const clamp = (value: number, min: number, max: number): number =>
   Math.min(Math.max(Number.isFinite(value) ? value : min, min), max);
@@ -86,6 +88,7 @@ export const locationHandlers: Pick<
       }
       const resolved = place.result && toGeo(place.result, location);
       yield* cache.set(key, resolved, now);
+      yield* cache.prune(now - LOCATION_MISS_TTL_MS, LOCATION_CACHE_ROWS);
       return resolved;
     }),
 
