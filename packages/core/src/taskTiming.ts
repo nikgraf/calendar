@@ -26,72 +26,55 @@ export const partitionCalendarTasks = (
   return { allDay, timed };
 };
 
-const taskDateTime = (
-  task: Pick<TaskRecord, 'dueDate' | 'dueTime'>,
-  timeZone: string,
-): Temporal.ZonedDateTime | undefined => {
-  if (task.dueDate === undefined || task.dueTime === undefined) {
-    return undefined;
-  }
-  return Temporal.PlainDate.from(task.dueDate)
-    .toPlainDateTime(Temporal.PlainTime.from(task.dueTime))
-    .toZonedDateTime(timeZone);
-};
+const DAY_MINUTES = 24 * 60;
 
-/**
- * Projects a point-in-time reminder into the ordinary overlap layout. Near
- * midnight the synthetic interval shifts upward so its compact block remains
- * wholly visible on the reminder's due day.
- */
-export const timedTaskSlot = (
-  task: Pick<TaskRecord, 'dueDate' | 'dueTime'>,
-  timeZone: string,
-):
-  | {
-      readonly endUtc: number;
-      readonly layoutEndMinute: number;
-      readonly layoutStartMinute: number;
-      readonly startUtc: number;
-    }
-  | undefined => {
-  const due = taskDateTime(task, timeZone);
-  if (due === undefined || task.dueDate === undefined) {
-    return undefined;
-  }
-  const dayEnd = Temporal.PlainDate.from(task.dueDate)
-    .add({ days: 1 })
-    .toZonedDateTime({ timeZone }).epochMilliseconds;
-  const durationMs = TIMED_TASK_LAYOUT_MINUTES * 60 * 1000;
-  const startUtc = Math.min(due.epochMilliseconds, dayEnd - durationMs);
-  const layoutStartMinute = Math.min(
-    due.hour * 60 + due.minute,
-    24 * 60 - TIMED_TASK_LAYOUT_MINUTES,
-  );
-  return {
-    endUtc: startUtc + durationMs,
-    layoutEndMinute: layoutStartMinute + TIMED_TASK_LAYOUT_MINUTES,
-    layoutStartMinute,
-    startUtc,
-  };
+const minutesOf = (time: string): number => {
+  const parsed = Temporal.PlainTime.from(time);
+  return parsed.hour * 60 + parsed.minute;
 };
 
 const pad2 = (value: number): string => String(value).padStart(2, '0');
 
-/** Move a timed reminder with the calendar's 15-minute, wall-clock drag rules. */
+/**
+ * Projects a point-in-time reminder into the ordinary overlap layout. A
+ * reminder's due date and time are wall-clock values (EventKit stores them
+ * as date components), so this never goes through a time zone. Near
+ * midnight the synthetic interval shifts upward so its compact block
+ * remains wholly visible on the reminder's due day.
+ */
+export const timedTaskSlot = (
+  task: Pick<TaskRecord, 'dueDate' | 'dueTime'>,
+): { readonly endMinute: number; readonly startMinute: number } | undefined => {
+  if (task.dueDate === undefined || task.dueTime === undefined) {
+    return undefined;
+  }
+  const startMinute = Math.min(minutesOf(task.dueTime), DAY_MINUTES - TIMED_TASK_LAYOUT_MINUTES);
+  return { endMinute: startMinute + TIMED_TASK_LAYOUT_MINUTES, startMinute };
+};
+
+/**
+ * Move a timed reminder with the calendar's 15-minute drag rules. A time
+ * move starts from where the block is drawn — not the stored time, which
+ * differs near midnight — so the reminder lands where it was dropped. A
+ * day-only move keeps the stored time.
+ */
 export const moveTimedTask = (
   task: Pick<TaskRecord, 'dueDate' | 'dueTime'>,
-  timeZone: string,
   deltaMinutes: number,
   deltaDays = 0,
 ): { readonly dueDate?: string; readonly dueTime?: string } | undefined => {
-  const due = taskDateTime(task, timeZone);
-  if (due === undefined) {
+  const slot = timedTaskSlot(task);
+  if (slot === undefined || task.dueDate === undefined || task.dueTime === undefined) {
     return undefined;
   }
-  const moved = due
-    .toPlainDateTime()
-    .add({ days: deltaDays, minutes: snapMinutes(deltaMinutes) })
-    .toZonedDateTime(timeZone);
+  const minutes = snapMinutes(deltaMinutes);
+  const from =
+    minutes === 0
+      ? Temporal.PlainTime.from(task.dueTime)
+      : new Temporal.PlainTime(Math.floor(slot.startMinute / 60), slot.startMinute % 60);
+  const moved = Temporal.PlainDate.from(task.dueDate)
+    .toPlainDateTime(from)
+    .add({ days: deltaDays, minutes });
   const dueDate = moved.toPlainDate().toString();
   const dueTime = `${pad2(moved.hour)}:${pad2(moved.minute)}`;
   if (dueDate === task.dueDate && dueTime === task.dueTime) {

@@ -115,7 +115,7 @@ export function DayTimeline({
   };
 
   const commitTaskChange = (task: TaskRecord, deltaMinutes: number) => {
-    const changes = moveTimedTask(task, timeZone, deltaMinutes);
+    const changes = moveTimedTask(task, deltaMinutes);
     if (changes === undefined) {
       return;
     }

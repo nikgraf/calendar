@@ -13,6 +13,8 @@ import {
   slotTimes,
   type TaskRecord,
   Temporal,
+  timedEventBox,
+  type TimedBox,
   timedTaskSlot,
   utcMsToPlainDate,
 } from '@calendar/core';
@@ -102,13 +104,10 @@ export function WeekView({
 
   const calendarTasks = useMemo(() => partitionCalendarTasks(tasks), [tasks]);
   const timedTaskLayout = useMemo(() => {
-    const byDay = new Map<
-      string,
-      Array<{ readonly endUtc: number; readonly id: string; readonly startUtc: number }>
-    >();
+    const byDay = new Map<string, Array<TimedBox>>();
     const byId = new Map<string, TaskRecord>();
     for (const task of calendarTasks.timed) {
-      const slot = timedTaskSlot(task, timeZone);
+      const slot = timedTaskSlot(task);
       if (slot === undefined || task.dueDate === undefined) {
         continue;
       }
@@ -119,7 +118,7 @@ export function WeekView({
       byDay.set(task.dueDate, day);
     }
     return { byDay, byId };
-  }, [calendarTasks.timed, timeZone]);
+  }, [calendarTasks.timed]);
 
   const drag = useEventDrag({
     dayCount: strip.length,
@@ -127,7 +126,6 @@ export function WeekView({
     hourHeight: HOUR_HEIGHT,
     onEventClick,
     onTaskClick,
-    timeZone,
   });
 
   const slot = useSlotDrag({ hourHeight: HOUR_HEIGHT, onCreate: onSlotDrag });
@@ -281,14 +279,10 @@ export function WeekView({
                     .filter(
                       (event) => event.startUtc < range.endUtc && event.endUtc > range.startUtc,
                     )
-                    .map((event) => ({
-                      endUtc: event.endUtc,
-                      id: `${event.calendarId}:${event.id}`,
-                      startUtc: event.startUtc,
-                    }))
+                    .map((event) =>
+                      timedEventBox(event, `${event.calendarId}:${event.id}`, day, timeZone),
+                    )
                     .concat(timedTaskLayout.byDay.get(iso) ?? []),
-                  range.startUtc,
-                  range.endUtc,
                 );
                 const isToday = Temporal.PlainDate.compare(day, today) === 0;
                 const drawn =
@@ -359,9 +353,7 @@ export function WeekView({
                       );
                     })}
 
-                    {isToday ? (
-                      <NowIndicator rangeEndUtc={range.endUtc} rangeStartUtc={range.startUtc} />
-                    ) : null}
+                    {isToday ? <NowIndicator date={day} timeZone={timeZone} /> : null}
 
                     {drawn ? (
                       <div

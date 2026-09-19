@@ -63,14 +63,12 @@ export const useEventDrag = ({
   hourHeight,
   onEventClick,
   onTaskClick,
-  timeZone,
 }: {
   dayCount: number;
   gridRef: RefObject<HTMLDivElement | null>;
   hourHeight: number;
   onEventClick: (event: EventRecord) => void;
   onTaskClick: (task: TaskRecord) => void;
-  timeZone: string;
 }) => {
   const { updateEvent, updateRecurring, updateTask } = useGuardedMutations();
   const [preview, setPreview] = useState<DragPreview | null>(null);
@@ -287,7 +285,7 @@ export const useEventDrag = ({
     }
     if (origin.target.kind === 'task') {
       const task = origin.target.task;
-      const changes = moveTimedTask(task, timeZone, deltaMinutes, deltaDays);
+      const changes = moveTimedTask(task, deltaMinutes, deltaDays);
       if (!changes) {
         return;
       }

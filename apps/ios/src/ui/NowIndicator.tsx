@@ -1,4 +1,5 @@
 import { useNow } from '@calendar/app-state';
+import { Temporal, wallClockMinutes } from '@calendar/core';
 import { StyleSheet, View } from 'react-native';
 import { palette } from './theme.ts';
 import { HOUR_HEIGHT } from './timelineLayout.ts';
@@ -9,18 +10,18 @@ import { HOUR_HEIGHT } from './timelineLayout.ts';
  * touches: a hold on the line belongs to the event (or the empty timeline)
  * under it.
  */
-export function NowIndicator({
-  rangeEndUtc,
-  rangeStartUtc,
-}: {
-  rangeEndUtc: number;
-  rangeStartUtc: number;
-}) {
+export function NowIndicator({ date, timeZone }: { date: Temporal.PlainDate; timeZone: string }) {
   const nowMs = useNow();
-  const fraction = (nowMs - rangeStartUtc) / (rangeEndUtc - rangeStartUtc);
-  if (fraction < 0 || fraction > 1) {
+  // The column can outlive midnight until its parent re-renders.
+  if (
+    !Temporal.Instant.fromEpochMilliseconds(nowMs)
+      .toZonedDateTimeISO(timeZone)
+      .toPlainDate()
+      .equals(date)
+  ) {
     return null;
   }
+  const fraction = wallClockMinutes(nowMs, timeZone) / (24 * 60);
   return (
     <View pointerEvents="none" style={[styles.line, { top: fraction * 24 * HOUR_HEIGHT }]}>
       <View style={styles.dot} />

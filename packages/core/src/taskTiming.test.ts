@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { layoutDayColumn } from './layout/dayGrid.ts';
-import { dayRange } from './time/ranges.ts';
+import { layoutDayColumn, timedEventBox } from './layout/dayGrid.ts';
 import { Temporal } from './time/temporal.ts';
 import { TaskRecord } from './types.ts';
 import {
@@ -44,65 +43,66 @@ describe('calendarTaskKey', () => {
 });
 
 describe('timedTaskSlot', () => {
-  it('projects a timed task into a compact layout interval', () => {
-    const slot = timedTaskSlot(task({ dueTime: '09:15' }), 'Europe/Vienna');
-
-    expect(slot).toEqual({
-      endUtc: Date.parse('2026-03-28T08:45:00Z'),
-      layoutEndMinute: 9 * 60 + 45,
-      layoutStartMinute: 9 * 60 + 15,
-      startUtc: Date.parse('2026-03-28T08:15:00Z'),
+  it('projects a timed task into a compact wall-clock interval', () => {
+    expect(timedTaskSlot(task({ dueTime: '09:15' }))).toEqual({
+      endMinute: 9 * 60 + 45,
+      startMinute: 9 * 60 + 15,
     });
   });
 
   it('returns no slot for a date-only task', () => {
-    expect(timedTaskSlot(task(), 'Europe/Vienna')).toBeUndefined();
+    expect(timedTaskSlot(task())).toBeUndefined();
   });
 
   it('keeps a late-night reminder in its due-day layout window', () => {
-    const slot = timedTaskSlot(task({ dueTime: '23:59' }), 'Europe/Vienna');
-
-    expect(slot?.endUtc).toBe(Date.parse('2026-03-28T23:00:00Z'));
-    expect(slot?.layoutEndMinute).toBe(24 * 60);
-    expect(slot?.layoutStartMinute).toBe(23 * 60 + 30);
-    expect(slot?.startUtc).toBe(Date.parse('2026-03-28T22:30:00Z'));
+    expect(timedTaskSlot(task({ dueTime: '23:59' }))).toEqual({
+      endMinute: 24 * 60,
+      startMinute: 23 * 60 + 30,
+    });
   });
 
-  it.each([
-    ['spring-forward', '2026-03-29', '2026-03-29T07:15:00Z'],
-    ['fall-back', '2026-10-25', '2026-10-25T08:15:00Z'],
-  ])('keeps the due-time position on a %s day', (_label, dueDate, startIso) => {
-    const timed = task({ dueDate, dueTime: '09:15' });
-    const slot = timedTaskSlot(timed, 'Europe/Vienna')!;
-    const range = dayRange(Temporal.PlainDate.from(dueDate), 'Europe/Vienna');
-    const [placed] = layoutDayColumn(
-      [{ ...slot, id: calendarTaskKey(timed) }],
-      range.startUtc,
-      range.endUtc,
+  it('draws a reminder inside the spring-forward gap at its stored time', () => {
+    // 02:15 does not exist in Vienna on 2026-03-29; resolving it through the
+    // zone would draw it at 03:15 under a label that says 2:15 AM.
+    expect(timedTaskSlot(task({ dueDate: '2026-03-29', dueTime: '02:15' }))?.startMinute).toBe(
+      2 * 60 + 15,
     );
-
-    expect(slot.startUtc).toBe(Date.parse(startIso));
-    expect(slot.endUtc).toBe(Date.parse(startIso) + TIMED_TASK_LAYOUT_MINUTES * 60 * 1000);
-    expect(placed?.top).toBeCloseTo((9 * 60 + 15) / (24 * 60));
-    expect(placed?.height).toBeCloseTo(TIMED_TASK_LAYOUT_MINUTES / (24 * 60));
   });
+
+  it.each(['2026-03-29', '2026-10-25'])(
+    'lines a reminder up with an event at the same time on %s',
+    (dueDate) => {
+      const timeZone = 'Europe/Vienna';
+      const timed = task({ dueDate, dueTime: '09:15' });
+      const epoch = (time: string) =>
+        Temporal.PlainDateTime.from(`${dueDate}T${time}`).toZonedDateTime(timeZone)
+          .epochMilliseconds;
+      const placed = layoutDayColumn([
+        timedEventBox(
+          { endUtc: epoch('10:15'), startUtc: epoch('09:15') },
+          'event',
+          Temporal.PlainDate.from(dueDate),
+          timeZone,
+        ),
+        { ...timedTaskSlot(timed)!, id: calendarTaskKey(timed) },
+      ]);
+
+      expect(placed).toHaveLength(2);
+      for (const box of placed) {
+        expect(box.top).toBeCloseTo((9 * 60 + 15) / (24 * 60));
+      }
+      expect(placed.find((box) => box.id === calendarTaskKey(timed))?.height).toBeCloseTo(
+        TIMED_TASK_LAYOUT_MINUTES / (24 * 60),
+      );
+    },
+  );
 
   it('shares overlap columns with ordinary timed events', () => {
     const timed = task({ dueTime: '09:15' });
-    const taskSlot = timedTaskSlot(timed, 'Europe/Vienna')!;
-    const range = dayRange(Temporal.PlainDate.from(timed.dueDate!), 'Europe/Vienna');
-    const placed = layoutDayColumn(
-      [
-        {
-          endUtc: Date.parse('2026-03-28T09:00:00Z'),
-          id: 'event',
-          startUtc: Date.parse('2026-03-28T08:00:00Z'),
-        },
-        { ...taskSlot, id: calendarTaskKey(timed) },
-      ],
-      range.startUtc,
-      range.endUtc,
-    );
+    const placed = layoutDayColumn([
+      { endMinute: 10 * 60, id: 'event', startMinute: 9 * 60 },
+      { ...timedTaskSlot(timed)!, id: calendarTaskKey(timed) },
+    ]);
 
     expect(placed).toHaveLength(2);
     expect(placed.every((box) => box.width === 0.5)).toBe(true);
@@ -111,48 +111,71 @@ describe('timedTaskSlot', () => {
 
 describe('moveTimedTask', () => {
   it('returns no change for an incomplete task', () => {
-    expect(moveTimedTask(task(), 'Europe/Vienna', 15)).toBeUndefined();
-    expect(
-      moveTimedTask(task({ dueDate: undefined, dueTime: '09:00' }), 'Europe/Vienna', 15),
-    ).toBeUndefined();
+    expect(moveTimedTask(task(), 15)).toBeUndefined();
+    expect(moveTimedTask(task({ dueDate: undefined, dueTime: '09:00' }), 15)).toBeUndefined();
   });
 
   it('snaps moves and rolls across midnight', () => {
-    expect(moveTimedTask(task({ dueTime: '23:45' }), 'Europe/Vienna', 22)).toEqual({
+    expect(moveTimedTask(task({ dueTime: '23:15' }), 44)).toEqual({
       dueDate: '2026-03-29',
       dueTime: '00:00',
     });
   });
 
   it('preserves wall-clock time across a daylight-saving transition', () => {
-    expect(moveTimedTask(task({ dueTime: '09:00' }), 'Europe/Vienna', 0, 1)).toEqual({
+    expect(moveTimedTask(task({ dueTime: '09:00' }), 0, 1)).toEqual({
       dueDate: '2026-03-29',
     });
   });
 
   it('returns only the changed time for a move within the day', () => {
-    expect(moveTimedTask(task({ dueTime: '09:00' }), 'Europe/Vienna', 22)).toEqual({
+    expect(moveTimedTask(task({ dueTime: '09:00' }), 22)).toEqual({
       dueTime: '09:15',
     });
   });
 
   it.each([0, 7, -7])('returns no change when a %s-minute move snaps to zero', (minutes) => {
-    expect(moveTimedTask(task({ dueTime: '09:00' }), 'Europe/Vienna', minutes)).toBeUndefined();
+    expect(moveTimedTask(task({ dueTime: '09:00' }), minutes)).toBeUndefined();
   });
 
   it.each(['2026-03-29', '2026-10-25'])(
     'adds wall-clock minutes across the DST transition on %s',
     (dueDate) => {
-      expect(moveTimedTask(task({ dueDate, dueTime: '01:45' }), 'Europe/Vienna', 90)).toEqual({
+      expect(moveTimedTask(task({ dueDate, dueTime: '01:45' }), 90)).toEqual({
         dueTime: '03:15',
       });
     },
   );
 
-  it('normalizes a nonexistent local time across spring-forward', () => {
-    expect(moveTimedTask(task({ dueTime: '01:45' }), 'Europe/Vienna', 30, 1)).toEqual({
+  it('moves a near-midnight reminder from where its block is drawn', () => {
+    // 23:50 is drawn at 23:30 so the block stays on its day; dragging it up
+    // half an hour must land on 23:00, where it was dropped.
+    expect(moveTimedTask(task({ dueTime: '23:50' }), -30)).toEqual({ dueTime: '23:00' });
+    expect(moveTimedTask(task({ dueTime: '23:50' }), 30)).toEqual({
       dueDate: '2026-03-29',
-      dueTime: '03:15',
+      dueTime: '00:00',
+    });
+  });
+
+  it('keeps the stored time on a day-only move', () => {
+    expect(moveTimedTask(task({ dueTime: '23:50' }), 0, 1)).toEqual({ dueDate: '2026-03-29' });
+  });
+
+  it('never rewrites a stored time that falls in the spring-forward gap', () => {
+    expect(moveTimedTask(task({ dueDate: '2026-03-29', dueTime: '02:15' }), 15)).toEqual({
+      dueTime: '02:30',
+    });
+    expect(moveTimedTask(task({ dueDate: '2026-03-29', dueTime: '02:15' }), 0, 1)).toEqual({
+      dueDate: '2026-03-30',
+    });
+  });
+
+  it('lands on the dropped wall-clock time inside the spring-forward gap', () => {
+    // Reminders store date components, not instants: the grid draws 02:15
+    // where it was dropped and EventKit keeps it as-is.
+    expect(moveTimedTask(task({ dueTime: '01:45' }), 30, 1)).toEqual({
+      dueDate: '2026-03-29',
+      dueTime: '02:15',
     });
   });
 });
