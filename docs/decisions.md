@@ -283,6 +283,21 @@ design decisions it settled.
       `TaskListInfo.readOnly` and opened as viewers. Decision: EventKit
       enforces read-only — no mutation-layer error, the rare slip
       surfaces as saveFailed.
+- [x] Timed-reminder grid review fixes (#73 follow-up) — done: the day
+      column is a fixed 24-hour wall clock, so `layoutDayColumn` places
+      every box — events, reminders, the "now" line — by wall-clock minute
+      instead of elapsed time; on a DST day an event sits beside its hour
+      label (spring-forward 01:30–03:30 draws two rows tall, the repeated
+      fall-back hour overlaps, as in Google Calendar). Reminders never go
+      through a time zone: their due date/time are EventKit date
+      components, so a time inside the spring-forward gap is kept as
+      stored and drawn at its label. A reminder drag starts from where the
+      block is drawn (a 23:50 reminder sits at 23:30 to stay on its day),
+      so it lands where it was dropped; a day-only move keeps the stored
+      time. The drag's click suppressor is cleared by the next
+      `pointerdown`: a suppressed click belongs to the gesture that set
+      it, so a cancelled pointer that never delivers its click cannot
+      swallow the user's next one.
 
 ## AI features
 

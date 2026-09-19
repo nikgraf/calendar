@@ -119,8 +119,18 @@ export const useEventDrag = ({
         activeItemKeyRef.current = null;
       }
     };
+    // A suppressed click belongs to the gesture that set it. A cancelled
+    // pointer usually never delivers its click, so a new press clears the
+    // flag instead of letting it swallow the user's next, unrelated click.
+    const onPressStart = () => {
+      suppressClickRef.current = false;
+    };
     window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
+    window.addEventListener('pointerdown', onPressStart, true);
+    return () => {
+      window.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener('pointerdown', onPressStart, true);
+    };
   }, []);
 
   const deltasFor = (origin: DragOrigin, clientX: number, clientY: number) => {
