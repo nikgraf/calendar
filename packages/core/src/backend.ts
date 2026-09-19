@@ -2,6 +2,7 @@ import { Cause, Effect, Schema } from 'effect';
 import { Rpc, RpcGroup } from 'effect/unstable/rpc';
 import type { RpcClientError } from 'effect/unstable/rpc/RpcClientError';
 import { BirthdayReminderSettings } from './birthdays/reminders.ts';
+import { PlaceSuggestion } from './geo/location.ts';
 import { AccountSyncStatus } from './syncStatus.ts';
 import {
   Account,
@@ -225,9 +226,35 @@ export class AppBackendRpcs extends RpcGroup.make(
     error: BackendError,
     success: Schema.Array(AccountSyncStatus),
   }),
+  /**
+   * Static map image for the event editor (desktop: MKMapSnapshotter in
+   * the Swift helper). Fails where the platform renders a live map instead.
+   */
+  Rpc.make('mapSnapshot', {
+    error: BackendError,
+    payload: {
+      appearance: Schema.Literals(['dark', 'light']),
+      height: Schema.Number,
+      lat: Schema.Number,
+      lng: Schema.Number,
+      scale: Schema.Number,
+      width: Schema.Number,
+    },
+    success: Schema.Struct({ pngBase64: Schema.String }),
+  }),
   Rpc.make('removeAccount', {
     error: BackendError,
     payload: { accountId: Schema.String },
+  }),
+  /**
+   * Coordinates for a location string, on-device and cached per string.
+   * `suggestion` is the typeahead row the user picked (resolves exactly);
+   * null when the text is not a place or nothing was found.
+   */
+  Rpc.make('resolveLocation', {
+    error: BackendError,
+    payload: { location: Schema.String, suggestion: Schema.optional(PlaceSuggestion) },
+    success: Schema.NullOr(GeoLocation),
   }),
   Rpc.make('respondToEvent', {
     error: BackendError,
@@ -243,6 +270,12 @@ export class AppBackendRpcs extends RpcGroup.make(
     error: BackendError,
     payload: { limit: Schema.optional(Schema.Number), query: Schema.String },
     success: Schema.Array(Contact),
+  }),
+  /** Location typeahead (MapKit completer); empty where there is no bridge. */
+  Rpc.make('searchPlaces', {
+    error: BackendError,
+    payload: { limit: Schema.optional(Schema.Number), query: Schema.String },
+    success: Schema.Array(PlaceSuggestion),
   }),
   /**
    * Saves the device-local reminder preferences. `notificationsGranted`

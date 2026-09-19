@@ -19,6 +19,7 @@
     "@calendar/contacts": "workspace:*",
     "@calendar/core": "workspace:*",
     "@calendar/db": "workspace:*",
+    "@calendar/geo": "workspace:*",
     "@calendar/google": "workspace:*",
     "@calendar/reminders": "workspace:*",
     "@calendar/sync": "workspace:*",

@@ -4,7 +4,9 @@
 // per line out. {"id","method","params"} -> {"id","result"} | {"id","error"}.
 // Methods: status | generateJson {schema,prompt} | prepareSpeech {locale} |
 // transcribe {audioBase64,locale} | reminders.* (see RemindersBridge.swift,
-// shared with the iOS Expo module). Version 2.
+// shared with the iOS Expo module) | contacts.* (ContactsBridge.swift) |
+// geo.* (GeoBridge.swift: MapKit place search, geocoding, map images).
+// Version 2.
 import Foundation
 
 #if canImport(FoundationModels)
@@ -306,11 +308,14 @@ Task.detached {
 // keeps concurrent writes line-atomic. (Detached also matters for a
 // second reason: top-level code is MainActor-isolated.)
 //
-// stdin is read on its own thread and the main thread runs the dispatch
-// main queue: EventKit delivers EKEventStoreChanged on the main queue,
-// so a main thread blocked in readLine() would never fire the change
-// observer above — the change push was silently dead until the real-
-// EventKit e2e asserted it. EOF on stdin means the supervisor is gone.
+// stdin is read on its own thread and the main thread runs the main run
+// loop: EventKit delivers EKEventStoreChanged on the main queue, so a main
+// thread blocked in readLine() would never fire the change observer above
+// — the change push was silently dead until the real-EventKit e2e asserted
+// it. It must be the run loop (which also drains the main queue), not
+// dispatchMain(): MKLocalSearchCompleter debounces with run-loop timers
+// and never calls back under a bare dispatch main queue. EOF on stdin
+// means the supervisor is gone.
 let stdinReader = Thread {
   while let line = readLine(strippingNewline: true) {
     handleLine(line)
@@ -318,7 +323,7 @@ let stdinReader = Thread {
   exit(0)
 }
 stdinReader.start()
-dispatchMain()
+RunLoop.main.run()
 
 func handleLine(_ line: String) {
   guard !line.isEmpty else { return }
@@ -354,6 +359,16 @@ func handleLine(_ line: String) {
         emitError(request.id, error.message)
       } catch {
         emitError(request.id, "contacts failed: \(error.localizedDescription)")
+      }
+    case let method where method.hasPrefix("geo."):
+      do {
+        let result = try await GeoDispatch.invoke(
+          method: method, params: params.mapValues { $0.anyValue })
+        emitResult(request.id, result)
+      } catch let error as GeoBridgeError {
+        emitError(request.id, error.message)
+      } catch {
+        emitError(request.id, "geo failed: \(error.localizedDescription)")
       }
     default: emitError(request.id, "unknown method: \(request.method)")
     }

@@ -9,6 +9,7 @@ import {
   DeviceSettingsRepo,
   EventRepo,
   forwardingReactivity,
+  LocationGeoRepo,
   makeInvalidationBus,
   PendingOpRepo,
   reposLayer,
@@ -44,7 +45,9 @@ import { runGoogleSignIn } from './auth/loopbackFlow.ts';
 import { loadOAuthConfig } from './oauthConfig.ts';
 import { RemindersClient } from '@calendar/reminders';
 import { ContactsClient } from '@calendar/contacts';
+import { GeoClient } from '@calendar/geo';
 import { desktopContactsLayer } from './contactsClient.ts';
+import { desktopGeoLayer } from './geoClient.ts';
 import { desktopNotificationSink } from './notifications.ts';
 import { desktopRemindersLayer } from './remindersClient.ts';
 import { rpcServerProtocol } from './rpcProtocol.ts';
@@ -92,6 +95,7 @@ export const startBackendHost = (): void => {
     Layer.provideMerge(desktopRemindersLayer),
     Layer.provideMerge(DeviceContacts.layer),
     Layer.provideMerge(desktopContactsLayer),
+    Layer.provideMerge(desktopGeoLayer),
     Layer.provideMerge(TokenManager.layer),
     Layer.provideMerge(dbLayer),
     Layer.provideMerge(platformLayer),
@@ -122,6 +126,8 @@ export const startBackendHost = (): void => {
     | DeviceContacts
     | EventMutations
     | EventRepo
+    | GeoClient
+    | LocationGeoRepo
     | NotificationSink
     | PendingOpRepo
     | RemindersClient

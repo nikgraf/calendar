@@ -8,7 +8,9 @@ import type {
   CalendarInfo,
   Contact,
   EventRecord,
+  GeoLocation,
   PendingOpSummary,
+  PlaceSuggestion,
   TaskListInfo,
   TaskRecord,
 } from '@calendar/core';
@@ -24,7 +26,13 @@ import {
   useState,
   type ReactNode,
 } from 'react';
-import { type MutationName, rangeKey, type BackendAtoms } from './atoms.ts';
+import {
+  type BackendAtoms,
+  type MapSnapshotParams,
+  mapSnapshotKey,
+  type MutationName,
+  rangeKey,
+} from './atoms.ts';
 
 const AtomsContext = createContext<BackendAtoms | null>(null);
 
@@ -120,6 +128,56 @@ export const useContactsSearch = (
   return Option.isSome(value)
     ? { contacts: value.value, stale: false }
     : { contacts: previous, stale: true };
+};
+
+/**
+ * Location typeahead rows for `query` ('' asks nothing), with the same
+ * stale-rows behavior as useContactsSearch: the previous rows stay on
+ * screen while the next query is in flight, flagged so nothing picks them.
+ */
+export const usePlacesSearch = (
+  query: string,
+  limit = 6,
+): { readonly places: ReadonlyArray<PlaceSuggestion>; readonly stale: boolean } => {
+  const atoms = useBackendAtoms();
+  const trimmed = query.trim();
+  const result = useAtomValue(atoms.placesSearch(`${String(limit)}:${trimmed}`));
+  const value = AsyncResult.value(result);
+  const [previous, setPrevious] = useState<ReadonlyArray<PlaceSuggestion>>([]);
+  if (Option.isSome(value) && value.value !== previous) {
+    setPrevious(value.value);
+  }
+  if (trimmed === '') {
+    return { places: [], stale: false };
+  }
+  return Option.isSome(value)
+    ? { places: value.value, stale: false }
+    : { places: previous, stale: true };
+};
+
+/**
+ * Coordinates for location text ('' asks nothing). A failed lookup reads
+ * as "no coordinates" — a map is a nicety, never an error in the editor.
+ */
+export const useLocationGeo = (
+  location: string,
+): { readonly geo: GeoLocation | null; readonly loading: boolean } => {
+  const result = useAtomValue(useBackendAtoms().locationGeo(location));
+  return {
+    geo: AsyncResult.isSuccess(result) ? result.value : null,
+    loading: AsyncResult.isInitial(result) || (result.waiting && !AsyncResult.isFailure(result)),
+  };
+};
+
+/** A static map image (desktop), base64 PNG; null while loading, failed, or not asked. */
+export const useMapSnapshot = (
+  params: MapSnapshotParams | null,
+): { readonly loading: boolean; readonly pngBase64: string | null } => {
+  const result = useAtomValue(useBackendAtoms().mapSnapshot(params ? mapSnapshotKey(params) : ''));
+  return {
+    loading: AsyncResult.isInitial(result),
+    pngBase64: AsyncResult.isSuccess(result) ? result.value : null,
+  };
 };
 
 /** Task lists across accounts (for visibility toggles + connect rows). */
@@ -239,6 +297,7 @@ export const useBackendMutations = () => {
       deleteTask: set('deleteTask'),
       discardPendingOp: set('discardPendingOp'),
       removeAccount: set('removeAccount'),
+      resolveLocation: set('resolveLocation'),
       respondToEvent: set('respondToEvent'),
       setBirthdayReminderSettings: set('setBirthdayReminderSettings'),
       setCalendarColor: set('setCalendarColor'),

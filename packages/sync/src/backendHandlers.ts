@@ -22,10 +22,12 @@ import {
   ContactRepo,
   DeviceSettingsRepo,
   EventRepo,
+  LocationGeoRepo,
   PendingOpRepo,
   SyncStateRepo,
   TaskRepo,
 } from '@calendar/db';
+import { GeoClient } from '@calendar/geo';
 import { TokenStore } from '@calendar/google';
 import { RemindersClient } from '@calendar/reminders';
 import { Clock, Effect, Queue, Stream } from 'effect';
@@ -35,6 +37,7 @@ import { DeviceContacts } from './deviceContacts.ts';
 import { readBirthdayReminderSettings, writeBirthdayReminderSettings } from './deviceSettings.ts';
 import { NotificationSink } from './notificationSink.ts';
 import { SyncEngine } from './engine.ts';
+import { locationHandlers } from './locationHandlers.ts';
 import { EventMutations } from './mutations.ts';
 
 /** Suggestions shown at once; the repo is asked for a few times that before ranking. */
@@ -51,6 +54,8 @@ export type CommonBackendServices =
   | DeviceSettingsRepo
   | EventMutations
   | EventRepo
+  | GeoClient
+  | LocationGeoRepo
   | NotificationSink
   | PendingOpRepo
   | RemindersClient
@@ -64,6 +69,8 @@ export type CommonBackendServices =
  * (the OAuth code-acquisition step differs) on top of these.
  */
 export const commonBackendHandlers: Omit<BackendHandlers<CommonBackendServices>, 'addAccount'> = {
+  ...locationHandlers,
+
   completeTask: (params) =>
     Effect.gen(function* () {
       const mutations = yield* EventMutations;

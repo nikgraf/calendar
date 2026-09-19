@@ -33,6 +33,7 @@ import { FetchHttpClient } from 'effect/unstable/http';
 import { signInWithGoogle } from './googleAuth.ts';
 import { iosNotificationSink } from './notifications.ts';
 import { iosContactsClient, iosContactsLayer } from './contactsClient.ts';
+import { iosGeoLayer } from './geoClient.ts';
 import { iosRemindersClient, iosRemindersLayer } from './remindersClient.ts';
 
 class OAuthNotConfiguredError extends Data.TaggedError('OAuthNotConfiguredError')<{
@@ -101,6 +102,7 @@ const appLayer = SyncEngine.layer.pipe(
   Layer.provideMerge(iosRemindersLayer),
   Layer.provideMerge(DeviceContacts.layer),
   Layer.provideMerge(iosContactsLayer),
+  Layer.provideMerge(iosGeoLayer),
   Layer.provideMerge(TokenManager.layer),
   Layer.provideMerge(dbLayer),
   Layer.provideMerge(platformLayer),
