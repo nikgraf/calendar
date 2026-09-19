@@ -1,7 +1,8 @@
 # Architecture
 
 Client-only: both apps talk directly to the Google Calendar and Google
-Tasks REST APIs, and to Apple Reminders through EventKit. There is no
+Tasks REST APIs, and to Apple Reminders and the Apple Calendar app's
+calendars through EventKit. There is no
 server of ours; all state lives in a local SQLite database per device and
 reconciles against Google / EventKit.
 
@@ -52,6 +53,17 @@ and synchronous). The permission ask (`reminders:*` preload IPC on
 desktop, the Settings diagnostics row on iOS) is a window-level concern;
 reminder rows only ever cross the rpc seam.
 
+Apple Calendar: AppleCalendarClient (packages/apple-calendar) is the
+same shape again — `calendar.*` over the helper (macOS) or the
+solunivo-apple-calendar Expo module (iOS), one Swift source
+(swift/AppleCalendarBridge.swift). Calendars are mirrored into the
+calendars table by the sync pass; events are **read through**: the
+`getEventsInRange` handler merges the Google window with a live
+EventKit query for the same range (AppleCalendarEvents), so nothing is
+stored and there is no window to maintain. Writes go to EventKit
+directly (no pending op). The permission ask is `appleCalendar:status`
+preload IPC on desktop plus the `connectAppleCalendar` rpc.
+
 Device contacts: ContactsClient (packages/contacts) is the same shape,
 read-only — `contacts.status` / `requestAccess` / `snapshot` over the
 helper stdio (macOS) or the solunivo-contacts Expo module (iOS), both
@@ -83,6 +95,7 @@ oldest-first). Kinds:
 | `delete`        | event id / instance id        | —                                | events.delete                                                                                                                    |
 | `rsvp`          | event id                      | EventRecord (attendees)          | events.patch, attendees-only body, **no If-Match**                                                                               |
 | `calendarColor` | `__calendar_color__` sentinel | `colorHex`                       | calendarList.patch?colorRgbFormat=true                                                                                           |
+| `move`          | master id (source calendar)   | `targetCalendarId`               | events.move?destination= (same account; organizer only; whole series)                                                            |
 | `createTask`    | temp `local-…` id             | title/notes/due                  | tasks.insert (NOT idempotent — see below)                                                                                        |
 | `updateTask`    | task id                       | title/notes/due                  | tasks.patch                                                                                                                      |
 | `completeTask`  | task id                       | completed flag                   | tasks.patch (status + hidden reset)                                                                                              |
@@ -92,7 +105,7 @@ Rules that keep the queue correct:
 
 - **Coalescing**: a content edit removes prior ops for the same
   (calendarId, eventId) and re-enqueues (a queued `create` absorbs edits);
-  `removeForEvent` deliberately spares `rsvp` ops; `calendarColor` ops
+  `removeForEvent` deliberately spares `rsvp` and `move` ops; `calendarColor` ops
   coalesce **per account** under the sentinel (the same shared calendar id
   can exist under several accounts).
 - **Backoff**: transient failures retry at `30s·2^attempts`, capped at
@@ -118,6 +131,14 @@ Rules that keep the queue correct:
   `createTask` that was already **dispatched** (`dispatched_at` stamp),
   the drain first lists recent tasks and adopts a match — otherwise a
   crash between insert and ack would duplicate the task.
+- **Moves keep queue order**: `listDue` skips ops in backoff, so a move
+  and the edits of its series (`<masterId>` and `<masterId>_<basetime>`
+  instance ids, any calendar of the account) check `earlierInSeries`
+  first — a move waits for older edits, an edit waits for an older move.
+  `moveEvent` re-queues pending edits of the series _behind_ the move,
+  re-keyed to the destination (a pending create simply becomes a create
+  there). A dropped move (403 non-organizer) re-keys the rows back.
+  Ties on `created_at` break by `rowid` (insertion order).
 - The drain loop re-reads each op by id before dispatching: a missing row
   means the user discarded it (skip), and coalescing rewrites stay
   visible.
@@ -249,6 +270,58 @@ Rules that keep the queue correct:
   touch. `replaceMirror` reports `skipped` and the engine ends the pass
   without stamping sync_state; removal itself is one transaction.
 
+## Apple Calendar (EventKit events)
+
+- **One synthetic account** `apple-calendar` (`provider: 'apple'`, next
+  to `apple-reminders`; tell them apart with `isAppleCalendarAccount` /
+  `isAppleRemindersAccount`). `connectAppleCalendar` asks for events
+  access — a separate TCC grant from Reminders — and creates it.
+- **Calendars are mirrored** (`syncAppleCalendar`): every EventKit
+  source (iCloud, Exchange, On My Mac, subscribed) except the Birthdays
+  calendar (the birthday lane shows those) and any source titled like a
+  connected Google account's email (that account added to Calendar.app
+  would show twice). `allowsContentModifications` → `accessRole`
+  owner/reader, `defaultCalendarForNewEvents` → `isPrimary`, the source
+  title → `CalendarInfo.sourceTitle` (sidebar grouping). `provider` is
+  never stored: CalendarRepo joins it from the account. Unavailable
+  bridge = skip; lost access = `reauth_required`, healed by the next pass.
+- **Events are read through, never stored.** EventKit is already a local
+  database and expands series itself; a mirror would need a window and
+  could disagree with Calendar.app. `AppleCalendarEvents.eventsInRange`
+  asks the bridge for exactly the range a view shows (the bridge chunks
+  EventKit's four-year predicate limit), keeps visible mirrored
+  calendars only, and memoizes up to 8 ranges. `EKEventStoreChanged`
+  (debounced 1 s), every Apple write and `setCalendarVisible` clear the
+  memo and invalidate `EVENTS_KEY`. The backend rpc stays the single
+  query surface (views, find-a-time, any future CLI/agent).
+- **Ids**: a single event is its `eventIdentifier`; an occurrence of a
+  series is `<eventIdentifier>__<occurrenceDate>` with
+  `recurringEventId`/`originalStartUtc` set — the same shape
+  `assembleWindow` gives Google occurrences, stable when one occurrence
+  is moved on its own (occurrenceDate names its slot, not its start).
+- **Scopes → EKSpan**: instance = `thisEvent` on the occurrence;
+  following = `futureEvents` on the occurrence (EventKit splits the
+  series); series = `futureEvents` on the first occurrence, a time edit
+  shifting it by the edited occurrence's wall-clock delta, as for Google.
+- **Recurrence** crosses as structured rules (core `StructuredRule`);
+  `toStructuredRules`/`toRRuleLines` convert. EXDATE/RDATE/EXRULE,
+  BYHOUR/BYMINUTE/BYSECOND, WKST≠MO and COUNT+UNTIL cannot be stored:
+  a create is refused (`UnsupportedForProviderError`), a move drops them
+  after confirmation.
+- **Capabilities**: EventKit cannot write guests or RSVPs — the editor
+  hides both for Apple events (existing guests show read-only), and the
+  mutation layer rejects them. A `reader` calendar opens as a viewer.
+- **Moving between calendars** (`moveEvent`, always the whole series):
+  Google → same Google account = queued `events.move` (keeps everything;
+  organizer only); Apple → Apple = `event.calendar = target` saved with
+  the series span; everything else = create in the target, then delete
+  the source (a failure between leaves a duplicate, never a loss). Copies
+  never carry guests; a Google conference link becomes the Apple event's
+  URL, an Apple URL is appended to the Google description; modified
+  occurrences are dropped. The editor asks `previewMove` first and
+  confirms `moveLossSummary` when anything is dropped, then saves field
+  edits at the source and moves.
+
 ## Recurring events
 
 - Masters carry `recurrence` (raw RFC 5545 lines, no DTSTART — derived from
@@ -303,7 +376,7 @@ Rules that keep the queue correct:
 ## Platform seams
 
 - Calendar data crosses process boundaries **only** through the typed rpc
-  seam. Window-level concerns use plain preload IPC: `logError`
+  seam (Apple events included). Window-level concerns use plain preload IPC: `logError`
   (renderer errors → `userData/logs/main.log`, 1 MB rotation),
   `privacyGet/Set` (screen-capture protection, default hidden), and the
   window-open handler (Join-meeting → system browser).

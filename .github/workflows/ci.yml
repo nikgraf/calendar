@@ -114,7 +114,7 @@ jobs:
   # new runner image breaks the seed the job goes red rather than green
   # while testing nothing. macos-26: build:helper needs the macOS 26 SDK.
   e2e-reminders:
-    name: Desktop e2e (real Reminders via helper)
+    name: Desktop e2e (real Reminders and Calendar via helper)
     needs: [gate, changes]
     if: needs.changes.outputs.code == 'true'
     runs-on: macos-26
@@ -135,7 +135,7 @@ jobs:
         uses: actions/cache@v6
         with:
           path: apps/desktop/helper/.build
-          key: helper-${{ runner.os }}-${{ hashFiles('apps/desktop/helper/Package.swift', 'apps/desktop/helper/Package.resolved', 'apps/desktop/helper/Sources/**', 'packages/reminders/swift/**', 'packages/contacts/swift/**') }}
+          key: helper-${{ runner.os }}-${{ hashFiles('apps/desktop/helper/Package.swift', 'apps/desktop/helper/Package.resolved', 'apps/desktop/helper/Sources/**', 'packages/apple-calendar/swift/**', 'packages/contacts/swift/**', 'packages/geo/swift/**', 'packages/reminders/swift/**') }}
           restore-keys: helper-${{ runner.os }}-
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @calendar/desktop build:helper
@@ -143,9 +143,14 @@ jobs:
       - run: pnpm --filter @calendar/desktop exec electron --version
       - name: Pre-grant Reminders to the helper (TCC)
         run: bash apps/desktop/e2e/ci/grant-reminders-tcc.sh apps/desktop/helper/.build/release/solunivo-model-helper
+      - name: Pre-grant Calendars to the helper (TCC)
+        run: bash apps/desktop/e2e/ci/grant-reminders-tcc.sh apps/desktop/helper/.build/release/solunivo-model-helper kTCCServiceCalendar
       - name: Probe helper access
-        run: bash apps/desktop/e2e/ci/probe-helper-access.sh apps/desktop/helper/.build/release/solunivo-model-helper
+        run: |
+          bash apps/desktop/e2e/ci/probe-helper-access.sh apps/desktop/helper/.build/release/solunivo-model-helper reminders
+          bash apps/desktop/e2e/ci/probe-helper-access.sh apps/desktop/helper/.build/release/solunivo-model-helper calendar
       - run: E2E=1 CALENDAR_E2E_REMINDERS=real pnpm exec vp test run apps/desktop/e2e/remindersReal.e2e.ts
+      - run: E2E=1 CALENDAR_E2E_APPLE_CALENDAR=real pnpm exec vp test run apps/desktop/e2e/appleCalendarReal.e2e.ts
       - name: Upload e2e diagnostics
         if: failure()
         uses: actions/upload-artifact@v7
@@ -363,7 +368,7 @@ jobs:
         uses: actions/cache@v6
         with:
           path: apps/desktop/helper/.build
-          key: helper-${{ runner.os }}-${{ hashFiles('apps/desktop/helper/Package.swift', 'apps/desktop/helper/Package.resolved', 'apps/desktop/helper/Sources/**', 'packages/reminders/swift/**', 'packages/contacts/swift/**') }}
+          key: helper-${{ runner.os }}-${{ hashFiles('apps/desktop/helper/Package.swift', 'apps/desktop/helper/Package.resolved', 'apps/desktop/helper/Sources/**', 'packages/apple-calendar/swift/**', 'packages/contacts/swift/**', 'packages/geo/swift/**', 'packages/reminders/swift/**') }}
           restore-keys: helper-${{ runner.os }}-
       - run: pnpm install --frozen-lockfile
       # The committed app icons and tokens.css are generated from brand/;
@@ -450,7 +455,7 @@ jobs:
         uses: actions/cache@v6
         with:
           path: apps/desktop/helper/.build
-          key: helper-${{ runner.os }}-${{ hashFiles('apps/desktop/helper/Package.swift', 'apps/desktop/helper/Package.resolved', 'apps/desktop/helper/Sources/**', 'packages/reminders/swift/**', 'packages/contacts/swift/**') }}
+          key: helper-${{ runner.os }}-${{ hashFiles('apps/desktop/helper/Package.swift', 'apps/desktop/helper/Package.resolved', 'apps/desktop/helper/Sources/**', 'packages/apple-calendar/swift/**', 'packages/contacts/swift/**', 'packages/geo/swift/**', 'packages/reminders/swift/**') }}
           restore-keys: helper-${{ runner.os }}-
       - run: pnpm install --frozen-lockfile
       - name: Compute short SHA

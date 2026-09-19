@@ -1,6 +1,7 @@
 # CLAUDE.md
 
-Client-only Google Calendar + Tasks client (no backend): Expo iOS app +
+Client-only Google Calendar + Tasks client, also showing the device's
+Apple Calendar (EventKit) calendars (no backend): Expo iOS app +
 Electron macOS app over a shared, Effect-v4-first TypeScript core. Data
 syncs directly against the Google Calendar/Tasks REST APIs with syncToken
 (events) and updatedMin-watermark (tasks) polling plus an offline-tolerant
@@ -29,6 +30,11 @@ powers quick-add parsing, find-a-time, and dictation.
   ↔ `TaskRecord` mapping, and an in-memory fake for tests. The one Swift
   source (`swift/RemindersBridge.swift`) is symlinked into the desktop
   helper and the iOS Expo module.
+- `packages/apple-calendar` — Apple Calendar (EventKit events) seam,
+  same shape as reminders: `AppleCalendarClient` (`calendar.*`), the JSON
+  protocol, an in-memory fake with EventKit span semantics, and one Swift
+  source (`swift/AppleCalendarBridge.swift`) symlinked into both native
+  hosts. Calendars are mirrored; events are read through, never stored.
 - `packages/contacts` — device address book seam, same shape as
   reminders but read-only: `ContactsClient` (`contacts.status` /
   `requestAccess` / `snapshot`), the JSON protocol, an in-memory fake,
@@ -45,11 +51,13 @@ powers quick-add parsing, find-a-time, and dictation.
   (`useBackendMutations`, `useEventsInRangeStable`, …).
 - `apps/desktop` — Electron (Forge, vite, tsdown main bundle); rpc over an
   IPC frame channel; Swift helper (`helper/`, Foundation Models +
-  SpeechAnalyzer + EventKit `reminders.*` + Contacts `contacts.*` over
+  SpeechAnalyzer + EventKit `reminders.*` / `calendar.*` + Contacts
+  `contacts.*` over
   stdio; process owned by
   `electron/helperProcess.ts`). `apps/ios` — Expo dev client; zero-hop
   direct backend; @react-native-ai/apple for on-device model access;
   local Expo modules `modules/solunivo-reminders` (EventKit),
+  `modules/solunivo-apple-calendar` (EventKit events),
   `modules/solunivo-contacts` (CNContactStore) and `modules/solunivo-geo`
   (MapKit); `expo-maps` draws the editor map.
 - `brand/` — SVG masters, logos, fonts and tokens; `pnpm brand:build`
@@ -86,19 +94,27 @@ powers quick-add parsing, find-a-time, and dictation.
 - Oxlint enforces alphabetically sorted object keys/interface members —
   write literals sorted or `vp check` fails.
 - Window-level concerns (screen privacy, logging, open-external, the four
-  `model:*` AI-helper channels, and the `reminders:*` / `contacts:*`
-  permission-status channels) use plain preload IPC; calendar data —
-  reminders and contact rows included — goes
+  `model:*` AI-helper channels, and the `reminders:*` / `contacts:*` /
+  `appleCalendar:*` permission-status channels) use plain preload IPC;
+  calendar data — reminders, Apple events and contact rows included — goes
   through the typed rpc seam only.
-- Tasks are provider-dispatched: Google lists go through the pending-op
-  queue (server-assigned ids, temp-id/adopt protocol); Apple lists write
-  EventKit synchronously and mirror the result. Reminders-only fields on
-  a Google list fail with `UnsupportedForProviderError` — never drop
-  them silently.
-- The e2e harness sets `CALENDAR_REMINDERS=off`, `CALENDAR_CONTACTS=off`
-  and `CALENDAR_GEO=off`: seeded Apple rows must never be replaced by a
-  real EventKit sync, no bridge may trigger a TCC prompt or read a
-  developer's data, and no run may depend on MapKit's network.
+- Tasks and events are provider-dispatched: Google goes through the
+  pending-op queue; Apple writes EventKit synchronously (Reminders mirror
+  the result, Apple Calendar events are read through and never stored).
+  A field the provider cannot hold (Reminders-only fields on a Google
+  list; guests, RSVP or an EXDATE/BYHOUR rule on an Apple event) fails
+  with `UnsupportedForProviderError` — never drop it silently. Moving an
+  event across accounts/providers is copy-then-delete and drops guests,
+  after the UI confirmed `previewMove`'s loss.
+- Two synthetic `provider: 'apple'` accounts exist (`apple-reminders`,
+  `apple-calendar`): branch with `isAppleRemindersAccount` /
+  `isAppleCalendarAccount`, never on `provider === 'apple'` alone.
+- The e2e harness sets `CALENDAR_REMINDERS=off`, `CALENDAR_CONTACTS=off`,
+  `CALENDAR_APPLE_CALENDAR=off` and `CALENDAR_GEO=off`: seeded Apple rows
+  must never be replaced by a real EventKit sync, no bridge may trigger a
+  TCC prompt or read a developer's data, and no run may depend on
+  MapKit's network. Apple events come from a fixture
+  (`CALENDAR_APPLE_CALENDAR=fixture`), since nothing stores them.
 - Event coordinates are only valid while `geo.source` matches the
   location text (`geoMatches`); every local write goes through
   `withConsistentGeo`, and an update PATCH touches the private geo keys
