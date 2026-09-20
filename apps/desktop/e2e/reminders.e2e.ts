@@ -80,6 +80,19 @@ const seed = {
       title: 'Overdue call',
       updatedAt: 1,
     }),
+    // A by-day rule ("Weekends") the app cannot express: mirrored as
+    // recurrenceUnsupported, it must still read as repeating.
+    new TaskRecord({
+      accountId: APPLE_REMINDERS_ACCOUNT_ID,
+      dueDate: isoToday,
+      id: 'ek-rem-weekends',
+      listId: 'ek-list-1',
+      provider: 'apple',
+      recurrenceUnsupported: true,
+      status: 'needsAction',
+      title: 'Theo reading',
+      updatedAt: 1,
+    }),
     new TaskRecord({
       accountId: APPLE_REMINDERS_ACCOUNT_ID,
       dueDate: isoToday,
@@ -167,6 +180,17 @@ const remindersFixture: RemindersFixture = {
       alarms: [],
       completed: false,
       dueDate: isoToday,
+      id: 'ek-rem-weekends',
+      listId: 'ek-list-1',
+      priority: 0,
+      recurrence: { unsupported: true },
+      title: 'Theo reading',
+      updatedAt: 1,
+    },
+    {
+      alarms: [],
+      completed: false,
+      dueDate: isoToday,
       id: 'ek-rem-allday',
       listId: 'ek-list-1',
       priority: 0,
@@ -225,8 +249,14 @@ describe('Apple Reminders UI', () => {
     );
     expect(label).toContain('!!! Call mom');
     expect(label).not.toContain('14:00');
-    // A weekly reminder carries the repeat marker; a one-off does not.
+    // A weekly reminder carries the repeat marker; a one-off does not. So
+    // does a rule the app cannot express (EventKit by-day, "Weekends").
     expect(label).toContain('\u21bb');
+    expect(
+      await cdp.eval<string>(
+        `document.querySelector('[data-testid="all-day-task-ek-rem-weekends"]')?.textContent ?? ''`,
+      ),
+    ).toContain('\u21bb');
     expect(
       await cdp.eval<string>(
         `document.querySelector('[data-testid="timed-task-ek-rem-ro-timed"]')?.textContent ?? ''`,
