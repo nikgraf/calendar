@@ -56,6 +56,11 @@ tags:
     id: 'reminder-repeat-ordinal-2'
 - tapOn:
     id: 'reminder-repeat-ordinal-weekday-TU'
+# The summary sits under the chip rows, below the fold on a phone.
+- scrollUntilVisible:
+    element:
+      id: 'reminder-repeat-summary'
+    direction: DOWN
 - assertVisible: 'Monthly on the 2nd Tuesday.*'
 - scrollUntilVisible:
     element:
