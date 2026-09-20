@@ -1,18 +1,17 @@
 import {
   calendarGroups,
-  REPEAT_ENDS_OPTIONS,
-  REPEAT_OPTIONS,
   RSVP_OPTIONS,
   SCOPE_OPTIONS,
   useAccounts,
   type useEventEditorModel,
   type useMoveConfirmation,
 } from '@calendar/app-state';
-import type { CalendarInfo, RecurrenceFrequency } from '@calendar/core';
+import type { CalendarInfo } from '@calendar/core';
 import { InviteeCombobox } from './InviteeCombobox.tsx';
 import { FIELD_CLASS as field } from './fieldStyles.ts';
 import { LocationCombobox } from './LocationCombobox.tsx';
 import { LocationMap } from './LocationMap.tsx';
+import { RepeatRuleFields } from './RepeatRuleFields.tsx';
 
 /**
  * The event half of EventEditor (mode === 'event'), extracted like the iOS
@@ -52,11 +51,6 @@ export function EventEditorForm({
     readOnly,
     remove,
     removeAttendee,
-    repeat,
-    repeatCount,
-    repeatEnds,
-    repeatInterval,
-    repeatUntil,
     respond,
     rsvp,
     save,
@@ -65,11 +59,6 @@ export function EventEditorForm({
     setDate,
     setEndTime,
     setIsAllDay,
-    setRepeat,
-    setRepeatCount,
-    setRepeatEnds,
-    setRepeatInterval,
-    setRepeatUntil,
     setScope,
     setStartTime,
     setTitle,
@@ -187,79 +176,7 @@ export function EventEditorForm({
         </div>
         <LocationCombobox model={model} />
         <LocationMap model={model} />
-        {existing ? null : (
-          <>
-            <div className="flex gap-2">
-              <select
-                aria-label="Repeat"
-                className={field}
-                onChange={(changeEvent) =>
-                  setRepeat(changeEvent.target.value as RecurrenceFrequency | 'none')
-                }
-                value={repeat}
-              >
-                {REPEAT_OPTIONS.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-              {repeat === 'none' ? null : (
-                <label className="flex items-center gap-1 text-sm whitespace-nowrap">
-                  every
-                  <input
-                    aria-label="Repeat interval"
-                    className={`${field} w-14`}
-                    min={1}
-                    onChange={(changeEvent) => setRepeatInterval(changeEvent.target.value)}
-                    type="number"
-                    value={repeatInterval}
-                  />
-                </label>
-              )}
-            </div>
-            {repeat === 'none' ? null : (
-              <div className="flex gap-2">
-                <select
-                  aria-label="Repeat ends"
-                  className={field}
-                  onChange={(changeEvent) =>
-                    setRepeatEnds(changeEvent.target.value as 'after' | 'never' | 'on')
-                  }
-                  value={repeatEnds}
-                >
-                  {REPEAT_ENDS_OPTIONS.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-                {repeatEnds === 'after' ? (
-                  <label className="flex items-center gap-1 text-sm whitespace-nowrap">
-                    <input
-                      aria-label="Occurrence count"
-                      className={`${field} w-16`}
-                      min={1}
-                      onChange={(changeEvent) => setRepeatCount(changeEvent.target.value)}
-                      type="number"
-                      value={repeatCount}
-                    />
-                    times
-                  </label>
-                ) : null}
-                {repeatEnds === 'on' ? (
-                  <input
-                    aria-label="Repeat until"
-                    className={field}
-                    onChange={(changeEvent) => setRepeatUntil(changeEvent.target.value)}
-                    type="date"
-                    value={repeatUntil}
-                  />
-                ) : null}
-              </div>
-            )}
-          </>
-        )}
+        {existing ? null : <RepeatRuleFields anchorDate={date} state={model} />}
         {canInvite ? (
           <div className="rounded-lg border border-neutral-200 bg-white p-3">
             <p className="mb-1 text-xs font-medium text-neutral-400 uppercase">Invitees</p>
