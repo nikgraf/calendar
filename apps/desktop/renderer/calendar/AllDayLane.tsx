@@ -3,6 +3,7 @@ import {
   type BirthdayOccurrence,
   birthdayChipLabel,
   type EventRecord,
+  MAX_ALL_DAY_ROWS,
   overdueLabel,
   type PlacedSpan,
   taskChipLabel,
@@ -15,15 +16,20 @@ import { chipTextColor, type ColorLookup } from './colors.ts';
 /**
  * Packed all-day chips (events spanning days, one-day task and birthday
  * rows) over the strip. Always rendered, even empty, so the timed grid
- * never jumps.
+ * never jumps. Collapsed, `placed` is already capped and `moreByDay` says
+ * which columns hide chips behind a "+N more" chip on the last row.
  */
 export function AllDayLane({
   allDayById,
   birthdayById,
+  collapsed,
+  collapsible,
   colorOf,
   listColorOf,
+  moreByDay,
   onBirthdayClick,
   onEventClick,
+  onSetCollapsed,
   onTaskClick,
   onToggleTask,
   overdueKeys,
@@ -37,10 +43,16 @@ export function AllDayLane({
 }: {
   allDayById: ReadonlyMap<string, EventRecord>;
   birthdayById: ReadonlyMap<string, BirthdayOccurrence>;
+  collapsed: boolean;
+  /** Whether the uncapped lane would exceed the cap — only then is "less" offered. */
+  collapsible: boolean;
   colorOf: ColorLookup;
   listColorOf: (task: TaskRecord) => string | undefined;
+  /** Hidden chips per strip column while collapsed (empty when expanded). */
+  moreByDay: ReadonlyArray<number>;
   onBirthdayClick: (birthday: BirthdayOccurrence) => void;
   onEventClick: (event: EventRecord) => void;
+  onSetCollapsed: (collapsed: boolean) => void;
   onTaskClick: (task: TaskRecord) => void;
   onToggleTask: (task: TaskRecord) => void;
   /** Task keys drawn on today because their due day has passed. */
@@ -56,11 +68,44 @@ export function AllDayLane({
   return (
     <div
       className="flex shrink-0 border-b border-neutral-200 bg-white"
+      data-testid="all-day-lane"
       style={{ height: Math.max(rowCount, 1) * 24 + 8, paddingRight: scrollbarWidth }}
     >
-      <div className="w-16 shrink-0 py-1 pr-2 text-right text-[10px] text-neutral-400">all-day</div>
+      <div className="w-16 shrink-0 py-1 pr-2 text-right text-[10px] text-neutral-400">
+        all-day
+        {collapsible && !collapsed ? (
+          <button
+            aria-label="Collapse the all-day lane"
+            className="block w-full cursor-pointer text-right text-blue-600 hover:underline"
+            data-testid="all-day-less"
+            onClick={() => onSetCollapsed(true)}
+            type="button"
+          >
+            less
+          </button>
+        ) : null}
+      </div>
       <div className="min-w-0 flex-1 overflow-hidden">
         <div className="relative h-full" style={stripStyle}>
+          {moreByDay.map((hidden, dayIndex) =>
+            hidden > 0 ? (
+              <button
+                aria-label={`${String(hidden)} more all-day items, show all`}
+                className="absolute cursor-pointer truncate rounded bg-neutral-100 px-1 text-left text-xs leading-5 text-neutral-500 hover:bg-neutral-200"
+                data-testid="all-day-more"
+                key={`more:${String(dayIndex)}`}
+                onClick={() => onSetCollapsed(false)}
+                style={{
+                  left: `calc(${(dayIndex / stripLength) * 100}% + 2px)`,
+                  top: (MAX_ALL_DAY_ROWS - 1) * 24 + 4,
+                  width: `calc(${(1 / stripLength) * 100}% - 4px)`,
+                }}
+                type="button"
+              >
+                +{hidden} more
+              </button>
+            ) : null,
+          )}
           {placed.map((span) => {
             const task = taskById.get(span.id);
             if (task) {

@@ -37,3 +37,4 @@ export * from './time/slotSelection.ts';
 export * from './time/temporal.ts';
 export * from './time/today.ts';
 export * from './types.ts';
+export * from './viewPreferences.ts';

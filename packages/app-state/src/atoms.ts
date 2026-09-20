@@ -61,6 +61,7 @@ export interface BackendAtoms {
   readonly syncStatus: ReturnType<typeof buildAtoms>['syncStatus'];
   readonly taskLists: ReturnType<typeof buildAtoms>['taskLists'];
   readonly tasksInRange: ReturnType<typeof buildAtoms>['tasksInRange'];
+  readonly viewPreferences: ReturnType<typeof buildAtoms>['viewPreferences'];
 }
 
 /**
@@ -93,6 +94,7 @@ const MUTATION_REACTIVITY = {
   setCalendarColor: [CALENDARS_KEY],
   setCalendarVisible: [CALENDARS_KEY, EVENTS_KEY],
   setTaskListVisible: [TASKLISTS_KEY, TASKS_KEY],
+  setViewPreferences: [deviceSettingsKey('viewPreferences')],
   syncNow: [],
   updateEvent: [EVENTS_KEY],
   updateRecurring: [EVENTS_KEY],
@@ -217,6 +219,16 @@ const buildAtoms = (client: BackendClient) => {
       }),
     )
     .pipe(Atom.withReactivity([deviceSettingsKey('birthdayReminders')]));
+
+  // Device-local view preferences; refetched only when they are written.
+  const viewPreferences = runtime
+    .atom(
+      Effect.gen(function* () {
+        const backend = yield* AppBackend;
+        return yield* backend.getViewPreferences(undefined);
+      }),
+    )
+    .pipe(Atom.withReactivity([deviceSettingsKey('viewPreferences')]));
 
   // Keys are date strings, like tasksInRange. BIRTHDAYS_KEY fires from the
   // Google cache writes and from a device snapshot that changed the list.
@@ -355,6 +367,7 @@ const buildAtoms = (client: BackendClient) => {
     syncStatus,
     taskLists,
     tasksInRange,
+    viewPreferences,
   };
 };
 

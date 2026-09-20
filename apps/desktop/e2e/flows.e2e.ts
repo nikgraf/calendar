@@ -12,6 +12,7 @@ import {
   launchApp,
   readCalendars,
   readEvents,
+  readDeviceSetting,
   readPendingOps,
   readPendingOpsCount,
   readSettings,
@@ -1104,5 +1105,79 @@ describe('calendar desktop e2e', () => {
     );
     expect(moved?.startUtc).toBe(expected);
     expect(await cdp.eval<boolean>(`document.body.textContent.includes('Edit event')`)).toBe(false);
+  });
+});
+
+describe('collapsible all-day lane', () => {
+  const LANE_ROW = 24;
+  const LANE_PADDING = 8;
+  let laneApp: App;
+
+  beforeAll(async () => {
+    // Five date-only tasks on one day: the lane grows to five rows when
+    // expanded and caps at three (two chips + "+3 more") when collapsed.
+    laneApp = await launchApp({
+      ...seed,
+      events: [],
+      tasks: Array.from({ length: 5 }, (_, index) => {
+        const n = index + 1;
+        return new TaskRecord({
+          accountId: 'acc-e2e',
+          dueDate: todayLocalIso(),
+          id: `chore-${n}`,
+          listId: 'list-e2e',
+          provider: 'google',
+          status: 'needsAction',
+          title: `Chore ${n}`,
+          updatedAt: 1,
+        });
+      }),
+    });
+  }, 60_000);
+
+  afterEach(async (context) => {
+    if (context.task.result?.state === 'fail') {
+      await laneApp?.dump(context.task.name);
+    }
+  });
+
+  afterAll(async () => {
+    await laneApp?.stop();
+  });
+
+  it('collapses to three rows with "+N more", persists the choice and expands again', async () => {
+    const { cdp } = laneApp;
+    const laneHeight = () =>
+      cdp.eval<number>(
+        `document.querySelector('[data-testid="all-day-lane"]').getBoundingClientRect().height`,
+      );
+    const visibleChores = () =>
+      cdp.eval<number>(`document.querySelectorAll('[title^="Chore "]').length`);
+    await cdp.locate('[title="Chore 5"]');
+    // Expanded by default: every chip drawn, no "+N more".
+    expect(await laneHeight()).toBe(5 * LANE_ROW + LANE_PADDING);
+    expect(await visibleChores()).toBe(5);
+    expect(await cdp.eval(`!!document.querySelector('[data-testid="all-day-more"]')`)).toBe(false);
+
+    const less = await cdp.locate('[data-testid="all-day-less"]');
+    await cdp.click(less.x, less.y);
+    await expect
+      .poll(() => readDeviceSetting(laneApp.userDataDir, 'viewPreferences'))
+      .toEqual({ allDayLaneCollapsed: true });
+    await cdp.waitFor(
+      `document.querySelector('[data-testid="all-day-more"]')?.textContent === '+3 more'`,
+    );
+    expect(await laneHeight()).toBe(3 * LANE_ROW + LANE_PADDING);
+    expect(await visibleChores()).toBe(2);
+    expect(await cdp.eval(`!!document.querySelector('[data-testid="all-day-less"]')`)).toBe(false);
+
+    const more = await cdp.locate('[data-testid="all-day-more"]');
+    await cdp.click(more.x, more.y);
+    await expect
+      .poll(() => readDeviceSetting(laneApp.userDataDir, 'viewPreferences'))
+      .toEqual({ allDayLaneCollapsed: false });
+    await cdp.waitFor(`document.querySelectorAll('[title^="Chore "]').length === 5`);
+    expect(await laneHeight()).toBe(5 * LANE_ROW + LANE_PADDING);
+    expect(await cdp.eval(`!!document.querySelector('[data-testid="all-day-more"]')`)).toBe(false);
   });
 });

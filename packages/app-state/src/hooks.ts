@@ -13,6 +13,7 @@ import type {
   PlaceSuggestion,
   TaskListInfo,
   TaskRecord,
+  ViewPreferences,
 } from '@calendar/core';
 import { msUntilNextMidnight, Temporal } from '@calendar/core';
 import { RegistryContext, useAtomValue } from '@effect/atom-react';
@@ -259,6 +260,12 @@ export const useBirthdayReminderSettings = (): BirthdayReminderSettings | null =
   return Option.getOrNull(AsyncResult.value(result));
 };
 
+/** The device-local view preferences; null until the first read resolves (treat as the defaults). */
+export const useViewPreferences = (): ViewPreferences | null => {
+  const result = useAtomValue(useBackendAtoms().viewPreferences);
+  return Option.getOrNull(AsyncResult.value(result));
+};
+
 /** Reminders lists carry a color; Google lists render neutral. Both lanes need this. */
 export const useListColorLookup = (): ((task: TaskRecord) => string | undefined) => {
   const taskLists = useTaskLists();
@@ -335,6 +342,7 @@ export const useBackendMutations = () => {
       setCalendarColor: set('setCalendarColor'),
       setCalendarVisible: set('setCalendarVisible'),
       setTaskListVisible: set('setTaskListVisible'),
+      setViewPreferences: set('setViewPreferences'),
       syncNow: set('syncNow'),
       updateEvent: set('updateEvent'),
       updateRecurring: set('updateRecurring'),

@@ -55,6 +55,7 @@ const makeStubClient = () => {
       }),
     getOverdueTasks: () => Effect.succeed([]),
     getTasksInRange: () => Effect.succeed([]),
+    getViewPreferences: () => Effect.succeed({ allDayLaneCollapsed: false }),
     listAccounts: () =>
       Effect.sync(() => {
         calls.accounts += 1;
@@ -91,6 +92,7 @@ const makeStubClient = () => {
         calls.setVisible += 1;
       }),
     setTaskListVisible: () => Effect.void,
+    setViewPreferences: () => Effect.void,
     syncNow: () => Effect.void,
     updateEvent: () => fail('not stubbed'),
     updateRecurring: () => fail('not stubbed'),

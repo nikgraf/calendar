@@ -47,3 +47,57 @@ export const layoutAllDayLane = (
 
   return { placed, rowCount: rows.length };
 };
+
+export interface CappedAllDayLane {
+  /** Hidden chips per day column; a count above zero draws a "+N more" chip at row maxRows - 1. */
+  readonly moreByDay: ReadonlyArray<number>;
+  /** Rows the capped lane draws: the packed count, at most maxRows. */
+  readonly rowCount: number;
+  readonly visible: ReadonlyArray<PlacedSpan>;
+}
+
+/**
+ * Caps a packed lane at `maxRows`. A column overflows when more than
+ * `maxRows` chips cover it (or a chip packed below the cap does): there the
+ * last row gives way to a "+N more" chip, so every chip at row `maxRows - 1`
+ * covering an overflowing column hides too — a multi-day chip counts in
+ * each column it covers. A lane that fits loses nothing, so collapsing an
+ * ordinary week changes no geometry.
+ */
+export const capAllDayLane = (
+  placed: ReadonlyArray<PlacedSpan>,
+  dayCount: number,
+  maxRows: number,
+): CappedAllDayLane => {
+  const covering = Array.from({ length: dayCount }, () => 0);
+  const overflowing = Array.from({ length: dayCount }, () => false);
+  let packedRows = 0;
+  for (const span of placed) {
+    packedRows = Math.max(packedRows, span.row + 1);
+    for (let day = span.startDayIndex; day < span.endDayIndex; day += 1) {
+      covering[day] = (covering[day] ?? 0) + 1;
+      if (span.row >= maxRows) {
+        overflowing[day] = true;
+      }
+    }
+  }
+  for (let day = 0; day < dayCount; day += 1) {
+    if ((covering[day] ?? 0) > maxRows) {
+      overflowing[day] = true;
+    }
+  }
+  const moreByDay = Array.from({ length: dayCount }, () => 0);
+  const visible: Array<PlacedSpan> = [];
+  for (const span of placed) {
+    const coversOverflow = overflowing.slice(span.startDayIndex, span.endDayIndex).some(Boolean);
+    const hidden = span.row >= maxRows || (span.row === maxRows - 1 && coversOverflow);
+    if (!hidden) {
+      visible.push(span);
+      continue;
+    }
+    for (let day = span.startDayIndex; day < span.endDayIndex; day += 1) {
+      moreByDay[day] = (moreByDay[day] ?? 0) + 1;
+    }
+  }
+  return { moreByDay, rowCount: Math.min(packedRows, maxRows), visible };
+};

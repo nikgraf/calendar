@@ -1,12 +1,15 @@
+import { useGuardedMutations, useViewPreferences } from '@calendar/app-state';
 import {
   type BirthdayOccurrence,
   bufferedDays,
   calendarTaskKey,
+  capAllDayLane,
   dayRange,
   type EventRecord,
   formatPlainTime,
   layoutAllDayLane,
   layoutDayColumn,
+  MAX_ALL_DAY_ROWS,
   PAN_BUFFER_DAYS,
   partitionCalendarTasks,
   type SlotRange,
@@ -236,6 +239,12 @@ export function WeekView({
   const allDayById = new Map(
     allDayEvents.map((event) => [`${event.calendarId}:${event.id}`, event]),
   );
+  // Collapsed, the lane caps at MAX_ALL_DAY_ROWS with "+N more" chips; the
+  // choice is a device setting, so it survives a relaunch. Expanded by default.
+  const preferences = useViewPreferences();
+  const { setViewPreferences } = useGuardedMutations();
+  const collapsed = preferences?.allDayLaneCollapsed ?? false;
+  const capped = collapsed ? capAllDayLane(allDayPlaced, strip.length, MAX_ALL_DAY_ROWS) : null;
   // Built once per render, not once per column: this component re-renders
   // on every drag pointermove, and the strip is up to 11 columns wide.
   const eventsById = new Map(
@@ -253,15 +262,19 @@ export function WeekView({
       <AllDayLane
         allDayById={allDayById}
         birthdayById={birthdayById}
+        collapsed={collapsed}
+        collapsible={rowCount > MAX_ALL_DAY_ROWS}
         colorOf={colorOf}
         listColorOf={listColorOf}
+        moreByDay={capped?.moreByDay ?? []}
         onBirthdayClick={onBirthdayClick}
         onEventClick={onEventClick}
+        onSetCollapsed={(value) => void setViewPreferences({ allDayLaneCollapsed: value })}
         onTaskClick={onTaskClick}
         onToggleTask={onToggleTask}
         overdueKeys={overdueKeys}
-        placed={allDayPlaced}
-        rowCount={rowCount}
+        placed={capped?.visible ?? allDayPlaced}
+        rowCount={capped?.rowCount ?? rowCount}
         scrollbarWidth={scrollbarWidth}
         stripLength={strip.length}
         stripStyle={stripStyle}

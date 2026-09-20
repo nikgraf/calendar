@@ -37,7 +37,12 @@ import { AppleCalendarEvents } from './appleCalendarEvents.ts';
 import { BirthdayReminders } from './birthdayReminders.ts';
 import { loadMergedBirthdays } from './birthdays.ts';
 import { DeviceContacts } from './deviceContacts.ts';
-import { readBirthdayReminderSettings, writeBirthdayReminderSettings } from './deviceSettings.ts';
+import {
+  readBirthdayReminderSettings,
+  readViewPreferences,
+  writeBirthdayReminderSettings,
+  writeViewPreferences,
+} from './deviceSettings.ts';
 import { NotificationSink } from './notificationSink.ts';
 import { SyncEngine } from './engine.ts';
 import { locationHandlers } from './locationHandlers.ts';
@@ -232,6 +237,8 @@ export const commonBackendHandlers: Omit<BackendHandlers<CommonBackendServices>,
       return yield* taskRepo.getWindow(startDate, endDate);
     }),
 
+  getViewPreferences: () => readViewPreferences,
+
   listAccounts: () =>
     Effect.gen(function* () {
       const accountRepo = yield* AccountRepo;
@@ -358,6 +365,8 @@ export const commonBackendHandlers: Omit<BackendHandlers<CommonBackendServices>,
       const taskRepo = yield* TaskRepo;
       yield* taskRepo.setListVisible(accountId, taskListId, isVisible);
     }),
+
+  setViewPreferences: (preferences) => writeViewPreferences(preferences),
 
   syncNow: () =>
     Effect.gen(function* () {

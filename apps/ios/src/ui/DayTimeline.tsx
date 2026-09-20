@@ -1,4 +1,4 @@
-import { useGuardedMutations } from '@calendar/app-state';
+import { useGuardedMutations, useViewPreferences } from '@calendar/app-state';
 import {
   type BirthdayOccurrence,
   bufferedDays,
@@ -6,6 +6,7 @@ import {
   type EventRecord,
   groupByDate,
   groupEventsByDay,
+  MAX_ALL_DAY_ROWS,
   moveTimedTask,
   partitionCalendarTasks,
   swipeSnapDecision,
@@ -25,13 +26,7 @@ import Animated, {
 import { AllDayColumn } from './AllDayColumn.tsx';
 import { DayColumn } from './DayColumn.tsx';
 import { palette } from './theme.ts';
-import {
-  ALL_DAY_ROW_HEIGHT,
-  EDGE_INSET,
-  GUTTER_WIDTH,
-  HOUR_HEIGHT,
-  MAX_ALL_DAY_ROWS,
-} from './timelineLayout.ts';
+import { ALL_DAY_ROW_HEIGHT, EDGE_INSET, GUTTER_WIDTH, HOUR_HEIGHT } from './timelineLayout.ts';
 
 /**
  * Writes a shared value from a worklet or callback. Going through a helper
@@ -93,9 +88,11 @@ export function DayTimeline({
   today: string;
 }) {
   const scrollRef = useRef<ScrollView>(null);
-  const { updateEvent, updateRecurring, updateTask } = useGuardedMutations();
+  const { setViewPreferences, updateEvent, updateRecurring, updateTask } = useGuardedMutations();
   const [pageWidth, setPageWidth] = useState(0);
-  const [expanded, setExpanded] = useState(false);
+  // The collapsed lane is a device setting (shared with desktop); expanded by default.
+  const collapsed = useViewPreferences()?.allDayLaneCollapsed ?? false;
+  const setCollapsed = (value: boolean) => void setViewPreferences({ allDayLaneCollapsed: value });
   const panX = useSharedValue(0);
   const compact = days.length > 1;
   const columnWidth = pageWidth / days.length;
@@ -175,7 +172,7 @@ export function DayTimeline({
       );
     }),
   );
-  const capped = !expanded && rowsNeeded > MAX_ALL_DAY_ROWS;
+  const capped = collapsed && rowsNeeded > MAX_ALL_DAY_ROWS;
   const laneHeight = Math.max(capped ? MAX_ALL_DAY_ROWS : rowsNeeded, 1) * ALL_DAY_ROW_HEIGHT + 4;
   const maxChips = capped ? MAX_ALL_DAY_ROWS : Number.POSITIVE_INFINITY;
 
@@ -228,12 +225,13 @@ export function DayTimeline({
     <View style={styles.container} testID="day-timeline">
       <View style={[styles.allDayLane, { height: laneHeight }]}>
         <View style={styles.gutterSpacer}>
-          {expanded && rowsNeeded > MAX_ALL_DAY_ROWS ? (
+          {!collapsed && rowsNeeded > MAX_ALL_DAY_ROWS ? (
             <Pressable
               accessibilityLabel="Collapse the all-day lane"
               accessibilityRole="button"
               hitSlop={8}
-              onPress={() => setExpanded(false)}
+              onPress={() => setCollapsed(true)}
+              testID="all-day-less"
             >
               <Text style={[styles.gutterLabel, styles.gutterAction]}>less</Text>
             </Pressable>
@@ -256,7 +254,7 @@ export function DayTimeline({
                   maxChips={maxChips}
                   onBirthdayPress={onBirthdayPress}
                   onEventPress={onEventPress}
-                  onShowMore={() => setExpanded(true)}
+                  onShowMore={() => setCollapsed(false)}
                   onTaskPress={onTaskPress}
                   onToggleTask={onToggleTask}
                   overdueKeys={overdueKeys}

@@ -18,6 +18,7 @@ import {
   TaskRecurrence,
   TaskStatus,
 } from './types.ts';
+import { ViewPreferences } from './viewPreferences.ts';
 
 /**
  * The platform seam: every UI talks to the backend exclusively through this
@@ -228,6 +229,11 @@ export class AppBackendRpcs extends RpcGroup.make(
     payload: { endDate: Schema.String, startDate: Schema.String },
     success: Schema.Array(TaskRecord),
   }),
+  /** Device-local view preferences (never synced). */
+  Rpc.make('getViewPreferences', {
+    error: BackendError,
+    success: ViewPreferences,
+  }),
   Rpc.make('invalidations', {
     /** Server-push stream of invalidated Reactivity key batches. */
     stream: true,
@@ -356,6 +362,10 @@ export class AppBackendRpcs extends RpcGroup.make(
       isVisible: Schema.Boolean,
       taskListId: Schema.String,
     },
+  }),
+  Rpc.make('setViewPreferences', {
+    error: BackendError,
+    payload: ViewPreferences,
   }),
   Rpc.make('syncNow', { error: BackendError }),
   Rpc.make('updateEvent', {
