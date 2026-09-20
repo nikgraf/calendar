@@ -104,7 +104,8 @@ design decisions it settled.
       (freq + interval + end-after-count / end-on-date; RFC 5545 defaults
       keep the series on DTSTART's weekday/day-of-month), optional
       `recurrence` on `EventDraft`, repeat pickers in both editors
-      (create mode). Custom BYDAY combinations stay out of scope for now.
+      (create mode). Custom BYDAY combinations stayed out of scope until
+      the by-day repeat rules entry under Apple Reminders (2026-09-20).
 - [x] RSVP on invitations — done: `respondToEvent` rpc + dedicated `rsvp`
       op kind sending an attendees-only patch (no If-Match — a response
       shouldn't lose to unrelated content edits), own entry matched via
@@ -298,6 +299,38 @@ design decisions it settled.
       `pointerdown`: a suppressed click belongs to the gesture that set
       it, so a cancelled pointer that never delivers its click cannot
       swallow the user's next one.
+
+- [x] By-day repeat rules — done (2026-09-20): weekly rules name their
+      weekdays ("Weekends", "every Tue and Thu") and monthly rules may
+      name one "Nth weekday" (1st…4th or last), for Apple Reminders and
+      for events (Google via RRULE BYDAY, Apple Calendar via the
+      structured rule it already carried), in both editors on both
+      platforms. Nik's pick over weekly-only and reminders-only after his
+      "Weekends" reminder opened as "cannot edit". Decisions: one `ByDay`
+      type (`packages/core/src/recurrence/byDay.ts`) shared by the
+      structured rule, `TaskRecurrence` and the editor spec, with
+      `byDayError` stating the allowed shapes once for the editors and the
+      Swift write path; the wire stays minimal — a weekly rule sends its
+      weekdays only when they differ from the anchor's weekday or the
+      source rule named them (an untouched Save never rewrites a rule
+      Reminders.app stored explicitly), scalar fixtures stay scalar; the
+      shared repeat state (`useRepeatState`) takes the anchor date, seeds
+      a fresh weekly rule with its weekday and the monthly "weekday" mode
+      with its ordinal, and is pure underneath (`seedRepeatFields`,
+      `repeatSpecFrom`, tested); the last selected weekday cannot be
+      removed; the Reminders bridge reads a monthly ordinal whether
+      EventKit stored it as the day's week number or as a set position
+      and writes it as the week number; yearly positional rules, several
+      rules and day-of-month lists still round-trip as `recurrenceUnsupported`.
+      Repeat controls live in one component per platform
+      (`RepeatRuleFields`, `RepeatRuleChips`), which also gave the reminder
+      form its aria-labels and Maestro-assertable chip selection; labels
+      use Reminders.app's words ("Weekly on weekends", "Monthly on the 2nd
+      Tuesday"). The Swift change moves the iOS fingerprint: a
+      development-simulator build was queued for CI and the merge triggers
+      TestFlight. The strict Maestro flow exercises the monthly path (its
+      chips set rather than toggle, so it holds on any date); the
+      real-helper desktop suite round-trips both rule kinds.
 
 ## Apple Calendar
 
