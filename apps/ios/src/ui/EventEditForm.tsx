@@ -1,7 +1,5 @@
 import {
   calendarGroups,
-  REPEAT_ENDS_OPTIONS,
-  REPEAT_OPTIONS,
   RSVP_OPTIONS,
   SCOPE_OPTIONS,
   useAccounts,
@@ -19,6 +17,7 @@ import {
 import { InviteeField } from './InviteeField.tsx';
 import { LocationField } from './LocationField.tsx';
 import { LocationMap } from './LocationMap.tsx';
+import { RepeatRuleChips } from './RepeatRuleChips.tsx';
 
 /** Which account (or, for Apple, which EventKit source) a calendar belongs to. */
 const groupLabel = (calendar: CalendarInfo, emailOf: (accountId: string) => string): string =>
@@ -49,11 +48,6 @@ export function EventEditForm({ model }: { model: ReturnType<typeof useEventEdit
     readOnly,
     remove,
     removeAttendee,
-    repeat,
-    repeatCount,
-    repeatEnds,
-    repeatInterval,
-    repeatUntil,
     respond,
     rsvp,
     scope,
@@ -61,11 +55,6 @@ export function EventEditForm({ model }: { model: ReturnType<typeof useEventEdit
     setDate,
     setEndTime,
     setIsAllDay,
-    setRepeat,
-    setRepeatCount,
-    setRepeatEnds,
-    setRepeatInterval,
-    setRepeatUntil,
     setScope,
     setStartTime,
     setTitle,
@@ -155,97 +144,7 @@ export function EventEditForm({ model }: { model: ReturnType<typeof useEventEdit
         </View>
 
         {existing ? null : (
-          <>
-            <Text style={styles.label}>Repeat</Text>
-            <View style={styles.scopeRow}>
-              {REPEAT_OPTIONS.map((option) => (
-                <Pressable
-                  key={option.value}
-                  onPress={() => setRepeat(option.value)}
-                  style={[styles.scopeChip, repeat === option.value && styles.scopeChipActive]}
-                >
-                  <Text
-                    style={[styles.scopeLabel, repeat === option.value && styles.scopeLabelActive]}
-                  >
-                    {option.short}
-                  </Text>
-                </Pressable>
-              ))}
-            </View>
-            {repeat === 'none' ? null : (
-              <View style={styles.timesRow}>
-                <View style={styles.timeField}>
-                  <Text style={styles.label}>Every (n)</Text>
-                  <TextInput
-                    keyboardType="number-pad"
-                    onChangeText={setRepeatInterval}
-                    style={styles.input}
-                    value={repeatInterval}
-                  />
-                </View>
-                <View style={styles.timeField}>
-                  <Text style={styles.label}>Ends</Text>
-                  <View style={styles.scopeRow}>
-                    {REPEAT_ENDS_OPTIONS.map((option) => (
-                      <Pressable
-                        key={option.value}
-                        onPress={() => {
-                          setRepeatEnds(option.value);
-                          // The picker chip renders a date even while the
-                          // model still holds '' — seed it, or a save
-                          // would silently drop the end bound and create
-                          // an unbounded recurrence.
-                          if (option.value === 'on' && !repeatUntil) {
-                            setRepeatUntil(date);
-                          }
-                        }}
-                        style={[
-                          styles.scopeChip,
-                          repeatEnds === option.value && styles.scopeChipActive,
-                        ]}
-                      >
-                        <Text
-                          style={[
-                            styles.scopeLabel,
-                            repeatEnds === option.value && styles.scopeLabelActive,
-                          ]}
-                        >
-                          {option.short}
-                        </Text>
-                      </Pressable>
-                    ))}
-                  </View>
-                </View>
-              </View>
-            )}
-
-            {repeat !== 'none' && repeatEnds === 'after' ? (
-              <>
-                <Text style={styles.label}>Occurrences</Text>
-                <TextInput
-                  keyboardType="number-pad"
-                  onChangeText={setRepeatCount}
-                  placeholder="10"
-                  style={styles.input}
-                  value={repeatCount}
-                />
-              </>
-            ) : null}
-
-            {repeat !== 'none' && repeatEnds === 'on' ? (
-              <>
-                <View style={styles.pickerRow}>
-                  <Text style={styles.label}>Ends on</Text>
-                  <DateTimePicker
-                    display="compact"
-                    mode="date"
-                    onChange={(_, picked) => picked && setRepeatUntil(toDateString(picked))}
-                    value={dateFromParts(repeatUntil || date)}
-                  />
-                </View>
-              </>
-            ) : null}
-          </>
+          <RepeatRuleChips anchorDate={date} state={model} testIDPrefix="event-repeat" />
         )}
 
         <View style={styles.pickerRow} testID="event-date">

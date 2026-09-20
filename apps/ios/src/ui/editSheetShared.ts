@@ -213,6 +213,7 @@ export const sheetStyles = StyleSheet.create({
   },
   scopeRow: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: 8,
     marginBottom: 14,
   },
@@ -272,3 +273,13 @@ export const sheetStyles = StyleSheet.create({
     marginTop: 4,
   },
 });
+
+/** A selectable chip's style: the shared scope chip, filled when active. */
+export const chip = (active: boolean) => [
+  sheetStyles.scopeChip,
+  active && sheetStyles.scopeChipActive,
+];
+export const chipLabel = (active: boolean) => [
+  sheetStyles.scopeLabel,
+  active && sheetStyles.scopeLabelActive,
+];
