@@ -7,11 +7,13 @@ import {
   useCalendars,
   useEventsInRangeStable,
   useListColorLookup,
+  useOverdueTasksStable,
   usePendingOps,
   useTaskLists,
   useBirthdaysInRangeStable,
   useTaskReadOnlyLookup,
   useTasksInRangeStable,
+  useToday,
 } from '@calendar/app-state';
 import {
   type BirthdayOccurrence,
@@ -91,6 +93,9 @@ function CalendarScreen() {
     utcMsToPlainDate(range.startUtc),
     utcMsToPlainDate(range.endUtc),
   );
+  // Open tasks due before today are drawn on today, whatever the window.
+  const today = useToday(timeZone);
+  const overdue = useOverdueTasksStable(today);
   const mutations = useGuardedMutations();
   const taskLists = useTaskLists();
   const isTaskReadOnly = useTaskReadOnlyLookup();
@@ -205,8 +210,10 @@ function CalendarScreen() {
             setFocused(date);
             switchView('day');
           }}
+          overdue={overdue}
           tasks={tasks}
           timeZone={timeZone}
+          today={today}
           yearMonth={Temporal.PlainYearMonth.from(focused)}
         />
       ) : (
@@ -253,8 +260,10 @@ function CalendarScreen() {
                 taskListId: task.listId,
               })
             }
+            overdue={overdue}
             tasks={tasks}
             timeZone={timeZone}
+            today={today}
           />
         </>
       )}

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { priorityMarker, taskChipLabel } from './taskLabel.ts';
+import { OVERDUE_MARKER, overdueLabel, priorityMarker, taskChipLabel } from './taskLabel.ts';
 
 describe('taskChipLabel', () => {
   it('prefixes time and priority marker in that order', () => {
@@ -11,10 +11,26 @@ describe('taskChipLabel', () => {
     );
   });
 
+  it('leads an overdue chip with the warning marker and drops the stale time', () => {
+    expect(
+      taskChipLabel({ dueTime: '14:00', priority: 'high', title: 'Taxes' }, { overdue: true }),
+    ).toBe(`${OVERDUE_MARKER} !!! Taxes`);
+  });
+
   it('maps priority buckets to the Reminders markers', () => {
     expect(priorityMarker(undefined)).toBe('');
     expect(priorityMarker('low')).toBe('!');
     expect(priorityMarker('medium')).toBe('!!');
     expect(priorityMarker('high')).toBe('!!!');
+  });
+});
+
+describe('overdueLabel', () => {
+  it('names the due day, adding the year only when it differs', () => {
+    expect(overdueLabel({ dueDate: '2026-09-17' }, '2026-09-20')).toBe('Overdue · due Sep 17');
+    expect(overdueLabel({ dueDate: '2025-12-30' }, '2026-01-02')).toBe(
+      'Overdue · due Dec 30, 2025',
+    );
+    expect(overdueLabel({}, '2026-09-20')).toBe('Overdue');
   });
 });

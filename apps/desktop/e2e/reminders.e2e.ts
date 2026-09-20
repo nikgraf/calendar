@@ -12,6 +12,9 @@ const isoToday = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart
 const tomorrow = new Date(today);
 tomorrow.setDate(tomorrow.getDate() + 1);
 const isoTomorrow = `${tomorrow.getFullYear()}-${String(tomorrow.getMonth() + 1).padStart(2, '0')}-${String(tomorrow.getDate()).padStart(2, '0')}`;
+const yesterday = new Date(today);
+yesterday.setDate(yesterday.getDate() - 1);
+const isoYesterday = `${yesterday.getFullYear()}-${String(yesterday.getMonth() + 1).padStart(2, '0')}-${String(yesterday.getDate()).padStart(2, '0')}`;
 
 const seed = {
   accounts: [
@@ -60,6 +63,19 @@ const seed = {
       recurrence: { freq: 'weekly', interval: 1 },
       status: 'needsAction',
       title: 'Call mom',
+      updatedAt: 1,
+    }),
+    // Yesterday is always inside the rendered strip (two buffer days precede
+    // the week), so a stale timed block on its own day would be in the DOM.
+    new TaskRecord({
+      accountId: APPLE_REMINDERS_ACCOUNT_ID,
+      dueDate: isoYesterday,
+      dueTime: '09:00',
+      id: 'ek-rem-overdue',
+      listId: 'ek-list-1',
+      provider: 'apple',
+      status: 'needsAction',
+      title: 'Overdue call',
       updatedAt: 1,
     }),
     new TaskRecord({
@@ -117,6 +133,17 @@ const remindersFixture: RemindersFixture = {
     {
       alarms: [],
       completed: false,
+      dueDate: isoYesterday,
+      dueTime: '09:00',
+      id: 'ek-rem-overdue',
+      listId: 'ek-list-1',
+      priority: 0,
+      title: 'Overdue call',
+      updatedAt: 1,
+    },
+    {
+      alarms: [],
+      completed: false,
       dueDate: isoToday,
       id: 'ek-rem-ro',
       listId: 'ek-list-ro',
@@ -164,6 +191,51 @@ describe('Apple Reminders UI', () => {
     expect(await cdp.locate('[title="Bin day"]')).toBeTruthy();
     const sidebar = await cdp.waitFor<string>('document.body.textContent ?? ""');
     expect(sidebar).toContain('Apple Reminders');
+  });
+
+  it('draws an overdue timed reminder as a marked all-day chip on today only', async () => {
+    const { cdp } = app;
+    const chip = await cdp.locate('[data-overdue][title^="Overdue call"]');
+    expect(chip).toBeTruthy();
+    // Overdue chips join the all-day lane in today's column; the past day
+    // keeps no timed block for it.
+    expect(
+      await cdp.eval(`!!document.querySelector('[data-testid="timed-task-ek-rem-overdue"]')`),
+    ).toBe(false);
+    expect(
+      await cdp.eval<number>(`document.querySelectorAll('[title^="Overdue call"]').length`),
+    ).toBe(1);
+    const facts = await cdp.eval<string>(`(() => {
+      const chip = document.querySelector('[data-overdue][title^="Overdue call"]');
+      const todayCell = document.querySelector('.bg-red-500')?.closest('.h-10');
+      const chipRect = chip.getBoundingClientRect();
+      const cellRect = todayCell.getBoundingClientRect();
+      return JSON.stringify({
+        inTodayColumn: chipRect.left >= cellRect.left - 1 && chipRect.right <= cellRect.right + 1,
+        label: chip.textContent,
+        tooltip: chip.getAttribute('title'),
+      });
+    })()`);
+    const { inTodayColumn, label, tooltip } = JSON.parse(facts) as {
+      inTodayColumn: boolean;
+      label: string;
+      tooltip: string;
+    };
+    expect(inTodayColumn).toBe(true);
+    expect(label).toContain('\u26a0');
+    expect(label).not.toContain('09:00');
+    expect(tooltip).toMatch(/Overdue call · Overdue · due /);
+
+    // Completing it from the chip clears the overdue state.
+    const complete = await cdp.locate('button[aria-label="Complete task Overdue call"]');
+    await cdp.click(complete.x, complete.y);
+    await expect
+      .poll(async () =>
+        (await readTasks(app.userDataDir)).find((task) => task.id === 'ek-rem-overdue'),
+      )
+      .toMatchObject({ status: 'completed' });
+    await cdp.waitFor(`!document.querySelector('[data-overdue][title^="Overdue call"]')`);
+    expect(await cdp.eval(`document.body.textContent.includes('Edit reminder')`)).toBe(false);
   });
 
   it('completes a timed reminder from its checkbox without opening the editor', async () => {

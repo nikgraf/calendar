@@ -62,8 +62,10 @@ export function WeekView({
   onSlotDrag,
   onTaskClick,
   onToggleTask,
+  overdue,
   tasks,
   timeZone,
+  today: todayIso,
 }: {
   birthdays: ReadonlyArray<BirthdayOccurrence>;
   colorOf: ColorLookup;
@@ -82,14 +84,18 @@ export function WeekView({
   ) => void;
   onTaskClick: (task: TaskRecord) => void;
   onToggleTask: (task: TaskRecord) => void;
+  /** Open tasks due before today; drawn as overdue chips on today's column. */
+  overdue: ReadonlyArray<TaskRecord>;
   tasks: ReadonlyArray<TaskRecord>;
   timeZone: string;
+  /** Today's ISO date (rolls at local midnight). */
+  today: string;
 }) {
   const rootRef = useRef<HTMLDivElement>(null);
   const viewportRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const gridRef = useRef<HTMLDivElement>(null);
-  const today = Temporal.Now.plainDateISO(timeZone);
+  const today = Temporal.PlainDate.from(todayIso);
 
   // The pan strip renders buffer columns on both sides of the visible days
   // so horizontal panning reveals fully drawn neighbours.
@@ -102,7 +108,10 @@ export function WeekView({
     width: `${(strip.length / days.length) * 100}%`,
   };
 
-  const calendarTasks = useMemo(() => partitionCalendarTasks(tasks), [tasks]);
+  const calendarTasks = useMemo(
+    () => partitionCalendarTasks([...tasks, ...overdue], todayIso),
+    [tasks, overdue, todayIso],
+  );
   const timedTaskLayout = useMemo(() => {
     const byDay = new Map<string, Array<TimedBox>>();
     const byId = new Map<string, TaskRecord>();
@@ -176,7 +185,20 @@ export function WeekView({
       ? []
       : [{ endDayIndex: index + 1, id: calendarTaskKey(task), startDayIndex: index }];
   });
-  const taskById = new Map(calendarTasks.allDay.map((task) => [calendarTaskKey(task), task]));
+  // Overdue tasks sit on today's column, whatever their due day.
+  const todayIndex = dayIndexOf(todayIso, strip);
+  const overdueSpans =
+    todayIndex === -1
+      ? []
+      : calendarTasks.overdue.map((task) => ({
+          endDayIndex: todayIndex + 1,
+          id: calendarTaskKey(task),
+          startDayIndex: todayIndex,
+        }));
+  const overdueKeys = new Set(calendarTasks.overdue.map(calendarTaskKey));
+  const taskById = new Map(
+    calendarTasks.allDay.concat(calendarTasks.overdue).map((task) => [calendarTaskKey(task), task]),
+  );
 
   // Birthdays are one-day spans like tasks.
   const birthdaySpans = birthdays.flatMap((birthday) => {
@@ -188,7 +210,8 @@ export function WeekView({
   const birthdayById = new Map(birthdays.map((birthday) => [birthdayKey(birthday), birthday]));
 
   const { placed: allDayPlaced, rowCount } = layoutAllDayLane(
-    taskSpans.concat(
+    overdueSpans.concat(
+      taskSpans,
       birthdaySpans,
       allDayEvents.map((event) => {
         const startIndex = event.startDate ? dayIndexOf(event.startDate, strip) : -1;
@@ -236,12 +259,14 @@ export function WeekView({
         onEventClick={onEventClick}
         onTaskClick={onTaskClick}
         onToggleTask={onToggleTask}
+        overdueKeys={overdueKeys}
         placed={allDayPlaced}
         rowCount={rowCount}
         scrollbarWidth={scrollbarWidth}
         stripLength={strip.length}
         stripStyle={stripStyle}
         taskById={taskById}
+        today={todayIso}
       />
 
       {/* Timed grid */}

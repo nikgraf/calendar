@@ -3,6 +3,7 @@ import {
   type BirthdayOccurrence,
   birthdayChipLabel,
   type EventRecord,
+  overdueLabel,
   type PlacedSpan,
   taskChipLabel,
   type TaskRecord,
@@ -24,12 +25,14 @@ export function AllDayLane({
   onEventClick,
   onTaskClick,
   onToggleTask,
+  overdueKeys,
   placed,
   rowCount,
   scrollbarWidth,
   stripLength,
   stripStyle,
   taskById,
+  today,
 }: {
   allDayById: ReadonlyMap<string, EventRecord>;
   birthdayById: ReadonlyMap<string, BirthdayOccurrence>;
@@ -39,12 +42,15 @@ export function AllDayLane({
   onEventClick: (event: EventRecord) => void;
   onTaskClick: (task: TaskRecord) => void;
   onToggleTask: (task: TaskRecord) => void;
+  /** Task keys drawn on today because their due day has passed. */
+  overdueKeys: ReadonlySet<string>;
   placed: ReadonlyArray<PlacedSpan>;
   rowCount: number;
   scrollbarWidth: number;
   stripLength: number;
   stripStyle: CSSProperties;
   taskById: ReadonlyMap<string, TaskRecord>;
+  today: string;
 }) {
   return (
     <div
@@ -58,9 +64,15 @@ export function AllDayLane({
             const task = taskById.get(span.id);
             if (task) {
               const done = task.status === 'completed';
+              const overdue = overdueKeys.has(span.id);
+              const label = taskChipLabel(task, { overdue });
               return (
                 <div
-                  className={`absolute flex cursor-pointer items-center gap-1 truncate rounded border border-neutral-300 bg-neutral-50 px-1 text-xs leading-5 text-neutral-700 ${done ? 'opacity-50' : ''}`}
+                  aria-label={overdue ? `${task.title}, ${overdueLabel(task, today)}` : undefined}
+                  className={`absolute flex cursor-pointer items-center gap-1 truncate rounded border border-neutral-300 bg-neutral-50 px-1 text-xs leading-5 ${
+                    overdue ? 'text-red-600' : 'text-neutral-700'
+                  } ${done ? 'opacity-50' : ''}`}
+                  data-overdue={overdue ? '' : undefined}
                   key={span.id}
                   onClick={() => onTaskClick(task)}
                   style={{
@@ -73,7 +85,7 @@ export function AllDayLane({
                     top: span.row * 24 + 4,
                     width: `calc(${((span.endDayIndex - span.startDayIndex) / stripLength) * 100}% - 4px)`,
                   }}
-                  title={task.title}
+                  title={overdue ? `${task.title} · ${overdueLabel(task, today)}` : task.title}
                 >
                   <button
                     aria-label={done ? `Reopen task ${task.title}` : `Complete task ${task.title}`}
@@ -86,9 +98,7 @@ export function AllDayLane({
                   >
                     {done ? '☑' : '☐'}
                   </button>
-                  <span className={`truncate ${done ? 'line-through' : ''}`}>
-                    {taskChipLabel(task)}
-                  </span>
+                  <span className={`truncate ${done ? 'line-through' : ''}`}>{label}</span>
                 </div>
               );
             }

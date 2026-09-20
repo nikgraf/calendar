@@ -57,6 +57,7 @@ const stubHandlers: BackendHandlers = {
     Effect.succeed({ enabled: false, leadDays: [0 as const], time: '09:00' }),
   getBirthdaysInRange: () => Effect.succeed([]),
   getEventsInRange: () => Effect.succeed([]),
+  getOverdueTasks: () => Effect.succeed([]),
   getTasksInRange: () => Effect.succeed([]),
   listAccounts: () => Effect.succeed([account]),
   listCalendars: () => Effect.succeed([]),

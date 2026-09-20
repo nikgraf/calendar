@@ -55,6 +55,7 @@ export interface BackendAtoms {
   readonly locationGeo: ReturnType<typeof buildAtoms>['locationGeo'];
   readonly mapSnapshot: ReturnType<typeof buildAtoms>['mapSnapshot'];
   readonly mutations: ReturnType<typeof buildAtoms>['mutations'];
+  readonly overdueTasks: ReturnType<typeof buildAtoms>['overdueTasks'];
   readonly pendingOps: ReturnType<typeof buildAtoms>['pendingOps'];
   readonly placesSearch: ReturnType<typeof buildAtoms>['placesSearch'];
   readonly syncStatus: ReturnType<typeof buildAtoms>['syncStatus'];
@@ -192,6 +193,19 @@ const buildAtoms = (client: BackendClient) => {
       )
       .pipe(Atom.withReactivity([TASKS_KEY]));
   });
+
+  // Keyed by today's date: open tasks due before it, drawn on today. Rolls
+  // to a new key at local midnight (useToday) and refetches on TASKS_KEY.
+  const overdueTasks = boundedAtomCache((before) =>
+    runtime
+      .atom(
+        Effect.gen(function* () {
+          const backend = yield* AppBackend;
+          return yield* backend.getOverdueTasks({ before });
+        }),
+      )
+      .pipe(Atom.withReactivity([TASKS_KEY])),
+  );
 
   // Keyed per setting: the reminder scheduler's own bookkeeping rows never
   // refetch this.
@@ -335,6 +349,7 @@ const buildAtoms = (client: BackendClient) => {
     locationGeo,
     mapSnapshot,
     mutations,
+    overdueTasks,
     pendingOps,
     placesSearch,
     syncStatus,

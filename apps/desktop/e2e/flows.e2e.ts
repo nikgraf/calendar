@@ -32,9 +32,12 @@ const todayAt = (hour: number, minute = 0): number => {
  * the day in the machine's zone, and between local midnight and UTC
  * midnight the UTC date is still yesterday (CI runs in UTC; dev does not).
  */
-const todayLocalIso = (): string => {
-  const now = new Date();
-  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+const todayLocalIso = (): string => localIsoDaysAgo(0);
+/** The local ISO date `days` before today. */
+const localIsoDaysAgo = (days: number): string => {
+  const date = new Date();
+  date.setDate(date.getDate() - days);
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 };
 
 // The daily series starts three days back so several instances are visible
@@ -152,6 +155,29 @@ const seed = {
       provider: 'google',
       status: 'needsAction',
       title: 'Pay rent',
+      updatedAt: 1,
+    }),
+    // Both past days sit inside the rendered strip (two buffer days precede
+    // the week), so a chip left on its own day would still be in the DOM.
+    new TaskRecord({
+      accountId: 'acc-e2e',
+      dueDate: localIsoDaysAgo(2),
+      id: 'task-overdue',
+      listId: 'list-e2e',
+      provider: 'google',
+      status: 'needsAction',
+      title: 'Old chore',
+      updatedAt: 1,
+    }),
+    new TaskRecord({
+      accountId: 'acc-e2e',
+      completedAt: 1,
+      dueDate: localIsoDaysAgo(1),
+      id: 'task-done-old',
+      listId: 'list-e2e',
+      provider: 'google',
+      status: 'completed',
+      title: 'Done chore',
       updatedAt: 1,
     }),
   ],
@@ -907,6 +933,30 @@ describe('calendar desktop e2e', () => {
     await cdp.waitFor(
       `!document.body.textContent.includes('on-device model is unavailable') &&
        !document.querySelector('input[placeholder="Lunch with Sarah tomorrow at 1"]')`,
+    );
+  });
+
+  it('moves an overdue task onto today and leaves a completed past task alone', async () => {
+    const { cdp } = app;
+    await cdp.locate('[data-overdue][title^="Old chore"]');
+    // Once in the DOM: on today, not also on its own past day.
+    expect(await cdp.eval<number>(`document.querySelectorAll('[title^="Old chore"]').length`)).toBe(
+      1,
+    );
+    const inTodayColumn = await cdp.eval<boolean>(`(() => {
+      const chip = document.querySelector('[data-overdue][title^="Old chore"]');
+      const cell = document.querySelector('.bg-red-500')?.closest('.h-10');
+      const chipRect = chip.getBoundingClientRect();
+      const cellRect = cell.getBoundingClientRect();
+      return chipRect.left >= cellRect.left - 1 && chipRect.right <= cellRect.right + 1;
+    })()`);
+    expect(inTodayColumn).toBe(true);
+    // A completed task stays on its past day without the overdue marker.
+    expect(await cdp.eval<number>(`document.querySelectorAll('[title="Done chore"]').length`)).toBe(
+      1,
+    );
+    expect(await cdp.eval(`!!document.querySelector('[data-overdue][title^="Done chore"]')`)).toBe(
+      false,
     );
   });
 

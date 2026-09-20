@@ -8,6 +8,8 @@ import {
   groupByDate,
   groupEventsByDay,
   monthCellLabel,
+  overdueLabel,
+  partitionCalendarTasks,
   taskChipLabel,
   type TaskRecord,
   Temporal,
@@ -32,8 +34,10 @@ export function MonthView({
   events,
   listColorOf,
   onSelectDay,
+  overdue,
   tasks,
   timeZone,
+  today: todayIso,
   yearMonth,
 }: {
   birthdays: ReadonlyArray<BirthdayOccurrence>;
@@ -41,11 +45,14 @@ export function MonthView({
   events: ReadonlyArray<EventRecord>;
   listColorOf: (task: TaskRecord) => string | undefined;
   onSelectDay: (date: Temporal.PlainDate) => void;
+  /** Open tasks due before today; listed on today's cell, not on their past day. */
+  overdue: ReadonlyArray<TaskRecord>;
   tasks: ReadonlyArray<TaskRecord>;
   timeZone: string;
+  today: string;
   yearMonth: Temporal.PlainYearMonth;
 }) {
-  const today = Temporal.Now.plainDateISO(timeZone);
+  const today = Temporal.PlainDate.from(todayIso);
   const weeks = buildMonthGrid(yearMonth, today);
 
   // One pass over each kind, not one filter + sort per cell.
@@ -54,7 +61,12 @@ export function MonthView({
     weeks.flat().map((cell) => cell.date),
     timeZone,
   );
-  const tasksByDay = groupByDate(tasks, (task) => task.dueDate);
+  const calendarTasks = partitionCalendarTasks([...tasks, ...overdue], todayIso);
+  const tasksByDay = groupByDate(
+    calendarTasks.allDay.concat(calendarTasks.timed),
+    (task) => task.dueDate,
+  );
+  const overdueKeys = new Set(calendarTasks.overdue.map(calendarTaskKey));
   const birthdaysByDay = groupByDate(birthdays, (birthday) => birthday.date);
 
   return (
@@ -74,7 +86,7 @@ export function MonthView({
           const iso = date.toString();
           const dayEvents = eventsByDay.get(iso) ?? [];
           const dayBirthdays = birthdaysByDay.get(iso) ?? [];
-          const dayTasks = tasksByDay.get(iso) ?? [];
+          const dayTasks = (isToday ? calendarTasks.overdue : []).concat(tasksByDay.get(iso) ?? []);
           const items: ReadonlyArray<CellItem> = [
             ...dayEvents.map((event): CellItem => ({ event, kind: 'event' })),
             ...dayBirthdays.map((birthday): CellItem => ({ birthday, kind: 'birthday' })),
@@ -110,24 +122,28 @@ export function MonthView({
                 if (item.kind === 'task') {
                   const { task } = item;
                   const done = task.status === 'completed';
+                  const isOverdue = overdueKeys.has(calendarTaskKey(task));
                   // The list accent only where the lane draws one: a
                   // colored Reminders list. Google lists stay neutral.
                   const listColor = listColorOf(task);
                   return (
                     <span
-                      className={`truncate rounded border border-neutral-300 bg-neutral-50 px-1 text-[11px] leading-4 text-neutral-700 ${
-                        done ? 'opacity-50' : ''
-                      }`}
+                      className={`truncate rounded border border-neutral-300 bg-neutral-50 px-1 text-[11px] leading-4 ${
+                        isOverdue ? 'text-red-600' : 'text-neutral-700'
+                      } ${done ? 'opacity-50' : ''}`}
+                      data-overdue={isOverdue ? '' : undefined}
                       key={calendarTaskKey(task)}
                       style={
                         listColor === undefined
                           ? undefined
                           : { borderLeftColor: listColor, borderLeftWidth: 3 }
                       }
-                      title={task.title}
+                      title={
+                        isOverdue ? `${task.title} · ${overdueLabel(task, todayIso)}` : task.title
+                      }
                     >
                       <span className={done ? 'line-through' : ''}>
-                        {done ? '☑' : '☐'} {taskChipLabel(task)}
+                        {done ? '☑' : '☐'} {taskChipLabel(task, { overdue: isOverdue })}
                       </span>
                     </span>
                   );

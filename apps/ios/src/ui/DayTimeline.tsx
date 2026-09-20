@@ -2,6 +2,7 @@ import { useGuardedMutations } from '@calendar/app-state';
 import {
   type BirthdayOccurrence,
   bufferedDays,
+  calendarTaskKey,
   type EventRecord,
   groupByDate,
   groupEventsByDay,
@@ -61,8 +62,10 @@ export function DayTimeline({
   onNavigate,
   onTaskPress,
   onToggleTask,
+  overdue,
   tasks,
   timeZone,
+  today: todayIso,
 }: {
   birthdays: ReadonlyArray<BirthdayOccurrence>;
   buffer: number;
@@ -82,8 +85,12 @@ export function DayTimeline({
   onNavigate: (direction: 1 | -1) => void;
   onTaskPress: (task: TaskRecord) => void;
   onToggleTask: (task: TaskRecord) => void;
+  /** Open tasks due before today; drawn as overdue chips in today's column. */
+  overdue: ReadonlyArray<TaskRecord>;
   tasks: ReadonlyArray<TaskRecord>;
   timeZone: string;
+  /** Today's ISO date (rolls at local midnight). */
+  today: string;
 }) {
   const scrollRef = useRef<ScrollView>(null);
   const { updateEvent, updateRecurring, updateTask } = useGuardedMutations();
@@ -92,7 +99,7 @@ export function DayTimeline({
   const panX = useSharedValue(0);
   const compact = days.length > 1;
   const columnWidth = pageWidth / days.length;
-  const today = Temporal.Now.plainDateISO(timeZone);
+  const today = Temporal.PlainDate.from(todayIso);
 
   const commitChange = (event: EventRecord, changes: { endUtc?: number; startUtc?: number }) => {
     if (event.recurringEventId) {
@@ -130,9 +137,20 @@ export function DayTimeline({
   const strip = useMemo(() => bufferedDays(days[0]!, days.length, buffer), [days, buffer]);
   // One pass over the window's events, not one filter per column.
   const byDay = useMemo(() => groupEventsByDay(events, strip, timeZone), [events, strip, timeZone]);
-  const calendarTasks = useMemo(() => partitionCalendarTasks(tasks), [tasks]);
-  const tasksByDay = useMemo(
-    () => groupByDate(calendarTasks.allDay, (task) => task.dueDate),
+  const calendarTasks = useMemo(
+    () => partitionCalendarTasks([...tasks, ...overdue], todayIso),
+    [tasks, overdue, todayIso],
+  );
+  // Overdue chips lead today's column, whatever their own due day.
+  const tasksByDay = useMemo(() => {
+    const byDay = new Map(groupByDate(calendarTasks.allDay, (task) => task.dueDate));
+    if (calendarTasks.overdue.length > 0) {
+      byDay.set(todayIso, calendarTasks.overdue.concat(byDay.get(todayIso) ?? []));
+    }
+    return byDay;
+  }, [calendarTasks, todayIso]);
+  const overdueKeys = useMemo(
+    () => new Set(calendarTasks.overdue.map(calendarTaskKey)),
     [calendarTasks],
   );
   const timedTasksByDay = useMemo(
@@ -241,7 +259,9 @@ export function DayTimeline({
                   onShowMore={() => setExpanded(true)}
                   onTaskPress={onTaskPress}
                   onToggleTask={onToggleTask}
+                  overdueKeys={overdueKeys}
                   tasks={tasksByDay.get(iso) ?? []}
+                  today={todayIso}
                   width={columnWidth}
                 />
               );

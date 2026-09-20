@@ -53,6 +53,7 @@ const makeStubClient = () => {
         calls.events += 1;
         return [] as ReadonlyArray<EventRecord>;
       }),
+    getOverdueTasks: () => Effect.succeed([]),
     getTasksInRange: () => Effect.succeed([]),
     listAccounts: () =>
       Effect.sync(() => {

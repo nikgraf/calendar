@@ -14,6 +14,7 @@ import type {
   TaskListInfo,
   TaskRecord,
 } from '@calendar/core';
+import { msUntilNextMidnight, Temporal } from '@calendar/core';
 import { RegistryContext, useAtomValue } from '@effect/atom-react';
 import { Cause, Effect, Exit, Option } from 'effect';
 import { AsyncResult, type Atom, AtomRegistry } from 'effect/unstable/reactivity';
@@ -196,6 +197,40 @@ export const useTasksInRangeStable = (
     setPrevious(value.value);
   }
   return Option.isSome(value) ? value.value : previous;
+};
+
+/**
+ * Open tasks due before `before` (today's 'YYYY-MM-DD'), for the overdue
+ * chips on today; keep-previous like useTasksInRangeStable.
+ */
+export const useOverdueTasksStable = (before: string): ReadonlyArray<TaskRecord> => {
+  const atoms = useBackendAtoms();
+  const result = useAtomValue(atoms.overdueTasks(before));
+  const value = AsyncResult.value(result);
+  const [previous, setPrevious] = useState<ReadonlyArray<TaskRecord>>([]);
+  if (Option.isSome(value) && value.value !== previous) {
+    // Render-phase state adjustment (the React "derive from props" pattern).
+    setPrevious(value.value);
+  }
+  return Option.isSome(value) ? value.value : previous;
+};
+
+/**
+ * Today's ISO date in `timeZone`, re-read at the next local midnight (one
+ * timer, not a minute tick — the grid must not re-render every minute).
+ */
+export const useToday = (timeZone: string): string => {
+  const [today, setToday] = useState(() => Temporal.Now.plainDateISO(timeZone).toString());
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const arm = () => {
+      setToday(Temporal.Now.plainDateISO(timeZone).toString());
+      timer = setTimeout(arm, msUntilNextMidnight(timeZone, Date.now()));
+    };
+    timer = setTimeout(arm, msUntilNextMidnight(timeZone, Date.now()));
+    return () => clearTimeout(timer);
+  }, [timeZone]);
+  return today;
 };
 
 /**

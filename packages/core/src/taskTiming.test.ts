@@ -5,6 +5,7 @@ import { TaskRecord } from './types.ts';
 import {
   TIMED_TASK_LAYOUT_MINUTES,
   calendarTaskKey,
+  isOverdue,
   moveTimedTask,
   partitionCalendarTasks,
   timedTaskSlot,
@@ -31,8 +32,53 @@ describe('partitionCalendarTasks', () => {
 
     expect(partitionCalendarTasks([dateOnly, timed, undated])).toEqual({
       allDay: [dateOnly],
+      overdue: [],
       timed: [timed],
     });
+  });
+
+  it('moves open tasks due before today into the overdue set, timed or not', () => {
+    const pastTimed = task({ dueDate: '2026-03-20', dueTime: '09:00', id: 'past-timed' });
+    const pastDateOnly = task({ dueDate: '2026-03-27', id: 'past' });
+    const todayTask = task({ id: 'today' });
+    const done = task({ dueDate: '2026-03-01', id: 'done', status: 'completed' });
+
+    expect(
+      partitionCalendarTasks([todayTask, pastDateOnly, pastTimed, done], '2026-03-28'),
+    ).toEqual({
+      allDay: [todayTask, done],
+      overdue: [pastTimed, pastDateOnly],
+      timed: [],
+    });
+  });
+
+  it('sorts overdue tasks by due date, time and title', () => {
+    const b = task({ dueDate: '2026-03-27', id: 'b', title: 'Beta' });
+    const a = task({ dueDate: '2026-03-27', id: 'a', title: 'Alpha' });
+    const early = task({ dueDate: '2026-03-27', dueTime: '08:00', id: 'early', title: 'Zulu' });
+    const older = task({ dueDate: '2026-03-01', id: 'older', title: 'Yankee' });
+
+    expect(
+      partitionCalendarTasks([b, a, early, older], '2026-03-28').overdue.map((t) => t.id),
+    ).toEqual(['older', 'a', 'b', 'early']);
+  });
+
+  it('de-duplicates a task the range and overdue queries both returned', () => {
+    const past = task({ dueDate: '2026-03-27', id: 'past' });
+    const partition = partitionCalendarTasks([past, past, task()], '2026-03-28');
+    expect(partition.overdue).toEqual([past]);
+    expect(partition.allDay).toHaveLength(1);
+  });
+});
+
+describe('isOverdue', () => {
+  it('is true only for an open task with a due day before today', () => {
+    expect(isOverdue(task({ dueDate: '2026-03-27' }), '2026-03-28')).toBe(true);
+    expect(isOverdue(task({ dueDate: '2026-03-28' }), '2026-03-28')).toBe(false);
+    expect(isOverdue(task({ dueDate: '2026-03-27', status: 'completed' }), '2026-03-28')).toBe(
+      false,
+    );
+    expect(isOverdue(task({ dueDate: undefined }), '2026-03-28')).toBe(false);
   });
 });
 

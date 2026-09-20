@@ -8,22 +8,53 @@ export const TIMED_TASK_LAYOUT_MINUTES = 30;
 export const calendarTaskKey = (task: Pick<TaskRecord, 'accountId' | 'id' | 'listId'>): string =>
   `task:${task.accountId}:${task.listId}:${task.id}`;
 
+/** An open task whose due day has passed (both dates are 'YYYY-MM-DD', so string order is date order). */
+export const isOverdue = (task: Pick<TaskRecord, 'dueDate' | 'status'>, today: string): boolean =>
+  task.status === 'needsAction' && task.dueDate !== undefined && task.dueDate < today;
+
+/**
+ * Splits the calendar's tasks into the all-day lane, the timed grid and —
+ * given `today` — the overdue set: open tasks due before today, timed or
+ * not, which the lanes draw on today instead of on their own past day.
+ * The in-range and overdue queries overlap when a past due day is inside
+ * the rendered strip, so tasks are de-duplicated by key first.
+ */
 export const partitionCalendarTasks = (
   tasks: ReadonlyArray<TaskRecord>,
-): { readonly allDay: Array<TaskRecord>; readonly timed: Array<TaskRecord> } => {
+  today?: string,
+): {
+  readonly allDay: Array<TaskRecord>;
+  readonly overdue: Array<TaskRecord>;
+  readonly timed: Array<TaskRecord>;
+} => {
   const allDay: Array<TaskRecord> = [];
+  const overdue: Array<TaskRecord> = [];
   const timed: Array<TaskRecord> = [];
+  const seen = new Set<string>();
   for (const task of tasks) {
     if (task.dueDate === undefined) {
       continue;
     }
-    if (task.dueTime === undefined) {
+    const key = calendarTaskKey(task);
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    if (today !== undefined && isOverdue(task, today)) {
+      overdue.push(task);
+    } else if (task.dueTime === undefined) {
       allDay.push(task);
     } else {
       timed.push(task);
     }
   }
-  return { allDay, timed };
+  overdue.sort(
+    (a, b) =>
+      a.dueDate!.localeCompare(b.dueDate!) ||
+      (a.dueTime ?? '').localeCompare(b.dueTime ?? '') ||
+      a.title.localeCompare(b.title),
+  );
+  return { allDay, overdue, timed };
 };
 
 const DAY_MINUTES = 24 * 60;

@@ -35,4 +35,5 @@ export * from './time/dragMath.ts';
 export * from './time/ranges.ts';
 export * from './time/slotSelection.ts';
 export * from './time/temporal.ts';
+export * from './time/today.ts';
 export * from './types.ts';

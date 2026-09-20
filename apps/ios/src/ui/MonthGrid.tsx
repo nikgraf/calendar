@@ -7,6 +7,7 @@ import {
   groupByDate,
   groupEventsByDay,
   monthCellLabel,
+  partitionCalendarTasks,
   type TaskRecord,
   Temporal,
 } from '@calendar/core';
@@ -28,8 +29,10 @@ export function MonthGrid({
   events,
   listColorOf,
   onSelectDay,
+  overdue,
   tasks,
   timeZone,
+  today: todayIso,
   yearMonth,
 }: {
   birthdays: ReadonlyArray<BirthdayOccurrence>;
@@ -37,11 +40,14 @@ export function MonthGrid({
   events: ReadonlyArray<EventRecord>;
   listColorOf: (task: TaskRecord) => string | undefined;
   onSelectDay: (date: Temporal.PlainDate) => void;
+  /** Open tasks due before today; dotted on today's cell, not on their past day. */
+  overdue: ReadonlyArray<TaskRecord>;
   tasks: ReadonlyArray<TaskRecord>;
   timeZone: string;
+  today: string;
   yearMonth: Temporal.PlainYearMonth;
 }) {
-  const today = Temporal.Now.plainDateISO(timeZone);
+  const today = Temporal.PlainDate.from(todayIso);
   const weeks = buildMonthGrid(yearMonth, today);
 
   // One pass over each kind, not one filter + sort per cell.
@@ -50,15 +56,26 @@ export function MonthGrid({
     weeks.flat().map((cell) => cell.date),
     timeZone,
   );
-  const tasksByDay = groupByDate(tasks, (task) => task.dueDate);
+  const calendarTasks = partitionCalendarTasks([...tasks, ...overdue], todayIso);
+  const tasksByDay = groupByDate(
+    calendarTasks.allDay.concat(calendarTasks.timed),
+    (task) => task.dueDate,
+  );
+  const overdueKeys = new Set(calendarTasks.overdue.map(calendarTaskKey));
   const birthdaysByDay = groupByDate(birthdays, (birthday) => birthday.date);
 
   // An outlined ring, like the lane's checkbox glyph: a task is not a
   // calendar color. The ring takes the Reminders list color where the lane
-  // draws that accent; Google lists stay neutral. Done tasks fade.
+  // draws that accent; Google lists stay neutral. Done tasks fade; an
+  // overdue task on today's cell rings red like its chip.
   const taskDot = (task: TaskRecord): ViewStyle => ({
     backgroundColor: 'transparent',
-    borderColor: task.status === 'completed' ? palette.textFaint : (listColorOf(task) ?? '#525252'),
+    borderColor:
+      task.status === 'completed'
+        ? palette.textFaint
+        : overdueKeys.has(calendarTaskKey(task))
+          ? palette.overdue
+          : (listColorOf(task) ?? '#525252'),
     borderWidth: 1,
   });
 
@@ -77,7 +94,9 @@ export function MonthGrid({
             const iso = date.toString();
             const dayEvents = eventsByDay.get(iso) ?? [];
             const dayBirthdays = birthdaysByDay.get(iso) ?? [];
-            const dayTasks = tasksByDay.get(iso) ?? [];
+            const dayTasks = (isToday ? calendarTasks.overdue : []).concat(
+              tasksByDay.get(iso) ?? [],
+            );
             const dots: Array<Dot> = [
               ...dayEvents.map((event) => ({
                 key: `${event.calendarId}:${event.id}`,

@@ -220,6 +220,12 @@ export const commonBackendHandlers: Omit<BackendHandlers<CommonBackendServices>,
         : [...result, ...apple].sort((a, b) => a.startUtc - b.startUtc);
     }),
 
+  getOverdueTasks: ({ before }) =>
+    Effect.gen(function* () {
+      const taskRepo = yield* TaskRepo;
+      return yield* taskRepo.getOverdue(before);
+    }),
+
   getTasksInRange: ({ endDate, startDate }) =>
     Effect.gen(function* () {
       const taskRepo = yield* TaskRepo;

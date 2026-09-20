@@ -216,6 +216,12 @@ export class AppBackendRpcs extends RpcGroup.make(
     payload: { rangeEndUtc: Schema.Number, rangeStartUtc: Schema.Number },
     success: Schema.Array(EventRecord),
   }),
+  Rpc.make('getOverdueTasks', {
+    error: BackendError,
+    /** Open tasks due strictly before `before` ('YYYY-MM-DD'), visible lists only; drawn on today. */
+    payload: { before: Schema.String },
+    success: Schema.Array(TaskRecord),
+  }),
   Rpc.make('getTasksInRange', {
     error: BackendError,
     /** Due-day window, inclusive 'YYYY-MM-DD' bounds (tasks are date-only). */

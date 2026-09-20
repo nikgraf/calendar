@@ -4,6 +4,7 @@ import {
   birthdayChipLabel,
   calendarTaskKey,
   type EventRecord,
+  overdueLabel,
   taskChipLabel,
   type TaskRecord,
 } from '@calendar/core';
@@ -28,7 +29,9 @@ export function AllDayColumn({
   onShowMore,
   onTaskPress,
   onToggleTask,
+  overdueKeys,
   tasks,
+  today,
   width,
 }: {
   /** Birthdays falling on this day. */
@@ -44,8 +47,11 @@ export function AllDayColumn({
   onShowMore: () => void;
   onTaskPress: (task: TaskRecord) => void;
   onToggleTask: (task: TaskRecord) => void;
+  /** Task keys drawn here because their due day has passed (today's column only). */
+  overdueKeys: ReadonlySet<string>;
   /** Tasks due on this day. */
   tasks: ReadonlyArray<TaskRecord>;
+  today: string;
   width: number;
 }) {
   const total = tasks.length + birthdays.length + events.length;
@@ -63,6 +69,7 @@ export function AllDayColumn({
     <View style={[styles.allDayColumn, { width }]}>
       {visibleTasks.map((task) => {
         const done = task.status === 'completed';
+        const overdue = overdueKeys.has(calendarTaskKey(task));
         const listColor = listColorOf(task);
         return (
           <View
@@ -92,6 +99,9 @@ export function AllDayColumn({
               <Text style={styles.taskCheckbox}>{done ? '☑' : '☐'}</Text>
             </Pressable>
             <Pressable
+              accessibilityLabel={
+                overdue ? `${task.title}, ${overdueLabel(task, today)}` : undefined
+              }
               hitSlop={4}
               onPress={() => onTaskPress(task)}
               style={styles.taskBody}
@@ -103,10 +113,11 @@ export function AllDayColumn({
                   styles.allDayText,
                   compact && styles.allDayTextCompact,
                   styles.taskText,
+                  overdue && styles.taskTextOverdue,
                   done && styles.taskTextDone,
                 ]}
               >
-                {taskChipLabel(task)}
+                {taskChipLabel(task, { overdue })}
               </Text>
             </Pressable>
           </View>
@@ -233,5 +244,8 @@ const styles = StyleSheet.create({
   },
   taskTextDone: {
     textDecorationLine: 'line-through',
+  },
+  taskTextOverdue: {
+    color: palette.overdue,
   },
 });
