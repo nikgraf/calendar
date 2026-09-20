@@ -42,6 +42,25 @@ tags:
     id: 'reminder-timed'
 - assertVisible:
     id: 'reminder-time'
+# A monthly "2nd Tuesday" rule: these chips set rather than toggle, so the
+# steps hold on any date (weekday chips start on today's weekday).
+- scrollUntilVisible:
+    element:
+      id: 'reminder-repeat-monthly'
+    direction: DOWN
+- tapOn:
+    id: 'reminder-repeat-monthly'
+- tapOn:
+    id: 'reminder-repeat-monthly-weekday'
+- tapOn:
+    id: 'reminder-repeat-ordinal-2'
+- tapOn:
+    id: 'reminder-repeat-ordinal-weekday-TU'
+- assertVisible: 'Monthly on the 2nd Tuesday.*'
+- scrollUntilVisible:
+    element:
+      id: 'task-title'
+    direction: UP
 - tapOn:
     id: 'task-title'
 - inputText: 'Solunivo ci reminder'
@@ -61,6 +80,21 @@ tags:
 # body label so the adjacent completion checkbox is never selected.
 - tapOn: 'Solunivo ci reminder, due .*'
 - assertVisible: 'Edit Reminder'
+# EventKit handed the rule back: the ordinal chip reopens selected.
+- scrollUntilVisible:
+    element:
+      id: 'reminder-repeat-ordinal-2'
+    direction: DOWN
+- assertVisible:
+    id: 'reminder-repeat-ordinal-2'
+    selected: true
+- assertVisible:
+    id: 'reminder-repeat-ordinal-weekday-TU'
+    selected: true
+- scrollUntilVisible:
+    element:
+      id: 'task-delete'
+    direction: DOWN
 - tapOn:
     id: 'task-delete'
 - extendedWaitUntil:

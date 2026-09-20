@@ -80,17 +80,29 @@ const seed = {
       title: 'Overdue call',
       updatedAt: 1,
     }),
-    // A by-day rule ("Weekends") the app cannot express: mirrored as
-    // recurrenceUnsupported, it must still read as repeating.
+    // EventKit's "Weekends": a weekly rule on Saturday and Sunday.
     new TaskRecord({
       accountId: APPLE_REMINDERS_ACCOUNT_ID,
       dueDate: isoToday,
       id: 'ek-rem-weekends',
       listId: 'ek-list-1',
       provider: 'apple',
-      recurrenceUnsupported: true,
+      recurrence: { byDay: [{ weekday: 'SA' }, { weekday: 'SU' }], freq: 'weekly', interval: 1 },
       status: 'needsAction',
       title: 'Theo reading',
+      updatedAt: 1,
+    }),
+    // A yearly positional rule the app cannot express: mirrored as
+    // recurrenceUnsupported, it must still read as repeating.
+    new TaskRecord({
+      accountId: APPLE_REMINDERS_ACCOUNT_ID,
+      dueDate: isoToday,
+      id: 'ek-rem-yearly',
+      listId: 'ek-list-1',
+      provider: 'apple',
+      recurrenceUnsupported: true,
+      status: 'needsAction',
+      title: 'Tax return',
       updatedAt: 1,
     }),
     new TaskRecord({
@@ -183,8 +195,19 @@ const remindersFixture: RemindersFixture = {
       id: 'ek-rem-weekends',
       listId: 'ek-list-1',
       priority: 0,
-      recurrence: { unsupported: true },
+      recurrence: { byDay: [{ weekday: 'SA' }, { weekday: 'SU' }], freq: 'weekly', interval: 1 },
       title: 'Theo reading',
+      updatedAt: 1,
+    },
+    {
+      alarms: [],
+      completed: false,
+      dueDate: isoToday,
+      id: 'ek-rem-yearly',
+      listId: 'ek-list-1',
+      priority: 0,
+      recurrence: { unsupported: true },
+      title: 'Tax return',
       updatedAt: 1,
     },
     {
@@ -250,13 +273,15 @@ describe('Apple Reminders UI', () => {
     expect(label).toContain('!!! Call mom');
     expect(label).not.toContain('14:00');
     // A weekly reminder carries the repeat marker; a one-off does not. So
-    // does a rule the app cannot express (EventKit by-day, "Weekends").
+    // do a weekend rule and a rule the app cannot express (yearly positional).
     expect(label).toContain('\u21bb');
-    expect(
-      await cdp.eval<string>(
-        `document.querySelector('[data-testid="all-day-task-ek-rem-weekends"]')?.textContent ?? ''`,
-      ),
-    ).toContain('\u21bb');
+    for (const id of ['ek-rem-weekends', 'ek-rem-yearly']) {
+      expect(
+        await cdp.eval<string>(
+          `document.querySelector('[data-testid="all-day-task-${id}"]')?.textContent ?? ''`,
+        ),
+      ).toContain('\u21bb');
+    }
     expect(
       await cdp.eval<string>(
         `document.querySelector('[data-testid="timed-task-ek-rem-ro-timed"]')?.textContent ?? ''`,
@@ -515,6 +540,122 @@ describe('Apple Reminders UI', () => {
         listDisabled: true,
         note: 'This list is read-only in Reminders.',
       });
+    } finally {
+      await cdp.clickButtonWithText('Cancel');
+    }
+  });
+});
+
+describe('Reminder repeat rules with weekdays', () => {
+  let app: App;
+  beforeAll(async () => {
+    app = await launchApp(seed, { reminders: { fixture: remindersFixture } });
+  }, 60_000);
+  afterAll(async () => {
+    await app.stop();
+  });
+
+  const POLL = { timeout: 5000 };
+  const taskById = async (id: string) =>
+    (await readTasks(app.userDataDir)).find((task) => task.id === id);
+  /** Opens a lane chip's editor by its body, past the leading checkbox. */
+  const openChip = async (id: string) => {
+    const chip = await app.cdp.locate(`[data-testid="all-day-task-${id}"]`);
+    await app.cdp.click(chip.x + 40, chip.y);
+    await app.cdp.waitFor(`document.body.textContent.includes('Edit reminder')`);
+  };
+  const repeatFacts = () =>
+    app.cdp.eval<string>(`JSON.stringify({
+      pressed: [...document.querySelectorAll('[data-testid^="repeat-weekday-"][aria-pressed="true"]')]
+        .map(b => b.dataset.testid.slice('repeat-weekday-'.length)),
+      repeat: document.querySelector('select[aria-label="Repeat"]')?.value ?? null,
+      summary: document.querySelector('[data-testid="repeat-summary"]')?.textContent ?? null,
+    })`);
+  const setSelect = (label: string, value: string) =>
+    app.cdp.eval(`(() => {
+      const select = document.querySelector('select[aria-label=${JSON.stringify(label)}]');
+      const setter = Object.getOwnPropertyDescriptor(window.HTMLSelectElement.prototype, 'value').set;
+      setter.call(select, ${JSON.stringify(value)});
+      select.dispatchEvent(new Event('change', { bubbles: true }));
+    })()`);
+
+  it('opens a weekend rule with Saturday and Sunday pressed', async () => {
+    const { cdp } = app;
+    await openChip('ek-rem-weekends');
+    try {
+      expect(JSON.parse(await repeatFacts())).toEqual({
+        pressed: ['SA', 'SU'],
+        repeat: 'weekly',
+        summary: 'Weekly on weekends',
+      });
+    } finally {
+      await cdp.clickButtonWithText('Cancel');
+    }
+  });
+
+  it('adds a weekday to the rule and saves it through EventKit', async () => {
+    const { cdp } = app;
+    await openChip('ek-rem-weekends');
+    const monday = await cdp.locate('[data-testid="repeat-weekday-MO"]');
+    await cdp.click(monday.x, monday.y);
+    expect(JSON.parse(await repeatFacts())).toMatchObject({
+      pressed: ['MO', 'SA', 'SU'],
+      summary: 'Weekly on Monday, Saturday, Sunday',
+    });
+    await cdp.clickButtonWithText('Save');
+    await expect
+      .poll(() => taskById('ek-rem-weekends'), POLL)
+      .toMatchObject({
+        recurrence: {
+          byDay: [{ weekday: 'MO' }, { weekday: 'SA' }, { weekday: 'SU' }],
+          freq: 'weekly',
+          interval: 1,
+        },
+      });
+    await openChip('ek-rem-weekends');
+    try {
+      expect(JSON.parse(await repeatFacts())).toMatchObject({ pressed: ['MO', 'SA', 'SU'] });
+    } finally {
+      await cdp.clickButtonWithText('Cancel');
+    }
+  });
+
+  it('turns a one-off into "the 2nd Tuesday of the month"', async () => {
+    const { cdp } = app;
+    await openChip('ek-rem-milk');
+    await setSelect('Repeat', 'monthly');
+    await setSelect('Monthly on', 'weekday');
+    await setSelect('Ordinal', '2');
+    await setSelect('Ordinal weekday', 'TU');
+    expect(JSON.parse(await repeatFacts())).toMatchObject({
+      summary: 'Monthly on the 2nd Tuesday',
+    });
+    await cdp.clickButtonWithText('Save');
+    await expect
+      .poll(() => taskById('ek-rem-milk'), POLL)
+      .toMatchObject({
+        recurrence: { byDay: [{ ordinal: 2, weekday: 'TU' }], freq: 'monthly', interval: 1 },
+      });
+    await openChip('ek-rem-milk');
+    try {
+      expect(JSON.parse(await repeatFacts())).toMatchObject({
+        repeat: 'monthly',
+        summary: 'Monthly on the 2nd Tuesday',
+      });
+      expect(
+        await cdp.eval<string>(`document.querySelector('select[aria-label="Ordinal"]')?.value`),
+      ).toBe('2');
+    } finally {
+      await cdp.clickButtonWithText('Cancel');
+    }
+  });
+
+  it('keeps a rule it cannot express read-only', async () => {
+    const { cdp } = app;
+    await openChip('ek-rem-yearly');
+    try {
+      expect(await cdp.eval(`document.body.textContent.includes('cannot edit')`)).toBe(true);
+      expect(await cdp.eval(`!!document.querySelector('select[aria-label="Repeat"]')`)).toBe(false);
     } finally {
       await cdp.clickButtonWithText('Cancel');
     }

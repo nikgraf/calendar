@@ -810,6 +810,54 @@ describe('calendar desktop e2e', () => {
     await cdp.waitFor(`document.querySelectorAll('[title^="Yoga flow"]').length >= 1`);
   });
 
+  it('creates a weekly event on chosen weekdays', async () => {
+    const { cdp } = app;
+    const add = await cdp.locate('button[aria-label="New event"]');
+    await cdp.click(add.x, add.y);
+    await cdp.waitFor(`document.body.textContent.includes('New event')`);
+    await setEditorTitle('Board game night');
+    await cdp.eval(`(() => {
+      const select = document.querySelector('select[aria-label="Repeat"]');
+      const setter = Object.getOwnPropertyDescriptor(window.HTMLSelectElement.prototype, 'value').set;
+      setter.call(select, 'weekly');
+      select.dispatchEvent(new Event('change', { bubbles: true }));
+    })()`);
+    // Press Monday and Wednesday, then release whatever else the start
+    // date pressed: adding first means the last-day guard never bites.
+    for (const day of ['MO', 'WE']) {
+      const pressed = await cdp.eval<boolean>(
+        `document.querySelector('[data-testid="repeat-weekday-${day}"]')?.getAttribute('aria-pressed') === 'true'`,
+      );
+      if (!pressed) {
+        const button = await cdp.locate(`[data-testid="repeat-weekday-${day}"]`);
+        await cdp.click(button.x, button.y);
+      }
+    }
+    for (;;) {
+      const extra = await cdp.eval<string | null>(
+        `[...document.querySelectorAll('[data-testid^="repeat-weekday-"][aria-pressed="true"]')]
+          .map(b => b.dataset.testid).find(id => !id.endsWith('-MO') && !id.endsWith('-WE')) ?? null`,
+      );
+      if (extra === null) {
+        break;
+      }
+      const button = await cdp.locate(`[data-testid="${extra}"]`);
+      await cdp.click(button.x, button.y);
+    }
+    expect(
+      await cdp.eval<string>(
+        `document.querySelector('[data-testid="repeat-summary"]')?.textContent ?? ''`,
+      ),
+    ).toBe('Weekly on Monday, Wednesday');
+    await cdp.clickButtonWithText('Save');
+
+    const master = await waitForEvent(
+      (event) => event.title === 'Board game night' && event.recurrence !== undefined,
+    );
+    expect(master?.recurrence).toEqual(['RRULE:FREQ=WEEKLY;BYDAY=MO,WE']);
+    await cdp.waitFor(`document.querySelectorAll('[title^="Board game night"]').length >= 1`);
+  });
+
   it('accepts an invitation through the RSVP buttons', async () => {
     const { cdp } = app;
     const block = await cdp.locate('[title^="Design review"]');
