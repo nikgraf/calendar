@@ -18,6 +18,7 @@ import {
   TaskRecurrence,
   TaskStatus,
 } from './types.ts';
+import { ViewPreferences } from './viewPreferences.ts';
 
 /**
  * The platform seam: every UI talks to the backend exclusively through this
@@ -216,11 +217,22 @@ export class AppBackendRpcs extends RpcGroup.make(
     payload: { rangeEndUtc: Schema.Number, rangeStartUtc: Schema.Number },
     success: Schema.Array(EventRecord),
   }),
+  Rpc.make('getOverdueTasks', {
+    error: BackendError,
+    /** Open tasks due strictly before `before` ('YYYY-MM-DD'), visible lists only; drawn on today. */
+    payload: { before: Schema.String },
+    success: Schema.Array(TaskRecord),
+  }),
   Rpc.make('getTasksInRange', {
     error: BackendError,
     /** Due-day window, inclusive 'YYYY-MM-DD' bounds (tasks are date-only). */
     payload: { endDate: Schema.String, startDate: Schema.String },
     success: Schema.Array(TaskRecord),
+  }),
+  /** Device-local view preferences (never synced). */
+  Rpc.make('getViewPreferences', {
+    error: BackendError,
+    success: ViewPreferences,
   }),
   Rpc.make('invalidations', {
     /** Server-push stream of invalidated Reactivity key batches. */
@@ -350,6 +362,10 @@ export class AppBackendRpcs extends RpcGroup.make(
       isVisible: Schema.Boolean,
       taskListId: Schema.String,
     },
+  }),
+  Rpc.make('setViewPreferences', {
+    error: BackendError,
+    payload: ViewPreferences,
   }),
   Rpc.make('syncNow', { error: BackendError }),
   Rpc.make('updateEvent', {

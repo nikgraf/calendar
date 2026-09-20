@@ -66,6 +66,12 @@ comment` for inline-playable video: 10 MB on Free plans, 100 MB paid
       trips as `{unsupported:true}`); creating/deleting Reminders lists
       (`REMINDERS_METHODS` has neither).
 
+- [ ] Task drag follow-ups — auto-scroll the grid while a chip is
+      dragged near its top or bottom edge (both platforms; today the
+      drop needs the target slot on screen); shrink `WEEK_SWIPE_BUFFER`
+      once day-by-day paging has proven itself on device (seven columns
+      each side is more than a flick reveals).
+
 ## Tier 3 — AI features
 
 Scope unchanged and all still open with zero code; the on-device-only

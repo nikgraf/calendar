@@ -71,6 +71,33 @@ describe('TaskRepo', () => {
     }).pipe(Effect.provide(freshDbLayer())),
   );
 
+  it.effect('lists open tasks due before a day as overdue, visible lists only', () =>
+    Effect.gen(function* () {
+      const repo = yield* TaskRepo;
+      yield* repo.upsertLists([list(), list({ id: 'list-hidden', title: 'Hidden' })], 100);
+      yield* repo.upsertTasks(
+        [
+          task({ dueDate: '2026-08-28', id: 'old-timed', title: 'Old timed' }),
+          task({ dueDate: '2026-08-29', id: 'old', title: 'Old' }),
+          task({ dueDate: '2026-08-30', id: 'boundary', title: 'Due on the day itself' }),
+          task({
+            completedAt: 1,
+            dueDate: '2026-08-01',
+            id: 'done',
+            status: 'completed',
+            title: 'Done long ago',
+          }),
+          task({ dueDate: '2026-08-01', id: 'hidden', listId: 'list-hidden', title: 'Hidden' }),
+          task({ dueDate: undefined, id: 'undated', title: 'Undated' }),
+        ],
+        100,
+      );
+      yield* repo.setListVisible('acc-1', 'list-hidden', false);
+      const overdue = yield* repo.getOverdue('2026-08-30');
+      expect(overdue.map((row) => row.id)).toEqual(['old-timed', 'old']);
+    }).pipe(Effect.provide(freshDbLayer())),
+  );
+
   it.effect('hides tasks of hidden lists and undated tasks', () =>
     Effect.gen(function* () {
       const repo = yield* TaskRepo;

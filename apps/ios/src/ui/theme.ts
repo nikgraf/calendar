@@ -7,6 +7,8 @@ export const palette = {
   text: '#171717',
   textFaint: '#a3a3a3',
   textMuted: '#737373',
+  /** Overdue task chips and dots: the same red as the today ring. */
+  overdue: '#dc2626',
   today: '#ef4444',
 };
 

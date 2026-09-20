@@ -7,11 +7,13 @@ import {
   useCalendars,
   useEventsInRangeStable,
   useListColorLookup,
+  useOverdueTasksStable,
   usePendingOps,
   useTaskLists,
   useBirthdaysInRangeStable,
   useTaskReadOnlyLookup,
   useTasksInRangeStable,
+  useToday,
 } from '@calendar/app-state';
 import {
   type BirthdayOccurrence,
@@ -45,7 +47,6 @@ import { SettingsSheet } from './src/ui/SettingsSheet.tsx';
 import { ConflictToast, DroppedToast, MutationNoticeToast } from './src/ui/Toast.tsx';
 import { ErrorBoundary } from './src/ui/ErrorBoundary.tsx';
 import { palette } from './src/ui/theme.ts';
-import { EDGE_INSET, GUTTER_WIDTH } from './src/ui/timelineLayout.ts';
 import { WeekStrip } from './src/ui/WeekStrip.tsx';
 
 const backendAtoms = makeBackendAtoms(backendClient);
@@ -54,14 +55,25 @@ const SEGMENT_LABELS = { day: 'Day', month: 'Month', week: 'Week' } as const;
 
 function CalendarScreen() {
   const timeZone = Temporal.Now.timeZoneId();
-  const { buffer, days, focused, goToday, range, setFocused, step, switchView, title, view } =
-    useCalendarNavigation({
-      dayBuffer: DAY_SWIPE_BUFFER,
-      initialView: 'day',
-      timeZone,
-      titleStyle: 'compact',
-      weekBuffer: WEEK_SWIPE_BUFFER,
-    });
+  const {
+    buffer,
+    days,
+    focused,
+    goToday,
+    panByDays,
+    range,
+    setFocused,
+    step,
+    switchView,
+    title,
+    view,
+  } = useCalendarNavigation({
+    dayBuffer: DAY_SWIPE_BUFFER,
+    initialView: 'day',
+    timeZone,
+    titleStyle: 'compact',
+    weekBuffer: WEEK_SWIPE_BUFFER,
+  });
   const [showSettings, setShowSettings] = useState(false);
   const [editSeed, setEditSeed] = useState<EditSeed | null>(null);
   const [editTask, setEditTask] = useState<TaskRecord | null>(null);
@@ -91,6 +103,9 @@ function CalendarScreen() {
     utcMsToPlainDate(range.startUtc),
     utcMsToPlainDate(range.endUtc),
   );
+  // Open tasks due before today are drawn on today, whatever the window.
+  const today = useToday(timeZone);
+  const overdue = useOverdueTasksStable(today);
   const mutations = useGuardedMutations();
   const taskLists = useTaskLists();
   const isTaskReadOnly = useTaskReadOnlyLookup();
@@ -104,15 +119,12 @@ function CalendarScreen() {
 
   const colorOf = useMemo(() => makeColorLookup(calendars), [calendars]);
 
-  // Day view: the focused day's Monday week. Week view: the rolling window
-  // itself, so the strip doubles as the column headers.
+  // Day view: the focused day's Monday week as a date picker. The week view
+  // draws its own headers inside the timeline, panning with the columns.
   const stripDays = useMemo(() => {
-    if (view === 'week') {
-      return days;
-    }
     const start = weekStart(focused);
     return Array.from({ length: 7 }, (_, index) => start.add({ days: index }));
-  }, [days, focused, view]);
+  }, [focused]);
   const unit = view === 'month' ? 'month' : view === 'week' ? 'week' : 'day';
 
   return (
@@ -205,8 +217,10 @@ function CalendarScreen() {
             setFocused(date);
             switchView('day');
           }}
+          overdue={overdue}
           tasks={tasks}
           timeZone={timeZone}
+          today={today}
           yearMonth={Temporal.PlainYearMonth.from(focused)}
         />
       ) : (
@@ -219,19 +233,14 @@ function CalendarScreen() {
             speech={appleSpeech}
             timeZone={timeZone}
           />
-          <WeekStrip
-            days={stripDays}
-            leadingInset={view === 'week' ? GUTTER_WIDTH : 0}
-            onSelect={(day) => {
-              setFocused(day);
-              if (view === 'week') {
-                switchView('day');
-              }
-            }}
-            selected={focused}
-            timeZone={timeZone}
-            trailingInset={view === 'week' ? EDGE_INSET : 0}
-          />
+          {view === 'day' ? (
+            <WeekStrip
+              days={stripDays}
+              onSelect={setFocused}
+              selected={focused}
+              timeZone={timeZone}
+            />
+          ) : null}
           <DayTimeline
             birthdays={birthdays}
             buffer={buffer}
@@ -243,7 +252,11 @@ function CalendarScreen() {
             onBirthdayPress={(birthday) => setViewBirthday(birthday)}
             onCreateSlot={(date, times) => setEditSeed({ initialDate: date, initialTimes: times })}
             onEventPress={(event) => setEditSeed({ event, initialDate: focused })}
-            onNavigate={step}
+            onNavigate={panByDays}
+            onSelectDay={(day) => {
+              setFocused(day);
+              switchView('day');
+            }}
             onTaskPress={(task) => setEditTask(task)}
             onToggleTask={(task) =>
               void mutations.completeTask({
@@ -253,8 +266,11 @@ function CalendarScreen() {
                 taskListId: task.listId,
               })
             }
+            overdue={overdue}
+            selected={focused}
             tasks={tasks}
             timeZone={timeZone}
+            today={today}
           />
         </>
       )}

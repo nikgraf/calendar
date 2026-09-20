@@ -5,6 +5,8 @@ import { TaskRecord } from './types.ts';
 import {
   TIMED_TASK_LAYOUT_MINUTES,
   calendarTaskKey,
+  dropTaskChanges,
+  isOverdue,
   moveTimedTask,
   partitionCalendarTasks,
   timedTaskSlot,
@@ -31,8 +33,53 @@ describe('partitionCalendarTasks', () => {
 
     expect(partitionCalendarTasks([dateOnly, timed, undated])).toEqual({
       allDay: [dateOnly],
+      overdue: [],
       timed: [timed],
     });
+  });
+
+  it('moves open tasks due before today into the overdue set, timed or not', () => {
+    const pastTimed = task({ dueDate: '2026-03-20', dueTime: '09:00', id: 'past-timed' });
+    const pastDateOnly = task({ dueDate: '2026-03-27', id: 'past' });
+    const todayTask = task({ id: 'today' });
+    const done = task({ dueDate: '2026-03-01', id: 'done', status: 'completed' });
+
+    expect(
+      partitionCalendarTasks([todayTask, pastDateOnly, pastTimed, done], '2026-03-28'),
+    ).toEqual({
+      allDay: [todayTask, done],
+      overdue: [pastTimed, pastDateOnly],
+      timed: [],
+    });
+  });
+
+  it('sorts overdue tasks by due date, time and title', () => {
+    const b = task({ dueDate: '2026-03-27', id: 'b', title: 'Beta' });
+    const a = task({ dueDate: '2026-03-27', id: 'a', title: 'Alpha' });
+    const early = task({ dueDate: '2026-03-27', dueTime: '08:00', id: 'early', title: 'Zulu' });
+    const older = task({ dueDate: '2026-03-01', id: 'older', title: 'Yankee' });
+
+    expect(
+      partitionCalendarTasks([b, a, early, older], '2026-03-28').overdue.map((t) => t.id),
+    ).toEqual(['older', 'a', 'b', 'early']);
+  });
+
+  it('de-duplicates a task the range and overdue queries both returned', () => {
+    const past = task({ dueDate: '2026-03-27', id: 'past' });
+    const partition = partitionCalendarTasks([past, past, task()], '2026-03-28');
+    expect(partition.overdue).toEqual([past]);
+    expect(partition.allDay).toHaveLength(1);
+  });
+});
+
+describe('isOverdue', () => {
+  it('is true only for an open task with a due day before today', () => {
+    expect(isOverdue(task({ dueDate: '2026-03-27' }), '2026-03-28')).toBe(true);
+    expect(isOverdue(task({ dueDate: '2026-03-28' }), '2026-03-28')).toBe(false);
+    expect(isOverdue(task({ dueDate: '2026-03-27', status: 'completed' }), '2026-03-28')).toBe(
+      false,
+    );
+    expect(isOverdue(task({ dueDate: undefined }), '2026-03-28')).toBe(false);
   });
 });
 
@@ -176,6 +223,59 @@ describe('moveTimedTask', () => {
     expect(moveTimedTask(task({ dueTime: '01:45' }), 30, 1)).toEqual({
       dueDate: '2026-03-29',
       dueTime: '02:15',
+    });
+  });
+});
+
+const grid = (dueDate: string, minute: number) => ({ dueDate, kind: 'timed' as const, minute });
+const lane = (dueDate: string) => ({ dueDate, kind: 'allDay' as const });
+
+describe('dropTaskChanges', () => {
+  it('gives a reminder dropped in the grid that day and time', () => {
+    expect(dropTaskChanges(task(), grid('2026-03-30', 10 * 60 + 15))).toEqual({
+      changes: { dueDate: '2026-03-30', dueTime: '10:15' },
+    });
+  });
+
+  it('sets only the time when the reminder stays on its day', () => {
+    expect(dropTaskChanges(task(), grid('2026-03-28', 9 * 60))).toEqual({
+      changes: { dueTime: '09:00' },
+    });
+    expect(dropTaskChanges(task({ dueTime: '09:00' }), grid('2026-03-28', 9 * 60))).toBeUndefined();
+  });
+
+  it('refuses a grid drop for a date-only Google task instead of moving its day', () => {
+    expect(dropTaskChanges(task({ provider: 'google' }), grid('2026-03-30', 9 * 60))).toEqual({
+      unsupported: 'dueTime',
+    });
+  });
+
+  it('clears the time of a timed reminder dropped in the lane', () => {
+    expect(dropTaskChanges(task({ dueTime: '14:00' }), lane('2026-03-28'))).toEqual({
+      changes: { dueTime: null },
+    });
+    expect(dropTaskChanges(task({ dueTime: '14:00' }), lane('2026-03-29'))).toEqual({
+      changes: { dueDate: '2026-03-29', dueTime: null },
+    });
+  });
+
+  it('moves the day of a date-only task dropped elsewhere in the lane, for either provider', () => {
+    expect(dropTaskChanges(task(), lane('2026-03-29'))).toEqual({
+      changes: { dueDate: '2026-03-29' },
+    });
+    expect(dropTaskChanges(task({ provider: 'google' }), lane('2026-03-29'))).toEqual({
+      changes: { dueDate: '2026-03-29' },
+    });
+    expect(dropTaskChanges(task(), lane('2026-03-28'))).toBeUndefined();
+  });
+
+  it('re-dates an overdue reminder dragged from today, clearing a stale time', () => {
+    const overdue = task({ dueDate: '2026-03-20', dueTime: '09:00' });
+    expect(dropTaskChanges(overdue, lane('2026-03-28'))).toEqual({
+      changes: { dueDate: '2026-03-28', dueTime: null },
+    });
+    expect(dropTaskChanges(overdue, grid('2026-03-28', 11 * 60))).toEqual({
+      changes: { dueDate: '2026-03-28', dueTime: '11:00' },
     });
   });
 });

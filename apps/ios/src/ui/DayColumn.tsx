@@ -23,6 +23,7 @@ import { NowIndicator } from './NowIndicator.tsx';
 import { TimedTaskBlock } from './TimedTaskBlock.tsx';
 import { palette } from './theme.ts';
 import { HOUR_HEIGHT } from './timelineLayout.ts';
+import type { TaskDrag } from './useTaskDrag.ts';
 
 /** Hold this long on empty space before a drag draws a slot instead of scrolling. */
 const HOLD_TO_CREATE_MS = 300;
@@ -41,16 +42,17 @@ export function DayColumn({
   colorOf,
   compact,
   date,
+  draggingKey,
   events,
   isTaskReadOnly,
   isToday,
   listColorOf,
   onCommit,
-  onCommitTask,
   onCreateSlot,
   onEventPress,
   onTaskPress,
   onToggleTask,
+  taskDrag,
   timedTasks,
   timeZone,
   width,
@@ -58,13 +60,14 @@ export function DayColumn({
   colorOf: (event: EventRecord) => string;
   compact: boolean;
   date: Temporal.PlainDate;
+  /** The task being dragged, if any: its source block dims. */
+  draggingKey: string | null;
   /** Timed events touching this day. */
   events: ReadonlyArray<EventRecord>;
   isTaskReadOnly: (task: TaskRecord) => boolean;
   isToday: boolean;
   listColorOf: (task: TaskRecord) => string | undefined;
   onCommit: (event: EventRecord, changes: { endUtc?: number; startUtc?: number }) => void;
-  onCommitTask: (task: TaskRecord, deltaMinutes: number) => void;
   /** A slot drawn by holding on empty space (and dragging to stretch it). */
   onCreateSlot: (
     date: Temporal.PlainDate,
@@ -73,6 +76,7 @@ export function DayColumn({
   onEventPress: (event: EventRecord) => void;
   onTaskPress: (task: TaskRecord) => void;
   onToggleTask: (task: TaskRecord) => void;
+  taskDrag: TaskDrag;
   timedTasks: ReadonlyArray<TaskRecord>;
   timeZone: string;
   width: number;
@@ -155,13 +159,13 @@ export function DayColumn({
           return (
             <TimedTaskBlock
               compact={compact}
+              dimmed={draggingKey === box.id}
+              gesture={taskDrag.gestureFor(task, 'grid', isTaskReadOnly(task))}
               key={box.id}
               left={`${box.left * 100}%` as DimensionValue}
               listColor={listColorOf(task)}
-              onCommitMove={(deltaMinutes) => onCommitTask(task, deltaMinutes)}
               onPress={() => onTaskPress(task)}
               onToggle={() => onToggleTask(task)}
-              readOnly={isTaskReadOnly(task)}
               task={task}
               top={box.top * 24 * HOUR_HEIGHT}
               width={`${box.width * 100}%` as DimensionValue}

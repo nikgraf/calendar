@@ -55,11 +55,13 @@ export interface BackendAtoms {
   readonly locationGeo: ReturnType<typeof buildAtoms>['locationGeo'];
   readonly mapSnapshot: ReturnType<typeof buildAtoms>['mapSnapshot'];
   readonly mutations: ReturnType<typeof buildAtoms>['mutations'];
+  readonly overdueTasks: ReturnType<typeof buildAtoms>['overdueTasks'];
   readonly pendingOps: ReturnType<typeof buildAtoms>['pendingOps'];
   readonly placesSearch: ReturnType<typeof buildAtoms>['placesSearch'];
   readonly syncStatus: ReturnType<typeof buildAtoms>['syncStatus'];
   readonly taskLists: ReturnType<typeof buildAtoms>['taskLists'];
   readonly tasksInRange: ReturnType<typeof buildAtoms>['tasksInRange'];
+  readonly viewPreferences: ReturnType<typeof buildAtoms>['viewPreferences'];
 }
 
 /**
@@ -92,6 +94,7 @@ const MUTATION_REACTIVITY = {
   setCalendarColor: [CALENDARS_KEY],
   setCalendarVisible: [CALENDARS_KEY, EVENTS_KEY],
   setTaskListVisible: [TASKLISTS_KEY, TASKS_KEY],
+  setViewPreferences: [deviceSettingsKey('viewPreferences')],
   syncNow: [],
   updateEvent: [EVENTS_KEY],
   updateRecurring: [EVENTS_KEY],
@@ -193,6 +196,19 @@ const buildAtoms = (client: BackendClient) => {
       .pipe(Atom.withReactivity([TASKS_KEY]));
   });
 
+  // Keyed by today's date: open tasks due before it, drawn on today. Rolls
+  // to a new key at local midnight (useToday) and refetches on TASKS_KEY.
+  const overdueTasks = boundedAtomCache((before) =>
+    runtime
+      .atom(
+        Effect.gen(function* () {
+          const backend = yield* AppBackend;
+          return yield* backend.getOverdueTasks({ before });
+        }),
+      )
+      .pipe(Atom.withReactivity([TASKS_KEY])),
+  );
+
   // Keyed per setting: the reminder scheduler's own bookkeeping rows never
   // refetch this.
   const birthdayReminderSettings = runtime
@@ -203,6 +219,16 @@ const buildAtoms = (client: BackendClient) => {
       }),
     )
     .pipe(Atom.withReactivity([deviceSettingsKey('birthdayReminders')]));
+
+  // Device-local view preferences; refetched only when they are written.
+  const viewPreferences = runtime
+    .atom(
+      Effect.gen(function* () {
+        const backend = yield* AppBackend;
+        return yield* backend.getViewPreferences(undefined);
+      }),
+    )
+    .pipe(Atom.withReactivity([deviceSettingsKey('viewPreferences')]));
 
   // Keys are date strings, like tasksInRange. BIRTHDAYS_KEY fires from the
   // Google cache writes and from a device snapshot that changed the list.
@@ -335,11 +361,13 @@ const buildAtoms = (client: BackendClient) => {
     locationGeo,
     mapSnapshot,
     mutations,
+    overdueTasks,
     pendingOps,
     placesSearch,
     syncStatus,
     taskLists,
     tasksInRange,
+    viewPreferences,
   };
 };
 

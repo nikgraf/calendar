@@ -10,8 +10,10 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import {
   type App,
   launchApp,
+  localIsoDaysAgo,
   readCalendars,
   readEvents,
+  readDeviceSetting,
   readPendingOps,
   readPendingOpsCount,
   readSettings,
@@ -27,15 +29,8 @@ const todayAt = (hour: number, minute = 0): number => {
   const now = new Date();
   return Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), hour, minute);
 };
-/**
- * Today's *local* ISO date, for date-only records: the app places a task on
- * the day in the machine's zone, and between local midnight and UTC
- * midnight the UTC date is still yesterday (CI runs in UTC; dev does not).
- */
-const todayLocalIso = (): string => {
-  const now = new Date();
-  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-};
+/** Today's local ISO date, for date-only records. */
+const todayLocalIso = (): string => localIsoDaysAgo(0);
 
 // The daily series starts three days back so several instances are visible
 // in the current week no matter which weekday the suite runs on. All seeded
@@ -152,6 +147,29 @@ const seed = {
       provider: 'google',
       status: 'needsAction',
       title: 'Pay rent',
+      updatedAt: 1,
+    }),
+    // Both past days sit inside the rendered strip (two buffer days precede
+    // the week), so a chip left on its own day would still be in the DOM.
+    new TaskRecord({
+      accountId: 'acc-e2e',
+      dueDate: localIsoDaysAgo(2),
+      id: 'task-overdue',
+      listId: 'list-e2e',
+      provider: 'google',
+      status: 'needsAction',
+      title: 'Old chore',
+      updatedAt: 1,
+    }),
+    new TaskRecord({
+      accountId: 'acc-e2e',
+      completedAt: 1,
+      dueDate: localIsoDaysAgo(1),
+      id: 'task-done-old',
+      listId: 'list-e2e',
+      provider: 'google',
+      status: 'completed',
+      title: 'Done chore',
       updatedAt: 1,
     }),
   ],
@@ -910,10 +928,38 @@ describe('calendar desktop e2e', () => {
     );
   });
 
+  it('moves an overdue task onto today and leaves a completed past task alone', async () => {
+    const { cdp } = app;
+    await cdp.locate('[data-overdue][title^="Old chore"]');
+    // Once in the DOM: on today, not also on its own past day.
+    expect(await cdp.eval<number>(`document.querySelectorAll('[title^="Old chore"]').length`)).toBe(
+      1,
+    );
+    const inTodayColumn = await cdp.eval<boolean>(`(() => {
+      const chip = document.querySelector('[data-overdue][title^="Old chore"]');
+      const cell = document.querySelector('.bg-red-500')?.closest('.h-10');
+      const chipRect = chip.getBoundingClientRect();
+      const cellRect = cell.getBoundingClientRect();
+      return chipRect.left >= cellRect.left - 1 && chipRect.right <= cellRect.right + 1;
+    })()`);
+    expect(inTodayColumn).toBe(true);
+    // A completed task stays on its past day without the overdue marker.
+    expect(await cdp.eval<number>(`document.querySelectorAll('[title="Done chore"]').length`)).toBe(
+      1,
+    );
+    expect(await cdp.eval(`!!document.querySelector('[data-overdue][title^="Done chore"]')`)).toBe(
+      false,
+    );
+  });
+
   it('checks a task off from its all-day chip', async () => {
     const { cdp } = app;
     // The chip renders in the all-day lane with the checkbox leading.
     const checkbox = await cdp.locate('[title="Pay rent"] button');
+    // Google tasks never repeat, so no repeat marker.
+    expect(
+      await cdp.eval<string>(`document.querySelector('[title="Pay rent"]')?.textContent ?? ''`),
+    ).not.toContain('\u21bb');
     await cdp.click(checkbox.x, checkbox.y);
 
     await cdp.waitFor(
@@ -1050,5 +1096,136 @@ describe('calendar desktop e2e', () => {
     );
     expect(moved?.startUtc).toBe(expected);
     expect(await cdp.eval<boolean>(`document.body.textContent.includes('Edit event')`)).toBe(false);
+  });
+});
+
+describe('Google task chips drag along the lane but never into the grid', () => {
+  let taskApp: App;
+
+  beforeAll(async () => {
+    taskApp = await launchApp(seed);
+  }, 60_000);
+
+  afterEach(async (context) => {
+    if (context.task.result?.state === 'fail') {
+      await taskApp?.dump(context.task.name);
+    }
+  });
+
+  afterAll(async () => {
+    await taskApp?.stop();
+  });
+
+  const rent = async () =>
+    (await readTasks(taskApp.userDataDir)).find((task) => task.id === 'task-rent');
+
+  it('refuses a grid drop with an explanation and changes nothing', async () => {
+    const { cdp } = taskApp;
+    const from = await cdp.locate('[data-testid="all-day-task-task-rent"]');
+    const y = await cdp.eval<number>(`(() => {
+      const scroller = document.querySelector('.overflow-y-scroll');
+      return scroller.getBoundingClientRect().top + 10 * ${HOUR_HEIGHT} - scroller.scrollTop;
+    })()`);
+    await cdp.drag(from, { x: from.x, y });
+    await cdp.waitFor(`document.body.textContent.includes('Google Tasks are date-only')`);
+    expect(await rent()).toMatchObject({ dueDate: todayLocalIso(), status: 'needsAction' });
+    expect(
+      (await readPendingOps(taskApp.userDataDir)).some(
+        (op) => op.kind === 'updateTask' && op.eventId === 'task-rent',
+      ),
+    ).toBe(false);
+    expect(await cdp.eval(`document.body.textContent.includes('Edit task')`)).toBe(false);
+    await cdp.locate('[data-testid="all-day-task-task-rent"]');
+  });
+
+  it('moves to another day along the lane through the op queue', async () => {
+    const { cdp } = taskApp;
+    const dayWidth = await cdp.eval<number>(
+      `document.querySelector('.relative.grid').getBoundingClientRect().width / document.querySelector('.relative.grid').children.length`,
+    );
+    const from = await cdp.locate('[data-testid="all-day-task-task-rent"]');
+    await cdp.drag(from, { x: from.x + dayWidth, y: from.y });
+    await expect.poll(rent).toMatchObject({ dueDate: localIsoDaysAgo(-1) });
+    await expect
+      .poll(async () =>
+        (await readPendingOps(taskApp.userDataDir)).some(
+          (op) => op.kind === 'updateTask' && op.eventId === 'task-rent',
+        ),
+      )
+      .toBe(true);
+  });
+});
+
+describe('collapsible all-day lane', () => {
+  const LANE_ROW = 24;
+  const LANE_PADDING = 8;
+  let laneApp: App;
+
+  beforeAll(async () => {
+    // Five date-only tasks on one day: the lane grows to five rows when
+    // expanded and caps at three (two chips + "+3 more") when collapsed.
+    laneApp = await launchApp({
+      ...seed,
+      events: [],
+      tasks: Array.from({ length: 5 }, (_, index) => {
+        const n = index + 1;
+        return new TaskRecord({
+          accountId: 'acc-e2e',
+          dueDate: todayLocalIso(),
+          id: `chore-${n}`,
+          listId: 'list-e2e',
+          provider: 'google',
+          status: 'needsAction',
+          title: `Chore ${n}`,
+          updatedAt: 1,
+        });
+      }),
+    });
+  }, 60_000);
+
+  afterEach(async (context) => {
+    if (context.task.result?.state === 'fail') {
+      await laneApp?.dump(context.task.name);
+    }
+  });
+
+  afterAll(async () => {
+    await laneApp?.stop();
+  });
+
+  it('collapses to three rows with "+N more", persists the choice and expands again', async () => {
+    const { cdp } = laneApp;
+    const laneHeight = () =>
+      cdp.eval<number>(
+        `document.querySelector('[data-testid="all-day-lane"]').getBoundingClientRect().height`,
+      );
+    const visibleChores = () =>
+      cdp.eval<number>(`document.querySelectorAll('[title^="Chore "]').length`);
+    await cdp.locate('[title="Chore 5"]');
+    // Expanded by default: every chip drawn, no "+N more".
+    expect(await laneHeight()).toBe(5 * LANE_ROW + LANE_PADDING);
+    expect(await visibleChores()).toBe(5);
+    expect(await cdp.eval(`!!document.querySelector('[data-testid="all-day-more"]')`)).toBe(false);
+
+    const less = await cdp.locate('[data-testid="all-day-less"]');
+    await cdp.click(less.x, less.y);
+    await expect
+      .poll(() => readDeviceSetting(laneApp.userDataDir, 'viewPreferences'))
+      .toEqual({ allDayLaneCollapsed: true });
+    await cdp.waitFor(
+      `document.querySelector('[data-testid="all-day-more"]')?.textContent === '+3 more'`,
+    );
+    expect(await laneHeight()).toBe(3 * LANE_ROW + LANE_PADDING);
+    expect(await visibleChores()).toBe(2);
+    expect(await cdp.eval(`!!document.querySelector('[data-testid="all-day-less"]')`)).toBe(false);
+
+    const more = await cdp.locate('[data-testid="all-day-more"]');
+    await cdp.click(more.x, more.y);
+    await expect
+      .poll(() => readDeviceSetting(laneApp.userDataDir, 'viewPreferences'))
+      .toEqual({ allDayLaneCollapsed: false });
+    await cdp.waitFor(`document.querySelectorAll('[title^="Chore "]').length === 5`);
+    expect(await laneHeight()).toBe(5 * LANE_ROW + LANE_PADDING);
+    expect(await cdp.eval(`!!document.querySelector('[data-testid="all-day-more"]')`)).toBe(false);
   });
 });

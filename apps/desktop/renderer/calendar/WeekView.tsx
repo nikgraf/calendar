@@ -1,12 +1,15 @@
+import { useGuardedMutations, useViewPreferences } from '@calendar/app-state';
 import {
   type BirthdayOccurrence,
   bufferedDays,
   calendarTaskKey,
+  capAllDayLane,
   dayRange,
   type EventRecord,
   formatPlainTime,
   layoutAllDayLane,
   layoutDayColumn,
+  MAX_ALL_DAY_ROWS,
   PAN_BUFFER_DAYS,
   partitionCalendarTasks,
   type SlotRange,
@@ -25,7 +28,7 @@ import { DayHeaders } from './DayHeaders.tsx';
 import { NowIndicator } from './NowIndicator.tsx';
 import { TimedEventBlock } from './TimedEventBlock.tsx';
 import { TimedTaskBlock } from './TimedTaskBlock.tsx';
-import { useEventDrag } from './useEventDrag.ts';
+import { useDropTarget, useEventDrag } from './useEventDrag.ts';
 import { useSlotDrag } from './useSlotDrag.ts';
 import { useWheelPan } from './useWheelPan.ts';
 
@@ -48,6 +51,33 @@ const dayIndexOf = (isoDate: string, days: ReadonlyArray<Temporal.PlainDate>): n
   return days.findIndex((day) => Temporal.PlainDate.compare(day, date) === 0);
 };
 
+/** Outlines the grid slot a lane chip would drop into (a timed block shows itself instead). */
+function GridDropIndicator({
+  drag,
+  hourHeight,
+  stripLength,
+}: {
+  drag: ReturnType<typeof useEventDrag>;
+  hourHeight: number;
+  stripLength: number;
+}) {
+  const drop = useDropTarget(drag);
+  if (drop === null || drop.from !== 'lane' || drop.target.kind !== 'timed') {
+    return null;
+  }
+  return (
+    <div
+      className="pointer-events-none absolute z-30 h-[22px] rounded border-2 border-dashed border-blue-500 bg-blue-500/10"
+      data-testid="task-drop-grid"
+      style={{
+        left: `calc(${(drop.target.dayIndex / stripLength) * 100}% + 1px)`,
+        top: (drop.target.minute / 60) * hourHeight,
+        width: `calc(${(1 / stripLength) * 100}% - 3px)`,
+      }}
+    />
+  );
+}
+
 export function WeekView({
   birthdays,
   colorOf,
@@ -62,8 +92,10 @@ export function WeekView({
   onSlotDrag,
   onTaskClick,
   onToggleTask,
+  overdue,
   tasks,
   timeZone,
+  today: todayIso,
 }: {
   birthdays: ReadonlyArray<BirthdayOccurrence>;
   colorOf: ColorLookup;
@@ -82,14 +114,19 @@ export function WeekView({
   ) => void;
   onTaskClick: (task: TaskRecord) => void;
   onToggleTask: (task: TaskRecord) => void;
+  /** Open tasks due before today; drawn as overdue chips on today's column. */
+  overdue: ReadonlyArray<TaskRecord>;
   tasks: ReadonlyArray<TaskRecord>;
   timeZone: string;
+  /** Today's ISO date (rolls at local midnight). */
+  today: string;
 }) {
   const rootRef = useRef<HTMLDivElement>(null);
   const viewportRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const gridRef = useRef<HTMLDivElement>(null);
-  const today = Temporal.Now.plainDateISO(timeZone);
+  const laneRef = useRef<HTMLDivElement>(null);
+  const today = Temporal.PlainDate.from(todayIso);
 
   // The pan strip renders buffer columns on both sides of the visible days
   // so horizontal panning reveals fully drawn neighbours.
@@ -102,7 +139,10 @@ export function WeekView({
     width: `${(strip.length / days.length) * 100}%`,
   };
 
-  const calendarTasks = useMemo(() => partitionCalendarTasks(tasks), [tasks]);
+  const calendarTasks = useMemo(
+    () => partitionCalendarTasks([...tasks, ...overdue], todayIso),
+    [tasks, overdue, todayIso],
+  );
   const timedTaskLayout = useMemo(() => {
     const byDay = new Map<string, Array<TimedBox>>();
     const byId = new Map<string, TaskRecord>();
@@ -121,11 +161,13 @@ export function WeekView({
   }, [calendarTasks.timed]);
 
   const drag = useEventDrag({
-    dayCount: strip.length,
     gridRef,
     hourHeight: HOUR_HEIGHT,
+    laneRef,
     onEventClick,
     onTaskClick,
+    scrollerRef: scrollRef,
+    strip,
   });
 
   const slot = useSlotDrag({ hourHeight: HOUR_HEIGHT, onCreate: onSlotDrag });
@@ -176,7 +218,20 @@ export function WeekView({
       ? []
       : [{ endDayIndex: index + 1, id: calendarTaskKey(task), startDayIndex: index }];
   });
-  const taskById = new Map(calendarTasks.allDay.map((task) => [calendarTaskKey(task), task]));
+  // Overdue tasks sit on today's column, whatever their due day.
+  const todayIndex = dayIndexOf(todayIso, strip);
+  const overdueSpans =
+    todayIndex === -1
+      ? []
+      : calendarTasks.overdue.map((task) => ({
+          endDayIndex: todayIndex + 1,
+          id: calendarTaskKey(task),
+          startDayIndex: todayIndex,
+        }));
+  const overdueKeys = new Set(calendarTasks.overdue.map(calendarTaskKey));
+  const taskById = new Map(
+    calendarTasks.allDay.concat(calendarTasks.overdue).map((task) => [calendarTaskKey(task), task]),
+  );
 
   // Birthdays are one-day spans like tasks.
   const birthdaySpans = birthdays.flatMap((birthday) => {
@@ -188,7 +243,8 @@ export function WeekView({
   const birthdayById = new Map(birthdays.map((birthday) => [birthdayKey(birthday), birthday]));
 
   const { placed: allDayPlaced, rowCount } = layoutAllDayLane(
-    taskSpans.concat(
+    overdueSpans.concat(
+      taskSpans,
       birthdaySpans,
       allDayEvents.map((event) => {
         const startIndex = event.startDate ? dayIndexOf(event.startDate, strip) : -1;
@@ -213,6 +269,12 @@ export function WeekView({
   const allDayById = new Map(
     allDayEvents.map((event) => [`${event.calendarId}:${event.id}`, event]),
   );
+  // Collapsed, the lane caps at MAX_ALL_DAY_ROWS with "+N more" chips; the
+  // choice is a device setting, so it survives a relaunch. Expanded by default.
+  const preferences = useViewPreferences();
+  const { setViewPreferences } = useGuardedMutations();
+  const collapsed = preferences?.allDayLaneCollapsed ?? false;
+  const capped = collapsed ? capAllDayLane(allDayPlaced, strip.length, MAX_ALL_DAY_ROWS) : null;
   // Built once per render, not once per column: this component re-renders
   // on every drag pointermove, and the strip is up to 11 columns wide.
   const eventsById = new Map(
@@ -230,18 +292,27 @@ export function WeekView({
       <AllDayLane
         allDayById={allDayById}
         birthdayById={birthdayById}
+        collapsed={collapsed}
+        collapsible={rowCount > MAX_ALL_DAY_ROWS}
         colorOf={colorOf}
+        drag={drag}
+        isTaskReadOnly={isTaskReadOnly}
+        laneRef={laneRef}
         listColorOf={listColorOf}
+        moreByDay={capped?.moreByDay ?? []}
         onBirthdayClick={onBirthdayClick}
         onEventClick={onEventClick}
+        onSetCollapsed={(value) => void setViewPreferences({ allDayLaneCollapsed: value })}
         onTaskClick={onTaskClick}
         onToggleTask={onToggleTask}
-        placed={allDayPlaced}
-        rowCount={rowCount}
+        overdueKeys={overdueKeys}
+        placed={capped?.visible ?? allDayPlaced}
+        rowCount={capped?.rowCount ?? rowCount}
         scrollbarWidth={scrollbarWidth}
         stripLength={strip.length}
         stripStyle={stripStyle}
         taskById={taskById}
+        today={todayIso}
       />
 
       {/* Timed grid */}
@@ -271,7 +342,8 @@ export function WeekView({
                 gridTemplateColumns: `repeat(${strip.length}, 1fr)`,
               }}
             >
-              {strip.map((day) => {
+              <GridDropIndicator drag={drag} hourHeight={HOUR_HEIGHT} stripLength={strip.length} />
+              {strip.map((day, dayIndex) => {
                 const iso = day.toString();
                 const range = dayRange(day, timeZone);
                 const boxes = layoutDayColumn(
@@ -327,6 +399,7 @@ export function WeekView({
                         return (
                           <TimedTaskBlock
                             box={box}
+                            dayIndex={dayIndex}
                             drag={drag}
                             hourHeight={HOUR_HEIGHT}
                             key={box.id}

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { layoutAllDayLane } from './allDayLane.ts';
+import { capAllDayLane, layoutAllDayLane } from './allDayLane.ts';
 
 describe('layoutAllDayLane', () => {
   it('packs non-overlapping chips into one row and overlapping ones below', () => {
@@ -47,5 +47,63 @@ describe('layoutAllDayLane', () => {
 
   it('is empty for no spans', () => {
     expect(layoutAllDayLane([], 7)).toEqual({ placed: [], rowCount: 0 });
+  });
+});
+
+const oneDay = (id: string, day: number, row: number) => ({
+  endDayIndex: day + 1,
+  id,
+  row,
+  startDayIndex: day,
+});
+
+describe('capAllDayLane', () => {
+  it('hides nothing when the lane fits the cap', () => {
+    const placed = [oneDay('a', 0, 0), oneDay('b', 0, 1), oneDay('c', 0, 2), oneDay('d', 3, 0)];
+    expect(capAllDayLane(placed, 7, 3)).toEqual({
+      moreByDay: [0, 0, 0, 0, 0, 0, 0],
+      rowCount: 3,
+      visible: placed,
+    });
+  });
+
+  it('gives an overflowing column its last row to the "+N more" chip', () => {
+    const placed = [
+      oneDay('a', 2, 0),
+      oneDay('b', 2, 1),
+      oneDay('c', 2, 2),
+      oneDay('d', 2, 3),
+      oneDay('e', 2, 4),
+      oneDay('f', 4, 2),
+    ];
+    const capped = capAllDayLane(placed, 7, 3);
+    expect(capped.visible.map((span) => span.id)).toEqual(['a', 'b', 'f']);
+    expect(capped.moreByDay).toEqual([0, 0, 3, 0, 0, 0, 0]);
+    expect(capped.rowCount).toBe(3);
+  });
+
+  it('hides a multi-day chip on the cap row once any covered column overflows, counting it in each', () => {
+    const placed = [
+      { endDayIndex: 5, id: 'long', row: 2, startDayIndex: 1 },
+      oneDay('a', 3, 0),
+      oneDay('b', 3, 1),
+      oneDay('c', 3, 3),
+    ];
+    const capped = capAllDayLane(placed, 7, 3);
+    expect(capped.visible.map((span) => span.id)).toEqual(['a', 'b']);
+    expect(capped.moreByDay).toEqual([0, 1, 1, 2, 1, 0, 0]);
+  });
+
+  it('always hides a chip packed below the cap, even where no column is over it', () => {
+    // Greedy packing can leave a chip on row 3 whose columns hold three
+    // chips each; the "+N more" it needs still evicts the row-2 chip there.
+    const placed = [oneDay('a', 0, 0), oneDay('b', 0, 1), oneDay('c', 0, 2), oneDay('d', 0, 3)];
+    const capped = capAllDayLane(placed, 7, 3);
+    expect(capped.visible.map((span) => span.id)).toEqual(['a', 'b']);
+    expect(capped.moreByDay[0]).toBe(2);
+  });
+
+  it('is empty for an empty lane', () => {
+    expect(capAllDayLane([], 3, 3)).toEqual({ moreByDay: [0, 0, 0], rowCount: 0, visible: [] });
   });
 });

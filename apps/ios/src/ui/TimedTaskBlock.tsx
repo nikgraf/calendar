@@ -1,90 +1,58 @@
-/* eslint-disable react/immutability -- Reanimated shared values are mutable refs by design. */
-import { formatPlainTime, priorityMarker, type TaskRecord } from '@calendar/core';
-import { Pressable, StyleSheet, Text, type DimensionValue } from 'react-native';
-import { Gesture, GestureDetector } from 'react-native-gesture-handler';
-import Animated, {
-  runOnJS,
-  useAnimatedStyle,
-  useSharedValue,
-  withTiming,
-} from 'react-native-reanimated';
+import {
+  formatPlainTime,
+  priorityMarker,
+  REPEAT_MARKER,
+  type TaskRecord,
+  taskRepeats,
+} from '@calendar/core';
+import { Pressable, StyleSheet, Text, View, type DimensionValue } from 'react-native';
+import { GestureDetector, type PanGesture } from 'react-native-gesture-handler';
 import { palette } from './theme.ts';
-import { pxToMinutes, SNAP_PX } from './timelineLayout.ts';
 
-/** A compact Apple Reminder that moves in 15-minute steps and has no duration. */
+/**
+ * A compact Apple Reminder with no duration. Its body long-presses into the
+ * timeline's task drag (`gesture`): a ghost follows the finger to another
+ * slot, another day, or up into the all-day lane, and the block dims until
+ * the drop lands.
+ */
 export function TimedTaskBlock({
   compact,
+  dimmed,
+  gesture,
   left,
   listColor,
-  onCommitMove,
   onPress,
   onToggle,
-  readOnly,
   task,
   top,
   width,
 }: {
   compact: boolean;
+  /** This block is the one being dragged. */
+  dimmed: boolean;
+  gesture: PanGesture;
   left: DimensionValue;
   listColor: string | undefined;
-  onCommitMove: (deltaMinutes: number) => void;
   onPress: () => void;
   onToggle: () => void;
-  readOnly: boolean;
   task: TaskRecord;
   top: number;
   width: DimensionValue;
 }) {
-  const translateY = useSharedValue(0);
-  const lifted = useSharedValue(0);
   const done = task.status === 'completed';
   const marker = priorityMarker(task.priority);
-  const label = `${marker ? `${marker} ` : ''}${task.title}`;
+  const repeats = taskRepeats(task);
+  const label = `${marker ? `${marker} ` : ''}${task.title}${repeats ? ` ${REPEAT_MARKER}` : ''}`;
   const dueLabel = formatPlainTime(task.dueTime!);
 
-  const commitMove = (translationPx: number) => {
-    translateY.value = 0;
-    lifted.value = 0;
-    const deltaMinutes = pxToMinutes(translationPx);
-    if (Math.round(deltaMinutes / 15) !== 0) {
-      onCommitMove(deltaMinutes);
-    }
-  };
-
-  const movePan = Gesture.Pan()
-    .enabled(!readOnly)
-    .activateAfterLongPress(250)
-    .onStart(() => {
-      lifted.value = withTiming(1, { duration: 120 });
-    })
-    .onUpdate((update) => {
-      translateY.value = Math.round(update.translationY / SNAP_PX) * SNAP_PX;
-    })
-    .onEnd((end, success) => {
-      if (success) {
-        runOnJS(commitMove)(end.translationY);
-      }
-    })
-    .onFinalize(() => {
-      translateY.value = withTiming(0, { duration: 120 });
-      lifted.value = withTiming(0, { duration: 120 });
-    });
-
-  const animatedStyle = useAnimatedStyle(() => ({
-    shadowOpacity: lifted.value * 0.3,
-    transform: [{ translateY: translateY.value }, { scale: 1 + lifted.value * 0.02 }],
-    zIndex: translateY.value !== 0 || lifted.value > 0 ? 10 : 0,
-  }));
-
   return (
-    <Animated.View
+    <View
       style={[
         styles.block,
-        styles.shadow,
         { left, top, width },
         listColor ? { borderLeftColor: listColor, borderLeftWidth: 3 } : null,
         done && styles.done,
-        animatedStyle,
+        dimmed && styles.dimmed,
       ]}
       testID={`timed-task-${task.id}`}
     >
@@ -99,9 +67,9 @@ export function TimedTaskBlock({
       >
         <Text style={styles.checkbox}>{done ? '☑' : '☐'}</Text>
       </Pressable>
-      <GestureDetector gesture={movePan}>
+      <GestureDetector gesture={gesture}>
         <Pressable
-          accessibilityLabel={`${task.title}, due ${dueLabel}`}
+          accessibilityLabel={`${task.title}, due ${dueLabel}${repeats ? ', repeats' : ''}`}
           accessibilityRole="button"
           hitSlop={4}
           onPress={onPress}
@@ -116,7 +84,7 @@ export function TimedTaskBlock({
           </Text>
         </Pressable>
       </GestureDetector>
-    </Animated.View>
+    </View>
   );
 }
 
@@ -140,13 +108,11 @@ const styles = StyleSheet.create({
     color: '#525252',
     fontSize: 12,
   },
+  dimmed: {
+    opacity: 0.3,
+  },
   done: {
     opacity: 0.5,
-  },
-  shadow: {
-    shadowColor: '#000000',
-    shadowOffset: { height: 4, width: 0 },
-    shadowRadius: 8,
   },
   title: {
     color: palette.text,

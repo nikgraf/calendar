@@ -845,3 +845,69 @@ Performance:
       flow is local-only because it needs MapKit's network. Out of
       scope: location-based reminder alarms, `eventType` /
       `workingLocationProperties`, travel time.
+
+### Task lane polish (2026-09-20)
+
+- [x] Overdue tasks and reminders surface on today — done: an open
+      task whose due day has passed shows only in today's all-day
+      section (week, day and month, both apps) with a red text-presentation
+      `⚠︎` and "Overdue · due <date>" in the tooltip/label; a timed
+      overdue reminder becomes an all-day chip there. Decisions: on today
+      only, never also on its original day (Nik's pick over showing both —
+      no duplicates, one chip to complete or drag); a dedicated
+      `getOverdueTasks({ before })` rpc (visible lists, `needsAction`, no
+      cap — the collapsible lane handles a backlog) merged with the range
+      query in `partitionCalendarTasks(tasks, today)`, which de-duplicates
+      by key and never re-dates a record (every mutation still compares
+      against the stored `dueDate`); `useToday` re-reads the date once at
+      local midnight rather than ticking every minute.
+- [x] Repeat marker on task chips — done: `↻` after the title on lane
+      chips, timed blocks and month chips whenever `recurrence` or
+      `recurrenceUnsupported` is set, "repeats" in accessibility labels.
+      Google tasks carry no rule on the wire, so nothing shows for them.
+- [x] Drag tasks between the all-day lane and the time grid — done on
+      both platforms. Decisions: the drop is judged by where the pointer
+      is released (`dropTargetAt` over the lane, grid viewport and scroll
+      offset; a worklet, so iOS judges it on the UI thread) and the rules
+      live in one pure function, `dropTaskChanges`: a grid drop sets the
+      day and 15-minute time, a lane drop clears the time (also for an
+      overdue timed reminder dragged along the lane it is drawn in), a
+      lane drop on another day moves the day for both providers, and a
+      Google task dropped into the grid is reported `unsupported` — the
+      chip snaps back and a notice says Google Tasks are date-only, never
+      a silent day-only move (the mutation layer's
+      `UnsupportedForProviderError` stays as the second line of defence).
+      Overdue chips drag by absolute target day, since their chip sits on
+      today while `dueDate` is past. Desktop keeps the timed block's live
+      translation for grid-to-grid moves (the existing e2e asserts it) and
+      adds drop indicators for lane-origin and lane-target drags; iOS
+      hosts a ghost at the timeline level because the lane and the
+      ScrollView are different containers, so the timed reminder drag
+      moved from "block follows the finger vertically" to ghost +
+      indicator (event blocks unchanged). All-day event chips stay fixed.
+      No auto-scroll at the grid edge. Desktop e2e covers every drop
+      kind, the Google refusal (rows and op queue unchanged, toast text)
+      and a read-only list; iOS has no Maestro flow (hold-then-drag).
+- [x] Collapsible all-day lane, persisted — done: default expanded on
+      both platforms (iOS previously defaulted to its 3-row cap);
+      collapsed caps at 3 rows with "+N more" per overflowing column
+      (`capAllDayLane`: a multi-day chip counts in every column it covers,
+      the cap row of an overflowing column gives way to the "+N more"
+      chip, a lane that fits changes nothing); "less" sits beside the
+      `all-day` gutter label. The choice is a device setting — the first
+      entry of a typed `ViewPreferences` struct
+      (`getViewPreferences`/`setViewPreferences`) rather than per-boolean
+      or untyped rpcs — and never syncs.
+- [x] iOS week view pages day by day — done: the seven-column strip
+      follows the finger 1:1 across its drawn buffer, and a release
+      commits the columns crossed (whole columns plus the existing
+      flick/quarter rule on the remainder, `swipeCommitColumns`, clamped
+      to the buffer); the day view is the same code with one column. The
+      week's day headers moved inside the timeline so they pan in
+      lockstep, and tapping one opens that day; the day view keeps the
+      Monday-week strip as its picker. `WEEK_SWIPE_BUFFER` stays seven so
+      a full-page drag reveals drawn columns; each committed day re-keys
+      the range atoms, which the bounded cache and the keep-previous hooks
+      absorb. Verified on a simulator with the fingerprint's EAS dev
+      client: one partial swipe moved the window two days with the
+      headers over their columns; `16-week-swipe.yaml` covers it in CI.

@@ -3,7 +3,9 @@ import {
   formatPlainTime,
   type PositionedBox,
   priorityMarker,
+  REPEAT_MARKER,
   type TaskRecord,
+  taskRepeats,
 } from '@calendar/core';
 import { useCallback, useSyncExternalStore } from 'react';
 import type { useEventDrag } from './useEventDrag.ts';
@@ -11,6 +13,7 @@ import type { useEventDrag } from './useEventDrag.ts';
 /** A point-in-time Apple Reminder rendered as a compact, move-only block. */
 export function TimedTaskBlock({
   box,
+  dayIndex,
   drag,
   hourHeight,
   listColor,
@@ -20,6 +23,8 @@ export function TimedTaskBlock({
   task,
 }: {
   box: PositionedBox;
+  /** The strip column this block sits in; a drag's drop day is counted from it. */
+  dayIndex: number;
   drag: ReturnType<typeof useEventDrag>;
   hourHeight: number;
   listColor: string | undefined;
@@ -41,11 +46,12 @@ export function TimedTaskBlock({
   const done = task.status === 'completed';
   const marker = priorityMarker(task.priority);
   const label = `${marker ? `${marker} ` : ''}${task.title}`;
+  const repeats = taskRepeats(task);
   const dueLabel = formatPlainTime(task.dueTime!);
 
   return (
     <div
-      aria-label={`${task.title}, due ${dueLabel}`}
+      aria-label={`${task.title}, due ${dueLabel}${repeats ? ', repeats' : ''}`}
       className={`absolute flex h-[22px] touch-none items-center gap-1 overflow-hidden rounded border border-neutral-300 bg-neutral-50 px-1 text-xs text-neutral-700 outline-none select-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
         readOnly ? 'cursor-pointer' : 'cursor-grab'
       } ${done ? 'opacity-50' : ''} ${dragging ? 'z-20 shadow-lg ring-2 ring-white/60' : ''}`}
@@ -58,7 +64,9 @@ export function TimedTaskBlock({
         }
       }}
       onPointerCancel={drag.onPointerCancel}
-      onPointerDown={(event) => drag.onTaskPointerDown(task, key, readOnly, event)}
+      onPointerDown={(event) =>
+        drag.onTaskPointerDown(task, key, { dayIndex, from: 'grid', readOnly }, event)
+      }
       onPointerMove={drag.onPointerMove}
       onPointerUp={drag.onPointerUp}
       role="button"
@@ -84,6 +92,11 @@ export function TimedTaskBlock({
         {done ? '☑' : '☐'}
       </button>
       <span className={`truncate ${done ? 'line-through' : ''}`}>{label}</span>
+      {repeats ? (
+        <span aria-hidden className="shrink-0 text-neutral-500">
+          {REPEAT_MARKER}
+        </span>
+      ) : null}
     </div>
   );
 }

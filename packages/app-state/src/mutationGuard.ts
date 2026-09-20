@@ -28,7 +28,12 @@ export const subscribeMutationNotices = (listener: NoticeListener): (() => void)
   };
 };
 
-const publish = (notice: MutationNotice): void => {
+/**
+ * Raises a notice without a failed mutation behind it — for a change the UI
+ * refused before asking the backend (a drop the provider cannot hold), so
+ * the user learns why nothing moved.
+ */
+export const publishMutationNotice = (notice: MutationNotice): void => {
   for (const listener of listeners) {
     listener(notice);
   }
@@ -50,7 +55,7 @@ export const guardMutation =
       () => undefined,
       (error: unknown) => {
         const raw = error instanceof Error ? error.message : String(error);
-        publish({
+        publishMutationNotice({
           action,
           detail: raw.length > MAX_DETAIL ? `${raw.slice(0, MAX_DETAIL)}…` : raw,
         });
@@ -80,6 +85,7 @@ export const useGuardedMutations = () => {
       setCalendarColor: guardMutation('change the calendar color', mutations.setCalendarColor),
       setCalendarVisible: guardMutation('toggle the calendar', mutations.setCalendarVisible),
       setTaskListVisible: guardMutation('toggle the task list', mutations.setTaskListVisible),
+      setViewPreferences: guardMutation('save the view settings', mutations.setViewPreferences),
       updateEvent: guardMutation('reschedule the event', mutations.updateEvent),
       updateRecurring: guardMutation('reschedule the event', mutations.updateRecurring),
       updateTask: guardMutation('reschedule the reminder', mutations.updateTask),

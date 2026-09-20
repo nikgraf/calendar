@@ -13,7 +13,9 @@ import type {
   PlaceSuggestion,
   TaskListInfo,
   TaskRecord,
+  ViewPreferences,
 } from '@calendar/core';
+import { msUntilNextMidnight, Temporal } from '@calendar/core';
 import { RegistryContext, useAtomValue } from '@effect/atom-react';
 import { Cause, Effect, Exit, Option } from 'effect';
 import { AsyncResult, type Atom, AtomRegistry } from 'effect/unstable/reactivity';
@@ -199,6 +201,41 @@ export const useTasksInRangeStable = (
 };
 
 /**
+ * Open tasks due before `before` (today's 'YYYY-MM-DD'), for the overdue
+ * chips on today; keep-previous like useTasksInRangeStable.
+ */
+export const useOverdueTasksStable = (before: string): ReadonlyArray<TaskRecord> => {
+  const atoms = useBackendAtoms();
+  const result = useAtomValue(atoms.overdueTasks(before));
+  const value = AsyncResult.value(result);
+  const [previous, setPrevious] = useState<ReadonlyArray<TaskRecord>>([]);
+  if (Option.isSome(value) && value.value !== previous) {
+    // Render-phase state adjustment (the React "derive from props" pattern).
+    setPrevious(value.value);
+  }
+  return Option.isSome(value) ? value.value : previous;
+};
+
+/**
+ * Today's ISO date in `timeZone`, re-read at the next local midnight (one
+ * timer, not a minute tick — the grid must not re-render every minute).
+ */
+export const useToday = (timeZone: string): string => {
+  const [today, setToday] = useState(() => Temporal.Now.plainDateISO(timeZone).toString());
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const arm = () => {
+      // Also runs at once: a zone change (travel) may already be a new day.
+      setToday(Temporal.Now.plainDateISO(timeZone).toString());
+      timer = setTimeout(arm, msUntilNextMidnight(timeZone, Date.now()));
+    };
+    arm();
+    return () => clearTimeout(timer);
+  }, [timeZone]);
+  return today;
+};
+
+/**
  * Contact birthdays falling inside [startDate, endDate] (inclusive
  * 'YYYY-MM-DD' bounds), with the same keep-previous behavior as
  * useTasksInRangeStable.
@@ -221,6 +258,12 @@ export const useBirthdaysInRangeStable = (
 /** The device-local reminder preferences; null until the first read resolves. */
 export const useBirthdayReminderSettings = (): BirthdayReminderSettings | null => {
   const result = useAtomValue(useBackendAtoms().birthdayReminderSettings);
+  return Option.getOrNull(AsyncResult.value(result));
+};
+
+/** The device-local view preferences; null until the first read resolves (treat as the defaults). */
+export const useViewPreferences = (): ViewPreferences | null => {
+  const result = useAtomValue(useBackendAtoms().viewPreferences);
   return Option.getOrNull(AsyncResult.value(result));
 };
 
@@ -300,6 +343,7 @@ export const useBackendMutations = () => {
       setCalendarColor: set('setCalendarColor'),
       setCalendarVisible: set('setCalendarVisible'),
       setTaskListVisible: set('setTaskListVisible'),
+      setViewPreferences: set('setViewPreferences'),
       syncNow: set('syncNow'),
       updateEvent: set('updateEvent'),
       updateRecurring: set('updateRecurring'),

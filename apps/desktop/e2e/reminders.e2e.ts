@@ -1,17 +1,22 @@
 import { Account, APPLE_REMINDERS_ACCOUNT_ID, TaskListInfo, TaskRecord } from '@calendar/core';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { type App, launchApp, readEvents, readTasks, type RemindersFixture } from './harness.ts';
+import {
+  type App,
+  launchApp,
+  localIsoDaysAgo,
+  readEvents,
+  readTasks,
+  type RemindersFixture,
+} from './harness.ts';
 
 // Seeded straight into SQLite: the harness launches the app with
 // CALENDAR_REMINDERS=off, so no EventKit sync can replace these rows and
 // no TCC prompt can fire on a developer's Mac. This covers the UI half of
 // the Reminders integration — chips, the provider-specific form, the
 // sidebar section — without a real Reminders database.
-const today = new Date();
-const isoToday = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
-const tomorrow = new Date(today);
-tomorrow.setDate(tomorrow.getDate() + 1);
-const isoTomorrow = `${tomorrow.getFullYear()}-${String(tomorrow.getMonth() + 1).padStart(2, '0')}-${String(tomorrow.getDate()).padStart(2, '0')}`;
+const isoToday = localIsoDaysAgo(0);
+const isoTomorrow = localIsoDaysAgo(-1);
+const isoYesterday = localIsoDaysAgo(1);
 
 const seed = {
   accounts: [
@@ -60,6 +65,52 @@ const seed = {
       recurrence: { freq: 'weekly', interval: 1 },
       status: 'needsAction',
       title: 'Call mom',
+      updatedAt: 1,
+    }),
+    // Yesterday is always inside the rendered strip (two buffer days precede
+    // the week), so a stale timed block on its own day would be in the DOM.
+    new TaskRecord({
+      accountId: APPLE_REMINDERS_ACCOUNT_ID,
+      dueDate: isoYesterday,
+      dueTime: '09:00',
+      id: 'ek-rem-overdue',
+      listId: 'ek-list-1',
+      provider: 'apple',
+      status: 'needsAction',
+      title: 'Overdue call',
+      updatedAt: 1,
+    }),
+    // A by-day rule ("Weekends") the app cannot express: mirrored as
+    // recurrenceUnsupported, it must still read as repeating.
+    new TaskRecord({
+      accountId: APPLE_REMINDERS_ACCOUNT_ID,
+      dueDate: isoToday,
+      id: 'ek-rem-weekends',
+      listId: 'ek-list-1',
+      provider: 'apple',
+      recurrenceUnsupported: true,
+      status: 'needsAction',
+      title: 'Theo reading',
+      updatedAt: 1,
+    }),
+    new TaskRecord({
+      accountId: APPLE_REMINDERS_ACCOUNT_ID,
+      dueDate: isoToday,
+      id: 'ek-rem-allday',
+      listId: 'ek-list-1',
+      provider: 'apple',
+      status: 'needsAction',
+      title: 'Water plants',
+      updatedAt: 1,
+    }),
+    new TaskRecord({
+      accountId: APPLE_REMINDERS_ACCOUNT_ID,
+      dueDate: isoToday,
+      id: 'ek-rem-milk',
+      listId: 'ek-list-1',
+      provider: 'apple',
+      status: 'needsAction',
+      title: 'Buy milk',
       updatedAt: 1,
     }),
     new TaskRecord({
@@ -117,6 +168,48 @@ const remindersFixture: RemindersFixture = {
     {
       alarms: [],
       completed: false,
+      dueDate: isoYesterday,
+      dueTime: '09:00',
+      id: 'ek-rem-overdue',
+      listId: 'ek-list-1',
+      priority: 0,
+      title: 'Overdue call',
+      updatedAt: 1,
+    },
+    {
+      alarms: [],
+      completed: false,
+      dueDate: isoToday,
+      id: 'ek-rem-weekends',
+      listId: 'ek-list-1',
+      priority: 0,
+      recurrence: { unsupported: true },
+      title: 'Theo reading',
+      updatedAt: 1,
+    },
+    {
+      alarms: [],
+      completed: false,
+      dueDate: isoToday,
+      id: 'ek-rem-allday',
+      listId: 'ek-list-1',
+      priority: 0,
+      title: 'Water plants',
+      updatedAt: 1,
+    },
+    {
+      alarms: [],
+      completed: false,
+      dueDate: isoToday,
+      id: 'ek-rem-milk',
+      listId: 'ek-list-1',
+      priority: 0,
+      title: 'Buy milk',
+      updatedAt: 1,
+    },
+    {
+      alarms: [],
+      completed: false,
       dueDate: isoToday,
       id: 'ek-rem-ro',
       listId: 'ek-list-ro',
@@ -156,6 +249,19 @@ describe('Apple Reminders UI', () => {
     );
     expect(label).toContain('!!! Call mom');
     expect(label).not.toContain('14:00');
+    // A weekly reminder carries the repeat marker; a one-off does not. So
+    // does a rule the app cannot express (EventKit by-day, "Weekends").
+    expect(label).toContain('\u21bb');
+    expect(
+      await cdp.eval<string>(
+        `document.querySelector('[data-testid="all-day-task-ek-rem-weekends"]')?.textContent ?? ''`,
+      ),
+    ).toContain('\u21bb');
+    expect(
+      await cdp.eval<string>(
+        `document.querySelector('[data-testid="timed-task-ek-rem-ro-timed"]')?.textContent ?? ''`,
+      ),
+    ).not.toContain('\u21bb');
     const tooltip = await cdp.eval<string>(
       `document.querySelector('[data-testid="timed-task-ek-rem-1"]')?.getAttribute('title') ?? ''`,
     );
@@ -164,6 +270,51 @@ describe('Apple Reminders UI', () => {
     expect(await cdp.locate('[title="Bin day"]')).toBeTruthy();
     const sidebar = await cdp.waitFor<string>('document.body.textContent ?? ""');
     expect(sidebar).toContain('Apple Reminders');
+  });
+
+  it('draws an overdue timed reminder as a marked all-day chip on today only', async () => {
+    const { cdp } = app;
+    const chip = await cdp.locate('[data-overdue][title^="Overdue call"]');
+    expect(chip).toBeTruthy();
+    // Overdue chips join the all-day lane in today's column; the past day
+    // keeps no timed block for it.
+    expect(
+      await cdp.eval(`!!document.querySelector('[data-testid="timed-task-ek-rem-overdue"]')`),
+    ).toBe(false);
+    expect(
+      await cdp.eval<number>(`document.querySelectorAll('[title^="Overdue call"]').length`),
+    ).toBe(1);
+    const facts = await cdp.eval<string>(`(() => {
+      const chip = document.querySelector('[data-overdue][title^="Overdue call"]');
+      const todayCell = document.querySelector('.bg-red-500')?.closest('.h-10');
+      const chipRect = chip.getBoundingClientRect();
+      const cellRect = todayCell.getBoundingClientRect();
+      return JSON.stringify({
+        inTodayColumn: chipRect.left >= cellRect.left - 1 && chipRect.right <= cellRect.right + 1,
+        label: chip.textContent,
+        tooltip: chip.getAttribute('title'),
+      });
+    })()`);
+    const { inTodayColumn, label, tooltip } = JSON.parse(facts) as {
+      inTodayColumn: boolean;
+      label: string;
+      tooltip: string;
+    };
+    expect(inTodayColumn).toBe(true);
+    expect(label).toContain('\u26a0');
+    expect(label).not.toContain('09:00');
+    expect(tooltip).toMatch(/Overdue call · Overdue · due /);
+
+    // Completing it from the chip clears the overdue state.
+    const complete = await cdp.locate('button[aria-label="Complete task Overdue call"]');
+    await cdp.click(complete.x, complete.y);
+    await expect
+      .poll(async () =>
+        (await readTasks(app.userDataDir)).find((task) => task.id === 'ek-rem-overdue'),
+      )
+      .toMatchObject({ status: 'completed' });
+    await cdp.waitFor(`!document.querySelector('[data-overdue][title^="Overdue call"]')`);
+    expect(await cdp.eval(`document.body.textContent.includes('Edit reminder')`)).toBe(false);
   });
 
   it('completes a timed reminder from its checkbox without opening the editor', async () => {
@@ -367,6 +518,101 @@ describe('Apple Reminders UI', () => {
     } finally {
       await cdp.clickButtonWithText('Cancel');
     }
+  });
+});
+
+describe('Reminder chips drag between the all-day lane and the grid', () => {
+  let app: App;
+  beforeAll(async () => {
+    app = await launchApp(seed, { reminders: { fixture: remindersFixture } });
+  }, 60_000);
+  afterAll(async () => {
+    await app.stop();
+  });
+
+  const HOUR_HEIGHT = 48;
+  /** Viewport y of a wall-clock hour inside the scrolled grid. */
+  const gridY = (hour: number) =>
+    app.cdp.eval<number>(`(() => {
+      const scroller = document.querySelector('.overflow-y-scroll');
+      return scroller.getBoundingClientRect().top + ${hour * HOUR_HEIGHT} - scroller.scrollTop;
+    })()`);
+  const laneY = () =>
+    app.cdp.eval<number>(`(() => {
+      const rect = document.querySelector('[data-testid="all-day-lane"]').getBoundingClientRect();
+      return rect.top + rect.height / 2;
+    })()`);
+  const dayWidth = () =>
+    app.cdp.eval<number>(
+      `document.querySelector('.relative.grid').getBoundingClientRect().width / document.querySelector('.relative.grid').children.length`,
+    );
+  const taskById = async (id: string) =>
+    (await readTasks(app.userDataDir)).find((task) => task.id === id);
+  // The first EventKit write after launch waits for the bridge to come up.
+  const POLL = { timeout: 5000 };
+
+  it('gives an all-day reminder a time when dropped into the grid', async () => {
+    const { cdp } = app;
+    const from = await cdp.locate('[data-testid="all-day-task-ek-rem-allday"]');
+    await cdp.drag(from, { x: from.x, y: await gridY(10) });
+    await expect
+      .poll(() => taskById('ek-rem-allday'))
+      .toMatchObject({
+        dueDate: isoToday,
+        dueTime: '10:00',
+      });
+    await cdp.locate('[data-testid="timed-task-ek-rem-allday"]');
+    expect(await cdp.eval(`!!document.querySelector('[data-testid="task-drop-grid"]')`)).toBe(
+      false,
+    );
+    expect(await cdp.eval(`document.body.textContent.includes('Edit reminder')`)).toBe(false);
+  });
+
+  it('clears the time of a timed reminder dropped into the lane on another day', async () => {
+    const { cdp } = app;
+    const from = await cdp.locate('[data-testid="timed-task-ek-rem-1"]');
+    await cdp.drag(from, { x: from.x + (await dayWidth()), y: await laneY() });
+    await expect
+      .poll(() => taskById('ek-rem-1'))
+      .toMatchObject({
+        dueDate: isoTomorrow,
+        recurrence: { freq: 'weekly', interval: 1 },
+      });
+    expect((await taskById('ek-rem-1'))?.dueTime).toBeUndefined();
+    expect(await cdp.eval(`!!document.querySelector('[data-testid="task-drop-lane"]')`)).toBe(
+      false,
+    );
+  });
+
+  it('moves an all-day reminder to another day along the lane', async () => {
+    const { cdp } = app;
+    const from = await cdp.locate('[data-testid="all-day-task-ek-rem-milk"]');
+    await cdp.drag(from, { x: from.x + (await dayWidth()), y: from.y });
+    await expect.poll(() => taskById('ek-rem-milk'), POLL).toMatchObject({ dueDate: isoTomorrow });
+    expect((await taskById('ek-rem-milk'))?.dueTime).toBeUndefined();
+  });
+
+  it('re-dates an overdue reminder to today at the dropped time', async () => {
+    const { cdp } = app;
+    const from = await cdp.locate('[data-overdue][title^="Overdue call"]');
+    await cdp.drag(from, { x: from.x, y: await gridY(11) });
+    await expect
+      .poll(() => taskById('ek-rem-overdue'))
+      .toMatchObject({
+        dueDate: isoToday,
+        dueTime: '11:00',
+      });
+    await cdp.waitFor(`!document.querySelector('[data-overdue][title^="Overdue call"]')`);
+    await cdp.locate('[data-testid="timed-task-ek-rem-overdue"]');
+  });
+
+  it('does not drag a chip from a read-only list', async () => {
+    const { cdp } = app;
+    const from = await cdp.locate('[data-testid="all-day-task-ek-rem-ro"]');
+    await cdp.drag(from, { x: from.x, y: await gridY(10) });
+    expect(await taskById('ek-rem-ro')).toMatchObject({ dueDate: isoToday });
+    expect((await taskById('ek-rem-ro'))?.dueTime).toBeUndefined();
+    expect(await cdp.eval(`document.body.textContent.includes('Couldn')`)).toBe(false);
   });
 });
 

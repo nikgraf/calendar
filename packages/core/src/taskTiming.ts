@@ -8,22 +8,53 @@ export const TIMED_TASK_LAYOUT_MINUTES = 30;
 export const calendarTaskKey = (task: Pick<TaskRecord, 'accountId' | 'id' | 'listId'>): string =>
   `task:${task.accountId}:${task.listId}:${task.id}`;
 
+/** An open task whose due day has passed (both dates are 'YYYY-MM-DD', so string order is date order). */
+export const isOverdue = (task: Pick<TaskRecord, 'dueDate' | 'status'>, today: string): boolean =>
+  task.status === 'needsAction' && task.dueDate !== undefined && task.dueDate < today;
+
+/**
+ * Splits the calendar's tasks into the all-day lane, the timed grid and —
+ * given `today` — the overdue set: open tasks due before today, timed or
+ * not, which the lanes draw on today instead of on their own past day.
+ * The in-range and overdue queries overlap when a past due day is inside
+ * the rendered strip, so tasks are de-duplicated by key first.
+ */
 export const partitionCalendarTasks = (
   tasks: ReadonlyArray<TaskRecord>,
-): { readonly allDay: Array<TaskRecord>; readonly timed: Array<TaskRecord> } => {
+  today?: string,
+): {
+  readonly allDay: Array<TaskRecord>;
+  readonly overdue: Array<TaskRecord>;
+  readonly timed: Array<TaskRecord>;
+} => {
   const allDay: Array<TaskRecord> = [];
+  const overdue: Array<TaskRecord> = [];
   const timed: Array<TaskRecord> = [];
+  const seen = new Set<string>();
   for (const task of tasks) {
     if (task.dueDate === undefined) {
       continue;
     }
-    if (task.dueTime === undefined) {
+    const key = calendarTaskKey(task);
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    if (today !== undefined && isOverdue(task, today)) {
+      overdue.push(task);
+    } else if (task.dueTime === undefined) {
       allDay.push(task);
     } else {
       timed.push(task);
     }
   }
-  return { allDay, timed };
+  overdue.sort(
+    (a, b) =>
+      a.dueDate!.localeCompare(b.dueDate!) ||
+      (a.dueTime ?? '').localeCompare(b.dueTime ?? '') ||
+      a.title.localeCompare(b.title),
+  );
+  return { allDay, overdue, timed };
 };
 
 const DAY_MINUTES = 24 * 60;
@@ -84,4 +115,43 @@ export const moveTimedTask = (
     ...(dueDate === task.dueDate ? {} : { dueDate }),
     ...(dueTime === task.dueTime ? {} : { dueTime }),
   };
+};
+
+/** A drop from a chip drag: a day in the all-day lane, or a day and a minute in the grid. */
+export type TaskDrop =
+  | { readonly dueDate: string; readonly kind: 'allDay' }
+  | { readonly dueDate: string; readonly kind: 'timed'; readonly minute: number };
+
+export type TaskDropResult =
+  | { readonly changes: { readonly dueDate?: string; readonly dueTime?: string | null } }
+  /** The target needs a field this task's provider cannot hold — refuse visibly, never silently. */
+  | { readonly unsupported: 'dueTime' };
+
+/**
+ * The changes a drop asks for, or undefined when it asks for nothing. A grid
+ * drop gives the task that day and time; a lane drop gives it that day and
+ * clears the time (also when an overdue timed reminder is dragged along the
+ * lane it is drawn in). Google Tasks are date-only, so a grid drop on one is
+ * reported as unsupported rather than turned into a day-only move.
+ */
+export const dropTaskChanges = (
+  task: Pick<TaskRecord, 'dueDate' | 'dueTime' | 'provider'>,
+  drop: TaskDrop,
+): TaskDropResult | undefined => {
+  if (drop.kind === 'timed') {
+    if (task.provider === 'google') {
+      return { unsupported: 'dueTime' };
+    }
+    const dueTime = `${pad2(Math.floor(drop.minute / 60))}:${pad2(drop.minute % 60)}`;
+    const changes = {
+      ...(drop.dueDate === task.dueDate ? {} : { dueDate: drop.dueDate }),
+      ...(dueTime === task.dueTime ? {} : { dueTime }),
+    };
+    return Object.keys(changes).length === 0 ? undefined : { changes };
+  }
+  const changes = {
+    ...(drop.dueDate === task.dueDate ? {} : { dueDate: drop.dueDate }),
+    ...(task.dueTime === undefined ? {} : { dueTime: null }),
+  };
+  return Object.keys(changes).length === 0 ? undefined : { changes };
 };

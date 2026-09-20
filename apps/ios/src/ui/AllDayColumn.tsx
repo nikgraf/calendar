@@ -4,23 +4,31 @@ import {
   birthdayChipLabel,
   calendarTaskKey,
   type EventRecord,
+  overdueLabel,
   taskChipLabel,
   type TaskRecord,
+  taskRepeats,
 } from '@calendar/core';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { GestureDetector } from 'react-native-gesture-handler';
 import { chipTextColor, palette } from './theme.ts';
 import { ALL_DAY_ROW_HEIGHT } from './timelineLayout.ts';
+import type { TaskDrag } from './useTaskDrag.ts';
 
 /**
  * One day's all-day chips (date-only tasks, then birthdays, then events), one
  * chip per row. Past `maxChips` the column shows the first rows and a
- * "+N more" chip that expands the lane.
+ * "+N more" chip that expands the lane. A task chip's body long-presses
+ * into a drag (another day, or a time in the grid); the chip dims while
+ * its ghost travels.
  */
 export function AllDayColumn({
   birthdays,
   colorOf,
   compact,
+  draggingKey,
   events,
+  isTaskReadOnly,
   listColorOf,
   maxChips,
   onBirthdayPress,
@@ -28,15 +36,21 @@ export function AllDayColumn({
   onShowMore,
   onTaskPress,
   onToggleTask,
+  overdueKeys,
+  taskDrag,
   tasks,
+  today,
   width,
 }: {
   /** Birthdays falling on this day. */
   birthdays: ReadonlyArray<BirthdayOccurrence>;
   colorOf: (event: EventRecord) => string;
   compact: boolean;
+  /** The task being dragged, if any: its source chip dims. */
+  draggingKey: string | null;
   /** All-day events on this day. */
   events: ReadonlyArray<EventRecord>;
+  isTaskReadOnly: (task: TaskRecord) => boolean;
   listColorOf: (task: TaskRecord) => string | undefined;
   maxChips: number;
   onBirthdayPress: (birthday: BirthdayOccurrence) => void;
@@ -44,8 +58,12 @@ export function AllDayColumn({
   onShowMore: () => void;
   onTaskPress: (task: TaskRecord) => void;
   onToggleTask: (task: TaskRecord) => void;
+  /** Task keys drawn here because their due day has passed (today's column only). */
+  overdueKeys: ReadonlySet<string>;
+  taskDrag: TaskDrag;
   /** Tasks due on this day. */
   tasks: ReadonlyArray<TaskRecord>;
+  today: string;
   width: number;
 }) {
   const total = tasks.length + birthdays.length + events.length;
@@ -62,7 +80,14 @@ export function AllDayColumn({
   return (
     <View style={[styles.allDayColumn, { width }]}>
       {visibleTasks.map((task) => {
+        const key = calendarTaskKey(task);
         const done = task.status === 'completed';
+        const overdue = overdueKeys.has(key);
+        const repeats = taskRepeats(task);
+        const facts = [
+          ...(overdue ? [overdueLabel(task, today)] : []),
+          ...(repeats ? ['repeats'] : []),
+        ];
         const listColor = listColorOf(task);
         return (
           <View
@@ -74,6 +99,7 @@ export function AllDayColumn({
               // from Google tasks without recoloring the whole chip.
               listColor ? { borderLeftColor: listColor, borderLeftWidth: 3 } : null,
               done && styles.taskChipDone,
+              draggingKey === key && styles.taskChipDragging,
             ]}
             testID={`task-chip-${task.id}`}
           >
@@ -91,24 +117,30 @@ export function AllDayColumn({
             >
               <Text style={styles.taskCheckbox}>{done ? '☑' : '☐'}</Text>
             </Pressable>
-            <Pressable
-              hitSlop={4}
-              onPress={() => onTaskPress(task)}
-              style={styles.taskBody}
-              testID={`task-chip-body-${task.id}`}
-            >
-              <Text
-                numberOfLines={1}
-                style={[
-                  styles.allDayText,
-                  compact && styles.allDayTextCompact,
-                  styles.taskText,
-                  done && styles.taskTextDone,
-                ]}
+            <GestureDetector gesture={taskDrag.gestureFor(task, 'lane', isTaskReadOnly(task))}>
+              <Pressable
+                accessibilityLabel={
+                  facts.length > 0 ? `${task.title}, ${facts.join(', ')}` : undefined
+                }
+                hitSlop={4}
+                onPress={() => onTaskPress(task)}
+                style={styles.taskBody}
+                testID={`task-chip-body-${task.id}`}
               >
-                {taskChipLabel(task)}
-              </Text>
-            </Pressable>
+                <Text
+                  numberOfLines={1}
+                  style={[
+                    styles.allDayText,
+                    compact && styles.allDayTextCompact,
+                    styles.taskText,
+                    overdue && styles.taskTextOverdue,
+                    done && styles.taskTextDone,
+                  ]}
+                >
+                  {taskChipLabel(task, { overdue, repeats })}
+                </Text>
+              </Pressable>
+            </GestureDetector>
           </View>
         );
       })}
@@ -228,10 +260,16 @@ const styles = StyleSheet.create({
   taskChipDone: {
     opacity: 0.5,
   },
+  taskChipDragging: {
+    opacity: 0.3,
+  },
   taskText: {
     color: '#404040',
   },
   taskTextDone: {
     textDecorationLine: 'line-through',
+  },
+  taskTextOverdue: {
+    color: palette.overdue,
   },
 });
