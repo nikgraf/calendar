@@ -70,6 +70,10 @@ export const monthlyOrdinalOf = (isoDate: string): MonthlyOrdinal => {
 
 const weekdayRank = (weekday: Weekday): number => WEEKDAYS_MONDAY_FIRST.indexOf(weekday);
 
+/** Plain weekdays in canonical (Monday-first) order, duplicates dropped. Never mutates its input. */
+export const sortWeekdays = (days: ReadonlyArray<Weekday>): Array<Weekday> =>
+  WEEKDAYS_MONDAY_FIRST.filter((day) => days.includes(day));
+
 /** Canonical order: Monday first, then by ordinal. Never mutates its input. */
 export const sortByDay = (days: ReadonlyArray<ByDay>): Array<ByDay> =>
   [...days].sort(
@@ -94,10 +98,11 @@ export const isWeekdays = (days: ReadonlyArray<Weekday>): boolean =>
   days.length === 5 && !days.includes('SA') && !days.includes('SU');
 
 /**
- * The shape a rule's byDay may take, stated once for the editors, the
- * mutation layer and the bridge: weekly rules list plain weekdays; monthly
- * rules name exactly one "Nth weekday"; daily and yearly rules have none.
- * Undefined when valid.
+ * The shape a rule's byDay may take, stated once: the editors refuse it on
+ * Save, the reminder mutations refuse it before EventKit (so the fake and
+ * the real bridge agree), and the Swift write path refuses it again.
+ * Weekly rules list plain weekdays; monthly rules name exactly one "Nth
+ * weekday"; daily and yearly rules have none. Undefined when valid.
  */
 export const byDayError = (spec: {
   readonly byDay?: ReadonlyArray<ByDay> | undefined;

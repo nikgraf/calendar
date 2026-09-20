@@ -5,6 +5,8 @@ import {
   repeatNumberError,
   repeatSpecFrom,
   seedRepeatFields,
+  shownOrdinal,
+  shownWeekdays,
   toggleWeekdayIn,
 } from './repeatState.ts';
 
@@ -48,46 +50,57 @@ const SUNDAY = '2026-09-20';
 const TUESDAY = '2026-09-08';
 
 describe('seedRepeatFields', () => {
-  it('starts an unseeded form off, on the anchor weekday and ordinal', () => {
-    expect(seedRepeatFields(undefined, SUNDAY)).toMatchObject({
-      explicitWeekdays: false,
+  it('starts an unseeded form off, following the anchor for weekdays and ordinal', () => {
+    const fields = seedRepeatFields(undefined);
+    expect(fields).toMatchObject({
       monthly: 'dayOfMonth',
-      ordinal: 3,
-      ordinalWeekday: 'SU',
+      ordinalExplicit: false,
       repeat: 'none',
-      weekdays: ['SU'],
+      weekdays: [],
+      weekdaysExplicit: false,
     });
-    expect(seedRepeatFields(undefined, TUESDAY)).toMatchObject({
-      ordinal: 2,
-      ordinalWeekday: 'TU',
+    expect(shownWeekdays(fields, SUNDAY)).toEqual(['SU']);
+    expect(shownOrdinal(fields, SUNDAY)).toEqual({ ordinal: 3, weekday: 'SU' });
+    expect(shownOrdinal(fields, TUESDAY)).toEqual({ ordinal: 2, weekday: 'TU' });
+  });
+
+  it('survives a date field mid-edit', () => {
+    const fields = seedRepeatFields(undefined);
+    expect(shownWeekdays(fields, '')).toEqual(['MO']);
+    expect(shownOrdinal(fields, '2026-0')).toEqual({ ordinal: 1, weekday: 'MO' });
+    expect(repeatSpecFrom({ ...fields, repeat: 'weekly' }, '')).toEqual({
+      freq: 'weekly',
+      interval: 1,
     });
   });
 
   it('reads a weekly rule with named weekdays as explicit, Monday first', () => {
     expect(
-      seedRepeatFields(
-        { byDay: [{ weekday: 'SU' }, { weekday: 'SA' }], freq: 'weekly', interval: 1 },
-        TUESDAY,
-      ),
-    ).toMatchObject({ explicitWeekdays: true, repeat: 'weekly', weekdays: ['SA', 'SU'] });
-    expect(seedRepeatFields({ freq: 'weekly', interval: 2 }, TUESDAY)).toMatchObject({
-      explicitWeekdays: false,
-      interval: '2',
-      weekdays: ['TU'],
-    });
+      seedRepeatFields({
+        byDay: [{ weekday: 'SU' }, { weekday: 'SA' }],
+        freq: 'weekly',
+        interval: 1,
+      }),
+    ).toMatchObject({ repeat: 'weekly', weekdays: ['SA', 'SU'], weekdaysExplicit: true });
+    const scalar = seedRepeatFields({ freq: 'weekly', interval: 2 });
+    expect(scalar).toMatchObject({ interval: '2', weekdays: [], weekdaysExplicit: false });
+    expect(shownWeekdays(scalar, TUESDAY)).toEqual(['TU']);
   });
 
   it('reads a monthly ordinal rule into weekday mode', () => {
     expect(
-      seedRepeatFields(
-        { byDay: [{ ordinal: -1, weekday: 'FR' }], freq: 'monthly', interval: 1 },
-        SUNDAY,
-      ),
-    ).toMatchObject({ monthly: 'weekday', ordinal: -1, ordinalWeekday: 'FR', repeat: 'monthly' });
-    expect(seedRepeatFields({ count: 6, freq: 'monthly', interval: 1 }, SUNDAY)).toMatchObject({
+      seedRepeatFields({ byDay: [{ ordinal: -1, weekday: 'FR' }], freq: 'monthly', interval: 1 }),
+    ).toMatchObject({
+      monthly: 'weekday',
+      ordinal: -1,
+      ordinalExplicit: true,
+      ordinalWeekday: 'FR',
+    });
+    expect(seedRepeatFields({ count: 6, freq: 'monthly', interval: 1 })).toMatchObject({
       count: '6',
       ends: 'after',
       monthly: 'dayOfMonth',
+      ordinalExplicit: false,
     });
   });
 });
@@ -102,16 +115,17 @@ describe('toggleWeekdayIn', () => {
 
 describe('repeatSpecFrom', () => {
   it('is undefined while repeat is off', () => {
-    expect(repeatSpecFrom(seedRepeatFields(undefined, SUNDAY), SUNDAY)).toBeUndefined();
+    expect(repeatSpecFrom(seedRepeatFields(undefined), SUNDAY)).toBeUndefined();
   });
 
-  it('keeps a weekly rule on the anchor weekday scalar, unless the seed named it', () => {
-    const fresh = { ...seedRepeatFields(undefined, SUNDAY), repeat: 'weekly' as const };
+  it('keeps an untouched weekly rule scalar, whatever date it moves to', () => {
+    const fresh = { ...seedRepeatFields(undefined), repeat: 'weekly' as const };
     expect(repeatSpecFrom(fresh, SUNDAY)).toEqual({ freq: 'weekly', interval: 1 });
-    const explicit = seedRepeatFields(
-      { byDay: [{ weekday: 'SU' }], freq: 'weekly', interval: 1 },
-      SUNDAY,
-    );
+    expect(repeatSpecFrom(fresh, TUESDAY)).toEqual({ freq: 'weekly', interval: 1 });
+  });
+
+  it('sends a seeded explicit rule back with its weekdays', () => {
+    const explicit = seedRepeatFields({ byDay: [{ weekday: 'SU' }], freq: 'weekly', interval: 1 });
     expect(repeatSpecFrom(explicit, SUNDAY)).toEqual({
       byDay: [{ weekday: 'SU' }],
       freq: 'weekly',
@@ -119,36 +133,48 @@ describe('repeatSpecFrom', () => {
     });
   });
 
-  it('names the weekdays once they differ from the anchor', () => {
-    const fields = { ...seedRepeatFields(undefined, SUNDAY), repeat: 'weekly' as const };
-    expect(
-      repeatSpecFrom({ ...fields, weekdays: toggleWeekdayIn(fields.weekdays, 'SA') }, SUNDAY),
-    ).toEqual({
+  it('names the weekdays once the user toggled one', () => {
+    const fields = { ...seedRepeatFields(undefined), repeat: 'weekly' as const };
+    const toggled = {
+      ...fields,
+      weekdays: toggleWeekdayIn(shownWeekdays(fields, SUNDAY), 'SA'),
+      weekdaysExplicit: true,
+    };
+    expect(repeatSpecFrom(toggled, SUNDAY)).toEqual({
       byDay: [{ weekday: 'SA' }, { weekday: 'SU' }],
       freq: 'weekly',
       interval: 1,
     });
   });
 
-  it('names the ordinal weekday only in monthly weekday mode', () => {
-    const base = { ...seedRepeatFields(undefined, TUESDAY), repeat: 'monthly' as const };
+  it('names the ordinal weekday only in monthly weekday mode, following the date until picked', () => {
+    const base = { ...seedRepeatFields(undefined), repeat: 'monthly' as const };
     expect(repeatSpecFrom(base, TUESDAY)).toEqual({ freq: 'monthly', interval: 1 });
-    expect(repeatSpecFrom({ ...base, monthly: 'weekday' }, TUESDAY)).toEqual({
+    const weekdayMode = { ...base, monthly: 'weekday' as const };
+    expect(repeatSpecFrom(weekdayMode, TUESDAY)).toEqual({
       byDay: [{ ordinal: 2, weekday: 'TU' }],
       freq: 'monthly',
       interval: 1,
     });
+    expect(repeatSpecFrom(weekdayMode, SUNDAY)?.byDay).toEqual([{ ordinal: 3, weekday: 'SU' }]);
+    const picked = {
+      ...weekdayMode,
+      ordinal: -1 as const,
+      ordinalExplicit: true,
+      ordinalWeekday: 'FR' as const,
+    };
+    expect(repeatSpecFrom(picked, SUNDAY)?.byDay).toEqual([{ ordinal: -1, weekday: 'FR' }]);
   });
 
-  it('carries the end condition and the display spec always shows weekdays', () => {
+  it('carries the end condition, and the display spec always shows weekdays', () => {
     const fields = {
-      ...seedRepeatFields(undefined, SUNDAY),
+      ...seedRepeatFields(undefined),
       count: '5',
       ends: 'after' as const,
       repeat: 'weekly' as const,
     };
     expect(repeatSpecFrom(fields, SUNDAY)).toEqual({ count: 5, freq: 'weekly', interval: 1 });
-    expect(repeatDisplaySpec(fields)).toEqual({
+    expect(repeatDisplaySpec(fields, SUNDAY)).toEqual({
       byDay: [{ weekday: 'SU' }],
       count: 5,
       freq: 'weekly',

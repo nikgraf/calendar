@@ -310,15 +310,19 @@ design decisions it settled.
       type (`packages/core/src/recurrence/byDay.ts`) shared by the
       structured rule, `TaskRecurrence` and the editor spec, with
       `byDayError` stating the allowed shapes once for the editors and the
-      Swift write path; the wire stays minimal — a weekly rule sends its
-      weekdays only when they differ from the anchor's weekday or the
-      source rule named them (an untouched Save never rewrites a rule
-      Reminders.app stored explicitly), scalar fixtures stay scalar; the
-      shared repeat state (`useRepeatState`) takes the anchor date, seeds
-      a fresh weekly rule with its weekday and the monthly "weekday" mode
-      with its ordinal, and is pure underneath (`seedRepeatFields`,
-      `repeatSpecFrom`, tested); the last selected weekday cannot be
-      removed; the Reminders bridge reads a monthly ordinal whether
+      Swift write path (and again in the reminder mutations, so the fake
+      and the real bridge agree); the wire stays minimal — a weekly rule
+      sends its weekdays only once they are explicit (the source rule named
+      them, or the user toggled one), so scalar fixtures stay scalar, an
+      untouched Save never rewrites a rule Reminders.app stored explicitly,
+      and moving the date of an untouched rule never pins it to the weekday
+      it started on; the shared repeat state (`useRepeatState`) takes the
+      anchor date, shows its weekday and ordinal until the user picks, and
+      is pure underneath (`seedRepeatFields`, `repeatSpecFrom`, tested);
+      the last selected weekday cannot be removed; a monthly rule on a
+      plain weekday without an ordinal stays unsupported (Reminders.app
+      cannot create one; rewriting it as weekly would be a silent change);
+      the Reminders bridge reads a monthly ordinal whether
       EventKit stored it as the day's week number or as a set position
       and writes it as the week number; yearly positional rules, several
       rules and day-of-month lists still round-trip as `recurrenceUnsupported`.

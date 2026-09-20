@@ -400,6 +400,26 @@ describe('reminder mutations', () => {
     }).pipe(Effect.provide(testLayer(fake)));
   });
 
+  it.effect('createTask refuses a by-day shape EventKit would reject, before the bridge', () => {
+    const fake = fakeWith();
+    return Effect.gen(function* () {
+      yield* seedApple();
+      yield* (yield* SyncEngine).syncAll();
+      const mutations = yield* EventMutations;
+      const failure = yield* Effect.flip(
+        mutations.createTask({
+          accountId: APPLE_REMINDERS_ACCOUNT_ID,
+          dueDate: tomorrow,
+          recurrence: { byDay: [{ ordinal: 2, weekday: 'MO' }], freq: 'weekly', interval: 1 },
+          taskListId: 'list-b',
+          title: 'Bad rule',
+        }),
+      );
+      expect(String(failure)).toContain('badRequest');
+      expect([...fake.state.reminders.values()].some((r) => r.title === 'Bad rule')).toBe(false);
+    }).pipe(Effect.provide(testLayer(fake)));
+  });
+
   it.effect('createTask writes EventKit, mirrors the final row, and queues nothing', () => {
     const fake = fakeWith();
     return Effect.gen(function* () {

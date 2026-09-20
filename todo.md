@@ -62,9 +62,10 @@ comment` for inline-playable video: 10 MB on Free plans, 100 MB paid
       out at read (`repos.ts:737`, needs a list view); quick-add/⌘K creating
       reminders (`QUICK_ADD_JSON_SCHEMA` is events-only); subtasks/flags/
       tags; location alarms; multiple editable alarms (`alarms` is already
-      `number[]` end to end); yearly positional rules, several rules and
-      day-of-month lists still round-trip as `{unsupported:true}` (weekly
-      by-day and monthly ordinals ship since 2026-09-20); creating/deleting
+      `number[]` end to end); yearly positional rules, several rules,
+      day-of-month lists and a monthly rule on a plain weekday without an
+      ordinal still round-trip as `{unsupported:true}` (weekly by-day and
+      monthly ordinals ship since 2026-09-20); creating/deleting
       Reminders lists
       (`REMINDERS_METHODS` has neither).
 
