@@ -4,18 +4,11 @@ tags:
   - ci
 ---
 - runFlow: ../common/launch.yaml
-- tapOn:
-    id: 'add-event'
-- assertVisible: 'New Event'
-# The sheet slides in; on a slow runner a tap taken mid-animation misses.
-- waitForAnimationToEnd:
-    timeout: 5000
+- runFlow: ../common/open-new-event.yaml
 # The Event | Task toggle only exists in create mode.
 - assertVisible:
     id: 'mode-task'
-- tapOn:
-    id: 'mode-task'
-- assertVisible: 'New Task'
+- runFlow: ../common/switch-to-task.yaml
 # Saving needs a task list, which needs a signed-in account whose token
 # carries the tasks scope. Everywhere else the flow is a no-op rather
 # than a false failure — the same shape as 06/07.

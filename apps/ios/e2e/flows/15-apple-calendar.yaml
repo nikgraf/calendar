@@ -1,0 +1,42 @@
+appId: com.solunivo.app
+name: Connect Apple Calendar and pick one of its calendars for a new event
+tags:
+  - ci
+---
+# launchApp pre-grants Calendars access, so connecting shows no prompt.
+# Seed-free: the simulator's own Calendar app calendars are what appears.
+# The flow is a no-op on a dev client built before the module existed
+# (the connect row still shows, but connecting reports "unavailable").
+- runFlow: ../common/launch.yaml
+- runFlow: ../common/open-settings.yaml
+- runFlow:
+    when:
+      visible:
+        id: 'connect-apple-calendar'
+    commands:
+      - tapOn:
+          id: 'connect-apple-calendar'
+      - extendedWaitUntil:
+          visible: '^Apple Calendar$'
+          timeout: 20000
+- runFlow:
+    when:
+      visible: '^Apple Calendar$'
+    commands:
+      - tapOn: 'Done'
+      - runFlow: ../common/open-new-event.yaml
+      # Apple calendars are grouped under their EventKit source.
+      - assertVisible: '(?i)apple calendar · .*'
+      - tapOn: 'Cancel'
+      # Leave no Apple Calendar account behind: the other flows must not
+      # find its calendars (flow 07 would start writing to it).
+      - runFlow: ../common/open-settings.yaml
+      - scrollUntilVisible:
+          element:
+            id: 'remove-account-apple-calendar'
+      - tapOn:
+          id: 'remove-account-apple-calendar'
+      - extendedWaitUntil:
+          notVisible: '^Apple Calendar$'
+          timeout: 20000
+      - tapOn: 'Done'

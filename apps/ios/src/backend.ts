@@ -16,6 +16,7 @@ import {
   TokenStore,
 } from '@calendar/google';
 import {
+  AppleCalendarEvents,
   BirthdayReminders,
   commonBackendHandlers,
   DeviceContacts,
@@ -33,6 +34,7 @@ import { FetchHttpClient } from 'effect/unstable/http';
 import { signInWithGoogle } from './googleAuth.ts';
 import { iosNotificationSink } from './notifications.ts';
 import { iosContactsClient, iosContactsLayer } from './contactsClient.ts';
+import { iosAppleCalendarClient, iosAppleCalendarLayer } from './appleCalendarClient.ts';
 import { iosGeoLayer } from './geoClient.ts';
 import { iosRemindersClient, iosRemindersLayer } from './remindersClient.ts';
 
@@ -95,6 +97,8 @@ const platformLayer = Layer.mergeAll(
 
 const appLayer = SyncEngine.layer.pipe(
   Layer.provideMerge(EventMutations.layer),
+  Layer.provideMerge(AppleCalendarEvents.layer),
+  Layer.provideMerge(iosAppleCalendarLayer),
   Layer.provideMerge(BirthdayReminders.layer({ timeZone: Temporal.Now.timeZoneId() })),
   Layer.provideMerge(GoogleCalendarClient.layer),
   Layer.provideMerge(GoogleTasksClient.layer),
@@ -151,6 +155,12 @@ const directClient = makeDirectBackendClient(handlers, (effect) => runtime.runPr
 // failures there must reach the UI instead of being mistaken for denial.
 export const backendClient: BackendClient = {
   ...directClient,
+  connectAppleCalendar: () =>
+    mapToBackendError(iosAppleCalendarClient.requestAccess()).pipe(
+      Effect.flatMap((granted) =>
+        granted ? directClient.connectAppleCalendar(undefined) : Effect.succeed({ granted: false }),
+      ),
+    ),
   connectContacts: () =>
     mapToBackendError(iosContactsClient.requestAccess()).pipe(
       Effect.flatMap((granted) =>

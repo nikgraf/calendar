@@ -9,9 +9,9 @@ import { app } from 'electron';
 /**
  * Owns the Swift helper child process (newline-delimited JSON over stdio:
  * {id,method,params} → {id,result|error}) and exposes one request
- * function to the rest of main. Two consumers: the renderer-facing
- * model:* IPC (modelHelper.ts) and the backend's RemindersClient
- * (remindersClient.ts) — both ride the same process.
+ * function to the rest of main. Consumers: the renderer-facing model:*
+ * IPC (modelHelper.ts) and the backend's native clients (Reminders,
+ * Contacts, Geo, Apple Calendar) — all ride the same process.
  */
 
 /**
@@ -22,6 +22,17 @@ import { app } from 'electron';
  * case is the TCC prompt, which waits on the user).
  */
 const TIMEOUTS_MS: Record<string, number> = {
+  'calendar.create': 15_000,
+  'calendar.delete': 15_000,
+  // A range query expands every series in it; years of history is still local.
+  'calendar.events': 30_000,
+  'calendar.listCalendars': 15_000,
+  'calendar.move': 15_000,
+  'calendar.requestAccess': 600_000,
+  'calendar.series': 15_000,
+  'calendar.setColor': 15_000,
+  'calendar.status': 10_000,
+  'calendar.update': 15_000,
   'contacts.birthdays': 30_000,
   'contacts.requestAccess': 600_000,
   'contacts.snapshot': 30_000,

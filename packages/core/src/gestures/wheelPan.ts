@@ -146,3 +146,17 @@ export const createWheelPan = (config: Partial<WheelPanConfig> = {}): WheelPan =
     },
   };
 };
+
+/**
+ * Whether a change of the rendered first day is (part of) this pan's own
+ * committed shift. A pan only ever renders shifts it committed: same
+ * direction as the pending days, and no more of them. Anything else — a
+ * "Today" jump, the arrows, a view switch — is outside navigation that
+ * happened to arrive while commits were still pending, and must reset the
+ * pan instead of being compensated as if the pan had moved that far.
+ */
+export const isOwnPanShift = (shiftedDays: number, pendingDays: number): boolean =>
+  shiftedDays !== 0 &&
+  pendingDays !== 0 &&
+  Math.sign(shiftedDays) === Math.sign(pendingDays) &&
+  Math.abs(shiftedDays) <= Math.abs(pendingDays);

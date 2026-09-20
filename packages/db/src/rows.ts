@@ -185,6 +185,7 @@ const OP_KINDS: ReadonlySet<string> = new Set([
   'createTask',
   'delete',
   'deleteTask',
+  'move',
   'rsvp',
   'update',
   'updateTask',
@@ -243,6 +244,10 @@ export interface CalendarRow {
   readonly is_primary: number;
   readonly is_visible: number;
   readonly time_zone: string;
+  /** Added by migration 3. */
+  readonly source_title: string | null;
+  /** Joined from accounts.provider by CalendarRepo.list (not a calendars column). */
+  readonly account_provider: string | null;
 }
 
 export const calendarFromRow = (row: CalendarRow): CalendarInfo =>
@@ -253,6 +258,8 @@ export const calendarFromRow = (row: CalendarRow): CalendarInfo =>
     id: row.id,
     isPrimary: row.is_primary === 1,
     isVisible: row.is_visible === 1,
+    provider: row.account_provider === 'apple' ? 'apple' : 'google',
+    sourceTitle: row.source_title ?? undefined,
     summary: row.summary,
     timeZone: row.time_zone,
   });
@@ -385,8 +392,10 @@ export interface PendingOpRow {
   readonly task_due: string | null;
   readonly dispatched_at: number | null;
   readonly attendees_changed: number;
-  /** Added by migration 2 (hence last). */
+  /** Added by migration 2 (hence late). */
   readonly geo_cleared: number;
+  /** Added by migration 3 (hence last). */
+  readonly target_calendar_id: string | null;
 }
 
 /**
@@ -412,6 +421,7 @@ export const pendingOpFromRow = (row: PendingOpRow): PendingOp | undefined =>
         lastError: row.last_error ?? undefined,
         nextAttemptAt: row.next_attempt_at,
         payload: decodeOr(EventRecord, parseJson(row.payload)),
+        targetCalendarId: row.target_calendar_id ?? undefined,
         taskDue: row.task_due ?? undefined,
         taskListId: row.task_list_id ?? undefined,
         taskNotes: row.task_notes ?? undefined,

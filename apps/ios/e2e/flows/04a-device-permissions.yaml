@@ -13,8 +13,7 @@ tags:
       reminders: unset
       contacts: unset
 - runFlow: ../common/await-shell.yaml
-- tapOn:
-    id: 'open-settings'
+- runFlow: ../common/open-settings.yaml
 - assertVisible: 'Connect Contacts'
 - tapOn:
     id: 'connect-reminders'
@@ -34,8 +33,7 @@ tags:
 # A privacy reset keeps the Apple account in our database. Its presence
 # must not hide the action that asks iOS for permission again.
 - runFlow: ../common/launch.yaml
-- tapOn:
-    id: 'open-settings'
+- runFlow: ../common/open-settings.yaml
 - tapOn:
     id: 'connect-reminders'
 - extendedWaitUntil:
@@ -47,8 +45,7 @@ tags:
       reminders: unset
       contacts: allow
 - runFlow: ../common/await-shell.yaml
-- tapOn:
-    id: 'open-settings'
+- runFlow: ../common/open-settings.yaml
 - assertVisible: '^Apple Reminders$'
 - tapOn:
     id: 'connect-reminders'

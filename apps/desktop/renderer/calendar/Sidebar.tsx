@@ -1,4 +1,10 @@
-import type { Account, CalendarInfo, TaskListInfo } from '@calendar/core';
+import {
+  type Account,
+  type CalendarInfo,
+  isAppleCalendarAccount,
+  isAppleRemindersAccount,
+  type TaskListInfo,
+} from '@calendar/core';
 import { useBackendMutations, useGuardedMutations, useTaskLists } from '@calendar/app-state';
 import { useState } from 'react';
 import { CalendarColorButton } from './CalendarColorButton.tsx';
@@ -16,22 +22,59 @@ export function Sidebar({
   const { addAccount, setCalendarVisible, setTaskListVisible } = useGuardedMutations();
   // Raw, not guarded: a refused grant resolves (granted: false) rather than
   // rejecting, and the user needs to hear about it.
-  const { connectReminders } = useBackendMutations();
+  const { connectAppleCalendar, connectReminders } = useBackendMutations();
   const [connectNote, setConnectNote] = useState<string | null>(null);
   const taskLists = useTaskLists();
 
-  const connect = async () => {
+  const connect = async (what: 'calendar' | 'reminders') => {
     setConnectNote(null);
     try {
-      const result = await connectReminders(undefined);
+      const result = await (what === 'calendar' ? connectAppleCalendar : connectReminders)(
+        undefined,
+      );
       if (!result.granted) {
         setConnectNote(
-          'Reminders access was not granted — allow it in System Settings › Privacy & Security › Reminders.',
+          what === 'calendar'
+            ? 'Calendar access was not granted — allow it in System Settings › Privacy & Security › Calendars.'
+            : 'Reminders access was not granted — allow it in System Settings › Privacy & Security › Reminders.',
         );
       }
     } catch (error) {
       setConnectNote(String(error));
     }
+  };
+
+  const calendarRow = (calendar: CalendarInfo) => (
+    <div
+      className="flex w-full items-center gap-2 rounded-md px-2 py-1 hover:bg-neutral-200/60"
+      key={calendar.id}
+    >
+      <CalendarColorButton calendar={calendar} />
+      <button
+        className="min-w-0 flex-1 text-left text-sm"
+        onClick={() => toggle(calendar)}
+        type="button"
+      >
+        <span className={`block truncate ${calendar.isVisible ? '' : 'text-neutral-400'}`}>
+          {calendar.summary}
+        </span>
+      </button>
+    </div>
+  );
+
+  /** Apple Calendar lists its calendars per EventKit source (iCloud, On My Mac…). */
+  const appleSources = (accountCalendars: ReadonlyArray<CalendarInfo>) => {
+    const sources = new Map<string, Array<CalendarInfo>>();
+    for (const calendar of accountCalendars) {
+      const source = calendar.sourceTitle || 'On My Mac';
+      sources.set(source, [...(sources.get(source) ?? []), calendar]);
+    }
+    return [...sources].map(([source, entries]) => (
+      <div data-testid={`calendar-source-${source}`} key={source}>
+        <p className="px-2 pt-1 text-[11px] text-neutral-400">{source}</p>
+        {entries.map(calendarRow)}
+      </div>
+    ));
   };
 
   const toggleList = (list: TaskListInfo) => {
@@ -57,34 +100,20 @@ export function Sidebar({
         {accounts.map((account) => (
           <section className="mb-3" key={account.id}>
             <p className="select-text px-2 py-1 text-[11px] font-medium tracking-wide text-neutral-400 uppercase">
-              {account.provider === 'apple' ? 'Apple Reminders' : account.email}
+              {isAppleRemindersAccount(account)
+                ? 'Apple Reminders'
+                : isAppleCalendarAccount(account)
+                  ? 'Apple Calendar'
+                  : account.email}
               {account.status === 'reauth_required' ? (
                 <span className="text-amber-600">
                   {account.provider === 'apple' ? ' — access off' : ' — sign in again'}
                 </span>
               ) : null}
             </p>
-            {calendars
-              .filter((calendar) => calendar.accountId === account.id)
-              .map((calendar) => (
-                <div
-                  className="flex w-full items-center gap-2 rounded-md px-2 py-1 hover:bg-neutral-200/60"
-                  key={calendar.id}
-                >
-                  <CalendarColorButton calendar={calendar} />
-                  <button
-                    className="min-w-0 flex-1 text-left text-sm"
-                    onClick={() => toggle(calendar)}
-                    type="button"
-                  >
-                    <span
-                      className={`block truncate ${calendar.isVisible ? '' : 'text-neutral-400'}`}
-                    >
-                      {calendar.summary}
-                    </span>
-                  </button>
-                </div>
-              ))}
+            {isAppleCalendarAccount(account)
+              ? appleSources(calendars.filter((calendar) => calendar.accountId === account.id))
+              : calendars.filter((calendar) => calendar.accountId === account.id).map(calendarRow)}
             {taskLists
               .filter((list) => list.accountId === account.id)
               .map((list) => (
@@ -112,7 +141,8 @@ export function Sidebar({
               ))}
             {account.provider === 'apple' && account.status === 'reauth_required' ? (
               <p className="px-2 py-1 text-xs text-neutral-400">
-                Allow Reminders in System Settings › Privacy & Security — it reconnects on its own.
+                Allow {isAppleCalendarAccount(account) ? 'Calendars' : 'Reminders'} in System
+                Settings › Privacy & Security — it reconnects on its own.
               </p>
             ) : null}
             {account.tasksEnabled || account.provider !== 'google' ? null : (
@@ -131,10 +161,19 @@ export function Sidebar({
         {accounts.length === 0 ? (
           <p className="px-2 py-4 text-sm text-neutral-400">No accounts connected.</p>
         ) : null}
-        {accounts.some((account) => account.provider === 'apple') ? null : (
+        {accounts.some(isAppleCalendarAccount) ? null : (
           <button
             className="w-full rounded-md px-2 py-1 text-left text-xs text-neutral-400 hover:bg-neutral-200/60 hover:text-neutral-600"
-            onClick={() => void connect()}
+            onClick={() => void connect('calendar')}
+            type="button"
+          >
+            Connect Apple Calendar
+          </button>
+        )}
+        {accounts.some(isAppleRemindersAccount) ? null : (
+          <button
+            className="w-full rounded-md px-2 py-1 text-left text-xs text-neutral-400 hover:bg-neutral-200/60 hover:text-neutral-600"
+            onClick={() => void connect('reminders')}
             type="button"
           >
             Connect Apple Reminders

@@ -7,6 +7,7 @@ import { startBackendHost } from './backendHost.ts';
 import { initFileLogging, logRendererError } from './log.ts';
 import { initPrivacy, registerPrivacyWindow } from './privacy.ts';
 import { registerModelHelper } from './modelHelper.ts';
+import { registerAppleCalendarIpc } from './appleCalendarIpc.ts';
 import { registerContactsIpc } from './contactsIpc.ts';
 import { registerRemindersIpc } from './remindersIpc.ts';
 
@@ -150,6 +151,7 @@ void app.whenReady().then(() => {
   registerModelHelper();
   registerRemindersIpc();
   registerContactsIpc();
+  registerAppleCalendarIpc();
   createWindow();
 
   app.on('activate', () => {

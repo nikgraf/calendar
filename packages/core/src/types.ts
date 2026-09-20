@@ -22,6 +22,8 @@ export const TaskRecurrence = Schema.Struct({
 export type TaskRecurrence = typeof TaskRecurrence.Type;
 /** The one synthetic account that owns Apple Reminders lists on a device. */
 export const APPLE_REMINDERS_ACCOUNT_ID = 'apple-reminders';
+/** The one synthetic account that owns the device's Calendar app calendars (EventKit events). */
+export const APPLE_CALENDAR_ACCOUNT_ID = 'apple-calendar';
 
 export class Account extends Schema.Class<Account>('Account')({
   avatarUrl: Schema.optional(Schema.String),
@@ -37,7 +39,11 @@ export class Account extends Schema.Class<Account>('Account')({
   email: Schema.String,
   /** Stable local UUID — never the Google account id. */
   id: Schema.String,
-  /** 'google' accounts sign in via OAuth; the single 'apple' account is the device's Reminders. */
+  /**
+   * 'google' accounts sign in via OAuth. Two synthetic 'apple' accounts can
+   * exist: the device's Reminders and the device's Calendar app — tell
+   * them apart with isAppleRemindersAccount / isAppleCalendarAccount.
+   */
   provider: TaskProvider,
   status: AccountStatus,
   /**
@@ -48,6 +54,14 @@ export class Account extends Schema.Class<Account>('Account')({
    */
   tasksEnabled: Schema.Boolean,
 }) {}
+
+/** The synthetic account that mirrors Apple Reminders lists. */
+export const isAppleRemindersAccount = (account: { readonly id: string }): boolean =>
+  account.id === APPLE_REMINDERS_ACCOUNT_ID;
+
+/** The synthetic account that owns the device's Calendar app calendars. */
+export const isAppleCalendarAccount = (account: { readonly id: string }): boolean =>
+  account.id === APPLE_CALENDAR_ACCOUNT_ID;
 
 /** Where a typeahead suggestion came from. */
 export const ContactSource = Schema.Literals(['device', 'google']);
@@ -135,14 +149,20 @@ export class TokenSet extends Schema.Class<TokenSet>('TokenSet')({
 }) {}
 
 export class CalendarInfo extends Schema.Class<CalendarInfo>('CalendarInfo')({
+  /** Apple calendars: 'owner' when EventKit allows writes, 'reader' otherwise. */
   accessRole: AccessRole,
   accountId: Schema.String,
   colorHex: Schema.String,
-  /** Google calendar id, unique within an account (not across accounts). */
+  /** Google calendar id / EK calendarIdentifier, unique within an account (not across accounts). */
   id: Schema.String,
+  /** Google: the account's primary calendar; Apple: EventKit's default for new events. */
   isPrimary: Schema.Boolean,
-  /** Local show/hide toggle — not synced to Google. */
+  /** Local show/hide toggle — not synced. */
   isVisible: Schema.Boolean,
+  /** The owning account's provider (joined, never stored on the calendar row). */
+  provider: TaskProvider,
+  /** Apple only: the EventKit source the calendar lives in ("iCloud", "On My Mac", …). */
+  sourceTitle: Schema.optional(Schema.String),
   summary: Schema.String,
   timeZone: Schema.String,
 }) {}
@@ -291,6 +311,7 @@ export class PendingOp extends Schema.Class<PendingOp>('PendingOp')({
     'createTask',
     'delete',
     'deleteTask',
+    'move',
     'rsvp',
     'update',
     'updateTask',
@@ -309,6 +330,8 @@ export class PendingOp extends Schema.Class<PendingOp>('PendingOp')({
   taskStatus: Schema.optional(TaskStatus),
   /** Title for kind 'createTask'/'updateTask'. */
   taskTitle: Schema.optional(Schema.String),
+  /** Kind 'move': destination calendar in the same Google account (calendarId is the source). */
+  targetCalendarId: Schema.optional(Schema.String),
 }) {}
 
 export class SyncState extends Schema.Class<SyncState>('SyncState')({

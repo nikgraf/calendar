@@ -4,8 +4,7 @@ tags:
   - ci
 ---
 - runFlow: ../common/launch.yaml
-- tapOn:
-    id: 'open-settings'
+- runFlow: ../common/open-settings.yaml
 - assertVisible: 'Accounts'
 - assertVisible: 'Add Google Account'
 - assertVisible:

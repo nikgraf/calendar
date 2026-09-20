@@ -2,6 +2,7 @@ import { Effect, Layer } from 'effect';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const native = vi.hoisted(() => ({
+  calendar: vi.fn<() => Promise<boolean>>(),
   contacts: vi.fn<() => Promise<boolean>>(),
   reminders: vi.fn<() => Promise<boolean>>(),
 }));
@@ -21,6 +22,26 @@ vi.mock('@effect/sql-sqlite-react-native/SqliteClient', async () => {
   const { SqlClient } = await import('effect/unstable/sql/SqlClient');
   return {
     layer: () => Layer.effect(SqlClient)(Effect.die(new Error('Database is ahead of this build'))),
+  };
+});
+vi.mock('./appleCalendarClient.ts', async () => {
+  const { AppleCalendarClient, AppleCalendarRequestError, makeFakeAppleCalendarClient } =
+    await import('@calendar/apple-calendar');
+  const client = {
+    ...makeFakeAppleCalendarClient().client,
+    requestAccess: () =>
+      Effect.tryPromise({
+        catch: (error) =>
+          new AppleCalendarRequestError({
+            message: String(error),
+            method: 'calendar.requestAccess',
+          }),
+        try: () => native.calendar(),
+      }),
+  };
+  return {
+    iosAppleCalendarClient: client,
+    iosAppleCalendarLayer: Layer.succeed(AppleCalendarClient, client),
   };
 });
 vi.mock('./contactsClient.ts', async () => {
@@ -59,11 +80,13 @@ vi.mock('./remindersClient.ts', async () => {
 const { backendClient } = await import('./backend.ts');
 
 beforeEach(() => {
+  native.calendar.mockReset();
   native.contacts.mockReset();
   native.reminders.mockReset();
 });
 
 describe.each([
+  ['Calendar', 'connectAppleCalendar', native.calendar],
   ['Contacts', 'connectContacts', native.contacts],
   ['Reminders', 'connectReminders', native.reminders],
 ] as const)('%s connection', (_label, method, requestAccess) => {

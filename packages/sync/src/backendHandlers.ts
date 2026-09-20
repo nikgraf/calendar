@@ -1,6 +1,7 @@
 import {
   Account,
   AccountSyncStatus,
+  APPLE_CALENDAR_ACCOUNT_ID,
   APPLE_REMINDERS_ACCOUNT_ID,
   AppBackendRpcs,
   assembleWindow,
@@ -14,6 +15,7 @@ import {
   birthdaysInRange,
   rankContacts,
 } from '@calendar/core';
+import { AppleCalendarClient } from '@calendar/apple-calendar';
 import { ContactsClient, contactsReadable } from '@calendar/contacts';
 import {
   AccountRepo,
@@ -31,6 +33,7 @@ import { GeoClient } from '@calendar/geo';
 import { TokenStore } from '@calendar/google';
 import { RemindersClient } from '@calendar/reminders';
 import { Clock, Effect, Queue, Stream } from 'effect';
+import { AppleCalendarEvents } from './appleCalendarEvents.ts';
 import { BirthdayReminders } from './birthdayReminders.ts';
 import { loadMergedBirthdays } from './birthdays.ts';
 import { DeviceContacts } from './deviceContacts.ts';
@@ -45,6 +48,8 @@ const DEFAULT_SEARCH_LIMIT = 8;
 
 export type CommonBackendServices =
   | AccountRepo
+  | AppleCalendarClient
+  | AppleCalendarEvents
   | BirthdayReminders
   | BirthdayRepo
   | CalendarRepo
@@ -90,6 +95,37 @@ export const commonBackendHandlers: Omit<BackendHandlers<CommonBackendServices>,
         yield* (yield* DeviceContacts).refresh();
       }
       return { granted };
+    }),
+
+  // Asks EventKit for events access (the OS prompt when undetermined; a
+  // separate grant from Reminders). On grant the synthetic Apple Calendar
+  // account appears and a sync mirrors its calendars; events are read live.
+  connectAppleCalendar: () =>
+    Effect.gen(function* () {
+      const client = yield* AppleCalendarClient;
+      // An existing grant does not prompt again; the bridge resets its
+      // store after a grant made in Settings.
+      const granted = yield* client.requestAccess();
+      if (!granted) {
+        return { granted: false };
+      }
+      const accountRepo = yield* AccountRepo;
+      const existing = yield* accountRepo.get(APPLE_CALENDAR_ACCOUNT_ID);
+      yield* accountRepo.upsert(
+        new Account({
+          contactsEnabled: false,
+          createdAt: existing?.createdAt ?? (yield* Clock.currentTimeMillis),
+          displayName: 'Apple Calendar',
+          email: '',
+          id: APPLE_CALENDAR_ACCOUNT_ID,
+          provider: 'apple',
+          status: 'ok',
+          tasksEnabled: false,
+        }),
+      );
+      const engine = yield* SyncEngine;
+      yield* Effect.forkDetach(engine.syncAll());
+      return { granted: true };
     }),
 
   // Asks EventKit (the OS prompt when undetermined); on grant the synthetic
@@ -177,7 +213,11 @@ export const commonBackendHandlers: Omit<BackendHandlers<CommonBackendServices>,
       if (skipped.length > 0) {
         yield* Effect.logWarning('recurring masters skipped in window', { skipped });
       }
-      return result;
+      // Apple Calendar events are never stored: EventKit answers the range live.
+      const apple = yield* (yield* AppleCalendarEvents).eventsInRange(rangeStartUtc, rangeEndUtc);
+      return apple.length === 0
+        ? result
+        : [...result, ...apple].sort((a, b) => a.startUtc - b.startUtc);
     }),
 
   getTasksInRange: ({ endDate, startDate }) =>
@@ -238,16 +278,32 @@ export const commonBackendHandlers: Omit<BackendHandlers<CommonBackendServices>,
       return yield* taskRepo.listLists();
     }),
 
+  moveEvent: (params) =>
+    Effect.gen(function* () {
+      const mutations = yield* EventMutations;
+      yield* mutations.moveEvent(params);
+    }),
+
+  previewMove: (params) =>
+    Effect.gen(function* () {
+      const mutations = yield* EventMutations;
+      return yield* mutations.previewMove(params);
+    }),
+
   removeAccount: ({ accountId }) =>
     Effect.gen(function* () {
       const accountRepo = yield* AccountRepo;
       const account = (yield* accountRepo.list()).find((candidate) => candidate.id === accountId);
       if (account?.provider !== 'apple') {
-        // The Apple account holds no tokens; its data is the cascade below.
+        // The Apple accounts hold no tokens; their data is the cascade below.
         const tokenStore = yield* TokenStore;
         yield* tokenStore.remove(accountId);
       }
       yield* accountRepo.remove(accountId);
+      if (accountId === APPLE_CALENDAR_ACCOUNT_ID) {
+        // Its events are not in the cascade (never stored): repaint the views.
+        yield* (yield* AppleCalendarEvents).invalidate;
+      }
     }),
 
   respondToEvent: (params) =>
@@ -286,6 +342,8 @@ export const commonBackendHandlers: Omit<BackendHandlers<CommonBackendServices>,
   setCalendarVisible: ({ accountId, calendarId, isVisible }) =>
     Effect.gen(function* () {
       const calendarRepo = yield* CalendarRepo;
+      // setVisible invalidates the event views too, which is what repaints
+      // an Apple calendar's read-through events.
       yield* calendarRepo.setVisible(accountId, calendarId, isVisible);
     }),
 

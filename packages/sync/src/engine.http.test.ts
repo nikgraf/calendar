@@ -1,3 +1,5 @@
+import { unavailableAppleCalendarClient } from '@calendar/apple-calendar';
+import { appleCalendarServicesLayer } from './appleCalendarEvents.ts';
 import { Account, eventsScope, GEO_PROPERTY_KEYS, GeoLocation } from '@calendar/core';
 import {
   AccountRepo,
@@ -40,6 +42,7 @@ const noYield = <A, E, R>(effect: Effect.Effect<A, E, R>): Effect.Effect<A, E, R
 const engineLayer = (google: FakeGoogle) =>
   SyncEngine.layer.pipe(
     Layer.provideMerge(EventMutations.layer),
+    Layer.provideMerge(appleCalendarServicesLayer(unavailableAppleCalendarClient('test'))),
     Layer.provideMerge(reposLayer),
     Layer.provideMerge(Layer.effectDiscard(runMigrations)),
     Layer.provideMerge(SqliteClient.layer({ filename: ':memory:' })),
@@ -88,6 +91,81 @@ const eventTitles = Effect.gen(function* () {
 });
 
 describe('SyncEngine over HTTP (fake Google)', () => {
+  it.effect('a same-account move lands through events.move and the next pass agrees', () => {
+    const google = new FakeGoogle({
+      calendars: [
+        { accessRole: 'owner', id: 'cal-1', primary: true, summary: 'Personal' },
+        { accessRole: 'owner', id: 'cal-2', summary: 'Work' },
+      ],
+    });
+    google.putEvent('cal-1', {
+      ...timed('mv', 9, 'Planning'),
+      organizer: { email: 'nik@example.com', self: true },
+    });
+    return Effect.gen(function* () {
+      yield* seedAccount(false);
+      const engine = yield* SyncEngine;
+      yield* engine.syncAll();
+      yield* (yield* EventMutations).moveEvent({
+        accountId: 'acc-1',
+        calendarId: 'cal-1',
+        eventId: 'mv',
+        target: { accountId: 'acc-1', calendarId: 'cal-2' },
+      });
+      yield* engine.syncAll();
+      expect(google.eventOf('cal-2', 'mv')?.summary).toBe('Planning');
+      expect(google.eventOf('cal-1', 'mv')?.status).toBe('cancelled');
+      const events = yield* EventRepo;
+      expect(yield* events.getById('acc-1', 'cal-1', 'mv')).toBeNull();
+      expect((yield* events.getById('acc-1', 'cal-2', 'mv'))?.syncStatus).toBe('synced');
+      expect(yield* (yield* PendingOpRepo).listAll()).toEqual([]);
+    }).pipe(Effect.provide(engineLayer(google)));
+  });
+
+  it.effect(
+    'an edit saved just before a same-account move lands after it, in the new calendar',
+    () => {
+      const google = new FakeGoogle({
+        calendars: [
+          { accessRole: 'owner', id: 'cal-1', primary: true, summary: 'Personal' },
+          { accessRole: 'owner', id: 'cal-2', summary: 'Work' },
+        ],
+      });
+      google.putEvent('cal-1', {
+        ...timed('mv', 9, 'Planning'),
+        organizer: { email: 'nik@example.com', self: true },
+      });
+      // The fake's etags count per calendar: something already in cal-2
+      // makes the moved copy's etag differ from the one cal-1 handed out.
+      google.putEvent('cal-2', timed('other', 14, 'Other'));
+      return Effect.gen(function* () {
+        yield* seedAccount(false);
+        const engine = yield* SyncEngine;
+        yield* engine.syncAll();
+        const mutations = yield* EventMutations;
+        // The editor's Save: the edit first, then the move. events.move bumps
+        // the etag, so the re-queued edit must not carry its pre-move If-Match.
+        yield* mutations.updateEvent({
+          accountId: 'acc-1',
+          calendarId: 'cal-1',
+          changes: { title: 'Planned' },
+          eventId: 'mv',
+        });
+        yield* mutations.moveEvent({
+          accountId: 'acc-1',
+          calendarId: 'cal-1',
+          eventId: 'mv',
+          target: { accountId: 'acc-1', calendarId: 'cal-2' },
+        });
+        yield* engine.syncAll();
+        expect(google.eventOf('cal-2', 'mv')?.summary).toBe('Planned');
+        const events = yield* EventRepo;
+        expect((yield* events.getById('acc-1', 'cal-2', 'mv'))?.title).toBe('Planned');
+        expect(yield* (yield* PendingOpRepo).listAll()).toEqual([]);
+      }).pipe(noYield, Effect.provide(engineLayer(google)));
+    },
+  );
+
   it.effect('birthdays come from People, and the Birthdays calendar is never synced', () => {
     const google = new FakeGoogle({
       calendars: [

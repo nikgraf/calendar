@@ -4,8 +4,7 @@ tags:
   - ci
 ---
 - runFlow: ../common/launch.yaml
-- tapOn:
-    id: 'open-settings'
+- runFlow: ../common/open-settings.yaml
 - waitForAnimationToEnd:
     timeout: 5000
 - scrollUntilVisible:
@@ -30,8 +29,7 @@ tags:
 - tapOn: 'Done'
 - assertVisible: 'Today'
 # Reopen: the choice was stored (device-local SQLite), not just React state.
-- tapOn:
-    id: 'open-settings'
+- runFlow: ../common/open-settings.yaml
 - waitForAnimationToEnd:
     timeout: 5000
 - scrollUntilVisible:

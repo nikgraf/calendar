@@ -26,6 +26,7 @@ import {
   TokenStore,
 } from '@calendar/google';
 import {
+  AppleCalendarEvents,
   BirthdayReminders,
   commonBackendHandlers,
   DeviceContacts,
@@ -43,9 +44,11 @@ import { FetchHttpClient } from 'effect/unstable/http';
 import { RpcSerialization, RpcServer } from 'effect/unstable/rpc';
 import { runGoogleSignIn } from './auth/loopbackFlow.ts';
 import { loadOAuthConfig } from './oauthConfig.ts';
+import { AppleCalendarClient } from '@calendar/apple-calendar';
 import { RemindersClient } from '@calendar/reminders';
 import { ContactsClient } from '@calendar/contacts';
 import { GeoClient } from '@calendar/geo';
+import { desktopAppleCalendarLayer } from './appleCalendarClient.ts';
 import { desktopContactsLayer } from './contactsClient.ts';
 import { desktopGeoLayer } from './geoClient.ts';
 import { desktopNotificationSink } from './notifications.ts';
@@ -88,6 +91,8 @@ export const startBackendHost = (): void => {
 
   const appLayer = SyncEngine.layer.pipe(
     Layer.provideMerge(EventMutations.layer),
+    Layer.provideMerge(AppleCalendarEvents.layer),
+    Layer.provideMerge(desktopAppleCalendarLayer),
     Layer.provideMerge(BirthdayReminders.layer({ timeZone: Temporal.Now.timeZoneId() })),
     Layer.provideMerge(GoogleCalendarClient.layer),
     Layer.provideMerge(GoogleTasksClient.layer),
@@ -117,6 +122,8 @@ export const startBackendHost = (): void => {
 
   const handlers: BackendHandlers<
     | AccountRepo
+    | AppleCalendarClient
+    | AppleCalendarEvents
     | BirthdayReminders
     | BirthdayRepo
     | CalendarRepo

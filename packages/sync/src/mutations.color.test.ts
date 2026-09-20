@@ -1,3 +1,5 @@
+import { unavailableAppleCalendarClient } from '@calendar/apple-calendar';
+import { appleCalendarServicesLayer } from './appleCalendarEvents.ts';
 import { Account, CalendarInfo } from '@calendar/core';
 import { AccountRepo, CalendarRepo, PendingOpRepo, reposLayer, runMigrations } from '@calendar/db';
 import {
@@ -42,6 +44,7 @@ const seedAccounts = Effect.gen(function* () {
 
 const makeLayer = (overrides: Partial<GoogleCalendarClientShape>) =>
   EventMutations.layer.pipe(
+    Layer.provideMerge(appleCalendarServicesLayer(unavailableAppleCalendarClient('test'))),
     Layer.provideMerge(Layer.effectDiscard(seedAccounts)),
     Layer.provideMerge(reposLayer),
     Layer.provideMerge(Layer.effectDiscard(runMigrations)),
@@ -55,6 +58,7 @@ const makeLayer = (overrides: Partial<GoogleCalendarClientShape>) =>
         insertEvent: () => Effect.die('unexpected insert'),
         listCalendars: () => Effect.succeed({ items: [] }),
         listEvents: () => Effect.succeed({ items: [] }),
+        moveEvent: () => Effect.die('unexpected move'),
         patchCalendarListEntry: () => Effect.die('unexpected calendarList patch'),
         patchEvent: () => Effect.die('unexpected patch'),
         ...overrides,
@@ -71,6 +75,7 @@ const workCalendar = (accountId: string) =>
     id: 'cal-1',
     isPrimary: true,
     isVisible: false,
+    provider: 'google',
     summary: 'Work',
     timeZone: 'UTC',
   });

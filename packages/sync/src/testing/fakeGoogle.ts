@@ -214,6 +214,15 @@ export class FakeGoogle {
       if (path === '/calendar/v3/colors') {
         return reply(200, { calendar: {} });
       }
+      const moveMatch = /^\/calendar\/v3\/calendars\/([^/]+)\/events\/([^/]+)\/move$/.exec(path);
+      if (moveMatch && request.method === 'POST') {
+        return this.moveRoute(
+          decodeURIComponent(moveMatch[1]!),
+          decodeURIComponent(moveMatch[2]!),
+          url.searchParams.get('destination'),
+          reply,
+        );
+      }
       const match = /^\/calendar\/v3\/calendars\/([^/]+)\/events(?:\/([^/]+))?$/.exec(path);
       if (match) {
         const calendarId = decodeURIComponent(match[1]!);
@@ -316,6 +325,37 @@ export class FakeGoogle {
       }
     }
     return reply(405);
+  }
+
+  /**
+   * events.move: the event leaves the source (a cancelled tombstone for
+   * its sync token) and appears in the destination under the same id.
+   * Organizer only, whole events only — an instance id is refused.
+   */
+  private moveRoute(
+    calendarId: string,
+    eventId: string,
+    destination: string | null,
+    reply: (status: number, json?: unknown) => HttpClientResponse.HttpClientResponse,
+  ): HttpClientResponse.HttpClientResponse {
+    const existing = this.eventsOf(calendarId).get(eventId);
+    if (!existing || existing.event.status === 'cancelled') {
+      return reply(404, { error: { message: 'Not Found' } });
+    }
+    if (destination === null || !this.calendars.some((entry) => entry.id === destination)) {
+      return reply(404, { error: { message: 'Destination calendar not found' } });
+    }
+    if (/_\d{8}(T\d{6}Z)?$/.test(eventId)) {
+      return reply(400, { error: { message: 'Cannot move an instance of a recurring event' } });
+    }
+    if (existing.event.organizer?.self !== true) {
+      return reply(403, {
+        error: { errors: [{ reason: 'forbiddenForNonOrganizer' }], message: 'Forbidden' },
+      });
+    }
+    this.cancelEvent(calendarId, eventId);
+    this.putEvent(destination, existing.event);
+    return reply(200, this.eventOf(destination, eventId));
   }
 
   private tasksRoute(

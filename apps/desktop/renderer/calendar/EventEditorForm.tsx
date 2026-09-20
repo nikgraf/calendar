@@ -1,11 +1,14 @@
 import {
+  calendarGroups,
   REPEAT_ENDS_OPTIONS,
   REPEAT_OPTIONS,
   RSVP_OPTIONS,
   SCOPE_OPTIONS,
+  useAccounts,
   type useEventEditorModel,
+  type useMoveConfirmation,
 } from '@calendar/app-state';
-import type { RecurrenceFrequency } from '@calendar/core';
+import type { CalendarInfo, RecurrenceFrequency } from '@calendar/core';
 import { InviteeCombobox } from './InviteeCombobox.tsx';
 import { FIELD_CLASS as field } from './fieldStyles.ts';
 import { LocationCombobox } from './LocationCombobox.tsx';
@@ -16,25 +19,37 @@ import { LocationMap } from './LocationMap.tsx';
  * EventEditForm. The e2e suite relies on the Title placeholder, the
  * Repeat/Apply-to labels and the Delete/Cancel/Save buttons.
  */
+/** Calendars grouped the way the sidebar shows them: per account, Apple per source. */
+const groupLabel = (calendar: CalendarInfo, accountLabel: (accountId: string) => string): string =>
+  calendar.provider === 'apple'
+    ? `Apple Calendar — ${calendar.sourceTitle ?? 'On this Mac'}`
+    : accountLabel(calendar.accountId);
+
 export function EventEditorForm({
   model,
+  moveConfirmation,
   onClose,
 }: {
   model: ReturnType<typeof useEventEditorModel>;
+  moveConfirmation: ReturnType<typeof useMoveConfirmation>;
   onClose: () => void;
 }) {
+  const accounts = useAccounts();
   const {
     addAttendee,
     attendees,
     attendeeStatus,
     calendarKey,
+    canInvite,
+    canMoveCalendar,
+    canRsvp,
     date,
     endTime,
     error,
     existing,
     isAllDay,
     isRecurring,
-    ownAttendee,
+    readOnly,
     remove,
     removeAttendee,
     repeat,
@@ -62,10 +77,21 @@ export function EventEditorForm({
     title,
     writableCalendars: writable,
   } = model;
+  const accountLabel = (accountId: string) =>
+    accounts.find((account) => account.id === accountId)?.email ?? accountId;
+  const readOnlyGuests = !canInvite && (existing?.attendees ?? []).length > 0;
 
   return (
     <>
-      <div className="flex flex-col gap-3">
+      <fieldset className="flex min-w-0 flex-col gap-3" disabled={readOnly}>
+        {readOnly ? (
+          <p
+            className="rounded-lg bg-neutral-100 p-2 text-sm text-neutral-600"
+            data-testid="event-read-only"
+          >
+            This calendar is read-only.
+          </p>
+        ) : null}
         {error ? (
           <p className="select-text rounded-lg bg-red-50 p-2 text-sm text-red-700">{error}</p>
         ) : null}
@@ -100,21 +126,33 @@ export function EventEditorForm({
           placeholder="Title"
           value={title}
         />
-        <select
-          className={field}
-          disabled={Boolean(existing)}
-          onChange={(changeEvent) => setCalendarKey(changeEvent.target.value)}
-          value={calendarKey}
-        >
-          {writable.map((calendar) => (
-            <option
-              key={`${calendar.accountId}:${calendar.id}`}
-              value={`${calendar.accountId}:${calendar.id}`}
-            >
-              {calendar.summary}
-            </option>
-          ))}
-        </select>
+        {readOnly ? null : (
+          <select
+            aria-label="Calendar"
+            className={field}
+            disabled={Boolean(existing) && !canMoveCalendar}
+            onChange={(changeEvent) => setCalendarKey(changeEvent.target.value)}
+            title={
+              existing && !canMoveCalendar ? 'Choose "All events" to move a series' : undefined
+            }
+            value={calendarKey}
+          >
+            {calendarGroups(writable, (calendar) => groupLabel(calendar, accountLabel)).map(
+              (group) => (
+                <optgroup key={group.label} label={group.label}>
+                  {group.calendars.map((calendar) => (
+                    <option
+                      key={`${calendar.accountId}:${calendar.id}`}
+                      value={`${calendar.accountId}:${calendar.id}`}
+                    >
+                      {calendar.summary}
+                    </option>
+                  ))}
+                </optgroup>
+              ),
+            )}
+          </select>
+        )}
         <label className="flex items-center gap-2 text-sm">
           <input
             checked={isAllDay}
@@ -222,37 +260,78 @@ export function EventEditorForm({
             )}
           </>
         )}
-        <div className="rounded-lg border border-neutral-200 bg-white p-3">
-          <p className="mb-1 text-xs font-medium text-neutral-400 uppercase">Invitees</p>
-          {ownAttendee ? (
-            <div className="mb-2 flex gap-1">
-              {RSVP_OPTIONS.map((option) => (
-                <button
-                  className={`flex-1 rounded-md border px-2 py-1 text-xs font-medium ${
-                    rsvp === option.value
-                      ? 'border-blue-600 bg-blue-600 text-white'
-                      : 'border-neutral-200 text-neutral-600 hover:bg-neutral-100'
-                  }`}
-                  key={option.value}
-                  onClick={() => void respond(option.value)}
-                  type="button"
-                >
-                  {option.label}
-                </button>
+        {canInvite ? (
+          <div className="rounded-lg border border-neutral-200 bg-white p-3">
+            <p className="mb-1 text-xs font-medium text-neutral-400 uppercase">Invitees</p>
+            {canRsvp ? (
+              <div className="mb-2 flex gap-1">
+                {RSVP_OPTIONS.map((option) => (
+                  <button
+                    className={`flex-1 rounded-md border px-2 py-1 text-xs font-medium ${
+                      rsvp === option.value
+                        ? 'border-blue-600 bg-blue-600 text-white'
+                        : 'border-neutral-200 text-neutral-600 hover:bg-neutral-100'
+                    }`}
+                    key={option.value}
+                    onClick={() => void respond(option.value)}
+                    type="button"
+                  >
+                    {option.label}
+                  </button>
+                ))}
+              </div>
+            ) : null}
+            <InviteeCombobox
+              attendees={attendees}
+              attendeeStatus={attendeeStatus}
+              onAdd={addAttendee}
+              onRemove={removeAttendee}
+            />
+          </div>
+        ) : readOnlyGuests ? (
+          // EventKit cannot write guests: shown as they are, never edited.
+          <div
+            className="rounded-lg border border-neutral-200 bg-white p-3"
+            data-testid="event-guests-read-only"
+          >
+            <p className="mb-1 text-xs font-medium text-neutral-400 uppercase">Guests</p>
+            <ul className="text-sm text-neutral-700">
+              {existing?.attendees?.map((attendee) => (
+                <li key={attendee.email}>{attendee.displayName ?? attendee.email}</li>
               ))}
-            </div>
-          ) : null}
-          <InviteeCombobox
-            attendees={attendees}
-            attendeeStatus={attendeeStatus}
-            onAdd={addAttendee}
-            onRemove={removeAttendee}
-          />
+            </ul>
+          </div>
+        ) : null}
+      </fieldset>
+
+      {moveConfirmation.pendingSummary ? (
+        <div
+          className="mt-4 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900"
+          data-testid="move-confirm"
+          role="alertdialog"
+        >
+          <p>{moveConfirmation.pendingSummary}</p>
+          <div className="mt-2 flex justify-end gap-2">
+            <button
+              className="rounded-lg px-3 py-1 hover:bg-amber-100"
+              onClick={() => moveConfirmation.answer(false)}
+              type="button"
+            >
+              Keep here
+            </button>
+            <button
+              className="rounded-lg bg-amber-600 px-3 py-1 font-medium text-white hover:bg-amber-500"
+              onClick={() => moveConfirmation.answer(true)}
+              type="button"
+            >
+              Move anyway
+            </button>
+          </div>
         </div>
-      </div>
+      ) : null}
 
       <div className="mt-5 flex items-center justify-between">
-        {existing ? (
+        {existing && !readOnly ? (
           <button
             className="text-sm text-red-600 hover:underline"
             onClick={() => void remove()}
@@ -271,13 +350,16 @@ export function EventEditorForm({
           >
             Cancel
           </button>
-          <button
-            className="rounded-lg bg-blue-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-blue-500"
-            onClick={() => void save()}
-            type="button"
-          >
-            Save
-          </button>
+          {readOnly ? null : (
+            <button
+              className="rounded-lg bg-blue-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-blue-500"
+              disabled={moveConfirmation.pendingSummary !== null}
+              onClick={() => void save()}
+              type="button"
+            >
+              Save
+            </button>
+          )}
         </div>
       </div>
     </>

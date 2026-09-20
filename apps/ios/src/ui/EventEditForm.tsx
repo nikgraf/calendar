@@ -1,10 +1,13 @@
 import {
+  calendarGroups,
   REPEAT_ENDS_OPTIONS,
   REPEAT_OPTIONS,
   RSVP_OPTIONS,
   SCOPE_OPTIONS,
+  useAccounts,
   type useEventEditorModel,
 } from '@calendar/app-state';
+import type { CalendarInfo } from '@calendar/core';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { Linking, Pressable, ScrollView, Switch, Text, TextInput, View } from 'react-native';
 import {
@@ -17,13 +20,25 @@ import { InviteeField } from './InviteeField.tsx';
 import { LocationField } from './LocationField.tsx';
 import { LocationMap } from './LocationMap.tsx';
 
+/** Which account (or, for Apple, which EventKit source) a calendar belongs to. */
+const groupLabel = (calendar: CalendarInfo, emailOf: (accountId: string) => string): string =>
+  calendar.provider === 'apple'
+    ? `Apple Calendar · ${calendar.sourceTitle ?? 'This iPhone'}`
+    : emailOf(calendar.accountId);
+
 /** The event half of EventEditSheet (mode === 'event'). */
 export function EventEditForm({ model }: { model: ReturnType<typeof useEventEditorModel> }) {
+  const accounts = useAccounts();
+  const emailOf = (accountId: string) =>
+    accounts.find((account) => account.id === accountId)?.email ?? accountId;
   const {
     addAttendee,
     attendees,
     attendeeStatus,
     calendarKey,
+    canInvite,
+    canMoveCalendar,
+    canRsvp,
     date,
     endTime,
     error,
@@ -31,7 +46,7 @@ export function EventEditForm({ model }: { model: ReturnType<typeof useEventEdit
     isAllDay,
     isRecurring,
     joinUrl,
-    ownAttendee,
+    readOnly,
     remove,
     removeAttendee,
     repeat,
@@ -69,6 +84,11 @@ export function EventEditForm({ model }: { model: ReturnType<typeof useEventEdit
       keyboardShouldPersistTaps="handled"
     >
       {error ? <Text style={styles.error}>{error}</Text> : null}
+      {readOnly ? (
+        <Text style={styles.label} testID="event-read-only">
+          This calendar is read-only.
+        </Text>
+      ) : null}
       {joinUrl ? (
         <Pressable onPress={() => void Linking.openURL(joinUrl)} style={styles.joinButton}>
           <Text style={styles.joinLabel}>Join meeting</Text>
@@ -92,6 +112,7 @@ export function EventEditForm({ model }: { model: ReturnType<typeof useEventEdit
       <>
         <TextInput
           autoFocus={!existing}
+          editable={!readOnly}
           onChangeText={setTitle}
           placeholder="Title"
           style={styles.input}
@@ -99,26 +120,34 @@ export function EventEditForm({ model }: { model: ReturnType<typeof useEventEdit
           value={title}
         />
 
-        <Text style={styles.label}>Calendar</Text>
-        {writable.map((calendar) => {
-          const key = `${calendar.accountId}:${calendar.id}`;
-          const selected = key === calendarKey;
-          return (
-            <Pressable
-              disabled={Boolean(existing)}
-              key={key}
-              onPress={() => setCalendarKey(key)}
-              style={styles.calendarRow}
-              testID="calendar-option"
-            >
-              <View style={[styles.swatch, { backgroundColor: calendar.colorHex }]} />
-              <Text style={[styles.calendarName, selected && styles.calendarSelected]}>
-                {calendar.summary}
-              </Text>
-              {selected ? <Text style={styles.check}>✓</Text> : null}
-            </Pressable>
-          );
-        })}
+        {readOnly ? null : <Text style={styles.label}>Calendar</Text>}
+        {readOnly
+          ? null
+          : calendarGroups(writable, (calendar) => groupLabel(calendar, emailOf)).map((group) => (
+              <View key={group.label}>
+                <Text style={styles.calendarGroup}>{group.label}</Text>
+                {group.calendars.map((calendar) => {
+                  const key = `${calendar.accountId}:${calendar.id}`;
+                  const selected = key === calendarKey;
+                  return (
+                    <Pressable
+                      // Moving takes the whole series: pick "All" to move one.
+                      disabled={Boolean(existing) && !canMoveCalendar}
+                      key={key}
+                      onPress={() => setCalendarKey(key)}
+                      style={styles.calendarRow}
+                      testID="calendar-option"
+                    >
+                      <View style={[styles.swatch, { backgroundColor: calendar.colorHex }]} />
+                      <Text style={[styles.calendarName, selected && styles.calendarSelected]}>
+                        {calendar.summary}
+                      </Text>
+                      {selected ? <Text style={styles.check}>✓</Text> : null}
+                    </Pressable>
+                  );
+                })}
+              </View>
+            ))}
 
         <View style={styles.switchRow}>
           <Text style={styles.label}>All-day</Text>
@@ -257,30 +286,46 @@ export function EventEditForm({ model }: { model: ReturnType<typeof useEventEdit
         <LocationField model={model} />
         <LocationMap model={model} />
 
-        <Text style={styles.label}>Invitees</Text>
-        {ownAttendee ? (
-          <View style={styles.scopeRow}>
-            {RSVP_OPTIONS.map((option) => (
-              <Pressable
-                key={option.value}
-                onPress={() => void respond(option.value)}
-                style={[styles.scopeChip, rsvp === option.value && styles.scopeChipActive]}
-              >
-                <Text style={[styles.scopeLabel, rsvp === option.value && styles.scopeLabelActive]}>
-                  {option.short}
-                </Text>
-              </Pressable>
+        {canInvite ? (
+          <>
+            <Text style={styles.label}>Invitees</Text>
+            {canRsvp ? (
+              <View style={styles.scopeRow}>
+                {RSVP_OPTIONS.map((option) => (
+                  <Pressable
+                    key={option.value}
+                    onPress={() => void respond(option.value)}
+                    style={[styles.scopeChip, rsvp === option.value && styles.scopeChipActive]}
+                  >
+                    <Text
+                      style={[styles.scopeLabel, rsvp === option.value && styles.scopeLabelActive]}
+                    >
+                      {option.short}
+                    </Text>
+                  </Pressable>
+                ))}
+              </View>
+            ) : null}
+            <InviteeField
+              attendees={attendees}
+              attendeeStatus={attendeeStatus}
+              onAdd={addAttendee}
+              onRemove={removeAttendee}
+            />
+          </>
+        ) : (existing?.attendees ?? []).length > 0 ? (
+          // EventKit cannot write guests: shown as they are, never edited.
+          <View testID="event-guests-read-only">
+            <Text style={styles.label}>Guests</Text>
+            {existing?.attendees?.map((attendee) => (
+              <Text key={attendee.email} style={styles.calendarName}>
+                {attendee.displayName ?? attendee.email}
+              </Text>
             ))}
           </View>
         ) : null}
-        <InviteeField
-          attendees={attendees}
-          attendeeStatus={attendeeStatus}
-          onAdd={addAttendee}
-          onRemove={removeAttendee}
-        />
 
-        {existing ? (
+        {existing && !readOnly ? (
           <Pressable
             onPress={() => void remove()}
             style={styles.deleteButton}

@@ -3,6 +3,8 @@ import {
   eventsScope,
   type GoogleBirthday,
   type GoogleContact,
+  isAppleCalendarAccount,
+  isAppleRemindersAccount,
   plainDateToUtcMs,
   SyncState,
   type Account,
@@ -33,6 +35,11 @@ import {
   type GoogleRequestError,
 } from '@calendar/google';
 import {
+  AppleCalendarClient,
+  type AppleCalendarError,
+  mapAppleCalendar,
+} from '@calendar/apple-calendar';
+import {
   mapReminder,
   mapReminderList,
   RemindersClient,
@@ -40,6 +47,7 @@ import {
 } from '@calendar/reminders';
 import { Clock, Context, Duration, Effect, Layer, Schedule, Semaphore, Stream } from 'effect';
 import type { SqlError } from 'effect/unstable/sql/SqlError';
+import { AppleCalendarEvents, deviceTimeZone } from './appleCalendarEvents.ts';
 import { EventMutations } from './mutations.ts';
 
 const CALENDAR_LIST_SCOPE = 'calendarList';
@@ -48,6 +56,8 @@ const tasksScope = (taskListId: string): string => `tasks:${taskListId}`;
 const TASKS_FULL_PASS_INTERVAL_MS = 24 * 60 * 60 * 1000;
 /** sync_state scope for the Apple mirror: lastSyncAt is the delta stamp. */
 const REMINDERS_SCOPE = 'reminders';
+/** sync_state scope stamping the Apple Calendar calendar-list mirror. */
+const APPLE_CALENDARS_SCOPE = 'appleCalendars';
 /** People API tiers, each on its own sync token (scope) and cache rows (is_other). */
 const CONTACT_TIERS: ReadonlyArray<{ readonly isOther: boolean; readonly scope: string }> = [
   { isOther: false, scope: 'contacts:connections' },
@@ -64,7 +74,7 @@ const REMINDERS_CHANGE_DEBOUNCE = '1 second';
 const WATERMARK_LAG_MS = 60_000;
 export const SYNC_INTERVAL = '90 seconds';
 
-type SyncError = GoogleRequestError | RemindersError | SqlError;
+type SyncError = AppleCalendarError | GoogleRequestError | RemindersError | SqlError;
 
 const TRANSIENT_RETRIES = 5;
 
@@ -153,6 +163,8 @@ const make: Effect.Effect<
   SyncEngineShape,
   never,
   | AccountRepo
+  | AppleCalendarClient
+  | AppleCalendarEvents
   | BirthdayRepo
   | CalendarRepo
   | ContactRepo
@@ -176,6 +188,8 @@ const make: Effect.Effect<
   const eventRepo = yield* EventRepo;
   const taskRepo = yield* TaskRepo;
   const remindersClient = yield* RemindersClient;
+  const appleCalendarClient = yield* AppleCalendarClient;
+  const appleEvents = yield* AppleCalendarEvents;
   const syncStateRepo = yield* SyncStateRepo;
   const gate = Semaphore.makeUnsafe(1);
 
@@ -711,6 +725,84 @@ const make: Effect.Effect<
       ),
     );
 
+  /**
+   * The Apple Calendar account mirrors EventKit's *calendars* only — its
+   * events are read live per range (AppleCalendarEvents). Birthday
+   * calendars are skipped (the birthday lane already shows them), and so
+   * is any source named like a connected Google account: that account's
+   * calendars added to Calendar.app would otherwise show twice. The
+   * status check is the account's health, like Reminders.
+   */
+  const syncAppleCalendar = (account: Account): Effect.Effect<void, SyncError> =>
+    Effect.gen(function* () {
+      const authorization = yield* appleCalendarClient
+        .status()
+        .pipe(Effect.orElseSucceed(() => 'unavailable' as const));
+      if (authorization === 'unavailable') {
+        yield* Effect.logDebug('calendar bridge unavailable; skipping pass');
+        return;
+      }
+      if (authorization !== 'fullAccess') {
+        if (account.status === 'ok') {
+          yield* accountRepo.setStatus(account.id, 'reauth_required');
+          yield* appleEvents.invalidate;
+        }
+        return;
+      }
+      if (account.status !== 'ok') {
+        yield* accountRepo.setStatus(account.id, 'ok');
+      }
+      const now = yield* Clock.currentTimeMillis;
+      const googleEmails = new Set(
+        (yield* accountRepo.list())
+          .filter((other) => other.provider === 'google')
+          .map((other) => other.email.toLowerCase()),
+      );
+      const previous = new Map(
+        (yield* calendarRepo.list(account.id)).map((calendar) => [calendar.id, calendar]),
+      );
+      const zone = deviceTimeZone();
+      const kept = (yield* appleCalendarClient.listCalendars())
+        .filter(
+          (calendar) =>
+            calendar.type !== 'birthday' && !googleEmails.has(calendar.sourceTitle.toLowerCase()),
+        )
+        .map((calendar) =>
+          mapAppleCalendar(calendar, {
+            deviceTimeZone: zone,
+            previousVisibility: previous.get(calendar.id)?.isVisible,
+          }),
+        );
+      yield* calendarRepo.upsertMany(kept);
+      const keptIds = new Set(kept.map((calendar) => calendar.id));
+      const gone = [...previous.keys()].filter((id) => !keptIds.has(id));
+      yield* calendarRepo.purge(account.id, gone);
+      yield* syncStateRepo.set(
+        new SyncState({
+          accountId: account.id,
+          lastFullSyncAt: now,
+          lastSyncAt: now,
+          scope: APPLE_CALENDARS_SCOPE,
+          status: 'idle',
+          syncToken: null,
+        }),
+      );
+      // A calendar that appeared or went must repaint the events it
+      // contributes; an unchanged set must not, or every 90 s pass would
+      // re-read EventKit for every open view.
+      if (gone.length > 0 || kept.some((calendar) => !previous.has(calendar.id))) {
+        yield* appleEvents.invalidate;
+      }
+    }).pipe(
+      Effect.catchTag('AppleCalendarAccessError', () =>
+        Effect.orDie(accountRepo.setStatus(account.id, 'reauth_required')),
+      ),
+    );
+
+  /** One pass for either synthetic Apple account. */
+  const syncApple = (account: Account): Effect.Effect<void, SyncError> =>
+    isAppleCalendarAccount(account) ? syncAppleCalendar(account) : syncReminders(account);
+
   const syncAccount = (account: Account): Effect.Effect<void, SyncError> =>
     Effect.gen(function* () {
       yield* syncCalendarList(account);
@@ -738,9 +830,12 @@ const make: Effect.Effect<
               // Always attempted: the status check is what heals a
               // revoked-then-restored grant, so a flagged account must
               // not be skipped.
-              yield* syncReminders(account).pipe(
+              yield* syncApple(account).pipe(
                 Effect.catchCause((cause) =>
-                  Effect.logWarning('reminders sync failed', { cause: String(cause) }),
+                  Effect.logWarning('apple sync failed', {
+                    accountId: account.id,
+                    cause: String(cause),
+                  }),
                 ),
               );
               continue;
@@ -780,7 +875,7 @@ const make: Effect.Effect<
         Effect.gen(function* () {
           const accounts = yield* accountRepo.list();
           for (const account of accounts) {
-            if (account.provider === 'apple') {
+            if (isAppleRemindersAccount(account)) {
               // Per account, like syncAll: one failing account must not
               // abort the pass for the rest.
               yield* syncReminders(account).pipe(
@@ -801,9 +896,37 @@ const make: Effect.Effect<
         ),
       );
 
+  /**
+   * Calendar-list pass for an Apple Calendar change notification (a
+   * calendar added, renamed or recolored in Calendar.app). Event changes
+   * need no pass: AppleCalendarEvents invalidates the views itself.
+   */
+  const syncAppleCalendarOnly = (): Effect.Effect<void> =>
+    gate
+      .withPermits(1)(
+        Effect.gen(function* () {
+          for (const account of yield* accountRepo.list()) {
+            if (isAppleCalendarAccount(account)) {
+              yield* syncAppleCalendar(account);
+            }
+          }
+        }),
+      )
+      .pipe(
+        Effect.catchCause((cause) =>
+          Effect.logWarning('apple calendar change pass failed', { cause: String(cause) }),
+        ),
+      );
+
   const start = (): Effect.Effect<void> =>
     Effect.gen(function* () {
       yield* Effect.forkDetach(Effect.repeat(syncAll(), Schedule.spaced(SYNC_INTERVAL)));
+      yield* Effect.forkDetach(
+        appleCalendarClient.changes.pipe(
+          Stream.debounce(REMINDERS_CHANGE_DEBOUNCE),
+          Stream.runForEach(() => syncAppleCalendarOnly()),
+        ),
+      );
       yield* Effect.forkDetach(
         remindersClient.changes.pipe(
           Stream.debounce(REMINDERS_CHANGE_DEBOUNCE),
@@ -820,6 +943,8 @@ export class SyncEngine extends Context.Service<SyncEngine, SyncEngineShape>()('
     SyncEngine,
     never,
     | AccountRepo
+    | AppleCalendarClient
+    | AppleCalendarEvents
     | BirthdayRepo
     | CalendarRepo
     | ContactRepo

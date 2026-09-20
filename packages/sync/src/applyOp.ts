@@ -1,4 +1,4 @@
-import { contrastingTextColor, type EventRecord, type PendingOp } from '@calendar/core';
+import { contrastingTextColor, EventRecord, type PendingOp } from '@calendar/core';
 import type {
   AccountRepoShape,
   CalendarRepoShape,
@@ -63,6 +63,9 @@ const describeFailure = (value: unknown): string => {
   return String(value);
 };
 
+/** Event ops a queued move of the same series must not be reordered with. */
+const EVENT_KINDS: ReadonlySet<PendingOp['kind']> = new Set(['create', 'delete', 'rsvp', 'update']);
+
 const TASK_KINDS: ReadonlySet<PendingOp['kind']> = new Set([
   'completeTask',
   'createTask',
@@ -94,6 +97,14 @@ export const makeApplyOp = (
    */
   const releaseRow = (op: PendingOp): Effect.Effect<void> => {
     switch (op.kind) {
+      case 'move':
+        // The server still has the event in the source calendar: put the
+        // rows the move re-keyed back there and hand them to sync.
+        return op.targetCalendarId
+          ? Effect.ignore(
+              rekeySeries(op.accountId, op.targetCalendarId, op.calendarId, op.eventId, 'synced'),
+            )
+          : Effect.void;
       case 'create':
         return Effect.ignore(eventRepo.deleteEvent(op.accountId, op.calendarId, op.eventId));
       case 'createTask':
@@ -113,6 +124,26 @@ export const makeApplyOp = (
     }
   };
 
+  /** Moves a series' local rows (master + overrides) between calendars of one account. */
+  function rekeySeries(
+    accountId: string,
+    fromCalendarId: string,
+    toCalendarId: string,
+    masterId: string,
+    syncStatus: EventRecord['syncStatus'],
+  ) {
+    return Effect.gen(function* () {
+      const master = yield* eventRepo.getById(accountId, fromCalendarId, masterId);
+      const overrides = yield* eventRepo.listOverrides(accountId, fromCalendarId, masterId);
+      for (const row of master ? [master, ...overrides] : overrides) {
+        yield* eventRepo.deleteEvent(accountId, fromCalendarId, row.id);
+        yield* eventRepo.upsertMany([
+          new EventRecord({ ...row, calendarId: toCalendarId, syncStatus }),
+        ]);
+      }
+    });
+  }
+
   /** A rejection retrying cannot fix: say so, tell the UI, drop the op. */
   const drop = (op: PendingOp, reason: string): Effect.Effect<ApplyOutcome> =>
     Effect.logWarning('pending op dropped', { eventId: op.eventId, kind: op.kind, reason }).pipe(
@@ -129,6 +160,20 @@ export const makeApplyOp = (
       // would drop the local row — wait instead.
       if (op.kind !== 'createTask' && op.eventId.startsWith('local-')) {
         return retry('waiting for the create ahead of it to land');
+      }
+      // A move and the edits of the same series keep their queue order even
+      // when backoff lets listDue skip the older one: an edit queued before
+      // the move patches the source calendar, one queued after patches the
+      // destination — either would 404 on the wrong side of the move.
+      if (op.kind === 'move' || EVENT_KINDS.has(op.kind)) {
+        const earlier = yield* pendingOpRepo.earlierInSeries(op);
+        if (op.kind === 'move' ? earlier.length > 0 : earlier.includes('move')) {
+          return retry(
+            op.kind === 'move'
+              ? 'waiting for earlier changes to the event'
+              : 'waiting for the move ahead of it',
+          );
+        }
       }
       switch (op.kind) {
         case 'calendarColor': {
@@ -302,6 +347,49 @@ export const makeApplyOp = (
           });
           return 'done' as const;
         }
+        case 'move': {
+          const destination = op.targetCalendarId;
+          if (!destination) {
+            return yield* drop(op, 'move without a destination');
+          }
+          const local = yield* eventRepo.getById(op.accountId, destination, op.eventId);
+          const response = yield* client.moveEvent({
+            accountId: op.accountId,
+            calendarId: op.calendarId,
+            destination,
+            eventId: op.eventId,
+            sendUpdates: local && hasGuests(local) ? 'all' : undefined,
+          });
+          const now = yield* Clock.currentTimeMillis;
+          const synced = mapGcalEvent(response, {
+            accountId: op.accountId,
+            calendarId: destination,
+            defaultTimeZone: local?.startTimeZone ?? 'UTC',
+            syncedAt: now,
+          });
+          // No row at the destination means the user moved it on again (or
+          // deleted it) while this op waited: those later ops own the rows now.
+          if (synced && local) {
+            yield* eventRepo.upsertMany([synced]);
+          }
+          // Its exceptions moved with it; hand back the ones no queued edit
+          // still owns (those stay pending until their own op lands).
+          const queuedIds = new Set(
+            (yield* pendingOpRepo.listAll())
+              .filter((queued) => queued.id !== op.id && queued.accountId === op.accountId)
+              .map((queued) => queued.eventId),
+          );
+          for (const override of yield* eventRepo.listOverrides(
+            op.accountId,
+            destination,
+            op.eventId,
+          )) {
+            if (!queuedIds.has(override.id)) {
+              yield* eventRepo.markSynced(op.accountId, destination, override.id);
+            }
+          }
+          return 'done' as const;
+        }
         case 'rsvp': {
           if (!op.payload?.attendees) {
             return 'done' as const;
@@ -432,6 +520,13 @@ export const makeApplyOp = (
               if (op.taskListId) {
                 yield* taskRepo.removeTask(op.accountId, op.taskListId, op.eventId);
               }
+            } else if (op.kind === 'move') {
+              // 404 is the event *or the destination calendar* — put the
+              // rows back where the server last had them. If the event is
+              // really gone the source's next pull carries the tombstone;
+              // deleting here would hide a still-existing event until a
+              // full resync (incremental pulls never resend it).
+              yield* releaseRow(op);
             } else {
               yield* eventRepo.deleteEvent(op.accountId, op.calendarId, op.eventId);
             }

@@ -4,11 +4,7 @@ tags:
   - ci
 ---
 - runFlow: ../common/launch.yaml
-- tapOn:
-    id: 'add-event'
-- assertVisible: 'New Event'
-- waitForAnimationToEnd:
-    timeout: 5000
+- runFlow: ../common/open-new-event.yaml
 # The title auto-focuses, so its keyboard is up and covers the invitee
 # field (its top edge is right where the keyboard starts on an iPhone 17
 # Pro). Maestro's visibility check does not know about the keyboard, so

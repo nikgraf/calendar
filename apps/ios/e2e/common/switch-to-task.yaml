@@ -1,0 +1,17 @@
+appId: com.solunivo.app
+name: Switch the open new-event sheet to the task form (shared)
+---
+# Run 35425328496: the mode tap reported COMPLETED and the sheet stayed on
+# "New Event". Re-tap while the task form is missing.
+- repeat:
+    times: 3
+    while:
+      notVisible: 'New Task'
+    commands:
+      - tapOn:
+          id: 'mode-task'
+      - extendedWaitUntil:
+          visible: 'New Task'
+          timeout: 5000
+          optional: true
+- assertVisible: 'New Task'

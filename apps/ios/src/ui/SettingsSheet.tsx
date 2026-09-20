@@ -7,9 +7,11 @@ import {
   useSyncStatus,
   useTaskLists,
   pendingOpLabel,
+  appleCalendarStatusCopy,
   contactsStatusCopy,
   remindersStatusCopy,
 } from '@calendar/app-state';
+import { isAppleCalendarAccount, isAppleRemindersAccount } from '@calendar/core';
 import { Effect } from 'effect';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
@@ -23,6 +25,7 @@ import {
   Text,
   View,
 } from 'react-native';
+import { iosAppleCalendarClient } from '../appleCalendarClient.ts';
 import { iosContactsClient } from '../contactsClient.ts';
 import { iosRemindersClient } from '../remindersClient.ts';
 import { AccountCard } from './AccountCard.tsx';
@@ -34,7 +37,14 @@ import { palette } from './theme.ts';
 import { MutationNoticeToast } from './Toast.tsx';
 
 const IOS_SETTINGS_PATH = 'Settings › Privacy & Security';
-type Connection = 'contacts' | 'google' | 'reminders';
+/**
+ * Re-reads of a permission status after a prompt was answered (~10 s in
+ * all): iOS records the answer a moment after the alert closes, and a CI
+ * runner has shown several seconds of "notDetermined" after "Allow".
+ */
+const STATUS_SETTLE_TRIES = 40;
+const STATUS_SETTLE_MS = 200;
+type Connection = 'calendar' | 'contacts' | 'google' | 'reminders';
 
 export function SettingsSheet({ onClose, visible }: { onClose: () => void; visible: boolean }) {
   const mutations = useBackendMutations();
@@ -51,25 +61,31 @@ export function SettingsSheet({ onClose, visible }: { onClose: () => void; visib
   const [contacts, setContacts] = useState('checking…');
   const [contactsConnectionFailed, setContactsConnectionFailed] = useState(false);
   const [reminders, setReminders] = useState('checking…');
+  const [calendar, setCalendar] = useState('checking…');
   const refreshVersion = useRef(0);
   const contactsConnected = contacts === 'authorized' || contacts === 'limited';
-  const hasRemindersAccount = accounts.some((account) => account.provider === 'apple');
+  const hasRemindersAccount = accounts.some(isAppleRemindersAccount);
+  const hasCalendarAccount = accounts.some(isAppleCalendarAccount);
 
   const refreshPermissions = useCallback(async () => {
     const version = ++refreshVersion.current;
-    const [contactsStatus, remindersStatus] = await Promise.all([
+    const [contactsStatus, remindersStatus, calendarStatus] = await Promise.all([
       Effect.runPromise(
         iosContactsClient.status().pipe(Effect.orElseSucceed(() => 'Could not check access.')),
       ),
       Effect.runPromise(
         iosRemindersClient.status().pipe(Effect.orElseSucceed(() => 'Could not check access.')),
       ),
+      Effect.runPromise(
+        iosAppleCalendarClient.status().pipe(Effect.orElseSucceed(() => 'Could not check access.')),
+      ),
     ]);
     if (version === refreshVersion.current) {
       setContacts(contactsStatus);
       setReminders(remindersStatus);
+      setCalendar(calendarStatus);
     }
-    return { contacts: contactsStatus, reminders: remindersStatus };
+    return { calendar: calendarStatus, contacts: contactsStatus, reminders: remindersStatus };
   }, []);
 
   useEffect(() => {
@@ -88,7 +104,7 @@ export function SettingsSheet({ onClose, visible }: { onClose: () => void; visib
     };
   }, [refreshPermissions, visible]);
 
-  const connectDevice = async (provider: 'contacts' | 'reminders') => {
+  const connectDevice = async (provider: 'calendar' | 'contacts' | 'reminders') => {
     if (busyRef.current) {
       return;
     }
@@ -96,10 +112,19 @@ export function SettingsSheet({ onClose, visible }: { onClose: () => void; visib
     setConnecting(provider);
     setError(null);
     let granted: boolean | undefined;
-    const name = provider === 'contacts' ? 'Contacts' : 'Apple Reminders';
+    const name =
+      provider === 'contacts'
+        ? 'Contacts'
+        : provider === 'calendar'
+          ? 'Apple Calendar'
+          : 'Apple Reminders';
     try {
       const connect =
-        provider === 'contacts' ? mutations.connectContacts : mutations.connectReminders;
+        provider === 'contacts'
+          ? mutations.connectContacts
+          : provider === 'calendar'
+            ? mutations.connectAppleCalendar
+            : mutations.connectReminders;
       granted = (await connect(undefined)).granted;
       if (provider === 'contacts') {
         setContactsConnectionFailed(!granted);
@@ -112,7 +137,21 @@ export function SettingsSheet({ onClose, visible }: { onClose: () => void; visib
         `Could not connect ${name}: ${error instanceof Error ? error.message : String(error)}`,
       );
     } finally {
-      const statuses = await refreshPermissions();
+      let statuses = await refreshPermissions();
+      // iOS records the answer shortly after the prompt closes: a read right
+      // after "Allow" or "Don't Allow" can still say notDetermined, which
+      // left the connect row up after a grant and reported "the prompt did
+      // not open" after a refusal. Give it a moment before trusting it.
+      for (
+        let attempt = 0;
+        granted !== undefined &&
+        statuses[provider] === 'notDetermined' &&
+        attempt < STATUS_SETTLE_TRIES;
+        attempt += 1
+      ) {
+        await new Promise((resolve) => setTimeout(resolve, STATUS_SETTLE_MS));
+        statuses = await refreshPermissions();
+      }
       if (granted === false) {
         const status = statuses[provider];
         if (status === 'notDetermined') {
@@ -214,6 +253,25 @@ export function SettingsSheet({ onClose, visible }: { onClose: () => void; visib
               {connecting === 'google' ? 'Waiting for Google…' : 'Add Google Account'}
             </Text>
           </Pressable>
+          {!hasCalendarAccount || calendar === 'notDetermined' || calendar === 'writeOnly' ? (
+            <Pressable
+              disabled={busy}
+              onPress={() => void connectDevice('calendar')}
+              style={[styles.addButton, styles.addSecondary, busy && styles.addBusy]}
+              testID="connect-apple-calendar"
+            >
+              <Text style={styles.addLabel}>
+                {connecting === 'calendar'
+                  ? 'Connecting Calendar…'
+                  : `${hasCalendarAccount ? 'Reconnect' : 'Connect'} Apple Calendar`}
+              </Text>
+            </Pressable>
+          ) : null}
+          {['denied', 'restricted', 'unavailable', 'writeOnly'].includes(calendar) ? (
+            <Text style={styles.connectionStatus}>
+              Calendar: {appleCalendarStatusCopy(calendar, IOS_SETTINGS_PATH)}
+            </Text>
+          ) : null}
           {!hasRemindersAccount || reminders === 'notDetermined' || reminders === 'writeOnly' ? (
             <Pressable
               disabled={busy}
@@ -256,7 +314,11 @@ export function SettingsSheet({ onClose, visible }: { onClose: () => void; visib
               Contacts: {contactsStatusCopy(contacts, IOS_SETTINGS_PATH)}
             </Text>
           ) : null}
-          {contacts === 'denied' || reminders === 'denied' || reminders === 'writeOnly' ? (
+          {contacts === 'denied' ||
+          reminders === 'denied' ||
+          reminders === 'writeOnly' ||
+          calendar === 'denied' ||
+          calendar === 'writeOnly' ? (
             <Pressable
               disabled={busy}
               onPress={() => void openSettings()}

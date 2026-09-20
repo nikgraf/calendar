@@ -30,15 +30,19 @@ tags:
       - extendedWaitUntil:
           notVisible: 'New Event'
           timeout: 20000
-      # Maestro patterns match the whole string, so use the exact title.
-      - assertVisible: 'Solunivo e2e event to delete'
+      # Maestro patterns match the whole string. A timed block's label is
+      # its title and time range ("…, 9:00 AM – 10:00 AM"), like flow 09's
+      # reminder label, so match the title as a prefix.
+      - extendedWaitUntil:
+          visible: 'Solunivo e2e event to delete.*'
+          timeout: 10000
       # Clean up, so repeated runs don't pile up in a real calendar.
-      - tapOn: 'Solunivo e2e event to delete'
+      - tapOn: 'Solunivo e2e event to delete.*'
       - assertVisible: 'Edit Event'
       - tapOn:
           id: 'event-delete'
       - extendedWaitUntil:
-          notVisible: 'Solunivo e2e event to delete'
+          notVisible: 'Solunivo e2e event to delete.*'
           timeout: 20000
 # Keyed on the sheet still being open (see 08): after a save the sheet is
 # closed and "no calendar rows" would be true for the wrong reason.

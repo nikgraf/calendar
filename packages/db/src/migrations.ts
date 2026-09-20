@@ -231,8 +231,20 @@ const eventGeo = Effect.gen(function* () {
     )`;
 });
 
+// Apple Calendar. source_title is the EventKit source an Apple calendar
+// lives in ("iCloud", "On My Mac") — NULL for Google calendars; the
+// calendar's provider is never stored, it is the owning account's.
+// target_calendar_id is the destination of a queued 'move' op (a Google
+// events.move inside one account; calendar_id stays the source).
+const appleCalendar = Effect.gen(function* () {
+  const sql = yield* SqlClient;
+  yield* sql`ALTER TABLE calendars ADD COLUMN source_title TEXT`;
+  yield* sql`ALTER TABLE pending_ops ADD COLUMN target_calendar_id TEXT`;
+});
+
 // The third tuple element is a *loader* whose result is the migration effect.
 export const migrations: ReadonlyArray<ResolvedMigration> = [
   [1, 'baseline', Effect.succeed(baseline)],
   [2, 'event-geo', Effect.succeed(eventGeo)],
+  [3, 'apple-calendar', Effect.succeed(appleCalendar)],
 ];

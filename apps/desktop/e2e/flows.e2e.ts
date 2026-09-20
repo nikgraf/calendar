@@ -70,6 +70,7 @@ const calendar = (id: string, summary: string, colorHex: string) =>
     id,
     isPrimary: id === 'cal-work',
     isVisible: true,
+    provider: 'google',
     summary,
     timeZone: 'Europe/Vienna',
   });

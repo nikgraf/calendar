@@ -12,6 +12,7 @@ import {
   TaskListInfo,
   TaskRecord,
 } from '@calendar/core';
+import type { AppleCalendarJson, FakeEventSeed } from '@calendar/apple-calendar';
 import type { DeviceBirthdayJson, DeviceContactJson } from '@calendar/contacts';
 import type { FakePlace } from '@calendar/geo';
 import type { ReminderJson, ReminderListJson } from '@calendar/reminders';
@@ -485,6 +486,12 @@ export interface ContactsFixture {
   readonly contacts?: ReadonlyArray<DeviceContactJson>;
 }
 
+/** An in-memory Calendar app (EventKit events) instead of the helper: no TCC, no real calendars. */
+export interface AppleCalendarFixture {
+  readonly calendars: ReadonlyArray<AppleCalendarJson>;
+  readonly events?: ReadonlyArray<FakeEventSeed>;
+}
+
 export interface GeoFixture {
   readonly places: ReadonlyArray<FakePlace>;
 }
@@ -495,6 +502,12 @@ export interface RemindersFixture {
 }
 
 export interface LaunchOptions {
+  /**
+   * 'off' (default): no calendar bridge. 'real': the helper. A fixture: the
+   * in-memory EventKit — Apple events live nowhere else, so this is how e2e
+   * sees them without reading a developer's calendars.
+   */
+  readonly appleCalendar?: 'off' | 'real' | { readonly fixture: AppleCalendarFixture };
   /**
    * 'off' (default): no bridge at all. 'real': the helper. A fixture: the
    * in-memory fake client seeded with these rows — the only way e2e sees
@@ -543,6 +556,20 @@ export const launchApp = async (seed?: SeedData, options: LaunchOptions = {}): P
             };
           })();
 
+  const appleCalendarEnv: Record<string, string> =
+    options.appleCalendar === 'real'
+      ? {}
+      : options.appleCalendar === undefined || options.appleCalendar === 'off'
+        ? { CALENDAR_APPLE_CALENDAR: 'off' }
+        : (() => {
+            const fixturePath = join(userDataDir, 'apple-calendar-fixture.json');
+            writeFileSync(fixturePath, JSON.stringify(options.appleCalendar.fixture));
+            return {
+              CALENDAR_APPLE_CALENDAR: 'fixture',
+              CALENDAR_APPLE_CALENDAR_FIXTURE: fixturePath,
+            };
+          })();
+
   const geoEnv: Record<string, string> =
     options.geo === 'real'
       ? {}
@@ -563,6 +590,8 @@ export const launchApp = async (seed?: SeedData, options: LaunchOptions = {}): P
       // Seeded Apple rows must not be replaced by (or prompt for) the
       // developer's real Reminders — see remindersClient.ts.
       ...remindersEnv,
+      // Likewise the Calendar app's events: never a developer's, never a prompt.
+      ...appleCalendarEnv,
       // Likewise the address book: no TCC prompt, no developer's contacts.
       ...contactsEnv,
       // And MapKit: no network lookups, so no run depends on Apple's servers.
