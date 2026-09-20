@@ -7,9 +7,9 @@ import {
   groupByDate,
   groupEventsByDay,
   MAX_ALL_DAY_ROWS,
-  moveTimedTask,
   partitionCalendarTasks,
   swipeCommitColumns,
+  taskChipLabel,
   type TaskRecord,
   Temporal,
 } from '@calendar/core';
@@ -26,6 +26,7 @@ import Animated, {
 import { AllDayColumn } from './AllDayColumn.tsx';
 import { DayColumn } from './DayColumn.tsx';
 import { palette } from './theme.ts';
+import { useTaskDrag } from './useTaskDrag.ts';
 import { WeekStripCell } from './WeekStrip.tsx';
 import { ALL_DAY_ROW_HEIGHT, EDGE_INSET, GUTTER_WIDTH, HOUR_HEIGHT } from './timelineLayout.ts';
 
@@ -97,7 +98,8 @@ export function DayTimeline({
   today: string;
 }) {
   const scrollRef = useRef<ScrollView>(null);
-  const { setViewPreferences, updateEvent, updateRecurring, updateTask } = useGuardedMutations();
+  const containerRef = useRef<View>(null);
+  const { setViewPreferences, updateEvent, updateRecurring } = useGuardedMutations();
   const [pageWidth, setPageWidth] = useState(0);
   // The collapsed lane is a device setting (shared with desktop); expanded by default.
   const collapsed = useViewPreferences()?.allDayLaneCollapsed ?? false;
@@ -125,19 +127,6 @@ export function DayTimeline({
         eventId: event.id,
       });
     }
-  };
-
-  const commitTaskChange = (task: TaskRecord, deltaMinutes: number) => {
-    const changes = moveTimedTask(task, deltaMinutes);
-    if (changes === undefined) {
-      return;
-    }
-    void updateTask({
-      accountId: task.accountId,
-      changes,
-      taskId: task.id,
-      taskListId: task.listId,
-    });
   };
 
   const strip = useMemo(() => bufferedDays(days[0]!, days.length, buffer), [days, buffer]);
@@ -189,6 +178,32 @@ export function DayTimeline({
     scrollRef.current?.scrollTo({ animated: false, y: 7.5 * HOUR_HEIGHT });
   }, []);
 
+  // Geometry the task drag judges drops against; measured, never rendered.
+  const containerX = useSharedValue(0);
+  const containerY = useSharedValue(0);
+  const containerHeight = useSharedValue(0);
+  const laneTop = useSharedValue(0);
+  const scrollY = useSharedValue(7.5 * HOUR_HEIGHT);
+  const taskDrag = useTaskDrag({
+    buffer,
+    columnWidth,
+    containerHeight,
+    containerX,
+    containerY,
+    laneHeight,
+    laneTop,
+    panX,
+    scrollY,
+    strip,
+  });
+  const measureContainer = () => {
+    containerRef.current?.measureInWindow((x, y, _width, height) => {
+      setShared(containerX, x);
+      setShared(containerY, y);
+      setShared(containerHeight, height);
+    });
+  };
+
   // Re-centre once the new page has rendered — resetting in the same tick as
   // the state update would briefly show the wrong day. Also clears a stray
   // offset when the days change from outside (Today, chevrons, week strip).
@@ -205,6 +220,10 @@ export function DayTimeline({
     .activeOffsetX([-15, 15])
     .failOffsetY([-12, 12])
     .onUpdate((update) => {
+      if (taskDrag.dragging !== null) {
+        // A chip is being dragged: the strip stays put under it.
+        return;
+      }
       setShared(panX, Math.max(-maxPan, Math.min(maxPan, update.translationX)));
     })
     .onEnd((end) => {
@@ -234,9 +253,17 @@ export function DayTimeline({
   }));
 
   return (
-    <View style={styles.container} testID="day-timeline">
+    <View
+      onLayout={measureContainer}
+      ref={containerRef}
+      style={styles.container}
+      testID="day-timeline"
+    >
       {days.length > 1 ? (
-        <View style={styles.weekHeader}>
+        <View
+          onLayout={(layout) => setShared(laneTop, layout.nativeEvent.layout.height)}
+          style={styles.weekHeader}
+        >
           <View style={styles.gutterSpacer} />
           <View style={styles.stripViewport}>
             <Animated.View style={[styles.strip, stripStyle]}>
@@ -272,6 +299,10 @@ export function DayTimeline({
         </View>
         <View style={styles.stripViewport}>
           <Animated.View style={[styles.strip, stripStyle]}>
+            <Animated.View
+              pointerEvents="none"
+              style={[styles.laneIndicator, { width: columnWidth }, taskDrag.laneIndicatorStyle]}
+            />
             {strip.map((day) => {
               const iso = day.toString();
               return (
@@ -279,7 +310,9 @@ export function DayTimeline({
                   birthdays={birthdaysByDay.get(iso) ?? []}
                   colorOf={colorOf}
                   compact={compact}
+                  draggingKey={taskDrag.dragging?.key ?? null}
                   events={(byDay.get(iso) ?? []).filter((event) => event.isAllDay)}
+                  isTaskReadOnly={isTaskReadOnly}
                   key={iso}
                   listColorOf={listColorOf}
                   maxChips={maxChips}
@@ -289,6 +322,7 @@ export function DayTimeline({
                   onTaskPress={onTaskPress}
                   onToggleTask={onToggleTask}
                   overdueKeys={overdueKeys}
+                  taskDrag={taskDrag}
                   tasks={tasksByDay.get(iso) ?? []}
                   today={todayIso}
                   width={columnWidth}
@@ -300,7 +334,12 @@ export function DayTimeline({
       </View>
 
       <GestureDetector gesture={swipe}>
-        <ScrollView ref={scrollRef} style={styles.scroll}>
+        <ScrollView
+          onScroll={(scroll) => setShared(scrollY, scroll.nativeEvent.contentOffset.y)}
+          ref={scrollRef}
+          scrollEventThrottle={16}
+          style={styles.scroll}
+        >
           <View style={{ height: 24 * HOUR_HEIGHT }}>
             {Array.from({ length: 24 }, (_, hour) => (
               <View key={hour} style={[styles.hourRow, { top: hour * HOUR_HEIGHT }]}>
@@ -320,6 +359,14 @@ export function DayTimeline({
               style={styles.eventsArea}
             >
               <Animated.View style={[styles.strip, stripStyle]}>
+                <Animated.View
+                  pointerEvents="none"
+                  style={[
+                    styles.gridIndicator,
+                    { width: columnWidth },
+                    taskDrag.gridIndicatorStyle,
+                  ]}
+                />
                 {strip.map((day) => {
                   const iso = day.toString();
                   return (
@@ -327,17 +374,18 @@ export function DayTimeline({
                       colorOf={colorOf}
                       compact={compact}
                       date={day}
+                      draggingKey={taskDrag.dragging?.key ?? null}
                       events={(byDay.get(iso) ?? []).filter((event) => !event.isAllDay)}
                       isTaskReadOnly={isTaskReadOnly}
                       isToday={Temporal.PlainDate.compare(day, today) === 0}
                       key={iso}
                       listColorOf={listColorOf}
                       onCommit={commitChange}
-                      onCommitTask={commitTaskChange}
                       onCreateSlot={onCreateSlot}
                       onEventPress={onEventPress}
                       onTaskPress={onTaskPress}
                       onToggleTask={onToggleTask}
+                      taskDrag={taskDrag}
                       timedTasks={timedTasksByDay.get(iso) ?? []}
                       timeZone={timeZone}
                       width={columnWidth}
@@ -349,6 +397,14 @@ export function DayTimeline({
           </View>
         </ScrollView>
       </GestureDetector>
+
+      {taskDrag.dragging ? (
+        <Animated.View pointerEvents="none" style={[styles.ghost, taskDrag.ghostStyle]}>
+          <Text numberOfLines={1} style={styles.ghostText}>
+            {taskChipLabel(taskDrag.dragging.task)}
+          </Text>
+        </Animated.View>
+      ) : null}
     </View>
   );
 }
@@ -368,6 +424,40 @@ const styles = StyleSheet.create({
     position: 'absolute',
     right: EDGE_INSET,
     top: 0,
+  },
+  ghost: {
+    backgroundColor: '#f5f5f5',
+    borderColor: '#d4d4d4',
+    borderRadius: 5,
+    borderWidth: StyleSheet.hairlineWidth,
+    height: 22,
+    justifyContent: 'center',
+    left: 0,
+    paddingHorizontal: 6,
+    position: 'absolute',
+    shadowColor: '#000000',
+    shadowOffset: { height: 4, width: 0 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    top: 0,
+    zIndex: 30,
+  },
+  ghostText: {
+    color: palette.text,
+    fontSize: 12,
+    fontWeight: '500',
+  },
+  gridIndicator: {
+    backgroundColor: 'rgba(59, 130, 246, 0.12)',
+    borderColor: '#3b82f6',
+    borderRadius: 5,
+    borderStyle: 'dashed',
+    borderWidth: 1.5,
+    height: 22,
+    left: 0,
+    position: 'absolute',
+    top: 0,
+    zIndex: 20,
   },
   gutterAction: {
     color: '#2563eb',
@@ -401,6 +491,16 @@ const styles = StyleSheet.create({
     left: 0,
     position: 'absolute',
     right: 0,
+  },
+  laneIndicator: {
+    backgroundColor: 'rgba(59, 130, 246, 0.12)',
+    borderColor: '#60a5fa',
+    borderRadius: 5,
+    borderWidth: 1,
+    bottom: 0,
+    left: 0,
+    position: 'absolute',
+    top: 0,
   },
   scroll: {
     flex: 1,
