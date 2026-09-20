@@ -1,12 +1,17 @@
+import { type ByDay, formatByDay } from './byDay.ts';
+
 /**
  * Builds the RRULE line for the editor's repeat picker. The rule leans on
  * RFC 5545 defaults: without BYDAY/BYMONTHDAY the series recurs on the
- * weekday/day-of-month of DTSTART, which matches what the pickers offer.
+ * weekday/day-of-month of DTSTART; the pickers add BYDAY only for chosen
+ * weekdays ("weekends") or an "Nth weekday of the month".
  */
 
 export type RecurrenceFrequency = 'daily' | 'monthly' | 'weekly' | 'yearly';
 
 export interface RecurrenceRuleSpec {
+  /** Weekly: the weekdays; monthly: one weekday with its ordinal. See `byDayError`. */
+  readonly byDay?: ReadonlyArray<ByDay> | undefined;
   /** End after this many occurrences; wins over untilDate if both are set. */
   readonly count?: number | undefined;
   readonly freq: RecurrenceFrequency;
@@ -26,6 +31,9 @@ export const buildRecurrenceRule = (spec: RecurrenceRuleSpec, isAllDay: boolean)
   } else if (spec.untilDate) {
     const compact = spec.untilDate.replaceAll('-', '');
     parts.push(`UNTIL=${isAllDay ? compact : `${compact}T235959Z`}`);
+  }
+  if (spec.byDay !== undefined && spec.byDay.length > 0) {
+    parts.push(`BYDAY=${formatByDay(spec.byDay)}`);
   }
   return `RRULE:${parts.join(';')}`;
 };

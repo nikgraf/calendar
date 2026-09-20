@@ -33,4 +33,20 @@ describe('buildRecurrenceRule', () => {
       'RRULE:FREQ=YEARLY;COUNT=5',
     );
   });
+
+  it('lists chosen weekdays and an ordinal weekday as BYDAY', () => {
+    expect(
+      buildRecurrenceRule({ byDay: [{ weekday: 'SA' }, { weekday: 'SU' }], freq: 'weekly' }, false),
+    ).toBe('RRULE:FREQ=WEEKLY;BYDAY=SA,SU');
+    expect(
+      buildRecurrenceRule({ byDay: [{ ordinal: 2, weekday: 'TU' }], freq: 'monthly' }, false),
+    ).toBe('RRULE:FREQ=MONTHLY;BYDAY=2TU');
+    expect(
+      buildRecurrenceRule(
+        { byDay: [{ ordinal: -1, weekday: 'FR' }], count: 6, freq: 'monthly' },
+        false,
+      ),
+    ).toBe('RRULE:FREQ=MONTHLY;COUNT=6;BYDAY=-1FR');
+    expect(buildRecurrenceRule({ byDay: [], freq: 'weekly' }, false)).toBe('RRULE:FREQ=WEEKLY');
+  });
 });
