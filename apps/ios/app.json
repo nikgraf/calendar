@@ -29,6 +29,7 @@
         "NSCalendarsFullAccessUsageDescription": "Solunivo shows the calendars from your Calendar app next to your Google calendars and lets you edit their events here. Nothing leaves your device.",
         "NSCalendarsUsageDescription": "Solunivo shows the calendars from your Calendar app next to your Google calendars and lets you edit their events here. Nothing leaves your device.",
         "NSContactsUsageDescription": "Solunivo suggests people from your Contacts when you invite someone to an event and shows their birthdays in your calendar. Nothing leaves your device.",
+        "NSLocationWhenInUseUsageDescription": "Solunivo uses your location only to show nearby results when you search for an event's location.",
         "NSRemindersFullAccessUsageDescription": "Solunivo shows your Reminders next to your calendar and lets you edit them here. Nothing leaves your device.",
         "NSRemindersUsageDescription": "Solunivo shows your Reminders next to your calendar and lets you edit them here. Nothing leaves your device.",
         "NSSpeechRecognitionUsageDescription": "Solunivo transcribes what you say into an event entirely on this device."

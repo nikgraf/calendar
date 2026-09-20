@@ -911,3 +911,29 @@ Performance:
       absorb. Verified on a simulator with the fingerprint's EAS dev
       client: one partial swipe moved the window two days with the
       headers over their columns; `16-week-swipe.yaml` covers it in CI.
+
+### iOS location purpose string (2026-09-20)
+
+- [x] `NSLocationWhenInUseUsageDescription` in the iOS Info.plist — done:
+      App Store Connect accepted build 24 with an ITMS-90683 warning, so
+      the string ships in `apps/ios/app.json` under `ios.infoPlist`
+      beside the other five. Nothing in the app prompts for location:
+      Apple's scan is static and only sees that `CLLocationManager` is
+      referenced by expo-maps' `MapPermissionRequester` (never called —
+      `LocationMap` sets `isMyLocationEnabled: false`) and that the geo
+      and apple-calendar podspecs link CoreLocation. Decisions: the key
+      is declared directly rather than through expo-maps'
+      `requestLocationPermission` plugin option, which would also add
+      `ACCESS_COARSE_LOCATION` / `ACCESS_FINE_LOCATION` to the Android
+      manifest and claim a permission the app never asks for; the
+      wording describes MapKit biasing search results toward nearby
+      places, which is all location would ever be used for here. It is
+      the one string here that does not end in "Nothing leaves your
+      device": place search is `MKLocalSearch`, which is a call to
+      Apple's servers, so that sentence would be false — do not restore
+      it for symmetry with the EventKit and Contacts strings. Do not
+      delete the key as unused either; the warning returns on the next
+      upload.
+      `ios.infoPlist` feeds the fingerprint, so this alone forces a
+      TestFlight build (build number auto-increments) and a fresh
+      `development-simulator` dev client for CI.
