@@ -1,22 +1,20 @@
 import {
   REMINDER_ALARM_OPTIONS,
   REMINDER_PRIORITY_OPTIONS,
-  REPEAT_ENDS_OPTIONS,
-  REPEAT_OPTIONS,
   type useTaskEditorModel,
 } from '@calendar/app-state';
 import type { TaskRecord } from '@calendar/core';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { Linking, Pressable, ScrollView, Switch, Text, TextInput, View } from 'react-native';
 import {
+  chip,
+  chipLabel,
   dateFromParts,
   sheetStyles as styles,
   toDateString,
   toTimeString,
 } from './editSheetShared.ts';
-
-const chip = (active: boolean) => [styles.scopeChip, active && styles.scopeChipActive];
-const chipLabel = (active: boolean) => [styles.scopeLabel, active && styles.scopeLabelActive];
+import { RepeatRuleChips } from './RepeatRuleChips.tsx';
 
 /**
  * The Reminders half of the task editor — what EventKit can do that Google
@@ -130,82 +128,19 @@ export function ReminderEditForm({
         ))}
       </View>
 
-      <Text style={styles.label}>Repeat</Text>
       {taskModel.recurrenceUnsupported ? (
-        <Text style={styles.hint}>
-          This reminder repeats on a schedule Solunivo cannot edit — change it in Reminders.
-        </Text>
-      ) : (
         <>
-          <View style={styles.scopeRow}>
-            {REPEAT_OPTIONS.map((option) => (
-              <Pressable
-                key={option.value}
-                onPress={() => taskModel.setRepeat(option.value)}
-                style={chip(taskModel.repeat === option.value)}
-                testID={`reminder-repeat-${option.value}`}
-              >
-                <Text style={chipLabel(taskModel.repeat === option.value)}>{option.short}</Text>
-              </Pressable>
-            ))}
-          </View>
-          {taskModel.repeat === 'none' ? null : (
-            <View style={styles.timesRow}>
-              <View style={styles.timeField}>
-                <Text style={styles.label}>Every (n)</Text>
-                <TextInput
-                  keyboardType="number-pad"
-                  onChangeText={taskModel.setRepeatInterval}
-                  style={styles.input}
-                  value={taskModel.repeatInterval}
-                />
-              </View>
-              <View style={styles.timeField}>
-                <Text style={styles.label}>Ends</Text>
-                <View style={styles.scopeRow}>
-                  {REPEAT_ENDS_OPTIONS.map((option) => (
-                    <Pressable
-                      key={option.value}
-                      onPress={() => {
-                        taskModel.setRepeatEnds(option.value);
-                        if (option.value === 'on' && !taskModel.repeatUntil) {
-                          taskModel.setRepeatUntil(taskModel.dueDate);
-                        }
-                      }}
-                      style={chip(taskModel.repeatEnds === option.value)}
-                    >
-                      <Text style={chipLabel(taskModel.repeatEnds === option.value)}>
-                        {option.short}
-                      </Text>
-                    </Pressable>
-                  ))}
-                </View>
-              </View>
-            </View>
-          )}
-          {taskModel.repeat !== 'none' && taskModel.repeatEnds === 'after' ? (
-            <View style={styles.timeField}>
-              <Text style={styles.label}>Occurrences</Text>
-              <TextInput
-                keyboardType="number-pad"
-                onChangeText={taskModel.setRepeatCount}
-                style={styles.input}
-                value={taskModel.repeatCount}
-              />
-            </View>
-          ) : null}
-          {taskModel.repeat !== 'none' && taskModel.repeatEnds === 'on' ? (
-            <View style={styles.pickerRow}>
-              <Text style={styles.label}>Until</Text>
-              <DateTimePicker
-                display="compact"
-                mode="date"
-                onChange={(_, picked) => picked && taskModel.setRepeatUntil(toDateString(picked))}
-                value={dateFromParts(taskModel.repeatUntil || taskModel.dueDate)}
-              />
-            </View>
-          ) : null}
+          <Text style={styles.label}>Repeat</Text>
+          <Text style={styles.hint}>
+            This reminder repeats on a schedule Solunivo cannot edit — change it in Reminders.
+          </Text>
         </>
+      ) : (
+        <RepeatRuleChips
+          anchorDate={taskModel.dueDate}
+          state={taskModel}
+          testIDPrefix="reminder-repeat"
+        />
       )}
 
       <Text style={styles.label}>URL</Text>

@@ -1,4 +1,4 @@
-import { TaskListInfo, type TaskPriority, TaskRecord } from '@calendar/core';
+import { TaskListInfo, type TaskPriority, TaskRecord, sortByDay } from '@calendar/core';
 import type { ReminderJson, ReminderListJson, ReminderWrite } from './protocol.ts';
 
 /**
@@ -62,6 +62,10 @@ export const mapReminder = (reminder: ReminderJson, accountId: string): TaskReco
         ? { recurrenceUnsupported: true as const }
         : {
             recurrence: {
+              // Canonical order in the mirror, so equal rules compare equal.
+              ...(recurrence.byDay === undefined || recurrence.byDay.length === 0
+                ? {}
+                : { byDay: sortByDay(recurrence.byDay) }),
               ...(recurrence.count === undefined ? {} : { count: recurrence.count }),
               freq: recurrence.freq,
               interval: recurrence.interval,

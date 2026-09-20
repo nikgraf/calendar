@@ -80,6 +80,39 @@ describe('mapReminder', () => {
     expect(record.priority).toBeUndefined();
   });
 
+  it('keeps chosen weekdays and an ordinal weekday, in canonical order', () => {
+    const weekends = mapReminder(
+      {
+        ...base,
+        dueDate: '2030-01-05',
+        recurrence: { byDay: [{ weekday: 'SU' }, { weekday: 'SA' }], freq: 'weekly', interval: 1 },
+      },
+      'apple-reminders',
+    );
+    expect(weekends.recurrence).toEqual({
+      byDay: [{ weekday: 'SA' }, { weekday: 'SU' }],
+      freq: 'weekly',
+      interval: 1,
+    });
+    const monthly = mapReminder(
+      {
+        ...base,
+        dueDate: '2030-01-08',
+        recurrence: { byDay: [{ ordinal: 2, weekday: 'TU' }], freq: 'monthly', interval: 1 },
+      },
+      'apple-reminders',
+    );
+    expect(monthly.recurrence).toEqual({
+      byDay: [{ ordinal: 2, weekday: 'TU' }],
+      freq: 'monthly',
+      interval: 1,
+    });
+    expect(
+      mapReminder({ ...base, recurrence: { byDay: [], freq: 'daily', interval: 1 } }, 'a')
+        .recurrence,
+    ).toEqual({ freq: 'daily', interval: 1 });
+  });
+
   it('never yields an empty title', () => {
     expect(mapReminder({ ...base, title: '' }, 'a').title).toBe('(untitled)');
   });
@@ -131,5 +164,15 @@ describe('toReminderWrite', () => {
       title: 'x',
     });
     expect(toReminderWrite({ priority: null })).toEqual({ priority: 0 });
+  });
+
+  it('carries the weekdays of a rule through unchanged', () => {
+    expect(
+      toReminderWrite({
+        recurrence: { byDay: [{ weekday: 'SA' }, { weekday: 'SU' }], freq: 'weekly', interval: 1 },
+      }),
+    ).toEqual({
+      recurrence: { byDay: [{ weekday: 'SA' }, { weekday: 'SU' }], freq: 'weekly', interval: 1 },
+    });
   });
 });

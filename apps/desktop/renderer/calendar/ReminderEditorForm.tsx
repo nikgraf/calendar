@@ -1,11 +1,10 @@
 import {
   REMINDER_ALARM_OPTIONS,
   REMINDER_PRIORITY_OPTIONS,
-  REPEAT_ENDS_OPTIONS,
-  REPEAT_OPTIONS,
   type useTaskEditorModel,
 } from '@calendar/app-state';
-import type { RecurrenceFrequency, TaskRecord } from '@calendar/core';
+import type { TaskRecord } from '@calendar/core';
+import { RepeatRuleFields } from './RepeatRuleFields.tsx';
 import { FIELD_CLASS, LABEL_CLASS } from './taskEditorOptions.ts';
 
 const segment = (active: boolean) =>
@@ -142,81 +141,7 @@ export function ReminderEditorForm({
           This reminder repeats on a schedule Solunivo cannot edit — change it in Reminders.
         </p>
       ) : (
-        <>
-          <label className={LABEL_CLASS}>
-            Repeat
-            <select
-              className={`${FIELD_CLASS} mt-1`}
-              onChange={(input) =>
-                taskModel.setRepeat(input.target.value as RecurrenceFrequency | 'none')
-              }
-              value={taskModel.repeat}
-            >
-              {REPEAT_OPTIONS.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-          </label>
-          {taskModel.repeat === 'none' ? null : (
-            <div className="flex gap-3">
-              <label className={`${LABEL_CLASS} w-24`}>
-                Every (n)
-                <input
-                  className={`${FIELD_CLASS} mt-1`}
-                  min={1}
-                  onChange={(input) => taskModel.setRepeatInterval(input.target.value)}
-                  type="number"
-                  value={taskModel.repeatInterval}
-                />
-              </label>
-              <label className={`${LABEL_CLASS} flex-1`}>
-                Ends
-                <select
-                  className={`${FIELD_CLASS} mt-1`}
-                  onChange={(input) => {
-                    const value = input.target.value as 'after' | 'never' | 'on';
-                    taskModel.setRepeatEnds(value);
-                    if (value === 'on' && !taskModel.repeatUntil) {
-                      taskModel.setRepeatUntil(taskModel.dueDate);
-                    }
-                  }}
-                  value={taskModel.repeatEnds}
-                >
-                  {REPEAT_ENDS_OPTIONS.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              {taskModel.repeatEnds === 'after' ? (
-                <label className={`${LABEL_CLASS} w-24`}>
-                  Times
-                  <input
-                    className={`${FIELD_CLASS} mt-1`}
-                    min={1}
-                    onChange={(input) => taskModel.setRepeatCount(input.target.value)}
-                    type="number"
-                    value={taskModel.repeatCount}
-                  />
-                </label>
-              ) : null}
-              {taskModel.repeatEnds === 'on' ? (
-                <label className={`${LABEL_CLASS} flex-1`}>
-                  Until
-                  <input
-                    className={`${FIELD_CLASS} mt-1`}
-                    onChange={(input) => taskModel.setRepeatUntil(input.target.value)}
-                    type="date"
-                    value={taskModel.repeatUntil}
-                  />
-                </label>
-              ) : null}
-            </div>
-          )}
-        </>
+        <RepeatRuleFields anchorDate={taskModel.dueDate} state={taskModel} />
       )}
       <label className={LABEL_CLASS}>
         URL

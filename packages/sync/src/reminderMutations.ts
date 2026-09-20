@@ -1,5 +1,11 @@
+import { byDayError, type TaskRecurrence } from '@calendar/core';
 import type { AccountRepoShape, TaskRepoShape } from '@calendar/db';
-import { mapReminder, type RemindersClientShape, toReminderWrite } from '@calendar/reminders';
+import {
+  mapReminder,
+  type RemindersClientShape,
+  RemindersRequestError,
+  toReminderWrite,
+} from '@calendar/reminders';
 import { Clock, Effect } from 'effect';
 import type { SqlError } from 'effect/unstable/sql/SqlError';
 import type { EventMutationsShape } from './mutationTypes.ts';
@@ -37,6 +43,21 @@ const mirror = (method: string, write: Effect.Effect<void, SqlError>): Effect.Ef
     }),
   );
 
+/**
+ * The by-day shapes the Swift bridge accepts, refused here first so the
+ * in-memory fake and the real bridge agree — a rule the fake stored but
+ * EventKit would reject must not pass a test.
+ */
+const refuseBadByDay = (
+  method: 'create' | 'update',
+  recurrence: TaskRecurrence | null | undefined,
+): Effect.Effect<void, RemindersRequestError> => {
+  const invalid = recurrence ? byDayError(recurrence) : undefined;
+  return invalid === undefined
+    ? Effect.void
+    : Effect.fail(new RemindersRequestError({ message: `badRequest: ${invalid}`, method }));
+};
+
 export const makeReminderMutations = (deps: ReminderMutationDeps): TaskMutations => {
   const { accountRepo, remindersClient, taskRepo } = deps;
 
@@ -68,6 +89,7 @@ export const makeReminderMutations = (deps: ReminderMutationDeps): TaskMutations
 
     createTask: ({ accountId, taskListId, ...fields }) =>
       Effect.gen(function* () {
+        yield* refuseBadByDay('create', fields.recurrence);
         const reminder = yield* remindersClient.create({
           listId: taskListId,
           reminder: toReminderWrite(fields),
@@ -96,6 +118,7 @@ export const makeReminderMutations = (deps: ReminderMutationDeps): TaskMutations
     updateTask: ({ accountId, changes, taskId, taskListId }) =>
       Effect.gen(function* () {
         const { moveToListId, ...fields } = changes;
+        yield* refuseBadByDay('update', fields.recurrence);
         const reminder = yield* remindersClient.update({
           changes: {
             ...toReminderWrite(fields),

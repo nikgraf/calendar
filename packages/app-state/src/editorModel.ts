@@ -1,4 +1,5 @@
 import {
+  byDayError,
   isLossy,
   moveLossSummary,
   buildRecurrenceRule,
@@ -276,7 +277,7 @@ export const useEventEditorModel = ({
     }
   };
   const [rsvp, setRsvp] = useState(ownAttendee?.responseStatus);
-  const { toSpec: repeatSpec, ...repeatState } = useRepeatState(prefill?.recurrence);
+  const { toSpec: repeatSpec, ...repeatState } = useRepeatState(prefill?.recurrence, date);
   const [error, setError] = useState<string | null>(null);
 
   const addAttendee = (input: AttendeeInput): boolean => {
@@ -322,7 +323,8 @@ export const useEventEditorModel = ({
 
   const save = async () => {
     const fields = { calendarKey, date, endTime, isAllDay, startTime, title };
-    const invalid = validateEventDraft(fields, timeZone);
+    const spec = repeatSpec();
+    const invalid = validateEventDraft(fields, timeZone) ?? (spec ? byDayError(spec) : undefined);
     if (invalid) {
       setError(invalid);
       return;
@@ -404,7 +406,6 @@ export const useEventEditorModel = ({
           isAllDay,
           location: location.trim() || undefined,
           recurrence: (() => {
-            const spec = repeatSpec();
             return spec ? [buildRecurrenceRule(spec, isAllDay)] : undefined;
           })(),
           title: title.trim(),

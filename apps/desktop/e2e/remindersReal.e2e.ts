@@ -146,6 +146,78 @@ describe.skipIf(!REAL)('Apple Reminders through the real helper', () => {
       .toBe(false);
   });
 
+  it('round-trips weekday and monthly-ordinal rules through EventKit', async () => {
+    const { cdp } = app;
+    const setSelect = (label: string, value: string) =>
+      cdp.eval(`(() => {
+        const select = document.querySelector('select[aria-label=${JSON.stringify(label)}]');
+        const setter = Object.getOwnPropertyDescriptor(window.HTMLSelectElement.prototype, 'value').set;
+        setter.call(select, ${JSON.stringify(value)});
+        select.dispatchEvent(new Event('change', { bubbles: true }));
+      })()`);
+    const pressWeekday = async (day: string) => {
+      const pressed = await cdp.eval<boolean>(
+        `document.querySelector('[data-testid="repeat-weekday-${day}"]')?.getAttribute('aria-pressed') === 'true'`,
+      );
+      if (!pressed) {
+        const button = await cdp.locate(`[data-testid="repeat-weekday-${day}"]`);
+        await cdp.click(button.x, button.y);
+      }
+    };
+    const row = async () =>
+      (await readTasks(app.userDataDir)).find((task) => task.title === 'Solunivo ci weekends');
+
+    const cell = await cdp.eval<{ x: number; y: number }>(`(() => {
+      const scroller = document.querySelector('.overflow-y-scroll').getBoundingClientRect();
+      const todayCell = document.querySelector('.bg-red-500').closest('.h-10').getBoundingClientRect();
+      return { x: todayCell.left + todayCell.width / 2, y: scroller.top + 260 };
+    })()`);
+    await cdp.click(cell.x, cell.y);
+    await cdp.waitFor(`document.body.textContent.includes('New event')`);
+    await cdp.clickButtonWithText('Task');
+    await cdp.waitFor(`!!document.querySelector('select[aria-label="Reminders list"]')`);
+    await setTitle('Solunivo ci weekends');
+    await setSelect('Repeat', 'weekly');
+    await pressWeekday('SA');
+    await pressWeekday('SU');
+    for (;;) {
+      const extra = await cdp.eval<string | null>(
+        `[...document.querySelectorAll('[data-testid^="repeat-weekday-"][aria-pressed="true"]')]
+          .map(b => b.dataset.testid).find(id => !id.endsWith('-SA') && !id.endsWith('-SU')) ?? null`,
+      );
+      if (extra === null) {
+        break;
+      }
+      const button = await cdp.locate(`[data-testid="${extra}"]`);
+      await cdp.click(button.x, button.y);
+    }
+    await cdp.clickButtonWithText('Save');
+    try {
+      await expect.poll(row, { timeout: 15_000 }).toMatchObject({
+        recurrence: { byDay: [{ weekday: 'SA' }, { weekday: 'SU' }], freq: 'weekly', interval: 1 },
+      });
+      expect((await row())?.recurrenceUnsupported).toBeUndefined();
+
+      const chip = await cdp.locate('[title="Solunivo ci weekends"]');
+      await cdp.click(chip.x + 40, chip.y);
+      await cdp.waitFor(`document.body.textContent.includes('Edit reminder')`);
+      await setSelect('Repeat', 'monthly');
+      await setSelect('Monthly on', 'weekday');
+      await setSelect('Ordinal', '2');
+      await setSelect('Ordinal weekday', 'TU');
+      await cdp.clickButtonWithText('Save');
+      await expect.poll(row, { timeout: 15_000 }).toMatchObject({
+        recurrence: { byDay: [{ ordinal: 2, weekday: 'TU' }], freq: 'monthly', interval: 1 },
+      });
+    } finally {
+      const chip = await cdp.locate('[title="Solunivo ci weekends"]');
+      await cdp.click(chip.x + 40, chip.y);
+      await cdp.waitFor(`document.body.textContent.includes('Edit reminder')`);
+      await cdp.clickButtonWithText('Delete');
+      await cdp.waitFor(`!document.querySelector('[title="Solunivo ci weekends"]')`);
+    }
+  });
+
   it('shows a reminder created outside the app without waiting for the schedule', async () => {
     const { cdp } = app;
     const list = (await readTaskLists(app.userDataDir)).find((entry) => !entry.readOnly);

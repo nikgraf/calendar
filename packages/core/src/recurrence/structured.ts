@@ -1,5 +1,6 @@
 import { Schema } from 'effect';
 import { Temporal } from '../time/temporal.ts';
+import { ByDay, formatByDay, WEEKDAY_CODES, type Weekday } from './byDay.ts';
 import { compactUtc, parseRuleParts } from './editing.ts';
 
 /**
@@ -14,19 +15,9 @@ import { compactUtc, parseRuleParts } from './editing.ts';
  * those come back in `unsupported` and are never written.
  */
 
-export const Weekday = Schema.Literals(['FR', 'MO', 'SA', 'SU', 'TH', 'TU', 'WE']);
-export type Weekday = typeof Weekday.Type;
-
 export const StructuredRule = Schema.Struct({
   /** BYDAY entries; `ordinal` is the week number (1…53, -1 = last) for monthly/yearly rules. */
-  byDay: Schema.optional(
-    Schema.Array(
-      Schema.Struct({
-        ordinal: Schema.optional(Schema.Number),
-        weekday: Weekday,
-      }),
-    ),
-  ),
+  byDay: Schema.optional(Schema.Array(ByDay)),
   byMonth: Schema.optional(Schema.Array(Schema.Number)),
   byMonthDay: Schema.optional(Schema.Array(Schema.Number)),
   bySetPos: Schema.optional(Schema.Array(Schema.Number)),
@@ -43,7 +34,6 @@ export const StructuredRule = Schema.Struct({
 export type StructuredRule = typeof StructuredRule.Type;
 
 const FREQS = new Set(['DAILY', 'MONTHLY', 'WEEKLY', 'YEARLY']);
-const WEEKDAYS = new Set<string>(['FR', 'MO', 'SA', 'SU', 'TH', 'TU', 'WE']);
 type ListField = 'byMonth' | 'byMonthDay' | 'bySetPos' | 'byWeekNo' | 'byYearDay';
 const LIST_PARTS: ReadonlyArray<readonly [string, ListField]> = [
   ['BYMONTH', 'byMonth'],
@@ -159,7 +149,7 @@ export const toStructuredRules = (
       for (const piece of byDayRaw.split(',')) {
         const match = /^([+-]?\d{1,2})?([A-Z]{2})$/.exec(piece.toUpperCase());
         const weekday = match?.[2];
-        if (!match || !weekday || !WEEKDAYS.has(weekday)) {
+        if (!match || !weekday || !WEEKDAY_CODES.has(weekday)) {
           lineUnsupported.push('BYDAY');
           break;
         }
@@ -236,9 +226,7 @@ export const toRRuleLines = (
       );
     }
     if (rule.byDay && rule.byDay.length > 0) {
-      parts.push(
-        `BYDAY=${rule.byDay.map((day) => `${day.ordinal ?? ''}${day.weekday}`).join(',')}`,
-      );
+      parts.push(`BYDAY=${formatByDay(rule.byDay)}`);
     }
     for (const [part, field] of LIST_PARTS) {
       const values = rule[field];

@@ -1,4 +1,5 @@
 import { Schema } from 'effect';
+import { ByDay } from './recurrence/byDay.ts';
 
 export const AccountStatus = Schema.Literals(['ok', 'reauth_required']);
 export const AccessRole = Schema.Literals(['freeBusyReader', 'owner', 'reader', 'writer']);
@@ -14,6 +15,8 @@ export const TaskPriority = Schema.Literals(['high', 'low', 'medium']);
 export type TaskPriority = typeof TaskPriority.Type;
 /** The recurrence subset a Reminders rule round-trips through (see RecurrenceRuleSpec). */
 export const TaskRecurrence = Schema.Struct({
+  /** Weekly: the weekdays ("weekends"); monthly: one "Nth weekday". Absent = on the due day's weekday/day. */
+  byDay: Schema.optional(Schema.Array(ByDay)),
   count: Schema.optional(Schema.Number),
   freq: Schema.Literals(['daily', 'monthly', 'weekly', 'yearly']),
   interval: Schema.Number,
@@ -203,7 +206,7 @@ export class TaskRecord extends Schema.Class<TaskRecord>('TaskRecord')({
   provider: TaskProvider,
   /** Reminders only: the editable repeat rule, when expressible. */
   recurrence: Schema.optional(TaskRecurrence),
-  /** Reminders only: a repeat rule exists that the app cannot express (by-day, positional…) — never overwritten. */
+  /** Reminders only: a repeat rule the app cannot express (yearly positional, several rules, month-day lists…) — never overwritten. */
   recurrenceUnsupported: Schema.optional(Schema.Literal(true)),
   status: TaskStatus,
   title: Schema.String,
