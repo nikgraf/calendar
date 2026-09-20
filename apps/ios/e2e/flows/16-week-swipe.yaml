@@ -1,0 +1,24 @@
+appId: com.solunivo.app
+name: Swiping the week view pages day by day
+tags:
+  - ci
+---
+- runFlow: ../common/launch.yaml
+- tapOn: 'Week'
+# Week titles are "September 7 – 13, 2026" or "Aug 31 – Sep 6, 2026".
+- assertVisible:
+    text: '.* – .*, 20\d\d'
+- copyTextFrom:
+    id: 'day-title'
+# A quarter of the screen is under two day columns: the strip follows the
+# finger and the release commits the columns crossed, so the window starts
+# on a new day and the title changes (whole-week paging would too, but a
+# tap on Today below proves the window is back on the Monday week).
+- swipe:
+    start: 85%, 60%
+    end: 60%, 60%
+- assertNotVisible: '${maestro.copiedText}'
+- assertVisible:
+    text: '.* – .*, 20\d\d'
+- tapOn: 'Today'
+- assertVisible: '${maestro.copiedText}'

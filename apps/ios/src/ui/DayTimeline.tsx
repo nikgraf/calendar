@@ -9,7 +9,7 @@ import {
   MAX_ALL_DAY_ROWS,
   moveTimedTask,
   partitionCalendarTasks,
-  swipeSnapDecision,
+  swipeCommitColumns,
   type TaskRecord,
   Temporal,
 } from '@calendar/core';
@@ -26,6 +26,7 @@ import Animated, {
 import { AllDayColumn } from './AllDayColumn.tsx';
 import { DayColumn } from './DayColumn.tsx';
 import { palette } from './theme.ts';
+import { WeekStripCell } from './WeekStrip.tsx';
 import { ALL_DAY_ROW_HEIGHT, EDGE_INSET, GUTTER_WIDTH, HOUR_HEIGHT } from './timelineLayout.ts';
 
 /**
@@ -41,7 +42,9 @@ const setShared = (shared: SharedValue<number>, value: number) => {
 /**
  * The timed grid for one day or one week: `days` are the visible columns,
  * `buffer` neighbours on each side stay drawn so a swipe reveals content.
- * A swipe pages by the visible width (one day or one week).
+ * The strip follows the finger and a release commits the columns crossed —
+ * one day at a time in the week view too, which is why the week's day
+ * headers live here, panning in lockstep with the columns.
  */
 export function DayTimeline({
   birthdays,
@@ -55,9 +58,11 @@ export function DayTimeline({
   onCreateSlot,
   onEventPress,
   onNavigate,
+  onSelectDay,
   onTaskPress,
   onToggleTask,
   overdue,
+  selected,
   tasks,
   timeZone,
   today: todayIso,
@@ -76,12 +81,16 @@ export function DayTimeline({
     times: { readonly endTime: string; readonly startTime: string },
   ) => void;
   onEventPress: (event: EventRecord) => void;
-  /** Swipe committed a page change: +1 forward, -1 back. */
-  onNavigate: (direction: 1 | -1) => void;
+  /** A swipe committed: whole days crossed, positive forward in time. */
+  onNavigate: (dayCount: number) => void;
+  /** A tap on a week-view day header. */
+  onSelectDay: (date: Temporal.PlainDate) => void;
   onTaskPress: (task: TaskRecord) => void;
   onToggleTask: (task: TaskRecord) => void;
   /** Open tasks due before today; drawn as overdue chips in today's column. */
   overdue: ReadonlyArray<TaskRecord>;
+  /** The focused day, ringed in the week header. */
+  selected: Temporal.PlainDate;
   tasks: ReadonlyArray<TaskRecord>;
   timeZone: string;
   /** Today's ISO date (rolls at local midnight). */
@@ -188,27 +197,30 @@ export function DayTimeline({
     setShared(panX, 0);
   }, [firstIso, panX]);
 
+  // The finger can drag as far as there are drawn columns: the buffer.
+  const maxPan = buffer * columnWidth;
   const swipe = Gesture.Pan()
     // Only clearly horizontal movement pans; vertical stays with the ScrollView,
     // and event blocks win the arena via their long-press activation.
     .activeOffsetX([-15, 15])
     .failOffsetY([-12, 12])
     .onUpdate((update) => {
-      // One page per gesture, like Apple's calendar.
-      setShared(panX, Math.max(-pageWidth, Math.min(pageWidth, update.translationX)));
+      setShared(panX, Math.max(-maxPan, Math.min(maxPan, update.translationX)));
     })
     .onEnd((end) => {
-      if (pageWidth === 0) {
+      if (columnWidth === 0) {
         setShared(panX, withTiming(0, { duration: 160 }));
         return;
       }
-      const direction = swipeSnapDecision(end.translationX, end.velocityX, pageWidth);
-      if (direction !== 0) {
+      // Snap to the nearest column boundary: whole columns crossed, plus
+      // the flick / quarter rule on the remainder.
+      const commit = swipeCommitColumns(end.translationX, end.velocityX, columnWidth, buffer);
+      if (commit !== 0) {
         setShared(
           panX,
-          withTiming(-direction * pageWidth, { duration: 180 }, (finished) => {
+          withTiming(-commit * columnWidth, { duration: 180 }, (finished) => {
             if (finished) {
-              runOnJS(onNavigate)(direction);
+              runOnJS(onNavigate)(commit);
             }
           }),
         );
@@ -223,6 +235,25 @@ export function DayTimeline({
 
   return (
     <View style={styles.container} testID="day-timeline">
+      {days.length > 1 ? (
+        <View style={styles.weekHeader}>
+          <View style={styles.gutterSpacer} />
+          <View style={styles.stripViewport}>
+            <Animated.View style={[styles.strip, stripStyle]}>
+              {strip.map((day) => (
+                <WeekStripCell
+                  day={day}
+                  isSelected={Temporal.PlainDate.compare(day, selected) === 0}
+                  isToday={Temporal.PlainDate.compare(day, today) === 0}
+                  key={day.toString()}
+                  onPress={() => onSelectDay(day)}
+                  width={columnWidth}
+                />
+              ))}
+            </Animated.View>
+          </View>
+        </View>
+      ) : null}
       <View style={[styles.allDayLane, { height: laneHeight }]}>
         <View style={styles.gutterSpacer}>
           {!collapsed && rowsNeeded > MAX_ALL_DAY_ROWS ? (
@@ -381,5 +412,11 @@ const styles = StyleSheet.create({
     flex: 1,
     marginRight: EDGE_INSET,
     overflow: 'hidden',
+  },
+  weekHeader: {
+    borderBottomColor: palette.border,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    flexDirection: 'row',
+    paddingBottom: 6,
   },
 });

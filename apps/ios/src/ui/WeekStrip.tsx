@@ -2,60 +2,73 @@ import { Temporal } from '@calendar/core';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { palette } from './theme.ts';
 
+/** One weekday + day-number cell: the strip's picker cell and the week timeline's column header. */
+export function WeekStripCell({
+  day,
+  isSelected,
+  isToday,
+  onPress,
+  width,
+}: {
+  day: Temporal.PlainDate;
+  isSelected: boolean;
+  isToday: boolean;
+  onPress: () => void;
+  /** Fixed column width (the timeline header); the picker strip flexes instead. */
+  width?: number;
+}) {
+  return (
+    <Pressable
+      accessibilityLabel={day.toLocaleString('en-US', {
+        day: 'numeric',
+        month: 'long',
+        weekday: 'long',
+      })}
+      accessibilityRole="button"
+      accessibilityState={{ selected: isSelected }}
+      onPress={onPress}
+      style={[styles.cell, width === undefined ? styles.cellFlex : { width }]}
+    >
+      <Text style={styles.weekday}>{day.toLocaleString('en-US', { weekday: 'narrow' })}</Text>
+      <View
+        style={[
+          styles.dayWrap,
+          isSelected && styles.selectedWrap,
+          isToday && !isSelected && styles.todayWrap,
+        ]}
+      >
+        <Text style={[styles.day, isToday && styles.todayText, isSelected && styles.selectedText]}>
+          {day.day}
+        </Text>
+      </View>
+    </Pressable>
+  );
+}
+
+/** The day view's date picker: the focused day's week, one flexing cell per day. */
 export function WeekStrip({
   days,
-  leadingInset = 0,
   onSelect,
   selected,
   timeZone,
-  trailingInset = 0,
 }: {
   days: ReadonlyArray<Temporal.PlainDate>;
-  /** Width of the timeline's hour gutter, so week-view cells sit over their columns. */
-  leadingInset?: number;
   onSelect: (date: Temporal.PlainDate) => void;
   selected: Temporal.PlainDate;
   timeZone: string;
-  trailingInset?: number;
 }) {
   const today = Temporal.Now.plainDateISO(timeZone);
   return (
-    <View style={[styles.row, leadingInset > 0 && styles.rowAligned]}>
-      {leadingInset > 0 ? <View style={{ width: leadingInset }} /> : null}
-      {days.map((day) => {
-        const isSelected = Temporal.PlainDate.compare(day, selected) === 0;
-        const isToday = Temporal.PlainDate.compare(day, today) === 0;
-        return (
-          <Pressable
-            accessibilityLabel={day.toLocaleString('en-US', {
-              day: 'numeric',
-              month: 'long',
-              weekday: 'long',
-            })}
-            accessibilityRole="button"
-            accessibilityState={{ selected: Temporal.PlainDate.compare(day, selected) === 0 }}
-            key={day.toString()}
-            onPress={() => onSelect(day)}
-            style={styles.cell}
-          >
-            <Text style={styles.weekday}>{day.toLocaleString('en-US', { weekday: 'narrow' })}</Text>
-            <View
-              style={[
-                styles.dayWrap,
-                isSelected && styles.selectedWrap,
-                isToday && !isSelected && styles.todayWrap,
-              ]}
-            >
-              <Text
-                style={[styles.day, isToday && styles.todayText, isSelected && styles.selectedText]}
-              >
-                {day.day}
-              </Text>
-            </View>
-          </Pressable>
-        );
-      })}
-      {trailingInset > 0 ? <View style={{ width: trailingInset }} /> : null}
+    <View style={styles.row}>
+      {days.map((day) => (
+        <WeekStripCell
+          day={day}
+          isSelected={Temporal.PlainDate.compare(day, selected) === 0}
+          isToday={Temporal.PlainDate.compare(day, today) === 0}
+          key={day.toString()}
+          onPress={() => onSelect(day)}
+        />
+      ))}
     </View>
   );
 }
@@ -63,8 +76,10 @@ export function WeekStrip({
 const styles = StyleSheet.create({
   cell: {
     alignItems: 'center',
-    flex: 1,
     gap: 2,
+  },
+  cellFlex: {
+    flex: 1,
   },
   day: {
     color: palette.text,
@@ -84,9 +99,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     paddingBottom: 6,
     paddingHorizontal: 4,
-  },
-  rowAligned: {
-    paddingHorizontal: 0,
   },
   selectedText: {
     color: '#ffffff',
