@@ -32,6 +32,7 @@ export * from './taskLabel.ts';
 export * from './taskTiming.ts';
 export * from './time/convert.ts';
 export * from './time/dragMath.ts';
+export * from './time/dropTarget.ts';
 export * from './time/ranges.ts';
 export * from './time/slotSelection.ts';
 export * from './time/temporal.ts';

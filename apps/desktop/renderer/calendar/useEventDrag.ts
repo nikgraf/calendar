@@ -1,20 +1,35 @@
-import { useGuardedMutations } from '@calendar/app-state';
+import { publishMutationNotice, useGuardedMutations } from '@calendar/app-state';
 import {
+  type DropTarget,
+  dropTargetAt,
+  dropTaskChanges,
   moveEventTimes,
   moveTimedTask,
   resizeEventEnd,
   snapMinutes,
   type EventRecord,
   type TaskRecord,
+  type Temporal,
 } from '@calendar/core';
-import { useCallback, useEffect, useRef, useState, type RefObject } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type RefObject,
+} from 'react';
 
 const DRAG_THRESHOLD_PX = 4;
 
 export type DragMode = 'move' | 'resize';
+/** Where a task drag started: its timed block in the grid, or its chip in the all-day lane. */
+export type TaskDragOrigin = 'grid' | 'lane';
 
 /** Which block is being dragged, and how. Changes twice per drag. */
 export interface DragPreview {
+  /** Set for task drags: which lane the chip came from. */
+  readonly from?: TaskDragOrigin;
   readonly itemKey: string;
   readonly mode: DragMode;
 }
@@ -23,9 +38,28 @@ export interface DragPreview {
 export interface DragDeltas {
   readonly deltaDays: number;
   readonly deltaMinutes: number;
+  /** Where a dragged task chip would land now; null outside the lane and grid. Events ignore it. */
+  readonly target: DropTarget | null;
 }
 
-const NO_DELTAS: DragDeltas = { deltaDays: 0, deltaMinutes: 0 };
+/** Listener key for the drop indicators: notified on every pointermove of a task drag. */
+const DROP_TARGET_KEY = 'drop-target';
+
+const NO_DELTAS: DragDeltas = { deltaDays: 0, deltaMinutes: 0, target: null };
+
+const sameTarget = (a: DropTarget | null, b: DropTarget | null): boolean =>
+  a === b ||
+  (a !== null &&
+    b !== null &&
+    a.kind === b.kind &&
+    a.dayIndex === b.dayIndex &&
+    (a.kind !== 'timed' || b.kind !== 'timed' || a.minute === b.minute));
+
+/** Google Tasks are date-only; the drop is refused here, before the backend sees it. */
+const GOOGLE_TIMED_DROP_NOTICE = {
+  action: 'give the task a time',
+  detail: 'Google Tasks are date-only; move it to a Reminders list to set a time.',
+};
 
 interface DragOrigin {
   active: boolean;
@@ -36,7 +70,12 @@ interface DragOrigin {
   readonly startClientY: number;
   readonly target:
     | { readonly event: EventRecord; readonly kind: 'event' }
-    | { readonly kind: 'task'; readonly readOnly: boolean; readonly task: TaskRecord };
+    | {
+        readonly from: TaskDragOrigin;
+        readonly kind: 'task';
+        readonly readOnly: boolean;
+        readonly task: TaskRecord;
+      };
 }
 
 // Recurring instances are draggable too — a drag commits a single-instance
@@ -52,23 +91,35 @@ const isDraggable = (origin: DragOrigin): boolean =>
  * the bottom edge resizes. Below the movement threshold a pointerup counts
  * as a click.
  *
+ * Task chips also drag between the all-day lane and the grid: their drop is
+ * judged by where the pointer is released (`DragDeltas.target`), so a lane
+ * chip can take a time and a timed block can lose one.
+ *
  * Only `preview` (which block, which mode) is React state; the per-move
  * offsets go through a tiny external store so the dragged block alone
  * re-renders per pointermove — the grid used to re-lay out every column on
  * each one.
  */
 export const useEventDrag = ({
-  dayCount,
   gridRef,
   hourHeight,
+  laneRef,
   onEventClick,
   onTaskClick,
+  scrollerRef,
+  strip,
 }: {
-  dayCount: number;
+  /** The timed strip: its rect gives the column width and where minute 0 sits. */
   gridRef: RefObject<HTMLDivElement | null>;
   hourHeight: number;
+  /** The all-day lane; a release inside it drops as all-day. */
+  laneRef: RefObject<HTMLDivElement | null>;
   onEventClick: (event: EventRecord) => void;
   onTaskClick: (task: TaskRecord) => void;
+  /** The grid's vertical scroller: the visible extent a release counts inside. */
+  scrollerRef: RefObject<HTMLDivElement | null>;
+  /** The rendered day columns, buffer included. */
+  strip: ReadonlyArray<Temporal.PlainDate>;
 }) => {
   const { updateEvent, updateRecurring, updateTask } = useGuardedMutations();
   const [preview, setPreview] = useState<DragPreview | null>(null);
@@ -78,7 +129,11 @@ export const useEventDrag = ({
   const listenersRef = useRef(new Map<string, Set<() => void>>());
   const publishDeltas = (next: DragDeltas) => {
     const current = deltasRef.current;
-    if (current.deltaDays === next.deltaDays && current.deltaMinutes === next.deltaMinutes) {
+    if (
+      current.deltaDays === next.deltaDays &&
+      current.deltaMinutes === next.deltaMinutes &&
+      sameTarget(current.target, next.target)
+    ) {
       return;
     }
     deltasRef.current = next;
@@ -87,6 +142,9 @@ export const useEventDrag = ({
         ? undefined
         : listenersRef.current.get(activeItemKeyRef.current);
     for (const listener of activeListeners ?? []) {
+      listener();
+    }
+    for (const listener of listenersRef.current.get(DROP_TARGET_KEY) ?? []) {
       listener();
     }
   };
@@ -133,15 +191,36 @@ export const useEventDrag = ({
     };
   }, []);
 
-  const deltasFor = (origin: DragOrigin, clientX: number, clientY: number) => {
+  /** The lane or grid slot under the pointer, in viewport coordinates. */
+  const targetAt = (clientX: number, clientY: number): DropTarget | null => {
+    const grid = gridRef.current?.getBoundingClientRect();
+    const lane = laneRef.current?.getBoundingClientRect();
+    const scroller = scrollerRef.current?.getBoundingClientRect();
+    if (!grid || !lane || !scroller) {
+      return null;
+    }
+    return dropTargetAt(clientX, clientY, {
+      columnWidth: grid.width / strip.length,
+      dayCount: strip.length,
+      grid: { bottom: scroller.bottom, top: scroller.top },
+      // The strip scrolls with its content, so its top is minute 0.
+      gridContentTop: grid.top,
+      hourHeight,
+      lane: { bottom: lane.bottom, top: lane.top },
+      stripLeft: grid.left,
+    });
+  };
+
+  const deltasFor = (origin: DragOrigin, clientX: number, clientY: number): DragDeltas => {
     const deltaMinutes = snapMinutes(((clientY - origin.startClientY) / hourHeight) * 60);
     if (origin.mode === 'resize') {
-      return { deltaDays: 0, deltaMinutes };
+      return { deltaDays: 0, deltaMinutes, target: null };
     }
     const grid = gridRef.current?.getBoundingClientRect();
-    const dayWidth = grid ? grid.width / dayCount : 0;
+    const dayWidth = grid ? grid.width / strip.length : 0;
     const deltaDays = dayWidth > 0 ? Math.round((clientX - origin.startClientX) / dayWidth) : 0;
-    return { deltaDays, deltaMinutes };
+    const target = origin.target.kind === 'task' ? targetAt(clientX, clientY) : null;
+    return { deltaDays, deltaMinutes, target };
   };
 
   const onPointerDown = (
@@ -193,7 +272,7 @@ export const useEventDrag = ({
   const onTaskPointerDown = (
     task: TaskRecord,
     itemKey: string,
-    readOnly: boolean,
+    options: { readonly from: TaskDragOrigin; readonly readOnly: boolean },
     domEvent: React.PointerEvent,
   ) => {
     if (domEvent.button !== 0) {
@@ -207,7 +286,7 @@ export const useEventDrag = ({
       pointerId: domEvent.pointerId,
       startClientX: domEvent.clientX,
       startClientY: domEvent.clientY,
-      target: { kind: 'task', readOnly, task },
+      target: { from: options.from, kind: 'task', readOnly: options.readOnly, task },
     };
     // Capture read-only drags too: movement is discarded below, but must not
     // fall through to the empty-grid slot gesture.
@@ -233,7 +312,11 @@ export const useEventDrag = ({
     if (!origin.active) {
       origin.active = true;
       activeItemKeyRef.current = origin.itemKey;
-      setPreview({ itemKey: origin.itemKey, mode: origin.mode });
+      setPreview({
+        ...(origin.target.kind === 'task' ? { from: origin.target.from } : {}),
+        itemKey: origin.itemKey,
+        mode: origin.mode,
+      });
     }
     publishDeltas(deltasFor(origin, domEvent.clientX, domEvent.clientY));
   };
@@ -289,22 +372,55 @@ export const useEventDrag = ({
       return;
     }
 
-    const { deltaDays, deltaMinutes } = deltasFor(origin, domEvent.clientX, domEvent.clientY);
-    if (deltaMinutes === 0 && deltaDays === 0) {
-      return;
-    }
+    const { deltaDays, deltaMinutes, target } = deltasFor(
+      origin,
+      domEvent.clientX,
+      domEvent.clientY,
+    );
     if (origin.target.kind === 'task') {
-      const task = origin.target.task;
-      const changes = moveTimedTask(task, deltaMinutes, deltaDays);
-      if (!changes) {
+      const { from, task } = origin.target;
+      const commit = (changes: Parameters<typeof updateTask>[0]['changes']) =>
+        void updateTask({
+          accountId: task.accountId,
+          changes,
+          taskId: task.id,
+          taskListId: task.listId,
+        });
+      // A chip from the lane, or a block released over the lane, drops by
+      // where the pointer is; a block moved within the grid keeps its
+      // delta-based move, which starts from where the block is drawn.
+      if (from === 'lane' || target?.kind === 'allDay') {
+        const day = target === null ? undefined : strip[target.dayIndex];
+        if (target === null || day === undefined) {
+          return;
+        }
+        const dueDate = day.toString();
+        const result = dropTaskChanges(
+          task,
+          target.kind === 'allDay'
+            ? { dueDate, kind: 'allDay' }
+            : { dueDate, kind: 'timed', minute: target.minute },
+        );
+        if (result === undefined) {
+          return;
+        }
+        if ('unsupported' in result) {
+          publishMutationNotice(GOOGLE_TIMED_DROP_NOTICE);
+          return;
+        }
+        commit(result.changes);
         return;
       }
-      void updateTask({
-        accountId: task.accountId,
-        changes,
-        taskId: task.id,
-        taskListId: task.listId,
-      });
+      if (deltaMinutes === 0 && deltaDays === 0) {
+        return;
+      }
+      const changes = moveTimedTask(task, deltaMinutes, deltaDays);
+      if (changes) {
+        commit(changes);
+      }
+      return;
+    }
+    if (deltaMinutes === 0 && deltaDays === 0) {
       return;
     }
     const event = origin.target.event;
@@ -338,6 +454,11 @@ export const useEventDrag = ({
     return suppressed;
   };
 
+  const subscribeDropTarget = useCallback(
+    (listener: () => void) => subscribeDeltas(DROP_TARGET_KEY, listener),
+    [subscribeDeltas],
+  );
+
   return {
     consumeSuppressedClick,
     /** Current offsets; pair with `subscribeDeltas` in useSyncExternalStore. */
@@ -349,5 +470,19 @@ export const useEventDrag = ({
     onTaskPointerDown,
     preview,
     subscribeDeltas,
+    /** Pair with `getDeltas` in useSyncExternalStore to follow a task drag's drop target. */
+    subscribeDropTarget,
   };
+};
+
+/**
+ * The live drop target of a task drag, for the lane and grid indicators:
+ * null while nothing is dragged or the pointer is outside both.
+ */
+export const useDropTarget = (
+  drag: ReturnType<typeof useEventDrag>,
+): { readonly from: TaskDragOrigin; readonly target: DropTarget } | null => {
+  const deltas = useSyncExternalStore(drag.subscribeDropTarget, drag.getDeltas);
+  const from = drag.preview?.from;
+  return from === undefined || deltas.target === null ? null : { from, target: deltas.target };
 };

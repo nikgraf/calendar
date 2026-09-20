@@ -28,7 +28,7 @@ import { DayHeaders } from './DayHeaders.tsx';
 import { NowIndicator } from './NowIndicator.tsx';
 import { TimedEventBlock } from './TimedEventBlock.tsx';
 import { TimedTaskBlock } from './TimedTaskBlock.tsx';
-import { useEventDrag } from './useEventDrag.ts';
+import { useDropTarget, useEventDrag } from './useEventDrag.ts';
 import { useSlotDrag } from './useSlotDrag.ts';
 import { useWheelPan } from './useWheelPan.ts';
 
@@ -50,6 +50,33 @@ const dayIndexOf = (isoDate: string, days: ReadonlyArray<Temporal.PlainDate>): n
   const date = Temporal.PlainDate.from(isoDate);
   return days.findIndex((day) => Temporal.PlainDate.compare(day, date) === 0);
 };
+
+/** Outlines the grid slot a lane chip would drop into (a timed block shows itself instead). */
+function GridDropIndicator({
+  drag,
+  hourHeight,
+  stripLength,
+}: {
+  drag: ReturnType<typeof useEventDrag>;
+  hourHeight: number;
+  stripLength: number;
+}) {
+  const drop = useDropTarget(drag);
+  if (drop === null || drop.from !== 'lane' || drop.target.kind !== 'timed') {
+    return null;
+  }
+  return (
+    <div
+      className="pointer-events-none absolute z-30 h-[22px] rounded border-2 border-dashed border-blue-500 bg-blue-500/10"
+      data-testid="task-drop-grid"
+      style={{
+        left: `calc(${(drop.target.dayIndex / stripLength) * 100}% + 1px)`,
+        top: (drop.target.minute / 60) * hourHeight,
+        width: `calc(${(1 / stripLength) * 100}% - 3px)`,
+      }}
+    />
+  );
+}
 
 export function WeekView({
   birthdays,
@@ -98,6 +125,7 @@ export function WeekView({
   const viewportRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const gridRef = useRef<HTMLDivElement>(null);
+  const laneRef = useRef<HTMLDivElement>(null);
   const today = Temporal.PlainDate.from(todayIso);
 
   // The pan strip renders buffer columns on both sides of the visible days
@@ -133,11 +161,13 @@ export function WeekView({
   }, [calendarTasks.timed]);
 
   const drag = useEventDrag({
-    dayCount: strip.length,
     gridRef,
     hourHeight: HOUR_HEIGHT,
+    laneRef,
     onEventClick,
     onTaskClick,
+    scrollerRef: scrollRef,
+    strip,
   });
 
   const slot = useSlotDrag({ hourHeight: HOUR_HEIGHT, onCreate: onSlotDrag });
@@ -265,6 +295,9 @@ export function WeekView({
         collapsed={collapsed}
         collapsible={rowCount > MAX_ALL_DAY_ROWS}
         colorOf={colorOf}
+        drag={drag}
+        isTaskReadOnly={isTaskReadOnly}
+        laneRef={laneRef}
         listColorOf={listColorOf}
         moreByDay={capped?.moreByDay ?? []}
         onBirthdayClick={onBirthdayClick}
@@ -309,6 +342,7 @@ export function WeekView({
                 gridTemplateColumns: `repeat(${strip.length}, 1fr)`,
               }}
             >
+              <GridDropIndicator drag={drag} hourHeight={HOUR_HEIGHT} stripLength={strip.length} />
               {strip.map((day) => {
                 const iso = day.toString();
                 const range = dayRange(day, timeZone);

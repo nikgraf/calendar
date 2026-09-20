@@ -1108,6 +1108,63 @@ describe('calendar desktop e2e', () => {
   });
 });
 
+describe('Google task chips drag along the lane but never into the grid', () => {
+  let taskApp: App;
+
+  beforeAll(async () => {
+    taskApp = await launchApp(seed);
+  }, 60_000);
+
+  afterEach(async (context) => {
+    if (context.task.result?.state === 'fail') {
+      await taskApp?.dump(context.task.name);
+    }
+  });
+
+  afterAll(async () => {
+    await taskApp?.stop();
+  });
+
+  const rent = async () =>
+    (await readTasks(taskApp.userDataDir)).find((task) => task.id === 'task-rent');
+
+  it('refuses a grid drop with an explanation and changes nothing', async () => {
+    const { cdp } = taskApp;
+    const from = await cdp.locate('[data-testid="all-day-task-task-rent"]');
+    const y = await cdp.eval<number>(`(() => {
+      const scroller = document.querySelector('.overflow-y-scroll');
+      return scroller.getBoundingClientRect().top + 10 * ${HOUR_HEIGHT} - scroller.scrollTop;
+    })()`);
+    await cdp.drag(from, { x: from.x, y });
+    await cdp.waitFor(`document.body.textContent.includes('Google Tasks are date-only')`);
+    expect(await rent()).toMatchObject({ dueDate: todayLocalIso(), status: 'needsAction' });
+    expect(
+      (await readPendingOps(taskApp.userDataDir)).some(
+        (op) => op.kind === 'updateTask' && op.eventId === 'task-rent',
+      ),
+    ).toBe(false);
+    expect(await cdp.eval(`document.body.textContent.includes('Edit task')`)).toBe(false);
+    await cdp.locate('[data-testid="all-day-task-task-rent"]');
+  });
+
+  it('moves to another day along the lane through the op queue', async () => {
+    const { cdp } = taskApp;
+    const dayWidth = await cdp.eval<number>(
+      `document.querySelector('.relative.grid').getBoundingClientRect().width / document.querySelector('.relative.grid').children.length`,
+    );
+    const from = await cdp.locate('[data-testid="all-day-task-task-rent"]');
+    await cdp.drag(from, { x: from.x + dayWidth, y: from.y });
+    await expect.poll(rent).toMatchObject({ dueDate: localIsoDaysAgo(-1) });
+    await expect
+      .poll(async () =>
+        (await readPendingOps(taskApp.userDataDir)).some(
+          (op) => op.kind === 'updateTask' && op.eventId === 'task-rent',
+        ),
+      )
+      .toBe(true);
+  });
+});
+
 describe('collapsible all-day lane', () => {
   const LANE_ROW = 24;
   const LANE_PADDING = 8;

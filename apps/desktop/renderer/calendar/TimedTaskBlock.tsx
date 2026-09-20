@@ -61,7 +61,9 @@ export function TimedTaskBlock({
         }
       }}
       onPointerCancel={drag.onPointerCancel}
-      onPointerDown={(event) => drag.onTaskPointerDown(task, key, readOnly, event)}
+      onPointerDown={(event) =>
+        drag.onTaskPointerDown(task, key, { from: 'grid', readOnly }, event)
+      }
       onPointerMove={drag.onPointerMove}
       onPointerUp={drag.onPointerUp}
       role="button"

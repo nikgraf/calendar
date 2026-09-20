@@ -116,3 +116,42 @@ export const moveTimedTask = (
     ...(dueTime === task.dueTime ? {} : { dueTime }),
   };
 };
+
+/** A drop from a chip drag: a day in the all-day lane, or a day and a minute in the grid. */
+export type TaskDrop =
+  | { readonly dueDate: string; readonly kind: 'allDay' }
+  | { readonly dueDate: string; readonly kind: 'timed'; readonly minute: number };
+
+export type TaskDropResult =
+  | { readonly changes: { readonly dueDate?: string; readonly dueTime?: string | null } }
+  /** The target needs a field this task's provider cannot hold — refuse visibly, never silently. */
+  | { readonly unsupported: 'dueTime' };
+
+/**
+ * The changes a drop asks for, or undefined when it asks for nothing. A grid
+ * drop gives the task that day and time; a lane drop gives it that day and
+ * clears the time (also when an overdue timed reminder is dragged along the
+ * lane it is drawn in). Google Tasks are date-only, so a grid drop on one is
+ * reported as unsupported rather than turned into a day-only move.
+ */
+export const dropTaskChanges = (
+  task: Pick<TaskRecord, 'dueDate' | 'dueTime' | 'provider'>,
+  drop: TaskDrop,
+): TaskDropResult | undefined => {
+  if (drop.kind === 'timed') {
+    if (task.provider === 'google') {
+      return { unsupported: 'dueTime' };
+    }
+    const dueTime = `${pad2(Math.floor(drop.minute / 60))}:${pad2(drop.minute % 60)}`;
+    const changes = {
+      ...(drop.dueDate === task.dueDate ? {} : { dueDate: drop.dueDate }),
+      ...(dueTime === task.dueTime ? {} : { dueTime }),
+    };
+    return Object.keys(changes).length === 0 ? undefined : { changes };
+  }
+  const changes = {
+    ...(drop.dueDate === task.dueDate ? {} : { dueDate: drop.dueDate }),
+    ...(task.dueTime === undefined ? {} : { dueTime: null }),
+  };
+  return Object.keys(changes).length === 0 ? undefined : { changes };
+};

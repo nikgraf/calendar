@@ -28,11 +28,18 @@ export const subscribeMutationNotices = (listener: NoticeListener): (() => void)
   };
 };
 
-const publish = (notice: MutationNotice): void => {
+/**
+ * Raises a notice without a failed mutation behind it — for a change the UI
+ * refused before asking the backend (a drop the provider cannot hold), so
+ * the user learns why nothing moved.
+ */
+export const publishMutationNotice = (notice: MutationNotice): void => {
   for (const listener of listeners) {
     listener(notice);
   }
 };
+
+const publish = publishMutationNotice;
 
 const MAX_DETAIL = 140;
 
