@@ -27,7 +27,18 @@ struct ReminderListDTO: Sendable {
   }
 }
 
+/// One BYDAY entry: a weekday code plus, on monthly rules, its ordinal (1…4, -1 = last; 0 = none).
+struct ReminderDayOfWeekDTO: Sendable {
+  let ordinal: Int
+  let weekday: String
+
+  func toDictionary() -> [String: Any] {
+    ordinal == 0 ? ["weekday": weekday] : ["ordinal": ordinal, "weekday": weekday]
+  }
+}
+
 struct ReminderRecurrenceDTO: Sendable {
+  let byDay: [ReminderDayOfWeekDTO]
   let count: Int?
   let freq: String
   let interval: Int
@@ -37,6 +48,7 @@ struct ReminderRecurrenceDTO: Sendable {
   func toDictionary() -> [String: Any] {
     if unsupported { return ["unsupported": true] }
     var out: [String: Any] = ["freq": freq, "interval": interval]
+    if !byDay.isEmpty { out["byDay"] = byDay.map { $0.toDictionary() } }
     if let count { out["count"] = count }
     if let untilDate { out["untilDate"] = untilDate }
     return out
@@ -222,6 +234,52 @@ private func hexColor(_ cgColor: CGColor?) -> String? {
   return String(format: "#%02x%02x%02x", r, g, b)
 }
 
+// Same table as AppleCalendarBridge.swift: the two bridges are separate
+// symlinked sources with no shared module. EKWeekday counts from Sunday = 1.
+private let weekdays: [(String, EKWeekday)] = [
+  ("SU", .sunday), ("MO", .monday), ("TU", .tuesday), ("WE", .wednesday),
+  ("TH", .thursday), ("FR", .friday), ("SA", .saturday),
+]
+
+private func weekdayName(_ day: EKWeekday) -> String {
+  weekdays.first { $0.1 == day }?.0 ?? "MO"
+}
+
+private func ints(_ numbers: [NSNumber]?) -> [Int] { (numbers ?? []).map { $0.intValue } }
+
+/// The ordinals the app's monthly picker offers; 0 means "no ordinal".
+private let monthlyOrdinals: Set<Int> = [1, 2, 3, 4, -1]
+
+/// The by-day entries of a rule the app can express, or nil when the
+/// rule is exotic. Weekly: plain weekdays (no week numbers, no positions).
+/// Monthly: one weekday with its ordinal, stored by EventKit either as the
+/// day's weekNumber or as a position (`setPositions`) on a plain day —
+/// both read as the same rule. Daily and yearly: no by-day parts at all.
+private func expressibleByDay(_ rule: EKRecurrenceRule) -> [ReminderDayOfWeekDTO]? {
+  let days = rule.daysOfTheWeek ?? []
+  let positions = ints(rule.setPositions)
+  switch rule.frequency {
+  case .weekly:
+    guard positions.isEmpty, days.allSatisfy({ $0.weekNumber == 0 }) else { return nil }
+    return days.map { ReminderDayOfWeekDTO(ordinal: 0, weekday: weekdayName($0.dayOfTheWeek)) }
+  case .monthly:
+    if days.isEmpty && positions.isEmpty { return [] }
+    guard days.count == 1, let day = days.first else { return nil }
+    let ordinal: Int
+    if positions.isEmpty {
+      ordinal = day.weekNumber
+    } else if positions.count == 1, day.weekNumber == 0, let position = positions.first {
+      ordinal = position
+    } else {
+      return nil
+    }
+    guard monthlyOrdinals.contains(ordinal) else { return nil }
+    return [ReminderDayOfWeekDTO(ordinal: ordinal, weekday: weekdayName(day.dayOfTheWeek))]
+  default:
+    return days.isEmpty && positions.isEmpty ? [] : nil
+  }
+}
+
 private func frequencyName(_ f: EKRecurrenceFrequency) -> String {
   switch f {
   case .daily: return "daily"
@@ -276,15 +334,11 @@ private func reminderDTO(_ reminder: EKReminder) -> ReminderDTO {
     .map { Int(($0.relativeOffset / 60).rounded()) }
   var recurrence: ReminderRecurrenceDTO? = nil
   if let rules = reminder.recurrenceRules, let rule = rules.first {
-    let exotic =
-      rules.count > 1 || !(rule.daysOfTheWeek ?? []).isEmpty
-      || !(rule.daysOfTheMonth ?? []).isEmpty || !(rule.monthsOfTheYear ?? []).isEmpty
+    let otherParts =
+      !(rule.daysOfTheMonth ?? []).isEmpty || !(rule.monthsOfTheYear ?? []).isEmpty
       || !(rule.weeksOfTheYear ?? []).isEmpty || !(rule.daysOfTheYear ?? []).isEmpty
-      || !(rule.setPositions ?? []).isEmpty
-    if exotic {
-      recurrence = ReminderRecurrenceDTO(
-        count: nil, freq: "daily", interval: 1, unsupported: true, untilDate: nil)
-    } else {
+    let byDay = rules.count > 1 || otherParts ? nil : expressibleByDay(rule)
+    if let byDay {
       var count: Int? = nil
       var until: String? = nil
       if let end = rule.recurrenceEnd {
@@ -295,8 +349,11 @@ private func reminderDTO(_ reminder: EKReminder) -> ReminderDTO {
         }
       }
       recurrence = ReminderRecurrenceDTO(
-        count: count, freq: frequencyName(rule.frequency), interval: rule.interval,
+        byDay: byDay, count: count, freq: frequencyName(rule.frequency), interval: rule.interval,
         unsupported: false, untilDate: until)
+    } else {
+      recurrence = ReminderRecurrenceDTO(
+        byDay: [], count: nil, freq: "daily", interval: 1, unsupported: true, untilDate: nil)
     }
   }
   return ReminderDTO(
@@ -481,6 +538,41 @@ actor RemindersBridge {
           guard let interval = boundedInt(spec["interval"] ?? 1, Bounds.interval) else {
             throw RemindersBridgeError.badRequest("recurrence.interval must be an integer 1…999")
           }
+          // The same shapes byDayError allows on the TS side.
+          var days: [EKRecurrenceDayOfWeek] = []
+          if let rawDays = spec["byDay"] as? [[String: Any]] {
+            for raw in rawDays {
+              guard let code = raw["weekday"] as? String,
+                let weekday = weekdays.first(where: { $0.0 == code })?.1
+              else {
+                throw RemindersBridgeError.badRequest("recurrence.byDay weekday must be MO…SU")
+              }
+              var ordinal = 0
+              if let rawOrdinal = raw["ordinal"], !(rawOrdinal is NSNull) {
+                guard let value = boundedInt(rawOrdinal, -1...4), value != 0 else {
+                  throw RemindersBridgeError.badRequest("recurrence.byDay ordinal must be 1…4 or -1")
+                }
+                ordinal = value
+              }
+              days.append(EKRecurrenceDayOfWeek(weekday, weekNumber: ordinal))
+            }
+          }
+          if !days.isEmpty {
+            switch freq {
+            case .weekly:
+              guard days.allSatisfy({ $0.weekNumber == 0 }) else {
+                throw RemindersBridgeError.badRequest("a weekly recurrence.byDay takes no ordinals")
+              }
+            case .monthly:
+              guard days.count == 1, days[0].weekNumber != 0 else {
+                throw RemindersBridgeError.badRequest(
+                  "a monthly recurrence.byDay takes exactly one weekday with an ordinal")
+              }
+            default:
+              throw RemindersBridgeError.badRequest(
+                "recurrence.byDay is only valid for weekly and monthly rules")
+            }
+          }
           var end: EKRecurrenceEnd? = nil
           if let rawCount = spec["count"], !(rawCount is NSNull) {
             guard let count = boundedInt(rawCount, Bounds.count) else {
@@ -491,7 +583,10 @@ actor RemindersBridge {
             end = EKRecurrenceEnd(end: untilDate)
           }
           reminder.recurrenceRules = [
-            EKRecurrenceRule(recurrenceWith: freq, interval: interval, end: end)
+            EKRecurrenceRule(
+              recurrenceWith: freq, interval: interval, daysOfTheWeek: days.isEmpty ? nil : days,
+              daysOfTheMonth: nil, monthsOfTheYear: nil, weeksOfTheYear: nil, daysOfTheYear: nil,
+              setPositions: nil, end: end)
           ]
         } else {
           throw RemindersBridgeError.badRequest("recurrence.freq must be daily|weekly|monthly|yearly")

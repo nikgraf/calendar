@@ -1,3 +1,4 @@
+import { ByDay } from '@calendar/core';
 import { Schema } from 'effect';
 
 /**
@@ -15,9 +16,11 @@ import { Schema } from 'effect';
  * - `priority` is EventKit's raw 0…9 (0 none, 1–4 high, 5 medium, 6–9 low).
  * - `alarms` are minutes relative to the due date (≤ 0 = before/at);
  *   absolute-date alarms are neither surfaced nor touched.
- * - `recurrence` is our RecurrenceRuleSpec subset; anything EventKit can
- *   express that we can't (by-day, positional, multiple rules) comes
- *   back as `{ unsupported: true }` and is never overwritten.
+ * - `recurrence` is our RecurrenceRuleSpec subset: frequency, interval,
+ *   an end, and `byDay` — plain weekdays on a weekly rule, one "Nth
+ *   weekday" (ordinal 1…4 or -1) on a monthly rule. Anything else EventKit
+ *   can express (yearly positional, several rules, day-of-month lists…)
+ *   comes back as `{ unsupported: true }` and is never overwritten.
  */
 
 export const RemindersAuthorization = Schema.Literals([
@@ -40,6 +43,7 @@ export type ReminderListJson = typeof ReminderListJson.Type;
 
 export const ReminderRecurrenceJson = Schema.Union([
   Schema.Struct({
+    byDay: Schema.optional(Schema.Array(ByDay)),
     count: Schema.optional(Schema.Number),
     freq: Schema.Literals(['daily', 'monthly', 'weekly', 'yearly']),
     interval: Schema.Number,
@@ -79,6 +83,7 @@ export interface ReminderWrite {
   readonly priority?: number | undefined;
   readonly recurrence?:
     | {
+        readonly byDay?: ReadonlyArray<ByDay> | undefined;
         readonly count?: number | undefined;
         readonly freq: string;
         readonly interval: number;

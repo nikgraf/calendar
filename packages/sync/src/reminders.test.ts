@@ -372,6 +372,34 @@ describe('reminders sync', () => {
 });
 
 describe('reminder mutations', () => {
+  it.effect('createTask carries chosen weekdays to EventKit and back', () => {
+    const fake = fakeWith();
+    return Effect.gen(function* () {
+      yield* seedApple();
+      yield* (yield* SyncEngine).syncAll();
+      const mutations = yield* EventMutations;
+      const created = yield* mutations.createTask({
+        accountId: APPLE_REMINDERS_ACCOUNT_ID,
+        dueDate: tomorrow,
+        recurrence: { byDay: [{ weekday: 'SA' }, { weekday: 'SU' }], freq: 'weekly', interval: 1 },
+        taskListId: 'list-b',
+        title: 'Water plants',
+      });
+      expect(fake.state.reminders.get(created.id)?.recurrence).toEqual({
+        byDay: [{ weekday: 'SA' }, { weekday: 'SU' }],
+        freq: 'weekly',
+        interval: 1,
+      });
+      const row = (yield* windowRows).find((task) => task.id === created.id);
+      expect(row?.recurrence).toEqual({
+        byDay: [{ weekday: 'SA' }, { weekday: 'SU' }],
+        freq: 'weekly',
+        interval: 1,
+      });
+      expect(row?.recurrenceUnsupported).toBeUndefined();
+    }).pipe(Effect.provide(testLayer(fake)));
+  });
+
   it.effect('createTask writes EventKit, mirrors the final row, and queues nothing', () => {
     const fake = fakeWith();
     return Effect.gen(function* () {
