@@ -5,6 +5,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
   type App,
   launchApp,
+  localIsoDaysAgo,
   readAccounts,
   readPendingOpsCount,
   readTaskLists,
@@ -29,8 +30,7 @@ const HELPER = join(
   'solunivo-model-helper',
 );
 
-const today = new Date();
-const isoToday = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+const isoToday = localIsoDaysAgo(0);
 
 /** One stdio request to the helper, the way the app itself talks to it. */
 const callHelper = (method: string, params: Record<string, unknown>): Promise<unknown> =>
@@ -93,10 +93,13 @@ describe.skipIf(!REAL)('Apple Reminders through the real helper', () => {
 
   it('creates, renames, and deletes a reminder through EventKit', async () => {
     const { cdp } = app;
-    // Nothing is seeded, so any grid cell is free: click into the scroller.
+    // Nothing is seeded, so any grid cell is free — but it must be today's
+    // column: a date-only reminder on a past weekday rolls onto today as
+    // overdue, and its tooltip then carries the due date after the title.
     const cell = await cdp.eval<{ x: number; y: number }>(`(() => {
-      const r = document.querySelector('.overflow-y-scroll').getBoundingClientRect();
-      return { x: r.left + r.width * 0.5, y: r.top + 200 };
+      const scroller = document.querySelector('.overflow-y-scroll').getBoundingClientRect();
+      const todayCell = document.querySelector('.bg-red-500').closest('.h-10').getBoundingClientRect();
+      return { x: todayCell.left + todayCell.width / 2, y: scroller.top + 200 };
     })()`);
     await cdp.click(cell.x, cell.y);
     await cdp.waitFor(`document.body.textContent.includes('New event')`);

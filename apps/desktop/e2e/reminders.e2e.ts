@@ -1,20 +1,22 @@
 import { Account, APPLE_REMINDERS_ACCOUNT_ID, TaskListInfo, TaskRecord } from '@calendar/core';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { type App, launchApp, readEvents, readTasks, type RemindersFixture } from './harness.ts';
+import {
+  type App,
+  launchApp,
+  localIsoDaysAgo,
+  readEvents,
+  readTasks,
+  type RemindersFixture,
+} from './harness.ts';
 
 // Seeded straight into SQLite: the harness launches the app with
 // CALENDAR_REMINDERS=off, so no EventKit sync can replace these rows and
 // no TCC prompt can fire on a developer's Mac. This covers the UI half of
 // the Reminders integration — chips, the provider-specific form, the
 // sidebar section — without a real Reminders database.
-const today = new Date();
-const isoToday = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
-const tomorrow = new Date(today);
-tomorrow.setDate(tomorrow.getDate() + 1);
-const isoTomorrow = `${tomorrow.getFullYear()}-${String(tomorrow.getMonth() + 1).padStart(2, '0')}-${String(tomorrow.getDate()).padStart(2, '0')}`;
-const yesterday = new Date(today);
-yesterday.setDate(yesterday.getDate() - 1);
-const isoYesterday = `${yesterday.getFullYear()}-${String(yesterday.getMonth() + 1).padStart(2, '0')}-${String(yesterday.getDate()).padStart(2, '0')}`;
+const isoToday = localIsoDaysAgo(0);
+const isoTomorrow = localIsoDaysAgo(-1);
+const isoYesterday = localIsoDaysAgo(1);
 
 const seed = {
   accounts: [

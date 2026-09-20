@@ -63,7 +63,14 @@ function AllDayTaskChip({
   const repeats = taskRepeats(task);
   const label = taskChipLabel(task, { overdue, repeats });
   const facts = [...(overdue ? [overdueLabel(task, today)] : []), ...(repeats ? ['repeats'] : [])];
-  const shift = dragging?.deltaDays ?? 0;
+  // Follow the column the drop would land in, so the preview never lands a
+  // day away from the commit; outside any target, fall back to the delta.
+  const shift =
+    dragging === null
+      ? 0
+      : dragging.target === null
+        ? dragging.deltaDays
+        : dragging.target.dayIndex - span.startDayIndex;
   return (
     <div
       aria-label={facts.length > 0 ? `${task.title}, ${facts.join(', ')}` : undefined}
@@ -83,7 +90,12 @@ function AllDayTaskChip({
       }}
       onPointerCancel={drag.onPointerCancel}
       onPointerDown={(event) =>
-        drag.onTaskPointerDown(task, span.id, { from: 'lane', readOnly }, event)
+        drag.onTaskPointerDown(
+          task,
+          span.id,
+          { dayIndex: span.startDayIndex, from: 'lane', readOnly },
+          event,
+        )
       }
       onPointerMove={drag.onPointerMove}
       onPointerUp={drag.onPointerUp}

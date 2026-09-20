@@ -1,8 +1,7 @@
-import { publishMutationNotice, useGuardedMutations } from '@calendar/app-state';
+import { commitTaskDrop, useGuardedMutations } from '@calendar/app-state';
 import {
   type DropTarget,
   dropTargetAt,
-  dropTaskChanges,
   moveEventTimes,
   moveTimedTask,
   resizeEventEnd,
@@ -55,12 +54,6 @@ const sameTarget = (a: DropTarget | null, b: DropTarget | null): boolean =>
     a.dayIndex === b.dayIndex &&
     (a.kind !== 'timed' || b.kind !== 'timed' || a.minute === b.minute));
 
-/** Google Tasks are date-only; the drop is refused here, before the backend sees it. */
-const GOOGLE_TIMED_DROP_NOTICE = {
-  action: 'give the task a time',
-  detail: 'Google Tasks are date-only; move it to a Reminders list to set a time.',
-};
-
 interface DragOrigin {
   active: boolean;
   readonly itemKey: string;
@@ -71,6 +64,8 @@ interface DragOrigin {
   readonly target:
     | { readonly event: EventRecord; readonly kind: 'event' }
     | {
+        /** The strip column the chip or block started in. */
+        readonly dayIndex: number;
         readonly from: TaskDragOrigin;
         readonly kind: 'task';
         readonly readOnly: boolean;
@@ -219,7 +214,19 @@ export const useEventDrag = ({
     const grid = gridRef.current?.getBoundingClientRect();
     const dayWidth = grid ? grid.width / strip.length : 0;
     const deltaDays = dayWidth > 0 ? Math.round((clientX - origin.startClientX) / dayWidth) : 0;
-    const target = origin.target.kind === 'task' ? targetAt(clientX, clientY) : null;
+    const pointed = origin.target.kind === 'task' ? targetAt(clientX, clientY) : null;
+    // A block dragged from the grid moves by whole columns from where it
+    // was pressed (it is drawn that way), so its drop day follows the same
+    // delta rather than the column under the pointer — the two differ when
+    // the press was off-centre. A lane chip instead follows the pointer's
+    // column, and its preview shifts to match (AllDayTaskChip).
+    const target =
+      pointed !== null && origin.target.kind === 'task' && origin.target.from === 'grid'
+        ? {
+            ...pointed,
+            dayIndex: Math.min(Math.max(origin.target.dayIndex + deltaDays, 0), strip.length - 1),
+          }
+        : pointed;
     return { deltaDays, deltaMinutes, target };
   };
 
@@ -272,7 +279,11 @@ export const useEventDrag = ({
   const onTaskPointerDown = (
     task: TaskRecord,
     itemKey: string,
-    options: { readonly from: TaskDragOrigin; readonly readOnly: boolean },
+    options: {
+      readonly dayIndex: number;
+      readonly from: TaskDragOrigin;
+      readonly readOnly: boolean;
+    },
     domEvent: React.PointerEvent,
   ) => {
     if (domEvent.button !== 0) {
@@ -286,7 +297,13 @@ export const useEventDrag = ({
       pointerId: domEvent.pointerId,
       startClientX: domEvent.clientX,
       startClientY: domEvent.clientY,
-      target: { from: options.from, kind: 'task', readOnly: options.readOnly, task },
+      target: {
+        dayIndex: options.dayIndex,
+        from: options.from,
+        kind: 'task',
+        readOnly: options.readOnly,
+        task,
+      },
     };
     // Capture read-only drags too: movement is discarded below, but must not
     // fall through to the empty-grid slot gesture.
@@ -391,24 +408,9 @@ export const useEventDrag = ({
       // delta-based move, which starts from where the block is drawn.
       if (from === 'lane' || target?.kind === 'allDay') {
         const day = target === null ? undefined : strip[target.dayIndex];
-        if (target === null || day === undefined) {
-          return;
+        if (target !== null && day !== undefined) {
+          commitTaskDrop(task, day.toString(), target, updateTask);
         }
-        const dueDate = day.toString();
-        const result = dropTaskChanges(
-          task,
-          target.kind === 'allDay'
-            ? { dueDate, kind: 'allDay' }
-            : { dueDate, kind: 'timed', minute: target.minute },
-        );
-        if (result === undefined) {
-          return;
-        }
-        if ('unsupported' in result) {
-          publishMutationNotice(GOOGLE_TIMED_DROP_NOTICE);
-          return;
-        }
-        commit(result.changes);
         return;
       }
       if (deltaMinutes === 0 && deltaDays === 0) {

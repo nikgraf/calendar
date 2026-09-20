@@ -10,6 +10,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import {
   type App,
   launchApp,
+  localIsoDaysAgo,
   readCalendars,
   readEvents,
   readDeviceSetting,
@@ -28,18 +29,8 @@ const todayAt = (hour: number, minute = 0): number => {
   const now = new Date();
   return Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), hour, minute);
 };
-/**
- * Today's *local* ISO date, for date-only records: the app places a task on
- * the day in the machine's zone, and between local midnight and UTC
- * midnight the UTC date is still yesterday (CI runs in UTC; dev does not).
- */
+/** Today's local ISO date, for date-only records. */
 const todayLocalIso = (): string => localIsoDaysAgo(0);
-/** The local ISO date `days` before today. */
-const localIsoDaysAgo = (days: number): string => {
-  const date = new Date();
-  date.setDate(date.getDate() - days);
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
-};
 
 // The daily series starts three days back so several instances are visible
 // in the current week no matter which weekday the suite runs on. All seeded

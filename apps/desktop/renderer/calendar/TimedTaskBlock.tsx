@@ -13,6 +13,7 @@ import type { useEventDrag } from './useEventDrag.ts';
 /** A point-in-time Apple Reminder rendered as a compact, move-only block. */
 export function TimedTaskBlock({
   box,
+  dayIndex,
   drag,
   hourHeight,
   listColor,
@@ -22,6 +23,8 @@ export function TimedTaskBlock({
   task,
 }: {
   box: PositionedBox;
+  /** The strip column this block sits in; a drag's drop day is counted from it. */
+  dayIndex: number;
   drag: ReturnType<typeof useEventDrag>;
   hourHeight: number;
   listColor: string | undefined;
@@ -62,7 +65,7 @@ export function TimedTaskBlock({
       }}
       onPointerCancel={drag.onPointerCancel}
       onPointerDown={(event) =>
-        drag.onTaskPointerDown(task, key, { from: 'grid', readOnly }, event)
+        drag.onTaskPointerDown(task, key, { dayIndex, from: 'grid', readOnly }, event)
       }
       onPointerMove={drag.onPointerMove}
       onPointerUp={drag.onPointerUp}

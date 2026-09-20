@@ -179,6 +179,9 @@ export function DayTimeline({
   }, []);
 
   // Geometry the task drag judges drops against; measured, never rendered.
+  // (The chip drags and this swipe are exclusive in the gesture arena: a
+  // long press activates the chip's pan and cancels a swipe that has not
+  // moved its 15 points yet.)
   const containerX = useSharedValue(0);
   const containerY = useSharedValue(0);
   const containerHeight = useSharedValue(0);
@@ -220,10 +223,6 @@ export function DayTimeline({
     .activeOffsetX([-15, 15])
     .failOffsetY([-12, 12])
     .onUpdate((update) => {
-      if (taskDrag.dragging !== null) {
-        // A chip is being dragged: the strip stays put under it.
-        return;
-      }
       setShared(panX, Math.max(-maxPan, Math.min(maxPan, update.translationX)));
     })
     .onEnd((end) => {
@@ -260,10 +259,7 @@ export function DayTimeline({
       testID="day-timeline"
     >
       {days.length > 1 ? (
-        <View
-          onLayout={(layout) => setShared(laneTop, layout.nativeEvent.layout.height)}
-          style={styles.weekHeader}
-        >
+        <View style={styles.weekHeader}>
           <View style={styles.gutterSpacer} />
           <View style={styles.stripViewport}>
             <Animated.View style={[styles.strip, stripStyle]}>
@@ -281,7 +277,10 @@ export function DayTimeline({
           </View>
         </View>
       ) : null}
-      <View style={[styles.allDayLane, { height: laneHeight }]}>
+      <View
+        onLayout={(layout) => setShared(laneTop, layout.nativeEvent.layout.y)}
+        style={[styles.allDayLane, { height: laneHeight }]}
+      >
         <View style={styles.gutterSpacer}>
           {!collapsed && rowsNeeded > MAX_ALL_DAY_ROWS ? (
             <Pressable

@@ -25,10 +25,11 @@ const LAST_SLOT_MINUTE = DAY_MINUTES - DRAG_SNAP_MINUTES;
 
 /**
  * Maps a pointer position to a drop target: the day column under x (clamped
- * to the strip, so the gutter still drops on the first column) and, in the
- * grid, the minute under y snapped to the drag step. Outside both the lane
- * and the grid viewport there is no target. A worklet: iOS calls it from
- * the gesture's UI-thread callbacks.
+ * to the strip; its off-screen buffer columns are real days, reachable the
+ * way a block dragged past the edge reaches them) and, in the grid, the
+ * minute under y snapped to the drag step. Outside both the lane and the
+ * grid viewport there is no target. A worklet: iOS calls it from the
+ * gesture's UI-thread callbacks.
  */
 export const dropTargetAt = (x: number, y: number, geometry: DropGeometry): DropTarget | null => {
   'worklet';

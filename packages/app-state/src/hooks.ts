@@ -225,10 +225,11 @@ export const useToday = (timeZone: string): string => {
   useEffect(() => {
     let timer: ReturnType<typeof setTimeout> | undefined;
     const arm = () => {
+      // Also runs at once: a zone change (travel) may already be a new day.
       setToday(Temporal.Now.plainDateISO(timeZone).toString());
       timer = setTimeout(arm, msUntilNextMidnight(timeZone, Date.now()));
     };
-    timer = setTimeout(arm, msUntilNextMidnight(timeZone, Date.now()));
+    arm();
     return () => clearTimeout(timer);
   }, [timeZone]);
   return today;

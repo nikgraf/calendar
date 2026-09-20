@@ -37,6 +37,18 @@ const require = createRequire(import.meta.url);
 
 /* eslint-disable no-console -- harness diagnostics are wanted in e2e output */
 
+/**
+ * The *local* ISO date `days` before today (negative = ahead), for
+ * date-only seeds: the app places a task on the day in the machine's zone,
+ * and between local midnight and UTC midnight the UTC date is still
+ * yesterday (CI runs in UTC; dev does not).
+ */
+export const localIsoDaysAgo = (days: number): string => {
+  const date = new Date();
+  date.setDate(date.getDate() - days);
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+};
+
 // ---------------------------------------------------------------------------
 // Seeding: build the schema with the app's own migrations, insert fixtures.
 // Must run BEFORE the app launches (external writes don't invalidate atoms).

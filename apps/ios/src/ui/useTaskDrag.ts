@@ -1,12 +1,11 @@
 /* eslint-disable react/immutability -- Reanimated shared values are mutable
    refs by design (`.value =` is the API); the React Compiler lint cannot tell
    them from hook state. */
-import { publishMutationNotice, useGuardedMutations } from '@calendar/app-state';
+import { commitTaskDrop, useGuardedMutations } from '@calendar/app-state';
 import {
   calendarTaskKey,
   type DropTarget,
   dropTargetAt,
-  dropTaskChanges,
   type TaskRecord,
   type Temporal,
 } from '@calendar/core';
@@ -50,12 +49,6 @@ const GHOST_HEIGHT = 22;
 const NO_TARGET = 0;
 const ALL_DAY_TARGET = 1;
 const TIMED_TARGET = 2;
-
-/** Google Tasks are date-only; the drop is refused here, before the backend sees it. */
-const GOOGLE_TIMED_DROP_NOTICE = {
-  action: 'give the task a time',
-  detail: 'Google Tasks are date-only; move it to a Reminders list to set a time.',
-};
 
 /**
  * Long-press drag of task chips across the all-day lane and the grid. The
@@ -121,29 +114,9 @@ export const useTaskDrag = (layout: TaskDragLayout) => {
   const clear = () => setDragging(null);
   const finish = (task: TaskRecord, target: DropTarget | null) => {
     const day = target === null ? undefined : strip[target.dayIndex];
-    if (target === null || day === undefined) {
-      return;
+    if (target !== null && day !== undefined) {
+      commitTaskDrop(task, day.toString(), target, updateTask);
     }
-    const dueDate = day.toString();
-    const result = dropTaskChanges(
-      task,
-      target.kind === 'allDay'
-        ? { dueDate, kind: 'allDay' }
-        : { dueDate, kind: 'timed', minute: target.minute },
-    );
-    if (result === undefined) {
-      return;
-    }
-    if ('unsupported' in result) {
-      publishMutationNotice(GOOGLE_TIMED_DROP_NOTICE);
-      return;
-    }
-    void updateTask({
-      accountId: task.accountId,
-      changes: result.changes,
-      taskId: task.id,
-      taskListId: task.listId,
-    });
   };
 
   /**

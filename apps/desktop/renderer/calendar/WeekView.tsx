@@ -343,7 +343,7 @@ export function WeekView({
               }}
             >
               <GridDropIndicator drag={drag} hourHeight={HOUR_HEIGHT} stripLength={strip.length} />
-              {strip.map((day) => {
+              {strip.map((day, dayIndex) => {
                 const iso = day.toString();
                 const range = dayRange(day, timeZone);
                 const boxes = layoutDayColumn(
@@ -399,6 +399,7 @@ export function WeekView({
                         return (
                           <TimedTaskBlock
                             box={box}
+                            dayIndex={dayIndex}
                             drag={drag}
                             hourHeight={HOUR_HEIGHT}
                             key={box.id}

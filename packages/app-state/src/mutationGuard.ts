@@ -39,8 +39,6 @@ export const publishMutationNotice = (notice: MutationNotice): void => {
   }
 };
 
-const publish = publishMutationNotice;
-
 const MAX_DETAIL = 140;
 
 /**
@@ -57,7 +55,7 @@ export const guardMutation =
       () => undefined,
       (error: unknown) => {
         const raw = error instanceof Error ? error.message : String(error);
-        publish({
+        publishMutationNotice({
           action,
           detail: raw.length > MAX_DETAIL ? `${raw.slice(0, MAX_DETAIL)}…` : raw,
         });

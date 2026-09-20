@@ -12,3 +12,4 @@ export * from './pendingOpLabel.ts';
 export * from './permissionCopy.ts';
 export * from './quickAddModel.ts';
 export * from './repeatState.ts';
+export * from './taskDrop.ts';
