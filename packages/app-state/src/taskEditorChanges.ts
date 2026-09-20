@@ -1,9 +1,10 @@
-import type {
-  TaskListInfo,
-  TaskPriority,
-  TaskProvider,
-  TaskRecord,
-  TaskRecurrence,
+import {
+  sameByDay,
+  type TaskListInfo,
+  type TaskPriority,
+  type TaskProvider,
+  type TaskRecord,
+  type TaskRecurrence,
 } from '@calendar/core';
 
 /**
@@ -59,7 +60,8 @@ const sameRecurrence = (a: TaskRecurrence | undefined, b: TaskRecurrence | undef
     a.freq === b.freq &&
     a.interval === b.interval &&
     a.count === b.count &&
-    a.untilDate === b.untilDate);
+    a.untilDate === b.untilDate &&
+    sameByDay(a.byDay, b.byDay));
 
 /**
  * The fields to send on Save: only those that differ from what the editor

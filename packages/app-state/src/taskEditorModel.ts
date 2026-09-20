@@ -1,4 +1,10 @@
-import type { TaskListInfo, TaskPriority, TaskProvider, TaskRecord } from '@calendar/core';
+import {
+  byDayError,
+  type TaskListInfo,
+  type TaskPriority,
+  type TaskProvider,
+  type TaskRecord,
+} from '@calendar/core';
 import { useState } from 'react';
 import { useBackendMutations, useTaskReadOnlyLookup } from './hooks.ts';
 import { repeatNumberError, useRepeatState } from './repeatState.ts';
@@ -87,7 +93,7 @@ export const useTaskEditorModel = ({
   // set in Reminders.app ride along untouched.
   const [initialAlarms] = useState<ReadonlyArray<number>>(() => existing?.alarms ?? []);
   const [alarm, setAlarm] = useState<number | undefined>(initialAlarms[0]);
-  const { toSpec: repeatSpec, ...repeatState } = useRepeatState(existing?.recurrence);
+  const { toSpec: repeatSpec, ...repeatState } = useRepeatState(existing?.recurrence, dueDate);
   // What the form opened with: Save sends only the fields that differ from
   // it (see taskEditorChanges) — captured once, not re-read from the row.
   const [initial] = useState<TaskEditorValues | undefined>(() =>
@@ -143,7 +149,8 @@ export const useTaskEditorModel = ({
         repeatNumberError(repeatState.repeatInterval, 'The repeat interval') ??
         (repeatState.repeatEnds === 'after'
           ? repeatNumberError(repeatState.repeatCount, 'The occurrence count')
-          : undefined);
+          : undefined) ??
+        byDayError(repeatSpec() ?? { freq: repeatState.repeat });
       if (invalid) {
         setError(invalid);
         return;

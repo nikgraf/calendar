@@ -276,7 +276,7 @@ export const useEventEditorModel = ({
     }
   };
   const [rsvp, setRsvp] = useState(ownAttendee?.responseStatus);
-  const { toSpec: repeatSpec, ...repeatState } = useRepeatState(prefill?.recurrence);
+  const { toSpec: repeatSpec, ...repeatState } = useRepeatState(prefill?.recurrence, date);
   const [error, setError] = useState<string | null>(null);
 
   const addAttendee = (input: AttendeeInput): boolean => {

@@ -120,6 +120,29 @@ describe('taskEditorChanges', () => {
     expect(diff({ listId: 'list-b' })).toEqual({ moveToListId: 'list-b' });
   });
 
+  it('compares weekdays order-insensitively and sends a changed set', () => {
+    const weekends = {
+      byDay: [{ weekday: 'SA' as const }, { weekday: 'SU' as const }],
+      freq: 'weekly' as const,
+      interval: 1,
+    };
+    const seeded = { ...initial, recurrence: weekends };
+    const diffFrom = (recurrence: TaskEditorValues['recurrence']) =>
+      taskEditorChanges({
+        current: { ...seeded, recurrence },
+        initial: seeded,
+        initialAlarms: [-15],
+        provider: 'apple',
+        recurrenceUnsupported: false,
+      });
+    expect(diffFrom({ ...weekends, byDay: [{ weekday: 'SU' }, { weekday: 'SA' }] })).toEqual({});
+    const withMonday = { ...weekends, byDay: [{ weekday: 'MO' as const }, ...weekends.byDay] };
+    expect(diffFrom(withMonday)).toEqual({ recurrence: withMonday });
+    expect(diffFrom({ freq: 'weekly', interval: 1 })).toEqual({
+      recurrence: { freq: 'weekly', interval: 1 },
+    });
+  });
+
   it('never touches a rule the form could not show', () => {
     expect(diff({ recurrence: undefined }, { recurrenceUnsupported: true })).toEqual({});
   });
