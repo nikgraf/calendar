@@ -1,5 +1,11 @@
 /* eslint-disable react/immutability -- Reanimated shared values are mutable refs by design. */
-import { formatPlainTime, priorityMarker, type TaskRecord } from '@calendar/core';
+import {
+  formatPlainTime,
+  priorityMarker,
+  REPEAT_MARKER,
+  type TaskRecord,
+  taskRepeats,
+} from '@calendar/core';
 import { Pressable, StyleSheet, Text, type DimensionValue } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
@@ -39,7 +45,8 @@ export function TimedTaskBlock({
   const lifted = useSharedValue(0);
   const done = task.status === 'completed';
   const marker = priorityMarker(task.priority);
-  const label = `${marker ? `${marker} ` : ''}${task.title}`;
+  const repeats = taskRepeats(task);
+  const label = `${marker ? `${marker} ` : ''}${task.title}${repeats ? ` ${REPEAT_MARKER}` : ''}`;
   const dueLabel = formatPlainTime(task.dueTime!);
 
   const commitMove = (translationPx: number) => {
@@ -101,7 +108,7 @@ export function TimedTaskBlock({
       </Pressable>
       <GestureDetector gesture={movePan}>
         <Pressable
-          accessibilityLabel={`${task.title}, due ${dueLabel}`}
+          accessibilityLabel={`${task.title}, due ${dueLabel}${repeats ? ', repeats' : ''}`}
           accessibilityRole="button"
           hitSlop={4}
           onPress={onPress}

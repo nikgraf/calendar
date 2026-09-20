@@ -7,6 +7,7 @@ import {
   type PlacedSpan,
   taskChipLabel,
   type TaskRecord,
+  taskRepeats,
 } from '@calendar/core';
 import type { CSSProperties } from 'react';
 import { chipTextColor, type ColorLookup } from './colors.ts';
@@ -65,10 +66,15 @@ export function AllDayLane({
             if (task) {
               const done = task.status === 'completed';
               const overdue = overdueKeys.has(span.id);
-              const label = taskChipLabel(task, { overdue });
+              const repeats = taskRepeats(task);
+              const label = taskChipLabel(task, { overdue, repeats });
+              const facts = [
+                ...(overdue ? [overdueLabel(task, today)] : []),
+                ...(repeats ? ['repeats'] : []),
+              ];
               return (
                 <div
-                  aria-label={overdue ? `${task.title}, ${overdueLabel(task, today)}` : undefined}
+                  aria-label={facts.length > 0 ? `${task.title}, ${facts.join(', ')}` : undefined}
                   className={`absolute flex cursor-pointer items-center gap-1 truncate rounded border border-neutral-300 bg-neutral-50 px-1 text-xs leading-5 ${
                     overdue ? 'text-red-600' : 'text-neutral-700'
                   } ${done ? 'opacity-50' : ''}`}

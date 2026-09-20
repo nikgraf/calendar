@@ -7,6 +7,7 @@ import {
   overdueLabel,
   taskChipLabel,
   type TaskRecord,
+  taskRepeats,
 } from '@calendar/core';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { chipTextColor, palette } from './theme.ts';
@@ -70,6 +71,11 @@ export function AllDayColumn({
       {visibleTasks.map((task) => {
         const done = task.status === 'completed';
         const overdue = overdueKeys.has(calendarTaskKey(task));
+        const repeats = taskRepeats(task);
+        const facts = [
+          ...(overdue ? [overdueLabel(task, today)] : []),
+          ...(repeats ? ['repeats'] : []),
+        ];
         const listColor = listColorOf(task);
         return (
           <View
@@ -100,7 +106,7 @@ export function AllDayColumn({
             </Pressable>
             <Pressable
               accessibilityLabel={
-                overdue ? `${task.title}, ${overdueLabel(task, today)}` : undefined
+                facts.length > 0 ? `${task.title}, ${facts.join(', ')}` : undefined
               }
               hitSlop={4}
               onPress={() => onTaskPress(task)}
@@ -117,7 +123,7 @@ export function AllDayColumn({
                   done && styles.taskTextDone,
                 ]}
               >
-                {taskChipLabel(task, { overdue })}
+                {taskChipLabel(task, { overdue, repeats })}
               </Text>
             </Pressable>
           </View>

@@ -964,6 +964,10 @@ describe('calendar desktop e2e', () => {
     const { cdp } = app;
     // The chip renders in the all-day lane with the checkbox leading.
     const checkbox = await cdp.locate('[title="Pay rent"] button');
+    // Google tasks never repeat, so no repeat marker.
+    expect(
+      await cdp.eval<string>(`document.querySelector('[title="Pay rent"]')?.textContent ?? ''`),
+    ).not.toContain('\u21bb');
     await cdp.click(checkbox.x, checkbox.y);
 
     await cdp.waitFor(

@@ -12,6 +12,7 @@ import {
   partitionCalendarTasks,
   taskChipLabel,
   type TaskRecord,
+  taskRepeats,
   Temporal,
 } from '@calendar/core';
 import { chipTextColor, type ColorLookup } from './colors.ts';
@@ -143,7 +144,8 @@ export function MonthView({
                       }
                     >
                       <span className={done ? 'line-through' : ''}>
-                        {done ? '☑' : '☐'} {taskChipLabel(task, { overdue: isOverdue })}
+                        {done ? '☑' : '☐'}{' '}
+                        {taskChipLabel(task, { overdue: isOverdue, repeats: taskRepeats(task) })}
                       </span>
                     </span>
                   );

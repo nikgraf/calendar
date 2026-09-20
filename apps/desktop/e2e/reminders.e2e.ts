@@ -183,6 +183,13 @@ describe('Apple Reminders UI', () => {
     );
     expect(label).toContain('!!! Call mom');
     expect(label).not.toContain('14:00');
+    // A weekly reminder carries the repeat marker; a one-off does not.
+    expect(label).toContain('\u21bb');
+    expect(
+      await cdp.eval<string>(
+        `document.querySelector('[data-testid="timed-task-ek-rem-ro-timed"]')?.textContent ?? ''`,
+      ),
+    ).not.toContain('\u21bb');
     const tooltip = await cdp.eval<string>(
       `document.querySelector('[data-testid="timed-task-ek-rem-1"]')?.getAttribute('title') ?? ''`,
     );
