@@ -20,11 +20,14 @@ tags:
     commands:
       # Reminders must be connected too (the CI simulator's grant is
       # pre-seeded; flows run in no particular order, so connect here
-      # when 10 has not run yet).
+      # when 10 has not run yet — and remove the account again at the
+      # end, since 10 expects to make the initial connection itself).
+      - evalScript: ${output.connectedReminders = false}
       - runFlow:
           when:
             notVisible: 'Reminders.*'
           commands:
+            - evalScript: ${output.connectedReminders = true}
             - tapOn: 'Cancel'
             - runFlow: ../common/open-settings.yaml
             - tapOn:
@@ -55,13 +58,15 @@ tags:
       - extendedWaitUntil:
           notVisible: 'New Task'
           timeout: 20000
+      # The block's label is "<title>, due <time>"; the localized time's
+      # spacing is not worth pinning (flow 10 matches it the same way).
       - extendedWaitUntil:
-          visible: 'Solunivo e2e convert, due 9:00 AM'
+          visible: 'Solunivo e2e convert, due .*'
           timeout: 10000
 
       # Reminder → Google list: the form flips to the Task form as soon
       # as the list is picked; Save asks what the move drops (the time).
-      - tapOn: 'Solunivo e2e convert, due 9:00 AM'
+      - tapOn: 'Solunivo e2e convert, due .*'
       - assertVisible: 'Edit Reminder'
       - tapOn: 'Mock Tasks'
       - assertVisible: 'Edit Task'
@@ -110,6 +115,19 @@ tags:
       - extendedWaitUntil:
           notVisible: 'Solunivo e2e convert'
           timeout: 10000
+      # Undo the connection this flow made, like 15 does for Apple Calendar.
+      - runFlow:
+          when:
+            true: ${output.connectedReminders === true}
+          commands:
+            - runFlow: ../common/open-settings.yaml
+            - tapOn:
+                id: 'remove-account-apple-reminders'
+            - extendedWaitUntil:
+                notVisible: '^Apple Reminders$'
+                timeout: 20000
+            - tapOn: 'Done'
+            - assertVisible: 'Today'
 # No fixture account: leave the sheet as we found it (keyed on the sheet,
 # see 08).
 - runFlow:
