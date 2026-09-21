@@ -364,7 +364,16 @@ design decisions it settled.
       task gets a new id and `parent`/`position` (unmodeled) do not
       follow. Read-only Reminders lists are never offered as a target.
       Desktop e2e (`taskConvert.e2e.ts`) seeds a Google account beside the
-      Reminders fixture for the first time.
+      Reminders fixture for the first time. Follow-up in the same PR: the
+      in-process fake Google API (`testing/fakeGoogle.ts`) became an app
+      fixture (`testing/googleFixture.ts`; desktop `CALENDAR_GOOGLE=fixture`,
+      iOS `EXPO_PUBLIC_CALENDAR_GOOGLE=fixture`, on for the whole CI Maestro
+      batch), so `taskConvertGoogle.e2e.ts` and `16-task-convert.yaml`
+      watch the queued create push and the temp id become a server id —
+      and the Google halves of iOS flows 07/08 run for the first time.
+      Decided: no HTTP mock server; the fake sits behind effect's
+      HttpClient and a pre-filled memory TokenStore keeps the real
+      TokenManager and request core on the path.
 
 ## Apple Calendar
 

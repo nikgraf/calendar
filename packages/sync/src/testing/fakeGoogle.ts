@@ -71,6 +71,12 @@ const wire = (entry: StoredTask): GcalTask => ({
 
 export interface FakeGoogleOptions {
   readonly calendars: ReadonlyArray<GcalCalendarListEntry>;
+  /**
+   * Stamp task writes with the wall clock instead of `now`. An app running
+   * against the fake pulls with a device-time `updatedMin` watermark, which
+   * a frozen 2026-08-24 stamp would never clear.
+   */
+  readonly live?: boolean;
   /** Events per list page (Google's cap is 2,500); small values exercise pagination. */
   readonly pageSize?: number;
   /** Saved contacts (people.connections); otherContacts is always empty. */
@@ -91,11 +97,13 @@ export class FakeGoogle {
   private readonly expiredBelow = new Map<string, number>();
   private readonly tasks = new Map<string, Map<string, StoredTask>>();
   private taskSeq = 0;
+  private readonly live: boolean;
   /** The fake's clock for task `updated` stamps; advance it between passes. */
   now = Date.parse('2026-08-24T10:00:00.000Z');
 
   constructor(options: FakeGoogleOptions) {
     this.calendars = [...options.calendars];
+    this.live = options.live ?? false;
     this.pageSize = options.pageSize ?? 2500;
     this.people = [...(options.people ?? [])];
     this.taskLists = [...(options.taskLists ?? [])];
@@ -125,7 +133,7 @@ export class FakeGoogle {
   }
 
   putTask(listId: string, task: GcalTask): void {
-    this.tasksOf(listId).set(task.id, { task, updatedAt: this.now });
+    this.tasksOf(listId).set(task.id, { task, updatedAt: this.stamp() });
   }
 
   deleteTaskServerSide(listId: string, taskId: string): void {
@@ -133,7 +141,7 @@ export class FakeGoogle {
     if (existing) {
       this.tasksOf(listId).set(taskId, {
         task: { ...existing.task, deleted: true },
-        updatedAt: this.now,
+        updatedAt: this.stamp(),
       });
     }
   }
@@ -167,6 +175,14 @@ export class FakeGoogle {
     return this.tasksOf(listId).get(taskId)?.task;
   }
 
+  /** The fake as an HttpClient: the real request core and clients run on top. */
+  get httpLayer(): Layer.Layer<HttpClient.HttpClient> {
+    return Layer.succeed(
+      HttpClient.HttpClient,
+      HttpClient.make((request) => Effect.sync(() => this.handle(request))),
+    );
+  }
+
   /** HttpClient + a TokenManager that always has a token. */
   get layer(): Layer.Layer<HttpClient.HttpClient | TokenManager> {
     const tokens: TokenManagerShape = {
@@ -174,13 +190,7 @@ export class FakeGoogle {
       getAccessToken: () => Effect.succeed('fake-token'),
       invalidateAccessToken: () => Effect.void,
     };
-    return Layer.mergeAll(
-      Layer.succeed(
-        HttpClient.HttpClient,
-        HttpClient.make((request) => Effect.sync(() => this.handle(request))),
-      ),
-      Layer.succeed(TokenManager, tokens),
-    );
+    return Layer.mergeAll(this.httpLayer, Layer.succeed(TokenManager, tokens));
   }
 
   // ---- routing ----
@@ -379,7 +389,7 @@ export class FakeGoogle {
       this.taskSeq += 1;
       const id = `task-${this.taskSeq}`;
       const task: GcalTask = { status: 'needsAction', ...(body as Partial<GcalTask>), id };
-      store.set(id, { task, updatedAt: this.now });
+      store.set(id, { task, updatedAt: this.stamp() });
       return reply(200, wire(store.get(id)!));
     }
     if (taskId !== undefined) {
@@ -389,7 +399,7 @@ export class FakeGoogle {
       }
       if (request.method === 'PATCH') {
         const patched: GcalTask = { ...existing.task, ...(body as Partial<GcalTask>), id: taskId };
-        store.set(taskId, { task: patched, updatedAt: this.now });
+        store.set(taskId, { task: patched, updatedAt: this.stamp() });
         return reply(200, wire(store.get(taskId)!));
       }
       if (request.method === 'DELETE') {
@@ -401,6 +411,10 @@ export class FakeGoogle {
   }
 
   // ---- helpers ----
+
+  private stamp(): number {
+    return this.live ? Date.now() : this.now;
+  }
 
   private bump(calendarId: string): number {
     const next = (this.versions.get(calendarId) ?? 0) + 1;

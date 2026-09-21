@@ -114,7 +114,11 @@ powers quick-add parsing, find-a-time, and dictation.
   must never be replaced by a real EventKit sync, no bridge may trigger a
   TCC prompt or read a developer's data, and no run may depend on
   MapKit's network. Apple events come from a fixture
-  (`CALENDAR_APPLE_CALENDAR=fixture`), since nothing stores them.
+  (`CALENDAR_APPLE_CALENDAR=fixture`), since nothing stores them. Google
+  is real by default (a seeded account has no token, so writes stay
+  queued); `CALENDAR_GOOGLE=fixture` (desktop) /
+  `EXPO_PUBLIC_CALENDAR_GOOGLE=fixture` (iOS Metro, on in CI) swaps in the
+  in-process fake API with a signed-in fixture account.
 - Event coordinates are only valid while `geo.source` matches the
   location text (`geoMatches`); every local write goes through
   `withConsistentGeo`, and an update PATCH touches the private geo keys

@@ -252,6 +252,10 @@ jobs:
         working-directory: apps/ios
         env:
           EXPO_RUNTIME_VERSION_PIN: ${{ steps.fingerprint.outputs.hash }}
+          # The in-process fake Google API with a signed-in fixture account,
+          # so the Google halves of the flows (create event, task lane, task
+          # convert) run without a real account. Inlined at bundle time.
+          EXPO_PUBLIC_CALENDAR_GOOGLE: fixture
         run: |
           nohup pnpm exec expo start --port 8081 > "$RUNNER_TEMP/metro.log" 2>&1 &
           for _ in $(seq 1 60); do
