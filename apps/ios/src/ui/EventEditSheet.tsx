@@ -75,56 +75,62 @@ export function EventEditSheet({
       presentationStyle="overFullScreen"
       visible
     >
-      {/* overFullScreen draws under the status bar; inset it ourselves. */}
-      <SafeAreaView style={styles.container}>
-        <View style={styles.header}>
-          <Pressable onPress={onClose}>
-            <Text style={styles.cancel}>Cancel</Text>
-          </Pressable>
-          <Text style={styles.title}>
-            {mode === 'birthday'
-              ? 'Birthday'
-              : mode === 'task'
-                ? task
-                  ? taskModel.provider === 'apple'
-                    ? 'Edit Reminder'
-                    : 'Edit Task'
-                  : 'New Task'
-                : eventModel.existing
-                  ? 'Edit Event'
-                  : 'New Event'}
-          </Text>
-          {mode === 'birthday' ||
-          (mode === 'task' && taskModel.readOnly) ||
-          (mode === 'event' && eventModel.readOnly) ? (
-            <View />
-          ) : (
-            <Pressable
-              onPress={() => void (mode === 'task' ? taskModel.save() : eventModel.save())}
-              testID="event-save"
-            >
-              <Text style={styles.save}>Save</Text>
+      {/* overFullScreen draws under the status bar; inset it ourselves.
+          Only the header: the form's ScrollView runs to the bottom edge
+          and pads its own content past the home indicator, so its last
+          control is never clipped by a bottom inset while still reporting
+          an on-screen frame — a tap there used to land on nothing (CI
+          flows 08/16). */}
+      <View style={styles.container}>
+        <SafeAreaView>
+          <View style={styles.header}>
+            <Pressable onPress={onClose}>
+              <Text style={styles.cancel}>Cancel</Text>
             </Pressable>
-          )}
-        </View>
-
-        {!eventModel.existing && !task && !birthday ? (
-          <View style={styles.modeRow}>
-            {(['event', 'task'] as const).map((option) => (
+            <Text style={styles.title}>
+              {mode === 'birthday'
+                ? 'Birthday'
+                : mode === 'task'
+                  ? task
+                    ? taskModel.provider === 'apple'
+                      ? 'Edit Reminder'
+                      : 'Edit Task'
+                    : 'New Task'
+                  : eventModel.existing
+                    ? 'Edit Event'
+                    : 'New Event'}
+            </Text>
+            {mode === 'birthday' ||
+            (mode === 'task' && taskModel.readOnly) ||
+            (mode === 'event' && eventModel.readOnly) ? (
+              <View />
+            ) : (
               <Pressable
-                key={option}
-                onPress={() => setMode(option)}
-                style={[styles.scopeChip, mode === option && styles.scopeChipActive]}
-                testID={`mode-${option}`}
+                onPress={() => void (mode === 'task' ? taskModel.save() : eventModel.save())}
+                testID="event-save"
               >
-                <Text style={[styles.scopeLabel, mode === option && styles.scopeLabelActive]}>
-                  {option === 'event' ? 'Event' : 'Task'}
-                </Text>
+                <Text style={styles.save}>Save</Text>
               </Pressable>
-            ))}
+            )}
           </View>
-        ) : null}
 
+          {!eventModel.existing && !task && !birthday ? (
+            <View style={styles.modeRow}>
+              {(['event', 'task'] as const).map((option) => (
+                <Pressable
+                  key={option}
+                  onPress={() => setMode(option)}
+                  style={[styles.scopeChip, mode === option && styles.scopeChipActive]}
+                  testID={`mode-${option}`}
+                >
+                  <Text style={[styles.scopeLabel, mode === option && styles.scopeLabelActive]}>
+                    {option === 'event' ? 'Event' : 'Task'}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+          ) : null}
+        </SafeAreaView>
         {mode === 'birthday' && birthday ? (
           <BirthdayDetail occurrence={birthday} timeZone={timeZone} />
         ) : mode === 'task' ? (
@@ -140,7 +146,7 @@ export function EventEditSheet({
         ) : (
           <EventEditForm model={eventModel} />
         )}
-      </SafeAreaView>
+      </View>
     </Modal>
   );
 }
