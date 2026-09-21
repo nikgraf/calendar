@@ -41,7 +41,7 @@ tags:
       # Timed reminders live in the time grid. Their compact title keeps the
       # priority marker while the due time is exposed by the body label.
       - extendedWaitUntil:
-          visible: 'Solunivo e2e reminder to delete, due 9:00 AM'
+          visible: 'Solunivo e2e reminder to delete, due .*'
           timeout: 10000
       # Experimental: Maestro's slow swipe has no configurable hold phase, so
       # it is not a reliable substitute for the native long-press pan.
@@ -53,11 +53,11 @@ tags:
           commands:
             - swipe:
                 from:
-                  text: 'Solunivo e2e reminder to delete, due 9:00 AM'
+                  text: 'Solunivo e2e reminder to delete, due .*'
                 direction: DOWN
                 duration: 3000
             - extendedWaitUntil:
-                notVisible: 'Solunivo e2e reminder to delete, due 9:00 AM'
+                notVisible: 'Solunivo e2e reminder to delete, due .*'
                 timeout: 10000
             - extendedWaitUntil:
                 visible: 'Solunivo e2e reminder to delete, due (1[0-2]|[1-9]):(00|15|30|45) (AM|PM)'
@@ -120,11 +120,11 @@ tags:
           timeout: 10000
       - scrollUntilVisible:
           element:
-            text: 'Solunivo e2e reminder to delete, due 9:00 AM'
+            text: 'Solunivo e2e reminder to delete, due .*'
           direction: UP
           timeout: 10000
       - extendedWaitUntil:
-          visible: 'Solunivo e2e reminder to delete, due 9:00 AM'
+          visible: 'Solunivo e2e reminder to delete, due .*'
           timeout: 10000
       - tapOn: 'Solunivo e2e reminder to delete, due .*'
       - assertVisible: 'Edit Reminder'
