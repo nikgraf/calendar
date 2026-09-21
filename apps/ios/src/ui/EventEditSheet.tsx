@@ -15,14 +15,18 @@ import { TaskEditForm } from './TaskEditForm.tsx';
 
 export type EditSeed = EventEditorSeed;
 
-/** A move that drops something (guests, the meeting link…) asks first. */
-const confirmMove = (summary: string): Promise<boolean> =>
-  new Promise((resolve) => {
-    Alert.alert('Move event?', summary, [
-      { onPress: () => resolve(false), style: 'cancel', text: 'Keep Here' },
-      { onPress: () => resolve(true), style: 'destructive', text: 'Move' },
-    ]);
-  });
+/** A move that drops something (guests, a due time…) asks first. */
+const confirmMoveOf =
+  (title: string) =>
+  (summary: string): Promise<boolean> =>
+    new Promise((resolve) => {
+      Alert.alert(title, summary, [
+        { onPress: () => resolve(false), style: 'cancel', text: 'Keep Here' },
+        { onPress: () => resolve(true), style: 'destructive', text: 'Move' },
+      ]);
+    });
+const confirmMove = confirmMoveOf('Move event?');
+const confirmTaskMove = confirmMoveOf('Move task?');
 
 /**
  * Modal shell for creating/editing events and tasks. The two forms live in
@@ -53,6 +57,7 @@ export function EventEditSheet({
     birthday ? 'birthday' : task ? 'task' : 'event',
   );
   const taskModel = useTaskEditorModel({
+    confirmMove: confirmTaskMove,
     onClose,
     seed: {
       existing: task,
@@ -124,8 +129,9 @@ export function EventEditSheet({
           <BirthdayDetail occurrence={birthday} timeZone={timeZone} />
         ) : mode === 'task' ? (
           // The selected list's provider picks the form: a Reminders list
-          // exposes time/priority/alert/repeat/URL and can move; a Google
-          // list gets the plain title/date/notes form.
+          // exposes time/priority/alert/repeat/URL; a Google list gets the
+          // plain title/date/notes form. Either list can be in another
+          // account or provider — Save then moves the task.
           taskModel.provider === 'apple' ? (
             <ReminderEditForm task={task} taskModel={taskModel} />
           ) : (

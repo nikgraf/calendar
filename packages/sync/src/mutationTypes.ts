@@ -11,7 +11,7 @@ import type {
   TaskRecurrence,
 } from '@calendar/core';
 import type { AppleCalendarError } from '@calendar/apple-calendar';
-import type { MoveEventParams, MoveLoss } from '@calendar/core';
+import type { MoveEventParams, MoveLoss, MoveTaskParams } from '@calendar/core';
 import type { RemindersError } from '@calendar/reminders';
 import { Data, type Effect } from 'effect';
 import type { SqlError } from 'effect/unstable/sql/SqlError';
@@ -184,6 +184,18 @@ export interface EventMutationsShape {
    * target followed by a delete of the source.
    */
   readonly moveEvent: (params: MoveEventParams) => Effect.Effect<void, MoveError>;
+  /**
+   * Moves a task to another list: EventKit's own list change between
+   * Reminders lists (identity kept), otherwise a create in the target
+   * from `draft` followed by a delete of the source. Completion follows
+   * the task. Returns the record now in the target list.
+   */
+  readonly moveTask: (
+    params: MoveTaskParams,
+  ) => Effect.Effect<
+    TaskRecord,
+    SqlError | TaskListNotFoundError | TaskNotFoundError | TaskProviderError
+  >;
   /** What moveEvent with these params would drop (see core moveLoss). */
   readonly previewMove: (params: MoveEventParams) => Effect.Effect<MoveLoss, MoveError>;
   /** Drains due pending ops (serialized); safe to call concurrently. */

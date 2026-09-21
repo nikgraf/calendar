@@ -14,6 +14,7 @@ import {
   meetingUrl,
   type MoveEventParams,
   moveLoss,
+  type MoveTaskParams,
   normalizeHexColor,
   PendingOp,
   remainingRecurrence,
@@ -43,6 +44,7 @@ import {
   NotOrganizerError,
   RecurringEditUnsupportedError,
   retryDelayMs,
+  TaskNotFoundError,
   UnsupportedForProviderError,
   type UpdateEventParams,
 } from './mutationTypes.ts';
@@ -400,7 +402,7 @@ const make: Effect.Effect<
       ),
   };
 
-  const shape: Omit<EventMutationsShape, 'moveEvent' | 'previewMove'> = {
+  const shape: Omit<EventMutationsShape, 'moveEvent' | 'moveTask' | 'previewMove'> = {
     ...taskMutations,
     createEvent: (draft) =>
       Effect.gen(function* () {
@@ -1101,6 +1103,92 @@ const make: Effect.Effect<
       return moveLoss(source.master, route, source.modifiedOccurrences);
     });
 
+  /**
+   * Moving a task: between two Reminders lists EventKit changes the list
+   * in place and the identifier survives; every other route creates the
+   * task in the target from the draft and then deletes the source, so a
+   * failure between the two leaves a duplicate, never a lost task. The
+   * draft, not the source row, is what gets written: the editor showed
+   * the target provider's form, and its fields are the user's intent.
+   * Completion follows the task.
+   */
+  const moveTask = (params: MoveTaskParams) =>
+    Effect.gen(function* () {
+      const { accountId, draft, target, taskId, taskListId } = params;
+      const source = yield* taskRepo.get(accountId, taskListId, taskId);
+      if (!source) {
+        return yield* Effect.fail(new TaskNotFoundError({ taskId }));
+      }
+      if (target.accountId === accountId && target.taskListId === taskListId) {
+        return source;
+      }
+      const sourceProvider = yield* providerOf(accountId);
+      const targetProvider = yield* providerOf(target.accountId);
+      if (sourceProvider === 'apple' && targetProvider === 'apple') {
+        // One EventKit store: the reminder keeps its identifier; the draft
+        // replaces its fields, except a repeat rule the app cannot express.
+        yield* reminders.updateTask({
+          accountId,
+          changes: {
+            alarms: draft.alarms ?? null,
+            dueDate: draft.dueDate,
+            dueTime: draft.dueTime ?? null,
+            moveToListId: target.taskListId,
+            notes: draft.notes ?? '',
+            priority: draft.priority ?? null,
+            ...(source.recurrenceUnsupported ? {} : { recurrence: draft.recurrence ?? null }),
+            title: draft.title,
+            url: draft.url ?? null,
+          },
+          taskId,
+          taskListId,
+        });
+        const moved = yield* taskRepo.get(accountId, target.taskListId, taskId);
+        return moved ?? source;
+      }
+      const createParams = { ...draft, accountId: target.accountId, taskListId: target.taskListId };
+      const createIn = (provider: 'apple' | 'google') =>
+        Effect.gen(function* () {
+          const created =
+            provider === 'apple'
+              ? yield* reminders.createTask(createParams)
+              : yield* Effect.andThen(
+                  rejectReminderFields(draft),
+                  googleTasks.createTask(createParams),
+                );
+          if (source.status === 'completed') {
+            const complete = {
+              accountId: created.accountId,
+              status: 'completed' as const,
+              taskId: created.id,
+              taskListId: created.listId,
+            };
+            yield* provider === 'apple'
+              ? reminders.completeTask(complete)
+              : googleTasks.completeTask(complete);
+            return { ...created, status: 'completed' as const };
+          }
+          return created;
+        });
+      const deleteSource = { accountId, taskId, taskListId };
+      const deleteFrom = (provider: 'apple' | 'google') =>
+        provider === 'apple'
+          ? reminders.deleteTask(deleteSource)
+          : googleTasks.deleteTask(deleteSource);
+      // Google → Google: both queue writes in one transaction.
+      if (sourceProvider === 'google' && targetProvider === 'google') {
+        return yield* transactional(Effect.tap(createIn('google'), () => deleteFrom('google')));
+      }
+      if (targetProvider === 'google') {
+        const created = yield* transactional(createIn('google'));
+        yield* deleteFrom('apple');
+        return created;
+      }
+      const created = yield* createIn('apple');
+      yield* transactional(deleteFrom('google'));
+      return created;
+    });
+
   /** Events dispatch like tasks: by the account's provider. */
   const byProvider =
     <P extends { readonly accountId: string }, A, E1, E2>(
@@ -1118,6 +1206,7 @@ const make: Effect.Effect<
     deleteEvent: byProvider(apple.deleteEvent, google.deleteEvent),
     deleteRecurring: byProvider(apple.deleteRecurring, google.deleteRecurring),
     moveEvent,
+    moveTask,
     previewMove,
     respondToEvent: byProvider(apple.respondToEvent, google.respondToEvent),
     setCalendarColor: byProvider(apple.setCalendarColor, google.setCalendarColor),

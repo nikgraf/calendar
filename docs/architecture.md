@@ -123,6 +123,14 @@ Rules that keep the queue correct:
   its real id from the start. Reminders-only fields (time, priority, url,
   alarms, recurrence, `moveToListId`) on a Google list fail with
   `UnsupportedForProviderError`.
+- **Task moves** (`moveTask`, the task twin of `moveEvent`): between two
+  Reminders lists EventKit changes the list in place; every other route —
+  Reminders ↔ Google and Google → another Google list or account — creates
+  the task in the target from the editor's draft and then deletes the
+  source, so a failure in between leaves a duplicate, never a lost task.
+  Completion follows the task. What a route drops is computed in core
+  (`taskMoveLoss`) from the source record and confirmed in the editor
+  before anything is written.
 - **Task creates are not idempotent**: Google assigns task ids
   server-side, so a `createTask` writes a temp `local-…` row that is
   swapped for the server task on success (`rewriteEventId` renames the

@@ -62,10 +62,10 @@ export const isLossy = (loss: MoveLoss): boolean =>
   loss.modifiedOccurrences > 0 ||
   loss.unsupportedRuleParts.length > 0;
 
-const plural = (count: number, one: string, many: string): string =>
+export const plural = (count: number, one: string, many: string): string =>
   `${count} ${count === 1 ? one : many}`;
 
-const joinList = (items: ReadonlyArray<string>): string =>
+export const joinList = (items: ReadonlyArray<string>): string =>
   items.length <= 1 ? (items[0] ?? '') : `${items.slice(0, -1).join(', ')} and ${items.at(-1)}`;
 
 /** One sentence for the move confirmation, or null when nothing is lost. */

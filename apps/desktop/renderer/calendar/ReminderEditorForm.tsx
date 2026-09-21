@@ -1,11 +1,14 @@
 import {
   REMINDER_ALARM_OPTIONS,
   REMINDER_PRIORITY_OPTIONS,
+  type useMoveConfirmation,
   type useTaskEditorModel,
 } from '@calendar/app-state';
 import type { TaskRecord } from '@calendar/core';
+import { MoveConfirm } from './MoveConfirm.tsx';
 import { RepeatRuleFields } from './RepeatRuleFields.tsx';
 import { FIELD_CLASS, LABEL_CLASS } from './taskEditorOptions.ts';
+import { TaskListSelect } from './TaskListSelect.tsx';
 
 const segment = (active: boolean) =>
   `rounded-md px-2 py-1 text-xs font-medium ${
@@ -19,10 +22,12 @@ const segment = (active: boolean) =>
  * Google form so the shell and the e2e suite stay provider-agnostic.
  */
 export function ReminderEditorForm({
+  moveConfirmation,
   onClose,
   task,
   taskModel,
 }: {
+  moveConfirmation: ReturnType<typeof useMoveConfirmation>;
   onClose: () => void;
   task: TaskRecord | undefined;
   taskModel: ReturnType<typeof useTaskEditorModel>;
@@ -49,23 +54,7 @@ export function ReminderEditorForm({
         placeholder="Title"
         value={taskModel.title}
       />
-      <label className={LABEL_CLASS}>
-        List
-        <select
-          aria-label="Reminders list"
-          className={`${FIELD_CLASS} mt-1`}
-          // Reminders can move between lists (EKReminder.calendar is settable).
-          disabled={Boolean(task) && !taskModel.canMoveList}
-          onChange={(input) => taskModel.setListKey(input.target.value)}
-          value={taskModel.listKey}
-        >
-          {taskModel.taskLists.map((list) => (
-            <option key={`${list.accountId}:${list.id}`} value={`${list.accountId}:${list.id}`}>
-              {list.title}
-            </option>
-          ))}
-        </select>
-      </label>
+      <TaskListSelect disabled={Boolean(task) && !taskModel.canMoveList} taskModel={taskModel} />
       <div className="flex gap-3">
         <label className={`${LABEL_CLASS} flex-1`}>
           Due
@@ -162,6 +151,7 @@ export function ReminderEditorForm({
           value={taskModel.notes}
         />
       </label>
+      <MoveConfirm moveConfirmation={moveConfirmation} />
       <div className="mt-2 flex items-center justify-between">
         {task && !taskModel.readOnly ? (
           <button
@@ -185,6 +175,7 @@ export function ReminderEditorForm({
           {taskModel.readOnly ? null : (
             <button
               className="rounded-lg bg-blue-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-blue-500"
+              disabled={moveConfirmation.pendingSummary !== null}
               onClick={() => void taskModel.save()}
               type="button"
             >

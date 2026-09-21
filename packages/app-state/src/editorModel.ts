@@ -22,6 +22,7 @@ import {
   type RecurrenceFrequency,
   type RecurringScope,
   type RsvpResponse,
+  type TaskListInfo,
   type Temporal,
 } from '@calendar/core';
 import { useCallback, useState } from 'react';
@@ -91,13 +92,26 @@ export const seedTimeFields = (seed: EventEditorSeed): { endTime: string; startT
 export const calendarGroups = (
   calendars: ReadonlyArray<CalendarInfo>,
   labelOf: (calendar: CalendarInfo) => string,
-): ReadonlyArray<{ readonly calendars: ReadonlyArray<CalendarInfo>; readonly label: string }> => {
-  const groups = new Map<string, Array<CalendarInfo>>();
-  for (const calendar of calendars) {
-    const label = labelOf(calendar);
-    groups.set(label, [...(groups.get(label) ?? []), calendar]);
+): ReadonlyArray<{ readonly calendars: ReadonlyArray<CalendarInfo>; readonly label: string }> =>
+  groupsBy(calendars, labelOf).map(({ items, label }) => ({ calendars: items, label }));
+
+/** Task lists bucketed for the task editor's picker, per account, in first-appearance order. */
+export const taskListGroups = (
+  lists: ReadonlyArray<TaskListInfo>,
+  labelOf: (list: TaskListInfo) => string,
+): ReadonlyArray<{ readonly label: string; readonly lists: ReadonlyArray<TaskListInfo> }> =>
+  groupsBy(lists, labelOf).map(({ items, label }) => ({ label, lists: items }));
+
+const groupsBy = <T>(
+  items: ReadonlyArray<T>,
+  labelOf: (item: T) => string,
+): ReadonlyArray<{ readonly items: ReadonlyArray<T>; readonly label: string }> => {
+  const groups = new Map<string, Array<T>>();
+  for (const item of items) {
+    const label = labelOf(item);
+    groups.set(label, [...(groups.get(label) ?? []), item]);
   }
-  return [...groups].map(([label, entries]) => ({ calendars: entries, label }));
+  return [...groups].map(([label, entries]) => ({ items: entries, label }));
 };
 
 const isWritable = (calendar: CalendarInfo | undefined): boolean =>

@@ -106,7 +106,7 @@ describe.skipIf(!REAL)('Apple Reminders through the real helper', () => {
     await cdp.clickButtonWithText('Task');
     await cdp.waitFor(`document.body.textContent.includes('New task')`);
     // Only Apple lists exist, so this is the Reminders form.
-    await cdp.waitFor(`!!document.querySelector('select[aria-label="Reminders list"]')`);
+    await cdp.waitFor(`!!document.querySelector('select[aria-label="Task list"]')`);
     await setTitle('Solunivo ci reminder');
     await cdp.eval(
       `[...document.querySelectorAll('[role="radio"]')].find(r => r.textContent.trim() === 'High').click()`,
@@ -175,7 +175,7 @@ describe.skipIf(!REAL)('Apple Reminders through the real helper', () => {
     await cdp.click(cell.x, cell.y);
     await cdp.waitFor(`document.body.textContent.includes('New event')`);
     await cdp.clickButtonWithText('Task');
-    await cdp.waitFor(`!!document.querySelector('select[aria-label="Reminders list"]')`);
+    await cdp.waitFor(`!!document.querySelector('select[aria-label="Task list"]')`);
     await setTitle('Solunivo ci weekends');
     await setSelect('Repeat', 'weekly');
     await pressWeekday('SA');

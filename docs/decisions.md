@@ -240,7 +240,8 @@ design decisions it settled.
       an unpushed create sends nothing. tasks.sync_status keeps the
       daily full-pass reconcile from eating unpushed local rows. Due
       date required (no task-list view yet); list fixed after create
-      (moving needs tasks.move).
+      (moving needs tasks.move) — superseded 2026-09-21 by the task
+      move below (copy-then-delete, no `tasks.move` needed).
 - [x] Tasks: detail sheet on chip tap — done as part of task
       create/edit/delete: the chip body opens the shared editor in task
       mode (notes, list, due, delete, open-in-Google via `webViewLink`).
@@ -335,6 +336,35 @@ design decisions it settled.
       TestFlight. The strict Maestro flow exercises the monthly path (its
       chips set rather than toggle, so it holds on any date); the
       real-helper desktop suite round-trips both rule kinds.
+
+- [x] Convert a Reminder ↔ Google Task — done (2026-09-21): the task
+      editor's list picker offers every writable list of every account,
+      grouped per account like the event editor's calendar picker, and
+      picking a list elsewhere moves the task on Save. Decisions: one
+      `moveTask` rpc mirroring `moveEvent` — Apple → Apple stays
+      EventKit's in-place list change (identifier kept); every other
+      route, Google → Google across lists or accounts included, creates
+      the task in the target and then deletes the source, so a failure in
+      between leaves a duplicate, never a lost task (Apple → Google:
+      queue the create in a transaction, then EventKit delete; Google →
+      Apple: EventKit create, then queue the delete; Google → Google: both
+      queue writes in one transaction). Unlike an event move the rpc
+      carries the _draft_: the editor flips to the target provider's form
+      the moment a list in the other provider is picked, so a Google task
+      can get a due time or priority on its way into Reminders, and the
+      form's values — not the source row — are what gets written.
+      Completion follows the task (a `completeTask` op queued behind the
+      create on the temp id, or `setCompleted` on the new reminder). The
+      loss preview is pure core (`taskMoveLoss` on the source record: due
+      time, alerts, priority, repeat rule incl. `recurrenceUnsupported`,
+      URL — only Apple → Google drops anything; the Google web link is
+      not carried, it points at the task being deleted) so no preview
+      rpc exists; the same `confirmMove` seam as events asks before
+      anything is written. Google → Google is not a server move: the
+      task gets a new id and `parent`/`position` (unmodeled) do not
+      follow. Read-only Reminders lists are never offered as a target.
+      Desktop e2e (`taskConvert.e2e.ts`) seeds a Google account beside the
+      Reminders fixture for the first time.
 
 ## Apple Calendar
 

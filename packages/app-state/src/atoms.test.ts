@@ -71,6 +71,7 @@ const makeStubClient = () => {
         return { pngBase64: 'png' };
       }),
     moveEvent: () => fail('not stubbed'),
+    moveTask: () => fail('not stubbed'),
     previewMove: () => fail('not stubbed'),
     removeAccount: () => Effect.void,
     resolveLocation: ({ location }) =>

@@ -16,6 +16,7 @@ export * from './format.ts';
 export * from './editor/attendees.ts';
 export * from './editor/eventDraft.ts';
 export * from './editor/moveLoss.ts';
+export * from './editor/taskMoveLoss.ts';
 export * from './geo/location.ts';
 export * from './gestures/swipeSnap.ts';
 export * from './gestures/wheelPan.ts';

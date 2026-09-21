@@ -1,17 +1,21 @@
-import type { useTaskEditorModel } from '@calendar/app-state';
+import type { useMoveConfirmation, useTaskEditorModel } from '@calendar/app-state';
 import type { TaskRecord } from '@calendar/core';
+import { MoveConfirm } from './MoveConfirm.tsx';
 import { FIELD_CLASS, LABEL_CLASS } from './taskEditorOptions.ts';
+import { TaskListSelect } from './TaskListSelect.tsx';
 
 /**
- * The Google Tasks form: title, due day, list (fixed after create — moving
- * needs tasks.move), notes. Extracted verbatim from EventEditor; the e2e
- * suite relies on the Title placeholder and the Delete/Cancel/Save labels.
+ * The Google Tasks form: title, due day, list, notes. Picking a list in
+ * another account or provider moves the task on Save. The e2e suite
+ * relies on the Title placeholder and the Delete/Cancel/Save labels.
  */
 export function TaskEditorForm({
+  moveConfirmation,
   onClose,
   task,
   taskModel,
 }: {
+  moveConfirmation: ReturnType<typeof useMoveConfirmation>;
   onClose: () => void;
   task: TaskRecord | undefined;
   taskModel: ReturnType<typeof useTaskEditorModel>;
@@ -39,22 +43,7 @@ export function TaskEditorForm({
           value={taskModel.dueDate}
         />
       </label>
-      <label className={LABEL_CLASS}>
-        List
-        <select
-          className={`${FIELD_CLASS} mt-1`}
-          // The list is fixed after create — moving needs tasks.move.
-          disabled={Boolean(task)}
-          onChange={(input) => taskModel.setListKey(input.target.value)}
-          value={taskModel.listKey}
-        >
-          {taskModel.taskLists.map((list) => (
-            <option key={`${list.accountId}:${list.id}`} value={`${list.accountId}:${list.id}`}>
-              {list.title}
-            </option>
-          ))}
-        </select>
-      </label>
+      <TaskListSelect disabled={Boolean(task) && !taskModel.canMoveList} taskModel={taskModel} />
       <label className={LABEL_CLASS}>
         Notes
         <textarea
@@ -73,6 +62,7 @@ export function TaskEditorForm({
           Open in Google Tasks
         </button>
       ) : null}
+      <MoveConfirm moveConfirmation={moveConfirmation} />
       <div className="mt-2 flex items-center justify-between">
         {task ? (
           <button
@@ -95,6 +85,7 @@ export function TaskEditorForm({
           </button>
           <button
             className="rounded-lg bg-blue-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-blue-500"
+            disabled={moveConfirmation.pendingSummary !== null}
             onClick={() => void taskModel.save()}
             type="button"
           >
