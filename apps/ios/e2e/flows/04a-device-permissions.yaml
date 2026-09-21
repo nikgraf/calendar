@@ -57,7 +57,11 @@ tags:
     timeout: 20000
 - assertVisible: '^Apple Reminders$'
 # Leave no Apple account so flow 10 still exercises the initial connection.
-- tapOn: 'Remove'
+# By id: with the fixture Google account signed in (CI's Metro), the sheet
+# has two Remove buttons and a text tap hit the Google one first (run
+# 35587137817).
+- tapOn:
+    id: 'remove-account-apple-reminders'
 - extendedWaitUntil:
     notVisible: '^Apple Reminders$'
     timeout: 20000
