@@ -17,6 +17,7 @@ const alice = { contactId: 'a', day: 4, displayName: 'Alice', month: 3, year: 19
 const immediateSink = () => {
   const shown: Array<string> = [];
   const sink: NotificationSinkShape = {
+    ensurePermission: () => Effect.succeed(true),
     kind: 'immediate',
     show: (planned) => Effect.sync(() => void shown.push(planned.key)),
   };

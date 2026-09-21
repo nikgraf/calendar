@@ -4,8 +4,8 @@ import {
   makeFakeContactsClient,
   type ContactsClientShape,
 } from '@calendar/contacts';
-import { Account, APPLE_REMINDERS_ACCOUNT_ID } from '@calendar/core';
-import { AccountRepo, runMigrations } from '@calendar/db';
+import { Account, APPLE_REMINDERS_ACCOUNT_ID, type BirthdayReminderSettings } from '@calendar/core';
+import { AccountRepo, DeviceSettingsRepo, runMigrations } from '@calendar/db';
 import {
   makeFakeRemindersClient,
   RemindersClient,
@@ -18,8 +18,10 @@ import { Effect, Layer } from 'effect';
 import { layer as reactivityLayer } from 'effect/unstable/reactivity/Reactivity';
 import { describe, vi } from 'vitest';
 import { commonBackendHandlers } from './backendHandlers.ts';
+import { BirthdayReminders } from './birthdayReminders.ts';
 import { DeviceContacts } from './deviceContacts.ts';
 import { SyncEngine } from './engine.ts';
+import { NotificationSink, type NotificationSinkShape } from './notificationSink.ts';
 
 // The exported handler map widens each method to all backend services.
 // These tests intentionally supply only the services these two paths use:
@@ -34,6 +36,13 @@ const connectContacts = commonBackendHandlers.connectContacts(undefined) as Effe
   unknown,
   ContactsClient | DeviceContacts
 >;
+
+const setBirthdayReminderSettings = (settings: BirthdayReminderSettings) =>
+  commonBackendHandlers.setBirthdayReminderSettings(settings) as Effect.Effect<
+    { readonly notificationsGranted: boolean },
+    unknown,
+    BirthdayReminders | DeviceSettingsRepo | NotificationSink
+  >;
 
 const remindersSetup = (client: RemindersClientShape) => {
   const syncAll = vi.fn(() => Effect.void);
@@ -198,4 +207,58 @@ describe('connectContacts', () => {
       }).pipe(Effect.provide(layer));
     });
   }
+});
+
+const birthdaySetup = (kind: 'immediate' | 'scheduled', granted = true) => {
+  const ensurePermission = vi.fn(() => Effect.succeed(granted));
+  const sink: NotificationSinkShape =
+    kind === 'immediate'
+      ? { ensurePermission, kind, show: () => Effect.void }
+      : { ensurePermission, kind, replaceSchedule: () => Effect.void };
+  const layer = Layer.mergeAll(
+    DeviceSettingsRepo.layer.pipe(
+      Layer.provideMerge(Layer.effectDiscard(runMigrations)),
+      Layer.provideMerge(SqliteClient.layer({ filename: ':memory:' })),
+      Layer.provideMerge(reactivityLayer),
+    ),
+    Layer.succeed(NotificationSink, sink),
+    Layer.succeed(BirthdayReminders, { run: () => Effect.void, start: () => Effect.void }),
+  );
+  return { ensurePermission, layer };
+};
+
+describe('setBirthdayReminderSettings', () => {
+  const on: BirthdayReminderSettings = { enabled: true, leadDays: [0], time: '09:00' };
+
+  it.effect('an immediate sink is asked once, as the reminders turn on', () => {
+    const { ensurePermission, layer } = birthdaySetup('immediate');
+    return Effect.gen(function* () {
+      expect(yield* setBirthdayReminderSettings(on)).toEqual({ notificationsGranted: true });
+      expect(yield* setBirthdayReminderSettings({ ...on, leadDays: [0, 1] })).toEqual({
+        notificationsGranted: true,
+      });
+      expect(ensurePermission).toHaveBeenCalledOnce();
+      yield* setBirthdayReminderSettings({ ...on, enabled: false });
+      yield* setBirthdayReminderSettings(on);
+      expect(ensurePermission).toHaveBeenCalledTimes(2);
+    }).pipe(Effect.provide(layer));
+  });
+
+  it.effect('a declined immediate sink reports notifications off', () => {
+    const { layer } = birthdaySetup('immediate', false);
+    return Effect.gen(function* () {
+      expect(yield* setBirthdayReminderSettings(on)).toEqual({ notificationsGranted: false });
+    }).pipe(Effect.provide(layer));
+  });
+
+  it.effect('a scheduled sink is asked on every enabled save', () => {
+    const { ensurePermission, layer } = birthdaySetup('scheduled');
+    return Effect.gen(function* () {
+      yield* setBirthdayReminderSettings(on);
+      yield* setBirthdayReminderSettings({ ...on, time: '08:00' });
+      expect(ensurePermission).toHaveBeenCalledTimes(2);
+      yield* setBirthdayReminderSettings({ ...on, enabled: false });
+      expect(ensurePermission).toHaveBeenCalledTimes(2);
+    }).pipe(Effect.provide(layer));
+  });
 });

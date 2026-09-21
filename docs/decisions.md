@@ -211,6 +211,11 @@ design decisions it settled.
       notifications while running (24 h catch-up, fired keys remembered),
       iOS pre-schedules the next ≤ 60 through expo-notifications and only
       reschedules when the plan changed; per-person overrides deferred.
+      Permission: iOS asks through expo-notifications on every enabled
+      save; Electron has no authorization query, so desktop asks only as
+      the reminders turn on, by posting a "Birthday reminders are on"
+      banner — 'show' means granted, 'failed' means denied (inline notice
+      in Settings), an unanswered prompt counts as granted after 60 s.
 
 ## Google Tasks
 

@@ -8,7 +8,46 @@ import { Effect, Layer } from 'effect';
  * brings the window back. CALENDAR_NOTIFICATIONS=off (the e2e harness)
  * swaps in the no-op sink so a seeded birthday never posts a banner.
  */
+
+/** A prompt left open this long counts as granted: unknown, so no nagging. */
+const PERMISSION_WAIT = '60 seconds';
+
+const focusWindow = () => {
+  const window = BrowserWindow.getAllWindows()[0];
+  window?.show();
+  window?.focus();
+};
+
+/**
+ * Electron has no query for the notification authorization: macOS asks
+ * on the first show(), then emits 'show' or 'failed'. So turning the
+ * reminders on posts a confirmation, which doubles as the permission ask.
+ */
+const ensurePermission = () =>
+  Effect.callback<boolean>((resume) => {
+    if (!Notification.isSupported()) {
+      resume(Effect.succeed(false));
+      return;
+    }
+    const notification = new Notification({
+      body: "You'll get a notification for contact birthdays while Solunivo is running.",
+      title: 'Birthday reminders are on',
+    });
+    notification.on('click', focusWindow);
+    notification.on('show', () => resume(Effect.succeed(true)));
+    notification.on('failed', (_event, error) =>
+      resume(
+        Effect.as(
+          Effect.logWarning('birthday reminders: notification permission check failed', { error }),
+          false,
+        ),
+      ),
+    );
+    notification.show();
+  }).pipe(Effect.timeoutOrElse({ duration: PERMISSION_WAIT, orElse: () => Effect.succeed(true) }));
+
 const desktopSink: NotificationSinkShape = {
+  ensurePermission,
   kind: 'immediate',
   show: (planned) =>
     Effect.sync(() => {
@@ -16,11 +55,11 @@ const desktopSink: NotificationSinkShape = {
         return;
       }
       const notification = new Notification({ body: planned.body, title: planned.title });
-      notification.on('click', () => {
-        const window = BrowserWindow.getAllWindows()[0];
-        window?.show();
-        window?.focus();
-      });
+      notification.on('click', focusWindow);
+      // Denied or revoked permission drops the banner; leave a trace.
+      notification.on('failed', (_event, error) =>
+        console.warn('birthday reminder notification failed', error),
+      );
       notification.show();
     }),
 };
