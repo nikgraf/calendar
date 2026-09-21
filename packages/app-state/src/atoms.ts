@@ -84,6 +84,7 @@ const MUTATION_REACTIVITY = {
   deleteTask: [TASKS_KEY],
   discardPendingOp: [OPS_KEY],
   moveEvent: [EVENTS_KEY, OPS_KEY],
+  moveTask: [TASKS_KEY, OPS_KEY],
   // Reads what a move would drop; changes nothing.
   previewMove: [],
   removeAccount: [ACCOUNTS_KEY, BIRTHDAYS_KEY, CALENDARS_KEY, EVENTS_KEY, TASKS_KEY, TASKLISTS_KEY],

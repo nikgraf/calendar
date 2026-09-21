@@ -115,6 +115,34 @@ export const MoveEventParams = Schema.Struct({
 });
 export type MoveEventParams = Schema.Schema.Type<typeof MoveEventParams>;
 
+/** A task as the editor submits it; the fields after `dueDate` are Reminders-only. */
+export const TaskDraft = Schema.Struct({
+  alarms: Schema.optional(Schema.Array(Schema.Number)),
+  dueDate: Schema.String,
+  dueTime: Schema.optional(Schema.String),
+  notes: Schema.optional(Schema.String),
+  priority: Schema.optional(TaskPriority),
+  recurrence: Schema.optional(TaskRecurrence),
+  title: Schema.String,
+  url: Schema.optional(Schema.String),
+});
+export type TaskDraft = Schema.Schema.Type<typeof TaskDraft>;
+
+/**
+ * Source task and the list it moves to. `draft` is what the target
+ * provider's form holds on Save: unlike an event move, the copy is
+ * written from it rather than from the source row, so a Google task can
+ * pick up a due time or priority on its way into Reminders.
+ */
+export const MoveTaskParams = Schema.Struct({
+  accountId: Schema.String,
+  draft: TaskDraft,
+  target: Schema.Struct({ accountId: Schema.String, taskListId: Schema.String }),
+  taskId: Schema.String,
+  taskListId: Schema.String,
+});
+export type MoveTaskParams = Schema.Schema.Type<typeof MoveTaskParams>;
+
 /** Wire format of a failed backend call. */
 export class BackendError extends Schema.Error<BackendError>('core/BackendError')({
   message: Schema.String,
@@ -287,6 +315,17 @@ export class AppBackendRpcs extends RpcGroup.make(
   Rpc.make('moveEvent', {
     error: BackendError,
     payload: MoveEventParams,
+  }),
+  /**
+   * Moves a task to another list, account or provider. Apple → Apple is
+   * EventKit's own list change (same identifier); every other route
+   * creates the task in the target from `draft` and deletes the source —
+   * check `taskMoveLoss` first and confirm what that drops.
+   */
+  Rpc.make('moveTask', {
+    error: BackendError,
+    payload: MoveTaskParams,
+    success: TaskRecord,
   }),
   /** What `moveEvent` with the same payload would drop (guests, link, modified occurrences…). */
   Rpc.make('previewMove', {

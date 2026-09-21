@@ -37,9 +37,10 @@ describe('offeredTaskLists', () => {
     ]);
   });
 
-  it('editing offers the own account only, never a read-only target', () => {
+  it('editing offers every writable list of every account, never a read-only target', () => {
     expect(offeredTaskLists(lists, reminderIn('apple-rw')).map((list) => list.id)).toEqual([
       'apple-rw',
+      'google',
     ]);
   });
 
@@ -47,6 +48,7 @@ describe('offeredTaskLists', () => {
     expect(offeredTaskLists(lists, reminderIn('apple-ro')).map((list) => list.id)).toEqual([
       'apple-rw',
       'apple-ro',
+      'google',
     ]);
   });
 });

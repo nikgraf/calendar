@@ -3,6 +3,7 @@ import type { TaskRecord } from '@calendar/core';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { Linking, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import { dateFromParts, sheetStyles as styles, toDateString } from './editSheetShared.ts';
+import { TaskListPicker } from './TaskListPicker.tsx';
 
 /** The task half of EventEditSheet (mode === 'task'). */
 export function TaskEditForm({
@@ -34,26 +35,7 @@ export function TaskEditForm({
         />
       </View>
 
-      <Text style={styles.label}>List</Text>
-      {taskModel.taskLists.map((list) => {
-        const key = `${list.accountId}:${list.id}`;
-        const selected = key === taskModel.listKey;
-        return (
-          <Pressable
-            // The list is fixed after create — moving needs tasks.move.
-            disabled={Boolean(task)}
-            key={key}
-            onPress={() => taskModel.setListKey(key)}
-            style={styles.calendarRow}
-            testID="task-list-option"
-          >
-            <Text style={[styles.calendarName, selected && styles.calendarSelected]}>
-              {list.title}
-            </Text>
-            {selected ? <Text style={styles.check}>✓</Text> : null}
-          </Pressable>
-        );
-      })}
+      <TaskListPicker disabled={Boolean(task) && !taskModel.canMoveList} taskModel={taskModel} />
 
       <Text style={styles.label}>Notes</Text>
       <TextInput

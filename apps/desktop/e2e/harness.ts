@@ -16,6 +16,7 @@ import type { AppleCalendarJson, FakeEventSeed } from '@calendar/apple-calendar'
 import type { DeviceBirthdayJson, DeviceContactJson } from '@calendar/contacts';
 import type { FakePlace } from '@calendar/geo';
 import type { ReminderJson, ReminderListJson } from '@calendar/reminders';
+import type { GoogleFixture } from '@calendar/sync/testing/googleFixture';
 import {
   AccountRepo,
   BirthdayRepo,
@@ -533,6 +534,14 @@ export interface LaunchOptions {
    */
   readonly geo?: 'off' | 'real' | { readonly fixture: GeoFixture };
   /**
+   * Absent (default): the real Google clients — a seeded account has no
+   * token, so its writes stay queued. A fixture runs the in-process fake
+   * Google API with a token for every fixture account: lists and tasks
+   * arrive through the first sync and queued writes push, so e2e can
+   * watch a temp `local-…` id become a server id.
+   */
+  readonly google?: { readonly fixture: GoogleFixture };
+  /**
    * 'off' (default): no EventKit. 'real': the helper. A fixture uses the
    * in-memory Reminders client so mutation e2e tests never touch personal data.
    */
@@ -582,6 +591,14 @@ export const launchApp = async (seed?: SeedData, options: LaunchOptions = {}): P
             };
           })();
 
+  const googleEnv: Record<string, string> = options.google
+    ? (() => {
+        const fixturePath = join(userDataDir, 'google-fixture.json');
+        writeFileSync(fixturePath, JSON.stringify(options.google.fixture));
+        return { CALENDAR_GOOGLE: 'fixture', CALENDAR_GOOGLE_FIXTURE: fixturePath };
+      })()
+    : {};
+
   const geoEnv: Record<string, string> =
     options.geo === 'real'
       ? {}
@@ -608,6 +625,8 @@ export const launchApp = async (seed?: SeedData, options: LaunchOptions = {}): P
       ...contactsEnv,
       // And MapKit: no network lookups, so no run depends on Apple's servers.
       ...geoEnv,
+      // Google, when a spec asks for it: the in-process fake API.
+      ...googleEnv,
       // A seeded birthday with reminders on must never post a real banner.
       CALENDAR_NOTIFICATIONS: 'off',
       CALENDAR_USERDATA: userDataDir,

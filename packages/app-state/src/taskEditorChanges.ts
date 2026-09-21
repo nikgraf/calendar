@@ -8,12 +8,12 @@ import {
 } from '@calendar/core';
 
 /**
- * The lists the editor's picker offers. Editing: a reminder can only move
- * within its own account (and a Google task cannot move at all), so the
- * other provider's lists never appear. Creating: every list, since the
- * choice decides the provider. Read-only lists (EventKit refuses writes)
- * are never a target — except the list the task is already in, so the
- * picker can still show where it lives.
+ * The lists the editor's picker offers: every list of every account and
+ * provider, since the choice decides the provider on create and moves the
+ * task on edit (a Reminders list re-homes in place; anything else is a
+ * copy into the target and a delete of the source). Read-only lists
+ * (EventKit refuses writes) are never a target — except the list the task
+ * is already in, so the picker can still show where it lives.
  */
 export const offeredTaskLists = (
   taskLists: ReadonlyArray<TaskListInfo>,
@@ -21,8 +21,7 @@ export const offeredTaskLists = (
 ): ReadonlyArray<TaskListInfo> =>
   taskLists.filter(
     (list) =>
-      (existing ? list.accountId === existing.accountId : true) &&
-      (!list.readOnly || (existing?.listId === list.id && existing.accountId === list.accountId)),
+      !list.readOnly || (existing?.listId === list.id && existing.accountId === list.accountId),
   );
 
 /** The editor's fields in their submitted form (trimmed, timed-or-not resolved). */

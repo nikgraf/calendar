@@ -1,0 +1,138 @@
+appId: com.solunivo.app
+name: A reminder converts to a Google task and back through the list picker
+tags:
+  - ci
+---
+# Needs the fixture Google account (Metro started with
+# EXPO_PUBLIC_CALENDAR_GOOGLE=fixture, as CI does) beside a connected
+# Reminders list. Without the fixture the flow is a no-op, like 07/08.
+# Google writes go to the in-process fake API, so the converted task's
+# create pushes and its temp id becomes a server id mid-flow — every
+# selector below is a title, never an id.
+- runFlow: ../common/launch.yaml
+- tapOn: 'Today'
+- tapOn: 'Day'
+- runFlow: ../common/open-new-event.yaml
+- runFlow: ../common/switch-to-task.yaml
+- runFlow:
+    when:
+      visible: 'fixture@solunivo.test'
+    commands:
+      # Reminders must be connected too (the CI simulator's grant is
+      # pre-seeded; flows run in no particular order, so connect here
+      # when 10 has not run yet — and remove the account again at the
+      # end, since 10 expects to make the initial connection itself).
+      - evalScript: ${output.connectedReminders = false}
+      - runFlow:
+          when:
+            notVisible: 'Reminders.*'
+          commands:
+            - evalScript: ${output.connectedReminders = true}
+            - tapOn: 'Cancel'
+            - runFlow: ../common/open-settings.yaml
+            - tapOn:
+                id: 'connect-reminders'
+            - extendedWaitUntil:
+                visible: 'Apple Reminders'
+                timeout: 20000
+            - tapOn: 'Done'
+            - assertVisible: 'Today'
+            - runFlow: ../common/open-new-event.yaml
+            - runFlow: ../common/switch-to-task.yaml
+      - extendedWaitUntil:
+          visible: 'Reminders.*'
+          timeout: 30000
+
+      # A timed reminder to convert.
+      - tapOn: 'Reminders.*'
+      - assertVisible:
+          id: 'reminder-timed'
+      - tapOn:
+          id: 'reminder-timed'
+      - tapOn:
+          id: 'task-title'
+      # ASCII only: unicode through XCTest typing is a known flaky spot.
+      - inputText: 'Solunivo e2e convert'
+      - tapOn:
+          id: 'event-save'
+      - extendedWaitUntil:
+          notVisible: 'New Task'
+          timeout: 20000
+      # The block's label is "<title>, due <time>"; the localized time's
+      # spacing is not worth pinning (flow 10 matches it the same way).
+      - extendedWaitUntil:
+          visible: 'Solunivo e2e convert, due .*'
+          timeout: 10000
+
+      # Reminder → Google list: the form flips to the Task form as soon
+      # as the list is picked; Save asks what the move drops (the time).
+      - tapOn: 'Solunivo e2e convert, due .*'
+      - assertVisible: 'Edit Reminder'
+      - tapOn: 'Mock Tasks'
+      - assertVisible: 'Edit Task'
+      - tapOn:
+          id: 'event-save'
+      - extendedWaitUntil:
+          visible: 'Move task?'
+          timeout: 10000
+      - tapOn: 'Move'
+      - extendedWaitUntil:
+          notVisible: 'Edit Task'
+          timeout: 20000
+      # Date-only now: an all-day chip, no due time in its label.
+      - extendedWaitUntil:
+          visible: 'Solunivo e2e convert'
+          timeout: 10000
+      # It reopens as a Google task — the create has pushed to the fake
+      # by now, so the chip's id is the server's.
+      - tapOn: 'Solunivo e2e convert'
+      - assertVisible: 'Edit Task'
+
+      # Google task → Reminders: nothing is lost, so no question.
+      - tapOn: 'Reminders.*'
+      - assertVisible: 'Edit Reminder'
+      - tapOn:
+          id: 'event-save'
+      - extendedWaitUntil:
+          notVisible: 'Edit Reminder'
+          timeout: 20000
+      - extendedWaitUntil:
+          visible: 'Solunivo e2e convert'
+          timeout: 10000
+      - tapOn: 'Solunivo e2e convert'
+      - assertVisible: 'Edit Reminder'
+
+      # Leave Reminders as found.
+      - scrollUntilVisible:
+          element:
+            id: 'task-delete'
+          direction: DOWN
+      - tapOn:
+          id: 'task-delete'
+      - extendedWaitUntil:
+          notVisible: 'Edit Reminder'
+          timeout: 20000
+      - extendedWaitUntil:
+          notVisible: 'Solunivo e2e convert'
+          timeout: 10000
+      # Undo the connection this flow made, like 15 does for Apple Calendar.
+      - runFlow:
+          when:
+            true: ${output.connectedReminders === true}
+          commands:
+            - runFlow: ../common/open-settings.yaml
+            - tapOn:
+                id: 'remove-account-apple-reminders'
+            - extendedWaitUntil:
+                notVisible: '^Apple Reminders$'
+                timeout: 20000
+            - tapOn: 'Done'
+            - assertVisible: 'Today'
+# No fixture account: leave the sheet as we found it (keyed on the sheet,
+# see 08).
+- runFlow:
+    when:
+      visible: 'New Task'
+    commands:
+      - tapOn: 'Cancel'
+      - assertVisible: 'Today'

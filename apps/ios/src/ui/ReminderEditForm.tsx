@@ -15,6 +15,7 @@ import {
   toTimeString,
 } from './editSheetShared.ts';
 import { RepeatRuleChips } from './RepeatRuleChips.tsx';
+import { TaskListPicker } from './TaskListPicker.tsx';
 
 /**
  * The Reminders half of the task editor — what EventKit can do that Google
@@ -47,29 +48,7 @@ export function ReminderEditForm({
         value={taskModel.title}
       />
 
-      <Text style={styles.label}>List</Text>
-      {taskModel.taskLists.map((list) => {
-        const key = `${list.accountId}:${list.id}`;
-        const selected = key === taskModel.listKey;
-        return (
-          <Pressable
-            // Reminders can move between lists (EKReminder.calendar is settable).
-            disabled={Boolean(task) && !taskModel.canMoveList}
-            key={key}
-            onPress={() => taskModel.setListKey(key)}
-            style={styles.calendarRow}
-            testID="task-list-option"
-          >
-            {list.colorHex ? (
-              <View style={[styles.swatch, { backgroundColor: list.colorHex }]} />
-            ) : null}
-            <Text style={[styles.calendarName, selected && styles.calendarSelected]}>
-              {list.title}
-            </Text>
-            {selected ? <Text style={styles.check}>✓</Text> : null}
-          </Pressable>
-        );
-      })}
+      <TaskListPicker disabled={Boolean(task) && !taskModel.canMoveList} taskModel={taskModel} />
 
       <View style={styles.pickerRow}>
         <Text style={styles.label}>Due</Text>

@@ -11,6 +11,7 @@ import { InviteeCombobox } from './InviteeCombobox.tsx';
 import { FIELD_CLASS as field } from './fieldStyles.ts';
 import { LocationCombobox } from './LocationCombobox.tsx';
 import { LocationMap } from './LocationMap.tsx';
+import { MoveConfirm } from './MoveConfirm.tsx';
 import { RepeatRuleFields } from './RepeatRuleFields.tsx';
 
 /**
@@ -221,31 +222,7 @@ export function EventEditorForm({
         ) : null}
       </fieldset>
 
-      {moveConfirmation.pendingSummary ? (
-        <div
-          className="mt-4 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900"
-          data-testid="move-confirm"
-          role="alertdialog"
-        >
-          <p>{moveConfirmation.pendingSummary}</p>
-          <div className="mt-2 flex justify-end gap-2">
-            <button
-              className="rounded-lg px-3 py-1 hover:bg-amber-100"
-              onClick={() => moveConfirmation.answer(false)}
-              type="button"
-            >
-              Keep here
-            </button>
-            <button
-              className="rounded-lg bg-amber-600 px-3 py-1 font-medium text-white hover:bg-amber-500"
-              onClick={() => moveConfirmation.answer(true)}
-              type="button"
-            >
-              Move anyway
-            </button>
-          </div>
-        </div>
-      ) : null}
+      <MoveConfirm moveConfirmation={moveConfirmation} />
 
       <div className="mt-5 flex items-center justify-between">
         {existing && !readOnly ? (

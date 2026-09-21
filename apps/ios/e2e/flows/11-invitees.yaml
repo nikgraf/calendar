@@ -11,8 +11,11 @@ tags:
 # a tap "on the input" lands on the predictive bar and the text goes into
 # the title. Dismiss the keyboard first: a tap on a plain label is not
 # handled by any child, so keyboardShouldPersistTaps="handled" lets the
-# ScrollView resign it.
-- tapOn: 'INVITEES'
+# ScrollView resign it. CALENDAR sits right under the title, so it is
+# never covered by the keyboard itself — INVITEES was, once the calendar
+# picker had an account's rows above it (run 35591082639 typed the
+# address into the title).
+- tapOn: 'CALENDAR'
 - waitForAnimationToEnd:
     timeout: 5000
 # The field sits below the location row; scroll it into view.

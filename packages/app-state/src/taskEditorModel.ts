@@ -1,6 +1,10 @@
 import {
   byDayError,
+  isTaskMoveLossy,
+  type TaskDraft,
   type TaskListInfo,
+  taskMoveLoss,
+  taskMoveLossSummary,
   type TaskPriority,
   type TaskProvider,
   type TaskRecord,
@@ -56,16 +60,22 @@ export const seedDueTiming = (seed: TaskEditorSeed): { dueTime: string; timed: b
  * Shared editor state for the Task mode of both platforms' edit sheets —
  * the small sibling of useEventEditorModel. The selected list decides the
  * provider, and the provider decides the form: Google Tasks are title /
- * due day / notes with a list fixed after create; Apple Reminders add a
- * due time, priority, URL, an alarm, a repeat rule, and can move between
- * lists. Due date is required for both: with no task-list view in the
- * app, an undated task would simply be invisible.
+ * due day / notes; Apple Reminders add a due time, priority, URL, an
+ * alarm and a repeat rule. Picking a list in another account or provider
+ * moves the task on Save (a copy into the target and a delete of the
+ * source, after `confirmMove` when the target cannot hold everything);
+ * between two Reminders lists it re-homes in place. Due date is required
+ * for both: with no task-list view in the app, an undated task would
+ * simply be invisible.
  */
 export const useTaskEditorModel = ({
+  confirmMove,
   onClose,
   seed,
   taskLists,
 }: {
+  /** Asks before a move that drops fields; resolves false to keep the task where it is. */
+  confirmMove: (summary: string) => Promise<boolean>;
   onClose: () => void;
   seed: TaskEditorSeed;
   taskLists: ReadonlyArray<TaskListInfo>;
@@ -115,12 +125,32 @@ export const useTaskEditorModel = ({
 
   const offeredLists = offeredTaskLists(taskLists, existing);
   const selectedList = taskLists.find((list) => listKeyOf(list.accountId, list.id) === listKey);
-  const provider: TaskProvider = existing?.provider ?? selectedList?.provider ?? 'google';
-  /** Reminders can move between lists; Google Tasks cannot (needs tasks.move). */
-  const canMoveList = provider === 'apple';
+  // The picked list's provider, so the form flips to the target's fields
+  // as soon as a list in the other provider is chosen.
+  const provider: TaskProvider = selectedList?.provider ?? existing?.provider ?? 'google';
   const recurrenceUnsupported = existing?.recurrenceUnsupported === true;
   /** The task sits in a list EventKit will not let us write: the form is a viewer. */
   const readOnly = existing !== undefined && isTaskReadOnly(existing);
+  /** Any writable task can move: to another Reminders list, account or provider. */
+  const canMoveList = existing !== undefined && !readOnly;
+  /** The form's fields as a create/move draft for the selected provider. */
+  const draft = (): TaskDraft => {
+    const spec = repeatSpec();
+    return {
+      dueDate,
+      ...(notes.trim() ? { notes: notes.trim() } : {}),
+      title: title.trim(),
+      ...(provider === 'apple'
+        ? {
+            ...(alarm === undefined ? {} : { alarms: [alarm] }),
+            ...(timed ? { dueTime } : {}),
+            ...(priority === undefined ? {} : { priority }),
+            ...(spec === undefined ? {} : { recurrence: spec }),
+            ...(url.trim() ? { url: url.trim() } : {}),
+          }
+        : {}),
+    };
+  };
 
   const save = async () => {
     if (readOnly) {
@@ -157,7 +187,28 @@ export const useTaskEditorModel = ({
       }
     }
     try {
-      if (existing && initial) {
+      const sameList = existing?.accountId === accountId && existing?.listId === taskListId;
+      const reHomesInPlace =
+        existing?.provider === 'apple' && provider === 'apple' && existing.accountId === accountId;
+      if (existing && !sameList && !reHomesInPlace) {
+        const loss = taskMoveLoss(existing, {
+          sameAccount: existing.accountId === accountId,
+          source: existing.provider,
+          target: provider,
+        });
+        const summary = taskMoveLossSummary(loss);
+        // Ask before writing anything, so "keep it here" leaves no trace.
+        if (isTaskMoveLossy(loss) && summary && !(await confirmMove(summary))) {
+          return;
+        }
+        await mutations.moveTask({
+          accountId: existing.accountId,
+          draft: draft(),
+          target: { accountId, taskListId },
+          taskId: existing.id,
+          taskListId: existing.listId,
+        });
+      } else if (existing && initial) {
         const changes = taskEditorChanges({
           current: {
             alarm,
@@ -184,23 +235,7 @@ export const useTaskEditorModel = ({
           });
         }
       } else {
-        const spec = repeatSpec();
-        await mutations.createTask({
-          accountId,
-          dueDate,
-          ...(notes.trim() ? { notes: notes.trim() } : {}),
-          taskListId,
-          title: title.trim(),
-          ...(provider === 'apple'
-            ? {
-                ...(alarm === undefined ? {} : { alarms: [alarm] }),
-                ...(timed ? { dueTime } : {}),
-                ...(priority === undefined ? {} : { priority }),
-                ...(spec === undefined ? {} : { recurrence: spec }),
-                ...(url.trim() ? { url: url.trim() } : {}),
-              }
-            : {}),
-        });
+        await mutations.createTask({ ...draft(), accountId, taskListId });
       }
       onClose();
     } catch (error) {

@@ -13,6 +13,25 @@ export class TokenStore extends Context.Service<
     readonly set: (accountId: string, tokens: TokenSet) => Effect.Effect<void>;
   }
 >()('google/TokenStore') {
+  /** In-memory implementation for tests, starting with these tokens. */
+  static readonly layerMemoryWith = (
+    initial: Iterable<readonly [string, TokenSet]>,
+  ): Layer.Layer<TokenStore> =>
+    Layer.sync(TokenStore, () => {
+      const tokens = new Map<string, TokenSet>(initial);
+      return {
+        get: (accountId) => Effect.sync(() => tokens.get(accountId) ?? null),
+        remove: (accountId) =>
+          Effect.sync(() => {
+            tokens.delete(accountId);
+          }),
+        set: (accountId, tokenSet) =>
+          Effect.sync(() => {
+            tokens.set(accountId, tokenSet);
+          }),
+      };
+    });
+
   /** In-memory implementation for tests. */
   static readonly layerMemory: Layer.Layer<TokenStore> = Layer.sync(TokenStore, () => {
     const tokens = new Map<string, TokenSet>();

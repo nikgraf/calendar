@@ -134,6 +134,19 @@ entry on incremental passes. Note: the engine reads `Clock`, and
 `it.effect` runs under `TestClock` — advance it between passes or
 `passStartedAt` never moves.
 
+Both apps can run against the same fake (`testing/googleFixture.ts`):
+desktop with `CALENDAR_GOOGLE=fixture` + `CALENDAR_GOOGLE_FIXTURE=<json>`
+(the e2e harness's `google: { fixture }` launch option), iOS with
+`EXPO_PUBLIC_CALENDAR_GOOGLE=fixture` at Metro start (CI does; the
+fixture is `apps/ios/e2e/fixtures/google.ts`). A `GoogleFixture` names
+accounts, calendars, task lists and tasks; only the account rows are
+seeded locally, everything else arrives through the first sync, and a
+pre-filled memory `TokenStore` keeps the real `TokenManager` and request
+core on the path. The fake stamps writes with the wall clock (`live`) so
+the device-time `updatedMin` watermark clears them. Desktop
+`taskConvertGoogle.e2e.ts` and iOS `16-task-convert.yaml` use it to watch
+a queued task create push and its `local-…` id become a server id.
+
 ### Google People API (contacts cache)
 
 - Two endpoints, two scopes: `people/me/connections` with
@@ -413,7 +426,12 @@ list). Maestro runs a directory's flows in a non-deterministic order and
 runs the bootstrap as its own invocation and every other flow must be
 independent of what ran before — the real-Reminders flow connects an
 account, after which the task form defaults to the Apple list, hence
-`Edit (Task|Reminder)` in flow 08. Text selectors are whole-string
+`Edit (Task|Reminder)` in flow 08. On CI Metro runs with
+`EXPO_PUBLIC_CALENDAR_GOOGLE=fixture`, so a fixture Google account
+(`fixture@solunivo.test`, list "Mock Tasks", calendar "Mock Calendar") is
+signed in for every flow and the Google halves of 07/08 and the whole of
+16 (task convert) run against the in-process fake; locally they are
+no-ops unless Metro was started with the same variable. Text selectors are whole-string
 regexes: a list row's label is title + swatch + check mark, so rows are
 picked by `id: task-list-option`; a chip body is tapped by its full text
 (`[0-9]+:[0-9]+ !!! <title>` for a timed reminder), because `.*<title>`

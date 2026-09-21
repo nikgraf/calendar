@@ -45,6 +45,13 @@ tags:
       # The first list may be a Google list or, once Reminders is
       # connected, the Apple one — either editor is the right outcome.
       - assertVisible: 'Edit (Task|Reminder)'
+      # The Reminders form is long, and the list picker's per-account
+      # groups push Delete below the fold (run 35591082639 tapped its
+      # cut-off edge and nothing happened): scroll first, like 10.
+      - scrollUntilVisible:
+          element:
+            id: 'task-delete'
+          direction: DOWN
       - tapOn:
           id: 'task-delete'
       # Deleting an unpushed create sends nothing to Google; a pushed one

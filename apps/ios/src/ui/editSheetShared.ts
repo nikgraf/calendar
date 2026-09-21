@@ -104,6 +104,10 @@ export const sheetStyles = StyleSheet.create({
   },
   content: {
     padding: 16,
+    // Room below the last control (Delete): on a phone the form can end
+    // exactly at the home indicator, where a tap never lands (CI runs
+    // 35591082639 and 35594605564 tapped Delete's cut-off edge).
+    paddingBottom: 48,
   },
   deleteButton: {
     alignItems: 'center',

@@ -252,6 +252,10 @@ jobs:
         working-directory: apps/ios
         env:
           EXPO_RUNTIME_VERSION_PIN: ${{ steps.fingerprint.outputs.hash }}
+          # The in-process fake Google API with a signed-in fixture account,
+          # so the Google halves of the flows (create event, task lane, task
+          # convert) run without a real account. Inlined at bundle time.
+          EXPO_PUBLIC_CALENDAR_GOOGLE: fixture
         run: |
           nohup pnpm exec expo start --port 8081 > "$RUNNER_TEMP/metro.log" 2>&1 &
           for _ in $(seq 1 60); do
@@ -282,7 +286,11 @@ jobs:
               -H 'expo-protocol-version: 1' -H 'expo-api-version: 1' \
               -H 'expo-updates-environment: DEVELOPMENT' http://127.0.0.1:8081/ 2>&1 | grep real
           done
-          xcrun simctl openurl "$SIMULATOR_UDID" "http://127.0.0.1:8081/status"
+          # Diagnostics only: run 35585741437 saw this openurl time out
+          # (NSPOSIXErrorDomain 60) with Metro answering every probe above,
+          # and the -e shell took the job down before a single flow ran.
+          xcrun simctl openurl "$SIMULATOR_UDID" "http://127.0.0.1:8081/status" \
+            || echo "::warning::simctl openurl to Metro's status page failed (diagnostic only)"
           sleep 10
           xcrun simctl io "$SIMULATOR_UDID" screenshot "$RUNNER_TEMP/safari-metro-status.png"
           # Leave the simulator on SpringBoard. Safari otherwise stays in

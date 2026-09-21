@@ -335,6 +335,7 @@ export const useBackendMutations = () => {
       deleteTask: set('deleteTask'),
       discardPendingOp: set('discardPendingOp'),
       moveEvent: set('moveEvent'),
+      moveTask: set('moveTask'),
       previewMove: set('previewMove'),
       removeAccount: set('removeAccount'),
       resolveLocation: set('resolveLocation'),

@@ -43,7 +43,9 @@ export function EventEditor({
   const [mode, setMode] = useState<'birthday' | 'event' | 'task'>(
     birthday ? 'birthday' : task ? 'task' : 'event',
   );
+  const moveConfirmation = useMoveConfirmation();
   const taskModel = useTaskEditorModel({
+    confirmMove: moveConfirmation.request,
     onClose,
     seed: {
       existing: task,
@@ -52,7 +54,6 @@ export function EventEditor({
     },
     taskLists,
   });
-  const moveConfirmation = useMoveConfirmation();
   const eventModel = useEventEditorModel({
     calendars,
     confirmMove: moveConfirmation.request,
@@ -116,12 +117,23 @@ export function EventEditor({
           <BirthdayDetail occurrence={birthday} onClose={onClose} timeZone={timeZone} />
         ) : mode === 'task' ? (
           // The selected list's provider picks the form: a Reminders list
-          // exposes time/priority/alert/repeat/URL and can move; a Google
-          // list gets the plain title/date/notes form.
+          // exposes time/priority/alert/repeat/URL; a Google list gets the
+          // plain title/date/notes form. Either list can be in another
+          // account or provider — Save then moves the task.
           taskModel.provider === 'apple' ? (
-            <ReminderEditorForm onClose={onClose} task={task} taskModel={taskModel} />
+            <ReminderEditorForm
+              moveConfirmation={moveConfirmation}
+              onClose={onClose}
+              task={task}
+              taskModel={taskModel}
+            />
           ) : (
-            <TaskEditorForm onClose={onClose} task={task} taskModel={taskModel} />
+            <TaskEditorForm
+              moveConfirmation={moveConfirmation}
+              onClose={onClose}
+              task={task}
+              taskModel={taskModel}
+            />
           )
         ) : (
           <EventEditorForm

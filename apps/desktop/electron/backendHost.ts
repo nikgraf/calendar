@@ -40,7 +40,6 @@ import {
 import { SqliteClient } from '@effect/sql-sqlite-node';
 import { app, powerMonitor } from 'electron';
 import { Data, Effect, Layer, ManagedRuntime } from 'effect';
-import { FetchHttpClient } from 'effect/unstable/http';
 import { RpcSerialization, RpcServer } from 'effect/unstable/rpc';
 import { runGoogleSignIn } from './auth/loopbackFlow.ts';
 import { loadOAuthConfig } from './oauthConfig.ts';
@@ -51,10 +50,10 @@ import { GeoClient } from '@calendar/geo';
 import { desktopAppleCalendarLayer } from './appleCalendarClient.ts';
 import { desktopContactsLayer } from './contactsClient.ts';
 import { desktopGeoLayer } from './geoClient.ts';
+import { desktopGoogleLayer, seedDesktopGoogleFixture } from './googleClient.ts';
 import { desktopNotificationSink } from './notifications.ts';
 import { desktopRemindersLayer } from './remindersClient.ts';
 import { rpcServerProtocol } from './rpcProtocol.ts';
-import { safeStorageTokenStore } from './tokens/safeStorageStore.ts';
 
 class OAuthNotConfiguredError extends Data.TaggedError('OAuthNotConfiguredError')<{
   readonly message: string;
@@ -71,8 +70,7 @@ export const startBackendHost = (): void => {
   const invalidations = makeInvalidationBus();
 
   const platformLayer = Layer.mergeAll(
-    safeStorageTokenStore,
-    FetchHttpClient.layer,
+    desktopGoogleLayer,
     GoogleOAuthConfig.layer({
       clientId: oauth?.clientId ?? 'unconfigured',
       ...(oauth?.clientSecret ? { clientSecret: oauth.clientSecret } : {}),
@@ -174,6 +172,7 @@ export const startBackendHost = (): void => {
   runtime
     .runPromise(
       Effect.gen(function* () {
+        yield* seedDesktopGoogleFixture;
         const engine = yield* SyncEngine;
         yield* engine.start();
         yield* (yield* BirthdayReminders).start();

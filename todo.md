@@ -54,10 +54,10 @@ comment` for inline-playable video: 10 MB on Free plans, 100 MB paid
       (`apiTypes.ts:139-140`) and dropped by `mapGcalTask`; `TaskRecord` has
       no such fields; `tasksClient.ts` has no `move`. Render indentation,
       keep ordering via `tasks.move`.
-- [ ] Convert a Reminder ↔ Google Task — create in target + delete in
-      source with a "these fields will be lost" confirmation; today
-      `moveToListId` is Reminders-internal (`UnsupportedForProviderError`
-      for Google, `mutations.ts:223-240`).
+- [ ] Google → Google task moves flatten subtasks silently — the move is
+      copy-then-delete (`moveTask`, #82) and `parent`/`position` are not
+      modeled, so no warning is possible; fixed by the subtask item above
+      (`tasks.move` keeps hierarchy and id).
 - [ ] Reminders follow-ups — undated reminders are mirrored but filtered
       out at read (`repos.ts:737`, needs a list view); quick-add/⌘K creating
       reminders (`QUICK_ADD_JSON_SCHEMA` is events-only); subtasks/flags/

@@ -297,6 +297,12 @@ export const commonBackendHandlers: Omit<BackendHandlers<CommonBackendServices>,
       yield* mutations.moveEvent(params);
     }),
 
+  moveTask: (params) =>
+    Effect.gen(function* () {
+      const mutations = yield* EventMutations;
+      return yield* mutations.moveTask(params);
+    }),
+
   previewMove: (params) =>
     Effect.gen(function* () {
       const mutations = yield* EventMutations;

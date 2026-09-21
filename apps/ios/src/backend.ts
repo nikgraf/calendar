@@ -31,6 +31,8 @@ import Constants from 'expo-constants';
 import { deleteItemAsync, getItemAsync, setItemAsync } from 'expo-secure-store';
 import { Data, Effect, Layer, ManagedRuntime, Schema } from 'effect';
 import { FetchHttpClient } from 'effect/unstable/http';
+import { googleFixtureLayer, seedFixtureAccounts } from '@calendar/sync/testing/googleFixture';
+import { googleFixture } from '../e2e/fixtures/google.ts';
 import { signInWithGoogle } from './googleAuth.ts';
 import { iosNotificationSink } from './notifications.ts';
 import { iosContactsClient, iosContactsLayer } from './contactsClient.ts';
@@ -89,9 +91,16 @@ const dbLayer = reposLayer.pipe(
   ),
 );
 
+// Metro inlines EXPO_PUBLIC_* at bundle time: with `fixture` (CI's Metro)
+// the Google wire is the in-process fake API with a signed-in fixture
+// account, so the Maestro flows exercise Google paths without a real
+// account. The fixture module is tiny and inert otherwise.
+const useGoogleFixture = process.env['EXPO_PUBLIC_CALENDAR_GOOGLE'] === 'fixture';
+
 const platformLayer = Layer.mergeAll(
-  secureTokenStore,
-  FetchHttpClient.layer,
+  useGoogleFixture
+    ? googleFixtureLayer(googleFixture)
+    : Layer.mergeAll(secureTokenStore, FetchHttpClient.layer),
   GoogleOAuthConfig.layer({ clientId: iosClientId ?? 'unconfigured' }),
 );
 
@@ -179,6 +188,9 @@ export const startSync = (): void => {
   runtime
     .runPromise(
       Effect.gen(function* () {
+        if (useGoogleFixture) {
+          yield* seedFixtureAccounts(googleFixture);
+        }
         const engine = yield* SyncEngine;
         yield* engine.start();
         yield* (yield* BirthdayReminders).start();

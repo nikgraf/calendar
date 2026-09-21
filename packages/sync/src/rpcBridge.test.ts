@@ -67,6 +67,7 @@ const stubHandlers: BackendHandlers = {
   listTaskLists: () => Effect.succeed([]),
   mapSnapshot: notStubbed,
   moveEvent: () => Effect.void,
+  moveTask: notStubbed,
   previewMove: notStubbed,
   removeAccount: () => Effect.void,
   resolveLocation: () => Effect.succeed(null),

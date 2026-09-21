@@ -20,6 +20,12 @@ export interface TaskRepoShape {
     listId: string,
     syncedAt: number,
   ) => Effect.Effect<void, SqlError>;
+  /** One task by its full key, or undefined. */
+  readonly get: (
+    accountId: string,
+    listId: string,
+    taskId: string,
+  ) => Effect.Effect<TaskRecord | undefined, SqlError>;
   /** Open tasks due strictly before `before`, visible lists only — the ones today's lane shows as overdue. */
   readonly getOverdue: (before: string) => Effect.Effect<ReadonlyArray<TaskRecord>, SqlError>;
   /** Tasks with a due day inside [startDate, endDate], visible lists only. */
@@ -201,6 +207,14 @@ const makeTaskRepo: Effect.Effect<TaskRepoShape, never, Reactivity | SqlClient> 
               AND list_id = ${listId} AND synced_at < ${syncedAt}
               AND sync_status = 'synced'`,
           ),
+        ),
+      get: (accountId, listId, taskId) =>
+        Effect.map(
+          sql<TaskRow>`
+            SELECT t.*, l.provider AS list_provider FROM tasks t
+            JOIN task_lists l ON l.account_id = t.account_id AND l.id = t.list_id
+            WHERE t.account_id = ${accountId} AND t.list_id = ${listId} AND t.id = ${taskId}`,
+          (rows) => (rows[0] ? taskFromRow(rows[0]) : undefined),
         ),
       getOverdue: (before) =>
         Effect.map(
