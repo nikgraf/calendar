@@ -445,14 +445,30 @@ Rules that keep the queue correct:
   IPC-vs-rpc rule is about window concerns, not about where data lives —
   SQLite is per device and never uploaded, and the consumer of these
   settings is a backend job that runs inside both hosts.
-- Birthday reminders: `BirthdayReminders` (packages/sync) runs its own
-  60 s loop — deliberately outside the sync pass, so the engine carries
-  no notification dependency — and hands `planBirthdayReminders`' output
-  to the platform `NotificationSink`: desktop fires an Electron
-  `Notification` when one is due (last 24 h catch-up, fired keys kept in
+- Local notifications: `LocalNotifications` (packages/sync) runs its own
+  loop — deliberately outside the sync pass, so the engine carries no
+  notification dependency — over two producers, `loadEventPlans`
+  (event reminders: visible calendars, a week ahead, `useDefault`
+  resolved against the calendar's `defaultReminders`, Apple Calendar
+  events only when the setting includes them) and `loadBirthdayPlans`,
+  merged into one `PlannedNotification` list sorted by delivery. A
+  producer whose setting is off returns nothing; the OS schedule is
+  cleared only when both do. The platform `NotificationSink` delivers:
+  desktop fires an Electron `Notification` when one is due and, after
+  sleep, only while the plan's `expiresAt` allows (a birthday all day,
+  a meeting until five minutes in; fired keys kept in
   `device_settings`), iOS replaces the pending expo-notifications
-  schedule with the next ≤ 60 whenever the plan changes. "The
+  schedule with the soonest ≤ 60 whenever the digest changes. The loop
+  sleeps until the next delivery (5 s..60 s) and re-plans, debounced,
+  on every `EVENTS_KEY` / `BIRTHDAYS_KEY` invalidation. "The
   notification is latency, the pass is correctness" applies.
+- Event reminders are data on the record (`EventRecord.reminders`,
+  Google's `useDefault`/`overrides` shape; `useDefault:false` with no
+  overrides is "none", distinct from the field being absent), mirrored
+  from Google and from EventKit alarms (`useDefault` always false — the
+  bridge flips the sign once). A PATCH carries the whole object only
+  when the op is flagged `remindersChanged`, since Google replaces it
+  and email overrides must survive an unrelated edit.
 
 - The task editor forks on the selected list's provider
   (`useTaskEditorModel.provider`): Google gets title/day/notes with a

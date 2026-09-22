@@ -20,7 +20,8 @@ powers quick-add parsing, find-a-time, and dictation.
   auth), Gcal↔domain mapping, OAuth token stores.
 - `packages/sync` — `EventMutations` (op queue + optimistic writes, event
   and task op kinds), `SyncEngine` (poll/push/pull; tasks watermark sync),
-  backend rpc handlers, duplex rpc protocols, `BirthdayReminders` over a
+  backend rpc handlers, duplex rpc protocols, `LocalNotifications`
+  (event reminders + birthday reminders, one merged OS schedule) over a
   platform `NotificationSink`.
 - `packages/ai` — model-provider seam (`ModelProvider`/`SpeechProvider`
   interfaces), quick-add + find-time prompt/normalize/parse pipelines.
