@@ -1,4 +1,4 @@
-import { useBirthdayReminderSettings, useGuardedMutations } from '@calendar/app-state';
+import { useBackendMutations, useBirthdayReminderSettings } from '@calendar/app-state';
 import {
   BIRTHDAY_LEAD_DAYS,
   BIRTHDAY_REMINDERS_DEVICE_ONLY,
@@ -6,22 +6,33 @@ import {
   type BirthdayReminderSettings,
   leadDaysLabel,
 } from '@calendar/core';
+import { useState } from 'react';
 
 /**
  * Lead times and delivery time for birthday notifications. Device-local
  * by design (the first setting that does not sync), and the copy says
- * so. Every change saves through the guarded mutation; the atom refetch
- * keeps the controls in step.
+ * so. Every change saves through the backend mutation; the atom refetch
+ * keeps the controls in step. Turning the reminders on asks macOS for
+ * notification permission, and a denial stays visible as a notice.
  */
 export function BirthdayRemindersSection() {
   const settings = useBirthdayReminderSettings();
-  const { setBirthdayReminderSettings } = useGuardedMutations();
+  const { setBirthdayReminderSettings } = useBackendMutations();
+  const [notice, setNotice] = useState<string | null>(null);
 
   if (!settings) {
     return null;
   }
   const save = (next: Partial<BirthdayReminderSettings>) =>
-    void setBirthdayReminderSettings({ ...settings, ...next });
+    void setBirthdayReminderSettings({ ...settings, ...next }).then(
+      ({ notificationsGranted }) =>
+        setNotice(
+          notificationsGranted
+            ? null
+            : 'Notifications are off — allow Solunivo in System Settings › Notifications.',
+        ),
+      (error: unknown) => setNotice(error instanceof Error ? error.message : String(error)),
+    );
   const toggleLead = (lead: BirthdayLeadDays, on: boolean) =>
     save({
       leadDays: on
@@ -67,6 +78,11 @@ export function BirthdayRemindersSection() {
           />
         </label>
       </fieldset>
+      {notice ? (
+        <p className="mt-3 text-sm text-amber-700" data-testid="birthday-notice" role="status">
+          {notice}
+        </p>
+      ) : null}
       <p className="mt-3 text-xs text-neutral-400" data-testid="birthday-device-only">
         {BIRTHDAY_REMINDERS_DEVICE_ONLY} Reminders arrive while Solunivo is running.
       </p>

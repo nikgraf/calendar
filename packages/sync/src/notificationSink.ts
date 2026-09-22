@@ -6,14 +6,18 @@ import { Context, Effect } from 'effect';
  * the moment it is due (the app is running, or nothing fires); iOS hands
  * the OS a schedule of upcoming ones so they arrive with the app closed.
  * The BirthdayReminders service narrows on `kind` and does the rest.
+ *
+ * `ensurePermission` asks the OS when undetermined; false means the user
+ * declined. An immediate sink may have no way to ask but to post a
+ * visible confirmation, so callers ask it only when reminders turn on.
  */
 export type NotificationSinkShape =
   | {
+      readonly ensurePermission: () => Effect.Effect<boolean>;
       readonly kind: 'immediate';
       readonly show: (notification: PlannedNotification) => Effect.Effect<void>;
     }
   | {
-      /** Asks the OS when undetermined; false means the user declined. */
       readonly ensurePermission: () => Effect.Effect<boolean>;
       readonly kind: 'scheduled';
       /**
@@ -32,6 +36,7 @@ export class NotificationSink extends Context.Service<NotificationSink, Notifica
 
 /** Tests, e2e and builds without a notification path. */
 export const noopNotificationSink: NotificationSinkShape = {
+  ensurePermission: () => Effect.succeed(true),
   kind: 'immediate',
   show: () => Effect.void,
 };

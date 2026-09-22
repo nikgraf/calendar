@@ -339,15 +339,19 @@ export const commonBackendHandlers: Omit<BackendHandlers<CommonBackendServices>,
       return rankContacts(query, [...google, ...device], take);
     }),
 
-  // Saves, asks the OS for notification permission when enabling on a
-  // platform that pre-schedules (iOS), and runs a reminder pass right
-  // away so the schedule reflects the new choice.
+  // Saves, asks the OS for notification permission, and runs a reminder
+  // pass right away so the schedule reflects the new choice. A scheduled
+  // sink (iOS) asks on every enabled save — a no-op once granted, and it
+  // brings the notice back after a later denial. An immediate sink
+  // (desktop) can only find out by posting a banner, so it asks once, as
+  // reminders turn on.
   setBirthdayReminderSettings: (settings) =>
     Effect.gen(function* () {
+      const previous = yield* readBirthdayReminderSettings;
       yield* writeBirthdayReminderSettings(settings);
       const sink = yield* NotificationSink;
-      const notificationsGranted =
-        settings.enabled && sink.kind === 'scheduled' ? yield* sink.ensurePermission() : true;
+      const ask = settings.enabled && (sink.kind === 'scheduled' || !previous.enabled);
+      const notificationsGranted = ask ? yield* sink.ensurePermission() : true;
       yield* Effect.forkDetach((yield* BirthdayReminders).run());
       return { notificationsGranted };
     }),
