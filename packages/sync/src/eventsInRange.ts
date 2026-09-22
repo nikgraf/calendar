@@ -13,6 +13,10 @@ import { AppleCalendarEvents } from './appleCalendarEvents.ts';
 export const loadEventsInRange = (
   rangeStartUtc: number,
   rangeEndUtc: number,
+  options: {
+    /** false skips the EventKit round trip (a planner that would discard the rows anyway). */
+    readonly apple: boolean;
+  } = { apple: true },
 ): Effect.Effect<ReadonlyArray<EventRecord>, SqlError, AppleCalendarEvents | EventRepo> =>
   Effect.gen(function* () {
     const events = yield* EventRepo;
@@ -25,7 +29,9 @@ export const loadEventsInRange = (
       yield* Effect.logWarning('recurring masters skipped in window', { skipped });
     }
     // Apple Calendar events are never stored: EventKit answers the range live.
-    const apple = yield* (yield* AppleCalendarEvents).eventsInRange(rangeStartUtc, rangeEndUtc);
+    const apple = options.apple
+      ? yield* (yield* AppleCalendarEvents).eventsInRange(rangeStartUtc, rangeEndUtc)
+      : [];
     return apple.length === 0
       ? result
       : [...result, ...apple].sort((a, b) => a.startUtc - b.startUtc);

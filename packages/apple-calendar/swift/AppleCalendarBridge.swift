@@ -97,7 +97,8 @@ struct RuleDTO: Sendable {
 }
 
 struct EventDTO: Sendable {
-  /// Relative alarm offsets in minutes (EventKit sign); absolute-date alarms are not listed.
+  /// Relative alarm offsets in minutes (EventKit sign) at or before the start;
+  /// absolute-date alarms and alarms after the start are not listed.
   let alarms: [Int]
   let attendees: [AttendeeDTO]
   let calendarId: String
@@ -422,7 +423,7 @@ private func eventDTO(_ event: EKEvent) -> EventDTO? {
   let location = event.location.flatMap { $0.isEmpty ? nil : $0 }
   let notes = event.notes.flatMap { $0.isEmpty ? nil : $0 }
   let alarms = (event.alarms ?? [])
-    .filter { $0.absoluteDate == nil }
+    .filter { $0.absoluteDate == nil && $0.relativeOffset <= 0 }
     .map { Int(($0.relativeOffset / 60).rounded()) }
   return EventDTO(
     alarms: alarms, attendees: attendees, calendarId: calendar.calendarIdentifier,
@@ -663,13 +664,18 @@ actor AppleCalendarBridge {
     case .clear: event.recurrenceRules = nil
     case .set(let rules): event.recurrenceRules = try rules.map(ekRule)
     }
-    // Relative alarms are replaced as a set; absolute-date ones are kept.
+    // The alarms the wire lists (relative, at or before the start) are
+    // replaced as a set; absolute-date ones and alarms after the start
+    // (Calendar.app's all-day "day of, 9:00" is +540 min) are kept as they
+    // are — never shown, never dropped.
+    let kept = { (alarms: [EKAlarm]?) in
+      (alarms ?? []).filter { $0.absoluteDate != nil || $0.relativeOffset > 0 }
+    }
     switch write.alarms {
     case .unchanged: break
-    case .clear: event.alarms = (event.alarms ?? []).filter { $0.absoluteDate != nil }
+    case .clear: event.alarms = kept(event.alarms)
     case .set(let offsets):
-      let absolute = (event.alarms ?? []).filter { $0.absoluteDate != nil }
-      event.alarms = absolute + offsets.map { EKAlarm(relativeOffset: TimeInterval($0 * 60)) }
+      event.alarms = kept(event.alarms) + offsets.map { EKAlarm(relativeOffset: TimeInterval($0 * 60)) }
     }
   }
 

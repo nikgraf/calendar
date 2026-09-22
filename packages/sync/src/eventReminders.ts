@@ -34,7 +34,9 @@ export const loadEventPlans = (
     }
     const from = now - LOOKBACK_MS;
     const until = now + HORIZON_MS;
-    const events = yield* loadEventsInRange(from, until + MAX_REMINDER_MINUTES * MINUTE_MS);
+    const events = yield* loadEventsInRange(from, until + MAX_REMINDER_MINUTES * MINUTE_MS, {
+      apple: settings.includeAppleCalendar,
+    });
     const calendars = yield* (yield* CalendarRepo).list();
     return planEventReminders(events, {
       calendars,

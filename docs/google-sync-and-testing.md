@@ -280,8 +280,10 @@ against a real store — confirm them there before relying on them more.
   place name without new coordinates drops the old ones.
 - **Alarms**: `EKEvent.alarms` holds relative (`relativeOffset`,
   seconds, negative = before) and absolute-date alarms. The bridge lists
-  relative ones as whole minutes and, on write, replaces the relative
-  set while keeping absolute ones — like the Reminders bridge. For an
+  relative ones at or before the start as whole minutes and, on write,
+  replaces that set while keeping absolute ones and alarms after the
+  start (Calendar.app's all-day default "day of event, 9:00" is
+  +540 min, which Google cannot express) — never shown, never dropped. For an
   all-day event the offset counts from local midnight, which matches
   Google's convention. There is no per-calendar default alarm in
   EventKit (Calendar.app's defaults are app preferences), so a Google

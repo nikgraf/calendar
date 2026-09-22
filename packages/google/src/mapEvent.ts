@@ -183,7 +183,12 @@ export const mapGcalCalendar = (
     defaultReminders:
       entry.defaultReminders === undefined
         ? undefined
-        : toReminderOverrides(entry.defaultReminders),
+        : canonicalReminders(
+            new EventReminders({
+              overrides: toReminderOverrides(entry.defaultReminders),
+              useDefault: false,
+            }),
+          ).overrides,
     id: entry.id,
     isPrimary: entry.primary ?? false,
     isVisible: context.previousVisibility ?? entry.selected ?? true,

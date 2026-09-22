@@ -128,9 +128,9 @@ const geoWrite = (geo: GeoLocation | null | undefined): EventWrite['geo'] =>
 
 /**
  * EventKit alarms as the domain sees them: always explicit (EventKit has
- * no "calendar default"), popup only, minutes-before positive. Alarms
- * after the start (a positive EventKit offset) are dropped — nothing
- * here can show them.
+ * no "calendar default"), popup only, minutes-before positive. The bridge
+ * only lists alarms at or before the start; later ones stay on the event
+ * untouched (the filter here is belt and braces).
  */
 const fromAlarms = (alarms: ReadonlyArray<number> | undefined): EventReminders =>
   canonicalReminders(

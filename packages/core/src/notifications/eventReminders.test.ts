@@ -163,6 +163,26 @@ describe('planEventReminders', () => {
     expect(plans[0]!.title).toBe('Standup');
   });
 
+  it('names the day when the delivery falls on an earlier one', () => {
+    const plans = planEventReminders(
+      [
+        event({
+          reminders: new EventReminders({
+            overrides: [popup(30), popup(1440), popup(2880)],
+            useDefault: false,
+          }),
+          startUtc: utc('2026-03-04T00:15:00Z'),
+        }),
+      ],
+      window,
+    );
+    expect(plans.map((plan) => plan.body)).toEqual([
+      'In 2 days · Wed, Mar 4 1:15 AM',
+      'In 1 day · Tomorrow 1:15 AM',
+      'In 30 minutes · 1:15 AM',
+    ]);
+  });
+
   it('uses the calendar defaults for an event that defers to them', () => {
     const plans = planEventReminders([event()], window);
     expect(plans.map((plan) => plan.fireAt)).toEqual([utc('2026-03-04T08:50:00Z')]);

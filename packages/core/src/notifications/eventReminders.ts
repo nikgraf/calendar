@@ -151,7 +151,13 @@ const eventReminderBody = (
     const fireDay = Temporal.Instant.fromEpochMilliseconds(fireAt)
       .toZonedDateTimeISO(timeZone)
       .toPlainDate();
-    const dayPrefix = Temporal.PlainDate.compare(startDay, fireDay) === 0 ? '' : 'Tomorrow ';
+    const daysAhead = fireDay.until(startDay, { largestUnit: 'day' }).days;
+    const dayPrefix =
+      daysAhead <= 0
+        ? ''
+        : daysAhead === 1
+          ? 'Tomorrow '
+          : `${startDay.toLocaleString('en-US', { day: 'numeric', month: 'short', weekday: 'short' })} `;
     parts.push(lead, `${dayPrefix}${formatClockTime(event.startUtc, timeZone)}`);
   }
   if (event.location) {

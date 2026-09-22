@@ -395,10 +395,17 @@ describe('reminders', () => {
 
   it('reads the calendar defaults from the list entry', () => {
     const calendar = mapGcalCalendar(
-      { defaultReminders: [{ method: 'popup', minutes: 10 }], id: 'cal-1' },
+      {
+        defaultReminders: [
+          { method: 'popup', minutes: 30 },
+          { method: 'popup', minutes: 10 },
+          { method: 'popup', minutes: 10 },
+        ],
+        id: 'cal-1',
+      },
       { accountId: 'acc-1', colorFromId: () => undefined },
     );
-    expect(calendar.defaultReminders).toEqual([popup(10)]);
+    expect(calendar.defaultReminders).toEqual([popup(10), popup(30)]);
     expect(
       mapGcalCalendar({ id: 'cal-2' }, { accountId: 'acc-1', colorFromId: () => undefined })
         .defaultReminders,

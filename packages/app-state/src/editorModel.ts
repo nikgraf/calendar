@@ -316,37 +316,39 @@ export const useEventEditorModel = ({
     .filter((override) => override.method === 'popup')
     .map((override) => override.minutes);
   /**
-   * Picking a calendar that cannot hold "calendar default" (Apple) turns
-   * the current default into explicit alarms, so the user sees what the
-   * event will actually get — the same resolution a move applies.
+   * What the picked calendar will actually get. An Apple calendar cannot
+   * hold "calendar default", so a deferring event shows the popup
+   * defaults of the calendar it came from as explicit alarms — the same
+   * resolution a move applies — without touching the stored value until
+   * the user edits a row or saves onto that calendar.
    */
-  const pickCalendar = (key: string) => {
-    setCalendarKey(key);
-    if (reminders.useDefault && calendarOf(key)?.provider === 'apple') {
-      const from = calendarOf(calendarKey)?.defaultReminders ?? [];
-      setReminders(
-        new EventReminders({
-          overrides: from.filter((override) => override.method === 'popup'),
+  const resolvedReminders: EventReminders =
+    reminders.useDefault && !capabilities.canUseDefaultReminders
+      ? new EventReminders({
+          overrides: (calendarOf(originalCalendarKey)?.defaultReminders ?? []).filter(
+            (override) => override.method === 'popup',
+          ),
           useDefault: false,
-        }),
-      );
-      setRemindersDirty(true);
-    }
-  };
+        })
+      : reminders;
   const updateReminders = (next: EventReminders) => {
     setReminders(canonicalReminders(next));
     setRemindersDirty(true);
   };
   const setUseDefaultReminders = (useDefault: boolean) =>
     updateReminders(new EventReminders({ ...reminders, useDefault }));
-  /** Adds a popup reminder; false when the event already holds Google's maximum. */
+  /** Adds a popup reminder; false (and no change) when it is already there or at Google's maximum. */
   const addReminder = (minutes: number): boolean => {
-    if (reminders.overrides.length >= MAX_REMINDER_OVERRIDES) {
+    const current = resolvedReminders.overrides;
+    if (
+      current.length >= MAX_REMINDER_OVERRIDES ||
+      current.some((override) => override.method === 'popup' && override.minutes === minutes)
+    ) {
       return false;
     }
     updateReminders(
       new EventReminders({
-        overrides: [...reminders.overrides, new ReminderOverride({ method: 'popup', minutes })],
+        overrides: [...current, new ReminderOverride({ method: 'popup', minutes })],
         useDefault: false,
       }),
     );
@@ -355,17 +357,17 @@ export const useEventEditorModel = ({
   const setReminderMinutes = (index: number, minutes: number) =>
     updateReminders(
       new EventReminders({
-        ...reminders,
-        overrides: reminders.overrides.map((override, at) =>
+        overrides: resolvedReminders.overrides.map((override, at) =>
           at === index ? new ReminderOverride({ method: override.method, minutes }) : override,
         ),
+        useDefault: false,
       }),
     );
   const removeReminder = (index: number) =>
     updateReminders(
       new EventReminders({
-        ...reminders,
-        overrides: reminders.overrides.filter((_, at) => at !== index),
+        overrides: resolvedReminders.overrides.filter((_, at) => at !== index),
+        useDefault: false,
       }),
     );
   const [rsvp, setRsvp] = useState(ownAttendee?.responseStatus);
@@ -503,8 +505,10 @@ export const useEventEditorModel = ({
             return spec ? [buildRecurrenceRule(spec, isAllDay)] : undefined;
           })(),
           // Untouched on a Google calendar means Google's own default; an
-          // Apple calendar always gets the explicit list.
-          ...(remindersDirty || !capabilities.canUseDefaultReminders ? { reminders } : {}),
+          // Apple calendar always gets the explicit (resolved) list.
+          ...(remindersDirty || !capabilities.canUseDefaultReminders
+            ? { reminders: resolvedReminders }
+            : {}),
           title: title.trim(),
           ...times,
         };
@@ -589,7 +593,7 @@ export const useEventEditorModel = ({
     mapsUrl: mapGeo ? openInMapsUrl(mapGeo) : undefined,
     ownAttendee,
     pickPlace,
-    reminders,
+    reminders: resolvedReminders,
     remove,
     removeAttendee,
     removeReminder,
@@ -598,7 +602,7 @@ export const useEventEditorModel = ({
     rsvp,
     save,
     scope,
-    setCalendarKey: pickCalendar,
+    setCalendarKey,
     setDate,
     setEndTime,
     setIsAllDay,

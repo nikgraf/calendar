@@ -37,6 +37,13 @@ export function RemindersFields({ model }: { model: ReturnType<typeof useEventEd
           .join(', ');
   const useDefault = canUseDefaultReminders && reminders.useDefault;
   const full = reminders.overrides.length >= MAX_REMINDER_OVERRIDES;
+  // The next offset to add: the first preset the event does not have yet.
+  const nextPreset = presets.find(
+    (minutes) =>
+      !reminders.overrides.some(
+        (override) => override.method === 'popup' && override.minutes === minutes,
+      ),
+  );
 
   if (readOnly) {
     const listed = useDefault
@@ -117,8 +124,8 @@ export function RemindersFields({ model }: { model: ReturnType<typeof useEventEd
           <button
             className="self-start text-sm text-blue-600 hover:underline disabled:text-neutral-400"
             data-testid="event-reminder-add"
-            disabled={full}
-            onClick={() => addReminder(presets[isAllDay ? 2 : 1] ?? 10)}
+            disabled={full || nextPreset === undefined}
+            onClick={() => nextPreset !== undefined && addReminder(nextPreset)}
             title={full ? `At most ${String(MAX_REMINDER_OVERRIDES)} notifications` : undefined}
             type="button"
           >
