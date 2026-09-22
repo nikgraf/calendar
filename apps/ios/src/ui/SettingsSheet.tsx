@@ -30,6 +30,7 @@ import { iosContactsClient } from '../contactsClient.ts';
 import { iosRemindersClient } from '../remindersClient.ts';
 import { AccountCard } from './AccountCard.tsx';
 import { BirthdayRemindersSection } from './BirthdayRemindersSection.tsx';
+import { EventNotificationsSection } from './EventNotificationsSection.tsx';
 import { DiagnosticsSection } from './DiagnosticsSection.tsx';
 import { LocationsSection } from './LocationsSection.tsx';
 import { PrPreviewSection } from './PrPreviewSection.tsx';
@@ -328,6 +329,7 @@ export function SettingsSheet({ onClose, visible }: { onClose: () => void; visib
             </Pressable>
           ) : null}
 
+          <EventNotificationsSection />
           <BirthdayRemindersSection />
           <LocationsSection />
           <PrPreviewSection />

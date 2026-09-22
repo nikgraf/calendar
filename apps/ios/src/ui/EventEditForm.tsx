@@ -17,6 +17,7 @@ import {
 import { InviteeField } from './InviteeField.tsx';
 import { LocationField } from './LocationField.tsx';
 import { LocationMap } from './LocationMap.tsx';
+import { ReminderChips } from './ReminderChips.tsx';
 import { RepeatRuleChips } from './RepeatRuleChips.tsx';
 
 /** Which account (or, for Apple, which EventKit source) a calendar belongs to. */
@@ -223,6 +224,8 @@ export function EventEditForm({ model }: { model: ReturnType<typeof useEventEdit
             ))}
           </View>
         ) : null}
+
+        <ReminderChips model={model} />
 
         {existing && !readOnly ? (
           <Pressable
