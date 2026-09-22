@@ -263,6 +263,7 @@ describe('moveEvent inside one Google account', () => {
         yield* mutations.previewMove(move(['acc-1', 'cal-1', 'evt-a'], ['acc-1', 'cal-2'])),
       ).toEqual({
         attendees: 0,
+        emailReminders: 0,
         meetingLink: false,
         modifiedOccurrences: 0,
         unsupportedRuleParts: [],
@@ -396,6 +397,7 @@ describe('moveEvent across accounts and providers', () => {
         const params = move(['acc-1', 'cal-1', 'evt-a'], [APPLE_CALENDAR_ACCOUNT_ID, 'ek-work']);
         expect(yield* mutations.previewMove(params)).toEqual({
           attendees: 1,
+          emailReminders: 0,
           meetingLink: false,
           modifiedOccurrences: 0,
           unsupportedRuleParts: [],

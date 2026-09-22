@@ -14,6 +14,8 @@ import type { EventRecord, TaskProvider } from '../types.ts';
 export const MoveLoss = Schema.Struct({
   /** Guests (rooms excluded) that will not follow the event. */
   attendees: Schema.Number,
+  /** Email reminders set on the event; EventKit alarms can only pop up. */
+  emailReminders: Schema.Number,
   /** The Google conference link is dropped (a move to Apple keeps it as the event URL). */
   meetingLink: Schema.Boolean,
   /** Occurrences edited or cancelled on their own; the series moves as its rule only. */
@@ -33,22 +35,35 @@ export interface MoveRoute {
 export const isServerMove = (route: MoveRoute): boolean =>
   route.sameAccount && route.source === 'google' && route.target === 'google';
 
+const NO_LOSS: MoveLoss = {
+  attendees: 0,
+  emailReminders: 0,
+  meetingLink: false,
+  modifiedOccurrences: 0,
+  unsupportedRuleParts: [],
+};
+
 export const moveLoss = (
-  event: Pick<EventRecord, 'attendees' | 'hangoutLink' | 'isAllDay' | 'recurrence'>,
+  event: Pick<EventRecord, 'attendees' | 'hangoutLink' | 'isAllDay' | 'recurrence' | 'reminders'>,
   route: MoveRoute,
   modifiedOccurrences: number,
 ): MoveLoss => {
   if (isServerMove(route)) {
-    return { attendees: 0, meetingLink: false, modifiedOccurrences: 0, unsupportedRuleParts: [] };
+    return NO_LOSS;
   }
   if (route.source === 'apple' && route.target === 'apple') {
     // Same EventKit store: the event keeps its identity and detached occurrences.
-    return { attendees: 0, meetingLink: false, modifiedOccurrences: 0, unsupportedRuleParts: [] };
+    return NO_LOSS;
   }
   return {
     attendees: (event.attendees ?? []).filter(
       (attendee) => !attendee.isResource && !attendee.isOrganizer && !attendee.isSelf,
     ).length,
+    // Reminders the calendar defaults supply are the calendar's, not the event's.
+    emailReminders:
+      route.target === 'apple' && event.reminders && !event.reminders.useDefault
+        ? event.reminders.overrides.filter((override) => override.method === 'email').length
+        : 0,
     meetingLink: route.source === 'google' && route.target === 'google' && !!event.hangoutLink,
     modifiedOccurrences,
     unsupportedRuleParts:
@@ -58,6 +73,7 @@ export const moveLoss = (
 
 export const isLossy = (loss: MoveLoss): boolean =>
   loss.attendees > 0 ||
+  loss.emailReminders > 0 ||
   loss.meetingLink ||
   loss.modifiedOccurrences > 0 ||
   loss.unsupportedRuleParts.length > 0;
@@ -76,6 +92,9 @@ export const moveLossSummary = (loss: MoveLoss): string | null => {
   }
   if (loss.meetingLink) {
     items.push('the meeting link');
+  }
+  if (loss.emailReminders > 0) {
+    items.push(plural(loss.emailReminders, 'email reminder', 'email reminders'));
   }
   if (loss.modifiedOccurrences > 0) {
     items.push(plural(loss.modifiedOccurrences, 'modified occurrence', 'modified occurrences'));

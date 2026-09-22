@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { Attendee } from '../types.ts';
+import { Attendee, EventReminders, ReminderOverride } from '../types.ts';
 import { isLossy, isServerMove, moveLoss, moveLossSummary } from './moveLoss.ts';
 
 const invited = {
@@ -35,6 +35,7 @@ describe('moveLoss', () => {
     const loss = moveLoss(invited, { sameAccount: false, source: 'google', target: 'google' }, 2);
     expect(loss).toEqual({
       attendees: 2,
+      emailReminders: 0,
       meetingLink: true,
       modifiedOccurrences: 2,
       unsupportedRuleParts: [],
@@ -51,6 +52,34 @@ describe('moveLoss', () => {
     expect(moveLossSummary(loss)).toContain(
       'repeat rules the target calendar cannot store (EXDATE)',
     );
+  });
+
+  it('counts email reminders only towards Apple and only when set on the event', () => {
+    const reminders = new EventReminders({
+      overrides: [
+        new ReminderOverride({ method: 'email', minutes: 60 }),
+        new ReminderOverride({ method: 'popup', minutes: 10 }),
+      ],
+      useDefault: false,
+    });
+    const toApple = { sameAccount: false, source: 'google', target: 'apple' } as const;
+    const loss = moveLoss({ isAllDay: false, reminders }, toApple, 0);
+    expect(loss.emailReminders).toBe(1);
+    expect(isLossy(loss)).toBe(true);
+    expect(moveLossSummary(loss)).toBe(
+      'Moving this event to another account drops 1 email reminder.',
+    );
+    expect(
+      moveLoss({ isAllDay: false, reminders: { ...reminders, useDefault: true } }, toApple, 0)
+        .emailReminders,
+    ).toBe(0);
+    expect(
+      moveLoss(
+        { isAllDay: false, reminders },
+        { sameAccount: false, source: 'google', target: 'google' },
+        0,
+      ).emailReminders,
+    ).toBe(0);
   });
 
   it('is empty for a plain event moving Apple → Google', () => {

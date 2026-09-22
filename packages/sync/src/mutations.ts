@@ -6,8 +6,10 @@ import {
 import {
   applyWallClockDelta,
   Attendee,
+  canonicalReminders,
   type EventDraft,
   EventRecord,
+  EventReminders,
   googleInstanceId,
   isServerMove,
   mergeAttendees,
@@ -18,6 +20,7 @@ import {
   normalizeHexColor,
   PendingOp,
   remainingRecurrence,
+  type ReminderOverride,
   toRRuleLines,
   toStructuredRules,
   truncateRecurrence,
@@ -84,19 +87,30 @@ const geoClearedFlag = (
     ? true
     : undefined;
 
+/** Whether this edit — or a still-queued update it replaces — touched the reminders. */
+const remindersFlag = (
+  changes: UpdateEventParams['changes'],
+  queued: ReadonlyArray<PendingOp>,
+): true | undefined =>
+  changes.reminders !== undefined || queued.some((op) => op.remindersChanged === true)
+    ? true
+    : undefined;
+
 const definedChanges = (
   changes: UpdateEventParams['changes'],
   currentAttendees: EventRecord['attendees'],
 ): Partial<EventRecord> => {
-  const { attendees, geo, ...rest } = changes;
+  const { attendees, geo, reminders, ...rest } = changes;
   const defined: Partial<EventRecord> = Object.fromEntries(
     Object.entries(rest).filter(([, value]) => value !== undefined),
   );
   // null clears: an explicit undefined overrides the record's geo in the spread.
   const withGeo = geo === undefined ? defined : { ...defined, geo: geo ?? undefined };
+  const withReminders =
+    reminders === undefined ? withGeo : { ...withGeo, reminders: canonicalReminders(reminders) };
   return attendees === undefined
-    ? withGeo
-    : { ...withGeo, attendees: mergeAttendees(currentAttendees, attendees) };
+    ? withReminders
+    : { ...withReminders, attendees: mergeAttendees(currentAttendees, attendees) };
 };
 
 /**
@@ -119,6 +133,8 @@ const ensureOrganizer = (record: EventRecord, ownEmail: string | undefined, cale
   });
 
 interface MoveSource {
+  /** Google only: what the master's `useDefault` resolves to on its calendar. */
+  readonly defaultReminders: ReadonlyArray<ReminderOverride> | undefined;
   /** The event as a series master (occurrence ids and slots stripped). */
   readonly master: EventRecord;
   readonly modifiedOccurrences: number;
@@ -152,6 +168,19 @@ const copyDraft = (
           master.isAllDay,
         )
       : master.recurrence;
+  // EventKit has no "calendar default": a deferring event takes its
+  // calendar's popup defaults along as explicit alarms (email ones were
+  // confirmed away). Google → Google keeps the object as it is.
+  const reminders =
+    targetProvider === 'apple'
+      ? new EventReminders({
+          overrides: (master.reminders === undefined || master.reminders.useDefault
+            ? (source.defaultReminders ?? [])
+            : master.reminders.overrides
+          ).filter((override) => override.method === 'popup'),
+          useDefault: false,
+        })
+      : master.reminders;
   return {
     accountId: target.accountId,
     calendarId: target.calendarId,
@@ -162,6 +191,7 @@ const copyDraft = (
     isAllDay: master.isAllDay,
     ...(master.location ? { location: master.location } : {}),
     ...(recurrence && recurrence.length > 0 ? { recurrence } : {}),
+    ...(reminders ? { reminders } : {}),
     ...(master.isAllDay ? {} : { startTimeZone: master.startTimeZone }),
     startUtc: master.startUtc,
     title: master.title,
@@ -426,6 +456,7 @@ const make: Effect.Effect<
             isAllDay: draft.isAllDay,
             location: draft.location,
             recurrence: draft.recurrence,
+            reminders: draft.reminders ? canonicalReminders(draft.reminders) : undefined,
             startDate: draft.startDate,
             startTimeZone: draft.startTimeZone,
             startUtc: draft.startUtc,
@@ -693,6 +724,7 @@ const make: Effect.Effect<
             kind: hasCreate ? 'create' : 'update',
             nextAttemptAt: 0,
             payload: merged,
+            remindersChanged: hasCreate ? undefined : remindersFlag(changes, queued),
           }),
         );
       }),
@@ -740,6 +772,7 @@ const make: Effect.Effect<
               kind: 'update',
               nextAttemptAt: 0,
               payload: merged,
+              remindersChanged: remindersFlag(changes, queued),
             }),
           );
           return;
@@ -772,6 +805,7 @@ const make: Effect.Effect<
               endUtc: master.isAllDay ? master.endUtc : startUtc + duration,
               geo: changes.geo === undefined ? master.geo : (changes.geo ?? undefined),
               location: changes.location ?? master.location,
+              reminders: defined.reminders ?? master.reminders,
               startUtc: master.isAllDay ? master.startUtc : startUtc,
               syncStatus: 'pending',
               title: changes.title ?? master.title,
@@ -795,6 +829,7 @@ const make: Effect.Effect<
               kind: 'update',
               nextAttemptAt: 0,
               payload: merged,
+              remindersChanged: remindersFlag(changes, queued),
             }),
           );
           return;
@@ -922,6 +957,7 @@ const make: Effect.Effect<
         const mapped = mapAppleEvent(series.first, { deviceTimeZone: deviceTimeZone(), now });
         const recurrence = toRRuleLines(series.rules, series.first.isAllDay);
         return {
+          defaultReminders: undefined,
           master: new EventRecord({
             ...mapped,
             id: eventId,
@@ -944,7 +980,13 @@ const make: Effect.Effect<
       const overrides = master.recurrence
         ? yield* eventRepo.listOverrides(accountId, calendarId, eventId)
         : [];
-      return { master, modifiedOccurrences: overrides.length, url: undefined } satisfies MoveSource;
+      const calendar = (yield* calendarRepo.list(accountId)).find((c) => c.id === calendarId);
+      return {
+        defaultReminders: calendar?.defaultReminders,
+        master,
+        modifiedOccurrences: overrides.length,
+        url: undefined,
+      } satisfies MoveSource;
     });
 
   /**

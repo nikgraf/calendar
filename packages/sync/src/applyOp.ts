@@ -17,6 +17,8 @@ import {
   toGcalEventInput,
   toGcalGeoInsert,
   toGcalGeoPatch,
+  toGcalRemindersInsert,
+  toGcalRemindersPatch,
 } from '@calendar/google';
 import { Cause, Clock, Effect } from 'effect';
 
@@ -312,6 +314,7 @@ export const makeApplyOp = (
             event: {
               ...toGcalEventInput(op.payload),
               ...toGcalGeoInsert(op.payload),
+              ...toGcalRemindersInsert(op.payload),
               attendees: toGcalAttendees(op.payload),
             },
             sendUpdates: sendUpdatesFor(op.payload, false),
@@ -437,6 +440,7 @@ export const makeApplyOp = (
             event: {
               ...toGcalEventInput(op.payload),
               ...toGcalGeoPatch(op.payload, op.geoCleared === true),
+              ...toGcalRemindersPatch(op.payload, op.remindersChanged === true),
               ...(op.attendeesChanged ? { attendees: toGcalAttendees(op.payload) } : {}),
             },
             eventId: op.eventId,
