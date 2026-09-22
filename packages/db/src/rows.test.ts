@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { GeoLocation } from '@calendar/core';
+import { EventReminders, GeoLocation, ReminderOverride } from '@calendar/core';
 import {
   eventFromRow,
   type EventRow,
@@ -26,6 +26,7 @@ const eventRow = (overrides: Partial<EventRow> = {}): EventRow => ({
   recurrence: null,
   recurrence_end_utc: null,
   recurring_event_id: null,
+  reminders: null,
   start_date: null,
   start_time_zone: null,
   start_utc: 1000,
@@ -36,6 +37,8 @@ const eventRow = (overrides: Partial<EventRow> = {}): EventRow => ({
   updated_at: 0,
   ...overrides,
 });
+
+const eventRow2 = (reminders: EventReminders) => ({ ...eventFromRow(eventRow()), reminders });
 
 const opRow = (overrides: Partial<PendingOpRow> = {}): PendingOpRow => ({
   account_id: 'acc-1',
@@ -53,6 +56,7 @@ const opRow = (overrides: Partial<PendingOpRow> = {}): PendingOpRow => ({
   last_error: null,
   next_attempt_at: 0,
   payload: null,
+  reminders_changed: 0,
   target_calendar_id: null,
   task_due: null,
   task_list_id: null,
@@ -99,6 +103,24 @@ describe('row decoders tolerate what the DB may hold', () => {
     expect(event.geo).toEqual(new GeoLocation(geo));
     expect(eventToRow(event).geo).toBe(JSON.stringify(geo));
     expect(eventFromRow(eventRow({ geo: '{"lat":"north"}' })).geo).toBeUndefined();
+  });
+
+  it('eventFromRow round-trips reminders, keeps "none" apart from absent and drops junk', () => {
+    const none = new EventReminders({ overrides: [], useDefault: false });
+    expect(eventFromRow(eventRow({ reminders: JSON.stringify(none) })).reminders).toEqual(none);
+    const custom = new EventReminders({
+      overrides: [new ReminderOverride({ method: 'popup', minutes: 30 })],
+      useDefault: false,
+    });
+    const event = eventFromRow(eventRow({ reminders: eventToRow(eventRow2(custom)).reminders }));
+    expect(event.reminders).toEqual(custom);
+    expect(eventFromRow(eventRow()).reminders).toBeUndefined();
+    expect(eventFromRow(eventRow({ reminders: '{"useDefault":"yes"}' })).reminders).toBeUndefined();
+  });
+
+  it('pendingOpFromRow reads the remindersChanged flag', () => {
+    expect(pendingOpFromRow(opRow({ reminders_changed: 1 }))?.remindersChanged).toBe(true);
+    expect(pendingOpFromRow(opRow())?.remindersChanged).toBeUndefined();
   });
 
   it('pendingOpFromRow turns an unreadable payload into payload: undefined', () => {

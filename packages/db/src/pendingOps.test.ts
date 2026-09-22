@@ -48,11 +48,18 @@ describe('PendingOpRepo', () => {
         updatedAt: 1,
       });
       yield* repo.enqueue(
-        op('op-1', { baseEtag: '"server"', colorHex: '#ff0000', lastError: 'boom', payload }),
+        op('op-1', {
+          baseEtag: '"server"',
+          colorHex: '#ff0000',
+          lastError: 'boom',
+          payload,
+          remindersChanged: true,
+        }),
       );
 
       const [stored] = yield* repo.listAll();
       expect(stored?.baseEtag).toBe('"server"');
+      expect(stored?.remindersChanged).toBe(true);
       expect(stored?.colorHex).toBe('#ff0000');
       expect(stored?.lastError).toBe('boom');
       expect(stored?.payload?.title).toBe('Standup');

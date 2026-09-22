@@ -4,7 +4,7 @@ import { Reactivity } from 'effect/unstable/reactivity/Reactivity';
 import { SqlClient } from 'effect/unstable/sql/SqlClient';
 import type { SqlError } from 'effect/unstable/sql/SqlError';
 import { CALENDARS_KEY, EVENTS_KEY, SYNC_STATE_KEY } from './keys.ts';
-import { calendarFromRow, type CalendarRow } from './rows.ts';
+import { calendarFromRow, type CalendarRow, defaultRemindersJson } from './rows.ts';
 import { accountGuard } from './repoShared.ts';
 
 export interface CalendarRepoShape {
@@ -126,11 +126,13 @@ const makeCalendarRepo: Effect.Effect<CalendarRepoShape, never, Reactivity | Sql
             (calendar) =>
               sql`
               INSERT INTO calendars (account_id, id, summary, color_hex, access_role,
-                                     is_primary, is_visible, time_zone, source_title)
+                                     is_primary, is_visible, time_zone, source_title,
+                                     default_reminders)
               SELECT ${calendar.accountId}, ${calendar.id}, ${calendar.summary},
                      ${calendar.colorHex}, ${calendar.accessRole},
                      ${calendar.isPrimary ? 1 : 0}, ${calendar.isVisible ? 1 : 0},
-                     ${calendar.timeZone}, ${calendar.sourceTitle ?? null}
+                     ${calendar.timeZone}, ${calendar.sourceTitle ?? null},
+                     ${defaultRemindersJson(calendar)}
               ${accountGuard(sql, calendar.accountId)}
               ON CONFLICT (account_id, id) DO UPDATE SET
                 summary = excluded.summary,
@@ -138,7 +140,8 @@ const makeCalendarRepo: Effect.Effect<CalendarRepoShape, never, Reactivity | Sql
                 access_role = excluded.access_role,
                 is_primary = excluded.is_primary,
                 time_zone = excluded.time_zone,
-                source_title = excluded.source_title
+                source_title = excluded.source_title,
+                default_reminders = excluded.default_reminders
             `,
             { discard: true },
           ),
