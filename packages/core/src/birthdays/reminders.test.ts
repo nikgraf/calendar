@@ -24,11 +24,11 @@ describe('planBirthdayReminders', () => {
     );
     expect(plans.map((plan) => [plan.key, plan.fireAt, plan.body])).toEqual([
       [
-        'device:a:2026-03-04:7',
+        'birthday:device:a:2026-03-04:7',
         utc('2026-02-25T09:00:00Z'),
         'Birthday in a week — turns 32 (Wed, Mar 4)',
       ],
-      ['device:a:2026-03-04:0', utc('2026-03-04T09:00:00Z'), 'Birthday today — turns 32'],
+      ['birthday:device:a:2026-03-04:0', utc('2026-03-04T09:00:00Z'), 'Birthday today — turns 32'],
     ]);
     expect(plans[0]!.title).toBe('🎂 Alice');
   });
@@ -47,7 +47,7 @@ describe('planBirthdayReminders', () => {
       { enabled: true, leadDays: [0, 7], time: '09:00' },
       { fromDate: '2026-03-01', horizonDays: 30, timeZone: 'UTC' },
     );
-    expect(plans.map((plan) => plan.key)).toEqual(['device:a:2026-03-04:0']);
+    expect(plans.map((plan) => plan.key)).toEqual(['birthday:device:a:2026-03-04:0']);
   });
 
   it('reaches into the next year for a lead that fires before the horizon ends', () => {
@@ -57,7 +57,7 @@ describe('planBirthdayReminders', () => {
       { fromDate: '2026-12-20', horizonDays: 7, timeZone: 'Europe/Vienna' },
     );
     expect(plans.map((plan) => [plan.key, plan.fireAt])).toEqual([
-      ['device:a:2027-01-03:14', utc('2026-12-20T07:30:00Z')],
+      ['birthday:device:a:2027-01-03:14', utc('2026-12-20T07:30:00Z')],
     ]);
     expect(plans[0]!.body).toBe('Birthday in two weeks (Sun, Jan 3)');
   });
@@ -68,7 +68,7 @@ describe('planBirthdayReminders', () => {
       { enabled: true, leadDays: [0], time: '09:00' },
       { fromDate: '2027-02-01', horizonDays: 40, timeZone: 'UTC' },
     );
-    expect(leap.map((plan) => plan.key)).toEqual(['device:a:2027-02-28:0']);
+    expect(leap.map((plan) => plan.key)).toEqual(['birthday:device:a:2027-02-28:0']);
     // 02:30 does not exist on 2027-03-28 in Vienna; the clock skips forward.
     const gap = planBirthdayReminders(
       [record({ day: 28, month: 3 })],

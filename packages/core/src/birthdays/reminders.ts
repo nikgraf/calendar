@@ -1,4 +1,5 @@
 import { Schema } from 'effect';
+import type { PlannedNotification } from '../notifications/planned.ts';
 import { Temporal } from '../time/temporal.ts';
 import type { BirthdayRecord } from '../types.ts';
 import { birthdaysInRange } from './model.ts';
@@ -43,19 +44,8 @@ export const leadDaysLabel = (leadDays: BirthdayLeadDays): string => {
   }
 };
 
-/** Copy shown under the settings on both platforms. */
-export const BIRTHDAY_REMINDERS_DEVICE_ONLY =
-  'Stored only on this device — not synced to your other devices or to Google.';
-
-/** One local notification the platform sink delivers or schedules. */
-export interface PlannedNotification {
-  readonly body: string;
-  /** Epoch ms of delivery in the planner's time zone. */
-  readonly fireAt: number;
-  /** `<recordId>:<occurrenceDate>:<leadDays>` — stable across runs, so a sink can dedupe. */
-  readonly key: string;
-  readonly title: string;
-}
+/** A missed birthday reminder is still worth showing for the rest of the day. */
+const BIRTHDAY_CATCH_UP_MS = 24 * 60 * 60 * 1000;
 
 const parseTime = (time: string): { readonly hour: number; readonly minute: number } => {
   const match = /^(\d{1,2}):(\d{2})$/.exec(time);
@@ -114,11 +104,16 @@ export const planBirthdayReminders = (
         leadDays === 0
           ? ''
           : ` (${date.toLocaleString('en-US', { day: 'numeric', month: 'short', weekday: 'short' })})`;
+      const fireAt = fireDate.toZonedDateTime({
+        plainTime,
+        timeZone: options.timeZone,
+      }).epochMilliseconds;
       out.push({
         body: `Birthday ${leadPhrase(leadDays)}${turns}${when}`,
-        fireAt: fireDate.toZonedDateTime({ plainTime, timeZone: options.timeZone })
-          .epochMilliseconds,
-        key: `${occurrence.record.id}:${occurrence.date}:${String(leadDays)}`,
+        expiresAt: fireAt + BIRTHDAY_CATCH_UP_MS,
+        fireAt,
+        // Prefixed so the merged notification schedule keeps producers apart.
+        key: `birthday:${occurrence.record.id}:${occurrence.date}:${String(leadDays)}`,
         title: `🎂 ${occurrence.record.displayName}`,
       });
     }

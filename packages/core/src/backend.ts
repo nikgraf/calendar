@@ -4,6 +4,7 @@ import type { RpcClientError } from 'effect/unstable/rpc/RpcClientError';
 import { BirthdayReminderSettings } from './birthdays/reminders.ts';
 import { MoveLoss } from './editor/moveLoss.ts';
 import { PlaceSuggestion } from './geo/location.ts';
+import { EventNotificationSettings } from './notifications/settings.ts';
 import { AccountSyncStatus } from './syncStatus.ts';
 import {
   Account,
@@ -11,6 +12,7 @@ import {
   CalendarInfo,
   Contact,
   EventRecord,
+  EventReminders,
   GeoLocation,
   TaskListInfo,
   TaskPriority,
@@ -48,6 +50,8 @@ export const EventDraft = Schema.Struct({
   location: Schema.optional(Schema.String),
   /** RFC 5545 lines (RRULE/...) to create the event as a recurring master. */
   recurrence: Schema.optional(Schema.Array(Schema.String)),
+  /** Absent = the calendar's default (Google) / no alarms (Apple). */
+  reminders: Schema.optional(EventReminders),
   startDate: Schema.optional(Schema.String),
   startTimeZone: Schema.optional(Schema.String),
   startUtc: Schema.Number,
@@ -70,6 +74,12 @@ export const UpdateEventChanges = Schema.Struct({
   geo: Schema.optional(Schema.NullOr(GeoLocation)),
   isAllDay: Schema.optional(Schema.Boolean),
   location: Schema.optional(Schema.String),
+  /**
+   * Full replacement: undefined leaves the reminders alone. There is no
+   * "clear" — `{ useDefault: true, overrides: [] }` is the Google reset and
+   * `{ useDefault: false, overrides: [] }` means none.
+   */
+  reminders: Schema.optional(EventReminders),
   startDate: Schema.optional(Schema.String),
   startUtc: Schema.optional(Schema.Number),
   title: Schema.optional(Schema.String),
@@ -234,6 +244,11 @@ export class AppBackendRpcs extends RpcGroup.make(
     error: BackendError,
     success: BirthdayReminderSettings,
   }),
+  /** Device-local event notification preferences (never synced). */
+  Rpc.make('getEventNotificationSettings', {
+    error: BackendError,
+    success: EventNotificationSettings,
+  }),
   /** Contact birthdays (Google People + device) falling on days in the window, inclusive bounds. */
   Rpc.make('getBirthdaysInRange', {
     error: BackendError,
@@ -376,6 +391,12 @@ export class AppBackendRpcs extends RpcGroup.make(
   Rpc.make('setBirthdayReminderSettings', {
     error: BackendError,
     payload: BirthdayReminderSettings,
+    success: Schema.Struct({ notificationsGranted: Schema.Boolean }),
+  }),
+  /** Same contract as setBirthdayReminderSettings, for event notifications. */
+  Rpc.make('setEventNotificationSettings', {
+    error: BackendError,
+    payload: EventNotificationSettings,
     success: Schema.Struct({ notificationsGranted: Schema.Boolean }),
   }),
   Rpc.make('setCalendarColor', {

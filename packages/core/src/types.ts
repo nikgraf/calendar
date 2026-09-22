@@ -151,11 +151,38 @@ export class TokenSet extends Schema.Class<TokenSet>('TokenSet')({
   scopes: Schema.Array(Schema.String),
 }) {}
 
+export const ReminderMethod = Schema.Literals(['email', 'popup']);
+export type ReminderMethod = Schema.Schema.Type<typeof ReminderMethod>;
+
+/** One reminder as Google models it. Only `popup` ones notify locally; `email` is Google's to send. */
+export class ReminderOverride extends Schema.Class<ReminderOverride>('ReminderOverride')({
+  method: ReminderMethod,
+  /**
+   * Minutes before the start (0..40320). For an all-day event: before
+   * local midnight of the start day — Google and EventKit agree on that.
+   */
+  minutes: Schema.Number,
+}) {}
+
+/**
+ * Google's `reminders` object, also the shape Apple alarms map onto
+ * (`useDefault: false` + popup overrides). `useDefault: false` with no
+ * overrides means "no reminders" and is distinct from the field being
+ * absent (a row synced before reminders were modelled).
+ */
+export class EventReminders extends Schema.Class<EventReminders>('EventReminders')({
+  overrides: Schema.Array(ReminderOverride),
+  /** Google: fall back to the calendar's `defaultReminders`. Never true on Apple events. */
+  useDefault: Schema.Boolean,
+}) {}
+
 export class CalendarInfo extends Schema.Class<CalendarInfo>('CalendarInfo')({
   /** Apple calendars: 'owner' when EventKit allows writes, 'reader' otherwise. */
   accessRole: AccessRole,
   accountId: Schema.String,
   colorHex: Schema.String,
+  /** Google only: what `useDefault` resolves to (calendarList `defaultReminders`). */
+  defaultReminders: Schema.optional(Schema.Array(ReminderOverride)),
   /** Google calendar id / EK calendarIdentifier, unique within an account (not across accounts). */
   id: Schema.String,
   /** Google: the account's primary calendar; Apple: EventKit's default for new events. */
@@ -265,6 +292,8 @@ export class EventRecord extends Schema.Class<EventRecord>('EventRecord')({
   recurrence: Schema.optional(Schema.Array(Schema.String)),
   /** Set only on override instances: id of the recurring master. */
   recurringEventId: Schema.optional(Schema.String),
+  /** Absent on Google rows synced before reminders were modelled (read as calendar default). */
+  reminders: Schema.optional(EventReminders),
   startDate: Schema.optional(Schema.String),
   /** IANA zone; drives recurrence expansion and cross-DST rendering. */
   startTimeZone: Schema.optional(Schema.String),
@@ -323,6 +352,12 @@ export class PendingOp extends Schema.Class<PendingOp>('PendingOp')({
   nextAttemptAt: Schema.Number,
   /** Snapshot of the event to send (create/update). */
   payload: Schema.optional(EventRecord),
+  /**
+   * Set on an update whose edit touched the reminders. Only then does the
+   * patch carry `reminders` — Google replaces the whole object, and an
+   * unrelated edit must not rewrite it from a possibly stale copy.
+   */
+  remindersChanged: Schema.optional(Schema.Boolean),
   /** Due day (YYYY-MM-DD) for kind 'createTask'/'updateTask'. */
   taskDue: Schema.optional(Schema.String),
   /** Task-list id for the task op kinds (eventId carries the task id). */

@@ -39,8 +39,10 @@ import { loadMergedBirthdays } from './birthdays.ts';
 import { DeviceContacts } from './deviceContacts.ts';
 import {
   readBirthdayReminderSettings,
+  readEventNotificationSettings,
   readViewPreferences,
   writeBirthdayReminderSettings,
+  writeEventNotificationSettings,
   writeViewPreferences,
 } from './deviceSettings.ts';
 import { NotificationSink } from './notificationSink.ts';
@@ -207,6 +209,8 @@ export const commonBackendHandlers: Omit<BackendHandlers<CommonBackendServices>,
   getBirthdaysInRange: ({ endDate, startDate }) =>
     Effect.map(loadMergedBirthdays, (records) => birthdaysInRange(records, startDate, endDate)),
 
+  getEventNotificationSettings: () => readEventNotificationSettings,
+
   getEventsInRange: ({ rangeEndUtc, rangeStartUtc }) =>
     Effect.gen(function* () {
       const events = yield* EventRepo;
@@ -368,6 +372,18 @@ export const commonBackendHandlers: Omit<BackendHandlers<CommonBackendServices>,
       // setVisible invalidates the event views too, which is what repaints
       // an Apple calendar's read-through events.
       yield* calendarRepo.setVisible(accountId, calendarId, isVisible);
+    }),
+
+  // Same permission rule as the birthday setter; the reminder pass picks
+  // the new choice up on its next run.
+  setEventNotificationSettings: (settings) =>
+    Effect.gen(function* () {
+      const previous = yield* readEventNotificationSettings;
+      yield* writeEventNotificationSettings(settings);
+      const sink = yield* NotificationSink;
+      const ask = settings.enabled && (sink.kind === 'scheduled' || !previous.enabled);
+      const notificationsGranted = ask ? yield* sink.ensurePermission() : true;
+      return { notificationsGranted };
     }),
 
   setTaskListVisible: ({ accountId, isVisible, taskListId }) =>

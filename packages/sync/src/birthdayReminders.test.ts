@@ -71,10 +71,10 @@ describe('BirthdayReminders', () => {
       yield* setClock('2026-03-03T10:00:00Z');
       yield* reminders.run();
       yield* reminders.run();
-      expect(shown).toEqual(['device:a:2026-03-04:1']);
+      expect(shown).toEqual(['birthday:device:a:2026-03-04:1']);
       yield* TestClock.adjust('24 hours');
       yield* reminders.run();
-      expect(shown).toEqual(['device:a:2026-03-04:1', 'device:a:2026-03-04:0']);
+      expect(shown).toEqual(['birthday:device:a:2026-03-04:1', 'birthday:device:a:2026-03-04:0']);
     }).pipe(Effect.provide(testLayer(sink)));
   });
 
@@ -86,7 +86,7 @@ describe('BirthdayReminders', () => {
       // 09:00 on the 4th is 2 h old (fires); 09:00 on the 3rd is 26 h old (dropped).
       yield* setClock('2026-03-04T11:00:00Z');
       yield* reminders.run();
-      expect(shown).toEqual(['device:a:2026-03-04:0']);
+      expect(shown).toEqual(['birthday:device:a:2026-03-04:0']);
     }).pipe(Effect.provide(testLayer(sink)));
   });
 
@@ -110,8 +110,8 @@ describe('BirthdayReminders', () => {
       yield* reminders.run();
       expect(scheduled.schedules).toHaveLength(1);
       expect(scheduled.schedules[0]!.map((plan) => plan.key)).toEqual([
-        'device:a:2026-03-04:1',
-        'device:a:2026-03-04:0',
+        'birthday:device:a:2026-03-04:1',
+        'birthday:device:a:2026-03-04:0',
       ]);
       expect(scheduled.asked()).toBe(1);
 

@@ -1,7 +1,7 @@
 import { useBackendMutations, useBirthdayReminderSettings } from '@calendar/app-state';
 import {
   BIRTHDAY_LEAD_DAYS,
-  BIRTHDAY_REMINDERS_DEVICE_ONLY,
+  DEVICE_ONLY_SETTING_COPY,
   type BirthdayLeadDays,
   type BirthdayReminderSettings,
   leadDaysLabel,
@@ -93,7 +93,7 @@ export function BirthdayRemindersSection() {
         </Text>
       ) : null}
       <Text style={sectionStyles.meta} testID="birthday-device-only">
-        {BIRTHDAY_REMINDERS_DEVICE_ONLY}
+        {DEVICE_ONLY_SETTING_COPY}
       </Text>
     </View>
   );

@@ -1,7 +1,9 @@
 import {
   BirthdayReminderSettings,
   DEFAULT_BIRTHDAY_REMINDER_SETTINGS,
+  DEFAULT_EVENT_NOTIFICATION_SETTINGS,
   DEFAULT_VIEW_PREFERENCES,
+  EventNotificationSettings,
   ViewPreferences,
 } from '@calendar/core';
 import { DeviceSettingsRepo } from '@calendar/db';
@@ -37,6 +39,36 @@ export const writeBirthdayReminderSettings = (
       // Deduped and ordered so the stored value is canonical.
       leadDays: [...new Set(settings.leadDays)].sort((a, b) => a - b),
       time: settings.time,
+    }),
+  );
+
+/** The device_settings key for event notifications. */
+export const EVENT_NOTIFICATIONS_KEY = 'eventNotifications';
+
+const decodeEventNotificationSettings = Schema.decodeUnknownEffect(EventNotificationSettings);
+
+/** The stored preferences, or the defaults (on) when nothing decodable is stored. */
+export const readEventNotificationSettings: Effect.Effect<
+  EventNotificationSettings,
+  SqlError,
+  DeviceSettingsRepo
+> = Effect.gen(function* () {
+  const raw = yield* (yield* DeviceSettingsRepo).get(EVENT_NOTIFICATIONS_KEY);
+  if (raw === null) {
+    return DEFAULT_EVENT_NOTIFICATION_SETTINGS;
+  }
+  return yield* decodeEventNotificationSettings(raw).pipe(
+    Effect.orElseSucceed(() => DEFAULT_EVENT_NOTIFICATION_SETTINGS),
+  );
+});
+
+export const writeEventNotificationSettings = (
+  settings: EventNotificationSettings,
+): Effect.Effect<void, SqlError, DeviceSettingsRepo> =>
+  Effect.flatMap(DeviceSettingsRepo, (repo) =>
+    repo.set(EVENT_NOTIFICATIONS_KEY, {
+      enabled: settings.enabled,
+      includeAppleCalendar: settings.includeAppleCalendar,
     }),
   );
 
