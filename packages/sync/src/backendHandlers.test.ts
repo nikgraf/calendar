@@ -18,7 +18,7 @@ import { Effect, Layer } from 'effect';
 import { layer as reactivityLayer } from 'effect/unstable/reactivity/Reactivity';
 import { describe, vi } from 'vitest';
 import { commonBackendHandlers } from './backendHandlers.ts';
-import { BirthdayReminders } from './birthdayReminders.ts';
+import { LocalNotifications } from './localNotifications.ts';
 import { DeviceContacts } from './deviceContacts.ts';
 import { SyncEngine } from './engine.ts';
 import { NotificationSink, type NotificationSinkShape } from './notificationSink.ts';
@@ -41,7 +41,7 @@ const setBirthdayReminderSettings = (settings: BirthdayReminderSettings) =>
   commonBackendHandlers.setBirthdayReminderSettings(settings) as Effect.Effect<
     { readonly notificationsGranted: boolean },
     unknown,
-    BirthdayReminders | DeviceSettingsRepo | NotificationSink
+    DeviceSettingsRepo | LocalNotifications | NotificationSink
   >;
 
 const remindersSetup = (client: RemindersClientShape) => {
@@ -222,7 +222,7 @@ const birthdaySetup = (kind: 'immediate' | 'scheduled', granted = true) => {
       Layer.provideMerge(reactivityLayer),
     ),
     Layer.succeed(NotificationSink, sink),
-    Layer.succeed(BirthdayReminders, { run: () => Effect.void, start: () => Effect.void }),
+    Layer.succeed(LocalNotifications, { run: () => Effect.void, start: () => Effect.void }),
   );
   return { ensurePermission, layer };
 };

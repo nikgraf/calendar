@@ -27,7 +27,7 @@ import {
 } from '@calendar/google';
 import {
   AppleCalendarEvents,
-  BirthdayReminders,
+  LocalNotifications,
   commonBackendHandlers,
   DeviceContacts,
   EventMutations,
@@ -89,9 +89,10 @@ export const startBackendHost = (): void => {
 
   const appLayer = SyncEngine.layer.pipe(
     Layer.provideMerge(EventMutations.layer),
+    // Above the Apple read path: the scheduler plans from it.
+    Layer.provideMerge(LocalNotifications.layer({ timeZone: Temporal.Now.timeZoneId() })),
     Layer.provideMerge(AppleCalendarEvents.layer),
     Layer.provideMerge(desktopAppleCalendarLayer),
-    Layer.provideMerge(BirthdayReminders.layer({ timeZone: Temporal.Now.timeZoneId() })),
     Layer.provideMerge(GoogleCalendarClient.layer),
     Layer.provideMerge(GoogleTasksClient.layer),
     Layer.provideMerge(GooglePeopleClient.layer),
@@ -122,7 +123,7 @@ export const startBackendHost = (): void => {
     | AccountRepo
     | AppleCalendarClient
     | AppleCalendarEvents
-    | BirthdayReminders
+    | LocalNotifications
     | BirthdayRepo
     | CalendarRepo
     | ContactRepo
@@ -175,7 +176,7 @@ export const startBackendHost = (): void => {
         yield* seedDesktopGoogleFixture;
         const engine = yield* SyncEngine;
         yield* engine.start();
-        yield* (yield* BirthdayReminders).start();
+        yield* (yield* LocalNotifications).start();
         console.log('[backend] runtime ready, rpc server + scheduler started');
       }),
     )

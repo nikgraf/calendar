@@ -31,7 +31,7 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import {
   backendClient,
   kickSync,
-  runBirthdayReminders,
+  runLocalNotifications,
   startSync,
   subscribeInvalidations,
 } from './src/backend.ts';
@@ -85,7 +85,7 @@ function CalendarScreen() {
     const subscription = AppState.addEventListener('change', (state) => {
       if (state === 'active') {
         kickSync();
-        runBirthdayReminders();
+        runLocalNotifications();
       }
     });
     return () => subscription.remove();

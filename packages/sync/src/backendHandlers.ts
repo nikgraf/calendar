@@ -4,7 +4,6 @@ import {
   APPLE_CALENDAR_ACCOUNT_ID,
   APPLE_REMINDERS_ACCOUNT_ID,
   AppBackendRpcs,
-  assembleWindow,
   backendMethodNames,
   mapToBackendError,
   type BackendError,
@@ -34,9 +33,10 @@ import { TokenStore } from '@calendar/google';
 import { RemindersClient } from '@calendar/reminders';
 import { Clock, Effect, Queue, Stream } from 'effect';
 import { AppleCalendarEvents } from './appleCalendarEvents.ts';
-import { BirthdayReminders } from './birthdayReminders.ts';
 import { loadMergedBirthdays } from './birthdays.ts';
 import { DeviceContacts } from './deviceContacts.ts';
+import { loadEventsInRange } from './eventsInRange.ts';
+import { LocalNotifications } from './localNotifications.ts';
 import {
   readBirthdayReminderSettings,
   readEventNotificationSettings,
@@ -57,7 +57,7 @@ export type CommonBackendServices =
   | AccountRepo
   | AppleCalendarClient
   | AppleCalendarEvents
-  | BirthdayReminders
+  | LocalNotifications
   | BirthdayRepo
   | CalendarRepo
   | ContactRepo
@@ -212,22 +212,7 @@ export const commonBackendHandlers: Omit<BackendHandlers<CommonBackendServices>,
   getEventNotificationSettings: () => readEventNotificationSettings,
 
   getEventsInRange: ({ rangeEndUtc, rangeStartUtc }) =>
-    Effect.gen(function* () {
-      const events = yield* EventRepo;
-      const window = yield* events.getWindow(rangeStartUtc, rangeEndUtc);
-      const skipped: Array<string> = [];
-      const result = assembleWindow(window, rangeStartUtc, rangeEndUtc, (master, error) =>
-        skipped.push(`${master.calendarId}/${master.id}: ${String(error)}`),
-      );
-      if (skipped.length > 0) {
-        yield* Effect.logWarning('recurring masters skipped in window', { skipped });
-      }
-      // Apple Calendar events are never stored: EventKit answers the range live.
-      const apple = yield* (yield* AppleCalendarEvents).eventsInRange(rangeStartUtc, rangeEndUtc);
-      return apple.length === 0
-        ? result
-        : [...result, ...apple].sort((a, b) => a.startUtc - b.startUtc);
-    }),
+    loadEventsInRange(rangeStartUtc, rangeEndUtc),
 
   getOverdueTasks: ({ before }) =>
     Effect.gen(function* () {
@@ -356,7 +341,7 @@ export const commonBackendHandlers: Omit<BackendHandlers<CommonBackendServices>,
       const sink = yield* NotificationSink;
       const ask = settings.enabled && (sink.kind === 'scheduled' || !previous.enabled);
       const notificationsGranted = ask ? yield* sink.ensurePermission() : true;
-      yield* Effect.forkDetach((yield* BirthdayReminders).run());
+      yield* Effect.forkDetach((yield* LocalNotifications).run());
       return { notificationsGranted };
     }),
 
@@ -374,8 +359,7 @@ export const commonBackendHandlers: Omit<BackendHandlers<CommonBackendServices>,
       yield* calendarRepo.setVisible(accountId, calendarId, isVisible);
     }),
 
-  // Same permission rule as the birthday setter; the reminder pass picks
-  // the new choice up on its next run.
+  // Same permission rule as the birthday setter, same immediate pass.
   setEventNotificationSettings: (settings) =>
     Effect.gen(function* () {
       const previous = yield* readEventNotificationSettings;
@@ -383,6 +367,7 @@ export const commonBackendHandlers: Omit<BackendHandlers<CommonBackendServices>,
       const sink = yield* NotificationSink;
       const ask = settings.enabled && (sink.kind === 'scheduled' || !previous.enabled);
       const notificationsGranted = ask ? yield* sink.ensurePermission() : true;
+      yield* Effect.forkDetach((yield* LocalNotifications).run());
       return { notificationsGranted };
     }),
 
