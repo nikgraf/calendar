@@ -172,7 +172,10 @@ jobs:
     needs: [gate, changes]
     if: needs.changes.outputs.code == 'true'
     runs-on: macos-26
-    timeout-minutes: 45
+    # Green runs take 37–43 min (simulator boot, Metro bootstrap and the
+    # first-permission pass before any flow); 45 cut a fully passed suite
+    # off during cleanup.
+    timeout-minutes: 60
     env:
       CI: 1
       EXPO_NO_TELEMETRY: 1
