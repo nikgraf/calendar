@@ -12,6 +12,7 @@ import { FIELD_CLASS as field } from './fieldStyles.ts';
 import { LocationCombobox } from './LocationCombobox.tsx';
 import { LocationMap } from './LocationMap.tsx';
 import { MoveConfirm } from './MoveConfirm.tsx';
+import { RemindersFields } from './RemindersFields.tsx';
 import { RepeatRuleFields } from './RepeatRuleFields.tsx';
 
 /**
@@ -220,6 +221,7 @@ export function EventEditorForm({
             </ul>
           </div>
         ) : null}
+        <RemindersFields model={model} />
       </fieldset>
 
       <MoveConfirm moveConfirmation={moveConfirmation} />
