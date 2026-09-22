@@ -21,8 +21,9 @@ const focusWindow = () => {
 
 /**
  * Electron has no query for the notification authorization: macOS asks
- * on the first show(), then emits 'show' or 'failed'. So turning
- * notifications on posts a confirmation, which doubles as the permission ask.
+ * on the first show(), then emits 'show' or 'failed'. So the first start
+ * (and turning notifications back on) posts a confirmation, which
+ * doubles as the permission ask.
  */
 const ensurePermission = () =>
   Effect.callback<boolean>((resume) => {

@@ -460,7 +460,9 @@ Rules that keep the queue correct:
   `device_settings`), iOS replaces the pending expo-notifications
   schedule with the soonest ≤ 60 whenever the digest changes. The loop
   sleeps until the next delivery (5 s..60 s) and re-plans, debounced,
-  on every `EVENTS_KEY` / `BIRTHDAYS_KEY` invalidation. "The
+  on every `EVENTS_KEY` / `BIRTHDAYS_KEY` invalidation. An immediate
+  sink is asked for permission once, on the first pass with a producer
+  enabled (desktop's ask is the "Notifications are on" banner). "The
   notification is latency, the pass is correctness" applies.
 - Event reminders are data on the record (`EventRecord.reminders`,
   Google's `useDefault`/`overrides` shape; `useDefault:false` with no

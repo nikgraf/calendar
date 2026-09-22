@@ -37,12 +37,17 @@ const alice = { contactId: 'a', day: 4, displayName: 'Alice', month: 3, year: 19
 
 const immediateSink = () => {
   const shown: Array<string> = [];
+  let asked = 0;
   const sink: NotificationSinkShape = {
-    ensurePermission: () => Effect.succeed(true),
+    ensurePermission: () =>
+      Effect.sync(() => {
+        asked += 1;
+        return true;
+      }),
     kind: 'immediate',
     show: (planned) => Effect.sync(() => void shown.push(planned.key)),
   };
-  return { shown, sink };
+  return { asked: () => asked, shown, sink };
 };
 
 const scheduledSink = (
@@ -151,6 +156,30 @@ describe('LocalNotifications', () => {
       yield* TestClock.adjust('24 hours');
       yield* notifications.run();
       expect(shown).toEqual(['birthday:device:a:2026-03-04:1', 'birthday:device:a:2026-03-04:0']);
+    }).pipe(Effect.provide(testLayer(sink)));
+  });
+
+  it.effect('an immediate sink is asked for permission once, on the first pass', () => {
+    const { asked, sink } = immediateSink();
+    return Effect.gen(function* () {
+      const notifications = yield* LocalNotifications;
+      yield* setClock('2026-03-01T12:00:00Z');
+      // Event notifications are on by default: nothing else needs enabling.
+      yield* notifications.run();
+      yield* notifications.run();
+      expect(asked()).toBe(1);
+      expect(yield* (yield* DeviceSettingsRepo).get('localNotifications.permissionAsked')).toBe(
+        true,
+      );
+    }).pipe(Effect.provide(testLayer(sink)));
+  });
+
+  it.effect('does not prompt while every producer is off', () => {
+    const { asked, sink } = immediateSink();
+    return Effect.gen(function* () {
+      yield* writeEventNotificationSettings({ enabled: false, includeAppleCalendar: false });
+      yield* (yield* LocalNotifications).run();
+      expect(asked()).toBe(0);
     }).pipe(Effect.provide(testLayer(sink)));
   });
 

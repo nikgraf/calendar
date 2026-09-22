@@ -1052,7 +1052,10 @@ Performance:
       device-local `eventNotifications` key, on by default, with a
       second switch for Apple Calendar events that is off by default
       because Calendar.app already fires those alarms; the desktop
-      permission banner now speaks of notifications in general. Hidden
+      permission banner now speaks of notifications in general and is
+      posted once on the first start (`localNotifications.permissionAsked`
+      is set before the ask, so a crash mid-prompt never nags), not
+      when the first due reminder happens to fire. Hidden
       calendars do not notify (the range loader is the rpc's). Left for
       later: iOS background refresh (the schedule only updates while
       the app runs, and 60 slots fill within days on a dense calendar)

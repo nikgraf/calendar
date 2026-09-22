@@ -12,6 +12,7 @@ import { Reactivity } from 'effect/unstable/reactivity/Reactivity';
 import type { AppleCalendarEvents } from './appleCalendarEvents.ts';
 import { loadBirthdayPlans } from './birthdayReminders.ts';
 import type { DeviceContacts } from './deviceContacts.ts';
+import { readBirthdayReminderSettings, readEventNotificationSettings } from './deviceSettings.ts';
 import { loadEventPlans } from './eventReminders.ts';
 import { NotificationSink } from './notificationSink.ts';
 
@@ -30,6 +31,8 @@ const FIRED_KEY = 'localNotifications.fired';
 const SCHEDULED_KEY = 'localNotifications.scheduled';
 /** The birthday-only scheduler's fired map, read once so an upgrade re-fires nothing. */
 const LEGACY_FIRED_KEY = 'birthdayReminders.fired';
+/** Set once an immediate sink has been asked for permission (first start). */
+const PERMISSION_ASKED_KEY = 'localNotifications.permissionAsked';
 
 export interface LocalNotificationsShape {
   /** One pass: deliver what is due (desktop) or refresh the OS schedule (iOS). Never fails. */
@@ -109,6 +112,28 @@ const make = (options: {
       );
     });
 
+    /**
+     * An immediate sink cannot ask for permission on its own (macOS
+     * prompts on the first banner), and event notifications are on by
+     * default — so the first pass asks, rather than the first due
+     * reminder weeks later. Once only: the key is set before the ask so
+     * a crash mid-prompt never turns into a nag on every launch.
+     */
+    const askOnce = Effect.gen(function* () {
+      if (sink.kind !== 'immediate' || (yield* settingsRepo.get(PERMISSION_ASKED_KEY)) === true) {
+        return;
+      }
+      const events = yield* readEventNotificationSettings;
+      const birthdays = yield* readBirthdayReminderSettings;
+      if (!events.enabled && !birthdays.enabled) {
+        return;
+      }
+      yield* settingsRepo.set(PERMISSION_ASKED_KEY, true);
+      if (!(yield* sink.ensurePermission())) {
+        yield* Effect.logWarning('local notifications: permission not granted at first start');
+      }
+    });
+
     /** Shows what is due and returns the next delivery still ahead. */
     const deliverImmediate = (plans: ReadonlyArray<PlannedNotification>, now: number) =>
       Effect.gen(function* () {
@@ -158,6 +183,7 @@ const make = (options: {
       });
 
     const pass = Effect.gen(function* () {
+      yield* askOnce;
       const now = yield* Clock.currentTimeMillis;
       const plans = merge(
         yield* loadBirthdayPlans(now, options.timeZone),
