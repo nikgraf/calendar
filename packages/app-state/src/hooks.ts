@@ -7,6 +7,7 @@ import type {
   BackendSuccess,
   CalendarInfo,
   Contact,
+  EventNotificationSettings,
   EventRecord,
   GeoLocation,
   PendingOpSummary,
@@ -261,6 +262,12 @@ export const useBirthdayReminderSettings = (): BirthdayReminderSettings | null =
   return Option.getOrNull(AsyncResult.value(result));
 };
 
+/** The device-local event notification preferences; null until the first read resolves. */
+export const useEventNotificationSettings = (): EventNotificationSettings | null => {
+  const result = useAtomValue(useBackendAtoms().eventNotificationSettings);
+  return Option.getOrNull(AsyncResult.value(result));
+};
+
 /** The device-local view preferences; null until the first read resolves (treat as the defaults). */
 export const useViewPreferences = (): ViewPreferences | null => {
   const result = useAtomValue(useBackendAtoms().viewPreferences);
@@ -343,6 +350,7 @@ export const useBackendMutations = () => {
       setBirthdayReminderSettings: set('setBirthdayReminderSettings'),
       setCalendarColor: set('setCalendarColor'),
       setCalendarVisible: set('setCalendarVisible'),
+      setEventNotificationSettings: set('setEventNotificationSettings'),
       setTaskListVisible: set('setTaskListVisible'),
       setViewPreferences: set('setViewPreferences'),
       syncNow: set('syncNow'),

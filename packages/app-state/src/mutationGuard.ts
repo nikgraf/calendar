@@ -84,6 +84,10 @@ export const useGuardedMutations = () => {
       ),
       setCalendarColor: guardMutation('change the calendar color', mutations.setCalendarColor),
       setCalendarVisible: guardMutation('toggle the calendar', mutations.setCalendarVisible),
+      setEventNotificationSettings: guardMutation(
+        'save the event notifications',
+        mutations.setEventNotificationSettings,
+      ),
       setTaskListVisible: guardMutation('toggle the task list', mutations.setTaskListVisible),
       setViewPreferences: guardMutation('save the view settings', mutations.setViewPreferences),
       updateEvent: guardMutation('reschedule the event', mutations.updateEvent),

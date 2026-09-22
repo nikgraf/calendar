@@ -32,6 +32,13 @@ describe('editorCapabilities', () => {
     );
   });
 
+  it('offers "calendar default" reminders only on Google calendars', () => {
+    expect(editorCapabilities(base).canUseDefaultReminders).toBe(true);
+    expect(
+      editorCapabilities({ ...base, targetCalendar: calendar('apple') }).canUseDefaultReminders,
+    ).toBe(false);
+  });
+
   it('offers RSVP only for a Google event the user is invited to', () => {
     expect(editorCapabilities({ ...base, hasOwnAttendee: true }).canRsvp).toBe(true);
     expect(
