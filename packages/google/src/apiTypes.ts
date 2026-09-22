@@ -36,6 +36,15 @@ const GcalExtendedProperties = Schema.Struct({
   shared: Schema.optional(Schema.Record(Schema.String, Schema.String)),
 });
 
+/** Google's per-event reminders; `overrides` is absent when `useDefault` is true. */
+export const GcalReminders = Schema.Struct({
+  overrides: Schema.optional(
+    Schema.Array(Schema.Struct({ method: Schema.String, minutes: Schema.Number })),
+  ),
+  useDefault: Schema.Boolean,
+});
+export type GcalReminders = Schema.Schema.Type<typeof GcalReminders>;
+
 export const GcalEvent = Schema.Struct({
   attendees: Schema.optional(Schema.Array(GcalAttendee)),
   conferenceData: Schema.optional(GcalConferenceData),
@@ -56,6 +65,7 @@ export const GcalEvent = Schema.Struct({
   originalStartTime: Schema.optional(GcalTime),
   recurrence: Schema.optional(Schema.Array(Schema.String)),
   recurringEventId: Schema.optional(Schema.String),
+  reminders: Schema.optional(GcalReminders),
   start: Schema.optional(GcalTime),
   status: Schema.optional(Schema.String),
   summary: Schema.optional(Schema.String),
@@ -75,6 +85,10 @@ export const GcalCalendarListEntry = Schema.Struct({
   accessRole: Schema.optional(Schema.String),
   backgroundColor: Schema.optional(Schema.String),
   colorId: Schema.optional(Schema.String),
+  /** What an event's `reminders.useDefault` resolves to. */
+  defaultReminders: Schema.optional(
+    Schema.Array(Schema.Struct({ method: Schema.String, minutes: Schema.Number })),
+  ),
   deleted: Schema.optional(Schema.Boolean),
   id: Schema.String,
   primary: Schema.optional(Schema.Boolean),
@@ -131,6 +145,13 @@ export interface GcalEventInput {
   readonly id?: string | undefined;
   readonly location?: string | undefined;
   readonly recurrence?: ReadonlyArray<string> | undefined;
+  /** PATCH replaces the whole object, so it always carries every override. */
+  readonly reminders?:
+    | {
+        readonly overrides: ReadonlyArray<{ readonly method: string; readonly minutes: number }>;
+        readonly useDefault: boolean;
+      }
+    | undefined;
   readonly start: {
     date?: string | undefined;
     dateTime?: string | undefined;
