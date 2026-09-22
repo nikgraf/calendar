@@ -333,6 +333,22 @@ describe('Apple Calendar mutations', () => {
         }),
       );
       expect(guests).toMatchObject({ field: 'attendees' });
+      const defaults = yield* Effect.flip(
+        mutations.updateEvent({
+          accountId: APPLE_CALENDAR_ACCOUNT_ID,
+          calendarId: 'ek-home',
+          changes: { reminders: { overrides: [], useDefault: true } },
+          eventId: 'ek-single',
+        }),
+      );
+      expect(defaults).toMatchObject({ field: 'reminders.useDefault', provider: 'apple' });
+      const email = yield* Effect.flip(
+        mutations.createEvent({
+          ...base,
+          reminders: { overrides: [{ method: 'email', minutes: 30 }], useDefault: false },
+        }),
+      );
+      expect(email).toMatchObject({ field: 'reminders.email', provider: 'apple' });
       const rsvp = yield* Effect.flip(
         mutations.respondToEvent({
           accountId: APPLE_CALENDAR_ACCOUNT_ID,

@@ -8,7 +8,7 @@ import {
   type Span,
   toEventWrite,
 } from '@calendar/apple-calendar';
-import { applyWallClockDelta, normalizeHexColor } from '@calendar/core';
+import { applyWallClockDelta, type EventReminders, normalizeHexColor } from '@calendar/core';
 import type { AccountRepoShape, CalendarRepoShape } from '@calendar/db';
 import { Clock, Effect } from 'effect';
 import type { AppleCalendarEventsShape } from './appleCalendarEvents.ts';
@@ -63,6 +63,23 @@ const rejectGuests = (changes: UpdateEventParams['changes']) =>
     ? Effect.void
     : Effect.fail(new UnsupportedForProviderError({ field: 'attendees', provider: 'apple' }));
 
+/**
+ * EventKit alarms are explicit popups: no "calendar default" and no
+ * email. Either would be dropped silently by the bridge, so refuse.
+ */
+const rejectUnsupportedReminders = (reminders: EventReminders | undefined) =>
+  reminders === undefined
+    ? Effect.void
+    : reminders.useDefault
+      ? Effect.fail(
+          new UnsupportedForProviderError({ field: 'reminders.useDefault', provider: 'apple' }),
+        )
+      : reminders.overrides.some((override) => override.method === 'email')
+        ? Effect.fail(
+            new UnsupportedForProviderError({ field: 'reminders.email', provider: 'apple' }),
+          )
+        : Effect.void;
+
 /** A delete of something EventKit no longer has has nothing left to do. */
 const goneIsDone = (effect: Effect.Effect<void, AppleCalendarError>) =>
   Effect.catchIf(effect, isNotFound, (error) =>
@@ -101,6 +118,7 @@ export const makeAppleEventMutations = (deps: AppleEventMutationDeps): AppleEven
             new UnsupportedForProviderError({ field: 'attendees', provider: 'apple' }),
           );
         }
+        yield* rejectUnsupportedReminders(draft.reminders);
         const converted = draftToEventWrite(draft, deviceTimeZone());
         if (converted._tag === 'unsupported') {
           return yield* Effect.fail(
@@ -157,6 +175,7 @@ export const makeAppleEventMutations = (deps: AppleEventMutationDeps): AppleEven
     updateEvent: ({ accountId, changes, eventId }) =>
       Effect.gen(function* () {
         yield* rejectGuests(changes);
+        yield* rejectUnsupportedReminders(changes.reminders);
         yield* client.update({
           changes: toEventWrite(changes),
           ref: { id: eventId },
@@ -167,6 +186,7 @@ export const makeAppleEventMutations = (deps: AppleEventMutationDeps): AppleEven
     updateRecurring: ({ accountId, changes, masterId, originalStartUtc, scope }) =>
       Effect.gen(function* () {
         yield* rejectGuests(changes);
+        yield* rejectUnsupportedReminders(changes.reminders);
         if (scope !== 'series') {
           yield* client.update({
             changes: toEventWrite(changes),

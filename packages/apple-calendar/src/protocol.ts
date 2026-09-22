@@ -74,6 +74,12 @@ export const AppleAttendeeJson = Schema.Struct({
 export type AppleAttendeeJson = typeof AppleAttendeeJson.Type;
 
 export const AppleEventJson = Schema.Struct({
+  /**
+   * Relative alarm offsets in minutes, EventKit sign (≤ 0 = before/at the
+   * start; all-day: before local midnight). Absolute-date alarms are
+   * neither listed nor touched, like the Reminders protocol.
+   */
+  alarms: Schema.optional(Schema.Array(Schema.Number)),
   /** Read-only: EventKit cannot invite or change guests. */
   attendees: Schema.optional(Schema.Array(AppleAttendeeJson)),
   calendarId: Schema.String,
@@ -109,6 +115,8 @@ export type AppleEventJson = typeof AppleEventJson.Type;
  * on create and on a `futureEvents` write of a series.
  */
 export interface EventWrite {
+  /** Replaces the relative alarms (null = none); absolute ones stay. */
+  readonly alarms?: ReadonlyArray<number> | null | undefined;
   readonly description?: string | null | undefined;
   readonly endDate?: string | undefined;
   readonly endUtc?: number | undefined;

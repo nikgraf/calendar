@@ -67,7 +67,12 @@ const applyWrite = (base: AppleEventJson, write: EventWrite, now: number): Apple
       continue;
     }
     if (value === null) {
-      delete next[key === 'geo' ? 'geo' : key];
+      // Like the bridge: no relative alarms is an empty list, not an absent one.
+      if (key === 'alarms') {
+        next['alarms'] = [];
+      } else {
+        delete next[key];
+      }
       continue;
     }
     next[key] = value;
@@ -237,6 +242,7 @@ export const makeFakeAppleCalendarClient = (
         const now = Date.now();
         const rules = event.recurrence ? [...event.recurrence] : [];
         const base: AppleEventJson = {
+          alarms: [],
           calendarId,
           endUtc: event.endUtc ?? event.startUtc ?? now,
           hasRecurrence: rules.length > 0,

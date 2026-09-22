@@ -1,4 +1,4 @@
-import { EventRecord, GeoLocation } from '@calendar/core';
+import { EventRecord, EventReminders, GeoLocation, ReminderOverride } from '@calendar/core';
 import { describe, expect, it } from 'vitest';
 import { draftToEventWrite, mapAppleCalendar, mapAppleEvent, toEventWrite } from './map.ts';
 import type { AppleEventJson } from './protocol.ts';
@@ -135,6 +135,42 @@ describe('mapAppleCalendar', () => {
     expect(calendar.provider).toBe('apple');
     expect(calendar.sourceTitle).toBe('Subscribed Calendars');
     expect(calendar.isVisible).toBe(true);
+  });
+});
+
+const popup = (minutes: number) => new ReminderOverride({ method: 'popup', minutes });
+
+describe('alarms', () => {
+  it('reads relative alarms as explicit popup reminders, minutes-before positive', () => {
+    expect(mapAppleEvent(event({ alarms: [-30, 0, -30, 15] }), context).reminders).toEqual(
+      new EventReminders({ overrides: [popup(0), popup(30)], useDefault: false }),
+    );
+    // No alarms is "none", never "calendar default": EventKit has no such thing.
+    expect(mapAppleEvent(event(), context).reminders).toEqual(
+      new EventReminders({ overrides: [], useDefault: false }),
+    );
+  });
+
+  it('writes popup reminders back as EventKit offsets', () => {
+    const reminders = new EventReminders({
+      overrides: [popup(10), popup(1440)],
+      useDefault: false,
+    });
+    expect(toEventWrite({ reminders })).toEqual({ alarms: [-10, -1440] });
+    expect(toEventWrite({ title: 'T' })).toEqual({ title: 'T' });
+    const draft = draftToEventWrite(
+      {
+        accountId: 'apple-calendar',
+        calendarId: 'cal-home',
+        endUtc: 2,
+        isAllDay: false,
+        reminders,
+        startUtc: 1,
+        title: 'Standup',
+      },
+      'UTC',
+    );
+    expect(draft._tag === 'ok' && draft.write.alarms).toEqual([-10, -1440]);
   });
 });
 

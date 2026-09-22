@@ -71,7 +71,8 @@ export const canonicalReminders = (reminders: EventReminders): EventReminders =>
   const seen = new Set<string>();
   const overrides: Array<ReminderOverride> = [];
   for (const override of reminders.overrides) {
-    const minutes = Math.round(override.minutes);
+    // `+ 0` folds the -0 an EventKit offset of 0 arrives as.
+    const minutes = Math.round(override.minutes) + 0;
     if (!Number.isFinite(minutes) || minutes < 0 || minutes > MAX_REMINDER_MINUTES) {
       continue;
     }
