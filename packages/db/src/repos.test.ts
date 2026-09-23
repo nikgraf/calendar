@@ -2,8 +2,10 @@ import {
   Account,
   CalendarInfo,
   EventRecord,
+  EventReminders,
   GeoLocation,
   plainDateToUtcMs,
+  ReminderOverride,
   SyncState,
 } from '@calendar/core';
 import { SqliteClient } from '@effect/sql-sqlite-node';
@@ -226,6 +228,21 @@ describe('repos', () => {
 
       yield* events.upsertMany([timedEvent({ location: 'Office' })]);
       expect((yield* events.getById('acc-1', 'cal-1', 'evt-1'))?.geo).toBeUndefined();
+    }).pipe(Effect.provide(freshDbLayer())),
+  );
+
+  it.effect('persists event reminders and calendar defaults', () =>
+    Effect.gen(function* () {
+      const calendars = yield* CalendarRepo;
+      const events = yield* EventRepo;
+      const defaults = [new ReminderOverride({ method: 'popup', minutes: 10 })];
+      yield* calendars.upsertMany([calendar({ defaultReminders: defaults })]);
+      expect((yield* calendars.list('acc-1'))[0]?.defaultReminders).toEqual(defaults);
+      const none = new EventReminders({ overrides: [], useDefault: false });
+      yield* events.upsertMany([timedEvent({ reminders: none })]);
+      expect((yield* events.getById('acc-1', 'cal-1', 'evt-1'))?.reminders).toEqual(none);
+      yield* events.upsertMany([timedEvent()]);
+      expect((yield* events.getById('acc-1', 'cal-1', 'evt-1'))?.reminders).toBeUndefined();
     }).pipe(Effect.provide(freshDbLayer())),
   );
 

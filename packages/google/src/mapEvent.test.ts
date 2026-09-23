@@ -1,4 +1,11 @@
-import { Attendee, EventRecord, GEO_PROPERTY_KEYS, GeoLocation } from '@calendar/core';
+import {
+  Attendee,
+  EventRecord,
+  EventReminders,
+  GEO_PROPERTY_KEYS,
+  GeoLocation,
+  ReminderOverride,
+} from '@calendar/core';
 import { describe, expect, it } from 'vitest';
 import {
   hasGuests,
@@ -8,6 +15,8 @@ import {
   toGcalEventInput,
   toGcalGeoInsert,
   toGcalGeoPatch,
+  toGcalRemindersInsert,
+  toGcalRemindersPatch,
 } from './mapEvent.ts';
 
 const context = {
@@ -343,5 +352,96 @@ describe('location coordinates', () => {
       context,
     )!;
     expect(toGcalEventInput(record).extendedProperties).toBeUndefined();
+  });
+});
+
+const popup = (minutes: number) => new ReminderOverride({ method: 'popup', minutes });
+const email = (minutes: number) => new ReminderOverride({ method: 'email', minutes });
+
+describe('reminders', () => {
+  const timed = {
+    end: { dateTime: '2026-07-02T15:00:00Z' },
+    id: 'evt-rem',
+    start: { dateTime: '2026-07-02T14:00:00Z' },
+    summary: 'Coffee',
+  };
+  it('reads overrides (unknown methods dropped, canonical order) and keeps "none" apart from absent', () => {
+    const custom = mapGcalEvent(
+      {
+        ...timed,
+        reminders: {
+          overrides: [
+            { method: 'popup', minutes: 30 },
+            { method: 'sms', minutes: 5 },
+            { method: 'email', minutes: 60 },
+          ],
+          useDefault: false,
+        },
+      },
+      context,
+    );
+    expect(custom?.reminders).toEqual(
+      new EventReminders({ overrides: [email(60), popup(30)], useDefault: false }),
+    );
+    expect(mapGcalEvent({ ...timed, reminders: { useDefault: true } }, context)?.reminders).toEqual(
+      new EventReminders({ overrides: [], useDefault: true }),
+    );
+    expect(
+      mapGcalEvent({ ...timed, reminders: { overrides: [], useDefault: false } }, context)
+        ?.reminders,
+    ).toEqual(new EventReminders({ overrides: [], useDefault: false }));
+    expect(mapGcalEvent(timed, context)?.reminders).toBeUndefined();
+  });
+
+  it('reads the calendar defaults from the list entry', () => {
+    const calendar = mapGcalCalendar(
+      {
+        defaultReminders: [
+          { method: 'popup', minutes: 30 },
+          { method: 'popup', minutes: 10 },
+          { method: 'popup', minutes: 10 },
+        ],
+        id: 'cal-1',
+      },
+      { accountId: 'acc-1', colorFromId: () => undefined },
+    );
+    expect(calendar.defaultReminders).toEqual([popup(10), popup(30)]);
+    expect(
+      mapGcalCalendar({ id: 'cal-2' }, { accountId: 'acc-1', colorFromId: () => undefined })
+        .defaultReminders,
+    ).toBeUndefined();
+  });
+
+  it('inserts the record reminders when known, patches them only when the edit touched them', () => {
+    const record = mapGcalEvent(
+      {
+        ...timed,
+        reminders: {
+          overrides: [
+            { method: 'email', minutes: 60 },
+            { method: 'popup', minutes: 30 },
+          ],
+          useDefault: false,
+        },
+      },
+      context,
+    )!;
+    const wire = {
+      reminders: {
+        overrides: [
+          { method: 'email', minutes: 60 },
+          { method: 'popup', minutes: 30 },
+        ],
+        useDefault: false,
+      },
+    };
+    expect(toGcalRemindersInsert(record)).toEqual(wire);
+    expect(toGcalRemindersInsert(new EventRecord({ ...record, reminders: undefined }))).toEqual({});
+    expect(toGcalRemindersPatch(record, true)).toEqual(wire);
+    expect(toGcalRemindersPatch(record, false)).toEqual({});
+    expect(
+      toGcalRemindersPatch(new EventRecord({ ...record, reminders: undefined }), true),
+    ).toEqual({});
+    expect(toGcalEventInput(record).reminders).toBeUndefined();
   });
 });

@@ -28,7 +28,7 @@ import {
 import { RemindersClient, unavailableRemindersClient } from '@calendar/reminders';
 import { SqliteClient } from '@effect/sql-sqlite-node';
 import { expect, it } from '@effect/vitest';
-import { Effect, Layer } from 'effect';
+import { Effect, Layer, Scheduler } from 'effect';
 import { layer as reactivityLayer } from 'effect/unstable/reactivity/Reactivity';
 import { describe } from 'vitest';
 import { appleCalendarServicesLayer } from './appleCalendarEvents.ts';
@@ -140,6 +140,11 @@ const appleFake = () =>
       },
     ],
   });
+
+// The detached drain must not run between a move and the queue assertion
+// (see docs: every new migration moves the fiber yield point).
+const noYield = <A, E, R>(effect: Effect.Effect<A, E, R>): Effect.Effect<A, E, R> =>
+  Effect.provideService(effect, Scheduler.MaxOpsBeforeYield, Number.MAX_SAFE_INTEGER);
 
 const testLayer = (
   google: GoogleCalendarClientShape,
@@ -258,6 +263,7 @@ describe('moveEvent inside one Google account', () => {
         yield* mutations.previewMove(move(['acc-1', 'cal-1', 'evt-a'], ['acc-1', 'cal-2'])),
       ).toEqual({
         attendees: 0,
+        emailReminders: 0,
         meetingLink: false,
         modifiedOccurrences: 0,
         unsupportedRuleParts: [],
@@ -391,6 +397,7 @@ describe('moveEvent across accounts and providers', () => {
         const params = move(['acc-1', 'cal-1', 'evt-a'], [APPLE_CALENDAR_ACCOUNT_ID, 'ek-work']);
         expect(yield* mutations.previewMove(params)).toEqual({
           attendees: 1,
+          emailReminders: 0,
           meetingLink: false,
           modifiedOccurrences: 0,
           unsupportedRuleParts: [],
@@ -405,7 +412,7 @@ describe('moveEvent across accounts and providers', () => {
         expect(created?.event.timeZone).toBe('Europe/Vienna');
         expect(yield* rowAt('acc-1', 'cal-1', 'evt-a')).toBeNull();
         expect((yield* queued).map((op) => `${op.kind}:${op.eventId}`)).toEqual(['delete:evt-a']);
-      }).pipe(Effect.provide(testLayer(recordingGoogle([]), apple)));
+      }).pipe(noYield, Effect.provide(testLayer(recordingGoogle([]), apple)));
     },
   );
 

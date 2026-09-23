@@ -46,6 +46,16 @@ comment` for inline-playable video: 10 MB on Free plans, 100 MB paid
       2.1 added cached plans for COUNT rules — re-measure before doing
       anything), and there is no per-calendar "keep only N years" switch
       should storage ever matter.
+- [ ] iOS background refresh for local notifications — the merged OS
+      schedule (`LocalNotifications`, events + birthdays, ≤ 60 slots)
+      only updates while the app runs: on a dense calendar a week of
+      event reminders fills the slots within days and later ones never
+      fire until the next launch, and an event added on another device
+      gets no notification here until then. A `BGAppRefreshTask` (via
+      `expo-background-task`) that runs `LocalNotifications.run()`
+      opportunistically would keep the schedule fresh; iOS grants it at
+      its own discretion, so the foreground refresh stays the
+      correctness path.
 - [ ] Per-person birthday reminder overrides — the general lead times
       landed (device-local, `device_settings`); a per-contact override
       ("Mom: 2 weeks before as well") would sit on the same table keyed

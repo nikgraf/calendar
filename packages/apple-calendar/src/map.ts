@@ -2,11 +2,14 @@ import {
   APPLE_CALENDAR_ACCOUNT_ID,
   Attendee,
   CalendarInfo,
+  canonicalReminders,
   type EventDraft,
   EventRecord,
+  EventReminders,
   GeoLocation,
   type UpdateEventChanges,
   meetingUrl,
+  ReminderOverride,
   normalizeHexColor,
   plainDateToUtcMs,
   toStructuredRules,
@@ -101,6 +104,7 @@ export const mapAppleEvent = (
     organizerEmail: event.organizerEmail,
     originalStartUtc: isOccurrence ? event.occurrenceStartUtc : undefined,
     recurringEventId: isOccurrence ? event.id : undefined,
+    reminders: fromAlarms(event.alarms),
     startDate: event.isAllDay ? event.startDate : undefined,
     // A floating event reads in the device's zone, like Calendar.app shows it.
     startTimeZone: event.isAllDay ? undefined : (event.timeZone ?? context.deviceTimeZone),
@@ -122,6 +126,28 @@ const geoWrite = (geo: GeoLocation | null | undefined): EventWrite['geo'] =>
       ? undefined
       : { lat: geo.lat, lng: geo.lng, ...(geo.name === undefined ? {} : { name: geo.name }) };
 
+/**
+ * EventKit alarms as the domain sees them: always explicit (EventKit has
+ * no "calendar default"), popup only, minutes-before positive. The bridge
+ * only lists alarms at or before the start; later ones stay on the event
+ * untouched (the filter here is belt and braces).
+ */
+const fromAlarms = (alarms: ReadonlyArray<number> | undefined): EventReminders =>
+  canonicalReminders(
+    new EventReminders({
+      overrides: (alarms ?? [])
+        .filter((offset) => offset <= 0)
+        .map((offset) => new ReminderOverride({ method: 'popup', minutes: -offset })),
+      useDefault: false,
+    }),
+  );
+
+/** The popup reminders as EventKit offsets. The mutation layer rejected `useDefault` and email ones. */
+const toAlarms = (reminders: EventReminders): Array<number> =>
+  canonicalReminders(reminders)
+    .overrides.filter((override) => override.method === 'popup')
+    .map((override) => -override.minutes || 0);
+
 /** An emptied text field clears it; undefined leaves it alone. */
 const clearable = (value: string | undefined): string | null | undefined =>
   value === undefined ? undefined : value.trim() === '' ? null : value;
@@ -132,6 +158,7 @@ const clearable = (value: string | undefined): string | null | undefined =>
  * location without coordinates drops the stored ones on the Swift side.
  */
 export const toEventWrite = (changes: typeof UpdateEventChanges.Type): EventWrite => ({
+  ...(changes.reminders === undefined ? {} : { alarms: toAlarms(changes.reminders) }),
   ...(changes.description === undefined ? {} : { description: clearable(changes.description) }),
   ...(changes.endDate === undefined ? {} : { endDate: changes.endDate }),
   ...(changes.endUtc === undefined ? {} : { endUtc: changes.endUtc }),
@@ -165,6 +192,7 @@ export const draftToEventWrite = (
   return {
     _tag: 'ok',
     write: {
+      ...(draft.reminders ? { alarms: toAlarms(draft.reminders) } : {}),
       ...(draft.description ? { description: draft.description } : {}),
       endUtc: draft.endUtc,
       ...(draft.isAllDay ? { endDate: draft.endDate, startDate: draft.startDate } : {}),

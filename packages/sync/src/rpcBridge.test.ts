@@ -56,6 +56,8 @@ const stubHandlers: BackendHandlers = {
   getBirthdayReminderSettings: () =>
     Effect.succeed({ enabled: false, leadDays: [0 as const], time: '09:00' }),
   getBirthdaysInRange: () => Effect.succeed([]),
+  getEventNotificationSettings: () =>
+    Effect.succeed({ enabled: true, includeAppleCalendar: false }),
   getEventsInRange: () => Effect.succeed([]),
   getOverdueTasks: () => Effect.succeed([]),
   getTasksInRange: () => Effect.succeed([]),
@@ -77,6 +79,7 @@ const stubHandlers: BackendHandlers = {
   setBirthdayReminderSettings: () => Effect.succeed({ notificationsGranted: true }),
   setCalendarColor: () => Effect.void,
   setCalendarVisible: () => Effect.void,
+  setEventNotificationSettings: () => Effect.succeed({ notificationsGranted: true }),
   setTaskListVisible: () => Effect.void,
   setViewPreferences: () => Effect.void,
   syncNow: notStubbed,

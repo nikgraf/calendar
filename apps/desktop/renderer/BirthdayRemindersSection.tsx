@@ -1,7 +1,7 @@
 import { useBackendMutations, useBirthdayReminderSettings } from '@calendar/app-state';
 import {
   BIRTHDAY_LEAD_DAYS,
-  BIRTHDAY_REMINDERS_DEVICE_ONLY,
+  DEVICE_ONLY_SETTING_COPY,
   type BirthdayLeadDays,
   type BirthdayReminderSettings,
   leadDaysLabel,
@@ -84,7 +84,7 @@ export function BirthdayRemindersSection() {
         </p>
       ) : null}
       <p className="mt-3 text-xs text-neutral-400" data-testid="birthday-device-only">
-        {BIRTHDAY_REMINDERS_DEVICE_ONLY} Reminders arrive while Solunivo is running.
+        {DEVICE_ONLY_SETTING_COPY} Reminders arrive while Solunivo is running.
       </p>
     </section>
   );

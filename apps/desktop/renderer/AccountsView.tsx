@@ -10,6 +10,7 @@ import { useState } from 'react';
 import { AppleCalendarSection } from './AppleCalendarSection.tsx';
 import { PrivacySection } from './PrivacySection.tsx';
 import { BirthdayRemindersSection } from './BirthdayRemindersSection.tsx';
+import { EventNotificationsSection } from './EventNotificationsSection.tsx';
 import { ContactsSection } from './ContactsSection.tsx';
 import { LocationsSection } from './LocationsSection.tsx';
 import { RemindersSection } from './RemindersSection.tsx';
@@ -146,6 +147,7 @@ export function AccountsView() {
       <AppleCalendarSection />
       <RemindersSection />
       <ContactsSection />
+      <EventNotificationsSection />
       <BirthdayRemindersSection />
       <LocationsSection />
       <PrivacySection />

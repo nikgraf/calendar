@@ -4,10 +4,12 @@ import {
   CalendarInfo,
   Contact,
   EventRecord,
+  EventReminders,
   GeoLocation,
   GoogleBirthday,
   PendingOp,
   recurrenceEndUtc,
+  ReminderOverride,
   SyncState,
   TaskListInfo,
   TaskRecord,
@@ -246,15 +248,26 @@ export interface CalendarRow {
   readonly time_zone: string;
   /** Added by migration 3. */
   readonly source_title: string | null;
+  /** JSON ReminderOverride[]; added by migration 4. */
+  readonly default_reminders: string | null;
   /** Joined from accounts.provider by CalendarRepo.list (not a calendars column). */
   readonly account_provider: string | null;
 }
+
+const remindersJson = Schema.Array(ReminderOverride);
+
+/** Column encoding for a calendar's default reminders (NULL = none known). */
+export const defaultRemindersJson = (calendar: CalendarInfo): string | null =>
+  calendar.defaultReminders
+    ? JSON.stringify(Schema.encodeSync(remindersJson)(calendar.defaultReminders))
+    : null;
 
 export const calendarFromRow = (row: CalendarRow): CalendarInfo =>
   new CalendarInfo({
     accessRole: oneOf<CalendarInfo['accessRole']>(ACCESS_ROLES, row.access_role, 'reader'),
     accountId: row.account_id,
     colorHex: row.color_hex,
+    defaultReminders: decodeOr(remindersJson, parseJson(row.default_reminders)),
     id: row.id,
     isPrimary: row.is_primary === 1,
     isVisible: row.is_visible === 1,
@@ -289,8 +302,10 @@ export interface EventRow {
   readonly sync_status: string;
   readonly updated_at: number;
   readonly synced_at: number;
-  /** JSON GeoLocation; added by migration 2 (hence last). */
+  /** JSON GeoLocation; added by migration 2 (hence late). */
   readonly geo: string | null;
+  /** JSON EventReminders; added by migration 4 (hence last). */
+  readonly reminders: string | null;
 }
 
 const attendeesJson = Schema.Array(Attendee);
@@ -318,6 +333,7 @@ export const eventFromRow = (row: EventRow): EventRecord =>
     originalStartUtc: row.original_start_utc ?? undefined,
     recurrence: stringArray(parseJson(row.recurrence)),
     recurringEventId: row.recurring_event_id ?? undefined,
+    reminders: decodeOr(EventReminders, parseJson(row.reminders)),
     startDate: row.start_date ?? undefined,
     startTimeZone: row.start_time_zone ?? undefined,
     startUtc: row.start_utc,
@@ -362,6 +378,9 @@ export const eventToRow = (event: EventRecord): EventRow => ({
         }) ?? null)
       : null,
   recurring_event_id: event.recurringEventId ?? null,
+  reminders: event.reminders
+    ? JSON.stringify(Schema.encodeSync(EventReminders)(event.reminders))
+    : null,
   start_date: event.startDate ?? null,
   start_time_zone: event.startTimeZone ?? null,
   start_utc: event.startUtc,
@@ -394,8 +413,10 @@ export interface PendingOpRow {
   readonly attendees_changed: number;
   /** Added by migration 2 (hence late). */
   readonly geo_cleared: number;
-  /** Added by migration 3 (hence last). */
+  /** Added by migration 3 (hence late). */
   readonly target_calendar_id: string | null;
+  /** Added by migration 4 (hence last). */
+  readonly reminders_changed: number;
 }
 
 /**
@@ -421,6 +442,7 @@ export const pendingOpFromRow = (row: PendingOpRow): PendingOp | undefined =>
         lastError: row.last_error ?? undefined,
         nextAttemptAt: row.next_attempt_at,
         payload: decodeOr(EventRecord, parseJson(row.payload)),
+        remindersChanged: row.reminders_changed === 1 ? true : undefined,
         targetCalendarId: row.target_calendar_id ?? undefined,
         taskDue: row.task_due ?? undefined,
         taskListId: row.task_list_id ?? undefined,

@@ -1018,3 +1018,45 @@ Performance:
       `ios.infoPlist` feeds the fingerprint, so this alone forces a
       TestFlight build (build number auto-increments) and a fresh
       `development-simulator` dev client for CI.
+
+### Event notifications (2026-09-22)
+
+- [x] Event reminders on macOS and iOS — done: `EventRecord.reminders`
+      in Google's `useDefault`/`overrides` shape (also what EventKit
+      alarms map onto, with `useDefault` always false), mirrored both
+      ways (Google `reminders` + calendarList `defaultReminders`;
+      relative `EKAlarm`s through the shared Swift bridge, absolute ones
+      untouched), edited in both editors (desktop: a "calendar default"
+      checkbox naming what it resolves to, else preset rows up to five;
+      iOS: toggle chips plus the switch; email reminders listed, never
+      edited) and delivered by `LocalNotifications`, the renamed birthday
+      scheduler, now with two producers merged into one fired map and
+      one OS schedule. Decisions: a `remindersChanged` flag on the
+      pending op (mirror of `attendeesChanged`) because Google's PATCH
+      replaces the object and email overrides must survive an unrelated
+      title edit; `useDefault:false, overrides:[]` is "none" and stays
+      distinct from the field being absent, which reads as the calendar
+      default for a Google row synced before this shipped — migration 4
+      drops the events sync tokens so every calendar re-lists once and
+      no row stays absent for long; a copy-move to Apple resolves the
+      calendar default into explicit popups and `previewMove` names the
+      email reminders that cannot follow; Apple writes refuse
+      `useDefault` and email rather than dropping them. Notifications:
+      `PlannedNotification.expiresAt` lets each producer own its
+      catch-up rule (a birthday all day, a meeting until five minutes
+      in) instead of one 24 h window; the loop sleeps until the next
+      delivery (5 s..60 s) and re-plans, debounced, on event/birthday
+      invalidations; a producer whose setting is off returns nothing,
+      so disabling one no longer wipes the other's OS schedule (a bug
+      the birthday-only scheduler had in waiting). Settings: a new
+      device-local `eventNotifications` key, on by default, with a
+      second switch for Apple Calendar events that is off by default
+      because Calendar.app already fires those alarms; the desktop
+      permission banner now speaks of notifications in general and is
+      posted once on the first start (`localNotifications.permissionAsked`
+      is set before the ask, so a crash mid-prompt never nags), not
+      when the first due reminder happens to fire. Hidden
+      calendars do not notify (the range loader is the rpc's). Left for
+      later: iOS background refresh (the schedule only updates while
+      the app runs, and 60 slots fill within days on a dense calendar)
+      — backlog item under Tier 2.

@@ -97,6 +97,9 @@ struct RuleDTO: Sendable {
 }
 
 struct EventDTO: Sendable {
+  /// Relative alarm offsets in minutes (EventKit sign) at or before the start;
+  /// absolute-date alarms and alarms after the start are not listed.
+  let alarms: [Int]
   let attendees: [AttendeeDTO]
   let calendarId: String
   let description: String?
@@ -122,9 +125,9 @@ struct EventDTO: Sendable {
 
   func toDictionary() -> [String: Any] {
     var out: [String: Any] = [
-      "calendarId": calendarId, "endUtc": endUtc, "hasRecurrence": hasRecurrence, "id": id,
-      "isAllDay": isAllDay, "isDetached": isDetached, "startUtc": startUtc, "status": status,
-      "title": title, "updatedAt": updatedAt,
+      "alarms": alarms, "calendarId": calendarId, "endUtc": endUtc,
+      "hasRecurrence": hasRecurrence, "id": id, "isAllDay": isAllDay, "isDetached": isDetached,
+      "startUtc": startUtc, "status": status, "title": title, "updatedAt": updatedAt,
     ]
     if !attendees.isEmpty { out["attendees"] = attendees.map { $0.toDictionary() } }
     if let description { out["description"] = description }
@@ -159,6 +162,7 @@ struct GeoWrite: Sendable {
 }
 
 struct EventWriteDTO: Sendable {
+  var alarms: Field<[Int]> = .unchanged
   var description: Field<String> = .unchanged
   var endDate: String?
   var endUtc: Double?
@@ -237,6 +241,9 @@ private func epochMs(_ value: Any?) -> Double? {
   guard let d = number(value), abs(d) <= 1e15 else { return nil }
   return d
 }
+
+/// Relative alarm offsets in minutes: a year either side, like the Reminders bridge.
+private let alarmMinutes = -527_040...527_040
 
 /// A JSON number as an Int within `range`, or nil (`Int(someDouble)` traps).
 private func boundedInt(_ value: Any?, _ range: ClosedRange<Int>) -> Int? {
@@ -415,8 +422,12 @@ private func eventDTO(_ event: EKEvent) -> EventDTO? {
   }
   let location = event.location.flatMap { $0.isEmpty ? nil : $0 }
   let notes = event.notes.flatMap { $0.isEmpty ? nil : $0 }
+  let alarms = (event.alarms ?? [])
+    .filter { $0.absoluteDate == nil && $0.relativeOffset <= 0 }
+    .map { Int(($0.relativeOffset / 60).rounded()) }
   return EventDTO(
-    attendees: attendees, calendarId: calendar.calendarIdentifier, description: notes,
+    alarms: alarms, attendees: attendees, calendarId: calendar.calendarIdentifier,
+    description: notes,
     endDate: endDay, endUtc: ms(end), geo: geo, hasRecurrence: event.hasRecurrenceRules, id: id,
     isAllDay: isAllDay, isDetached: event.isDetached, location: location,
     occurrenceStartUtc: repeats ? event.occurrenceDate.map(ms) : nil,
@@ -653,6 +664,19 @@ actor AppleCalendarBridge {
     case .clear: event.recurrenceRules = nil
     case .set(let rules): event.recurrenceRules = try rules.map(ekRule)
     }
+    // The alarms the wire lists (relative, at or before the start) are
+    // replaced as a set; absolute-date ones and alarms after the start
+    // (Calendar.app's all-day "day of, 9:00" is +540 min) are kept as they
+    // are — never shown, never dropped.
+    let kept = { (alarms: [EKAlarm]?) in
+      (alarms ?? []).filter { $0.absoluteDate != nil || $0.relativeOffset > 0 }
+    }
+    switch write.alarms {
+    case .unchanged: break
+    case .clear: event.alarms = kept(event.alarms)
+    case .set(let offsets):
+      event.alarms = kept(event.alarms) + offsets.map { EKAlarm(relativeOffset: TimeInterval($0 * 60)) }
+    }
   }
 
   private func save(_ event: EKEvent, span: EKSpan) throws {
@@ -802,6 +826,11 @@ enum AppleCalendarDispatch {
       guard let items = raw as? [Any] else { return nil }
       let rules = items.compactMap(rule)
       return rules.count == items.count ? rules : nil
+    }
+    write.alarms = try field(params, "alarms") { raw in
+      guard let items = raw as? [Any] else { return nil }
+      let offsets = items.compactMap { boundedInt($0, alarmMinutes) }
+      return offsets.count == items.count ? offsets : nil
     }
     return write
   }

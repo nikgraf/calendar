@@ -48,6 +48,8 @@ const makeStubClient = () => {
     getBirthdayReminderSettings: () =>
       Effect.succeed({ enabled: false, leadDays: [0 as const], time: '09:00' }),
     getBirthdaysInRange: () => Effect.succeed([]),
+    getEventNotificationSettings: () =>
+      Effect.succeed({ enabled: true, includeAppleCalendar: false }),
     getEventsInRange: () =>
       Effect.sync(() => {
         calls.events += 1;
@@ -92,6 +94,7 @@ const makeStubClient = () => {
       Effect.sync(() => {
         calls.setVisible += 1;
       }),
+    setEventNotificationSettings: () => Effect.succeed({ notificationsGranted: true }),
     setTaskListVisible: () => Effect.void,
     setViewPreferences: () => Effect.void,
     syncNow: () => Effect.void,

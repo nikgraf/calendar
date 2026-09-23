@@ -2,6 +2,7 @@ import type {
   AttendeeInput,
   EventDraft,
   EventRecord,
+  EventReminders,
   GeoLocation,
   RecurringScope,
   RsvpResponse,
@@ -111,6 +112,8 @@ export interface UpdateEventParams {
     readonly geo?: GeoLocation | null | undefined;
     readonly isAllDay?: boolean | undefined;
     readonly location?: string | undefined;
+    /** Full replacement (see UpdateEventChanges): undefined leaves the reminders alone. */
+    readonly reminders?: EventReminders | undefined;
     readonly startDate?: string | undefined;
     readonly startUtc?: number | undefined;
     readonly title?: string | undefined;

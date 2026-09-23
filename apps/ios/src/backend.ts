@@ -17,7 +17,7 @@ import {
 } from '@calendar/google';
 import {
   AppleCalendarEvents,
-  BirthdayReminders,
+  LocalNotifications,
   commonBackendHandlers,
   DeviceContacts,
   EventMutations,
@@ -106,9 +106,10 @@ const platformLayer = Layer.mergeAll(
 
 const appLayer = SyncEngine.layer.pipe(
   Layer.provideMerge(EventMutations.layer),
+  // Above the Apple read path: the scheduler plans from it.
+  Layer.provideMerge(LocalNotifications.layer({ timeZone: Temporal.Now.timeZoneId() })),
   Layer.provideMerge(AppleCalendarEvents.layer),
   Layer.provideMerge(iosAppleCalendarLayer),
-  Layer.provideMerge(BirthdayReminders.layer({ timeZone: Temporal.Now.timeZoneId() })),
   Layer.provideMerge(GoogleCalendarClient.layer),
   Layer.provideMerge(GoogleTasksClient.layer),
   Layer.provideMerge(GooglePeopleClient.layer),
@@ -193,7 +194,7 @@ export const startSync = (): void => {
         }
         const engine = yield* SyncEngine;
         yield* engine.start();
-        yield* (yield* BirthdayReminders).start();
+        yield* (yield* LocalNotifications).start();
       }),
     )
     .catch(() => {
@@ -208,9 +209,9 @@ export const kickSync = makeSyncKicker(() =>
 );
 
 /** Refreshes the OS notification schedule now — on return to the foreground, next to kickSync. */
-export const runBirthdayReminders = (): void => {
+export const runLocalNotifications = (): void => {
   runtime
-    .runPromise(Effect.flatMap(BirthdayReminders, (reminders) => reminders.run()))
+    .runPromise(Effect.flatMap(LocalNotifications, (reminders) => reminders.run()))
     .catch(() => {
       // run() never fails; a runtime that is not up yet must not surface here.
     });

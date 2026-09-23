@@ -4,6 +4,7 @@ import {
   moveLossSummary,
   buildRecurrenceRule,
   buildEventTimes,
+  canonicalReminders,
   emailKey,
   geoMatches,
   isMappableLocation,
@@ -17,10 +18,13 @@ import {
   type CalendarInfo,
   type EventDraft,
   type EventRecord,
+  EventReminders,
   GeoLocation,
+  MAX_REMINDER_OVERRIDES,
   type PlaceSuggestion,
   type RecurrenceFrequency,
   type RecurringScope,
+  ReminderOverride,
   type RsvpResponse,
   type TaskListInfo,
   type Temporal,
@@ -144,6 +148,8 @@ export const editorCapabilities = ({
     canInvite: (targetCalendar?.provider ?? 'google') === 'google',
     canMoveCalendar: isExisting && !readOnly && (!isRecurring || scope === 'series'),
     canRsvp: (sourceCalendar?.provider ?? 'google') === 'google' && hasOwnAttendee,
+    /** "Calendar default" is a Google concept; EventKit alarms are always explicit. */
+    canUseDefaultReminders: (targetCalendar?.provider ?? 'google') === 'google',
     readOnly,
   };
 };
@@ -274,6 +280,19 @@ export const useEventEditorModel = ({
       .map((attendee) => ({ displayName: attendee.displayName, email: attendee.email })),
   );
   const [attendeesDirty, setAttendeesDirty] = useState(false);
+  // Reminders as the editor shows them. A Google event without the field
+  // (synced before reminders were modelled) defers to its calendar; an
+  // Apple one never can. `remindersDirty` keeps an untouched value out of
+  // the update, like the guest list.
+  const [reminders, setReminders] = useState<EventReminders>(
+    () =>
+      existing?.reminders ??
+      new EventReminders({
+        overrides: [],
+        useDefault: calendarOf(originalCalendarKey ?? calendarKey)?.provider !== 'apple',
+      }),
+  );
+  const [remindersDirty, setRemindersDirty] = useState(false);
   const [scope, setScopeState] = useState<RecurringScope>('instance');
   const capabilities = editorCapabilities({
     hasOwnAttendee: ownAttendee !== undefined,
@@ -290,6 +309,67 @@ export const useEventEditorModel = ({
       setCalendarKey(originalCalendarKey);
     }
   };
+  /** The popup offsets the picked calendar's default resolves to (Google only). */
+  const calendarDefaultReminders: ReadonlyArray<number> = (
+    calendarOf(calendarKey)?.defaultReminders ?? []
+  )
+    .filter((override) => override.method === 'popup')
+    .map((override) => override.minutes);
+  /**
+   * What the picked calendar will actually get. An Apple calendar cannot
+   * hold "calendar default", so a deferring event shows the popup
+   * defaults of the calendar it came from as explicit alarms — the same
+   * resolution a move applies — without touching the stored value until
+   * the user edits a row or saves onto that calendar.
+   */
+  const resolvedReminders: EventReminders =
+    reminders.useDefault && !capabilities.canUseDefaultReminders
+      ? new EventReminders({
+          overrides: (calendarOf(originalCalendarKey)?.defaultReminders ?? []).filter(
+            (override) => override.method === 'popup',
+          ),
+          useDefault: false,
+        })
+      : reminders;
+  const updateReminders = (next: EventReminders) => {
+    setReminders(canonicalReminders(next));
+    setRemindersDirty(true);
+  };
+  const setUseDefaultReminders = (useDefault: boolean) =>
+    updateReminders(new EventReminders({ ...reminders, useDefault }));
+  /** Adds a popup reminder; false (and no change) when it is already there or at Google's maximum. */
+  const addReminder = (minutes: number): boolean => {
+    const current = resolvedReminders.overrides;
+    if (
+      current.length >= MAX_REMINDER_OVERRIDES ||
+      current.some((override) => override.method === 'popup' && override.minutes === minutes)
+    ) {
+      return false;
+    }
+    updateReminders(
+      new EventReminders({
+        overrides: [...current, new ReminderOverride({ method: 'popup', minutes })],
+        useDefault: false,
+      }),
+    );
+    return true;
+  };
+  const setReminderMinutes = (index: number, minutes: number) =>
+    updateReminders(
+      new EventReminders({
+        overrides: resolvedReminders.overrides.map((override, at) =>
+          at === index ? new ReminderOverride({ method: override.method, minutes }) : override,
+        ),
+        useDefault: false,
+      }),
+    );
+  const removeReminder = (index: number) =>
+    updateReminders(
+      new EventReminders({
+        overrides: resolvedReminders.overrides.filter((_, at) => at !== index),
+        useDefault: false,
+      }),
+    );
   const [rsvp, setRsvp] = useState(ownAttendee?.responseStatus);
   const { toSpec: repeatSpec, ...repeatState } = useRepeatState(prefill?.recurrence, date);
   const [error, setError] = useState<string | null>(null);
@@ -389,6 +469,7 @@ export const useEventEditorModel = ({
             geo: savedGeo ?? null,
             // Empty string clears the field; undefined would read as "unchanged".
             location: location.trim(),
+            ...(remindersDirty ? { reminders } : {}),
             title: title.trim(),
             ...times,
           },
@@ -405,6 +486,7 @@ export const useEventEditorModel = ({
             geo: savedGeo ?? null,
             isAllDay,
             location: location.trim(),
+            ...(remindersDirty ? { reminders } : {}),
             title: title.trim(),
             ...times,
           },
@@ -422,6 +504,11 @@ export const useEventEditorModel = ({
           recurrence: (() => {
             return spec ? [buildRecurrenceRule(spec, isAllDay)] : undefined;
           })(),
+          // Untouched on a Google calendar means Google's own default; an
+          // Apple calendar always gets the explicit (resolved) list.
+          ...(remindersDirty || !capabilities.canUseDefaultReminders
+            ? { reminders: resolvedReminders }
+            : {}),
           title: title.trim(),
           ...times,
         };
@@ -484,8 +571,11 @@ export const useEventEditorModel = ({
 
   return {
     addAttendee,
+    addReminder,
     attendees,
     attendeeStatus,
+    /** Popup offsets "calendar default" stands for on the picked calendar. */
+    calendarDefaultReminders,
     calendarKey,
     ...capabilities,
     date,
@@ -503,8 +593,10 @@ export const useEventEditorModel = ({
     mapsUrl: mapGeo ? openInMapsUrl(mapGeo) : undefined,
     ownAttendee,
     pickPlace,
+    reminders: resolvedReminders,
     remove,
     removeAttendee,
+    removeReminder,
     ...repeatState,
     respond,
     rsvp,
@@ -515,9 +607,11 @@ export const useEventEditorModel = ({
     setEndTime,
     setIsAllDay,
     setLocation,
+    setReminderMinutes,
     setScope,
     setStartTime,
     setTitle,
+    setUseDefaultReminders,
     startTime,
     title,
     writableCalendars,

@@ -1,13 +1,22 @@
 import {
   Attendee,
   CalendarInfo,
+  canonicalReminders,
   decodeGeoProperties,
   encodeGeoProperties,
   EventRecord,
+  EventReminders,
   plainDateToUtcMs,
+  ReminderOverride,
   Temporal,
 } from '@calendar/core';
-import type { GcalCalendarListEntry, GcalEvent, GcalEventInput, GcalTime } from './apiTypes.ts';
+import type {
+  GcalCalendarListEntry,
+  GcalEvent,
+  GcalEventInput,
+  GcalReminders,
+  GcalTime,
+} from './apiTypes.ts';
 import { Schema } from 'effect';
 
 type GcalTimeValue = Schema.Schema.Type<typeof GcalTime>;
@@ -41,6 +50,31 @@ const toEpochMs = (time: GcalTimeValue | undefined): number | undefined => {
 };
 
 const RESPONSE_STATUSES = new Set(['accepted', 'declined', 'needsAction', 'tentative']);
+const REMINDER_METHODS = new Set(['email', 'popup']);
+
+/** Google's overrides as domain records; methods the app does not model (sms) are dropped. */
+const toReminderOverrides = (
+  overrides: ReadonlyArray<{ readonly method: string; readonly minutes: number }> | undefined,
+): Array<ReminderOverride> =>
+  (overrides ?? [])
+    .filter((override) => REMINDER_METHODS.has(override.method))
+    .map(
+      (override) =>
+        new ReminderOverride({
+          method: override.method as ReminderOverride['method'],
+          minutes: override.minutes,
+        }),
+    );
+
+const toEventReminders = (reminders: GcalReminders | undefined): EventReminders | undefined =>
+  reminders === undefined
+    ? undefined
+    : canonicalReminders(
+        new EventReminders({
+          overrides: toReminderOverrides(reminders.overrides),
+          useDefault: reminders.useDefault,
+        }),
+      );
 const EVENT_STATUSES = new Set(['cancelled', 'confirmed', 'tentative']);
 const ACCESS_ROLES = new Set(['freeBusyReader', 'owner', 'reader', 'writer']);
 
@@ -108,6 +142,7 @@ export const mapGcalEvent = (
     originalStartUtc: toEpochMs(event.originalStartTime),
     recurrence: event.recurrence,
     recurringEventId: event.recurringEventId,
+    reminders: toEventReminders(event.reminders),
     startDate: event.start?.date,
     startTimeZone: isAllDay ? undefined : (event.start?.timeZone ?? context.defaultTimeZone),
     startUtc,
@@ -145,6 +180,15 @@ export const mapGcalCalendar = (
       entry.backgroundColor ??
       (entry.colorId ? context.colorFromId(entry.colorId) : undefined) ??
       '#4285f4',
+    defaultReminders:
+      entry.defaultReminders === undefined
+        ? undefined
+        : canonicalReminders(
+            new EventReminders({
+              overrides: toReminderOverrides(entry.defaultReminders),
+              useDefault: false,
+            }),
+          ).overrides,
     id: entry.id,
     isPrimary: entry.primary ?? false,
     isVisible: context.previousVisibility ?? entry.selected ?? true,
@@ -190,6 +234,32 @@ export const toGcalEventInput = (event: EventRecord): GcalEventInput => ({
       },
   summary: event.title,
 });
+
+const toGcalReminders = (reminders: EventReminders): GcalEventInput['reminders'] => ({
+  overrides: reminders.overrides.map((override) => ({
+    method: override.method,
+    minutes: override.minutes,
+  })),
+  useDefault: reminders.useDefault,
+});
+
+/** The reminders for events.insert: the record's when it has any, else Google's default. */
+export const toGcalRemindersInsert = (event: EventRecord): Pick<GcalEventInput, 'reminders'> =>
+  event.reminders === undefined ? {} : { reminders: toGcalReminders(event.reminders) };
+
+/**
+ * The reminders for events.patch: the whole object when this edit touched
+ * them (Google replaces it, so email overrides ride along), nothing
+ * otherwise — an unrelated edit must not rewrite reminders from a copy
+ * another client may have changed since.
+ */
+export const toGcalRemindersPatch = (
+  event: EventRecord,
+  remindersChanged: boolean,
+): Pick<GcalEventInput, 'reminders'> =>
+  remindersChanged && event.reminders !== undefined
+    ? { reminders: toGcalReminders(event.reminders) }
+    : {};
 
 /**
  * The location coordinates for events.insert: the keys when the record

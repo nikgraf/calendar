@@ -51,6 +51,7 @@ export interface BackendAtoms {
   readonly birthdaysInRange: ReturnType<typeof buildAtoms>['birthdaysInRange'];
   readonly calendars: ReturnType<typeof buildAtoms>['calendars'];
   readonly contactsSearch: ReturnType<typeof buildAtoms>['contactsSearch'];
+  readonly eventNotificationSettings: ReturnType<typeof buildAtoms>['eventNotificationSettings'];
   readonly eventsInRange: ReturnType<typeof buildAtoms>['eventsInRange'];
   readonly locationGeo: ReturnType<typeof buildAtoms>['locationGeo'];
   readonly mapSnapshot: ReturnType<typeof buildAtoms>['mapSnapshot'];
@@ -94,6 +95,7 @@ const MUTATION_REACTIVITY = {
   setBirthdayReminderSettings: [deviceSettingsKey('birthdayReminders')],
   setCalendarColor: [CALENDARS_KEY],
   setCalendarVisible: [CALENDARS_KEY, EVENTS_KEY],
+  setEventNotificationSettings: [deviceSettingsKey('eventNotifications')],
   setTaskListVisible: [TASKLISTS_KEY, TASKS_KEY],
   setViewPreferences: [deviceSettingsKey('viewPreferences')],
   syncNow: [],
@@ -220,6 +222,15 @@ const buildAtoms = (client: BackendClient) => {
       }),
     )
     .pipe(Atom.withReactivity([deviceSettingsKey('birthdayReminders')]));
+
+  const eventNotificationSettings = runtime
+    .atom(
+      Effect.gen(function* () {
+        const backend = yield* AppBackend;
+        return yield* backend.getEventNotificationSettings(undefined);
+      }),
+    )
+    .pipe(Atom.withReactivity([deviceSettingsKey('eventNotifications')]));
 
   // Device-local view preferences; refetched only when they are written.
   const viewPreferences = runtime
@@ -358,6 +369,7 @@ const buildAtoms = (client: BackendClient) => {
     birthdaysInRange,
     calendars,
     contactsSearch,
+    eventNotificationSettings,
     eventsInRange,
     locationGeo,
     mapSnapshot,

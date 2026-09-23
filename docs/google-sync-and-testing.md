@@ -54,6 +54,20 @@ invariants.
   guests. The fake server implements exactly this (source tombstone,
   destination upsert, 403/400/404 arms).
 
+- **reminders**: `{useDefault, overrides?: [{method, minutes}]}` on
+  every event resource (no `fields` param is sent, so it always
+  arrives). `useDefault: true` means the calendarList entry's
+  `defaultReminders` apply; `useDefault: false` with no overrides means
+  none — keep the two apart. `overrides` holds at most five, `minutes`
+  0..40320 (four weeks); methods `email` and `popup` (an `sms` override
+  from an old account is dropped on read). PATCH replaces the whole
+  object, so a flagged update always sends `useDefault` plus every
+  override, email ones included, and an unrelated edit sends none. For
+  an all-day event `minutes` count from local midnight of the start day
+  in the calendar's time zone _(verify against the web UI: 420 should
+  read "the day before at 5:00 PM")_. Local delivery only fires
+  `popup` reminders; `email` is Google's to send.
+
 ### calendarList
 
 - `calendarList.patch?colorRgbFormat=true` accepts arbitrary
@@ -264,6 +278,18 @@ against a real store — confirm them there before relying on them more.
   coordinates; assigning a structured location can rewrite the location
   text, so the bridge writes coordinates first and the text last. A new
   place name without new coordinates drops the old ones.
+- **Alarms**: `EKEvent.alarms` holds relative (`relativeOffset`,
+  seconds, negative = before) and absolute-date alarms. The bridge lists
+  relative ones at or before the start as whole minutes and, on write,
+  replaces that set while keeping absolute ones and alarms after the
+  start (Calendar.app's all-day default "day of event, 9:00" is
+  +540 min, which Google cannot express) — never shown, never dropped. For an
+  all-day event the offset counts from local midnight, which matches
+  Google's convention. There is no per-calendar default alarm in
+  EventKit (Calendar.app's defaults are app preferences), so a Google
+  "calendar default" is resolved into explicit popups when an event is
+  copied to an Apple calendar, and `useDefault` or an email reminder on
+  an Apple event is refused with `UnsupportedForProviderError`.
 - **`EKEventStoreChanged`** fires for any EventKit change in any process
   (reminders and events alike) and only reaches a live observer; the
   Reminders bridge's observer and this one each react to both.

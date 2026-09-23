@@ -242,9 +242,27 @@ const appleCalendar = Effect.gen(function* () {
   yield* sql`ALTER TABLE pending_ops ADD COLUMN target_calendar_id TEXT`;
 });
 
+// Event reminders. events.reminders is the JSON EventReminders (NULL =
+// synced before reminders were modelled, read as the calendar default);
+// calendars.default_reminders the JSON ReminderOverride[] from Google's
+// calendarList; reminders_changed = 1 when the queued update must carry
+// the reminders object. The Google sync tokens (calendar list and every
+// events scope) are dropped so both re-list once and fill the new columns
+// — an incremental pass never re-sends an unchanged entry, and a row left
+// NULL would fire at the calendar default even where the user chose
+// "none" (or, for a calendar, never fire at all).
+const eventReminders = Effect.gen(function* () {
+  const sql = yield* SqlClient;
+  yield* sql`ALTER TABLE events ADD COLUMN reminders TEXT`;
+  yield* sql`ALTER TABLE calendars ADD COLUMN default_reminders TEXT`;
+  yield* sql`ALTER TABLE pending_ops ADD COLUMN reminders_changed INTEGER NOT NULL DEFAULT 0`;
+  yield* sql`DELETE FROM sync_state WHERE scope = 'calendarList' OR scope LIKE 'events:%'`;
+});
+
 // The third tuple element is a *loader* whose result is the migration effect.
 export const migrations: ReadonlyArray<ResolvedMigration> = [
   [1, 'baseline', Effect.succeed(baseline)],
   [2, 'event-geo', Effect.succeed(eventGeo)],
   [3, 'apple-calendar', Effect.succeed(appleCalendar)],
+  [4, 'event-reminders', Effect.succeed(eventReminders)],
 ];
