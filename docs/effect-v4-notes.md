@@ -117,6 +117,13 @@ socket/worker protocols do) — the client failed at runtime with
   (`Missing internal slot calendar-id`): `packages/core/src/time/intl-compat.ts`
   patches `Intl.DateTimeFormat.prototype.resolvedOptions` to include
   `calendar`/`numberingSystem`.
+- A worklet (iOS UI-thread code, e.g. `packages/core/src/time/slotSelection.ts`)
+  must not default a parameter to a module binding (`step = DRAG_SNAP_MINUTES`):
+  the UI runtime unpacks captured values inside the body, after parameter
+  defaults are evaluated, so the call throws a `ReferenceError` and a release
+  build crashes. Resolve the default in the body (`step ?? DRAG_SNAP_MINUTES`);
+  `apps/ios/src/workletClosures.test.ts` runs core worklets the way the UI
+  runtime does.
 
 ## `Effect.dieMessage` is gone
 
