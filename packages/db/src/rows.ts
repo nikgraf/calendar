@@ -415,8 +415,11 @@ export interface PendingOpRow {
   readonly geo_cleared: number;
   /** Added by migration 3 (hence late). */
   readonly target_calendar_id: string | null;
-  /** Added by migration 4 (hence last). */
+  /** Added by migration 4 (hence late). */
   readonly reminders_changed: number;
+  /** Added by migration 5 (hence last). */
+  readonly conflict_at: number | null;
+  readonly server_payload: string | null;
 }
 
 /**
@@ -433,6 +436,7 @@ export const pendingOpFromRow = (row: PendingOpRow): PendingOp | undefined =>
         baseEtag: row.base_etag ?? undefined,
         calendarId: row.calendar_id,
         colorHex: row.color_hex ?? undefined,
+        conflictAt: row.conflict_at ?? undefined,
         createdAt: row.created_at,
         dispatchedAt: row.dispatched_at ?? undefined,
         eventId: row.event_id,
@@ -443,6 +447,7 @@ export const pendingOpFromRow = (row: PendingOpRow): PendingOp | undefined =>
         nextAttemptAt: row.next_attempt_at,
         payload: decodeOr(EventRecord, parseJson(row.payload)),
         remindersChanged: row.reminders_changed === 1 ? true : undefined,
+        serverPayload: decodeOr(EventRecord, parseJson(row.server_payload)),
         targetCalendarId: row.target_calendar_id ?? undefined,
         taskDue: row.task_due ?? undefined,
         taskListId: row.task_list_id ?? undefined,

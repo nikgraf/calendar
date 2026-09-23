@@ -259,10 +259,21 @@ const eventReminders = Effect.gen(function* () {
   yield* sql`DELETE FROM sync_state WHERE scope = 'calendarList' OR scope LIKE 'events:%'`;
 });
 
+// Conflict parking. conflict_at is set when a 412 parked the op (the drain
+// skips it until the user chooses keep-mine or take-theirs); server_payload
+// is Google's version fetched at park time (JSON EventRecord, NULL when the
+// event was deleted on Google), shown so the user can compare.
+const conflictPark = Effect.gen(function* () {
+  const sql = yield* SqlClient;
+  yield* sql`ALTER TABLE pending_ops ADD COLUMN conflict_at INTEGER`;
+  yield* sql`ALTER TABLE pending_ops ADD COLUMN server_payload TEXT`;
+});
+
 // The third tuple element is a *loader* whose result is the migration effect.
 export const migrations: ReadonlyArray<ResolvedMigration> = [
   [1, 'baseline', Effect.succeed(baseline)],
   [2, 'event-geo', Effect.succeed(eventGeo)],
   [3, 'apple-calendar', Effect.succeed(appleCalendar)],
   [4, 'event-reminders', Effect.succeed(eventReminders)],
+  [5, 'conflict-park', Effect.succeed(conflictPark)],
 ];

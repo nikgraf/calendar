@@ -1,5 +1,7 @@
 import { pendingOpLabel, useGuardedMutations, usePendingOps } from '@calendar/app-state';
+import { isParkedOp } from '@calendar/core';
 import { useState } from 'react';
+import { ConflictActions } from './ConflictBanner.tsx';
 
 /** Sidebar indicator for local changes Google has not acknowledged yet. */
 export function SyncStatus() {
@@ -32,13 +34,17 @@ export function SyncStatus() {
                     <span className="text-xs text-amber-700"> — {label.retry}</span>
                   ) : null}
                 </span>
-                <button
-                  className="text-xs text-red-600 hover:underline"
-                  onClick={() => void discardPendingOp({ opId: op.id })}
-                  type="button"
-                >
-                  Discard
-                </button>
+                {isParkedOp(op) ? (
+                  <ConflictActions op={op} size="sm" />
+                ) : (
+                  <button
+                    className="text-xs text-red-600 hover:underline"
+                    onClick={() => void discardPendingOp({ opId: op.id })}
+                    type="button"
+                  >
+                    Discard
+                  </button>
+                )}
               </li>
             );
           })}

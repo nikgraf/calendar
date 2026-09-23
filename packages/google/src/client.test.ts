@@ -120,6 +120,15 @@ describe('GoogleCalendarClient', () => {
     }).pipe(Effect.provide(clientLayer([{ status: 410 }], []))),
   );
 
+  it.effect('maps 404 and 410 on events.get to NotFoundError', () =>
+    Effect.gen(function* () {
+      const client = yield* GoogleCalendarClient;
+      const params = { accountId: 'acc', calendarId: 'primary', eventId: 'evt1' };
+      expect((yield* client.getEvent(params).pipe(Effect.flip))._tag).toBe('NotFoundError');
+      expect((yield* client.getEvent(params).pipe(Effect.flip))._tag).toBe('NotFoundError');
+    }).pipe(Effect.provide(clientLayer([{ status: 404 }, { status: 410 }], []))),
+  );
+
   it.effect('maps 412 to ConflictError on patch', () =>
     Effect.gen(function* () {
       const client = yield* GoogleCalendarClient;

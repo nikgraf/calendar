@@ -74,7 +74,7 @@ written to SQLite and nothing leaves the device.
 
 Invalidation path (backend → UI): repo mutations invalidate Reactivity keys
 (`accounts`, `calendars`, `events`, `pendingOps`, `tasks`, `taskLists`,
-plus `notice:conflict` as a broadcast-only signal). `forwardingReactivity`
+plus `notice:dropped` as a broadcast-only signal). `forwardingReactivity`
 (packages/db/src/reactivityForward.ts) decorates the backend Reactivity to
 also publish every key to an in-process invalidation bus
 (packages/db/src/invalidationBus.ts); the bus feeds the `stream: true`
@@ -92,7 +92,7 @@ oldest-first). Kinds:
 | --------------- | ----------------------------- | -------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
 | `create`        | client-generated id           | full EventRecord                 | events.insert (idempotent — 409 = already landed); attendees included; `sendUpdates=all` when guests exist                       |
 | `update`        | event id / instance id        | EventRecord + `attendeesChanged` | events.patch (If-Match when etag known); attendees only when flagged; `sendUpdates=all` when guests exist or the list was edited |
-| `delete`        | event id / instance id        | —                                | events.delete                                                                                                                    |
+| `delete`        | event id / instance id        | EventRecord (the deleted row)    | events.delete (If-Match when etag known); the snapshot only names a parked conflict                                              |
 | `rsvp`          | event id                      | EventRecord (attendees)          | events.patch, attendees-only body, **no If-Match**                                                                               |
 | `calendarColor` | `__calendar_color__` sentinel | `colorHex`                       | calendarList.patch?colorRgbFormat=true                                                                                           |
 | `move`          | master id (source calendar)   | `targetCalendarId`               | events.move?destination= (same account; organizer only; whole series)                                                            |
@@ -110,9 +110,24 @@ Rules that keep the queue correct:
   can exist under several accounts).
 - **Backoff**: transient failures retry at `30s·2^attempts`, capped at
   30 min (`markFailed`). Non-409 4xx (except 429) are permanent → drop.
-- **412 Conflict**: server wins — the op is dropped and `notice:conflict`
-  is broadcast; the desktop shows a toast. The next pull replaces the local
-  copy.
+- **412 Conflict** (only `update` and `delete` send If-Match): the op is
+  **parked**, never dropped. The drain fetches Google's copy
+  (`events.get`; 404/410 = deleted there) and `markConflict` stores it in
+  `server_payload` with `conflict_at` set; a failed fetch is an ordinary
+  retry. `listDue` skips parked ops and the local row stays `pending`, so
+  pulls keep skipping it and the user's version stays on screen. The UI
+  reads the conflict from `listPendingOps` (`PendingOpSummary.conflict`:
+  mine, theirs) — a persistent banner on both apps plus the queue rows —
+  and `resolveConflict` settles it: **mine** unparks with `base_etag`
+  cleared so the re-send overwrites Google (a parked delete also removes a
+  copy a pull re-inserted meanwhile; an edit of an event Google deleted is
+  re-created under a new id as a standalone event); **theirs** re-fetches
+  Google's _current_ copy (the stored one is a preview, and a pull may
+  have consumed a newer change while the row was pending) and writes it in
+  ack mode, then drops the op. Take-theirs is refused while a move of the
+  series is queued ahead (the op already points at the destination). A
+  new edit of a parked event coalesces as usual and parks again with the
+  newer payload; a move re-queues a parked op still parked.
 - **401**: the op stays queued, the account is flagged `reauth_required`;
   reconnecting (same account id, resolved by email) resets status and the
   queue drains.
@@ -151,7 +166,8 @@ Rules that keep the queue correct:
   means the user discarded it (skip), and coalescing rewrites stay
   visible.
 - The op queue is surfaced in the UI (`listPendingOps`/`discardPendingOp`
-  rpcs, "N unsynced changes" panel). `PendingOpSummary` in core/backend.ts
+  rpcs, "N unsynced changes" panel). Discarding an op hands its row back
+  to sync the same way a dropped op does (`releaseRow`). `PendingOpSummary` in core/backend.ts
   has its **own kind literal** — extend it whenever a kind is added.
 
 ## Sync engine (packages/sync/src/engine.ts)
@@ -191,8 +207,9 @@ Rules that keep the queue correct:
   protected by sync_status). Local writes mark their row `pending`; pulls
   upsert in `mode: 'pull'`, which skips pending rows, so a queued edit is
   never clobbered by a page carrying the server's older copy. The push
-  response (ack upsert) or an abandoned op (`markSynced` on drop/412) hands
-  the row back. Task rows work the same way (`setStatus`/`updateLocal`
+  response (ack upsert), an abandoned op (`markSynced` on drop or discard)
+  or a resolved conflict (take-theirs writes Google's copy) hands the row
+  back. Task rows work the same way (`setStatus`/`updateLocal`
   mark pending; `upsertTasks(…, { mode: 'pull' })`).
 - Cancelled events arrive as tombstones and are kept as `status:
 'cancelled'` rows when they shadow recurring instances.

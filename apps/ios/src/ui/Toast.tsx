@@ -1,8 +1,15 @@
-import { type MutationNotice, subscribeMutationNotices } from '@calendar/app-state';
-import { CONFLICT_NOTICE_KEY, DROPPED_NOTICE_KEY } from '@calendar/db/keys';
+import {
+  type MutationNotice,
+  subscribeMutationNotices,
+  useGuardedMutations,
+  usePendingOps,
+} from '@calendar/app-state';
+import { isParkedOp } from '@calendar/core';
+import { DROPPED_NOTICE_KEY } from '@calendar/db/keys';
 import { useEffect, useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { subscribeInvalidations } from '../backend.ts';
+import { askConflict } from './conflictAlert.ts';
 
 /**
  * Transient banner for failed fire-and-forget mutations (mutationGuard).
@@ -36,8 +43,7 @@ export function MutationNoticeToast() {
 
 /**
  * Transient banner keyed on a broadcast invalidation. Parity with the
- * desktop NoticeToast — without it, a conflict on iPhone was silent
- * data loss.
+ * desktop NoticeToast.
  */
 function NoticeToast({ message, noticeKey }: { message: string; noticeKey: string }) {
   const [visible, setVisible] = useState(false);
@@ -68,13 +74,31 @@ function NoticeToast({ message, noticeKey }: { message: string; noticeKey: strin
   );
 }
 
-/** 412 server-wins: the local edit was discarded. */
-export function ConflictToast() {
+/**
+ * A queued change Google refused with a 412 (the event changed there
+ * first). Stays until resolved: tapping it asks keep-mine / take-theirs.
+ * Parity with the desktop ConflictBanner.
+ */
+export function ConflictBanner() {
+  const parked = usePendingOps().filter(isParkedOp);
+  const { resolveConflict } = useGuardedMutations();
+  const first = parked[0];
+  if (!first) {
+    return null;
+  }
+  const name = first.title || first.conflict.theirs?.title || 'An event';
   return (
-    <NoticeToast
-      message="An edit was overridden by a newer version from Google."
-      noticeKey={CONFLICT_NOTICE_KEY}
-    />
+    <Pressable
+      accessibilityRole="button"
+      onPress={() => askConflict(first, resolveConflict)}
+      style={[styles.toast, styles.conflict]}
+      testID="conflict-banner"
+    >
+      <Text style={styles.conflictText}>
+        “{name}” changed on Google while your change waited. Tap to choose a version
+        {parked.length > 1 ? ` (+${String(parked.length - 1)} more)` : ''}.
+      </Text>
+    </Pressable>
   );
 }
 
@@ -89,6 +113,16 @@ export function DroppedToast() {
 }
 
 const styles = StyleSheet.create({
+  conflict: {
+    backgroundColor: '#fffbeb',
+    borderColor: '#fcd34d',
+    borderWidth: 1,
+  },
+  conflictText: {
+    color: '#78350f',
+    fontSize: 13,
+    textAlign: 'center',
+  },
   detail: {
     color: '#ffffffcc',
     fontSize: 11,

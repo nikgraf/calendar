@@ -27,8 +27,14 @@ import {
   withConsistentGeo,
 } from '@calendar/core';
 import { AccountRepo, CalendarRepo, EventRepo, PendingOpRepo, TaskRepo } from '@calendar/db';
-import { CONFLICT_NOTICE_KEY, DROPPED_NOTICE_KEY } from '@calendar/db/keys';
-import { generateEventId, GoogleCalendarClient, GoogleTasksClient } from '@calendar/google';
+import { DROPPED_NOTICE_KEY } from '@calendar/db/keys';
+import {
+  type GcalEvent,
+  generateEventId,
+  GoogleCalendarClient,
+  GoogleTasksClient,
+  mapGcalEvent,
+} from '@calendar/google';
 import { RemindersClient } from '@calendar/reminders';
 import { Cause, Clock, Context, Effect, Layer, Semaphore } from 'effect';
 import { Reactivity } from 'effect/unstable/reactivity/Reactivity';
@@ -40,6 +46,7 @@ import { makeAppleEventMutations } from './appleEventMutations.ts';
 import {
   CALENDAR_COLOR_EVENT_ID,
   CalendarNotWritableError,
+  ConflictNotResolvableError,
   EventNotFoundError,
   type EventMutationsShape,
   InvalidColorError,
@@ -52,6 +59,7 @@ import {
   type UpdateEventParams,
 } from './mutationTypes.ts';
 import { makeReminderMutations } from './reminderMutations.ts';
+import { cancelledOverrideTombstone } from './tombstone.ts';
 import { makeTaskMutations } from './taskMutations.ts';
 
 export * from './mutationTypes.ts';
@@ -312,17 +320,17 @@ const make: Effect.Effect<
             id: generateEventId(),
             kind: 'delete',
             nextAttemptAt: 0,
+            payload: override,
           }),
         );
       }
     });
 
-  const applyOp = makeApplyOp({
+  const { apply: applyOp, releaseRow } = makeApplyOp({
     accountRepo,
     calendarRepo,
     client,
     eventRepo,
-    notifyConflict: Effect.ignore(reactivity.invalidate([CONFLICT_NOTICE_KEY])),
     notifyDropped: Effect.ignore(reactivity.invalidate([DROPPED_NOTICE_KEY])),
     pendingOpRepo,
     taskRepo,
@@ -347,6 +355,10 @@ const make: Effect.Effect<
             const outcome = yield* applyOp(op);
             if (outcome === 'done') {
               yield* pendingOpRepo.remove(op.id);
+            } else if ('conflict' in outcome) {
+              // Parked until the user chooses (resolveConflict); the local
+              // row stays pending so pulls cannot overwrite their version.
+              yield* pendingOpRepo.markConflict(op.id, now, outcome.conflict ?? undefined);
             } else {
               // The reason lands in pending_ops.last_error, which the
               // unsynced-changes panel shows next to the retry count.
@@ -365,6 +377,132 @@ const make: Effect.Effect<
           Effect.logError('pending-op drain failed', { cause: String(Cause.squash(cause)) }),
         ),
       );
+
+  const discardPendingOp: EventMutationsShape['discardPendingOp'] = (opId) =>
+    sql.withTransaction(
+      Effect.gen(function* () {
+        const op = yield* pendingOpRepo.getById(opId);
+        yield* pendingOpRepo.remove(opId);
+        if (op) {
+          yield* releaseRow(op);
+        }
+      }),
+    );
+
+  /**
+   * Keep mine: re-send without If-Match. A parked delete also clears a
+   * copy a pull re-inserted while it waited (a pending row — an instance
+   * tombstone — is the user's own and stays). An edit of an event Google
+   * deleted is restored as a new event: patching it would 404 and the
+   * NotFound arm would drop the edit.
+   */
+  const keepMine = (op: PendingOp, now: number) =>
+    Effect.gen(function* () {
+      if (op.kind === 'delete') {
+        const row = yield* eventRepo.getById(op.accountId, op.calendarId, op.eventId);
+        if (row && row.syncStatus !== 'pending') {
+          yield* eventRepo.deleteEvent(op.accountId, op.calendarId, op.eventId);
+        }
+        return yield* pendingOpRepo.unpark(op.id, now);
+      }
+      if (op.serverPayload && op.serverPayload.status !== 'cancelled') {
+        return yield* pendingOpRepo.unpark(op.id, now);
+      }
+      yield* pendingOpRepo.remove(op.id);
+      if (!op.payload) {
+        return yield* releaseRow(op);
+      }
+      // A standalone copy: the series (or occurrence) it belonged to is
+      // gone, so it cannot be an override of it any more.
+      const restored = new EventRecord({
+        ...op.payload,
+        etag: null,
+        id: generateEventId(),
+        originalStartUtc: undefined,
+        recurringEventId: undefined,
+        syncStatus: 'pending',
+        updatedAt: now,
+      });
+      yield* eventRepo.deleteEvent(op.accountId, op.calendarId, op.eventId);
+      yield* eventRepo.upsertMany([restored]);
+      yield* enqueue(
+        new PendingOp({
+          accountId: op.accountId,
+          attempts: 0,
+          calendarId: op.calendarId,
+          createdAt: now,
+          eventId: restored.id,
+          id: generateEventId(),
+          kind: 'create',
+          nextAttemptAt: 0,
+          payload: restored,
+        }),
+      );
+    });
+
+  /** Take theirs: Google's current copy (undefined = gone) replaces the local row. */
+  const takeTheirs = (op: PendingOp, item: GcalEvent | undefined, now: number) =>
+    Effect.gen(function* () {
+      const context = { accountId: op.accountId, calendarId: op.calendarId, syncedAt: now };
+      const record =
+        item === undefined
+          ? null
+          : item.status === 'cancelled'
+            ? cancelledOverrideTombstone(item, context)
+            : mapGcalEvent(item, {
+                ...context,
+                defaultTimeZone: op.payload?.startTimeZone ?? 'UTC',
+              });
+      if (record) {
+        // Ack mode: overwrites the pending row the pulls skipped.
+        yield* eventRepo.upsertMany([record]);
+      } else {
+        yield* eventRepo.deleteEvent(op.accountId, op.calendarId, op.eventId);
+      }
+      yield* pendingOpRepo.remove(op.id);
+    });
+
+  const resolveConflict: EventMutationsShape['resolveConflict'] = ({ choice, opId }) =>
+    Effect.gen(function* () {
+      const op = yield* pendingOpRepo.getById(opId);
+      if (!op || op.conflictAt === undefined) {
+        return;
+      }
+      if (choice === 'mine') {
+        // transactional kicks the drain once the unpark committed.
+        return yield* transactional(
+          Effect.flatMap(Clock.currentTimeMillis, (now) => keepMine(op, now)),
+        );
+      }
+      // After a move the op points at the destination, where Google has
+      // nothing until the move lands; a fetch there would 404 and delete
+      // the user's row.
+      if ((yield* pendingOpRepo.earlierInSeries(op)).includes('move')) {
+        return yield* Effect.fail(
+          new ConflictNotResolvableError({
+            message: 'The event is still moving to another calendar — try again once it synced.',
+          }),
+        );
+      }
+      // The stored copy is only a preview: Google may have moved on while
+      // the op was parked, so fetch what it has now.
+      const item = yield* client
+        .getEvent({ accountId: op.accountId, calendarId: op.calendarId, eventId: op.eventId })
+        .pipe(
+          Effect.map((event): GcalEvent | undefined => event),
+          Effect.catchTag('NotFoundError', () => Effect.succeed(undefined)),
+        );
+      const now = yield* Clock.currentTimeMillis;
+      yield* sql.withTransaction(
+        Effect.gen(function* () {
+          // The user may have edited (re-queued) or resolved it meanwhile.
+          const current = yield* pendingOpRepo.getById(opId);
+          if (current?.conflictAt !== undefined) {
+            yield* takeTheirs(current, item, now);
+          }
+        }),
+      );
+    });
 
   const googleTasks = makeTaskMutations({
     enqueue,
@@ -483,7 +621,6 @@ const make: Effect.Effect<
         );
         return record;
       }),
-
     deleteEvent: ({ accountId, calendarId, eventId }) =>
       Effect.gen(function* () {
         const existing = yield* eventRepo.getById(accountId, calendarId, eventId);
@@ -511,6 +648,8 @@ const make: Effect.Effect<
               id: generateEventId(),
               kind: 'delete',
               nextAttemptAt: 0,
+              // Snapshot of what was deleted: names a parked 412 in the UI.
+              payload: existing,
             }),
           );
         }
@@ -545,6 +684,7 @@ const make: Effect.Effect<
               id: generateEventId(),
               kind: 'delete',
               nextAttemptAt: 0,
+              payload: tombstone,
             }),
           );
           return;
@@ -570,6 +710,7 @@ const make: Effect.Effect<
               id: generateEventId(),
               kind: 'delete',
               nextAttemptAt: 0,
+              payload: master,
             }),
           );
           return;
@@ -606,7 +747,11 @@ const make: Effect.Effect<
         yield* dropOverridesFrom(accountId, calendarId, masterId, originalStartUtc, now);
       }),
 
+    discardPendingOp,
+
     processPendingOps,
+
+    resolveConflict,
 
     respondToEvent: ({ accountId, calendarId, eventId, response }) =>
       Effect.gen(function* () {
@@ -1022,7 +1167,11 @@ const make: Effect.Effect<
         yield* pendingOpRepo.remove(op.id);
       }
       // The move itself bumps the event's etag, so a re-queued edit must
-      // not send its pre-move If-Match: it would 412 and be dropped.
+      // not send its pre-move If-Match: it would 412 and park. A parked op
+      // stays parked (conflictAt rides along): dropping the park with the
+      // etag would silently decide the conflict for the user.
+      const retarget = (record: EventRecord | undefined) =>
+        record ? new EventRecord({ ...record, calendarId: target.calendarId }) : undefined;
       const rekey = (op: PendingOp, createdAt: number) =>
         new PendingOp({
           ...op,
@@ -1031,11 +1180,10 @@ const make: Effect.Effect<
           calendarId: target.calendarId,
           createdAt,
           id: generateEventId(),
-          lastError: undefined,
+          lastError: op.conflictAt === undefined ? undefined : op.lastError,
           nextAttemptAt: 0,
-          payload: op.payload
-            ? new EventRecord({ ...op.payload, calendarId: target.calendarId })
-            : undefined,
+          payload: retarget(op.payload),
+          serverPayload: retarget(op.serverPayload),
         });
       const pendingCreate = queued.find((op) => op.kind === 'create' && op.eventId === master.id);
       if (!pendingCreate) {

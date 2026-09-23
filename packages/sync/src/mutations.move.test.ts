@@ -55,6 +55,7 @@ const recordingGoogle = (
       calls.push({ calendarId, detail: eventId, kind: 'delete' });
     }),
   getColors: () => Effect.succeed({ calendar: {} }),
+  getEvent: () => Effect.die('unexpected get'),
   insertEvent: ({ calendarId, event }) =>
     Effect.sync(() => {
       calls.push({ calendarId, detail: event.summary, kind: 'insert' });
@@ -283,7 +284,7 @@ describe('moveEvent inside one Google account', () => {
       ]);
       expect(yield* queued).toEqual([]);
       expect((yield* rowAt('acc-1', 'cal-2', 'evt-a'))?.syncStatus).toBe('synced');
-    }).pipe(Effect.provide(testLayer(recordingGoogle(calls), appleFake())));
+    }).pipe(noYield, Effect.provide(testLayer(recordingGoogle(calls), appleFake())));
   });
 
   it.effect('an edit queued behind a move waits while the move is in backoff', () => {
@@ -310,6 +311,39 @@ describe('moveEvent inside one Google account', () => {
       const ops = yield* queued;
       expect(ops.map((op) => op.kind)).toEqual(['move', 'update']);
     }).pipe(Effect.provide(testLayer(google, appleFake())));
+  });
+
+  it.effect('a parked edit stays parked behind a move; take theirs waits for the move', () => {
+    const calls: Array<Call> = [];
+    const google = recordingGoogle(calls, {
+      moveEvent: () => Effect.fail(new ApiUnavailableError({ cause: 'down', status: 503 })),
+    });
+    return Effect.gen(function* () {
+      yield* seed([googleEvent()]);
+      const mutations = yield* EventMutations;
+      const pending = yield* PendingOpRepo;
+      yield* mutations.updateEvent({
+        accountId: 'acc-1',
+        calendarId: 'cal-1',
+        changes: { title: 'Parked edit' },
+        eventId: 'evt-a',
+      });
+      const [edit] = yield* queued;
+      yield* pending.markConflict(edit!.id, 1, googleEvent({ title: 'Theirs' }));
+      yield* mutations.moveEvent(move(['acc-1', 'cal-1', 'evt-a'], ['acc-1', 'cal-2']));
+
+      const ops = yield* queued;
+      expect(ops.map((op) => op.kind)).toEqual(['move', 'update']);
+      const requeued = ops[1]!;
+      expect(requeued.calendarId).toBe('cal-2');
+      expect(requeued.conflictAt).toBe(1);
+      expect(requeued.serverPayload?.calendarId).toBe('cal-2');
+
+      const refused = yield* mutations
+        .resolveConflict({ choice: 'theirs', opId: requeued.id })
+        .pipe(Effect.flip);
+      expect(refused._tag).toBe('ConflictNotResolvableError');
+    }).pipe(noYield, Effect.provide(testLayer(google, appleFake())));
   });
 
   it.effect('a rejected move puts the event back where the server has it', () => {

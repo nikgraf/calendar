@@ -65,6 +65,7 @@ const stubClient = (
 ): GoogleCalendarClientShape => ({
   deleteEvent: () => Effect.die('not used'),
   getColors: () => Effect.succeed({ calendar: {} }),
+  getEvent: () => Effect.die('unexpected get'),
   insertEvent: () => Effect.die('not used'),
   listCalendars: () => Effect.succeed(calendarListPage),
   listEvents: ({ params }) => {

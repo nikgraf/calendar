@@ -37,6 +37,7 @@ import { EventMutations } from './mutations.ts';
 const stubClient: GoogleCalendarClientShape = {
   deleteEvent: () => Effect.fail(new ApiUnavailableError({ cause: 'offline' })),
   getColors: () => Effect.succeed({ calendar: {} }),
+  getEvent: () => Effect.die('unexpected get'),
   insertEvent: () => Effect.die('unexpected insert'),
   listCalendars: () => Effect.succeed({ items: [] }),
   listEvents: () => Effect.succeed({ items: [] }),

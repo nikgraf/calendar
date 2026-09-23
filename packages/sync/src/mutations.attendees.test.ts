@@ -70,6 +70,7 @@ const makeLayer = (sent: Array<Sent>, overrides: Partial<GoogleCalendarClientSha
       Layer.succeed(GoogleCalendarClient, {
         deleteEvent: () => Effect.void,
         getColors: () => Effect.succeed({ calendar: {} }),
+        getEvent: () => Effect.die('unexpected get'),
         insertEvent: ({ event, sendUpdates }) => {
           sent.push({ event, kind: 'insert', sendUpdates });
           return echo(event, event.id ?? 'server-id');

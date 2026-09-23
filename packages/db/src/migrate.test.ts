@@ -69,6 +69,8 @@ describe('runMigrations', () => {
       expect(yield* columnsOf('accounts')).toContain('contacts_enabled');
       expect(yield* columnsOf('events')).toContain('geo');
       expect(yield* columnsOf('pending_ops')).toContain('geo_cleared');
+      expect(yield* columnsOf('pending_ops')).toContain('conflict_at');
+      expect(yield* columnsOf('pending_ops')).toContain('server_payload');
     }).pipe(Effect.provide(sqlLayer())),
   );
 

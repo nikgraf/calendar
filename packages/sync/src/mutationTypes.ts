@@ -12,7 +12,8 @@ import type {
   TaskRecurrence,
 } from '@calendar/core';
 import type { AppleCalendarError } from '@calendar/apple-calendar';
-import type { MoveEventParams, MoveLoss, MoveTaskParams } from '@calendar/core';
+import type { ConflictChoice, MoveEventParams, MoveLoss, MoveTaskParams } from '@calendar/core';
+import type { GoogleRequestError } from '@calendar/google';
 import type { RemindersError } from '@calendar/reminders';
 import { Data, type Effect } from 'effect';
 import type { SqlError } from 'effect/unstable/sql/SqlError';
@@ -95,6 +96,14 @@ type MoveError =
   | NotOrganizerError
   | RecurringEditUnsupportedError
   | SqlError;
+
+/**
+ * Take-theirs refused: a move of the same series is queued ahead, so
+ * Google does not have the event where the parked op now points yet.
+ */
+export class ConflictNotResolvableError extends Data.TaggedError('ConflictNotResolvableError')<{
+  readonly message: string;
+}> {}
 
 /** Sentinel eventId keying calendar-color ops for coalescing. */
 export const CALENDAR_COLOR_EVENT_ID = '__calendar_color__';
@@ -181,6 +190,11 @@ export interface EventMutationsShape {
     readonly taskListId: string;
   }) => Effect.Effect<void, SqlError | TaskProviderError>;
   /**
+   * Removes a queued change the user gave up on and hands its local row
+   * back to sync (a dropped create takes its row with it).
+   */
+  readonly discardPendingOp: (opId: string) => Effect.Effect<void, SqlError>;
+  /**
    * Moves an event (the whole series for a recurring one) to another
    * calendar: a server move inside one Google account, EventKit's own
    * calendar change between Apple calendars, otherwise a copy into the
@@ -203,6 +217,16 @@ export interface EventMutationsShape {
   readonly previewMove: (params: MoveEventParams) => Effect.Effect<MoveLoss, MoveError>;
   /** Drains due pending ops (serialized); safe to call concurrently. */
   readonly processPendingOps: () => Effect.Effect<void>;
+  /**
+   * Settles an op a 412 parked. 'mine' re-sends it without If-Match (a
+   * change whose event Google deleted is re-created); 'theirs' fetches
+   * Google's current version into the local row and drops the change. A
+   * no-op when the op is gone or no longer parked.
+   */
+  readonly resolveConflict: (params: {
+    readonly choice: ConflictChoice;
+    readonly opId: string;
+  }) => Effect.Effect<void, ConflictNotResolvableError | GoogleRequestError | SqlError>;
   /** Updates the caller's own attendee responseStatus (series-wide). */
   readonly respondToEvent: (params: {
     readonly accountId: string;

@@ -11,7 +11,7 @@ import {
   contactsStatusCopy,
   remindersStatusCopy,
 } from '@calendar/app-state';
-import { isAppleCalendarAccount, isAppleRemindersAccount } from '@calendar/core';
+import { isAppleCalendarAccount, isAppleRemindersAccount, isParkedOp } from '@calendar/core';
 import { Effect } from 'effect';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
@@ -30,6 +30,7 @@ import { iosContactsClient } from '../contactsClient.ts';
 import { iosRemindersClient } from '../remindersClient.ts';
 import { AccountCard } from './AccountCard.tsx';
 import { BirthdayRemindersSection } from './BirthdayRemindersSection.tsx';
+import { askConflict } from './conflictAlert.ts';
 import { EventNotificationsSection } from './EventNotificationsSection.tsx';
 import { DiagnosticsSection } from './DiagnosticsSection.tsx';
 import { LocationsSection } from './LocationsSection.tsx';
@@ -225,9 +226,15 @@ export function SettingsSheet({ onClose, visible }: { onClose: () => void; visib
                     {pendingOpLabel(op).text}
                     {pendingOpLabel(op).retry ? ` — ${pendingOpLabel(op).retry}` : ''}
                   </Text>
-                  <Pressable onPress={() => void guarded.discardPendingOp({ opId: op.id })}>
-                    <Text style={styles.pendingDiscard}>Discard</Text>
-                  </Pressable>
+                  {isParkedOp(op) ? (
+                    <Pressable onPress={() => askConflict(op, guarded.resolveConflict)}>
+                      <Text style={styles.pendingResolve}>Resolve</Text>
+                    </Pressable>
+                  ) : (
+                    <Pressable onPress={() => void guarded.discardPendingOp({ opId: op.id })}>
+                      <Text style={styles.pendingDiscard}>Discard</Text>
+                    </Pressable>
+                  )}
                 </View>
               ))}
             </View>
@@ -406,6 +413,11 @@ const styles = StyleSheet.create({
     color: '#92400e',
     flex: 1,
     fontSize: 13,
+  },
+  pendingResolve: {
+    color: '#b45309',
+    fontSize: 13,
+    fontWeight: '600',
   },
   pendingRow: {
     alignItems: 'center',

@@ -22,6 +22,15 @@ export interface PendingOpRepoShape {
   readonly getById: (opId: string) => Effect.Effect<PendingOp | undefined, SqlError>;
   readonly listAll: () => Effect.Effect<ReadonlyArray<PendingOp>, SqlError>;
   readonly listDue: (now: number) => Effect.Effect<ReadonlyArray<PendingOp>, SqlError>;
+  /**
+   * Parks an op after a 412: the drain skips it until `unpark` or removal.
+   * `serverPayload` is Google's version (undefined = deleted on Google).
+   */
+  readonly markConflict: (
+    opId: string,
+    at: number,
+    serverPayload: PendingOp['serverPayload'],
+  ) => Effect.Effect<void, SqlError>;
   /** Persists the pre-network stamp for non-idempotent calls. */
   readonly markDispatched: (opId: string, at: number) => Effect.Effect<void, SqlError>;
   readonly markFailed: (
@@ -39,6 +48,11 @@ export interface PendingOpRepoShape {
     oldEventId: string,
     newEventId: string,
   ) => Effect.Effect<void, SqlError>;
+  /**
+   * Keep-mine: clears the park and the If-Match etag so the next drain
+   * overwrites the server copy, and makes the op due immediately.
+   */
+  readonly unpark: (opId: string, now: number) => Effect.Effect<void, SqlError>;
 }
 
 /** Ops one drain pass takes on; a larger backlog continues on the next kick. */
@@ -79,7 +93,7 @@ const makePendingOpRepo: Effect.Effect<PendingOpRepoShape, never, Reactivity | S
                                    task_list_id, task_status,
                                    task_title, task_notes, task_due, dispatched_at,
                                    attendees_changed, geo_cleared, target_calendar_id,
-                                   reminders_changed)
+                                   reminders_changed, conflict_at, server_payload)
           VALUES (${op.id}, ${op.accountId}, ${op.calendarId}, ${op.kind},
                   ${op.eventId},
                   ${op.payload ? JSON.stringify(eventPayloadJson(op.payload)) : null},
@@ -89,7 +103,8 @@ const makePendingOpRepo: Effect.Effect<PendingOpRepoShape, never, Reactivity | S
                   ${op.taskTitle ?? null}, ${op.taskNotes ?? null}, ${op.taskDue ?? null},
                   ${op.dispatchedAt ?? null}, ${op.attendeesChanged ? 1 : 0},
                   ${op.geoCleared ? 1 : 0}, ${op.targetCalendarId ?? null},
-                  ${op.remindersChanged ? 1 : 0})
+                  ${op.remindersChanged ? 1 : 0}, ${op.conflictAt ?? null},
+                  ${op.serverPayload ? JSON.stringify(eventPayloadJson(op.serverPayload)) : null})
         `),
         ),
       getById: (opId) =>
@@ -107,8 +122,17 @@ const makePendingOpRepo: Effect.Effect<PendingOpRepoShape, never, Reactivity | S
           // rowid breaks created_at ties in insertion order (two ops of one
           // mutation, or a fixed test clock) — order matters for moves.
           sql<PendingOpRow>`SELECT * FROM pending_ops
-            WHERE next_attempt_at <= ${now} ORDER BY created_at, rowid LIMIT ${DRAIN_PAGE_SIZE}`,
+            WHERE next_attempt_at <= ${now} AND conflict_at IS NULL ORDER BY created_at, rowid LIMIT ${DRAIN_PAGE_SIZE}`,
           (rows) => rows.flatMap(decodedOps),
+        ),
+      markConflict: (opId, at, serverPayload) =>
+        invalidating(
+          Effect.asVoid(
+            sql`UPDATE pending_ops SET conflict_at = ${at},
+              server_payload = ${serverPayload ? JSON.stringify(eventPayloadJson(serverPayload)) : null},
+              last_error = 'changed on Google'
+              WHERE id = ${opId}`,
+          ),
         ),
       markDispatched: (opId, at) =>
         invalidating(
@@ -141,6 +165,14 @@ const makePendingOpRepo: Effect.Effect<PendingOpRepoShape, never, Reactivity | S
             sql`UPDATE pending_ops SET event_id = ${newEventId}
               WHERE account_id = ${accountId} AND calendar_id = ${calendarId}
                 AND event_id = ${oldEventId}`,
+          ),
+        ),
+      unpark: (opId, now) =>
+        invalidating(
+          Effect.asVoid(
+            sql`UPDATE pending_ops SET conflict_at = NULL, server_payload = NULL,
+              base_etag = NULL, attempts = 0, next_attempt_at = ${now}, last_error = NULL
+              WHERE id = ${opId}`,
           ),
         ),
     };

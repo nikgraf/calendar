@@ -8,6 +8,7 @@ import {
   GcalEventsPage,
   type GcalEventInput,
 } from './apiTypes.ts';
+import { NotFoundError } from './errors.ts';
 import { TokenManager } from './oauth/tokenManager.ts';
 import { definedParams, makeRequestCore, type GoogleRequestError } from './requestCore.ts';
 
@@ -31,6 +32,15 @@ export interface GoogleCalendarClientShape {
     readonly eventId: string;
   }) => Effect.Effect<void, GoogleRequestError>;
   readonly getColors: (accountId: string) => Effect.Effect<GcalColors, GoogleRequestError>;
+  /**
+   * events.get: one event as Google has it now (a cancelled one comes back
+   * with `status: 'cancelled'`). 404 and 410 both mean gone → NotFoundError.
+   */
+  readonly getEvent: (params: {
+    readonly accountId: string;
+    readonly calendarId: string;
+    readonly eventId: string;
+  }) => Effect.Effect<GcalEvent, GoogleRequestError>;
   readonly insertEvent: (params: {
     readonly accountId: string;
     readonly calendarId: string;
@@ -102,6 +112,20 @@ const make: Effect.Effect<GoogleCalendarClientShape, never, HttpClient.HttpClien
 
       getColors: (accountId) =>
         requestJson(accountId, HttpClientRequest.get(`${BASE_URL}/colors`), GcalColors),
+
+      getEvent: ({ accountId, calendarId, eventId }) =>
+        requestJson(
+          accountId,
+          HttpClientRequest.get(eventsUrl(calendarId, `/${encodeURIComponent(eventId)}`)),
+          GcalEvent,
+          { calendarId, eventId },
+        ).pipe(
+          // failForStatus reads 410 as an expired sync token — for a single
+          // event it means deleted.
+          Effect.catchTag('SyncTokenExpiredError', () =>
+            Effect.fail(new NotFoundError({ resource: eventId })),
+          ),
+        ),
 
       insertEvent: ({ accountId, calendarId, event, sendUpdates }) =>
         requestJson(

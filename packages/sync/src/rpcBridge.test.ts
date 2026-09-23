@@ -72,6 +72,7 @@ const stubHandlers: BackendHandlers = {
   moveTask: notStubbed,
   previewMove: notStubbed,
   removeAccount: () => Effect.void,
+  resolveConflict: () => Effect.void,
   resolveLocation: () => Effect.succeed(null),
   respondToEvent: () => Effect.void,
   searchContacts: () => Effect.succeed([]),

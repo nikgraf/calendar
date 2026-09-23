@@ -88,13 +88,30 @@ export const UpdateEventChanges = Schema.Struct({
 export const RecurringScope = Schema.Literals(['following', 'instance', 'series']);
 export type RecurringScope = Schema.Schema.Type<typeof RecurringScope>;
 
+export const ConflictChoice = Schema.Literals(['mine', 'theirs']);
+export type ConflictChoice = Schema.Schema.Type<typeof ConflictChoice>;
+
 export const RsvpResponse = Schema.Literals(['accepted', 'declined', 'tentative']);
 export type RsvpResponse = Schema.Schema.Type<typeof RsvpResponse>;
+
+/**
+ * A parked 412: `mine` is the queued version (the deleted row for a
+ * delete), `theirs` Google's version when the op was parked (null =
+ * deleted on Google).
+ */
+export const PendingOpConflict = Schema.Struct({
+  at: Schema.Number,
+  mine: Schema.optional(EventRecord),
+  theirs: Schema.NullOr(EventRecord),
+});
+export type PendingOpConflict = Schema.Schema.Type<typeof PendingOpConflict>;
 
 /** Queue entry surfaced to the UI (payload stripped; title pulled out). */
 export const PendingOpSummary = Schema.Struct({
   attempts: Schema.Number,
   calendarId: Schema.String,
+  /** Set while a 412 has the op parked, waiting for keep-mine / take-theirs. */
+  conflict: Schema.optional(PendingOpConflict),
   createdAt: Schema.Number,
   eventId: Schema.String,
   id: Schema.String,
@@ -351,6 +368,16 @@ export class AppBackendRpcs extends RpcGroup.make(
   Rpc.make('removeAccount', {
     error: BackendError,
     payload: { accountId: Schema.String },
+  }),
+  /**
+   * Settles a parked 412: 'mine' re-sends the queued change without
+   * If-Match (overwriting Google), 'theirs' replaces the local copy with
+   * Google's current version and drops the change. A no-op for an op that
+   * is gone or no longer parked.
+   */
+  Rpc.make('resolveConflict', {
+    error: BackendError,
+    payload: { choice: ConflictChoice, opId: Schema.String },
   }),
   /**
    * Coordinates for a location string, on-device and cached per string.

@@ -319,6 +319,11 @@ export class PendingOp extends Schema.Class<PendingOp>('PendingOp')({
   calendarId: Schema.String,
   /** New calendar color for kind 'calendarColor' (lowercase #rrggbb). */
   colorHex: Schema.optional(Schema.String),
+  /**
+   * Set when a 412 parked the op (update/delete): the drain skips it until
+   * the user keeps their version or takes Google's.
+   */
+  conflictAt: Schema.optional(Schema.Number),
   createdAt: Schema.Number,
   /**
    * Set just before a non-idempotent network call (createTask). A re-run
@@ -350,7 +355,10 @@ export class PendingOp extends Schema.Class<PendingOp>('PendingOp')({
   ]),
   lastError: Schema.optional(Schema.String),
   nextAttemptAt: Schema.Number,
-  /** Snapshot of the event to send (create/update). */
+  /**
+   * Snapshot of the event: what to send for create/update, and the row as
+   * it was when deleted for delete (so a parked delete can be named).
+   */
   payload: Schema.optional(EventRecord),
   /**
    * Set on an update whose edit touched the reminders. Only then does the
@@ -358,6 +366,11 @@ export class PendingOp extends Schema.Class<PendingOp>('PendingOp')({
    * unrelated edit must not rewrite it from a possibly stale copy.
    */
   remindersChanged: Schema.optional(Schema.Boolean),
+  /**
+   * Google's version fetched when the op was parked; absent on a parked op
+   * means the event was deleted on Google.
+   */
+  serverPayload: Schema.optional(EventRecord),
   /** Due day (YYYY-MM-DD) for kind 'createTask'/'updateTask'. */
   taskDue: Schema.optional(Schema.String),
   /** Task-list id for the task op kinds (eventId carries the task id). */
