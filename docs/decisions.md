@@ -476,7 +476,8 @@ desktop waits on a helper binary (below).
       queue, `listPendingOps`/`discardPendingOp` rpcs, "N unsynced changes"
       panel in the desktop sidebar and iOS settings (per-op discard, retry
       count). 412 server-wins now broadcasts `notice:conflict` over the
-      invalidation stream and the desktop shows a toast.
+      invalidation stream and the desktop shows a toast. (Superseded
+      2026-09-23: a 412 parks the op — see "Conflicts with a choice".)
 - [x] Re-auth flow when a refresh token dies — done: ops hitting a 401 now
       flag the account `reauth_required` (and stay queued for after the
       reconnect); iOS settings gets a tappable "Session expired — reconnect"
@@ -1060,3 +1061,36 @@ Performance:
       later: iOS background refresh (the schedule only updates while
       the app runs, and 60 slots fill within days on a dense calendar)
       — backlog item under Tier 2.
+
+### Conflicts with a choice (2026-09-23)
+
+- [x] Manage conflicts with a choice — done (2026-09-23): a 412 used to
+      drop the op (server wins) and delete the user's version before
+      anyone could offer it; worse, a server change a pull had skipped
+      while the row was pending never came back. Now the op is parked
+      (migration 5: `pending_ops.conflict_at` + `server_payload`) with
+      Google's copy fetched at park time, and a persistent banner names
+      the event and lists what differs (title, time, location, notes,
+      guests — `describeConflict` in core, shared by both apps) with
+      Keep mine / Take theirs; the queue rows offer the same instead of
+      Discard. Decisions: fetch and show Google's version rather than
+      the title alone (chosen by Nik); the stored copy is only a preview
+      and take-theirs re-fetches live, because the pull that carried a
+      newer change may already have advanced the token; keep-mine
+      re-sends without If-Match rather than with the new etag (the user
+      saw the comparison — a further change in between is theirs to
+      overwrite); an edit of an event Google deleted is restored as a
+      new standalone event under a fresh id, since the NotFound arm
+      would otherwise drop it; delete ops now snapshot the deleted row
+      so a parked delete can be named; a failed fetch retries instead of
+      parking blind; parked ops survive a move (dropping the park with
+      the etag would decide for the user) and take-theirs is refused
+      until the move lands; the `notice:conflict` key and both conflict
+      toasts are gone — the banner derives from `listPendingOps`.
+      Fixed on the way: `discardPendingOp` never released the row, so a
+      discarded edit stayed `pending` and pulls skipped it forever.
+      Tests: unit (park, fetch failure, both choices, restore, re-edit,
+      move), HTTP against the fake (both choices, a parked delete whose
+      row a pull re-inserted), desktop e2e `conflicts.e2e.ts` on fixture
+      Google. iOS has no Maestro flow for it (seeding a parked op there
+      is not worth a 40-minute CI slot); verify on a device.
