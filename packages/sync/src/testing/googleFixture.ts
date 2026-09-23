@@ -2,6 +2,7 @@ import { Account, TokenSet } from '@calendar/core';
 import { AccountRepo } from '@calendar/db';
 import {
   type GcalCalendarListEntry,
+  type GcalEvent,
   type GcalTask,
   type GcalTaskList,
   GOOGLE_SCOPES,
@@ -28,6 +29,8 @@ export interface GoogleFixture {
     readonly tasksEnabled: boolean;
   }>;
   readonly calendars?: ReadonlyArray<GcalCalendarListEntry> | undefined;
+  /** Events per calendar id, as Google would list them (the fake assigns etags). */
+  readonly events?: Readonly<Record<string, ReadonlyArray<GcalEvent>>> | undefined;
   readonly taskLists?: ReadonlyArray<GcalTaskList> | undefined;
   /** Tasks per list id; `due` as RFC 3339 midnight UTC, like the API. */
   readonly tasks?: Readonly<Record<string, ReadonlyArray<GcalTask>>> | undefined;
@@ -47,6 +50,11 @@ export const fakeGoogleFrom = (fixture: GoogleFixture): FakeGoogle => {
     live: true,
     taskLists: fixture.taskLists ?? [],
   });
+  for (const [calendarId, events] of Object.entries(fixture.events ?? {})) {
+    for (const event of events) {
+      fake.putEvent(calendarId, event);
+    }
+  }
   for (const [listId, tasks] of Object.entries(fixture.tasks ?? {})) {
     for (const task of tasks) {
       fake.putTask(listId, task);

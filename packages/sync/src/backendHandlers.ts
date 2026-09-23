@@ -200,8 +200,8 @@ export const commonBackendHandlers: Omit<BackendHandlers<CommonBackendServices>,
 
   discardPendingOp: ({ opId }) =>
     Effect.gen(function* () {
-      const pendingOps = yield* PendingOpRepo;
-      yield* pendingOps.remove(opId);
+      const mutations = yield* EventMutations;
+      yield* mutations.discardPendingOp(opId);
     }),
 
   getBirthdayReminderSettings: () => readBirthdayReminderSettings,
@@ -252,6 +252,15 @@ export const commonBackendHandlers: Omit<BackendHandlers<CommonBackendServices>,
         id: op.id,
         kind: op.kind,
         nextAttemptAt: op.nextAttemptAt,
+        ...(op.conflictAt === undefined
+          ? {}
+          : {
+              conflict: {
+                at: op.conflictAt,
+                ...(op.payload === undefined ? {} : { mine: op.payload }),
+                theirs: op.serverPayload ?? null,
+              },
+            }),
         ...(op.lastError === undefined ? {} : { lastError: op.lastError }),
         ...(op.payload?.title === undefined ? {} : { title: op.payload.title }),
       }));
@@ -312,6 +321,12 @@ export const commonBackendHandlers: Omit<BackendHandlers<CommonBackendServices>,
         // Its events are not in the cascade (never stored): repaint the views.
         yield* (yield* AppleCalendarEvents).invalidate;
       }
+    }),
+
+  resolveConflict: (params) =>
+    Effect.gen(function* () {
+      const mutations = yield* EventMutations;
+      yield* mutations.resolveConflict(params);
     }),
 
   respondToEvent: (params) =>

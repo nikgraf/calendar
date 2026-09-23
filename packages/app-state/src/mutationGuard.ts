@@ -78,6 +78,7 @@ export const useGuardedMutations = () => {
       connectReminders: guardMutation('connect Apple Reminders', mutations.connectReminders),
       discardPendingOp: guardMutation('discard the change', mutations.discardPendingOp),
       removeAccount: guardMutation('remove the account', mutations.removeAccount),
+      resolveConflict: guardMutation('resolve the conflict', mutations.resolveConflict),
       setBirthdayReminderSettings: guardMutation(
         'save the birthday reminders',
         mutations.setBirthdayReminderSettings,

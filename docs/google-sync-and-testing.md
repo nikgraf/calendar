@@ -43,8 +43,11 @@ invariants.
   about time/location edits too. The organizer is never added
   client-side: Google puts it on the insert response.
 - **412 (etag mismatch)**: we use If-Match on content updates/deletes when
-  an etag is known; on 412 the server wins (drop op, toast, next pull
-  replaces local).
+  an etag is known; on 412 the op is parked with Google's copy
+  (`events.get`) and the user keeps theirs (re-sent without If-Match) or
+  takes Google's (re-fetched live). `events.get` answers a deleted event
+  with 404 or 410 — the client maps both to `NotFoundError` (a 410 is not
+  an expired sync token there).
 
 - **events.move** (`POST …/events/{id}/move?destination=`): re-homes an
   event into another calendar _of the same account_, keeping its id,
@@ -139,7 +142,7 @@ Tasks API behind effect's `HttpClient`, and `engine.http.test.ts` runs
 the real clients, request core and sync engine against it: full then
 incremental passes with sync tokens, a 410 forcing a full resync whose
 `deleteStale` drops vanished rows, cancelled tombstones, If-Match → 412
-with the server winning, client-generated event ids, the `updatedMin`
+parking the op and both resolutions (single-event `GET` included), client-generated event ids, the `updatedMin`
 watermark with deleted task tombstones, and server-assigned task ids.
 Before this the semantics above were documented prose only. The fake
 pages event lists (`pageSize`, default 2,500; the sync token rides only on

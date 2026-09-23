@@ -27,6 +27,7 @@ import { EventMutations } from './mutations.ts';
 const inertGoogle: GoogleCalendarClientShape = {
   deleteEvent: () => Effect.die('unexpected deleteEvent'),
   getColors: () => Effect.succeed({ calendar: {} }),
+  getEvent: () => Effect.die('unexpected get'),
   insertEvent: () => Effect.die('unexpected insertEvent'),
   listCalendars: () => Effect.succeed({ items: [] }),
   listEvents: () => Effect.succeed({ items: [] }),

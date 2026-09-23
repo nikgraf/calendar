@@ -35,11 +35,6 @@ comment` for inline-playable video: 10 MB on Free plans, 100 MB paid
 
 ## Tier 2 — features (near-term, well-scoped)
 
-- [ ] Manage conflicts with a choice — today 412 means server wins: the op
-      is dropped and `notice:conflict` broadcast (`applyOp.ts:315`), and the
-      payload — the user's version — is deleted before anyone could offer
-      it. Park it, make the notice name the event, offer keep-mine / take-
-      theirs.
 - [ ] Full-history follow-ups — RDATE-only series have no stored end
       (`recurrenceEndUtc` returns undefined), long-lived COUNT series
       may still iterate from DTSTART on every window read (rrule-temporal

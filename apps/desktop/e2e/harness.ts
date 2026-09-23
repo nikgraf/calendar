@@ -9,6 +9,7 @@ import {
   EventRecord,
   GoogleBirthday,
   GoogleContact,
+  type PendingOp,
   TaskListInfo,
   TaskRecord,
 } from '@calendar/core';
@@ -63,6 +64,8 @@ export interface SeedData {
   /** Google People cache rows — the typeahead's only source with CALENDAR_CONTACTS=off. */
   readonly contacts?: ReadonlyArray<GoogleContact>;
   readonly events: ReadonlyArray<EventRecord>;
+  /** Queued changes as the app would have left them (e.g. a parked 412). */
+  readonly pendingOps?: ReadonlyArray<PendingOp>;
   readonly taskLists?: ReadonlyArray<TaskListInfo>;
   readonly tasks?: ReadonlyArray<TaskRecord>;
 }
@@ -83,6 +86,9 @@ export const seedDatabase = async (userDataDir: string, seed: SeedData): Promise
       }
       yield* calendars.upsertMany(seed.calendars);
       yield* events.upsertMany(seed.events);
+      for (const op of seed.pendingOps ?? []) {
+        yield* (yield* PendingOpRepo).enqueue(op);
+      }
       const tasks = yield* TaskRepo;
       yield* tasks.upsertLists(seed.taskLists ?? [], 1);
       yield* tasks.upsertTasks(seed.tasks ?? [], 1);

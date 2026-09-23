@@ -26,6 +26,7 @@ import {
   type GoogleCalendarClientShape,
   GoogleTasksClient,
   type GoogleTasksClientShape,
+  NotFoundError,
   ReauthRequiredError,
 } from '@calendar/google';
 import { RemindersClient, unavailableRemindersClient } from '@calendar/reminders';
@@ -42,6 +43,7 @@ type ClientOverrides = Partial<GoogleCalendarClientShape>;
 const stubClient = (overrides: ClientOverrides): GoogleCalendarClientShape => ({
   deleteEvent: () => Effect.void,
   getColors: () => Effect.succeed({ calendar: {} }),
+  getEvent: () => Effect.die('unexpected get'),
   insertEvent: () => Effect.die('unexpected insert'),
   listCalendars: () => Effect.succeed({ items: [] }),
   listEvents: () => Effect.succeed({ items: [] }),
@@ -118,6 +120,79 @@ const eventsNow = Effect.gen(function* () {
   const window = yield* events.getWindow(0, plainDateToUtcMs('2030-01-01'));
   return window.singles;
 });
+
+const echo = (
+  event: {
+    readonly end?: unknown;
+    readonly start?: unknown;
+    readonly summary?: string | undefined;
+  },
+  id: string,
+  etag: string,
+): GcalEvent => ({
+  end: event.end as GcalEvent['end'],
+  etag,
+  id,
+  start: event.start as GcalEvent['start'],
+  status: 'confirmed',
+  ...(event.summary === undefined ? {} : { summary: event.summary }),
+});
+
+/**
+ * Google as If-Match sees it: a patch or delete carrying the stale
+ * etag is a 412; one without If-Match (keep-mine) lands.
+ */
+const conflictingGoogle = (
+  server: { current: GcalEvent | undefined; fetchFails?: boolean },
+  sent: Array<{ readonly baseEtag: string | undefined; readonly kind: string }>,
+) =>
+  stubClient({
+    deleteEvent: ({ baseEtag }) => {
+      sent.push({ baseEtag, kind: 'delete' });
+      return baseEtag
+        ? Effect.fail(new ConflictError({ calendarId: 'cal-1', eventId: 'e' }))
+        : Effect.void;
+    },
+    getEvent: () =>
+      server.fetchFails
+        ? Effect.fail(new ApiUnavailableError({ cause: 'offline' }))
+        : server.current
+          ? Effect.succeed(server.current)
+          : Effect.fail(new NotFoundError({ resource: 'e' })),
+    insertEvent: ({ event }) => {
+      sent.push({ baseEtag: undefined, kind: 'insert' });
+      return Effect.succeed(echo(event, event.id ?? 'x', '"server-1"'));
+    },
+    patchEvent: ({ baseEtag, event, eventId }) => {
+      sent.push({ baseEtag, kind: 'patch' });
+      return baseEtag
+        ? Effect.fail(new ConflictError({ calendarId: 'cal-1', eventId }))
+        : Effect.succeed(echo(event, eventId, '"server-3"'));
+    },
+  });
+
+/** A synced event, then a local edit that meets a 412. */
+const parkEdit = Effect.gen(function* () {
+  yield* seedCalendar;
+  const mutations = yield* EventMutations;
+  const record = yield* mutations.createEvent(draft);
+  yield* mutations.processPendingOps();
+  yield* mutations.updateEvent({
+    accountId: 'acc-1',
+    calendarId: 'cal-1',
+    changes: { title: 'Conflicting edit' },
+    eventId: record.id,
+  });
+  yield* mutations.processPendingOps();
+  const ops = yield* (yield* PendingOpRepo).listAll();
+  return { mutations, op: ops[0]!, ops, record };
+});
+
+const rowOf = (id: string) =>
+  Effect.gen(function* () {
+    const events = yield* EventRepo;
+    return yield* events.getById('acc-1', 'cal-1', id);
+  });
 
 describe('EventMutations', () => {
   it.effect('createEvent writes optimistically and syncs through the queue', () => {
@@ -325,36 +400,159 @@ describe('EventMutations', () => {
     }).pipe(Effect.provide(mutationsLayer(client)));
   });
 
-  it.effect('drops the op on 412 conflict (server wins)', () => {
-    const client = stubClient({
-      insertEvent: ({ event }) =>
-        Effect.succeed({
-          end: event.end as GcalEvent['end'],
-          etag: '"server-1"',
-          id: event.id ?? 'x',
-          start: event.start as GcalEvent['start'],
-          status: 'confirmed',
-          summary: event.summary,
-        }),
-      patchEvent: () => Effect.fail(new ConflictError({ calendarId: 'cal-1', eventId: 'e' })),
+  describe('412 conflicts', () => {
+    it.effect("parks the op with Google's version instead of dropping the edit", () => {
+      const sent: Array<{ baseEtag: string | undefined; kind: string }> = [];
+      const server = { current: undefined as GcalEvent | undefined };
+      return Effect.gen(function* () {
+        const pending = yield* parkEdit;
+        expect(pending.ops).toHaveLength(1);
+        expect(pending.op.conflictAt).toBeDefined();
+        expect(pending.op.lastError).toBe('changed on Google');
+        // The user's version stays on screen, protected from pulls.
+        const row = yield* rowOf(pending.record.id);
+        expect(row?.title).toBe('Conflicting edit');
+        expect(row?.syncStatus).toBe('pending');
+
+        // Parked ops are not retried.
+        const before = sent.length;
+        yield* pending.mutations.processPendingOps();
+        expect(sent.length).toBe(before);
+      }).pipe(Effect.provide(mutationsLayer(conflictingGoogle(server, sent))));
     });
-    return Effect.gen(function* () {
-      yield* seedCalendar;
-      const mutations = yield* EventMutations;
-      const record = yield* mutations.createEvent(draft);
-      yield* mutations.processPendingOps();
 
-      yield* mutations.updateEvent({
-        accountId: 'acc-1',
-        calendarId: 'cal-1',
-        changes: { title: 'Conflicting edit' },
-        eventId: record.id,
-      });
-      yield* mutations.processPendingOps();
+    it.effect('stores the server copy for the comparison', () => {
+      const sent: Array<{ baseEtag: string | undefined; kind: string }> = [];
+      const server: { current: GcalEvent | undefined } = { current: undefined };
+      const client = conflictingGoogle(server, sent);
+      return Effect.gen(function* () {
+        server.current = {
+          end: { dateTime: '2026-07-03T12:00:00Z' },
+          etag: '"server-2"',
+          id: 'placeholder',
+          start: { dateTime: '2026-07-03T11:00:00Z' },
+          status: 'confirmed',
+          summary: 'Server title',
+        };
+        const { op, record } = yield* parkEdit;
+        expect(op.eventId).toBe(record.id);
+        expect(op.serverPayload?.title).toBe('Server title');
+        expect(op.serverPayload?.etag).toBe('"server-2"');
+      }).pipe(Effect.provide(mutationsLayer(client)));
+    });
 
-      const ops = yield* (yield* PendingOpRepo).listAll();
-      expect(ops).toHaveLength(0);
-    }).pipe(Effect.provide(mutationsLayer(client)));
+    it.effect("retries instead of parking when Google's version cannot be fetched", () => {
+      const sent: Array<{ baseEtag: string | undefined; kind: string }> = [];
+      const server = { current: undefined, fetchFails: true };
+      return Effect.gen(function* () {
+        const { op } = yield* parkEdit;
+        expect(op.conflictAt).toBeUndefined();
+        expect(op.attempts).toBe(1);
+        expect(op.lastError).toContain('ApiUnavailableError');
+      }).pipe(Effect.provide(mutationsLayer(conflictingGoogle(server, sent))));
+    });
+
+    it.effect('keep mine re-sends the edit without If-Match', () => {
+      const sent: Array<{ baseEtag: string | undefined; kind: string }> = [];
+      const server: { current: GcalEvent | undefined } = { current: undefined };
+      return Effect.gen(function* () {
+        const { mutations, op, record } = yield* parkEdit;
+        // Google still has the event (the fetch said so when parking).
+        yield* (yield* PendingOpRepo).markConflict(op.id, 1, record);
+        yield* mutations.resolveConflict({ choice: 'mine', opId: op.id });
+        yield* mutations.processPendingOps();
+
+        expect(sent.at(-1)).toEqual({ baseEtag: undefined, kind: 'patch' });
+        expect(yield* (yield* PendingOpRepo).listAll()).toEqual([]);
+        const row = yield* rowOf(record.id);
+        expect(row?.title).toBe('Conflicting edit');
+        expect(row?.syncStatus).toBe('synced');
+      }).pipe(Effect.provide(mutationsLayer(conflictingGoogle(server, sent))));
+    });
+
+    it.effect('restore mine re-creates an event Google deleted', () => {
+      const sent: Array<{ baseEtag: string | undefined; kind: string }> = [];
+      const server: { current: GcalEvent | undefined } = { current: undefined };
+      return Effect.gen(function* () {
+        const { mutations, op, record } = yield* parkEdit;
+        expect(op.serverPayload).toBeUndefined();
+        yield* mutations.resolveConflict({ choice: 'mine', opId: op.id });
+        yield* mutations.processPendingOps();
+
+        expect(sent.at(-1)?.kind).toBe('insert');
+        expect(yield* rowOf(record.id)).toBeNull();
+        const titles = (yield* eventsNow).map((event) => event.title);
+        expect(titles).toEqual(['Conflicting edit']);
+        expect(yield* (yield* PendingOpRepo).listAll()).toEqual([]);
+      }).pipe(Effect.provide(mutationsLayer(conflictingGoogle(server, sent))));
+    });
+
+    it.effect("take theirs replaces the local copy with Google's current version", () => {
+      const sent: Array<{ baseEtag: string | undefined; kind: string }> = [];
+      const server: { current: GcalEvent | undefined } = { current: undefined };
+      return Effect.gen(function* () {
+        const { mutations, op, record } = yield* parkEdit;
+        // Google moved on again after the op was parked: the live copy wins.
+        server.current = {
+          end: { dateTime: '2026-07-03T12:00:00Z' },
+          etag: '"server-4"',
+          id: record.id,
+          start: { dateTime: '2026-07-03T11:00:00Z' },
+          status: 'confirmed',
+          summary: 'Server title, later',
+        };
+        yield* mutations.resolveConflict({ choice: 'theirs', opId: op.id });
+
+        const row = yield* rowOf(record.id);
+        expect(row?.title).toBe('Server title, later');
+        expect(row?.etag).toBe('"server-4"');
+        expect(row?.syncStatus).toBe('synced');
+        expect(yield* (yield* PendingOpRepo).listAll()).toEqual([]);
+        // Resolving twice (the banner raced the queue) is a no-op.
+        yield* mutations.resolveConflict({ choice: 'theirs', opId: op.id });
+      }).pipe(Effect.provide(mutationsLayer(conflictingGoogle(server, sent))));
+    });
+
+    it.effect('take theirs drops the local copy of an event Google deleted', () => {
+      const sent: Array<{ baseEtag: string | undefined; kind: string }> = [];
+      const server: { current: GcalEvent | undefined } = { current: undefined };
+      return Effect.gen(function* () {
+        const { mutations, op, record } = yield* parkEdit;
+        yield* mutations.resolveConflict({ choice: 'theirs', opId: op.id });
+        expect(yield* rowOf(record.id)).toBeNull();
+        expect(yield* (yield* PendingOpRepo).listAll()).toEqual([]);
+      }).pipe(Effect.provide(mutationsLayer(conflictingGoogle(server, sent))));
+    });
+
+    it.effect('a new edit of a parked event re-queues it and parks again', () => {
+      const sent: Array<{ baseEtag: string | undefined; kind: string }> = [];
+      const server: { current: GcalEvent | undefined } = { current: undefined };
+      return Effect.gen(function* () {
+        const { mutations, record } = yield* parkEdit;
+        yield* mutations.updateEvent({
+          accountId: 'acc-1',
+          calendarId: 'cal-1',
+          changes: { title: 'Second edit' },
+          eventId: record.id,
+        });
+        yield* mutations.processPendingOps();
+        const ops = yield* (yield* PendingOpRepo).listAll();
+        expect(ops).toHaveLength(1);
+        expect(ops[0]?.conflictAt).toBeDefined();
+        expect(ops[0]?.payload?.title).toBe('Second edit');
+      }).pipe(Effect.provide(mutationsLayer(conflictingGoogle(server, sent))));
+    });
+
+    it.effect('discarding a queued edit hands its row back to sync', () => {
+      const sent: Array<{ baseEtag: string | undefined; kind: string }> = [];
+      const server: { current: GcalEvent | undefined } = { current: undefined };
+      return Effect.gen(function* () {
+        const { mutations, op, record } = yield* parkEdit;
+        yield* mutations.discardPendingOp(op.id);
+        expect(yield* (yield* PendingOpRepo).listAll()).toEqual([]);
+        expect((yield* rowOf(record.id))?.syncStatus).toBe('synced');
+      }).pipe(Effect.provide(mutationsLayer(conflictingGoogle(server, sent))));
+    });
   });
 
   it.effect('a permanent 4xx drops the op and broadcasts the dropped notice', () => {

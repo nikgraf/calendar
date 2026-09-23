@@ -313,6 +313,9 @@ export class FakeGoogle {
       if (!existing || existing.event.status === 'cancelled') {
         return reply(404, { error: { message: 'Not Found' } });
       }
+      if (request.method === 'GET') {
+        return reply(200, this.eventOf(calendarId, eventId));
+      }
       const ifMatch = request.headers['if-match'];
       if (ifMatch !== undefined && ifMatch !== existing.event.etag) {
         return reply(412, { error: { message: 'Precondition Failed' } });

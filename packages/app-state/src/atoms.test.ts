@@ -76,6 +76,7 @@ const makeStubClient = () => {
     moveTask: () => fail('not stubbed'),
     previewMove: () => fail('not stubbed'),
     removeAccount: () => Effect.void,
+    resolveConflict: () => Effect.void,
     resolveLocation: ({ location }) =>
       Effect.sync(() => {
         calls.resolved.push(location);

@@ -8,6 +8,7 @@ import type {
 } from '@calendar/db';
 import {
   type GoogleCalendarClientShape,
+  type GoogleRequestError,
   type GoogleTasksClientShape,
   mapGcalCalendar,
   mapGcalEvent,
@@ -33,7 +34,8 @@ const sendUpdatesFor = (payload: EventRecord, attendeesChanged: boolean): 'all' 
 
 /**
  * The pending-op drain's per-op dispatch: one arm per op kind, mapping every
- * failure to 'done' (drop) or 'retry' (backoff). Split out of mutations.ts —
+ * failure to 'done' (drop), 'retry' (backoff) or, for a 412, a parked
+ * conflict. Split out of mutations.ts —
  * the queue-correctness rules live in docs/architecture.md.
  */
 export interface ApplyOpDeps {
@@ -41,8 +43,6 @@ export interface ApplyOpDeps {
   readonly calendarRepo: CalendarRepoShape;
   readonly client: GoogleCalendarClientShape;
   readonly eventRepo: EventRepoShape;
-  /** Broadcasts the 412 server-wins notice (CONFLICT_NOTICE_KEY). */
-  readonly notifyConflict: Effect.Effect<void>;
   /** Broadcasts that a queued change was permanently rejected (DROPPED_NOTICE_KEY). */
   readonly notifyDropped: Effect.Effect<void>;
   readonly pendingOpRepo: PendingOpRepoShape;
@@ -50,8 +50,15 @@ export interface ApplyOpDeps {
   readonly tasksClient: GoogleTasksClientShape;
 }
 
-/** 'done' removes the op; a retry carries the reason the queue shows the user. */
-export type ApplyOutcome = 'done' | { readonly retry: string };
+/**
+ * 'done' removes the op; a retry carries the reason the queue shows the
+ * user; a conflict parks the op with Google's version (null = deleted on
+ * Google) until the user chooses.
+ */
+export type ApplyOutcome =
+  | 'done'
+  | { readonly conflict: EventRecord | null }
+  | { readonly retry: string };
 const retry = (reason: string): ApplyOutcome => ({ retry: reason });
 
 /** Tag + message (or cause) — a tagged error's own string form is just the tag. */
@@ -75,15 +82,21 @@ const TASK_KINDS: ReadonlySet<PendingOp['kind']> = new Set([
   'updateTask',
 ]);
 
-export const makeApplyOp = (
-  deps: ApplyOpDeps,
-): ((op: PendingOp) => Effect.Effect<ApplyOutcome>) => {
+/** Only these send If-Match, so only these can meet a 412 and park. */
+const PARKABLE_KINDS: ReadonlySet<PendingOp['kind']> = new Set(['delete', 'update']);
+
+export interface ApplyOp {
+  readonly apply: (op: PendingOp) => Effect.Effect<ApplyOutcome>;
+  /** Hands an abandoned op's local row back to sync (also used by discard). */
+  readonly releaseRow: (op: PendingOp) => Effect.Effect<void>;
+}
+
+export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
   const {
     accountRepo,
     calendarRepo,
     client,
     eventRepo,
-    notifyConflict,
     notifyDropped,
     pendingOpRepo,
     taskRepo,
@@ -154,7 +167,33 @@ export const makeApplyOp = (
       Effect.as('done' as const),
     );
 
-  return (op: PendingOp): Effect.Effect<ApplyOutcome> =>
+  /**
+   * A 412: Google's copy moved on since the edit was queued. Park the op
+   * with Google's current version so the user can compare and choose; the
+   * local row stays `pending`, so pulls keep skipping it and the user's
+   * version stays on screen. A failed fetch retries the whole op (it will
+   * 412 again and re-try the fetch).
+   */
+  const park = (op: PendingOp): Effect.Effect<ApplyOutcome, GoogleRequestError> =>
+    PARKABLE_KINDS.has(op.kind)
+      ? client
+          .getEvent({ accountId: op.accountId, calendarId: op.calendarId, eventId: op.eventId })
+          .pipe(
+            Effect.flatMap((item) =>
+              Effect.map(Clock.currentTimeMillis, (syncedAt) => ({
+                conflict: mapGcalEvent(item, {
+                  accountId: op.accountId,
+                  calendarId: op.calendarId,
+                  defaultTimeZone: op.payload?.startTimeZone ?? 'UTC',
+                  syncedAt,
+                }),
+              })),
+            ),
+            Effect.catchTag('NotFoundError', () => Effect.succeed({ conflict: null })),
+          )
+      : drop(op, 'changed on Google');
+
+  const apply = (op: PendingOp): Effect.Effect<ApplyOutcome> =>
     Effect.gen(function* () {
       // A task op queued behind its create while that create is still in
       // backoff: the create's id swap rewrites this op's eventId once it
@@ -485,10 +524,7 @@ export const makeApplyOp = (
       }
     }).pipe(
       Effect.catchTags({
-        // Server wins: drop the op, tell the UI the edit was overridden,
-        // and let the next pull replace the local copy.
-        ConflictError: () =>
-          Effect.as(Effect.andThen(releaseRow(op), Effect.ignore(notifyConflict)), 'done' as const),
+        ConflictError: () => park(op),
         GoogleApiError: (error) =>
           // 409 on insert = the idempotent create already landed. Other
           // 4xx are permanent (e.g. a rejected color patch) — retrying a
@@ -558,4 +594,6 @@ export const makeApplyOp = (
         );
       }),
     );
+
+  return { apply, releaseRow };
 };

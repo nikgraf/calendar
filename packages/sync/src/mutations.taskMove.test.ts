@@ -37,6 +37,7 @@ const noYield = <A, E, R>(effect: Effect.Effect<A, E, R>): Effect.Effect<A, E, R
 const inertCalendarClient: GoogleCalendarClientShape = {
   deleteEvent: () => Effect.void,
   getColors: () => Effect.succeed({ calendar: {} }),
+  getEvent: () => Effect.die('unexpected get'),
   insertEvent: () => Effect.die('not used'),
   listCalendars: () => Effect.succeed({ items: [] }),
   listEvents: () => Effect.succeed({ items: [] }),

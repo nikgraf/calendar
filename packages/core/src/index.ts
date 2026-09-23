@@ -14,6 +14,7 @@ export * from './contacts/email.ts';
 export * from './contacts/search.ts';
 export * from './format.ts';
 export * from './editor/attendees.ts';
+export * from './editor/conflict.ts';
 export * from './editor/eventDraft.ts';
 export * from './editor/moveLoss.ts';
 export * from './editor/taskMoveLoss.ts';

@@ -345,6 +345,7 @@ export const useBackendMutations = () => {
       moveTask: set('moveTask'),
       previewMove: set('previewMove'),
       removeAccount: set('removeAccount'),
+      resolveConflict: set('resolveConflict'),
       resolveLocation: set('resolveLocation'),
       respondToEvent: set('respondToEvent'),
       setBirthdayReminderSettings: set('setBirthdayReminderSettings'),

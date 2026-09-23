@@ -428,10 +428,9 @@ describe('SyncEngine over HTTP (fake Google)', () => {
     }).pipe(noYield, Effect.provide(engineLayer(google)));
   });
 
-  it.effect('a local edit patches with If-Match; a stale etag is a 412 and the server wins', () => {
-    const google = newFake();
-    google.putEvent('cal-1', timed('a', 9));
-    return Effect.gen(function* () {
+  /** Synced event a, edit 1 landed, then Google moved on and edit 2 met a 412. */
+  const parkedEdit = (google: FakeGoogle) =>
+    Effect.gen(function* () {
       yield* seedAccount(false);
       const engine = yield* SyncEngine;
       const mutations = yield* EventMutations;
@@ -449,7 +448,7 @@ describe('SyncEngine over HTTP (fake Google)', () => {
       expect(yield* (yield* PendingOpRepo).listAll()).toHaveLength(0);
 
       // The server moves on behind our back; our next edit carries the
-      // old etag → 412 → dropped, and the pull restores the server copy.
+      // old etag → 412 → parked with Google's version for the user.
       google.putEvent('cal-1', timed('a', 9, 'Server 2'));
       yield* mutations.updateEvent({
         accountId: 'acc-1',
@@ -459,10 +458,76 @@ describe('SyncEngine over HTTP (fake Google)', () => {
       });
       yield* mutations.processPendingOps();
       expect(google.eventOf('cal-1', 'a')?.summary).toBe('Server 2');
+      const [op] = yield* (yield* PendingOpRepo).listAll();
+      expect(op?.conflictAt).toBeDefined();
+      expect(op?.serverPayload?.title).toBe('Server 2');
+
+      // A pull while parked leaves the user's version alone.
+      yield* TestClock.adjust('1 minute');
+      yield* engine.syncAll();
+      expect(yield* eventTitles).toEqual(['a:Local 2']);
+      return { engine, mutations, opId: op!.id };
+    });
+
+  it.effect("a stale etag is a 412 that parks the edit; take theirs restores Google's copy", () => {
+    const google = newFake();
+    google.putEvent('cal-1', timed('a', 9));
+    return Effect.gen(function* () {
+      const { engine, mutations, opId } = yield* parkedEdit(google);
+      yield* mutations.resolveConflict({ choice: 'theirs', opId });
+      expect(yield* eventTitles).toEqual(['a:Server 2']);
       expect(yield* (yield* PendingOpRepo).listAll()).toHaveLength(0);
+      // Back in sync: the next pass changes nothing.
       yield* TestClock.adjust('1 minute');
       yield* engine.syncAll();
       expect(yield* eventTitles).toEqual(['a:Server 2']);
+    }).pipe(noYield, Effect.provide(engineLayer(google)));
+  });
+
+  it.effect('keep mine re-sends a parked edit without If-Match', () => {
+    const google = newFake();
+    google.putEvent('cal-1', timed('a', 9));
+    return Effect.gen(function* () {
+      const { engine, mutations, opId } = yield* parkedEdit(google);
+      yield* mutations.resolveConflict({ choice: 'mine', opId });
+      yield* mutations.processPendingOps();
+      expect(google.eventOf('cal-1', 'a')?.summary).toBe('Local 2');
+      expect(yield* (yield* PendingOpRepo).listAll()).toHaveLength(0);
+      yield* TestClock.adjust('1 minute');
+      yield* engine.syncAll();
+      expect(yield* eventTitles).toEqual(['a:Local 2']);
+    }).pipe(noYield, Effect.provide(engineLayer(google)));
+  });
+
+  it.effect('a parked delete: the pull brings the event back, delete anyway removes it', () => {
+    const google = newFake();
+    google.putEvent('cal-1', timed('a', 9));
+    return Effect.gen(function* () {
+      yield* seedAccount(false);
+      const engine = yield* SyncEngine;
+      const mutations = yield* EventMutations;
+      yield* engine.syncAll();
+
+      google.putEvent('cal-1', timed('a', 9, 'Server 2'));
+      yield* mutations.deleteEvent({ accountId: 'acc-1', calendarId: 'cal-1', eventId: 'a' });
+      yield* mutations.processPendingOps();
+      const [op] = yield* (yield* PendingOpRepo).listAll();
+      expect(op?.kind).toBe('delete');
+      expect(op?.conflictAt).toBeDefined();
+      expect(op?.payload?.title).toBe('Event a');
+
+      // Nothing local protects a deleted row, so the pull re-inserts it.
+      yield* TestClock.adjust('1 minute');
+      yield* engine.syncAll();
+      expect(yield* eventTitles).toEqual(['a:Server 2']);
+
+      yield* mutations.resolveConflict({ choice: 'mine', opId: op!.id });
+      expect(yield* eventTitles).toEqual([]);
+      yield* mutations.processPendingOps();
+      expect(google.eventOf('cal-1', 'a')?.status).toBe('cancelled');
+      yield* TestClock.adjust('1 minute');
+      yield* engine.syncAll();
+      expect(yield* eventTitles).toEqual([]);
     }).pipe(noYield, Effect.provide(engineLayer(google)));
   });
 

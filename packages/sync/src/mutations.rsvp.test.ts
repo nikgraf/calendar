@@ -44,6 +44,7 @@ const makeLayer = (overrides: Partial<GoogleCalendarClientShape>) =>
       Layer.succeed(GoogleCalendarClient, {
         deleteEvent: () => Effect.void,
         getColors: () => Effect.succeed({ calendar: {} }),
+        getEvent: () => Effect.die('unexpected get'),
         insertEvent: () => Effect.die('unexpected insert'),
         listCalendars: () => Effect.succeed({ items: [] }),
         listEvents: () => Effect.succeed({ items: [] }),

@@ -89,6 +89,7 @@ const MUTATION_REACTIVITY = {
   // Reads what a move would drop; changes nothing.
   previewMove: [],
   removeAccount: [ACCOUNTS_KEY, BIRTHDAYS_KEY, CALENDARS_KEY, EVENTS_KEY, TASKS_KEY, TASKLISTS_KEY],
+  resolveConflict: [EVENTS_KEY, OPS_KEY],
   // Geocodes a picked place suggestion; writes only the device-local cache.
   resolveLocation: [],
   respondToEvent: [EVENTS_KEY],
