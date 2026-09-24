@@ -7,11 +7,10 @@ tags:
 - runFlow: ../../common/open-new-event.yaml
 - runFlow: ../../common/switch-to-task.yaml
 # Into the run's list (rows share id task-list-option; the title is unique).
-- scrollUntilVisible:
-    element:
-      text: ${MAESTRO_LIVE_LIST_NAME}
-    direction: DOWN
-- tapOn: ${MAESTRO_LIVE_LIST_NAME}
+- runFlow:
+    file: ../pick-row.yaml
+    env:
+      NAME: ${MAESTRO_LIVE_LIST_NAME}
 - scrollUntilVisible:
     element:
       id: 'task-title'

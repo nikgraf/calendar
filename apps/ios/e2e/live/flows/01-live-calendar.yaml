@@ -3,6 +3,7 @@ name: Live Google — the run's calendar and task list arrive after the first pa
 tags:
   - live
 ---
+# Picker rows read "<name>" or "<name>, ✓" — hence the trailing `.*`.
 # Metro was started with EXPO_PUBLIC_CALENDAR_GOOGLE=live and the sidecar
 # (scripts/google-live-scratch.ts) created this run's calendar and list;
 # their names arrive as MAESTRO_LIVE_CALENDAR_NAME / MAESTRO_LIVE_LIST_NAME.
@@ -10,22 +11,22 @@ tags:
 - runFlow: ../../common/open-new-event.yaml
 # The first pass has to list calendars before the picker can show ours.
 - extendedWaitUntil:
-    visible: ${MAESTRO_LIVE_CALENDAR_NAME}
+    visible: '${MAESTRO_LIVE_CALENDAR_NAME}.*'
     timeout: 90000
     optional: true
 - scrollUntilVisible:
     element:
-      text: ${MAESTRO_LIVE_CALENDAR_NAME}
+      text: '${MAESTRO_LIVE_CALENDAR_NAME}.*'
     direction: DOWN
 - assertVisible: ${MAESTRO_LIVE_EMAIL}
 - runFlow: ../../common/switch-to-task.yaml
 - extendedWaitUntil:
-    visible: ${MAESTRO_LIVE_LIST_NAME}
+    visible: '${MAESTRO_LIVE_LIST_NAME}.*'
     timeout: 30000
     optional: true
 - scrollUntilVisible:
     element:
-      text: ${MAESTRO_LIVE_LIST_NAME}
+      text: '${MAESTRO_LIVE_LIST_NAME}.*'
     direction: DOWN
 - tapOn: 'Cancel'
 - assertVisible: 'Today'

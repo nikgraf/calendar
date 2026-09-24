@@ -278,6 +278,20 @@ export const sweep = async (
       } catch {
         // Leave it for the next sweep.
       }
+      continue;
+    }
+    // A run's task that landed outside its scratch list (a UI flow whose
+    // list pick missed) would otherwise stay forever: tasks titled
+    // `live-…` in the account's own lists go once they are stale too.
+    try {
+      for (const task of await listTasks(token, list.id)) {
+        const updated = Date.parse(task.updated ?? '');
+        if (!task.deleted && task.title?.startsWith('live-') && updated < cutoff) {
+          await deleteTask(token, list.id, task.id).catch(() => undefined);
+        }
+      }
+    } catch {
+      // Leave them for the next sweep.
     }
   }
   return { calendars, lists };

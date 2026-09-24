@@ -289,7 +289,13 @@ SECRET`), not with `app.json`'s iOS client.
   polled through `wait-for-event*.yaml` / `wait-for-task.yaml` with the
   `pause.yaml` idiom (an optional two-second wait for nothing — Maestro
   has no sleep). Calendar and list are picked by their unique names
-  (rows share `id: calendar-option` / `task-list-option`). Maestro 2.10
+  through `pick-row.yaml` (rows share `id: calendar-option` /
+  `task-list-option`; a row reads `<name>` or, selected, `<name>, ✓`, so
+  the match is `<name>.*`; the row is centred first and the tap repeats
+  until the check mark shows — a row clipped at the sheet's edge counts
+  as visible and swallowed the tap on the first CI run, sending the task
+  to the default list). The sweep also deletes stale `live-…` tasks from
+  the account's own lists for that reason. Maestro 2.10
   has no drag command, `longPressOn` releases after its press and a
   `swipe` from an element always starts at its centre, so neither the
   block's long-press-then-pan move nor its bottom-edge resize can be

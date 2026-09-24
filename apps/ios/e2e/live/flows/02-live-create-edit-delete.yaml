@@ -6,11 +6,10 @@ tags:
 - runFlow: ../../common/launch.yaml
 - runFlow: ../../common/open-new-event.yaml
 # Into the run's calendar, never the account's first writable one.
-- scrollUntilVisible:
-    element:
-      text: ${MAESTRO_LIVE_CALENDAR_NAME}
-    direction: DOWN
-- tapOn: ${MAESTRO_LIVE_CALENDAR_NAME}
+- runFlow:
+    file: ../pick-row.yaml
+    env:
+      NAME: ${MAESTRO_LIVE_CALENDAR_NAME}
 - scrollUntilVisible:
     element:
       id: 'event-title'

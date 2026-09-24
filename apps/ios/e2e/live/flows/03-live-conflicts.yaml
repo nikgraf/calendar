@@ -6,11 +6,10 @@ tags:
 # Every title the event takes shares the prefix the block pattern matches.
 - runFlow: ../../common/launch.yaml
 - runFlow: ../../common/open-new-event.yaml
-- scrollUntilVisible:
-    element:
-      text: ${MAESTRO_LIVE_CALENDAR_NAME}
-    direction: DOWN
-- tapOn: ${MAESTRO_LIVE_CALENDAR_NAME}
+- runFlow:
+    file: ../pick-row.yaml
+    env:
+      NAME: ${MAESTRO_LIVE_CALENDAR_NAME}
 - scrollUntilVisible:
     element:
       id: 'event-title'
