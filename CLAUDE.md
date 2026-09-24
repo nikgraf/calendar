@@ -119,7 +119,13 @@ powers quick-add parsing, find-a-time, and dictation.
   is real by default (a seeded account has no token, so writes stay
   queued); `CALENDAR_GOOGLE=fixture` (desktop) /
   `EXPO_PUBLIC_CALENDAR_GOOGLE=fixture` (iOS Metro, on in CI) swaps in the
-  in-process fake API with a signed-in fixture account.
+  in-process fake API with a signed-in fixture account. `…=live` signs
+  the real API in as the dedicated live test account — only the opt-in
+  live suites use it (`GOOGLE_LIVE=1` Node files, `CALENDAR_E2E_GOOGLE=live`
+  desktop spec, `apps/ios/e2e/live` flows; `google-live.yml` nightly),
+  never `pnpm test` / `test:e2e` / `test:e2e:ios`. Live tests create
+  their own `e2e-<ts>-<runTag>` calendars and lists and assert only on
+  their own ids; guest mail is muted (`GuestNotifications`).
 - Event coordinates are only valid while `geo.source` matches the
   location text (`geoMatches`); every local write goes through
   `withConsistentGeo`, and an update PATCH touches the private geo keys
