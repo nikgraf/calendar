@@ -18,6 +18,7 @@ import {
 } from '@calendar/google';
 import {
   AppleCalendarEvents,
+  backgroundRefresh,
   LocalNotifications,
   commonBackendHandlers,
   DeviceContacts,
@@ -30,7 +31,7 @@ import {
 } from '@calendar/sync';
 import { layer as sqliteLayer } from '@effect/sql-sqlite-react-native/SqliteClient';
 import Constants from 'expo-constants';
-import { deleteItemAsync, getItemAsync, setItemAsync } from 'expo-secure-store';
+import { AFTER_FIRST_UNLOCK, deleteItemAsync, getItemAsync, setItemAsync } from 'expo-secure-store';
 import { Data, Duration, Effect, Layer, ManagedRuntime, Schema } from 'effect';
 import { FetchHttpClient } from 'effect/unstable/http';
 import { googleFixtureLayer, seedFixtureAccounts } from '@calendar/sync/testing/googleFixture';
@@ -66,10 +67,19 @@ const secureTokenStore: Layer.Layer<TokenStore> = Layer.succeed(TokenStore, {
       }
     }),
   remove: (accountId) => Effect.promise(() => deleteItemAsync(`tokens.${accountId}`)),
+  // Readable after the first unlock since boot, so the background refresh
+  // can pull while the phone is locked. The Keychain keeps an existing
+  // item's accessibility on update, so the old WHEN_UNLOCKED item is
+  // deleted first — every token refresh (hourly) migrates it.
   set: (accountId, tokens) =>
-    Effect.promise(() =>
-      setItemAsync(`tokens.${accountId}`, JSON.stringify(Schema.encodeSync(TokenSet)(tokens))),
-    ),
+    Effect.promise(async () => {
+      await deleteItemAsync(`tokens.${accountId}`);
+      await setItemAsync(
+        `tokens.${accountId}`,
+        JSON.stringify(Schema.encodeSync(TokenSet)(tokens)),
+        { keychainAccessible: AFTER_FIRST_UNLOCK },
+      );
+    }),
 });
 
 const invalidationListeners = new Set<(keys: ReadonlyArray<unknown>) => void>();
@@ -237,6 +247,14 @@ export const startSync = (): void => {
 export const kickSync = makeSyncKicker(() =>
   runtime.runPromise(Effect.flatMap(SyncEngine, (engine) => engine.syncAll())),
 );
+
+/**
+ * The background task's pass: a bounded pull, then the notification
+ * schedule. iOS may end the task at any time, so the pull gets 20 s and
+ * the schedule refresh runs regardless.
+ */
+export const runBackgroundRefresh = (): Promise<void> =>
+  runtime.runPromise(backgroundRefresh('20 seconds'));
 
 /** Refreshes the OS notification schedule now — on return to the foreground, next to kickSync. */
 export const runLocalNotifications = (): void => {

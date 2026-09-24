@@ -36,6 +36,7 @@ import {
   subscribeInvalidations,
 } from './src/backend.ts';
 import { appleLanguageModel } from './src/appleModel.ts';
+import { registerBackgroundRefresh } from './src/backgroundTask.ts';
 import { appleSpeech } from './src/appleSpeech.ts';
 import { makeFindSlots } from '@calendar/ai';
 import { DayTimeline } from './src/ui/DayTimeline.tsx';
@@ -82,6 +83,7 @@ function CalendarScreen() {
   useBackendInvalidations(subscribeInvalidations);
   useEffect(() => {
     startSync();
+    registerBackgroundRefresh();
     const subscription = AppState.addEventListener('change', (state) => {
       if (state === 'active') {
         kickSync();

@@ -1,5 +1,6 @@
 export * from './appleCalendarEvents.ts';
 export * from './backendHandlers.ts';
+export * from './backgroundRefresh.ts';
 export * from './birthdayReminders.ts';
 export * from './eventReminders.ts';
 export * from './eventsInRange.ts';

@@ -480,7 +480,11 @@ Rules that keep the queue correct:
   on every `EVENTS_KEY` / `BIRTHDAYS_KEY` invalidation. An immediate
   sink is asked for permission once, on the first pass with a producer
   enabled (desktop's ask is the "Notifications are on" banner). "The
-  notification is latency, the pass is correctness" applies.
+  notification is latency, the pass is correctness" applies. On iOS a
+  background task (`apps/ios/src/backgroundTask.ts`, defined before the
+  root component registers) runs `backgroundRefresh` when the OS grants
+  it: a pull bounded to 20 s, then one pass, so the 60 slots refill and
+  remote additions get scheduled without a launch.
 - Event reminders are data on the record (`EventRecord.reminders`,
   Google's `useDefault`/`overrides` shape; `useDefault:false` with no
   overrides is "none", distinct from the field being absent), mirrored
