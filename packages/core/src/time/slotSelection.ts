@@ -2,6 +2,12 @@ import { DRAG_SNAP_MINUTES } from './dragMath.ts';
 
 const DAY_MINUTES = 24 * 60;
 
+// These are worklets: on iOS they run on the UI runtime, where a captured
+// module constant only exists inside the function body. A default
+// parameter is evaluated before the body, so `step = DRAG_SNAP_MINUTES`
+// would throw a ReferenceError there and crash the app. Resolve such
+// defaults in the body instead.
+
 /** A range of one day's wall-clock minutes, drawn on the time grid. */
 export interface SlotRange {
   /** Exclusive; up to 1440 (midnight at the end of the day). */
@@ -32,9 +38,10 @@ export const minuteOfDay = (offsetY: number, hourHeight: number): number => {
 export const slotFromDrag = (
   anchorMinute: number,
   currentMinute: number,
-  step: number = DRAG_SNAP_MINUTES,
+  stepMinutes?: number,
 ): SlotRange => {
   'worklet';
+  const step = stepMinutes ?? DRAG_SNAP_MINUTES;
   const lastStart = DAY_MINUTES - step;
   const anchorStart = Math.min(Math.max(Math.floor(anchorMinute / step) * step, 0), lastStart);
   const pointerStart = Math.min(Math.max(Math.floor(currentMinute / step) * step, 0), lastStart);
@@ -58,10 +65,11 @@ export const slotFromDrag = (
 export const slotFromHold = (
   anchorMinute: number,
   currentMinute: number,
-  step: number = DRAG_SNAP_MINUTES,
+  stepMinutes?: number,
   defaultMinutes = 60,
 ): SlotRange => {
   'worklet';
+  const step = stepMinutes ?? DRAG_SNAP_MINUTES;
   const lastStart = DAY_MINUTES - step;
   const anchorStart = Math.min(Math.max(Math.floor(anchorMinute / step) * step, 0), lastStart);
   const defaultEnd = Math.min(anchorStart + defaultMinutes, DAY_MINUTES);
