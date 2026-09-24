@@ -276,7 +276,7 @@ SECRET`), not with `app.json`'s iOS client.
   them as `MAESTRO_LIVE_*` (`--github-env` masks the token; `--export`
   prints shell lines) — the Maestro CLI injects every `MAESTRO_*` shell
   variable into each flow, and the refresh token never reaches Maestro.
-  The flows (`e2e/live/flows/01…06`, tag `live`, outside `e2e/flows/` so
+  The flows (`e2e/live/flows/01…05`, tag `live`, outside `e2e/flows/` so
   the default suite never picks them up) run as explicit files in that
   order; behind-the-back edits and Google-side checks are `runScript`s
   (`e2e/live/scripts/*.js`, GraalJS with `http`, `json`, `output`)
@@ -284,14 +284,18 @@ SECRET`), not with `app.json`'s iOS client.
   `pause.yaml` idiom (an optional two-second wait for nothing — Maestro
   has no sleep). Calendar and list are picked by their unique names
   (rows share `id: calendar-option` / `task-list-option`). Maestro 2.10
-  has no drag command and `longPressOn` releases after its press, so the
-  block's long-press-then-pan move is out of reach: 02 changes the
-  event's shape through the all-day switch instead, and 03's resize by a
-  slow swipe from the block's bottom edge is best effort (its check is
-  `optional`). `conflict-round.yaml` retries a round whose banner a poll
-  defused. Locally: `pnpm --filter @calendar/ios test:e2e:live` (dev
-  client installed, Metro up with the live env; `SIMULATOR_UDID` picks
-  the device), which runs setup, the six flows and teardown.
+  has no drag command, `longPressOn` releases after its press and a
+  `swipe` from an element always starts at its centre, so neither the
+  block's long-press-then-pan move nor its bottom-edge resize can be
+  driven: 02 changes the event's shape through the all-day switch
+  instead (the drag math has unit tests and the desktop live spec).
+  `conflict-round.yaml` retries a round whose banner a poll defused. The
+  chip's open/done glyph is not in the accessibility tree, so 04 proves a
+  server-side reopen behaviourally: after two polls one tap must complete
+  the task again on Google. Locally: `pnpm --filter @calendar/ios
+test:e2e:live` (dev client installed, Metro up with the live env;
+  `SIMULATOR_UDID` picks the device), which runs setup, the five flows
+  and teardown.
 - **Leaks.** Effect redacts `authorization` headers in logged causes; the
   desktop token file lives only in the temp profile; the iOS bundle on
   the CI simulator carries the secrets inlined (never shipped).
@@ -571,7 +575,7 @@ Flakiness lessons (each caused a real CI failure — keep them enforced):
   `google-live` PR label): the real-account suites — `live-node`
   (ubuntu, `GOOGLE_LIVE=1`), `live-desktop` (macos-15, the one spec) and
   `live-ios` (macos-26, the ios-e2e steps with a live Metro plus the
-  sidecar's setup/teardown around the six flows). `decide` fails red
+  sidecar's setup/teardown around the five flows). `decide` fails red
   without the secrets and, on the schedule, compares `github.sha` with
   the last completed run's `headSha` (`gh run list`, `actions: read`) —
   a skipped night still completes at that sha. `concurrency:

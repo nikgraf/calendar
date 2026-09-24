@@ -79,7 +79,7 @@ jobs:
     timeout-minutes: 25
     env:
       GOOGLE_LIVE: 1
-      GOOGLE_LIVE_RUN_TAG: gh-${{ github.run_id }}-${{ github.run_attempt }}-node
+      GOOGLE_LIVE_RUN_TAG: gh-${{ github.run_id }}-${{ github.run_attempt }}
       GOOGLE_DESKTOP_CLIENT_ID: ${{ secrets.GOOGLE_DESKTOP_CLIENT_ID }}
       GOOGLE_DESKTOP_CLIENT_SECRET: ${{ secrets.GOOGLE_DESKTOP_CLIENT_SECRET }}
       GOOGLE_LIVE_EMAIL: ${{ secrets.GOOGLE_LIVE_EMAIL }}
@@ -100,12 +100,14 @@ jobs:
   live-desktop:
     name: Desktop e2e over the real API (Electron, CDP)
     needs: [decide, live-node]
-    if: needs.decide.outputs.run == 'true'
+    # After the Node suite (it fails fast on a dead token), but not gated
+    # on it: one Node assertion must not hide the UI suites' results.
+    if: ${{ !cancelled() && needs.decide.outputs.run == 'true' }}
     # macos-15: like ci.yml's e2e job — the helper is never invoked.
     runs-on: macos-15
     timeout-minutes: 25
     env:
-      GOOGLE_LIVE_RUN_TAG: gh-${{ github.run_id }}-${{ github.run_attempt }}-desktop
+      GOOGLE_LIVE_RUN_TAG: gh-${{ github.run_id }}-${{ github.run_attempt }}
       GOOGLE_DESKTOP_CLIENT_ID: ${{ secrets.GOOGLE_DESKTOP_CLIENT_ID }}
       GOOGLE_DESKTOP_CLIENT_SECRET: ${{ secrets.GOOGLE_DESKTOP_CLIENT_SECRET }}
       GOOGLE_LIVE_EMAIL: ${{ secrets.GOOGLE_LIVE_EMAIL }}
@@ -138,7 +140,7 @@ jobs:
   live-ios:
     name: iOS e2e over the real API (Maestro)
     needs: [decide, live-node]
-    if: needs.decide.outputs.run == 'true'
+    if: ${{ !cancelled() && needs.decide.outputs.run == 'true' }}
     runs-on: macos-26
     # ci.yml's ios-e2e: 37–43 min green; the live flows are fewer but wait on Google.
     timeout-minutes: 60
@@ -148,7 +150,7 @@ jobs:
       # Pinned + checksum-verified below; keep in step with ci.yml.
       MAESTRO_VERSION: 2.10.0
       MAESTRO_SHA256: 29b675e10cc12080e445e9bfb2e2b4e4dfb9c0f2e30d5884120d258b5e1cd991
-      GOOGLE_LIVE_RUN_TAG: gh-${{ github.run_id }}-${{ github.run_attempt }}-ios
+      GOOGLE_LIVE_RUN_TAG: gh-${{ github.run_id }}-${{ github.run_attempt }}
       GOOGLE_DESKTOP_CLIENT_ID: ${{ secrets.GOOGLE_DESKTOP_CLIENT_ID }}
       GOOGLE_DESKTOP_CLIENT_SECRET: ${{ secrets.GOOGLE_DESKTOP_CLIENT_SECRET }}
       GOOGLE_LIVE_EMAIL: ${{ secrets.GOOGLE_LIVE_EMAIL }}
@@ -237,17 +239,35 @@ jobs:
           echo "warming $BUNDLE_URL"
           time curl -fsS -o /dev/null --max-time 900 "$BUNDLE_URL"
           grep -a "Bundled" "$RUNNER_TEMP/metro.log" | tail -1
+      - name: Simulator ↔ Metro diagnostics
+        # Diagnostic only, as in ci.yml: Metro's listener, manifest latency,
+        # Safari's view of Metro (screenshot in the failure artifact), then
+        # Safari out of the way before the bootstrap flow.
+        run: |
+          lsof -nP -iTCP:8081 -sTCP:LISTEN || true
+          for _ in 1 2 3; do
+            /usr/bin/time -p curl -sS -o /dev/null -H 'expo-platform: ios' \
+              -H 'expo-runtime-version: ${{ steps.fingerprint.outputs.hash }}' \
+              -H 'expo-protocol-version: 1' -H 'expo-api-version: 1' \
+              -H 'expo-updates-environment: DEVELOPMENT' http://127.0.0.1:8081/ 2>&1 | grep real
+          done
+          xcrun simctl openurl "$SIMULATOR_UDID" "http://127.0.0.1:8081/status" \
+            || echo "::warning::simctl openurl to Metro's status page failed (diagnostic only)"
+          sleep 10
+          xcrun simctl io "$SIMULATOR_UDID" screenshot "$RUNNER_TEMP/safari-metro-status.png"
           xcrun simctl terminate "$SIMULATOR_UDID" com.apple.mobilesafari || true
-      - name: This run's scratch calendar, list and access token
-        # Exports MAESTRO_LIVE_* to the job env (the token masked); the
-        # Maestro CLI hands every MAESTRO_* variable to each flow.
-        run: node scripts/google-live-scratch.ts setup --suffix ios --github-env
       - name: Bootstrap the dev client onto Metro
         working-directory: apps/ios
         run: maestro test --device "$SIMULATOR_UDID" e2e/flows/00-devclient-bootstrap.yaml
       - name: First-time device permissions
         working-directory: apps/ios
         run: maestro test --device "$SIMULATOR_UDID" e2e/flows/04a-device-permissions.yaml
+      - name: This run's scratch calendar, list and access token
+        # After the bootstrap (the slow part), so the one-hour token has
+        # the flows to itself. Exports MAESTRO_LIVE_* to the job env (the
+        # token masked); the Maestro CLI hands every MAESTRO_* variable to
+        # each flow.
+        run: node scripts/google-live-scratch.ts setup --suffix ios --github-env
       - name: Live flows
         working-directory: apps/ios
         # Explicit files keep this order (a directory's order is not
@@ -257,10 +277,9 @@ jobs:
           maestro test --device "$SIMULATOR_UDID" \
             e2e/live/flows/01-live-calendar.yaml \
             e2e/live/flows/02-live-create-edit-delete.yaml \
-            e2e/live/flows/03-live-resize.yaml \
-            e2e/live/flows/04-live-conflicts.yaml \
-            e2e/live/flows/05-live-tasks.yaml \
-            e2e/live/flows/06-live-pull.yaml
+            e2e/live/flows/03-live-conflicts.yaml \
+            e2e/live/flows/04-live-tasks.yaml \
+            e2e/live/flows/05-live-pull.yaml
       - name: Delete this run's scratch calendar and list
         if: always()
         run: node scripts/google-live-scratch.ts teardown
@@ -289,6 +308,7 @@ jobs:
           path: |
             ~/.maestro/tests/
             ${{ runner.temp }}/metro.log
+            ${{ runner.temp }}/*.png
             ~/Library/Logs/DiagnosticReports/Solunivo*.ips
           retention-days: 7
           if-no-files-found: ignore

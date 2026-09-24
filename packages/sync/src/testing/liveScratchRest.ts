@@ -131,7 +131,8 @@ export const mintAccessToken = async (oauth: LiveOAuth): Promise<string> => {
 
 const isRateLimited = (error: unknown): boolean =>
   error instanceof LiveScratchError &&
-  (error.status === 429 || (error.status === 403 && error.body.includes('ateLimitExceeded')));
+  (error.status === 429 ||
+    (error.status === 403 && /ateLimitExceeded|quotaExceeded|usageLimits/.test(error.body)));
 
 const request = async <A>(
   token: string,

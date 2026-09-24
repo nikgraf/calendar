@@ -36,7 +36,14 @@ const HOUR_MS = 60 * 60 * 1000;
 const HOUR_HEIGHT = 48;
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-describe.skipIf(!LIVE)('Google live (real account)', () => {
+// No retry: E2E=1 gives the fixture specs one, and a retried create would
+// write a second event with the same title. Two minutes per test: the
+// polls below wait on Google, not on a local fake.
+/** The conflict banner's text contains `text` (a CDP expression). */
+const bannerShows = (text: string) =>
+  `(document.querySelector('[data-testid="conflict-banner"]')?.textContent ?? '').includes(${JSON.stringify(text)})`;
+
+describe.skipIf(!LIVE)('Google live (real account)', { retry: 0, timeout: 120_000 }, () => {
   let config: LiveGoogleConfig;
   let runtime: ManagedRuntime.ManagedRuntime<LiveScratch, never>;
   let app: App;
@@ -180,8 +187,9 @@ describe.skipIf(!LIVE)('Google live (real account)', () => {
         POLL,
       )
       .toBe(true);
+    // A dead refresh token flips the row to reauth_required on the first pass.
     const account = (await readAccounts(app.userDataDir)).find((a) => a.id === LIVE_ACCOUNT_ID);
-    expect(account?.status, 'the refresh token works').toBe('ok');
+    expect(account?.status, 'the refresh token still works').toBe('ok');
     await app.cdp.waitFor(`document.body.textContent.includes(${JSON.stringify(calendarName)})`);
   });
 
@@ -242,22 +250,37 @@ describe.skipIf(!LIVE)('Google live (real account)', () => {
     await expect.poll(() => readPendingOpsCount(app.userDataDir), POLL).toBe(0);
   });
 
+  /**
+   * One 412 round: the sheet is filled first and Google patched right
+   * before Save, so the app's own 10 s poll rarely gets to refresh the
+   * etag in between (that would let the edit land and show no banner).
+   * When a poll still wins, the round repeats with the same titles — the
+   * block is located by the title prefix every title here shares.
+   */
   const conflictingEdit = async (suffix: string): Promise<{ mine: string; theirs: string }> => {
     const row = (await eventByTitle(title))!;
     const theirs = `${title} google-${suffix}`;
     const mine = `${title} mine-${suffix}`;
-    // Another device renames it; the app's next edit carries a stale etag.
-    await google((scratch) => scratch.patchEvent(calendarId, row.id, { summary: theirs }));
-    const block = await app.cdp.locate(`[title^=${JSON.stringify(title)}]`);
-    await app.cdp.click(block.x, block.y);
-    await app.cdp.waitFor(`document.body.textContent.includes('Edit event')`);
-    await setEditorTitle(mine);
-    await app.cdp.clickButtonWithText('Save');
-    await app.cdp.waitFor(
-      `(document.querySelector('[data-testid="conflict-banner"]')?.textContent ?? '').includes(${JSON.stringify(mine)})`,
-      POLL.timeout,
-    );
-    return { mine, theirs };
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const block = await app.cdp.locate(`[title^=${JSON.stringify(title)}]`);
+      await app.cdp.click(block.x, block.y);
+      await app.cdp.waitFor(`document.body.textContent.includes('Edit event')`);
+      await setEditorTitle(mine);
+      // Another device renames it now; the Save carries the stale etag.
+      await google((scratch) => scratch.patchEvent(calendarId, row.id, { summary: theirs }));
+      await app.cdp.clickButtonWithText('Save');
+      const parked = await app.cdp
+        .waitFor(bannerShows(mine), 15_000)
+        .then(() => true)
+        .catch(() => false);
+      if (parked) {
+        return { mine, theirs };
+      }
+      // The poll defused it: the edit landed as `mine`, so re-sync to
+      // Google's view before the next attempt.
+      await expect.poll(() => readPendingOpsCount(app.userDataDir), POLL).toBe(0);
+    }
+    throw new Error(`no conflict banner after three rounds for ${title}`);
   };
 
   it('a rename behind the app’s back parks the edit; Take theirs loads Google’s copy', async () => {
@@ -333,7 +356,7 @@ describe.skipIf(!LIVE)('Google live (real account)', () => {
     await expect.poll(() => readPendingOpsCount(app.userDataDir), POLL).toBe(0);
   });
 
-  it('what another device adds shows up through the poll', async () => {
+  it('what another device adds shows up through the poll', { timeout: 180_000 }, async () => {
     const pulled = `${tag()}-pulled`;
     const start = Math.ceil(Date.now() / HOUR_MS) * HOUR_MS + 3 * HOUR_MS;
     await google((scratch) =>

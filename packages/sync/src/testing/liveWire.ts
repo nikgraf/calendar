@@ -25,8 +25,12 @@ export interface LiveAccountSeed {
   readonly tasksEnabled: boolean;
 }
 
-/** One store per refresh token: every layer built from a config shares the refreshed access token. */
-const stores = new Map<string, Layer.Layer<TokenStore>>();
+/**
+ * One token map per refresh token, shared by every layer built from it:
+ * `TokenStore.layerMemoryWith` would start a fresh map per build, and a
+ * suite builds a layer per test — that would be a refresh grant each.
+ */
+const tokenMaps = new Map<string, Map<string, TokenSet>>();
 
 /**
  * The real wire plus a memory token store that already holds the live
@@ -38,9 +42,9 @@ export const liveWireLayer = (
   accountId = LIVE_ACCOUNT_ID,
 ): Layer.Layer<HttpClient.HttpClient | TokenStore> => {
   const key = `${accountId}:${seed.refreshToken}`;
-  let store = stores.get(key);
-  if (!store) {
-    store = TokenStore.layerMemoryWith([
+  let tokens = tokenMaps.get(key);
+  if (!tokens) {
+    tokens = new Map([
       [
         accountId,
         new TokenSet({
@@ -51,8 +55,20 @@ export const liveWireLayer = (
         }),
       ],
     ]);
-    stores.set(key, store);
+    tokenMaps.set(key, tokens);
   }
+  const shared = tokens;
+  const store = Layer.succeed(TokenStore, {
+    get: (id) => Effect.sync(() => shared.get(id) ?? null),
+    remove: (id) =>
+      Effect.sync(() => {
+        shared.delete(id);
+      }),
+    set: (id, tokenSet) =>
+      Effect.sync(() => {
+        shared.set(id, tokenSet);
+      }),
+  });
   return Layer.mergeAll(FetchHttpClient.layer, store);
 };
 

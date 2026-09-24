@@ -1100,7 +1100,7 @@ Performance:
 - [x] Tests against a real Google account — done (2026-09-24): the fake
       pinned what we believed Google does; nothing checked it. Now three
       opt-in suites sign in as a dedicated throwaway account over the real
-      API — the Node engine suite (`packages/sync/src/live`, seven files:
+      API — the Node engine suite (`packages/sync/src/live`, eight files:
       events, calendarList, recurring, move, attendees, conflicts, tasks,
       People), the desktop spec `googleLive.e2e.ts` and six iOS Maestro
       flows — and `google-live.yml` runs them nightly only when `main`
@@ -1125,10 +1125,11 @@ test`/`test:e2e`/`test:e2e:ios`; every file creates its own
       Maestro gets a one-hour access token from the sidecar as
       `MAESTRO_LIVE_*`, never the refresh token; behind-the-back edits
       run inside the flows via `runScript` + `http`. Not covered on iOS:
-      drag-to-move (Maestro 2.10 has no drag command; resize by swipe is
-      best effort). Secrets: `GOOGLE_LIVE_EMAIL`, `GOOGLE_LIVE_REFRESH_TOKEN`
+      drag-to-move and resize (Maestro 2.10 has no drag command and a
+      swipe from an element starts at its centre). Secrets: `GOOGLE_LIVE_EMAIL`, `GOOGLE_LIVE_REFRESH_TOKEN`
       (new) + `GOOGLE_DESKTOP_CLIENT_ID/SECRET`; the consent screen must
       be In production or the token dies in seven days. Verify on the
       first real run: `events.get` for a deleted event (cancelled vs
       404/410), a stale-etag PATCH of a deleted event (412 vs 404), a
-      deleted task's `tasks.get`, and the iOS resize swipe.
+      deleted task's `tasks.get`, and whether Google adds a `self: true`
+      organizer attendee on a secondary calendar (the attendees file).

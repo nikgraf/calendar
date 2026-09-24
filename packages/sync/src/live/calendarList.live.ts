@@ -27,7 +27,9 @@ describe('live Google: calendarList', () => {
       const { engine, mutations, scratch } = yield* bootstrap(config);
       const calendars = yield* CalendarRepo;
       const { id } = yield* scratch.createCalendar(scratchName(config, 'list'));
-      try {
+      // Effect.ensuring, not try/finally: a failing yield* never resumes
+      // the generator, so a finally block would skip the cleanup.
+      yield* Effect.gen(function* () {
         expect((yield* calendars.list(LIVE_ACCOUNT_ID)).some((entry) => entry.id === id)).toBe(
           false,
         );
@@ -56,9 +58,7 @@ describe('live Google: calendarList', () => {
         );
         expect(yield* (yield* EventRepo).getById(LIVE_ACCOUNT_ID, id, record.id)).toBeNull();
         expect(yield* state.get(LIVE_ACCOUNT_ID, eventsScope(id))).toBeNull();
-      } finally {
-        yield* Effect.ignore(scratch.deleteCalendar(id));
-      }
+      }).pipe(Effect.ensuring(Effect.ignore(scratch.deleteCalendar(id))));
     }).pipe(Effect.provide(liveEngineLayer(config))),
   );
 });

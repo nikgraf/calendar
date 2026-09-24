@@ -14,6 +14,7 @@ import {
   GONE,
   HOUR,
   hoursFromNow,
+  noYield,
   pendingOps,
   titleFor,
   scratchFor,
@@ -36,7 +37,8 @@ const draft = (name: string, extra: Record<string, unknown> = {}) => ({
   calendarId: source(),
   endUtc: hoursFromNow(3),
   isAllDay: false,
-  startTimeZone: 'Europe/Vienna',
+  // UTC: the instance-id test below names an occurrence as start + a week.
+  startTimeZone: 'UTC',
   startUtc: hoursFromNow(2),
   title: titleFor(config, name),
   ...extra,
@@ -73,14 +75,20 @@ describe('live Google: moves between calendars', () => {
       const { engine, mutations, scratch: google } = yield* bootstrap(config);
       const record = yield* mutations.createEvent(draft('edit-then-move'));
       yield* mutations.processPendingOps();
-      // The editor's Save: the edit first, then the move, in one go.
-      yield* mutations.updateEvent({
-        accountId: LIVE_ACCOUNT_ID,
-        calendarId: source(),
-        changes: { title: `${record.title} (edited)` },
-        eventId: record.id,
-      });
-      yield* mutations.moveEvent(move(record.id));
+      // The editor's Save: the edit first, then the move, in one go — no
+      // yield in between, or the edit's kicked drain could patch first and
+      // the test would no longer pin the reorder.
+      yield* noYield(
+        Effect.gen(function* () {
+          yield* mutations.updateEvent({
+            accountId: LIVE_ACCOUNT_ID,
+            calendarId: source(),
+            changes: { title: `${record.title} (edited)` },
+            eventId: record.id,
+          });
+          yield* mutations.moveEvent(move(record.id));
+        }),
+      );
       yield* engine.syncAll();
       expect((yield* google.getEvent(destination(), record.id)).summary).toBe(
         `${record.title} (edited)`,

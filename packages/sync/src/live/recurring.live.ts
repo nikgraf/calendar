@@ -23,7 +23,12 @@ const scratch = scratchFor(config, { calendars: ['recurring'] });
 const calendar = () => scratch.calendars[0]!;
 const WEEK = 7 * 24 * HOUR;
 
-/** A weekly master starting two hours from now, six occurrences; each test gets its own. */
+/**
+ * A weekly master starting two hours from now, six occurrences; each test
+ * gets its own. UTC on purpose: Google's instance ids carry the
+ * occurrence's UTC instant, and a zoned weekly rule shifts by an hour
+ * across a DST change — `start + n * WEEK` would name the wrong instance.
+ */
 const createWeekly = (mutations: Pick<EventMutationsShape, 'createEvent'>, name: string) =>
   mutations.createEvent({
     accountId: LIVE_ACCOUNT_ID,
@@ -31,7 +36,7 @@ const createWeekly = (mutations: Pick<EventMutationsShape, 'createEvent'>, name:
     endUtc: hoursFromNow(3),
     isAllDay: false,
     recurrence: ['RRULE:FREQ=WEEKLY;COUNT=6'],
-    startTimeZone: 'Europe/Vienna',
+    startTimeZone: 'UTC',
     startUtc: hoursFromNow(2),
     title: titleFor(config, name),
   });
@@ -125,16 +130,19 @@ describe('live Google: recurring series', () => {
       expect(yield* pendingOps).toEqual([]);
       const truncated = yield* google.getEvent(calendar(), master.id);
       expect(truncated.recurrence?.some((line) => line.includes('UNTIL='))).toBe(true);
-      const tails = yield* google.findEvents(calendar(), `${master.title} (tail)`);
-      const tail = tails.find((event) => event.recurrence !== undefined);
-      expect(tail?.recurrence?.some((line) => line.includes('COUNT=3'))).toBe(true);
+      // The split's new master is a local row already; Google has it under that id.
+      const events = yield* EventRepo;
+      const window = yield* events.getWindow(0, Number.MAX_SAFE_INTEGER);
+      const tailRow = window.masters.find((row) => row.title === `${master.title} (tail)`);
+      expect(tailRow).toBeDefined();
+      const tail = yield* google.getEvent(calendar(), tailRow!.id);
+      expect(tail.recurrence?.some((line) => line.includes('COUNT=3'))).toBe(true);
       // Both masters come back as the editor left them.
       yield* engine.syncAll();
-      const events = yield* EventRepo;
       expect((yield* events.getById(LIVE_ACCOUNT_ID, calendar(), master.id))?.recurrence).toEqual(
         truncated.recurrence,
       );
-      expect((yield* events.getById(LIVE_ACCOUNT_ID, calendar(), tail!.id))?.title).toBe(
+      expect((yield* events.getById(LIVE_ACCOUNT_ID, calendar(), tailRow!.id))?.title).toBe(
         `${master.title} (tail)`,
       );
     }).pipe(Effect.provide(liveEngineLayer(config))),
@@ -142,7 +150,7 @@ describe('live Google: recurring series', () => {
 
   it.live('a series rename reaches the master and spares an exception', () =>
     Effect.gen(function* () {
-      const { mutations, scratch: google } = yield* bootstrap(config);
+      const { engine, mutations, scratch: google } = yield* bootstrap(config);
       const master = yield* createWeekly(mutations, 'rename');
       yield* mutations.processPendingOps();
       const second = master.startUtc + WEEK;
@@ -152,6 +160,9 @@ describe('live Google: recurring series', () => {
         scope: 'instance',
       });
       yield* mutations.processPendingOps();
+      // Materialising the exception may have bumped the master's etag on
+      // Google: refresh it, the assertion is about the exception surviving.
+      yield* engine.syncAll();
       yield* mutations.updateRecurring({
         ...target(master.id, master.startUtc),
         changes: { title: `${master.title} (series)` },

@@ -46,15 +46,26 @@ tags:
       STATUS: 'completed'
       TITLE: 'live-${MAESTRO_LIVE_RUN_TAG}-ios-task'
 
-# Another device reopens it; the next poll flips the chip back to open.
+# Another device reopens it. The chip's open/done glyph is not exposed
+# to the accessibility tree (the toggle carries a fixed label), so the
+# pull is proven behaviourally: after two 30 s polls, one tap must
+# complete it again — had the app still believed it done, the tap would
+# have reopened it and Google would read needsAction.
 - runScript:
     file: ../scripts/patchTask.js
     env:
       STATUS: 'needsAction'
       TASK_ID: ${output.taskId}
-- extendedWaitUntil:
-    visible: '☐'
-    timeout: 90000
+- repeat:
+    times: 36
+    commands:
+      - runFlow: ../pause.yaml
+- tapOn: 'Toggle live-${MAESTRO_LIVE_RUN_TAG}-ios-task'
+- runFlow:
+    file: ../wait-for-task.yaml
+    env:
+      STATUS: 'completed'
+      TITLE: 'live-${MAESTRO_LIVE_RUN_TAG}-ios-task'
 
 # Clean up through the sheet (the Delete button sits below the fold).
 - tapOn: 'live-${MAESTRO_LIVE_RUN_TAG}-ios-task'

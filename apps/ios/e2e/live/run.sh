@@ -8,18 +8,16 @@
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 
-eval "$(node ../../scripts/google-live-scratch.ts setup --suffix ios --export)"
+# The trap first: a setup that dies after creating the calendar still
+# tears it down. `eval` would hide the sidecar's exit code, so capture it.
 trap 'node ../../scripts/google-live-scratch.ts teardown' EXIT
+vars=$(node ../../scripts/google-live-scratch.ts setup --suffix ios --export) || exit 1
+eval "$vars"
 
-device=()
-if [ -n "${SIMULATOR_UDID:-}" ]; then
-  device=(--device "$SIMULATOR_UDID")
-fi
-
-maestro test "${device[@]}" \
+# shellcheck disable=SC2086 -- an empty expansion is the point (bash 3.2 has no empty arrays)
+maestro test ${SIMULATOR_UDID:+--device "$SIMULATOR_UDID"} \
   e2e/live/flows/01-live-calendar.yaml \
   e2e/live/flows/02-live-create-edit-delete.yaml \
-  e2e/live/flows/03-live-resize.yaml \
-  e2e/live/flows/04-live-conflicts.yaml \
-  e2e/live/flows/05-live-tasks.yaml \
-  e2e/live/flows/06-live-pull.yaml
+  e2e/live/flows/03-live-conflicts.yaml \
+  e2e/live/flows/04-live-tasks.yaml \
+  e2e/live/flows/05-live-pull.yaml

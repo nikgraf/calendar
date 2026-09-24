@@ -150,22 +150,29 @@ describe('live Google: 412 conflicts', () => {
         eventId: record.id,
       });
       yield* mutations.processPendingOps();
-      // Pins Google's answer for a stale-etag PATCH of a deleted event:
-      // the drain parks it (412 → its copy is the cancelled tombstone, or
-      // NotFound → null) and keep mine re-creates the event under a new id.
+      // Pins Google's answer for a stale-etag PATCH of a deleted event.
+      // Expected: the delete bumped the etag, so the PATCH is a 412 and the
+      // drain parks the op with Google's copy — the cancelled tombstone,
+      // or null when `events.get` says gone. (A 404/410 on the PATCH
+      // itself would instead take the NotFound arm: row dropped, nothing
+      // parked — and this test fails, which is the point.)
       const [op] = yield* pendingOps;
       expect(op?.kind).toBe('update');
       expect(op?.conflictAt).toBeDefined();
       expect(op?.serverPayload === undefined || op.serverPayload.status === 'cancelled').toBe(true);
       yield* mutations.resolveConflict({ choice: 'mine', opId: op!.id });
+      // Keep mine re-created the row under a fresh id before the drain ran.
+      const window = yield* (yield* EventRepo).getWindow(0, Number.MAX_SAFE_INTEGER);
+      const restoredRow = window.singles.find((row) => row.title === `${record.title} (mine)`);
+      expect(restoredRow).toBeDefined();
+      expect(restoredRow!.id).not.toBe(record.id);
       yield* mutations.processPendingOps();
-      const restored = yield* google.findEvents(calendar(), `${record.title} (mine)`);
-      const live = restored.filter((event) => event.status !== 'cancelled');
-      expect(live).toHaveLength(1);
-      expect(live[0]!.id).not.toBe(record.id);
+      const restored = yield* google.getEvent(calendar(), restoredRow!.id);
+      expect(restored.summary).toBe(`${record.title} (mine)`);
+      expect(restored.status).not.toBe('cancelled');
       yield* engine.syncAll();
       expect(yield* titleOf(record.id)).toBeNull();
-      expect(yield* titleOf(live[0]!.id)).toBe(`${record.title} (mine)`);
+      expect(yield* titleOf(restoredRow!.id)).toBe(`${record.title} (mine)`);
       expect(yield* pendingOps).toEqual([]);
     }).pipe(Effect.provide(liveEngineLayer(config))),
   );
