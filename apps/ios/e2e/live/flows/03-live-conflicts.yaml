@@ -66,8 +66,10 @@ tags:
     timeout: 30000
 
 # Clean up.
-- tapOn: 'live-${MAESTRO_LIVE_RUN_TAG}-ios-c-mine2.*'
-- assertVisible: 'Edit Event'
+- runFlow:
+    file: ../open-event.yaml
+    env:
+      BLOCK: 'live-${MAESTRO_LIVE_RUN_TAG}-ios-c-mine2.*'
 - tapOn:
     id: 'event-delete'
 - extendedWaitUntil:

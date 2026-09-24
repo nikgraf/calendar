@@ -1,7 +1,4 @@
 appId: com.solunivo.app
-name: Wait two seconds (shared) — Maestro has no sleep; an optional wait for nothing is one
+name: Wait two seconds (shared)
 ---
-- extendedWaitUntil:
-    visible: 'solunivo-live-never-visible'
-    timeout: 2000
-    optional: true
+- runScript: scripts/pause.js

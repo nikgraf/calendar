@@ -28,6 +28,12 @@ invariants.
   for entries other than your own are ignored — RSVP therefore sends an
   attendees-only body and deliberately omits If-Match (a response should
   not lose to unrelated content edits).
+- **PATCH merges `start`/`end` field by field** (verified live
+  2026-09-24): a timed → all-day edit that sends only `{date}` keeps the
+  stored `dateTime`, and a time carrying both is a 400 "Invalid start
+  time". `toGcalTimesPatch` sends the unused form as null
+  (`{date, dateTime: null, timeZone: null}` and the reverse); the fake
+  merges and refuses the same way.
 - **Attendee editing**: `attendees` on `EventDraft`/`UpdateEventChanges`
   is a replacement guest list (`[]` clears). Google **replaces the whole
   array** on write and our copy lacks fields we never model (`optional`,
@@ -286,9 +292,16 @@ SECRET`), not with `app.json`'s iOS client.
   the default suite never picks them up) run as explicit files in that
   order; behind-the-back edits and Google-side checks are `runScript`s
   (`e2e/live/scripts/*.js`, GraalJS with `http`, `json`, `output`)
-  polled through `wait-for-event*.yaml` / `wait-for-task.yaml` with the
-  `pause.yaml` idiom (an optional two-second wait for nothing — Maestro
-  has no sleep). Calendar and list are picked by their unique names
+  polled through `wait-for-event*.yaml` / `wait-for-task.yaml`, paced by
+  `scripts/pause.js` (a spin — GraalJS has no timers, and an optional
+  wait for a never-visible element returns after ~0.5 s, not its
+  timeout: a "72 s" wait measured 19.8 s). Blocks are opened through
+  `open-event.yaml` (centre, tap, repeat until "Edit Event" — a block
+  outside the grid's viewport counts as visible and swallows the tap),
+  titles are cleared with the field's system ⓧ ("Clear text": `eraseText`
+  only deletes what sits before the cursor, which the tap puts
+  mid-title), and the pulled event in 05 is all-day so it shows in the
+  lane whatever the hour. Calendar and list are picked by their unique names
   through `pick-row.yaml` (rows share `id: calendar-option` /
   `task-list-option`; a row reads `<name>` or, selected, `<name>, ✓`, so
   the match is `<name>.*`; the row is centred first and the tap repeats

@@ -1,0 +1,24 @@
+appId: com.solunivo.app
+name: Open the event whose block matches BLOCK in the edit sheet (shared)
+---
+# The day grid scrolls, and Maestro counts a block outside its viewport as
+# visible — the tap then lands on nothing (flow 05, first CI runs). Centre
+# the block first and repeat until the sheet is up.
+- repeat:
+    times: 3
+    while:
+      notVisible: 'Edit Event'
+    commands:
+      - scrollUntilVisible:
+          element:
+            text: ${BLOCK}
+          direction: DOWN
+          centerElement: true
+      - tapOn: ${BLOCK}
+      - extendedWaitUntil:
+          visible: 'Edit Event'
+          timeout: 5000
+          optional: true
+- assertVisible: 'Edit Event'
+- waitForAnimationToEnd:
+    timeout: 5000

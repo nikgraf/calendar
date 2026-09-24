@@ -55,10 +55,10 @@ tags:
     env:
       STATUS: 'needsAction'
       TASK_ID: ${output.taskId}
-- repeat:
-    times: 36
-    commands:
-      - runFlow: ../pause.yaml
+- runScript:
+    file: ../scripts/pause.js
+    env:
+      SECONDS: '75'
 - tapOn: 'Toggle live-${MAESTRO_LIVE_RUN_TAG}-ios-task'
 - runFlow:
     file: ../wait-for-task.yaml

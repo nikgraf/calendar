@@ -140,6 +140,34 @@ describe('live Google: tasks', () => {
     }).pipe(Effect.provide(liveEngineLayer(config))),
   );
 
+  it.live('a task completed here and reopened on Google comes back open', () =>
+    Effect.gen(function* () {
+      const { engine, mutations, scratch: google } = yield* bootstrap(config);
+      const temp = yield* create(mutations, 'reopen');
+      yield* drain(mutations);
+      const row = (yield* localByTitle(listA(), temp.title))!;
+      yield* mutations.completeTask({
+        accountId: LIVE_ACCOUNT_ID,
+        status: 'completed',
+        taskId: row.id,
+        taskListId: listA(),
+      });
+      yield* drain(mutations);
+      expect((yield* google.getTask(listA(), row.id)).status).toBe('completed');
+      // Another device reopens it; the watermark pass must bring it back.
+      yield* google.patchTask(listA(), row.id, { completed: null, status: 'needsAction' });
+      const repo = yield* TaskRepo;
+      const reopened = yield* syncUntil(
+        engine,
+        Effect.map(
+          repo.get(LIVE_ACCOUNT_ID, listA(), row.id),
+          (task) => task?.status === 'needsAction',
+        ),
+      );
+      expect(reopened).toBe(true);
+    }).pipe(Effect.provide(liveEngineLayer(config))),
+  );
+
   it.live('a local delete reaches Google', () =>
     Effect.gen(function* () {
       const { mutations, scratch: google } = yield* bootstrap(config);

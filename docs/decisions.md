@@ -1137,4 +1137,11 @@ test`/`test:e2e`/`test:e2e:ios`; every file creates its own
       cannot RSVP and a guest-side RSVP needs a second account (left on
       the fake); a series rename overwrites existing exceptions' titles
       on Google, while the app's optimistic write leaves the local
-      override rows until the next pull (candidate follow-up).
+      override rows until the next pull (candidate follow-up). The iOS
+      flows found an app bug: turning a timed Google event all-day (or
+      back) sent a PATCH Google refused — it merges start/end fields, so
+      the old `dateTime` stayed next to the new `date` (400 "Invalid start
+      time") and the op was dropped, all-day here and timed on Google.
+      `toGcalTimesPatch` now nulls the unused form; the fake merges times
+      like Google and has a regression test. The iOS title field gained
+      the system clear button (also what the flows use to rename).

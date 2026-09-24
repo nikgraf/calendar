@@ -16,6 +16,8 @@ output/branding/
 apps/ios/.expo/
 apps/ios/ios/
 apps/ios/android/
+# Downloaded EAS dev client and the live sidecar's state (e2e/ci, scripts/google-live-scratch.ts)
+apps/ios/build/
 google-oauth.local.json
 # The live Google suite's refresh token (scripts/google-live-token.mjs --write).
 google-live.local.json

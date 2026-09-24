@@ -13,11 +13,13 @@ name: One 412 round (shared) — edit the block to MINE while Google renames it 
     while:
       true: ${!output.banner}
     commands:
-      - tapOn: ${BLOCK}
-      - assertVisible: 'Edit Event'
+      - runFlow:
+          file: open-event.yaml
+          env:
+            BLOCK: ${BLOCK}
       - tapOn:
           id: 'event-title'
-      - eraseText: 100
+      - tapOn: 'Clear text'
       - inputText: ${MINE}
       - runScript:
           file: scripts/patchEvent.js

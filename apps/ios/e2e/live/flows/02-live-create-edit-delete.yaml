@@ -39,11 +39,15 @@ tags:
 - evalScript: ${output.eventId = output.event.id}
 
 # Rename through the sheet.
-- tapOn: 'live-${MAESTRO_LIVE_RUN_TAG}-ios-event.*'
-- assertVisible: 'Edit Event'
+- runFlow:
+    file: ../open-event.yaml
+    env:
+      BLOCK: 'live-${MAESTRO_LIVE_RUN_TAG}-ios-event.*'
 - tapOn:
     id: 'event-title'
-- eraseText: 100
+# The system clear button: eraseText only deletes what sits before the
+# cursor, and the tap puts the cursor mid-title.
+- tapOn: 'Clear text'
 - inputText: 'live-${MAESTRO_LIVE_RUN_TAG}-ios-edited'
 - tapOn:
     id: 'event-save'
@@ -60,10 +64,29 @@ tags:
       EXPECT: 'live-${MAESTRO_LIVE_RUN_TAG}-ios-edited'
 
 # Change its shape: the all-day switch turns start/end into dates on Google.
-- tapOn: 'live-${MAESTRO_LIVE_RUN_TAG}-ios-edited.*'
-- assertVisible: 'Edit Event'
-- tapOn:
+- runFlow:
+    file: ../open-event.yaml
+    env:
+      BLOCK: 'live-${MAESTRO_LIVE_RUN_TAG}-ios-edited.*'
+# Lower in the edit sheet than in the new-event one: centre it (a switch
+# clipped at the sheet's edge swallows the tap) and repeat until it is on.
+- repeat:
+    times: 3
+    while:
+      notVisible:
+        id: 'event-all-day'
+        checked: true
+    commands:
+      - scrollUntilVisible:
+          element:
+            id: 'event-all-day'
+          direction: DOWN
+          centerElement: true
+      - tapOn:
+          id: 'event-all-day'
+- assertVisible:
     id: 'event-all-day'
+    checked: true
 - tapOn:
     id: 'event-save'
 - extendedWaitUntil:
@@ -80,8 +103,10 @@ tags:
       EXPECT: 'allday'
 
 # Delete from the sheet; Google answers cancelled (or 404/410).
-- tapOn: 'live-${MAESTRO_LIVE_RUN_TAG}-ios-edited'
-- assertVisible: 'Edit Event'
+- runFlow:
+    file: ../open-event.yaml
+    env:
+      BLOCK: 'live-${MAESTRO_LIVE_RUN_TAG}-ios-edited'
 - tapOn:
     id: 'event-delete'
 - extendedWaitUntil:

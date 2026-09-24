@@ -4,22 +4,26 @@ tags:
   - live
 ---
 - runFlow: ../../common/launch.yaml
-# Next whole hour plus one: near where the day view sits after launch.
+# After the launch's own full pass, so only the 30 s poll can bring it in.
+# All-day today: the chip sits in the all-day lane at the top of the day
+# view whatever the hour (a timed event late in the day lands off-screen
+# or tomorrow).
 - runScript:
     file: ../scripts/insertEvent.js
     env:
-      HOURS_AHEAD: '1'
+      ALL_DAY: 'true'
       TITLE: 'live-${MAESTRO_LIVE_RUN_TAG}-ios-pulled'
-# Metro runs with a 30 s poll in the live job; three ticks is plenty.
 - extendedWaitUntil:
-    visible: 'live-${MAESTRO_LIVE_RUN_TAG}-ios-pulled.*'
+    visible: 'live-${MAESTRO_LIVE_RUN_TAG}-ios-pulled'
     timeout: 100000
 
 # Clean up.
-- tapOn: 'live-${MAESTRO_LIVE_RUN_TAG}-ios-pulled.*'
-- assertVisible: 'Edit Event'
+- runFlow:
+    file: ../open-event.yaml
+    env:
+      BLOCK: 'live-${MAESTRO_LIVE_RUN_TAG}-ios-pulled'
 - tapOn:
     id: 'event-delete'
 - extendedWaitUntil:
-    notVisible: 'live-${MAESTRO_LIVE_RUN_TAG}-ios-pulled.*'
+    notVisible: 'live-${MAESTRO_LIVE_RUN_TAG}-ios-pulled'
     timeout: 20000
