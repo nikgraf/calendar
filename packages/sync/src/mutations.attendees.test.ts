@@ -15,6 +15,7 @@ import {
   type GoogleCalendarClientShape,
   GoogleTasksClient,
   type GoogleTasksClientShape,
+  type GuestNotificationMode,
 } from '@calendar/google';
 import { RemindersClient, unavailableRemindersClient } from '@calendar/reminders';
 import { SqliteClient } from '@effect/sql-sqlite-node';
@@ -44,7 +45,7 @@ const noYield = <A, E, R>(effect: Effect.Effect<A, E, R>): Effect.Effect<A, E, R
 interface Sent {
   readonly event: Partial<GcalEventInput>;
   readonly kind: 'insert' | 'patch';
-  readonly sendUpdates: 'all' | undefined;
+  readonly sendUpdates: GuestNotificationMode | undefined;
 }
 
 const echo = (event: Partial<GcalEventInput>, id: string) =>
