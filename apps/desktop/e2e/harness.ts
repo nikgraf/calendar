@@ -18,6 +18,7 @@ import type { DeviceBirthdayJson, DeviceContactJson } from '@calendar/contacts';
 import type { FakePlace } from '@calendar/geo';
 import type { ReminderJson, ReminderListJson } from '@calendar/reminders';
 import type { GoogleFixture } from '@calendar/sync/testing/googleFixture';
+import type { LiveAccountSeed } from '@calendar/sync/testing/liveGoogle';
 import {
   AccountRepo,
   BirthdayRepo,
@@ -544,14 +545,24 @@ export interface LaunchOptions {
    * token, so its writes stay queued. A fixture runs the in-process fake
    * Google API with a token for every fixture account: lists and tasks
    * arrive through the first sync and queued writes push, so e2e can
-   * watch a temp `local-…` id become a server id.
+   * watch a temp `local-…` id become a server id. `live` signs the real
+   * API in as the live test account (googleLive.e2e.ts only): the seed
+   * goes into a JSON file in the run's userData dir, the OAuth client
+   * into the env, and the poll can be shortened.
    */
-  readonly google?: { readonly fixture: GoogleFixture };
+  readonly google?: { readonly fixture: GoogleFixture } | { readonly live: LiveGoogleLaunch };
   /**
    * 'off' (default): no EventKit. 'real': the helper. A fixture uses the
    * in-memory Reminders client so mutation e2e tests never touch personal data.
    */
   readonly reminders?: 'off' | 'real' | { readonly fixture: RemindersFixture };
+}
+
+export interface LiveGoogleLaunch extends LiveAccountSeed {
+  readonly clientId: string;
+  readonly clientSecret?: string | undefined;
+  /** Overrides the 90 s poll so a pull lands inside a test's timeout. */
+  readonly syncIntervalMs?: number | undefined;
 }
 
 export const launchApp = async (seed?: SeedData, options: LaunchOptions = {}): Promise<App> => {
@@ -597,13 +608,28 @@ export const launchApp = async (seed?: SeedData, options: LaunchOptions = {}): P
             };
           })();
 
-  const googleEnv: Record<string, string> = options.google
-    ? (() => {
-        const fixturePath = join(userDataDir, 'google-fixture.json');
-        writeFileSync(fixturePath, JSON.stringify(options.google.fixture));
-        return { CALENDAR_GOOGLE: 'fixture', CALENDAR_GOOGLE_FIXTURE: fixturePath };
-      })()
-    : {};
+  const googleEnv: Record<string, string> = !options.google
+    ? {}
+    : 'fixture' in options.google
+      ? (() => {
+          const fixturePath = join(userDataDir, 'google-fixture.json');
+          writeFileSync(fixturePath, JSON.stringify(options.google.fixture));
+          return { CALENDAR_GOOGLE: 'fixture', CALENDAR_GOOGLE_FIXTURE: fixturePath };
+        })()
+      : (() => {
+          const { clientId, clientSecret, syncIntervalMs, ...seed } = options.google.live;
+          // The refresh token lives only here, inside the temp profile
+          // stop() deletes — never on the command line.
+          const livePath = join(userDataDir, 'google-live.json');
+          writeFileSync(livePath, JSON.stringify(seed), { mode: 0o600 });
+          return {
+            CALENDAR_GOOGLE: 'live',
+            CALENDAR_GOOGLE_LIVE: livePath,
+            GOOGLE_DESKTOP_CLIENT_ID: clientId,
+            ...(clientSecret ? { GOOGLE_DESKTOP_CLIENT_SECRET: clientSecret } : {}),
+            ...(syncIntervalMs ? { CALENDAR_SYNC_INTERVAL_MS: String(syncIntervalMs) } : {}),
+          };
+        })();
 
   const geoEnv: Record<string, string> =
     options.geo === 'real'
