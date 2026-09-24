@@ -130,6 +130,27 @@ export const bootstrap = (
 export const pendingOps = Effect.flatMap(PendingOpRepo, (repo) => repo.listAll());
 
 /**
+ * Drains the queue the way the app eventually does: Google answers a
+ * burst of writes with 403 rateLimitExceeded, the op goes into backoff
+ * (30 s, then 60 s), and a later drain lands it. Keeps draining until only
+ * parked ops (412s waiting for a choice) are left, or two minutes passed —
+ * then the assertion that follows reports what never landed.
+ */
+export const drain = (mutations: { readonly processPendingOps: () => Effect.Effect<void> }) =>
+  Effect.gen(function* () {
+    const deadline = Date.now() + 120_000;
+    yield* mutations.processPendingOps();
+    while (Date.now() < deadline) {
+      const waiting = (yield* pendingOps).filter((op) => op.conflictAt === undefined);
+      if (waiting.length === 0) {
+        return;
+      }
+      yield* Effect.sleep('5 seconds');
+      yield* mutations.processPendingOps();
+    }
+  });
+
+/**
  * Re-runs a pass until `check` holds: Google's `updated` stamps can lag
  * the write that set them, and the tasks watermark filters on them.
  */

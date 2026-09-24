@@ -23,6 +23,7 @@ import {
   pendingOps,
   titleFor,
   scratchFor,
+  drain,
 } from './support.ts';
 
 /**
@@ -71,7 +72,7 @@ describe('live Google: events', () => {
     Effect.gen(function* () {
       const { mutations, scratch: google } = yield* bootstrap(config);
       const record = yield* mutations.createEvent(timed('create', 2));
-      yield* mutations.processPendingOps();
+      yield* drain(mutations);
       const server = yield* google.getEvent(calendar(), record.id);
       expect(server.summary).toBe(record.title);
       const row = yield* (yield* EventRepo).getById(LIVE_ACCOUNT_ID, calendar(), record.id);
@@ -87,7 +88,7 @@ describe('live Google: events', () => {
       // that Google really answers 409, not 400 or 200.
       const { mutations, scratch: google } = yield* bootstrap(config);
       const record = yield* mutations.createEvent(timed('dup', 2));
-      yield* mutations.processPendingOps();
+      yield* drain(mutations);
       const outcome = yield* google
         .insertEvent(calendar(), {
           end: { dateTime: new Date(record.endUtc).toISOString() },
@@ -110,7 +111,7 @@ describe('live Google: events', () => {
       const { engine, mutations, scratch: google } = yield* bootstrap(config);
       const kept = yield* mutations.createEvent(timed('kept', 2));
       const gone = yield* mutations.createEvent(timed('gone', 4));
-      yield* mutations.processPendingOps();
+      yield* drain(mutations);
 
       // Another device renames one and deletes the other.
       yield* google.patchEvent(calendar(), kept.id, { summary: `${kept.title} (renamed)` });
@@ -133,14 +134,14 @@ describe('live Google: events', () => {
       const record = yield* mutations.createEvent(
         timed('merge', 2, { description: 'Agenda: everything', location: 'Room 4' }),
       );
-      yield* mutations.processPendingOps();
+      yield* drain(mutations);
       yield* mutations.updateEvent({
         accountId: LIVE_ACCOUNT_ID,
         calendarId: calendar(),
         changes: { title: `${record.title} (edited)` },
         eventId: record.id,
       });
-      yield* mutations.processPendingOps();
+      yield* drain(mutations);
       const server = yield* google.getEvent(calendar(), record.id);
       expect(server.summary).toBe(`${record.title} (edited)`);
       expect(server.description).toBe('Agenda: everything');
@@ -152,13 +153,13 @@ describe('live Google: events', () => {
     Effect.gen(function* () {
       const { engine, mutations, scratch: google } = yield* bootstrap(config);
       const record = yield* mutations.createEvent(timed('delete', 2));
-      yield* mutations.processPendingOps();
+      yield* drain(mutations);
       yield* mutations.deleteEvent({
         accountId: LIVE_ACCOUNT_ID,
         calendarId: calendar(),
         eventId: record.id,
       });
-      yield* mutations.processPendingOps();
+      yield* drain(mutations);
       expect(yield* pendingOps).toEqual([]);
       expect(GONE.has(yield* deletedStatus(google, calendar(), record.id))).toBe(true);
       // The next pass carries the tombstone and does not resurrect the row.
@@ -178,7 +179,7 @@ describe('live Google: events', () => {
         source: location,
       });
       const record = yield* mutations.createEvent(timed('geo', 2, { geo, location }));
-      yield* mutations.processPendingOps();
+      yield* drain(mutations);
       expect((yield* google.getEvent(calendar(), record.id)).extendedProperties?.private).toEqual({
         [GEO_PROPERTY_KEYS.coordinates]: '48.1977,16.3616',
         [GEO_PROPERTY_KEYS.name]: 'Naschmarkt',
@@ -197,7 +198,7 @@ describe('live Google: events', () => {
         changes: { title: `${record.title} (late)` },
         eventId: record.id,
       });
-      yield* mutations.processPendingOps();
+      yield* drain(mutations);
       expect(
         (yield* google.getEvent(calendar(), record.id)).extendedProperties?.private,
       ).toMatchObject({ [GEO_PROPERTY_KEYS.source]: location });
@@ -209,7 +210,7 @@ describe('live Google: events', () => {
         changes: { location: 'Office' },
         eventId: record.id,
       });
-      yield* mutations.processPendingOps();
+      yield* drain(mutations);
       const server = yield* google.getEvent(calendar(), record.id);
       expect(server.location).toBe('Office');
       expect(server.extendedProperties?.private?.[GEO_PROPERTY_KEYS.coordinates]).toBeUndefined();
@@ -221,7 +222,7 @@ describe('live Google: events', () => {
     Effect.gen(function* () {
       const { mutations, scratch: google } = yield* bootstrap(config);
       const record = yield* mutations.createEvent(timed('reminders', 2, { reminders: popup(10) }));
-      yield* mutations.processPendingOps();
+      yield* drain(mutations);
       expect((yield* google.getEvent(calendar(), record.id)).reminders).toEqual({
         overrides: [{ method: 'popup', minutes: 10 }],
         useDefault: false,
@@ -233,7 +234,7 @@ describe('live Google: events', () => {
         changes: { reminders: popup(25) },
         eventId: record.id,
       });
-      yield* mutations.processPendingOps();
+      yield* drain(mutations);
       expect((yield* google.getEvent(calendar(), record.id)).reminders?.overrides).toEqual([
         { method: 'popup', minutes: 25 },
       ]);
@@ -245,7 +246,7 @@ describe('live Google: events', () => {
         changes: { title: `${record.title} (edited)` },
         eventId: record.id,
       });
-      yield* mutations.processPendingOps();
+      yield* drain(mutations);
       expect((yield* google.getEvent(calendar(), record.id)).reminders?.overrides).toEqual([
         { method: 'popup', minutes: 25 },
       ]);
@@ -260,7 +261,7 @@ describe('live Google: events', () => {
         calendarId: calendar(),
         colorHex: '#0b8043',
       });
-      yield* mutations.processPendingOps();
+      yield* drain(mutations);
       expect((yield* google.getCalendarListEntry(calendar())).backgroundColor?.toLowerCase()).toBe(
         '#0b8043',
       );

@@ -52,6 +52,7 @@ export interface LiveEvent {
   readonly extendedProperties?: { readonly private?: Record<string, string> };
   readonly id: string;
   readonly location?: string;
+  readonly organizer?: { readonly email?: string; readonly self?: boolean };
   readonly recurrence?: ReadonlyArray<string>;
   readonly recurringEventId?: string;
   readonly reminders?: {

@@ -9,7 +9,15 @@ import {
   liveEngineLayer,
   liveGoogleConfigFromEnv,
 } from '../testing/liveGoogle.ts';
-import { bootstrap, HOUR, hoursFromNow, pendingOps, titleFor, scratchFor } from './support.ts';
+import {
+  bootstrap,
+  HOUR,
+  hoursFromNow,
+  pendingOps,
+  titleFor,
+  scratchFor,
+  drain,
+} from './support.ts';
 
 /**
  * Recurring series on the real API: masters round-trip with
@@ -53,7 +61,7 @@ describe('live Google: recurring series', () => {
     Effect.gen(function* () {
       const { engine, mutations, scratch: google } = yield* bootstrap(config);
       const master = yield* createWeekly(mutations, 'weekly');
-      yield* mutations.processPendingOps();
+      yield* drain(mutations);
       const server = yield* google.getEvent(calendar(), master.id);
       expect(server.recurrence?.some((line) => line.includes('FREQ=WEEKLY'))).toBe(true);
       expect(server.recurrence?.some((line) => line.includes('COUNT=6'))).toBe(true);
@@ -69,14 +77,14 @@ describe('live Google: recurring series', () => {
     Effect.gen(function* () {
       const { engine, mutations, scratch: google } = yield* bootstrap(config);
       const master = yield* createWeekly(mutations, 'instance');
-      yield* mutations.processPendingOps();
+      yield* drain(mutations);
       const second = master.startUtc + WEEK;
       yield* mutations.updateRecurring({
         ...target(master.id, second),
         changes: { title: `${master.title} (second)` },
         scope: 'instance',
       });
-      yield* mutations.processPendingOps();
+      yield* drain(mutations);
       const instanceId = googleInstanceId(master.id, second, false);
       const exception = yield* google.getEvent(calendar(), instanceId);
       expect(exception.recurringEventId).toBe(master.id);
@@ -99,10 +107,10 @@ describe('live Google: recurring series', () => {
     Effect.gen(function* () {
       const { engine, mutations, scratch: google } = yield* bootstrap(config);
       const master = yield* createWeekly(mutations, 'skip');
-      yield* mutations.processPendingOps();
+      yield* drain(mutations);
       const third = master.startUtc + 2 * WEEK;
       yield* mutations.deleteRecurring({ ...target(master.id, third), scope: 'instance' });
-      yield* mutations.processPendingOps();
+      yield* drain(mutations);
       const instanceId = googleInstanceId(master.id, third, false);
       expect((yield* google.getEvent(calendar(), instanceId)).status).toBe('cancelled');
       yield* engine.syncAll();
@@ -119,14 +127,14 @@ describe('live Google: recurring series', () => {
     Effect.gen(function* () {
       const { engine, mutations, scratch: google } = yield* bootstrap(config);
       const master = yield* createWeekly(mutations, 'split');
-      yield* mutations.processPendingOps();
+      yield* drain(mutations);
       const fourth = master.startUtc + 3 * WEEK;
       yield* mutations.updateRecurring({
         ...target(master.id, fourth),
         changes: { title: `${master.title} (tail)` },
         scope: 'following',
       });
-      yield* mutations.processPendingOps();
+      yield* drain(mutations);
       expect(yield* pendingOps).toEqual([]);
       const truncated = yield* google.getEvent(calendar(), master.id);
       expect(truncated.recurrence?.some((line) => line.includes('UNTIL='))).toBe(true);
@@ -148,34 +156,41 @@ describe('live Google: recurring series', () => {
     }).pipe(Effect.provide(liveEngineLayer(config))),
   );
 
-  it.live('a series rename reaches the master and spares an exception', () =>
+  it.live('a series rename reaches the master and overwrites an exception’s title', () =>
     Effect.gen(function* () {
       const { engine, mutations, scratch: google } = yield* bootstrap(config);
       const master = yield* createWeekly(mutations, 'rename');
-      yield* mutations.processPendingOps();
+      yield* drain(mutations);
       const second = master.startUtc + WEEK;
       yield* mutations.updateRecurring({
         ...target(master.id, second),
         changes: { title: `${master.title} (exception)` },
         scope: 'instance',
       });
-      yield* mutations.processPendingOps();
+      yield* drain(mutations);
       // Materialising the exception may have bumped the master's etag on
-      // Google: refresh it, the assertion is about the exception surviving.
+      // Google: refresh it so the rename is not a 412.
       yield* engine.syncAll();
       yield* mutations.updateRecurring({
         ...target(master.id, master.startUtc),
         changes: { title: `${master.title} (series)` },
         scope: 'series',
       });
-      yield* mutations.processPendingOps();
+      yield* drain(mutations);
       expect((yield* google.getEvent(calendar(), master.id)).summary).toBe(
         `${master.title} (series)`,
       );
+      // Verified 2026-09-24: Google copies a master's new summary onto its
+      // existing exceptions, overridden ones included (a title-only PATCH
+      // of the master is enough). The exception keeps its own time.
       const instanceId = googleInstanceId(master.id, second, false);
       expect((yield* google.getEvent(calendar(), instanceId)).summary).toBe(
-        `${master.title} (exception)`,
+        `${master.title} (series)`,
       );
+      // And the next pull brings the local exception row in line.
+      yield* engine.syncAll();
+      const override = yield* (yield* EventRepo).getById(LIVE_ACCOUNT_ID, calendar(), instanceId);
+      expect(override?.title).toBe(`${master.title} (series)`);
     }).pipe(Effect.provide(liveEngineLayer(config))),
   );
 });

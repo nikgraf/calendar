@@ -8,7 +8,7 @@ import {
   liveEngineLayer,
   liveGoogleConfigFromEnv,
 } from '../testing/liveGoogle.ts';
-import { bootstrap, hoursFromNow, pendingOps, titleFor, scratchFor } from './support.ts';
+import { bootstrap, hoursFromNow, pendingOps, titleFor, scratchFor, drain } from './support.ts';
 
 /**
  * Guests on the real API, always with `sendUpdates=none` (GuestNotifications
@@ -35,43 +35,48 @@ const invite = (name: string) => ({
 
 const guestOf = (event: LiveEvent) =>
   event.attendees?.find((attendee) => attendee.email === config.guestEmail);
-const organizerOf = (event: LiveEvent) =>
-  event.attendees?.find((attendee) => attendee.self === true);
 
 describe('live Google: attendees', () => {
-  it.live('a create with a guest comes back with the organizer added', () =>
+  it.live('a create with a guest: Google keeps the list as sent, the calendar organizes', () =>
     Effect.gen(function* () {
+      // Verified 2026-09-24: an API insert does not add the organizer to
+      // `attendees` (web UI inserts do) — on a secondary calendar the
+      // organizer is the calendar itself, on the primary the account.
       const { mutations, scratch: google } = yield* bootstrap(config);
       const record = yield* mutations.createEvent(invite('invite'));
-      yield* mutations.processPendingOps();
+      yield* drain(mutations);
       const server = yield* google.getEvent(calendar(), record.id);
       expect(guestOf(server)?.responseStatus).toBe('needsAction');
-      expect(organizerOf(server)?.organizer).toBe(true);
+      expect(server.attendees).toHaveLength(1);
+      expect(server.organizer).toMatchObject({ email: calendar(), self: true });
       const row = yield* (yield* EventRepo).getById(LIVE_ACCOUNT_ID, calendar(), record.id);
-      expect(row?.attendees?.some((attendee) => attendee.isSelf)).toBe(true);
-      expect(row?.attendees?.some((attendee) => attendee.email === config.guestEmail)).toBe(true);
+      expect(row?.attendees?.map((attendee) => attendee.email)).toEqual([config.guestEmail]);
+      expect(row?.attendees?.some((attendee) => attendee.isSelf)).toBe(false);
     }).pipe(Effect.provide(liveEngineLayer(config))),
   );
 
-  it.live('an RSVP patches only the own attendee, without If-Match', () =>
+  it.live('the organizer cannot RSVP: not on the guest list, nothing is queued', () =>
     Effect.gen(function* () {
-      const { mutations, scratch: google } = yield* bootstrap(config);
+      // A guest-side RSVP (attendees-only PATCH without If-Match) needs a
+      // second account to send the invitation — an invitation from the
+      // account's own calendar never reaches its primary. The fake covers
+      // that path (engine.http.test.ts); here Google's side is pinned.
+      const { mutations } = yield* bootstrap(config);
       const record = yield* mutations.createEvent(invite('rsvp'));
-      yield* mutations.processPendingOps();
-      // Google moves on behind our back; the RSVP still lands (no If-Match).
-      yield* google.patchEvent(calendar(), record.id, { summary: `${record.title} (server)` });
-      yield* mutations.respondToEvent({
-        accountId: LIVE_ACCOUNT_ID,
-        calendarId: calendar(),
-        eventId: record.id,
-        response: 'tentative',
-      });
-      yield* mutations.processPendingOps();
+      yield* drain(mutations);
+      const outcome = yield* mutations
+        .respondToEvent({
+          accountId: LIVE_ACCOUNT_ID,
+          calendarId: calendar(),
+          eventId: record.id,
+          response: 'tentative',
+        })
+        .pipe(
+          Effect.map(() => 'responded'),
+          Effect.catchTag('NotAttendeeError', () => Effect.succeed('not an attendee')),
+        );
+      expect(outcome).toBe('not an attendee');
       expect(yield* pendingOps).toEqual([]);
-      const server = yield* google.getEvent(calendar(), record.id);
-      expect(organizerOf(server)?.responseStatus).toBe('tentative');
-      expect(guestOf(server)?.responseStatus).toBe('needsAction');
-      expect(server.summary).toBe(`${record.title} (server)`);
     }).pipe(Effect.provide(liveEngineLayer(config))),
   );
 
@@ -79,14 +84,14 @@ describe('live Google: attendees', () => {
     Effect.gen(function* () {
       const { mutations, scratch: google } = yield* bootstrap(config);
       const record = yield* mutations.createEvent(invite('guests'));
-      yield* mutations.processPendingOps();
+      yield* drain(mutations);
       yield* mutations.updateEvent({
         accountId: LIVE_ACCOUNT_ID,
         calendarId: calendar(),
         changes: { title: `${record.title} (edited)` },
         eventId: record.id,
       });
-      yield* mutations.processPendingOps();
+      yield* drain(mutations);
       expect(guestOf(yield* google.getEvent(calendar(), record.id))).toBeDefined();
 
       yield* mutations.updateEvent({
@@ -95,17 +100,17 @@ describe('live Google: attendees', () => {
         changes: { attendees: [] },
         eventId: record.id,
       });
-      yield* mutations.processPendingOps();
+      yield* drain(mutations);
       expect(guestOf(yield* google.getEvent(calendar(), record.id))).toBeUndefined();
       expect(yield* pendingOps).toEqual([]);
     }).pipe(Effect.provide(liveEngineLayer(config))),
   );
 
-  it.live('a content edit on a stale etag parks where the RSVP went through', () =>
+  it.live('a content edit of an event with guests on a stale etag parks', () =>
     Effect.gen(function* () {
       const { mutations, scratch: google } = yield* bootstrap(config);
       const record = yield* mutations.createEvent(invite('stale'));
-      yield* mutations.processPendingOps();
+      yield* drain(mutations);
       yield* google.patchEvent(calendar(), record.id, { summary: `${record.title} (server)` });
       yield* mutations.updateEvent({
         accountId: LIVE_ACCOUNT_ID,
@@ -113,7 +118,7 @@ describe('live Google: attendees', () => {
         changes: { title: `${record.title} (mine)` },
         eventId: record.id,
       });
-      yield* mutations.processPendingOps();
+      yield* drain(mutations);
       const [op] = yield* pendingOps;
       expect(op?.kind).toBe('update');
       expect(op?.conflictAt).toBeDefined();

@@ -9,7 +9,7 @@ import {
   liveGoogleConfigFromEnv,
   scratchName,
 } from '../testing/liveGoogle.ts';
-import { bootstrap, hoursFromNow, titleFor, scratchFor } from './support.ts';
+import { bootstrap, hoursFromNow, titleFor, scratchFor, drain } from './support.ts';
 
 /**
  * The calendarList sync token on the real API: a calendar created after
@@ -47,7 +47,7 @@ describe('live Google: calendarList', () => {
           startUtc: hoursFromNow(2),
           title: titleFor(config, 'in-new-calendar'),
         });
-        yield* mutations.processPendingOps();
+        yield* drain(mutations);
         const state = yield* SyncStateRepo;
         expect((yield* state.get(LIVE_ACCOUNT_ID, eventsScope(id)))?.syncToken).toBeTruthy();
 

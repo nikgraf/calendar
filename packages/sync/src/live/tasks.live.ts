@@ -17,6 +17,7 @@ import {
   syncUntil,
   titleFor,
   scratchFor,
+  drain,
 } from './support.ts';
 
 /**
@@ -59,7 +60,7 @@ describe('live Google: tasks', () => {
       expect(lists.map((list) => list.id)).toEqual(expect.arrayContaining([listA(), listB()]));
       const temp = yield* create(mutations, 'create');
       expect(temp.id.startsWith('local-')).toBe(true);
-      yield* mutations.processPendingOps();
+      yield* drain(mutations);
       const row = yield* localByTitle(listA(), temp.title);
       expect(row?.id.startsWith('local-')).toBe(false);
       const server = yield* google.getTask(listA(), row!.id);
@@ -73,7 +74,7 @@ describe('live Google: tasks', () => {
     Effect.gen(function* () {
       const { mutations, scratch: google } = yield* bootstrap(config);
       const temp = yield* create(mutations, 'edit');
-      yield* mutations.processPendingOps();
+      yield* drain(mutations);
       const row = (yield* localByTitle(listA(), temp.title))!;
       yield* mutations.updateTask({
         accountId: LIVE_ACCOUNT_ID,
@@ -85,7 +86,7 @@ describe('live Google: tasks', () => {
         taskId: row.id,
         taskListId: listA(),
       });
-      yield* mutations.processPendingOps();
+      yield* drain(mutations);
       let server = yield* google.getTask(listA(), row.id);
       expect(server.title).toBe(`${temp.title} (edited)`);
       expect(server.notes).toBe('bring the charger');
@@ -97,7 +98,7 @@ describe('live Google: tasks', () => {
         taskId: row.id,
         taskListId: listA(),
       });
-      yield* mutations.processPendingOps();
+      yield* drain(mutations);
       server = yield* google.getTask(listA(), row.id);
       expect(server.status).toBe('completed');
       expect(server.completed).toBeTruthy();
@@ -108,7 +109,7 @@ describe('live Google: tasks', () => {
         taskId: row.id,
         taskListId: listA(),
       });
-      yield* mutations.processPendingOps();
+      yield* drain(mutations);
       server = yield* google.getTask(listA(), row.id);
       expect(server.status).toBe('needsAction');
       expect(server.completed).toBeUndefined();
@@ -121,7 +122,7 @@ describe('live Google: tasks', () => {
       const { engine, mutations, scratch: google } = yield* bootstrap(config);
       const kept = yield* create(mutations, 'wm-kept');
       const gone = yield* create(mutations, 'wm-gone');
-      yield* mutations.processPendingOps();
+      yield* drain(mutations);
       const keptRow = (yield* localByTitle(listA(), kept.title))!;
       const goneRow = (yield* localByTitle(listA(), gone.title))!;
       yield* google.patchTask(listA(), keptRow.id, { title: `${kept.title} (renamed)` });
@@ -143,14 +144,14 @@ describe('live Google: tasks', () => {
     Effect.gen(function* () {
       const { mutations, scratch: google } = yield* bootstrap(config);
       const temp = yield* create(mutations, 'delete');
-      yield* mutations.processPendingOps();
+      yield* drain(mutations);
       const row = (yield* localByTitle(listA(), temp.title))!;
       yield* mutations.deleteTask({
         accountId: LIVE_ACCOUNT_ID,
         taskId: row.id,
         taskListId: listA(),
       });
-      yield* mutations.processPendingOps();
+      yield* drain(mutations);
       expect(yield* pendingOps).toEqual([]);
       // Pins the answer: a deleted task reads back as `deleted: true` or 404.
       const after = yield* google.getTask(listA(), row.id).pipe(
@@ -176,7 +177,7 @@ describe('live Google: tasks', () => {
           yield* (yield* PendingOpRepo).markDispatched(op!.id, Date.now() - 1000);
         }),
       );
-      yield* mutations.processPendingOps();
+      yield* drain(mutations);
       const onGoogle = (yield* google.listTasks(listA())).filter(
         (task) => task.title === title && !task.deleted,
       );
@@ -190,7 +191,7 @@ describe('live Google: tasks', () => {
     Effect.gen(function* () {
       const { mutations, scratch: google } = yield* bootstrap(config);
       const temp = yield* create(mutations, 'move');
-      yield* mutations.processPendingOps();
+      yield* drain(mutations);
       const row = (yield* localByTitle(listA(), temp.title))!;
       yield* mutations.moveTask({
         accountId: LIVE_ACCOUNT_ID,
@@ -199,7 +200,7 @@ describe('live Google: tasks', () => {
         taskId: row.id,
         taskListId: listA(),
       });
-      yield* mutations.processPendingOps();
+      yield* drain(mutations);
       expect(yield* pendingOps).toEqual([]);
       const inB = (yield* google.listTasks(listB())).filter(
         (task) => task.title === temp.title && !task.deleted,

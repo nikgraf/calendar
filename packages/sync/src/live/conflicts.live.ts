@@ -15,6 +15,7 @@ import {
   pendingOps,
   titleFor,
   scratchFor,
+  drain,
 } from './support.ts';
 
 /**
@@ -50,7 +51,7 @@ const parkedEdit = (name: string) =>
   Effect.gen(function* () {
     const { engine, mutations, scratch: google } = yield* bootstrap(config);
     const record = yield* mutations.createEvent(draft(name));
-    yield* mutations.processPendingOps();
+    yield* drain(mutations);
     const edit = (title: string) =>
       mutations.updateEvent({
         accountId: LIVE_ACCOUNT_ID,
@@ -60,13 +61,13 @@ const parkedEdit = (name: string) =>
       });
 
     yield* edit(`${record.title} local 1`);
-    yield* mutations.processPendingOps();
+    yield* drain(mutations);
     expect((yield* google.getEvent(calendar(), record.id)).summary).toBe(`${record.title} local 1`);
     expect(yield* pendingOps).toEqual([]);
 
     yield* google.patchEvent(calendar(), record.id, { summary: `${record.title} server 2` });
     yield* edit(`${record.title} local 2`);
-    yield* mutations.processPendingOps();
+    yield* drain(mutations);
     expect((yield* google.getEvent(calendar(), record.id)).summary).toBe(
       `${record.title} server 2`,
     );
@@ -96,7 +97,7 @@ describe('live Google: 412 conflicts', () => {
     Effect.gen(function* () {
       const { engine, google, mutations, opId, record } = yield* parkedEdit('mine');
       yield* mutations.resolveConflict({ choice: 'mine', opId });
-      yield* mutations.processPendingOps();
+      yield* drain(mutations);
       expect((yield* google.getEvent(calendar(), record.id)).summary).toBe(
         `${record.title} local 2`,
       );
@@ -110,14 +111,14 @@ describe('live Google: 412 conflicts', () => {
     Effect.gen(function* () {
       const { engine, mutations, scratch: google } = yield* bootstrap(config);
       const record = yield* mutations.createEvent(draft('parked-delete'));
-      yield* mutations.processPendingOps();
+      yield* drain(mutations);
       yield* google.patchEvent(calendar(), record.id, { summary: `${record.title} server 2` });
       yield* mutations.deleteEvent({
         accountId: LIVE_ACCOUNT_ID,
         calendarId: calendar(),
         eventId: record.id,
       });
-      yield* mutations.processPendingOps();
+      yield* drain(mutations);
       const [op] = yield* pendingOps;
       expect(op?.kind).toBe('delete');
       expect(op?.conflictAt).toBeDefined();
@@ -129,7 +130,7 @@ describe('live Google: 412 conflicts', () => {
 
       yield* mutations.resolveConflict({ choice: 'mine', opId: op!.id });
       expect(yield* titleOf(record.id)).toBeNull();
-      yield* mutations.processPendingOps();
+      yield* drain(mutations);
       expect(GONE.has(yield* deletedStatus(google, calendar(), record.id))).toBe(true);
       yield* engine.syncAll();
       expect(yield* titleOf(record.id)).toBeNull();
@@ -141,7 +142,7 @@ describe('live Google: 412 conflicts', () => {
     Effect.gen(function* () {
       const { engine, mutations, scratch: google } = yield* bootstrap(config);
       const record = yield* mutations.createEvent(draft('restore'));
-      yield* mutations.processPendingOps();
+      yield* drain(mutations);
       yield* google.deleteEvent(calendar(), record.id);
       yield* mutations.updateEvent({
         accountId: LIVE_ACCOUNT_ID,
@@ -149,7 +150,7 @@ describe('live Google: 412 conflicts', () => {
         changes: { title: `${record.title} (mine)` },
         eventId: record.id,
       });
-      yield* mutations.processPendingOps();
+      yield* drain(mutations);
       // Pins Google's answer for a stale-etag PATCH of a deleted event.
       // Expected: the delete bumped the etag, so the PATCH is a 412 and the
       // drain parks the op with Google's copy — the cancelled tombstone,
@@ -166,7 +167,7 @@ describe('live Google: 412 conflicts', () => {
       const restoredRow = window.singles.find((row) => row.title === `${record.title} (mine)`);
       expect(restoredRow).toBeDefined();
       expect(restoredRow!.id).not.toBe(record.id);
-      yield* mutations.processPendingOps();
+      yield* drain(mutations);
       const restored = yield* google.getEvent(calendar(), restoredRow!.id);
       expect(restored.summary).toBe(`${record.title} (mine)`);
       expect(restored.status).not.toBe('cancelled');

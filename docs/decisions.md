@@ -1128,8 +1128,13 @@ test`/`test:e2e`/`test:e2e:ios`; every file creates its own
       drag-to-move and resize (Maestro 2.10 has no drag command and a
       swipe from an element starts at its centre). Secrets: `GOOGLE_LIVE_EMAIL`, `GOOGLE_LIVE_REFRESH_TOKEN`
       (new) + `GOOGLE_DESKTOP_CLIENT_ID/SECRET`; the consent screen must
-      be In production or the token dies in seven days. Verify on the
-      first real run: `events.get` for a deleted event (cancelled vs
-      404/410), a stale-etag PATCH of a deleted event (412 vs 404), a
-      deleted task's `tasks.get`, and whether Google adds a `self: true`
-      organizer attendee on a secondary calendar (the attendees file).
+      be In production or the token dies in seven days. First real run
+      (2026-09-24, 33/33 after fixes) settled: a stale-etag PATCH of a
+      deleted event and a stale If-Match DELETE are 412s (so both park);
+      Google rate-limits a burst of writes (403, handled by the op
+      backoff — the suite drains until only parked ops remain); an API
+      insert never adds the organizer to `attendees`, so the organizer
+      cannot RSVP and a guest-side RSVP needs a second account (left on
+      the fake); a series rename overwrites existing exceptions' titles
+      on Google, while the app's optimistic write leaves the local
+      override rows until the next pull (candidate follow-up).

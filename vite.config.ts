@@ -107,6 +107,6 @@ export default defineConfig({
     // first paint) used to cost a full macOS job rerun. Never for live
     // files — a retry repeats real writes.
     retry: process.env['E2E'] ? 1 : 0,
-    testTimeout: process.env['E2E'] ? 60_000 : process.env['GOOGLE_LIVE'] ? 120_000 : 5000,
+    testTimeout: process.env['E2E'] ? 60_000 : process.env['GOOGLE_LIVE'] ? 300_000 : 5000,
   },
 });

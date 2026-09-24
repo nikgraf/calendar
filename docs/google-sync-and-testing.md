@@ -236,13 +236,19 @@ SECRET`), not with `app.json`'s iOS client.
   events, `events:<id>` sync state). `recurring`: a weekly master, an
   instance edit under `<master>_<basetime>` with `recurringEventId`, a
   cancelled instance the pull keeps hidden, this-and-following (UNTIL
-  master + new master), a series rename sparing the exception. `move`:
+  master + new master), a series rename — which Google copies onto
+  existing exceptions, overridden titles included (the local override
+  row catches up on the next pull). `move`:
   `events.move` keeps the id and leaves a tombstone, an edit queued
   before a move lands after it in the destination, a master takes its
-  exception along. `attendees`: Google adds the organizer, an RSVP is an
-  attendees-only PATCH without If-Match (lands on a stale etag), a
-  title-only edit keeps guests, `attendees: []` removes them, a content
-  edit on the stale etag parks. `conflicts`: `parkedEdit` against Google
+  exception along. `attendees`: an API insert keeps the guest list as
+  sent — Google does not add the organizer as an attendee (the web UI
+  does); the organizer is the calendar itself (`organizer.self`), so the
+  app refuses an RSVP there (`NotAttendeeError`); a title-only edit keeps
+  guests, `attendees: []` removes them, a content edit on a stale etag
+  parks. A guest-side RSVP needs a second account to invite this one (an
+  invitation from the account's own calendar never reaches its primary),
+  so that path stays on the fake. `conflicts`: `parkedEdit` against Google
   (park with Google's copy, pull leaves the local version, take theirs,
   keep mine without If-Match, a parked delete, an edit of a deleted event
   restored under a new id). `tasks`: both lists, temp id → server id,
@@ -296,6 +302,10 @@ SECRET`), not with `app.json`'s iOS client.
 test:e2e:live` (dev client installed, Metro up with the live env;
   `SIMULATOR_UDID` picks the device), which runs setup, the five flows
   and teardown.
+- **Rate limits.** A full run writes fast enough that Google answers some
+  writes with 403 `rateLimitExceeded`; the op backs off (30 s, 60 s) like
+  in the app. `drain` in `live/support.ts` keeps draining until only
+  parked ops are left (two-minute cap), hence the 300 s live test timeout.
 - **Leaks.** Effect redacts `authorization` headers in logged causes; the
   desktop token file lives only in the temp profile; the iOS bundle on
   the CI simulator carries the secrets inlined (never shipped).

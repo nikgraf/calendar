@@ -18,6 +18,7 @@ import {
   pendingOps,
   titleFor,
   scratchFor,
+  drain,
 } from './support.ts';
 
 /**
@@ -56,7 +57,7 @@ describe('live Google: moves between calendars', () => {
     Effect.gen(function* () {
       const { engine, mutations, scratch: google } = yield* bootstrap(config);
       const record = yield* mutations.createEvent(draft('move'));
-      yield* mutations.processPendingOps();
+      yield* drain(mutations);
       yield* mutations.moveEvent(move(record.id));
       yield* engine.syncAll();
       expect((yield* google.getEvent(destination(), record.id)).summary).toBe(record.title);
@@ -74,7 +75,7 @@ describe('live Google: moves between calendars', () => {
     Effect.gen(function* () {
       const { engine, mutations, scratch: google } = yield* bootstrap(config);
       const record = yield* mutations.createEvent(draft('edit-then-move'));
-      yield* mutations.processPendingOps();
+      yield* drain(mutations);
       // The editor's Save: the edit first, then the move, in one go — no
       // yield in between, or the edit's kicked drain could patch first and
       // the test would no longer pin the reorder.
@@ -103,7 +104,7 @@ describe('live Google: moves between calendars', () => {
       const master = yield* mutations.createEvent(
         draft('move-series', { recurrence: ['RRULE:FREQ=WEEKLY;COUNT=4'] }),
       );
-      yield* mutations.processPendingOps();
+      yield* drain(mutations);
       const second = master.startUtc + 7 * 24 * HOUR;
       yield* mutations.updateRecurring({
         accountId: LIVE_ACCOUNT_ID,
@@ -113,7 +114,7 @@ describe('live Google: moves between calendars', () => {
         originalStartUtc: second,
         scope: 'instance',
       });
-      yield* mutations.processPendingOps();
+      yield* drain(mutations);
       yield* mutations.moveEvent(move(master.id));
       yield* engine.syncAll();
       const instanceId = googleInstanceId(master.id, second, false);
