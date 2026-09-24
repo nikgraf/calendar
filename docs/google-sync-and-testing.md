@@ -200,14 +200,20 @@ labelled `google-live`, one run at a time (`concurrency: google-live`).
   The refresh token is bound to the desktop client, so iOS refreshes it
   with that client too (`EXPO_PUBLIC_CALENDAR_GOOGLE_LIVE_CLIENT_ID/
 SECRET`), not with `app.json`'s iOS client.
-- **Isolation.** Every file (desktop spec, iOS job) creates its own
-  secondary calendar and/or task list named
-  `e2e-<unixSeconds>-<runTag>[-suffix]` (`GOOGLE_LIVE_RUN_TAG` —
-  `gh-<run>-<attempt>-<job>` on CI, `local-<pid>` locally), deletes it
-  in `afterAll`, and first sweeps anything older than six hours that a
-  crashed run left behind (`LiveScratch.sweep`; younger ones may belong
-  to a run in flight — a local run overlapping CI is fine). One calendar
-  per file, not per test: Google throttles secondary-calendar creation.
+- **Isolation.** Every run gets its own scratch calendars and task lists,
+  named `e2e-<unixSeconds>-<runTag>[-suffix]` (`GOOGLE_LIVE_RUN_TAG` —
+  `gh-<run>-<attempt>` on CI, `local-<pid>` locally), **one set per job**:
+  the Node job's `live/globalSetup.ts` creates two calendars and two lists
+  once and hands them to every file (`inject('liveScratch')`), the desktop
+  spec and the iOS sidecar create one calendar and one list each; only
+  `calendarList.live.ts` creates (and deletes) its own, since that is what
+  it tests — about five calendars per full run. Google caps secondary-
+  calendar creation per account and day (403 `usageLimits`/`quotaExceeded`
+  "Calendar usage limits exceeded" after ~40 on a debugging day, blocking
+  creation for up to a day) — a calendar per file did not scale. Each job
+  deletes its set at the end and first sweeps anything older than six
+  hours that a crashed run left behind (`sweep`; younger ones may belong
+  to a run in flight — a local run overlapping CI is fine).
   Titles carry `live-<runTag>-…`; tests assert on their own ids and
   never touch the primary calendar. Guests are `guest-<runTag>@example.com`
   (reserved, never delivered) and every write with guests goes out with

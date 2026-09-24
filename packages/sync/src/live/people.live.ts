@@ -7,7 +7,7 @@ import {
   liveEngineLayer,
   liveGoogleConfigFromEnv,
 } from '../testing/liveGoogle.ts';
-import { bootstrap, scratchFor } from './support.ts';
+import { bootstrap } from './support.ts';
 
 /**
  * The People API on the real account: both tiers complete with a sync
@@ -18,7 +18,6 @@ import { bootstrap, scratchFor } from './support.ts';
  */
 
 const config = liveGoogleConfigFromEnv();
-scratchFor(config, {});
 
 describe('live Google: People', () => {
   it.live('both contact tiers finish with a sync token', () =>

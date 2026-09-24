@@ -83,7 +83,9 @@ export default defineConfig({
     '*': 'vp check --fix',
   },
   test: {
-    // A live file's beforeAll sweeps the account and creates a calendar.
+    // The live run's shared scratch calendars and lists, created once (Google
+    // caps calendar creation per account and day).
+    globalSetup: process.env['GOOGLE_LIVE'] ? ['packages/sync/src/live/globalSetup.ts'] : [],
     hookTimeout: process.env['GOOGLE_LIVE'] ? 120_000 : 10_000,
     // `GOOGLE_LIVE=1`: the real-account suite (packages/sync/src/live), never
     // part of `pnpm test` — it needs a refresh token and writes to Google.

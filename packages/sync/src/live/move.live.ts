@@ -29,7 +29,7 @@ import {
  */
 
 const config = liveGoogleConfigFromEnv();
-const scratch = scratchFor(config, { calendars: ['move-from', 'move-to'] });
+const scratch = scratchFor(config);
 const source = () => scratch.calendars[0]!;
 const destination = () => scratch.calendars[1]!;
 

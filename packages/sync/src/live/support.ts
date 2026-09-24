@@ -1,6 +1,6 @@
 import { AccountRepo, PendingOpRepo } from '@calendar/db';
 import { Effect, Scheduler } from 'effect';
-import { afterAll, beforeAll } from 'vitest';
+import { afterAll, inject } from 'vitest';
 import { SyncEngine } from '../engine.ts';
 import { EventMutations } from '../mutations.ts';
 import {
@@ -10,7 +10,6 @@ import {
   LiveScratch,
   type LiveScratchShape,
   makeScratchRuntime,
-  scratchName,
   seedLiveAccount,
 } from '../testing/liveGoogle.ts';
 import { LiveScratchError } from '../testing/liveScratchRest.ts';
@@ -47,49 +46,21 @@ export interface ScratchHandle {
 }
 
 /**
- * Registers the file's beforeAll/afterAll: sweep stale leftovers, create
- * this file's calendars and lists (one calendar per file — Google
- * throttles secondary-calendar creation), delete them afterwards.
+ * This run's shared scratch calendars and lists (created once by
+ * globalSetup.ts — Google caps calendar creation per day), plus a scratch
+ * runtime for the file's own admin calls, disposed after the file.
  */
-export const scratchFor = (
-  config: LiveGoogleConfig,
-  spec: { readonly calendars?: ReadonlyArray<string>; readonly lists?: ReadonlyArray<string> },
-): ScratchHandle => {
+export const scratchFor = (config: LiveGoogleConfig): ScratchHandle => {
   const runtime = makeScratchRuntime(config);
-  const handle: ScratchHandle = {
-    calendars: [],
-    lists: [],
-    run: (effect) => runtime.runPromise(effect),
-  };
-  beforeAll(async () => {
-    await handle.run(
-      Effect.gen(function* () {
-        const scratch = yield* LiveScratch;
-        yield* scratch.sweep({ maxAgeMs: SWEEP_MAX_AGE_MS });
-        for (const suffix of spec.calendars ?? []) {
-          handle.calendars.push((yield* scratch.createCalendar(scratchName(config, suffix))).id);
-        }
-        for (const suffix of spec.lists ?? []) {
-          handle.lists.push((yield* scratch.createTaskList(scratchName(config, suffix))).id);
-        }
-      }),
-    );
-  });
+  const { calendars, lists } = inject('liveScratch');
   afterAll(async () => {
-    await handle.run(
-      Effect.gen(function* () {
-        const scratch = yield* LiveScratch;
-        for (const id of handle.calendars) {
-          yield* Effect.ignore(scratch.deleteCalendar(id));
-        }
-        for (const id of handle.lists) {
-          yield* Effect.ignore(scratch.deleteTaskList(id));
-        }
-      }),
-    );
     await runtime.dispose();
   });
-  return handle;
+  return {
+    calendars: [...calendars],
+    lists: [...lists],
+    run: (effect) => runtime.runPromise(effect),
+  };
 };
 
 /** Keeps the current fiber from yielding, so a detached drain cannot run in between. */

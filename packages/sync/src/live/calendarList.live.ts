@@ -9,7 +9,7 @@ import {
   liveGoogleConfigFromEnv,
   scratchName,
 } from '../testing/liveGoogle.ts';
-import { bootstrap, hoursFromNow, titleFor, scratchFor, drain } from './support.ts';
+import { bootstrap, hoursFromNow, titleFor, drain } from './support.ts';
 
 /**
  * The calendarList sync token on the real API: a calendar created after
@@ -18,8 +18,8 @@ import { bootstrap, hoursFromNow, titleFor, scratchFor, drain } from './support.
  */
 
 const config = liveGoogleConfigFromEnv();
-// This file creates its calendar inside the test; the handle only sweeps.
-scratchFor(config, {});
+// This file creates (and deletes) its own calendar inside the test —
+// creating one is what it tests.
 
 describe('live Google: calendarList', () => {
   it.live('a calendar created after the first pass arrives, and its removal cascades', () =>

@@ -27,7 +27,7 @@ import {
  */
 
 const config = liveGoogleConfigFromEnv();
-const scratch = scratchFor(config, { calendars: ['recurring'] });
+const scratch = scratchFor(config);
 const calendar = () => scratch.calendars[0]!;
 const WEEK = 7 * 24 * HOUR;
 

@@ -19,7 +19,7 @@ import { bootstrap, hoursFromNow, pendingOps, titleFor, scratchFor, drain } from
  */
 
 const config = liveGoogleConfigFromEnv();
-const scratch = scratchFor(config, { calendars: ['attendees'] });
+const scratch = scratchFor(config);
 const calendar = () => scratch.calendars[0]!;
 
 const invite = (name: string) => ({

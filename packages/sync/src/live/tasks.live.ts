@@ -28,7 +28,7 @@ import {
  */
 
 const config = liveGoogleConfigFromEnv();
-const scratch = scratchFor(config, { lists: ['tasks-a', 'tasks-b'] });
+const scratch = scratchFor(config);
 const listA = () => scratch.lists[0]!;
 const listB = () => scratch.lists[1]!;
 

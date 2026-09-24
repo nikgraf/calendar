@@ -27,7 +27,7 @@ import {
  */
 
 const config = liveGoogleConfigFromEnv();
-const scratch = scratchFor(config, { calendars: ['conflicts'] });
+const scratch = scratchFor(config);
 const calendar = () => scratch.calendars[0]!;
 
 const draft = (name: string) => ({
