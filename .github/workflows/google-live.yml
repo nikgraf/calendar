@@ -1,0 +1,294 @@
+name: Google live
+
+# The suites that talk to Google itself, signed in as the dedicated live
+# test account (docs/google-sync-and-testing.md, "Live Google suite"):
+# the Node engine suite, the desktop e2e spec and the iOS Maestro flows.
+# Nightly — but only when main moved since the last completed run — and
+# on demand: the Actions tab, or the `google-live` label on a PR. One run
+# at a time (one account); each run names its scratch calendars and lists
+# after itself and sweeps what older runs left behind.
+on:
+  schedule:
+    - cron: '17 3 * * *'
+  workflow_dispatch:
+  pull_request:
+    types: [labeled, synchronize, reopened]
+
+permissions:
+  contents: read
+  # `gh run list` in the decide job.
+  actions: read
+
+concurrency:
+  group: google-live
+  cancel-in-progress: false
+
+jobs:
+  decide:
+    name: Decide whether to run
+    if: github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'google-live')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      run: ${{ steps.decide.outputs.run }}
+    steps:
+      - name: Require the live secrets
+        # Red rather than green-while-testing-nothing (the reminders job's rule).
+        env:
+          GOOGLE_DESKTOP_CLIENT_ID: ${{ secrets.GOOGLE_DESKTOP_CLIENT_ID }}
+          GOOGLE_LIVE_EMAIL: ${{ secrets.GOOGLE_LIVE_EMAIL }}
+          GOOGLE_LIVE_REFRESH_TOKEN: ${{ secrets.GOOGLE_LIVE_REFRESH_TOKEN }}
+        run: |
+          missing=""
+          for name in GOOGLE_DESKTOP_CLIENT_ID GOOGLE_LIVE_EMAIL GOOGLE_LIVE_REFRESH_TOKEN; do
+            [ -n "${!name}" ] || missing="$missing $name"
+          done
+          if [ -n "$missing" ]; then
+            echo "::error::missing repository secrets:$missing — see docs/google-sync-and-testing.md (Live Google suite)"
+            exit 1
+          fi
+      - id: decide
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -uo pipefail
+          if [ "${{ github.event_name }}" != "schedule" ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # The sha the last finished nightly (or manual) run tested. A
+          # skipped night still completes at the same sha, so the next one
+          # compares against the right commit.
+          last=$(gh run list --repo "$REPO" --workflow google-live.yml --branch main \
+            --status completed --json headSha,conclusion --limit 30 \
+            --jq '[.[] | select(.conclusion == "success" or .conclusion == "failure")][0].headSha // empty') || last=""
+          echo "last tested: ${last:-none}; now: ${{ github.sha }}"
+          if [ "$last" = "${{ github.sha }}" ]; then
+            echo "main has not moved since the last live run — skipping"
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  live-node:
+    name: Engine over the real API (Node)
+    needs: decide
+    if: needs.decide.outputs.run == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      GOOGLE_LIVE: 1
+      GOOGLE_LIVE_RUN_TAG: gh-${{ github.run_id }}-${{ github.run_attempt }}-node
+      GOOGLE_DESKTOP_CLIENT_ID: ${{ secrets.GOOGLE_DESKTOP_CLIENT_ID }}
+      GOOGLE_DESKTOP_CLIENT_SECRET: ${{ secrets.GOOGLE_DESKTOP_CLIENT_SECRET }}
+      GOOGLE_LIVE_EMAIL: ${{ secrets.GOOGLE_LIVE_EMAIL }}
+      GOOGLE_LIVE_REFRESH_TOKEN: ${{ secrets.GOOGLE_LIVE_REFRESH_TOKEN }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # GOOGLE_LIVE=1 swaps vitest's include to packages/sync/src/live and
+      # runs the files one at a time (one account; calendar creation is
+      # rate-limited).
+      - run: pnpm exec vp test run
+
+  live-desktop:
+    name: Desktop e2e over the real API (Electron, CDP)
+    needs: [decide, live-node]
+    if: needs.decide.outputs.run == 'true'
+    # macos-15: like ci.yml's e2e job — the helper is never invoked.
+    runs-on: macos-15
+    timeout-minutes: 25
+    env:
+      GOOGLE_LIVE_RUN_TAG: gh-${{ github.run_id }}-${{ github.run_attempt }}-desktop
+      GOOGLE_DESKTOP_CLIENT_ID: ${{ secrets.GOOGLE_DESKTOP_CLIENT_ID }}
+      GOOGLE_DESKTOP_CLIENT_SECRET: ${{ secrets.GOOGLE_DESKTOP_CLIENT_SECRET }}
+      GOOGLE_LIVE_EMAIL: ${{ secrets.GOOGLE_LIVE_EMAIL }}
+      GOOGLE_LIVE_REFRESH_TOKEN: ${{ secrets.GOOGLE_LIVE_REFRESH_TOKEN }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+      - name: Cache the Electron binary
+        uses: actions/cache@v6
+        with:
+          path: ~/Library/Caches/electron
+          key: electron-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @calendar/desktop build
+      - run: pnpm --filter @calendar/desktop exec electron --version
+      - run: E2E=1 CALENDAR_E2E_GOOGLE=live pnpm exec vp test run apps/desktop/e2e/googleLive.e2e.ts
+      - name: Upload e2e diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: google-live-desktop-diagnostics-${{ github.run_attempt }}
+          path: apps/desktop/e2e-artifacts/
+          retention-days: 7
+          if-no-files-found: ignore
+
+  live-ios:
+    name: iOS e2e over the real API (Maestro)
+    needs: [decide, live-node]
+    if: needs.decide.outputs.run == 'true'
+    runs-on: macos-26
+    # ci.yml's ios-e2e: 37–43 min green; the live flows are fewer but wait on Google.
+    timeout-minutes: 60
+    env:
+      CI: 1
+      EXPO_NO_TELEMETRY: 1
+      # Pinned + checksum-verified below; keep in step with ci.yml.
+      MAESTRO_VERSION: 2.10.0
+      MAESTRO_SHA256: 29b675e10cc12080e445e9bfb2e2b4e4dfb9c0f2e30d5884120d258b5e1cd991
+      GOOGLE_LIVE_RUN_TAG: gh-${{ github.run_id }}-${{ github.run_attempt }}-ios
+      GOOGLE_DESKTOP_CLIENT_ID: ${{ secrets.GOOGLE_DESKTOP_CLIENT_ID }}
+      GOOGLE_DESKTOP_CLIENT_SECRET: ${{ secrets.GOOGLE_DESKTOP_CLIENT_SECRET }}
+      GOOGLE_LIVE_EMAIL: ${{ secrets.GOOGLE_LIVE_EMAIL }}
+      GOOGLE_LIVE_REFRESH_TOKEN: ${{ secrets.GOOGLE_LIVE_REFRESH_TOKEN }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Require EXPO_TOKEN
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: |
+          if [ -z "$EXPO_TOKEN" ]; then
+            echo "::error::EXPO_TOKEN is not set — the dev client comes from EAS"
+            exit 1
+          fi
+      - id: fingerprint
+        name: Native fingerprint
+        working-directory: apps/ios
+        run: |
+          HASH=$(npx expo-updates fingerprint:generate --platform ios | jq -r '.hash // empty')
+          test -n "$HASH" || { echo "::error::fingerprint generation failed"; exit 1; }
+          echo "fingerprint: $HASH"
+          echo "hash=$HASH" >> "$GITHUB_OUTPUT"
+      - id: devclient
+        name: Restore the dev client for this fingerprint
+        uses: actions/cache@v6
+        with:
+          path: apps/ios/build/devclient
+          key: ios-devclient-${{ steps.fingerprint.outputs.hash }}
+      - name: Fetch the dev client from EAS
+        if: steps.devclient.outputs.cache-hit != 'true'
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        working-directory: apps/ios
+        run: bash e2e/ci/fetch-dev-client.sh "${{ steps.fingerprint.outputs.hash }}"
+      - name: Boot a simulator, install, pre-grant Reminders
+        run: bash apps/ios/e2e/ci/prepare-simulator.sh apps/ios/build/devclient/Solunivo.app
+      - name: Cache Maestro
+        id: maestro
+        uses: actions/cache@v6
+        with:
+          path: ~/.maestro
+          key: maestro-${{ runner.os }}-${{ env.MAESTRO_VERSION }}
+      - name: Install Maestro (pinned release, checksum verified)
+        if: steps.maestro.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          zip="$RUNNER_TEMP/maestro.zip"
+          curl -fsSL -o "$zip" \
+            "https://github.com/mobile-dev-inc/maestro/releases/download/cli-${MAESTRO_VERSION}/maestro.zip"
+          echo "${MAESTRO_SHA256}  $zip" | shasum -a 256 -c -
+          rm -rf "$RUNNER_TEMP/maestro-unzip" "$HOME/.maestro"
+          unzip -qo "$zip" -d "$RUNNER_TEMP/maestro-unzip"
+          mkdir -p "$HOME/.maestro"
+          cp -R "$RUNNER_TEMP/maestro-unzip/maestro/." "$HOME/.maestro/"
+      - run: echo "$HOME/.maestro/bin" >> "$GITHUB_PATH"
+      - name: Pin the runtime version for Metro
+        working-directory: apps/ios
+        run: cp e2e/ci/app.config.ci.cjs app.config.js
+      - name: Start Metro (live Google)
+        working-directory: apps/ios
+        env:
+          EXPO_RUNTIME_VERSION_PIN: ${{ steps.fingerprint.outputs.hash }}
+          # Inlined into this dev bundle at Metro start: the real API signed
+          # in as the live account, refreshed with the desktop OAuth client,
+          # polling every 30 s so a flow can watch a pull land.
+          EXPO_PUBLIC_CALENDAR_GOOGLE: live
+          EXPO_PUBLIC_CALENDAR_GOOGLE_LIVE_CLIENT_ID: ${{ secrets.GOOGLE_DESKTOP_CLIENT_ID }}
+          EXPO_PUBLIC_CALENDAR_GOOGLE_LIVE_CLIENT_SECRET: ${{ secrets.GOOGLE_DESKTOP_CLIENT_SECRET }}
+          EXPO_PUBLIC_CALENDAR_GOOGLE_LIVE_EMAIL: ${{ secrets.GOOGLE_LIVE_EMAIL }}
+          EXPO_PUBLIC_CALENDAR_GOOGLE_LIVE_REFRESH_TOKEN: ${{ secrets.GOOGLE_LIVE_REFRESH_TOKEN }}
+          EXPO_PUBLIC_CALENDAR_SYNC_INTERVAL_MS: '30000'
+        run: |
+          nohup pnpm exec expo start --port 8081 > "$RUNNER_TEMP/metro.log" 2>&1 &
+          for _ in $(seq 1 60); do
+            curl -fsS http://127.0.0.1:8081/status >/dev/null 2>&1 && break
+            sleep 2
+          done
+          curl -fsS http://127.0.0.1:8081/status
+          BUNDLE_URL=$(curl -fsS -H 'expo-platform: ios' http://127.0.0.1:8081/ | jq -r '.launchAsset.url')
+          echo "warming $BUNDLE_URL"
+          time curl -fsS -o /dev/null --max-time 900 "$BUNDLE_URL"
+          grep -a "Bundled" "$RUNNER_TEMP/metro.log" | tail -1
+          xcrun simctl terminate "$SIMULATOR_UDID" com.apple.mobilesafari || true
+      - name: This run's scratch calendar, list and access token
+        # Exports MAESTRO_LIVE_* to the job env (the token masked); the
+        # Maestro CLI hands every MAESTRO_* variable to each flow.
+        run: node scripts/google-live-scratch.ts setup --suffix ios --github-env
+      - name: Bootstrap the dev client onto Metro
+        working-directory: apps/ios
+        run: maestro test --device "$SIMULATOR_UDID" e2e/flows/00-devclient-bootstrap.yaml
+      - name: First-time device permissions
+        working-directory: apps/ios
+        run: maestro test --device "$SIMULATOR_UDID" e2e/flows/04a-device-permissions.yaml
+      - name: Live flows
+        working-directory: apps/ios
+        # Explicit files keep this order (a directory's order is not
+        # deterministic): the calendar must exist before anything is
+        # written into it.
+        run: |
+          maestro test --device "$SIMULATOR_UDID" \
+            e2e/live/flows/01-live-calendar.yaml \
+            e2e/live/flows/02-live-create-edit-delete.yaml \
+            e2e/live/flows/03-live-resize.yaml \
+            e2e/live/flows/04-live-conflicts.yaml \
+            e2e/live/flows/05-live-tasks.yaml \
+            e2e/live/flows/06-live-pull.yaml
+      - name: Delete this run's scratch calendar and list
+        if: always()
+        run: node scripts/google-live-scratch.ts teardown
+      - name: Wait for a simulator crash report
+        if: failure()
+        run: |
+          for _ in $(seq 1 24); do
+            ls ~/Library/Logs/DiagnosticReports/Solunivo*.ips >/dev/null 2>&1 && break
+            sleep 5
+          done
+          for f in ~/Library/Logs/DiagnosticReports/Solunivo*.ips; do
+            [ -e "$f" ] || { echo "no Solunivo crash report"; break; }
+            echo "== $f"
+            tail -n +2 "$f" | jq -r '
+              "exception: \(.exception // {} | tostring)",
+              "termination: \(.termination // {} | tostring)",
+              (.threads[.faultingThread // 0] // {} | .frames // [] | .[0:25][]
+                | "  \(.imageIndex) \(.symbol // "?") + \(.imageOffset // 0)")
+            ' 2>/dev/null || head -c 4000 "$f"
+          done
+      - name: Upload Maestro diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: google-live-ios-diagnostics-${{ github.run_attempt }}
+          path: |
+            ~/.maestro/tests/
+            ${{ runner.temp }}/metro.log
+            ~/Library/Logs/DiagnosticReports/Solunivo*.ips
+          retention-days: 7
+          if-no-files-found: ignore
