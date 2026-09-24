@@ -102,6 +102,9 @@ export function EventEditForm({ model }: { model: ReturnType<typeof useEventEdit
       <>
         <TextInput
           autoFocus={!existing}
+          // The system ⓧ ("Clear text"): renaming starts from an empty field
+          // instead of deleting the old title character by character.
+          clearButtonMode="while-editing"
           editable={!readOnly}
           onChangeText={setTitle}
           placeholder="Title"

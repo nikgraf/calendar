@@ -7,6 +7,7 @@ import {
   GcalEvent,
   GcalEventsPage,
   type GcalEventInput,
+  type GcalEventPatch,
 } from './apiTypes.ts';
 import { NotFoundError } from './errors.ts';
 import { TokenManager } from './oauth/tokenManager.ts';
@@ -94,7 +95,7 @@ export interface GoogleCalendarClientShape {
     readonly accountId: string;
     readonly baseEtag?: string | undefined;
     readonly calendarId: string;
-    readonly event: Partial<GcalEventInput>;
+    readonly event: GcalEventPatch;
     readonly eventId: string;
     /** Google emails guests about the change ('none' suppresses it); ignored without attendees. */
     readonly sendUpdates?: GuestNotificationMode | undefined;

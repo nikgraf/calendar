@@ -16,6 +16,7 @@ import type {
   GcalEventInput,
   GcalReminders,
   GcalTime,
+  GcalTimePatch,
 } from './apiTypes.ts';
 import { Schema } from 'effect';
 
@@ -234,6 +235,24 @@ export const toGcalEventInput = (event: EventRecord): GcalEventInput => ({
       },
   summary: event.title,
 });
+
+/**
+ * start/end for a PATCH. Google merges nested fields into the stored time,
+ * so a timed → all-day edit that sends only `date` keeps the old
+ * `dateTime` and is refused (400 "Invalid start time"); the form the event
+ * no longer uses goes out as null. An insert needs none of this.
+ */
+export const toGcalTimesPatch = (
+  event: EventRecord,
+): { readonly end: GcalTimePatch; readonly start: GcalTimePatch } => {
+  const { end, start } = toGcalEventInput(event);
+  return event.isAllDay
+    ? {
+        end: { ...end, dateTime: null, timeZone: null },
+        start: { ...start, dateTime: null, timeZone: null },
+      }
+    : { end: { ...end, date: null }, start: { ...start, date: null } };
+};
 
 const toGcalReminders = (reminders: EventReminders): GcalEventInput['reminders'] => ({
   overrides: reminders.overrides.map((override) => ({

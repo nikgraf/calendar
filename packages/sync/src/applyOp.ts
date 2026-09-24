@@ -22,6 +22,7 @@ import {
   toGcalGeoPatch,
   toGcalRemindersInsert,
   toGcalRemindersPatch,
+  toGcalTimesPatch,
 } from '@calendar/google';
 import { Cause, Clock, Effect } from 'effect';
 
@@ -485,6 +486,7 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
             // edit dropped them, and not at all otherwise.
             event: {
               ...toGcalEventInput(op.payload),
+              ...toGcalTimesPatch(op.payload),
               ...toGcalGeoPatch(op.payload, op.geoCleared === true),
               ...toGcalRemindersPatch(op.payload, op.remindersChanged === true),
               ...(op.attendeesChanged ? { attendees: toGcalAttendees(op.payload) } : {}),
