@@ -2,10 +2,8 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { unavailableAppleCalendarClient } from '@calendar/apple-calendar';
-import { Account, TokenSet } from '@calendar/core';
-import { AccountRepo, reposLayer, runMigrations } from '@calendar/db';
+import { reposLayer, runMigrations } from '@calendar/db';
 import {
-  GOOGLE_SCOPES,
   GoogleCalendarClient,
   GoogleOAuthConfig,
   GooglePeopleClient,
@@ -19,9 +17,9 @@ import {
 import { RemindersClient, unavailableRemindersClient } from '@calendar/reminders';
 import { SqliteClient } from '@effect/sql-sqlite-node';
 import { Context, Data, Effect, Layer, ManagedRuntime } from 'effect';
-import { FetchHttpClient, type HttpClient } from 'effect/unstable/http';
+import { LIVE_ACCOUNT_ID, liveWireLayer } from './liveWire.ts';
+import type { HttpClient } from 'effect/unstable/http';
 import { layer as reactivityLayer } from 'effect/unstable/reactivity/Reactivity';
-import type { SqlError } from 'effect/unstable/sql/SqlError';
 import { appleCalendarServicesLayer } from '../appleCalendarEvents.ts';
 import { SyncEngine } from '../engine.ts';
 import { EventMutations } from '../mutations.ts';
@@ -38,7 +36,6 @@ import {
   getTask,
   insertEvent,
   insertTask,
-  LIVE_CALENDAR_SCOPE,
   listTasks,
   type LiveCalendarListEntry,
   type LiveEvent,
@@ -49,6 +46,12 @@ import {
   sweep,
 } from './liveScratchRest.ts';
 
+export {
+  LIVE_ACCOUNT_ID,
+  type LiveAccountSeed,
+  liveWireLayer,
+  seedLiveAccount,
+} from './liveWire.ts';
 export {
   LIVE_CALENDAR_SCOPE,
   type LiveCalendarListEntry,
@@ -70,9 +73,6 @@ export {
  * `scripts/google-live-token.mjs`. See docs/google-sync-and-testing.md.
  */
 
-/** The seeded account row; the token store holds the refresh token under it. */
-export const LIVE_ACCOUNT_ID = 'acc-live';
-
 export interface LiveGoogleConfig {
   readonly clientId: string;
   readonly clientSecret?: string | undefined;
@@ -82,14 +82,6 @@ export interface LiveGoogleConfig {
   readonly refreshToken: string;
   /** Distinguishes this run's scratch resources: `gh-<run>-<attempt>` or `local-<pid>`. */
   readonly runTag: string;
-}
-
-/** What the desktop and iOS hosts read to sign the live account in (JSON on desktop, env on iOS). */
-export interface LiveAccountSeed {
-  readonly contactsEnabled: boolean;
-  readonly email: string;
-  readonly refreshToken: string;
-  readonly tasksEnabled: boolean;
 }
 
 const REPO_ROOT = fileURLToPath(new URL('../../../../', import.meta.url));
@@ -128,35 +120,6 @@ export const liveGoogleConfigFromEnv = (): LiveGoogleConfig => {
   };
 };
 
-/** One store per refresh token: every layer built from a config shares the refreshed access token. */
-const stores = new Map<string, Layer.Layer<TokenStore>>();
-
-/**
- * The real wire plus a memory token store that already holds the live
- * account's refresh token. `expiresAt: 0` makes the first request refresh.
- */
-export const liveWireLayer = (
-  seed: Pick<LiveGoogleConfig, 'refreshToken'>,
-  accountId = LIVE_ACCOUNT_ID,
-): Layer.Layer<HttpClient.HttpClient | TokenStore> => {
-  let store = stores.get(`${accountId}:${seed.refreshToken}`);
-  if (!store) {
-    store = TokenStore.layerMemoryWith([
-      [
-        accountId,
-        new TokenSet({
-          accessToken: '',
-          expiresAt: 0,
-          refreshToken: seed.refreshToken,
-          scopes: [...GOOGLE_SCOPES, LIVE_CALENDAR_SCOPE],
-        }),
-      ],
-    ]);
-    stores.set(`${accountId}:${seed.refreshToken}`, store);
-  }
-  return Layer.mergeAll(FetchHttpClient.layer, store);
-};
-
 /** The wire, the OAuth client and a TokenManager, with guest mail muted. */
 export const liveGoogleLayer = (
   config: LiveGoogleConfig,
@@ -172,27 +135,6 @@ export const liveGoogleLayer = (
       ),
     ),
   );
-
-/** Upserts the live account row (idempotent), like `seedFixtureAccounts`. */
-export const seedLiveAccount = (
-  seed: Pick<LiveAccountSeed, 'email'> & Partial<LiveAccountSeed>,
-  accountId = LIVE_ACCOUNT_ID,
-): Effect.Effect<void, SqlError, AccountRepo> =>
-  Effect.gen(function* () {
-    const accounts = yield* AccountRepo;
-    const existing = yield* accounts.get(accountId);
-    yield* accounts.upsert(
-      new Account({
-        contactsEnabled: seed.contactsEnabled ?? false,
-        createdAt: existing?.createdAt ?? Date.now(),
-        email: seed.email,
-        id: accountId,
-        provider: 'google',
-        status: 'ok',
-        tasksEnabled: seed.tasksEnabled ?? true,
-      }),
-    );
-  });
 
 export const scratchName = (config: Pick<LiveGoogleConfig, 'runTag'>, suffix?: string): string =>
   scratchNameFor(config.runTag, suffix);

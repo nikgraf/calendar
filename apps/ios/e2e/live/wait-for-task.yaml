@@ -1,0 +1,22 @@
+appId: com.solunivo.app
+name: Poll Google until this run's task titled TITLE exists, with STATUS when given (shared) → output.task
+---
+- evalScript: ${output.taskMatched = false}
+- repeat:
+    times: 15
+    while:
+      true: ${!output.taskMatched}
+    commands:
+      - runScript:
+          file: scripts/findTask.js
+          env:
+            TITLE: ${TITLE}
+      - evalScript: "${output.taskMatched = output.found && (typeof STATUS === 'undefined' || STATUS === '' || output.task.status === STATUS)}"
+      - runFlow:
+          when:
+            true: ${!output.taskMatched}
+          commands:
+            - runFlow: pause.yaml
+- assertTrue:
+    condition: ${output.taskMatched}
+    label: 'the task "${TITLE}" is on Google as expected'

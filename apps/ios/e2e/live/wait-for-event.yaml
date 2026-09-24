@@ -1,0 +1,23 @@
+appId: com.solunivo.app
+name: Poll Google until this run's event titled TITLE exists (shared) → output.event
+---
+# The app pushes right after Save; Google's list catches up within a
+# second or two. Fifteen tries two seconds apart is generous.
+- evalScript: ${output.found = false}
+- repeat:
+    times: 15
+    while:
+      true: ${!output.found}
+    commands:
+      - runScript:
+          file: scripts/findEvent.js
+          env:
+            TITLE: ${TITLE}
+      - runFlow:
+          when:
+            true: ${!output.found}
+          commands:
+            - runFlow: pause.yaml
+- assertTrue:
+    condition: ${output.found}
+    label: 'the event "${TITLE}" landed on Google'

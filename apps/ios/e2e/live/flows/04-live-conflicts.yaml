@@ -1,0 +1,76 @@
+appId: com.solunivo.app
+name: Live Google — a rename behind the app's back parks the edit; Take theirs, then Keep mine
+tags:
+  - live
+---
+# Every title the event takes shares the prefix the block pattern matches.
+- runFlow: ../../common/launch.yaml
+- runFlow: ../../common/open-new-event.yaml
+- scrollUntilVisible:
+    element:
+      text: ${MAESTRO_LIVE_CALENDAR_NAME}
+    direction: DOWN
+- tapOn: ${MAESTRO_LIVE_CALENDAR_NAME}
+- scrollUntilVisible:
+    element:
+      id: 'event-title'
+    direction: UP
+- tapOn:
+    id: 'event-title'
+- inputText: 'live-${MAESTRO_LIVE_RUN_TAG}-ios-c-start'
+- tapOn:
+    id: 'event-save'
+- extendedWaitUntil:
+    notVisible: 'New Event'
+    timeout: 20000
+- extendedWaitUntil:
+    visible: 'live-${MAESTRO_LIVE_RUN_TAG}-ios-c-start.*'
+    timeout: 10000
+- runFlow:
+    file: ../wait-for-event.yaml
+    env:
+      TITLE: 'live-${MAESTRO_LIVE_RUN_TAG}-ios-c-start'
+- evalScript: ${output.eventId = output.event.id}
+
+# Round 1: Take theirs — Google's title shows, the queue is empty.
+- runFlow:
+    file: ../conflict-round.yaml
+    env:
+      BLOCK: 'live-${MAESTRO_LIVE_RUN_TAG}-ios-c-.*'
+      CHOICE: 'Take theirs'
+      EVENT_ID: ${output.eventId}
+      MINE: 'live-${MAESTRO_LIVE_RUN_TAG}-ios-c-mine1'
+      THEIRS: 'live-${MAESTRO_LIVE_RUN_TAG}-ios-c-google1'
+- extendedWaitUntil:
+    visible: 'live-${MAESTRO_LIVE_RUN_TAG}-ios-c-google1.*'
+    timeout: 30000
+- assertNotVisible:
+    id: 'pending-badge'
+
+# Round 2: Keep mine — re-sent without If-Match, Google takes it.
+- runFlow:
+    file: ../conflict-round.yaml
+    env:
+      BLOCK: 'live-${MAESTRO_LIVE_RUN_TAG}-ios-c-.*'
+      CHOICE: 'Keep mine'
+      EVENT_ID: ${output.eventId}
+      MINE: 'live-${MAESTRO_LIVE_RUN_TAG}-ios-c-mine2'
+      THEIRS: 'live-${MAESTRO_LIVE_RUN_TAG}-ios-c-google2'
+- runFlow:
+    file: ../wait-for-event-state.yaml
+    env:
+      EVENT_ID: ${output.eventId}
+      EXPECT: 'live-${MAESTRO_LIVE_RUN_TAG}-ios-c-mine2'
+- extendedWaitUntil:
+    notVisible:
+      id: 'pending-badge'
+    timeout: 30000
+
+# Clean up.
+- tapOn: 'live-${MAESTRO_LIVE_RUN_TAG}-ios-c-mine2.*'
+- assertVisible: 'Edit Event'
+- tapOn:
+    id: 'event-delete'
+- extendedWaitUntil:
+    notVisible: 'live-${MAESTRO_LIVE_RUN_TAG}-ios-c-.*'
+    timeout: 20000

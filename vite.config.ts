@@ -59,6 +59,24 @@ export default defineConfig({
           'no-console': 'off',
         },
       },
+      {
+        // Maestro runScript files: GraalJS with `http`, `json`, `output`
+        // and every flow/env variable as bare globals.
+        files: ['apps/ios/e2e/live/scripts/*.js'],
+        rules: {
+          'no-undef': 'off',
+        },
+      },
+      {
+        env: {
+          node: true,
+        },
+        // Repo CLI scripts talk through stdout/stderr by design.
+        files: ['scripts/*.mjs', 'scripts/*.ts'],
+        rules: {
+          'no-console': 'off',
+        },
+      },
     ],
   },
   staged: {
