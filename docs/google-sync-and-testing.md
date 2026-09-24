@@ -28,6 +28,12 @@ invariants.
   for entries other than your own are ignored — RSVP therefore sends an
   attendees-only body and deliberately omits If-Match (a response should
   not lose to unrelated content edits).
+- **PATCH merges `start`/`end` field by field** (verified live
+  2026-09-24): a timed → all-day edit that sends only `{date}` keeps the
+  stored `dateTime`, and a time carrying both is a 400 "Invalid start
+  time". `toGcalTimesPatch` sends the unused form as null
+  (`{date, dateTime: null, timeZone: null}` and the reverse); the fake
+  merges and refuses the same way.
 - **Attendee editing**: `attendees` on `EventDraft`/`UpdateEventChanges`
   is a replacement guest list (`[]` clears). Google **replaces the whole
   array** on write and our copy lacks fields we never model (`optional`,
@@ -163,6 +169,171 @@ core on the path. The fake stamps writes with the wall clock (`live`) so
 the device-time `updatedMin` watermark clears them. Desktop
 `taskConvertGoogle.e2e.ts` and iOS `16-task-convert.yaml` use it to watch
 a queued task create push and its `local-…` id become a server id.
+
+### Live Google suite (real account)
+
+The fake pins what we _believe_ Google does; the live suite checks it
+against Google itself, signed in as a dedicated throwaway account, at
+three levels: the Node engine suite (`packages/sync/src/live/*.live.ts`
+— the real clients, request core, `SyncEngine` and `EventMutations` over
+`FetchHttpClient` with a fresh in-memory database per test), the desktop
+spec `apps/desktop/e2e/googleLive.e2e.ts` (the built Electron app signed
+in as that account) and the iOS flows under `apps/ios/e2e/live/`. None of
+them run in `pnpm test`, `pnpm test:e2e` or `pnpm test:e2e:ios`: they
+need the token, they write to the account, and they take minutes.
+`.github/workflows/google-live.yml` runs all three nightly when `main`
+moved since the last completed run, on `workflow_dispatch`, and on PRs
+labelled `google-live`, one run at a time (`concurrency: google-live`).
+
+- **Setup (once).** A fresh Gmail account (sign into Calendar and Tasks
+  once; unsubscribe the holiday calendars — every pass lists every
+  calendar). The GCP project's OAuth consent screen must be **In
+  production**: in Testing status refresh tokens expire after seven days.
+  Then `node scripts/google-live-token.mjs --write` — the desktop OAuth
+  client (`GOOGLE_DESKTOP_CLIENT_ID/SECRET` or
+  `apps/desktop/google-oauth.local.json`), a loopback PKCE flow, the
+  app's scopes plus the full `calendar` scope (calendars.insert/delete
+  need it). It writes the gitignored `google-live.local.json` and prints
+  the `gh secret set` lines for `GOOGLE_LIVE_EMAIL` and
+  `GOOGLE_LIVE_REFRESH_TOKEN`; the workflow reuses
+  `GOOGLE_DESKTOP_CLIENT_ID/SECRET` and fails red when any is missing.
+  The refresh token is bound to the desktop client, so iOS refreshes it
+  with that client too (`EXPO_PUBLIC_CALENDAR_GOOGLE_LIVE_CLIENT_ID/
+SECRET`), not with `app.json`'s iOS client.
+- **Isolation.** Every run gets its own scratch calendars and task lists,
+  named `e2e-<unixSeconds>-<runTag>[-suffix]` (`GOOGLE_LIVE_RUN_TAG` —
+  `gh-<run>-<attempt>` on CI, `local-<pid>` locally), **one set per job**:
+  the Node job's `live/globalSetup.ts` creates two calendars and two lists
+  once and hands them to every file (`inject('liveScratch')`), the desktop
+  spec and the iOS sidecar create one calendar and one list each; only
+  `calendarList.live.ts` creates (and deletes) its own, since that is what
+  it tests — about five calendars per full run. Google caps secondary-
+  calendar creation per account and day (403 `usageLimits`/`quotaExceeded`
+  "Calendar usage limits exceeded" after ~40 on a debugging day, blocking
+  creation for up to a day) — a calendar per file did not scale. Each job
+  deletes its set at the end and first sweeps anything older than six
+  hours that a crashed run left behind (`sweep`; younger ones may belong
+  to a run in flight — a local run overlapping CI is fine).
+  Titles carry `live-<runTag>-…`; tests assert on their own ids and
+  never touch the primary calendar. Guests are `guest-<runTag>@example.com`
+  (reserved, never delivered) and every write with guests goes out with
+  `sendUpdates=none`: `GuestNotifications` (`packages/google`, a
+  `Context.Reference` defaulting to `'all'`) is `'none'` in the live
+  layers only.
+- **Recipe.** `packages/sync/src/testing/liveScratchRest.ts` is the
+  admin side as plain `fetch` (no Effect, no workspace imports, so Node
+  24 runs it unbundled): scratch calendars/lists, the sweep, and "the
+  other device" — raw event/task writes without If-Match. `liveWire.ts`
+  is the host half (`liveWireLayer`: `FetchHttpClient` + a memory
+  `TokenStore` holding the refresh token with `expiresAt: 0`, so the very
+  first request goes through the `TokenManager` refresh; `seedLiveAccount`)
+  — free of Node imports so the iOS bundle can carry it. `liveGoogle.ts`
+  adds the Effect `LiveScratch` service over the app's own
+  `TokenManager`, `liveEngineLayer` (engine.http.test.ts's recipe with the
+  live wire) and `makeScratchRuntime` for `beforeAll`/`afterAll`. Tests
+  use `it.live` (real `Clock` — the tasks watermark, `passStartedAt`
+  and token expiry all read it); never `TestClock`. `vite.config.ts`
+  switches on `GOOGLE_LIVE=1`: only `packages/sync/src/live/**/*.live.ts`,
+  one file at a time, 120 s timeouts, no retry (a retry repeats real
+  writes).
+- **What the Node files pin.** `events`: the events sync token and an
+  `idle` state, client ids and the ack's etag, a re-posted client id →
+  409, an incremental pass applying a rename and a cancelled tombstone,
+  PATCH-merge (a title-only patch keeps description/location), delete
+  with If-Match (then `events.get` answers `cancelled` or 404/410), the
+  geo extended-property keys (insert, untouched by an unrelated edit,
+  nulled by a location change), reminder overrides replaced whole, the
+  calendarList colour patch. `calendarList`: a calendar created after
+  the first pass arrives incrementally and its deletion cascades (rows,
+  events, `events:<id>` sync state). `recurring`: a weekly master, an
+  instance edit under `<master>_<basetime>` with `recurringEventId`, a
+  cancelled instance the pull keeps hidden, this-and-following (UNTIL
+  master + new master), a series rename — which Google copies onto
+  existing exceptions, overridden titles included (the local override
+  row catches up on the next pull). `move`:
+  `events.move` keeps the id and leaves a tombstone, an edit queued
+  before a move lands after it in the destination, a master takes its
+  exception along. `attendees`: an API insert keeps the guest list as
+  sent — Google does not add the organizer as an attendee (the web UI
+  does); the organizer is the calendar itself (`organizer.self`), so the
+  app refuses an RSVP there (`NotAttendeeError`); a title-only edit keeps
+  guests, `attendees: []` removes them, a content edit on a stale etag
+  parks. A guest-side RSVP needs a second account to invite this one (an
+  invitation from the account's own calendar never reaches its primary),
+  so that path stays on the fake. `conflicts`: `parkedEdit` against Google
+  (park with Google's copy, pull leaves the local version, take theirs,
+  keep mine without If-Match, a parked delete, an edit of a deleted event
+  restored under a new id). `tasks`: both lists, temp id → server id,
+  date-only due, complete/uncomplete, the watermark pass picking a rename
+  and a deleted tombstone (`syncUntil`: `updated` stamps can lag),
+  adopt-before-retry (an identical task inserted "by the first attempt"
+  is adopted, not duplicated — `noYield` stamps the op before the drain),
+  a copy-then-delete move. `people`: both tiers finish with a sync token
+  on an empty address book (`GOOGLE_LIVE_BIRTHDAY_NAME` names a contact
+  with a birthday when one was added by hand). Not reachable on demand
+  and therefore fake-only: 410 sync-token expiry, People
+  `EXPIRED_SYNC_TOKEN`, 403 insufficient scope, 429/5xx, paging.
+- **Desktop.** `CALENDAR_GOOGLE=live` + `CALENDAR_GOOGLE_LIVE=<json>`
+  (`{email, refreshToken, tasksEnabled, contactsEnabled}` — the harness
+  writes it into the run's temp profile, mode 600, deleted with it) and
+  `CALENDAR_SYNC_INTERVAL_MS` (`SyncInterval`, a `Context.Reference` in
+  `engine.ts`; the spec uses 10 s so a pull lands inside a poll). The
+  spec always sets `select[aria-label="Calendar"]` / `"Task list"` to the
+  run's own — a new event defaults to the last-used or first writable
+  calendar, which on a real account is the primary. For a 412 it fills
+  the sheet first and patches Google just before Save (the app's own
+  poll could otherwise refresh the etag and defuse the conflict), and
+  retries the round when a poll still won. Run:
+  `E2E=1 CALENDAR_E2E_GOOGLE=live pnpm exec vp test run apps/desktop/e2e/googleLive.e2e.ts`.
+- **iOS.** Metro must start with `EXPO_PUBLIC_CALENDAR_GOOGLE=live`, the
+  four `EXPO_PUBLIC_CALENDAR_GOOGLE_LIVE_*` values and
+  `EXPO_PUBLIC_CALENDAR_SYNC_INTERVAL_MS=30000` (inlined at bundle
+  time — CI and local only, never an EAS update). The sidecar
+  `scripts/google-live-scratch.ts setup --suffix ios` sweeps, creates the
+  run's calendar and list, mints a one-hour access token and exports
+  them as `MAESTRO_LIVE_*` (`--github-env` masks the token; `--export`
+  prints shell lines) — the Maestro CLI injects every `MAESTRO_*` shell
+  variable into each flow, and the refresh token never reaches Maestro.
+  The flows (`e2e/live/flows/01…05`, tag `live`, outside `e2e/flows/` so
+  the default suite never picks them up) run as explicit files in that
+  order; behind-the-back edits and Google-side checks are `runScript`s
+  (`e2e/live/scripts/*.js`, GraalJS with `http`, `json`, `output`)
+  polled through `wait-for-event*.yaml` / `wait-for-task.yaml`, paced by
+  `scripts/pause.js` (a spin — GraalJS has no timers, and an optional
+  wait for a never-visible element returns after ~0.5 s, not its
+  timeout: a "72 s" wait measured 19.8 s). Blocks are opened through
+  `open-event.yaml` (centre, tap, repeat until "Edit Event" — a block
+  outside the grid's viewport counts as visible and swallows the tap),
+  titles are cleared with the field's system ⓧ ("Clear text": `eraseText`
+  only deletes what sits before the cursor, which the tap puts
+  mid-title), and the pulled event in 05 is all-day so it shows in the
+  lane whatever the hour. Calendar and list are picked by their unique names
+  through `pick-row.yaml` (rows share `id: calendar-option` /
+  `task-list-option`; a row reads `<name>` or, selected, `<name>, ✓`, so
+  the match is `<name>.*`; the row is centred first and the tap repeats
+  until the check mark shows — a row clipped at the sheet's edge counts
+  as visible and swallowed the tap on the first CI run, sending the task
+  to the default list). The sweep also deletes stale `live-…` tasks from
+  the account's own lists for that reason. Maestro 2.10
+  has no drag command, `longPressOn` releases after its press and a
+  `swipe` from an element always starts at its centre, so neither the
+  block's long-press-then-pan move nor its bottom-edge resize can be
+  driven: 02 changes the event's shape through the all-day switch
+  instead (the drag math has unit tests and the desktop live spec).
+  `conflict-round.yaml` retries a round whose banner a poll defused. The
+  chip's open/done glyph is not in the accessibility tree, so 04 proves a
+  server-side reopen behaviourally: after two polls one tap must complete
+  the task again on Google. Locally: `pnpm --filter @calendar/ios
+test:e2e:live` (dev client installed, Metro up with the live env;
+  `SIMULATOR_UDID` picks the device), which runs setup, the five flows
+  and teardown.
+- **Rate limits.** A full run writes fast enough that Google answers some
+  writes with 403 `rateLimitExceeded`; the op backs off (30 s, 60 s) like
+  in the app. `drain` in `live/support.ts` keeps draining until only
+  parked ops are left (two-minute cap), hence the 300 s live test timeout.
+- **Leaks.** Effect redacts `authorization` headers in logged causes; the
+  desktop token file lives only in the temp profile; the iOS bundle on
+  the CI simulator carries the secrets inlined (never shipped).
 
 ### Google People API (contacts cache)
 
@@ -435,6 +606,16 @@ Flakiness lessons (each caused a real CI failure — keep them enforced):
 - `ios.yml` (main + PRs): fingerprint-gated — TestFlight build when the
   native fingerprint changed, otherwise `eas update`; PRs get a `pr-<n>`
   preview channel.
+- `google-live.yml` (nightly-if-changed, `workflow_dispatch`, the
+  `google-live` PR label): the real-account suites — `live-node`
+  (ubuntu, `GOOGLE_LIVE=1`), `live-desktop` (macos-15, the one spec) and
+  `live-ios` (macos-26, the ios-e2e steps with a live Metro plus the
+  sidecar's setup/teardown around the five flows). `decide` fails red
+  without the secrets and, on the schedule, compares `github.sha` with
+  the last completed run's `headSha` (`gh run list`, `actions: read`) —
+  a skipped night still completes at that sha. `concurrency:
+google-live` keeps runs from overlapping on the one account. See "Live
+  Google suite" above.
 - Log lines may stringify effect causes containing HTTP requests; effect
   redacts auth headers (`"authorization":<redacted>` — verified), so
   tokens cannot leak into CI logs this way.

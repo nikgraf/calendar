@@ -160,6 +160,19 @@ export interface GcalEventInput {
   readonly summary: string;
 }
 
+/** start/end in a PATCH: Google merges the fields into the stored time; null removes one. */
+export interface GcalTimePatch {
+  readonly date?: string | null | undefined;
+  readonly dateTime?: string | null | undefined;
+  readonly timeZone?: string | null | undefined;
+}
+
+/** An events.patch body: any insert field, with times that can null the unused form. */
+export type GcalEventPatch = Omit<Partial<GcalEventInput>, 'end' | 'start'> & {
+  readonly end?: GcalTimePatch | undefined;
+  readonly start?: GcalTimePatch | undefined;
+};
+
 export const GcalTaskList = Schema.Struct({
   id: Schema.String,
   title: Schema.optional(Schema.String),

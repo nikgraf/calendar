@@ -30,6 +30,32 @@ interface StoredTask {
 }
 
 type ExtendedProperties = GcalEvent['extendedProperties'];
+type EventTime = GcalEvent['start'];
+
+/**
+ * PATCH semantics of start/end: nested fields merge into the stored time,
+ * and one sent as null is removed — so turning a timed event all-day has
+ * to null `dateTime` (and `timeZone`) explicitly. Verified on Google
+ * 2026-09-24: a time with both `date` and `dateTime` is a 400 "Invalid
+ * start time".
+ */
+const mergeEventTime = (stored: EventTime, patch: unknown): EventTime => {
+  if (patch === undefined || patch === null || typeof patch !== 'object') {
+    return stored;
+  }
+  const merged: Record<string, string | undefined> = { ...stored };
+  for (const [key, value] of Object.entries(patch)) {
+    if (typeof value === 'string') {
+      merged[key] = value;
+    } else {
+      delete merged[key];
+    }
+  }
+  return merged as EventTime;
+};
+
+const invalidTime = (time: EventTime): boolean =>
+  time !== undefined && time.date !== undefined && time.dateTime !== undefined;
 
 /**
  * PATCH semantics of extendedProperties: each map merges key by key into
@@ -321,14 +347,21 @@ export class FakeGoogle {
         return reply(412, { error: { message: 'Precondition Failed' } });
       }
       if (request.method === 'PATCH') {
+        const start = mergeEventTime(existing.event.start, body?.['start']);
+        const end = mergeEventTime(existing.event.end, body?.['end']);
+        if (invalidTime(start) || invalidTime(end)) {
+          return reply(400, { error: { code: 400, message: 'Invalid start time.' } });
+        }
         this.putEvent(calendarId, {
           ...existing.event,
           ...(body as Partial<GcalEvent>),
+          end,
           extendedProperties: mergeExtendedProperties(
             existing.event.extendedProperties,
             body?.['extendedProperties'],
           ),
           id: eventId,
+          start,
         });
         return reply(200, this.eventOf(calendarId, eventId));
       }

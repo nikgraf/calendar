@@ -1,0 +1,29 @@
+appId: com.solunivo.app
+name: Live Google — an event another device adds shows up through the poll
+tags:
+  - live
+---
+- runFlow: ../../common/launch.yaml
+# After the launch's own full pass, so only the 30 s poll can bring it in.
+# All-day today: the chip sits in the all-day lane at the top of the day
+# view whatever the hour (a timed event late in the day lands off-screen
+# or tomorrow).
+- runScript:
+    file: ../scripts/insertEvent.js
+    env:
+      ALL_DAY: 'true'
+      TITLE: 'live-${MAESTRO_LIVE_RUN_TAG}-ios-pulled'
+- extendedWaitUntil:
+    visible: 'live-${MAESTRO_LIVE_RUN_TAG}-ios-pulled'
+    timeout: 100000
+
+# Clean up.
+- runFlow:
+    file: ../open-event.yaml
+    env:
+      BLOCK: 'live-${MAESTRO_LIVE_RUN_TAG}-ios-pulled'
+- tapOn:
+    id: 'event-delete'
+- extendedWaitUntil:
+    notVisible: 'live-${MAESTRO_LIVE_RUN_TAG}-ios-pulled'
+    timeout: 20000

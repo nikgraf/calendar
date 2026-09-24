@@ -1094,3 +1094,54 @@ Performance:
       row a pull re-inserted), desktop e2e `conflicts.e2e.ts` on fixture
       Google. iOS has no Maestro flow for it (seeding a parked op there
       is not worth a 40-minute CI slot); verify on a device.
+
+### Live Google suite (2026-09-24)
+
+- [x] Tests against a real Google account — done (2026-09-24): the fake
+      pinned what we believed Google does; nothing checked it. Now three
+      opt-in suites sign in as a dedicated throwaway account over the real
+      API — the Node engine suite (`packages/sync/src/live`, eight files:
+      events, calendarList, recurring, move, attendees, conflicts, tasks,
+      People), the desktop spec `googleLive.e2e.ts` and six iOS Maestro
+      flows — and `google-live.yml` runs them nightly only when `main`
+      moved since the last completed run, on demand, or on the
+      `google-live` PR label, one run at a time. Decisions: the fixture
+      suites stay the PR gate, the live suites never run under `pnpm
+test`/`test:e2e`/`test:e2e:ios`; every file creates its own
+      `e2e-<ts>-<runTag>` calendar/list (one per file — Google throttles
+      calendar creation), deletes it after, and sweeps leftovers older
+      than six hours, so overlapping local and CI runs cannot collide;
+      `calendars.insert/delete` and `tasklists.insert/delete` stay
+      test-only (`liveScratchRest.ts`, plain fetch, shared by Node,
+      the Electron harness and the iOS sidecar) rather than widening the
+      app's clients and every stub; guests are `guest-<runTag>@example.com`
+      with `sendUpdates=none` through a new `GuestNotifications`
+      reference (default `'all'`, unchanged for the apps) instead of a
+      second real account; a `SyncInterval` reference lets the UI suites
+      watch a pull land; one refresh token serves all three suites, minted
+      by `scripts/google-live-token.mjs` against the desktop OAuth client
+      (which iOS therefore also uses in live mode — the iOS client's
+      custom-scheme redirect cannot be driven by a loopback script);
+      Maestro gets a one-hour access token from the sidecar as
+      `MAESTRO_LIVE_*`, never the refresh token; behind-the-back edits
+      run inside the flows via `runScript` + `http`. Not covered on iOS:
+      drag-to-move and resize (Maestro 2.10 has no drag command and a
+      swipe from an element starts at its centre). Secrets: `GOOGLE_LIVE_EMAIL`, `GOOGLE_LIVE_REFRESH_TOKEN`
+      (new) + `GOOGLE_DESKTOP_CLIENT_ID/SECRET`; the consent screen must
+      be In production or the token dies in seven days. First real run
+      (2026-09-24, 33/33 after fixes) settled: a stale-etag PATCH of a
+      deleted event and a stale If-Match DELETE are 412s (so both park);
+      Google rate-limits a burst of writes (403, handled by the op
+      backoff — the suite drains until only parked ops remain); an API
+      insert never adds the organizer to `attendees`, so the organizer
+      cannot RSVP and a guest-side RSVP needs a second account (left on
+      the fake); a series rename overwrites existing exceptions' titles
+      on Google, while the app's optimistic write leaves the local
+      override rows until the next pull (candidate follow-up). The iOS
+      flows found an app bug: turning a timed Google event all-day (or
+      back) sent a PATCH Google refused — it merges start/end fields, so
+      the old `dateTime` stayed next to the new `date` (400 "Invalid start
+      time") and the op was dropped, all-day here and timed on Google.
+      `toGcalTimesPatch` now nulls the unused form; the fake merges times
+      like Google and has a regression test. The iOS title field gained
+      the system clear button (also what the flows use to rename).

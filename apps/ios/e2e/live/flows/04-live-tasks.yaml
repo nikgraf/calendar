@@ -1,0 +1,80 @@
+appId: com.solunivo.app
+name: Live Google — a task in the run's list gets Google's id, completes there, and a server-side reopen reaches the chip
+tags:
+  - live
+---
+- runFlow: ../../common/launch.yaml
+- runFlow: ../../common/open-new-event.yaml
+- runFlow: ../../common/switch-to-task.yaml
+# Into the run's list (rows share id task-list-option; the title is unique).
+- runFlow:
+    file: ../pick-row.yaml
+    env:
+      NAME: ${MAESTRO_LIVE_LIST_NAME}
+- scrollUntilVisible:
+    element:
+      id: 'task-title'
+    direction: UP
+- tapOn:
+    id: 'task-title'
+- inputText: 'live-${MAESTRO_LIVE_RUN_TAG}-ios-task'
+- tapOn:
+    id: 'event-save'
+- extendedWaitUntil:
+    notVisible: 'New Task'
+    timeout: 20000
+- extendedWaitUntil:
+    visible: 'live-${MAESTRO_LIVE_RUN_TAG}-ios-task'
+    timeout: 10000
+
+# The create pushed: Google has it (its id replaced the temp id by now).
+- runFlow:
+    file: ../wait-for-task.yaml
+    env:
+      TITLE: 'live-${MAESTRO_LIVE_RUN_TAG}-ios-task'
+- evalScript: ${output.taskId = output.task.id}
+- assertTrue:
+    condition: ${output.task.status === 'needsAction'}
+    label: 'a new task is open on Google'
+
+# Check it off from the chip; Google completes it.
+- tapOn: 'Toggle live-${MAESTRO_LIVE_RUN_TAG}-ios-task'
+- runFlow:
+    file: ../wait-for-task.yaml
+    env:
+      STATUS: 'completed'
+      TITLE: 'live-${MAESTRO_LIVE_RUN_TAG}-ios-task'
+
+# Another device reopens it. The chip's open/done glyph is not exposed
+# to the accessibility tree (the toggle carries a fixed label), so the
+# pull is proven behaviourally: after two 30 s polls, one tap must
+# complete it again — had the app still believed it done, the tap would
+# have reopened it and Google would read needsAction.
+- runScript:
+    file: ../scripts/patchTask.js
+    env:
+      STATUS: 'needsAction'
+      TASK_ID: ${output.taskId}
+- runScript:
+    file: ../scripts/pause.js
+    env:
+      SECONDS: '75'
+- tapOn: 'Toggle live-${MAESTRO_LIVE_RUN_TAG}-ios-task'
+- runFlow:
+    file: ../wait-for-task.yaml
+    env:
+      STATUS: 'completed'
+      TITLE: 'live-${MAESTRO_LIVE_RUN_TAG}-ios-task'
+
+# Clean up through the sheet (the Delete button sits below the fold).
+- tapOn: 'live-${MAESTRO_LIVE_RUN_TAG}-ios-task'
+- assertVisible: 'Edit Task'
+- scrollUntilVisible:
+    element:
+      id: 'task-delete'
+    direction: DOWN
+- tapOn:
+    id: 'task-delete'
+- extendedWaitUntil:
+    notVisible: 'live-${MAESTRO_LIVE_RUN_TAG}-ios-task'
+    timeout: 20000

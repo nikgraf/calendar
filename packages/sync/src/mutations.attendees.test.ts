@@ -10,11 +10,12 @@ import {
   runMigrations,
 } from '@calendar/db';
 import {
-  type GcalEventInput,
+  type GcalEventPatch,
   GoogleCalendarClient,
   type GoogleCalendarClientShape,
   GoogleTasksClient,
   type GoogleTasksClientShape,
+  type GuestNotificationMode,
 } from '@calendar/google';
 import { RemindersClient, unavailableRemindersClient } from '@calendar/reminders';
 import { SqliteClient } from '@effect/sql-sqlite-node';
@@ -42,12 +43,12 @@ const noYield = <A, E, R>(effect: Effect.Effect<A, E, R>): Effect.Effect<A, E, R
   Effect.provideService(effect, Scheduler.MaxOpsBeforeYield, Number.MAX_SAFE_INTEGER);
 
 interface Sent {
-  readonly event: Partial<GcalEventInput>;
+  readonly event: GcalEventPatch;
   readonly kind: 'insert' | 'patch';
-  readonly sendUpdates: 'all' | undefined;
+  readonly sendUpdates: GuestNotificationMode | undefined;
 }
 
-const echo = (event: Partial<GcalEventInput>, id: string) =>
+const echo = (event: GcalEventPatch, id: string) =>
   Effect.succeed({
     attendees: event.attendees?.map((attendee) => ({ ...attendee })),
     end: { dateTime: '2026-07-08T11:00:00Z' },

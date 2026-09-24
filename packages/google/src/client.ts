@@ -7,6 +7,7 @@ import {
   GcalEvent,
   GcalEventsPage,
   type GcalEventInput,
+  type GcalEventPatch,
 } from './apiTypes.ts';
 import { NotFoundError } from './errors.ts';
 import { TokenManager } from './oauth/tokenManager.ts';
@@ -15,6 +16,19 @@ import { definedParams, makeRequestCore, type GoogleRequestError } from './reque
 const BASE_URL = 'https://www.googleapis.com/calendar/v3';
 
 export type { GoogleRequestError } from './requestCore.ts';
+
+/** Google's `sendUpdates`: whether guests get emailed about a change. */
+export type GuestNotificationMode = 'all' | 'none';
+
+/**
+ * The `sendUpdates` policy for writes to events with guests. The app never
+ * asks — guests are always told — so the default is 'all'; the live test
+ * suites provide 'none' so their throwaway guests never get mail.
+ */
+export const GuestNotifications = Context.Reference<GuestNotificationMode>(
+  'google/GuestNotifications',
+  { defaultValue: () => 'all' },
+);
 
 export interface ListEventsParams {
   readonly maxResults?: number | undefined;
@@ -45,8 +59,8 @@ export interface GoogleCalendarClientShape {
     readonly accountId: string;
     readonly calendarId: string;
     readonly event: GcalEventInput;
-    /** Google emails guests about the change; ignored without attendees. */
-    readonly sendUpdates?: 'all' | undefined;
+    /** Google emails guests about the change ('none' suppresses it); ignored without attendees. */
+    readonly sendUpdates?: GuestNotificationMode | undefined;
   }) => Effect.Effect<GcalEvent, GoogleRequestError>;
   readonly listCalendars: (params: {
     readonly accountId: string;
@@ -68,8 +82,8 @@ export interface GoogleCalendarClientShape {
     readonly calendarId: string;
     readonly destination: string;
     readonly eventId: string;
-    /** Google emails guests about the change; ignored without attendees. */
-    readonly sendUpdates?: 'all' | undefined;
+    /** Google emails guests about the change ('none' suppresses it); ignored without attendees. */
+    readonly sendUpdates?: GuestNotificationMode | undefined;
   }) => Effect.Effect<GcalEvent, GoogleRequestError>;
   readonly patchCalendarListEntry: (params: {
     readonly accountId: string;
@@ -81,10 +95,10 @@ export interface GoogleCalendarClientShape {
     readonly accountId: string;
     readonly baseEtag?: string | undefined;
     readonly calendarId: string;
-    readonly event: Partial<GcalEventInput>;
+    readonly event: GcalEventPatch;
     readonly eventId: string;
-    /** Google emails guests about the change; ignored without attendees. */
-    readonly sendUpdates?: 'all' | undefined;
+    /** Google emails guests about the change ('none' suppresses it); ignored without attendees. */
+    readonly sendUpdates?: GuestNotificationMode | undefined;
   }) => Effect.Effect<GcalEvent, GoogleRequestError>;
 }
 

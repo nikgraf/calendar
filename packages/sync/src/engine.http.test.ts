@@ -531,6 +531,47 @@ describe('SyncEngine over HTTP (fake Google)', () => {
     }).pipe(noYield, Effect.provide(engineLayer(google)));
   });
 
+  it.effect('a timed event turns all-day and back: the unused time form is nulled', () => {
+    // Google merges start/end fields on PATCH: sending only `date` kept the
+    // old `dateTime`, and Google answered 400 "Invalid start time" (seen
+    // on the first live iOS run) — the op was dropped, the row stayed
+    // all-day here and timed on Google.
+    const google = newFake();
+    google.putEvent('cal-1', timed('a', 9));
+    return Effect.gen(function* () {
+      yield* seedAccount(false);
+      const engine = yield* SyncEngine;
+      const mutations = yield* EventMutations;
+      yield* engine.syncAll();
+
+      yield* mutations.updateEvent({
+        accountId: 'acc-1',
+        calendarId: 'cal-1',
+        changes: { endDate: '2026-07-03', isAllDay: true, startDate: '2026-07-02' },
+        eventId: 'a',
+      });
+      yield* mutations.processPendingOps();
+      expect(yield* (yield* PendingOpRepo).listAll()).toEqual([]);
+      expect(google.eventOf('cal-1', 'a')?.start).toEqual({ date: '2026-07-02' });
+      expect(google.eventOf('cal-1', 'a')?.end).toEqual({ date: '2026-07-03' });
+
+      yield* mutations.updateEvent({
+        accountId: 'acc-1',
+        calendarId: 'cal-1',
+        changes: {
+          endUtc: Date.parse('2026-07-02T11:00:00Z'),
+          isAllDay: false,
+          startUtc: Date.parse('2026-07-02T10:00:00Z'),
+        },
+        eventId: 'a',
+      });
+      yield* mutations.processPendingOps();
+      expect(yield* (yield* PendingOpRepo).listAll()).toEqual([]);
+      expect(google.eventOf('cal-1', 'a')?.start?.date).toBeUndefined();
+      expect(google.eventOf('cal-1', 'a')?.start?.dateTime).toBe('2026-07-02T10:00:00Z');
+    }).pipe(noYield, Effect.provide(engineLayer(google)));
+  });
+
   it.effect('a local create posts the client id and the response acks the row', () => {
     const google = newFake();
     return Effect.gen(function* () {

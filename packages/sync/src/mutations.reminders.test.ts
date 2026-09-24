@@ -16,7 +16,8 @@ import {
   runMigrations,
 } from '@calendar/db';
 import {
-  type GcalEventInput,
+  type GcalEventPatch,
+  type GcalTimePatch,
   GoogleCalendarClient,
   type GoogleCalendarClientShape,
   GoogleTasksClient,
@@ -44,20 +45,24 @@ const noYield = <A, E, R>(effect: Effect.Effect<A, E, R>): Effect.Effect<A, E, R
   Effect.provideService(effect, Scheduler.MaxOpsBeforeYield, Number.MAX_SAFE_INTEGER);
 
 interface Sent {
-  readonly event: Partial<GcalEventInput>;
+  readonly event: GcalEventPatch;
   readonly kind: 'insert' | 'patch';
 }
 
 // Echoes what was sent, like Google: a stale start would turn the next
 // following-scope edit into a series edit.
-const echo = (event: Partial<GcalEventInput>, id: string) =>
+/** A patched time as Google stores it: the nulled fields are gone. */
+const stored = (time: GcalTimePatch | undefined) =>
+  time && Object.fromEntries(Object.entries(time).filter(([, value]) => typeof value === 'string'));
+
+const echo = (event: GcalEventPatch, id: string) =>
   Effect.succeed({
-    end: event.end ?? { dateTime: '2026-07-08T11:00:00Z' },
+    end: stored(event.end) ?? { dateTime: '2026-07-08T11:00:00Z' },
     etag: '"next"',
     id,
     recurrence: event.recurrence,
     reminders: event.reminders ?? { useDefault: true },
-    start: event.start ?? { dateTime: '2026-07-08T10:00:00Z', timeZone: 'UTC' },
+    start: stored(event.start) ?? { dateTime: '2026-07-08T10:00:00Z', timeZone: 'UTC' },
     status: 'confirmed',
     summary: event.summary ?? 'Planning',
   });

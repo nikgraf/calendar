@@ -1,0 +1,4 @@
+appId: com.solunivo.app
+name: Wait two seconds (shared)
+---
+- runScript: scripts/pause.js

@@ -72,6 +72,15 @@ const REMINDERS_CHANGE_DEBOUNCE = '1 second';
  */
 const WATERMARK_LAG_MS = 60_000;
 export const SYNC_INTERVAL = '90 seconds';
+/**
+ * How often `start()` polls. A reference rather than a constant so the
+ * live e2e suites (desktop `CALENDAR_SYNC_INTERVAL_MS`, iOS
+ * `EXPO_PUBLIC_CALENDAR_SYNC_INTERVAL_MS`) can watch a pull land within
+ * a test's timeout; nothing else overrides it.
+ */
+export const SyncInterval = Context.Reference<Duration.Input>('sync/SyncInterval', {
+  defaultValue: () => SYNC_INTERVAL,
+});
 
 type SyncError = AppleCalendarError | GoogleRequestError | RemindersError | SqlError;
 
@@ -873,7 +882,8 @@ const make: Effect.Effect<
 
   const start = (): Effect.Effect<void> =>
     Effect.gen(function* () {
-      yield* Effect.forkDetach(Effect.repeat(syncAll(), Schedule.spaced(SYNC_INTERVAL)));
+      const interval = yield* SyncInterval;
+      yield* Effect.forkDetach(Effect.repeat(syncAll(), Schedule.spaced(interval)));
       yield* Effect.forkDetach(
         appleCalendarClient.changes.pipe(
           Stream.debounce(REMINDERS_CHANGE_DEBOUNCE),

@@ -121,6 +121,16 @@ const eventsNow = Effect.gen(function* () {
   return window.singles;
 });
 
+/** A patched time as Google stores it: fields sent as null are gone. */
+const storedTime = (time: unknown): GcalEvent['start'] =>
+  time === undefined
+    ? undefined
+    : Object.fromEntries(
+        Object.entries(time as Record<string, unknown>).filter(
+          ([, value]) => typeof value === 'string',
+        ),
+      );
+
 const echo = (
   event: {
     readonly end?: unknown;
@@ -130,10 +140,10 @@ const echo = (
   id: string,
   etag: string,
 ): GcalEvent => ({
-  end: event.end as GcalEvent['end'],
+  end: storedTime(event.end),
   etag,
   id,
-  start: event.start as GcalEvent['start'],
+  start: storedTime(event.start),
   status: 'confirmed',
   ...(event.summary === undefined ? {} : { summary: event.summary }),
 });
@@ -288,11 +298,11 @@ describe('EventMutations', () => {
       patchEvent: ({ event }) => {
         patched.push(event as Record<string, unknown>);
         return Effect.succeed({
-          end: event.end as GcalEvent['end'],
+          end: storedTime(event.end),
           etag: '"server-2"',
           id: 'e',
           location: event.location,
-          start: event.start as GcalEvent['start'],
+          start: storedTime(event.start),
           status: 'confirmed',
           summary: event.summary,
         });

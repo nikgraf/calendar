@@ -1,0 +1,20 @@
+appId: com.solunivo.app
+name: Select the picker row named NAME (shared) — calendar or task list
+---
+# A row reads "<name>" or, once selected, "<name>, ✓". Maestro counts a
+# row clipped at the sheet's scroll edge as visible and its tap then lands
+# on nothing (run 35998271822: the task went to the default list), so the
+# row is scrolled to the middle first and the tap repeats until the check
+# mark proves the selection took.
+- repeat:
+    times: 3
+    while:
+      notVisible: '${NAME}, ✓'
+    commands:
+      - scrollUntilVisible:
+          element:
+            text: '${NAME}.*'
+          direction: DOWN
+          centerElement: true
+      - tapOn: '${NAME}.*'
+- assertVisible: '${NAME}, ✓'

@@ -10,7 +10,7 @@ import {
   runMigrations,
 } from '@calendar/db';
 import {
-  type GcalEventInput,
+  type GcalEventPatch,
   GoogleCalendarClient,
   type GoogleCalendarClientShape,
   GoogleTasksClient,
@@ -112,7 +112,7 @@ const respond = { accountId: 'acc-1', calendarId: 'cal-1', eventId: 'evt-invite'
 
 describe('EventMutations.respondToEvent', () => {
   it.effect('updates only the own attendee and patches attendees-only', () => {
-    const patches: Array<Partial<GcalEventInput>> = [];
+    const patches: Array<GcalEventPatch> = [];
     const layer = makeLayer({
       patchEvent: ({ event }) => {
         patches.push(event);

@@ -12,6 +12,7 @@ import {
   GooglePeopleClient,
   GoogleOAuthConfig,
   GoogleTasksClient,
+  GuestNotifications,
   TokenManager,
   TokenStore,
 } from '@calendar/google';
@@ -24,14 +25,16 @@ import {
   finishAddAccount,
   makeSyncKicker,
   SyncEngine,
+  SyncInterval,
   type CommonBackendServices,
 } from '@calendar/sync';
 import { layer as sqliteLayer } from '@effect/sql-sqlite-react-native/SqliteClient';
 import Constants from 'expo-constants';
 import { deleteItemAsync, getItemAsync, setItemAsync } from 'expo-secure-store';
-import { Data, Effect, Layer, ManagedRuntime, Schema } from 'effect';
+import { Data, Duration, Effect, Layer, ManagedRuntime, Schema } from 'effect';
 import { FetchHttpClient } from 'effect/unstable/http';
 import { googleFixtureLayer, seedFixtureAccounts } from '@calendar/sync/testing/googleFixture';
+import { liveWireLayer, seedLiveAccount } from '@calendar/sync/testing/liveWire';
 import { googleFixture } from '../e2e/fixtures/google.ts';
 import { signInWithGoogle } from './googleAuth.ts';
 import { iosNotificationSink } from './notifications.ts';
@@ -97,11 +100,35 @@ const dbLayer = reposLayer.pipe(
 // account. The fixture module is tiny and inert otherwise.
 const useGoogleFixture = process.env['EXPO_PUBLIC_CALENDAR_GOOGLE'] === 'fixture';
 
+// `live` (the nightly live suite's Metro): the real API signed in as the
+// live test account. Its refresh token was minted by the desktop OAuth
+// client, so that client (id + secret) refreshes it here, not the iOS one.
+// Every value is inlined into this dev bundle — CI and local runs only,
+// never an EAS update. Guest mail is muted and the poll shortened so a
+// flow can watch a pull land.
+const useGoogleLive = process.env['EXPO_PUBLIC_CALENDAR_GOOGLE'] === 'live';
+const liveSeed = {
+  contactsEnabled: false,
+  email: process.env['EXPO_PUBLIC_CALENDAR_GOOGLE_LIVE_EMAIL'] ?? '',
+  refreshToken: process.env['EXPO_PUBLIC_CALENDAR_GOOGLE_LIVE_REFRESH_TOKEN'] ?? '',
+  tasksEnabled: true,
+};
+const liveClientSecret = process.env['EXPO_PUBLIC_CALENDAR_GOOGLE_LIVE_CLIENT_SECRET'];
+const syncIntervalMs = Number(process.env['EXPO_PUBLIC_CALENDAR_SYNC_INTERVAL_MS']);
+
 const platformLayer = Layer.mergeAll(
   useGoogleFixture
     ? googleFixtureLayer(googleFixture)
-    : Layer.mergeAll(secureTokenStore, FetchHttpClient.layer),
-  GoogleOAuthConfig.layer({ clientId: iosClientId ?? 'unconfigured' }),
+    : useGoogleLive
+      ? Layer.mergeAll(liveWireLayer(liveSeed), Layer.succeed(GuestNotifications, 'none'))
+      : Layer.mergeAll(secureTokenStore, FetchHttpClient.layer),
+  useGoogleLive
+    ? GoogleOAuthConfig.layer({
+        clientId: process.env['EXPO_PUBLIC_CALENDAR_GOOGLE_LIVE_CLIENT_ID'] ?? 'unconfigured',
+        ...(liveClientSecret ? { clientSecret: liveClientSecret } : {}),
+      })
+    : GoogleOAuthConfig.layer({ clientId: iosClientId ?? 'unconfigured' }),
+  syncIntervalMs > 0 ? Layer.succeed(SyncInterval, Duration.millis(syncIntervalMs)) : Layer.empty,
 );
 
 const appLayer = SyncEngine.layer.pipe(
@@ -191,6 +218,9 @@ export const startSync = (): void => {
       Effect.gen(function* () {
         if (useGoogleFixture) {
           yield* seedFixtureAccounts(googleFixture);
+        }
+        if (useGoogleLive) {
+          yield* seedLiveAccount(liveSeed);
         }
         const engine = yield* SyncEngine;
         yield* engine.start();

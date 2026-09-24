@@ -36,10 +36,11 @@ import {
   makeSyncKicker,
   NotificationSink,
   SyncEngine,
+  SyncInterval,
 } from '@calendar/sync';
 import { SqliteClient } from '@effect/sql-sqlite-node';
 import { app, powerMonitor } from 'electron';
-import { Data, Effect, Layer, ManagedRuntime } from 'effect';
+import { Data, Duration, Effect, Layer, ManagedRuntime } from 'effect';
 import { RpcSerialization, RpcServer } from 'effect/unstable/rpc';
 import { runGoogleSignIn } from './auth/loopbackFlow.ts';
 import { loadOAuthConfig } from './oauthConfig.ts';
@@ -50,7 +51,7 @@ import { GeoClient } from '@calendar/geo';
 import { desktopAppleCalendarLayer } from './appleCalendarClient.ts';
 import { desktopContactsLayer } from './contactsClient.ts';
 import { desktopGeoLayer } from './geoClient.ts';
-import { desktopGoogleLayer, seedDesktopGoogleFixture } from './googleClient.ts';
+import { desktopGoogleLayer, seedDesktopGoogleAccounts } from './googleClient.ts';
 import { desktopNotificationSink } from './notifications.ts';
 import { desktopRemindersLayer } from './remindersClient.ts';
 import { rpcServerProtocol } from './rpcProtocol.ts';
@@ -69,12 +70,16 @@ export const startBackendHost = (): void => {
   const oauth = loadOAuthConfig();
   const invalidations = makeInvalidationBus();
 
+  // The live e2e suite shortens the poll so a pull lands inside a test's
+  // timeout; nothing else sets it.
+  const syncIntervalMs = Number(process.env['CALENDAR_SYNC_INTERVAL_MS']);
   const platformLayer = Layer.mergeAll(
     desktopGoogleLayer,
     GoogleOAuthConfig.layer({
       clientId: oauth?.clientId ?? 'unconfigured',
       ...(oauth?.clientSecret ? { clientSecret: oauth.clientSecret } : {}),
     }),
+    syncIntervalMs > 0 ? Layer.succeed(SyncInterval, Duration.millis(syncIntervalMs)) : Layer.empty,
   );
 
   const dbLayer = reposLayer.pipe(
@@ -173,7 +178,7 @@ export const startBackendHost = (): void => {
   runtime
     .runPromise(
       Effect.gen(function* () {
-        yield* seedDesktopGoogleFixture;
+        yield* seedDesktopGoogleAccounts;
         const engine = yield* SyncEngine;
         yield* engine.start();
         yield* (yield* LocalNotifications).start();

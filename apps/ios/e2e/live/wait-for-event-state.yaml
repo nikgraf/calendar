@@ -1,0 +1,27 @@
+appId: com.solunivo.app
+name: Poll Google until event EVENT_ID reaches EXPECT (shared)
+---
+# EXPECT is one of:
+#   gone            — cancelled, or events.get answers 404/410
+#   allday          — start carries a date, not a dateTime
+#   end-after       — end.dateTime is later than AFTER (an ISO stamp)
+#   anything else   — the exact summary
+- evalScript: ${output.matched = false}
+- repeat:
+    times: 15
+    while:
+      true: ${!output.matched}
+    commands:
+      - runScript:
+          file: scripts/getEvent.js
+          env:
+            EVENT_ID: ${EVENT_ID}
+      - evalScript: "${output.matched = EXPECT === 'gone' ? (output.event.status === 'cancelled' || String(output.event.status).indexOf('http') === 0) : EXPECT === 'allday' ? !!(output.event.start && output.event.start.date) : EXPECT === 'end-after' ? !!(output.event.end && output.event.end.dateTime && Date.parse(output.event.end.dateTime) > Date.parse(AFTER)) : output.event.summary === EXPECT}"
+      - runFlow:
+          when:
+            true: ${!output.matched}
+          commands:
+            - runFlow: pause.yaml
+- assertTrue:
+    condition: ${output.matched}
+    label: 'Google reached "${EXPECT}" for the event'

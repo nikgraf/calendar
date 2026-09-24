@@ -10,6 +10,8 @@ import {
   type GoogleCalendarClientShape,
   type GoogleRequestError,
   type GoogleTasksClientShape,
+  type GuestNotificationMode,
+  GuestNotifications,
   mapGcalCalendar,
   mapGcalEvent,
   hasGuests,
@@ -20,17 +22,22 @@ import {
   toGcalGeoPatch,
   toGcalRemindersInsert,
   toGcalRemindersPatch,
+  toGcalTimesPatch,
 } from '@calendar/google';
 import { Cause, Clock, Effect } from 'effect';
 
 /**
  * Guests get emailed about any change to an event that has guests — the
- * decision was "always notify, never ask". Google ignores the flag when
- * nothing guest-relevant changed; rooms alone are nobody to notify, but
- * a guest-list edit notifies whoever was just removed.
+ * decision was "always notify, never ask" (the GuestNotifications
+ * reference only lets the live test suites mute it). Google ignores the
+ * flag when nothing guest-relevant changed; rooms alone are nobody to
+ * notify, but a guest-list edit notifies whoever was just removed.
  */
-const sendUpdatesFor = (payload: EventRecord, attendeesChanged: boolean): 'all' | undefined =>
-  hasGuests(payload) || attendeesChanged ? 'all' : undefined;
+const sendUpdatesFor = (
+  payload: EventRecord,
+  attendeesChanged: boolean,
+  mode: GuestNotificationMode,
+): GuestNotificationMode | undefined => (hasGuests(payload) || attendeesChanged ? mode : undefined);
 
 /**
  * The pending-op drain's per-op dispatch: one arm per op kind, mapping every
@@ -195,6 +202,7 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
 
   const apply = (op: PendingOp): Effect.Effect<ApplyOutcome> =>
     Effect.gen(function* () {
+      const guestMode = yield* GuestNotifications;
       // A task op queued behind its create while that create is still in
       // backoff: the create's id swap rewrites this op's eventId once it
       // lands. Patching the temp id now would 404 and the NotFound arm
@@ -356,7 +364,7 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
               ...toGcalRemindersInsert(op.payload),
               attendees: toGcalAttendees(op.payload),
             },
-            sendUpdates: sendUpdatesFor(op.payload, false),
+            sendUpdates: sendUpdatesFor(op.payload, false, guestMode),
           });
           const synced = mapGcalEvent(response, {
             accountId: op.accountId,
@@ -400,7 +408,7 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
             calendarId: op.calendarId,
             destination,
             eventId: op.eventId,
-            sendUpdates: local && hasGuests(local) ? 'all' : undefined,
+            sendUpdates: local && hasGuests(local) ? guestMode : undefined,
           });
           const now = yield* Clock.currentTimeMillis;
           const synced = mapGcalEvent(response, {
@@ -478,6 +486,7 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
             // edit dropped them, and not at all otherwise.
             event: {
               ...toGcalEventInput(op.payload),
+              ...toGcalTimesPatch(op.payload),
               ...toGcalGeoPatch(op.payload, op.geoCleared === true),
               ...toGcalRemindersPatch(op.payload, op.remindersChanged === true),
               ...(op.attendeesChanged ? { attendees: toGcalAttendees(op.payload) } : {}),
@@ -485,7 +494,7 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
             eventId: op.eventId,
             // Removed guests get their cancellation too: flagged edits
             // always notify, even when nobody is left.
-            sendUpdates: sendUpdatesFor(op.payload, op.attendeesChanged === true),
+            sendUpdates: sendUpdatesFor(op.payload, op.attendeesChanged === true, guestMode),
           });
           const synced = mapGcalEvent(response, {
             accountId: op.accountId,

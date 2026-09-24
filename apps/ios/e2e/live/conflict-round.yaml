@@ -1,0 +1,54 @@
+appId: com.solunivo.app
+name: One 412 round (shared) — edit the block to MINE while Google renames it to THEIRS, settle with CHOICE
+---
+# The sheet is filled first and Google patched just before Save, so the
+# window in which the app's own poll could refresh the etag (and defuse
+# the conflict) is a fraction of a second. If a poll still wins the race
+# the edit simply lands and no banner shows — then the round is repeated
+# with the same titles (BLOCK is a prefix pattern that matches every title
+# the event takes here).
+- evalScript: ${output.banner = false}
+- repeat:
+    times: 3
+    while:
+      true: ${!output.banner}
+    commands:
+      - runFlow:
+          file: open-event.yaml
+          env:
+            BLOCK: ${BLOCK}
+      - tapOn:
+          id: 'event-title'
+      - tapOn: 'Clear text'
+      - inputText: ${MINE}
+      - runScript:
+          file: scripts/patchEvent.js
+          env:
+            EVENT_ID: ${EVENT_ID}
+            SUMMARY: ${THEIRS}
+      - tapOn:
+          id: 'event-save'
+      - extendedWaitUntil:
+          notVisible: 'Edit Event'
+          timeout: 20000
+      - extendedWaitUntil:
+          visible:
+            id: 'conflict-banner'
+          timeout: 15000
+          optional: true
+      - runFlow:
+          when:
+            visible:
+              id: 'conflict-banner'
+          commands:
+            - evalScript: ${output.banner = true}
+- assertVisible:
+    id: 'conflict-banner'
+# The banner opens a native alert: Later, then the two versions.
+- tapOn:
+    id: 'conflict-banner'
+- tapOn: ${CHOICE}
+- extendedWaitUntil:
+    notVisible:
+      id: 'conflict-banner'
+    timeout: 30000
