@@ -702,14 +702,20 @@ describe('calendar desktop e2e', () => {
     );
     expect(master).toBeDefined();
     expect(master!.startUtc).toBe(dailyStart);
-    // The detached override keeps its own title.
-    await cdp.waitFor(`!!document.querySelector('[title^="Daily sync (solo)"]')`);
+    // Google copies a master's changed title onto every exception, the
+    // detached one included — and the app mirrors that at save.
+    await cdp.waitFor(`!document.querySelector('[title^="Daily sync (solo)"]')`);
+    const override = await waitForEvent(
+      (event) => event.recurringEventId === 'evt-daily' && event.title === 'Daily standup',
+    );
+    expect(override).toBeDefined();
   });
 
   it('splits the series with this-and-following', async () => {
     const { cdp } = app;
-    const block = await cdp.locate('[title^="Daily standup"]');
-    await cdp.click(block.x, block.y);
+    // The first "Daily standup" block is the detached override (the series
+    // rename reached it); the second is the next generated instance.
+    await clickNth('[title^="Daily standup"]', 1);
     await cdp.waitFor(`document.body.textContent.includes('This and following')`);
     await cdp.clickButtonWithText('This and following');
     await setEditorTitle('Daily standup v2');
