@@ -34,6 +34,12 @@ invariants.
   time". `toGcalTimesPatch` sends the unused form as null
   (`{date, dateTime: null, timeZone: null}` and the reverse); the fake
   merges and refuses the same way.
+- **A master edit reaches the exceptions** (verified live 2026-09-25):
+  when a master's title, description or location **changes**, Google
+  copies the new value onto every exception of the series, overridden
+  ones included; a field re-sent with its old value leaves the
+  exceptions' own values alone. `updateRecurring` (series scope) mirrors
+  the changed fields onto the local override rows at save.
 - **Attendee editing**: `attendees` on `EventDraft`/`UpdateEventChanges`
   is a replacement guest list (`[]` clears). Google **replaces the whole
   array** on write and our copy lacks fields we never model (`optional`,
@@ -327,6 +333,12 @@ SECRET`), not with `app.json`'s iOS client.
 test:e2e:live` (dev client installed, Metro up with the live env;
   `SIMULATOR_UDID` picks the device), which runs setup, the five flows
   and teardown.
+- **`400 failedPrecondition`.** Seen once, in a background pass of the
+  run where the account had just exhausted its calendar-creation quota
+  (the same run then got `Calendar usage limits exceeded`); neither a
+  deleted task list (404) nor a deleted calendar (still lists) reproduces
+  it. Read it as Google's answer to an over-limit account; the next pass
+  recovers.
 - **Rate limits.** A full run writes fast enough that Google answers some
   writes with 403 `rateLimitExceeded`; the op backs off (30 s, 60 s) like
   in the app. `drain` in `live/support.ts` keeps draining until only
@@ -613,7 +625,10 @@ Flakiness lessons (each caused a real CI failure — keep them enforced):
   sidecar's setup/teardown around the five flows). `decide` fails red
   without the secrets and, on the schedule, compares `github.sha` with
   the last completed run's `headSha` (`gh run list`, `actions: read`) —
-  a skipped night still completes at that sha. `concurrency:
+  a skipped night still completes at that sha. GitHub's `schedule` is
+  best effort: the first night after the workflow reached `main` fired
+  no run at all (2026-09-25) — dispatch it by hand when a night is
+  missing. `concurrency:
 google-live` keeps runs from overlapping on the one account. See "Live
   Google suite" above.
 - Log lines may stringify effect causes containing HTTP requests; effect
