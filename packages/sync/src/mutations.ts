@@ -958,6 +958,26 @@ const make: Effect.Effect<
             }),
           );
           yield* eventRepo.upsertMany([merged]);
+          // Google copies a changed title, description or location onto
+          // every exception of the series — overridden ones included — but
+          // leaves fields whose value did not change (verified live
+          // 2026-09-24). Mirror that now instead of showing the old text
+          // until the next pull.
+          const carried = {
+            ...(merged.title === master.title ? {} : { title: merged.title }),
+            ...(merged.description === master.description
+              ? {}
+              : { description: merged.description }),
+            ...(merged.location === master.location ? {} : { location: merged.location }),
+          };
+          if (Object.keys(carried).length > 0) {
+            const overrides = yield* eventRepo.listOverrides(accountId, calendarId, masterId);
+            yield* eventRepo.upsertMany(
+              overrides
+                .filter((override) => override.status !== 'cancelled')
+                .map((override) => new EventRecord({ ...override, ...carried })),
+            );
+          }
           const queued = yield* opsForEvent(calendarId, masterId);
           yield* pendingOpRepo.removeForEvent(calendarId, masterId);
           yield* enqueue(
