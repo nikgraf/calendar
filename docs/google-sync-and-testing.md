@@ -356,12 +356,16 @@ test:e2e:live` (dev client installed, Metro up with the live env;
   run where the account had just exhausted its calendar-creation quota
   (the same run then got `Calendar usage limits exceeded`); neither a
   deleted task list (404) nor a deleted calendar (still lists) reproduces
-  it. Read it as Google's answer to an over-limit account; the next pass
-  recovers.
+  it. The quota is a suspected cause, not an established one: the probes
+  only ruled the other explanations out. If it recurs, record the
+  request (endpoint, sync scope, the error body) before assuming the
+  next pass recovers.
 - **Rate limits.** A full run writes fast enough that Google answers some
   writes with 403 `rateLimitExceeded`; the op backs off (30 s, 60 s) like
   in the app. `drain` in `live/support.ts` keeps draining until only
-  parked ops are left (two-minute cap), hence the 300 s live test timeout.
+  parked ops are left; after two minutes it fails, listing each op still
+  queued with its attempts, next retry and last error (hence the 300 s
+  live test timeout).
 - **Leaks.** Effect redacts `authorization` headers in logged causes; the
   desktop token file lives only in the temp profile; the iOS bundle on
   the CI simulator carries the secrets inlined (never shipped).

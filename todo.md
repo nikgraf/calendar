@@ -32,6 +32,21 @@ comment` for inline-playable video: 10 MB on Free plans, 100 MB paid
       binary). PR template gains a "video attached / n.a." checkbox. Not
       possible: REST/GraphQL upload; inline playback from an Actions
       artifact or a private-repo release asset.
+- [ ] Live suite follow-ups (review of #88/#90, 2026-09-26; the findings
+      themselves shipped in `todo/review-findings`). iOS flow 04 waits a
+      fixed 75 s spin (`e2e/live/scripts/pause.js`) because the task
+      chip's done/open state is not in the accessibility tree: expose it
+      (accessibilityState or a label suffix) and poll for the reopen
+      instead. The people test passes on an empty address book and the
+      RSVP test only exercises the organizer guard — decide whether a
+      known contact fixture and a second live account for guest-side
+      RSVPs are worth their upkeep. Before the sweep deletes, check the
+      token's identity against `GOOGLE_LIVE_EMAIL` and only touch
+      `e2e-`/`live-` resources the run tag format proves ours. The
+      this-and-following live test checks for `UNTIL`/`COUNT` strings;
+      assert the last old and first new occurrence and no overlap. A
+      carried text's queued instance ops keep their payload: rewrite it on
+      restore if the pull-converges gap ever shows up.
 
 ## Tier 2 — features (near-term, well-scoped)
 

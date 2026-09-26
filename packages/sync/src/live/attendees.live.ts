@@ -60,7 +60,9 @@ describe('live Google: attendees', () => {
       // A guest-side RSVP (attendees-only PATCH without If-Match) needs a
       // second account to send the invitation — an invitation from the
       // account's own calendar never reaches its primary. The fake covers
-      // that path (engine.http.test.ts); here Google's side is pinned.
+      // that path (engine.http.test.ts). What this pins is Google's insert
+      // answer: it leaves the organizer off `attendees`, so the local guard
+      // refuses the RSVP before any request is sent.
       const { mutations } = yield* bootstrap(config);
       const record = yield* mutations.createEvent(invite('rsvp'));
       yield* drain(mutations);
