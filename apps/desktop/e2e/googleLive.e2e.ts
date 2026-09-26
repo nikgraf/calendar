@@ -103,12 +103,13 @@ describe.skipIf(!LIVE)('Google live (real account)', { retry: 0, timeout: 120_00
     );
 
   /**
-   * A point on today's column at a wall-clock hour with nothing on it:
-   * six hours from now, so the now line is never under the click, and
-   * the run calendar is empty at that hour by construction.
+   * A point on today's column at a wall-clock hour with nothing on it (the
+   * run calendar is empty by construction): 16:00 in the morning, 04:00
+   * from noon on. The now line is never under the click or the later
+   * one-hour drag, and both stay inside the day, clear of the DST hours.
    */
   const freeSlot = async (): Promise<{ x: number; y: number }> => {
-    const hour = (new Date().getHours() + 6) % 24;
+    const hour = new Date().getHours() < 12 ? 16 : 4;
     const label = new Date().toLocaleDateString('en-US', {
       day: 'numeric',
       month: 'long',

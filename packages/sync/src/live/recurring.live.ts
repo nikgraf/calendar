@@ -1,4 +1,4 @@
-import { googleInstanceId } from '@calendar/core';
+import { assembleWindow, googleInstanceId } from '@calendar/core';
 import { EventRepo } from '@calendar/db';
 import type { EventMutationsShape } from '../mutationTypes.ts';
 import { expect, it } from '@effect/vitest';
@@ -116,10 +116,15 @@ describe('live Google: recurring series', () => {
       yield* engine.syncAll();
       const events = yield* EventRepo;
       const row = yield* events.getById(LIVE_ACCOUNT_ID, calendar(), instanceId);
-      // Either a cancelled tombstone row or nothing — never a visible occurrence.
       expect(row === null || row.status === 'cancelled').toBe(true);
-      const window = yield* events.getWindow(third - HOUR, third + 2 * HOUR);
-      expect(window.singles.some((single) => single.id === instanceId)).toBe(false);
+      // What the calendar renders: without the tombstone the master would
+      // expand the deleted occurrence again. Its neighbours stay.
+      const from = third - WEEK - HOUR;
+      const to = third + WEEK + 2 * HOUR;
+      const starts = assembleWindow(yield* events.getWindow(from, to), from, to)
+        .filter((event) => event.recurringEventId === master.id)
+        .map((event) => event.originalStartUtc);
+      expect(starts).toEqual([third - WEEK, third + WEEK]);
     }).pipe(Effect.provide(liveEngineLayer(config))),
   );
 

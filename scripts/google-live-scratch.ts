@@ -5,7 +5,9 @@
  * calendar and task list, mints a one-hour access token and hands all of
  * it to Maestro as `MAESTRO_LIVE_*` variables (the CLI injects every
  * `MAESTRO_*` shell variable into each flow); `teardown` deletes what
- * `setup` created. The refresh token never reaches Maestro.
+ * `setup` created, and exits non-zero while anything is left (the state
+ * file keeps it for the next teardown). The refresh token never reaches
+ * Maestro.
  *
  *   node scripts/google-live-scratch.ts setup --suffix ios [--export | --github-env]
  *   node scripts/google-live-scratch.ts teardown
@@ -17,15 +19,8 @@
  * packages/sync/src/testing/liveScratchRest.ts with the Node and desktop
  * suites. See docs/google-sync-and-testing.md.
  */
-import {
-  appendFileSync,
-  existsSync,
-  mkdirSync,
-  readFileSync,
-  rmSync,
-  writeFileSync,
-} from 'node:fs';
-import { dirname, join } from 'node:path';
+import { appendFileSync, existsSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   createCalendar,
@@ -36,6 +31,13 @@ import {
   scratchName,
   sweep,
 } from '../packages/sync/src/testing/liveScratchRest.ts';
+import {
+  allocateScratch,
+  readScratchState,
+  releaseScratch,
+} from '../packages/sync/src/testing/liveScratchState.ts';
+
+const api = { createCalendar, createTaskList, deleteCalendar, deleteTaskList };
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
 const SWEEP_MAX_AGE_MS = 6 * 60 * 60 * 1000;
@@ -96,18 +98,20 @@ const setup = async (): Promise<void> => {
   console.error(`swept ${swept.calendars} stale calendars, ${swept.lists} stale lists`);
   const calendarName = scratchName(live.runTag, suffix);
   const listName = scratchName(live.runTag, `${suffix}-tasks`);
-  const calendar = await createCalendar(token, calendarName);
-  const list = await createTaskList(token, listName);
-  mkdirSync(dirname(statePath), { recursive: true });
-  writeFileSync(statePath, JSON.stringify({ calendarId: calendar.id, listId: list.id }));
-  console.error(`created ${calendarName} (${calendar.id}) and ${listName} (${list.id})`);
+  // Each id lands in the state file as soon as it exists, so a setup that
+  // dies halfway still leaves teardown something to delete.
+  const { calendarId, listId } = await allocateScratch(api, token, statePath, {
+    calendar: calendarName,
+    list: listName,
+  });
+  console.error(`created ${calendarName} (${calendarId}) and ${listName} (${listId})`);
 
   const vars: Record<string, string> = {
     MAESTRO_LIVE_ACCESS_TOKEN: token,
-    MAESTRO_LIVE_CALENDAR_ID: calendar.id,
+    MAESTRO_LIVE_CALENDAR_ID: calendarId,
     MAESTRO_LIVE_CALENDAR_NAME: calendarName,
     MAESTRO_LIVE_EMAIL: live.email,
-    MAESTRO_LIVE_LIST_ID: list.id,
+    MAESTRO_LIVE_LIST_ID: listId,
     MAESTRO_LIVE_LIST_NAME: listName,
     MAESTRO_LIVE_RUN_TAG: live.runTag,
   };
@@ -130,26 +134,18 @@ const setup = async (): Promise<void> => {
 };
 
 const teardown = async (): Promise<void> => {
-  if (!existsSync(statePath)) {
-    console.error(`nothing to tear down (${statePath} is missing)`);
+  const state = readScratchState(statePath);
+  if (state.calendars.length === 0 && state.lists.length === 0) {
+    console.error(`nothing to tear down (${statePath} records nothing)`);
     return;
   }
-  const state = JSON.parse(readFileSync(statePath, 'utf8')) as {
-    calendarId?: string;
-    listId?: string;
-  };
-  const token = await mintAccessToken(config());
-  if (state.calendarId) {
-    await deleteCalendar(token, state.calendarId).catch((error: unknown) => {
-      console.error(`calendar ${state.calendarId} not deleted: ${String(error)}`);
-    });
+  const { failures } = await releaseScratch(api, await mintAccessToken(config()), statePath);
+  if (failures.length > 0) {
+    // Red, not "torn down": a leaked calendar counts against Google's daily
+    // creation cap. The ids stay in the state file for the next teardown.
+    console.error(`not deleted (kept in ${statePath}):\n  ${failures.join('\n  ')}`);
+    process.exit(1);
   }
-  if (state.listId) {
-    await deleteTaskList(token, state.listId).catch((error: unknown) => {
-      console.error(`task list ${state.listId} not deleted: ${String(error)}`);
-    });
-  }
-  rmSync(statePath, { force: true });
   console.error('torn down');
 };
 
