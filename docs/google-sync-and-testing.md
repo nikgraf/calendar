@@ -300,6 +300,13 @@ SECRET`), not with `app.json`'s iOS client.
   them as `MAESTRO_LIVE_*` (`--github-env` masks the token; `--export`
   prints shell lines) — the Maestro CLI injects every `MAESTRO_*` shell
   variable into each flow, and the refresh token never reaches Maestro.
+  The mask covers the job log only: Maestro records every `MAESTRO_*`
+  value, the token included, in each flow's `commands.json` and in
+  `maestro.log`. So a failed job's artifacts pass through
+  `scripts/redact-live-reports.ts` first (exact secrets plus token
+  shapes, then a re-scan; the upload runs only if that step passed), and
+  the Maestro cache holds `~/.maestro/bin` and `lib` only, never the
+  reports.
   The flows (`e2e/live/flows/01…05`, tag `live`, outside `e2e/flows/` so
   the default suite never picks them up) run as explicit files in that
   order; behind-the-back edits and Google-side checks are `runScript`s

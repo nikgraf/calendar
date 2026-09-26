@@ -128,8 +128,14 @@ jobs:
       - run: pnpm --filter @calendar/desktop build
       - run: pnpm --filter @calendar/desktop exec electron --version
       - run: E2E=1 CALENDAR_E2E_GOOGLE=live pnpm exec vp test run apps/desktop/e2e/googleLive.e2e.ts
-      - name: Upload e2e diagnostics
+      - name: Redact credentials from the diagnostics
+        # The app log in each dump should never hold a token: verified
+        # rather than assumed, as for the iOS reports.
+        id: redact
         if: failure()
+        run: node scripts/redact-live-reports.ts apps/desktop/e2e-artifacts
+      - name: Upload e2e diagnostics
+        if: failure() && steps.redact.outcome == 'success'
         uses: actions/upload-artifact@v7
         with:
           name: google-live-desktop-diagnostics-${{ github.run_attempt }}
@@ -197,8 +203,12 @@ jobs:
         id: maestro
         uses: actions/cache@v6
         with:
-          path: ~/.maestro
-          key: maestro-${{ runner.os }}-${{ env.MAESTRO_VERSION }}
+          # The install only: ~/.maestro/tests holds run reports, and the
+          # live suite's reports carry its access token.
+          path: |
+            ~/.maestro/bin
+            ~/.maestro/lib
+          key: maestro-install-${{ runner.os }}-${{ env.MAESTRO_VERSION }}
       - name: Install Maestro (pinned release, checksum verified)
         if: steps.maestro.outputs.cache-hit != 'true'
         run: |
@@ -300,8 +310,21 @@ jobs:
                 | "  \(.imageIndex) \(.symbol // "?") + \(.imageOffset // 0)")
             ' 2>/dev/null || head -c 4000 "$f"
           done
-      - name: Upload Maestro diagnostics
+      - name: Redact credentials from the diagnostics
+        # Maestro writes every MAESTRO_* variable, the access token
+        # included, into each flow's commands.json and maestro.log;
+        # ::add-mask:: covers the job log, not artifact files. The upload
+        # only runs if this step verified the files clean.
+        id: redact
         if: failure()
+        env:
+          GOOGLE_DESKTOP_CLIENT_SECRET: ${{ secrets.GOOGLE_DESKTOP_CLIENT_SECRET }}
+          GOOGLE_LIVE_REFRESH_TOKEN: ${{ secrets.GOOGLE_LIVE_REFRESH_TOKEN }}
+        run: |
+          node scripts/redact-live-reports.ts ~/.maestro/tests "$RUNNER_TEMP/metro.log" \
+            ~/Library/Logs/DiagnosticReports/Solunivo*.ips
+      - name: Upload Maestro diagnostics
+        if: failure() && steps.redact.outcome == 'success'
         uses: actions/upload-artifact@v7
         with:
           name: google-live-ios-diagnostics-${{ github.run_attempt }}
