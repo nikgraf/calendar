@@ -1163,7 +1163,9 @@ test`/`test:e2e`/`test:e2e:ios`; every file creates its own
       (`CarriedText`, migration 6), "changed" is measured against that
       across coalesced edits (an offline A→B→A is no change, as on Google),
       and discard, take-theirs and a permanent rejection restore the
-      exceptions except fields edited on them since; storing values was
+      exceptions (coordinates included) except fields edited on them
+      since and rows whose etag moved on (a pull already brought Google's
+      version, e.g. another device's identical rename); storing values was
       necessary because Google overwrites custom exception text too, so
       nothing could be recomputed. An empty field now equals a missing one
       in that diff: the editor always sends `location: ''`, which used to

@@ -135,7 +135,9 @@ describe('row decoders tolerate what the DB may hold', () => {
   it('pendingOpFromRow reads carriedText and drops an unreadable one', () => {
     const carried = {
       base: { description: null, location: 'Room 1', title: 'Daily' },
-      overrides: [{ eventId: 'evt_20300101T090000Z', location: null, title: 'Daily (moved)' }],
+      overrides: [
+        { etag: null, eventId: 'evt_20300101T090000Z', location: null, title: 'Daily (moved)' },
+      ],
     };
     expect(pendingOpFromRow(opRow({ carried_text: JSON.stringify(carried) }))?.carriedText).toEqual(
       new CarriedText(carried),

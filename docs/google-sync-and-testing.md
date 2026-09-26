@@ -47,8 +47,12 @@ invariants.
   exceptions keep their own titles, as on Google; an empty field equals a
   missing one (Google stores no empty text, and the editor sends `''`).
   Discard, take-theirs and a permanent rejection put the exceptions' text
-  back, except a field the user has since edited on the exception. A
-  this-and-following split inherits the carry of the op it replaces.
+  back, with the coordinates a carried location dropped, except a field
+  the user has since edited on the exception and a row a pull or push
+  replaced since (its etag moved on: that is Google's version, e.g. another
+  device's identical rename, and no later incremental pull would resend
+  it). A this-and-following split inherits the carry of the op it
+  replaces.
   Known gap: a queued instance op's payload is not rewritten, so it can
   still push carried text of an abandoned series edit; the next pull
   converges.

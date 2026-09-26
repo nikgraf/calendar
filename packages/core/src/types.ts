@@ -323,12 +323,16 @@ export class CarriedText extends Schema.Class<CarriedText>('CarriedText')({
   }),
   /**
    * Each exception's own value of every field the edit carried onto it
-   * (a missing key: not carried; null: the exception had none).
+   * (a missing key: not carried; null: the exception had none), with its
+   * coordinates when the location was carried, and its etag then: a row
+   * whose etag moved on holds Google's version, which an undo must keep.
    */
   overrides: Schema.Array(
     Schema.Struct({
       description: Schema.optionalKey(Schema.NullOr(Schema.String)),
+      etag: Schema.NullOr(Schema.String),
       eventId: Schema.String,
+      geo: Schema.optionalKey(Schema.NullOr(GeoLocation)),
       location: Schema.optionalKey(Schema.NullOr(Schema.String)),
       title: Schema.optionalKey(Schema.String),
     }),

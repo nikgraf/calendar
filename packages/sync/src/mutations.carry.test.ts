@@ -185,8 +185,8 @@ describe('a series edit carries text onto the exceptions, undoably', () => {
       const [op] = yield* masterOp;
       expect(op?.carriedText?.base).toEqual({ description: null, location: null, title: 'Daily' });
       expect(op?.carriedText?.overrides).toEqual([
-        { eventId: moved.id, title: 'Daily (moved)' },
-        { eventId: plain.id, title: 'Daily' },
+        { etag: moved.etag, eventId: moved.id, title: 'Daily (moved)' },
+        { etag: plain.etag, eventId: plain.id, title: 'Daily' },
       ]);
     }).pipe(Effect.provide(layer({ patch: 'offline' }))),
   );
@@ -199,6 +199,7 @@ describe('a series edit carries text onto the exceptions, undoably', () => {
       expect(kept?.location).toBe(geo.source);
       expect(kept?.geo).toEqual(geo);
       expect((yield* masterOp)[0]?.carriedText?.overrides[0]).toEqual({
+        etag: moved.etag,
         eventId: moved.id,
         title: 'Daily (moved)',
       });
@@ -240,7 +241,11 @@ describe('a series edit carries text onto the exceptions, undoably', () => {
       expect((yield* text(moved.id)).title).toBe('Sync');
       const [op] = yield* masterOp;
       expect(op?.carriedText?.base.title).toBe('Daily');
-      expect(op?.carriedText?.overrides[0]).toEqual({ eventId: moved.id, title: 'Daily (moved)' });
+      expect(op?.carriedText?.overrides[0]).toEqual({
+        etag: moved.etag,
+        eventId: moved.id,
+        title: 'Daily (moved)',
+      });
 
       yield* (yield* EventMutations).discardPendingOp(op!.id);
       expect((yield* text(moved.id)).title).toBe('Daily (moved)');
@@ -299,6 +304,58 @@ describe('a series edit carries text onto the exceptions, undoably', () => {
       expect(yield* masterOp).toEqual([]);
     }).pipe(Effect.provide(layer(google)));
   });
+
+  it.effect("taking Google's version keeps what a pull brought in meanwhile", () => {
+    const google: Google = {
+      patch: 'conflict',
+      server: {
+        end: { dateTime: '2026-07-01T10:00:00Z', timeZone: 'UTC' },
+        etag: '"m-2"',
+        id: 'master1',
+        recurrence: [RULE],
+        start: { dateTime: '2026-07-01T09:00:00Z', timeZone: 'UTC' },
+        status: 'confirmed',
+        summary: 'Standup',
+      },
+    };
+    return Effect.gen(function* () {
+      const mutations = yield* EventMutations;
+      yield* series({ title: 'Standup' });
+      yield* mutations.processPendingOps();
+      const [op] = yield* masterOp;
+      // Another device made the same rename, Google carried it onto the
+      // exception, and a pull brought that version in while ours waited.
+      yield* (yield* EventRepo).upsertMany(
+        [new EventRecord({ ...moved, etag: '"o-3-theirs"', title: 'Standup' })],
+        { mode: 'pull' },
+      );
+      yield* mutations.resolveConflict({ choice: 'theirs', opId: op!.id });
+
+      expect((yield* text(moved.id)).title).toBe('Standup');
+      // Not pulled yet: its own text, until Google's copy arrives.
+      expect((yield* text(plain.id)).title).toBe('Daily');
+    }).pipe(Effect.provide(layer(google)));
+  });
+
+  it.effect("undoing a location carry brings the exception's coordinates back", () =>
+    Effect.gen(function* () {
+      yield* series({ location: 'Karlsplatz' });
+      expect((yield* row(moved.id))?.geo).toBeUndefined();
+      // The series had no location: reverting is no change on Google, which
+      // keeps the exception's own place, coordinates included.
+      yield* series({ location: '' });
+      const reverted = yield* row(moved.id);
+      expect(reverted?.location).toBe(geo.source);
+      expect(reverted?.geo).toEqual(geo);
+
+      yield* series({ location: 'Karlsplatz' });
+      const [op] = yield* masterOp;
+      yield* (yield* EventMutations).discardPendingOp(op!.id);
+      const restored = yield* row(moved.id);
+      expect(restored?.location).toBe(geo.source);
+      expect(restored?.geo).toEqual(geo);
+    }).pipe(Effect.provide(layer({ patch: 'offline' }))),
+  );
 
   it.effect('an exception edited after the carry keeps its newer text', () =>
     Effect.gen(function* () {

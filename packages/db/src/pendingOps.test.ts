@@ -1,4 +1,4 @@
-import { Attendee, CarriedText, EventRecord, PendingOp } from '@calendar/core';
+import { Attendee, CarriedText, EventRecord, GeoLocation, PendingOp } from '@calendar/core';
 import { SqliteClient } from '@effect/sql-sqlite-node';
 import { expect, it } from '@effect/vitest';
 import { Effect, Layer } from 'effect';
@@ -49,7 +49,15 @@ describe('PendingOpRepo', () => {
       });
       const carriedText = new CarriedText({
         base: { description: null, location: 'Room 1', title: 'Daily' },
-        overrides: [{ eventId: 'evt-1_x', location: null, title: 'Daily (moved)' }],
+        overrides: [
+          {
+            etag: '"o-1"',
+            eventId: 'evt-1_x',
+            geo: new GeoLocation({ lat: 48.2, lng: 16.37, source: 'Stephansplatz 3, Wien' }),
+            location: 'Stephansplatz 3, Wien',
+            title: 'Daily (moved)',
+          },
+        ],
       });
       yield* repo.enqueue(
         op('op-1', {
