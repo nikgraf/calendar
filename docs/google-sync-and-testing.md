@@ -39,7 +39,19 @@ invariants.
   copies the new value onto every exception of the series, overridden
   ones included; a field re-sent with its old value leaves the
   exceptions' own values alone. `updateRecurring` (series scope) mirrors
-  the changed fields onto the local override rows at save.
+  the changed fields onto the local override rows at save, as a
+  projection of the queued op (`carriedText.ts`): the op keeps the text
+  Google's master had and each exception's own text (`carried_text`).
+  "Changed" is measured against Google's text, not the local row, so an
+  offline rename and its revert coalesce into a no-change patch and the
+  exceptions keep their own titles, as on Google; an empty field equals a
+  missing one (Google stores no empty text, and the editor sends `''`).
+  Discard, take-theirs and a permanent rejection put the exceptions' text
+  back, except a field the user has since edited on the exception. A
+  this-and-following split inherits the carry of the op it replaces.
+  Known gap: a queued instance op's payload is not rewritten, so it can
+  still push carried text of an abandoned series edit; the next pull
+  converges.
 - **Attendee editing**: `attendees` on `EventDraft`/`UpdateEventChanges`
   is a replacement guest list (`[]` clears). Google **replaces the whole
   array** on write and our copy lacks fields we never model (`optional`,

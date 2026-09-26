@@ -1,4 +1,4 @@
-import { Attendee, EventRecord, PendingOp } from '@calendar/core';
+import { Attendee, CarriedText, EventRecord, PendingOp } from '@calendar/core';
 import { SqliteClient } from '@effect/sql-sqlite-node';
 import { expect, it } from '@effect/vitest';
 import { Effect, Layer } from 'effect';
@@ -47,9 +47,14 @@ describe('PendingOpRepo', () => {
         title: 'Standup',
         updatedAt: 1,
       });
+      const carriedText = new CarriedText({
+        base: { description: null, location: 'Room 1', title: 'Daily' },
+        overrides: [{ eventId: 'evt-1_x', location: null, title: 'Daily (moved)' }],
+      });
       yield* repo.enqueue(
         op('op-1', {
           baseEtag: '"server"',
+          carriedText,
           colorHex: '#ff0000',
           lastError: 'boom',
           payload,
@@ -65,6 +70,7 @@ describe('PendingOpRepo', () => {
       expect(stored?.payload?.title).toBe('Standup');
       expect(stored?.payload?.location).toBe('Room 1');
       expect(stored?.payload?.attendees?.[0]?.email).toBe('guest@example.com');
+      expect(stored?.carriedText).toEqual(carriedText);
     }).pipe(Effect.provide(freshDbLayer())),
   );
 
