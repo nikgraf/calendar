@@ -282,6 +282,41 @@ describe('EventMutations recurring scopes', () => {
     }).pipe(Effect.provide(testLayer)),
   );
 
+  it.effect('a series edit carries changed text fields onto the exceptions, like Google', () =>
+    Effect.gen(function* () {
+      yield* seedMaster;
+      const events = yield* EventRepo;
+      // An exception with its own title and location.
+      yield* events.upsertMany([
+        new EventRecord({
+          ...master,
+          endUtc: occurrence + 60 * 60 * 1000,
+          etag: '"o-1"',
+          id: instanceId,
+          location: 'Room 4',
+          originalStartUtc: occurrence,
+          recurrence: undefined,
+          recurringEventId: 'master1',
+          startUtc: occurrence,
+          title: 'Daily (moved)',
+        }),
+      ]);
+      const mutations = yield* EventMutations;
+      // Only the title changes: Google copies it onto the exception and
+      // leaves the exception's own location alone.
+      yield* mutations.updateRecurring({
+        ...target,
+        changes: { title: 'Standup' },
+        scope: 'series',
+      });
+      const exception = yield* events.getById('acc-1', 'cal-1', instanceId);
+      expect(exception!.title).toBe('Standup');
+      expect(exception!.location).toBe('Room 4');
+      // No op for the exception: Google updates it itself.
+      expect((yield* listOps).map((op) => op.eventId)).toEqual(['master1']);
+    }).pipe(Effect.provide(testLayer)),
+  );
+
   it.effect('series and instance edits keep, replace or drop location coordinates', () =>
     Effect.gen(function* () {
       yield* seedMaster;

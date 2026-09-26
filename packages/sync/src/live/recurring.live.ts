@@ -187,10 +187,15 @@ describe('live Google: recurring series', () => {
       expect((yield* google.getEvent(calendar(), instanceId)).summary).toBe(
         `${master.title} (series)`,
       );
-      // And the next pull brings the local exception row in line.
+      // The app mirrored it on save — no pull needed — and the pull agrees.
+      const events = yield* EventRepo;
+      expect((yield* events.getById(LIVE_ACCOUNT_ID, calendar(), instanceId))?.title).toBe(
+        `${master.title} (series)`,
+      );
       yield* engine.syncAll();
-      const override = yield* (yield* EventRepo).getById(LIVE_ACCOUNT_ID, calendar(), instanceId);
-      expect(override?.title).toBe(`${master.title} (series)`);
+      expect((yield* events.getById(LIVE_ACCOUNT_ID, calendar(), instanceId))?.title).toBe(
+        `${master.title} (series)`,
+      );
     }).pipe(Effect.provide(liveEngineLayer(config))),
   );
 });
