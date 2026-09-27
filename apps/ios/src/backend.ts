@@ -2,7 +2,6 @@ import {
   makeDirectBackendClient,
   mapToBackendError,
   Temporal,
-  TokenSet,
   type BackendClient,
   type BackendHandlers,
 } from '@calendar/core';
@@ -14,7 +13,6 @@ import {
   GoogleTasksClient,
   GuestNotifications,
   TokenManager,
-  TokenStore,
 } from '@calendar/google';
 import {
   AppleCalendarEvents,
@@ -32,12 +30,13 @@ import {
 import { layer as sqliteLayer } from '@effect/sql-sqlite-react-native/SqliteClient';
 import Constants from 'expo-constants';
 import { AFTER_FIRST_UNLOCK, deleteItemAsync, getItemAsync, setItemAsync } from 'expo-secure-store';
-import { Data, Duration, Effect, Layer, ManagedRuntime, Schema } from 'effect';
+import { Data, Duration, Effect, Layer, ManagedRuntime } from 'effect';
 import { FetchHttpClient } from 'effect/unstable/http';
 import { googleFixtureLayer, seedFixtureAccounts } from '@calendar/sync/testing/googleFixture';
 import { liveWireLayer, seedLiveAccount } from '@calendar/sync/testing/liveWire';
 import { googleFixture } from '../e2e/fixtures/google.ts';
 import { signInWithGoogle } from './googleAuth.ts';
+import { makeKeychainTokenStore } from './tokenStore.ts';
 import { iosNotificationSink } from './notifications.ts';
 import { iosContactsClient, iosContactsLayer } from './contactsClient.ts';
 import { iosAppleCalendarClient, iosAppleCalendarLayer } from './appleCalendarClient.ts';
@@ -52,34 +51,11 @@ export const iosClientId: string | undefined = (
   Constants.expoConfig?.extra as { googleIosClientId?: string } | undefined
 )?.googleIosClientId;
 
-/** iOS Keychain-backed TokenStore (expo-secure-store). */
-const secureTokenStore: Layer.Layer<TokenStore> = Layer.succeed(TokenStore, {
-  get: (accountId) =>
-    Effect.promise(async () => {
-      const raw = await getItemAsync(`tokens.${accountId}`);
-      if (!raw) {
-        return null;
-      }
-      try {
-        return Schema.decodeUnknownSync(TokenSet)(JSON.parse(raw));
-      } catch {
-        return null;
-      }
-    }),
-  remove: (accountId) => Effect.promise(() => deleteItemAsync(`tokens.${accountId}`)),
-  // Readable after the first unlock since boot, so the background refresh
-  // can pull while the phone is locked. The Keychain keeps an existing
-  // item's accessibility on update, so the old WHEN_UNLOCKED item is
-  // deleted first — every token refresh (hourly) migrates it.
-  set: (accountId, tokens) =>
-    Effect.promise(async () => {
-      await deleteItemAsync(`tokens.${accountId}`);
-      await setItemAsync(
-        `tokens.${accountId}`,
-        JSON.stringify(Schema.encodeSync(TokenSet)(tokens)),
-        { keychainAccessible: AFTER_FIRST_UNLOCK },
-      );
-    }),
+/** iOS Keychain-backed TokenStore (expo-secure-store); see `tokenStore.ts`. */
+const secureTokenStore = makeKeychainTokenStore({
+  delete: (key) => deleteItemAsync(key),
+  get: (key) => getItemAsync(key),
+  set: (key, value) => setItemAsync(key, value, { keychainAccessible: AFTER_FIRST_UNLOCK }),
 });
 
 const invalidationListeners = new Set<(keys: ReadonlyArray<unknown>) => void>();

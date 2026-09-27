@@ -1201,8 +1201,12 @@ test`/`test:e2e`/`test:e2e:ios`; every file creates its own
       out; the foreground refresh stays the correctness path. Google
       tokens are now stored `AFTER_FIRST_UNLOCK` (chosen by Nik) so a
       pull can run while the phone is locked; the Keychain keeps an
-      item's accessibility on update, so `set` deletes before writing
-      and the hourly token refresh migrates existing items. Added the
+      item's accessibility on update, so tokens move to a new key
+      (`tokens.v2.<id>`, `apps/ios/src/tokenStore.ts`): the new item is
+      written first and the old one deleted only after that succeeded
+      (the refresh token is the only copy — deleting first lost it on a
+      failed write, caught in review), reads fall back to the old key
+      and migrate it the same way. Added the
       missing 60-slot cap test. No Maestro flow: BGTasks cannot be
       triggered from it; verify with `triggerBackgroundRefreshForTesting`
       in a debug build or the debugger's `_simulateLaunchForTaskWithIdentifier:`
