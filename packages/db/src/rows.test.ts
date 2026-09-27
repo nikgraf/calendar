@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { EventReminders, GeoLocation, ReminderOverride } from '@calendar/core';
+import { CarriedText, EventReminders, GeoLocation, ReminderOverride } from '@calendar/core';
 import {
   eventFromRow,
   type EventRow,
@@ -46,6 +46,7 @@ const opRow = (overrides: Partial<PendingOpRow> = {}): PendingOpRow => ({
   attendees_changed: 0,
   base_etag: null,
   calendar_id: 'cal-1',
+  carried_text: null,
   color_hex: null,
   conflict_at: null,
   created_at: 0,
@@ -129,6 +130,20 @@ describe('row decoders tolerate what the DB may hold', () => {
     const op = pendingOpFromRow(opRow({ payload: '{"id": 1}' }));
     expect(op?.kind).toBe('update');
     expect(op?.payload).toBeUndefined();
+  });
+
+  it('pendingOpFromRow reads carriedText and drops an unreadable one', () => {
+    const carried = {
+      base: { description: null, location: 'Room 1', title: 'Daily' },
+      overrides: [
+        { etag: null, eventId: 'evt_20300101T090000Z', location: null, title: 'Daily (moved)' },
+      ],
+    };
+    expect(pendingOpFromRow(opRow({ carried_text: JSON.stringify(carried) }))?.carriedText).toEqual(
+      new CarriedText(carried),
+    );
+    expect(pendingOpFromRow(opRow({ carried_text: '{"base":1}' }))?.carriedText).toBeUndefined();
+    expect(pendingOpFromRow(opRow())?.carriedText).toBeUndefined();
   });
 
   it('pendingOpFromRow skips a row whose op kind nothing could apply', () => {

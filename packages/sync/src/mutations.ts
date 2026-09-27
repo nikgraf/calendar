@@ -43,6 +43,7 @@ import type { SqlError } from 'effect/unstable/sql/SqlError';
 import { makeApplyOp } from './applyOp.ts';
 import { AppleCalendarEvents, deviceTimeZone } from './appleCalendarEvents.ts';
 import { makeAppleEventMutations } from './appleEventMutations.ts';
+import { planCarry, restoreCarriedText } from './carriedText.ts';
 import {
   CALENDAR_COLOR_EVENT_ID,
   CalendarNotWritableError,
@@ -240,6 +241,16 @@ const make: Effect.Effect<
   const opsForEvent = (calendarId: string, eventId: string) =>
     Effect.map(pendingOpRepo.listAll(), (ops) =>
       ops.filter((op) => op.calendarId === calendarId && op.eventId === eventId),
+    );
+
+  /**
+   * The carried text of the series edit a truncation replaces: its payload
+   * still shows that edit's text, so abandoning it must still undo the carry.
+   */
+  const queuedCarriedText = (calendarId: string, masterId: string) =>
+    Effect.map(
+      opsForEvent(calendarId, masterId),
+      (ops) => ops.findLast((op) => op.kind === 'update')?.carriedText,
     );
 
   const enqueue = (op: PendingOp) => pendingOpRepo.enqueue(op);
@@ -459,6 +470,7 @@ const make: Effect.Effect<
       } else {
         yield* eventRepo.deleteEvent(op.accountId, op.calendarId, op.eventId);
       }
+      yield* restoreCarriedText(eventRepo, op);
       yield* pendingOpRepo.remove(op.id);
     });
 
@@ -729,6 +741,7 @@ const make: Effect.Effect<
           updatedAt: now,
         });
         yield* eventRepo.upsertMany([truncated]);
+        const carriedText = yield* queuedCarriedText(calendarId, masterId);
         yield* pendingOpRepo.removeForEvent(calendarId, masterId);
         yield* enqueue(
           new PendingOp({
@@ -736,6 +749,7 @@ const make: Effect.Effect<
             attempts: 0,
             baseEtag: master.etag ?? undefined,
             calendarId,
+            carriedText,
             createdAt: now,
             eventId: masterId,
             id: generateEventId(),
@@ -958,27 +972,16 @@ const make: Effect.Effect<
             }),
           );
           yield* eventRepo.upsertMany([merged]);
-          // Google copies a changed title, description or location onto
-          // every exception of the series — overridden ones included — but
-          // leaves fields whose value did not change (verified live
-          // 2026-09-24). Mirror that now instead of showing the old text
-          // until the next pull.
-          const carried = {
-            ...(merged.title === master.title ? {} : { title: merged.title }),
-            ...(merged.description === master.description
-              ? {}
-              : { description: merged.description }),
-            ...(merged.location === master.location ? {} : { location: merged.location }),
-          };
-          if (Object.keys(carried).length > 0) {
-            const overrides = yield* eventRepo.listOverrides(accountId, calendarId, masterId);
-            yield* eventRepo.upsertMany(
-              overrides
-                .filter((override) => override.status !== 'cancelled')
-                .map((override) => new EventRecord({ ...override, ...carried })),
-            );
-          }
+          // Google carries changed text onto the exceptions; so does the
+          // local copy, undoably (carriedText.ts).
           const queued = yield* opsForEvent(calendarId, masterId);
+          const { carriedText, rows } = planCarry({
+            master,
+            merged,
+            overrides: yield* eventRepo.listOverrides(accountId, calendarId, masterId),
+            queued: queued.findLast((op) => op.kind === 'update'),
+          });
+          yield* eventRepo.upsertMany(rows);
           yield* pendingOpRepo.removeForEvent(calendarId, masterId);
           yield* enqueue(
             new PendingOp({
@@ -987,6 +990,7 @@ const make: Effect.Effect<
               attendeesChanged: attendeesFlag(changes, queued),
               baseEtag: master.etag ?? undefined,
               calendarId,
+              carriedText,
               createdAt: now,
               eventId: masterId,
               geoCleared: geoClearedFlag(master, merged, queued),
@@ -1027,6 +1031,7 @@ const make: Effect.Effect<
           updatedAt: now,
         });
         yield* eventRepo.upsertMany([truncated]);
+        const carriedText = yield* queuedCarriedText(calendarId, masterId);
         yield* pendingOpRepo.removeForEvent(calendarId, masterId);
         yield* enqueue(
           new PendingOp({
@@ -1034,6 +1039,7 @@ const make: Effect.Effect<
             attempts: 0,
             baseEtag: master.etag ?? undefined,
             calendarId,
+            carriedText,
             createdAt: now,
             eventId: masterId,
             id: generateEventId(),

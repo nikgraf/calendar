@@ -12,6 +12,7 @@ import {
   makeScratchRuntime,
   seedLiveAccount,
 } from '../testing/liveGoogle.ts';
+import { redactSecrets } from '../testing/liveRedact.ts';
 import { LiveScratchError } from '../testing/liveScratchRest.ts';
 
 /**
@@ -104,17 +105,29 @@ export const pendingOps = Effect.flatMap(PendingOpRepo, (repo) => repo.listAll()
  * Drains the queue the way the app eventually does: Google answers a
  * burst of writes with 403 rateLimitExceeded, the op goes into backoff
  * (30 s, then 60 s), and a later drain lands it. Keeps draining until only
- * parked ops (412s waiting for a choice) are left, or two minutes passed —
- * then the assertion that follows reports what never landed.
+ * parked ops (412s waiting for a choice) are left; after two minutes it
+ * fails with what never landed and why.
  */
 export const drain = (mutations: { readonly processPendingOps: () => Effect.Effect<void> }) =>
   Effect.gen(function* () {
     const deadline = Date.now() + 120_000;
     yield* mutations.processPendingOps();
-    while (Date.now() < deadline) {
+    for (;;) {
       const waiting = (yield* pendingOps).filter((op) => op.conflictAt === undefined);
       if (waiting.length === 0) {
         return;
+      }
+      if (Date.now() >= deadline) {
+        const now = Date.now();
+        const lines = waiting.map(
+          (op) =>
+            `  ${op.kind} ${op.eventId}: ${op.attempts} attempt(s), next in ` +
+            `${Math.max(0, Math.round((op.nextAttemptAt - now) / 1000))} s, last error: ` +
+            redactSecrets(op.lastError ?? 'none', []).text,
+        );
+        return yield* Effect.die(
+          new Error(`drain gave up after two minutes; still queued:\n${lines.join('\n')}`),
+        );
       }
       yield* Effect.sleep('5 seconds');
       yield* mutations.processPendingOps();

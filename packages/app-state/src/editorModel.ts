@@ -11,6 +11,7 @@ import {
   meetingUrl,
   openInMapsUrl,
   placeSuggestionLabel,
+  slotTimes,
   toZonedDateTime,
   validateEventDraft,
   type Attendee,
@@ -77,16 +78,19 @@ export const rememberCalendar = (calendarKey: string): void => {
   lastUsedCalendarKey = calendarKey;
 };
 
-const pad = (hour: number): string => `${String(hour).padStart(2, '0')}:00`;
-
 /**
  * The start and end a new event opens with: a quick-add result first, then
- * a slot drawn on the grid, then the clicked hour (one hour long), then 09:00.
+ * a slot drawn on the grid, then the clicked hour (one hour long; the last
+ * hour ends at 23:59, since `24:00` is no valid time), then 09:00.
  */
-export const seedTimeFields = (seed: EventEditorSeed): { endTime: string; startTime: string } => ({
-  endTime: seed.prefill?.endTime ?? seed.initialTimes?.endTime ?? pad((seed.initialHour ?? 9) + 1),
-  startTime: seed.prefill?.startTime ?? seed.initialTimes?.startTime ?? pad(seed.initialHour ?? 9),
-});
+export const seedTimeFields = (seed: EventEditorSeed): { endTime: string; startTime: string } => {
+  const hour = seed.initialHour ?? 9;
+  const clicked = slotTimes({ endMinute: (hour + 1) * 60, startMinute: hour * 60 });
+  return {
+    endTime: seed.prefill?.endTime ?? seed.initialTimes?.endTime ?? clicked.endTime,
+    startTime: seed.prefill?.startTime ?? seed.initialTimes?.startTime ?? clicked.startTime,
+  };
+};
 
 /**
  * Calendars bucketed for a picker, in first-appearance order: per Google

@@ -1146,3 +1146,35 @@ test`/`test:e2e`/`test:e2e:ios`; every file creates its own
       `toGcalTimesPatch` now nulls the unused form; the fake merges times
       like Google and has a regression test. The iOS title field gained
       the system clear button (also what the flows use to rename).
+
+### Live suite review fixes (2026-09-26)
+
+- [x] Six findings from a review of #88/#90 — done (2026-09-26,
+      `todo/review-findings`). Maestro records every `MAESTRO_*` value,
+      the live access token included, in each flow's `commands.json` and
+      `maestro.log`; `::add-mask::` covers only the job log, so the
+      failure artifacts now pass `scripts/redact-live-reports.ts` (exact
+      secrets plus token shapes, binaries holding one and symlinks
+      removed, a re-scan gating the upload), and the Maestro cache holds
+      only `bin/` and `lib/` (it was shared with `ci.yml`, so a live job's
+      reports could reach ordinary CI). The series-edit carry became a
+      projection of the queued op rather than a plain overwrite: the op
+      stores Google's master text and each exception's own text
+      (`CarriedText`, migration 6), "changed" is measured against that
+      across coalesced edits (an offline A→B→A is no change, as on Google),
+      and discard, take-theirs and a permanent rejection restore the
+      exceptions (coordinates included) except fields edited on them
+      since and rows whose etag moved on (a pull already brought Google's
+      version, e.g. another device's identical rename); storing values was
+      necessary because Google overwrites custom exception text too, so
+      nothing could be recomputed. An empty field now equals a missing one
+      in that diff: the editor always sends `location: ''`, which used to
+      wipe the exceptions' own locations locally. The iOS sidecar records
+      each scratch id as it is created and keeps what a delete missed
+      (teardown exits 1). A click on the 23:00 row opened the editor at
+      23:00–24:00, which validation rejects; the clicked hour now goes
+      through `slotTimes` like a drawn slot (ends 23:59). The live
+      recurring-delete test asserts the assembled occurrences, `drain`
+      fails with the leftover ops instead of returning, and the desktop
+      spec's free slot no longer wraps to 23:00. Deferred items are one
+      Tier 1 entry in `todo.md`.

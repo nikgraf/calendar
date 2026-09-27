@@ -39,7 +39,23 @@ invariants.
   copies the new value onto every exception of the series, overridden
   ones included; a field re-sent with its old value leaves the
   exceptions' own values alone. `updateRecurring` (series scope) mirrors
-  the changed fields onto the local override rows at save.
+  the changed fields onto the local override rows at save, as a
+  projection of the queued op (`carriedText.ts`): the op keeps the text
+  Google's master had and each exception's own text (`carried_text`).
+  "Changed" is measured against Google's text, not the local row, so an
+  offline rename and its revert coalesce into a no-change patch and the
+  exceptions keep their own titles, as on Google; an empty field equals a
+  missing one (Google stores no empty text, and the editor sends `''`).
+  Discard, take-theirs and a permanent rejection put the exceptions' text
+  back, with the coordinates a carried location dropped, except a field
+  the user has since edited on the exception and a row a pull or push
+  replaced since (its etag moved on: that is Google's version, e.g. another
+  device's identical rename, and no later incremental pull would resend
+  it). A this-and-following split inherits the carry of the op it
+  replaces.
+  Known gap: a queued instance op's payload is not rewritten, so it can
+  still push carried text of an abandoned series edit; the next pull
+  converges.
 - **Attendee editing**: `attendees` on `EventDraft`/`UpdateEventChanges`
   is a replacement guest list (`[]` clears). Google **replaces the whole
   array** on write and our copy lacks fields we never model (`optional`,
@@ -300,6 +316,13 @@ SECRET`), not with `app.json`'s iOS client.
   them as `MAESTRO_LIVE_*` (`--github-env` masks the token; `--export`
   prints shell lines) — the Maestro CLI injects every `MAESTRO_*` shell
   variable into each flow, and the refresh token never reaches Maestro.
+  The mask covers the job log only: Maestro records every `MAESTRO_*`
+  value, the token included, in each flow's `commands.json` and in
+  `maestro.log`. So a failed job's artifacts pass through
+  `scripts/redact-live-reports.ts` first (exact secrets plus token
+  shapes, then a re-scan; the upload runs only if that step passed), and
+  the Maestro cache holds `~/.maestro/bin` and `lib` only, never the
+  reports.
   The flows (`e2e/live/flows/01…05`, tag `live`, outside `e2e/flows/` so
   the default suite never picks them up) run as explicit files in that
   order; behind-the-back edits and Google-side checks are `runScript`s
@@ -337,12 +360,16 @@ test:e2e:live` (dev client installed, Metro up with the live env;
   run where the account had just exhausted its calendar-creation quota
   (the same run then got `Calendar usage limits exceeded`); neither a
   deleted task list (404) nor a deleted calendar (still lists) reproduces
-  it. Read it as Google's answer to an over-limit account; the next pass
-  recovers.
+  it. The quota is a suspected cause, not an established one: the probes
+  only ruled the other explanations out. If it recurs, record the
+  request (endpoint, sync scope, the error body) before assuming the
+  next pass recovers.
 - **Rate limits.** A full run writes fast enough that Google answers some
   writes with 403 `rateLimitExceeded`; the op backs off (30 s, 60 s) like
   in the app. `drain` in `live/support.ts` keeps draining until only
-  parked ops are left (two-minute cap), hence the 300 s live test timeout.
+  parked ops are left; after two minutes it fails, listing each op still
+  queued with its attempts, next retry and last error (hence the 300 s
+  live test timeout).
 - **Leaks.** Effect redacts `authorization` headers in logged causes; the
   desktop token file lives only in the temp profile; the iOS bundle on
   the CI simulator carries the secrets inlined (never shipped).

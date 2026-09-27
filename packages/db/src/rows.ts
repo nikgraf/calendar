@@ -2,6 +2,7 @@ import {
   Account,
   Attendee,
   CalendarInfo,
+  CarriedText,
   Contact,
   EventRecord,
   EventReminders,
@@ -417,9 +418,11 @@ export interface PendingOpRow {
   readonly target_calendar_id: string | null;
   /** Added by migration 4 (hence late). */
   readonly reminders_changed: number;
-  /** Added by migration 5 (hence last). */
+  /** Added by migration 5 (hence late). */
   readonly conflict_at: number | null;
   readonly server_payload: string | null;
+  /** Added by migration 6 (hence last). */
+  readonly carried_text: string | null;
 }
 
 /**
@@ -435,6 +438,7 @@ export const pendingOpFromRow = (row: PendingOpRow): PendingOp | undefined =>
         attendeesChanged: row.attendees_changed === 1 ? true : undefined,
         baseEtag: row.base_etag ?? undefined,
         calendarId: row.calendar_id,
+        carriedText: decodeOr(CarriedText, parseJson(row.carried_text)),
         colorHex: row.color_hex ?? undefined,
         conflictAt: row.conflict_at ?? undefined,
         createdAt: row.created_at,

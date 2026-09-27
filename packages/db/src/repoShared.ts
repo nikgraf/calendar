@@ -1,10 +1,13 @@
-import { type EventRecord, EventRecord as EventRecordSchema } from '@calendar/core';
+import { CarriedText, type EventRecord, EventRecord as EventRecordSchema } from '@calendar/core';
 import { Schema } from 'effect';
 import { SqlClient } from 'effect/unstable/sql/SqlClient';
 
 /** PendingOp payloads are stored as encoded EventRecord JSON. */
 export const eventPayloadJson = (event: EventRecord): unknown =>
   Schema.encodeSync(EventRecordSchema)(event);
+
+export const carriedTextJson = (carried: CarriedText): unknown =>
+  Schema.encodeSync(CarriedText)(carried);
 
 /**
  * The WHERE clause of every mirror INSERT: a row is written only while its

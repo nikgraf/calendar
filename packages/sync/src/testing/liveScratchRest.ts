@@ -186,7 +186,7 @@ export const createCalendar = (token: string, summary: string): Promise<{ readon
 
 /** calendars.delete — removes a secondary calendar outright (not just the subscription). */
 export const deleteCalendar = (token: string, calendarId: string): Promise<void> =>
-  request<void>(token, 'DELETE', calendarUrl(calendarId));
+  withRateLimitRetry(() => request<void>(token, 'DELETE', calendarUrl(calendarId)));
 
 export const listCalendarList = async (
   token: string,
@@ -221,7 +221,9 @@ export const createTaskList = (token: string, title: string): Promise<{ readonly
   );
 
 export const deleteTaskList = (token: string, listId: string): Promise<void> =>
-  request<void>(token, 'DELETE', `${TASKS_BASE}/users/@me/lists/${encodeURIComponent(listId)}`);
+  withRateLimitRetry(() =>
+    request<void>(token, 'DELETE', `${TASKS_BASE}/users/@me/lists/${encodeURIComponent(listId)}`),
+  );
 
 export const listTaskLists = async (token: string): Promise<ReadonlyArray<LiveTaskList>> => {
   const items: Array<LiveTaskList> = [];

@@ -25,6 +25,7 @@ import {
   toGcalTimesPatch,
 } from '@calendar/google';
 import { Cause, Clock, Effect } from 'effect';
+import { restoreCarriedText } from './carriedText.ts';
 
 /**
  * Guests get emailed about any change to an event that has guests — the
@@ -139,8 +140,13 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
           ? Effect.ignore(taskRepo.markSynced(op.accountId, op.taskListId, op.eventId))
           : Effect.void;
       case 'rsvp':
-      case 'update':
         return Effect.ignore(eventRepo.markSynced(op.accountId, op.calendarId, op.eventId));
+      case 'update':
+        // A series edit's exceptions get their own text back too.
+        return Effect.andThen(
+          Effect.ignore(restoreCarriedText(eventRepo, op)),
+          Effect.ignore(eventRepo.markSynced(op.accountId, op.calendarId, op.eventId)),
+        );
       default:
         return Effect.void;
     }

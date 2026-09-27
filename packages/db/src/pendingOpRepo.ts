@@ -5,7 +5,7 @@ import { SqlClient } from 'effect/unstable/sql/SqlClient';
 import type { SqlError } from 'effect/unstable/sql/SqlError';
 import { OPS_KEY } from './keys.ts';
 import { pendingOpFromRow, type PendingOpRow } from './rows.ts';
-import { eventPayloadJson } from './repoShared.ts';
+import { carriedTextJson, eventPayloadJson } from './repoShared.ts';
 
 export interface PendingOpRepoShape {
   /**
@@ -93,7 +93,8 @@ const makePendingOpRepo: Effect.Effect<PendingOpRepoShape, never, Reactivity | S
                                    task_list_id, task_status,
                                    task_title, task_notes, task_due, dispatched_at,
                                    attendees_changed, geo_cleared, target_calendar_id,
-                                   reminders_changed, conflict_at, server_payload)
+                                   reminders_changed, conflict_at, server_payload,
+                                   carried_text)
           VALUES (${op.id}, ${op.accountId}, ${op.calendarId}, ${op.kind},
                   ${op.eventId},
                   ${op.payload ? JSON.stringify(eventPayloadJson(op.payload)) : null},
@@ -104,7 +105,8 @@ const makePendingOpRepo: Effect.Effect<PendingOpRepoShape, never, Reactivity | S
                   ${op.dispatchedAt ?? null}, ${op.attendeesChanged ? 1 : 0},
                   ${op.geoCleared ? 1 : 0}, ${op.targetCalendarId ?? null},
                   ${op.remindersChanged ? 1 : 0}, ${op.conflictAt ?? null},
-                  ${op.serverPayload ? JSON.stringify(eventPayloadJson(op.serverPayload)) : null})
+                  ${op.serverPayload ? JSON.stringify(eventPayloadJson(op.serverPayload)) : null},
+                  ${op.carriedText ? JSON.stringify(carriedTextJson(op.carriedText)) : null})
         `),
         ),
       getById: (opId) =>

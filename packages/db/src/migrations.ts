@@ -269,6 +269,14 @@ const conflictPark = Effect.gen(function* () {
   yield* sql`ALTER TABLE pending_ops ADD COLUMN server_payload TEXT`;
 });
 
+// A series edit's carried text (JSON CarriedText): what it mirrored onto the
+// series' exceptions and their own text before, so abandoning the op can
+// put that back.
+const carriedText = Effect.gen(function* () {
+  const sql = yield* SqlClient;
+  yield* sql`ALTER TABLE pending_ops ADD COLUMN carried_text TEXT`;
+});
+
 // The third tuple element is a *loader* whose result is the migration effect.
 export const migrations: ReadonlyArray<ResolvedMigration> = [
   [1, 'baseline', Effect.succeed(baseline)],
@@ -276,4 +284,5 @@ export const migrations: ReadonlyArray<ResolvedMigration> = [
   [3, 'apple-calendar', Effect.succeed(appleCalendar)],
   [4, 'event-reminders', Effect.succeed(eventReminders)],
   [5, 'conflict-park', Effect.succeed(conflictPark)],
+  [6, 'carried-text', Effect.succeed(carriedText)],
 ];

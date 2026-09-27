@@ -305,6 +305,40 @@ export class EventRecord extends Schema.Class<EventRecord>('EventRecord')({
   updatedAt: Schema.Number,
 }) {}
 
+/**
+ * What a series edit mirrored onto the series' exceptions, kept so the
+ * queued op can undo it. Google copies a changed title, description or
+ * location onto every exception and leaves a field whose value did not
+ * change; the edit shows that at once and records what it replaced.
+ */
+export class CarriedText extends Schema.Class<CarriedText>('CarriedText')({
+  /**
+   * The master's text as Google last acknowledged it: what "changed" is
+   * measured against, also when later edits coalesce into this op.
+   */
+  base: Schema.Struct({
+    description: Schema.NullOr(Schema.String),
+    location: Schema.NullOr(Schema.String),
+    title: Schema.String,
+  }),
+  /**
+   * Each exception's own value of every field the edit carried onto it
+   * (a missing key: not carried; null: the exception had none), with its
+   * coordinates when the location was carried, and its etag then: a row
+   * whose etag moved on holds Google's version, which an undo must keep.
+   */
+  overrides: Schema.Array(
+    Schema.Struct({
+      description: Schema.optionalKey(Schema.NullOr(Schema.String)),
+      etag: Schema.NullOr(Schema.String),
+      eventId: Schema.String,
+      geo: Schema.optionalKey(Schema.NullOr(GeoLocation)),
+      location: Schema.optionalKey(Schema.NullOr(Schema.String)),
+      title: Schema.optionalKey(Schema.String),
+    }),
+  ),
+}) {}
+
 export class PendingOp extends Schema.Class<PendingOp>('PendingOp')({
   accountId: Schema.String,
   attempts: Schema.Number,
@@ -317,6 +351,12 @@ export class PendingOp extends Schema.Class<PendingOp>('PendingOp')({
   /** If-Match etag captured when the op was enqueued (update/delete). */
   baseEtag: Schema.optional(Schema.String),
   calendarId: Schema.String,
+  /**
+   * Set on a series update that mirrored changed text onto the local
+   * exceptions: abandoning the op (discard, take theirs, a permanent
+   * rejection) puts their own text back.
+   */
+  carriedText: Schema.optional(CarriedText),
   /** New calendar color for kind 'calendarColor' (lowercase #rrggbb). */
   colorHex: Schema.optional(Schema.String),
   /**

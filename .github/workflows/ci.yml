@@ -227,8 +227,12 @@ jobs:
         id: maestro
         uses: actions/cache@v6
         with:
-          path: ~/.maestro
-          key: maestro-${{ runner.os }}-${{ env.MAESTRO_VERSION }}
+          # The install only: ~/.maestro/tests holds run reports, and the
+          # live suite's reports carry its access token (google-live.yml).
+          path: |
+            ~/.maestro/bin
+            ~/.maestro/lib
+          key: maestro-install-${{ runner.os }}-${{ env.MAESTRO_VERSION }}
       - name: Install Maestro (pinned release, checksum verified)
         # The same layout the official installer produces (lib/ + bin/ under
         # ~/.maestro), without piping a remote script into bash.
