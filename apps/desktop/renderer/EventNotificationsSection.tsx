@@ -1,4 +1,8 @@
-import { useBackendMutations, useEventNotificationSettings } from '@calendar/app-state';
+import {
+  useBackendMutations,
+  useEventNotificationSettings,
+  useSettingsEditor,
+} from '@calendar/app-state';
 import { DEVICE_ONLY_SETTING_COPY, type EventNotificationSettings } from '@calendar/core';
 import { useState } from 'react';
 
@@ -9,15 +13,18 @@ import { useState } from 'react';
  * turning it on posts the permission banner, a denial stays as a notice.
  */
 export function EventNotificationsSection() {
-  const settings = useEventNotificationSettings();
   const { setEventNotificationSettings } = useBackendMutations();
+  const [settings, persist] = useSettingsEditor(
+    useEventNotificationSettings(),
+    setEventNotificationSettings,
+  );
   const [notice, setNotice] = useState<string | null>(null);
 
   if (!settings) {
     return null;
   }
   const save = (next: Partial<EventNotificationSettings>) =>
-    void setEventNotificationSettings({ ...settings, ...next }).then(
+    void persist(next).then(
       ({ notificationsGranted }) =>
         setNotice(
           notificationsGranted

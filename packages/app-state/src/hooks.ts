@@ -268,6 +268,34 @@ export const useEventNotificationSettings = (): EventNotificationSettings | null
   return Option.getOrNull(AsyncResult.value(result));
 };
 
+/**
+ * A device-local setting as its editor sees it: the stored value until
+ * the first change, then the last value sent. Merging a change into the
+ * read value instead loses the previous change whenever the second click
+ * lands before the re-read (two quick toggles). The settings UI is the
+ * only writer of these keys, so its own last value is the truth; a failed
+ * save falls back to the stored one.
+ */
+export const useSettingsEditor = <A extends object, R>(
+  stored: A | null,
+  persist: (next: A) => Promise<R>,
+): readonly [current: A | null, save: (change: Partial<A>) => Promise<R>] => {
+  const [sent, setSent] = useState<A | null>(null);
+  const current = sent ?? stored;
+  const save = (change: Partial<A>): Promise<R> => {
+    if (!current) {
+      return Promise.reject(new Error('The setting has not loaded yet.'));
+    }
+    const next = { ...current, ...change };
+    setSent(next);
+    return persist(next).catch((error: unknown) => {
+      setSent(null);
+      throw error;
+    });
+  };
+  return [current, save];
+};
+
 /** The device-local view preferences; null until the first read resolves (treat as the defaults). */
 export const useViewPreferences = (): ViewPreferences | null => {
   const result = useAtomValue(useBackendAtoms().viewPreferences);

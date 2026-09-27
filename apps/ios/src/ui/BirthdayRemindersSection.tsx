@@ -1,4 +1,8 @@
-import { useBackendMutations, useBirthdayReminderSettings } from '@calendar/app-state';
+import {
+  useBackendMutations,
+  useBirthdayReminderSettings,
+  useSettingsEditor,
+} from '@calendar/app-state';
 import {
   BIRTHDAY_LEAD_DAYS,
   DEVICE_ONLY_SETTING_COPY,
@@ -18,15 +22,18 @@ import { palette } from './theme.ts';
  * by design (the first setting that does not sync), and the copy says so.
  */
 export function BirthdayRemindersSection() {
-  const settings = useBirthdayReminderSettings();
   const { setBirthdayReminderSettings } = useBackendMutations();
+  const [settings, persist] = useSettingsEditor(
+    useBirthdayReminderSettings(),
+    setBirthdayReminderSettings,
+  );
   const [notice, setNotice] = useState<string | null>(null);
 
   if (!settings) {
     return null;
   }
   const save = (next: Partial<BirthdayReminderSettings>) =>
-    void setBirthdayReminderSettings({ ...settings, ...next }).then(
+    void persist(next).then(
       ({ notificationsGranted }) =>
         setNotice(
           notificationsGranted

@@ -1206,4 +1206,9 @@ test`/`test:e2e`/`test:e2e:ios`; every file creates its own
       missing 60-slot cap test. No Maestro flow: BGTasks cannot be
       triggered from it; verify with `triggerBackgroundRefreshForTesting`
       in a debug build or the debugger's `_simulateLaunchForTaskWithIdentifier:`
-      on `com.expo.modules.backgroundtask.processing`.
+      on `com.expo.modules.backgroundtask.processing`. Fixed on the way
+      (CI caught it): the four notification settings sections merged a
+      change into the atom's last read, so a second toggle before the
+      re-read undid the first; `useSettingsEditor` keeps the last value
+      sent as the section's truth (the UI is the only writer of those
+      keys) and falls back to the stored one on a failed save.
