@@ -2,6 +2,7 @@ import { Cause, Effect, Schema } from 'effect';
 import { Rpc, RpcGroup } from 'effect/unstable/rpc';
 import type { RpcClientError } from 'effect/unstable/rpc/RpcClientError';
 import { BirthdayReminderSettings } from './birthdays/reminders.ts';
+import { EventToTaskPreview } from './editor/convertLoss.ts';
 import { MoveLoss } from './editor/moveLoss.ts';
 import { PlaceSuggestion } from './geo/location.ts';
 import { EventNotificationSettings } from './notifications/settings.ts';
@@ -170,6 +171,38 @@ export const MoveTaskParams = Schema.Struct({
 });
 export type MoveTaskParams = Schema.Schema.Type<typeof MoveTaskParams>;
 
+/**
+ * Source event (the master id for a series) and the list the task it
+ * becomes goes to. `draft` is what the task form holds on Save: like a
+ * task move, the copy is written from it, not from the event row.
+ */
+export const ConvertEventToTaskParams = Schema.Struct({
+  accountId: Schema.String,
+  calendarId: Schema.String,
+  draft: TaskDraft,
+  eventId: Schema.String,
+  target: Schema.Struct({ accountId: Schema.String, taskListId: Schema.String }),
+});
+export type ConvertEventToTaskParams = Schema.Schema.Type<typeof ConvertEventToTaskParams>;
+
+/** `ConvertEventToTaskParams` without the draft: what the preview needs. */
+export const PreviewEventToTaskParams = Schema.Struct({
+  accountId: Schema.String,
+  calendarId: Schema.String,
+  eventId: Schema.String,
+  target: Schema.Struct({ accountId: Schema.String, taskListId: Schema.String }),
+});
+export type PreviewEventToTaskParams = Schema.Schema.Type<typeof PreviewEventToTaskParams>;
+
+/** Source task and the event it becomes (`draft` names the target calendar). */
+export const ConvertTaskToEventParams = Schema.Struct({
+  accountId: Schema.String,
+  draft: EventDraft,
+  taskId: Schema.String,
+  taskListId: Schema.String,
+});
+export type ConvertTaskToEventParams = Schema.Schema.Type<typeof ConvertTaskToEventParams>;
+
 /** Wire format of a failed backend call. */
 export class BackendError extends Schema.Error<BackendError>('core/BackendError')({
   message: Schema.String,
@@ -208,6 +241,26 @@ export class AppBackendRpcs extends RpcGroup.make(
   Rpc.make('connectReminders', {
     error: BackendError,
     success: Schema.Struct({ granted: Schema.Boolean }),
+  }),
+  /**
+   * Turns an event (a whole series: pass the master id) into a task in
+   * the given list: the task is created from `draft`, then the event is
+   * deleted — call `previewEventToTask` first and confirm what that drops.
+   */
+  Rpc.make('convertEventToTask', {
+    error: BackendError,
+    payload: ConvertEventToTaskParams,
+    success: TaskRecord,
+  }),
+  /**
+   * Turns a task into an event: the event is created from `draft`, then
+   * the task is deleted — check `taskToEventLoss` first and confirm what
+   * that drops.
+   */
+  Rpc.make('convertTaskToEvent', {
+    error: BackendError,
+    payload: ConvertTaskToEventParams,
+    success: EventRecord,
   }),
   Rpc.make('createTask', {
     error: BackendError,
@@ -358,6 +411,12 @@ export class AppBackendRpcs extends RpcGroup.make(
     error: BackendError,
     payload: MoveTaskParams,
     success: TaskRecord,
+  }),
+  /** What `convertEventToTask` with the same source and target would drop (guests, location, time…). */
+  Rpc.make('previewEventToTask', {
+    error: BackendError,
+    payload: PreviewEventToTaskParams,
+    success: EventToTaskPreview,
   }),
   /** What `moveEvent` with the same payload would drop (guests, link, modified occurrences…). */
   Rpc.make('previewMove', {

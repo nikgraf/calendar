@@ -12,7 +12,16 @@ import type {
   TaskRecurrence,
 } from '@calendar/core';
 import type { AppleCalendarError } from '@calendar/apple-calendar';
-import type { ConflictChoice, MoveEventParams, MoveLoss, MoveTaskParams } from '@calendar/core';
+import type {
+  ConflictChoice,
+  ConvertEventToTaskParams,
+  ConvertTaskToEventParams,
+  EventToTaskPreview,
+  MoveEventParams,
+  MoveLoss,
+  MoveTaskParams,
+  PreviewEventToTaskParams,
+} from '@calendar/core';
 import type { GoogleRequestError } from '@calendar/google';
 import type { RemindersError } from '@calendar/reminders';
 import { Data, type Effect } from 'effect';
@@ -97,6 +106,9 @@ type MoveError =
   | RecurringEditUnsupportedError
   | SqlError;
 
+/** A conversion touches both stores: an event-side and a task-side failure can each stop it. */
+type ConvertError = MoveError | TaskListNotFoundError | TaskNotFoundError | TaskProviderError;
+
 /**
  * Take-theirs refused: a move of the same series is queued ahead, so
  * Google does not have the event where the parked op now points yet.
@@ -157,6 +169,18 @@ export interface EventMutationsShape {
     readonly taskId: string;
     readonly taskListId: string;
   }) => Effect.Effect<void, SqlError | TaskNotFoundError | TaskProviderError>;
+  /**
+   * Turns an event (the whole series for a recurring one) into a task:
+   * creates the task in the target list from `draft`, then deletes the
+   * event. A failure between the two leaves both, never neither.
+   */
+  readonly convertEventToTask: (
+    params: ConvertEventToTaskParams,
+  ) => Effect.Effect<TaskRecord, ConvertError>;
+  /** Turns a task into an event: creates the event from `draft`, then deletes the task. */
+  readonly convertTaskToEvent: (
+    params: ConvertTaskToEventParams,
+  ) => Effect.Effect<EventRecord, ConvertError>;
   readonly createEvent: (
     draft: EventDraft,
   ) => Effect.Effect<EventRecord, EventProviderError | SqlError>;
@@ -213,6 +237,10 @@ export interface EventMutationsShape {
     TaskRecord,
     SqlError | TaskListNotFoundError | TaskNotFoundError | TaskProviderError
   >;
+  /** What convertEventToTask with this source and target would drop (see core eventToTaskLoss). */
+  readonly previewEventToTask: (
+    params: PreviewEventToTaskParams,
+  ) => Effect.Effect<EventToTaskPreview, MoveError>;
   /** What moveEvent with these params would drop (see core moveLoss). */
   readonly previewMove: (params: MoveEventParams) => Effect.Effect<MoveLoss, MoveError>;
   /** Drains due pending ops (serialized); safe to call concurrently. */

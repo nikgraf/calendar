@@ -168,6 +168,18 @@ export const commonBackendHandlers: Omit<BackendHandlers<CommonBackendServices>,
       return { granted: true };
     }),
 
+  convertEventToTask: (params) =>
+    Effect.gen(function* () {
+      const mutations = yield* EventMutations;
+      return yield* mutations.convertEventToTask(params);
+    }),
+
+  convertTaskToEvent: (params) =>
+    Effect.gen(function* () {
+      const mutations = yield* EventMutations;
+      return yield* mutations.convertTaskToEvent(params);
+    }),
+
   createEvent: (draft) =>
     Effect.gen(function* () {
       const mutations = yield* EventMutations;
@@ -299,6 +311,12 @@ export const commonBackendHandlers: Omit<BackendHandlers<CommonBackendServices>,
     Effect.gen(function* () {
       const mutations = yield* EventMutations;
       return yield* mutations.moveTask(params);
+    }),
+
+  previewEventToTask: (params) =>
+    Effect.gen(function* () {
+      const mutations = yield* EventMutations;
+      return yield* mutations.previewEventToTask(params);
     }),
 
   previewMove: (params) =>

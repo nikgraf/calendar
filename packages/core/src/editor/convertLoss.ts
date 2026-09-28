@@ -1,6 +1,12 @@
 import { Schema } from 'effect';
 import { taskRecurrenceFromLines } from '../recurrence/taskRecurrence.ts';
-import type { EventReminders, TaskPriority, TaskProvider, TaskRecord } from '../types.ts';
+import {
+  type EventReminders,
+  type TaskPriority,
+  type TaskProvider,
+  type TaskRecord,
+  TaskRecurrence,
+} from '../types.ts';
 import { joinList, plural } from './moveLoss.ts';
 
 /**
@@ -43,6 +49,18 @@ export interface EventConvertSource {
   readonly reminders?: EventReminders | undefined;
   readonly startTimeZone?: string | undefined;
 }
+
+/**
+ * The preview of an event → task conversion: what it drops, and the
+ * series' rule as a reminder can hold it (absent when there is none or
+ * it cannot be expressed). The rule rides along because the editor only
+ * has the occurrence it was opened from, never the master's lines.
+ */
+export const EventToTaskPreview = Schema.Struct({
+  carriedRecurrence: Schema.optional(TaskRecurrence),
+  loss: EventToTaskLoss,
+});
+export type EventToTaskPreview = typeof EventToTaskPreview.Type;
 
 export const eventToTaskLoss = (
   source: EventConvertSource,
