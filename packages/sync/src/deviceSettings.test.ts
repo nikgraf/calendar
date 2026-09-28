@@ -1,4 +1,8 @@
-import { DEFAULT_BIRTHDAY_REMINDER_SETTINGS, DEFAULT_VIEW_PREFERENCES } from '@calendar/core';
+import {
+  DEFAULT_BIRTHDAY_REMINDER_SETTINGS,
+  DEFAULT_VIEW_PREFERENCES,
+  isValidTimeZone,
+} from '@calendar/core';
 import { DeviceSettingsRepo, reposLayer, runMigrations } from '@calendar/db';
 import { SqliteClient } from '@effect/sql-sqlite-node';
 import { expect, it } from '@effect/vitest';
@@ -8,9 +12,12 @@ import { describe } from 'vitest';
 import {
   BIRTHDAY_REMINDERS_KEY,
   readBirthdayReminderSettings,
+  readTimeZoneSettings,
   readViewPreferences,
+  TIME_ZONES_KEY,
   VIEW_PREFERENCES_KEY,
   writeBirthdayReminderSettings,
+  writeTimeZoneSettings,
   writeViewPreferences,
 } from './deviceSettings.ts';
 
@@ -55,6 +62,42 @@ describe('view preferences', () => {
     Effect.gen(function* () {
       yield* (yield* DeviceSettingsRepo).set(VIEW_PREFERENCES_KEY, { allDayLaneCollapsed: 'yes' });
       expect(yield* readViewPreferences).toEqual(DEFAULT_VIEW_PREFERENCES);
+    }).pipe(Effect.provide(dbLayer())),
+  );
+});
+
+describe('time zone settings', () => {
+  it.effect('defaults to a single valid zone that is the primary', () =>
+    Effect.gen(function* () {
+      const settings = yield* readTimeZoneSettings;
+      expect(settings.zones).toHaveLength(1);
+      expect(settings.primary).toBe(settings.zones[0]);
+      expect(isValidTimeZone(settings.primary)).toBe(true);
+    }).pipe(Effect.provide(dbLayer())),
+  );
+
+  it.effect('round-trips the list in the stored order', () =>
+    Effect.gen(function* () {
+      yield* writeTimeZoneSettings({
+        primary: 'Asia/Kolkata',
+        zones: ['Europe/Vienna', 'Asia/Kolkata'],
+      });
+      expect(yield* readTimeZoneSettings).toEqual({
+        primary: 'Asia/Kolkata',
+        zones: ['Europe/Vienna', 'Asia/Kolkata'],
+      });
+    }).pipe(Effect.provide(dbLayer())),
+  );
+
+  it.effect('an undecodable or stale value reads as the default', () =>
+    Effect.gen(function* () {
+      const repo = yield* DeviceSettingsRepo;
+      yield* repo.set(TIME_ZONES_KEY, { primary: 'x' });
+      const fallback = yield* readTimeZoneSettings;
+      expect(fallback.zones).toHaveLength(1);
+      // A zone tzdata dropped must not reach the grid.
+      yield* repo.set(TIME_ZONES_KEY, { primary: 'Mars/Olympus', zones: ['Mars/Olympus'] });
+      expect(yield* readTimeZoneSettings).toEqual(fallback);
     }).pipe(Effect.provide(dbLayer())),
   );
 });
