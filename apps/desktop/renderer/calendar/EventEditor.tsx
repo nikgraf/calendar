@@ -45,7 +45,7 @@ export function EventEditor({
   );
   const moveConfirmation = useMoveConfirmation();
   const taskModel = useTaskEditorModel({
-    confirmMove: moveConfirmation.request,
+    confirm: moveConfirmation.request,
     onClose,
     seed: {
       existing: task,
@@ -56,7 +56,7 @@ export function EventEditor({
   });
   const eventModel = useEventEditorModel({
     calendars,
-    confirmMove: moveConfirmation.request,
+    confirm: moveConfirmation.request,
     onClose,
     seed,
     timeZone,

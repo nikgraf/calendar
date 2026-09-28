@@ -1,6 +1,10 @@
 import {
   byDayError,
+  type EventRecord,
+  eventToTaskLossSummary,
+  isEventToTaskLossy,
   isTaskMoveLossy,
+  type TaskConvertValues,
   type TaskDraft,
   type TaskListInfo,
   taskMoveLoss,
@@ -10,11 +14,18 @@ import {
   type TaskRecord,
 } from '@calendar/core';
 import { useState } from 'react';
+import type { EditorConfirmRequest } from './editorModel.ts';
 import { useBackendMutations, useTaskReadOnlyLookup } from './hooks.ts';
 import { repeatNumberError, useRepeatState } from './repeatState.ts';
 import { offeredTaskLists, taskEditorChanges, type TaskEditorValues } from './taskEditorChanges.ts';
 
 export interface TaskEditorSeed {
+  /**
+   * The event this (otherwise new) task replaces: Save converts it — the
+   * task is created from the form, then the event (its whole series) is
+   * deleted — after confirming what the event holds that a task cannot.
+   */
+  readonly convertFromEvent?: EventRecord | undefined;
   /** Present when editing; absent for create. */
   readonly existing?: TaskRecord | undefined;
   /** Default due day for creates ('YYYY-MM-DD') — usually the focused day. */
@@ -69,13 +80,13 @@ export const seedDueTiming = (seed: TaskEditorSeed): { dueTime: string; timed: b
  * simply be invisible.
  */
 export const useTaskEditorModel = ({
-  confirmMove,
+  confirm,
   onClose,
   seed,
   taskLists,
 }: {
-  /** Asks before a move that drops fields; resolves false to keep the task where it is. */
-  confirmMove: (summary: string) => Promise<boolean>;
+  /** Asks before a move or conversion that drops fields; resolves false to leave things as they are. */
+  confirm: (request: EditorConfirmRequest) => Promise<boolean>;
   onClose: () => void;
   seed: TaskEditorSeed;
   taskLists: ReadonlyArray<TaskListInfo>;
@@ -100,9 +111,13 @@ export const useTaskEditorModel = ({
   const [priority, setPriority] = useState<TaskPriority | undefined>(existing?.priority);
   const [url, setUrl] = useState(existing?.url ?? '');
   // The form edits the FIRST relative alert; any further alerts the user
-  // set in Reminders.app ride along untouched.
+  // set in Reminders.app (or an event's other notifications carried in)
+  // ride along untouched.
   const [initialAlarms] = useState<ReadonlyArray<number>>(() => existing?.alarms ?? []);
   const [alarm, setAlarm] = useState<number | undefined>(initialAlarms[0]);
+  const [extraAlarms, setExtraAlarms] = useState<ReadonlyArray<number>>(() =>
+    initialAlarms.slice(1),
+  );
   const { toSpec: repeatSpec, ...repeatState } = useRepeatState(existing?.recurrence, dueDate);
   // What the form opened with: Save sends only the fields that differ from
   // it (see taskEditorChanges) — captured once, not re-read from the row.
@@ -133,6 +148,7 @@ export const useTaskEditorModel = ({
   const readOnly = existing !== undefined && isTaskReadOnly(existing);
   /** Any writable task can move: to another Reminders list, account or provider. */
   const canMoveList = existing !== undefined && !readOnly;
+  const alarms = () => [...(alarm === undefined ? [] : [alarm]), ...extraAlarms];
   /** The form's fields as a create/move draft for the selected provider. */
   const draft = (): TaskDraft => {
     const spec = repeatSpec();
@@ -142,7 +158,7 @@ export const useTaskEditorModel = ({
       title: title.trim(),
       ...(provider === 'apple'
         ? {
-            ...(alarm === undefined ? {} : { alarms: [alarm] }),
+            ...(alarms().length === 0 ? {} : { alarms: alarms() }),
             ...(timed ? { dueTime } : {}),
             ...(priority === undefined ? {} : { priority }),
             ...(spec === undefined ? {} : { recurrence: spec }),
@@ -150,6 +166,37 @@ export const useTaskEditorModel = ({
           }
         : {}),
     };
+  };
+
+  /** The form as a conversion source (see core `convert.ts`). */
+  const values = (): TaskConvertValues => ({
+    alarms: alarms(),
+    completed: existing?.status === 'completed',
+    dueDate,
+    ...(timed ? { dueTime } : {}),
+    notes: notes.trim(),
+    priority,
+    recurrence: repeatSpec(),
+    recurrenceUnsupported,
+    title: title.trim(),
+    ...(url.trim() ? { url: url.trim() } : {}),
+  });
+
+  /**
+   * Takes an event's fields over (a create-mode flip or a conversion).
+   * The Reminders-only ones are set whatever list is selected, like the
+   * rest of the state, so a later flip to a Reminders list finds them.
+   */
+  const adopt = (next: TaskConvertValues) => {
+    setTitle(next.title);
+    setNotes(next.notes);
+    setDueDate(next.dueDate);
+    setTimed(next.dueTime !== undefined);
+    setDueTime(next.dueTime ?? '09:00');
+    setAlarm(next.alarms[0]);
+    setExtraAlarms(next.alarms.slice(1));
+    setUrl(next.url ?? '');
+    repeatState.resetRepeat(next.recurrence);
   };
 
   const save = async () => {
@@ -190,7 +237,32 @@ export const useTaskEditorModel = ({
       const sameList = existing?.accountId === accountId && existing?.listId === taskListId;
       const reHomesInPlace =
         existing?.provider === 'apple' && provider === 'apple' && existing.accountId === accountId;
-      if (existing && !sameList && !reHomesInPlace) {
+      const event = seed.convertFromEvent;
+      if (!existing && event) {
+        const source = {
+          accountId: event.accountId,
+          calendarId: event.calendarId,
+          // A series converts as a whole: its master.
+          eventId: event.recurringEventId ?? event.id,
+        };
+        const target = { accountId, taskListId };
+        // The stored event decides what is lost; ask before writing anything.
+        const preview = await mutations.previewEventToTask({ ...source, target });
+        const summary = eventToTaskLossSummary(
+          preview.loss,
+          provider === 'apple'
+            ? 'Converting this event to a reminder'
+            : 'Converting this event to a task',
+        );
+        if (
+          isEventToTaskLossy(preview.loss) &&
+          summary &&
+          !(await confirm({ kind: 'convert', subject: 'event', summary }))
+        ) {
+          return;
+        }
+        await mutations.convertEventToTask({ ...source, draft: draft(), target });
+      } else if (existing && !sameList && !reHomesInPlace) {
         const loss = taskMoveLoss(existing, {
           sameAccount: existing.accountId === accountId,
           source: existing.provider,
@@ -198,7 +270,11 @@ export const useTaskEditorModel = ({
         });
         const summary = taskMoveLossSummary(loss);
         // Ask before writing anything, so "keep it here" leaves no trace.
-        if (isTaskMoveLossy(loss) && summary && !(await confirmMove(summary))) {
+        if (
+          isTaskMoveLossy(loss) &&
+          summary &&
+          !(await confirm({ kind: 'move', subject: 'task', summary }))
+        ) {
           return;
         }
         await mutations.moveTask({
@@ -260,6 +336,7 @@ export const useTaskEditorModel = ({
   };
 
   return {
+    adopt,
     alarm,
     canMoveList,
     dueDate,
@@ -288,5 +365,6 @@ export const useTaskEditorModel = ({
     timed,
     title,
     url,
+    values,
   };
 };

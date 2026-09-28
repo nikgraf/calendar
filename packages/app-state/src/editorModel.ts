@@ -1,7 +1,12 @@
 import {
+  appendLink,
   byDayError,
   isLossy,
+  isTaskToEventLossy,
   moveLossSummary,
+  taskRecurrenceFromLines,
+  taskToEventLoss,
+  taskToEventLossSummary,
   buildRecurrenceRule,
   buildEventTimes,
   canonicalReminders,
@@ -17,6 +22,7 @@ import {
   type Attendee,
   type AttendeeInput,
   type CalendarInfo,
+  type EventConvertValues,
   type EventDraft,
   type EventRecord,
   EventReminders,
@@ -28,6 +34,7 @@ import {
   ReminderOverride,
   type RsvpResponse,
   type TaskListInfo,
+  type TaskRecord,
   type Temporal,
 } from '@calendar/core';
 import { useCallback, useState } from 'react';
@@ -59,6 +66,12 @@ export interface EventEditorPrefill {
 export interface EventEditorSeed {
   /** `accountId:calendarId` to create in; wins over the remembered calendar. */
   readonly calendarKey?: string | undefined;
+  /**
+   * The task this (otherwise new) event replaces: Save converts it — the
+   * event is created from the form, then the task is deleted — after
+   * confirming what the task holds that an event cannot.
+   */
+  readonly convertFromTask?: TaskRecord | undefined;
   readonly event?: EventRecord;
   readonly initialDate: Temporal.PlainDate;
   readonly initialHour?: number;
@@ -159,23 +172,37 @@ export const editorCapabilities = ({
 };
 
 /**
- * A promise-shaped yes/no for the move confirmation, for UIs that render
- * it inline (desktop). `request` resolves once `answer` is called.
+ * What an editor asks before a write that drops something. The platform
+ * words the buttons from `kind` and `subject`: a `move` keeps the item
+ * where it is, a `convert` (an existing item changes kind on Save) or a
+ * `switch` (a new draft changes kind) keeps it as the `subject`.
+ */
+export interface EditorConfirmRequest {
+  readonly kind: 'convert' | 'move' | 'switch';
+  readonly subject: 'event' | 'task';
+  readonly summary: string;
+}
+
+/**
+ * A promise-shaped yes/no for the move and conversion confirmations, for
+ * UIs that render them inline (desktop). `request` resolves once `answer`
+ * is called.
  */
 export const useMoveConfirmation = () => {
   const [pending, setPending] = useState<{
+    readonly request: EditorConfirmRequest;
     readonly resolve: (ok: boolean) => void;
-    readonly summary: string;
   } | null>(null);
   const request = useCallback(
-    (summary: string) => new Promise<boolean>((resolve) => setPending({ resolve, summary })),
+    (question: EditorConfirmRequest) =>
+      new Promise<boolean>((resolve) => setPending({ request: question, resolve })),
     [],
   );
   const answer = (ok: boolean) => {
     pending?.resolve(ok);
     setPending(null);
   };
-  return { answer, pendingSummary: pending?.summary ?? null, request };
+  return { answer, pending: pending?.request ?? null, request };
 };
 
 const timeString = (epochMs: number, timeZone: string): string =>
@@ -188,18 +215,19 @@ const timeString = (epochMs: number, timeZone: string): string =>
  */
 export const useEventEditorModel = ({
   calendars,
-  confirmMove,
+  confirm,
   onClose,
   seed,
   timeZone,
 }: {
   calendars: ReadonlyArray<CalendarInfo>;
   /**
-   * Asked before a move that drops something (guests, the meeting link,
-   * modified occurrences…): the platform shows `summary` and resolves
-   * whether to go ahead. Moves that lose nothing are not asked about.
+   * Asked before a move or conversion that drops something (guests, the
+   * meeting link, a task's priority…): the platform shows the summary
+   * and resolves whether to go ahead. Writes that lose nothing are not
+   * asked about.
    */
-  confirmMove: (summary: string) => Promise<boolean>;
+  confirm: (request: EditorConfirmRequest) => Promise<boolean>;
   onClose: () => void;
   seed: EventEditorSeed;
   timeZone: string;
@@ -376,7 +404,57 @@ export const useEventEditorModel = ({
     );
   const [rsvp, setRsvp] = useState(ownAttendee?.responseStatus);
   const { toSpec: repeatSpec, ...repeatState } = useRepeatState(prefill?.recurrence, date);
+  // Fields a task carried in that the form has no control for: they go
+  // out with the create draft as they came.
+  const [carried, setCarried] = useState<{
+    readonly description?: string | undefined;
+    readonly url?: string | undefined;
+  }>({});
   const [error, setError] = useState<string | null>(null);
+
+  /** The form as a conversion source (see core `convert.ts`). */
+  const values = (): EventConvertValues => {
+    const spec = repeatSpec();
+    return {
+      attendees,
+      date,
+      defaultReminderMinutes: calendarDefaultReminders,
+      description: carried.description ?? existing?.description,
+      endTime,
+      hangoutLink: existing?.hangoutLink,
+      isAllDay,
+      location: location.trim() || undefined,
+      // An occurrence never carries its series' lines; the backend preview does.
+      recurrence: existing
+        ? existing.recurrence
+        : spec
+          ? [buildRecurrenceRule(spec, isAllDay)]
+          : undefined,
+      reminders,
+      startTime,
+      startTimeZone: existing?.startTimeZone ?? timeZone,
+      title: title.trim(),
+      url: carried.url,
+    };
+  };
+
+  /** Takes a task's fields over (a create-mode flip or a conversion); guests and location stay. */
+  const adopt = (next: EventConvertValues) => {
+    setTitle(next.title);
+    setIsAllDay(next.isAllDay);
+    setDate(next.date);
+    setStartTime(next.startTime);
+    setEndTime(next.endTime);
+    updateReminders(next.reminders);
+    repeatState.resetRepeat(
+      taskRecurrenceFromLines(next.recurrence, {
+        isAllDay: next.isAllDay,
+        startTime: next.startTime,
+        timeZone,
+      }),
+    );
+    setCarried({ description: next.description, url: next.url });
+  };
 
   const addAttendee = (input: AttendeeInput): boolean => {
     const key = emailKey(input.email);
@@ -460,7 +538,11 @@ export const useEventEditorModel = ({
         // Ask before writing anything, so "keep it here" leaves no trace.
         const loss = await mutations.previewMove(move);
         const summary = moveLossSummary(loss);
-        if (isLossy(loss) && summary && !(await confirmMove(summary))) {
+        if (
+          isLossy(loss) &&
+          summary &&
+          !(await confirm({ kind: 'move', subject: 'event', summary }))
+        ) {
           return;
         }
       }
@@ -497,11 +579,18 @@ export const useEventEditorModel = ({
           eventId: existing.id,
         });
       } else {
+        // A carried URL is the event's on Apple; on Google it rides in the description.
+        const targetProvider = calendarOf(calendarKey)?.provider ?? 'google';
+        const description =
+          targetProvider === 'google'
+            ? appendLink(carried.description, carried.url)
+            : carried.description;
         const draft: EventDraft = {
           accountId,
           // Guests typed before switching to a calendar that cannot invite are not sent.
           ...(attendees.length > 0 && capabilities.canInvite ? { attendees } : {}),
           calendarId,
+          ...(description ? { description } : {}),
           geo: savedGeo,
           isAllDay,
           location: location.trim() || undefined,
@@ -515,8 +604,29 @@ export const useEventEditorModel = ({
             : {}),
           title: title.trim(),
           ...times,
+          ...(targetProvider === 'apple' && carried.url ? { url: carried.url } : {}),
         };
-        await mutations.createEvent(draft);
+        const task = seed.convertFromTask;
+        if (task) {
+          const loss = taskToEventLoss(task);
+          const summary = taskToEventLossSummary(loss, 'Converting this task to an event');
+          // Ask before writing anything, so "keep it a task" leaves no trace.
+          if (
+            isTaskToEventLossy(loss) &&
+            summary &&
+            !(await confirm({ kind: 'convert', subject: 'task', summary }))
+          ) {
+            return;
+          }
+          await mutations.convertTaskToEvent({
+            accountId: task.accountId,
+            draft,
+            taskId: task.id,
+            taskListId: task.listId,
+          });
+        } else {
+          await mutations.createEvent(draft);
+        }
         rememberCalendar(calendarKey);
       }
       if (move) {
@@ -576,6 +686,7 @@ export const useEventEditorModel = ({
   return {
     addAttendee,
     addReminder,
+    adopt,
     attendees,
     attendeeStatus,
     /** Popup offsets "calendar default" stands for on the picked calendar. */
@@ -618,6 +729,7 @@ export const useEventEditorModel = ({
     setUseDefaultReminders,
     startTime,
     title,
+    values,
     writableCalendars,
   };
 };

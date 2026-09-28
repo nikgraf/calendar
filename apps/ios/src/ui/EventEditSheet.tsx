@@ -1,4 +1,9 @@
-import { useEventEditorModel, useTaskEditorModel, type EventEditorSeed } from '@calendar/app-state';
+import {
+  type EditorConfirmRequest,
+  useEventEditorModel,
+  useTaskEditorModel,
+  type EventEditorSeed,
+} from '@calendar/app-state';
 import {
   type BirthdayOccurrence,
   type CalendarInfo,
@@ -15,18 +20,31 @@ import { TaskEditForm } from './TaskEditForm.tsx';
 
 export type EditSeed = EventEditorSeed;
 
-/** A move that drops something (guests, a due time…) asks first. */
-const confirmMoveOf =
-  (title: string) =>
-  (summary: string): Promise<boolean> =>
-    new Promise((resolve) => {
-      Alert.alert(title, summary, [
-        { onPress: () => resolve(false), style: 'cancel', text: 'Keep Here' },
-        { onPress: () => resolve(true), style: 'destructive', text: 'Move' },
-      ]);
-    });
-const confirmMove = confirmMoveOf('Move event?');
-const confirmTaskMove = confirmMoveOf('Move task?');
+const capitalize = (word: string) => word.charAt(0).toUpperCase() + word.slice(1);
+
+/** The alert for a move, conversion or create-mode switch that drops something (guests, a due time…). */
+const wording = (
+  request: EditorConfirmRequest,
+): { readonly no: string; readonly title: string; readonly yes: string } => {
+  const subject = capitalize(request.subject);
+  const other = request.subject === 'event' ? 'task' : 'event';
+  switch (request.kind) {
+    case 'move':
+      return { no: 'Keep Here', title: `Move ${request.subject}?`, yes: 'Move' };
+    case 'convert':
+      return { no: `Keep as ${subject}`, title: `Convert ${request.subject}?`, yes: 'Convert' };
+    case 'switch':
+      return { no: `Keep as ${subject}`, title: `Switch to ${other}?`, yes: 'Switch' };
+  }
+};
+const confirm = (request: EditorConfirmRequest): Promise<boolean> =>
+  new Promise((resolve) => {
+    const { no, title, yes } = wording(request);
+    Alert.alert(title, request.summary, [
+      { onPress: () => resolve(false), style: 'cancel', text: no },
+      { onPress: () => resolve(true), style: 'destructive', text: yes },
+    ]);
+  });
 
 /**
  * Modal shell for creating/editing events and tasks. The two forms live in
@@ -57,7 +75,7 @@ export function EventEditSheet({
     birthday ? 'birthday' : task ? 'task' : 'event',
   );
   const taskModel = useTaskEditorModel({
-    confirmMove: confirmTaskMove,
+    confirm,
     onClose,
     seed: {
       existing: task,
@@ -66,7 +84,7 @@ export function EventEditSheet({
     },
     taskLists,
   });
-  const eventModel = useEventEditorModel({ calendars, confirmMove, onClose, seed, timeZone });
+  const eventModel = useEventEditorModel({ calendars, confirm, onClose, seed, timeZone });
 
   return (
     <Modal
