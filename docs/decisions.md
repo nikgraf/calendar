@@ -379,6 +379,40 @@ design decisions it settled.
       Decided: no HTTP mock server; the fake sits behind effect's
       HttpClient and a pre-filled memory TokenStore keeps the real
       TokenManager and request core on the path.
+- [x] Convert events ↔ tasks/reminders, new and existing — done
+      (2026-09-28): the editor's Event | Task toggle now carries the draft
+      across in create mode (title, day, time, notes, notifications,
+      repeat rule, links) and shows for existing items too, where Save
+      converts: `convertEventToTask` / `convertTaskToEvent` rpcs create
+      the other kind from the form and delete the source, copy-then-delete
+      with the same route-ordered transaction as the moves (one shared
+      `crossStore` helper now serves both moves and both conversions).
+      Decisions: the confirmation asks only when a field that is actually
+      set has no home on the other side — the end time never counts (a
+      task has no duration), nor do calendar-default notifications or
+      links (a meeting link becomes the reminder's URL, or is appended to
+      a Google task's notes; a reminder's URL becomes an Apple event's URL
+      or rides in a Google event's description); guests, the location,
+      email notifications (any notification toward Google Tasks), an
+      inexpressible repeat rule (any rule toward Google Tasks), modified
+      occurrences, a priority, alerts after the due time and the
+      completed status do count. A timed event heading for Google Tasks
+      (date-only) counts its time as lost and asks; toward Reminders the
+      time is kept and nothing is asked — so a create-mode flip to a
+      Google list asks about the slot's time too. In create mode the
+      question comes at the flip (Save would otherwise drop what the other
+      form no longer shows; both models stay mounted, so flipping back
+      finds the old state); for an existing item it comes at Save, from
+      the stored record and the list or calendar picked by then
+      (`previewEventToTask`, pure `taskToEventLoss`). A recurring event
+      converts as its whole series only (the toggle needs scope "All
+      events", like a move); the series' rule reaches the reminder form
+      through the preview, since an occurrence row never carries its
+      master's lines. Per-occurrence conversion is a follow-up. The
+      confirmation seam carries a structured request (move / convert /
+      switch + subject) so each platform words its own buttons; the move
+      strings stay as they were. The task draft now carries every alarm,
+      not only the first, so a move keeps a reminder's further alerts.
 
 ## Apple Calendar
 
