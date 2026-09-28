@@ -6,6 +6,7 @@ import {
   usePendingOps,
   useSyncStatus,
   useTaskLists,
+  useTimeZones,
   pendingOpLabel,
   appleCalendarStatusCopy,
   contactsStatusCopy,
@@ -35,6 +36,7 @@ import { EventNotificationsSection } from './EventNotificationsSection.tsx';
 import { DiagnosticsSection } from './DiagnosticsSection.tsx';
 import { LocationsSection } from './LocationsSection.tsx';
 import { PrPreviewSection } from './PrPreviewSection.tsx';
+import { TimeZonesSection } from './TimeZonesSection.tsx';
 import { palette } from './theme.ts';
 import { MutationNoticeToast } from './Toast.tsx';
 
@@ -56,6 +58,7 @@ export function SettingsSheet({ onClose, visible }: { onClose: () => void; visib
   const pendingOps = usePendingOps();
   const syncStatus = useSyncStatus();
   const taskLists = useTaskLists();
+  const { primary: timeZone } = useTimeZones();
   const [connecting, setConnecting] = useState<Connection | null>(null);
   const busyRef = useRef(false);
   const busy = connecting !== null;
@@ -227,7 +230,7 @@ export function SettingsSheet({ onClose, visible }: { onClose: () => void; visib
                     {pendingOpLabel(op).retry ? ` — ${pendingOpLabel(op).retry}` : ''}
                   </Text>
                   {isParkedOp(op) ? (
-                    <Pressable onPress={() => askConflict(op, guarded.resolveConflict)}>
+                    <Pressable onPress={() => askConflict(op, guarded.resolveConflict, timeZone)}>
                       <Text style={styles.pendingResolve}>Resolve</Text>
                     </Pressable>
                   ) : (
@@ -338,6 +341,7 @@ export function SettingsSheet({ onClose, visible }: { onClose: () => void; visib
 
           <EventNotificationsSection />
           <BirthdayRemindersSection />
+          <TimeZonesSection />
           <LocationsSection />
           <PrPreviewSection />
           <DiagnosticsSection contacts={contacts} reminders={reminders} visible={visible} />

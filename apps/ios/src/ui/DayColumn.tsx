@@ -53,6 +53,7 @@ export function DayColumn({
   onEventPress,
   onTaskPress,
   onToggleTask,
+  secondaryZones,
   taskDrag,
   timedTasks,
   timeZone,
@@ -80,6 +81,8 @@ export function DayColumn({
   onEventPress: (event: EventRecord) => void;
   onTaskPress: (task: TaskRecord) => void;
   onToggleTask: (task: TaskRecord) => void;
+  /** The non-primary zones; a tall block adds their start–end as a third line. */
+  secondaryZones: ReadonlyArray<string>;
   taskDrag: TaskDrag;
   timedTasks: ReadonlyArray<TaskRecord>;
   timeZone: string;
@@ -188,6 +191,7 @@ export function DayColumn({
             onCommitMove={(deltaMinutes) => onCommit(event, moveEventTimes(event, deltaMinutes))}
             onCommitResize={(deltaMinutes) => onCommit(event, resizeEventEnd(event, deltaMinutes))}
             onPress={() => onEventPress(event)}
+            secondaryZones={secondaryZones}
             timeZone={timeZone}
             top={box.top * 24 * HOUR_HEIGHT}
             width={`${box.width * 100}%` as DimensionValue}

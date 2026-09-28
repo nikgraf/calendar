@@ -2,11 +2,13 @@ import { StyleSheet } from 'react-native';
 import { palette } from './theme.ts';
 
 /**
- * The editor model stores wall-clock strings (YYYY-MM-DD / HH:MM) shared
- * with desktop; the native pickers speak JS Date. On iOS the editor's
- * zone is the device zone, so local-time Dates round-trip exactly.
- * Degenerate strings fall back to today 09:00 — a picker must never
- * receive an Invalid Date.
+ * The editor models store wall-clock strings (YYYY-MM-DD / HH:MM) shared
+ * with desktop; the native pickers speak JS Date. Reminders, tasks and
+ * the birthday time are floating wall clock in the device zone, so
+ * local-time Dates round-trip exactly here. Events are wall clock in the
+ * primary zone instead: they go through pickerDates.ts. Degenerate
+ * strings fall back to today 09:00 — a picker must never receive an
+ * Invalid Date.
  */
 export const dateFromParts = (date: string, time?: string): Date => {
   const [year, month, day] = date.split('-').map(Number);

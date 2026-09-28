@@ -1,7 +1,7 @@
 /* eslint-disable react/immutability -- Reanimated shared values are mutable
    refs by design (`.value =` is the API); the React Compiler lint cannot tell
    them from hook state. */
-import { type EventRecord, formatClockTime } from '@calendar/core';
+import { type EventRecord, formatClockTime, formatZoneRange } from '@calendar/core';
 import { Pressable, StyleSheet, Text, View, type DimensionValue } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
@@ -26,6 +26,7 @@ export function DraggableEventBlock({
   onCommitMove,
   onCommitResize,
   onPress,
+  secondaryZones,
   timeZone,
   top,
   width,
@@ -39,6 +40,8 @@ export function DraggableEventBlock({
   onCommitMove: (deltaMinutes: number) => void;
   onCommitResize: (deltaMinutes: number) => void;
   onPress: () => void;
+  /** The non-primary zones; a tall block adds their start–end as a third line. */
+  secondaryZones: ReadonlyArray<string>;
   timeZone: string;
   top: number;
   width: DimensionValue;
@@ -124,6 +127,15 @@ export function DraggableEventBlock({
               {formatClockTime(event.endUtc, timeZone)}
             </Text>
           ) : null}
+          {!compact && secondaryZones.length > 0 && height > 52 ? (
+            <Text
+              numberOfLines={1}
+              style={[styles.eventZones, { color: chipTextColor(color) }]}
+              testID="event-secondary-times"
+            >
+              {formatZoneRange(event.startUtc, event.endUtc, secondaryZones)}
+            </Text>
+          ) : null}
         </Pressable>
         {draggable ? (
           <GestureDetector gesture={resizePan}>
@@ -161,6 +173,10 @@ const styles = StyleSheet.create({
   eventTitleCompact: {
     fontSize: 11,
     lineHeight: 13,
+  },
+  eventZones: {
+    fontSize: 9,
+    opacity: 0.7,
   },
   resizeHandle: {
     bottom: 0,

@@ -13,6 +13,7 @@ import {
   useBirthdaysInRangeStable,
   useTaskReadOnlyLookup,
   useTasksInRangeStable,
+  useTimeZones,
   useToday,
 } from '@calendar/app-state';
 import {
@@ -55,8 +56,40 @@ const backendAtoms = makeBackendAtoms(backendClient);
 
 const SEGMENT_LABELS = { day: 'Day', month: 'Month', twoDay: '2 Days', week: 'Week' } as const;
 
+/**
+ * Sync, invalidations and background refresh start here, whatever the
+ * zones; the calendar itself waits for the device-local time zones so its
+ * first frame is already in the primary zone (a frame in the device zone
+ * followed by a re-layout would, near midnight with a distant primary,
+ * also seed the focused day and "today" with the wrong date).
+ */
 function CalendarScreen() {
-  const timeZone = Temporal.Now.timeZoneId();
+  useBackendInvalidations(subscribeInvalidations);
+  useEffect(() => {
+    startSync();
+    registerBackgroundRefresh();
+    const subscription = AppState.addEventListener('change', (state) => {
+      if (state === 'active') {
+        kickSync();
+        runLocalNotifications();
+      }
+    });
+    return () => subscription.remove();
+  }, []);
+  const zones = useTimeZones();
+  if (!zones.loaded) {
+    return <SafeAreaView style={styles.safeArea} />;
+  }
+  return <CalendarBody primary={zones.primary} secondary={zones.secondary} />;
+}
+
+function CalendarBody({
+  primary: timeZone,
+  secondary: secondaryZones,
+}: {
+  primary: string;
+  secondary: ReadonlyArray<string>;
+}) {
   const {
     buffer,
     days,
@@ -81,19 +114,6 @@ function CalendarScreen() {
   const [editSeed, setEditSeed] = useState<EditSeed | null>(null);
   const [editTask, setEditTask] = useState<TaskRecord | null>(null);
   const [viewBirthday, setViewBirthday] = useState<BirthdayOccurrence | null>(null);
-
-  useBackendInvalidations(subscribeInvalidations);
-  useEffect(() => {
-    startSync();
-    registerBackgroundRefresh();
-    const subscription = AppState.addEventListener('change', (state) => {
-      if (state === 'active') {
-        kickSync();
-        runLocalNotifications();
-      }
-    });
-    return () => subscription.remove();
-  }, []);
 
   // Stable variant: keeps the previous days' events while a new range loads,
   // so swiping never flashes an empty grid.
@@ -273,6 +293,7 @@ function CalendarScreen() {
               })
             }
             overdue={overdue}
+            secondaryZones={secondaryZones}
             selected={focused}
             tasks={tasks}
             timeZone={timeZone}

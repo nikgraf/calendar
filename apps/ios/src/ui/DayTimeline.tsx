@@ -8,6 +8,7 @@ import {
   groupEventsByDay,
   MAX_ALL_DAY_ROWS,
   partitionCalendarTasks,
+  secondaryHourLabels,
   swipeCommitColumns,
   taskChipLabel,
   type TaskRecord,
@@ -28,7 +29,7 @@ import { DayColumn } from './DayColumn.tsx';
 import { palette } from './theme.ts';
 import { useTaskDrag } from './useTaskDrag.ts';
 import { WeekStripCell } from './WeekStrip.tsx';
-import { ALL_DAY_ROW_HEIGHT, EDGE_INSET, GUTTER_WIDTH, HOUR_HEIGHT } from './timelineLayout.ts';
+import { ALL_DAY_ROW_HEIGHT, EDGE_INSET, gutterWidth, HOUR_HEIGHT } from './timelineLayout.ts';
 
 /**
  * Writes a shared value from a worklet or callback. Going through a helper
@@ -63,6 +64,7 @@ export function DayTimeline({
   onTaskPress,
   onToggleTask,
   overdue,
+  secondaryZones,
   selected,
   tasks,
   timeZone,
@@ -90,6 +92,8 @@ export function DayTimeline({
   onToggleTask: (task: TaskRecord) => void;
   /** Open tasks due before today; drawn as overdue chips in today's column. */
   overdue: ReadonlyArray<TaskRecord>;
+  /** The non-primary zones: a second line under each hour label and on tall event blocks. */
+  secondaryZones: ReadonlyArray<string>;
   /** The focused day, ringed in the week header. */
   selected: Temporal.PlainDate;
   tasks: ReadonlyArray<TaskRecord>;
@@ -111,6 +115,22 @@ export function DayTimeline({
   const compact = days.length > 2;
   const columnWidth = pageWidth / days.length;
   const today = Temporal.PlainDate.from(todayIso);
+  // The gutter widens with the zones it lists; the header, the lane and the
+  // drag geometry all take the same width so the columns stay aligned.
+  const gutter = gutterWidth(secondaryZones.length);
+  // One label per hour for the first visible day: a DST change inside a
+  // multi-day strip can put another column an hour off, which the exact
+  // times on the blocks themselves never are.
+  const firstDay = days[0]!;
+  const secondaryLabels = useMemo(
+    () =>
+      secondaryZones.length === 0
+        ? null
+        : Array.from({ length: 24 }, (_, hour) =>
+            secondaryHourLabels(firstDay, hour, timeZone, secondaryZones),
+          ),
+    [firstDay, timeZone, secondaryZones],
+  );
 
   const commitChange = (event: EventRecord, changes: { endUtc?: number; startUtc?: number }) => {
     if (event.recurringEventId) {
@@ -196,6 +216,7 @@ export function DayTimeline({
     containerHeight,
     containerX,
     containerY,
+    gutterWidth: gutter,
     laneHeight,
     laneTop,
     panX,
@@ -263,7 +284,7 @@ export function DayTimeline({
     >
       {days.length > 1 ? (
         <View style={styles.weekHeader}>
-          <View style={styles.gutterSpacer} />
+          <View style={{ width: gutter }} />
           <View style={styles.stripViewport}>
             <Animated.View style={[styles.strip, stripStyle]}>
               {strip.map((day) => (
@@ -284,7 +305,7 @@ export function DayTimeline({
         onLayout={(layout) => setShared(laneTop, layout.nativeEvent.layout.y)}
         style={[styles.allDayLane, { height: laneHeight }]}
       >
-        <View style={styles.gutterSpacer}>
+        <View style={{ width: gutter }}>
           {!collapsed && rowsNeeded > MAX_ALL_DAY_ROWS ? (
             <Pressable
               accessibilityLabel="Collapse the all-day lane"
@@ -345,20 +366,31 @@ export function DayTimeline({
           <View style={{ height: 24 * HOUR_HEIGHT }}>
             {Array.from({ length: 24 }, (_, hour) => (
               <View key={hour} style={[styles.hourRow, { top: hour * HOUR_HEIGHT }]}>
-                <Text style={styles.hourLabel}>
-                  {hour === 0
-                    ? ''
-                    : new Temporal.PlainTime(hour).toLocaleString('en-US', {
-                        hour: 'numeric',
-                      })}
-                </Text>
+                <View style={[styles.hourLabels, { width: gutter - 12 }]}>
+                  <Text style={styles.hourLabel}>
+                    {hour === 0
+                      ? ''
+                      : new Temporal.PlainTime(hour).toLocaleString('en-US', {
+                          hour: 'numeric',
+                        })}
+                  </Text>
+                  {secondaryLabels ? (
+                    <Text
+                      numberOfLines={1}
+                      style={styles.hourLabelSecondary}
+                      testID={`hour-secondary-${hour}`}
+                    >
+                      {hour === 0 ? '' : secondaryLabels[hour]}
+                    </Text>
+                  ) : null}
+                </View>
                 <View style={styles.hourLine} />
               </View>
             ))}
 
             <View
               onLayout={(layout) => setPageWidth(layout.nativeEvent.layout.width)}
-              style={styles.eventsArea}
+              style={[styles.eventsArea, { left: gutter }]}
             >
               <Animated.View style={[styles.strip, stripStyle]}>
                 <Animated.View
@@ -388,6 +420,7 @@ export function DayTimeline({
                       onEventPress={onEventPress}
                       onTaskPress={onTaskPress}
                       onToggleTask={onToggleTask}
+                      secondaryZones={secondaryZones}
                       taskDrag={taskDrag}
                       timedTasks={timedTasksByDay.get(iso) ?? []}
                       timeZone={timeZone}
@@ -422,7 +455,6 @@ const styles = StyleSheet.create({
   },
   eventsArea: {
     bottom: 0,
-    left: GUTTER_WIDTH,
     overflow: 'hidden',
     position: 'absolute',
     right: EDGE_INSET,
@@ -472,15 +504,19 @@ const styles = StyleSheet.create({
     paddingTop: 6,
     textAlign: 'right',
   },
-  gutterSpacer: {
-    width: GUTTER_WIDTH,
-  },
   hourLabel: {
     color: palette.textFaint,
     fontSize: 10,
     textAlign: 'right',
+  },
+  hourLabels: {
     transform: [{ translateY: -6 }],
-    width: 44,
+  },
+  hourLabelSecondary: {
+    color: palette.textFaint,
+    fontSize: 8,
+    opacity: 0.8,
+    textAlign: 'right',
   },
   hourLine: {
     backgroundColor: palette.gridLine,

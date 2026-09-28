@@ -3,6 +3,7 @@ import {
   subscribeMutationNotices,
   useGuardedMutations,
   usePendingOps,
+  useTimeZones,
 } from '@calendar/app-state';
 import { isParkedOp } from '@calendar/core';
 import { DROPPED_NOTICE_KEY } from '@calendar/db/keys';
@@ -82,6 +83,7 @@ function NoticeToast({ message, noticeKey }: { message: string; noticeKey: strin
 export function ConflictBanner() {
   const parked = usePendingOps().filter(isParkedOp);
   const { resolveConflict } = useGuardedMutations();
+  const { primary: timeZone } = useTimeZones();
   const first = parked[0];
   if (!first) {
     return null;
@@ -90,7 +92,7 @@ export function ConflictBanner() {
   return (
     <Pressable
       accessibilityRole="button"
-      onPress={() => askConflict(first, resolveConflict)}
+      onPress={() => askConflict(first, resolveConflict, timeZone)}
       style={[styles.toast, styles.conflict]}
       testID="conflict-banner"
     >
