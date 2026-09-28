@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { Temporal } from '../time/temporal.ts';
-import { bufferedDays, bufferedRange } from './dayStrip.ts';
+import { bufferedDays, bufferedRange, TWO_DAY_SWIPE_BUFFER } from './dayStrip.ts';
 
 const MONDAY = Temporal.PlainDate.from('2026-08-17');
 
@@ -13,6 +13,13 @@ describe('dayStrip', () => {
     ]);
     expect(bufferedDays(MONDAY, 7, 2)).toHaveLength(11);
     expect(bufferedDays(MONDAY, 7, 2)[0]!.toString()).toBe('2026-08-15');
+  });
+
+  it('gives the two-day view a full page of drawn neighbours on each side', () => {
+    const strip = bufferedDays(MONDAY, 2, TWO_DAY_SWIPE_BUFFER);
+    expect(strip).toHaveLength(6);
+    expect(strip[0]!.toString()).toBe('2026-08-15');
+    expect(strip.at(-1)!.toString()).toBe('2026-08-20');
   });
 
   it('renders only the visible days when there is no buffer', () => {

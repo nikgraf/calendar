@@ -1258,3 +1258,30 @@ test`/`test:e2e`/`test:e2e:ios`; every file creates its own
       re-read undid the first; `useSettingsEditor` keeps the last value
       sent as the section's truth (the UI is the only writer of those
       keys) and falls back to the stored one on a failed save.
+
+### iOS two-day view (2026-09-28)
+
+- [x] iOS "2 Days" view between Day and Week — done (2026-09-28): a
+      fourth segment shows the focused day and the next one side by
+      side. It is the week timeline with two columns: `DayTimeline`
+      already draws `days.length` columns with per-day swipe paging and
+      its own header cells, so the change is in the shared
+      `useCalendarNavigation` (`'twoDay'` in `CalendarViewKind`, a
+      `viewColumns` helper replacing the scattered `7` / `=== 'week'`
+      literals) plus the iOS segment. Decisions: the window is anchored
+      on the focused day (`[focused, focused + 1]`, as Apple's and
+      Google's multi-day views do), so unlike the week's Monday-snapped
+      window it needs no state of its own — a swipe moves `focused` by
+      the columns crossed, a chevron by two, Today shows today and
+      tomorrow, and a header tap opens that day in the Day view as in the
+      week. `TWO_DAY_SWIPE_BUFFER` is two, the week's rule of buffer =
+      visible columns, so a full-page drag reveals drawn columns and can
+      commit both days. Two columns (~170 pt on a phone) keep the day
+      view's block layout: the column divider now follows
+      `days.length > 1` and the dense text only `days.length > 2`. The
+      title reuses the week format on a two-day span ("Sep 30 – Oct 1,
+      2026"). Desktop keeps Day / Week / Month (the shared type gains the
+      value, its segment is its own literal); the chosen view is still
+      not persisted, on either app. `18-two-day-view.yaml` covers the
+      chevrons, Today and a swipe in CI; `titleFor` and `viewColumns` are
+      exported for unit tests.

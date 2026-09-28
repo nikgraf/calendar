@@ -21,6 +21,7 @@ import {
   makeColorLookup,
   type TaskRecord,
   Temporal,
+  TWO_DAY_SWIPE_BUFFER,
   utcMsToPlainDate,
   WEEK_SWIPE_BUFFER,
   weekStart,
@@ -52,7 +53,7 @@ import { WeekStrip } from './src/ui/WeekStrip.tsx';
 
 const backendAtoms = makeBackendAtoms(backendClient);
 
-const SEGMENT_LABELS = { day: 'Day', month: 'Month', week: 'Week' } as const;
+const SEGMENT_LABELS = { day: 'Day', month: 'Month', twoDay: '2 Days', week: 'Week' } as const;
 
 function CalendarScreen() {
   const timeZone = Temporal.Now.timeZoneId();
@@ -73,6 +74,7 @@ function CalendarScreen() {
     initialView: 'day',
     timeZone,
     titleStyle: 'compact',
+    twoDayBuffer: TWO_DAY_SWIPE_BUFFER,
     weekBuffer: WEEK_SWIPE_BUFFER,
   });
   const [showSettings, setShowSettings] = useState(false);
@@ -121,13 +123,15 @@ function CalendarScreen() {
 
   const colorOf = useMemo(() => makeColorLookup(calendars), [calendars]);
 
-  // Day view: the focused day's Monday week as a date picker. The week view
-  // draws its own headers inside the timeline, panning with the columns.
+  // Day view: the focused day's Monday week as a date picker. The two-day
+  // and week views draw their own headers inside the timeline, panning
+  // with the columns.
   const stripDays = useMemo(() => {
     const start = weekStart(focused);
     return Array.from({ length: 7 }, (_, index) => start.add({ days: index }));
   }, [focused]);
-  const unit = view === 'month' ? 'month' : view === 'week' ? 'week' : 'day';
+  const unit =
+    view === 'month' ? 'month' : view === 'week' ? 'week' : view === 'twoDay' ? '2 days' : 'day';
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -194,7 +198,7 @@ function CalendarScreen() {
       </View>
 
       <View style={styles.segment}>
-        {(['day', 'week', 'month'] as const).map((kind) => (
+        {(['day', 'twoDay', 'week', 'month'] as const).map((kind) => (
           <Pressable
             accessibilityRole="button"
             accessibilityState={{ selected: view === kind }}
