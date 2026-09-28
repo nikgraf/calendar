@@ -28,7 +28,9 @@ import { TestClock } from 'effect/testing';
 import { layer as reactivityLayer } from 'effect/unstable/reactivity/Reactivity';
 import { describe } from 'vitest';
 import { appleCalendarServicesLayer } from './appleCalendarEvents.ts';
+import { backgroundRefresh } from './backgroundRefresh.ts';
 import { DeviceContacts } from './deviceContacts.ts';
+import { SyncEngine } from './engine.ts';
 import { writeBirthdayReminderSettings, writeEventNotificationSettings } from './deviceSettings.ts';
 import { LocalNotifications } from './localNotifications.ts';
 import { NotificationSink, type NotificationSinkShape } from './notificationSink.ts';
@@ -420,6 +422,39 @@ describe('LocalNotifications', () => {
     },
   );
 
+  it.effect('a scheduled sink gets the soonest 60; later ones follow as time passes', () => {
+    const scheduled = scheduledSink();
+    const hour = 60 * 60 * 1000;
+    const first = Date.parse('2026-03-01T13:00:00Z');
+    // Hourly events, well inside the 7-day horizon: 70 plans for 60 slots.
+    const events = Array.from(
+      { length: 70 },
+      (_, i) =>
+        new EventRecord({
+          ...standup,
+          endUtc: first + i * hour + hour / 2,
+          id: `e${String(i)}`,
+          startUtc: first + i * hour,
+        }),
+    );
+    const key = (i: number) => `event:acc-1/cal-1/e${String(i)}:${String(first + i * hour)}:10`;
+    return Effect.gen(function* () {
+      yield* seedGoogle(...events);
+      const notifications = yield* LocalNotifications;
+      yield* setClock('2026-03-01T12:00:00Z');
+      yield* notifications.run();
+      expect(scheduled.schedules[0]!.map((plan) => plan.key)).toEqual(
+        Array.from({ length: 60 }, (_, i) => key(i)),
+      );
+      // Ten of them delivered: the freed slots take the next ten.
+      yield* TestClock.adjust('10 hours');
+      yield* notifications.run();
+      expect(scheduled.schedules[1]!.map((plan) => plan.key)).toEqual(
+        Array.from({ length: 60 }, (_, i) => key(i + 10)),
+      );
+    }).pipe(Effect.provide(testLayer(scheduled.sink)));
+  });
+
   it.effect('a scheduled sink without permission schedules nothing', () => {
     const scheduled = scheduledSink(false);
     return Effect.gen(function* () {
@@ -429,5 +464,61 @@ describe('LocalNotifications', () => {
       expect(scheduled.schedules).toEqual([]);
       expect(yield* (yield* DeviceSettingsRepo).get('localNotifications.scheduled')).toBeNull();
     }).pipe(Effect.provide(testLayer(scheduled.sink)));
+  });
+});
+
+/** A SyncEngine whose one pass is `syncAll` — the pull under test. */
+const stubEngine = (syncAll: Effect.Effect<void, unknown, EventRepo>) =>
+  Layer.effect(SyncEngine)(
+    Effect.map(Effect.context<EventRepo>(), (context) => ({
+      start: () => Effect.void,
+      syncAll: () => Effect.orDie(Effect.provide(syncAll, context)),
+    })),
+  );
+
+describe('backgroundRefresh', () => {
+  it.effect('reschedules what the pull brought in', () => {
+    const scheduled = scheduledSink();
+    const pulled = Effect.flatMap(EventRepo, (repo) => repo.upsertMany([standup]));
+    return Effect.gen(function* () {
+      yield* seedGoogle();
+      yield* setClock('2026-03-01T12:00:00Z');
+      yield* backgroundRefresh('20 seconds');
+      expect(scheduled.schedules.map((plans) => plans.map((plan) => plan.key))).toEqual([
+        [STANDUP_KEY],
+      ]);
+    }).pipe(Effect.provide(stubEngine(pulled).pipe(Layer.provideMerge(testLayer(scheduled.sink)))));
+  });
+
+  it.effect('a sync past its budget still refreshes the schedule from local data', () => {
+    const scheduled = scheduledSink();
+    return Effect.gen(function* () {
+      yield* seedGoogle(standup);
+      yield* setClock('2026-03-01T12:00:00Z');
+      const refresh = yield* Effect.forkChild(backgroundRefresh('20 seconds'));
+      yield* TestClock.adjust('20 seconds');
+      yield* Fiber.join(refresh);
+      expect(scheduled.schedules.map((plans) => plans.map((plan) => plan.key))).toEqual([
+        [STANDUP_KEY],
+      ]);
+    }).pipe(
+      Effect.provide(stubEngine(Effect.never).pipe(Layer.provideMerge(testLayer(scheduled.sink)))),
+    );
+  });
+
+  it.effect('a sync that dies still refreshes the schedule', () => {
+    const scheduled = scheduledSink();
+    return Effect.gen(function* () {
+      yield* seedGoogle(standup);
+      yield* setClock('2026-03-01T12:00:00Z');
+      yield* backgroundRefresh('20 seconds');
+      expect(scheduled.schedules).toHaveLength(1);
+    }).pipe(
+      Effect.provide(
+        stubEngine(Effect.die(new Error('errSecInteractionNotAllowed'))).pipe(
+          Layer.provideMerge(testLayer(scheduled.sink)),
+        ),
+      ),
+    );
   });
 });

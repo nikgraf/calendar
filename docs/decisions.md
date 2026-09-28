@@ -1057,10 +1057,8 @@ Performance:
       posted once on the first start (`localNotifications.permissionAsked`
       is set before the ask, so a crash mid-prompt never nags), not
       when the first due reminder happens to fire. Hidden
-      calendars do not notify (the range loader is the rpc's). Left for
-      later: iOS background refresh (the schedule only updates while
-      the app runs, and 60 slots fill within days on a dense calendar)
-      — backlog item under Tier 2.
+      calendars do not notify (the range loader is the rpc's). iOS
+      background refresh followed on 2026-09-27 (entry below).
 
 ### Conflicts with a choice (2026-09-23)
 
@@ -1178,3 +1176,43 @@ test`/`test:e2e`/`test:e2e:ios`; every file creates its own
       fails with the leftover ops instead of returning, and the desktop
       spec's free slot no longer wraps to 23:00. Deferred items are one
       Tier 1 entry in `todo.md`.
+
+### iOS background refresh for notifications (2026-09-27)
+
+- [x] iOS background refresh for local notifications — done
+      (2026-09-27): the ≤ 60-slot OS schedule only updated while the app
+      ran, so a dense calendar ran dry within days and an event added
+      elsewhere never notified until the next launch. Now a background
+      task (`expo-background-task`, registered on mount with a 30-minute
+      minimum interval) runs `backgroundRefresh`: `syncAll` bounded to
+      20 s, then `LocalNotifications.run()` regardless — a pull that is
+      slow, offline or dies (a Keychain read while locked) still leaves
+      a schedule refilled from local data. Decisions: the effect lives
+      in `packages/sync` so the ordering and the budget are unit-tested
+      against a stub engine; the task is defined in `index.ts` before
+      `registerRootComponent`, because a background launch runs it
+      before anything mounts, and it reuses the app's one runtime (a
+      mount on the same launch is harmless: `syncAll` is gated, `run`
+      serialized); both modules load through a guarded `require` so OTA
+      previews on older binaries keep working. expo-background-task
+      submits a `BGProcessingTask` (network required, no power
+      requirement), not the `BGAppRefreshTask` the backlog named — iOS
+      tends to grant it overnight or while idle, which is when slots run
+      out; the foreground refresh stays the correctness path. Google
+      tokens are now stored `AFTER_FIRST_UNLOCK` (chosen by Nik) so a
+      pull can run while the phone is locked; the Keychain keeps an
+      item's accessibility on update, so tokens move to a new key
+      (`tokens.v2.<id>`, `apps/ios/src/tokenStore.ts`): the new item is
+      written first and the old one deleted only after that succeeded
+      (the refresh token is the only copy — deleting first lost it on a
+      failed write, caught in review), reads fall back to the old key
+      and migrate it the same way. Added the
+      missing 60-slot cap test. No Maestro flow: BGTasks cannot be
+      triggered from it; verify with `triggerBackgroundRefreshForTesting`
+      in a debug build or the debugger's `_simulateLaunchForTaskWithIdentifier:`
+      on `com.expo.modules.backgroundtask.processing`. Fixed on the way
+      (CI caught it): the four notification settings sections merged a
+      change into the atom's last read, so a second toggle before the
+      re-read undid the first; `useSettingsEditor` keeps the last value
+      sent as the section's truth (the UI is the only writer of those
+      keys) and falls back to the stored one on a failed save.
