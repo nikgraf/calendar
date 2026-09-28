@@ -41,7 +41,7 @@ const setShared = (shared: SharedValue<number>, value: number) => {
 };
 
 /**
- * The timed grid for one day or one week: `days` are the visible columns,
+ * The timed grid for one day, two days or one week: `days` are the visible columns,
  * `buffer` neighbours on each side stay drawn so a swipe reveals content.
  * The strip follows the finger and a release commits the columns crossed —
  * one day at a time in the week view too, which is why the week's day
@@ -105,7 +105,10 @@ export function DayTimeline({
   const collapsed = useViewPreferences()?.allDayLaneCollapsed ?? false;
   const setCollapsed = (value: boolean) => void setViewPreferences({ allDayLaneCollapsed: value });
   const panX = useSharedValue(0);
-  const compact = days.length > 1;
+  // Columns get a divider whenever there is more than one; the dense text
+  // treatment only once they are week-narrow (two columns fit the day layout).
+  const divided = days.length > 1;
+  const compact = days.length > 2;
   const columnWidth = pageWidth / days.length;
   const today = Temporal.PlainDate.from(todayIso);
 
@@ -373,6 +376,7 @@ export function DayTimeline({
                       colorOf={colorOf}
                       compact={compact}
                       date={day}
+                      divided={divided}
                       draggingKey={taskDrag.dragging?.key ?? null}
                       events={(byDay.get(iso) ?? []).filter((event) => !event.isAllDay)}
                       isTaskReadOnly={isTaskReadOnly}

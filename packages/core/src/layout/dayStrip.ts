@@ -1,5 +1,7 @@
 /** Neighbour days the mobile day view keeps drawn on each side. */
 export const DAY_SWIPE_BUFFER = 1;
+/** The mobile two-day view: a full-page drag reveals two drawn columns. */
+export const TWO_DAY_SWIPE_BUFFER = 2;
 /** The mobile week view pages by whole weeks, so a full week sits on each side. */
 export const WEEK_SWIPE_BUFFER = 7;
 

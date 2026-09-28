@@ -1,0 +1,31 @@
+appId: com.solunivo.app
+name: The two-day view steps and swipes by its columns
+tags:
+  - ci
+---
+- runFlow: ../common/launch.yaml
+- tapOn: '2 Days'
+# Two-day titles are "Sep 28 – 29, 2026" or "Sep 30 – Oct 1, 2026".
+- assertVisible:
+    text: '.* – .*, 20\d\d'
+- assertVisible:
+    id: 'day-timeline'
+- copyTextFrom:
+    id: 'day-title'
+# A chevron moves two days, so the title changes; Today brings it back.
+- tapOn:
+    id: 'nav-next'
+- assertNotVisible: '${maestro.copiedText}'
+- tapOn: 'Today'
+- assertVisible: '${maestro.copiedText}'
+# A quarter of the screen is half a column: the strip follows the finger
+# and the release commits the column crossed, so the window starts on a
+# new day and the title changes.
+- swipe:
+    start: 85%, 60%
+    end: 60%, 60%
+- assertNotVisible: '${maestro.copiedText}'
+- assertVisible:
+    text: '.* – .*, 20\d\d'
+- tapOn: 'Today'
+- assertVisible: '${maestro.copiedText}'

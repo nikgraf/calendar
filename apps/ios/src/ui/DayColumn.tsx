@@ -42,6 +42,7 @@ export function DayColumn({
   colorOf,
   compact,
   date,
+  divided,
   draggingKey,
   events,
   isTaskReadOnly,
@@ -58,8 +59,11 @@ export function DayColumn({
   width,
 }: {
   colorOf: (event: EventRecord) => string;
+  /** Week-narrow column: smaller block text, no slot time label. */
   compact: boolean;
   date: Temporal.PlainDate;
+  /** One of several columns: draws the left divider. */
+  divided: boolean;
   /** The task being dragged, if any: its source block dims. */
   draggingKey: string | null;
   /** Timed events touching this day. */
@@ -148,7 +152,7 @@ export function DayColumn({
     });
 
   return (
-    <View style={[styles.dayColumn, compact && styles.dayColumnCompact, { width }]}>
+    <View style={[styles.dayColumn, divided && styles.dayColumnDivided, { width }]}>
       <GestureDetector gesture={createPan}>
         <View style={StyleSheet.absoluteFill} />
       </GestureDetector>
@@ -221,7 +225,7 @@ const styles = StyleSheet.create({
   dayColumn: {
     height: 24 * HOUR_HEIGHT,
   },
-  dayColumnCompact: {
+  dayColumnDivided: {
     borderLeftColor: palette.gridLine,
     borderLeftWidth: StyleSheet.hairlineWidth,
   },
