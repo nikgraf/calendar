@@ -287,10 +287,11 @@ export function WeekView({
   // The gutter widens with the zones it lists; the header and the all-day
   // lane carry the same spacer so the three stay column-aligned.
   const gutterClassName = ['w-16', 'w-24', 'w-32'][Math.min(secondaryZones.length, 2)]!;
-  // One label per hour for the first visible day: a DST change inside a
-  // multi-day strip can put another column an hour off, which the exact
-  // times on the blocks themselves never are.
-  const firstDay = strip[0] ?? days[0]!;
+  // One label per hour for the first *visible* day (not the strip's, which
+  // starts PAN_BUFFER_DAYS earlier and can sit on the other side of a DST
+  // change): a change inside a multi-day strip can still put another
+  // column an hour off, which the exact times on the blocks never are.
+  const firstDay = days[0]!;
   const secondaryLabels = useMemo(
     () =>
       secondaryZones.length === 0
