@@ -1,5 +1,8 @@
 import {
   type EditorConfirmRequest,
+  type EditorSourceKind,
+  switchEditorMode,
+  useBackendMutations,
   useEventEditorModel,
   useTaskEditorModel,
   type EventEditorSeed,
@@ -70,21 +73,78 @@ export function EventEditSheet({
   taskLists: ReadonlyArray<TaskListInfo>;
   timeZone: string;
 }) {
-  // Create mode offers an Event | Task toggle; a chip tap fixes the mode.
+  const sourceKind: EditorSourceKind = birthday
+    ? 'birthday'
+    : task
+      ? 'task'
+      : seed.event
+        ? 'event'
+        : 'new';
+  // The Event | Task toggle: in create mode it picks the kind, on an
+  // existing item it converts (Save then writes the other kind and
+  // deletes the source). Both models stay mounted so a flip keeps state.
   const [mode, setMode] = useState<'birthday' | 'event' | 'task'>(
     birthday ? 'birthday' : task ? 'task' : 'event',
   );
+  const mutations = useBackendMutations();
   const taskModel = useTaskEditorModel({
     confirm,
     onClose,
     seed: {
+      convertFromEvent: seed.event,
       existing: task,
       initialDate: seed.initialDate.toString(),
       initialTime: seed.initialTimes?.startTime,
     },
     taskLists,
   });
-  const eventModel = useEventEditorModel({ calendars, confirm, onClose, seed, timeZone });
+  const eventModel = useEventEditorModel({
+    calendars,
+    confirm,
+    onClose,
+    seed: { ...seed, convertFromTask: task },
+    timeZone,
+  });
+
+  const switchTo = async (next: 'event' | 'task') => {
+    if (next === mode) {
+      return;
+    }
+    const switched = await switchEditorMode({
+      confirm,
+      eventModel,
+      next,
+      previewEventToTask: mutations.previewEventToTask,
+      sourceKind,
+      taskModel,
+      timeZone,
+    });
+    if (switched) {
+      setMode(next);
+    }
+  };
+  const showToggle =
+    mode !== 'birthday' &&
+    !(sourceKind === 'event' && eventModel.readOnly) &&
+    !(sourceKind === 'task' && taskModel.readOnly);
+  // A series converts as a whole, like it moves: an occurrence-scoped edit stays an event.
+  const seriesOnly =
+    sourceKind === 'event' && eventModel.isRecurring && eventModel.scope !== 'series';
+  const taskWord = taskModel.provider === 'apple' ? 'Reminder' : 'Task';
+  const title =
+    mode === 'birthday'
+      ? 'Birthday'
+      : mode === 'task'
+        ? sourceKind === 'event'
+          ? `Convert to ${taskWord}`
+          : task
+            ? `Edit ${taskWord}`
+            : 'New Task'
+        : sourceKind === 'task'
+          ? 'Convert to Event'
+          : eventModel.existing
+            ? 'Edit Event'
+            : 'New Event';
 
   return (
     <Modal
@@ -105,19 +165,7 @@ export function EventEditSheet({
             <Pressable onPress={onClose}>
               <Text style={styles.cancel}>Cancel</Text>
             </Pressable>
-            <Text style={styles.title}>
-              {mode === 'birthday'
-                ? 'Birthday'
-                : mode === 'task'
-                  ? task
-                    ? taskModel.provider === 'apple'
-                      ? 'Edit Reminder'
-                      : 'Edit Task'
-                    : 'New Task'
-                  : eventModel.existing
-                    ? 'Edit Event'
-                    : 'New Event'}
-            </Text>
+            <Text style={styles.title}>{title}</Text>
             {mode === 'birthday' ||
             (mode === 'task' && taskModel.readOnly) ||
             (mode === 'event' && eventModel.readOnly) ? (
@@ -132,20 +180,28 @@ export function EventEditSheet({
             )}
           </View>
 
-          {!eventModel.existing && !task && !birthday ? (
+          {showToggle ? (
             <View style={styles.modeRow}>
-              {(['event', 'task'] as const).map((option) => (
-                <Pressable
-                  key={option}
-                  onPress={() => setMode(option)}
-                  style={[styles.scopeChip, mode === option && styles.scopeChipActive]}
-                  testID={`mode-${option}`}
-                >
-                  <Text style={[styles.scopeLabel, mode === option && styles.scopeLabelActive]}>
-                    {option === 'event' ? 'Event' : 'Task'}
-                  </Text>
-                </Pressable>
-              ))}
+              {(['event', 'task'] as const).map((option) => {
+                const disabled = option === 'task' && seriesOnly;
+                return (
+                  <Pressable
+                    disabled={disabled}
+                    key={option}
+                    onPress={() => void switchTo(option)}
+                    style={[
+                      styles.scopeChip,
+                      mode === option && styles.scopeChipActive,
+                      disabled && styles.scopeChipDisabled,
+                    ]}
+                    testID={`mode-${option}`}
+                  >
+                    <Text style={[styles.scopeLabel, mode === option && styles.scopeLabelActive]}>
+                      {option === 'event' ? 'Event' : 'Task'}
+                    </Text>
+                  </Pressable>
+                );
+              })}
             </View>
           ) : null}
         </SafeAreaView>

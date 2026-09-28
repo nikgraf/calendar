@@ -207,6 +207,9 @@ export const sheetStyles = StyleSheet.create({
     backgroundColor: '#2563eb',
     borderColor: '#2563eb',
   },
+  scopeChipDisabled: {
+    opacity: 0.4,
+  },
   scopeLabel: {
     color: palette.textMuted,
     fontSize: 13,
