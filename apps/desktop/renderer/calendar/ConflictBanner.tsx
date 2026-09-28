@@ -1,10 +1,9 @@
-import { useGuardedMutations, usePendingOps } from '@calendar/app-state';
+import { useGuardedMutations, usePendingOps, useTimeZones } from '@calendar/app-state';
 import {
   conflictChoiceLabels,
   describeConflict,
   isParkedOp,
   type ParkedOpSummary,
-  Temporal,
 } from '@calendar/core';
 
 /** Keep-mine / take-theirs for one parked op (the banner and the queue panel). */
@@ -40,11 +39,12 @@ export function ConflictActions({ op, size = 'md' }: { op: ParkedOpSummary; size
  */
 export function ConflictBanner() {
   const parked = usePendingOps().filter(isParkedOp);
+  const { primary: timeZone } = useTimeZones();
   const first = parked[0];
   if (!first) {
     return null;
   }
-  const { changes, headline } = describeConflict(first, Temporal.Now.timeZoneId());
+  const { changes, headline } = describeConflict(first, timeZone);
   return (
     <div
       className="fixed bottom-4 left-1/2 z-40 w-[min(34rem,calc(100vw-2rem))] -translate-x-1/2 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 shadow-lg"

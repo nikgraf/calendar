@@ -1,4 +1,9 @@
-import { type EventRecord, formatClockTime, type PositionedBox } from '@calendar/core';
+import {
+  type EventRecord,
+  formatClockTime,
+  formatZoneRange,
+  type PositionedBox,
+} from '@calendar/core';
 import { useCallback, useSyncExternalStore } from 'react';
 import { chipTextColor } from './colors.ts';
 import type { useEventDrag } from './useEventDrag.ts';
@@ -18,6 +23,7 @@ export function TimedEventBlock({
   event,
   hourHeight,
   onEventClick,
+  secondaryZones,
   timeZone,
 }: {
   box: PositionedBox;
@@ -26,6 +32,8 @@ export function TimedEventBlock({
   event: EventRecord;
   hourHeight: number;
   onEventClick: (event: EventRecord) => void;
+  /** The non-primary zones; a tall block adds their start–end as a third line. */
+  secondaryZones: ReadonlyArray<string>;
   timeZone: string;
 }) {
   const mine = drag.preview?.itemKey === box.id;
@@ -48,7 +56,10 @@ export function TimedEventBlock({
     dragging?.mode === 'resize'
       ? Math.max(event.endUtc + resizeMinutes * MINUTE_MS, event.startUtc + 15 * MINUTE_MS)
       : event.endUtc + moveMinutes * MINUTE_MS;
-  const compact = (heightMinutes / 60) * hourHeight < 28;
+  const pixelHeight = (heightMinutes / 60) * hourHeight;
+  const compact = pixelHeight < 28;
+  // Three lines need ~46px; the primary line alone hides below 28.
+  const showZones = secondaryZones.length > 0 && pixelHeight >= 46;
   const draggable = !event.recurrence;
   return (
     <div
@@ -87,6 +98,15 @@ export function TimedEventBlock({
           {formatClockTime(dragging ? previewEnd : event.endUtc, timeZone)}
         </p>
       )}
+      {showZones ? (
+        <p className="truncate text-[9px] opacity-60" data-testid="event-secondary-times">
+          {formatZoneRange(
+            dragging ? previewStart : event.startUtc,
+            dragging ? previewEnd : event.endUtc,
+            secondaryZones,
+          )}
+        </p>
+      ) : null}
       {draggable ? (
         <div
           className="absolute right-0 bottom-0 left-0 h-2 cursor-ns-resize"

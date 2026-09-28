@@ -3,11 +3,14 @@ import type { CSSProperties } from 'react';
 
 /** Weekday + day-number cells over the strip's columns. */
 export function DayHeaders({
+  gutterClassName,
   scrollbarWidth,
   strip,
   stripStyle,
   today,
 }: {
+  /** The hour gutter's width class, so the header's spacer matches it. */
+  gutterClassName: string;
   scrollbarWidth: number;
   strip: ReadonlyArray<Temporal.PlainDate>;
   stripStyle: CSSProperties;
@@ -18,7 +21,7 @@ export function DayHeaders({
       className="flex shrink-0 border-b border-neutral-200 bg-white"
       style={{ paddingRight: scrollbarWidth }}
     >
-      <div className="w-16 shrink-0" />
+      <div className={`shrink-0 ${gutterClassName}`} />
       <div className="min-w-0 flex-1 overflow-hidden">
         <div
           className="grid"
