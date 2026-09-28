@@ -37,6 +37,7 @@ export type EventToTaskLoss = typeof EventToTaskLoss.Type;
 export interface EventConvertSource {
   readonly attendees?:
     | ReadonlyArray<{
+        readonly email: string;
         readonly isOrganizer?: boolean | undefined;
         readonly isResource?: boolean | undefined;
         readonly isSelf?: boolean | undefined;

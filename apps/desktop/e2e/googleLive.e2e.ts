@@ -330,6 +330,9 @@ describe.skipIf(!LIVE)('Google live (real account)', { retry: 0, timeout: 120_00
     const taskTitle = `${tag()}-task`;
     await openNewEventAt();
     await app.cdp.clickButtonWithText('Task');
+    // A timed draft heading for a Google list (date-only) asks about its time.
+    await app.cdp.waitFor(`!!document.querySelector('[data-testid="move-confirm"]')`);
+    await app.cdp.clickButtonWithText('Switch');
     await app.cdp.waitFor(`document.body.textContent.includes('New task')`);
     await setEditorTitle(taskTitle);
     await pickRunList();

@@ -61,7 +61,12 @@ describe('eventToTaskLoss', () => {
   it('counts guests (rooms, organizer and self excluded), the location and modified occurrences', () => {
     const loss = eventToTaskLoss(
       {
-        attendees: [{}, { isResource: true }, { isOrganizer: true, isSelf: true }, {}],
+        attendees: [
+          { email: 'a@example.com' },
+          { email: 'room@example.com', isResource: true },
+          { email: 'me@example.com', isOrganizer: true, isSelf: true },
+          { email: 'b@example.com' },
+        ],
         isAllDay: true,
         location: 'Room 4B',
       },

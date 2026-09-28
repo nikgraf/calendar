@@ -728,6 +728,8 @@ export const useEventEditorModel = ({
     setTitle,
     setUseDefaultReminders,
     startTime,
+    /** The picked calendar's provider: what a create (or conversion) writes to. */
+    targetProvider: calendarOf(calendarKey)?.provider ?? 'google',
     title,
     values,
     writableCalendars,
