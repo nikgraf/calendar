@@ -281,6 +281,12 @@ export const useEventEditorModel = ({
       ? timeString(existing.endUtc, timeZone)
       : seedTimeFields(seed).endTime,
   );
+  // A stored event, a drawn slot or a parsed phrase chose the time; the
+  // clicked hour and the 09:00 fallback are the editor's own defaults.
+  // Only a chosen time follows the draft into a task.
+  const [timeChosen, setTimeChosen] = useState(
+    existing !== undefined || seed.initialTimes !== undefined || prefill !== undefined,
+  );
   const initialLocation = existing?.location ?? prefill?.location ?? '';
   const [location, setLocation] = useState(initialLocation);
   // Coordinates for the location text, from the event (server-mirrored) or
@@ -433,6 +439,7 @@ export const useEventEditorModel = ({
       reminders,
       startTime,
       startTimeZone: existing?.startTimeZone ?? timeZone,
+      timeChosen,
       title: title.trim(),
       url: carried.url,
     };
@@ -445,13 +452,17 @@ export const useEventEditorModel = ({
     setDate(next.date);
     setStartTime(next.startTime);
     setEndTime(next.endTime);
+    setTimeChosen(next.timeChosen);
     updateReminders(next.reminders);
+    // A task's rule comes as the form holds it; lines are parsed back only
+    // when that is all there is.
     repeatState.resetRepeat(
-      taskRecurrenceFromLines(next.recurrence, {
-        isAllDay: next.isAllDay,
-        startTime: next.startTime,
-        timeZone,
-      }),
+      next.repeat ??
+        taskRecurrenceFromLines(next.recurrence, {
+          isAllDay: next.isAllDay,
+          startTime: next.startTime,
+          timeZone,
+        }),
     );
     setCarried({ description: next.description, url: next.url });
   };
@@ -719,12 +730,21 @@ export const useEventEditorModel = ({
     scope,
     setCalendarKey,
     setDate,
-    setEndTime,
-    setIsAllDay,
+    setEndTime: (time: string) => {
+      setEndTime(time);
+      setTimeChosen(true);
+    },
+    setIsAllDay: (allDay: boolean) => {
+      setIsAllDay(allDay);
+      setTimeChosen(true);
+    },
     setLocation,
     setReminderMinutes,
     setScope,
-    setStartTime,
+    setStartTime: (time: string) => {
+      setStartTime(time);
+      setTimeChosen(true);
+    },
     setTitle,
     setUseDefaultReminders,
     startTime,

@@ -10,17 +10,6 @@ name: Switch the open new-event sheet to the task form (shared)
     commands:
       - tapOn:
           id: 'mode-task'
-      # A timed draft heading for a Google list (date-only) asks about its
-      # time; the fixture account's list comes first, so answer it.
-      - extendedWaitUntil:
-          visible: 'Switch to task?'
-          timeout: 3000
-          optional: true
-      - runFlow:
-          when:
-            visible: 'Switch to task?'
-          commands:
-            - tapOn: 'Switch'
       - extendedWaitUntil:
           visible: 'New Task'
           timeout: 5000

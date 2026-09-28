@@ -43,6 +43,10 @@ describe('eventToTaskLoss', () => {
     expect(eventToTaskLossSummary(loss, 'Converting this event to a task')).toBe(
       'Converting this event to a task drops the time and 2 notifications.',
     );
+    // The editor's untouched slot default is not a time anyone chose.
+    expect(eventToTaskLoss({ isAllDay: false, timeChosen: false }, 'google', 0).dueTime).toBe(
+      false,
+    );
   });
 
   it('ignores calendar-default notifications and counts only email ones toward Reminders', () => {

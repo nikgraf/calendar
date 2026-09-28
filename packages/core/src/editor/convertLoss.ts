@@ -49,6 +49,12 @@ export interface EventConvertSource {
   readonly recurrence?: ReadonlyArray<string> | undefined;
   readonly reminders?: EventReminders | undefined;
   readonly startTimeZone?: string | undefined;
+  /**
+   * Whether the time was chosen (a stored event, a drawn slot, a quick-add
+   * phrase, an edit) rather than the editor's untouched slot default;
+   * absent = chosen. Only a chosen time is carried or counted.
+   */
+  readonly timeChosen?: boolean | undefined;
 }
 
 /**
@@ -59,6 +65,8 @@ export interface EventConvertSource {
  */
 export const EventToTaskPreview = Schema.Struct({
   carriedRecurrence: Schema.optional(TaskRecurrence),
+  /** An Apple event's URL: the record only shows a meeting URL (as `hangoutLink`). */
+  carriedUrl: Schema.optional(Schema.String),
   loss: EventToTaskLoss,
 });
 export type EventToTaskPreview = typeof EventToTaskPreview.Type;
@@ -71,7 +79,7 @@ export const eventToTaskLoss = (
   attendees: (source.attendees ?? []).filter(
     (attendee) => !attendee.isResource && !attendee.isOrganizer && !attendee.isSelf,
   ).length,
-  dueTime: !source.isAllDay && target === 'google',
+  dueTime: !source.isAllDay && (source.timeChosen ?? true) && target === 'google',
   location: (source.location ?? '').trim() !== '',
   modifiedOccurrences,
   recurrence:

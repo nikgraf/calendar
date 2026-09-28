@@ -1,5 +1,5 @@
 appId: com.solunivo.app
-name: A reminder converts to an event and back through the editor's Event | Task toggle
+name: A reminder converts to an event and back through the editor's kind toggle
 tags:
   - ci
 ---

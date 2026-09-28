@@ -398,17 +398,25 @@ design decisions it settled.
       occurrences, a priority, alerts after the due time and the
       completed status do count. A timed event heading for Google Tasks
       (date-only) counts its time as lost and asks; toward Reminders the
-      time is kept and nothing is asked — so a create-mode flip to a
-      Google list asks about the slot's time too. In create mode the
+      time is kept and nothing is asked. Only a chosen time counts: a
+      stored event's, a drawn slot's, a parsed phrase's or an edited one —
+      the editor's own 09:00 / clicked-hour default is neither carried nor
+      asked about, so "+ → Task" still opens an untimed task. In create mode the
       question comes at the flip (Save would otherwise drop what the other
       form no longer shows; both models stay mounted, so flipping back
       finds the old state); for an existing item it comes at Save, from
       the stored record and the list or calendar picked by then
       (`previewEventToTask`, pure `taskToEventLoss`). A recurring event
       converts as its whole series only (the toggle needs scope "All
-      events", like a move); the series' rule reaches the reminder form
-      through the preview, since an occurrence row never carries its
-      master's lines. Per-occurrence conversion is a follow-up. The
+      events", like a move); the series' rule and an Apple event's plain
+      URL reach the task form through the preview, since an occurrence row
+      never carries its master's lines and the record shows only meeting
+      URLs. A link travels as the task's URL and is folded into the notes
+      (or a task's URL into the event description) only when the draft
+      finally saves to Google, so changing the list or calendar after the
+      flip cannot lose it; a task's rule reaches the event's repeat form as
+      it is, never re-read from an UNTIL line. Per-occurrence conversion is
+      a follow-up. The
       confirmation seam carries a structured request (move / convert /
       switch + subject) so each platform words its own buttons; the move
       strings stay as they were. The task draft now carries every alarm,

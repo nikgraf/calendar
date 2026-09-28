@@ -426,6 +426,22 @@ describe('convertEventToTask', () => {
     },
   );
 
+  it.effect('the preview of an Apple event carries its URL, which the record does not show', () => {
+    const apple = appleFake();
+    const reminders = remindersFake();
+    return Effect.gen(function* () {
+      yield* seed;
+      const preview = yield* (yield* EventMutations).previewEventToTask({
+        accountId: APPLE_CAL,
+        calendarId: 'ek-home',
+        eventId: 'ek-single',
+        target: { accountId: 'acc-1', taskListId: 'list-1' },
+      });
+      expect(preview.carriedUrl).toBe('https://example.com/agenda');
+      expect(preview.loss.dueTime).toBe(true);
+    }).pipe(noYield, Effect.provide(testLayer(apple, reminders.client)));
+  });
+
   it.effect('a series converts as a whole; one occurrence cannot', () => {
     const apple = appleFake();
     const reminders = remindersFake();

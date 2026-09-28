@@ -39,7 +39,7 @@ export const switchEditorMode = async ({
   readonly confirm: (request: EditorConfirmRequest) => Promise<boolean>;
   readonly eventModel: ReturnType<typeof useEventEditorModel>;
   readonly next: 'event' | 'task';
-  /** The backend preview, which carries a series' rule: an occurrence never has its master's lines. */
+  /** The backend preview: it carries a series' rule and an Apple event's URL, which the record lacks. */
   readonly previewEventToTask: (params: PreviewEventToTaskParams) => Promise<EventToTaskPreview>;
   readonly sourceKind: EditorSourceKind;
   readonly taskModel: ReturnType<typeof useTaskEditorModel>;
@@ -58,21 +58,26 @@ export const switchEditorMode = async ({
         return false;
       }
     }
-    const carried = eventValuesToTaskValues(source, taskModel.provider, timeZone);
+    const carried = eventValuesToTaskValues(source, timeZone);
     const event = eventModel.existing;
+    if (event === undefined) {
+      taskModel.adopt(carried);
+      return true;
+    }
+    // The stored event holds what the form never shows: a series' rule
+    // (an occurrence row has no lines) and an Apple event's plain URL.
     const [accountId = '', taskListId = ''] = taskModel.listKey.split(':', 2);
-    const recurrence =
-      event && eventModel.isRecurring
-        ? (
-            await previewEventToTask({
-              accountId: event.accountId,
-              calendarId: event.calendarId,
-              eventId: event.recurringEventId ?? event.id,
-              target: { accountId, taskListId },
-            })
-          ).carriedRecurrence
-        : carried.recurrence;
-    taskModel.adopt({ ...carried, recurrence });
+    const preview = await previewEventToTask({
+      accountId: event.accountId,
+      calendarId: event.calendarId,
+      eventId: event.recurringEventId ?? event.id,
+      target: { accountId, taskListId },
+    });
+    taskModel.adopt({
+      ...carried,
+      recurrence: preview.carriedRecurrence,
+      url: carried.url ?? preview.carriedUrl,
+    });
     return true;
   }
   if (next === 'event' && sourceKind !== 'event') {

@@ -1,4 +1,5 @@
 import {
+  appendLink,
   byDayError,
   type EventRecord,
   eventToTaskLossSummary,
@@ -168,6 +169,23 @@ export const useTaskEditorModel = ({
     };
   };
 
+  /**
+   * The draft for a create or a conversion. A link carried in from an
+   * event (the URL field, which a Google list has no home for) rides in
+   * the notes when the list it finally saves to is a Google one — decided
+   * here, not at the flip, since the list can change in between. A move
+   * keeps its own rule: a reminder's URL is named as lost there.
+   */
+  const newDraft = (): TaskDraft => {
+    const base = draft();
+    const link = url.trim();
+    if (provider !== 'google' || link === '') {
+      return base;
+    }
+    const notes = appendLink(base.notes, link);
+    return notes === undefined ? base : { ...base, notes };
+  };
+
   /** The form as a conversion source (see core `convert.ts`). */
   const values = (): TaskConvertValues => ({
     alarms: alarms(),
@@ -261,7 +279,7 @@ export const useTaskEditorModel = ({
         ) {
           return;
         }
-        await mutations.convertEventToTask({ ...source, draft: draft(), target });
+        await mutations.convertEventToTask({ ...source, draft: newDraft(), target });
       } else if (existing && !sameList && !reHomesInPlace) {
         const loss = taskMoveLoss(existing, {
           sameAccount: existing.accountId === accountId,
@@ -311,7 +329,7 @@ export const useTaskEditorModel = ({
           });
         }
       } else {
-        await mutations.createTask({ ...draft(), accountId, taskListId });
+        await mutations.createTask({ ...newDraft(), accountId, taskListId });
       }
       onClose();
     } catch (error) {

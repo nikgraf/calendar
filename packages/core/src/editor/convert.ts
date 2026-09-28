@@ -1,6 +1,5 @@
 import { meetingUrl } from '../meeting.ts';
 import { canonicalReminders } from '../notifications/eventReminders.ts';
-import { buildRecurrenceRule } from '../recurrence/build.ts';
 import { taskRecurrenceFromLines } from '../recurrence/taskRecurrence.ts';
 import { slotTimes } from '../time/slotSelection.ts';
 import {
@@ -33,8 +32,12 @@ export interface EventConvertValues {
   /** RFC 5545 lines. */
   readonly recurrence?: ReadonlyArray<string> | undefined;
   readonly reminders: EventReminders;
+  /** The rule as the repeat form holds it, when it came from a task (never re-read from `recurrence`). */
+  readonly repeat?: TaskRecurrence | undefined;
   readonly startTime: string;
   readonly startTimeZone?: string | undefined;
+  /** See `EventConvertSource.timeChosen`. */
+  readonly timeChosen: boolean;
   readonly title: string;
   /** Apple events only: the event URL. */
   readonly url?: string | undefined;
@@ -70,13 +73,13 @@ const nonEmpty = (text: string | undefined): string | undefined =>
 
 /**
  * What a task made from the event's fields holds. The link travels as the
- * URL (a Reminders field) and, for a Google list, inside the notes; the
- * calendar-default notifications become explicit alarms the way a move
- * to Apple resolves them; a rule a reminder can express is carried.
+ * URL; the task editor folds it into the notes if the list it finally
+ * saves to is a Google one. The calendar-default notifications become
+ * explicit alarms the way a move to Apple resolves them; a rule a
+ * reminder can express is carried; an unchosen slot default is no time.
  */
 export const eventValuesToTaskValues = (
   values: EventConvertValues,
-  target: TaskProvider,
   timeZone: string,
 ): TaskConvertValues => {
   const link = values.hangoutLink ?? meetingUrl(values) ?? nonEmpty(values.url);
@@ -85,21 +88,18 @@ export const eventValuesToTaskValues = (
     : values.reminders.overrides
         .filter((override) => override.method === 'popup')
         .map((override) => override.minutes);
-  const notes =
-    target === 'google'
-      ? appendLink(nonEmpty(values.description), link, values.location)
-      : nonEmpty(values.description);
+  const timed = !values.isAllDay && values.timeChosen;
   const recurrence = taskRecurrenceFromLines(values.recurrence, {
     isAllDay: values.isAllDay,
-    startTime: values.startTime,
+    ...(timed ? { startTime: values.startTime } : {}),
     timeZone: values.startTimeZone ?? timeZone,
   });
   return {
     alarms: popupMinutes.map((minutes) => -minutes),
     completed: false,
     dueDate: values.date,
-    ...(values.isAllDay ? {} : { dueTime: values.startTime }),
-    notes: notes ?? '',
+    ...(timed ? { dueTime: values.startTime } : {}),
+    notes: nonEmpty(values.description) ?? '',
     ...(recurrence === undefined ? {} : { recurrence }),
     title: values.title,
     ...(link === undefined ? {} : { url: link }),
@@ -115,8 +115,9 @@ const minuteOf = (time: string): number => {
  * What an event made from the task's fields holds: a timed reminder
  * becomes a one-hour event at its time (the slot-click default), an
  * untimed one an all-day event; alarms before the due time become
- * notifications; the URL is the event's on Apple and rides in the
- * description on Google; a rule is carried as it is.
+ * notifications; the URL travels as the event URL and the event editor
+ * folds it into the description if it finally saves to Google; the rule
+ * is carried as the repeat form holds it, so its end date survives.
  */
 export const taskValuesToEventValues = (
   values: TaskConvertValues,
@@ -128,10 +129,7 @@ export const taskValuesToEventValues = (
   const popups = values.alarms
     .filter((offset) => offset <= 0)
     .map((offset) => new ReminderOverride({ method: 'popup', minutes: -offset }));
-  const description =
-    target === 'google'
-      ? appendLink(nonEmpty(values.notes), nonEmpty(values.url))
-      : nonEmpty(values.notes);
+  const description = nonEmpty(values.notes);
   return {
     attendees: [],
     date: values.dueDate,
@@ -139,9 +137,6 @@ export const taskValuesToEventValues = (
     ...(description === undefined ? {} : { description }),
     endTime: times.endTime,
     isAllDay,
-    ...(values.recurrence === undefined
-      ? {}
-      : { recurrence: [buildRecurrenceRule(values.recurrence, isAllDay)] }),
     // No alarms: the same reminders a new event gets (its calendar's
     // defaults on Google, none on Apple).
     reminders: canonicalReminders(
@@ -150,8 +145,10 @@ export const taskValuesToEventValues = (
         useDefault: popups.length === 0 && target === 'google',
       }),
     ),
+    ...(values.recurrence === undefined ? {} : { repeat: values.recurrence }),
     startTime: times.startTime,
+    timeChosen: true,
     title: values.title,
-    ...(target === 'apple' && nonEmpty(values.url) !== undefined ? { url: values.url } : {}),
+    ...(nonEmpty(values.url) === undefined ? {} : { url: values.url }),
   };
 };

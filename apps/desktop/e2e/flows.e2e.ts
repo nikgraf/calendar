@@ -917,9 +917,6 @@ describe('calendar desktop e2e', () => {
     await cdp.waitFor(`document.body.textContent.includes('New event')`);
     try {
       await cdp.clickButtonWithText('Task');
-      // A timed draft heading for a Google list (date-only) asks about its time.
-      await cdp.waitFor(`!!document.querySelector('[data-testid="move-confirm"]')`);
-      await cdp.clickButtonWithText('Switch');
       await cdp.waitFor(`document.body.textContent.includes('New task')`);
       await setEditorTitle('Water plants');
       await cdp.clickButtonWithText('Save');

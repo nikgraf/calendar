@@ -155,10 +155,15 @@ describe('Converting between events and tasks', () => {
 
   it('switches a new draft between the kinds, asking only when a filled field would be lost', async () => {
     const { cdp } = app;
+    // The lists (and the reminder) are loaded once its chip renders: the
+    // task form's default list is read when the editor opens.
+    await cdp.locate('[data-testid="timed-task-ek-rem-1"]');
     const button = await cdp.locate('[aria-label="New event"]');
     await cdp.click(button.x, button.y);
     await cdp.waitFor(heading('New event'));
     await cdp.eval(setField(TITLE, 'Water plants', 'input'));
+    // A chosen time (the untouched 09:00 default is not one) follows the draft.
+    await cdp.eval(setField('input[type="time"]', '10:30', 'input'));
     // Title, day and time all fit a reminder: no question.
     await clickTestId('mode-task');
     await cdp.waitFor(heading('New task'));
@@ -166,6 +171,9 @@ describe('Converting between events and tasks', () => {
     expect(await cdp.eval(`document.querySelector('${TITLE}').value`)).toBe('Water plants');
     expect(await cdp.eval(`document.querySelector('input[aria-label="At a time"]').checked`)).toBe(
       true,
+    );
+    expect(await cdp.eval(`document.querySelector('input[aria-label="Due time"]').value`)).toBe(
+      '10:30',
     );
     // Back to the event, and a location makes the next switch lossy.
     await clickTestId('mode-event');

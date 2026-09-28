@@ -1474,7 +1474,7 @@ const make: Effect.Effect<
     Effect.gen(function* () {
       const sourceProvider = yield* providerOf(params.accountId);
       const targetProvider = yield* providerOf(params.target.accountId);
-      const { master, modifiedOccurrences } = yield* loadSource(params, sourceProvider);
+      const { master, modifiedOccurrences, url } = yield* loadSource(params, sourceProvider);
       const timeZone = master.startTimeZone ?? 'UTC';
       const carriedRecurrence = taskRecurrenceFromLines(master.recurrence, {
         isAllDay: master.isAllDay,
@@ -1487,6 +1487,8 @@ const make: Effect.Effect<
       });
       return {
         ...(carriedRecurrence === undefined ? {} : { carriedRecurrence }),
+        // An Apple event's plain URL is not on the record (only a meeting URL is).
+        ...(url === undefined ? {} : { carriedUrl: url }),
         loss: eventToTaskLoss(master, targetProvider, modifiedOccurrences),
       };
     });

@@ -22,6 +22,7 @@ const event: EventConvertValues = {
   isAllDay: false,
   reminders: popups(10, 60),
   startTime: '09:30',
+  timeChosen: true,
   title: 'Dentist',
 };
 
@@ -47,7 +48,7 @@ describe('appendLink', () => {
 
 describe('eventValuesToTaskValues', () => {
   it('carries the day and time, notifications as alarms and the title', () => {
-    expect(eventValuesToTaskValues(event, 'apple', 'Europe/Berlin')).toEqual({
+    expect(eventValuesToTaskValues(event, 'Europe/Berlin')).toEqual({
       alarms: [-10, -60],
       completed: false,
       dueDate: '2026-10-05',
@@ -57,35 +58,31 @@ describe('eventValuesToTaskValues', () => {
     });
   });
 
-  it('leaves an all-day event untimed and resolves calendar-default notifications', () => {
+  it('leaves an all-day event, or an unchosen slot default, untimed and resolves calendar-default notifications', () => {
     const values = eventValuesToTaskValues(
       {
         ...event,
         isAllDay: true,
         reminders: new EventReminders({ overrides: [], useDefault: true }),
       },
-      'apple',
       'UTC',
     );
     expect(values.dueTime).toBeUndefined();
     expect(values.alarms).toEqual([-30]);
+    expect(eventValuesToTaskValues({ ...event, timeChosen: false }, 'UTC').dueTime).toBeUndefined();
   });
 
-  it('puts the meeting link in the URL and, for Google Tasks, into the notes', () => {
+  it('puts the meeting link in the URL and leaves the notes to the description', () => {
     const meet = {
       ...event,
       description: 'Agenda',
       hangoutLink: 'https://meet.google.com/abc-defg-hij',
     };
-    expect(eventValuesToTaskValues(meet, 'apple', 'UTC')).toMatchObject({
+    expect(eventValuesToTaskValues(meet, 'UTC')).toMatchObject({
       notes: 'Agenda',
       url: 'https://meet.google.com/abc-defg-hij',
     });
-    expect(eventValuesToTaskValues(meet, 'google', 'UTC')).toMatchObject({
-      notes: 'Agenda\n\nhttps://meet.google.com/abc-defg-hij',
-      url: 'https://meet.google.com/abc-defg-hij',
-    });
-    expect(eventValuesToTaskValues({ ...event, url: 'https://x.test' }, 'apple', 'UTC').url).toBe(
+    expect(eventValuesToTaskValues({ ...event, url: 'https://x.test' }, 'UTC').url).toBe(
       'https://x.test',
     );
   });
@@ -94,7 +91,6 @@ describe('eventValuesToTaskValues', () => {
     expect(
       eventValuesToTaskValues(
         { ...event, recurrence: ['RRULE:FREQ=WEEKLY;BYDAY=MO,WE;UNTIL=20261130T235959Z'] },
-        'apple',
         'Europe/Berlin',
       ).recurrence,
     ).toEqual({
@@ -104,11 +100,8 @@ describe('eventValuesToTaskValues', () => {
       untilDate: '2026-11-30',
     });
     expect(
-      eventValuesToTaskValues(
-        { ...event, recurrence: ['RRULE:FREQ=MONTHLY;BYMONTHDAY=1'] },
-        'apple',
-        'UTC',
-      ).recurrence,
+      eventValuesToTaskValues({ ...event, recurrence: ['RRULE:FREQ=MONTHLY;BYMONTHDAY=1'] }, 'UTC')
+        .recurrence,
     ).toBeUndefined();
   });
 });
@@ -124,28 +117,31 @@ describe('taskValuesToEventValues', () => {
       isAllDay: false,
       reminders: popups(0, 15),
       startTime: '14:00',
+      timeChosen: true,
       title: 'Call mom',
       url: 'https://example.com/form',
     });
   });
 
-  it('appends the URL to the description on Google and defers to the calendar without alarms', () => {
+  it('keeps the URL apart from the description and defers to the calendar without alarms', () => {
     const values = taskValuesToEventValues({ ...task, alarms: [] }, 'google');
-    expect(values.description).toBe('Bring the form\n\nhttps://example.com/form');
-    expect(values.url).toBeUndefined();
+    expect(values.description).toBe('Bring the form');
+    expect(values.url).toBe('https://example.com/form');
     expect(values.reminders).toEqual(new EventReminders({ overrides: [], useDefault: true }));
     expect(taskValuesToEventValues({ ...task, alarms: [] }, 'apple').reminders).toEqual(
       new EventReminders({ overrides: [], useDefault: false }),
     );
   });
 
-  it('makes an untimed task all-day, ends the last hour at 23:59 and builds the rule', () => {
+  it('makes an untimed task all-day, ends the last hour at 23:59 and carries the rule as it is', () => {
+    const rule = { freq: 'weekly', interval: 2, untilDate: '2026-09-30' } as const;
     const allDay = taskValuesToEventValues(
-      { ...task, dueTime: undefined, recurrence: { freq: 'weekly', interval: 2 } },
+      { ...task, dueTime: undefined, recurrence: rule },
       'google',
     );
     expect(allDay.isAllDay).toBe(true);
-    expect(allDay.recurrence).toEqual(['RRULE:FREQ=WEEKLY;INTERVAL=2']);
+    expect(allDay.repeat).toEqual(rule);
+    expect(allDay.recurrence).toBeUndefined();
     expect(taskValuesToEventValues({ ...task, dueTime: '23:30' }, 'google')).toMatchObject({
       endTime: '23:59',
       startTime: '23:30',
