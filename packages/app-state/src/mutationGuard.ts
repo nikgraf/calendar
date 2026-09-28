@@ -90,6 +90,7 @@ export const useGuardedMutations = () => {
         mutations.setEventNotificationSettings,
       ),
       setTaskListVisible: guardMutation('toggle the task list', mutations.setTaskListVisible),
+      setTimeZoneSettings: guardMutation('save the time zones', mutations.setTimeZoneSettings),
       setViewPreferences: guardMutation('save the view settings', mutations.setViewPreferences),
       updateEvent: guardMutation('reschedule the event', mutations.updateEvent),
       updateRecurring: guardMutation('reschedule the event', mutations.updateRecurring),
