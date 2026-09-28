@@ -543,6 +543,11 @@ against a real store — confirm them there before relying on them more.
   with wall-clock times via Temporal in an explicit zone — never pinned
   dates or UTC-offset literals. Three CI breakages came from tests that
   passed on the day they were written and decayed.
+  The desktop e2e seeds place "today" by the UTC date (`todayAt`), which
+  matches the local date on CI (UTC) and in Vienna except between local
+  midnight and 02:00 CEST — a run in that window creates tasks on
+  yesterday's column ("Overdue" titles) and fails `convert` and the task
+  editor test. Rerun with `TZ=UTC` rather than chasing a code bug.
 - `getWindow` joins visible calendars: tests asserting through it must
   seed a calendar row, not just events.
 - The SQLite driver is Node's built-in `node:sqlite` (same in tests,

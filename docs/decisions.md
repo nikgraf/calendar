@@ -1285,3 +1285,46 @@ test`/`test:e2e`/`test:e2e:ios`; every file creates its own
       not persisted, on either app. `18-two-day-view.yaml` covers the
       chevrons, Today and a swipe in CI; `titleFor` and `viewColumns` are
       exported for unit tests.
+
+### Multiple time zones (2026-09-29)
+
+- [x] Time zones in settings — done (2026-09-29): up to three IANA zones
+      per device, one primary. The primary zone replaces the device zone
+      for everything the UI draws: both roots (`CalendarApp`,
+      `CalendarScreen`) gate on `useTimeZones()` and hand the primary
+      to the body where `Temporal.Now.timeZoneId()` used to be, so the
+      hour axis, event placement, "today", the now-line, navigation,
+      quick add, find-a-time and the editors all follow it, and new
+      events carry `startTimeZone = primary`. The other zones annotate:
+      a dimmer second line under each hour label (built from the instant
+      of that hour on the first visible day, so half-hour zones show
+      minutes and a DST gap resolves; a DST change inside a multi-day
+      strip can put another column an hour off, which the blocks' own
+      times never are), a third line on tall event blocks and a helper
+      line under the editor's time inputs. Decisions: a new
+      `timeZones` device_settings key (`ViewPreferences` is replaced
+      wholesale by its callers), decoded through a schema that validates
+      every id against Temporal so a zone tzdata dropped reads as the
+      default single device zone rather than a grid that throws; the
+      picker's catalog is a checked-in canonical IANA list with modern
+      spellings (ICU's `Asia/Calcutta` → `Asia/Kolkata`), the same on
+      both apps since Hermes lacks `Intl.supportedValuesOf`; zone labels
+      are the city part of the id (Intl's short names are inconsistent on
+      Hermes). Gating rather than falling back to the device zone: a
+      first frame in the device zone would, near midnight with a distant
+      primary, seed the focused day and "today" with the wrong date.
+      Stays on the device zone: `LocalNotifications` (alarms are
+      instants; a birthday "09:00" means the phone's 9:00; the layer is
+      built at startup), EventKit's floating-event zone, and timed Apple
+      reminders (`dueTime` is floating wall clock, drawn at that hour in
+      whatever zone the grid uses). iOS event pickers pass
+      `timeZoneName={primary}` and convert through `pickerDates.ts`, so
+      a primary that differs from the device zone round-trips exactly;
+      reminder, task and birthday pickers keep the device-local helpers.
+      The gutter widens per zone (desktop `w-16`→`w-24`→`w-32` shared by
+      header and lane; iOS `gutterWidth()` also fed to the task drag so
+      drops land in the right column). Tests: core catalog / label /
+      schema units, sync round-trip, `timeZones.e2e.ts` (a seeded
+      UTC + Kolkata pair, host-independent, plus the section's add /
+      promote / remove / cap), Maestro `19-time-zones.yaml` (Honolulu
+      primary, Kolkata secondary: "3:30 AM" under noon).
