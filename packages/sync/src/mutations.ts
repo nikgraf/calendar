@@ -4,6 +4,7 @@ import {
   type AppleCalendarClientShape,
 } from '@calendar/apple-calendar';
 import {
+  appendLink,
   applyWallClockDelta,
   Attendee,
   canonicalReminders,
@@ -163,10 +164,7 @@ const copyDraft = (
   if (targetProvider === 'apple') {
     url = master.hangoutLink ?? meetingUrl(master) ?? source.url;
   } else {
-    const link = source.url ?? master.hangoutLink;
-    if (link && !(description ?? '').includes(link) && !(master.location ?? '').includes(link)) {
-      description = [description, link].filter(Boolean).join('\n\n');
-    }
+    description = appendLink(description, source.url ?? master.hangoutLink, master.location);
   }
   // Rule parts EventKit cannot store were confirmed away (moveLoss names them).
   const recurrence =
