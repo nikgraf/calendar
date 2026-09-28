@@ -68,9 +68,14 @@ comment` for inline-playable video: 10 MB on Free plans, 100 MB paid
       copy-then-delete (`moveTask`, #82) and `parent`/`position` are not
       modeled, so no warning is possible; fixed by the subtask item above
       (`tasks.move` keeps hierarchy and id).
+- [ ] Conversion follow-ups — convert one occurrence of a series into a
+      task (today the whole series converts, like a move; an instance
+      would be `deleteRecurring(scope: 'instance')` plus a create from that
+      occurrence's day).
 - [ ] Reminders follow-ups — undated reminders are mirrored but filtered
       out at read (`repos.ts:737`, needs a list view); quick-add/⌘K creating
-      reminders (`QUICK_ADD_JSON_SCHEMA` is events-only); subtasks/flags/
+      reminders (`QUICK_ADD_JSON_SCHEMA` is events-only — though a parsed
+      event is now one Event | Task flip away from a reminder); subtasks/flags/
       tags; location alarms; multiple editable alarms (`alarms` is already
       `number[]` end to end); yearly positional rules, several rules,
       day-of-month lists and a monthly rule on a plain weekday without an

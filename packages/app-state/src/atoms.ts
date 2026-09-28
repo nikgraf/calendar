@@ -78,6 +78,8 @@ const MUTATION_REACTIVITY = {
   connectAppleCalendar: [ACCOUNTS_KEY, CALENDARS_KEY, EVENTS_KEY],
   connectContacts: [BIRTHDAYS_KEY, CONTACTS_KEY],
   connectReminders: [ACCOUNTS_KEY, TASKLISTS_KEY, TASKS_KEY],
+  convertEventToTask: [EVENTS_KEY, OPS_KEY, TASKS_KEY],
+  convertTaskToEvent: [EVENTS_KEY, OPS_KEY, TASKS_KEY],
   createEvent: [EVENTS_KEY],
   createTask: [TASKS_KEY],
   deleteEvent: [EVENTS_KEY],
@@ -86,7 +88,8 @@ const MUTATION_REACTIVITY = {
   discardPendingOp: [OPS_KEY],
   moveEvent: [EVENTS_KEY, OPS_KEY],
   moveTask: [TASKS_KEY, OPS_KEY],
-  // Reads what a move would drop; changes nothing.
+  // Read what a conversion or a move would drop; change nothing.
+  previewEventToTask: [],
   previewMove: [],
   removeAccount: [ACCOUNTS_KEY, BIRTHDAYS_KEY, CALENDARS_KEY, EVENTS_KEY, TASKS_KEY, TASKLISTS_KEY],
   resolveConflict: [EVENTS_KEY, OPS_KEY],

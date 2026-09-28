@@ -146,6 +146,18 @@ Rules that keep the queue correct:
   Completion follows the task. What a route drops is computed in core
   (`taskMoveLoss`) from the source record and confirmed in the editor
   before anything is written.
+- **Conversions** (`convertEventToTask`, `convertTaskToEvent`): an event
+  becomes a task (the whole series for a recurring one) or a task an
+  event by creating the other kind from the editor's draft and then
+  deleting the source — the same copy-then-delete as a cross-provider
+  move, through the shared `crossStore` ordering (Google → Google in one
+  transaction; toward Google the queued create first, then the EventKit
+  delete; toward Apple the EventKit create first, then the queued
+  delete). The editors carry the fields across (core `convert.ts`) and
+  ask only when a set field has no home on the other side (core
+  `convertLoss.ts`; `previewEventToTask` computes the event side from the
+  stored record and carries the series' rule, since an occurrence row
+  never has its master's lines).
 - **Task creates are not idempotent**: Google assigns task ids
   server-side, so a `createTask` writes a temp `local-…` row that is
   swapped for the server task on success (`rewriteEventId` renames the
@@ -346,7 +358,8 @@ Rules that keep the queue correct:
   URL, an Apple URL is appended to the Google description; modified
   occurrences are dropped. The editor asks `previewMove` first and
   confirms `moveLossSummary` when anything is dropped, then saves field
-  edits at the source and moves.
+  edits at the source and moves. Converting an event into a task reuses
+  the same source loading and series delete (`loadSource`, `deleteFrom`).
 
 ## Recurring events
 

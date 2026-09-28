@@ -1,6 +1,7 @@
 export * from './atoms.ts';
 export * from './calendarNavigation.ts';
 export * from './editorOptions.ts';
+export * from './editorSwitch.ts';
 export * from './hooks.ts';
 export * from './inviteeField.ts';
 export * from './locationField.ts';

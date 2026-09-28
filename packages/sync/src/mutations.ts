@@ -4,12 +4,16 @@ import {
   type AppleCalendarClientShape,
 } from '@calendar/apple-calendar';
 import {
+  appendLink,
   applyWallClockDelta,
   Attendee,
   canonicalReminders,
+  type ConvertEventToTaskParams,
+  type ConvertTaskToEventParams,
   type EventDraft,
   EventRecord,
   EventReminders,
+  eventToTaskLoss,
   googleInstanceId,
   isServerMove,
   mergeAttendees,
@@ -19,7 +23,10 @@ import {
   type MoveTaskParams,
   normalizeHexColor,
   PendingOp,
+  type PreviewEventToTaskParams,
   remainingRecurrence,
+  taskRecurrenceFromLines,
+  toZonedDateTime,
   type ReminderOverride,
   toRRuleLines,
   toStructuredRules,
@@ -141,6 +148,9 @@ const ensureOrganizer = (record: EventRecord, ownEmail: string | undefined, cale
     return ours ? Effect.void : Effect.fail(new NotOrganizerError({ eventId: record.id }));
   });
 
+/** Which event: the source of a move or a conversion. */
+type EventRef = Pick<MoveEventParams, 'accountId' | 'calendarId' | 'eventId'>;
+
 interface MoveSource {
   /** Google only: what the master's `useDefault` resolves to on its calendar. */
   readonly defaultReminders: ReadonlyArray<ReminderOverride> | undefined;
@@ -163,10 +173,7 @@ const copyDraft = (
   if (targetProvider === 'apple') {
     url = master.hangoutLink ?? meetingUrl(master) ?? source.url;
   } else {
-    const link = source.url ?? master.hangoutLink;
-    if (link && !(description ?? '').includes(link) && !(master.location ?? '').includes(link)) {
-      description = [description, link].filter(Boolean).join('\n\n');
-    }
+    description = appendLink(description, source.url ?? master.hangoutLink, master.location);
   }
   // Rule parts EventKit cannot store were confirmed away (moveLoss names them).
   const recurrence =
@@ -265,6 +272,25 @@ const make: Effect.Effect<
   const transactional = <A, E, R>(
     body: Effect.Effect<A, E, R>,
   ): Effect.Effect<A, E | SqlError, R> => Effect.tap(sql.withTransaction(body), () => kick);
+
+  /**
+   * Copy, then delete, across two stores — a move or a conversion. A
+   * failure between the two leaves a duplicate, never nothing. Google →
+   * Google runs both queue writes in one transaction; toward Google the
+   * create is queued in a transaction and the EventKit delete follows;
+   * toward Apple the EventKit create comes first and the queued delete
+   * is transactional.
+   */
+  const crossStore = <A, E1, E2, R1, R2>(
+    route: { readonly source: 'apple' | 'google'; readonly target: 'apple' | 'google' },
+    create: Effect.Effect<A, E1, R1>,
+    remove: Effect.Effect<unknown, E2, R2>,
+  ): Effect.Effect<A, E1 | E2 | SqlError, R1 | R2> =>
+    route.source === 'google' && route.target === 'google'
+      ? transactional(Effect.tap(create, () => remove))
+      : route.target === 'google'
+        ? Effect.tap(transactional(create), () => remove)
+        : Effect.tap(create, () => transactional(remove));
 
   const loadMaster = (accountId: string, calendarId: string, masterId: string) =>
     Effect.gen(function* () {
@@ -546,6 +572,19 @@ const make: Effect.Effect<
       }
     });
 
+  /** A task create/delete against one provider's store, outside any transaction (crossStore adds it). */
+  const createTaskIn = (
+    provider: 'apple' | 'google',
+    params: Parameters<EventMutationsShape['createTask']>[0],
+  ) =>
+    provider === 'apple'
+      ? reminders.createTask(params)
+      : Effect.andThen(rejectReminderFields(params), googleTasks.createTask(params));
+  const deleteTaskFrom = (
+    provider: 'apple' | 'google',
+    params: Parameters<EventMutationsShape['deleteTask']>[0],
+  ) => (provider === 'apple' ? reminders.deleteTask(params) : googleTasks.deleteTask(params));
+
   const taskMutations: Pick<
     EventMutationsShape,
     'completeTask' | 'createTask' | 'deleteTask' | 'updateTask'
@@ -582,7 +621,15 @@ const make: Effect.Effect<
       ),
   };
 
-  const shape: Omit<EventMutationsShape, 'moveEvent' | 'moveTask' | 'previewMove'> = {
+  const shape: Omit<
+    EventMutationsShape,
+    | 'convertEventToTask'
+    | 'convertTaskToEvent'
+    | 'moveEvent'
+    | 'moveTask'
+    | 'previewEventToTask'
+    | 'previewMove'
+  > = {
     ...taskMutations,
     createEvent: (draft) =>
       Effect.gen(function* () {
@@ -1119,7 +1166,7 @@ const make: Effect.Effect<
     );
 
   /** The source event as a whole (the series for a recurring one). */
-  const loadSource = (params: MoveEventParams, provider: 'apple' | 'google') =>
+  const loadSource = (params: EventRef, provider: 'apple' | 'google') =>
     Effect.gen(function* () {
       const { accountId, calendarId, eventId } = params;
       if (provider === 'apple') {
@@ -1235,11 +1282,7 @@ const make: Effect.Effect<
   const createIn = (provider: 'apple' | 'google', draft: EventDraft) =>
     provider === 'apple' ? apple.createEvent(draft) : shape.createEvent(draft);
 
-  const deleteFrom = (
-    provider: 'apple' | 'google',
-    params: MoveEventParams,
-    master: EventRecord,
-  ) =>
+  const deleteFrom = (provider: 'apple' | 'google', params: EventRef, master: EventRecord) =>
     master.recurrence
       ? (provider === 'apple' ? apple : shape).deleteRecurring({
           accountId: params.accountId,
@@ -1291,22 +1334,11 @@ const make: Effect.Effect<
       const account = yield* accountRepo.get(accountId);
       yield* ensureOrganizer(source.master, account?.email, calendarId);
       const draft = copyDraft(source, target, route.target);
-      const both = Effect.andThen(
+      yield* crossStore(
+        route,
         createIn(route.target, draft),
         deleteFrom(route.source, params, source.master),
       );
-      // Google → Google across accounts: both queue writes in one transaction.
-      yield* route.source === 'google' && route.target === 'google'
-        ? transactional(both)
-        : route.target === 'google'
-          ? Effect.andThen(
-              transactional(createIn('google', draft)),
-              deleteFrom('apple', params, source.master),
-            )
-          : Effect.andThen(
-              createIn('apple', draft),
-              transactional(deleteFrom('google', params, source.master)),
-            );
     });
 
   const previewMove = (params: MoveEventParams) =>
@@ -1365,13 +1397,7 @@ const make: Effect.Effect<
       const createParams = { ...draft, accountId: target.accountId, taskListId: target.taskListId };
       const createIn = (provider: 'apple' | 'google') =>
         Effect.gen(function* () {
-          const created =
-            provider === 'apple'
-              ? yield* reminders.createTask(createParams)
-              : yield* Effect.andThen(
-                  rejectReminderFields(draft),
-                  googleTasks.createTask(createParams),
-                );
+          const created = yield* createTaskIn(provider, createParams);
           if (source.status === 'completed') {
             const complete = {
               accountId: created.accountId,
@@ -1386,23 +1412,85 @@ const make: Effect.Effect<
           }
           return created;
         });
-      const deleteSource = { accountId, taskId, taskListId };
-      const deleteFrom = (provider: 'apple' | 'google') =>
-        provider === 'apple'
-          ? reminders.deleteTask(deleteSource)
-          : googleTasks.deleteTask(deleteSource);
-      // Google → Google: both queue writes in one transaction.
-      if (sourceProvider === 'google' && targetProvider === 'google') {
-        return yield* transactional(Effect.tap(createIn('google'), () => deleteFrom('google')));
+      return yield* crossStore(
+        { source: sourceProvider, target: targetProvider },
+        createIn(targetProvider),
+        deleteTaskFrom(sourceProvider, { accountId, taskId, taskListId }),
+      );
+    });
+
+  // ---- conversions ----
+
+  /**
+   * An event becomes a task: the task is created in the target list from
+   * the draft (the task form's fields), then the event — the whole
+   * series for a recurring one — is deleted. Like a move, an invitation
+   * cannot be converted by a guest.
+   */
+  const convertEventToTask = (params: ConvertEventToTaskParams) =>
+    Effect.gen(function* () {
+      const { accountId, calendarId, draft, target } = params;
+      const sourceProvider = yield* providerOf(accountId);
+      const targetProvider = yield* providerOf(target.accountId);
+      const source = yield* loadSource(params, sourceProvider);
+      const account = yield* accountRepo.get(accountId);
+      yield* ensureOrganizer(source.master, account?.email, calendarId);
+      return yield* crossStore(
+        { source: sourceProvider, target: targetProvider },
+        createTaskIn(targetProvider, {
+          ...draft,
+          accountId: target.accountId,
+          taskListId: target.taskListId,
+        }),
+        deleteFrom(sourceProvider, params, source.master),
+      );
+    });
+
+  /** A task becomes an event: the event is created from the draft, then the task is deleted. */
+  const convertTaskToEvent = (params: ConvertTaskToEventParams) =>
+    Effect.gen(function* () {
+      const { accountId, draft, taskId, taskListId } = params;
+      const source = yield* taskRepo.get(accountId, taskListId, taskId);
+      if (!source) {
+        return yield* Effect.fail(new TaskNotFoundError({ taskId }));
       }
-      if (targetProvider === 'google') {
-        const created = yield* transactional(createIn('google'));
-        yield* deleteFrom('apple');
-        return created;
+      const targetCalendar = yield* findCalendar(draft.accountId, draft.calendarId);
+      if (
+        !targetCalendar ||
+        (targetCalendar.accessRole !== 'owner' && targetCalendar.accessRole !== 'writer')
+      ) {
+        return yield* Effect.fail(new CalendarNotWritableError({ calendarId: draft.calendarId }));
       }
-      const created = yield* createIn('apple');
-      yield* transactional(deleteFrom('google'));
-      return created;
+      const sourceProvider = yield* providerOf(accountId);
+      const targetProvider = yield* providerOf(draft.accountId);
+      return yield* crossStore(
+        { source: sourceProvider, target: targetProvider },
+        createIn(targetProvider, draft),
+        deleteTaskFrom(sourceProvider, { accountId, taskId, taskListId }),
+      );
+    });
+
+  const previewEventToTask = (params: PreviewEventToTaskParams) =>
+    Effect.gen(function* () {
+      const sourceProvider = yield* providerOf(params.accountId);
+      const targetProvider = yield* providerOf(params.target.accountId);
+      const { master, modifiedOccurrences, url } = yield* loadSource(params, sourceProvider);
+      const timeZone = master.startTimeZone ?? 'UTC';
+      const carriedRecurrence = taskRecurrenceFromLines(master.recurrence, {
+        isAllDay: master.isAllDay,
+        startTime: master.isAllDay
+          ? undefined
+          : toZonedDateTime(master.startUtc, timeZone)
+              .toPlainTime()
+              .toString({ smallestUnit: 'minute' }),
+        timeZone,
+      });
+      return {
+        ...(carriedRecurrence === undefined ? {} : { carriedRecurrence }),
+        // An Apple event's plain URL is not on the record (only a meeting URL is).
+        ...(url === undefined ? {} : { carriedUrl: url }),
+        loss: eventToTaskLoss(master, targetProvider, modifiedOccurrences),
+      };
     });
 
   /** Events dispatch like tasks: by the account's provider. */
@@ -1418,11 +1506,14 @@ const make: Effect.Effect<
 
   return {
     ...shape,
+    convertEventToTask,
+    convertTaskToEvent,
     createEvent: byProvider(apple.createEvent, google.createEvent),
     deleteEvent: byProvider(apple.deleteEvent, google.deleteEvent),
     deleteRecurring: byProvider(apple.deleteRecurring, google.deleteRecurring),
     moveEvent,
     moveTask,
+    previewEventToTask,
     previewMove,
     respondToEvent: byProvider(apple.respondToEvent, google.respondToEvent),
     setCalendarColor: byProvider(apple.setCalendarColor, google.setCalendarColor),

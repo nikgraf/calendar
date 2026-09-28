@@ -636,7 +636,7 @@ describe('moveEvent across accounts and providers', () => {
       expect(created?.location).toBe('Dr. Weiss');
       expect(created?.description).toBe('Bring the forms\n\nhttps://example.com/agenda');
       expect(created?.startTimeZone).toBe('Europe/Vienna');
-    }).pipe(Effect.provide(testLayer(recordingGoogle([]), apple)));
+    }).pipe(noYield, Effect.provide(testLayer(recordingGoogle([]), apple)));
   });
 
   it.effect('Apple → Apple re-homes the whole series inside EventKit', () => {
