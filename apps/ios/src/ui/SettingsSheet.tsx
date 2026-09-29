@@ -215,7 +215,11 @@ export function SettingsSheet({ onClose, visible }: { onClose: () => void; visib
           </Pressable>
         </View>
 
-        <ScrollView contentContainerStyle={styles.content}>
+        {/* keyboardShouldPersistTaps: the responder system follows the React
+            tree, so a Modal rendered by a section (the time-zone picker)
+            still bubbles through this ScrollView, which would otherwise eat
+            the first tap on a row to dismiss the picker's keyboard. */}
+        <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
           {error ? <Text style={styles.error}>{error}</Text> : null}
 
           {pendingOps.length > 0 ? (

@@ -4,12 +4,17 @@ import { Temporal } from './temporal.ts';
 export const MAX_TIME_ZONES = 3;
 
 /**
- * The canonical IANA zone catalog both apps offer in the picker: every id
- * from Node's `Intl.supportedValuesOf('timeZone')` minus `Etc/*`, plus
- * `UTC`, with ICU's legacy spellings (Asia/Calcutta, Europe/Kiev, …)
- * replaced by the current IANA names, checked in as a static list. Hermes has no `supportedValuesOf`,
- * and one catalog keeps the two apps identical. The unit test validates
- * every id against Temporal so tzdata drift shows up at build time.
+ * The IANA zone catalog both apps offer in the picker: every id from
+ * Node's `Intl.supportedValuesOf('timeZone')` minus `Etc/*`, plus `UTC`,
+ * with ICU's legacy spellings (Asia/Calcutta, Europe/Kiev, …) replaced by
+ * the current IANA names, checked in as a static list. Hermes has no
+ * `supportedValuesOf`, and one catalog keeps the two apps identical. The
+ * unit test validates every id against Temporal so tzdata drift shows up
+ * at build time — on Node. Engines differ on the spellings they accept
+ * (Hermes rejects Asia/Kolkata but takes Asia/Calcutta, and rejects
+ * America/Buenos_Aires but takes America/Argentina/Buenos_Aires), so the
+ * id a device stores comes from `runtimeZoneId`, and display, search and
+ * test ids go through `canonicalZoneId` so both spellings read the same.
  */
 export const TIME_ZONE_IDS: ReadonlyArray<string> = [
   'Africa/Abidjan',
@@ -433,6 +438,39 @@ export const TIME_ZONE_IDS: ReadonlyArray<string> = [
   'UTC',
 ];
 
+/**
+ * ICU's legacy spellings and the current IANA names, both ways. V8 accepts
+ * both; Hermes accepts an inconsistent mix, so every catalog id is tried
+ * in this order: the modern name, then the legacy one.
+ */
+const LEGACY_TO_MODERN: Readonly<Record<string, string>> = {
+  'Africa/Asmera': 'Africa/Asmara',
+  'America/Buenos_Aires': 'America/Argentina/Buenos_Aires',
+  'America/Catamarca': 'America/Argentina/Catamarca',
+  'America/Coral_Harbour': 'America/Atikokan',
+  'America/Cordoba': 'America/Argentina/Cordoba',
+  'America/Godthab': 'America/Nuuk',
+  'America/Indianapolis': 'America/Indiana/Indianapolis',
+  'America/Jujuy': 'America/Argentina/Jujuy',
+  'America/Louisville': 'America/Kentucky/Louisville',
+  'America/Mendoza': 'America/Argentina/Mendoza',
+  'Asia/Calcutta': 'Asia/Kolkata',
+  'Asia/Katmandu': 'Asia/Kathmandu',
+  'Asia/Rangoon': 'Asia/Yangon',
+  'Asia/Saigon': 'Asia/Ho_Chi_Minh',
+  'Atlantic/Faeroe': 'Atlantic/Faroe',
+  'Europe/Kiev': 'Europe/Kyiv',
+  'Pacific/Enderbury': 'Pacific/Kanton',
+  'Pacific/Ponape': 'Pacific/Pohnpei',
+  'Pacific/Truk': 'Pacific/Chuuk',
+};
+const MODERN_TO_LEGACY: Readonly<Record<string, string>> = Object.fromEntries(
+  Object.entries(LEGACY_TO_MODERN).map(([legacy, modern]) => [modern, legacy]),
+);
+
+/** The current IANA name for a stored id, whichever spelling the device kept. */
+export const canonicalZoneId = (id: string): string => LEGACY_TO_MODERN[id] ?? id;
+
 /** true when Temporal (and so tzdata) knows the zone id. */
 export const isValidTimeZone = (id: string): boolean => {
   try {
@@ -443,20 +481,48 @@ export const isValidTimeZone = (id: string): boolean => {
   }
 };
 
-/** The city part of an id: 'America/Argentina/Buenos_Aires' → 'Buenos Aires'; 'UTC' → 'UTC'. */
+/**
+ * The spelling this engine accepts for a catalog id — the id itself, else
+ * ICU's legacy name — or undefined when it knows neither. `isValid` is
+ * injectable so tests can act out an engine with a different table.
+ */
+export const runtimeZoneId = (
+  id: string,
+  isValid: (candidate: string) => boolean = isValidTimeZone,
+): string | undefined => {
+  if (isValid(id)) {
+    return id;
+  }
+  const legacy = MODERN_TO_LEGACY[id];
+  return legacy !== undefined && isValid(legacy) ? legacy : undefined;
+};
+
+let runtimeIds: ReadonlyArray<string> | undefined;
+
+/** The catalog as this engine can store and draw it, resolved once. */
+export const allTimeZoneIds = (): ReadonlyArray<string> => {
+  runtimeIds ??= TIME_ZONE_IDS.map((id) => runtimeZoneId(id)).filter(
+    (id): id is string => id !== undefined,
+  );
+  return runtimeIds;
+};
+
+/** The city part of an id: 'America/Argentina/Buenos_Aires' → 'Buenos Aires'; 'Asia/Calcutta' → 'Kolkata'; 'UTC' → 'UTC'. */
 export const zoneCity = (id: string): string => {
-  const last = id.slice(id.lastIndexOf('/') + 1);
+  const canonical = canonicalZoneId(id);
+  const last = canonical.slice(canonical.lastIndexOf('/') + 1);
   return last.replaceAll('_', ' ');
 };
 
 /** The region part of an id: 'America/Argentina/Buenos_Aires' → 'America'; 'UTC' → ''. */
 export const zoneRegion = (id: string): string => {
-  const slash = id.indexOf('/');
-  return slash === -1 ? '' : id.slice(0, slash);
+  const canonical = canonicalZoneId(id);
+  const slash = canonical.indexOf('/');
+  return slash === -1 ? '' : canonical.slice(0, slash);
 };
 
-/** A testID-safe slug: 'Asia/Kolkata' → 'Asia-Kolkata'. */
-export const zoneSlug = (id: string): string => id.replaceAll('/', '-');
+/** A testID-safe slug from the current name, whatever spelling is stored: 'Asia/Calcutta' → 'Asia-Kolkata'. */
+export const zoneSlug = (id: string): string => canonicalZoneId(id).replaceAll('/', '-');
 
 export interface TimeZoneMatch {
   readonly city: string;
@@ -475,16 +541,17 @@ const words = (value: string): ReadonlyArray<string> => normalize(value).split(/
  * the city, the region and the raw id. City matches rank first, then
  * region matches, then anything else; ties keep catalog order. An empty
  * query lists everything (capped). `exclude` drops the zones already
- * picked.
+ * picked. `ids` defaults to the catalog as this engine accepts it.
  */
 export const searchTimeZones = (
   query: string,
   exclude: ReadonlyArray<string> = [],
+  ids: ReadonlyArray<string> = allTimeZoneIds(),
 ): ReadonlyArray<TimeZoneMatch> => {
   const needle = normalize(query.trim());
   const excluded = new Set(exclude);
   const ranked: Array<{ readonly match: TimeZoneMatch; readonly rank: number }> = [];
-  for (const id of TIME_ZONE_IDS) {
+  for (const id of ids) {
     if (excluded.has(id)) {
       continue;
     }
@@ -497,7 +564,7 @@ export const searchTimeZones = (
           ? 0
           : words(match.region).some((word) => word.startsWith(needle))
             ? 1
-            : normalize(id).includes(needle)
+            : normalize(canonicalZoneId(id)).includes(needle) || normalize(id).includes(needle)
               ? 2
               : -1;
     if (rank >= 0) {

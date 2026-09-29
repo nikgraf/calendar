@@ -1308,7 +1308,13 @@ test`/`test:e2e`/`test:e2e:ios`; every file creates its own
       default single device zone rather than a grid that throws; the
       picker's catalog is a checked-in canonical IANA list with modern
       spellings (ICU's `Asia/Calcutta` → `Asia/Kolkata`), the same on
-      both apps since Hermes lacks `Intl.supportedValuesOf`; zone labels
+      both apps since Hermes lacks `Intl.supportedValuesOf` — but engines
+      accept different spellings (Hermes rejects `Asia/Kolkata` and takes
+      `Asia/Calcutta`; V8 takes both), so a device stores whichever
+      spelling its engine validates (`runtimeZoneId`) while display,
+      search and test ids go through `canonicalZoneId`. The first iOS
+      run stored `Asia/Kolkata`, failed the schema's Temporal check on
+      the next read and reset the whole list; zone labels
       are the city part of the id (Intl's short names are inconsistent on
       Hermes). Gating rather than falling back to the device zone: a
       first frame in the device zone would, near midnight with a distant

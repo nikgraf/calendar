@@ -1,12 +1,18 @@
 import { describe, expect, it } from 'vitest';
 import {
+  allTimeZoneIds,
+  canonicalZoneId,
   isValidTimeZone,
+  runtimeZoneId,
   searchTimeZones,
   TIME_ZONE_IDS,
   zoneCity,
   zoneRegion,
   zoneSlug,
 } from './zones.ts';
+
+/** An engine like Hermes, which rejects the modern name but takes ICU's. */
+const hermes = (id: string) => id !== 'Asia/Kolkata' && id !== 'Mars/Olympus';
 
 describe('zones catalog', () => {
   it('holds only ids Temporal knows, without duplicates, sorted', () => {
@@ -21,6 +27,23 @@ describe('zones catalog', () => {
   it('rejects an unknown zone', () => {
     expect(isValidTimeZone('Mars/Olympus')).toBe(false);
     expect(isValidTimeZone('')).toBe(false);
+  });
+
+  it('reads a stored legacy spelling as its current name', () => {
+    expect(canonicalZoneId('Asia/Calcutta')).toBe('Asia/Kolkata');
+    expect(canonicalZoneId('Asia/Kolkata')).toBe('Asia/Kolkata');
+    expect(zoneCity('Asia/Calcutta')).toBe('Kolkata');
+    expect(zoneSlug('Asia/Calcutta')).toBe('Asia-Kolkata');
+    expect(zoneRegion('America/Buenos_Aires')).toBe('America');
+  });
+
+  it('resolves each catalog id to the spelling the engine accepts', () => {
+    // Node knows both spellings, so the catalog resolves to itself.
+    expect(runtimeZoneId('Asia/Kolkata')).toBe('Asia/Kolkata');
+    expect(allTimeZoneIds()).toEqual([...TIME_ZONE_IDS]);
+    expect(runtimeZoneId('Asia/Kolkata', hermes)).toBe('Asia/Calcutta');
+    expect(runtimeZoneId('Europe/Vienna', hermes)).toBe('Europe/Vienna');
+    expect(runtimeZoneId('Mars/Olympus', hermes)).toBeUndefined();
   });
 
   it('derives city, region and slug from the id', () => {
@@ -54,6 +77,11 @@ describe('searchTimeZones', () => {
 
   it('drops excluded zones', () => {
     expect(searchTimeZones('kolk', ['Asia/Kolkata'])).toEqual([]);
+  });
+
+  it('searches a legacy-spelled catalog by the current city name', () => {
+    const match = searchTimeZones('kolk', [], ['Asia/Calcutta', 'Europe/Vienna']);
+    expect(match).toEqual([{ city: 'Kolkata', id: 'Asia/Calcutta', region: 'Asia' }]);
   });
 
   it('returns nothing for a query matching no zone', () => {

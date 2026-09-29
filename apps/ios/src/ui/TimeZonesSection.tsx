@@ -12,10 +12,10 @@ import {
 } from '@calendar/core';
 import { useState } from 'react';
 import {
-  FlatList,
   Modal,
   Pressable,
   SafeAreaView,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -130,7 +130,14 @@ export function TimeZonesSection() {
   );
 }
 
-/** A search box over the zone catalog; a tap on a row picks it. */
+/**
+ * A search box over the zone catalog; a tap on a row picks it. The rows
+ * are plain pressables in a ScrollView that keeps taps alive with
+ * keyboardShouldPersistTaps, like the edit form's invitee and location
+ * fields. The settings sheet's own ScrollView needs the same flag: this
+ * Modal is a child of it in the React tree, so the responder capture that
+ * dismisses the keyboard runs there first (it ate the first row tap).
+ */
 function TimeZonePickerSheet({
   exclude,
   onClose,
@@ -168,36 +175,39 @@ function TimeZonePickerSheet({
           <Text style={styles.sheetTitle}>Add time zone</Text>
           <View style={styles.sheetHeaderSpacer} />
         </View>
-        <TextInput
-          autoCapitalize="none"
-          autoCorrect={false}
-          autoFocus
-          onChangeText={setQuery}
-          placeholder="City or region"
-          placeholderTextColor={palette.textFaint}
-          style={styles.search}
-          testID="time-zone-search"
-          value={query}
-        />
-        <FlatList
-          data={matches}
+        <ScrollView
+          automaticallyAdjustKeyboardInsets
+          keyboardDismissMode="on-drag"
           keyboardShouldPersistTaps="handled"
-          keyExtractor={(match) => match.id}
-          renderItem={({ item }) => (
+          style={styles.list}
+        >
+          <TextInput
+            autoCapitalize="none"
+            autoCorrect={false}
+            autoFocus
+            onChangeText={setQuery}
+            placeholder="City or region"
+            placeholderTextColor={palette.textFaint}
+            style={styles.search}
+            testID="time-zone-search"
+            value={query}
+          />
+          {matches.map((match) => (
             <Pressable
               accessibilityRole="button"
+              key={match.id}
               onPress={() => {
                 setQuery('');
-                onPick(item.id);
+                onPick(match.id);
               }}
               style={styles.option}
-              testID={`time-zone-option-${zoneSlug(item.id)}`}
+              testID={`time-zone-option-${zoneSlug(match.id)}`}
             >
-              <Text style={styles.city}>{item.city}</Text>
-              <Text style={sectionStyles.meta}>{item.id}</Text>
+              <Text style={styles.city}>{match.city}</Text>
+              <Text style={sectionStyles.meta}>{match.id}</Text>
             </Pressable>
-          )}
-        />
+          ))}
+        </ScrollView>
       </SafeAreaView>
     </Modal>
   );
@@ -215,6 +225,9 @@ const styles = StyleSheet.create({
     color: '#2563eb',
     fontSize: 14,
     fontWeight: '600',
+  },
+  list: {
+    flex: 1,
   },
   option: {
     borderBottomColor: palette.border,

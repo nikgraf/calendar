@@ -48,7 +48,9 @@ tags:
 - tapOn: 'Done'
 - assertVisible: 'Today'
 # The gutter's second line under noon (in the primary zone, Honolulu)
-# names the device zone's hour and Kolkata's 3:30 AM.
+# names the device zone's hour and Kolkata's 3:30 AM. The localized
+# time's spacing (a narrow no-break space before AM) is not pinned, as in
+# flows 10 and 16.
 - scrollUntilVisible:
     element:
       id: 'hour-secondary-12'
@@ -56,7 +58,7 @@ tags:
     timeout: 10000
 - assertVisible:
     id: 'hour-secondary-12'
-    text: '.*3:30 AM'
+    text: '.*3:30.AM'
 # Reopen: the choice was stored (device-local SQLite), not just React
 # state. Then leave the settings as found for the next flow: removing the
 # primary promotes the device zone back.
