@@ -168,6 +168,39 @@ describe('tasks sync', () => {
     }).pipe(noYield, Effect.provide(testLayer(client)));
   });
 
+  it.effect('a list Google still names but whose tasks 404 is dropped; the next list syncs', () => {
+    const client: GoogleTasksClientShape = tasksClient({
+      listTaskLists: () =>
+        Effect.succeed({
+          items: [
+            { id: 'list-gone', title: 'A deleted list' },
+            { id: 'list-1', title: 'My Tasks' },
+          ],
+        }),
+      listTasks: ({ taskListId }) =>
+        taskListId === 'list-gone'
+          ? Effect.fail(new NotFoundError({ resource: taskListId }))
+          : Effect.succeed({
+              items: [
+                {
+                  due: '2026-08-30T00:00:00.000Z',
+                  id: 't1',
+                  status: 'needsAction',
+                  title: 'Pay rent',
+                  updated: '2026-08-20T00:00:00.000Z',
+                },
+              ],
+            }),
+    });
+    return Effect.gen(function* () {
+      yield* seedAccount(true);
+      yield* (yield* SyncEngine).syncAll();
+      const repo = yield* TaskRepo;
+      expect((yield* repo.listLists('acc-1')).map((list) => list.id)).toEqual(['list-1']);
+      expect(yield* repo.getWindow('2026-08-24', '2026-08-31')).toHaveLength(1);
+    }).pipe(noYield, Effect.provide(testLayer(client)));
+  });
+
   it.effect('does not touch the tasks API for accounts without the scope', () => {
     const client: GoogleTasksClientShape = tasksClient({
       listTaskLists: () => Effect.die('must not be called'),

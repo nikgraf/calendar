@@ -9,6 +9,7 @@ import {
   reposLayer,
   runMigrations,
   SyncStateRepo,
+  TaskRepo,
 } from '@calendar/db';
 import {
   ApiUnavailableError,
@@ -21,6 +22,7 @@ import {
   type GooglePeopleClientShape,
   GoogleTasksClient,
   type GoogleTasksClientShape,
+  NotFoundError,
   ReauthRequiredError,
   SyncTokenExpiredError,
 } from '@calendar/google';
@@ -102,7 +104,10 @@ const inertPeopleClient: GooglePeopleClientShape = {
   listOtherContacts: () => Effect.die('people not used in this test'),
 };
 
-const engineLayer = (client: GoogleCalendarClientShape) =>
+const engineLayer = (
+  client: GoogleCalendarClientShape,
+  tasksClient: GoogleTasksClientShape = stubTasksClient,
+) =>
   SyncEngine.layer.pipe(
     Layer.provideMerge(EventMutations.layer),
     Layer.provideMerge(appleCalendarServicesLayer(unavailableAppleCalendarClient('test'))),
@@ -112,7 +117,7 @@ const engineLayer = (client: GoogleCalendarClientShape) =>
     Layer.provideMerge(reactivityLayer),
     Layer.provideMerge(Layer.succeed(RemindersClient, unavailableRemindersClient('test'))),
     Layer.provideMerge(Layer.succeed(GoogleCalendarClient, client)),
-    Layer.provideMerge(Layer.succeed(GoogleTasksClient, stubTasksClient)),
+    Layer.provideMerge(Layer.succeed(GoogleTasksClient, tasksClient)),
     Layer.provideMerge(Layer.succeed(GooglePeopleClient, inertPeopleClient)),
   );
 
@@ -272,6 +277,65 @@ describe('SyncEngine', () => {
       expect(state?.syncToken).toBe('sync-2');
     }).pipe(Effect.provide(engineLayer(client)));
   });
+
+  it.effect(
+    'a calendar Google still lists but no longer serves is purged; the rest sync on',
+    () => {
+      // calendarList can name a deleted calendar for minutes while its events
+      // already 404. Sorted first ("A…" < "Personal"), it used to fail the
+      // whole account pass: the calendars after it and tasks never synced.
+      const client: GoogleCalendarClientShape = {
+        ...stubClient([]),
+        listCalendars: () =>
+          Effect.succeed({
+            items: [
+              ...(calendarListPage.items ?? []),
+              { accessRole: 'owner', id: 'cal-gone', selected: true, summary: 'A deleted one' },
+            ],
+            nextSyncToken: 'cal-sync-1',
+          }),
+        listEvents: ({ calendarId }) =>
+          calendarId === 'cal-gone'
+            ? Effect.fail(new NotFoundError({ resource: calendarId }))
+            : Effect.succeed({ items: [timedItem('evt-1', 10)], nextSyncToken: 'evt-sync-1' }),
+      };
+      const tasksClient: GoogleTasksClientShape = {
+        ...stubTasksClient,
+        listTaskLists: () => Effect.succeed({ items: [{ id: 'list-1', title: 'My Tasks' }] }),
+        listTasks: () =>
+          Effect.succeed({ items: [{ id: 't1', status: 'needsAction', title: 'Pay rent' }] }),
+      };
+      return Effect.gen(function* () {
+        yield* (yield* AccountRepo).upsert(
+          new Account({
+            contactsEnabled: false,
+            createdAt: 1,
+            email: 'nik@example.com',
+            id: 'acc-1',
+            provider: 'google',
+            status: 'ok',
+            tasksEnabled: true,
+          }),
+        );
+        const engine = yield* SyncEngine;
+        const calendars = yield* CalendarRepo;
+        const state = yield* SyncStateRepo;
+        // Twice: a full calendar list re-sends it, and it goes again.
+        for (let pass = 0; pass < 2; pass++) {
+          yield* engine.syncAll();
+          expect((yield* calendars.list('acc-1')).map((calendar) => calendar.id)).toEqual([
+            'cal-1',
+          ]);
+          expect(yield* state.get('acc-1', eventsScope('cal-gone'))).toBeNull();
+          expect((yield* state.get('acc-1', eventsScope('cal-1')))?.syncToken).toBe('evt-sync-1');
+          expect(yield* (yield* EventRepo).getById('acc-1', 'cal-1', 'evt-1')).not.toBeNull();
+          expect((yield* (yield* TaskRepo).listLists('acc-1')).map((list) => list.id)).toEqual([
+            'list-1',
+          ]);
+        }
+      }).pipe(Effect.provide(engineLayer(client, tasksClient)));
+    },
+  );
 
   it.effect('flags the account when Google demands re-auth', () => {
     const client = stubClient(['reauth']);

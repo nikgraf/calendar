@@ -447,7 +447,29 @@ const make: Effect.Effect<
     Effect.gen(function* () {
       yield* syncTaskLists(account);
       const lists = yield* taskRepo.listLists(account.id);
-      yield* Effect.forEach(lists, (list) => syncTasks(account, list.id), { discard: true });
+      yield* Effect.forEach(
+        lists,
+        (list) =>
+          syncTasks(account, list.id).pipe(
+            // tasklists.list can still name a list deleted moments ago while
+            // its tasks already 404: drop it here instead of failing every
+            // list after it. A list that does exist comes back next pass.
+            Effect.catchTag('NotFoundError', () =>
+              Effect.gen(function* () {
+                yield* Effect.logWarning('task list gone upstream; dropped', {
+                  accountId: account.id,
+                  taskListId: list.id,
+                });
+                yield* taskRepo.removeListsMissing(
+                  account.id,
+                  lists.filter((other) => other.id !== list.id).map((other) => other.id),
+                );
+                yield* syncStateRepo.remove(account.id, tasksScope(list.id));
+              }),
+            ),
+          ),
+        { discard: true },
+      );
     }).pipe(
       // The token was granted without the tasks scope after all (stale
       // flag, consent revoked): disable rather than fail the account.
@@ -769,9 +791,27 @@ const make: Effect.Effect<
     Effect.gen(function* () {
       yield* syncCalendarList(account);
       const calendars = yield* calendarRepo.list(account.id);
-      yield* Effect.forEach(calendars, (calendar) => syncEvents(account, calendar.id), {
-        discard: true,
-      });
+      yield* Effect.forEach(
+        calendars,
+        (calendar) =>
+          syncEvents(account, calendar.id).pipe(
+            // calendarList keeps naming a deleted calendar for minutes while
+            // its events already 404, and an incremental list never reports
+            // a deletion older than its token — so the row would stay, and
+            // fail every pass. Purge it like a reported deletion; one gone
+            // calendar must not stall the account's others, tasks, contacts.
+            Effect.catchTag('NotFoundError', () =>
+              Effect.gen(function* () {
+                yield* Effect.logWarning('calendar gone upstream; purged', {
+                  accountId: account.id,
+                  calendarId: calendar.id,
+                });
+                yield* calendarRepo.purge(account.id, [calendar.id]);
+              }),
+            ),
+          ),
+        { discard: true },
+      );
       if (account.tasksEnabled) {
         yield* syncAccountTasks(account);
       }

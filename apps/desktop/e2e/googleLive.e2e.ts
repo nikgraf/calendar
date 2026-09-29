@@ -9,7 +9,7 @@ import {
 } from '@calendar/sync/testing/liveGoogle';
 import { LiveScratchError } from '@calendar/sync/testing/liveScratchRest';
 import { Effect, type ManagedRuntime } from 'effect';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import {
   type App,
   launchApp,
@@ -163,6 +163,14 @@ describe.skipIf(!LIVE)('Google live (real account)', { retry: 0, timeout: 120_00
     });
     title = `${tag()}-desktop`;
   }, 120_000);
+
+  // Screenshot, DOM and the app's own log for whatever failed; CI uploads
+  // e2e-artifacts/ after redacting it.
+  afterEach(async (context) => {
+    if (context.task.result?.state === 'fail') {
+      await app?.dump(context.task.name);
+    }
+  });
 
   afterAll(async () => {
     await app?.stop();

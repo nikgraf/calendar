@@ -115,6 +115,18 @@ invariants.
   lowercase (`normalizeHexColor`) so pull-after-push is byte-identical.
 - The calendarList entry is per-user metadata: color patches work for any
   accessRole, including read-only calendars.
+- **A deleted calendar lingers.** After `calendars.delete`, a full
+  `calendarList.list` kept naming the calendar for minutes (a probe on
+  2026-09-29: both calendars deleted 5–6 min earlier were still listed, and
+  `events.list` on them still answered 200). Later `events.list` turns
+  404 while the list may still name it, and an incremental list never
+  reports a deletion that predates its token: nightly 36517901490's iOS
+  install did its first full list during that window, and every pass
+  failed on that calendar's 404 for the rest of the run (11 min). The
+  engine therefore treats an `events.list` 404 as the deletion itself and
+  purges the calendar (`syncAccount`); a later full list may re-add it,
+  and the next 404 purges it again. Task lists get the same treatment for
+  a `tasks.list` 404.
 
 ### Misc
 
