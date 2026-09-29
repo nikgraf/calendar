@@ -1349,12 +1349,17 @@ test`/`test:e2e`/`test:e2e:ios`; every file creates its own
       the account stayed stuck (iOS: every pass for 11 min; its run list
       and a server-side event never arrived). A real user who deletes a
       calendar elsewhere could hit the same. Decisions: a 404 from one
-      calendar's `events.list` purges that calendar like a reported
-      deletion (`CalendarRepo.purge`), and a 404 from one list's
-      `tasks.list` drops that list and its watermark; any other failure
-      still fails the account pass as before. The Node calendarList test
-      polls up to four passes for the purge instead of asserting after
-      one, and the desktop live spec now dumps screenshot, DOM and app
+      calendar's `events.list` skips that calendar for the pass, keeps its
+      rows and drops the calendarList sync token, so the next pass lists
+      calendars in full; that removes the calendar once Google stops naming
+      it. The first cut purged the calendar on the 404, which a review
+      rejected: Google says to retry 404s, and after a transient one an
+      unchanged calendar would never have come back through the delta. A
+      404 from one list's `tasks.list` skips that list and keeps its rows
+      (task lists are listed in full every pass). Any other failure still
+      fails the account pass as before. The Node calendarList test
+      polls up to three minutes for the removal instead of asserting after
+      one pass, and the desktop live spec now dumps screenshot, DOM and app
       log on a failure. The desktop failure of 36517901490 (a created
       event never rendered; the later tests chained on it) did not
       reproduce locally, not after a fresh deletion and not at the

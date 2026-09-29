@@ -122,11 +122,16 @@ invariants.
   404 while the list may still name it, and an incremental list never
   reports a deletion that predates its token: nightly 36517901490's iOS
   install did its first full list during that window, and every pass
-  failed on that calendar's 404 for the rest of the run (11 min). The
-  engine therefore treats an `events.list` 404 as the deletion itself and
-  purges the calendar (`syncAccount`); a later full list may re-add it,
-  and the next 404 purges it again. Task lists get the same treatment for
-  a `tasks.list` 404.
+  failed on that calendar's 404 for the rest of the run (11 min). A 404
+  is no proof of deletion, though: Google's error guide says to retry it
+  with backoff (it also covers "a calendar the user can not access"). So
+  the engine skips that calendar for the pass, keeps its rows, and drops
+  the calendarList token so the next pass lists calendars in full
+  (`syncAccount`): that removes the calendar once Google stops naming it,
+  and keeps it, retrying its events, if it recovers. A delta would never
+  bring an unchanged calendar back, which is why a purge on the 404 was
+  wrong (review of #96). A `tasks.list` 404 skips that list the same way;
+  task lists are listed in full every pass anyway.
 
 ### Misc
 

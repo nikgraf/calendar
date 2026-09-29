@@ -451,20 +451,14 @@ const make: Effect.Effect<
         lists,
         (list) =>
           syncTasks(account, list.id).pipe(
-            // tasklists.list can still name a list deleted moments ago while
-            // its tasks already 404: drop it here instead of failing every
-            // list after it. A list that does exist comes back next pass.
+            // A 404 on one list (tasklists.list can still name a list just
+            // deleted) must not fail the lists after it. Its rows stay: the
+            // lists are listed in full every pass, so a gone one is removed
+            // once Google stops naming it, and a transient 404 retries.
             Effect.catchTag('NotFoundError', () =>
-              Effect.gen(function* () {
-                yield* Effect.logWarning('task list gone upstream; dropped', {
-                  accountId: account.id,
-                  taskListId: list.id,
-                });
-                yield* taskRepo.removeListsMissing(
-                  account.id,
-                  lists.filter((other) => other.id !== list.id).map((other) => other.id),
-                );
-                yield* syncStateRepo.remove(account.id, tasksScope(list.id));
+              Effect.logWarning('task list 404; retried next pass', {
+                accountId: account.id,
+                taskListId: list.id,
               }),
             ),
           ),
@@ -795,18 +789,21 @@ const make: Effect.Effect<
         calendars,
         (calendar) =>
           syncEvents(account, calendar.id).pipe(
-            // calendarList keeps naming a deleted calendar for minutes while
-            // its events already 404, and an incremental list never reports
-            // a deletion older than its token — so the row would stay, and
-            // fail every pass. Purge it like a reported deletion; one gone
-            // calendar must not stall the account's others, tasks, contacts.
+            // A 404 on one calendar must not stall the account's others,
+            // tasks and contacts. It is not proof of deletion either: Google
+            // says to retry 404s, and calendarList names a deleted calendar
+            // for minutes while its events already 404. The rows stay and
+            // the next pass lists calendars in full — an incremental list
+            // never reports a deletion older than its token — which drops
+            // the calendar once Google stops naming it and keeps it (and
+            // retries its events) if it recovers.
             Effect.catchTag('NotFoundError', () =>
               Effect.gen(function* () {
-                yield* Effect.logWarning('calendar gone upstream; purged', {
+                yield* Effect.logWarning('calendar events 404; relisting calendars next pass', {
                   accountId: account.id,
                   calendarId: calendar.id,
                 });
-                yield* calendarRepo.purge(account.id, [calendar.id]);
+                yield* syncStateRepo.remove(account.id, CALENDAR_LIST_SCOPE);
               }),
             ),
           ),

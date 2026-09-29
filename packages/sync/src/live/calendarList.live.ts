@@ -52,20 +52,21 @@ describe('live Google: calendarList', () => {
         expect((yield* state.get(LIVE_ACCOUNT_ID, eventsScope(id)))?.syncToken).toBeTruthy();
 
         yield* scratch.deleteCalendar(id);
-        // Google's calendarList keeps naming a deleted calendar for a while
-        // (the delta may never report it); its events 404 at once, and that
-        // is what the pass purges on. A few passes absorb the reverse lag,
-        // events.list still answering right after the delete.
-        const gone = Effect.gen(function* () {
+        // Google's calendarList can keep naming a deleted calendar for
+        // minutes, and the delta may not report the deletion at all; the
+        // engine then relists in full once the calendar's events 404, and
+        // drops it when Google stops naming it. Poll for that, well inside
+        // the 300 s test timeout.
+        const deadline = Date.now() + 180_000;
+        let removed = false;
+        while (!removed && Date.now() < deadline) {
           yield* engine.syncAll();
-          return !(yield* calendars.list(LIVE_ACCOUNT_ID)).some((entry) => entry.id === id);
-        });
-        let removed = yield* gone;
-        for (let pass = 1; pass < 4 && !removed; pass++) {
-          yield* Effect.sleep('10 seconds');
-          removed = yield* gone;
+          removed = !(yield* calendars.list(LIVE_ACCOUNT_ID)).some((entry) => entry.id === id);
+          if (!removed) {
+            yield* Effect.sleep('10 seconds');
+          }
         }
-        expect(removed, 'the deleted calendar is purged within four passes').toBe(true);
+        expect(removed, 'the deleted calendar is purged within three minutes').toBe(true);
         expect(yield* (yield* EventRepo).getById(LIVE_ACCOUNT_ID, id, record.id)).toBeNull();
         expect(yield* state.get(LIVE_ACCOUNT_ID, eventsScope(id))).toBeNull();
       }).pipe(Effect.ensuring(Effect.ignore(scratch.deleteCalendar(id))));

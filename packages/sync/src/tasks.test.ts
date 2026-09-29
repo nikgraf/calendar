@@ -97,6 +97,15 @@ const seedAccount = (tasksEnabled: boolean) =>
 
 const lists = { items: [{ id: 'list-1', title: 'My Tasks' }] };
 
+/** An open task due 2026-08-30, as Google lists it. */
+const openTask = (id: string) => ({
+  due: '2026-08-30T00:00:00.000Z',
+  id,
+  status: 'needsAction' as const,
+  title: `Task ${id}`,
+  updated: '2026-08-20T00:00:00.000Z',
+});
+
 describe('tasks sync', () => {
   it.effect('pulls lists and tasks, then advances the updatedMin watermark', () => {
     const updatedMins: Array<string | undefined> = [];
@@ -168,36 +177,51 @@ describe('tasks sync', () => {
     }).pipe(noYield, Effect.provide(testLayer(client)));
   });
 
-  it.effect('a list Google still names but whose tasks 404 is dropped; the next list syncs', () => {
+  it.effect('a list whose tasks 404 keeps its rows and skips only itself', () => {
+    let googleListsIt = true;
+    const goneResponses: Array<'ok' | 'not-found'> = ['ok', 'not-found'];
+    let listOneCalls = 0;
     const client: GoogleTasksClientShape = tasksClient({
       listTaskLists: () =>
         Effect.succeed({
           items: [
-            { id: 'list-gone', title: 'A deleted list' },
+            ...(googleListsIt ? [{ id: 'list-gone', title: 'A deleted list' }] : []),
             { id: 'list-1', title: 'My Tasks' },
           ],
         }),
       listTasks: ({ taskListId }) =>
-        taskListId === 'list-gone'
+        taskListId === 'list-gone' && goneResponses.shift() === 'not-found'
           ? Effect.fail(new NotFoundError({ resource: taskListId }))
           : Effect.succeed({
-              items: [
-                {
-                  due: '2026-08-30T00:00:00.000Z',
-                  id: 't1',
-                  status: 'needsAction',
-                  title: 'Pay rent',
-                  updated: '2026-08-20T00:00:00.000Z',
-                },
-              ],
+              items:
+                taskListId === 'list-gone'
+                  ? [openTask('t-gone')]
+                  : // A task added on Google shows up only if list-1 synced.
+                    ++listOneCalls === 1
+                    ? [openTask('t1')]
+                    : [openTask('t1'), openTask('t2')],
             }),
     });
     return Effect.gen(function* () {
       yield* seedAccount(true);
-      yield* (yield* SyncEngine).syncAll();
+      const engine = yield* SyncEngine;
       const repo = yield* TaskRepo;
-      expect((yield* repo.listLists('acc-1')).map((list) => list.id)).toEqual(['list-1']);
-      expect(yield* repo.getWindow('2026-08-24', '2026-08-31')).toHaveLength(1);
+      const listIds = Effect.map(repo.listLists('acc-1'), (rows) => rows.map((row) => row.id));
+      const taskIds = Effect.map(repo.getWindow('2026-08-24', '2026-08-31'), (rows) =>
+        rows.map((row) => row.id).sort(),
+      );
+      yield* engine.syncAll();
+      expect(yield* taskIds).toEqual(['t-gone', 't1']);
+      // The 404 pass: list-gone keeps its cached task, list-1 (sorted
+      // after it) still syncs.
+      yield* engine.syncAll();
+      expect(yield* listIds).toEqual(['list-gone', 'list-1']);
+      expect(yield* taskIds).toEqual(['t-gone', 't1', 't2']);
+      // Once Google stops naming it, the full list pass removes it.
+      googleListsIt = false;
+      yield* engine.syncAll();
+      expect(yield* listIds).toEqual(['list-1']);
+      expect(yield* taskIds).toEqual(['t1', 't2']);
     }).pipe(noYield, Effect.provide(testLayer(client)));
   });
 
