@@ -12,6 +12,7 @@ import {
   MAX_ALL_DAY_ROWS,
   PAN_BUFFER_DAYS,
   partitionCalendarTasks,
+  secondaryHourLabels,
   type SlotRange,
   slotTimes,
   type TaskRecord,
@@ -93,6 +94,7 @@ export function WeekView({
   onTaskClick,
   onToggleTask,
   overdue,
+  secondaryZones,
   tasks,
   timeZone,
   today: todayIso,
@@ -116,6 +118,8 @@ export function WeekView({
   onToggleTask: (task: TaskRecord) => void;
   /** Open tasks due before today; drawn as overdue chips on today's column. */
   overdue: ReadonlyArray<TaskRecord>;
+  /** The non-primary zones: a second line under each hour label and on tall event blocks. */
+  secondaryZones: ReadonlyArray<string>;
   tasks: ReadonlyArray<TaskRecord>;
   timeZone: string;
   /** Today's ISO date (rolls at local midnight). */
@@ -280,9 +284,27 @@ export function WeekView({
   const eventsById = new Map(
     timedEvents.map((event) => [`${event.calendarId}:${event.id}`, event]),
   );
+  // The gutter widens with the zones it lists; the header and the all-day
+  // lane carry the same spacer so the three stay column-aligned.
+  const gutterClassName = ['w-16', 'w-24', 'w-32'][Math.min(secondaryZones.length, 2)]!;
+  // One label per hour for the first *visible* day (not the strip's, which
+  // starts PAN_BUFFER_DAYS earlier and can sit on the other side of a DST
+  // change): a change inside a multi-day strip can still put another
+  // column an hour off, which the exact times on the blocks never are.
+  const firstDay = days[0]!;
+  const secondaryLabels = useMemo(
+    () =>
+      secondaryZones.length === 0
+        ? null
+        : Array.from({ length: 24 }, (_, hour) =>
+            secondaryHourLabels(firstDay, hour, timeZone, secondaryZones),
+          ),
+    [firstDay, timeZone, secondaryZones],
+  );
   return (
     <div className="flex min-h-0 flex-1 flex-col" ref={rootRef}>
       <DayHeaders
+        gutterClassName={gutterClassName}
         scrollbarWidth={scrollbarWidth}
         strip={strip}
         stripStyle={stripStyle}
@@ -296,6 +318,7 @@ export function WeekView({
         collapsible={rowCount > MAX_ALL_DAY_ROWS}
         colorOf={colorOf}
         drag={drag}
+        gutterClassName={gutterClassName}
         isTaskReadOnly={isTaskReadOnly}
         laneRef={laneRef}
         listColorOf={listColorOf}
@@ -319,16 +342,26 @@ export function WeekView({
       <div className="min-h-0 flex-1 overflow-y-scroll" ref={scrollRef}>
         <div className="flex" style={{ height: 24 * HOUR_HEIGHT }}>
           {/* Hour gutter */}
-          <div className="relative w-16 shrink-0">
+          <div className={`relative shrink-0 ${gutterClassName}`}>
             {Array.from({ length: 23 }, (_, index) => (
               <span
-                className="absolute right-2 -translate-y-1/2 text-[10px] text-neutral-400"
+                className="absolute right-2 flex -translate-y-1/2 flex-col items-end text-[10px] leading-3 whitespace-nowrap text-neutral-400"
                 key={index + 1}
                 style={{ top: (index + 1) * HOUR_HEIGHT }}
               >
-                {new Temporal.PlainTime(index + 1).toLocaleString('en-US', {
-                  hour: 'numeric',
-                })}
+                <span>
+                  {new Temporal.PlainTime(index + 1).toLocaleString('en-US', {
+                    hour: 'numeric',
+                  })}
+                </span>
+                {secondaryLabels ? (
+                  <span
+                    className="text-[9px] text-neutral-300"
+                    data-testid={`hour-secondary-${index + 1}`}
+                  >
+                    {secondaryLabels[index + 1]}
+                  </span>
+                ) : null}
               </span>
             ))}
           </div>
@@ -421,6 +454,7 @@ export function WeekView({
                           hourHeight={HOUR_HEIGHT}
                           key={box.id}
                           onEventClick={onEventClick}
+                          secondaryZones={secondaryZones}
                           timeZone={timeZone}
                         />
                       );

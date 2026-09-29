@@ -1,17 +1,19 @@
 import type { ConflictChoice, ParkedOpSummary } from '@calendar/core';
-import { conflictChoiceLabels, describeConflict, Temporal } from '@calendar/core';
+import { conflictChoiceLabels, describeConflict } from '@calendar/core';
 import { Alert } from 'react-native';
 
 /**
  * The keep-mine / take-theirs question for a parked 412, as a native
  * alert: the event, what differs ("Time: yours … · Google's …"), and the
- * two choices plus Later. The banner and the Settings queue row share it.
+ * two choices plus Later. The banner and the Settings queue row share it;
+ * times read in `timeZone`, the primary zone.
  */
 export const askConflict = (
   op: ParkedOpSummary,
   resolve: (params: { readonly choice: ConflictChoice; readonly opId: string }) => unknown,
+  timeZone: string,
 ): void => {
-  const { changes, headline } = describeConflict(op, Temporal.Now.timeZoneId());
+  const { changes, headline } = describeConflict(op, timeZone);
   const labels = conflictChoiceLabels(op);
   const detail = changes
     .map((change) => `${change.label}\nYours: ${change.mine}\nGoogle's: ${change.theirs}`)

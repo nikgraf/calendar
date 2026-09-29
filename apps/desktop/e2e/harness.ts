@@ -64,6 +64,8 @@ export interface SeedData {
   readonly calendars: ReadonlyArray<CalendarInfo>;
   /** Google People cache rows — the typeahead's only source with CALENDAR_CONTACTS=off. */
   readonly contacts?: ReadonlyArray<GoogleContact>;
+  /** device_settings rows (JSON values by key), as the app would have stored them. */
+  readonly deviceSettings?: Readonly<Record<string, unknown>>;
   readonly events: ReadonlyArray<EventRecord>;
   /** Queued changes as the app would have left them (e.g. a parked 412). */
   readonly pendingOps?: ReadonlyArray<PendingOp>;
@@ -95,6 +97,10 @@ export const seedDatabase = async (userDataDir: string, seed: SeedData): Promise
       yield* tasks.upsertTasks(seed.tasks ?? [], 1);
       yield* (yield* ContactRepo).upsertMany(seed.contacts ?? [], 1);
       yield* (yield* BirthdayRepo).upsertMany(seed.birthdays ?? [], 1);
+      const deviceSettings = yield* DeviceSettingsRepo;
+      for (const [key, value] of Object.entries(seed.deviceSettings ?? {})) {
+        yield* deviceSettings.set(key, value);
+      }
     }).pipe(Effect.provide(dbLayer)),
   );
 };

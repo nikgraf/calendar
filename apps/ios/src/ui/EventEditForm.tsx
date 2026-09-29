@@ -4,16 +4,13 @@ import {
   SCOPE_OPTIONS,
   useAccounts,
   type useEventEditorModel,
+  useTimeZones,
 } from '@calendar/app-state';
-import type { CalendarInfo } from '@calendar/core';
+import { type CalendarInfo, draftZoneRange } from '@calendar/core';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { Linking, Pressable, ScrollView, Switch, Text, TextInput, View } from 'react-native';
-import {
-  dateFromParts,
-  sheetStyles as styles,
-  toDateString,
-  toTimeString,
-} from './editSheetShared.ts';
+import { sheetStyles as styles } from './editSheetShared.ts';
+import { dateForPicker, dateStringFromPicker, timeStringFromPicker } from './pickerDates.ts';
 import { InviteeField } from './InviteeField.tsx';
 import { LocationField } from './LocationField.tsx';
 import { LocationMap } from './LocationMap.tsx';
@@ -29,6 +26,7 @@ const groupLabel = (calendar: CalendarInfo, emailOf: (accountId: string) => stri
 /** The event half of EventEditSheet (mode === 'event'). */
 export function EventEditForm({ model }: { model: ReturnType<typeof useEventEditorModel> }) {
   const accounts = useAccounts();
+  const { secondary: secondaryZones } = useTimeZones();
   const emailOf = (accountId: string) =>
     accounts.find((account) => account.id === accountId)?.email ?? accountId;
   const {
@@ -63,6 +61,9 @@ export function EventEditForm({ model }: { model: ReturnType<typeof useEventEdit
     title,
     writableCalendars: writable,
   } = model;
+  const { timeZone } = model;
+  // The draft's times in the other zones; null for all-day or before the times build.
+  const zoneLine = draftZoneRange({ date, endTime, isAllDay, startTime }, timeZone, secondaryZones);
 
   return (
     // Keyboard insets: the invitee field and its suggestions sit at the
@@ -156,8 +157,9 @@ export function EventEditForm({ model }: { model: ReturnType<typeof useEventEdit
           <DateTimePicker
             display="compact"
             mode="date"
-            onChange={(_, picked) => picked && setDate(toDateString(picked))}
-            value={dateFromParts(date)}
+            onChange={(_, picked) => picked && setDate(dateStringFromPicker(picked, timeZone))}
+            timeZoneName={timeZone}
+            value={dateForPicker(date, undefined, timeZone)}
           />
         </View>
         {isAllDay ? null : (
@@ -167,9 +169,12 @@ export function EventEditForm({ model }: { model: ReturnType<typeof useEventEdit
               <DateTimePicker
                 display="compact"
                 mode="time"
-                onChange={(_, picked) => picked && setStartTime(toTimeString(picked))}
+                onChange={(_, picked) =>
+                  picked && setStartTime(timeStringFromPicker(picked, timeZone))
+                }
                 style={styles.timePicker}
-                value={dateFromParts(date, startTime)}
+                timeZoneName={timeZone}
+                value={dateForPicker(date, startTime, timeZone)}
               />
             </View>
             <View style={styles.timeField} testID="event-end">
@@ -177,13 +182,21 @@ export function EventEditForm({ model }: { model: ReturnType<typeof useEventEdit
               <DateTimePicker
                 display="compact"
                 mode="time"
-                onChange={(_, picked) => picked && setEndTime(toTimeString(picked))}
+                onChange={(_, picked) =>
+                  picked && setEndTime(timeStringFromPicker(picked, timeZone))
+                }
                 style={styles.timePicker}
-                value={dateFromParts(date, endTime)}
+                timeZoneName={timeZone}
+                value={dateForPicker(date, endTime, timeZone)}
               />
             </View>
           </View>
         )}
+        {zoneLine ? (
+          <Text style={styles.hint} testID="event-secondary-times">
+            {zoneLine}
+          </Text>
+        ) : null}
 
         <Text style={styles.label}>Location</Text>
         <LocationField model={model} />

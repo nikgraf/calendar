@@ -17,6 +17,7 @@ import {
   useBirthdaysInRangeStable,
   useTaskReadOnlyLookup,
   useTasksInRangeStable,
+  useTimeZones,
   useToday,
 } from '@calendar/app-state';
 import { useEffect, useMemo, useState } from 'react';
@@ -29,8 +30,28 @@ import { Sidebar } from './Sidebar.tsx';
 import { CommandBar } from './CommandBar.tsx';
 import { WeekView } from './WeekView.tsx';
 
+/**
+ * Waits for the device-local time zones before drawing anything: a first
+ * frame in the device zone followed by a re-layout in the primary zone
+ * would, near midnight with a distant primary, also seed the focused day
+ * and "today" with the wrong date. The read resolves with the other
+ * initial atoms, so the gate never shows.
+ */
 export function CalendarApp() {
-  const timeZone = Temporal.Now.timeZoneId();
+  const zones = useTimeZones();
+  if (!zones.loaded) {
+    return <div className="flex h-screen bg-white" />;
+  }
+  return <CalendarBody primary={zones.primary} secondary={zones.secondary} />;
+}
+
+function CalendarBody({
+  primary: timeZone,
+  secondary: secondaryZones,
+}: {
+  primary: string;
+  secondary: ReadonlyArray<string>;
+}) {
   const { days, focused, goToday, panByDays, range, setFocused, step, switchView, title, view } =
     useCalendarNavigation({
       dayBuffer: PAN_BUFFER_DAYS,
@@ -233,6 +254,7 @@ export function CalendarApp() {
               })
             }
             overdue={overdue}
+            secondaryZones={secondaryZones}
             tasks={tasks}
             timeZone={timeZone}
             today={today}

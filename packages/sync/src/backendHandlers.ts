@@ -40,9 +40,11 @@ import { LocalNotifications } from './localNotifications.ts';
 import {
   readBirthdayReminderSettings,
   readEventNotificationSettings,
+  readTimeZoneSettings,
   readViewPreferences,
   writeBirthdayReminderSettings,
   writeEventNotificationSettings,
+  writeTimeZoneSettings,
   writeViewPreferences,
 } from './deviceSettings.ts';
 import { NotificationSink } from './notificationSink.ts';
@@ -238,6 +240,8 @@ export const commonBackendHandlers: Omit<BackendHandlers<CommonBackendServices>,
       return yield* taskRepo.getWindow(startDate, endDate);
     }),
 
+  getTimeZoneSettings: () => readTimeZoneSettings,
+
   getViewPreferences: () => readViewPreferences,
 
   listAccounts: () =>
@@ -409,6 +413,8 @@ export const commonBackendHandlers: Omit<BackendHandlers<CommonBackendServices>,
       const taskRepo = yield* TaskRepo;
       yield* taskRepo.setListVisible(accountId, taskListId, isVisible);
     }),
+
+  setTimeZoneSettings: (settings) => writeTimeZoneSettings(settings),
 
   setViewPreferences: (preferences) => writeViewPreferences(preferences),
 

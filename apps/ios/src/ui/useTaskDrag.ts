@@ -18,7 +18,7 @@ import {
   withTiming,
   type SharedValue,
 } from 'react-native-reanimated';
-import { GUTTER_WIDTH, HOUR_HEIGHT } from './timelineLayout.ts';
+import { HOUR_HEIGHT } from './timelineLayout.ts';
 
 /** Where a task drag started: its chip in the all-day lane, or its block in the grid. */
 export type TaskDragFrom = 'grid' | 'lane';
@@ -37,6 +37,8 @@ export interface TaskDragLayout {
   readonly containerHeight: SharedValue<number>;
   readonly containerX: SharedValue<number>;
   readonly containerY: SharedValue<number>;
+  /** The hour gutter's width: where the strip's columns start. */
+  readonly gutterWidth: number;
   readonly laneHeight: number;
   /** Where the lane starts: below the week header, or at the top in the day view. */
   readonly laneTop: SharedValue<number>;
@@ -74,6 +76,7 @@ export const useTaskDrag = (layout: TaskDragLayout) => {
     containerHeight,
     containerX,
     containerY,
+    gutterWidth,
     laneHeight,
     laneTop,
     panX,
@@ -92,7 +95,7 @@ export const useTaskDrag = (layout: TaskDragLayout) => {
       gridContentTop: laneBottom - scrollY.value,
       hourHeight: HOUR_HEIGHT,
       lane: { bottom: laneBottom, top: laneTop.value },
-      stripLeft: GUTTER_WIDTH - buffer * columnWidth + panX.value,
+      stripLeft: gutterWidth - buffer * columnWidth + panX.value,
     });
   };
 

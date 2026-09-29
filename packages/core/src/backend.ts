@@ -21,6 +21,7 @@ import {
   TaskRecurrence,
   TaskStatus,
 } from './types.ts';
+import { TimeZoneSettings } from './timeZoneSettings.ts';
 import { ViewPreferences } from './viewPreferences.ts';
 
 /**
@@ -342,6 +343,11 @@ export class AppBackendRpcs extends RpcGroup.make(
     payload: { endDate: Schema.String, startDate: Schema.String },
     success: Schema.Array(TaskRecord),
   }),
+  /** Device-local time zones: 1–3 IANA ids, one primary (never synced). */
+  Rpc.make('getTimeZoneSettings', {
+    error: BackendError,
+    success: TimeZoneSettings,
+  }),
   /** Device-local view preferences (never synced). */
   Rpc.make('getViewPreferences', {
     error: BackendError,
@@ -508,6 +514,10 @@ export class AppBackendRpcs extends RpcGroup.make(
       isVisible: Schema.Boolean,
       taskListId: Schema.String,
     },
+  }),
+  Rpc.make('setTimeZoneSettings', {
+    error: BackendError,
+    payload: TimeZoneSettings,
   }),
   Rpc.make('setViewPreferences', {
     error: BackendError,

@@ -47,5 +47,8 @@ export * from './time/ranges.ts';
 export * from './time/slotSelection.ts';
 export * from './time/temporal.ts';
 export * from './time/today.ts';
+export * from './time/zoneLabels.ts';
+export * from './time/zones.ts';
+export * from './timeZoneSettings.ts';
 export * from './types.ts';
 export * from './viewPreferences.ts';

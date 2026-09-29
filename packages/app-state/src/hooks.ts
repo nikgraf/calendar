@@ -14,9 +14,10 @@ import type {
   PlaceSuggestion,
   TaskListInfo,
   TaskRecord,
+  TimeZoneSettings,
   ViewPreferences,
 } from '@calendar/core';
-import { msUntilNextMidnight, Temporal } from '@calendar/core';
+import { msUntilNextMidnight, secondaryZones, Temporal } from '@calendar/core';
 import { RegistryContext, useAtomValue } from '@effect/atom-react';
 import { Cause, Effect, Exit, Option } from 'effect';
 import { AsyncResult, type Atom, AtomRegistry } from 'effect/unstable/reactivity';
@@ -296,6 +297,43 @@ export const useSettingsEditor = <A extends object, R>(
   return [current, save];
 };
 
+/** The device-local time zones as stored; null until the first read resolves. For the settings editor. */
+export const useTimeZoneSettings = (): TimeZoneSettings | null => {
+  const result = useAtomValue(useBackendAtoms().timeZoneSettings);
+  return Option.getOrNull(AsyncResult.value(result));
+};
+
+export interface TimeZones {
+  /** false only before the first read; the roots gate on it so the grid never draws in the wrong zone. */
+  readonly loaded: boolean;
+  /** The zone the grid, "today" and the editors use. */
+  readonly primary: string;
+  /** The other zones, in settings order: the gutter's second line, chips and the editor helper. */
+  readonly secondary: ReadonlyArray<string>;
+}
+
+/**
+ * The zones the calendar draws. Before the first read this is a single
+ * device zone; after it, the last loaded value survives the refetch that
+ * follows a write, so a primary never falls back mid-session.
+ */
+export const useTimeZones = (): TimeZones => {
+  const stored = useTimeZoneSettings();
+  const [last, setLast] = useState<TimeZoneSettings | null>(null);
+  if (stored !== null && stored !== last) {
+    // Render-phase state adjustment (the React "derive from props" pattern).
+    setLast(stored);
+  }
+  const settings = stored ?? last;
+  return useMemo(
+    () =>
+      settings === null
+        ? { loaded: false, primary: Temporal.Now.timeZoneId(), secondary: [] }
+        : { loaded: true, primary: settings.primary, secondary: secondaryZones(settings) },
+    [settings],
+  );
+};
+
 /** The device-local view preferences; null until the first read resolves (treat as the defaults). */
 export const useViewPreferences = (): ViewPreferences | null => {
   const result = useAtomValue(useBackendAtoms().viewPreferences);
@@ -384,6 +422,7 @@ export const useBackendMutations = () => {
       setCalendarVisible: set('setCalendarVisible'),
       setEventNotificationSettings: set('setEventNotificationSettings'),
       setTaskListVisible: set('setTaskListVisible'),
+      setTimeZoneSettings: set('setTimeZoneSettings'),
       setViewPreferences: set('setViewPreferences'),
       syncNow: set('syncNow'),
       updateEvent: set('updateEvent'),

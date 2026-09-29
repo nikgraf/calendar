@@ -59,6 +59,7 @@ const makeStubClient = () => {
       }),
     getOverdueTasks: () => Effect.succeed([]),
     getTasksInRange: () => Effect.succeed([]),
+    getTimeZoneSettings: () => Effect.succeed({ primary: 'UTC', zones: ['UTC'] }),
     getViewPreferences: () => Effect.succeed({ allDayLaneCollapsed: false }),
     listAccounts: () =>
       Effect.sync(() => {
@@ -100,6 +101,7 @@ const makeStubClient = () => {
       }),
     setEventNotificationSettings: () => Effect.succeed({ notificationsGranted: true }),
     setTaskListVisible: () => Effect.void,
+    setTimeZoneSettings: () => Effect.void,
     setViewPreferences: () => Effect.void,
     syncNow: () => Effect.void,
     updateEvent: () => fail('not stubbed'),

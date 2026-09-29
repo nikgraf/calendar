@@ -750,6 +750,8 @@ export const useEventEditorModel = ({
     startTime,
     /** The picked calendar's provider: what a create (or conversion) writes to. */
     targetProvider: calendarOf(calendarKey)?.provider ?? 'google',
+    /** The primary zone the date/time fields are wall clock in. */
+    timeZone,
     title,
     values,
     writableCalendars,

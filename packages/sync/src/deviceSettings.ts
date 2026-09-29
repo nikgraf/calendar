@@ -3,7 +3,10 @@ import {
   DEFAULT_BIRTHDAY_REMINDER_SETTINGS,
   DEFAULT_EVENT_NOTIFICATION_SETTINGS,
   DEFAULT_VIEW_PREFERENCES,
+  defaultTimeZoneSettings,
   EventNotificationSettings,
+  Temporal,
+  TimeZoneSettings,
   ViewPreferences,
 } from '@calendar/core';
 import { DeviceSettingsRepo } from '@calendar/db';
@@ -94,4 +97,33 @@ export const writeViewPreferences = (
 ): Effect.Effect<void, SqlError, DeviceSettingsRepo> =>
   Effect.flatMap(DeviceSettingsRepo, (repo) =>
     repo.set(VIEW_PREFERENCES_KEY, { allDayLaneCollapsed: preferences.allDayLaneCollapsed }),
+  );
+
+/** The device_settings key for the time zones. */
+export const TIME_ZONES_KEY = 'timeZones';
+
+const decodeTimeZoneSettings = Schema.decodeUnknownEffect(TimeZoneSettings);
+
+/**
+ * The stored time zones, or a single device zone when nothing (or nothing
+ * decodable) is stored — a zone id tzdata no longer knows fails the
+ * schema's Temporal check and so also reads as the default, never as a
+ * grid that throws.
+ */
+export const readTimeZoneSettings: Effect.Effect<TimeZoneSettings, SqlError, DeviceSettingsRepo> =
+  Effect.gen(function* () {
+    const raw = yield* (yield* DeviceSettingsRepo).get(TIME_ZONES_KEY);
+    if (raw === null) {
+      return defaultTimeZoneSettings(Temporal.Now.timeZoneId());
+    }
+    return yield* decodeTimeZoneSettings(raw).pipe(
+      Effect.orElseSucceed(() => defaultTimeZoneSettings(Temporal.Now.timeZoneId())),
+    );
+  });
+
+export const writeTimeZoneSettings = (
+  settings: TimeZoneSettings,
+): Effect.Effect<void, SqlError, DeviceSettingsRepo> =>
+  Effect.flatMap(DeviceSettingsRepo, (repo) =>
+    repo.set(TIME_ZONES_KEY, { primary: settings.primary, zones: [...settings.zones] }),
   );

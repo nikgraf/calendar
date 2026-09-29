@@ -14,6 +14,7 @@ import { EventNotificationsSection } from './EventNotificationsSection.tsx';
 import { ContactsSection } from './ContactsSection.tsx';
 import { LocationsSection } from './LocationsSection.tsx';
 import { RemindersSection } from './RemindersSection.tsx';
+import { TimeZonesSection } from './TimeZonesSection.tsx';
 
 export function AccountsView() {
   const accounts = useAccounts();
@@ -149,6 +150,7 @@ export function AccountsView() {
       <ContactsSection />
       <EventNotificationsSection />
       <BirthdayRemindersSection />
+      <TimeZonesSection />
       <LocationsSection />
       <PrivacySection />
     </div>

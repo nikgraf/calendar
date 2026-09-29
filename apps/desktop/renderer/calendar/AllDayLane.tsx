@@ -162,6 +162,7 @@ export function AllDayLane({
   collapsible,
   colorOf,
   drag,
+  gutterClassName,
   isTaskReadOnly,
   laneRef,
   listColorOf,
@@ -187,6 +188,8 @@ export function AllDayLane({
   collapsible: boolean;
   colorOf: ColorLookup;
   drag: ReturnType<typeof useEventDrag>;
+  /** The hour gutter's width class, so the lane's label cell matches it. */
+  gutterClassName: string;
   isTaskReadOnly: (task: TaskRecord) => boolean;
   /** The lane's root, so the drag hook can tell a release inside it. */
   laneRef: RefObject<HTMLDivElement | null>;
@@ -215,7 +218,9 @@ export function AllDayLane({
       ref={laneRef}
       style={{ height: Math.max(rowCount, 1) * 24 + 8, paddingRight: scrollbarWidth }}
     >
-      <div className="w-16 shrink-0 py-1 pr-2 text-right text-[10px] text-neutral-400">
+      <div
+        className={`shrink-0 py-1 pr-2 text-right text-[10px] text-neutral-400 ${gutterClassName}`}
+      >
         all-day
         {collapsible && !collapsed ? (
           <button

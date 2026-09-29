@@ -5,8 +5,9 @@ import {
   useAccounts,
   type useEventEditorModel,
   type useMoveConfirmation,
+  useTimeZones,
 } from '@calendar/app-state';
-import type { CalendarInfo } from '@calendar/core';
+import { type CalendarInfo, draftZoneRange } from '@calendar/core';
 import { InviteeCombobox } from './InviteeCombobox.tsx';
 import { FIELD_CLASS as field } from './fieldStyles.ts';
 import { LocationCombobox } from './LocationCombobox.tsx';
@@ -36,6 +37,7 @@ export function EventEditorForm({
   onClose: () => void;
 }) {
   const accounts = useAccounts();
+  const { secondary: secondaryZones } = useTimeZones();
   const {
     addAttendee,
     attendees,
@@ -71,6 +73,12 @@ export function EventEditorForm({
   const accountLabel = (accountId: string) =>
     accounts.find((account) => account.id === accountId)?.email ?? accountId;
   const readOnlyGuests = !canInvite && (existing?.attendees ?? []).length > 0;
+  // The draft's times in the other zones; null for all-day or before the times build.
+  const zoneLine = draftZoneRange(
+    { date, endTime, isAllDay, startTime },
+    model.timeZone,
+    secondaryZones,
+  );
 
   return (
     <>
@@ -176,6 +184,11 @@ export function EventEditorForm({
             </>
           )}
         </div>
+        {zoneLine ? (
+          <p className="-mt-2 text-xs text-neutral-400" data-testid="event-secondary-times">
+            {zoneLine}
+          </p>
+        ) : null}
         <LocationCombobox model={model} />
         <LocationMap model={model} />
         {existing ? null : <RepeatRuleFields anchorDate={date} state={model} />}

@@ -62,6 +62,7 @@ export interface BackendAtoms {
   readonly syncStatus: ReturnType<typeof buildAtoms>['syncStatus'];
   readonly taskLists: ReturnType<typeof buildAtoms>['taskLists'];
   readonly tasksInRange: ReturnType<typeof buildAtoms>['tasksInRange'];
+  readonly timeZoneSettings: ReturnType<typeof buildAtoms>['timeZoneSettings'];
   readonly viewPreferences: ReturnType<typeof buildAtoms>['viewPreferences'];
 }
 
@@ -101,6 +102,7 @@ const MUTATION_REACTIVITY = {
   setCalendarVisible: [CALENDARS_KEY, EVENTS_KEY],
   setEventNotificationSettings: [deviceSettingsKey('eventNotifications')],
   setTaskListVisible: [TASKLISTS_KEY, TASKS_KEY],
+  setTimeZoneSettings: [deviceSettingsKey('timeZones')],
   setViewPreferences: [deviceSettingsKey('viewPreferences')],
   syncNow: [],
   updateEvent: [EVENTS_KEY],
@@ -235,6 +237,16 @@ const buildAtoms = (client: BackendClient) => {
       }),
     )
     .pipe(Atom.withReactivity([deviceSettingsKey('eventNotifications')]));
+
+  // Device-local time zones; refetched only when they are written.
+  const timeZoneSettings = runtime
+    .atom(
+      Effect.gen(function* () {
+        const backend = yield* AppBackend;
+        return yield* backend.getTimeZoneSettings(undefined);
+      }),
+    )
+    .pipe(Atom.withReactivity([deviceSettingsKey('timeZones')]));
 
   // Device-local view preferences; refetched only when they are written.
   const viewPreferences = runtime
@@ -384,6 +396,7 @@ const buildAtoms = (client: BackendClient) => {
     syncStatus,
     taskLists,
     tasksInRange,
+    timeZoneSettings,
     viewPreferences,
   };
 };
