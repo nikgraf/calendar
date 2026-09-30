@@ -9,6 +9,14 @@ export interface PrivacyState {
   readonly visibleUntil?: number;
 }
 
+/** The watched settings file, as the main process reports it. */
+export interface SettingsFileStatus {
+  readonly error?: string;
+  readonly exists: boolean;
+  readonly lastAppliedAt?: number;
+  readonly path: string;
+}
+
 declare global {
   interface Window {
     calendarBridge: {
@@ -24,10 +32,15 @@ declare global {
       ) => Promise<{ segments: ReadonlyArray<{ text: string }> }>;
       onPrivacyChanged: (listener: (state: PrivacyState) => void) => () => void;
       onRpcMessage: (listener: (data: string | Uint8Array) => void) => () => void;
+      onSettingsFileChanged: (listener: (status: SettingsFileStatus) => void) => () => void;
       privacyGet: () => Promise<PrivacyState>;
       privacySet: (choice: 'hidden' | 'pause10m' | 'visible') => Promise<PrivacyState>;
       remindersStatus: () => Promise<string>;
       rpcSend: (data: string | Uint8Array) => void;
+      settingsFileCreate: () => Promise<SettingsFileStatus>;
+      settingsFileOpen: () => Promise<{ canceled: true } | { path: string; text: string }>;
+      settingsFileSave: (text: string) => Promise<{ canceled: true } | { path: string }>;
+      settingsFileStatus: () => Promise<SettingsFileStatus>;
     };
   }
 }

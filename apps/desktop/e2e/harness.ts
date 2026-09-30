@@ -500,6 +500,8 @@ export class Cdp {
 export interface App {
   readonly cdp: Cdp;
   readonly dump: (label: string) => Promise<void>;
+  /** Where this run's watched settings file lives (may not exist). */
+  readonly settingsFilePath: string;
   readonly stop: () => Promise<void>;
   readonly userDataDir: string;
 }
@@ -562,6 +564,12 @@ export interface LaunchOptions {
    * in-memory Reminders client so mutation e2e tests never touch personal data.
    */
   readonly reminders?: 'off' | 'real' | { readonly fixture: RemindersFixture };
+  /**
+   * Initial text of the watched settings file. The file always lives under
+   * the run's temp profile (CALENDAR_SETTINGS_FILE), never at the
+   * developer's ~/.solunivo — absent means the app starts without one.
+   */
+  readonly settingsFile?: string;
 }
 
 export interface LiveGoogleLaunch extends LiveAccountSeed {
@@ -648,6 +656,13 @@ export const launchApp = async (seed?: SeedData, options: LaunchOptions = {}): P
             return { CALENDAR_GEO: 'fixture', CALENDAR_GEO_FIXTURE: fixturePath };
           })();
 
+  // The watched settings file stays inside the temp profile: HOME is not
+  // isolated here, and a run must never read or rewrite a developer's file.
+  const settingsFilePath = join(userDataDir, 'solunivo.jsonc');
+  if (options.settingsFile !== undefined) {
+    writeFileSync(settingsFilePath, options.settingsFile);
+  }
+
   const electronPath = require('electron') as unknown as string;
   const appDir = join(import.meta.dirname, '..');
   const port = 9333 + Math.floor(Math.random() * 500);
@@ -667,6 +682,7 @@ export const launchApp = async (seed?: SeedData, options: LaunchOptions = {}): P
       ...googleEnv,
       // A seeded birthday with reminders on must never post a real banner.
       CALENDAR_NOTIFICATIONS: 'off',
+      CALENDAR_SETTINGS_FILE: settingsFilePath,
       CALENDAR_USERDATA: userDataDir,
     },
     stdio: ['ignore', 'pipe', 'pipe'],
@@ -718,6 +734,7 @@ export const launchApp = async (seed?: SeedData, options: LaunchOptions = {}): P
         writeFileSync(join(dir, `${safe}.dump-error.txt`), String(error));
       }
     },
+    settingsFilePath,
     stop: async () => {
       cdp.close();
       // Wait for the process to actually exit — deleting the profile while

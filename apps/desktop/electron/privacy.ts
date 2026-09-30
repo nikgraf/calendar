@@ -33,11 +33,23 @@ export const getPrivacyState = (): PrivacyState => ({
   ...(visibleUntil !== null && Date.now() < visibleUntil ? { visibleUntil } : {}),
 });
 
+const listeners = new Set<(state: PrivacyState) => void>();
+
+/** Main-process subscribers (the settings file mirrors the mode); windows hear `privacy:changed`. */
+export const subscribePrivacy = (listener: (state: PrivacyState) => void): (() => void) => {
+  listeners.add(listener);
+  return () => listeners.delete(listener);
+};
+
 const applyAndBroadcast = () => {
   const value = isProtected();
+  const state = getPrivacyState();
   for (const window of BrowserWindow.getAllWindows()) {
     window.setContentProtection(value);
-    window.webContents.send('privacy:changed', getPrivacyState());
+    window.webContents.send('privacy:changed', state);
+  }
+  for (const listener of listeners) {
+    listener(state);
   }
 };
 

@@ -4,6 +4,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { app, BrowserWindow, ipcMain, session, shell } from 'electron';
 import { updateElectronApp } from 'update-electron-app';
 import { startBackendHost } from './backendHost.ts';
+import { startSettingsFile } from './settingsFile.ts';
 import { initFileLogging, logRendererError } from './log.ts';
 import { initPrivacy, registerPrivacyWindow } from './privacy.ts';
 import { registerModelHelper } from './modelHelper.ts';
@@ -147,7 +148,8 @@ void app.whenReady().then(() => {
       });
     });
   }
-  startBackendHost();
+  const host = startBackendHost();
+  startSettingsFile(host);
   registerModelHelper();
   registerRemindersIpc();
   registerContactsIpc();

@@ -58,7 +58,17 @@ const desktopPlatformSettings: Layer.Layer<PlatformSettings> = Layer.succeed(Pla
   read: Effect.sync(() => ({ screenPrivacy: getPrivacyState().mode })),
 });
 
-export const startBackendHost = (): void => {
+/** What the main process may do with the running backend besides serving rpc. */
+export interface BackendHost {
+  /** Resolves once the seed, the sync scheduler and the notifications are up. */
+  readonly ready: Promise<void>;
+  readonly run: <A, E>(
+    effect: Effect.Effect<A, E, CommonBackendServices | TokenManager>,
+  ) => Promise<A>;
+  readonly subscribeInvalidations: (listener: (keys: ReadonlyArray<string>) => void) => () => void;
+}
+
+export const startBackendHost = (): BackendHost => {
   console.log('[backend] starting host');
   const oauth = loadOAuthConfig();
   const invalidations = makeInvalidationBus();
@@ -146,19 +156,18 @@ export const startBackendHost = (): void => {
   const runtime = ManagedRuntime.make(Layer.provideMerge(rpcLayer, appLayer));
 
   // Building the runtime starts the rpc server; then start the scheduler.
-  runtime
-    .runPromise(
-      Effect.gen(function* () {
-        yield* seedDesktopGoogleAccounts;
-        const engine = yield* SyncEngine;
-        yield* engine.start();
-        yield* (yield* LocalNotifications).start();
-        console.log('[backend] runtime ready, rpc server + scheduler started');
-      }),
-    )
-    .catch((error: unknown) => {
-      console.error('[backend] bootstrap failed:', error);
-    });
+  const ready = runtime.runPromise(
+    Effect.gen(function* () {
+      yield* seedDesktopGoogleAccounts;
+      const engine = yield* SyncEngine;
+      yield* engine.start();
+      yield* (yield* LocalNotifications).start();
+      console.log('[backend] runtime ready, rpc server + scheduler started');
+    }),
+  );
+  ready.catch((error: unknown) => {
+    console.error('[backend] bootstrap failed:', error);
+  });
 
   // The steady-state poll misses the moments staleness is most visible:
   // right after wake, unlock, or refocusing the window.
@@ -168,4 +177,10 @@ export const startBackendHost = (): void => {
   powerMonitor.on('resume', kickSync);
   powerMonitor.on('unlock-screen', kickSync);
   app.on('browser-window-focus', kickSync);
+
+  return {
+    ready,
+    run: (effect) => runtime.runPromise(effect),
+    subscribeInvalidations: invalidations.subscribe,
+  };
 };

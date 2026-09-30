@@ -297,3 +297,40 @@ export const SettingsImportSummary = Schema.Struct({
   visibilityPending: Schema.Number,
 });
 export type SettingsImportSummary = typeof SettingsImportSummary.Type;
+
+const SECTION_LABELS: Record<SettingsSection, string> = {
+  birthdayReminders: 'birthday reminders',
+  eventNotifications: 'event notifications',
+  screenPrivacy: 'screen privacy',
+  timeZones: 'time zones',
+  view: 'view preferences',
+};
+
+const plural = (count: number, noun: string): string => `${count} ${noun}${count === 1 ? '' : 's'}`;
+
+/** The summary as lines a person can read before confirming — the same words on both platforms. */
+export const describeImportSummary = (summary: SettingsImportSummary): ReadonlyArray<string> => {
+  const lines: Array<string> = [];
+  if (summary.settingsChanged.length > 0) {
+    lines.push(
+      `Changes ${summary.settingsChanged.map((section) => SECTION_LABELS[section]).join(', ')}.`,
+    );
+  }
+  for (const email of summary.googleAccountsToAdd) {
+    lines.push(`Adds ${email} — it shows as "Sign in again" until you sign in.`);
+  }
+  for (const entry of summary.appleAccountsPending) {
+    const what = entry.kind === 'apple-calendar' ? 'Apple Calendar' : 'Reminders';
+    lines.push(
+      `${what} is not connected here; ${plural(entry.pendingCount, 'preference')} wait for it.`,
+    );
+  }
+  if (summary.visibilityChanges > 0) {
+    lines.push(`Shows or hides ${plural(summary.visibilityChanges, 'calendar or list')}.`);
+  }
+  lines.push(...summary.notes);
+  if (lines.length === 0) {
+    lines.push('Nothing differs from this device.');
+  }
+  return lines;
+};
