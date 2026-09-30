@@ -1418,9 +1418,14 @@ test`/`test:e2e`/`test:e2e:ios`; every file creates its own
       comes back — the file mirrors the device. The app never creates the
       file on its own ("Create file" in Settings does). The e2e harness
       always points `CALENDAR_SETTINGS_FILE` under its temp profile: HOME
-      is not isolated, and no run may touch a developer's real file. The
-      main bundle aliases `jsonc-parser` to its ESM entry: its `main` is a
-      UMD build that requires its parts by relative path at runtime.
+      is not isolated, and no run may touch a developer's real file. Core
+      imports `jsonc-parser/lib/esm/main.js` directly: the package's
+      `main` is a UMD build whose parts are
+      required through the wrapper's own `require` argument, which both
+      rolldown (the Electron main bundle) and Metro bundle without them —
+      the first iOS CI run died at launch with "Requiring unknown module
+      ./impl/format". One deep import fixes every bundler; a per-bundler
+      alias did not.
       Tests: `settingsDocument.test.ts` (parse, version gate, Hermes zone
       spelling, comment-preserving merge), `settingsExport.test.ts`,
       `settingsImport.test.ts` (preview = import, reauth row, parked and

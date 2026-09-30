@@ -10,9 +10,6 @@ import { defineConfig } from 'tsdown';
 // retirement (#36).
 export default [
   defineConfig({
-    // jsonc-parser's `main` is a UMD build that requires its parts by
-    // relative path at runtime; the bundle needs the ESM entry.
-    alias: { 'jsonc-parser': 'jsonc-parser/lib/esm/main.js' },
     entry: { main: 'electron/main.ts' },
     external: ['electron'],
     format: 'esm',

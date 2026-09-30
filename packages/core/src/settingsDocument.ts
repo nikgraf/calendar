@@ -1,5 +1,15 @@
 import { Effect, Schema } from 'effect';
-import { applyEdits, modify, parse, printParseErrorCode, type ParseError } from 'jsonc-parser';
+// The package's `main` is a UMD build that requires its parts by relative
+// path through the wrapper's own `require` argument — Metro and rolldown
+// both bundle it without them ("Requiring unknown module ./impl/format"
+// at launch). The ESM entry is plain and has its own .d.ts.
+import {
+  applyEdits,
+  modify,
+  parse,
+  printParseErrorCode,
+  type ParseError,
+} from 'jsonc-parser/lib/esm/main.js';
 import { BirthdayReminderSettings } from './birthdays/reminders.ts';
 import { EventNotificationSettings } from './notifications/settings.ts';
 import { canonicalZoneId, runtimeZoneId } from './time/zones.ts';
