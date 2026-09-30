@@ -9,6 +9,7 @@ import {
   reposLayer,
   runMigrations,
   SyncStateRepo,
+  TaskRepo,
 } from '@calendar/db';
 import {
   ApiUnavailableError,
@@ -21,6 +22,7 @@ import {
   type GooglePeopleClientShape,
   GoogleTasksClient,
   type GoogleTasksClientShape,
+  NotFoundError,
   ReauthRequiredError,
   SyncTokenExpiredError,
 } from '@calendar/google';
@@ -60,7 +62,7 @@ const timedItem = (id: string, hour: number) => ({
 
 /** Scripted client: each listEvents call shifts the next page. */
 const stubClient = (
-  eventPages: Array<GcalEventsPage | 'sync-token-expired' | 'reauth'>,
+  eventPages: Array<GcalEventsPage | 'not-found' | 'sync-token-expired' | 'reauth'>,
   calls: Array<{ syncToken?: string | undefined; timeMin?: string | undefined }> = [],
 ): GoogleCalendarClientShape => ({
   deleteEvent: () => Effect.die('not used'),
@@ -80,12 +82,34 @@ const stubClient = (
     if (next === 'reauth') {
       return Effect.fail(new ReauthRequiredError({ accountId: 'acc-1' }));
     }
+    if (next === 'not-found') {
+      return Effect.fail(new NotFoundError({ resource: 'cal-1' }));
+    }
     return Effect.succeed(next);
   },
   moveEvent: () => Effect.die('unexpected move'),
   patchCalendarListEntry: () => Effect.die('unexpected calendarList patch'),
   patchEvent: () => Effect.die('not used'),
 });
+
+/**
+ * calendarList with Google's delta semantics: a token returns only
+ * changes (none here), no token the full list. `calls` records which
+ * kind each pass asked for.
+ */
+const calendarList =
+  (
+    items: () => GcalCalendarListPage['items'],
+    calls: Array<string>,
+  ): GoogleCalendarClientShape['listCalendars'] =>
+  (params) => {
+    calls.push(params.syncToken ?? 'full');
+    return Effect.succeed(
+      params.syncToken
+        ? { items: [], nextSyncToken: 'cal-sync-n' }
+        : { items: items(), nextSyncToken: 'cal-sync-1' },
+    );
+  };
 
 /** Accounts here have tasksEnabled=false, so tasks calls must not happen. */
 const stubTasksClient: GoogleTasksClientShape = {
@@ -102,7 +126,10 @@ const inertPeopleClient: GooglePeopleClientShape = {
   listOtherContacts: () => Effect.die('people not used in this test'),
 };
 
-const engineLayer = (client: GoogleCalendarClientShape) =>
+const engineLayer = (
+  client: GoogleCalendarClientShape,
+  tasksClient: GoogleTasksClientShape = stubTasksClient,
+) =>
   SyncEngine.layer.pipe(
     Layer.provideMerge(EventMutations.layer),
     Layer.provideMerge(appleCalendarServicesLayer(unavailableAppleCalendarClient('test'))),
@@ -112,7 +139,7 @@ const engineLayer = (client: GoogleCalendarClientShape) =>
     Layer.provideMerge(reactivityLayer),
     Layer.provideMerge(Layer.succeed(RemindersClient, unavailableRemindersClient('test'))),
     Layer.provideMerge(Layer.succeed(GoogleCalendarClient, client)),
-    Layer.provideMerge(Layer.succeed(GoogleTasksClient, stubTasksClient)),
+    Layer.provideMerge(Layer.succeed(GoogleTasksClient, tasksClient)),
     Layer.provideMerge(Layer.succeed(GooglePeopleClient, inertPeopleClient)),
   );
 
@@ -271,6 +298,115 @@ describe('SyncEngine', () => {
       const state = yield* (yield* SyncStateRepo).get('acc-1', eventsScope('cal-1'));
       expect(state?.syncToken).toBe('sync-2');
     }).pipe(Effect.provide(engineLayer(client)));
+  });
+
+  describe('an events.list 404', () => {
+    const goneEntry = {
+      accessRole: 'owner' as const,
+      id: 'cal-gone',
+      selected: true,
+      summary: 'A deleted one',
+    };
+    const tasksEnabledAccount = Effect.gen(function* () {
+      yield* (yield* AccountRepo).upsert(
+        new Account({
+          contactsEnabled: false,
+          createdAt: 1,
+          email: 'nik@example.com',
+          id: 'acc-1',
+          provider: 'google',
+          status: 'ok',
+          tasksEnabled: true,
+        }),
+      );
+    });
+
+    it.effect(
+      'skips the calendar, not the account; a full relist drops it once Google does',
+      () => {
+        // calendarList names a deleted calendar for minutes while its events
+        // already 404. Sorted first ("A…" < "Personal"), it used to fail the
+        // whole account pass: the calendars after it and tasks never synced.
+        let googleListsIt = true;
+        const calls: Array<string> = [];
+        const client: GoogleCalendarClientShape = {
+          ...stubClient([]),
+          listCalendars: calendarList(
+            () => [...(calendarListPage.items ?? []), ...(googleListsIt ? [goneEntry] : [])],
+            calls,
+          ),
+          listEvents: ({ calendarId }) =>
+            calendarId === 'cal-gone'
+              ? Effect.fail(new NotFoundError({ resource: calendarId }))
+              : Effect.succeed({ items: [timedItem('evt-1', 10)], nextSyncToken: 'evt-sync-1' }),
+        };
+        const tasksClient: GoogleTasksClientShape = {
+          ...stubTasksClient,
+          listTaskLists: () => Effect.succeed({ items: [{ id: 'list-1', title: 'My Tasks' }] }),
+          listTasks: () =>
+            Effect.succeed({ items: [{ id: 't1', status: 'needsAction', title: 'Pay rent' }] }),
+        };
+        return Effect.gen(function* () {
+          yield* tasksEnabledAccount;
+          const engine = yield* SyncEngine;
+          const calendars = yield* CalendarRepo;
+          const state = yield* SyncStateRepo;
+          const ids = Effect.map(calendars.list('acc-1'), (rows) => rows.map((row) => row.id));
+
+          yield* engine.syncAll();
+          expect(yield* ids).toEqual(['cal-gone', 'cal-1']);
+          expect((yield* state.get('acc-1', eventsScope('cal-1')))?.syncToken).toBe('evt-sync-1');
+          expect(yield* (yield* EventRepo).getById('acc-1', 'cal-1', 'evt-1')).not.toBeNull();
+          expect((yield* (yield* TaskRepo).listLists('acc-1')).map((list) => list.id)).toEqual([
+            'list-1',
+          ]);
+
+          // Still listed: the full relist keeps it, and it 404s again.
+          yield* engine.syncAll();
+          expect(yield* ids).toEqual(['cal-gone', 'cal-1']);
+
+          googleListsIt = false;
+          yield* engine.syncAll();
+          expect(yield* ids).toEqual(['cal-1']);
+          expect(yield* state.get('acc-1', eventsScope('cal-gone'))).toBeNull();
+          // Each pass after a 404 lists in full; a delta would never say.
+          expect(calls).toEqual(['full', 'full', 'full']);
+          yield* engine.syncAll();
+          expect(calls.at(-1)).toBe('cal-sync-1');
+        }).pipe(Effect.provide(engineLayer(client, tasksClient)));
+      },
+    );
+
+    it.effect('that is transient keeps the calendar and its events; the next pass recovers', () => {
+      const calls: Array<string> = [];
+      const client: GoogleCalendarClientShape = {
+        ...stubClient([
+          { items: [timedItem('evt-1', 10)], nextSyncToken: 'evt-sync-1' },
+          'not-found',
+          { items: [timedItem('evt-2', 12)], nextSyncToken: 'evt-sync-2' },
+        ]),
+        listCalendars: calendarList(() => calendarListPage.items, calls),
+      };
+      return Effect.gen(function* () {
+        yield* seedAccount;
+        const engine = yield* SyncEngine;
+        const events = yield* EventRepo;
+        yield* engine.syncAll();
+        yield* engine.syncAll();
+        // The 404 pass keeps what it had…
+        expect((yield* (yield* CalendarRepo).list('acc-1')).map((row) => row.id)).toEqual([
+          'cal-1',
+        ]);
+        expect(yield* events.getById('acc-1', 'cal-1', 'evt-1')).not.toBeNull();
+        // …and the next one relists calendars in full (a delta would omit
+        // the unchanged calendar) and resumes its events on the old token.
+        yield* engine.syncAll();
+        expect(calls).toEqual(['full', 'cal-sync-1', 'full']);
+        expect(yield* events.getById('acc-1', 'cal-1', 'evt-2')).not.toBeNull();
+        const state = yield* (yield* SyncStateRepo).get('acc-1', eventsScope('cal-1'));
+        expect(state?.syncToken).toBe('evt-sync-2');
+      }).pipe(Effect.provide(engineLayer(client)));
+    });
   });
 
   it.effect('flags the account when Google demands re-auth', () => {

@@ -1334,3 +1334,34 @@ test`/`test:e2e`/`test:e2e:ios`; every file creates its own
       UTC + Kolkata pair, host-independent, plus the section's add /
       promote / remove / cap), Maestro `19-time-zones.yaml` (Honolulu
       primary, Kolkata secondary: "3:30 AM" under noon).
+
+### A gone calendar no longer stalls the account (2026-09-29)
+
+- [x] Nightly live runs 36374700458 and 36517901490 went red — done
+      (2026-09-29, `todo/live-nightly-gone-calendar`). The three live jobs
+      share one account, so each app lists the other jobs' scratch
+      calendars too, and Google keeps listing a deleted calendar for
+      minutes (docs/google-sync-and-testing.md, calendarList). Once its
+      `events.list` answers 404, `syncAccount` used to fail at that
+      calendar, and because it syncs calendars one after another, the
+      calendars sorted after it, tasks and contacts never synced. An
+      incremental list never reports a deletion older than its token, so
+      the account stayed stuck (iOS: every pass for 11 min; its run list
+      and a server-side event never arrived). A real user who deletes a
+      calendar elsewhere could hit the same. Decisions: a 404 from one
+      calendar's `events.list` skips that calendar for the pass, keeps its
+      rows and drops the calendarList sync token, so the next pass lists
+      calendars in full; that removes the calendar once Google stops naming
+      it. The first cut purged the calendar on the 404, which a review
+      rejected: Google says to retry 404s, and after a transient one an
+      unchanged calendar would never have come back through the delta. A
+      404 from one list's `tasks.list` skips that list and keeps its rows
+      (task lists are listed in full every pass). Any other failure still
+      fails the account pass as before. The Node calendarList test
+      polls up to three minutes for the removal instead of asserting after
+      one pass, and the desktop live spec now dumps screenshot, DOM and app
+      log on a failure. The desktop failure of 36517901490 (a created
+      event never rendered; the later tests chained on it) did not
+      reproduce locally, not after a fresh deletion and not at the
+      nightly's 16:00 slot, so its cause is still open; the dump is there
+      for the next time.
