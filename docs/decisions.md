@@ -1365,3 +1365,66 @@ test`/`test:e2e`/`test:e2e:ios`; every file creates its own
       reproduce locally, not after a fresh deletion and not at the
       nightly's 16:00 slot, so its cause is still open; the dump is there
       for the next time.
+
+### Settings export/import and the watched settings file (2026-09-30)
+
+- [x] Settings as a file — done (2026-09-30,
+      `todo/settings-export-import`): a versioned `SettingsDocument`
+      (`packages/core/src/settingsDocument.ts`) carrying the device
+      settings (time zones, event notifications, birthday reminders, view
+      preferences), the desktop's screen privacy under `desktop`, and
+      every account as a sign-in checklist with its calendar/list
+      visibility. Export… / Import… on both apps (desktop: file dialogs
+      over preload IPC, the document itself over the rpc seam; iOS: the
+      share sheet via React Native's `Share` with a file in the cache
+      folder, and `expo-document-picker` for the pick — a native module,
+      so the iOS fingerprint moved), plus the desktop's watched
+      `~/.solunivo/solunivo.jsonc` (`CALENDAR_SETTINGS_FILE` overrides it)
+      that is applied on start and on every save and written back when
+      settings change in the UI. Decisions: **the document never holds
+      tokens or secrets** — desktop and iOS use different Google OAuth
+      clients, so refresh tokens could not cross platforms anyway, and a
+      desktop refresh token is a non-expiring bearer credential; a Google
+      account the file lists that is unknown here is created as
+      `reauth_required` with no token, so the existing "Sign in again"
+      row is the checklist and `finishAddAccount` (now case-insensitive
+      on the email) keeps the id. An import never removes anything and
+      never connects Apple providers (no TCC prompt from a file);
+      sections are written only when they differ, notification toggles
+      go through the setters' permission + reschedule path
+      (`notificationSettings.ts`), and `desktop.screenPrivacy` reaches
+      the Electron main process through the `PlatformSettings` seam (iOS
+      provides `none` and notes the section as desktop-only). Accounts
+      are keyed by `kind` (`google` + email, `apple-calendar`,
+      `apple-reminders`) because both Apple accounts share
+      `provider: 'apple'` and an empty email. Apple calendar ids are per
+      device, so Apple calendars match by EventKit source title + title
+      and Reminders lists by title, best-effort. Visibility for rows not
+      in the database yet (account not signed in, Apple not connected,
+      first sync pending) is parked in `device_settings.importedVisibility`
+      and applied after each calendar/list sync pass (`applyPendingVisibility`
+      in the engine, under one semaphore shared with the import so a pass
+      cannot drop what an import just parked); the export merges the
+      parked entries back in, or the desktop write-back right after an
+      import would erase them from the file. The watched file is two-way:
+      file → app on change (directory watch, since editors save by
+      rename; hash of the last applied/written text tells our own writes
+      apart, a parse error is reported and not recorded so the next good
+      save applies, an unapplied edit on disk wins over a pending
+      write-back), app → file via `jsonc-parser` edits leaf by leaf so
+      comments and unknown keys survive (`accounts` is replaced as a
+      whole; comments inside it are lost). A minimal file fills in to the
+      full state after the first write-back, and a deleted account entry
+      comes back — the file mirrors the device. The app never creates the
+      file on its own ("Create file" in Settings does). The e2e harness
+      always points `CALENDAR_SETTINGS_FILE` under its temp profile: HOME
+      is not isolated, and no run may touch a developer's real file. The
+      main bundle aliases `jsonc-parser` to its ESM entry: its `main` is a
+      UMD build that requires its parts by relative path at runtime.
+      Tests: `settingsDocument.test.ts` (parse, version gate, Hermes zone
+      spelling, comment-preserving merge), `settingsExport.test.ts`,
+      `settingsImport.test.ts` (preview = import, reauth row, parked and
+      applied visibility, Apple matching), `settingsFileSync.test.ts`
+      (loop guard with a fake disk), desktop `settingsFile.e2e.ts` (file
+      at launch, live edit, write-back with comments, Create file) and
+      Maestro `20-settings-file.yaml` (export opens the share sheet).

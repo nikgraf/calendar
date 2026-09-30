@@ -126,6 +126,14 @@ powers quick-add parsing, find-a-time, and dictation.
   never `pnpm test` / `test:e2e` / `test:e2e:ios`. Live tests create
   their own `e2e-<ts>-<runTag>` calendars and lists and assert only on
   their own ids; guest mail is muted (`GuestNotifications`).
+- The settings document (`SettingsDocument`, Export/Import and the
+  desktop's watched `~/.solunivo/solunivo.jsonc`) never holds tokens or
+  secrets: accounts are a sign-in checklist (kind + email + visibility),
+  an unknown Google account imports as `reauth_required`, Apple accounts
+  are never connected by an import, and an import never removes anything.
+  The desktop e2e harness always points `CALENDAR_SETTINGS_FILE` under
+  its temp profile — HOME is not isolated, a run must never touch a
+  developer's real file.
 - Event coordinates are only valid while `geo.source` matches the
   location text (`geoMatches`); every local write goes through
   `withConsistentGeo`, and an update PATCH touches the private geo keys
