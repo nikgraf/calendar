@@ -37,6 +37,7 @@ export * from './recurrence/structured.ts';
 export * from './recurrence/taskRecurrence.ts';
 export * from './recurrence/window.ts';
 export * from './scheduling/findSlots.ts';
+export * from './settingsDocument.ts';
 export * from './syncStatus.ts';
 export * from './taskLabel.ts';
 export * from './taskTiming.ts';

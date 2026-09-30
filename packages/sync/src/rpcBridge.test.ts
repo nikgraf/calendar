@@ -55,6 +55,7 @@ const stubHandlers: BackendHandlers = {
   deleteRecurring: () => Effect.void,
   deleteTask: () => Effect.void,
   discardPendingOp: () => Effect.void,
+  exportSettings: () => Effect.succeed({ version: 1 as const }),
   getBirthdayReminderSettings: () =>
     Effect.succeed({ enabled: false, leadDays: [0 as const], time: '09:00' }),
   getBirthdaysInRange: () => Effect.succeed([]),
@@ -65,6 +66,7 @@ const stubHandlers: BackendHandlers = {
   getTasksInRange: () => Effect.succeed([]),
   getTimeZoneSettings: () => Effect.succeed({ primary: 'UTC', zones: ['UTC'] }),
   getViewPreferences: () => Effect.succeed({ allDayLaneCollapsed: false }),
+  importSettings: notStubbed,
   listAccounts: () => Effect.succeed([account]),
   listCalendars: () => Effect.succeed([]),
   listPendingOps: () => Effect.succeed([]),
@@ -75,6 +77,7 @@ const stubHandlers: BackendHandlers = {
   moveTask: notStubbed,
   previewEventToTask: notStubbed,
   previewMove: notStubbed,
+  previewSettingsImport: notStubbed,
   removeAccount: () => Effect.void,
   resolveConflict: () => Effect.void,
   resolveLocation: () => Effect.succeed(null),

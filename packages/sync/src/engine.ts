@@ -13,6 +13,7 @@ import {
   BirthdayRepo,
   CalendarRepo,
   ContactRepo,
+  DeviceSettingsRepo,
   EventRepo,
   SyncStateRepo,
   TaskRepo,
@@ -46,6 +47,7 @@ import {
 import { Clock, Context, Duration, Effect, Layer, Schedule, Semaphore, Stream } from 'effect';
 import type { SqlError } from 'effect/unstable/sql/SqlError';
 import { AppleCalendarEvents, deviceTimeZone } from './appleCalendarEvents.ts';
+import { applyPendingVisibility as applyImportedVisibility } from './importedVisibility.ts';
 import { EventMutations } from './mutations.ts';
 import { cancelledOverrideTombstone } from './tombstone.ts';
 
@@ -130,6 +132,7 @@ const make: Effect.Effect<
   | BirthdayRepo
   | CalendarRepo
   | ContactRepo
+  | DeviceSettingsRepo
   | EventMutations
   | EventRepo
   | GoogleCalendarClient
@@ -154,6 +157,13 @@ const make: Effect.Effect<
   const appleEvents = yield* AppleCalendarEvents;
   const syncStateRepo = yield* SyncStateRepo;
   const gate = Semaphore.makeUnsafe(1);
+  // Imported visibility parked for rows that had not synced yet is applied
+  // after every calendar/list pass; the repos it needs are resolved here.
+  const pendingVisibilityContext = yield* Effect.context<
+    CalendarRepo | DeviceSettingsRepo | TaskRepo
+  >();
+  const applyPendingVisibility = (account: Account): Effect.Effect<void, SqlError> =>
+    Effect.asVoid(Effect.provide(applyImportedVisibility(account), pendingVisibilityContext));
 
   const syncCalendarList = (account: Account): Effect.Effect<void, SyncError> =>
     Effect.gen(function* () {
@@ -246,6 +256,9 @@ const make: Effect.Effect<
           [...previousVisibility.keys()].filter((id) => !kept.has(id)),
         );
       }
+      // Imported visibility for calendars that just arrived, over Google's
+      // `selected` default.
+      yield* applyPendingVisibility(account);
 
       yield* syncStateRepo.set(
         new SyncState({
@@ -382,6 +395,7 @@ const make: Effect.Effect<
       } while (pageToken !== undefined);
       // No syncToken/updatedMin on tasklists — every pass is full.
       yield* taskRepo.removeListsMissing(account.id, keptIds);
+      yield* applyPendingVisibility(account);
     });
 
   const syncTasks = (account: Account, taskListId: string): Effect.Effect<void, SyncError> =>
@@ -687,6 +701,7 @@ const make: Effect.Effect<
           return;
         }
       }
+      yield* applyPendingVisibility(account);
       yield* syncStateRepo.set(
         new SyncState({
           accountId: account.id,
@@ -755,6 +770,8 @@ const make: Effect.Effect<
       const keptIds = new Set(kept.map((calendar) => calendar.id));
       const gone = [...previous.keys()].filter((id) => !keptIds.has(id));
       yield* calendarRepo.purge(account.id, gone);
+      // Imported visibility matches Apple calendars by source and title.
+      yield* applyPendingVisibility(account);
       yield* syncStateRepo.set(
         new SyncState({
           accountId: account.id,
@@ -948,6 +965,7 @@ export class SyncEngine extends Context.Service<SyncEngine, SyncEngineShape>()('
     | BirthdayRepo
     | CalendarRepo
     | ContactRepo
+    | DeviceSettingsRepo
     | EventMutations
     | EventRepo
     | GoogleCalendarClient
