@@ -1,0 +1,37 @@
+appId: com.solunivo.app
+name: Settings export opens the share sheet with the settings file
+tags:
+  - ci
+---
+- runFlow: ../common/launch.yaml
+- runFlow: ../common/open-settings.yaml
+- waitForAnimationToEnd:
+    timeout: 5000
+- scrollUntilVisible:
+    element:
+      id: 'settings-file'
+    direction: DOWN
+    timeout: 10000
+- assertVisible: 'Export & import'
+- assertVisible:
+    id: 'settings-file-import'
+- tapOn:
+    id: 'settings-file-export'
+# The share sheet names the file it was handed.
+- extendedWaitUntil:
+    visible: 'solunivo.jsonc'
+    timeout: 10000
+# Dismiss the sheet: iOS 17+ shows a close control; older builds swipe.
+- runFlow:
+    when:
+      visible: 'Close'
+    commands:
+      - tapOn: 'Close'
+- runFlow:
+    when:
+      notVisible: 'Export & import'
+    commands:
+      - swipe:
+          direction: DOWN
+- assertVisible: 'Export & import'
+- tapOn: 'Done'
