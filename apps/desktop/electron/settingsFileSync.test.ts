@@ -207,3 +207,58 @@ describe('makeSettingsFileSync', () => {
     expect(world.imports).toHaveLength(1);
   });
 });
+
+describe('makeSettingsFileSync: review cases', () => {
+  let sync: SettingsFileSync | null = null;
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    sync?.stop();
+    sync = null;
+    vi.useRealTimers();
+  });
+
+  it('applies a restore of an older app-written text after an external edit', async () => {
+    const { deps, edit, world } = makeWorld({ file: '{ "version": 1 }' });
+    sync = makeSettingsFileSync(PATH, deps);
+    await sync.start();
+    const written = world.file!;
+    // An editor changes the file (B), then puts the app's text (A) back.
+    edit('{ "version": 1, "view": { "allDayLaneCollapsed": true } }');
+    await settle();
+    expect(world.imports.at(-1)).toEqual({ version: 1, view: { allDayLaneCollapsed: true } });
+    edit(written);
+    await settle();
+    expect(world.imports.at(-1)).toEqual({ version: 1, view: { allDayLaneCollapsed: false } });
+  });
+
+  it('a save that lands while the export runs is applied, not overwritten', async () => {
+    const { deps, world } = makeWorld({ file: '{ "version": 1 }' });
+    let release: (() => void) | undefined;
+    const slowDeps: SettingsFileDeps = {
+      ...deps,
+      exportDocument: () =>
+        new Promise((resolve) => {
+          release = () => resolve(world.state);
+        }),
+    };
+    sync = makeSettingsFileSync(PATH, slowDeps);
+    const started = sync.start();
+    await settle();
+    // start() is inside its write-back, waiting on the export. Save now.
+    const saved = '{ "version": 1, "view": { "allDayLaneCollapsed": true } }';
+    world.file = saved;
+    for (const watcher of world.watchers) {
+      watcher('solunivo.jsonc');
+    }
+    release?.();
+    await started;
+    await settle();
+    expect(world.imports.at(-1)).toEqual({ version: 1, view: { allDayLaneCollapsed: true } });
+    expect(world.writes.some((text) => text === saved)).toBe(false);
+    expect(world.file).toContain('"allDayLaneCollapsed": true');
+  });
+});

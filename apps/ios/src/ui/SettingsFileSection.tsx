@@ -85,8 +85,9 @@ export function SettingsFileSection() {
       const picked = await native.picker.getDocumentAsync({
         copyToCacheDirectory: true,
         multiple: false,
-        // .jsonc has no UTI of its own; accept anything text-like.
-        type: ['public.json', 'public.plain-text', 'public.text', 'public.data'],
+        // MIME types, not UTIs; .jsonc has none of its own, so accept any
+        // file and let the parser judge the contents.
+        type: '*/*',
       });
       const asset = picked.canceled ? undefined : picked.assets[0];
       if (!asset) {

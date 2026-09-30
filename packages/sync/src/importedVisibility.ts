@@ -261,3 +261,33 @@ export const applyPendingVisibility = (
       return changed;
     }),
   );
+
+/**
+ * Drops what the row parks for an account being removed: the export would
+ * otherwise keep listing the account from its parked preferences and a
+ * re-import would recreate it.
+ */
+export const clearPendingVisibility = (
+  account: Account,
+): Effect.Effect<void, SqlError, DeviceSettingsRepo> =>
+  withPendingVisibilityLock(
+    Effect.gen(function* () {
+      const pending = yield* readPendingVisibility;
+      if (countPendingVisibility(pending) === 0) {
+        return;
+      }
+      let next: PendingVisibility;
+      if (isAppleCalendarAccount(account)) {
+        next = { ...pending, appleCalendar: [] };
+      } else if (isAppleRemindersAccount(account)) {
+        next = { ...pending, appleReminders: [] };
+      } else {
+        const google = { ...pending.google };
+        delete google[account.email.toLowerCase()];
+        next = { ...pending, google };
+      }
+      if (countPendingVisibility(next) !== countPendingVisibility(pending)) {
+        yield* writePendingVisibility(next);
+      }
+    }),
+  );

@@ -15,9 +15,11 @@ import { Effect } from 'effect';
  * (`~/.solunivo/solunivo.jsonc`). File → app: on start and whenever the
  * file changes on disk, parse and import. App → file: whenever a setting,
  * account or visibility changes, export and merge into the file's text
- * (comments survive). Hashes of the last text this module applied or
- * wrote tell the two directions apart — the watcher ignores our own
- * writes, and the write-back yields to an edit it has not applied yet.
+ * (comments survive). The hash of the last text this module applied — or
+ * wrote, which counts as applied — tells the two directions apart: the
+ * watcher ignores our own writes, the write-back yields to an edit it has
+ * not applied yet, and an external edit supersedes the marker so a later
+ * restore of an older text is applied again, not mistaken for an echo.
  * Pure orchestration: every side effect comes in through `deps`, so the
  * loop guard is unit-tested without Electron or a real file system.
  */
@@ -103,7 +105,6 @@ export const makeSettingsFileSync = (path: string, deps: SettingsFileDeps): Sett
   const name = basename(path);
 
   let lastApplied: string | null = null;
-  let lastWritten: string | null = null;
   let started = false;
   let stopped = false;
   let unwatch: (() => void) | null = null;
@@ -181,7 +182,7 @@ export const makeSettingsFileSync = (path: string, deps: SettingsFileDeps): Sett
         return;
       }
       const hash = settingsTextHash(text);
-      if (hash === lastApplied || hash === lastWritten) {
+      if (hash === lastApplied) {
         update({ exists: true });
         return;
       }
@@ -198,20 +199,32 @@ export const makeSettingsFileSync = (path: string, deps: SettingsFileDeps): Sett
         update({ exists: false });
         return;
       }
-      const hash = settingsTextHash(text);
-      if (hash !== lastApplied && hash !== lastWritten) {
+      if (settingsTextHash(text) !== lastApplied) {
         // An edit on disk we have not applied wins over what we would
         // write; its import re-triggers the write-back.
         await applyText(text);
         return;
       }
-      const merged = mergeSettingsDocument(text, await deps.exportDocument());
+      const document = await deps.exportDocument();
+      // A save that landed while the export ran must not be overwritten:
+      // the watcher's callback is still queued behind this task and would
+      // only see our replacement. Take the edit instead; its import
+      // re-triggers the write-back.
+      const latest = deps.fs.readText(path);
+      if (latest === null) {
+        update({ exists: false });
+        return;
+      }
+      if (latest !== text) {
+        await applyText(latest);
+        return;
+      }
+      const merged = mergeSettingsDocument(text, document);
       if (merged === text) {
         return;
       }
       const mergedHash = settingsTextHash(merged);
       // Set before the rename so the watcher's event finds it known.
-      lastWritten = mergedHash;
       lastApplied = mergedHash;
       deps.fs.writeTextAtomic(path, merged);
       const appliedAt = now();
@@ -263,8 +276,15 @@ export const makeSettingsFileSync = (path: string, deps: SettingsFileDeps): Sett
           return;
         }
         const text = formatSettingsDocument(await deps.exportDocument());
+        const existing = deps.fs.readText(path);
+        if (existing !== null) {
+          // Appeared while the export ran (another app instance, a sync
+          // client): apply it rather than replace it.
+          await applyText(existing);
+          arm();
+          return;
+        }
         const hash = settingsTextHash(text);
-        lastWritten = hash;
         lastApplied = hash;
         deps.fs.mkdir(dir);
         deps.fs.writeTextAtomic(path, text);

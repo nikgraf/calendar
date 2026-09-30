@@ -201,7 +201,14 @@ export const withCanonicalZones = (document: SettingsDocument): SettingsDocument
       }
     : document;
 
-const encodeDocument = Schema.encodeSync(SettingsDocument);
+/**
+ * The document is plain data, so the wire form is the value itself. It is
+ * deliberately not run through the schema on the way out: the zone filter
+ * would re-validate a canonical spelling (Asia/Kolkata) in the exporting
+ * runtime, and Hermes rejects some canonical names it wrote under their
+ * legacy spelling — `parseSettingsDocument` maps them back on the way in.
+ */
+const encodeDocument = (document: SettingsDocument): Record<string, unknown> => ({ ...document });
 
 export const SETTINGS_FILE_HEADER = [
   '// Solunivo settings. Edit freely; the app applies changes when the file is saved',
@@ -239,7 +246,7 @@ export const mergeSettingsDocument = (text: string, document: SettingsDocument):
   if (text.trim() === '') {
     return formatSettingsDocument(document);
   }
-  const encoded = encodeDocument(document) as Record<string, unknown>;
+  const encoded = encodeDocument(document);
   const options = { formattingOptions: SETTINGS_FORMATTING };
   let result = text;
   const set = (path: ReadonlyArray<string>, value: unknown) => {

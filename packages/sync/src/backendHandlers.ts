@@ -51,6 +51,7 @@ import {
   applyEventNotificationSettings,
 } from './notificationSettings.ts';
 import { SyncEngine } from './engine.ts';
+import { clearPendingVisibility } from './importedVisibility.ts';
 import { locationHandlers } from './locationHandlers.ts';
 import { EventMutations } from './mutations.ts';
 import { PlatformSettings } from './platformSettings.ts';
@@ -351,6 +352,11 @@ export const commonBackendHandlers: Omit<BackendHandlers<CommonBackendServices>,
         yield* tokenStore.remove(accountId);
       }
       yield* accountRepo.remove(accountId);
+      if (account) {
+        // Preferences an import parked for it would otherwise keep the
+        // account in the exported document.
+        yield* clearPendingVisibility(account);
+      }
       if (accountId === APPLE_CALENDAR_ACCOUNT_ID) {
         // Its events are not in the cascade (never stored): repaint the views.
         yield* (yield* AppleCalendarEvents).invalidate;

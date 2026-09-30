@@ -6,9 +6,11 @@ import { describe } from 'vitest';
 import { readEventNotificationSettings, readTimeZoneSettings } from './deviceSettings.ts';
 import {
   applyPendingVisibility,
+  clearPendingVisibility,
   IMPORTED_VISIBILITY_KEY,
   readPendingVisibility,
 } from './importedVisibility.ts';
+import { buildSettingsDocument } from './settingsExport.ts';
 import { importSettings, previewSettingsImport } from './settingsImport.ts';
 import {
   appleCalendarAccount,
@@ -250,6 +252,50 @@ describe('importSettings', () => {
         },
       });
       expect(yield* Effect.flatMap(AccountRepo, (repo) => repo.list())).toHaveLength(2);
+    }).pipe(Effect.provide(layer));
+  });
+});
+
+describe('clearPendingVisibility', () => {
+  it.effect('removing an account drops what an import parked for it', () => {
+    const { layer } = makeSettingsTestLayer();
+    return Effect.gen(function* () {
+      yield* importSettings({
+        accounts: [
+          {
+            calendars: [{ id: 'a', title: 'A', visible: false }],
+            email: 'gone@example.com',
+            kind: 'google',
+          },
+          {
+            calendars: [{ id: 'b', title: 'B', visible: false }],
+            email: 'kept@example.com',
+            kind: 'google',
+          },
+          {
+            calendars: [{ source: 'iCloud', title: 'Home', visible: false }],
+            kind: 'apple-calendar',
+          },
+        ],
+        version: 1,
+      });
+      const accounts = yield* Effect.flatMap(AccountRepo, (repo) => repo.list());
+      const gone = accounts.find((account) => account.email === 'gone@example.com')!;
+      yield* Effect.flatMap(AccountRepo, (repo) => repo.remove(gone.id));
+      yield* clearPendingVisibility(gone);
+      yield* clearPendingVisibility(appleCalendarAccount());
+      expect(yield* readPendingVisibility).toEqual({
+        google: {
+          'kept@example.com': {
+            calendars: [{ id: 'b', title: 'B', visible: false }],
+            taskLists: [],
+          },
+        },
+      });
+      const exported = yield* buildSettingsDocument;
+      expect(
+        exported.accounts?.map((account) => ('email' in account ? account.email : account.kind)),
+      ).toEqual(['kept@example.com']);
     }).pipe(Effect.provide(layer));
   });
 });

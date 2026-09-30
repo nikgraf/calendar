@@ -153,3 +153,17 @@ describe('mergeSettingsDocument', () => {
     expect(mergeSettingsDocument(once, full)).toBe(once);
   });
 });
+
+describe('formatSettingsDocument on a runtime that rejects a canonical zone', () => {
+  it('writes the document without re-validating zones', () => {
+    // Hermes stores Asia/Calcutta and rejects Asia/Kolkata; the export
+    // canonicalizes to Kolkata and must still produce text.
+    const document = {
+      timeZones: { primary: 'Mars/Olympus', zones: ['Mars/Olympus'] },
+      version: 1,
+    } as SettingsDocument;
+    expect(() => formatSettingsDocument(document)).not.toThrow();
+    expect(() => mergeSettingsDocument('{ "version": 1 }', document)).not.toThrow();
+    expect(mergeSettingsDocument('{ "version": 1 }', document)).toContain('Mars/Olympus');
+  });
+});
