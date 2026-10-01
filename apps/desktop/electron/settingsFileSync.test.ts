@@ -5,11 +5,30 @@ import {
   makeSettingsFileSync,
   type SettingsFileApplied,
   type SettingsFileDeps,
+  settingsFilePath,
   type SettingsFileSync,
   settingsTextHash,
 } from './settingsFileSync.ts';
 
 const PATH = '/home/nik/.solunivo/solunivo.jsonc';
+
+describe('settingsFilePath', () => {
+  it('keeps the packaged app and a dev build on different files', () => {
+    expect(settingsFilePath({ env: {}, home: '/home/nik', packaged: true })).toBe(PATH);
+    expect(settingsFilePath({ env: {}, home: '/home/nik', packaged: false })).toBe(
+      '/home/nik/.solunivo/solunivo-dev.jsonc',
+    );
+  });
+
+  it('lets CALENDAR_SETTINGS_FILE override both', () => {
+    const env = { CALENDAR_SETTINGS_FILE: '/tmp/profile/solunivo.jsonc' };
+    for (const packaged of [true, false]) {
+      expect(settingsFilePath({ env, home: '/home/nik', packaged })).toBe(
+        '/tmp/profile/solunivo.jsonc',
+      );
+    }
+  });
+});
 
 const emptySummary = {
   appleAccountsPending: [],

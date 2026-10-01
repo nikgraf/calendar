@@ -171,6 +171,13 @@ never through MCP elicitation, which the agent's own client could answer.
   umask, so there is no window before a chmod). `CALENDAR_AGENT_SOCKET`
   overrides it; **the e2e harness always points it under its temp
   profile**.
+- The installed app and a run from source are two gateways that can run
+  at once: separate sockets, separate `agents.db` (so separate agents,
+  tokens and grants), and the copyable MCP entry is named `solunivo` in
+  the packaged app and `solunivo-dev` in a dev build, so one agent's
+  configuration can hold both. The relay picks its socket the same way:
+  the bundled wrapper sets `SOLUNIVO_CLI_BUNDLE` and gets `agent.sock`,
+  `node dist-electron/cli.mjs` gets `agent-dev.sock`.
 - It listens only while at least one agent exists.
 - First line: `{v, token, mode: "mcp" | "cli", argv?}` → `{ok}`. Then MCP's
   own ndjson, or one `{exitCode, stdout, stderr}` line.

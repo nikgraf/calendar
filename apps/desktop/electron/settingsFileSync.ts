@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { basename, dirname } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import {
   formatSettingsDocument,
   mergeSettingsDocument,
@@ -12,7 +12,7 @@ import { Effect } from 'effect';
 
 /**
  * Two-way sync between the backend and the watched settings file
- * (`~/.solunivo/solunivo.jsonc`). File → app: on start and whenever the
+ * (`settingsFilePath`). File → app: on start and whenever the
  * file changes on disk, parse and import. App → file: whenever a setting,
  * account or visibility changes, export and merge into the file's text
  * (comments survive). The hash of the last text this module applied — or
@@ -33,6 +33,23 @@ import { Effect } from 'effect';
  * Pure orchestration: every side effect comes in through `deps`, so the
  * loop guard is unit-tested without Electron or a real file system.
  */
+
+/** Overrides the watched file (the e2e harness points it under its temp profile). */
+export const SETTINGS_FILE_ENV = 'CALENDAR_SETTINGS_FILE';
+
+/**
+ * Where the watched settings file lives. Like the agent socket next to it
+ * (`agentSocketPath`), the packaged app and a dev build use different
+ * files: the sync is two-way, so one shared file would list each one's
+ * accounts in the other.
+ */
+export const settingsFilePath = (options: {
+  readonly env: Readonly<Record<string, string | undefined>>;
+  readonly home: string;
+  readonly packaged: boolean;
+}): string =>
+  options.env[SETTINGS_FILE_ENV] ??
+  join(options.home, '.solunivo', options.packaged ? 'solunivo.jsonc' : 'solunivo-dev.jsonc');
 
 /** The bookkeeping row in device_settings: what the file held when it was last applied. */
 export const SETTINGS_FILE_KEY = 'settingsFile';

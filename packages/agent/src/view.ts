@@ -1,5 +1,6 @@
 import type { AgentErrorJson } from './errors.ts';
 import type { AgentPolicy } from './policy.ts';
+import type { RelayCommand } from './policyEdit.ts';
 import type { AgentRequestRecord, RequestStatus, RequestSummary } from './store.ts';
 
 /**
@@ -34,7 +35,7 @@ export interface AgentsState {
   readonly activity: ReadonlyArray<AgentRequestView>;
   readonly agents: ReadonlyArray<AgentView>;
   /** How an agent starts the relay on this Mac (for the copyable config). */
-  readonly command: { readonly args: ReadonlyArray<string>; readonly command: string };
+  readonly command: RelayCommand;
   /** Why the gateway is not listening although agents exist. */
   readonly error?: string;
   readonly listening: boolean;

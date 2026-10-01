@@ -60,10 +60,11 @@ const decodePolicy = Schema.decodeUnknownSync(AgentPolicy);
 /** How an agent starts the relay: the bundled wrapper, or the built script in a dev checkout. */
 const relayCommand = (): AgentsState['command'] =>
   app.isPackaged
-    ? { args: [], command: join(process.resourcesPath, 'solunivo-cli') }
+    ? { args: [], command: join(process.resourcesPath, 'solunivo-cli'), name: 'solunivo' }
     : {
         args: [fileURLToPath(new URL('cli.mjs', import.meta.url))],
         command: 'node',
+        name: 'solunivo-dev',
       };
 
 const broadcast = (): void => {

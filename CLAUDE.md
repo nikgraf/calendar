@@ -135,7 +135,8 @@ powers quick-add parsing, find-a-time, and dictation.
   their own `e2e-<ts>-<runTag>` calendars and lists and assert only on
   their own ids; guest mail is muted (`GuestNotifications`).
 - The settings document (`SettingsDocument`, Export/Import and the
-  desktop's watched `~/.solunivo/solunivo.jsonc`) never holds tokens or
+  desktop's watched `~/.solunivo/solunivo.jsonc` — `solunivo-dev.jsonc`
+  for a run from source) never holds tokens or
   secrets: accounts are a sign-in checklist (kind + email + visibility),
   an unknown Google account imports as `reauth_required`, Apple accounts
   are never connected by an import, and an import never removes anything.
