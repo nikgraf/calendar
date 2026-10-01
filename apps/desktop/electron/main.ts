@@ -1,5 +1,6 @@
 import { app, BrowserWindow, ipcMain, session, shell } from 'electron';
 import { updateElectronApp } from 'update-electron-app';
+import { startAgentHost } from './agent/agentHost.ts';
 import { startBackendHost } from './backendHost.ts';
 import { startSettingsFile } from './settingsFile.ts';
 import { initFileLogging, logRendererError } from './log.ts';
@@ -127,6 +128,7 @@ void app.whenReady().then(() => {
   }
   const host = startBackendHost();
   startSettingsFile(host);
+  startAgentHost(host);
   registerModelHelper();
   registerRemindersIpc();
   registerContactsIpc();
