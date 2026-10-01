@@ -20,6 +20,7 @@ export * from './editor/convertLoss.ts';
 export * from './editor/eventDraft.ts';
 export * from './editor/moveLoss.ts';
 export * from './editor/taskMoveLoss.ts';
+export * from './editor/writable.ts';
 export * from './geo/location.ts';
 export * from './gestures/swipeSnap.ts';
 export * from './gestures/wheelPan.ts';

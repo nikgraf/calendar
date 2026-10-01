@@ -1,6 +1,7 @@
 import {
   appendLink,
   byDayError,
+  isCalendarWritable,
   isLossy,
   isTaskToEventLossy,
   moveLossSummary,
@@ -135,9 +136,6 @@ const groupsBy = <T>(
   return [...groups].map(([label, entries]) => ({ items: entries, label }));
 };
 
-const isWritable = (calendar: CalendarInfo | undefined): boolean =>
-  calendar?.accessRole === 'owner' || calendar?.accessRole === 'writer';
-
 /**
  * What the editor offers for an event, from the calendar it lives in and
  * the one picked. Guests and RSVPs exist only on Google (EventKit cannot
@@ -160,7 +158,8 @@ export const editorCapabilities = ({
   readonly sourceCalendar: CalendarInfo | undefined;
   readonly targetCalendar: CalendarInfo | undefined;
 }) => {
-  const readOnly = isExisting && sourceCalendar !== undefined && !isWritable(sourceCalendar);
+  const readOnly =
+    isExisting && sourceCalendar !== undefined && !isCalendarWritable(sourceCalendar);
   return {
     canInvite: (targetCalendar?.provider ?? 'google') === 'google',
     canMoveCalendar: isExisting && !readOnly && (!isRecurring || scope === 'series'),
@@ -243,9 +242,7 @@ export const useEventEditorModel = ({
     (attendee) => attendee.isSelf === true || attendee.email.toLowerCase() === ownEmail,
   );
   const joinUrl = existing ? meetingUrl(existing) : undefined;
-  const writableCalendars = calendars.filter(
-    (calendar) => calendar.accessRole === 'owner' || calendar.accessRole === 'writer',
-  );
+  const writableCalendars = calendars.filter(isCalendarWritable);
 
   const prefill = seed.prefill;
   const [title, setTitle] = useState(existing?.title ?? prefill?.title ?? '');
