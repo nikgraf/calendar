@@ -90,6 +90,23 @@ comment` for inline-playable video: 10 MB on Free plans, 100 MB paid
       once day-by-day paging has proven itself on device (seven columns
       each side is more than a flick reveals).
 
+- [ ] Agent gateway follow-ups (shipped 2026-10-01, docs/agent-gateway.md)
+      — a login item and a menu-bar item, so agents work without anyone
+      having opened the app (today: it keeps running after the last
+      window closes, and the relay launches it with `--background`, Dock
+      icon included); an "Install `solunivo` on PATH" button (the wrapper
+      already resolves symlinks); undo for an agent's write from the
+      activity list; grants on calendars hidden in the app (range reads
+      filter on `is_visible`, so today hidden = `none`); an event
+      `transparency` field so "free" timed events stop counting as busy;
+      a Swift relay in place of the TS one so the RunAsNode fuse can be
+      flipped (`@electron/fuses`); moves and conversions as tools;
+      MCP `subscriptions/listen` fed by the invalidation bus; access from
+      another machine (needs real transport auth — out of scope so far).
+      Manual checks still open: a real Hermes/OpenClaw session, the relay
+      under the notarized build from `/Applications`, relay auto-launch,
+      a real guest invitation at "ask".
+
 ## Tier 3 — AI features
 
 Scope unchanged and all still open with zero code; the on-device-only
@@ -139,8 +156,6 @@ decision and platform notes live in `docs/decisions.md`.
       - What can other people see e.g. impersonation of a colleage
     - Personal dashboard view shows everything
       - allow to block time
-- API for OpenClaw/Hermes to interact with (CalDir inspired https://caldir.org/)
-- Server mode that doesn't run the GUI?
 - Habit builder (setup as remiders?)
 - Linux support (AI support?)
 - Android support (what does Android offer as local AI?)

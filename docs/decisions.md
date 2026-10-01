@@ -1471,3 +1471,76 @@ test`/`test:e2e`/`test:e2e:ios`; every file creates its own
       without its extension and hides the app's elements from the
       accessibility tree while it is up, so the flow keys on "Save to
       Files" and dismisses with a swipe that starts inside the sheet.
+
+### Agent gateway: MCP and CLI access for other agents (2026-10-01)
+
+- [x] Let other agents on the Mac use the app — done (2026-10-01,
+      `todo/agent-gateway`): a gateway in the Electron main process that
+      Hermes, OpenClaw or a script reach over MCP or a CLI, with a
+      per-agent grant set in Settings → Agents. New package
+      `packages/agent` (policy, refs, tool contract, enforced reads,
+      planned writes, approvals, store), the host in
+      `apps/desktop/electron/agent/`, and `solunivo-cli`, a dependency-free
+      relay the packaged app ships in `Contents/Resources`.
+      Decisions: **one gateway, two front ends** — MCP and the CLI are the
+      same 15 tools over the same `callTool`, so neither can drift or skip
+      a check; the tool set is curated (no accounts, settings, conflicts,
+      queue, moves or conversions), not the ~55 backend rpcs. **MCP is
+      served in main, the relay only pipes**: `@modelcontextprotocol/server`
+      2.2.0 implements the 2026-07-28 revision and still answers the 2025
+      `initialize` handshake (effect's bundled `McpServer` stops at
+      2025-11-25); it brings zod into the main bundle, while the relay
+      stays 6 kB of node built-ins and runs under the app's own binary
+      (`ELECTRON_RUN_AS_NODE`), so agents need no Node — at the price of
+      keeping the RunAsNode fuse enabled until a Swift relay exists. The
+      SDK is handed a pass-through Standard Schema that only advertises
+      the JSON Schema: the gateway's Effect decoder is the one validator.
+      **Levels are per calendar and per list** (none < free/busy < read <
+      ask < write), with guests and contacts as separate switches; `none`
+      answers NotFound so a denial never confirms a hidden calendar;
+      calendars hidden in the app are `none` for every agent (range reads
+      filter on `is_visible`, and a grant should not show more than the
+      UI). **The gateway resolves a write's real container first**:
+      EventKit and Reminders address items by id alone and ignore the
+      calendar or list passed in, so without that a ref pairing a granted
+      calendar with another calendar's event would have written it — the
+      backend has no permission checks of its own below the UI. Guests are
+      gated on create, edit and delete (all three reach other people);
+      RSVP only needs the calendar level. **Ask-first** stores the planned
+      write with a summary the app wrote, waits ~25 s, then hands back a
+      request id to poll; approval is a conditional status transition
+      (two clicks execute once) and re-plans from the stored input, so a
+      narrowed grant or a removed agent still stops it; it is never asked
+      through MCP elicitation, which the agent's own client could answer.
+      **Storage is a separate `agents.db`**, not a migration in
+      `packages/db`: the phone never has agents, `migrate.test.ts` and the
+      yield-point-sensitive sync tests stay untouched, and grants cannot
+      ride along with anything that syncs or exports — they are edited
+      only over `agents:*` IPC and are not in `SettingsDocument`, so an
+      agent with a shell cannot widen itself through the watched settings
+      file. The token is 256 random bits shown once; only its SHA-256 is
+      stored, in SQLite — a hash cannot authenticate, and safeStorage
+      would add nothing while any same-user process can read calendar.db.
+      That is the stated threat model: a guardrail for agents that connect
+      through it, not a sandbox. **Transport**: a Unix socket under
+      `~/.solunivo/run` (0700 dir, 0600 socket created under a umask),
+      open only while an agent exists, one authenticating hello line, the
+      agent looked up again on every call; same Mac only. **No window**:
+      the app already kept running after its last window closed; it now
+      takes a single-instance lock (after the userData override), starts
+      without a window on `--background` (what the relay passes when it
+      launches the app via `open -g`), and opens a window on demand for a
+      notification click. A login item and a menu-bar item are follow-ups.
+      Found on the way: two quick edits in the grant editor overwrote each
+      other (each built on the last state main had sent back) — the
+      editor now builds on its own last edit; the e2e spec caught it.
+      Tests: `packages/agent` (policy matrix, refs, times, DTO redaction,
+      store, and the gateway over the Apple Calendar and Reminders fakes:
+      forged refs, read-only, guests, occurrence routing, approvals),
+      `apps/desktop/electron/agent` (a real socket, MCP against the
+      official client in both eras, CLI flags), desktop
+      `agentGateway.e2e.ts` (the built relay spawned against the launched
+      app), and `solunivo-cli --version` from the packaged and the signed
+      app in CI. Not verified here: the relay under the hardened runtime
+      (first signed CI build), a real Hermes/OpenClaw session, relay
+      auto-launch of the installed app, a real guest invitation.

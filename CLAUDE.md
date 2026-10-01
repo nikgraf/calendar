@@ -48,6 +48,11 @@ powers quick-add parsing, find-a-time, and dictation.
   (`swift/GeoBridge.swift`) symlinked into both native hosts. Google
   stores only location text; coordinates are derived on-device and
   mirrored into the event's private `extendedProperties`.
+- `packages/agent` — the agent gateway's logic, desktop-only in use: the
+  per-agent grant (`AgentPolicy`), opaque refs, the curated tool contract,
+  enforced reads and planned writes over `EventMutations`, ask-first
+  approvals, and the agent store (its own `agents.db`, never
+  calendar.db). `callTool` is the single entry point for an agent.
 - `packages/app-state` — `@effect/atom-react` atoms + React hooks
   (`useBackendMutations`, `useEventsInRangeStable`, …).
 - `apps/desktop` — Electron (Forge, vite, tsdown main bundle); rpc over an
@@ -55,8 +60,10 @@ powers quick-add parsing, find-a-time, and dictation.
   SpeechAnalyzer + EventKit `reminders.*` / `calendar.*` + Contacts
   `contacts.*` over
   stdio; process owned by
-  `electron/helperProcess.ts`). `apps/ios` — Expo dev client; zero-hop
-  direct backend; @react-native-ai/apple for on-device model access;
+  `electron/helperProcess.ts`); the agent gateway host
+  (`electron/agent/`: Unix socket, MCP server, CLI runner) and its relay
+  `solunivo-cli` (`electron/cli.ts`, a third tsdown entry). `apps/ios` —
+  Expo dev client; zero-hop direct backend; @react-native-ai/apple for on-device model access;
   local Expo modules `modules/solunivo-reminders` (EventKit),
   `modules/solunivo-apple-calendar` (EventKit events),
   `modules/solunivo-contacts` (CNContactStore) and `modules/solunivo-geo`
@@ -95,8 +102,9 @@ powers quick-add parsing, find-a-time, and dictation.
 - Oxlint enforces alphabetically sorted object keys/interface members —
   write literals sorted or `vp check` fails.
 - Window-level concerns (screen privacy, logging, open-external, the four
-  `model:*` AI-helper channels, and the `reminders:*` / `contacts:*` /
-  `appleCalendar:*` permission-status channels) use plain preload IPC;
+  `model:*` AI-helper channels, the `reminders:*` / `contacts:*` /
+  `appleCalendar:*` permission-status channels, and `agents:*`) use plain
+  preload IPC;
   calendar data — reminders, Apple events and contact rows included — goes
   through the typed rpc seam only.
 - Tasks and events are provider-dispatched: Google goes through the
@@ -134,6 +142,23 @@ powers quick-add parsing, find-a-time, and dictation.
   The desktop e2e harness always points `CALENDAR_SETTINGS_FILE` under
   its temp profile — HOME is not isolated, a run must never touch a
   developer's real file.
+- Other agents reach the app only through the agent gateway
+  (`packages/agent` `callTool`, hosted in `apps/desktop/electron/agent/`),
+  never the rpc seam: nothing below the UI checks a caller or a
+  permission, so the gateway enforces everything. Before authorizing a
+  write it resolves the item's real container (`resolve.ts`) — EventKit
+  and Reminders address items by id alone and ignore the calendar/list a
+  caller names. A calendar the grant hides answers NotFound, never
+  PermissionDenied. Grants live in `agents.db` and are edited only over
+  `agents:*` IPC: never part of `SettingsDocument`, never importable. An
+  agent token is shown once and stored only as its SHA-256 (a hash is not
+  a usable token; the TokenStore rule below covers OAuth tokens).
+  Ask-first approval is given in the app, never via MCP elicitation, and
+  re-plans the write from the stored input. The relay runs under
+  `ELECTRON_RUN_AS_NODE`, so the RunAsNode fuse must stay enabled. The
+  desktop e2e harness always points `CALENDAR_AGENT_SOCKET` under its
+  temp profile — a run must never listen in a developer's `~/.solunivo`.
+  See docs/agent-gateway.md.
 - Event coordinates are only valid while `geo.source` matches the
   location text (`geoMatches`); every local write goes through
   `withConsistentGeo`, and an update PATCH touches the private geo keys
@@ -145,8 +170,8 @@ powers quick-add parsing, find-a-time, and dictation.
   `dispatchMain()`: MKLocalSearchCompleter never calls back without
   run-loop timers.
 - Secrets: `google-oauth.local.json` is gitignored — never commit OAuth
-  client config. Tokens live only in TokenStore (Keychain/safeStorage),
-  never in SQLite.
+  client config. OAuth tokens live only in TokenStore
+  (Keychain/safeStorage), never in SQLite.
 - Workflow: one commit per task on a `todo/<slug>` branch → PR to `main` →
   CI green (gate + macOS e2e) → Nik merges. Direct pushes to main are
   blocked.
@@ -163,6 +188,8 @@ powers quick-add parsing, find-a-time, and dictation.
   testing conventions and flakiness lessons.
 - `docs/distribution.md` — CI build/signing pipeline, TestFlight, EAS
   updates, fingerprint-gated iOS publishing.
+- `docs/agent-gateway.md` — MCP/CLI access for other agents: tools,
+  permission levels, ask-first, transport, storage, threat model.
 - `AGENTS.md` — command reference. `todo.md` — ranked backlog (tiers by
   impact, one PR per item). `docs/decisions.md` — decision log: every
   shipped item's `[x]` entry with the design decisions it settled.
