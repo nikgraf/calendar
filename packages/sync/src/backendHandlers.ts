@@ -42,15 +42,21 @@ import {
   readEventNotificationSettings,
   readTimeZoneSettings,
   readViewPreferences,
-  writeBirthdayReminderSettings,
-  writeEventNotificationSettings,
   writeTimeZoneSettings,
   writeViewPreferences,
 } from './deviceSettings.ts';
 import { NotificationSink } from './notificationSink.ts';
+import {
+  applyBirthdayReminderSettings,
+  applyEventNotificationSettings,
+} from './notificationSettings.ts';
 import { SyncEngine } from './engine.ts';
+import { clearPendingVisibility } from './importedVisibility.ts';
 import { locationHandlers } from './locationHandlers.ts';
 import { EventMutations } from './mutations.ts';
+import { PlatformSettings } from './platformSettings.ts';
+import { buildSettingsDocument } from './settingsExport.ts';
+import { importSettings, previewSettingsImport } from './settingsImport.ts';
 
 /** Suggestions shown at once; the repo is asked for a few times that before ranking. */
 const DEFAULT_SEARCH_LIMIT = 8;
@@ -72,6 +78,7 @@ export type CommonBackendServices =
   | LocationGeoRepo
   | NotificationSink
   | PendingOpRepo
+  | PlatformSettings
   | RemindersClient
   | SyncEngine
   | SyncStateRepo
@@ -218,6 +225,8 @@ export const commonBackendHandlers: Omit<BackendHandlers<CommonBackendServices>,
       yield* mutations.discardPendingOp(opId);
     }),
 
+  exportSettings: () => buildSettingsDocument,
+
   getBirthdayReminderSettings: () => readBirthdayReminderSettings,
 
   getBirthdaysInRange: ({ endDate, startDate }) =>
@@ -243,6 +252,8 @@ export const commonBackendHandlers: Omit<BackendHandlers<CommonBackendServices>,
   getTimeZoneSettings: () => readTimeZoneSettings,
 
   getViewPreferences: () => readViewPreferences,
+
+  importSettings: ({ document }) => importSettings(document),
 
   listAccounts: () =>
     Effect.gen(function* () {
@@ -329,6 +340,8 @@ export const commonBackendHandlers: Omit<BackendHandlers<CommonBackendServices>,
       return yield* mutations.previewMove(params);
     }),
 
+  previewSettingsImport: ({ document }) => previewSettingsImport(document),
+
   removeAccount: ({ accountId }) =>
     Effect.gen(function* () {
       const accountRepo = yield* AccountRepo;
@@ -339,6 +352,11 @@ export const commonBackendHandlers: Omit<BackendHandlers<CommonBackendServices>,
         yield* tokenStore.remove(accountId);
       }
       yield* accountRepo.remove(accountId);
+      if (account) {
+        // Preferences an import parked for it would otherwise keep the
+        // account in the exported document.
+        yield* clearPendingVisibility(account);
+      }
       if (accountId === APPLE_CALENDAR_ACCOUNT_ID) {
         // Its events are not in the cascade (never stored): repaint the views.
         yield* (yield* AppleCalendarEvents).invalidate;
@@ -365,22 +383,8 @@ export const commonBackendHandlers: Omit<BackendHandlers<CommonBackendServices>,
       return rankContacts(query, [...google, ...device], take);
     }),
 
-  // Saves, asks the OS for notification permission, and runs a reminder
-  // pass right away so the schedule reflects the new choice. A scheduled
-  // sink (iOS) asks on every enabled save — a no-op once granted, and it
-  // brings the notice back after a later denial. An immediate sink
-  // (desktop) can only find out by posting a banner, so it asks once, as
-  // reminders turn on.
-  setBirthdayReminderSettings: (settings) =>
-    Effect.gen(function* () {
-      const previous = yield* readBirthdayReminderSettings;
-      yield* writeBirthdayReminderSettings(settings);
-      const sink = yield* NotificationSink;
-      const ask = settings.enabled && (sink.kind === 'scheduled' || !previous.enabled);
-      const notificationsGranted = ask ? yield* sink.ensurePermission() : true;
-      yield* Effect.forkDetach((yield* LocalNotifications).run());
-      return { notificationsGranted };
-    }),
+  // Saves, asks for permission and reschedules — see notificationSettings.ts.
+  setBirthdayReminderSettings: (settings) => applyBirthdayReminderSettings(settings),
 
   setCalendarColor: (params) =>
     Effect.gen(function* () {
@@ -396,17 +400,7 @@ export const commonBackendHandlers: Omit<BackendHandlers<CommonBackendServices>,
       yield* calendarRepo.setVisible(accountId, calendarId, isVisible);
     }),
 
-  // Same permission rule as the birthday setter, same immediate pass.
-  setEventNotificationSettings: (settings) =>
-    Effect.gen(function* () {
-      const previous = yield* readEventNotificationSettings;
-      yield* writeEventNotificationSettings(settings);
-      const sink = yield* NotificationSink;
-      const ask = settings.enabled && (sink.kind === 'scheduled' || !previous.enabled);
-      const notificationsGranted = ask ? yield* sink.ensurePermission() : true;
-      yield* Effect.forkDetach((yield* LocalNotifications).run());
-      return { notificationsGranted };
-    }),
+  setEventNotificationSettings: (settings) => applyEventNotificationSettings(settings),
 
   setTaskListVisible: ({ accountId, isVisible, taskListId }) =>
     Effect.gen(function* () {

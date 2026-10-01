@@ -14,6 +14,7 @@ import { EventNotificationsSection } from './EventNotificationsSection.tsx';
 import { ContactsSection } from './ContactsSection.tsx';
 import { LocationsSection } from './LocationsSection.tsx';
 import { RemindersSection } from './RemindersSection.tsx';
+import { SettingsFileSection, SettingsTransferSection } from './SettingsFileSection.tsx';
 import { TimeZonesSection } from './TimeZonesSection.tsx';
 
 export function AccountsView() {
@@ -98,7 +99,7 @@ export function AccountsView() {
                       onClick={() => void addAccount()}
                       type="button"
                     >
-                      Sign in again
+                      {account.displayName ? 'Sign in again' : 'Sign in'}
                     </button>
                   )
                 ) : null}
@@ -151,6 +152,8 @@ export function AccountsView() {
       <EventNotificationsSection />
       <BirthdayRemindersSection />
       <TimeZonesSection />
+      <SettingsTransferSection />
+      <SettingsFileSection />
       <LocationsSection />
       <PrivacySection />
     </div>

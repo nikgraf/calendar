@@ -1365,3 +1365,109 @@ test`/`test:e2e`/`test:e2e:ios`; every file creates its own
       reproduce locally, not after a fresh deletion and not at the
       nightly's 16:00 slot, so its cause is still open; the dump is there
       for the next time.
+
+### Settings export/import and the watched settings file (2026-09-30)
+
+- [x] Settings as a file — done (2026-09-30,
+      `todo/settings-export-import`): a versioned `SettingsDocument`
+      (`packages/core/src/settingsDocument.ts`) carrying the device
+      settings (time zones, event notifications, birthday reminders, view
+      preferences), the desktop's screen privacy under `desktop`, and
+      every account as a sign-in checklist with its calendar/list
+      visibility. Export… / Import… on both apps (desktop: file dialogs
+      over preload IPC, the document itself over the rpc seam; iOS: the
+      share sheet via React Native's `Share` with a file in the cache
+      folder, and `expo-document-picker` for the pick — a native module,
+      so the iOS fingerprint moved), plus the desktop's watched
+      `~/.solunivo/solunivo.jsonc` (`CALENDAR_SETTINGS_FILE` overrides it)
+      that is applied on start and on every save and written back when
+      settings change in the UI. Decisions: **the document never holds
+      tokens or secrets** — desktop and iOS use different Google OAuth
+      clients, so refresh tokens could not cross platforms anyway, and a
+      desktop refresh token is a non-expiring bearer credential; a Google
+      account the file lists that is unknown here is created as
+      `reauth_required` with no token, so the existing "Sign in again"
+      row is the checklist and `finishAddAccount` (now case-insensitive
+      on the email) keeps the id. An import never removes anything and
+      never connects Apple providers (no TCC prompt from a file);
+      sections are written only when they differ, notification toggles
+      go through the setters' permission + reschedule path
+      (`notificationSettings.ts`), and `desktop.screenPrivacy` reaches
+      the Electron main process through the `PlatformSettings` seam (iOS
+      provides `none` and notes the section as desktop-only). Accounts
+      are keyed by `kind` (`google` + email, `apple-calendar`,
+      `apple-reminders`) because both Apple accounts share
+      `provider: 'apple'` and an empty email. Apple calendar ids are per
+      device, so Apple calendars match by EventKit source title + title
+      and Reminders lists by title, best-effort. Visibility for rows not
+      in the database yet (account not signed in, Apple not connected,
+      first sync pending) is parked in `device_settings.importedVisibility`
+      and applied after each calendar/list sync pass (`applyPendingVisibility`
+      in the engine, under one semaphore shared with the import so a pass
+      cannot drop what an import just parked); the export merges the
+      parked entries back in, or the desktop write-back right after an
+      import would erase them from the file. The watched file is two-way:
+      file → app on change (directory watch, since editors save by
+      rename; hash of the last applied/written text tells our own writes
+      apart, a parse error is reported and not recorded so the next good
+      save applies, an unapplied edit on disk wins over a pending
+      write-back), app → file via `jsonc-parser` edits leaf by leaf so
+      comments and unknown keys survive (`accounts` is replaced as a
+      whole; comments inside it are lost). A minimal file fills in to the
+      full state after the first write-back, and a deleted account entry
+      comes back — the file mirrors the device. The app never creates the
+      file on its own ("Create file" in Settings does). The e2e harness
+      always points `CALENDAR_SETTINGS_FILE` under its temp profile: HOME
+      is not isolated, and no run may touch a developer's real file. Core
+      imports `jsonc-parser/lib/esm/main.js` directly: the package's
+      `main` is a UMD build whose parts are
+      required through the wrapper's own `require` argument, which both
+      rolldown (the Electron main bundle) and Metro bundle without them —
+      the first iOS CI run died at launch with "Requiring unknown module
+      ./impl/format". One deep import fixes every bundler; a per-bundler
+      alias did not.
+      Directory watchers are only the fast path; the source of truth is a
+      periodic check (every 5 s, on window focus and when Settings asks
+      for the status): one stat of the file, a reload when its identity
+      or modification time moved, a re-attach when the folders to watch
+      changed. It covers what a watcher cannot — the folder created after
+      the app started (the app never creates it itself, and a watch
+      cannot attach to a missing folder), a folder deleted and recreated
+      (the old watch goes silent), events dropped on synced volumes.
+      Watching the home directory for the folder to appear was rejected:
+      it solves one of those cases, and home is noisy (every shell
+      history append fires there). The file stays opt-in: auto-creating
+      it would put account emails and calendar names in a dotfolder
+      nobody asked for, switch on the two-way mirror for everyone, and
+      collide with a setup script that links the real file later. A
+      symlinked file (a dotfiles repo) is written at its resolved target
+      — renaming over the link would replace it with a regular file and
+      silently detach the repo — and both the link's folder and the
+      target's folder are watched, since an in-place edit at the target
+      fires only there. `settingsFileFs.test.ts` proves both against a
+      real temp directory.
+      The desktop shows two cards so the two ideas stay apart: "Export &
+      import" is a one-off copy for another device, nothing watched;
+      "Settings file" explains the watched file — what it is good for (a
+      new Mac set up from dotfiles, scripts and coding agents changing
+      settings by editing a file), what it exposes (the settings in plain
+      text, including connected accounts' email addresses and calendar
+      names, readable by anything that can read the home folder — never
+      passwords or tokens) — and holds the one button that creates it.
+      Local account ids come from `crypto.randomUUID()` everywhere: native
+      in Node and Electron, and on Hermes filled in by the Web Crypto
+      polyfill (`apps/ios/src/polyfills.ts`, expo-crypto's native
+      `randomUUID` next to the `getRandomValues` it already installed) —
+      the hand-rolled `Math.random` UUID the iOS host carried is gone, and
+      an import no longer names accounts differently from a sign-in.
+      Tests: `settingsDocument.test.ts` (parse, version gate, Hermes zone
+      spelling, comment-preserving merge), `settingsExport.test.ts`,
+      `settingsImport.test.ts` (preview = import, reauth row, parked and
+      applied visibility, Apple matching), `settingsFileSync.test.ts`
+      (loop guard with a fake disk), desktop `settingsFile.e2e.ts` (file
+      at launch, live edit, write-back with comments, Create file) and
+      Maestro `20-settings-file.yaml` (export opens the share sheet,
+      import opens the document picker). The share sheet titles the file
+      without its extension and hides the app's elements from the
+      accessibility tree while it is up, so the flow keys on "Save to
+      Files" and dismisses with a swipe that starts inside the sheet.

@@ -36,6 +36,7 @@ import { EventNotificationsSection } from './EventNotificationsSection.tsx';
 import { DiagnosticsSection } from './DiagnosticsSection.tsx';
 import { LocationsSection } from './LocationsSection.tsx';
 import { PrPreviewSection } from './PrPreviewSection.tsx';
+import { SettingsFileSection } from './SettingsFileSection.tsx';
 import { TimeZonesSection } from './TimeZonesSection.tsx';
 import { palette } from './theme.ts';
 import { MutationNoticeToast } from './Toast.tsx';
@@ -346,6 +347,7 @@ export function SettingsSheet({ onClose, visible }: { onClose: () => void; visib
           <EventNotificationsSection />
           <BirthdayRemindersSection />
           <TimeZonesSection />
+          <SettingsFileSection />
           <LocationsSection />
           <PrPreviewSection />
           <DiagnosticsSection contacts={contacts} reminders={reminders} visible={visible} />

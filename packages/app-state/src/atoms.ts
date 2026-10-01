@@ -87,11 +87,25 @@ const MUTATION_REACTIVITY = {
   deleteRecurring: [EVENTS_KEY],
   deleteTask: [TASKS_KEY],
   discardPendingOp: [OPS_KEY],
+  // Reads the document; changes nothing.
+  exportSettings: [],
+  importSettings: [
+    ACCOUNTS_KEY,
+    CALENDARS_KEY,
+    EVENTS_KEY,
+    TASKLISTS_KEY,
+    TASKS_KEY,
+    deviceSettingsKey('birthdayReminders'),
+    deviceSettingsKey('eventNotifications'),
+    deviceSettingsKey('timeZones'),
+    deviceSettingsKey('viewPreferences'),
+  ],
   moveEvent: [EVENTS_KEY, OPS_KEY],
   moveTask: [TASKS_KEY, OPS_KEY],
   // Read what a conversion or a move would drop; change nothing.
   previewEventToTask: [],
   previewMove: [],
+  previewSettingsImport: [],
   removeAccount: [ACCOUNTS_KEY, BIRTHDAYS_KEY, CALENDARS_KEY, EVENTS_KEY, TASKS_KEY, TASKLISTS_KEY],
   resolveConflict: [EVENTS_KEY, OPS_KEY],
   // Geocodes a picked place suggestion; writes only the device-local cache.

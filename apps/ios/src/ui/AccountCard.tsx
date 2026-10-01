@@ -67,7 +67,9 @@ export function AccountCard({
               </Text>
             ) : (
               <Pressable disabled={busy} onPress={onReconnect}>
-                <Text style={sectionStyles.action}>Session expired — reconnect</Text>
+                <Text style={sectionStyles.action}>
+                  {account.displayName ? 'Session expired — reconnect' : 'Sign in to connect'}
+                </Text>
               </Pressable>
             )
           ) : null}

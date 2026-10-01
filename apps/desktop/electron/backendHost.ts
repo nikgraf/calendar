@@ -1,40 +1,25 @@
 import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 import { AppBackendRpcs, type BackendHandlers, Temporal } from '@calendar/core';
-import {
-  AccountRepo,
-  BirthdayRepo,
-  CalendarRepo,
-  ContactRepo,
-  DeviceSettingsRepo,
-  EventRepo,
-  forwardingReactivity,
-  LocationGeoRepo,
-  makeInvalidationBus,
-  PendingOpRepo,
-  reposLayer,
-  runMigrations,
-  SyncStateRepo,
-  TaskRepo,
-} from '@calendar/db';
+import { forwardingReactivity, makeInvalidationBus, reposLayer, runMigrations } from '@calendar/db';
 import {
   GoogleCalendarClient,
   GooglePeopleClient,
   GoogleOAuthConfig,
   GoogleTasksClient,
   TokenManager,
-  TokenStore,
 } from '@calendar/google';
 import {
   AppleCalendarEvents,
   LocalNotifications,
   commonBackendHandlers,
+  type CommonBackendServices,
   DeviceContacts,
   EventMutations,
   finishAddAccount,
   makeAppBackendLayer,
   makeSyncKicker,
-  NotificationSink,
+  PlatformSettings,
   SyncEngine,
   SyncInterval,
 } from '@calendar/sync';
@@ -44,10 +29,7 @@ import { Data, Duration, Effect, Layer, ManagedRuntime } from 'effect';
 import { RpcSerialization, RpcServer } from 'effect/unstable/rpc';
 import { runGoogleSignIn } from './auth/loopbackFlow.ts';
 import { loadOAuthConfig } from './oauthConfig.ts';
-import { AppleCalendarClient } from '@calendar/apple-calendar';
-import { RemindersClient } from '@calendar/reminders';
-import { ContactsClient } from '@calendar/contacts';
-import { GeoClient } from '@calendar/geo';
+import { getPrivacyState, setPrivacyChoice } from './privacy.ts';
 import { desktopAppleCalendarLayer } from './appleCalendarClient.ts';
 import { desktopContactsLayer } from './contactsClient.ts';
 import { desktopGeoLayer } from './geoClient.ts';
@@ -65,7 +47,28 @@ class OAuthNotConfiguredError extends Data.TaggedError('OAuthNotConfiguredError'
  * sync engine, served to renderers as the AppBackend rpc group over the
  * 'rpc' IPC channel — including the typed invalidations stream.
  */
-export const startBackendHost = (): void => {
+/** Screen privacy lives with the window code (privacy.ts), so the shared export/import reach it through this seam. */
+const desktopPlatformSettings: Layer.Layer<PlatformSettings> = Layer.succeed(PlatformSettings, {
+  apply: (section) =>
+    Effect.sync(() => {
+      if (section.screenPrivacy !== undefined) {
+        setPrivacyChoice(section.screenPrivacy);
+      }
+    }),
+  read: Effect.sync(() => ({ screenPrivacy: getPrivacyState().mode })),
+});
+
+/** What the main process may do with the running backend besides serving rpc. */
+export interface BackendHost {
+  /** Resolves once the seed, the sync scheduler and the notifications are up. */
+  readonly ready: Promise<void>;
+  readonly run: <A, E>(
+    effect: Effect.Effect<A, E, CommonBackendServices | TokenManager>,
+  ) => Promise<A>;
+  readonly subscribeInvalidations: (listener: (keys: ReadonlyArray<string>) => void) => () => void;
+}
+
+export const startBackendHost = (): BackendHost => {
   console.log('[backend] starting host');
   const oauth = loadOAuthConfig();
   const invalidations = makeInvalidationBus();
@@ -109,6 +112,7 @@ export const startBackendHost = (): void => {
     Layer.provideMerge(dbLayer),
     Layer.provideMerge(platformLayer),
     Layer.provideMerge(desktopNotificationSink),
+    Layer.provideMerge(desktopPlatformSettings),
   );
 
   const requireOAuth = Effect.suspend(() =>
@@ -124,30 +128,7 @@ export const startBackendHost = (): void => {
         ),
   );
 
-  const handlers: BackendHandlers<
-    | AccountRepo
-    | AppleCalendarClient
-    | AppleCalendarEvents
-    | LocalNotifications
-    | BirthdayRepo
-    | CalendarRepo
-    | ContactRepo
-    | ContactsClient
-    | DeviceSettingsRepo
-    | DeviceContacts
-    | EventMutations
-    | EventRepo
-    | GeoClient
-    | LocationGeoRepo
-    | NotificationSink
-    | PendingOpRepo
-    | RemindersClient
-    | SyncEngine
-    | SyncStateRepo
-    | TaskRepo
-    | TokenManager
-    | TokenStore
-  > = {
+  const handlers: BackendHandlers<CommonBackendServices | TokenManager> = {
     ...commonBackendHandlers,
 
     addAccount: () =>
@@ -175,19 +156,18 @@ export const startBackendHost = (): void => {
   const runtime = ManagedRuntime.make(Layer.provideMerge(rpcLayer, appLayer));
 
   // Building the runtime starts the rpc server; then start the scheduler.
-  runtime
-    .runPromise(
-      Effect.gen(function* () {
-        yield* seedDesktopGoogleAccounts;
-        const engine = yield* SyncEngine;
-        yield* engine.start();
-        yield* (yield* LocalNotifications).start();
-        console.log('[backend] runtime ready, rpc server + scheduler started');
-      }),
-    )
-    .catch((error: unknown) => {
-      console.error('[backend] bootstrap failed:', error);
-    });
+  const ready = runtime.runPromise(
+    Effect.gen(function* () {
+      yield* seedDesktopGoogleAccounts;
+      const engine = yield* SyncEngine;
+      yield* engine.start();
+      yield* (yield* LocalNotifications).start();
+      console.log('[backend] runtime ready, rpc server + scheduler started');
+    }),
+  );
+  ready.catch((error: unknown) => {
+    console.error('[backend] bootstrap failed:', error);
+  });
 
   // The steady-state poll misses the moments staleness is most visible:
   // right after wake, unlock, or refocusing the window.
@@ -197,4 +177,10 @@ export const startBackendHost = (): void => {
   powerMonitor.on('resume', kickSync);
   powerMonitor.on('unlock-screen', kickSync);
   app.on('browser-window-focus', kickSync);
+
+  return {
+    ready,
+    run: (effect) => runtime.runPromise(effect),
+    subscribeInvalidations: invalidations.subscribe,
+  };
 };

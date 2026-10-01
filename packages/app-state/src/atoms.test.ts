@@ -47,6 +47,7 @@ const makeStubClient = () => {
     deleteRecurring: () => fail('not stubbed'),
     deleteTask: () => Effect.void,
     discardPendingOp: () => Effect.void,
+    exportSettings: () => Effect.succeed({ version: 1 as const }),
     getBirthdayReminderSettings: () =>
       Effect.succeed({ enabled: false, leadDays: [0 as const], time: '09:00' }),
     getBirthdaysInRange: () => Effect.succeed([]),
@@ -61,6 +62,7 @@ const makeStubClient = () => {
     getTasksInRange: () => Effect.succeed([]),
     getTimeZoneSettings: () => Effect.succeed({ primary: 'UTC', zones: ['UTC'] }),
     getViewPreferences: () => Effect.succeed({ allDayLaneCollapsed: false }),
+    importSettings: () => fail('not stubbed'),
     listAccounts: () =>
       Effect.sync(() => {
         calls.accounts += 1;
@@ -79,6 +81,7 @@ const makeStubClient = () => {
     moveTask: () => fail('not stubbed'),
     previewEventToTask: () => fail('not stubbed'),
     previewMove: () => fail('not stubbed'),
+    previewSettingsImport: () => fail('not stubbed'),
     removeAccount: () => Effect.void,
     resolveConflict: () => Effect.void,
     resolveLocation: ({ location }) =>

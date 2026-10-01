@@ -23,6 +23,7 @@ import {
   EventMutations,
   finishAddAccount,
   makeSyncKicker,
+  PlatformSettings,
   SyncEngine,
   SyncInterval,
   type CommonBackendServices,
@@ -134,17 +135,11 @@ const appLayer = SyncEngine.layer.pipe(
   Layer.provideMerge(dbLayer),
   Layer.provideMerge(platformLayer),
   Layer.provideMerge(iosNotificationSink),
+  // iOS keeps no settings outside the database.
+  Layer.provideMerge(PlatformSettings.none),
 );
 
 const runtime = ManagedRuntime.make(appLayer);
-
-const generateUuid = (): string =>
-  // eslint-disable-next-line unicorn/prefer-crypto-uuid -- Hermes lacks crypto.randomUUID
-  'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replaceAll(/[xy]/g, (char) => {
-    const random = Math.trunc(Math.random() * 16);
-    const value = char === 'x' ? random : (random & 0x3) | 0x8;
-    return value.toString(16);
-  });
 
 const handlers: BackendHandlers<CommonBackendServices | TokenManager> = {
   ...commonBackendHandlers,
@@ -166,7 +161,7 @@ const handlers: BackendHandlers<CommonBackendServices | TokenManager> = {
         try: () => signInWithGoogle(iosClientId ?? ''),
       });
       const result = yield* tokenManager.exchangeCode(grant);
-      return yield* finishAddAccount(result, generateUuid);
+      return yield* finishAddAccount(result, () => crypto.randomUUID());
     }),
 };
 

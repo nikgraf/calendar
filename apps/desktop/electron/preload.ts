@@ -22,8 +22,17 @@ contextBridge.exposeInMainWorld('calendarBridge', {
     ipcRenderer.on('rpc', wrapped);
     return () => ipcRenderer.off('rpc', wrapped);
   },
+  onSettingsFileChanged: (listener: (status: unknown) => void) => {
+    const wrapped = (_event: unknown, status: unknown) => listener(status);
+    ipcRenderer.on('settingsFile:changed', wrapped);
+    return () => ipcRenderer.off('settingsFile:changed', wrapped);
+  },
   privacyGet: () => ipcRenderer.invoke('privacy:get'),
   privacySet: (choice: string) => ipcRenderer.invoke('privacy:set', choice),
   remindersStatus: () => ipcRenderer.invoke('reminders:status'),
   rpcSend: (data: string | Uint8Array) => ipcRenderer.send('rpc', data),
+  settingsFileCreate: () => ipcRenderer.invoke('settingsFile:create'),
+  settingsFileOpen: () => ipcRenderer.invoke('settingsFile:open'),
+  settingsFileSave: (text: string) => ipcRenderer.invoke('settingsFile:save', text),
+  settingsFileStatus: () => ipcRenderer.invoke('settingsFile:status'),
 });

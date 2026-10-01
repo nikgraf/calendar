@@ -31,8 +31,11 @@ export const finishAddAccount = (
     const accountRepo = yield* AccountRepo;
     const tokenStore = yield* TokenStore;
     const engine = yield* SyncEngine;
+    // Case-insensitive: a settings import may have created the row from a
+    // file that spelled the address differently.
+    const email = result.profile.email.toLowerCase();
     const existing = (yield* accountRepo.list()).find(
-      (candidate) => candidate.email === result.profile.email,
+      (candidate) => candidate.provider === 'google' && candidate.email.toLowerCase() === email,
     );
     const account = new Account({
       avatarUrl: result.profile.avatarUrl,

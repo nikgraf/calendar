@@ -6,6 +6,7 @@ import { EventToTaskPreview } from './editor/convertLoss.ts';
 import { MoveLoss } from './editor/moveLoss.ts';
 import { PlaceSuggestion } from './geo/location.ts';
 import { EventNotificationSettings } from './notifications/settings.ts';
+import { SettingsDocument, SettingsImportSummary } from './settingsDocument.ts';
 import { AccountSyncStatus } from './syncStatus.ts';
 import {
   Account,
@@ -310,6 +311,15 @@ export class AppBackendRpcs extends RpcGroup.make(
       scope: RecurringScope,
     },
   }),
+  /**
+   * The portable settings document (device settings, desktop-only settings,
+   * accounts as a sign-in checklist with calendar/list visibility). Never
+   * contains tokens.
+   */
+  Rpc.make('exportSettings', {
+    error: BackendError,
+    success: SettingsDocument,
+  }),
   /** Device-local birthday reminder preferences (never synced). */
   Rpc.make('getBirthdayReminderSettings', {
     error: BackendError,
@@ -418,11 +428,28 @@ export class AppBackendRpcs extends RpcGroup.make(
     payload: MoveTaskParams,
     success: TaskRecord,
   }),
+  /**
+   * Applies a settings document: sections present are written, a Google
+   * account unknown here is created as "Sign in again" (no token), Apple
+   * accounts are never connected by an import, and visibility for rows not
+   * synced yet waits for their sync. Never removes anything.
+   */
+  Rpc.make('importSettings', {
+    error: BackendError,
+    payload: { document: SettingsDocument },
+    success: SettingsImportSummary,
+  }),
   /** What `convertEventToTask` with the same source and target would drop (guests, location, time…). */
   Rpc.make('previewEventToTask', {
     error: BackendError,
     payload: PreviewEventToTaskParams,
     success: EventToTaskPreview,
+  }),
+  /** What `importSettings` with the same document would do, without doing it. */
+  Rpc.make('previewSettingsImport', {
+    error: BackendError,
+    payload: { document: SettingsDocument },
+    success: SettingsImportSummary,
   }),
   /** What `moveEvent` with the same payload would drop (guests, link, modified occurrences…). */
   Rpc.make('previewMove', {
