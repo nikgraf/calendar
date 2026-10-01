@@ -1,23 +1,19 @@
 import { NotificationSink, noopNotificationSink, type NotificationSinkShape } from '@calendar/sync';
-import { BrowserWindow, Notification } from 'electron';
+import { Notification } from 'electron';
 import { Effect, Layer } from 'effect';
+import { showMainWindow } from './windows.ts';
 
 /**
  * Local notifications on macOS (event reminders, birthdays): a plain
  * Electron Notification the moment one is due, while the app runs (there
- * is no login item yet). A click brings the window back.
+ * is no login item yet). A click brings the window back — or opens one,
+ * since the app keeps running after its last window closes.
  * CALENDAR_NOTIFICATIONS=off (the e2e harness) swaps in the no-op sink so
  * a seeded event or birthday never posts a banner.
  */
 
 /** A prompt left open this long counts as granted: unknown, so no nagging. */
 const PERMISSION_WAIT = '60 seconds';
-
-const focusWindow = () => {
-  const window = BrowserWindow.getAllWindows()[0];
-  window?.show();
-  window?.focus();
-};
 
 /**
  * Electron has no query for the notification authorization: macOS asks
@@ -35,7 +31,7 @@ const ensurePermission = () =>
       body: "You'll get reminders for events and birthdays while Solunivo is running.",
       title: 'Notifications are on',
     });
-    notification.on('click', focusWindow);
+    notification.on('click', showMainWindow);
     notification.on('show', () => resume(Effect.succeed(true)));
     notification.on('failed', (_event, error) =>
       resume(
@@ -54,7 +50,7 @@ const desktopSink: NotificationSinkShape = {
         return;
       }
       const notification = new Notification({ body: planned.body, title: planned.title });
-      notification.on('click', focusWindow);
+      notification.on('click', showMainWindow);
       // Denied or revoked permission drops the banner; leave a trace.
       notification.on('failed', (_event, error) =>
         console.warn('local notification failed', error),
