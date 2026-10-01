@@ -1,6 +1,7 @@
 export * from './contract.ts';
 export * from './dto.ts';
 export * from './errors.ts';
+export * from './gateway.ts';
 export * from './manage.ts';
 export * from './policy.ts';
 export * from './refs.ts';
