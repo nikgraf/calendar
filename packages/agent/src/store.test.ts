@@ -92,7 +92,7 @@ describe('agents', () => {
     }).pipe(Effect.provide(layer)),
   );
 
-  it.effect('removing an agent expires what it had waiting and wakes the waiters', () =>
+  it.effect('removing an agent expires what it had waiting', () =>
     Effect.gen(function* () {
       const { agent } = yield* createAgent('Hermes');
       const requests = yield* AgentRequestRepo;
@@ -113,7 +113,11 @@ describe('requests', () => {
       const approved = yield* requests.transition('req-1', 'pending', 'approved', {
         decidedAt: 200,
       });
-      expect(approved).toMatchObject({ decidedAt: 200, status: 'approved' });
+      expect(approved).toMatchObject({
+        decidedAt: 200,
+        input: { title: 'Dentist' },
+        status: 'approved',
+      });
       // The second approval (a double click, another window) finds nothing to move.
       expect(yield* requests.transition('req-1', 'pending', 'approved', {})).toBeUndefined();
       expect(yield* requests.transition('req-1', 'pending', 'denied', {})).toBeUndefined();
@@ -125,7 +129,8 @@ describe('requests', () => {
       expect(done).toMatchObject({
         decidedAt: 200,
         finishedAt: 300,
-        input: { title: 'Dentist' },
+        // Kept while the request could still be replayed, dropped once it settled.
+        input: null,
         result: { status: 'done' },
         status: 'done',
         summary: { title: 'Create event “Dentist”' },
@@ -164,18 +169,30 @@ describe('requests', () => {
     }).pipe(Effect.provide(layer)),
   );
 
-  it.effect('pruning keeps the newest finished rows and every pending one', () =>
+  it.effect('pruning bounds finished writes and refusals apart; waiting ones always stay', () =>
     Effect.gen(function* () {
       const requests = yield* AgentRequestRepo;
-      for (let index = 0; index < 6; index += 1) {
+      for (let index = 0; index < 4; index += 1) {
         yield* requests.insert(request({ createdAt: index, id: `done-${index}`, status: 'done' }));
       }
+      // A burst of refusals, all newer than the real writes.
+      for (let index = 0; index < 6; index += 1) {
+        yield* requests.insert(
+          request({ createdAt: 100 + index, id: `blocked-${index}`, status: 'blocked' }),
+        );
+      }
       yield* requests.insert(request({ createdAt: -1, id: 'waiting' }));
-      yield* requests.prune(2);
+      yield* requests.insert(request({ createdAt: -2, id: 'running', status: 'approved' }));
+      yield* requests.prune(2, 3);
       expect((yield* requests.list(50)).map((row) => row.id)).toEqual([
-        'done-5',
-        'done-4',
+        'blocked-5',
+        'blocked-4',
+        'blocked-3',
+        // The refusals did not push the writes out.
+        'done-3',
+        'done-2',
         'waiting',
+        'running',
       ]);
     }).pipe(Effect.provide(layer)),
   );

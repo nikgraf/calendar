@@ -5,12 +5,11 @@ import { Effect, Fiber } from 'effect';
 import { TestClock } from 'effect/testing';
 import { describe } from 'vitest';
 import type { CalendarDto, EventDto, TaskDto } from './dto.ts';
-import type { AgentError } from './errors.ts';
-import { callTool, decideRequest, type GatewayServices, MAX_PENDING_PER_AGENT } from './gateway.ts';
+import { callTool, decideRequest, MAX_PENDING_PER_AGENT } from './gateway.ts';
 import { createAgent, removeAgent, updateAgent } from './manage.ts';
 import { EMPTY_POLICY } from './policy.ts';
-import { AgentSignals } from './signals.ts';
-import { type AgentRecord, AgentRequestRepo, type AgentRequestRecord } from './store.ts';
+import type { AgentRecord } from './store.ts';
+import { activity, failureOf, untilAsked, watchApprovals } from './testing/calls.ts';
 import {
   ACCOUNT,
   agentWith,
@@ -31,46 +30,11 @@ const range = { from: iso(base), to: iso(base + DAY) };
 /** A time on the base day as the gateway prints it in the (UTC) primary zone. */
 const at = (hours: number) => iso(base + hours * HOUR).replace('Z', '+00:00');
 
-/** The failure of a call that must fail. */
-const failureOf = <A>(effect: Effect.Effect<A, AgentError, GatewayServices>) =>
-  Effect.gen(function* () {
-    const result = yield* Effect.result(effect);
-    if (result._tag !== 'Failure') {
-      throw new Error(`expected a failure, got ${JSON.stringify(result.success)}`);
-    }
-    return result.failure;
-  });
-
 const titles = (result: unknown): Array<string> =>
   (result as { events: ReadonlyArray<EventDto> }).events.map((event) => event.title);
 
 const eventsOf = (result: unknown): ReadonlyArray<EventDto> =>
   (result as { events: ReadonlyArray<EventDto> }).events;
-
-const activity = Effect.gen(function* () {
-  return yield* (yield* AgentRequestRepo).list(50);
-});
-
-/** Everything `approvalRequested` announced so far. */
-const watchApprovals = Effect.gen(function* () {
-  const seen: Array<AgentRequestRecord> = [];
-  (yield* AgentSignals).subscribe((change) => {
-    if (change.type === 'approvalRequested') {
-      seen.push(change.request);
-    }
-  });
-  return seen;
-});
-
-/** Lets a forked call run up to the point where it waits for the user. */
-const untilAsked = (seen: ReadonlyArray<AgentRequestRecord>, count = 1) =>
-  Effect.gen(function* () {
-    for (let spins = 0; spins < 5000 && seen.length < count; spins += 1) {
-      yield* Effect.yieldNow;
-    }
-    expect(seen.length).toBe(count);
-    return seen[count - 1]!;
-  });
 
 const reader = () =>
   agentWith({

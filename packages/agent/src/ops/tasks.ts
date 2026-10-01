@@ -3,14 +3,12 @@ import { EventMutations, type TaskWriteChanges } from '@calendar/sync';
 import { Effect } from 'effect';
 import type { ToolInput } from '../contract.ts';
 import { toTaskDto } from '../dto.ts';
-import { AgentInvalidInputError } from '../errors.ts';
 import { type AgentPolicy, decideWrite } from '../policy.ts';
 import { type Directory, resolveTask, resolveTaskList } from '../resolve.ts';
 import { changeLine, listLine, summarize, textLine, titled } from '../summary.ts';
 import { isIsoDate } from '../times.ts';
+import { invalid, MAX_NOTES, MAX_TITLE, MAX_URL, within } from './limits.ts';
 import type { WritePlan } from './plan.ts';
-
-const invalid = (message: string) => Effect.fail(new AgentInvalidInputError({ message }));
 
 const CLOCK = /^([01]\d|2[0-3]):[0-5]\d$/u;
 
@@ -29,6 +27,9 @@ export const planCreateTask = (
     if (title === '') {
       return yield* invalid('title must not be empty.');
     }
+    yield* within('title', title, MAX_TITLE);
+    yield* within('notes', input.notes, MAX_NOTES);
+    yield* within('url', input.url, MAX_URL);
     if (!isIsoDate(input.dueDate)) {
       return yield* invalid('dueDate must be a real date in YYYY-MM-DD form.');
     }
@@ -89,6 +90,9 @@ export const planUpdateTask = (
     if (title === '') {
       return yield* invalid('title must not be empty.');
     }
+    yield* within('title', title, MAX_TITLE);
+    yield* within('notes', input.notes, MAX_NOTES);
+    yield* within('url', input.url, MAX_URL);
     if (input.dueDate !== undefined && !isIsoDate(input.dueDate)) {
       return yield* invalid('dueDate must be a real date in YYYY-MM-DD form.');
     }

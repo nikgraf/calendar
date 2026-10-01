@@ -41,6 +41,7 @@ import {
 import { planCreateTask, planDeleteTask, planUpdateTask } from './ops/tasks.ts';
 import type { DeniedReason } from './policy.ts';
 import { loadDirectory } from './resolve.ts';
+import { sameSummary } from './summary.ts';
 import { AgentSignals } from './signals.ts';
 import {
   AgentRepo,
@@ -71,8 +72,9 @@ export const APPROVAL_WAIT_MS = 25_000;
 export const APPROVAL_TTL_MS = 24 * 60 * 60 * 1000;
 /** Requests one agent may have waiting at once. */
 export const MAX_PENDING_PER_AGENT = 10;
-/** Finished rows the activity log keeps. */
+/** Finished rows the activity log keeps — and, counted apart, refusals. */
 export const ACTIVITY_LOG_SIZE = 500;
+export const BLOCKED_LOG_SIZE = 100;
 
 const DENIED_MESSAGE: Record<DeniedReason, string> = {
   guests:
@@ -161,7 +163,6 @@ const runPlan = (
 const logRow = (
   agent: AgentRecord,
   name: ToolName,
-  input: unknown,
   summary: RequestSummary,
   outcome:
     | { readonly error: AgentErrorJson; readonly status: 'blocked' | 'failed' }
@@ -169,19 +170,23 @@ const logRow = (
 ) =>
   Effect.gen(function* () {
     const now = yield* Clock.currentTimeMillis;
-    yield* (yield* AgentRequestRepo).insert({
+    const requests = yield* AgentRequestRepo;
+    // A finished write is logged by its summary alone: the input was only
+    // ever needed to replay a request that is still waiting.
+    yield* requests.insert({
       agentId: agent.id,
       agentName: agent.name,
       createdAt: now,
-      dedupeKey: `${name}:${stable(input)}`,
+      dedupeKey: '',
       finishedAt: now,
       id: newId(),
-      input,
+      input: null,
       status: outcome.status,
       summary,
       tool: name,
       ...(outcome.status === 'done' ? { result: outcome.result } : { error: outcome.error }),
     });
+    yield* requests.prune(ACTIVITY_LOG_SIZE, BLOCKED_LOG_SIZE);
     yield* (yield* AgentSignals).publish({ type: 'requests' });
   }).pipe(
     // The log must never turn a finished write into a failed call.
@@ -257,6 +262,14 @@ const settledAnswer = (request: AgentRequestRecord): Effect.Effect<unknown, Agen
           : new AgentFailedError({ message: 'The write failed.', tag: 'Failed' }),
       );
     }
+    case 'expired': {
+      return Effect.fail(
+        new AgentFailedError({
+          message: 'Nobody answered this request in time; nothing was written.',
+          tag: 'Expired',
+        }),
+      );
+    }
     default: {
       return Effect.succeed(requestView(request));
     }
@@ -311,10 +324,23 @@ const executeWrite = (
   agent: AgentRecord,
   name: ToolName,
   input: unknown,
-  mode: 'approved' | 'direct',
+  /** `approved` carries the summary the user said yes to. */
+  mode: 'direct' | { readonly approved: RequestSummary },
 ): Effect.Effect<unknown, AgentError, GatewayServices> =>
   Effect.gen(function* () {
     const plan = yield* planWrite(agent, name, input).pipe(Effect.mapError(toAgentError));
+    // The user approved a description, not an input: if planning the same
+    // input now describes anything else — the event was renamed, gained
+    // guests, moved — the approval does not cover it.
+    if (mode !== 'direct' && !sameSummary(plan.summary, mode.approved)) {
+      return yield* Effect.fail(
+        new AgentFailedError({
+          message:
+            'What this request would do changed after it was asked (the item was edited in between). Nothing was written; send the request again.',
+          tag: 'Changed',
+        }),
+      );
+    }
     switch (plan.decision._tag) {
       case 'Hidden': {
         return yield* Effect.fail(new AgentNotFoundError({ what: plan.what }));
@@ -325,7 +351,7 @@ const executeWrite = (
           reason: plan.decision.reason,
         });
         if (mode === 'direct') {
-          yield* logRow(agent, name, input, plan.summary, {
+          yield* logRow(agent, name, plan.summary, {
             error: agentErrorJson(error),
             status: 'blocked',
           });
@@ -339,18 +365,18 @@ const executeWrite = (
         return yield* runPlan(plan);
       }
       case 'Allow': {
-        if (mode === 'approved') {
+        if (mode !== 'direct') {
           return yield* runPlan(plan);
         }
         const outcome = yield* Effect.result(runPlan(plan));
         if (outcome._tag === 'Failure') {
-          yield* logRow(agent, name, input, plan.summary, {
+          yield* logRow(agent, name, plan.summary, {
             error: agentErrorJson(outcome.failure),
             status: 'failed',
           });
           return yield* Effect.fail(outcome.failure);
         }
-        yield* logRow(agent, name, input, plan.summary, {
+        yield* logRow(agent, name, plan.summary, {
           result: outcome.success,
           status: 'done',
         });
@@ -442,17 +468,34 @@ export const decideRequest = (
     const requests = yield* AgentRequestRepo;
     const signals = yield* AgentSignals;
     const now = yield* Clock.currentTimeMillis;
-    if (decision === 'deny') {
-      const denied = yield* requests.transition(requestId, 'pending', 'denied', {
-        decidedAt: now,
-        finishedAt: now,
+    const settledNow = (row: AgentRequestRecord | undefined) =>
+      Effect.gen(function* () {
+        if (row) {
+          yield* signals.settle(requestId);
+          yield* signals.publish({ type: 'requests' });
+        }
+        return row ?? (yield* requests.get(requestId));
       });
-      if (denied) {
-        yield* signals.settle(requestId);
-        yield* signals.publish({ type: 'requests' });
-      }
-      return denied ?? (yield* requests.get(requestId));
+
+    const current = yield* requests.get(requestId);
+    if (!current || current.status !== 'pending') {
+      return current;
     }
+    // Too old to answer: the sweep only runs now and then, the limit holds always.
+    if (current.createdAt < now - APPROVAL_TTL_MS) {
+      return yield* settledNow(
+        yield* requests.transition(requestId, 'pending', 'expired', { finishedAt: now }),
+      );
+    }
+    if (decision === 'deny') {
+      return yield* settledNow(
+        yield* requests.transition(requestId, 'pending', 'denied', {
+          decidedAt: now,
+          finishedAt: now,
+        }),
+      );
+    }
+    // The stored input goes with the row once it settles, so take it now.
     const approved = yield* requests.transition(requestId, 'pending', 'approved', {
       decidedAt: now,
     });
@@ -460,19 +503,22 @@ export const decideRequest = (
       return yield* requests.get(requestId);
     }
     yield* signals.publish({ type: 'requests' });
-    const agent = yield* (yield* AgentRepo).get(approved.agentId);
+    // From here the row must end in done or failed, whatever goes wrong.
     const outcome = yield* Effect.result(
-      (agent && isToolName(approved.tool)
-        ? Effect.flatMap(decodeInput(approved.tool, approved.input), (input) =>
-            executeWrite(agent, approved.tool as ToolName, input, 'approved'),
-          )
-        : Effect.fail(
+      Effect.gen(function* () {
+        const agent = yield* (yield* AgentRepo).get(approved.agentId);
+        if (!agent || !isToolName(approved.tool)) {
+          return yield* Effect.fail(
             new AgentFailedError({
               message: 'The agent that asked for this was removed.',
               tag: 'AgentRemoved',
             }),
-          )
-      ).pipe(
+          );
+        }
+        const input = yield* decodeInput(approved.tool, approved.input);
+        return yield* executeWrite(agent, approved.tool, input, { approved: approved.summary });
+      }).pipe(
+        Effect.mapError(toAgentError),
         Effect.catchDefect((defect) =>
           Effect.fail(new AgentFailedError({ message: formatIssue(defect), tag: 'Defect' })),
         ),
@@ -489,10 +535,10 @@ export const decideRequest = (
             error: agentErrorJson(outcome.failure),
             finishedAt,
           });
-    yield* signals.settle(requestId);
-    yield* signals.publish({ type: 'requests' });
-    return settled ?? (yield* requests.get(requestId));
+    return yield* settledNow(settled);
   }).pipe(
+    // Even when the store itself fails, nobody keeps waiting on this request.
+    Effect.ensuring(Effect.flatMap(AgentSignals, (signals) => signals.settle(requestId))),
     Effect.catchCause((cause) =>
       Effect.as(Effect.logWarning('agent request decision failed', cause), undefined),
     ),
@@ -524,7 +570,7 @@ export const sweepRequests: Effect.Effect<void, never, AgentRequestRepo | AgentS
     for (const id of expired) {
       yield* signals.settle(id);
     }
-    yield* requests.prune(ACTIVITY_LOG_SIZE);
+    yield* requests.prune(ACTIVITY_LOG_SIZE, BLOCKED_LOG_SIZE);
     if (expired.length > 0) {
       yield* signals.publish({ type: 'requests' });
     }

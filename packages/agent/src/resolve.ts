@@ -1,7 +1,13 @@
-import { AppleCalendarClient, isNotFound, mapAppleEvent } from '@calendar/apple-calendar';
+import {
+  AppleCalendarClient,
+  type AppleCalendarError,
+  isNotFound,
+  mapAppleEvent,
+} from '@calendar/apple-calendar';
 import {
   type Account,
   addDaysToPlainDate,
+  assembleWindow,
   type CalendarInfo,
   daysBetweenPlainDates,
   type EventRecord,
@@ -186,17 +192,22 @@ export const resolveTaskListFilter = (
     : Effect.forEach(refs, (ref) => resolveTaskList(directory, ref));
 
 export interface ResolvedEvent {
-  /** The times an edit starts from (the occurrence's slot for one occurrence of a series). */
+  /** The times a change to just this event or occurrence starts from (its own, if it was moved). */
   readonly base: ExistingTimes;
   readonly granted: GrantedCalendar;
-  /** The event itself; for an occurrence its stored exception if there is one, else the master. */
+  /** The event itself; for an occurrence, the occurrence as it is now (a moved or edited one included). */
   readonly record: EventRecord;
   readonly ref: EventRef;
   /** For an occurrence: the series master (guests on it are reached by a series-wide write). */
   readonly series?: EventRecord;
+  /** For an occurrence: its slot in the series — what a series-wide or "following" change starts from. */
+  readonly slotBase?: ExistingTimes;
 }
 
 const eventNotFound = new AgentNotFoundError({ what: 'Event' });
+
+/** How far from its slot a moved Apple occurrence is still looked for (EventKit only answers ranges). */
+const APPLE_OCCURRENCE_WINDOW_MS = 45 * 24 * 60 * 60 * 1000;
 
 const slotTimes = (master: EventRecord, originalStartUtc: number): ExistingTimes => {
   if (master.isAllDay && master.startDate !== undefined && master.endDate !== undefined) {
@@ -227,6 +238,22 @@ const ownTimes = (record: EventRecord): ExistingTimes => ({
   startUtc: record.startUtc,
 });
 
+/** Whether the series' rule really produces an occurrence at this slot. */
+const ruleProduces = (master: EventRecord, originalStartUtc: number): boolean => {
+  let failed = false;
+  const occurrences = assembleWindow(
+    { masters: [master], overrides: [], singles: [] },
+    originalStartUtc,
+    originalStartUtc + 1,
+    () => {
+      failed = true;
+    },
+  );
+  return (
+    !failed && occurrences.some((occurrence) => occurrence.originalStartUtc === originalStartUtc)
+  );
+};
+
 /**
  * Finds the event a ref names and the calendar it REALLY lives in. This
  * is the gateway's defence against a confused deputy: EventKit addresses
@@ -235,6 +262,11 @@ const ownTimes = (record: EventRecord): ExistingTimes => ({
  * resolve. Apple: EventKit says where the event is. Google: the row is
  * keyed by its calendar. Anything the agent cannot read in full is "not
  * found" — exactly what a non-existent event answers.
+ *
+ * An occurrence ref must name a real occurrence: a slot the series does
+ * not have (a made-up one, or one that was deleted) is not found either,
+ * so a write can neither invent an exception nor answer "done" for
+ * nothing.
  */
 export const resolveEvent = (
   directory: Directory,
@@ -253,29 +285,46 @@ export const resolveEvent = (
 
     if (isAppleCalendarAccount({ id: ref.accountId })) {
       const client = yield* AppleCalendarClient;
-      const series = yield* client
-        .series({ id })
-        .pipe(
-          Effect.mapError((error): AgentError =>
-            isNotFound(error)
-              ? eventNotFound
-              : new AgentFailedError({ message: String(error), tag: error._tag }),
-          ),
-        );
+      const appleFailure = (error: AppleCalendarError): AgentError =>
+        isNotFound(error)
+          ? eventNotFound
+          : new AgentFailedError({ message: String(error), tag: error._tag });
+      const series = yield* client.series({ id }).pipe(Effect.mapError(appleFailure));
       if (series.first.calendarId !== ref.calendarId) {
         return yield* Effect.fail(eventNotFound);
       }
-      const now = yield* Clock.currentTimeMillis;
-      const first = mapAppleEvent(series.first, { deviceTimeZone: deviceTimeZone(), now });
-      return ref.kind === 'event'
-        ? { base: ownTimes(first), granted, record: first, ref }
-        : {
-            base: slotTimes(first, ref.originalStartUtc),
-            granted,
-            record: first,
-            ref,
-            series: first,
-          };
+      const context = { deviceTimeZone: deviceTimeZone(), now: yield* Clock.currentTimeMillis };
+      const first = mapAppleEvent(series.first, context);
+      if (ref.kind === 'event') {
+        return { base: ownTimes(first), granted, record: first, ref };
+      }
+      // The occurrence as EventKit has it now — one that was moved or
+      // renamed on its own differs from the series' first occurrence.
+      const nearby = yield* client
+        .events({
+          endUtc: ref.originalStartUtc + APPLE_OCCURRENCE_WINDOW_MS,
+          startUtc: ref.originalStartUtc - APPLE_OCCURRENCE_WINDOW_MS,
+        })
+        .pipe(Effect.mapError(appleFailure));
+      const found = nearby.find(
+        (event) =>
+          event.id === id &&
+          event.occurrenceStartUtc === ref.originalStartUtc &&
+          event.calendarId === ref.calendarId &&
+          event.status !== 'cancelled',
+      );
+      if (!found) {
+        return yield* Effect.fail(eventNotFound);
+      }
+      const occurrence = mapAppleEvent(found, context);
+      return {
+        base: ownTimes(occurrence),
+        granted,
+        record: occurrence,
+        ref,
+        series: first,
+        slotBase: slotTimes(first, ref.originalStartUtc),
+      };
     }
 
     const events = yield* EventRepo;
@@ -286,17 +335,27 @@ export const resolveEvent = (
     if (ref.kind === 'event') {
       return { base: ownTimes(stored), granted, record: stored, ref };
     }
+    if (!stored.recurrence || stored.recurrence.length === 0) {
+      return yield* Effect.fail(eventNotFound);
+    }
     const overrides = yield* events.listOverrides(ref.accountId, ref.calendarId, id);
     const exception = overrides.find(
-      (override) =>
-        override.originalStartUtc === ref.originalStartUtc && override.status !== 'cancelled',
+      (override) => override.originalStartUtc === ref.originalStartUtc,
     );
+    // A cancelled exception is a deleted occurrence; without an exception
+    // the rule itself has to produce the slot.
+    if (
+      exception ? exception.status === 'cancelled' : !ruleProduces(stored, ref.originalStartUtc)
+    ) {
+      return yield* Effect.fail(eventNotFound);
+    }
     return {
       base: exception ? ownTimes(exception) : slotTimes(stored, ref.originalStartUtc),
       granted,
       record: exception ?? stored,
       ref,
       series: stored,
+      slotBase: slotTimes(stored, ref.originalStartUtc),
     };
   });
 

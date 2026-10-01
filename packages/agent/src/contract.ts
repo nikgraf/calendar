@@ -129,6 +129,7 @@ export const CreateEventInput = Schema.Struct({
 
 export const UpdateEventInput = Schema.Struct({
   ...eventTimeFields,
+  // An edit never re-anchors the event: the zone only says how to read the new times.
   attendees: Schema.optionalKey(
     Schema.Array(Guest).annotate({
       description:
@@ -139,6 +140,9 @@ export const UpdateEventInput = Schema.Struct({
   location: Schema.optionalKey(text('New location ("" clears it).')),
   ref: text('The event `ref` from list_events.'),
   scope: Schema.optionalKey(Scope),
+  timeZone: Schema.optionalKey(
+    text("IANA zone that offset-less times are read in (default: the event's own zone)."),
+  ),
   title: Schema.optionalKey(text('New title.')),
 });
 

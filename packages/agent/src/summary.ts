@@ -37,10 +37,21 @@ export const describeWhen = (times: EventTimes | ExistingTimes, timeZone: string
   return `${startDay}, ${formatClockTime(times.startUtc, zone)} – ${endText} (${zone})`;
 };
 
-const quote = (value: string): string => `“${value}”`;
+/**
+ * Text from an agent or an invitation, safe to show as one line of a
+ * summary: a line break inside it must not be able to pose as another
+ * line ("Guests: nobody"), so breaks are shown as a visible mark and
+ * other control characters are dropped. Nothing is ever shortened here —
+ * the user approves the whole of what is written, and input sizes are
+ * capped where the request is planned.
+ */
+export const oneLine = (value: string): string =>
+  value
+    .replaceAll(/\s*(?:\r\n|[\n\r\u2028\u2029])\s*/gu, ' ⏎ ')
+    // eslint-disable-next-line no-control-regex -- stripping them is the point
+    .replaceAll(/[\u0000-\u001F\u007F-\u009F\u200B-\u200F\u202A-\u202E\u2066-\u2069]/gu, '');
 
-const clip = (value: string, max = 160): string =>
-  value.length > max ? `${value.slice(0, max - 1)}…` : value;
+const quote = (value: string): string => `“${oneLine(value)}”`;
 
 const SCOPE_LABEL = {
   following: 'This and all following occurrences',
@@ -51,21 +62,23 @@ const SCOPE_LABEL = {
 export const scopeLine = (scope: keyof typeof SCOPE_LABEL): string =>
   `Applies to: ${SCOPE_LABEL[scope]}`;
 
+/** Every guest, always: this is who gets mail. */
 export const guestsLine = (emails: ReadonlyArray<string>): string =>
-  `Guests: ${emails.slice(0, 8).join(', ')}${emails.length > 8 ? ` and ${emails.length - 8} more` : ''}`;
+  `Guests: ${emails.map(oneLine).join(', ')}`;
 
 export const calendarLine = (name: string, account: string): string =>
-  `Calendar: ${name} (${account})`;
+  `Calendar: ${oneLine(name)} (${oneLine(account)})`;
 
-export const listLine = (name: string, account: string): string => `List: ${name} (${account})`;
+export const listLine = (name: string, account: string): string =>
+  `List: ${oneLine(name)} (${oneLine(account)})`;
 
 /** "Title: “A” → “B”" — one changed text field. */
 export const changeLine = (label: string, before: string | undefined, after: string): string =>
   before === undefined || before === ''
-    ? `${label}: ${after === '' ? '(empty)' : quote(clip(after))}`
-    : `${label}: ${quote(clip(before))} → ${after === '' ? '(cleared)' : quote(clip(after))}`;
+    ? `${label}: ${after === '' ? '(empty)' : quote(after)}`
+    : `${label}: ${quote(before)} → ${after === '' ? '(cleared)' : quote(after)}`;
 
-export const textLine = (label: string, value: string): string => `${label}: ${clip(value)}`;
+export const textLine = (label: string, value: string): string => `${label}: ${oneLine(value)}`;
 
 export const summarize = (
   title: string,
@@ -76,4 +89,10 @@ export const summarize = (
 });
 
 export const titled = (verb: string, noun: string, title: string): string =>
-  `${verb} ${noun} ${quote(clip(title, 80))}`;
+  `${verb} ${noun} ${quote(title)}`;
+
+/** Whether two summaries describe the same write — what an approval is checked against. */
+export const sameSummary = (a: RequestSummary, b: RequestSummary): boolean =>
+  a.title === b.title &&
+  a.lines.length === b.lines.length &&
+  a.lines.every((line, index) => line === b.lines[index]);

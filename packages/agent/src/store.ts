@@ -260,12 +260,19 @@ export interface AgentRequestRepoShape {
   ) => Effect.Effect<void, SqlError>;
   readonly list: (limit: number) => Effect.Effect<ReadonlyArray<AgentRequestRecord>, SqlError>;
   readonly listPending: () => Effect.Effect<ReadonlyArray<AgentRequestRecord>, SqlError>;
-  /** Keeps the newest `keep` finished rows; pending ones always stay. */
-  readonly prune: (keep: number) => Effect.Effect<void, SqlError>;
+  /**
+   * Bounds the log: the newest `keep` finished writes and, counted apart,
+   * the newest `keepBlocked` refusals — so an agent hammering at a closed
+   * door cannot push what it really did out of the log. Pending and
+   * running requests always stay.
+   */
+  readonly prune: (keep: number, keepBlocked: number) => Effect.Effect<void, SqlError>;
   /**
    * Moves a request from one status to another only if it is still in
    * `from` — the single guard that makes an approval execute once.
    * Returns the updated row, or undefined when someone else got there.
+   * A request that has settled drops its stored input: it was kept only
+   * to replay the write, and the summary is what the log shows.
    */
   readonly transition: (
     id: string,
@@ -298,20 +305,21 @@ const makeAgentRequestRepo: Effect.Effect<AgentRequestRepoShape, never, SqlClien
       expireForAgent: (agentId, now) =>
         Effect.map(
           sql<{ readonly id: string }>`UPDATE agent_requests
-            SET status = 'expired', finished_at = ${now}
+            SET status = 'expired', finished_at = ${now}, input = 'null'
             WHERE agent_id = ${agentId} AND status = 'pending' RETURNING id`,
           (rows) => rows.map((row) => row.id),
         ),
       expireOlderThan: (olderThan, now) =>
         Effect.map(
           sql<{ readonly id: string }>`UPDATE agent_requests
-            SET status = 'expired', finished_at = ${now}
+            SET status = 'expired', finished_at = ${now}, input = 'null'
             WHERE status = 'pending' AND created_at < ${olderThan} RETURNING id`,
           (rows) => rows.map((row) => row.id),
         ),
       failInterrupted: (now, error) =>
         Effect.asVoid(sql`UPDATE agent_requests
-          SET status = 'failed', finished_at = ${now}, error = ${JSON.stringify(error)}
+          SET status = 'failed', finished_at = ${now}, error = ${JSON.stringify(error)},
+            input = 'null'
           WHERE status = 'approved'`),
       findPending: (agentId, dedupeKey) =>
         Effect.map(
@@ -343,16 +351,25 @@ const makeAgentRequestRepo: Effect.Effect<AgentRequestRepoShape, never, SqlClien
             ORDER BY created_at, id`,
           (rows) => rows.map(requestFromRow),
         ),
-      prune: (keep) =>
-        Effect.asVoid(sql`DELETE FROM agent_requests
-          WHERE status != 'pending' AND id NOT IN (
-            SELECT id FROM agent_requests WHERE status != 'pending'
-            ORDER BY created_at DESC, id DESC LIMIT ${keep}
-          )`),
+      prune: (keep, keepBlocked) =>
+        Effect.gen(function* () {
+          yield* sql`DELETE FROM agent_requests
+            WHERE status NOT IN ('pending', 'approved', 'blocked') AND id NOT IN (
+              SELECT id FROM agent_requests
+              WHERE status NOT IN ('pending', 'approved', 'blocked')
+              ORDER BY created_at DESC, id DESC LIMIT ${keep}
+            )`;
+          yield* sql`DELETE FROM agent_requests
+            WHERE status = 'blocked' AND id NOT IN (
+              SELECT id FROM agent_requests WHERE status = 'blocked'
+              ORDER BY created_at DESC, id DESC LIMIT ${keepBlocked}
+            )`;
+        }),
       transition: (id, from, to, patch) =>
         Effect.map(
           sql<RequestRow>`UPDATE agent_requests SET
               status = ${to},
+              input = CASE WHEN ${to} IN ('pending', 'approved') THEN input ELSE 'null' END,
               decided_at = COALESCE(${patch.decidedAt ?? null}, decided_at),
               finished_at = COALESCE(${patch.finishedAt ?? null}, finished_at),
               result = COALESCE(${jsonOrNull(patch.result)}, result),

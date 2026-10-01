@@ -1,11 +1,13 @@
 import {
   type AppleCalendarJson,
   type AppleEventJson,
+  type FakeEventSeed,
   makeFakeAppleCalendarClient,
   mapAppleCalendar,
 } from '@calendar/apple-calendar';
 import {
   Account,
+  addDaysToPlainDate,
   APPLE_CALENDAR_ACCOUNT_ID,
   APPLE_REMINDERS_ACCOUNT_ID,
   Attendee,
@@ -193,8 +195,12 @@ export const refs = {
   event: (calendarId: string, eventId: string, accountId: string = ACCOUNT) =>
     encodeRef({ accountId, calendarId, eventId, kind: 'event' }),
   googleList: encodeRef({ accountId: ACCOUNT, kind: 'taskList', taskListId: 'tl-1' }),
-  occurrence: (calendarId: string, masterId: string, originalStartUtc: number) =>
-    encodeRef({ accountId: ACCOUNT, calendarId, kind: 'occurrence', masterId, originalStartUtc }),
+  occurrence: (
+    calendarId: string,
+    masterId: string,
+    originalStartUtc: number,
+    accountId: string = ACCOUNT,
+  ) => encodeRef({ accountId, calendarId, kind: 'occurrence', masterId, originalStartUtc }),
   reminderList: (taskListId: string) =>
     encodeRef({ accountId: APPLE_REMINDERS_ACCOUNT_ID, kind: 'taskList', taskListId }),
   task: (taskListId: string, taskId: string, accountId: string = APPLE_REMINDERS_ACCOUNT_ID) =>
@@ -248,6 +254,15 @@ const seed = Effect.gen(function* () {
     googleEvent('weekly', 'work', 'Weekly sync', seriesStart, {
       recurrence: ['RRULE:FREQ=WEEKLY'],
     }),
+    // An all-day weekly series, first on the day after the base day.
+    googleEvent('review', 'work', 'Quarterly review day', base + DAY, {
+      endDate: addDaysToPlainDate(baseDate, 2),
+      endUtc: base + 2 * DAY,
+      isAllDay: true,
+      recurrence: ['RRULE:FREQ=WEEKLY'],
+      startDate: addDaysToPlainDate(baseDate, 1),
+      startTimeZone: undefined,
+    }),
     googleEvent('therapy', 'private', 'Therapy', base + 10.5 * HOUR),
     googleEvent('offsite', 'team', 'Team offsite', base + 14 * HOUR),
     googleEvent('ghost', 'hidden', 'Hidden thing', base + 9 * HOUR),
@@ -290,12 +305,28 @@ const seed = Effect.gen(function* () {
 // Queued Google writes never land: the tests assert the local row and the queue.
 const never = () => Effect.never;
 
-export const makeWorld = () => {
+/** Start of the Apple daily series some tests add: the base day, 20:00 UTC. */
+export const appleSeriesStart = base + 20 * HOUR;
+
+/** A daily Apple series ("Evening walk", an hour at 20:00) for tests of occurrences. */
+export const appleDailySeries: FakeEventSeed = {
+  event: {
+    ...appleEvent('ek-walk', 'ek-home', 'Evening walk', appleSeriesStart),
+    hasRecurrence: true,
+    occurrenceStartUtc: appleSeriesStart,
+  },
+  recurrence: ['RRULE:FREQ=DAILY;COUNT=5'],
+};
+
+export const makeWorld = (
+  options: { readonly appleEvents?: ReadonlyArray<FakeEventSeed> } = {},
+) => {
   const apple = makeFakeAppleCalendarClient({
     calendars: APPLE_CALENDARS,
     events: [
       { event: appleEvent('ek-dentist', 'ek-home', 'Dentist', base + 8 * HOUR) },
       { event: appleEvent('ek-plan', 'ek-secret', 'Secret plan', base + 9 * HOUR) },
+      ...(options.appleEvents ?? []),
     ],
   });
   const reminders = makeFakeRemindersClient({ lists: REMINDER_LISTS, reminders: REMINDERS });
