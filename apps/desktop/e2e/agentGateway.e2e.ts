@@ -410,6 +410,10 @@ describe('agent gateway: other agents reach the app over the CLI and MCP', () =>
       'Asked breakfast',
     );
 
+    // The buttons arm a moment after a request appears.
+    await cdp.waitFor(
+      `document.querySelector('[data-testid="agent-approve"]')?.disabled === false`,
+    );
     await click(cdp, '[data-testid="agent-approve"]');
     expect(json<{ status: string }>(await approved).status).toBe('done');
     await expect
@@ -421,6 +425,7 @@ describe('agent gateway: other agents reach the app over the CLI and MCP', () =>
     await cdp.waitFor(
       `document.querySelector('[data-testid="agent-approval-title"]')?.textContent.includes('Asked brunch')`,
     );
+    await cdp.waitFor(`document.querySelector('[data-testid="agent-deny"]')?.disabled === false`);
     await click(cdp, '[data-testid="agent-deny"]');
     const result = await declined;
     expect(result.code).toBe(1);

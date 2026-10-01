@@ -28,7 +28,7 @@ import { SqliteClient } from '@effect/sql-sqlite-node';
 import { app, BrowserWindow, ipcMain, type IpcMainInvokeEvent, Notification } from 'electron';
 import { Effect, Layer, ManagedRuntime, Schema } from 'effect';
 import type { BackendHost } from '../backendHost.ts';
-import { rendererOrigin, showMainWindow } from '../windows.ts';
+import { isOwnPage, showMainWindow } from '../windows.ts';
 import { runCli } from './cliRunner.ts';
 import { serveMcpSession, socketTransport, type ToolCaller, type ToolOutcome } from './mcp.ts';
 import { agentSocketPath } from './protocol.ts';
@@ -49,6 +49,7 @@ import { type AgentSocketServer, startAgentSocketServer } from './socketServer.t
 const CALLS_PER_MINUTE = 120;
 const SWEEP_INTERVAL_MS = 60 * 60 * 1000;
 const ACTIVITY_SHOWN = 30;
+const BLOCKED_SHOWN = 10;
 const MAX_NAME_INPUT = 200;
 
 const log = (message: string, detail?: unknown): void =>
@@ -86,7 +87,7 @@ const announce = (change: Extract<AgentChange, { type: 'approvalRequested' }>): 
 
 /** Only this app's own page may manage agents. */
 const trusted = (event: IpcMainInvokeEvent): void => {
-  if (!event.senderFrame?.url.startsWith(rendererOrigin)) {
+  if (!event.senderFrame || !isOwnPage(event.senderFrame.url)) {
     throw new Error('agents: untrusted sender');
   }
 };
@@ -192,31 +193,38 @@ export const startAgentHost = (backend: BackendHost): void => {
   /** Listens exactly while there is an agent to listen for. One change at a time. */
   let syncing: Promise<void> = Promise.resolve();
   const syncSocket = (): Promise<void> => {
-    syncing = syncing.then(async () => {
-      const count = (await run(listAgents)).length;
-      if (count > 0 && !server) {
-        await openSocket();
-      } else if (count === 0 && server) {
-        const closing = server;
-        server = undefined;
-        await closing.close();
-        log('no agents left; socket closed');
-      }
-    });
-    return syncing.catch((error: unknown) => log('socket sync failed', String(error)));
+    // The chain never rejects: one failed pass must not stop every later one.
+    syncing = syncing
+      .then(async () => {
+        const count = (await run(listAgents)).length;
+        if (count > 0 && !server) {
+          await openSocket();
+        } else if (count === 0 && server) {
+          const closing = server;
+          server = undefined;
+          await closing.close();
+          log('no agents left; socket closed');
+        }
+      })
+      .catch((error: unknown) => log('socket sync failed', String(error)));
+    return syncing;
   };
 
   const state = async (): Promise<AgentsState> => {
     const [agents, pending, recent] = await Promise.all([
       run(listAgents),
       run(listPendingRequests),
-      run(listRequests(ACTIVITY_SHOWN + 10)),
+      run(listRequests(500)),
     ]);
+    // Refusals get their own small share of the list, so a burst of them
+    // cannot scroll what an agent actually changed out of sight.
+    const finished = recent.filter((request) => request.status !== 'pending');
+    const shown = [
+      ...finished.filter((request) => request.status !== 'blocked').slice(0, ACTIVITY_SHOWN),
+      ...finished.filter((request) => request.status === 'blocked').slice(0, BLOCKED_SHOWN),
+    ].sort((a, b) => b.createdAt - a.createdAt);
     return {
-      activity: recent
-        .filter((request) => request.status !== 'pending')
-        .slice(0, ACTIVITY_SHOWN)
-        .map(toRequestView),
+      activity: shown.map(toRequestView),
       agents,
       command: relayCommand(),
       ...(socketError === undefined ? {} : { error: socketError }),

@@ -144,6 +144,67 @@ describe('agent socket server', () => {
     expect(silent.lines()).toEqual([]);
   });
 
+  it('releases the slot of a refused peer that never hangs up', async () => {
+    const path = socketPath();
+    server = await startAgentSocketServer(path, handlers(), { maxConnections: 1 });
+    // Keeps its own half open after the refusal, like a peer squatting on a slot.
+    const squatter = connect({ allowHalfOpen: true, path });
+    cleanups.push(() => squatter.destroy());
+    squatter.on('error', () => {});
+    squatter.write('nope\n');
+    // And one that leaves unread bytes behind before it goes away.
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    const litterer = dial(path);
+    litterer.socket.write('nope\n');
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    litterer.socket.write('and some more that nobody reads\n');
+    litterer.socket.destroy();
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
+    // With a single slot, a real client only gets through if both were dropped.
+    const client = dial(path);
+    client.socket.write(hello({ argv: ['tools'] }));
+    await client.closed;
+    expect(JSON.parse(client.lines()[1] ?? '{}')).toMatchObject({ stdout: 'tools' });
+  });
+
+  it('drops a hello whose first line is longer than a hello can be', async () => {
+    const path = socketPath();
+    const seen: Array<string> = [];
+    server = await startAgentSocketServer(
+      path,
+      handlers({
+        authenticate: async (token) => {
+          seen.push(token);
+          return 'agent-1';
+        },
+      }),
+    );
+    const client = dial(path);
+    client.socket.write(`${hello({ argv: ['x'.repeat(MAX_HELLO_BYTES)] })}`);
+    await client.closed;
+    expect(client.lines()).toEqual([]);
+    expect(seen).toEqual([]);
+  });
+
+  it('limits how many connections one agent holds open', async () => {
+    const path = socketPath();
+    server = await startAgentSocketServer(path, handlers(), { maxConnectionsPerAgent: 1 });
+    const first = dial(path);
+    first.socket.write(hello({ mode: 'mcp' }));
+    await first.until(1);
+    const second = dial(path);
+    second.socket.write(hello({ mode: 'mcp' }));
+    await second.closed;
+    expect(JSON.parse(second.lines()[0]!)).toMatchObject({
+      error: { code: 'TooManyConnections' },
+      ok: false,
+    });
+    // The first session is untouched.
+    first.socket.write('still here\n');
+    expect(await first.until(2)).toEqual(['{"ok":true}', 'STILL HERE']);
+  });
+
   it('hands an MCP session every byte after the hello, even from the same packet', async () => {
     const path = socketPath();
     server = await startAgentSocketServer(path, handlers());

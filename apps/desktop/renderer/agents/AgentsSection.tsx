@@ -523,7 +523,7 @@ export function AgentsSection() {
                 <p>
                   <span className="font-medium">{request.agentName}</span> · {request.summary.title}
                 </p>
-                <ul className="mt-1 text-xs text-neutral-600">
+                <ul className="mt-1 max-h-40 overflow-y-auto text-xs break-words text-neutral-600">
                   {request.summary.lines.map((line) => (
                     <li key={line}>{line}</li>
                   ))}

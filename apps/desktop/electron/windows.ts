@@ -16,6 +16,22 @@ export const rendererUrl = process.env.ELECTRON_RENDERER_URL;
 /** Where the renderer is allowed to be: the vite dev server, or the built index. */
 export const rendererOrigin = rendererUrl ?? pathToFileURL(join(rootPath, 'dist')).href;
 
+/**
+ * Whether a URL is this app's own page. Compared by origin (dev server)
+ * or by the built folder with its trailing slash — a bare prefix test
+ * would also accept `…/dist-electron/…` or `localhost:51730`.
+ */
+export const isOwnPage = (url: string): boolean => {
+  if (rendererUrl) {
+    try {
+      return new URL(url).origin === new URL(rendererUrl).origin;
+    } catch {
+      return false;
+    }
+  }
+  return url.startsWith(`${rendererOrigin}/`);
+};
+
 export const createMainWindow = (): BrowserWindow => {
   const window = new BrowserWindow({
     height: 800,

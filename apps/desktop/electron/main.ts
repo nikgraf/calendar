@@ -9,7 +9,7 @@ import { registerModelHelper } from './modelHelper.ts';
 import { registerAppleCalendarIpc } from './appleCalendarIpc.ts';
 import { registerContactsIpc } from './contactsIpc.ts';
 import { registerRemindersIpc } from './remindersIpc.ts';
-import { createMainWindow, rendererOrigin, rendererUrl, showMainWindow } from './windows.ts';
+import { createMainWindow, isOwnPage, rendererUrl, showMainWindow } from './windows.ts';
 
 /**
  * The renderer loads nothing remote: scripts and styles are its own
@@ -80,7 +80,7 @@ ipcMain.on('renderer-error', (_event, text: unknown) => {
  */
 app.on('web-contents-created', (_event, contents) => {
   contents.on('will-navigate', (event, url) => {
-    if (!url.startsWith(rendererOrigin)) {
+    if (!isOwnPage(url)) {
       event.preventDefault();
     }
   });

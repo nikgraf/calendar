@@ -35,6 +35,7 @@ export interface AgentSocketOptions {
   readonly helloTimeoutMs?: number;
   readonly log?: (message: string) => void;
   readonly maxConnections?: number;
+  readonly maxConnectionsPerAgent?: number;
 }
 
 export interface AgentSocketServer {
@@ -46,6 +47,9 @@ export interface AgentSocketServer {
 
 const DEFAULT_HELLO_TIMEOUT_MS = 5000;
 const DEFAULT_MAX_CONNECTIONS = 32;
+/** Open connections one agent may hold (MCP sessions are long-lived). */
+const DEFAULT_MAX_PER_AGENT = 8;
+const FINISH_LINGER_MS = 2000;
 
 const isHello = (value: unknown): value is AgentHello => {
   if (typeof value !== 'object' || value === null) {
@@ -89,6 +93,18 @@ const writeLine = (socket: Socket, value: unknown): void => {
   socket.write(`${JSON.stringify(value)}\n`);
 };
 
+/**
+ * Sends the last line and then drops the connection for good. `end()`
+ * alone only closes our half: a peer that keeps its own half open (or
+ * leaves unread bytes behind) would hold one of the connection slots
+ * forever — without ever having shown a token.
+ */
+const finish = (socket: Socket, value: unknown): void => {
+  socket.end(`${JSON.stringify(value)}\n`, () => socket.destroy());
+  // A peer that never reads must not keep the socket alive either.
+  setTimeout(() => socket.destroy(), FINISH_LINGER_MS).unref();
+};
+
 export const startAgentSocketServer = async (
   path: string,
   handlers: AgentSocketHandlers,
@@ -102,6 +118,7 @@ export const startAgentSocketServer = async (
   const log = options.log ?? (() => {});
   const helloTimeoutMs = options.helloTimeoutMs ?? DEFAULT_HELLO_TIMEOUT_MS;
   const maxConnections = options.maxConnections ?? DEFAULT_MAX_CONNECTIONS;
+  const maxPerAgent = options.maxConnectionsPerAgent ?? DEFAULT_MAX_PER_AGENT;
 
   // A directory this run creates is private; an existing one keeps its mode
   // (the socket's own 0600 is what gates access either way).
@@ -112,8 +129,7 @@ export const startAgentSocketServer = async (
 
   const reject = (socket: Socket, code: string, message: string): void => {
     const reply: AgentHelloReply = { error: { code, message }, ok: false };
-    writeLine(socket, reply);
-    socket.end();
+    finish(socket, reply);
   };
 
   const onHello = async (socket: Socket, line: string, rest: Buffer): Promise<void> => {
@@ -148,12 +164,20 @@ export const startAgentSocketServer = async (
     if (socket.destroyed) {
       return;
     }
+    const held = [...sockets.values()].filter((owner) => owner === agentId).length;
+    if (held >= maxPerAgent) {
+      reject(
+        socket,
+        'TooManyConnections',
+        `This agent already has ${maxPerAgent} connections open; close one first.`,
+      );
+      return;
+    }
     sockets.set(socket, agentId);
     const accepted: AgentHelloReply = { ok: true };
     if (hello.mode === 'cli') {
       writeLine(socket, accepted);
-      writeLine(socket, await handlers.runCli(hello.token, hello.argv ?? []));
-      socket.end();
+      finish(socket, await handlers.runCli(hello.token, hello.argv ?? []));
       return;
     }
     writeLine(socket, accepted);

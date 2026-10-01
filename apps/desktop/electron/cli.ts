@@ -11,7 +11,6 @@ import {
   type AgentHello,
   type AgentHelloReply,
   agentSocketPath,
-  MAX_LINE_BYTES,
 } from './agent/protocol.ts';
 
 /**
@@ -35,6 +34,11 @@ agent in Solunivo → Settings → Agents to get one. Solunivo must be running.
 `;
 
 const LAUNCH_WAIT_MS = 15_000;
+/**
+ * A CLI reply is one line from the app this relay trusts — a long
+ * list_events answer is megabytes. The bound only stops a runaway.
+ */
+const MAX_REPLY_BYTES = 256 * 1024 * 1024;
 const RETRY_EVERY_MS = 250;
 
 const fail = (message: string, exitCode = 1): never => {
@@ -113,7 +117,7 @@ const lineReader = (socket: Socket) => {
       const resolve = waiting;
       waiting = undefined;
       resolve(line);
-    } else if (ended || pending.length > MAX_LINE_BYTES) {
+    } else if (ended || pending.length > MAX_REPLY_BYTES) {
       const resolve = waiting;
       waiting = undefined;
       resolve(undefined);
