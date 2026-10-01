@@ -13,6 +13,14 @@ import {
   TaskListInfo,
   TaskRecord,
 } from '@calendar/core';
+import {
+  type AgentPolicy,
+  AgentRepo,
+  AgentRequestRepo,
+  type AgentRequestRecord,
+  agentStoreLayer,
+  hashToken,
+} from '@calendar/agent';
 import type { AppleCalendarJson, FakeEventSeed } from '@calendar/apple-calendar';
 import type { DeviceBirthdayJson, DeviceContactJson } from '@calendar/contacts';
 import type { FakePlace } from '@calendar/geo';
@@ -224,6 +232,98 @@ export const readEvents = async (userDataDir: string): Promise<ReadonlyArray<Eve
     }).pipe(Effect.provide(dbLayer)),
   );
 };
+
+// ---------------------------------------------------------------------------
+// Agents: the gateway's own store (agents.db), seeded and read like the rest.
+// ---------------------------------------------------------------------------
+
+/** An agent as the Settings UI would have created it; `token` is what the test connects with. */
+export interface AgentSeed {
+  readonly name: string;
+  readonly policy: AgentPolicy;
+  readonly token: string;
+}
+
+/** A well-formed agent token for a seed (`sol_` + 43 characters). */
+export const agentToken = (label: string): string =>
+  `sol_${label
+    .replaceAll(/[^\w-]/g, '')
+    .padEnd(43, 'x')
+    .slice(0, 43)}`;
+
+const agentsLayer = (userDataDir: string) =>
+  agentStoreLayer.pipe(
+    Layer.provide(SqliteClient.layer({ filename: join(userDataDir, 'agents.db') })),
+  );
+
+export const seedAgents = async (
+  userDataDir: string,
+  agents: ReadonlyArray<AgentSeed>,
+): Promise<void> => {
+  await Effect.runPromise(
+    Effect.gen(function* () {
+      const repo = yield* AgentRepo;
+      for (const [index, agent] of agents.entries()) {
+        yield* repo.insert({
+          createdAt: index + 1,
+          id: `agent-${index + 1}`,
+          name: agent.name,
+          policy: agent.policy,
+          tokenHash: yield* hashToken(agent.token),
+        });
+      }
+    }).pipe(Effect.provide(agentsLayer(userDataDir))),
+  );
+};
+
+/** The gateway's request rows (approval queue + activity log), newest first. */
+export const readAgentRequests = (
+  userDataDir: string,
+): Promise<ReadonlyArray<AgentRequestRecord>> =>
+  Effect.runPromise(
+    Effect.gen(function* () {
+      return yield* (yield* AgentRequestRepo).list(100);
+    }).pipe(Effect.provide(agentsLayer(userDataDir))),
+  );
+
+/** The built relay script (`solunivo-cli` runs exactly this, under the app's own binary). */
+export const agentRelayPath = join(import.meta.dirname, '..', 'dist-electron', 'cli.mjs');
+
+/** The environment an agent starts the relay with. Nothing else is inherited. */
+export const agentEnv = (app: App, token: string): Record<string, string> => ({
+  CALENDAR_AGENT_SOCKET: app.agentSocketPath,
+  PATH: process.env['PATH'] ?? '',
+  SOLUNIVO_AGENT_TOKEN: token,
+});
+
+export interface CliResult {
+  readonly code: number;
+  readonly stderr: string;
+  readonly stdout: string;
+}
+
+/** Runs one `solunivo-cli` command against the launched app, as an agent would. */
+export const runAgentCli = (
+  app: App,
+  token: string,
+  args: ReadonlyArray<string>,
+): Promise<CliResult> =>
+  new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, [agentRelayPath, ...args], {
+      env: agentEnv(app, token),
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    let stdout = '';
+    let stderr = '';
+    child.stdout.on('data', (chunk: Buffer) => {
+      stdout += chunk.toString();
+    });
+    child.stderr.on('data', (chunk: Buffer) => {
+      stderr += chunk.toString();
+    });
+    child.once('error', reject);
+    child.once('close', (code) => resolve({ code: code ?? -1, stderr, stdout }));
+  });
 
 // ---------------------------------------------------------------------------
 // CDP client over Node's native WebSocket.
@@ -498,6 +598,8 @@ export class Cdp {
 // ---------------------------------------------------------------------------
 
 export interface App {
+  /** Where this run's agent gateway listens (once an agent exists). */
+  readonly agentSocketPath: string;
   readonly cdp: Cdp;
   readonly dump: (label: string) => Promise<void>;
   /** Where this run's watched settings file lives (may not exist). */
@@ -530,6 +632,12 @@ export interface RemindersFixture {
 }
 
 export interface LaunchOptions {
+  /**
+   * Agents present at launch (the gateway only listens while one exists).
+   * Their socket always lives under the run's temp profile
+   * (CALENDAR_AGENT_SOCKET), never in the developer's ~/.solunivo.
+   */
+  readonly agents?: ReadonlyArray<AgentSeed>;
   /**
    * 'off' (default): no calendar bridge. 'real': the helper. A fixture: the
    * in-memory EventKit — Apple events live nowhere else, so this is how e2e
@@ -584,6 +692,12 @@ export const launchApp = async (seed?: SeedData, options: LaunchOptions = {}): P
   if (seed) {
     await seedDatabase(userDataDir, seed);
   }
+  if (options.agents) {
+    await seedAgents(userDataDir, options.agents);
+  }
+  // Like the settings file: HOME is not isolated, so the agent socket is
+  // pinned inside the temp profile for every run, agents or not.
+  const agentSocketPath = join(userDataDir, 'agent.sock');
   const contactsEnv: Record<string, string> =
     options.contacts === 'real'
       ? {}
@@ -680,6 +794,7 @@ export const launchApp = async (seed?: SeedData, options: LaunchOptions = {}): P
       ...geoEnv,
       // Google, when a spec asks for it: the in-process fake API.
       ...googleEnv,
+      CALENDAR_AGENT_SOCKET: agentSocketPath,
       // A seeded birthday with reminders on must never post a real banner.
       CALENDAR_NOTIFICATIONS: 'off',
       CALENDAR_SETTINGS_FILE: settingsFilePath,
@@ -714,6 +829,7 @@ export const launchApp = async (seed?: SeedData, options: LaunchOptions = {}): P
   }
 
   return {
+    agentSocketPath,
     cdp,
     /** Screenshot + DOM + app log, for CI to upload when a test fails. */
     dump: async (label: string) => {
