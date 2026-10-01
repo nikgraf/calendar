@@ -24,7 +24,7 @@ const Scope = RecurringScope.annotate({
 });
 const Guest = Schema.Struct({
   email: text('Email address of the guest.'),
-  name: Schema.optional(text('Display name.')),
+  name: Schema.optionalKey(text('Display name.')),
 });
 
 const UNTRUSTED =
@@ -35,69 +35,73 @@ export const ListCalendarsInput = Schema.Struct({});
 export const ListTaskListsInput = Schema.Struct({});
 
 export const ListEventsInput = Schema.Struct({
-  calendars: Schema.optional(CalendarRefs),
+  calendars: Schema.optionalKey(CalendarRefs),
   from: DateTime.annotate({
     description: 'Start of the range (inclusive). ISO 8601 or YYYY-MM-DD.',
   }),
-  limit: Schema.optional(
+  limit: Schema.optionalKey(
     Schema.Number.annotate({ description: 'Most events to return (default 200, at most 2000).' }),
   ),
-  query: Schema.optional(
+  query: Schema.optionalKey(
     text('Case-insensitive text to find in title, description, location or guests.'),
   ),
-  timeZone: Schema.optional(text('IANA zone for reading `from`/`to` and for the returned times.')),
+  timeZone: Schema.optionalKey(
+    text('IANA zone for reading `from`/`to` and for the returned times.'),
+  ),
   to: DateTime.annotate({ description: 'End of the range (exclusive). ISO 8601 or YYYY-MM-DD.' }),
 });
 
 export const GetFreeBusyInput = Schema.Struct({
-  calendars: Schema.optional(CalendarRefs),
+  calendars: Schema.optionalKey(CalendarRefs),
   from: DateTime.annotate({ description: 'Start of the range. ISO 8601 or YYYY-MM-DD.' }),
-  timeZone: Schema.optional(text('IANA zone for reading `from`/`to` and for the returned times.')),
+  timeZone: Schema.optionalKey(
+    text('IANA zone for reading `from`/`to` and for the returned times.'),
+  ),
   to: DateTime.annotate({ description: 'End of the range. ISO 8601 or YYYY-MM-DD.' }),
 });
 
 export const FindFreeSlotsInput = Schema.Struct({
-  calendars: Schema.optional(CalendarRefs),
-  daysOfWeek: Schema.optional(
+  calendars: Schema.optionalKey(CalendarRefs),
+  daysOfWeek: Schema.optionalKey(
     Schema.Array(Schema.Number).annotate({
       description: 'ISO weekdays to consider, 1 = Monday … 7 = Sunday. Default: every day.',
     }),
   ),
   durationMinutes: Schema.Number.annotate({ description: 'Length of the slot, in minutes.' }),
-  earliestTime: Schema.optional(
+  earliestTime: Schema.optionalKey(
     ClockTime.annotate({ description: 'Earliest start per day, HH:MM (default 08:00).' }),
   ),
   fromDate: IsoDate.annotate({ description: 'First day to search, YYYY-MM-DD.' }),
-  latestTime: Schema.optional(
+  latestTime: Schema.optionalKey(
     ClockTime.annotate({ description: 'Latest end per day, HH:MM (default 20:00).' }),
   ),
-  maxSlots: Schema.optional(
+  maxSlots: Schema.optionalKey(
     Schema.Number.annotate({ description: 'Most slots to return (default 10, at most 50).' }),
   ),
-  timeZone: Schema.optional(
+  timeZone: Schema.optionalKey(
     text("IANA zone of the wall-clock bounds (default: the user's primary zone)."),
   ),
   toDate: IsoDate.annotate({ description: 'Last day to search, YYYY-MM-DD (inclusive).' }),
 });
 
 const eventTimeFields = {
-  end: Schema.optional(
+  end: Schema.optionalKey(
     DateTime.annotate({
       description: 'Timed event: end (ISO 8601). Default: one hour after start.',
     }),
   ),
-  endDate: Schema.optional(
+  endDate: Schema.optionalKey(
     IsoDate.annotate({
       description: 'All-day event: last day, inclusive (YYYY-MM-DD). Default: startDate.',
     }),
   ),
-  start: Schema.optional(DateTime.annotate({ description: 'Timed event: start (ISO 8601).' })),
-  startDate: Schema.optional(
+  start: Schema.optionalKey(DateTime.annotate({ description: 'Timed event: start (ISO 8601).' })),
+  startDate: Schema.optionalKey(
     IsoDate.annotate({
       description: 'All-day event: first day (YYYY-MM-DD). Use instead of start/end.',
     }),
   ),
-  timeZone: Schema.optional(
+  timeZone: Schema.optionalKey(
     text(
       "IANA zone the event is anchored in and offset-less times are read in (default: the user's primary zone).",
     ),
@@ -106,16 +110,16 @@ const eventTimeFields = {
 
 export const CreateEventInput = Schema.Struct({
   ...eventTimeFields,
-  attendees: Schema.optional(
+  attendees: Schema.optionalKey(
     Schema.Array(Guest).annotate({
       description:
         'Guests to invite. The provider emails them, so this needs the guests permission; Apple calendars cannot hold guests.',
     }),
   ),
   calendar: text('The calendar `ref` (from list_calendars) to create the event in.'),
-  description: Schema.optional(text('Notes for the event.')),
-  location: Schema.optional(text('Where it takes place (free text).')),
-  recurrence: Schema.optional(
+  description: Schema.optionalKey(text('Notes for the event.')),
+  location: Schema.optionalKey(text('Where it takes place (free text).')),
+  recurrence: Schema.optionalKey(
     Schema.Array(text('One RFC 5545 line, e.g. RRULE:FREQ=WEEKLY;BYDAY=MO.')).annotate({
       description: 'Makes the event repeat.',
     }),
@@ -125,22 +129,22 @@ export const CreateEventInput = Schema.Struct({
 
 export const UpdateEventInput = Schema.Struct({
   ...eventTimeFields,
-  attendees: Schema.optional(
+  attendees: Schema.optionalKey(
     Schema.Array(Guest).annotate({
       description:
         'The full new guest list (replaces the current one; [] removes everyone). Omit to leave guests alone.',
     }),
   ),
-  description: Schema.optional(text('New notes ("" clears them).')),
-  location: Schema.optional(text('New location ("" clears it).')),
+  description: Schema.optionalKey(text('New notes ("" clears them).')),
+  location: Schema.optionalKey(text('New location ("" clears it).')),
   ref: text('The event `ref` from list_events.'),
-  scope: Schema.optional(Scope),
-  title: Schema.optional(text('New title.')),
+  scope: Schema.optionalKey(Scope),
+  title: Schema.optionalKey(text('New title.')),
 });
 
 export const DeleteEventInput = Schema.Struct({
   ref: text('The event `ref` from list_events.'),
-  scope: Schema.optional(Scope),
+  scope: Schema.optionalKey(Scope),
 });
 
 export const RespondToEventInput = Schema.Struct({
@@ -149,20 +153,20 @@ export const RespondToEventInput = Schema.Struct({
 });
 
 export const ListTasksInput = Schema.Struct({
-  fromDate: Schema.optional(
+  fromDate: Schema.optionalKey(
     IsoDate.annotate({ description: 'First due day, YYYY-MM-DD (default: today).' }),
   ),
-  includeOverdue: Schema.optional(
+  includeOverdue: Schema.optionalKey(
     Schema.Boolean.annotate({
       description: 'Also return open tasks due before fromDate (default true).',
     }),
   ),
-  lists: Schema.optional(
+  lists: Schema.optionalKey(
     Schema.Array(text('A task list `ref` from list_task_lists.')).annotate({
       description: 'Limit to these lists. Default: every list the grant covers.',
     }),
   ),
-  toDate: Schema.optional(
+  toDate: Schema.optionalKey(
     IsoDate.annotate({
       description: 'Last due day, YYYY-MM-DD, inclusive (default: 30 days after fromDate).',
     }),
@@ -171,35 +175,37 @@ export const ListTasksInput = Schema.Struct({
 
 export const CreateTaskInput = Schema.Struct({
   dueDate: IsoDate.annotate({ description: 'Due day, YYYY-MM-DD.' }),
-  dueTime: Schema.optional(
+  dueTime: Schema.optionalKey(
     ClockTime.annotate({ description: 'Due time, HH:MM. Apple Reminders lists only.' }),
   ),
   list: text('The task list `ref` (from list_task_lists) to create the task in.'),
-  notes: Schema.optional(text('Notes for the task.')),
-  priority: Schema.optional(TaskPriority.annotate({ description: 'Apple Reminders lists only.' })),
+  notes: Schema.optionalKey(text('Notes for the task.')),
+  priority: Schema.optionalKey(
+    TaskPriority.annotate({ description: 'Apple Reminders lists only.' }),
+  ),
   title: text('Title of the task.'),
-  url: Schema.optional(text('A link for the task. Apple Reminders lists only.')),
+  url: Schema.optionalKey(text('A link for the task. Apple Reminders lists only.')),
 });
 
 export const UpdateTaskInput = Schema.Struct({
-  completed: Schema.optional(
+  completed: Schema.optionalKey(
     Schema.Boolean.annotate({ description: 'true completes the task, false reopens it.' }),
   ),
-  dueDate: Schema.optional(IsoDate.annotate({ description: 'New due day, YYYY-MM-DD.' })),
-  dueTime: Schema.optional(
+  dueDate: Schema.optionalKey(IsoDate.annotate({ description: 'New due day, YYYY-MM-DD.' })),
+  dueTime: Schema.optionalKey(
     Schema.NullOr(ClockTime).annotate({
       description: 'New due time, HH:MM; null removes it. Apple Reminders lists only.',
     }),
   ),
-  notes: Schema.optional(text('New notes.')),
-  priority: Schema.optional(
+  notes: Schema.optionalKey(text('New notes.')),
+  priority: Schema.optionalKey(
     Schema.NullOr(TaskPriority).annotate({
       description: 'New priority; null removes it. Apple Reminders lists only.',
     }),
   ),
   ref: text('The task `ref` from list_tasks.'),
-  title: Schema.optional(text('New title.')),
-  url: Schema.optional(
+  title: Schema.optionalKey(text('New title.')),
+  url: Schema.optionalKey(
     Schema.NullOr(Schema.String).annotate({
       description: 'New link; null removes it. Apple Reminders lists only.',
     }),
@@ -211,7 +217,7 @@ export const DeleteTaskInput = Schema.Struct({
 });
 
 export const SearchContactsInput = Schema.Struct({
-  limit: Schema.optional(
+  limit: Schema.optionalKey(
     Schema.Number.annotate({ description: 'Most matches to return (default 8, at most 25).' }),
   ),
   query: text('Part of a name or email address.'),
@@ -360,3 +366,33 @@ export const isToolName = (name: string): name is ToolName => Object.hasOwn(TOOL
 
 /** Tools that change something: these are logged, and may wait for approval. */
 export const isWriteTool = (name: ToolName): boolean => TOOLS[name].kind !== 'read';
+
+type JsonSchemaObject = { readonly [key: string]: unknown };
+
+/** Mirrors the decoder: unknown properties are an error, at every level. */
+const closeObjects = (node: unknown): unknown => {
+  if (Array.isArray(node)) {
+    return node.map(closeObjects);
+  }
+  if (typeof node !== 'object' || node === null) {
+    return node;
+  }
+  const closed = Object.fromEntries(
+    Object.entries(node).map(([key, value]) => [key, closeObjects(value)]),
+  );
+  return closed['type'] === 'object' ? { ...closed, additionalProperties: false } : closed;
+};
+
+/**
+ * A tool's input as JSON Schema (draft 2020-12) — what MCP's tools/list
+ * and the CLI's `tools` command advertise. Generated from the same Schema
+ * the gateway decodes with, so the two cannot drift.
+ */
+export const toolInputJsonSchema = (name: ToolName): JsonSchemaObject => {
+  const { schema } = Schema.toJsonSchemaDocument(TOOLS[name].input);
+  const closed = closeObjects(schema) as JsonSchemaObject;
+  // A tool without parameters: Effect renders the empty struct as "anything but null".
+  return closed['type'] === 'object'
+    ? closed
+    : { additionalProperties: false, properties: {}, type: 'object' };
+};
