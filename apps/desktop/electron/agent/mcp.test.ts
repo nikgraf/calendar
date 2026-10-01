@@ -1,7 +1,9 @@
 import { TOOL_NAMES } from '@calendar/agent';
 import { Client, InMemoryTransport } from '@modelcontextprotocol/client';
+import { PassThrough } from 'node:stream';
 import { describe, expect, it } from 'vitest';
-import { serveMcpSession, type ToolCaller } from './mcp.ts';
+import { MAX_LINE_BYTES } from './protocol.ts';
+import { serveMcpSession, socketTransport, type ToolCaller } from './mcp.ts';
 
 /** A connected client/server pair over the SDK's in-memory transport. */
 const connect = async (
@@ -84,5 +86,38 @@ describe.each([
       error: { code: 'PermissionDenied', message: 'read only' },
     });
     await close();
+  });
+});
+
+describe('socketTransport', () => {
+  it('takes the connection down with it when a message is too large', async () => {
+    const input = new PassThrough();
+    const output = new PassThrough();
+    let closed = 0;
+    const session = serveMcpSession({
+      call: recorder().call,
+      transport: socketTransport(input, output, () => {
+        closed += 1;
+      }),
+      version: '1.2.3',
+    });
+    // One "line" that never ends and is larger than a message may be.
+    input.write(Buffer.alloc(MAX_LINE_BYTES + 1024, 0x61));
+    await expect.poll(() => closed, { timeout: 2000 }).toBeGreaterThan(0);
+    await session.close();
+  });
+
+  it('tells the owner when the peer hangs up', async () => {
+    const input = new PassThrough();
+    let closed = 0;
+    serveMcpSession({
+      call: recorder().call,
+      transport: socketTransport(input, new PassThrough(), () => {
+        closed += 1;
+      }),
+      version: '1.2.3',
+    });
+    input.end();
+    await expect.poll(() => closed, { timeout: 2000 }).toBeGreaterThan(0);
   });
 });

@@ -1,4 +1,4 @@
-import { APPLE_CALENDAR_ACCOUNT_ID, plainDateToUtcMs } from '@calendar/core';
+import { APPLE_CALENDAR_ACCOUNT_ID, Attendee, EventRecord, plainDateToUtcMs } from '@calendar/core';
 import { EventRepo, PendingOpRepo } from '@calendar/db';
 import { expect, it } from '@effect/vitest';
 import { Effect, Fiber } from 'effect';
@@ -348,6 +348,191 @@ describe('recurring events', () => {
       }).pipe(Effect.provide(world.layer));
     },
   );
+});
+
+/** A stored exception of the weekly series (an occurrence changed on its own). */
+const weeklyException = (
+  slotUtc: number,
+  overrides: Partial<ConstructorParameters<typeof EventRecord>[0]> = {},
+) =>
+  new EventRecord({
+    accountId: ACCOUNT,
+    calendarId: 'work',
+    endUtc: slotUtc + HOUR,
+    etag: '"1"',
+    id: `weekly_exception_${slotUtc}`,
+    isAllDay: false,
+    originalStartUtc: slotUtc,
+    recurringEventId: 'weekly',
+    startTimeZone: 'UTC',
+    startUtc: slotUtc,
+    status: 'confirmed',
+    syncedAt: 1,
+    syncStatus: 'synced',
+    title: 'Weekly sync',
+    updatedAt: 1,
+    ...overrides,
+  });
+
+const guest = (email: string) => new Attendee({ email, responseStatus: 'accepted' });
+
+const textOf = (summary: { readonly lines: ReadonlyArray<string>; readonly title: string }) =>
+  [summary.title, ...summary.lines].join('\n');
+
+/** The slot of the Apple daily series' nth day (0 = the first). */
+const day = (index: number) => appleSeriesStart + index * DAY;
+
+describe('guests across a series', () => {
+  it.effect('a wider scope counts the guests of every exception it rewrites or cancels', () => {
+    const world = makeWorld();
+    return Effect.gen(function* () {
+      const events = yield* EventRepo;
+      // The master has no guests; one later occurrence was given one on its own.
+      yield* events.upsertMany([
+        weeklyException(slot + 7 * DAY, { attendees: [guest('ben@example.com')] }),
+      ]);
+      const agent = writer(); // guests: off
+
+      for (const [tool, input] of [
+        ['delete_event', { ref: weeklyRef, scope: 'following' }],
+        ['delete_event', { ref: weeklyRef, scope: 'series' }],
+        ['update_event', { ref: weeklyRef, scope: 'following', title: 'Renamed' }],
+        ['update_event', { ref: weeklyRef, scope: 'series', title: 'Renamed' }],
+      ] as const) {
+        expect(yield* failureOf(callTool(agent, tool, input))).toMatchObject({
+          _tag: 'PermissionDenied',
+          reason: 'guests',
+        });
+      }
+      expect(yield* (yield* PendingOpRepo).listAll()).toEqual([]);
+      expect(
+        (yield* events.listOverrides(ACCOUNT, 'work', 'weekly')).map((row) => row.status),
+      ).toEqual(['confirmed']);
+
+      // What does not reach that exception is still allowed: one guestless
+      // occurrence, and "following" from an occurrence after it.
+      yield* callTool(agent, 'update_event', { ref: weeklyRef, title: 'Just this one' });
+      yield* callTool(agent, 'delete_event', {
+        ref: refs.occurrence('work', 'weekly', slot + 14 * DAY),
+        scope: 'following',
+      });
+    }).pipe(Effect.provide(world.layer));
+  });
+
+  it.effect("a series invitation shows the master's text, not the clicked occurrence's", () => {
+    const world = makeWorld();
+    return Effect.gen(function* () {
+      const events = yield* EventRepo;
+      const series = (yield* events.getById(ACCOUNT, 'work', 'weekly'))!;
+      yield* events.upsertMany([
+        new EventRecord({
+          ...series,
+          description: 'CONFIDENTIAL: master notes',
+          location: 'Board room',
+        }),
+        weeklyException(slot, { description: 'benign notes', title: 'Renamed occurrence' }),
+      ]);
+      const agent = yield* stored(askGuests);
+      const asked = yield* watchApprovals;
+
+      yield* Effect.forkChild(
+        callTool(agent, 'update_event', {
+          attendees: [{ email: 'x@evil.example' }],
+          ref: weeklyRef,
+          scope: 'series',
+        }),
+      );
+      const seriesWide = textOf((yield* untilAsked(asked)).summary);
+      // The write lands on the master: its title and its notes are what the new guest gets.
+      expect(seriesWide).toContain('Update event “Weekly sync”');
+      expect(seriesWide).toContain('Notes: CONFIDENTIAL: master notes');
+      expect(seriesWide).toContain('Location: Board room');
+      expect(seriesWide).not.toMatch(/benign|Renamed occurrence/u);
+
+      // The same occurrence, only itself: now the exception is what is written.
+      yield* Effect.forkChild(
+        callTool(agent, 'update_event', {
+          attendees: [{ email: 'x@evil.example' }],
+          ref: weeklyRef,
+        }),
+      );
+      const single = textOf((yield* untilAsked(asked, 2)).summary);
+      expect(single).toContain('Update event “Renamed occurrence”');
+      expect(single).toContain('Notes: benign notes');
+      expect(single).not.toContain('CONFIDENTIAL');
+    }).pipe(Effect.provide(world.layer));
+  });
+
+  it.effect('guests are named, so swapping one for another voids a waiting approval', () => {
+    const world = makeWorld();
+    return Effect.gen(function* () {
+      const events = yield* EventRepo;
+      const agent = yield* stored(askGuests);
+      const asked = yield* watchApprovals;
+      const call = yield* Effect.forkChild(
+        failureOf(
+          callTool(agent, 'update_event', {
+            ref: refs.event('work', 'lunch'),
+            title: 'Late lunch',
+          }),
+        ),
+      );
+      const request = yield* untilAsked(asked);
+      expect(request.summary.lines).toContain('Guests who will be notified: ana@example.com');
+
+      // Same number of guests, another person.
+      const lunch = (yield* events.getById(ACCOUNT, 'work', 'lunch'))!;
+      yield* events.upsertMany([
+        new EventRecord({
+          ...lunch,
+          attendees: (lunch.attendees ?? []).map((attendee) =>
+            attendee.email === 'ana@example.com' ? guest('eve@evil.example') : attendee,
+          ),
+        }),
+      ]);
+
+      expect(yield* decideRequest(request.id, 'approve')).toMatchObject({ status: 'failed' });
+      expect((yield* Fiber.join(call)).message).toMatch(/changed after it was asked/u);
+      expect((yield* events.getById(ACCOUNT, 'work', 'lunch'))?.title).toBe('Lunch with Ana');
+      expect(yield* (yield* PendingOpRepo).listAll()).toEqual([]);
+
+      // A delete names them too.
+      yield* Effect.forkChild(
+        callTool(agent, 'delete_event', { ref: refs.event('work', 'lunch') }),
+      );
+      expect((yield* untilAsked(asked, 2)).summary.lines).toContain(
+        'Guests who will see it cancelled: eve@evil.example',
+      );
+    }).pipe(Effect.provide(world.layer));
+  });
+
+  it.effect('Apple: a detached occurrence with guests gates "following" and "series"', () => {
+    const world = makeWorld({ appleEvents: [appleDailySeries] });
+    return Effect.gen(function* () {
+      const agent = writer(); // guests: off
+      const ref = (index: number) =>
+        refs.occurrence('ek-home', 'ek-walk', day(index), APPLE_CALENDAR_ACCOUNT_ID);
+      // Day 4 is detached and — as an invitation changed for one day can be — has a guest.
+      yield* callTool(agent, 'update_event', { ref: ref(3), title: 'Walk with Ben' });
+      const walk = world.apple.state.series.get('ek-walk')!;
+      walk.detached.set(day(3), {
+        ...walk.detached.get(day(3))!,
+        attendees: [
+          { email: 'ben@example.com', isOrganizer: false, isSelf: false, status: 'accepted' },
+        ],
+      });
+
+      for (const scope of ['following', 'series'] as const) {
+        expect(
+          yield* failureOf(callTool(agent, 'delete_event', { ref: ref(1), scope })),
+        ).toMatchObject({ _tag: 'PermissionDenied', reason: 'guests' });
+      }
+      expect(walk.detached.has(day(3))).toBe(true);
+      // One guestless day is still the agent's to delete.
+      yield* callTool(agent, 'delete_event', { ref: ref(1) });
+      expect(walk.deleted.has(day(1))).toBe(true);
+    }).pipe(Effect.provide(world.layer));
+  });
 });
 
 describe('grants, again', () => {

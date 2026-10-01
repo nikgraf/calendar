@@ -66,6 +66,10 @@ export const scopeLine = (scope: keyof typeof SCOPE_LABEL): string =>
 export const guestsLine = (emails: ReadonlyArray<string>): string =>
   `Guests: ${emails.map(oneLine).join(', ')}`;
 
+/** People a write reaches, by address — a count would let one guest be swapped for another unnoticed. */
+export const peopleLine = (label: string, emails: ReadonlyArray<string>): string =>
+  `${label}: ${emails.map(oneLine).join(', ')}`;
+
 export const calendarLine = (name: string, account: string): string =>
   `Calendar: ${oneLine(name)} (${oneLine(account)})`;
 

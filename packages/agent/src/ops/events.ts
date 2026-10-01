@@ -1,4 +1,11 @@
-import { type AttendeeInput, type EventDraft, isCalendarWritable } from '@calendar/core';
+import {
+  type AttendeeInput,
+  type EventDraft,
+  type EventRecord,
+  isAppleCalendarAccount,
+  isCalendarWritable,
+  type RecurringScope,
+} from '@calendar/core';
 import { EventMutations, type UpdateEventParams } from '@calendar/sync';
 import { Effect } from 'effect';
 import type { ToolInput } from '../contract.ts';
@@ -14,12 +21,13 @@ import {
   MAX_TITLE,
   within,
 } from './limits.ts';
-import { type Directory, resolveCalendar, resolveEvent } from '../resolve.ts';
+import { type Directory, resolveCalendar, type ResolvedEvent, resolveEvent } from '../resolve.ts';
 import {
   calendarLine,
   changeLine,
   describeWhen,
   guestsLine,
+  peopleLine,
   scopeLine,
   summarize,
   textLine,
@@ -66,6 +74,52 @@ const timeFields = (times: EventTimes) =>
         startUtc: times.startUtc,
       }
     : { endUtc: times.endUtc, startUtc: times.startUtc };
+
+/**
+ * What a write with this scope really lands on, and everyone it reaches.
+ *
+ * `written` is the event whose text and guest list the mutation works
+ * from — and so what a summary must show: the occurrence itself for a
+ * change to one occurrence, but the series master for a series-wide or
+ * "following" change (which ignores what a moved occurrence says about
+ * itself). `guests` are the people who get mail: the written event's, the
+ * master's whenever the series is touched, and those of every other
+ * exception the scope rewrites or cancels.
+ */
+const reachOf = (
+  resolved: ResolvedEvent,
+  scope: RecurringScope,
+  ownEmail: string | undefined,
+): { readonly guests: ReadonlyArray<string>; readonly written: EventRecord } => {
+  const { exceptions, record, ref, series } = resolved;
+  if (ref.kind === 'event' || scope === 'instance' || !series) {
+    return {
+      guests: [
+        ...new Set(otherGuests(record, ownEmail).map((guest) => guest.email.toLowerCase())),
+      ].sort(),
+      written: record,
+    };
+  }
+  // EventKit applies "this and following" from the occurrence itself;
+  // everything else works from the master.
+  const written =
+    scope === 'following' && isAppleCalendarAccount({ id: ref.accountId }) ? record : series;
+  const affected = (exceptions ?? []).filter(
+    (exception) =>
+      scope === 'series' ||
+      (exception.originalStartUtc ?? exception.startUtc) >= ref.originalStartUtc,
+  );
+  return {
+    guests: [
+      ...new Set(
+        [written, series, ...affected]
+          .flatMap((event) => otherGuests(event, ownEmail))
+          .map((guest) => guest.email.toLowerCase()),
+      ),
+    ].sort(),
+    written,
+  };
+};
 
 export const planCreateEvent = (
   policy: AgentPolicy,
@@ -137,10 +191,12 @@ export const planUpdateEvent = (
   input: ToolInput<'update_event'>,
 ) =>
   Effect.gen(function* () {
-    const resolved = yield* resolveEvent(directory, input.ref);
-    const { granted, record, ref, series } = resolved;
-    const { calendar } = granted;
     const scope = input.scope ?? 'instance';
+    const resolved = yield* resolveEvent(directory, input.ref, {
+      wholeSeries: scope !== 'instance',
+    });
+    const { granted, ref } = resolved;
+    const { calendar } = granted;
     // A change to one occurrence starts from that occurrence (its own
     // times when it was moved before). A series-wide or "following" change
     // starts from the occurrence's slot in the series: the mutation shifts
@@ -193,23 +249,21 @@ export const planUpdateEvent = (
         : { isAllDay: times.value.isAllDay }),
       ...(title === undefined ? {} : { title }),
     };
-    // Everyone a write reaches: the event's guests, the series' guests for
-    // an occurrence, and whoever the new list adds.
-    const own = granted.account?.email;
-    const current = new Set(
-      [...otherGuests(record, own), ...(series ? otherGuests(series, own) : [])].map((guest) =>
-        guest.email.toLowerCase(),
-      ),
+    // `written` is what the mutation merges into; `reached` is who gets mail.
+    const { guests: reached, written } = reachOf(resolved, scope, granted.account?.email);
+    const onWritten = new Set(
+      otherGuests(written, granted.account?.email).map((guest) => guest.email.toLowerCase()),
     );
     const next = attendees?.map((guest) => guest.email.toLowerCase());
-    const added = (attendees ?? []).filter((guest) => !current.has(guest.email.toLowerCase()));
-    const removed = next === undefined ? [] : [...current].filter((email) => !next.includes(email));
+    const added = (attendees ?? []).filter((guest) => !onWritten.has(guest.email.toLowerCase()));
+    const removed =
+      next === undefined ? [] : [...onWritten].filter((email) => !next.includes(email)).sort();
     const plan: WritePlan<EventMutations> = {
       decision: decideWrite({
         guests: policy.guests,
         level: granted.level,
         providerWritable: isCalendarWritable(calendar),
-        touchesGuests: current.size > 0 || (attendees?.length ?? 0) > 0,
+        touchesGuests: reached.length > 0 || (attendees?.length ?? 0) > 0,
       }),
       run: Effect.gen(function* () {
         const mutations = yield* EventMutations;
@@ -230,31 +284,34 @@ export const planUpdateEvent = (
             });
         return { status: 'done' as const };
       }),
-      summary: summarize(titled('Update', 'event', record.title), [
+      // Built from the event that is written, not the one that was clicked:
+      // for a series-wide change those differ when the occurrence was edited
+      // on its own, and the user must see the text new guests will get.
+      summary: summarize(titled('Update', 'event', written.title), [
         calendarLine(calendar.summary, directory.accountLabel(calendar.accountId)),
         ref.kind === 'occurrence' && scopeLine(scope),
-        title !== undefined && title !== record.title && changeLine('Title', record.title, title),
+        title !== undefined && title !== written.title && changeLine('Title', written.title, title),
         times.value !== undefined &&
           `When: ${describeWhen(base, directory.timeZone)} → ${describeWhen(times.value, directory.timeZone)}`,
         times.value === undefined && `When: ${describeWhen(base, directory.timeZone)}`,
         input.location !== undefined &&
-          changeLine('Location', record.location, input.location.trim()),
+          changeLine('Location', written.location, input.location.trim()),
         input.description !== undefined &&
-          changeLine('Notes', record.description, input.description),
+          changeLine('Notes', written.description, input.description),
         // New guests receive the whole event: show what they will read even
         // where this request does not change it.
         added.length > 0 &&
           input.location === undefined &&
-          !!record.location &&
-          textLine('Location', record.location),
+          !!written.location &&
+          textLine('Location', written.location),
         added.length > 0 &&
           input.description === undefined &&
-          !!record.description &&
-          textLine('Notes', record.description),
+          !!written.description &&
+          textLine('Notes', written.description),
         added.length > 0 && `Adds ${guestsLine(added.map((guest) => guest.email))}`,
         removed.length > 0 && `Removes ${guestsLine(removed)}`,
-        current.size > 0 &&
-          `${current.size} guest${current.size === 1 ? '' : 's'} on this event will be notified`,
+        // By address: swapping one guest for another must change the summary.
+        reached.length > 0 && peopleLine('Guests who will be notified', reached),
       ]),
       what: 'Event',
     };
@@ -267,21 +324,19 @@ export const planDeleteEvent = (
   input: ToolInput<'delete_event'>,
 ) =>
   Effect.gen(function* () {
-    const { base, granted, record, ref, series } = yield* resolveEvent(directory, input.ref);
-    const { calendar } = granted;
     const scope = input.scope ?? 'instance';
-    const own = granted.account?.email;
-    const guests = new Set(
-      [...otherGuests(record, own), ...(series ? otherGuests(series, own) : [])].map((guest) =>
-        guest.email.toLowerCase(),
-      ),
-    );
+    const resolved = yield* resolveEvent(directory, input.ref, {
+      wholeSeries: scope !== 'instance',
+    });
+    const { base, granted, ref } = resolved;
+    const { calendar } = granted;
+    const { guests, written } = reachOf(resolved, scope, granted.account?.email);
     const plan: WritePlan<EventMutations> = {
       decision: decideWrite({
         guests: policy.guests,
         level: granted.level,
         providerWritable: isCalendarWritable(calendar),
-        touchesGuests: guests.size > 0,
+        touchesGuests: guests.length > 0,
       }),
       run: Effect.gen(function* () {
         const mutations = yield* EventMutations;
@@ -300,12 +355,11 @@ export const planDeleteEvent = (
             });
         return { status: 'done' as const };
       }),
-      summary: summarize(titled('Delete', 'event', record.title), [
+      summary: summarize(titled('Delete', 'event', written.title), [
         calendarLine(calendar.summary, directory.accountLabel(calendar.accountId)),
         `When: ${describeWhen(base, directory.timeZone)}`,
         ref.kind === 'occurrence' && scopeLine(scope),
-        guests.size > 0 &&
-          `${guests.size} guest${guests.size === 1 ? '' : 's'} on this event will see it cancelled`,
+        guests.length > 0 && peopleLine('Guests who will see it cancelled', guests),
       ]),
       what: 'Event',
     };

@@ -194,6 +194,13 @@ export const resolveTaskListFilter = (
 export interface ResolvedEvent {
   /** The times a change to just this event or occurrence starts from (its own, if it was moved). */
   readonly base: ExistingTimes;
+  /**
+   * For an occurrence: the series' live exceptions — occurrences changed
+   * on their own. A series-wide or "following" write rewrites or cancels
+   * them too, so their guests count. Apple: those EventKit returns within
+   * the searched window around the slot.
+   */
+  readonly exceptions?: ReadonlyArray<EventRecord>;
   readonly granted: GrantedCalendar;
   /** The event itself; for an occurrence, the occurrence as it is now (a moved or edited one included). */
   readonly record: EventRecord;
@@ -208,6 +215,8 @@ const eventNotFound = new AgentNotFoundError({ what: 'Event' });
 
 /** How far from its slot a moved Apple occurrence is still looked for (EventKit only answers ranges). */
 const APPLE_OCCURRENCE_WINDOW_MS = 45 * 24 * 60 * 60 * 1000;
+/** The wider search for a series-wide or "following" write, which must see the other exceptions too. */
+const APPLE_SERIES_WINDOW_MS = 400 * 24 * 60 * 60 * 1000;
 
 const slotTimes = (master: EventRecord, originalStartUtc: number): ExistingTimes => {
   if (master.isAllDay && master.startDate !== undefined && master.endDate !== undefined) {
@@ -271,6 +280,10 @@ const ruleProduces = (master: EventRecord, originalStartUtc: number): boolean =>
 export const resolveEvent = (
   directory: Directory,
   refText: string,
+  options: {
+    /** The write reaches beyond one occurrence: look further for the series' other exceptions. */
+    readonly wholeSeries?: boolean;
+  } = {},
 ): Effect.Effect<ResolvedEvent, AgentError | SqlError, AppleCalendarClient | EventRepo> =>
   Effect.gen(function* () {
     const ref = decodeEventRef(refText);
@@ -300,10 +313,11 @@ export const resolveEvent = (
       }
       // The occurrence as EventKit has it now — one that was moved or
       // renamed on its own differs from the series' first occurrence.
+      const reach = options.wholeSeries ? APPLE_SERIES_WINDOW_MS : APPLE_OCCURRENCE_WINDOW_MS;
       const nearby = yield* client
         .events({
-          endUtc: ref.originalStartUtc + APPLE_OCCURRENCE_WINDOW_MS,
-          startUtc: ref.originalStartUtc - APPLE_OCCURRENCE_WINDOW_MS,
+          endUtc: ref.originalStartUtc + reach,
+          startUtc: ref.originalStartUtc - reach,
         })
         .pipe(Effect.mapError(appleFailure));
       const found = nearby.find(
@@ -319,6 +333,9 @@ export const resolveEvent = (
       const occurrence = mapAppleEvent(found, context);
       return {
         base: ownTimes(occurrence),
+        exceptions: nearby
+          .filter((event) => event.id === id && event.isDetached && event.status !== 'cancelled')
+          .map((event) => mapAppleEvent(event, context)),
         granted,
         record: occurrence,
         ref,
@@ -351,6 +368,7 @@ export const resolveEvent = (
     }
     return {
       base: exception ? ownTimes(exception) : slotTimes(stored, ref.originalStartUtc),
+      exceptions: overrides.filter((override) => override.status !== 'cancelled'),
       granted,
       record: exception ?? stored,
       ref,

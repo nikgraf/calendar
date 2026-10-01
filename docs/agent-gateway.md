@@ -88,7 +88,11 @@ with nothing.
 - **Guests** (`off` | `ask` | `allow`): creating, editing or deleting an
   event that has or gains other attendees needs it on top of the calendar
   level — Google emails them, which is the one write an agent could leak
-  data with. An RSVP only needs the calendar level.
+  data with. An RSVP only needs the calendar level. For a `series` or
+  `following` write "the event" is everything the scope touches
+  (`reachOf` in `ops/events.ts`): the master and every exception it
+  rewrites or cancels, so a guest on one later occurrence counts. (Apple:
+  the exceptions EventKit returns within ±400 days of the slot.)
 - Free/busy merges blocks across calendars and skips all-day, cancelled
   and declined events (there is no `transparency` field yet, so a "free"
   timed event still blocks).
@@ -140,6 +144,12 @@ moment, so a reminder moved there is briefly judged by its old list.
    guests in between — by anyone, the same agent included — the request
    fails with "changed after it was asked" and nothing is written.
 
+The summary is built from the event that is **written**, which for a
+`series` or `following` change is the master, not the occurrence the ref
+names (an occurrence edited on its own can carry other text). Guests a
+write reaches are listed by address, never as a count — replacing one
+guest with another must change the summary.
+
 The summary is therefore the whole write: nothing in it is shortened
 (every guest, the full notes; the dialog scrolls), an update that adds
 guests also shows the location and notes those guests will receive, and
@@ -171,7 +181,9 @@ never through MCP elicitation, which the agent's own client could answer.
 - Limits: 64 KiB hello within 5 s, 1 MiB per MCP message, 32
   connections (8 per agent), 120 calls a minute per agent, 400-day
   ranges, 2000 events. A refused or finished connection is destroyed,
-  not just ended — a peer that keeps its half open must not hold a slot.
+  not just ended — a peer that keeps its half open must not hold a slot —
+  and an MCP session that closes itself (an oversize message) takes its
+  socket with it.
 - MCP: 2026-07-28 (stateless, `server/discover`) with the 2025 `initialize`
   handshake still served (`legacy: 'serve'`).
 - If the socket is missing and the relay runs from a `.app`, it starts the

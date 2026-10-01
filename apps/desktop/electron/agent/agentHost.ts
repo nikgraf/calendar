@@ -175,7 +175,8 @@ export const startAgentHost = (backend: BackendHost): void => {
             const session = serveMcpSession({
               call: callFor(token),
               onError: (error) => log('mcp session error', error.message),
-              transport: socketTransport(input, output),
+              // A session that ends on its own (an oversize message) takes its socket with it.
+              transport: socketTransport(input, output, () => socket.destroy()),
               version: app.getVersion(),
             });
             socket.once('close', () => void session.close().catch(() => {}));

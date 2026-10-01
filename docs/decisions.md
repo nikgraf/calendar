@@ -1549,7 +1549,14 @@ test`/`test:e2e`/`test:e2e:ios`; every file creates its own
       over 1 MiB; a log that stored every input and could be flooded by
       refusals; the request age limit only enforced by the hourly sweep.
       Each has a regression test (`gateway.hardening.test.ts`,
-      `socketServer.test.ts`).
+      `socketServer.test.ts`). A second review of the PR found four more
+      of the same family: a `series`/`following` write ignored guests on
+      the other exceptions it rewrites or cancels; its summary showed the
+      clicked occurrence's text while the master's is what gets written
+      (and mailed to a new guest); existing guests were only counted, so
+      swapping one for another did not void a waiting approval; and an
+      MCP session that closed itself kept its socket and slot. A summary
+      is now built from the written event and names every guest reached.
       Found on the way: two quick edits in the grant editor overwrote each
       other (each built on the last state main had sent back) — the
       editor now builds on its own last edit; the e2e spec caught it.

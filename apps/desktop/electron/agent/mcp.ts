@@ -106,6 +106,27 @@ export const serveMcpSession = (options: {
     transport: options.transport,
   });
 
-/** Newline-delimited JSON-RPC over a stream pair, with a bounded message size. */
-export const socketTransport = (input: Readable, output: Writable): Transport =>
-  new StdioServerTransport(input, output, { maxBufferSize: MAX_LINE_BYTES });
+/**
+ * Newline-delimited JSON-RPC over a stream pair, with a bounded message
+ * size. The transport closes itself when a message is too large or its
+ * input ends; `onClose` lets the owner drop the connection underneath —
+ * otherwise a dead session would keep its socket, and the relay behind
+ * it, waiting forever.
+ */
+export const socketTransport = (
+  input: Readable,
+  output: Writable,
+  onClose?: () => void,
+): Transport => {
+  const transport = new StdioServerTransport(input, output, { maxBufferSize: MAX_LINE_BYTES });
+  const close = transport.close.bind(transport);
+  // The SDK tears down through `this.close()`, so this sees every path.
+  transport.close = async () => {
+    try {
+      await close();
+    } finally {
+      onClose?.();
+    }
+  };
+  return transport;
+};
