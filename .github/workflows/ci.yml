@@ -398,9 +398,13 @@ jobs:
           test -d "$APP" || { echo "::error::packaged app missing"; exit 1; }
           test -x "$APP/Contents/Resources/solunivo-model-helper" \
             || { echo "::error::model helper missing from Resources"; exit 1; }
+          # The agent relay: the wrapper must run the bundled script with
+          # the app's own binary (ELECTRON_RUN_AS_NODE) and answer.
+          "$APP/Contents/Resources/solunivo-cli" --version \
+            || { echo "::error::solunivo-cli does not run from the packaged app"; exit 1; }
           # Regression check for the ignore-list fix: never ship Swift build
           # objects, e2e source, or local e2e screenshots inside the app.
-          for banned in helper e2e e2e-artifacts; do
+          for banned in helper e2e e2e-artifacts resources; do
             if [ -e "$APP/Contents/Resources/app/$banned" ]; then
               echo "::error::packaged app contains $banned/ — forge ignore list regressed"
               exit 1
@@ -520,6 +524,10 @@ jobs:
             || { echo "::error::extracted app executable missing or not executable"; exit 1; }
           test -x "$APP/Contents/Resources/solunivo-model-helper" \
             || { echo "::error::extracted model helper missing or not executable"; exit 1; }
+          # Signed and under the hardened runtime: the relay still has to
+          # start (it runs the app binary as Node; the RunAsNode fuse stays on).
+          "$APP/Contents/Resources/solunivo-cli" --version \
+            || { echo "::error::solunivo-cli does not run from the signed app"; exit 1; }
           codesign --verify --deep --strict --verbose=2 "$APP"
           bash apps/desktop/scripts/check-privacy-entitlements.sh "$APP"
           spctl --assess --type execute -vv "$APP"
