@@ -1426,6 +1426,34 @@ test`/`test:e2e`/`test:e2e:ios`; every file creates its own
       the first iOS CI run died at launch with "Requiring unknown module
       ./impl/format". One deep import fixes every bundler; a per-bundler
       alias did not.
+      Directory watchers are only the fast path; the source of truth is a
+      periodic check (every 5 s, on window focus and when Settings asks
+      for the status): one stat of the file, a reload when its identity
+      or modification time moved, a re-attach when the folders to watch
+      changed. It covers what a watcher cannot — the folder created after
+      the app started (the app never creates it itself, and a watch
+      cannot attach to a missing folder), a folder deleted and recreated
+      (the old watch goes silent), events dropped on synced volumes.
+      Watching the home directory for the folder to appear was rejected:
+      it solves one of those cases, and home is noisy (every shell
+      history append fires there). The file stays opt-in: auto-creating
+      it would put account emails and calendar names in a dotfolder
+      nobody asked for, switch on the two-way mirror for everyone, and
+      collide with a setup script that links the real file later. A
+      symlinked file (a dotfiles repo) is written at its resolved target
+      — renaming over the link would replace it with a regular file and
+      silently detach the repo — and both the link's folder and the
+      target's folder are watched, since an in-place edit at the target
+      fires only there. `settingsFileFs.test.ts` proves both against a
+      real temp directory.
+      The desktop shows two cards so the two ideas stay apart: "Export &
+      import" is a one-off copy for another device, nothing watched;
+      "Settings file" explains the watched file — what it is good for (a
+      new Mac set up from dotfiles, scripts and coding agents changing
+      settings by editing a file), what it exposes (the settings in plain
+      text, including connected accounts' email addresses and calendar
+      names, readable by anything that can read the home folder — never
+      passwords or tokens) — and holds the one button that creates it.
       Local account ids come from `crypto.randomUUID()` everywhere: native
       in Node and Electron, and on Hermes filled in by the Web Crypto
       polyfill (`apps/ios/src/polyfills.ts`, expo-crypto's native

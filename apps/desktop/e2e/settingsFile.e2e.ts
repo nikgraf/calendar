@@ -178,6 +178,34 @@ describe('settings file: created on request', () => {
     await expect.poll(() => statusText(cdp), { timeout: 10_000 }).toMatch(/^No file yet/);
     expect(() => fileText(app)).toThrow();
 
+    // The watched file has its own card: what it is for, what it exposes,
+    // and the create button — apart from the one-off Export/Import.
+    const layout = await cdp.eval<{
+      createInFile: boolean;
+      createInTransfer: boolean;
+      exportInTransfer: boolean;
+      exposure: string;
+      purpose: string;
+    }>(`(() => {
+      const file = document.querySelector('[data-testid="settings-file"]');
+      const transfer = document.querySelector('[data-testid="settings-transfer"]');
+      return {
+        createInFile: !!file?.querySelector('[data-testid="settings-file-create"]'),
+        createInTransfer: !!transfer?.querySelector('[data-testid="settings-file-create"]'),
+        exportInTransfer: !!transfer?.querySelector('[data-testid="settings-file-export"]')
+          && !!transfer?.querySelector('[data-testid="settings-file-import"]'),
+        exposure: file?.querySelector('[data-testid="settings-file-exposure"]')?.textContent ?? '',
+        purpose: file?.textContent ?? '',
+      };
+    })()`);
+    expect(layout.createInFile).toBe(true);
+    expect(layout.createInTransfer).toBe(false);
+    expect(layout.exportInTransfer).toBe(true);
+    expect(layout.exposure).toContain('connected accounts');
+    expect(layout.exposure).toContain('Passwords and sign-in tokens are never written');
+    expect(layout.purpose).toContain('Set up a new Mac');
+    expect(layout.purpose).toContain('coding agents');
+
     await cdp.eval(`document.querySelector('[data-testid="settings-file-create"]')?.click()`);
     await expect.poll(() => statusText(cdp), { timeout: 10_000 }).toMatch(/^Watching/);
     const created = fileText(app);
