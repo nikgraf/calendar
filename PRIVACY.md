@@ -37,6 +37,12 @@ Calendar, Apple Reminders and your address book, for the same purposes.
   search and maps use Apple Maps, and changes to Apple Calendar or
   Reminders items are saved through the system's own calendar and
   reminders stores.
+- **Goes to other software on your Mac** only if you set it up: under
+  Settings → Agents you can let an AI agent running on the same Mac read
+  or change your calendars and tasks through Solunivo. Nothing is shared
+  until you create an agent, and each agent only gets the calendars and
+  lists you grant it. What an agent does with what it reads is up to that
+  agent and its provider.
 - **Stays on your device, too:** quick-add parsing, find-a-time
   suggestions and dictation use Apple's on-device models; your text and
   voice are not sent anywhere for this.

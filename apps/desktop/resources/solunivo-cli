@@ -1,0 +1,22 @@
+#!/bin/sh
+# solunivo-cli — how other agents on this Mac reach Solunivo (MCP + CLI).
+#
+# A thin relay: it connects to the running app's Unix socket and pipes.
+# It runs the relay script with the app's own Electron binary as Node, so
+# no Node install is needed. Shipped as Contents/Resources/solunivo-cli.
+
+# Resolve symlinks, so the script still finds its bundle when linked onto PATH.
+SELF="$0"
+while [ -L "$SELF" ]; do
+  LINK="$(readlink "$SELF")"
+  case "$LINK" in
+    /*) SELF="$LINK" ;;
+    *) SELF="$(dirname "$SELF")/$LINK" ;;
+  esac
+done
+
+RESOURCES="$(cd "$(dirname "$SELF")" && pwd)"
+BUNDLE="$(cd "$RESOURCES/../.." && pwd)"
+
+SOLUNIVO_CLI_BUNDLE="$BUNDLE" ELECTRON_RUN_AS_NODE=1 \
+  exec "$BUNDLE/Contents/MacOS/solunivo" "$RESOURCES/app/dist-electron/cli.mjs" "$@"

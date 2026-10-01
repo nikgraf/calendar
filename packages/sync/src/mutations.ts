@@ -15,6 +15,7 @@ import {
   EventReminders,
   eventToTaskLoss,
   googleInstanceId,
+  isCalendarWritable,
   isServerMove,
   mergeAttendees,
   meetingUrl,
@@ -1311,10 +1312,7 @@ const make: Effect.Effect<
         return;
       }
       const targetCalendar = yield* findCalendar(target.accountId, target.calendarId);
-      if (
-        !targetCalendar ||
-        (targetCalendar.accessRole !== 'owner' && targetCalendar.accessRole !== 'writer')
-      ) {
+      if (!isCalendarWritable(targetCalendar)) {
         return yield* Effect.fail(new CalendarNotWritableError({ calendarId: target.calendarId }));
       }
       const route = yield* routeOf(params);
@@ -1455,10 +1453,7 @@ const make: Effect.Effect<
         return yield* Effect.fail(new TaskNotFoundError({ taskId }));
       }
       const targetCalendar = yield* findCalendar(draft.accountId, draft.calendarId);
-      if (
-        !targetCalendar ||
-        (targetCalendar.accessRole !== 'owner' && targetCalendar.accessRole !== 'writer')
-      ) {
+      if (!isCalendarWritable(targetCalendar)) {
         return yield* Effect.fail(new CalendarNotWritableError({ calendarId: draft.calendarId }));
       }
       const sourceProvider = yield* providerOf(accountId);

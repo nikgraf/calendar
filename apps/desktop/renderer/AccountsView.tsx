@@ -7,6 +7,7 @@ import {
 } from '@calendar/app-state';
 import { type Account, historyStatusLabel, isAppleCalendarAccount } from '@calendar/core';
 import { useState } from 'react';
+import { AgentsSection } from './agents/AgentsSection.tsx';
 import { AppleCalendarSection } from './AppleCalendarSection.tsx';
 import { PrivacySection } from './PrivacySection.tsx';
 import { BirthdayRemindersSection } from './BirthdayRemindersSection.tsx';
@@ -154,6 +155,7 @@ export function AccountsView() {
       <TimeZonesSection />
       <SettingsTransferSection />
       <SettingsFileSection />
+      <AgentsSection />
       <LocationsSection />
       <PrivacySection />
     </div>

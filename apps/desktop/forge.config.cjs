@@ -50,7 +50,10 @@ module.exports = {
     // stdio) rides in Resources; osx-sign signs Mach-O binaries it finds
     // in the bundle, and CI's codesign --verify --deep covers it via the
     // resource seal.
-    extraResource: ['helper/.build/release/solunivo-model-helper'],
+    // solunivo-cli is the agent relay's wrapper script (a sealed resource,
+    // not a Mach-O: nothing to sign). It execs the app's own binary with
+    // ELECTRON_RUN_AS_NODE, so the RunAsNode fuse must stay enabled.
+    extraResource: ['helper/.build/release/solunivo-model-helper', 'resources/solunivo-cli'],
     // CFBundleVersion; CI sets the short commit SHA so testers can identify
     // builds. Undefined locally — packager skips it.
     buildVersion: process.env.BUILD_VERSION,
@@ -96,6 +99,7 @@ module.exports = {
       // harness, and e2e-artifacts — local test runs leave calendar
       // SCREENSHOTS there, and a make after that would hand them out.
       /^\/helper(?:$|\/)/,
+      /^\/resources(?:$|\/)/,
       /^\/e2e(?:$|\/)/,
       /^\/e2e-artifacts(?:$|\/)/,
       /^\/\.gitignore$/,

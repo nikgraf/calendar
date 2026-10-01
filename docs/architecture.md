@@ -412,13 +412,35 @@ Rules that keep the queue correct:
   touch never reaches it. Each hook suppresses the click its own release
   would otherwise turn into an hour click.
 
+## Agent gateway (desktop)
+
+Other agents on the Mac get in through one more door, not through the rpc
+seam: a Unix socket in the main process (`apps/desktop/electron/agent/`)
+that authenticates a per-agent token and then serves MCP or one CLI
+command, both over the same tool set. Every call goes through
+`callTool` (`packages/agent/src/gateway.ts`) on the backend runtime —
+the same services the renderer's rpc handlers use, with the agent
+store's services (a second, tiny runtime over `agents.db`) provided into
+each effect. The backend itself has no caller identity or permission
+checks, so the gateway carries all of it: grant levels per calendar and
+list, resolution of a write's real container, the guests capability,
+ask-first approvals and the activity log. Details, limits and the threat
+model: `docs/agent-gateway.md`.
+
 ## Platform seams
 
 - Calendar data crosses process boundaries **only** through the typed rpc
   seam (Apple events included). Window-level concerns use plain preload IPC: `logError`
   (renderer errors → `userData/logs/main.log`, 1 MB rotation),
-  `privacyGet/Set` (screen-capture protection, default hidden), and the
-  window-open handler (Join-meeting → system browser).
+  `privacyGet/Set` (screen-capture protection, default hidden), the
+  window-open handler (Join-meeting → system browser), and `agents:*`
+  (agent grants and approvals — device-local, never rpc, never exported).
+- The main process is single-instance per profile
+  (`requestSingleInstanceLock`, taken after the `CALENDAR_USERDATA`
+  override) and keeps running without a window on macOS; `windows.ts`
+  opens one on demand (Dock, a notification click, a second launch).
+  `--background` starts without a window — what the agent relay passes
+  when it has to launch the app.
 - Auto-update (`update-electron-app` + Forge GitHub publisher) is wired
   but inert: builds are signed now, so the remaining blocker is that the
   repo (and thus Releases) is private — update.electronjs.org only serves

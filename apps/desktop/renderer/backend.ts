@@ -1,3 +1,5 @@
+import type { AgentPolicy } from '@calendar/agent/policy';
+import type { AgentRequestView, AgentsState, AgentView } from '@calendar/agent/view';
 import { AppBackendRpcs, type BackendClient } from '@calendar/core';
 import { duplexClientProtocol } from '@calendar/sync/rpcDuplex';
 import { Context, Effect, Fiber, Layer, ManagedRuntime, Stream } from 'effect';
@@ -20,6 +22,18 @@ export interface SettingsFileStatus {
 declare global {
   interface Window {
     calendarBridge: {
+      agentsCreate: (name: string) => Promise<{ agent: AgentView; token: string }>;
+      agentsDecide: (
+        requestId: string,
+        decision: 'approve' | 'deny',
+      ) => Promise<AgentRequestView | null>;
+      agentsRemove: (id: string) => Promise<void>;
+      agentsRotate: (id: string) => Promise<{ token: string } | null>;
+      agentsState: () => Promise<AgentsState>;
+      agentsUpdate: (
+        id: string,
+        changes: { name?: string; policy?: AgentPolicy },
+      ) => Promise<AgentView | undefined>;
       appleCalendarStatus: () => Promise<string>;
       contactsStatus: () => Promise<string>;
       logError?: (text: string) => void;
@@ -30,6 +44,7 @@ declare global {
         audioBase64: string,
         locale: string,
       ) => Promise<{ segments: ReadonlyArray<{ text: string }> }>;
+      onAgentsChanged: (listener: () => void) => () => void;
       onPrivacyChanged: (listener: (state: PrivacyState) => void) => () => void;
       onRpcMessage: (listener: (data: string | Uint8Array) => void) => () => void;
       onSettingsFileChanged: (listener: (status: SettingsFileStatus) => void) => () => void;

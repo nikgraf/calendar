@@ -18,6 +18,15 @@ export default [
     platform: 'node',
     shims: true,
   }),
+  // The agent relay (`solunivo-cli`): node built-ins only, so it starts
+  // fast under ELECTRON_RUN_AS_NODE and carries none of the main bundle.
+  defineConfig({
+    entry: { cli: 'electron/cli.ts' },
+    format: 'esm',
+    noExternal: [/.*/],
+    outDir: 'dist-electron',
+    platform: 'node',
+  }),
   defineConfig({
     entry: { preload: 'electron/preload.ts' },
     external: ['electron'],
