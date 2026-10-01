@@ -7,6 +7,7 @@ import {
 } from '@calendar/app-state';
 import { DROPPED_NOTICE_KEY } from '@calendar/db/keys';
 import { useEffect, useState } from 'react';
+import { AgentApprovalDialog } from './agents/AgentApprovalDialog.tsx';
 import { CalendarApp } from './calendar/CalendarApp.tsx';
 import { ConflictBanner } from './calendar/ConflictBanner.tsx';
 import { ErrorBoundary } from './ErrorBoundary.tsx';
@@ -82,6 +83,7 @@ function Bridge() {
         noticeKey={DROPPED_NOTICE_KEY}
       />
       <MutationNoticeToast />
+      <AgentApprovalDialog />
     </>
   );
 }

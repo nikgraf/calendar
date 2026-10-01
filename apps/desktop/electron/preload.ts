@@ -3,6 +3,13 @@ import { contextBridge, ipcRenderer } from 'electron';
 // The renderer's only door into the main process: a duplex frame channel
 // carrying the AppBackend rpc protocol (see packages/core/src/backend.ts).
 contextBridge.exposeInMainWorld('calendarBridge', {
+  agentsCreate: (name: string) => ipcRenderer.invoke('agents:create', name),
+  agentsDecide: (requestId: string, decision: string) =>
+    ipcRenderer.invoke('agents:decide', requestId, decision),
+  agentsRemove: (id: string) => ipcRenderer.invoke('agents:remove', id),
+  agentsRotate: (id: string) => ipcRenderer.invoke('agents:rotate', id),
+  agentsState: () => ipcRenderer.invoke('agents:state'),
+  agentsUpdate: (id: string, changes: unknown) => ipcRenderer.invoke('agents:update', id, changes),
   appleCalendarStatus: () => ipcRenderer.invoke('appleCalendar:status'),
   contactsStatus: () => ipcRenderer.invoke('contacts:status'),
   logError: (text: string) => ipcRenderer.send('renderer-error', text),
@@ -12,6 +19,11 @@ contextBridge.exposeInMainWorld('calendarBridge', {
   modelStatus: () => ipcRenderer.invoke('model:status'),
   modelTranscribe: (audioBase64: string, locale: string) =>
     ipcRenderer.invoke('model:transcribe', audioBase64, locale),
+  onAgentsChanged: (listener: () => void) => {
+    const wrapped = () => listener();
+    ipcRenderer.on('agents:changed', wrapped);
+    return () => ipcRenderer.off('agents:changed', wrapped);
+  },
   onPrivacyChanged: (listener: (state: unknown) => void) => {
     const wrapped = (_event: unknown, state: unknown) => listener(state);
     ipcRenderer.on('privacy:changed', wrapped);
