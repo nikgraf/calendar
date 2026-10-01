@@ -1,0 +1,26 @@
+{
+  "name": "@calendar/agent",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./*": "./src/*.ts"
+  },
+  "dependencies": {
+    "@calendar/apple-calendar": "workspace:*",
+    "@calendar/core": "workspace:*",
+    "@calendar/db": "workspace:*",
+    "@calendar/sync": "workspace:*",
+    "effect": "catalog:"
+  },
+  "devDependencies": {
+    "@calendar/google": "workspace:*",
+    "@calendar/reminders": "workspace:*",
+    "@effect/sql-sqlite-node": "catalog:",
+    "@effect/vitest": "catalog:",
+    "@types/node": "^26.1.0",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}

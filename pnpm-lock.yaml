@@ -469,6 +469,46 @@ importers:
         specifier: 'catalog:'
         version: 7.0.2
 
+  packages/agent:
+    dependencies:
+      '@calendar/apple-calendar':
+        specifier: workspace:*
+        version: link:../apple-calendar
+      '@calendar/core':
+        specifier: workspace:*
+        version: link:../core
+      '@calendar/db':
+        specifier: workspace:*
+        version: link:../db
+      '@calendar/sync':
+        specifier: workspace:*
+        version: link:../sync
+      effect:
+        specifier: 'catalog:'
+        version: 4.0.0-rc.115
+    devDependencies:
+      '@calendar/google':
+        specifier: workspace:*
+        version: link:../google
+      '@calendar/reminders':
+        specifier: workspace:*
+        version: link:../reminders
+      '@effect/sql-sqlite-node':
+        specifier: 'catalog:'
+        version: 4.0.0-rc.115(effect@4.0.0-rc.115)
+      '@effect/vitest':
+        specifier: 'catalog:'
+        version: 4.0.0-rc.115(effect@4.0.0-rc.115)(vitest@4.1.11)
+      '@types/node':
+        specifier: ^26.1.0
+        version: 26.1.0
+      typescript:
+        specifier: 'catalog:'
+        version: 7.0.2
+      vitest:
+        specifier: 4.1.11
+        version: 4.1.11(@types/node@26.1.0)(@vitest/browser-preview@4.1.11)(@voidzero-dev/vite-plus-core@0.3.1(@types/node@26.1.0)(jiti@2.7.0)(terser@5.48.0)(typescript@7.0.2)(yaml@2.9.0))
+
   packages/ai:
     dependencies:
       '@calendar/core':
