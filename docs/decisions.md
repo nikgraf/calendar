@@ -1432,4 +1432,8 @@ test`/`test:e2e`/`test:e2e:ios`; every file creates its own
       applied visibility, Apple matching), `settingsFileSync.test.ts`
       (loop guard with a fake disk), desktop `settingsFile.e2e.ts` (file
       at launch, live edit, write-back with comments, Create file) and
-      Maestro `20-settings-file.yaml` (export opens the share sheet).
+      Maestro `20-settings-file.yaml` (export opens the share sheet,
+      import opens the document picker). The share sheet titles the file
+      without its extension and hides the app's elements from the
+      accessibility tree while it is up, so the flow keys on "Save to
+      Files" and dismisses with a swipe that starts inside the sheet.

@@ -1,5 +1,5 @@
 appId: com.solunivo.app
-name: Settings export opens the share sheet with the settings file
+name: Settings export opens the share sheet and import opens the file picker
 tags:
   - ci
 ---
@@ -17,21 +17,42 @@ tags:
     id: 'settings-file-import'
 - tapOn:
     id: 'settings-file-export'
-# The share sheet names the file it was handed.
+# The system share sheet. It titles the file without its extension and,
+# while it is up, the app's own elements leave the accessibility tree —
+# so the sheet's "Save to Files" action is the marker, not the file name
+# and not the section behind it.
 - extendedWaitUntil:
-    visible: 'solunivo.jsonc'
+    visible: 'Save to Files'
     timeout: 10000
-# Dismiss the sheet: iOS 17+ shows a close control; older builds swipe.
-- runFlow:
-    when:
-      visible: 'Close'
-    commands:
-      - tapOn: 'Close'
-- runFlow:
-    when:
-      notVisible: 'Export & import'
+# No "Close" control on iOS 26: dragging the sheet down from inside it
+# dismisses it (a swipe from the screen centre starts above the sheet).
+- repeat:
+    times: 3
+    while:
+      visible: 'Save to Files'
     commands:
       - swipe:
-          direction: DOWN
-- assertVisible: 'Export & import'
+          start: 50%, 62%
+          end: 50%, 97%
+      - waitForAnimationToEnd:
+          timeout: 3000
+- assertNotVisible: 'Save to Files'
+- assertVisible: '^Accounts$'
+# Import hands off to the system document picker (any file type; the
+# parser judges the contents). Opening and cancelling it is as far as a
+# simulator without a seeded Files provider can go.
+- scrollUntilVisible:
+    element:
+      id: 'settings-file-import'
+    direction: DOWN
+    timeout: 10000
+- tapOn:
+    id: 'settings-file-import'
+- extendedWaitUntil:
+    visible: 'Browse'
+    timeout: 10000
+- tapOn: 'Cancel'
+- extendedWaitUntil:
+    visible: '^Accounts$'
+    timeout: 5000
 - tapOn: 'Done'
