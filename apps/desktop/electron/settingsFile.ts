@@ -1,17 +1,17 @@
-import { mkdirSync, readFileSync, renameSync, watch, writeFileSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { basename, join } from 'node:path';
+import { join } from 'node:path';
 import { DeviceSettingsRepo } from '@calendar/db';
 import { buildSettingsDocument, importSettings } from '@calendar/sync';
 import { app, BrowserWindow, dialog, ipcMain } from 'electron';
 import { Effect, Schema } from 'effect';
 import type { BackendHost } from './backendHost.ts';
 import { subscribePrivacy } from './privacy.ts';
+import { nodeSettingsFileFs } from './settingsFileFs.ts';
 import {
   makeSettingsFileSync,
   SETTINGS_FILE_KEY,
   type SettingsFileApplied,
-  type SettingsFileFs,
   type SettingsFileStatus,
 } from './settingsFileSync.ts';
 
@@ -28,36 +28,6 @@ export const settingsFilePath = (): string =>
 const AppliedRow = Schema.Struct({ appliedAt: Schema.Number, hash: Schema.String });
 const decodeApplied = Schema.decodeUnknownOption(AppliedRow);
 
-const nodeFs: SettingsFileFs = {
-  exists: (path) => {
-    try {
-      readFileSync(path);
-      return true;
-    } catch {
-      return false;
-    }
-  },
-  mkdir: (dir) => mkdirSync(dir, { recursive: true }),
-  readText: (path) => {
-    try {
-      return readFileSync(path, 'utf8');
-    } catch {
-      return null;
-    }
-  },
-  watchDir: (dir, onChange) => {
-    const watcher = watch(dir, { persistent: false }, (_event, filename) => {
-      onChange(filename === null ? null : basename(String(filename)));
-    });
-    return () => watcher.close();
-  },
-  writeTextAtomic: (path, text) => {
-    const temp = `${path}.${process.pid}.tmp`;
-    writeFileSync(temp, text, { mode: 0o600 });
-    renameSync(temp, path);
-  },
-};
-
 const broadcast = (status: SettingsFileStatus) => {
   for (const window of BrowserWindow.getAllWindows()) {
     window.webContents.send('settingsFile:changed', status);
@@ -68,7 +38,7 @@ export const startSettingsFile = (host: BackendHost): void => {
   const path = settingsFilePath();
   const sync = makeSettingsFileSync(path, {
     exportDocument: () => host.run(buildSettingsDocument),
-    fs: nodeFs,
+    fs: nodeSettingsFileFs,
     importDocument: (document) => host.run(importSettings(document)),
     log: (message, meta) => console.log(`[settings-file] ${message}`, meta ?? ''),
     readLastApplied: () =>
@@ -86,7 +56,12 @@ export const startSettingsFile = (host: BackendHost): void => {
   });
   sync.subscribeStatus(broadcast);
 
-  ipcMain.handle('settingsFile:status', () => sync.status());
+  // Opening Settings re-checks the disk first, so the status line is never
+  // older than the last look.
+  ipcMain.handle('settingsFile:status', async () => {
+    await sync.checkNow();
+    return sync.status();
+  });
   ipcMain.handle('settingsFile:create', async () => {
     await sync.createFromState();
     return sync.status();
@@ -103,7 +78,7 @@ export const startSettingsFile = (host: BackendHost): void => {
     if (result.canceled || !result.filePath) {
       return { canceled: true };
     }
-    nodeFs.writeTextAtomic(result.filePath, String(text));
+    nodeSettingsFileFs.writeTextAtomic(result.filePath, String(text));
     return { path: result.filePath };
   });
   ipcMain.handle('settingsFile:open', async (event) => {
@@ -131,5 +106,8 @@ export const startSettingsFile = (host: BackendHost): void => {
     .catch((error: unknown) => {
       console.error('[settings-file] start failed:', error);
     });
+  // Coming back to the app after running a setup script or editing the
+  // file elsewhere: check right away instead of waiting for the next poll.
+  app.on('browser-window-focus', () => void sync.checkNow());
   app.on('will-quit', () => sync.stop());
 };

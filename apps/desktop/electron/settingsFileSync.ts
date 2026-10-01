@@ -20,6 +20,16 @@ import { Effect } from 'effect';
  * watcher ignores our own writes, the write-back yields to an edit it has
  * not applied yet, and an external edit supersedes the marker so a later
  * restore of an older text is applied again, not mistaken for an echo.
+ *
+ * Directory watchers are only the fast path. The source of truth is a
+ * periodic check (`checkNow`, also run on window focus): one stat of the
+ * file, a reload when its identity or modification time moved, and a
+ * re-attach of the watchers when the folders they should watch changed.
+ * That covers what a watcher alone cannot: the folder appearing after the
+ * app started, a folder deleted and recreated (the old watch goes silent),
+ * events dropped on network or synced volumes, and a symlinked file edited
+ * at its target.
+ *
  * Pure orchestration: every side effect comes in through `deps`, so the
  * loop guard is unit-tested without Electron or a real file system.
  */
@@ -32,10 +42,25 @@ export interface SettingsFileApplied {
   readonly hash: string;
 }
 
+/** What identifies one version of a file or directory on disk. */
+export interface SettingsFileStat {
+  readonly ino: number;
+  readonly mtimeMs: number;
+  readonly size: number;
+}
+
 export interface SettingsFileFs {
-  readonly exists: (path: string) => boolean;
   readonly mkdir: (dir: string) => void;
   readonly readText: (path: string) => string | null;
+  /**
+   * Where the path really lives: symlinks resolved, a dangling link's
+   * target, or the path itself when there is nothing to resolve. Writes
+   * go here — renaming over a symlink would replace the link with a
+   * regular file and silently detach a dotfiles repo.
+   */
+  readonly realPath: (path: string) => string;
+  /** Follows symlinks; null when the path does not exist. */
+  readonly stat: (path: string) => SettingsFileStat | null;
   /**
    * Watches a directory (not the file: editors save by rename, which
    * would orphan a file watch) and reports the changed name, or null when
@@ -54,6 +79,8 @@ export interface SettingsFileDeps {
   readonly importDocument: (document: SettingsDocument) => Promise<SettingsImportSummary>;
   readonly log?: (message: string, meta?: Record<string, unknown>) => void;
   readonly now?: () => number;
+  /** How often the file is re-checked without a watcher event. */
+  readonly pollMs?: number;
   readonly readLastApplied: () => Promise<SettingsFileApplied | null>;
   readonly writeLastApplied: (applied: SettingsFileApplied) => Promise<void>;
 }
@@ -84,6 +111,8 @@ export const settingsTextHash = (text: string): string =>
 export interface SettingsFileSync {
   /** Parses and imports the file when its content is not what was last applied or written. */
   readonly applyFromDisk: () => Promise<void>;
+  /** One reconciliation pass: re-attach watchers if needed, reload if the file moved on. */
+  readonly checkNow: () => Promise<void>;
   /** Writes a fresh document from the current state and starts watching it. */
   readonly createFromState: () => Promise<void>;
   readonly onInvalidation: (keys: ReadonlyArray<string>) => void;
@@ -99,6 +128,7 @@ export interface SettingsFileSync {
 
 export const makeSettingsFileSync = (path: string, deps: SettingsFileDeps): SettingsFileSync => {
   const debounceMs = deps.debounceMs ?? 300;
+  const pollMs = deps.pollMs ?? 5000;
   const now = deps.now ?? (() => Date.now());
   const log = deps.log ?? (() => {});
   const dir = dirname(path);
@@ -107,7 +137,12 @@ export const makeSettingsFileSync = (path: string, deps: SettingsFileDeps): Sett
   let lastApplied: string | null = null;
   let started = false;
   let stopped = false;
-  let unwatch: (() => void) | null = null;
+  let unwatchers: Array<() => void> = [];
+  /** The watch targets (folder, name, folder identity) the watchers were attached for. */
+  let armedKey: string | null = null;
+  /** The file's identity and modification time at the last check. */
+  let lastSeen: string | null = null;
+  let pollTimer: NodeJS.Timeout | null = null;
   let applyTimer: NodeJS.Timeout | null = null;
   let writeTimer: NodeJS.Timeout | null = null;
   // Every disk/backend operation runs on this chain so an apply and a
@@ -226,33 +261,85 @@ export const makeSettingsFileSync = (path: string, deps: SettingsFileDeps): Sett
       const mergedHash = settingsTextHash(merged);
       // Set before the rename so the watcher's event finds it known.
       lastApplied = mergedHash;
-      deps.fs.writeTextAtomic(path, merged);
+      deps.fs.writeTextAtomic(deps.fs.realPath(path), merged);
       const appliedAt = now();
       await deps.writeLastApplied({ appliedAt, hash: mergedHash });
       update({ exists: true, lastAppliedAt: appliedAt });
     });
 
-  const arm = () => {
-    if (unwatch || stopped) {
+  const onWatchEvent = (expected: string) => (file: string | null) => {
+    if (file !== null && file !== expected) {
       return;
     }
-    try {
-      unwatch = deps.fs.watchDir(dir, (file) => {
-        if (file !== null && file !== name) {
-          return;
-        }
-        if (applyTimer) {
-          clearTimeout(applyTimer);
-        }
-        applyTimer = setTimeout(() => {
-          applyTimer = null;
-          void applyFromDisk();
-        }, debounceMs);
-      });
-    } catch (error) {
-      // No directory yet: `createFromState` arms after making it.
-      log('settings file directory not watched', { error: String(error) });
+    if (applyTimer) {
+      clearTimeout(applyTimer);
     }
+    applyTimer = setTimeout(() => {
+      applyTimer = null;
+      void applyFromDisk();
+    }, debounceMs);
+  };
+
+  /**
+   * The folders worth watching: the one the path names (the file being
+   * created, replaced or saved by rename) and, for a symlinked file, the
+   * one its target lives in (an edit made in place at the target fires
+   * there, not at the link).
+   */
+  const watchTargets = (): ReadonlyArray<{ readonly dir: string; readonly name: string }> => {
+    const real = deps.fs.realPath(path);
+    const realDir = dirname(real);
+    const realName = basename(real);
+    return realDir === dir && realName === name
+      ? [{ dir, name }]
+      : [
+          { dir, name },
+          { dir: realDir, name: realName },
+        ];
+  };
+
+  /** Attaches the watchers, again whenever a target folder appeared, vanished or was replaced. */
+  const ensureWatchers = () => {
+    if (stopped) {
+      return;
+    }
+    const targets = watchTargets();
+    const key = targets
+      .map(
+        (target) => `${target.dir}\n${target.name}\n${deps.fs.stat(target.dir)?.ino ?? 'missing'}`,
+      )
+      .join('\n\n');
+    if (key === armedKey) {
+      return;
+    }
+    for (const unwatch of unwatchers) {
+      unwatch();
+    }
+    unwatchers = [];
+    armedKey = key;
+    for (const target of targets) {
+      try {
+        unwatchers.push(deps.fs.watchDir(target.dir, onWatchEvent(target.name)));
+      } catch (error) {
+        // No such folder (yet): the next check attaches once it exists.
+        log('settings file directory not watched', { dir: target.dir, error: String(error) });
+      }
+    }
+  };
+
+  const checkNow = async (): Promise<void> => {
+    if (!started || stopped) {
+      return;
+    }
+    ensureWatchers();
+    const info = deps.fs.stat(path);
+    const seen = info === null ? null : `${info.ino}:${info.mtimeMs}:${info.size}`;
+    if (seen === lastSeen) {
+      return;
+    }
+    lastSeen = seen;
+    // Hash-guarded: our own writes and unchanged content are no-ops.
+    await applyFromDisk();
   };
 
   const scheduleWriteBack = () => {
@@ -270,6 +357,7 @@ export const makeSettingsFileSync = (path: string, deps: SettingsFileDeps): Sett
 
   return {
     applyFromDisk,
+    checkNow,
     createFromState: () =>
       enqueue(async () => {
         if (stopped) {
@@ -281,17 +369,20 @@ export const makeSettingsFileSync = (path: string, deps: SettingsFileDeps): Sett
           // Appeared while the export ran (another app instance, a sync
           // client): apply it rather than replace it.
           await applyText(existing);
-          arm();
+          ensureWatchers();
           return;
         }
         const hash = settingsTextHash(text);
         lastApplied = hash;
         deps.fs.mkdir(dir);
-        deps.fs.writeTextAtomic(path, text);
+        // A dangling symlink at the path: create its target, keep the link.
+        const target = deps.fs.realPath(path);
+        deps.fs.mkdir(dirname(target));
+        deps.fs.writeTextAtomic(target, text);
         const appliedAt = now();
         await deps.writeLastApplied({ appliedAt, hash });
         update({ exists: true, lastAppliedAt: appliedAt });
-        arm();
+        ensureWatchers();
       }),
     onInvalidation: (keys) => {
       if (keys.some((key) => SETTINGS_FILE_TRIGGER_KEYS.has(key))) {
@@ -309,8 +400,12 @@ export const makeSettingsFileSync = (path: string, deps: SettingsFileDeps): Sett
       // Only now: exporting before the initial import would write the
       // pre-import state over the file.
       started = true;
-      arm();
+      ensureWatchers();
       await writeBack();
+      const info = deps.fs.stat(path);
+      lastSeen = info === null ? null : `${info.ino}:${info.mtimeMs}:${info.size}`;
+      pollTimer = setInterval(() => void checkNow(), pollMs);
+      pollTimer.unref?.();
     },
     status: () => status,
     stop: () => {
@@ -321,8 +416,13 @@ export const makeSettingsFileSync = (path: string, deps: SettingsFileDeps): Sett
       if (writeTimer) {
         clearTimeout(writeTimer);
       }
-      unwatch?.();
-      unwatch = null;
+      if (pollTimer) {
+        clearInterval(pollTimer);
+      }
+      for (const unwatch of unwatchers) {
+        unwatch();
+      }
+      unwatchers = [];
     },
     subscribeStatus: (listener) => {
       listeners.add(listener);
