@@ -4,7 +4,6 @@ import {
   type AppleTaskListPref,
   type BirthdayReminderSettings,
   type EventNotificationSettings,
-  generateLocalId,
   isAppleCalendarAccount,
   isAppleRemindersAccount,
   type ScreenPrivacy,
@@ -297,7 +296,9 @@ export const importSettings = (
             contactsEnabled: false,
             createdAt: now,
             email,
-            id: generateLocalId(),
+            // Web Crypto: native in Node and Electron, polyfilled from
+            // expo-crypto on Hermes (apps/ios/src/polyfills.ts).
+            id: crypto.randomUUID(),
             provider: 'google',
             status: 'reauth_required',
             tasksEnabled: (prefs?.taskLists.length ?? 0) > 0,

@@ -280,18 +280,6 @@ export const mergeSettingsDocument = (text: string, document: SettingsDocument):
 };
 
 /**
- * A local account id. Hermes lacks crypto.randomUUID, and the ids only
- * need to be unique within one device's database.
- */
-export const generateLocalId = (): string =>
-  // eslint-disable-next-line unicorn/prefer-crypto-uuid -- Hermes lacks crypto.randomUUID
-  'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replaceAll(/[xy]/g, (char) => {
-    const random = Math.trunc(Math.random() * 16);
-    const value = char === 'x' ? random : (random & 0x3) | 0x8;
-    return value.toString(16);
-  });
-
-/**
  * What an import would do (preview) or did (import): the same summary from
  * the same plan, so the confirmation never disagrees with the outcome.
  */

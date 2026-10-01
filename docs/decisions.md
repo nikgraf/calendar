@@ -1426,6 +1426,12 @@ test`/`test:e2e`/`test:e2e:ios`; every file creates its own
       the first iOS CI run died at launch with "Requiring unknown module
       ./impl/format". One deep import fixes every bundler; a per-bundler
       alias did not.
+      Local account ids come from `crypto.randomUUID()` everywhere: native
+      in Node and Electron, and on Hermes filled in by the Web Crypto
+      polyfill (`apps/ios/src/polyfills.ts`, expo-crypto's native
+      `randomUUID` next to the `getRandomValues` it already installed) —
+      the hand-rolled `Math.random` UUID the iOS host carried is gone, and
+      an import no longer names accounts differently from a sign-in.
       Tests: `settingsDocument.test.ts` (parse, version gate, Hermes zone
       spelling, comment-preserving merge), `settingsExport.test.ts`,
       `settingsImport.test.ts` (preview = import, reauth row, parked and

@@ -1,5 +1,4 @@
 import {
-  generateLocalId,
   makeDirectBackendClient,
   mapToBackendError,
   Temporal,
@@ -162,7 +161,7 @@ const handlers: BackendHandlers<CommonBackendServices | TokenManager> = {
         try: () => signInWithGoogle(iosClientId ?? ''),
       });
       const result = yield* tokenManager.exchangeCode(grant);
-      return yield* finishAddAccount(result, generateLocalId);
+      return yield* finishAddAccount(result, () => crypto.randomUUID());
     }),
 };
 
