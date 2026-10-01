@@ -153,8 +153,10 @@ powers quick-add parsing, find-a-time, and dictation.
   `agents:*` IPC: never part of `SettingsDocument`, never importable. An
   agent token is shown once and stored only as its SHA-256 (a hash is not
   a usable token; the TokenStore rule below covers OAuth tokens).
-  Ask-first approval is given in the app, never via MCP elicitation, and
-  re-plans the write from the stored input. The relay runs under
+  Ask-first approval is given in the app, never via MCP elicitation; it
+  re-plans the write from the stored input and runs it only if the plan's
+  summary equals the one the user approved — so a summary must describe
+  the whole write and is never shortened (cap input sizes instead). The relay runs under
   `ELECTRON_RUN_AS_NODE`, so the RunAsNode fuse must stay enabled. The
   desktop e2e harness always points `CALENDAR_AGENT_SOCKET` under its
   temp profile — a run must never listen in a developer's `~/.solunivo`.

@@ -1531,6 +1531,25 @@ test`/`test:e2e`/`test:e2e:ios`; every file creates its own
       without a window on `--background` (what the relay passes when it
       launches the app via `open -g`), and opens a window on demand for a
       notification click. A login item and a menu-bar item are follow-ups.
+      An adversarial review before the first push found no way past a
+      grant and no existence oracle, but did find: summaries that
+      clipped guests and text (an approved invitation could carry a ninth
+      guest and a payload past character 160) — summaries are now never
+      shortened and inputs are capped instead; a summary that went stale
+      while it waited (the same agent could rewrite an event between the
+      question and the answer) — **an approval now only runs a plan whose
+      summary equals the approved one**, and adding a guest shows the
+      location and notes that guest will get; refused and finished socket
+      connections that were ended but never destroyed, so a peer without
+      a token could pin every slot; series-wide edits made through a
+      moved exception dragging the whole series (now based on the slot);
+      all-day series date changes answered "done" and dropped (now
+      refused); Apple occurrences resolved from the series' first
+      occurrence; occurrence slots that were never validated; CLI replies
+      over 1 MiB; a log that stored every input and could be flooded by
+      refusals; the request age limit only enforced by the hourly sweep.
+      Each has a regression test (`gateway.hardening.test.ts`,
+      `socketServer.test.ts`).
       Found on the way: two quick edits in the grant editor overwrote each
       other (each built on the last state main had sent back) — the
       editor now builds on its own last edit; the e2e spec caught it.

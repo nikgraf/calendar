@@ -106,6 +106,21 @@ calendar-keyed row for Google events, the mirror row for tasks. A ref
 that pairs a granted calendar with another calendar's event does not
 resolve. `moveToListId` is never exposed.
 
+An occurrence ref must name a real occurrence. Google: a stored
+exception at that slot, or a slot the rule produces (`assembleWindow`);
+a cancelled exception is a deleted occurrence. Apple: the occurrence is
+looked up in EventKit around its slot (±45 days), so one that was moved
+or renamed on its own is edited — and summarized — as it is now. A
+made-up slot is NotFound; a write can neither invent an exception nor
+answer "done" for nothing.
+
+A change with scope `series` or `following` starts from the occurrence's
+**slot**, not from a moved exception's own times (the series mutation
+shifts by the distance from the slot). An all-day series only moves one
+occurrence at a time; a series-wide date change is refused rather than
+silently dropped. The Reminders mirror can lag Reminders.app by a
+moment, so a reminder moved there is briefly judged by its old list.
+
 ### Ask first
 
 1. The write is planned (resolved, checked) and stored as a `pending`
@@ -119,8 +134,24 @@ resolve. `moveToListId` is never exposed.
    execute once). The write is **planned again from the stored input**, so
    a narrowed grant, a removed agent or a moved item still stops it.
 
+5. **An approval covers a description, not an input.** The replay is
+   planned again and runs only if it produces the very summary the user
+   approved (`sameSummary`). If the event was renamed, moved or gained
+   guests in between — by anyone, the same agent included — the request
+   fails with "changed after it was asked" and nothing is written.
+
+The summary is therefore the whole write: nothing in it is shortened
+(every guest, the full notes; the dialog scrolls), an update that adds
+guests also shows the location and notes those guests will receive, and
+line breaks in agent or invitation text are shown as `⏎` so they cannot
+pose as another line. Input sizes are capped instead (`ops/limits.ts`:
+title 500, location 1000, notes 8000, 100 guests, 10 recurrence lines);
+guest addresses must be printable ASCII.
+
 Identical pending requests are joined, 10 may wait per agent, and a
-request expires after 24 h. Approval is only ever given in the app —
+request can be answered for 24 h (checked when it is answered, not only
+by the hourly sweep). The dialog's buttons arm 700 ms after a request
+appears, so a double click on one request cannot approve the next. Approval is only ever given in the app —
 never through MCP elicitation, which the agent's own client could answer.
 
 ## Transport
@@ -137,8 +168,10 @@ never through MCP elicitation, which the agent's own client could answer.
   logged). The agent is looked up on **every call**, so a changed grant
   or replaced token applies to an open connection; removing an agent
   drops its connections.
-- Limits: 64 KiB hello within 5 s, 1 MiB per message, 32 connections,
-  120 calls a minute per agent, 400-day ranges, 2000 events.
+- Limits: 64 KiB hello within 5 s, 1 MiB per MCP message, 32
+  connections (8 per agent), 120 calls a minute per agent, 400-day
+  ranges, 2000 events. A refused or finished connection is destroyed,
+  not just ended — a peer that keeps its half open must not hold a slot.
 - MCP: 2026-07-28 (stateless, `server/discover`) with the 2025 `initialize`
   handshake still served (`legacy: 'serve'`).
 - If the socket is missing and the relay runs from a `.app`, it starts the
@@ -156,7 +189,11 @@ grants must not travel with anything that syncs or exports.
 - `agent_requests`: the approval queue and the activity log in one —
   every write attempt with agent, tool, summary, status (`pending`,
   `approved`, `done`, `failed`, `denied`, `expired`, `blocked`), result or
-  error. The newest 500 finished rows are kept.
+  error. A row keeps the tool input only while it can still be replayed
+  (`pending`/`approved`); the log is summaries. The newest 500 finished
+  rows are kept and, counted apart, the newest 100 refusals, so a burst
+  of refused calls cannot push real writes out (the Settings list gives
+  refusals their own small share for the same reason).
 
 Grants are managed over plain preload IPC (`agents:*`), never the rpc
 seam, and are never part of `SettingsDocument`: the watched settings file
