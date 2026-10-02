@@ -1,4 +1,4 @@
-appId: com.solunivo.app
+appId: com.solunivo.app.dev
 name: Real Reminders on CI - connect, create through EventKit, delete
 tags:
   - ci

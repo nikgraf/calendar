@@ -79,6 +79,11 @@ export const taskListOverride = (
 export interface RelayCommand {
   readonly args: ReadonlyArray<string>;
   readonly command: string;
+  /**
+   * The server's name in an agent's MCP configuration. The packaged app
+   * and a dev build differ, so one agent can be connected to both.
+   */
+  readonly name: string;
 }
 
 /** The entry an agent's MCP configuration needs (the common `mcpServers` shape). */
@@ -87,7 +92,7 @@ export const mcpConfigSnippet = (relay: RelayCommand, token: string): string =>
     {
       mcpServers: {
         // In the order people expect to read it: command, args, env.
-        solunivo: Object.fromEntries([
+        [relay.name]: Object.fromEntries([
           ['command', relay.command],
           ['args', [...relay.args, 'mcp']],
           ['env', { SOLUNIVO_AGENT_TOKEN: token }],

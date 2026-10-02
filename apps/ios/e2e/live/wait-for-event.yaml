@@ -1,4 +1,4 @@
-appId: com.solunivo.app
+appId: com.solunivo.app.dev
 name: Poll Google until this run's event titled TITLE exists (shared) → output.event
 ---
 # The app pushes right after Save; Google's list catches up within a

@@ -1,4 +1,4 @@
-appId: com.solunivo.app
+appId: com.solunivo.app.dev
 name: Switch the open new-event sheet to the task form (shared)
 ---
 # Run 35425328496: the mode tap reported COMPLETED and the sheet stayed on

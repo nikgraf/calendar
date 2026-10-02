@@ -1,4 +1,4 @@
-appId: com.solunivo.app
+appId: com.solunivo.app.dev
 name: Launch the app and wait for a settled shell (shared preamble)
 ---
 - launchApp

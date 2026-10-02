@@ -1,4 +1,4 @@
-appId: com.solunivo.app
+appId: com.solunivo.app.dev
 name: Swiping the timeline changes days
 tags:
   - ci

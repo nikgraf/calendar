@@ -6,6 +6,8 @@
 set -euo pipefail
 
 APP="${1:?path to the .app}"
+# The dev variant (app.config.js): e2e always drives the dev client.
+BUNDLE_ID="com.solunivo.app.dev"
 UDID=$(xcrun simctl list devices available -j | jq -r '
   .devices | to_entries
   | map(select(.key | test("iOS")))
@@ -26,9 +28,9 @@ fi
 xcrun simctl boot "$UDID" 2>/dev/null || true
 xcrun simctl bootstatus "$UDID" -b
 xcrun simctl install "$UDID" "$APP"
-xcrun simctl privacy "$UDID" grant reminders com.solunivo.app
-xcrun simctl privacy "$UDID" grant contacts com.solunivo.app
-xcrun simctl privacy "$UDID" grant calendar com.solunivo.app
+xcrun simctl privacy "$UDID" grant reminders "$BUNDLE_ID"
+xcrun simctl privacy "$UDID" grant contacts "$BUNDLE_ID"
+xcrun simctl privacy "$UDID" grant calendar "$BUNDLE_ID"
 # expo-dev-menu preferences (UserDefaults keys from DevMenuPreferences.swift):
 # no floating "Dev tools" button — it sits exactly over the app's own
 # settings gear and steals the tap — and no first-launch onboarding or
@@ -37,6 +39,6 @@ for pref in "EXDevMenuShowFloatingActionButton -bool false" \
             "EXDevMenuIsOnboardingFinished -bool true" \
             "EXDevMenuShowsAtLaunch -bool false"; do
   # shellcheck disable=SC2086
-  xcrun simctl spawn "$UDID" defaults write com.solunivo.app $pref
+  xcrun simctl spawn "$UDID" defaults write "$BUNDLE_ID" $pref
 done
 echo "SIMULATOR_UDID=$UDID" >> "${GITHUB_ENV:-/dev/null}"

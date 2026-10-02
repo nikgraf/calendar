@@ -12,18 +12,9 @@ import {
   makeSettingsFileSync,
   SETTINGS_FILE_KEY,
   type SettingsFileApplied,
+  settingsFilePath,
   type SettingsFileStatus,
 } from './settingsFileSync.ts';
-
-/**
- * The watched settings file. Default `~/.solunivo/solunivo.jsonc`; the e2e
- * harness points CALENDAR_SETTINGS_FILE under its temp profile so a test
- * never reads or writes a developer's real file. The window-level pieces
- * (file dialogs, status) are plain preload IPC; the document itself only
- * ever crosses the rpc seam.
- */
-export const settingsFilePath = (): string =>
-  process.env['CALENDAR_SETTINGS_FILE'] ?? join(homedir(), '.solunivo', 'solunivo.jsonc');
 
 const AppliedRow = Schema.Struct({ appliedAt: Schema.Number, hash: Schema.String });
 const decodeApplied = Schema.decodeUnknownOption(AppliedRow);
@@ -34,8 +25,16 @@ const broadcast = (status: SettingsFileStatus) => {
   }
 };
 
+/**
+ * The watched settings file. Default `~/.solunivo/solunivo.jsonc`
+ * (`solunivo-dev.jsonc` for a dev build); the e2e harness points
+ * CALENDAR_SETTINGS_FILE under its temp profile so a test never reads or
+ * writes a developer's real file. The window-level pieces (file dialogs,
+ * status) are plain preload IPC; the document itself only ever crosses the
+ * rpc seam.
+ */
 export const startSettingsFile = (host: BackendHost): void => {
-  const path = settingsFilePath();
+  const path = settingsFilePath({ env: process.env, home: homedir(), packaged: app.isPackaged });
   const sync = makeSettingsFileSync(path, {
     exportDocument: () => host.run(buildSettingsDocument),
     fs: nodeSettingsFileFs,

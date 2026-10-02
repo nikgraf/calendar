@@ -1,4 +1,4 @@
-appId: com.solunivo.app
+appId: com.solunivo.app.dev
 name: Birthday reminder settings persist on this device
 tags:
   - ci

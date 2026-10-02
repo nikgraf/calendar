@@ -1,4 +1,4 @@
-appId: com.solunivo.app
+appId: com.solunivo.app.dev
 name: Poll Google until this run's task titled TITLE exists, with STATUS when given (shared) → output.task
 ---
 - evalScript: ${output.taskMatched = false}

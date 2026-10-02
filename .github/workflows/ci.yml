@@ -179,6 +179,10 @@ jobs:
     env:
       CI: 1
       EXPO_NO_TELEMETRY: 1
+      # The dev variant (apps/ios/app.config.js): the fingerprint, the EAS
+      # dev client it selects and Metro's manifest must all be computed for
+      # the same variant.
+      APP_VARIANT: development
       # Pinned + checksum-verified below; bump both together.
       MAESTRO_VERSION: 2.10.0
       MAESTRO_SHA256: 29b675e10cc12080e445e9bfb2e2b4e4dfb9c0f2e30d5884120d258b5e1cd991
@@ -248,16 +252,14 @@ jobs:
           mkdir -p "$HOME/.maestro"
           cp -R "$RUNNER_TEMP/maestro-unzip/maestro/." "$HOME/.maestro/"
       - run: echo "$HOME/.maestro/bin" >> "$GITHUB_PATH"
-      - name: Pin the runtime version for Metro
-        # After the fingerprint step (an explicit runtimeVersion would change
-        # the fingerprint): with the fingerprint policy Expo CLI re-runs a
-        # full project fingerprint for every manifest request, which on this
-        # runner outlasts the dev launcher's 10 s request timeout.
-        working-directory: apps/ios
-        run: cp e2e/ci/app.config.ci.cjs app.config.js
       - name: Start Metro
         working-directory: apps/ios
         env:
+          # Read by app.config.js, and set here only — never for the
+          # fingerprint step, since an explicit runtimeVersion would change
+          # the fingerprint. With the fingerprint policy Expo CLI re-runs a
+          # full project fingerprint for every manifest request, which on
+          # this runner outlasts the dev launcher's 10 s request timeout.
           EXPO_RUNTIME_VERSION_PIN: ${{ steps.fingerprint.outputs.hash }}
           # The in-process fake Google API with a signed-in fixture account,
           # so the Google halves of the flows (create event, task lane, task

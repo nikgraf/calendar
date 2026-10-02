@@ -53,7 +53,8 @@ Create a Google Cloud project once, then:
 2. **APIs & Services → OAuth consent screen**: External, Testing mode; add yourself (and any other test users). Scopes: see `packages/google/src/oauth/scopes.ts` — the single source of truth (`calendar.readonly`, `calendar.events`, `tasks`, `contacts.readonly`, `contacts.other.readonly`, plus `openid email profile`). The two `contacts.*` scopes are _sensitive_: fine in Testing mode, but moving the consent screen to Production requires Google's app verification for them.
 3. **Credentials → Create credentials → OAuth client ID**:
    - Type **Desktop app** → used by the macOS app. Note client ID + secret.
-   - Type **iOS** (bundle id `com.solunivo.app`) → used by the iOS app. Note client ID.
+   - Type **iOS** (bundle id `com.solunivo.app`) → used by the production iOS app (TestFlight). Note client ID.
+   - Type **iOS** (bundle id `com.solunivo.app.dev`) → used by the iOS dev client, which is a separate app. Note client ID.
 4. Configure the desktop app, either via env vars:
    ```sh
    export GOOGLE_DESKTOP_CLIENT_ID="....apps.googleusercontent.com"
@@ -70,9 +71,12 @@ Adding a scope later (tasks, then contacts) does not touch accounts that are
 already signed in: their tokens never carried it. Re-run **Add Google Account**
 for the same address — it re-consents and upgrades the account in place.
 
-For iOS, set the client id in `apps/ios/app.json` under `expo.extra.googleIosClientId`
-and add the reversed client id (`com.googleusercontent.apps.<id>`) to `expo.scheme`,
-then re-run `pnpm --filter @calendar/ios prebuild`.
+For iOS, the production client id goes into `apps/ios/app.json` under
+`expo.extra.googleIosClientId`, with the reversed client id
+(`com.googleusercontent.apps.<id>`) added to `expo.scheme`. The dev client's
+goes into `DEV_GOOGLE_IOS_CLIENT_ID` in `apps/ios/app.config.js`, which derives
+its scheme. Either change needs a new build of that variant (see
+`docs/distribution.md`, "Two variants").
 
 ## Development
 

@@ -163,7 +163,8 @@ export function SettingsTransferSection() {
 }
 
 /**
- * The watched settings file (`~/.solunivo/solunivo.jsonc`): what it is,
+ * The watched settings file (`~/.solunivo/solunivo.jsonc`, or
+ * `solunivo-dev.jsonc` for a dev build): what it is,
  * what it is good for, what it exposes, its current state, and the one
  * button that creates it. Opt-in on purpose — the file lists account
  * emails and calendar names in plain text, so it only exists once asked
@@ -193,7 +194,9 @@ export function SettingsFileSection() {
       return null;
     });
 
-  const path = status ? shortPath(status.path) : '~/.solunivo/solunivo.jsonc';
+  // Until the status arrives only the folder is known: the file name
+  // differs between the packaged app and a dev build.
+  const path = status ? shortPath(status.path) : '~/.solunivo';
 
   const statusLine = (): string => {
     if (!status) {

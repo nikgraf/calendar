@@ -41,21 +41,33 @@ describe('setup text for a new agent', () => {
   const packaged = {
     args: [],
     command: '/Applications/Solunivo.app/Contents/Resources/solunivo-cli',
+    name: 'solunivo',
   };
+  const dev = { args: ['/Users/n g/dist/cli.mjs'], command: 'node', name: 'solunivo-dev' };
 
   it('is the mcpServers entry with the token in env, never in args', () => {
     const config = JSON.parse(mcpConfigSnippet(packaged, 'sol_abc')) as {
-      mcpServers: { solunivo: { args: Array<string>; command: string; env: object } };
+      mcpServers: Record<string, { args: Array<string>; command: string; env: object }>;
     };
-    expect(config.mcpServers.solunivo).toEqual({
-      args: ['mcp'],
-      command: packaged.command,
-      env: { SOLUNIVO_AGENT_TOKEN: 'sol_abc' },
+    expect(config.mcpServers).toEqual({
+      solunivo: {
+        args: ['mcp'],
+        command: packaged.command,
+        env: { SOLUNIVO_AGENT_TOKEN: 'sol_abc' },
+      },
     });
   });
 
+  it('names a dev build differently, so one agent can hold both entries', () => {
+    const config = JSON.parse(mcpConfigSnippet(dev, 'sol_abc')) as {
+      mcpServers: Record<string, { args: Array<string> }>;
+    };
+    expect(Object.keys(config.mcpServers)).toEqual(['solunivo-dev']);
+    expect(config.mcpServers['solunivo-dev']?.args).toEqual(['/Users/n g/dist/cli.mjs', 'mcp']);
+  });
+
   it('quotes a path with spaces in the shell example', () => {
-    expect(cliExample({ args: ['/Users/n g/dist/cli.mjs'], command: 'node' }, 'sol_abc')).toBe(
+    expect(cliExample(dev, 'sol_abc')).toBe(
       "SOLUNIVO_AGENT_TOKEN=sol_abc node '/Users/n g/dist/cli.mjs' list_calendars",
     );
   });

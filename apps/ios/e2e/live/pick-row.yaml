@@ -1,4 +1,4 @@
-appId: com.solunivo.app
+appId: com.solunivo.app.dev
 name: Select the picker row named NAME (shared) — calendar or task list
 ---
 # A row reads "<name>" or, once selected, "<name>, ✓". Maestro counts a

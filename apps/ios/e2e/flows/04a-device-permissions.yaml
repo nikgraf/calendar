@@ -1,4 +1,4 @@
-appId: com.solunivo.app
+appId: com.solunivo.app.dev
 name: First connection asks for Reminders and Contacts permission
 tags:
   - ci

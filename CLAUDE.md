@@ -135,7 +135,8 @@ powers quick-add parsing, find-a-time, and dictation.
   their own `e2e-<ts>-<runTag>` calendars and lists and assert only on
   their own ids; guest mail is muted (`GuestNotifications`).
 - The settings document (`SettingsDocument`, Export/Import and the
-  desktop's watched `~/.solunivo/solunivo.jsonc`) never holds tokens or
+  desktop's watched `~/.solunivo/solunivo.jsonc` — `solunivo-dev.jsonc`
+  for a run from source) never holds tokens or
   secrets: accounts are a sign-in checklist (kind + email + visibility),
   an unknown Google account imports as `reauth_required`, Apple accounts
   are never connected by an import, and an import never removes anything.
@@ -161,6 +162,26 @@ powers quick-add parsing, find-a-time, and dictation.
   desktop e2e harness always points `CALENDAR_AGENT_SOCKET` under its
   temp profile — a run must never listen in a developer's `~/.solunivo`.
   See docs/agent-gateway.md.
+- Two variants per platform, production and dev, that run side by side —
+  never a third. Desktop: the packaged app vs. a run from source,
+  switched on `app.isPackaged`, which picks the settings file
+  (`solunivo.jsonc` / `solunivo-dev.jsonc`), the agent socket
+  (`agent.sock` / `agent-dev.sock`) and the MCP entry's name (`solunivo` /
+  `solunivo-dev`); userData differs by itself. iOS: `com.solunivo.app`
+  (TestFlight) vs. `com.solunivo.app.dev` (the dev client), switched by
+  `APP_VARIANT=development` in `apps/ios/app.config.js`. Unset means
+  production, so release jobs set nothing; every dev consumer sets it
+  (eas.json's development profiles, the `start`/`ios`/`prebuild` scripts,
+  the iOS e2e jobs, `check-devclient.mjs`). The variants have different
+  native fingerprints: compute one under the `APP_VARIANT` of the build it
+  must match. Maestro flows and `simctl` grants name the dev id. Anything
+  two installed apps would both claim (a URL scheme, an OAuth client, a
+  file under `~/.solunivo`) must differ per variant. Apple data is the
+  device's and is shared by both. Keep `app.config.js` plain CommonJS:
+  Expo evaluates it on every manifest request, and a `.ts` config is
+  transpiled with Babel each time — on CI that pushed the dev client's
+  first request past its 10 s budget and `ios-e2e` past its hour. See
+  docs/distribution.md.
 - Event coordinates are only valid while `geo.source` matches the
   location text (`geoMatches`); every local write goes through
   `withConsistentGeo`, and an update PATCH touches the private geo keys

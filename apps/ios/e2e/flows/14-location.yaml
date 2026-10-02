@@ -1,4 +1,4 @@
-appId: com.solunivo.app
+appId: com.solunivo.app.dev
 name: The location field suggests places and maps a picked one
 # No `ci` tag: the suggestions and the map come from real MapKit on the
 # simulator, so this flow needs the network. Run it locally with

@@ -153,6 +153,8 @@ jobs:
     env:
       CI: 1
       EXPO_NO_TELEMETRY: 1
+      # The dev variant, as in ci.yml's ios-e2e.
+      APP_VARIANT: development
       # Pinned + checksum-verified below; keep in step with ci.yml.
       MAESTRO_VERSION: 2.10.0
       MAESTRO_SHA256: 29b675e10cc12080e445e9bfb2e2b4e4dfb9c0f2e30d5884120d258b5e1cd991
@@ -222,12 +224,10 @@ jobs:
           mkdir -p "$HOME/.maestro"
           cp -R "$RUNNER_TEMP/maestro-unzip/maestro/." "$HOME/.maestro/"
       - run: echo "$HOME/.maestro/bin" >> "$GITHUB_PATH"
-      - name: Pin the runtime version for Metro
-        working-directory: apps/ios
-        run: cp e2e/ci/app.config.ci.cjs app.config.js
       - name: Start Metro (live Google)
         working-directory: apps/ios
         env:
+          # Read by app.config.js (see ci.yml's ios-e2e).
           EXPO_RUNTIME_VERSION_PIN: ${{ steps.fingerprint.outputs.hash }}
           # Inlined into this dev bundle at Metro start: the real API signed
           # in as the live account, refreshed with the desktop OAuth client,

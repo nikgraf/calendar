@@ -1,4 +1,4 @@
-appId: com.solunivo.app
+appId: com.solunivo.app.dev
 name: Open the event whose block matches BLOCK in the edit sheet (shared)
 ---
 # The day grid scrolls, and Maestro counts a block outside its viewport as

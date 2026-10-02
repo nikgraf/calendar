@@ -11,8 +11,9 @@
 #
 # Not touched: TCC grants (Contacts/Reminders permissions), your Apple
 # Reminders and Contacts data, and apps/desktop/google-oauth.local.json.
-# Physical iOS devices: delete the app by hand (same bundle id for the dev
-# client and TestFlight, so one delete covers both).
+# Physical iOS devices: delete the app by hand (the dev client and the
+# TestFlight build are two apps, Solunivo Dev and Solunivo), and
+# ~/.solunivo (the watched settings files and the agent sockets).
 set -euo pipefail
 
 remove() {
@@ -59,10 +60,14 @@ if command -v xcrun >/dev/null 2>&1; then
     | python3 -c 'import json,sys; print("\n".join(d["udid"] for v in json.load(sys.stdin)["devices"].values() for d in v))' \
     || true)
   for udid in $booted; do
-    if xcrun simctl get_app_container "$udid" com.solunivo.app >/dev/null 2>&1; then
-      echo "uninstalling com.solunivo.app from simulator $udid"
-      xcrun simctl uninstall "$udid" com.solunivo.app
-    fi
+    # The dev client, and a production build (or a dev client from before
+    # the variants split) if one is installed.
+    for id in com.solunivo.app.dev com.solunivo.app; do
+      if xcrun simctl get_app_container "$udid" "$id" >/dev/null 2>&1; then
+        echo "uninstalling $id from simulator $udid"
+        xcrun simctl uninstall "$udid" "$id"
+      fi
+    done
   done
   [ -n "$booted" ] || echo "no booted simulator; boot one first if the iOS app should be reset too"
 fi

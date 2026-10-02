@@ -1,4 +1,4 @@
-appId: com.solunivo.app
+appId: com.solunivo.app.dev
 name: A reminder converts to a Google task and back through the list picker
 tags:
   - ci

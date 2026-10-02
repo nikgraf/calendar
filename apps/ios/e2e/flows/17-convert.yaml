@@ -1,4 +1,4 @@
-appId: com.solunivo.app
+appId: com.solunivo.app.dev
 name: A reminder converts to an event and back through the editor's kind toggle
 tags:
   - ci

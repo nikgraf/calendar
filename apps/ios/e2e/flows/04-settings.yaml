@@ -1,4 +1,4 @@
-appId: com.solunivo.app
+appId: com.solunivo.app.dev
 name: Accounts sheet opens and closes
 tags:
   - ci

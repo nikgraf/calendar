@@ -471,9 +471,11 @@ describe('agent gateway: other agents reach the app over the CLI and MCP', () =>
       await cdp.eval<string>(
         `document.querySelector('[data-testid="agent-mcp-config"]').textContent`,
       ),
-    ) as { mcpServers: { solunivo: { args: Array<string>; env: Record<string, string> } } };
-    expect(config.mcpServers.solunivo.args.at(-1)).toBe('mcp');
-    expect(config.mcpServers.solunivo.env).toEqual({ SOLUNIVO_AGENT_TOKEN: token });
+    ) as { mcpServers: Record<string, { args: Array<string>; env: Record<string, string> }> };
+    // The harness runs the app unpackaged, which names itself as a dev build.
+    const entry = config.mcpServers['solunivo-dev'];
+    expect(entry?.args.at(-1)).toBe('mcp');
+    expect(entry?.env).toEqual({ SOLUNIVO_AGENT_TOKEN: token });
 
     // A new agent can connect and sees nothing.
     expect(json<Listed<CalendarRow>>(await runAgentCli(app, token, ['list_calendars']))).toEqual({

@@ -1,4 +1,4 @@
-appId: com.solunivo.app
+appId: com.solunivo.app.dev
 name: Recover the running dev client and wait for a settled shell
 ---
 # The app re-bundles from Metro on a cold dev-client launch; wait for the

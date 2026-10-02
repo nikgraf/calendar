@@ -27,12 +27,12 @@ function replaceOnce(source, pattern, replacement) {
   return source.replace(pattern, replacement);
 }
 
-function iosArtwork(source) {
+function iosArtwork(source, idPrefix) {
   // Fill a square before iOS applies its own mask. Keep the number and curl
   // curves intact; only the outer paper edges lose the baked-in macOS corners.
   let result = replaceOnce(source, /viewBox="0 0 1024 1024"/, 'viewBox="76 68 851 851"');
   result = replaceOnce(result, /transform="scale\(1\.02073\)"/, '');
-  const cream = source.match(/id="solunivo-number-24-cream-face" d="[^"]*V483(C[^H]+)H258/);
+  const cream = source.match(new RegExp(`id="${idPrefix}-cream-face" d="[^"]*V483(C[^H]+)H258`));
   if (!cream) {
     throw new Error('The cream-face curl no longer matches the iOS adapter.');
   }
@@ -42,7 +42,7 @@ function iosArtwork(source) {
     'peach-face': 'M76 68H927V906H76Z',
   };
   for (const [name, path] of Object.entries(edges)) {
-    const pattern = new RegExp(`<path\\b[^>]*id="solunivo-number-24-${name}"[^>]*>`);
+    const pattern = new RegExp(`<path\\b[^>]*id="${idPrefix}-${name}"[^>]*>`);
     result = replaceOnce(result, pattern, (tag) => tag.replace(/\bd="[^"]*"/, `d="${path}"`));
   }
   return result;
@@ -218,21 +218,34 @@ try {
   }
 
   const source = await readFile(join(brand, 'icons/solunivo.svg'), 'utf8');
-  const square = iosArtwork(source);
+  const square = iosArtwork(source, 'solunivo-number-24');
   const ios = await sharp(Buffer.from(square), { density: 144 })
     .resize(1024, 1024)
     .flatten({ background: tokens.brand.blush })
     .removeAlpha()
     .png()
     .toBuffer();
+  // The dev variant (com.solunivo.app.dev) sits next to the production app
+  // on one home screen, so it wears the dark master: plum paper, ivory date.
+  const darkSource = await readFile(join(brand, 'icons/solunivo-dark.svg'), 'utf8');
+  const iosDev = await sharp(Buffer.from(iosArtwork(darkSource, 'solunivo-dark-24')), {
+    density: 144,
+  })
+    .resize(1024, 1024)
+    .flatten({ background: tokens.brand.plum })
+    .removeAlpha()
+    .png()
+    .toBuffer();
   await write(join(kit, 'exports/ios/icon.svg'), square);
   await write(join(kit, 'exports/ios/icon.png'), ios);
+  await write(join(kit, 'exports/ios/icon-dev.png'), iosDev);
 
   const generated = new Map([
     [
       'apps/desktop/assets/icon.icns',
       await readFile(join(kit, 'exports/icons/default/Solunivo.icns')),
     ],
+    ['apps/ios/assets/icon-dev.png', iosDev],
     ['apps/ios/assets/icon.png', ios],
     ['brand/tokens/tokens.css', Buffer.from(css)],
   ]);
