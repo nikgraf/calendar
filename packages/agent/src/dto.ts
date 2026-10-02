@@ -5,6 +5,7 @@ import {
   type Contact,
   type EventRecord,
   isCalendarWritable,
+  isDeclinedBySelf,
   isTaskListWritable,
   meetingUrl,
   type TaskListInfo,
@@ -188,16 +189,6 @@ export const toContactDto = (contact: Contact): ContactDto => ({
   ...(contact.displayName === undefined ? {} : { name: contact.displayName }),
 });
 
-/** Whether the user turned the event down (it then blocks no time). */
-export const isDeclinedBySelf = (event: EventRecord, accountEmail: string | undefined): boolean => {
-  const own = accountEmail?.toLowerCase();
-  return (event.attendees ?? []).some(
-    (attendee) =>
-      attendee.responseStatus === 'declined' &&
-      (attendee.isSelf === true || (own !== undefined && attendee.email.toLowerCase() === own)),
-  );
-};
-
 /** Guests other than the user and booked rooms — the people a write would reach. */
 export const otherGuests = (
   event: Pick<EventRecord, 'attendees'>,
@@ -219,33 +210,8 @@ export const otherGuests = (
 export const isBusy = (event: EventRecord, accountEmail: string | undefined): boolean =>
   !event.isAllDay && event.status !== 'cancelled' && !isDeclinedBySelf(event, accountEmail);
 
-/**
- * The free/busy answer: intervals clipped to the range and merged across
- * calendars, so neither a block's source calendar nor how many events
- * overlap in it can be read back.
- */
-export const mergeBusy = (
-  events: ReadonlyArray<Pick<EventRecord, 'endUtc' | 'startUtc'>>,
-  range: { readonly endUtc: number; readonly startUtc: number },
-): Array<{ endUtc: number; startUtc: number }> => {
-  const clipped = events
-    .map((event) => ({
-      endUtc: Math.min(event.endUtc, range.endUtc),
-      startUtc: Math.max(event.startUtc, range.startUtc),
-    }))
-    .filter((interval) => interval.endUtc > interval.startUtc)
-    .sort((a, b) => a.startUtc - b.startUtc);
-  const merged: Array<{ endUtc: number; startUtc: number }> = [];
-  for (const interval of clipped) {
-    const last = merged.at(-1);
-    if (last && interval.startUtc <= last.endUtc) {
-      last.endUtc = Math.max(last.endUtc, interval.endUtc);
-    } else {
-      merged.push({ ...interval });
-    }
-  }
-  return merged;
-};
+// Shared with the availability mirror, so they live in core.
+export { isDeclinedBySelf, mergeBusy } from '@calendar/core';
 
 export const toBusyBlockDto = (
   interval: { readonly endUtc: number; readonly startUtc: number },

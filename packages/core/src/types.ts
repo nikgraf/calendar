@@ -268,6 +268,12 @@ export class GeoLocation extends Schema.Class<GeoLocation>('GeoLocation')({
   source: Schema.String,
 }) {}
 
+export const EventTransparency = Schema.Literals(['opaque', 'transparent']);
+export type EventTransparency = typeof EventTransparency.Type;
+
+export const EventVisibility = Schema.Literals(['confidential', 'default', 'private', 'public']);
+export type EventVisibility = typeof EventVisibility.Type;
+
 export class EventRecord extends Schema.Class<EventRecord>('EventRecord')({
   accountId: Schema.String,
   attendees: Schema.optional(Schema.Array(Attendee)),
@@ -285,6 +291,12 @@ export class EventRecord extends Schema.Class<EventRecord>('EventRecord')({
   id: Schema.String,
   isAllDay: Schema.Boolean,
   location: Schema.optional(Schema.String),
+  /**
+   * Set only on a calendar mirror's copy: the marker the mirror wrote
+   * (see core `mirror/marker.ts`). Copies are hidden from every read the
+   * UI, find-a-time, notifications and agents share.
+   */
+  mirror: Schema.optional(Schema.String),
   organizerEmail: Schema.optional(Schema.String),
   /** Identifies an override's slot in its series (from originalStartTime). */
   originalStartUtc: Schema.optional(Schema.Number),
@@ -302,7 +314,14 @@ export class EventRecord extends Schema.Class<EventRecord>('EventRecord')({
   syncedAt: Schema.Number,
   syncStatus: SyncStatus,
   title: Schema.String,
+  /** Google only: 'transparent' = marked free. Absent on rows synced before it was modelled. */
+  transparency: Schema.optional(EventTransparency),
   updatedAt: Schema.Number,
+  /**
+   * Google only. Absent on rows synced before it was modelled — a mirror
+   * treats those as private until the re-list fills it in.
+   */
+  visibility: Schema.optional(EventVisibility),
 }) {}
 
 /**
