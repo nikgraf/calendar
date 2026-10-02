@@ -227,7 +227,7 @@ jobs:
       - name: Start Metro (live Google)
         working-directory: apps/ios
         env:
-          # Read by app.config.ts (see ci.yml's ios-e2e).
+          # Read by app.config.js (see ci.yml's ios-e2e).
           EXPO_RUNTIME_VERSION_PIN: ${{ steps.fingerprint.outputs.hash }}
           # Inlined into this dev bundle at Metro start: the real API signed
           # in as the live account, refreshed with the desktop OAuth client,

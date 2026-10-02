@@ -152,7 +152,7 @@ const handlers: BackendHandlers<CommonBackendServices | TokenManager> = {
             message:
               'Google OAuth is not configured. Set the iOS OAuth client id ' +
               '(expo.extra.googleIosClientId in apps/ios/app.json, or the dev ' +
-              "variant's in apps/ios/app.config.ts) and rebuild.",
+              "variant's in apps/ios/app.config.js) and rebuild.",
           }),
         );
       }

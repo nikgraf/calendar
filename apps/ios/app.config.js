@@ -1,5 +1,3 @@
-import type { ConfigContext, ExpoConfig } from 'expo/config';
-
 /**
  * Two variants of the app that install side by side (docs/distribution.md):
  *
@@ -19,14 +17,19 @@ import type { ConfigContext, ExpoConfig } from 'expo/config';
  * The variants have different native fingerprints, so whatever computes one
  * (`fingerprint:generate`, `eas update`) has to run under the same
  * `APP_VARIANT` as the build it is meant to match.
+ *
+ * Plain CommonJS on purpose, not TypeScript: Expo CLI evaluates this file
+ * for every manifest request, once more in a fresh process each time, and
+ * a .ts config has to be transpiled there first. On a CI runner that put
+ * the dev launcher's first request after a launch past its 10 s budget.
  */
-type Variant = 'development' | 'production';
 
 /** The iOS OAuth client registered for `com.solunivo.app.dev`. */
 const DEV_GOOGLE_IOS_CLIENT_ID =
   '930599242270-9nm0noj40jiamnc6ettbj36gdei0adis.apps.googleusercontent.com';
 
-const variant = (): Variant => {
+/** @returns {'development' | 'production'} */
+const variant = () => {
   const value = process.env.APP_VARIANT ?? 'production';
   if (value !== 'development' && value !== 'production') {
     throw new Error(`APP_VARIANT must be "development" or "production", got "${value}"`);
@@ -34,14 +37,20 @@ const variant = (): Variant => {
   return value;
 };
 
-/** Google's redirect scheme for an iOS client (see `redirectUriFor` in src/googleAuth.ts). */
-const reversedClientId = (clientId: string): string =>
+/**
+ * Google's redirect scheme for an iOS client (see `redirectUriFor` in src/googleAuth.ts).
+ * @param {string} clientId
+ */
+const reversedClientId = (clientId) =>
   `com.googleusercontent.apps.${clientId.replace('.apps.googleusercontent.com', '')}`;
 
-export default ({ config }: ConfigContext): ExpoConfig => {
+/**
+ * @param {import('expo/config').ConfigContext} context
+ * @returns {Partial<import('expo/config').ExpoConfig>}
+ */
+module.exports = ({ config }) => {
   const base = {
     ...config,
-    name: config.name ?? 'Solunivo',
     // With runtimeVersion.policy "fingerprint", Expo CLI re-runs
     // `expo-updates runtimeversion:resolve` — a full fingerprint of the
     // project — for every manifest request; on a small CI runner that
@@ -52,7 +61,6 @@ export default ({ config }: ConfigContext): ExpoConfig => {
     // fingerprint. Set for Metro only, never while the fingerprint itself
     // is computed — an explicit runtimeVersion would change it.
     runtimeVersion: process.env.EXPO_RUNTIME_VERSION_PIN || config.runtimeVersion,
-    slug: config.slug ?? 'solunivo',
   };
   if (variant() === 'production') {
     return {

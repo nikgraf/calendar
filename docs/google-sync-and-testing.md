@@ -655,7 +655,7 @@ Flakiness lessons (each caused a real CI failure — keep them enforced):
   before it is opened: the bundle is warmed through the manifest's
   `launchAsset.url` (so the request shares Metro's cache with the
   client's), and the runtime version is pinned to the computed
-  fingerprint (`EXPO_RUNTIME_VERSION_PIN`, read by `app.config.ts` and
+  fingerprint (`EXPO_RUNTIME_VERSION_PIN`, read by `app.config.js` and
   set on the Metro step only, never while the fingerprint is computed) —
   with the fingerprint policy Expo CLI re-runs a full project
   fingerprint for _every_ manifest request, ~2 s on a laptop and past

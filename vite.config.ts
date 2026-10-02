@@ -47,7 +47,7 @@ export default defineConfig({
         env: {
           node: true,
         },
-        files: ['**/*.cjs', 'apps/ios/metro.config.js'],
+        files: ['**/*.cjs', 'apps/ios/app.config.js', 'apps/ios/metro.config.js'],
         rules: {
           'typescript/no-require-imports': 'off',
         },

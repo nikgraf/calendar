@@ -6,7 +6,7 @@
 set -euo pipefail
 
 APP="${1:?path to the .app}"
-# The dev variant (app.config.ts): e2e always drives the dev client.
+# The dev variant (app.config.js): e2e always drives the dev client.
 BUNDLE_ID="com.solunivo.app.dev"
 UDID=$(xcrun simctl list devices available -j | jq -r '
   .devices | to_entries

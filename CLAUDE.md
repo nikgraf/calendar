@@ -169,7 +169,7 @@ powers quick-add parsing, find-a-time, and dictation.
   (`agent.sock` / `agent-dev.sock`) and the MCP entry's name (`solunivo` /
   `solunivo-dev`); userData differs by itself. iOS: `com.solunivo.app`
   (TestFlight) vs. `com.solunivo.app.dev` (the dev client), switched by
-  `APP_VARIANT=development` in `apps/ios/app.config.ts`. Unset means
+  `APP_VARIANT=development` in `apps/ios/app.config.js`. Unset means
   production, so release jobs set nothing; every dev consumer sets it
   (eas.json's development profiles, the `start`/`ios`/`prebuild` scripts,
   the iOS e2e jobs, `check-devclient.mjs`). The variants have different
@@ -177,7 +177,11 @@ powers quick-add parsing, find-a-time, and dictation.
   must match. Maestro flows and `simctl` grants name the dev id. Anything
   two installed apps would both claim (a URL scheme, an OAuth client, a
   file under `~/.solunivo`) must differ per variant. Apple data is the
-  device's and is shared by both. See docs/distribution.md.
+  device's and is shared by both. Keep `app.config.js` plain CommonJS:
+  Expo evaluates it on every manifest request, and a `.ts` config is
+  transpiled with Babel each time — on CI that pushed the dev client's
+  first request past its 10 s budget and `ios-e2e` past its hour. See
+  docs/distribution.md.
 - Event coordinates are only valid while `geo.source` matches the
   location text (`geoMatches`); every local write goes through
   `withConsistentGeo`, and an update PATCH touches the private geo keys

@@ -15,7 +15,7 @@ const say = (message) => {
 };
 
 const root = fileURLToPath(new URL('..', import.meta.url));
-// The dev client is the dev variant (app.config.ts): its bundle id, and a
+// The dev client is the dev variant (app.config.js): its bundle id, and a
 // fingerprint computed for that variant — production hashes differently.
 const run = (command, args) =>
   execFileSync(command, args, {

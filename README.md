@@ -74,7 +74,7 @@ for the same address — it re-consents and upgrades the account in place.
 For iOS, the production client id goes into `apps/ios/app.json` under
 `expo.extra.googleIosClientId`, with the reversed client id
 (`com.googleusercontent.apps.<id>`) added to `expo.scheme`. The dev client's
-goes into `DEV_GOOGLE_IOS_CLIENT_ID` in `apps/ios/app.config.ts`, which derives
+goes into `DEV_GOOGLE_IOS_CLIENT_ID` in `apps/ios/app.config.js`, which derives
 its scheme. Either change needs a new build of that variant (see
 `docs/distribution.md`, "Two variants").
 

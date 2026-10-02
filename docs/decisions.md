@@ -99,7 +99,7 @@ design decisions it settled.
       stays production (the installed TestFlight app keeps its data) and
       the dev client becomes `com.solunivo.app.dev`, "Solunivo Dev", with
       the dark icon master. `app.json` stays the production app as
-      written and `app.config.ts` layers the dev variant on top under
+      written and `app.config.js` layers the dev variant on top under
       `APP_VARIANT=development`; **unset means production**, so a release
       job that forgets the variable cannot ship the dev identity, while a
       dev consumer that forgets it fails visibly (no matching dev client,
@@ -107,10 +107,20 @@ design decisions it settled.
       scheme and their own Google iOS client — two installed apps
       claiming one scheme get the redirect at iOS's whim — and production
       drops expo-dev-client's generated `exp+solunivo` scheme. The CI
-      runtime-version pin moved from the copied `app.config.js` overlay
-      into `app.config.ts`, because Expo resolves `.ts` first and the
-      overlay would silently have stopped loading. Fingerprints differ
-      per variant, so the e2e jobs compute theirs under the dev variant.
+      runtime-version pin, until now a CI-only overlay copied to
+      `app.config.js`, became part of that file. **The config is plain
+      CommonJS, not TypeScript**: it was `app.config.ts` first, and
+      `ios-e2e` then ran past its 60 minutes twice. Expo evaluates the
+      config for every manifest request, once more in a fresh process
+      each time, and a `.ts` config is transpiled with Babel there
+      (manifest 0.12 s → 0.23 s on a laptop, 0.2–0.9 s → 0.5–3 s on the
+      runner). After nearly every launch the dev client's first request
+      missed the launcher's 10 s budget, fell back to the launcher home
+      and had to be recovered by the flows — which main never does. The
+      Babel modules also landed in the fingerprint as loaded sources, so
+      a `caniuse-lite` bump would have asked for a new dev client.
+      Fingerprints differ per variant, so the e2e jobs compute theirs
+      under the dev variant.
       Not separated, by nature: Apple Calendar, Reminders and Contacts
       belong to the device — withhold the permissions from the dev app
       (iOS) or start a dev run with the `CALENDAR_*=off` switches

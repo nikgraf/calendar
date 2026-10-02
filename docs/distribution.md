@@ -171,11 +171,11 @@ The app exists twice, and the two install side by side on one device:
 | EAS profiles  | `testflight`                     | `development`, `development-simulator`        |
 | Distribution  | TestFlight, later the App Store  | internal (ad hoc) and the simulator CI drives |
 | URL schemes   | `solunivo`, its Google redirect  | `solunivo-dev`, its Google redirect           |
-| Google client | `app.json` → `googleIosClientId` | `DEV_GOOGLE_IOS_CLIENT_ID` in `app.config.ts` |
+| Google client | `app.json` → `googleIosClientId` | `DEV_GOOGLE_IOS_CLIENT_ID` in `app.config.js` |
 | Meant for     | the real accounts                | test accounts, Metro, Maestro                 |
 
 `apps/ios/app.json` is the production app as written;
-`apps/ios/app.config.ts` layers the dev variant on top when
+`apps/ios/app.config.js` layers the dev variant on top when
 `APP_VARIANT=development`. **Unset means production**, so a release job
 that forgets the variable can never ship the dev identity — `ios.yml` sets
 nothing. The dev side sets it everywhere it is needed: the two development
