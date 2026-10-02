@@ -441,14 +441,8 @@ describe('agent gateway: other agents reach the app over the CLI and MCP', () =>
   });
 
   it('Settings → Agents: create an agent, grant it, and remove it', async () => {
-    const { cdp } = app;
-    await cdp.eval(
-      `[...document.querySelectorAll('button')].find(b => b.title === 'Accounts')?.click()`,
-    );
+    const cdp = await app.openSettings('agents');
     await cdp.waitFor(`!!document.querySelector('[data-testid="agents-section"]')`);
-    await cdp.eval(
-      `document.querySelector('[data-testid="agents-section"]').scrollIntoView({ block: 'center' })`,
-    );
     // The seeded agents are listed (a retried run may also still show its own).
     const listed = await cdp.eval<Array<string>>(
       `[...document.querySelectorAll('[data-testid="agent-row"]')].map(row => row.dataset.agentName)`,
@@ -505,7 +499,7 @@ describe('agent gateway: other agents reach the app over the CLI and MCP', () =>
     await cdp.waitFor(`!document.querySelector(${JSON.stringify(row)})`);
     const gone = await runAgentCli(app, token, ['list_calendars']);
     expect(gone.code).toBe(3);
-    await cdp.pressEscape();
+    await app.closeSettings();
   });
 
   it('the relay answers --version and --help without a token or a running app', async () => {

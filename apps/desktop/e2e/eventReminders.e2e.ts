@@ -178,10 +178,7 @@ describe('event reminders', () => {
   });
 
   it('stores the notification switches on this device only', async () => {
-    const { cdp } = app;
-    await cdp.eval(
-      `[...document.querySelectorAll('button')].find(b => b.title === 'Accounts')?.click()`,
-    );
+    const cdp = await app.openSettings('notifications');
     await cdp.waitFor(`document.body.textContent.includes('Event notifications')`);
     expect(
       await cdp.eval<boolean>(
@@ -207,6 +204,6 @@ describe('event reminders', () => {
     await cdp.waitFor(
       `document.querySelector('input[aria-label="Also for Apple Calendar events"]')?.disabled === true`,
     );
-    await cdp.pressEscape();
+    await app.closeSettings();
   });
 });

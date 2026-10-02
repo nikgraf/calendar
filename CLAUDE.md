@@ -103,10 +103,17 @@ powers quick-add parsing, find-a-time, and dictation.
   write literals sorted or `vp check` fails.
 - Window-level concerns (screen privacy, logging, open-external, the four
   `model:*` AI-helper channels, the `reminders:*` / `contacts:*` /
-  `appleCalendar:*` permission-status channels, and `agents:*`) use plain
-  preload IPC;
+  `appleCalendar:*` permission-status channels, `settings:open`, and
+  `agents:*`) use plain preload IPC;
   calendar data — reminders, Apple events and contact rows included — goes
   through the typed rpc seam only.
+- The desktop has two windows on one renderer bundle: the calendar and
+  Settings (`#settings/<pane>`, App menu › Settings… / ⌘,, one at most).
+  Each is its own rpc client. Find the main window through `windows.ts`
+  (`showMainWindow` / `hasMainWindow`), never `getAllWindows()[0]`;
+  broadcasts go to all windows. The agent approval dialog, the conflict
+  banner and the dropped-change toast are mounted in the main window
+  only.
 - Tasks and events are provider-dispatched: Google goes through the
   pending-op queue; Apple writes EventKit synchronously (Reminders mirror
   the result, Apple Calendar events are read through and never stored).

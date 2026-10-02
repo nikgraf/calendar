@@ -5,6 +5,7 @@ import { duplexClientProtocol } from '@calendar/sync/rpcDuplex';
 import { Context, Effect, Fiber, Layer, ManagedRuntime, Stream } from 'effect';
 import { RpcClient, RpcSerialization } from 'effect/unstable/rpc';
 import type { RpcClientError } from 'effect/unstable/rpc/RpcClientError';
+import type { SettingsPaneId } from './settingsPanes.ts';
 
 export interface PrivacyState {
   readonly mode: 'hidden' | 'visible';
@@ -48,6 +49,8 @@ declare global {
       onPrivacyChanged: (listener: (state: PrivacyState) => void) => () => void;
       onRpcMessage: (listener: (data: string | Uint8Array) => void) => () => void;
       onSettingsFileChanged: (listener: (status: SettingsFileStatus) => void) => () => void;
+      /** Opens the settings window (or focuses it), on `pane` when given. */
+      openSettings: (pane?: SettingsPaneId) => Promise<void>;
       privacyGet: () => Promise<PrivacyState>;
       privacySet: (choice: 'hidden' | 'pause10m' | 'visible') => Promise<PrivacyState>;
       remindersStatus: () => Promise<string>;

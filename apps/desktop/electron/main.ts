@@ -1,15 +1,23 @@
-import { app, BrowserWindow, ipcMain, session, shell } from 'electron';
+import { app, ipcMain, session, shell } from 'electron';
 import { updateElectronApp } from 'update-electron-app';
 import { startAgentHost } from './agent/agentHost.ts';
 import { startBackendHost } from './backendHost.ts';
 import { startSettingsFile } from './settingsFile.ts';
 import { initFileLogging, logRendererError } from './log.ts';
+import { installApplicationMenu } from './menu.ts';
 import { initPrivacy } from './privacy.ts';
 import { registerModelHelper } from './modelHelper.ts';
 import { registerAppleCalendarIpc } from './appleCalendarIpc.ts';
 import { registerContactsIpc } from './contactsIpc.ts';
 import { registerRemindersIpc } from './remindersIpc.ts';
-import { createMainWindow, isOwnPage, rendererUrl, showMainWindow } from './windows.ts';
+import {
+  createMainWindow,
+  hasMainWindow,
+  isOwnPage,
+  registerSettingsIpc,
+  rendererUrl,
+  showMainWindow,
+} from './windows.ts';
 
 /**
  * The renderer loads nothing remote: scripts and styles are its own
@@ -133,12 +141,16 @@ void app.whenReady().then(() => {
   registerRemindersIpc();
   registerContactsIpc();
   registerAppleCalendarIpc();
+  registerSettingsIpc();
+  installApplicationMenu();
   if (!startInBackground) {
     createMainWindow();
   }
 
+  // A Dock click brings the calendar back, also when only the settings
+  // window is open.
   app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
+    if (!hasMainWindow()) {
       createMainWindow();
     }
   });

@@ -36,11 +36,11 @@ const seed = { accounts: [account], calendars: [calendar], events: [] };
 
 const fileText = (app: App): string => readFileSync(app.settingsFilePath, 'utf8');
 
-const openSettings = async (cdp: App['cdp']) => {
-  await cdp.eval(
-    `[...document.querySelectorAll('button')].find(b => b.title === 'Accounts')?.click()`,
-  );
-  await cdp.waitFor(`!!document.querySelector('[data-testid="settings-file"]')`);
+/** The settings window on Advanced, where the file's card lives. */
+const openSettings = async (app: App): Promise<App['cdp']> => {
+  const settings = await app.openSettings('advanced');
+  await settings.waitFor(`!!document.querySelector('[data-testid="settings-file"]')`);
+  return settings;
 };
 
 const statusText = (cdp: App['cdp']) =>
@@ -99,9 +99,9 @@ describe('settings file: applied at launch and while running, written back on ed
     } | null;
     expect(typeof applied?.hash).toBe('string');
 
-    await openSettings(cdp);
+    const settings = await openSettings(app);
     await expect
-      .poll(() => statusText(cdp), { timeout: 10_000 })
+      .poll(() => statusText(settings), { timeout: 10_000 })
       .toMatch(/^Watching .*solunivo\.jsonc/);
     // The write-back filled the file in with the seeded account and its calendar.
     await expect.poll(() => fileText(app), { timeout: 10_000 }).toContain('"e2e@nikgraf.com"');
@@ -136,8 +136,8 @@ describe('settings file: applied at launch and while running, written back on ed
   });
 
   it('writes a settings change back, keeping the comments', async () => {
-    const { cdp } = app;
-    // The Work checkbox in the account card (the settings modal is still open).
+    // The Work checkbox in the account card (the settings window is still open).
+    const cdp = await app.openSettings('accounts');
     await cdp.waitFor(
       `[...document.querySelectorAll('input[type="checkbox"]')].some(b => b.parentElement?.textContent?.includes('Work') && !b.checked)`,
     );
@@ -173,8 +173,7 @@ describe('settings file: created on request', () => {
   });
 
   it('starts without a file and creates one from the current state', async () => {
-    const { cdp } = app;
-    await openSettings(cdp);
+    const cdp = await openSettings(app);
     await expect.poll(() => statusText(cdp), { timeout: 10_000 }).toMatch(/^No file yet/);
     expect(() => fileText(app)).toThrow();
 
@@ -220,6 +219,7 @@ describe('settings file: created on request', () => {
     ]);
 
     // A later change lands in the file.
+    await app.openSettings('general');
     await cdp.clickButtonWithText('Always visible');
     await expect
       .poll(() => fileText(app), { timeout: 10_000 })

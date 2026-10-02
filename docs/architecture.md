@@ -441,6 +441,22 @@ model: `docs/agent-gateway.md`.
   opens one on demand (Dock, a notification click, a second launch).
   `--background` starts without a window — what the agent relay passes
   when it has to launch the app.
+- Two windows, one renderer bundle. `renderer/main.tsx` mounts the
+  calendar, or the settings window when the page was loaded at
+  `#settings` (`windows.ts` `showSettingsWindow`). Settings is opened from
+  the application menu (`menu.ts`: Settings…, ⌘,) — also with no main
+  window — or over `settings:open` from the sidebar's "Manage accounts…";
+  there is one at most, fixed-size, with minimize and zoom off. The pane is the
+  URL hash (`#settings/<pane>`): the main process moves an open window by
+  navigating the hash, which the page sees as `hashchange` without a
+  reload (a pane asked for while the page still loads is applied when
+  loading stops), and a tab click navigates the hash too — the page
+  reads the pane from the hash and never writes its own state over it. Each window is its own
+  rpc client (`webContents.id`) with its own atoms, kept in step by the
+  invalidation stream; `privacy:changed`, `agents:changed` and
+  `settingsFile:changed` are sent to every window. The agent approval
+  dialog, the conflict banner and the dropped-change toast live in the
+  main window only.
 - Auto-update (`update-electron-app` + Forge GitHub publisher) is wired
   but inert: builds are signed now, so the remaining blocker is that the
   repo (and thus Releases) is private — update.electronjs.org only serves
