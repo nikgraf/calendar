@@ -29,6 +29,7 @@ export * from './mirror/definition.ts';
 export * from './mirror/diff.ts';
 export * from './mirror/item.ts';
 export * from './mirror/marker.ts';
+export * from './mirror/status.ts';
 export * from './mirror/transform.ts';
 export * from './mirror/window.ts';
 export * from './notifications/eventReminders.ts';

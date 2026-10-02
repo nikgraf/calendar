@@ -53,7 +53,11 @@ const remindersSetup = (client: RemindersClientShape) => {
       Layer.provideMerge(reactivityLayer),
     ),
     Layer.succeed(RemindersClient, client),
-    Layer.succeed(SyncEngine, { start: () => Effect.void, syncAll }),
+    Layer.succeed(SyncEngine, {
+      exclusive: (effect) => effect,
+      start: () => Effect.void,
+      syncAll,
+    }),
   );
   return { layer, syncAll };
 };

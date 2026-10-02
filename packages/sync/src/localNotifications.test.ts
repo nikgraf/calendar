@@ -471,6 +471,7 @@ describe('LocalNotifications', () => {
 const stubEngine = (syncAll: Effect.Effect<void, unknown, EventRepo>) =>
   Layer.effect(SyncEngine)(
     Effect.map(Effect.context<EventRepo>(), (context) => ({
+      exclusive: <A, E, R>(effect: Effect.Effect<A, E, R>) => effect,
       start: () => Effect.void,
       syncAll: () => Effect.orDie(Effect.provide(syncAll, context)),
     })),

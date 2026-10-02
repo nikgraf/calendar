@@ -149,7 +149,7 @@ export class FakeGoogle {
 
   putEvent(calendarId: string, event: GcalEvent): void {
     const version = this.bump(calendarId);
-    this.eventsOf(calendarId).set(event.id, {
+    this.storeOf(calendarId).set(event.id, {
       event: { ...event, etag: `"v${version}"` },
       version,
     });
@@ -157,7 +157,7 @@ export class FakeGoogle {
 
   cancelEvent(calendarId: string, eventId: string): void {
     const version = this.bump(calendarId);
-    this.eventsOf(calendarId).set(eventId, {
+    this.storeOf(calendarId).set(eventId, {
       event: { etag: `"v${version}"`, id: eventId, status: 'cancelled' },
       version,
     });
@@ -204,7 +204,19 @@ export class FakeGoogle {
   }
 
   eventOf(calendarId: string, eventId: string): GcalEvent | undefined {
-    return this.eventsOf(calendarId).get(eventId)?.event;
+    return this.storeOf(calendarId).get(eventId)?.event;
+  }
+
+  /** Every event the calendar holds now (deleted ones left out), in start order. */
+  eventsOf(calendarId: string): Array<GcalEvent> {
+    return [...this.storeOf(calendarId).values()]
+      .map((entry) => entry.event)
+      .filter((event) => event.status !== 'cancelled')
+      .sort((a, b) =>
+        (a.start?.dateTime ?? a.start?.date ?? '').localeCompare(
+          b.start?.dateTime ?? b.start?.date ?? '',
+        ),
+      );
   }
 
   taskOf(listId: string, taskId: string): GcalTask | undefined {
@@ -330,7 +342,7 @@ export class FakeGoogle {
     body: Record<string, unknown> | undefined,
     reply: (status: number, json?: unknown) => HttpClientResponse.HttpClientResponse,
   ): HttpClientResponse.HttpClientResponse {
-    const store = this.eventsOf(calendarId);
+    const store = this.storeOf(calendarId);
     if (request.method === 'GET' && eventId === undefined) {
       const syncToken = url.searchParams.get('syncToken');
       const current = this.versions.get(calendarId) ?? 0;
@@ -443,7 +455,7 @@ export class FakeGoogle {
     destination: string | null,
     reply: (status: number, json?: unknown) => HttpClientResponse.HttpClientResponse,
   ): HttpClientResponse.HttpClientResponse {
-    const existing = this.eventsOf(calendarId).get(eventId);
+    const existing = this.storeOf(calendarId).get(eventId);
     if (!existing || existing.event.status === 'cancelled') {
       return reply(404, { error: { message: 'Not Found' } });
     }
@@ -517,7 +529,7 @@ export class FakeGoogle {
     return next;
   }
 
-  private eventsOf(calendarId: string): Map<string, StoredEvent> {
+  private storeOf(calendarId: string): Map<string, StoredEvent> {
     let store = this.events.get(calendarId);
     if (!store) {
       store = new Map();

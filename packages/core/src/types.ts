@@ -466,3 +466,5 @@ export class SyncState extends Schema.Class<SyncState>('SyncState')({
 }) {}
 
 export const eventsScope = (calendarId: string): string => `events:${calendarId}`;
+/** The sync_state scope of a Google task list. */
+export const tasksScope = (taskListId: string): string => `tasks:${taskListId}`;

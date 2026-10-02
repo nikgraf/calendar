@@ -2,6 +2,7 @@ import {
   addDaysToPlainDate,
   changesFromSubscription,
   expandRecurringEvent,
+  plainDateToUtcMs,
   type StructuredRule,
   toRRuleLines,
   truncateRecurrence,
@@ -85,6 +86,14 @@ const applyWrite = (base: AppleEventJson, write: EventWrite, now: number): Apple
   if (next['isAllDay'] === false) {
     delete next['startDate'];
     delete next['endDate'];
+  }
+  // Like EventKit, an all-day event's instants follow its days (the bridge
+  // reports local midnight; the fake uses UTC midnight, a fixed zone).
+  if (next['isAllDay'] === true && typeof next['startDate'] === 'string') {
+    next['startUtc'] = plainDateToUtcMs(next['startDate']);
+    if (typeof next['endDate'] === 'string') {
+      next['endUtc'] = plainDateToUtcMs(next['endDate']);
+    }
   }
   return next as unknown as AppleEventJson;
 };

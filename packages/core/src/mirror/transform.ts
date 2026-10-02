@@ -126,15 +126,19 @@ const itemCopy = (definition: MirrorDefinition, item: MirrorItem): MirrorCopy =>
           MAX_DESCRIPTION,
         )
       : undefined;
+  // An all-day item is its dates; the instants only order it, and are
+  // taken from the dates so every device orders alike (EventKit reports
+  // an all-day event at this device's local midnight).
+  const days = item.allDay && item.startDate !== undefined && item.endDate !== undefined;
   return finish(definition, {
     allDay: item.allDay,
     description,
     endDate: item.allDay ? item.endDate : undefined,
-    endUtc: toSecond(item.endUtc),
+    endUtc: days ? plainDateToUtcMs(item.endDate) : toSecond(item.endUtc),
     keyHash: mirrorKeyHash(definition.id, item.key),
     location,
     startDate: item.allDay ? item.startDate : undefined,
-    startUtc: toSecond(item.startUtc),
+    startUtc: days ? plainDateToUtcMs(item.startDate) : toSecond(item.startUtc),
     title,
   });
 };
