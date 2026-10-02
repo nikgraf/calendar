@@ -1,0 +1,69 @@
+appId: com.solunivo.app.dev
+name: A calendar mirror is made in Settings, copies land, and deleting it removes them
+tags:
+  - ci
+---
+- runFlow: ../common/launch.yaml
+- runFlow: ../common/open-settings.yaml
+- waitForAnimationToEnd:
+    timeout: 5000
+- scrollUntilVisible:
+    element:
+      id: 'mirror-add'
+    direction: DOWN
+    timeout: 10000
+- tapOn:
+    id: 'mirror-add'
+- waitForAnimationToEnd:
+    timeout: 5000
+- tapOn:
+    id: 'mirror-name'
+- inputText: 'Family'
+# The keyboard would cover the rows below (Maestro's visibility ignores it).
+- hideKeyboard
+- scrollUntilVisible:
+    element:
+      id: 'mirror-source-google|fixture@solunivo.test|mock-calendar'
+    direction: DOWN
+    timeout: 10000
+- tapOn:
+    id: 'mirror-source-google|fixture@solunivo.test|mock-calendar'
+- scrollUntilVisible:
+    element:
+      id: 'mirror-destination-google|fixture@solunivo.test|mock-shared'
+    direction: DOWN
+    timeout: 10000
+- tapOn:
+    id: 'mirror-destination-google|fixture@solunivo.test|mock-shared'
+# The preview says what others would see: the title and the place.
+- scrollUntilVisible:
+    element:
+      id: 'mirror-preview'
+    direction: DOWN
+    timeout: 10000
+- extendedWaitUntil:
+    visible: 'Fixture planning · Room 4.*'
+    timeout: 10000
+- tapOn:
+    id: 'mirror-save'
+- extendedWaitUntil:
+    visible:
+      id: 'mirror-add'
+    timeout: 10000
+# The copies land through the fake API and the row reports it.
+- extendedWaitUntil:
+    visible: 'Up to date — 1 event mirrored.'
+    timeout: 20000
+# Leave the settings as found for the next flow.
+- scrollUntilVisible:
+    element:
+      text: 'Delete'
+    direction: DOWN
+    timeout: 10000
+- tapOn: 'Delete'
+- tapOn: 'Delete and remove copies'
+- extendedWaitUntil:
+    notVisible: 'Up to date — 1 event mirrored.'
+    timeout: 10000
+- tapOn: 'Done'
+- assertVisible: 'Today'

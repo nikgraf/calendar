@@ -7,6 +7,14 @@ const todayDue = (): string => {
   return `${iso}T00:00:00.000Z`;
 };
 
+/** An instant `weeks` from now at the given UTC hour, RFC 3339. */
+const weeksOut = (weeks: number, hour: number): string => {
+  const date = new Date(Date.now() + weeks * 7 * 24 * 60 * 60 * 1000);
+  return new Date(
+    Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate(), hour),
+  ).toISOString();
+};
+
 /**
  * The signed-in Google account the Maestro flows see when Metro runs
  * with EXPO_PUBLIC_CALENDAR_GOOGLE=fixture (CI does): one writable
@@ -24,7 +32,27 @@ export const googleFixture: GoogleFixture = {
       primary: true,
       summary: 'Mock Calendar',
     },
+    // The mirror flow's destination: a second writable calendar.
+    {
+      accessRole: 'owner',
+      backgroundColor: '#0b8043',
+      id: 'mock-shared',
+      summary: 'Mock Shared',
+    },
   ],
+  // One event the mirror flow copies, weeks out so no day-view flow meets it.
+  events: {
+    'mock-calendar': [
+      {
+        end: { dateTime: weeksOut(5, 11) },
+        id: 'fixture-planning',
+        location: 'Room 4',
+        start: { dateTime: weeksOut(5, 10) },
+        status: 'confirmed',
+        summary: 'Fixture planning',
+      },
+    ],
+  },
   taskLists: [{ id: 'mock-list', title: 'Mock Tasks' }],
   tasks: {
     'mock-list': [

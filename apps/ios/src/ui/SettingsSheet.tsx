@@ -35,6 +35,7 @@ import { askConflict } from './conflictAlert.ts';
 import { EventNotificationsSection } from './EventNotificationsSection.tsx';
 import { DiagnosticsSection } from './DiagnosticsSection.tsx';
 import { LocationsSection } from './LocationsSection.tsx';
+import { MirrorsSection } from './MirrorsSection.tsx';
 import { PrPreviewSection } from './PrPreviewSection.tsx';
 import { SettingsFileSection } from './SettingsFileSection.tsx';
 import { TimeZonesSection } from './TimeZonesSection.tsx';
@@ -347,6 +348,7 @@ export function SettingsSheet({ onClose, visible }: { onClose: () => void; visib
           <EventNotificationsSection />
           <BirthdayRemindersSection />
           <TimeZonesSection />
+          <MirrorsSection />
           <SettingsFileSection />
           <LocationsSection />
           <PrPreviewSection />
