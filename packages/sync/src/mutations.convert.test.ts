@@ -60,6 +60,7 @@ const inertGoogle: GoogleCalendarClientShape = {
   deleteEvent: () => Effect.die('unexpected deleteEvent'),
   getColors: () => Effect.succeed({ calendar: {} }),
   getEvent: () => Effect.die('unexpected get'),
+  insertCalendar: () => Effect.die('not used'),
   insertEvent: ({ event }) =>
     Effect.succeed({ ...(event as GcalEvent), etag: '"new"', status: 'confirmed' as const }),
   listCalendars: () => Effect.succeed({ items: [] }),
@@ -67,6 +68,7 @@ const inertGoogle: GoogleCalendarClientShape = {
   moveEvent: () => Effect.die('unexpected moveEvent'),
   patchCalendarListEntry: () => Effect.die('unexpected calendarList patch'),
   patchEvent: () => Effect.die('unexpected patchEvent'),
+  replaceEvent: () => Effect.die('not used'),
 };
 
 const inertTasks: GoogleTasksClientShape = {

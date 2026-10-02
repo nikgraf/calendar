@@ -13,7 +13,9 @@ import { HttpClient, HttpClientResponse, type HttpClientRequest } from 'effect/u
  * An in-process Google (Calendar + Tasks) behind effect's HttpClient, so
  * the real clients, request core and sync engine run against something
  * that answers like the API: sync tokens that go stale (410), cancelled
- * tombstones, If-Match → 412, server-assigned task ids, the updatedMin
+ * tombstones, If-Match → 412, a re-posted event id → 409 (a deleted
+ * event keeps its id reserved), events.update as a full replace that can
+ * bring a deleted event back, server-assigned task ids, the updatedMin
  * watermark with deleted tombstones. Every semantic here mirrors
  * docs/google-sync-and-testing.md; before this, those were prose only.
  */
@@ -96,6 +98,11 @@ const wire = (entry: StoredTask): GcalTask => ({
 });
 
 export interface FakeGoogleOptions {
+  /**
+   * How calendars.insert answers: 'forbidden' is an account signed in
+   * before the app asked for the calendar-creation scope (403).
+   */
+  readonly calendarCreation?: 'allowed' | 'forbidden';
   readonly calendars: ReadonlyArray<GcalCalendarListEntry>;
   /**
    * Stamp task writes with the wall clock instead of `now`. An app running
@@ -113,6 +120,8 @@ export interface FakeGoogleOptions {
 export class FakeGoogle {
   readonly requests: Array<{ readonly method: string; readonly url: string }> = [];
   private readonly calendars: Array<GcalCalendarListEntry>;
+  private readonly calendarCreation: 'allowed' | 'forbidden';
+  private calendarSeq = 0;
   private readonly removedCalendars: Array<string> = [];
   private readonly pageSize: number;
   private readonly people: Array<GcalPerson>;
@@ -129,6 +138,7 @@ export class FakeGoogle {
 
   constructor(options: FakeGoogleOptions) {
     this.calendars = [...options.calendars];
+    this.calendarCreation = options.calendarCreation ?? 'allowed';
     this.live = options.live ?? false;
     this.pageSize = options.pageSize ?? 2500;
     this.people = [...(options.people ?? [])];
@@ -250,6 +260,28 @@ export class FakeGoogle {
       if (path === '/calendar/v3/colors') {
         return reply(200, { calendar: {} });
       }
+      if (path === '/calendar/v3/calendars' && request.method === 'POST') {
+        if (this.calendarCreation === 'forbidden') {
+          return reply(403, {
+            error: {
+              code: 403,
+              errors: [{ reason: 'insufficientPermissions' }],
+              message: 'Request had insufficient authentication scopes.',
+              status: 'PERMISSION_DENIED',
+            },
+          });
+        }
+        // A secondary calendar the account owns; it joins calendarList at once.
+        this.calendarSeq += 1;
+        const entry: GcalCalendarListEntry = {
+          accessRole: 'owner',
+          id: `created-${this.calendarSeq}@group.calendar.google.com`,
+          summary: typeof body?.['summary'] === 'string' ? body['summary'] : '',
+          timeZone: typeof body?.['timeZone'] === 'string' ? body['timeZone'] : 'UTC',
+        };
+        this.calendars.push(entry);
+        return reply(200, { id: entry.id, summary: entry.summary, timeZone: entry.timeZone });
+      }
       const moveMatch = /^\/calendar\/v3\/calendars\/([^/]+)\/events\/([^/]+)\/move$/.exec(path);
       if (moveMatch && request.method === 'POST') {
         return this.moveRoute(
@@ -331,12 +363,29 @@ export class FakeGoogle {
     }
     if (request.method === 'POST' && eventId === undefined) {
       const id = typeof body?.['id'] === 'string' ? body['id'] : `srv-${this.bump(calendarId)}`;
+      // An id stays taken for good — by a live event and by a deleted one
+      // alike (verified live 2026-10-02).
+      if (store.has(id)) {
+        return reply(409, {
+          error: {
+            code: 409,
+            errors: [{ reason: 'duplicate' }],
+            message: 'The requested identifier already exists.',
+          },
+        });
+      }
       this.putEvent(calendarId, { ...(body as GcalEvent), id });
       return reply(200, this.eventOf(calendarId, id));
     }
     if (eventId !== undefined) {
       const existing = store.get(eventId);
-      if (!existing || existing.event.status === 'cancelled') {
+      // events.update with `status: 'confirmed'` is the one write a deleted
+      // event accepts: it comes back under its id (verified live 2026-10-02).
+      const revives =
+        request.method === 'PUT' &&
+        existing?.event.status === 'cancelled' &&
+        body?.['status'] === 'confirmed';
+      if (!existing || (existing.event.status === 'cancelled' && !revives)) {
         return reply(404, { error: { message: 'Not Found' } });
       }
       if (request.method === 'GET') {
@@ -363,6 +412,16 @@ export class FakeGoogle {
           id: eventId,
           start,
         });
+        return reply(200, this.eventOf(calendarId, eventId));
+      }
+      if (request.method === 'PUT') {
+        // A full replace: whatever the body leaves out is gone, extended
+        // properties included — no merge, unlike PATCH.
+        const next = body as GcalEvent;
+        if (invalidTime(next.start) || invalidTime(next.end)) {
+          return reply(400, { error: { code: 400, message: 'Invalid start time.' } });
+        }
+        this.putEvent(calendarId, { ...next, id: eventId });
         return reply(200, this.eventOf(calendarId, eventId));
       }
       if (request.method === 'DELETE') {

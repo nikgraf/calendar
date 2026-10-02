@@ -6,6 +6,8 @@ import {
   encodeGeoProperties,
   EventRecord,
   EventReminders,
+  googleMirrorMarker,
+  MIRROR_PROPERTY_KEY,
   plainDateToUtcMs,
   ReminderOverride,
   Temporal,
@@ -77,6 +79,7 @@ const toEventReminders = (reminders: GcalReminders | undefined): EventReminders 
         }),
       );
 const EVENT_STATUSES = new Set(['cancelled', 'confirmed', 'tentative']);
+const VISIBILITIES = new Set(['confidential', 'private', 'public']);
 const ACCESS_ROLES = new Set(['freeBusyReader', 'owner', 'reader', 'writer']);
 
 /**
@@ -139,6 +142,7 @@ export const mapGcalEvent = (
     id: event.id,
     isAllDay,
     location: event.location,
+    mirror: googleMirrorMarker(event.id, event.extendedProperties?.private?.[MIRROR_PROPERTY_KEY]),
     organizerEmail: event.organizer?.email,
     originalStartUtc: toEpochMs(event.originalStartTime),
     recurrence: event.recurrence,
@@ -151,9 +155,14 @@ export const mapGcalEvent = (
     syncedAt: context.syncedAt,
     syncStatus: 'synced',
     title: event.summary ?? '(no title)',
+    // Google leaves both out at their defaults; the record always says.
+    transparency: event.transparency === 'transparent' ? 'transparent' : 'opaque',
     updatedAt: event.updated
       ? Temporal.Instant.from(event.updated).epochMilliseconds
       : context.syncedAt,
+    visibility: VISIBILITIES.has(event.visibility ?? '')
+      ? (event.visibility as 'confidential' | 'private' | 'public')
+      : 'default',
   });
 };
 

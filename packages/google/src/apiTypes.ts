@@ -69,7 +69,11 @@ export const GcalEvent = Schema.Struct({
   start: Schema.optional(GcalTime),
   status: Schema.optional(Schema.String),
   summary: Schema.optional(Schema.String),
+  /** 'transparent' = marked free; absent means opaque. */
+  transparency: Schema.optional(Schema.String),
   updated: Schema.optional(Schema.String),
+  /** 'private' | 'confidential' | 'public'; absent means the calendar's default. */
+  visibility: Schema.optional(Schema.String),
 });
 export type GcalEvent = Schema.Schema.Type<typeof GcalEvent>;
 
@@ -159,6 +163,21 @@ export interface GcalEventInput {
   };
   readonly summary: string;
 }
+
+/**
+ * An events.update body — a full replace: whatever it leaves out is
+ * cleared, which a PATCH cannot do. `status: 'confirmed'` brings a deleted
+ * event back under its id.
+ */
+export type GcalEventReplace = GcalEventInput & { readonly status?: 'confirmed' | undefined };
+
+/** calendars.insert's answer: the new secondary calendar. */
+export const GcalCalendar = Schema.Struct({
+  id: Schema.String,
+  summary: Schema.optional(Schema.String),
+  timeZone: Schema.optional(Schema.String),
+});
+export type GcalCalendar = Schema.Schema.Type<typeof GcalCalendar>;
 
 /** start/end in a PATCH: Google merges the fields into the stored time; null removes one. */
 export interface GcalTimePatch {

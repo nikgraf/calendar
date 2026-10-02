@@ -38,12 +38,14 @@ const stubClient: GoogleCalendarClientShape = {
   deleteEvent: () => Effect.fail(new ApiUnavailableError({ cause: 'offline' })),
   getColors: () => Effect.succeed({ calendar: {} }),
   getEvent: () => Effect.die('unexpected get'),
+  insertCalendar: () => Effect.die('not used'),
   insertEvent: () => Effect.die('unexpected insert'),
   listCalendars: () => Effect.succeed({ items: [] }),
   listEvents: () => Effect.succeed({ items: [] }),
   moveEvent: () => Effect.die('unexpected move'),
   patchCalendarListEntry: () => Effect.die('unexpected calendarList patch'),
   patchEvent: () => Effect.die('unexpected patch'),
+  replaceEvent: () => Effect.die('not used'),
 };
 
 const stubTasksClient: GoogleTasksClientShape = {

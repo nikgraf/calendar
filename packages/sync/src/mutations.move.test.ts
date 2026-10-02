@@ -56,6 +56,7 @@ const recordingGoogle = (
     }),
   getColors: () => Effect.succeed({ calendar: {} }),
   getEvent: () => Effect.die('unexpected get'),
+  insertCalendar: () => Effect.die('not used'),
   insertEvent: ({ calendarId, event }) =>
     Effect.sync(() => {
       calls.push({ calendarId, detail: event.summary, kind: 'insert' });
@@ -89,6 +90,7 @@ const recordingGoogle = (
         summary: event.summary,
       };
     }),
+  replaceEvent: () => Effect.die('not used'),
   ...overrides,
 });
 

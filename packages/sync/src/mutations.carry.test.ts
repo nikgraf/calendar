@@ -43,6 +43,7 @@ const googleClient = (google: Google): GoogleCalendarClientShape => ({
     google.server
       ? Effect.succeed(google.server)
       : Effect.fail(new ApiUnavailableError({ cause: 'offline' })),
+  insertCalendar: () => Effect.die('not used'),
   insertEvent: () => Effect.fail(new ApiUnavailableError({ cause: 'offline' })),
   listCalendars: () => Effect.succeed({ items: [] }),
   listEvents: () => Effect.succeed({ items: [] }),
@@ -54,6 +55,7 @@ const googleClient = (google: Google): GoogleCalendarClientShape => ({
       : google.patch === 'reject'
         ? Effect.fail(new GoogleApiError({ message: 'Invalid value', status: 400 }))
         : Effect.fail(new ApiUnavailableError({ cause: 'offline' })),
+  replaceEvent: () => Effect.die('not used'),
 });
 
 const stubTasksClient: GoogleTasksClientShape = {

@@ -28,12 +28,14 @@ const inertGoogle: GoogleCalendarClientShape = {
   deleteEvent: () => Effect.die('unexpected deleteEvent'),
   getColors: () => Effect.succeed({ calendar: {} }),
   getEvent: () => Effect.die('unexpected get'),
+  insertCalendar: () => Effect.die('not used'),
   insertEvent: () => Effect.die('unexpected insertEvent'),
   listCalendars: () => Effect.succeed({ items: [] }),
   listEvents: () => Effect.succeed({ items: [] }),
   moveEvent: () => Effect.die('unexpected moveEvent'),
   patchCalendarListEntry: () => Effect.die('unexpected calendarList patch'),
   patchEvent: () => Effect.die('unexpected patchEvent'),
+  replaceEvent: () => Effect.die('not used'),
 };
 
 const testLayer = (fake: ReturnType<typeof makeFakeAppleCalendarClient>) =>

@@ -4,6 +4,11 @@ import {
   EventReminders,
   GEO_PROPERTY_KEYS,
   GeoLocation,
+  encodeMirrorProperty,
+  MIRROR_PROPERTY_KEY,
+  mirrorEventId,
+  mirrorKeyHash,
+  mirrorTag,
   ReminderOverride,
 } from '@calendar/core';
 import { describe, expect, it } from 'vitest';
@@ -109,6 +114,42 @@ describe('mapGcalEvent', () => {
     );
     expect(record?.recurringEventId).toBe('master');
     expect(record?.originalStartUtc).toBe(Date.parse('2026-07-02T14:00:00Z'));
+  });
+});
+
+describe('what a calendar mirror reads', () => {
+  const base = {
+    end: { dateTime: '2026-07-02T10:00:00Z' },
+    id: 'evt-1',
+    start: { dateTime: '2026-07-02T09:00:00Z' },
+  };
+
+  it('always says whether an event is free and how visible it is', () => {
+    // Google leaves both out at their defaults.
+    expect(mapGcalEvent(base, context)).toMatchObject({
+      transparency: 'opaque',
+      visibility: 'default',
+    });
+    expect(
+      mapGcalEvent({ ...base, transparency: 'transparent', visibility: 'private' }, context),
+    ).toMatchObject({ transparency: 'transparent', visibility: 'private' });
+    expect(mapGcalEvent({ ...base, visibility: 'something-new' }, context)?.visibility).toBe(
+      'default',
+    );
+  });
+
+  it('marks an event as a mirror copy only when its id and its property agree', () => {
+    const property = encodeMirrorProperty({
+      contentHash: '0123456789abcdef',
+      rev: 1000,
+      tag: mirrorTag('mirror-1'),
+    });
+    const extendedProperties = { private: { [MIRROR_PROPERTY_KEY]: property } };
+    const id = mirrorEventId(mirrorKeyHash('mirror-1', 'g|cal|evt'));
+    expect(mapGcalEvent({ ...base, extendedProperties, id }, context)?.mirror).toBe(property);
+    // A duplicate someone made of a copy: the property came along, the id did not.
+    expect(mapGcalEvent({ ...base, extendedProperties }, context)?.mirror).toBeUndefined();
+    expect(mapGcalEvent({ ...base, id }, context)?.mirror).toBeUndefined();
   });
 });
 
