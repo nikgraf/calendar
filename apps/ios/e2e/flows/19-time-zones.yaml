@@ -1,4 +1,4 @@
-appId: com.solunivo.app
+appId: com.solunivo.app.dev
 name: Time zones persist on this device and annotate the hour gutter
 tags:
   - ci

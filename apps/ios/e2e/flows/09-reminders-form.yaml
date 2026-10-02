@@ -1,4 +1,4 @@
-appId: com.solunivo.app
+appId: com.solunivo.app.dev
 name: The Reminders form shows its extra fields and round-trips create/delete
 tags:
   - ci

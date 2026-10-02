@@ -1,4 +1,4 @@
-appId: com.solunivo.app
+appId: com.solunivo.app.dev
 name: Open the Settings sheet from the header gear (shared)
 ---
 # Same failure as the "+" in open-new-event.yaml: on a slow runner a tap

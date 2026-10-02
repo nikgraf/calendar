@@ -655,11 +655,14 @@ Flakiness lessons (each caused a real CI failure — keep them enforced):
   before it is opened: the bundle is warmed through the manifest's
   `launchAsset.url` (so the request shares Metro's cache with the
   client's), and the runtime version is pinned to the computed
-  fingerprint through a CI-only `app.config.js` overlay
-  (`e2e/ci/app.config.ci.cjs`, copied after the fingerprint step) —
+  fingerprint (`EXPO_RUNTIME_VERSION_PIN`, read by `app.config.ts` and
+  set on the Metro step only, never while the fingerprint is computed) —
   with the fingerprint policy Expo CLI re-runs a full project
   fingerprint for _every_ manifest request, ~2 s on a laptop and past
-  10 s on the runner. The dev client is opened on `127.0.0.1`. Two Maestro invocations: the bootstrap flow, then the rest —
+  10 s on the runner. The whole job runs under `APP_VARIANT=development`:
+  the dev client is the dev variant (`com.solunivo.app.dev`, which is what
+  every flow's `appId` and the `simctl` grants name), and its fingerprint
+  differs from production's. The dev client is opened on `127.0.0.1`. Two Maestro invocations: the bootstrap flow, then the rest —
   Maestro ignores `config.yaml` execution order (maestro#2231).
 - `testing-build` (macos-26, main only): signed + notarized arm64 zip
   incl. the Swift model helper — macos-26 is the only runner image with
@@ -719,7 +722,8 @@ quick-add flow accepts the bar's "couldn't be read" outcome: a CI
 simulator passes the model availability check yet cannot generate,
 so the prefilled editor is asserted only where a model answers.
 The bootstrap flow `launchApp`s the dev client and only then opens
-`solunivo://expo-development-client/?url=…`. Relying on the URL to
+`solunivo-dev://expo-development-client/?url=…` (the dev variant's own
+scheme; `solunivo://` belongs to the production app). Relying on the URL to
 launch the app was not reliable on a runner: run 34851193180 confirmed
 the "Open in Solunivo?" alert and no launch followed, because the
 diagnostics step had left Safari in front with a modal "download

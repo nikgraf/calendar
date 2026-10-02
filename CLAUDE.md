@@ -162,6 +162,22 @@ powers quick-add parsing, find-a-time, and dictation.
   desktop e2e harness always points `CALENDAR_AGENT_SOCKET` under its
   temp profile — a run must never listen in a developer's `~/.solunivo`.
   See docs/agent-gateway.md.
+- Two variants per platform, production and dev, that run side by side —
+  never a third. Desktop: the packaged app vs. a run from source,
+  switched on `app.isPackaged`, which picks the settings file
+  (`solunivo.jsonc` / `solunivo-dev.jsonc`), the agent socket
+  (`agent.sock` / `agent-dev.sock`) and the MCP entry's name (`solunivo` /
+  `solunivo-dev`); userData differs by itself. iOS: `com.solunivo.app`
+  (TestFlight) vs. `com.solunivo.app.dev` (the dev client), switched by
+  `APP_VARIANT=development` in `apps/ios/app.config.ts`. Unset means
+  production, so release jobs set nothing; every dev consumer sets it
+  (eas.json's development profiles, the `start`/`ios`/`prebuild` scripts,
+  the iOS e2e jobs, `check-devclient.mjs`). The variants have different
+  native fingerprints: compute one under the `APP_VARIANT` of the build it
+  must match. Maestro flows and `simctl` grants name the dev id. Anything
+  two installed apps would both claim (a URL scheme, an OAuth client, a
+  file under `~/.solunivo`) must differ per variant. Apple data is the
+  device's and is shared by both. See docs/distribution.md.
 - Event coordinates are only valid while `geo.source` matches the
   location text (`geoMatches`); every local write goes through
   `withConsistentGeo`, and an update PATCH touches the private geo keys

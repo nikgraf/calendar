@@ -1,4 +1,4 @@
-appId: com.solunivo.app
+appId: com.solunivo.app.dev
 name: New-event sheet opens with the repeat picker
 tags:
   - ci

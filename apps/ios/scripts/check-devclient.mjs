@@ -15,18 +15,21 @@ const say = (message) => {
 };
 
 const root = fileURLToPath(new URL('..', import.meta.url));
+// The dev client is the dev variant (app.config.ts): its bundle id, and a
+// fingerprint computed for that variant — production hashes differently.
 const run = (command, args) =>
   execFileSync(command, args, {
     cwd: root,
     encoding: 'utf8',
+    env: { ...process.env, APP_VARIANT: 'development' },
     stdio: ['ignore', 'pipe', 'ignore'],
   }).trim();
 
 let container;
 try {
-  container = run('xcrun', ['simctl', 'get_app_container', 'booted', 'com.solunivo.app']);
+  container = run('xcrun', ['simctl', 'get_app_container', 'booted', 'com.solunivo.app.dev']);
 } catch {
-  warn('[check-devclient] no booted simulator with Solunivo installed — skipping');
+  warn('[check-devclient] no booted simulator with Solunivo Dev installed — skipping');
   process.exit(0);
 }
 let installed;

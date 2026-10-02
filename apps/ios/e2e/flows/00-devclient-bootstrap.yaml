@@ -1,4 +1,4 @@
-appId: com.solunivo.app
+appId: com.solunivo.app.dev
 name: Bootstrap the dev client onto Metro (CI only)
 tags:
   - ci
@@ -16,7 +16,7 @@ tags:
 #
 # Launch the client first, then hand it the URL. Relying on the URL to
 # launch the app was not reliable on a runner: in run 34851193180 the
-# flow confirmed the "Open in Solunivo?" alert and no launch followed —
+# flow confirmed the "Open in Solunivo Dev?" alert and no launch followed —
 # Safari (left in front by the diagnostics step) kept the screen with a
 # modal sheet and the job died on the final assertion. With the client
 # already running and in front, confirming the alert delivers the URL to
@@ -31,7 +31,7 @@ tags:
     when:
       notVisible: 'Today'
     commands:
-      - openLink: 'solunivo://expo-development-client/?url=http%3A%2F%2F127.0.0.1%3A8081'
+      - openLink: 'solunivo-dev://expo-development-client/?url=http%3A%2F%2F127.0.0.1%3A8081'
       - runFlow: ../common/confirm-open.yaml
 # The dev launcher gives each request 10 s; on a loaded runner the first
 # attempt can still miss that even with the bundle warm. Its error screen
@@ -45,7 +45,7 @@ tags:
           visible: 'Today|There was a problem loading the project|Toggle performance monitor|Continue|Error loading app|http://127\.0\.0\.1:8081|Enter URL manually|Open'
           timeout: 60000
           optional: true
-      # The "Open in Solunivo?" alert can arrive after confirm-open.yaml's
+      # The "Open in Solunivo Dev?" alert can arrive after confirm-open.yaml's
       # 15 s wait gave up: in run 35078237553 it showed up about 20 s after
       # the link and sat unconfirmed through all six rounds. While it is up,
       # Maestro sees only the alert (the launcher behind it is not in the
@@ -107,7 +107,7 @@ tags:
             visible: 'Enter URL manually'
             notVisible: 'Today|http://127\.0\.0\.1:8081|Open'
           commands:
-            - openLink: 'solunivo://expo-development-client/?url=http%3A%2F%2F127.0.0.1%3A8081'
+            - openLink: 'solunivo-dev://expo-development-client/?url=http%3A%2F%2F127.0.0.1%3A8081'
             - runFlow: ../common/confirm-open.yaml
 - extendedWaitUntil:
     visible: 'Today'

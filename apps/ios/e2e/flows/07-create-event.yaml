@@ -1,4 +1,4 @@
-appId: com.solunivo.app
+appId: com.solunivo.app.dev
 name: Saving a new event writes it to the day
 tags:
   - ci

@@ -160,10 +160,59 @@ build instead of rebuilding.
 Every PR push publishes an **OTA preview update** to channel `pr-<number>`
 in ~30s and comments the channel name on the PR.
 
-## Platform constraint: one install per bundle id
+## Two variants: production and dev
 
-iOS allows one installed copy of `com.solunivo.app`. You can't have several
-PR builds side by side. Instead:
+The app exists twice, and the two install side by side on one device:
+
+|               | Production                       | Dev                                           |
+| ------------- | -------------------------------- | --------------------------------------------- |
+| Bundle id     | `com.solunivo.app`               | `com.solunivo.app.dev`                        |
+| Name, icon    | Solunivo, the light icon         | Solunivo Dev, the dark icon                   |
+| EAS profiles  | `testflight`                     | `development`, `development-simulator`        |
+| Distribution  | TestFlight, later the App Store  | internal (ad hoc) and the simulator CI drives |
+| URL schemes   | `solunivo`, its Google redirect  | `solunivo-dev`, its Google redirect           |
+| Google client | `app.json` → `googleIosClientId` | `DEV_GOOGLE_IOS_CLIENT_ID` in `app.config.ts` |
+| Meant for     | the real accounts                | test accounts, Metro, Maestro                 |
+
+`apps/ios/app.json` is the production app as written;
+`apps/ios/app.config.ts` layers the dev variant on top when
+`APP_VARIANT=development`. **Unset means production**, so a release job
+that forgets the variable can never ship the dev identity — `ios.yml` sets
+nothing. The dev side sets it everywhere it is needed: the two development
+profiles in `eas.json`, the `start` / `ios` / `prebuild` scripts, the
+`ios-e2e` and `live-ios` jobs, and `check-devclient.mjs`.
+
+What that buys and what it does not:
+
+- iOS keys the database, the Keychain (OAuth tokens), permissions and
+  notification settings on the bundle id, so the two apps share nothing of
+  that. Sign the dev app in to test accounts and leave the real ones to
+  production.
+- **Apple data is the device's, not the app's.** Both apps see the same
+  Calendar, Reminders and Contacts once granted. To keep the dev app off
+  real Apple data, do not grant it those permissions — and leave its
+  notifications off, or birthdays and Apple events remind twice.
+- The variants have **different native fingerprints** (name, bundle id,
+  schemes, icon and `extra` are all hashed). A fingerprint only matches a
+  build when it is computed under that build's `APP_VARIANT`; `eas update`
+  for TestFlight runs without it and is therefore production's.
+- Two installed apps must not claim the same URL scheme — iOS picks one
+  arbitrarily, and a Google sign-in could return to the wrong app. Hence
+  the separate scheme and the separate OAuth client (an iOS client is
+  bound to one bundle id, and its redirect is its reversed client id).
+  Production also drops expo-dev-client's generated `exp+solunivo` scheme,
+  which only a dev launcher can answer.
+- The dev client is a debug build that loads from Metro. Away from the Mac
+  it opens to the dev launcher, so it is a development tool, not a second
+  everyday app. A release-mode build of the dev variant would be one more
+  `eas.json` profile with `APP_VARIANT=development`; a separate "beta" app
+  in App Store Connect is deliberately not part of this.
+
+### One install per variant
+
+Within a variant the platform rule still holds: iOS allows one installed
+copy of `com.solunivo.app`. You can't have several PR builds side by side.
+Instead:
 
 - **JS/TS changes (almost all agent PRs)** — keep the installed TestFlight
   build and switch channels in-app: **Settings → PR preview** → enter
@@ -196,8 +245,9 @@ TestFlight build has shipped. If credentials ever need recreating:
    **every publishing job skips quietly** — deliberate, so agent PRs
    aren't blocked before setup, but it means a missing/expired token
    shows up as skipped jobs, not red ones.
-4. Google OAuth: the iOS client must match bundle id `com.solunivo.app`
-   (see README) — sign-in in TestFlight builds needs it.
+4. Google OAuth: one iOS client per variant, each matching its bundle id
+   (`com.solunivo.app`, `com.solunivo.app.dev`; see README) — sign-in
+   needs the one that belongs to the installed app.
 5. TestFlight internal testing: add yourself (and teammates) as internal
    testers in App Store Connect — internal builds need no Apple review.
 
@@ -218,6 +268,11 @@ pnpm exec eas build --platform ios --profile development-simulator
 pnpm exec eas build:run --platform ios --latest   # downloads + installs on a booted simulator
 pnpm --filter @calendar/ios start                 # Metro, then open the app
 ```
+
+This is the dev variant (`com.solunivo.app.dev`, "Solunivo Dev"): the
+profile sets `APP_VARIANT=development`, and so does the `start` script —
+Metro has to serve the dev variant's config (its Google client id) to the
+dev client.
 
 No Xcode toolchain, no signing (simulator builds are unsigned), and the
 artifact is a URL anyone on the team — or an agent — can install from. Costs
@@ -247,7 +302,26 @@ makes CI request one (`eas build --profile development-simulator`), so
 the quota cost is one simulator build per native change — the same
 economics as the TestFlight gate. Running `eas build --profile
 development-simulator` locally after a native change means CI finds it
-ready.
+ready. The jobs compute the fingerprint under `APP_VARIANT=development`
+(job-level env); without it they would look up production's hash and
+never find a dev client.
+
+## Device dev client (next to the TestFlight app)
+
+The same variant on a phone, installed beside the production app:
+
+```sh
+cd apps/ios
+pnpm exec eas device:create                              # once per device: registers its UDID
+pnpm exec eas build --platform ios --profile development # interactive the first time
+```
+
+Internal distribution is ad hoc: the device has to be in the provisioning
+profile, and the first build for `com.solunivo.app.dev` needs an
+interactive Apple login so EAS can create the App ID and the profile.
+Install from the build page's link or QR code. It needs no App Store
+Connect record. With Metro running on the same network
+(`pnpm --filter @calendar/ios start`), the dev launcher lists the server.
 
 ### Local Xcode build (fallback)
 

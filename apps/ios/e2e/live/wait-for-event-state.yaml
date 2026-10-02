@@ -1,4 +1,4 @@
-appId: com.solunivo.app
+appId: com.solunivo.app.dev
 name: Poll Google until event EVENT_ID reaches EXPECT (shared)
 ---
 # EXPECT is one of:

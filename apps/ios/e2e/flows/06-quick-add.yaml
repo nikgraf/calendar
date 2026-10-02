@@ -1,4 +1,4 @@
-appId: com.solunivo.app
+appId: com.solunivo.app.dev
 name: Quick add turns a phrase into a prefilled editor
 tags:
   - ci

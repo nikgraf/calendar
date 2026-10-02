@@ -150,8 +150,9 @@ const handlers: BackendHandlers<CommonBackendServices | TokenManager> = {
         return yield* Effect.fail(
           new OAuthNotConfiguredError({
             message:
-              'Google OAuth is not configured. Set expo.extra.googleIosClientId ' +
-              'in apps/ios/app.json (iOS OAuth client id) and rebuild.',
+              'Google OAuth is not configured. Set the iOS OAuth client id ' +
+              '(expo.extra.googleIosClientId in apps/ios/app.json, or the dev ' +
+              "variant's in apps/ios/app.config.ts) and rebuild.",
           }),
         );
       }

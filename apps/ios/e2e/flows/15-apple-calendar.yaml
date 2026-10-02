@@ -1,4 +1,4 @@
-appId: com.solunivo.app
+appId: com.solunivo.app.dev
 name: Connect Apple Calendar and pick one of its calendars for a new event
 tags:
   - ci

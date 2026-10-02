@@ -1,4 +1,4 @@
-appId: com.solunivo.app
+appId: com.solunivo.app.dev
 name: The invitee field turns a typed address into a chip
 tags:
   - ci

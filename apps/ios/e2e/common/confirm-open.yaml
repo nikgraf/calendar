@@ -1,7 +1,7 @@
-appId: com.solunivo.app
-name: Confirm one "Open in Solunivo?" alert and cancel the rest (shared)
+appId: com.solunivo.app.dev
+name: Confirm one "Open in Solunivo Dev?" alert and cancel the rest (shared)
 ---
-# iOS confirms a scheme URL opened from outside with "Open in Solunivo?"
+# iOS confirms a scheme URL opened from outside with "Open in Solunivo Dev?"
 # — one alert per `simctl openurl`, and they stack (the CI step's own
 # openurl plus the flow's openLink, more on a runner that re-prompts).
 # Confirm exactly ONE: every further "Open" re-delivers the same URL to

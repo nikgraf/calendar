@@ -80,6 +80,42 @@ design decisions it settled.
       local ones. First catch: the helper's main thread sat in
       readLine(), so EKEventStoreChanged never fired — the desktop
       change push had never worked.
+- [x] Production and dev side by side — done (2026-10-01): the real
+      accounts live in the production app, test accounts in a dev variant
+      that runs next to it, on the Mac and on the phone. This replaces the
+      "single bundle id" decision above. **Two variants, not three**: no
+      separately packaged desktop dev app (signing, TCC, auto-update and
+      an icon for something a run from source already is) and no "beta"
+      app in App Store Connect (a second record and update channel, and
+      the binary tested would no longer be the one shipped) — TestFlight
+      on the production id stays the pre-release path. **Desktop** was
+      nearly there: a run from source already had its own userData and
+      agent socket. The watched settings file was still shared, and its
+      sync is two-way, so each app would have listed the other's accounts
+      as `reauth_required`; a dev build now watches `solunivo-dev.jsonc`
+      (`settingsFilePath`, the same `packaged` switch as
+      `agentSocketPath`) and names its MCP entry `solunivo-dev`, so one
+      agent's configuration can hold both. **iOS**: `com.solunivo.app`
+      stays production (the installed TestFlight app keeps its data) and
+      the dev client becomes `com.solunivo.app.dev`, "Solunivo Dev", with
+      the dark icon master. `app.json` stays the production app as
+      written and `app.config.ts` layers the dev variant on top under
+      `APP_VARIANT=development`; **unset means production**, so a release
+      job that forgets the variable cannot ship the dev identity, while a
+      dev consumer that forgets it fails visibly (no matching dev client,
+      or a sign-in that cannot return). The variants need their own URL
+      scheme and their own Google iOS client — two installed apps
+      claiming one scheme get the redirect at iOS's whim — and production
+      drops expo-dev-client's generated `exp+solunivo` scheme. The CI
+      runtime-version pin moved from the copied `app.config.js` overlay
+      into `app.config.ts`, because Expo resolves `.ts` first and the
+      overlay would silently have stopped loading. Fingerprints differ
+      per variant, so the e2e jobs compute theirs under the dev variant.
+      Not separated, by nature: Apple Calendar, Reminders and Contacts
+      belong to the device — withhold the permissions from the dev app
+      (iOS) or start a dev run with the `CALENDAR_*=off` switches
+      (desktop). The dev icon was first the same artwork on a plum ground,
+      which rendered identical: the artwork covers the whole square.
 
 ## Calendar: editing, gestures, views
 

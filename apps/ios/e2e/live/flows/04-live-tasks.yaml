@@ -1,4 +1,4 @@
-appId: com.solunivo.app
+appId: com.solunivo.app.dev
 name: Live Google — a task in the run's list gets Google's id, completes there, and a server-side reopen reaches the chip
 tags:
   - live

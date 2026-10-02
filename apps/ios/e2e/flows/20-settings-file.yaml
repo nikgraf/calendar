@@ -1,4 +1,4 @@
-appId: com.solunivo.app
+appId: com.solunivo.app.dev
 name: Settings export opens the share sheet and import opens the file picker
 tags:
   - ci
