@@ -167,7 +167,7 @@ export const showSettingsWindow = (pane?: string): void => {
   loadRenderer(window, settingsHash(pane));
 };
 
-/** `settings:open` — the main window's buttons; the menu calls showSettingsWindow itself. */
+/** `settings:open` — the sidebar's "Manage accounts…"; the menu calls showSettingsWindow itself. */
 export const registerSettingsIpc = (): void => {
   ipcMain.handle('settings:open', (event, pane: unknown) => {
     if (!event.senderFrame || !isOwnPage(event.senderFrame.url)) {

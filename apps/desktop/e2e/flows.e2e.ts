@@ -1160,13 +1160,11 @@ describe('calendar desktop e2e', () => {
     await settings.click(tab.x, tab.y);
     await settings.waitFor(`${title} === 'Notifications'`);
 
-    // Closed and reopened without naming a pane (the toolbar gear, like
-    // the menu item): back on the pane viewed last.
+    // Closed and reopened without naming a pane, as the menu item does:
+    // back on the pane viewed last.
     await app.closeSettings();
     await expect.poll(() => app.windowCount(), { timeout: 10_000 }).toBe(1);
-    await cdp.eval(
-      `[...document.querySelectorAll('button')].find(b => b.title === 'Settings')?.click()`,
-    );
+    await cdp.eval(`window.calendarBridge.openSettings()`);
     const reopened = await app.settingsPage();
     await reopened.waitFor(`${title} === 'Notifications'`);
     await app.closeSettings();

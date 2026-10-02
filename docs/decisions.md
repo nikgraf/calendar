@@ -1641,10 +1641,10 @@ test`/`test:e2e`/`test:e2e:ios`; every file creates its own
       arrive before the page listens. All panes stay mounted (hidden),
       so an agent token shown once or a half-typed name survives a look
       at another pane. **The toolbar is HTML** in a hidden title bar —
-      Electron cannot host an `NSToolbar`. **The main window keeps its
-      two buttons** (toolbar gear → the window, sidebar "Manage
-      accounts…" → the Accounts pane), a deliberate deviation from the
-      HIG's "no settings button in a toolbar" for discoverability.
+      Electron cannot host an `NSToolbar`. **No settings button in the main
+      window's toolbar**, as the HIG has it: the gear is gone, the menu
+      is the way in; the sidebar's "Manage accounts…" stays and opens the
+      Accounts pane.
       `windows.ts` now tracks the main window explicitly:
       `getAllWindows()[0]` would have focused Settings on a notification
       click, and a Dock click with only Settings open now reopens the

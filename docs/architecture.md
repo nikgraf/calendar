@@ -445,8 +445,8 @@ model: `docs/agent-gateway.md`.
   calendar, or the settings window when the page was loaded at
   `#settings` (`windows.ts` `showSettingsWindow`). Settings is opened from
   the application menu (`menu.ts`: Settings…, ⌘,) — also with no main
-  window — or over `settings:open` from the main window's buttons; there
-  is one at most, fixed-size, with minimize and zoom off. The pane is the
+  window — or over `settings:open` from the sidebar's "Manage accounts…";
+  there is one at most, fixed-size, with minimize and zoom off. The pane is the
   URL hash (`#settings/<pane>`): the main process moves an open window by
   navigating the hash, which the page sees as `hashchange` without a
   reload, and a tab click writes the hash back. Each window is its own

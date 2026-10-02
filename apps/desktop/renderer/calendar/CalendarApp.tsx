@@ -191,17 +191,6 @@ function CalendarBody({
           >
             +
           </button>
-          {/* Settings is its own window (App menu › Settings…, ⌘,); this opens the same one. */}
-          <button
-            aria-label="Settings"
-            className="rounded-md px-2 py-1 text-neutral-500 hover:bg-neutral-100"
-            onClick={() => void window.calendarBridge.openSettings()}
-            style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
-            title="Settings"
-            type="button"
-          >
-            ⚙
-          </button>
         </header>
 
         {view === 'month' ? (
