@@ -28,6 +28,23 @@ const op = (id: string, overrides: Partial<PendingOp> = {}) =>
   });
 
 describe('PendingOpRepo', () => {
+  it.effect('counts the ops waiting for a set of calendars and task lists', () =>
+    Effect.gen(function* () {
+      const repo = yield* PendingOpRepo;
+      yield* repo.enqueue(op('a'));
+      yield* repo.enqueue(op('b', { calendarId: 'cal-2' }));
+      yield* repo.enqueue(op('c', { kind: 'updateTask', taskListId: 'list-1' }));
+      yield* repo.enqueue(op('d', { accountId: 'acc-2' }));
+      const count = (calendarIds: Array<string>, taskListIds: Array<string>) =>
+        repo.countFor('acc-1', { calendarIds, taskListIds });
+      expect(yield* count(['cal-2'], [])).toBe(1);
+      expect(yield* count([], ['list-1'])).toBe(1);
+      expect(yield* count(['cal-1', 'cal-2'], ['list-1'])).toBe(3);
+      expect(yield* count(['cal-9'], ['list-9'])).toBe(0);
+      expect(yield* count([], [])).toBe(0);
+    }).pipe(Effect.provide(freshDbLayer())),
+  );
+
   it.effect('round-trips every optional field, payload included', () =>
     Effect.gen(function* () {
       const repo = yield* PendingOpRepo;

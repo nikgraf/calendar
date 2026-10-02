@@ -21,6 +21,7 @@ const eventRow = (overrides: Partial<EventRow> = {}): EventRow => ({
   id: 'evt',
   is_all_day: 0,
   location: null,
+  mirror: null,
   organizer_email: null,
   original_start_utc: null,
   recurrence: null,
@@ -34,7 +35,9 @@ const eventRow = (overrides: Partial<EventRow> = {}): EventRow => ({
   sync_status: 'synced',
   synced_at: 0,
   title: 'x',
+  transparency: null,
   updated_at: 0,
+  visibility: null,
   ...overrides,
 });
 

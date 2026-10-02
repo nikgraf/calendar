@@ -224,6 +224,17 @@ export class TaskRecord extends Schema.Class<TaskRecord>('TaskRecord')({
   dueDate: Schema.optional(Schema.String),
   /** Reminders only: 'HH:MM' in the device zone when the reminder is timed. */
   dueTime: Schema.optional(Schema.String),
+  /**
+   * Reminders only: the due instant, when the reminder carries a time zone
+   * of its own. `dueTime` is how this device reads it; this is the same on
+   * every device (a calendar mirror places a timed reminder by it).
+   */
+  dueUtc: Schema.optional(Schema.Number),
+  /**
+   * Reminders only: EventKit's external identifier — unlike `id`, the same
+   * on every device the reminder syncs to. A calendar mirror keys by it.
+   */
+  externalId: Schema.optional(Schema.String),
   /** Task id, unique within its list. */
   id: Schema.String,
   listId: Schema.String,

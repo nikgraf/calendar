@@ -149,6 +149,28 @@ describe('TaskRepo', () => {
     }).pipe(Effect.provide(freshDbLayer())),
   );
 
+  it.effect('reads a mirror’s source lists whole and keeps a reminder’s portable identity', () =>
+    Effect.gen(function* () {
+      const repo = yield* TaskRepo;
+      yield* repo.upsertLists([list(), list({ id: 'list-other' })], 100);
+      yield* repo.upsertTasks(
+        [
+          task({ dueUtc: 1_760_000_000_000, externalId: 'ext-1', id: 'a' }),
+          task({ dueDate: undefined, id: 'b' }),
+          task({ completedAt: 5, id: 'c', status: 'completed' }),
+          task({ id: 'd', listId: 'list-other' }),
+        ],
+        100,
+      );
+      // Hidden here is still a source: visibility is this device's own toggle.
+      yield* repo.setListVisible('acc-1', 'list-1', false);
+      const rows = yield* repo.getMirrorSource('acc-1', ['list-1']);
+      expect(rows.map((row) => row.id)).toEqual(['a', 'b', 'c']);
+      expect(rows[0]).toMatchObject({ dueUtc: 1_760_000_000_000, externalId: 'ext-1' });
+      expect(yield* repo.getMirrorSource('acc-1', [])).toEqual([]);
+    }).pipe(Effect.provide(freshDbLayer())),
+  );
+
   it.effect('preserves the local visibility toggle across list upserts', () =>
     Effect.gen(function* () {
       const repo = yield* TaskRepo;

@@ -15,6 +15,18 @@ export interface PendingOpRepoShape {
    * use it to keep order: backoff lets `listDue` skip an older op, and a
    * move must never overtake, or be overtaken by, an edit of that series.
    */
+  /**
+   * How many ops wait for the given calendars and task lists of an account.
+   * A calendar mirror stands back while its sources hold unsynced edits:
+   * this device would mirror its own version and another the server's.
+   */
+  readonly countFor: (
+    accountId: string,
+    sources: {
+      readonly calendarIds: ReadonlyArray<string>;
+      readonly taskListIds: ReadonlyArray<string>;
+    },
+  ) => Effect.Effect<number, SqlError>;
   readonly earlierInSeries: (
     op: PendingOp,
   ) => Effect.Effect<ReadonlyArray<PendingOp['kind']>, SqlError>;
@@ -72,6 +84,21 @@ const makePendingOpRepo: Effect.Effect<PendingOpRepoShape, never, Reactivity | S
       reactivity.mutation([OPS_KEY], effect);
 
     return {
+      countFor: (accountId, sources) => {
+        const { calendarIds, taskListIds } = sources;
+        if (calendarIds.length === 0 && taskListIds.length === 0) {
+          return Effect.succeed(0);
+        }
+        const inCalendars =
+          calendarIds.length === 0 ? sql`0` : sql`calendar_id IN ${sql.in(calendarIds)}`;
+        const inLists =
+          taskListIds.length === 0 ? sql`0` : sql`task_list_id IN ${sql.in(taskListIds)}`;
+        return Effect.map(
+          sql<{ readonly count: number }>`SELECT COUNT(*) AS count FROM pending_ops
+            WHERE account_id = ${accountId} AND (${inCalendars} OR ${inLists})`,
+          (rows) => rows[0]?.count ?? 0,
+        );
+      },
       earlierInSeries: (op) =>
         Effect.map(
           sql<{ readonly kind: PendingOp['kind'] }>`SELECT kind FROM pending_ops

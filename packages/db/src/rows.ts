@@ -140,6 +140,9 @@ export interface TaskRow {
   readonly url: string | null;
   readonly alarms: string | null;
   readonly recurrence: string | null;
+  /** Reminders only; added by migration 7. */
+  readonly external_id: string | null;
+  readonly due_utc: number | null;
   /** Joined from task_lists.provider by getWindow; plain SELECTs leave it absent (= google). */
   readonly list_provider?: string | null;
 }
@@ -180,6 +183,8 @@ const oneOf = <T extends string>(allowed: ReadonlySet<string>, value: string, fa
 const EVENT_STATUSES: ReadonlySet<string> = new Set(['cancelled', 'confirmed', 'tentative']);
 const SYNC_STATUSES: ReadonlySet<string> = new Set(['error', 'pending', 'synced']);
 const TASK_STATUSES: ReadonlySet<string> = new Set(['completed', 'needsAction']);
+const TRANSPARENCIES: ReadonlySet<string> = new Set(['opaque', 'transparent']);
+const VISIBILITIES: ReadonlySet<string> = new Set(['confidential', 'default', 'private', 'public']);
 const ACCESS_ROLES: ReadonlySet<string> = new Set(['freeBusyReader', 'owner', 'reader', 'writer']);
 const OP_KINDS: ReadonlySet<string> = new Set([
   'calendarColor',
@@ -209,6 +214,8 @@ export const taskFromRow = (row: TaskRow): TaskRecord => {
     completedAt: row.completed_at ?? undefined,
     dueDate: row.due_date ?? undefined,
     dueTime: row.due_time ?? undefined,
+    dueUtc: row.due_utc ?? undefined,
+    externalId: row.external_id ?? undefined,
     id: row.id,
     listId: row.list_id,
     notes: row.notes ?? undefined,
@@ -305,8 +312,12 @@ export interface EventRow {
   readonly synced_at: number;
   /** JSON GeoLocation; added by migration 2 (hence late). */
   readonly geo: string | null;
-  /** JSON EventReminders; added by migration 4 (hence last). */
+  /** JSON EventReminders; added by migration 4. */
   readonly reminders: string | null;
+  /** A mirror copy's marker; with the two below, added by migration 7. */
+  readonly mirror: string | null;
+  readonly transparency: string | null;
+  readonly visibility: string | null;
 }
 
 const attendeesJson = Schema.Array(Attendee);
@@ -330,6 +341,7 @@ export const eventFromRow = (row: EventRow): EventRecord =>
     id: row.id,
     isAllDay: row.is_all_day === 1,
     location: row.location ?? undefined,
+    mirror: row.mirror ?? undefined,
     organizerEmail: row.organizer_email ?? undefined,
     originalStartUtc: row.original_start_utc ?? undefined,
     recurrence: stringArray(parseJson(row.recurrence)),
@@ -342,7 +354,19 @@ export const eventFromRow = (row: EventRow): EventRecord =>
     syncedAt: row.synced_at,
     syncStatus: oneOf<EventRecord['syncStatus']>(SYNC_STATUSES, row.sync_status, 'synced'),
     title: row.title,
+    transparency:
+      row.transparency === null
+        ? undefined
+        : oneOf<NonNullable<EventRecord['transparency']>>(
+            TRANSPARENCIES,
+            row.transparency,
+            'opaque',
+          ),
     updatedAt: row.updated_at,
+    visibility:
+      row.visibility === null
+        ? undefined
+        : oneOf<NonNullable<EventRecord['visibility']>>(VISIBILITIES, row.visibility, 'default'),
   });
 
 export const eventToRow = (event: EventRecord): EventRow => ({
@@ -360,6 +384,7 @@ export const eventToRow = (event: EventRecord): EventRow => ({
   id: event.id,
   is_all_day: event.isAllDay ? 1 : 0,
   location: event.location ?? null,
+  mirror: event.mirror ?? null,
   organizer_email: event.organizerEmail ?? null,
   original_start_utc: event.originalStartUtc ?? null,
   recurrence: event.recurrence ? JSON.stringify(event.recurrence) : null,
@@ -389,7 +414,9 @@ export const eventToRow = (event: EventRecord): EventRow => ({
   sync_status: event.syncStatus,
   synced_at: event.syncedAt,
   title: event.title,
+  transparency: event.transparency ?? null,
   updated_at: event.updatedAt,
+  visibility: event.visibility ?? null,
 });
 
 export interface PendingOpRow {

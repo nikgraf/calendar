@@ -39,6 +39,16 @@ export interface EventRepoShape {
     ReadonlyArray<{ readonly accountId: string; readonly eventCount: number }>,
     SqlError
   >;
+  /**
+   * How many ordinary events (not a mirror's copies) a calendar holds in
+   * the range — what a mirror would be sharing its destination with.
+   */
+  readonly countOrdinary: (
+    accountId: string,
+    calendarId: string,
+    rangeStartUtc: number,
+    rangeEndUtc: number,
+  ) => Effect.Effect<number, SqlError>;
   /** Everything of a calendar that no longer exists upstream. */
   readonly deleteByCalendar: (
     accountId: string,
@@ -60,11 +70,33 @@ export interface EventRepoShape {
     calendarId: string,
     eventId: string,
   ) => Effect.Effect<EventRecord | null, SqlError>;
-  /** Window of visible-calendar events for range rendering. */
+  /**
+   * The window of the given calendars as a calendar mirror reads its
+   * sources: whether a calendar is shown on this device does not matter
+   * (visibility is a local toggle; two devices must read the same
+   * sources), and another mirror's copies are never a source.
+   */
+  readonly getSourceWindow: (
+    accountId: string,
+    calendarIds: ReadonlyArray<string>,
+    rangeStartUtc: number,
+    rangeEndUtc: number,
+  ) => Effect.Effect<EventWindow, SqlError>;
+  /**
+   * Window of visible-calendar events for range rendering. A calendar
+   * mirror's copies are left out: the originals are already there.
+   */
   readonly getWindow: (
     rangeStartUtc: number,
     rangeEndUtc: number,
   ) => Effect.Effect<EventWindow, SqlError>;
+  /** The mirror copies a calendar holds that start inside [rangeStartUtc, rangeEndUtc). */
+  readonly listMirrorCopies: (
+    accountId: string,
+    calendarId: string,
+    rangeStartUtc: number,
+    rangeEndUtc: number,
+  ) => Effect.Effect<ReadonlyArray<EventRecord>, SqlError>;
   /** Exception rows belonging to a recurring master. */
   readonly listOverrides: (
     accountId: string,
@@ -102,7 +134,7 @@ const makeEventRepo: Effect.Effect<EventRepoShape, never, Reactivity | SqlClient
                           end_date, start_time_zone, recurrence, recurrence_end_utc,
                           recurring_event_id, original_start_utc, attendees,
                           hangout_link, organizer_email, sync_status, updated_at,
-                          synced_at, geo, reminders)
+                          synced_at, geo, reminders, mirror, transparency, visibility)
       SELECT ${row.account_id}, ${row.calendar_id}, ${row.id}, ${row.etag},
              ${row.status}, ${row.title}, ${row.location}, ${row.description},
              ${row.is_all_day}, ${row.start_utc}, ${row.end_utc}, ${row.start_date},
@@ -110,7 +142,8 @@ const makeEventRepo: Effect.Effect<EventRepoShape, never, Reactivity | SqlClient
              ${row.recurrence_end_utc}, ${row.recurring_event_id},
              ${row.original_start_utc}, ${row.attendees}, ${row.hangout_link},
              ${row.organizer_email}, ${row.sync_status}, ${row.updated_at},
-             ${row.synced_at}, ${row.geo}, ${row.reminders}
+             ${row.synced_at}, ${row.geo}, ${row.reminders}, ${row.mirror},
+             ${row.transparency}, ${row.visibility}
       ${accountGuard(sql, row.account_id)}
       ON CONFLICT (account_id, calendar_id, id) DO UPDATE SET
         etag = excluded.etag,
@@ -135,7 +168,10 @@ const makeEventRepo: Effect.Effect<EventRepoShape, never, Reactivity | SqlClient
         updated_at = excluded.updated_at,
         synced_at = excluded.synced_at,
         geo = excluded.geo,
-        reminders = excluded.reminders
+        reminders = excluded.reminders,
+        mirror = excluded.mirror,
+        transparency = excluded.transparency,
+        visibility = excluded.visibility
       ${guard}
     `;
     };
@@ -169,6 +205,17 @@ const makeEventRepo: Effect.Effect<EventRepoShape, never, Reactivity | SqlClient
             GROUP BY account_id ORDER BY account_id`,
           (rows) => rows.map((row) => ({ accountId: row.account_id, eventCount: row.event_count })),
         ),
+      countOrdinary: (accountId, calendarId, rangeStartUtc, rangeEndUtc) =>
+        Effect.map(
+          sql<{ readonly count: number }>`
+            SELECT COUNT(*) AS count FROM events
+            WHERE account_id = ${accountId} AND calendar_id = ${calendarId}
+            AND mirror IS NULL AND status != 'cancelled'
+            AND start_utc < ${rangeEndUtc}
+            AND (CASE WHEN recurrence IS NULL THEN end_utc > ${rangeStartUtc}
+                 ELSE recurrence_end_utc IS NULL OR recurrence_end_utc >= ${rangeStartUtc} END)`,
+          (rows) => rows[0]?.count ?? 0,
+        ),
       deleteByCalendar: (accountId, calendarId) =>
         reactivity.mutation(
           [EVENTS_KEY, eventsKey(calendarId)],
@@ -199,6 +246,41 @@ const makeEventRepo: Effect.Effect<EventRepoShape, never, Reactivity | SqlClient
             AND calendar_id = ${calendarId} AND id = ${eventId}`,
           (rows) => (rows[0] ? eventFromRow(rows[0]) : null),
         ),
+      getSourceWindow: (accountId, calendarIds, rangeStartUtc, rangeEndUtc) =>
+        Effect.gen(function* () {
+          if (calendarIds.length === 0) {
+            return { masters: [], overrides: [], singles: [] };
+          }
+          const singles = yield* sql<EventRow>`
+          SELECT e.* FROM events e
+          WHERE e.account_id = ${accountId} AND e.calendar_id IN ${sql.in(calendarIds)}
+          AND e.recurrence IS NULL
+          AND e.start_utc < ${rangeEndUtc} AND e.end_utc > ${rangeStartUtc}
+          AND e.status != 'cancelled' AND e.mirror IS NULL`;
+          const masters = yield* sql<EventRow>`
+          SELECT e.* FROM events e
+          WHERE e.account_id = ${accountId} AND e.calendar_id IN ${sql.in(calendarIds)}
+          AND e.recurrence IS NOT NULL
+          AND e.start_utc < ${rangeEndUtc}
+          AND (e.recurrence_end_utc IS NULL OR e.recurrence_end_utc >= ${rangeStartUtc})
+          AND e.status != 'cancelled'`;
+          const masterIds = masters.map((row) => row.id);
+          const overrides =
+            masterIds.length === 0
+              ? []
+              : yield* sql<EventRow>`
+                SELECT e.* FROM events e
+                JOIN events m ON m.account_id = e.account_id
+                  AND m.calendar_id = e.calendar_id AND m.id = e.recurring_event_id
+                WHERE e.account_id = ${accountId} AND e.calendar_id IN ${sql.in(calendarIds)}
+                AND m.recurrence IS NOT NULL
+                AND e.recurring_event_id IN ${sql.in(masterIds)}`;
+          return {
+            masters: masters.map(eventFromRow),
+            overrides: overrides.map(eventFromRow),
+            singles: singles.map(eventFromRow),
+          };
+        }),
       getWindow: (rangeStartUtc, rangeEndUtc) =>
         Effect.gen(function* () {
           const singles = yield* sql<EventRow>`
@@ -206,7 +288,7 @@ const makeEventRepo: Effect.Effect<EventRepoShape, never, Reactivity | SqlClient
           JOIN calendars c ON c.account_id = e.account_id AND c.id = e.calendar_id
           WHERE c.is_visible = 1 AND e.recurrence IS NULL
           AND e.start_utc < ${rangeEndUtc} AND e.end_utc > ${rangeStartUtc}
-          AND e.status != 'cancelled'`;
+          AND e.status != 'cancelled' AND e.mirror IS NULL`;
 
           // Series that ended before the range are left out; an override
           // of such a series that falls in range still arrives as a single.
@@ -216,7 +298,7 @@ const makeEventRepo: Effect.Effect<EventRepoShape, never, Reactivity | SqlClient
           WHERE c.is_visible = 1 AND e.recurrence IS NOT NULL
           AND e.start_utc < ${rangeEndUtc}
           AND (e.recurrence_end_utc IS NULL OR e.recurrence_end_utc >= ${rangeStartUtc})
-          AND e.status != 'cancelled'`;
+          AND e.status != 'cancelled' AND e.mirror IS NULL`;
 
           const masterIds = masters.map((row) => row.id);
           // An override shadows an occurrence of the master it belongs
@@ -243,6 +325,15 @@ const makeEventRepo: Effect.Effect<EventRepoShape, never, Reactivity | SqlClient
             singles: singles.map(eventFromRow),
           };
         }),
+      listMirrorCopies: (accountId, calendarId, rangeStartUtc, rangeEndUtc) =>
+        Effect.map(
+          sql<EventRow>`SELECT * FROM events WHERE account_id = ${accountId}
+            AND calendar_id = ${calendarId} AND mirror IS NOT NULL
+            AND status != 'cancelled'
+            AND start_utc >= ${rangeStartUtc} AND start_utc < ${rangeEndUtc}
+            ORDER BY start_utc`,
+          (rows) => rows.map(eventFromRow),
+        ),
       listOverrides: (accountId, calendarId, masterId) =>
         Effect.map(
           sql<EventRow>`SELECT * FROM events WHERE account_id = ${accountId}
