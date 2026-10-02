@@ -1,4 +1,4 @@
-import { type ReactNode, useEffect, useState } from 'react';
+import { type ReactNode, useEffect, useState, useSyncExternalStore } from 'react';
 import { AccountsView } from './AccountsView.tsx';
 import { AgentsSection } from './agents/AgentsSection.tsx';
 import { AppleCalendarSection } from './AppleCalendarSection.tsx';
@@ -95,42 +95,40 @@ const PANE_ICON: Record<SettingsPaneId, ReactNode> = {
   ),
 };
 
+const subscribeHash = (onChange: () => void): (() => void) => {
+  window.addEventListener('hashchange', onChange);
+  return () => window.removeEventListener('hashchange', onChange);
+};
+const readHash = (): string => window.location.hash;
+/** A tab click. A same-document navigation: `hashchange` follows, no reload, no history entry. */
+const showPane = (id: SettingsPaneId): void => window.location.replace(`${SETTINGS_HASH}/${id}`);
+
 /**
  * The settings window's page (the main process loads it at `#settings`):
  * a pane toolbar in the title bar, the window title naming the pane in
  * view, changes applying as they are made — the macOS settings layout.
  *
- * The pane lives in the URL hash. The main process opens the window on a
- * pane, or moves an open one to it, by navigating the hash (windows.ts),
- * so a request can never arrive before a listener exists; a tab click
- * writes the hash back so the main process can tell where the window is.
+ * The URL hash is the pane, and the only place it is kept: the main
+ * process opens the window on a pane, or moves an open one to it, by
+ * navigating the hash (windows.ts), and a tab click navigates it too.
+ * Nothing here writes its own idea of the pane back over the hash, so a
+ * request from the main process cannot be lost to this page's timing —
+ * it holds whether it lands before the first render or after. A hash that
+ * names no pane (the bare `#settings` of a window opened without one)
+ * shows the pane viewed last.
  *
  * Every pane stays mounted and only the one in view is shown: a half-typed
  * agent name, a token shown once and each pane's scroll position survive a
  * look at another pane.
  */
 export function SettingsWindow() {
-  const [pane, setPane] = useState<SettingsPaneId>(
-    () => paneFromHash(window.location.hash) ?? storedPane() ?? 'general',
-  );
+  const hash = useSyncExternalStore(subscribeHash, readHash);
+  const [fallback] = useState<SettingsPaneId>(() => storedPane() ?? 'general');
+  const pane = paneFromHash(hash) ?? fallback;
   const label = SETTINGS_PANES.find((entry) => entry.id === pane)!.label;
 
   useEffect(() => {
-    const onHashChange = () => {
-      const next = paneFromHash(window.location.hash);
-      if (next) {
-        setPane(next);
-      }
-    };
-    window.addEventListener('hashchange', onHashChange);
-    return () => window.removeEventListener('hashchange', onHashChange);
-  }, []);
-
-  useEffect(() => {
     document.title = label;
-    if (paneFromHash(window.location.hash) !== pane) {
-      window.history.replaceState(null, '', `${SETTINGS_HASH}/${pane}`);
-    }
     try {
       window.localStorage.setItem(LAST_PANE_KEY, pane);
     } catch {
@@ -162,7 +160,7 @@ export function SettingsWindow() {
               }`}
               data-testid={`settings-tab-${entry.id}`}
               key={entry.id}
-              onClick={() => setPane(entry.id)}
+              onClick={() => showPane(entry.id)}
               role="tab"
               style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
               type="button"

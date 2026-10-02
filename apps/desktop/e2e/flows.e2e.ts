@@ -1171,6 +1171,30 @@ describe('calendar desktop e2e', () => {
     // The calendar window was never touched.
     expect(await cdp.eval(`document.body.textContent.includes('Today')`)).toBe(true);
   });
+  it('keeps a pane asked for while the settings window is still opening', async () => {
+    const { cdp } = app;
+    // A second request at several points of the window's start-up: before
+    // its first navigation has committed (the main process has no URL to
+    // compare yet), while the page loads, and around the page's first
+    // render. Neither request may fail, and the later one wins.
+    for (const gapMs of [0, 30, 60, 90, 150]) {
+      const outcomes = await cdp.eval<Array<string>>(`(async () => {
+        const first = window.calendarBridge.openSettings('general');
+        await new Promise((resolve) => setTimeout(resolve, ${gapMs}));
+        const second = window.calendarBridge.openSettings('accounts');
+        return (await Promise.allSettled([first, second])).map((result) => result.status);
+      })()`);
+      expect(outcomes, `gap ${gapMs} ms`).toEqual(['fulfilled', 'fulfilled']);
+      const settings = await app.settingsPage();
+      await settings.waitFor(
+        `document.querySelector('[data-testid="settings-title"]')?.textContent === 'Accounts'`,
+      );
+      expect(await app.windowCount()).toBe(2);
+      await app.closeSettings();
+      await expect.poll(() => app.windowCount(), { timeout: 10_000 }).toBe(1);
+    }
+  });
+
   it('moves an event even when no pointermove is delivered', async () => {
     const { cdp } = app;
     // A press and release with nothing in between: the browser coalescing

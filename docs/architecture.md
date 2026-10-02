@@ -449,7 +449,9 @@ model: `docs/agent-gateway.md`.
   there is one at most, fixed-size, with minimize and zoom off. The pane is the
   URL hash (`#settings/<pane>`): the main process moves an open window by
   navigating the hash, which the page sees as `hashchange` without a
-  reload, and a tab click writes the hash back. Each window is its own
+  reload (a pane asked for while the page still loads is applied when
+  loading stops), and a tab click navigates the hash too — the page
+  reads the pane from the hash and never writes its own state over it. Each window is its own
   rpc client (`webContents.id`) with its own atoms, kept in step by the
   invalidation stream; `privacy:changed`, `agents:changed` and
   `settingsFile:changed` are sent to every window. The agent approval

@@ -53,7 +53,12 @@ const loadRenderer = (window: BrowserWindow, hash: string): void => {
 };
 
 let mainWindow: BrowserWindow | null = null;
-let settingsWindow: BrowserWindow | null = null;
+/** The settings window, and the pane asked for while its page was still loading. */
+interface SettingsWindow {
+  pendingPane?: string | undefined;
+  readonly window: BrowserWindow;
+}
+let settings: SettingsWindow | null = null;
 
 export const hasMainWindow = (): boolean => mainWindow !== null;
 
@@ -121,24 +126,45 @@ export const showMainWindow = (): void => {
 const settingsHash = (pane: string | undefined): string => (pane ? `settings/${pane}` : 'settings');
 
 /**
+ * Moves the settings window to a pane by navigating the hash, which the
+ * page sees as `hashchange` without reloading. Only once the page has
+ * loaded: until the first navigation commits there is no URL to compare
+ * (`getURL()` is empty — parsing it threw, and the request was lost), and
+ * navigating then would abort the load in flight. So a pane asked for
+ * while the window is still opening is kept, the last one winning, and
+ * applied when loading stops.
+ */
+const moveSettingsTo = (pane: string): void => {
+  if (!settings) {
+    return;
+  }
+  const { webContents } = settings.window;
+  const current = URL.parse(webContents.getURL());
+  if (webContents.isLoading() || !current) {
+    settings.pendingPane = pane;
+    return;
+  }
+  if (current.hash !== `#${settingsHash(pane)}`) {
+    loadRenderer(settings.window, settingsHash(pane));
+  }
+};
+
+/**
  * Opens the settings window, or brings the one that exists to the front.
- * The pane lives in the URL hash, so there is no message to lose while the
- * page is still loading: a new window starts on `pane`, an open one is
- * navigated to it — a hash-only change, which the page sees as
- * `hashchange` without reloading. Without a pane the window reopens on
- * the one last viewed (the renderer remembers it).
+ * The pane lives in the URL hash: a new window starts on `pane`, an open
+ * one is moved to it (moveSettingsTo). Without a pane the window reopens
+ * on the one last viewed (the renderer remembers it).
  */
 export const showSettingsWindow = (pane?: string): void => {
   if (!app.isReady()) {
     return;
   }
-  const existing = settingsWindow;
-  if (existing) {
-    if (pane && new URL(existing.webContents.getURL()).hash !== `#${settingsHash(pane)}`) {
-      loadRenderer(existing, settingsHash(pane));
+  if (settings) {
+    if (pane) {
+      moveSettingsTo(pane);
     }
-    existing.show();
-    existing.focus();
+    settings.window.show();
+    settings.window.focus();
     return;
   }
   // A settings window as macOS draws them: fixed size, close button only
@@ -156,10 +182,18 @@ export const showSettingsWindow = (pane?: string): void => {
     webPreferences,
     width: 680,
   });
-  settingsWindow = window;
+  const opened: SettingsWindow = { window };
+  settings = opened;
   window.once('closed', () => {
-    if (settingsWindow === window) {
-      settingsWindow = null;
+    if (settings === opened) {
+      settings = null;
+    }
+  });
+  window.webContents.on('did-stop-loading', () => {
+    const pending = opened.pendingPane;
+    opened.pendingPane = undefined;
+    if (pending && settings === opened) {
+      moveSettingsTo(pending);
     }
   });
   window.once('ready-to-show', () => window.show());

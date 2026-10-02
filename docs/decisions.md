@@ -1638,7 +1638,16 @@ test`/`test:e2e`/`test:e2e:ios`; every file creates its own
       no backend change. **The pane lives in the URL hash**: the main
       process moves an open window to a pane by navigating the hash
       (same-document, the page gets `hashchange`), so no message can
-      arrive before the page listens. All panes stay mounted (hidden),
+      arrive before the page listens. Review found the two ways that
+      still lost a request made while the window was opening: the main
+      process parsed `getURL()`, which is empty until the first
+      navigation commits (`Invalid URL`, request rejected), and the page
+      wrote its own pane back over the hash after its first render,
+      undoing a navigation that landed in between. Now a pane asked for
+      during loading is kept and applied on `did-stop-loading`, and the
+      page only ever reads the hash (`useSyncExternalStore`; a tab click
+      navigates it) — nothing writes state back over it. All panes stay
+      mounted (hidden),
       so an agent token shown once or a half-typed name survives a look
       at another pane. **The toolbar is HTML** in a hidden title bar —
       Electron cannot host an `NSToolbar`. **No settings button in the main
