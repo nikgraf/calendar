@@ -27,7 +27,7 @@ import {
 import { SqliteClient } from '@effect/sql-sqlite-node';
 import { app, powerMonitor } from 'electron';
 import { Data, Duration, Effect, Layer, ManagedRuntime } from 'effect';
-import { RpcSerialization, RpcServer } from 'effect/unstable/rpc';
+import { RpcSerialization, RpcServer } from 'effect/rpc';
 import { runGoogleSignIn } from './auth/loopbackFlow.ts';
 import { loadOAuthConfig } from './oauthConfig.ts';
 import { getPrivacyState, setPrivacyChoice } from './privacy.ts';

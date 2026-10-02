@@ -30,7 +30,7 @@ import {
   mapGcalEvent,
 } from '@calendar/google';
 import { Clock, Context, Duration, Effect } from 'effect';
-import type { SqlError } from 'effect/unstable/sql/SqlError';
+import type { SqlError } from 'effect/sql/SqlError';
 import { SyncEngine } from './engine.ts';
 
 /**

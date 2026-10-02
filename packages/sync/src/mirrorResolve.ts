@@ -16,7 +16,7 @@ import {
 } from '@calendar/core';
 import { AccountRepo, CalendarRepo, PendingOpRepo, SyncStateRepo, TaskRepo } from '@calendar/db';
 import { Effect } from 'effect';
-import type { SqlError } from 'effect/unstable/sql/SqlError';
+import type { SqlError } from 'effect/sql/SqlError';
 import { appleCalendarSource } from './importedVisibility.ts';
 
 /**

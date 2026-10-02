@@ -1,8 +1,8 @@
 import { GeoLocation } from '@calendar/core';
 import { Context, Effect, Layer, Schema } from 'effect';
-import { Reactivity } from 'effect/unstable/reactivity/Reactivity';
-import { SqlClient } from 'effect/unstable/sql/SqlClient';
-import type { SqlError } from 'effect/unstable/sql/SqlError';
+import { Reactivity } from 'effect/reactivity/Reactivity';
+import { SqlClient } from 'effect/sql/SqlClient';
+import type { SqlError } from 'effect/sql/SqlError';
 import { LOCATION_GEO_KEY } from './keys.ts';
 import { type LocationGeoRow, locationGeoFromRow } from './rows.ts';
 

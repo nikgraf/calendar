@@ -1,8 +1,8 @@
 import { type EventRecord } from '@calendar/core';
 import { Context, Effect, Layer } from 'effect';
-import { Reactivity } from 'effect/unstable/reactivity/Reactivity';
-import { SqlClient } from 'effect/unstable/sql/SqlClient';
-import type { SqlError } from 'effect/unstable/sql/SqlError';
+import { Reactivity } from 'effect/reactivity/Reactivity';
+import { SqlClient } from 'effect/sql/SqlClient';
+import type { SqlError } from 'effect/sql/SqlError';
 import { EVENTS_KEY, eventsKey } from './keys.ts';
 import { eventFromRow, eventToRow, type EventRow } from './rows.ts';
 import { accountGuard } from './repoShared.ts';

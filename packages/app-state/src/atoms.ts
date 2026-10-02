@@ -13,7 +13,7 @@ import {
 } from '@calendar/db/keys';
 import type { BackendClient, BackendPayload, BackendSuccess } from '@calendar/core';
 import { Context, Effect, Layer } from 'effect';
-import { Atom, AsyncResult, Reactivity, type AtomRegistry } from 'effect/unstable/reactivity';
+import { Atom, AsyncResult, Reactivity, type AtomRegistry } from 'effect/reactivity';
 
 /** The BackendClient as a service, so atom effects can yield it. */
 export class AppBackend extends Context.Service<AppBackend, BackendClient>()(

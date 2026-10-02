@@ -21,7 +21,7 @@ import { AccountRepo, CalendarRepo, DeviceSettingsRepo, EventRepo, TaskRepo } fr
 import { deviceTimeZone } from '@calendar/sync';
 import { readTimeZoneSettings } from '@calendar/sync/deviceSettings';
 import { Clock, Effect } from 'effect';
-import type { SqlError } from 'effect/unstable/sql/SqlError';
+import type { SqlError } from 'effect/sql/SqlError';
 import {
   AgentFailedError,
   AgentInvalidInputError,

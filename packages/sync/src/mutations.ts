@@ -45,9 +45,9 @@ import {
 } from '@calendar/google';
 import { RemindersClient } from '@calendar/reminders';
 import { Cause, Clock, Context, Effect, Layer, Semaphore } from 'effect';
-import { Reactivity } from 'effect/unstable/reactivity/Reactivity';
-import { SqlClient } from 'effect/unstable/sql/SqlClient';
-import type { SqlError } from 'effect/unstable/sql/SqlError';
+import { Reactivity } from 'effect/reactivity/Reactivity';
+import { SqlClient } from 'effect/sql/SqlClient';
+import type { SqlError } from 'effect/sql/SqlError';
 import { makeApplyOp } from './applyOp.ts';
 import { AppleCalendarEvents, deviceTimeZone } from './appleCalendarEvents.ts';
 import { makeAppleEventMutations } from './appleEventMutations.ts';

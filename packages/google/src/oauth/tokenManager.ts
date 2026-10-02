@@ -1,6 +1,6 @@
 import { TokenSet } from '@calendar/core/types';
 import { Clock, Context, Effect, Layer, Schema, Semaphore } from 'effect';
-import { HttpClient, HttpClientRequest } from 'effect/unstable/http';
+import { HttpClient, HttpClientRequest } from 'effect/http';
 import { ReauthRequiredError, TokenRefreshError } from '../errors.ts';
 import { TokenStore } from './tokenStore.ts';
 

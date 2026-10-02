@@ -7,7 +7,7 @@ import {
 } from '@calendar/core';
 import type { EventRepoShape } from '@calendar/db';
 import { Effect } from 'effect';
-import type { SqlError } from 'effect/unstable/sql/SqlError';
+import type { SqlError } from 'effect/sql/SqlError';
 
 /**
  * Google copies a changed title, description or location of a series onto

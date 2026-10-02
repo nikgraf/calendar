@@ -12,7 +12,7 @@ export const TimeZoneSettings = Schema.Struct({
   primary: Schema.String,
   /** 1..MAX_TIME_ZONES unique IANA ids, in the order the gutter shows them. */
   zones: Schema.Array(Schema.String).pipe(
-    Schema.check(Schema.isLengthBetween(1, MAX_TIME_ZONES), Schema.isUnique()),
+    Schema.check(Schema.isBetweenLength(1, MAX_TIME_ZONES), Schema.isUnique()),
   ),
 }).pipe(
   Schema.check(

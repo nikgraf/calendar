@@ -7,7 +7,7 @@ import {
 } from '@calendar/core';
 import { ACCOUNTS_KEY } from '@calendar/db/keys';
 import { Effect } from 'effect';
-import { AsyncResult, type Atom, AtomRegistry } from 'effect/unstable/reactivity';
+import { AsyncResult, type Atom, AtomRegistry } from 'effect/reactivity';
 import { describe, expect, it } from 'vitest';
 import { makeBackendAtoms, mapSnapshotKey, rangeKey } from './atoms.ts';
 

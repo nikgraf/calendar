@@ -1,6 +1,6 @@
 import { Layer } from 'effect';
-import { Reactivity } from 'effect/unstable/reactivity/Reactivity';
-import { SqlClient } from 'effect/unstable/sql/SqlClient';
+import { Reactivity } from 'effect/reactivity/Reactivity';
+import { SqlClient } from 'effect/sql/SqlClient';
 import { AccountRepo } from './accountRepo.ts';
 import { BirthdayRepo } from './birthdayRepo.ts';
 import { CalendarRepo } from './calendarRepo.ts';

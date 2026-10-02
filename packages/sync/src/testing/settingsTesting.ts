@@ -9,7 +9,7 @@ import {
 import { AccountRepo, CalendarRepo, reposLayer, runMigrations, TaskRepo } from '@calendar/db';
 import { SqliteClient } from '@effect/sql-sqlite-node';
 import { Effect, Layer } from 'effect';
-import { layer as reactivityLayer } from 'effect/unstable/reactivity/Reactivity';
+import { layer as reactivityLayer } from 'effect/reactivity/Reactivity';
 import { LocalNotifications } from '../localNotifications.ts';
 import { NotificationSink, noopNotificationSink } from '../notificationSink.ts';
 import { PlatformSettings } from '../platformSettings.ts';

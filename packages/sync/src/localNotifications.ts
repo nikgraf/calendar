@@ -8,7 +8,7 @@ import {
 } from '@calendar/db';
 import { BIRTHDAYS_KEY, EVENTS_KEY } from '@calendar/db/keys';
 import { Clock, Context, Duration, Effect, Layer, Semaphore, Stream } from 'effect';
-import { Reactivity } from 'effect/unstable/reactivity/Reactivity';
+import { Reactivity } from 'effect/reactivity/Reactivity';
 import type { AppleCalendarEvents } from './appleCalendarEvents.ts';
 import { loadBirthdayPlans } from './birthdayReminders.ts';
 import type { DeviceContacts } from './deviceContacts.ts';

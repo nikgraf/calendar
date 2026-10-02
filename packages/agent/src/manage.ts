@@ -1,5 +1,5 @@
 import { Clock, Effect } from 'effect';
-import type { SqlError } from 'effect/unstable/sql/SqlError';
+import type { SqlError } from 'effect/sql/SqlError';
 import { type AgentPolicy, EMPTY_POLICY } from './policy.ts';
 import { AgentSignals } from './signals.ts';
 import { AgentRepo, type AgentRecord, AgentRequestRepo, type AgentRequestRecord } from './store.ts';

@@ -46,7 +46,7 @@ import {
   type RemindersError,
 } from '@calendar/reminders';
 import { Clock, Context, Duration, Effect, Layer, Schedule, Semaphore, Stream } from 'effect';
-import type { SqlError } from 'effect/unstable/sql/SqlError';
+import type { SqlError } from 'effect/sql/SqlError';
 import { AppleCalendarEvents, deviceTimeZone } from './appleCalendarEvents.ts';
 import { applyPendingVisibility as applyImportedVisibility } from './importedVisibility.ts';
 import { EventMutations } from './mutations.ts';

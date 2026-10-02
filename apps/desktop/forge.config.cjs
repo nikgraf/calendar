@@ -28,8 +28,9 @@ module.exports = {
         await cp(join(rootModules, name), join(buildPath, 'node_modules', name), {
           dereference: true,
           // Nested .bin dirs hold symlinks into the hoisted store — some
-          // dangling (effect@rc ships one for uuid), and dereference:true
-          // dies on those. The packaged app never execs .bin anyway.
+          // dangling (effect's rcs left one for uuid in older installs),
+          // and dereference:true dies on those. The packaged app never
+          // execs .bin anyway.
           filter: (source) => !source.includes(`${'node_modules'}/.bin`),
           recursive: true,
         });

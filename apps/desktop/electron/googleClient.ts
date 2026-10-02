@@ -11,7 +11,7 @@ import {
   seedLiveAccount,
 } from '@calendar/sync/testing/liveGoogle';
 import { Effect, Layer } from 'effect';
-import { FetchHttpClient, type HttpClient } from 'effect/unstable/http';
+import { FetchHttpClient, type HttpClient } from 'effect/http';
 import { safeStorageTokenStore } from './tokens/safeStorageStore.ts';
 
 const readJson = <A>(path: string): A => JSON.parse(readFileSync(path, 'utf8')) as A;

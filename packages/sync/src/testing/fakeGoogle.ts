@@ -7,7 +7,7 @@ import type {
 } from '@calendar/google';
 import { TokenManager, type TokenManagerShape } from '@calendar/google';
 import { Effect, Layer } from 'effect';
-import { HttpClient, HttpClientResponse, type HttpClientRequest } from 'effect/unstable/http';
+import { HttpClient, HttpClientResponse, type HttpClientRequest } from 'effect/http';
 
 /**
  * An in-process Google (Calendar + Tasks) behind effect's HttpClient, so

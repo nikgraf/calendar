@@ -2,7 +2,7 @@ import { Account, type TokenSet } from '@calendar/core';
 import { AccountRepo } from '@calendar/db';
 import { grantsContacts, TASKS_SCOPE, TokenStore } from '@calendar/google';
 import { Effect } from 'effect';
-import type { SqlError } from 'effect/unstable/sql/SqlError';
+import type { SqlError } from 'effect/sql/SqlError';
 import { SyncEngine } from './engine.ts';
 
 /** What a completed Google sign-in yields on either platform. */

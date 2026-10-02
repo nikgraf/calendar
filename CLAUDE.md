@@ -82,16 +82,17 @@ powers quick-add parsing, find-a-time, and dictation.
 
 ## Hard rules (each learned the hard way — details in docs/)
 
-- Effect is pinned to **4.0.0-rc.115** (v4 pre-release, all `effect*` via
-  catalog). Use `Effect.forkChild`/`forkDetach`/`forkIn` — `Effect.fork`
+- Effect is pinned exactly to **4.0.0** (all `effect*` via catalog — the
+  rpc/sql/http/reactivity modules are `@stability unstable` and may break
+  in a minor). Use `Effect.forkChild`/`forkDetach`/`forkIn` — `Effect.fork`
   and `forkDaemon` do not exist. `Context.Service` is two-stage:
   `class X extends Context.Service<X, Shape>()('id')`. `Layer.effect` is
   curried: `Layer.effect(Tag)(effect)`. `Schema.Literals` takes an array.
   The Reactivity class + `layer` live at
-  `effect/unstable/reactivity/Reactivity` (deep import).
+  `effect/reactivity/Reactivity` (deep import).
 - Metro (iOS) cannot parse effect's `Migrator` or barrels re-exporting it:
   keep the custom `runMigrations` (`packages/db/src/migrate.ts`) and deep
-  imports (`effect/unstable/sql/SqlClient`,
+  imports (`effect/sql/SqlClient`,
   `@effect/sql-sqlite-react-native/SqliteClient`).
 - Electron main: never top-level-await `app.whenReady()` — 'ready' fires
   only after module evaluation, so it deadlocks. Promise-chain it
@@ -228,7 +229,7 @@ powers quick-add parsing, find-a-time, and dictation.
 
 - `docs/architecture.md` — data flow, op queue, sync engine, recurring
   model.
-- `docs/effect-v4-notes.md` — the v4-beta gotcha catalog (symptom → fix).
+- `docs/effect-v4-notes.md` — the Effect v4 gotcha catalog (symptom → fix).
 - `docs/google-sync-and-testing.md` — verified Google API semantics +
   testing conventions and flakiness lessons.
 - `docs/distribution.md` — CI build/signing pipeline, TestFlight, EAS

@@ -2,7 +2,7 @@ import { generateEventId } from '@calendar/google';
 import { PendingOp, TaskRecord } from '@calendar/core';
 import type { PendingOpRepoShape, TaskRepoShape } from '@calendar/db';
 import { Clock, Effect } from 'effect';
-import type { SqlError } from 'effect/unstable/sql/SqlError';
+import type { SqlError } from 'effect/sql/SqlError';
 import {
   type EventMutationsShape,
   TaskListNotFoundError,

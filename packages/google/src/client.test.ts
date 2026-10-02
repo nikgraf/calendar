@@ -1,6 +1,6 @@
 import { expect, it } from '@effect/vitest';
 import { Effect, Layer } from 'effect';
-import { HttpClient, HttpClientResponse, type HttpClientRequest } from 'effect/unstable/http';
+import { HttpClient, HttpClientResponse, type HttpClientRequest } from 'effect/http';
 import { describe } from 'vitest';
 import { GoogleCalendarClient } from './client.ts';
 import { TokenManager, type TokenManagerShape } from './oauth/tokenManager.ts';

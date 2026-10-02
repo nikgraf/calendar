@@ -12,7 +12,7 @@ import { unavailableAppleCalendarClient } from '@calendar/apple-calendar';
 import { SqliteClient } from '@effect/sql-sqlite-node';
 import { expect, it } from '@effect/vitest';
 import { Effect, Layer } from 'effect';
-import { layer as reactivityLayer } from 'effect/unstable/reactivity/Reactivity';
+import { layer as reactivityLayer } from 'effect/reactivity/Reactivity';
 import { describe } from 'vitest';
 import { appleCalendarServicesLayer } from '../appleCalendarEvents.ts';
 import { SyncEngine } from '../engine.ts';

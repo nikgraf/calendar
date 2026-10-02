@@ -12,7 +12,7 @@ import {
 } from '@calendar/core';
 import { CalendarRepo, DeviceSettingsRepo, TaskRepo } from '@calendar/db';
 import { Effect, Schema, Semaphore } from 'effect';
-import type { SqlError } from 'effect/unstable/sql/SqlError';
+import type { SqlError } from 'effect/sql/SqlError';
 
 /**
  * Visibility preferences an import could not apply yet: the calendar or

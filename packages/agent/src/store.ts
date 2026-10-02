@@ -1,8 +1,8 @@
 import { runMigrationsWith } from '@calendar/db';
 import { Context, Effect, Layer, Option, Schema } from 'effect';
-import type { ResolvedMigration } from 'effect/unstable/sql/Migrator';
-import { SqlClient } from 'effect/unstable/sql/SqlClient';
-import type { SqlError } from 'effect/unstable/sql/SqlError';
+import type { ResolvedMigration } from 'effect/sql/Migrator';
+import { SqlClient } from 'effect/sql/SqlClient';
+import type { SqlError } from 'effect/sql/SqlError';
 import type { AgentErrorJson } from './errors.ts';
 import { AgentPolicy, EMPTY_POLICY } from './policy.ts';
 

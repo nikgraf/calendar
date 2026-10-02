@@ -1,7 +1,7 @@
 import { duplexServerProtocol } from '@calendar/sync/rpcDuplex';
 import { ipcMain, webContents } from 'electron';
 import type { Layer } from 'effect';
-import type { RpcSerialization, RpcServer } from 'effect/unstable/rpc';
+import type { RpcSerialization, RpcServer } from 'effect/rpc';
 
 type FrameListener = (clientId: number, data: string | Uint8Array) => void;
 type DisconnectListener = (clientId: number) => void;

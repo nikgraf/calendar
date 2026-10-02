@@ -1,14 +1,22 @@
-# Effect v4 (pre-release) notes
+# Effect v4 notes
 
-The repo pins every `effect*` package to **4.0.0-rc.115** via the pnpm
-catalog. v4 is a substantial break from v3 and the pre-releases are thinly
-documented — this is the catalog of differences and traps we hit while
-building, each as symptom → cause → fix. The beta.93 → rc.111 bump cost
+The repo pins every `effect*` package exactly to **4.0.0** via the pnpm
+catalog. v4 is a substantial break from v3 and was built here on its thinly
+documented pre-releases — this is the catalog of differences and traps we
+hit, each as symptom → cause → fix. The modules this app leans on hardest
+(rpc, sql, http, reactivity) are still tagged `@stability unstable` and may
+break in a minor release, so the pin stays exact. The beta.93 → rc.111 bump cost
 exactly two code changes (`Schema.ErrorClass` rename, `supportsNotifications`
 on the custom rpc protocol); rc.111 → rc.115 cost one: custom rpc protocols
 must expose `codecFor` (forward `serialization.codecFor`, as effect's own
 socket/worker protocols do) — the client failed at runtime with
 "codecFor is not a function" before the typecheck error was read.
+rc.115 → 4.0.0 cost two: rc.118 moved every `effect/unstable/*` module to
+`effect/*` and removed the old paths (a mechanical import rewrite, ~100
+files), and renamed `Schema.isLengthBetween` → `Schema.isBetweenLength`.
+`effect` also dropped its runtime dependencies. The custom rpc protocol
+shapes were unchanged; `@effect/vitest` declares a Vitest 5 peer but runs
+fine on vite-plus's Vitest 4 for `it.effect` / `expect`.
 
 ## API renames / removals
 
@@ -52,8 +60,8 @@ socket/worker protocols do) — the client failed at runtime with
 ## Reactivity / atoms
 
 - The Reactivity **class and its `layer`** live at the deep path
-  `effect/unstable/reactivity/Reactivity` (the barrel
-  `effect/unstable/reactivity` exposes the namespace, and `layer` is a
+  `effect/reactivity/Reactivity` (the barrel
+  `effect/reactivity` exposes the namespace, and `layer` is a
   module-level export, not a static).
 - `Atom.family` memoizes per key **forever** — unbounded key spaces leak.
   We replaced it with a 32-entry LRU for range atoms
@@ -66,7 +74,7 @@ socket/worker protocols do) — the client failed at runtime with
 - `Reactivity.mutation(keys, effect)` invalidates after the effect;
   `invalidate`/`invalidateUnsafe` fire listeners directly.
 
-## rpc (effect/unstable/rpc)
+## rpc (effect/rpc)
 
 - Groups: `RpcGroup.make(Rpc.make('name', { payload, success, error }),
 …)`; payloads may be struct-field records or Schemas; streams via
@@ -88,7 +96,7 @@ socket/worker protocols do) — the client failed at runtime with
 
 ## SQL / migrations
 
-- `SqlClient` deep import: `effect/unstable/sql/SqlClient` (the barrel
+- `SqlClient` deep import: `effect/sql/SqlClient` (the barrel
   re-exports `Migrator`, which Metro cannot parse — see below).
 - `@effect/sql-sqlite-node` switched from better-sqlite3 to Node's
   built-in `node:sqlite` somewhere on the rc line — silently, via the

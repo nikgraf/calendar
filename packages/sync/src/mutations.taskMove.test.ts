@@ -25,7 +25,7 @@ import {
 import { SqliteClient } from '@effect/sql-sqlite-node';
 import { expect, it } from '@effect/vitest';
 import { Effect, Layer, Scheduler } from 'effect';
-import { layer as reactivityLayer } from 'effect/unstable/reactivity/Reactivity';
+import { layer as reactivityLayer } from 'effect/reactivity/Reactivity';
 import { describe } from 'vitest';
 import { appleCalendarServicesLayer } from './appleCalendarEvents.ts';
 import { EventMutations } from './mutations.ts';

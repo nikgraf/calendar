@@ -1,6 +1,6 @@
 import { expect, it } from '@effect/vitest';
 import { Effect, Layer } from 'effect';
-import { HttpClient, HttpClientResponse, type HttpClientRequest } from 'effect/unstable/http';
+import { HttpClient, HttpClientResponse, type HttpClientRequest } from 'effect/http';
 import { describe } from 'vitest';
 import { TokenManager, type TokenManagerShape } from './oauth/tokenManager.ts';
 import { GooglePeopleClient } from './peopleClient.ts';

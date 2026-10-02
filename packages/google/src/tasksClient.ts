@@ -1,5 +1,5 @@
 import { Context, Effect, Layer } from 'effect';
-import { HttpClient, HttpClientRequest } from 'effect/unstable/http';
+import { HttpClient, HttpClientRequest } from 'effect/http';
 import { GcalTask, GcalTaskListsPage, GcalTasksPage } from './apiTypes.ts';
 import { TokenManager } from './oauth/tokenManager.ts';
 import { definedParams, makeRequestCore, type GoogleRequestError } from './requestCore.ts';

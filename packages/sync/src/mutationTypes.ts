@@ -25,7 +25,7 @@ import type {
 import type { GoogleRequestError } from '@calendar/google';
 import type { RemindersError } from '@calendar/reminders';
 import { Data, type Effect } from 'effect';
-import type { SqlError } from 'effect/unstable/sql/SqlError';
+import type { SqlError } from 'effect/sql/SqlError';
 
 export class EventNotFoundError extends Data.TaggedError('EventNotFoundError')<{
   readonly eventId: string;

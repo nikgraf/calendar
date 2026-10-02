@@ -1,7 +1,7 @@
 import { planBirthdayReminders, type PlannedNotification, Temporal } from '@calendar/core';
 import type { AccountRepo, BirthdayRepo, DeviceSettingsRepo } from '@calendar/db';
 import { Effect } from 'effect';
-import type { SqlError } from 'effect/unstable/sql/SqlError';
+import type { SqlError } from 'effect/sql/SqlError';
 import { loadMergedBirthdays } from './birthdays.ts';
 import type { DeviceContacts } from './deviceContacts.ts';
 import { readBirthdayReminderSettings } from './deviceSettings.ts';

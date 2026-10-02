@@ -1,6 +1,6 @@
 import { Cause, Effect, Schema } from 'effect';
-import { Rpc, RpcGroup } from 'effect/unstable/rpc';
-import type { RpcClientError } from 'effect/unstable/rpc/RpcClientError';
+import { Rpc, RpcGroup } from 'effect/rpc';
+import type { RpcClientError } from 'effect/rpc/RpcClientError';
 import { BirthdayReminderSettings } from './birthdays/reminders.ts';
 import { EventToTaskPreview } from './editor/convertLoss.ts';
 import { MoveLoss } from './editor/moveLoss.ts';
