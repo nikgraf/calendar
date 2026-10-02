@@ -28,7 +28,8 @@ export const offeredTaskLists = (
 export interface TaskEditorValues {
   /** The first relative alert (minutes); undefined = none. */
   readonly alarm: number | undefined;
-  readonly dueDate: string;
+  /** Undefined while the task has no due day. */
+  readonly dueDate: string | undefined;
   /** Undefined when the reminder is all-day. */
   readonly dueTime: string | undefined;
   readonly listId: string;
@@ -97,7 +98,9 @@ export const taskEditorChanges = ({
   if (current.notes !== initial.notes) {
     changes.notes = current.notes;
   }
-  if (current.dueDate !== initial.dueDate) {
+  // A due day can be given or changed, never taken away (the rpc has no
+  // way to clear one): an undated task stays undated until it gets a day.
+  if (current.dueDate !== undefined && current.dueDate !== initial.dueDate) {
     changes.dueDate = current.dueDate;
   }
   if (provider !== 'apple') {

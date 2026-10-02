@@ -259,9 +259,14 @@ Rules that keep the queue correct:
 - **Apple Reminders** (the synthetic `apple-reminders` account, created by
   the `connectReminders` rpc after the EventKit prompt): SQLite holds the
   latest **complete** EventKit snapshot — open and completed, dated and
-  undated (undated rows are stored for the future list view; `getWindow`
-  excludes them), so paging any distance ahead or back reads locally,
-  like Google Tasks. `syncReminders` checks authorization first — no
+  undated, so paging any distance ahead or back reads locally, like
+  Google Tasks. Where a task is drawn is one rule, `taskCalendarDate`
+  (core `taskTiming.ts`): an open task on its due day, or on today once
+  that day has passed or when it has none; a completed one on its due
+  day, or on the day it was completed when it has no due day or was
+  completed late. `getTasksInRange` therefore returns the due-day window
+  (`getWindow`, which still excludes undated rows — agent reads use it)
+  plus the open undated tasks and the completions around the window. `syncReminders` checks authorization first — no
   access flags the account, access regained heals it without
   reconnecting; an _unavailable_ bridge is skipped, not mistaken for a
   revoked grant. The bridge's `reminders.snapshot({ changedSince })`

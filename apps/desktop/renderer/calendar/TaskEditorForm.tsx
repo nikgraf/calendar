@@ -1,6 +1,7 @@
 import type { useMoveConfirmation, useTaskEditorModel } from '@calendar/app-state';
 import type { TaskRecord } from '@calendar/core';
 import { MoveConfirm } from './MoveConfirm.tsx';
+import { NoDueDate } from './NoDueDate.tsx';
 import { FIELD_CLASS, LABEL_CLASS } from './taskEditorOptions.ts';
 import { TaskListSelect } from './TaskListSelect.tsx';
 
@@ -34,15 +35,19 @@ export function TaskEditorForm({
         placeholder="Title"
         value={taskModel.title}
       />
-      <label className={LABEL_CLASS}>
-        Due
-        <input
-          className={`${FIELD_CLASS} mt-1`}
-          onChange={(input) => taskModel.setDueDate(input.target.value)}
-          placeholder="YYYY-MM-DD"
-          value={taskModel.dueDate}
-        />
-      </label>
+      {taskModel.dated ? (
+        <label className={LABEL_CLASS}>
+          Due
+          <input
+            className={`${FIELD_CLASS} mt-1`}
+            onChange={(input) => taskModel.setDueDate(input.target.value)}
+            placeholder="YYYY-MM-DD"
+            value={taskModel.dueDate}
+          />
+        </label>
+      ) : (
+        <NoDueDate onAdd={taskModel.addDueDate} />
+      )}
       <TaskListSelect disabled={Boolean(task) && !taskModel.canMoveList} taskModel={taskModel} />
       <label className={LABEL_CLASS}>
         Notes

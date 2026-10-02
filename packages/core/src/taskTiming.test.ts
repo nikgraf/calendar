@@ -9,6 +9,7 @@ import {
   isOverdue,
   moveTimedTask,
   partitionCalendarTasks,
+  taskCalendarDate,
   timedTaskSlot,
 } from './taskTiming.ts';
 
@@ -25,6 +26,11 @@ const task = (overrides: Partial<TaskRecord> = {}) =>
     ...overrides,
   });
 
+/** Epoch ms of a wall-clock time in a zone. */
+const at = (date: string, time: string, timeZone: string) =>
+  Temporal.PlainDate.from(date).toZonedDateTime({ plainTime: time, timeZone }).toInstant()
+    .epochMilliseconds;
+
 describe('partitionCalendarTasks', () => {
   it('keeps only date-and-time tasks in the timed collection', () => {
     const dateOnly = task({ id: 'date-only' });
@@ -35,6 +41,7 @@ describe('partitionCalendarTasks', () => {
       allDay: [dateOnly],
       overdue: [],
       timed: [timed],
+      undated: [],
     });
   });
 
@@ -50,7 +57,49 @@ describe('partitionCalendarTasks', () => {
       allDay: [todayTask, done],
       overdue: [pastTimed, pastDateOnly],
       timed: [],
+      undated: [],
     });
+  });
+
+  it('draws open undated tasks on today once it knows today and its zone', () => {
+    const zulu = task({ dueDate: undefined, id: 'zulu', title: 'Zulu' });
+    const alpha = task({ dueDate: undefined, id: 'alpha', title: 'Alpha' });
+    const partition = partitionCalendarTasks([zulu, alpha, task()], '2026-03-28', 'UTC');
+    expect(partition.undated.map((entry) => entry.id)).toEqual(['alpha', 'zulu']);
+    expect(partition.allDay).toHaveLength(1);
+    expect(partition.overdue).toEqual([]);
+  });
+
+  it('puts a late or undated completion in the lane of the day it was completed', () => {
+    const doneAt = at('2026-03-27', '10:00', 'UTC');
+    const late = task({
+      completedAt: doneAt,
+      dueDate: '2026-03-20',
+      dueTime: '09:00',
+      id: 'late',
+      status: 'completed',
+    });
+    const loose = task({
+      completedAt: doneAt,
+      dueDate: undefined,
+      id: 'loose',
+      status: 'completed',
+    });
+    const onTime = task({
+      completedAt: doneAt,
+      dueDate: '2026-03-27',
+      dueTime: '09:00',
+      id: 'on-time',
+      status: 'completed',
+    });
+    const partition = partitionCalendarTasks([late, loose, onTime], '2026-03-28', 'UTC');
+    // The late one lost its time slot: 09:00 belonged to its due day.
+    expect(partition.allDay).toEqual([late, loose]);
+    expect(partition.timed).toEqual([onTime]);
+    expect(partition.allDay.map((entry) => taskCalendarDate(entry, '2026-03-28', 'UTC'))).toEqual([
+      '2026-03-27',
+      '2026-03-27',
+    ]);
   });
 
   it('sorts overdue tasks by due date, time and title', () => {
@@ -69,6 +118,50 @@ describe('partitionCalendarTasks', () => {
     const partition = partitionCalendarTasks([past, past, task()], '2026-03-28');
     expect(partition.overdue).toEqual([past]);
     expect(partition.allDay).toHaveLength(1);
+  });
+});
+
+describe('taskCalendarDate', () => {
+  it('keeps an open task on its due day until that day has passed', () => {
+    expect(taskCalendarDate(task({ dueDate: '2026-03-30' }), '2026-03-28', 'UTC')).toBe(
+      '2026-03-30',
+    );
+    expect(taskCalendarDate(task({ dueDate: '2026-03-28' }), '2026-03-28', 'UTC')).toBe(
+      '2026-03-28',
+    );
+    expect(taskCalendarDate(task({ dueDate: '2026-03-01' }), '2026-03-28', 'UTC')).toBe(
+      '2026-03-28',
+    );
+    expect(taskCalendarDate(task({ dueDate: undefined }), '2026-03-28', 'UTC')).toBe('2026-03-28');
+  });
+
+  it('keeps a task completed on time or early on its due day', () => {
+    const done = task({
+      completedAt: at('2026-03-25', '08:00', 'UTC'),
+      dueDate: '2026-03-27',
+      status: 'completed',
+    });
+    expect(taskCalendarDate(done, '2026-03-28', 'UTC')).toBe('2026-03-27');
+  });
+
+  it('reads the completion day in the given zone', () => {
+    // 23:30 in New York on the 27th is already the 28th in Vienna.
+    const done = task({
+      completedAt: at('2026-03-27', '23:30', 'America/New_York'),
+      dueDate: undefined,
+      status: 'completed',
+    });
+    expect(taskCalendarDate(done, '2026-03-28', 'America/New_York')).toBe('2026-03-27');
+    expect(taskCalendarDate(done, '2026-03-28', 'Europe/Vienna')).toBe('2026-03-28');
+  });
+
+  it('falls back to the last change when a completion carries no time', () => {
+    const done = task({
+      dueDate: undefined,
+      status: 'completed',
+      updatedAt: at('2026-03-26', '12:00', 'UTC'),
+    });
+    expect(taskCalendarDate(done, '2026-03-28', 'UTC')).toBe('2026-03-26');
   });
 });
 

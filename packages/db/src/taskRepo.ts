@@ -26,8 +26,19 @@ export interface TaskRepoShape {
     listId: string,
     taskId: string,
   ) => Effect.Effect<TaskRecord | undefined, SqlError>;
+  /**
+   * Tasks completed inside [startMs, endMs), visible lists only. The
+   * calendar draws a late or undated completion on the day it was
+   * completed, which no due-day window finds.
+   */
+  readonly getCompletedBetween: (
+    startMs: number,
+    endMs: number,
+  ) => Effect.Effect<ReadonlyArray<TaskRecord>, SqlError>;
   /** Open tasks due strictly before `before`, visible lists only — the ones today's lane shows as overdue. */
   readonly getOverdue: (before: string) => Effect.Effect<ReadonlyArray<TaskRecord>, SqlError>;
+  /** Open tasks without a due day, visible lists only — drawn on today until they are done. */
+  readonly getUndatedOpen: () => Effect.Effect<ReadonlyArray<TaskRecord>, SqlError>;
   /** Tasks with a due day inside [startDate, endDate], visible lists only. */
   readonly getWindow: (
     startDate: string,
@@ -216,6 +227,17 @@ const makeTaskRepo: Effect.Effect<TaskRepoShape, never, Reactivity | SqlClient> 
             WHERE t.account_id = ${accountId} AND t.list_id = ${listId} AND t.id = ${taskId}`,
           (rows) => (rows[0] ? taskFromRow(rows[0]) : undefined),
         ),
+      getCompletedBetween: (startMs, endMs) =>
+        Effect.map(
+          sql<TaskRow>`
+            SELECT t.*, l.provider AS list_provider FROM tasks t
+            JOIN task_lists l ON l.account_id = t.account_id AND l.id = t.list_id
+            WHERE l.is_visible = 1
+              AND t.status = 'completed'
+              AND t.completed_at >= ${startMs} AND t.completed_at < ${endMs}
+            ORDER BY t.completed_at, t.title`,
+          (rows) => rows.map(taskFromRow),
+        ),
       getOverdue: (before) =>
         Effect.map(
           sql<TaskRow>`
@@ -226,6 +248,17 @@ const makeTaskRepo: Effect.Effect<TaskRepoShape, never, Reactivity | SqlClient> 
               AND t.due_date IS NOT NULL
               AND t.due_date < ${before}
             ORDER BY t.due_date, t.due_time IS NULL, t.due_time, t.title`,
+          (rows) => rows.map(taskFromRow),
+        ),
+      getUndatedOpen: () =>
+        Effect.map(
+          sql<TaskRow>`
+            SELECT t.*, l.provider AS list_provider FROM tasks t
+            JOIN task_lists l ON l.account_id = t.account_id AND l.id = t.list_id
+            WHERE l.is_visible = 1
+              AND t.status = 'needsAction'
+              AND t.due_date IS NULL
+            ORDER BY t.title`,
           (rows) => rows.map(taskFromRow),
         ),
       getWindow: (startDate, endDate) =>

@@ -14,6 +14,7 @@ import {
   toDateString,
   toTimeString,
 } from './editSheetShared.ts';
+import { NoDueDate } from './NoDueDate.tsx';
 import { RepeatRuleChips } from './RepeatRuleChips.tsx';
 import { TaskListPicker } from './TaskListPicker.tsx';
 
@@ -50,34 +51,40 @@ export function ReminderEditForm({
 
       <TaskListPicker disabled={Boolean(task) && !taskModel.canMoveList} taskModel={taskModel} />
 
-      <View style={styles.pickerRow}>
-        <Text style={styles.label}>Due</Text>
-        <DateTimePicker
-          display="compact"
-          mode="date"
-          onChange={(_, picked) => picked && taskModel.setDueDate(toDateString(picked))}
-          value={dateFromParts(taskModel.dueDate)}
-        />
-      </View>
-      <View style={styles.switchRow}>
-        <Text style={styles.label}>At a time</Text>
-        <Switch
-          onValueChange={taskModel.setTimed}
-          testID="reminder-timed"
-          value={taskModel.timed}
-        />
-      </View>
-      {taskModel.timed ? (
-        <View style={styles.pickerRow} testID="reminder-time">
-          <Text style={styles.label}>Time</Text>
-          <DateTimePicker
-            display="compact"
-            mode="time"
-            onChange={(_, picked) => picked && taskModel.setDueTime(toTimeString(picked))}
-            value={dateFromParts(taskModel.dueDate, taskModel.dueTime)}
-          />
-        </View>
-      ) : null}
+      {taskModel.dated ? (
+        <>
+          <View style={styles.pickerRow}>
+            <Text style={styles.label}>Due</Text>
+            <DateTimePicker
+              display="compact"
+              mode="date"
+              onChange={(_, picked) => picked && taskModel.setDueDate(toDateString(picked))}
+              value={dateFromParts(taskModel.dueDate)}
+            />
+          </View>
+          <View style={styles.switchRow}>
+            <Text style={styles.label}>At a time</Text>
+            <Switch
+              onValueChange={taskModel.setTimed}
+              testID="reminder-timed"
+              value={taskModel.timed}
+            />
+          </View>
+          {taskModel.timed ? (
+            <View style={styles.pickerRow} testID="reminder-time">
+              <Text style={styles.label}>Time</Text>
+              <DateTimePicker
+                display="compact"
+                mode="time"
+                onChange={(_, picked) => picked && taskModel.setDueTime(toTimeString(picked))}
+                value={dateFromParts(taskModel.dueDate, taskModel.dueTime)}
+              />
+            </View>
+          ) : null}
+        </>
+      ) : (
+        <NoDueDate onAdd={taskModel.addDueDate} />
+      )}
 
       <Text style={styles.label}>Priority</Text>
       <View style={styles.scopeRow}>

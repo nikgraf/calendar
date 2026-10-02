@@ -214,7 +214,12 @@ export const readTasks = async (userDataDir: string): Promise<ReadonlyArray<Task
   );
   return Effect.runPromise(
     Effect.gen(function* () {
-      return yield* (yield* TaskRepo).getWindow('0000-01-01', '9999-12-31');
+      const tasks = yield* TaskRepo;
+      // Every dated task, plus the open ones without a due day.
+      return [
+        ...(yield* tasks.getWindow('0000-01-01', '9999-12-31')),
+        ...(yield* tasks.getUndatedOpen()),
+      ];
     }).pipe(Effect.provide(dbLayer)),
   );
 };

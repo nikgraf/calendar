@@ -8,6 +8,7 @@ import {
   groupEventsByDay,
   monthCellLabel,
   partitionCalendarTasks,
+  taskCalendarDate,
   type TaskRecord,
   Temporal,
 } from '@calendar/core';
@@ -56,11 +57,12 @@ export function MonthGrid({
     weeks.flat().map((cell) => cell.date),
     timeZone,
   );
-  const calendarTasks = partitionCalendarTasks([...tasks, ...overdue], todayIso);
-  const tasksByDay = groupByDate(
-    calendarTasks.allDay.concat(calendarTasks.timed),
-    (task) => task.dueDate,
+  const calendarTasks = partitionCalendarTasks([...tasks, ...overdue], todayIso, timeZone);
+  const tasksByDay = groupByDate(calendarTasks.allDay.concat(calendarTasks.timed), (task) =>
+    taskCalendarDate(task, todayIso, timeZone),
   );
+  // Overdue and undated tasks lead today's cell until they are done.
+  const todayTasks = calendarTasks.overdue.concat(calendarTasks.undated);
   const overdueKeys = new Set(calendarTasks.overdue.map(calendarTaskKey));
   const birthdaysByDay = groupByDate(birthdays, (birthday) => birthday.date);
 
@@ -94,9 +96,7 @@ export function MonthGrid({
             const iso = date.toString();
             const dayEvents = eventsByDay.get(iso) ?? [];
             const dayBirthdays = birthdaysByDay.get(iso) ?? [];
-            const dayTasks = (isToday ? calendarTasks.overdue : []).concat(
-              tasksByDay.get(iso) ?? [],
-            );
+            const dayTasks = (isToday ? todayTasks : []).concat(tasksByDay.get(iso) ?? []);
             const dots: Array<Dot> = [
               ...dayEvents.map((event) => ({
                 key: `${event.calendarId}:${event.id}`,

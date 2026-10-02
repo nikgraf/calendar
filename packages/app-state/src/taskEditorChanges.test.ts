@@ -149,6 +149,22 @@ describe('taskEditorChanges', () => {
     expect(diff({ recurrence: undefined }, { recurrenceUnsupported: true })).toEqual({});
   });
 
+  it('leaves an undated task undated until a due day is added', () => {
+    const undated = { ...initial, dueDate: undefined, dueTime: undefined };
+    const changes = (current: Partial<TaskEditorValues>) =>
+      taskEditorChanges({
+        current: { ...undated, ...current },
+        initial: undated,
+        initialAlarms: [-15, -1440],
+        provider: 'apple',
+        recurrenceUnsupported: false,
+      });
+    expect(changes({ title: 'Renamed' })).toEqual({ title: 'Renamed' });
+    expect(changes({ dueDate: '2030-03-11' })).toEqual({ dueDate: '2030-03-11' });
+    // A due day cannot be taken away again: the rpc has no way to clear one.
+    expect(diff({ dueDate: undefined })).toEqual({});
+  });
+
   it('a Google task only ever sends title, notes, and due date', () => {
     expect(
       diff(

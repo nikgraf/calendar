@@ -349,7 +349,12 @@ export class AppBackendRpcs extends RpcGroup.make(
   }),
   Rpc.make('getTasksInRange', {
     error: BackendError,
-    /** Due-day window, inclusive 'YYYY-MM-DD' bounds (tasks are date-only). */
+    /**
+     * What the calendar draws inside an inclusive 'YYYY-MM-DD' window:
+     * tasks due in it, every open undated task (drawn on today) and tasks
+     * completed around it (a late or undated completion sits on its
+     * completion day). May repeat a task; place with `taskCalendarDate`.
+     */
     payload: { endDate: Schema.String, startDate: Schema.String },
     success: Schema.Array(TaskRecord),
   }),

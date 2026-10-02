@@ -3,6 +3,7 @@ import type { TaskRecord } from '@calendar/core';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { Linking, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import { dateFromParts, sheetStyles as styles, toDateString } from './editSheetShared.ts';
+import { NoDueDate } from './NoDueDate.tsx';
 import { TaskListPicker } from './TaskListPicker.tsx';
 
 /** The task half of EventEditSheet (mode === 'task'). */
@@ -25,15 +26,19 @@ export function TaskEditForm({
         value={taskModel.title}
       />
 
-      <View style={styles.pickerRow}>
-        <Text style={styles.label}>Due</Text>
-        <DateTimePicker
-          display="compact"
-          mode="date"
-          onChange={(_, picked) => picked && taskModel.setDueDate(toDateString(picked))}
-          value={dateFromParts(taskModel.dueDate)}
-        />
-      </View>
+      {taskModel.dated ? (
+        <View style={styles.pickerRow}>
+          <Text style={styles.label}>Due</Text>
+          <DateTimePicker
+            display="compact"
+            mode="date"
+            onChange={(_, picked) => picked && taskModel.setDueDate(toDateString(picked))}
+            value={dateFromParts(taskModel.dueDate)}
+          />
+        </View>
+      ) : (
+        <NoDueDate onAdd={taskModel.addDueDate} />
+      )}
 
       <TaskListPicker disabled={Boolean(task) && !taskModel.canMoveList} taskModel={taskModel} />
 

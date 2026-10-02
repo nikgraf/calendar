@@ -1,11 +1,13 @@
 import {
   Account,
   AccountSyncStatus,
+  addDaysToPlainDate,
   APPLE_CALENDAR_ACCOUNT_ID,
   APPLE_REMINDERS_ACCOUNT_ID,
   AppBackendRpcs,
   backendMethodNames,
   mapToBackendError,
+  plainDateToUtcMs,
   type BackendError,
   type BackendHandlers,
   type BackendMethodName,
@@ -246,7 +248,20 @@ export const commonBackendHandlers: Omit<BackendHandlers<CommonBackendServices>,
   getTasksInRange: ({ endDate, startDate }) =>
     Effect.gen(function* () {
       const taskRepo = yield* TaskRepo;
-      return yield* taskRepo.getWindow(startDate, endDate);
+      // What the calendar draws inside the window: tasks due in it, open
+      // undated ones (on today) and completions that sit on the day they
+      // were completed. The completion query is a day wider on both
+      // sides, since the views place by their own zone
+      // (`taskCalendarDate`); partitionCalendarTasks drops the doubles.
+      const [due, undated, completed] = yield* Effect.all([
+        taskRepo.getWindow(startDate, endDate),
+        taskRepo.getUndatedOpen(),
+        taskRepo.getCompletedBetween(
+          plainDateToUtcMs(addDaysToPlainDate(startDate, -1)),
+          plainDateToUtcMs(addDaysToPlainDate(endDate, 2)),
+        ),
+      ]);
+      return [...due, ...undated, ...completed];
     }),
 
   getTimeZoneSettings: () => readTimeZoneSettings,
