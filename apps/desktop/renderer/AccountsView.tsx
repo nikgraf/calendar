@@ -7,17 +7,8 @@ import {
 } from '@calendar/app-state';
 import { type Account, historyStatusLabel, isAppleCalendarAccount } from '@calendar/core';
 import { useState } from 'react';
-import { AgentsSection } from './agents/AgentsSection.tsx';
-import { AppleCalendarSection } from './AppleCalendarSection.tsx';
-import { PrivacySection } from './PrivacySection.tsx';
-import { BirthdayRemindersSection } from './BirthdayRemindersSection.tsx';
-import { EventNotificationsSection } from './EventNotificationsSection.tsx';
-import { ContactsSection } from './ContactsSection.tsx';
-import { LocationsSection } from './LocationsSection.tsx';
-import { RemindersSection } from './RemindersSection.tsx';
-import { SettingsFileSection, SettingsTransferSection } from './SettingsFileSection.tsx';
-import { TimeZonesSection } from './TimeZonesSection.tsx';
 
+/** The connected accounts and their calendars: the top of the settings window's Accounts pane. */
 export function AccountsView() {
   const accounts = useAccounts();
   const syncStatus = useSyncStatus();
@@ -50,11 +41,11 @@ export function AccountsView() {
   };
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-4">
       <header className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">Accounts</h1>
+        <h2 className="font-medium">Connected accounts</h2>
         <button
-          className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50"
+          className="rounded-lg bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50"
           disabled={busy}
           onClick={() => void addAccount()}
           type="button"
@@ -146,18 +137,6 @@ export function AccountsView() {
           </ul>
         </section>
       ))}
-
-      <AppleCalendarSection />
-      <RemindersSection />
-      <ContactsSection />
-      <EventNotificationsSection />
-      <BirthdayRemindersSection />
-      <TimeZonesSection />
-      <SettingsTransferSection />
-      <SettingsFileSection />
-      <AgentsSection />
-      <LocationsSection />
-      <PrivacySection />
     </div>
   );
 }

@@ -5,9 +5,10 @@ const FOCUSABLE =
   'textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
 /**
- * The one modal shell for the editor, the settings sheet and the ⌘K bar:
- * dialog semantics, Escape closes, focus moves inside on open and is
- * trapped there (Tab cycles), and returns to the opener on close. The
+ * The one modal shell for the editor, the ⌘K bar and the dialogs inside
+ * the settings window: dialog semantics, Escape closes, focus moves inside
+ * on open and is trapped there (Tab cycles), and returns to the opener on
+ * close. The
  * backdrop is a real button so keyboard and assistive-tech users can
  * dismiss too — the same pattern the calendar color picker already used,
  * while the three big modals were plain divs that only a mouse could

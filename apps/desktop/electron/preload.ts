@@ -39,6 +39,7 @@ contextBridge.exposeInMainWorld('calendarBridge', {
     ipcRenderer.on('settingsFile:changed', wrapped);
     return () => ipcRenderer.off('settingsFile:changed', wrapped);
   },
+  openSettings: (pane?: string) => ipcRenderer.invoke('settings:open', pane),
   privacyGet: () => ipcRenderer.invoke('privacy:get'),
   privacySet: (choice: string) => ipcRenderer.invoke('privacy:set', choice),
   remindersStatus: () => ipcRenderer.invoke('reminders:status'),

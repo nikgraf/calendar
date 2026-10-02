@@ -106,15 +106,14 @@ describe('time zones: the settings section', () => {
   });
 
   it('adds, promotes and removes zones on this device only', async () => {
-    const { cdp } = app;
+    // The settings window edits; the calendar window's grid follows.
+    const { cdp: calendar } = app;
+    const cdp = await app.openSettings('general');
     const stored = () => readDeviceSetting(app.userDataDir, 'timeZones');
     const deviceZone = await cdp.eval<string>(`Intl.DateTimeFormat().resolvedOptions().timeZone`);
     const clickButton = (label: string) =>
       cdp.eval(`document.querySelector('button[aria-label=${JSON.stringify(label)}]')?.click()`);
 
-    await cdp.eval(
-      `[...document.querySelectorAll('button')].find(b => b.title === 'Accounts')?.click()`,
-    );
     await cdp.waitFor(`!!document.querySelector('[data-testid="time-zones"]')`);
     expect(
       await cdp.eval<boolean>(
@@ -123,9 +122,9 @@ describe('time zones: the settings section', () => {
     ).toBe(true);
     expect(await stored()).toBeNull();
     // No secondary zone yet: the gutter has a single line.
-    expect(await cdp.eval(`!!document.querySelector('[data-testid="hour-secondary-12"]')`)).toBe(
-      false,
-    );
+    expect(
+      await calendar.eval(`!!document.querySelector('[data-testid="hour-secondary-12"]')`),
+    ).toBe(false);
 
     // Add Kolkata through the search.
     await clickButton('Add time zone');
@@ -136,8 +135,8 @@ describe('time zones: the settings section', () => {
       .poll(stored, { timeout: 10_000 })
       .toEqual({ primary: deviceZone, zones: [deviceZone, 'Asia/Kolkata'] });
     await cdp.waitFor(`!!document.querySelector('[data-testid="time-zone-row-Asia-Kolkata"]')`);
-    // The grid behind the dialog already lists it under each hour.
-    await cdp.waitFor(`!!document.querySelector('[data-testid="hour-secondary-12"]')`);
+    // The grid in the calendar window already lists it under each hour.
+    await calendar.waitFor(`!!document.querySelector('[data-testid="hour-secondary-12"]')`);
 
     // Make it primary.
     await clickButton('Make Kolkata primary');
@@ -154,7 +153,7 @@ describe('time zones: the settings section', () => {
     await expect
       .poll(stored, { timeout: 10_000 })
       .toEqual({ primary: 'Asia/Kolkata', zones: ['Asia/Kolkata'] });
-    await cdp.waitFor(`!document.querySelector('[data-testid="hour-secondary-12"]')`);
+    await calendar.waitFor(`!document.querySelector('[data-testid="hour-secondary-12"]')`);
     // The only zone cannot be removed.
     expect(await cdp.eval(`!!document.querySelector('button[aria-label="Remove Kolkata"]')`)).toBe(
       false,
@@ -177,6 +176,6 @@ describe('time zones: the settings section', () => {
     await cdp.waitFor(
       `document.querySelector('button[aria-label="Add time zone"]')?.disabled === true`,
     );
-    await cdp.pressEscape();
+    await app.closeSettings();
   });
 });

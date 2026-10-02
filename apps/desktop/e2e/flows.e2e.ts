@@ -324,17 +324,13 @@ describe('calendar desktop e2e', () => {
   });
 
   it('shows the history import status under the account', async () => {
-    const { cdp } = app;
-    await cdp.eval(
-      `[...document.querySelectorAll('button')].find(b => b.title === 'Accounts')?.click()`,
-    );
+    const settings = await app.openSettings('accounts');
     // Seeded rows and no sync_state: nothing is importing, so the line
     // reads complete.
-    await cdp.waitFor(
+    await settings.waitFor(
       `document.querySelector('[data-testid="sync-history-acc-e2e"]')?.textContent === 'History complete'`,
     );
-    await cdp.click(20, 400);
-    await cdp.waitFor(`!document.body.textContent.includes('Add Google Account')`);
+    await app.closeSettings();
   });
 
   it('navigates days with a horizontal trackpad scroll', async () => {
@@ -1086,12 +1082,8 @@ describe('calendar desktop e2e', () => {
     expect(after).toBeLessThan(count);
   });
 
-  it('controls screen-sharing privacy from the settings modal', async () => {
-    const { cdp } = app;
-    await cdp.eval(
-      `[...document.querySelectorAll('button')].find(b => b.title === 'Accounts')?.click()`,
-    );
-    await cdp.waitFor(`document.body.textContent.includes('Add Google Account')`);
+  it('controls screen-sharing privacy from the settings window', async () => {
+    const cdp = await app.openSettings('general');
 
     // Hidden is the default and nothing is persisted yet.
     await cdp.waitFor(
@@ -1120,19 +1112,66 @@ describe('calendar desktop e2e', () => {
 
     // Back to the default for the remaining flows.
     await cdp.clickButtonWithText('Hidden');
-    await cdp.click(20, 400);
-    await cdp.waitFor(`!document.body.textContent.includes('Add Google Account')`);
+    await cdp.waitFor(
+      `[...document.querySelectorAll('[role="radio"]')].some(b => b.textContent === 'Hidden' && b.getAttribute('aria-checked') === 'true')`,
+    );
+    await app.closeSettings();
   });
 
-  it('opens and closes the accounts modal', async () => {
+  it('opens settings as its own window: one at most, on the pane asked for', async () => {
     const { cdp } = app;
-    await cdp.eval(
-      `[...document.querySelectorAll('button')].find(b => b.title === 'Accounts')?.click()`,
+    const title = `document.querySelector('[data-testid="settings-title"]')?.textContent`;
+    expect(await app.windowCount()).toBe(1);
+
+    const settings = await app.openSettings('agents');
+    await settings.waitFor(`${title} === 'Agents'`);
+    expect(await settings.eval<string>('document.title')).toBe('Agents');
+    expect(await app.windowCount()).toBe(2);
+    // The calendar is no longer covered by anything.
+    expect(await cdp.eval(`!!document.querySelector('[role="dialog"]')`)).toBe(false);
+
+    // The sidebar button moves the open window to Accounts: no second
+    // window, and no reload (the page's own state survives).
+    await settings.eval(`void (window.__settingsMarker = 'kept')`);
+    await cdp.clickButtonWithText('Manage accounts…');
+    await settings.waitFor(`${title} === 'Accounts'`);
+    await settings.waitFor(
+      `document.querySelector('[data-testid="settings-pane-accounts"]')?.hidden === false && document.body.textContent.includes('Add Google Account')`,
     );
-    await cdp.waitFor(`document.body.textContent.includes('Add Google Account')`);
-    // Close by clicking the overlay backdrop.
-    await cdp.click(20, 400);
-    await cdp.waitFor(`!document.body.textContent.includes('Add Google Account')`);
+    expect(await settings.eval<string>('window.__settingsMarker')).toBe('kept');
+    expect(await app.windowCount()).toBe(2);
+
+    // A toolbar tab switches the pane and the window's title with it.
+    const tab = await settings.locate('[data-testid="settings-tab-notifications"]');
+    await settings.click(tab.x, tab.y);
+    await settings.waitFor(`${title} === 'Notifications'`);
+    expect(await settings.eval<string>('document.title')).toBe('Notifications');
+    expect(
+      await settings.eval(
+        `document.querySelector('[data-testid="settings-pane-accounts"]')?.hidden === true`,
+      ),
+    ).toBe(true);
+
+    // The main process reads the pane from the window's URL, so it must
+    // have followed the tab click: asking for Accounts again moves back.
+    await cdp.clickButtonWithText('Manage accounts…');
+    await settings.waitFor(`${title} === 'Accounts'`);
+    expect(await settings.eval<string>('window.__settingsMarker')).toBe('kept');
+    await settings.click(tab.x, tab.y);
+    await settings.waitFor(`${title} === 'Notifications'`);
+
+    // Closed and reopened without naming a pane (the toolbar gear, like
+    // the menu item): back on the pane viewed last.
+    await app.closeSettings();
+    await expect.poll(() => app.windowCount(), { timeout: 10_000 }).toBe(1);
+    await cdp.eval(
+      `[...document.querySelectorAll('button')].find(b => b.title === 'Settings')?.click()`,
+    );
+    const reopened = await app.settingsPage();
+    await reopened.waitFor(`${title} === 'Notifications'`);
+    await app.closeSettings();
+    // The calendar window was never touched.
+    expect(await cdp.eval(`document.body.textContent.includes('Today')`)).toBe(true);
   });
   it('moves an event even when no pointermove is delivered', async () => {
     const { cdp } = app;

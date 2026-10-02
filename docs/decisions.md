@@ -1616,3 +1616,47 @@ test`/`test:e2e`/`test:e2e:ios`; every file creates its own
       app in CI. Not verified here: the relay under the hardened runtime
       (first signed CI build), a real Hermes/OpenClaw session, relay
       auto-launch of the installed app, a real guest invitation.
+
+### Settings in its own window (2026-10-02)
+
+- [x] Settings as a macOS settings window — done (2026-10-02,
+      `todo/settings-window`): Settings left the main window's modal for
+      a window of its own, opened from the application menu
+      (Settings…, ⌘,) as the HIG asks. The app had no menu of its own
+      before (Electron's default), so ⌘, was a renderer key handler that
+      needed a focused main window; as a menu accelerator it now also
+      works with no window open. Decisions: **toolbar panes, not a
+      sidebar** — five panes (General, Accounts, Notifications, Agents,
+      Advanced) replace the single twelve-section scroll; a System
+      Settings-style sidebar only pays off with many more. The window
+      follows the HIG's settings-window rules: one at most, fixed size,
+      minimize and zoom dimmed, title = the pane in view, reopens on the
+      pane viewed last (`localStorage`), changes apply at once. **One
+      bundle, a hash route** (`#settings/<pane>`) instead of a second
+      vite entry: the rpc seam was already per-`webContents` and every
+      broadcast already went to all windows, so the second window needed
+      no backend change. **The pane lives in the URL hash**: the main
+      process moves an open window to a pane by navigating the hash
+      (same-document, the page gets `hashchange`), so no message can
+      arrive before the page listens. All panes stay mounted (hidden),
+      so an agent token shown once or a half-typed name survives a look
+      at another pane. **The toolbar is HTML** in a hidden title bar —
+      Electron cannot host an `NSToolbar`. **The main window keeps its
+      two buttons** (toolbar gear → the window, sidebar "Manage
+      accounts…" → the Accounts pane), a deliberate deviation from the
+      HIG's "no settings button in a toolbar" for discoverability.
+      `windows.ts` now tracks the main window explicitly:
+      `getAllWindows()[0]` would have focused Settings on a notification
+      click, and a Dock click with only Settings open now reopens the
+      calendar. The approval dialog, conflict banner and dropped-change
+      toast stay main-window only. Not done: auto-sizing the window to
+      each pane's height (fixed 680×620, panes scroll). Tests: the e2e
+      harness attaches to the settings window as a second CDP target
+      (`app.openSettings(pane)` / `closeSettings`); every spec that used
+      the modal drives the window instead, `timeZones.e2e.ts` asserts a
+      change made there redraws the calendar window, and `flows.e2e.ts`
+      covers one-window-at-most, pane moves without a reload and the
+      last-viewed pane. The menu item itself is not in the suite (CDP
+      cannot press a native menu accelerator); it was checked by hand
+      through the main-process inspector: Settings… opens the window,
+      also with the main window closed.

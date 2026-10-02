@@ -21,8 +21,6 @@ import {
   useToday,
 } from '@calendar/app-state';
 import { useEffect, useMemo, useState } from 'react';
-import { AccountsView } from '../AccountsView.tsx';
-import { Dialog } from '../Dialog.tsx';
 import { EventEditor, type EditorSeed } from './EventEditor.tsx';
 import { makeColorLookup } from './colors.ts';
 import { MonthView } from './MonthView.tsx';
@@ -59,7 +57,6 @@ function CalendarBody({
       timeZone,
       titleStyle: 'long',
     });
-  const [showSettings, setShowSettings] = useState(false);
   const [editorSeed, setEditorSeed] = useState<EditorSeed | null>(null);
   const [editTask, setEditTask] = useState<TaskRecord | null>(null);
   const [viewBirthday, setViewBirthday] = useState<BirthdayOccurrence | null>(null);
@@ -87,11 +84,7 @@ function CalendarBody({
   const colorOf = useMemo(() => makeColorLookup(calendars), [calendars]);
 
   const dialogOpen =
-    commandBarOpen ||
-    editorSeed !== null ||
-    editTask !== null ||
-    viewBirthday !== null ||
-    showSettings;
+    commandBarOpen || editorSeed !== null || editTask !== null || viewBirthday !== null;
   useEffect(() => {
     const isTyping = (target: EventTarget | null) => {
       const element = target as { isContentEditable?: boolean; tagName?: string } | null;
@@ -105,11 +98,6 @@ function CalendarBody({
       if (command && key.key.toLowerCase() === 'k') {
         key.preventDefault();
         setCommandBarOpen((open) => !open);
-        return;
-      }
-      if (command && key.key === ',') {
-        key.preventDefault();
-        setShowSettings(true);
         return;
       }
       // The rest are single keys for the calendar itself: not while a
@@ -137,7 +125,7 @@ function CalendarBody({
       <Sidebar
         accounts={accounts}
         calendars={calendars}
-        onOpenSettings={() => setShowSettings(true)}
+        onManageAccounts={() => void window.calendarBridge.openSettings('accounts')}
       />
 
       <div className="flex min-w-0 flex-1 flex-col">
@@ -203,12 +191,13 @@ function CalendarBody({
           >
             +
           </button>
+          {/* Settings is its own window (App menu › Settings…, ⌘,); this opens the same one. */}
           <button
-            aria-label="Accounts"
+            aria-label="Settings"
             className="rounded-md px-2 py-1 text-neutral-500 hover:bg-neutral-100"
-            onClick={() => setShowSettings(true)}
+            onClick={() => void window.calendarBridge.openSettings()}
             style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
-            title="Accounts"
+            title="Settings"
             type="button"
           >
             ⚙
@@ -294,17 +283,6 @@ function CalendarBody({
           taskLists={taskLists}
           timeZone={timeZone}
         />
-      ) : null}
-
-      {showSettings ? (
-        <Dialog
-          label="Settings"
-          onClose={() => setShowSettings(false)}
-          panelClassName="max-h-[80vh] w-[540px] overflow-y-auto rounded-2xl bg-neutral-50 p-8 shadow-2xl"
-          zIndex={20}
-        >
-          <AccountsView />
-        </Dialog>
       ) : null}
     </div>
   );

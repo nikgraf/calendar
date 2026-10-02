@@ -129,10 +129,7 @@ describe('contact birthdays', () => {
   });
 
   it('stores birthday reminder lead times on this device only', async () => {
-    const { cdp } = app;
-    await cdp.eval(
-      `[...document.querySelectorAll('button')].find(b => b.title === 'Accounts')?.click()`,
-    );
+    const cdp = await app.openSettings('notifications');
     await cdp.waitFor(`document.body.textContent.includes('Birthday reminders')`);
     expect(
       await cdp.eval<boolean>(
@@ -165,6 +162,6 @@ describe('contact birthdays', () => {
     await expect
       .poll(stored, { timeout: 10_000 })
       .toEqual({ enabled: false, leadDays: [0, 7], time: '09:00' });
-    await cdp.pressEscape();
+    await app.closeSettings();
   });
 });

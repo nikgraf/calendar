@@ -54,7 +54,8 @@ export function PrivacySection() {
     <section className="rounded-xl border border-neutral-200 bg-white p-4">
       <h2 className="font-medium">Privacy</h2>
       <p className="mt-1 text-sm text-neutral-500">
-        Hide this window from screen sharing and recordings. It stays visible on your own display.
+        Hide Solunivo&rsquo;s windows from screen sharing and recordings. They stay visible on your
+        own display.
       </p>
       <div
         aria-label="Screen-sharing visibility"

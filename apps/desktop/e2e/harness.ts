@@ -329,6 +329,11 @@ export const runAgentCli = (
 // CDP client over Node's native WebSocket.
 // ---------------------------------------------------------------------------
 
+const isSettingsUrl = (url: string): boolean => /#settings(\/|$)/.test(url);
+
+/** The settings window's panes (renderer/settingsPanes.ts). */
+export type SettingsPane = 'accounts' | 'advanced' | 'agents' | 'general' | 'notifications';
+
 export class Cdp {
   private nextId = 0;
   private readonly pending = new Map<
@@ -355,7 +360,12 @@ export class Cdp {
     };
   }
 
-  static async connect(port: number): Promise<Cdp> {
+  /**
+   * Attaches to one of the app's windows: the calendar by default, the
+   * settings window with `'settings'`. They are told apart by the hash
+   * route the main process loads them at.
+   */
+  static async connect(port: number, which: 'main' | 'settings' = 'main'): Promise<Cdp> {
     // Generous: a cold macOS runner starting two Electron apps at once
     // (one per spec file) took longer than 15 s to expose a page target,
     // which failed the whole suite before a single test ran.
@@ -364,8 +374,11 @@ export class Cdp {
       try {
         const targets = (await (
           await fetch(`http://127.0.0.1:${port}/json/list`)
-        ).json()) as Array<{ type: string; webSocketDebuggerUrl: string }>;
-        const page = targets.find((target) => target.type === 'page');
+        ).json()) as Array<{ type: string; url: string; webSocketDebuggerUrl: string }>;
+        const page = targets.find(
+          (target) =>
+            target.type === 'page' && isSettingsUrl(target.url) === (which === 'settings'),
+        );
         if (page) {
           const ws = new WebSocket(page.webSocketDebuggerUrl);
           await new Promise<void>((resolve, reject) => {
@@ -389,6 +402,10 @@ export class Cdp {
 
   close(): void {
     this.ws.close();
+  }
+
+  get closed(): boolean {
+    return this.ws.readyState !== WebSocket.OPEN;
   }
 
   send(method: string, params: Record<string, unknown> = {}): Promise<unknown> {
@@ -601,11 +618,23 @@ export interface App {
   /** Where this run's agent gateway listens (once an agent exists). */
   readonly agentSocketPath: string;
   readonly cdp: Cdp;
+  /** Closes the settings window, if one is open. */
+  readonly closeSettings: () => Promise<void>;
   readonly dump: (label: string) => Promise<void>;
+  /**
+   * Opens the settings window on a pane — through the main window's bridge,
+   * as its buttons do — and returns a client attached to it. An open
+   * window is moved to the pane and its client reused.
+   */
+  readonly openSettings: (pane: SettingsPane) => Promise<Cdp>;
   /** Where this run's watched settings file lives (may not exist). */
   readonly settingsFilePath: string;
+  /** A client attached to the settings window something else opened (a button, the menu). */
+  readonly settingsPage: () => Promise<Cdp>;
   readonly stop: () => Promise<void>;
   readonly userDataDir: string;
+  /** How many windows the app has open (the calendar, settings). */
+  readonly windowCount: () => Promise<number>;
 }
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -686,6 +715,22 @@ export interface LiveGoogleLaunch extends LiveAccountSeed {
   /** Overrides the 90 s poll so a pull lands inside a test's timeout. */
   readonly syncIntervalMs?: number | undefined;
 }
+
+/** One window's DOM and screenshot, for a failed test's artifacts. */
+const dumpPage = async (page: Cdp, dir: string, name: string) => {
+  try {
+    const html = await page.eval<string>('document.body.outerHTML');
+    writeFileSync(join(dir, `${name}.html`), html);
+    const shot = (await page.send('Page.captureScreenshot')) as { data?: string };
+    if (shot.data) {
+      writeFileSync(join(dir, `${name}.png`), Buffer.from(shot.data, 'base64'));
+    }
+  } catch (error) {
+    // A dead renderer is exactly when the log above matters most — record
+    // why the richer artifacts couldn't be captured instead of hiding it.
+    writeFileSync(join(dir, `${name}.dump-error.txt`), String(error));
+  }
+};
 
 export const launchApp = async (seed?: SeedData, options: LaunchOptions = {}): Promise<App> => {
   const userDataDir = mkdtempSync(join(tmpdir(), 'calendar-e2e-'));
@@ -828,30 +873,58 @@ export const launchApp = async (seed?: SeedData, options: LaunchOptions = {}): P
     throw error;
   }
 
+  let settings: Cdp | null = null;
+  const settingsPage = async (): Promise<Cdp> => {
+    if (!settings || settings.closed) {
+      settings = await Cdp.connect(port, 'settings');
+      await settings.waitFor(`!!document.querySelector('[data-testid="settings-window"]')`);
+    }
+    return settings;
+  };
+
   return {
     agentSocketPath,
     cdp,
-    /** Screenshot + DOM + app log, for CI to upload when a test fails. */
+    closeSettings: async () => {
+      if (!settings || settings.closed) {
+        settings = null;
+        return;
+      }
+      const page = settings;
+      settings = null;
+      // The reply may never come: the page is gone once this runs.
+      void page.send('Page.close').catch(() => {});
+      const deadline = Date.now() + 10_000;
+      while (!page.closed) {
+        if (Date.now() > deadline) {
+          throw new Error('settings window did not close');
+        }
+        await sleep(50);
+      }
+    },
+    /** Screenshot + DOM (of each open window) + app log, for CI to upload when a test fails. */
     dump: async (label: string) => {
       const dir = join(import.meta.dirname, '..', 'e2e-artifacts');
       mkdirSync(dir, { recursive: true });
       const safe = label.replaceAll(/[^a-z0-9]+/gi, '-').slice(0, 80);
       writeFileSync(join(dir, `${safe}.log`), appLog.join(''));
-      try {
-        const html = await cdp.eval<string>('document.body.outerHTML');
-        writeFileSync(join(dir, `${safe}.html`), html);
-        const shot = (await cdp.send('Page.captureScreenshot')) as { data?: string };
-        if (shot.data) {
-          writeFileSync(join(dir, `${safe}.png`), Buffer.from(shot.data, 'base64'));
-        }
-      } catch (error) {
-        // A dead renderer is exactly when the log above matters most — record
-        // why the richer artifacts couldn't be captured instead of hiding it.
-        writeFileSync(join(dir, `${safe}.dump-error.txt`), String(error));
+      await dumpPage(cdp, dir, safe);
+      if (settings && !settings.closed) {
+        await dumpPage(settings, dir, `${safe}.settings`);
       }
     },
+    openSettings: async (pane: SettingsPane) => {
+      await cdp.eval(`window.calendarBridge.openSettings(${JSON.stringify(pane)})`);
+      const page = await settingsPage();
+      await page.waitFor(
+        `document.querySelector('[data-testid="settings-pane-${pane}"]')?.hidden === false`,
+      );
+      return page;
+    },
     settingsFilePath,
+    settingsPage,
     stop: async () => {
+      settings?.close();
       cdp.close();
       // Wait for the process to actually exit — deleting the profile while
       // Electron flushes it races into ENOTEMPTY on slower CI runners.
@@ -864,5 +937,11 @@ export const launchApp = async (seed?: SeedData, options: LaunchOptions = {}): P
       rmSync(userDataDir, { force: true, maxRetries: 5, recursive: true, retryDelay: 200 });
     },
     userDataDir,
+    windowCount: async () => {
+      const targets = (await (await fetch(`http://127.0.0.1:${port}/json/list`)).json()) as Array<{
+        type: string;
+      }>;
+      return targets.filter((target) => target.type === 'page').length;
+    },
   };
 };

@@ -13,11 +13,11 @@ import { SyncStatus } from './SyncStatus.tsx';
 export function Sidebar({
   accounts,
   calendars,
-  onOpenSettings,
+  onManageAccounts,
 }: {
   accounts: ReadonlyArray<Account>;
   calendars: ReadonlyArray<CalendarInfo>;
-  onOpenSettings: () => void;
+  onManageAccounts: () => void;
 }) {
   const { addAccount, setCalendarVisible, setTaskListVisible } = useGuardedMutations();
   // Raw, not guarded: a refused grant resolves (granted: false) rather than
@@ -184,7 +184,7 @@ export function Sidebar({
       <SyncStatus />
       <button
         className="m-3 rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm hover:bg-neutral-100"
-        onClick={onOpenSettings}
+        onClick={onManageAccounts}
         type="button"
       >
         Manage accounts…
