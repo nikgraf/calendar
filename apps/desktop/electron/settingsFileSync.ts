@@ -118,6 +118,7 @@ export const SETTINGS_FILE_TRIGGER_KEYS: ReadonlySet<string> = new Set([
   deviceSettingsKey('birthdayReminders'),
   deviceSettingsKey('eventNotifications'),
   deviceSettingsKey('importedVisibility'),
+  deviceSettingsKey('mirrors'),
   deviceSettingsKey('timeZones'),
   deviceSettingsKey('viewPreferences'),
 ]);

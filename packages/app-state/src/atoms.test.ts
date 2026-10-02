@@ -42,8 +42,10 @@ const makeStubClient = () => {
     convertEventToTask: () => fail('not stubbed'),
     convertTaskToEvent: () => fail('not stubbed'),
     createEvent: () => fail('not stubbed'),
+    createMirrorCalendar: () => fail('not stubbed'),
     createTask: () => fail('not stubbed'),
     deleteEvent: () => fail('not stubbed'),
+    deleteMirror: () => fail('not stubbed'),
     deleteRecurring: () => fail('not stubbed'),
     deleteTask: () => Effect.void,
     discardPendingOp: () => Effect.void,
@@ -69,6 +71,7 @@ const makeStubClient = () => {
         return [account];
       }),
     listCalendars: () => Effect.succeed([]),
+    listMirrors: () => Effect.succeed([]),
     listPendingOps: () => Effect.succeed([]),
     listSyncStatus: () => Effect.succeed([]),
     listTaskLists: () => Effect.succeed([]),
@@ -80,6 +83,7 @@ const makeStubClient = () => {
     moveEvent: () => fail('not stubbed'),
     moveTask: () => fail('not stubbed'),
     previewEventToTask: () => fail('not stubbed'),
+    previewMirror: () => fail('not stubbed'),
     previewMove: () => fail('not stubbed'),
     previewSettingsImport: () => fail('not stubbed'),
     removeAccount: () => Effect.void,
@@ -90,6 +94,8 @@ const makeStubClient = () => {
         return new GeoLocation({ lat: 1, lng: 2, source: location });
       }),
     respondToEvent: () => Effect.void,
+    runMirrorsNow: () => Effect.void,
+    saveMirror: () => fail('not stubbed'),
     searchContacts: () => Effect.succeed([]),
     searchPlaces: ({ query }) =>
       Effect.sync(() => {
@@ -103,6 +109,7 @@ const makeStubClient = () => {
         calls.setVisible += 1;
       }),
     setEventNotificationSettings: () => Effect.succeed({ notificationsGranted: true }),
+    setMirrorEnabled: () => fail('not stubbed'),
     setTaskListVisible: () => Effect.void,
     setTimeZoneSettings: () => Effect.void,
     setViewPreferences: () => Effect.void,

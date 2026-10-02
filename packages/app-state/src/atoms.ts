@@ -41,6 +41,10 @@ const parseMapSnapshotKey = (key: string): MapSnapshotParams => {
   };
 };
 
+/** The mirror definitions' and their device-local status rows' settings keys (see sync/mirrorSettings.ts). */
+const MIRRORS_KEYS = deviceSettingsKey('mirrors');
+const MIRRORS_LOCAL_KEY = deviceSettingsKey('mirrors.local');
+
 export interface BackendAtoms {
   readonly accounts: ReturnType<typeof buildAtoms>['accounts'];
   readonly bindInvalidations: (
@@ -55,6 +59,7 @@ export interface BackendAtoms {
   readonly eventsInRange: ReturnType<typeof buildAtoms>['eventsInRange'];
   readonly locationGeo: ReturnType<typeof buildAtoms>['locationGeo'];
   readonly mapSnapshot: ReturnType<typeof buildAtoms>['mapSnapshot'];
+  readonly mirrors: ReturnType<typeof buildAtoms>['mirrors'];
   readonly mutations: ReturnType<typeof buildAtoms>['mutations'];
   readonly overdueTasks: ReturnType<typeof buildAtoms>['overdueTasks'];
   readonly pendingOps: ReturnType<typeof buildAtoms>['pendingOps'];
@@ -76,14 +81,17 @@ const MUTATION_REACTIVITY = {
   addAccount: [ACCOUNTS_KEY, CALENDARS_KEY, EVENTS_KEY, TASKS_KEY, TASKLISTS_KEY],
   clearLocationCache: [LOCATION_GEO_KEY],
   completeTask: [TASKS_KEY],
+  // The new calendar arrives with the sync pass the handler runs.
   connectAppleCalendar: [ACCOUNTS_KEY, CALENDARS_KEY, EVENTS_KEY],
   connectContacts: [BIRTHDAYS_KEY, CONTACTS_KEY],
   connectReminders: [ACCOUNTS_KEY, TASKLISTS_KEY, TASKS_KEY],
   convertEventToTask: [EVENTS_KEY, OPS_KEY, TASKS_KEY],
   convertTaskToEvent: [EVENTS_KEY, OPS_KEY, TASKS_KEY],
   createEvent: [EVENTS_KEY],
+  createMirrorCalendar: [CALENDARS_KEY],
   createTask: [TASKS_KEY],
   deleteEvent: [EVENTS_KEY],
+  deleteMirror: [MIRRORS_KEYS, MIRRORS_LOCAL_KEY],
   deleteRecurring: [EVENTS_KEY],
   deleteTask: [TASKS_KEY],
   discardPendingOp: [OPS_KEY],
@@ -99,11 +107,13 @@ const MUTATION_REACTIVITY = {
     deviceSettingsKey('eventNotifications'),
     deviceSettingsKey('timeZones'),
     deviceSettingsKey('viewPreferences'),
+    MIRRORS_KEYS,
   ],
   moveEvent: [EVENTS_KEY, OPS_KEY],
   moveTask: [TASKS_KEY, OPS_KEY],
   // Read what a conversion or a move would drop; change nothing.
   previewEventToTask: [],
+  previewMirror: [],
   previewMove: [],
   previewSettingsImport: [],
   removeAccount: [ACCOUNTS_KEY, BIRTHDAYS_KEY, CALENDARS_KEY, EVENTS_KEY, TASKS_KEY, TASKLISTS_KEY],
@@ -111,10 +121,14 @@ const MUTATION_REACTIVITY = {
   // Geocodes a picked place suggestion; writes only the device-local cache.
   resolveLocation: [],
   respondToEvent: [EVENTS_KEY],
+  // The pass writes its status rows itself; the backend invalidates them.
+  runMirrorsNow: [],
+  saveMirror: [MIRRORS_KEYS, MIRRORS_LOCAL_KEY],
   setBirthdayReminderSettings: [deviceSettingsKey('birthdayReminders')],
   setCalendarColor: [CALENDARS_KEY],
   setCalendarVisible: [CALENDARS_KEY, EVENTS_KEY],
   setEventNotificationSettings: [deviceSettingsKey('eventNotifications')],
+  setMirrorEnabled: [MIRRORS_LOCAL_KEY],
   setTaskListVisible: [TASKLISTS_KEY, TASKS_KEY],
   setTimeZoneSettings: [deviceSettingsKey('timeZones')],
   setViewPreferences: [deviceSettingsKey('viewPreferences')],
@@ -151,6 +165,16 @@ const buildAtoms = (client: BackendClient) => {
   // Refetched per imported page (EVENTS_KEY) while Settings is mounted —
   // one COUNT per page is nothing next to the page itself — and the moment
   // a pass finishes (SYNC_STATE_KEY).
+  // Definitions and this device's status rows: both change what the row shows.
+  const mirrors = runtime
+    .atom(
+      Effect.gen(function* () {
+        const backend = yield* AppBackend;
+        return yield* backend.listMirrors(undefined);
+      }),
+    )
+    .pipe(Atom.withReactivity([MIRRORS_KEYS, MIRRORS_LOCAL_KEY]));
+
   const syncStatus = runtime
     .atom(
       Effect.gen(function* () {
@@ -403,6 +427,7 @@ const buildAtoms = (client: BackendClient) => {
     eventsInRange,
     locationGeo,
     mapSnapshot,
+    mirrors,
     mutations,
     overdueTasks,
     pendingOps,

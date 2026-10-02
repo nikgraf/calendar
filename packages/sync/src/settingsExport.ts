@@ -20,6 +20,7 @@ import {
   readTimeZoneSettings,
   readViewPreferences,
 } from './deviceSettings.ts';
+import { readMirrors } from './mirrorSettings.ts';
 import {
   appleCalendarSource,
   type PendingVisibility,
@@ -156,6 +157,7 @@ export const buildSettingsDocument: Effect.Effect<
       ? {}
       : { desktop: { screenPrivacy: desktop.screenPrivacy } }),
     eventNotifications: yield* readEventNotificationSettings,
+    mirrors: yield* readMirrors,
     timeZones: yield* readTimeZoneSettings,
     version: SETTINGS_DOCUMENT_VERSION,
     view: yield* readViewPreferences,

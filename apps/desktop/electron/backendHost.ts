@@ -19,6 +19,7 @@ import {
   finishAddAccount,
   makeAppBackendLayer,
   makeSyncKicker,
+  Mirrors,
   PlatformSettings,
   SyncEngine,
   SyncInterval,
@@ -95,7 +96,9 @@ export const startBackendHost = (): BackendHost => {
     Layer.provideMerge(forwardingReactivity(invalidations.publish)),
   );
 
-  const appLayer = SyncEngine.layer.pipe(
+  // The mirrors sit above the engine: they write under its gate and react to its passes.
+  const appLayer = Mirrors.layer.pipe(
+    Layer.provideMerge(SyncEngine.layer),
     Layer.provideMerge(EventMutations.layer),
     // Above the Apple read path: the scheduler plans from it.
     Layer.provideMerge(LocalNotifications.layer({ timeZone: Temporal.Now.timeZoneId() })),
@@ -162,6 +165,7 @@ export const startBackendHost = (): BackendHost => {
       const engine = yield* SyncEngine;
       yield* engine.start();
       yield* (yield* LocalNotifications).start();
+      yield* (yield* Mirrors).start();
       console.log('[backend] runtime ready, rpc server + scheduler started');
     }),
   );

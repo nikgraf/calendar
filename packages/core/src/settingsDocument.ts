@@ -11,6 +11,7 @@ import {
   type ParseError,
 } from 'jsonc-parser/lib/esm/main.js';
 import { BirthdayReminderSettings } from './birthdays/reminders.ts';
+import { MirrorDefinition } from './mirror/definition.ts';
 import { EventNotificationSettings } from './notifications/settings.ts';
 import { canonicalZoneId, runtimeZoneId } from './time/zones.ts';
 import { TimeZoneSettings } from './timeZoneSettings.ts';
@@ -105,6 +106,12 @@ export const SettingsDocument = Schema.Struct({
   birthdayReminders: Schema.optional(BirthdayReminderSettings),
   desktop: Schema.optional(DesktopSettings),
   eventNotifications: Schema.optional(EventNotificationSettings),
+  /**
+   * Calendar mirrors: how a mirror made on one device reaches another.
+   * An import adds or updates, never removes, and an imported mirror
+   * arrives switched off (on/off is each device's own).
+   */
+  mirrors: Schema.optional(Schema.Array(MirrorDefinition)),
   timeZones: Schema.optional(TimeZoneSettings),
   version: Schema.Literal(SETTINGS_DOCUMENT_VERSION),
   view: Schema.optional(ViewPreferences),
@@ -115,6 +122,7 @@ export type SettingsDocument = typeof SettingsDocument.Type;
 export const SettingsSection = Schema.Literals([
   'birthdayReminders',
   'eventNotifications',
+  'mirrors',
   'screenPrivacy',
   'timeZones',
   'view',
@@ -276,6 +284,10 @@ export const mergeSettingsDocument = (text: string, document: SettingsDocument):
   if (encoded['accounts'] !== undefined) {
     set(['accounts'], encoded['accounts']);
   }
+  // Like accounts: a list, replaced as a whole.
+  if (encoded['mirrors'] !== undefined) {
+    set(['mirrors'], encoded['mirrors']);
+  }
   return result;
 };
 
@@ -306,6 +318,7 @@ export type SettingsImportSummary = typeof SettingsImportSummary.Type;
 const SECTION_LABELS: Record<SettingsSection, string> = {
   birthdayReminders: 'birthday reminders',
   eventNotifications: 'event notifications',
+  mirrors: 'calendar mirrors',
   screenPrivacy: 'screen privacy',
   timeZones: 'time zones',
   view: 'view preferences',

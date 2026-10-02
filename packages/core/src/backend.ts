@@ -5,6 +5,8 @@ import { BirthdayReminderSettings } from './birthdays/reminders.ts';
 import { EventToTaskPreview } from './editor/convertLoss.ts';
 import { MoveLoss } from './editor/moveLoss.ts';
 import { PlaceSuggestion } from './geo/location.ts';
+import { MirrorCalendarRef, MirrorDefinition } from './mirror/definition.ts';
+import { MirrorPreview, MirrorView } from './mirror/status.ts';
 import { EventNotificationSettings } from './notifications/settings.ts';
 import { SettingsDocument, SettingsImportSummary } from './settingsDocument.ts';
 import { AccountSyncStatus } from './syncStatus.ts';
@@ -229,6 +231,26 @@ export class AppBackendRpcs extends RpcGroup.make(
     payload: EventDraft,
     success: EventRecord,
   }),
+  /**
+   * A new calendar for a mirror to copy into: in a Google account (needs
+   * the calendar-creation scope — an account signed in before the app asked
+   * for it fails with tag 'needsSignIn') or in the device's default Apple
+   * account. Resolves to the ref a definition names it by.
+   */
+  Rpc.make('createMirrorCalendar', {
+    error: BackendError,
+    payload: {
+      target: Schema.Union([
+        Schema.Struct({
+          accountId: Schema.String,
+          kind: Schema.Literal('google'),
+          title: Schema.String,
+        }),
+        Schema.Struct({ kind: Schema.Literal('apple'), title: Schema.String }),
+      ]),
+    },
+    success: MirrorCalendarRef,
+  }),
   /** Device contacts: asks for Contacts access (the OS prompt when undetermined). */
   Rpc.make('connectContacts', {
     error: BackendError,
@@ -319,6 +341,11 @@ export class AppBackendRpcs extends RpcGroup.make(
   Rpc.make('exportSettings', {
     error: BackendError,
     success: SettingsDocument,
+  }),
+  /** Forgets a mirror here; with `removeCopies` its copies leave the destination first. */
+  Rpc.make('deleteMirror', {
+    error: BackendError,
+    payload: { id: Schema.String, removeCopies: Schema.Boolean },
   }),
   /** Device-local birthday reminder preferences (never synced). */
   Rpc.make('getBirthdayReminderSettings', {
@@ -444,6 +471,11 @@ export class AppBackendRpcs extends RpcGroup.make(
     payload: { document: SettingsDocument },
     success: SettingsImportSummary,
   }),
+  /** Every mirror with its state on this device. */
+  Rpc.make('listMirrors', {
+    error: BackendError,
+    success: Schema.Array(MirrorView),
+  }),
   /** What `convertEventToTask` with the same source and target would drop (guests, location, time…). */
   Rpc.make('previewEventToTask', {
     error: BackendError,
@@ -455,6 +487,25 @@ export class AppBackendRpcs extends RpcGroup.make(
     error: BackendError,
     payload: { document: SettingsDocument },
     success: SettingsImportSummary,
+  }),
+  /** What a mirror definition would write, before it is saved. Reads only. */
+  Rpc.make('previewMirror', {
+    error: BackendError,
+    payload: { definition: MirrorDefinition },
+    success: MirrorPreview,
+  }),
+  /** One pass over every mirror now, skipping the large-removal wait. */
+  Rpc.make('runMirrorsNow', { error: BackendError }),
+  /** Adds or replaces a mirror; a new one is switched on here. The error names a collision. */
+  Rpc.make('saveMirror', {
+    error: BackendError,
+    payload: { definition: MirrorDefinition },
+    success: MirrorView,
+  }),
+  /** Switches a mirror on or off on this device. */
+  Rpc.make('setMirrorEnabled', {
+    error: BackendError,
+    payload: { enabled: Schema.Boolean, id: Schema.String },
   }),
   /** What `moveEvent` with the same payload would drop (guests, link, modified occurrences…). */
   Rpc.make('previewMove', {
