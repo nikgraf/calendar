@@ -42,6 +42,7 @@ import {
   type LiveTask,
   patchEvent,
   patchTask,
+  putEvent,
   scratchName as scratchNameFor,
   sweep,
 } from './liveScratchRest.ts';
@@ -191,6 +192,11 @@ export interface LiveScratchShape {
     taskId: string,
     changes: Record<string, unknown>,
   ) => Effect.Effect<LiveTask, ScratchError>;
+  readonly putEvent: (
+    calendarId: string,
+    eventId: string,
+    event: Record<string, unknown>,
+  ) => Effect.Effect<LiveEvent, ScratchError>;
   /** Removes scratch calendars/lists older than `maxAgeMs` (a crashed run's leftovers). */
   readonly sweep: (options: {
     readonly maxAgeMs: number;
@@ -232,6 +238,8 @@ const makeLiveScratch = (accountId: string): Effect.Effect<LiveScratchShape, nev
         call((token) => patchEvent(token, calendarId, eventId, changes)),
       patchTask: (listId, taskId, changes) =>
         call((token) => patchTask(token, listId, taskId, changes)),
+      putEvent: (calendarId, eventId, event) =>
+        call((token) => putEvent(token, calendarId, eventId, event)),
       sweep: (options) => call((token) => sweep(token, options)),
     };
   });
