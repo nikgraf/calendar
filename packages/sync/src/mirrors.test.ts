@@ -34,7 +34,7 @@ import { layer as reactivityLayer } from 'effect/unstable/reactivity/Reactivity'
 import { describe } from 'vitest';
 import { appleCalendarServicesLayer } from './appleCalendarEvents.ts';
 import { SyncEngine } from './engine.ts';
-import { MirrorWritePace } from './mirrorDestination.ts';
+import { appleMirrorDestination, MirrorWritePace } from './mirrorDestination.ts';
 import { Mirrors } from './mirrors.ts';
 import { readMirrorLocals, updateMirrorLocal, writeMirrors } from './mirrorSettings.ts';
 import { EventMutations } from './mutations.ts';
@@ -187,11 +187,15 @@ const mirror = (overrides: Partial<MirrorDefinition> = {}): MirrorDefinition => 
   ...overrides,
 });
 
-/** Gives a device a definition the way an import does, then switches it on there. */
+/**
+ * Gives a device a definition the way an import does, switched on there.
+ * Written directly rather than through `setEnabled`, which would kick a
+ * run of its own: these tests say exactly when each device runs.
+ */
 const adopt = (definition: MirrorDefinition) =>
   Effect.gen(function* () {
     yield* writeMirrors([definition]);
-    yield* (yield* Mirrors).setEnabled(definition.id, true);
+    yield* updateMirrorLocal(definition.id, () => ({ enabled: true }));
   });
 
 const writes = (google: FakeGoogle): number =>
@@ -417,6 +421,143 @@ describe('calendar mirrors', () => {
         yield* phone(runMirrors());
         expect(yield* phone(statusOf())).toEqual({ reason: undefined, state: 'upToDate' });
         expect(writes(world.google)).toBe(before);
+      }),
+    ),
+  );
+
+  it.effect('a stale device’s insert never puts an older definition’s content back', () =>
+    scenario((world) =>
+      Effect.gen(function* () {
+        world.google.putEvent(WORK, meeting('a', NOW + 2 * HOUR, { location: 'Room 4' }));
+        const mac = yield* makeDevice(world);
+        // The phone synced before any copy existed: it holds no copy rows,
+        // and its pull is fresh enough to pass the gate.
+        const phone = yield* makeDevice(world);
+        const first = yield* mac(Effect.flatMap(Mirrors, (mirrors) => mirrors.save(mirror())));
+        yield* phone(adopt(first.definition));
+        yield* mac(runMirrors());
+        // The Mac drops the location and rewrites the copy under revision two.
+        yield* TestClock.adjust('1 second');
+        yield* mac(
+          Effect.flatMap(Mirrors, (mirrors) =>
+            mirrors.save(mirror({ fields: { description: false, location: false, title: true } })),
+          ),
+        );
+        yield* mac(runMirrors());
+        expect(copies(world.google)).toMatchObject([{ location: undefined }]);
+
+        // The phone's insert meets the id (409). Looking first, it finds
+        // the newer revision and stands back instead of replacing.
+        yield* phone(runMirrors());
+        expect(copies(world.google)).toMatchObject([{ location: undefined, title: 'Meeting a' }]);
+        expect(yield* phone(statusOf())).toEqual({ reason: 'newerDefinition', state: 'paused' });
+      }),
+    ),
+  );
+
+  it.effect(
+    'a definition that excludes everything wins: the stale device trips its own breaker',
+    () =>
+      scenario((world) =>
+        Effect.gen(function* () {
+          world.google.putEvent(
+            WORK,
+            meeting('a', NOW + 2 * HOUR, { transparency: 'transparent' }),
+          );
+          const mac = yield* makeDevice(world);
+          const phone = yield* makeDevice(world);
+          // The preset copies events marked free; the change below leaves them out.
+          const first = yield* mac(Effect.flatMap(Mirrors, (mirrors) => mirrors.save(mirror())));
+          yield* mac(runMirrors());
+          yield* phone(sync);
+          yield* phone(adopt(first.definition));
+          yield* phone(runMirrors());
+          expect(world.google.eventsOf(DEST)).toHaveLength(1);
+
+          // The Mac leaves free events out: every copy goes, and nothing is
+          // left to carry the new revision.
+          yield* TestClock.adjust('1 second');
+          yield* mac(
+            Effect.flatMap(Mirrors, (mirrors) =>
+              mirrors.save(
+                mirror({ filters: { ...MIRROR_PRESETS.titleLocation.filters, free: 'skip' } }),
+              ),
+            ),
+          );
+          yield* mac(runMirrors());
+          expect(world.google.eventsOf(DEST)).toHaveLength(0);
+
+          for (let round = 0; round < 3; round++) {
+            yield* phone(sync);
+            yield* phone(runMirrors());
+            yield* mac(sync);
+            yield* mac(runMirrors());
+          }
+          // The phone wrote the excluded copy back twice and refused the
+          // third; the Mac deleted it each time and never paused itself.
+          expect(world.google.eventsOf(DEST)).toHaveLength(0);
+          expect(yield* phone(statusOf())).toEqual({ reason: 'rewriteLoop', state: 'paused' });
+          expect(yield* mac(statusOf())).toEqual({ reason: undefined, state: 'upToDate' });
+        }),
+      ),
+  );
+
+  it.effect('moving a mirror to another calendar takes its copies out of the old one', () =>
+    scenario((world) =>
+      Effect.gen(function* () {
+        world.google.putEvent(WORK, meeting('a', NOW + 2 * HOUR));
+        const mac = yield* makeDevice(world);
+        const mirrors = yield* mac(Mirrors);
+        yield* mirrors.save(mirror());
+        yield* mirrors.run();
+        expect(world.google.eventsOf(DEST)).toHaveLength(1);
+        yield* TestClock.adjust('1 second');
+        yield* mirrors.save(
+          mirror({ destination: { kind: 'apple', source: 'iCloud', title: 'Family' } }),
+        );
+        yield* mirrors.run();
+        expect(world.google.eventsOf(DEST)).toHaveLength(0);
+        const family = [...world.apple.state.series.values()].filter(
+          (series) => series.event.calendarId === 'ek-family',
+        );
+        expect(family).toHaveLength(1);
+      }),
+    ),
+  );
+
+  it.effect('an Apple write that is refused stays pending instead of counting as done', () =>
+    scenario((world) =>
+      Effect.gen(function* () {
+        const calendar = {
+          accessRole: 'owner' as const,
+          accountId: APPLE_CALENDAR_ACCOUNT_ID,
+          colorHex: '#000000',
+          id: 'ek-nope',
+          isPrimary: false,
+          isVisible: true,
+          provider: 'apple' as const,
+          summary: 'Gone',
+          timeZone: 'UTC',
+        };
+        const destination = appleMirrorDestination(world.apple.client, calendar as never);
+        const copy = {
+          allDay: false,
+          contentHash: '0123456789abcdef',
+          description: undefined,
+          endDate: undefined,
+          endUtc: NOW + HOUR,
+          keyHash: mirrorKeyHash('m', 'k'),
+          location: undefined,
+          startDate: undefined,
+          startUtc: NOW,
+          title: 'Copy',
+        };
+        const result = yield* destination.apply(
+          [{ copy, kind: 'create' }],
+          { rev: 1, tag: mirrorTag('m'), timeZone: 'UTC' },
+          Number.MAX_SAFE_INTEGER,
+        );
+        expect(result).toMatchObject({ applied: 0, failedIndices: [0], processed: 1 });
       }),
     ),
   );

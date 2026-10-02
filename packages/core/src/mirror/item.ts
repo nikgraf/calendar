@@ -1,7 +1,7 @@
 import { meetingUrl } from '../meeting.ts';
 import { isDeclinedBySelf } from '../scheduling/busy.ts';
 import { TIMED_TASK_LAYOUT_MINUTES, taskCalendarDate } from '../taskTiming.ts';
-import { addDaysToPlainDate, plainDateToUtcMs } from '../time/convert.ts';
+import { addDaysToPlainDate, plainDateToUtcMs, toZonedDateTime } from '../time/convert.ts';
 import { Temporal } from '../time/temporal.ts';
 import type { EventRecord, TaskRecord } from '../types.ts';
 
@@ -65,6 +65,20 @@ export const googleEventMirrorItem = (
   title: event.title,
 });
 
+const pad2 = (value: number): string => String(value).padStart(2, '0');
+
+const withDueIn = <T extends TaskRecord & { readonly dueUtc?: number | undefined }>(
+  task: T,
+  timeZone: string,
+): T => {
+  const due = toZonedDateTime(task.dueUtc ?? 0, timeZone);
+  return {
+    ...task,
+    dueDate: due.toPlainDate().toString(),
+    dueTime: `${pad2(due.hour)}:${pad2(due.minute)}`,
+  };
+};
+
 const wallClockToUtc = (date: string, time: string, timeZone: string): number =>
   Temporal.PlainDate.from(date).toZonedDateTime({
     plainTime: Temporal.PlainTime.from(time),
@@ -78,9 +92,14 @@ const wallClockToUtc = (date: string, time: string, timeZone: string): number =>
  * wall-clock time in the mirror's zone; everything else is all-day.
  */
 export const taskMirrorItem = (
-  task: TaskRecord & { readonly dueUtc?: number | undefined },
+  stored: TaskRecord & { readonly dueUtc?: number | undefined },
   options: { readonly key: string; readonly timeZone: string; readonly today: string },
 ): MirrorItem => {
+  // A reminder with a zone of its own is read in the mirror's zone, not
+  // in this device's: its stored due day and time are this device's wall
+  // clock, which differs between a Berlin and a New York device for the
+  // same instant — and then so would the copy.
+  const task = stored.dueUtc === undefined ? stored : withDueIn(stored, options.timeZone);
   const day = taskCalendarDate(task, options.today, options.timeZone);
   const shared = {
     declined: false,

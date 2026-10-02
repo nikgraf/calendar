@@ -1728,6 +1728,16 @@ test`/`test:e2e`/`test:e2e:ios`; every file creates its own
       done state, a raced Apple duplicate, a hidden source), repo and
       fake tests, `mirrors.live.ts`, desktop `mirrors.e2e.ts`, Maestro
       `21-mirrors.yaml` (not run locally: the dev client needs the Swift
-      changes). Open: the `calendar.app.created` consent-screen entry
-      (Nik), a real two-device run, reminder external ids across devices,
-      the new Swift paths against real EventKit.
+      changes). Review (2026-10-03) found and fixed: a stale device's 409
+      path replaced a copy blindly (now it reads the event and stands back
+      from a newer revision, else replaces with If-Match); a definition
+      that excludes everything leaves no revision carrier (bounded: deletes
+      are not counted by the breaker, so the right device keeps deleting
+      while the stale one trips its own after two rounds); refused Apple
+      batch writes counted as applied; moving a mirror to another calendar
+      left its copies in the old one (now removed first); a zoned reminder
+      was placed by this device's wall clock instead of its instant. Open:
+      the `calendar.app.created` scope is on the consent screen (added
+      2026-10-03) but a narrow-scope sign-in creating a calendar is
+      untested; a real two-device run, reminder external ids across
+      devices, the new Swift paths against real EventKit.

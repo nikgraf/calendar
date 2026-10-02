@@ -411,8 +411,15 @@ an allow-list of fields, so a calendar can be shared without the details.
 - **Backstops** for what cannot be checked (EventKit never says whether
   iCloud has caught up): a plan that would delete more than
   max(10, 30 %) of the copies with an unchanged definition waits ten
-  minutes (or "Run now"); the same write made a third time within a day
-  pauses the mirror on this device until it is switched on again.
+  minutes (or "Run now"); the same create or update made a third time
+  within a day pauses the mirror on this device until it is switched on
+  again. Deletes are never counted: when a definition change empties the
+  destination, nothing carries the new revision, and a device still on
+  the old definition writes the excluded copies back until its own
+  creates trip its breaker — the device that is right keeps deleting and
+  must not pause with it. A Google insert that meets its id (409) reads
+  the event first and stands back from a newer revision, rather than
+  replacing it with the older definition's content.
 - **Triggers.** A change to events, tasks, calendars, accounts or the
   definitions marks the inputs dirty; a finished sync pass runs the
   mirrors (cheap gates first, the heavy part only when dirty); a heartbeat

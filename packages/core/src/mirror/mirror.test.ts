@@ -265,16 +265,33 @@ describe('mirror items', () => {
     });
   });
 
+  it('reads a reminder with its own zone by its instant, whatever this device’s clock said', () => {
+    // 00:30 UTC on the 13th: a Berlin device stores it as the 13th, a New
+    // York one as the 12th. The copy must not depend on which device runs.
+    const instant = at('2026-03-13', '00:30', 'UTC');
+    const berlin = taskMirrorItem(
+      { ...task({ dueDate: '2026-03-13', dueTime: '01:30' }), dueUtc: instant } as never,
+      options,
+    );
+    const newYork = taskMirrorItem(
+      { ...task({ dueDate: '2026-03-12', dueTime: '19:30' }), dueUtc: instant } as never,
+      options,
+    );
+    expect(newYork).toEqual(berlin);
+    expect(berlin).toMatchObject({ allDay: false, startUtc: instant });
+  });
+
   it('makes a timed reminder a short event at its wall-clock time in the mirror zone', () => {
     const timed = taskMirrorItem(task({ dueDate: '2026-03-12', dueTime: '17:30' }), options);
     expect(timed).toMatchObject({ allDay: false, startUtc: at('2026-03-12', '17:30') });
     expect(timed.endUtc - timed.startUtc).toBe(30 * 60_000);
     // A reminder that carries a zone keeps its own instant.
+    const instant = at('2026-03-12', '16:30', 'UTC');
     const zoned = taskMirrorItem(
-      { ...task({ dueDate: '2026-03-12', dueTime: '17:30' }), dueUtc: 42 * HOUR } as never,
+      { ...task({ dueDate: '2026-03-12', dueTime: '17:30' }), dueUtc: instant } as never,
       options,
     );
-    expect(zoned.startUtc).toBe(42 * HOUR);
+    expect(zoned.startUtc).toBe(instant);
   });
 });
 

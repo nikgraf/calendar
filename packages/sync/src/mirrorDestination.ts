@@ -53,8 +53,17 @@ export interface MirrorStamp {
 }
 
 export interface MirrorApplyResult {
-  /** How many of the ops were dealt with, in order from the first. */
+  /** How many ops landed. */
   readonly applied: number;
+  /** Ops that were attempted and refused (by index); the rest up to `processed` landed. */
+  readonly failedIndices: ReadonlyArray<number>;
+  /**
+   * A copy in the destination carries a newer definition than this
+   * device's: the writes stopped there, and the mirror must stand back.
+   */
+  readonly newestRev?: number | undefined;
+  /** How many ops were attempted, in order from the first. */
+  readonly processed: number;
   /** Google said to slow down: the run ends here and the next one continues. */
   readonly rateLimited: boolean;
 }
@@ -157,6 +166,7 @@ export const googleMirrorDestination = (
 
     type Outcome =
       | { readonly id: string; readonly kind: 'gone' }
+      | { readonly kind: 'newer'; readonly rev: number }
       | { readonly kind: 'rateLimited' }
       | { readonly kind: 'skipped' }
       | { readonly kind: 'written'; readonly row: EventRecord | null };
@@ -174,21 +184,48 @@ export const googleMirrorDestination = (
     ): Effect.Effect<Outcome, GoogleRequestError> => {
       if (op.kind === 'create') {
         const event = googleBody(op.copy, stamp);
+        const eventId = mirrorEventId(op.copy.keyHash);
+        // The id is taken: another device wrote this copy — a moment ago,
+        // or under a definition this device has not seen — or it was
+        // deleted earlier and Google keeps the id reserved. Look before
+        // replacing: a blind replace would put an older definition's
+        // content (a location since switched off) back on the shared copy.
+        const taken: Effect.Effect<Outcome, GoogleRequestError> = Effect.gen(function* () {
+          const existing = yield* client
+            .getEvent({ ...target, eventId })
+            .pipe(Effect.catchTag('NotFoundError', () => Effect.succeed(undefined)));
+          const live = existing !== undefined && existing.status !== 'cancelled';
+          const marker = parseMirrorProperty(
+            existing?.extendedProperties?.private?.[MIRROR_PROPERTY_KEY],
+          );
+          if (live && marker !== undefined && marker.tag === stamp.tag) {
+            if (marker.rev > stamp.rev) {
+              return { kind: 'newer', rev: marker.rev } as Outcome;
+            }
+            if (marker.contentHash === op.copy.contentHash) {
+              // The same copy, written by the other device: take it as is.
+              return written(existing, now);
+            }
+          }
+          return yield* client
+            .replaceEvent({
+              ...target,
+              ...(live && existing.etag ? { baseEtag: existing.etag } : {}),
+              event: { ...event, status: 'confirmed' },
+              eventId,
+              sendUpdates: 'none',
+            })
+            .pipe(
+              Effect.map((response) => written(response, now)),
+              Effect.catchTag('ConflictError', () => Effect.succeed<Outcome>({ kind: 'skipped' })),
+            );
+        });
         return client.insertEvent({ ...target, event, sendUpdates: 'none' }).pipe(
-          // The id is taken: another device wrote this copy a moment ago,
-          // or it was deleted earlier and Google keeps the id reserved.
-          // Either way a confirming replace makes it this copy.
+          Effect.map((response) => written(response, now)),
           Effect.catchIf(
             (error) => error._tag === 'GoogleApiError' && error.status === 409,
-            () =>
-              client.replaceEvent({
-                ...target,
-                event: { ...event, status: 'confirmed' },
-                eventId: mirrorEventId(op.copy.keyHash),
-                sendUpdates: 'none',
-              }),
+            () => taken,
           ),
-          Effect.map((response) => written(response, now)),
         );
       }
       const ref = op.actual.ref as GoogleRef;
@@ -232,6 +269,7 @@ export const googleMirrorDestination = (
         const deletions: Array<string> = [];
         let applied = 0;
         let rateLimited = false;
+        let newestRev: number | undefined;
         for (const op of ops) {
           const now = yield* Clock.currentTimeMillis;
           // A plan is only good for a while: a process that was suspended
@@ -246,6 +284,10 @@ export const googleMirrorDestination = (
           );
           if (outcome.kind === 'rateLimited') {
             rateLimited = true;
+            break;
+          }
+          if (outcome.kind === 'newer') {
+            newestRev = outcome.rev;
             break;
           }
           if (outcome.kind === 'written' && outcome.row !== null) {
@@ -263,7 +305,7 @@ export const googleMirrorDestination = (
         if (upserts.length > 0 || deletions.length > 0) {
           yield* events.applyPage(account.id, calendar.id, { deletions, mode: 'ack', upserts });
         }
-        return { applied, rateLimited };
+        return { applied, failedIndices: [], newestRev, processed: applied, rateLimited };
       });
 
     return {
@@ -276,11 +318,21 @@ export const googleMirrorDestination = (
             // ack would put the old row back until the next pass.
             const result = yield* engine.exclusive(applyChunk(chunk, stamp, deadlineMs));
             applied += result.applied;
-            if (result.rateLimited || result.applied < chunk.length) {
-              return { applied, rateLimited: result.rateLimited };
+            if (
+              result.rateLimited ||
+              result.newestRev !== undefined ||
+              result.applied < chunk.length
+            ) {
+              return {
+                applied,
+                failedIndices: [],
+                newestRev: result.newestRev,
+                processed: applied,
+                rateLimited: result.rateLimited,
+              };
             }
           }
-          return { applied, rateLimited: false };
+          return { applied, failedIndices: [], processed: applied, rateLimited: false };
         }),
       countOrdinary: (startUtc, endUtc) =>
         events.countOrdinary(account.id, calendar.id, startUtc, endUtc),
@@ -364,21 +416,32 @@ export const appleMirrorDestination = (
     apply: (ops, stamp, deadlineMs) =>
       Effect.gen(function* () {
         if (ops.length === 0 || (yield* Clock.currentTimeMillis) >= deadlineMs) {
-          return { applied: 0, rateLimited: false };
+          return { applied: 0, failedIndices: [], processed: 0, rateLimited: false };
         }
         const failures = yield* client.applyBatch({
           ops: ops.map((op) => batchWrite(op, stamp)),
         });
-        // An event that is already gone needs no write; anything else is
-        // worth a line (indices only — a log never carries a title).
-        const real = failures.filter((failure) => !failure.message.startsWith('notFound:'));
+        // An event that is already gone needs no update or delete; a
+        // create that found nothing (its calendar is gone) did not land.
+        // Refused writes stay pending (indices only — a log never carries
+        // a title).
+        const real = failures.filter(
+          (failure) =>
+            !failure.message.startsWith('notFound:') || ops[failure.index]?.kind === 'create',
+        );
         if (real.length > 0) {
           yield* Effect.logWarning('mirror: apple writes refused', {
             count: real.length,
             first: real[0]?.message,
           });
         }
-        return { applied: ops.length, rateLimited: false };
+        const failedIndices = real.map((failure) => failure.index);
+        return {
+          applied: ops.length - failedIndices.length,
+          failedIndices,
+          processed: ops.length,
+          rateLimited: false,
+        };
       }),
     countOrdinary: (startUtc, endUtc) =>
       Effect.map(

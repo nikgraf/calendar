@@ -10,6 +10,7 @@ import {
   type MirrorReason,
   type MirrorStatus,
   mirrorTag,
+  mirrorRefKey,
   type MirrorView,
   mirrorWindow,
   msUntilNextMidnight,
@@ -156,10 +157,21 @@ type Services =
   | TaskRepo
   | TokenStore;
 
-const journalKey = (op: MirrorOp<unknown>): string =>
+/**
+ * What the rewrite journal counts: a create or update of a copy with a
+ * given content. Deletes are not counted. When a definition change leaves
+ * a destination empty, nothing can carry the new revision, and a device
+ * still on the old definition writes the excluded copies back until its
+ * own creates trip its breaker; the device that is right must keep
+ * deleting them, not pause alongside it.
+ */
+const refName = (ref: MirrorDefinition['destination']): string =>
+  ref.kind === 'google' ? (ref.title ?? ref.calendarId) : ref.title;
+
+const journalKey = (op: MirrorOp<unknown>): string | undefined =>
   op.kind === 'create' || op.kind === 'update'
     ? `${op.copy.keyHash}:${op.copy.contentHash}`
-    : `${op.actual.keyHash}:x`;
+    : undefined;
 
 const pruneJournal = (
   journal: MirrorLocal['journal'],
@@ -312,7 +324,11 @@ const make: Effect.Effect<MirrorsShape, never, Reactivity | Services> = Effect.g
 
       const journal = pruneJournal(local.journal, now);
       const ops = plan.ops.slice(0, WRITES_PER_PLAN);
-      if (ops.some((op) => (journal[journalKey(op)]?.[0] ?? 0) >= REWRITE_LIMIT - 1)) {
+      const rewrites = (op: MirrorOp<unknown>): number => {
+        const key = journalKey(op);
+        return key === undefined ? 0 : (journal[key]?.[0] ?? 0);
+      };
+      if (ops.some((op) => rewrites(op) >= REWRITE_LIMIT - 1)) {
         yield* Effect.logWarning('mirror: a copy keeps being rewritten; pausing', {
           mirror: tag,
         });
@@ -324,16 +340,32 @@ const make: Effect.Effect<MirrorsShape, never, Reactivity | Services> = Effect.g
 
       const result =
         ops.length === 0
-          ? { applied: 0, rateLimited: false }
+          ? { applied: 0, failedIndices: [], processed: 0, rateLimited: false }
           : yield* destination.apply(
               ops,
               { rev: definition.updatedAt, tag, timeZone: definition.timeZone },
               Math.min(options.deadlineMs, now + PLAN_LIFETIME_MS),
             );
-      for (const op of ops.slice(0, result.applied)) {
-        const key = journalKey(op);
-        journal[key] = [(journal[key]?.[0] ?? 0) + 1, now];
+      // A copy already carries a newer definition: the writes stopped
+      // there (see the Google insert path), and this device stands back.
+      if (result.newestRev !== undefined && result.newestRev > definition.updatedAt) {
+        yield* setStatus(
+          definition.id,
+          blockedStatus({ reason: 'newerDefinition' }, local.status),
+          {
+            journal,
+            newestRev: result.newestRev,
+          },
+        );
+        return false;
       }
+      const failed = new Set(result.failedIndices);
+      ops.slice(0, result.processed).forEach((op, index) => {
+        const key = journalKey(op);
+        if (key !== undefined && !failed.has(index)) {
+          journal[key] = [(journal[key]?.[0] ?? 0) + 1, now];
+        }
+      });
       const pending = plan.ops.length - result.applied;
       const status: MirrorStatus =
         pending === 0
@@ -362,8 +394,10 @@ const make: Effect.Effect<MirrorsShape, never, Reactivity | Services> = Effect.g
           today: window.today,
         });
       }
-      // Go again only when this plan made progress and Google is not asking for a pause.
-      return pending > 0 && result.applied > 0 && !result.rateLimited;
+      // Go again only when this plan made progress, every attempted write
+      // landed (a refused one would be refused again) and Google is not
+      // asking for a pause.
+      return pending > 0 && result.applied > 0 && failed.size === 0 && !result.rateLimited;
     }).pipe(
       Effect.catchCause((cause) =>
         Effect.gen(function* () {
@@ -413,6 +447,45 @@ const make: Effect.Effect<MirrorsShape, never, Reactivity | Services> = Effect.g
           Effect.logWarning('mirrors pass failed', { cause: String(cause).slice(0, 300) }),
         ),
       );
+
+  /**
+   * Deletes everything a mirror ever wrote into its destination — not
+   * just its window: the oldest copy is as old as the mirror, the newest
+   * as far ahead as a mirror can reach.
+   */
+  const removeCopiesOf = (definition: MirrorDefinition) =>
+    Effect.gen(function* () {
+      const resolved = yield* resolveMirrorDestination(definition);
+      if ('block' in resolved) {
+        return yield* new MirrorSaveError({
+          message: `The copies in ${refName(definition.destination)} could not be removed: that calendar is not available on this device.`,
+        });
+      }
+      const destination = yield* destinationOf(resolved.value);
+      const now = yield* Clock.currentTimeMillis;
+      const reach = (MIRROR_MAX_MONTHS + 2) * 31 * DAY_MS;
+      const tag = mirrorTag(definition.id);
+      const stamp = { rev: definition.updatedAt, tag, timeZone: definition.timeZone };
+      const google = resolved.value.provider === 'google';
+      for (;;) {
+        const mine = (yield* destination.read(
+          google ? 0 : now - reach,
+          google ? Number.MAX_SAFE_INTEGER : now + reach,
+        )).filter((actual) => actual.marker.tag === tag);
+        if (mine.length === 0) {
+          return;
+        }
+        const batch = mine
+          .slice(0, WRITES_PER_PLAN)
+          .map((actual): MirrorOp<unknown> => ({ actual, kind: 'delete' }));
+        const result = yield* destination.apply(batch, stamp, Number.MAX_SAFE_INTEGER);
+        if (result.applied === 0) {
+          return yield* new MirrorSaveError({
+            message: 'The copies could not be removed right now. Try again in a moment.',
+          });
+        }
+      }
+    });
 
   const views = Effect.gen(function* () {
     const locals = yield* readMirrorLocals;
@@ -540,39 +613,7 @@ const make: Effect.Effect<MirrorsShape, never, Reactivity | Services> = Effect.g
           Effect.gen(function* () {
             const definition = (yield* readMirrors).find((mirror) => mirror.id === id);
             if (definition !== undefined && removeCopies) {
-              const resolved = yield* resolveMirrorDestination(definition);
-              if ('block' in resolved) {
-                return yield* new MirrorSaveError({
-                  message:
-                    'The copies could not be removed: the destination calendar is not available on this device.',
-                });
-              }
-              const destination = yield* destinationOf(resolved.value);
-              const now = yield* Clock.currentTimeMillis;
-              // Everything this mirror ever wrote, not just its window:
-              // the oldest copy is as old as the mirror, the newest as far
-              // ahead as a mirror can reach.
-              const reach = (MIRROR_MAX_MONTHS + 2) * 31 * DAY_MS;
-              const tag = mirrorTag(id);
-              const stamp = { rev: definition.updatedAt, tag, timeZone: definition.timeZone };
-              for (;;) {
-                const mine = (yield* destination.read(
-                  resolved.value.provider === 'google' ? 0 : now - reach,
-                  resolved.value.provider === 'google' ? Number.MAX_SAFE_INTEGER : now + reach,
-                )).filter((actual) => actual.marker.tag === tag);
-                if (mine.length === 0) {
-                  break;
-                }
-                const batch = mine
-                  .slice(0, WRITES_PER_PLAN)
-                  .map((actual): MirrorOp<unknown> => ({ actual, kind: 'delete' }));
-                const result = yield* destination.apply(batch, stamp, Number.MAX_SAFE_INTEGER);
-                if (result.applied === 0) {
-                  return yield* new MirrorSaveError({
-                    message: 'The copies could not be removed right now. Try again in a moment.',
-                  });
-                }
-              }
+              yield* removeCopiesOf(definition);
             }
             yield* removeMirror(id);
             clean.delete(id);
@@ -596,6 +637,15 @@ const make: Effect.Effect<MirrorsShape, never, Reactivity | Services> = Effect.g
 
     save: (definition) =>
       Effect.gen(function* () {
+        // A mirror that moves to another calendar takes its copies out of
+        // the old one first; nothing would ever reach them there again.
+        const previous = (yield* readMirrors).find((mirror) => mirror.id === definition.id);
+        if (
+          previous !== undefined &&
+          mirrorRefKey(previous.destination) !== mirrorRefKey(definition.destination)
+        ) {
+          yield* gate.withPermits(1)(removeCopiesOf(previous));
+        }
         const saved = yield* saveMirror(definition, yield* Clock.currentTimeMillis);
         // A mirror made here runs here; one that arrives by import stays
         // off until it is switched on.
@@ -606,8 +656,10 @@ const make: Effect.Effect<MirrorsShape, never, Reactivity | Services> = Effect.g
         return { definition: saved, enabled: local.enabled, status: mirrorStatusOf(local) };
       }).pipe(
         Effect.provide(context),
-        Effect.catchTag('SqlError', (error) =>
-          Effect.fail(new MirrorSaveError({ message: String(error) })),
+        Effect.catchIf(
+          (error): error is Exclude<typeof error, MirrorSaveError> =>
+            !(error instanceof MirrorSaveError),
+          (error) => Effect.fail(new MirrorSaveError({ message: String(error) })),
         ),
       ),
 
