@@ -193,6 +193,12 @@ export const definitionOf = (
     ? undefined
     : { ...draft, destination: draft.destination, updatedAt };
 
+/**
+ * A ref key as a test id: Maestro reads an id as a regular expression, so
+ * `|`, `.` and `@` in the raw key would never match.
+ */
+export const refSlug = (key: string): string => key.replaceAll(/[^a-z0-9]+/gi, '-');
+
 export const refLabel = (ref: MirrorSourceRef): string => {
   switch (ref.kind) {
     case 'apple':

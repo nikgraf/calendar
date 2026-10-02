@@ -95,7 +95,7 @@ describe('Calendar mirrors (fake Google)', () => {
     await cdp.click(add.x, add.y);
     await cdp.eval(setInput('[data-testid="mirror-name"]', 'Family'));
     const source = await cdp.locate(
-      '[data-testid="mirror-source-google|e2e@nikgraf.com|cal-work"]',
+      '[data-testid="mirror-source-google-e2e-nikgraf-com-cal-work"]',
     );
     await cdp.click(source.x, source.y);
     await cdp.eval(

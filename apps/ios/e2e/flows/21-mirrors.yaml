@@ -23,18 +23,18 @@ tags:
 - hideKeyboard
 - scrollUntilVisible:
     element:
-      id: 'mirror-source-google|fixture@solunivo.test|mock-calendar'
+      id: 'mirror-source-google-fixture-solunivo-test-mock-calendar'
     direction: DOWN
     timeout: 10000
 - tapOn:
-    id: 'mirror-source-google|fixture@solunivo.test|mock-calendar'
+    id: 'mirror-source-google-fixture-solunivo-test-mock-calendar'
 - scrollUntilVisible:
     element:
-      id: 'mirror-destination-google|fixture@solunivo.test|mock-shared'
+      id: 'mirror-destination-google-fixture-solunivo-test-mock-shared'
     direction: DOWN
     timeout: 10000
 - tapOn:
-    id: 'mirror-destination-google|fixture@solunivo.test|mock-shared'
+    id: 'mirror-destination-google-fixture-solunivo-test-mock-shared'
 # The preview says what others would see: the title and the place.
 - scrollUntilVisible:
     element:

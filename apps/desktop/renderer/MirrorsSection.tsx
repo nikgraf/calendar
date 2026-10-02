@@ -9,6 +9,7 @@ import {
   mirrorSourceOptions,
   newMirrorDraft,
   refLabel,
+  refSlug,
   useAccounts,
   useBackendMutations,
   useCalendars,
@@ -325,7 +326,7 @@ function MirrorEditor({
                 <label className="flex items-center gap-1.5 text-sm" key={option.key}>
                   <input
                     checked={hasSource(draft, option.ref)}
-                    data-testid={`mirror-source-${option.key}`}
+                    data-testid={`mirror-source-${refSlug(option.key)}`}
                     onChange={() => setDraft(withSourceToggled(draft, option.ref))}
                     type="checkbox"
                   />

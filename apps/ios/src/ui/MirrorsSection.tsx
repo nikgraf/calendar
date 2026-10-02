@@ -9,6 +9,7 @@ import {
   mirrorSourceOptions,
   newMirrorDraft,
   refLabel,
+  refSlug,
   useAccounts,
   useBackendMutations,
   useCalendars,
@@ -353,7 +354,7 @@ function MirrorEditSheet({
                     key={option.key}
                     label={option.label}
                     onToggle={() => setDraft(withSourceToggled(draft, option.ref))}
-                    testID={`mirror-source-${option.key}`}
+                    testID={`mirror-source-${refSlug(option.key)}`}
                   />
                 ))}
             </View>
@@ -368,7 +369,7 @@ function MirrorEditSheet({
               key={option.key}
               onPress={() => setDraft({ ...draft, destination: option.ref })}
               style={[styles.option, option.key === destinationKey && styles.optionSelected]}
-              testID={`mirror-destination-${option.key}`}
+              testID={`mirror-destination-${refSlug(option.key)}`}
             >
               <Text style={styles.optionTitle}>{option.label}</Text>
               <Text style={sectionStyles.meta}>{option.group}</Text>
