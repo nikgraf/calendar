@@ -61,6 +61,11 @@ struct ReminderDTO: Sendable {
   let completedAt: Int?
   let dueDate: String?
   let dueTime: String?
+  /// The due instant of a timed reminder that carries its own time zone.
+  let dueUtc: Int?
+  /// `calendarItemExternalIdentifier`: unlike `id`, the same on every
+  /// device the reminder syncs to.
+  let externalId: String?
   let id: String
   let listId: String
   let notes: String?
@@ -78,6 +83,8 @@ struct ReminderDTO: Sendable {
     if let completedAt { out["completedAt"] = completedAt }
     if let dueDate { out["dueDate"] = dueDate }
     if let dueTime { out["dueTime"] = dueTime }
+    if let dueUtc { out["dueUtc"] = dueUtc }
+    if let externalId { out["externalId"] = externalId }
     if let notes { out["notes"] = notes }
     if let recurrence { out["recurrence"] = recurrence.toDictionary() }
     if let url { out["url"] = url }
@@ -193,6 +200,20 @@ private func dueStrings(_ components: DateComponents?) -> (date: String?, time: 
   let date = "\(year)-\(pad2(month))-\(pad2(day))"
   guard timed, let h = local.hour else { return (date, nil) }
   return (date, "\(pad2(h)):\(pad2(local.minute ?? 0))")
+}
+
+/// The instant a timed reminder is due, when its components name a time
+/// zone. `dueStrings` reads the same instant as this device's wall clock,
+/// which differs between two devices in different zones; this does not.
+/// A floating reminder (no zone) has no instant of its own.
+private func dueInstant(_ components: DateComponents?) -> Int? {
+  guard let c = components, c.year != nil, c.month != nil, c.day != nil, c.hour != nil,
+    let zone = c.timeZone
+  else { return nil }
+  var source = Calendar(identifier: c.calendar?.identifier ?? .gregorian)
+  source.timeZone = zone
+  guard let instant = source.date(from: c) else { return nil }
+  return Int((instant.timeIntervalSince1970 * 1000).rounded())
 }
 
 private func parseDay(_ text: String) -> (year: Int, month: Int, day: Int)? {
@@ -362,6 +383,8 @@ private func reminderDTO(_ reminder: EKReminder) -> ReminderDTO {
     completedAt: reminder.completionDate.map { Int($0.timeIntervalSince1970 * 1000) },
     dueDate: due.date,
     dueTime: due.time,
+    dueUtc: dueInstant(reminder.dueDateComponents),
+    externalId: reminder.calendarItemExternalIdentifier,
     id: reminder.calendarItemIdentifier,
     listId: reminder.calendar.calendarIdentifier,
     notes: reminder.notes,

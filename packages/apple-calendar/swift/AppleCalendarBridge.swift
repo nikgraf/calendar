@@ -105,6 +105,9 @@ struct EventDTO: Sendable {
   let description: String?
   let endDate: String?
   let endUtc: Double
+  /// `calendarItemExternalIdentifier`: unlike `id`, the same on every
+  /// device the event syncs to (shared by the occurrences of a series).
+  let externalId: String?
   let geo: (lat: Double, lng: Double, name: String?)?
   let hasRecurrence: Bool
   let id: String
@@ -132,6 +135,7 @@ struct EventDTO: Sendable {
     if !attendees.isEmpty { out["attendees"] = attendees.map { $0.toDictionary() } }
     if let description { out["description"] = description }
     if let endDate { out["endDate"] = endDate }
+    if let externalId { out["externalId"] = externalId }
     if let geo {
       var g: [String: Any] = ["lat": geo.lat, "lng": geo.lng]
       if let name = geo.name { g["name"] = name }
@@ -159,6 +163,13 @@ struct GeoWrite: Sendable {
   let lat: Double
   let lng: Double
   let name: String?
+}
+
+/// One write of a batch (`calendar.applyBatch`): single events only.
+enum BatchOp: Sendable {
+  case create(calendarId: String, write: EventWriteDTO)
+  case delete(id: String, originalStartUtc: Double?)
+  case update(id: String, originalStartUtc: Double?, write: EventWriteDTO)
 }
 
 struct EventWriteDTO: Sendable {
@@ -384,6 +395,8 @@ private func sourceTypeName(_ type: EKSourceType?) -> String {
 
 /// EventKit only matches events inside a four-year span per predicate.
 private let chunkDays = 4 * 365
+/// A batch is one commit; a caller with more work sends several.
+private let maxBatchOps = 200
 
 private func eventDTO(_ event: EKEvent) -> EventDTO? {
   guard let id = event.eventIdentifier, let start = event.startDate, let end = event.endDate,
@@ -428,7 +441,8 @@ private func eventDTO(_ event: EKEvent) -> EventDTO? {
   return EventDTO(
     alarms: alarms, attendees: attendees, calendarId: calendar.calendarIdentifier,
     description: notes,
-    endDate: endDay, endUtc: ms(end), geo: geo, hasRecurrence: event.hasRecurrenceRules, id: id,
+    endDate: endDay, endUtc: ms(end), externalId: event.calendarItemExternalIdentifier, geo: geo,
+    hasRecurrence: event.hasRecurrenceRules, id: id,
     isAllDay: isAllDay, isDetached: event.isDetached, location: location,
     occurrenceStartUtc: repeats ? event.occurrenceDate.map(ms) : nil,
     organizerEmail: email(event.organizer?.url),
@@ -509,6 +523,39 @@ actor AppleCalendarBridge {
         sourceTitle: calendar.source?.title ?? "", sourceType: sourceTypeName(calendar.source?.sourceType),
         title: calendar.title, type: calendarTypeName(calendar.type))
     }
+  }
+
+  /// A new calendar in the account new events go to by default, when that
+  /// is iCloud or another CalDAV account, else on this device. Exchange is
+  /// never picked: a calendar mirror — the one caller — marks its copies
+  /// in the event URL, which Exchange does not keep.
+  func createCalendar(title: String) throws -> CalendarDTO {
+    try requireAccess()
+    let usable = { (source: EKSource) in source.sourceType == .calDAV || source.sourceType == .local }
+    var candidates: [EKSource] = []
+    if let preferred = store.defaultCalendarForNewEvents?.source, usable(preferred) {
+      candidates.append(preferred)
+    }
+    candidates += store.sources.filter { $0.sourceType == .calDAV }
+    candidates += store.sources.filter { $0.sourceType == .local }
+    var failure = "no account on this device accepts a new calendar"
+    var tried = Set<String>()
+    for source in candidates where tried.insert(source.sourceIdentifier).inserted {
+      let calendar = EKCalendar(for: .event, eventStore: store)
+      calendar.title = title
+      calendar.source = source
+      do {
+        try store.saveCalendar(calendar, commit: true)
+        return CalendarDTO(
+          allowsModifications: calendar.allowsContentModifications,
+          colorHex: hexColor(calendar.cgColor), id: calendar.calendarIdentifier, isDefault: false,
+          sourceTitle: source.title, sourceType: sourceTypeName(source.sourceType),
+          title: calendar.title, type: calendarTypeName(calendar.type))
+      } catch {
+        failure = error.localizedDescription
+      }
+    }
+    throw AppleCalendarBridgeError.saveFailed(failure)
   }
 
   func setColor(calendarId: String, colorHex: String) throws {
@@ -724,6 +771,53 @@ actor AppleCalendarBridge {
     }
   }
 
+  /// Several single-event writes under one commit: one database change,
+  /// one EKEventStoreChanged, and nothing half-written when the process is
+  /// cut off. A write that cannot be made (its event or calendar is gone,
+  /// a bad field) is skipped and reported by index; the rest still land.
+  func applyBatch(_ ops: [BatchOp]) throws -> [(index: Int, message: String)] {
+    try requireAccess()
+    var failures: [(index: Int, message: String)] = []
+    var staged = 0
+    for (index, op) in ops.enumerated() {
+      do {
+        switch op {
+        case .create(let calendarId, let write):
+          guard let calendar = store.calendar(withIdentifier: calendarId) else {
+            throw AppleCalendarBridgeError.notFound("calendar \(calendarId)")
+          }
+          let event = EKEvent(eventStore: store)
+          event.calendar = calendar
+          event.timeZone = TimeZone.current
+          try apply(write, to: event)
+          try store.save(event, span: .thisEvent, commit: false)
+        case .update(let id, let originalStartUtc, let write):
+          let event = try occurrence(id: id, originalStartUtc: originalStartUtc)
+          try apply(write, to: event)
+          try store.save(event, span: .thisEvent, commit: false)
+        case .delete(let id, let originalStartUtc):
+          let event = try occurrence(id: id, originalStartUtc: originalStartUtc)
+          try store.remove(event, span: .thisEvent, commit: false)
+        }
+        staged += 1
+      } catch let error as AppleCalendarBridgeError {
+        failures.append((index, error.message))
+      } catch {
+        failures.append((index, "saveFailed: \(error.localizedDescription)"))
+      }
+    }
+    if staged > 0 {
+      do {
+        try store.commit()
+      } catch {
+        // Nothing of the batch may stay staged for a later, unrelated commit.
+        store.reset()
+        throw AppleCalendarBridgeError.saveFailed(error.localizedDescription)
+      }
+    }
+    return failures
+  }
+
   /// Moves a single event, or a whole series (with its detached
   /// occurrences), to another calendar of this store.
   func move(id: String, calendarId: String) throws -> EventDTO {
@@ -892,6 +986,37 @@ enum AppleCalendarDispatch {
       let event = try await bridge.move(
         id: try text(params, "id"), calendarId: try text(params, "calendarId"))
       return ["event": event.toDictionary()]
+    case "calendar.createCalendar":
+      let calendar = try await bridge.createCalendar(title: try text(params, "title"))
+      return ["calendar": calendar.toDictionary()]
+    case "calendar.applyBatch":
+      guard let items = params["ops"] as? [Any], items.count <= maxBatchOps else {
+        throw AppleCalendarBridgeError.badRequest("ops: at most \(maxBatchOps)")
+      }
+      var ops: [BatchOp] = []
+      for item in items {
+        guard let op = item as? [String: Any] else {
+          throw AppleCalendarBridgeError.badRequest("ops")
+        }
+        switch op["kind"] as? String {
+        case "create":
+          ops.append(
+            .create(calendarId: try text(op, "calendarId"), write: try write(op["event"])))
+        case "update":
+          ops.append(
+            .update(
+              id: try text(op, "id"), originalStartUtc: try originalStart(op),
+              write: try write(op["changes"])))
+        case "delete":
+          ops.append(.delete(id: try text(op, "id"), originalStartUtc: try originalStart(op)))
+        default:
+          throw AppleCalendarBridgeError.badRequest("ops: unknown kind")
+        }
+      }
+      let failures = try await bridge.applyBatch(ops)
+      return [
+        "failures": failures.map { ["index": $0.index, "message": $0.message] as [String: Any] }
+      ]
     case "calendar.setColor":
       try await bridge.setColor(
         calendarId: try text(params, "calendarId"), colorHex: try text(params, "colorHex"))

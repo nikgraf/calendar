@@ -35,6 +35,23 @@ describe('priority buckets', () => {
 });
 
 describe('mapReminder', () => {
+  it('keeps what is the same on every device: the external id and a zoned due instant', () => {
+    const record = mapReminder(
+      {
+        ...base,
+        dueDate: '2030-01-02',
+        dueTime: '14:30',
+        dueUtc: 1_893_591_000_000,
+        externalId: 'ext-1',
+      },
+      'apple-reminders',
+    );
+    expect(record).toMatchObject({ dueUtc: 1_893_591_000_000, externalId: 'ext-1' });
+    const floating = mapReminder(base, 'apple-reminders');
+    expect(floating.dueUtc).toBeUndefined();
+    expect(floating.externalId).toBeUndefined();
+  });
+
   it('maps a timed, prioritised, repeating reminder', () => {
     const record = mapReminder(
       {

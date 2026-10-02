@@ -51,6 +51,8 @@ export const mapReminder = (reminder: ReminderJson, accountId: string): TaskReco
     ...(reminder.completedAt === undefined ? {} : { completedAt: reminder.completedAt }),
     ...(reminder.dueDate === undefined ? {} : { dueDate: reminder.dueDate }),
     ...(reminder.dueTime === undefined ? {} : { dueTime: reminder.dueTime }),
+    ...(reminder.dueUtc === undefined ? {} : { dueUtc: reminder.dueUtc }),
+    ...(reminder.externalId === undefined ? {} : { externalId: reminder.externalId }),
     id: reminder.id,
     listId: reminder.listId,
     ...(reminder.notes === undefined || reminder.notes === '' ? {} : { notes: reminder.notes }),

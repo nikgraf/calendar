@@ -108,6 +108,8 @@ export const makeFakeRemindersClient = (
           {
             alarms: [],
             completed: false,
+            // EventKit hands out both; only this one is the same on every device.
+            externalId: `ext-${id}`,
             id,
             listId,
             priority: 0,

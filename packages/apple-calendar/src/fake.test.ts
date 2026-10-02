@@ -50,6 +50,65 @@ const setup = () =>
 const window = { endUtc: first + 5 * 7 * DAY, startUtc: first - DAY };
 const run = <A, E>(effect: Effect.Effect<A, E>) => Effect.runPromise(effect);
 
+describe('fake EventKit batches and calendars', () => {
+  it('applies a batch write by write and reports the ones it could not make', async () => {
+    const { client, state } = setup();
+    const single = await run(
+      client.create({
+        calendarId: 'cal-home',
+        event: { endUtc: first + HOUR, startUtc: first, title: 'Single' },
+      }),
+    );
+    // Both ids exist; only the external one is the same on every device.
+    expect(single.externalId).toBe(`ext-${single.id}`);
+    const failures = await run(
+      client.applyBatch({
+        ops: [
+          {
+            calendarId: 'cal-home',
+            event: {
+              endUtc: first + 2 * HOUR,
+              startUtc: first + HOUR,
+              title: 'Created',
+              url: 'x-solunivo-mirror:abc',
+            },
+            kind: 'create',
+          },
+          { changes: { location: null, title: 'Renamed' }, kind: 'update', ref: { id: single.id } },
+          { kind: 'delete', ref: { id: 'ek-nope' } },
+          { calendarId: 'cal-nope', event: { title: 'Lost' }, kind: 'create' },
+        ],
+      }),
+    );
+    expect(failures.map((failure) => failure.index)).toEqual([2, 3]);
+    expect(failures[0]?.message).toContain('notFound');
+    const titles = [...state.series.values()].map((series) => series.event.title).sort();
+    expect(titles).toEqual(['Created', 'Renamed', 'Standup']);
+  });
+
+  it('refuses a batch above the cap', async () => {
+    const { client } = setup();
+    const ops = Array.from({ length: 201 }, () => ({
+      kind: 'delete' as const,
+      ref: { id: 'ek-nope' },
+    }));
+    const error = await run(Effect.flip(client.applyBatch({ ops })));
+    expect(error._tag).toBe('AppleCalendarRequestError');
+  });
+
+  it('creates a writable calendar in a CalDAV account', async () => {
+    const { client } = setup();
+    const created = await run(client.createCalendar({ title: 'Availability' }));
+    expect(created).toMatchObject({
+      allowsModifications: true,
+      sourceType: 'calDAV',
+      title: 'Availability',
+    });
+    const listed = await run(client.listCalendars());
+    expect(listed.map((calendar) => calendar.title)).toContain('Availability');
+  });
+});
+
 describe('fake EventKit spans', () => {
   it('expands a series into occurrences named by their slot', async () => {
     const { client } = setup();
