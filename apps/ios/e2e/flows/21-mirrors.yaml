@@ -54,13 +54,21 @@ tags:
 - extendedWaitUntil:
     visible: 'Up to date — 1 event mirrored.'
     timeout: 20000
-# Leave the settings as found for the next flow.
+# Leave the settings as found for the next flow. The row's action line
+# sits at the sheet's bottom edge after the scroll above; XCTest reports a
+# clipped control as visible, so it is centred first or the tap lands on
+# nothing (CI run 37073975532).
 - scrollUntilVisible:
     element:
-      text: 'Delete'
+      id: 'mirror-delete-.*'
     direction: DOWN
+    centerElement: true
     timeout: 10000
-- tapOn: 'Delete'
+- tapOn:
+    id: 'mirror-delete-.*'
+- extendedWaitUntil:
+    visible: 'Delete and remove copies'
+    timeout: 5000
 - tapOn: 'Delete and remove copies'
 - extendedWaitUntil:
     notVisible: 'Up to date — 1 event mirrored.'
