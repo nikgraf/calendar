@@ -20,7 +20,7 @@
   "devDependencies": {
     "@effect/sql-sqlite-node": "catalog:",
     "@effect/vitest": "catalog:",
-    "@types/node": "^26.1.0",
+    "@types/node": "^26.6.3",
     "typescript": "catalog:",
     "vitest": "catalog:"
   }
