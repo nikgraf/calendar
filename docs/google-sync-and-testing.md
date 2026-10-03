@@ -647,28 +647,43 @@ Flakiness lessons (each caused a real CI failure — keep them enforced):
   binary download into "CDP page target not found". Locally:
   `CALENDAR_E2E_REMINDERS=real E2E=1 pnpm exec vp test run apps/desktop/e2e/remindersReal.e2e.ts`
   (creates and deletes reminders in _your_ database).
-- `ios-e2e` (macos-26): Maestro against the **EAS** dev client. CI never
-  compiles the app — `apps/ios/e2e/ci/fetch-dev-client.sh` looks up the
-  `development-simulator` build for the commit's native fingerprint
-  (`expo-updates fingerprint:generate`, the hash `ios.yml` compares),
-  requests one only if none exists, and the extracted `.app` lives in the
-  Actions cache under that fingerprint, so JS-only pushes download
-  nothing. `prepare-simulator.sh` boots the newest iPhone, installs, and
-  pre-grants Reminders with `simctl privacy grant reminders` (supported);
-  Metro on the runner serves the commit's JS. Two things made the dev
-  launcher's 10 s request timeout bite on the runner and are handled
-  before it is opened: the bundle is warmed through the manifest's
-  `launchAsset.url` (so the request shares Metro's cache with the
-  client's), and the runtime version is pinned to the computed
-  fingerprint (`EXPO_RUNTIME_VERSION_PIN`, read by `app.config.js` and
-  set on the Metro step only, never while the fingerprint is computed) —
-  with the fingerprint policy Expo CLI re-runs a full project
-  fingerprint for _every_ manifest request, ~2 s on a laptop and past
-  10 s on the runner. The whole job runs under `APP_VARIANT=development`:
-  the dev client is the dev variant (`com.solunivo.app.dev`, which is what
-  every flow's `appId` and the `simctl` grants name), and its fingerprint
-  differs from production's. The dev client is opened on `127.0.0.1`. Two Maestro invocations: the bootstrap flow, then the rest —
-  Maestro ignores `config.yaml` execution order (maestro#2231).
+- `ios-e2e` (macos-26, two shards): Maestro against an **EAS** build with
+  the commit's JS embedded — no Metro, no dev launcher. CI never compiles
+  the app: `apps/ios/e2e/ci/fetch-eas-build.sh` looks up the
+  `e2e-simulator` build (the dev variant in Release configuration) for the
+  commit's native fingerprint (`expo-updates fingerprint:generate`, the
+  hash `ios.yml` compares), requests one only if none exists, and the
+  extracted `.app` lives in the Actions cache under that fingerprint
+  (`ios-e2e-app-<hash>`), so JS-only pushes download nothing.
+  `repack-app.sh` then bundles the commit's JS (`@expo/repack-app
+--js-bundle-only`, about 20 s) into a copy of that app, switches
+  expo-updates off in its `Expo.plist` (a launch must never fetch a
+  published update over the bundle under test) and re-signs it ad hoc.
+  `EXPO_PUBLIC_CALENDAR_GOOGLE=fixture` is set on that step: it is inlined
+  at bundle time. `prepare-simulator.sh boot` runs right after checkout —
+  a runner's first boot spends two minutes in data migration, which then
+  overlaps the install and the bundling — and `prepare-simulator.sh
+install` waits for it, installs, and pre-grants Reminders with `simctl
+privacy grant reminders` (supported). The whole job runs under
+  `APP_VARIANT=development`: the app is the dev variant
+  (`com.solunivo.app.dev`, which is what every flow's `appId` and the
+  `simctl` grants name), and its fingerprint differs from production's.
+  The flows are split over two runners by `e2e/ci/shard-flows.mjs` (every
+  `ci` flow, by position in the sorted file list — a new flow needs no
+  registration); shard 1 first runs the permissions flow in its own
+  Maestro invocation, since Maestro ignores `config.yaml` execution order
+  (maestro#2231). Only shard 1 may request a missing EAS build; shard 2
+  waits for it (`--wait-only`). The required check keeps the old job name:
+  a small ubuntu job that passes when the shards passed or were skipped.
+  Why this shape: with the dev client a run took 49 min on one runner —
+  18 min before the first regular flow (simulator, Metro, bootstrapping
+  the launcher) and about 30 s per `launchApp` re-downloading the bundle.
+  To reproduce a CI run locally: `eas build:list --build-profile
+e2e-simulator`, `fetch-eas-build.sh <fingerprint> e2e-simulator
+build/e2e-app`, `repack-app.sh`, a fresh simulator, then `maestro test`
+  with the shard's files. `google-live.yml` still drives the dev client
+  with Metro (the `development-simulator` profile, the bootstrap flow,
+  `EXPO_RUNTIME_VERSION_PIN`).
 - `testing-build` (macos-26, main only): signed + notarized arm64 zip
   incl. the Swift model helper — macos-26 is the only runner image with
   the FoundationModels SDK. See docs/distribution.md.

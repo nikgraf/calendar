@@ -164,22 +164,22 @@ in ~30s and comments the channel name on the PR.
 
 The app exists twice, and the two install side by side on one device:
 
-|               | Production                       | Dev                                           |
-| ------------- | -------------------------------- | --------------------------------------------- |
-| Bundle id     | `com.solunivo.app`               | `com.solunivo.app.dev`                        |
-| Name, icon    | Solunivo, the light icon         | Solunivo Dev, the dark icon                   |
-| EAS profiles  | `testflight`                     | `development`, `development-simulator`        |
-| Distribution  | TestFlight, later the App Store  | internal (ad hoc) and the simulator CI drives |
-| URL schemes   | `solunivo`, its Google redirect  | `solunivo-dev`, its Google redirect           |
-| Google client | `app.json` → `googleIosClientId` | `DEV_GOOGLE_IOS_CLIENT_ID` in `app.config.js` |
-| Meant for     | the real accounts                | test accounts, Metro, Maestro                 |
+|               | Production                       | Dev                                                     |
+| ------------- | -------------------------------- | ------------------------------------------------------- |
+| Bundle id     | `com.solunivo.app`               | `com.solunivo.app.dev`                                  |
+| Name, icon    | Solunivo, the light icon         | Solunivo Dev, the dark icon                             |
+| EAS profiles  | `testflight`                     | `development`, `development-simulator`, `e2e-simulator` |
+| Distribution  | TestFlight, later the App Store  | internal (ad hoc) and the simulator CI drives           |
+| URL schemes   | `solunivo`, its Google redirect  | `solunivo-dev`, its Google redirect                     |
+| Google client | `app.json` → `googleIosClientId` | `DEV_GOOGLE_IOS_CLIENT_ID` in `app.config.js`           |
+| Meant for     | the real accounts                | test accounts, Metro, Maestro                           |
 
 `apps/ios/app.json` is the production app as written;
 `apps/ios/app.config.js` layers the dev variant on top when
 `APP_VARIANT=development`. **Unset means production**, so a release job
 that forgets the variable can never ship the dev identity — `ios.yml` sets
 nothing. The dev side sets it everywhere it is needed: the two development
-profiles in `eas.json`, the `start` / `ios` / `prebuild` scripts, the
+profiles and `e2e-simulator` in `eas.json`, the `start` / `ios` / `prebuild` scripts, the
 `ios-e2e` and `live-ios` jobs, and `check-devclient.mjs`.
 
 What that buys and what it does not:
@@ -293,18 +293,24 @@ quickest way to confirm a rebuild picked up `expo-updates`.
 Maestro e2e (`pnpm test:e2e:ios`) runs against this dev client, so install a
 fresh one before those flows after a native change.
 
-The same profile has a second consumer: CI's `ios-e2e` job fetches the
-`development-simulator` build whose fingerprint matches the commit
-(`eas build:list --fingerprint-hash`, then the archive URL) and keeps the
-extracted `.app` in the Actions cache keyed on that fingerprint. Only a
-commit with a **new** native fingerprint and no finished build for it
-makes CI request one (`eas build --profile development-simulator`), so
-the quota cost is one simulator build per native change — the same
-economics as the TestFlight gate. Running `eas build --profile
-development-simulator` locally after a native change means CI finds it
-ready. The jobs compute the fingerprint under `APP_VARIANT=development`
-(job-level env); without it they would look up production's hash and
-never find a dev client.
+The same profile has a second consumer: the nightly `live-ios` job
+(`google-live.yml`) fetches the `development-simulator` build whose
+fingerprint matches the commit (`eas build:list --fingerprint-hash`, then
+the archive URL) and keeps the extracted `.app` in the Actions cache keyed
+on that fingerprint.
+
+CI's `ios-e2e` job does the same with a third profile, `e2e-simulator`:
+the dev variant (same bundle id, so not a third variant) built in Release
+configuration for the simulator, without the dev client. The job embeds
+each commit's JS into that build (`apps/ios/e2e/ci/repack-app.sh`) and
+runs it with no Metro — see docs/google-sync-and-testing.md. Only a commit
+with a **new** native fingerprint and no finished build for it makes a job
+request one, so the quota cost is one simulator build per native change
+and profile — the same economics as the TestFlight gate. Running `eas
+build --profile e2e-simulator` locally after a native change means CI
+finds it ready. The jobs compute the fingerprint under
+`APP_VARIANT=development` (job-level env); without it they would look up
+production's hash and never find a build.
 
 ## Device dev client (next to the TestFlight app)
 

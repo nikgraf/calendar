@@ -23,6 +23,15 @@
         "simulator": true
       }
     },
+    "e2e-simulator": {
+      "distribution": "internal",
+      "env": {
+        "APP_VARIANT": "development"
+      },
+      "ios": {
+        "simulator": true
+      }
+    },
     "testflight": {
       "autoIncrement": true,
       "channel": "main",
