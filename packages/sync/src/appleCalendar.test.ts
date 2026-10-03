@@ -3,7 +3,15 @@ import {
   type AppleEventJson,
   makeFakeAppleCalendarClient,
 } from '@calendar/apple-calendar';
-import { Account, APPLE_CALENDAR_ACCOUNT_ID, plainDateToUtcMs, Temporal } from '@calendar/core';
+import {
+  Account,
+  APPLE_CALENDAR_ACCOUNT_ID,
+  encodeMirrorUrl,
+  mirrorKeyHash,
+  mirrorTag,
+  plainDateToUtcMs,
+  Temporal,
+} from '@calendar/core';
 import { AccountRepo, CalendarRepo, reposLayer, runMigrations } from '@calendar/db';
 import { EVENTS_KEY } from '@calendar/db/keys';
 import {
@@ -28,12 +36,14 @@ const inertGoogle: GoogleCalendarClientShape = {
   deleteEvent: () => Effect.die('unexpected deleteEvent'),
   getColors: () => Effect.succeed({ calendar: {} }),
   getEvent: () => Effect.die('unexpected get'),
+  insertCalendar: () => Effect.die('not used'),
   insertEvent: () => Effect.die('unexpected insertEvent'),
   listCalendars: () => Effect.succeed({ items: [] }),
   listEvents: () => Effect.succeed({ items: [] }),
   moveEvent: () => Effect.die('unexpected moveEvent'),
   patchCalendarListEntry: () => Effect.die('unexpected calendarList patch'),
   patchEvent: () => Effect.die('unexpected patchEvent'),
+  replaceEvent: () => Effect.die('not used'),
 };
 
 const testLayer = (fake: ReturnType<typeof makeFakeAppleCalendarClient>) =>
@@ -227,6 +237,47 @@ describe('Apple Calendar mirror and read-through', () => {
       yield* (yield* CalendarRepo).setVisible(APPLE_CALENDAR_ACCOUNT_ID, 'ek-work', false);
       yield* (yield* AppleCalendarEvents).invalidate;
       expect((yield* eventsInWindow).map((entry) => entry.title)).not.toContain('Review');
+    }).pipe(Effect.provide(testLayer(fake)));
+  });
+
+  it.effect('never draws a calendar mirror’s copy', () => {
+    const fake = fakeWith();
+    return Effect.gen(function* () {
+      yield* connected;
+      const marker = encodeMirrorUrl({
+        contentHash: '0123456789abcdef',
+        keyHash: mirrorKeyHash('mirror-1', 'g|cal|evt'),
+        rev: 1000,
+        tag: mirrorTag('mirror-1'),
+      });
+      yield* fake.client.applyBatch({
+        ops: [
+          {
+            calendarId: 'ek-home',
+            event: {
+              endUtc: seriesStart + HOUR,
+              startUtc: seriesStart,
+              title: 'Busy',
+              url: marker,
+            },
+            kind: 'create',
+          },
+          {
+            calendarId: 'ek-home',
+            event: {
+              endUtc: seriesStart + HOUR,
+              startUtc: seriesStart,
+              title: 'Own event with a link',
+              url: 'https://example.com/agenda',
+            },
+            kind: 'create',
+          },
+        ],
+      });
+      yield* (yield* AppleCalendarEvents).invalidate;
+      const titles = (yield* eventsInWindow).map((entry) => entry.title);
+      expect(titles).toContain('Own event with a link');
+      expect(titles).not.toContain('Busy');
     }).pipe(Effect.provide(testLayer(fake)));
   });
 

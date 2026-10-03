@@ -55,6 +55,7 @@ describe('runMigrations', () => {
       expect(yield* namesOf('index')).toEqual([
         'idx_contacts_email',
         'idx_events_masters',
+        'idx_events_mirror',
         'idx_events_range',
         'idx_events_recurring',
         'idx_events_stale',
@@ -72,6 +73,10 @@ describe('runMigrations', () => {
       expect(yield* columnsOf('pending_ops')).toContain('conflict_at');
       expect(yield* columnsOf('pending_ops')).toContain('server_payload');
       expect(yield* columnsOf('pending_ops')).toContain('carried_text');
+      expect(yield* columnsOf('events')).toEqual(
+        expect.arrayContaining(['mirror', 'transparency', 'visibility']),
+      );
+      expect(yield* columnsOf('tasks')).toEqual(expect.arrayContaining(['due_utc', 'external_id']));
     }).pipe(Effect.provide(sqlLayer())),
   );
 

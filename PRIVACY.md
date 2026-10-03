@@ -43,6 +43,14 @@ Calendar, Apple Reminders and your address book, for the same purposes.
   until you create an agent, and each agent only gets the calendars and
   lists you grant it. What an agent does with what it reads is up to that
   agent and its provider.
+- **Goes where you point a calendar mirror.** Under Settings → Mirrors
+  you can have events from your calendars and lists copied into one
+  calendar you share, reduced to what you choose (just "Busy", or the
+  title and place). Those copies are written into your own Google
+  calendar or Apple calendar by the app on your device, and Google data
+  can end up in an Apple calendar this way, or the other way round. The
+  copies carry an opaque marker so the app can find them again; it names
+  nothing about the original.
 - **Stays on your device, too:** quick-add parsing, find-a-time
   suggestions and dictation use Apple's on-device models; your text and
   voice are not sent anywhere for this.

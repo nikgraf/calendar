@@ -231,6 +231,14 @@ rather than behind safeStorage.
   obvious way out.
 - Read access to one calendar plus write access to a _shared_ one is
   still a path for data to leave. The grant is the user's call.
+- A calendar mirror (Settings → Mirrors) is such a path by design: an
+  agent's write into a calendar that is a mirror's source reaches the
+  mirror's destination — reduced to the mirror's allow-list — on the next
+  run, without any further approval. The approval summary describes the
+  write the agent asked for; where it is copied is the user's standing
+  choice. A mirror's copies are never visible to agents (hidden from every
+  shared read), and an agent granted the destination can see and change
+  them like any event there.
 - The relay needs the RunAsNode fuse enabled. A Swift relay would allow
   flipping it (see todo.md).
 

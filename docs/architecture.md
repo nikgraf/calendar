@@ -259,9 +259,14 @@ Rules that keep the queue correct:
 - **Apple Reminders** (the synthetic `apple-reminders` account, created by
   the `connectReminders` rpc after the EventKit prompt): SQLite holds the
   latest **complete** EventKit snapshot — open and completed, dated and
-  undated (undated rows are stored for the future list view; `getWindow`
-  excludes them), so paging any distance ahead or back reads locally,
-  like Google Tasks. `syncReminders` checks authorization first — no
+  undated, so paging any distance ahead or back reads locally, like
+  Google Tasks. Where a task is drawn is one rule, `taskCalendarDate`
+  (core `taskTiming.ts`): an open task on its due day, or on today once
+  that day has passed or when it has none; a completed one on its due
+  day, or on the day it was completed when it has no due day or was
+  completed late. `getTasksInRange` therefore returns the due-day window
+  (`getWindow`, which still excludes undated rows — agent reads use it)
+  plus the open undated tasks and the completions around the window. `syncReminders` checks authorization first — no
   access flags the account, access regained heals it without
   reconnecting; an _unavailable_ bridge is skipped, not mistaken for a
   revoked grant. The bridge's `reminders.snapshot({ changedSince })`
@@ -360,6 +365,79 @@ Rules that keep the queue correct:
   confirms `moveLossSummary` when anything is dropped, then saves field
   edits at the source and moves. Converting an event into a task reuses
   the same source loading and series delete (`loadSource`, `deleteFrom`).
+
+## Calendar mirrors (packages/sync/src/mirrors.ts, core mirror/)
+
+A mirror copies several sources (Google and Apple calendars, Google task
+lists, Reminders lists) one way into one destination calendar, reduced to
+an allow-list of fields, so a calendar can be shared without the details.
+
+- **A run is a reconcile, not a sync.** What should exist is computed from
+  the sources (`loadMirrorItems` → `buildMirrorCopies`), what exists is
+  read from the destination by its markers, and `planMirror` writes the
+  difference. Nothing remembers which copy belongs to which source: the
+  destination is the state. So any device can run a mirror, a run cut off
+  by the OS simply runs again, and two devices running the same mirror
+  agree — provided their inputs agree, which is why sources are read with
+  their own queries (local show/hide is ignored), "today" and the window
+  are computed in the mirror's own `timeZone`, and source keys are
+  portable (Google ids; EventKit's external identifier, new on both
+  bridges, since `eventIdentifier` differs per device).
+- **Identity and markers.** `keyHash = sha256(mirrorId | sourceKey)`.
+  Google: the event id is `slnvmr` + keyHash (a racing second insert gets
+  409 and becomes a confirming replace), and the private property
+  `solunivo.mirror` holds `tag.rev.contentHash`. Apple: the URL field holds
+  `x-solunivo-mirror:keyHash.tag.rev.contentHash`. A Google row is a copy
+  only when id and property agree, so an event someone duplicated from a
+  copy is theirs. `rev` is the definition's `updatedAt`; a device whose
+  definition is older than a copy's rev pauses ("changed on another
+  device"); after a definition change at least one copy is restamped so
+  the other device notices. Everything in a marker is opaque: the
+  destination is shared with others who can read both carriers.
+- **Writes.** Google copies go through `replaceEvent` (PUT: a switched-off
+  field must leave the copy; PATCH keeps omitted fields), paced, in chunks
+  acked through `applyPage(mode: 'ack')` under the engine's gate
+  (`SyncEngine.exclusive`) so a pull cannot interleave. Apple copies go
+  through `calendar.applyBatch`, one commit per batch. No guests, no
+  reminders (`useDefault: false`, none), the mirror's zone, never the
+  source's.
+- **When a device runs a mirror** (`mirrorResolve.ts`): every source and
+  the destination resolve to exactly one row here and their accounts are
+  ok; every Google calendar and list involved was pulled successfully
+  within five minutes (`sync_state`); no pending op targets a source; no
+  other mirror's copies are in the destination; an Apple destination is
+  iCloud, CalDAV or local (Exchange drops the URL). Otherwise the status
+  says why, in words (`describeMirrorStatus`).
+- **Backstops** for what cannot be checked (EventKit never says whether
+  iCloud has caught up): a plan that would delete more than
+  max(10, 30 %) of the copies with an unchanged definition waits ten
+  minutes (or "Run now"); the same create or update made a third time
+  within a day pauses the mirror on this device until it is switched on
+  again. Deletes are never counted: when a definition change empties the
+  destination, nothing carries the new revision, and a device still on
+  the old definition writes the excluded copies back until its own
+  creates trip its breaker — the device that is right keeps deleting and
+  must not pause with it. A Google insert that meets its id (409) reads
+  the event first and stands back from a newer revision, rather than
+  replacing it with the older definition's content.
+- **Triggers.** A change to events, tasks, calendars, accounts or the
+  definitions marks the inputs dirty; a finished sync pass runs the
+  mirrors (cheap gates first, the heavy part only when dirty); a heartbeat
+  follows midnight in each mirror's zone (undated and overdue tasks move
+  to today). An empty pull page no longer invalidates `EVENTS_KEY`, or
+  every quiet poll would expand months of events. iOS runs a budgeted pass
+  at the end of the background task; a first fill is foreground work.
+- **Storage.** Definitions in `device_settings` `mirrors` (portable: the
+  `mirrors` section of the settings document, import adds or updates,
+  never removes, and an imported mirror arrives switched off); on/off,
+  status, the newest revision seen and the rewrite journal in
+  `mirrors.local`, this device's own. Copies are hidden in
+  `EventRepo.getWindow` and the Apple read-through: the originals are
+  already drawn.
+- **Tasks** become events by one rule shared with the views
+  (`taskCalendarDate`): open on the due day, or today once past or when
+  undated; completed on the due day, or the completion day when undated
+  or late. A completed task's copy gets a "✓ " prefix.
 
 ## Recurring events
 

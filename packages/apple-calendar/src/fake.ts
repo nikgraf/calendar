@@ -2,6 +2,7 @@ import {
   addDaysToPlainDate,
   changesFromSubscription,
   expandRecurringEvent,
+  plainDateToUtcMs,
   type StructuredRule,
   toRRuleLines,
   truncateRecurrence,
@@ -13,12 +14,13 @@ import {
   type AppleCalendarClientShape,
   AppleCalendarRequestError,
 } from './client.ts';
-import type {
-  AppleCalendarJson,
-  AppleEventJson,
-  CalendarAuthorization,
-  EventWrite,
-  OccurrenceRef,
+import {
+  APPLE_BATCH_MAX,
+  type AppleCalendarJson,
+  type AppleEventJson,
+  type CalendarAuthorization,
+  type EventWrite,
+  type OccurrenceRef,
 } from './protocol.ts';
 
 /**
@@ -84,6 +86,14 @@ const applyWrite = (base: AppleEventJson, write: EventWrite, now: number): Apple
   if (next['isAllDay'] === false) {
     delete next['startDate'];
     delete next['endDate'];
+  }
+  // Like EventKit, an all-day event's instants follow its days (the bridge
+  // reports local midnight; the fake uses UTC midnight, a fixed zone).
+  if (next['isAllDay'] === true && typeof next['startDate'] === 'string') {
+    next['startUtc'] = plainDateToUtcMs(next['startDate']);
+    if (typeof next['endDate'] === 'string') {
+      next['endUtc'] = plainDateToUtcMs(next['endDate']);
+    }
   }
   return next as unknown as AppleEventJson;
 };
@@ -227,6 +237,35 @@ export const makeFakeAppleCalendarClient = (
   const newId = (): string => `ek-${String(state.nextId++)}`;
 
   const client: AppleCalendarClientShape = {
+    // Each write runs like its single-call sibling; one that cannot be made
+    // is reported by index and the rest still land, as in the bridge.
+    applyBatch: ({ ops }) =>
+      Effect.gen(function* () {
+        if (ops.length > APPLE_BATCH_MAX) {
+          return yield* new AppleCalendarRequestError({
+            message: `badRequest: ops: at most ${APPLE_BATCH_MAX}`,
+            method: 'applyBatch',
+          });
+        }
+        const failures: Array<{ index: number; message: string }> = [];
+        for (const [index, op] of ops.entries()) {
+          const write =
+            op.kind === 'create'
+              ? client.create({ calendarId: op.calendarId, event: op.event })
+              : op.kind === 'update'
+                ? client.update({ changes: op.changes, ref: op.ref, span: 'thisEvent' })
+                : client.delete({ ref: op.ref, span: 'thisEvent' });
+          const failure = yield* write.pipe(
+            Effect.as(undefined),
+            Effect.catchTag('AppleCalendarRequestError', (error) => Effect.succeed(error.message)),
+          );
+          if (failure !== undefined) {
+            failures.push({ index, message: failure });
+          }
+        }
+        state.calls.push('applyBatch');
+        return failures;
+      }),
     changes: changesFromSubscription((listener) => {
       changeListeners.add(listener);
       return () => {
@@ -245,6 +284,8 @@ export const makeFakeAppleCalendarClient = (
           alarms: [],
           calendarId,
           endUtc: event.endUtc ?? event.startUtc ?? now,
+          // EventKit hands out both; only this one is the same on every device.
+          externalId: `ext-${id}`,
           hasRecurrence: rules.length > 0,
           id,
           isAllDay: event.isAllDay ?? false,
@@ -260,6 +301,20 @@ export const makeFakeAppleCalendarClient = (
         }
         state.series.set(id, { deleted: new Set(), detached: new Map(), event: created, rules });
         return created;
+      }),
+    createCalendar: ({ title }) =>
+      guard('createCalendar', () => {
+        const calendar: AppleCalendarJson = {
+          allowsModifications: true,
+          id: `ek-cal-${String(state.nextId++)}`,
+          isDefault: false,
+          sourceTitle: 'iCloud',
+          sourceType: 'calDAV',
+          title,
+          type: 'calDAV',
+        };
+        state.calendars.set(calendar.id, calendar);
+        return calendar;
       }),
     delete: ({ ref, span }) =>
       guard('delete', () => {

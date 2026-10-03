@@ -72,8 +72,17 @@ comment` for inline-playable video: 10 MB on Free plans, 100 MB paid
       task (today the whole series converts, like a move; an instance
       would be `deleteRecurring(scope: 'instance')` plus a create from that
       occurrence's day).
-- [ ] Reminders follow-ups — undated reminders are mirrored but filtered
-      out at read (`repos.ts:737`, needs a list view); quick-add/⌘K creating
+- [ ] Calendar mirrors follow-ups — a merged "busy day" block for all-day
+      availability is keyed by its dates, so a window edge sliding past
+      one leaves a stale copy behind (harmless, past); a copy someone with
+      write access edited is not reverted until its source changes; the
+      Apple bridge does not read availability, so "marked free" is Google
+      only; definitions could sync through iCloud key-value storage
+      instead of the settings file (a new entitlement in every build).
+- [ ] Reminders follow-ups — undated tasks are drawn on today, but the
+      editor can neither create one nor take a due day away again
+      (`TaskDraft.dueDate` is required, `updateTask` cannot clear it);
+      quick-add/⌘K creating
       reminders (`QUICK_ADD_JSON_SCHEMA` is events-only — though a parsed
       event is now one Event | Task flip away from a reminder); subtasks/flags/
       tags; location alarms; multiple editable alarms (`alarms` is already

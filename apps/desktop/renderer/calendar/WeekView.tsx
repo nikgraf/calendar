@@ -12,6 +12,7 @@ import {
   MAX_ALL_DAY_ROWS,
   PAN_BUFFER_DAYS,
   partitionCalendarTasks,
+  taskCalendarDate,
   secondaryHourLabels,
   type SlotRange,
   slotTimes,
@@ -144,8 +145,8 @@ export function WeekView({
   };
 
   const calendarTasks = useMemo(
-    () => partitionCalendarTasks([...tasks, ...overdue], todayIso),
-    [tasks, overdue, todayIso],
+    () => partitionCalendarTasks([...tasks, ...overdue], todayIso, timeZone),
+    [tasks, overdue, todayIso, timeZone],
   );
   const timedTaskLayout = useMemo(() => {
     const byDay = new Map<string, Array<TimedBox>>();
@@ -213,28 +214,27 @@ export function WeekView({
 
   // Date-only tasks join one-day spans in the all-day lane. Timed reminders
   // are projected into the ordinary day-column overlap layout below.
+  // A late or undated completion sits on the day it was completed.
   const taskSpans = calendarTasks.allDay.flatMap((task) => {
-    if (!task.dueDate) {
-      return [];
-    }
-    const index = dayIndexOf(task.dueDate, strip);
+    const index = dayIndexOf(taskCalendarDate(task, todayIso, timeZone), strip);
     return index === -1
       ? []
       : [{ endDayIndex: index + 1, id: calendarTaskKey(task), startDayIndex: index }];
   });
-  // Overdue tasks sit on today's column, whatever their due day.
+  // Overdue and undated tasks sit on today's column until they are done.
   const todayIndex = dayIndexOf(todayIso, strip);
+  const todayTasks = calendarTasks.overdue.concat(calendarTasks.undated);
   const overdueSpans =
     todayIndex === -1
       ? []
-      : calendarTasks.overdue.map((task) => ({
+      : todayTasks.map((task) => ({
           endDayIndex: todayIndex + 1,
           id: calendarTaskKey(task),
           startDayIndex: todayIndex,
         }));
   const overdueKeys = new Set(calendarTasks.overdue.map(calendarTaskKey));
   const taskById = new Map(
-    calendarTasks.allDay.concat(calendarTasks.overdue).map((task) => [calendarTaskKey(task), task]),
+    calendarTasks.allDay.concat(todayTasks).map((task) => [calendarTaskKey(task), task]),
   );
 
   // Birthdays are one-day spans like tasks.

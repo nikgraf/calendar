@@ -4,8 +4,20 @@ tags:
   - ci
 ---
 - runFlow: ../common/launch.yaml
-- tapOn: 'Month'
+# Same as the gear in open-settings.yaml: a tap taken right after launch
+# can report COMPLETED with nothing switching (runs 37104577969 and its
+# rerun sat on the day view). Re-tap while the month title is missing.
 # Month view titles are "July 2026"-style.
+- repeat:
+    times: 3
+    while:
+      notVisible: '.* 20\d\d'
+    commands:
+      - tapOn: 'Month'
+      - extendedWaitUntil:
+          visible: '.* 20\d\d'
+          timeout: 5000
+          optional: true
 - assertVisible:
     text: '.* 20\d\d'
 - tapOn: '2 Days'

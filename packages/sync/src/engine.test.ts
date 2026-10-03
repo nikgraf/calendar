@@ -68,6 +68,7 @@ const stubClient = (
   deleteEvent: () => Effect.die('not used'),
   getColors: () => Effect.succeed({ calendar: {} }),
   getEvent: () => Effect.die('unexpected get'),
+  insertCalendar: () => Effect.die('not used'),
   insertEvent: () => Effect.die('not used'),
   listCalendars: () => Effect.succeed(calendarListPage),
   listEvents: ({ params }) => {
@@ -90,6 +91,7 @@ const stubClient = (
   moveEvent: () => Effect.die('unexpected move'),
   patchCalendarListEntry: () => Effect.die('unexpected calendarList patch'),
   patchEvent: () => Effect.die('not used'),
+  replaceEvent: () => Effect.die('not used'),
 });
 
 /**

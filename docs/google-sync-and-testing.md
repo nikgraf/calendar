@@ -275,7 +275,12 @@ SECRET`), not with `app.json`'s iOS client.
   switches on `GOOGLE_LIVE=1`: only `packages/sync/src/live/**/*.live.ts`,
   one file at a time, 120 s timeouts, no retry (a retry repeats real
   writes).
-- **What the Node files pin.** `events`: the events sync token and an
+- **What the Node files pin.** `mirrors` (2026-10-02): a calendar
+  mirror's copy under a derived id with its private marker property and
+  `useDefault: false` reminders; `events.update` (PUT) clears what the
+  body leaves out where PATCH keeps it; a deleted event keeps its id
+  reserved (re-insert → 409) and comes back by a PUT with `status:
+'confirmed'`; a second delete answers 404/410. `events`: the events sync token and an
   `idle` state, client ids and the ack's etag, a re-posted client id →
   409, an incremental pass applying a rename and a cancelled tombstone,
   PATCH-merge (a title-only patch keeps description/location), delete

@@ -88,6 +88,12 @@ export const AppleEventJson = Schema.Struct({
   /** All-day only, exclusive. */
   endDate: Schema.optional(Schema.String),
   endUtc: Schema.Number,
+  /**
+   * EKCalendarItem.calendarItemExternalIdentifier: unlike `id`, the same on
+   * every device the event syncs to, and shared by the occurrences of a
+   * series. A calendar mirror keys its sources by it.
+   */
+  externalId: Schema.optional(Schema.String),
   geo: Schema.optional(AppleGeoJson),
   hasRecurrence: Schema.Boolean,
   /** EKEvent.eventIdentifier — shared by every occurrence of a series. */
@@ -143,6 +149,27 @@ export interface OccurrenceRef {
   readonly originalStartUtc?: number | undefined;
 }
 
+/**
+ * One write of `calendar.applyBatch`: single events only (span
+ * `thisEvent`). A calendar mirror writes its copies this way — the whole
+ * batch is one commit, so one change notification and nothing half-written.
+ */
+export type BatchWrite =
+  | { readonly calendarId: string; readonly event: EventWrite; readonly kind: 'create' }
+  | { readonly kind: 'delete'; readonly ref: OccurrenceRef }
+  | { readonly changes: EventWrite; readonly kind: 'update'; readonly ref: OccurrenceRef };
+
+/** The bridge refuses a larger batch; a caller with more work sends several. */
+export const APPLE_BATCH_MAX = 200;
+
+/** The writes that could not be made, by their index in the batch; the rest landed. */
+export const ApplyBatchResult = Schema.Struct({
+  failures: Schema.Array(Schema.Struct({ index: Schema.Number, message: Schema.String })),
+});
+export type ApplyBatchResult = typeof ApplyBatchResult.Type;
+
+export const CreateCalendarResult = Schema.Struct({ calendar: AppleCalendarJson });
+
 export const StatusResult = Schema.Struct({ authorization: CalendarAuthorization });
 export const RequestAccessResult = Schema.Struct({ granted: Schema.Boolean });
 export const ListCalendarsResult = Schema.Struct({ calendars: Schema.Array(AppleCalendarJson) });
@@ -161,7 +188,9 @@ export const SeriesResult = Schema.Struct({
 export type SeriesResult = typeof SeriesResult.Type;
 
 export const APPLE_CALENDAR_METHODS = {
+  applyBatch: 'calendar.applyBatch',
   create: 'calendar.create',
+  createCalendar: 'calendar.createCalendar',
   delete: 'calendar.delete',
   events: 'calendar.events',
   listCalendars: 'calendar.listCalendars',

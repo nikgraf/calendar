@@ -1,4 +1,4 @@
-import type { SettingsDocument } from '@calendar/core';
+import type { MirrorDefinition, SettingsDocument } from '@calendar/core';
 import { AccountRepo, CalendarRepo, DeviceSettingsRepo, TaskRepo } from '@calendar/db';
 import { expect, it } from '@effect/vitest';
 import { Effect } from 'effect';
@@ -11,6 +11,7 @@ import {
   readPendingVisibility,
 } from './importedVisibility.ts';
 import { buildSettingsDocument } from './settingsExport.ts';
+import { readMirrorLocals, readMirrors } from './mirrorSettings.ts';
 import { importSettings, previewSettingsImport } from './settingsImport.ts';
 import {
   appleCalendarAccount,
@@ -34,6 +35,19 @@ const listVisibility = (accountId: string) =>
     Effect.flatMap(TaskRepo, (repo) => repo.listLists(accountId)),
     (lists) => Object.fromEntries(lists.map((list) => [list.id, list.isVisible])),
   );
+
+const mirror = (id: string, updatedAt: number, destination: string): MirrorDefinition => ({
+  busyLabel: 'Busy',
+  destination: { calendarId: destination, email: 'me@example.com', kind: 'google' },
+  fields: { description: false, location: true, title: true },
+  filters: { allDay: 'copy', declined: 'skip', free: 'copy', private: 'busy' },
+  id,
+  monthsAhead: 3,
+  name: id,
+  sources: [{ calendarId: 'work', email: 'me@example.com', kind: 'google' }],
+  timeZone: 'UTC',
+  updatedAt,
+});
 
 describe('importSettings', () => {
   it.effect('applies only the sections present, and only when they differ', () => {
@@ -63,6 +77,42 @@ describe('importSettings', () => {
       expect(applied).toHaveLength(1);
     }).pipe(Effect.provide(layer));
   });
+
+  it.effect(
+    'imports mirrors switched off, updates newer ones, never removes, and exports them',
+    () => {
+      const { layer } = makeSettingsTestLayer({});
+      return Effect.gen(function* () {
+        const document: SettingsDocument = { mirrors: [mirror('a', 10, 'shared')], version: 1 };
+        const preview = yield* previewSettingsImport(document);
+        expect(preview.settingsChanged).toEqual(['mirrors']);
+        yield* importSettings(document);
+        expect((yield* readMirrors).map((entry) => entry.id)).toEqual(['a']);
+        // Off here until its user turns it on; a repeat import is quiet.
+        expect((yield* readMirrorLocals)['a']).toEqual({ enabled: false });
+        expect((yield* importSettings(document)).settingsChanged).toEqual([]);
+
+        // A newer revision replaces; an older one is ignored; a collision is named.
+        const next: SettingsDocument = {
+          mirrors: [mirror('a', 20, 'shared'), mirror('b', 5, 'shared')],
+          version: 1,
+        };
+        const summary = yield* importSettings(next);
+        expect(summary.settingsChanged).toEqual(['mirrors']);
+        expect(summary.notes.some((note) => note.includes('same calendar'))).toBe(true);
+        expect((yield* readMirrors).map((entry) => [entry.id, entry.updatedAt])).toEqual([
+          ['a', 20],
+        ]);
+        expect(
+          (yield* importSettings({ mirrors: [mirror('a', 15, 'other')], version: 1 }))
+            .settingsChanged,
+        ).toEqual([]);
+        // A file without the section leaves them alone; the export carries them.
+        yield* importSettings({ version: 1 });
+        expect((yield* buildSettingsDocument).mirrors?.map((entry) => entry.id)).toEqual(['a']);
+      }).pipe(Effect.provide(layer));
+    },
+  );
 
   it.effect('notes a desktop-only section on a host without it', () => {
     const { applied, layer } = makeSettingsTestLayer();

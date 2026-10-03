@@ -6,6 +6,7 @@ import {
 } from '@calendar/app-state';
 import type { TaskRecord } from '@calendar/core';
 import { MoveConfirm } from './MoveConfirm.tsx';
+import { NoDueDate } from './NoDueDate.tsx';
 import { RepeatRuleFields } from './RepeatRuleFields.tsx';
 import { FIELD_CLASS, LABEL_CLASS } from './taskEditorOptions.ts';
 import { TaskListSelect } from './TaskListSelect.tsx';
@@ -55,36 +56,40 @@ export function ReminderEditorForm({
         value={taskModel.title}
       />
       <TaskListSelect disabled={Boolean(task) && !taskModel.canMoveList} taskModel={taskModel} />
-      <div className="flex gap-3">
-        <label className={`${LABEL_CLASS} flex-1`}>
-          Due
-          <input
-            className={`${FIELD_CLASS} mt-1`}
-            onChange={(input) => taskModel.setDueDate(input.target.value)}
-            type="date"
-            value={taskModel.dueDate}
-          />
-        </label>
-        <label className={`${LABEL_CLASS} flex-1`}>
-          <span className="flex items-center gap-2">
+      {taskModel.dated ? (
+        <div className="flex gap-3">
+          <label className={`${LABEL_CLASS} flex-1`}>
+            Due
             <input
-              aria-label="At a time"
-              checked={taskModel.timed}
-              onChange={(input) => taskModel.setTimed(input.target.checked)}
-              type="checkbox"
+              className={`${FIELD_CLASS} mt-1`}
+              onChange={(input) => taskModel.setDueDate(input.target.value)}
+              type="date"
+              value={taskModel.dueDate}
             />
-            Time
-          </span>
-          <input
-            aria-label="Due time"
-            className={`${FIELD_CLASS} mt-1`}
-            disabled={!taskModel.timed}
-            onChange={(input) => taskModel.setDueTime(input.target.value)}
-            type="time"
-            value={taskModel.dueTime}
-          />
-        </label>
-      </div>
+          </label>
+          <label className={`${LABEL_CLASS} flex-1`}>
+            <span className="flex items-center gap-2">
+              <input
+                aria-label="At a time"
+                checked={taskModel.timed}
+                onChange={(input) => taskModel.setTimed(input.target.checked)}
+                type="checkbox"
+              />
+              Time
+            </span>
+            <input
+              aria-label="Due time"
+              className={`${FIELD_CLASS} mt-1`}
+              disabled={!taskModel.timed}
+              onChange={(input) => taskModel.setDueTime(input.target.value)}
+              type="time"
+              value={taskModel.dueTime}
+            />
+          </label>
+        </div>
+      ) : (
+        <NoDueDate onAdd={taskModel.addDueDate} />
+      )}
       <div>
         <span className={LABEL_CLASS}>Priority</span>
         <div

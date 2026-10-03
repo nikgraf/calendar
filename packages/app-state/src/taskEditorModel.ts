@@ -76,9 +76,11 @@ export const seedDueTiming = (seed: TaskEditorSeed): { dueTime: string; timed: b
  * alarm and a repeat rule. Picking a list in another account or provider
  * moves the task on Save (a copy into the target and a delete of the
  * source, after `confirmMove` when the target cannot hold everything);
- * between two Reminders lists it re-homes in place. Due date is required
- * for both: with no task-list view in the app, an undated task would
- * simply be invisible.
+ * between two Reminders lists it re-homes in place. A new task always
+ * gets a due day. An existing undated one (made in Reminders or Google
+ * Tasks; the calendar draws it on today) opens as "no due date" and stays
+ * that way unless a day is added: showing it today is not a due day, and
+ * Save must not turn it into one.
  */
 export const useTaskEditorModel = ({
   confirm,
@@ -98,6 +100,7 @@ export const useTaskEditorModel = ({
   const [title, setTitle] = useState(existing?.title ?? '');
   const [notes, setNotes] = useState(existing?.notes ?? '');
   const [dueDate, setDueDate] = useState(existing?.dueDate ?? seed.initialDate);
+  const [dated, setDated] = useState(existing === undefined || existing.dueDate !== undefined);
   const [listKey, setListKey] = useState(
     existing
       ? listKeyOf(existing.accountId, existing.listId)
@@ -126,7 +129,7 @@ export const useTaskEditorModel = ({
     existing
       ? {
           alarm: initialAlarms[0],
-          dueDate: existing.dueDate ?? seed.initialDate,
+          dueDate: existing.dueDate,
           dueTime: existing.dueTime,
           listId: existing.listId,
           notes: existing.notes ?? '',
@@ -209,6 +212,7 @@ export const useTaskEditorModel = ({
     setTitle(next.title);
     setNotes(next.notes);
     setDueDate(next.dueDate);
+    setDated(true);
     setTimed(next.dueTime !== undefined);
     setDueTime(next.dueTime ?? '09:00');
     setAlarm(next.alarms[0]);
@@ -227,11 +231,11 @@ export const useTaskEditorModel = ({
       setError('A title and task list are required.');
       return;
     }
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(dueDate)) {
+    if (dated && !/^\d{4}-\d{2}-\d{2}$/.test(dueDate)) {
       setError('A due date is required.');
       return;
     }
-    if (provider === 'apple' && timed && !TIME_RE.test(dueTime)) {
+    if (provider === 'apple' && dated && timed && !TIME_RE.test(dueTime)) {
       setError('The due time must be HH:MM.');
       return;
     }
@@ -281,6 +285,11 @@ export const useTaskEditorModel = ({
         }
         await mutations.convertEventToTask({ ...source, draft: newDraft(), target });
       } else if (existing && !sameList && !reHomesInPlace) {
+        // A move is a copy made from the form, and a copy needs a due day.
+        if (!dated) {
+          setError('Add a due date before moving this task to another list.');
+          return;
+        }
         const loss = taskMoveLoss(existing, {
           sameAccount: existing.accountId === accountId,
           source: existing.provider,
@@ -306,8 +315,8 @@ export const useTaskEditorModel = ({
         const changes = taskEditorChanges({
           current: {
             alarm,
-            dueDate,
-            dueTime: timed ? dueTime : undefined,
+            dueDate: dated ? dueDate : undefined,
+            dueTime: dated && timed ? dueTime : undefined,
             listId: taskListId,
             notes: notes.trim(),
             priority,
@@ -354,9 +363,13 @@ export const useTaskEditorModel = ({
   };
 
   return {
+    /** Gives an undated task a due day (the form's date, today by default). */
+    addDueDate: () => setDated(true),
     adopt,
     alarm,
     canMoveList,
+    /** False for an existing task without a due day, until one is added. */
+    dated,
     dueDate,
     dueTime,
     error,

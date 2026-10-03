@@ -3,6 +3,7 @@ export const SETTINGS_PANES = [
   { id: 'general', label: 'General' },
   { id: 'accounts', label: 'Accounts' },
   { id: 'notifications', label: 'Notifications' },
+  { id: 'mirrors', label: 'Mirrors' },
   { id: 'agents', label: 'Agents' },
   { id: 'advanced', label: 'Advanced' },
 ] as const;

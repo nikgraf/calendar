@@ -33,6 +33,7 @@ import { DeviceContacts } from './deviceContacts.ts';
 import { SyncEngine } from './engine.ts';
 import { writeBirthdayReminderSettings, writeEventNotificationSettings } from './deviceSettings.ts';
 import { LocalNotifications } from './localNotifications.ts';
+import { Mirrors } from './mirrors.ts';
 import { NotificationSink, type NotificationSinkShape } from './notificationSink.ts';
 
 const alice = { contactId: 'a', day: 4, displayName: 'Alice', month: 3, year: 1994 };
@@ -471,37 +472,60 @@ describe('LocalNotifications', () => {
 const stubEngine = (syncAll: Effect.Effect<void, unknown, EventRepo>) =>
   Layer.effect(SyncEngine)(
     Effect.map(Effect.context<EventRepo>(), (context) => ({
+      exclusive: <A, E, R>(effect: Effect.Effect<A, E, R>) => effect,
       start: () => Effect.void,
       syncAll: () => Effect.orDie(Effect.provide(syncAll, context)),
     })),
   );
 
-describe('backgroundRefresh', () => {
-  it.effect('reschedules what the pull brought in', () => {
-    const scheduled = scheduledSink();
-    const pulled = Effect.flatMap(EventRepo, (repo) => repo.upsertMany([standup]));
-    return Effect.gen(function* () {
-      yield* seedGoogle();
-      yield* setClock('2026-03-01T12:00:00Z');
-      yield* backgroundRefresh('20 seconds');
-      expect(scheduled.schedules.map((plans) => plans.map((plan) => plan.key))).toEqual([
-        [STANDUP_KEY],
-      ]);
-    }).pipe(Effect.provide(stubEngine(pulled).pipe(Layer.provideMerge(testLayer(scheduled.sink)))));
+/** Mirrors that count their passes and do nothing else. */
+const stubMirrors = (passes: Array<unknown>) =>
+  Layer.succeed(Mirrors, {
+    createCalendar: () => Effect.die('not used'),
+    list: () => Effect.succeed([]),
+    preview: () => Effect.die('not used'),
+    remove: () => Effect.void,
+    run: (options) => Effect.sync(() => void passes.push(options?.budget)),
+    save: () => Effect.die('not used'),
+    setEnabled: () => Effect.void,
+    start: () => Effect.void,
   });
+
+describe('backgroundRefresh', () => {
+  it.effect(
+    'reschedules what the pull brought in, then runs the mirrors within their budget',
+    () => {
+      const scheduled = scheduledSink();
+      const passes: Array<unknown> = [];
+      const pulled = Effect.flatMap(EventRepo, (repo) => repo.upsertMany([standup]));
+      return Effect.gen(function* () {
+        yield* seedGoogle();
+        yield* setClock('2026-03-01T12:00:00Z');
+        yield* backgroundRefresh('20 seconds', '20 seconds');
+        expect(scheduled.schedules.map((plans) => plans.map((plan) => plan.key))).toEqual([
+          [STANDUP_KEY],
+        ]);
+        expect(passes).toEqual(['20 seconds']);
+      }).pipe(
+        Effect.provide(stubMirrors(passes)),
+        Effect.provide(stubEngine(pulled).pipe(Layer.provideMerge(testLayer(scheduled.sink)))),
+      );
+    },
+  );
 
   it.effect('a sync past its budget still refreshes the schedule from local data', () => {
     const scheduled = scheduledSink();
     return Effect.gen(function* () {
       yield* seedGoogle(standup);
       yield* setClock('2026-03-01T12:00:00Z');
-      const refresh = yield* Effect.forkChild(backgroundRefresh('20 seconds'));
+      const refresh = yield* Effect.forkChild(backgroundRefresh('20 seconds', '20 seconds'));
       yield* TestClock.adjust('20 seconds');
       yield* Fiber.join(refresh);
       expect(scheduled.schedules.map((plans) => plans.map((plan) => plan.key))).toEqual([
         [STANDUP_KEY],
       ]);
     }).pipe(
+      Effect.provide(stubMirrors([])),
       Effect.provide(stubEngine(Effect.never).pipe(Layer.provideMerge(testLayer(scheduled.sink)))),
     );
   });
@@ -511,9 +535,10 @@ describe('backgroundRefresh', () => {
     return Effect.gen(function* () {
       yield* seedGoogle(standup);
       yield* setClock('2026-03-01T12:00:00Z');
-      yield* backgroundRefresh('20 seconds');
+      yield* backgroundRefresh('20 seconds', '20 seconds');
       expect(scheduled.schedules).toHaveLength(1);
     }).pipe(
+      Effect.provide(stubMirrors([])),
       Effect.provide(
         stubEngine(Effect.die(new Error('errSecInteractionNotAllowed'))).pipe(
           Layer.provideMerge(testLayer(scheduled.sink)),

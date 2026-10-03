@@ -1,6 +1,7 @@
 import type {
   Account,
   AccountSyncStatus,
+  MirrorView,
   BackendPayload,
   BirthdayOccurrence,
   BirthdayReminderSettings,
@@ -82,6 +83,10 @@ export const useCalendars = (): ReadonlyArray<CalendarInfo> =>
 /** Queue of local changes not yet acknowledged by Google. */
 export const usePendingOps = (): ReadonlyArray<PendingOpSummary> =>
   unwrapList(useAtomValue(useBackendAtoms().pendingOps));
+
+/** Every calendar mirror with its state on this device. */
+export const useMirrors = (): ReadonlyArray<MirrorView> =>
+  unwrapList(useAtomValue(useBackendAtoms().mirrors));
 
 /** Events history import progress per account. */
 export const useSyncStatus = (): ReadonlyArray<AccountSyncStatus> =>
@@ -404,8 +409,10 @@ export const useBackendMutations = () => {
       convertEventToTask: set('convertEventToTask'),
       convertTaskToEvent: set('convertTaskToEvent'),
       createEvent: set('createEvent'),
+      createMirrorCalendar: set('createMirrorCalendar'),
       createTask: set('createTask'),
       deleteEvent: set('deleteEvent'),
+      deleteMirror: set('deleteMirror'),
       deleteRecurring: set('deleteRecurring'),
       deleteTask: set('deleteTask'),
       discardPendingOp: set('discardPendingOp'),
@@ -414,16 +421,20 @@ export const useBackendMutations = () => {
       moveEvent: set('moveEvent'),
       moveTask: set('moveTask'),
       previewEventToTask: set('previewEventToTask'),
+      previewMirror: set('previewMirror'),
       previewMove: set('previewMove'),
       previewSettingsImport: set('previewSettingsImport'),
       removeAccount: set('removeAccount'),
       resolveConflict: set('resolveConflict'),
       resolveLocation: set('resolveLocation'),
       respondToEvent: set('respondToEvent'),
+      runMirrorsNow: set('runMirrorsNow'),
+      saveMirror: set('saveMirror'),
       setBirthdayReminderSettings: set('setBirthdayReminderSettings'),
       setCalendarColor: set('setCalendarColor'),
       setCalendarVisible: set('setCalendarVisible'),
       setEventNotificationSettings: set('setEventNotificationSettings'),
+      setMirrorEnabled: set('setMirrorEnabled'),
       setTaskListVisible: set('setTaskListVisible'),
       setTimeZoneSettings: set('setTimeZoneSettings'),
       setViewPreferences: set('setViewPreferences'),

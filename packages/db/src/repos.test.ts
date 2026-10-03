@@ -217,6 +217,77 @@ describe('repos', () => {
     }).pipe(Effect.provide(freshDbLayer())),
   );
 
+  it.effect('keeps a mirror copy out of the window and finds it as a copy', () =>
+    Effect.gen(function* () {
+      const calendars = yield* CalendarRepo;
+      const events = yield* EventRepo;
+      yield* calendars.upsertMany([calendar()]);
+      const start = Date.parse('2026-07-02T12:00:00Z');
+      yield* events.upsertMany([
+        timedEvent({ transparency: 'transparent', visibility: 'private' }),
+        timedEvent({ id: 'slnvmrcopy', mirror: 'tag.1000.hash', title: 'Busy' }),
+      ]);
+      const window = yield* events.getWindow(start - 1, start + 1);
+      // The original is drawn; its copy is not.
+      expect(window.singles.map((event) => event.id)).toEqual(['evt-1']);
+      expect(window.singles[0]).toMatchObject({
+        transparency: 'transparent',
+        visibility: 'private',
+      });
+      expect(window.singles[0]?.mirror).toBeUndefined();
+
+      const copies = yield* events.listMirrorCopies('acc-1', 'cal-1', start, start + 1);
+      expect(copies.map((event) => [event.id, event.mirror])).toEqual([
+        ['slnvmrcopy', 'tag.1000.hash'],
+      ]);
+      // The range is by start, end exclusive.
+      expect(yield* events.listMirrorCopies('acc-1', 'cal-1', start + 1, start + 2)).toEqual([]);
+      expect(yield* events.countOrdinary('acc-1', 'cal-1', start - 1, start + 1)).toBe(1);
+    }).pipe(Effect.provide(freshDbLayer())),
+  );
+
+  it.effect(
+    'reads a mirror’s sources whatever their visibility, never another mirror’s copies',
+    () =>
+      Effect.gen(function* () {
+        const calendars = yield* CalendarRepo;
+        const events = yield* EventRepo;
+        yield* calendars.upsertMany([
+          calendar({ isVisible: false }),
+          calendar({ id: 'cal-2', isPrimary: false }),
+        ]);
+        const start = Date.parse('2026-07-02T12:00:00Z');
+        yield* events.upsertMany([
+          timedEvent(),
+          timedEvent({ id: 'slnvmrcopy', mirror: 'tag.1000.hash' }),
+          timedEvent({ id: 'evt-gone', status: 'cancelled' }),
+          timedEvent({ calendarId: 'cal-2', id: 'evt-other' }),
+          timedEvent({ id: 'series', recurrence: ['RRULE:FREQ=WEEKLY'] }),
+          timedEvent({
+            id: 'series_20260709T120000Z',
+            originalStartUtc: start + 7 * 86_400_000,
+            recurringEventId: 'series',
+          }),
+        ]);
+        // A hidden calendar is invisible to the views and still a source.
+        expect((yield* events.getWindow(start - 1, start + 1)).singles.map((e) => e.id)).toEqual([
+          'evt-other',
+        ]);
+        const source = yield* events.getSourceWindow('acc-1', ['cal-1'], start - 1, start + 1);
+        expect(source.singles.map((event) => event.id).sort()).toEqual([
+          'evt-1',
+          'series_20260709T120000Z',
+        ]);
+        expect(source.masters.map((event) => event.id)).toEqual(['series']);
+        expect(source.overrides.map((event) => event.id)).toEqual(['series_20260709T120000Z']);
+        expect(yield* events.getSourceWindow('acc-1', [], 0, start)).toEqual({
+          masters: [],
+          overrides: [],
+          singles: [],
+        });
+      }).pipe(Effect.provide(freshDbLayer())),
+  );
+
   it.effect('persists and clears event coordinates', () =>
     Effect.gen(function* () {
       const calendars = yield* CalendarRepo;

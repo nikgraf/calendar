@@ -6,6 +6,7 @@ import {
   isAppleCalendarAccount,
   isAppleRemindersAccount,
   SyncState,
+  tasksScope,
   type Account,
 } from '@calendar/core';
 import {
@@ -52,7 +53,6 @@ import { EventMutations } from './mutations.ts';
 import { cancelledOverrideTombstone } from './tombstone.ts';
 
 const CALENDAR_LIST_SCOPE = 'calendarList';
-const tasksScope = (taskListId: string): string => `tasks:${taskListId}`;
 /** updatedMin has no tombstone guarantees forever — reconcile fully daily. */
 const TASKS_FULL_PASS_INTERVAL_MS = 24 * 60 * 60 * 1000;
 /** sync_state scope for the Apple mirror: lastSyncAt is the delta stamp. */
@@ -117,6 +117,14 @@ const withTransientRetry = <A, E extends { readonly _tag: string }, R>(
 };
 
 export interface SyncEngineShape {
+  /**
+   * Runs `effect` while no sync pass does, and holds the next pass off
+   * until it is done. A calendar mirror writes its Google copies and their
+   * rows under it: a pull landing in between would put a just-deleted copy
+   * back, or a just-written one back to its old state, until the next pass.
+   * Never call `syncAll` from inside it.
+   */
+  readonly exclusive: <A, E, R>(effect: Effect.Effect<A, E, R>) => Effect.Effect<A, E, R>;
   /** Starts the polling scheduler (initial pass + every 90s) in the scope. */
   readonly start: () => Effect.Effect<void, never, never>;
   /** Full pass over every account; failures are logged, not thrown. */
@@ -304,8 +312,17 @@ const make: Effect.Effect<
             }
           }
           // One transaction per page; a pull never overwrites a row with a
-          // local edit still queued.
-          yield* eventRepo.applyPage(account.id, calendarId, { deletions, mode: 'pull', upserts });
+          // local edit still queued. An empty page (every quiet poll ends
+          // in one) writes nothing and invalidates nothing: the views, the
+          // notification planner and the calendar mirrors all recompute on
+          // EVENTS_KEY, and none of them has anything to recompute.
+          if (upserts.length > 0 || deletions.length > 0) {
+            yield* eventRepo.applyPage(account.id, calendarId, {
+              deletions,
+              mode: 'pull',
+              upserts,
+            });
+          }
           // A full list of a big calendar is many pages: let rpc handlers
           // and the UI interleave between them.
           yield* Effect.yieldNow;
@@ -952,7 +969,7 @@ const make: Effect.Effect<
       );
     });
 
-  return { start, syncAll };
+  return { exclusive: (effect) => gate.withPermits(1)(effect), start, syncAll };
 });
 
 export class SyncEngine extends Context.Service<SyncEngine, SyncEngineShape>()('sync/SyncEngine') {

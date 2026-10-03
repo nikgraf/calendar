@@ -137,7 +137,7 @@ const isRateLimited = (error: unknown): boolean =>
 
 const request = async <A>(
   token: string,
-  method: 'DELETE' | 'GET' | 'PATCH' | 'POST',
+  method: 'DELETE' | 'GET' | 'PATCH' | 'POST' | 'PUT',
   url: string,
   body?: unknown,
 ): Promise<A> => {
@@ -319,6 +319,15 @@ export const patchEvent = (
   changes: Record<string, unknown>,
 ): Promise<LiveEvent> =>
   request(token, 'PATCH', eventUrl(calendarId, eventId, '?sendUpdates=none'), changes);
+
+/** events.update — a full replace: a field the body leaves out is cleared, unlike PATCH. */
+export const putEvent = (
+  token: string,
+  calendarId: string,
+  eventId: string,
+  event: Record<string, unknown>,
+): Promise<LiveEvent> =>
+  request(token, 'PUT', eventUrl(calendarId, eventId, '?sendUpdates=none'), event);
 
 export const deleteEvent = (token: string, calendarId: string, eventId: string): Promise<void> =>
   request<void>(token, 'DELETE', eventUrl(calendarId, eventId, '?sendUpdates=none'));

@@ -23,6 +23,7 @@ import {
   EventMutations,
   finishAddAccount,
   makeSyncKicker,
+  Mirrors,
   PlatformSettings,
   SyncEngine,
   SyncInterval,
@@ -118,7 +119,9 @@ const platformLayer = Layer.mergeAll(
   syncIntervalMs > 0 ? Layer.succeed(SyncInterval, Duration.millis(syncIntervalMs)) : Layer.empty,
 );
 
-const appLayer = SyncEngine.layer.pipe(
+// The mirrors sit above the engine: they write under its gate and react to its passes.
+const appLayer = Mirrors.layer.pipe(
+  Layer.provideMerge(SyncEngine.layer),
   Layer.provideMerge(EventMutations.layer),
   // Above the Apple read path: the scheduler plans from it.
   Layer.provideMerge(LocalNotifications.layer({ timeZone: Temporal.Now.timeZoneId() })),
@@ -207,6 +210,7 @@ export const startSync = (): void => {
         const engine = yield* SyncEngine;
         yield* engine.start();
         yield* (yield* LocalNotifications).start();
+        yield* (yield* Mirrors).start();
       }),
     )
     .catch(() => {
@@ -222,11 +226,12 @@ export const kickSync = makeSyncKicker(() =>
 
 /**
  * The background task's pass: a bounded pull, then the notification
- * schedule. iOS may end the task at any time, so the pull gets 20 s and
- * the schedule refresh runs regardless.
+ * schedule, then a bounded mirror pass. iOS may end the task at any time,
+ * so the pull gets 20 s, the schedule refresh runs regardless, and the
+ * mirrors get what a steady state needs (a first fill is foreground work).
  */
 export const runBackgroundRefresh = (): Promise<void> =>
-  runtime.runPromise(backgroundRefresh('20 seconds'));
+  runtime.runPromise(backgroundRefresh('20 seconds', '20 seconds'));
 
 /** Refreshes the OS notification schedule now — on return to the foreground, next to kickSync. */
 export const runLocalNotifications = (): void => {

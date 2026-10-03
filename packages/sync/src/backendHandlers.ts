@@ -1,12 +1,14 @@
 import {
   Account,
   AccountSyncStatus,
+  addDaysToPlainDate,
   APPLE_CALENDAR_ACCOUNT_ID,
   APPLE_REMINDERS_ACCOUNT_ID,
   AppBackendRpcs,
   backendMethodNames,
+  BackendError,
   mapToBackendError,
-  type BackendError,
+  plainDateToUtcMs,
   type BackendHandlers,
   type BackendMethodName,
   type BackendPayload,
@@ -56,6 +58,7 @@ import { locationHandlers } from './locationHandlers.ts';
 import { EventMutations } from './mutations.ts';
 import { PlatformSettings } from './platformSettings.ts';
 import { buildSettingsDocument } from './settingsExport.ts';
+import { Mirrors } from './mirrors.ts';
 import { importSettings, previewSettingsImport } from './settingsImport.ts';
 
 /** Suggestions shown at once; the repo is asked for a few times that before ranking. */
@@ -66,6 +69,7 @@ export type CommonBackendServices =
   | AppleCalendarClient
   | AppleCalendarEvents
   | LocalNotifications
+  | Mirrors
   | BirthdayRepo
   | CalendarRepo
   | ContactRepo
@@ -97,6 +101,29 @@ export const commonBackendHandlers: Omit<BackendHandlers<CommonBackendServices>,
       const mutations = yield* EventMutations;
       yield* mutations.completeTask(params);
     }),
+
+  createMirrorCalendar: ({ target }) =>
+    Effect.flatMap(Mirrors, (mirrors) =>
+      mirrors.createCalendar(target).pipe(
+        // The tag tells the UI apart a scope that is missing from a failure.
+        Effect.mapError((error) => new BackendError({ message: error.message, tag: error.reason })),
+      ),
+    ),
+
+  deleteMirror: ({ id, removeCopies }) =>
+    Effect.flatMap(Mirrors, (mirrors) => mirrors.remove(id, removeCopies)),
+
+  listMirrors: () => Effect.flatMap(Mirrors, (mirrors) => mirrors.list()),
+
+  previewMirror: ({ definition }) =>
+    Effect.flatMap(Mirrors, (mirrors) => mirrors.preview(definition)),
+
+  runMirrorsNow: () => Effect.flatMap(Mirrors, (mirrors) => mirrors.run({ force: true })),
+
+  saveMirror: ({ definition }) => Effect.flatMap(Mirrors, (mirrors) => mirrors.save(definition)),
+
+  setMirrorEnabled: ({ enabled, id }) =>
+    Effect.flatMap(Mirrors, (mirrors) => mirrors.setEnabled(id, enabled)),
 
   // Asks for Contacts access (the OS prompt when undetermined) and loads
   // the address book into the typeahead cache on grant. A refusal resolves
@@ -246,7 +273,20 @@ export const commonBackendHandlers: Omit<BackendHandlers<CommonBackendServices>,
   getTasksInRange: ({ endDate, startDate }) =>
     Effect.gen(function* () {
       const taskRepo = yield* TaskRepo;
-      return yield* taskRepo.getWindow(startDate, endDate);
+      // What the calendar draws inside the window: tasks due in it, open
+      // undated ones (on today) and completions that sit on the day they
+      // were completed. The completion query is a day wider on both
+      // sides, since the views place by their own zone
+      // (`taskCalendarDate`); partitionCalendarTasks drops the doubles.
+      const [due, undated, completed] = yield* Effect.all([
+        taskRepo.getWindow(startDate, endDate),
+        taskRepo.getUndatedOpen(),
+        taskRepo.getCompletedBetween(
+          plainDateToUtcMs(addDaysToPlainDate(startDate, -1)),
+          plainDateToUtcMs(addDaysToPlainDate(endDate, 2)),
+        ),
+      ]);
+      return [...due, ...undated, ...completed];
     }),
 
   getTimeZoneSettings: () => readTimeZoneSettings,

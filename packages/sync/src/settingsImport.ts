@@ -40,6 +40,13 @@ import {
 } from './importedVisibility.ts';
 import type { LocalNotifications } from './localNotifications.ts';
 import {
+  planMirrorImport,
+  readMirrorLocals,
+  readMirrors,
+  writeMirrorLocals,
+  writeMirrors,
+} from './mirrorSettings.ts';
+import {
   applyBirthdayReminderSettings,
   applyEventNotificationSettings,
 } from './notificationSettings.ts';
@@ -61,6 +68,7 @@ interface ImportPlan {
   readonly eventNotifications?: EventNotificationSettings | undefined;
   readonly flips: ReadonlyArray<AccountFlips>;
   readonly googleAccountsToAdd: ReadonlyArray<string>;
+  readonly mirrors?: ReturnType<typeof planMirrorImport> | undefined;
   readonly pending: PendingVisibility;
   readonly screenPrivacy?: ScreenPrivacy | undefined;
   readonly summary: SettingsImportSummary;
@@ -113,6 +121,22 @@ const planSettingsImport = (
       document.view && !same(document.view, yield* readViewPreferences) ? document.view : undefined;
     if (view) {
       settingsChanged.push('view');
+    }
+    // Mirrors: added or updated, never removed; an imported one is off here.
+    let mirrors: ReturnType<typeof planMirrorImport> | undefined;
+    if (document.mirrors !== undefined && document.mirrors.length > 0) {
+      const planned = planMirrorImport(
+        yield* readMirrors,
+        document.mirrors,
+        yield* Clock.currentTimeMillis,
+      );
+      if (planned.added.length + planned.updated.length > 0) {
+        mirrors = planned;
+        settingsChanged.push('mirrors');
+      }
+      for (const issue of planned.skipped) {
+        notes.push(`A mirror was not imported: ${issue}`);
+      }
     }
     let screenPrivacy: ScreenPrivacy | undefined;
     if (document.desktop?.screenPrivacy !== undefined) {
@@ -232,6 +256,7 @@ const planSettingsImport = (
       eventNotifications,
       flips,
       googleAccountsToAdd,
+      mirrors,
       pending,
       screenPrivacy,
       summary: {
@@ -286,6 +311,18 @@ export const importSettings = (
       }
       if (plan.screenPrivacy) {
         yield* platform.apply({ screenPrivacy: plan.screenPrivacy });
+      }
+      if (plan.mirrors) {
+        yield* writeMirrors(plan.mirrors.next);
+        // Each new mirror gets an explicit "off" here, so a later edit on
+        // this device does not read as "made here" and switch it on.
+        const locals = yield* readMirrorLocals;
+        yield* writeMirrorLocals({
+          ...Object.fromEntries(
+            plan.mirrors.added.map((mirror) => [mirror.id, { enabled: false }]),
+          ),
+          ...locals,
+        });
       }
 
       const now = yield* Clock.currentTimeMillis;

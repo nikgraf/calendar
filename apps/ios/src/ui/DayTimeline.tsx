@@ -8,6 +8,7 @@ import {
   groupEventsByDay,
   MAX_ALL_DAY_ROWS,
   partitionCalendarTasks,
+  taskCalendarDate,
   secondaryHourLabels,
   swipeCommitColumns,
   taskChipLabel,
@@ -156,17 +157,21 @@ export function DayTimeline({
   // One pass over the window's events, not one filter per column.
   const byDay = useMemo(() => groupEventsByDay(events, strip, timeZone), [events, strip, timeZone]);
   const calendarTasks = useMemo(
-    () => partitionCalendarTasks([...tasks, ...overdue], todayIso),
-    [tasks, overdue, todayIso],
+    () => partitionCalendarTasks([...tasks, ...overdue], todayIso, timeZone),
+    [tasks, overdue, todayIso, timeZone],
   );
-  // Overdue chips lead today's column, whatever their own due day.
+  // Overdue and undated chips lead today's column until they are done; a
+  // late or undated completion sits on the day it was completed.
   const tasksByDay = useMemo(() => {
-    const byDay = new Map(groupByDate(calendarTasks.allDay, (task) => task.dueDate));
-    if (calendarTasks.overdue.length > 0) {
-      byDay.set(todayIso, calendarTasks.overdue.concat(byDay.get(todayIso) ?? []));
+    const byDay = new Map(
+      groupByDate(calendarTasks.allDay, (task) => taskCalendarDate(task, todayIso, timeZone)),
+    );
+    const todayTasks = calendarTasks.overdue.concat(calendarTasks.undated);
+    if (todayTasks.length > 0) {
+      byDay.set(todayIso, todayTasks.concat(byDay.get(todayIso) ?? []));
     }
     return byDay;
-  }, [calendarTasks, todayIso]);
+  }, [calendarTasks, todayIso, timeZone]);
   const overdueKeys = useMemo(
     () => new Set(calendarTasks.overdue.map(calendarTaskKey)),
     [calendarTasks],

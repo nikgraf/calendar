@@ -1,6 +1,7 @@
 import { type Duration, Effect, Option } from 'effect';
 import { SyncEngine } from './engine.ts';
 import { LocalNotifications } from './localNotifications.ts';
+import { Mirrors } from './mirrors.ts';
 
 /**
  * One opportunistic background pass (iOS background task): pull what
@@ -10,11 +11,14 @@ import { LocalNotifications } from './localNotifications.ts';
  * time, and a slow or failing pull (no network, a Keychain item not yet
  * readable) must not cost the schedule refresh, which works from local
  * data alone. An unfinished sync is interrupted; the foreground run picks
- * it up again. Never fails.
+ * it up again. The calendar mirrors go last, within `mirrorBudget`: they
+ * only write what a fresh pull changed, and a cut-off mirror pass just
+ * plans again next time. Never fails.
  */
 export const backgroundRefresh = (
   syncBudget: Duration.Input,
-): Effect.Effect<void, never, LocalNotifications | SyncEngine> =>
+  mirrorBudget: Duration.Input,
+): Effect.Effect<void, never, LocalNotifications | Mirrors | SyncEngine> =>
   Effect.gen(function* () {
     const engine = yield* SyncEngine;
     const notifications = yield* LocalNotifications;
@@ -32,4 +36,5 @@ export const backgroundRefresh = (
       yield* Effect.logWarning('background refresh: sync exceeded its budget');
     }
     yield* notifications.run();
+    yield* (yield* Mirrors).run({ budget: mirrorBudget });
   });

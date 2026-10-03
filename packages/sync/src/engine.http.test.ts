@@ -90,6 +90,18 @@ const eventTitles = Effect.gen(function* () {
   return window.singles.map((event) => `${event.id}:${event.title}`).sort();
 });
 
+/** 200, or the status Google refused a write with. */
+const writeStatus = <A, E extends { readonly _tag: string }>(
+  effect: Effect.Effect<A, E, GoogleCalendarClient>,
+): Effect.Effect<number, E, GoogleCalendarClient> =>
+  effect.pipe(
+    Effect.map(() => 200),
+    Effect.catchIf(
+      (error): error is E & { readonly status: number } => error._tag === 'GoogleApiError',
+      (error) => Effect.succeed(error.status),
+    ),
+  );
+
 describe('SyncEngine over HTTP (fake Google)', () => {
   it.effect('a same-account move lands through events.move and the next pass agrees', () => {
     const google = new FakeGoogle({
@@ -593,6 +605,97 @@ describe('SyncEngine over HTTP (fake Google)', () => {
       const events = yield* EventRepo;
       expect((yield* events.getById('acc-1', 'cal-1', record.id))?.syncStatus).toBe('synced');
     }).pipe(noYield, Effect.provide(engineLayer(google)));
+  });
+
+  it.effect('a re-posted event id is a 409, also after the event was deleted', () => {
+    const google = newFake();
+    return Effect.gen(function* () {
+      const client = yield* GoogleCalendarClient;
+      const insert = client.insertEvent({
+        accountId: 'acc-1',
+        calendarId: 'cal-1',
+        event: { ...timed('slnvmrabc', 9), summary: 'Copy' },
+      });
+      yield* insert;
+      expect(yield* writeStatus(insert)).toBe(409);
+      yield* client.deleteEvent({ accountId: 'acc-1', calendarId: 'cal-1', eventId: 'slnvmrabc' });
+      // The id stays reserved by the tombstone.
+      expect(yield* writeStatus(insert)).toBe(409);
+    }).pipe(Effect.provide(engineLayer(google)));
+  });
+
+  it.effect('a full replace clears what it leaves out and brings a deleted event back', () => {
+    const google = newFake();
+    return Effect.gen(function* () {
+      const client = yield* GoogleCalendarClient;
+      const target = { accountId: 'acc-1', calendarId: 'cal-1', eventId: 'slnvmrdef' };
+      const { status: _status, ...body } = { ...timed('slnvmrdef', 9), summary: 'Copy' };
+      yield* client.insertEvent({
+        ...target,
+        event: {
+          ...body,
+          description: 'Dial-in 1234',
+          extendedProperties: { private: { keep: 'no' } },
+          location: 'Room 4',
+        },
+      });
+      yield* client.patchEvent({ ...target, event: { summary: 'Patched' } });
+      expect(google.eventOf('cal-1', 'slnvmrdef')?.location).toBe('Room 4');
+
+      const replaced = yield* client.replaceEvent({ ...target, event: body });
+      expect(replaced.summary).toBe('Copy');
+      const stored = google.eventOf('cal-1', 'slnvmrdef');
+      expect(stored?.location).toBeUndefined();
+      expect(stored?.description).toBeUndefined();
+      expect(stored?.extendedProperties).toBeUndefined();
+
+      // If-Match guards a replace like any other write.
+      const stale = yield* client
+        .replaceEvent({ ...target, baseEtag: '"stale"', event: body })
+        .pipe(Effect.flip);
+      expect(stale._tag).toBe('ConflictError');
+
+      yield* client.deleteEvent(target);
+      // A deleted event refuses a plain replace and accepts a confirming one.
+      const gone = yield* client.replaceEvent({ ...target, event: body }).pipe(Effect.flip);
+      expect(gone._tag).toBe('NotFoundError');
+      yield* client.replaceEvent({ ...target, event: { ...body, status: 'confirmed' } });
+      expect(google.eventOf('cal-1', 'slnvmrdef')?.status).toBe('confirmed');
+    }).pipe(Effect.provide(engineLayer(google)));
+  });
+
+  it.effect('a created calendar arrives with the next pass', () => {
+    const google = newFake();
+    return Effect.gen(function* () {
+      yield* seedAccount(false);
+      const client = yield* GoogleCalendarClient;
+      const engine = yield* SyncEngine;
+      yield* engine.syncAll();
+      const created = yield* client.insertCalendar({
+        accountId: 'acc-1',
+        summary: 'Availability',
+        timeZone: 'Europe/Vienna',
+      });
+      yield* engine.syncAll();
+      const stored = (yield* (yield* CalendarRepo).list('acc-1')).find(
+        (calendar) => calendar.id === created.id,
+      );
+      expect(stored).toMatchObject({ accessRole: 'owner', summary: 'Availability' });
+    }).pipe(Effect.provide(engineLayer(google)));
+  });
+
+  it.effect('an account without the calendar-creation scope is refused as such', () => {
+    const google = new FakeGoogle({
+      calendarCreation: 'forbidden',
+      calendars: [{ accessRole: 'owner', id: 'cal-1', primary: true, summary: 'Personal' }],
+    });
+    return Effect.gen(function* () {
+      const client = yield* GoogleCalendarClient;
+      const refused = yield* client
+        .insertCalendar({ accountId: 'acc-1', summary: 'Nope' })
+        .pipe(Effect.flip);
+      expect(refused._tag).toBe('InsufficientScopeError');
+    }).pipe(Effect.provide(engineLayer(google)));
   });
 
   it.effect('tasks: full pass, then a watermark pass applies a deleted tombstone', () => {

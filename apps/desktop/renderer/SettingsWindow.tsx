@@ -6,6 +6,7 @@ import { BirthdayRemindersSection } from './BirthdayRemindersSection.tsx';
 import { ContactsSection } from './ContactsSection.tsx';
 import { EventNotificationsSection } from './EventNotificationsSection.tsx';
 import { LocationsSection } from './LocationsSection.tsx';
+import { MirrorsSection } from './MirrorsSection.tsx';
 import { PrivacySection } from './PrivacySection.tsx';
 import { RemindersSection } from './RemindersSection.tsx';
 import { SettingsFileSection, SettingsTransferSection } from './SettingsFileSection.tsx';
@@ -51,6 +52,7 @@ const PANE_CONTENT: Record<SettingsPaneId, ReactNode> = {
       <PrivacySection />
     </>
   ),
+  mirrors: <MirrorsSection />,
   notifications: (
     <>
       <EventNotificationsSection />
@@ -85,6 +87,13 @@ const PANE_ICON: Record<SettingsPaneId, ReactNode> = {
       <circle cx="12" cy="12" r="6.25" />
       <circle cx="12" cy="12" r="2.25" />
       <path d="M12 3v2.75M12 18.25V21M3 12h2.75M18.25 12H21M5.64 5.64l1.94 1.94M16.42 16.42l1.94 1.94M5.64 18.36l1.94-1.94M16.42 7.58l1.94-1.94" />
+    </>
+  ),
+  mirrors: (
+    <>
+      <rect height="11" rx="2" width="8" x="3" y="6.5" />
+      <rect height="11" rx="2" width="8" x="13" y="6.5" />
+      <path d="M9.5 12h5m-1.5-1.5 1.5 1.5-1.5 1.5" />
     </>
   ),
   notifications: (

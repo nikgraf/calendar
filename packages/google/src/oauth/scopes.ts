@@ -15,12 +15,24 @@ export const CONTACTS_SCOPES: ReadonlyArray<string> = [CONTACTS_SCOPE, OTHER_CON
 export const grantsContacts = (scopes: ReadonlyArray<string>): boolean =>
   CONTACTS_SCOPES.every((scope) => scopes.includes(scope));
 
+/**
+ * calendars.insert for secondary calendars, nothing else new: a calendar
+ * mirror can create its own destination. The app still cannot change or
+ * share calendars it did not create.
+ */
+export const CALENDAR_CREATE_SCOPE = 'https://www.googleapis.com/auth/calendar.app.created';
+/** Whether the account may create calendars — one signed in before the scope was asked for may not. */
+export const grantsCalendarCreation = (scopes: ReadonlyArray<string>): boolean =>
+  scopes.includes(CALENDAR_CREATE_SCOPE) ||
+  scopes.includes('https://www.googleapis.com/auth/calendar');
+
 export const GOOGLE_SCOPES: ReadonlyArray<string> = [
   'openid',
   'email',
   'profile',
   'https://www.googleapis.com/auth/calendar.readonly',
   'https://www.googleapis.com/auth/calendar.events',
+  CALENDAR_CREATE_SCOPE,
   TASKS_SCOPE,
   ...CONTACTS_SCOPES,
 ];

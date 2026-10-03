@@ -224,6 +224,17 @@ export class TaskRecord extends Schema.Class<TaskRecord>('TaskRecord')({
   dueDate: Schema.optional(Schema.String),
   /** Reminders only: 'HH:MM' in the device zone when the reminder is timed. */
   dueTime: Schema.optional(Schema.String),
+  /**
+   * Reminders only: the due instant, when the reminder carries a time zone
+   * of its own. `dueTime` is how this device reads it; this is the same on
+   * every device (a calendar mirror places a timed reminder by it).
+   */
+  dueUtc: Schema.optional(Schema.Number),
+  /**
+   * Reminders only: EventKit's external identifier — unlike `id`, the same
+   * on every device the reminder syncs to. A calendar mirror keys by it.
+   */
+  externalId: Schema.optional(Schema.String),
   /** Task id, unique within its list. */
   id: Schema.String,
   listId: Schema.String,
@@ -268,6 +279,12 @@ export class GeoLocation extends Schema.Class<GeoLocation>('GeoLocation')({
   source: Schema.String,
 }) {}
 
+export const EventTransparency = Schema.Literals(['opaque', 'transparent']);
+export type EventTransparency = typeof EventTransparency.Type;
+
+export const EventVisibility = Schema.Literals(['confidential', 'default', 'private', 'public']);
+export type EventVisibility = typeof EventVisibility.Type;
+
 export class EventRecord extends Schema.Class<EventRecord>('EventRecord')({
   accountId: Schema.String,
   attendees: Schema.optional(Schema.Array(Attendee)),
@@ -285,6 +302,12 @@ export class EventRecord extends Schema.Class<EventRecord>('EventRecord')({
   id: Schema.String,
   isAllDay: Schema.Boolean,
   location: Schema.optional(Schema.String),
+  /**
+   * Set only on a calendar mirror's copy: the marker the mirror wrote
+   * (see core `mirror/marker.ts`). Copies are hidden from every read the
+   * UI, find-a-time, notifications and agents share.
+   */
+  mirror: Schema.optional(Schema.String),
   organizerEmail: Schema.optional(Schema.String),
   /** Identifies an override's slot in its series (from originalStartTime). */
   originalStartUtc: Schema.optional(Schema.Number),
@@ -302,7 +325,14 @@ export class EventRecord extends Schema.Class<EventRecord>('EventRecord')({
   syncedAt: Schema.Number,
   syncStatus: SyncStatus,
   title: Schema.String,
+  /** Google only: 'transparent' = marked free. Absent on rows synced before it was modelled. */
+  transparency: Schema.optional(EventTransparency),
   updatedAt: Schema.Number,
+  /**
+   * Google only. Absent on rows synced before it was modelled — a mirror
+   * treats those as private until the re-list fills it in.
+   */
+  visibility: Schema.optional(EventVisibility),
 }) {}
 
 /**
@@ -436,3 +466,5 @@ export class SyncState extends Schema.Class<SyncState>('SyncState')({
 }) {}
 
 export const eventsScope = (calendarId: string): string => `events:${calendarId}`;
+/** The sync_state scope of a Google task list. */
+export const tasksScope = (taskListId: string): string => `tasks:${taskListId}`;

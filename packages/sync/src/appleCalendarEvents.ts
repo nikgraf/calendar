@@ -3,7 +3,7 @@ import {
   type AppleCalendarClientShape,
   mapAppleEvent,
 } from '@calendar/apple-calendar';
-import { APPLE_CALENDAR_ACCOUNT_ID, type EventRecord, Temporal } from '@calendar/core';
+import { APPLE_CALENDAR_ACCOUNT_ID, type EventRecord, isMirrorUrl, Temporal } from '@calendar/core';
 import { AccountRepo, CalendarRepo } from '@calendar/db';
 import { EVENTS_KEY } from '@calendar/db/keys';
 import { Clock, Context, Effect, Layer, Stream } from 'effect';
@@ -69,9 +69,15 @@ const make: Effect.Effect<
       const now = yield* Clock.currentTimeMillis;
       const zone = deviceTimeZone();
       // Like Google's cancelled events (never stored), a meeting the
-      // organizer cancelled is not drawn.
+      // organizer cancelled is not drawn. Neither is a calendar mirror's
+      // copy (its marker rides in the URL): the original is already here.
       return events
-        .filter((event) => visible.has(event.calendarId) && event.status !== 'cancelled')
+        .filter(
+          (event) =>
+            visible.has(event.calendarId) &&
+            event.status !== 'cancelled' &&
+            !isMirrorUrl(event.url),
+        )
         .map((event) => mapAppleEvent(event, { deviceTimeZone: zone, now }));
     }).pipe(
       Effect.catchTag('AppleCalendarAccessError', () =>

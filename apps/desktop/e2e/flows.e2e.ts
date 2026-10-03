@@ -172,6 +172,16 @@ const seed = {
       title: 'Done chore',
       updatedAt: 1,
     }),
+    // No due day at all (made in Google Tasks): drawn on today until done.
+    new TaskRecord({
+      accountId: 'acc-e2e',
+      id: 'task-undated',
+      listId: 'list-e2e',
+      provider: 'google',
+      status: 'needsAction',
+      title: 'Loose end',
+      updatedAt: 1,
+    }),
   ],
 };
 
@@ -1000,6 +1010,42 @@ describe('calendar desktop e2e', () => {
     expect(await cdp.eval(`!!document.querySelector('[data-overdue][title^="Done chore"]')`)).toBe(
       false,
     );
+  });
+
+  it('draws an undated task on today and never gives it a due day by itself', async () => {
+    const { cdp } = app;
+    const chip = await cdp.locate('[data-testid="all-day-task-task-undated"]');
+    // On today's column, once, and not marked overdue: it was never due.
+    expect(
+      await cdp.eval<number>(
+        `document.querySelectorAll('[data-testid="all-day-task-task-undated"]').length`,
+      ),
+    ).toBe(1);
+    const placement = await cdp.eval<{ inToday: boolean; overdue: boolean }>(`(() => {
+      const chip = document.querySelector('[data-testid="all-day-task-task-undated"]');
+      const cell = document.querySelector('.bg-red-500')?.closest('.h-10');
+      const chipRect = chip.getBoundingClientRect();
+      const cellRect = cell.getBoundingClientRect();
+      return {
+        inToday: chipRect.left >= cellRect.left - 1 && chipRect.right <= cellRect.right + 1,
+        overdue: chip.hasAttribute('data-overdue'),
+      };
+    })()`);
+    expect(placement).toEqual({ inToday: true, overdue: false });
+
+    // The editor says so instead of showing today as its due day, and a
+    // rename leaves it undated.
+    await cdp.click(chip.x + 40, chip.y);
+    await cdp.waitFor(`!!document.querySelector('[data-testid="task-no-due-date"]')`);
+    await setEditorTitle('Loose end, renamed');
+    await cdp.clickButtonWithText('Save');
+    await expect
+      .poll(async () => {
+        const task = (await readTasks(app.userDataDir)).find((row) => row.id === 'task-undated');
+        return { dueDate: task?.dueDate ?? null, title: task?.title };
+      })
+      .toEqual({ dueDate: null, title: 'Loose end, renamed' });
+    await cdp.locate('[title="Loose end, renamed"]');
   });
 
   it('checks a task off from its all-day chip', async () => {

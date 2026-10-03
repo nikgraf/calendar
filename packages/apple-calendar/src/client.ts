@@ -4,7 +4,10 @@ import {
   APPLE_CALENDAR_METHODS,
   type AppleCalendarJson,
   type AppleEventJson,
+  ApplyBatchResult,
+  type BatchWrite,
   type CalendarAuthorization,
+  CreateCalendarResult,
   EventResult,
   EventsResult,
   type EventWrite,
@@ -56,6 +59,14 @@ const isAuthorization = (value: string): value is CalendarAuthorization =>
 
 export interface AppleCalendarClientShape {
   /**
+   * Several single-event writes under one commit (at most
+   * `APPLE_BATCH_MAX`). Resolves to the writes that could not be made, by
+   * index; the others landed.
+   */
+  readonly applyBatch: (params: {
+    readonly ops: ReadonlyArray<BatchWrite>;
+  }) => Effect.Effect<ApplyBatchResult['failures'], AppleCalendarError>;
+  /**
    * Fires whenever EventKit's database changed (any app, any item). The
    * backend holds no Apple event rows, so this is what repaints the UI
    * after an edit in Calendar.app; it reaches a live observer only.
@@ -65,6 +76,13 @@ export interface AppleCalendarClientShape {
     readonly calendarId: string;
     readonly event: EventWrite;
   }) => Effect.Effect<AppleEventJson, AppleCalendarError>;
+  /**
+   * A new calendar in the account new events default to when that is
+   * iCloud or another CalDAV account, else on this device — never Exchange.
+   */
+  readonly createCalendar: (params: {
+    readonly title: string;
+  }) => Effect.Effect<AppleCalendarJson, AppleCalendarError>;
   readonly delete: (params: {
     readonly ref: OccurrenceRef;
     readonly span: Span;
@@ -157,11 +175,29 @@ export const makeAppleCalendarClient = (
     status === 'notDetermined' && answered !== undefined ? answered : status;
 
   return {
+    applyBatch: ({ ops }) =>
+      Effect.map(
+        call(APPLE_CALENDAR_METHODS.applyBatch, ApplyBatchResult, {
+          ops: ops.map((op) =>
+            op.kind === 'create'
+              ? { calendarId: op.calendarId, event: op.event, kind: op.kind }
+              : op.kind === 'update'
+                ? { ...refParams(op.ref), changes: op.changes, kind: op.kind }
+                : { ...refParams(op.ref), kind: op.kind },
+          ),
+        }),
+        (r) => r.failures,
+      ),
     changes,
     create: ({ calendarId, event }) =>
       Effect.map(
         call(APPLE_CALENDAR_METHODS.create, EventResult, { calendarId, event }),
         (r) => r.event,
+      ),
+    createCalendar: ({ title }) =>
+      Effect.map(
+        call(APPLE_CALENDAR_METHODS.createCalendar, CreateCalendarResult, { title }),
+        (r) => r.calendar,
       ),
     delete: ({ ref, span }) =>
       Effect.asVoid(
@@ -213,8 +249,10 @@ export const unavailableAppleCalendarClient = (reason: string): AppleCalendarCli
   const fail = <A>(): Effect.Effect<A, AppleCalendarError> =>
     Effect.fail(new AppleCalendarUnavailableError({ message: reason }));
   return {
+    applyBatch: () => fail(),
     changes: Stream.empty,
     create: () => fail(),
+    createCalendar: () => fail(),
     delete: () => fail(),
     events: () => fail(),
     listCalendars: () => fail(),

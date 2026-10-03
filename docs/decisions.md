@@ -1669,3 +1669,75 @@ test`/`test:e2e`/`test:e2e:ios`; every file creates its own
       cannot press a native menu accelerator); it was checked by hand
       through the main-process inspector: Settings… opens the window,
       also with the main window closed.
+
+### Calendar mirrors (2026-10-02)
+
+- [x] Calendar mirrors — done (2026-10-02, `todo/calendar-mirrors`): a
+      mirror copies several sources (Google and Apple calendars, Google
+      task lists, Reminders lists) one way into one destination calendar,
+      reduced to an allow-list of fields, so a calendar can be shared
+      without the details: a "Busy"-only calendar for friends, household
+      reminders as events with their done state, title and place of a
+      work calendar in a family calendar — all on the user's devices, no
+      service. Also: undated tasks show on today in both apps (and a task
+      completed late stays on the day it was completed), the editor opens
+      an undated task as "No due date" rather than silently giving it one.
+      Decisions: **a mirror, not a workflow** — one way, the app owns the
+      copies and overwrites them; no rule engine, three presets
+      (Availability, Title and location, Full details) and an Advanced
+      disclosure with fields, the busy label, months ahead (1–24, default 3) and filters. **Reconcile with no mapping table**: the destination
+      is the state, any device can run a mirror, a cut-off run runs again;
+      the price is that every input must be device-independent (own
+      queries past local visibility, the mirror's own time zone, portable
+      keys — EventKit's external identifier is new on both bridges).
+      **Google writes bypass the pending-op queue** (copies are derived;
+      the queue would list every one as an unsynced change) and use
+      `events.update` (PUT), since a switched-off field must leave the
+      copy and PATCH keeps omitted fields; a derived id (`slnvmr` +
+      hash) makes a second device's insert a 409 and a confirming replace
+      revives a deleted copy — all pinned live first (`mirrors.live.ts`).
+      **Markers are opaque** (the key is salted with the mirror id, the
+      content hash covers only what was written): the destination is
+      shared with people who can read both carriers. **Setting a mirror
+      up by hand on two devices does not cooperate** — the settings file
+      is the only way across, an imported mirror arrives switched off,
+      and a device whose definition is older than a copy's revision stands
+      back. **Availability merges overlapping events** into one block
+      (`mergeBusy`, moved to core from the agent package), so nobody can
+      count meetings; **private events copy as the busy label** by
+      default, and until the one-time re-list after the upgrade every
+      event counts as private. **Two backstops** for what cannot be
+      checked (EventKit never says whether iCloud caught up): a large
+      removal waits ten minutes, a third identical write within a day
+      pauses the mirror. **Apple destinations are iCloud, CalDAV or
+      local** (Exchange drops the URL that carries the marker). **The
+      editor can create the destination**: Google under the new
+      `calendar.app.created` scope (the narrowest that allows
+      `calendars.insert`; sign-in now asks for it, an older sign-in is
+      told to sign in again), Apple in the default account. **Copies are
+      hidden in the app** — the originals are already drawn — in every
+      shared read. **An empty pull page no longer invalidates
+      EVENTS_KEY**, or every quiet poll would recompute. Rejected: a
+      Zapier-style workflow; cutting the app-side undated-task change
+      (asked for); iCloud key-value sync of definitions (a new
+      entitlement in every build). Tests: core `mirror/mirror.test.ts`,
+      `sync/mirrors.test.ts` (two devices — each its own database and
+      engine — over one fake Google and one fake EventKit store: sync
+      lag, a stale device, an older definition, another mirror, unsynced
+      edits, the large-removal brake, the rewrite breaker, reminders with
+      done state, a raced Apple duplicate, a hidden source), repo and
+      fake tests, `mirrors.live.ts`, desktop `mirrors.e2e.ts`, Maestro
+      `21-mirrors.yaml` (not run locally: the dev client needs the Swift
+      changes). Review (2026-10-03) found and fixed: a stale device's 409
+      path replaced a copy blindly (now it reads the event and stands back
+      from a newer revision, else replaces with If-Match); a definition
+      that excludes everything leaves no revision carrier (bounded: deletes
+      are not counted by the breaker, so the right device keeps deleting
+      while the stale one trips its own after two rounds); refused Apple
+      batch writes counted as applied; moving a mirror to another calendar
+      left its copies in the old one (now removed first); a zoned reminder
+      was placed by this device's wall clock instead of its instant. Open:
+      the `calendar.app.created` scope is on the consent screen (added
+      2026-10-03) but a narrow-scope sign-in creating a calendar is
+      untested; a real two-device run, reminder external ids across
+      devices, the new Swift paths against real EventKit.

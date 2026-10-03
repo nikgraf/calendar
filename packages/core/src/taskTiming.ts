@@ -1,4 +1,5 @@
 import type { TaskRecord } from './types.ts';
+import { toZonedDateTime } from './time/convert.ts';
 import { snapMinutes } from './time/dragMath.ts';
 import { Temporal } from './time/temporal.ts';
 
@@ -13,26 +14,60 @@ export const isOverdue = (task: Pick<TaskRecord, 'dueDate' | 'status'>, today: s
   task.status === 'needsAction' && task.dueDate !== undefined && task.dueDate < today;
 
 /**
- * Splits the calendar's tasks into the all-day lane, the timed grid and —
- * given `today` — the overdue set: open tasks due before today, timed or
- * not, which the lanes draw on today instead of on their own past day.
- * The in-range and overdue queries overlap when a past due day is inside
- * the rendered strip, so tasks are de-duplicated by key first.
+ * The one day a task is drawn on — in the app's views and in a calendar
+ * mirror's copies alike. An open task sits on its due day, or on today
+ * once that day has passed or when it has none: it stays in view until it
+ * is done. A completed task sits on its due day, or on the day it was
+ * completed when it has no due day or was completed late — ticking an
+ * overdue task must not send it back into the past, out of sight.
+ */
+export const taskCalendarDate = (
+  task: Pick<TaskRecord, 'completedAt' | 'dueDate' | 'status' | 'updatedAt'>,
+  today: string,
+  timeZone: string,
+): string => {
+  if (task.status !== 'completed') {
+    return task.dueDate !== undefined && task.dueDate >= today ? task.dueDate : today;
+  }
+  const done = toZonedDateTime(task.completedAt ?? task.updatedAt, timeZone)
+    .toPlainDate()
+    .toString();
+  return task.dueDate !== undefined && done <= task.dueDate ? task.dueDate : done;
+};
+
+/**
+ * Splits the calendar's tasks by where they are drawn. Given `today` and
+ * the zone it is in, every task lands on its `taskCalendarDate`:
+ * `overdue` (open, due before today) and `undated` (open, no due day) are
+ * drawn on today; `allDay` and `timed` on their own day — group `allDay`
+ * by `taskCalendarDate`, since a late or undated completion sits on the
+ * day it was completed (in the lane: its due time belongs to another day).
+ * Without `today` and `timeZone` tasks stay on their due day and undated
+ * ones are dropped. The in-range and overdue queries overlap when a past
+ * due day is inside the rendered strip, so tasks are de-duplicated by key
+ * first.
  */
 export const partitionCalendarTasks = (
   tasks: ReadonlyArray<TaskRecord>,
   today?: string,
+  timeZone?: string,
 ): {
   readonly allDay: Array<TaskRecord>;
   readonly overdue: Array<TaskRecord>;
   readonly timed: Array<TaskRecord>;
+  readonly undated: Array<TaskRecord>;
 } => {
   const allDay: Array<TaskRecord> = [];
   const overdue: Array<TaskRecord> = [];
   const timed: Array<TaskRecord> = [];
+  const undated: Array<TaskRecord> = [];
   const seen = new Set<string>();
   for (const task of tasks) {
-    if (task.dueDate === undefined) {
+    const day =
+      today !== undefined && timeZone !== undefined
+        ? taskCalendarDate(task, today, timeZone)
+        : task.dueDate;
+    if (day === undefined) {
       continue;
     }
     const key = calendarTaskKey(task);
@@ -40,9 +75,11 @@ export const partitionCalendarTasks = (
       continue;
     }
     seen.add(key);
-    if (today !== undefined && isOverdue(task, today)) {
+    if (task.dueDate === undefined && task.status === 'needsAction') {
+      undated.push(task);
+    } else if (today !== undefined && isOverdue(task, today)) {
       overdue.push(task);
-    } else if (task.dueTime === undefined) {
+    } else if (task.dueTime === undefined || day !== task.dueDate) {
       allDay.push(task);
     } else {
       timed.push(task);
@@ -54,7 +91,8 @@ export const partitionCalendarTasks = (
       (a.dueTime ?? '').localeCompare(b.dueTime ?? '') ||
       a.title.localeCompare(b.title),
   );
-  return { allDay, overdue, timed };
+  undated.sort((a, b) => a.title.localeCompare(b.title));
+  return { allDay, overdue, timed, undated };
 };
 
 const DAY_MINUTES = 24 * 60;

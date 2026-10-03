@@ -214,8 +214,30 @@ export const readTasks = async (userDataDir: string): Promise<ReadonlyArray<Task
   );
   return Effect.runPromise(
     Effect.gen(function* () {
-      return yield* (yield* TaskRepo).getWindow('0000-01-01', '9999-12-31');
+      const tasks = yield* TaskRepo;
+      // Every dated task, plus the open ones without a due day.
+      return [
+        ...(yield* tasks.getWindow('0000-01-01', '9999-12-31')),
+        ...(yield* tasks.getUndatedOpen()),
+      ];
     }).pipe(Effect.provide(dbLayer)),
+  );
+};
+
+/** A calendar mirror's copies in a calendar: hidden from `readEvents` like from the views. */
+export const readMirrorCopies = async (
+  userDataDir: string,
+  accountId: string,
+  calendarId: string,
+): Promise<ReadonlyArray<EventRecord>> => {
+  const dbLayer = reposLayer.pipe(
+    Layer.provideMerge(SqliteClient.layer({ filename: join(userDataDir, 'calendar.db') })),
+    Layer.provideMerge(reactivityLayer),
+  );
+  return Effect.runPromise(
+    Effect.flatMap(EventRepo, (events) =>
+      events.listMirrorCopies(accountId, calendarId, 0, Number.MAX_SAFE_INTEGER),
+    ).pipe(Effect.provide(dbLayer)),
   );
 };
 
@@ -332,7 +354,13 @@ export const runAgentCli = (
 const isSettingsUrl = (url: string): boolean => /#settings(\/|$)/.test(url);
 
 /** The settings window's panes (renderer/settingsPanes.ts). */
-export type SettingsPane = 'accounts' | 'advanced' | 'agents' | 'general' | 'notifications';
+export type SettingsPane =
+  | 'accounts'
+  | 'advanced'
+  | 'agents'
+  | 'general'
+  | 'mirrors'
+  | 'notifications';
 
 export class Cdp {
   private nextId = 0;

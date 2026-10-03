@@ -10,6 +10,7 @@ import {
   monthCellLabel,
   overdueLabel,
   partitionCalendarTasks,
+  taskCalendarDate,
   taskChipLabel,
   type TaskRecord,
   taskRepeats,
@@ -62,11 +63,12 @@ export function MonthView({
     weeks.flat().map((cell) => cell.date),
     timeZone,
   );
-  const calendarTasks = partitionCalendarTasks([...tasks, ...overdue], todayIso);
-  const tasksByDay = groupByDate(
-    calendarTasks.allDay.concat(calendarTasks.timed),
-    (task) => task.dueDate,
+  const calendarTasks = partitionCalendarTasks([...tasks, ...overdue], todayIso, timeZone);
+  const tasksByDay = groupByDate(calendarTasks.allDay.concat(calendarTasks.timed), (task) =>
+    taskCalendarDate(task, todayIso, timeZone),
   );
+  // Overdue and undated tasks lead today's cell until they are done.
+  const todayTasks = calendarTasks.overdue.concat(calendarTasks.undated);
   const overdueKeys = new Set(calendarTasks.overdue.map(calendarTaskKey));
   const birthdaysByDay = groupByDate(birthdays, (birthday) => birthday.date);
 
@@ -87,7 +89,7 @@ export function MonthView({
           const iso = date.toString();
           const dayEvents = eventsByDay.get(iso) ?? [];
           const dayBirthdays = birthdaysByDay.get(iso) ?? [];
-          const dayTasks = (isToday ? calendarTasks.overdue : []).concat(tasksByDay.get(iso) ?? []);
+          const dayTasks = (isToday ? todayTasks : []).concat(tasksByDay.get(iso) ?? []);
           const items: ReadonlyArray<CellItem> = [
             ...dayEvents.map((event): CellItem => ({ event, kind: 'event' })),
             ...dayBirthdays.map((birthday): CellItem => ({ birthday, kind: 'birthday' })),

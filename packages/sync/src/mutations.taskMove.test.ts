@@ -38,12 +38,14 @@ const inertCalendarClient: GoogleCalendarClientShape = {
   deleteEvent: () => Effect.void,
   getColors: () => Effect.succeed({ calendar: {} }),
   getEvent: () => Effect.die('unexpected get'),
+  insertCalendar: () => Effect.die('not used'),
   insertEvent: () => Effect.die('not used'),
   listCalendars: () => Effect.succeed({ items: [] }),
   listEvents: () => Effect.succeed({ items: [] }),
   moveEvent: () => Effect.die('unexpected move'),
   patchCalendarListEntry: () => Effect.die('not used'),
   patchEvent: () => Effect.die('not used'),
+  replaceEvent: () => Effect.die('not used'),
 };
 
 const inertPeopleClient: GooglePeopleClientShape = {

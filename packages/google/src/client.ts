@@ -1,6 +1,7 @@
 import { Context, Effect, Layer } from 'effect';
 import { HttpClient, HttpClientRequest } from 'effect/unstable/http';
 import {
+  GcalCalendar,
   GcalCalendarListEntry,
   GcalCalendarListPage,
   GcalColors,
@@ -8,6 +9,7 @@ import {
   GcalEventsPage,
   type GcalEventInput,
   type GcalEventPatch,
+  type GcalEventReplace,
 } from './apiTypes.ts';
 import { NotFoundError } from './errors.ts';
 import { TokenManager } from './oauth/tokenManager.ts';
@@ -55,6 +57,16 @@ export interface GoogleCalendarClientShape {
     readonly calendarId: string;
     readonly eventId: string;
   }) => Effect.Effect<GcalEvent, GoogleRequestError>;
+  /**
+   * calendars.insert: a new secondary calendar the account owns. Needs the
+   * `calendar.app.created` scope — an account signed in before the app
+   * asked for it fails with InsufficientScopeError until it signs in again.
+   */
+  readonly insertCalendar: (params: {
+    readonly accountId: string;
+    readonly summary: string;
+    readonly timeZone?: string | undefined;
+  }) => Effect.Effect<GcalCalendar, GoogleRequestError>;
   readonly insertEvent: (params: {
     readonly accountId: string;
     readonly calendarId: string;
@@ -100,6 +112,19 @@ export interface GoogleCalendarClientShape {
     /** Google emails guests about the change ('none' suppresses it); ignored without attendees. */
     readonly sendUpdates?: GuestNotificationMode | undefined;
   }) => Effect.Effect<GcalEvent, GoogleRequestError>;
+  /**
+   * events.update: replaces the event with the body, clearing every field
+   * the body leaves out. Only calendar mirrors use it — their copies must
+   * lose a field the moment it is switched off; ordinary edits PATCH.
+   */
+  readonly replaceEvent: (params: {
+    readonly accountId: string;
+    readonly baseEtag?: string | undefined;
+    readonly calendarId: string;
+    readonly event: GcalEventReplace;
+    readonly eventId: string;
+    readonly sendUpdates?: GuestNotificationMode | undefined;
+  }) => Effect.Effect<GcalEvent, GoogleRequestError>;
 }
 
 const make: Effect.Effect<GoogleCalendarClientShape, never, HttpClient.HttpClient | TokenManager> =
@@ -139,6 +164,15 @@ const make: Effect.Effect<GoogleCalendarClientShape, never, HttpClient.HttpClien
           Effect.catchTag('SyncTokenExpiredError', () =>
             Effect.fail(new NotFoundError({ resource: eventId })),
           ),
+        ),
+
+      insertCalendar: ({ accountId, summary, timeZone }) =>
+        requestJson(
+          accountId,
+          HttpClientRequest.post(`${BASE_URL}/calendars`).pipe(
+            HttpClientRequest.bodyJsonUnsafe({ summary, ...(timeZone ? { timeZone } : {}) }),
+          ),
+          GcalCalendar,
         ),
 
       insertEvent: ({ accountId, calendarId, event, sendUpdates }) =>
@@ -218,6 +252,22 @@ const make: Effect.Effect<GoogleCalendarClientShape, never, HttpClient.HttpClien
 
       patchEvent: ({ accountId, baseEtag, calendarId, event, eventId, sendUpdates }) => {
         let request = HttpClientRequest.patch(
+          eventsUrl(calendarId, `/${encodeURIComponent(eventId)}`),
+        ).pipe(
+          HttpClientRequest.setUrlParams(definedParams({ sendUpdates })),
+          HttpClientRequest.bodyJsonUnsafe(event),
+        );
+        if (baseEtag) {
+          request = HttpClientRequest.setHeader(request, 'if-match', baseEtag);
+        }
+        return requestJson(accountId, request, GcalEvent, {
+          calendarId,
+          eventId,
+        });
+      },
+
+      replaceEvent: ({ accountId, baseEtag, calendarId, event, eventId, sendUpdates }) => {
+        let request = HttpClientRequest.put(
           eventsUrl(calendarId, `/${encodeURIComponent(eventId)}`),
         ).pipe(
           HttpClientRequest.setUrlParams(definedParams({ sendUpdates })),

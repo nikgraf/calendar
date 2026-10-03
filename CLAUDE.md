@@ -122,6 +122,21 @@ powers quick-add parsing, find-a-time, and dictation.
   with `UnsupportedForProviderError` — never drop it silently. Moving an
   event across accounts/providers is copy-then-delete and drops guests,
   after the UI confirmed `previewMove`'s loss.
+- Calendar mirrors (`packages/sync/src/mirrors.ts`, core `mirror/`) are the
+  one exception to two rules above: their Google copies are written
+  straight through the REST client under the engine's gate, never through
+  the pending-op queue (copies are derived — the next run recomputes what
+  did not land, and the queue would list every copy as an unsynced
+  change), and a copy is built from an allow-list of fields, so leaving a
+  field out is the point, not a silent drop. A copy carries a marker (a
+  derived Google id plus the private `solunivo.mirror` property; an opaque
+  `x-solunivo-mirror:` URL on Apple — never register that scheme) and is
+  hidden from every read the UI, find-a-time, notifications and agents
+  share (`EventRepo.getWindow`, the Apple read-through). A mirror runs on a
+  device only when every source and the destination resolve there, the
+  Google data was pulled minutes ago and no source holds an unsynced edit;
+  definitions travel in the settings document, on/off and status stay in
+  `mirrors.local`. See docs/architecture.md → Calendar mirrors.
 - Two synthetic `provider: 'apple'` accounts exist (`apple-reminders`,
   `apple-calendar`): branch with `isAppleRemindersAccount` /
   `isAppleCalendarAccount`, never on `provider === 'apple'` alone.

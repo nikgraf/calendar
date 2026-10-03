@@ -26,8 +26,29 @@ export interface TaskRepoShape {
     listId: string,
     taskId: string,
   ) => Effect.Effect<TaskRecord | undefined, SqlError>;
+  /**
+   * Tasks completed inside [startMs, endMs), visible lists only. The
+   * calendar draws a late or undated completion on the day it was
+   * completed, which no due-day window finds.
+   */
+  readonly getCompletedBetween: (
+    startMs: number,
+    endMs: number,
+  ) => Effect.Effect<ReadonlyArray<TaskRecord>, SqlError>;
+  /**
+   * Every task of the given lists as a calendar mirror reads its sources:
+   * dated or not, open or completed, whether or not the list is shown on
+   * this device (visibility is a local toggle; two devices must read the
+   * same sources).
+   */
+  readonly getMirrorSource: (
+    accountId: string,
+    listIds: ReadonlyArray<string>,
+  ) => Effect.Effect<ReadonlyArray<TaskRecord>, SqlError>;
   /** Open tasks due strictly before `before`, visible lists only — the ones today's lane shows as overdue. */
   readonly getOverdue: (before: string) => Effect.Effect<ReadonlyArray<TaskRecord>, SqlError>;
+  /** Open tasks without a due day, visible lists only — drawn on today until they are done. */
+  readonly getUndatedOpen: () => Effect.Effect<ReadonlyArray<TaskRecord>, SqlError>;
   /** Tasks with a due day inside [startDate, endDate], visible lists only. */
   readonly getWindow: (
     startDate: string,
@@ -159,13 +180,15 @@ const makeTaskRepo: Effect.Effect<TaskRepoShape, never, Reactivity | SqlClient> 
       return sql`
               INSERT INTO tasks (account_id, list_id, id, title, notes, status, due_date,
                                  completed_at, web_view_link, updated_at, synced_at,
-                                 sync_status, due_time, priority, url, alarms, recurrence)
+                                 sync_status, due_time, priority, url, alarms, recurrence,
+                                 external_id, due_utc)
               SELECT ${task.accountId}, ${task.listId}, ${task.id}, ${task.title},
                      ${task.notes ?? null}, ${task.status}, ${task.dueDate ?? null},
                      ${task.completedAt ?? null}, ${task.webViewLink ?? null},
                      ${task.updatedAt}, ${syncedAt}, 'synced',
                      ${task.dueTime ?? null}, ${task.priority ?? null}, ${task.url ?? null},
-                     ${json.alarms}, ${json.recurrence}
+                     ${json.alarms}, ${json.recurrence},
+                     ${task.externalId ?? null}, ${task.dueUtc ?? null}
               ${accountGuard(sql, task.accountId)}
               ON CONFLICT (account_id, list_id, id) DO UPDATE SET
                 sync_status = 'synced',
@@ -181,7 +204,9 @@ const makeTaskRepo: Effect.Effect<TaskRepoShape, never, Reactivity | SqlClient> 
                 priority = excluded.priority,
                 url = excluded.url,
                 alarms = excluded.alarms,
-                recurrence = excluded.recurrence
+                recurrence = excluded.recurrence,
+                external_id = excluded.external_id,
+                due_utc = excluded.due_utc
               ${guard}`;
     };
 
@@ -216,6 +241,28 @@ const makeTaskRepo: Effect.Effect<TaskRepoShape, never, Reactivity | SqlClient> 
             WHERE t.account_id = ${accountId} AND t.list_id = ${listId} AND t.id = ${taskId}`,
           (rows) => (rows[0] ? taskFromRow(rows[0]) : undefined),
         ),
+      getCompletedBetween: (startMs, endMs) =>
+        Effect.map(
+          sql<TaskRow>`
+            SELECT t.*, l.provider AS list_provider FROM tasks t
+            JOIN task_lists l ON l.account_id = t.account_id AND l.id = t.list_id
+            WHERE l.is_visible = 1
+              AND t.status = 'completed'
+              AND t.completed_at >= ${startMs} AND t.completed_at < ${endMs}
+            ORDER BY t.completed_at, t.title`,
+          (rows) => rows.map(taskFromRow),
+        ),
+      getMirrorSource: (accountId, listIds) =>
+        listIds.length === 0
+          ? Effect.succeed([])
+          : Effect.map(
+              sql<TaskRow>`
+                SELECT t.*, l.provider AS list_provider FROM tasks t
+                JOIN task_lists l ON l.account_id = t.account_id AND l.id = t.list_id
+                WHERE t.account_id = ${accountId} AND t.list_id IN ${sql.in(listIds)}
+                ORDER BY t.list_id, t.id`,
+              (rows) => rows.map(taskFromRow),
+            ),
       getOverdue: (before) =>
         Effect.map(
           sql<TaskRow>`
@@ -226,6 +273,17 @@ const makeTaskRepo: Effect.Effect<TaskRepoShape, never, Reactivity | SqlClient> 
               AND t.due_date IS NOT NULL
               AND t.due_date < ${before}
             ORDER BY t.due_date, t.due_time IS NULL, t.due_time, t.title`,
+          (rows) => rows.map(taskFromRow),
+        ),
+      getUndatedOpen: () =>
+        Effect.map(
+          sql<TaskRow>`
+            SELECT t.*, l.provider AS list_provider FROM tasks t
+            JOIN task_lists l ON l.account_id = t.account_id AND l.id = t.list_id
+            WHERE l.is_visible = 1
+              AND t.status = 'needsAction'
+              AND t.due_date IS NULL
+            ORDER BY t.title`,
           (rows) => rows.map(taskFromRow),
         ),
       getWindow: (startDate, endDate) =>
@@ -245,13 +303,14 @@ const makeTaskRepo: Effect.Effect<TaskRepoShape, never, Reactivity | SqlClient> 
             sql`
             INSERT INTO tasks (account_id, list_id, id, title, notes, status, due_date,
                                completed_at, web_view_link, updated_at, synced_at, sync_status,
-                               due_time, priority, url, alarms, recurrence)
+                               due_time, priority, url, alarms, recurrence, external_id, due_utc)
             VALUES (${task.accountId}, ${task.listId}, ${task.id}, ${task.title},
                     ${task.notes ?? null}, ${task.status}, ${task.dueDate ?? null},
                     ${task.completedAt ?? null}, ${task.webViewLink ?? null},
                     ${task.updatedAt}, ${task.updatedAt}, 'pending',
                     ${task.dueTime ?? null}, ${task.priority ?? null}, ${task.url ?? null},
-                    ${taskJsonColumns(task).alarms}, ${taskJsonColumns(task).recurrence})`,
+                    ${taskJsonColumns(task).alarms}, ${taskJsonColumns(task).recurrence},
+                    ${task.externalId ?? null}, ${task.dueUtc ?? null})`,
           ),
         ),
       listLists: (accountId) =>

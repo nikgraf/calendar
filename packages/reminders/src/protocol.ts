@@ -59,6 +59,18 @@ export const ReminderJson = Schema.Struct({
   completedAt: Schema.optional(Schema.Number),
   dueDate: Schema.optional(Schema.String),
   dueTime: Schema.optional(Schema.String),
+  /**
+   * The due instant (epoch ms) of a timed reminder that carries a time zone
+   * of its own. `dueTime` is that instant on this device's wall clock, so it
+   * differs between devices in different zones; this does not. Absent for
+   * all-day and floating reminders.
+   */
+  dueUtc: Schema.optional(Schema.Number),
+  /**
+   * EKCalendarItem.calendarItemExternalIdentifier: unlike `id`, the same on
+   * every device the reminder syncs to.
+   */
+  externalId: Schema.optional(Schema.String),
   id: Schema.String,
   listId: Schema.String,
   notes: Schema.optional(Schema.String),

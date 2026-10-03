@@ -277,6 +277,32 @@ const carriedText = Effect.gen(function* () {
   yield* sql`ALTER TABLE pending_ops ADD COLUMN carried_text TEXT`;
 });
 
+// Calendar mirrors. events.mirror is the marker of a mirror's copy (NULL for
+// every ordinary event; see core mirror/marker.ts) — copies are hidden from
+// the window query, and the partial index finds a destination's copies.
+// transparency ('opaque' | 'transparent') and visibility ('default' |
+// 'public' | 'private' | 'confidential') feed a mirror's filters; NULL =
+// synced before they were modelled, which a mirror reads as private. The
+// events sync tokens are dropped so every calendar re-lists once and fills
+// them in (an incremental pass never re-sends an unchanged event).
+// tasks.external_id and due_utc are a reminder's device-independent identity
+// and due instant: the Reminders rows and their delta stamp are dropped so
+// the next EventKit pass (local, fast) writes them back whole — the mirror's
+// upsert keeps a row that is not newer, so it would never backfill them.
+const calendarMirrors = Effect.gen(function* () {
+  const sql = yield* SqlClient;
+  yield* sql`ALTER TABLE events ADD COLUMN mirror TEXT`;
+  yield* sql`ALTER TABLE events ADD COLUMN transparency TEXT`;
+  yield* sql`ALTER TABLE events ADD COLUMN visibility TEXT`;
+  yield* sql`
+    CREATE INDEX idx_events_mirror ON events (account_id, calendar_id, start_utc)
+    WHERE mirror IS NOT NULL`;
+  yield* sql`ALTER TABLE tasks ADD COLUMN external_id TEXT`;
+  yield* sql`ALTER TABLE tasks ADD COLUMN due_utc INTEGER`;
+  yield* sql`DELETE FROM sync_state WHERE scope LIKE 'events:%' OR scope = 'reminders'`;
+  yield* sql`DELETE FROM tasks WHERE account_id = 'apple-reminders'`;
+});
+
 // The third tuple element is a *loader* whose result is the migration effect.
 export const migrations: ReadonlyArray<ResolvedMigration> = [
   [1, 'baseline', Effect.succeed(baseline)],
@@ -285,4 +311,5 @@ export const migrations: ReadonlyArray<ResolvedMigration> = [
   [4, 'event-reminders', Effect.succeed(eventReminders)],
   [5, 'conflict-park', Effect.succeed(conflictPark)],
   [6, 'carried-text', Effect.succeed(carriedText)],
+  [7, 'calendar-mirrors', Effect.succeed(calendarMirrors)],
 ];
