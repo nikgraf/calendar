@@ -4,8 +4,19 @@ tags:
   - ci
 ---
 - runFlow: ../common/launch.yaml
-- tapOn: '2 Days'
+# A tap right after launch can report COMPLETED with nothing switching
+# (see 02-navigation.yaml); re-tap while the two-day title is missing.
 # Two-day titles are "Sep 28 – 29, 2026" or "Sep 30 – Oct 1, 2026".
+- repeat:
+    times: 3
+    while:
+      notVisible: '.* – .*, 20\d\d'
+    commands:
+      - tapOn: '2 Days'
+      - extendedWaitUntil:
+          visible: '.* – .*, 20\d\d'
+          timeout: 5000
+          optional: true
 - assertVisible:
     text: '.* – .*, 20\d\d'
 - assertVisible:
