@@ -23,10 +23,18 @@ list() {
     --fingerprint-hash "$FP" --status "$1" --limit 1 --json --non-interactive
 }
 
+# Sets BUILD_ID to the newest build in any live state, or leaves it empty.
+# A lookup that fails ends the script rather than reading as "no build":
+# this runs as an `if` condition, where errexit is off, and an EAS outage
+# would otherwise request a second build for a fingerprint that has one.
 find_build() {
+  local status json
+  BUILD_ID=""
   # Two pushes with the same new fingerprint must not queue two builds.
   for status in finished in-progress in-queue new; do
-    BUILD_ID=$(list "$status" | jq -r '.[0].id // empty')
+    json=$(list "$status") || { echo "::error::eas build:list ($status) failed"; exit 1; }
+    BUILD_ID=$(jq -er 'if type == "array" then .[0].id // "" else error("not a list") end' <<< "$json") \
+      || { echo "::error::eas build:list ($status) returned no build list"; exit 1; }
     [ -n "$BUILD_ID" ] && return 0
   done
   return 1
