@@ -38,7 +38,7 @@ import {
 import { appleCalendarServicesLayer, DeviceContacts, EventMutations } from '@calendar/sync';
 import { SqliteClient } from '@effect/sql-sqlite-node';
 import { Effect, Layer } from 'effect';
-import { layer as reactivityLayer } from 'effect/unstable/reactivity/Reactivity';
+import { layer as reactivityLayer } from 'effect/reactivity/Reactivity';
 import { type AgentPolicy, EMPTY_POLICY } from '../policy.ts';
 import { encodeRef } from '../refs.ts';
 import { AgentSignals } from '../signals.ts';

@@ -21,7 +21,7 @@ import type {
 import { msUntilNextMidnight, secondaryZones, Temporal } from '@calendar/core';
 import { RegistryContext, useAtomValue } from '@effect/atom-react';
 import { Cause, Effect, Exit, Option } from 'effect';
-import { AsyncResult, type Atom, AtomRegistry } from 'effect/unstable/reactivity';
+import { AsyncResult, type Atom, AtomRegistry } from 'effect/reactivity';
 import {
   createContext,
   createElement,

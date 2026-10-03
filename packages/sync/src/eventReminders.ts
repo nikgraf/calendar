@@ -1,7 +1,7 @@
 import { MAX_REMINDER_MINUTES, planEventReminders, type PlannedNotification } from '@calendar/core';
 import { CalendarRepo, type DeviceSettingsRepo, type EventRepo } from '@calendar/db';
 import { Effect } from 'effect';
-import type { SqlError } from 'effect/unstable/sql/SqlError';
+import type { SqlError } from 'effect/sql/SqlError';
 import type { AppleCalendarEvents } from './appleCalendarEvents.ts';
 import { readEventNotificationSettings } from './deviceSettings.ts';
 import { loadEventsInRange } from './eventsInRange.ts';

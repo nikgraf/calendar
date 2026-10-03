@@ -1,9 +1,9 @@
 import { SqliteClient } from '@effect/sql-sqlite-node';
 import { expect, it } from '@effect/vitest';
 import { Effect } from 'effect';
-import { SqlClient } from 'effect/unstable/sql/SqlClient';
+import { SqlClient } from 'effect/sql/SqlClient';
 import { describe } from 'vitest';
-import type { ResolvedMigration } from 'effect/unstable/sql/Migrator';
+import type { ResolvedMigration } from 'effect/sql/Migrator';
 import { runMigrations, runMigrationsWith } from './migrate.ts';
 import { migrations } from './migrations.ts';
 

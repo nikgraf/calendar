@@ -33,8 +33,8 @@ import { RemindersClient, unavailableRemindersClient } from '@calendar/reminders
 import { SqliteClient } from '@effect/sql-sqlite-node';
 import { expect, it } from '@effect/vitest';
 import { Effect, Exit, Layer } from 'effect';
-import { layer as reactivityLayer, type Reactivity } from 'effect/unstable/reactivity/Reactivity';
-import { SqlClient } from 'effect/unstable/sql/SqlClient';
+import { layer as reactivityLayer, type Reactivity } from 'effect/reactivity/Reactivity';
+import { SqlClient } from 'effect/sql/SqlClient';
 import { describe } from 'vitest';
 import { EventMutations } from './mutations.ts';
 

@@ -4,10 +4,10 @@ A Fantastical-style Google Calendar and Apple Calendar client: iOS app (Expo SDK
 
 ## Architecture
 
-Effect v4 (rc pre-release, all `effect*` packages pinned to one version via the pnpm catalog) is the foundation for all non-UI code:
+Effect v4 (4.0.0, all `effect*` packages pinned exactly to one version via the pnpm catalog) is the foundation for all non-UI code:
 
 - `packages/core` — Schema domain models, tagged errors, Temporal time helpers (`@js-temporal/polyfill`), rrule-temporal recurrence expansion, pure layout engine, drag/time math, the `findSlots` free-time solver (`src/scheduling/`), and `AppBackendRpcs` — the effect rpc group that is the platform seam (request/response methods + a `stream: true` invalidations rpc).
-- `packages/google` — TokenStore/TokenManager services, GoogleCalendarClient + GoogleTasksClient over `effect/unstable/http`, Schedule-based retry.
+- `packages/google` — TokenStore/TokenManager services, GoogleCalendarClient + GoogleTasksClient over `effect/http`, Schedule-based retry.
 - `packages/db` — repository services with Schema row codecs over a hand-rolled migration runner (`src/migrate.ts` — effect's Migrator is Metro-incompatible); Reactivity keys (`accounts`, `calendars`, `events` + `events:<calendarId>`, `pendingOps`, `tasks`, `taskLists`, `notice:dropped`) for invalidation.
 - `packages/sync` — SyncEngine service: per-account sync fibers, pending-op queue (10 op kinds incl. tasks and `move`), typed sync errors; Google Tasks watermark sync; Apple Reminders mirror (`syncReminders`) and provider-dispatched task mutations (`reminderMutations.ts`); Apple Calendar calendar mirror (`syncAppleCalendar`), read-through events (`AppleCalendarEvents`) and provider-dispatched event mutations + cross-provider moves (`appleEventMutations.ts`, `moveEvent` in `mutations.ts`).
 - `packages/ai` — provider seam + prompt/normalize pipelines for quick-add parsing and find-a-time; platform adapters (Swift helper on desktop, @react-native-ai/apple on iOS) live in the apps.

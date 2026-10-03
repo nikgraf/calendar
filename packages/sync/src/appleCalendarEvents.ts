@@ -7,7 +7,7 @@ import { APPLE_CALENDAR_ACCOUNT_ID, type EventRecord, isMirrorUrl, Temporal } fr
 import { AccountRepo, CalendarRepo } from '@calendar/db';
 import { EVENTS_KEY } from '@calendar/db/keys';
 import { Clock, Context, Effect, Layer, Stream } from 'effect';
-import { Reactivity } from 'effect/unstable/reactivity/Reactivity';
+import { Reactivity } from 'effect/reactivity/Reactivity';
 
 /** EKEventStoreChanged arrives in bursts (iCloud sync, our own writes). */
 const CHANGE_DEBOUNCE = '1 second';

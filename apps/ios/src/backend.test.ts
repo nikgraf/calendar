@@ -19,7 +19,7 @@ vi.mock('./notifications.ts', async () => {
   return { iosNotificationSink: Layer.succeed(NotificationSink, noopNotificationSink) };
 });
 vi.mock('@effect/sql-sqlite-react-native/SqliteClient', async () => {
-  const { SqlClient } = await import('effect/unstable/sql/SqlClient');
+  const { SqlClient } = await import('effect/sql/SqlClient');
   return {
     layer: () => Layer.effect(SqlClient)(Effect.die(new Error('Database is ahead of this build'))),
   };

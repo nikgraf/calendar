@@ -9,7 +9,7 @@ import {
 } from '@calendar/core';
 import { DeviceSettingsRepo } from '@calendar/db';
 import { Effect, Schema } from 'effect';
-import type { SqlError } from 'effect/unstable/sql/SqlError';
+import type { SqlError } from 'effect/sql/SqlError';
 
 /**
  * Where mirrors live. Two device_settings rows, on purpose:

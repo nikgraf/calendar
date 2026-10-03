@@ -18,8 +18,8 @@ import { RemindersClient, unavailableRemindersClient } from '@calendar/reminders
 import { SqliteClient } from '@effect/sql-sqlite-node';
 import { Context, Data, Effect, Layer, ManagedRuntime } from 'effect';
 import { LIVE_ACCOUNT_ID, liveWireLayer } from './liveWire.ts';
-import type { HttpClient } from 'effect/unstable/http';
-import { layer as reactivityLayer } from 'effect/unstable/reactivity/Reactivity';
+import type { HttpClient } from 'effect/http';
+import { layer as reactivityLayer } from 'effect/reactivity/Reactivity';
 import { appleCalendarServicesLayer } from '../appleCalendarEvents.ts';
 import { SyncEngine } from '../engine.ts';
 import { EventMutations } from '../mutations.ts';

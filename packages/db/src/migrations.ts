@@ -1,6 +1,6 @@
 import { Effect } from 'effect';
-import { SqlClient } from 'effect/unstable/sql/SqlClient';
-import type { ResolvedMigration } from 'effect/unstable/sql/Migrator';
+import { SqlClient } from 'effect/sql/SqlClient';
+import type { ResolvedMigration } from 'effect/sql/Migrator';
 
 // The whole schema in one migration. Twelve incremental migrations accreted
 // while building and were collapsed before the first release (2026-09-15);

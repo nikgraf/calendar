@@ -1,5 +1,5 @@
 import { Context, Effect, Layer } from 'effect';
-import { HttpClient, HttpClientRequest } from 'effect/unstable/http';
+import { HttpClient, HttpClientRequest } from 'effect/http';
 import { GcalPeoplePage } from './apiTypes.ts';
 import { SyncTokenExpiredError } from './errors.ts';
 import { TokenManager } from './oauth/tokenManager.ts';

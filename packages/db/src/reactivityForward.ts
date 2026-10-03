@@ -1,5 +1,5 @@
 import { Effect, Layer } from 'effect';
-import { make as makeReactivity, Reactivity } from 'effect/unstable/reactivity/Reactivity';
+import { make as makeReactivity, Reactivity } from 'effect/reactivity/Reactivity';
 
 type Keys = ReadonlyArray<unknown> | Readonly<Record<string, ReadonlyArray<unknown>>>;
 

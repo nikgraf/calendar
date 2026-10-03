@@ -1,5 +1,5 @@
 import { Context, Effect, Layer } from 'effect';
-import { HttpClient, HttpClientRequest } from 'effect/unstable/http';
+import { HttpClient, HttpClientRequest } from 'effect/http';
 import {
   GcalCalendar,
   GcalCalendarListEntry,

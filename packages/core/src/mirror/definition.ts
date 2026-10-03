@@ -93,7 +93,7 @@ export type MirrorFilters = typeof MirrorFilters.Type;
 
 export const MirrorDefinition = Schema.Struct({
   /** The title of busy blocks and of private events. */
-  busyLabel: Schema.String.pipe(Schema.check(Schema.isLengthBetween(1, MAX_LABEL_LENGTH))),
+  busyLabel: Schema.String.pipe(Schema.check(Schema.isBetweenLength(1, MAX_LABEL_LENGTH))),
   destination: MirrorCalendarRef,
   fields: MirrorFields,
   filters: MirrorFilters,
@@ -102,9 +102,9 @@ export const MirrorDefinition = Schema.Struct({
   monthsAhead: Schema.Number.pipe(
     Schema.check(Schema.isInt(), Schema.isBetween({ maximum: MIRROR_MAX_MONTHS, minimum: 1 })),
   ),
-  name: Schema.String.pipe(Schema.check(Schema.isLengthBetween(1, MAX_LABEL_LENGTH))),
+  name: Schema.String.pipe(Schema.check(Schema.isBetweenLength(1, MAX_LABEL_LENGTH))),
   sources: Schema.Array(MirrorSourceRef).pipe(
-    Schema.check(Schema.isLengthBetween(1, MIRROR_MAX_SOURCES)),
+    Schema.check(Schema.isBetweenLength(1, MIRROR_MAX_SOURCES)),
   ),
   /** The zone "today" and the window are computed in, and copies are written in. */
   timeZone: Schema.String.pipe(

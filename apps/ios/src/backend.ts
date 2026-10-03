@@ -33,7 +33,7 @@ import { layer as sqliteLayer } from '@effect/sql-sqlite-react-native/SqliteClie
 import Constants from 'expo-constants';
 import { AFTER_FIRST_UNLOCK, deleteItemAsync, getItemAsync, setItemAsync } from 'expo-secure-store';
 import { Data, Duration, Effect, Layer, ManagedRuntime } from 'effect';
-import { FetchHttpClient } from 'effect/unstable/http';
+import { FetchHttpClient } from 'effect/http';
 import { googleFixtureLayer, seedFixtureAccounts } from '@calendar/sync/testing/googleFixture';
 import { liveWireLayer, seedLiveAccount } from '@calendar/sync/testing/liveWire';
 import { googleFixture } from '../e2e/fixtures/google.ts';

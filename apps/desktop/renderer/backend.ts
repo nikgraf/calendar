@@ -3,8 +3,8 @@ import type { AgentRequestView, AgentsState, AgentView } from '@calendar/agent/v
 import { AppBackendRpcs, type BackendClient } from '@calendar/core';
 import { duplexClientProtocol } from '@calendar/sync/rpcDuplex';
 import { Context, Effect, Fiber, Layer, ManagedRuntime, Stream } from 'effect';
-import { RpcClient, RpcSerialization } from 'effect/unstable/rpc';
-import type { RpcClientError } from 'effect/unstable/rpc/RpcClientError';
+import { RpcClient, RpcSerialization } from 'effect/rpc';
+import type { RpcClientError } from 'effect/rpc/RpcClientError';
 import type { SettingsPaneId } from './settingsPanes.ts';
 
 export interface PrivacyState {

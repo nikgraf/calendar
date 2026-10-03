@@ -8,7 +8,7 @@ import { expect, it } from '@effect/vitest';
 import { Effect, Layer } from 'effect';
 import { TestClock } from 'effect/testing';
 import { BIRTHDAYS_KEY } from '@calendar/db/keys';
-import { layer as reactivityLayer, Reactivity } from 'effect/unstable/reactivity/Reactivity';
+import { layer as reactivityLayer, Reactivity } from 'effect/reactivity/Reactivity';
 import { describe } from 'vitest';
 import { DeviceContacts } from './deviceContacts.ts';
 

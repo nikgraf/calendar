@@ -7,7 +7,8 @@ updates:
       interval: weekly
     labels: [dependencies]
   # Grouped so one PR per week covers the workspace; effect stays pinned
-  # to its rc via the pnpm catalog and is left alone here.
+  # exactly via the pnpm catalog (all effect* move together, by hand) and
+  # is left alone here.
   - package-ecosystem: npm
     directory: /
     schedule:

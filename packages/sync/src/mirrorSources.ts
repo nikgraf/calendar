@@ -18,7 +18,7 @@ import {
 } from '@calendar/core';
 import { EventRepo, TaskRepo } from '@calendar/db';
 import { Effect } from 'effect';
-import type { SqlError } from 'effect/unstable/sql/SqlError';
+import type { SqlError } from 'effect/sql/SqlError';
 import type { ResolvedSource } from './mirrorResolve.ts';
 
 /**

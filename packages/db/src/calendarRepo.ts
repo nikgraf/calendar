@@ -1,8 +1,8 @@
 import { type CalendarInfo } from '@calendar/core';
 import { Context, Effect, Layer } from 'effect';
-import { Reactivity } from 'effect/unstable/reactivity/Reactivity';
-import { SqlClient } from 'effect/unstable/sql/SqlClient';
-import type { SqlError } from 'effect/unstable/sql/SqlError';
+import { Reactivity } from 'effect/reactivity/Reactivity';
+import { SqlClient } from 'effect/sql/SqlClient';
+import type { SqlError } from 'effect/sql/SqlError';
 import { CALENDARS_KEY, EVENTS_KEY, SYNC_STATE_KEY } from './keys.ts';
 import { calendarFromRow, type CalendarRow, defaultRemindersJson } from './rows.ts';
 import { accountGuard } from './repoShared.ts';

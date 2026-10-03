@@ -1,7 +1,7 @@
 import { BirthdayRecord, mergeBirthdays } from '@calendar/core';
 import { AccountRepo, BirthdayRepo } from '@calendar/db';
 import { Effect } from 'effect';
-import type { SqlError } from 'effect/unstable/sql/SqlError';
+import type { SqlError } from 'effect/sql/SqlError';
 import { DeviceContacts } from './deviceContacts.ts';
 
 /**

@@ -1,6 +1,6 @@
 import { CarriedText, type EventRecord, EventRecord as EventRecordSchema } from '@calendar/core';
 import { Schema } from 'effect';
-import { SqlClient } from 'effect/unstable/sql/SqlClient';
+import { SqlClient } from 'effect/sql/SqlClient';
 
 /** PendingOp payloads are stored as encoded EventRecord JSON. */
 export const eventPayloadJson = (event: EventRecord): unknown =>

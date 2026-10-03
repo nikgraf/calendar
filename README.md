@@ -9,7 +9,7 @@ A Fantastical-style Google Calendar client: iOS (Expo) + macOS (Electron), clien
 - On-device AI (Apple Foundation Models, no cloud): quick-add natural language parsing, "find a time" slot suggestions, and dictation — ⌘K bar on macOS, quick-add bar on iOS.
 
 **Docs:** `docs/architecture.md` (data flow, op queue, recurring model, AI layer),
-`docs/effect-v4-notes.md` (Effect v4 pre-release gotchas),
+`docs/effect-v4-notes.md` (Effect v4 gotchas),
 `docs/google-sync-and-testing.md` (verified API semantics, testing),
 `docs/distribution.md` (CI builds, TestFlight, EAS updates).
 

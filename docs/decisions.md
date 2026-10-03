@@ -1741,3 +1741,29 @@ test`/`test:e2e`/`test:e2e:ios`; every file creates its own
       2026-10-03) but a narrow-scope sign-in creating a calendar is
       untested; a real two-device run, reminder external ids across
       devices, the new Swift paths against real EventKit.
+
+### Effect 4.0.0 stable (2026-10-03)
+
+- [x] Move off the release candidates onto stable Effect 4.0.0 — done
+      (`todo/effect-4-stable`): all five `effect*` packages pinned
+      exactly to `4.0.0` in the catalog. Decisions: **the pin stays
+      exact** — rpc, sql, http and reactivity, the modules this app
+      leans on most, are still `@stability unstable` and may break in a
+      minor, so every bump stays a deliberate, all-packages-together
+      change (Dependabot keeps ignoring `effect*`). **No release-age
+      exclusion**: stable shipped 2026-10-01 and the 2-day
+      `minimumReleaseAge` was waited out rather than bypassed; the code
+      was migrated against rc.118, which already carried every change
+      that needed an edit. The cost from rc.115: rc.118 moved every
+      `effect/unstable/*` module to `effect/*` and removed the old paths
+      (~100 files, imports and one `vi.mock` only); the deep SQL imports
+      stay deep (`effect/sql/SqlClient`, never the barrel — the Metro
+      rule is unchanged); `Schema.isLengthBetween` became
+      `isBetweenLength`. The custom rpc protocols in `rpcDuplex.ts`
+      needed nothing — both `Protocol` shapes are field-for-field what
+      rc.115 required. `effect` no longer has runtime dependencies (159
+      fewer packages installed). **Vitest stays 4**: `@effect/vitest`
+      declares a Vitest 5 peer (it already did at rc.115) but the suites
+      only use `it.effect` / `expect` and pass unchanged, so vite-plus 1.0
+      (Vitest 5) stays a separate sweep item. The iOS native fingerprint
+      did not move, so the existing EAS dev client covers the change.

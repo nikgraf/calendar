@@ -1,8 +1,8 @@
 import { type PendingOp } from '@calendar/core';
 import { Context, Effect, Layer } from 'effect';
-import { Reactivity } from 'effect/unstable/reactivity/Reactivity';
-import { SqlClient } from 'effect/unstable/sql/SqlClient';
-import type { SqlError } from 'effect/unstable/sql/SqlError';
+import { Reactivity } from 'effect/reactivity/Reactivity';
+import { SqlClient } from 'effect/sql/SqlClient';
+import type { SqlError } from 'effect/sql/SqlError';
 import { OPS_KEY } from './keys.ts';
 import { pendingOpFromRow, type PendingOpRow } from './rows.ts';
 import { carriedTextJson, eventPayloadJson } from './repoShared.ts';

@@ -2,7 +2,7 @@ import { BirthdayRecord, Contact } from '@calendar/core';
 import { ContactsClient, contactsReadable, type DeviceBirthdayJson } from '@calendar/contacts';
 import { BIRTHDAYS_KEY } from '@calendar/db/keys';
 import { Clock, Context, Effect, Layer, Ref, Semaphore, Stream } from 'effect';
-import { Reactivity } from 'effect/unstable/reactivity/Reactivity';
+import { Reactivity } from 'effect/reactivity/Reactivity';
 
 /** A snapshot older than this is refetched on the next lookup. */
 const STALE_AFTER_MS = 5 * 60 * 1000;

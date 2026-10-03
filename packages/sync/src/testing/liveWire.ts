@@ -2,8 +2,8 @@ import { Account, TokenSet } from '@calendar/core';
 import { AccountRepo } from '@calendar/db';
 import { GOOGLE_SCOPES, TokenStore } from '@calendar/google';
 import { Effect, Layer } from 'effect';
-import { FetchHttpClient, type HttpClient } from 'effect/unstable/http';
-import type { SqlError } from 'effect/unstable/sql/SqlError';
+import { FetchHttpClient, type HttpClient } from 'effect/http';
+import type { SqlError } from 'effect/sql/SqlError';
 import { LIVE_CALENDAR_SCOPE } from './liveScratchRest.ts';
 
 /**

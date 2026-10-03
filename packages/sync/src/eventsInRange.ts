@@ -1,7 +1,7 @@
 import { assembleWindow, type EventRecord } from '@calendar/core';
 import { EventRepo } from '@calendar/db';
 import { Effect } from 'effect';
-import type { SqlError } from 'effect/unstable/sql/SqlError';
+import type { SqlError } from 'effect/sql/SqlError';
 import { AppleCalendarEvents } from './appleCalendarEvents.ts';
 
 /**

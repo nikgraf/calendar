@@ -1,7 +1,7 @@
 import { Effect, Layer } from 'effect';
 import { Queue } from 'effect';
-import { RpcClient, RpcSerialization, RpcServer } from 'effect/unstable/rpc';
-import type { FromClientEncoded, FromServerEncoded } from 'effect/unstable/rpc/RpcMessage';
+import { RpcClient, RpcSerialization, RpcServer } from 'effect/rpc';
+import type { FromClientEncoded, FromServerEncoded } from 'effect/rpc/RpcMessage';
 
 export type RpcFrame = string | Uint8Array;
 
@@ -57,8 +57,8 @@ export const duplexServerProtocol = (
 
         return {
           clientIds: Effect.sync(() => new Set(clients)),
-          // rc.115: the server derives its payload/exit codecs through the
-          // protocol, so it forwards the serialization's codecFor.
+          // The server derives its payload/exit codecs through the protocol,
+          // so it forwards the serialization's codecFor.
           codecFor: serialization.codecFor,
           disconnects,
           end: (_clientId) => Effect.void,

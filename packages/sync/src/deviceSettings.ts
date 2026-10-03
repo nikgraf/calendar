@@ -11,7 +11,7 @@ import {
 } from '@calendar/core';
 import { DeviceSettingsRepo } from '@calendar/db';
 import { Effect, Schema } from 'effect';
-import type { SqlError } from 'effect/unstable/sql/SqlError';
+import type { SqlError } from 'effect/sql/SqlError';
 
 /** The device_settings key for birthday reminders. */
 export const BIRTHDAY_REMINDERS_KEY = 'birthdayReminders';

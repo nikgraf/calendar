@@ -2,7 +2,7 @@ import { Attendee, CarriedText, EventRecord, GeoLocation, PendingOp } from '@cal
 import { SqliteClient } from '@effect/sql-sqlite-node';
 import { expect, it } from '@effect/vitest';
 import { Effect, Layer } from 'effect';
-import { layer as reactivityLayer } from 'effect/unstable/reactivity/Reactivity';
+import { layer as reactivityLayer } from 'effect/reactivity/Reactivity';
 import { describe } from 'vitest';
 import { runMigrations } from './migrate.ts';
 import { PendingOpRepo, reposLayer } from './repos.ts';

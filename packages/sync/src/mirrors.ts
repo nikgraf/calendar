@@ -36,7 +36,7 @@ import {
 } from '@calendar/db/keys';
 import { GoogleCalendarClient, grantsCalendarCreation, TokenStore } from '@calendar/google';
 import { Clock, Context, Duration, Effect, Layer, Schema, Semaphore, Stream } from 'effect';
-import { Reactivity } from 'effect/unstable/reactivity/Reactivity';
+import { Reactivity } from 'effect/reactivity/Reactivity';
 import { SyncEngine } from './engine.ts';
 import {
   appleMirrorDestination,
