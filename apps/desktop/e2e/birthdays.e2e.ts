@@ -217,7 +217,9 @@ describe('contact birthdays', () => {
       `!document.querySelector('[data-testid="birthday-reminders-custom"]') && document.querySelector('[data-testid="birthday-reminders"] input[aria-label="Remind 2 weeks before"]')?.checked === false`,
     );
 
-    // Muted for this person; Settings lists them and resets them too.
+    // Muted for this person; Settings lists them and resets them too —
+    // with the detail still open, which follows the reset instead of
+    // holding on to the last value it sent.
     await clickInDetail('input[aria-label="Remind on the day"]');
     await clickInDetail('input[aria-label="Remind 1 week before"]');
     await expect
@@ -225,8 +227,6 @@ describe('contact birthdays', () => {
       .toEqual([
         { day: person.day, displayName: 'Alice Example', leadDays: [], month: person.month },
       ]);
-    await cdp.pressEscape();
-    await cdp.waitFor(`!document.querySelector('[role="dialog"][aria-label="Birthday"]')`);
 
     const settings = await app.openSettings('notifications');
     await settings.waitFor(
@@ -238,5 +238,24 @@ describe('contact birthdays', () => {
     await expect.poll(stored, { timeout: 10_000 }).toEqual([]);
     await settings.waitFor(`!document.querySelector('[data-testid="birthday-overrides"]')`);
     await app.closeSettings();
+
+    await cdp.waitFor(
+      `!document.querySelector('[data-testid="birthday-reminders-custom"]') && document.querySelector('[data-testid="birthday-reminders"] input[aria-label="Remind on the day"]')?.checked === true`,
+    );
+    expect(await checked('Remind 1 week before')).toBe(true);
+    // A toggle now starts from the general lead days, not the muted list.
+    await clickInDetail('input[aria-label="Remind 2 weeks before"]');
+    await expect.poll(stored, { timeout: 10_000 }).toEqual([
+      {
+        day: person.day,
+        displayName: 'Alice Example',
+        leadDays: [0, 7, 14],
+        month: person.month,
+      },
+    ]);
+    await clickInDetail('[data-testid="birthday-reminders-custom"]');
+    await expect.poll(stored, { timeout: 10_000 }).toEqual([]);
+    await cdp.pressEscape();
+    await cdp.waitFor(`!document.querySelector('[role="dialog"][aria-label="Birthday"]')`);
   });
 });

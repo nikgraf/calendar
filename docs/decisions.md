@@ -1862,7 +1862,15 @@ test`/`test:e2e`/`test:e2e:ios`; every file creates its own
       main window held an idle copy of the general lead days changed
       meanwhile in the Settings window (the e2e caught it — first open
       after the change showed the old list, a reopen the new one), and a
-      toggle would have saved an override built from it. iOS e2e seeds
+      toggle would have saved an override built from it. Review fixes:
+      every partial write of the list goes through one locked
+      read-modify-write (`updateBirthdayReminderOverrides`), and an import
+      joins the file's entries into what is stored when it runs, not into
+      the list it planned against — it can sit on the iOS permission
+      prompt while the user mutes someone. The detail view's optimistic
+      value lasts only until its save's refetch lands; after that the
+      stored list is the truth, so a Reset in Settings with the detail
+      open shows up instead of being shadowed. iOS e2e seeds
       the person through the fixture Google account's People
       connections (`GoogleFixture.people`, contacts on), a week from
       today inside today's month so no day-view flow meets the chip;

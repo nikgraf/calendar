@@ -24,7 +24,7 @@ import {
   readEventNotificationSettings,
   readTimeZoneSettings,
   readViewPreferences,
-  writeBirthdayReminderOverrides,
+  updateBirthdayReminderOverrides,
   writeTimeZoneSettings,
   writeViewPreferences,
 } from './deviceSettings.ts';
@@ -68,6 +68,7 @@ interface AccountFlips {
 
 /** Everything an import would do, computed once; preview reports it, import executes it. */
 interface ImportPlan {
+  /** The file's per-person entries, joined into what is stored when the import runs. */
   readonly birthdayReminderOverrides?: BirthdayReminderOverrides | undefined;
   readonly birthdayReminders?: BirthdayReminderSettings | undefined;
   readonly eventNotifications?: EventNotificationSettings | undefined;
@@ -82,6 +83,12 @@ interface ImportPlan {
 }
 
 const same = (a: unknown, b: unknown): boolean => JSON.stringify(a) === JSON.stringify(b);
+
+/** Stored entries plus a file's; the file's wins for the same person. */
+const joinOverrides = (
+  current: BirthdayReminderOverrides,
+  incoming: BirthdayReminderOverrides,
+): BirthdayReminderOverrides => canonicalBirthdayOverrides([...current, ...incoming]);
 
 const plural = (count: number, noun: string): string => `${count} ${noun}${count === 1 ? '' : 's'}`;
 
@@ -123,13 +130,15 @@ const planSettingsImport = (
       settingsChanged.push('birthdayReminders');
     }
     // Per-person lead days: the file's entries join (and for the same
-    // person replace) the ones here; none is removed.
+    // person replace) the ones here; none is removed. The plan keeps the
+    // file's entries, not the joined list: the join is redone against
+    // what is stored when the import runs (see updateBirthdayReminderOverrides).
+    const incomingOverrides = document.birthdayReminderOverrides;
     let birthdayReminderOverrides: BirthdayReminderOverrides | undefined;
-    if (document.birthdayReminderOverrides !== undefined) {
+    if (incomingOverrides !== undefined) {
       const current = yield* readBirthdayReminderOverrides;
-      const next = canonicalBirthdayOverrides([...current, ...document.birthdayReminderOverrides]);
-      if (!same(next, current)) {
-        birthdayReminderOverrides = next;
+      if (!same(joinOverrides(current, incomingOverrides), current)) {
+        birthdayReminderOverrides = incomingOverrides;
         settingsChanged.push('birthdayReminderOverrides');
       }
     }
@@ -326,8 +335,11 @@ export const importSettings = (
       if (plan.birthdayReminders) {
         yield* applyBirthdayReminderSettings(plan.birthdayReminders);
       }
-      if (plan.birthdayReminderOverrides) {
-        yield* writeBirthdayReminderOverrides(plan.birthdayReminderOverrides);
+      const incomingOverrides = plan.birthdayReminderOverrides;
+      if (incomingOverrides) {
+        yield* updateBirthdayReminderOverrides((current) =>
+          joinOverrides(current, incomingOverrides),
+        );
         yield* Effect.forkDetach((yield* LocalNotifications).run());
       }
       if (plan.screenPrivacy) {

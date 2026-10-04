@@ -8,10 +8,9 @@ import type { DeviceSettingsRepo } from '@calendar/db';
 import { Effect } from 'effect';
 import type { SqlError } from 'effect/sql/SqlError';
 import {
-  readBirthdayReminderOverrides,
   readBirthdayReminderSettings,
   readEventNotificationSettings,
-  writeBirthdayReminderOverrides,
+  updateBirthdayReminderOverrides,
   writeBirthdayReminderSettings,
   writeEventNotificationSettings,
 } from './deviceSettings.ts';
@@ -72,8 +71,9 @@ export const applyBirthdayReminderOverride = (
   input: BirthdayReminderOverrideInput,
 ): Effect.Effect<void, SqlError, DeviceSettingsRepo | LocalNotifications> =>
   Effect.gen(function* () {
-    const overrides = yield* readBirthdayReminderOverrides;
-    yield* writeBirthdayReminderOverrides(withBirthdayOverride(overrides, input, input.leadDays));
+    yield* updateBirthdayReminderOverrides((overrides) =>
+      withBirthdayOverride(overrides, input, input.leadDays),
+    );
     yield* Effect.forkDetach((yield* LocalNotifications).run());
   });
 

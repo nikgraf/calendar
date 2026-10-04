@@ -37,6 +37,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from 'react';
@@ -299,9 +300,12 @@ export interface BirthdayOverrideEditor {
 }
 
 /**
- * The detail view's per-person reminder editor. Like useSettingsEditor,
- * the last value sent is the truth until it is read back, so two quick
- * toggles both land.
+ * The detail view's per-person reminder editor. A save shows its value at
+ * once and keeps showing it until the refetch it set off has landed, so
+ * two quick toggles both land; after that the stored list is the truth
+ * again, so a change made elsewhere while the view stays open (Reset in
+ * Settings, an import, the settings file) shows up instead of being
+ * shadowed by the last value sent.
  *
  * Both settings are re-read as the view opens, and it reports `loaded`
  * only once they are back. On desktop, the first open after the general
@@ -318,9 +322,8 @@ export const useBirthdayOverrideEditor = (
   const settings = Option.getOrNull(
     AsyncResult.value(useAtomValue(atoms.birthdayReminderSettings)),
   );
-  const overrides = Option.getOrNull(
-    AsyncResult.value(useAtomValue(atoms.birthdayReminderOverrides)),
-  );
+  const overridesResult = useAtomValue(atoms.birthdayReminderOverrides);
+  const overrides = Option.getOrNull(AsyncResult.value(overridesResult));
   // Set once the re-read is back, never cleared: a save's own refetch must
   // not unmount the controls.
   const [refreshed, setRefreshed] = useState(false);
@@ -344,25 +347,46 @@ export const useBirthdayOverrideEditor = (
   const loaded = refreshed && settings !== null && overrides !== null;
   const { setBirthdayReminderOverride } = useBackendMutations();
   const key = birthdayMergeKey(record);
-  // `null`: sent "use the general ones"; undefined: nothing sent yet.
+  // The latest save, shown until stored data has caught up with it.
+  // `leadDays: null` sent "use the general ones".
   const [sent, setSent] = useState<
-    { readonly key: string; readonly leadDays: ReadonlyArray<BirthdayLeadDays> | null } | undefined
+    | {
+        readonly key: string;
+        readonly leadDays: ReadonlyArray<BirthdayLeadDays> | null;
+        /** The backend acknowledged it; its refetch was already under way. */
+        readonly saved: boolean;
+        readonly seq: number;
+      }
+    | undefined
   >(undefined);
+  const lastSeq = useRef(0);
+  // A save's invalidation runs before the save resolves, so once it is
+  // acknowledged a list that is no longer waiting already holds it.
+  const pending =
+    sent !== undefined && sent.key === key && !(sent.saved && !overridesResult.waiting)
+      ? sent
+      : undefined;
+  if (sent !== undefined && pending === undefined) {
+    // Render-phase state adjustment (the React "derive from props" pattern).
+    setSent(undefined);
+  }
   const stored = overrides ? findBirthdayOverride(overrides, record)?.leadDays : undefined;
-  const own = sent?.key === key ? sent.leadDays : stored;
+  const own = pending ? pending.leadDays : stored;
   const general = settings?.leadDays ?? [];
   const leadDays = own ?? general;
   const save = (next: ReadonlyArray<BirthdayLeadDays> | null): Promise<void> => {
-    setSent({ key, leadDays: next });
+    lastSeq.current += 1;
+    const seq = lastSeq.current;
+    setSent({ key, leadDays: next, saved: false, seq });
     return setBirthdayReminderOverride({
       day: record.day,
       displayName: record.displayName,
       leadDays: next,
       month: record.month,
     }).then(
-      () => undefined,
+      () => setSent((current) => (current?.seq === seq ? { ...current, saved: true } : current)),
       (error: unknown) => {
-        setSent(undefined);
+        setSent((current) => (current?.seq === seq ? undefined : current));
         throw error;
       },
     );
