@@ -14,31 +14,11 @@ except the two below; their entries are in `docs/decisions.md` under
 From a read-only review of the whole app; nothing was run. "Verified"
 means the cited code was re-read and the defect is there, "reported" that
 one audit pass traced it — reproduce with a failing test first. Lines are
-from main on 2026-10-04.
+from main on 2026-10-04. The seven items fixed first (#110–#115) are closed in
+`docs/decisions.md` under "Review fixes (2026-10-04)".
 
 ### Data loss or corruption
 
-- [ ] All-day toggle on a recurring event corrupts it (verified) —
-      `editorModel.ts:565-580` never sends `isAllDay` to `updateRecurring`
-      (the `updateEvent` branch does), while `buildEventTimes` already
-      produced UTC-midnight times. Scope "This event" yields a timed 24 h
-      block; scope "All" shifts the whole series by the wall-clock delta
-      (`mutations.ts` series branch); all-day → timed is dropped silently.
-      Apple strips the same fields (`appleEventMutations.ts:166-215`). No
-      test has a recurring `isAllDay: true` fixture.
-- [ ] Editing a series that has not reached Google yet deletes it
-      (verified) — the series and following paths (`mutations.ts:1034`,
-      `:1084`; `deleteRecurring` following at `:794`) remove every queued
-      op and queue an `update`, with no `hasCreate` check like
-      `updateEvent`'s. The PATCH 404s and the NotFound arm deletes the
-      local master (`applyOp.ts:586`) without a toast. An instance edit
-      behind a create in backoff is dropped the same way.
-- [ ] Two edits to different fields of a Google task lose the first
-      (verified) — "latest wins" removes the queued `updateTask`
-      (`taskMutations.ts:192-197`), but an op carries only the fields that
-      edit changed (`applyOp.ts:520-526`). Rename, then change the day
-      while offline: the title reverts. Merge the queued op's fields into
-      the new one.
 - [ ] Event creates do not track "may already be on Google" (reported;
       the 409-is-done arm at `applyOp.ts:548` is verified) — tasks have
       `dispatchedAt`, events do not. An edit folded into a create that
@@ -46,22 +26,11 @@ from main on 2026-10-04.
       bring the event back, and a 409 leaves the row `pending` forever, so
       pulls skip it. The 410 and task `InsufficientScopeError` arms leave
       rows unreleased the same way.
-- [ ] Events in read-only calendars can be dragged (verified) —
-      `useEventDrag.ts:78-81` checks `readOnly` for tasks only, and
-      `updateEvent`/`updateRecurring` have no writability guard
-      (`moveEvent` and `createEvent` raise `CalendarNotWritableError`).
-      Google answers 403, the op is dropped and the moved row is marked
-      synced, so it shows the wrong time until the server copy changes.
-      Guard in `EventMutations`, then in both drag paths.
 - [ ] An earlier op's response overwrites a newer queued edit (reported)
       — `applyOp.ts:512` (also the rsvp and move arms) writes the response
       back without checking that a newer op owns the row; the newer op
       reuses the old etag, gets 412 and parks as a conflict against the
       user's own edit. A lost response retries into the same self-conflict.
-- [ ] "Remove" account is one tap and deletes queued changes (verified) —
-      `AccountCard.tsx:77-82`, desktop `AccountsView.tsx:100-106`;
-      `accountRepo.ts:57` deletes `pending_ops`. Confirm first and name
-      the number of unsynced changes.
 - [ ] Save tapped twice creates two events or tasks (reported) — no
       in-flight guard in `editorModel.ts` `save` or `taskEditorModel.ts`,
       and the Save button is never disabled; a write waiting behind a
@@ -69,14 +38,6 @@ from main on 2026-10-04.
 
 ### Security — agent gateway and desktop
 
-- [ ] Invisible text passes an ask-first approval (verified) —
-      `packages/agent/src/summary.ts:48-52` strips control, zero-width and
-      bidi characters from the summary the user approves, but the write
-      stores the agent's raw text (`ops/events.ts`, `ops/tasks.ts`), and
-      tag characters (U+E0000–E007F), U+2060–2064, U+FEFF and U+00AD are
-      not stripped at all. A prompt-injected agent can hide data in notes
-      that Google mails to a guest. Reject such characters when the write
-      is planned, so the summary is the whole write.
 - [ ] Approve in Settings › Agents lacks the dialog's 700 ms guard
       (reported) — `AgentsSection.tsx:513-553` vs
       `AgentApprovalDialog.tsx:6-29`: a double click can approve the next
@@ -98,11 +59,6 @@ from main on 2026-10-04.
 
 ### Time zones and recurrence
 
-- [ ] "Repeat until" is written as end of day in UTC (verified) —
-      `recurrence/build.ts:33` (also `structured.ts:214`). West of UTC the
-      last day is lost, east of it one extra occurrence appears;
-      `taskRecurrence.ts:51-75` already compensates on the read side.
-      `build.test.ts:22` pins the current output.
 - [ ] Notification text shows the event's zone, not the device's
       (verified) — `notifications/eventReminders.ts:201-203`: a Berlin
       user's 15:00 meeting created in New York reads "9:00 AM".
