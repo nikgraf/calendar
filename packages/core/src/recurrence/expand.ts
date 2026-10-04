@@ -43,22 +43,76 @@ const icsWallTime = (zonedDateTime: Temporal.ZonedDateTime): string =>
 
 /**
  * rrule-temporal throws past this many iterations. Rules without COUNT
- * fast-forward to the window, so only very long COUNT series and
- * pathological rules ever approach it; assembleWindow skips such a
- * master rather than failing the whole window.
+ * fast-forward to the window, and most COUNT shapes jump straight to it
+ * through the library's COUNT query plan; the shapes without a plan
+ * (plain MONTHLY, BYSETPOS, …) walk from DTSTART, so only very long such
+ * series and pathological rules ever approach it. assembleWindow skips
+ * such a master rather than failing the whole window.
  */
 export const EXPANSION_MAX_ITERATIONS = 10_000;
 
-export const buildRuleString = (master: RecurrenceMaster): string => {
-  const dtstart = master.isAllDay
+/**
+ * A set of only RDATE lines has no rule, and rrule-temporal will not build
+ * one without FREQ. This rule yields exactly DTSTART — the first instance
+ * of every recurrence set (RFC 5545) — and the library adds the RDATEs and
+ * takes the EXDATEs away as it does for any rule.
+ */
+export const DTSTART_ONLY_RULE = 'RRULE:FREQ=DAILY;COUNT=1';
+
+const dtstartLine = (master: RecurrenceMaster): string =>
+  master.isAllDay
     ? `DTSTART;VALUE=DATE:${(master.startDate ?? '').replaceAll('-', '')}`
     : `DTSTART;TZID=${master.startTimeZone}:${icsWallTime(
         toZonedDateTime(master.startUtc, master.startTimeZone),
       )}`;
+
+/**
+ * The master as rrule-temporal reads it. DTSTART is listed as an RDATE as
+ * well: Google draws an event's start as its first occurrence even on a
+ * day its rule skips, without counting it toward COUNT (verified live
+ * 2026-10-04), while rrule-temporal drops a DTSTART the rule does not
+ * generate. The RDATE adds exactly that — on a day the rule generates, the
+ * library dedupes it — and an EXDATE still takes it away.
+ */
+export const buildRuleString = (master: RecurrenceMaster): string => {
+  const dtstart = dtstartLine(master);
   // Google never includes DTSTART in recurrence[], but guard against it anyway.
   const lines = master.recurrence.filter((line) => !line.startsWith('DTSTART'));
-  return [dtstart, ...lines].join('\n');
+  const hasRule = lines.some((line) => line.toUpperCase().startsWith('RRULE:'));
+  return [
+    dtstart,
+    ...(hasRule ? [] : [DTSTART_ONLY_RULE]),
+    ...lines,
+    `RDATE${dtstart.slice('DTSTART'.length)}`,
+  ].join('\n');
 };
+
+/**
+ * How many occurrences one RRULE line generates before `beforeUtc`, DTSTART
+ * included only where the rule generates it — COUNT's own arithmetic, with
+ * none of the set's RDATE/EXDATE lines.
+ */
+export const ruleOccurrencesBefore = (
+  master: RecurrenceMaster,
+  ruleLine: string,
+  beforeUtc: EpochMs,
+): number =>
+  new RRuleTemporal({
+    maxIterations: EXPANSION_MAX_ITERATIONS,
+    rruleString: `${dtstartLine(master)}\n${ruleLine}`,
+    temporal: Temporal,
+  })
+    .between(
+      toZonedDateTime(master.startUtc, master.startTimeZone),
+      toZonedDateTime(beforeUtc, master.startTimeZone),
+      true,
+    )
+    .filter(
+      (occurrence) =>
+        (master.isAllDay
+          ? plainDateToUtcMs(occurrence.toPlainDate().toString())
+          : occurrence.toInstant().epochMilliseconds) < beforeUtc,
+    ).length;
 
 /**
  * Expands a recurring master into concrete instances overlapping

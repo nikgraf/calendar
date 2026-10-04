@@ -184,4 +184,32 @@ describe('assembleWindow', () => {
     expect(events.filter((event) => event.recurringEventId === 'fine')).toHaveLength(3);
     expect(events.some((event) => event.recurringEventId === 'runaway')).toBe(false);
   });
+
+  it('expands a set of only RDATE lines instead of skipping it', () => {
+    const skipped: Array<string> = [];
+    // The RDATE occurrence was moved: its override shadows it (and, in
+    // range, arrives among the singles like every override).
+    const moved = override({
+      endUtc: instant('2026-07-16T16:00:00Z'),
+      id: 'dates_20260716T090000Z',
+      originalStartUtc: instant('2026-07-16T09:00:00Z'),
+      recurringEventId: 'dates',
+      startUtc: instant('2026-07-16T15:00:00Z'),
+    });
+    const events = assembleWindow(
+      {
+        masters: [master({ id: 'dates', recurrence: ['RDATE:20260716T090000Z'] })],
+        overrides: [moved],
+        singles: [moved],
+      },
+      rangeStart,
+      rangeEnd,
+      (skippedMaster) => skipped.push(skippedMaster.id),
+    );
+    expect(skipped).toEqual([]);
+    expect(events.map((event) => event.id)).toEqual([
+      `dates__${instant('2026-07-07T09:00:00Z')}`,
+      'dates_20260716T090000Z',
+    ]);
+  });
 });

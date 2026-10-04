@@ -100,6 +100,33 @@ describe('runMigrations', () => {
     }).pipe(Effect.provide(sqlLayer())),
   );
 
+  it.effect('backfills the series end of masters with RDATE lines (migration 8)', () =>
+    Effect.gen(function* () {
+      const sql = yield* SqlClient;
+      yield* runMigrationsWith(migrations.filter(([id]) => id < 8));
+      const insert = (id: string, recurrence: ReadonlyArray<string>) => sql`
+        INSERT INTO events (account_id, calendar_id, id, status, title, is_all_day, start_utc,
+                            end_utc, start_time_zone, recurrence, recurrence_end_utc,
+                            sync_status, updated_at, synced_at)
+        VALUES ('a', 'c', ${id}, 'confirmed', 'Talks', 0, ${Date.parse('2026-07-07T09:00:00Z')},
+                ${Date.parse('2026-07-07T10:00:00Z')}, 'UTC', ${JSON.stringify(recurrence)}, NULL,
+                'synced', 1, 1)`;
+      yield* insert('dates', ['RDATE:20260801T090000Z,20260901T090000Z']);
+      yield* insert('rule-and-dates', ['RRULE:FREQ=WEEKLY;COUNT=2', 'RDATE:20261001T090000Z']);
+      yield* insert('endless', ['RRULE:FREQ=WEEKLY', 'RDATE:20261001T090000Z']);
+
+      yield* runMigrations;
+
+      const rows = yield* sql<{ id: string; recurrence_end_utc: number | null }>`
+        SELECT id, recurrence_end_utc FROM events ORDER BY id`;
+      expect(rows).toEqual([
+        { id: 'dates', recurrence_end_utc: Date.parse('2026-09-01T10:00:00Z') },
+        { id: 'endless', recurrence_end_utc: null },
+        { id: 'rule-and-dates', recurrence_end_utc: Date.parse('2026-10-01T10:00:00Z') },
+      ]);
+    }).pipe(Effect.provide(sqlLayer())),
+  );
+
   it.effect('is idempotent — a second run applies nothing', () =>
     Effect.gen(function* () {
       yield* runMigrations;

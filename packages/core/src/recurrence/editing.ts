@@ -1,6 +1,6 @@
 import { plainDateToUtcMs } from '../time/convert.ts';
 import { Temporal } from '../time/temporal.ts';
-import { expandRecurringEvent, type RecurrenceMaster } from './expand.ts';
+import { DTSTART_ONLY_RULE, type RecurrenceMaster, ruleOccurrencesBefore } from './expand.ts';
 
 /**
  * Helpers for editing recurring series the way Google Calendar does it:
@@ -111,13 +111,26 @@ const parseDateList = (
  * pruned the same way: UNTIL only bounds the RRULE, so an explicit
  * occurrence at or after the split would otherwise survive in the old
  * series. EXDATE lines stay as they are (an exclusion past the split is
- * harmless).
+ * harmless). A set of only RDATE lines with no value left before the split
+ * keeps DTSTART alone through DTSTART_ONLY_RULE: the old master stays a
+ * series for its exceptions, and the update is a PATCH, where an absent
+ * recurrence would keep the old one on Google.
  */
 export const truncateRecurrence = (
   recurrence: ReadonlyArray<string>,
   splitOriginalStartUtc: number,
   isAllDay: boolean,
   seriesTimeZone = 'UTC',
+): Array<string> => {
+  const truncated = pruneForTruncation(recurrence, splitOriginalStartUtc, isAllDay, seriesTimeZone);
+  return isRecurringSet(truncated) ? truncated : [DTSTART_ONLY_RULE, ...truncated];
+};
+
+const pruneForTruncation = (
+  recurrence: ReadonlyArray<string>,
+  splitOriginalStartUtc: number,
+  isAllDay: boolean,
+  seriesTimeZone: string,
 ): Array<string> =>
   recurrence.flatMap((line) => {
     const upper = line.toUpperCase();
@@ -151,26 +164,57 @@ export const truncateRecurrence = (
 
 /**
  * Recurrence lines for the new master created by a this-and-following split.
- * COUNT rules keep only the remaining occurrences (computed by expanding the
- * original master up to the split); UNTIL/unbounded rules carry over as-is.
+ * COUNT rules keep only the remaining occurrences: COUNT counts what the
+ * rule generates before any exclusion (RFC 5545), so the consumed part is
+ * the RRULE alone expanded up to the split — RDATE values add to it and
+ * EXDATE values do not take from it. UNTIL/unbounded rules carry over
+ * as-is. RDATE values keep only those after the split (rrule-temporal emits
+ * values before DTSTART too, so the old series' would show twice). The
+ * value at the split is the occurrence being edited: it becomes the new
+ * master's DTSTART, which is always an occurrence (on Google, and here via
+ * `buildRuleString`) even on a day the rule skips. A line left empty is
+ * dropped. EXDATE lines stay (an exclusion before the new start is
+ * harmless).
  */
 export const remainingRecurrence = (
   master: RecurrenceMaster,
   splitOriginalStartUtc: number,
 ): Array<string> =>
-  master.recurrence.map((line) => {
-    if (!line.toUpperCase().startsWith('RRULE:')) {
-      return line;
-    }
-    return rewriteRule(line, (parts) => {
-      const count = parts.get('COUNT');
-      if (count !== undefined) {
-        const consumed = expandRecurringEvent(
-          master,
-          master.startUtc,
-          splitOriginalStartUtc,
-        ).length;
-        parts.set('COUNT', String(Math.max(Number(count) - consumed, 1)));
+  master.recurrence.flatMap((line) => {
+    const upper = line.toUpperCase();
+    if (upper.startsWith('RDATE')) {
+      const { params, values } = parseDateList(line);
+      const kept = values.filter((value) => {
+        const ms = listValueMs(value, params, master.startTimeZone);
+        return ms === undefined || ms > splitOriginalStartUtc;
+      });
+      if (kept.length === 0) {
+        return [];
       }
-    });
+      const colon = line.indexOf(':');
+      return [`${line.slice(0, colon + 1)}${kept.join(',')}`];
+    }
+    if (!upper.startsWith('RRULE:')) {
+      return [line];
+    }
+    return [
+      rewriteRule(line, (parts) => {
+        const count = parts.get('COUNT');
+        if (count !== undefined) {
+          const consumed = ruleOccurrencesBefore(master, line, splitOriginalStartUtc);
+          parts.set('COUNT', String(Math.max(Number(count) - consumed, 1)));
+        }
+      }),
+    ];
+  });
+
+/**
+ * Whether lines still describe a series: an RRULE or an RDATE value. The
+ * new half of a split of a set of only RDATE lines can be left with
+ * neither (just DTSTART, maybe EXDATEs) — it is created as a single event.
+ */
+export const isRecurringSet = (recurrence: ReadonlyArray<string>): boolean =>
+  recurrence.some((line) => {
+    const upper = line.toUpperCase();
+    return upper.startsWith('RRULE:') || upper.startsWith('RDATE');
   });

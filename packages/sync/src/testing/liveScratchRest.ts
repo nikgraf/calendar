@@ -346,6 +346,20 @@ export const findEvents = async (
   return page.items ?? [];
 };
 
+/** events.instances: a series' occurrences as Google expands them (cancelled ones left out). */
+export const listInstances = async (
+  token: string,
+  calendarId: string,
+  eventId: string,
+): Promise<ReadonlyArray<LiveEvent>> => {
+  const page = await request<{ items?: ReadonlyArray<LiveEvent> }>(
+    token,
+    'GET',
+    eventUrl(calendarId, eventId, '/instances?maxResults=250'),
+  );
+  return page.items ?? [];
+};
+
 export const getTask = (token: string, listId: string, taskId: string): Promise<LiveTask> =>
   request(token, 'GET', listUrl(listId, `/tasks/${encodeURIComponent(taskId)}`));
 

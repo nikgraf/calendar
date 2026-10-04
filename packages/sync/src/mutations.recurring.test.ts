@@ -388,6 +388,60 @@ describe('EventMutations recurring scopes', () => {
     }).pipe(Effect.provide(testLayer)),
   );
 
+  it.effect('following update of a set of only RDATE lines splits its dates', () =>
+    Effect.gen(function* () {
+      yield* seedMaster;
+      const events = yield* EventRepo;
+      // July 1 (DTSTART), July 4 and July 8: explicit dates, no rule.
+      yield* events.upsertMany([
+        new EventRecord({
+          ...master,
+          recurrence: ['RDATE:20260704T090000Z,20260708T090000Z'],
+        }),
+      ]);
+      const mutations = yield* EventMutations;
+      // Split on July 4: the old master keeps July 1, the new one takes July 4 and 8.
+      yield* mutations.updateRecurring({
+        ...target,
+        changes: { title: 'Talks' },
+        scope: 'following',
+      });
+      const truncated = yield* events.getById('acc-1', 'cal-1', 'master1');
+      expect(truncated!.recurrence).toEqual(['RRULE:FREQ=DAILY;COUNT=1']);
+      const window = yield* events.getWindow(0, plainDateToUtcMs('2030-01-01'));
+      const newMaster = window.masters.find((event) => event.id !== 'master1');
+      expect(newMaster!.recurrence).toEqual(['RDATE:20260708T090000Z']);
+      expect(newMaster!.startUtc).toBe(occurrence);
+      expect(newMaster!.title).toBe('Talks');
+    }).pipe(Effect.provide(testLayer)),
+  );
+
+  it.effect('following update on the last RDATE value creates a single event', () =>
+    Effect.gen(function* () {
+      yield* seedMaster;
+      const events = yield* EventRepo;
+      yield* events.upsertMany([
+        new EventRecord({ ...master, recurrence: ['RDATE:20260702T090000Z,20260704T090000Z'] }),
+      ]);
+      const mutations = yield* EventMutations;
+      yield* mutations.updateRecurring({
+        ...target,
+        changes: { title: 'Last talk' },
+        scope: 'following',
+      });
+      const truncated = yield* events.getById('acc-1', 'cal-1', 'master1');
+      expect(truncated!.recurrence).toEqual(['RDATE:20260702T090000Z']);
+      const window = yield* events.getWindow(0, plainDateToUtcMs('2030-01-01'));
+      expect(window.masters.map((event) => event.id)).toEqual(['master1']);
+      const single = window.singles.find((event) => event.title === 'Last talk');
+      expect(single!.recurrence).toBeUndefined();
+      expect(single!.startUtc).toBe(occurrence);
+      const ops = yield* listOps;
+      const create = ops.find((op) => op.kind === 'create');
+      expect(create!.payload!.recurrence).toBeUndefined();
+    }).pipe(Effect.provide(testLayer)),
+  );
+
   it.effect('following delete truncates and drops later overrides', () =>
     Effect.gen(function* () {
       yield* seedMaster;

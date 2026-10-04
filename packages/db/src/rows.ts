@@ -369,6 +369,21 @@ export const eventFromRow = (row: EventRow): EventRecord =>
         : oneOf<NonNullable<EventRecord['visibility']>>(VISIBILITIES, row.visibility, 'default'),
   });
 
+/** The `recurrence_end_utc` column: when a master's series ends, NULL for endless and singles. */
+export const seriesEndUtc = (event: EventRecord): number | null =>
+  event.recurrence && event.recurrence.length > 0
+    ? (recurrenceEndUtc({
+        endDate: event.endDate,
+        endUtc: event.endUtc,
+        id: event.id,
+        isAllDay: event.isAllDay,
+        recurrence: event.recurrence,
+        startDate: event.startDate,
+        startTimeZone: event.startTimeZone ?? 'UTC',
+        startUtc: event.startUtc,
+      }) ?? null)
+    : null;
+
 export const eventToRow = (event: EventRecord): EventRow => ({
   account_id: event.accountId,
   attendees: event.attendees
@@ -390,19 +405,7 @@ export const eventToRow = (event: EventRecord): EventRow => ({
   recurrence: event.recurrence ? JSON.stringify(event.recurrence) : null,
   // Computed on every write (sync pages, local edits, seeds) so the
   // window query can skip series that ended before the range.
-  recurrence_end_utc:
-    event.recurrence && event.recurrence.length > 0
-      ? (recurrenceEndUtc({
-          endDate: event.endDate,
-          endUtc: event.endUtc,
-          id: event.id,
-          isAllDay: event.isAllDay,
-          recurrence: event.recurrence,
-          startDate: event.startDate,
-          startTimeZone: event.startTimeZone ?? 'UTC',
-          startUtc: event.startUtc,
-        }) ?? null)
-      : null,
+  recurrence_end_utc: seriesEndUtc(event),
   recurring_event_id: event.recurringEventId ?? null,
   reminders: event.reminders
     ? JSON.stringify(Schema.encodeSync(EventReminders)(event.reminders))

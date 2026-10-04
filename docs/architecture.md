@@ -209,9 +209,16 @@ Rules that keep the queue correct:
   its first pass — so a calendar that comes back always re-lists its
   history.
 - With every master ever synced in the table, `getWindow` bounds the
-  recurring-masters query by a stored `recurrence_end_utc` (UNTIL, or the
-  last COUNT occurrence computed once at write time; NULL = endless) over
-  a partial index, so ended series are never expanded again. Expansion
+  recurring-masters query by a stored `recurrence_end_utc` (a plain UNTIL,
+  or the last occurrence — COUNT and RDATE values included — computed
+  once at write time; NULL = endless) over a partial index, so ended
+  series are never expanded again. DTSTART is always the first
+  occurrence, as on Google, even on a day the rule skips (and never
+  counted in COUNT): `buildRuleString` lists it as an RDATE as well,
+  which rrule-temporal otherwise drops. A set of only RDATE lines has no
+  rule: `buildRuleString` gives it `RRULE:FREQ=DAILY;COUNT=1`, so it
+  expands as DTSTART + RDATE − EXDATE through the same library pass as
+  every rule. Expansion
   runs under an explicit iteration cap and `assembleWindow` skips a master
   whose rule throws instead of blanking the window (the handler logs it).
 - Incremental pulls use syncTokens; a 410 forces a full resync, after which
