@@ -1,9 +1,14 @@
 import type { MirrorDefinition, SettingsDocument } from '@calendar/core';
 import { AccountRepo, CalendarRepo, DeviceSettingsRepo, TaskRepo } from '@calendar/db';
 import { expect, it } from '@effect/vitest';
-import { Effect } from 'effect';
+import { Deferred, Effect, Fiber } from 'effect';
 import { describe } from 'vitest';
-import { readEventNotificationSettings, readTimeZoneSettings } from './deviceSettings.ts';
+import {
+  readBirthdayReminderOverrides,
+  readEventNotificationSettings,
+  readTimeZoneSettings,
+  writeBirthdayReminderOverrides,
+} from './deviceSettings.ts';
 import {
   applyPendingVisibility,
   clearPendingVisibility,
@@ -12,6 +17,7 @@ import {
 } from './importedVisibility.ts';
 import { buildSettingsDocument } from './settingsExport.ts';
 import { readMirrorLocals, readMirrors } from './mirrorSettings.ts';
+import { applyBirthdayReminderOverride } from './notificationSettings.ts';
 import { importSettings, previewSettingsImport } from './settingsImport.ts';
 import {
   appleCalendarAccount,
@@ -112,6 +118,77 @@ describe('importSettings', () => {
         expect((yield* buildSettingsDocument).mirrors?.map((entry) => entry.id)).toEqual(['a']);
       }).pipe(Effect.provide(layer));
     },
+  );
+
+  it.effect('joins per-person birthday lead days by person and never removes one', () => {
+    const { layer } = makeSettingsTestLayer();
+    return Effect.gen(function* () {
+      yield* writeBirthdayReminderOverrides([
+        { day: 4, displayName: 'Alice', leadDays: [1], month: 3 },
+        { day: 10, displayName: 'Bob', leadDays: [7], month: 3 },
+      ]);
+      const document: SettingsDocument = {
+        birthdayReminderOverrides: [
+          // The same person as "Alice", spelled as the other device has her.
+          { day: 4, displayName: 'alice', leadDays: [14], month: 3 },
+          { day: 20, displayName: 'Carol', leadDays: [], month: 5 },
+        ],
+        version: 1,
+      };
+      expect((yield* previewSettingsImport(document)).settingsChanged).toEqual([
+        'birthdayReminderOverrides',
+      ]);
+      yield* importSettings(document);
+      expect(yield* readBirthdayReminderOverrides).toEqual([
+        { day: 4, displayName: 'alice', leadDays: [14], month: 3 },
+        { day: 10, displayName: 'Bob', leadDays: [7], month: 3 },
+        { day: 20, displayName: 'Carol', leadDays: [], month: 5 },
+      ]);
+      expect((yield* importSettings(document)).settingsChanged).toEqual([]);
+    }).pipe(Effect.provide(layer));
+  });
+
+  it.effect("keeps a person's change made while the import waits on the permission prompt", () =>
+    Effect.gen(function* () {
+      const asked = yield* Deferred.make<void>();
+      const answer = yield* Deferred.make<boolean>();
+      const { layer } = makeSettingsTestLayer({
+        sink: {
+          ensurePermission: () =>
+            Effect.andThen(Deferred.succeed(asked, undefined), Deferred.await(answer)),
+          kind: 'scheduled',
+          replaceSchedule: () => Effect.void,
+        },
+      });
+      yield* Effect.gen(function* () {
+        yield* writeBirthdayReminderOverrides([
+          { day: 4, displayName: 'Alice', leadDays: [1], month: 3 },
+          { day: 10, displayName: 'Bob', leadDays: [7], month: 3 },
+        ]);
+        // Turning the reminders on asks (iOS) before the overrides are written.
+        const running = yield* Effect.forkChild(
+          importSettings({
+            birthdayReminderOverrides: [{ day: 4, displayName: 'Alice', leadDays: [14], month: 3 }],
+            birthdayReminders: { enabled: true, leadDays: [0], time: '09:00' },
+            version: 1,
+          }),
+        );
+        yield* Deferred.await(asked);
+        // Meanwhile Bob is muted from his birthday.
+        yield* applyBirthdayReminderOverride({
+          day: 10,
+          displayName: 'Bob',
+          leadDays: [],
+          month: 3,
+        });
+        yield* Deferred.succeed(answer, true);
+        yield* Fiber.join(running);
+        expect(yield* readBirthdayReminderOverrides).toEqual([
+          { day: 4, displayName: 'Alice', leadDays: [14], month: 3 },
+          { day: 10, displayName: 'Bob', leadDays: [], month: 3 },
+        ]);
+      }).pipe(Effect.provide(layer));
+    }),
   );
 
   it.effect('notes a desktop-only section on a host without it', () => {

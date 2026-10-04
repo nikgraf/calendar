@@ -11,7 +11,11 @@ import { SqliteClient } from '@effect/sql-sqlite-node';
 import { Effect, Layer } from 'effect';
 import { layer as reactivityLayer } from 'effect/reactivity/Reactivity';
 import { LocalNotifications } from '../localNotifications.ts';
-import { NotificationSink, noopNotificationSink } from '../notificationSink.ts';
+import {
+  NotificationSink,
+  type NotificationSinkShape,
+  noopNotificationSink,
+} from '../notificationSink.ts';
 import { PlatformSettings } from '../platformSettings.ts';
 
 /**
@@ -20,7 +24,11 @@ import { PlatformSettings } from '../platformSettings.ts';
  * settings fake that records what an import applied.
  */
 export const makeSettingsTestLayer = (
-  options: { readonly screenPrivacy?: 'hidden' | 'visible' } = {},
+  options: {
+    readonly screenPrivacy?: 'hidden' | 'visible';
+    /** Defaults to the inert sink; a test can hold the permission prompt open. */
+    readonly sink?: NotificationSinkShape;
+  } = {},
 ) => {
   const applied: Array<DesktopSettings> = [];
   let current: DesktopSettings = options.screenPrivacy
@@ -41,7 +49,7 @@ export const makeSettingsTestLayer = (
       Layer.provideMerge(reactivityLayer),
     ),
     platform,
-    Layer.succeed(NotificationSink, noopNotificationSink),
+    Layer.succeed(NotificationSink, options.sink ?? noopNotificationSink),
     Layer.succeed(LocalNotifications, { run: () => Effect.void, start: () => Effect.void }),
   );
   return { applied, layer };

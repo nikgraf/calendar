@@ -31,7 +31,11 @@ import { appleCalendarServicesLayer } from './appleCalendarEvents.ts';
 import { backgroundRefresh } from './backgroundRefresh.ts';
 import { DeviceContacts } from './deviceContacts.ts';
 import { SyncEngine } from './engine.ts';
-import { writeBirthdayReminderSettings, writeEventNotificationSettings } from './deviceSettings.ts';
+import {
+  writeBirthdayReminderOverrides,
+  writeBirthdayReminderSettings,
+  writeEventNotificationSettings,
+} from './deviceSettings.ts';
 import { LocalNotifications } from './localNotifications.ts';
 import { Mirrors } from './mirrors.ts';
 import { NotificationSink, type NotificationSinkShape } from './notificationSink.ts';
@@ -160,6 +164,41 @@ describe('LocalNotifications', () => {
       yield* notifications.run();
       expect(shown).toEqual(['birthday:device:a:2026-03-04:1', 'birthday:device:a:2026-03-04:0']);
     }).pipe(Effect.provide(testLayer(sink)));
+  });
+
+  it.effect("a person's own lead days replace the general ones", () => {
+    const { shown, sink } = immediateSink();
+    return Effect.gen(function* () {
+      yield* writeBirthdayReminderSettings({ enabled: true, leadDays: [0], time: '09:00' });
+      yield* writeBirthdayReminderOverrides([
+        { day: 4, displayName: 'Alice', leadDays: [1], month: 3 },
+      ]);
+      const notifications = yield* LocalNotifications;
+      yield* setClock('2026-03-03T10:00:00Z');
+      yield* notifications.run();
+      yield* TestClock.adjust('24 hours');
+      yield* notifications.run();
+      expect(shown).toEqual(['birthday:device:a:2026-03-04:1']);
+    }).pipe(Effect.provide(testLayer(sink)));
+  });
+
+  it.effect('a muted person leaves the OS schedule', () => {
+    const scheduled = scheduledSink();
+    return Effect.gen(function* () {
+      yield* enableBirthdays;
+      const notifications = yield* LocalNotifications;
+      yield* setClock('2026-03-01T12:00:00Z');
+      yield* notifications.run();
+      expect(scheduled.schedules.at(-1)?.map((plan) => plan.key)).toEqual([
+        'birthday:device:a:2026-03-04:1',
+        'birthday:device:a:2026-03-04:0',
+      ]);
+      yield* writeBirthdayReminderOverrides([
+        { day: 4, displayName: 'Alice', leadDays: [], month: 3 },
+      ]);
+      yield* notifications.run();
+      expect(scheduled.schedules.at(-1)).toEqual([]);
+    }).pipe(Effect.provide(testLayer(scheduled.sink)));
   });
 
   it.effect('an immediate sink is asked for permission once, on the first pass', () => {

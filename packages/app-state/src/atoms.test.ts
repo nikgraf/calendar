@@ -50,6 +50,7 @@ const makeStubClient = () => {
     deleteTask: () => Effect.void,
     discardPendingOp: () => Effect.void,
     exportSettings: () => Effect.succeed({ version: 1 as const }),
+    getBirthdayReminderOverrides: () => Effect.succeed([]),
     getBirthdayReminderSettings: () =>
       Effect.succeed({ enabled: false, leadDays: [0 as const], time: '09:00' }),
     getBirthdaysInRange: () => Effect.succeed([]),
@@ -102,6 +103,7 @@ const makeStubClient = () => {
         calls.places.push(query);
         return [{ title: query }];
       }),
+    setBirthdayReminderOverride: () => Effect.void,
     setBirthdayReminderSettings: () => Effect.succeed({ notificationsGranted: true }),
     setCalendarColor: () => Effect.void,
     setCalendarVisible: () =>

@@ -40,6 +40,7 @@ import { DeviceContacts } from './deviceContacts.ts';
 import { loadEventsInRange } from './eventsInRange.ts';
 import { LocalNotifications } from './localNotifications.ts';
 import {
+  readBirthdayReminderOverrides,
   readBirthdayReminderSettings,
   readEventNotificationSettings,
   readTimeZoneSettings,
@@ -49,6 +50,7 @@ import {
 } from './deviceSettings.ts';
 import { NotificationSink } from './notificationSink.ts';
 import {
+  applyBirthdayReminderOverride,
   applyBirthdayReminderSettings,
   applyEventNotificationSettings,
 } from './notificationSettings.ts';
@@ -254,6 +256,8 @@ export const commonBackendHandlers: Omit<BackendHandlers<CommonBackendServices>,
 
   exportSettings: () => buildSettingsDocument,
 
+  getBirthdayReminderOverrides: () => readBirthdayReminderOverrides,
+
   getBirthdayReminderSettings: () => readBirthdayReminderSettings,
 
   getBirthdaysInRange: ({ endDate, startDate }) =>
@@ -422,6 +426,8 @@ export const commonBackendHandlers: Omit<BackendHandlers<CommonBackendServices>,
       const device = yield* (yield* DeviceContacts).list();
       return rankContacts(query, [...google, ...device], take);
     }),
+
+  setBirthdayReminderOverride: (input) => applyBirthdayReminderOverride(input),
 
   // Saves, asks for permission and reschedules — see notificationSettings.ts.
   setBirthdayReminderSettings: (settings) => applyBirthdayReminderSettings(settings),

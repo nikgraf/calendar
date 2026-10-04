@@ -1,7 +1,11 @@
 import { Cause, Effect, Schema } from 'effect';
 import { Rpc, RpcGroup } from 'effect/rpc';
 import type { RpcClientError } from 'effect/rpc/RpcClientError';
-import { BirthdayReminderSettings } from './birthdays/reminders.ts';
+import {
+  BirthdayLeadDays,
+  BirthdayReminderOverrides,
+  BirthdayReminderSettings,
+} from './birthdays/reminders.ts';
 import { EventToTaskPreview } from './editor/convertLoss.ts';
 import { MoveLoss } from './editor/moveLoss.ts';
 import { PlaceSuggestion } from './geo/location.ts';
@@ -347,6 +351,11 @@ export class AppBackendRpcs extends RpcGroup.make(
     error: BackendError,
     payload: { id: Schema.String, removeCopies: Schema.Boolean },
   }),
+  /** People with their own birthday lead days, in merge-key order. */
+  Rpc.make('getBirthdayReminderOverrides', {
+    error: BackendError,
+    success: BirthdayReminderOverrides,
+  }),
   /** Device-local birthday reminder preferences (never synced). */
   Rpc.make('getBirthdayReminderSettings', {
     error: BackendError,
@@ -557,6 +566,21 @@ export class AppBackendRpcs extends RpcGroup.make(
     error: BackendError,
     payload: { limit: Schema.optional(Schema.Number), query: Schema.String },
     success: Schema.Array(PlaceSuggestion),
+  }),
+  /**
+   * Gives one person their own lead days (`[]`: no reminder for them), or
+   * with `leadDays: null` returns them to the general ones. Never asks for
+   * permission — the general switch did, and an override cannot turn the
+   * reminders on.
+   */
+  Rpc.make('setBirthdayReminderOverride', {
+    error: BackendError,
+    payload: {
+      day: Schema.Number,
+      displayName: Schema.String,
+      leadDays: Schema.NullOr(Schema.Array(BirthdayLeadDays)),
+      month: Schema.Number,
+    },
   }),
   /**
    * Saves the device-local reminder preferences. `notificationsGranted`

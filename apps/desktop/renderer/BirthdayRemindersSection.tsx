@@ -1,5 +1,6 @@
 import {
   useBackendMutations,
+  useBirthdayReminderOverrides,
   useBirthdayReminderSettings,
   useSettingsEditor,
 } from '@calendar/app-state';
@@ -9,6 +10,7 @@ import {
   type BirthdayLeadDays,
   type BirthdayReminderSettings,
   leadDaysLabel,
+  leadDaysSummary,
 } from '@calendar/core';
 import { useState } from 'react';
 
@@ -20,7 +22,8 @@ import { useState } from 'react';
  * notification permission, and a denial stays visible as a notice.
  */
 export function BirthdayRemindersSection() {
-  const { setBirthdayReminderSettings } = useBackendMutations();
+  const { setBirthdayReminderOverride, setBirthdayReminderSettings } = useBackendMutations();
+  const overrides = useBirthdayReminderOverrides() ?? [];
   const [settings, persist] = useSettingsEditor(
     useBirthdayReminderSettings(),
     setBirthdayReminderSettings,
@@ -85,6 +88,40 @@ export function BirthdayRemindersSection() {
           />
         </label>
       </fieldset>
+      {overrides.length > 0 ? (
+        <div className="mt-3" data-testid="birthday-overrides">
+          <p className="text-xs font-medium text-neutral-400 uppercase">Custom per person</p>
+          <ul className="mt-1 flex flex-col gap-1">
+            {overrides.map((override) => (
+              <li
+                className="flex items-center justify-between gap-2 text-sm"
+                key={`${override.displayName}:${String(override.month)}-${String(override.day)}`}
+              >
+                <span className="min-w-0 truncate">
+                  {override.displayName}
+                  <span className="text-neutral-500"> · {leadDaysSummary(override.leadDays)}</span>
+                </span>
+                <button
+                  aria-label={`Reset reminders for ${override.displayName}`}
+                  className="rounded px-1.5 text-xs text-blue-600 hover:bg-neutral-100"
+                  onClick={() =>
+                    void setBirthdayReminderOverride({ ...override, leadDays: null }).catch(
+                      (error: unknown) =>
+                        setNotice(error instanceof Error ? error.message : String(error)),
+                    )
+                  }
+                  type="button"
+                >
+                  Reset
+                </button>
+              </li>
+            ))}
+          </ul>
+          <p className="mt-1 text-xs text-neutral-400">
+            Change a person&apos;s reminders from their birthday in the calendar.
+          </p>
+        </div>
+      ) : null}
       {notice ? (
         <p className="mt-3 text-sm text-amber-700" data-testid="birthday-notice" role="status">
           {notice}

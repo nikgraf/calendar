@@ -10,12 +10,15 @@ import { Effect, Layer } from 'effect';
 import { layer as reactivityLayer } from 'effect/reactivity/Reactivity';
 import { describe } from 'vitest';
 import {
+  BIRTHDAY_REMINDER_OVERRIDES_KEY,
   BIRTHDAY_REMINDERS_KEY,
+  readBirthdayReminderOverrides,
   readBirthdayReminderSettings,
   readTimeZoneSettings,
   readViewPreferences,
   TIME_ZONES_KEY,
   VIEW_PREFERENCES_KEY,
+  writeBirthdayReminderOverrides,
   writeBirthdayReminderSettings,
   writeTimeZoneSettings,
   writeViewPreferences,
@@ -45,6 +48,37 @@ describe('birthday reminder settings', () => {
     Effect.gen(function* () {
       yield* (yield* DeviceSettingsRepo).set(BIRTHDAY_REMINDERS_KEY, { leadDays: [5] });
       expect(yield* readBirthdayReminderSettings).toEqual(DEFAULT_BIRTHDAY_REMINDER_SETTINGS);
+    }).pipe(Effect.provide(dbLayer())),
+  );
+});
+
+describe('birthday reminder overrides', () => {
+  it.effect('empty when nothing is stored, round-trips one canonical entry per person', () =>
+    Effect.gen(function* () {
+      expect(yield* readBirthdayReminderOverrides).toEqual([]);
+      yield* writeBirthdayReminderOverrides([
+        { day: 10, displayName: 'Bob', leadDays: [7, 0, 7], month: 3 },
+        { day: 4, displayName: 'Alice', leadDays: [1], month: 3 },
+        { day: 4, displayName: 'alice', leadDays: [14], month: 3 },
+      ]);
+      expect(yield* (yield* DeviceSettingsRepo).get(BIRTHDAY_REMINDER_OVERRIDES_KEY)).toEqual([
+        { day: 4, displayName: 'alice', leadDays: [14], month: 3 },
+        { day: 10, displayName: 'Bob', leadDays: [0, 7], month: 3 },
+      ]);
+    }).pipe(Effect.provide(dbLayer())),
+  );
+
+  it.effect('an entry that no longer decodes is skipped, the others survive', () =>
+    Effect.gen(function* () {
+      yield* (yield* DeviceSettingsRepo).set(BIRTHDAY_REMINDER_OVERRIDES_KEY, [
+        { day: 4, displayName: 'Alice', leadDays: [5], month: 3 },
+        { day: 10, displayName: 'Bob', leadDays: [14], month: 3 },
+      ]);
+      expect(yield* readBirthdayReminderOverrides).toEqual([
+        { day: 10, displayName: 'Bob', leadDays: [14], month: 3 },
+      ]);
+      yield* (yield* DeviceSettingsRepo).set(BIRTHDAY_REMINDER_OVERRIDES_KEY, { not: 'a list' });
+      expect(yield* readBirthdayReminderOverrides).toEqual([]);
     }).pipe(Effect.provide(dbLayer())),
   );
 });

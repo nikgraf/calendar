@@ -10,7 +10,7 @@ import {
   printParseErrorCode,
   type ParseError,
 } from 'jsonc-parser/lib/esm/main.js';
-import { BirthdayReminderSettings } from './birthdays/reminders.ts';
+import { BirthdayReminderOverrides, BirthdayReminderSettings } from './birthdays/reminders.ts';
 import { MirrorDefinition } from './mirror/definition.ts';
 import { EventNotificationSettings } from './notifications/settings.ts';
 import { canonicalZoneId, runtimeZoneId } from './time/zones.ts';
@@ -103,6 +103,12 @@ export type DesktopSettings = typeof DesktopSettings.Type;
 
 export const SettingsDocument = Schema.Struct({
   accounts: Schema.optional(Schema.Array(SettingsAccount)),
+  /**
+   * People with their own birthday lead days, named by display name plus
+   * month and day so the same person matches on every device. An import
+   * adds or updates, never removes.
+   */
+  birthdayReminderOverrides: Schema.optional(BirthdayReminderOverrides),
   birthdayReminders: Schema.optional(BirthdayReminderSettings),
   desktop: Schema.optional(DesktopSettings),
   eventNotifications: Schema.optional(EventNotificationSettings),
@@ -120,6 +126,7 @@ export type SettingsDocument = typeof SettingsDocument.Type;
 
 /** The top-level settings sections an import can change, for summaries. */
 export const SettingsSection = Schema.Literals([
+  'birthdayReminderOverrides',
   'birthdayReminders',
   'eventNotifications',
   'mirrors',
@@ -284,7 +291,10 @@ export const mergeSettingsDocument = (text: string, document: SettingsDocument):
   if (encoded['accounts'] !== undefined) {
     set(['accounts'], encoded['accounts']);
   }
-  // Like accounts: a list, replaced as a whole.
+  // Like accounts: lists, replaced as a whole.
+  if (encoded['birthdayReminderOverrides'] !== undefined) {
+    set(['birthdayReminderOverrides'], encoded['birthdayReminderOverrides']);
+  }
   if (encoded['mirrors'] !== undefined) {
     set(['mirrors'], encoded['mirrors']);
   }
@@ -316,6 +326,7 @@ export const SettingsImportSummary = Schema.Struct({
 export type SettingsImportSummary = typeof SettingsImportSummary.Type;
 
 const SECTION_LABELS: Record<SettingsSection, string> = {
+  birthdayReminderOverrides: 'birthday reminders for single people',
   birthdayReminders: 'birthday reminders',
   eventNotifications: 'event notifications',
   mirrors: 'calendar mirrors',

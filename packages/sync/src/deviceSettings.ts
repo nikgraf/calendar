@@ -1,5 +1,8 @@
 import {
+  BirthdayReminderOverride,
+  type BirthdayReminderOverrides,
   BirthdayReminderSettings,
+  canonicalBirthdayOverrides,
   DEFAULT_BIRTHDAY_REMINDER_SETTINGS,
   DEFAULT_EVENT_NOTIFICATION_SETTINGS,
   DEFAULT_VIEW_PREFERENCES,
@@ -10,7 +13,7 @@ import {
   ViewPreferences,
 } from '@calendar/core';
 import { DeviceSettingsRepo } from '@calendar/db';
-import { Effect, Schema } from 'effect';
+import { Effect, Schema, Semaphore } from 'effect';
 import type { SqlError } from 'effect/sql/SqlError';
 
 /** The device_settings key for birthday reminders. */
@@ -43,6 +46,61 @@ export const writeBirthdayReminderSettings = (
       leadDays: [...new Set(settings.leadDays)].sort((a, b) => a - b),
       time: settings.time,
     }),
+  );
+
+/** The device_settings key for per-person birthday lead days. */
+export const BIRTHDAY_REMINDER_OVERRIDES_KEY = 'birthdayReminderOverrides';
+
+const decodeOverride = Schema.decodeUnknownEffect(BirthdayReminderOverride);
+
+/**
+ * The stored per-person lead days. An entry that no longer decodes (a
+ * hand edit in the settings file) is skipped rather than taking the
+ * others with it.
+ */
+export const readBirthdayReminderOverrides: Effect.Effect<
+  BirthdayReminderOverrides,
+  SqlError,
+  DeviceSettingsRepo
+> = Effect.gen(function* () {
+  const raw = yield* (yield* DeviceSettingsRepo).get(BIRTHDAY_REMINDER_OVERRIDES_KEY);
+  if (!Array.isArray(raw)) {
+    return [];
+  }
+  const overrides: Array<BirthdayReminderOverride> = [];
+  for (const entry of raw) {
+    const decoded = yield* decodeOverride(entry).pipe(Effect.orElseSucceed(() => undefined));
+    if (decoded !== undefined) {
+      overrides.push(decoded);
+    }
+  }
+  return canonicalBirthdayOverrides(overrides);
+});
+
+export const writeBirthdayReminderOverrides = (
+  overrides: BirthdayReminderOverrides,
+): Effect.Effect<void, SqlError, DeviceSettingsRepo> =>
+  Effect.flatMap(DeviceSettingsRepo, (repo) =>
+    // Canonical, so an unchanged set writes identical text to the settings file.
+    repo.set(BIRTHDAY_REMINDER_OVERRIDES_KEY, canonicalBirthdayOverrides(overrides)),
+  );
+
+const overridesLock = Semaphore.makeUnsafe(1);
+
+/**
+ * Read-modify-write of the per-person list, one at a time. Every writer
+ * that changes part of the list goes through here — a person's save, an
+ * import joining a file's entries — so neither writes back a list it read
+ * before the other's change landed (an import can sit on the iOS
+ * permission prompt for as long as the user takes).
+ */
+export const updateBirthdayReminderOverrides = (
+  change: (current: BirthdayReminderOverrides) => BirthdayReminderOverrides,
+): Effect.Effect<void, SqlError, DeviceSettingsRepo> =>
+  overridesLock.withPermits(1)(
+    Effect.flatMap(readBirthdayReminderOverrides, (current) =>
+      writeBirthdayReminderOverrides(change(current)),
+    ),
   );
 
 /** The device_settings key for event notifications. */

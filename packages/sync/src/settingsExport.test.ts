@@ -2,7 +2,7 @@ import { DeviceSettingsRepo } from '@calendar/db';
 import { expect, it } from '@effect/vitest';
 import { Effect } from 'effect';
 import { describe } from 'vitest';
-import { writeTimeZoneSettings } from './deviceSettings.ts';
+import { writeBirthdayReminderOverrides, writeTimeZoneSettings } from './deviceSettings.ts';
 import { IMPORTED_VISIBILITY_KEY } from './importedVisibility.ts';
 import { buildSettingsDocument } from './settingsExport.ts';
 import {
@@ -37,8 +37,14 @@ describe('buildSettingsDocument', () => {
         ],
       });
       yield* writeTimeZoneSettings({ primary: 'Asia/Calcutta', zones: ['Asia/Calcutta', 'UTC'] });
+      yield* writeBirthdayReminderOverrides([
+        { day: 4, displayName: 'Alice', leadDays: [14], month: 3 },
+      ]);
       const document = yield* buildSettingsDocument;
       expect(document.version).toBe(1);
+      expect(document.birthdayReminderOverrides).toEqual([
+        { day: 4, displayName: 'Alice', leadDays: [14], month: 3 },
+      ]);
       expect(document.desktop).toEqual({ screenPrivacy: 'visible' });
       expect(document.timeZones).toEqual({
         primary: 'Asia/Kolkata',

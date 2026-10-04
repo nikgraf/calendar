@@ -553,8 +553,9 @@ model: `docs/agent-gateway.md`.
   (`DeviceContacts.birthdays()`, `CNContactBirthdayKey`) by folded name +
   MM-DD (`mergeBirthdays`), expands occurrences per day (Feb 29 lands on
   Feb 28 in common years), and both lanes draw a neutral chip with a
-  fixed pink accent (`birthdayChipLabel`). The detail view is read-only
-  and lists every source. Month views show tasks and birthdays too, as
+  fixed pink accent (`birthdayChipLabel`). The detail view lists every
+  source; the birthday itself is read-only, and the one thing it edits
+  is that person's reminder lead days (below). Month views show tasks and birthdays too, as
   read-only summaries after the day's events (events keep the cap — they
   carry the calendar's color — then birthdays, then tasks): chips on
   desktop under the same three-chip cap, dots on iOS under the four-dot
@@ -587,7 +588,12 @@ model: `docs/agent-gateway.md`.
   draws a static `MKMapSnapshotter` PNG (`mapSnapshot`); iOS draws a live
   `expo-maps` Apple Maps view (iOS 17+, else only the Open in Maps link).
 - Device-only data behind rpc: `device_settings` is a key/value table
-  for preferences that never sync (birthday reminders first). The
+  for preferences that never sync (birthday reminders first;
+  `birthdayReminderOverrides` holds per-person lead days, each person
+  named by display name + month + day and matched through
+  `birthdayMergeKey`, so an override survives a source coming or going —
+  the merged record's id does not — and means the same person on every
+  device). The
   IPC-vs-rpc rule is about window concerns, not about where data lives —
   SQLite is per device and never uploaded, and the consumer of these
   settings is a backend job that runs inside both hosts.
@@ -596,8 +602,9 @@ model: `docs/agent-gateway.md`.
   notification dependency — over two producers, `loadEventPlans`
   (event reminders: visible calendars, a week ahead, `useDefault`
   resolved against the calendar's `defaultReminders`, Apple Calendar
-  events only when the setting includes them) and `loadBirthdayPlans`,
-  merged into one `PlannedNotification` list sorted by delivery. A
+  events only when the setting includes them) and `loadBirthdayPlans`
+  (a person's own lead days, when they have an override, replace the
+  general ones; the general switch gates both), merged into one `PlannedNotification` list sorted by delivery. A
   producer whose setting is off returns nothing; the OS schedule is
   cleared only when both do. The platform `NotificationSink` delivers:
   desktop fires an Electron `Notification` when one is due and, after
@@ -606,7 +613,8 @@ model: `docs/agent-gateway.md`.
   `device_settings`), iOS replaces the pending expo-notifications
   schedule with the soonest ≤ 60 whenever the digest changes. The loop
   sleeps until the next delivery (5 s..60 s) and re-plans, debounced,
-  on every `EVENTS_KEY` / `BIRTHDAYS_KEY` invalidation. An immediate
+  on every `EVENTS_KEY` / `BIRTHDAYS_KEY` invalidation; a settings write
+  is not one of those, so each settings path runs a pass itself. An immediate
   sink is asked for permission once, on the first pass with a producer
   enabled (desktop's ask is the "Notifications are on" banner). "The
   notification is latency, the pass is correctness" applies. On iOS a

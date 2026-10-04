@@ -2,7 +2,9 @@ import {
   Account,
   type AppleCalendarPref,
   type AppleTaskListPref,
+  type BirthdayReminderOverrides,
   type BirthdayReminderSettings,
+  canonicalBirthdayOverrides,
   type EventNotificationSettings,
   isAppleCalendarAccount,
   isAppleRemindersAccount,
@@ -17,10 +19,12 @@ import { AccountRepo, CalendarRepo, DeviceSettingsRepo, TaskRepo } from '@calend
 import { Clock, Effect } from 'effect';
 import type { SqlError } from 'effect/sql/SqlError';
 import {
+  readBirthdayReminderOverrides,
   readBirthdayReminderSettings,
   readEventNotificationSettings,
   readTimeZoneSettings,
   readViewPreferences,
+  updateBirthdayReminderOverrides,
   writeTimeZoneSettings,
   writeViewPreferences,
 } from './deviceSettings.ts';
@@ -38,7 +42,7 @@ import {
   withPendingVisibilityLock,
   writePendingVisibility,
 } from './importedVisibility.ts';
-import type { LocalNotifications } from './localNotifications.ts';
+import { LocalNotifications } from './localNotifications.ts';
 import {
   planMirrorImport,
   readMirrorLocals,
@@ -64,6 +68,8 @@ interface AccountFlips {
 
 /** Everything an import would do, computed once; preview reports it, import executes it. */
 interface ImportPlan {
+  /** The file's per-person entries, joined into what is stored when the import runs. */
+  readonly birthdayReminderOverrides?: BirthdayReminderOverrides | undefined;
   readonly birthdayReminders?: BirthdayReminderSettings | undefined;
   readonly eventNotifications?: EventNotificationSettings | undefined;
   readonly flips: ReadonlyArray<AccountFlips>;
@@ -77,6 +83,12 @@ interface ImportPlan {
 }
 
 const same = (a: unknown, b: unknown): boolean => JSON.stringify(a) === JSON.stringify(b);
+
+/** Stored entries plus a file's; the file's wins for the same person. */
+const joinOverrides = (
+  current: BirthdayReminderOverrides,
+  incoming: BirthdayReminderOverrides,
+): BirthdayReminderOverrides => canonicalBirthdayOverrides([...current, ...incoming]);
 
 const plural = (count: number, noun: string): string => `${count} ${noun}${count === 1 ? '' : 's'}`;
 
@@ -116,6 +128,19 @@ const planSettingsImport = (
         : undefined;
     if (birthdayReminders) {
       settingsChanged.push('birthdayReminders');
+    }
+    // Per-person lead days: the file's entries join (and for the same
+    // person replace) the ones here; none is removed. The plan keeps the
+    // file's entries, not the joined list: the join is redone against
+    // what is stored when the import runs (see updateBirthdayReminderOverrides).
+    const incomingOverrides = document.birthdayReminderOverrides;
+    let birthdayReminderOverrides: BirthdayReminderOverrides | undefined;
+    if (incomingOverrides !== undefined) {
+      const current = yield* readBirthdayReminderOverrides;
+      if (!same(joinOverrides(current, incomingOverrides), current)) {
+        birthdayReminderOverrides = incomingOverrides;
+        settingsChanged.push('birthdayReminderOverrides');
+      }
     }
     const view =
       document.view && !same(document.view, yield* readViewPreferences) ? document.view : undefined;
@@ -252,6 +277,7 @@ const planSettingsImport = (
 
     const pending: PendingVisibility = { appleCalendar, appleReminders, google };
     return {
+      birthdayReminderOverrides,
       birthdayReminders,
       eventNotifications,
       flips,
@@ -308,6 +334,13 @@ export const importSettings = (
       }
       if (plan.birthdayReminders) {
         yield* applyBirthdayReminderSettings(plan.birthdayReminders);
+      }
+      const incomingOverrides = plan.birthdayReminderOverrides;
+      if (incomingOverrides) {
+        yield* updateBirthdayReminderOverrides((current) =>
+          joinOverrides(current, incomingOverrides),
+        );
+        yield* Effect.forkDetach((yield* LocalNotifications).run());
       }
       if (plan.screenPrivacy) {
         yield* platform.apply({ screenPrivacy: plan.screenPrivacy });

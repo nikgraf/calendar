@@ -7,6 +7,17 @@ const todayDue = (): string => {
   return `${iso}T00:00:00.000Z`;
 };
 
+/**
+ * The birthday flow's date: a week from today, or a week back late in the
+ * month, so it shares today's month grid (the flow reaches it from there)
+ * and no day-view flow meets the chip on today.
+ */
+const birthdayDate = (): { readonly day: number; readonly month: number } => {
+  const date = new Date();
+  date.setDate(date.getDate() + (date.getDate() <= 21 ? 7 : -7));
+  return { day: date.getDate(), month: date.getMonth() + 1 };
+};
+
 /** An instant `weeks` from now at the given UTC hour, RFC 3339. */
 const weeksOut = (weeks: number, hour: number): string => {
   const date = new Date(Date.now() + weeks * 7 * 24 * 60 * 60 * 1000);
@@ -19,11 +30,18 @@ const weeksOut = (weeks: number, hour: number): string => {
  * The signed-in Google account the Maestro flows see when Metro runs
  * with EXPO_PUBLIC_CALENDAR_GOOGLE=fixture (CI does): one writable
  * calendar for the create-event flow, one task list for the task lane
- * and task-convert flows. Served by the in-process fake API; nothing
- * here ever reaches Google.
+ * and task-convert flows, one contact birthday for the birthday flow.
+ * Served by the in-process fake API; nothing here ever reaches Google.
  */
 export const googleFixture: GoogleFixture = {
-  accounts: [{ email: 'fixture@solunivo.test', id: 'fixture-google', tasksEnabled: true }],
+  accounts: [
+    {
+      contactsEnabled: true,
+      email: 'fixture@solunivo.test',
+      id: 'fixture-google',
+      tasksEnabled: true,
+    },
+  ],
   calendars: [
     {
       accessRole: 'owner',
@@ -53,6 +71,15 @@ export const googleFixture: GoogleFixture = {
       },
     ],
   },
+  // The birthday-override flow's person. No email, so the invitee
+  // typeahead never offers them.
+  people: [
+    {
+      birthdays: [{ date: birthdayDate() }],
+      names: [{ displayName: 'Birthday Fixture' }],
+      resourceName: 'people/fixture-birthday',
+    },
+  ],
   taskLists: [{ id: 'mock-list', title: 'Mock Tasks' }],
   tasks: {
     'mock-list': [

@@ -1,0 +1,75 @@
+appId: com.solunivo.app.dev
+name: A birthday's own reminder lead days persist and reset
+tags:
+  - ci
+---
+# Needs the fixture Google account (EXPO_PUBLIC_CALENDAR_GOOGLE=fixture,
+# as CI does): its contacts hold "Birthday Fixture", a week from today in
+# today's month (e2e/fixtures/google.ts), reached from the month grid.
+- runFlow: ../common/launch.yaml
+- repeat:
+    times: 3
+    while:
+      notVisible: '.* 20\d\d'
+    commands:
+      - tapOn: 'Month'
+      - extendedWaitUntil:
+          visible: '.* 20\d\d'
+          timeout: 5000
+          optional: true
+# The cell's label counts its items ("Friday, October 9, 1 birthday");
+# the People sync lands shortly after launch.
+- extendedWaitUntil:
+    visible: '.*, 1 birthday.*'
+    timeout: 20000
+- tapOn: '.*, 1 birthday.*'
+- tapOn:
+    id: 'birthday-chip'
+- extendedWaitUntil:
+    visible:
+      id: 'birthday-detail'
+    timeout: 5000
+- assertVisible: 'Birthday Fixture'
+# The chips start on the general lead days ("On the day" by default); the
+# id suffix carries the state. Add two weeks for this person only. The
+# general switch is never touched (it would raise the permission alert).
+- assertVisible:
+    id: 'birthday-override-0-on'
+- tapOn:
+    id: 'birthday-override-14'
+- extendedWaitUntil:
+    visible:
+      id: 'birthday-override-14-on'
+    timeout: 5000
+- assertVisible:
+    id: 'birthday-override-reset'
+- tapOn: 'Done'
+# Reopen: stored (device-local SQLite), not just React state.
+- tapOn:
+    id: 'birthday-chip'
+- extendedWaitUntil:
+    visible:
+      id: 'birthday-override-14-on'
+    timeout: 5000
+# Settings lists the person under "Custom per person".
+- tapOn: 'Done'
+- runFlow: ../common/open-settings.yaml
+- waitForAnimationToEnd:
+    timeout: 5000
+- scrollUntilVisible:
+    element:
+      id: 'birthday-overrides'
+    direction: DOWN
+    timeout: 10000
+- assertVisible: 'Birthday Fixture.*'
+# Reset from Settings leaves the state as found for the next flow.
+- tapOn:
+    id: 'birthday-override-reset-0'
+- extendedWaitUntil:
+    notVisible:
+      id: 'birthday-overrides'
+    timeout: 5000
+- tapOn: 'Done'
+- tapOn: 'Day'
+- tapOn: 'Today'
+- assertVisible: 'Day'
