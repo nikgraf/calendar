@@ -1,4 +1,6 @@
+import { Temporal } from '../time/temporal.ts';
 import { type ByDay, formatByDay } from './byDay.ts';
+import { compactUtc } from './editing.ts';
 
 /**
  * Builds the RRULE line for the editor's repeat picker. The rule leans on
@@ -21,7 +23,17 @@ export interface RecurrenceRuleSpec {
   readonly untilDate?: string | undefined;
 }
 
-export const buildRecurrenceRule = (spec: RecurrenceRuleSpec, isAllDay: boolean): string => {
+/**
+ * `timeZone` is the series' own (its startTimeZone): a timed series ends
+ * at the last second of `untilDate` there, written in UTC as RFC 5545
+ * asks — the day's end in UTC would drop the last day west of UTC and add
+ * one east of it. An all-day series ends on the DATE itself.
+ */
+export const buildRecurrenceRule = (
+  spec: RecurrenceRuleSpec,
+  isAllDay: boolean,
+  timeZone: string,
+): string => {
   const parts = [`FREQ=${spec.freq.toUpperCase()}`];
   if (spec.interval !== undefined && spec.interval > 1) {
     parts.push(`INTERVAL=${Math.floor(spec.interval)}`);
@@ -29,11 +41,19 @@ export const buildRecurrenceRule = (spec: RecurrenceRuleSpec, isAllDay: boolean)
   if (spec.count !== undefined && spec.count > 0) {
     parts.push(`COUNT=${Math.floor(spec.count)}`);
   } else if (spec.untilDate) {
-    const compact = spec.untilDate.replaceAll('-', '');
-    parts.push(`UNTIL=${isAllDay ? compact : `${compact}T235959Z`}`);
+    parts.push(
+      `UNTIL=${isAllDay ? spec.untilDate.replaceAll('-', '') : endOfDayUtc(spec.untilDate, timeZone)}`,
+    );
   }
   if (spec.byDay !== undefined && spec.byDay.length > 0) {
     parts.push(`BYDAY=${formatByDay(spec.byDay)}`);
   }
   return `RRULE:${parts.join(';')}`;
 };
+
+/** The last second of `date` in `timeZone`, as `YYYYMMDDTHHMMSSZ`. */
+const endOfDayUtc = (date: string, timeZone: string): string =>
+  compactUtc(
+    Temporal.PlainDate.from(date).add({ days: 1 }).toZonedDateTime({ timeZone }).epochMilliseconds -
+      1000,
+  );

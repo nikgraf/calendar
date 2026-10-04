@@ -438,7 +438,7 @@ export const useEventEditorModel = ({
       recurrence: existing
         ? existing.recurrence
         : spec
-          ? [buildRecurrenceRule(spec, isAllDay)]
+          ? [buildRecurrenceRule(spec, isAllDay, timeZone)]
           : undefined,
       reminders,
       startTime,
@@ -610,7 +610,8 @@ export const useEventEditorModel = ({
           isAllDay,
           location: location.trim() || undefined,
           recurrence: (() => {
-            return spec ? [buildRecurrenceRule(spec, isAllDay)] : undefined;
+            // The draft's startTimeZone (buildEventTimes): its UNTIL ends there.
+            return spec ? [buildRecurrenceRule(spec, isAllDay, timeZone)] : undefined;
           })(),
           // Untouched on a Google calendar means Google's own default; an
           // Apple calendar always gets the explicit (resolved) list.
