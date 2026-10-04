@@ -32,6 +32,20 @@ type TaskMutations = Pick<
   'completeTask' | 'createTask' | 'deleteTask' | 'updateTask'
 >;
 
+/** What an `updateTask` op patches; an absent field is left alone. */
+type TaskPatchFields = Partial<Pick<PendingOp, 'taskDue' | 'taskNotes' | 'taskTitle'>>;
+
+/** The fields an op (or an edit) sets, without the ones it leaves alone. */
+const patchFields = (source: {
+  readonly taskDue?: string | undefined;
+  readonly taskNotes?: string | undefined;
+  readonly taskTitle?: string | undefined;
+}): TaskPatchFields => ({
+  ...(source.taskDue === undefined ? {} : { taskDue: source.taskDue }),
+  ...(source.taskNotes === undefined ? {} : { taskNotes: source.taskNotes }),
+  ...(source.taskTitle === undefined ? {} : { taskTitle: source.taskTitle }),
+});
+
 export const makeTaskMutations = (deps: TaskMutationDeps): TaskMutations => {
   const { enqueue, opsForEvent, pendingOpRepo, taskRepo } = deps;
   return {
@@ -189,12 +203,24 @@ export const makeTaskMutations = (deps: TaskMutationDeps): TaskMutations => {
         // exactly those, so it stays untouched and the edit queues behind
         // it as a patch. The create's id swap rewrites this op's eventId,
         // and applyOp holds a temp-id follower until then.
-        // Latest wins: a newer edit supersedes queued ones.
+        // Latest wins, field by field: a newer edit supersedes queued ones,
+        // but each op carries only the fields its edit changed — a rename
+        // followed by a new due day must still send the rename.
+        let fields: TaskPatchFields = {};
         for (const queuedOp of queued) {
           if (queuedOp.accountId === accountId && queuedOp.kind === 'updateTask') {
+            fields = { ...fields, ...patchFields(queuedOp) };
             yield* pendingOpRepo.remove(queuedOp.id);
           }
         }
+        fields = {
+          ...fields,
+          ...patchFields({
+            taskDue: changes.dueDate,
+            taskNotes: changes.notes,
+            taskTitle: changes.title,
+          }),
+        };
         yield* enqueue(
           new PendingOp({
             accountId,
@@ -205,10 +231,8 @@ export const makeTaskMutations = (deps: TaskMutationDeps): TaskMutations => {
             id: generateEventId(),
             kind: 'updateTask',
             nextAttemptAt: 0,
-            ...(changes.dueDate === undefined ? {} : { taskDue: changes.dueDate }),
             taskListId,
-            ...(changes.notes === undefined ? {} : { taskNotes: changes.notes }),
-            ...(changes.title === undefined ? {} : { taskTitle: changes.title }),
+            ...fields,
           }),
         );
       }),
