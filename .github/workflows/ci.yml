@@ -247,6 +247,10 @@ jobs:
           # so the Google halves of the flows (create event, task lane, task
           # convert) run without a real account. Inlined at bundle time.
           EXPO_PUBLIC_CALENDAR_GOOGLE: fixture
+          # The deterministic model and text recognizer from @calendar/ai:
+          # quick-add (06) and capture (22) assert real outcomes instead of
+          # whatever the runner's Apple Intelligence allows.
+          EXPO_PUBLIC_CALENDAR_MODEL: fixture
         run: bash e2e/ci/repack-app.sh build/e2e-app/Solunivo.app build/e2e-repacked/Solunivo.app
       - name: Install on the simulator, pre-grant Reminders
         run: bash apps/ios/e2e/ci/prepare-simulator.sh install apps/ios/build/e2e-repacked/Solunivo.app

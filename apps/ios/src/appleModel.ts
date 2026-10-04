@@ -1,7 +1,7 @@
 import type { LanguageModel, ModelStatus } from '@calendar/ai';
 
 /** Give up rather than leaving the UI stuck behind a stalled generation. */
-const GENERATE_TIMEOUT_MS = 30_000;
+const GENERATE_TIMEOUT_MS = 60_000;
 
 /**
  * The package resolves its turbo module with `getEnforcing`, which throws

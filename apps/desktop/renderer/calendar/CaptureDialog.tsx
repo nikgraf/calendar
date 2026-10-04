@@ -1,5 +1,9 @@
-import { CAPTURE_MODEL_UNAVAILABLE, type CaptureRow, type CaptureState } from '@calendar/app-state';
-import { Temporal } from '@calendar/core';
+import {
+  CAPTURE_MODEL_UNAVAILABLE,
+  describeCaptureRow,
+  type CaptureRow,
+  type CaptureState,
+} from '@calendar/app-state';
 import { Dialog } from '../Dialog.tsx';
 
 /**
@@ -9,17 +13,6 @@ import { Dialog } from '../Dialog.tsx';
  * once its editor saved. The progress and error states live in the same
  * dialog so a paste always answers with something on screen.
  */
-export const describeRow = (row: CaptureRow): string => {
-  const { date, endTime, isAllDay, location, startTime } = row.prefill;
-  const day = Temporal.PlainDate.from(date).toLocaleString('en-US', {
-    day: 'numeric',
-    month: 'short',
-    weekday: 'short',
-  });
-  const when = isAllDay ? day : `${day} · ${startTime}–${endTime}`;
-  return location ? `${when} · ${location}` : when;
-};
-
 export function CaptureDialog({
   onClose,
   onOpenRow,
@@ -82,7 +75,7 @@ export function CaptureDialog({
                         {row.prefill.title}
                       </span>
                       <span className="block truncate text-xs text-neutral-500">
-                        {describeRow(row)}
+                        {describeCaptureRow(row)}
                       </span>
                     </span>
                     <span className="shrink-0 text-xs">

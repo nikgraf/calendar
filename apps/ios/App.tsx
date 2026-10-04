@@ -5,6 +5,7 @@ import {
   useBackendInvalidations,
   useCalendarNavigation,
   useCalendars,
+  useCaptureModel,
   useEventsInRangeStable,
   useListColorLookup,
   useOverdueTasksStable,
@@ -15,6 +16,7 @@ import {
   useTasksInRangeStable,
   useTimeZones,
   useToday,
+  type EventEditorPrefill,
 } from '@calendar/app-state';
 import {
   type BirthdayOccurrence,
@@ -28,7 +30,16 @@ import {
   weekStart,
 } from '@calendar/core';
 import { useEffect, useMemo, useState } from 'react';
-import { AppState, Pressable, SafeAreaView, StatusBar, StyleSheet, Text, View } from 'react-native';
+import {
+  AppState,
+  Linking,
+  Pressable,
+  SafeAreaView,
+  StatusBar,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import {
   backendClient,
@@ -37,10 +48,17 @@ import {
   startSync,
   subscribeInvalidations,
 } from './src/backend.ts';
-import { appleLanguageModel } from './src/appleModel.ts';
 import { registerBackgroundRefresh } from './src/backgroundTask.ts';
 import { appleSpeech } from './src/appleSpeech.ts';
-import { makeFindSlots } from '@calendar/ai';
+import {
+  discardingAfterRead,
+  fixtureShareFromUrl,
+  takeIncomingShare,
+} from './src/incomingShare.ts';
+import { languageModel, modelFixture, textRecognizer } from './src/model.ts';
+import { makeFindSlots, type CaptureSource } from '@calendar/ai';
+import { CaptureBanner } from './src/ui/CaptureBanner.tsx';
+import { CaptureSheet } from './src/ui/CaptureSheet.tsx';
 import { DayTimeline } from './src/ui/DayTimeline.tsx';
 
 import { QuickAddBar } from './src/ui/QuickAddBar.tsx';
@@ -55,6 +73,11 @@ import { WeekStrip } from './src/ui/WeekStrip.tsx';
 const backendAtoms = makeBackendAtoms(backendClient);
 
 const SEGMENT_LABELS = { day: 'Day', month: 'Month', twoDay: '2 Days', week: 'Week' } as const;
+
+/** The share extension opens the app at `<scheme>://expo-sharing` once the payload is stored. */
+const isShareUrl = (url: string) => /^[a-z-]+:\/\/expo-sharing/i.test(url);
+/** Images shared into the app are deleted once read; see incomingShare.ts. */
+const recognizer = discardingAfterRead(textRecognizer);
 
 /**
  * Sync, invalidations and background refresh start here, whatever the
@@ -114,6 +137,69 @@ function CalendarBody({
   const [editSeed, setEditSeed] = useState<EditSeed | null>(null);
   const [editTask, setEditTask] = useState<TaskRecord | null>(null);
   const [viewBirthday, setViewBirthday] = useState<BirthdayOccurrence | null>(null);
+  /** The capture row whose edit sheet is open, so a save can mark it added. */
+  const [captureRow, setCaptureRow] = useState<string | null>(null);
+
+  // A parsed prefill (quick-add, or a single captured event) opens the
+  // editor: the user reviews it before anything is written.
+  const openPrefill = (prefill: EventEditorPrefill) => {
+    setEditSeed({ initialDate: Temporal.PlainDate.from(prefill.date), prefill });
+  };
+  const capture = useCaptureModel({
+    model: languageModel,
+    onSingle: openPrefill,
+    recognizer,
+    timeZone,
+  });
+
+  // Something shared into the app (the share sheet, or the e2e flows' deep
+  // link under the fixture model) starts a capture — over whatever sheet was
+  // open, since the share is what the user is doing now. The extension
+  // stores the payload and opens the app, so it is picked up on that URL and
+  // again whenever the app comes to the foreground; a store read twice is
+  // empty the second time.
+  const startCapture = (source: CaptureSource) => {
+    setShowSettings(false);
+    setEditSeed(null);
+    setEditTask(null);
+    setViewBirthday(null);
+    setCaptureRow(null);
+    capture.start(source);
+  };
+  useEffect(() => {
+    const pickUpShare = () => {
+      const source = takeIncomingShare();
+      if (source) {
+        startCapture(source);
+      }
+    };
+    const onUrl = (url: string | null) => {
+      if (!url) {
+        return;
+      }
+      if (isShareUrl(url)) {
+        pickUpShare();
+        return;
+      }
+      const fixtureSource = modelFixture ? fixtureShareFromUrl(url) : undefined;
+      if (fixtureSource) {
+        startCapture(fixtureSource);
+      }
+    };
+    pickUpShare();
+    void Linking.getInitialURL().then(onUrl);
+    const urlSubscription = Linking.addEventListener('url', ({ url }) => onUrl(url));
+    const stateSubscription = AppState.addEventListener('change', (state) => {
+      if (state === 'active') {
+        pickUpShare();
+      }
+    });
+    return () => {
+      urlSubscription.remove();
+      stateSubscription.remove();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- subscribe once; the handlers read fresh state through the hook's refs
+  }, []);
 
   // Stable variant: keeps the previous days' events while a new range loads,
   // so swiping never flashes an empty grid.
@@ -136,7 +222,7 @@ function CalendarBody({
   const pendingOps = usePendingOps();
   const listColorOf = useListColorLookup();
   const findSlots = useMemo(
-    () => makeFindSlots(appleLanguageModel, backendClient, timeZone),
+    () => makeFindSlots(languageModel, backendClient, timeZone),
     [timeZone],
   );
   const calendars = useCalendars();
@@ -254,7 +340,7 @@ function CalendarBody({
           <QuickAddBar
             findSlots={findSlots}
             focusedDate={focused}
-            model={appleLanguageModel}
+            model={languageModel}
             onParsed={(prefill) => setEditSeed({ initialDate: focused, prefill })}
             speech={appleSpeech}
             timeZone={timeZone}
@@ -303,34 +389,57 @@ function CalendarBody({
       )}
 
       {/* Keyed + conditionally mounted: the sheet seeds its form fields from
-          `seed` in useState initializers, which only run on mount. */}
-      {editSeed || editTask || viewBirthday ? (
-        <EventEditSheet
-          birthday={viewBirthday ?? undefined}
-          calendars={calendars}
-          key={
-            viewBirthday
-              ? `birthday:${viewBirthday.record.id}:${viewBirthday.date}`
-              : editTask
-                ? `task:${editTask.id}`
-                : (editSeed?.event?.id ??
-                  `new:${editSeed?.initialDate.toString()}:${editSeed?.initialTimes?.startTime ?? ''}`)
-          }
-          onClose={() => {
-            setEditSeed(null);
-            setEditTask(null);
-            setViewBirthday(null);
-          }}
-          seed={editSeed ?? { initialDate: focused }}
-          task={editTask ?? undefined}
-          taskLists={taskLists}
-          timeZone={timeZone}
-        />
-      ) : null}
+          `seed` in useState initializers, which only run on mount. Under a
+          capture review it renders inside that sheet: two sibling Modals
+          never present together on iOS. */}
+      {(() => {
+        const editSheet =
+          editSeed || editTask || viewBirthday ? (
+            <EventEditSheet
+              birthday={viewBirthday ?? undefined}
+              calendars={calendars}
+              key={
+                viewBirthday
+                  ? `birthday:${viewBirthday.record.id}:${viewBirthday.date}`
+                  : editTask
+                    ? `task:${editTask.id}`
+                    : (editSeed?.event?.id ??
+                      `new:${editSeed?.initialDate.toString()}:${editSeed?.initialTimes?.startTime ?? ''}`)
+              }
+              onClose={() => {
+                setEditSeed(null);
+                setEditTask(null);
+                setViewBirthday(null);
+                setCaptureRow(null);
+              }}
+              onSaved={captureRow ? () => capture.markAdded(captureRow) : undefined}
+              seed={editSeed ?? { initialDate: focused }}
+              task={editTask ?? undefined}
+              taskLists={taskLists}
+              timeZone={timeZone}
+            />
+          ) : null;
+        return capture.state.kind === 'review' ? (
+          <CaptureSheet
+            onClose={capture.dismiss}
+            onOpenRow={(row) => {
+              setCaptureRow(row.id);
+              openPrefill(row.prefill);
+            }}
+            rows={capture.state.rows}
+            truncated={capture.state.truncated}
+          >
+            {editSheet}
+          </CaptureSheet>
+        ) : (
+          editSheet
+        );
+      })()}
       <SettingsSheet onClose={() => setShowSettings(false)} visible={showSettings} />
       <ConflictBanner />
       <DroppedToast />
       <MutationNoticeToast />
+      <CaptureBanner onDismiss={capture.dismiss} state={capture.state} />
     </SafeAreaView>
   );
 }

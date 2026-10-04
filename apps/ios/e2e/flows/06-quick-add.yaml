@@ -35,8 +35,10 @@ tags:
           when:
             visible: 'New Event'
           commands:
-            # The phrase must have filled the form, not just opened it.
-            - assertVisible: 'Lunch with Sarah'
+            # The phrase must have filled the form, not just opened it. The
+            # e2e bundle's fixture model (CI) makes the whole phrase the
+            # title; a real model extracts "Lunch with Sarah".
+            - assertVisible: 'Lunch with Sarah.*'
             - tapOn: 'Cancel'
       - runFlow:
           when:

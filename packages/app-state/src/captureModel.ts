@@ -112,6 +112,17 @@ export const applyCaptureEvent = (event: CaptureEvent): CaptureState => {
   }
 };
 
+/** The second line of a row: when, and where if known — what the user checks before opening it. */
+export const describeCaptureRow = ({ prefill }: CaptureRow): string => {
+  const day = Temporal.PlainDate.from(prefill.date).toLocaleString('en-US', {
+    day: 'numeric',
+    month: 'short',
+    weekday: 'short',
+  });
+  const when = prefill.isAllDay ? day : `${day} · ${prefill.startTime}–${prefill.endTime}`;
+  return prefill.location ? `${when} · ${prefill.location}` : when;
+};
+
 export const markCaptureRowAdded = (state: CaptureState, id: string): CaptureState =>
   state.kind === 'review'
     ? {
