@@ -219,15 +219,20 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
       // A move and the edits of the same series keep their queue order even
       // when backoff lets listDue skip the older one: an edit queued before
       // the move patches the source calendar, one queued after patches the
-      // destination — either would 404 on the wrong side of the move.
+      // destination — either would 404 on the wrong side of the move. An
+      // occurrence edit (or RSVP) queued behind its series' create waits
+      // for it the same way: Google has no instance to patch until then,
+      // and the 404 would drop the edit.
       if (op.kind === 'move' || EVENT_KINDS.has(op.kind)) {
         const earlier = yield* pendingOpRepo.earlierInSeries(op);
-        if (op.kind === 'move' ? earlier.length > 0 : earlier.includes('move')) {
-          return retry(
-            op.kind === 'move'
-              ? 'waiting for earlier changes to the event'
-              : 'waiting for the move ahead of it',
-          );
+        if (op.kind === 'move' && earlier.length > 0) {
+          return retry('waiting for earlier changes to the event');
+        }
+        if (op.kind !== 'move' && earlier.includes('move')) {
+          return retry('waiting for the move ahead of it');
+        }
+        if (op.kind !== 'move' && op.kind !== 'create' && earlier.includes('create')) {
+          return retry('waiting for the create ahead of it');
         }
       }
       switch (op.kind) {

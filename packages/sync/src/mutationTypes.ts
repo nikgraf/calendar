@@ -40,6 +40,31 @@ export class RecurringEditUnsupportedError extends Data.TaggedError(
   'RecurringEditUnsupportedError',
 )<{ readonly eventId: string }> {}
 
+/**
+ * A repeating event keeps its kind: Google keys a series' occurrences and
+ * exceptions by a date or a date-time to match it, so an edit cannot
+ * switch the series, or one occurrence, between timed and all-day. The
+ * agent gateway refuses the same edit before it gets here.
+ */
+export class RecurringAllDaySwitchError extends Data.TaggedError('RecurringAllDaySwitchError')<{
+  readonly eventId: string;
+}> {
+  override readonly message = 'A repeating event cannot switch between all-day and timed.';
+}
+
+/**
+ * An all-day series moves one occurrence at a time: shifting the whole
+ * series' dates would leave its by-day rules behind, so a series or
+ * this-and-following edit takes non-date fields only — and says so
+ * rather than dropping the new date.
+ */
+export class RecurringAllDayMoveError extends Data.TaggedError('RecurringAllDayMoveError')<{
+  readonly eventId: string;
+}> {
+  override readonly message =
+    'An all-day repeating event moves one occurrence at a time: choose “This event”.';
+}
+
 /** The signed-in account is not on the event's guest list. */
 export class NotAttendeeError extends Data.TaggedError('NotAttendeeError')<{
   readonly eventId: string;
@@ -161,6 +186,12 @@ type RecurringEditError =
   | RecurringEditUnsupportedError
   | SqlError;
 
+/** A recurring update can also refuse the edit's times (see the two errors). */
+type RecurringUpdateError =
+  | RecurringAllDayMoveError
+  | RecurringAllDaySwitchError
+  | RecurringEditError;
+
 export interface EventMutationsShape {
   /** Toggles a task's completion locally and writes it back (Google queue / EventKit). */
   readonly completeTask: (params: {
@@ -271,7 +302,7 @@ export interface EventMutationsShape {
   readonly updateEvent: (params: UpdateEventParams) => Effect.Effect<void, RecurringEditError>;
   readonly updateRecurring: (
     params: UpdateRecurringParams,
-  ) => Effect.Effect<void, RecurringEditError>;
+  ) => Effect.Effect<void, RecurringUpdateError>;
   /** Edits a task; Google gets title/notes/due, Reminders the full field set. */
   readonly updateTask: (params: {
     readonly accountId: string;

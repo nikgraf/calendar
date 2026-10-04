@@ -62,6 +62,8 @@ import {
   InvalidColorError,
   NotAttendeeError,
   NotOrganizerError,
+  RecurringAllDayMoveError,
+  RecurringAllDaySwitchError,
   RecurringEditUnsupportedError,
   retryDelayMs,
   TaskNotFoundError,
@@ -76,6 +78,25 @@ export * from './mutationTypes.ts';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const isoDate = (epochMs: number): string => new Date(epochMs).toISOString().slice(0, 10);
+
+/**
+ * An edit of an event Google has not seen yet rides in its queued create:
+ * patching it would 404, and the NotFound arm would delete the local row.
+ * The create keeps its place in the queue, so the occurrence edits queued
+ * after it still wait for it (applyOp).
+ */
+const foldIntoCreate = (create: PendingOp, payload: EventRecord) =>
+  new PendingOp({
+    accountId: create.accountId,
+    attempts: 0,
+    calendarId: create.calendarId,
+    createdAt: create.createdAt,
+    eventId: create.eventId,
+    id: generateEventId(),
+    kind: 'create',
+    nextAttemptAt: 0,
+    payload,
+  });
 
 /**
  * The defined fields of an update, ready to spread over an EventRecord.
@@ -263,6 +284,44 @@ const make: Effect.Effect<
     );
 
   const enqueue = (op: PendingOp) => pendingOpRepo.enqueue(op);
+
+  /** The queued create of an event Google has not seen yet, if any. */
+  const queuedCreateOf = (calendarId: string, eventId: string) =>
+    Effect.map(opsForEvent(calendarId, eventId), (ops) => ops.find((op) => op.kind === 'create'));
+
+  /** Queues a this-and-following truncation of the master: a patch, or its create. */
+  const truncateQueued = (
+    accountId: string,
+    calendarId: string,
+    master: EventRecord,
+    truncated: EventRecord,
+    queuedCreate: PendingOp | undefined,
+    now: number,
+  ) =>
+    Effect.gen(function* () {
+      const carriedText = queuedCreate
+        ? undefined
+        : yield* queuedCarriedText(calendarId, master.id);
+      yield* pendingOpRepo.removeForEvent(calendarId, master.id);
+      yield* enqueue(
+        queuedCreate
+          ? foldIntoCreate(queuedCreate, truncated)
+          : new PendingOp({
+              accountId,
+              attempts: 0,
+              baseEtag: master.etag ?? undefined,
+              calendarId,
+              carriedText,
+              createdAt: now,
+              eventId: master.id,
+              id: generateEventId(),
+              kind: 'update',
+              nextAttemptAt: 0,
+              payload: truncated,
+            }),
+      );
+    });
+
   const kick = Effect.suspend(() => Effect.forkDetach(processPendingOps()));
   /**
    * A mutation's local write and its queue changes (coalesce old ops,
@@ -332,13 +391,18 @@ const make: Effect.Effect<
     });
   };
 
-  /** Drops override rows at/after the split and cancels them remotely. */
+  /**
+   * Drops override rows at/after the split and cancels them remotely —
+   * unless the series never reached Google (`remote: false`): its create
+   * already carries the truncated rule, so there is nothing to cancel.
+   */
   const dropOverridesFrom = (
     accountId: string,
     calendarId: string,
     masterId: string,
     fromOriginalStartUtc: number,
     now: number,
+    { remote }: { readonly remote: boolean },
   ) =>
     Effect.gen(function* () {
       const overrides = yield* eventRepo.listOverrides(accountId, calendarId, masterId);
@@ -348,6 +412,9 @@ const make: Effect.Effect<
         }
         yield* pendingOpRepo.removeForEvent(calendarId, override.id);
         yield* eventRepo.deleteEvent(accountId, calendarId, override.id);
+        if (!remote) {
+          continue;
+        }
         yield* enqueue(
           new PendingOp({
             accountId,
@@ -751,6 +818,7 @@ const make: Effect.Effect<
           return;
         }
 
+        const queuedCreate = yield* queuedCreateOf(calendarId, masterId);
         if (scope === 'series' || originalStartUtc <= master.startUtc) {
           // Deleting the master cascades to its exceptions server-side.
           const overrides = yield* eventRepo.listOverrides(accountId, calendarId, masterId);
@@ -760,6 +828,10 @@ const make: Effect.Effect<
           }
           yield* pendingOpRepo.removeForEvent(calendarId, masterId);
           yield* eventRepo.deleteEvent(accountId, calendarId, masterId);
+          if (queuedCreate) {
+            // Never reached Google: dropping its create is the whole delete.
+            return;
+          }
           yield* enqueue(
             new PendingOp({
               accountId,
@@ -790,24 +862,10 @@ const make: Effect.Effect<
           updatedAt: now,
         });
         yield* eventRepo.upsertMany([truncated]);
-        const carriedText = yield* queuedCarriedText(calendarId, masterId);
-        yield* pendingOpRepo.removeForEvent(calendarId, masterId);
-        yield* enqueue(
-          new PendingOp({
-            accountId,
-            attempts: 0,
-            baseEtag: master.etag ?? undefined,
-            calendarId,
-            carriedText,
-            createdAt: now,
-            eventId: masterId,
-            id: generateEventId(),
-            kind: 'update',
-            nextAttemptAt: 0,
-            payload: truncated,
-          }),
-        );
-        yield* dropOverridesFrom(accountId, calendarId, masterId, originalStartUtc, now);
+        yield* truncateQueued(accountId, calendarId, master, truncated, queuedCreate, now);
+        yield* dropOverridesFrom(accountId, calendarId, masterId, originalStartUtc, now, {
+          remote: !queuedCreate,
+        });
       }),
 
     discardPendingOp,
@@ -952,6 +1010,9 @@ const make: Effect.Effect<
           const instanceId = googleInstanceId(masterId, originalStartUtc, master.isAllDay);
           const existing = yield* eventRepo.getById(accountId, calendarId, instanceId);
           const base = existing ?? projectInstance(master, originalStartUtc, now);
+          if (changes.isAllDay !== undefined && changes.isAllDay !== base.isAllDay) {
+            return yield* Effect.fail(new RecurringAllDaySwitchError({ eventId: masterId }));
+          }
           const merged = withConsistentGeo(
             new EventRecord({
               ...base,
@@ -985,6 +1046,22 @@ const make: Effect.Effect<
           );
           return;
         }
+
+        if (changes.isAllDay !== undefined && changes.isAllDay !== master.isAllDay) {
+          return yield* Effect.fail(new RecurringAllDaySwitchError({ eventId: masterId }));
+        }
+        if (master.isAllDay && changes.startDate !== undefined) {
+          // The date the occurrence shows now: its exception's, else its slot's.
+          const exception = yield* eventRepo.getById(
+            accountId,
+            calendarId,
+            googleInstanceId(masterId, originalStartUtc, true),
+          );
+          if (changes.startDate !== (exception?.startDate ?? isoDate(originalStartUtc))) {
+            return yield* Effect.fail(new RecurringAllDayMoveError({ eventId: masterId }));
+          }
+        }
+        const queuedCreate = yield* queuedCreateOf(calendarId, masterId);
 
         const duration =
           changes.startUtc !== undefined && changes.endUtc !== undefined
@@ -1021,6 +1098,12 @@ const make: Effect.Effect<
             }),
           );
           yield* eventRepo.upsertMany([merged]);
+          if (queuedCreate) {
+            // Google has no exceptions to carry text onto yet: the queued
+            // occurrence edits land after the create with their own text.
+            yield* pendingOpRepo.removeForEvent(calendarId, masterId);
+            return yield* enqueue(foldIntoCreate(queuedCreate, merged));
+          }
           // Google carries changed text onto the exceptions; so does the
           // local copy, undoably (carriedText.ts).
           const queued = yield* opsForEvent(calendarId, masterId);
@@ -1080,34 +1163,29 @@ const make: Effect.Effect<
           updatedAt: now,
         });
         yield* eventRepo.upsertMany([truncated]);
-        const carriedText = yield* queuedCarriedText(calendarId, masterId);
-        yield* pendingOpRepo.removeForEvent(calendarId, masterId);
-        yield* enqueue(
-          new PendingOp({
-            accountId,
-            attempts: 0,
-            baseEtag: master.etag ?? undefined,
-            calendarId,
-            carriedText,
-            createdAt: now,
-            eventId: masterId,
-            id: generateEventId(),
-            kind: 'update',
-            nextAttemptAt: 0,
-            payload: truncated,
-          }),
-        );
-        yield* dropOverridesFrom(accountId, calendarId, masterId, originalStartUtc, now);
+        yield* truncateQueued(accountId, calendarId, master, truncated, queuedCreate, now);
+        yield* dropOverridesFrom(accountId, calendarId, masterId, originalStartUtc, now, {
+          remote: !queuedCreate,
+        });
 
         const projected = projectInstance(master, originalStartUtc, now);
         const startUtc =
           !master.isAllDay && changes.startUtc !== undefined
             ? changes.startUtc
             : projected.startUtc;
+        // An all-day split starts on the occurrence's slot (a date change
+        // was refused above): the edit's dates would contradict startUtc.
+        const {
+          endDate: _endDate,
+          endUtc: _endUtc,
+          startDate: _startDate,
+          startUtc: _startUtc,
+          ...untimed
+        } = defined;
         const newMaster = withConsistentGeo(
           new EventRecord({
             ...projected,
-            ...defined,
+            ...(master.isAllDay ? untimed : defined),
             endUtc: master.isAllDay ? projected.endUtc : startUtc + duration,
             etag: null,
             id: generateEventId(),

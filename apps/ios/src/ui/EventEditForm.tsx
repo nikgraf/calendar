@@ -37,6 +37,7 @@ export function EventEditForm({ model }: { model: ReturnType<typeof useEventEdit
     canInvite,
     canMoveCalendar,
     canRsvp,
+    canSwitchAllDay,
     date,
     endTime,
     error,
@@ -145,7 +146,13 @@ export function EventEditForm({ model }: { model: ReturnType<typeof useEventEdit
 
         <View style={styles.switchRow}>
           <Text style={styles.label}>All-day</Text>
-          <Switch onValueChange={setIsAllDay} testID="event-all-day" value={isAllDay} />
+          <Switch
+            // A repeating event keeps its kind (timed or all-day).
+            disabled={!canSwitchAllDay}
+            onValueChange={setIsAllDay}
+            testID="event-all-day"
+            value={isAllDay}
+          />
         </View>
 
         {existing ? null : (

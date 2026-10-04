@@ -16,6 +16,7 @@ import { deviceTimeZone } from './appleCalendarEvents.ts';
 import {
   type EventMutationsShape,
   InvalidColorError,
+  RecurringAllDaySwitchError,
   type UpdateEventParams,
   UnsupportedForProviderError,
 } from './mutationTypes.ts';
@@ -187,7 +188,15 @@ export const makeAppleEventMutations = (deps: AppleEventMutationDeps): AppleEven
       Effect.gen(function* () {
         yield* rejectGuests(changes);
         yield* rejectUnsupportedReminders(changes.reminders);
-        if (scope !== 'series') {
+        // The series keeps its kind, like a Google one (RecurringAllDaySwitchError).
+        const series =
+          scope === 'series' || changes.isAllDay !== undefined
+            ? yield* client.series({ id: masterId })
+            : undefined;
+        if (changes.isAllDay !== undefined && changes.isAllDay !== series?.first.isAllDay) {
+          return yield* Effect.fail(new RecurringAllDaySwitchError({ eventId: masterId }));
+        }
+        if (scope !== 'series' || !series) {
           yield* client.update({
             changes: toEventWrite(changes),
             ref: { id: masterId, originalStartUtc },
@@ -198,8 +207,10 @@ export const makeAppleEventMutations = (deps: AppleEventMutationDeps): AppleEven
         // The whole series: write the first occurrence with futureEvents.
         // A time edit made on some occurrence shifts the series start by
         // that occurrence's wall-clock delta (DST-safe), exactly like the
-        // Google series path; all-day series take non-time fields only.
-        const series = yield* client.series({ id: masterId });
+        // Google series path; all-day series take non-time fields only (the
+        // editor and the agent gateway refuse a new date before it gets here:
+        // an EventKit slot is a device-local midnight, so only they know the
+        // date the occurrence showed).
         const first = series.first;
         const firstSlot = first.occurrenceStartUtc ?? first.startUtc;
         const {

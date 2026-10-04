@@ -46,6 +46,7 @@ export function EventEditorForm({
     canInvite,
     canMoveCalendar,
     canRsvp,
+    canSwitchAllDay,
     date,
     endTime,
     error,
@@ -152,9 +153,13 @@ export function EventEditorForm({
             )}
           </select>
         )}
-        <label className="flex items-center gap-2 text-sm">
+        <label
+          className="flex items-center gap-2 text-sm"
+          title={canSwitchAllDay ? undefined : 'A repeating event stays timed or all-day'}
+        >
           <input
             checked={isAllDay}
+            disabled={!canSwitchAllDay}
             onChange={(changeEvent) => setIsAllDay(changeEvent.target.checked)}
             type="checkbox"
           />

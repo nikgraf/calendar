@@ -1,6 +1,6 @@
 import { CalendarInfo } from '@calendar/core';
 import { describe, expect, it } from 'vitest';
-import { editorCapabilities } from './editorModel.ts';
+import { editorCapabilities, recurringTimesError } from './editorModel.ts';
 
 const calendar = (provider: 'apple' | 'google', accessRole: CalendarInfo['accessRole'] = 'owner') =>
   new CalendarInfo({
@@ -62,5 +62,48 @@ describe('editorCapabilities', () => {
       editorCapabilities({ ...base, isRecurring: true, scope: 'series' }).canMoveCalendar,
     ).toBe(true);
     expect(editorCapabilities({ ...base, isExisting: false }).canMoveCalendar).toBe(false);
+  });
+
+  it('keeps an existing repeating event timed or all-day', () => {
+    expect(editorCapabilities({ ...base, isRecurring: true }).canSwitchAllDay).toBe(false);
+    expect(editorCapabilities(base).canSwitchAllDay).toBe(true);
+    expect(
+      editorCapabilities({ ...base, isExisting: false, isRecurring: true }).canSwitchAllDay,
+    ).toBe(true);
+  });
+});
+
+describe('recurringTimesError', () => {
+  const opened = { date: '2026-07-04', isAllDay: true };
+
+  it('refuses a switch between timed and all-day in any scope', () => {
+    for (const scope of ['instance', 'following', 'series'] as const) {
+      expect(recurringTimesError({ date: '2026-07-04', isAllDay: false, opened, scope })).toMatch(
+        /cannot switch/,
+      );
+    }
+  });
+
+  it('moves an all-day occurrence only on its own', () => {
+    expect(
+      recurringTimesError({ date: '2026-07-05', isAllDay: true, opened, scope: 'series' }),
+    ).toMatch(/one occurrence at a time/);
+    expect(
+      recurringTimesError({ date: '2026-07-05', isAllDay: true, opened, scope: 'instance' }),
+    ).toBeUndefined();
+    expect(
+      recurringTimesError({ date: '2026-07-04', isAllDay: true, opened, scope: 'series' }),
+    ).toBeUndefined();
+  });
+
+  it('lets a timed series move by its wall-clock delta', () => {
+    expect(
+      recurringTimesError({
+        date: '2026-07-05',
+        isAllDay: false,
+        opened: { date: '2026-07-04', isAllDay: false },
+        scope: 'series',
+      }),
+    ).toBeUndefined();
   });
 });

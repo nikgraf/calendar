@@ -456,6 +456,28 @@ describe('Apple Calendar mutations', () => {
     }).pipe(Effect.provide(testLayer(fake)));
   });
 
+  it.effect('refuses to switch a series or an occurrence between timed and all-day', () => {
+    const fake = fakeWith();
+    return Effect.gen(function* () {
+      yield* connected;
+      const mutations = yield* EventMutations;
+      for (const scope of ['instance', 'following', 'series'] as const) {
+        const error = yield* Effect.flip(
+          mutations.updateRecurring({
+            accountId: APPLE_CALENDAR_ACCOUNT_ID,
+            calendarId: 'ek-home',
+            changes: { isAllDay: true, title: 'Standup' },
+            masterId: 'ek-series',
+            originalStartUtc: seriesStart + 7 * DAY,
+            scope,
+          }),
+        );
+        expect(error._tag).toBe('RecurringAllDaySwitchError');
+      }
+      expect(series(fake).every((entry) => !entry.isAllDay)).toBe(true);
+    }).pipe(Effect.provide(testLayer(fake)));
+  });
+
   it.effect('a series time edit on a later occurrence shifts the whole series by its delta', () => {
     const fake = fakeWith();
     return Effect.gen(function* () {
