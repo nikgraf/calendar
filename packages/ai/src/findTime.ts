@@ -1,5 +1,6 @@
 import { Temporal, type FindSlotsConstraints } from '@calendar/core';
 import { ModelUnavailableError, type LanguageModel } from './model.ts';
+import { meaningfulText, realDate, realTime, upcomingDays } from './shared.ts';
 
 /** What the model is asked to extract from one constraint sentence. */
 export interface FindTimeParse {
@@ -36,16 +37,6 @@ export const FIND_TIME_JSON_SCHEMA = {
   type: 'object',
 } as const;
 
-const CALENDAR_HINT_DAYS = 14;
-
-/** The quickAdd trick: dated weekdays to look up, never to compute. */
-const upcomingDays = (referenceDate: string): string =>
-  Array.from({ length: CALENDAR_HINT_DAYS }, (_, index) => {
-    const date = Temporal.PlainDate.from(referenceDate).add({ days: index });
-    const weekday = date.toLocaleString('en-US', { weekday: 'short' });
-    return `${weekday} ${date.toString()}${index === 0 ? ' (today)' : ''}`;
-  }).join(', ');
-
 export const buildFindTimePrompt = ({
   phrase,
   referenceDate,
@@ -76,40 +67,8 @@ export const buildFindTimePrompt = ({
     `Phrase: ${phrase}`,
   ].join('\n');
 
-const TIME = /^(\d{1,2}):(\d{2})$/;
-const DATE = /^\d{4}-\d{2}-\d{2}$/;
-const PLACEHOLDERS = new Set(['-', 'n/a', 'na', 'none', 'null', 'tbd', 'unknown', 'unspecified']);
 const MAX_DURATION_MINUTES = 12 * 60;
 const DEFAULT_WINDOW_DAYS = 7;
-
-const realDate = (value: string | undefined): string | undefined => {
-  if (!value || !DATE.test(value)) {
-    return undefined;
-  }
-  try {
-    return Temporal.PlainDate.from(value, { overflow: 'reject' }).toString();
-  } catch {
-    return undefined;
-  }
-};
-
-const realTime = (value: string | undefined): string | undefined => {
-  const match = value ? TIME.exec(value.trim()) : null;
-  if (!match) {
-    return undefined;
-  }
-  const hour = Number(match[1]);
-  const minute = Number(match[2]);
-  if (hour > 23 || minute > 59) {
-    return undefined;
-  }
-  return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
-};
-
-const realText = (value: string | undefined): string | undefined => {
-  const text = value?.trim();
-  return text && !PLACEHOLDERS.has(text.toLowerCase()) ? text : undefined;
-};
 
 export type FindTimeResult =
   | {
@@ -147,7 +106,7 @@ export const normalizeFindTime = (
   const daysOfWeek = parse.daysOfWeek?.filter(
     (dayNumber) => Number.isInteger(dayNumber) && dayNumber >= 1 && dayNumber <= 7,
   );
-  const title = realText(parse.title);
+  const title = meaningfulText(parse.title);
   return {
     constraints: {
       ...(daysOfWeek && daysOfWeek.length > 0 ? { daysOfWeek } : {}),

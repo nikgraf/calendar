@@ -1,5 +1,6 @@
-import { Temporal, validateEventDraft, type RecurrenceFrequency } from '@calendar/core';
+import { validateEventDraft, type RecurrenceFrequency } from '@calendar/core';
 import type { QuickAddParse } from './quickAdd.ts';
+import { meaningfulText, realDate, realTime } from './shared.ts';
 
 /** Editor prefill: exactly the fields the shared editor model seeds from. */
 export interface QuickAddPrefill {
@@ -25,46 +26,7 @@ export type QuickAddResult =
   | { readonly kind: 'parsed'; readonly prefill: QuickAddPrefill }
   | { readonly kind: 'rejected'; readonly reason: string };
 
-const TIME = /^(\d{1,2}):(\d{2})$/;
-const DATE = /^\d{4}-\d{2}-\d{2}$/;
-/**
- * Small models fill optional string fields with placeholders instead of
- * omitting them — an observed run wrote "unknown" into location for a
- * phrase that never mentioned one.
- */
-const PLACEHOLDERS = new Set(['-', 'n/a', 'na', 'none', 'null', 'tbd', 'unknown', 'unspecified']);
 const FREQUENCIES = new Set<RecurrenceFrequency>(['daily', 'monthly', 'weekly', 'yearly']);
-
-/** A real calendar date, not merely a date-shaped string ('2026-02-30'). */
-const realDate = (value: string | undefined): string | undefined => {
-  if (!value || !DATE.test(value)) {
-    return undefined;
-  }
-  try {
-    Temporal.PlainDate.from(value, { overflow: 'reject' });
-    return value;
-  } catch {
-    return undefined;
-  }
-};
-
-const meaningfulText = (value: string | undefined): string | undefined => {
-  const text = value?.trim();
-  return text && !PLACEHOLDERS.has(text.toLowerCase()) ? text : undefined;
-};
-
-const normalizeTime = (value: string | undefined): string | undefined => {
-  const match = value?.trim().match(TIME);
-  if (!match) {
-    return undefined;
-  }
-  const hour = Number(match[1]);
-  const minute = Number(match[2]);
-  if (hour > 23 || minute > 59) {
-    return undefined;
-  }
-  return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
-};
 
 const addHour = (time: string): string => {
   const [hour, minute] = time.split(':').map(Number) as [number, number];
@@ -108,8 +70,8 @@ export const normalizeQuickAdd = (
     return { kind: 'rejected', reason: 'That date could not be understood.' };
   }
 
-  const startTime = normalizeTime(parse.startTime);
-  const endTime = normalizeTime(parse.endTime);
+  const startTime = realTime(parse.startTime);
+  const endTime = realTime(parse.endTime);
   // No usable time at all means the phrase described a whole day.
   const isAllDay = parse.isAllDay === true || !startTime;
   const resolvedStart = isAllDay ? '00:00' : startTime!;

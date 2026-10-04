@@ -1,4 +1,5 @@
-import { Temporal, type RecurrenceFrequency } from '@calendar/core';
+import type { RecurrenceFrequency } from '@calendar/core';
+import { upcomingDays } from './shared.ts';
 
 /** What the model is asked to extract from one phrase. */
 export interface QuickAddParse {
@@ -43,20 +44,11 @@ export const QUICK_ADD_JSON_SCHEMA = {
   type: 'object',
 } as const;
 
-/** Days of dated weekdays given to the model to choose from. */
-const CALENDAR_HINT_DAYS = 14;
-
 /**
- * A dated weekday list the model can look up instead of computing. Small
- * models get relative-date arithmetic wrong often enough to matter: an
- * observed "next Tuesday" landed on a Thursday before this existed.
+ * The line the user's words follow in the prompt. Exported so the fixture
+ * model can find them without knowing the rest of the prompt.
  */
-const upcomingDays = (referenceDate: string): string =>
-  Array.from({ length: CALENDAR_HINT_DAYS }, (_, index) => {
-    const date = Temporal.PlainDate.from(referenceDate).add({ days: index });
-    const weekday = date.toLocaleString('en-US', { weekday: 'short' });
-    return `${weekday} ${date.toString()}${index === 0 ? ' (today)' : ''}`;
-  }).join(', ');
+export const QUICK_ADD_PHRASE_MARKER = 'Phrase: ';
 
 /**
  * Builds the extraction prompt. The reference date and zone are injected
@@ -85,7 +77,7 @@ export const buildQuickAddPrompt = ({
     'out of it ("Lunch with Sarah next Tuesday at 1pm" has the title',
     '"Lunch with Sarah"). The phrase may be in any language; the title keeps',
     'its original language.',
-    `Phrase: ${phrase}`,
+    `${QUICK_ADD_PHRASE_MARKER}${phrase}`,
   ]
     .filter(Boolean)
     .join('\n');
