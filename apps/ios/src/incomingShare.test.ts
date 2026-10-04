@@ -1,4 +1,3 @@
-import type { TextRecognizer } from '@calendar/ai';
 import { describe, expect, it, vi } from 'vitest';
 
 const deleted: Array<string> = [];
@@ -17,8 +16,21 @@ vi.mock('expo-sharing', () => {
   throw new Error("Cannot find native module 'ExpoSharing'");
 });
 
-const { discardingAfterRead, fixtureShareFromUrl, sourceFromPayloads, takeIncomingShare } =
+/** The native store as the share extension leaves it. */
+const storeWith = (payloads: Array<SharePayload>): SharingModule => {
+  let stored = payloads;
+  return {
+    clearSharedPayloads: () => {
+      stored = [];
+    },
+    getSharedPayloads: () => stored,
+  };
+};
+
+const { fixtureShareFromUrl, sourceFromPayloads, takeIncomingShare } =
   await import('./incomingShare.ts');
+type SharePayload = import('./incomingShare.ts').SharePayload;
+type SharingModule = import('./incomingShare.ts').SharingModule;
 
 describe('sourceFromPayloads', () => {
   it('prefers the image and ignores a text part beside it', () => {
@@ -45,33 +57,33 @@ describe('sourceFromPayloads', () => {
   });
 });
 
-describe('takeIncomingShare without the native module', () => {
-  it('reports nothing instead of crashing', () => {
+describe('takeIncomingShare', () => {
+  it('reports nothing without the native module instead of crashing', () => {
     expect(takeIncomingShare()).toBeUndefined();
   });
-});
 
-describe('discardingAfterRead', () => {
-  const recognizer: TextRecognizer = {
-    recognizeText: async (image) => {
-      if (image.kind === 'uri' && image.uri.endsWith('bad.png')) {
-        throw new Error('vision');
-      }
-      return 'text';
-    },
-  };
-
-  it('deletes a shared file whether reading worked or failed, and leaves bytes alone', async () => {
+  it('takes the payload once and deletes the copied file only on discard', () => {
+    const store = storeWith([
+      { mimeType: 'image/png', shareType: 'image', value: 'file:///g/IMG.png' },
+    ]);
     deleted.length = 0;
-    const wrapped = discardingAfterRead(recognizer);
-    await expect(wrapped.recognizeText({ kind: 'uri', uri: 'file:///g/ok.png' })).resolves.toBe(
-      'text',
-    );
-    await expect(wrapped.recognizeText({ kind: 'uri', uri: 'file:///g/bad.png' })).rejects.toThrow(
-      'vision',
-    );
-    await wrapped.recognizeText({ base64: 'AA==', kind: 'base64' });
-    expect(deleted).toEqual(['file:///g/ok.png', 'file:///g/bad.png']);
+    const share = takeIncomingShare(store);
+    expect(share?.source).toEqual({
+      image: { kind: 'uri', uri: 'file:///g/IMG.png' },
+      kind: 'image',
+    });
+    expect(takeIncomingShare(store)).toBeUndefined();
+    expect(deleted).toEqual([]);
+    share?.discard();
+    expect(deleted).toEqual(['file:///g/IMG.png']);
+  });
+
+  it('discards a file it cannot use right away', () => {
+    deleted.length = 0;
+    expect(
+      takeIncomingShare(storeWith([{ shareType: 'video', value: 'file:///g/clip.mov' }])),
+    ).toBeUndefined();
+    expect(deleted).toEqual(['file:///g/clip.mov']);
   });
 });
 

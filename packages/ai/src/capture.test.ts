@@ -37,11 +37,17 @@ describe('prepareCaptureText', () => {
     expect(prepareCaptureText('Top.\n________________________________\nOld').text).toBe('Top.');
   });
 
-  it('clips tokens longer than a URL has any right to be', () => {
+  it('clips URLs and encoded junk, never prose written without spaces', () => {
     const url = `https://example.com/${'x'.repeat(200)}`;
     const { text } = prepareCaptureText(`Tickets: ${url} see you`);
     expect(text.length).toBeLessThan(90);
     expect(text.endsWith('… see you')).toBe(true);
+    expect(prepareCaptureText(`id ${'QUJD'.repeat(40)} end`).text).toMatch(
+      /^id Q{1}[A-Z]{59}… end$/,
+    );
+    // A Japanese invitation is one whitespace-delimited "token".
+    const invitation = `${'来週の金曜日、十月十日の午後三時に会議室四で打ち合わせを行います。'.repeat(3)}場所は本社です。`;
+    expect(prepareCaptureText(invitation).text).toBe(invitation);
   });
 
   it('caps at a line boundary and says so', () => {

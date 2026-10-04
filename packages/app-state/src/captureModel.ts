@@ -151,10 +151,19 @@ export const useCaptureModel = ({
   // A dismissed or superseded run must not resurface its result later.
   const run = useRef(0);
 
-  const start = (source: CaptureSource) => {
+  /**
+   * `onSettled` fires once the run has ended, whatever the outcome and
+   * even after a dismiss — the caller's chance to release what the source
+   * referred to (iOS deletes the shared image), which must happen when the
+   * model turned out unavailable just as much as after a successful read.
+   */
+  const start = (source: CaptureSource, onSettled?: () => void) => {
     const current = ++run.current;
     setState({ kind: source.kind === 'image' ? 'reading' : 'extracting' });
     void runCapture({ model, recognizer, timeZone }, source, (event) => {
+      if (event.kind !== 'phase') {
+        onSettled?.();
+      }
       if (current !== run.current) {
         return;
       }

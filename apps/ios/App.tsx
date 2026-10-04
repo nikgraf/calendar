@@ -29,7 +29,7 @@ import {
   WEEK_SWIPE_BUFFER,
   weekStart,
 } from '@calendar/core';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useEffectEvent, useMemo, useState } from 'react';
 import {
   AppState,
   Linking,
@@ -50,11 +50,7 @@ import {
 } from './src/backend.ts';
 import { registerBackgroundRefresh } from './src/backgroundTask.ts';
 import { appleSpeech } from './src/appleSpeech.ts';
-import {
-  discardingAfterRead,
-  fixtureShareFromUrl,
-  takeIncomingShare,
-} from './src/incomingShare.ts';
+import { fixtureShareFromUrl, takeIncomingShare } from './src/incomingShare.ts';
 import { languageModel, modelFixture, textRecognizer } from './src/model.ts';
 import { makeFindSlots, type CaptureSource } from '@calendar/ai';
 import { CaptureBanner } from './src/ui/CaptureBanner.tsx';
@@ -76,8 +72,6 @@ const SEGMENT_LABELS = { day: 'Day', month: 'Month', twoDay: '2 Days', week: 'We
 
 /** The share extension opens the app at `<scheme>://expo-sharing` once the payload is stored. */
 const isShareUrl = (url: string) => /^[a-z-]+:\/\/expo-sharing/i.test(url);
-/** Images shared into the app are deleted once read; see incomingShare.ts. */
-const recognizer = discardingAfterRead(textRecognizer);
 
 /**
  * Sync, invalidations and background refresh start here, whatever the
@@ -148,7 +142,7 @@ function CalendarBody({
   const capture = useCaptureModel({
     model: languageModel,
     onSingle: openPrefill,
-    recognizer,
+    recognizer: textRecognizer,
     timeZone,
   });
 
@@ -158,19 +152,26 @@ function CalendarBody({
   // stores the payload and opens the app, so it is picked up on that URL and
   // again whenever the app comes to the foreground; a store read twice is
   // empty the second time.
-  const startCapture = (source: CaptureSource) => {
+  const startCapture = (source: CaptureSource, onSettled?: () => void) => {
     setShowSettings(false);
     setEditSeed(null);
     setEditTask(null);
     setViewBirthday(null);
     setCaptureRow(null);
-    capture.start(source);
+    capture.start(source, onSettled);
   };
+  // The subscriptions below are made once, but `startCapture` closes over
+  // this render's model, recognizer and time zone (a share after the
+  // primary zone changed must resolve "tomorrow" in the new zone), so they
+  // go through an effect event, which always runs the latest render's.
+  const onIncoming = useEffectEvent((source: CaptureSource, onSettled?: () => void) => {
+    startCapture(source, onSettled);
+  });
   useEffect(() => {
     const pickUpShare = () => {
-      const source = takeIncomingShare();
-      if (source) {
-        startCapture(source);
+      const share = takeIncomingShare();
+      if (share) {
+        onIncoming(share.source, share.discard);
       }
     };
     const onUrl = (url: string | null) => {
@@ -183,7 +184,7 @@ function CalendarBody({
       }
       const fixtureSource = modelFixture ? fixtureShareFromUrl(url) : undefined;
       if (fixtureSource) {
-        startCapture(fixtureSource);
+        onIncoming(fixtureSource);
       }
     };
     pickUpShare();
@@ -198,7 +199,6 @@ function CalendarBody({
       urlSubscription.remove();
       stateSubscription.remove();
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- subscribe once; the handlers read fresh state through the hook's refs
   }, []);
 
   // Stable variant: keeps the previous days' events while a new range loads,

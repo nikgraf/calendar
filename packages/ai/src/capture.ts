@@ -28,6 +28,12 @@ export const MAX_CAPTURE_TEXT_CHARS = 6000;
 export const MAX_CAPTURE_EVENTS = 8;
 /** Longest token kept whole; tracking URLs and base64 junk are clipped. */
 const MAX_TOKEN_CHARS = 60;
+/**
+ * What a long token has to look like to be clipped: a URL, or a run of
+ * ASCII word characters (base64, a tracking id). Prose without spaces —
+ * a Japanese or Chinese paragraph is one "token" — is left whole.
+ */
+const CLIPPABLE_TOKEN = /^(?:https?:\/\/|www\.)|[A-Za-z0-9+/=_%&?.~:#-]{60,}/;
 /** The line the source text follows in the prompt; the fixture model keys on it. */
 export const CAPTURE_TEXT_MARKER = 'Text:\n';
 
@@ -81,7 +87,9 @@ export const prepareCaptureText = (raw: string): { text: string; truncated: bool
         .trim()
         .split(/[ \t]+/)
         .map((token) =>
-          token.length > MAX_TOKEN_CHARS ? `${token.slice(0, MAX_TOKEN_CHARS)}…` : token,
+          token.length > MAX_TOKEN_CHARS && CLIPPABLE_TOKEN.test(token)
+            ? `${token.slice(0, MAX_TOKEN_CHARS)}…`
+            : token,
         )
         .join(' '),
     );

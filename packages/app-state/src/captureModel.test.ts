@@ -73,6 +73,32 @@ describe('runCapture', () => {
   });
 });
 
+const unavailableModel: LanguageModel = {
+  generateJson: async () => ({}),
+  status: async () => 'unavailable',
+};
+
+describe('runCapture ends with exactly one terminal event', () => {
+  // `useCaptureModel.start` fires `onSettled` on that event — the moment a
+  // shared image may be deleted — so every path must produce one, the
+  // unavailable model (no OCR ever ran) included.
+  it.each([
+    [
+      'review',
+      modelAnswering([
+        { date: ahead(1), title: 'A' },
+        { date: ahead(2), title: 'B' },
+      ]),
+    ],
+    ['single', modelAnswering([{ date: ahead(1), title: 'A' }])],
+    ['error', modelAnswering([])],
+    ['error', unavailableModel],
+  ] as const)('%s', async (kind, model) => {
+    const terminal = (await eventsOf(model)).filter((event) => event.kind !== 'phase');
+    expect(terminal.map((event) => event.kind)).toEqual([kind]);
+  });
+});
+
 describe('capture state', () => {
   it('builds rows from a review and marks one added', () => {
     const review = applyCaptureEvent({

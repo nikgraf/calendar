@@ -1,4 +1,4 @@
-import type { CaptureSource, TextRecognizer } from '@calendar/ai';
+import type { CaptureSource } from '@calendar/ai';
 import { File } from 'expo-file-system';
 
 /** What the share extension left for the app (expo-sharing's `SharePayload`). */
@@ -9,7 +9,7 @@ export interface SharePayload {
   readonly value: string;
 }
 
-interface SharingModule {
+export interface SharingModule {
   readonly clearSharedPayloads: () => void;
   readonly getSharedPayloads: () => ReadonlyArray<SharePayload>;
 }
@@ -53,13 +53,22 @@ export const sourceFromPayloads = (
   return text ? { kind: 'text', text } : undefined;
 };
 
+/** What the share extension left; `discard` removes any copied files. */
+export interface IncomingShare {
+  readonly discard: () => void;
+  readonly source: CaptureSource;
+}
+
 /**
  * Takes what the share extension left, clearing the store so a share is
- * handled once. Clearing only forgets the entry: the copied image stays in
- * the container until `discardingAfterRead` deletes it.
+ * handled once. Clearing only forgets the entry: the extension copied an
+ * image into the app-group container and nothing else would ever remove
+ * it, so the caller runs `discard` once the capture has ended — whatever
+ * its outcome, an unavailable model included.
  */
-export const takeIncomingShare = (): CaptureSource | undefined => {
-  const sharing = loadSharing();
+export const takeIncomingShare = (
+  sharing: SharingModule | undefined = loadSharing(),
+): IncomingShare | undefined => {
   if (!sharing) {
     return undefined;
   }
@@ -68,29 +77,25 @@ export const takeIncomingShare = (): CaptureSource | undefined => {
     return undefined;
   }
   sharing.clearSharedPayloads();
-  return sourceFromPayloads(payloads);
-};
-
-/**
- * Deletes a shared image once it has been read, whatever the outcome — the
- * extension copied it into the app-group container, and nothing else would
- * ever remove it.
- */
-export const discardingAfterRead = (recognizer: TextRecognizer): TextRecognizer => ({
-  recognizeText: async (image) => {
-    try {
-      return await recognizer.recognizeText(image);
-    } finally {
-      if (image.kind === 'uri') {
-        try {
-          new File(image.uri).delete();
-        } catch {
-          // Already gone.
-        }
+  const files = payloads
+    .filter((payload) => payload.shareType !== 'text' && payload.shareType !== 'url')
+    .map((payload) => payload.value);
+  const discard = () => {
+    for (const uri of files) {
+      try {
+        new File(uri).delete();
+      } catch {
+        // Already gone.
       }
     }
-  },
-});
+  };
+  const source = sourceFromPayloads(payloads);
+  if (!source) {
+    discard();
+    return undefined;
+  }
+  return { discard, source };
+};
 
 /** The e2e flows' stand-in for a share: `solunivo-dev://capture-fixture?text=…`, fixture model only. */
 export const fixtureShareFromUrl = (url: string): CaptureSource | undefined => {
