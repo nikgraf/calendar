@@ -35,9 +35,11 @@ const seed = {
 };
 
 const TITLE = 'input[placeholder="Title"]';
-const STATE = `document.querySelector('[data-capture-state]')?.dataset.captureState ?? ''`;
+// Parenthesised: `??` binds looser than `===`, so an unwrapped expression
+// compared in a waitFor would be truthy as soon as the element existed.
+const STATE = `(document.querySelector('[data-capture-state]')?.dataset.captureState ?? '')`;
 const rowStatus = (id: string) =>
-  `document.querySelector('[data-capture-row="${id}"]')?.dataset.status ?? ''`;
+  `(document.querySelector('[data-capture-row="${id}"]')?.dataset.status ?? '')`;
 
 /**
  * A paste as the OS would deliver it, dispatched where `target` says: the
