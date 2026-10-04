@@ -3,6 +3,7 @@ import { appleCalendarServicesLayer } from './appleCalendarEvents.ts';
 import {
   Account,
   CalendarInfo,
+  EventRecord,
   GeoLocation,
   plainDateToUtcMs,
   type EventDraft,
@@ -741,6 +742,66 @@ describe('EventMutations', () => {
       }
     }),
   );
+
+  it.effect('refuses edits, deletes and moves of an event in a read-only calendar', () => {
+    const client = stubClient({});
+    return Effect.gen(function* () {
+      yield* seedCalendar;
+      yield* (yield* CalendarRepo).upsertMany([
+        new CalendarInfo({
+          accessRole: 'reader',
+          accountId: 'acc-1',
+          colorHex: '#16a765',
+          id: 'shared',
+          isPrimary: false,
+          isVisible: true,
+          provider: 'google',
+          summary: 'Team (view only)',
+          timeZone: 'Europe/Vienna',
+        }),
+      ]);
+      const stored = new EventRecord({
+        accountId: 'acc-1',
+        calendarId: 'shared',
+        endUtc: draft.endUtc,
+        etag: '"s-1"',
+        id: 'shared-1',
+        isAllDay: false,
+        startTimeZone: 'Europe/Vienna',
+        startUtc: draft.startUtc,
+        status: 'confirmed',
+        syncedAt: 1,
+        syncStatus: 'synced',
+        title: 'Their meeting',
+        updatedAt: 1,
+      });
+      const events = yield* EventRepo;
+      yield* events.upsertMany([stored]);
+      const mutations = yield* EventMutations;
+      const ref = { accountId: 'acc-1', calendarId: 'shared', eventId: 'shared-1' };
+      const refusals = [
+        // A drag: Google would 403, and the drop marked the moved row synced.
+        mutations.updateEvent({
+          ...ref,
+          changes: { endUtc: draft.endUtc + 3_600_000, startUtc: draft.startUtc + 3_600_000 },
+        }),
+        mutations.deleteEvent(ref),
+        mutations.updateRecurring({
+          ...ref,
+          changes: { title: 'x' },
+          masterId: 'shared-1',
+          originalStartUtc: draft.startUtc,
+          scope: 'instance',
+        }),
+        mutations.moveEvent({ ...ref, target: { accountId: 'acc-1', calendarId: 'cal-1' } }),
+      ];
+      for (const refusal of refusals) {
+        expect((yield* Effect.flip(refusal))._tag).toBe('CalendarNotWritableError');
+      }
+      expect(yield* (yield* PendingOpRepo).listAll()).toEqual([]);
+      expect(yield* events.getById('acc-1', 'shared', 'shared-1')).toEqual(stored);
+    }).pipe(Effect.provide(mutationsLayer(client)));
+  });
 
   it.effect('deleting a never-synced event needs no server op', () => {
     const client = stubClient({});

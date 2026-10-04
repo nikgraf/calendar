@@ -1169,6 +1169,19 @@ const make: Effect.Effect<
       calendars.find((calendar) => calendar.id === calendarId),
     );
 
+  /**
+   * An existing event changes only in a calendar we can write. Google
+   * answers 403 for the rest, and the dropped op used to mark the edited
+   * row synced: a dragged event showed the wrong time until the server
+   * copy changed. A calendar we have no row for passes; the provider judges.
+   */
+  const requireWritable = (accountId: string, calendarId: string) =>
+    Effect.flatMap(findCalendar(accountId, calendarId), (calendar) =>
+      calendar && !isCalendarWritable(calendar)
+        ? Effect.fail(new CalendarNotWritableError({ calendarId }))
+        : Effect.void,
+    );
+
   /** The source event as a whole (the series for a recurring one). */
   const loadSource = (params: EventRef, provider: 'apple' | 'google') =>
     Effect.gen(function* () {
@@ -1314,6 +1327,8 @@ const make: Effect.Effect<
       if (target.accountId === accountId && target.calendarId === calendarId) {
         return;
       }
+      // Moving out deletes from the source, which a read-only calendar refuses.
+      yield* requireWritable(accountId, calendarId);
       const targetCalendar = yield* findCalendar(target.accountId, target.calendarId);
       if (!isCalendarWritable(targetCalendar)) {
         return yield* Effect.fail(new CalendarNotWritableError({ calendarId: target.calendarId }));
@@ -1431,6 +1446,7 @@ const make: Effect.Effect<
   const convertEventToTask = (params: ConvertEventToTaskParams) =>
     Effect.gen(function* () {
       const { accountId, calendarId, draft, target } = params;
+      yield* requireWritable(accountId, calendarId);
       const sourceProvider = yield* providerOf(accountId);
       const targetProvider = yield* providerOf(target.accountId);
       const source = yield* loadSource(params, sourceProvider);
@@ -1502,21 +1518,29 @@ const make: Effect.Effect<
         provider === 'apple' ? onApple(params) : onGoogle(params),
       );
 
+  /** Edits and deletes of an existing event: only where we can write (requireWritable). */
+  const writable =
+    <P extends { readonly accountId: string; readonly calendarId: string }, A, E>(
+      write: (params: P) => Effect.Effect<A, E>,
+    ) =>
+    (params: P): Effect.Effect<A, E | CalendarNotWritableError | SqlError> =>
+      Effect.andThen(requireWritable(params.accountId, params.calendarId), write(params));
+
   return {
     ...shape,
     convertEventToTask,
     convertTaskToEvent,
     createEvent: byProvider(apple.createEvent, google.createEvent),
-    deleteEvent: byProvider(apple.deleteEvent, google.deleteEvent),
-    deleteRecurring: byProvider(apple.deleteRecurring, google.deleteRecurring),
+    deleteEvent: writable(byProvider(apple.deleteEvent, google.deleteEvent)),
+    deleteRecurring: writable(byProvider(apple.deleteRecurring, google.deleteRecurring)),
     moveEvent,
     moveTask,
     previewEventToTask,
     previewMove,
     respondToEvent: byProvider(apple.respondToEvent, google.respondToEvent),
     setCalendarColor: byProvider(apple.setCalendarColor, google.setCalendarColor),
-    updateEvent: byProvider(apple.updateEvent, google.updateEvent),
-    updateRecurring: byProvider(apple.updateRecurring, google.updateRecurring),
+    updateEvent: writable(byProvider(apple.updateEvent, google.updateEvent)),
+    updateRecurring: writable(byProvider(apple.updateRecurring, google.updateRecurring)),
   };
 });
 

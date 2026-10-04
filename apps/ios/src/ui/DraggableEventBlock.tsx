@@ -26,6 +26,7 @@ export function DraggableEventBlock({
   onCommitMove,
   onCommitResize,
   onPress,
+  readOnly,
   secondaryZones,
   timeZone,
   top,
@@ -40,6 +41,8 @@ export function DraggableEventBlock({
   onCommitMove: (deltaMinutes: number) => void;
   onCommitResize: (deltaMinutes: number) => void;
   onPress: () => void;
+  /** In a calendar we cannot write: opens on tap, offers no move or resize. */
+  readOnly: boolean;
   /** The non-primary zones; a tall block adds their start–end as a third line. */
   secondaryZones: ReadonlyArray<string>;
   timeZone: string;
@@ -49,8 +52,9 @@ export function DraggableEventBlock({
   const translateY = useSharedValue(0);
   const extraHeight = useSharedValue(0);
   const lifted = useSharedValue(0);
-  // Recurring instances drag too — the commit becomes a single-instance override.
-  const draggable = !event.recurrence;
+  // Recurring instances drag too — the commit becomes a single-instance
+  // override. Nothing in a calendar we cannot write moves.
+  const draggable = !event.recurrence && !readOnly;
 
   const commitMove = (translationPx: number) => {
     translateY.value = 0;

@@ -55,6 +55,7 @@ export function DayTimeline({
   colorOf,
   days,
   events,
+  isEventReadOnly,
   isTaskReadOnly,
   listColorOf,
   onBirthdayPress,
@@ -76,6 +77,8 @@ export function DayTimeline({
   colorOf: (event: EventRecord) => string;
   days: ReadonlyArray<Temporal.PlainDate>;
   events: ReadonlyArray<EventRecord>;
+  /** An event in a calendar we cannot write opens on tap but never drags. */
+  isEventReadOnly: (event: EventRecord) => boolean;
   isTaskReadOnly: (task: TaskRecord) => boolean;
   listColorOf: (task: TaskRecord) => string | undefined;
   onBirthdayPress: (birthday: BirthdayOccurrence) => void;
@@ -416,6 +419,7 @@ export function DayTimeline({
                       divided={divided}
                       draggingKey={taskDrag.dragging?.key ?? null}
                       events={(byDay.get(iso) ?? []).filter((event) => !event.isAllDay)}
+                      isEventReadOnly={isEventReadOnly}
                       isTaskReadOnly={isTaskReadOnly}
                       isToday={Temporal.PlainDate.compare(day, today) === 0}
                       key={iso}

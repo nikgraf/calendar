@@ -23,6 +23,7 @@ export function TimedEventBlock({
   event,
   hourHeight,
   onEventClick,
+  readOnly,
   secondaryZones,
   timeZone,
 }: {
@@ -32,6 +33,8 @@ export function TimedEventBlock({
   event: EventRecord;
   hourHeight: number;
   onEventClick: (event: EventRecord) => void;
+  /** In a calendar we cannot write: opens on click, offers no move or resize. */
+  readOnly: boolean;
   /** The non-primary zones; a tall block adds their start–end as a third line. */
   secondaryZones: ReadonlyArray<string>;
   timeZone: string;
@@ -60,7 +63,7 @@ export function TimedEventBlock({
   const compact = pixelHeight < 28;
   // Three lines need ~46px; the primary line alone hides below 28.
   const showZones = secondaryZones.length > 0 && pixelHeight >= 46;
-  const draggable = !event.recurrence;
+  const draggable = !event.recurrence && !readOnly;
   return (
     <div
       aria-label={`${event.title}, ${formatClockTime(event.startUtc, timeZone)} to ${formatClockTime(event.endUtc, timeZone)}`}

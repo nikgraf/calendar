@@ -85,6 +85,7 @@ export function WeekView({
   colorOf,
   days,
   events,
+  isEventReadOnly,
   isTaskReadOnly,
   listColorOf,
   onBirthdayClick,
@@ -104,6 +105,7 @@ export function WeekView({
   colorOf: ColorLookup;
   days: ReadonlyArray<Temporal.PlainDate>;
   events: ReadonlyArray<EventRecord>;
+  isEventReadOnly: (event: EventRecord) => boolean;
   isTaskReadOnly: (task: TaskRecord) => boolean;
   listColorOf: (task: TaskRecord) => string | undefined;
   onBirthdayClick: (birthday: BirthdayOccurrence) => void;
@@ -168,6 +170,7 @@ export function WeekView({
   const drag = useEventDrag({
     gridRef,
     hourHeight: HOUR_HEIGHT,
+    isEventReadOnly,
     laneRef,
     onEventClick,
     onTaskClick,
@@ -454,6 +457,7 @@ export function WeekView({
                           hourHeight={HOUR_HEIGHT}
                           key={box.id}
                           onEventClick={onEventClick}
+                          readOnly={isEventReadOnly(event)}
                           secondaryZones={secondaryZones}
                           timeZone={timeZone}
                         />

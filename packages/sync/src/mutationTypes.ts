@@ -156,6 +156,7 @@ export interface UpdateRecurringParams extends RecurringTargetParams {
 }
 
 type RecurringEditError =
+  | CalendarNotWritableError
   | EventNotFoundError
   | EventProviderError
   | RecurringEditUnsupportedError

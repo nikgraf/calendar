@@ -24,6 +24,7 @@ import type {
 import {
   birthdayMergeKey,
   findBirthdayOverride,
+  isCalendarWritable,
   msUntilNextMidnight,
   secondaryZones,
   Temporal,
@@ -505,6 +506,23 @@ export const useTaskReadOnlyLookup = (): ((task: TaskRecord) => boolean) => {
     );
     return (task: TaskRecord) => readOnlyLists.has(`${task.accountId}:${task.listId}`);
   }, [taskLists]);
+};
+
+/**
+ * Whether an event lives in a calendar we cannot write (a shared calendar
+ * with reader access, a subscription, birthdays): its blocks open as a
+ * viewer and never start a drag. EventMutations refuses the write too.
+ */
+export const useEventReadOnlyLookup = (): ((event: EventRecord) => boolean) => {
+  const calendars = useCalendars();
+  return useMemo(() => {
+    const readOnly = new Set(
+      calendars
+        .filter((calendar) => !isCalendarWritable(calendar))
+        .map((calendar) => `${calendar.accountId}:${calendar.id}`),
+    );
+    return (event: EventRecord) => readOnly.has(`${event.accountId}:${event.calendarId}`);
+  }, [calendars]);
 };
 
 /**
