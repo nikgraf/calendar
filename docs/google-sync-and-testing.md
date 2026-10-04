@@ -542,10 +542,18 @@ against a real store — confirm them there before relying on them more.
 - The stubbed `GoogleCalendarClientShape` / `GoogleTasksClientShape` are
   **complete records** — every new client method must be added to every
   stub (typecheck enumerates them).
-- AI pipelines never hit a real model in tests: the provider seams take a
-  fake `ModelProvider`/`SpeechProvider` returning canned JSON, so
-  prompt-building, normalization, and error paths are fully unit-tested
-  (see `packages/ai/*.test.ts` and `findTimePipeline.test.ts`).
+- AI pipelines never hit a real model in tests: the seams take a fake
+  `LanguageModel`/`SpeechToText`/`TextRecognizer` returning canned JSON,
+  so prompt-building, normalization, and error paths are fully
+  unit-tested (see `packages/ai/*.test.ts` and
+  `findTimePipeline.test.ts`). The e2e suites use the shared fixture
+  model (`makeFixtureLanguageModel`, `fixtureTextRecognizer`): one event
+  per line, `Title | +N or YYYY-MM-DD | HH:MM-HH:MM | Location`, with
+  `+N` counted from the prompt's own "Today is" line so no spec computes a
+  date; desktop `launchApp(seed, { model: 'fixture' })`, iOS
+  `EXPO_PUBLIC_CALENDAR_MODEL=fixture` in the bundle (CI), which also
+  accepts `solunivo-dev://capture-fixture?text=…` as a stand-in for a
+  share.
 - Apple Calendar never hits EventKit in tests: `makeFakeAppleCalendarClient`
   (`packages/apple-calendar/src/fake.ts`) keeps series the way EventKit
   does (master + rules, detached and deleted occurrences), expands them

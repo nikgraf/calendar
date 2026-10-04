@@ -23,9 +23,13 @@ powers quick-add parsing, find-a-time, and dictation.
   backend rpc handlers, duplex rpc protocols, `LocalNotifications`
   (event reminders + birthday reminders, one merged OS schedule) over a
   platform `NotificationSink`.
-- `packages/ai` — model-provider seam (`ModelProvider`/`SpeechProvider`
-  interfaces), quick-add + find-time prompt/normalize/parse pipelines.
-  Pure; platform adapters live in the apps.
+- `packages/ai` — the on-device AI seams (`LanguageModel`,
+  `SpeechToText`, `TextRecognizer`), the quick-add, find-time and
+  capture prompt/normalize/parse pipelines, and the deterministic
+  fixture model both e2e suites run on. Pure TypeScript; platform
+  adapters live in the apps. Its one Swift source
+  (`swift/OcrBridge.swift`, Vision text recognition) is symlinked into
+  the desktop helper and the iOS Expo module like the other bridges.
 - `packages/reminders` — Apple Reminders seam: the `RemindersClient`
   service, the JSON protocol shared with both native bridges, EventKit
   ↔ `TaskRecord` mapping, and an in-memory fake for tests. The one Swift
@@ -102,7 +106,7 @@ powers quick-add parsing, find-a-time, and dictation.
   Electron-ABI rebuilds. The whole better-sqlite3 apparatus is retired.
 - Oxlint enforces alphabetically sorted object keys/interface members —
   write literals sorted or `vp check` fails.
-- Window-level concerns (screen privacy, logging, open-external, the four
+- Window-level concerns (screen privacy, logging, open-external, the five
   `model:*` AI-helper channels, the `reminders:*` / `contacts:*` /
   `appleCalendar:*` permission-status channels, `settings:open`, and
   `agents:*`) use plain preload IPC;
@@ -150,7 +154,11 @@ powers quick-add parsing, find-a-time, and dictation.
   is real by default (a seeded account has no token, so writes stay
   queued); `CALENDAR_GOOGLE=fixture` (desktop) /
   `EXPO_PUBLIC_CALENDAR_GOOGLE=fixture` (iOS bundle, on in CI) swaps in the
-  in-process fake API with a signed-in fixture account. `…=live` signs
+  in-process fake API with a signed-in fixture account. The on-device
+  model is real by default too; `CALENDAR_MODEL=fixture` (desktop, a
+  spec's `model: 'fixture'`) / `EXPO_PUBLIC_CALENDAR_MODEL=fixture` (iOS
+  bundle, on in CI) answer with the deterministic model and text
+  recognizer from `@calendar/ai` instead. `…=live` signs
   the real API in as the dedicated live test account — only the opt-in
   live suites use it (`GOOGLE_LIVE=1` Node files, `CALENDAR_E2E_GOOGLE=live`
   desktop spec, `apps/ios/e2e/live` flows; `google-live.yml` nightly),
@@ -196,7 +204,10 @@ powers quick-add parsing, find-a-time, and dictation.
   production, so release jobs set nothing; every dev consumer sets it
   (eas.json's development and `e2e-simulator` profiles, the
   `start`/`ios`/`prebuild` scripts, the iOS e2e jobs,
-  `check-devclient.mjs`). CI's `ios-e2e` drives the dev variant as a
+  `check-devclient.mjs`). The share extension and its app group derive
+  from the bundle id (`<id>.share`, `group.<id>`, pinned in
+  `plugins/withShareExtension.cjs`), so they differ per variant too.
+  CI's `ios-e2e` drives the dev variant as a
   Release build with the commit's JS embedded (`e2e/ci/repack-app.sh`,
   expo-updates switched off), in two shards and without Metro; the dev
   client with Metro is for local runs and the live suite. The variants have different

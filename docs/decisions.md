@@ -717,7 +717,11 @@ Correctness and the sync path:
       bridge client factories (`remindersClientFrom`/`contactsClientFrom` + layers, `helperTransport(killSwitch)`) live in the packages;
       `changesFromSubscription`/`bridgeMessage` moved to
       `@calendar/core/bridge`. iOS gets no `CALENDAR_*=off` switch — its
-      e2e runs against the real bridges by design (flow 10).
+      e2e runs against the real bridges by design (flow 10). The two
+      `EXPO_PUBLIC_CALENDAR_GOOGLE=fixture` / `EXPO_PUBLIC_CALENDAR_MODEL=fixture`
+      bundle flags are not that: they swap a JS-level fake in for a
+      remote API and for the on-device model, and leave every bridge
+      real.
 
 Cost, CI and distribution:
 
@@ -1767,3 +1771,58 @@ test`/`test:e2e`/`test:e2e:ios`; every file creates its own
       only use `it.effect` / `expect` and pass unchanged, so vite-plus 1.0
       (Vitest 5) stays a separate sweep item. The iOS native fingerprint
       did not move, so the existing EAS dev client covers the change.
+
+### Capture from text or photo (2026-10-04)
+
+- [x] Paste an email (desktop) or share a screenshot/poster (iOS share
+      sheet) → the events it describes, reviewed before anything is
+      written — done (`todo/capture-text-photo`). Decisions: **OCR first,
+      not image input**: Apple Vision reads the image on-device
+      (`RecognizeDocumentsRequest`, paragraphs in reading order, OS 26 —
+      the model needs 26 anyway) and the text goes through the existing
+      text-only `generateJson`; native image input exists only on OS 27
+      and `@react-native-ai/apple` 0.12 is text-only, so it is a backlog
+      follow-up, and `TextRecognizer` is its own seam in `packages/ai`
+      (the permanent OS 26 path, fakeable) rather than an image field on
+      `LanguageModel`. **The quick-add item shape, minus recurrence, in an
+      `{events: […]}` array** (the Swift `dynamicSchema` already did
+      arrays; `maxItems` now maps to `maximumElements`); every item goes
+      through `normalizeQuickAdd`, an undated item is dropped — never
+      placed on today — and a date the model wrote without a stated year
+      that lands well in the past rolls forward a year (deterministic,
+      `resolveUnstatedYear`). **Text is prepared deterministically**
+      (`prepareCaptureText`: quoted replies cut, over-long tokens clipped,
+      a 6000-char cap at a line boundary for the ~4k-token context, the
+      cut reported as `truncated`). **Review is a list whose rows open the
+      existing editor**; only that editor's Save marks a row added
+      (`onSaved` on both editor models), so calendar choice, the Event |
+      Task flip and the create path are unchanged and "never an auto-save"
+      holds; a single event skips the list, like quick-add. **Desktop
+      entry is ⌘V** (the stock Edit › Paste role delivers the same event):
+      on the grid any text or image, in the ⌘K input only an image or
+      multi-line text; a menu item and a main-process clipboard read were
+      not worth their cost. One dialog at a time: the list unmounts while
+      a row's editor is open (both `Dialog`s close on one Escape), and on
+      iOS the edit sheet renders inside the capture sheet (sibling Modals
+      never present together) while progress and errors are a banner.
+      **iOS share sheet via `expo-sharing`'s receive support** (first
+      party, experimental): its plugin is wrapped
+      (`plugins/withShareExtension.cjs`) because it writes the array of
+      schemes into the extension's plist and the extension crashes on a
+      non-string, and because the share sheet would show the target
+      name; the extension's bundle id and app group are pinned per
+      variant. The extension opens the app over an unofficial responder-
+      chain call (upstream's choice, documented as a review risk). Only
+      `getSharedPayloads()` is used — the hook reads native state on
+      every render and the "resolved" variant makes a network request —
+      and `expo-sharing` is required lazily so an older binary under new
+      JS does not crash. A shared image is deleted once read. **A model
+      fixture for both e2e suites**: `CALENDAR_MODEL=fixture` is answered
+      in Electron main after the same validation (IPC stays on the tested
+      path), `EXPO_PUBLIC_CALENDAR_MODEL=fixture` is bundled for CI; the
+      fixture is a one-line-per-event grammar with dates relative to the
+      prompt's "today", so specs stay date-independent, and it accepts a
+      `capture-fixture` deep link as the stand-in for a share. Open: the
+      real share sheet and extension on a device (both variants), HEIC
+      from Photos, whether 6000 chars / 8 events fit the context, and the
+      interactive EAS credentials run for the extension App IDs.
