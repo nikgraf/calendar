@@ -1,8 +1,10 @@
 import {
+  removeAccountQuestion,
   useAccounts,
   useBackendMutations,
   useCalendars,
   useGuardedMutations,
+  usePendingOps,
   useSyncStatus,
 } from '@calendar/app-state';
 import { type Account, historyStatusLabel, isAppleCalendarAccount } from '@calendar/core';
@@ -25,8 +27,19 @@ export function AccountsView() {
   const calendars = useCalendars();
   const mutations = useBackendMutations();
   const guarded = useGuardedMutations();
+  const pendingOps = usePendingOps();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /** The account whose Remove is waiting for a yes (see removeAccountQuestion). */
+  const [confirmingRemove, setConfirmingRemove] = useState<string | null>(null);
+
+  const remove = (account: Account) => {
+    if (removeAccountQuestion(account, pendingOps)) {
+      setConfirmingRemove(account.id);
+      return;
+    }
+    void guarded.removeAccount({ accountId: account.id });
+  };
 
   const addAccount = async () => {
     setBusy(true);
@@ -99,12 +112,23 @@ export function AccountsView() {
             </div>
             <button
               className="text-sm text-red-600 hover:underline"
-              onClick={() => void guarded.removeAccount({ accountId: account.id })}
+              data-testid={`remove-account-${account.id}`}
+              onClick={() => remove(account)}
               type="button"
             >
               Remove
             </button>
           </div>
+          {confirmingRemove === account.id ? (
+            <RemoveAccountConfirm
+              onCancel={() => setConfirmingRemove(null)}
+              onRemove={() => {
+                setConfirmingRemove(null);
+                void guarded.removeAccount({ accountId: account.id });
+              }}
+              question={removeAccountQuestion(account, pendingOps)}
+            />
+          ) : null}
           <ul className="mt-3 space-y-1">
             {calendars
               .filter((calendar) => calendar.accountId === account.id)
@@ -137,6 +161,46 @@ export function AccountsView() {
           </ul>
         </section>
       ))}
+    </div>
+  );
+}
+
+/** The yes/no under an account before it, and its unsynced changes, are removed. */
+function RemoveAccountConfirm({
+  onCancel,
+  onRemove,
+  question,
+}: {
+  onCancel: () => void;
+  onRemove: () => void;
+  question: ReturnType<typeof removeAccountQuestion>;
+}) {
+  return (
+    <div
+      className="mt-3 rounded-lg border border-red-200 bg-red-50 p-3 text-sm"
+      data-testid="remove-account-confirm"
+      role="alertdialog"
+    >
+      <p className="font-medium text-red-800">{question?.title}</p>
+      <p className="mt-1 text-red-700">{question?.message}</p>
+      <div className="mt-3 flex justify-end gap-2">
+        <button
+          autoFocus
+          className="rounded-md px-3 py-1 text-neutral-700 hover:bg-white"
+          onClick={onCancel}
+          type="button"
+        >
+          Cancel
+        </button>
+        <button
+          className="rounded-md bg-red-600 px-3 py-1 font-medium text-white hover:bg-red-500"
+          data-testid="remove-account-yes"
+          onClick={onRemove}
+          type="button"
+        >
+          Remove
+        </button>
+      </div>
     </div>
   );
 }

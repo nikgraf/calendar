@@ -1,4 +1,4 @@
-import { useGuardedMutations } from '@calendar/app-state';
+import { removeAccountQuestion, useGuardedMutations, usePendingOps } from '@calendar/app-state';
 import {
   type Account,
   type AccountSyncStatus,
@@ -9,7 +9,7 @@ import {
   type TaskListInfo,
 } from '@calendar/core';
 import { useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 import { sectionStyles } from './settingsShared.ts';
 import { palette } from './theme.ts';
 
@@ -40,6 +40,19 @@ export function AccountCard({
       ? historyStatusLabel(syncStatus)
       : null;
   const guarded = useGuardedMutations();
+  const pendingOps = usePendingOps();
+  const remove = () => {
+    const removeNow = () => void guarded.removeAccount({ accountId: account.id });
+    const question = removeAccountQuestion(account, pendingOps);
+    if (!question) {
+      removeNow();
+      return;
+    }
+    Alert.alert(question.title, question.message, [
+      { style: 'cancel', text: 'Cancel' },
+      { onPress: removeNow, style: 'destructive', text: 'Remove' },
+    ]);
+  };
   /** `${accountId}:${calendarId}` of the row with the palette expanded. */
   const [colorPickerFor, setColorPickerFor] = useState<string | null>(null);
 
@@ -74,10 +87,7 @@ export function AccountCard({
             )
           ) : null}
         </View>
-        <Pressable
-          onPress={() => void guarded.removeAccount({ accountId: account.id })}
-          testID={`remove-account-${account.id}`}
-        >
+        <Pressable onPress={remove} testID={`remove-account-${account.id}`}>
           <Text style={styles.remove}>Remove</Text>
         </Pressable>
       </View>
