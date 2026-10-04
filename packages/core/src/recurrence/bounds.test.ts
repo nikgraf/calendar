@@ -38,6 +38,12 @@ describe('recurrenceEndUtc', () => {
     ).toBe(instant('2026-07-28T07:00:00Z') + HOUR);
   });
 
+  it('never ends before DTSTART, which is an occurrence even past UNTIL', () => {
+    expect(recurrenceEndUtc(weekly(['RRULE:FREQ=WEEKLY;UNTIL=20260601T090000Z']))).toBe(
+      instant('2026-07-07T10:00:00Z'),
+    );
+  });
+
   it('enumerates a COUNT series to its last occurrence', () => {
     expect(recurrenceEndUtc(weekly(['RRULE:FREQ=WEEKLY;BYDAY=TU;COUNT=3']))).toBe(
       instant('2026-07-21T10:00:00Z'),

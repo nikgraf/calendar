@@ -63,7 +63,8 @@ export const recurrenceEndUtc = (master: RecurrenceMaster): EpochMs | undefined 
   const hasRdate = master.recurrence.some((line) => line.toUpperCase().startsWith('RDATE'));
   if (until !== undefined && !hasRdate) {
     const end = untilMs(until, master.startTimeZone, master.isAllDay);
-    return end === undefined ? undefined : end + durationMs(master);
+    // DTSTART is an occurrence even past an UNTIL (see buildRuleString).
+    return end === undefined ? undefined : Math.max(end, master.startUtc) + durationMs(master);
   }
   try {
     const occurrences = new RRuleTemporal({

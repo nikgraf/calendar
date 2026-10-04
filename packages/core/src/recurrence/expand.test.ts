@@ -211,6 +211,28 @@ describe('expandRecurringEvent', () => {
     });
   });
 
+  it('draws a DTSTART its rule skips as the first occurrence, outside COUNT', () => {
+    // What Google does (probed live 2026-10-04): a Tuesday start with a
+    // Sunday rule, COUNT=2 → the Tuesday plus two Sundays.
+    const instances = expandRecurringEvent(
+      {
+        endUtc: instant('2026-10-06T22:00:00Z'),
+        id: 'off-rule',
+        isAllDay: false,
+        recurrence: ['RRULE:FREQ=WEEKLY;BYDAY=SU;COUNT=2'],
+        startTimeZone: 'UTC',
+        startUtc: instant('2026-10-06T21:00:00Z'),
+      },
+      instant('2026-10-01T00:00:00Z'),
+      instant('2026-11-01T00:00:00Z'),
+    );
+    expect(instances.map((entry) => entry.startUtc)).toEqual([
+      instant('2026-10-06T21:00:00Z'),
+      instant('2026-10-11T21:00:00Z'),
+      instant('2026-10-18T21:00:00Z'),
+    ]);
+  });
+
   it('adds RDATE values to an RRULE', () => {
     const instances = expandRecurringEvent(
       {

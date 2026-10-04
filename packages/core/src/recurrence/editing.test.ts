@@ -6,7 +6,7 @@ import {
   remainingRecurrence,
   truncateRecurrence,
 } from './editing.ts';
-import type { RecurrenceMaster } from './expand.ts';
+import { expandRecurringEvent, type RecurrenceMaster } from './expand.ts';
 
 const instant = (iso: string): number => Date.parse(iso);
 
@@ -139,6 +139,106 @@ describe('recurrence editing helpers', () => {
       'RRULE:FREQ=WEEKLY',
       'RDATE:20260720T090000Z',
     ]);
+  });
+
+  describe('a split keeps every occurrence, in exactly one half', () => {
+    // Wednesdays from July 1, four times, plus a Friday (July 10) by RDATE.
+    const wednesdays: RecurrenceMaster = {
+      endUtc: instant('2026-07-01T10:00:00Z'),
+      id: 'm',
+      isAllDay: false,
+      recurrence: ['RRULE:FREQ=WEEKLY;BYDAY=WE;COUNT=4', 'RDATE:20260710T090000Z'],
+      startTimeZone: 'UTC',
+      startUtc: instant('2026-07-01T09:00:00Z'),
+    };
+    const HOUR = 60 * 60 * 1000;
+    const starts = (master: RecurrenceMaster): Array<string> =>
+      expandRecurringEvent(
+        master,
+        instant('2026-06-01T00:00:00Z'),
+        instant('2026-09-01T00:00:00Z'),
+      ).map((entry) => new Date(entry.startUtc).toISOString().slice(0, 16));
+    const split = (master: RecurrenceMaster, at: number) => ({
+      head: starts({ ...master, recurrence: truncateRecurrence(master.recurrence, at, false) }),
+      tail: starts({
+        ...master,
+        endUtc: at + HOUR,
+        recurrence: remainingRecurrence(master, at),
+        startUtc: at,
+      }),
+    });
+
+    it('on an RDATE occurrence the rule skips: it starts the new half', () => {
+      // The new master's DTSTART is a Friday its Wednesday rule skips —
+      // still its first occurrence, as on Google, and not counted in COUNT.
+      expect(remainingRecurrence(wednesdays, instant('2026-07-10T09:00:00Z'))).toEqual([
+        'RRULE:FREQ=WEEKLY;BYDAY=WE;COUNT=2',
+      ]);
+      expect(split(wednesdays, instant('2026-07-10T09:00:00Z'))).toEqual({
+        head: ['2026-07-01T09:00', '2026-07-08T09:00'],
+        tail: ['2026-07-10T09:00', '2026-07-15T09:00', '2026-07-22T09:00'],
+      });
+    });
+
+    it('on an occurrence the rule generates', () => {
+      expect(remainingRecurrence(wednesdays, instant('2026-07-15T09:00:00Z'))).toEqual([
+        'RRULE:FREQ=WEEKLY;BYDAY=WE;COUNT=2',
+      ]);
+      expect(split(wednesdays, instant('2026-07-15T09:00:00Z'))).toEqual({
+        head: ['2026-07-01T09:00', '2026-07-08T09:00', '2026-07-10T09:00'],
+        tail: ['2026-07-15T09:00', '2026-07-22T09:00'],
+      });
+    });
+
+    it('counts COUNT from the rule, not from a DTSTART the rule skips', () => {
+      // A Tuesday start with a Wednesday rule: Tuesday, then three Wednesdays.
+      const offRule: RecurrenceMaster = {
+        ...wednesdays,
+        endUtc: instant('2026-06-30T10:00:00Z'),
+        recurrence: ['RRULE:FREQ=WEEKLY;BYDAY=WE;COUNT=3'],
+        startUtc: instant('2026-06-30T09:00:00Z'),
+      };
+      expect(starts(offRule)).toEqual([
+        '2026-06-30T09:00',
+        '2026-07-01T09:00',
+        '2026-07-08T09:00',
+        '2026-07-15T09:00',
+      ]);
+      expect(split(offRule, instant('2026-07-08T09:00:00Z'))).toEqual({
+        head: ['2026-06-30T09:00', '2026-07-01T09:00'],
+        tail: ['2026-07-08T09:00', '2026-07-15T09:00'],
+      });
+    });
+
+    it('on an all-day RDATE occurrence the rule skips', () => {
+      // Saturdays from July 4, plus Monday July 13.
+      const saturdays: RecurrenceMaster = {
+        endDate: '2026-07-05',
+        endUtc: instant('2026-07-05T00:00:00Z'),
+        id: 'm',
+        isAllDay: true,
+        recurrence: ['RRULE:FREQ=WEEKLY;BYDAY=SA;COUNT=3', 'RDATE;VALUE=DATE:20260713'],
+        startDate: '2026-07-04',
+        startTimeZone: 'UTC',
+        startUtc: instant('2026-07-04T00:00:00Z'),
+      };
+      const at = instant('2026-07-13T00:00:00Z');
+      const tail = remainingRecurrence(saturdays, at);
+      expect(tail).toEqual(['RRULE:FREQ=WEEKLY;BYDAY=SA;COUNT=1']);
+      expect(
+        expandRecurringEvent(
+          {
+            ...saturdays,
+            endDate: '2026-07-14',
+            recurrence: tail,
+            startDate: '2026-07-13',
+            startUtc: at,
+          },
+          instant('2026-07-01T00:00:00Z'),
+          instant('2026-09-01T00:00:00Z'),
+        ).map((entry) => entry.startDate),
+      ).toEqual(['2026-07-13', '2026-07-18']);
+    });
   });
 
   describe('a set of only RDATE lines', () => {

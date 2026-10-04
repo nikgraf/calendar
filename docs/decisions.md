@@ -1890,7 +1890,19 @@ test`/`test:e2e`/`test:e2e:ios`; every file creates its own
       DTSTART) and the library adds the RDATEs and takes the EXDATEs as
       for any rule, every value form included; the live suite proves
       Google counts DTSTART as the first instance (an instance PATCH on
-      it lands) and draws what we expand. **The stored end reads RDATE
+      it lands) and draws what we expand. **DTSTART is always an
+      occurrence**: probed live, Google draws an event's start even on a
+      day its rule skips (Tuesday start, `BYDAY=SU;COUNT=2` → the Tuesday
+      plus two Sundays — DTSTART outside COUNT), where rrule-temporal
+      drops it. `buildRuleString` lists DTSTART as an RDATE too, which
+      the library dedupes on a rule day; it costs the COUNT query plan
+      nothing and an endless rule ~0.02 ms per read. The review of #109
+      found the visible case: a this-and-following split on an RDATE
+      occurrence the rule skips starts the new master there, and the
+      calendar drew neither half's copy of it while Google drew it.
+      COUNT arithmetic for a split counts the RRULE line alone from the
+      original DTSTART (`ruleOccurrencesBefore`), so an off-rule start is
+      never consumed. **The stored end reads RDATE
       values**: a plain UNTIL is still read off the rule (a long UNTIL
       series is never enumerated); COUNT, RDATE-only and UNTIL/COUNT with
       RDATE enumerate the set once through that same rule string, so the
@@ -1910,6 +1922,10 @@ test`/`test:e2e`/`test:e2e:ios`; every file creates its own
       COUNT=1 rule (it keeps its exceptions, and its update is a PATCH,
       where an absent `recurrence` would keep the old dates on Google);
       the new half, a create, becomes a single event (`isRecurringSet`).
+      Left as it was: a this-and-following edit that moves a rule
+      occurrence onto a day an explicit BYDAY skips keeps the old COUNT,
+      so the new series ends one occurrence late — on Google too (its own
+      UI rewrites BYDAY instead).
       **Long COUNT series: measured, no change.** A one-week window two
       years into a series starting ten years back, a fresh `RRuleTemporal`
       per read as `expandRecurringEvent` builds it (rrule-temporal 2.2.5,

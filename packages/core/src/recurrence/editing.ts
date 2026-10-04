@@ -1,6 +1,6 @@
 import { plainDateToUtcMs } from '../time/convert.ts';
 import { Temporal } from '../time/temporal.ts';
-import { DTSTART_ONLY_RULE, expandRecurringEvent, type RecurrenceMaster } from './expand.ts';
+import { DTSTART_ONLY_RULE, type RecurrenceMaster, ruleOccurrencesBefore } from './expand.ts';
 
 /**
  * Helpers for editing recurring series the way Google Calendar does it:
@@ -169,9 +169,12 @@ const pruneForTruncation = (
  * the RRULE alone expanded up to the split — RDATE values add to it and
  * EXDATE values do not take from it. UNTIL/unbounded rules carry over
  * as-is. RDATE values keep only those after the split (rrule-temporal emits
- * values before DTSTART too, so the old series' would show twice; one at
- * the split is the new DTSTART), dropping a line left empty. EXDATE lines
- * stay (an exclusion before the new start is harmless).
+ * values before DTSTART too, so the old series' would show twice). The
+ * value at the split is the occurrence being edited: it becomes the new
+ * master's DTSTART, which is always an occurrence (on Google, and here via
+ * `buildRuleString`) even on a day the rule skips. A line left empty is
+ * dropped. EXDATE lines stay (an exclusion before the new start is
+ * harmless).
  */
 export const remainingRecurrence = (
   master: RecurrenceMaster,
@@ -198,11 +201,7 @@ export const remainingRecurrence = (
       rewriteRule(line, (parts) => {
         const count = parts.get('COUNT');
         if (count !== undefined) {
-          const consumed = expandRecurringEvent(
-            { ...master, recurrence: [line] },
-            master.startUtc,
-            splitOriginalStartUtc,
-          ).length;
+          const consumed = ruleOccurrencesBefore(master, line, splitOriginalStartUtc);
           parts.set('COUNT', String(Math.max(Number(count) - consumed, 1)));
         }
       }),
