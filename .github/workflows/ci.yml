@@ -161,26 +161,32 @@ jobs:
           retention-days: 7
           if-no-files-found: ignore
 
-  # Real EventKit on iOS: Maestro drives the dev client on a simulator whose
+  # Real EventKit on iOS: Maestro drives the app on a simulator whose
   # Reminders grant is pre-seeded (simctl privacy, supported). CI never
-  # compiles the app: the dev client is the EAS development-simulator
-  # build for this commit's native fingerprint, kept in the Actions cache
-  # so a JS-only push downloads nothing (a new fingerprint fetches, or
-  # first requests, one EAS build). Metro on the runner serves the JS.
-  ios-e2e:
-    name: iOS e2e (Maestro, real Reminders)
+  # compiles the app: the native half is the EAS `e2e-simulator` build (the
+  # dev variant in Release configuration) for this commit's native
+  # fingerprint, kept in the Actions cache so a JS-only push downloads
+  # nothing (a new fingerprint fetches, or first requests, one EAS build).
+  # The JS half is bundled here and embedded into that app
+  # (repack-app.sh), so there is no Metro and no dev launcher: a launch
+  # takes seconds instead of the ~30 s a dev client needs to re-download
+  # its bundle. Two shards, each on its own runner and simulator; the flows
+  # do not depend on each other (shard-flows.mjs splits them).
+  ios-e2e-shards:
+    name: iOS e2e shard ${{ matrix.shard }}/2
     needs: [gate, changes]
     if: needs.changes.outputs.code == 'true'
     runs-on: macos-26
-    # Green runs take 37–43 min (simulator boot, Metro bootstrap and the
-    # first-permission pass before any flow); 45 cut a fully passed suite
-    # off during cleanup.
-    timeout-minutes: 60
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2]
     env:
       CI: 1
       EXPO_NO_TELEMETRY: 1
       # The dev variant (apps/ios/app.config.js): the fingerprint, the EAS
-      # dev client it selects and Metro's manifest must all be computed for
+      # build it selects and the embedded bundle must all be computed for
       # the same variant.
       APP_VARIANT: development
       # Pinned + checksum-verified below; bump both together.
@@ -188,6 +194,11 @@ jobs:
       MAESTRO_SHA256: 29b675e10cc12080e445e9bfb2e2b4e4dfb9c0f2e30d5884120d258b5e1cd991
     steps:
       - uses: actions/checkout@v7
+      # First, in the background: a runner's first boot spends about two
+      # minutes in data migration, which now overlaps the install and the
+      # bundling below.
+      - name: Start booting a simulator
+        run: bash apps/ios/e2e/ci/prepare-simulator.sh boot
       - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
       - uses: actions/setup-node@v7
         with:
@@ -199,7 +210,7 @@ jobs:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
         run: |
           if [ -z "$EXPO_TOKEN" ]; then
-            echo "::error::EXPO_TOKEN is not set — the dev client comes from EAS"
+            echo "::error::EXPO_TOKEN is not set — the app's native build comes from EAS"
             exit 1
           fi
       - id: fingerprint
@@ -210,23 +221,35 @@ jobs:
           test -n "$HASH" || { echo "::error::fingerprint generation failed"; exit 1; }
           echo "fingerprint: $HASH"
           echo "hash=$HASH" >> "$GITHUB_OUTPUT"
-      - id: devclient
-        name: Restore the dev client for this fingerprint
+      - id: app
+        name: Restore the e2e build for this fingerprint
         uses: actions/cache@v6
         with:
-          path: apps/ios/build/devclient
+          path: apps/ios/build/e2e-app
           # No restore-keys: a build for another fingerprint is never valid.
-          key: ios-devclient-${{ steps.fingerprint.outputs.hash }}
-      - name: Fetch the dev client from EAS
-        if: steps.devclient.outputs.cache-hit != 'true'
-        # The only step that needs the token: it used to sit in the job env,
-        # next to a `curl | bash` of a third-party installer.
+          # Its own prefix: the dev client (google-live.yml) has the same
+          # fingerprint and is a different build.
+          key: ios-e2e-app-${{ steps.fingerprint.outputs.hash }}
+      - name: Fetch the e2e build from EAS
+        if: steps.app.outputs.cache-hit != 'true'
+        # The only step that needs the token. Both shards miss the cache on
+        # a new fingerprint; only the first may request the build.
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
         working-directory: apps/ios
-        run: bash e2e/ci/fetch-dev-client.sh "${{ steps.fingerprint.outputs.hash }}"
-      - name: Boot a simulator, install, pre-grant Reminders
-        run: bash apps/ios/e2e/ci/prepare-simulator.sh apps/ios/build/devclient/Solunivo.app
+        run: >-
+          bash e2e/ci/fetch-eas-build.sh "${{ steps.fingerprint.outputs.hash }}"
+          e2e-simulator build/e2e-app ${{ matrix.shard != 1 && '--wait-only' || '' }}
+      - name: Embed this commit's JS
+        working-directory: apps/ios
+        env:
+          # The in-process fake Google API with a signed-in fixture account,
+          # so the Google halves of the flows (create event, task lane, task
+          # convert) run without a real account. Inlined at bundle time.
+          EXPO_PUBLIC_CALENDAR_GOOGLE: fixture
+        run: bash e2e/ci/repack-app.sh build/e2e-app/Solunivo.app build/e2e-repacked/Solunivo.app
+      - name: Install on the simulator, pre-grant Reminders
+        run: bash apps/ios/e2e/ci/prepare-simulator.sh install apps/ios/build/e2e-repacked/Solunivo.app
       - name: Cache Maestro
         id: maestro
         uses: actions/cache@v6
@@ -252,79 +275,25 @@ jobs:
           mkdir -p "$HOME/.maestro"
           cp -R "$RUNNER_TEMP/maestro-unzip/maestro/." "$HOME/.maestro/"
       - run: echo "$HOME/.maestro/bin" >> "$GITHUB_PATH"
-      - name: Start Metro
-        working-directory: apps/ios
-        env:
-          # Read by app.config.js, and set here only — never for the
-          # fingerprint step, since an explicit runtimeVersion would change
-          # the fingerprint. With the fingerprint policy Expo CLI re-runs a
-          # full project fingerprint for every manifest request, which on
-          # this runner outlasts the dev launcher's 10 s request timeout.
-          EXPO_RUNTIME_VERSION_PIN: ${{ steps.fingerprint.outputs.hash }}
-          # The in-process fake Google API with a signed-in fixture account,
-          # so the Google halves of the flows (create event, task lane, task
-          # convert) run without a real account. Inlined at bundle time.
-          EXPO_PUBLIC_CALENDAR_GOOGLE: fixture
-        run: |
-          nohup pnpm exec expo start --port 8081 > "$RUNNER_TEMP/metro.log" 2>&1 &
-          for _ in $(seq 1 60); do
-            curl -fsS http://127.0.0.1:8081/status >/dev/null 2>&1 && break
-            sleep 2
-          done
-          curl -fsS http://127.0.0.1:8081/status
-          # Warm the bundle before the dev client asks for it: a cold first
-          # bundle on a small runner outlasts the dev client's request
-          # timeout ("Failed to load app … The request timed out"). The
-          # manifest names the exact bundle URL (transform options
-          # included), so this request and the client's share Metro's cache.
-          BUNDLE_URL=$(curl -fsS -H 'expo-platform: ios' http://127.0.0.1:8081/ | jq -r '.launchAsset.url')
-          echo "warming $BUNDLE_URL"
-          time curl -fsS -o /dev/null --max-time 900 "$BUNDLE_URL"
-          grep -a "Bundled" "$RUNNER_TEMP/metro.log" | tail -1
-      - name: Simulator ↔ Metro diagnostics
-        # Independent of the app: what Metro listens on, and whether Safari
-        # inside the simulator can load Metro's status page at all (the
-        # screenshot lands in the failure artifact).
-        run: |
-          lsof -nP -iTCP:8081 -sTCP:LISTEN || true
-          # Manifest latency as the dev launcher sees it (its budget is 10 s
-          # per request): three requests, cold to warm.
-          for _ in 1 2 3; do
-            /usr/bin/time -p curl -sS -o /dev/null -H 'expo-platform: ios' \
-              -H 'expo-runtime-version: ${{ steps.fingerprint.outputs.hash }}' \
-              -H 'expo-protocol-version: 1' -H 'expo-api-version: 1' \
-              -H 'expo-updates-environment: DEVELOPMENT' http://127.0.0.1:8081/ 2>&1 | grep real
-          done
-          # Diagnostics only: run 35585741437 saw this openurl time out
-          # (NSPOSIXErrorDomain 60) with Metro answering every probe above,
-          # and the -e shell took the job down before a single flow ran.
-          xcrun simctl openurl "$SIMULATOR_UDID" "http://127.0.0.1:8081/status" \
-            || echo "::warning::simctl openurl to Metro's status page failed (diagnostic only)"
-          sleep 10
-          xcrun simctl io "$SIMULATOR_UDID" screenshot "$RUNNER_TEMP/safari-metro-status.png"
-          # Leave the simulator on SpringBoard. Safari otherwise stays in
-          # front with a modal "Do you want to download 'status'?" sheet
-          # (Metro serves /status as a download), and the dev client never
-          # came up behind it: run 34851193180 confirmed the "Open in
-          # Solunivo?" alert and nothing launched. The bootstrap flow
-          # launches the client itself and hands it the server URL.
-          xcrun simctl terminate "$SIMULATOR_UDID" com.apple.mobilesafari || true
-      # Separate invocations: Maestro runs a directory's flows in a
-      # non-deterministic order (config.yaml executionOrder is not
-      # honored — mobile-dev-inc/maestro#2231), and the bootstrap must
-      # come first, then permission prompts before any Apple account is
-      # connected. The remaining flows do not depend on that ordering.
-      - name: Bootstrap the dev client onto Metro
-        working-directory: apps/ios
-        run: maestro test --device "$SIMULATOR_UDID" e2e/flows/00-devclient-bootstrap.yaml
+      # A separate invocation, on one shard only: the permission prompts
+      # must come before any Apple account is connected, and Maestro runs
+      # a set of flows in a non-deterministic order (config.yaml
+      # executionOrder is not honored — mobile-dev-inc/maestro#2231). The
+      # remaining flows do not depend on ordering.
       - name: First-time device permissions
+        if: matrix.shard == 1
         working-directory: apps/ios
         run: maestro test --device "$SIMULATOR_UDID" e2e/flows/04a-device-permissions.yaml
       - name: Maestro flows
         working-directory: apps/ios
         # MODELLESS: the runner's simulator has no usable on-device model
         # (see 06-quick-add.yaml).
-        run: maestro test --include-tags ci --exclude-tags ci-bootstrap,ci-permissions -e MODELLESS=1 --device "$SIMULATOR_UDID" e2e/flows
+        run: |
+          set -euo pipefail
+          flows=$(node e2e/ci/shard-flows.mjs "${{ matrix.shard }}" 2)
+          echo "$flows"
+          # shellcheck disable=SC2086
+          maestro test -e MODELLESS=1 --device "$SIMULATOR_UDID" $flows
       - name: Wait for a simulator crash report
         # ReportCrash writes the .ips a minute or so after the process
         # dies (74 s on run 34013939965); the upload step ran before it
@@ -353,14 +322,28 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v7
         with:
-          name: ios-e2e-diagnostics-${{ github.run_attempt }}
+          name: ios-e2e-diagnostics-shard${{ matrix.shard }}-${{ github.run_attempt }}
           path: |
             ~/.maestro/tests/
-            ${{ runner.temp }}/metro.log
-            ${{ runner.temp }}/*.png
             ~/Library/Logs/DiagnosticReports/Solunivo*.ips
           retention-days: 7
           if-no-files-found: ignore
+
+  # The check branch protection requires, under the name the single job
+  # had before it was sharded. Skipped shards (a docs-only push) pass, as
+  # a skipped job did.
+  ios-e2e:
+    name: iOS e2e (Maestro, real Reminders)
+    needs: [ios-e2e-shards]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - env:
+          RESULT: ${{ needs.ios-e2e-shards.result }}
+        run: |
+          echo "shards: $RESULT"
+          [ "$RESULT" = success ] || [ "$RESULT" = skipped ]
 
   # PR-only unsigned packaging smoke: Forge packaging broke twice with
   # failures only a real package run reveals (a retired native module's

@@ -149,7 +149,7 @@ powers quick-add parsing, find-a-time, and dictation.
   (`CALENDAR_APPLE_CALENDAR=fixture`), since nothing stores them. Google
   is real by default (a seeded account has no token, so writes stay
   queued); `CALENDAR_GOOGLE=fixture` (desktop) /
-  `EXPO_PUBLIC_CALENDAR_GOOGLE=fixture` (iOS Metro, on in CI) swaps in the
+  `EXPO_PUBLIC_CALENDAR_GOOGLE=fixture` (iOS bundle, on in CI) swaps in the
   in-process fake API with a signed-in fixture account. `…=live` signs
   the real API in as the dedicated live test account — only the opt-in
   live suites use it (`GOOGLE_LIVE=1` Node files, `CALENDAR_E2E_GOOGLE=live`
@@ -194,8 +194,12 @@ powers quick-add parsing, find-a-time, and dictation.
   (TestFlight) vs. `com.solunivo.app.dev` (the dev client), switched by
   `APP_VARIANT=development` in `apps/ios/app.config.js`. Unset means
   production, so release jobs set nothing; every dev consumer sets it
-  (eas.json's development profiles, the `start`/`ios`/`prebuild` scripts,
-  the iOS e2e jobs, `check-devclient.mjs`). The variants have different
+  (eas.json's development and `e2e-simulator` profiles, the
+  `start`/`ios`/`prebuild` scripts, the iOS e2e jobs,
+  `check-devclient.mjs`). CI's `ios-e2e` drives the dev variant as a
+  Release build with the commit's JS embedded (`e2e/ci/repack-app.sh`,
+  expo-updates switched off), in two shards and without Metro; the dev
+  client with Metro is for local runs and the live suite. The variants have different
   native fingerprints: compute one under the `APP_VARIANT` of the build it
   must match. Maestro flows and `simctl` grants name the dev id. Anything
   two installed apps would both claim (a URL scheme, an OAuth client, a

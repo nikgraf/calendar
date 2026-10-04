@@ -5,12 +5,38 @@ tags:
 ---
 # Runs only when an Apple Reminders list is connected on the simulator
 # (Settings → Connect Apple Reminders, then allow the prompt). Without one
-# the flow is a no-op, like flow 08 without a tasks-enabled account.
+# the flow is a no-op, like flow 08 without a tasks-enabled account —
+# except on CI (keyed on the fixture Google account, like 16 and 17),
+# where it connects Reminders itself and undoes that at the end: the
+# shard this flow runs on may hold no flow that leaves a connection, and
+# the assertions below must never be skipped there.
 - runFlow: ../common/launch.yaml
 - tapOn: 'Today'
 - tapOn: 'Day'
 - runFlow: ../common/open-new-event.yaml
 - runFlow: ../common/switch-to-task.yaml
+- evalScript: ${output.connectedReminders = false}
+- runFlow:
+    when:
+      visible: 'fixture@solunivo.test'
+      notVisible: 'Reminders.*'
+    commands:
+      - evalScript: ${output.connectedReminders = true}
+      - tapOn: 'Cancel'
+      - runFlow: ../common/open-settings.yaml
+      - tapOn:
+          id: 'connect-reminders'
+      - extendedWaitUntil:
+          visible: 'Apple Reminders'
+          timeout: 20000
+      - tapOn: 'Done'
+      - assertVisible: 'Today'
+      - runFlow: ../common/open-new-event.yaml
+      - runFlow: ../common/switch-to-task.yaml
+      # The first pass after connecting has to land before the list shows.
+      - extendedWaitUntil:
+          visible: 'Reminders.*'
+          timeout: 30000
 # Pick the first Reminders list: its rows carry a color swatch, but the
 # stable handle is the list title. 'Reminders' is the default list name.
 - runFlow:
@@ -130,11 +156,30 @@ tags:
       - assertVisible: 'Edit Reminder'
       - waitForAnimationToEnd:
           timeout: 5000
+      # With a second account in the list picker Delete is below the fold:
+      # scroll first, like 08 and 10.
+      - scrollUntilVisible:
+          element:
+            id: 'task-delete'
+          direction: DOWN
       - tapOn:
           id: 'task-delete'
       - extendedWaitUntil:
           notVisible: 'Edit Reminder'
           timeout: 20000
+      # Undo the connection this flow made, like 16 does.
+      - runFlow:
+          when:
+            true: ${output.connectedReminders === true}
+          commands:
+            - runFlow: ../common/open-settings.yaml
+            - tapOn:
+                id: 'remove-account-apple-reminders'
+            - extendedWaitUntil:
+                notVisible: '^Apple Reminders$'
+                timeout: 20000
+            - tapOn: 'Done'
+            - assertVisible: 'Today'
 # Keyed on the sheet still being open (see 08): after the branch above
 # closed it, "no Reminders list visible" would be true for the wrong
 # reason and the Cancel tap would fail.

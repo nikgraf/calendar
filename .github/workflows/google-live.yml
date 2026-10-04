@@ -198,7 +198,7 @@ jobs:
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
         working-directory: apps/ios
-        run: bash e2e/ci/fetch-dev-client.sh "${{ steps.fingerprint.outputs.hash }}"
+        run: bash e2e/ci/fetch-eas-build.sh "${{ steps.fingerprint.outputs.hash }}" development-simulator build/devclient
       - name: Boot a simulator, install, pre-grant Reminders
         run: bash apps/ios/e2e/ci/prepare-simulator.sh apps/ios/build/devclient/Solunivo.app
       - name: Cache Maestro
