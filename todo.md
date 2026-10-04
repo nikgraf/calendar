@@ -56,10 +56,6 @@ comment` for inline-playable video: 10 MB on Free plans, 100 MB paid
       2.1 added cached plans for COUNT rules — re-measure before doing
       anything), and there is no per-calendar "keep only N years" switch
       should storage ever matter.
-- [ ] Per-person birthday reminder overrides — the general lead times
-      landed (device-local, `device_settings`); a per-contact override
-      ("Mom: 2 weeks before as well") would sit on the same table keyed
-      by the merged record id, with the detail view as its entry point.
 - [ ] Tasks: subtask hierarchy — `parent`/`position` are decoded
       (`apiTypes.ts:139-140`) and dropped by `mapGcalTask`; `TaskRecord` has
       no such fields; `tasksClient.ts` has no `move`. Render indentation,
@@ -172,7 +168,7 @@ decision and platform notes live in `docs/decisions.md`.
   - Weather (also show on the day?)
   - Food tracking (nutrition data + macros)
   - Garmin data e.g. body battery
-  - Birthdays (shown since 2026-09-12; per-person reminder overrides are a Tier 2 item)
+  - Birthdays (shown since 2026-09-12; per-person reminder lead days since 2026-10-04)
   - Different views:
     - Business view(s) with certain selected calendar
       - What can other people see e.g. impersonation of a colleage

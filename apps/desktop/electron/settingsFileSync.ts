@@ -115,6 +115,7 @@ export const SETTINGS_FILE_TRIGGER_KEYS: ReadonlySet<string> = new Set([
   ACCOUNTS_KEY,
   CALENDARS_KEY,
   TASKLISTS_KEY,
+  deviceSettingsKey('birthdayReminderOverrides'),
   deviceSettingsKey('birthdayReminders'),
   deviceSettingsKey('eventNotifications'),
   deviceSettingsKey('importedVisibility'),

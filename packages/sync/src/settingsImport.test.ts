@@ -3,7 +3,12 @@ import { AccountRepo, CalendarRepo, DeviceSettingsRepo, TaskRepo } from '@calend
 import { expect, it } from '@effect/vitest';
 import { Effect } from 'effect';
 import { describe } from 'vitest';
-import { readEventNotificationSettings, readTimeZoneSettings } from './deviceSettings.ts';
+import {
+  readBirthdayReminderOverrides,
+  readEventNotificationSettings,
+  readTimeZoneSettings,
+  writeBirthdayReminderOverrides,
+} from './deviceSettings.ts';
 import {
   applyPendingVisibility,
   clearPendingVisibility,
@@ -113,6 +118,34 @@ describe('importSettings', () => {
       }).pipe(Effect.provide(layer));
     },
   );
+
+  it.effect('joins per-person birthday lead days by person and never removes one', () => {
+    const { layer } = makeSettingsTestLayer();
+    return Effect.gen(function* () {
+      yield* writeBirthdayReminderOverrides([
+        { day: 4, displayName: 'Alice', leadDays: [1], month: 3 },
+        { day: 10, displayName: 'Bob', leadDays: [7], month: 3 },
+      ]);
+      const document: SettingsDocument = {
+        birthdayReminderOverrides: [
+          // The same person as "Alice", spelled as the other device has her.
+          { day: 4, displayName: 'alice', leadDays: [14], month: 3 },
+          { day: 20, displayName: 'Carol', leadDays: [], month: 5 },
+        ],
+        version: 1,
+      };
+      expect((yield* previewSettingsImport(document)).settingsChanged).toEqual([
+        'birthdayReminderOverrides',
+      ]);
+      yield* importSettings(document);
+      expect(yield* readBirthdayReminderOverrides).toEqual([
+        { day: 4, displayName: 'alice', leadDays: [14], month: 3 },
+        { day: 10, displayName: 'Bob', leadDays: [7], month: 3 },
+        { day: 20, displayName: 'Carol', leadDays: [], month: 5 },
+      ]);
+      expect((yield* importSettings(document)).settingsChanged).toEqual([]);
+    }).pipe(Effect.provide(layer));
+  });
 
   it.effect('notes a desktop-only section on a host without it', () => {
     const { applied, layer } = makeSettingsTestLayer();

@@ -33,6 +33,7 @@ const full: SettingsDocument = {
     { calendars: [{ source: 'iCloud', title: 'Home', visible: true }], kind: 'apple-calendar' },
     { kind: 'apple-reminders', taskLists: [{ title: 'Groceries', visible: false }] },
   ],
+  birthdayReminderOverrides: [{ day: 4, displayName: 'Alice', leadDays: [14], month: 3 }],
   birthdayReminders: { enabled: true, leadDays: [0, 7], time: '08:30' },
   desktop: { screenPrivacy: 'visible' },
   eventNotifications: { enabled: false, includeAppleCalendar: true },
@@ -146,6 +147,19 @@ describe('mergeSettingsDocument', () => {
     expect(parse(merged)).toEqual({ ...full, timeZones: full.timeZones });
     expect(merged).toContain('// keep me');
     expect(merged).not.toContain('old@example.com');
+  });
+
+  it('replaces the per-person birthday list as a whole, keeping the comments around it', () => {
+    const once = mergeSettingsDocument(text, full);
+    const merged = mergeSettingsDocument(once, {
+      birthdayReminderOverrides: [{ day: 10, displayName: 'Bob', leadDays: [], month: 3 }],
+      version: 1,
+    });
+    expect(parse(merged).birthdayReminderOverrides).toEqual([
+      { day: 10, displayName: 'Bob', leadDays: [], month: 3 },
+    ]);
+    expect(merged).toContain('// keep me');
+    expect(merged).toContain('// primary comment');
   });
 
   it('is idempotent', () => {

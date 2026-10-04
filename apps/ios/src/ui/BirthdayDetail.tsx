@@ -1,6 +1,15 @@
-import { type BirthdayOccurrence, describeBirthday, Temporal } from '@calendar/core';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
-import { sheetStyles } from './editSheetShared.ts';
+import { useBirthdayOverrideEditor } from '@calendar/app-state';
+import {
+  BIRTHDAY_LEAD_DAYS,
+  type BirthdayOccurrence,
+  type BirthdayRecord,
+  describeBirthday,
+  leadDaysLabel,
+  Temporal,
+} from '@calendar/core';
+import { useState } from 'react';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { chip, chipLabel, sheetStyles } from './editSheetShared.ts';
 import { palette } from './theme.ts';
 
 // Through a PlainDate in a leap year: the polyfill cannot localise a
@@ -23,7 +32,66 @@ const countdown = (daysUntil: number, ageTurning: number | undefined): string =>
   return `In ${String(daysUntil)} days${turns}`;
 };
 
-/** The read-only birthday half of EventEditSheet: who, when, and which address book. */
+/**
+ * This person's reminder lead days as toggle chips: the general ones
+ * until a chip is changed, then their own (saved at once). "Use defaults"
+ * hands them back to the general list.
+ */
+function BirthdayReminders({ record }: { record: BirthdayRecord }) {
+  const editor = useBirthdayOverrideEditor(record);
+  const [error, setError] = useState<string | null>(null);
+  if (!editor.loaded) {
+    return null;
+  }
+  const run = (save: Promise<void>) =>
+    void save.then(
+      () => setError(null),
+      (error: unknown) => setError(String(error)),
+    );
+  return (
+    <View testID="birthday-override">
+      <View style={styles.remindersHeader}>
+        <Text style={sheetStyles.label}>REMINDERS</Text>
+        {editor.overridden ? (
+          <Pressable
+            accessibilityRole="button"
+            hitSlop={8}
+            onPress={() => run(editor.reset())}
+            testID="birthday-override-reset"
+          >
+            <Text style={styles.reset}>Use defaults</Text>
+          </Pressable>
+        ) : null}
+      </View>
+      <View style={sheetStyles.scopeRow}>
+        {BIRTHDAY_LEAD_DAYS.map((lead) => {
+          const selected = editor.leadDays.includes(lead);
+          return (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityState={{ selected }}
+              key={lead}
+              onPress={() => run(editor.toggle(lead))}
+              style={chip(selected)}
+              // The suffix lets the e2e flow assert the state without a query.
+              testID={`birthday-override-${String(lead)}${selected ? '-on' : ''}`}
+            >
+              <Text style={chipLabel(selected)}>{leadDaysLabel(lead)}</Text>
+            </Pressable>
+          );
+        })}
+      </View>
+      {editor.enabled ? null : (
+        <Text style={sheetStyles.readOnlyNote} testID="birthday-reminders-off">
+          Birthday reminders are off — turn them on in Settings.
+        </Text>
+      )}
+      {error ? <Text style={styles.error}>{error}</Text> : null}
+    </View>
+  );
+}
+
+/** The birthday half of EventEditSheet: who, when, which address book, and its reminders. */
 export function BirthdayDetail({
   occurrence,
   timeZone,
@@ -53,6 +121,7 @@ export function BirthdayDetail({
           </Text>
         ))}
       </View>
+      <BirthdayReminders record={record} />
       <Text style={sheetStyles.readOnlyNote}>
         Birthdays are read-only here — edit them in Contacts or Google Contacts.
       </Text>
@@ -71,11 +140,26 @@ const styles = StyleSheet.create({
     fontSize: 15,
     marginBottom: 6,
   },
+  error: {
+    color: '#b45309',
+    fontSize: 13,
+    marginBottom: 8,
+  },
   name: {
     color: palette.text,
     fontSize: 20,
     fontWeight: '600',
     marginBottom: 6,
+  },
+  remindersHeader: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  reset: {
+    color: '#2563eb',
+    fontSize: 13,
+    fontWeight: '600',
   },
   source: {
     color: palette.text,

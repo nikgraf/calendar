@@ -44,6 +44,17 @@ const setBirthdayReminderSettings = (settings: BirthdayReminderSettings) =>
     DeviceSettingsRepo | LocalNotifications | NotificationSink
   >;
 
+type OverrideInput = Parameters<typeof commonBackendHandlers.setBirthdayReminderOverride>[0];
+const setBirthdayReminderOverride = (input: OverrideInput) =>
+  commonBackendHandlers.setBirthdayReminderOverride(input) as Effect.Effect<
+    void,
+    unknown,
+    DeviceSettingsRepo | LocalNotifications
+  >;
+const getBirthdayReminderOverrides = commonBackendHandlers.getBirthdayReminderOverrides(
+  undefined,
+) as Effect.Effect<ReadonlyArray<unknown>, unknown, DeviceSettingsRepo>;
+
 const remindersSetup = (client: RemindersClientShape) => {
   const syncAll = vi.fn(() => Effect.void);
   const layer = Layer.mergeAll(
@@ -215,6 +226,7 @@ describe('connectContacts', () => {
 
 const birthdaySetup = (kind: 'immediate' | 'scheduled', granted = true) => {
   const ensurePermission = vi.fn(() => Effect.succeed(granted));
+  const run = vi.fn(() => Effect.void);
   const sink: NotificationSinkShape =
     kind === 'immediate'
       ? { ensurePermission, kind, show: () => Effect.void }
@@ -226,10 +238,30 @@ const birthdaySetup = (kind: 'immediate' | 'scheduled', granted = true) => {
       Layer.provideMerge(reactivityLayer),
     ),
     Layer.succeed(NotificationSink, sink),
-    Layer.succeed(LocalNotifications, { run: () => Effect.void, start: () => Effect.void }),
+    Layer.succeed(LocalNotifications, { run, start: () => Effect.void }),
   );
-  return { ensurePermission, layer };
+  return { ensurePermission, layer, run };
 };
+
+describe('setBirthdayReminderOverride', () => {
+  const alice = { day: 4, displayName: 'Alice', month: 3 };
+
+  it.effect('stores, replaces and removes one person, re-planning without a prompt', () => {
+    const { ensurePermission, layer, run } = birthdaySetup('scheduled');
+    return Effect.gen(function* () {
+      yield* setBirthdayReminderOverride({ ...alice, leadDays: [14, 0] });
+      expect(yield* getBirthdayReminderOverrides).toEqual([{ ...alice, leadDays: [0, 14] }]);
+      yield* setBirthdayReminderOverride({ ...alice, displayName: 'alice', leadDays: [] });
+      expect(yield* getBirthdayReminderOverrides).toEqual([
+        { ...alice, displayName: 'alice', leadDays: [] },
+      ]);
+      yield* setBirthdayReminderOverride({ ...alice, leadDays: null });
+      expect(yield* getBirthdayReminderOverrides).toEqual([]);
+      expect(run).toHaveBeenCalledTimes(3);
+      expect(ensurePermission).not.toHaveBeenCalled();
+    }).pipe(Effect.provide(layer));
+  });
+});
 
 describe('setBirthdayReminderSettings', () => {
   const on: BirthdayReminderSettings = { enabled: true, leadDays: [0], time: '09:00' };

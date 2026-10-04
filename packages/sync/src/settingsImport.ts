@@ -2,7 +2,9 @@ import {
   Account,
   type AppleCalendarPref,
   type AppleTaskListPref,
+  type BirthdayReminderOverrides,
   type BirthdayReminderSettings,
+  canonicalBirthdayOverrides,
   type EventNotificationSettings,
   isAppleCalendarAccount,
   isAppleRemindersAccount,
@@ -17,10 +19,12 @@ import { AccountRepo, CalendarRepo, DeviceSettingsRepo, TaskRepo } from '@calend
 import { Clock, Effect } from 'effect';
 import type { SqlError } from 'effect/sql/SqlError';
 import {
+  readBirthdayReminderOverrides,
   readBirthdayReminderSettings,
   readEventNotificationSettings,
   readTimeZoneSettings,
   readViewPreferences,
+  writeBirthdayReminderOverrides,
   writeTimeZoneSettings,
   writeViewPreferences,
 } from './deviceSettings.ts';
@@ -38,7 +42,7 @@ import {
   withPendingVisibilityLock,
   writePendingVisibility,
 } from './importedVisibility.ts';
-import type { LocalNotifications } from './localNotifications.ts';
+import { LocalNotifications } from './localNotifications.ts';
 import {
   planMirrorImport,
   readMirrorLocals,
@@ -64,6 +68,7 @@ interface AccountFlips {
 
 /** Everything an import would do, computed once; preview reports it, import executes it. */
 interface ImportPlan {
+  readonly birthdayReminderOverrides?: BirthdayReminderOverrides | undefined;
   readonly birthdayReminders?: BirthdayReminderSettings | undefined;
   readonly eventNotifications?: EventNotificationSettings | undefined;
   readonly flips: ReadonlyArray<AccountFlips>;
@@ -116,6 +121,17 @@ const planSettingsImport = (
         : undefined;
     if (birthdayReminders) {
       settingsChanged.push('birthdayReminders');
+    }
+    // Per-person lead days: the file's entries join (and for the same
+    // person replace) the ones here; none is removed.
+    let birthdayReminderOverrides: BirthdayReminderOverrides | undefined;
+    if (document.birthdayReminderOverrides !== undefined) {
+      const current = yield* readBirthdayReminderOverrides;
+      const next = canonicalBirthdayOverrides([...current, ...document.birthdayReminderOverrides]);
+      if (!same(next, current)) {
+        birthdayReminderOverrides = next;
+        settingsChanged.push('birthdayReminderOverrides');
+      }
     }
     const view =
       document.view && !same(document.view, yield* readViewPreferences) ? document.view : undefined;
@@ -252,6 +268,7 @@ const planSettingsImport = (
 
     const pending: PendingVisibility = { appleCalendar, appleReminders, google };
     return {
+      birthdayReminderOverrides,
       birthdayReminders,
       eventNotifications,
       flips,
@@ -308,6 +325,10 @@ export const importSettings = (
       }
       if (plan.birthdayReminders) {
         yield* applyBirthdayReminderSettings(plan.birthdayReminders);
+      }
+      if (plan.birthdayReminderOverrides) {
+        yield* writeBirthdayReminderOverrides(plan.birthdayReminderOverrides);
+        yield* Effect.forkDetach((yield* LocalNotifications).run());
       }
       if (plan.screenPrivacy) {
         yield* platform.apply({ screenPrivacy: plan.screenPrivacy });

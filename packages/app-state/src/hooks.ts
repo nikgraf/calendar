@@ -3,7 +3,10 @@ import type {
   AccountSyncStatus,
   MirrorView,
   BackendPayload,
+  BirthdayLeadDays,
   BirthdayOccurrence,
+  BirthdayRecord,
+  BirthdayReminderOverrides,
   BirthdayReminderSettings,
   BackendSuccess,
   CalendarInfo,
@@ -18,7 +21,13 @@ import type {
   TimeZoneSettings,
   ViewPreferences,
 } from '@calendar/core';
-import { msUntilNextMidnight, secondaryZones, Temporal } from '@calendar/core';
+import {
+  birthdayMergeKey,
+  findBirthdayOverride,
+  msUntilNextMidnight,
+  secondaryZones,
+  Temporal,
+} from '@calendar/core';
 import { RegistryContext, useAtomValue } from '@effect/atom-react';
 import { Cause, Effect, Exit, Option } from 'effect';
 import { AsyncResult, type Atom, AtomRegistry } from 'effect/reactivity';
@@ -268,6 +277,111 @@ export const useBirthdayReminderSettings = (): BirthdayReminderSettings | null =
   return Option.getOrNull(AsyncResult.value(result));
 };
 
+/** People with their own birthday lead days; null until the first read resolves. */
+export const useBirthdayReminderOverrides = (): BirthdayReminderOverrides | null => {
+  const result = useAtomValue(useBackendAtoms().birthdayReminderOverrides);
+  return Option.getOrNull(AsyncResult.value(result));
+};
+
+export interface BirthdayOverrideEditor {
+  /** Whether birthday reminders are on at all; an override fires only then. */
+  readonly enabled: boolean;
+  /** The lead days that apply to this person: their own, else the general ones. */
+  readonly leadDays: ReadonlyArray<BirthdayLeadDays>;
+  /** false until both settings have been read. */
+  readonly loaded: boolean;
+  /** Whether this person has their own lead days. */
+  readonly overridden: boolean;
+  /** Back to the general lead days. */
+  readonly reset: () => Promise<void>;
+  /** Turns one lead day on or off for this person, starting from what applies now. */
+  readonly toggle: (lead: BirthdayLeadDays) => Promise<void>;
+}
+
+/**
+ * The detail view's per-person reminder editor. Like useSettingsEditor,
+ * the last value sent is the truth until it is read back, so two quick
+ * toggles both land.
+ *
+ * Both settings are re-read as the view opens, and it reports `loaded`
+ * only once they are back. On desktop, the first open after the general
+ * lead days changed in the Settings window showed the old ones (the
+ * main window's copy from an earlier open was still served; a reopen
+ * was fresh), and the first toggle would have saved an override built
+ * from them.
+ */
+export const useBirthdayOverrideEditor = (
+  record: Pick<BirthdayRecord, 'day' | 'displayName' | 'month'>,
+): BirthdayOverrideEditor => {
+  const atoms = useBackendAtoms();
+  const registry = useContext(RegistryContext);
+  const settings = Option.getOrNull(
+    AsyncResult.value(useAtomValue(atoms.birthdayReminderSettings)),
+  );
+  const overrides = Option.getOrNull(
+    AsyncResult.value(useAtomValue(atoms.birthdayReminderOverrides)),
+  );
+  // Set once the re-read is back, never cleared: a save's own refetch must
+  // not unmount the controls.
+  const [refreshed, setRefreshed] = useState(false);
+  useEffect(() => {
+    let active = true;
+    const reread = <A, E>(atom: Atom.Atom<AsyncResult.AsyncResult<A, E>>) => {
+      registry.refresh(atom);
+      return Effect.exit(AtomRegistry.getResult(registry, atom, { suspendOnWaiting: true }));
+    };
+    void Effect.runPromise(
+      Effect.all([reread(atoms.birthdayReminderSettings), reread(atoms.birthdayReminderOverrides)]),
+    ).then(() => {
+      if (active) {
+        setRefreshed(true);
+      }
+    });
+    return () => {
+      active = false;
+    };
+  }, [atoms, registry]);
+  const loaded = refreshed && settings !== null && overrides !== null;
+  const { setBirthdayReminderOverride } = useBackendMutations();
+  const key = birthdayMergeKey(record);
+  // `null`: sent "use the general ones"; undefined: nothing sent yet.
+  const [sent, setSent] = useState<
+    { readonly key: string; readonly leadDays: ReadonlyArray<BirthdayLeadDays> | null } | undefined
+  >(undefined);
+  const stored = overrides ? findBirthdayOverride(overrides, record)?.leadDays : undefined;
+  const own = sent?.key === key ? sent.leadDays : stored;
+  const general = settings?.leadDays ?? [];
+  const leadDays = own ?? general;
+  const save = (next: ReadonlyArray<BirthdayLeadDays> | null): Promise<void> => {
+    setSent({ key, leadDays: next });
+    return setBirthdayReminderOverride({
+      day: record.day,
+      displayName: record.displayName,
+      leadDays: next,
+      month: record.month,
+    }).then(
+      () => undefined,
+      (error: unknown) => {
+        setSent(undefined);
+        throw error;
+      },
+    );
+  };
+  return {
+    enabled: settings?.enabled ?? false,
+    leadDays,
+    loaded,
+    overridden: own !== undefined && own !== null,
+    reset: () => save(null),
+    toggle: (lead) =>
+      save(
+        leadDays.includes(lead)
+          ? leadDays.filter((value) => value !== lead)
+          : [...leadDays, lead].sort((a, b) => a - b),
+      ),
+  };
+};
+
 /** The device-local event notification preferences; null until the first read resolves. */
 export const useEventNotificationSettings = (): EventNotificationSettings | null => {
   const result = useAtomValue(useBackendAtoms().eventNotificationSettings);
@@ -430,6 +544,7 @@ export const useBackendMutations = () => {
       respondToEvent: set('respondToEvent'),
       runMirrorsNow: set('runMirrorsNow'),
       saveMirror: set('saveMirror'),
+      setBirthdayReminderOverride: set('setBirthdayReminderOverride'),
       setBirthdayReminderSettings: set('setBirthdayReminderSettings'),
       setCalendarColor: set('setCalendarColor'),
       setCalendarVisible: set('setCalendarVisible'),

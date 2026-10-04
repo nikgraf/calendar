@@ -1,5 +1,6 @@
 import {
   useBackendMutations,
+  useBirthdayReminderOverrides,
   useBirthdayReminderSettings,
   useSettingsEditor,
 } from '@calendar/app-state';
@@ -9,6 +10,7 @@ import {
   type BirthdayLeadDays,
   type BirthdayReminderSettings,
   leadDaysLabel,
+  leadDaysSummary,
 } from '@calendar/core';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { useState } from 'react';
@@ -22,7 +24,8 @@ import { palette } from './theme.ts';
  * by design (the first setting that does not sync), and the copy says so.
  */
 export function BirthdayRemindersSection() {
-  const { setBirthdayReminderSettings } = useBackendMutations();
+  const { setBirthdayReminderOverride, setBirthdayReminderSettings } = useBackendMutations();
+  const overrides = useBirthdayReminderOverrides() ?? [];
   const [settings, persist] = useSettingsEditor(
     useBirthdayReminderSettings(),
     setBirthdayReminderSettings,
@@ -94,6 +97,38 @@ export function BirthdayRemindersSection() {
           value={dateFromParts('2026-01-01', settings.time)}
         />
       </View>
+      {overrides.length > 0 ? (
+        <View style={styles.overrides} testID="birthday-overrides">
+          <Text style={styles.overridesTitle}>CUSTOM PER PERSON</Text>
+          {overrides.map((override, index) => (
+            <View
+              key={`${override.displayName}:${String(override.month)}-${String(override.day)}`}
+              style={styles.overrideRow}
+            >
+              <Text numberOfLines={1} style={styles.overrideName}>
+                {override.displayName}
+                <Text style={sectionStyles.meta}> · {leadDaysSummary(override.leadDays)}</Text>
+              </Text>
+              <Pressable
+                accessibilityLabel={`Reset reminders for ${override.displayName}`}
+                accessibilityRole="button"
+                hitSlop={8}
+                onPress={() =>
+                  void setBirthdayReminderOverride({ ...override, leadDays: null }).catch(
+                    (error: unknown) => setNotice(String(error)),
+                  )
+                }
+                testID={`birthday-override-reset-${String(index)}`}
+              >
+                <Text style={styles.reset}>Reset</Text>
+              </Pressable>
+            </View>
+          ))}
+          <Text style={sectionStyles.meta}>
+            Change a person&apos;s reminders from their birthday in the calendar.
+          </Text>
+        </View>
+      ) : null}
       {notice ? (
         <Text style={sectionStyles.action} testID="birthday-notifications-denied">
           {notice}
@@ -136,11 +171,37 @@ const styles = StyleSheet.create({
     color: palette.text,
     fontSize: 14,
   },
+  overrideName: {
+    color: palette.text,
+    flexShrink: 1,
+    fontSize: 14,
+  },
+  overrideRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 8,
+    justifyContent: 'space-between',
+    paddingVertical: 4,
+  },
+  overrides: {
+    marginTop: 12,
+  },
+  overridesTitle: {
+    color: palette.textMuted,
+    fontSize: 12,
+    fontWeight: '600',
+    marginBottom: 2,
+  },
   pickerRow: {
     alignItems: 'center',
     flexDirection: 'row',
     justifyContent: 'space-between',
     marginTop: 10,
+  },
+  reset: {
+    color: '#2563eb',
+    fontSize: 13,
+    fontWeight: '600',
   },
   switchRow: {
     alignItems: 'center',

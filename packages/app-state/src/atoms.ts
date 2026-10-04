@@ -44,6 +44,8 @@ const parseMapSnapshotKey = (key: string): MapSnapshotParams => {
 /** The mirror definitions' and their device-local status rows' settings keys (see sync/mirrorSettings.ts). */
 const MIRRORS_KEYS = deviceSettingsKey('mirrors');
 const MIRRORS_LOCAL_KEY = deviceSettingsKey('mirrors.local');
+/** Per-person birthday lead days (see sync/deviceSettings.ts). */
+const BIRTHDAY_OVERRIDES_KEY = deviceSettingsKey('birthdayReminderOverrides');
 
 export interface BackendAtoms {
   readonly accounts: ReturnType<typeof buildAtoms>['accounts'];
@@ -51,6 +53,7 @@ export interface BackendAtoms {
     registry: AtomRegistry.AtomRegistry,
     subscribe: (listener: (keys: ReadonlyArray<unknown>) => void) => () => void,
   ) => () => void;
+  readonly birthdayReminderOverrides: ReturnType<typeof buildAtoms>['birthdayReminderOverrides'];
   readonly birthdayReminderSettings: ReturnType<typeof buildAtoms>['birthdayReminderSettings'];
   readonly birthdaysInRange: ReturnType<typeof buildAtoms>['birthdaysInRange'];
   readonly calendars: ReturnType<typeof buildAtoms>['calendars'];
@@ -103,6 +106,7 @@ const MUTATION_REACTIVITY = {
     EVENTS_KEY,
     TASKLISTS_KEY,
     TASKS_KEY,
+    BIRTHDAY_OVERRIDES_KEY,
     deviceSettingsKey('birthdayReminders'),
     deviceSettingsKey('eventNotifications'),
     deviceSettingsKey('timeZones'),
@@ -124,6 +128,7 @@ const MUTATION_REACTIVITY = {
   // The pass writes its status rows itself; the backend invalidates them.
   runMirrorsNow: [],
   saveMirror: [MIRRORS_KEYS, MIRRORS_LOCAL_KEY],
+  setBirthdayReminderOverride: [BIRTHDAY_OVERRIDES_KEY],
   setBirthdayReminderSettings: [deviceSettingsKey('birthdayReminders')],
   setCalendarColor: [CALENDARS_KEY],
   setCalendarVisible: [CALENDARS_KEY, EVENTS_KEY],
@@ -255,6 +260,15 @@ const buildAtoms = (client: BackendClient) => {
       )
       .pipe(Atom.withReactivity([TASKS_KEY])),
   );
+
+  const birthdayReminderOverrides = runtime
+    .atom(
+      Effect.gen(function* () {
+        const backend = yield* AppBackend;
+        return yield* backend.getBirthdayReminderOverrides(undefined);
+      }),
+    )
+    .pipe(Atom.withReactivity([BIRTHDAY_OVERRIDES_KEY]));
 
   // Keyed per setting: the reminder scheduler's own bookkeeping rows never
   // refetch this.
@@ -419,6 +433,7 @@ const buildAtoms = (client: BackendClient) => {
   return {
     accounts,
     bindInvalidations,
+    birthdayReminderOverrides,
     birthdayReminderSettings,
     birthdaysInRange,
     calendars,

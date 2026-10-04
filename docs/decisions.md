@@ -1826,3 +1826,45 @@ test`/`test:e2e`/`test:e2e:ios`; every file creates its own
       real share sheet and extension on a device (both variants), HEIC
       from Photos, whether 6000 chars / 8 events fit the context, and the
       interactive EAS credentials run for the extension App IDs.
+
+### Per-person birthday reminders (2026-10-04)
+
+- [x] Per-person birthday reminder overrides — done
+      (`todo/birthday-reminder-overrides`): the birthday detail view on
+      both platforms edits that person's lead days, saved as they change
+      (no Save button; the iOS sheet's header reads Done for a birthday).
+      Decisions: **a per-person list that inherits until touched**, not
+      extra lead days on top of the general ones: the boxes start on the
+      general list, the first change stores the person's own, an empty
+      list mutes them, "Use defaults" removes the entry — so "Mom: 2
+      weeks before as well" and "never for this colleague" are one
+      control. The general switch still gates everything, and an
+      override never asks for permission (it cannot turn reminders on).
+      **Keyed by name + month + day (`birthdayMergeKey`), not the merged
+      record id** the backlog proposed: that id is the first source's and
+      changes when a Google contact appears or goes, when an account is
+      re-added (generated account id), and differs between the Mac and
+      the iPhone; the merge key is what makes two sources one person in
+      the first place. Accepted cost: a rename in the address book drops
+      the override, and two people with the same name and birthday share
+      one. **Travels in the settings document** (`birthdayReminderOverrides`,
+      a list replaced as a whole in the JSONC like `mirrors`); an import
+      joins by person — the file's entry wins for the same person —
+      and never removes one. One `device_settings` row
+      (`birthdayReminderOverrides`), per-entry decode so one bad hand
+      edit does not drop the rest, canonical order so an unchanged set
+      writes identical text. A write runs a `LocalNotifications` pass
+      itself, since its loop re-plans only on birthday and event
+      invalidations. Both Settings sections list the people with their
+      own lead days, with a Reset each, so a muted person stays
+      findable. **The detail view re-reads both settings as it opens**
+      and enables its controls only once they are back: on desktop the
+      main window held an idle copy of the general lead days changed
+      meanwhile in the Settings window (the e2e caught it — first open
+      after the change showed the old list, a reopen the new one), and a
+      toggle would have saved an override built from it. iOS e2e seeds
+      the person through the fixture Google account's People
+      connections (`GoogleFixture.people`, contacts on), a week from
+      today inside today's month so no day-view flow meets the chip;
+      flow 23 reaches it from the month grid. Open: on-device check of
+      the pending iOS notifications after an override.

@@ -168,7 +168,8 @@ export function EventEditSheet({
         <SafeAreaView>
           <View style={styles.header}>
             <Pressable onPress={onClose}>
-              <Text style={styles.cancel}>Cancel</Text>
+              {/* A birthday's reminder chips save as they change: nothing to cancel. */}
+              <Text style={styles.cancel}>{mode === 'birthday' ? 'Done' : 'Cancel'}</Text>
             </Pressable>
             <Text style={styles.title}>{title}</Text>
             {mode === 'birthday' ||

@@ -4,14 +4,15 @@ import { Effect } from 'effect';
 import type { SqlError } from 'effect/sql/SqlError';
 import { loadMergedBirthdays } from './birthdays.ts';
 import type { DeviceContacts } from './deviceContacts.ts';
-import { readBirthdayReminderSettings } from './deviceSettings.ts';
+import { readBirthdayReminderOverrides, readBirthdayReminderSettings } from './deviceSettings.ts';
 
 /** How far ahead birthday reminders are planned (iOS schedules from this list). */
 const HORIZON_DAYS = 120;
 
 /**
  * The birthday-reminder producer for LocalNotifications: the settings'
- * lead times for every contact birthday in the next four months, at the
+ * lead times (or a person's own, where they have an override) for every
+ * contact birthday in the next four months, at the
  * chosen time of day. Planned from yesterday so an immediate sink can
  * still catch up on last night's reminder.
  */
@@ -28,15 +29,17 @@ export const loadBirthdayPlans = (
     if (!settings.enabled) {
       return [];
     }
+    const overrides = yield* readBirthdayReminderOverrides;
     const records = yield* loadMergedBirthdays;
     const fromDate = Temporal.Instant.fromEpochMilliseconds(now)
       .toZonedDateTimeISO(timeZone)
       .toPlainDate()
       .subtract({ days: 1 })
       .toString();
-    return planBirthdayReminders(records, settings, {
-      fromDate,
-      horizonDays: HORIZON_DAYS,
-      timeZone,
-    });
+    return planBirthdayReminders(
+      records,
+      settings,
+      { fromDate, horizonDays: HORIZON_DAYS, timeZone },
+      overrides,
+    );
   });

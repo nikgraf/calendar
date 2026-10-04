@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { BirthdayRecord } from '../types.ts';
-import { planBirthdayReminders } from './reminders.ts';
+import {
+  findBirthdayOverride,
+  leadDaysSummary,
+  planBirthdayReminders,
+  withBirthdayOverride,
+} from './reminders.ts';
 
 const record = (overrides: Partial<BirthdayRecord> = {}): BirthdayRecord =>
   new BirthdayRecord({
@@ -14,6 +19,8 @@ const record = (overrides: Partial<BirthdayRecord> = {}): BirthdayRecord =>
   });
 
 const utc = (iso: string): number => Date.parse(iso);
+
+const keys = (plans: ReadonlyArray<{ readonly key: string }>) => plans.map((plan) => plan.key);
 
 describe('planBirthdayReminders', () => {
   it('plans one notification per lead at the chosen time, sorted by delivery', () => {
@@ -85,5 +92,86 @@ describe('planBirthdayReminders', () => {
       { fromDate: '2026-03-01', horizonDays: 10, timeZone: 'UTC' },
     );
     expect(plans[0]!.fireAt).toBe(utc('2026-03-04T09:00:00Z'));
+  });
+});
+
+describe('per-person overrides', () => {
+  const on = { enabled: true, leadDays: [0 as const], time: '09:00' };
+  const window = { fromDate: '2026-02-01', horizonDays: 60, timeZone: 'UTC' };
+  const bob = record({ day: 10, displayName: 'Bob', id: 'device:b', month: 3 });
+
+  it('replaces the general lead days for that person only, matched by name and date', () => {
+    // A different id and different case/diacritics: still the same person.
+    const overrides = [{ day: 4, displayName: 'ALICE', leadDays: [1, 14] as const, month: 3 }];
+    expect(
+      keys(
+        planBirthdayReminders([record({ id: 'google:acc:people/c1' }), bob], on, window, overrides),
+      ),
+    ).toEqual([
+      'birthday:google:acc:people/c1:2026-03-04:14',
+      'birthday:google:acc:people/c1:2026-03-04:1',
+      'birthday:device:b:2026-03-10:0',
+    ]);
+  });
+
+  it('an empty list mutes the person; the general switch still gates everything', () => {
+    const muted = [{ day: 4, displayName: 'Alice', leadDays: [] as const, month: 3 }];
+    expect(keys(planBirthdayReminders([record(), bob], on, window, muted))).toEqual([
+      'birthday:device:b:2026-03-10:0',
+    ]);
+    const extra = [{ day: 4, displayName: 'Alice', leadDays: [7] as const, month: 3 }];
+    expect(planBirthdayReminders([record()], { ...on, enabled: false }, window, extra)).toEqual([]);
+  });
+
+  it("reads far enough ahead for an override's longer lead", () => {
+    // General [0] alone would stop at Jan 10; Alice's two weeks reach Jan 20.
+    const plans = planBirthdayReminders(
+      [record({ day: 20, month: 1 })],
+      on,
+      { fromDate: '2026-01-01', horizonDays: 9, timeZone: 'UTC' },
+      [{ day: 20, displayName: 'Alice', leadDays: [14], month: 1 }],
+    );
+    expect(keys(plans)).toEqual(['birthday:device:a:2026-01-20:14']);
+  });
+
+  it('runs with no general lead days when an override has some', () => {
+    expect(
+      keys(
+        planBirthdayReminders([record(), bob], { ...on, leadDays: [] }, window, [
+          { day: 10, displayName: 'Bob', leadDays: [0], month: 3 },
+        ]),
+      ),
+    ).toEqual(['birthday:device:b:2026-03-10:0']);
+  });
+
+  it('withBirthdayOverride replaces, removes and keeps a canonical order', () => {
+    const alice = { day: 4, displayName: 'Alice', month: 3 };
+    let overrides = withBirthdayOverride([], bob, [7, 0, 7]);
+    overrides = withBirthdayOverride(overrides, alice, [14]);
+    expect(overrides).toEqual([
+      { day: 4, displayName: 'Alice', leadDays: [14], month: 3 },
+      { day: 10, displayName: 'Bob', leadDays: [0, 7], month: 3 },
+    ]);
+    overrides = withBirthdayOverride(overrides, { ...alice, displayName: 'alice' }, []);
+    expect(findBirthdayOverride(overrides, alice)?.leadDays).toEqual([]);
+    expect(overrides).toHaveLength(2);
+    expect(withBirthdayOverride(overrides, alice, null)).toEqual([
+      { day: 10, displayName: 'Bob', leadDays: [0, 7], month: 3 },
+    ]);
+  });
+
+  it('a rename or another date is another person', () => {
+    const overrides = [{ day: 4, displayName: 'Alice', leadDays: [14] as const, month: 3 }];
+    expect(findBirthdayOverride(overrides, { day: 4, displayName: 'Alice Smith', month: 3 })).toBe(
+      undefined,
+    );
+    expect(findBirthdayOverride(overrides, { day: 5, displayName: 'Alice', month: 3 })).toBe(
+      undefined,
+    );
+  });
+
+  it('summarises a list the way Settings shows it', () => {
+    expect(leadDaysSummary([14, 0])).toBe('On the day, 2 weeks before');
+    expect(leadDaysSummary([])).toBe('No reminder');
   });
 });

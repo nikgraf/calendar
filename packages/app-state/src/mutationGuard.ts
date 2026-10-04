@@ -79,6 +79,10 @@ export const useGuardedMutations = () => {
       discardPendingOp: guardMutation('discard the change', mutations.discardPendingOp),
       removeAccount: guardMutation('remove the account', mutations.removeAccount),
       resolveConflict: guardMutation('resolve the conflict', mutations.resolveConflict),
+      setBirthdayReminderOverride: guardMutation(
+        'save the reminders for this birthday',
+        mutations.setBirthdayReminderOverride,
+      ),
       setBirthdayReminderSettings: guardMutation(
         'save the birthday reminders',
         mutations.setBirthdayReminderSettings,

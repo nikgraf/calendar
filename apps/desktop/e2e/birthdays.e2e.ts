@@ -106,7 +106,7 @@ describe('contact birthdays', () => {
     }
   });
 
-  it('opens a read-only detail that names both sources, and closes with Escape', async () => {
+  it('opens a detail that names both sources, and closes with Escape', async () => {
     const { cdp } = app;
     const point = await cdp.locate('[data-birthday]');
     await cdp.click(point.x, point.y);
@@ -118,7 +118,8 @@ describe('contact birthdays', () => {
     expect(
       await cdp.eval<boolean>(`document.body.textContent.includes('Today — turns ${YEARS_AGO}')`),
     ).toBe(true);
-    // Nothing to edit: no Save button in this dialog.
+    // The birthday itself is read-only and its reminders save as they
+    // change: no Save button in this dialog.
     expect(
       await cdp.eval<boolean>(
         `[...document.querySelectorAll('[role="dialog"] button')].some(b => b.textContent?.trim() === 'Save')`,
@@ -162,6 +163,80 @@ describe('contact birthdays', () => {
     await expect
       .poll(stored, { timeout: 10_000 })
       .toEqual({ enabled: false, leadDays: [0, 7], time: '09:00' });
+    await app.closeSettings();
+  });
+
+  it('gives one person their own lead days from the detail, and resets them', async () => {
+    const { cdp } = app;
+    const stored = () => readDeviceSetting(app.userDataDir, 'birthdayReminderOverrides');
+    const checked = (label: string) =>
+      cdp.eval<boolean>(
+        `document.querySelector('[data-testid="birthday-reminders"] input[aria-label=${JSON.stringify(label)}]')?.checked ?? false`,
+      );
+    const openDetail = async () => {
+      const point = await cdp.locate('[data-birthday]');
+      await cdp.click(point.x, point.y);
+      await cdp.waitFor(`!!document.querySelector('[data-testid="birthday-reminders"]')`);
+    };
+    const clickInDetail = (selector: string) =>
+      cdp.eval(
+        `document.querySelector(${JSON.stringify(`[data-testid="birthday-reminders"] ${selector}`)})?.click()`,
+      );
+
+    await openDetail();
+    // The previous test left the general lead days at [0, 7] with the
+    // switch off: the boxes show them, and the detail says reminders are off.
+    expect(await checked('Remind on the day')).toBe(true);
+    expect(await checked('Remind 1 week before')).toBe(true);
+    expect(await checked('Remind 2 weeks before')).toBe(false);
+    expect(
+      await cdp.eval<boolean>(`!!document.querySelector('[data-testid="birthday-reminders-off"]')`),
+    ).toBe(true);
+    expect(await stored()).toBeNull();
+
+    await clickInDetail('input[aria-label="Remind 2 weeks before"]');
+    await expect.poll(stored, { timeout: 10_000 }).toEqual([
+      {
+        day: person.day,
+        displayName: 'Alice Example',
+        leadDays: [0, 7, 14],
+        month: person.month,
+      },
+    ]);
+    await cdp.pressEscape();
+    await cdp.waitFor(`!document.querySelector('[role="dialog"][aria-label="Birthday"]')`);
+
+    // Reopened: read back from SQLite, with the way back to the defaults.
+    await openDetail();
+    await cdp.waitFor(
+      `document.querySelector('[data-testid="birthday-reminders"] input[aria-label="Remind 2 weeks before"]')?.checked === true`,
+    );
+    await clickInDetail('[data-testid="birthday-reminders-custom"]');
+    await expect.poll(stored, { timeout: 10_000 }).toEqual([]);
+    await cdp.waitFor(
+      `!document.querySelector('[data-testid="birthday-reminders-custom"]') && document.querySelector('[data-testid="birthday-reminders"] input[aria-label="Remind 2 weeks before"]')?.checked === false`,
+    );
+
+    // Muted for this person; Settings lists them and resets them too.
+    await clickInDetail('input[aria-label="Remind on the day"]');
+    await clickInDetail('input[aria-label="Remind 1 week before"]');
+    await expect
+      .poll(stored, { timeout: 10_000 })
+      .toEqual([
+        { day: person.day, displayName: 'Alice Example', leadDays: [], month: person.month },
+      ]);
+    await cdp.pressEscape();
+    await cdp.waitFor(`!document.querySelector('[role="dialog"][aria-label="Birthday"]')`);
+
+    const settings = await app.openSettings('notifications');
+    await settings.waitFor(
+      `document.querySelector('[data-testid="birthday-overrides"]')?.textContent?.includes('Alice Example · No reminder') ?? false`,
+    );
+    await settings.eval(
+      `document.querySelector('button[aria-label="Reset reminders for Alice Example"]')?.click()`,
+    );
+    await expect.poll(stored, { timeout: 10_000 }).toEqual([]);
+    await settings.waitFor(`!document.querySelector('[data-testid="birthday-overrides"]')`);
     await app.closeSettings();
   });
 });

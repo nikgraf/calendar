@@ -15,6 +15,7 @@ import { AccountRepo, CalendarRepo, type DeviceSettingsRepo, TaskRepo } from '@c
 import { Effect } from 'effect';
 import type { SqlError } from 'effect/sql/SqlError';
 import {
+  readBirthdayReminderOverrides,
   readBirthdayReminderSettings,
   readEventNotificationSettings,
   readTimeZoneSettings,
@@ -152,6 +153,7 @@ export const buildSettingsDocument: Effect.Effect<
   const desktop = yield* platform.read;
   return withCanonicalZones({
     accounts,
+    birthdayReminderOverrides: yield* readBirthdayReminderOverrides,
     birthdayReminders: yield* readBirthdayReminderSettings,
     ...(desktop.screenPrivacy === undefined
       ? {}

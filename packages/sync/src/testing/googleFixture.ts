@@ -3,6 +3,7 @@ import { AccountRepo } from '@calendar/db';
 import {
   type GcalCalendarListEntry,
   type GcalEvent,
+  type GcalPerson,
   type GcalTask,
   type GcalTaskList,
   GOOGLE_SCOPES,
@@ -24,6 +25,8 @@ import { FakeGoogle } from './fakeGoogle.ts';
  */
 export interface GoogleFixture {
   readonly accounts: ReadonlyArray<{
+    /** Sync the account's People contacts (and so its birthdays). */
+    readonly contactsEnabled?: boolean | undefined;
     readonly email: string;
     readonly id: string;
     readonly tasksEnabled: boolean;
@@ -31,6 +34,8 @@ export interface GoogleFixture {
   readonly calendars?: ReadonlyArray<GcalCalendarListEntry> | undefined;
   /** Events per calendar id, as Google would list them (the fake assigns etags). */
   readonly events?: Readonly<Record<string, ReadonlyArray<GcalEvent>>> | undefined;
+  /** Saved contacts, served to every account whose contacts are on. */
+  readonly people?: ReadonlyArray<GcalPerson> | undefined;
   readonly taskLists?: ReadonlyArray<GcalTaskList> | undefined;
   /** Tasks per list id; `due` as RFC 3339 midnight UTC, like the API. */
   readonly tasks?: Readonly<Record<string, ReadonlyArray<GcalTask>>> | undefined;
@@ -48,6 +53,7 @@ export const fakeGoogleFrom = (fixture: GoogleFixture): FakeGoogle => {
   const fake = new FakeGoogle({
     calendars: fixture.calendars ?? [],
     live: true,
+    people: fixture.people ?? [],
     taskLists: fixture.taskLists ?? [],
   });
   for (const [calendarId, events] of Object.entries(fixture.events ?? {})) {
@@ -88,7 +94,7 @@ export const seedFixtureAccounts = (
       const existing = yield* accounts.get(entry.id);
       yield* accounts.upsert(
         new Account({
-          contactsEnabled: false,
+          contactsEnabled: entry.contactsEnabled ?? false,
           createdAt: existing?.createdAt ?? Date.now(),
           email: entry.email,
           id: entry.id,
