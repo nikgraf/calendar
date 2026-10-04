@@ -216,6 +216,7 @@ export const useEventEditorModel = ({
   calendars,
   confirm,
   onClose,
+  onSaved,
   seed,
   timeZone,
 }: {
@@ -228,6 +229,12 @@ export const useEventEditorModel = ({
    */
   confirm: (request: EditorConfirmRequest) => Promise<boolean>;
   onClose: () => void;
+  /**
+   * Called when Save went through, right before `onClose` — the only way a
+   * caller can tell a saved editor from a dismissed one (capture marks its
+   * row as added). Not called for a delete.
+   */
+  onSaved?: (() => void) | undefined;
   seed: EventEditorSeed;
   timeZone: string;
 }) => {
@@ -641,6 +648,7 @@ export const useEventEditorModel = ({
         // Update, then move: the move carries the saved fields along.
         await mutations.moveEvent(move);
       }
+      onSaved?.();
       onClose();
     } catch (error) {
       setError(String(error));

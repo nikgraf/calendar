@@ -725,6 +725,13 @@ export interface LaunchOptions {
    */
   readonly google?: { readonly fixture: GoogleFixture } | { readonly live: LiveGoogleLaunch };
   /**
+   * Absent (default): the real helper, so the ⌘K bar shows whatever this
+   * machine's Apple Intelligence allows. 'fixture': the deterministic model
+   * and text recognizer from @calendar/ai answer in the main process, so a
+   * spec can paste a text in the fixture grammar and assert the events.
+   */
+  readonly model?: 'fixture';
+  /**
    * 'off' (default): no EventKit. 'real': the helper. A fixture uses the
    * in-memory Reminders client so mutation e2e tests never touch personal data.
    */
@@ -867,6 +874,7 @@ export const launchApp = async (seed?: SeedData, options: LaunchOptions = {}): P
       ...geoEnv,
       // Google, when a spec asks for it: the in-process fake API.
       ...googleEnv,
+      ...(options.model === 'fixture' ? { CALENDAR_MODEL: 'fixture' } : {}),
       CALENDAR_AGENT_SOCKET: agentSocketPath,
       // A seeded birthday with reminders on must never post a real banner.
       CALENDAR_NOTIFICATIONS: 'off',

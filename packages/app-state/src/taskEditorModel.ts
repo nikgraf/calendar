@@ -85,12 +85,15 @@ export const seedDueTiming = (seed: TaskEditorSeed): { dueTime: string; timed: b
 export const useTaskEditorModel = ({
   confirm,
   onClose,
+  onSaved,
   seed,
   taskLists,
 }: {
   /** Asks before a move or conversion that drops fields; resolves false to leave things as they are. */
   confirm: (request: EditorConfirmRequest) => Promise<boolean>;
   onClose: () => void;
+  /** Save went through (see the event model); not called for a delete. */
+  onSaved?: (() => void) | undefined;
   seed: TaskEditorSeed;
   taskLists: ReadonlyArray<TaskListInfo>;
 }) => {
@@ -340,6 +343,7 @@ export const useTaskEditorModel = ({
       } else {
         await mutations.createTask({ ...newDraft(), accountId, taskListId });
       }
+      onSaved?.();
       onClose();
     } catch (error) {
       setError(String(error));

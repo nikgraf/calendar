@@ -325,6 +325,16 @@ pnpm exec eas build --platform ios --profile development # interactive the first
 Internal distribution is ad hoc: the device has to be in the provisioning
 profile, and the first build for `com.solunivo.app.dev` needs an
 interactive Apple login so EAS can create the App ID and the profile.
+The same goes for the share extension (`com.solunivo.app.share` /
+`com.solunivo.app.dev.share`, declared by `plugins/withShareExtension.cjs`
+through `extra.eas.build.experimental.ios.appExtensions`) and the app
+groups both targets share (`group.com.solunivo.app` /
+`group.com.solunivo.app.dev`): the first build after adding them — one
+`--profile testflight` and one `--profile development`, run
+interactively from the branch — creates the extension App IDs, adds the
+App Groups capability to the main ones and regenerates the profiles.
+`ios.yml` runs the TestFlight build non-interactively on a fingerprint
+change, so this has to happen before that merge lands.
 Install from the build page's link or QR code. It needs no App Store
 Connect record. With Metro running on the same network
 (`pnpm --filter @calendar/ios start`), the dev launcher lists the server.

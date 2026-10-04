@@ -40,6 +40,7 @@ declare global {
       logError?: (text: string) => void;
       modelGenerate: (schema: unknown, prompt: string) => Promise<{ json: string }>;
       modelPrepareSpeech: (locale: string) => Promise<{ denied?: boolean; prepared?: boolean }>;
+      modelRecognizeText: (imageBase64: string) => Promise<{ text: string }>;
       modelStatus: () => Promise<{ detail?: string; status: string }>;
       modelTranscribe: (
         audioBase64: string,

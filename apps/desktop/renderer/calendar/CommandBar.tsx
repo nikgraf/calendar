@@ -1,4 +1,4 @@
-import { makeFindSlots } from '@calendar/ai';
+import { makeFindSlots, type CaptureSource } from '@calendar/ai';
 import {
   useModelAvailability,
   useQuickAddModel,
@@ -10,6 +10,7 @@ import { Dialog } from '../Dialog.tsx';
 import { desktopLanguageModel } from '../ai/desktopModel.ts';
 import { desktopSpeech } from '../ai/desktopSpeech.ts';
 import { backend } from '../backend.ts';
+import { captureSourceOf, isCapturableInPhrase, readPaste } from './captureClipboard.ts';
 
 /**
  * The ⌘K bar: natural-language quick add and find-a-time on desktop,
@@ -25,12 +26,15 @@ const onWindowFocus = (onActive: () => void): (() => void) => {
 
 export function CommandBar({
   focusedDate,
+  onCapture,
   onClose,
   onParsed,
   timeZone,
 }: {
   /** Undated phrases land on the day being viewed, like the iOS bar. */
   focusedDate: Temporal.PlainDate;
+  /** A pasted email or image is not a phrase: it goes to capture, and the bar closes. */
+  onCapture: (source: CaptureSource) => void;
   onClose: () => void;
   onParsed: (prefill: EventEditorPrefill) => void;
   timeZone: string;
@@ -119,6 +123,19 @@ export function CommandBar({
                     void submit();
                   }
                 }}
+                onPaste={(event) => {
+                  const pasted = readPaste(event.clipboardData);
+                  if (mode !== 'add' || !isCapturableInPhrase(pasted)) {
+                    return;
+                  }
+                  event.preventDefault();
+                  void captureSourceOf(pasted).then((source) => {
+                    if (source) {
+                      onCapture(source);
+                    }
+                  });
+                  onClose();
+                }}
                 placeholder={
                   mode === 'find'
                     ? '90 min focus this week, mornings'
@@ -157,6 +174,10 @@ export function CommandBar({
               <p className="mt-2 text-xs text-neutral-400">Listening — click ■ when finished.</p>
             ) : voice === 'transcribing' ? (
               <p className="mt-2 text-xs text-neutral-400">Transcribing…</p>
+            ) : mode === 'add' && !error && !busy ? (
+              <p className="mt-2 text-xs text-neutral-400">
+                Paste an email or a screenshot (here or on the calendar) to pull its events out.
+              </p>
             ) : null}
             {error ? <p className="mt-2 text-sm text-red-600">{error}</p> : null}
             {found ? (

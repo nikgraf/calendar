@@ -121,10 +121,23 @@ comment` for inline-playable video: 10 MB on Free plans, 100 MB paid
 Scope unchanged and all still open with zero code; the on-device-only
 decision and platform notes live in `docs/decisions.md`.
 
-- [ ] Capture from text or photo — paste an email (desktop) or share a
-      screenshot/poster (iOS share sheet) → extracted event(s). Needs an
-      image input on the `LanguageModel` seam (`packages/ai`, text-only
-      today) and an iOS share-extension target.
+- [ ] Capture follow-ups (shipped 2026-10-04, OCR-first; see
+      docs/decisions.md) — **native image input on OS 27**: Foundation
+      Models takes an image directly there (`Transcript.ImageAttachment`,
+      `Attachment(imageURL:)`, the `vision` capability), which reads a
+      stylised poster better than OCR text does. Shape: an optional
+      `images` field plus a capability check on `LanguageModel`, one more
+      branch in `parseCapture` (OCR stays the OS 26 path through the
+      `TextRecognizer` seam, nothing above changes), a helper method that
+      builds the attachment, and own Swift on iOS since
+      `@react-native-ai/apple` 0.12 is text-only. Also: keep the source
+      text as the event's notes (`carried.description` exists in the
+      editor model, the editors have no notes field yet); shared web URLs
+      (the activation rule leaves them out — nothing fetches a page);
+      multi-day events (the editor clamps an end to its start day); a
+      File-menu entry if ⌘V proves undiscoverable; token counting via
+      `SystemLanguageModel.contextSize` (26.4+) in place of the 6000-char
+      cap.
 - [ ] Day briefing (iOS-first) — a short generated summary of the day; a
       widget or Live Activity candidate once it earns its place.
 - [ ] Ask your calendar — start with SQLite FTS5 (no virtual table exists

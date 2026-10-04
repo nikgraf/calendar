@@ -1,5 +1,6 @@
 export * from './atoms.ts';
 export * from './calendarNavigation.ts';
+export * from './captureModel.ts';
 export * from './editorOptions.ts';
 export * from './editorSwitch.ts';
 export * from './hooks.ts';

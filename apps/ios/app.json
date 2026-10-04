@@ -47,6 +47,7 @@
       ],
       "@react-native-community/datetimepicker",
       "expo-background-task",
+      "./plugins/withShareExtension.cjs",
       "./plugins/withLocalNotificationsOnly.cjs"
     ],
     "extra": {

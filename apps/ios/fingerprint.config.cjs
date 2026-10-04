@@ -6,6 +6,7 @@
 // binary. Hash the real sources too.
 module.exports = {
   extraSources: [
+    '../../packages/ai/swift',
     '../../packages/apple-calendar/swift',
     '../../packages/contacts/swift',
     '../../packages/geo/swift',

@@ -58,6 +58,7 @@ export function EventEditSheet({
   birthday,
   calendars,
   onClose,
+  onSaved,
   seed,
   task,
   taskLists,
@@ -67,6 +68,8 @@ export function EventEditSheet({
   birthday?: BirthdayOccurrence | undefined;
   calendars: ReadonlyArray<CalendarInfo>;
   onClose: () => void;
+  /** Save went through, as an event or a task (capture marks its row added). */
+  onSaved?: (() => void) | undefined;
   seed: EditSeed;
   /** Present when the sheet was opened from a task chip (task edit mode). */
   task?: TaskRecord | undefined;
@@ -90,6 +93,7 @@ export function EventEditSheet({
   const taskModel = useTaskEditorModel({
     confirm,
     onClose,
+    onSaved,
     seed: {
       convertFromEvent: seed.event,
       existing: task,
@@ -102,6 +106,7 @@ export function EventEditSheet({
     calendars,
     confirm,
     onClose,
+    onSaved,
     seed: { ...seed, convertFromTask: task },
     timeZone,
   });

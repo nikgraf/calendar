@@ -27,6 +27,7 @@ export function EventEditor({
   birthday,
   calendars,
   onClose,
+  onSaved,
   seed,
   task,
   taskLists,
@@ -36,6 +37,8 @@ export function EventEditor({
   birthday?: BirthdayOccurrence | undefined;
   calendars: ReadonlyArray<CalendarInfo>;
   onClose: () => void;
+  /** Save went through, as an event or a task (capture marks its row added). */
+  onSaved?: (() => void) | undefined;
   seed: EditorSeed;
   /** Present when the editor was opened from a task chip (task edit mode). */
   task?: TaskRecord | undefined;
@@ -60,6 +63,7 @@ export function EventEditor({
   const taskModel = useTaskEditorModel({
     confirm: moveConfirmation.request,
     onClose,
+    onSaved,
     seed: {
       convertFromEvent: seed.event,
       existing: task,
@@ -72,6 +76,7 @@ export function EventEditor({
     calendars,
     confirm: moveConfirmation.request,
     onClose,
+    onSaved,
     seed: { ...seed, convertFromTask: task },
     timeZone,
   });

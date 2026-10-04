@@ -1,0 +1,9 @@
+{
+  "name": "solunivo-ocr",
+  "version": "0.1.0",
+  "private": true,
+  "description": "On-device text recognition (Vision) for Solunivo's capture — local Expo module",
+  "license": "UNLICENSED",
+  "author": "Nik Graf",
+  "main": "index.ts"
+}

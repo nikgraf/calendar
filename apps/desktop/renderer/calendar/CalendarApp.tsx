@@ -9,6 +9,7 @@ import {
   useAccounts,
   useCalendarNavigation,
   useCalendars,
+  useCaptureModel,
   useEventsInRangeStable,
   useGuardedMutations,
   useListColorLookup,
@@ -19,14 +20,27 @@ import {
   useTasksInRangeStable,
   useTimeZones,
   useToday,
+  type EventEditorPrefill,
 } from '@calendar/app-state';
 import { useEffect, useMemo, useState } from 'react';
+import { desktopLanguageModel } from '../ai/desktopModel.ts';
+import { desktopTextRecognizer } from '../ai/desktopTextRecognizer.ts';
 import { EventEditor, type EditorSeed } from './EventEditor.tsx';
+import { CaptureDialog } from './CaptureDialog.tsx';
+import { captureSourceOf, isCapturable, readPaste } from './captureClipboard.ts';
 import { makeColorLookup } from './colors.ts';
 import { MonthView } from './MonthView.tsx';
 import { Sidebar } from './Sidebar.tsx';
 import { CommandBar } from './CommandBar.tsx';
 import { WeekView } from './WeekView.tsx';
+
+/** Keys and pastes inside a field belong to the field, not the calendar. */
+const isTyping = (target: EventTarget | null) => {
+  const element = target as { isContentEditable?: boolean; tagName?: string } | null;
+  return Boolean(
+    element?.isContentEditable || ['INPUT', 'SELECT', 'TEXTAREA'].includes(element?.tagName ?? ''),
+  );
+};
 
 /**
  * Waits for the device-local time zones before drawing anything: a first
@@ -61,6 +75,20 @@ function CalendarBody({
   const [editTask, setEditTask] = useState<TaskRecord | null>(null);
   const [viewBirthday, setViewBirthday] = useState<BirthdayOccurrence | null>(null);
   const [commandBarOpen, setCommandBarOpen] = useState(false);
+  /** The capture row whose editor is open, so a save can mark it added. */
+  const [captureRow, setCaptureRow] = useState<string | null>(null);
+
+  // A parsed prefill (quick-add, or a single captured event) opens the
+  // editor on its day: the user reviews it before anything is written.
+  const openPrefill = (prefill: EventEditorPrefill) => {
+    setEditorSeed({ initialDate: Temporal.PlainDate.from(prefill.date), prefill });
+  };
+  const capture = useCaptureModel({
+    model: desktopLanguageModel,
+    onSingle: openPrefill,
+    recognizer: desktopTextRecognizer,
+    timeZone,
+  });
 
   const events = useEventsInRangeStable(range.startUtc, range.endUtc);
   // Tasks use date bounds even when a reminder also carries a due time.
@@ -83,16 +111,14 @@ function CalendarBody({
   const accounts = useAccounts();
   const colorOf = useMemo(() => makeColorLookup(calendars), [calendars]);
 
+  const captureOpen = capture.state.kind !== 'idle';
   const dialogOpen =
-    commandBarOpen || editorSeed !== null || editTask !== null || viewBirthday !== null;
+    commandBarOpen ||
+    captureOpen ||
+    editorSeed !== null ||
+    editTask !== null ||
+    viewBirthday !== null;
   useEffect(() => {
-    const isTyping = (target: EventTarget | null) => {
-      const element = target as { isContentEditable?: boolean; tagName?: string } | null;
-      return Boolean(
-        element?.isContentEditable ||
-        ['INPUT', 'SELECT', 'TEXTAREA'].includes(element?.tagName ?? ''),
-      );
-    };
     const onKeyDown = (key: KeyboardEvent) => {
       const command = key.metaKey || key.ctrlKey;
       if (command && key.key.toLowerCase() === 'k') {
@@ -119,6 +145,29 @@ function CalendarBody({
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [dialogOpen, focused, goToday, step]);
+
+  // ⌘V on the calendar itself: an email or a screenshot becomes events to
+  // review. Not while a dialog is open or a field has focus — those pastes
+  // are theirs. The stock Edit › Paste menu role fires the same event.
+  useEffect(() => {
+    const onPaste = (event: ClipboardEvent) => {
+      if (dialogOpen || isTyping(event.target)) {
+        return;
+      }
+      const pasted = readPaste(event.clipboardData);
+      if (!isCapturable(pasted)) {
+        return;
+      }
+      event.preventDefault();
+      void captureSourceOf(pasted).then((source) => {
+        if (source) {
+          capture.start(source);
+        }
+      });
+    };
+    window.addEventListener('paste', onPaste);
+    return () => window.removeEventListener('paste', onPaste);
+  }, [capture, dialogOpen]);
 
   return (
     <div className="flex h-screen bg-white text-neutral-900">
@@ -243,11 +292,22 @@ function CalendarBody({
       {commandBarOpen ? (
         <CommandBar
           focusedDate={focused}
+          onCapture={capture.start}
           onClose={() => setCommandBarOpen(false)}
-          onParsed={(prefill) =>
-            setEditorSeed({ initialDate: Temporal.PlainDate.from(prefill.date), prefill })
-          }
+          onParsed={openPrefill}
           timeZone={timeZone}
+        />
+      ) : null}
+
+      {/* Hidden while a row's editor is open: two dialogs would both close on one Escape. */}
+      {capture.state.kind !== 'idle' && !editorSeed ? (
+        <CaptureDialog
+          onClose={capture.dismiss}
+          onOpenRow={(row) => {
+            setCaptureRow(row.id);
+            openPrefill(row.prefill);
+          }}
+          state={capture.state}
         />
       ) : null}
 
@@ -266,7 +326,9 @@ function CalendarBody({
             setEditorSeed(null);
             setEditTask(null);
             setViewBirthday(null);
+            setCaptureRow(null);
           }}
+          onSaved={captureRow ? () => capture.markAdded(captureRow) : undefined}
           seed={editorSeed ?? { initialDate: focused }}
           task={editTask ?? undefined}
           taskLists={taskLists}

@@ -1,0 +1,83 @@
+appId: com.solunivo.app.dev
+name: A shared text becomes events to review; a row is added through the editor
+tags:
+  - ci
+---
+# Capture from the share sheet. The sheet itself is not driven here — the
+# e2e bundle's fixture model (EXPO_PUBLIC_CALENDAR_MODEL=fixture, as CI
+# bundles it) accepts a deep link that feeds the same path a share takes
+# after the extension stored its payload. The text is the fixture grammar,
+# one event per line, days relative to today: `Standup | +0 | 09:00-10:00 |
+# Room 4` and `Planning | +1 | 14:00-15:00`, URL-encoded. A bundle without
+# the fixture ignores the link, and the flow passes without asserting. The
+# saved event is an hour long on purpose: a half-hour block's title text
+# is taller than the block, and XCTest taps the text's centre, below it.
+- runFlow: ../common/launch.yaml
+- tapOn: 'Today'
+- tapOn: 'Day'
+- openLink: 'solunivo-dev://capture-fixture?text=Standup%20%7C%20%2B0%20%7C%2009%3A00-10%3A00%20%7C%20Room%204%0APlanning%20%7C%20%2B1%20%7C%2014%3A00-15%3A00'
+- runFlow: ../common/confirm-open.yaml
+- extendedWaitUntil:
+    visible:
+      id: 'capture-sheet'
+    timeout: 30000
+    optional: true
+- runFlow:
+    when:
+      visible:
+        id: 'capture-sheet'
+    commands:
+      - assertVisible: '2 events found'
+      # A row reads as one label: title, when (and where), status.
+      - assertVisible: 'Standup, .*Room 4, Open'
+      - tapOn:
+          id: 'capture-row-0'
+      - extendedWaitUntil:
+          visible: 'New Event'
+          timeout: 10000
+      # Prefilled, not merely opened.
+      - assertVisible: 'Standup'
+      # Saving needs a writable calendar: the fixture Google account (CI).
+      - runFlow:
+          when:
+            visible:
+              id: 'calendar-option'
+          commands:
+            - tapOn:
+                id: 'event-save'
+            - extendedWaitUntil:
+                notVisible: 'New Event'
+                timeout: 20000
+            # Back on the list: the saved row is marked, the other still open.
+            - assertVisible: 'Standup, .*, Added'
+            - assertVisible: 'Planning, .*, Open'
+            - tapOn:
+                id: 'capture-close'
+            - assertVisible: 'Today'
+            # On today's timeline, too; then clean up. The sheet is still
+            # sliding away when the block first reports visible.
+            - extendedWaitUntil:
+                visible: 'Standup.*'
+                timeout: 10000
+            - waitForAnimationToEnd:
+                timeout: 5000
+            - tapOn: 'Standup.*'
+            - assertVisible: 'Edit Event'
+            # The location's map pushes Delete below the fold.
+            - scrollUntilVisible:
+                element:
+                  id: 'event-delete'
+                direction: DOWN
+            - tapOn:
+                id: 'event-delete'
+            - extendedWaitUntil:
+                notVisible: 'Standup.*'
+                timeout: 20000
+      - runFlow:
+          when:
+            visible: 'New Event'
+          commands:
+            - tapOn: 'Cancel'
+            - tapOn:
+                id: 'capture-close'
+            - assertVisible: 'Today'
