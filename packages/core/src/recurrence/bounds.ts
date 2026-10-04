@@ -46,26 +46,24 @@ const untilMs = (value: string, timeZone: string, isAllDay: boolean): number | u
  * When a series is over: the end of its last occurrence, or undefined for
  * a series that never ends (or whose end cannot be told). Stored on the
  * master row so the window query skips series that ended before the range
- * instead of expanding every master ever synced. UNTIL is read off the
- * rule; COUNT enumerates the series once, at write time, bounded by the
- * expansion cap — past it the series counts as endless, which is safe.
- * RDATE-only series (no RRULE) count as endless for now.
+ * instead of expanding every master ever synced. A plain UNTIL is read off
+ * the rule. Everything else that ends — COUNT, a set of only RDATE lines,
+ * and UNTIL or COUNT with RDATE values that may lie past the rule's last
+ * occurrence — enumerates the set once, at write time, through the same
+ * rule string expansion uses, bounded by the expansion cap: past it the
+ * series counts as endless, which is safe.
  */
 export const recurrenceEndUtc = (master: RecurrenceMaster): EpochMs | undefined => {
   const rule = master.recurrence.find((line) => line.toUpperCase().startsWith('RRULE:'));
-  // RDATE values may lie past UNTIL or the last COUNT occurrence; such a
-  // series counts as endless rather than risk hiding one.
-  if (!rule || master.recurrence.some((line) => line.toUpperCase().startsWith('RDATE'))) {
+  const parts = rule === undefined ? undefined : parseRuleParts(rule);
+  const until = parts?.get('UNTIL');
+  if (parts !== undefined && until === undefined && parts.get('COUNT') === undefined) {
     return undefined;
   }
-  const parts = parseRuleParts(rule);
-  const until = parts.get('UNTIL');
-  if (until !== undefined) {
+  const hasRdate = master.recurrence.some((line) => line.toUpperCase().startsWith('RDATE'));
+  if (until !== undefined && !hasRdate) {
     const end = untilMs(until, master.startTimeZone, master.isAllDay);
     return end === undefined ? undefined : end + durationMs(master);
-  }
-  if (parts.get('COUNT') === undefined) {
-    return undefined;
   }
   try {
     const occurrences = new RRuleTemporal({

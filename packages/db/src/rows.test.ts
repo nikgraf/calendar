@@ -103,6 +103,26 @@ describe('row decoders tolerate what the DB may hold', () => {
     expect(event.syncStatus).toBe('pending');
   });
 
+  it('eventToRow stores when a series ends: NULL for endless series and singles', () => {
+    const master = (recurrence: ReadonlyArray<string> | null) =>
+      eventFromRow(
+        eventRow({
+          end_utc: Date.parse('2026-07-07T10:00:00Z'),
+          recurrence: recurrence === null ? null : JSON.stringify(recurrence),
+          start_time_zone: 'UTC',
+          start_utc: Date.parse('2026-07-07T09:00:00Z'),
+        }),
+      );
+    expect(eventToRow(master(['RRULE:FREQ=WEEKLY;COUNT=2'])).recurrence_end_utc).toBe(
+      Date.parse('2026-07-14T10:00:00Z'),
+    );
+    expect(eventToRow(master(['RDATE:20260901T090000Z'])).recurrence_end_utc).toBe(
+      Date.parse('2026-09-01T10:00:00Z'),
+    );
+    expect(eventToRow(master(['RRULE:FREQ=WEEKLY'])).recurrence_end_utc).toBeNull();
+    expect(eventToRow(master(null)).recurrence_end_utc).toBeNull();
+  });
+
   it('eventFromRow round-trips geo and drops an unreadable value', () => {
     const geo = { lat: 48.2, lng: 16.37, name: 'Stephansdom', source: 'Stephansplatz 3, Wien' };
     const event = eventFromRow(eventRow({ geo: JSON.stringify(geo), location: geo.source }));

@@ -137,6 +137,96 @@ describe('expandRecurringEvent', () => {
     expect(instances[0]!.endUtc).toBe(plainDateToUtcMs('2026-07-06'));
   });
 
+  describe('a set of only RDATE lines', () => {
+    // 09:00–10:00 Vienna on 2026-07-01, then explicit dates only.
+    const rdateOnly = (recurrence: ReadonlyArray<string>): RecurrenceMaster => ({
+      endUtc: instant('2026-07-01T08:00:00Z'),
+      id: 'rdate',
+      isAllDay: false,
+      recurrence,
+      startTimeZone: 'Europe/Vienna',
+      startUtc: instant('2026-07-01T07:00:00Z'),
+    });
+
+    it('expands DTSTART plus every RDATE value, in any value form', () => {
+      const instances = expandRecurringEvent(
+        rdateOnly([
+          'RDATE:20260801T070000Z',
+          'RDATE;TZID=America/New_York:20260901T090000',
+          'RDATE:20261001T090000', // floating: the series zone
+        ]),
+        instant('2026-06-01T00:00:00Z'),
+        instant('2027-01-01T00:00:00Z'),
+      );
+      expect(instances.map((entry) => entry.startUtc)).toEqual([
+        instant('2026-07-01T07:00:00Z'),
+        instant('2026-08-01T07:00:00Z'),
+        instant('2026-09-01T13:00:00Z'),
+        instant('2026-10-01T07:00:00Z'),
+      ]);
+      for (const entry of instances) {
+        expect(entry.endUtc - entry.startUtc).toBe(HOUR);
+        expect(entry.originalStartUtc).toBe(entry.startUtc);
+      }
+    });
+
+    it('drops DTSTART when an EXDATE names it', () => {
+      const instances = expandRecurringEvent(
+        rdateOnly(['RDATE:20260801T070000Z', 'EXDATE;TZID=Europe/Vienna:20260701T090000']),
+        instant('2026-06-01T00:00:00Z'),
+        instant('2027-01-01T00:00:00Z'),
+      );
+      expect(instances.map((entry) => entry.startUtc)).toEqual([instant('2026-08-01T07:00:00Z')]);
+    });
+
+    it('returns only the values inside a window far past DTSTART', () => {
+      const instances = expandRecurringEvent(
+        rdateOnly(['RDATE:20360801T070000Z,20360815T070000Z']),
+        instant('2036-08-10T00:00:00Z'),
+        instant('2036-08-20T00:00:00Z'),
+      );
+      expect(instances.map((entry) => entry.startUtc)).toEqual([instant('2036-08-15T07:00:00Z')]);
+    });
+
+    it('expands all-day dates', () => {
+      const instances = expandRecurringEvent(
+        {
+          endDate: '2026-07-02',
+          endUtc: plainDateToUtcMs('2026-07-02'),
+          id: 'allday-rdate',
+          isAllDay: true,
+          recurrence: ['RDATE;VALUE=DATE:20260801,20260901'],
+          startDate: '2026-07-01',
+          startTimeZone: 'UTC',
+          startUtc: plainDateToUtcMs('2026-07-01'),
+        },
+        plainDateToUtcMs('2026-06-01'),
+        plainDateToUtcMs('2027-01-01'),
+      );
+      expect(instances.map((entry) => [entry.startDate, entry.endDate])).toEqual([
+        ['2026-07-01', '2026-07-02'],
+        ['2026-08-01', '2026-08-02'],
+        ['2026-09-01', '2026-09-02'],
+      ]);
+    });
+  });
+
+  it('adds RDATE values to an RRULE', () => {
+    const instances = expandRecurringEvent(
+      {
+        ...weeklyLa,
+        recurrence: ['RRULE:FREQ=WEEKLY;BYDAY=TU;COUNT=2', 'RDATE:20260320T170000Z'],
+      },
+      instant('2026-03-01T00:00:00Z'),
+      instant('2026-04-01T00:00:00Z'),
+    );
+    expect(instances.map((entry) => entry.startUtc)).toEqual([
+      instant('2026-03-03T17:00:00Z'),
+      instant('2026-03-10T16:00:00Z'),
+      instant('2026-03-20T17:00:00Z'),
+    ]);
+  });
+
   it('clips all-day occurrences to the query range by overlap', () => {
     const master: RecurrenceMaster = {
       endDate: '2026-07-06',

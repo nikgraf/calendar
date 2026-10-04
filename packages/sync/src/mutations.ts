@@ -16,6 +16,7 @@ import {
   eventToTaskLoss,
   googleInstanceId,
   isCalendarWritable,
+  isRecurringSet,
   isServerMove,
   mergeAttendees,
   meetingUrl,
@@ -1111,7 +1112,9 @@ const make: Effect.Effect<
             etag: null,
             id: generateEventId(),
             originalStartUtc: undefined,
-            recurrence: newRecurrence,
+            // Splitting a set of only RDATE lines on its last value leaves
+            // nothing to repeat: the new half is a single event.
+            recurrence: isRecurringSet(newRecurrence) ? newRecurrence : undefined,
             recurringEventId: undefined,
             startUtc,
             syncedAt: 0,

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   compactUtc,
   googleInstanceId,
+  isRecurringSet,
   remainingRecurrence,
   truncateRecurrence,
 } from './editing.ts';
@@ -97,6 +98,84 @@ describe('recurrence editing helpers', () => {
     expect(remainingRecurrence(master, instant('2026-07-04T09:00:00Z'))).toEqual([
       'RRULE:FREQ=DAILY;COUNT=7',
     ]);
+  });
+
+  it('counts only what the RRULE generated toward the remaining COUNT', () => {
+    const master: RecurrenceMaster = {
+      endUtc: instant('2026-07-01T10:00:00Z'),
+      id: 'm',
+      isAllDay: false,
+      // An extra date and an excluded occurrence, both before the split.
+      recurrence: [
+        'RRULE:FREQ=DAILY;COUNT=10',
+        'RDATE:20260620T090000Z',
+        'EXDATE:20260702T090000Z',
+      ],
+      startTimeZone: 'UTC',
+      startUtc: instant('2026-07-01T09:00:00Z'),
+    };
+    // Split on July 4: July 1–3 were generated (July 2 excluded still counts).
+    expect(remainingRecurrence(master, instant('2026-07-04T09:00:00Z'))).toEqual([
+      'RRULE:FREQ=DAILY;COUNT=7',
+      'EXDATE:20260702T090000Z',
+    ]);
+  });
+
+  it('keeps only RDATE values after the split for the new master', () => {
+    const master: RecurrenceMaster = {
+      endUtc: instant('2026-07-01T10:00:00Z'),
+      id: 'm',
+      isAllDay: false,
+      recurrence: [
+        'RRULE:FREQ=WEEKLY',
+        'RDATE:20260703T090000Z,20260714T090000Z,20260720T090000Z',
+        'RDATE;VALUE=DATE:20260705',
+      ],
+      startTimeZone: 'UTC',
+      startUtc: instant('2026-07-01T09:00:00Z'),
+    };
+    // The value at the split is the new DTSTART; earlier ones stay with the old series.
+    expect(remainingRecurrence(master, instant('2026-07-14T09:00:00Z'))).toEqual([
+      'RRULE:FREQ=WEEKLY',
+      'RDATE:20260720T090000Z',
+    ]);
+  });
+
+  describe('a set of only RDATE lines', () => {
+    const rdateOnly: RecurrenceMaster = {
+      endUtc: instant('2026-07-01T10:00:00Z'),
+      id: 'm',
+      isAllDay: false,
+      recurrence: ['RDATE:20260801T090000Z,20260901T090000Z', 'EXDATE:20260815T090000Z'],
+      startTimeZone: 'UTC',
+      startUtc: instant('2026-07-01T09:00:00Z'),
+    };
+
+    it('splits into the values before and after the occurrence', () => {
+      expect(
+        truncateRecurrence(rdateOnly.recurrence, instant('2026-09-01T09:00:00Z'), false),
+      ).toEqual(['RDATE:20260801T090000Z', 'EXDATE:20260815T090000Z']);
+      expect(remainingRecurrence(rdateOnly, instant('2026-08-01T09:00:00Z'))).toEqual([
+        'RDATE:20260901T090000Z',
+        'EXDATE:20260815T090000Z',
+      ]);
+    });
+
+    it('keeps the old master a series of DTSTART when no value precedes the split', () => {
+      const truncated = truncateRecurrence(
+        rdateOnly.recurrence,
+        instant('2026-08-01T09:00:00Z'),
+        false,
+      );
+      expect(truncated).toEqual(['RRULE:FREQ=DAILY;COUNT=1', 'EXDATE:20260815T090000Z']);
+      expect(isRecurringSet(truncated)).toBe(true);
+    });
+
+    it('leaves nothing to repeat for the new half of a split on the last value', () => {
+      const remaining = remainingRecurrence(rdateOnly, instant('2026-09-01T09:00:00Z'));
+      expect(remaining).toEqual(['EXDATE:20260815T090000Z']);
+      expect(isRecurringSet(remaining)).toBe(false);
+    });
   });
 
   it('keeps UNTIL rules unchanged for the new master', () => {

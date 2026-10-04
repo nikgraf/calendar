@@ -421,6 +421,36 @@ describe('repos', () => {
     }).pipe(Effect.provide(freshDbLayer())),
   );
 
+  it.effect('getWindow bounds a set of only RDATE lines by its latest value', () =>
+    Effect.gen(function* () {
+      const calendars = yield* CalendarRepo;
+      const events = yield* EventRepo;
+      yield* calendars.upsertMany([calendar()]);
+      yield* events.upsertMany([
+        timedEvent({ id: 'dates', recurrence: ['RDATE:20260815T120000Z'] }),
+        timedEvent({
+          id: 'rule-and-dates',
+          recurrence: ['RRULE:FREQ=WEEKLY;COUNT=2', 'RDATE:20261015T120000Z'],
+        }),
+      ]);
+      const august = yield* events.getWindow(
+        Date.parse('2026-08-01T00:00:00Z'),
+        Date.parse('2026-08-31T00:00:00Z'),
+      );
+      expect(august.masters.map((event) => event.id).sort()).toEqual(['dates', 'rule-and-dates']);
+      const september = yield* events.getWindow(
+        Date.parse('2026-09-01T00:00:00Z'),
+        Date.parse('2026-09-30T00:00:00Z'),
+      );
+      expect(september.masters.map((event) => event.id)).toEqual(['rule-and-dates']);
+      const later = yield* events.getWindow(
+        Date.parse('2026-11-01T00:00:00Z'),
+        Date.parse('2026-11-30T00:00:00Z'),
+      );
+      expect(later.masters).toEqual([]);
+    }).pipe(Effect.provide(freshDbLayer())),
+  );
+
   it.effect(
     'applyPage writes a page atomically and a failing page leaves the last one intact',
     () =>

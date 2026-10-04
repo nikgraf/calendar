@@ -1,4 +1,4 @@
-import { assembleWindow, googleInstanceId } from '@calendar/core';
+import { assembleWindow, compactUtc, googleInstanceId } from '@calendar/core';
 import { EventRepo } from '@calendar/db';
 import type { EventMutationsShape } from '../mutationTypes.ts';
 import { expect, it } from '@effect/vitest';
@@ -23,7 +23,8 @@ import {
  * Recurring series on the real API: masters round-trip with
  * `singleEvents=false`, an instance edit becomes an exception under
  * Google's `<master>_<basetime>` id, a "this and following" split leaves
- * an UNTIL master plus a new one, and a series rename spares exceptions.
+ * an UNTIL master plus a new one, a set of only RDATE lines expands like
+ * Google's, and a series rename spares exceptions.
  */
 
 const config = liveGoogleConfigFromEnv();
@@ -158,6 +159,48 @@ describe('live Google: recurring series', () => {
       expect((yield* events.getById(LIVE_ACCOUNT_ID, calendar(), tailRow!.id))?.title).toBe(
         `${master.title} (tail)`,
       );
+    }).pipe(Effect.provide(liveEngineLayer(config))),
+  );
+
+  it.live('a set of only RDATE lines: DTSTART is an instance on Google and here', () =>
+    Effect.gen(function* () {
+      const { engine, mutations, scratch: google } = yield* bootstrap(config);
+      const start = hoursFromNow(2);
+      const dates = [start + WEEK, start + 2 * WEEK];
+      const master = yield* mutations.createEvent({
+        accountId: LIVE_ACCOUNT_ID,
+        calendarId: calendar(),
+        endUtc: start + HOUR,
+        isAllDay: false,
+        recurrence: [`RDATE:${dates.map(compactUtc).join(',')}`],
+        startTimeZone: 'UTC',
+        startUtc: start,
+        title: titleFor(config, 'rdate'),
+      });
+      yield* drain(mutations);
+      const server = yield* google.getEvent(calendar(), master.id);
+      expect(server.recurrence?.every((line) => line.startsWith('RDATE'))).toBe(true);
+      // Editing the DTSTART occurrence only works if Google counts it as
+      // an instance of the set (RFC 5545): the PATCH would 404 otherwise.
+      yield* mutations.updateRecurring({
+        ...target(master.id, start),
+        changes: { title: `${master.title} (first)` },
+        scope: 'instance',
+      });
+      yield* drain(mutations);
+      expect(yield* pendingOps).toEqual([]);
+      const first = yield* google.getEvent(calendar(), googleInstanceId(master.id, start, false));
+      expect(first.recurringEventId).toBe(master.id);
+      // After a pull the calendar draws the edited first occurrence and
+      // both dates — Google's ids, our expansion.
+      yield* engine.syncAll();
+      const events = yield* EventRepo;
+      const from = start - HOUR;
+      const to = start + 3 * WEEK;
+      const starts = assembleWindow(yield* events.getWindow(from, to), from, to)
+        .filter((event) => event.recurringEventId === master.id)
+        .map((event) => event.originalStartUtc);
+      expect(starts).toEqual([start, ...dates]);
     }).pipe(Effect.provide(liveEngineLayer(config))),
   );
 

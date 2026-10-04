@@ -50,12 +50,20 @@ comment` for inline-playable video: 10 MB on Free plans, 100 MB paid
 
 ## Tier 2 — features (near-term, well-scoped)
 
-- [ ] Full-history follow-ups — RDATE-only series have no stored end
-      (`recurrenceEndUtc` returns undefined), long-lived COUNT series
-      may still iterate from DTSTART on every window read (rrule-temporal
-      2.1 added cached plans for COUNT rules — re-measure before doing
-      anything), and there is no per-calendar "keep only N years" switch
-      should storage ever matter.
+- [ ] Per-calendar "keep only N years" switch — only should storage ever
+      matter (2026-10-04: 303 events in 380 KB; the RDATE and COUNT
+      follow-ups shipped, see `docs/decisions.md`). Google calendars only
+      (Apple events are never stored). A `timeMin` token cannot be widened
+      later, so turning the switch on/off or changing N drops the
+      calendar's `events:<id>` `sync_state` row and re-lists; the windowed
+      full list plus `deleteStale` removes the old rows. Events still age
+      past the window afterwards, so a periodic local prune is needed too —
+      keeping pending rows, endless masters (`recurrence_end_utc IS NULL`)
+      and masters still in the window together with their overrides. A
+      `calendars` column left out of `upsertMany`'s `ON CONFLICT`, like
+      `is_visible`; a field on `GoogleCalendarPref` in `SettingsDocument`
+      (the import's visibility-specific parking in `importedVisibility.ts`
+      widens with it); the "History complete" label says what is kept.
 - [ ] Tasks: subtask hierarchy — `parent`/`position` are decoded
       (`apiTypes.ts:139-140`) and dropped by `mapGcalTask`; `TaskRecord` has
       no such fields; `tasksClient.ts` has no `move`. Render indentation,

@@ -1,6 +1,7 @@
 import { Effect } from 'effect';
 import { SqlClient } from 'effect/sql/SqlClient';
 import type { ResolvedMigration } from 'effect/sql/Migrator';
+import { eventFromRow, type EventRow, seriesEndUtc } from './rows.ts';
 
 // The whole schema in one migration. Twelve incremental migrations accreted
 // while building and were collapsed before the first release (2026-09-15);
@@ -303,6 +304,26 @@ const calendarMirrors = Effect.gen(function* () {
   yield* sql`DELETE FROM tasks WHERE account_id = 'apple-reminders'`;
 });
 
+// The series end of masters with RDATE lines. recurrence_end_utc stayed NULL
+// (endless) for every series with an RDATE, so such a master was fetched
+// for every window ever after; it is now computed like any other bounded
+// series. Sync never rewrites an unchanged row — an ended series' would
+// stay NULL forever — so the rows are recomputed here instead of
+// re-listing every calendar.
+const rdateSeriesEnd = Effect.gen(function* () {
+  const sql = yield* SqlClient;
+  const rows = yield* sql<EventRow>`SELECT * FROM events WHERE recurrence LIKE '%RDATE%'`;
+  for (const row of rows) {
+    const end = seriesEndUtc(eventFromRow(row));
+    if (end !== row.recurrence_end_utc) {
+      yield* sql`
+        UPDATE events SET recurrence_end_utc = ${end}
+        WHERE account_id = ${row.account_id} AND calendar_id = ${row.calendar_id}
+          AND id = ${row.id}`;
+    }
+  }
+});
+
 // The third tuple element is a *loader* whose result is the migration effect.
 export const migrations: ReadonlyArray<ResolvedMigration> = [
   [1, 'baseline', Effect.succeed(baseline)],
@@ -312,4 +333,5 @@ export const migrations: ReadonlyArray<ResolvedMigration> = [
   [5, 'conflict-park', Effect.succeed(conflictPark)],
   [6, 'carried-text', Effect.succeed(carriedText)],
   [7, 'calendar-mirrors', Effect.succeed(calendarMirrors)],
+  [8, 'rdate-series-end', Effect.succeed(rdateSeriesEnd)],
 ];

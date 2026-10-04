@@ -1876,3 +1876,52 @@ test`/`test:e2e`/`test:e2e:ios`; every file creates its own
       today inside today's month so no day-view flow meets the chip;
       flow 23 reaches it from the month grid. Open: on-device check of
       the pending iOS notifications after an override.
+
+### Full-history follow-ups (2026-10-04)
+
+- [x] RDATE series and long COUNT series — done
+      (`todo/full-history-follow-ups`). **A set of only RDATE lines never
+      rendered**, which the follow-up note undersold as "unbounded":
+      rrule-temporal refuses a rule without FREQ, `assembleWindow` skipped
+      the master on every read and logged it, and its NULL end kept it in
+      every window's masters query. Such sets come from other clients,
+      ICS imports and agent writes. Decisions: **no RDATE parser of our
+      own** — `buildRuleString` adds `RRULE:FREQ=DAILY;COUNT=1` (exactly
+      DTSTART) and the library adds the RDATEs and takes the EXDATEs as
+      for any rule, every value form included; the live suite proves
+      Google counts DTSTART as the first instance (an instance PATCH on
+      it lands) and draws what we expand. **The stored end reads RDATE
+      values**: a plain UNTIL is still read off the rule (a long UNTIL
+      series is never enumerated); COUNT, RDATE-only and UNTIL/COUNT with
+      RDATE enumerate the set once through that same rule string, so the
+      bound and the drawing cannot disagree; an endless rule stays
+      endless whatever its RDATEs say. Migration 8 recomputes the column
+      for stored masters with an RDATE line — sync never rewrites an
+      unchanged row, so an ended series would have stayed NULL, and a
+      re-list of every calendar was not worth it. **Two split bugs rode
+      along** in `remainingRecurrence`: the new half kept every RDATE
+      value (the library emits values before DTSTART, so the old half's
+      showed twice) — it now keeps only values after the split; and the
+      remaining COUNT subtracted the full set's instances up to the
+      split, RDATEs added and EXDATEs taken away, where RFC 5545 counts
+      only what the rule generated — it now expands the RRULE line alone.
+      **A split of an RDATE-only set** can leave a half with nothing to
+      repeat: the old half becomes a one-instance series through the same
+      COUNT=1 rule (it keeps its exceptions, and its update is a PATCH,
+      where an absent `recurrence` would keep the old dates on Google);
+      the new half, a create, becomes a single event (`isRecurringSet`).
+      **Long COUNT series: measured, no change.** A one-week window two
+      years into a series starting ten years back, a fresh `RRuleTemporal`
+      per read as `expandRecurringEvent` builds it (rrule-temporal 2.2.5,
+      Node 24, M-series Mac): DAILY COUNT=5000 0.02 ms, WEEKLY MO/WE/FR
+      COUNT=2000 0.015 ms, MONTHLY BYMONTHDAY COUNT=240 0.03 ms, YEARLY
+      COUNT=50 0.02 ms — the library's COUNT query plan (since 2.2.3, not
+      2.1 as the note said) jumps to the window. The shapes without a
+      plan walk from DTSTART, capped at 10k periods: plain MONTHLY
+      COUNT=240 (what our repeat picker writes) 0.29 ms, WEEKLY
+      BYDAY+BYSETPOS COUNT=2000 9 ms (rare). Revisit only if a profile
+      shows expansion in a window read; the fix then is caching
+      `RRuleTemporal` instances per master so the library's plan and
+      `all()` caches outlive one read. The per-calendar "keep only N
+      years" switch stays in `todo.md`: 303 events in 380 KB locally is
+      no storage problem.

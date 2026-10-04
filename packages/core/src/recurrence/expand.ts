@@ -43,11 +43,21 @@ const icsWallTime = (zonedDateTime: Temporal.ZonedDateTime): string =>
 
 /**
  * rrule-temporal throws past this many iterations. Rules without COUNT
- * fast-forward to the window, so only very long COUNT series and
- * pathological rules ever approach it; assembleWindow skips such a
- * master rather than failing the whole window.
+ * fast-forward to the window, and most COUNT shapes jump straight to it
+ * through the library's COUNT query plan; the shapes without a plan
+ * (plain MONTHLY, BYSETPOS, …) walk from DTSTART, so only very long such
+ * series and pathological rules ever approach it. assembleWindow skips
+ * such a master rather than failing the whole window.
  */
 export const EXPANSION_MAX_ITERATIONS = 10_000;
+
+/**
+ * A set of only RDATE lines has no rule, and rrule-temporal will not build
+ * one without FREQ. This rule yields exactly DTSTART — the first instance
+ * of every recurrence set (RFC 5545) — and the library adds the RDATEs and
+ * takes the EXDATEs away as it does for any rule.
+ */
+export const DTSTART_ONLY_RULE = 'RRULE:FREQ=DAILY;COUNT=1';
 
 export const buildRuleString = (master: RecurrenceMaster): string => {
   const dtstart = master.isAllDay
@@ -57,7 +67,8 @@ export const buildRuleString = (master: RecurrenceMaster): string => {
       )}`;
   // Google never includes DTSTART in recurrence[], but guard against it anyway.
   const lines = master.recurrence.filter((line) => !line.startsWith('DTSTART'));
-  return [dtstart, ...lines].join('\n');
+  const hasRule = lines.some((line) => line.toUpperCase().startsWith('RRULE:'));
+  return [dtstart, ...(hasRule ? [] : [DTSTART_ONLY_RULE]), ...lines].join('\n');
 };
 
 /**
