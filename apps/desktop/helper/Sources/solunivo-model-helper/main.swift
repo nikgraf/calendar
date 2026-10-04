@@ -121,8 +121,13 @@ func emitError(_ id: Int, _ message: String) {
       return DynamicGenerationSchema(type: Bool.self)
     case "array":
       let items = schema["items"]?.objectValue ?? ["type": .string("string")]
+      // A capped array stops a chatty answer before it overruns the
+      // context; the iOS module honours maxItems too.
+      var maximum: Int?
+      if case .number(let value) = schema["maxItems"] { maximum = Int(value) }
       return DynamicGenerationSchema(
-        arrayOf: try dynamicSchema(name: "\(name)Item", from: items))
+        arrayOf: try dynamicSchema(name: "\(name)Item", from: items),
+        maximumElements: maximum)
     case "object":
       let required = Set(
         (schema["required"]?.arrayValue ?? []).compactMap { $0.stringValue })
@@ -383,6 +388,16 @@ func handleLine(_ line: String) {
         emitError(request.id, error.message)
       } catch {
         emitError(request.id, "geo failed: \(error.localizedDescription)")
+      }
+    case let method where method.hasPrefix("ocr."):
+      do {
+        let result = try await OcrDispatch.invoke(
+          method: method, params: params.mapValues { $0.anyValue })
+        emitResult(request.id, result)
+      } catch let error as OcrBridgeError {
+        emitError(request.id, error.message)
+      } catch {
+        emitError(request.id, "ocr failed: \(error.localizedDescription)")
       }
     default: emitError(request.id, "unknown method: \(request.method)")
     }

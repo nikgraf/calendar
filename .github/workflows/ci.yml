@@ -135,7 +135,7 @@ jobs:
         uses: actions/cache@v6
         with:
           path: apps/desktop/helper/.build
-          key: helper-${{ runner.os }}-${{ hashFiles('apps/desktop/helper/Package.swift', 'apps/desktop/helper/Package.resolved', 'apps/desktop/helper/Sources/**', 'packages/apple-calendar/swift/**', 'packages/contacts/swift/**', 'packages/geo/swift/**', 'packages/reminders/swift/**') }}
+          key: helper-${{ runner.os }}-${{ hashFiles('apps/desktop/helper/Package.swift', 'apps/desktop/helper/Package.resolved', 'apps/desktop/helper/Sources/**', 'packages/ai/swift/**', 'packages/apple-calendar/swift/**', 'packages/contacts/swift/**', 'packages/geo/swift/**', 'packages/reminders/swift/**') }}
           restore-keys: helper-${{ runner.os }}-
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @calendar/desktop build:helper
@@ -368,7 +368,7 @@ jobs:
         uses: actions/cache@v6
         with:
           path: apps/desktop/helper/.build
-          key: helper-${{ runner.os }}-${{ hashFiles('apps/desktop/helper/Package.swift', 'apps/desktop/helper/Package.resolved', 'apps/desktop/helper/Sources/**', 'packages/apple-calendar/swift/**', 'packages/contacts/swift/**', 'packages/geo/swift/**', 'packages/reminders/swift/**') }}
+          key: helper-${{ runner.os }}-${{ hashFiles('apps/desktop/helper/Package.swift', 'apps/desktop/helper/Package.resolved', 'apps/desktop/helper/Sources/**', 'packages/ai/swift/**', 'packages/apple-calendar/swift/**', 'packages/contacts/swift/**', 'packages/geo/swift/**', 'packages/reminders/swift/**') }}
           restore-keys: helper-${{ runner.os }}-
       - run: pnpm install --frozen-lockfile
       # The committed app icons and tokens.css are generated from brand/;
@@ -459,7 +459,7 @@ jobs:
         uses: actions/cache@v6
         with:
           path: apps/desktop/helper/.build
-          key: helper-${{ runner.os }}-${{ hashFiles('apps/desktop/helper/Package.swift', 'apps/desktop/helper/Package.resolved', 'apps/desktop/helper/Sources/**', 'packages/apple-calendar/swift/**', 'packages/contacts/swift/**', 'packages/geo/swift/**', 'packages/reminders/swift/**') }}
+          key: helper-${{ runner.os }}-${{ hashFiles('apps/desktop/helper/Package.swift', 'apps/desktop/helper/Package.resolved', 'apps/desktop/helper/Sources/**', 'packages/ai/swift/**', 'packages/apple-calendar/swift/**', 'packages/contacts/swift/**', 'packages/geo/swift/**', 'packages/reminders/swift/**') }}
           restore-keys: helper-${{ runner.os }}-
       - run: pnpm install --frozen-lockfile
       - name: Compute short SHA

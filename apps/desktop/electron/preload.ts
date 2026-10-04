@@ -16,6 +16,8 @@ contextBridge.exposeInMainWorld('calendarBridge', {
   modelGenerate: (schema: unknown, prompt: string) =>
     ipcRenderer.invoke('model:generate', schema, prompt),
   modelPrepareSpeech: (locale: string) => ipcRenderer.invoke('model:prepare-speech', locale),
+  modelRecognizeText: (imageBase64: string) =>
+    ipcRenderer.invoke('model:recognize-text', imageBase64),
   modelStatus: () => ipcRenderer.invoke('model:status'),
   modelTranscribe: (audioBase64: string, locale: string) =>
     ipcRenderer.invoke('model:transcribe', audioBase64, locale),

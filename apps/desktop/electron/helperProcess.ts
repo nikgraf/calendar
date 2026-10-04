@@ -42,6 +42,8 @@ const TIMEOUTS_MS: Record<string, number> = {
   'geo.resolve': 15_000,
   'geo.search': 10_000,
   'geo.snapshot': 20_000,
+  // Vision on a full-resolution screenshot; local, but a document pass is not instant.
+  'ocr.recognizeText': 60_000,
   prepareSpeech: 600_000,
   'reminders.create': 15_000,
   'reminders.delete': 15_000,
