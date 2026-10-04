@@ -40,14 +40,17 @@ export const describeWhen = (times: EventTimes | ExistingTimes, timeZone: string
 /**
  * Text from an agent or an invitation, safe to show as one line of a
  * summary: a line break inside it must not be able to pose as another
- * line ("Guests: nobody"), so breaks are shown as a visible mark and
- * other control characters are dropped. Nothing is ever shortened here —
- * the user approves the whole of what is written, and input sizes are
- * capped where the request is planned.
+ * line ("Guests: nobody"), so breaks are shown as a visible mark, a tab
+ * as a space, and other control characters are dropped. An agent's own
+ * text never carries those or anything else that draws as nothing
+ * (`hiddenCharacter` refuses it); an invitation's may. Nothing is ever
+ * shortened here — the user approves the whole of what is written, and
+ * input sizes are capped where the request is planned.
  */
 export const oneLine = (value: string): string =>
   value
     .replaceAll(/\s*(?:\r\n|[\n\r\u2028\u2029])\s*/gu, ' ⏎ ')
+    .replaceAll('\t', ' ')
     // eslint-disable-next-line no-control-regex -- stripping them is the point
     .replaceAll(/[\u0000-\u001F\u007F-\u009F\u200B-\u200F\u202A-\u202E\u2066-\u2069]/gu, '');
 
