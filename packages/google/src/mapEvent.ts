@@ -11,6 +11,7 @@ import {
   plainDateToUtcMs,
   ReminderOverride,
   Temporal,
+  UNTITLED_EVENT,
 } from '@calendar/core';
 import type {
   GcalCalendarListEntry,
@@ -154,7 +155,7 @@ export const mapGcalEvent = (
     status,
     syncedAt: context.syncedAt,
     syncStatus: 'synced',
-    title: event.summary ?? '(no title)',
+    title: event.summary ?? UNTITLED_EVENT,
     // Google leaves both out at their defaults; the record always says.
     transparency: event.transparency === 'transparent' ? 'transparent' : 'opaque',
     updatedAt: event.updated
@@ -242,7 +243,9 @@ export const toGcalEventInput = (event: EventRecord): GcalEventInput => ({
         dateTime: Temporal.Instant.fromEpochMilliseconds(event.startUtc).toString(),
         timeZone: event.startTimeZone,
       },
-  summary: event.title,
+  // The placeholder stays here: on a PATCH Google keeps no title, and an
+  // insert creates an untitled event.
+  summary: event.title === UNTITLED_EVENT ? undefined : event.title,
 });
 
 /**

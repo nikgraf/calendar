@@ -161,7 +161,8 @@ export interface GcalEventInput {
     dateTime?: string | undefined;
     timeZone?: string | undefined;
   };
-  readonly summary: string;
+  /** Absent: untitled on insert, unchanged on a PATCH (see UNTITLED_EVENT). */
+  readonly summary?: string | undefined;
 }
 
 /**

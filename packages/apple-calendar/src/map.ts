@@ -13,6 +13,7 @@ import {
   normalizeHexColor,
   plainDateToUtcMs,
   toStructuredRules,
+  UNTITLED_EVENT,
   withConsistentGeo,
 } from '@calendar/core';
 import type { AppleCalendarJson, AppleEventJson, EventWrite } from './protocol.ts';
@@ -113,7 +114,7 @@ export const mapAppleEvent = (
     status: event.status,
     syncedAt: context.now,
     syncStatus: 'synced',
-    title: event.title === '' ? '(no title)' : event.title,
+    title: event.title === '' ? UNTITLED_EVENT : event.title,
     updatedAt: event.updatedAt,
   });
   return withConsistentGeo(record);
@@ -167,7 +168,10 @@ export const toEventWrite = (changes: typeof UpdateEventChanges.Type): EventWrit
   ...(changes.location === undefined ? {} : { location: clearable(changes.location) }),
   ...(changes.startDate === undefined ? {} : { startDate: changes.startDate }),
   ...(changes.startUtc === undefined ? {} : { startUtc: changes.startUtc }),
-  ...(changes.title === undefined ? {} : { title: changes.title }),
+  // The placeholder is the bridge's empty title read back: never written.
+  ...(changes.title === undefined || changes.title === UNTITLED_EVENT
+    ? {}
+    : { title: changes.title }),
 });
 
 /**

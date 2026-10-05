@@ -158,6 +158,11 @@ describe('alarms', () => {
     });
     expect(toEventWrite({ reminders })).toEqual({ alarms: [-10, -1440] });
     expect(toEventWrite({ title: 'T' })).toEqual({ title: 'T' });
+    // An untitled EventKit event reads as the placeholder; writing it back
+    // would name the event "(no title)" in Calendar.app.
+    expect(toEventWrite({ location: 'Room 1', title: '(no title)' })).toEqual({
+      location: 'Room 1',
+    });
     const draft = draftToEventWrite(
       {
         accountId: 'apple-calendar',

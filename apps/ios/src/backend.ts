@@ -197,7 +197,19 @@ export const backendClient: BackendClient = {
     ),
 };
 
+/**
+ * Whether the loops below already run. "Try again" on the error screen
+ * remounts the screen that calls startSync; each call forked another poll
+ * loop, notification scheduler and EventKit subscriber for the rest of the
+ * process.
+ */
+let syncStarted = false;
+
 export const startSync = (): void => {
+  if (syncStarted) {
+    return;
+  }
+  syncStarted = true;
   runtime
     .runPromise(
       Effect.gen(function* () {
