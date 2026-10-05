@@ -37,7 +37,7 @@ export const sheetStyles = StyleSheet.create({
     fontSize: 14,
     paddingVertical: 2,
   },
-  /** Save and Delete while a save or delete is running. */
+  /** Save and Delete while a save or delete is running (a press does nothing then). */
   busy: {
     opacity: 0.4,
   },

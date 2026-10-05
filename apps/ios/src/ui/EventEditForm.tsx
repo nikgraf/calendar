@@ -253,7 +253,6 @@ export function EventEditForm({ model }: { model: ReturnType<typeof useEventEdit
 
         {existing && !readOnly ? (
           <Pressable
-            disabled={busy}
             onPress={() => void remove()}
             style={[styles.deleteButton, busy && styles.busy]}
             testID="event-delete"

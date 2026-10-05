@@ -749,7 +749,7 @@ export const useEventEditorModel = ({
     adopt,
     attendees,
     attendeeStatus,
-    /** A save or delete is running: Save and Delete are disabled. */
+    /** A save or delete is running: Save and Delete are dimmed (a press does nothing). */
     busy: write.busy,
     /** Popup offsets "calendar default" stands for on the picked calendar. */
     calendarDefaultReminders,

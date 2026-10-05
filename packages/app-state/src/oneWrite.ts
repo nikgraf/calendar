@@ -31,8 +31,11 @@ export const runOneWrite = (
  * One write at a time from an editor. A second tap on Save used to create
  * a second event or task: nothing stopped it while the first was still
  * waiting (behind a history import, or on a move/convert confirmation).
- * `busy` disables the buttons; the slot, set synchronously, also covers a
- * tap that lands before that render. Save and Delete share one slot.
+ * The slot, set synchronously, turns a second press away even before a
+ * render; `busy` only dims Save and Delete. Disabling them was worse: the
+ * button came back only on the next render, so a press right after a
+ * declined move or convert confirmation landed on it and did nothing.
+ * Save and Delete share one slot.
  */
 export const useOneWrite = () => {
   const slot = useRef<WriteSlot>({ current: null });

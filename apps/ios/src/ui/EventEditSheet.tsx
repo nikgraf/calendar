@@ -179,7 +179,6 @@ export function EventEditSheet({
               <View />
             ) : (
               <Pressable
-                disabled={busy}
                 onPress={() => void (mode === 'task' ? taskModel.save() : eventModel.save())}
                 style={busy ? styles.busy : undefined}
                 testID="event-save"

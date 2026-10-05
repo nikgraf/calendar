@@ -373,7 +373,7 @@ export const useTaskEditorModel = ({
     addDueDate: () => setDated(true),
     adopt,
     alarm,
-    /** A save or delete is running: Save and Delete are disabled. */
+    /** A save or delete is running: Save and Delete are dimmed (a press does nothing). */
     busy: write.busy,
     canMoveList,
     /** False for an existing task without a due day, until one is added. */

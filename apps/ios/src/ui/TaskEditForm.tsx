@@ -60,7 +60,6 @@ export function TaskEditForm({
 
       {task ? (
         <Pressable
-          disabled={taskModel.busy}
           onPress={() => void taskModel.remove()}
           style={[styles.deleteButton, taskModel.busy && styles.busy]}
           testID="task-delete"
