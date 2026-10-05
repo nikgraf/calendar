@@ -2062,7 +2062,11 @@ both had merged.
       on a `google-live` PR no longer reruns the live suite. Dependabot's
       weekly group holds only what can merge as is — majors, vite-plus
       with vitest, and minors of the Expo-bound React Native stack are
-      the deliberate sweep's.
+      the deliberate sweep's. An iOS e2e shard may run 45 minutes (green
+      ones take 25–34, half of it setup; at 35 a slow runner was cancelled
+      two flows short). Flow 07 retypes a title XCTest garbled, and flow
+      21 counts any mirrored events, since a flow that failed before its
+      clean-up leaves its event behind.
 - [x] Sync queue integrity — #118 (`todo/sync-queue-integrity`).
       **A response writes its row only while no later op of the event is
       queued** (`settleRow`: create, update, RSVP, move) — the guard #110
