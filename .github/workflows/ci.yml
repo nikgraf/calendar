@@ -65,8 +65,10 @@ jobs:
             exit 0
           fi
           echo "$files"
-          # Docs-only: every path is Markdown or lives under docs/.
-          code=$(echo "$files" | grep -vE '^(docs/.*|([^/]+/)*[^/]+\.md)$')
+          # Docs-only: every path is Markdown or lives under docs/. grep
+          # finds no line then and exits 1, which `bash -e` (how Actions
+          # runs this step) would treat as a failure.
+          code=$(echo "$files" | grep -vE '^(docs/.*|([^/]+/)*[^/]+\.md)$' || true)
           desktop=false
           ios=false
           if [ -n "$code" ]; then
