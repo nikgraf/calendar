@@ -24,13 +24,22 @@ jobs:
   # code changed. A job skipped by `if:` still reports (as skipped, which
   # branch protection accepts) — `paths-ignore` on the workflow would make
   # a required check never report at all. Anything unclassifiable counts
-  # as code.
+  # as code for both platforms.
+  #
+  # Code is split by platform too: a change only under apps/ios/ cannot
+  # affect the desktop jobs, and one only under apps/desktop/ or
+  # packages/agent/ (desktop-only, see CLAUDE.md) cannot affect iOS — a
+  # desktop-only PR ran the ~40-minute iOS e2e anyway. Everything else
+  # (the shared packages, root config, the lockfile, workflows, brand/)
+  # runs both. apps/ios/assets/ holds brand exports that packaging smoke
+  # checks (brand:check), so it counts for the desktop jobs as well.
   changes:
     name: Classify changed paths
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
-      code: ${{ steps.classify.outputs.code }}
+      desktop: ${{ steps.classify.outputs.desktop }}
+      ios: ${{ steps.classify.outputs.ios }}
     steps:
       - id: classify
         env:
@@ -51,18 +60,28 @@ jobs:
               ;;
           esac
           if [ -z "$files" ]; then
-            echo "could not classify the change — treating it as code"
-            echo "code=true" >> "$GITHUB_OUTPUT"
+            echo "could not classify the change — treating it as code for both platforms"
+            { echo "desktop=true"; echo "ios=true"; } >> "$GITHUB_OUTPUT"
             exit 0
           fi
           echo "$files"
-          # Docs-only: every path is Markdown or lives under docs/.
-          if echo "$files" | grep -vE '^(docs/.*|([^/]+/)*[^/]+\.md)$' > /dev/null; then
-            echo "code=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "docs-only change: the macOS jobs are skipped"
-            echo "code=false" >> "$GITHUB_OUTPUT"
+          # Docs-only: every path is Markdown or lives under docs/. grep
+          # finds no line then and exits 1, which `bash -e` (how Actions
+          # runs this step) would treat as a failure.
+          code=$(echo "$files" | grep -vE '^(docs/.*|([^/]+/)*[^/]+\.md)$' || true)
+          desktop=false
+          ios=false
+          if [ -n "$code" ]; then
+            if echo "$code" | grep -vE '^apps/ios/' | grep -q . ||
+              echo "$code" | grep -qE '^apps/ios/assets/'; then
+              desktop=true
+            fi
+            if echo "$code" | grep -vE '^(apps/desktop/|packages/agent/)' | grep -q .; then
+              ios=true
+            fi
           fi
+          echo "desktop jobs: $desktop, iOS jobs: $ios"
+          { echo "desktop=$desktop"; echo "ios=$ios"; } >> "$GITHUB_OUTPUT"
 
   # The gate lives in gate.yml so ios.yml can run the same one (see the
   # note there about the check name).
@@ -72,8 +91,10 @@ jobs:
 
   e2e:
     name: Desktop e2e (Electron, CDP)
-    needs: changes
-    if: needs.changes.outputs.code == 'true'
+    # After the gate, like the other macOS jobs: a red gate used to leave
+    # this one burning macOS minutes on a change that cannot merge.
+    needs: [gate, changes]
+    if: needs.changes.outputs.desktop == 'true'
     # macos-15: macos-14 images are deprecated; e2e needs no macOS 26 SDK
     # (the helper is availability-guarded and e2e never invokes the model).
     runs-on: macos-15
@@ -116,7 +137,7 @@ jobs:
   e2e-reminders:
     name: Desktop e2e (real Reminders and Calendar via helper)
     needs: [gate, changes]
-    if: needs.changes.outputs.code == 'true'
+    if: needs.changes.outputs.desktop == 'true'
     runs-on: macos-26
     timeout-minutes: 30
     steps:
@@ -175,9 +196,12 @@ jobs:
   ios-e2e-shards:
     name: iOS e2e shard ${{ matrix.shard }}/2
     needs: [gate, changes]
-    if: needs.changes.outputs.code == 'true'
+    if: needs.changes.outputs.ios == 'true'
     runs-on: macos-26
-    timeout-minutes: 35
+    # A green shard takes 25–34 min, about half of it setup. At 35 a slow
+    # runner was cancelled two flows short of passing (run 37336020673),
+    # throwing the whole run away; the cap is for hung jobs.
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
@@ -334,8 +358,8 @@ jobs:
           if-no-files-found: ignore
 
   # The check branch protection requires, under the name the single job
-  # had before it was sharded. Skipped shards (a docs-only push) pass, as
-  # a skipped job did.
+  # had before it was sharded. Skipped shards (a docs-only or desktop-only
+  # change) pass, as a skipped job did.
   ios-e2e:
     name: iOS e2e (Maestro, real Reminders)
     needs: [ios-e2e-shards]
@@ -358,7 +382,7 @@ jobs:
   package-smoke:
     name: Packaging smoke (unsigned .app)
     needs: [gate, changes]
-    if: github.event_name == 'pull_request' && needs.changes.outputs.code == 'true'
+    if: github.event_name == 'pull_request' && needs.changes.outputs.desktop == 'true'
     runs-on: macos-26
     timeout-minutes: 25
     steps:
@@ -376,8 +400,9 @@ jobs:
           restore-keys: helper-${{ runner.os }}-
       - run: pnpm install --frozen-lockfile
       # The committed app icons and tokens.css are generated from brand/;
-      # this is the only macOS job on every code PR, and the generator
-      # needs iconutil. About a second.
+      # this is the only macOS job that runs whenever brand exports can
+      # change (the classifier counts apps/ios/assets/ for the desktop jobs
+      # too), and the generator needs iconutil. About a second.
       - name: Brand exports are up to date
         run: pnpm brand:check
       - run: pnpm --filter @calendar/desktop package:app
@@ -409,7 +434,7 @@ jobs:
     needs: [gate, changes]
     if: >-
       github.event_name == 'workflow_dispatch' ||
-      (github.event_name == 'push' && needs.changes.outputs.code == 'true')
+      (github.event_name == 'push' && needs.changes.outputs.desktop == 'true')
     # macos-26: the Swift model helper needs the macOS 26 SDK
     # (FoundationModels/SpeechAnalyzer). Runtime stays guarded, so the
     # packaged app still runs on older macOS with the model unavailable.

@@ -16,7 +16,10 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: ios-${{ github.workflow }}-${{ github.ref }}
+  # A label is not a new push: in the push's group it cancelled that
+  # push's in-progress OTA preview (and any label did, not just
+  # `testflight`). Label runs get their own group.
+  group: ios-${{ github.workflow }}-${{ github.ref }}${{ github.event.action == 'labeled' && '-label' || '' }}
   # PR pushes supersede each other; main pushes must all complete — a
   # cancelled testing-build ships no artifact, and a cancelled EAS
   # publish silently strands testers on old JS.
@@ -51,6 +54,8 @@ jobs:
   # workflows, so the same reusable gate runs here too.
   verify:
     name: Gate
+    # A label other than `testflight` publishes nothing: no gate to run.
+    if: github.event.action != 'labeled' || github.event.label.name == 'testflight'
     uses: ./.github/workflows/gate.yml
 
   # Build only when necessary: with runtimeVersion.policy "fingerprint",

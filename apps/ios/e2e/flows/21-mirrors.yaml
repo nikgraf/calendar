@@ -46,13 +46,23 @@ tags:
     timeout: 10000
 - tapOn:
     id: 'mirror-save'
+# The editor closes; the new mirror's row then pushes "Add mirror" below
+# the sheet's fold, so scroll to it rather than wait for it in place
+# (run 37298882532).
 - extendedWaitUntil:
-    visible:
-      id: 'mirror-add'
+    notVisible:
+      id: 'mirror-save'
     timeout: 10000
-# The copies land through the fake API and the row reports it.
+- scrollUntilVisible:
+    element:
+      id: 'mirror-add'
+    direction: DOWN
+    timeout: 10000
+# The copies land through the fake API and the row reports it. The count
+# is whatever the source holds by now: an earlier flow that failed before
+# its clean-up leaves its event there (run 37314663224 mirrored 2).
 - extendedWaitUntil:
-    visible: 'Up to date — 1 event mirrored.'
+    visible: 'Up to date — [1-9][0-9]* events? mirrored\.'
     timeout: 20000
 # Leave the settings as found for the next flow. The row's action line
 # sits at the sheet's bottom edge after the scroll above; XCTest reports a
@@ -71,7 +81,7 @@ tags:
     timeout: 5000
 - tapOn: 'Delete and remove copies'
 - extendedWaitUntil:
-    notVisible: 'Up to date — 1 event mirrored.'
+    notVisible: 'Up to date — [1-9][0-9]* events? mirrored\.'
     timeout: 10000
 - tapOn: 'Done'
 - assertVisible: 'Today'

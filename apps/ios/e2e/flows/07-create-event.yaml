@@ -22,6 +22,19 @@ tags:
       # Google account the device is signed into, and is deleted below.
       # ASCII only — unicode through XCTest typing is a known flaky spot.
       - inputText: 'Solunivo e2e event to delete'
+      # XCTest typing can drop or move letters ("Snivo …" in run
+      # 37314663224, "Sunivo … deleteol" before): retype until the field
+      # (whose value Maestro reads as its text) holds the title, so the
+      # checks below test saving rather than typing.
+      - repeat:
+          times: 3
+          while:
+            notVisible:
+              id: 'event-title'
+              text: 'Solunivo e2e event to delete'
+          commands:
+            - tapOn: 'Clear text'
+            - inputText: 'Solunivo e2e event to delete'
       - tapOn:
           id: 'event-save'
       # The sheet closes only after the whole create path ran, id
