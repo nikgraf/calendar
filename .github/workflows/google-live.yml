@@ -26,7 +26,12 @@ concurrency:
 jobs:
   decide:
     name: Decide whether to run
-    if: github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'google-live')
+    # On a PR carrying `google-live`: a push, or adding that label — not
+    # adding some other label, which used to rerun the whole live suite.
+    if: >-
+      github.event_name != 'pull_request' ||
+      (contains(github.event.pull_request.labels.*.name, 'google-live') &&
+      (github.event.action != 'labeled' || github.event.label.name == 'google-live'))
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
