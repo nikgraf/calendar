@@ -2101,9 +2101,12 @@ both had merged.
       (`todo/small-verified-fixes`). **The placeholder stays in the
       record and is never written**: `UNTITLED_EVENT` is what both mappers
       read an untitled event as (the editors require a title, so an empty
-      one would make it uneditable), and both write paths leave it out —
-      Google gets no `summary` (`GcalEventInput.summary` is optional now),
-      EventKit no title. Zoom and Webex links count only from the domain
+      one would make it uneditable). Google gets an empty title instead —
+      no change on an untitled event, untitled on an insert, and (review of
+      #120) a remote title cleared when "keep mine" restores an untitled
+      version; left out, Google kept its title and the response overwrote
+      the user's choice. An empty summary reads back as untitled. EventKit
+      gets no title (no conflict path there). Zoom and Webex links count only from the domain
       itself or a dotted subdomain. iOS `startSync` runs once per process.
 - [x] Desktop hardening — #121 (`todo/desktop-hardening`). **The CSP
       does reach the packaged app's `file://` page** (an inline script is
