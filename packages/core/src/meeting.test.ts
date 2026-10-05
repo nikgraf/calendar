@@ -28,6 +28,20 @@ describe('meetingUrl', () => {
     ).toBe('https://teams.microsoft.com/l/meetup-join/19%3ameeting_x?context=y');
   });
 
+  it('takes a Zoom or Webex link only from the real domain or a subdomain of it', () => {
+    expect(meetingUrl({ location: 'https://acme.webex.com/meet/ana' })).toBe(
+      'https://acme.webex.com/meet/ana',
+    );
+    // Look-alikes got a green "Join meeting" button pointing elsewhere.
+    for (const location of [
+      'https://securezoom.us/j/1',
+      'https://evilwebex.com/meet/ana',
+      'https://zoom.us.evil.example/j/1',
+    ]) {
+      expect(meetingUrl({ location }), location).toBeUndefined();
+    }
+  });
+
   it('returns undefined for plain rooms and non-meeting urls', () => {
     expect(meetingUrl({ location: 'Room 4.01' })).toBeUndefined();
     expect(meetingUrl({ description: 'agenda: https://example.com/doc' })).toBeUndefined();

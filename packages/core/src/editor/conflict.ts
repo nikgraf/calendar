@@ -1,4 +1,5 @@
 import type { PendingOpSummary } from '../backend.ts';
+import { UNTITLED_EVENT } from '../format.ts';
 import { Temporal } from '../time/temporal.ts';
 import type { EventRecord } from '../types.ts';
 
@@ -78,7 +79,7 @@ export const conflictChanges = (
   timeZone: string,
 ): ReadonlyArray<ConflictChange> => {
   const pairs: ReadonlyArray<readonly [ConflictChange['label'], string, string]> = [
-    ['Title', mine.title || '(no title)', theirs.title || '(no title)'],
+    ['Title', mine.title || UNTITLED_EVENT, theirs.title || UNTITLED_EVENT],
     ['Time', conflictTimeLabel(mine, timeZone), conflictTimeLabel(theirs, timeZone)],
     ['Location', orNone(mine.location), orNone(theirs.location)],
     ['Notes', orNone(mine.description), orNone(theirs.description)],

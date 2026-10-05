@@ -7,9 +7,11 @@ const MEETING_URL = new RegExp(
   'https://(?:' +
     [
       String.raw`meet\.google\.com/[a-z0-9-]+`,
-      String.raw`[\w.-]*zoom\.us/(?:j|my|s)/[\w?=&.-]+`,
+      // The domain itself or a subdomain of it ("us02web.zoom.us") — a
+      // bare prefix also let "securezoom.us" pass as Zoom.
+      String.raw`(?:[\w-]+\.)*zoom\.us/(?:j|my|s)/[\w?=&.-]+`,
       String.raw`teams\.microsoft\.com/l/meetup-join/[\w%/?=&.-]+`,
-      String.raw`[\w.-]*webex\.com/(?:meet|join)/[\w?=&.-]+`,
+      String.raw`(?:[\w-]+\.)*webex\.com/(?:meet|join)/[\w?=&.-]+`,
       String.raw`whereby\.com/[\w-]+`,
     ].join('|') +
     ')',
