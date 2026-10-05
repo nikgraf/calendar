@@ -124,7 +124,7 @@ const appLayer = Mirrors.layer.pipe(
   Layer.provideMerge(SyncEngine.layer),
   Layer.provideMerge(EventMutations.layer),
   // Above the Apple read path: the scheduler plans from it.
-  Layer.provideMerge(LocalNotifications.layer({ timeZone: Temporal.Now.timeZoneId() })),
+  Layer.provideMerge(LocalNotifications.layer({ timeZone: () => Temporal.Now.timeZoneId() })),
   Layer.provideMerge(AppleCalendarEvents.layer),
   Layer.provideMerge(iosAppleCalendarLayer),
   Layer.provideMerge(GoogleCalendarClient.layer),

@@ -77,8 +77,12 @@ const scheduledSink = (
   return { asked: () => asked, schedules, sink };
 };
 
-const testLayer = (sink: NotificationSinkShape, apple = unavailableAppleCalendarClient('test')) =>
-  LocalNotifications.layer({ timeZone: 'UTC' }).pipe(
+const testLayer = (
+  sink: NotificationSinkShape,
+  apple = unavailableAppleCalendarClient('test'),
+  timeZone: () => string = () => 'UTC',
+) =>
+  LocalNotifications.layer({ timeZone }).pipe(
     Layer.provideMerge(appleCalendarServicesLayer(apple)),
     Layer.provideMerge(DeviceContacts.layer),
     Layer.provideMerge(
@@ -430,6 +434,28 @@ describe('LocalNotifications', () => {
       expect(scheduled.schedules).toHaveLength(2);
       expect(scheduled.schedules[1]![0]!.fireAt).toBe(Date.parse('2026-03-03T15:00:00Z'));
     }).pipe(Effect.provide(testLayer(scheduled.sink)));
+  });
+
+  it.effect('each pass reads the device zone: a 9:00 reminder follows a flight', () => {
+    const scheduled = scheduledSink();
+    let zone = 'UTC';
+    return Effect.gen(function* () {
+      yield* enableBirthdays;
+      const notifications = yield* LocalNotifications;
+      yield* setClock('2026-03-01T12:00:00Z');
+      yield* notifications.run();
+      // Landed in Tokyo with the app still running.
+      zone = 'Asia/Tokyo';
+      yield* notifications.run();
+      const [before, after] = scheduled.schedules.map((schedule) =>
+        schedule.map((planned) => planned.fireAt),
+      );
+      expect(before!.length).toBeGreaterThan(0);
+      // 09:00 in Tokyo is 00:00Z: nine hours earlier than 09:00 in UTC.
+      expect(after).toEqual(before!.map((fireAt) => fireAt - 9 * 60 * 60_000));
+    }).pipe(
+      Effect.provide(testLayer(scheduled.sink, unavailableAppleCalendarClient('test'), () => zone)),
+    );
   });
 
   it.effect(
