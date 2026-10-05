@@ -14,99 +14,50 @@ except the two below; their entries are in `docs/decisions.md` under
 From a read-only review of the whole app; nothing was run. "Verified"
 means the cited code was re-read and the defect is there, "reported" that
 one audit pass traced it — reproduce with a failing test first. Lines are
-from main on 2026-10-04. The seven items fixed first (#110–#115) are closed in
-`docs/decisions.md` under "Review fixes (2026-10-04)".
+from main on 2026-10-04. Fixed items are closed in `docs/decisions.md`
+under "Review fixes (2026-10-04)" (#110–#115) and "Review fixes, second
+batch (2026-10-05)" (#117–#121).
 
 ### Data loss or corruption
 
-- [ ] A create Google answers with 409 leaves its row `pending` forever
-      (reported; the 409-is-done arm in `applyOp.ts` is verified) — pulls
-      skip it, so remote edits never arrive, unless a later op of the
-      event settles the row. The 410 and task `InsufficientScopeError`
-      arms leave rows unreleased the same way. Since #110 event creates
-      carry a dispatch stamp and only unsent ones are folded into or
-      dropped; a move of a sent create (`googleServerMove` re-keys the
-      create into the destination) can still duplicate the event if the
-      first insert landed in the source.
-- [ ] An earlier op's response overwrites a newer queued edit (reported)
-      — `applyOp.ts:512` (also the rsvp and move arms) writes the response
-      back without checking that a newer op owns the row; the newer op
-      reuses the old etag, gets 412 and parks as a conflict against the
-      user's own edit. A lost response retries into the same self-conflict.
+- [ ] Queue leftovers after #110 and #118 — a move of a sent create can
+      duplicate the event (`googleServerMove` re-keys a create that may
+      have landed in the source into the destination); the 410 and task
+      `InsufficientScopeError` arms leave rows unreleased (pulls skip
+      pending rows); an RSVP's response does not move queued edits to the
+      etag it produced (no If-Match went out, so Google's prior state is
+      unknown), so an edit queued right behind an RSVP can still park
+      against it.
 - [ ] Save tapped twice creates two events or tasks (reported) — no
       in-flight guard in `editorModel.ts` `save` or `taskEditorModel.ts`,
       and the Save button is never disabled; a write waiting behind a
       history-import transaction invites the second tap.
 
-### Security — agent gateway and desktop
-
-- [ ] Approve in Settings › Agents lacks the dialog's 700 ms guard
-      (reported) — `AgentsSection.tsx:513-553` vs
-      `AgentApprovalDialog.tsx:6-29`: a double click can approve the next
-      request as the list reloads under the pointer.
-- [ ] "Join meeting" accepts look-alike hosts (verified) —
-      `packages/core/src/meeting.ts:10,12`: `[\w.-]*zoom\.us` matches
-      `securezoom.us`, likewise webex. Require the bare domain or a
-      dot-separated subdomain; add look-alike cases to `meeting.test.ts`.
-- [ ] Production CSP is set only through `onHeadersReceived` (needs a
-      check) — `electron/main.ts:128` with `loadFile` (`windows.ts`);
-      Electron documents that a header CSP does not apply to `file://`.
-      Either the packaged renderer has no CSP, or it has one that blocks
-      the dictation worklet's `blob:` module. One CDP assertion in e2e
-      settles which; a `<meta>` CSP in `index.html` fixes the first case.
-- [ ] The microphone can stay on after ⌘K closes (reported) —
-      `quickAddModel.ts:128-160`: cancel is a no-op while `prepare()` is
-      pending, and the stream then starts with nobody left to stop it
-      (`desktopSpeech.ts:95-121`).
-
 ### Time zones and recurrence
 
-- [ ] Notification text shows the event's zone, not the device's
-      (verified) — `notifications/eventReminders.ts:201-203`: a Berlin
-      user's 15:00 meeting created in New York reads "9:00 AM".
-      `eventReminders.test.ts:159` pins it; contradicts the 2026-09-29
-      device-zone decision.
-- [ ] The device zone is read once per process (reported, three places) —
-      the default zone setting (`deviceSettings.ts:113-121`, not
-      invalidated on foreground), the notification layer
-      (`backendHost.ts:101`, `apps/ios/src/backend.ts:124`) and the
-      Reminders bridge's global formatter (`RemindersBridge.swift:159-177`;
-      the Apple Calendar bridge uses a computed var). After travel the
-      grid, "today" and reminder times stay on the old zone until relaunch.
+- [ ] The device zone is read once per process, two places left (the
+      notification layer reads it per pass since #119) — the default zone
+      setting (`deviceSettings.ts:113-121`, not invalidated on foreground)
+      and the Reminders bridge's global formatter
+      (`RemindersBridge.swift:159-177`; the Apple Calendar bridge uses a
+      computed var). After travel the grid, "today" and new reminders'
+      times stay on the old zone until relaunch.
 - [ ] Pulled events without a zone are stored as UTC and edits write UTC
       back (the literal at `engine.ts:294` is verified) — use the
       calendar's `timeZone`.
-- [ ] A zone the runtime rejects aborts the whole notification pass
-      (reported) — `mapEvent.ts:152` stores zones unvalidated although
-      `runtimeZoneId` exists (Hermes rejects `Asia/Kolkata`); on iOS a
-      series in such a zone is skipped by `assembleWindow`.
-- [ ] "(no title)" is written back to Google (verified) — `mapEvent.ts:157`
-      substitutes it on read and `:245` sends `event.title` on every PATCH,
-      so dragging an untitled event names it. Keep the record's title
-      empty; substitute at render.
+- [ ] A zone the runtime rejects still hides a series on iOS (the
+      notification pass copes since #119) — `mapEvent.ts:152` stores zones
+      unvalidated although `runtimeZoneId` exists (Hermes rejects
+      `Asia/Kolkata`), and `assembleWindow` skips a series in such a zone.
 - [ ] A repeat end date before the start is accepted (reported) —
       `normalizeQuickAdd.ts:148-157`, `RepeatRuleChips.tsx:174-179` (no
       `minimumDate`): "every Monday until March" said in October.
 
 ### Sync robustness
 
-- [ ] Reconnect or foreground does not reset op backoff (reported) —
-      nothing clears `next_attempt_at`; after a reauth "N unsynced
-      changes" can sit for up to 30 minutes, against
-      `docs/architecture.md` ("drains on reconnect").
 - [ ] After a calendar-list 410, removed calendars are never purged
       (reported) — `engine.ts:236,251` still takes the incremental branch
       after the full relist; `syncEvents` tracks `fullPass`, this does not.
-- [ ] Pending-op cleanup is not scoped by account (reported) —
-      `pendingOpRepo.ts:184` (`removeForEvent`) and `opsForEvent` filter by
-      calendar and event id only; two accounts sharing a calendar can
-      delete each other's ops. `opsForEvent` also decodes every queued op
-      per edit — give it a `(calendar_id, event_id)` query.
-- [ ] "Try again" on the iOS error screen starts duplicate sync loops
-      (verified) — `startSync` (`apps/ios/src/backend.ts:197-216`) has no
-      started guard and `ErrorBoundary.tsx:40` remounts the screen that
-      calls it (`App.tsx:86`); `engine.start` and
-      `LocalNotifications.start` fork detached fibers each time.
 - [ ] EventKit/Contacts observers die after `reloadAsync` (reported,
       medium) — the bridges return early when `changeObserver != nil`
       (`AppleCalendarBridge.swift:453-458` and siblings) while the
@@ -122,7 +73,9 @@ from main on 2026-10-04. The seven items fixed first (#110–#115) are closed in
 - [ ] Smaller — a malformed `updated` still throws for the whole pass
       (`mapEvent.ts:160-161`); the offline 5× retry holds the sync gate
       about 30 s per Google account (`engine.ts:96`), so Reminders passes
-      and the iOS background budget wait behind it.
+      and the iOS background budget wait behind it; `opsForEvent` decodes
+      every queued op per edit — give it an
+      `(account_id, calendar_id, event_id)` query.
 
 ## Tier 1 — CI and distribution
 
@@ -162,18 +115,6 @@ comment` for inline-playable video: 10 MB on Free plans, 100 MB paid
       assert the last old and first new occurrence and no overlap. A
       carried text's queued instance ops keep their payload: rewrite it on
       restore if the pull-converges gap ever shows up.
-- [ ] CI minutes and Dependabot (review 2026-10-02) — desktop `e2e`
-      needs only `changes`, not `gate` (`ci.yml:75`, verified), so a red
-      gate still runs it on macOS. `changes` has one `code` output and no
-      per-platform split (reported): desktop-only PRs run `ios-e2e`,
-      iOS-only PRs run desktop e2e and package-smoke — re-check against
-      the two-shard layout of #106. The grouped Dependabot PR can never
-      merge (`dependabot.yml`: one `all` group, only `effect` ignored; the
-      Expo SDK and vite-plus ceilings are not encoded) — add the `ignore`
-      entries or split patch/minor from major. Adding a label cancels the
-      PR's OTA preview (`ios.yml`: `labeled` shares the `synchronize`
-      concurrency group), and `google-live.yml` reruns the live suite on
-      any later label.
 
 ## Tier 2 — features (near-term, well-scoped)
 
