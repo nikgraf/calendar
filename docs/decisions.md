@@ -2093,7 +2093,9 @@ both had merged.
       pass (`timeZone: () => string`): the 2026-09-29 decision is "follow
       the device", and capturing it at startup was where it was read, not
       a choice. A zone the engine cannot load is read under its other
-      spelling (`runtimeZoneId`), else as the device's; an event that
+      spelling (`runtimeZoneId`, both ways round since the review of #119:
+      Google can store a legacy name Hermes rejects, such as
+      America/Buenos_Aires), else as the device's; an event that
       still cannot be planned is skipped, never the whole pass.
 - [x] Untitled events, meeting hosts, one sync start — #120
       (`todo/small-verified-fixes`). **The placeholder stays in the
