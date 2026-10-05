@@ -2040,3 +2040,93 @@ a failing test first.
       second, safe across a midnight DST change); all-day keeps the DATE.
       The read side (`parseUntil`, `lastDayOf`) already read UNTIL in the
       series' zone.
+
+### Review fixes, second batch (2026-10-05)
+
+The next items of the 2026-10-02 review, grouped by the code they share
+into five PRs so none conflicts with another; each fix came with a
+failing test first. All five also carry one identical commit that made
+main typecheck again: #112's read-only test put the mutations' effects in
+one array, and #110's `RecurringUpdateError` broke its inferred type once
+both had merged.
+
+- [x] CI minutes and Dependabot — #117 (`todo/ci-minutes`). The change
+      classifier reports `desktop` and `ios` instead of one `code` flag: a
+      change only under `apps/ios/` skips the desktop jobs, one only under
+      `apps/desktop/` or `packages/agent/` skips the iOS e2e; shared
+      packages, root config, the lockfile, workflows and `brand/` run
+      both, and `apps/ios/assets/` also runs packaging smoke (it checks
+      the brand exports there). Desktop e2e waits for the gate. An iOS
+      label run has its own concurrency group (it cancelled the push's
+      OTA preview) and runs the gate only for `testflight`; another label
+      on a `google-live` PR no longer reruns the live suite. Dependabot's
+      weekly group holds only what can merge as is — majors, vite-plus
+      with vitest, and minors of the Expo-bound React Native stack are
+      the deliberate sweep's. An iOS e2e shard may run 45 minutes (green
+      ones take 25–34, half of it setup; at 35 a slow runner was cancelled
+      two flows short). Flow 07 retypes a title XCTest garbled, and flow
+      21 counts any mirrored events, since a flow that failed before its
+      clean-up leaves its event behind.
+- [x] Sync queue integrity — #118 (`todo/sync-queue-integrity`).
+      **A response writes its row only while no later op of the event is
+      queued** (`settleRow`: create, update, RSVP, move) — the guard #110
+      added for creates, shared. **An update that lands moves the queued
+      ops built on the etag it sent to the etag it produced**
+      (`advanceBaseEtag`): Google checked that etag, so nothing else
+      changed in between; an RSVP moves nothing (no If-Match, Google's
+      prior state unknown). The row a later edit still holds moves too
+      (`advanceEtag`), so a third drag that replaces the second starts from
+      the new etag (review of #118). Every ack settles in one transaction
+      with its queue check (`settle`). **A 412 is done only when Google's
+      copy yields exactly the PATCH body the update would send**
+      (`updateBody` from both): a lost response's retry; any difference
+      still parks — and its followers keep their etag (review of #118: the
+      match covers only the fields this update sends, so a follower moved
+      to the new etag overwrote another client's reminders unasked). **A
+      create answered 409 fetches the event** (or drops the row if Google
+      has none) instead of leaving it `pending`, checking the queue again
+      after the fetch. **Queue cleanup is scoped
+      by account** (a shared calendar repeats its ids). **A sync the user
+      caused makes waiting ops due** (`SyncEngine.syncNow`: wake, focus,
+      foreground, a reconnect; `retryNow` keeps the attempt count; the
+      timed poll keeps the backoff).
+- [x] Notification time zones — #119 (`todo/notification-zones`). The
+      text ("Tomorrow 3:00 PM") is in the device's zone; an all-day
+      reminder still counts from midnight in the calendar's zone, as
+      Google's do. `LocalNotifications` reads the device zone on every
+      pass (`timeZone: () => string`): the 2026-09-29 decision is "follow
+      the device", and capturing it at startup was where it was read, not
+      a choice. A zone the engine cannot load is read under its other
+      spelling (`runtimeZoneId`, both ways round since the review of #119:
+      Google can store a legacy name Hermes rejects, such as
+      America/Buenos_Aires), else as the device's; an event that
+      still cannot be planned is skipped, never the whole pass.
+- [x] Untitled events, meeting hosts, one sync start — #120
+      (`todo/small-verified-fixes`). **The placeholder stays in the
+      record and is never written**: `UNTITLED_EVENT` is what both mappers
+      read an untitled event as (the editors require a title, so an empty
+      one would make it uneditable). Google gets an empty title instead —
+      no change on an untitled event, untitled on an insert, and (review of
+      #120) a remote title cleared when "keep mine" restores an untitled
+      version; left out, Google kept its title and the response overwrote
+      the user's choice. An empty summary reads back as untitled. EventKit
+      gets no title (no conflict path there). Zoom and Webex links count
+      only from the domain itself or a dotted subdomain. iOS `startSync`
+      runs once per process.
+- [x] Desktop hardening — #121 (`todo/desktop-hardening`). **The CSP
+      does reach the packaged app's `file://` page** (an inline script is
+      blocked; the review doubted it, and an `eval` probe misled: CDP's own
+      evaluation is exempt from a page's eval rules) — **so it blocked
+      dictation's `blob:` worklet**, and dictation worked only from source.
+      The worklet is `public/pcm-collector.worklet.js` (copied next to
+      `index.html`; not a `?url` import, which may inline as `data:`).
+      Settings › Agents arms Decline/Approve 700 ms after the waiting list
+      changes (keyed by the whole list: the row that slides up was mounted,
+      and armed, long before). A ⌘K bar closed while dictation prepared or
+      while the microphone was granted no longer turns the microphone on.
+      **Each start owns what it opens**: `startRecording` takes an
+      `AbortSignal`, the bar aborts its start on close, and an aborted start
+      stops its own stream (review of #121: the adapters keep one shared
+      recording, so the closed bar's late `cancelRecording()` stopped a
+      reopened bar's). A new recording stops the one it replaces when it
+      commits.
