@@ -1,6 +1,7 @@
 import {
   appendLink,
   byDayError,
+  repeatUntilError,
   type EventRecord,
   eventToTaskLossSummary,
   isEventToTaskLossy,
@@ -17,7 +18,7 @@ import {
 import { useState } from 'react';
 import type { EditorConfirmRequest } from './editorModel.ts';
 import { useBackendMutations, useTaskReadOnlyLookup } from './hooks.ts';
-import { repeatNumberError, repeatUntilError, useRepeatState } from './repeatState.ts';
+import { repeatNumberError, useRepeatState } from './repeatState.ts';
 import { offeredTaskLists, taskEditorChanges, type TaskEditorValues } from './taskEditorChanges.ts';
 
 export interface TaskEditorSeed {

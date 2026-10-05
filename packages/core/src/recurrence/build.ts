@@ -23,6 +23,15 @@ export interface RecurrenceRuleSpec {
   readonly untilDate?: string | undefined;
 }
 
+/** The validation message for a repeat that ends before its first day, or undefined. */
+export const repeatUntilError = (
+  spec: { readonly untilDate?: string | undefined },
+  firstDay: string,
+): string | undefined =>
+  spec.untilDate !== undefined && spec.untilDate < firstDay
+    ? 'The repeat must end on or after its first day.'
+    : undefined;
+
 /**
  * `timeZone` is the series' own (its startTimeZone): a timed series ends
  * at the last second of `untilDate` there, written in UTC as RFC 5545

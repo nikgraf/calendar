@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { Temporal } from '../time/temporal.ts';
-import { buildRecurrenceRule } from './build.ts';
+import { buildRecurrenceRule, repeatUntilError } from './build.ts';
 import { expandRecurringEvent } from './expand.ts';
 
 /** The local day of the last occurrence of a daily 30-minute series "until Aug 31" starting Aug 25. */
@@ -107,5 +107,16 @@ describe('buildRecurrenceRule', () => {
     expect(buildRecurrenceRule({ byDay: [], freq: 'weekly' }, false, 'UTC')).toBe(
       'RRULE:FREQ=WEEKLY',
     );
+  });
+});
+
+describe('repeatUntilError', () => {
+  it('refuses an end before the first day and accepts the day itself', () => {
+    expect(repeatUntilError({ untilDate: '2026-09-19' }, '2026-09-20')).toBe(
+      'The repeat must end on or after its first day.',
+    );
+    expect(repeatUntilError({ untilDate: '2026-09-20' }, '2026-09-20')).toBeUndefined();
+    expect(repeatUntilError({ untilDate: '2027-01-01' }, '2026-09-20')).toBeUndefined();
+    expect(repeatUntilError({}, '2026-09-20')).toBeUndefined();
   });
 });

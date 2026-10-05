@@ -1,6 +1,7 @@
 import {
   appendLink,
   byDayError,
+  repeatUntilError,
   isCalendarWritable,
   isLossy,
   isTaskToEventLossy,
@@ -40,7 +41,7 @@ import {
 } from '@calendar/core';
 import { useCallback, useState } from 'react';
 import { useAccounts, useBackendMutations, useLocationGeo } from './hooks.ts';
-import { repeatUntilError, useRepeatState } from './repeatState.ts';
+import { useRepeatState } from './repeatState.ts';
 
 /**
  * Fields a parsed phrase can prefill. Structural on purpose so app-state
