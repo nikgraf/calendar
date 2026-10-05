@@ -127,13 +127,17 @@ export const useQuickAddModel = ({
   };
 
   /**
-   * Whether the bar is still open. Cancelling on unmount only stops a
+   * The latest dictation start. Cancelling on unmount only stops a
    * recording that already started; one still preparing or waiting for
-   * the microphone checks this before it goes on.
+   * the microphone is aborted instead, and the adapter stops only what
+   * that start opened. Cancelling it late would stop whichever recording
+   * is current by then — possibly a newer bar's.
    */
-  const open = useRef(true);
+  const starting = useRef<AbortController | null>(null);
 
   const startRecording = async () => {
+    const controller = new AbortController();
+    starting.current = controller;
     setError(null);
     setVoice('preparing');
     try {
@@ -142,7 +146,7 @@ export const useQuickAddModel = ({
       await speech.prepare();
       // Preparing can take minutes (the locale's models download): a bar
       // closed meanwhile must not switch the microphone on afterwards.
-      if (!open.current) {
+      if (controller.signal.aborted) {
         return;
       }
     } catch (error) {
@@ -160,11 +164,10 @@ export const useQuickAddModel = ({
       return;
     }
     try {
-      await speech.startRecording();
-      // Closed while the microphone was being granted: nobody is left to
-      // stop this stream, so stop it now.
-      if (!open.current) {
-        await speech.cancelRecording();
+      await speech.startRecording({ signal: controller.signal });
+      // Closed while the microphone was being granted: the adapter has
+      // already stopped this start's stream.
+      if (controller.signal.aborted) {
         return;
       }
       setVoice('recording');
@@ -208,13 +211,13 @@ export const useQuickAddModel = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- restart the cap per recording
   }, [voice]);
 
-  useEffect(() => {
-    open.current = true;
-    return () => {
-      open.current = false;
+  useEffect(
+    () => () => {
+      starting.current?.abort();
       void speech.cancelRecording();
-    };
-  }, [speech]);
+    },
+    [speech],
+  );
 
   return {
     busy,

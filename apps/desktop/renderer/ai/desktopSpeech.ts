@@ -31,11 +31,11 @@ interface Recording {
 
 let recording: Recording | null = null;
 
-const stopStream = (active: Recording) => {
-  for (const track of active.stream.getTracks()) {
+const stopStream = (stream: MediaStream, context?: AudioContext) => {
+  for (const track of stream.getTracks()) {
     track.stop();
   }
-  void active.context.close();
+  void context?.close();
 };
 
 const collectSamples = (chunks: ReadonlyArray<Float32Array>): Float32Array => {
@@ -61,7 +61,7 @@ const toBase64 = (bytes: Uint8Array): string => {
 export const desktopSpeech: SpeechToText = {
   cancelRecording: async () => {
     if (recording) {
-      stopStream(recording);
+      stopStream(recording.stream, recording.context);
       recording = null;
     }
   },
@@ -88,13 +88,7 @@ export const desktopSpeech: SpeechToText = {
     }
   },
 
-  startRecording: async () => {
-    // One recording at a time: a new one used to replace the old without
-    // stopping it, leaving that microphone stream on for good.
-    if (recording) {
-      stopStream(recording);
-      recording = null;
-    }
+  startRecording: async ({ signal } = {}) => {
     let stream: MediaStream;
     try {
       stream = await navigator.mediaDevices.getUserMedia({
@@ -103,8 +97,22 @@ export const desktopSpeech: SpeechToText = {
     } catch {
       throw new MicrophoneDeniedError({ message: 'Microphone access was declined.' });
     }
-    const context = new AudioContext({ sampleRate: SAMPLE_RATE });
-    await context.audioWorklet.addModule(WORKLET_URL);
+    let context: AudioContext | undefined;
+    try {
+      if (!signal?.aborted) {
+        context = new AudioContext({ sampleRate: SAMPLE_RATE });
+        await context.audioWorklet.addModule(WORKLET_URL);
+      }
+    } catch (error) {
+      stopStream(stream, context);
+      throw error;
+    }
+    // Given up while the microphone was being granted: stop this stream
+    // only. The current recording may already be a newer caller's.
+    if (!context || signal?.aborted) {
+      stopStream(stream, context);
+      return;
+    }
     const source = context.createMediaStreamSource(stream);
     const collector = new AudioWorkletNode(context, 'pcm-collector');
     const chunks: Array<Float32Array> = [];
@@ -112,6 +120,11 @@ export const desktopSpeech: SpeechToText = {
       chunks.push(message.data);
     };
     source.connect(collector);
+    // One recording at a time: replacing one without stopping it would
+    // leave that microphone stream on for good.
+    if (recording) {
+      stopStream(recording.stream, recording.context);
+    }
     recording = { chunks, context, stream };
   },
 
@@ -121,7 +134,7 @@ export const desktopSpeech: SpeechToText = {
     if (!active) {
       return undefined;
     }
-    stopStream(active);
+    stopStream(active.stream, active.context);
     const samples = collectSamples(active.chunks);
     if (samples.length === 0) {
       return undefined;
