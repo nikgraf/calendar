@@ -58,9 +58,11 @@ tags:
       id: 'mirror-add'
     direction: DOWN
     timeout: 10000
-# The copies land through the fake API and the row reports it.
+# The copies land through the fake API and the row reports it. The count
+# is whatever the source holds by now: an earlier flow that failed before
+# its clean-up leaves its event there (run 37314663224 mirrored 2).
 - extendedWaitUntil:
-    visible: 'Up to date — 1 event mirrored.'
+    visible: 'Up to date — [1-9][0-9]* events? mirrored\.'
     timeout: 20000
 # Leave the settings as found for the next flow. The row's action line
 # sits at the sheet's bottom edge after the scroll above; XCTest reports a
@@ -79,7 +81,7 @@ tags:
     timeout: 5000
 - tapOn: 'Delete and remove copies'
 - extendedWaitUntil:
-    notVisible: 'Up to date — 1 event mirrored.'
+    notVisible: 'Up to date — [1-9][0-9]* events? mirrored\.'
     timeout: 10000
 - tapOn: 'Done'
 - assertVisible: 'Today'
