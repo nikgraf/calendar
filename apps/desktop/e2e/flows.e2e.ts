@@ -1534,4 +1534,23 @@ describe('a reloaded window', () => {
     await cdp.waitFor(`!document.querySelector('[title^="Standup meeting"]')`, 20_000);
     await reloadApp.closeSettings();
   });
+
+  it('stays a client when a navigation is refused', async () => {
+    const { cdp } = reloadApp;
+    // main.ts refuses a navigation off the app's own page in will-navigate,
+    // after Electron has already reported did-start-navigation: the
+    // document stays, and so must its streams.
+    await cdp.eval(`void (window.__stillHere = true)`);
+    await cdp.eval(`void (location.href = 'https://example.com/')`);
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    expect(await cdp.eval<boolean>('window.__stillHere === true')).toBe(true);
+    // Showing Work again in Settings reaches it only through its
+    // invalidations stream.
+    const settings = await reloadApp.openSettings('accounts');
+    const work = `[...document.querySelectorAll('input[type="checkbox"]')].find(b => b.parentElement?.textContent?.includes('Work') && !b.checked)`;
+    await settings.waitFor(`!!${work}`);
+    await settings.eval(`${work}?.click()`);
+    await cdp.waitFor(`!!document.querySelector('[title^="Standup meeting"]')`, 20_000);
+    await reloadApp.closeSettings();
+  });
 });

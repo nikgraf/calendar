@@ -2,8 +2,6 @@
 export interface ClientPage {
   readonly id: number;
   readonly onDestroyed: (listener: () => void) => void;
-  /** Calls back when the page starts loading a new document, a reload included. */
-  readonly onNewDocument: (listener: () => void) => void;
 }
 
 /**
@@ -14,7 +12,12 @@ export interface ClientPage {
  * page's invalidations stream under one of those ids — and the server
  * drops a request whose id is still running, so a query of the new page
  * could hang for good. Disconnecting first ends the old page's streams.
- * Returns the function to call with every frame's page.
+ *
+ * The new document says so itself (`newDocument`, sent by the preload
+ * before any rpc frame of it). Navigation events cannot: Electron reports
+ * did-start-navigation before main.ts's will-navigate can refuse the
+ * navigation, and a refused one leaves the old document — streams and
+ * all — in place.
  */
 export const makeClientPages = (onGone: (clientId: number) => void) => {
   const known = new Set<number>();
@@ -24,17 +27,21 @@ export const makeClientPages = (onGone: (clientId: number) => void) => {
       onGone(clientId);
     }
   };
-  return (page: ClientPage): void => {
-    const clientId = page.id;
-    known.add(clientId);
-    if (watched.has(clientId)) {
-      return;
-    }
-    watched.add(clientId);
-    page.onNewDocument(() => gone(clientId));
-    page.onDestroyed(() => {
-      watched.delete(clientId);
-      gone(clientId);
-    });
+  return {
+    /** The page started a new document: the old document's client is gone. */
+    newDocument: gone,
+    /** Called with every rpc frame's page; the first makes it a client. */
+    seen: (page: ClientPage): void => {
+      const clientId = page.id;
+      known.add(clientId);
+      if (watched.has(clientId)) {
+        return;
+      }
+      watched.add(clientId);
+      page.onDestroyed(() => {
+        watched.delete(clientId);
+        gone(clientId);
+      });
+    },
   };
 };

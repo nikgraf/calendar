@@ -10,27 +10,25 @@ type DisconnectListener = (clientId: number) => void;
 const frameListeners = new Set<FrameListener>();
 const disconnectListeners = new Set<DisconnectListener>();
 
-const seen = makeClientPages((clientId) => {
+const pages = makeClientPages((clientId) => {
   for (const listener of disconnectListeners) {
     listener(clientId);
   }
 });
 
+// The preload sends this as each document starts, before any rpc frame of
+// it: a reload's new document ends the old one's client (rpcClientPages.ts).
+ipcMain.on('rpc:document', (event) => {
+  pages.newDocument(event.sender.id);
+});
+
 ipcMain.on('rpc', (event, data: string | Uint8Array) => {
   const sender = event.sender;
   const clientId = sender.id;
-  seen({
+  pages.seen({
     id: clientId,
     onDestroyed: (listener) => {
       sender.once('destroyed', listener);
-    },
-    onNewDocument: (listener) => {
-      sender.on('did-start-navigation', (details) => {
-        // A hash change (the Settings window's panes) keeps the document.
-        if (details.isMainFrame && !details.isSameDocument) {
-          listener();
-        }
-      });
     },
   });
   for (const listener of frameListeners) {

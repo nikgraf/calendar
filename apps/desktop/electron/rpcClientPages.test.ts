@@ -1,14 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { type ClientPage, makeClientPages } from './rpcClientPages.ts';
 
-/** A page whose new-document and destroyed events the test fires. */
+/** A page whose destroyed event the test fires. */
 const fakePage = (id: number) => {
-  const newDocument: Array<() => void> = [];
   const destroyed: Array<() => void> = [];
   const page: ClientPage = {
     id,
     onDestroyed: (listener) => destroyed.push(listener),
-    onNewDocument: (listener) => newDocument.push(listener),
   };
   return {
     destroy: () => {
@@ -16,47 +14,46 @@ const fakePage = (id: number) => {
         listener();
       }
     },
-    newDocument,
+    destroyed,
     page,
-    reload: () => {
-      for (const listener of newDocument) {
-        listener();
-      }
-    },
   };
 };
 
 describe('makeClientPages', () => {
-  it('reports a reloaded page gone, then follows its new document', () => {
+  it('reports a page gone when it starts a new document, then follows that one', () => {
     const gone: Array<number> = [];
-    const seen = makeClientPages((clientId) => gone.push(clientId));
+    const pages = makeClientPages((clientId) => gone.push(clientId));
     const window = fakePage(7);
-    seen(window.page);
-    seen(window.page);
+    pages.seen(window.page);
+    pages.seen(window.page);
     // Watched once, however many frames it sends.
-    expect(window.newDocument).toHaveLength(1);
+    expect(window.destroyed).toHaveLength(1);
 
-    window.reload();
+    pages.newDocument(7);
     expect(gone).toEqual([7]);
-    // The reloaded page's first frame makes it a client again; its next
-    // reload is reported too.
-    seen(window.page);
-    window.reload();
+    // The new document's first frame makes it a client again; its own
+    // successor is reported too.
+    pages.seen(window.page);
+    pages.newDocument(7);
     expect(gone).toEqual([7, 7]);
   });
 
-  it('reports a page once, whether it reloads or closes first', () => {
+  it('ignores the first document of a page, and reports a page once', () => {
     const gone: Array<number> = [];
-    const seen = makeClientPages((clientId) => gone.push(clientId));
+    const pages = makeClientPages((clientId) => gone.push(clientId));
+    // A window's first document announces itself before any frame.
+    pages.newDocument(3);
+    expect(gone).toEqual([]);
+
     const window = fakePage(3);
-    seen(window.page);
-    window.reload();
+    pages.seen(window.page);
+    pages.newDocument(3);
     // Closed before the new document sent anything: already gone.
     window.destroy();
     expect(gone).toEqual([3]);
 
     const other = fakePage(4);
-    seen(other.page);
+    pages.seen(other.page);
     other.destroy();
     expect(gone).toEqual([3, 4]);
   });
