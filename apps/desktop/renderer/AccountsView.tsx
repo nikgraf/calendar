@@ -4,7 +4,7 @@ import {
   useBackendMutations,
   useCalendars,
   useGuardedMutations,
-  usePendingOps,
+  usePendingOpsRead,
   useSyncStatus,
 } from '@calendar/app-state';
 import { type Account, historyStatusLabel, isAppleCalendarAccount } from '@calendar/core';
@@ -27,7 +27,9 @@ export function AccountsView() {
   const calendars = useCalendars();
   const mutations = useBackendMutations();
   const guarded = useGuardedMutations();
-  const pendingOps = usePendingOps();
+  // Not `usePendingOps`: its empty fallback while loading would read as
+  // "nothing unsynced". The question re-renders as the read lands.
+  const pendingOps = usePendingOpsRead();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   /** The account whose Remove is waiting for a yes (see removeAccountQuestion). */
@@ -193,8 +195,10 @@ function RemoveAccountConfirm({
           Cancel
         </button>
         <button
-          className="rounded-md bg-red-600 px-3 py-1 font-medium text-white hover:bg-red-500"
+          className="rounded-md bg-red-600 px-3 py-1 font-medium text-white hover:bg-red-500 disabled:opacity-50"
           data-testid="remove-account-yes"
+          // Only once the unsynced changes were counted (removeAccountQuestion).
+          disabled={!question?.canRemove}
           onClick={onRemove}
           type="button"
         >

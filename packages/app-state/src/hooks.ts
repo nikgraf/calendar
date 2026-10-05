@@ -41,6 +41,7 @@ import {
   useState,
   type ReactNode,
 } from 'react';
+import { pendingOpsRead } from './accountRemoval.ts';
 import {
   type BackendAtoms,
   type MapSnapshotParams,
@@ -93,6 +94,15 @@ export const useCalendars = (): ReadonlyArray<CalendarInfo> =>
 /** Queue of local changes not yet acknowledged by Google. */
 export const usePendingOps = (): ReadonlyArray<PendingOpSummary> =>
   unwrapList(useAtomValue(useBackendAtoms().pendingOps));
+
+/**
+ * The queue, or 'loading' / 'failed' until a read succeeded: for a
+ * question that counts what would be lost, where `usePendingOps`'s empty
+ * fallback would read as "nothing unsynced". A failed refresh counts as
+ * failed too — the last good read may be stale.
+ */
+export const usePendingOpsRead = (): ReadonlyArray<PendingOpSummary> | 'failed' | 'loading' =>
+  pendingOpsRead(useAtomValue(useBackendAtoms().pendingOps));
 
 /** Every calendar mirror with its state on this device. */
 export const useMirrors = (): ReadonlyArray<MirrorView> =>

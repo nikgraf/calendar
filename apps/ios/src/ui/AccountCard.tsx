@@ -1,4 +1,4 @@
-import { removeAccountQuestion, useGuardedMutations, usePendingOps } from '@calendar/app-state';
+import { removeAccountQuestion, useGuardedMutations, usePendingOpsRead } from '@calendar/app-state';
 import {
   type Account,
   type AccountSyncStatus,
@@ -40,7 +40,9 @@ export function AccountCard({
       ? historyStatusLabel(syncStatus)
       : null;
   const guarded = useGuardedMutations();
-  const pendingOps = usePendingOps();
+  // Not `usePendingOps`: its empty fallback while loading would read as
+  // "nothing unsynced".
+  const pendingOps = usePendingOpsRead();
   const remove = () => {
     const removeNow = () => void guarded.removeAccount({ accountId: account.id });
     const question = removeAccountQuestion(account, pendingOps);
@@ -48,10 +50,18 @@ export function AccountCard({
       removeNow();
       return;
     }
-    Alert.alert(question.title, question.message, [
-      { style: 'cancel', text: 'Cancel' },
-      { onPress: removeNow, style: 'destructive', text: 'Remove' },
-    ]);
+    // A shown alert cannot update when the read lands, so it offers
+    // Remove only with the count already in it.
+    Alert.alert(
+      question.title,
+      question.message,
+      question.canRemove
+        ? [
+            { style: 'cancel', text: 'Cancel' },
+            { onPress: removeNow, style: 'destructive', text: 'Remove' },
+          ]
+        : [{ style: 'cancel', text: 'OK' }],
+    );
   };
   /** `${accountId}:${calendarId}` of the row with the palette expanded. */
   const [colorPickerFor, setColorPickerFor] = useState<string | null>(null);
