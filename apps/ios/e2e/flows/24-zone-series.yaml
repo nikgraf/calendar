@@ -4,11 +4,12 @@ tags:
   - ci
 ---
 # Needs the fixture Google account (EXPO_PUBLIC_CALENDAR_GOOGLE=fixture, as
-# CI does): "Kolkata series" repeats weekly, on today's weekday, in Asia/Kolkata
-# (e2e/fixtures/google.ts). Hermes rejects that name and takes
-# Asia/Calcutta; stored as Google sent it, the series was left out of
-# every view. Its time of day depends on the simulator's zone, and the
-# day view opens at 7:30, so look below that first, then above.
+# CI does): "Kolkata series" repeats weekly in Asia/Kolkata, today's
+# occurrence at noon on the simulator (e2e/fixtures/google.ts). Hermes
+# rejects that zone name and takes Asia/Calcutta; stored as Google sent
+# it, the series was left out of every view. The day view opens at 7:30,
+# so look below that first, then above (a DST change since the series
+# began shifts it by an hour).
 - runFlow: ../common/launch.yaml
 - tapOn: 'Day'
 - scrollUntilVisible:
