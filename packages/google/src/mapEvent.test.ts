@@ -227,18 +227,18 @@ describe('meeting links', () => {
 
 describe('toGcalEventInput', () => {
   it('reads an untitled event as the placeholder and never writes the placeholder back', () => {
-    const record = mapGcalEvent(
-      {
-        end: { dateTime: '2026-07-01T10:00:00Z' },
-        id: 'untitled',
-        start: { dateTime: '2026-07-01T09:00:00Z' },
-        status: 'confirmed',
-      },
-      context,
-    );
+    const rawUntitled = {
+      end: { dateTime: '2026-07-01T10:00:00Z' },
+      id: 'untitled',
+      start: { dateTime: '2026-07-01T09:00:00Z' },
+      status: 'confirmed',
+    } as const;
+    const record = mapGcalEvent(rawUntitled, context);
     expect(record?.title).toBe('(no title)');
-    // A drag PATCHes the whole input: summary absent keeps it untitled.
-    expect(toGcalEventInput(record!).summary).toBeUndefined();
+    // A drag PATCHes the whole input: an empty title keeps it untitled
+    // (and clears a remote one when the user's untitled version wins).
+    expect(toGcalEventInput(record!).summary).toBe('');
+    expect(mapGcalEvent({ ...rawUntitled, summary: '' }, context)?.title).toBe('(no title)');
     expect(toGcalEventInput(new EventRecord({ ...record!, title: 'Named' })).summary).toBe('Named');
   });
 

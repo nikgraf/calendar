@@ -155,7 +155,8 @@ export const mapGcalEvent = (
     status,
     syncedAt: context.syncedAt,
     syncStatus: 'synced',
-    title: event.summary ?? UNTITLED_EVENT,
+    // A cleared title comes back empty or not at all.
+    title: event.summary || UNTITLED_EVENT,
     // Google leaves both out at their defaults; the record always says.
     transparency: event.transparency === 'transparent' ? 'transparent' : 'opaque',
     updatedAt: event.updated
@@ -243,9 +244,11 @@ export const toGcalEventInput = (event: EventRecord): GcalEventInput => ({
         dateTime: Temporal.Instant.fromEpochMilliseconds(event.startUtc).toString(),
         timeZone: event.startTimeZone,
       },
-  // The placeholder stays here: on a PATCH Google keeps no title, and an
-  // insert creates an untitled event.
-  summary: event.title === UNTITLED_EVENT ? undefined : event.title,
+  // The placeholder is never sent: it goes as an empty title — no change
+  // for an event that is untitled already, untitled on an insert, and
+  // cleared on Google when "keep mine" restores an untitled version over
+  // a remote rename (left out, Google kept its title).
+  summary: event.title === UNTITLED_EVENT ? '' : event.title,
 });
 
 /**

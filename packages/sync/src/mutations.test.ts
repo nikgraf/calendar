@@ -553,6 +553,54 @@ describe('EventMutations', () => {
       }).pipe(Effect.provide(mutationsLayer(conflictingGoogle(server, sent))));
     });
 
+    it.effect('keep mine on an untitled event clears a title Google got meanwhile', () => {
+      let server: GcalEvent | undefined;
+      const client = stubClient({
+        getEvent: () => Effect.succeed(server!),
+        insertEvent: ({ event }) => {
+          // Created untitled: Google stores no summary.
+          server = { ...echo({ end: event.end, start: event.start }, event.id ?? 'x', '"v1"') };
+          return Effect.succeed(server);
+        },
+        patchEvent: ({ baseEtag, event, eventId }) =>
+          Effect.gen(function* () {
+            if (baseEtag !== undefined && baseEtag !== server!.etag) {
+              return yield* Effect.fail(new ConflictError({ calendarId: 'cal-1', eventId }));
+            }
+            server = {
+              ...server!,
+              ...(event.summary === undefined ? {} : { summary: event.summary }),
+              etag: '"v3"',
+            };
+            return server;
+          }),
+      });
+      return Effect.gen(function* () {
+        yield* seedCalendar;
+        const mutations = yield* EventMutations;
+        const record = yield* mutations.createEvent({ ...draft, title: '(no title)' });
+        yield* mutations.processPendingOps();
+        expect((yield* rowOf(record.id))?.title).toBe('(no title)');
+        // A local time change waits while someone names the event on Google.
+        yield* mutations.updateEvent({
+          accountId: 'acc-1',
+          calendarId: 'cal-1',
+          changes: { endUtc: draft.endUtc + 3_600_000 },
+          eventId: record.id,
+        });
+        server = { ...server!, etag: '"v2"', summary: 'Lunch' };
+        yield* mutations.processPendingOps();
+        const [parked] = yield* (yield* PendingOpRepo).listAll();
+        expect(parked?.conflictAt).toBeDefined();
+        // The user keeps the untitled version: Google's title is cleared,
+        // not kept and written over the local row.
+        yield* mutations.resolveConflict({ choice: 'mine', opId: parked!.id });
+        yield* mutations.processPendingOps();
+        expect(server?.summary).toBe('');
+        expect((yield* rowOf(record.id))?.title).toBe('(no title)');
+      }).pipe(noYield, Effect.provide(mutationsLayer(client)));
+    });
+
     it.effect('restore mine re-creates an event Google deleted', () => {
       const sent: Array<{ baseEtag: string | undefined; kind: string }> = [];
       const server: { current: GcalEvent | undefined } = { current: undefined };

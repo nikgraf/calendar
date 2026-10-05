@@ -4,8 +4,9 @@ import { Temporal } from './time/temporal.ts';
 /**
  * What an event without a title is called on screen. Both mappers put it
  * in the record (the editors require a title, so an untitled event stays
- * editable), and both write paths leave it out: sent back, it named the
- * event "(no title)" for every client the first time it was dragged.
+ * editable), and neither write path sends it: Google gets an empty title,
+ * EventKit none. Sent back, it named the event "(no title)" for every
+ * client the first time it was dragged.
  */
 export const UNTITLED_EVENT = '(no title)';
 
