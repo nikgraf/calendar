@@ -46,9 +46,17 @@ tags:
     timeout: 10000
 - tapOn:
     id: 'mirror-save'
+# The editor closes; the new mirror's row then pushes "Add mirror" below
+# the sheet's fold, so scroll to it rather than wait for it in place
+# (run 37298882532).
 - extendedWaitUntil:
-    visible:
+    notVisible:
+      id: 'mirror-save'
+    timeout: 10000
+- scrollUntilVisible:
+    element:
       id: 'mirror-add'
+    direction: DOWN
     timeout: 10000
 # The copies land through the fake API and the row reports it.
 - extendedWaitUntil:

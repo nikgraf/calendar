@@ -21,9 +21,11 @@ tags:
 # while it is up, the app's own elements leave the accessibility tree —
 # so the sheet's "Save to Files" action is the marker, not the file name
 # and not the section behind it.
+# A slow runner draws the sheet blank for over ten seconds before its
+# actions appear (run 37296818448, twice).
 - extendedWaitUntil:
     visible: 'Save to Files'
-    timeout: 10000
+    timeout: 30000
 # No "Close" control on iOS 26: dragging the sheet down from inside it
 # dismisses it (a swipe from the screen centre starts above the sheet).
 - repeat:
