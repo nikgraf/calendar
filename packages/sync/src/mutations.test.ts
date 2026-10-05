@@ -790,6 +790,16 @@ describe('EventMutations', () => {
           Effect.provide(
             mutationsLayer(
               stubClient({
+                // A 409 makes the drain fetch what the create already made.
+                getEvent: ({ eventId }) =>
+                  Effect.succeed({
+                    end: { dateTime: '2026-07-03T11:00:00Z', timeZone: 'Europe/Vienna' },
+                    etag: '"landed"',
+                    id: eventId,
+                    start: { dateTime: '2026-07-03T10:00:00Z', timeZone: 'Europe/Vienna' },
+                    status: 'confirmed',
+                    summary: `evt-${status}`,
+                  }),
                 insertEvent: () => Effect.fail(new GoogleApiError({ message: 'boom', status })),
               }),
             ),
@@ -890,6 +900,227 @@ describe('EventMutations', () => {
       expect(ops).toHaveLength(0);
       const singles = yield* eventsNow;
       expect(singles).toHaveLength(0);
+    }).pipe(noYield, Effect.provide(mutationsLayer(client)));
+  });
+
+  /** A synced event on Google at etag "v1", built through the queue. */
+  const syncedEvent = Effect.gen(function* () {
+    yield* seedCalendar;
+    const mutations = yield* EventMutations;
+    const record = yield* mutations.createEvent(draft);
+    yield* mutations.processPendingOps();
+    return record;
+  });
+  const insertAtV1: Partial<GoogleCalendarClientShape> = {
+    insertEvent: ({ event }) => Effect.succeed(echo(event, event.id ?? 'x', '"v1"')),
+  };
+
+  it.effect('a second drag while the first is in flight follows it, not conflicts with it', () => {
+    const sent: Array<string | undefined> = [];
+    let duringFirstPatch: Effect.Effect<unknown, unknown> | undefined;
+    const client = stubClient({
+      ...insertAtV1,
+      patchEvent: ({ baseEtag, event, eventId }) =>
+        Effect.gen(function* () {
+          sent.push(baseEtag);
+          // Google accepts only the etag it holds.
+          if (baseEtag !== `"v${sent.length}"`) {
+            return yield* Effect.fail(new ConflictError({ calendarId: 'cal-1', eventId }));
+          }
+          const during = duringFirstPatch;
+          duringFirstPatch = undefined;
+          if (during) {
+            yield* Effect.orDie(during);
+          }
+          return echo(event, eventId, `"v${sent.length + 1}"`);
+        }),
+    });
+    return Effect.gen(function* () {
+      const record = yield* syncedEvent;
+      const mutations = yield* EventMutations;
+      const move = (title: string) =>
+        mutations.updateEvent({
+          accountId: 'acc-1',
+          calendarId: 'cal-1',
+          changes: { title },
+          eventId: record.id,
+        });
+      yield* move('First drag');
+      duringFirstPatch = move('Second drag');
+      yield* mutations.processPendingOps();
+      // The first response did not paint over the second drag…
+      expect((yield* rowOf(record.id))?.title).toBe('Second drag');
+      // …and the second drag now sends the etag the first one produced.
+      const [queued] = yield* (yield* PendingOpRepo).listAll();
+      expect(queued?.baseEtag).toBe('"v2"');
+      yield* mutations.processPendingOps();
+      expect(sent).toEqual(['"v1"', '"v2"']);
+      expect(yield* (yield* PendingOpRepo).listAll()).toEqual([]);
+      expect(yield* rowOf(record.id)).toMatchObject({
+        etag: '"v3"',
+        syncStatus: 'synced',
+        title: 'Second drag',
+      });
+    }).pipe(noYield, Effect.provide(mutationsLayer(client)));
+  });
+
+  it.effect('a retry whose first attempt landed is done, not a conflict with itself', () => {
+    let server: GcalEvent | undefined;
+    const client = stubClient({
+      ...insertAtV1,
+      getEvent: () => Effect.succeed(server!),
+      patchEvent: ({ baseEtag, event, eventId }) =>
+        Effect.gen(function* () {
+          if (server === undefined) {
+            // The patch lands; its response is lost on the way back.
+            server = echo(event, eventId, '"v2"');
+            return yield* Effect.fail(new ApiUnavailableError({ cause: 'response lost' }));
+          }
+          return baseEtag === server.etag
+            ? server
+            : yield* Effect.fail(new ConflictError({ calendarId: 'cal-1', eventId }));
+        }),
+    });
+    return Effect.gen(function* () {
+      const record = yield* syncedEvent;
+      const mutations = yield* EventMutations;
+      const ops = yield* PendingOpRepo;
+      yield* mutations.updateEvent({
+        accountId: 'acc-1',
+        calendarId: 'cal-1',
+        changes: { title: 'Renamed' },
+        eventId: record.id,
+      });
+      yield* mutations.processPendingOps();
+      for (const op of yield* ops.listAll()) {
+        yield* ops.markFailed(op.id, op.attempts, 0, 'test');
+      }
+      yield* mutations.processPendingOps();
+      expect(yield* ops.listAll()).toEqual([]);
+      expect(yield* rowOf(record.id)).toMatchObject({
+        etag: '"v2"',
+        syncStatus: 'synced',
+        title: 'Renamed',
+      });
+    }).pipe(noYield, Effect.provide(mutationsLayer(client)));
+  });
+
+  it.effect('a create answered 409 takes what Google has and stops being unsynced', () => {
+    const client = stubClient({
+      getEvent: ({ eventId }) =>
+        Effect.succeed({
+          ...echo({ end: undefined, start: undefined, summary: 'New event' }, eventId, '"landed"'),
+          end: { dateTime: '2026-07-03T11:00:00Z', timeZone: 'Europe/Vienna' },
+          start: { dateTime: '2026-07-03T10:00:00Z', timeZone: 'Europe/Vienna' },
+        }),
+      insertEvent: () => Effect.fail(new GoogleApiError({ message: 'duplicate', status: 409 })),
+    });
+    return Effect.gen(function* () {
+      yield* seedCalendar;
+      const mutations = yield* EventMutations;
+      const record = yield* mutations.createEvent(draft);
+      yield* mutations.processPendingOps();
+      expect(yield* (yield* PendingOpRepo).listAll()).toEqual([]);
+      // Pulls skip pending rows: left pending, it would never see a
+      // remote edit again.
+      expect(yield* rowOf(record.id)).toMatchObject({ etag: '"landed"', syncStatus: 'synced' });
+    }).pipe(noYield, Effect.provide(mutationsLayer(client)));
+  });
+
+  it.effect("an edit as one account leaves another account's queued edit of a shared event", () => {
+    const client = stubClient({
+      patchEvent: () => Effect.fail(new ApiUnavailableError({ cause: 'offline' })),
+    });
+    return Effect.gen(function* () {
+      yield* seedCalendar;
+      yield* (yield* AccountRepo).upsert(
+        new Account({
+          contactsEnabled: false,
+          createdAt: 1,
+          email: 'other@example.com',
+          id: 'acc-2',
+          provider: 'google',
+          status: 'ok',
+          tasksEnabled: false,
+        }),
+      );
+      // One shared calendar, subscribed by both accounts: same ids.
+      const shared = new EventRecord({
+        accountId: 'acc-1',
+        calendarId: 'cal-1',
+        endUtc: draft.endUtc,
+        etag: '"s-1"',
+        id: 'shared-1',
+        isAllDay: false,
+        startTimeZone: 'Europe/Vienna',
+        startUtc: draft.startUtc,
+        status: 'confirmed',
+        syncedAt: 1,
+        syncStatus: 'synced',
+        title: 'Shared',
+        updatedAt: 1,
+      });
+      yield* (yield* CalendarRepo).upsertMany([
+        new CalendarInfo({
+          accessRole: 'owner',
+          accountId: 'acc-2',
+          colorHex: '#3b82f6',
+          id: 'cal-1',
+          isPrimary: false,
+          isVisible: true,
+          provider: 'google',
+          summary: 'Work',
+          timeZone: 'Europe/Vienna',
+        }),
+      ]);
+      yield* (yield* EventRepo).upsertMany([
+        shared,
+        new EventRecord({ ...shared, accountId: 'acc-2' }),
+      ]);
+      const mutations = yield* EventMutations;
+      const rename = (accountId: string, title: string) =>
+        mutations.updateEvent({
+          accountId,
+          calendarId: 'cal-1',
+          changes: { title },
+          eventId: 'shared-1',
+        });
+      yield* rename('acc-1', 'Mine');
+      yield* rename('acc-2', 'Theirs');
+      const queued = (yield* (yield* PendingOpRepo).listAll()).map(
+        (op) => `${op.accountId}:${op.payload?.title}`,
+      );
+      expect(queued.sort()).toEqual(['acc-1:Mine', 'acc-2:Theirs']);
+    }).pipe(noYield, Effect.provide(mutationsLayer(client)));
+  });
+
+  it.effect('retryPendingOps sends a change that was backing off now', () => {
+    const sent: Array<string> = [];
+    const client = stubClient({
+      ...insertAtV1,
+      patchEvent: ({ event, eventId }) => {
+        sent.push(event.summary ?? '');
+        return Effect.succeed(echo(event, eventId, '"v2"'));
+      },
+    });
+    return Effect.gen(function* () {
+      const record = yield* syncedEvent;
+      const mutations = yield* EventMutations;
+      const ops = yield* PendingOpRepo;
+      yield* mutations.updateEvent({
+        accountId: 'acc-1',
+        calendarId: 'cal-1',
+        changes: { title: 'Offline edit' },
+        eventId: record.id,
+      });
+      // Failed while signed out: due again only half an hour from now.
+      const [op] = yield* ops.listAll();
+      yield* ops.markFailed(op!.id, 6, Date.now() + 30 * 60_000, 'signed out');
+      yield* mutations.processPendingOps();
+      expect(sent).toEqual([]);
+      yield* mutations.retryPendingOps();
+      yield* mutations.processPendingOps();
+      expect(sent).toEqual(['Offline edit']);
     }).pipe(noYield, Effect.provide(mutationsLayer(client)));
   });
 

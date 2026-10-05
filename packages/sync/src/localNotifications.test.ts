@@ -514,6 +514,7 @@ const stubEngine = (syncAll: Effect.Effect<void, unknown, EventRepo>) =>
       exclusive: <A, E, R>(effect: Effect.Effect<A, E, R>) => effect,
       start: () => Effect.void,
       syncAll: () => Effect.orDie(Effect.provide(syncAll, context)),
+      syncNow: () => Effect.orDie(Effect.provide(syncAll, context)),
     })),
   );
 

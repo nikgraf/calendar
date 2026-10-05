@@ -25,6 +25,7 @@ import {
   toGcalTimesPatch,
 } from '@calendar/google';
 import { Cause, Clock, Effect } from 'effect';
+import type { SqlError } from 'effect/sql/SqlError';
 import { restoreCarriedText } from './carriedText.ts';
 
 /**
@@ -92,6 +93,21 @@ const TASK_KINDS: ReadonlySet<PendingOp['kind']> = new Set([
 
 /** Only these send If-Match, so only these can meet a 412 and park. */
 const PARKABLE_KINDS: ReadonlySet<PendingOp['kind']> = new Set(['delete', 'update']);
+
+/** What an update PATCHes, built the same way from the user's record and from Google's. */
+const updateBody = (op: PendingOp, record: EventRecord) => ({
+  ...toGcalEventInput(record),
+  ...toGcalTimesPatch(record),
+  // Location coordinates ride along as values while the record has
+  // them, as explicit nulls (deleting the keys) when this edit dropped
+  // them, and not at all otherwise.
+  ...toGcalGeoPatch(record, op.geoCleared === true),
+  ...toGcalRemindersPatch(record, op.remindersChanged === true),
+  // The guest list rides along only when this edit changed it: Google
+  // replaces the whole array, and our copy may lack fields we never
+  // model (optional, comment, additionalGuests).
+  ...(op.attendeesChanged ? { attendees: toGcalAttendees(record) } : {}),
+});
 
 export interface ApplyOp {
   readonly apply: (op: PendingOp) => Effect.Effect<ApplyOutcome>;
@@ -181,26 +197,122 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
     );
 
   /**
+   * Whether another op of the same event is queued (in `calendarId`, the
+   * op's own unless a move put the event elsewhere). That op owns the row
+   * now: a response written over it would put back what the user changed,
+   * or deleted, since — its own response settles the row.
+   */
+  const othersQueued = (op: PendingOp, calendarId: string = op.calendarId) =>
+    Effect.map(pendingOpRepo.listAll(), (queued) =>
+      queued.some(
+        (other) =>
+          other.id !== op.id &&
+          other.accountId === op.accountId &&
+          other.calendarId === calendarId &&
+          other.eventId === op.eventId,
+      ),
+    );
+
+  /** Writes Google's copy of the op's event, unless a later op owns the row. */
+  const settleRow = (op: PendingOp, synced: EventRecord | null, calendarId?: string) =>
+    Effect.gen(function* () {
+      if (synced && !(yield* othersQueued(op, calendarId))) {
+        yield* eventRepo.upsertMany([synced]);
+      }
+    });
+
+  /**
+   * After our own write landed: queued edits and deletes built on the etag
+   * it was sent with now send the one it produced. The server checked that
+   * etag, so nothing else changed in between; a stale If-Match would 412
+   * against the user's own edit.
+   */
+  const advanceFollowers = (
+    op: PendingOp,
+    sentEtag: string | undefined,
+    newEtag: string | undefined,
+  ) =>
+    sentEtag !== undefined && newEtag !== undefined && sentEtag !== newEtag
+      ? pendingOpRepo.advanceBaseEtag(op, sentEtag, newEtag)
+      : Effect.void;
+
+  /**
+   * A create answered 409: an earlier attempt landed and its response was
+   * lost. Fetch what Google has and write it, so the row stops being
+   * `pending` (pulls skip pending rows — remote edits never arrived); a
+   * later op of the event settles the row itself. Gone on Google: the row
+   * goes too. A failed fetch retries the create, which 409s and fetches
+   * again.
+   */
+  const settleLanded = (op: PendingOp): Effect.Effect<ApplyOutcome> =>
+    Effect.gen(function* () {
+      if (yield* othersQueued(op)) {
+        return 'done' as const;
+      }
+      const item = yield* client
+        .getEvent({ accountId: op.accountId, calendarId: op.calendarId, eventId: op.eventId })
+        .pipe(Effect.catchTag('NotFoundError', () => Effect.succeed(undefined)));
+      const landed = item
+        ? mapGcalEvent(item, {
+            accountId: op.accountId,
+            calendarId: op.calendarId,
+            defaultTimeZone: op.payload?.startTimeZone ?? 'UTC',
+            syncedAt: yield* Clock.currentTimeMillis,
+          })
+        : undefined;
+      if (landed) {
+        yield* eventRepo.upsertMany([landed]);
+      } else {
+        yield* eventRepo.deleteEvent(op.accountId, op.calendarId, op.eventId);
+      }
+      return 'done' as const;
+    }).pipe(
+      Effect.catchCause((cause) =>
+        Effect.succeed(
+          retry(
+            `fetching the event an earlier attempt created: ${describeFailure(Cause.squash(cause))}`,
+          ),
+        ),
+      ),
+    );
+
+  /**
    * A 412: Google's copy moved on since the edit was queued. Park the op
    * with Google's current version so the user can compare and choose; the
    * local row stays `pending`, so pulls keep skipping it and the user's
    * version stays on screen. A failed fetch retries the whole op (it will
    * 412 again and re-try the fetch).
    */
-  const park = (op: PendingOp): Effect.Effect<ApplyOutcome, GoogleRequestError> =>
+  const park = (op: PendingOp): Effect.Effect<ApplyOutcome, GoogleRequestError | SqlError> =>
     PARKABLE_KINDS.has(op.kind)
       ? client
           .getEvent({ accountId: op.accountId, calendarId: op.calendarId, eventId: op.eventId })
           .pipe(
             Effect.flatMap((item) =>
-              Effect.map(Clock.currentTimeMillis, (syncedAt) => ({
-                conflict: mapGcalEvent(item, {
+              Effect.gen(function* () {
+                const theirs = mapGcalEvent(item, {
                   accountId: op.accountId,
                   calendarId: op.calendarId,
                   defaultTimeZone: op.payload?.startTimeZone ?? 'UTC',
-                  syncedAt,
-                }),
-              })),
+                  syncedAt: yield* Clock.currentTimeMillis,
+                });
+                // Google already holds exactly what this update would send:
+                // an earlier attempt landed and its response was lost, so
+                // the retry's stale If-Match met our own write. Not a
+                // conflict to ask about.
+                if (
+                  op.kind === 'update' &&
+                  op.payload &&
+                  theirs &&
+                  JSON.stringify(updateBody(op, theirs)) ===
+                    JSON.stringify(updateBody(op, op.payload))
+                ) {
+                  yield* advanceFollowers(op, op.baseEtag, theirs.etag ?? undefined);
+                  yield* settleRow(op, theirs);
+                  return 'done' as const;
+                }
+                return { conflict: theirs };
+              }),
             ),
             Effect.catchTag('NotFoundError', () => Effect.succeed({ conflict: null })),
           )
@@ -384,25 +496,15 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
             },
             sendUpdates: sendUpdatesFor(op.payload, false, guestMode),
           });
-          // An edit or delete queued behind this create owns the row now:
-          // the response would put back what the user changed or deleted
-          // since. That op's own response settles the row.
-          const followed = (yield* pendingOpRepo.listAll()).some(
-            (queued) =>
-              queued.id !== op.id &&
-              queued.accountId === op.accountId &&
-              queued.calendarId === op.calendarId &&
-              queued.eventId === op.eventId,
+          yield* settleRow(
+            op,
+            mapGcalEvent(response, {
+              accountId: op.accountId,
+              calendarId: op.calendarId,
+              defaultTimeZone: op.payload.startTimeZone ?? 'UTC',
+              syncedAt: yield* Clock.currentTimeMillis,
+            }),
           );
-          const synced = mapGcalEvent(response, {
-            accountId: op.accountId,
-            calendarId: op.calendarId,
-            defaultTimeZone: op.payload.startTimeZone ?? 'UTC',
-            syncedAt: yield* Clock.currentTimeMillis,
-          });
-          if (synced && !followed) {
-            yield* eventRepo.upsertMany([synced]);
-          }
           return 'done' as const;
         }
         case 'delete': {
@@ -446,9 +548,10 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
             syncedAt: now,
           });
           // No row at the destination means the user moved it on again (or
-          // deleted it) while this op waited: those later ops own the rows now.
-          if (synced && local) {
-            yield* eventRepo.upsertMany([synced]);
+          // deleted it) while this op waited: those later ops own the rows
+          // now — as does an edit queued behind the move.
+          if (local) {
+            yield* settleRow(op, synced, destination);
           }
           // Its exceptions moved with it; hand back the ones no queued edit
           // still owns (those stay pending until their own op lands).
@@ -485,15 +588,17 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
             },
             eventId: op.eventId,
           });
-          const synced = mapGcalEvent(response, {
-            accountId: op.accountId,
-            calendarId: op.calendarId,
-            defaultTimeZone: op.payload.startTimeZone ?? 'UTC',
-            syncedAt: yield* Clock.currentTimeMillis,
-          });
-          if (synced) {
-            yield* eventRepo.upsertMany([synced]);
-          }
+          // No If-Match went out, so nothing says what Google had before:
+          // queued edits keep their etag (a 412 there asks the user).
+          yield* settleRow(
+            op,
+            mapGcalEvent(response, {
+              accountId: op.accountId,
+              calendarId: op.calendarId,
+              defaultTimeZone: op.payload.startTimeZone ?? 'UTC',
+              syncedAt: yield* Clock.currentTimeMillis,
+            }),
+          );
           return 'done' as const;
         }
         case 'update': {
@@ -502,37 +607,28 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
             // to send, and the user should know the edit is gone.
             return yield* drop(op, 'stored payload unreadable');
           }
-          // The guest list rides along only when this edit changed it:
-          // Google replaces the whole array, and our copy may lack fields
-          // we never model (optional, comment, additionalGuests).
           const response = yield* client.patchEvent({
             accountId: op.accountId,
             baseEtag: op.baseEtag,
             calendarId: op.calendarId,
-            // Location coordinates ride along as values while the record
-            // has them, as explicit nulls (deleting the keys) when this
-            // edit dropped them, and not at all otherwise.
-            event: {
-              ...toGcalEventInput(op.payload),
-              ...toGcalTimesPatch(op.payload),
-              ...toGcalGeoPatch(op.payload, op.geoCleared === true),
-              ...toGcalRemindersPatch(op.payload, op.remindersChanged === true),
-              ...(op.attendeesChanged ? { attendees: toGcalAttendees(op.payload) } : {}),
-            },
+            event: updateBody(op, op.payload),
             eventId: op.eventId,
             // Removed guests get their cancellation too: flagged edits
             // always notify, even when nobody is left.
             sendUpdates: sendUpdatesFor(op.payload, op.attendeesChanged === true, guestMode),
           });
-          const synced = mapGcalEvent(response, {
-            accountId: op.accountId,
-            calendarId: op.calendarId,
-            defaultTimeZone: op.payload.startTimeZone ?? 'UTC',
-            syncedAt: yield* Clock.currentTimeMillis,
-          });
-          if (synced) {
-            yield* eventRepo.upsertMany([synced]);
-          }
+          // A second drag made while this patch was in flight queued a new
+          // update on the same etag: it now follows this write.
+          yield* advanceFollowers(op, op.baseEtag, response.etag ?? undefined);
+          yield* settleRow(
+            op,
+            mapGcalEvent(response, {
+              accountId: op.accountId,
+              calendarId: op.calendarId,
+              defaultTimeZone: op.payload.startTimeZone ?? 'UTC',
+              syncedAt: yield* Clock.currentTimeMillis,
+            }),
+          );
           return 'done' as const;
         }
         case 'updateTask': {
@@ -568,7 +664,9 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
           // bad request forever would pin the queue, so the op is dropped
           // and the UI told; it used to vanish without a trace.
           error.status === 409
-            ? Effect.succeed('done' as const)
+            ? op.kind === 'create'
+              ? settleLanded(op)
+              : Effect.succeed('done' as const)
             : (error.status >= 400 && error.status < 500 && error.status !== 429) ||
                 // A 2xx whose body did not decode is a schema bug on our
                 // side; retrying it forever at the 30-minute cap fixes

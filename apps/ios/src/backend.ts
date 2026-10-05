@@ -219,9 +219,10 @@ export const startSync = (): void => {
     });
 };
 
-// Immediate refresh when the app returns to the foreground.
+// Immediate refresh when the app returns to the foreground; queued
+// changes backing off go out with it too (syncNow).
 export const kickSync = makeSyncKicker(() =>
-  runtime.runPromise(Effect.flatMap(SyncEngine, (engine) => engine.syncAll())),
+  runtime.runPromise(Effect.flatMap(SyncEngine, (engine) => engine.syncNow())),
 );
 
 /**

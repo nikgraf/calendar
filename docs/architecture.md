@@ -104,14 +104,28 @@ oldest-first). Kinds:
 Rules that keep the queue correct:
 
 - **Coalescing**: a content edit removes prior ops for the same
-  (calendarId, eventId) and re-enqueues (a queued `create` absorbs edits);
+  (accountId, calendarId, eventId) — a shared calendar repeats its ids
+  under every account — and re-enqueues (a never-sent `create` absorbs
+  edits; a sent one stays ahead and the edit follows it);
   `removeForEvent` deliberately spares `rsvp` and `move` ops; `calendarColor` ops
   coalesce **per account** under the sentinel (the same shared calendar id
   can exist under several accounts).
 - **Backoff**: transient failures retry at `30s·2^attempts`, capped at
-  30 min (`markFailed`). Non-409 4xx (except 429) are permanent → drop.
+  30 min (`markFailed`). Non-409 4xx (except 429) are permanent → drop. A
+  sync the user caused (`SyncEngine.syncNow`: the app came back, the
+  machine woke, an account reconnected) makes waiting ops due at once
+  (`retryNow`); the timed poll keeps the backoff.
+- **Acks**: a response is written to its row only while no later op of
+  the event is queued — that op owns the row and its own response settles
+  it. An `update` that lands moves the queued ops built on the etag it was
+  sent with to the etag it produced (`advanceBaseEtag`): a second drag
+  made while the first was in flight follows it instead of meeting a 412.
+  A create answered 409 (an earlier attempt landed, its response lost)
+  fetches what Google has, so the row stops being `pending`.
 - **412 Conflict** (only `update` and `delete` send If-Match): the op is
-  **parked**, never dropped. The drain fetches Google's copy
+  **parked**, never dropped — unless Google's copy already yields exactly
+  the PATCH body the update would send (`updateBody` built from both: our
+  own earlier attempt landed), which is done. The drain fetches Google's copy
   (`events.get`; 404/410 = deleted there) and `markConflict` stores it in
   `server_payload` with `conflict_at` set; a failed fetch is an ordinary
   retry. `listDue` skips parked ops and the local row stays `pending`, so
@@ -130,7 +144,7 @@ Rules that keep the queue correct:
   newer payload; a move re-queues a parked op still parked.
 - **401**: the op stays queued, the account is flagged `reauth_required`;
   reconnecting (same account id, resolved by email) resets status and the
-  queue drains.
+  queue drains at once (`syncNow`), backoff or not.
 - **Provider dispatch**: `completeTask/createTask/deleteTask/updateTask`
   look up the account's provider. Google lists take the queue path
   below; Apple lists call EventKit synchronously via `reminderMutations`
