@@ -2106,8 +2106,9 @@ both had merged.
       #120) a remote title cleared when "keep mine" restores an untitled
       version; left out, Google kept its title and the response overwrote
       the user's choice. An empty summary reads back as untitled. EventKit
-      gets no title (no conflict path there). Zoom and Webex links count only from the domain
-      itself or a dotted subdomain. iOS `startSync` runs once per process.
+      gets no title (no conflict path there). Zoom and Webex links count
+      only from the domain itself or a dotted subdomain. iOS `startSync`
+      runs once per process.
 - [x] Desktop hardening — #121 (`todo/desktop-hardening`). **The CSP
       does reach the packaged app's `file://` page** (an inline script is
       blocked; the review doubted it, and an `eval` probe misled: CDP's own
