@@ -17,7 +17,7 @@ import {
 import { useState } from 'react';
 import type { EditorConfirmRequest } from './editorModel.ts';
 import { useBackendMutations, useTaskReadOnlyLookup } from './hooks.ts';
-import { repeatNumberError, useRepeatState } from './repeatState.ts';
+import { repeatNumberError, repeatUntilError, useRepeatState } from './repeatState.ts';
 import { offeredTaskLists, taskEditorChanges, type TaskEditorValues } from './taskEditorChanges.ts';
 
 export interface TaskEditorSeed {
@@ -252,7 +252,8 @@ export const useTaskEditorModel = ({
         (repeatState.repeatEnds === 'after'
           ? repeatNumberError(repeatState.repeatCount, 'The occurrence count')
           : undefined) ??
-        byDayError(repeatSpec() ?? { freq: repeatState.repeat });
+        byDayError(repeatSpec() ?? { freq: repeatState.repeat }) ??
+        (dated ? repeatUntilError(repeatSpec() ?? {}, dueDate) : undefined);
       if (invalid) {
         setError(invalid);
         return;

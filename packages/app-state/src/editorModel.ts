@@ -40,7 +40,7 @@ import {
 } from '@calendar/core';
 import { useCallback, useState } from 'react';
 import { useAccounts, useBackendMutations, useLocationGeo } from './hooks.ts';
-import { useRepeatState } from './repeatState.ts';
+import { repeatUntilError, useRepeatState } from './repeatState.ts';
 
 /**
  * Fields a parsed phrase can prefill. Structural on purpose so app-state
@@ -545,7 +545,7 @@ export const useEventEditorModel = ({
     const spec = repeatSpec();
     const invalid =
       validateEventDraft(fields, timeZone) ??
-      (spec ? byDayError(spec) : undefined) ??
+      (spec ? (byDayError(spec) ?? repeatUntilError(spec, date)) : undefined) ??
       (existing && isRecurring && openedDate !== undefined
         ? recurringTimesError({
             date,

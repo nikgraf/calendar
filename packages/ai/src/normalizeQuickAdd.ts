@@ -1,4 +1,4 @@
-import { validateEventDraft, type RecurrenceFrequency } from '@calendar/core';
+import { Temporal, validateEventDraft, type RecurrenceFrequency } from '@calendar/core';
 import type { QuickAddParse } from './quickAdd.ts';
 import { meaningfulText, realDate, realTime } from './shared.ts';
 
@@ -27,6 +27,20 @@ export type QuickAddResult =
   | { readonly kind: 'rejected'; readonly reason: string };
 
 const FREQUENCIES = new Set<RecurrenceFrequency>(['daily', 'monthly', 'weekly', 'yearly']);
+
+/**
+ * A repeat end before the first day reads as next year's: "every Monday
+ * until March", said in October, means the coming March, and models
+ * answer with this year's. Still before the start a year on, it is a
+ * misread and dropped — the editor would refuse it.
+ */
+const untilOnOrAfter = (until: string | undefined, start: string): string | undefined => {
+  if (until === undefined || until >= start) {
+    return until;
+  }
+  const nextYear = Temporal.PlainDate.from(until).add({ years: 1 }).toString();
+  return nextYear >= start ? nextYear : undefined;
+};
 
 const addHour = (time: string): string => {
   const [hour, minute] = time.split(':').map(Number) as [number, number];
@@ -107,7 +121,7 @@ export const normalizeQuickAdd = (
   const location = meaningfulText(parse.location);
   const parsedFreq = parse.recurrence?.freq;
   const freq = count === 1 || !parsedFreq || !FREQUENCIES.has(parsedFreq) ? undefined : parsedFreq;
-  const untilDate = realDate(parse.recurrence?.untilDate);
+  const untilDate = untilOnOrAfter(realDate(parse.recurrence?.untilDate), resolvedDate);
   const recurrence = freq
     ? {
         ...(typeof count === 'number' && count > 1 ? { count } : {}),

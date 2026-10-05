@@ -38,6 +38,15 @@ export const repeatNumberError = (text: string, label: string): string | undefin
     ? undefined
     : `${label} must be a whole number between 1 and ${String(REPEAT_NUMBER_MAX)}.`;
 
+/** The validation message for a repeat that ends before its first day, or undefined. */
+export const repeatUntilError = (
+  spec: { readonly untilDate?: string | undefined },
+  firstDay: string,
+): string | undefined =>
+  spec.untilDate !== undefined && spec.untilDate < firstDay
+    ? 'The repeat must end on or after its first day.'
+    : undefined;
+
 /** What a form is seeded from: a task's rule or an event prefill — structurally, so both fit. */
 export interface RepeatSeed {
   readonly byDay?: ReadonlyArray<ByDay> | undefined;

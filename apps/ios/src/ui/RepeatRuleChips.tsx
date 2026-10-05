@@ -173,6 +173,7 @@ export function RepeatRuleChips({
           <Text style={styles.label}>Until</Text>
           <DateTimePicker
             display="compact"
+            minimumDate={dateFromParts(anchorDate)}
             mode="date"
             onChange={(_, picked) => picked && state.setRepeatUntil(toDateString(picked))}
             value={dateFromParts(state.repeatUntil || anchorDate)}

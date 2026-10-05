@@ -139,6 +139,24 @@ describe('parseQuickAdd', () => {
     expect(prefill.recurrence).toBeUndefined();
   });
 
+  it('reads a repeat end before the first day as next year', async () => {
+    // "every Monday until March", said in August: the model answers with
+    // this year's March, which is already past.
+    const untilOf = async (untilDate: string) =>
+      (
+        await prefillOf({
+          recurrence: { freq: 'weekly', untilDate },
+          startTime: '09:00',
+          title: 'Standup',
+        })
+      ).recurrence?.untilDate;
+    expect(await untilOf('2026-03-31')).toBe('2027-03-31');
+    expect(await untilOf('2026-12-31')).toBe('2026-12-31');
+    expect(await untilOf('2026-08-22')).toBe('2026-08-22');
+    // More than a year back is a misread, not next year's.
+    expect(await untilOf('2024-03-31')).toBeUndefined();
+  });
+
   it('rejects a date-shaped string that is not a real date', async () => {
     // '2026-02-30' passes a regex but is not a day; it used to reach Google
     // as UNTIL=20260230T235959Z and come back a 400.

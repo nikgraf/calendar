@@ -4,6 +4,7 @@ import {
   repeatDisplaySpec,
   repeatNumberError,
   repeatSpecFrom,
+  repeatUntilError,
   seedRepeatFields,
   shownOrdinal,
   shownWeekdays,
@@ -41,6 +42,17 @@ describe('repeatNumberError', () => {
         'The repeat interval must be a whole number between 1 and 999.',
       );
     }
+  });
+});
+
+describe('repeatUntilError', () => {
+  it('refuses an end before the first day and accepts the day itself', () => {
+    expect(repeatUntilError({ untilDate: '2026-09-19' }, '2026-09-20')).toBe(
+      'The repeat must end on or after its first day.',
+    );
+    expect(repeatUntilError({ untilDate: '2026-09-20' }, '2026-09-20')).toBeUndefined();
+    expect(repeatUntilError({ untilDate: '2027-01-01' }, '2026-09-20')).toBeUndefined();
+    expect(repeatUntilError({}, '2026-09-20')).toBeUndefined();
   });
 });
 
