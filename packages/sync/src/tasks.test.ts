@@ -844,6 +844,46 @@ describe('completeTask', () => {
     }).pipe(noYield, Effect.provide(testLayer(client)));
   });
 
+  it.effect('a newer edit of another field keeps the queued one’s fields', () => {
+    const patches: Array<string> = [];
+    const client: GoogleTasksClientShape = tasksClient({
+      patchTask: ({ changes, taskId }) => {
+        patches.push(`${taskId}|${changes.title ?? '-'}|${changes.due ?? '-'}`);
+        return Effect.succeed({
+          ...(changes.due ? { due: changes.due } : {}),
+          id: taskId,
+          status: 'needsAction',
+          title: changes.title,
+        });
+      },
+    });
+    return Effect.gen(function* () {
+      yield* seedTasks;
+      const mutations = yield* EventMutations;
+      // Offline: a rename, then a new due day from a drag.
+      yield* mutations.updateTask({
+        accountId: 'acc-1',
+        changes: { title: 'Renamed' },
+        taskId: 't1',
+        taskListId: 'list-1',
+      });
+      yield* mutations.updateTask({
+        accountId: 'acc-1',
+        changes: { dueDate: '2026-08-31' },
+        taskId: 't1',
+        taskListId: 'list-1',
+      });
+      const ops = yield* PendingOpRepo;
+      expect((yield* ops.listAll()).map((op) => op.kind)).toEqual(['updateTask']);
+      yield* mutations.processPendingOps();
+      // One patch with both fields: the response used to overwrite the
+      // local row with the old title.
+      expect(patches).toEqual(['t1|Renamed|2026-08-31T00:00:00.000Z']);
+      const window = yield* (yield* TaskRepo).getWindow('2026-08-24', '2026-09-07');
+      expect(window.find((row) => row.id === 't1')?.title).toBe('Renamed');
+    }).pipe(noYield, Effect.provide(testLayer(client)));
+  });
+
   it.effect('deleting an unpushed create cancels everything locally', () => {
     // Every client method dies — nothing may reach Google.
     const client = tasksClient({});
