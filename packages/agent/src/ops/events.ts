@@ -19,7 +19,7 @@ import {
   MAX_RECURRENCE_LINE,
   MAX_RECURRENCE_LINES,
   MAX_TITLE,
-  within,
+  checkText,
 } from './limits.ts';
 import { type Directory, resolveCalendar, type ResolvedEvent, resolveEvent } from '../resolve.ts';
 import {
@@ -53,7 +53,7 @@ const guestList = (
     }
     const seen = new Map<string, AttendeeInput>();
     for (const attendee of attendees) {
-      yield* within('A guest name', attendee.name, MAX_TITLE);
+      yield* checkText('A guest name', attendee.name, MAX_TITLE);
       const email = attendee.email.trim();
       if (!EMAIL.test(email)) {
         return yield* invalid(`"${attendee.email}" is not an email address.`);
@@ -132,9 +132,9 @@ export const planCreateEvent = (
     if (title === '') {
       return yield* invalid('title must not be empty.');
     }
-    yield* within('title', title, MAX_TITLE);
-    yield* within('description', input.description, MAX_NOTES);
-    yield* within('location', input.location, MAX_LOCATION);
+    yield* checkText('title', title, MAX_TITLE);
+    yield* checkText('description', input.description, MAX_NOTES);
+    yield* checkText('location', input.location, MAX_LOCATION);
     const times = createTimes(input, directory.timeZone);
     if (!times.ok) {
       return yield* invalid(times.message);
@@ -214,9 +214,9 @@ export const planUpdateEvent = (
     if (title === '') {
       return yield* invalid('title must not be empty.');
     }
-    yield* within('title', title, MAX_TITLE);
-    yield* within('description', input.description, MAX_NOTES);
-    yield* within('location', input.location, MAX_LOCATION);
+    yield* checkText('title', title, MAX_TITLE);
+    yield* checkText('description', input.description, MAX_NOTES);
+    yield* checkText('location', input.location, MAX_LOCATION);
     const attendees = input.attendees === undefined ? undefined : yield* guestList(input.attendees);
     if (
       times.value === undefined &&

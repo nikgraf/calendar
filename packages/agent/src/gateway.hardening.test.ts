@@ -19,6 +19,7 @@ import {
   baseDate,
   DAY,
   grantCalendar,
+  grantList,
   HOUR,
   iso,
   makeWorld,
@@ -47,6 +48,24 @@ const stored = (policy: Partial<AgentPolicy>) =>
 
 /** Calendar writable, guests "ask": the natural "write, but ask before emailing people". */
 const askGuests = { calendars: [grantCalendar('work', 'write')], guests: 'ask' as const };
+
+/** One code point by number: the invisible ones stay legible in this file. */
+const char = (code: number) => String.fromCodePoint(code);
+const zwj = char(0x20_0d);
+const vs16 = char(0xfe_0f);
+const apple = char(0x1_f3_4e);
+const banana = char(0x1_f3_4c);
+/** Complete emoji (Unicode's recommended sequences), joiners and selectors included. */
+const family = [0x1_f4_68, 0x20_0d, 0x1_f4_69, 0x20_0d, 0x1_f4_67].map(char).join('');
+const heart = char(0x27_64) + vs16;
+const keycapOne = `1${vs16}${char(0x20_e3)}`;
+const rainbowFlag = [0x1_f3_f3, 0xfe_0f, 0x20_0d, 0x1_f3_08].map(char).join('');
+/** Text as bits: an apple per bit, a joiner after it for a 1. */
+const smuggledInJoiners = (text: string) =>
+  [...text]
+    .flatMap((letter) => [...letter.charCodeAt(0).toString(2).padStart(8, '0')])
+    .map((bit) => (bit === '1' ? `${apple}${zwj}` : apple))
+    .join('');
 
 const slot = seriesStart + 7 * DAY;
 const weeklyRef = refs.occurrence('work', 'weekly', slot);
@@ -97,7 +116,7 @@ describe('the approval summary is the whole write', () => {
       yield* Effect.forkChild(
         callTool(agent, 'create_event', {
           calendar: refs.calendar('work'),
-          description: 'Bring cake\nGuests: nobody at all‮',
+          description: 'Bring cake\nGuests: nobody at all',
           location: 'Room 1\r\nCalendar: Private',
           start: iso(base + 18 * HOUR),
           title: 'Party\nWhen: never',
@@ -111,6 +130,80 @@ describe('the approval summary is the whole write', () => {
       ]);
       expect(summary.lines).toContain('Notes: Bring cake ⏎ Guests: nobody at all');
       expect(summary.lines).toContain('Location: Room 1 ⏎ Calendar: Private');
+    }).pipe(Effect.provide(world.layer));
+  });
+
+  it.effect('text that draws as nothing is refused, so it cannot ride along unseen', () => {
+    const world = makeWorld();
+    return Effect.gen(function* () {
+      const agent = yield* stored({
+        ...askGuests,
+        taskLists: [grantList('tl-1', 'write', ACCOUNT)],
+      });
+      // Tag characters spell ASCII invisibly: "Agenda" shows, the rest does not.
+      const smuggled = [...'secret numbers']
+        .map((char) => String.fromCodePoint(0xe_00_00 + char.charCodeAt(0)))
+        .join('');
+      const hidden: ReadonlyArray<readonly [string, Record<string, string>]> = [
+        ['U+E0073', { description: `Agenda${smuggled}` }],
+        ['U+202E', { title: `Party${char(0x20_2e)}` }],
+        ['U+200B', { location: `Room${char(0x20_0b)}1` }],
+        ['U+FE01', { description: `A${char(0xfe_01)}B` }],
+        ['U+00AD', { title: `Plan${char(0xad)}ning` }],
+        ['U+0007', { description: `bell${char(0x07)}` }],
+        // A joiner between pictographs that form no emoji, and a selector
+        // on one that needs none, draw as nothing: each is a hidden bit.
+        ['U+200D', { description: `${apple}${zwj}${banana}` }],
+        ['U+FE0F', { title: `Snack ${apple}${vs16}` }],
+        // "PIN=1234" in bits, a joiner for 1, between visible apples.
+        ['U+200D', { description: smuggledInJoiners('PIN=1234') }],
+      ];
+      for (const [code, text] of hidden) {
+        const failure = yield* failureOf(
+          callTool(agent, 'create_event', {
+            attendees: [{ email: 'guest@corp.example' }],
+            calendar: refs.calendar('work'),
+            start: iso(base + 18 * HOUR),
+            title: 'Sync',
+            ...text,
+          }),
+        );
+        expect(failure).toMatchObject({ _tag: 'InvalidInput' });
+        expect(String((failure as { message: string }).message)).toContain(code);
+      }
+      // Tasks take the same check.
+      const task = yield* failureOf(
+        callTool(agent, 'create_task', {
+          list: refs.googleList,
+          notes: `Buy milk${smuggled}`,
+          title: 'Errand',
+        }),
+      );
+      expect(task).toMatchObject({ _tag: 'InvalidInput' });
+      expect(yield* (yield* PendingOpRepo).listAll()).toEqual([]);
+    }).pipe(Effect.provide(world.layer));
+  });
+
+  it.effect('complete emoji, tabs and line breaks are visible text and show whole', () => {
+    const world = makeWorld();
+    return Effect.gen(function* () {
+      const agent = yield* stored({ calendars: [grantCalendar('work', 'ask')] });
+      const asked = yield* watchApprovals;
+      yield* Effect.forkChild(
+        callTool(agent, 'create_event', {
+          calendar: refs.calendar('work'),
+          description: `Family ${family} ${heart} ${keycapOne}\tfirst\nsecond`,
+          start: iso(base + 18 * HOUR),
+          title: `Party ${rainbowFlag}`,
+        }),
+      );
+      const { summary } = yield* untilAsked(asked);
+      // Joiners and selectors inside a complete emoji stay in the summary:
+      // it shows the one family emoji the write holds, not three people.
+      expect(summary.title).toBe(`Create event “Party ${rainbowFlag}”`);
+      expect(summary.lines).toContain(
+        `Notes: Family ${family} ${heart} ${keycapOne} first ⏎ second`,
+      );
     }).pipe(Effect.provide(world.layer));
   });
 

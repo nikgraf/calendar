@@ -156,7 +156,16 @@ guests also shows the location and notes those guests will receive, and
 line breaks in agent or invitation text are shown as `⏎` so they cannot
 pose as another line. Input sizes are capped instead (`ops/limits.ts`:
 title 500, location 1000, notes 8000, 100 guests, 10 recurrence lines);
-guest addresses must be printable ASCII.
+guest addresses must be printable ASCII. Agent text that would draw as
+nothing is refused, not stripped (`hiddenCharacter`): control characters
+other than line breaks and tabs, and every default-ignorable code point —
+tag characters can spell a whole sentence invisibly, which the user would
+approve unseen and Google would mail to the guests. A zero-width joiner or
+variation selector is allowed only inside a complete emoji (`\p{RGI_Emoji}`:
+a family, a flag, a keycap): between pictographs that form no emoji it
+draws as nothing, and its presence or absence can spell bits. The summary
+keeps those complete emoji whole, so it shows the one family emoji the
+write holds.
 
 Identical pending requests are joined, 10 may wait per agent, and a
 request can be answered for 24 h (checked when it is answered, not only
