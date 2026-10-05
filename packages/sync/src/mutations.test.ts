@@ -849,7 +849,8 @@ describe('EventMutations', () => {
       yield* events.upsertMany([stored]);
       const mutations = yield* EventMutations;
       const ref = { accountId: 'acc-1', calendarId: 'shared', eventId: 'shared-1' };
-      const refusals = [
+      // Each mutation fails its own way; all must fail as not writable.
+      const refusals: ReadonlyArray<Effect.Effect<void, { readonly _tag: string }>> = [
         // A drag: Google would 403, and the drop marked the moved row synced.
         mutations.updateEvent({
           ...ref,
