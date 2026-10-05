@@ -1,5 +1,6 @@
 import { Effect } from 'effect';
 import { AgentInvalidInputError } from '../errors.ts';
+import { RGI_EMOJI } from '../summary.ts';
 
 /**
  * Size limits on what an agent may write. They bound what the approval
@@ -16,14 +17,6 @@ export const MAX_RECURRENCE_LINE = 500;
 
 export const invalid = (message: string) => Effect.fail(new AgentInvalidInputError({ message }));
 
-/**
- * A zero-width joiner or presentation selector that joins or styles a
- * pictograph ("👨‍👩‍👧", "❤️", "1️⃣"): drawn as part of the emoji, so it
- * hides nothing.
- */
-const EMOJI_GLUE =
-  /(?<=[\p{Extended_Pictographic}\p{Emoji_Modifier}#*0-9])️|(?<=[\p{Extended_Pictographic}\p{Emoji_Modifier}]️?)‍(?=\p{Extended_Pictographic})/gu;
-
 /** Control characters other than line breaks and tabs, and code points that draw as nothing. */
 const HIDDEN = /(?![\t\n\r])[\p{Cc}\p{Default_Ignorable_Code_Point}]/u;
 
@@ -33,10 +26,15 @@ const HIDDEN = /(?![\t\n\r])[\p{Cc}\p{Default_Ignorable_Code_Point}]/u;
  * characters, variation selectors, zero-width and bidi controls, a soft
  * hyphen), so an agent could hide text behind them that the user approves
  * without seeing — and that Google then mails to every guest. Refusing
- * them keeps the summary the whole write.
+ * them keeps the summary the whole write. Only a complete emoji may carry
+ * a joiner or selector: one between pictographs that form no emoji, or on
+ * one that needs none, draws as nothing, and its presence or absence can
+ * spell bits.
  */
 export const hiddenCharacter = (value: string): string | undefined => {
-  const found = value.replaceAll(EMOJI_GLUE, '').match(HIDDEN)?.[0];
+  // A complete emoji keeps its joiners and selectors (they are part of
+  // what shows); any left over join or style nothing — a hidden bit.
+  const found = value.replaceAll(RGI_EMOJI, '').match(HIDDEN)?.[0];
   return found === undefined
     ? undefined
     : `U+${found.codePointAt(0)!.toString(16).toUpperCase().padStart(4, '0')}`;
