@@ -4,8 +4,10 @@ import {
   Account,
   CalendarInfo,
   EventRecord,
+  EventReminders,
   GeoLocation,
   plainDateToUtcMs,
+  ReminderOverride,
   type EventDraft,
 } from '@calendar/core';
 import {
@@ -40,6 +42,12 @@ import { describe } from 'vitest';
 import { EventMutations } from './mutations.ts';
 
 type ClientOverrides = Partial<GoogleCalendarClientShape>;
+
+/** Google's reminders object with one popup override. */
+const popupMinutes = (minutes: number) => ({
+  overrides: [{ method: 'popup', minutes }],
+  useDefault: false,
+});
 
 /**
  * Keeps the drain that createEvent forks from running before the next
@@ -963,6 +971,164 @@ describe('EventMutations', () => {
       });
     }).pipe(noYield, Effect.provide(mutationsLayer(client)));
   });
+
+  it.effect('a third drag keeps the etag the first one produced (review of #118)', () => {
+    const sent: Array<string | undefined> = [];
+    let duringPatch: Effect.Effect<unknown, unknown> | undefined;
+    const client = stubClient({
+      ...insertAtV1,
+      patchEvent: ({ baseEtag, event, eventId }) =>
+        Effect.gen(function* () {
+          sent.push(baseEtag);
+          if (baseEtag !== `"v${sent.length}"`) {
+            return yield* Effect.fail(new ConflictError({ calendarId: 'cal-1', eventId }));
+          }
+          const during = duringPatch;
+          duringPatch = undefined;
+          if (during) {
+            yield* Effect.orDie(during);
+          }
+          return echo(event, eventId, `"v${sent.length + 1}"`);
+        }),
+    });
+    return Effect.gen(function* () {
+      const record = yield* syncedEvent;
+      const mutations = yield* EventMutations;
+      const move = (title: string) =>
+        mutations.updateEvent({
+          accountId: 'acc-1',
+          calendarId: 'cal-1',
+          changes: { title },
+          eventId: record.id,
+        });
+      yield* move('First drag');
+      duringPatch = move('Second drag');
+      yield* mutations.processPendingOps();
+      // Replaces the second drag's op: it must start from v2 too, which
+      // only the row (still pending) can tell it.
+      yield* move('Third drag');
+      yield* mutations.processPendingOps();
+      expect(sent).toEqual(['"v1"', '"v2"']);
+      expect(yield* (yield* PendingOpRepo).listAll()).toEqual([]);
+      expect(yield* rowOf(record.id)).toMatchObject({
+        etag: '"v3"',
+        syncStatus: 'synced',
+        title: 'Third drag',
+      });
+    }).pipe(noYield, Effect.provide(mutationsLayer(client)));
+  });
+
+  it.effect('an edit made during a 409 recovery fetch keeps its row (review of #118)', () => {
+    let duringGet: Effect.Effect<unknown, unknown> | undefined;
+    const client = stubClient({
+      getEvent: ({ eventId }) =>
+        Effect.gen(function* () {
+          const during = duringGet;
+          duringGet = undefined;
+          if (during) {
+            yield* Effect.orDie(during);
+          }
+          return {
+            end: { dateTime: '2026-07-03T11:00:00Z', timeZone: 'Europe/Vienna' },
+            etag: '"landed"',
+            id: eventId,
+            start: { dateTime: '2026-07-03T10:00:00Z', timeZone: 'Europe/Vienna' },
+            status: 'confirmed',
+            summary: 'New event',
+          };
+        }),
+      insertEvent: () => Effect.fail(new GoogleApiError({ message: 'duplicate', status: 409 })),
+      patchEvent: () => Effect.fail(new ApiUnavailableError({ cause: 'offline' })),
+    });
+    return Effect.gen(function* () {
+      yield* seedCalendar;
+      const mutations = yield* EventMutations;
+      const record = yield* mutations.createEvent(draft);
+      duringGet = mutations.updateEvent({
+        accountId: 'acc-1',
+        calendarId: 'cal-1',
+        changes: { title: 'Edited while fetching' },
+        eventId: record.id,
+      });
+      yield* mutations.processPendingOps();
+      expect(yield* rowOf(record.id)).toMatchObject({
+        syncStatus: 'pending',
+        title: 'Edited while fetching',
+      });
+    }).pipe(noYield, Effect.provide(mutationsLayer(client)));
+  });
+
+  it.effect(
+    "a 412 that matches our own write does not let a follower overwrite another client's change",
+    () => {
+      let server: GcalEvent | undefined;
+      let duringGet: Effect.Effect<unknown, unknown> | undefined;
+      let patches = 0;
+      const client = stubClient({
+        getEvent: () =>
+          Effect.gen(function* () {
+            const during = duringGet;
+            duringGet = undefined;
+            if (during) {
+              yield* Effect.orDie(during);
+            }
+            return server!;
+          }),
+        insertEvent: ({ event }) => {
+          server = { ...echo(event, event.id ?? 'x', '"v1"'), reminders: popupMinutes(10) };
+          return Effect.succeed(server);
+        },
+        patchEvent: ({ baseEtag, event, eventId }) =>
+          Effect.gen(function* () {
+            if (baseEtag !== server?.etag) {
+              return yield* Effect.fail(new ConflictError({ calendarId: 'cal-1', eventId }));
+            }
+            patches += 1;
+            server = {
+              ...echo(event, eventId, patches === 1 ? '"v2"' : '"v4"'),
+              reminders: event.reminders ?? server?.reminders,
+            };
+            if (patches === 1) {
+              return yield* Effect.fail(new ApiUnavailableError({ cause: 'response lost' }));
+            }
+            return server;
+          }),
+      });
+      return Effect.gen(function* () {
+        const record = yield* syncedEvent;
+        const mutations = yield* EventMutations;
+        yield* mutations.updateEvent({
+          accountId: 'acc-1',
+          calendarId: 'cal-1',
+          changes: { title: 'Renamed' },
+          eventId: record.id,
+        });
+        yield* mutations.processPendingOps();
+        // Another client changes a field the rename did not touch.
+        server = { ...server!, etag: '"v3"', reminders: popupMinutes(5) };
+        // A reminders edit queued while the retry's 412 is being checked.
+        duringGet = mutations.updateEvent({
+          accountId: 'acc-1',
+          calendarId: 'cal-1',
+          changes: {
+            reminders: new EventReminders({
+              overrides: [new ReminderOverride({ method: 'popup', minutes: 15 })],
+              useDefault: false,
+            }),
+          },
+          eventId: record.id,
+        });
+        yield* mutations.retryPendingOps();
+        yield* mutations.processPendingOps();
+        yield* mutations.processPendingOps();
+        // The other client's reminder survives; the user is asked.
+        expect(server?.reminders?.overrides?.[0]?.minutes).toBe(5);
+        const queued = yield* (yield* PendingOpRepo).listAll();
+        expect(queued).toHaveLength(1);
+        expect(queued[0]?.conflictAt).toBeDefined();
+      }).pipe(noYield, Effect.provide(mutationsLayer(client)));
+    },
+  );
 
   it.effect('a retry whose first attempt landed is done, not a conflict with itself', () => {
     let server: GcalEvent | undefined;

@@ -476,6 +476,7 @@ const make: Effect.Effect<
     pendingOpRepo,
     taskRepo,
     tasksClient,
+    transaction: sql.withTransaction,
   });
 
   const processPendingOps = (): Effect.Effect<void> =>

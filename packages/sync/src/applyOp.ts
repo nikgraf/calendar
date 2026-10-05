@@ -57,6 +57,14 @@ export interface ApplyOpDeps {
   readonly pendingOpRepo: PendingOpRepoShape;
   readonly taskRepo: TaskRepoShape;
   readonly tasksClient: GoogleTasksClientShape;
+  /**
+   * Runs `effect` as one transaction. A mutation's queue changes commit in
+   * one too, so a row settled here is either settled before an edit
+   * queues, or sees that edit and leaves the row to it.
+   */
+  readonly transaction: <A, E, R>(
+    effect: Effect.Effect<A, E, R>,
+  ) => Effect.Effect<A, E | SqlError, R>;
 }
 
 /**
@@ -125,6 +133,7 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
     pendingOpRepo,
     taskRepo,
     tasksClient,
+    transaction,
   } = deps;
 
   /**
@@ -213,28 +222,37 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
       ),
     );
 
-  /** Writes Google's copy of the op's event, unless a later op owns the row. */
-  const settleRow = (op: PendingOp, synced: EventRecord | null, calendarId?: string) =>
-    Effect.gen(function* () {
-      if (synced && !(yield* othersQueued(op, calendarId))) {
-        yield* eventRepo.upsertMany([synced]);
-      }
-    });
-
   /**
-   * After our own write landed: queued edits and deletes built on the etag
-   * it was sent with now send the one it produced. The server checked that
-   * etag, so nothing else changed in between; a stale If-Match would 412
-   * against the user's own edit.
+   * After the op's own write landed, in one transaction: when it was sent
+   * with If-Match (`sentEtag`), the queued edits and deletes built on that
+   * etag — and the row a later edit still holds — move to the etag it
+   * produced. Google checked `sentEtag`, so nothing else changed in
+   * between, and a stale If-Match would 412 against the user's own edit.
+   * Then Google's copy settles the row, unless a later op owns it.
    */
-  const advanceFollowers = (
+  const settle = (
     op: PendingOp,
-    sentEtag: string | undefined,
-    newEtag: string | undefined,
+    synced: EventRecord | null,
+    options: { readonly calendarId?: string; readonly sentEtag?: string | undefined } = {},
   ) =>
-    sentEtag !== undefined && newEtag !== undefined && sentEtag !== newEtag
-      ? pendingOpRepo.advanceBaseEtag(op, sentEtag, newEtag)
-      : Effect.void;
+    transaction(
+      Effect.gen(function* () {
+        const calendarId = options.calendarId ?? op.calendarId;
+        const event = { accountId: op.accountId, calendarId, eventId: op.eventId };
+        const produced = synced?.etag ?? undefined;
+        if (
+          options.sentEtag !== undefined &&
+          produced !== undefined &&
+          produced !== options.sentEtag
+        ) {
+          yield* pendingOpRepo.advanceBaseEtag(event, options.sentEtag, produced);
+          yield* eventRepo.advanceEtag(event, options.sentEtag, produced);
+        }
+        if (synced && !(yield* othersQueued(op, calendarId))) {
+          yield* eventRepo.upsertMany([synced]);
+        }
+      }),
+    );
 
   /**
    * A create answered 409: an earlier attempt landed and its response was
@@ -246,6 +264,7 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
    */
   const settleLanded = (op: PendingOp): Effect.Effect<ApplyOutcome> =>
     Effect.gen(function* () {
+      // A later op already owns the row: nothing to fetch for it.
       if (yield* othersQueued(op)) {
         return 'done' as const;
       }
@@ -260,11 +279,20 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
             syncedAt: yield* Clock.currentTimeMillis,
           })
         : undefined;
-      if (landed) {
-        yield* eventRepo.upsertMany([landed]);
-      } else {
-        yield* eventRepo.deleteEvent(op.accountId, op.calendarId, op.eventId);
-      }
+      // Checked after the fetch, with the write: an edit made while it was
+      // in flight owns the row, and its own push settles it.
+      yield* transaction(
+        Effect.gen(function* () {
+          if (yield* othersQueued(op)) {
+            return;
+          }
+          if (landed) {
+            yield* eventRepo.upsertMany([landed]);
+          } else {
+            yield* eventRepo.deleteEvent(op.accountId, op.calendarId, op.eventId);
+          }
+        }),
+      );
       return 'done' as const;
     }).pipe(
       Effect.catchCause((cause) =>
@@ -307,8 +335,11 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
                   JSON.stringify(updateBody(op, theirs)) ===
                     JSON.stringify(updateBody(op, op.payload))
                 ) {
-                  yield* advanceFollowers(op, op.baseEtag, theirs.etag ?? undefined);
-                  yield* settleRow(op, theirs);
+                  // Followers keep their etag: matching the fields this
+                  // update sends says nothing about the rest (another
+                  // client may have changed reminders meanwhile). Each
+                  // meets its own 412 and its own check.
+                  yield* settle(op, theirs);
                   return 'done' as const;
                 }
                 return { conflict: theirs };
@@ -496,7 +527,7 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
             },
             sendUpdates: sendUpdatesFor(op.payload, false, guestMode),
           });
-          yield* settleRow(
+          yield* settle(
             op,
             mapGcalEvent(response, {
               accountId: op.accountId,
@@ -551,7 +582,7 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
           // deleted it) while this op waited: those later ops own the rows
           // now — as does an edit queued behind the move.
           if (local) {
-            yield* settleRow(op, synced, destination);
+            yield* settle(op, synced, { calendarId: destination });
           }
           // Its exceptions moved with it; hand back the ones no queued edit
           // still owns (those stay pending until their own op lands).
@@ -590,7 +621,7 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
           });
           // No If-Match went out, so nothing says what Google had before:
           // queued edits keep their etag (a 412 there asks the user).
-          yield* settleRow(
+          yield* settle(
             op,
             mapGcalEvent(response, {
               accountId: op.accountId,
@@ -619,8 +650,7 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
           });
           // A second drag made while this patch was in flight queued a new
           // update on the same etag: it now follows this write.
-          yield* advanceFollowers(op, op.baseEtag, response.etag ?? undefined);
-          yield* settleRow(
+          yield* settle(
             op,
             mapGcalEvent(response, {
               accountId: op.accountId,
@@ -628,6 +658,7 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
               defaultTimeZone: op.payload.startTimeZone ?? 'UTC',
               syncedAt: yield* Clock.currentTimeMillis,
             }),
+            { sentEtag: op.baseEtag },
           );
           return 'done' as const;
         }

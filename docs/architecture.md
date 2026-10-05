@@ -115,17 +115,25 @@ Rules that keep the queue correct:
   sync the user caused (`SyncEngine.syncNow`: the app came back, the
   machine woke, an account reconnected) makes waiting ops due at once
   (`retryNow`); the timed poll keeps the backoff.
-- **Acks**: a response is written to its row only while no later op of
-  the event is queued — that op owns the row and its own response settles
-  it. An `update` that lands moves the queued ops built on the etag it was
-  sent with to the etag it produced (`advanceBaseEtag`): a second drag
-  made while the first was in flight follows it instead of meeting a 412.
-  A create answered 409 (an earlier attempt landed, its response lost)
-  fetches what Google has, so the row stops being `pending`.
+- **Acks** (`settle`, one transaction with the queue check, so an edit
+  queued meanwhile is either seen or waits): a response is written to its
+  row only while no later op of the event is queued — that op owns the
+  row and its own response settles it. An `update` that lands moves the
+  queued ops built on the etag it was sent with, and the row a later edit
+  still holds, to the etag it produced (`advanceBaseEtag`, `advanceEtag`):
+  a second drag made while the first was in flight follows it instead of
+  meeting a 412, and so does a third that replaces the second. Only an
+  If-Match write does this — Google checked that etag, so nothing else
+  changed in between. A create answered 409 (an earlier attempt landed,
+  its response lost) fetches what Google has, so the row stops being
+  `pending`; the queue is checked again after the fetch.
 - **412 Conflict** (only `update` and `delete` send If-Match): the op is
   **parked**, never dropped — unless Google's copy already yields exactly
   the PATCH body the update would send (`updateBody` built from both: our
-  own earlier attempt landed), which is done. The drain fetches Google's copy
+  own earlier attempt landed), which is done. Its followers keep their
+  etag there: the match covers only the fields this update sends, and
+  another client may have changed the rest — each follower meets its own
+  412 and its own check. The drain fetches Google's copy
   (`events.get`; 404/410 = deleted there) and `markConflict` stores it in
   `server_payload` with `conflict_at` set; a failed fetch is an ordinary
   retry. `listDue` skips parked ops and the local row stays `pending`, so
