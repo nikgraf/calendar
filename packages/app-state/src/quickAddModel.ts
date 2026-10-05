@@ -7,7 +7,7 @@ import {
   type SpeechToText,
 } from '@calendar/ai';
 import { Temporal, type FreeSlot } from '@calendar/core';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { EventEditorPrefill } from './editorModel.ts';
 
 /** A forgotten recording stops itself rather than running until the app dies. */
@@ -126,13 +126,29 @@ export const useQuickAddModel = ({
     });
   };
 
+  /**
+   * The latest dictation start. Cancelling on unmount only stops a
+   * recording that already started; one still preparing or waiting for
+   * the microphone is aborted instead, and the adapter stops only what
+   * that start opened. Cancelling it late would stop whichever recording
+   * is current by then — possibly a newer bar's.
+   */
+  const starting = useRef<AbortController | null>(null);
+
   const startRecording = async () => {
+    const controller = new AbortController();
+    starting.current = controller;
     setError(null);
     setVoice('preparing');
     try {
       // Prepare first: asking for the microphone before knowing dictation
       // can run would extract a permanent permission for nothing.
       await speech.prepare();
+      // Preparing can take minutes (the locale's models download): a bar
+      // closed meanwhile must not switch the microphone on afterwards.
+      if (controller.signal.aborted) {
+        return;
+      }
     } catch (error) {
       setVoice('idle');
       if (error instanceof SpeechUnsupportedError) {
@@ -148,7 +164,12 @@ export const useQuickAddModel = ({
       return;
     }
     try {
-      await speech.startRecording();
+      await speech.startRecording({ signal: controller.signal });
+      // Closed while the microphone was being granted: the adapter has
+      // already stopped this start's stream.
+      if (controller.signal.aborted) {
+        return;
+      }
       setVoice('recording');
     } catch (error) {
       setVoice('idle');
@@ -192,6 +213,7 @@ export const useQuickAddModel = ({
 
   useEffect(
     () => () => {
+      starting.current?.abort();
       void speech.cancelRecording();
     },
     [speech],

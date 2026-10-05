@@ -4,7 +4,7 @@ import { Dialog } from '../Dialog.tsx';
 import { useAgentsState } from './useAgentsState.ts';
 
 /** A request's buttons stay inert this long after it appears. */
-const ARM_DELAY_MS = 700;
+export const ARM_DELAY_MS = 700;
 
 /**
  * One waiting request. Mounted fresh per request (keyed by its id), so

@@ -440,6 +440,39 @@ describe('agent gateway: other agents reach the app over the CLI and MCP', () =>
     expect(asked.map((row) => row.status)).toEqual(['denied', 'done']);
   });
 
+  it('Settings → Agents: answering one request disarms the next one sliding up', async () => {
+    const work = await calendarRef(app, ASKER, 'Work');
+    const first = runAgentCli(app, ASKER, newEvent(work, 'Asked lunch', 12));
+    const second = runAgentCli(app, ASKER, newEvent(work, 'Asked dinner', 19));
+    const settings = await app.openSettings('agents');
+    try {
+      const rows = `document.querySelectorAll('[data-testid="agent-pending-row"]')`;
+      await settings.waitFor(`${rows}.length === 2`);
+      await settings.waitFor(
+        `[...document.querySelectorAll('[data-testid="agent-pending-approve"]')].every((button) => !button.disabled)`,
+      );
+      await click(settings, '[data-testid="agent-pending-approve"]');
+      // The other request now sits where the click landed: not armed yet,
+      // so a double click cannot approve it unread.
+      await settings.waitFor(`${rows}.length === 1`);
+      expect(
+        await settings.eval<boolean>(
+          `document.querySelector('[data-testid="agent-pending-approve"]').disabled`,
+        ),
+      ).toBe(true);
+      await settings.waitFor(
+        `document.querySelector('[data-testid="agent-pending-decline"]')?.disabled === false`,
+      );
+      await click(settings, '[data-testid="agent-pending-decline"]');
+      // One approved, one declined — whichever the pane listed first.
+      expect((await Promise.all([first, second])).map((result) => result.code).sort()).toEqual([
+        0, 1,
+      ]);
+    } finally {
+      await app.closeSettings();
+    }
+  });
+
   it('Settings → Agents: create an agent, grant it, and remove it', async () => {
     const cdp = await app.openSettings('agents');
     await cdp.waitFor(`!!document.querySelector('[data-testid="agents-section"]')`);

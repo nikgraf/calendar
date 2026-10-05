@@ -123,7 +123,7 @@ export const appleSpeech: SpeechToText = {
       throw error;
     }
   },
-  startRecording: async () => {
+  startRecording: async ({ signal } = {}) => {
     const modules = load();
     if (!modules) {
       throw new SpeechUnsupportedError({
@@ -134,7 +134,18 @@ export const appleSpeech: SpeechToText = {
     if (!permission.granted) {
       throw new MicrophoneDeniedError({ message: 'Microphone access was declined.' });
     }
+    if (signal?.aborted) {
+      return;
+    }
     await modules.audio.setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true });
+    // Given up meanwhile: record nothing, and leave the session in record
+    // mode if a recording is running — it may be a newer caller's.
+    if (signal?.aborted) {
+      if (!recorder) {
+        releaseSession(modules.audio);
+      }
+      return;
+    }
     const instance = new (
       modules.audio as unknown as {
         AudioModule: { AudioRecorder: new (options: unknown) => typeof recorder };

@@ -42,8 +42,14 @@ export interface SpeechToText {
    * MicrophoneDeniedError when refused. Owning recording here keeps every
    * native import — and the audio-session and temp-file lifecycle — behind
    * one lazily loaded module.
+   *
+   * A call whose `signal` is aborted before it finishes stops whatever it
+   * opened and resolves without becoming the current recording. A caller
+   * that gave up (the bar closed while the microphone was being granted)
+   * must not cancel afterwards instead: by then the current recording may
+   * belong to a newer caller.
    */
-  readonly startRecording: () => Promise<void>;
+  readonly startRecording: (options?: { readonly signal?: AbortSignal }) => Promise<void>;
   /** Stops, transcribes, cleans up. Undefined when nothing was said. */
   readonly stopRecording: () => Promise<string | undefined>;
 }

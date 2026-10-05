@@ -23,9 +23,11 @@ import {
  * The renderer loads nothing remote: scripts and styles are its own
  * bundle (Tailwind emits a stylesheet; React sets inline style
  * attributes, hence 'unsafe-inline' for styles only), images are account
- * avatars from Google, and every request goes over the preload IPC. Not
- * applied against the vite dev server, whose HMR needs inline scripts
- * and a websocket.
+ * avatars from Google, and every request goes over the preload IPC. The
+ * dictation worklet is a file of the bundle (public/): a blob: worklet
+ * is blocked by script-src 'self', so dictation worked only from source.
+ * Not applied against the vite dev server, whose HMR needs inline scripts
+ * and a websocket. It does reach the file:// page (flows.e2e.ts checks).
  */
 const RENDERER_CSP = [
   "default-src 'self'",
