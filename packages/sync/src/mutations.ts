@@ -62,6 +62,8 @@ import {
   InvalidColorError,
   NotAttendeeError,
   NotOrganizerError,
+  RecurringAllDayMoveError,
+  RecurringAllDaySwitchError,
   RecurringEditUnsupportedError,
   retryDelayMs,
   TaskNotFoundError,
@@ -76,6 +78,25 @@ export * from './mutationTypes.ts';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const isoDate = (epochMs: number): string => new Date(epochMs).toISOString().slice(0, 10);
+
+/**
+ * An edit of an event Google has not seen yet rides in its unsent create
+ * (`unsentCreateOf`): patching it would 404, and the NotFound arm would
+ * delete the local row. The create keeps its place in the queue, so the
+ * occurrence edits queued after it still wait for it (applyOp).
+ */
+const foldIntoCreate = (create: PendingOp, payload: EventRecord) =>
+  new PendingOp({
+    accountId: create.accountId,
+    attempts: 0,
+    calendarId: create.calendarId,
+    createdAt: create.createdAt,
+    eventId: create.eventId,
+    id: generateEventId(),
+    kind: 'create',
+    nextAttemptAt: 0,
+    payload,
+  });
 
 /**
  * The defined fields of an update, ready to spread over an EventRecord.
@@ -263,6 +284,75 @@ const make: Effect.Effect<
     );
 
   const enqueue = (op: PendingOp) => pendingOpRepo.enqueue(op);
+
+  /**
+   * The queued create of an event, while it was never sent (no dispatch
+   * stamp, applyOp): only then is Google sure not to have the event, so an
+   * edit may fold into it and a delete may simply drop it. A sent create
+   * may have landed with its response lost — its retry answers 409, which
+   * counts as done without sending a folded edit — so edits and deletes
+   * queue behind it instead (`supersedeQueued`).
+   */
+  const unsentCreateOf = (calendarId: string, eventId: string) =>
+    Effect.map(opsForEvent(calendarId, eventId), (ops) =>
+      ops.find((op) => op.kind === 'create' && op.dispatchedAt === undefined),
+    );
+
+  /**
+   * Drops the queued ops a new edit or delete of the event replaces — all
+   * but a sent create, which stays ahead of it (applyOp holds the new op
+   * until the create is done). RSVPs and moves stay, as in removeForEvent.
+   */
+  const supersedeQueued = (calendarId: string, eventId: string) =>
+    Effect.gen(function* () {
+      const queued = yield* opsForEvent(calendarId, eventId);
+      if (!queued.some((op) => op.kind === 'create')) {
+        return yield* pendingOpRepo.removeForEvent(calendarId, eventId);
+      }
+      for (const op of queued) {
+        if (op.kind === 'update' || op.kind === 'delete') {
+          yield* pendingOpRepo.remove(op.id);
+        }
+      }
+    });
+
+  /** Queues a this-and-following truncation of the master: a patch, or its unsent create. */
+  const truncateQueued = (
+    accountId: string,
+    calendarId: string,
+    master: EventRecord,
+    truncated: EventRecord,
+    unsentCreate: PendingOp | undefined,
+    now: number,
+  ) =>
+    Effect.gen(function* () {
+      const carriedText = unsentCreate
+        ? undefined
+        : yield* queuedCarriedText(calendarId, master.id);
+      if (unsentCreate) {
+        yield* pendingOpRepo.removeForEvent(calendarId, master.id);
+      } else {
+        yield* supersedeQueued(calendarId, master.id);
+      }
+      yield* enqueue(
+        unsentCreate
+          ? foldIntoCreate(unsentCreate, truncated)
+          : new PendingOp({
+              accountId,
+              attempts: 0,
+              baseEtag: master.etag ?? undefined,
+              calendarId,
+              carriedText,
+              createdAt: now,
+              eventId: master.id,
+              id: generateEventId(),
+              kind: 'update',
+              nextAttemptAt: 0,
+              payload: truncated,
+            }),
+      );
+    });
+
   const kick = Effect.suspend(() => Effect.forkDetach(processPendingOps()));
   /**
    * A mutation's local write and its queue changes (coalesce old ops,
@@ -332,13 +422,18 @@ const make: Effect.Effect<
     });
   };
 
-  /** Drops override rows at/after the split and cancels them remotely. */
+  /**
+   * Drops override rows at/after the split and cancels them remotely —
+   * unless the series never reached Google (`remote: false`): its create
+   * already carries the truncated rule, so there is nothing to cancel.
+   */
   const dropOverridesFrom = (
     accountId: string,
     calendarId: string,
     masterId: string,
     fromOriginalStartUtc: number,
     now: number,
+    { remote }: { readonly remote: boolean },
   ) =>
     Effect.gen(function* () {
       const overrides = yield* eventRepo.listOverrides(accountId, calendarId, masterId);
@@ -348,6 +443,9 @@ const make: Effect.Effect<
         }
         yield* pendingOpRepo.removeForEvent(calendarId, override.id);
         yield* eventRepo.deleteEvent(accountId, calendarId, override.id);
+        if (!remote) {
+          continue;
+        }
         yield* enqueue(
           new PendingOp({
             accountId,
@@ -691,12 +789,14 @@ const make: Effect.Effect<
         if (existing.recurringEventId || existing.recurrence) {
           return yield* Effect.fail(new RecurringEditUnsupportedError({ eventId }));
         }
-        const queued = yield* opsForEvent(calendarId, eventId);
-        yield* pendingOpRepo.removeForEvent(calendarId, eventId);
+        const unsentCreate = yield* unsentCreateOf(calendarId, eventId);
         yield* eventRepo.deleteEvent(accountId, calendarId, eventId);
-
-        const neverSynced = queued.some((op) => op.kind === 'create');
-        if (!neverSynced) {
+        if (unsentCreate) {
+          // Never sent: dropping its create is the whole delete.
+          yield* pendingOpRepo.removeForEvent(calendarId, eventId);
+        } else {
+          // A sent create stays ahead: the delete follows whatever it did.
+          yield* supersedeQueued(calendarId, eventId);
           const now = yield* Clock.currentTimeMillis;
           yield* enqueue(
             new PendingOp({
@@ -751,6 +851,7 @@ const make: Effect.Effect<
           return;
         }
 
+        const unsentCreate = yield* unsentCreateOf(calendarId, masterId);
         if (scope === 'series' || originalStartUtc <= master.startUtc) {
           // Deleting the master cascades to its exceptions server-side.
           const overrides = yield* eventRepo.listOverrides(accountId, calendarId, masterId);
@@ -758,8 +859,13 @@ const make: Effect.Effect<
             yield* pendingOpRepo.removeForEvent(calendarId, override.id);
             yield* eventRepo.deleteEvent(accountId, calendarId, override.id);
           }
-          yield* pendingOpRepo.removeForEvent(calendarId, masterId);
           yield* eventRepo.deleteEvent(accountId, calendarId, masterId);
+          if (unsentCreate) {
+            // Never sent: dropping its create is the whole delete.
+            return yield* pendingOpRepo.removeForEvent(calendarId, masterId);
+          }
+          // A sent create stays ahead: the delete follows whatever it did.
+          yield* supersedeQueued(calendarId, masterId);
           yield* enqueue(
             new PendingOp({
               accountId,
@@ -790,24 +896,10 @@ const make: Effect.Effect<
           updatedAt: now,
         });
         yield* eventRepo.upsertMany([truncated]);
-        const carriedText = yield* queuedCarriedText(calendarId, masterId);
-        yield* pendingOpRepo.removeForEvent(calendarId, masterId);
-        yield* enqueue(
-          new PendingOp({
-            accountId,
-            attempts: 0,
-            baseEtag: master.etag ?? undefined,
-            calendarId,
-            carriedText,
-            createdAt: now,
-            eventId: masterId,
-            id: generateEventId(),
-            kind: 'update',
-            nextAttemptAt: 0,
-            payload: truncated,
-          }),
-        );
-        yield* dropOverridesFrom(accountId, calendarId, masterId, originalStartUtc, now);
+        yield* truncateQueued(accountId, calendarId, master, truncated, unsentCreate, now);
+        yield* dropOverridesFrom(accountId, calendarId, masterId, originalStartUtc, now, {
+          remote: !unsentCreate,
+        });
       }),
 
     discardPendingOp,
@@ -912,27 +1004,34 @@ const make: Effect.Effect<
         );
         yield* eventRepo.upsertMany([merged]);
 
-        // Coalesce: a queued create absorbs the change; otherwise a fresh
+        // Coalesce: an unsent create absorbs the change; otherwise a fresh
         // update op replaces any queued update — and inherits its guest-list
-        // flag, since the merged record still carries that edit.
+        // flag, since the merged record still carries that edit — and
+        // queues behind a sent create.
         const queued = yield* opsForEvent(calendarId, eventId);
-        yield* pendingOpRepo.removeForEvent(calendarId, eventId);
-        const hasCreate = queued.some((op) => op.kind === 'create');
+        const unsentCreate = queued.find(
+          (op) => op.kind === 'create' && op.dispatchedAt === undefined,
+        );
+        if (unsentCreate) {
+          yield* pendingOpRepo.removeForEvent(calendarId, eventId);
+          return yield* enqueue(foldIntoCreate(unsentCreate, merged));
+        }
+        yield* supersedeQueued(calendarId, eventId);
         yield* enqueue(
           new PendingOp({
             accountId,
             attempts: 0,
-            attendeesChanged: hasCreate ? undefined : attendeesFlag(changes, queued),
-            baseEtag: hasCreate ? undefined : (existing.etag ?? undefined),
+            attendeesChanged: attendeesFlag(changes, queued),
+            baseEtag: existing.etag ?? undefined,
             calendarId,
             createdAt: now,
             eventId,
-            geoCleared: hasCreate ? undefined : geoClearedFlag(existing, merged, queued),
+            geoCleared: geoClearedFlag(existing, merged, queued),
             id: generateEventId(),
-            kind: hasCreate ? 'create' : 'update',
+            kind: 'update',
             nextAttemptAt: 0,
             payload: merged,
-            remindersChanged: hasCreate ? undefined : remindersFlag(changes, queued),
+            remindersChanged: remindersFlag(changes, queued),
           }),
         );
       }),
@@ -952,6 +1051,9 @@ const make: Effect.Effect<
           const instanceId = googleInstanceId(masterId, originalStartUtc, master.isAllDay);
           const existing = yield* eventRepo.getById(accountId, calendarId, instanceId);
           const base = existing ?? projectInstance(master, originalStartUtc, now);
+          if (changes.isAllDay !== undefined && changes.isAllDay !== base.isAllDay) {
+            return yield* Effect.fail(new RecurringAllDaySwitchError({ eventId: masterId }));
+          }
           const merged = withConsistentGeo(
             new EventRecord({
               ...base,
@@ -985,6 +1087,22 @@ const make: Effect.Effect<
           );
           return;
         }
+
+        if (changes.isAllDay !== undefined && changes.isAllDay !== master.isAllDay) {
+          return yield* Effect.fail(new RecurringAllDaySwitchError({ eventId: masterId }));
+        }
+        if (master.isAllDay && changes.startDate !== undefined) {
+          // The date the occurrence shows now: its exception's, else its slot's.
+          const exception = yield* eventRepo.getById(
+            accountId,
+            calendarId,
+            googleInstanceId(masterId, originalStartUtc, true),
+          );
+          if (changes.startDate !== (exception?.startDate ?? isoDate(originalStartUtc))) {
+            return yield* Effect.fail(new RecurringAllDayMoveError({ eventId: masterId }));
+          }
+        }
+        const unsentCreate = yield* unsentCreateOf(calendarId, masterId);
 
         const duration =
           changes.startUtc !== undefined && changes.endUtc !== undefined
@@ -1021,6 +1139,12 @@ const make: Effect.Effect<
             }),
           );
           yield* eventRepo.upsertMany([merged]);
+          if (unsentCreate) {
+            // Google has no exceptions to carry text onto yet: the queued
+            // occurrence edits land after the create with their own text.
+            yield* pendingOpRepo.removeForEvent(calendarId, masterId);
+            return yield* enqueue(foldIntoCreate(unsentCreate, merged));
+          }
           // Google carries changed text onto the exceptions; so does the
           // local copy, undoably (carriedText.ts).
           const queued = yield* opsForEvent(calendarId, masterId);
@@ -1031,7 +1155,8 @@ const make: Effect.Effect<
             queued: queued.findLast((op) => op.kind === 'update'),
           });
           yield* eventRepo.upsertMany(rows);
-          yield* pendingOpRepo.removeForEvent(calendarId, masterId);
+          // A sent create stays ahead: this patch follows whatever it did.
+          yield* supersedeQueued(calendarId, masterId);
           yield* enqueue(
             new PendingOp({
               accountId,
@@ -1080,34 +1205,29 @@ const make: Effect.Effect<
           updatedAt: now,
         });
         yield* eventRepo.upsertMany([truncated]);
-        const carriedText = yield* queuedCarriedText(calendarId, masterId);
-        yield* pendingOpRepo.removeForEvent(calendarId, masterId);
-        yield* enqueue(
-          new PendingOp({
-            accountId,
-            attempts: 0,
-            baseEtag: master.etag ?? undefined,
-            calendarId,
-            carriedText,
-            createdAt: now,
-            eventId: masterId,
-            id: generateEventId(),
-            kind: 'update',
-            nextAttemptAt: 0,
-            payload: truncated,
-          }),
-        );
-        yield* dropOverridesFrom(accountId, calendarId, masterId, originalStartUtc, now);
+        yield* truncateQueued(accountId, calendarId, master, truncated, unsentCreate, now);
+        yield* dropOverridesFrom(accountId, calendarId, masterId, originalStartUtc, now, {
+          remote: !unsentCreate,
+        });
 
         const projected = projectInstance(master, originalStartUtc, now);
         const startUtc =
           !master.isAllDay && changes.startUtc !== undefined
             ? changes.startUtc
             : projected.startUtc;
+        // An all-day split starts on the occurrence's slot (a date change
+        // was refused above): the edit's dates would contradict startUtc.
+        const {
+          endDate: _endDate,
+          endUtc: _endUtc,
+          startDate: _startDate,
+          startUtc: _startUtc,
+          ...untimed
+        } = defined;
         const newMaster = withConsistentGeo(
           new EventRecord({
             ...projected,
-            ...defined,
+            ...(master.isAllDay ? untimed : defined),
             endUtc: master.isAllDay ? projected.endUtc : startUtc + duration,
             etag: null,
             id: generateEventId(),

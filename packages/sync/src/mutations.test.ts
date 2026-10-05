@@ -32,13 +32,21 @@ import {
 import { RemindersClient, unavailableRemindersClient } from '@calendar/reminders';
 import { SqliteClient } from '@effect/sql-sqlite-node';
 import { expect, it } from '@effect/vitest';
-import { Effect, Exit, Layer } from 'effect';
+import { Effect, Exit, Layer, Scheduler } from 'effect';
 import { layer as reactivityLayer, type Reactivity } from 'effect/reactivity/Reactivity';
 import { SqlClient } from 'effect/sql/SqlClient';
 import { describe } from 'vitest';
 import { EventMutations } from './mutations.ts';
 
 type ClientOverrides = Partial<GoogleCalendarClientShape>;
+
+/**
+ * Keeps the drain that createEvent forks from running before the next
+ * call: a test of a never-sent create must not see it attempted (and
+ * stamped as sent) in between.
+ */
+const noYield = <A, E, R>(effect: Effect.Effect<A, E, R>): Effect.Effect<A, E, R> =>
+  Effect.provideService(effect, Scheduler.MaxOpsBeforeYield, Number.MAX_SAFE_INTEGER);
 
 const stubClient = (overrides: ClientOverrides): GoogleCalendarClientShape => ({
   deleteEvent: () => Effect.void,
@@ -281,7 +289,69 @@ describe('EventMutations', () => {
 
       const singles = yield* eventsNow;
       expect(singles[0]!.title).toBe('Renamed');
-    }).pipe(Effect.provide(mutationsLayer(client)));
+    }).pipe(noYield, Effect.provide(mutationsLayer(client)));
+  });
+
+  it.effect('a sent create may be on Google: an edit and a delete queue behind it', () => {
+    // The first insert landed but its response was lost; the retry is a
+    // 409 — "done" without sending anything new.
+    const sent: Array<string> = [];
+    const client = stubClient({
+      deleteEvent: ({ eventId }) => {
+        sent.push(`delete:${eventId}`);
+        return Effect.void;
+      },
+      insertEvent: ({ event }) => {
+        sent.push(`insert:${event.summary}`);
+        return Effect.fail(
+          sent.length === 1
+            ? new ApiUnavailableError({ cause: 'response lost' })
+            : new GoogleApiError({ message: 'duplicate', status: 409 }),
+        );
+      },
+      patchEvent: ({ event, eventId }) => {
+        sent.push(`patch:${event.summary}`);
+        return Effect.succeed(echo(event, eventId, '"after-patch"'));
+      },
+    });
+    return Effect.gen(function* () {
+      yield* seedCalendar;
+      const mutations = yield* EventMutations;
+      const ops = yield* PendingOpRepo;
+      const record = yield* mutations.createEvent(draft);
+      yield* mutations.processPendingOps();
+      expect((yield* ops.listAll())[0]!.dispatchedAt).toBeDefined();
+
+      yield* mutations.updateEvent({
+        accountId: 'acc-1',
+        calendarId: 'cal-1',
+        changes: { title: 'Renamed' },
+        eventId: record.id,
+      });
+      expect((yield* ops.listAll()).map((op) => op.kind)).toEqual(['create', 'update']);
+      for (const op of yield* ops.listAll()) {
+        yield* ops.markFailed(op.id, op.attempts, 0, 'test');
+      }
+      yield* mutations.processPendingOps();
+      // The rename reaches Google after the create's 409, instead of
+      // riding in an insert Google ignores.
+      expect(sent).toEqual(['insert:New event', 'insert:New event', 'patch:Renamed']);
+      expect(yield* ops.listAll()).toEqual([]);
+      expect((yield* rowOf(record.id))?.title).toBe('Renamed');
+
+      // And a delete of a sent create is sent too.
+      const second = yield* mutations.createEvent({ ...draft, title: 'Second' });
+      sent.length = 0;
+      yield* mutations.processPendingOps();
+      yield* mutations.deleteEvent({ accountId: 'acc-1', calendarId: 'cal-1', eventId: second.id });
+      expect((yield* ops.listAll()).map((op) => op.kind)).toEqual(['create', 'delete']);
+      for (const op of yield* ops.listAll()) {
+        yield* ops.markFailed(op.id, op.attempts, 0, 'test');
+      }
+      yield* mutations.processPendingOps();
+      expect(sent).toEqual(['insert:Second', 'insert:Second', `delete:${second.id}`]);
+      expect(yield* rowOf(second.id)).toBeNull();
+    }).pipe(noYield, Effect.provide(mutationsLayer(client)));
   });
 
   it.effect('an empty location clears the field and reaches the patch body', () => {
@@ -758,7 +828,7 @@ describe('EventMutations', () => {
       expect(ops).toHaveLength(0);
       const singles = yield* eventsNow;
       expect(singles).toHaveLength(0);
-    }).pipe(Effect.provide(mutationsLayer(client)));
+    }).pipe(noYield, Effect.provide(mutationsLayer(client)));
   });
 
   it.effect('deleting a synced event enqueues a delete with If-Match', () => {

@@ -26,7 +26,7 @@ import {
 import { RemindersClient, unavailableRemindersClient } from '@calendar/reminders';
 import { SqliteClient } from '@effect/sql-sqlite-node';
 import { expect, it } from '@effect/vitest';
-import { Effect, Layer } from 'effect';
+import { Effect, Layer, Scheduler } from 'effect';
 import { layer as reactivityLayer } from 'effect/reactivity/Reactivity';
 import { describe } from 'vitest';
 import { EventMutations } from './mutations.ts';
@@ -132,6 +132,13 @@ const seedMaster = Effect.gen(function* () {
   const events = yield* EventRepo;
   yield* events.upsertMany([master]);
 });
+
+/**
+ * Keeps the drain a mutation forks from running before the next call: the
+ * stub insert would stamp a create as sent in between.
+ */
+const noYield = <A, E, R>(effect: Effect.Effect<A, E, R>): Effect.Effect<A, E, R> =>
+  Effect.provideService(effect, Scheduler.MaxOpsBeforeYield, Number.MAX_SAFE_INTEGER);
 
 const listOps = Effect.gen(function* () {
   return yield* (yield* PendingOpRepo).listAll();
@@ -501,5 +508,215 @@ describe('EventMutations recurring scopes', () => {
       expect(ops[0]!.eventId).toBe('master1');
       expect(ops[0]!.baseEtag).toBe('"m-1"');
     }).pipe(Effect.provide(testLayer)),
+  );
+});
+
+describe('EventMutations: a series keeps its kind', () => {
+  /** The July 4 occurrence as the editor sends it after the all-day switch. */
+  const allDayTimes = {
+    endDate: '2026-07-05',
+    endUtc: plainDateToUtcMs('2026-07-05'),
+    isAllDay: true,
+    startDate: '2026-07-04',
+    startUtc: plainDateToUtcMs('2026-07-04'),
+  };
+
+  it.effect('refuses to switch an occurrence or the series between timed and all-day', () =>
+    Effect.gen(function* () {
+      yield* seedMaster;
+      const mutations = yield* EventMutations;
+      for (const scope of ['instance', 'following', 'series'] as const) {
+        const error = yield* Effect.flip(
+          mutations.updateRecurring({ ...target, changes: allDayTimes, scope }),
+        );
+        expect(error._tag).toBe('RecurringAllDaySwitchError');
+      }
+      const events = yield* EventRepo;
+      expect(yield* events.getById('acc-1', 'cal-1', 'master1')).toEqual(master);
+      expect(yield* events.getById('acc-1', 'cal-1', instanceId)).toBeNull();
+      expect(yield* listOps).toEqual([]);
+    }).pipe(Effect.provide(testLayer)),
+  );
+
+  it.effect('moves an all-day series one occurrence at a time, and says so', () =>
+    Effect.gen(function* () {
+      yield* seedMaster;
+      const events = yield* EventRepo;
+      const allDay = new EventRecord({
+        ...master,
+        endDate: '2026-07-02',
+        endUtc: plainDateToUtcMs('2026-07-02'),
+        id: 'allday1',
+        isAllDay: true,
+        startDate: '2026-07-01',
+        startTimeZone: undefined,
+        startUtc: plainDateToUtcMs('2026-07-01'),
+      });
+      yield* events.upsertMany([allDay]);
+      const mutations = yield* EventMutations;
+      const slot = {
+        ...target,
+        masterId: 'allday1',
+        originalStartUtc: plainDateToUtcMs('2026-07-04'),
+      };
+      const nextDay = {
+        endDate: '2026-07-06',
+        endUtc: plainDateToUtcMs('2026-07-06'),
+        isAllDay: true,
+        startDate: '2026-07-05',
+        startUtc: plainDateToUtcMs('2026-07-05'),
+      };
+      for (const scope of ['following', 'series'] as const) {
+        const error = yield* Effect.flip(
+          mutations.updateRecurring({ ...slot, changes: nextDay, scope }),
+        );
+        expect(error._tag).toBe('RecurringAllDayMoveError');
+      }
+      expect(yield* listOps).toEqual([]);
+
+      // Same date, new title: the series takes it.
+      yield* mutations.updateRecurring({
+        ...slot,
+        changes: { ...allDayTimes, title: 'Renamed' },
+        scope: 'series',
+      });
+      expect((yield* events.getById('acc-1', 'cal-1', 'allday1'))!.title).toBe('Renamed');
+
+      // One occurrence moves.
+      yield* mutations.updateRecurring({ ...slot, changes: nextDay, scope: 'instance' });
+      const moved = yield* events.getById('acc-1', 'cal-1', 'allday1_20260704');
+      expect(moved!.startDate).toBe('2026-07-05');
+
+      // Its exception's date, not its slot's, is the one it shows: a
+      // this-and-following edit there that keeps the date is no move, and
+      // the new series starts on the slot without contradicting itself.
+      yield* mutations.updateRecurring({
+        ...slot,
+        changes: { ...nextDay, title: 'From here' },
+        scope: 'following',
+      });
+      const window = yield* events.getWindow(0, plainDateToUtcMs('2030-01-01'));
+      const split = window.masters.find((event) => event.title === 'From here');
+      expect(split!.startDate).toBe('2026-07-04');
+      expect(split!.startUtc).toBe(plainDateToUtcMs('2026-07-04'));
+    }).pipe(Effect.provide(testLayer)),
+  );
+});
+
+describe('EventMutations: a series Google has not seen yet', () => {
+  const createSeries = Effect.gen(function* () {
+    yield* seedMaster;
+    return yield* (yield* EventMutations).createEvent({
+      accountId: 'acc-1',
+      calendarId: 'cal-1',
+      endUtc: master.endUtc,
+      isAllDay: false,
+      recurrence: ['RRULE:FREQ=DAILY;COUNT=10'],
+      startTimeZone: 'UTC',
+      startUtc: master.startUtc,
+      title: 'Fresh',
+    });
+  });
+
+  it.effect('a series edit rides in the queued create instead of a patch that would 404', () =>
+    Effect.gen(function* () {
+      const created = yield* createSeries;
+      const [create] = yield* listOps;
+      yield* (yield* EventMutations).updateRecurring({
+        ...target,
+        changes: { title: 'Renamed' },
+        masterId: created.id,
+        scope: 'series',
+      });
+      const ops = yield* listOps;
+      expect(ops.map((op) => `${op.kind}:${op.eventId}`)).toEqual([`create:${created.id}`]);
+      expect(ops[0]!.payload?.title).toBe('Renamed');
+      // Its place in the queue: occurrence edits queued after it still wait.
+      expect(ops[0]!.createdAt).toBe(create!.createdAt);
+    }).pipe(noYield, Effect.provide(testLayer)),
+  );
+
+  it.effect('this-and-following truncates inside the create and creates the new half', () =>
+    Effect.gen(function* () {
+      const created = yield* createSeries;
+      yield* (yield* EventMutations).updateRecurring({
+        ...target,
+        changes: { title: 'Later' },
+        masterId: created.id,
+        scope: 'following',
+      });
+      const ops = yield* listOps;
+      expect(ops.map((op) => op.kind)).toEqual(['create', 'create']);
+      expect(ops[0]!.eventId).toBe(created.id);
+      expect(ops[0]!.payload?.recurrence).toEqual(['RRULE:FREQ=DAILY;UNTIL=20260704T085959Z']);
+      expect(ops[1]!.payload?.title).toBe('Later');
+    }).pipe(noYield, Effect.provide(testLayer)),
+  );
+
+  it.effect('deleting it queues nothing; deleting from an occurrence on truncates the create', () =>
+    Effect.gen(function* () {
+      const created = yield* createSeries;
+      const mutations = yield* EventMutations;
+      const events = yield* EventRepo;
+      yield* mutations.deleteRecurring({ ...target, masterId: created.id, scope: 'following' });
+      const ops = yield* listOps;
+      expect(ops.map((op) => op.kind)).toEqual(['create']);
+      expect(ops[0]!.payload?.recurrence).toEqual(['RRULE:FREQ=DAILY;UNTIL=20260704T085959Z']);
+
+      yield* mutations.deleteRecurring({ ...target, masterId: created.id, scope: 'series' });
+      expect(yield* listOps).toEqual([]);
+      expect(yield* events.getById('acc-1', 'cal-1', created.id)).toBeNull();
+    }).pipe(noYield, Effect.provide(testLayer)),
+  );
+
+  it.effect('an occurrence edit waits for the create instead of 404ing and being dropped', () =>
+    Effect.gen(function* () {
+      const created = yield* createSeries;
+      const mutations = yield* EventMutations;
+      yield* mutations.updateRecurring({
+        ...target,
+        changes: { title: 'Just this one' },
+        masterId: created.id,
+        scope: 'instance',
+      });
+      // The stub insert fails, so the create stays queued ahead of it.
+      yield* mutations.processPendingOps();
+      const instance = (yield* listOps).find((op) => op.eventId !== created.id);
+      expect(instance?.kind).toBe('update');
+      expect(instance?.lastError).toBe('waiting for the create ahead of it');
+      const events = yield* EventRepo;
+      expect(
+        (yield* events.getById('acc-1', 'cal-1', `${created.id}_20260704T090000Z`))?.title,
+      ).toBe('Just this one');
+    }).pipe(noYield, Effect.provide(testLayer)),
+  );
+
+  it.effect('a sent create may be on Google: series edits and deletes queue behind it', () =>
+    Effect.gen(function* () {
+      const created = yield* createSeries;
+      const ops = yield* PendingOpRepo;
+      const [create] = yield* ops.listAll();
+      // The insert went out; its response never came back.
+      yield* ops.markDispatched(create!.id, 1);
+      const mutations = yield* EventMutations;
+      yield* mutations.updateRecurring({
+        ...target,
+        changes: { title: 'Renamed' },
+        masterId: created.id,
+        scope: 'series',
+      });
+      expect((yield* ops.listAll()).map((op) => op.kind)).toEqual(['create', 'update']);
+      expect((yield* ops.listAll())[0]!.payload?.title).toBe('Fresh');
+
+      yield* mutations.deleteRecurring({ ...target, masterId: created.id, scope: 'following' });
+      expect((yield* ops.listAll()).map((op) => op.kind)).toEqual(['create', 'update']);
+      expect((yield* ops.listAll())[1]!.payload?.recurrence).toEqual([
+        'RRULE:FREQ=DAILY;UNTIL=20260704T085959Z',
+      ]);
+
+      yield* mutations.deleteRecurring({ ...target, masterId: created.id, scope: 'series' });
+      // The delete is sent after the create, whatever Google made of it.
+      expect((yield* ops.listAll()).map((op) => op.kind)).toEqual(['create', 'delete']);
+    }).pipe(noYield, Effect.provide(testLayer)),
   );
 });

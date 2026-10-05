@@ -219,15 +219,20 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
       // A move and the edits of the same series keep their queue order even
       // when backoff lets listDue skip the older one: an edit queued before
       // the move patches the source calendar, one queued after patches the
-      // destination — either would 404 on the wrong side of the move.
+      // destination — either would 404 on the wrong side of the move. An
+      // occurrence edit (or RSVP) queued behind its series' create waits
+      // for it the same way: Google has no instance to patch until then,
+      // and the 404 would drop the edit.
       if (op.kind === 'move' || EVENT_KINDS.has(op.kind)) {
         const earlier = yield* pendingOpRepo.earlierInSeries(op);
-        if (op.kind === 'move' ? earlier.length > 0 : earlier.includes('move')) {
-          return retry(
-            op.kind === 'move'
-              ? 'waiting for earlier changes to the event'
-              : 'waiting for the move ahead of it',
-          );
+        if (op.kind === 'move' && earlier.length > 0) {
+          return retry('waiting for earlier changes to the event');
+        }
+        if (op.kind !== 'move' && earlier.includes('move')) {
+          return retry('waiting for the move ahead of it');
+        }
+        if (op.kind !== 'move' && op.kind !== 'create' && earlier.includes('create')) {
+          return retry('waiting for the create ahead of it');
         }
       }
       switch (op.kind) {
@@ -361,6 +366,13 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
             // to send, and the user should know the edit is gone.
             return yield* drop(op, 'stored payload unreadable');
           }
+          // From here on Google may have the event even if the response
+          // never arrives (its retry then answers 409, which counts as
+          // done): a later edit must not fold into this create, nor a
+          // delete simply drop it (mutations.ts unsentCreateOf).
+          if (op.dispatchedAt === undefined) {
+            yield* pendingOpRepo.markDispatched(op.id, yield* Clock.currentTimeMillis);
+          }
           const response = yield* client.insertEvent({
             accountId: op.accountId,
             calendarId: op.calendarId,
@@ -372,13 +384,23 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
             },
             sendUpdates: sendUpdatesFor(op.payload, false, guestMode),
           });
+          // An edit or delete queued behind this create owns the row now:
+          // the response would put back what the user changed or deleted
+          // since. That op's own response settles the row.
+          const followed = (yield* pendingOpRepo.listAll()).some(
+            (queued) =>
+              queued.id !== op.id &&
+              queued.accountId === op.accountId &&
+              queued.calendarId === op.calendarId &&
+              queued.eventId === op.eventId,
+          );
           const synced = mapGcalEvent(response, {
             accountId: op.accountId,
             calendarId: op.calendarId,
             defaultTimeZone: op.payload.startTimeZone ?? 'UTC',
             syncedAt: yield* Clock.currentTimeMillis,
           });
-          if (synced) {
+          if (synced && !followed) {
             yield* eventRepo.upsertMany([synced]);
           }
           return 'done' as const;

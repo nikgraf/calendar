@@ -164,10 +164,40 @@ export const editorCapabilities = ({
     canInvite: (targetCalendar?.provider ?? 'google') === 'google',
     canMoveCalendar: isExisting && !readOnly && (!isRecurring || scope === 'series'),
     canRsvp: (sourceCalendar?.provider ?? 'google') === 'google' && hasOwnAttendee,
+    /** A repeating event keeps its kind (see `recurringTimesError`). */
+    canSwitchAllDay: !(isExisting && isRecurring),
     /** "Calendar default" is a Google concept; EventKit alarms are always explicit. */
     canUseDefaultReminders: (targetCalendar?.provider ?? 'google') === 'google',
     readOnly,
   };
+};
+
+/**
+ * Why a time edit of an existing repeating event cannot be saved, or
+ * undefined. A series keeps its kind (timed or all-day), and an all-day
+ * one moves one occurrence at a time — the rules EventMutations and the
+ * agent gateway enforce, checked here so the editor can say so in words.
+ */
+export const recurringTimesError = ({
+  date,
+  isAllDay,
+  opened,
+  scope,
+}: {
+  /** The editor's date field now. */
+  readonly date: string;
+  readonly isAllDay: boolean;
+  /** The occurrence as the editor opened it. */
+  readonly opened: { readonly date: string; readonly isAllDay: boolean };
+  readonly scope: RecurringScope;
+}): string | undefined => {
+  if (isAllDay !== opened.isAllDay) {
+    return 'A repeating event cannot switch between all-day and timed.';
+  }
+  if (isAllDay && scope !== 'instance' && date !== opened.date) {
+    return 'An all-day repeating event moves one occurrence at a time: choose “This event”.';
+  }
+  return undefined;
 };
 
 /**
@@ -269,12 +299,10 @@ export const useEventEditorModel = ({
     return preferred ?? writableKeys[0] ?? '';
   });
   const [isAllDay, setIsAllDay] = useState(existing?.isAllDay ?? prefill?.isAllDay ?? false);
-  const [date, setDate] = useState(
-    existing
-      ? (existing.startDate ??
-          toZonedDateTime(existing.startUtc, timeZone).toPlainDate().toString())
-      : (prefill?.date ?? seed.initialDate.toString()),
-  );
+  const openedDate = existing
+    ? (existing.startDate ?? toZonedDateTime(existing.startUtc, timeZone).toPlainDate().toString())
+    : undefined;
+  const [date, setDate] = useState(openedDate ?? prefill?.date ?? seed.initialDate.toString());
   const [startTime, setStartTime] = useState(
     existing && !existing.isAllDay
       ? timeString(existing.startUtc, timeZone)
@@ -515,7 +543,17 @@ export const useEventEditorModel = ({
   const save = async () => {
     const fields = { calendarKey, date, endTime, isAllDay, startTime, title };
     const spec = repeatSpec();
-    const invalid = validateEventDraft(fields, timeZone) ?? (spec ? byDayError(spec) : undefined);
+    const invalid =
+      validateEventDraft(fields, timeZone) ??
+      (spec ? byDayError(spec) : undefined) ??
+      (existing && isRecurring && openedDate !== undefined
+        ? recurringTimesError({
+            date,
+            isAllDay,
+            opened: { date: openedDate, isAllDay: existing.isAllDay },
+            scope,
+          })
+        : undefined);
     if (invalid) {
       setError(invalid);
       return;
@@ -568,6 +606,9 @@ export const useEventEditorModel = ({
           changes: {
             ...(attendeesDirty ? { attendees } : {}),
             geo: savedGeo ?? null,
+            // Sent so the times are read as what they are: a switch is
+            // refused above, and by the mutation should one get past.
+            isAllDay,
             // Empty string clears the field; undefined would read as "unchanged".
             location: location.trim(),
             ...(remindersDirty ? { reminders } : {}),
