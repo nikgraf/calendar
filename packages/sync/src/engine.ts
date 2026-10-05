@@ -129,6 +129,13 @@ export interface SyncEngineShape {
   readonly start: () => Effect.Effect<void, never, never>;
   /** Full pass over every account; failures are logged, not thrown. */
   readonly syncAll: () => Effect.Effect<void>;
+  /**
+   * A pass the user caused — the app came back, the machine woke, an
+   * account reconnected: queued changes waiting out a backoff (up to 30
+   * minutes) are tried in it rather than sat out. The timed poll keeps
+   * the backoff.
+   */
+  readonly syncNow: () => Effect.Effect<void>;
 }
 
 const make: Effect.Effect<
@@ -969,7 +976,12 @@ const make: Effect.Effect<
       );
     });
 
-  return { exclusive: (effect) => gate.withPermits(1)(effect), start, syncAll };
+  return {
+    exclusive: (effect) => gate.withPermits(1)(effect),
+    start,
+    syncAll,
+    syncNow: () => Effect.andThen(mutations.retryPendingOps(), syncAll()),
+  };
 });
 
 export class SyncEngine extends Context.Service<SyncEngine, SyncEngineShape>()('sync/SyncEngine') {

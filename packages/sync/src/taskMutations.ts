@@ -20,6 +20,7 @@ export interface TaskMutationDeps {
   readonly enqueue: (op: PendingOp) => Effect.Effect<void, SqlError>;
   /** Queued ops addressed to (opaque containerId, itemId). */
   readonly opsForEvent: (
+    accountId: string,
     calendarId: string,
     eventId: string,
   ) => Effect.Effect<ReadonlyArray<PendingOp>, SqlError>;
@@ -64,7 +65,7 @@ export const makeTaskMutations = (deps: TaskMutationDeps): TaskMutations => {
           taskId,
         });
         // Only the latest toggle needs to reach Google.
-        const queued = yield* opsForEvent(taskListId, taskId);
+        const queued = yield* opsForEvent(accountId, taskListId, taskId);
         for (const op of queued) {
           if (op.accountId === accountId && op.kind === 'completeTask') {
             yield* pendingOpRepo.remove(op.id);
@@ -135,7 +136,7 @@ export const makeTaskMutations = (deps: TaskMutationDeps): TaskMutations => {
         yield* taskRepo.removeTask(accountId, taskListId, taskId);
         // Everything queued for this task is moot now — and if its create
         // never pushed, the task never existed upstream: no server op.
-        const queued = yield* opsForEvent(taskListId, taskId);
+        const queued = yield* opsForEvent(accountId, taskListId, taskId);
         let unsentCreate = false;
         for (const queuedOp of queued) {
           if (queuedOp.accountId !== accountId) {
@@ -176,7 +177,7 @@ export const makeTaskMutations = (deps: TaskMutationDeps): TaskMutations => {
           taskId,
         });
         const now = yield* Clock.currentTimeMillis;
-        const queued = yield* opsForEvent(taskListId, taskId);
+        const queued = yield* opsForEvent(accountId, taskListId, taskId);
         const pendingCreate = queued.find(
           (queuedOp) => queuedOp.accountId === accountId && queuedOp.kind === 'createTask',
         );
