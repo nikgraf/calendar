@@ -2130,3 +2130,56 @@ both had merged.
       recording, so the closed bar's late `cancelRecording()` stopped a
       reopened bar's). A new recording stops the one it replaces when it
       commits.
+
+### Review fixes, third batch (2026-10-05)
+
+Four more Tier 0 items of the 2026-10-02 review, one PR each, grouped so
+none conflicts with another; each fix came with a failing test first,
+except where a test cannot fail on Node (noted).
+
+- [x] Save once — #124 (`todo/save-once`). **One write at a time per
+      editor**: Save and Delete run through one slot (`useOneWrite`), and
+      a press while a write is in flight starts nothing; a second tap
+      used to create a second event or task. The slot is a ref set
+      synchronously, so two clicks in one tick count once (desktop e2e).
+      `busy` only dims the buttons: disabled, a button came back on the
+      next render only, and CI's convert e2e showed a press right after a
+      declined confirmation landing on it and doing nothing.
+- [x] Queue leftovers after #110 and #118 — #125
+      (`todo/queue-leftovers`). **A sent create stays in its calendar on
+      a move** (`googleServerMove`), with the move queued behind it: it
+      may have landed there, and re-keyed into the destination its retry
+      inserted a second copy. **A 410 on a write is "gone", like a 404**
+      (failForStatus reads every 410 as an expired sync token; taken as
+      done, the row stayed pending for good). **Losing the tasks scope
+      drops the op through `drop`**, which releases the row and tells the
+      UI. **An RSVP sends If-Match** on the etag it was queued against:
+      when that holds, the edits built on it move to the etag it produced
+      (an edit right behind an RSVP no longer parks against it); a 412
+      resends it unchecked — an RSVP never loses to an unrelated edit —
+      and moves nothing.
+- [x] Event zones and repeat ends — #126 (`todo/event-zones`). **A pulled
+      event without a zone takes its calendar's** (the zone Google sends
+      with each page, then the stored calendar's), not UTC. **Zones are
+      spelled for the engine where events come in and where rows are
+      read** (`engineZoneId`, `engineRecurrenceLines`: the start zone and
+      every TZID): Hermes rejects `Asia/Kolkata`, and such a series was
+      left out of every iOS view; decoding covers rows stored before. A
+      zone known under no spelling stays as it was. Node knows every
+      spelling, so iOS flow 24 (a fixture series in that zone) is the
+      only check on the engine that rejects it. **A repeat end before the
+      first day** is read by quick-add as next year's ("until March" in
+      October), dropped if still before; the editors refuse one
+      (`repeatUntilError`) and the until pickers start at the first day.
+- [x] Desktop robustness — #127 (`todo/desktop-robustness`). **A page
+      leaves as an rpc client when it starts a new document** (⌘R; not a
+      hash change, so the Settings panes stay one client). The review's
+      "stops receiving invalidations" did not reproduce — the reloaded
+      page reuses the old stream's request id and gets its batches by
+      accident — but every reload leaked that stream, and the server
+      drops a new request whose id is still running, so a query could
+      hang. **A helper timeout fails that request alone** and sends a
+      `status` probe; only a probe that times out too kills the helper.
+      The helper runs each request in its own task, so a slow MapKit
+      search no longer takes a pending permission prompt or a
+      transcription with it.
