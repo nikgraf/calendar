@@ -2022,9 +2022,16 @@ a failing test first.
       guest. Decisions: **refuse, don't strip** (`hiddenCharacter`, in
       `checkText`, the former length-only `within` every free-text field
       already went through): control characters other than line breaks
-      and tabs, and every default-ignorable code point; a joiner or
-      variation selector inside an emoji is allowed. Tabs show as a space
-      in the summary. Invitation text keeps being stripped for display.
+      and tabs, and every default-ignorable code point. **A joiner or
+      variation selector only inside a complete emoji** (review of #114:
+      `\p{RGI_Emoji}`, Unicode's recommended sequences): a joiner between
+      pictographs that form no emoji draws as nothing, and its presence or
+      absence spelled "PIN=1234" between visible apples. The summary keeps
+      complete emoji whole, so it shows the family emoji the write holds.
+      The pattern is built with `new RegExp(…, 'gv')` — a `v` literal needs
+      an ES2024 target; the agent runs only on Node and Electron. Tabs
+      show as a space in the summary. Invitation text keeps being stripped
+      for display.
 - [x] Repeat until ends in the series' own zone — #115
       (`todo/repeat-until-zone`). `UNTIL=<date>T235959Z` lost the last
       day west of UTC and added one east of it. Decision:
