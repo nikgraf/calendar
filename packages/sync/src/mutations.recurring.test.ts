@@ -26,7 +26,7 @@ import {
 import { RemindersClient, unavailableRemindersClient } from '@calendar/reminders';
 import { SqliteClient } from '@effect/sql-sqlite-node';
 import { expect, it } from '@effect/vitest';
-import { Effect, Layer } from 'effect';
+import { Effect, Layer, Scheduler } from 'effect';
 import { layer as reactivityLayer } from 'effect/reactivity/Reactivity';
 import { describe } from 'vitest';
 import { EventMutations } from './mutations.ts';
@@ -132,6 +132,13 @@ const seedMaster = Effect.gen(function* () {
   const events = yield* EventRepo;
   yield* events.upsertMany([master]);
 });
+
+/**
+ * Keeps the drain a mutation forks from running before the next call: the
+ * stub insert would stamp a create as sent in between.
+ */
+const noYield = <A, E, R>(effect: Effect.Effect<A, E, R>): Effect.Effect<A, E, R> =>
+  Effect.provideService(effect, Scheduler.MaxOpsBeforeYield, Number.MAX_SAFE_INTEGER);
 
 const listOps = Effect.gen(function* () {
   return yield* (yield* PendingOpRepo).listAll();
@@ -626,7 +633,7 @@ describe('EventMutations: a series Google has not seen yet', () => {
       expect(ops[0]!.payload?.title).toBe('Renamed');
       // Its place in the queue: occurrence edits queued after it still wait.
       expect(ops[0]!.createdAt).toBe(create!.createdAt);
-    }).pipe(Effect.provide(testLayer)),
+    }).pipe(noYield, Effect.provide(testLayer)),
   );
 
   it.effect('this-and-following truncates inside the create and creates the new half', () =>
@@ -643,7 +650,7 @@ describe('EventMutations: a series Google has not seen yet', () => {
       expect(ops[0]!.eventId).toBe(created.id);
       expect(ops[0]!.payload?.recurrence).toEqual(['RRULE:FREQ=DAILY;UNTIL=20260704T085959Z']);
       expect(ops[1]!.payload?.title).toBe('Later');
-    }).pipe(Effect.provide(testLayer)),
+    }).pipe(noYield, Effect.provide(testLayer)),
   );
 
   it.effect('deleting it queues nothing; deleting from an occurrence on truncates the create', () =>
@@ -659,7 +666,7 @@ describe('EventMutations: a series Google has not seen yet', () => {
       yield* mutations.deleteRecurring({ ...target, masterId: created.id, scope: 'series' });
       expect(yield* listOps).toEqual([]);
       expect(yield* events.getById('acc-1', 'cal-1', created.id)).toBeNull();
-    }).pipe(Effect.provide(testLayer)),
+    }).pipe(noYield, Effect.provide(testLayer)),
   );
 
   it.effect('an occurrence edit waits for the create instead of 404ing and being dropped', () =>
@@ -681,6 +688,35 @@ describe('EventMutations: a series Google has not seen yet', () => {
       expect(
         (yield* events.getById('acc-1', 'cal-1', `${created.id}_20260704T090000Z`))?.title,
       ).toBe('Just this one');
-    }).pipe(Effect.provide(testLayer)),
+    }).pipe(noYield, Effect.provide(testLayer)),
+  );
+
+  it.effect('a sent create may be on Google: series edits and deletes queue behind it', () =>
+    Effect.gen(function* () {
+      const created = yield* createSeries;
+      const ops = yield* PendingOpRepo;
+      const [create] = yield* ops.listAll();
+      // The insert went out; its response never came back.
+      yield* ops.markDispatched(create!.id, 1);
+      const mutations = yield* EventMutations;
+      yield* mutations.updateRecurring({
+        ...target,
+        changes: { title: 'Renamed' },
+        masterId: created.id,
+        scope: 'series',
+      });
+      expect((yield* ops.listAll()).map((op) => op.kind)).toEqual(['create', 'update']);
+      expect((yield* ops.listAll())[0]!.payload?.title).toBe('Fresh');
+
+      yield* mutations.deleteRecurring({ ...target, masterId: created.id, scope: 'following' });
+      expect((yield* ops.listAll()).map((op) => op.kind)).toEqual(['create', 'update']);
+      expect((yield* ops.listAll())[1]!.payload?.recurrence).toEqual([
+        'RRULE:FREQ=DAILY;UNTIL=20260704T085959Z',
+      ]);
+
+      yield* mutations.deleteRecurring({ ...target, masterId: created.id, scope: 'series' });
+      // The delete is sent after the create, whatever Google made of it.
+      expect((yield* ops.listAll()).map((op) => op.kind)).toEqual(['create', 'delete']);
+    }).pipe(noYield, Effect.provide(testLayer)),
   );
 });
