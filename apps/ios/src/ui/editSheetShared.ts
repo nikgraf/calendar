@@ -37,6 +37,10 @@ export const sheetStyles = StyleSheet.create({
     fontSize: 14,
     paddingVertical: 2,
   },
+  /** Save and Delete while a save or delete is running. */
+  busy: {
+    opacity: 0.4,
+  },
   calendarGroup: {
     color: palette.textMuted,
     fontSize: 12,

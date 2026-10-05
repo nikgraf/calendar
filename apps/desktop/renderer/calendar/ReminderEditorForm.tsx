@@ -160,7 +160,8 @@ export function ReminderEditorForm({
       <div className="mt-2 flex items-center justify-between">
         {task && !taskModel.readOnly ? (
           <button
-            className="text-sm text-red-600 hover:underline"
+            className="text-sm text-red-600 hover:underline disabled:opacity-40"
+            disabled={taskModel.busy}
             onClick={() => void taskModel.remove()}
             type="button"
           >
@@ -179,8 +180,8 @@ export function ReminderEditorForm({
           </button>
           {taskModel.readOnly ? null : (
             <button
-              className="rounded-lg bg-blue-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-blue-500"
-              disabled={moveConfirmation.pending !== null}
+              className="rounded-lg bg-blue-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-40"
+              disabled={taskModel.busy || moveConfirmation.pending !== null}
               onClick={() => void taskModel.save()}
               type="button"
             >

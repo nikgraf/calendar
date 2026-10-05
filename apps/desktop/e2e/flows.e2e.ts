@@ -538,6 +538,28 @@ describe('calendar desktop e2e', () => {
     expect(created!.endUtc - created!.startUtc).toBe(105 * 60 * 1000);
   });
 
+  it('creates the event once when Save is clicked twice', async () => {
+    const { cdp } = app;
+    const from = await todayGridPoint(21, 5);
+    await cdp.drag(from, { x: from.x, y: from.y + HOUR_HEIGHT });
+    await cdp.waitFor(`document.body.textContent.includes('New event')`);
+    await setEditorTitle('Saved once');
+    // Both clicks land before React re-renders the button disabled.
+    await cdp.eval(`(() => {
+      const save = [...document.querySelectorAll('button')].find((b) => b.textContent?.trim() === 'Save');
+      save.click();
+      save.click();
+    })()`);
+    await cdp.waitFor(`!!document.querySelector('[title^="Saved once"]')`);
+    expect(await waitForEvent((event) => event.title === 'Saved once')).toBeDefined();
+    // A second create would be written right behind the first.
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+    const saved = (await readEvents(app.userDataDir)).filter(
+      (event) => event.title === 'Saved once',
+    );
+    expect(saved).toHaveLength(1);
+  });
+
   it('draws a slot upwards, keeping the quarter the drag started in', async () => {
     const { cdp } = app;
     const from = await todayGridPoint(23, 5);

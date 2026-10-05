@@ -17,6 +17,7 @@ import {
 import { useState } from 'react';
 import type { EditorConfirmRequest } from './editorModel.ts';
 import { useBackendMutations, useTaskReadOnlyLookup } from './hooks.ts';
+import { useOneWrite } from './oneWrite.ts';
 import { repeatNumberError, useRepeatState } from './repeatState.ts';
 import { offeredTaskLists, taskEditorChanges, type TaskEditorValues } from './taskEditorChanges.ts';
 
@@ -144,6 +145,7 @@ export const useTaskEditorModel = ({
       : undefined,
   );
   const [error, setError] = useState<string | null>(null);
+  const write = useOneWrite();
 
   const offeredLists = offeredTaskLists(taskLists, existing);
   const selectedList = taskLists.find((list) => listKeyOf(list.accountId, list.id) === listKey);
@@ -371,6 +373,8 @@ export const useTaskEditorModel = ({
     addDueDate: () => setDated(true),
     adopt,
     alarm,
+    /** A save or delete is running: Save and Delete are disabled. */
+    busy: write.busy,
     canMoveList,
     /** False for an existing task without a due day, until one is added. */
     dated,
@@ -384,9 +388,9 @@ export const useTaskEditorModel = ({
     provider,
     readOnly,
     recurrenceUnsupported,
-    remove,
+    remove: () => write.run(remove),
     ...repeatState,
-    save,
+    save: () => write.run(save),
     setAlarm,
     setDueDate,
     setDueTime,
