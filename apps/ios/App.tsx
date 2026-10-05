@@ -12,6 +12,7 @@ import {
   usePendingOps,
   useTaskLists,
   useBirthdaysInRangeStable,
+  useEventReadOnlyLookup,
   useTaskReadOnlyLookup,
   useTasksInRangeStable,
   useTimeZones,
@@ -219,6 +220,7 @@ function CalendarBody({
   const mutations = useGuardedMutations();
   const taskLists = useTaskLists();
   const isTaskReadOnly = useTaskReadOnlyLookup();
+  const isEventReadOnly = useEventReadOnlyLookup();
   const pendingOps = usePendingOps();
   const listColorOf = useListColorLookup();
   const findSlots = useMemo(
@@ -359,6 +361,7 @@ function CalendarBody({
             colorOf={colorOf}
             days={days}
             events={events}
+            isEventReadOnly={isEventReadOnly}
             isTaskReadOnly={isTaskReadOnly}
             listColorOf={listColorOf}
             onBirthdayPress={(birthday) => setViewBirthday(birthday)}

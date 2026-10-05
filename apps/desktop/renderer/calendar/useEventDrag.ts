@@ -62,7 +62,7 @@ interface DragOrigin {
   readonly startClientX: number;
   readonly startClientY: number;
   readonly target:
-    | { readonly event: EventRecord; readonly kind: 'event' }
+    | { readonly event: EventRecord; readonly kind: 'event'; readonly readOnly: boolean }
     | {
         /** The strip column the chip or block started in. */
         readonly dayIndex: number;
@@ -74,11 +74,12 @@ interface DragOrigin {
 }
 
 // Recurring instances are draggable too — a drag commits a single-instance
-// override, like Fantastical. Only all-day chips stay fixed.
+// override, like Fantastical. All-day chips stay fixed, and nothing in a
+// calendar or list we cannot write moves.
 const isDraggable = (origin: DragOrigin): boolean =>
-  origin.target.kind === 'event'
-    ? !origin.target.event.isAllDay && !origin.target.event.recurrence
-    : !origin.target.readOnly;
+  !origin.target.readOnly &&
+  (origin.target.kind === 'task' ||
+    (!origin.target.event.isAllDay && !origin.target.event.recurrence));
 
 /**
  * Pointer-event drag for week/day event blocks: vertical movement shifts
@@ -98,6 +99,7 @@ const isDraggable = (origin: DragOrigin): boolean =>
 export const useEventDrag = ({
   gridRef,
   hourHeight,
+  isEventReadOnly,
   laneRef,
   onEventClick,
   onTaskClick,
@@ -107,6 +109,8 @@ export const useEventDrag = ({
   /** The timed strip: its rect gives the column width and where minute 0 sits. */
   gridRef: RefObject<HTMLDivElement | null>;
   hourHeight: number;
+  /** An event in a calendar we cannot write opens on click but never drags. */
+  isEventReadOnly: (event: EventRecord) => boolean;
   /** The all-day lane; a release inside it drops as all-day. */
   laneRef: RefObject<HTMLDivElement | null>;
   onEventClick: (event: EventRecord) => void;
@@ -247,33 +251,16 @@ export const useEventDrag = ({
       pointerId: domEvent.pointerId,
       startClientX: domEvent.clientX,
       startClientY: domEvent.clientY,
-      target: { event, kind: 'event' },
+      target: { event, kind: 'event', readOnly: isEventReadOnly(event) },
     };
-    if (!isDraggable(origin)) {
-      // Still allow click-through for recurring/all-day events.
-      if (mode === 'move') {
-        originRef.current = {
-          active: false,
-          itemKey,
-          mode,
-          pointerId: domEvent.pointerId,
-          startClientX: domEvent.clientX,
-          startClientY: domEvent.clientY,
-          target: { event, kind: 'event' },
-        };
-      }
+    if (!isDraggable(origin) && mode !== 'move') {
       return;
     }
+    // Capture presses on blocks that cannot move too (read-only, recurring
+    // masters): the release must come back here — a click opens the event,
+    // a drag does nothing — instead of landing on the grid as a slot click.
     domEvent.currentTarget.setPointerCapture(domEvent.pointerId);
-    originRef.current = {
-      active: false,
-      itemKey,
-      mode,
-      pointerId: domEvent.pointerId,
-      startClientX: domEvent.clientX,
-      startClientY: domEvent.clientY,
-      target: { event, kind: 'event' },
-    };
+    originRef.current = origin;
   };
 
   const onTaskPointerDown = (

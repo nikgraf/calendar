@@ -45,6 +45,7 @@ export function DayColumn({
   divided,
   draggingKey,
   events,
+  isEventReadOnly,
   isTaskReadOnly,
   isToday,
   listColorOf,
@@ -69,6 +70,7 @@ export function DayColumn({
   draggingKey: string | null;
   /** Timed events touching this day. */
   events: ReadonlyArray<EventRecord>;
+  isEventReadOnly: (event: EventRecord) => boolean;
   isTaskReadOnly: (task: TaskRecord) => boolean;
   isToday: boolean;
   listColorOf: (task: TaskRecord) => string | undefined;
@@ -191,6 +193,7 @@ export function DayColumn({
             onCommitMove={(deltaMinutes) => onCommit(event, moveEventTimes(event, deltaMinutes))}
             onCommitResize={(deltaMinutes) => onCommit(event, resizeEventEnd(event, deltaMinutes))}
             onPress={() => onEventPress(event)}
+            readOnly={isEventReadOnly(event)}
             secondaryZones={secondaryZones}
             timeZone={timeZone}
             top={box.top * 24 * HOUR_HEIGHT}

@@ -1317,6 +1317,56 @@ describe('Google task chips drag along the lane but never into the grid', () => 
   });
 });
 
+describe('an event in a read-only calendar', () => {
+  let viewerApp: App;
+
+  beforeAll(async () => {
+    viewerApp = await launchApp({
+      ...seed,
+      calendars: [
+        ...seed.calendars,
+        new CalendarInfo({ ...calendar('cal-shared', 'Team', '#a855f7'), accessRole: 'reader' }),
+      ],
+      events: [timedEvent('evt-shared', 'cal-shared', 'Their review', todayAt(11), todayAt(12))],
+    });
+  }, 60_000);
+
+  afterEach(async (context) => {
+    if (context.task.result?.state === 'fail') {
+      await viewerApp?.dump(context.task.name);
+    }
+  });
+
+  afterAll(async () => {
+    await viewerApp?.stop();
+  });
+
+  const shared = async () =>
+    (await readEvents(viewerApp.userDataDir)).find((event) => event.id === 'evt-shared');
+
+  it('neither moves nor resizes, and opens as a viewer', async () => {
+    const { cdp } = viewerApp;
+    const before = await shared();
+    const from = await cdp.locate('[title^="Their review"]');
+    await cdp.drag(from, { x: from.x, y: from.y + 2 * HOUR_HEIGHT });
+    const handle = await cdp.locate('[title^="Their review"]', { atBottom: true });
+    await cdp.drag(handle, { x: handle.x, y: handle.y + HOUR_HEIGHT });
+    await new Promise((resolve) => setTimeout(resolve, 800));
+    expect(await shared()).toMatchObject({
+      endUtc: before!.endUtc,
+      startUtc: before!.startUtc,
+      syncStatus: 'synced',
+    });
+    expect(await readPendingOps(viewerApp.userDataDir)).toEqual([]);
+    // The release did not fall through to the grid as a slot click.
+    expect(await cdp.eval(`document.body.textContent.includes('New event')`)).toBe(false);
+    // Still a click target: it opens the viewer.
+    const block = await cdp.locate('[title^="Their review"]');
+    await cdp.click(block.x, block.y);
+    await cdp.waitFor(`!!document.querySelector('[data-testid="event-read-only"]')`);
+  });
+});
+
 describe('collapsible all-day lane', () => {
   const LANE_ROW = 24;
   const LANE_PADDING = 8;

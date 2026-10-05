@@ -10,6 +10,7 @@ import {
   useCalendarNavigation,
   useCalendars,
   useCaptureModel,
+  useEventReadOnlyLookup,
   useEventsInRangeStable,
   useGuardedMutations,
   useListColorLookup,
@@ -107,6 +108,7 @@ function CalendarBody({
   const taskLists = useTaskLists();
   const listColorOf = useListColorLookup();
   const isTaskReadOnly = useTaskReadOnlyLookup();
+  const isEventReadOnly = useEventReadOnlyLookup();
   const calendars = useCalendars();
   const accounts = useAccounts();
   const colorOf = useMemo(() => makeColorLookup(calendars), [calendars]);
@@ -264,6 +266,7 @@ function CalendarBody({
             colorOf={colorOf}
             days={days}
             events={events}
+            isEventReadOnly={isEventReadOnly}
             isTaskReadOnly={isTaskReadOnly}
             listColorOf={listColorOf}
             onBirthdayClick={(birthday) => setViewBirthday(birthday)}
