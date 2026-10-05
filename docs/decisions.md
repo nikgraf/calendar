@@ -2157,7 +2157,14 @@ except where a test cannot fail on Node (noted).
       when that holds, the edits built on it move to the etag it produced
       (an edit right behind an RSVP no longer parks against it); a 412
       resends it unchecked — an RSVP never loses to an unrelated edit —
-      and moves nothing.
+      and moves nothing. **Only ops queued after the one that landed
+      follow its etag** (review of #125: an RSVP that overtook a guest-list
+      edit in backoff moved it too, and the edit then undid the RSVP). **A
+      delete answered 404 or 410 is done and keeps the local state**: for
+      an occurrence that is the cancelled override, whose loss brought the
+      occurrence back. **Dropping a create drops a move queued behind it**
+      and the rows it put at the destination, which the move's 404 would
+      have put back in the source as synced.
 - [x] Event zones and repeat ends — #126 (`todo/event-zones`). **A pulled
       event without a zone takes its calendar's** (the zone Google sends
       with each page, then the stored calendar's), not UTC. **Zones are
@@ -2167,13 +2174,19 @@ except where a test cannot fail on Node (noted).
       left out of every iOS view; decoding covers rows stored before. A
       zone known under no spelling stays as it was. Node knows every
       spelling, so iOS flow 24 (a fixture series in that zone) is the
-      only check on the engine that rejects it. **A repeat end before the
+      only check on the engine that rejects it; its series is anchored to
+      noon on the simulator's today (review of #126: a UTC anchor missed
+      today where the local date differs). **A repeat end before the
       first day** is read by quick-add as next year's ("until March" in
       October), dropped if still before; the editors refuse one
       (`repeatUntilError`) and the until pickers start at the first day.
 - [x] Desktop robustness — #127 (`todo/desktop-robustness`). **A page
-      leaves as an rpc client when it starts a new document** (⌘R; not a
-      hash change, so the Settings panes stay one client). The review's
+      leaves as an rpc client when its new document says so**: the
+      preload sends `rpc:document` before any rpc frame (⌘R; a hash change
+      runs no preload, so the Settings panes stay one client). Not on
+      did-start-navigation (review of #127): it fires before main.ts's
+      will-navigate refuses a navigation, and a refused one keeps its
+      document — and must keep its streams. The review's
       "stops receiving invalidations" did not reproduce — the reloaded
       page reuses the old stream's request id and gets its batches by
       accident — but every reload leaked that stream, and the server
