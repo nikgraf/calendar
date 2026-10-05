@@ -26,6 +26,10 @@ const weeksOut = (weeks: number, hour: number): string => {
   ).toISOString();
 };
 
+/** The UTC calendar day `days` from today, YYYY-MM-DD. */
+const utcDay = (days: number): string =>
+  new Date(Date.now() + days * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+
 /**
  * The signed-in Google account the Maestro flows see when Metro runs
  * with EXPO_PUBLIC_CALENDAR_GOOGLE=fixture (CI does): one writable
@@ -68,6 +72,23 @@ export const googleFixture: GoogleFixture = {
         start: { dateTime: weeksOut(5, 10) },
         status: 'confirmed',
         summary: 'Fixture planning',
+      },
+    ],
+    // The zone-series flow's event: daily in Asia/Kolkata, which Hermes
+    // rejects (it takes Asia/Calcutta), with an EXDATE in that zone too.
+    // 19:30 there is 14:00 UTC, so the Kolkata and UTC days agree. In the
+    // mirror flow's destination, so nothing mirrors it.
+    'mock-shared': [
+      {
+        end: { dateTime: `${utcDay(-7)}T20:00:00+05:30`, timeZone: 'Asia/Kolkata' },
+        id: 'fixture-kolkata',
+        recurrence: [
+          'RRULE:FREQ=DAILY',
+          `EXDATE;TZID=Asia/Kolkata:${utcDay(-3).replaceAll('-', '')}T193000`,
+        ],
+        start: { dateTime: `${utcDay(-7)}T19:30:00+05:30`, timeZone: 'Asia/Kolkata' },
+        status: 'confirmed',
+        summary: 'Kolkata series',
       },
     ],
   },

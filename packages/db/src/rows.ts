@@ -4,6 +4,8 @@ import {
   CalendarInfo,
   CarriedText,
   Contact,
+  engineRecurrenceLines,
+  engineZoneId,
   EventRecord,
   EventReminders,
   GeoLocation,
@@ -327,6 +329,16 @@ const stringArray = (value: unknown): Array<string> | undefined =>
     ? (value as Array<string>)
     : undefined;
 
+/**
+ * A row's zones are read in the spelling this engine accepts: rows pulled
+ * before mapEvent did that keep Google's (Hermes rejects Asia/Kolkata, so
+ * such a series was left out of every view on iOS).
+ */
+const recurrenceOf = (stored: string | null): Array<string> | undefined => {
+  const lines = stringArray(parseJson(stored));
+  return lines && engineRecurrenceLines(lines);
+};
+
 export const eventFromRow = (row: EventRow): EventRecord =>
   new EventRecord({
     accountId: row.account_id,
@@ -344,11 +356,11 @@ export const eventFromRow = (row: EventRow): EventRecord =>
     mirror: row.mirror ?? undefined,
     organizerEmail: row.organizer_email ?? undefined,
     originalStartUtc: row.original_start_utc ?? undefined,
-    recurrence: stringArray(parseJson(row.recurrence)),
+    recurrence: recurrenceOf(row.recurrence),
     recurringEventId: row.recurring_event_id ?? undefined,
     reminders: decodeOr(EventReminders, parseJson(row.reminders)),
     startDate: row.start_date ?? undefined,
-    startTimeZone: row.start_time_zone ?? undefined,
+    startTimeZone: row.start_time_zone === null ? undefined : engineZoneId(row.start_time_zone),
     startUtc: row.start_utc,
     status: oneOf<EventRecord['status']>(EVENT_STATUSES, row.status, 'confirmed'),
     syncedAt: row.synced_at,

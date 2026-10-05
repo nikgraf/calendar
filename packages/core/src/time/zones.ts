@@ -505,6 +505,40 @@ export const runtimeZoneId = (
   return legacy !== undefined && legacy !== id && isValid(legacy) ? legacy : undefined;
 };
 
+const engineZoneIds = new Map<string, string>();
+
+/**
+ * A zone an event carries (from Google, EventKit or a stored row) in the
+ * spelling this engine accepts, or as it was when the engine knows none
+ * (its reader then fails as before). Hermes rejects Asia/Kolkata, and a
+ * series in it was left out of every view on iOS. Memoised: rows decode
+ * by the thousand.
+ */
+export const engineZoneId = (id: string): string => {
+  let spelled = engineZoneIds.get(id);
+  if (spelled === undefined) {
+    spelled = runtimeZoneId(id) ?? id;
+    engineZoneIds.set(id, spelled);
+  }
+  return spelled;
+};
+
+/**
+ * Recurrence lines with every TZID parameter (an EXDATE's or RDATE's) in
+ * the engine's spelling, which rrule-temporal hands to Temporal as is.
+ * `spell` is injectable so tests can act out another engine.
+ */
+export const engineRecurrenceLines = (
+  lines: ReadonlyArray<string>,
+  spell: (id: string) => string = engineZoneId,
+): Array<string> =>
+  lines.map((line) =>
+    line.replaceAll(
+      /TZID=("?)([^";:]+)\1/g,
+      (_match, quote: string, zone: string) => `TZID=${quote}${spell(zone)}${quote}`,
+    ),
+  );
+
 let runtimeIds: ReadonlyArray<string> | undefined;
 
 /** The catalog as this engine can store and draw it, resolved once. */
