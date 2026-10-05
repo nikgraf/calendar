@@ -150,13 +150,13 @@ describe('planEventReminders', () => {
       [
         `event:acc/cal/ev:${String(start)}:30`,
         start - 30 * 60_000,
-        'In 30 minutes · 10:00 AM · Room 4B',
+        'In 30 minutes · 9:00 AM · Room 4B',
         start + 5 * 60_000,
       ],
       [
         `event:acc/cal/ev:${String(start)}:0`,
         start,
-        'Starting now · 10:00 AM · Room 4B',
+        'Starting now · 9:00 AM · Room 4B',
         start + 5 * 60_000,
       ],
     ]);
@@ -176,10 +176,51 @@ describe('planEventReminders', () => {
       ],
       window,
     );
+    // The device is in UTC: 00:15 there, and the 30-minute reminder goes
+    // off the evening before.
     expect(plans.map((plan) => plan.body)).toEqual([
-      'In 2 days · Wed, Mar 4 1:15 AM',
-      'In 1 day · Tomorrow 1:15 AM',
-      'In 30 minutes · 1:15 AM',
+      'In 2 days · Wed, Mar 4 12:15 AM',
+      'In 1 day · Tomorrow 12:15 AM',
+      'In 30 minutes · Tomorrow 12:15 AM',
+    ]);
+  });
+
+  it("tells the time on the reader's clock, not the organizer's", () => {
+    const plans = planEventReminders(
+      [
+        event({
+          reminders: new EventReminders({ overrides: [popup(10)], useDefault: false }),
+          // 15:00 in Berlin, made by a colleague in New York.
+          startTimeZone: 'America/New_York',
+          startUtc: utc('2026-03-04T14:00:00Z'),
+        }),
+      ],
+      { ...window, deviceTimeZone: 'Europe/Berlin' },
+    );
+    expect(plans.map((plan) => plan.body)).toEqual(['In 10 minutes · 3:00 PM']);
+  });
+
+  it('a zone or date this engine cannot read costs that event its reminder, not the pass', () => {
+    const plans = planEventReminders(
+      [
+        event({
+          endDate: '2026-03-05',
+          id: 'unknown-zone',
+          isAllDay: true,
+          reminders: new EventReminders({ overrides: [popup(0)], useDefault: false }),
+          startDate: '2026-03-04',
+          // Counted from the device's midnight instead.
+          startTimeZone: 'Mars/Olympus_Mons',
+          startUtc: utc('2026-03-04T00:00:00Z'),
+        }),
+        event({ id: 'unreadable', isAllDay: true, startDate: 'not a date' }),
+        event({ id: 'fine' }),
+      ],
+      window,
+    );
+    expect(plans.map((plan) => [plan.key.split(':')[1]!.split('/')[2], plan.fireAt])).toEqual([
+      ['unknown-zone', utc('2026-03-04T00:00:00Z')],
+      ['fine', utc('2026-03-04T08:50:00Z')],
     ]);
   });
 

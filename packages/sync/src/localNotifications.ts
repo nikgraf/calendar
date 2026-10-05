@@ -66,7 +66,13 @@ const merge = (
  * schedule is only cleared when every producer does.
  */
 const make = (options: {
-  readonly timeZone: string;
+  /**
+   * The device's zone, read on every pass: notifications follow the
+   * device (docs/decisions.md, "Multiple time zones"), and a phone that
+   * travelled keeps its process — captured once at startup, birthday
+   * 9:00s and reminder times stayed on the zone it left.
+   */
+  readonly timeZone: () => string;
 }): Effect.Effect<
   LocalNotificationsShape,
   never,
@@ -185,9 +191,10 @@ const make = (options: {
     const pass = Effect.gen(function* () {
       yield* askOnce;
       const now = yield* Clock.currentTimeMillis;
+      const timeZone = options.timeZone();
       const plans = merge(
-        yield* loadBirthdayPlans(now, options.timeZone),
-        yield* loadEventPlans(now, options.timeZone),
+        yield* loadBirthdayPlans(now, timeZone),
+        yield* loadEventPlans(now, timeZone),
       );
       const next = yield* deliverImmediate(plans, now);
       yield* refreshSchedule(plans, now);
@@ -241,7 +248,8 @@ export class LocalNotifications extends Context.Service<
   LocalNotificationsShape
 >()('sync/LocalNotifications') {
   static readonly layer = (options: {
-    readonly timeZone: string;
+    /** The device's zone, read on every pass (see `make`). */
+    readonly timeZone: () => string;
   }): Layer.Layer<
     LocalNotifications,
     never,
