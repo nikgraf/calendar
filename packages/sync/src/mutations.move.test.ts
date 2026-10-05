@@ -419,6 +419,53 @@ describe('moveEvent inside one Google account', () => {
     }).pipe(noYield, Effect.provide(testLayer(google, appleFake())));
   });
 
+  it.effect('a sent create that Google then rejects takes the move behind it along', () => {
+    // The first insert never landed (offline); the retry is refused for
+    // good. The move queued behind it has nothing to move, and its rows
+    // must not come back as a synced event Google never had.
+    const calls: Array<Call> = [];
+    const google = recordingGoogle(calls, {
+      insertEvent: ({ calendarId, event }) =>
+        Effect.suspend(() => {
+          calls.push({ calendarId, detail: event.summary, kind: 'insert' });
+          return Effect.fail(
+            calls.length === 1
+              ? new ApiUnavailableError({ cause: 'offline', status: 503 })
+              : new GoogleApiError({ message: 'invalid', status: 400 }),
+          );
+        }),
+    });
+    return Effect.gen(function* () {
+      yield* seed();
+      const mutations = yield* EventMutations;
+      const pending = yield* PendingOpRepo;
+      const created = yield* mutations.createEvent({
+        accountId: 'acc-1',
+        calendarId: 'cal-1',
+        endUtc: base + HOUR,
+        isAllDay: false,
+        startTimeZone: 'Europe/Vienna',
+        startUtc: base,
+        title: 'Refused',
+      });
+      yield* mutations.processPendingOps();
+      yield* mutations.moveEvent(move(['acc-1', 'cal-1', created.id], ['acc-1', 'cal-2']));
+      for (const op of yield* queued) {
+        yield* pending.markFailed(op.id, op.attempts, 0, 'test');
+      }
+      yield* mutations.processPendingOps();
+      yield* mutations.processPendingOps();
+
+      expect(calls.map((call) => `${call.kind}:${call.calendarId}`)).toEqual([
+        'insert:cal-1',
+        'insert:cal-1',
+      ]);
+      expect(yield* queued).toEqual([]);
+      expect(yield* rowAt('acc-1', 'cal-1', created.id)).toBeNull();
+      expect(yield* rowAt('acc-1', 'cal-2', created.id)).toBeNull();
+    }).pipe(noYield, Effect.provide(testLayer(google, appleFake())));
+  });
+
   it.effect('moves a series with its exceptions', () => {
     const calls: Array<Call> = [];
     const master = googleEvent({ id: 'ser', recurrence: ['RRULE:FREQ=DAILY;COUNT=5'] });

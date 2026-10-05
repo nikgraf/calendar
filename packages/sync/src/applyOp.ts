@@ -157,7 +157,37 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
             )
           : Effect.void;
       case 'create':
-        return Effect.ignore(eventRepo.deleteEvent(op.accountId, op.calendarId, op.eventId));
+        return Effect.ignore(
+          Effect.gen(function* () {
+            yield* eventRepo.deleteEvent(op.accountId, op.calendarId, op.eventId);
+            // A move queued behind a sent create (mutations.ts
+            // googleServerMove) already put the rows at its destination.
+            // With the create gone it moves nothing: its 404 would put
+            // them back in the source as synced — an event Google never
+            // had. Drop the move and those rows instead.
+            for (const queued of yield* pendingOpRepo.listAll()) {
+              if (
+                queued.kind !== 'move' ||
+                queued.accountId !== op.accountId ||
+                queued.calendarId !== op.calendarId ||
+                queued.eventId !== op.eventId ||
+                queued.targetCalendarId === undefined
+              ) {
+                continue;
+              }
+              yield* pendingOpRepo.remove(queued.id);
+              const destination = queued.targetCalendarId;
+              for (const override of yield* eventRepo.listOverrides(
+                op.accountId,
+                destination,
+                op.eventId,
+              )) {
+                yield* eventRepo.deleteEvent(op.accountId, destination, override.id);
+              }
+              yield* eventRepo.deleteEvent(op.accountId, destination, op.eventId);
+            }
+          }),
+        );
       case 'createTask':
         return op.taskListId
           ? Effect.ignore(taskRepo.removeTask(op.accountId, op.taskListId, op.eventId))
@@ -211,6 +241,14 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
   /** Google no longer has what the op writes to (404, or a 410 on a write). */
   const gone = (op: PendingOp) =>
     Effect.gen(function* () {
+      // A delete is done: what it deletes is gone (an earlier attempt
+      // landed, its response lost). Its local state already says so, and
+      // for one occurrence of a series that state is a cancelled override
+      // — deleting that row would bring the occurrence back, for good if
+      // a pull already consumed Google's cancellation.
+      if (op.kind === 'delete') {
+        return 'done' as const;
+      }
       // Deleted remotely — drop the local copy too. (For deleteTask
       // this is simply "already gone".)
       if (TASK_KINDS.has(op.kind)) {
@@ -249,11 +287,13 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
 
   /**
    * After the op's own write landed, in one transaction: when it was sent
-   * with If-Match (`sentEtag`), the queued edits and deletes built on that
-   * etag — and the row a later edit still holds — move to the etag it
+   * with If-Match (`sentEtag`), the edits and deletes queued after it on
+   * that etag — and the row a later edit still holds — move to the etag it
    * produced. Google checked `sentEtag`, so nothing else changed in
    * between, and a stale If-Match would 412 against the user's own edit.
-   * Then Google's copy settles the row, unless a later op owns it.
+   * One queued before it keeps its etag: it was built without this change
+   * (advanceBaseEtag). Then Google's copy settles the row, unless a later
+   * op owns it.
    */
   const settle = (
     op: PendingOp,
@@ -270,7 +310,7 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
           produced !== undefined &&
           produced !== options.sentEtag
         ) {
-          yield* pendingOpRepo.advanceBaseEtag(event, options.sentEtag, produced);
+          yield* pendingOpRepo.advanceBaseEtag(event, options.sentEtag, produced, op);
           yield* eventRepo.advanceEtag(event, options.sentEtag, produced);
         }
         if (synced && !(yield* othersQueued(op, calendarId))) {

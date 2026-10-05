@@ -193,6 +193,11 @@ describe('PendingOpRepo', () => {
   it.effect('advanceBaseEtag moves the followers built on the sent etag, not parked ones', () =>
     Effect.gen(function* () {
       const repo = yield* PendingOpRepo;
+      // Queued before the op that landed (same instant, earlier row) and
+      // long before: built without its change, so they keep their etag.
+      yield* repo.enqueue(op('older', { baseEtag: '"v1"', createdAt: 0, eventId: 'evt-1' }));
+      yield* repo.enqueue(op('tie', { baseEtag: '"v1"', eventId: 'evt-1' }));
+      yield* repo.enqueue(op('landed', { baseEtag: '"v1"', eventId: 'evt-1' }));
       yield* repo.enqueue(op('same', { baseEtag: '"v1"', eventId: 'evt-1' }));
       yield* repo.enqueue(op('other', { baseEtag: '"v0"', eventId: 'evt-1' }));
       yield* repo.enqueue(op('parked', { baseEtag: '"v1"', eventId: 'evt-1' }));
@@ -202,16 +207,35 @@ describe('PendingOpRepo', () => {
         { accountId: 'acc-1', calendarId: 'cal-1', eventId: 'evt-1' },
         '"v1"',
         '"v2"',
+        { createdAt: 1, id: 'landed' },
       );
       const etags = Object.fromEntries(
         (yield* repo.listAll()).map((entry) => [entry.id, entry.baseEtag]),
       );
       expect(etags).toEqual({
         elsewhere: '"v1"',
+        landed: '"v1"',
+        older: '"v1"',
         other: '"v0"',
         parked: '"v1"',
         same: '"v2"',
+        tie: '"v1"',
       });
+    }).pipe(Effect.provide(freshDbLayer())),
+  );
+
+  it.effect('advanceBaseEtag after an op superseded in flight moves what shares its instant', () =>
+    Effect.gen(function* () {
+      const repo = yield* PendingOpRepo;
+      // The landed op is gone: a later edit replaced it while it was sent.
+      yield* repo.enqueue(op('replacement', { baseEtag: '"v1"', eventId: 'evt-1' }));
+      yield* repo.advanceBaseEtag(
+        { accountId: 'acc-1', calendarId: 'cal-1', eventId: 'evt-1' },
+        '"v1"',
+        '"v2"',
+        { createdAt: 1, id: 'superseded' },
+      );
+      expect((yield* repo.getById('replacement'))?.baseEtag).toBe('"v2"');
     }).pipe(Effect.provide(freshDbLayer())),
   );
 

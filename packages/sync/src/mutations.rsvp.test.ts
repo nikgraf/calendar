@@ -10,6 +10,7 @@ import {
   runMigrations,
 } from '@calendar/db';
 import {
+  ApiUnavailableError,
   ConflictError,
   type GcalEventPatch,
   GoogleCalendarClient,
@@ -118,10 +119,11 @@ const respond = { accountId: 'acc-1', calendarId: 'cal-1', eventId: 'evt-invite'
  * etag is a 412, and write n produces etag "wn". `sent` reads
  * "<fields> <If-Match or unchecked> → <new etag or 412>".
  */
-const ifMatchGoogle = (initialEtag: string) => {
+const ifMatchGoogle = (initialEtag: string, { firstEditFails = false } = {}) => {
   const sent: Array<string> = [];
   let etag = initialEtag;
   let writes = 0;
+  let editFails = firstEditFails;
   // Only the fields the tests change: a PATCH body's nulls are not a stored event.
   const current = (patch: GcalEventPatch = {}) => ({
     attendees:
@@ -140,9 +142,14 @@ const ifMatchGoogle = (initialEtag: string) => {
   const client: Partial<GoogleCalendarClientShape> = {
     getEvent: () => Effect.sync(() => current()),
     patchEvent: ({ baseEtag, event, eventId }) =>
-      Effect.suspend(() => {
+      Effect.suspend((): ReturnType<GoogleCalendarClientShape['patchEvent']> => {
         const fields = 'summary' in event ? 'summary' : 'attendees';
         const check = baseEtag === undefined ? 'unchecked' : `If-Match ${baseEtag}`;
+        if (fields === 'summary' && editFails) {
+          editFails = false;
+          sent.push(`${fields} ${check} → offline`);
+          return Effect.fail(new ApiUnavailableError({ cause: 'offline' }));
+        }
         if (baseEtag !== undefined && baseEtag !== etag) {
           sent.push(`${fields} ${check} → 412`);
           return Effect.fail(new ConflictError({ calendarId: 'cal-1', eventId }));
@@ -258,6 +265,42 @@ describe('EventMutations.respondToEvent', () => {
         'summary If-Match "inv-1" → 412',
       ]);
       const [parked] = yield* (yield* PendingOpRepo).listAll();
+      expect(parked?.kind).toBe('update');
+      expect(parked?.conflictAt).toBeDefined();
+    }).pipe(Effect.provide(makeLayer(google.client)));
+  });
+
+  it.effect('an edit queued before an RSVP that overtook it keeps its etag and asks', () => {
+    // The guest-list edit carries the response the RSVP then replaced: on
+    // the RSVP's etag it would land and quietly undo the RSVP.
+    const google = ifMatchGoogle('"inv-1"', { firstEditFails: true });
+    return Effect.gen(function* () {
+      yield* seed;
+      const mutations = yield* EventMutations;
+      const pending = yield* PendingOpRepo;
+      yield* mutations.updateEvent({
+        ...respond,
+        changes: {
+          attendees: [
+            ...invited.attendees!.map((attendee) => ({ email: attendee.email })),
+            { email: 'new@example.com' },
+          ],
+        },
+      });
+      yield* mutations.respondToEvent({ ...respond, response: 'accepted' });
+      // The edit goes offline into backoff; the RSVP lands meanwhile.
+      yield* mutations.processPendingOps();
+      for (const op of yield* pending.listAll()) {
+        yield* pending.markFailed(op.id, op.attempts, 0, 'test');
+      }
+      yield* mutations.processPendingOps();
+
+      expect(google.sent).toEqual([
+        'summary If-Match "inv-1" → offline',
+        'attendees If-Match "inv-1" → "w1"',
+        'summary If-Match "inv-1" → 412',
+      ]);
+      const [parked] = yield* pending.listAll();
       expect(parked?.kind).toBe('update');
       expect(parked?.conflictAt).toBeDefined();
     }).pipe(Effect.provide(makeLayer(google.client)));

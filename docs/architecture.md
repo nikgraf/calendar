@@ -119,16 +119,23 @@ Rules that keep the queue correct:
   queued meanwhile is either seen or waits): a response is written to its
   row only while no later op of the event is queued — that op owns the
   row and its own response settles it. An `update` that lands moves the
-  queued ops built on the etag it was sent with, and the row a later edit
-  still holds, to the etag it produced (`advanceBaseEtag`, `advanceEtag`):
-  a second drag made while the first was in flight follows it instead of
-  meeting a 412, and so does a third that replaces the second. Only an
-  If-Match write does this — Google checked that etag, so nothing else
-  changed in between. An `rsvp` does it when its If-Match held, so an
-  edit queued right behind it follows it; one resent unchecked after a
-  412 moves nothing. A create answered 409 (an earlier attempt landed,
-  its response lost) fetches what Google has, so the row stops being
-  `pending`; the queue is checked again after the fetch.
+  ops queued after it on the etag it was sent with, and the row a later
+  edit still holds, to the etag it produced (`advanceBaseEtag`,
+  `advanceEtag`): a second drag made while the first was in flight
+  follows it instead of meeting a 412, and so does a third that replaces
+  the second. Only an If-Match write does this — Google checked that
+  etag, so nothing else changed in between. An `rsvp` does it when its
+  If-Match held, so an edit queued right behind it follows it; one resent
+  unchecked after a 412 moves nothing. An op queued _before_ the one that
+  landed (in backoff while it overtook) keeps its etag: it was built
+  without that change — a guest-list edit there still carries the
+  response the RSVP replaced — and meets its 412. A create answered 409
+  (an earlier attempt landed, its response lost) fetches what Google has,
+  so the row stops being `pending`; the queue is checked again after the
+  fetch. A `delete` answered 404 or 410 is done and leaves the local
+  state alone: for one occurrence that state is the cancelled override
+  that keeps it away. A create dropped for good takes a move queued
+  behind it along, with the rows it already put at the destination.
 - **412 Conflict** (only `update` and `delete` park; an `rsvp` resends unchecked): the op is
   **parked**, never dropped — unless Google's copy already yields exactly
   the PATCH body the update would send (`updateBody` built from both: our

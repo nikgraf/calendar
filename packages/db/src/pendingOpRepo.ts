@@ -9,16 +9,20 @@ import { carriedTextJson, eventPayloadJson } from './repoShared.ts';
 
 export interface PendingOpRepoShape {
   /**
-   * After an op landed: the queued edits and deletes of the same event
-   * that were built on the etag it was sent with (`from`) now send the
-   * etag it produced (`to`). Google's copy moved on through our own write,
-   * and the stale If-Match would 412 against the user's own edit. Parked
-   * ops are left alone.
+   * After an op (`landed`) landed: the queued edits and deletes of the same
+   * event that were built on the etag it was sent with (`from`) now send
+   * the etag it produced (`to`). Google's copy moved on through our own
+   * write, and the stale If-Match would 412 against the user's own edit.
+   * Only ops queued after it move — they were built on the local row with
+   * its change in. One queued before it (in backoff while it overtook) was
+   * not: a guest-list edit there still carries the response an RSVP just
+   * replaced, and must meet its 412. Parked ops are left alone.
    */
   readonly advanceBaseEtag: (
     event: { readonly accountId: string; readonly calendarId: string; readonly eventId: string },
     from: string,
     to: string,
+    landed: { readonly createdAt: number; readonly id: string },
   ) => Effect.Effect<void, SqlError>;
   /**
    * Kinds of the ops queued before `op` for the same series — the event
@@ -174,13 +178,20 @@ const makePendingOpRepo: Effect.Effect<PendingOpRepoShape, never, Reactivity | S
           (rows) => rows.flatMap(decodedOps),
         ),
       // Bounded: one drain handles a page; the next kick takes the rest.
-      advanceBaseEtag: ({ accountId, calendarId, eventId }, from, to) =>
+      advanceBaseEtag: ({ accountId, calendarId, eventId }, from, to, landed) =>
         invalidating(
           Effect.asVoid(
+            // Queue order is (created_at, rowid), as listDue drains it. A
+            // landed op a later edit superseded while it was in flight is
+            // no longer queued: everything at its instant came after it.
             sql`UPDATE pending_ops SET base_etag = ${to}
               WHERE account_id = ${accountId} AND calendar_id = ${calendarId}
                 AND event_id = ${eventId} AND base_etag = ${from}
-                AND conflict_at IS NULL`,
+                AND conflict_at IS NULL
+                AND (created_at > ${landed.createdAt}
+                  OR (created_at = ${landed.createdAt}
+                    AND rowid > COALESCE(
+                      (SELECT rowid FROM pending_ops WHERE id = ${landed.id}), -1)))`,
           ),
         ),
       listDue: (now) =>
