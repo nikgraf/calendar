@@ -1,5 +1,6 @@
 import { formatClockTime } from '../format.ts';
 import { Temporal } from '../time/temporal.ts';
+import { runtimeZoneId } from '../time/zones.ts';
 import {
   type CalendarInfo,
   type EventRecord,
@@ -176,7 +177,11 @@ const ALL_DAY_GRACE_MS = 12 * 60 * MINUTE;
  * falls in `[from, until)`. Cancelled events, ones the user declined and —
  * unless `includeApple` — Apple Calendar events (Calendar.app fires those
  * itself) are skipped. All-day offsets count from local midnight of the
- * start day in the calendar's zone (Google) or the device's (Apple).
+ * start day in the calendar's zone (Google) or the device's (Apple). The
+ * text — "Tomorrow 9:00 AM" — is in the device's zone: the reader's clock,
+ * not the organizer's. A zone this engine cannot load is read under its
+ * other spelling (`runtimeZoneId`), else as the device's; an event that
+ * cannot be planned is skipped, never the whole pass.
  */
 export const planEventReminders = (
   events: ReadonlyArray<EventRecord>,
@@ -191,6 +196,17 @@ export const planEventReminders = (
   const calendars = new Map(
     options.calendars.map((calendar) => [`${calendar.accountId}:${calendar.id}`, calendar]),
   );
+  // Hermes rejects some ids V8 takes (Asia/Kolkata, not Asia/Calcutta):
+  // one such event used to throw the whole pass away, birthdays included.
+  const loadable = new Map<string, string>();
+  const loadableZone = (id: string): string => {
+    let zone = loadable.get(id);
+    if (zone === undefined) {
+      zone = runtimeZoneId(id) ?? options.deviceTimeZone;
+      loadable.set(id, zone);
+    }
+    return zone;
+  };
   const out: Array<PlannedNotification> = [];
   for (const event of events) {
     const isApple = isAppleCalendarAccount({ id: event.accountId });
@@ -198,26 +214,32 @@ export const planEventReminders = (
       continue;
     }
     const calendar = calendars.get(`${event.accountId}:${event.calendarId}`);
-    const timeZone = isApple
-      ? options.deviceTimeZone
-      : (event.startTimeZone ?? calendar?.timeZone ?? options.deviceTimeZone);
-    // Never startUtc for an all-day event: that is UTC midnight, not local.
-    const startRef =
-      event.isAllDay && event.startDate
-        ? Temporal.PlainDate.from(event.startDate).toZonedDateTime({ timeZone }).epochMilliseconds
-        : event.startUtc;
-    for (const minutes of effectivePopupMinutes(event, calendar)) {
-      const fireAt = startRef - minutes * MINUTE;
-      if (fireAt < options.from || fireAt >= options.until) {
-        continue;
+    try {
+      const allDayZone = isApple
+        ? options.deviceTimeZone
+        : loadableZone(event.startTimeZone ?? calendar?.timeZone ?? options.deviceTimeZone);
+      // Never startUtc for an all-day event: that is UTC midnight, not local.
+      const startRef =
+        event.isAllDay && event.startDate
+          ? Temporal.PlainDate.from(event.startDate).toZonedDateTime({ timeZone: allDayZone })
+              .epochMilliseconds
+          : event.startUtc;
+      for (const minutes of effectivePopupMinutes(event, calendar)) {
+        const fireAt = startRef - minutes * MINUTE;
+        if (fireAt < options.from || fireAt >= options.until) {
+          continue;
+        }
+        out.push({
+          body: eventReminderBody(event, minutes, fireAt, options.deviceTimeZone),
+          expiresAt: startRef + (event.isAllDay ? ALL_DAY_GRACE_MS : TIMED_GRACE_MS),
+          fireAt,
+          key: `event:${event.accountId}/${event.calendarId}/${event.id}:${String(event.startUtc)}:${String(minutes)}`,
+          title: event.title,
+        });
       }
-      out.push({
-        body: eventReminderBody(event, minutes, fireAt, timeZone),
-        expiresAt: startRef + (event.isAllDay ? ALL_DAY_GRACE_MS : TIMED_GRACE_MS),
-        fireAt,
-        key: `event:${event.accountId}/${event.calendarId}/${event.id}:${String(event.startUtc)}:${String(minutes)}`,
-        title: event.title,
-      });
+    } catch {
+      // A date this engine cannot read: this event goes without a reminder.
+      continue;
     }
   }
   return out.sort((a, b) => a.fireAt - b.fireAt || a.key.localeCompare(b.key));

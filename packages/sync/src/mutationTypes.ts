@@ -294,6 +294,12 @@ export interface EventMutationsShape {
     readonly eventId: string;
     readonly response: RsvpResponse;
   }) => Effect.Effect<void, EventNotFoundError | EventProviderError | NotAttendeeError | SqlError>;
+  /**
+   * Makes queued changes waiting out a backoff due now (see
+   * PendingOpRepo.retryNow): the user did something that is a reason to
+   * try again — reconnected, came back to the app, woke the machine.
+   */
+  readonly retryPendingOps: () => Effect.Effect<void>;
   /** Recolors a calendar locally and writes it back to Google. */
   readonly setCalendarColor: (params: {
     readonly accountId: string;

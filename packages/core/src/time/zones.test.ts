@@ -12,7 +12,9 @@ import {
 } from './zones.ts';
 
 /** An engine like Hermes, which rejects the modern name but takes ICU's. */
-const hermes = (id: string) => id !== 'Asia/Kolkata' && id !== 'Mars/Olympus';
+/** Hermes as it is: some current names rejected, some legacy ones too. */
+const hermes = (id: string) =>
+  id !== 'Asia/Kolkata' && id !== 'America/Buenos_Aires' && id !== 'Mars/Olympus';
 
 describe('zones catalog', () => {
   it('holds only ids Temporal knows, without duplicates, sorted', () => {
@@ -44,6 +46,20 @@ describe('zones catalog', () => {
     expect(runtimeZoneId('Asia/Kolkata', hermes)).toBe('Asia/Calcutta');
     expect(runtimeZoneId('Europe/Vienna', hermes)).toBe('Europe/Vienna');
     expect(runtimeZoneId('Mars/Olympus', hermes)).toBeUndefined();
+  });
+
+  it('resolves a legacy id Google stored to the current name the engine takes', () => {
+    // A calendar's zone can arrive legacy: falling back to the device zone
+    // moved an all-day reminder's midnight by hours.
+    expect(runtimeZoneId('America/Buenos_Aires', hermes)).toBe('America/Argentina/Buenos_Aires');
+    expect(runtimeZoneId('Asia/Calcutta', hermes)).toBe('Asia/Calcutta');
+    // Neither spelling known: nothing to offer.
+    expect(
+      runtimeZoneId(
+        'America/Buenos_Aires',
+        (id) => id !== 'America/Buenos_Aires' && id !== 'America/Argentina/Buenos_Aires',
+      ),
+    ).toBeUndefined();
   });
 
   it('derives city, region and slug from the id', () => {

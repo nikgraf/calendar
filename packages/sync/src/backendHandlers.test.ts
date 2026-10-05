@@ -68,6 +68,7 @@ const remindersSetup = (client: RemindersClientShape) => {
       exclusive: (effect) => effect,
       start: () => Effect.void,
       syncAll,
+      syncNow: syncAll,
     }),
   );
   return { layer, syncAll };

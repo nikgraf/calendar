@@ -122,7 +122,7 @@ describe('PendingOpRepo', () => {
       yield* repo.enqueue(
         op('mv', { createdAt: 2, eventId: 'evt-m', kind: 'move', targetCalendarId: 'cal-2' }),
       );
-      yield* repo.removeForEvent('cal-1', 'evt-m');
+      yield* repo.removeForEvent('acc-1', 'cal-1', 'evt-m');
 
       const remaining = yield* repo.listAll();
       expect(remaining.map((entry) => entry.kind)).toEqual(['move']);
@@ -175,8 +175,61 @@ describe('PendingOpRepo', () => {
       yield* repo.remove('a');
       expect((yield* repo.listAll()).map((entry) => entry.id).sort()).toEqual(['b', 'c']);
 
-      yield* repo.removeForEvent('cal-1', 'evt-1');
+      yield* repo.removeForEvent('acc-1', 'cal-1', 'evt-1');
       expect((yield* repo.listAll()).map((entry) => entry.id)).toEqual(['c']);
+    }).pipe(Effect.provide(freshDbLayer())),
+  );
+
+  it.effect('removeForEvent leaves another account on the same shared calendar alone', () =>
+    Effect.gen(function* () {
+      const repo = yield* PendingOpRepo;
+      yield* repo.enqueue(op('mine', { eventId: 'evt-1' }));
+      yield* repo.enqueue(op('theirs', { accountId: 'acc-2', eventId: 'evt-1' }));
+      yield* repo.removeForEvent('acc-1', 'cal-1', 'evt-1');
+      expect((yield* repo.listAll()).map((entry) => entry.id)).toEqual(['theirs']);
+    }).pipe(Effect.provide(freshDbLayer())),
+  );
+
+  it.effect('advanceBaseEtag moves the followers built on the sent etag, not parked ones', () =>
+    Effect.gen(function* () {
+      const repo = yield* PendingOpRepo;
+      yield* repo.enqueue(op('same', { baseEtag: '"v1"', eventId: 'evt-1' }));
+      yield* repo.enqueue(op('other', { baseEtag: '"v0"', eventId: 'evt-1' }));
+      yield* repo.enqueue(op('parked', { baseEtag: '"v1"', eventId: 'evt-1' }));
+      yield* repo.markConflict('parked', 5, undefined);
+      yield* repo.enqueue(op('elsewhere', { baseEtag: '"v1"', eventId: 'evt-2' }));
+      yield* repo.advanceBaseEtag(
+        { accountId: 'acc-1', calendarId: 'cal-1', eventId: 'evt-1' },
+        '"v1"',
+        '"v2"',
+      );
+      const etags = Object.fromEntries(
+        (yield* repo.listAll()).map((entry) => [entry.id, entry.baseEtag]),
+      );
+      expect(etags).toEqual({
+        elsewhere: '"v1"',
+        other: '"v0"',
+        parked: '"v1"',
+        same: '"v2"',
+      });
+    }).pipe(Effect.provide(freshDbLayer())),
+  );
+
+  it.effect('retryNow makes waiting ops due, per account or all, but not parked ones', () =>
+    Effect.gen(function* () {
+      const repo = yield* PendingOpRepo;
+      yield* repo.enqueue(op('a1', { attempts: 6, nextAttemptAt: 9000 }));
+      yield* repo.enqueue(op('b1', { accountId: 'acc-2', nextAttemptAt: 9000 }));
+      yield* repo.enqueue(op('parked', { nextAttemptAt: 9000 }));
+      yield* repo.markConflict('parked', 5, undefined);
+
+      yield* repo.retryNow('acc-1');
+      expect((yield* repo.listDue(1)).map((entry) => entry.id)).toEqual(['a1']);
+      // Attempts stay: the next failure backs off from where it was.
+      expect((yield* repo.getById('a1'))?.attempts).toBe(6);
+
+      yield* repo.retryNow();
+      expect((yield* repo.listDue(1)).map((entry) => entry.id).sort()).toEqual(['a1', 'b1']);
     }).pipe(Effect.provide(freshDbLayer())),
   );
 });

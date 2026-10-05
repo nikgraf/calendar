@@ -482,9 +482,13 @@ export const isValidTimeZone = (id: string): boolean => {
 };
 
 /**
- * The spelling this engine accepts for a catalog id — the id itself, else
- * ICU's legacy name — or undefined when it knows neither. `isValid` is
- * injectable so tests can act out an engine with a different table.
+ * The spelling this engine accepts for a zone id — the id itself, else its
+ * current name, else ICU's legacy name for that — or undefined when it
+ * knows none. Both ways round: a catalog id is current (Asia/Kolkata,
+ * which Hermes rejects for Asia/Calcutta), but a zone Google stored may be
+ * legacy (America/Buenos_Aires, which Hermes rejects for
+ * America/Argentina/Buenos_Aires). `isValid` is injectable so tests can act
+ * out an engine with a different table.
  */
 export const runtimeZoneId = (
   id: string,
@@ -493,8 +497,12 @@ export const runtimeZoneId = (
   if (isValid(id)) {
     return id;
   }
-  const legacy = MODERN_TO_LEGACY[id];
-  return legacy !== undefined && isValid(legacy) ? legacy : undefined;
+  const current = canonicalZoneId(id);
+  if (current !== id && isValid(current)) {
+    return current;
+  }
+  const legacy = MODERN_TO_LEGACY[current];
+  return legacy !== undefined && legacy !== id && isValid(legacy) ? legacy : undefined;
 };
 
 let runtimeIds: ReadonlyArray<string> | undefined;

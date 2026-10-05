@@ -50,6 +50,8 @@ export const finishAddAccount = (
     });
     yield* tokenStore.set(account.id, result.tokens);
     yield* accountRepo.upsert(account);
-    yield* Effect.forkDetach(engine.syncAll());
+    // A reconnect: what the expired session queued has been backing off
+    // (toward 30 minutes) — it goes out with this first pass.
+    yield* Effect.forkDetach(existing ? engine.syncNow() : engine.syncAll());
     return account;
   });

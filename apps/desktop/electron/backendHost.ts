@@ -101,7 +101,7 @@ export const startBackendHost = (): BackendHost => {
     Layer.provideMerge(SyncEngine.layer),
     Layer.provideMerge(EventMutations.layer),
     // Above the Apple read path: the scheduler plans from it.
-    Layer.provideMerge(LocalNotifications.layer({ timeZone: Temporal.Now.timeZoneId() })),
+    Layer.provideMerge(LocalNotifications.layer({ timeZone: () => Temporal.Now.timeZoneId() })),
     Layer.provideMerge(AppleCalendarEvents.layer),
     Layer.provideMerge(desktopAppleCalendarLayer),
     Layer.provideMerge(GoogleCalendarClient.layer),
@@ -174,9 +174,10 @@ export const startBackendHost = (): BackendHost => {
   });
 
   // The steady-state poll misses the moments staleness is most visible:
-  // right after wake, unlock, or refocusing the window.
+  // right after wake, unlock, or refocusing the window. Queued changes
+  // backing off go out with it too (syncNow).
   const kickSync = makeSyncKicker(() =>
-    runtime.runPromise(Effect.flatMap(SyncEngine, (engine) => engine.syncAll())),
+    runtime.runPromise(Effect.flatMap(SyncEngine, (engine) => engine.syncNow())),
   );
   powerMonitor.on('resume', kickSync);
   powerMonitor.on('unlock-screen', kickSync);

@@ -314,6 +314,9 @@ describe('a series edit carries text onto the exceptions, undoably', () => {
         end: { dateTime: '2026-07-01T10:00:00Z', timeZone: 'UTC' },
         etag: '"m-2"',
         id: 'master1',
+        // A different room too: the same rename alone would be our own
+        // edit already on Google, which needs no choice (applyOp park).
+        location: 'Room 2',
         recurrence: [RULE],
         start: { dateTime: '2026-07-01T09:00:00Z', timeZone: 'UTC' },
         status: 'confirmed',

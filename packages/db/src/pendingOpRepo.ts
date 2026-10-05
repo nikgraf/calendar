@@ -9,6 +9,18 @@ import { carriedTextJson, eventPayloadJson } from './repoShared.ts';
 
 export interface PendingOpRepoShape {
   /**
+   * After an op landed: the queued edits and deletes of the same event
+   * that were built on the etag it was sent with (`from`) now send the
+   * etag it produced (`to`). Google's copy moved on through our own write,
+   * and the stale If-Match would 412 against the user's own edit. Parked
+   * ops are left alone.
+   */
+  readonly advanceBaseEtag: (
+    event: { readonly accountId: string; readonly calendarId: string; readonly eventId: string },
+    from: string,
+    to: string,
+  ) => Effect.Effect<void, SqlError>;
+  /**
    * Kinds of the ops queued before `op` for the same series — the event
    * itself or, for a recurring one, its Google instance ids
    * (`<masterId>_<basetime>`) — in any of the account's calendars. Moves
@@ -52,7 +64,23 @@ export interface PendingOpRepoShape {
     lastError: string,
   ) => Effect.Effect<void, SqlError>;
   readonly remove: (opId: string) => Effect.Effect<void, SqlError>;
-  readonly removeForEvent: (calendarId: string, eventId: string) => Effect.Effect<void, SqlError>;
+  /**
+   * Drops the event's queued ops — one account's: a shared calendar
+   * carries the same calendar and event ids under every account that
+   * subscribes to it.
+   */
+  readonly removeForEvent: (
+    accountId: string,
+    calendarId: string,
+    eventId: string,
+  ) => Effect.Effect<void, SqlError>;
+  /**
+   * Makes waiting ops due now (one account's, or all): a reconnect or the
+   * app coming back is a reason to try again, not to sit out a backoff of
+   * up to 30 minutes. Attempts are kept, so the next failure backs off as
+   * before. Parked ops wait for the user.
+   */
+  readonly retryNow: (accountId?: string) => Effect.Effect<void, SqlError>;
   /** Re-keys queued ops after a server-assigned id replaces a temp id. */
   readonly rewriteEventId: (
     accountId: string,
@@ -146,6 +174,15 @@ const makePendingOpRepo: Effect.Effect<PendingOpRepoShape, never, Reactivity | S
           (rows) => rows.flatMap(decodedOps),
         ),
       // Bounded: one drain handles a page; the next kick takes the rest.
+      advanceBaseEtag: ({ accountId, calendarId, eventId }, from, to) =>
+        invalidating(
+          Effect.asVoid(
+            sql`UPDATE pending_ops SET base_etag = ${to}
+              WHERE account_id = ${accountId} AND calendar_id = ${calendarId}
+                AND event_id = ${eventId} AND base_etag = ${from}
+                AND conflict_at IS NULL`,
+          ),
+        ),
       listDue: (now) =>
         Effect.map(
           // rowid breaks created_at ties in insertion order (two ops of one
@@ -181,11 +218,23 @@ const makePendingOpRepo: Effect.Effect<PendingOpRepoShape, never, Reactivity | S
       // no-ops through the NotFound path after a delete. A queued move is
       // never coalesced away either: a later edit targets the destination
       // calendar and must land after the move, not replace it.
-      removeForEvent: (calendarId, eventId) =>
+      removeForEvent: (accountId, calendarId, eventId) =>
         invalidating(
           Effect.asVoid(
-            sql`DELETE FROM pending_ops WHERE calendar_id = ${calendarId}
-              AND event_id = ${eventId} AND kind NOT IN ('rsvp', 'move')`,
+            sql`DELETE FROM pending_ops WHERE account_id = ${accountId}
+              AND calendar_id = ${calendarId} AND event_id = ${eventId}
+              AND kind NOT IN ('rsvp', 'move')`,
+          ),
+        ),
+      retryNow: (accountId) =>
+        invalidating(
+          Effect.asVoid(
+            accountId === undefined
+              ? sql`UPDATE pending_ops SET next_attempt_at = 0
+                  WHERE conflict_at IS NULL AND next_attempt_at > 0`
+              : sql`UPDATE pending_ops SET next_attempt_at = 0
+                  WHERE account_id = ${accountId} AND conflict_at IS NULL
+                    AND next_attempt_at > 0`,
           ),
         ),
       rewriteEventId: (accountId, calendarId, oldEventId, newEventId) =>

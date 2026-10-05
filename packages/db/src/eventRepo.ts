@@ -25,6 +25,16 @@ export interface EventPage {
 
 export interface EventRepoShape {
   /**
+   * Moves a row still built on etag `from` to `to`, leaving its (pending)
+   * content alone: the server's copy moved on through our own write while
+   * a later edit kept the row. An edit queued from the row next sends `to`.
+   */
+  readonly advanceEtag: (
+    event: { readonly accountId: string; readonly calendarId: string; readonly eventId: string },
+    from: string,
+    to: string,
+  ) => Effect.Effect<void, SqlError>;
+  /**
    * One transaction per page: a 2,500-row page as single autocommit
    * INSERTs was the dominant cost of a full pass on both hosts, and one
    * invalidation per page replaces one per deletion.
@@ -181,6 +191,11 @@ const makeEventRepo: Effect.Effect<EventRepoShape, never, Reactivity | SqlClient
         AND calendar_id = ${calendarId} AND id = ${eventId}`;
 
     return {
+      advanceEtag: ({ accountId, calendarId, eventId }, from, to) =>
+        Effect.asVoid(
+          sql`UPDATE events SET etag = ${to} WHERE account_id = ${accountId}
+            AND calendar_id = ${calendarId} AND id = ${eventId} AND etag = ${from}`,
+        ),
       applyPage: (accountId, calendarId, page) =>
         reactivity.mutation(
           [EVENTS_KEY, eventsKey(calendarId)],
