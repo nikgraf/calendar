@@ -2070,11 +2070,18 @@ both had merged.
       ops built on the etag it sent to the etag it produced**
       (`advanceBaseEtag`): Google checked that etag, so nothing else
       changed in between; an RSVP moves nothing (no If-Match, Google's
-      prior state unknown). **A 412 is done only when Google's copy yields
-      exactly the PATCH body the update would send** (`updateBody` from
-      both): a lost response's retry; any difference still parks. **A
+      prior state unknown). The row a later edit still holds moves too
+      (`advanceEtag`), so a third drag that replaces the second starts from
+      the new etag (review of #118). Every ack settles in one transaction
+      with its queue check (`settle`). **A 412 is done only when Google's
+      copy yields exactly the PATCH body the update would send**
+      (`updateBody` from both): a lost response's retry; any difference
+      still parks — and its followers keep their etag (review of #118: the
+      match covers only the fields this update sends, so a follower moved
+      to the new etag overwrote another client's reminders unasked). **A
       create answered 409 fetches the event** (or drops the row if Google
-      has none) instead of leaving it `pending`. **Queue cleanup is scoped
+      has none) instead of leaving it `pending`, checking the queue again
+      after the fetch. **Queue cleanup is scoped
       by account** (a shared calendar repeats its ids). **A sync the user
       caused makes waiting ops due** (`SyncEngine.syncNow`: wake, focus,
       foreground, a reconnect; `retryNow` keeps the attempt count; the
