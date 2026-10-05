@@ -316,6 +316,7 @@ export const commonBackendHandlers: Omit<BackendHandlers<CommonBackendServices>,
       const pendingOps = yield* PendingOpRepo;
       const ops = yield* pendingOps.listAll();
       return ops.map((op) => ({
+        accountId: op.accountId,
         attempts: op.attempts,
         calendarId: op.calendarId,
         createdAt: op.createdAt,

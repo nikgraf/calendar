@@ -11,6 +11,7 @@ import {
   type App,
   launchApp,
   localIsoDaysAgo,
+  readAccounts,
   readCalendars,
   readEvents,
   readDeviceSetting,
@@ -341,6 +342,24 @@ describe('calendar desktop e2e', () => {
       `document.querySelector('[data-testid="sync-history-acc-e2e"]')?.textContent === 'History complete'`,
     );
     await app.closeSettings();
+  });
+
+  it('asks before removing a Google account, and Cancel keeps it', async () => {
+    const settings = await app.openSettings('accounts');
+    try {
+      const remove = await settings.locate('[data-testid="remove-account-acc-e2e"]');
+      await settings.click(remove.x, remove.y);
+      await settings.waitFor(
+        `document.querySelector('[data-testid="remove-account-confirm"]')?.textContent.includes('Remove e2e@nikgraf.com?')`,
+      );
+      await settings.clickButtonWithText('Cancel');
+      await settings.waitFor(`!document.querySelector('[data-testid="remove-account-confirm"]')`);
+      expect((await readAccounts(app.userDataDir)).map((account) => account.id)).toContain(
+        'acc-e2e',
+      );
+    } finally {
+      await app.closeSettings();
+    }
   });
 
   it('navigates days with a horizontal trackpad scroll', async () => {

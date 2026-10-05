@@ -117,6 +117,8 @@ export type PendingOpConflict = Schema.Schema.Type<typeof PendingOpConflict>;
 
 /** Queue entry surfaced to the UI (payload stripped; title pulled out). */
 export const PendingOpSummary = Schema.Struct({
+  /** Whose queue it is: removing that account drops the change. */
+  accountId: Schema.String,
   attempts: Schema.Number,
   calendarId: Schema.String,
   /** Set while a 412 has the op parked, waiting for keep-mine / take-theirs. */
