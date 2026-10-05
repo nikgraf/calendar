@@ -99,7 +99,10 @@ const TASK_KINDS: ReadonlySet<PendingOp['kind']> = new Set([
   'updateTask',
 ]);
 
-/** Only these send If-Match, so only these can meet a 412 and park. */
+/**
+ * Only these can meet a 412 and park. An RSVP sends If-Match too, but
+ * answers its own 412 by sending again without it.
+ */
 const PARKABLE_KINDS: ReadonlySet<PendingOp['kind']> = new Set(['delete', 'update']);
 
 /** What an update PATCHes, built the same way from the user's record and from Google's. */
@@ -204,6 +207,28 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
       Effect.andThen(Effect.ignore(notifyDropped)),
       Effect.as('done' as const),
     );
+
+  /** Google no longer has what the op writes to (404, or a 410 on a write). */
+  const gone = (op: PendingOp) =>
+    Effect.gen(function* () {
+      // Deleted remotely — drop the local copy too. (For deleteTask
+      // this is simply "already gone".)
+      if (TASK_KINDS.has(op.kind)) {
+        if (op.taskListId) {
+          yield* taskRepo.removeTask(op.accountId, op.taskListId, op.eventId);
+        }
+      } else if (op.kind === 'move') {
+        // 404 is the event *or the destination calendar* — put the
+        // rows back where the server last had them. If the event is
+        // really gone the source's next pull carries the tombstone;
+        // deleting here would hide a still-existing event until a
+        // full resync (incremental pulls never resend it).
+        yield* releaseRow(op);
+      } else {
+        yield* eventRepo.deleteEvent(op.accountId, op.calendarId, op.eventId);
+      }
+      return 'done' as const;
+    });
 
   /**
    * Whether another op of the same event is queued (in `calendarId`, the
@@ -606,29 +631,41 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
           if (!op.payload?.attendees) {
             return 'done' as const;
           }
-          // Attendees-only patch, no If-Match: an RSVP should not lose to
-          // unrelated content edits on the server copy.
-          const response = yield* client.patchEvent({
-            accountId: op.accountId,
-            calendarId: op.calendarId,
-            event: {
-              attendees: op.payload.attendees.map((attendee) => ({
-                email: attendee.email,
-                responseStatus: attendee.responseStatus,
-              })),
-            },
-            eventId: op.eventId,
-          });
-          // No If-Match went out, so nothing says what Google had before:
-          // queued edits keep their etag (a 412 there asks the user).
+          const attendees = op.payload.attendees.map((attendee) => ({
+            email: attendee.email,
+            responseStatus: attendee.responseStatus,
+          }));
+          const send = (baseEtag: string | undefined) =>
+            client.patchEvent({
+              accountId: op.accountId,
+              baseEtag,
+              calendarId: op.calendarId,
+              event: { attendees },
+              eventId: op.eventId,
+            });
+          // Attendees-only patch, first with If-Match on the etag the RSVP
+          // was queued against. When that holds, Google had exactly the
+          // version the queued edits were built on, so they move to the
+          // etag this produced (an edit right behind an RSVP used to park
+          // against it). A 412 sends it again unchecked — an RSVP should
+          // not lose to unrelated content edits — and then nothing says
+          // what Google had before: queued edits keep their etag, and a
+          // 412 there asks the user.
+          const sent = yield* send(op.baseEtag).pipe(
+            Effect.map((response) => ({ response, sentEtag: op.baseEtag })),
+            Effect.catchTag('ConflictError', () =>
+              Effect.map(send(undefined), (response) => ({ response, sentEtag: undefined })),
+            ),
+          );
           yield* settle(
             op,
-            mapGcalEvent(response, {
+            mapGcalEvent(sent.response, {
               accountId: op.accountId,
               calendarId: op.calendarId,
               defaultTimeZone: op.payload.startTimeZone ?? 'UTC',
               syncedAt: yield* Clock.currentTimeMillis,
             }),
+            { sentEtag: sent.sentEtag },
           );
           return 'done' as const;
         }
@@ -707,37 +744,19 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
               : Effect.succeed(retry(`${error.status}: ${error.message}`)),
         // The scope vanished after the op was queued (consent revoked, or
         // the enable flag was stale): this push can never succeed, so
-        // retrying would pin the queue forever. Drop it; for a task op
-        // also disable tasks for the account — the connect row reappears
-        // in the UI. A calendar op cannot lose the tasks scope.
+        // retrying would pin the queue forever. Drop it, which hands the
+        // row back (pulls skip pending rows, so a task op that only
+        // disabled tasks left it stuck); for a task op also disable tasks
+        // for the account — the connect row reappears in the UI. A
+        // calendar op cannot lose the tasks scope.
         InsufficientScopeError: (error) =>
-          TASK_KINDS.has(op.kind)
-            ? Effect.as(
-                Effect.ignore(accountRepo.setTasksEnabled(op.accountId, false)),
-                'done' as const,
-              )
-            : drop(op, `insufficient scope: ${error.message}`),
-        NotFoundError: () =>
-          Effect.gen(function* () {
-            // Deleted remotely — drop the local copy too. (For deleteTask
-            // this is simply "already gone".)
-            const taskKinds = ['completeTask', 'createTask', 'deleteTask', 'updateTask'];
-            if (taskKinds.includes(op.kind)) {
-              if (op.taskListId) {
-                yield* taskRepo.removeTask(op.accountId, op.taskListId, op.eventId);
-              }
-            } else if (op.kind === 'move') {
-              // 404 is the event *or the destination calendar* — put the
-              // rows back where the server last had them. If the event is
-              // really gone the source's next pull carries the tombstone;
-              // deleting here would hide a still-existing event until a
-              // full resync (incremental pulls never resend it).
-              yield* releaseRow(op);
-            } else {
-              yield* eventRepo.deleteEvent(op.accountId, op.calendarId, op.eventId);
-            }
-            return 'done' as const;
-          }),
+          Effect.andThen(
+            TASK_KINDS.has(op.kind)
+              ? Effect.ignore(accountRepo.setTasksEnabled(op.accountId, false))
+              : Effect.void,
+            drop(op, `insufficient scope: ${error.message}`),
+          ),
+        NotFoundError: () => gone(op),
         // Keep the op; flag the account so the UI offers a reconnect and
         // the queue drains after the user signs in again.
         ReauthRequiredError: () =>
@@ -745,7 +764,11 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
             Effect.ignore(accountRepo.setStatus(op.accountId, 'reauth_required')),
             retry('signed out — reconnect the account'),
           ),
-        SyncTokenExpiredError: () => Effect.succeed('done' as const),
+        // failForStatus reads every 410 as an expired sync token; on a
+        // write it is Google's "deleted". Taken as done, an edit left its
+        // row pending — pulls skip pending rows — so the deletion never
+        // showed.
+        SyncTokenExpiredError: () => gone(op),
       }),
       // Anything else (network, a defect): keep the op, record why.
       Effect.catchCause((cause) => {

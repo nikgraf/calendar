@@ -21,6 +21,7 @@ import { SqliteClient } from '@effect/sql-sqlite-node';
 import { expect, it } from '@effect/vitest';
 import { Effect, Layer, Scheduler } from 'effect';
 import { layer as reactivityLayer } from 'effect/reactivity/Reactivity';
+import { SqlClient } from 'effect/sql/SqlClient';
 import { describe } from 'vitest';
 import { SyncEngine } from './engine.ts';
 import { EventMutations } from './mutations.ts';
@@ -452,6 +453,13 @@ describe('completeTask', () => {
       const accounts = yield* AccountRepo;
       const [account] = yield* accounts.list();
       expect(account?.tasksEnabled).toBe(false);
+      // And the row is handed back to sync: left pending, pulls would skip
+      // it for good once tasks are connected again.
+      const sql = yield* SqlClient;
+      const rows = yield* sql<{
+        readonly sync_status: string;
+      }>`SELECT sync_status FROM tasks WHERE id = 't1'`;
+      expect(rows[0]?.sync_status).toBe('synced');
     }).pipe(noYield, Effect.provide(testLayer(client)));
   });
 

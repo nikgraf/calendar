@@ -10,6 +10,7 @@ import {
   runMigrations,
 } from '@calendar/db';
 import {
+  ConflictError,
   type GcalEventPatch,
   GoogleCalendarClient,
   type GoogleCalendarClientShape,
@@ -112,6 +113,49 @@ const seed = Effect.gen(function* () {
 
 const respond = { accountId: 'acc-1', calendarId: 'cal-1', eventId: 'evt-invite' } as const;
 
+/**
+ * Google's copy of the invitation with a real If-Match check: a stale
+ * etag is a 412, and write n produces etag "wn". `sent` reads
+ * "<fields> <If-Match or unchecked> → <new etag or 412>".
+ */
+const ifMatchGoogle = (initialEtag: string) => {
+  const sent: Array<string> = [];
+  let etag = initialEtag;
+  let writes = 0;
+  // Only the fields the tests change: a PATCH body's nulls are not a stored event.
+  const current = (patch: GcalEventPatch = {}) => ({
+    attendees:
+      patch.attendees ??
+      invited.attendees?.map((attendee) => ({
+        email: attendee.email,
+        responseStatus: attendee.responseStatus,
+      })),
+    end: { dateTime: '2026-07-08T11:00:00Z' },
+    etag,
+    id: 'evt-invite',
+    start: { dateTime: '2026-07-08T10:00:00Z', timeZone: 'UTC' },
+    status: 'confirmed' as const,
+    summary: typeof patch.summary === 'string' ? patch.summary : 'Planning',
+  });
+  const client: Partial<GoogleCalendarClientShape> = {
+    getEvent: () => Effect.sync(() => current()),
+    patchEvent: ({ baseEtag, event, eventId }) =>
+      Effect.suspend(() => {
+        const fields = 'summary' in event ? 'summary' : 'attendees';
+        const check = baseEtag === undefined ? 'unchecked' : `If-Match ${baseEtag}`;
+        if (baseEtag !== undefined && baseEtag !== etag) {
+          sent.push(`${fields} ${check} → 412`);
+          return Effect.fail(new ConflictError({ calendarId: 'cal-1', eventId }));
+        }
+        writes += 1;
+        etag = `"w${writes}"`;
+        sent.push(`${fields} ${check} → ${etag}`);
+        return Effect.succeed(current(event));
+      }),
+  };
+  return { client, sent };
+};
+
 describe('EventMutations.respondToEvent', () => {
   it.effect('updates only the own attendee and patches attendees-only', () => {
     const patches: Array<GcalEventPatch> = [];
@@ -176,6 +220,48 @@ describe('EventMutations.respondToEvent', () => {
       ).toBe('tentative');
     }).pipe(Effect.provide(makeLayer({}))),
   );
+
+  it.effect('an edit queued behind an RSVP follows the etag it produced', () => {
+    const google = ifMatchGoogle('"inv-1"');
+    return Effect.gen(function* () {
+      yield* seed;
+      const mutations = yield* EventMutations;
+      yield* mutations.respondToEvent({ ...respond, response: 'accepted' });
+      yield* mutations.updateEvent({ ...respond, changes: { title: 'Planning v2' } });
+      yield* mutations.processPendingOps();
+      yield* mutations.processPendingOps();
+
+      // The RSVP's If-Match held, so the edit went out on the etag it
+      // produced instead of meeting a 412 against the user's own RSVP.
+      expect(google.sent).toEqual([
+        'attendees If-Match "inv-1" → "w1"',
+        'summary If-Match "w1" → "w2"',
+      ]);
+      expect(yield* (yield* PendingOpRepo).listAll()).toEqual([]);
+    }).pipe(Effect.provide(makeLayer(google.client)));
+  });
+
+  it.effect('an RSVP lands when Google moved on; the edit behind it still asks', () => {
+    // Another client changed the event after it was pulled.
+    const google = ifMatchGoogle('"remote"');
+    return Effect.gen(function* () {
+      yield* seed;
+      const mutations = yield* EventMutations;
+      yield* mutations.respondToEvent({ ...respond, response: 'accepted' });
+      yield* mutations.updateEvent({ ...respond, changes: { title: 'Planning v2' } });
+      yield* mutations.processPendingOps();
+      yield* mutations.processPendingOps();
+
+      expect(google.sent).toEqual([
+        'attendees If-Match "inv-1" → 412',
+        'attendees unchecked → "w1"',
+        'summary If-Match "inv-1" → 412',
+      ]);
+      const [parked] = yield* (yield* PendingOpRepo).listAll();
+      expect(parked?.kind).toBe('update');
+      expect(parked?.conflictAt).toBeDefined();
+    }).pipe(Effect.provide(makeLayer(google.client)));
+  });
 
   it.effect('fails when the account is not on the guest list', () =>
     Effect.gen(function* () {

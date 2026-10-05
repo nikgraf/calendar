@@ -365,6 +365,60 @@ describe('moveEvent inside one Google account', () => {
     }).pipe(Effect.provide(testLayer(google, appleFake())));
   });
 
+  it.effect('a sent create stays in its calendar and moves once it lands', () => {
+    // The first insert landed but its response was lost; the retry is a
+    // 409. Re-keyed into the destination, the create would insert a
+    // second copy there.
+    const calls: Array<Call> = [];
+    const google = recordingGoogle(calls, {
+      insertEvent: ({ calendarId, event }) =>
+        Effect.suspend(() => {
+          calls.push({ calendarId, detail: event.summary, kind: 'insert' });
+          return Effect.fail(
+            calls.length === 1
+              ? new ApiUnavailableError({ cause: 'response lost', status: 503 })
+              : new GoogleApiError({ message: 'duplicate', status: 409 }),
+          );
+        }),
+    });
+    return Effect.gen(function* () {
+      yield* seed();
+      const mutations = yield* EventMutations;
+      const pending = yield* PendingOpRepo;
+      const created = yield* mutations.createEvent({
+        accountId: 'acc-1',
+        calendarId: 'cal-1',
+        endUtc: base + HOUR,
+        isAllDay: false,
+        startTimeZone: 'Europe/Vienna',
+        startUtc: base,
+        title: 'Fresh',
+      });
+      yield* mutations.processPendingOps();
+      expect((yield* queued)[0]?.dispatchedAt).toBeDefined();
+
+      yield* mutations.moveEvent(move(['acc-1', 'cal-1', created.id], ['acc-1', 'cal-2']));
+      expect((yield* queued).map((op) => `${op.kind}:${op.calendarId}`)).toEqual([
+        'create:cal-1',
+        'move:cal-1',
+      ]);
+      for (const op of yield* queued) {
+        yield* pending.markFailed(op.id, op.attempts, 0, 'test');
+      }
+      yield* mutations.processPendingOps();
+      yield* mutations.processPendingOps();
+
+      expect(calls.map((call) => `${call.kind}:${call.calendarId}`)).toEqual([
+        'insert:cal-1',
+        'insert:cal-1',
+        'move:cal-1',
+      ]);
+      expect(yield* queued).toEqual([]);
+      expect(yield* rowAt('acc-1', 'cal-1', created.id)).toBeNull();
+      expect((yield* rowAt('acc-1', 'cal-2', created.id))?.syncStatus).toBe('synced');
+    }).pipe(noYield, Effect.provide(testLayer(google, appleFake())));
+  });
+
   it.effect('moves a series with its exceptions', () => {
     const calls: Array<Call> = [];
     const master = googleEvent({ id: 'ser', recurrence: ['RRULE:FREQ=DAILY;COUNT=5'] });

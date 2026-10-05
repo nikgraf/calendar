@@ -93,7 +93,7 @@ oldest-first). Kinds:
 | `create`        | client-generated id           | full EventRecord                 | events.insert (idempotent — 409 = already landed); attendees included; `sendUpdates=all` when guests exist                       |
 | `update`        | event id / instance id        | EventRecord + `attendeesChanged` | events.patch (If-Match when etag known); attendees only when flagged; `sendUpdates=all` when guests exist or the list was edited |
 | `delete`        | event id / instance id        | EventRecord (the deleted row)    | events.delete (If-Match when etag known); the snapshot only names a parked conflict                                              |
-| `rsvp`          | event id                      | EventRecord (attendees)          | events.patch, attendees-only body, **no If-Match**                                                                               |
+| `rsvp`          | event id                      | EventRecord (attendees)          | events.patch, attendees-only body; If-Match on the queued etag, resent **without** on a 412 (never parks)                        |
 | `calendarColor` | `__calendar_color__` sentinel | `colorHex`                       | calendarList.patch?colorRgbFormat=true                                                                                           |
 | `move`          | master id (source calendar)   | `targetCalendarId`               | events.move?destination= (same account; organizer only; whole series)                                                            |
 | `createTask`    | temp `local-…` id             | title/notes/due                  | tasks.insert (NOT idempotent — see below)                                                                                        |
@@ -124,10 +124,12 @@ Rules that keep the queue correct:
   a second drag made while the first was in flight follows it instead of
   meeting a 412, and so does a third that replaces the second. Only an
   If-Match write does this — Google checked that etag, so nothing else
-  changed in between. A create answered 409 (an earlier attempt landed,
+  changed in between. An `rsvp` does it when its If-Match held, so an
+  edit queued right behind it follows it; one resent unchecked after a
+  412 moves nothing. A create answered 409 (an earlier attempt landed,
   its response lost) fetches what Google has, so the row stops being
   `pending`; the queue is checked again after the fetch.
-- **412 Conflict** (only `update` and `delete` send If-Match): the op is
+- **412 Conflict** (only `update` and `delete` park; an `rsvp` resends unchecked): the op is
   **parked**, never dropped — unless Google's copy already yields exactly
   the PATCH body the update would send (`updateBody` built from both: our
   own earlier attempt landed), which is done. Its followers keep their
@@ -385,7 +387,9 @@ Rules that keep the queue correct:
   mutation layer rejects them. A `reader` calendar opens as a viewer.
 - **Moving between calendars** (`moveEvent`, always the whole series):
   Google → same Google account = queued `events.move` (keeps everything;
-  organizer only); Apple → Apple = `event.calendar = target` saved with
+  organizer only; a create never sent becomes a create in the target, a
+  sent one stays queued in the source with the move behind it, since it
+  may have landed there); Apple → Apple = `event.calendar = target` saved with
   the series span; everything else = create in the target, then delete
   the source (a failure between leaves a duplicate, never a loss). Copies
   never carry guests; a Google conference link becomes the Apple event's

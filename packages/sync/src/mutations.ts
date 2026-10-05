@@ -947,6 +947,9 @@ const make: Effect.Effect<
           new PendingOp({
             accountId,
             attempts: 0,
+            // Sent as If-Match, retried without on a 412 (applyOp): when it
+            // holds, the edits queued on this etag can follow the RSVP.
+            baseEtag: existing.etag ?? undefined,
             calendarId,
             createdAt: now,
             eventId,
@@ -1364,7 +1367,9 @@ const make: Effect.Effect<
    * queued edit of the series is re-queued *behind* the move against the
    * target calendar (the drain holds either side back until the other
    * lands — see applyOp), and a create that never reached Google simply
-   * becomes a create in the target.
+   * becomes a create in the target. A create already sent may have landed
+   * in the source (its response lost): it stays queued there with the move
+   * behind it, since re-keyed it would insert a second copy in the target.
    */
   const googleServerMove = (params: MoveEventParams) =>
     Effect.gen(function* () {
@@ -1383,10 +1388,13 @@ const make: Effect.Effect<
         ]);
       }
       const seriesIds = new Set([master.id, ...overrides.map((row) => row.id)]);
-      const queued = (yield* pendingOpRepo.listAll()).filter(
+      const inSeries = (yield* pendingOpRepo.listAll()).filter(
         (op) =>
           op.accountId === accountId && op.calendarId === calendarId && seriesIds.has(op.eventId),
       );
+      const pendingCreate = inSeries.find((op) => op.kind === 'create' && op.eventId === master.id);
+      const sentCreate = pendingCreate?.dispatchedAt === undefined ? undefined : pendingCreate;
+      const queued = inSeries.filter((op) => op !== sentCreate);
       for (const op of queued) {
         yield* pendingOpRepo.remove(op.id);
       }
@@ -1409,8 +1417,7 @@ const make: Effect.Effect<
           payload: retarget(op.payload),
           serverPayload: retarget(op.serverPayload),
         });
-      const pendingCreate = queued.find((op) => op.kind === 'create' && op.eventId === master.id);
-      if (!pendingCreate) {
+      if (!pendingCreate || sentCreate) {
         yield* enqueue(
           new PendingOp({
             accountId,
