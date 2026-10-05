@@ -1996,7 +1996,14 @@ a failing test first.
       unsynced changes would be lost; an Apple account only disconnects
       (EventKit keeps everything, reconnecting is a tap) and still goes
       on one tap — the five Maestro flows that remove one are unchanged.
-      `PendingOpSummary` carries `accountId` for the count.
+      `PendingOpSummary` carries `accountId` for the count. **Remove waits
+      for a successful queue read** (review of #113): `usePendingOps`
+      falls back to `[]` while loading or after a failed read, which read
+      as "nothing unsynced"; `usePendingOpsRead` keeps 'loading' /
+      'failed' (a failed refresh included — the last count may be stale),
+      the desktop button stays disabled until the read lands, and the
+      iOS alert, which cannot update once shown, offers only OK until
+      then.
 - [x] Agent text that would pass an approval unseen is refused — #114
       (`todo/agent-hidden-text`). The summary dropped invisible
       characters while the write kept them, and tag characters were not
