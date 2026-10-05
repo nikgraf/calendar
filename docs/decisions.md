@@ -2119,5 +2119,10 @@ both had merged.
       Settings › Agents arms Decline/Approve 700 ms after the waiting list
       changes (keyed by the whole list: the row that slides up was mounted,
       and armed, long before). A ⌘K bar closed while dictation prepared or
-      while the microphone was granted no longer turns the microphone on;
-      a new recording stops the previous stream.
+      while the microphone was granted no longer turns the microphone on.
+      **Each start owns what it opens**: `startRecording` takes an
+      `AbortSignal`, the bar aborts its start on close, and an aborted start
+      stops its own stream (review of #121: the adapters keep one shared
+      recording, so the closed bar's late `cancelRecording()` stopped a
+      reopened bar's). A new recording stops the one it replaces when it
+      commits.
