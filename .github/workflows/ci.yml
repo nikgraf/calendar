@@ -198,7 +198,10 @@ jobs:
     needs: [gate, changes]
     if: needs.changes.outputs.ios == 'true'
     runs-on: macos-26
-    timeout-minutes: 35
+    # A green shard takes 25–34 min, about half of it setup. At 35 a slow
+    # runner was cancelled two flows short of passing (run 37336020673),
+    # throwing the whole run away; the cap is for hung jobs.
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
