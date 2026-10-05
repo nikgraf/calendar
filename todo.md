@@ -19,13 +19,15 @@ from main on 2026-10-04. The seven items fixed first (#110–#115) are closed in
 
 ### Data loss or corruption
 
-- [ ] Event creates do not track "may already be on Google" (reported;
-      the 409-is-done arm at `applyOp.ts:548` is verified) — tasks have
-      `dispatchedAt`, events do not. An edit folded into a create that
-      already landed is lost (409), a quick delete lets the create's ack
-      bring the event back, and a 409 leaves the row `pending` forever, so
-      pulls skip it. The 410 and task `InsufficientScopeError` arms leave
-      rows unreleased the same way.
+- [ ] A create Google answers with 409 leaves its row `pending` forever
+      (reported; the 409-is-done arm in `applyOp.ts` is verified) — pulls
+      skip it, so remote edits never arrive, unless a later op of the
+      event settles the row. The 410 and task `InsufficientScopeError`
+      arms leave rows unreleased the same way. Since #110 event creates
+      carry a dispatch stamp and only unsent ones are folded into or
+      dropped; a move of a sent create (`googleServerMove` re-keys the
+      create into the destination) can still duplicate the event if the
+      first insert landed in the source.
 - [ ] An earlier op's response overwrites a newer queued edit (reported)
       — `applyOp.ts:512` (also the rsvp and move arms) writes the response
       back without checking that a newer op owns the row; the newer op

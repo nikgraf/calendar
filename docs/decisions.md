@@ -1972,7 +1972,18 @@ a failing test first.
       create and queues no instance deletes; text is not carried onto
       exceptions Google does not have yet. **Occurrence edits and RSVPs
       wait for a create queued ahead in their series** (`applyOp`, the
-      same hold as for moves).
+      same hold as for moves). **Only a never-sent create is folded into
+      or dropped** (review of #110): an insert that landed with its
+      response lost stays queued, and its retry's 409 counts as done
+      without sending a folded edit. `applyOp` stamps an event create as
+      dispatched before the insert (as for tasks); behind a sent create
+      the PATCH or DELETE queues as before and waits for it. `updateEvent`
+      and `deleteEvent` follow the same rule for single events. A
+      create's response no longer overwrites its row while a later op of
+      the event is queued — it would restore an edited or deleted event.
+      A create the token never let out is stamped too (the stamp is set
+      before the request): the edit then queues behind it, one request
+      more than needed, never one too few.
 - [x] A newer task edit of another field keeps the queued one's — #111
       (`todo/task-edit-merge`). "Latest wins" removed the queued
       `updateTask` while an op carries only the fields its edit changed:
