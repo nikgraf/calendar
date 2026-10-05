@@ -1941,3 +1941,102 @@ test`/`test:e2e`/`test:e2e:ios`; every file creates its own
       `all()` caches outlive one read. The per-calendar "keep only N
       years" switch stays in `todo.md`: 303 events in 380 KB locally is
       no storage problem.
+
+### Review fixes (2026-10-04)
+
+The first seven Tier 0 items of the 2026-10-02 review, as separate PRs
+(two shared `updateRecurring`, so they went together). Each fix came with
+a failing test first.
+
+- [x] A series keeps its kind; edits before the create lands — #110
+      (`todo/recurring-edit-fixes`). The all-day switch on an occurrence
+      built UTC-midnight times but never sent `isAllDay`: "This event"
+      wrote a timed 24 h block at 00:00Z, "All events" shifted the whole
+      series by that delta, all-day → timed was dropped. Decisions: **the
+      switch is refused, not supported** — Google keys occurrences and
+      exceptions by date or date-time to match the series, so a real
+      switch is a new series and needs a live-verified design. Refused
+      in `updateRecurring` (`RecurringAllDaySwitchError`, Google and
+      Apple), the editor model (`recurringTimesError`) and the UI
+      (`canSwitchAllDay`: the switch is disabled on an existing repeating
+      event); the agent gateway already had the rule. **An all-day series
+      moves one occurrence at a time** (`RecurringAllDayMoveError`): the
+      Google path compares against the date the occurrence shows (its
+      exception's, else its slot's); Apple slots are device-local
+      midnights, so there only the editor and the agent refuse. A
+      series/following edit, or a following delete, of a series whose
+      create had not reached Google replaced the create with a PATCH that
+      404'd, and the NotFound arm deleted the series locally. **The edit
+      folds into the queued create**, which keeps its `createdAt`; a
+      series delete of it queues nothing; a split truncates inside the
+      create and queues no instance deletes; text is not carried onto
+      exceptions Google does not have yet. **Occurrence edits and RSVPs
+      wait for a create queued ahead in their series** (`applyOp`, the
+      same hold as for moves). **Only a never-sent create is folded into
+      or dropped** (review of #110): an insert that landed with its
+      response lost stays queued, and its retry's 409 counts as done
+      without sending a folded edit. `applyOp` stamps an event create as
+      dispatched before the insert (as for tasks); behind a sent create
+      the PATCH or DELETE queues as before and waits for it. `updateEvent`
+      and `deleteEvent` follow the same rule for single events. A
+      create's response no longer overwrites its row while a later op of
+      the event is queued — it would restore an edited or deleted event.
+      A create the token never let out is stamped too (the stamp is set
+      before the request): the edit then queues behind it, one request
+      more than needed, never one too few.
+- [x] A newer task edit of another field keeps the queued one's — #111
+      (`todo/task-edit-merge`). "Latest wins" removed the queued
+      `updateTask` while an op carries only the fields its edit changed:
+      rename, then a new due day, sent only the day and the response
+      reverted the title. Decision: latest wins field by field — still
+      one patch per task in the queue.
+- [x] Read-only calendars: events there neither drag nor change — #112
+      (`todo/readonly-calendar-writes`). A dragged event in a reader
+      calendar got a 403, the op was dropped, and the drop marked the
+      moved row synced. Decisions: **the mutation layer refuses**
+      (`writable` around update/delete in both providers, and moving or
+      converting out of such a calendar) with the existing
+      `CalendarNotWritableError`; a calendar with no row passes. Both
+      apps stop the drag before it starts (`useEventReadOnlyLookup`); the
+      block still opens the viewer. Desktop: a press on a block that
+      cannot move now captures the pointer — without it the release
+      landed on the grid as a click on an empty slot.
+- [x] Removing a Google account asks first — #113
+      (`todo/confirm-account-removal`). Decision: only a Google account
+      asks (`removeAccountQuestion`), naming the account and how many
+      unsynced changes would be lost; an Apple account only disconnects
+      (EventKit keeps everything, reconnecting is a tap) and still goes
+      on one tap — the five Maestro flows that remove one are unchanged.
+      `PendingOpSummary` carries `accountId` for the count. **Remove waits
+      for a successful queue read** (review of #113): `usePendingOps`
+      falls back to `[]` while loading or after a failed read, which read
+      as "nothing unsynced"; `usePendingOpsRead` keeps 'loading' /
+      'failed' (a failed refresh included — the last count may be stale),
+      the desktop button stays disabled until the read lands, and the
+      iOS alert, which cannot update once shown, offers only OK until
+      then.
+- [x] Agent text that would pass an approval unseen is refused — #114
+      (`todo/agent-hidden-text`). The summary dropped invisible
+      characters while the write kept them, and tag characters were not
+      even dropped: a sentence could ride in an event's notes to every
+      guest. Decisions: **refuse, don't strip** (`hiddenCharacter`, in
+      `checkText`, the former length-only `within` every free-text field
+      already went through): control characters other than line breaks
+      and tabs, and every default-ignorable code point. **A joiner or
+      variation selector only inside a complete emoji** (review of #114:
+      `\p{RGI_Emoji}`, Unicode's recommended sequences): a joiner between
+      pictographs that form no emoji draws as nothing, and its presence or
+      absence spelled "PIN=1234" between visible apples. The summary keeps
+      complete emoji whole, so it shows the family emoji the write holds.
+      The pattern is built with `new RegExp(…, 'gv')` — a `v` literal needs
+      an ES2024 target; the agent runs only on Node and Electron. Tabs
+      show as a space in the summary. Invitation text keeps being stripped
+      for display.
+- [x] Repeat until ends in the series' own zone — #115
+      (`todo/repeat-until-zone`). `UNTIL=<date>T235959Z` lost the last
+      day west of UTC and added one east of it. Decision:
+      `buildRecurrenceRule` takes the series' zone and writes the last
+      second of the chosen day there (start of the next day minus one
+      second, safe across a midnight DST change); all-day keeps the DATE.
+      The read side (`parseUntil`, `lastDayOf`) already read UNTIL in the
+      series' zone.
