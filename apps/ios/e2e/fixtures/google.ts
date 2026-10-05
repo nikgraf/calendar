@@ -74,19 +74,22 @@ export const googleFixture: GoogleFixture = {
         summary: 'Fixture planning',
       },
     ],
-    // The zone-series flow's event: daily in Asia/Kolkata, which Hermes
-    // rejects (it takes Asia/Calcutta), with an EXDATE in that zone too.
-    // 19:30 there is 14:00 UTC, so the Kolkata and UTC days agree. In the
-    // mirror flow's destination, so nothing mirrors it.
+    // The zone-series flow's event: weekly on today's weekday in
+    // Asia/Kolkata, which Hermes rejects (it takes Asia/Calcutta), with an
+    // EXDATE in that zone too. 19:30 there is 14:00 UTC, so the Kolkata
+    // and UTC days agree. Weekly, not daily: the day pager lays out the
+    // neighbouring days off-screen, and a copy there is the element
+    // Maestro picks first. In the mirror flow's destination, so nothing
+    // mirrors it.
     'mock-shared': [
       {
-        end: { dateTime: `${utcDay(-7)}T20:00:00+05:30`, timeZone: 'Asia/Kolkata' },
+        end: { dateTime: `${utcDay(-21)}T20:00:00+05:30`, timeZone: 'Asia/Kolkata' },
         id: 'fixture-kolkata',
         recurrence: [
-          'RRULE:FREQ=DAILY',
-          `EXDATE;TZID=Asia/Kolkata:${utcDay(-3).replaceAll('-', '')}T193000`,
+          'RRULE:FREQ=WEEKLY',
+          `EXDATE;TZID=Asia/Kolkata:${utcDay(-14).replaceAll('-', '')}T193000`,
         ],
-        start: { dateTime: `${utcDay(-7)}T19:30:00+05:30`, timeZone: 'Asia/Kolkata' },
+        start: { dateTime: `${utcDay(-21)}T19:30:00+05:30`, timeZone: 'Asia/Kolkata' },
         status: 'confirmed',
         summary: 'Kolkata series',
       },
