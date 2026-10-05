@@ -334,6 +334,41 @@ describe('calendar desktop e2e', () => {
     }
   });
 
+  it('runs the built renderer under the content security policy', async () => {
+    // The e2e app loads dist/index.html from file://, as the packaged app
+    // does. An inline script must not run under script-src 'self'. (Not
+    // eval: CDP's own evaluation is exempt from the page's policy.)
+    const inlineRan = await app.cdp.eval<boolean>(`(() => {
+      delete window.__cspProbe;
+      const probe = document.createElement('script');
+      probe.textContent = 'window.__cspProbe = true';
+      document.head.append(probe);
+      probe.remove();
+      return window.__cspProbe === true;
+    })()`);
+    expect(inlineRan).toBe(false);
+  });
+
+  it('loads the dictation worklet under that policy', async () => {
+    // Where desktopSpeech.ts loads it from; a blob: worklet was blocked
+    // here, so dictation failed in every built app.
+    const loaded = await app.cdp.eval<string>(`(async () => {
+      const context = new AudioContext();
+      try {
+        await context.audioWorklet.addModule(
+          new URL('pcm-collector.worklet.js', document.baseURI).href,
+        );
+        new AudioWorkletNode(context, 'pcm-collector');
+        return 'loaded';
+      } catch (error) {
+        return String(error);
+      } finally {
+        void context.close();
+      }
+    })()`);
+    expect(loaded).toBe('loaded');
+  });
+
   it('shows the history import status under the account', async () => {
     const settings = await app.openSettings('accounts');
     // Seeded rows and no sync_state: nothing is importing, so the line

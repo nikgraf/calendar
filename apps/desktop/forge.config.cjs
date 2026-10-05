@@ -89,6 +89,8 @@ module.exports = {
       /^\/electron(?:$|\/)/,
       /^\/renderer(?:$|\/)/,
       /^\/index\.html$/,
+      // Copied into dist/ by the build (the dictation worklet).
+      /^\/public(?:$|\/)/,
       /^\/forge\.config\.cjs$/,
       /^\/tsconfig\.json$/,
       /^\/tsdown\.config\.ts$/,

@@ -7,7 +7,7 @@ import {
   type SpeechToText,
 } from '@calendar/ai';
 import { Temporal, type FreeSlot } from '@calendar/core';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { EventEditorPrefill } from './editorModel.ts';
 
 /** A forgotten recording stops itself rather than running until the app dies. */
@@ -126,6 +126,13 @@ export const useQuickAddModel = ({
     });
   };
 
+  /**
+   * Whether the bar is still open. Cancelling on unmount only stops a
+   * recording that already started; one still preparing or waiting for
+   * the microphone checks this before it goes on.
+   */
+  const open = useRef(true);
+
   const startRecording = async () => {
     setError(null);
     setVoice('preparing');
@@ -133,6 +140,11 @@ export const useQuickAddModel = ({
       // Prepare first: asking for the microphone before knowing dictation
       // can run would extract a permanent permission for nothing.
       await speech.prepare();
+      // Preparing can take minutes (the locale's models download): a bar
+      // closed meanwhile must not switch the microphone on afterwards.
+      if (!open.current) {
+        return;
+      }
     } catch (error) {
       setVoice('idle');
       if (error instanceof SpeechUnsupportedError) {
@@ -149,6 +161,12 @@ export const useQuickAddModel = ({
     }
     try {
       await speech.startRecording();
+      // Closed while the microphone was being granted: nobody is left to
+      // stop this stream, so stop it now.
+      if (!open.current) {
+        await speech.cancelRecording();
+        return;
+      }
       setVoice('recording');
     } catch (error) {
       setVoice('idle');
@@ -190,12 +208,13 @@ export const useQuickAddModel = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- restart the cap per recording
   }, [voice]);
 
-  useEffect(
-    () => () => {
+  useEffect(() => {
+    open.current = true;
+    return () => {
+      open.current = false;
       void speech.cancelRecording();
-    },
-    [speech],
-  );
+    };
+  }, [speech]);
 
   return {
     busy,

@@ -21,7 +21,8 @@ import {
   isCalendarWritable,
   isTaskListWritable,
 } from '@calendar/core';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { ARM_DELAY_MS } from './AgentApprovalDialog.tsx';
 import { useAgentsState } from './useAgentsState.ts';
 
 const BUTTON =
@@ -398,6 +399,9 @@ export function AgentsSection() {
     attempt(async () => {
       await window.calendarBridge.agentsDecide(request.id, decision);
     });
+  // Answering one request moves the next into its place under the
+  // pointer; every row disarms whenever the list changes (PendingChoice).
+  const pendingIds = state.pending.map((request) => request.id).join(' ');
 
   return (
     <section
@@ -528,24 +532,13 @@ export function AgentsSection() {
                     <li key={line}>{line}</li>
                   ))}
                 </ul>
-                <div className="mt-2 flex gap-2">
-                  <button
-                    className={BUTTON}
-                    disabled={busy}
-                    onClick={() => void decide(request, 'deny')}
-                    type="button"
-                  >
-                    Decline
-                  </button>
-                  <button
-                    className="rounded-lg bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50"
-                    disabled={busy}
-                    onClick={() => void decide(request, 'approve')}
-                    type="button"
-                  >
-                    Approve
-                  </button>
-                </div>
+                <PendingChoice
+                  busy={busy}
+                  // Remounted whenever the list changes, so it starts disarmed.
+                  key={pendingIds}
+                  onApprove={() => void decide(request, 'approve')}
+                  onDecline={() => void decide(request, 'deny')}
+                />
               </li>
             ))}
           </ul>
@@ -578,5 +571,49 @@ export function AgentsSection() {
         </p>
       ) : null}
     </section>
+  );
+}
+
+/**
+ * Decline / Approve for one waiting request, inert for ARM_DELAY_MS after
+ * it mounts — as in the approval dialog. Keyed by the whole list: when an
+ * answered request leaves and the next slides up, the second click of a
+ * double click lands on buttons that are not armed yet.
+ */
+function PendingChoice({
+  busy,
+  onApprove,
+  onDecline,
+}: {
+  busy: boolean;
+  onApprove: () => void;
+  onDecline: () => void;
+}) {
+  const [armed, setArmed] = useState(false);
+  useEffect(() => {
+    const timer = setTimeout(() => setArmed(true), ARM_DELAY_MS);
+    return () => clearTimeout(timer);
+  }, []);
+  return (
+    <div className="mt-2 flex gap-2">
+      <button
+        className={BUTTON}
+        data-testid="agent-pending-decline"
+        disabled={busy || !armed}
+        onClick={onDecline}
+        type="button"
+      >
+        Decline
+      </button>
+      <button
+        className="rounded-lg bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50"
+        data-testid="agent-pending-approve"
+        disabled={busy || !armed}
+        onClick={onApprove}
+        type="button"
+      >
+        Approve
+      </button>
+    </div>
   );
 }

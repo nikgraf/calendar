@@ -15,17 +15,13 @@ const SAMPLE_RATE = 16_000;
  * apps/ios/src/appleSpeech.ts: availability is decided by attempting
  * prepare, and the audio never outlives the request.
  */
-const WORKLET_SOURCE = `
-registerProcessor('pcm-collector', class extends AudioWorkletProcessor {
-  process(inputs) {
-    const channel = inputs[0]?.[0];
-    if (channel) {
-      this.port.postMessage(channel.slice(0));
-    }
-    return true;
-  }
-});
-`;
+/**
+ * The worklet that collects PCM blocks: public/pcm-collector.worklet.js,
+ * next to index.html in the build and at the root on the dev server. A
+ * file of the bundle, so the CSP's script-src 'self' covers it — a blob:
+ * URL is blocked there.
+ */
+const WORKLET_URL = new URL('pcm-collector.worklet.js', document.baseURI).href;
 
 interface Recording {
   readonly chunks: Array<Float32Array>;
@@ -93,6 +89,12 @@ export const desktopSpeech: SpeechToText = {
   },
 
   startRecording: async () => {
+    // One recording at a time: a new one used to replace the old without
+    // stopping it, leaving that microphone stream on for good.
+    if (recording) {
+      stopStream(recording);
+      recording = null;
+    }
     let stream: MediaStream;
     try {
       stream = await navigator.mediaDevices.getUserMedia({
@@ -102,14 +104,7 @@ export const desktopSpeech: SpeechToText = {
       throw new MicrophoneDeniedError({ message: 'Microphone access was declined.' });
     }
     const context = new AudioContext({ sampleRate: SAMPLE_RATE });
-    const workletUrl = URL.createObjectURL(
-      new Blob([WORKLET_SOURCE], { type: 'application/javascript' }),
-    );
-    try {
-      await context.audioWorklet.addModule(workletUrl);
-    } finally {
-      URL.revokeObjectURL(workletUrl);
-    }
+    await context.audioWorklet.addModule(WORKLET_URL);
     const source = context.createMediaStreamSource(stream);
     const collector = new AudioWorkletNode(context, 'pcm-collector');
     const chunks: Array<Float32Array> = [];

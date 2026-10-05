@@ -60,6 +60,12 @@ export default defineConfig({
         },
       },
       {
+        // The dictation worklet runs in an AudioWorkletGlobalScope:
+        // registerProcessor and AudioWorkletProcessor are its globals.
+        files: ['apps/desktop/public/*.worklet.js'],
+        globals: { AudioWorkletProcessor: 'readonly', registerProcessor: 'readonly' },
+      },
+      {
         // Maestro runScript files: GraalJS with `http`, `json`, `output`
         // and every flow/env variable as bare globals.
         files: ['apps/ios/e2e/live/scripts/*.js'],
