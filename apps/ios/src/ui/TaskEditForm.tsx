@@ -61,7 +61,7 @@ export function TaskEditForm({
       {task ? (
         <Pressable
           onPress={() => void taskModel.remove()}
-          style={styles.deleteButton}
+          style={[styles.deleteButton, taskModel.busy && styles.busy]}
           testID="task-delete"
         >
           <Text style={styles.deleteLabel}>Delete Task</Text>

@@ -33,6 +33,7 @@ export function EventEditForm({ model }: { model: ReturnType<typeof useEventEdit
     addAttendee,
     attendees,
     attendeeStatus,
+    busy,
     calendarKey,
     canInvite,
     canMoveCalendar,
@@ -253,7 +254,7 @@ export function EventEditForm({ model }: { model: ReturnType<typeof useEventEdit
         {existing && !readOnly ? (
           <Pressable
             onPress={() => void remove()}
-            style={styles.deleteButton}
+            style={[styles.deleteButton, busy && styles.busy]}
             testID="event-delete"
           >
             <Text style={styles.deleteLabel}>Delete Event</Text>

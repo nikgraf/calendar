@@ -40,6 +40,7 @@ import {
 } from '@calendar/core';
 import { useCallback, useState } from 'react';
 import { useAccounts, useBackendMutations, useLocationGeo } from './hooks.ts';
+import { useOneWrite } from './oneWrite.ts';
 import { useRepeatState } from './repeatState.ts';
 
 /**
@@ -449,6 +450,7 @@ export const useEventEditorModel = ({
     readonly url?: string | undefined;
   }>({});
   const [error, setError] = useState<string | null>(null);
+  const write = useOneWrite();
 
   /** The form as a conversion source (see core `convert.ts`). */
   const values = (): EventConvertValues => {
@@ -747,6 +749,8 @@ export const useEventEditorModel = ({
     adopt,
     attendees,
     attendeeStatus,
+    /** A save or delete is running: Save and Delete are dimmed (a press does nothing). */
+    busy: write.busy,
     /** Popup offsets "calendar default" stands for on the picked calendar. */
     calendarDefaultReminders,
     calendarKey,
@@ -767,13 +771,13 @@ export const useEventEditorModel = ({
     ownAttendee,
     pickPlace,
     reminders: resolvedReminders,
-    remove,
+    remove: () => write.run(remove),
     removeAttendee,
     removeReminder,
     ...repeatState,
     respond,
     rsvp,
-    save,
+    save: () => write.run(save),
     scope,
     setCalendarKey,
     setDate,

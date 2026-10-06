@@ -136,6 +136,7 @@ export function EventEditSheet({
   const seriesOnly =
     sourceKind === 'event' && eventModel.isRecurring && eventModel.scope !== 'series';
   const taskWord = taskModel.provider === 'apple' ? 'Reminder' : 'Task';
+  const busy = mode === 'task' ? taskModel.busy : eventModel.busy;
   const title =
     mode === 'birthday'
       ? 'Birthday'
@@ -179,6 +180,7 @@ export function EventEditSheet({
             ) : (
               <Pressable
                 onPress={() => void (mode === 'task' ? taskModel.save() : eventModel.save())}
+                style={busy ? styles.busy : undefined}
                 testID="event-save"
               >
                 <Text style={styles.save}>Save</Text>
