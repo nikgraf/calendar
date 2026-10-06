@@ -1,0 +1,23 @@
+appId: com.solunivo.app.dev
+name: A series in a zone Hermes spells differently still shows
+tags:
+  - ci
+---
+# Needs the fixture Google account (EXPO_PUBLIC_CALENDAR_GOOGLE=fixture, as
+# CI does): "Kolkata series" repeats weekly in Asia/Kolkata, today's
+# occurrence at noon on the simulator (e2e/fixtures/google.ts). Hermes
+# rejects that zone name and takes Asia/Calcutta; stored as Google sent
+# it, the series was left out of every view. The day view opens at 7:30,
+# so look below that first, then above (a DST change since the series
+# began shifts it by an hour).
+- runFlow: ../common/launch.yaml
+- tapOn: 'Day'
+- scrollUntilVisible:
+    element: 'Kolkata series.*'
+    direction: DOWN
+    timeout: 20000
+    optional: true
+- scrollUntilVisible:
+    element: 'Kolkata series.*'
+    direction: UP
+    timeout: 10000

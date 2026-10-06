@@ -3,6 +3,7 @@ import {
   Attendee,
   CalendarInfo,
   canonicalReminders,
+  engineZoneId,
   type EventDraft,
   EventRecord,
   EventReminders,
@@ -108,7 +109,9 @@ export const mapAppleEvent = (
     reminders: fromAlarms(event.alarms),
     startDate: event.isAllDay ? event.startDate : undefined,
     // A floating event reads in the device's zone, like Calendar.app shows it.
-    startTimeZone: event.isAllDay ? undefined : (event.timeZone ?? context.deviceTimeZone),
+    startTimeZone: event.isAllDay
+      ? undefined
+      : engineZoneId(event.timeZone ?? context.deviceTimeZone),
     startUtc:
       event.isAllDay && event.startDate ? plainDateToUtcMs(event.startDate) : event.startUtc,
     status: event.status,

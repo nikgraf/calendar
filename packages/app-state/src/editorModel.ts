@@ -1,6 +1,7 @@
 import {
   appendLink,
   byDayError,
+  repeatUntilError,
   isCalendarWritable,
   isLossy,
   isTaskToEventLossy,
@@ -547,7 +548,7 @@ export const useEventEditorModel = ({
     const spec = repeatSpec();
     const invalid =
       validateEventDraft(fields, timeZone) ??
-      (spec ? byDayError(spec) : undefined) ??
+      (spec ? (byDayError(spec) ?? repeatUntilError(spec, date)) : undefined) ??
       (existing && isRecurring && openedDate !== undefined
         ? recurringTimesError({
             date,

@@ -203,6 +203,7 @@ export function RepeatRuleFields({
               <input
                 aria-label="Repeat until"
                 className={`${FIELD_CLASS} mt-1`}
+                min={anchorDate}
                 onChange={(input) => state.setRepeatUntil(input.target.value)}
                 type="date"
                 value={state.repeatUntil}

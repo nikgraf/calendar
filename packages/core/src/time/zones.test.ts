@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import {
   allTimeZoneIds,
   canonicalZoneId,
+  engineRecurrenceLines,
+  engineZoneId,
   isValidTimeZone,
   runtimeZoneId,
   searchTimeZones,
@@ -11,7 +13,6 @@ import {
   zoneSlug,
 } from './zones.ts';
 
-/** An engine like Hermes, which rejects the modern name but takes ICU's. */
 /** Hermes as it is: some current names rejected, some legacy ones too. */
 const hermes = (id: string) =>
   id !== 'Asia/Kolkata' && id !== 'America/Buenos_Aires' && id !== 'Mars/Olympus';
@@ -46,6 +47,32 @@ describe('zones catalog', () => {
     expect(runtimeZoneId('Asia/Kolkata', hermes)).toBe('Asia/Calcutta');
     expect(runtimeZoneId('Europe/Vienna', hermes)).toBe('Europe/Vienna');
     expect(runtimeZoneId('Mars/Olympus', hermes)).toBeUndefined();
+  });
+
+  it('spells an event zone the way the engine reads it', () => {
+    // Node knows every spelling, so ids stand as they are.
+    expect(engineZoneId('Asia/Kolkata')).toBe('Asia/Kolkata');
+    expect(engineZoneId('Mars/Olympus')).toBe('Mars/Olympus');
+    // Under Hermes a series' EXDATE in Asia/Kolkata would throw.
+    const hermesSpell = (id: string) => runtimeZoneId(id, hermes) ?? id;
+    expect(
+      engineRecurrenceLines(
+        [
+          'RRULE:FREQ=WEEKLY;BYDAY=MO',
+          'EXDATE;TZID=Asia/Kolkata:20261005T093000,20261012T093000',
+          'RDATE;TZID="Asia/Kolkata":20261020T093000',
+          'EXDATE;TZID=America/Buenos_Aires:20261005T093000',
+          'EXDATE;TZID=Europe/Vienna:20261005T093000',
+        ],
+        hermesSpell,
+      ),
+    ).toEqual([
+      'RRULE:FREQ=WEEKLY;BYDAY=MO',
+      'EXDATE;TZID=Asia/Calcutta:20261005T093000,20261012T093000',
+      'RDATE;TZID="Asia/Calcutta":20261020T093000',
+      'EXDATE;TZID=America/Argentina/Buenos_Aires:20261005T093000',
+      'EXDATE;TZID=Europe/Vienna:20261005T093000',
+    ]);
   });
 
   it('resolves a legacy id Google stored to the current name the engine takes', () => {

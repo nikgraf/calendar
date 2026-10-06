@@ -240,6 +240,24 @@ describe('SyncEngine', () => {
     }).pipe(Effect.provide(engineLayer(client)));
   });
 
+  it.effect('an event without a zone of its own is stored in its calendar zone', () => {
+    // timedItem sends no start.timeZone. The page names the calendar's zone;
+    // without one, the stored calendar's (calendarListPage: Europe/Vienna).
+    const client = stubClient([
+      { items: [timedItem('evt-1', 10)], nextPageToken: 'page-2', timeZone: 'America/New_York' },
+      { items: [timedItem('evt-2', 12)], nextSyncToken: 'evt-sync-1' },
+    ]);
+    return Effect.gen(function* () {
+      yield* seedAccount;
+      yield* (yield* SyncEngine).syncAll();
+      const window = yield* (yield* EventRepo).getWindow(0, plainDateToUtcMs('2030-01-01'));
+      const zones = Object.fromEntries(
+        window.singles.map((event) => [event.id, event.startTimeZone]),
+      );
+      expect(zones).toEqual({ 'evt-1': 'America/New_York', 'evt-2': 'Europe/Vienna' });
+    }).pipe(Effect.provide(engineLayer(client)));
+  });
+
   it.effect('incremental sync applies updates and cancellation tombstones', () => {
     const calls: Array<{ syncToken?: string | undefined; timeMin?: string | undefined }> = [];
     const client = stubClient(

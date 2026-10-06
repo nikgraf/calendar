@@ -287,18 +287,25 @@ const make: Effect.Effect<
       );
     });
 
-  const syncEvents = (account: Account, calendarId: string): Effect.Effect<void, SyncError> =>
+  const syncEvents = (
+    account: Account,
+    calendarId: string,
+    calendarTimeZone: string | undefined,
+  ): Effect.Effect<void, SyncError> =>
     Effect.gen(function* () {
       const scope = eventsScope(calendarId);
       const state = yield* syncStateRepo.get(account.id, scope);
       const passStartedAt = yield* Clock.currentTimeMillis;
 
-      const applyItems = (items: ReadonlyArray<GcalEvent>) =>
+      const applyItems = (items: ReadonlyArray<GcalEvent>, pageTimeZone: string | undefined) =>
         Effect.gen(function* () {
           const context = {
             accountId: account.id,
             calendarId,
-            defaultTimeZone: 'UTC',
+            // An event without a zone of its own is in its calendar's, which
+            // Google sends with every page: stored as UTC, its times showed
+            // and repeated in UTC, and an edit wrote UTC back.
+            defaultTimeZone: pageTimeZone ?? calendarTimeZone ?? 'UTC',
             syncedAt: passStartedAt,
           };
           const upserts: Array<EventRecord> = [];
@@ -352,7 +359,7 @@ const make: Effect.Effect<
                 params: syncToken ? { pageToken, syncToken } : { pageToken },
               }),
             );
-            yield* applyItems(page.items ?? []);
+            yield* applyItems(page.items ?? [], page.timeZone);
             pageToken = page.nextPageToken;
             nextSyncToken = page.nextSyncToken ?? nextSyncToken;
           } while (pageToken !== undefined);
@@ -829,7 +836,7 @@ const make: Effect.Effect<
       yield* Effect.forEach(
         calendars,
         (calendar) =>
-          syncEvents(account, calendar.id).pipe(
+          syncEvents(account, calendar.id, calendar.timeZone).pipe(
             // A 404 on one calendar must not stall the account's others,
             // tasks and contacts. It is not proof of deletion either: Google
             // says to retry 404s, and calendarList names a deleted calendar

@@ -4,6 +4,8 @@ import {
   canonicalReminders,
   decodeGeoProperties,
   encodeGeoProperties,
+  engineRecurrenceLines,
+  engineZoneId,
   EventRecord,
   EventReminders,
   googleMirrorMarker,
@@ -146,11 +148,14 @@ export const mapGcalEvent = (
     mirror: googleMirrorMarker(event.id, event.extendedProperties?.private?.[MIRROR_PROPERTY_KEY]),
     organizerEmail: event.organizer?.email,
     originalStartUtc: toEpochMs(event.originalStartTime),
-    recurrence: event.recurrence,
+    recurrence: event.recurrence && engineRecurrenceLines(event.recurrence),
     recurringEventId: event.recurringEventId,
     reminders: toEventReminders(event.reminders),
     startDate: event.start?.date,
-    startTimeZone: isAllDay ? undefined : (event.start?.timeZone ?? context.defaultTimeZone),
+    // In the spelling this engine reads (Hermes rejects Asia/Kolkata).
+    startTimeZone: isAllDay
+      ? undefined
+      : engineZoneId(event.start?.timeZone ?? context.defaultTimeZone),
     startUtc,
     status,
     syncedAt: context.syncedAt,

@@ -26,6 +26,30 @@ const weeksOut = (weeks: number, hour: number): string => {
   ).toISOString();
 };
 
+const pad = (n: number): string => String(n).padStart(2, '0');
+
+/** Noon on this device's today, `weeks` weeks back (local calendar, DST-safe). */
+const localNoonWeeksBack = (weeks: number): number => {
+  const date = new Date();
+  date.setDate(date.getDate() - 7 * weeks);
+  date.setHours(12, 0, 0, 0);
+  return date.getTime();
+};
+
+/**
+ * An instant as Asia/Kolkata wall time, YYYY-MM-DDTHH:MM:00. Plain offset
+ * math (UTC+05:30, no DST there): this runs on Hermes, whose Temporal and
+ * Intl reject that zone name — the point of the flow.
+ */
+const kolkataWallTime = (ms: number): string => {
+  const wall = new Date(ms + 5.5 * 60 * 60 * 1000);
+  return `${wall.getUTCFullYear()}-${pad(wall.getUTCMonth() + 1)}-${pad(wall.getUTCDate())}T${pad(wall.getUTCHours())}:${pad(wall.getUTCMinutes())}:00`;
+};
+
+/** The zone-series flow's series starts three weeks back, at noon on this device. */
+const KOLKATA_SERIES_START = localNoonWeeksBack(3);
+const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
+
 /**
  * The signed-in Google account the Maestro flows see when Metro runs
  * with EXPO_PUBLIC_CALENDAR_GOOGLE=fixture (CI does): one writable
@@ -68,6 +92,35 @@ export const googleFixture: GoogleFixture = {
         start: { dateTime: weeksOut(5, 10) },
         status: 'confirmed',
         summary: 'Fixture planning',
+      },
+    ],
+    // The zone-series flow's event: weekly in Asia/Kolkata, which Hermes
+    // rejects (it takes Asia/Calcutta), with an EXDATE in that zone too.
+    // Anchored to noon on this device's today, three weeks back: Kolkata
+    // keeps no DST, so this week's occurrence is around noon on the
+    // simulator's today whatever its zone (a UTC anchor missed it where
+    // the local date differs). Weekly, not daily: the day pager lays out
+    // the neighbouring days off-screen, and a copy there is the element
+    // Maestro picks first. In the mirror flow's destination, so nothing
+    // mirrors it.
+    'mock-shared': [
+      {
+        end: {
+          dateTime: `${kolkataWallTime(KOLKATA_SERIES_START + 30 * 60 * 1000)}+05:30`,
+          timeZone: 'Asia/Kolkata',
+        },
+        id: 'fixture-kolkata',
+        recurrence: [
+          'RRULE:FREQ=WEEKLY',
+          // The second occurrence, a week after the start.
+          `EXDATE;TZID=Asia/Kolkata:${kolkataWallTime(KOLKATA_SERIES_START + WEEK_MS).replaceAll(/[-:]/g, '')}`,
+        ],
+        start: {
+          dateTime: `${kolkataWallTime(KOLKATA_SERIES_START)}+05:30`,
+          timeZone: 'Asia/Kolkata',
+        },
+        status: 'confirmed',
+        summary: 'Kolkata series',
       },
     ],
   },

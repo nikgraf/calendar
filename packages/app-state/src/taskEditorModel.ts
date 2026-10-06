@@ -1,6 +1,7 @@
 import {
   appendLink,
   byDayError,
+  repeatUntilError,
   type EventRecord,
   eventToTaskLossSummary,
   isEventToTaskLossy,
@@ -254,7 +255,8 @@ export const useTaskEditorModel = ({
         (repeatState.repeatEnds === 'after'
           ? repeatNumberError(repeatState.repeatCount, 'The occurrence count')
           : undefined) ??
-        byDayError(repeatSpec() ?? { freq: repeatState.repeat });
+        byDayError(repeatSpec() ?? { freq: repeatState.repeat }) ??
+        (dated ? repeatUntilError(repeatSpec() ?? {}, dueDate) : undefined);
       if (invalid) {
         setError(invalid);
         return;
