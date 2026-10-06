@@ -2,25 +2,35 @@ import { duplexServerProtocol } from '@calendar/sync/rpcDuplex';
 import { ipcMain, webContents } from 'electron';
 import type { Layer } from 'effect';
 import type { RpcSerialization, RpcServer } from 'effect/rpc';
+import { makeClientPages } from './rpcClientPages.ts';
 
 type FrameListener = (clientId: number, data: string | Uint8Array) => void;
 type DisconnectListener = (clientId: number) => void;
 
 const frameListeners = new Set<FrameListener>();
 const disconnectListeners = new Set<DisconnectListener>();
-const knownClients = new Set<number>();
+
+const pages = makeClientPages((clientId) => {
+  for (const listener of disconnectListeners) {
+    listener(clientId);
+  }
+});
+
+// The preload sends this as each document starts, before any rpc frame of
+// it: a reload's new document ends the old one's client (rpcClientPages.ts).
+ipcMain.on('rpc:document', (event) => {
+  pages.newDocument(event.sender.id);
+});
 
 ipcMain.on('rpc', (event, data: string | Uint8Array) => {
-  const clientId = event.sender.id;
-  if (!knownClients.has(clientId)) {
-    knownClients.add(clientId);
-    event.sender.once('destroyed', () => {
-      knownClients.delete(clientId);
-      for (const listener of disconnectListeners) {
-        listener(clientId);
-      }
-    });
-  }
+  const sender = event.sender;
+  const clientId = sender.id;
+  pages.seen({
+    id: clientId,
+    onDestroyed: (listener) => {
+      sender.once('destroyed', listener);
+    },
+  });
   for (const listener of frameListeners) {
     listener(clientId, data);
   }
@@ -29,6 +39,8 @@ ipcMain.on('rpc', (event, data: string | Uint8Array) => {
 /**
  * The AppBackend rpc protocol over Electron IPC: each renderer WebContents
  * is a client (id = webContents.id); frames travel on the 'rpc' channel.
+ * A page that reloads leaves as a client before its new document joins
+ * (rpcClientPages.ts).
  */
 export const rpcServerProtocol: Layer.Layer<
   RpcServer.Protocol,

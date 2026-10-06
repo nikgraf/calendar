@@ -51,3 +51,7 @@ contextBridge.exposeInMainWorld('calendarBridge', {
   settingsFileSave: (text: string) => ipcRenderer.invoke('settingsFile:save', text),
   settingsFileStatus: () => ipcRenderer.invoke('settingsFile:status'),
 });
+
+// This document is a new rpc client: sent before any of its rpc frames, so
+// main ends a reloaded page's old client first (electron/rpcClientPages.ts).
+ipcRenderer.send('rpc:document');

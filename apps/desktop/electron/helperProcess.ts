@@ -5,6 +5,7 @@ import { createInterface } from 'node:readline';
 import type { Readable, Writable } from 'node:stream';
 import type { BridgeTransport } from '@calendar/core';
 import { app } from 'electron';
+import { type HelperRequests, makeHelperRequests } from './helperRequests.ts';
 
 /**
  * Owns the Swift helper child process (newline-delimited JSON over stdio:
@@ -60,12 +61,6 @@ const DEFAULT_TIMEOUT_MS = 120_000;
 /** Crash-looping helpers back off instead of burning CPU. */
 const RESTART_BACKOFF_MS = 5000;
 
-interface PendingRequest {
-  readonly reject: (error: Error) => void;
-  readonly resolve: (value: unknown) => void;
-  readonly timer: NodeJS.Timeout;
-}
-
 const helperPath = (): string | null => {
   const candidates = app.isPackaged
     ? [join(process.resourcesPath, 'solunivo-model-helper')]
@@ -82,10 +77,9 @@ export const helperAvailable = (): boolean => helperPath() !== null;
 
 type Helper = ChildProcessByStdio<Writable, Readable, null>;
 
-let child: Helper | null = null;
+/** The running helper and the requests in flight to it. */
+let child: { readonly process: Helper; readonly requests: HelperRequests } | null = null;
 let lastSpawnFailedAt = 0;
-let nextRequestId = 1;
-const pending = new Map<number, PendingRequest>();
 /** Subscribers to the helper's unsolicited `{"event": name}` lines. */
 const eventListeners = new Map<string, Set<() => void>>();
 
@@ -98,17 +92,9 @@ export const onHelperEvent = (name: string, listener: () => void): (() => void) 
   };
 };
 
-const failAllPending = (message: string) => {
-  for (const [, request] of pending) {
-    clearTimeout(request.timer);
-    request.reject(new Error(message));
-  }
-  pending.clear();
-};
-
-const ensureHelper = (): Helper | null => {
+const ensureHelper = (): HelperRequests | null => {
   if (child) {
-    return child;
+    return child.requests;
   }
   if (Date.now() - lastSpawnFailedAt < RESTART_BACKOFF_MS) {
     return null;
@@ -121,77 +107,51 @@ const ensureHelper = (): Helper | null => {
   // stderr ignored deliberately: an unread pipe fills its buffer and
   // blocks the child if anything (framework warnings included) writes.
   const spawned = spawn(binary, [], { stdio: ['pipe', 'pipe', 'ignore'] });
-  child = spawned;
+  const requests = makeHelperRequests({
+    // Only a helper that stopped answering altogether: the next call
+    // respawns it (after the restart backoff), and the exit handler fails
+    // what was still waiting.
+    kill: () => {
+      if (child?.process === spawned) {
+        spawned.kill();
+      }
+    },
+    timeoutFor: (method) => TIMEOUTS_MS[method] ?? DEFAULT_TIMEOUT_MS,
+    write: (line) => {
+      spawned.stdin.write(line);
+    },
+  });
+  child = { process: spawned, requests };
   // A write racing the child's death emits 'error' on stdin; unhandled,
   // that is an uncaught exception in the MAIN process. The exit handler
   // already fails pending requests, so swallowing here is correct — the
   // racing request resolves via its timeout at worst.
   spawned.stdin.on('error', () => undefined);
   createInterface({ input: spawned.stdout }).on('line', (line) => {
-    let parsed: { error?: string; event?: string; id?: number; result?: unknown };
-    try {
-      parsed = JSON.parse(line) as typeof parsed;
-    } catch {
-      return;
-    }
-    if (parsed.id === undefined && typeof parsed.event === 'string') {
-      for (const listener of eventListeners.get(parsed.event) ?? []) {
+    const event = requests.receive(line);
+    if (event !== undefined) {
+      for (const listener of eventListeners.get(event) ?? []) {
         listener();
       }
-      return;
-    }
-    const request = parsed.id === undefined ? undefined : pending.get(parsed.id);
-    if (!request) {
-      return;
-    }
-    pending.delete(parsed.id!);
-    clearTimeout(request.timer);
-    if (parsed.error !== undefined) {
-      request.reject(new Error(parsed.error));
-    } else {
-      request.resolve(parsed.result);
     }
   });
-  spawned.on('exit', () => {
-    if (child === spawned) {
+  const ended = (message: string) => {
+    if (child?.process === spawned) {
       child = null;
       lastSpawnFailedAt = Date.now();
     }
-    failAllPending('model helper exited');
-  });
-  spawned.on('error', () => {
-    if (child === spawned) {
-      child = null;
-      lastSpawnFailedAt = Date.now();
-    }
-    failAllPending('model helper failed to start');
-  });
-  return spawned;
+    requests.failAll(message);
+  };
+  spawned.on('exit', () => ended('model helper exited'));
+  spawned.on('error', () => ended('model helper failed to start'));
+  return requests;
 };
 
 export const HELPER_UNAVAILABLE = 'model helper unavailable';
 
 export const callHelper = (method: string, params?: Record<string, unknown>): Promise<unknown> => {
-  const helper = ensureHelper();
-  if (!helper) {
-    return Promise.reject(new Error(HELPER_UNAVAILABLE));
-  }
-  const id = nextRequestId++;
-  return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => {
-      pending.delete(id);
-      reject(new Error('model helper timed out'));
-      // A request that outlives its budget means a wedged helper; kill it
-      // so the next call respawns (after the restart backoff) instead of
-      // every later request timing out too. The exit handler fails the
-      // other pending requests.
-      if (child === helper) {
-        helper.kill();
-      }
-    }, TIMEOUTS_MS[method] ?? DEFAULT_TIMEOUT_MS);
-    pending.set(id, { reject, resolve, timer });
-    helper.stdin.write(`${JSON.stringify({ id, method, ...(params ? { params } : {}) })}\n`);
-  });
+  const requests = ensureHelper();
+  return requests ? requests.call(method, params) : Promise.reject(new Error(HELPER_UNAVAILABLE));
 };
 
 /**
@@ -214,7 +174,7 @@ export const helperTransport = (
 /** Wire once from main: kill the child when the app quits. */
 export const registerHelperLifecycle = (): void => {
   app.on('will-quit', () => {
-    child?.kill();
+    child?.process.kill();
     child = null;
   });
 };

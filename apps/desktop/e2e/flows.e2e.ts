@@ -249,13 +249,17 @@ const setEditorTitle = async (title: string): Promise<void> => {
  * Viewport point at a wall-clock time in today's day column, scrolled into
  * view — for drawing slots on grid space no seeded or test event occupies.
  */
-const todayGridPoint = async (hour: number, minute = 0): Promise<{ x: number; y: number }> => {
+const todayGridPoint = async (
+  hour: number,
+  minute = 0,
+  cdp: App['cdp'] = app.cdp,
+): Promise<{ x: number; y: number }> => {
   const label = new Date().toLocaleDateString('en-US', {
     day: 'numeric',
     month: 'long',
     weekday: 'long',
   });
-  return app.cdp.eval<{ x: number; y: number }>(`(() => {
+  return cdp.eval<{ x: number; y: number }>(`(() => {
     const column = [...document.querySelectorAll('[role="button"][aria-label]')].find((element) =>
       element.getAttribute('aria-label').startsWith(${JSON.stringify(`${label}:`)}),
     );
@@ -1514,5 +1518,61 @@ describe('collapsible all-day lane', () => {
     await cdp.waitFor(`document.querySelectorAll('[title^="Chore "]').length === 5`);
     expect(await laneHeight()).toBe(5 * LANE_ROW + LANE_PADDING);
     expect(await cdp.eval(`!!document.querySelector('[data-testid="all-day-more"]')`)).toBe(false);
+  });
+});
+
+describe('a reloaded window', () => {
+  let reloadApp: App;
+
+  beforeAll(async () => {
+    reloadApp = await launchApp(seed);
+  }, 60_000);
+
+  afterEach(async (context) => {
+    if (context.task.result?.state === 'fail') {
+      await reloadApp?.dump(context.task.name);
+    }
+  });
+
+  afterAll(async () => {
+    await reloadApp?.stop();
+  });
+
+  it('still hears about changes made elsewhere after ⌘R', async () => {
+    const { cdp } = reloadApp;
+    await cdp.waitFor(`!!document.querySelector('[title^="Standup meeting"]')`);
+    // The reloaded page numbers its requests from 0 again. The old page's
+    // invalidations stream stayed open under the same client id, and the
+    // server drops a request whose id is still running — so the new
+    // page's own subscription never started.
+    await cdp.send('Page.reload', {});
+    await cdp.waitFor(`!!document.querySelector('[title^="Standup meeting"]')`);
+    // A change the window did not make: hiding Work in the Settings window
+    // reaches it only through its invalidations stream.
+    const settings = await reloadApp.openSettings('accounts');
+    const work = `[...document.querySelectorAll('input[type="checkbox"]')].find(b => b.parentElement?.textContent?.includes('Work') && b.checked)`;
+    await settings.waitFor(`!!${work}`);
+    await settings.eval(`${work}?.click()`);
+    await cdp.waitFor(`!document.querySelector('[title^="Standup meeting"]')`, 20_000);
+    await reloadApp.closeSettings();
+  });
+
+  it('stays a client when a navigation is refused', async () => {
+    const { cdp } = reloadApp;
+    // main.ts refuses a navigation off the app's own page in will-navigate,
+    // after Electron has already reported did-start-navigation: the
+    // document stays, and so must its streams.
+    await cdp.eval(`void (window.__stillHere = true)`);
+    await cdp.eval(`void (location.href = 'https://example.com/')`);
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    expect(await cdp.eval<boolean>('window.__stillHere === true')).toBe(true);
+    // Showing Work again in Settings reaches it only through its
+    // invalidations stream.
+    const settings = await reloadApp.openSettings('accounts');
+    const work = `[...document.querySelectorAll('input[type="checkbox"]')].find(b => b.parentElement?.textContent?.includes('Work') && !b.checked)`;
+    await settings.waitFor(`!!${work}`);
+    await settings.eval(`${work}?.click()`);
+    await cdp.waitFor(`!!document.querySelector('[title^="Standup meeting"]')`, 20_000);
+    await reloadApp.closeSettings();
   });
 });
