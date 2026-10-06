@@ -15,23 +15,9 @@ From a read-only review of the whole app; nothing was run. "Verified"
 means the cited code was re-read and the defect is there, "reported" that
 one audit pass traced it — reproduce with a failing test first. Lines are
 from main on 2026-10-04. Fixed items are closed in `docs/decisions.md`
-under "Review fixes (2026-10-04)" (#110–#115) and "Review fixes, second
-batch (2026-10-05)" (#117–#121).
-
-### Data loss or corruption
-
-- [ ] Queue leftovers after #110 and #118 — a move of a sent create can
-      duplicate the event (`googleServerMove` re-keys a create that may
-      have landed in the source into the destination); the 410 and task
-      `InsufficientScopeError` arms leave rows unreleased (pulls skip
-      pending rows); an RSVP's response does not move queued edits to the
-      etag it produced (no If-Match went out, so Google's prior state is
-      unknown), so an edit queued right behind an RSVP can still park
-      against it.
-- [ ] Save tapped twice creates two events or tasks (reported) — no
-      in-flight guard in `editorModel.ts` `save` or `taskEditorModel.ts`,
-      and the Save button is never disabled; a write waiting behind a
-      history-import transaction invites the second tap.
+under "Review fixes (2026-10-04)" (#110–#115), "Review fixes, second
+batch (2026-10-05)" (#117–#121) and "Review fixes, third batch
+(2026-10-05)" (#124–#127).
 
 ### Time zones and recurrence
 
@@ -42,16 +28,6 @@ batch (2026-10-05)" (#117–#121).
       (`RemindersBridge.swift:159-177`; the Apple Calendar bridge uses a
       computed var). After travel the grid, "today" and new reminders'
       times stay on the old zone until relaunch.
-- [ ] Pulled events without a zone are stored as UTC and edits write UTC
-      back (the literal at `engine.ts:294` is verified) — use the
-      calendar's `timeZone`.
-- [ ] A zone the runtime rejects still hides a series on iOS (the
-      notification pass copes since #119) — `mapEvent.ts:152` stores zones
-      unvalidated although `runtimeZoneId` exists (Hermes rejects
-      `Asia/Kolkata`), and `assembleWindow` skips a series in such a zone.
-- [ ] A repeat end date before the start is accepted (reported) —
-      `normalizeQuickAdd.ts:148-157`, `RepeatRuleChips.tsx:174-179` (no
-      `minimumDate`): "every Monday until March" said in October.
 
 ### Sync robustness
 
@@ -62,14 +38,6 @@ batch (2026-10-05)" (#117–#121).
       medium) — the bridges return early when `changeObserver != nil`
       (`AppleCalendarBridge.swift:453-458` and siblings) while the
       closure's module instance is gone; "Load PR channel" triggers it.
-- [ ] ⌘R leaves the old window's rpc streams alive in main (reported,
-      medium) — `rpcProtocol.ts:13-26` disconnects only on `destroyed`;
-      request ids restart at 0 and collide, so the window can stop
-      receiving invalidations. Drop Reload from the production menu
-      (`menu.ts:36`) or disconnect on navigation.
-- [ ] One helper timeout fails every in-flight helper call (reported,
-      medium-low) — `helperProcess.ts:179-189` kills the helper; a slow
-      `geo.search` takes a pending TCC prompt or transcription with it.
 - [ ] Smaller — a malformed `updated` still throws for the whole pass
       (`mapEvent.ts:160-161`); the offline 5× retry holds the sync gate
       about 30 s per Google account (`engine.ts:96`), so Reminders passes
