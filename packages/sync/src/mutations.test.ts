@@ -31,6 +31,7 @@ import {
   type GoogleTasksClientShape,
   NotFoundError,
   ReauthRequiredError,
+  SyncTokenExpiredError,
 } from '@calendar/google';
 import { RemindersClient, unavailableRemindersClient } from '@calendar/reminders';
 import { SqliteClient } from '@effect/sql-sqlite-node';
@@ -360,6 +361,32 @@ describe('EventMutations', () => {
       yield* mutations.processPendingOps();
       expect(sent).toEqual(['insert:Second', 'insert:Second', `delete:${second.id}`]);
       expect(yield* rowOf(second.id)).toBeNull();
+    }).pipe(noYield, Effect.provide(mutationsLayer(client)));
+  });
+
+  it.effect('a 410 on an edit reads as deleted on Google, not as done', () => {
+    // failForStatus reads every 410 as an expired sync token; on a write
+    // it means the event is gone.
+    const client = stubClient({
+      insertEvent: ({ event }) => Effect.succeed(echo(event, event.id ?? 'x', '"server-1"')),
+      patchEvent: () => Effect.fail(new SyncTokenExpiredError({ calendarId: 'cal-1' })),
+    });
+    return Effect.gen(function* () {
+      yield* seedCalendar;
+      const mutations = yield* EventMutations;
+      const record = yield* mutations.createEvent(draft);
+      yield* mutations.processPendingOps();
+      yield* mutations.updateEvent({
+        accountId: 'acc-1',
+        calendarId: 'cal-1',
+        changes: { title: 'Too late' },
+        eventId: record.id,
+      });
+      yield* mutations.processPendingOps();
+      expect(yield* (yield* PendingOpRepo).listAll()).toEqual([]);
+      // It used to stay, pending: pulls skip pending rows, so the deletion
+      // never showed.
+      expect(yield* rowOf(record.id)).toBeNull();
     }).pipe(noYield, Effect.provide(mutationsLayer(client)));
   });
 

@@ -22,6 +22,7 @@ import {
   type GoogleCalendarClientShape,
   GoogleTasksClient,
   type GoogleTasksClientShape,
+  SyncTokenExpiredError,
 } from '@calendar/google';
 import { RemindersClient, unavailableRemindersClient } from '@calendar/reminders';
 import { SqliteClient } from '@effect/sql-sqlite-node';
@@ -74,17 +75,20 @@ const seedAccounts = Effect.gen(function* () {
   }
 });
 
-const testLayer = EventMutations.layer.pipe(
-  Layer.provideMerge(appleCalendarServicesLayer(unavailableAppleCalendarClient('test'))),
-  Layer.provideMerge(Layer.effectDiscard(seedAccounts)),
-  Layer.provideMerge(reposLayer),
-  Layer.provideMerge(Layer.effectDiscard(runMigrations)),
-  Layer.provideMerge(SqliteClient.layer({ filename: ':memory:' })),
-  Layer.provideMerge(reactivityLayer),
-  Layer.provideMerge(Layer.succeed(RemindersClient, unavailableRemindersClient('test'))),
-  Layer.provideMerge(Layer.succeed(GoogleCalendarClient, stubClient)),
-  Layer.provideMerge(Layer.succeed(GoogleTasksClient, stubTasksClient)),
-);
+const testLayerWith = (client: GoogleCalendarClientShape) =>
+  EventMutations.layer.pipe(
+    Layer.provideMerge(appleCalendarServicesLayer(unavailableAppleCalendarClient('test'))),
+    Layer.provideMerge(Layer.effectDiscard(seedAccounts)),
+    Layer.provideMerge(reposLayer),
+    Layer.provideMerge(Layer.effectDiscard(runMigrations)),
+    Layer.provideMerge(SqliteClient.layer({ filename: ':memory:' })),
+    Layer.provideMerge(reactivityLayer),
+    Layer.provideMerge(Layer.succeed(RemindersClient, unavailableRemindersClient('test'))),
+    Layer.provideMerge(Layer.succeed(GoogleCalendarClient, client)),
+    Layer.provideMerge(Layer.succeed(GoogleTasksClient, stubTasksClient)),
+  );
+
+const testLayer = testLayerWith(stubClient);
 
 const master = new EventRecord({
   accountId: 'acc-1',
@@ -220,6 +224,27 @@ describe('EventMutations recurring scopes', () => {
       expect(ops[0]!.kind).toBe('delete');
       expect(ops[0]!.eventId).toBe(instanceId);
     }).pipe(Effect.provide(testLayer)),
+  );
+
+  it.effect('an occurrence delete Google answers 410 for keeps its cancelled tombstone', () =>
+    Effect.gen(function* () {
+      yield* seedMaster;
+      const mutations = yield* EventMutations;
+      yield* mutations.deleteRecurring({ ...target, scope: 'instance' });
+      yield* mutations.processPendingOps();
+      // 410: already deleted there (an earlier attempt landed, its
+      // response lost). The tombstone is what keeps the occurrence away.
+      expect(yield* listOps).toEqual([]);
+      const tombstone = yield* (yield* EventRepo).getById('acc-1', 'cal-1', instanceId);
+      expect(tombstone?.status).toBe('cancelled');
+    }).pipe(
+      Effect.provide(
+        testLayerWith({
+          ...stubClient,
+          deleteEvent: () => Effect.fail(new SyncTokenExpiredError({ calendarId: 'cal-1' })),
+        }),
+      ),
+    ),
   );
 
   it.effect('instance guest edits merge against the occurrence, not the master', () =>
