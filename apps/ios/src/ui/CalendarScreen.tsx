@@ -26,8 +26,9 @@ import {
   WEEK_SWIPE_BUFFER,
   weekStart,
 } from '@calendar/core';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo } from 'react';
 import { MenuView } from '@expo/ui/community/menu';
+import { useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { AppState, Pressable, SafeAreaView, StyleSheet, Text, View } from 'react-native';
 import { kickSync, runLocalNotifications, startSync, subscribeInvalidations } from '../backend.ts';
@@ -36,7 +37,6 @@ import { AgendaView } from './AgendaView.tsx';
 import { DayTimeline } from './DayTimeline.tsx';
 import { useEditorHost } from './EditorHost.tsx';
 import { MonthGrid } from './MonthGrid.tsx';
-import { SettingsSheet } from './SettingsSheet.tsx';
 import { ConflictBanner, DroppedToast, MutationNoticeToast } from './Toast.tsx';
 import { type ThemeColors, useStyles } from './theme.ts';
 import { WeekStrip } from './WeekStrip.tsx';
@@ -117,7 +117,8 @@ function CalendarBody({
     twoDayBuffer: TWO_DAY_SWIPE_BUFFER,
     weekBuffer: WEEK_SWIPE_BUFFER,
   });
-  const [showSettings, setShowSettings] = useState(false);
+  const router = useRouter();
+  const openSettings = () => router.push('/settings');
   const host = useEditorHost();
   const updatePrefs = useUpdateViewPreferences();
   /** The view is device taste: it persists, and the app reopens on it. */
@@ -183,7 +184,7 @@ function CalendarBody({
             <Pressable
               accessibilityLabel={`${String(pendingOps.length)} unsynced ${pendingOps.length === 1 ? 'change' : 'changes'}, open settings`}
               accessibilityRole="button"
-              onPress={() => setShowSettings(true)}
+              onPress={openSettings}
               style={styles.pendingBadge}
               testID="pending-badge"
             >
@@ -243,7 +244,7 @@ function CalendarBody({
           <Pressable
             accessibilityLabel="Settings"
             accessibilityRole="button"
-            onPress={() => setShowSettings(true)}
+            onPress={openSettings}
             style={styles.navButton}
             testID="open-settings"
           >
@@ -347,7 +348,6 @@ function CalendarBody({
       >
         <Text style={styles.fabLabel}>＋</Text>
       </Pressable>
-      <SettingsSheet onClose={() => setShowSettings(false)} visible={showSettings} />
       <ConflictBanner />
       <DroppedToast />
       <MutationNoticeToast />

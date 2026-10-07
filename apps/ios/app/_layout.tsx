@@ -34,6 +34,7 @@ export default function RootLayout() {
           <EditorHostProvider>
             <Stack screenOptions={{ headerShown: false }}>
               <Stack.Screen name="(tabs)" />
+              <Stack.Screen name="settings" options={{ presentation: 'modal' }} />
             </Stack>
           </EditorHostProvider>
         </BackendProvider>

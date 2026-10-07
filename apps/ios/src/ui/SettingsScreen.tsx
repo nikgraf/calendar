@@ -23,7 +23,6 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   AppState,
   Linking,
-  Modal,
   Pressable,
   SafeAreaView,
   ScrollView,
@@ -57,7 +56,12 @@ const STATUS_SETTLE_TRIES = 40;
 const STATUS_SETTLE_MS = 200;
 type Connection = 'calendar' | 'contacts' | 'google' | 'reminders';
 
-export function SettingsSheet({ onClose, visible }: { onClose: () => void; visible: boolean }) {
+/**
+ * The settings screen, presented as a modal route (`app/settings.tsx`)
+ * from the calendar's gear: accounts, connections and the sections.
+ * Mounted only while open, so what used to key on `visible` runs on mount.
+ */
+export function SettingsScreen({ onClose }: { onClose: () => void }) {
   const styles = useStyles(makeStyles);
   const mutations = useBackendMutations();
   const guarded = useGuardedMutations();
@@ -102,9 +106,6 @@ export function SettingsSheet({ onClose, visible }: { onClose: () => void; visib
   }, []);
 
   useEffect(() => {
-    if (!visible) {
-      return;
-    }
     void refreshPermissions();
     const subscription = AppState.addEventListener('change', (state) => {
       if (state === 'active') {
@@ -115,7 +116,7 @@ export function SettingsSheet({ onClose, visible }: { onClose: () => void; visib
       refreshVersion.current += 1;
       subscription.remove();
     };
-  }, [refreshPermissions, visible]);
+  }, [refreshPermissions]);
 
   const connectDevice = async (provider: 'calendar' | 'contacts' | 'reminders') => {
     if (busyRef.current) {
@@ -212,14 +213,8 @@ export function SettingsSheet({ onClose, visible }: { onClose: () => void; visib
   };
 
   return (
-    <Modal
-      animationType="slide"
-      onRequestClose={onClose}
-      presentationStyle="overFullScreen"
-      visible={visible}
-    >
-      {/* overFullScreen draws under the status bar; inset it ourselves. */}
-      <SafeAreaView style={styles.container}>
+    <>
+      <SafeAreaView style={styles.container} testID="settings-screen">
         <View style={styles.header}>
           <Text style={styles.title}>Accounts</Text>
           <Pressable onPress={onClose}>
@@ -362,13 +357,13 @@ export function SettingsSheet({ onClose, visible }: { onClose: () => void; visib
           <SettingsFileSection />
           <LocationsSection />
           <PrPreviewSection />
-          <DiagnosticsSection contacts={contacts} reminders={reminders} visible={visible} />
+          <DiagnosticsSection contacts={contacts} reminders={reminders} visible />
         </ScrollView>
         {/* RN Modals cover the root screen's toast, so this sheet mounts
             its own listener for failures triggered from inside it. */}
         <MutationNoticeToast />
       </SafeAreaView>
-    </Modal>
+    </>
   );
 }
 
