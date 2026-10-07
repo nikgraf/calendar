@@ -11,12 +11,14 @@ import { PrivacySection } from './PrivacySection.tsx';
 import { RemindersSection } from './RemindersSection.tsx';
 import { SettingsFileSection, SettingsTransferSection } from './SettingsFileSection.tsx';
 import {
+  filterPanes,
   paneFromHash,
   SETTINGS_HASH,
   SETTINGS_PANES,
   type SettingsPaneId,
 } from './settingsPanes.ts';
 import { TimeZonesSection } from './TimeZonesSection.tsx';
+import { PaneIcon, SearchIcon } from './ui/icons.tsx';
 
 const LAST_PANE_KEY = 'settings.lastPane';
 
@@ -61,47 +63,14 @@ const PANE_CONTENT: Record<SettingsPaneId, ReactNode> = {
   ),
 };
 
-const PANE_ICON: Record<SettingsPaneId, ReactNode> = {
-  accounts: (
-    <>
-      <circle cx="12" cy="8.5" r="3.5" />
-      <path d="M5 19.5c.6-3.4 3.4-5.5 7-5.5s6.4 2.1 7 5.5" />
-    </>
-  ),
-  advanced: (
-    <>
-      <path d="M4 7h9m5 0h2M4 12h3m5 0h8M4 17h7m5 0h4" />
-      <circle cx="15.5" cy="7" r="2" />
-      <circle cx="9.5" cy="12" r="2" />
-      <circle cx="13.5" cy="17" r="2" />
-    </>
-  ),
-  agents: (
-    <>
-      <rect height="15" rx="3" width="18" x="3" y="4.5" />
-      <path d="m7.5 10 2.5 2.25L7.5 14.5M12.5 14.5h4" />
-    </>
-  ),
-  general: (
-    <>
-      <circle cx="12" cy="12" r="6.25" />
-      <circle cx="12" cy="12" r="2.25" />
-      <path d="M12 3v2.75M12 18.25V21M3 12h2.75M18.25 12H21M5.64 5.64l1.94 1.94M16.42 16.42l1.94 1.94M5.64 18.36l1.94-1.94M16.42 7.58l1.94-1.94" />
-    </>
-  ),
-  mirrors: (
-    <>
-      <rect height="11" rx="2" width="8" x="3" y="6.5" />
-      <rect height="11" rx="2" width="8" x="13" y="6.5" />
-      <path d="M9.5 12h5m-1.5-1.5 1.5 1.5-1.5 1.5" />
-    </>
-  ),
-  notifications: (
-    <>
-      <path d="M6.5 16.5v-5a5.5 5.5 0 0 1 11 0v5l1.5 2H5z" />
-      <path d="M10 20.5a2.1 2.1 0 0 0 4 0" />
-    </>
-  ),
+/** The icon squares' tints: one hue per pane, like System Settings. */
+const PANE_TINT: Record<SettingsPaneId, string> = {
+  accounts: 'bg-event-blue text-on-event-blue',
+  advanced: 'bg-fill text-ink-secondary',
+  agents: 'bg-event-lilac text-on-event-lilac',
+  general: 'bg-fill text-ink',
+  mirrors: 'bg-event-mint text-on-event-mint',
+  notifications: 'bg-event-blush text-on-event-blush',
 };
 
 const subscribeHash = (onChange: () => void): (() => void) => {
@@ -114,8 +83,9 @@ const showPane = (id: SettingsPaneId): void => window.location.replace(`${SETTIN
 
 /**
  * The settings window's page (the main process loads it at `#settings`):
- * a pane toolbar in the title bar, the window title naming the pane in
- * view, changes applying as they are made — the macOS settings layout.
+ * a sidebar of panes with a search field, the pane's title over its
+ * content, changes applying as they are made — the System Settings
+ * layout.
  *
  * The URL hash is the pane, and the only place it is kept: the main
  * process opens the window on a pane, or moves an open one to it, by
@@ -128,13 +98,16 @@ const showPane = (id: SettingsPaneId): void => window.location.replace(`${SETTIN
  *
  * Every pane stays mounted and only the one in view is shown: a half-typed
  * agent name, a token shown once and each pane's scroll position survive a
- * look at another pane.
+ * look at another pane. The search only narrows the sidebar; the pane in
+ * view stays, even when it is filtered out of the list.
  */
 export function SettingsWindow() {
   const hash = useSyncExternalStore(subscribeHash, readHash);
   const [fallback] = useState<SettingsPaneId>(() => storedPane() ?? 'general');
   const pane = paneFromHash(hash) ?? fallback;
   const label = SETTINGS_PANES.find((entry) => entry.id === pane)!.label;
+  const [query, setQuery] = useState('');
+  const shown = filterPanes(query);
 
   useEffect(() => {
     document.title = label;
@@ -146,64 +119,75 @@ export function SettingsWindow() {
   }, [label, pane]);
 
   return (
-    <div
-      className="flex h-screen flex-col bg-surface-subtle text-ink"
-      data-testid="settings-window"
-    >
-      <header
-        className="shrink-0 border-b border-hairline bg-fill pt-2 pb-1.5"
-        style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}
+    <div className="flex h-screen bg-canvas text-ink" data-testid="settings-window">
+      <nav
+        aria-label="Settings"
+        className="flex w-52 shrink-0 flex-col border-r border-hairline bg-surface-subtle"
       >
-        <h1 className="text-center text-[13px] font-semibold" data-testid="settings-title">
-          {label}
-        </h1>
-        <div aria-label="Settings" className="mt-1.5 flex justify-center gap-1" role="tablist">
-          {SETTINGS_PANES.map((entry) => (
+        {/* The traffic lights sit in this strip; the page draws no title bar of its own. */}
+        <div className="h-12 shrink-0" style={{ WebkitAppRegion: 'drag' } as React.CSSProperties} />
+        <label className="mx-3 mb-2 flex h-7 items-center gap-1.5 rounded-control bg-fill px-2 text-xs text-ink-secondary focus-within:ring-2 focus-within:ring-focus">
+          <SearchIcon size={13} />
+          <input
+            aria-label="Search settings"
+            className="min-w-0 flex-1 bg-transparent text-ink outline-none placeholder:text-ink-secondary"
+            data-testid="settings-search"
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="Search"
+            type="search"
+            value={query}
+          />
+        </label>
+        <div className="flex flex-col gap-0.5 px-2" role="tablist">
+          {shown.map((entry) => (
             <button
               aria-controls={`settings-pane-${entry.id}`}
               aria-selected={pane === entry.id}
-              className={`flex w-[84px] flex-col items-center gap-0.5 rounded-md px-1 py-1 text-[11px] ${
-                pane === entry.id
-                  ? 'bg-fill text-primary'
-                  : 'text-ink-secondary hover:bg-fill hover:text-ink'
+              className={`flex h-8 items-center gap-2.5 rounded-control px-2 text-left text-[13px] ${
+                pane === entry.id ? 'bg-selection text-on-selection' : 'hover:bg-fill'
               }`}
               data-testid={`settings-tab-${entry.id}`}
               key={entry.id}
               onClick={() => showPane(entry.id)}
               role="tab"
-              style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
               type="button"
             >
-              <svg
-                aria-hidden="true"
-                className="size-6"
-                fill="none"
-                stroke="currentColor"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth="1.5"
-                viewBox="0 0 24 24"
+              <span
+                className={`flex size-5.5 shrink-0 items-center justify-center rounded-[6px] ${PANE_TINT[entry.id]}`}
               >
-                {PANE_ICON[entry.id]}
-              </svg>
+                <PaneIcon pane={entry.id} size={13} />
+              </span>
               {entry.label}
             </button>
           ))}
+          {shown.length === 0 ? (
+            <p className="px-2 py-3 text-xs text-ink-secondary">No settings match.</p>
+          ) : null}
         </div>
-      </header>
-      {SETTINGS_PANES.map((entry) => (
-        <div
-          aria-label={entry.label}
-          className="min-h-0 flex-1 overflow-y-auto px-10 py-6"
-          data-testid={`settings-pane-${entry.id}`}
-          hidden={pane !== entry.id}
-          id={`settings-pane-${entry.id}`}
-          key={entry.id}
-          role="tabpanel"
+      </nav>
+      <div className="flex min-w-0 flex-1 flex-col">
+        <header
+          className="flex h-12 shrink-0 items-center px-8"
+          style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}
         >
-          <div className="flex flex-col gap-4">{PANE_CONTENT[entry.id]}</div>
-        </div>
-      ))}
+          <h1 className="text-[15px] font-semibold" data-testid="settings-title">
+            {label}
+          </h1>
+        </header>
+        {SETTINGS_PANES.map((entry) => (
+          <div
+            aria-label={entry.label}
+            className="min-h-0 flex-1 overflow-y-auto px-8 pt-1 pb-8"
+            data-testid={`settings-pane-${entry.id}`}
+            hidden={pane !== entry.id}
+            id={`settings-pane-${entry.id}`}
+            key={entry.id}
+            role="tabpanel"
+          >
+            <div className="flex flex-col gap-4">{PANE_CONTENT[entry.id]}</div>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

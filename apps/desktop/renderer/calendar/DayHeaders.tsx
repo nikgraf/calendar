@@ -37,16 +37,19 @@ export function DayHeaders({
                 // Fixed height: the today-circle is taller than plain text,
                 // and a header that resizes while panning shifts the grid.
                 className="flex h-10 items-center gap-1.5 border-l border-hairline px-2"
+                data-testid={isToday ? 'today-header' : undefined}
                 key={day.toString()}
               >
-                <span className="text-xs font-medium text-ink-secondary uppercase">
+                <span
+                  className={`text-xs font-medium uppercase ${isToday ? 'text-primary' : 'text-ink-secondary'}`}
+                >
                   {day.toLocaleString('en-US', { weekday: 'short' })}
                 </span>
                 <span
                   className={`text-sm font-semibold ${
                     isToday
-                      ? 'flex size-6 items-center justify-center rounded-full bg-red-500 text-white'
-                      : 'text-ink-secondary'
+                      ? 'flex size-6 items-center justify-center rounded-full bg-primary text-on-primary'
+                      : 'text-ink'
                   }`}
                 >
                   {day.day}

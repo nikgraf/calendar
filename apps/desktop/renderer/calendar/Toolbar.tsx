@@ -1,0 +1,140 @@
+import type { CaptureSource } from '@calendar/ai';
+import type { CalendarViewKind, EventEditorPrefill, TaskEditorSeed } from '@calendar/app-state';
+import type { Temporal } from '@calendar/core';
+import type { RefObject } from 'react';
+import { Button } from '../ui/Button.tsx';
+import { IconButton } from '../ui/IconButton.tsx';
+import {
+  ChevronLeftIcon,
+  ChevronRightIcon,
+  PlusIcon,
+  SearchIcon,
+  SidebarIcon,
+} from '../ui/icons.tsx';
+import { SegmentedControl } from '../ui/SegmentedControl.tsx';
+import { QuickAddField } from './QuickAddField.tsx';
+
+const VIEWS: ReadonlyArray<{ label: string; value: 'day' | 'month' | 'week' }> = [
+  { label: 'Day', value: 'day' },
+  { label: 'Week', value: 'week' },
+  { label: 'Month', value: 'month' },
+];
+
+/**
+ * The window's one toolbar: the drag region under the traffic lights,
+ * the period title, navigation, the quick-add field, the view switcher,
+ * search (not yet) and New. Everything else lives in the sidebar or the
+ * side panel.
+ */
+export function Toolbar({
+  focused,
+  onCapture,
+  onNew,
+  onParsed,
+  onStep,
+  onSwitchView,
+  onTaskParsed,
+  onToday,
+  onToggleSidebar,
+  quickAddRef,
+  sidebarCollapsed,
+  timeZone,
+  title,
+  view,
+}: {
+  focused: Temporal.PlainDate;
+  onCapture: (source: CaptureSource) => void;
+  onNew: () => void;
+  onParsed: (prefill: EventEditorPrefill) => void;
+  onStep: (direction: 1 | -1) => void;
+  onSwitchView: (view: 'day' | 'month' | 'week') => void;
+  onTaskParsed: (seed: TaskEditorSeed) => void;
+  onToday: () => void;
+  onToggleSidebar: () => void;
+  quickAddRef: RefObject<HTMLInputElement | null>;
+  sidebarCollapsed: boolean;
+  timeZone: string;
+  title: string;
+  view: CalendarViewKind;
+}) {
+  const noDrag = { WebkitAppRegion: 'no-drag' } as React.CSSProperties;
+  const unit = view === 'month' ? 'month' : view === 'day' ? 'day' : 'week';
+  return (
+    <header
+      className="relative flex h-13 shrink-0 items-center gap-3 border-b border-hairline bg-surface-subtle pr-3.5 pl-[78px]"
+      style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}
+    >
+      <IconButton
+        active={!sidebarCollapsed}
+        data-testid="sidebar-toggle"
+        label={sidebarCollapsed ? 'Show sidebar' : 'Hide sidebar'}
+        onClick={onToggleSidebar}
+        style={noDrag}
+      >
+        <SidebarIcon />
+      </IconButton>
+      <h1
+        className="min-w-0 truncate text-[17px] font-semibold tracking-tight"
+        data-testid="toolbar-title"
+      >
+        {title}
+      </h1>
+      <div className="flex items-center gap-0.5" style={noDrag}>
+        <IconButton
+          data-testid="nav-prev"
+          label={`Previous ${unit}`}
+          onClick={() => onStep(-1)}
+          size="sm"
+        >
+          <ChevronLeftIcon />
+        </IconButton>
+        <Button data-testid="today" onClick={onToday} size="sm">
+          Today
+        </Button>
+        <IconButton
+          data-testid="nav-next"
+          label={`Next ${unit}`}
+          onClick={() => onStep(1)}
+          size="sm"
+        >
+          <ChevronRightIcon />
+        </IconButton>
+      </div>
+      <div className="flex-1" />
+      <QuickAddField
+        focusedDate={focused}
+        inputRef={quickAddRef}
+        onCapture={onCapture}
+        onParsed={onParsed}
+        onTaskParsed={onTaskParsed}
+        timeZone={timeZone}
+      />
+      <div style={noDrag}>
+        <SegmentedControl
+          label="View"
+          onChange={onSwitchView}
+          options={VIEWS.map((option) => ({
+            label: option.label,
+            testId: `view-${option.value}`,
+            value: option.value,
+          }))}
+          size="sm"
+          value={view === 'day' || view === 'month' ? view : 'week'}
+        />
+      </div>
+      <IconButton disabled label="Search (coming soon)" style={noDrag}>
+        <SearchIcon />
+      </IconButton>
+      <Button
+        aria-label="New event"
+        data-testid="new-event"
+        onClick={onNew}
+        style={noDrag}
+        variant="primary"
+      >
+        <PlusIcon />
+        New
+      </Button>
+    </header>
+  );
+}

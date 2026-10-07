@@ -2293,3 +2293,45 @@ design-tokens`). **The brand kit is the one palette**: `tokens.json`
       the focused day, no pan buffer). Pure helpers for the new surfaces:
       `upNext`, `groupTaskInbox`, `buildAgenda`, with `useUpNext` /
       `useTaskInbox` over them.
+- [x] Desktop redesign — done (2026-10-07, `todo/desktop-redesign`).
+      **One toolbar, one panel.** The window is toolbar / sidebar + grid +
+      side panel; the ⌘K `CommandBar` dialog and the centered editor
+      dialog are gone. The quick-add field is always in the toolbar (⌘K
+      focuses it; on a machine without the model it is disabled, with
+      Retry) and holds a parse for a look — the "Understood as" card with
+      an Event/Task toggle, "Edit details" (the editor) or "Add
+      event/task" (written as understood, into the last-used calendar or
+      the first writable list). **Click = inspector, Edit = editor**: a
+      grid click opens the read-first inspector in the panel (when, where,
+      who, notes, Join, RSVP, the series scope and Delete), its Edit
+      button the inline editor; a slot, New, ⌘N, a task chip and a task
+      phrase open the editor directly. The panel at rest is the Today rail
+      (Up next with Join, the inbox — overdue / today / no date — and an
+      add-task field that creates undated). **The inline panel is not a
+      dialog**: it never joins `dialogStack`, so a real dialog over it (the
+      agent approval, capture, a birthday) keeps Escape and Enter; the
+      calendar's own Escape leaves the panel only when no dialog is open.
+      Birthdays and `MoveConfirm` stay as they were. **Forms**: notes on
+      events, a Done checkbox on existing tasks (applies at once, like the
+      chip), the repeat fields on existing series. **Grid**: every
+      calendar-colored block and chip goes through `eventTint`
+      (borderless, `data-color` carries the hex); the event open in the
+      panel carries the one outline; tentative = striped, declined =
+      struck through; today, the now line and the month's today number
+      are primary plum. Month cells are divs with chip buttons inside (a
+      chip opens its item, the cell the day). Task chips sit on `fill`
+      with a list-colored dot. **Tasks drag from the panel** too: the drag
+      hook moved to the app (`useEventDrag` with a `'panel'` origin), a
+      ghost follows the pointer, both drop indicators light up, the drop is
+      judged by the pointer like a lane chip's; a release elsewhere changes
+      nothing. **Settings** is a sidebar window (780×560): search narrows
+      the panes by label and keyword (`filterPanes`), the pane in view
+      stays; the hash is still the one place the pane lives. **Device
+      taste persists**: `lastView` and `sidebarCollapsed` through the view
+      preferences, read before the first paint. **e2e** opens editors
+      through `openInspector` / `openEditor` and locates by testid
+      (`toolbar-title`, `view-*`, `nav-*`, `panel`, `inspector`, `editor`,
+      `editor-title`, `week-grid`, `today-header`, `now-line`,
+      `panel-task-*`); color is asserted through `data-color`, never a
+      computed rgb. Search stays a disabled toolbar placeholder (its own
+      PR).

@@ -83,14 +83,14 @@ describe('time zones: a stored secondary zone', () => {
       '5:30 – 6:30 PM Kolkata',
     );
 
-    const block = await cdp.locate('[title^="Noon sync"]');
-    await cdp.click(block.x, block.y);
-    await cdp.waitFor(`!!document.querySelector('[role="dialog"] input[type="time"]')`);
-    expect(await text(cdp, '[role="dialog"] [data-testid="event-secondary-times"]')).toBe(
+    await cdp.openEditor('[title^="Noon sync"]');
+    const EDITOR = '[data-testid="editor"]';
+    await cdp.waitFor(`!!document.querySelector('${EDITOR} input[type="time"]')`);
+    expect(await text(cdp, `${EDITOR} [data-testid="event-secondary-times"]`)).toBe(
       '5:30 – 6:30 PM Kolkata',
     );
     await cdp.pressEscape();
-    await cdp.waitFor(`!document.querySelector('[role="dialog"] input[type="time"]')`);
+    await cdp.waitFor(`!document.querySelector('${EDITOR} input[type="time"]')`);
   });
 });
 

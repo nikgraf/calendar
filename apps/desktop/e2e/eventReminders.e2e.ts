@@ -96,8 +96,7 @@ describe('event reminders', () => {
   });
 
   const openEvent = async (title: string) => {
-    const block = await app.cdp.locate(`[title^="${title}"]`);
-    await app.cdp.click(block.x, block.y);
+    await app.cdp.openEditor(`[title^="${title}"]`);
     await app.cdp.waitFor(`!!document.querySelector('[data-testid="event-reminders"]')`);
   };
   const selectMinutes = (index: number, minutes: number) =>

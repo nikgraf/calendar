@@ -104,7 +104,7 @@ export function AccountsView() {
       ) : null}
 
       {accounts.map((account) => (
-        <section className="rounded-xl border border-hairline bg-surface p-4" key={account.id}>
+        <section className="rounded-popover bg-surface-subtle p-4" key={account.id}>
           <div className="flex items-center justify-between">
             <div>
               <p className="select-text font-medium">{account.displayName ?? account.email}</p>

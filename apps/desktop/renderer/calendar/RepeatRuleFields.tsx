@@ -12,7 +12,7 @@ import {
   Temporal,
   type Weekday,
 } from '@calendar/core';
-import { FIELD_CLASS, LABEL_CLASS } from './taskEditorOptions.ts';
+import { FIELD_CLASS, LABEL_CLASS } from '../ui/fieldStyles.ts';
 
 /** The repeat form state both editors expose (everything but the spec exit). */
 export type RepeatRuleState = Omit<ReturnType<typeof useRepeatState>, 'toSpec'>;

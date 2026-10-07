@@ -104,9 +104,7 @@ describe.skipIf(!REAL)('Apple Calendar through the real helper', () => {
     created.push(event.id);
 
     // EKEventStoreChanged reaches the app's helper and repaints the view.
-    const block = await cdp.locate('[title^="Solunivo ci event"]');
-    await cdp.click(block.x, block.y);
-    await cdp.waitFor(`document.body.textContent.includes('Edit event')`);
+    await cdp.openEditor('[title^="Solunivo ci event"]');
     await cdp.eval(`(() => {
       const input = document.querySelector('input[placeholder="Title"]');
       const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
@@ -118,9 +116,7 @@ describe.skipIf(!REAL)('Apple Calendar through the real helper', () => {
       .poll(async () => (await todaysEvents()).find((entry) => entry.id === event.id)?.title)
       .toBe('Solunivo ci event edited');
 
-    const renamed = await cdp.locate('[title^="Solunivo ci event edited"]');
-    await cdp.click(renamed.x, renamed.y);
-    await cdp.waitFor(`document.body.textContent.includes('Edit event')`);
+    await cdp.openEditor('[title^="Solunivo ci event edited"]');
     await cdp.clickButtonWithText('Delete');
     await cdp.confirmDelete();
     await expect

@@ -1,6 +1,6 @@
 import { useLocationField, type useEventEditorModel } from '@calendar/app-state';
 import { useId } from 'react';
-import { FIELD_CLASS } from './fieldStyles.ts';
+import { FIELD_CLASS } from '../ui/fieldStyles.ts';
 import { SuggestionList } from './SuggestionList.tsx';
 
 /**

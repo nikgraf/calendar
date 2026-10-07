@@ -311,7 +311,7 @@ describe('Apple Reminders UI', () => {
     ).toBe(1);
     const facts = await cdp.eval<string>(`(() => {
       const chip = document.querySelector('[data-overdue][title^="Overdue call"]');
-      const todayCell = document.querySelector('.bg-red-500')?.closest('.h-10');
+      const todayCell = document.querySelector('[data-testid="today-header"]');
       const chipRect = chip.getBoundingClientRect();
       const cellRect = todayCell.getBoundingClientRect();
       return JSON.stringify({
@@ -424,7 +424,7 @@ describe('Apple Reminders UI', () => {
       await cdp.waitFor(`document.body.textContent.includes('Edit reminder')`);
       const facts = await cdp.waitFor<string>(`JSON.stringify({
         listEnabled: !document.querySelector('select[aria-label="Task list"]')?.disabled,
-        priorityHigh: document.querySelector('[role="radio"][aria-checked="true"]')?.textContent,
+        priorityHigh: document.querySelector('[aria-label="Priority"] [role="radio"][aria-checked="true"]')?.textContent,
         timeValue: document.querySelector('input[aria-label="Due time"]')?.value,
         timed: document.querySelector('input[aria-label="At a time"]')?.checked,
       })`);

@@ -23,20 +23,21 @@ import {
   timedTaskSlot,
   utcMsToPlainDate,
 } from '@calendar/core';
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { type RefObject, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { AllDayLane } from './AllDayLane.tsx';
 import { type ColorLookup } from './colors.ts';
 import { DayHeaders } from './DayHeaders.tsx';
 import { NowIndicator } from './NowIndicator.tsx';
 import { TimedEventBlock } from './TimedEventBlock.tsx';
 import { TimedTaskBlock } from './TimedTaskBlock.tsx';
-import { useDropTarget, useEventDrag } from './useEventDrag.ts';
+import { useDropTarget, type useEventDrag } from './useEventDrag.ts';
 import { useSlotDrag } from './useSlotDrag.ts';
 import { useWheelPan } from './useWheelPan.ts';
 
-const HOUR_HEIGHT = 48;
+export const HOUR_HEIGHT = 48;
 /** Hour lines as one repeating gradient (neutral-100), not 24 divs per column. */
-const HOUR_LINES = `repeating-linear-gradient(to bottom, #f5f5f5 0, #f5f5f5 1px, transparent 1px, transparent ${HOUR_HEIGHT}px)`;
+/** One hairline per hour, in the theme's border color so the dark grid stays quiet. */
+const HOUR_LINES = `repeating-linear-gradient(to bottom, var(--border) 0, var(--border) 1px, transparent 1px, transparent ${HOUR_HEIGHT}px)`;
 
 /** The occurrence date keys a birthday: one person recurs every year the strip crosses. */
 const birthdayKey = (birthday: BirthdayOccurrence): string =>
@@ -64,7 +65,8 @@ function GridDropIndicator({
   stripLength: number;
 }) {
   const drop = useDropTarget(drag);
-  if (drop === null || drop.from !== 'lane' || drop.target.kind !== 'timed') {
+  // A grid block already draws its own preview.
+  if (drop === null || drop.from === 'grid' || drop.target.kind !== 'timed') {
     return null;
   }
   return (
@@ -80,13 +82,27 @@ function GridDropIndicator({
   );
 }
 
+/**
+ * The rendered day columns, buffer included — what the drag hook and the
+ * strip share. Empty in the month view, which has no day columns (the app
+ * owns the hook, so it computes this in every view).
+ */
+export const useWeekStrip = (days: ReadonlyArray<Temporal.PlainDate>) =>
+  useMemo(() => {
+    const first = days[0];
+    return first === undefined ? [] : bufferedDays(first, days.length, PAN_BUFFER_DAYS);
+  }, [days]);
+
 export function WeekView({
   birthdays,
   colorOf,
   days,
+  drag,
   events,
+  gridRef,
   isEventReadOnly,
   isTaskReadOnly,
+  laneRef,
   listColorOf,
   onBirthdayClick,
   onEventClick,
@@ -96,7 +112,9 @@ export function WeekView({
   onTaskClick,
   onToggleTask,
   overdue,
+  scrollRef,
   secondaryZones,
+  selectedKey,
   tasks,
   timeZone,
   today: todayIso,
@@ -104,9 +122,14 @@ export function WeekView({
   birthdays: ReadonlyArray<BirthdayOccurrence>;
   colorOf: ColorLookup;
   days: ReadonlyArray<Temporal.PlainDate>;
+  /** The drag hook, owned by the app so the side panel's rows can drag too. */
+  drag: ReturnType<typeof useEventDrag>;
   events: ReadonlyArray<EventRecord>;
+  /** The timed strip, the all-day lane and the scroller: the drag hook reads their rects. */
+  gridRef: RefObject<HTMLDivElement | null>;
   isEventReadOnly: (event: EventRecord) => boolean;
   isTaskReadOnly: (task: TaskRecord) => boolean;
+  laneRef: RefObject<HTMLDivElement | null>;
   listColorOf: (task: TaskRecord) => string | undefined;
   onBirthdayClick: (birthday: BirthdayOccurrence) => void;
   onEventClick: (event: EventRecord) => void;
@@ -121,8 +144,11 @@ export function WeekView({
   onToggleTask: (task: TaskRecord) => void;
   /** Open tasks due before today; drawn as overdue chips on today's column. */
   overdue: ReadonlyArray<TaskRecord>;
+  scrollRef: RefObject<HTMLDivElement | null>;
   /** The non-primary zones: a second line under each hour label and on tall event blocks. */
   secondaryZones: ReadonlyArray<string>;
+  /** `calendarId:id` of the event open in the side panel: its block gets the outline. */
+  selectedKey: string | undefined;
   tasks: ReadonlyArray<TaskRecord>;
   timeZone: string;
   /** Today's ISO date (rolls at local midnight). */
@@ -130,14 +156,11 @@ export function WeekView({
 }) {
   const rootRef = useRef<HTMLDivElement>(null);
   const viewportRef = useRef<HTMLDivElement>(null);
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const gridRef = useRef<HTMLDivElement>(null);
-  const laneRef = useRef<HTMLDivElement>(null);
   const today = Temporal.PlainDate.from(todayIso);
 
   // The pan strip renders buffer columns on both sides of the visible days
   // so horizontal panning reveals fully drawn neighbours.
-  const strip = useMemo(() => bufferedDays(days[0]!, days.length, PAN_BUFFER_DAYS), [days]);
+  const strip = useWeekStrip(days);
   // Strips are (buffered/visible)× as wide as their clipped viewport and
   // sit shifted left by the leading buffer; `--pan-x` (set imperatively by
   // useWheelPan on the root) adds the live gesture offset.
@@ -167,17 +190,6 @@ export function WeekView({
     return { byDay, byId };
   }, [calendarTasks.timed]);
 
-  const drag = useEventDrag({
-    gridRef,
-    hourHeight: HOUR_HEIGHT,
-    isEventReadOnly,
-    laneRef,
-    onEventClick,
-    onTaskClick,
-    scrollerRef: scrollRef,
-    strip,
-  });
-
   const slot = useSlotDrag({ hourHeight: HOUR_HEIGHT, onCreate: onSlotDrag });
 
   useWheelPan({
@@ -191,9 +203,10 @@ export function WeekView({
     visibleDayCount: days.length,
   });
 
+  // The ref object is stable (the app owns it); listing it keeps the lint honest.
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: 7.5 * HOUR_HEIGHT });
-  }, []);
+  }, [scrollRef]);
 
   // Header and all-day rows pad their right edge by the timed scroller's
   // actual scrollbar width (0 for macOS overlay scrollbars) so all three
@@ -210,7 +223,7 @@ export function WeekView({
     const observer = new ResizeObserver(measure);
     observer.observe(scroller);
     return () => observer.disconnect();
-  }, []);
+  }, [scrollRef]);
 
   const allDayEvents = events.filter((event) => event.isAllDay);
   const timedEvents = events.filter((event) => !event.isAllDay);
@@ -335,6 +348,7 @@ export function WeekView({
         placed={capped?.visible ?? allDayPlaced}
         rowCount={capped?.rowCount ?? rowCount}
         scrollbarWidth={scrollbarWidth}
+        selectedKey={selectedKey}
         stripLength={strip.length}
         stripStyle={stripStyle}
         taskById={taskById}
@@ -342,7 +356,7 @@ export function WeekView({
       />
 
       {/* Timed grid */}
-      <div className="min-h-0 flex-1 overflow-y-scroll" ref={scrollRef}>
+      <div className="min-h-0 flex-1 overflow-y-scroll" data-testid="week-scroller" ref={scrollRef}>
         <div className="flex" style={{ height: 24 * HOUR_HEIGHT }}>
           {/* Hour gutter */}
           <div className={`relative shrink-0 ${gutterClassName}`}>
@@ -372,6 +386,7 @@ export function WeekView({
           <div className="min-w-0 flex-1 overflow-hidden" ref={viewportRef}>
             <div
               className="relative grid h-full"
+              data-testid="week-grid"
               ref={gridRef}
               style={{
                 ...stripStyle,
@@ -459,6 +474,7 @@ export function WeekView({
                           onEventClick={onEventClick}
                           readOnly={isEventReadOnly(event)}
                           secondaryZones={secondaryZones}
+                          selected={selectedKey === box.id}
                           timeZone={timeZone}
                         />
                       );
@@ -468,7 +484,7 @@ export function WeekView({
 
                     {drawn ? (
                       <div
-                        className="pointer-events-none absolute inset-x-1 z-10 overflow-hidden rounded-md border border-primary bg-primary/15 px-1 text-[11px] leading-4 font-medium text-on-selection"
+                        className="pointer-events-none absolute inset-x-1 z-10 overflow-hidden rounded-event bg-selection px-1 text-[11px] leading-4 font-medium text-on-selection ring-2 ring-primary ring-inset"
                         data-testid="slot-selection"
                         style={{
                           height: ((drawn.endMinute - drawn.startMinute) / 60) * HOUR_HEIGHT,

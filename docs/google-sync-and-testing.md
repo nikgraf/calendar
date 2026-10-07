@@ -630,6 +630,22 @@ Flakiness lessons (each caused a real CI failure — keep them enforced):
   drives the combobox through `input[aria-label="Invitees"]`: value
   setter + `input` event to type, synthetic `keydown` for ArrowDown /
   Enter, `[role="option"]` rows and `[data-invitee]` chips to assert.
+- **Open items through the harness, locate by testid.** A grid click
+  opens the inspector, not the editor: `cdp.openInspector(selector)`
+  (click → `[data-testid="inspector"]`) and `cdp.openEditor(selector)`
+  (… → `inspector-edit` → `editor-title` reads "Edit event"); tasks and
+  slots still open the editor directly, and `editor-title` /
+  `body.textContent.includes('Edit task')` tell when it is up. The stable
+  hooks: `toolbar-title` (the first `h1`), `view-day/week/month`,
+  `nav-prev/next`, `today`, `quick-add-input`, `sidebar`, `sync-footer`,
+  `panel` (`data-panel-kind`), `inspector`, `editor`, `editor-notes`,
+  `task-done`, `panel-task-<id>`, `panel-add-task`, `week-scroller`,
+  `week-grid`, `today-header`, `now-line`, `all-day-lane`, `month-grid`.
+  A block's calendar color is its `data-color` attribute — never assert
+  a computed `backgroundColor`, the tint is theme-dependent — and
+  Tailwind classes are not selectors (they change with the design). The
+  `[title^="…"]` selectors match grid blocks and chips only: nothing in
+  the panel carries a `title` attribute.
 
 ### CI (.github/workflows/ci.yml + ios.yml)
 

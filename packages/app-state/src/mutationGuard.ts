@@ -81,6 +81,8 @@ export const useGuardedMutations = () => {
       completeTask: guardMutation('update the task', mutations.completeTask),
       connectAppleCalendar: guardMutation('connect Apple Calendar', mutations.connectAppleCalendar),
       connectReminders: guardMutation('connect Apple Reminders', mutations.connectReminders),
+      createEvent: guardMutation('add the event', mutations.createEvent),
+      createTask: guardMutation('add the task', mutations.createTask),
       discardPendingOp: guardMutation('discard the change', mutations.discardPendingOp),
       removeAccount: guardMutation('remove the account', mutations.removeAccount),
       resolveConflict: guardMutation('resolve the conflict', mutations.resolveConflict),

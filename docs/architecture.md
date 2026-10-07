@@ -576,12 +576,15 @@ model: `docs/agent-gateway.md`.
   calendar, or the settings window when the page was loaded at
   `#settings` (`windows.ts` `showSettingsWindow`). Settings is opened from
   the application menu (`menu.ts`: Settings…, ⌘,) — also with no main
-  window — or over `settings:open` from the sidebar's "Manage accounts…";
-  there is one at most, fixed-size, with minimize and zoom off. The pane is the
+  window — or over `settings:open` from the sidebar footer's "Manage
+  accounts…"; there is one at most, fixed-size (780×560), with minimize
+  and zoom off. The page is a sidebar of panes with a search field
+  (`filterPanes`: label + keywords, the pane in view stays) and the pane's
+  title over its content. The pane is the
   URL hash (`#settings/<pane>`): the main process moves an open window by
   navigating the hash, which the page sees as `hashchange` without a
   reload (a pane asked for while the page still loads is applied when
-  loading stops), and a tab click navigates the hash too — the page
+  loading stops), and a sidebar click navigates the hash too — the page
   reads the pane from the hash and never writes its own state over it. Each window is its own
   rpc client (`webContents.id`) with its own atoms, kept in step by the
   invalidation stream; `privacy:changed`, `agents:changed` and
@@ -606,6 +609,22 @@ model: `docs/agent-gateway.md`.
 scheme)`: hue and chroma from the calendar, lightness from the theme,
   text on fill at 4.5:1 for every palette entry; the brand `event-*`
   tokens are for items with no calendar.
+- Desktop shell (`renderer/calendar/`): one toolbar (`Toolbar.tsx`:
+  sidebar toggle, title, ‹ Today ›, the always-visible quick-add field
+  with the "Understood as" review card, Day/Week/Month, New), a
+  collapsible sidebar (`sidebar/`: mini month, calendars and lists per
+  account, the sync footer), the grid, and a side panel on the right
+  (`panel/`): the Today rail at rest (Up next + task inbox + add-task),
+  an event's inspector after a grid click (`EventInspector.tsx`, read
+  first: Join, RSVP, series scope, Delete, Edit), or the inline editor
+  (`EditorPanel.tsx`, 360px) from Edit, a slot, New, a task chip or a
+  task phrase. `CalendarApp.tsx` holds that as one `PanelState`; the
+  panel never joins the dialog stack, so a real dialog over it (the agent
+  approval, capture, a birthday) keeps Escape. The drag hook
+  (`useEventDrag`) is owned by the app, not the week view, so the panel's
+  task rows drag onto the grid and lane too (a `'panel'` origin with a
+  pointer-following ghost). `lastView` and `sidebarCollapsed` are read
+  from the view preferences before the first paint.
 - Views: day/week (time grid with wheel-pan on desktop, swipe paging on
   iOS), month grid, and an all-day lane that hosts date-only tasks. Timed
   Apple Reminders share the day-column overlap layout with events as compact,

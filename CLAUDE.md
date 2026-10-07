@@ -245,7 +245,11 @@ powers quick-add parsing, find-a-time, and dictation.
   blocked.
 - e2e tests must be date- and scroll-independent: seed relative to "today
   minus N days", locate elements via `scrollIntoView` (harness `locate`),
-  and assert relative counts. See docs/google-sync-and-testing.md.
+  and assert relative counts. Desktop specs open an event through the
+  harness's `openInspector` / `openEditor` (a grid click shows the
+  inspector; Edit opens the editor) and locate by `data-testid`, never by
+  a Tailwind class or a computed color (`data-color` carries a block's
+  calendar hex). See docs/google-sync-and-testing.md.
 
 ## Deep docs
 

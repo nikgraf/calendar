@@ -98,7 +98,7 @@ describe.skipIf(!REAL)('Apple Reminders through the real helper', () => {
     // overdue, and its tooltip then carries the due date after the title.
     const cell = await cdp.eval<{ x: number; y: number }>(`(() => {
       const scroller = document.querySelector('.overflow-y-scroll').getBoundingClientRect();
-      const todayCell = document.querySelector('.bg-red-500').closest('.h-10').getBoundingClientRect();
+      const todayCell = document.querySelector('[data-testid="today-header"]').getBoundingClientRect();
       return { x: todayCell.left + todayCell.width / 2, y: scroller.top + 200 };
     })()`);
     await cdp.click(cell.x, cell.y);
@@ -170,7 +170,7 @@ describe.skipIf(!REAL)('Apple Reminders through the real helper', () => {
 
     const cell = await cdp.eval<{ x: number; y: number }>(`(() => {
       const scroller = document.querySelector('.overflow-y-scroll').getBoundingClientRect();
-      const todayCell = document.querySelector('.bg-red-500').closest('.h-10').getBoundingClientRect();
+      const todayCell = document.querySelector('[data-testid="today-header"]').getBoundingClientRect();
       return { x: todayCell.left + todayCell.width / 2, y: scroller.top + 260 };
     })()`);
     await cdp.click(cell.x, cell.y);

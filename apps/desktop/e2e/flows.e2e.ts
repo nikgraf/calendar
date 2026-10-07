@@ -293,39 +293,46 @@ describe('calendar desktop e2e', () => {
 
   it('switches views and navigates dates', async () => {
     const { cdp } = app;
-    await cdp.clickButtonWithText('month');
+    await cdp.clickTestId('view-month');
     try {
       // Month view: weekday header row appears, and today's cell announces
       // the seeded task. The label, not the chip: today also holds several
       // seeded events, which lead the cell and push the task into "+N more".
       await cdp.waitFor(`document.body.textContent.includes('Mon')`);
       await cdp.waitFor(
-        `[...document.querySelectorAll('[data-testid="month-grid"] button')].some((cell) => (cell.getAttribute('aria-label') ?? '').includes('1 task'))`,
+        `[...document.querySelectorAll('[data-testid="month-grid"] [role="button"]')].some((cell) => (cell.getAttribute('aria-label') ?? '').includes('1 task'))`,
       );
+      // A chip is a real target: it opens its event's inspector, not the day.
+      await cdp.openInspector('[data-testid="month-grid"] [data-color]');
+      expect(
+        await cdp.eval<boolean>(`!!document.querySelector('[data-testid="month-grid"]')`),
+      ).toBe(true);
+      await cdp.pressEscape();
+      await cdp.waitFor(`!document.querySelector('[data-testid="inspector"]')`);
     } finally {
-      await cdp.clickButtonWithText('day');
+      await cdp.clickTestId('view-day');
     }
     await cdp.waitFor(`!!document.querySelector('[title^="Standup meeting"]')`);
 
     const titleBefore = await cdp.eval<string>(`document.querySelector('h1')?.textContent ?? ''`);
-    await cdp.clickButtonWithText('›');
+    await cdp.clickTestId('nav-next');
     const titleAfter = await cdp.waitFor<string>(
       `(document.querySelector('h1')?.textContent ?? '') !== ${JSON.stringify('')} && (document.querySelector('h1')?.textContent ?? '')`,
     );
     expect(titleAfter).not.toBe(titleBefore);
     await cdp.clickButtonWithText('Today');
-    await cdp.clickButtonWithText('week');
+    await cdp.clickTestId('view-week');
     await cdp.waitFor(`!!document.querySelector('[title^="Standup meeting"]')`);
   });
 
   it('renders an event three years back in the month view', async () => {
     const { cdp } = app;
-    await cdp.clickButtonWithText('month');
+    await cdp.clickTestId('view-month');
     await cdp.waitFor(`document.body.textContent.includes('Mon')`);
     try {
       for (let step = 0; step < 12 * YEARS_BACK; step += 1) {
         const before = await cdp.eval<string>(`document.querySelector('h1')?.textContent ?? ''`);
-        await cdp.clickButtonWithText('‹');
+        await cdp.clickTestId('nav-prev');
         await cdp.waitFor(
           `(document.querySelector('h1')?.textContent ?? '') !== ${JSON.stringify(before)}`,
         );
@@ -333,7 +340,7 @@ describe('calendar desktop e2e', () => {
       await cdp.waitFor(`document.body.textContent.includes('Ancient offsite')`);
     } finally {
       await cdp.clickButtonWithText('Today');
-      await cdp.clickButtonWithText('week');
+      await cdp.clickTestId('view-week');
       await cdp.waitFor(`!!document.querySelector('[title^="Standup meeting"]')`);
     }
   });
@@ -412,7 +419,7 @@ describe('calendar desktop e2e', () => {
     // A failure mid-test would leave the view panned weeks away and cascade
     // through every later test — always restore Today + week view.
     try {
-      await cdp.clickButtonWithText('day');
+      await cdp.clickTestId('view-day');
       await cdp.waitFor(`!!document.querySelector('[title^="Standup meeting"]')`);
       const point = await cdp.locate('.overflow-y-scroll');
 
@@ -428,7 +435,7 @@ describe('calendar desktop e2e', () => {
       await cdp.waitFor(`${h1} !== ${JSON.stringify(dayTitle)}`);
 
       await cdp.clickButtonWithText('Today');
-      await cdp.clickButtonWithText('week');
+      await cdp.clickTestId('view-week');
       const weekTitle = await cdp.waitFor<string>(h1);
 
       // Week view: horizontal pan slides the rolling 7-day window.
@@ -450,7 +457,7 @@ describe('calendar desktop e2e', () => {
     } finally {
       // Unconditional restore for the rest of the suite.
       await cdp.clickButtonWithText('Today');
-      await cdp.clickButtonWithText('week');
+      await cdp.clickTestId('view-week');
       await cdp
         .waitFor(`!!document.querySelector('[title^="Standup meeting"]')`)
         .catch(() => undefined);
@@ -513,9 +520,7 @@ describe('calendar desktop e2e', () => {
 
   it('edits an event title through the editor', async () => {
     const { cdp } = app;
-    const block = await cdp.locate('[title^="Coffee chat"]');
-    await cdp.click(block.x, block.y);
-    await cdp.waitFor(`document.body.textContent.includes('Edit event')`);
+    await cdp.openEditor('[title^="Coffee chat"]');
     await cdp.eval(`(() => {
       const input = document.querySelector('input[placeholder="Title"]');
       const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
@@ -690,9 +695,7 @@ describe('calendar desktop e2e', () => {
     // hit-test landed on the line and the resize test timed out).
     const handle = await cdp.locate('[title^="Gym session"]', { atBottom: true });
     const reachesEvent = await cdp.eval<boolean>(`(() => {
-      const line = [...document.querySelectorAll('.border-red-500')].find((el) =>
-        el.className.includes('border-t-2'),
-      );
+      const line = document.querySelector('[data-testid="now-line"]');
       const column = line.parentElement;
       line.style.top = ${handle.y} - column.getBoundingClientRect().top - 1 + 'px';
       const hit = document.elementFromPoint(${handle.x}, ${handle.y});
@@ -764,6 +767,10 @@ describe('calendar desktop e2e', () => {
     // First matching block is the override created by the drag test.
     await clickNth('[title^="Daily sync"]', 0);
     await cdp.waitFor(`document.body.textContent.includes('This and following')`);
+    await cdp.clickTestId('inspector-edit');
+    await cdp.waitFor(
+      `document.querySelector('[data-testid="editor-title"]')?.textContent === 'Edit event'`,
+    );
     await setEditorTitle('Daily sync (solo)');
     await cdp.clickButtonWithText('Save');
 
@@ -779,6 +786,10 @@ describe('calendar desktop e2e', () => {
     // Second matching block is a generated (non-override) instance.
     await clickNth('[title^="Daily sync"]', 1);
     await cdp.waitFor(`document.body.textContent.includes('All events')`);
+    await cdp.clickTestId('inspector-edit');
+    await cdp.waitFor(
+      `document.querySelector('[data-testid="editor-title"]')?.textContent === 'Edit event'`,
+    );
     await cdp.clickButtonWithText('All events');
     await setEditorTitle('Daily standup');
     await cdp.clickButtonWithText('Save');
@@ -803,6 +814,10 @@ describe('calendar desktop e2e', () => {
     // rename reached it); the second is the next generated instance.
     await clickNth('[title^="Daily standup"]', 1);
     await cdp.waitFor(`document.body.textContent.includes('This and following')`);
+    await cdp.clickTestId('inspector-edit');
+    await cdp.waitFor(
+      `document.querySelector('[data-testid="editor-title"]')?.textContent === 'Edit event'`,
+    );
     await cdp.clickButtonWithText('This and following');
     await setEditorTitle('Daily standup v2');
     await cdp.clickButtonWithText('Save');
@@ -858,9 +873,7 @@ describe('calendar desktop e2e', () => {
 
   it('deletes an event through the editor, after asking', async () => {
     const { cdp } = app;
-    const block = await cdp.locate('[title^="Coffee chat (moved)"]');
-    await cdp.click(block.x, block.y);
-    await cdp.waitFor(`document.body.textContent.includes('Edit event')`);
+    await cdp.openEditor('[title^="Coffee chat (moved)"]');
     await cdp.clickButtonWithText('Delete');
     // Asked first, naming what goes; Keep leaves it alone.
     const question = await cdp.waitFor<string>(
@@ -986,7 +999,7 @@ describe('calendar desktop e2e', () => {
       updated!.attendees!.find((attendee) => attendee.email === 'organizer@example.com')!
         .responseStatus,
     ).toBe('accepted');
-    await cdp.clickButtonWithText('Cancel');
+    await cdp.clickTestId('inspector-close');
   });
 
   it('creates, renames, and deletes a task through the editor', async () => {
@@ -1061,25 +1074,22 @@ describe('calendar desktop e2e', () => {
     }
   });
 
-  it('opens the command bar on Cmd-K and closes it on Escape', async () => {
+  it('focuses the quick-add field on Cmd-K and leaves it on Escape', async () => {
     const { cdp } = app;
+    const INPUT = `document.querySelector('[data-testid="quick-add-input"]')`;
     // Synthesize Cmd-K via the app's own handler (CDP key events don't
     // carry macOS meta reliably) — the listener is on window.
     await cdp.eval(
       `window.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', metaKey: true }))`,
     );
-    // Present in BOTH bar states: on a helper-less CI runner the bar
-    // explains unavailability; on a dev machine it shows the input. Either
-    // way the overlay mounts — assert something stable to each.
-    await cdp.waitFor(
-      `document.body.textContent.includes('on-device model is unavailable') ||
-       !!document.querySelector('input[placeholder="Lunch with Sarah tomorrow at 1"]')`,
-    );
-    await cdp.eval(`window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))`);
-    await cdp.waitFor(
-      `!document.body.textContent.includes('on-device model is unavailable') &&
-       !document.querySelector('input[placeholder="Lunch with Sarah tomorrow at 1"]')`,
-    );
+    // Stable in BOTH field states: on a helper-less CI runner the field is
+    // disabled (and cannot take focus); on a dev machine ⌘K focuses it.
+    await cdp.waitFor(`${INPUT}.disabled || document.activeElement === ${INPUT}`);
+    const focused = await cdp.eval<boolean>(`document.activeElement === ${INPUT}`);
+    if (focused) {
+      await cdp.pressEscape();
+      await cdp.waitFor(`document.activeElement !== ${INPUT}`);
+    }
   });
 
   it('moves an overdue task onto today and leaves a completed past task alone', async () => {
@@ -1091,7 +1101,7 @@ describe('calendar desktop e2e', () => {
     );
     const inTodayColumn = await cdp.eval<boolean>(`(() => {
       const chip = document.querySelector('[data-overdue][title^="Old chore"]');
-      const cell = document.querySelector('.bg-red-500')?.closest('.h-10');
+      const cell = document.querySelector('[data-testid="today-header"]');
       const chipRect = chip.getBoundingClientRect();
       const cellRect = cell.getBoundingClientRect();
       return chipRect.left >= cellRect.left - 1 && chipRect.right <= cellRect.right + 1;
@@ -1117,7 +1127,7 @@ describe('calendar desktop e2e', () => {
     ).toBe(1);
     const placement = await cdp.eval<{ inToday: boolean; overdue: boolean }>(`(() => {
       const chip = document.querySelector('[data-testid="all-day-task-task-undated"]');
-      const cell = document.querySelector('.bg-red-500')?.closest('.h-10');
+      const cell = document.querySelector('[data-testid="today-header"]');
       const chipRect = chip.getBoundingClientRect();
       const cellRect = cell.getBoundingClientRect();
       return {
@@ -1193,7 +1203,7 @@ describe('calendar desktop e2e', () => {
     expect(colorOps[0]!.colorHex).toBe('#16a765');
     // The event chip repaints from the calendars atom.
     await cdp.waitFor(
-      `(() => { const el = document.querySelector('[title^="Gym session"]'); return el && getComputedStyle(el).backgroundColor === 'rgb(22, 167, 101)'; })()`,
+      `(() => { const el = document.querySelector('[title^="Gym session"]'); return el && el.dataset.color === '#16a765'; })()`,
     );
   });
 
@@ -1292,6 +1302,21 @@ describe('calendar desktop e2e', () => {
       ),
     ).toBe(true);
 
+    // The sidebar's search narrows the panes by label and keyword; the
+    // pane in view stays even when its tab is filtered out.
+    await settings.type('[data-testid="settings-search"]', 'token');
+    await settings.waitFor(
+      `document.querySelectorAll('[role="tab"]').length === 1 && !!document.querySelector('[data-testid="settings-tab-agents"]')`,
+    );
+    expect(await settings.eval<string>('document.title')).toBe('Notifications');
+    await settings.eval(`(() => {
+      const input = document.querySelector('[data-testid="settings-search"]');
+      const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+      setter.call(input, '');
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    })()`);
+    await settings.waitFor(`document.querySelectorAll('[role="tab"]').length === 6`);
+
     // The main process reads the pane from the window's URL, so it must
     // have followed the tab click: asking for Accounts again moves back.
     await cdp.clickButtonWithText('Manage accounts…');
@@ -1351,6 +1376,132 @@ describe('calendar desktop e2e', () => {
     );
     expect(moved?.startUtc).toBe(expected);
     expect(await cdp.eval<boolean>(`document.body.textContent.includes('Edit event')`)).toBe(false);
+  });
+
+  it('edits notes through the editor and reads them back in the inspector', async () => {
+    const { cdp } = app;
+    await cdp.openEditor('[title^="Gym session"]');
+    await cdp.eval(`(() => {
+      const input = document.querySelector('[data-testid="editor-notes"]');
+      const setter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value').set;
+      setter.call(input, 'Bring the resistance bands');
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    })()`);
+    await cdp.clickButtonWithText('Save');
+    const updated = await waitForEvent(
+      (event) =>
+        event.title === 'Gym session' && event.description === 'Bring the resistance bands',
+    );
+    expect(updated).toBeDefined();
+    // The inspector shows the notes read-first; Escape leaves it.
+    await cdp.openInspector('[title^="Gym session"]');
+    await cdp.waitFor(
+      `document.querySelector('[data-testid="inspector-notes"]')?.textContent === 'Bring the resistance bands'`,
+    );
+    await cdp.pressEscape();
+    await cdp.waitFor(`!document.querySelector('[data-testid="inspector"]')`);
+  });
+
+  it('converts from the inspector with the event carried into the task form', async () => {
+    const { cdp } = app;
+    await cdp.openInspector('[title^="Gym session"]');
+    await cdp.clickTestId('inspector-convert');
+    await cdp.waitFor(
+      `document.querySelector('[data-testid="editor-title"]')?.textContent === 'Convert to task'`,
+    );
+    expect(
+      await cdp.eval<string>(`document.querySelector('input[placeholder="Title"]').value`),
+    ).toBe('Gym session');
+    expect(
+      await cdp.eval<string>(`document.querySelector('textarea[placeholder="Add notes"]').value`),
+    ).toBe('Bring the resistance bands');
+    await cdp.clickButtonWithText('Cancel');
+    await cdp.waitFor(`!document.querySelector('[data-testid="editor"]')`);
+  });
+
+  it('closes only the color picker on Escape, keeping the editor and its draft', async () => {
+    const { cdp } = app;
+    await cdp.openEditor('[title^="Gym session"]');
+    await setEditorTitle('Gym session (draft)');
+    const swatch = await cdp.locate('[aria-label="Change color: Personal"]');
+    await cdp.click(swatch.x, swatch.y);
+    await cdp.waitFor(`!!document.querySelector('[aria-label="Close color picker"]')`);
+    await cdp.pressEscape();
+    await cdp.waitFor(`!document.querySelector('[aria-label="Close color picker"]')`);
+    expect(
+      await cdp.eval<string>(`document.querySelector('input[placeholder="Title"]')?.value`),
+    ).toBe('Gym session (draft)');
+    await cdp.pressEscape();
+    await cdp.waitFor(`!document.querySelector('[data-testid="editor"]')`);
+  });
+
+  it('reseeds the editor when another slot is clicked while it is open', async () => {
+    const { cdp } = app;
+    const block = await cdp.locate('[title^="Standup meeting"]');
+    const START = `document.querySelector('[data-testid="editor"] input[type="time"]')?.value`;
+    await cdp.click(block.x, block.y + 3 * HOUR_HEIGHT + 10);
+    await cdp.waitFor(
+      `document.querySelector('[data-testid="editor-title"]')?.textContent === 'New event'`,
+    );
+    const first = await cdp.eval<string>(START);
+    await cdp.click(block.x, block.y + 4 * HOUR_HEIGHT + 10);
+    await cdp.waitFor(`${START} !== ${JSON.stringify(first)}`);
+    await cdp.pressEscape();
+    await cdp.waitFor(`!document.querySelector('[data-testid="editor"]')`);
+  });
+
+  it('adds an undated task from the panel', async () => {
+    const { cdp } = app;
+    await cdp.type('[data-testid="panel-add-task"]', 'Sharpen the pencils');
+    await cdp.eval(`document.querySelector('[data-testid="panel-add-task"]').form.requestSubmit()`);
+    await expect
+      .poll(async () => {
+        const task = (await readTasks(app.userDataDir)).find(
+          (row) => row.title === 'Sharpen the pencils',
+        );
+        return task && { dueDate: task.dueDate ?? null, title: task.title };
+      })
+      .toEqual({ dueDate: null, title: 'Sharpen the pencils' });
+    // It lands in the inbox's "No date" group right away.
+    await cdp.waitFor(
+      `document.querySelector('[data-testid="task-inbox"]')?.textContent.includes('Sharpen the pencils')`,
+    );
+  });
+
+  it('drags a task row from the panel onto the all-day lane and dates it', async () => {
+    const { cdp } = app;
+    const row = await cdp.locate('[data-testid="panel-task-task-undated"]');
+    const column = await cdp.locate('[data-testid="today-header"]');
+    const lane = await cdp.locate('[data-testid="all-day-lane"]');
+    await cdp.drag(row, { x: column.x, y: lane.y });
+    await expect
+      .poll(
+        async () =>
+          (await readTasks(app.userDataDir)).find((task) => task.id === 'task-undated')?.dueDate,
+      )
+      .toBe(todayLocalIso());
+    // The release was a drop, not a click: no editor opened.
+    expect(await cdp.eval<boolean>(`!!document.querySelector('[data-testid="editor"]')`)).toBe(
+      false,
+    );
+  });
+
+  it('leaves a panel row alone when it is released inside the panel', async () => {
+    const { cdp } = app;
+    const pencils = (await readTasks(app.userDataDir)).find(
+      (task) => task.title === 'Sharpen the pencils',
+    )!;
+    const row = await cdp.locate(`[data-testid="panel-task-${pencils.id}"]`);
+    const lane = await cdp.locate('[data-testid="all-day-lane"]');
+    // Down to the lane's height, but still over the panel: no column.
+    await cdp.drag(row, { x: row.x, y: lane.y });
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    expect(
+      (await readTasks(app.userDataDir)).find((task) => task.id === pencils.id)?.dueDate ?? null,
+    ).toBeNull();
+    expect(await cdp.eval<boolean>(`!!document.querySelector('[data-testid="editor"]')`)).toBe(
+      false,
+    );
   });
 });
 
@@ -1453,7 +1604,7 @@ describe('an event in a read-only calendar', () => {
     });
     expect(await readPendingOps(viewerApp.userDataDir)).toEqual([]);
     // The release did not fall through to the grid as a slot click.
-    expect(await cdp.eval(`document.body.textContent.includes('New event')`)).toBe(false);
+    expect(await cdp.eval(`!!document.querySelector('[data-testid="editor"]')`)).toBe(false);
     // Still a click target: it opens the viewer.
     const block = await cdp.locate('[title^="Their review"]');
     await cdp.click(block.x, block.y);

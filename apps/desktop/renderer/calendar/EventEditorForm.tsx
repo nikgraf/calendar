@@ -1,3 +1,4 @@
+import { SegmentedControl } from '../ui/SegmentedControl.tsx';
 import {
   calendarGroups,
   RSVP_OPTIONS,
@@ -7,9 +8,10 @@ import {
   type useMoveConfirmation,
   useTimeZones,
 } from '@calendar/app-state';
-import { type CalendarInfo, draftZoneRange } from '@calendar/core';
+import { type CalendarInfo, draftZoneRange, type RsvpResponse } from '@calendar/core';
 import { InviteeCombobox } from './InviteeCombobox.tsx';
-import { FIELD_CLASS as field } from './fieldStyles.ts';
+import { Button } from '../ui/Button.tsx';
+import { FIELD_CLASS as field, LABEL_CLASS } from '../ui/fieldStyles.ts';
 import { LocationCombobox } from './LocationCombobox.tsx';
 import { LocationMap } from './LocationMap.tsx';
 import { MoveConfirm } from './MoveConfirm.tsx';
@@ -49,6 +51,7 @@ export function EventEditorForm({
     canRsvp,
     canSwitchAllDay,
     date,
+    description,
     endTime,
     error,
     existing,
@@ -63,6 +66,7 @@ export function EventEditorForm({
     scope,
     setCalendarKey,
     setDate,
+    setDescription,
     setEndTime,
     setIsAllDay,
     setScope,
@@ -87,38 +91,25 @@ export function EventEditorForm({
       <fieldset className="flex min-w-0 flex-col gap-3" disabled={readOnly}>
         {readOnly ? (
           <p
-            className="rounded-lg bg-fill p-2 text-sm text-ink-secondary"
+            className="rounded-control bg-fill p-2 text-sm text-ink-secondary"
             data-testid="event-read-only"
           >
             This calendar is read-only.
           </p>
         ) : null}
         {error ? (
-          <p className="select-text rounded-lg bg-red-50 p-2 text-sm text-red-700">{error}</p>
+          <p className="select-text rounded-control bg-fill p-2 text-sm text-danger">{error}</p>
         ) : null}
         {isRecurring ? (
-          <div
-            aria-label="Apply to"
-            className="flex rounded-lg border border-hairline bg-surface p-0.5"
-            role="radiogroup"
-          >
-            {SCOPE_OPTIONS.map((option) => (
-              <button
-                aria-checked={scope === option.value}
-                className={`flex-1 rounded-md px-2 py-1 text-xs font-medium ${
-                  scope === option.value
-                    ? 'bg-primary text-on-primary'
-                    : 'text-ink-secondary hover:bg-fill'
-                }`}
-                key={option.value}
-                onClick={() => setScope(option.value)}
-                role="radio"
-                type="button"
-              >
-                {option.label}
-              </button>
-            ))}
-          </div>
+          <SegmentedControl
+            className="w-full"
+            grow
+            label="Apply to"
+            onChange={setScope}
+            options={SCOPE_OPTIONS.map((option) => ({ label: option.label, value: option.value }))}
+            size="sm"
+            value={scope}
+          />
         ) : null}
         <input
           autoFocus
@@ -199,25 +190,25 @@ export function EventEditorForm({
         <LocationMap model={model} />
         {model.repeatLoaded ? <RepeatRuleFields anchorDate={date} state={model} /> : null}
         {canInvite ? (
-          <div className="rounded-lg border border-hairline bg-surface p-3">
+          <div className="rounded-control bg-fill p-3">
             <p className="mb-1 text-xs font-medium text-ink-secondary uppercase">Invitees</p>
             {canRsvp ? (
-              <div className="mb-2 flex gap-1">
-                {RSVP_OPTIONS.map((option) => (
-                  <button
-                    className={`flex-1 rounded-md border px-2 py-1 text-xs font-medium ${
-                      rsvp === option.value
-                        ? 'border-primary bg-primary text-on-primary'
-                        : 'border-hairline text-ink-secondary hover:bg-fill'
-                    }`}
-                    key={option.value}
-                    onClick={() => void respond(option.value)}
-                    type="button"
-                  >
-                    {option.label}
-                  </button>
-                ))}
-              </div>
+              <SegmentedControl
+                className="mb-2 w-full"
+                grow
+                label="RSVP"
+                onChange={(value) => {
+                  if (value !== 'needsAction') {
+                    void respond(value);
+                  }
+                }}
+                options={RSVP_OPTIONS.map((option) => ({
+                  label: option.label,
+                  value: option.value as RsvpResponse | 'needsAction',
+                }))}
+                size="sm"
+                value={rsvp ?? 'needsAction'}
+              />
             ) : null}
             <InviteeCombobox
               attendees={attendees}
@@ -228,10 +219,7 @@ export function EventEditorForm({
           </div>
         ) : readOnlyGuests ? (
           // EventKit cannot write guests: shown as they are, never edited.
-          <div
-            className="rounded-lg border border-hairline bg-surface p-3"
-            data-testid="event-guests-read-only"
-          >
+          <div className="rounded-control bg-fill p-3" data-testid="event-guests-read-only">
             <p className="mb-1 text-xs font-medium text-ink-secondary uppercase">Guests</p>
             <ul className="text-sm text-ink-secondary">
               {existing?.attendees?.map((attendee) => (
@@ -241,41 +229,42 @@ export function EventEditorForm({
           </div>
         ) : null}
         <RemindersFields model={model} />
+        <label className={LABEL_CLASS}>
+          Notes
+          <textarea
+            className={`${field} mt-1 min-h-16`}
+            data-testid="editor-notes"
+            onChange={(changeEvent) => setDescription(changeEvent.target.value)}
+            placeholder="Add notes"
+            value={description}
+          />
+        </label>
       </fieldset>
 
       <MoveConfirm moveConfirmation={moveConfirmation} />
 
       <div className="mt-5 flex items-center justify-between">
         {existing && !readOnly ? (
-          <button
-            aria-busy={busy}
-            className={`text-sm text-red-600 hover:underline ${busy ? 'opacity-40' : ''}`}
-            onClick={() => void remove()}
-            type="button"
-          >
+          <Button aria-busy={busy} onClick={() => void remove()} size="sm" variant="danger">
             Delete
-          </button>
+          </Button>
         ) : (
           <span />
         )}
         <div className="flex gap-2">
-          <button
-            className="rounded-lg px-3 py-1.5 text-sm hover:bg-fill"
-            onClick={onClose}
-            type="button"
-          >
+          <Button onClick={onClose} size="sm" variant="ghost">
             Cancel
-          </button>
+          </Button>
           {readOnly ? null : (
-            <button
+            <Button
               aria-busy={busy}
-              className={`rounded-lg bg-primary px-4 py-1.5 text-sm font-medium text-on-primary hover:bg-primary-hover disabled:opacity-40 ${busy ? 'opacity-40' : ''}`}
               disabled={moveConfirmation.pending !== null}
               onClick={() => void save()}
-              type="button"
+              size="sm"
+              variant="primary"
             >
               Save
-            </button>
+            </Button>
           )}
         </div>
       </div>

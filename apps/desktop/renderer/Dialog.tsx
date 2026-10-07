@@ -16,6 +16,14 @@ const dialogs = makeDialogStack(window);
 export const isDialogOpen = (): boolean => dialogs.isOpen();
 
 /**
+ * Registers a lighter surface (a popover) with the same stack, so only
+ * the topmost one answers Escape and the calendar's keys stand back
+ * while it is open. Returns what closes it.
+ */
+export const openDialogLayer = (zIndex: number, onEscape: () => void): (() => void) =>
+  dialogs.open(zIndex, { onEscape, onKey: () => {} });
+
+/**
  * The one modal shell for the editor, the ⌘K bar and the dialogs inside
  * the settings window: dialog semantics, Escape closes, focus moves inside
  * on open and is trapped there (Tab cycles), and returns to the opener on

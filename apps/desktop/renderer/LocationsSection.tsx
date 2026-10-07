@@ -21,7 +21,7 @@ export function LocationsSection() {
   };
 
   return (
-    <section className="rounded-xl border border-hairline bg-surface p-4">
+    <section className="rounded-popover bg-surface-subtle p-4">
       <h2 className="font-medium">Locations</h2>
       <p className="mt-1 text-sm text-ink-secondary">
         Event locations are looked up on this Mac with Apple Maps and remembered so the editor map

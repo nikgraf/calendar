@@ -112,8 +112,7 @@ describe('invitee combobox', () => {
 
   it('suggests seeded contacts, ranks saved above other, and adds by keyboard', async () => {
     const { cdp } = app;
-    const block = await cdp.locate('[title^="Planning session"]');
-    await cdp.click(block.x, block.y);
+    await cdp.openEditor('[title^="Planning session"]');
     await cdp.waitFor(`document.body.textContent.includes('Invitees')`);
     // The organizer is already a chip and cannot be removed.
     expect(await chips()).toEqual(['e2e@nikgraf.com']);

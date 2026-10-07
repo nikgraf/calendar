@@ -108,8 +108,7 @@ describe('location picker and map', () => {
       `${INPUT}.dispatchEvent(new KeyboardEvent('keydown', { key: ${JSON.stringify(key)}, bubbles: true, cancelable: true }))`,
     );
   const openEvent = async (title: string) => {
-    const block = await app.cdp.locate(`[title^="${title}"]`);
-    await app.cdp.click(block.x, block.y);
+    await app.cdp.openEditor(`[title^="${title}"]`);
     await app.cdp.waitFor(`!!${INPUT}`);
   };
 

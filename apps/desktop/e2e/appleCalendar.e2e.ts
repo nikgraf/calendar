@@ -176,9 +176,7 @@ describe('Apple Calendar', () => {
   });
 
   const open = async (title: string) => {
-    const block = await app.cdp.locate(`[title^=${JSON.stringify(title)}]`);
-    await app.cdp.click(block.x, block.y);
-    await app.cdp.waitFor(`document.body.textContent.includes('Edit event')`);
+    await app.cdp.openEditor(`[title^=${JSON.stringify(title)}]`);
   };
 
   it('shows Apple events and groups the calendars by source', async () => {

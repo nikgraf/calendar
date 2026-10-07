@@ -1,10 +1,10 @@
 import {
-  BIRTHDAY_ACCENT,
   type BirthdayOccurrence,
   birthdayChipLabel,
   buildMonthGrid,
   calendarTaskKey,
   type EventRecord,
+  formatClockTime,
   groupByDate,
   groupEventsByDay,
   monthCellLabel,
@@ -16,27 +16,36 @@ import {
   taskRepeats,
   Temporal,
 } from '@calendar/core';
-import { chipTextColor, type ColorLookup } from './colors.ts';
+import type { ColorLookup } from './colors.ts';
+import { eventLook, stripes, useTint } from './tint.ts';
 
 const MAX_CHIPS = 3;
 
 // A cell's items: the day's events (all-day first), then birthdays, then
 // tasks. Events lead because they carry the calendar's color and are what
 // the month grid showed before; a day full of tasks must not push them
-// into "+N more". Chips are read-only summaries — the cell opens the day,
-// where the full chips with toggle and editor live.
+// into "+N more". Each chip opens its own item; the cell (and "+N more")
+// opens the day.
 type CellItem =
   | { readonly birthday: BirthdayOccurrence; readonly kind: 'birthday' }
   | { readonly event: EventRecord; readonly kind: 'event' }
   | { readonly kind: 'task'; readonly task: TaskRecord };
+
+const CHIP =
+  'flex h-4 w-full items-center gap-1 truncate rounded-event px-1 text-left text-[11px] leading-4';
 
 export function MonthView({
   birthdays,
   colorOf,
   events,
   listColorOf,
+  onBirthdayClick,
+  onEventClick,
   onSelectDay,
+  onTaskClick,
+  onToggleTask,
   overdue,
+  selectedKey,
   tasks,
   timeZone,
   today: todayIso,
@@ -46,14 +55,21 @@ export function MonthView({
   colorOf: ColorLookup;
   events: ReadonlyArray<EventRecord>;
   listColorOf: (task: TaskRecord) => string | undefined;
+  onBirthdayClick: (birthday: BirthdayOccurrence) => void;
+  onEventClick: (event: EventRecord) => void;
   onSelectDay: (date: Temporal.PlainDate) => void;
+  onTaskClick: (task: TaskRecord) => void;
+  onToggleTask: (task: TaskRecord) => void;
   /** Open tasks due before today; listed on today's cell, not on their past day. */
   overdue: ReadonlyArray<TaskRecord>;
+  /** `calendarId:id` of the event open in the side panel. */
+  selectedKey: string | undefined;
   tasks: ReadonlyArray<TaskRecord>;
   timeZone: string;
   today: string;
   yearMonth: Temporal.PlainYearMonth;
 }) {
+  const tintOf = useTint();
   const today = Temporal.PlainDate.from(todayIso);
   const weeks = buildMonthGrid(yearMonth, today);
 
@@ -71,6 +87,116 @@ export function MonthView({
   const todayTasks = calendarTasks.overdue.concat(calendarTasks.undated);
   const overdueKeys = new Set(calendarTasks.overdue.map(calendarTaskKey));
   const birthdaysByDay = groupByDate(birthdays, (birthday) => birthday.date);
+
+  const chip = (item: CellItem) => {
+    if (item.kind === 'task') {
+      const { task } = item;
+      const done = task.status === 'completed';
+      const isOverdue = overdueKeys.has(calendarTaskKey(task));
+      // The list accent only where the lane draws one: a colored
+      // Reminders list. Google lists stay neutral.
+      const listColor = listColorOf(task);
+      return (
+        <span
+          className={`${CHIP} bg-fill ${isOverdue ? 'text-danger' : 'text-ink-secondary'} ${
+            done ? 'opacity-50' : ''
+          }`}
+          data-overdue={isOverdue ? '' : undefined}
+          key={calendarTaskKey(task)}
+          title={isOverdue ? `${task.title} · ${overdueLabel(task, todayIso)}` : task.title}
+        >
+          <button
+            aria-label={done ? `Reopen task ${task.title}` : `Complete task ${task.title}`}
+            className="shrink-0"
+            onClick={(mouse) => {
+              mouse.stopPropagation();
+              onToggleTask(task);
+            }}
+            type="button"
+          >
+            {done ? '☑' : '☐'}
+          </button>
+          {listColor ? (
+            <span
+              aria-hidden
+              className="size-1.5 shrink-0 rounded-full"
+              style={{ backgroundColor: listColor }}
+            />
+          ) : null}
+          <button
+            className={`min-w-0 flex-1 truncate text-left ${done ? 'line-through' : ''}`}
+            onClick={(mouse) => {
+              mouse.stopPropagation();
+              onTaskClick(task);
+            }}
+            type="button"
+          >
+            {taskChipLabel(task, { overdue: isOverdue, repeats: taskRepeats(task) })}
+          </button>
+        </span>
+      );
+    }
+    if (item.kind === 'birthday') {
+      const { birthday } = item;
+      const label = birthdayChipLabel(birthday);
+      return (
+        <button
+          className={`${CHIP} bg-event-blush text-on-event-blush`}
+          data-birthday={birthday.record.id}
+          key={`birthday:${birthday.record.id}:${birthday.date}`}
+          onClick={(mouse) => {
+            mouse.stopPropagation();
+            onBirthdayClick(birthday);
+          }}
+          title={label}
+          type="button"
+        >
+          <span className="truncate">{label}</span>
+        </button>
+      );
+    }
+    const { event } = item;
+    const color = colorOf(event);
+    const tint = tintOf(color);
+    const look = eventLook(event);
+    const selected = selectedKey === `${event.calendarId}:${event.id}`;
+    return (
+      <button
+        className={`${CHIP} ${selected ? 'ring-2 ring-primary' : ''} ${look.declined ? 'opacity-60' : ''}`}
+        data-color={color}
+        key={`${event.calendarId}:${event.id}`}
+        onClick={(mouse) => {
+          mouse.stopPropagation();
+          onEventClick(event);
+        }}
+        style={
+          event.isAllDay
+            ? {
+                backgroundColor: tint.fill,
+                backgroundImage: look.tentative ? stripes(tint.edge) : undefined,
+                color: tint.text,
+              }
+            : { color: 'var(--text)' }
+        }
+        title={event.title}
+        type="button"
+      >
+        {event.isAllDay ? null : (
+          <>
+            <span
+              aria-hidden
+              className="size-1.5 shrink-0 rounded-full"
+              style={{ backgroundColor: tint.edge }}
+            />
+            <span className="shrink-0 text-ink-secondary">
+              {formatClockTime(event.startUtc, timeZone)}
+            </span>
+          </>
+        )}
+        <span className={`truncate ${look.declined ? 'line-through' : ''}`}>{event.title}</span>
+      </button>
+    );
+  };
 
   return (
     <div className="flex min-h-0 flex-1 flex-col" data-testid="month-grid">
@@ -97,23 +223,31 @@ export function MonthView({
           ];
           const overflow = items.length - MAX_CHIPS;
           return (
-            <button
+            // A div, not a button: the chips inside are buttons of their own.
+            <div
               aria-label={monthCellLabel(date, {
                 birthdays: dayBirthdays.length,
                 events: dayEvents.length,
                 tasks: dayTasks.length,
               })}
-              className={`flex min-h-0 flex-col items-stretch gap-0.5 border-r border-b border-hairline p-1 text-left ${
+              className={`flex min-h-0 cursor-default flex-col items-stretch gap-0.5 border-r border-b border-hairline p-1 text-left outline-none focus-visible:bg-selection/40 ${
                 inMonth ? 'bg-surface' : 'bg-surface-subtle'
               } hover:bg-selection/40`}
               key={iso}
               onClick={() => onSelectDay(date)}
-              type="button"
+              onKeyDown={(key) => {
+                if (key.target === key.currentTarget && (key.key === 'Enter' || key.key === ' ')) {
+                  key.preventDefault();
+                  onSelectDay(date);
+                }
+              }}
+              role="button"
+              tabIndex={0}
             >
               <span
                 className={`self-start text-xs font-semibold ${
                   isToday
-                    ? 'flex size-5 items-center justify-center rounded-full bg-red-500 text-white'
+                    ? 'flex size-5 items-center justify-center rounded-full bg-primary text-on-primary'
                     : inMonth
                       ? 'text-ink-secondary'
                       : 'text-ink-secondary/70'
@@ -121,78 +255,11 @@ export function MonthView({
               >
                 {date.day}
               </span>
-              {items.slice(0, MAX_CHIPS).map((item) => {
-                if (item.kind === 'task') {
-                  const { task } = item;
-                  const done = task.status === 'completed';
-                  const isOverdue = overdueKeys.has(calendarTaskKey(task));
-                  // The list accent only where the lane draws one: a
-                  // colored Reminders list. Google lists stay neutral.
-                  const listColor = listColorOf(task);
-                  return (
-                    <span
-                      className={`truncate rounded border border-hairline-strong bg-surface-subtle px-1 text-[11px] leading-4 ${
-                        isOverdue ? 'text-red-600' : 'text-ink-secondary'
-                      } ${done ? 'opacity-50' : ''}`}
-                      data-overdue={isOverdue ? '' : undefined}
-                      key={calendarTaskKey(task)}
-                      style={
-                        listColor === undefined
-                          ? undefined
-                          : { borderLeftColor: listColor, borderLeftWidth: 3 }
-                      }
-                      title={
-                        isOverdue ? `${task.title} · ${overdueLabel(task, todayIso)}` : task.title
-                      }
-                    >
-                      <span className={done ? 'line-through' : ''}>
-                        {done ? '☑' : '☐'}{' '}
-                        {taskChipLabel(task, { overdue: isOverdue, repeats: taskRepeats(task) })}
-                      </span>
-                    </span>
-                  );
-                }
-                if (item.kind === 'birthday') {
-                  const { birthday } = item;
-                  const label = birthdayChipLabel(birthday);
-                  return (
-                    <span
-                      className="truncate rounded border border-hairline-strong bg-surface-subtle px-1 text-[11px] leading-4 text-ink-secondary"
-                      data-birthday={birthday.record.id}
-                      key={`birthday:${birthday.record.id}:${birthday.date}`}
-                      style={{ borderLeftColor: BIRTHDAY_ACCENT, borderLeftWidth: 3 }}
-                      title={label}
-                    >
-                      {label}
-                    </span>
-                  );
-                }
-                const { event } = item;
-                const color = colorOf(event);
-                return (
-                  <span
-                    className="truncate rounded px-1 text-[11px] leading-4 text-ink"
-                    key={`${event.calendarId}:${event.id}`}
-                    style={
-                      event.isAllDay
-                        ? { backgroundColor: color, color: chipTextColor(color) }
-                        : undefined
-                    }
-                  >
-                    {event.isAllDay ? null : (
-                      <span
-                        className="mr-1 inline-block size-1.5 rounded-full align-middle"
-                        style={{ backgroundColor: color }}
-                      />
-                    )}
-                    {event.title}
-                  </span>
-                );
-              })}
+              {items.slice(0, MAX_CHIPS).map(chip)}
               {overflow > 0 ? (
                 <span className="px-1 text-[10px] text-ink-secondary">+{overflow} more</span>
               ) : null}
-            </button>
+            </div>
           );
         })}
       </div>

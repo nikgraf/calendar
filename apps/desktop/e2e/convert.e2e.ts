@@ -195,9 +195,7 @@ describe('Converting between events and tasks', () => {
 
   it('converts an event into a reminder without asking when nothing is lost', async () => {
     const { cdp } = app;
-    const block = await cdp.locate('[title^="Plain event"]');
-    await cdp.click(block.x, block.y);
-    await cdp.waitFor(heading('Edit event'));
+    await cdp.openEditor('[title^="Plain event"]');
     await clickTestId('mode-task');
     await cdp.waitFor(heading('Convert to reminder'));
     expect(await cdp.eval(`document.querySelector('${TITLE}').value`)).toBe('Plain event');

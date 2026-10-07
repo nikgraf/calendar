@@ -78,32 +78,6 @@ comment` for inline-playable video: 10 MB on Free plans, 100 MB paid
 
 ## Tier 2 — features (near-term, well-scoped)
 
-- [ ] Desktop redesign — the chosen direction from the 2026-10 design
-      review (canvas: "Chosen direction" row). Full-width toolbar with the
-      quick-add field always visible (replaces the ⌘K `CommandBar` Dialog,
-      `CalendarApp.tsx:302-310`; ⌘K focuses the field; `reviewFirst` card
-      from `useQuickAddModel`), collapsible sidebar with mini month, task
-      lists and a sync footer (`Sidebar.tsx:97`; `sidebarCollapsed` /
-      `lastView` via `useUpdateViewPreferences`), right panel (300px, 360px
-      while editing): `useUpNext` card + `useTaskInbox` rail by default,
-      the event inspector on click, the inline editors on Edit — the
-      centered `EventEditor` Dialog goes (`EventEditor.tsx:126-131`;
-      `MoveConfirm` and `BirthdayDetail` stay dialogs; the inline editor
-      never joins `dialogStack`, so the agent approval keeps winning
-      Escape). Forms gain the notes textarea (`model.description`), a done
-      checkbox, and the repeat fields on existing series (`repeatLoaded`).
-      Grid: `eventTint` fills, no borders, selection outline, striped
-      tentative, strikethrough declined, clickable month chips
-      (`MonthView.tsx:110-124`), tasks dragged from the panel
-      (`useEventDrag.ts:266-299` gains a `'panel'` origin; x-bounds guard
-      before `dropTargetAt`). Settings window: sidebar nav with search and
-      icon squares (`windows.ts:176-187` 680×620 → 780×560; hash stays
-      the source of truth). e2e: stable testids (`toolbar-title`,
-      `view-*`, `panel`, `inspector`, `editor-title`, `week-grid`,
-      `today-header`, `now-line`), harness `openInspector`/`openEditor`
-      replace the ~60 `body.textContent.includes('Edit event')` waits,
-      `[title^=…]` scoped to the grid, the `rgb(22,167,101)` assertion
-      reads `data-color`. Search stays a disabled placeholder (its own PR).
 - [ ] iOS redesign — the chosen direction: expo-router `NativeTabs`
       Calendar · Tasks · Search (placeholder) with `@expo/ui` sheets
       (BottomSheet, List, Switch, Menu, the datetimepicker drop-in) and

@@ -61,7 +61,7 @@ export function RemindersSection() {
   }
   const connected = apple !== undefined && apple.status === 'ok';
   return (
-    <section className="rounded-xl border border-hairline bg-surface p-4">
+    <section className="rounded-popover bg-surface-subtle p-4">
       <h2 className="font-medium">Apple Reminders</h2>
       <p className="mt-1 text-sm text-ink-secondary">
         {connected ? 'Connected.' : (remindersStatusCopy(status, SETTINGS_PATH) ?? status)}

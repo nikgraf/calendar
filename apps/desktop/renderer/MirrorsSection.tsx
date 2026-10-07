@@ -644,7 +644,7 @@ export function MirrorsSection() {
   const [deleting, setDeleting] = useState<MirrorView | null>(null);
 
   return (
-    <section className="rounded-xl border border-hairline bg-surface p-4" data-testid="mirrors">
+    <section className="rounded-popover bg-surface-subtle p-4" data-testid="mirrors">
       <h2 className="font-medium">Calendar mirrors</h2>
       <p className="mt-1 text-sm text-ink-secondary">{MIRROR_COPY.intro}</p>
       <ul className="mt-3 flex flex-col gap-2">

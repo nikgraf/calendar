@@ -1,5 +1,6 @@
 import {
   type BirthdayOccurrence,
+  type EventRecord,
   PAN_BUFFER_DAYS,
   type TaskRecord,
   Temporal,
@@ -21,20 +22,63 @@ import {
   useTasksInRangeStable,
   useTimeZones,
   useToday,
+  useUpdateViewPreferences,
+  useViewPreferences,
   type EventEditorPrefill,
+  type TaskEditorSeed,
 } from '@calendar/app-state';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { desktopLanguageModel } from '../ai/desktopModel.ts';
 import { desktopTextRecognizer } from '../ai/desktopTextRecognizer.ts';
-import { isDialogOpen } from '../Dialog.tsx';
-import { EventEditor, type EditorSeed } from './EventEditor.tsx';
+import { Dialog, isDialogOpen } from '../Dialog.tsx';
+import { BirthdayDetail } from './BirthdayDetail.tsx';
 import { CaptureDialog } from './CaptureDialog.tsx';
 import { captureSourceOf, isCapturable, readPaste } from './captureClipboard.ts';
 import { makeColorLookup } from './colors.ts';
 import { MonthView } from './MonthView.tsx';
-import { Sidebar } from './Sidebar.tsx';
-import { CommandBar } from './CommandBar.tsx';
-import { WeekView } from './WeekView.tsx';
+import { DragGhost } from './panel/DragGhost.tsx';
+import { EditorPanel, type EditorSeed } from './panel/EditorPanel.tsx';
+import { EventInspector } from './panel/EventInspector.tsx';
+import { TodayRail } from './panel/TodayRail.tsx';
+import { Sidebar } from './sidebar/Sidebar.tsx';
+import { Toolbar } from './Toolbar.tsx';
+import { useEventDrag } from './useEventDrag.ts';
+import { HOUR_HEIGHT, useWeekStrip, WeekView } from './WeekView.tsx';
+
+type MainView = 'day' | 'month' | 'week';
+
+/**
+ * What the side panel shows: the Today rail at rest, an event's inspector
+ * after a click on the grid, or an inline editor (Edit, a slot, New, a
+ * task chip, a quick-add phrase).
+ */
+type PanelState =
+  | { readonly kind: 'rail' }
+  | { readonly event: EventRecord; readonly kind: 'inspector' }
+  | {
+      /** The capture row this editor came from, so a save can mark it added. */
+      readonly captureRow?: string | undefined;
+      readonly kind: 'editEvent';
+      readonly mode?: 'task' | undefined;
+      /** Distinct per opening: a second slot click must not reuse the first draft. */
+      readonly opening: number;
+      readonly seed: EditorSeed;
+    }
+  | {
+      readonly kind: 'editTask';
+      readonly opening: number;
+      readonly prefill?: TaskEditorSeed | undefined;
+      readonly task?: TaskRecord | undefined;
+    };
+
+const RAIL: PanelState = { kind: 'rail' };
+
+let openings = 0;
+/** A fresh identity for an editor opening; the panel is keyed by it. */
+const nextOpening = (): number => {
+  openings += 1;
+  return openings;
+};
 
 /** Keys and pastes inside a field belong to the field, not the calendar. */
 const isTyping = (target: EventTarget | null) => {
@@ -44,46 +88,73 @@ const isTyping = (target: EventTarget | null) => {
   );
 };
 
+/** The desktop draws day, week and month; an iOS-only view falls back to the week. */
+const mainViewOf = (view: string | undefined): MainView =>
+  view === 'day' || view === 'month' ? view : 'week';
+
 /**
  * Waits for the device-local time zones before drawing anything: a first
  * frame in the device zone followed by a re-layout in the primary zone
  * would, near midnight with a distant primary, also seed the focused day
- * and "today" with the wrong date. The read resolves with the other
- * initial atoms, so the gate never shows.
+ * and "today" with the wrong date. The view preferences resolve with the
+ * same initial atoms, so the gate never shows — and the last view opens
+ * without a flash of the default.
  */
 export function CalendarApp() {
   const zones = useTimeZones();
-  if (!zones.loaded) {
-    return <div className="flex h-screen bg-surface" />;
+  const prefs = useViewPreferences();
+  if (!zones.loaded || prefs === null) {
+    return <div className="flex h-screen bg-canvas" />;
   }
-  return <CalendarBody primary={zones.primary} secondary={zones.secondary} />;
+  return (
+    <CalendarBody
+      initialView={mainViewOf(prefs.lastView)}
+      primary={zones.primary}
+      secondary={zones.secondary}
+    />
+  );
 }
 
 function CalendarBody({
+  initialView,
   primary: timeZone,
   secondary: secondaryZones,
 }: {
+  initialView: MainView;
   primary: string;
   secondary: ReadonlyArray<string>;
 }) {
   const { days, focused, goToday, panByDays, range, setFocused, step, switchView, title, view } =
     useCalendarNavigation({
       dayBuffer: PAN_BUFFER_DAYS,
-      initialView: 'week',
+      initialView,
       timeZone,
       titleStyle: 'long',
     });
-  const [editorSeed, setEditorSeed] = useState<EditorSeed | null>(null);
-  const [editTask, setEditTask] = useState<TaskRecord | null>(null);
+  const prefs = useViewPreferences();
+  const updatePrefs = useUpdateViewPreferences();
+  const sidebarCollapsed = prefs?.sidebarCollapsed ?? false;
+  const changeView = (next: MainView) => {
+    switchView(next);
+    updatePrefs({ lastView: next });
+  };
+
+  const [panel, setPanel] = useState<PanelState>(RAIL);
   const [viewBirthday, setViewBirthday] = useState<BirthdayOccurrence | null>(null);
-  const [commandBarOpen, setCommandBarOpen] = useState(false);
-  /** The capture row whose editor is open, so a save can mark it added. */
-  const [captureRow, setCaptureRow] = useState<string | null>(null);
+  const quickAddRef = useRef<HTMLInputElement>(null);
+  const editing = panel.kind === 'editEvent' || panel.kind === 'editTask';
+  const openEditor = (seed: EditorSeed) =>
+    setPanel({ kind: 'editEvent', opening: nextOpening(), seed });
 
   // A parsed prefill (quick-add, or a single captured event) opens the
   // editor on its day: the user reviews it before anything is written.
-  const openPrefill = (prefill: EventEditorPrefill) => {
-    setEditorSeed({ initialDate: Temporal.PlainDate.from(prefill.date), prefill });
+  const openPrefill = (prefill: EventEditorPrefill, captureRow?: string) => {
+    setPanel({
+      captureRow,
+      kind: 'editEvent',
+      opening: nextOpening(),
+      seed: { initialDate: Temporal.PlainDate.from(prefill.date), prefill },
+    });
   };
   const capture = useCaptureModel({
     model: desktopLanguageModel,
@@ -106,6 +177,13 @@ function CalendarBody({
   const today = useToday(timeZone);
   const overdue = useOverdueTasksStable(today);
   const { completeTask } = useGuardedMutations();
+  const toggleTask = (task: TaskRecord) =>
+    void completeTask({
+      accountId: task.accountId,
+      status: task.status === 'completed' ? 'needsAction' : 'completed',
+      taskId: task.id,
+      taskListId: task.listId,
+    });
   const taskLists = useTaskLists();
   const listColorOf = useListColorLookup();
   const isTaskReadOnly = useTaskReadOnlyLookup();
@@ -114,35 +192,60 @@ function CalendarBody({
   const accounts = useAccounts();
   const colorOf = useMemo(() => makeColorLookup(calendars), [calendars]);
 
+  // The drag hook lives here, not in the week view: the panel's task rows
+  // drag onto the grid and lane too, and the hook reads their rects.
+  const gridRef = useRef<HTMLDivElement>(null);
+  const laneRef = useRef<HTMLDivElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const strip = useWeekStrip(days);
+  const drag = useEventDrag({
+    gridRef,
+    hourHeight: HOUR_HEIGHT,
+    isEventReadOnly,
+    laneRef,
+    onEventClick: (event) => setPanel({ event, kind: 'inspector' }),
+    onTaskClick: (task) => setPanel({ kind: 'editTask', opening: nextOpening(), task }),
+    scrollerRef: scrollRef,
+    strip,
+  });
+
   const captureOpen = capture.state.kind !== 'idle';
-  const dialogOpen =
-    commandBarOpen ||
-    captureOpen ||
-    editorSeed !== null ||
-    editTask !== null ||
-    viewBirthday !== null;
+  // The window's own modal dialogs; the panel's editors are not dialogs
+  // (they never join the dialog stack, so a real dialog over them — the
+  // agent approval, a capture — keeps Escape and Enter).
+  const dialogOpen = captureOpen || viewBirthday !== null;
   useEffect(() => {
     const onKeyDown = (key: KeyboardEvent) => {
       const command = key.metaKey || key.ctrlKey;
       // Any dialog of this window counts — the agent approval dialog too,
       // which App opens over the calendar without it knowing.
       const anyDialog = dialogOpen || isDialogOpen();
+      if (key.key === 'Escape') {
+        // Escape leaves the panel's inspector or editor, from anywhere in
+        // the window but a dialog (which takes its own Escape first).
+        if (!anyDialog && panel.kind !== 'rail') {
+          setPanel(RAIL);
+        }
+        return;
+      }
       if (command && key.key.toLowerCase() === 'k') {
         key.preventDefault();
-        // ⌘K closes its own bar; it opens none over another dialog.
-        if (commandBarOpen || !anyDialog) {
-          setCommandBarOpen((open) => !open);
+        // ⌘K goes to the quick-add field — not from under a dialog, whose
+        // Escape and Enter the field would otherwise take.
+        if (!anyDialog) {
+          quickAddRef.current?.focus();
+          quickAddRef.current?.select();
         }
         return;
       }
       // The rest are single keys for the calendar itself: not while a
-      // dialog is open (they close on Escape themselves) or while typing.
-      if (anyDialog || isTyping(key.target) || key.altKey) {
+      // dialog or an editor is open, or while typing.
+      if (anyDialog || editing || isTyping(key.target) || key.altKey) {
         return;
       }
       if (command && key.key.toLowerCase() === 'n') {
         key.preventDefault();
-        setEditorSeed({ initialDate: focused, initialHour: 9 });
+        openEditor({ initialDate: focused, initialHour: 9 });
       } else if (!command && key.key.toLowerCase() === 't') {
         goToday();
       } else if (!command && key.key === 'ArrowLeft') {
@@ -153,7 +256,7 @@ function CalendarBody({
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [commandBarOpen, dialogOpen, focused, goToday, step]);
+  }, [dialogOpen, editing, focused, goToday, panel.kind, step]);
 
   // ⌘V on the calendar itself: an email or a screenshot becomes events to
   // review. Not while a dialog is open or a field has focus — those pastes
@@ -178,172 +281,202 @@ function CalendarBody({
     return () => window.removeEventListener('paste', onPaste);
   }, [capture, dialogOpen]);
 
+  const closePanel = () => setPanel(RAIL);
+  /** The event open in the panel: its block carries the grid's one outline. */
+  const selectedEvent =
+    panel.kind === 'inspector'
+      ? panel.event
+      : panel.kind === 'editEvent'
+        ? panel.seed.event
+        : undefined;
+  const selectedKey = selectedEvent ? `${selectedEvent.calendarId}:${selectedEvent.id}` : undefined;
+  const panelKey =
+    panel.kind === 'inspector'
+      ? `inspect:${panel.event.id}`
+      : panel.kind === 'editEvent'
+        ? `event:${panel.seed.event?.id ?? 'new'}:${String(panel.opening)}`
+        : panel.kind === 'editTask'
+          ? `task:${panel.task?.id ?? 'new'}:${String(panel.opening)}`
+          : 'rail';
+
   return (
-    <div className="flex h-screen bg-surface text-ink">
-      <Sidebar
-        accounts={accounts}
-        calendars={calendars}
-        onManageAccounts={() => void window.calendarBridge.openSettings('accounts')}
+    <div className="flex h-screen flex-col bg-canvas text-ink">
+      <Toolbar
+        focused={focused}
+        onCapture={capture.start}
+        onNew={() => openEditor({ initialDate: focused, initialHour: 9 })}
+        onParsed={openPrefill}
+        onStep={step}
+        onSwitchView={changeView}
+        onTaskParsed={(prefill) => setPanel({ kind: 'editTask', opening: nextOpening(), prefill })}
+        onToday={goToday}
+        onToggleSidebar={() => updatePrefs({ sidebarCollapsed: !sidebarCollapsed })}
+        quickAddRef={quickAddRef}
+        sidebarCollapsed={sidebarCollapsed}
+        timeZone={timeZone}
+        title={title}
+        view={view}
       />
 
-      <div className="flex min-w-0 flex-1 flex-col">
-        <header
-          className="flex shrink-0 items-center gap-3 border-b border-hairline px-4 py-2.5"
-          style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}
-        >
-          <h1 className="min-w-56 text-lg font-semibold">{title}</h1>
-          <div
-            className="flex items-center gap-1"
-            style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
-          >
-            <button
-              aria-label={`Previous ${view}`}
-              className="rounded-md px-2 py-1 text-ink-secondary hover:bg-fill"
-              onClick={() => step(-1)}
-              type="button"
-            >
-              ‹
-            </button>
-            <button
-              className="rounded-md px-2 py-1 text-sm hover:bg-fill"
-              onClick={goToday}
-              type="button"
-            >
-              Today
-            </button>
-            <button
-              aria-label={`Next ${view}`}
-              className="rounded-md px-2 py-1 text-ink-secondary hover:bg-fill"
-              onClick={() => step(1)}
-              type="button"
-            >
-              ›
-            </button>
-          </div>
-          <div className="flex-1" />
-          <div
-            className="flex rounded-lg bg-fill p-0.5 text-sm"
-            style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
-          >
-            {(['day', 'week', 'month'] as const).map((kind) => (
-              <button
-                className={`rounded-md px-3 py-1 capitalize ${
-                  view === kind
-                    ? 'bg-surface font-medium shadow-sm'
-                    : 'text-ink-secondary hover:text-ink'
-                }`}
-                key={kind}
-                onClick={() => switchView(kind)}
-                type="button"
-              >
-                {kind}
-              </button>
-            ))}
-          </div>
-          <button
-            aria-label="New event"
-            className="rounded-md bg-primary px-3 py-1 text-sm font-medium text-on-primary hover:bg-primary-hover"
-            onClick={() => setEditorSeed({ initialDate: focused, initialHour: 9 })}
-            style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
-            type="button"
-          >
-            +
-          </button>
-        </header>
-
-        {view === 'month' ? (
-          <MonthView
-            birthdays={birthdays}
-            colorOf={colorOf}
-            events={events}
-            listColorOf={listColorOf}
-            onSelectDay={(date) => {
-              setFocused(date);
-              switchView('day');
-            }}
-            overdue={overdue}
-            tasks={tasks}
-            timeZone={timeZone}
-            today={today}
-            yearMonth={Temporal.PlainYearMonth.from(focused)}
-          />
-        ) : (
-          <WeekView
-            birthdays={birthdays}
-            colorOf={colorOf}
-            days={days}
-            events={events}
-            isEventReadOnly={isEventReadOnly}
-            isTaskReadOnly={isTaskReadOnly}
-            listColorOf={listColorOf}
-            onBirthdayClick={(birthday) => setViewBirthday(birthday)}
-            onEventClick={(event) => setEditorSeed({ event, initialDate: focused })}
-            onNavigate={panByDays}
-            onSlotClick={(date, hour) => setEditorSeed({ initialDate: date, initialHour: hour })}
-            onSlotDrag={(date, times) => setEditorSeed({ initialDate: date, initialTimes: times })}
-            onTaskClick={(task) => setEditTask(task)}
-            onToggleTask={(task) =>
-              void completeTask({
-                accountId: task.accountId,
-                status: task.status === 'completed' ? 'needsAction' : 'completed',
-                taskId: task.id,
-                taskListId: task.listId,
-              })
-            }
-            overdue={overdue}
-            secondaryZones={secondaryZones}
-            tasks={tasks}
-            timeZone={timeZone}
-            today={today}
+      <div className="flex min-h-0 flex-1">
+        {sidebarCollapsed ? null : (
+          <Sidebar
+            accounts={accounts}
+            calendars={calendars}
+            focused={focused}
+            onManageAccounts={() => void window.calendarBridge.openSettings('accounts')}
+            onPickDay={setFocused}
+            today={Temporal.PlainDate.from(today)}
           />
         )}
+
+        <div className="flex min-w-0 flex-1 flex-col">
+          {view === 'month' ? (
+            <MonthView
+              birthdays={birthdays}
+              colorOf={colorOf}
+              events={events}
+              listColorOf={listColorOf}
+              onBirthdayClick={(birthday) => setViewBirthday(birthday)}
+              onEventClick={(event) => setPanel({ event, kind: 'inspector' })}
+              onSelectDay={(date) => {
+                setFocused(date);
+                changeView('day');
+              }}
+              onTaskClick={(task) => setPanel({ kind: 'editTask', opening: nextOpening(), task })}
+              onToggleTask={toggleTask}
+              overdue={overdue}
+              selectedKey={selectedKey}
+              tasks={tasks}
+              timeZone={timeZone}
+              today={today}
+              yearMonth={Temporal.PlainYearMonth.from(focused)}
+            />
+          ) : (
+            <WeekView
+              birthdays={birthdays}
+              colorOf={colorOf}
+              days={days}
+              drag={drag}
+              events={events}
+              gridRef={gridRef}
+              isEventReadOnly={isEventReadOnly}
+              isTaskReadOnly={isTaskReadOnly}
+              laneRef={laneRef}
+              listColorOf={listColorOf}
+              onBirthdayClick={(birthday) => setViewBirthday(birthday)}
+              onEventClick={(event) => setPanel({ event, kind: 'inspector' })}
+              onNavigate={panByDays}
+              onSlotClick={(date, hour) => openEditor({ initialDate: date, initialHour: hour })}
+              onSlotDrag={(date, times) => openEditor({ initialDate: date, initialTimes: times })}
+              onTaskClick={(task) => setPanel({ kind: 'editTask', opening: nextOpening(), task })}
+              onToggleTask={toggleTask}
+              overdue={overdue}
+              scrollRef={scrollRef}
+              secondaryZones={secondaryZones}
+              selectedKey={selectedKey}
+              tasks={tasks}
+              timeZone={timeZone}
+              today={today}
+            />
+          )}
+        </div>
+
+        <aside
+          className={`flex shrink-0 flex-col border-l border-hairline bg-surface-subtle ${
+            editing ? 'w-[360px]' : 'w-[300px]'
+          }`}
+          data-panel-kind={panel.kind}
+          data-testid="panel"
+          key={panelKey}
+        >
+          {panel.kind === 'rail' ? (
+            <TodayRail
+              drag={drag}
+              onEditTask={(task) => setPanel({ kind: 'editTask', opening: nextOpening(), task })}
+              onOpenEvent={(event) => setPanel({ event, kind: 'inspector' })}
+              timeZone={timeZone}
+            />
+          ) : panel.kind === 'inspector' ? (
+            <EventInspector
+              calendars={calendars}
+              event={panel.event}
+              onClose={closePanel}
+              onConvert={() =>
+                setPanel({
+                  kind: 'editEvent',
+                  mode: 'task',
+                  opening: nextOpening(),
+                  seed: { event: panel.event, initialDate: focused },
+                })
+              }
+              onEdit={() =>
+                setPanel({
+                  kind: 'editEvent',
+                  opening: nextOpening(),
+                  seed: { event: panel.event, initialDate: focused },
+                })
+              }
+              timeZone={timeZone}
+            />
+          ) : panel.kind === 'editEvent' ? (
+            <EditorPanel
+              calendars={calendars}
+              initialMode={panel.mode}
+              onClose={closePanel}
+              onSaved={
+                panel.captureRow === undefined
+                  ? undefined
+                  : () => capture.markAdded(panel.captureRow!)
+              }
+              seed={panel.seed}
+              taskLists={taskLists}
+              timeZone={timeZone}
+            />
+          ) : (
+            <EditorPanel
+              calendars={calendars}
+              onClose={closePanel}
+              seed={{
+                initialDate: panel.prefill
+                  ? Temporal.PlainDate.from(panel.prefill.initialDate)
+                  : focused,
+              }}
+              task={panel.task}
+              taskLists={taskLists}
+              taskPrefill={panel.prefill}
+              timeZone={timeZone}
+            />
+          )}
+        </aside>
       </div>
 
-      {commandBarOpen ? (
-        <CommandBar
-          focusedDate={focused}
-          onCapture={capture.start}
-          onClose={() => setCommandBarOpen(false)}
-          onParsed={openPrefill}
-          timeZone={timeZone}
-        />
-      ) : null}
+      <DragGhost drag={drag} />
 
-      {/* Hidden while a row's editor is open: two dialogs would both close on one Escape. */}
-      {capture.state.kind !== 'idle' && !editorSeed ? (
+      {/* Hidden while a row's editor is open: the editor is the capture's next step. */}
+      {capture.state.kind !== 'idle' && panel.kind !== 'editEvent' ? (
         <CaptureDialog
           onClose={capture.dismiss}
-          onOpenRow={(row) => {
-            setCaptureRow(row.id);
-            openPrefill(row.prefill);
-          }}
+          onOpenRow={(row) => openPrefill(row.prefill, row.id)}
           state={capture.state}
         />
       ) : null}
 
-      {editorSeed || editTask || viewBirthday ? (
-        <EventEditor
-          birthday={viewBirthday ?? undefined}
-          calendars={calendars}
-          key={
-            viewBirthday
-              ? `birthday:${viewBirthday.record.id}:${viewBirthday.date}`
-              : editTask
-                ? `task:${editTask.id}`
-                : (editorSeed?.event?.id ?? 'new')
-          }
-          onClose={() => {
-            setEditorSeed(null);
-            setEditTask(null);
-            setViewBirthday(null);
-            setCaptureRow(null);
-          }}
-          onSaved={captureRow ? () => capture.markAdded(captureRow) : undefined}
-          seed={editorSeed ?? { initialDate: focused }}
-          task={editTask ?? undefined}
-          taskLists={taskLists}
-          timeZone={timeZone}
-        />
+      {viewBirthday ? (
+        <Dialog
+          key={`birthday:${viewBirthday.record.id}:${viewBirthday.date}`}
+          label="Birthday"
+          onClose={() => setViewBirthday(null)}
+          panelClassName="w-[420px] rounded-popover bg-surface-raised p-6 shadow-2xl"
+          zIndex={30}
+        >
+          <h2 className="mb-4 text-lg font-semibold">Birthday</h2>
+          <BirthdayDetail
+            occurrence={viewBirthday}
+            onClose={() => setViewBirthday(null)}
+            timeZone={timeZone}
+          />
+        </Dialog>
       ) : null}
     </div>
   );
