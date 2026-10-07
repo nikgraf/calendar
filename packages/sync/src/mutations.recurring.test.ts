@@ -874,3 +874,29 @@ describe('EventMutations recurrence rule edits', () => {
     }).pipe(Effect.provide(testLayer)),
   );
 });
+
+describe('a cleared series edited again before it synced', () => {
+  it.effect('keeps clearing the rule on Google when a later edit replaces the queued op', () =>
+    Effect.gen(function* () {
+      yield* seedMaster;
+      const mutations = yield* EventMutations;
+      yield* mutations.updateRecurring({
+        ...target,
+        changes: { recurrence: null },
+        scope: 'series',
+      });
+      // Locally a single event now, so the plain update path takes it.
+      yield* mutations.updateEvent({
+        accountId: 'acc-1',
+        calendarId: 'cal-1',
+        changes: { title: 'Once, renamed' },
+        eventId: 'master1',
+      });
+      const ops = yield* listOps;
+      expect(ops).toHaveLength(1);
+      expect(ops[0]!.payload?.title).toBe('Once, renamed');
+      expect(ops[0]!.payload?.recurrence).toBeUndefined();
+      expect(ops[0]!.recurrenceCleared).toBe(true);
+    }).pipe(Effect.provide(testLayer)),
+  );
+});

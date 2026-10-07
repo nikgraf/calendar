@@ -1,5 +1,12 @@
-import { isOverdue, partitionCalendarTasks, taskCalendarDate } from './taskTiming.ts';
+import { isOverdue, partitionCalendarTasks } from './taskTiming.ts';
+import { toZonedDateTime } from './time/convert.ts';
 import type { TaskRecord } from './types.ts';
+
+/** The day a task was completed on, in the zone. */
+const completionDay = (task: TaskRecord, timeZone: string): string =>
+  toZonedDateTime(task.completedAt ?? task.updatedAt, timeZone)
+    .toPlainDate()
+    .toString();
 
 /** The task inbox's groups, in the order the rail shows them. */
 export interface TaskInbox {
@@ -34,10 +41,10 @@ export const groupTaskInbox = (
   const dated = [...allDay, ...timed];
   const open = dated.filter((task) => task.status === 'needsAction' && !isOverdue(task, today));
   return {
+    // By the day it was done, not the day it was due: the grid places an
+    // early completion on its due day, but "done today" is about today.
     completedToday: dated
-      .filter(
-        (task) => task.status === 'completed' && taskCalendarDate(task, today, timeZone) === today,
-      )
+      .filter((task) => task.status === 'completed' && completionDay(task, timeZone) === today)
       .sort((a, b) => (b.completedAt ?? b.updatedAt) - (a.completedAt ?? a.updatedAt)),
     noDate: undated,
     overdue,

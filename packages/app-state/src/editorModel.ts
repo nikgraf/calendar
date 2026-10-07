@@ -590,7 +590,12 @@ export const useEventEditorModel = ({
     const spec = repeatSpec();
     const invalid =
       validateEventDraft(fields, timeZone) ??
-      (spec ? (byDayError(spec) ?? repeatUntilError(spec, date)) : undefined) ??
+      // The rule is checked when it is being written: a new event's, or an
+      // edited one. An untouched series rule is not re-sent, and its UNTIL
+      // must not pin an occurrence that is being moved past the series end.
+      (spec && (!existing || repeatDirty)
+        ? (byDayError(spec) ?? repeatUntilError(spec, date))
+        : undefined) ??
       (existing && isRecurring && openedDate !== undefined
         ? recurringTimesError({
             date,

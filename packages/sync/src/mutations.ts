@@ -1057,6 +1057,9 @@ const make: Effect.Effect<
             kind: 'update',
             nextAttemptAt: 0,
             payload: merged,
+            // A series cleared while offline is a single event here already;
+            // this edit replaces that queued op and must still clear it there.
+            recurrenceCleared: recurrenceClearedFlag(changes, queued),
             remindersChanged: remindersFlag(changes, queued),
           }),
         );

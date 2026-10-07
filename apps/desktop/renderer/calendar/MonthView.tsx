@@ -171,12 +171,12 @@ export function MonthView({
                 const color = colorOf(event);
                 return (
                   <span
-                    className="truncate rounded px-1 text-[11px] leading-4"
+                    className="truncate rounded px-1 text-[11px] leading-4 text-ink"
                     key={`${event.calendarId}:${event.id}`}
                     style={
                       event.isAllDay
                         ? { backgroundColor: color, color: chipTextColor(color) }
-                        : { color: '#404040' }
+                        : undefined
                     }
                   >
                     {event.isAllDay ? null : (
