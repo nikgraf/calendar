@@ -164,9 +164,9 @@ export const mapGcalEvent = (
     title: event.summary || UNTITLED_EVENT,
     // Google leaves both out at their defaults; the record always says.
     transparency: event.transparency === 'transparent' ? 'transparent' : 'opaque',
-    updatedAt: event.updated
-      ? Temporal.Instant.from(event.updated).epochMilliseconds
-      : context.syncedAt,
+    // Through instantMs too: one malformed `updated` used to throw and fail
+    // the calendar's whole pass, every pass.
+    updatedAt: (event.updated ? instantMs(event.updated) : undefined) ?? context.syncedAt,
     visibility: VISIBILITIES.has(event.visibility ?? '')
       ? (event.visibility as 'confidential' | 'private' | 'public')
       : 'default',

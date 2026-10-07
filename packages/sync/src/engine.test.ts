@@ -29,7 +29,7 @@ import {
 import { RemindersClient, unavailableRemindersClient } from '@calendar/reminders';
 import { SqliteClient } from '@effect/sql-sqlite-node';
 import { expect, it } from '@effect/vitest';
-import { Effect, Layer } from 'effect';
+import { Effect, Fiber, Layer } from 'effect';
 import { TestClock } from 'effect/testing';
 import { layer as reactivityLayer } from 'effect/reactivity/Reactivity';
 import { describe } from 'vitest';
@@ -317,6 +317,119 @@ describe('SyncEngine', () => {
 
       const state = yield* (yield* SyncStateRepo).get('acc-1', eventsScope('cal-1'));
       expect(state?.syncToken).toBe('sync-2');
+    }).pipe(Effect.provide(engineLayer(client)));
+  });
+
+  it.effect('a calendar-list 410 relists in full and drops what Google no longer has', () => {
+    // A full list never reports a deletion: the purge has to know the
+    // incremental pass fell back to one, or a calendar removed meanwhile
+    // stays for good.
+    const extra = { accessRole: 'owner' as const, id: 'cal-old', selected: true, summary: 'Old' };
+    let listsOld = true;
+    let tokenExpired = false;
+    const calls: Array<string> = [];
+    const client: GoogleCalendarClientShape = {
+      ...stubClient([]),
+      listCalendars: (params) => {
+        calls.push(params.syncToken ?? 'full');
+        if (params.syncToken && tokenExpired) {
+          return Effect.fail(new SyncTokenExpiredError({ calendarId: '' }));
+        }
+        return Effect.succeed(
+          params.syncToken
+            ? { items: [], nextSyncToken: 'cal-sync-n' }
+            : {
+                items: [...(calendarListPage.items ?? []), ...(listsOld ? [extra] : [])],
+                nextSyncToken: 'cal-sync-1',
+              },
+        );
+      },
+    };
+    return Effect.gen(function* () {
+      yield* seedAccount;
+      const engine = yield* SyncEngine;
+      const ids = Effect.map((yield* CalendarRepo).list('acc-1'), (rows) =>
+        rows.map((row) => row.id).sort(),
+      );
+      yield* engine.syncAll();
+      expect(yield* ids).toEqual(['cal-1', 'cal-old']);
+
+      listsOld = false;
+      tokenExpired = true;
+      yield* engine.syncAll();
+      expect(calls).toEqual(['full', 'cal-sync-1', 'full']);
+      expect(yield* ids).toEqual(['cal-1']);
+    }).pipe(Effect.provide(engineLayer(client)));
+  });
+
+  it.effect(
+    'a calendar an incremental page added before the 410 goes if the relist omits it',
+    () => {
+      // Pages are stored as they arrive: page one of the delta adds a
+      // calendar, page two answers 410, and the full list no longer has it.
+      // The purge compared only with what was stored before the pass.
+      const added = {
+        accessRole: 'owner' as const,
+        id: 'cal-brief',
+        selected: true,
+        summary: 'Brief',
+      };
+      let deltaExpires = false;
+      const client: GoogleCalendarClientShape = {
+        ...stubClient([]),
+        listCalendars: (params) => {
+          if (!params.syncToken) {
+            return Effect.succeed({ items: calendarListPage.items, nextSyncToken: 'cal-sync-1' });
+          }
+          if (!deltaExpires) {
+            return Effect.succeed({ items: [], nextSyncToken: 'cal-sync-1' });
+          }
+          return params.pageToken
+            ? Effect.fail(new SyncTokenExpiredError({ calendarId: '' }))
+            : Effect.succeed({ items: [added], nextPageToken: 'page-2' });
+        },
+      };
+      return Effect.gen(function* () {
+        yield* seedAccount;
+        const engine = yield* SyncEngine;
+        const ids = Effect.map((yield* CalendarRepo).list('acc-1'), (rows) =>
+          rows.map((row) => row.id).sort(),
+        );
+        yield* engine.syncAll();
+        deltaExpires = true;
+        yield* engine.syncAll();
+        expect(yield* ids).toEqual(['cal-1']);
+      }).pipe(Effect.provide(engineLayer(client)));
+    },
+  );
+
+  it.effect('offline, a pass gives up after one retry; a 503 still gets five', () => {
+    // An unreached request (no status) used to be retried five times, about
+    // half a minute per account with the sync gate held.
+    let failure = new ApiUnavailableError({ cause: 'offline' });
+    let colorCalls = 0;
+    const client: GoogleCalendarClientShape = {
+      ...stubClient([]),
+      getColors: () =>
+        Effect.suspend(() => {
+          colorCalls += 1;
+          return Effect.fail(failure);
+        }),
+    };
+    return Effect.gen(function* () {
+      yield* seedAccount;
+      const engine = yield* SyncEngine;
+      const run = () =>
+        Effect.gen(function* () {
+          colorCalls = 0;
+          const fiber = yield* Effect.forkChild(Effect.ignore(engine.syncAll()));
+          yield* TestClock.adjust('5 minutes');
+          yield* Fiber.join(fiber);
+          return colorCalls;
+        });
+      expect(yield* run()).toBe(2);
+      failure = new ApiUnavailableError({ cause: 'http 503', status: 503 });
+      expect(yield* run()).toBe(6);
     }).pipe(Effect.provide(engineLayer(client)));
   });
 

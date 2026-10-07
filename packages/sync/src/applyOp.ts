@@ -275,14 +275,9 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
    * or deleted, since — its own response settles the row.
    */
   const othersQueued = (op: PendingOp, calendarId: string = op.calendarId) =>
-    Effect.map(pendingOpRepo.listAll(), (queued) =>
-      queued.some(
-        (other) =>
-          other.id !== op.id &&
-          other.accountId === op.accountId &&
-          other.calendarId === calendarId &&
-          other.eventId === op.eventId,
-      ),
+    Effect.map(
+      pendingOpRepo.listForEvent({ accountId: op.accountId, calendarId, eventId: op.eventId }),
+      (queued) => queued.some((other) => other.id !== op.id),
     );
 
   /**

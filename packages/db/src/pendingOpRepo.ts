@@ -51,6 +51,16 @@ export interface PendingOpRepoShape {
   readonly listAll: () => Effect.Effect<ReadonlyArray<PendingOp>, SqlError>;
   readonly listDue: (now: number) => Effect.Effect<ReadonlyArray<PendingOp>, SqlError>;
   /**
+   * The ops queued for one event of one account, in queue order. Every
+   * edit and every ack asks this; filtering in SQL decodes only these ops,
+   * not the whole queue's payloads.
+   */
+  readonly listForEvent: (event: {
+    readonly accountId: string;
+    readonly calendarId: string;
+    readonly eventId: string;
+  }) => Effect.Effect<ReadonlyArray<PendingOp>, SqlError>;
+  /**
    * Parks an op after a 412: the drain skips it until `unpark` or removal.
    * `serverPayload` is Google's version (undefined = deleted on Google).
    */
@@ -200,6 +210,14 @@ const makePendingOpRepo: Effect.Effect<PendingOpRepoShape, never, Reactivity | S
           // mutation, or a fixed test clock) — order matters for moves.
           sql<PendingOpRow>`SELECT * FROM pending_ops
             WHERE next_attempt_at <= ${now} AND conflict_at IS NULL ORDER BY created_at, rowid LIMIT ${DRAIN_PAGE_SIZE}`,
+          (rows) => rows.flatMap(decodedOps),
+        ),
+      listForEvent: ({ accountId, calendarId, eventId }) =>
+        Effect.map(
+          sql<PendingOpRow>`SELECT * FROM pending_ops
+            WHERE account_id = ${accountId} AND calendar_id = ${calendarId}
+              AND event_id = ${eventId}
+            ORDER BY created_at, rowid`,
           (rows) => rows.flatMap(decodedOps),
         ),
       markConflict: (opId, at, serverPayload) =>

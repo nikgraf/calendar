@@ -30,7 +30,7 @@ import {
   Temporal,
 } from '@calendar/core';
 import { RegistryContext, useAtomValue } from '@effect/atom-react';
-import { Cause, Effect, Exit, Option } from 'effect';
+import { Effect, Option } from 'effect';
 import { AsyncResult, type Atom, AtomRegistry } from 'effect/reactivity';
 import {
   createContext,
@@ -49,6 +49,7 @@ import {
   mapSnapshotKey,
   type MutationName,
   rangeKey,
+  runMutation,
 } from './atoms.ts';
 
 const AtomsContext = createContext<BackendAtoms | null>(null);
@@ -538,33 +539,20 @@ export const useEventReadOnlyLookup = (): ((event: EventRecord) => boolean) => {
 /**
  * Promise-returning mutation callbacks; each invalidates its reactivity keys.
  *
- * Built once per registry from the atoms record instead of nineteen
- * `useAtomSet` calls: that hook mounts its atom in an effect, so every
- * consumer (editors, sidebar, settings, drag) paid nineteen mounts and a
- * nineteen-dependency memo. A fn atom needs no mount to be set — the
- * registry runs it and the reactivity keys fire on completion, which is
- * exactly what promise mode did.
+ * Each call runs on an fn atom of its own (`runMutation`): with one shared
+ * atom per mutation a second quick call interrupted the first and both
+ * read the second's result. No `useAtomSet` either — that hook mounts its
+ * atom in an effect, and a fn atom needs no mount to be set: the registry
+ * runs it and the reactivity keys fire on completion.
  */
 export const useBackendMutations = () => {
-  const { mutations } = useBackendAtoms();
+  const atoms = useBackendAtoms();
   const registry = useContext(RegistryContext);
   return useMemo(() => {
     const set =
       <M extends MutationName>(name: M) =>
-      async (payload: BackendPayload<M>): Promise<BackendSuccess<M>> => {
-        const atom = mutations[name];
-        registry.set(atom, payload as never);
-        const result: Effect.Effect<BackendSuccess<M>, unknown> = AtomRegistry.getResult(
-          registry,
-          atom,
-          { suspendOnWaiting: true },
-        );
-        const exit = await Effect.runPromiseExit(result);
-        if (Exit.isSuccess(exit)) {
-          return exit.value;
-        }
-        throw Cause.squash(exit.cause);
-      };
+      (payload: BackendPayload<M>): Promise<BackendSuccess<M>> =>
+        runMutation(registry, atoms, name, payload);
     return {
       addAccount: set('addAccount'),
       clearLocationCache: set('clearLocationCache'),
@@ -610,7 +598,7 @@ export const useBackendMutations = () => {
       updateRecurring: set('updateRecurring'),
       updateTask: set('updateTask'),
     };
-  }, [mutations, registry]);
+  }, [atoms, registry]);
 };
 
 /** The current time, updated every `intervalMs` (drives now-indicators). */

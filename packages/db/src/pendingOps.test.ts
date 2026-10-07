@@ -239,6 +239,23 @@ describe('PendingOpRepo', () => {
     }).pipe(Effect.provide(freshDbLayer())),
   );
 
+  it.effect('listForEvent returns one event of one account, in queue order', () =>
+    Effect.gen(function* () {
+      const repo = yield* PendingOpRepo;
+      yield* repo.enqueue(op('second', { createdAt: 2, eventId: 'evt-1' }));
+      yield* repo.enqueue(op('first', { createdAt: 1, eventId: 'evt-1' }));
+      yield* repo.enqueue(op('other-account', { accountId: 'acc-2', eventId: 'evt-1' }));
+      yield* repo.enqueue(op('other-calendar', { calendarId: 'cal-2', eventId: 'evt-1' }));
+      yield* repo.enqueue(op('other-event', { eventId: 'evt-2' }));
+      const ids = (yield* repo.listForEvent({
+        accountId: 'acc-1',
+        calendarId: 'cal-1',
+        eventId: 'evt-1',
+      })).map((entry) => entry.id);
+      expect(ids).toEqual(['first', 'second']);
+    }).pipe(Effect.provide(freshDbLayer())),
+  );
+
   it.effect('retryNow makes waiting ops due, per account or all, but not parked ones', () =>
     Effect.gen(function* () {
       const repo = yield* PendingOpRepo;
