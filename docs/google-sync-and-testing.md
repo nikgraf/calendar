@@ -758,11 +758,15 @@ picked by `id: task-list-option`; a chip body is tapped by its full text
 (`[0-9]+:[0-9]+ !!! <title>` for a timed reminder), because `.*<title>`
 also matches the checkbox's "Toggle <title>" label and toggles
 completion instead of opening the editor. Flows that open the edit sheet `waitForAnimationToEnd` before tapping
-inside it (a tap taken mid-slide missed on the runner); the header "+"
-is tapped through `common/open-new-event.yaml`, which re-taps while the
-sheet is missing (run 34852090635 tapped it once at the right
-coordinates and nothing opened), and the
-quick-add flow accepts the bar's "couldn't be read" outcome: a CI
+inside it (a tap taken mid-slide missed on the runner); the editor is
+reached through `common/open-new-event.yaml` — the floating "+" opens
+the quick-add sheet, whose "New event" row opens the empty editor — which
+re-taps while the sheet is missing (run 34852090635 tapped once at the
+right coordinates and nothing opened); a tap on an event opens its
+detail sheet first, so `common/open-event-editor.yaml` taps Edit; views
+are picked through `common/switch-view.yaml` (the header's menu, `VIEW`);
+the shell anchor is still the "Today" button; and the
+quick-add flow accepts the sheet's "couldn't be read" outcome: a CI
 simulator passes the model availability check yet cannot generate,
 so the prefilled editor is asserted only where a model answers.
 The bootstrap flow `launchApp`s the dev client and only then opens

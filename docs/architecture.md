@@ -625,6 +625,16 @@ scheme)`: hue and chroma from the calendar, lightness from the theme,
   task rows drag onto the grid and lane too (a `'panel'` origin with a
   pointer-following ghost). `lastView` and `sidebarCollapsed` are read
   from the view preferences before the first paint.
+- iOS shell (`apps/ios/app/`, expo-router): `_layout.tsx` mounts the
+  providers, the system background, the editor host and a native stack
+  with the tab bar (`(tabs)/`: Calendar · Tasks · Search) and Settings as
+  a modal route. `src/ui/CalendarScreen.tsx` is the calendar tab: a
+  header (title, view menu, ‹ Today ›, gear), the week strip, the
+  timeline / month grid / agenda, and the floating "+". `EditorHost.tsx`
+  owns every sheet — quick add, event detail, the editors, the birthday
+  detail, the capture review — and the capture model behind the share
+  sheet and deep links; screens ask it through `useEditorHost()`.
+  `+native-intent.tsx` keeps non-route URLs on the calendar.
 - Views: day/week (time grid with wheel-pan on desktop, swipe paging on
   iOS), month grid, and an all-day lane that hosts date-only tasks. Timed
   Apple Reminders share the day-column overlap layout with events as compact,
