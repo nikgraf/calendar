@@ -88,10 +88,7 @@ export function SettingsTransferSection() {
   };
 
   return (
-    <section
-      className="rounded-xl border border-hairline bg-surface p-4"
-      data-testid="settings-transfer"
-    >
+    <section className="rounded-popover bg-surface-subtle p-4" data-testid="settings-transfer">
       <h2 className="font-medium">Export & import</h2>
       <p className="mt-1 text-sm text-ink-secondary">
         Save these settings as a file to carry them to another Mac or iPhone, or load a file from
@@ -214,10 +211,7 @@ export function SettingsFileSection() {
   };
 
   return (
-    <section
-      className="rounded-xl border border-hairline bg-surface p-4"
-      data-testid="settings-file"
-    >
+    <section className="rounded-popover bg-surface-subtle p-4" data-testid="settings-file">
       <h2 className="font-medium">Settings file</h2>
       <p className="mt-1 text-sm text-ink-secondary">
         Solunivo can keep its settings in a file at <span className="select-text">{path}</span>.

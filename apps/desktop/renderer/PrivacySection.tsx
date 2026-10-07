@@ -52,7 +52,7 @@ export function PrivacySection() {
   };
 
   return (
-    <section className="rounded-xl border border-hairline bg-surface p-4">
+    <section className="rounded-popover bg-surface-subtle p-4">
       <h2 className="font-medium">Privacy</h2>
       <p className="mt-1 text-sm text-ink-secondary">
         Hide Solunivo&rsquo;s windows from screen sharing and recordings. They stay visible on your

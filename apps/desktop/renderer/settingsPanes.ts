@@ -1,14 +1,44 @@
-/** The settings window's panes, in toolbar order (General first, as macOS apps have it). */
+/**
+ * The settings window's panes, in sidebar order (General first, as macOS
+ * apps have it). `keywords` are what the sidebar's search matches besides
+ * the label: the sections and settings a pane holds, as a user would name
+ * them.
+ */
 export const SETTINGS_PANES = [
-  { id: 'general', label: 'General' },
-  { id: 'accounts', label: 'Accounts' },
-  { id: 'notifications', label: 'Notifications' },
-  { id: 'mirrors', label: 'Mirrors' },
-  { id: 'agents', label: 'Agents' },
-  { id: 'advanced', label: 'Advanced' },
+  {
+    id: 'general',
+    keywords: ['time zones', 'clock', 'location', 'map', 'privacy', 'screen'],
+    label: 'General',
+  },
+  {
+    id: 'accounts',
+    keywords: ['google', 'apple', 'calendar', 'reminders', 'contacts', 'sign in', 'tasks'],
+    label: 'Accounts',
+  },
+  {
+    id: 'notifications',
+    keywords: ['alerts', 'reminders', 'birthdays', 'events'],
+    label: 'Notifications',
+  },
+  {
+    id: 'mirrors',
+    keywords: ['shared calendar', 'copy', 'availability', 'busy'],
+    label: 'Mirrors',
+  },
+  {
+    id: 'agents',
+    keywords: ['mcp', 'cli', 'token', 'ai', 'claude', 'permissions', 'grants'],
+    label: 'Agents',
+  },
+  {
+    id: 'advanced',
+    keywords: ['export', 'import', 'settings file', 'backup', 'transfer'],
+    label: 'Advanced',
+  },
 ] as const;
 
 export type SettingsPaneId = (typeof SETTINGS_PANES)[number]['id'];
+export type SettingsPane = (typeof SETTINGS_PANES)[number];
 
 /** The page's hash routes: `#settings` is the settings window, `#settings/<pane>` one of its panes. */
 export const SETTINGS_HASH = '#settings';
@@ -20,4 +50,20 @@ export const isSettingsRoute = (hash: string): boolean =>
 export const paneFromHash = (hash: string): SettingsPaneId | null => {
   const id = hash.startsWith(`${SETTINGS_HASH}/`) ? hash.slice(SETTINGS_HASH.length + 1) : '';
   return SETTINGS_PANES.find((pane) => pane.id === id)?.id ?? null;
+};
+
+/**
+ * The panes a search shows: every pane for an empty query, otherwise
+ * those whose label or keywords contain every word of it (case-folded).
+ * Order is kept.
+ */
+export const filterPanes = (query: string): ReadonlyArray<SettingsPane> => {
+  const words = query.toLowerCase().split(/\s+/).filter(Boolean);
+  if (words.length === 0) {
+    return SETTINGS_PANES;
+  }
+  return SETTINGS_PANES.filter((pane) => {
+    const haystack = [pane.label, ...pane.keywords].join(' ').toLowerCase();
+    return words.every((word) => haystack.includes(word));
+  });
 };

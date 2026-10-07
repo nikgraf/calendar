@@ -408,10 +408,7 @@ export function AgentsSection() {
   const pendingIds = state.pending.map((request) => request.id).join(' ');
 
   return (
-    <section
-      className="rounded-xl border border-hairline bg-surface p-4"
-      data-testid="agents-section"
-    >
+    <section className="rounded-popover bg-surface-subtle p-4" data-testid="agents-section">
       <h2 className="font-medium">Agents</h2>
       <p className="mt-1 text-sm text-ink-secondary">
         Let other agents on this Mac read and change your calendars and tasks through Solunivo, over

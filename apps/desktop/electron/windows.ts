@@ -174,11 +174,11 @@ export const showSettingsWindow = (pane?: string): void => {
   }
   // A settings window as macOS draws them: fixed size, close button only
   // (minimize and zoom dimmed), never full screen. The page draws the
-  // title and the pane toolbar inside the hidden title bar.
+  // sidebar and the pane title inside the hidden title bar.
   const window = new BrowserWindow({
     backgroundColor: windowBackground(),
     fullscreenable: false,
-    height: 620,
+    height: 560,
     maximizable: false,
     minimizable: false,
     resizable: false,
@@ -186,7 +186,7 @@ export const showSettingsWindow = (pane?: string): void => {
     title: 'Settings',
     titleBarStyle: 'hidden',
     webPreferences,
-    width: 680,
+    width: 780,
   });
   const opened: SettingsWindow = { window };
   settings = opened;

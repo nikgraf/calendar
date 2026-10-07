@@ -51,7 +51,7 @@ export function BirthdayRemindersSection() {
     });
 
   return (
-    <section className="rounded-xl border border-hairline bg-surface p-4">
+    <section className="rounded-popover bg-surface-subtle p-4">
       <h2 className="font-medium">Birthday reminders</h2>
       <p className="mt-1 text-sm text-ink-secondary">
         A notification for every contact birthday, at the lead times you pick.

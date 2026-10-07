@@ -44,7 +44,7 @@ export function ContactsSection() {
     return null;
   }
   return (
-    <section className="rounded-xl border border-hairline bg-surface p-4">
+    <section className="rounded-popover bg-surface-subtle p-4">
       <h2 className="font-medium">Contacts</h2>
       <p className="mt-1 text-sm text-ink-secondary">
         {contactsStatusCopy(status, SETTINGS_PATH) ?? status}
