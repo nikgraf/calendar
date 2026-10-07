@@ -35,6 +35,8 @@ tags:
       # Clean up, so repeated runs don't pile up in a real calendar.
       - tapOn:
           id: 'event-delete'
+      # The confirmation alert (deleteQuestion).
+      - tapOn: 'Delete'
       - extendedWaitUntil:
           notVisible: 'Solunivo e2e all-day to delete'
           timeout: 20000

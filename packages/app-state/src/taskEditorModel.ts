@@ -16,6 +16,7 @@ import {
   type TaskRecord,
 } from '@calendar/core';
 import { useState } from 'react';
+import { deleteQuestion } from './deleteQuestion.ts';
 import type { EditorConfirmRequest } from './editorModel.ts';
 import { useBackendMutations, useTaskReadOnlyLookup } from './hooks.ts';
 import { useOneWrite } from './oneWrite.ts';
@@ -356,6 +357,11 @@ export const useTaskEditorModel = ({
 
   const remove = async () => {
     if (!existing || readOnly) {
+      return;
+    }
+    if (
+      !(await confirm({ kind: 'delete', subject: 'task', summary: deleteQuestion(existing.title) }))
+    ) {
       return;
     }
     try {

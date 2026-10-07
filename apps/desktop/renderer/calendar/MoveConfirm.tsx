@@ -1,8 +1,9 @@
 import type { EditorConfirmRequest, useMoveConfirmation } from '@calendar/app-state';
 
 /**
- * The buttons for each question. The e2e suite relies on the test id and
- * on the move labels ("Keep here" / "Move anyway").
+ * The buttons for each question. The e2e suite relies on the test ids and
+ * on the move labels ("Keep here" / "Move anyway"); a delete's answer is
+ * "Delete" like the editor's own button, so tests press it by test id.
  */
 const labels = (request: EditorConfirmRequest): { readonly no: string; readonly yes: string } => {
   switch (request.kind) {
@@ -10,14 +11,16 @@ const labels = (request: EditorConfirmRequest): { readonly no: string; readonly 
       return { no: 'Keep here', yes: 'Move anyway' };
     case 'convert':
       return { no: `Keep as ${request.subject}`, yes: 'Convert anyway' };
+    case 'delete':
+      return { no: 'Keep', yes: 'Delete' };
     case 'switch':
       return { no: `Keep as ${request.subject}`, yes: 'Switch' };
   }
 };
 
 /**
- * The inline "this drops …" question the event and task editors show
- * before a lossy move, conversion or create-mode switch.
+ * The inline question the event and task editors show before a lossy
+ * move, conversion or create-mode switch, and before a delete.
  */
 export function MoveConfirm({
   moveConfirmation,
@@ -39,6 +42,7 @@ export function MoveConfirm({
       <div className="mt-2 flex justify-end gap-2">
         <button
           className="rounded-lg px-3 py-1 hover:bg-amber-100"
+          data-testid="move-confirm-no"
           onClick={() => moveConfirmation.answer(false)}
           type="button"
         >
@@ -46,6 +50,7 @@ export function MoveConfirm({
         </button>
         <button
           className="rounded-lg bg-amber-600 px-3 py-1 font-medium text-white hover:bg-amber-500"
+          data-testid="move-confirm-yes"
           onClick={() => moveConfirmation.answer(true)}
           type="button"
         >

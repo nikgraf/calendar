@@ -70,6 +70,8 @@ tags:
                 direction: DOWN
             - tapOn:
                 id: 'event-delete'
+            # The confirmation alert (deleteQuestion).
+            - tapOn: 'Delete'
             - extendedWaitUntil:
                 notVisible: 'Standup.*'
                 timeout: 20000

@@ -109,6 +109,8 @@ tags:
       BLOCK: 'live-${MAESTRO_LIVE_RUN_TAG}-ios-edited'
 - tapOn:
     id: 'event-delete'
+# The confirmation alert (deleteQuestion).
+- tapOn: 'Delete'
 - extendedWaitUntil:
     notVisible: 'live-${MAESTRO_LIVE_RUN_TAG}-ios-edited'
     timeout: 20000

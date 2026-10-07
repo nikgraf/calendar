@@ -834,6 +834,7 @@ describe('calendar desktop e2e', () => {
     await cdp.click(block.x, block.y);
     await cdp.waitFor(`document.body.textContent.includes('This event')`);
     await cdp.clickButtonWithText('Delete');
+    await cdp.confirmDelete();
     // One occurrence vanishes; the master survives.
     await cdp.waitFor(
       `document.querySelectorAll('[title^="Daily standup v2"]').length === ${countBefore - 1}`,
@@ -855,12 +856,24 @@ describe('calendar desktop e2e', () => {
     await cdp.waitFor(`!!document.querySelector('[title^="Gym session"]')`);
   });
 
-  it('deletes an event through the editor', async () => {
+  it('deletes an event through the editor, after asking', async () => {
     const { cdp } = app;
     const block = await cdp.locate('[title^="Coffee chat (moved)"]');
     await cdp.click(block.x, block.y);
     await cdp.waitFor(`document.body.textContent.includes('Edit event')`);
     await cdp.clickButtonWithText('Delete');
+    // Asked first, naming what goes; Keep leaves it alone.
+    const question = await cdp.waitFor<string>(
+      `document.querySelector('[data-testid="move-confirm"]')?.textContent ?? ''`,
+    );
+    expect(question).toContain('Delete “Coffee chat (moved)”?');
+    await cdp.eval(`document.querySelector('[data-testid="move-confirm-no"]').click()`);
+    await cdp.waitFor(`!document.querySelector('[data-testid="move-confirm"]')`);
+    expect(
+      (await readEvents(app.userDataDir)).some((event) => event.title === 'Coffee chat (moved)'),
+    ).toBe(true);
+    await cdp.clickButtonWithText('Delete');
+    await cdp.confirmDelete();
     await cdp.waitFor(`!document.querySelector('[title^="Coffee chat (moved)"]')`);
     const events = await readEvents(app.userDataDir);
     expect(events.some((event) => event.title === 'Coffee chat (moved)')).toBe(false);
@@ -1030,6 +1043,7 @@ describe('calendar desktop e2e', () => {
       await cdp.click(renamed.x + 40, renamed.y);
       await cdp.waitFor(`document.body.textContent.includes('Edit task')`);
       await cdp.clickButtonWithText('Delete');
+      await cdp.confirmDelete();
       await cdp.waitFor(`!document.querySelector('[title="Water the plants"]')`);
       await expect
         .poll(async () => {

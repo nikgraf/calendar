@@ -54,6 +54,8 @@ tags:
           direction: DOWN
       - tapOn:
           id: 'task-delete'
+      # The confirmation alert (deleteQuestion).
+      - tapOn: 'Delete'
       # Deleting an unpushed create sends nothing to Google; a pushed one
       # deletes server-side — either way the account ends clean.
       - extendedWaitUntil:
