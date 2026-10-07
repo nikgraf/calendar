@@ -1,7 +1,5 @@
 import {
-  BackendProvider,
   useGuardedMutations,
-  makeBackendAtoms,
   useBackendInvalidations,
   useCalendarNavigation,
   useCalendars,
@@ -41,33 +39,28 @@ import {
   Text,
   View,
 } from 'react-native';
-import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import {
   backendClient,
   kickSync,
   runLocalNotifications,
   startSync,
   subscribeInvalidations,
-} from './src/backend.ts';
-import { registerBackgroundRefresh } from './src/backgroundTask.ts';
-import { appleSpeech } from './src/appleSpeech.ts';
-import { fixtureShareFromUrl, takeIncomingShare } from './src/incomingShare.ts';
-import { languageModel, modelFixture, textRecognizer } from './src/model.ts';
+} from '../backend.ts';
+import { registerBackgroundRefresh } from '../backgroundTask.ts';
+import { appleSpeech } from '../appleSpeech.ts';
+import { fixtureShareFromUrl, takeIncomingShare } from '../incomingShare.ts';
+import { languageModel, modelFixture, textRecognizer } from '../model.ts';
 import { makeFindSlots, type CaptureSource } from '@calendar/ai';
-import { CaptureBanner } from './src/ui/CaptureBanner.tsx';
-import { CaptureSheet } from './src/ui/CaptureSheet.tsx';
-import { DayTimeline } from './src/ui/DayTimeline.tsx';
-
-import { QuickAddBar } from './src/ui/QuickAddBar.tsx';
-import { MonthGrid } from './src/ui/MonthGrid.tsx';
-import { EventEditSheet, type EditSeed } from './src/ui/EventEditSheet.tsx';
-import { SettingsSheet } from './src/ui/SettingsSheet.tsx';
-import { ConflictBanner, DroppedToast, MutationNoticeToast } from './src/ui/Toast.tsx';
-import { ErrorBoundary } from './src/ui/ErrorBoundary.tsx';
-import { palette } from './src/ui/theme.ts';
-import { WeekStrip } from './src/ui/WeekStrip.tsx';
-
-const backendAtoms = makeBackendAtoms(backendClient);
+import { CaptureBanner } from './CaptureBanner.tsx';
+import { CaptureSheet } from './CaptureSheet.tsx';
+import { DayTimeline } from './DayTimeline.tsx';
+import { QuickAddBar } from './QuickAddBar.tsx';
+import { MonthGrid } from './MonthGrid.tsx';
+import { EventEditSheet, type EditSeed } from './EventEditSheet.tsx';
+import { SettingsSheet } from './SettingsSheet.tsx';
+import { ConflictBanner, DroppedToast, MutationNoticeToast } from './Toast.tsx';
+import { palette } from './theme.ts';
+import { WeekStrip } from './WeekStrip.tsx';
 
 const SEGMENT_LABELS = { day: 'Day', month: 'Month', twoDay: '2 Days', week: 'Week' } as const;
 
@@ -81,7 +74,7 @@ const isShareUrl = (url: string) => /^[a-z-]+:\/\/expo-sharing/i.test(url);
  * followed by a re-layout would, near midnight with a distant primary,
  * also seed the focused day and "today" with the wrong date).
  */
-function CalendarScreen() {
+export function CalendarScreen() {
   useBackendInvalidations(subscribeInvalidations);
   useEffect(() => {
     startSync();
@@ -447,23 +440,7 @@ function CalendarBody({
   );
 }
 
-export function App() {
-  return (
-    <GestureHandlerRootView style={styles.root}>
-      <ErrorBoundary>
-        <BackendProvider atoms={backendAtoms}>
-          <CalendarScreen />
-        </BackendProvider>
-      </ErrorBoundary>
-    </GestureHandlerRootView>
-  );
-}
-
 const styles = StyleSheet.create({
-  root: {
-    flex: 1,
-  },
-  // eslint-disable-next-line perfectionist/sort-objects -- root first for clarity
   addLabel: {
     color: '#2563eb',
     fontSize: 18,
