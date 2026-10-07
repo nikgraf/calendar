@@ -431,6 +431,11 @@ export class PendingOp extends Schema.Class<PendingOp>('PendingOp')({
    */
   payload: Schema.optional(EventRecord),
   /**
+   * Set on a series update whose edit made the series a single event: the
+   * patch then sends an empty rule list (an absent key keeps Google's).
+   */
+  recurrenceCleared: Schema.optional(Schema.Boolean),
+  /**
    * Set on an update whose edit touched the reminders. Only then does the
    * patch carry `reminders` — Google replaces the whole object, and an
    * unrelated edit must not rewrite it from a possibly stale copy.

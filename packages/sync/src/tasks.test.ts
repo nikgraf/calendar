@@ -947,3 +947,51 @@ describe('completeTask', () => {
     }).pipe(Effect.provide(testLayer(tasksClient({})))),
   );
 });
+
+describe('tasks without a due day', () => {
+  it.effect('a create without a due day pushes no due and stays undated', () => {
+    const bodies: Array<Record<string, unknown>> = [];
+    const client: GoogleTasksClientShape = tasksClient({
+      insertTask: ({ task }) => {
+        bodies.push({ ...task });
+        return Effect.succeed({
+          id: 'server-undated',
+          status: 'needsAction',
+          title: task.title,
+          updated: '2026-08-24T10:00:00.000Z',
+        });
+      },
+    });
+    return Effect.gen(function* () {
+      yield* seedAccount(true);
+      yield* (yield* TaskRepo).upsertLists(
+        [
+          new TaskListInfo({
+            accountId: 'acc-1',
+            id: 'list-1',
+            isVisible: true,
+            provider: 'google',
+            title: 'My Tasks',
+          }),
+        ],
+        100,
+      );
+      const mutations = yield* EventMutations;
+      const temp = yield* mutations.createTask({
+        accountId: 'acc-1',
+        taskListId: 'list-1',
+        title: 'Someday',
+      });
+      expect(temp.dueDate).toBeUndefined();
+      yield* mutations.processPendingOps();
+      expect(bodies).toHaveLength(1);
+      expect(bodies[0]!['title']).toBe('Someday');
+      expect(bodies[0]!['due']).toBeUndefined();
+      const repo = yield* TaskRepo;
+      // Undated tasks are read apart from any window (and drawn on today).
+      const undated = yield* repo.getUndatedOpen();
+      expect(undated.map((task) => task.id)).toEqual(['server-undated']);
+      expect(undated[0]!.dueDate).toBeUndefined();
+    }).pipe(noYield, Effect.provide(testLayer(client)));
+  });
+});

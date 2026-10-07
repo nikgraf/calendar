@@ -62,6 +62,7 @@ const stubHandlers: BackendHandlers = {
   getBirthdayReminderSettings: () =>
     Effect.succeed({ enabled: false, leadDays: [0 as const], time: '09:00' }),
   getBirthdaysInRange: () => Effect.succeed([]),
+  getEvent: () => Effect.succeed(null),
   getEventNotificationSettings: () =>
     Effect.succeed({ enabled: true, includeAppleCalendar: false }),
   getEventsInRange: () => Effect.succeed([]),

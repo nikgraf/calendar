@@ -61,6 +61,7 @@ const opRow = (overrides: Partial<PendingOpRow> = {}): PendingOpRow => ({
   last_error: null,
   next_attempt_at: 0,
   payload: null,
+  recurrence_cleared: 0,
   reminders_changed: 0,
   server_payload: null,
   target_calendar_id: null,

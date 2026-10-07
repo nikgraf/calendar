@@ -116,6 +116,15 @@ const attendeesFlag = (
  * Whether this edit — or a still-queued update it replaces — dropped the
  * event's coordinates, so the patch must delete the server's geo keys.
  */
+/** The patch must send an empty rule list: this edit (or a queued one it replaces) cleared it. */
+const recurrenceClearedFlag = (
+  changes: UpdateEventParams['changes'],
+  queued: ReadonlyArray<PendingOp>,
+): true | undefined =>
+  changes.recurrence === null || queued.some((op) => op.recurrenceCleared === true)
+    ? true
+    : undefined;
+
 const geoClearedFlag = (
   before: EventRecord,
   after: EventRecord,
@@ -139,7 +148,8 @@ const definedChanges = (
   changes: UpdateEventParams['changes'],
   currentAttendees: EventRecord['attendees'],
 ): Partial<EventRecord> => {
-  const { attendees, geo, reminders, ...rest } = changes;
+  // The rule is never spread onto a row: each scope handles it itself.
+  const { attendees, geo, recurrence: _recurrence, reminders, ...rest } = changes;
   const defined: Partial<EventRecord> = Object.fromEntries(
     Object.entries(rest).filter(([, value]) => value !== undefined),
   );
@@ -1005,6 +1015,10 @@ const make: Effect.Effect<
         if (existing.recurringEventId || existing.recurrence) {
           return yield* Effect.fail(new RecurringEditUnsupportedError({ eventId }));
         }
+        if (changes.recurrence !== undefined) {
+          // A single event does not become a series through an update.
+          return yield* Effect.fail(new RecurringEditUnsupportedError({ eventId }));
+        }
         const now = yield* Clock.currentTimeMillis;
         const merged = withConsistentGeo(
           new EventRecord({
@@ -1056,6 +1070,10 @@ const make: Effect.Effect<
         // instance edit merges against the occurrence's own list below —
         // an override can carry responses the master does not.
         const defined = definedChanges(changes, master.attendees);
+        if (scope === 'instance' && changes.recurrence !== undefined) {
+          // One occurrence cannot carry its own rule.
+          return yield* Effect.fail(new RecurringEditUnsupportedError({ eventId: masterId }));
+        }
 
         if (scope === 'instance') {
           // Materialize (or update) the exception under its instance id; the
@@ -1135,6 +1153,13 @@ const make: Effect.Effect<
                   changes.startUtc,
                 )
               : master.startUtc;
+          // A new rule — or none — orphans the exceptions: they belong to
+          // occurrences of the old rule. Google drops them with it; so do we.
+          if (changes.recurrence !== undefined) {
+            yield* dropOverridesFrom(accountId, calendarId, masterId, 0, now, {
+              remote: !unsentCreate,
+            });
+          }
           const merged = withConsistentGeo(
             new EventRecord({
               ...master,
@@ -1143,6 +1168,10 @@ const make: Effect.Effect<
               endUtc: master.isAllDay ? master.endUtc : startUtc + duration,
               geo: changes.geo === undefined ? master.geo : (changes.geo ?? undefined),
               location: changes.location ?? master.location,
+              recurrence:
+                changes.recurrence === undefined
+                  ? master.recurrence
+                  : (changes.recurrence ?? undefined),
               reminders: defined.reminders ?? master.reminders,
               startUtc: master.isAllDay ? master.startUtc : startUtc,
               syncStatus: 'pending',
@@ -1184,6 +1213,7 @@ const make: Effect.Effect<
               kind: 'update',
               nextAttemptAt: 0,
               payload: merged,
+              recurrenceCleared: recurrenceClearedFlag(changes, queued),
               remindersChanged: remindersFlag(changes, queued),
             }),
           );
@@ -1244,9 +1274,16 @@ const make: Effect.Effect<
             etag: null,
             id: generateEventId(),
             originalStartUtc: undefined,
-            // Splitting a set of only RDATE lines on its last value leaves
-            // nothing to repeat: the new half is a single event.
-            recurrence: isRecurringSet(newRecurrence) ? newRecurrence : undefined,
+            // The edit's own rule wins (null: the occurrence becomes a single
+            // event). Otherwise the remainder of the old one — and splitting
+            // a set of only RDATE lines on its last value leaves nothing to
+            // repeat: the new half is a single event.
+            recurrence:
+              changes.recurrence === undefined
+                ? isRecurringSet(newRecurrence)
+                  ? newRecurrence
+                  : undefined
+                : (changes.recurrence ?? undefined),
             recurringEventId: undefined,
             startUtc,
             syncedAt: 0,

@@ -409,10 +409,14 @@ export const makeFakeAppleCalendarClient = (
         }
         if (isFirst(series, ref)) {
           const next = applyWrite(series.event, changes, now);
-          series.event = { ...next, occurrenceStartUtc: next.startUtc };
           if (changes.recurrence !== undefined) {
             series.rules = changes.recurrence ? [...changes.recurrence] : [];
           }
+          series.event = {
+            ...next,
+            hasRecurrence: series.rules.length > 0,
+            occurrenceStartUtc: next.startUtc,
+          };
           series.detached.clear();
           series.deleted.clear();
           return series.event;
@@ -438,7 +442,11 @@ export const makeFakeAppleCalendarClient = (
         truncateAt(series, slot);
         const id = newId();
         const started = applyWrite({ ...current, id, isDetached: false }, changes, now);
-        const event = { ...started, occurrenceStartUtc: started.startUtc };
+        const event = {
+          ...started,
+          hasRecurrence: continued.length > 0,
+          occurrenceStartUtc: started.startUtc,
+        };
         state.series.set(id, {
           deleted: new Set(),
           detached: new Map(),

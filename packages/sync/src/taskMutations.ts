@@ -102,7 +102,7 @@ export const makeTaskMutations = (deps: TaskMutationDeps): TaskMutations => {
         const tempId = `local-${generateEventId()}`;
         const record = new TaskRecord({
           accountId,
-          dueDate,
+          ...(dueDate === undefined ? {} : { dueDate }),
           id: tempId,
           listId: taskListId,
           ...(notes === undefined ? {} : { notes }),

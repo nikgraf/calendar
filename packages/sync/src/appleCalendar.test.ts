@@ -539,3 +539,58 @@ describe('Apple Calendar mutations', () => {
     }).pipe(Effect.provide(testLayer(fake)));
   });
 });
+
+describe('Apple Calendar recurrence rule edits', () => {
+  const standups = (fake: ReturnType<typeof makeFakeAppleCalendarClient>) =>
+    Effect.runSync(fake.client.events({ endUtc: window.end, startUtc: window.start })).filter(
+      (entry) => entry.title === 'Standup',
+    );
+  const target = {
+    accountId: APPLE_CALENDAR_ACCOUNT_ID,
+    calendarId: 'ek-home',
+    masterId: 'ek-series',
+  };
+
+  it.effect(
+    'a series takes a new rule, a later occurrence can end it, EventKit-only parts are refused',
+    () => {
+      const fake = fakeWith();
+      return Effect.gen(function* () {
+        yield* connected;
+        const mutations = yield* EventMutations;
+        expect(standups(fake)).toHaveLength(4);
+        yield* mutations.updateRecurring({
+          ...target,
+          changes: { recurrence: ['RRULE:FREQ=DAILY;COUNT=3'] },
+          originalStartUtc: seriesStart + 7 * DAY,
+          scope: 'series',
+        });
+        expect(standups(fake).map((entry) => entry.startUtc)).toEqual([
+          seriesStart,
+          seriesStart + DAY,
+          seriesStart + 2 * DAY,
+        ]);
+        // "Does not repeat" from the second day on: the series ends before
+        // it and the second day stays as a single event.
+        yield* mutations.updateRecurring({
+          ...target,
+          changes: { recurrence: null },
+          originalStartUtc: seriesStart + DAY,
+          scope: 'following',
+        });
+        const left = standups(fake);
+        expect(left.map((entry) => entry.startUtc)).toEqual([seriesStart, seriesStart + DAY]);
+        expect(left[1]!.hasRecurrence).toBe(false);
+        const refused = yield* Effect.flip(
+          mutations.updateRecurring({
+            ...target,
+            changes: { recurrence: ['RRULE:FREQ=DAILY', 'EXDATE:20260704T090000Z'] },
+            originalStartUtc: seriesStart,
+            scope: 'series',
+          }),
+        );
+        expect(refused).toMatchObject({ _tag: 'UnsupportedForProviderError', provider: 'apple' });
+      }).pipe(Effect.provide(testLayer(fake)));
+    },
+  );
+});

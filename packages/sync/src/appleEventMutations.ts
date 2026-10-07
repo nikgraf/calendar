@@ -8,7 +8,12 @@ import {
   type Span,
   toEventWrite,
 } from '@calendar/apple-calendar';
-import { applyWallClockDelta, type EventReminders, normalizeHexColor } from '@calendar/core';
+import {
+  applyWallClockDelta,
+  type EventReminders,
+  normalizeHexColor,
+  toStructuredRules,
+} from '@calendar/core';
 import type { AccountRepoShape, CalendarRepoShape } from '@calendar/db';
 import { Clock, Effect } from 'effect';
 import type { AppleCalendarEventsShape } from './appleCalendarEvents.ts';
@@ -17,9 +22,42 @@ import {
   type EventMutationsShape,
   InvalidColorError,
   RecurringAllDaySwitchError,
+  RecurringEditUnsupportedError,
   type UpdateEventParams,
   UnsupportedForProviderError,
 } from './mutationTypes.ts';
+
+/**
+ * The rule part of an edit as the bridge takes it: null clears the series,
+ * lines convert to structured rules — or are refused when EventKit cannot
+ * hold a part (an EXDATE, a BYHOUR), never silently narrowed.
+ */
+const ruleWrite = (
+  changes: UpdateEventParams['changes'],
+  first: { readonly isAllDay: boolean; readonly timeZone?: string | undefined },
+): Effect.Effect<Pick<EventWrite, 'recurrence'>, UnsupportedForProviderError> =>
+  Effect.gen(function* () {
+    if (changes.recurrence === undefined) {
+      return {};
+    }
+    if (changes.recurrence === null) {
+      return { recurrence: null };
+    }
+    const converted = toStructuredRules(
+      changes.recurrence,
+      first.isAllDay,
+      first.timeZone ?? deviceTimeZone(),
+    );
+    if (converted.unsupported.length > 0) {
+      return yield* Effect.fail(
+        new UnsupportedForProviderError({
+          field: `recurrence (${converted.unsupported.join(', ')})`,
+          provider: 'apple',
+        }),
+      );
+    }
+    return { recurrence: converted.rules };
+  });
 
 /**
  * The Apple Calendar half of the event mutations. EventKit is local and
@@ -177,6 +215,10 @@ export const makeAppleEventMutations = (deps: AppleEventMutationDeps): AppleEven
       Effect.gen(function* () {
         yield* rejectGuests(changes);
         yield* rejectUnsupportedReminders(changes.reminders);
+        if (changes.recurrence !== undefined) {
+          // A single event does not become a series through an update.
+          return yield* Effect.fail(new RecurringEditUnsupportedError({ eventId }));
+        }
         yield* client.update({
           changes: toEventWrite(changes),
           ref: { id: eventId },
@@ -188,17 +230,23 @@ export const makeAppleEventMutations = (deps: AppleEventMutationDeps): AppleEven
       Effect.gen(function* () {
         yield* rejectGuests(changes);
         yield* rejectUnsupportedReminders(changes.reminders);
+        if (scope === 'instance' && changes.recurrence !== undefined) {
+          // One occurrence cannot carry its own rule.
+          return yield* Effect.fail(new RecurringEditUnsupportedError({ eventId: masterId }));
+        }
         // The series keeps its kind, like a Google one (RecurringAllDaySwitchError).
+        // A rule edit needs the series too: its kind and zone shape the rules.
         const series =
-          scope === 'series' || changes.isAllDay !== undefined
+          scope === 'series' || changes.isAllDay !== undefined || changes.recurrence !== undefined
             ? yield* client.series({ id: masterId })
             : undefined;
         if (changes.isAllDay !== undefined && changes.isAllDay !== series?.first.isAllDay) {
           return yield* Effect.fail(new RecurringAllDaySwitchError({ eventId: masterId }));
         }
         if (scope !== 'series' || !series) {
+          const rule = series ? yield* ruleWrite(changes, series.first) : {};
           yield* client.update({
-            changes: toEventWrite(changes),
+            changes: { ...toEventWrite(changes), ...rule },
             ref: { id: masterId, originalStartUtc },
             span: scope === 'instance' ? 'thisEvent' : 'futureEvents',
           });
@@ -221,7 +269,7 @@ export const makeAppleEventMutations = (deps: AppleEventMutationDeps): AppleEven
           startUtc,
           ...rest
         } = changes;
-        let write: EventWrite = toEventWrite(rest);
+        let write: EventWrite = { ...toEventWrite(rest), ...(yield* ruleWrite(changes, first)) };
         if (!first.isAllDay && startUtc !== undefined) {
           const zone = first.timeZone ?? deviceTimeZone();
           const shifted = applyWallClockDelta(first.startUtc, zone, originalStartUtc, startUtc);
