@@ -2234,7 +2234,9 @@ came with a failing test first.
       tab is answered once the outcome is known** (after the code
       exchange; state checked first, reason escaped). **Cancel** stops a
       sign-in waiting on the browser (`auth:cancel` preload IPC — no
-      calendar data, so not rpc). **A cancellation is no error**:
+      calendar data, so not rpc), and stays in force through the code
+      exchange, which races it (review of #132: a slow token endpoint
+      let the account be added after Cancel). **A cancellation is no error**:
       `SignInCancelledError` (sheet dismissed, `access_denied`, Cancel)
       crosses as BackendError's tag and neither app nor the mutation
       toasts show it. **`addAccount({ loginHint })`**: a reconnect sends
