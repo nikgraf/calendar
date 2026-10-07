@@ -7,7 +7,12 @@ import {
   usePendingOpsRead,
   useSyncStatus,
 } from '@calendar/app-state';
-import { type Account, historyStatusLabel, isAppleCalendarAccount } from '@calendar/core';
+import {
+  type Account,
+  historyStatusLabel,
+  isAppleCalendarAccount,
+  isSignInCancelled,
+} from '@calendar/core';
 import { useState } from 'react';
 
 /** The connected accounts and their calendars: the top of the settings window's Accounts pane. */
@@ -43,13 +48,17 @@ export function AccountsView() {
     void guarded.removeAccount({ accountId: account.id });
   };
 
-  const addAccount = async () => {
+  /** `loginHint`: the account being reconnected — Google opens on it. */
+  const addAccount = async (loginHint?: string) => {
     setBusy(true);
     setError(null);
     try {
-      await mutations.addAccount(undefined);
+      await mutations.addAccount(loginHint === undefined ? {} : { loginHint });
     } catch (error) {
-      setError(String(error));
+      // Cancelled in the browser or here: nothing went wrong.
+      if (!isSignInCancelled(error)) {
+        setError(String(error));
+      }
     } finally {
       setBusy(false);
     }
@@ -59,14 +68,27 @@ export function AccountsView() {
     <div className="flex flex-col gap-4">
       <header className="flex items-center justify-between">
         <h2 className="font-medium">Connected accounts</h2>
-        <button
-          className="rounded-lg bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50"
-          disabled={busy}
-          onClick={() => void addAccount()}
-          type="button"
-        >
-          {busy ? 'Waiting for Google…' : 'Add Google Account'}
-        </button>
+        {busy ? (
+          <span className="flex items-center gap-2 text-sm text-neutral-500">
+            Waiting for Google in your browser…
+            <button
+              className="rounded-lg px-2 py-1 text-neutral-700 hover:bg-neutral-100"
+              data-testid="sign-in-cancel"
+              onClick={() => void window.calendarBridge.authCancel()}
+              type="button"
+            >
+              Cancel
+            </button>
+          </span>
+        ) : (
+          <button
+            className="rounded-lg bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-500"
+            onClick={() => void addAccount()}
+            type="button"
+          >
+            Add Google Account
+          </button>
+        )}
       </header>
 
       {error ? (
@@ -102,8 +124,9 @@ export function AccountsView() {
                     </span>
                   ) : (
                     <button
-                      className="ml-2 text-blue-600 hover:underline"
-                      onClick={() => void addAccount()}
+                      className="ml-2 text-blue-600 hover:underline disabled:opacity-50"
+                      disabled={busy}
+                      onClick={() => void addAccount(account.email)}
                       type="button"
                     >
                       {account.displayName ? 'Sign in again' : 'Sign in'}

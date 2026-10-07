@@ -1,6 +1,7 @@
 import {
   makeDirectBackendClient,
   mapToBackendError,
+  SignInCancelledError,
   Temporal,
   type BackendClient,
   type BackendHandlers,
@@ -147,7 +148,7 @@ const runtime = ManagedRuntime.make(appLayer);
 const handlers: BackendHandlers<CommonBackendServices | TokenManager> = {
   ...commonBackendHandlers,
 
-  addAccount: () =>
+  addAccount: ({ loginHint }) =>
     Effect.gen(function* () {
       if (!iosClientId) {
         return yield* Effect.fail(
@@ -161,8 +162,11 @@ const handlers: BackendHandlers<CommonBackendServices | TokenManager> = {
       }
       const tokenManager = yield* TokenManager;
       const grant = yield* Effect.tryPromise({
-        catch: (error) => new OAuthNotConfiguredError({ message: String(error) }),
-        try: () => signInWithGoogle(iosClientId ?? ''),
+        catch: (error) =>
+          error instanceof SignInCancelledError
+            ? error
+            : new OAuthNotConfiguredError({ message: String(error) }),
+        try: () => signInWithGoogle(iosClientId ?? '', loginHint),
       });
       const result = yield* tokenManager.exchangeCode(grant);
       return yield* finishAddAccount(result, () => crypto.randomUUID());

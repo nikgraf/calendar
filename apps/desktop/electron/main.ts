@@ -18,6 +18,7 @@ import {
   rendererUrl,
   showMainWindow,
 } from './windows.ts';
+import { cancelGoogleSignIn } from './auth/loopbackFlow.ts';
 
 /**
  * The renderer loads nothing remote: scripts and styles are its own
@@ -79,6 +80,10 @@ initFileLogging(app.getPath('userData'));
 initPrivacy(app.getPath('userData'));
 ipcMain.on('renderer-error', (_event, text: unknown) => {
   logRendererError(String(text).slice(0, MAX_RENDERER_ERROR_CHARS));
+});
+// Accounts › Cancel: the sign-in waiting on the browser fails as cancelled.
+ipcMain.handle('auth:cancel', () => {
+  cancelGoogleSignIn();
 });
 
 /**

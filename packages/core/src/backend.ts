@@ -1,4 +1,4 @@
-import { Cause, Effect, Schema } from 'effect';
+import { Cause, Data, Effect, Schema } from 'effect';
 import { Rpc, RpcGroup } from 'effect/rpc';
 import type { RpcClientError } from 'effect/rpc/RpcClientError';
 import {
@@ -219,8 +219,31 @@ export class BackendError extends Schema.Error<BackendError>('core/BackendError'
   tag: Schema.String,
 }) {}
 
+/**
+ * "Add Google Account" / "Sign in again". `loginHint` is the account being
+ * reconnected: Google opens on it instead of the account chooser, so
+ * picking another account by mistake no longer adds that one.
+ */
+export const AddAccountParams = Schema.Struct({
+  loginHint: Schema.optional(Schema.String),
+});
+export type AddAccountParams = Schema.Schema.Type<typeof AddAccountParams>;
+
+/**
+ * The user stopped a sign-in: the consent sheet was dismissed, Google
+ * reported `access_denied`, or the desktop's Cancel. Not an error to show.
+ */
+export class SignInCancelledError extends Data.TaggedError('SignInCancelledError')<{
+  readonly message: string;
+}> {}
+
+/** Whether a failed addAccount was the user cancelling (as it crosses the wire). */
+export const isSignInCancelled = (error: unknown): boolean =>
+  (error instanceof BackendError && error.tag === 'SignInCancelledError') ||
+  error instanceof SignInCancelledError;
+
 export class AppBackendRpcs extends RpcGroup.make(
-  Rpc.make('addAccount', { error: BackendError, success: Account }),
+  Rpc.make('addAccount', { error: BackendError, payload: AddAccountParams, success: Account }),
   /** Wipes the on-device location geocode cache (Settings). */
   Rpc.make('clearLocationCache', { error: BackendError }),
   Rpc.make('completeTask', {

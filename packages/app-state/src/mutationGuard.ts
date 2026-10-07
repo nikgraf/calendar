@@ -1,3 +1,4 @@
+import { isSignInCancelled } from '@calendar/core';
 import { useMemo } from 'react';
 import { useBackendMutations } from './hooks.ts';
 
@@ -43,7 +44,8 @@ const MAX_DETAIL = 140;
 
 /**
  * Wrap a promise-returning mutation: the result never rejects; a rejection
- * publishes a MutationNotice instead. Exported for tests.
+ * publishes a MutationNotice instead — except a sign-in the user cancelled,
+ * which is not a failure. Exported for tests.
  */
 export const guardMutation =
   <Args extends ReadonlyArray<unknown>>(
@@ -54,6 +56,9 @@ export const guardMutation =
     run(...args).then(
       () => undefined,
       (error: unknown) => {
+        if (isSignInCancelled(error)) {
+          return;
+        }
         const raw = error instanceof Error ? error.message : String(error);
         publishMutationNotice({
           action,

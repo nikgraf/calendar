@@ -12,7 +12,12 @@ import {
   contactsStatusCopy,
   remindersStatusCopy,
 } from '@calendar/app-state';
-import { isAppleCalendarAccount, isAppleRemindersAccount, isParkedOp } from '@calendar/core';
+import {
+  isAppleCalendarAccount,
+  isAppleRemindersAccount,
+  isParkedOp,
+  isSignInCancelled,
+} from '@calendar/core';
 import { Effect } from 'effect';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
@@ -184,7 +189,8 @@ export function SettingsSheet({ onClose, visible }: { onClose: () => void; visib
     }
   };
 
-  const addAccount = async () => {
+  /** `loginHint`: the account being reconnected — Google opens on it. */
+  const addAccount = async (loginHint?: string) => {
     if (busyRef.current) {
       return;
     }
@@ -192,9 +198,12 @@ export function SettingsSheet({ onClose, visible }: { onClose: () => void; visib
     setConnecting('google');
     setError(null);
     try {
-      await mutations.addAccount(undefined);
+      await mutations.addAccount(loginHint === undefined ? {} : { loginHint });
     } catch (error) {
-      setError(String(error));
+      // A dismissed sheet is the user changing their mind, not an error.
+      if (!isSignInCancelled(error)) {
+        setError(String(error));
+      }
     } finally {
       busyRef.current = false;
       setConnecting(null);
@@ -255,7 +264,7 @@ export function SettingsSheet({ onClose, visible }: { onClose: () => void; visib
               busy={busy}
               calendars={calendars}
               key={account.id}
-              onReconnect={() => void addAccount()}
+              onReconnect={() => void addAccount(account.email)}
               syncStatus={syncStatus.find((entry) => entry.accountId === account.id)}
               taskLists={taskLists}
             />

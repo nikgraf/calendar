@@ -36,6 +36,8 @@ declare global {
         changes: { name?: string; policy?: AgentPolicy },
       ) => Promise<AgentView | undefined>;
       appleCalendarStatus: () => Promise<string>;
+      /** Stops a Google sign-in waiting on the browser: it fails as cancelled. */
+      authCancel: () => Promise<void>;
       contactsStatus: () => Promise<string>;
       logError?: (text: string) => void;
       modelGenerate: (schema: unknown, prompt: string) => Promise<{ json: string }>;
