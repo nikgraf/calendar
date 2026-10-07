@@ -94,6 +94,24 @@ describe('runGoogleSignIn', () => {
     expect(Exit.isFailure(exit) && JSON.stringify(exit.cause)).toContain('SignInCancelledError');
   });
 
+  it('Cancel still works while the code exchange is pending', async () => {
+    // Google's token endpoint is slow: the UI still offers Cancel, and the
+    // account must not be added after it was pressed.
+    let exchanging = false;
+    const flow = await start(() =>
+      Effect.suspend(() => {
+        exchanging = true;
+        return Effect.never;
+      }),
+    );
+    const page = flow.callback({ code: 'the-code', state: flow.state });
+    await vi.waitFor(() => expect(exchanging).toBe(true));
+    cancelGoogleSignIn();
+    const exit = await flow.outcome;
+    expect(Exit.isFailure(exit) && JSON.stringify(exit.cause)).toContain('SignInCancelledError');
+    expect(await page).toContain('Sign-in cancelled');
+  });
+
   it('opens a reconnect on its account instead of the chooser', async () => {
     const reconnect = await start(exchangeOk, { loginHint: 'nik@example.com' });
     expect(reconnect.auth.searchParams.get('login_hint')).toBe('nik@example.com');

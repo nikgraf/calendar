@@ -8,7 +8,7 @@ import {
   type CodeExchangeResult,
 } from '@calendar/google';
 import { shell } from 'electron';
-import { Data, Effect, Exit } from 'effect';
+import { Cause, Data, Effect, Exit } from 'effect';
 
 const AUTH_ENDPOINT = 'https://accounts.google.com/o/oauth2/v2/auth';
 
@@ -35,6 +35,12 @@ const CANCELLED = 'Sign-in cancelled — you can close this tab.';
 const failed = (why: string) => `Sign-in failed: ${why}. Return to Solunivo and try again.`;
 
 const FLOW_TIMEOUT_MS = 5 * 60 * 1000;
+
+const isCancelled = (exit: Exit.Exit<unknown, unknown>): boolean =>
+  Exit.isFailure(exit) &&
+  exit.cause.reasons.some(
+    (reason) => Cause.isFailReason(reason) && reason.error instanceof SignInCancelledError,
+  );
 
 /** Google's answer on the loopback, held open until the outcome is known. */
 interface Callback {
@@ -159,7 +165,15 @@ export const runGoogleSignIn = (
       },
     );
 
-    return yield* tokenManager
+    // Cancel stays in force through the code exchange — Accounts still
+    // offers it, and a slow token endpoint must not add the account after
+    // it was pressed: the exchange races the Cancel.
+    let cancelExchange: (() => void) | undefined;
+    const cancelled = new Promise<void>((resolve) => {
+      cancelExchange = resolve;
+    });
+    cancelCurrent = cancelExchange;
+    const exchange = tokenManager
       .exchangeCode({
         code: callback.code,
         codeVerifier: pkce.verifier,
@@ -169,12 +183,27 @@ export const runGoogleSignIn = (
         Effect.catchTag('TokenRefreshError', (error) =>
           Effect.fail(new AuthFlowError({ reason: `code exchange failed: ${error.message}` })),
         ),
-        Effect.onExit((exit) =>
-          Effect.sync(() =>
-            callback.answer(
-              Exit.isSuccess(exit) ? SIGNED_IN : failed('the sign-in could not be completed'),
-            ),
-          ),
-        ),
       );
+    return yield* Effect.raceFirst(
+      exchange,
+      Effect.andThen(
+        Effect.promise(() => cancelled),
+        Effect.fail(new SignInCancelledError({ message: 'sign-in cancelled' })),
+      ),
+    ).pipe(
+      Effect.onExit((exit) =>
+        Effect.sync(() => {
+          if (cancelCurrent === cancelExchange) {
+            cancelCurrent = undefined;
+          }
+          callback.answer(
+            Exit.isSuccess(exit)
+              ? SIGNED_IN
+              : isCancelled(exit)
+                ? CANCELLED
+                : failed('the sign-in could not be completed'),
+          );
+        }),
+      ),
+    );
   });
