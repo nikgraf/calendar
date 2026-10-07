@@ -2214,7 +2214,10 @@ came with a failing test first.
 - [x] Desktop dialogs — #130 (`todo/dialog-escape`). **One stack of open
       dialogs; only the topmost (highest zIndex, then the last opened)
       answers Escape and traps Tab** — stopPropagation does not stop
-      another window listener, so one Escape closed them all. The
+      another window listener, so one Escape closed them all. Escape
+      stops with stopImmediatePropagation (review of #130): for a native
+      key React commits the closed dialog's unmount between listeners,
+      and the next one found itself on top. The
       calendar's keys and its paste stand back for any dialog
       (`isDialogOpen`), the agent approval App opens included; ⌘K opens
       its bar over none.
