@@ -1,3 +1,4 @@
+import { SegmentedControl } from '../ui/SegmentedControl.tsx';
 import {
   calendarGroups,
   RSVP_OPTIONS,
@@ -9,7 +10,7 @@ import {
 } from '@calendar/app-state';
 import { type CalendarInfo, draftZoneRange } from '@calendar/core';
 import { InviteeCombobox } from './InviteeCombobox.tsx';
-import { FIELD_CLASS as field } from './fieldStyles.ts';
+import { FIELD_CLASS as field } from '../ui/fieldStyles.ts';
 import { LocationCombobox } from './LocationCombobox.tsx';
 import { LocationMap } from './LocationMap.tsx';
 import { MoveConfirm } from './MoveConfirm.tsx';
@@ -97,28 +98,15 @@ export function EventEditorForm({
           <p className="select-text rounded-lg bg-red-50 p-2 text-sm text-red-700">{error}</p>
         ) : null}
         {isRecurring ? (
-          <div
-            aria-label="Apply to"
-            className="flex rounded-lg border border-hairline bg-surface p-0.5"
-            role="radiogroup"
-          >
-            {SCOPE_OPTIONS.map((option) => (
-              <button
-                aria-checked={scope === option.value}
-                className={`flex-1 rounded-md px-2 py-1 text-xs font-medium ${
-                  scope === option.value
-                    ? 'bg-primary text-on-primary'
-                    : 'text-ink-secondary hover:bg-fill'
-                }`}
-                key={option.value}
-                onClick={() => setScope(option.value)}
-                role="radio"
-                type="button"
-              >
-                {option.label}
-              </button>
-            ))}
-          </div>
+          <SegmentedControl
+            className="w-full"
+            grow
+            label="Apply to"
+            onChange={setScope}
+            options={SCOPE_OPTIONS.map((option) => ({ label: option.label, value: option.value }))}
+            size="sm"
+            value={scope}
+          />
         ) : null}
         <input
           autoFocus

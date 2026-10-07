@@ -1,3 +1,4 @@
+import { SegmentedControl } from '../ui/SegmentedControl.tsx';
 import {
   REMINDER_ALARM_OPTIONS,
   REMINDER_PRIORITY_OPTIONS,
@@ -8,13 +9,8 @@ import type { TaskRecord } from '@calendar/core';
 import { MoveConfirm } from './MoveConfirm.tsx';
 import { NoDueDate } from './NoDueDate.tsx';
 import { RepeatRuleFields } from './RepeatRuleFields.tsx';
-import { FIELD_CLASS, LABEL_CLASS } from './taskEditorOptions.ts';
+import { FIELD_CLASS, LABEL_CLASS } from '../ui/fieldStyles.ts';
 import { TaskListSelect } from './TaskListSelect.tsx';
-
-const segment = (active: boolean) =>
-  `rounded-md px-2 py-1 text-xs font-medium ${
-    active ? 'bg-primary text-on-primary' : 'text-ink-secondary hover:bg-fill'
-  }`;
 
 /**
  * The Reminders form — what EventKit can do that Google Tasks cannot: a
@@ -92,24 +88,25 @@ export function ReminderEditorForm({
       )}
       <div>
         <span className={LABEL_CLASS}>Priority</span>
-        <div
-          aria-label="Priority"
-          className="mt-1 flex rounded-lg border border-hairline bg-surface-subtle p-0.5"
-          role="radiogroup"
-        >
-          {REMINDER_PRIORITY_OPTIONS.map((option) => (
-            <button
-              aria-checked={taskModel.priority === option.value}
-              className={`flex-1 ${segment(taskModel.priority === option.value)}`}
-              key={option.label}
-              onClick={() => taskModel.setPriority(option.value)}
-              role="radio"
-              type="button"
-            >
-              {option.label}
-            </button>
-          ))}
-        </div>
+        <SegmentedControl
+          className="mt-1 w-full"
+          grow
+          label="Priority"
+          onChange={(value) =>
+            taskModel.setPriority(
+              REMINDER_PRIORITY_OPTIONS.find((option) => option.label === value)?.value,
+            )
+          }
+          options={REMINDER_PRIORITY_OPTIONS.map((option) => ({
+            label: option.label,
+            value: option.label,
+          }))}
+          size="sm"
+          value={
+            REMINDER_PRIORITY_OPTIONS.find((option) => option.value === taskModel.priority)
+              ?.label ?? 'None'
+          }
+        />
       </div>
       <label className={LABEL_CLASS}>
         Alert

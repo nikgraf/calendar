@@ -1,4 +1,4 @@
-import { LABEL_CLASS } from './taskEditorOptions.ts';
+import { LABEL_CLASS } from '../ui/fieldStyles.ts';
 
 /**
  * The Due row of a task that has no due day: the calendar shows it on

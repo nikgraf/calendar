@@ -1,3 +1,4 @@
+import { SegmentedControl } from '../ui/SegmentedControl.tsx';
 import { makeFindSlots, type CaptureSource } from '@calendar/ai';
 import {
   useModelAvailability,
@@ -100,20 +101,16 @@ export function CommandBar({
         ) : (
           <>
             <div className="flex items-center gap-2">
-              <div className="flex rounded-lg border border-hairline bg-surface-subtle p-0.5">
-                {(['add', 'find'] as const).map((option) => (
-                  <button
-                    className={`rounded-md px-2 py-1 text-xs font-medium ${
-                      mode === option ? 'bg-primary text-on-primary' : 'text-ink-secondary'
-                    }`}
-                    key={option}
-                    onClick={() => setMode(option)}
-                    type="button"
-                  >
-                    {option === 'add' ? 'Add' : 'Find'}
-                  </button>
-                ))}
-              </div>
+              <SegmentedControl
+                label="Mode"
+                onChange={setMode}
+                options={[
+                  { label: 'Add', value: 'add' },
+                  { label: 'Find', value: 'find' },
+                ]}
+                size="sm"
+                value={mode}
+              />
               <input
                 className="flex-1 rounded-lg border border-hairline px-3 py-2 text-sm"
                 disabled={busy}

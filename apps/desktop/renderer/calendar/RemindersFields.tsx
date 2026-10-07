@@ -5,7 +5,7 @@ import {
   REMINDER_PRESET_MINUTES,
   reminderLabel,
 } from '@calendar/core';
-import { FIELD_CLASS as field } from './fieldStyles.ts';
+import { FIELD_CLASS as field } from '../ui/fieldStyles.ts';
 
 /**
  * The event's reminders. Google: a "calendar default" checkbox (what it

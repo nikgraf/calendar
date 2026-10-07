@@ -2,7 +2,7 @@ import type { useMoveConfirmation, useTaskEditorModel } from '@calendar/app-stat
 import type { TaskRecord } from '@calendar/core';
 import { MoveConfirm } from './MoveConfirm.tsx';
 import { NoDueDate } from './NoDueDate.tsx';
-import { FIELD_CLASS, LABEL_CLASS } from './taskEditorOptions.ts';
+import { FIELD_CLASS, LABEL_CLASS } from '../ui/fieldStyles.ts';
 import { TaskListSelect } from './TaskListSelect.tsx';
 
 /**

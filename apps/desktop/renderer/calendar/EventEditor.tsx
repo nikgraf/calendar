@@ -1,3 +1,4 @@
+import { SegmentedControl } from '../ui/SegmentedControl.tsx';
 import {
   type EditorSourceKind,
   switchEditorMode,
@@ -144,27 +145,29 @@ export function EventEditor({
         </div>
 
         {showToggle ? (
-          <div className="mb-3 flex rounded-lg border border-hairline bg-surface p-0.5">
-            {(['event', 'task'] as const).map((option) => (
-              <button
-                className={`flex-1 rounded-md px-2 py-1 text-xs font-medium disabled:opacity-50 ${
-                  mode === option ? 'bg-primary text-on-primary' : 'text-ink-secondary'
-                }`}
-                data-testid={`mode-${option}`}
-                disabled={moveConfirmation.pending !== null || (option === 'task' && seriesOnly)}
-                key={option}
-                onClick={() => void switchTo(option)}
-                title={
-                  option === 'task' && seriesOnly
-                    ? 'Choose "All events" to convert a series'
-                    : undefined
-                }
-                type="button"
-              >
-                {option === 'event' ? 'Event' : 'Task'}
-              </button>
-            ))}
-          </div>
+          <SegmentedControl
+            className="mb-3 w-full"
+            grow
+            label="Kind"
+            onChange={(option) => void switchTo(option)}
+            options={[
+              {
+                disabled: moveConfirmation.pending !== null,
+                label: 'Event',
+                testId: 'mode-event',
+                value: 'event',
+              },
+              {
+                disabled: moveConfirmation.pending !== null || seriesOnly,
+                label: 'Task',
+                testId: 'mode-task',
+                title: seriesOnly ? 'Choose "All events" to convert a series' : undefined,
+                value: 'task',
+              },
+            ]}
+            size="sm"
+            value={mode === 'task' ? 'task' : 'event'}
+          />
         ) : null}
 
         {mode === 'birthday' && birthday ? (

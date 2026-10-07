@@ -1,6 +1,6 @@
 import { taskListGroups, useAccounts, type useTaskEditorModel } from '@calendar/app-state';
 import { APPLE_REMINDERS_ACCOUNT_ID, type TaskListInfo } from '@calendar/core';
-import { FIELD_CLASS, LABEL_CLASS } from './taskEditorOptions.ts';
+import { FIELD_CLASS, LABEL_CLASS } from '../ui/fieldStyles.ts';
 
 /** Which account a task list belongs to; the Reminders account is the one synthetic one. */
 const groupLabel = (list: TaskListInfo, accountLabel: (accountId: string) => string): string =>

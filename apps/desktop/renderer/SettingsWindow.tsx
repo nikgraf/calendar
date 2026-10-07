@@ -1,3 +1,4 @@
+import { PANE_ICON_PATHS } from './ui/icons.tsx';
 import { type ReactNode, useEffect, useState, useSyncExternalStore } from 'react';
 import { AccountsView } from './AccountsView.tsx';
 import { AgentsSection } from './agents/AgentsSection.tsx';
@@ -57,49 +58,6 @@ const PANE_CONTENT: Record<SettingsPaneId, ReactNode> = {
     <>
       <EventNotificationsSection />
       <BirthdayRemindersSection />
-    </>
-  ),
-};
-
-const PANE_ICON: Record<SettingsPaneId, ReactNode> = {
-  accounts: (
-    <>
-      <circle cx="12" cy="8.5" r="3.5" />
-      <path d="M5 19.5c.6-3.4 3.4-5.5 7-5.5s6.4 2.1 7 5.5" />
-    </>
-  ),
-  advanced: (
-    <>
-      <path d="M4 7h9m5 0h2M4 12h3m5 0h8M4 17h7m5 0h4" />
-      <circle cx="15.5" cy="7" r="2" />
-      <circle cx="9.5" cy="12" r="2" />
-      <circle cx="13.5" cy="17" r="2" />
-    </>
-  ),
-  agents: (
-    <>
-      <rect height="15" rx="3" width="18" x="3" y="4.5" />
-      <path d="m7.5 10 2.5 2.25L7.5 14.5M12.5 14.5h4" />
-    </>
-  ),
-  general: (
-    <>
-      <circle cx="12" cy="12" r="6.25" />
-      <circle cx="12" cy="12" r="2.25" />
-      <path d="M12 3v2.75M12 18.25V21M3 12h2.75M18.25 12H21M5.64 5.64l1.94 1.94M16.42 16.42l1.94 1.94M5.64 18.36l1.94-1.94M16.42 7.58l1.94-1.94" />
-    </>
-  ),
-  mirrors: (
-    <>
-      <rect height="11" rx="2" width="8" x="3" y="6.5" />
-      <rect height="11" rx="2" width="8" x="13" y="6.5" />
-      <path d="M9.5 12h5m-1.5-1.5 1.5 1.5-1.5 1.5" />
-    </>
-  ),
-  notifications: (
-    <>
-      <path d="M6.5 16.5v-5a5.5 5.5 0 0 1 11 0v5l1.5 2H5z" />
-      <path d="M10 20.5a2.1 2.1 0 0 0 4 0" />
     </>
   ),
 };
@@ -184,7 +142,7 @@ export function SettingsWindow() {
                 strokeWidth="1.5"
                 viewBox="0 0 24 24"
               >
-                {PANE_ICON[entry.id]}
+                {PANE_ICON_PATHS[entry.id]}
               </svg>
               {entry.label}
             </button>
