@@ -22,15 +22,27 @@ import {
 const DRAG_THRESHOLD_PX = 4;
 
 export type DragMode = 'move' | 'resize';
-/** Where a task drag started: its timed block in the grid, or its chip in the all-day lane. */
-export type TaskDragOrigin = 'grid' | 'lane';
+/**
+ * Where a task drag started: its timed block in the grid, its chip in the
+ * all-day lane, or its row in the side panel's inbox (which has no place
+ * on the grid: a ghost follows the pointer instead).
+ */
+export type TaskDragOrigin = 'grid' | 'lane' | 'panel';
 
 /** Which block is being dragged, and how. Changes twice per drag. */
 export interface DragPreview {
   /** Set for task drags: which lane the chip came from. */
   readonly from?: TaskDragOrigin;
   readonly itemKey: string;
+  /** Set for task drags: what the ghost of a panel drag shows. */
+  readonly label?: string;
   readonly mode: DragMode;
+}
+
+/** The pointer, in viewport coordinates, while a panel row is dragged. */
+export interface DragPointer {
+  readonly x: number;
+  readonly y: number;
 }
 
 /** The live offsets of that drag. Published per pointermove, outside React state. */
@@ -43,6 +55,8 @@ export interface DragDeltas {
 
 /** Listener key for the drop indicators: notified on every pointermove of a task drag. */
 const DROP_TARGET_KEY = 'drop-target';
+/** Listener key for the panel drag's ghost: notified on every pointermove of one. */
+const GHOST_KEY = 'ghost';
 
 const NO_DELTAS: DragDeltas = { deltaDays: 0, deltaMinutes: 0, target: null };
 
@@ -159,6 +173,17 @@ export const useEventDrag = ({
     };
   }, []);
   const getDeltas = useCallback(() => deltasRef.current, []);
+  const pointerRef = useRef<DragPointer | null>(null);
+  const publishPointer = (next: DragPointer | null) => {
+    if (next === pointerRef.current) {
+      return;
+    }
+    pointerRef.current = next;
+    for (const listener of listenersRef.current.get(GHOST_KEY) ?? []) {
+      listener();
+    }
+  };
+  const getPointer = useCallback(() => pointerRef.current, []);
   // Suppresses the day column's slot-click that follows a drag's pointerup.
   const suppressClickRef = useRef(false);
 
@@ -173,6 +198,7 @@ export const useEventDrag = ({
         originRef.current = null;
         setPreview(null);
         publishDeltas(NO_DELTAS);
+        publishPointer(null);
         activeItemKeyRef.current = null;
       }
     };
@@ -317,12 +343,17 @@ export const useEventDrag = ({
       origin.active = true;
       activeItemKeyRef.current = origin.itemKey;
       setPreview({
-        ...(origin.target.kind === 'task' ? { from: origin.target.from } : {}),
+        ...(origin.target.kind === 'task'
+          ? { from: origin.target.from, label: origin.target.task.title }
+          : {}),
         itemKey: origin.itemKey,
         mode: origin.mode,
       });
     }
     publishDeltas(deltasFor(origin, domEvent.clientX, domEvent.clientY));
+    if (origin.target.kind === 'task' && origin.target.from === 'panel') {
+      publishPointer({ x: domEvent.clientX, y: domEvent.clientY });
+    }
   };
 
   const onPointerCancel = (domEvent: React.PointerEvent) => {
@@ -336,6 +367,7 @@ export const useEventDrag = ({
     originRef.current = null;
     setPreview(null);
     publishDeltas(NO_DELTAS);
+    publishPointer(null);
     activeItemKeyRef.current = null;
   };
 
@@ -370,6 +402,7 @@ export const useEventDrag = ({
     suppressClickRef.current = true;
     setPreview(null);
     publishDeltas(NO_DELTAS);
+    publishPointer(null);
     activeItemKeyRef.current = null;
 
     if (!isDraggable(origin)) {
@@ -390,10 +423,12 @@ export const useEventDrag = ({
           taskId: task.id,
           taskListId: task.listId,
         });
-      // A chip from the lane, or a block released over the lane, drops by
-      // where the pointer is; a block moved within the grid keeps its
-      // delta-based move, which starts from where the block is drawn.
-      if (from === 'lane' || target?.kind === 'allDay') {
+      // A chip from the lane or a row from the panel, or a block released
+      // over the lane, drops by where the pointer is; a block moved within
+      // the grid keeps its delta-based move, which starts from where the
+      // block is drawn. A panel row let go elsewhere (the month view, the
+      // panel itself) changes nothing.
+      if (from === 'lane' || from === 'panel' || target?.kind === 'allDay') {
         const day = target === null ? undefined : strip[target.dayIndex];
         if (target !== null && day !== undefined) {
           commitTaskDrop(task, day.toString(), target, updateTask);
@@ -447,11 +482,17 @@ export const useEventDrag = ({
     (listener: () => void) => subscribeDeltas(DROP_TARGET_KEY, listener),
     [subscribeDeltas],
   );
+  const subscribeGhost = useCallback(
+    (listener: () => void) => subscribeDeltas(GHOST_KEY, listener),
+    [subscribeDeltas],
+  );
 
   return {
     consumeSuppressedClick,
     /** Current offsets; pair with `subscribeDeltas` in useSyncExternalStore. */
     getDeltas,
+    /** The pointer of a panel drag; pair with `subscribeGhost`. */
+    getPointer,
     onPointerCancel,
     onPointerDown,
     onPointerMove,
@@ -461,8 +502,13 @@ export const useEventDrag = ({
     subscribeDeltas,
     /** Pair with `getDeltas` in useSyncExternalStore to follow a task drag's drop target. */
     subscribeDropTarget,
+    subscribeGhost,
   };
 };
+
+/** Where a panel row's ghost sits: null unless a panel drag is under way. */
+export const useDragPointer = (drag: ReturnType<typeof useEventDrag>): DragPointer | null =>
+  useSyncExternalStore(drag.subscribeGhost, drag.getPointer);
 
 /**
  * The live drop target of a task drag, for the lane and grid indicators:

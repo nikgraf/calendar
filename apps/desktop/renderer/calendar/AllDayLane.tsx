@@ -143,7 +143,7 @@ function LaneDropIndicator({
 }) {
   const drop = useDropTarget(drag);
   // A chip dragged along the lane already follows the pointer.
-  if (drop === null || drop.from !== 'grid' || drop.target.kind !== 'allDay') {
+  if (drop === null || drop.from === 'lane' || drop.target.kind !== 'allDay') {
     return null;
   }
   return (

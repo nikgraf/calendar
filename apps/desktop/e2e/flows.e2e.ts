@@ -1302,6 +1302,21 @@ describe('calendar desktop e2e', () => {
       ),
     ).toBe(true);
 
+    // The sidebar's search narrows the panes by label and keyword; the
+    // pane in view stays even when its tab is filtered out.
+    await settings.type('[data-testid="settings-search"]', 'token');
+    await settings.waitFor(
+      `document.querySelectorAll('[role="tab"]').length === 1 && !!document.querySelector('[data-testid="settings-tab-agents"]')`,
+    );
+    expect(await settings.eval<string>('document.title')).toBe('Notifications');
+    await settings.eval(`(() => {
+      const input = document.querySelector('[data-testid="settings-search"]');
+      const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+      setter.call(input, '');
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    })()`);
+    await settings.waitFor(`document.querySelectorAll('[role="tab"]').length === 6`);
+
     // The main process reads the pane from the window's URL, so it must
     // have followed the tab click: asking for Accounts again moves back.
     await cdp.clickButtonWithText('Manage accounts…');
@@ -1402,6 +1417,24 @@ describe('calendar desktop e2e', () => {
     // It lands in the inbox's "No date" group right away.
     await cdp.waitFor(
       `document.querySelector('[data-testid="task-inbox"]')?.textContent.includes('Sharpen the pencils')`,
+    );
+  });
+
+  it('drags a task row from the panel onto the all-day lane and dates it', async () => {
+    const { cdp } = app;
+    const row = await cdp.locate('[data-testid="panel-task-task-undated"]');
+    const column = await cdp.locate('[data-testid="today-header"]');
+    const lane = await cdp.locate('[data-testid="all-day-lane"]');
+    await cdp.drag(row, { x: column.x, y: lane.y });
+    await expect
+      .poll(
+        async () =>
+          (await readTasks(app.userDataDir)).find((task) => task.id === 'task-undated')?.dueDate,
+      )
+      .toBe(todayLocalIso());
+    // The release was a drop, not a click: no editor opened.
+    expect(await cdp.eval<boolean>(`!!document.querySelector('[data-testid="editor"]')`)).toBe(
+      false,
     );
   });
 });
@@ -1505,7 +1538,7 @@ describe('an event in a read-only calendar', () => {
     });
     expect(await readPendingOps(viewerApp.userDataDir)).toEqual([]);
     // The release did not fall through to the grid as a slot click.
-    expect(await cdp.eval(`document.body.textContent.includes('New event')`)).toBe(false);
+    expect(await cdp.eval(`!!document.querySelector('[data-testid="editor"]')`)).toBe(false);
     // Still a click target: it opens the viewer.
     const block = await cdp.locate('[title^="Their review"]');
     await cdp.click(block.x, block.y);

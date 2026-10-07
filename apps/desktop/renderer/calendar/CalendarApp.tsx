@@ -36,12 +36,14 @@ import { CaptureDialog } from './CaptureDialog.tsx';
 import { captureSourceOf, isCapturable, readPaste } from './captureClipboard.ts';
 import { makeColorLookup } from './colors.ts';
 import { MonthView } from './MonthView.tsx';
+import { DragGhost } from './panel/DragGhost.tsx';
 import { EditorPanel, type EditorSeed } from './panel/EditorPanel.tsx';
 import { EventInspector } from './panel/EventInspector.tsx';
 import { TodayRail } from './panel/TodayRail.tsx';
 import { Sidebar } from './sidebar/Sidebar.tsx';
 import { Toolbar } from './Toolbar.tsx';
-import { WeekView } from './WeekView.tsx';
+import { useEventDrag } from './useEventDrag.ts';
+import { HOUR_HEIGHT, useWeekStrip, WeekView } from './WeekView.tsx';
 
 type MainView = 'day' | 'month' | 'week';
 
@@ -177,6 +179,23 @@ function CalendarBody({
   const calendars = useCalendars();
   const accounts = useAccounts();
   const colorOf = useMemo(() => makeColorLookup(calendars), [calendars]);
+
+  // The drag hook lives here, not in the week view: the panel's task rows
+  // drag onto the grid and lane too, and the hook reads their rects.
+  const gridRef = useRef<HTMLDivElement>(null);
+  const laneRef = useRef<HTMLDivElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const strip = useWeekStrip(days);
+  const drag = useEventDrag({
+    gridRef,
+    hourHeight: HOUR_HEIGHT,
+    isEventReadOnly,
+    laneRef,
+    onEventClick: (event) => setPanel({ event, kind: 'inspector' }),
+    onTaskClick: (task) => setPanel({ kind: 'editTask', task }),
+    scrollerRef: scrollRef,
+    strip,
+  });
 
   const captureOpen = capture.state.kind !== 'idle';
   // The window's own modal dialogs; the panel's editors are not dialogs
@@ -326,9 +345,12 @@ function CalendarBody({
               birthdays={birthdays}
               colorOf={colorOf}
               days={days}
+              drag={drag}
               events={events}
+              gridRef={gridRef}
               isEventReadOnly={isEventReadOnly}
               isTaskReadOnly={isTaskReadOnly}
+              laneRef={laneRef}
               listColorOf={listColorOf}
               onBirthdayClick={(birthday) => setViewBirthday(birthday)}
               onEventClick={(event) => setPanel({ event, kind: 'inspector' })}
@@ -338,6 +360,7 @@ function CalendarBody({
               onTaskClick={(task) => setPanel({ kind: 'editTask', task })}
               onToggleTask={toggleTask}
               overdue={overdue}
+              scrollRef={scrollRef}
               secondaryZones={secondaryZones}
               selectedKey={selectedKey}
               tasks={tasks}
@@ -357,6 +380,7 @@ function CalendarBody({
         >
           {panel.kind === 'rail' ? (
             <TodayRail
+              drag={drag}
               onEditTask={(task) => setPanel({ kind: 'editTask', task })}
               onOpenEvent={(event) => setPanel({ event, kind: 'inspector' })}
               timeZone={timeZone}
@@ -409,6 +433,8 @@ function CalendarBody({
           )}
         </aside>
       </div>
+
+      <DragGhost drag={drag} />
 
       {/* Hidden while a row's editor is open: the editor is the capture's next step. */}
       {capture.state.kind !== 'idle' && panel.kind !== 'editEvent' ? (

@@ -6,8 +6,9 @@ import {
   useTaskReadOnlyLookup,
   useToday,
 } from '@calendar/app-state';
-import { overdueLabel, type TaskRecord } from '@calendar/core';
+import { calendarTaskKey, overdueLabel, type TaskRecord } from '@calendar/core';
 import { useState } from 'react';
+import type { useEventDrag } from '../useEventDrag.ts';
 import { CheckIcon, PlusIcon } from '../../ui/icons.tsx';
 
 /**
@@ -18,9 +19,12 @@ import { CheckIcon, PlusIcon } from '../../ui/icons.tsx';
  * keep matching the grid alone.
  */
 export function TaskInbox({
+  drag,
   onEdit,
   timeZone,
 }: {
+  /** The app's drag hook: a row drags onto the grid or lane like a chip; a release in place opens it. */
+  drag: ReturnType<typeof useEventDrag>;
   onEdit: (task: TaskRecord) => void;
   timeZone: string;
 }) {
@@ -53,11 +57,25 @@ export function TaskInbox({
   const row = (task: TaskRecord, late: boolean) => {
     const done = task.status === 'completed';
     const readOnly = isReadOnly(task);
+    const dragging = drag.preview?.itemKey === `panel:${calendarTaskKey(task)}`;
     return (
       <li
-        className="flex items-center gap-2 rounded-control px-2 py-1 hover:bg-fill"
+        className={`flex touch-none items-center gap-2 rounded-control px-2 py-1 select-none hover:bg-fill ${
+          readOnly ? '' : 'cursor-grab'
+        } ${dragging ? 'opacity-50' : ''}`}
         data-testid={`panel-task-${task.id}`}
         key={`${task.listId}:${task.id}`}
+        onPointerCancel={drag.onPointerCancel}
+        onPointerDown={(event) =>
+          drag.onTaskPointerDown(
+            task,
+            `panel:${calendarTaskKey(task)}`,
+            { dayIndex: 0, from: 'panel', readOnly },
+            event,
+          )
+        }
+        onPointerMove={drag.onPointerMove}
+        onPointerUp={drag.onPointerUp}
       >
         <button
           aria-label={`${done ? 'Reopen' : 'Mark done'}: ${task.title}`}
@@ -66,14 +84,21 @@ export function TaskInbox({
           } disabled:opacity-50`}
           disabled={readOnly}
           onClick={() => toggle(task)}
+          onPointerDown={(event) => event.stopPropagation()}
           style={done ? undefined : { borderColor: listColorOf(task) }}
           type="button"
         >
           {done ? <CheckIcon size={10} /> : null}
         </button>
+        {/* The press-and-release opens the editor through the drag hook; the button keeps the keyboard. */}
         <button
-          className="flex min-w-0 flex-1 items-center gap-2 text-left text-sm"
-          onClick={() => onEdit(task)}
+          className="flex min-w-0 flex-1 items-center gap-2 text-left text-sm outline-none focus-visible:underline"
+          onKeyDown={(key) => {
+            if (key.key === 'Enter' || key.key === ' ') {
+              key.preventDefault();
+              onEdit(task);
+            }
+          }}
           type="button"
         >
           <span
