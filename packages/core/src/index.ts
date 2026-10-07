@@ -50,6 +50,8 @@ export * from './settingsDocument.ts';
 export * from './syncStatus.ts';
 export * from './taskLabel.ts';
 export * from './taskTiming.ts';
+export * from './theme/eventTint.ts';
+export * from './theme/tokens.ts';
 export * from './time/convert.ts';
 export * from './time/dragMath.ts';
 export * from './time/dropTarget.ts';

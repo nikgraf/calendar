@@ -89,6 +89,17 @@ describe('view preferences', () => {
       expect(yield* readViewPreferences).toEqual(DEFAULT_VIEW_PREFERENCES);
       yield* writeViewPreferences({ allDayLaneCollapsed: true });
       expect(yield* readViewPreferences).toEqual({ allDayLaneCollapsed: true });
+      // The device-local fields round-trip too, and only when set.
+      yield* writeViewPreferences({
+        allDayLaneCollapsed: false,
+        lastView: 'agenda',
+        sidebarCollapsed: true,
+      });
+      expect(yield* readViewPreferences).toEqual({
+        allDayLaneCollapsed: false,
+        lastView: 'agenda',
+        sidebarCollapsed: true,
+      });
     }).pipe(Effect.provide(dbLayer())),
   );
 

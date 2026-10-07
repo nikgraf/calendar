@@ -1,21 +1,36 @@
-import { bufferedRange, monthGridRange, Temporal, type UtcRange, weekStart } from '@calendar/core';
+import {
+  bufferedRange,
+  type CalendarViewKind,
+  monthGridRange,
+  Temporal,
+  type UtcRange,
+  weekStart,
+} from '@calendar/core';
 import { useCallback, useMemo, useState } from 'react';
 
-export type CalendarViewKind = 'day' | 'month' | 'twoDay' | 'week';
+export type { CalendarViewKind } from '@calendar/core';
 
-/** Timeline columns a view draws; the month grid has none. */
+/** Days the agenda lists from the focused day on. */
+export const AGENDA_DAYS = 14;
+
+/** Timeline columns a view draws; the month grid and the agenda list have none. */
 export const viewColumns = (view: CalendarViewKind): number => {
   switch (view) {
-    case 'day':
-      return 1;
+    case 'agenda':
     case 'month':
       return 0;
+    case 'day':
+      return 1;
     case 'twoDay':
       return 2;
     case 'week':
       return 7;
   }
 };
+
+/** Days a view covers from its window start: its columns, or the agenda's two weeks. */
+const visibleDays = (view: CalendarViewKind): number =>
+  view === 'agenda' ? AGENDA_DAYS : viewColumns(view);
 
 export interface CalendarNavigationOptions {
   /** Buffer days fetched on each side of the visible day/week strip. */
@@ -52,7 +67,7 @@ export const titleFor = (
         })
       : focused.toLocaleString('en-US', { day: 'numeric', month: 'long', weekday: 'short' });
   }
-  const end = windowStart.add({ days: viewColumns(view) - 1 });
+  const end = windowStart.add({ days: visibleDays(view) - 1 });
   // "September 7 – 13, 2026" on desktop; the phone header truncates the
   // long month, so compact uses "Sep 7 – 13, 2026".
   const month = style === 'long' ? 'long' : 'short';
@@ -87,13 +102,16 @@ export const useCalendarNavigation = ({
     [view, weekWindowStart, focused],
   );
 
+  // The agenda is a list, not a strip: nothing pans, so nothing is buffered.
   const buffer =
     view === 'week'
       ? (weekBuffer ?? dayBuffer)
       : view === 'twoDay'
         ? (twoDayBuffer ?? dayBuffer)
-        : dayBuffer;
-  const columns = viewColumns(view);
+        : view === 'agenda'
+          ? 0
+          : dayBuffer;
+  const dayCount = visibleDays(view);
 
   const range: UtcRange = useMemo(
     () =>
@@ -103,13 +121,13 @@ export const useCalendarNavigation = ({
             Temporal.Now.plainDateISO(timeZone),
             timeZone,
           )
-        : bufferedRange(windowStart, columns, buffer, timeZone),
-    [view, focused, windowStart, columns, buffer, timeZone],
+        : bufferedRange(windowStart, dayCount, buffer, timeZone),
+    [view, focused, windowStart, dayCount, buffer, timeZone],
   );
 
   const days = useMemo(
-    () => Array.from({ length: columns }, (_, index) => windowStart.add({ days: index })),
-    [columns, windowStart],
+    () => Array.from({ length: dayCount }, (_, index) => windowStart.add({ days: index })),
+    [dayCount, windowStart],
   );
 
   // Stable per (view, windowStart, timeZone): the apps hang these on
@@ -119,13 +137,13 @@ export const useCalendarNavigation = ({
       setFocused((current) =>
         view === 'month'
           ? current.add({ months: direction })
-          : current.add({ days: direction * columns }),
+          : current.add({ days: direction * dayCount }),
       );
       if (view === 'week') {
         setWeekWindowStart((current) => current?.add({ days: 7 * direction }) ?? null);
       }
     },
-    [view, columns],
+    [view, dayCount],
   );
 
   /** Pan commits: whole days crossed by a wheel pan or a swipe. */

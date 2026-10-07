@@ -1,4 +1,4 @@
-import { useGuardedMutations, useViewPreferences } from '@calendar/app-state';
+import { useUpdateViewPreferences, useViewPreferences } from '@calendar/app-state';
 import {
   type BirthdayOccurrence,
   bufferedDays,
@@ -279,7 +279,7 @@ export function WeekView({
   // Collapsed, the lane caps at MAX_ALL_DAY_ROWS with "+N more" chips; the
   // choice is a device setting, so it survives a relaunch. Expanded by default.
   const preferences = useViewPreferences();
-  const { setViewPreferences } = useGuardedMutations();
+  const updateViewPreferences = useUpdateViewPreferences();
   const collapsed = preferences?.allDayLaneCollapsed ?? false;
   const capped = collapsed ? capAllDayLane(allDayPlaced, strip.length, MAX_ALL_DAY_ROWS) : null;
   // Built once per render, not once per column: this component re-renders
@@ -328,7 +328,7 @@ export function WeekView({
         moreByDay={capped?.moreByDay ?? []}
         onBirthdayClick={onBirthdayClick}
         onEventClick={onEventClick}
-        onSetCollapsed={(value) => void setViewPreferences({ allDayLaneCollapsed: value })}
+        onSetCollapsed={(value) => updateViewPreferences({ allDayLaneCollapsed: value })}
         onTaskClick={onTaskClick}
         onToggleTask={onToggleTask}
         overdueKeys={overdueKeys}

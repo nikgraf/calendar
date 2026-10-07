@@ -154,7 +154,13 @@ export const writeViewPreferences = (
   preferences: ViewPreferences,
 ): Effect.Effect<void, SqlError, DeviceSettingsRepo> =>
   Effect.flatMap(DeviceSettingsRepo, (repo) =>
-    repo.set(VIEW_PREFERENCES_KEY, { allDayLaneCollapsed: preferences.allDayLaneCollapsed }),
+    repo.set(VIEW_PREFERENCES_KEY, {
+      allDayLaneCollapsed: preferences.allDayLaneCollapsed,
+      ...(preferences.lastView === undefined ? {} : { lastView: preferences.lastView }),
+      ...(preferences.sidebarCollapsed === undefined
+        ? {}
+        : { sidebarCollapsed: preferences.sidebarCollapsed }),
+    }),
   );
 
 /** The device_settings key for the time zones. */
