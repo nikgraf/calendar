@@ -1,8 +1,19 @@
 import { useEffect, useRef, type ReactNode } from 'react';
+import { makeDialogStack } from './dialogStack.ts';
 
 const FOCUSABLE =
   'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), ' +
   'textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
+/** This window's open dialogs: only the topmost answers keys (dialogStack.ts). */
+const dialogs = makeDialogStack(window);
+
+/**
+ * Whether a dialog is open in this window: the calendar's own keys (and its
+ * paste) stand back, including behind the agent approval dialog, which the
+ * calendar does not open itself.
+ */
+export const isDialogOpen = (): boolean => dialogs.isOpen();
 
 /**
  * The one modal shell for the editor, the ⌘K bar and the dialogs inside
@@ -48,12 +59,7 @@ export function Dialog({
       const first = panel.querySelector<HTMLElement>(FOCUSABLE);
       (first ?? panel).focus();
     }
-    const onKeyDown = (key: KeyboardEvent) => {
-      if (key.key === 'Escape') {
-        key.stopPropagation();
-        onCloseRef.current();
-        return;
-      }
+    const trapTab = (key: KeyboardEvent) => {
       if (key.key !== 'Tab' || !panel) {
         return;
       }
@@ -74,11 +80,16 @@ export function Dialog({
     };
     // On window, capture phase: real key events pass through here first,
     // and the e2e suite's synthetic Escape is dispatched on window.
-    window.addEventListener('keydown', onKeyDown, true);
+    const close = dialogs.open(zIndex, {
+      onEscape: () => onCloseRef.current(),
+      onKey: trapTab,
+    });
     return () => {
-      window.removeEventListener('keydown', onKeyDown, true);
+      close();
       opener?.focus();
     };
+    // zIndex is fixed per call site; re-running would re-open the dialog.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return (
