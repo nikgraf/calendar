@@ -10,7 +10,7 @@ import Animated, {
   useSharedValue,
   withTiming,
 } from 'react-native-reanimated';
-import { chipTextColor } from './theme.ts';
+import { useEventTint } from './theme.ts';
 import { pxToMinutes, SNAP_PX } from './timelineLayout.ts';
 
 /**
@@ -97,6 +97,7 @@ export function DraggableEventBlock({
       runOnJS(commitResize)(end.translationY);
     });
 
+  const tint = useEventTint(color);
   const animatedStyle = useAnimatedStyle(() => ({
     height: Math.max(height - 2 + extraHeight.value, SNAP_PX),
     shadowOpacity: lifted.value * 0.3,
@@ -109,7 +110,7 @@ export function DraggableEventBlock({
       <Animated.View
         style={[
           styles.eventBlock,
-          { backgroundColor: color, left, top, width },
+          { backgroundColor: tint.fill, left, top, width },
           styles.eventShadow,
           animatedStyle,
         ]}
@@ -117,16 +118,12 @@ export function DraggableEventBlock({
         <Pressable onPress={onPress} style={styles.eventPressable}>
           <Text
             numberOfLines={compact ? 2 : 1}
-            style={[
-              styles.eventTitle,
-              compact && styles.eventTitleCompact,
-              { color: chipTextColor(color) },
-            ]}
+            style={[styles.eventTitle, compact && styles.eventTitleCompact, { color: tint.text }]}
           >
             {event.title}
           </Text>
           {!compact && height > 34 ? (
-            <Text numberOfLines={1} style={[styles.eventTime, { color: chipTextColor(color) }]}>
+            <Text numberOfLines={1} style={[styles.eventTime, { color: tint.text }]}>
               {formatClockTime(event.startUtc, timeZone)} –{' '}
               {formatClockTime(event.endUtc, timeZone)}
             </Text>
@@ -134,7 +131,7 @@ export function DraggableEventBlock({
           {!compact && secondaryZones.length > 0 && height > 52 ? (
             <Text
               numberOfLines={1}
-              style={[styles.eventZones, { color: chipTextColor(color) }]}
+              style={[styles.eventZones, { color: tint.text }]}
               testID="event-secondary-times"
             >
               {formatZoneRange(event.startUtc, event.endUtc, secondaryZones)}

@@ -12,7 +12,10 @@ tags:
     while:
       notVisible: '.* – .*, 20\d\d'
     commands:
-      - tapOn: '2 Days'
+      - runFlow:
+          file: ../common/switch-view.yaml
+          env:
+            VIEW: '2 Days'
       - extendedWaitUntil:
           visible: '.* – .*, 20\d\d'
           timeout: 5000

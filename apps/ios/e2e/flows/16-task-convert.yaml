@@ -11,7 +11,10 @@ tags:
 # selector below is a title, never an id.
 - runFlow: ../common/launch.yaml
 - tapOn: 'Today'
-- tapOn: 'Day'
+- runFlow:
+    file: ../common/switch-view.yaml
+    env:
+      VIEW: 'Day'
 - runFlow: ../common/open-new-event.yaml
 - runFlow: ../common/switch-to-task.yaml
 - runFlow:

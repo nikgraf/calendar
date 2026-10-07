@@ -48,13 +48,7 @@ export function TimedTaskBlock({
 
   return (
     <View
-      style={[
-        styles.block,
-        { left, top, width },
-        listColor ? { borderLeftColor: listColor, borderLeftWidth: 3 } : null,
-        done && styles.done,
-        dimmed && styles.dimmed,
-      ]}
+      style={[styles.block, { left, top, width }, done && styles.done, dimmed && styles.dimmed]}
       testID={`timed-task-${task.id}`}
     >
       <Pressable
@@ -68,6 +62,7 @@ export function TimedTaskBlock({
       >
         <Text style={styles.checkbox}>{done ? '☑' : '☐'}</Text>
       </Pressable>
+      {listColor ? <View style={[styles.listDot, { backgroundColor: listColor }]} /> : null}
       <GestureDetector gesture={gesture}>
         <Pressable
           accessibilityLabel={`${task.title}, due ${dueLabel}${repeats ? ', repeats' : ''}`}
@@ -94,9 +89,7 @@ const makeStyles = (colors: ThemeColors) =>
     block: {
       alignItems: 'center',
       backgroundColor: colors.fill,
-      borderColor: colors.border,
       borderRadius: 5,
-      borderWidth: StyleSheet.hairlineWidth,
       flexDirection: 'row',
       gap: 3,
       height: 22,
@@ -115,6 +108,12 @@ const makeStyles = (colors: ThemeColors) =>
     },
     done: {
       opacity: 0.5,
+    },
+    listDot: {
+      borderRadius: 3,
+      height: 6,
+      marginRight: 4,
+      width: 6,
     },
     title: {
       color: colors.text,

@@ -5,7 +5,9 @@ tags:
 ---
 - runFlow: ../common/launch.yaml
 - assertVisible: 'Today'
-- assertVisible: 'Day'
-- assertVisible: '2 Days'
-- assertVisible: 'Week'
-- assertVisible: 'Month'
+- assertVisible:
+    id: 'calendar-screen'
+- assertVisible:
+    id: 'view-menu'
+- assertVisible:
+    id: 'add'

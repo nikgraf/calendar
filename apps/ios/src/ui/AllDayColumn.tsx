@@ -1,5 +1,4 @@
 import {
-  BIRTHDAY_ACCENT,
   type BirthdayOccurrence,
   birthdayChipLabel,
   calendarTaskKey,
@@ -11,7 +10,7 @@ import {
 } from '@calendar/core';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { GestureDetector } from 'react-native-gesture-handler';
-import { type ThemeColors, chipTextColor, useStyles } from './theme.ts';
+import { type ThemeColors, useEventTint, useStyles } from './theme.ts';
 import { ALL_DAY_ROW_HEIGHT } from './timelineLayout.ts';
 import type { TaskDrag } from './useTaskDrag.ts';
 
@@ -96,9 +95,6 @@ export function AllDayColumn({
             style={[
               styles.allDayChip,
               styles.taskChip,
-              // Reminders lists have colors; a left accent tells them apart
-              // from Google tasks without recoloring the whole chip.
-              listColor ? { borderLeftColor: listColor, borderLeftWidth: 3 } : null,
               done && styles.taskChipDone,
               draggingKey === key && styles.taskChipDragging,
             ]}
@@ -118,6 +114,8 @@ export function AllDayColumn({
             >
               <Text style={styles.taskCheckbox}>{done ? '☑' : '☐'}</Text>
             </Pressable>
+            {/* Reminders lists have colors; a dot tells them apart from Google tasks without recoloring the chip. */}
+            {listColor ? <View style={[styles.listDot, { backgroundColor: listColor }]} /> : null}
             <GestureDetector gesture={taskDrag.gestureFor(task, 'lane', isTaskReadOnly(task))}>
               <Pressable
                 accessibilityLabel={
@@ -168,33 +166,15 @@ export function AllDayColumn({
           </Pressable>
         );
       })}
-      {visibleEvents.map((event) => {
-        const color = colorOf(event);
-        // A Pressable like the task chip body: an all-day event opens
-        // its editor on the phone the way it does on desktop.
-        return (
-          <Pressable
-            accessibilityLabel={event.title}
-            accessibilityRole="button"
-            hitSlop={4}
-            key={`${event.calendarId}:${event.id}`}
-            onPress={() => onEventPress(event)}
-            style={[styles.allDayChip, { backgroundColor: color }]}
-            testID="all-day-event-chip"
-          >
-            <Text
-              numberOfLines={1}
-              style={[
-                styles.allDayText,
-                compact && styles.allDayTextCompact,
-                { color: chipTextColor(color) },
-              ]}
-            >
-              {event.title}
-            </Text>
-          </Pressable>
-        );
-      })}
+      {visibleEvents.map((event) => (
+        <AllDayEventChip
+          color={colorOf(event)}
+          compact={compact}
+          event={event}
+          key={`${event.calendarId}:${event.id}`}
+          onPress={onEventPress}
+        />
+      ))}
       {hidden > 0 ? (
         <Pressable
           accessibilityLabel={`${String(hidden)} more all-day items, show all`}
@@ -210,6 +190,39 @@ export function AllDayColumn({
         </Pressable>
       ) : null}
     </View>
+  );
+}
+
+/** An all-day event in its calendar's tint: a Pressable like the task chip body, so it opens on the phone the way it does on desktop. */
+function AllDayEventChip({
+  color,
+  compact,
+  event,
+  onPress,
+}: {
+  color: string;
+  compact: boolean;
+  event: EventRecord;
+  onPress: (event: EventRecord) => void;
+}) {
+  const styles = useStyles(makeStyles);
+  const tint = useEventTint(color);
+  return (
+    <Pressable
+      accessibilityLabel={event.title}
+      accessibilityRole="button"
+      hitSlop={4}
+      onPress={() => onPress(event)}
+      style={[styles.allDayChip, { backgroundColor: tint.fill }]}
+      testID="all-day-event-chip"
+    >
+      <Text
+        numberOfLines={1}
+        style={[styles.allDayText, compact && styles.allDayTextCompact, { color: tint.text }]}
+      >
+        {event.title}
+      </Text>
+    </Pressable>
   );
 }
 
@@ -234,8 +247,12 @@ const makeStyles = (colors: ThemeColors) =>
       fontSize: 11,
     },
     birthdayChip: {
-      borderLeftColor: BIRTHDAY_ACCENT,
-      borderLeftWidth: 3,
+      backgroundColor: colors['event-blush'],
+    },
+    listDot: {
+      borderRadius: 3,
+      height: 6,
+      width: 6,
     },
     moreChip: {
       backgroundColor: colors.fill,
@@ -254,8 +271,6 @@ const makeStyles = (colors: ThemeColors) =>
     taskChip: {
       alignItems: 'center',
       backgroundColor: colors.fill,
-      borderColor: colors.border,
-      borderWidth: StyleSheet.hairlineWidth,
       flexDirection: 'row',
       gap: 3,
     },

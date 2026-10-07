@@ -7,16 +7,12 @@ tags:
 # as CI does): its contacts hold "Birthday Fixture", a week from today in
 # today's month (e2e/fixtures/google.ts), reached from the month grid.
 - runFlow: ../common/launch.yaml
-- repeat:
-    times: 3
-    while:
-      notVisible: '.* 20\d\d'
-    commands:
-      - tapOn: 'Month'
-      - extendedWaitUntil:
-          visible: '.* 20\d\d'
-          timeout: 5000
-          optional: true
+# Straight to the month grid: the app reopens on the last view it was in
+# (a two-day title also ends in a year, so a title guard would skip this).
+- runFlow:
+    file: ../common/switch-view.yaml
+    env:
+      VIEW: 'Month'
 # The cell's label counts its items ("Friday, October 9, 1 birthday");
 # the People sync lands shortly after launch.
 - extendedWaitUntil:
@@ -70,6 +66,10 @@ tags:
       id: 'birthday-overrides'
     timeout: 5000
 - tapOn: 'Done'
-- tapOn: 'Day'
+- runFlow:
+    file: ../common/switch-view.yaml
+    env:
+      VIEW: 'Day'
 - tapOn: 'Today'
-- assertVisible: 'Day'
+- assertVisible:
+    id: 'day-timeline'

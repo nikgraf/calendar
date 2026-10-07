@@ -13,6 +13,9 @@ import {
   useTasksInRangeStable,
   useTimeZones,
   useToday,
+  useUpdateViewPreferences,
+  useViewPreferences,
+  type CalendarViewKind,
 } from '@calendar/app-state';
 import {
   DAY_SWIPE_BUFFER,
@@ -24,10 +27,12 @@ import {
   weekStart,
 } from '@calendar/core';
 import { useEffect, useMemo, useState } from 'react';
+import { MenuView } from '@expo/ui/community/menu';
 import { StatusBar } from 'expo-status-bar';
 import { AppState, Pressable, SafeAreaView, StyleSheet, Text, View } from 'react-native';
 import { kickSync, runLocalNotifications, startSync, subscribeInvalidations } from '../backend.ts';
 import { registerBackgroundRefresh } from '../backgroundTask.ts';
+import { AgendaView } from './AgendaView.tsx';
 import { DayTimeline } from './DayTimeline.tsx';
 import { useEditorHost } from './EditorHost.tsx';
 import { MonthGrid } from './MonthGrid.tsx';
@@ -36,7 +41,16 @@ import { ConflictBanner, DroppedToast, MutationNoticeToast } from './Toast.tsx';
 import { type ThemeColors, useStyles } from './theme.ts';
 import { WeekStrip } from './WeekStrip.tsx';
 
-const SEGMENT_LABELS = { day: 'Day', month: 'Month', twoDay: '2 Days', week: 'Week' } as const;
+/** The view menu's entries, in order. */
+const VIEWS: ReadonlyArray<{ readonly id: CalendarViewKind; readonly label: string }> = [
+  { id: 'day', label: 'Day' },
+  { id: 'twoDay', label: '2 Days' },
+  { id: 'week', label: 'Week' },
+  { id: 'month', label: 'Month' },
+  { id: 'agenda', label: 'Agenda' },
+];
+const isViewKind = (value: string): value is CalendarViewKind =>
+  VIEWS.some((entry) => entry.id === value);
 
 /**
  * Sync, invalidations and background refresh start here, whatever the
@@ -60,16 +74,25 @@ export function CalendarScreen() {
     return () => subscription.remove();
   }, []);
   const zones = useTimeZones();
-  if (!zones.loaded) {
+  const prefs = useViewPreferences();
+  if (!zones.loaded || prefs === null) {
     return <SafeAreaView style={styles.safeArea} />;
   }
-  return <CalendarBody primary={zones.primary} secondary={zones.secondary} />;
+  return (
+    <CalendarBody
+      initialView={prefs.lastView ?? 'day'}
+      primary={zones.primary}
+      secondary={zones.secondary}
+    />
+  );
 }
 
 function CalendarBody({
+  initialView,
   primary: timeZone,
   secondary: secondaryZones,
 }: {
+  initialView: CalendarViewKind;
   primary: string;
   secondary: ReadonlyArray<string>;
 }) {
@@ -88,7 +111,7 @@ function CalendarBody({
     view,
   } = useCalendarNavigation({
     dayBuffer: DAY_SWIPE_BUFFER,
-    initialView: 'day',
+    initialView,
     timeZone,
     titleStyle: 'compact',
     twoDayBuffer: TWO_DAY_SWIPE_BUFFER,
@@ -96,6 +119,12 @@ function CalendarBody({
   });
   const [showSettings, setShowSettings] = useState(false);
   const host = useEditorHost();
+  const updatePrefs = useUpdateViewPreferences();
+  /** The view is device taste: it persists, and the app reopens on it. */
+  const changeView = (next: CalendarViewKind) => {
+    switchView(next);
+    updatePrefs({ lastView: next });
+  };
 
   // Stable variant: keeps the previous days' events while a new range loads,
   // so swiping never flashes an empty grid.
@@ -129,10 +158,19 @@ function CalendarBody({
     return Array.from({ length: 7 }, (_, index) => start.add({ days: index }));
   }, [focused]);
   const unit =
-    view === 'month' ? 'month' : view === 'week' ? 'week' : view === 'twoDay' ? '2 days' : 'day';
+    view === 'month'
+      ? 'month'
+      : view === 'week'
+        ? 'week'
+        : view === 'twoDay'
+          ? '2 days'
+          : view === 'agenda'
+            ? '2 weeks'
+            : 'day';
+  const viewLabel = VIEWS.find((entry) => entry.id === view)?.label ?? 'Day';
 
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <SafeAreaView style={styles.safeArea} testID="calendar-screen">
       <StatusBar style="auto" />
       <View style={styles.header}>
         <Text numberOfLines={1} style={styles.title} testID="day-title">
@@ -152,7 +190,30 @@ function CalendarBody({
               <Text style={styles.pendingBadgeLabel}>{pendingOps.length} unsynced</Text>
             </Pressable>
           ) : null}
-          {/* Icon-only buttons: VoiceOver read the glyphs ("‹", "＋") without labels. */}
+          {/* The view menu: Day · 2 Days · Week · Month · Agenda, the current one checked. */}
+          <MenuView
+            actions={VIEWS.map((entry) => ({
+              id: entry.id,
+              state: view === entry.id ? 'on' : 'off',
+              title: entry.label,
+            }))}
+            onPressAction={({ nativeEvent }) => {
+              if (isViewKind(nativeEvent.event)) {
+                changeView(nativeEvent.event);
+              }
+            }}
+            title="View"
+          >
+            <Pressable
+              accessibilityLabel={`View: ${viewLabel}`}
+              accessibilityRole="button"
+              style={styles.viewButton}
+              testID="view-menu"
+            >
+              <Text style={styles.viewButtonLabel}>{viewLabel} ▾</Text>
+            </Pressable>
+          </MenuView>
+          {/* Icon-only buttons: VoiceOver read the glyphs ("‹") without labels. */}
           <Pressable
             accessibilityLabel={`Previous ${unit}`}
             accessibilityRole="button"
@@ -162,7 +223,12 @@ function CalendarBody({
           >
             <Text style={styles.navLabel}>‹</Text>
           </Pressable>
-          <Pressable accessibilityRole="button" onPress={goToday} style={styles.navButton}>
+          <Pressable
+            accessibilityRole="button"
+            onPress={goToday}
+            style={styles.navButton}
+            testID="today"
+          >
             <Text style={styles.todayLabel}>Today</Text>
           </Pressable>
           <Pressable
@@ -186,22 +252,6 @@ function CalendarBody({
         </View>
       </View>
 
-      <View style={styles.segment}>
-        {(['day', 'twoDay', 'week', 'month'] as const).map((kind) => (
-          <Pressable
-            accessibilityRole="button"
-            accessibilityState={{ selected: view === kind }}
-            key={kind}
-            onPress={() => switchView(kind)}
-            style={[styles.segmentItem, view === kind && styles.segmentActive]}
-          >
-            <Text style={[styles.segmentLabel, view === kind && styles.segmentLabelActive]}>
-              {SEGMENT_LABELS[kind]}
-            </Text>
-          </Pressable>
-        ))}
-      </View>
-
       {view === 'month' ? (
         <MonthGrid
           birthdays={birthdays}
@@ -210,13 +260,35 @@ function CalendarBody({
           listColorOf={listColorOf}
           onSelectDay={(date) => {
             setFocused(date);
-            switchView('day');
+            changeView('day');
           }}
           overdue={overdue}
           tasks={tasks}
           timeZone={timeZone}
           today={today}
           yearMonth={Temporal.PlainYearMonth.from(focused)}
+        />
+      ) : view === 'agenda' ? (
+        <AgendaView
+          birthdays={birthdays}
+          colorOf={colorOf}
+          days={days}
+          events={events}
+          onBirthdayPress={host.openBirthday}
+          onEventPress={host.openEvent}
+          onTaskPress={host.editTask}
+          onToggleTask={(task) =>
+            void mutations.completeTask({
+              accountId: task.accountId,
+              status: task.status === 'completed' ? 'needsAction' : 'completed',
+              taskId: task.id,
+              taskListId: task.listId,
+            })
+          }
+          overdue={overdue}
+          tasks={tasks}
+          timeZone={timeZone}
+          today={today}
         />
       ) : (
         <>
@@ -245,7 +317,7 @@ function CalendarBody({
             onNavigate={panByDays}
             onSelectDay={(day) => {
               setFocused(day);
-              switchView('day');
+              changeView('day');
             }}
             onTaskPress={host.editTask}
             onToggleTask={(task) =>
@@ -344,31 +416,6 @@ const makeStyles = (colors: ThemeColors) =>
       backgroundColor: colors.canvas,
       flex: 1,
     },
-    segment: {
-      alignSelf: 'center',
-      backgroundColor: colors.border,
-      borderRadius: 9,
-      flexDirection: 'row',
-      marginBottom: 8,
-      padding: 2,
-    },
-    segmentActive: {
-      backgroundColor: colors.surface,
-    },
-    segmentItem: {
-      borderRadius: 7,
-      paddingHorizontal: 16,
-      paddingVertical: 4,
-    },
-    segmentLabel: {
-      color: colors['text-secondary'],
-      fontSize: 13,
-      fontWeight: '500',
-    },
-    segmentLabelActive: {
-      color: colors.text,
-      fontWeight: '600',
-    },
     title: {
       color: colors.text,
       flex: 1,
@@ -378,5 +425,17 @@ const makeStyles = (colors: ThemeColors) =>
     todayLabel: {
       color: colors['text-secondary'],
       fontSize: 14,
+    },
+    viewButton: {
+      backgroundColor: colors.fill,
+      borderRadius: 8,
+      marginRight: 4,
+      paddingHorizontal: 10,
+      paddingVertical: 5,
+    },
+    viewButtonLabel: {
+      color: colors.text,
+      fontSize: 13,
+      fontWeight: '600',
     },
   });

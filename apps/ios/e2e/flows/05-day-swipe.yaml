@@ -4,7 +4,10 @@ tags:
   - ci
 ---
 - runFlow: ../common/launch.yaml
-- tapOn: 'Day'
+- runFlow:
+    file: ../common/switch-view.yaml
+    env:
+      VIEW: 'Day'
 # The header shows the focused day, e.g. "Fri, August 21".
 - assertVisible:
     id: 'day-timeline'

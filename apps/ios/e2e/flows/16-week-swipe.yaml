@@ -4,7 +4,10 @@ tags:
   - ci
 ---
 - runFlow: ../common/launch.yaml
-- tapOn: 'Week'
+- runFlow:
+    file: ../common/switch-view.yaml
+    env:
+      VIEW: 'Week'
 # Week titles are "September 7 – 13, 2026" or "Aug 31 – Sep 6, 2026".
 - assertVisible:
     text: '.* – .*, 20\d\d'
