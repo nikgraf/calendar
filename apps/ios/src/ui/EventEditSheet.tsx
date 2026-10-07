@@ -25,25 +25,51 @@ export type EditSeed = EventEditorSeed;
 
 const capitalize = (word: string) => word.charAt(0).toUpperCase() + word.slice(1);
 
-/** The alert for a move, conversion or create-mode switch that drops something (guests, a due time…). */
+/**
+ * The alert for a move, conversion or create-mode switch that drops
+ * something (guests, a due time…), and for a delete, whose summary is the
+ * whole question.
+ */
 const wording = (
   request: EditorConfirmRequest,
-): { readonly no: string; readonly title: string; readonly yes: string } => {
+): {
+  readonly message: string | undefined;
+  readonly no: string;
+  readonly title: string;
+  readonly yes: string;
+} => {
   const subject = capitalize(request.subject);
   const other = request.subject === 'event' ? 'task' : 'event';
   switch (request.kind) {
     case 'move':
-      return { no: 'Keep Here', title: `Move ${request.subject}?`, yes: 'Move' };
+      return {
+        message: request.summary,
+        no: 'Keep Here',
+        title: `Move ${request.subject}?`,
+        yes: 'Move',
+      };
     case 'convert':
-      return { no: `Keep as ${subject}`, title: `Convert ${request.subject}?`, yes: 'Convert' };
+      return {
+        message: request.summary,
+        no: `Keep as ${subject}`,
+        title: `Convert ${request.subject}?`,
+        yes: 'Convert',
+      };
     case 'switch':
-      return { no: `Keep as ${subject}`, title: `Switch to ${other}?`, yes: 'Switch' };
+      return {
+        message: request.summary,
+        no: `Keep as ${subject}`,
+        title: `Switch to ${other}?`,
+        yes: 'Switch',
+      };
+    case 'delete':
+      return { message: undefined, no: 'Cancel', title: request.summary, yes: 'Delete' };
   }
 };
 const confirm = (request: EditorConfirmRequest): Promise<boolean> =>
   new Promise((resolve) => {
-    const { no, title, yes } = wording(request);
-    Alert.alert(title, request.summary, [
+    const { message, no, title, yes } = wording(request);
+    Alert.alert(title, message, [
       { onPress: () => resolve(false), style: 'cancel', text: no },
       { onPress: () => resolve(true), style: 'destructive', text: yes },
     ]);

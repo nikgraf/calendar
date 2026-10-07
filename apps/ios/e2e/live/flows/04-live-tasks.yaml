@@ -75,6 +75,8 @@ tags:
     direction: DOWN
 - tapOn:
     id: 'task-delete'
+# The confirmation alert (deleteQuestion).
+- tapOn: 'Delete'
 - extendedWaitUntil:
     notVisible: 'live-${MAESTRO_LIVE_RUN_TAG}-ios-task'
     timeout: 20000

@@ -122,6 +122,7 @@ describe.skipIf(!REAL)('Apple Calendar through the real helper', () => {
     await cdp.click(renamed.x, renamed.y);
     await cdp.waitFor(`document.body.textContent.includes('Edit event')`);
     await cdp.clickButtonWithText('Delete');
+    await cdp.confirmDelete();
     await expect
       .poll(async () => (await todaysEvents()).some((entry) => entry.id === event.id))
       .toBe(false);

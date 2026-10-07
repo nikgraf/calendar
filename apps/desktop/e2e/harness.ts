@@ -628,6 +628,13 @@ export class Cdp {
     await this.send('Input.insertText', { text });
   }
 
+  /** Answers an editor's delete confirmation (MoveConfirm) with Delete. */
+  async confirmDelete(): Promise<void> {
+    const yes = `document.querySelector('[data-testid="move-confirm-yes"]')`;
+    await this.waitFor<boolean>(`!!${yes}`);
+    await this.eval(`${yes}.click()`);
+  }
+
   async clickButtonWithText(text: string): Promise<void> {
     await this.waitFor<boolean>(
       `[...document.querySelectorAll('button')].some(b => b.textContent?.trim() === ${JSON.stringify(text)})`,

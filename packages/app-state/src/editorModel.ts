@@ -40,6 +40,7 @@ import {
   type Temporal,
 } from '@calendar/core';
 import { useCallback, useState } from 'react';
+import { deleteQuestion } from './deleteQuestion.ts';
 import { useAccounts, useBackendMutations, useLocationGeo } from './hooks.ts';
 import { useOneWrite } from './oneWrite.ts';
 import { useRepeatState } from './repeatState.ts';
@@ -206,10 +207,12 @@ export const recurringTimesError = ({
  * What an editor asks before a write that drops something. The platform
  * words the buttons from `kind` and `subject`: a `move` keeps the item
  * where it is, a `convert` (an existing item changes kind on Save) or a
- * `switch` (a new draft changes kind) keeps it as the `subject`.
+ * `switch` (a new draft changes kind) keeps it as the `subject`, and a
+ * `delete` keeps it — its `summary` is the whole question
+ * (`deleteQuestion`).
  */
 export interface EditorConfirmRequest {
-  readonly kind: 'convert' | 'move' | 'switch';
+  readonly kind: 'convert' | 'delete' | 'move' | 'switch';
   readonly subject: 'event' | 'task';
   readonly summary: string;
 }
@@ -720,6 +723,16 @@ export const useEventEditorModel = ({
 
   const remove = async () => {
     if (!existing) {
+      return;
+    }
+    const series = isRecurring && existing.recurringEventId !== undefined;
+    if (
+      !(await confirm({
+        kind: 'delete',
+        subject: 'event',
+        summary: deleteQuestion(existing.title, series ? scope : undefined),
+      }))
+    ) {
       return;
     }
     try {

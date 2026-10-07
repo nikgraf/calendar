@@ -138,6 +138,7 @@ describe.skipIf(!REAL)('Apple Reminders through the real helper', () => {
     await cdp.click(renamed.x + 40, renamed.y);
     await cdp.waitFor(`document.body.textContent.includes('Edit reminder')`);
     await cdp.clickButtonWithText('Delete');
+    await cdp.confirmDelete();
     await cdp.waitFor(`!document.querySelector('[title="Solunivo ci reminder edited"]')`);
     await expect
       .poll(async () =>
@@ -214,6 +215,7 @@ describe.skipIf(!REAL)('Apple Reminders through the real helper', () => {
       await cdp.click(chip.x + 40, chip.y);
       await cdp.waitFor(`document.body.textContent.includes('Edit reminder')`);
       await cdp.clickButtonWithText('Delete');
+      await cdp.confirmDelete();
       await cdp.waitFor(`!document.querySelector('[title="Solunivo ci weekends"]')`);
     }
   });

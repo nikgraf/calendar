@@ -109,6 +109,8 @@ tags:
           direction: DOWN
       - tapOn:
           id: 'task-delete'
+      # The confirmation alert (deleteQuestion).
+      - tapOn: 'Delete'
       - extendedWaitUntil:
           notVisible: 'Edit Reminder'
           timeout: 20000

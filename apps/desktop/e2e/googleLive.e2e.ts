@@ -327,6 +327,7 @@ describe.skipIf(!LIVE)('Google live (real account)', { retry: 0, timeout: 120_00
     await app.cdp.click(block.x, block.y);
     await app.cdp.waitFor(`document.body.textContent.includes('Edit event')`);
     await app.cdp.clickButtonWithText('Delete');
+    await app.cdp.confirmDelete();
     await app.cdp.waitFor(`!document.querySelector('[title^=${JSON.stringify(title)}]')`);
     await expect
       .poll(() => serverStatus(row.id), POLL)

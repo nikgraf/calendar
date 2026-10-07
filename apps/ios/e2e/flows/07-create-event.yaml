@@ -54,6 +54,8 @@ tags:
       - assertVisible: 'Edit Event'
       - tapOn:
           id: 'event-delete'
+      # The confirmation alert (deleteQuestion).
+      - tapOn: 'Delete'
       - extendedWaitUntil:
           notVisible: 'Solunivo e2e event to delete.*'
           timeout: 20000
