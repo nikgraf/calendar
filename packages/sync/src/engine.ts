@@ -286,11 +286,15 @@ const make: Effect.Effect<
         }
         yield* calendarRepo.purge(account.id, [...new Set(gone)]);
       } else {
-        // Full pass: anything not seen no longer exists upstream.
+        // Full pass: anything not seen no longer exists upstream. Compared
+        // with what is stored now, not before the pass: a delta page that
+        // landed before a 410 may have stored a calendar the full list no
+        // longer has.
         const kept = new Set(result.keptIds);
+        const stored = yield* calendarRepo.list(account.id);
         yield* calendarRepo.purge(
           account.id,
-          [...previousVisibility.keys()].filter((id) => !kept.has(id)),
+          stored.map((calendar) => calendar.id).filter((id) => !kept.has(id)),
         );
       }
       // Imported visibility for calendars that just arrived, over Google's

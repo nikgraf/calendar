@@ -362,6 +362,47 @@ describe('SyncEngine', () => {
     }).pipe(Effect.provide(engineLayer(client)));
   });
 
+  it.effect(
+    'a calendar an incremental page added before the 410 goes if the relist omits it',
+    () => {
+      // Pages are stored as they arrive: page one of the delta adds a
+      // calendar, page two answers 410, and the full list no longer has it.
+      // The purge compared only with what was stored before the pass.
+      const added = {
+        accessRole: 'owner' as const,
+        id: 'cal-brief',
+        selected: true,
+        summary: 'Brief',
+      };
+      let deltaExpires = false;
+      const client: GoogleCalendarClientShape = {
+        ...stubClient([]),
+        listCalendars: (params) => {
+          if (!params.syncToken) {
+            return Effect.succeed({ items: calendarListPage.items, nextSyncToken: 'cal-sync-1' });
+          }
+          if (!deltaExpires) {
+            return Effect.succeed({ items: [], nextSyncToken: 'cal-sync-1' });
+          }
+          return params.pageToken
+            ? Effect.fail(new SyncTokenExpiredError({ calendarId: '' }))
+            : Effect.succeed({ items: [added], nextPageToken: 'page-2' });
+        },
+      };
+      return Effect.gen(function* () {
+        yield* seedAccount;
+        const engine = yield* SyncEngine;
+        const ids = Effect.map((yield* CalendarRepo).list('acc-1'), (rows) =>
+          rows.map((row) => row.id).sort(),
+        );
+        yield* engine.syncAll();
+        deltaExpires = true;
+        yield* engine.syncAll();
+        expect(yield* ids).toEqual(['cal-1']);
+      }).pipe(Effect.provide(engineLayer(client)));
+    },
+  );
+
   it.effect('offline, a pass gives up after one retry; a 503 still gets five', () => {
     // An unreached request (no status) used to be retried five times, about
     // half a minute per account with the sync gate held.
