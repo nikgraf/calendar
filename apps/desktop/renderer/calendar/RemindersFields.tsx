@@ -54,12 +54,12 @@ export function RemindersFields({ model }: { model: ReturnType<typeof useEventEd
         );
     return (
       <div
-        className="rounded-lg border border-neutral-200 bg-white p-3"
+        className="rounded-lg border border-hairline bg-surface p-3"
         data-testid="event-reminders"
       >
-        <p className="mb-1 text-xs font-medium text-neutral-400 uppercase">Notifications</p>
-        <ul className="text-sm text-neutral-700">
-          {listed.length === 0 ? <li className="text-neutral-400">None</li> : null}
+        <p className="mb-1 text-xs font-medium text-ink-secondary uppercase">Notifications</p>
+        <ul className="text-sm text-ink-secondary">
+          {listed.length === 0 ? <li className="text-ink-secondary">None</li> : null}
           {listed.map((label) => (
             <li key={label}>{label}</li>
           ))}
@@ -69,11 +69,8 @@ export function RemindersFields({ model }: { model: ReturnType<typeof useEventEd
   }
 
   return (
-    <div
-      className="rounded-lg border border-neutral-200 bg-white p-3"
-      data-testid="event-reminders"
-    >
-      <p className="mb-1 text-xs font-medium text-neutral-400 uppercase">Notifications</p>
+    <div className="rounded-lg border border-hairline bg-surface p-3" data-testid="event-reminders">
+      <p className="mb-1 text-xs font-medium text-ink-secondary uppercase">Notifications</p>
       {canUseDefaultReminders ? (
         <label className="mb-2 flex items-center gap-2 text-sm">
           <input
@@ -89,7 +86,7 @@ export function RemindersFields({ model }: { model: ReturnType<typeof useEventEd
         <div className="flex flex-col gap-1">
           {reminders.overrides.map((override, index) =>
             override.method === 'email' ? (
-              <p className="text-sm text-neutral-500" key={`email-${String(index)}`}>
+              <p className="text-sm text-ink-secondary" key={`email-${String(index)}`}>
                 Email · {reminderLabel(override.minutes, isAllDay)}
               </p>
             ) : (
@@ -109,7 +106,7 @@ export function RemindersFields({ model }: { model: ReturnType<typeof useEventEd
                 </select>
                 <button
                   aria-label={`Remove notification ${String(index + 1)}`}
-                  className="text-sm text-neutral-500 hover:text-red-600"
+                  className="text-sm text-ink-secondary hover:text-red-600"
                   onClick={() => removeReminder(index)}
                   type="button"
                 >
@@ -119,10 +116,10 @@ export function RemindersFields({ model }: { model: ReturnType<typeof useEventEd
             ),
           )}
           {reminders.overrides.length === 0 ? (
-            <p className="text-sm text-neutral-400">None</p>
+            <p className="text-sm text-ink-secondary">None</p>
           ) : null}
           <button
-            className="self-start text-sm text-blue-600 hover:underline disabled:text-neutral-400"
+            className="self-start text-sm text-primary hover:underline disabled:text-ink-secondary"
             data-testid="event-reminder-add"
             disabled={full || nextPreset === undefined}
             onClick={() => nextPreset !== undefined && addReminder(nextPreset)}

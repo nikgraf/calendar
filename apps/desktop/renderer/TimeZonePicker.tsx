@@ -32,7 +32,7 @@ export function TimeZonePicker({
         aria-expanded={matches.length > 0}
         aria-label="Search time zones"
         autoFocus
-        className="w-full rounded-lg border border-neutral-200 bg-white px-3 py-1.5 text-sm"
+        className="w-full rounded-lg border border-hairline bg-surface px-3 py-1.5 text-sm"
         onChange={(change) => {
           setQuery(change.target.value);
           setHighlight(0);
@@ -71,7 +71,7 @@ export function TimeZonePicker({
           renderItem={(match) => (
             <>
               <span data-testid={`time-zone-option-${zoneSlug(match.id)}`}>{match.city}</span>
-              <span className="text-xs text-neutral-400">{match.id}</span>
+              <span className="text-xs text-ink-secondary">{match.id}</span>
             </>
           )}
           setHighlight={setHighlight}

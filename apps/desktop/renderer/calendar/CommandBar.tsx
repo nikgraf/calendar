@@ -78,18 +78,18 @@ export function CommandBar({
       align="top"
       label="Quick add"
       onClose={onClose}
-      panelClassName="w-[560px] rounded-2xl bg-white p-4 shadow-2xl"
+      panelClassName="w-[560px] rounded-2xl bg-surface p-4 shadow-2xl"
       zIndex={40}
     >
       <>
         {status !== null && status !== 'ready' ? (
           <div className="flex items-center gap-3">
-            <p className="flex-1 text-sm text-neutral-500">
+            <p className="flex-1 text-sm text-ink-secondary">
               The on-device model is unavailable — Solunivo&apos;s AI features need macOS 26 with
               Apple Intelligence enabled.
             </p>
             <button
-              className="rounded-lg border border-neutral-200 px-3 py-1.5 text-sm disabled:opacity-40"
+              className="rounded-lg border border-hairline px-3 py-1.5 text-sm disabled:opacity-40"
               disabled={checking}
               onClick={retry}
               type="button"
@@ -100,11 +100,11 @@ export function CommandBar({
         ) : (
           <>
             <div className="flex items-center gap-2">
-              <div className="flex rounded-lg border border-neutral-200 bg-neutral-50 p-0.5">
+              <div className="flex rounded-lg border border-hairline bg-surface-subtle p-0.5">
                 {(['add', 'find'] as const).map((option) => (
                   <button
                     className={`rounded-md px-2 py-1 text-xs font-medium ${
-                      mode === option ? 'bg-blue-600 text-white' : 'text-neutral-600'
+                      mode === option ? 'bg-primary text-on-primary' : 'text-ink-secondary'
                     }`}
                     key={option}
                     onClick={() => setMode(option)}
@@ -115,7 +115,7 @@ export function CommandBar({
                 ))}
               </div>
               <input
-                className="flex-1 rounded-lg border border-neutral-200 px-3 py-2 text-sm"
+                className="flex-1 rounded-lg border border-hairline px-3 py-2 text-sm"
                 disabled={busy}
                 onChange={(input) => setPhrase(input.target.value)}
                 onKeyDown={(key) => {
@@ -150,7 +150,7 @@ export function CommandBar({
                   className={`rounded-lg border px-2 py-1.5 text-sm ${
                     voice === 'recording'
                       ? 'border-red-500 bg-red-50'
-                      : 'border-neutral-200 bg-white'
+                      : 'border-hairline bg-surface'
                   }`}
                   disabled={voice === 'preparing'}
                   onClick={() => void (voice === 'recording' ? stopRecording() : startRecording())}
@@ -160,7 +160,7 @@ export function CommandBar({
                 </button>
               ) : null}
               <button
-                className="rounded-lg bg-blue-600 px-3 py-1.5 text-sm font-medium text-white disabled:opacity-40"
+                className="rounded-lg bg-primary px-3 py-1.5 text-sm font-medium text-on-primary disabled:opacity-40"
                 disabled={busy || phrase.trim() === '' || voice === 'recording'}
                 onClick={() => void submit()}
                 type="button"
@@ -169,13 +169,13 @@ export function CommandBar({
               </button>
             </div>
             {voice === 'preparing' ? (
-              <p className="mt-2 text-xs text-neutral-400">Preparing dictation…</p>
+              <p className="mt-2 text-xs text-ink-secondary">Preparing dictation…</p>
             ) : voice === 'recording' ? (
-              <p className="mt-2 text-xs text-neutral-400">Listening — click ■ when finished.</p>
+              <p className="mt-2 text-xs text-ink-secondary">Listening — click ■ when finished.</p>
             ) : voice === 'transcribing' ? (
-              <p className="mt-2 text-xs text-neutral-400">Transcribing…</p>
+              <p className="mt-2 text-xs text-ink-secondary">Transcribing…</p>
             ) : mode === 'add' && !error && !busy ? (
-              <p className="mt-2 text-xs text-neutral-400">
+              <p className="mt-2 text-xs text-ink-secondary">
                 Paste an email or a screenshot (here or on the calendar) to pull its events out.
               </p>
             ) : null}
@@ -184,7 +184,7 @@ export function CommandBar({
               <div className="mt-3 flex flex-wrap gap-2">
                 {found.slots.map((slot) => (
                   <button
-                    className="rounded-lg border border-blue-200 bg-blue-50 px-2.5 py-1.5 text-sm text-blue-700 hover:bg-blue-100"
+                    className="rounded-lg border border-hairline-strong bg-selection px-2.5 py-1.5 text-sm text-on-selection hover:bg-selection"
                     key={`${slot.date}T${slot.startTime}`}
                     onClick={() => pickSlot(slot)}
                     type="button"

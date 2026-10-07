@@ -77,7 +77,7 @@ export function LocationCombobox({ model }: { model: ReturnType<typeof useEventE
             <>
               <span className="truncate">{place.title}</span>
               {place.subtitle ? (
-                <span className="truncate text-xs text-neutral-400">{place.subtitle}</span>
+                <span className="truncate text-xs text-ink-secondary">{place.subtitle}</span>
               ) : null}
             </>
           )}

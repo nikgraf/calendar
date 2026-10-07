@@ -13,7 +13,7 @@ import { TaskListSelect } from './TaskListSelect.tsx';
 
 const segment = (active: boolean) =>
   `rounded-md px-2 py-1 text-xs font-medium ${
-    active ? 'bg-blue-600 text-white' : 'text-neutral-600 hover:bg-neutral-200/60'
+    active ? 'bg-primary text-on-primary' : 'text-ink-secondary hover:bg-fill'
   }`;
 
 /**
@@ -42,7 +42,7 @@ export function ReminderEditorForm({
       ) : null}
       {taskModel.readOnly ? (
         <p
-          className="rounded-lg bg-neutral-100 p-2 text-sm text-neutral-600"
+          className="rounded-lg bg-fill p-2 text-sm text-ink-secondary"
           data-testid="task-read-only"
         >
           This list is read-only in Reminders.
@@ -94,7 +94,7 @@ export function ReminderEditorForm({
         <span className={LABEL_CLASS}>Priority</span>
         <div
           aria-label="Priority"
-          className="mt-1 flex rounded-lg border border-neutral-200 bg-neutral-50 p-0.5"
+          className="mt-1 flex rounded-lg border border-hairline bg-surface-subtle p-0.5"
           role="radiogroup"
         >
           {REMINDER_PRIORITY_OPTIONS.map((option) => (
@@ -131,7 +131,7 @@ export function ReminderEditorForm({
         </select>
       </label>
       {taskModel.recurrenceUnsupported ? (
-        <p className="text-xs text-neutral-500">
+        <p className="text-xs text-ink-secondary">
           This reminder repeats on a schedule Solunivo cannot edit — change it in Reminders.
         </p>
       ) : (
@@ -172,7 +172,7 @@ export function ReminderEditorForm({
         )}
         <div className="flex gap-2">
           <button
-            className="rounded-lg px-3 py-1.5 text-sm hover:bg-neutral-200"
+            className="rounded-lg px-3 py-1.5 text-sm hover:bg-fill"
             onClick={onClose}
             type="button"
           >
@@ -181,7 +181,7 @@ export function ReminderEditorForm({
           {taskModel.readOnly ? null : (
             <button
               aria-busy={taskModel.busy}
-              className={`rounded-lg bg-blue-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-40 ${taskModel.busy ? 'opacity-40' : ''}`}
+              className={`rounded-lg bg-primary px-4 py-1.5 text-sm font-medium text-on-primary hover:bg-primary-hover disabled:opacity-40 ${taskModel.busy ? 'opacity-40' : ''}`}
               disabled={moveConfirmation.pending !== null}
               onClick={() => void taskModel.save()}
               type="button"

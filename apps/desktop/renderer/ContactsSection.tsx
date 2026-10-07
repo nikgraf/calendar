@@ -44,20 +44,20 @@ export function ContactsSection() {
     return null;
   }
   return (
-    <section className="rounded-xl border border-neutral-200 bg-white p-4">
+    <section className="rounded-xl border border-hairline bg-surface p-4">
       <h2 className="font-medium">Contacts</h2>
-      <p className="mt-1 text-sm text-neutral-500">
+      <p className="mt-1 text-sm text-ink-secondary">
         {contactsStatusCopy(status, SETTINGS_PATH) ?? status}
       </p>
       {googleWithout.length > 0 ? (
-        <p className="mt-1 text-xs text-neutral-400">
+        <p className="mt-1 text-xs text-ink-secondary">
           Google contacts are not enabled for {googleWithout.map((a) => a.email).join(', ')} —
           re-run “Add Google Account” to grant the contacts scopes.
         </p>
       ) : null}
       {status === 'notDetermined' || status === 'denied' ? (
         <button
-          className="mt-3 rounded-lg bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50"
+          className="mt-3 rounded-lg bg-primary px-3 py-1.5 text-sm font-medium text-on-primary hover:bg-primary-hover disabled:opacity-50"
           disabled={busy}
           onClick={() => void connect()}
           type="button"

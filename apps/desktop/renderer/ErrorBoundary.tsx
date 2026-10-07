@@ -21,13 +21,13 @@ export class ErrorBoundary extends Component<{ children: ReactNode }, State> {
       return this.props.children;
     }
     return (
-      <div className="flex h-screen flex-col items-center justify-center gap-3 bg-neutral-50">
+      <div className="flex h-screen flex-col items-center justify-center gap-3 bg-surface-subtle">
         <p className="text-lg font-semibold">Something went wrong.</p>
-        <p className="max-w-md select-text truncate text-sm text-neutral-500">
+        <p className="max-w-md select-text truncate text-sm text-ink-secondary">
           {String(this.state.error)}
         </p>
         <button
-          className="rounded-lg bg-blue-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-blue-500"
+          className="rounded-lg bg-primary px-4 py-1.5 text-sm font-medium text-on-primary hover:bg-primary-hover"
           onClick={() => window.location.reload()}
           type="button"
         >

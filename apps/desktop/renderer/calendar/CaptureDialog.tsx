@@ -28,23 +28,23 @@ export function CaptureDialog({
       align="top"
       label="Events from paste"
       onClose={onClose}
-      panelClassName="w-[560px] rounded-2xl bg-white p-4 shadow-2xl"
+      panelClassName="w-[560px] rounded-2xl bg-surface p-4 shadow-2xl"
       zIndex={40}
     >
       <div data-capture-state={state.kind}>
         {state.kind === 'reading' || state.kind === 'extracting' ? (
-          <p className="text-sm text-neutral-500">
+          <p className="text-sm text-ink-secondary">
             {state.kind === 'reading' ? 'Reading the image…' : 'Looking for events…'}
           </p>
         ) : state.kind === 'error' ? (
           <div className="flex items-center gap-3">
-            <p className="flex-1 text-sm text-neutral-600">
+            <p className="flex-1 text-sm text-ink-secondary">
               {state.message === CAPTURE_MODEL_UNAVAILABLE
                 ? 'The on-device model is unavailable — Solunivo’s AI features need macOS 26 with Apple Intelligence enabled.'
                 : state.message}
             </p>
             <button
-              className="rounded-lg border border-neutral-200 px-3 py-1.5 text-sm"
+              className="rounded-lg border border-hairline px-3 py-1.5 text-sm"
               onClick={onClose}
               type="button"
             >
@@ -57,13 +57,15 @@ export function CaptureDialog({
               <h2 className="text-sm font-semibold">
                 {state.rows.length} {state.rows.length === 1 ? 'event' : 'events'} found
               </h2>
-              <p className="text-xs text-neutral-400">Open one to review it before it is added.</p>
+              <p className="text-xs text-ink-secondary">
+                Open one to review it before it is added.
+              </p>
             </div>
             <ul className="flex flex-col gap-1.5">
               {state.rows.map((row) => (
                 <li key={row.id}>
                   <button
-                    className="flex w-full items-center gap-3 rounded-lg border border-neutral-200 px-3 py-2 text-left hover:bg-neutral-50 disabled:bg-neutral-50 disabled:text-neutral-400"
+                    className="flex w-full items-center gap-3 rounded-lg border border-hairline px-3 py-2 text-left hover:bg-surface-subtle disabled:bg-surface-subtle disabled:text-ink-secondary"
                     data-capture-row={row.id}
                     data-status={row.status}
                     disabled={row.status === 'added'}
@@ -74,7 +76,7 @@ export function CaptureDialog({
                       <span className="block truncate text-sm font-medium">
                         {row.prefill.title}
                       </span>
-                      <span className="block truncate text-xs text-neutral-500">
+                      <span className="block truncate text-xs text-ink-secondary">
                         {describeCaptureRow(row)}
                       </span>
                     </span>
@@ -86,13 +88,13 @@ export function CaptureDialog({
               ))}
             </ul>
             {state.truncated ? (
-              <p className="mt-3 text-xs text-neutral-400">
+              <p className="mt-3 text-xs text-ink-secondary">
                 The text was long, so only its beginning was read — later events may be missing.
               </p>
             ) : null}
             <div className="mt-3 flex justify-end">
               <button
-                className="rounded-lg bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-500"
+                className="rounded-lg bg-primary px-3 py-1.5 text-sm font-medium text-on-primary hover:bg-primary-hover"
                 onClick={onClose}
                 type="button"
               >

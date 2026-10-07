@@ -69,10 +69,10 @@ export function AccountsView() {
       <header className="flex items-center justify-between">
         <h2 className="font-medium">Connected accounts</h2>
         {busy ? (
-          <span className="flex items-center gap-2 text-sm text-neutral-500">
+          <span className="flex items-center gap-2 text-sm text-ink-secondary">
             Waiting for Google in your browser…
             <button
-              className="rounded-lg px-2 py-1 text-neutral-700 hover:bg-neutral-100"
+              className="rounded-lg px-2 py-1 text-ink-secondary hover:bg-fill"
               data-testid="sign-in-cancel"
               onClick={() => void window.calendarBridge.authCancel()}
               type="button"
@@ -82,7 +82,7 @@ export function AccountsView() {
           </span>
         ) : (
           <button
-            className="rounded-lg bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-500"
+            className="rounded-lg bg-primary px-3 py-1.5 text-sm font-medium text-on-primary hover:bg-primary-hover"
             onClick={() => void addAccount()}
             type="button"
           >
@@ -98,22 +98,25 @@ export function AccountsView() {
       ) : null}
 
       {accounts.length === 0 && !error ? (
-        <p className="text-neutral-500">
+        <p className="text-ink-secondary">
           No Google accounts connected yet. Add one to see your calendars.
         </p>
       ) : null}
 
       {accounts.map((account) => (
-        <section className="rounded-xl border border-neutral-200 bg-white p-4" key={account.id}>
+        <section className="rounded-xl border border-hairline bg-surface p-4" key={account.id}>
           <div className="flex items-center justify-between">
             <div>
               <p className="select-text font-medium">{account.displayName ?? account.email}</p>
               {historyLine(account) ? (
-                <p className="text-xs text-neutral-500" data-testid={`sync-history-${account.id}`}>
+                <p
+                  className="text-xs text-ink-secondary"
+                  data-testid={`sync-history-${account.id}`}
+                >
                   {historyLine(account)}
                 </p>
               ) : null}
-              <p className="select-text text-sm text-neutral-500">
+              <p className="select-text text-sm text-ink-secondary">
                 {account.provider === 'apple' ? 'This Mac' : account.email}
                 {account.status === 'reauth_required' ? (
                   account.provider === 'apple' ? (
@@ -124,7 +127,7 @@ export function AccountsView() {
                     </span>
                   ) : (
                     <button
-                      className="ml-2 text-blue-600 hover:underline disabled:opacity-50"
+                      className="ml-2 text-primary hover:underline disabled:opacity-50"
                       disabled={busy}
                       onClick={() => void addAccount(account.email)}
                       type="button"
@@ -179,7 +182,7 @@ export function AccountsView() {
                   />
                   <span>{calendar.summary}</span>
                   {calendar.isPrimary ? (
-                    <span className="text-xs text-neutral-400">primary</span>
+                    <span className="text-xs text-ink-secondary">primary</span>
                   ) : null}
                 </li>
               ))}
@@ -211,7 +214,7 @@ function RemoveAccountConfirm({
       <div className="mt-3 flex justify-end gap-2">
         <button
           autoFocus
-          className="rounded-md px-3 py-1 text-neutral-700 hover:bg-white"
+          className="rounded-md px-3 py-1 text-ink-secondary hover:bg-surface"
           onClick={onCancel}
           type="button"
         >

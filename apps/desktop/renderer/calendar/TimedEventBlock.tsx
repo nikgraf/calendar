@@ -67,7 +67,7 @@ export function TimedEventBlock({
   return (
     <div
       aria-label={`${event.title}, ${formatClockTime(event.startUtc, timeZone)} to ${formatClockTime(event.endUtc, timeZone)}`}
-      className={`absolute touch-none overflow-hidden rounded-md px-1.5 py-0.5 outline-none select-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
+      className={`absolute touch-none overflow-hidden rounded-md px-1.5 py-0.5 outline-none select-none focus-visible:ring-2 focus-visible:ring-focus ${
         draggable ? 'cursor-grab' : 'cursor-pointer'
       } ${dragging ? 'z-20 opacity-90 shadow-lg ring-2 ring-white/60' : ''}`}
       key={box.id}

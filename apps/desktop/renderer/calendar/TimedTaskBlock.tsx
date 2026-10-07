@@ -52,7 +52,7 @@ export function TimedTaskBlock({
   return (
     <div
       aria-label={`${task.title}, due ${dueLabel}${repeats ? ', repeats' : ''}`}
-      className={`absolute flex h-[22px] touch-none items-center gap-1 overflow-hidden rounded border border-neutral-300 bg-neutral-50 px-1 text-xs text-neutral-700 outline-none select-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
+      className={`absolute flex h-[22px] touch-none items-center gap-1 overflow-hidden rounded border border-hairline-strong bg-surface-subtle px-1 text-xs text-ink-secondary outline-none select-none focus-visible:ring-2 focus-visible:ring-focus ${
         readOnly ? 'cursor-pointer' : 'cursor-grab'
       } ${done ? 'opacity-50' : ''} ${dragging ? 'z-20 shadow-lg ring-2 ring-white/60' : ''}`}
       data-testid={`timed-task-${task.id}`}
@@ -93,7 +93,7 @@ export function TimedTaskBlock({
       </button>
       <span className={`truncate ${done ? 'line-through' : ''}`}>{label}</span>
       {repeats ? (
-        <span aria-hidden className="shrink-0 text-neutral-500">
+        <span aria-hidden className="shrink-0 text-ink-secondary">
           {REPEAT_MARKER}
         </span>
       ) : null}

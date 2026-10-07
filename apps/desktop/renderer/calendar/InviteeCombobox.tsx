@@ -6,7 +6,7 @@ import { SuggestionList } from './SuggestionList.tsx';
 const STATUS_DOT: Record<Attendee['responseStatus'], string> = {
   accepted: 'bg-green-500',
   declined: 'bg-red-500',
-  needsAction: 'bg-neutral-300',
+  needsAction: 'bg-hairline-strong',
   tentative: 'bg-amber-400',
 };
 
@@ -74,7 +74,7 @@ export function InviteeCombobox({
   const footer =
     permission === 'notDetermined' ? (
       <button
-        className="w-full px-3 py-2 text-left text-xs text-blue-600 hover:bg-neutral-50"
+        className="w-full px-3 py-2 text-left text-xs text-primary hover:bg-surface-subtle"
         disabled={busy}
         onClick={() => void allow()}
         onMouseDown={(mouseEvent) => mouseEvent.preventDefault()}
@@ -83,23 +83,23 @@ export function InviteeCombobox({
         Allow access to Contacts to suggest people from your address book
       </button>
     ) : permission === 'denied' ? (
-      <p className="px-3 py-2 text-xs text-neutral-400">
+      <p className="px-3 py-2 text-xs text-ink-secondary">
         Contacts access is off — System Settings › Privacy &amp; Security › Contacts
       </p>
     ) : !googleContactsEnabled && accounts.some((account) => account.provider === 'google') ? (
-      <p className="px-3 py-2 text-xs text-neutral-400">
+      <p className="px-3 py-2 text-xs text-ink-secondary">
         Re-add your Google account to search Google contacts
       </p>
     ) : null;
 
   return (
     <div className="relative">
-      <div className="flex flex-wrap items-center gap-1 rounded-lg border border-neutral-200 bg-white px-2 py-1">
+      <div className="flex flex-wrap items-center gap-1 rounded-lg border border-hairline bg-surface px-2 py-1">
         {attendees.map((attendee) => {
           const status = attendeeStatus(attendee.email);
           return (
             <span
-              className="inline-flex items-center gap-1 rounded-md bg-neutral-100 px-2 py-0.5 text-xs"
+              className="inline-flex items-center gap-1 rounded-md bg-fill px-2 py-0.5 text-xs"
               data-invitee={attendee.email}
               key={emailKey(attendee.email)}
               title={`${attendee.email}${status ? ` · ${status.responseStatus}` : ''}`}
@@ -109,11 +109,11 @@ export function InviteeCombobox({
               />
               <span className="select-text">{attendee.displayName ?? attendee.email}</span>
               {status?.isOrganizer ? (
-                <span className="text-neutral-400">organizer</span>
+                <span className="text-ink-secondary">organizer</span>
               ) : (
                 <button
                   aria-label={`Remove ${attendee.email}`}
-                  className="ml-0.5 text-neutral-400 hover:text-neutral-700"
+                  className="ml-0.5 text-ink-secondary hover:text-ink-secondary"
                   onClick={() => onRemove(attendee.email)}
                   type="button"
                 >
@@ -181,9 +181,9 @@ export function InviteeCombobox({
             <>
               <span>{contact.displayName ?? contact.email}</span>
               {contact.displayName ? (
-                <span className="truncate text-xs text-neutral-400">{contact.email}</span>
+                <span className="truncate text-xs text-ink-secondary">{contact.email}</span>
               ) : null}
-              <span className="ml-auto text-[10px] text-neutral-300 uppercase">
+              <span className="ml-auto text-[10px] text-ink-secondary/70 uppercase">
                 {contact.source === 'device' ? 'Contacts' : contact.isOtherContact ? '' : 'Google'}
               </span>
             </>
@@ -192,7 +192,7 @@ export function InviteeCombobox({
           stale={stale}
         >
           {suggestions.length === 0 && text.trim() !== '' ? (
-            <p className="px-3 py-1.5 text-xs text-neutral-400">
+            <p className="px-3 py-1.5 text-xs text-ink-secondary">
               {isValidEmail(text) ? 'Press Enter to invite this address' : 'No matches'}
             </p>
           ) : null}

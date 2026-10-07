@@ -2,5 +2,5 @@
 
 /** The shared input class of the editor dialog. */
 export const FIELD_CLASS =
-  'w-full rounded-lg border border-neutral-200 bg-white px-3 py-1.5 text-sm';
-export const LABEL_CLASS = 'text-xs font-medium text-neutral-500';
+  'w-full rounded-lg border border-hairline bg-surface px-3 py-1.5 text-sm';
+export const LABEL_CLASS = 'text-xs font-medium text-ink-secondary';

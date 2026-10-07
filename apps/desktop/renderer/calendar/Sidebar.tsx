@@ -46,7 +46,7 @@ export function Sidebar({
 
   const calendarRow = (calendar: CalendarInfo) => (
     <div
-      className="flex w-full items-center gap-2 rounded-md px-2 py-1 hover:bg-neutral-200/60"
+      className="flex w-full items-center gap-2 rounded-md px-2 py-1 hover:bg-fill"
       key={calendar.id}
     >
       <CalendarColorButton calendar={calendar} />
@@ -55,7 +55,7 @@ export function Sidebar({
         onClick={() => toggle(calendar)}
         type="button"
       >
-        <span className={`block truncate ${calendar.isVisible ? '' : 'text-neutral-400'}`}>
+        <span className={`block truncate ${calendar.isVisible ? '' : 'text-ink-secondary'}`}>
           {calendar.summary}
         </span>
       </button>
@@ -71,7 +71,7 @@ export function Sidebar({
     }
     return [...sources].map(([source, entries]) => (
       <div data-testid={`calendar-source-${source}`} key={source}>
-        <p className="px-2 pt-1 text-[11px] text-neutral-400">{source}</p>
+        <p className="px-2 pt-1 text-[11px] text-ink-secondary">{source}</p>
         {entries.map(calendarRow)}
       </div>
     ));
@@ -94,12 +94,12 @@ export function Sidebar({
   };
 
   return (
-    <aside className="flex w-60 shrink-0 flex-col border-r border-neutral-200 bg-neutral-50">
+    <aside className="flex w-60 shrink-0 flex-col border-r border-hairline bg-surface-subtle">
       <div className="px-4 pt-10 pb-2 text-sm font-semibold">Solunivo</div>
       <div className="min-h-0 flex-1 overflow-y-auto px-2">
         {accounts.map((account) => (
           <section className="mb-3" key={account.id}>
-            <p className="select-text px-2 py-1 text-[11px] font-medium tracking-wide text-neutral-400 uppercase">
+            <p className="select-text px-2 py-1 text-[11px] font-medium tracking-wide text-ink-secondary uppercase">
               {isAppleRemindersAccount(account)
                 ? 'Apple Reminders'
                 : isAppleCalendarAccount(account)
@@ -118,7 +118,7 @@ export function Sidebar({
               .filter((list) => list.accountId === account.id)
               .map((list) => (
                 <button
-                  className="flex w-full items-center gap-2 rounded-md px-2 py-1 text-left text-sm hover:bg-neutral-200/60"
+                  className="flex w-full items-center gap-2 rounded-md px-2 py-1 text-left text-sm hover:bg-fill"
                   key={list.id}
                   onClick={() => toggleList(list)}
                   type="button"
@@ -134,13 +134,13 @@ export function Sidebar({
                       ✓
                     </span>
                   )}
-                  <span className={`block truncate ${list.isVisible ? '' : 'text-neutral-400'}`}>
+                  <span className={`block truncate ${list.isVisible ? '' : 'text-ink-secondary'}`}>
                     {list.title}
                   </span>
                 </button>
               ))}
             {account.provider === 'apple' && account.status === 'reauth_required' ? (
-              <p className="px-2 py-1 text-xs text-neutral-400">
+              <p className="px-2 py-1 text-xs text-ink-secondary">
                 Allow {isAppleCalendarAccount(account) ? 'Calendars' : 'Reminders'} in System
                 Settings › Privacy & Security — it reconnects on its own.
               </p>
@@ -149,7 +149,7 @@ export function Sidebar({
               // Tokens from before the tasks scope: re-running sign-in
               // re-consents and upgrades the account in place.
               <button
-                className="w-full rounded-md px-2 py-1 text-left text-xs text-neutral-400 hover:bg-neutral-200/60 hover:text-neutral-600"
+                className="w-full rounded-md px-2 py-1 text-left text-xs text-ink-secondary hover:bg-fill hover:text-ink-secondary"
                 onClick={() => void addAccount({ loginHint: account.email })}
                 type="button"
               >
@@ -159,11 +159,11 @@ export function Sidebar({
           </section>
         ))}
         {accounts.length === 0 ? (
-          <p className="px-2 py-4 text-sm text-neutral-400">No accounts connected.</p>
+          <p className="px-2 py-4 text-sm text-ink-secondary">No accounts connected.</p>
         ) : null}
         {accounts.some(isAppleCalendarAccount) ? null : (
           <button
-            className="w-full rounded-md px-2 py-1 text-left text-xs text-neutral-400 hover:bg-neutral-200/60 hover:text-neutral-600"
+            className="w-full rounded-md px-2 py-1 text-left text-xs text-ink-secondary hover:bg-fill hover:text-ink-secondary"
             onClick={() => void connect('calendar')}
             type="button"
           >
@@ -172,7 +172,7 @@ export function Sidebar({
         )}
         {accounts.some(isAppleRemindersAccount) ? null : (
           <button
-            className="w-full rounded-md px-2 py-1 text-left text-xs text-neutral-400 hover:bg-neutral-200/60 hover:text-neutral-600"
+            className="w-full rounded-md px-2 py-1 text-left text-xs text-ink-secondary hover:bg-fill hover:text-ink-secondary"
             onClick={() => void connect('reminders')}
             type="button"
           >
@@ -183,7 +183,7 @@ export function Sidebar({
       </div>
       <SyncStatus />
       <button
-        className="m-3 rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm hover:bg-neutral-100"
+        className="m-3 rounded-lg border border-hairline bg-surface px-3 py-2 text-sm hover:bg-fill"
         onClick={onManageAccounts}
         type="button"
       >

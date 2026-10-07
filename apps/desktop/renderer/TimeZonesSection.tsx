@@ -36,9 +36,9 @@ export function TimeZonesSection() {
     );
 
   return (
-    <section className="rounded-xl border border-neutral-200 bg-white p-4" data-testid="time-zones">
+    <section className="rounded-xl border border-hairline bg-surface p-4" data-testid="time-zones">
       <h2 className="font-medium">Time zones</h2>
-      <p className="mt-1 text-sm text-neutral-500">
+      <p className="mt-1 text-sm text-ink-secondary">
         The calendar is drawn in the primary zone; the others appear under each hour and on events.
       </p>
       <ul className="mt-3 flex flex-col gap-1">
@@ -53,19 +53,19 @@ export function TimeZonesSection() {
               key={zone}
             >
               <span className="font-medium">{city}</span>
-              <span className="text-xs text-neutral-400">
+              <span className="text-xs text-ink-secondary">
                 {zone}
                 {zone === deviceZone ? ' (this device)' : ''}
               </span>
               <span className="flex-1" />
               {primary ? (
-                <span className="rounded-full bg-neutral-100 px-2 py-0.5 text-xs text-neutral-600">
+                <span className="rounded-full bg-fill px-2 py-0.5 text-xs text-ink-secondary">
                   Primary
                 </span>
               ) : (
                 <button
                   aria-label={`Make ${city} primary`}
-                  className="text-xs text-blue-600 hover:underline"
+                  className="text-xs text-primary hover:underline"
                   onClick={() => save(withPrimary(settings, zone))}
                   type="button"
                 >
@@ -98,7 +98,7 @@ export function TimeZonesSection() {
       ) : (
         <button
           aria-label="Add time zone"
-          className="mt-3 text-sm text-blue-600 hover:underline disabled:text-neutral-400 disabled:no-underline"
+          className="mt-3 text-sm text-primary hover:underline disabled:text-ink-secondary disabled:no-underline"
           disabled={full}
           onClick={() => setPicking(true)}
           title={full ? `Up to ${MAX_TIME_ZONES} time zones.` : undefined}
@@ -112,7 +112,7 @@ export function TimeZonesSection() {
           {notice}
         </p>
       ) : null}
-      <p className="mt-3 text-xs text-neutral-400" data-testid="time-zones-device-only">
+      <p className="mt-3 text-xs text-ink-secondary" data-testid="time-zones-device-only">
         {DEVICE_ONLY_SETTING_COPY}
       </p>
     </section>

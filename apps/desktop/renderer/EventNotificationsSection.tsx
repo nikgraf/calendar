@@ -35,9 +35,9 @@ export function EventNotificationsSection() {
     );
 
   return (
-    <section className="rounded-xl border border-neutral-200 bg-white p-4">
+    <section className="rounded-xl border border-hairline bg-surface p-4">
       <h2 className="font-medium">Event notifications</h2>
-      <p className="mt-1 text-sm text-neutral-500">
+      <p className="mt-1 text-sm text-ink-secondary">
         A notification before each event, at the times set on the event or its calendar.
       </p>
       <label className="mt-3 flex items-center gap-2 text-sm">
@@ -59,7 +59,7 @@ export function EventNotificationsSection() {
         />
         Also for Apple Calendar events
       </label>
-      <p className="mt-1 ml-6 text-xs text-neutral-400">
+      <p className="mt-1 ml-6 text-xs text-ink-secondary">
         Calendar already notifies you about these; on means you get both.
       </p>
       {notice ? (
@@ -67,7 +67,7 @@ export function EventNotificationsSection() {
           {notice}
         </p>
       ) : null}
-      <p className="mt-3 text-xs text-neutral-400" data-testid="event-notifications-device-only">
+      <p className="mt-3 text-xs text-ink-secondary" data-testid="event-notifications-device-only">
         {DEVICE_ONLY_SETTING_COPY} Notifications arrive while Solunivo is running.
       </p>
     </section>
