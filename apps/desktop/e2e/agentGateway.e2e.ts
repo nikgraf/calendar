@@ -440,6 +440,60 @@ describe('agent gateway: other agents reach the app over the CLI and MCP', () =>
     expect(asked.map((row) => row.status)).toEqual(['denied', 'done']);
   });
 
+  it('Escape closes only the request on top, and the calendar ignores keys behind it', async () => {
+    const { cdp } = app;
+    const work = await calendarRef(app, ASKER, 'Work');
+    const key = (init: string) =>
+      cdp.eval(`void window.dispatchEvent(new KeyboardEvent('keydown', ${init}))`);
+    const declineAll = async () => {
+      for (const request of (
+        await cdp.eval<{ pending: ReadonlyArray<{ id: string }> }>(
+          `window.calendarBridge.agentsState()`,
+        )
+      ).pending) {
+        await cdp.eval(`window.calendarBridge.agentsDecide(${JSON.stringify(request.id)}, 'deny')`);
+      }
+    };
+
+    // A half-written event (⌘N), then a request on top of it.
+    await key(`{ key: 'n', metaKey: true }`);
+    await cdp.waitFor(`document.body.textContent.includes('New event')`);
+    await cdp.eval(`(() => {
+      const input = document.querySelector('input[placeholder="Title"]');
+      const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+      setter.call(input, 'Half written');
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    })()`);
+    const first = runAgentCli(app, ASKER, newEvent(work, 'Asked lunch', 12));
+    await cdp.waitFor(`!!document.querySelector('[data-testid="agent-approval"]')`);
+
+    // One Escape: the request goes, the draft stays.
+    await cdp.pressEscape();
+    await cdp.waitFor(`!document.querySelector('[data-testid="agent-approval"]')`);
+    expect(
+      await cdp.eval<string>(`document.querySelector('input[placeholder="Title"]')?.value ?? ''`),
+    ).toBe('Half written');
+    await cdp.pressEscape();
+    await cdp.waitFor(`!document.body.textContent.includes('New event')`);
+
+    // Behind a request, the calendar's own keys do nothing.
+    const second = runAgentCli(app, ASKER, newEvent(work, 'Asked dinner', 19));
+    await cdp.waitFor(
+      `document.querySelector('[data-testid="agent-approval-title"]')?.textContent.includes('Asked dinner')`,
+    );
+    const title = await cdp.eval<string>(`document.querySelector('h1')?.textContent ?? ''`);
+    await key(`{ key: 'ArrowRight' }`);
+    await key(`{ key: 'k', metaKey: true }`);
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    expect(await cdp.eval<string>(`document.querySelector('h1')?.textContent ?? ''`)).toBe(title);
+    expect(await cdp.eval<number>(`document.querySelectorAll('[role="dialog"]').length`)).toBe(1);
+
+    await declineAll();
+    expect((await first).code).toBe(1);
+    expect((await second).code).toBe(1);
+    await cdp.waitFor(`!document.querySelector('[data-testid="agent-approval"]')`);
+  });
+
   it('Settings → Agents: answering one request disarms the next one sliding up', async () => {
     const work = await calendarRef(app, ASKER, 'Work');
     const first = runAgentCli(app, ASKER, newEvent(work, 'Asked lunch', 12));

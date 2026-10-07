@@ -26,6 +26,7 @@ import {
 import { useEffect, useMemo, useState } from 'react';
 import { desktopLanguageModel } from '../ai/desktopModel.ts';
 import { desktopTextRecognizer } from '../ai/desktopTextRecognizer.ts';
+import { isDialogOpen } from '../Dialog.tsx';
 import { EventEditor, type EditorSeed } from './EventEditor.tsx';
 import { CaptureDialog } from './CaptureDialog.tsx';
 import { captureSourceOf, isCapturable, readPaste } from './captureClipboard.ts';
@@ -123,14 +124,20 @@ function CalendarBody({
   useEffect(() => {
     const onKeyDown = (key: KeyboardEvent) => {
       const command = key.metaKey || key.ctrlKey;
+      // Any dialog of this window counts — the agent approval dialog too,
+      // which App opens over the calendar without it knowing.
+      const anyDialog = dialogOpen || isDialogOpen();
       if (command && key.key.toLowerCase() === 'k') {
         key.preventDefault();
-        setCommandBarOpen((open) => !open);
+        // ⌘K closes its own bar; it opens none over another dialog.
+        if (commandBarOpen || !anyDialog) {
+          setCommandBarOpen((open) => !open);
+        }
         return;
       }
       // The rest are single keys for the calendar itself: not while a
       // dialog is open (they close on Escape themselves) or while typing.
-      if (dialogOpen || isTyping(key.target) || key.altKey) {
+      if (anyDialog || isTyping(key.target) || key.altKey) {
         return;
       }
       if (command && key.key.toLowerCase() === 'n') {
@@ -146,14 +153,14 @@ function CalendarBody({
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [dialogOpen, focused, goToday, step]);
+  }, [commandBarOpen, dialogOpen, focused, goToday, step]);
 
   // ⌘V on the calendar itself: an email or a screenshot becomes events to
   // review. Not while a dialog is open or a field has focus — those pastes
   // are theirs. The stock Edit › Paste menu role fires the same event.
   useEffect(() => {
     const onPaste = (event: ClipboardEvent) => {
-      if (dialogOpen || isTyping(event.target)) {
+      if (dialogOpen || isDialogOpen() || isTyping(event.target)) {
         return;
       }
       const pasted = readPaste(event.clipboardData);
