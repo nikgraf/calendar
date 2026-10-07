@@ -204,6 +204,28 @@ export const useMapSnapshot = (
   };
 };
 
+/**
+ * The rule lines of the series an event belongs to. An occurrence row
+ * never carries them, so its master is read by id; a master (or a single
+ * event) answers from the row itself. `loaded` is false while the master
+ * is on its way — the repeat fields wait for it. Apple events are read
+ * through, not stored: their master reads as null, so the rule stays
+ * unknown (and uneditable) for them.
+ */
+export const useEventMaster = (
+  event: EventRecord | undefined,
+): { readonly loaded: boolean; readonly recurrence: ReadonlyArray<string> | undefined } => {
+  const masterId = event?.recurringEventId;
+  const key = event && masterId ? `${event.accountId}|${event.calendarId}|${masterId}` : '';
+  const result = useAtomValue(useBackendAtoms().eventById(key));
+  if (key === '') {
+    return { loaded: true, recurrence: event?.recurrence };
+  }
+  return AsyncResult.isSuccess(result)
+    ? { loaded: result.value !== null, recurrence: result.value?.recurrence }
+    : { loaded: false, recurrence: undefined };
+};
+
 /** Task lists across accounts (for visibility toggles + connect rows). */
 export const useTaskLists = (): ReadonlyArray<TaskListInfo> => {
   const atoms = useBackendAtoms();

@@ -197,7 +197,7 @@ export function EventEditorForm({
         ) : null}
         <LocationCombobox model={model} />
         <LocationMap model={model} />
-        {existing ? null : <RepeatRuleFields anchorDate={date} state={model} />}
+        {model.repeatLoaded ? <RepeatRuleFields anchorDate={date} state={model} /> : null}
         {canInvite ? (
           <div className="rounded-lg border border-hairline bg-surface p-3">
             <p className="mb-1 text-xs font-medium text-ink-secondary uppercase">Invitees</p>

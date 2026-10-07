@@ -58,6 +58,7 @@ export interface BackendAtoms {
   readonly birthdaysInRange: ReturnType<typeof buildAtoms>['birthdaysInRange'];
   readonly calendars: ReturnType<typeof buildAtoms>['calendars'];
   readonly contactsSearch: ReturnType<typeof buildAtoms>['contactsSearch'];
+  readonly eventById: ReturnType<typeof buildAtoms>['eventById'];
   readonly eventNotificationSettings: ReturnType<typeof buildAtoms>['eventNotificationSettings'];
   readonly eventsInRange: ReturnType<typeof buildAtoms>['eventsInRange'];
   readonly locationGeo: ReturnType<typeof buildAtoms>['locationGeo'];
@@ -375,6 +376,22 @@ const buildAtoms = (client: BackendClient) => {
       .pipe(Atom.withReactivity([LOCATION_GEO_KEY])),
   );
 
+  // One stored event by `accountId|calendarId|eventId`: the editor reads
+  // a series' master for its rule. '' resolves to null.
+  const eventById = boundedAtomCache((key) =>
+    runtime
+      .atom(
+        key === ''
+          ? Effect.succeed(null)
+          : Effect.gen(function* () {
+              const backend = yield* AppBackend;
+              const [accountId = '', calendarId = '', eventId = ''] = key.split('|', 3);
+              return yield* backend.getEvent({ accountId, calendarId, eventId });
+            }),
+      )
+      .pipe(Atom.withReactivity([EVENTS_KEY])),
+  );
+
   // Desktop map images, keyed by mapSnapshotKey; '' resolves to null.
   const mapSnapshot = boundedAtomCache((key) =>
     runtime.atom(
@@ -442,6 +459,7 @@ const buildAtoms = (client: BackendClient) => {
     birthdaysInRange,
     calendars,
     contactsSearch,
+    eventById,
     eventNotificationSettings,
     eventsInRange,
     locationGeo,
