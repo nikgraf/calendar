@@ -8,6 +8,8 @@ export interface QuickAddParse {
   /** `HH:MM`, 24-hour. Absent for all-day or unspecified. */
   readonly endTime?: string;
   readonly isAllDay?: boolean;
+  /** A to-do ("remind me to…", "todo: …") rather than an appointment; absent = event. */
+  readonly kind?: 'event' | 'task';
   readonly location?: string;
   readonly recurrence?: {
     readonly count?: number;
@@ -26,6 +28,7 @@ export const QUICK_ADD_JSON_SCHEMA = {
     date: { description: 'YYYY-MM-DD', type: 'string' },
     endTime: { description: 'HH:MM, 24-hour', type: 'string' },
     isAllDay: { type: 'boolean' },
+    kind: { enum: ['event', 'task'], type: 'string' },
     location: { type: 'string' },
     recurrence: {
       additionalProperties: false,
@@ -66,7 +69,10 @@ export const buildQuickAddPrompt = ({
   timeZone: string;
 }): string =>
   [
-    'Extract calendar event details from the phrase.',
+    'Extract calendar details from the phrase.',
+    'It is an event (kind "event") unless it describes something to do rather',
+    'than attend — "remind me to", "todo", "don\'t forget to", "I need to" —',
+    'then it is a task (kind "task"): a task has a date and maybe a time, no end.',
     `Today is ${referenceDate} in time zone ${timeZone}.`,
     'Resolve relative dates ("tomorrow", "next Tuesday") by picking from',
     `this list, never by computing: ${upcomingDays(referenceDate)}.`,

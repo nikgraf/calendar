@@ -94,6 +94,8 @@ let lastUsedCalendarKey: string | null = null;
 export const rememberCalendar = (calendarKey: string): void => {
   lastUsedCalendarKey = calendarKey;
 };
+/** The calendar a new event will default to (a quick-add review names it). */
+export const getLastUsedCalendarKey = (): string | null => lastUsedCalendarKey;
 
 /**
  * The start and end a new event opens with: a quick-add result first, then

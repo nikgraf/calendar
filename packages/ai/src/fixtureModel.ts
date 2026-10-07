@@ -75,11 +75,14 @@ export const makeFixtureLanguageModel = (): LanguageModel => ({
       return { events } satisfies CaptureParse;
     }
     if (isRecord(properties) && 'startTime' in properties) {
-      const phrase = textAfter(prompt, QUICK_ADD_PHRASE_MARKER).trim();
-      return (
-        (phrase.includes('|') ? parseLine(phrase, referenceDate) : undefined) ??
-        ({ title: phrase } satisfies QuickAddParse)
-      );
+      const full = textAfter(prompt, QUICK_ADD_PHRASE_MARKER).trim();
+      // "todo: …" is the fixture's deterministic task marker.
+      const task = /^todo:\s*/i.exec(full);
+      const phrase = task ? full.slice(task[0].length) : full;
+      const parsed: QuickAddParse = (phrase.includes('|')
+        ? parseLine(phrase, referenceDate)
+        : undefined) ?? { title: phrase };
+      return task ? { ...parsed, kind: 'task' } : parsed;
     }
     throw new Error('fixture model: unsupported schema');
   },
