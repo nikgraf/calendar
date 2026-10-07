@@ -29,16 +29,8 @@ import {
   weekStart,
 } from '@calendar/core';
 import { useEffect, useEffectEvent, useMemo, useState } from 'react';
-import {
-  AppState,
-  Linking,
-  Pressable,
-  SafeAreaView,
-  StatusBar,
-  StyleSheet,
-  Text,
-  View,
-} from 'react-native';
+import { StatusBar } from 'expo-status-bar';
+import { AppState, Linking, Pressable, SafeAreaView, StyleSheet, Text, View } from 'react-native';
 import {
   backendClient,
   kickSync,
@@ -59,7 +51,7 @@ import { MonthGrid } from './MonthGrid.tsx';
 import { EventEditSheet, type EditSeed } from './EventEditSheet.tsx';
 import { SettingsSheet } from './SettingsSheet.tsx';
 import { ConflictBanner, DroppedToast, MutationNoticeToast } from './Toast.tsx';
-import { palette } from './theme.ts';
+import { type ThemeColors, useStyles } from './theme.ts';
 import { WeekStrip } from './WeekStrip.tsx';
 
 const SEGMENT_LABELS = { day: 'Day', month: 'Month', twoDay: '2 Days', week: 'Week' } as const;
@@ -75,6 +67,7 @@ const isShareUrl = (url: string) => /^[a-z-]+:\/\/expo-sharing/i.test(url);
  * also seed the focused day and "today" with the wrong date).
  */
 export function CalendarScreen() {
+  const styles = useStyles(makeStyles);
   useBackendInvalidations(subscribeInvalidations);
   useEffect(() => {
     startSync();
@@ -101,6 +94,7 @@ function CalendarBody({
   primary: string;
   secondary: ReadonlyArray<string>;
 }) {
+  const styles = useStyles(makeStyles);
   const {
     buffer,
     days,
@@ -236,7 +230,7 @@ function CalendarBody({
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <StatusBar barStyle="dark-content" />
+      <StatusBar style="auto" />
       <View style={styles.header}>
         <Text numberOfLines={1} style={styles.title} testID="day-title">
           {title}
@@ -440,80 +434,81 @@ function CalendarBody({
   );
 }
 
-const styles = StyleSheet.create({
-  addLabel: {
-    color: '#2563eb',
-    fontSize: 18,
-    fontWeight: '600',
-  },
-  header: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-  },
-  headerActions: {
-    alignItems: 'center',
-    flexDirection: 'row',
-  },
-  navButton: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-  },
-  navLabel: {
-    color: palette.textMuted,
-    fontSize: 18,
-  },
-  pendingBadge: {
-    backgroundColor: '#fef3c7',
-    borderRadius: 10,
-    marginRight: 4,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-  },
-  pendingBadgeLabel: {
-    color: '#92400e',
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  safeArea: {
-    backgroundColor: palette.background,
-    flex: 1,
-  },
-  segment: {
-    alignSelf: 'center',
-    backgroundColor: '#e5e5e5',
-    borderRadius: 9,
-    flexDirection: 'row',
-    marginBottom: 8,
-    padding: 2,
-  },
-  segmentActive: {
-    backgroundColor: '#ffffff',
-  },
-  segmentItem: {
-    borderRadius: 7,
-    paddingHorizontal: 16,
-    paddingVertical: 4,
-  },
-  segmentLabel: {
-    color: palette.textMuted,
-    fontSize: 13,
-    fontWeight: '500',
-  },
-  segmentLabelActive: {
-    color: palette.text,
-    fontWeight: '600',
-  },
-  title: {
-    color: palette.text,
-    flex: 1,
-    fontSize: 20,
-    fontWeight: '700',
-  },
-  todayLabel: {
-    color: palette.textMuted,
-    fontSize: 14,
-  },
-});
+const makeStyles = (colors: ThemeColors) =>
+  StyleSheet.create({
+    addLabel: {
+      color: colors.primary,
+      fontSize: 18,
+      fontWeight: '600',
+    },
+    header: {
+      alignItems: 'center',
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      paddingHorizontal: 16,
+      paddingVertical: 8,
+    },
+    headerActions: {
+      alignItems: 'center',
+      flexDirection: 'row',
+    },
+    navButton: {
+      paddingHorizontal: 8,
+      paddingVertical: 4,
+    },
+    navLabel: {
+      color: colors['text-secondary'],
+      fontSize: 18,
+    },
+    pendingBadge: {
+      backgroundColor: colors.warning,
+      borderRadius: 10,
+      marginRight: 4,
+      paddingHorizontal: 8,
+      paddingVertical: 3,
+    },
+    pendingBadgeLabel: {
+      color: colors['on-warning'],
+      fontSize: 12,
+      fontWeight: '600',
+    },
+    safeArea: {
+      backgroundColor: colors.canvas,
+      flex: 1,
+    },
+    segment: {
+      alignSelf: 'center',
+      backgroundColor: colors.border,
+      borderRadius: 9,
+      flexDirection: 'row',
+      marginBottom: 8,
+      padding: 2,
+    },
+    segmentActive: {
+      backgroundColor: colors.surface,
+    },
+    segmentItem: {
+      borderRadius: 7,
+      paddingHorizontal: 16,
+      paddingVertical: 4,
+    },
+    segmentLabel: {
+      color: colors['text-secondary'],
+      fontSize: 13,
+      fontWeight: '500',
+    },
+    segmentLabelActive: {
+      color: colors.text,
+      fontWeight: '600',
+    },
+    title: {
+      color: colors.text,
+      flex: 1,
+      fontSize: 20,
+      fontWeight: '700',
+    },
+    todayLabel: {
+      color: colors['text-secondary'],
+      fontSize: 14,
+    },
+  });

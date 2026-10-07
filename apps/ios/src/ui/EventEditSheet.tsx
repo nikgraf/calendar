@@ -16,7 +16,7 @@ import {
 import { useState } from 'react';
 import { Alert, Modal, Pressable, SafeAreaView, Text, View } from 'react-native';
 import { BirthdayDetail } from './BirthdayDetail.tsx';
-import { sheetStyles as styles } from './editSheetShared.ts';
+import { useSheetStyles } from './editSheetShared.ts';
 import { EventEditForm } from './EventEditForm.tsx';
 import { ReminderEditForm } from './ReminderEditForm.tsx';
 import { TaskEditForm } from './TaskEditForm.tsx';
@@ -102,6 +102,7 @@ export function EventEditSheet({
   taskLists: ReadonlyArray<TaskListInfo>;
   timeZone: string;
 }) {
+  const styles = useSheetStyles();
   const sourceKind: EditorSourceKind = birthday
     ? 'birthday'
     : task

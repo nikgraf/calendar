@@ -1,7 +1,7 @@
 import { taskListGroups, useAccounts, type useTaskEditorModel } from '@calendar/app-state';
 import { APPLE_REMINDERS_ACCOUNT_ID, type TaskListInfo } from '@calendar/core';
 import { Pressable, Text, View } from 'react-native';
-import { sheetStyles as styles } from './editSheetShared.ts';
+import { useSheetStyles } from './editSheetShared.ts';
 
 /** Which account a task list belongs to; the Reminders account is the one synthetic one. */
 const groupLabel = (list: TaskListInfo, emailOf: (accountId: string) => string): string =>
@@ -19,6 +19,7 @@ export function TaskListPicker({
   disabled: boolean;
   taskModel: ReturnType<typeof useTaskEditorModel>;
 }) {
+  const styles = useSheetStyles();
   const accounts = useAccounts();
   const emailOf = (accountId: string) =>
     accounts.find((account) => account.id === accountId)?.email ?? accountId;

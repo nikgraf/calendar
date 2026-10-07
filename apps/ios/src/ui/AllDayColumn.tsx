@@ -11,7 +11,7 @@ import {
 } from '@calendar/core';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { GestureDetector } from 'react-native-gesture-handler';
-import { chipTextColor, palette } from './theme.ts';
+import { type ThemeColors, chipTextColor, useStyles } from './theme.ts';
 import { ALL_DAY_ROW_HEIGHT } from './timelineLayout.ts';
 import type { TaskDrag } from './useTaskDrag.ts';
 
@@ -66,6 +66,7 @@ export function AllDayColumn({
   today: string;
   width: number;
 }) {
+  const styles = useStyles(makeStyles);
   const total = tasks.length + birthdays.length + events.length;
   // A column that fits shows everything; one that overflows gives its
   // last row to the "+N more" chip.
@@ -212,64 +213,65 @@ export function AllDayColumn({
   );
 }
 
-const styles = StyleSheet.create({
-  allDayChip: {
-    borderRadius: 5,
-    height: ALL_DAY_ROW_HEIGHT - 4,
-    justifyContent: 'center',
-    paddingHorizontal: 6,
-  },
-  allDayColumn: {
-    gap: 4,
-    paddingHorizontal: 2,
-    paddingVertical: 2,
-  },
-  allDayText: {
-    fontSize: 13,
-    fontWeight: '500',
-  },
-  allDayTextCompact: {
-    fontSize: 11,
-  },
-  birthdayChip: {
-    borderLeftColor: BIRTHDAY_ACCENT,
-    borderLeftWidth: 3,
-  },
-  moreChip: {
-    backgroundColor: '#f5f5f5',
-  },
-  moreText: {
-    color: palette.textMuted,
-    fontSize: 11,
-  },
-  taskBody: {
-    flexShrink: 1,
-  },
-  taskCheckbox: {
-    color: '#525252',
-    fontSize: 12,
-  },
-  taskChip: {
-    alignItems: 'center',
-    backgroundColor: '#f5f5f5',
-    borderColor: '#d4d4d4',
-    borderWidth: StyleSheet.hairlineWidth,
-    flexDirection: 'row',
-    gap: 3,
-  },
-  taskChipDone: {
-    opacity: 0.5,
-  },
-  taskChipDragging: {
-    opacity: 0.3,
-  },
-  taskText: {
-    color: '#404040',
-  },
-  taskTextDone: {
-    textDecorationLine: 'line-through',
-  },
-  taskTextOverdue: {
-    color: palette.overdue,
-  },
-});
+const makeStyles = (colors: ThemeColors) =>
+  StyleSheet.create({
+    allDayChip: {
+      borderRadius: 5,
+      height: ALL_DAY_ROW_HEIGHT - 4,
+      justifyContent: 'center',
+      paddingHorizontal: 6,
+    },
+    allDayColumn: {
+      gap: 4,
+      paddingHorizontal: 2,
+      paddingVertical: 2,
+    },
+    allDayText: {
+      fontSize: 13,
+      fontWeight: '500',
+    },
+    allDayTextCompact: {
+      fontSize: 11,
+    },
+    birthdayChip: {
+      borderLeftColor: BIRTHDAY_ACCENT,
+      borderLeftWidth: 3,
+    },
+    moreChip: {
+      backgroundColor: colors.fill,
+    },
+    moreText: {
+      color: colors['text-secondary'],
+      fontSize: 11,
+    },
+    taskBody: {
+      flexShrink: 1,
+    },
+    taskCheckbox: {
+      color: colors['text-secondary'],
+      fontSize: 12,
+    },
+    taskChip: {
+      alignItems: 'center',
+      backgroundColor: colors.fill,
+      borderColor: colors.border,
+      borderWidth: StyleSheet.hairlineWidth,
+      flexDirection: 'row',
+      gap: 3,
+    },
+    taskChipDone: {
+      opacity: 0.5,
+    },
+    taskChipDragging: {
+      opacity: 0.3,
+    },
+    taskText: {
+      color: colors.text,
+    },
+    taskTextDone: {
+      textDecorationLine: 'line-through',
+    },
+    taskTextOverdue: {
+      color: colors.danger,
+    },
+  });

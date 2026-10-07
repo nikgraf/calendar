@@ -9,8 +9,8 @@ import {
 } from '@calendar/core';
 import { useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { chip, chipLabel, sheetStyles } from './editSheetShared.ts';
-import { palette } from './theme.ts';
+import { chip, chipLabel, useSheetStyles } from './editSheetShared.ts';
+import { type ThemeColors, useStyles } from './theme.ts';
 
 // Through a PlainDate in a leap year: the polyfill cannot localise a
 // PlainMonthDay ("cannot format PlainMonthDay with calendar iso8601"),
@@ -38,6 +38,8 @@ const countdown = (daysUntil: number, ageTurning: number | undefined): string =>
  * hands them back to the general list.
  */
 function BirthdayReminders({ record }: { record: BirthdayRecord }) {
+  const sheetStyles = useSheetStyles();
+  const styles = useStyles(makeStyles);
   const editor = useBirthdayOverrideEditor(record);
   const [error, setError] = useState<string | null>(null);
   if (!editor.loaded) {
@@ -72,11 +74,11 @@ function BirthdayReminders({ record }: { record: BirthdayRecord }) {
               accessibilityState={{ selected }}
               key={lead}
               onPress={() => run(editor.toggle(lead))}
-              style={chip(selected)}
+              style={chip(sheetStyles, selected)}
               // The suffix lets the e2e flow assert the state without a query.
               testID={`birthday-override-${String(lead)}${selected ? '-on' : ''}`}
             >
-              <Text style={chipLabel(selected)}>{leadDaysLabel(lead)}</Text>
+              <Text style={chipLabel(sheetStyles, selected)}>{leadDaysLabel(lead)}</Text>
             </Pressable>
           );
         })}
@@ -99,6 +101,8 @@ export function BirthdayDetail({
   occurrence: BirthdayOccurrence;
   timeZone: string;
 }) {
+  const sheetStyles = useSheetStyles();
+  const styles = useStyles(makeStyles);
   const { record } = occurrence;
   const next = describeBirthday(record, Temporal.Now.plainDateISO(timeZone).toString());
   return (
@@ -129,50 +133,51 @@ export function BirthdayDetail({
   );
 }
 
-const styles = StyleSheet.create({
-  countdown: {
-    color: palette.textMuted,
-    fontSize: 14,
-    marginBottom: 16,
-  },
-  date: {
-    color: palette.text,
-    fontSize: 15,
-    marginBottom: 6,
-  },
-  error: {
-    color: '#b45309',
-    fontSize: 13,
-    marginBottom: 8,
-  },
-  name: {
-    color: palette.text,
-    fontSize: 20,
-    fontWeight: '600',
-    marginBottom: 6,
-  },
-  remindersHeader: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  reset: {
-    color: '#2563eb',
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  source: {
-    color: palette.text,
-    fontSize: 14,
-    paddingVertical: 4,
-  },
-  sources: {
-    backgroundColor: '#ffffff',
-    borderColor: palette.border,
-    borderRadius: 10,
-    borderWidth: StyleSheet.hairlineWidth,
-    marginBottom: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-  },
-});
+const makeStyles = (colors: ThemeColors) =>
+  StyleSheet.create({
+    countdown: {
+      color: colors['text-secondary'],
+      fontSize: 14,
+      marginBottom: 16,
+    },
+    date: {
+      color: colors.text,
+      fontSize: 15,
+      marginBottom: 6,
+    },
+    error: {
+      color: colors['on-warning'],
+      fontSize: 13,
+      marginBottom: 8,
+    },
+    name: {
+      color: colors.text,
+      fontSize: 20,
+      fontWeight: '600',
+      marginBottom: 6,
+    },
+    remindersHeader: {
+      alignItems: 'center',
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+    },
+    reset: {
+      color: colors.primary,
+      fontSize: 13,
+      fontWeight: '600',
+    },
+    source: {
+      color: colors.text,
+      fontSize: 14,
+      paddingVertical: 4,
+    },
+    sources: {
+      backgroundColor: colors.surface,
+      borderColor: colors.border,
+      borderRadius: 10,
+      borderWidth: StyleSheet.hairlineWidth,
+      marginBottom: 12,
+      paddingHorizontal: 12,
+      paddingVertical: 6,
+    },
+  });

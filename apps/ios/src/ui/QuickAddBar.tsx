@@ -16,7 +16,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { palette } from './theme.ts';
+import { type ThemeColors, useStyles } from './theme.ts';
 
 /** Foundation Models exist from iOS 26; below that there is nothing to say. */
 const MODEL_MIN_IOS = 26;
@@ -71,6 +71,7 @@ export function QuickAddBar({
   speech: SpeechToText;
   timeZone: string;
 }) {
+  const styles = useStyles(makeStyles);
   const { checking, retry, status } = useModelAvailability(model, onAppActive);
   const {
     busy,
@@ -218,92 +219,93 @@ export function QuickAddBar({
   );
 }
 
-const styles = StyleSheet.create({
-  button: {
-    backgroundColor: '#2563eb',
-    borderRadius: 8,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-  },
-  buttonDisabled: {
-    opacity: 0.4,
-  },
-  buttonLabel: {
-    color: '#ffffff',
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  container: {
-    borderBottomColor: palette.border,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    paddingBottom: 8,
-    paddingHorizontal: 12,
-  },
-  error: {
-    color: '#b91c1c',
-    fontSize: 12,
-    marginTop: 6,
-  },
-  hint: {
-    color: palette.textMuted,
-    fontSize: 12,
-    marginTop: 6,
-  },
-  input: {
-    borderColor: palette.border,
-    borderRadius: 8,
-    borderWidth: StyleSheet.hairlineWidth,
-    flex: 1,
-    fontSize: 14,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-  },
-  mic: {
-    borderColor: palette.border,
-    borderRadius: 8,
-    borderWidth: StyleSheet.hairlineWidth,
-    paddingHorizontal: 10,
-    paddingVertical: 7,
-  },
-  micLabel: {
-    fontSize: 15,
-  },
-  micRecording: {
-    backgroundColor: '#fee2e2',
-    borderColor: '#dc2626',
-  },
-  modeActive: {
-    backgroundColor: '#dbeafe',
-    borderColor: '#2563eb',
-  },
-  notice: {
-    color: palette.textMuted,
-    flex: 1,
-    fontSize: 12,
-    lineHeight: 16,
-  },
-  row: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    gap: 8,
-  },
-  slotChip: {
-    backgroundColor: '#eff6ff',
-    borderColor: '#bfdbfe',
-    borderRadius: 8,
-    borderWidth: StyleSheet.hairlineWidth,
-    marginRight: 6,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-  },
-  slotLabel: {
-    color: '#1d4ed8',
-    fontSize: 13,
-  },
-  slotRow: {
-    marginTop: 8,
-  },
-  spinner: {
-    paddingHorizontal: 18,
-  },
-});
+const makeStyles = (colors: ThemeColors) =>
+  StyleSheet.create({
+    button: {
+      backgroundColor: colors.primary,
+      borderRadius: 8,
+      paddingHorizontal: 14,
+      paddingVertical: 8,
+    },
+    buttonDisabled: {
+      opacity: 0.4,
+    },
+    buttonLabel: {
+      color: colors['on-primary'],
+      fontSize: 14,
+      fontWeight: '600',
+    },
+    container: {
+      borderBottomColor: colors.border,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      paddingBottom: 8,
+      paddingHorizontal: 12,
+    },
+    error: {
+      color: colors.danger,
+      fontSize: 12,
+      marginTop: 6,
+    },
+    hint: {
+      color: colors['text-secondary'],
+      fontSize: 12,
+      marginTop: 6,
+    },
+    input: {
+      borderColor: colors.border,
+      borderRadius: 8,
+      borderWidth: StyleSheet.hairlineWidth,
+      flex: 1,
+      fontSize: 14,
+      paddingHorizontal: 10,
+      paddingVertical: 8,
+    },
+    mic: {
+      borderColor: colors.border,
+      borderRadius: 8,
+      borderWidth: StyleSheet.hairlineWidth,
+      paddingHorizontal: 10,
+      paddingVertical: 7,
+    },
+    micLabel: {
+      fontSize: 15,
+    },
+    micRecording: {
+      backgroundColor: colors['event-blush'],
+      borderColor: colors.danger,
+    },
+    modeActive: {
+      backgroundColor: colors.selection,
+      borderColor: colors.primary,
+    },
+    notice: {
+      color: colors['text-secondary'],
+      flex: 1,
+      fontSize: 12,
+      lineHeight: 16,
+    },
+    row: {
+      alignItems: 'center',
+      flexDirection: 'row',
+      gap: 8,
+    },
+    slotChip: {
+      backgroundColor: colors.selection,
+      borderColor: colors['border-strong'],
+      borderRadius: 8,
+      borderWidth: StyleSheet.hairlineWidth,
+      marginRight: 6,
+      paddingHorizontal: 10,
+      paddingVertical: 6,
+    },
+    slotLabel: {
+      color: colors['primary-hover'],
+      fontSize: 13,
+    },
+    slotRow: {
+      marginTop: 8,
+    },
+    spinner: {
+      paddingHorizontal: 18,
+    },
+  });

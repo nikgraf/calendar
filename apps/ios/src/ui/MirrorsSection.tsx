@@ -45,8 +45,8 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { sectionStyles } from './settingsShared.ts';
-import { palette } from './theme.ts';
+import { useSectionStyles } from './settingsShared.ts';
+import { type ThemeColors, useStyles, useTheme } from './theme.ts';
 
 /**
  * Calendar mirrors on the iPhone: the list with each mirror's state here,
@@ -54,6 +54,8 @@ import { palette } from './theme.ts';
  * the shared editor model; only the controls are this platform's.
  */
 export function MirrorsSection() {
+  const sectionStyles = useSectionStyles();
+  const styles = useStyles(makeStyles);
   const mirrors = useMirrors();
   const mutations = useBackendMutations();
   const timeZone = useTimeZoneSettings()?.primary ?? Temporal.Now.timeZoneId();
@@ -193,6 +195,7 @@ function Check({
   onToggle: () => void;
   testID: string;
 }) {
+  const styles = useStyles(makeStyles);
   return (
     <Pressable
       accessibilityRole="checkbox"
@@ -221,6 +224,9 @@ function MirrorEditSheet({
   mirrors: ReadonlyArray<MirrorView>;
   onClose: () => void;
 }) {
+  const { colors } = useTheme();
+  const sectionStyles = useSectionStyles();
+  const styles = useStyles(makeStyles);
   const mutations = useBackendMutations();
   const accounts = useAccounts();
   const calendars = useCalendars();
@@ -336,7 +342,7 @@ function MirrorEditSheet({
           <TextInput
             onChangeText={(name) => setDraft({ ...draft, name })}
             placeholder="Family calendar"
-            placeholderTextColor={palette.textFaint}
+            placeholderTextColor={colors['text-secondary']}
             style={styles.input}
             testID="mirror-name"
             value={draft.name}
@@ -536,151 +542,152 @@ function MirrorEditSheet({
   );
 }
 
-const styles = StyleSheet.create({
-  actions: {
-    flexDirection: 'row',
-    gap: 16,
-    marginTop: 6,
-  },
-  addRow: {
-    marginTop: 10,
-  },
-  check: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    gap: 8,
-    paddingVertical: 6,
-  },
-  checkLabel: {
-    color: palette.text,
-    flex: 1,
-    fontSize: 15,
-  },
-  checkMark: {
-    color: palette.text,
-    fontSize: 17,
-  },
-  content: {
-    gap: 4,
-    padding: 16,
-    paddingBottom: 48,
-  },
-  disabled: {
-    opacity: 0.4,
-  },
-  error: {
-    color: '#dc2626',
-    fontSize: 13,
-    marginTop: 8,
-  },
-  footer: {
-    color: palette.textFaint,
-    fontSize: 12,
-    marginTop: 8,
-  },
-  input: {
-    borderColor: palette.border,
-    borderRadius: 8,
-    borderWidth: StyleSheet.hairlineWidth,
-    color: palette.text,
-    fontSize: 15,
-    marginTop: 4,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-  },
-  label: {
-    color: palette.textMuted,
-    fontSize: 12,
-    fontWeight: '600',
-    marginTop: 14,
-    textTransform: 'uppercase',
-  },
-  link: {
-    color: '#2563eb',
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  name: {
-    color: palette.text,
-    fontSize: 15,
-    fontWeight: '600',
-  },
-  option: {
-    borderColor: palette.border,
-    borderRadius: 8,
-    borderWidth: StyleSheet.hairlineWidth,
-    marginTop: 6,
-    padding: 10,
-  },
-  optionSelected: {
-    backgroundColor: '#eff6ff',
-    borderColor: '#2563eb',
-  },
-  optionTitle: {
-    color: palette.text,
-    fontSize: 15,
-  },
-  paused: {
-    color: '#dc2626',
-  },
-  preview: {
-    borderColor: palette.border,
-    borderRadius: 8,
-    borderWidth: StyleSheet.hairlineWidth,
-    marginTop: 10,
-    padding: 10,
-  },
-  remove: {
-    color: '#dc2626',
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  row: {
-    borderTopColor: palette.border,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    marginTop: 10,
-    paddingTop: 10,
-  },
-  rowHeader: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    gap: 12,
-  },
-  rowText: {
-    flex: 1,
-  },
-  sample: {
-    color: palette.text,
-    fontSize: 13,
-    marginTop: 2,
-  },
-  sheet: {
-    backgroundColor: '#ffffff',
-    flex: 1,
-  },
-  sheetHeader: {
-    alignItems: 'center',
-    borderBottomColor: palette.border,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-  },
-  sheetTitle: {
-    color: palette.text,
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  waiting: {
-    color: '#b45309',
-  },
-  warning: {
-    backgroundColor: '#fffbeb',
-    borderRadius: 8,
-    color: '#92400e',
-    fontSize: 12,
-    marginTop: 8,
-    padding: 8,
-  },
-});
+const makeStyles = (colors: ThemeColors) =>
+  StyleSheet.create({
+    actions: {
+      flexDirection: 'row',
+      gap: 16,
+      marginTop: 6,
+    },
+    addRow: {
+      marginTop: 10,
+    },
+    check: {
+      alignItems: 'center',
+      flexDirection: 'row',
+      gap: 8,
+      paddingVertical: 6,
+    },
+    checkLabel: {
+      color: colors.text,
+      flex: 1,
+      fontSize: 15,
+    },
+    checkMark: {
+      color: colors.text,
+      fontSize: 17,
+    },
+    content: {
+      gap: 4,
+      padding: 16,
+      paddingBottom: 48,
+    },
+    disabled: {
+      opacity: 0.4,
+    },
+    error: {
+      color: colors.danger,
+      fontSize: 13,
+      marginTop: 8,
+    },
+    footer: {
+      color: colors['text-secondary'],
+      fontSize: 12,
+      marginTop: 8,
+    },
+    input: {
+      borderColor: colors.border,
+      borderRadius: 8,
+      borderWidth: StyleSheet.hairlineWidth,
+      color: colors.text,
+      fontSize: 15,
+      marginTop: 4,
+      paddingHorizontal: 10,
+      paddingVertical: 8,
+    },
+    label: {
+      color: colors['text-secondary'],
+      fontSize: 12,
+      fontWeight: '600',
+      marginTop: 14,
+      textTransform: 'uppercase',
+    },
+    link: {
+      color: colors.primary,
+      fontSize: 14,
+      fontWeight: '600',
+    },
+    name: {
+      color: colors.text,
+      fontSize: 15,
+      fontWeight: '600',
+    },
+    option: {
+      borderColor: colors.border,
+      borderRadius: 8,
+      borderWidth: StyleSheet.hairlineWidth,
+      marginTop: 6,
+      padding: 10,
+    },
+    optionSelected: {
+      backgroundColor: colors.selection,
+      borderColor: colors.primary,
+    },
+    optionTitle: {
+      color: colors.text,
+      fontSize: 15,
+    },
+    paused: {
+      color: colors.danger,
+    },
+    preview: {
+      borderColor: colors.border,
+      borderRadius: 8,
+      borderWidth: StyleSheet.hairlineWidth,
+      marginTop: 10,
+      padding: 10,
+    },
+    remove: {
+      color: colors.danger,
+      fontSize: 14,
+      fontWeight: '600',
+    },
+    row: {
+      borderTopColor: colors.border,
+      borderTopWidth: StyleSheet.hairlineWidth,
+      marginTop: 10,
+      paddingTop: 10,
+    },
+    rowHeader: {
+      alignItems: 'center',
+      flexDirection: 'row',
+      gap: 12,
+    },
+    rowText: {
+      flex: 1,
+    },
+    sample: {
+      color: colors.text,
+      fontSize: 13,
+      marginTop: 2,
+    },
+    sheet: {
+      backgroundColor: colors.surface,
+      flex: 1,
+    },
+    sheetHeader: {
+      alignItems: 'center',
+      borderBottomColor: colors.border,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      paddingHorizontal: 16,
+      paddingVertical: 12,
+    },
+    sheetTitle: {
+      color: colors.text,
+      fontSize: 16,
+      fontWeight: '600',
+    },
+    waiting: {
+      color: colors['on-warning'],
+    },
+    warning: {
+      backgroundColor: colors.warning,
+      borderRadius: 8,
+      color: colors['on-warning'],
+      fontSize: 12,
+      marginTop: 8,
+      padding: 8,
+    },
+  });

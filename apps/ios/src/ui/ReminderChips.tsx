@@ -6,7 +6,7 @@ import {
   reminderLabel,
 } from '@calendar/core';
 import { Pressable, Switch, Text, View } from 'react-native';
-import { sheetStyles as styles } from './editSheetShared.ts';
+import { useSheetStyles } from './editSheetShared.ts';
 
 /**
  * The event's reminders as toggle chips, one per preset offset (an
@@ -16,6 +16,7 @@ import { sheetStyles as styles } from './editSheetShared.ts';
  * edited, and ride along on the write-back.
  */
 export function ReminderChips({ model }: { model: ReturnType<typeof useEventEditorModel> }) {
+  const styles = useSheetStyles();
   const {
     addReminder,
     calendarDefaultReminders,

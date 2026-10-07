@@ -1,6 +1,6 @@
 import { Temporal } from '@calendar/core';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { palette } from './theme.ts';
+import { type ThemeColors, useStyles } from './theme.ts';
 
 /** One weekday + day-number cell: the strip's picker cell and the week timeline's column header. */
 export function WeekStripCell({
@@ -17,6 +17,7 @@ export function WeekStripCell({
   /** Fixed column width (the timeline header); the picker strip flexes instead. */
   width?: number;
 }) {
+  const styles = useStyles(makeStyles);
   return (
     <Pressable
       accessibilityLabel={day.toLocaleString('en-US', {
@@ -57,6 +58,7 @@ export function WeekStrip({
   selected: Temporal.PlainDate;
   timeZone: string;
 }) {
+  const styles = useStyles(makeStyles);
   const today = Temporal.Now.plainDateISO(timeZone);
   return (
     <View style={styles.row}>
@@ -73,49 +75,50 @@ export function WeekStrip({
   );
 }
 
-const styles = StyleSheet.create({
-  cell: {
-    alignItems: 'center',
-    gap: 2,
-  },
-  cellFlex: {
-    flex: 1,
-  },
-  day: {
-    color: palette.text,
-    fontSize: 15,
-    fontWeight: '600',
-  },
-  dayWrap: {
-    alignItems: 'center',
-    borderRadius: 15,
-    height: 30,
-    justifyContent: 'center',
-    width: 30,
-  },
-  row: {
-    borderBottomColor: palette.border,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    flexDirection: 'row',
-    paddingBottom: 6,
-    paddingHorizontal: 4,
-  },
-  selectedText: {
-    color: '#ffffff',
-  },
-  selectedWrap: {
-    backgroundColor: palette.text,
-  },
-  todayText: {
-    color: palette.today,
-  },
-  todayWrap: {
-    borderColor: palette.today,
-    borderWidth: 1.5,
-  },
-  weekday: {
-    color: palette.textFaint,
-    fontSize: 10,
-    fontWeight: '600',
-  },
-});
+const makeStyles = (colors: ThemeColors) =>
+  StyleSheet.create({
+    cell: {
+      alignItems: 'center',
+      gap: 2,
+    },
+    cellFlex: {
+      flex: 1,
+    },
+    day: {
+      color: colors.text,
+      fontSize: 15,
+      fontWeight: '600',
+    },
+    dayWrap: {
+      alignItems: 'center',
+      borderRadius: 15,
+      height: 30,
+      justifyContent: 'center',
+      width: 30,
+    },
+    row: {
+      borderBottomColor: colors.border,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      flexDirection: 'row',
+      paddingBottom: 6,
+      paddingHorizontal: 4,
+    },
+    selectedText: {
+      color: colors['on-primary'],
+    },
+    selectedWrap: {
+      backgroundColor: colors.text,
+    },
+    todayText: {
+      color: colors.primary,
+    },
+    todayWrap: {
+      borderColor: colors.primary,
+      borderWidth: 1.5,
+    },
+    weekday: {
+      color: colors['text-secondary'],
+      fontSize: 10,
+      fontWeight: '600',
+    },
+  });

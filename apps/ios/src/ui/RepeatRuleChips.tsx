@@ -9,27 +9,34 @@ import {
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { Pressable, Text, TextInput, View } from 'react-native';
 import {
+  type SheetStyles,
   chip,
   chipLabel,
   dateFromParts,
-  sheetStyles as styles,
   toDateString,
+  useSheetStyles,
 } from './editSheetShared.ts';
 
 /** The repeat form state both editors expose (everything but the spec exit). */
 export type RepeatRuleState = Omit<ReturnType<typeof useRepeatState>, 'toSpec'>;
 
 /** One selectable chip; `accessibilityState.selected` is what Maestro asserts. */
-const option = (selected: boolean, label: string, onPress: () => void, testID: string) => (
+const option = (
+  styles: SheetStyles,
+  selected: boolean,
+  label: string,
+  onPress: () => void,
+  testID: string,
+) => (
   <Pressable
     accessibilityRole="button"
     accessibilityState={{ selected }}
     key={testID}
     onPress={onPress}
-    style={chip(selected)}
+    style={chip(styles, selected)}
     testID={testID}
   >
-    <Text style={chipLabel(selected)}>{label}</Text>
+    <Text style={chipLabel(styles, selected)}>{label}</Text>
   </Pressable>
 );
 
@@ -52,12 +59,14 @@ export function RepeatRuleChips({
   state: RepeatRuleState;
   testIDPrefix: string;
 }) {
+  const styles = useSheetStyles();
   return (
     <>
       <Text style={styles.label}>Repeat</Text>
       <View style={styles.scopeRow}>
         {REPEAT_OPTIONS.map((entry) =>
           option(
+            styles,
             state.repeat === entry.value,
             entry.short,
             () => state.setRepeat(entry.value),
@@ -71,6 +80,7 @@ export function RepeatRuleChips({
           <View style={styles.scopeRow}>
             {WEEKDAY_OPTIONS.map((entry) =>
               option(
+                styles,
                 state.repeatWeekdays.includes(entry.value),
                 entry.short,
                 () => state.toggleWeekday(entry.value),
@@ -86,6 +96,7 @@ export function RepeatRuleChips({
           <View style={styles.scopeRow}>
             {MONTHLY_MODE_OPTIONS.map((entry) =>
               option(
+                styles,
                 state.repeatMonthly === entry.value,
                 entry.value === 'dayOfMonth'
                   ? `Day ${anchorDate.slice(8).replace(/^0/, '')}`
@@ -100,6 +111,7 @@ export function RepeatRuleChips({
               <View style={styles.scopeRow}>
                 {ORDINAL_OPTIONS.map((entry) =>
                   option(
+                    styles,
                     state.repeatOrdinal === entry.value,
                     entry.short,
                     () => state.setRepeatOrdinal(entry.value),
@@ -110,6 +122,7 @@ export function RepeatRuleChips({
               <View style={styles.scopeRow}>
                 {WEEKDAY_OPTIONS.map((entry) =>
                   option(
+                    styles,
                     state.repeatOrdinalWeekday === entry.value,
                     entry.short,
                     () => state.setRepeatOrdinalWeekday(entry.value),
@@ -138,6 +151,7 @@ export function RepeatRuleChips({
             <View style={styles.scopeRow}>
               {REPEAT_ENDS_OPTIONS.map((entry) =>
                 option(
+                  styles,
                   state.repeatEnds === entry.value,
                   entry.short,
                   () => {

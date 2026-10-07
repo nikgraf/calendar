@@ -16,14 +16,16 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import { useState } from 'react';
 import { Pressable, StyleSheet, Switch, Text, View } from 'react-native';
 import { dateFromParts, toTimeString } from './editSheetShared.ts';
-import { sectionStyles } from './settingsShared.ts';
-import { palette } from './theme.ts';
+import { useSectionStyles } from './settingsShared.ts';
+import { type ThemeColors, useStyles } from './theme.ts';
 
 /**
  * Lead times and delivery time for birthday notifications. Device-local
  * by design (the first setting that does not sync), and the copy says so.
  */
 export function BirthdayRemindersSection() {
+  const sectionStyles = useSectionStyles();
+  const styles = useStyles(makeStyles);
   const { setBirthdayReminderOverride, setBirthdayReminderSettings } = useBackendMutations();
   const overrides = useBirthdayReminderOverrides() ?? [];
   const [settings, persist] = useSettingsEditor(
@@ -141,72 +143,73 @@ export function BirthdayRemindersSection() {
   );
 }
 
-const styles = StyleSheet.create({
-  chip: {
-    borderColor: palette.border,
-    borderRadius: 16,
-    borderWidth: 1,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-  },
-  chipActive: {
-    backgroundColor: '#2563eb',
-    borderColor: '#2563eb',
-  },
-  chipLabel: {
-    color: palette.text,
-    fontSize: 13,
-  },
-  chipLabelActive: {
-    color: '#ffffff',
-    fontWeight: '600',
-  },
-  chips: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-    marginTop: 10,
-  },
-  label: {
-    color: palette.text,
-    fontSize: 14,
-  },
-  overrideName: {
-    color: palette.text,
-    flexShrink: 1,
-    fontSize: 14,
-  },
-  overrideRow: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    gap: 8,
-    justifyContent: 'space-between',
-    paddingVertical: 4,
-  },
-  overrides: {
-    marginTop: 12,
-  },
-  overridesTitle: {
-    color: palette.textMuted,
-    fontSize: 12,
-    fontWeight: '600',
-    marginBottom: 2,
-  },
-  pickerRow: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginTop: 10,
-  },
-  reset: {
-    color: '#2563eb',
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  switchRow: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginTop: 10,
-  },
-});
+const makeStyles = (colors: ThemeColors) =>
+  StyleSheet.create({
+    chip: {
+      borderColor: colors.border,
+      borderRadius: 16,
+      borderWidth: 1,
+      paddingHorizontal: 12,
+      paddingVertical: 6,
+    },
+    chipActive: {
+      backgroundColor: colors.primary,
+      borderColor: colors.primary,
+    },
+    chipLabel: {
+      color: colors.text,
+      fontSize: 13,
+    },
+    chipLabelActive: {
+      color: colors['on-primary'],
+      fontWeight: '600',
+    },
+    chips: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: 8,
+      marginTop: 10,
+    },
+    label: {
+      color: colors.text,
+      fontSize: 14,
+    },
+    overrideName: {
+      color: colors.text,
+      flexShrink: 1,
+      fontSize: 14,
+    },
+    overrideRow: {
+      alignItems: 'center',
+      flexDirection: 'row',
+      gap: 8,
+      justifyContent: 'space-between',
+      paddingVertical: 4,
+    },
+    overrides: {
+      marginTop: 12,
+    },
+    overridesTitle: {
+      color: colors['text-secondary'],
+      fontSize: 12,
+      fontWeight: '600',
+      marginBottom: 2,
+    },
+    pickerRow: {
+      alignItems: 'center',
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      marginTop: 10,
+    },
+    reset: {
+      color: colors.primary,
+      fontSize: 13,
+      fontWeight: '600',
+    },
+    switchRow: {
+      alignItems: 'center',
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      marginTop: 10,
+    },
+  });

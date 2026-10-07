@@ -7,7 +7,7 @@ import {
 import { Effect } from 'effect';
 import { useState } from 'react';
 import { Alert, Pressable, Share, Text, View } from 'react-native';
-import { sectionStyles } from './settingsShared.ts';
+import { useSectionStyles } from './settingsShared.ts';
 
 /**
  * Native modules are loaded lazily and inside a try: a static import of a
@@ -47,6 +47,7 @@ const confirmImport = (lines: ReadonlyArray<string>) =>
  * account from another device shows up as "reconnect".
  */
 export function SettingsFileSection() {
+  const sectionStyles = useSectionStyles();
   const mutations = useBackendMutations();
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);

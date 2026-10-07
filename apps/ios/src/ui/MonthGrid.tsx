@@ -13,7 +13,7 @@ import {
   Temporal,
 } from '@calendar/core';
 import { Pressable, StyleSheet, Text, View, type ViewStyle } from 'react-native';
-import { palette } from './theme.ts';
+import { type ThemeColors, useStyles, useTheme } from './theme.ts';
 
 const MAX_DOTS = 4;
 
@@ -48,6 +48,8 @@ export function MonthGrid({
   today: string;
   yearMonth: Temporal.PlainYearMonth;
 }) {
+  const { colors } = useTheme();
+  const styles = useStyles(makeStyles);
   const today = Temporal.PlainDate.from(todayIso);
   const weeks = buildMonthGrid(yearMonth, today);
 
@@ -74,10 +76,10 @@ export function MonthGrid({
     backgroundColor: 'transparent',
     borderColor:
       task.status === 'completed'
-        ? palette.textFaint
+        ? colors['text-secondary']
         : overdueKeys.has(calendarTaskKey(task))
-          ? palette.overdue
-          : (listColorOf(task) ?? '#525252'),
+          ? colors.danger
+          : (listColorOf(task) ?? colors['text-secondary']),
     borderWidth: 1,
   });
 
@@ -148,63 +150,64 @@ export function MonthGrid({
   );
 }
 
-const styles = StyleSheet.create({
-  birthdayDot: {
-    backgroundColor: BIRTHDAY_ACCENT,
-  },
-  container: {
-    flex: 1,
-    paddingHorizontal: 4,
-  },
-  dayCell: {
-    alignItems: 'center',
-    flex: 1,
-    gap: 3,
-    paddingVertical: 10,
-  },
-  dayNumber: {
-    color: palette.text,
-    fontSize: 15,
-    fontWeight: '500',
-  },
-  dayNumberWrap: {
-    alignItems: 'center',
-    borderRadius: 14,
-    height: 28,
-    justifyContent: 'center',
-    width: 28,
-  },
-  dot: {
-    borderRadius: 2.5,
-    height: 5,
-    width: 5,
-  },
-  dotsRow: {
-    flexDirection: 'row',
-    gap: 3,
-    height: 6,
-  },
-  outsideMonth: {
-    color: palette.textFaint,
-  },
-  todayText: {
-    color: '#ffffff',
-  },
-  todayWrap: {
-    backgroundColor: palette.today,
-  },
-  weekdayLabel: {
-    color: palette.textFaint,
-    flex: 1,
-    fontSize: 11,
-    fontWeight: '600',
-    textAlign: 'center',
-  },
-  weekdayRow: {
-    flexDirection: 'row',
-    paddingVertical: 6,
-  },
-  weekRow: {
-    flexDirection: 'row',
-  },
-});
+const makeStyles = (colors: ThemeColors) =>
+  StyleSheet.create({
+    birthdayDot: {
+      backgroundColor: BIRTHDAY_ACCENT,
+    },
+    container: {
+      flex: 1,
+      paddingHorizontal: 4,
+    },
+    dayCell: {
+      alignItems: 'center',
+      flex: 1,
+      gap: 3,
+      paddingVertical: 10,
+    },
+    dayNumber: {
+      color: colors.text,
+      fontSize: 15,
+      fontWeight: '500',
+    },
+    dayNumberWrap: {
+      alignItems: 'center',
+      borderRadius: 14,
+      height: 28,
+      justifyContent: 'center',
+      width: 28,
+    },
+    dot: {
+      borderRadius: 2.5,
+      height: 5,
+      width: 5,
+    },
+    dotsRow: {
+      flexDirection: 'row',
+      gap: 3,
+      height: 6,
+    },
+    outsideMonth: {
+      color: colors['text-secondary'],
+    },
+    todayText: {
+      color: colors['on-primary'],
+    },
+    todayWrap: {
+      backgroundColor: colors.primary,
+    },
+    weekdayLabel: {
+      color: colors['text-secondary'],
+      flex: 1,
+      fontSize: 11,
+      fontWeight: '600',
+      textAlign: 'center',
+    },
+    weekdayRow: {
+      flexDirection: 'row',
+      paddingVertical: 6,
+    },
+    weekRow: {
+      flexDirection: 'row',
+    },
+  });

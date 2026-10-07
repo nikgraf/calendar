@@ -21,7 +21,7 @@ import { runOnJS, useSharedValue, type SharedValue } from 'react-native-reanimat
 import { DraggableEventBlock } from './DraggableEventBlock.tsx';
 import { NowIndicator } from './NowIndicator.tsx';
 import { TimedTaskBlock } from './TimedTaskBlock.tsx';
-import { palette } from './theme.ts';
+import { type ThemeColors, useStyles } from './theme.ts';
 import { HOUR_HEIGHT } from './timelineLayout.ts';
 import type { TaskDrag } from './useTaskDrag.ts';
 
@@ -90,6 +90,7 @@ export function DayColumn({
   timeZone: string;
   width: number;
 }) {
+  const styles = useStyles(makeStyles);
   const boxes = layoutDayColumn(
     events
       .map((event) => timedEventBox(event, `${event.calendarId}:${event.id}`, date, timeZone))
@@ -228,28 +229,29 @@ export function DayColumn({
   );
 }
 
-const styles = StyleSheet.create({
-  dayColumn: {
-    height: 24 * HOUR_HEIGHT,
-  },
-  dayColumnDivided: {
-    borderLeftColor: palette.gridLine,
-    borderLeftWidth: StyleSheet.hairlineWidth,
-  },
-  slot: {
-    backgroundColor: 'rgba(59, 130, 246, 0.15)',
-    borderColor: '#3b82f6',
-    borderRadius: 6,
-    borderWidth: 1,
-    left: 2,
-    paddingHorizontal: 4,
-    position: 'absolute',
-    right: 2,
-    zIndex: 20,
-  },
-  slotLabel: {
-    color: '#1d4ed8',
-    fontSize: 11,
-    fontWeight: '600',
-  },
-});
+const makeStyles = (colors: ThemeColors) =>
+  StyleSheet.create({
+    dayColumn: {
+      height: 24 * HOUR_HEIGHT,
+    },
+    dayColumnDivided: {
+      borderLeftColor: colors.border,
+      borderLeftWidth: StyleSheet.hairlineWidth,
+    },
+    slot: {
+      backgroundColor: colors.selection,
+      borderColor: colors.primary,
+      borderRadius: 6,
+      borderWidth: 1,
+      left: 2,
+      paddingHorizontal: 4,
+      position: 'absolute',
+      right: 2,
+      zIndex: 20,
+    },
+    slotLabel: {
+      color: colors['primary-hover'],
+      fontSize: 11,
+      fontWeight: '600',
+    },
+  });

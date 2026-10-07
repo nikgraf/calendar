@@ -31,7 +31,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import { AllDayColumn } from './AllDayColumn.tsx';
 import { DayColumn } from './DayColumn.tsx';
-import { palette } from './theme.ts';
+import { type ThemeColors, useStyles } from './theme.ts';
 import { useTaskDrag } from './useTaskDrag.ts';
 import { WeekStripCell } from './WeekStrip.tsx';
 import { ALL_DAY_ROW_HEIGHT, EDGE_INSET, gutterWidth, HOUR_HEIGHT } from './timelineLayout.ts';
@@ -109,6 +109,7 @@ export function DayTimeline({
   /** Today's ISO date (rolls at local midnight). */
   today: string;
 }) {
+  const styles = useStyles(makeStyles);
   const scrollRef = useRef<ScrollView>(null);
   const containerRef = useRef<View>(null);
   const { updateEvent, updateRecurring } = useGuardedMutations();
@@ -458,118 +459,119 @@ export function DayTimeline({
     </View>
   );
 }
-const styles = StyleSheet.create({
-  allDayLane: {
-    borderBottomColor: palette.border,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    flexDirection: 'row',
-  },
-  container: {
-    flex: 1,
-  },
-  eventsArea: {
-    bottom: 0,
-    overflow: 'hidden',
-    position: 'absolute',
-    right: EDGE_INSET,
-    top: 0,
-  },
-  ghost: {
-    backgroundColor: '#f5f5f5',
-    borderColor: '#d4d4d4',
-    borderRadius: 5,
-    borderWidth: StyleSheet.hairlineWidth,
-    height: 22,
-    justifyContent: 'center',
-    left: 0,
-    paddingHorizontal: 6,
-    position: 'absolute',
-    shadowColor: '#000000',
-    shadowOffset: { height: 4, width: 0 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    top: 0,
-    zIndex: 30,
-  },
-  ghostText: {
-    color: palette.text,
-    fontSize: 12,
-    fontWeight: '500',
-  },
-  gridIndicator: {
-    backgroundColor: 'rgba(59, 130, 246, 0.12)',
-    borderColor: '#3b82f6',
-    borderRadius: 5,
-    borderStyle: 'dashed',
-    borderWidth: 1.5,
-    height: 22,
-    left: 0,
-    position: 'absolute',
-    top: 0,
-    zIndex: 20,
-  },
-  gutterAction: {
-    color: '#2563eb',
-  },
-  gutterLabel: {
-    color: palette.textFaint,
-    fontSize: 10,
-    paddingRight: 12,
-    paddingTop: 6,
-    textAlign: 'right',
-  },
-  hourLabel: {
-    color: palette.textFaint,
-    fontSize: 10,
-    textAlign: 'right',
-  },
-  hourLabels: {
-    transform: [{ translateY: -6 }],
-  },
-  hourLabelSecondary: {
-    color: palette.textFaint,
-    fontSize: 8,
-    opacity: 0.8,
-    textAlign: 'right',
-  },
-  hourLine: {
-    backgroundColor: palette.gridLine,
-    flex: 1,
-    height: StyleSheet.hairlineWidth,
-    marginLeft: 6,
-  },
-  hourRow: {
-    alignItems: 'flex-start',
-    flexDirection: 'row',
-    left: 0,
-    position: 'absolute',
-    right: 0,
-  },
-  laneIndicator: {
-    backgroundColor: 'rgba(59, 130, 246, 0.12)',
-    borderColor: '#60a5fa',
-    borderRadius: 5,
-    borderWidth: 1,
-    bottom: 0,
-    left: 0,
-    position: 'absolute',
-    top: 0,
-  },
-  scroll: {
-    flex: 1,
-  },
-  strip: {
-    flexDirection: 'row',
-  },
-  stripViewport: {
-    flex: 1,
-    marginRight: EDGE_INSET,
-    overflow: 'hidden',
-  },
-  weekHeader: {
-    borderBottomColor: palette.border,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    flexDirection: 'row',
-    paddingBottom: 6,
-  },
-});
+const makeStyles = (colors: ThemeColors) =>
+  StyleSheet.create({
+    allDayLane: {
+      borderBottomColor: colors.border,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      flexDirection: 'row',
+    },
+    container: {
+      flex: 1,
+    },
+    eventsArea: {
+      bottom: 0,
+      overflow: 'hidden',
+      position: 'absolute',
+      right: EDGE_INSET,
+      top: 0,
+    },
+    ghost: {
+      backgroundColor: colors.fill,
+      borderColor: colors.border,
+      borderRadius: 5,
+      borderWidth: StyleSheet.hairlineWidth,
+      height: 22,
+      justifyContent: 'center',
+      left: 0,
+      paddingHorizontal: 6,
+      position: 'absolute',
+      shadowColor: '#000000',
+      shadowOffset: { height: 4, width: 0 },
+      shadowOpacity: 0.3,
+      shadowRadius: 8,
+      top: 0,
+      zIndex: 30,
+    },
+    ghostText: {
+      color: colors.text,
+      fontSize: 12,
+      fontWeight: '500',
+    },
+    gridIndicator: {
+      backgroundColor: colors.selection,
+      borderColor: colors.primary,
+      borderRadius: 5,
+      borderStyle: 'dashed',
+      borderWidth: 1.5,
+      height: 22,
+      left: 0,
+      position: 'absolute',
+      top: 0,
+      zIndex: 20,
+    },
+    gutterAction: {
+      color: colors.primary,
+    },
+    gutterLabel: {
+      color: colors['text-secondary'],
+      fontSize: 10,
+      paddingRight: 12,
+      paddingTop: 6,
+      textAlign: 'right',
+    },
+    hourLabel: {
+      color: colors['text-secondary'],
+      fontSize: 10,
+      textAlign: 'right',
+    },
+    hourLabels: {
+      transform: [{ translateY: -6 }],
+    },
+    hourLabelSecondary: {
+      color: colors['text-secondary'],
+      fontSize: 8,
+      opacity: 0.8,
+      textAlign: 'right',
+    },
+    hourLine: {
+      backgroundColor: colors.border,
+      flex: 1,
+      height: StyleSheet.hairlineWidth,
+      marginLeft: 6,
+    },
+    hourRow: {
+      alignItems: 'flex-start',
+      flexDirection: 'row',
+      left: 0,
+      position: 'absolute',
+      right: 0,
+    },
+    laneIndicator: {
+      backgroundColor: colors.selection,
+      borderColor: colors.primary,
+      borderRadius: 5,
+      borderWidth: 1,
+      bottom: 0,
+      left: 0,
+      position: 'absolute',
+      top: 0,
+    },
+    scroll: {
+      flex: 1,
+    },
+    strip: {
+      flexDirection: 'row',
+    },
+    stripViewport: {
+      flex: 1,
+      marginRight: EDGE_INSET,
+      overflow: 'hidden',
+    },
+    weekHeader: {
+      borderBottomColor: colors.border,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      flexDirection: 'row',
+      paddingBottom: 6,
+    },
+  });

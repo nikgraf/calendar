@@ -6,8 +6,8 @@ import {
 import { DEVICE_ONLY_SETTING_COPY, type EventNotificationSettings } from '@calendar/core';
 import { useState } from 'react';
 import { StyleSheet, Switch, Text, View } from 'react-native';
-import { sectionStyles } from './settingsShared.ts';
-import { palette } from './theme.ts';
+import { useSectionStyles } from './settingsShared.ts';
+import { type ThemeColors, useStyles } from './theme.ts';
 
 /**
  * Whether event reminders notify on this iPhone, and whether Apple
@@ -16,6 +16,8 @@ import { palette } from './theme.ts';
  * birthday reminders; every enabled save asks for permission.
  */
 export function EventNotificationsSection() {
+  const sectionStyles = useSectionStyles();
+  const styles = useStyles(makeStyles);
   const { setEventNotificationSettings } = useBackendMutations();
   const [settings, persist] = useSettingsEditor(
     useEventNotificationSettings(),
@@ -75,16 +77,17 @@ export function EventNotificationsSection() {
   );
 }
 
-const styles = StyleSheet.create({
-  label: {
-    color: palette.text,
-    flexShrink: 1,
-    fontSize: 14,
-  },
-  switchRow: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginTop: 10,
-  },
-});
+const makeStyles = (colors: ThemeColors) =>
+  StyleSheet.create({
+    label: {
+      color: colors.text,
+      flexShrink: 1,
+      fontSize: 14,
+    },
+    switchRow: {
+      alignItems: 'center',
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      marginTop: 10,
+    },
+  });

@@ -9,7 +9,7 @@ import {
 import { type CalendarInfo, draftZoneRange } from '@calendar/core';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { Linking, Pressable, ScrollView, Switch, Text, TextInput, View } from 'react-native';
-import { sheetStyles as styles } from './editSheetShared.ts';
+import { useSheetStyles } from './editSheetShared.ts';
 import { dateForPicker, dateStringFromPicker, timeStringFromPicker } from './pickerDates.ts';
 import { InviteeField } from './InviteeField.tsx';
 import { LocationField } from './LocationField.tsx';
@@ -25,6 +25,7 @@ const groupLabel = (calendar: CalendarInfo, emailOf: (accountId: string) => stri
 
 /** The event half of EventEditSheet (mode === 'event'). */
 export function EventEditForm({ model }: { model: ReturnType<typeof useEventEditorModel> }) {
+  const styles = useSheetStyles();
   const accounts = useAccounts();
   const { secondary: secondaryZones } = useTimeZones();
   const emailOf = (accountId: string) =>
