@@ -86,7 +86,8 @@ export const THEMES = {
 
 export type ThemeScheme = keyof typeof THEMES;
 
-export type ThemeColors = (typeof THEMES)['light'];
+/** One scheme's colors; both schemes share the keys, so a theme hook can hand out either. */
+export type ThemeColors = { readonly [K in keyof (typeof THEMES)['light']]: string };
 
 export const FONT_FAMILY = 'Inter';
 
