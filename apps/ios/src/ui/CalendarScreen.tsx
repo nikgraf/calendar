@@ -3,61 +3,40 @@ import {
   useBackendInvalidations,
   useCalendarNavigation,
   useCalendars,
-  useCaptureModel,
   useEventsInRangeStable,
   useListColorLookup,
   useOverdueTasksStable,
   usePendingOps,
-  useTaskLists,
   useBirthdaysInRangeStable,
   useEventReadOnlyLookup,
   useTaskReadOnlyLookup,
   useTasksInRangeStable,
   useTimeZones,
   useToday,
-  type EventEditorPrefill,
 } from '@calendar/app-state';
 import {
-  type BirthdayOccurrence,
   DAY_SWIPE_BUFFER,
   makeColorLookup,
-  type TaskRecord,
   Temporal,
   TWO_DAY_SWIPE_BUFFER,
   utcMsToPlainDate,
   WEEK_SWIPE_BUFFER,
   weekStart,
 } from '@calendar/core';
-import { useEffect, useEffectEvent, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { StatusBar } from 'expo-status-bar';
-import { AppState, Linking, Pressable, SafeAreaView, StyleSheet, Text, View } from 'react-native';
-import {
-  backendClient,
-  kickSync,
-  runLocalNotifications,
-  startSync,
-  subscribeInvalidations,
-} from '../backend.ts';
+import { AppState, Pressable, SafeAreaView, StyleSheet, Text, View } from 'react-native';
+import { kickSync, runLocalNotifications, startSync, subscribeInvalidations } from '../backend.ts';
 import { registerBackgroundRefresh } from '../backgroundTask.ts';
-import { appleSpeech } from '../appleSpeech.ts';
-import { fixtureShareFromUrl, takeIncomingShare } from '../incomingShare.ts';
-import { languageModel, modelFixture, textRecognizer } from '../model.ts';
-import { makeFindSlots, type CaptureSource } from '@calendar/ai';
-import { CaptureBanner } from './CaptureBanner.tsx';
-import { CaptureSheet } from './CaptureSheet.tsx';
 import { DayTimeline } from './DayTimeline.tsx';
-import { QuickAddBar } from './QuickAddBar.tsx';
+import { useEditorHost } from './EditorHost.tsx';
 import { MonthGrid } from './MonthGrid.tsx';
-import { EventEditSheet, type EditSeed } from './EventEditSheet.tsx';
 import { SettingsSheet } from './SettingsSheet.tsx';
 import { ConflictBanner, DroppedToast, MutationNoticeToast } from './Toast.tsx';
 import { type ThemeColors, useStyles } from './theme.ts';
 import { WeekStrip } from './WeekStrip.tsx';
 
 const SEGMENT_LABELS = { day: 'Day', month: 'Month', twoDay: '2 Days', week: 'Week' } as const;
-
-/** The share extension opens the app at `<scheme>://expo-sharing` once the payload is stored. */
-const isShareUrl = (url: string) => /^[a-z-]+:\/\/expo-sharing/i.test(url);
 
 /**
  * Sync, invalidations and background refresh start here, whatever the
@@ -116,78 +95,7 @@ function CalendarBody({
     weekBuffer: WEEK_SWIPE_BUFFER,
   });
   const [showSettings, setShowSettings] = useState(false);
-  const [editSeed, setEditSeed] = useState<EditSeed | null>(null);
-  const [editTask, setEditTask] = useState<TaskRecord | null>(null);
-  const [viewBirthday, setViewBirthday] = useState<BirthdayOccurrence | null>(null);
-  /** The capture row whose edit sheet is open, so a save can mark it added. */
-  const [captureRow, setCaptureRow] = useState<string | null>(null);
-
-  // A parsed prefill (quick-add, or a single captured event) opens the
-  // editor: the user reviews it before anything is written.
-  const openPrefill = (prefill: EventEditorPrefill) => {
-    setEditSeed({ initialDate: Temporal.PlainDate.from(prefill.date), prefill });
-  };
-  const capture = useCaptureModel({
-    model: languageModel,
-    onSingle: openPrefill,
-    recognizer: textRecognizer,
-    timeZone,
-  });
-
-  // Something shared into the app (the share sheet, or the e2e flows' deep
-  // link under the fixture model) starts a capture — over whatever sheet was
-  // open, since the share is what the user is doing now. The extension
-  // stores the payload and opens the app, so it is picked up on that URL and
-  // again whenever the app comes to the foreground; a store read twice is
-  // empty the second time.
-  const startCapture = (source: CaptureSource, onSettled?: () => void) => {
-    setShowSettings(false);
-    setEditSeed(null);
-    setEditTask(null);
-    setViewBirthday(null);
-    setCaptureRow(null);
-    capture.start(source, onSettled);
-  };
-  // The subscriptions below are made once, but `startCapture` closes over
-  // this render's model, recognizer and time zone (a share after the
-  // primary zone changed must resolve "tomorrow" in the new zone), so they
-  // go through an effect event, which always runs the latest render's.
-  const onIncoming = useEffectEvent((source: CaptureSource, onSettled?: () => void) => {
-    startCapture(source, onSettled);
-  });
-  useEffect(() => {
-    const pickUpShare = () => {
-      const share = takeIncomingShare();
-      if (share) {
-        onIncoming(share.source, share.discard);
-      }
-    };
-    const onUrl = (url: string | null) => {
-      if (!url) {
-        return;
-      }
-      if (isShareUrl(url)) {
-        pickUpShare();
-        return;
-      }
-      const fixtureSource = modelFixture ? fixtureShareFromUrl(url) : undefined;
-      if (fixtureSource) {
-        onIncoming(fixtureSource);
-      }
-    };
-    pickUpShare();
-    void Linking.getInitialURL().then(onUrl);
-    const urlSubscription = Linking.addEventListener('url', ({ url }) => onUrl(url));
-    const stateSubscription = AppState.addEventListener('change', (state) => {
-      if (state === 'active') {
-        pickUpShare();
-      }
-    });
-    return () => {
-      urlSubscription.remove();
-      stateSubscription.remove();
-    };
-  }, []);
+  const host = useEditorHost();
 
   // Stable variant: keeps the previous days' events while a new range loads,
   // so swiping never flashes an empty grid.
@@ -205,15 +113,10 @@ function CalendarBody({
   const today = useToday(timeZone);
   const overdue = useOverdueTasksStable(today);
   const mutations = useGuardedMutations();
-  const taskLists = useTaskLists();
   const isTaskReadOnly = useTaskReadOnlyLookup();
   const isEventReadOnly = useEventReadOnlyLookup();
   const pendingOps = usePendingOps();
   const listColorOf = useListColorLookup();
-  const findSlots = useMemo(
-    () => makeFindSlots(languageModel, backendClient, timeZone),
-    [timeZone],
-  );
   const calendars = useCalendars();
 
   const colorOf = useMemo(() => makeColorLookup(calendars), [calendars]);
@@ -272,15 +175,6 @@ function CalendarBody({
             <Text style={styles.navLabel}>›</Text>
           </Pressable>
           <Pressable
-            accessibilityLabel="Add event"
-            accessibilityRole="button"
-            onPress={() => setEditSeed({ initialDate: focused })}
-            style={styles.navButton}
-            testID="add-event"
-          >
-            <Text style={styles.addLabel}>＋</Text>
-          </Pressable>
-          <Pressable
             accessibilityLabel="Settings"
             accessibilityRole="button"
             onPress={() => setShowSettings(true)}
@@ -326,14 +220,6 @@ function CalendarBody({
         />
       ) : (
         <>
-          <QuickAddBar
-            findSlots={findSlots}
-            focusedDate={focused}
-            model={languageModel}
-            onParsed={(prefill) => setEditSeed({ initialDate: focused, prefill })}
-            speech={appleSpeech}
-            timeZone={timeZone}
-          />
           {view === 'day' ? (
             <WeekStrip
               days={stripDays}
@@ -351,15 +237,17 @@ function CalendarBody({
             isEventReadOnly={isEventReadOnly}
             isTaskReadOnly={isTaskReadOnly}
             listColorOf={listColorOf}
-            onBirthdayPress={(birthday) => setViewBirthday(birthday)}
-            onCreateSlot={(date, times) => setEditSeed({ initialDate: date, initialTimes: times })}
-            onEventPress={(event) => setEditSeed({ event, initialDate: focused })}
+            onBirthdayPress={host.openBirthday}
+            onCreateSlot={(date, times) =>
+              host.editEvent({ initialDate: date, initialTimes: times })
+            }
+            onEventPress={host.openEvent}
             onNavigate={panByDays}
             onSelectDay={(day) => {
               setFocused(day);
               switchView('day');
             }}
-            onTaskPress={(task) => setEditTask(task)}
+            onTaskPress={host.editTask}
             onToggleTask={(task) =>
               void mutations.completeTask({
                 accountId: task.accountId,
@@ -378,68 +266,48 @@ function CalendarBody({
         </>
       )}
 
-      {/* Keyed + conditionally mounted: the sheet seeds its form fields from
-          `seed` in useState initializers, which only run on mount. Under a
-          capture review it renders inside that sheet: two sibling Modals
-          never present together on iOS. */}
-      {(() => {
-        const editSheet =
-          editSeed || editTask || viewBirthday ? (
-            <EventEditSheet
-              birthday={viewBirthday ?? undefined}
-              calendars={calendars}
-              key={
-                viewBirthday
-                  ? `birthday:${viewBirthday.record.id}:${viewBirthday.date}`
-                  : editTask
-                    ? `task:${editTask.id}`
-                    : (editSeed?.event?.id ??
-                      `new:${editSeed?.initialDate.toString()}:${editSeed?.initialTimes?.startTime ?? ''}`)
-              }
-              onClose={() => {
-                setEditSeed(null);
-                setEditTask(null);
-                setViewBirthday(null);
-                setCaptureRow(null);
-              }}
-              onSaved={captureRow ? () => capture.markAdded(captureRow) : undefined}
-              seed={editSeed ?? { initialDate: focused }}
-              task={editTask ?? undefined}
-              taskLists={taskLists}
-              timeZone={timeZone}
-            />
-          ) : null;
-        return capture.state.kind === 'review' ? (
-          <CaptureSheet
-            onClose={capture.dismiss}
-            onOpenRow={(row) => {
-              setCaptureRow(row.id);
-              openPrefill(row.prefill);
-            }}
-            rows={capture.state.rows}
-            truncated={capture.state.truncated}
-          >
-            {editSheet}
-          </CaptureSheet>
-        ) : (
-          editSheet
-        );
-      })()}
+      <Pressable
+        accessibilityLabel="Add"
+        accessibilityRole="button"
+        onPress={host.openQuickAdd}
+        style={styles.fab}
+        testID="add"
+      >
+        <Text style={styles.fabLabel}>＋</Text>
+      </Pressable>
       <SettingsSheet onClose={() => setShowSettings(false)} visible={showSettings} />
       <ConflictBanner />
       <DroppedToast />
       <MutationNoticeToast />
-      <CaptureBanner onDismiss={capture.dismiss} state={capture.state} />
     </SafeAreaView>
   );
 }
 
 const makeStyles = (colors: ThemeColors) =>
   StyleSheet.create({
-    addLabel: {
-      color: colors.primary,
-      fontSize: 18,
+    // Above the floating tab bar: iOS 26 draws the Search tab as its own
+    // circle at the bottom right, exactly where a bottom-aligned FAB sat.
+    fab: {
+      alignItems: 'center',
+      backgroundColor: colors.primary,
+      borderRadius: 28,
+      bottom: 104,
+      elevation: 4,
+      height: 56,
+      justifyContent: 'center',
+      position: 'absolute',
+      right: 20,
+      shadowColor: '#000000',
+      shadowOffset: { height: 4, width: 0 },
+      shadowOpacity: 0.2,
+      shadowRadius: 8,
+      width: 56,
+    },
+    fabLabel: {
+      color: colors['on-primary'],
+      fontSize: 28,
       fontWeight: '600',
+      lineHeight: 32,
     },
     header: {
       alignItems: 'center',

@@ -7,7 +7,8 @@ name: Open the event whose block matches BLOCK in the edit sheet (shared)
 - repeat:
     times: 3
     while:
-      notVisible: 'Edit Event'
+      notVisible:
+        id: 'event-edit'
     commands:
       - scrollUntilVisible:
           element:
@@ -16,9 +17,9 @@ name: Open the event whose block matches BLOCK in the edit sheet (shared)
           centerElement: true
       - tapOn: ${BLOCK}
       - extendedWaitUntil:
-          visible: 'Edit Event'
+          visible:
+            id: 'event-edit'
           timeout: 5000
           optional: true
-- assertVisible: 'Edit Event'
-- waitForAnimationToEnd:
-    timeout: 5000
+# The detail sheet is up; Edit opens the editor.
+- runFlow: ../common/open-event-editor.yaml

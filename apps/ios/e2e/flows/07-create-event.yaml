@@ -51,7 +51,7 @@ tags:
           timeout: 10000
       # Clean up, so repeated runs don't pile up in a real calendar.
       - tapOn: 'Solunivo e2e event to delete.*'
-      - assertVisible: 'Edit Event'
+      - runFlow: ../common/open-event-editor.yaml
       - tapOn:
           id: 'event-delete'
       # The confirmation alert (deleteQuestion).

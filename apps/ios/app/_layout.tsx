@@ -5,6 +5,7 @@ import { useEffect } from 'react';
 import { StyleSheet } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { backendClient } from '../src/backend.ts';
+import { EditorHostProvider } from '../src/ui/EditorHost.tsx';
 import { ErrorBoundary } from '../src/ui/ErrorBoundary.tsx';
 import { useTheme } from '../src/ui/theme.ts';
 
@@ -30,9 +31,11 @@ export default function RootLayout() {
       <ErrorBoundary>
         <BackendProvider atoms={backendAtoms}>
           <SystemBackground />
-          <Stack screenOptions={{ headerShown: false }}>
-            <Stack.Screen name="(tabs)" />
-          </Stack>
+          <EditorHostProvider>
+            <Stack screenOptions={{ headerShown: false }}>
+              <Stack.Screen name="(tabs)" />
+            </Stack>
+          </EditorHostProvider>
         </BackendProvider>
       </ErrorBoundary>
     </GestureHandlerRootView>

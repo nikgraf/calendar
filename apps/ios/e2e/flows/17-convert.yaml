@@ -79,7 +79,7 @@ tags:
       # Event → reminder: the form follows the picked list; the Reminders
       # list keeps the time, so again no question.
       - tapOn: 'Solunivo e2e convert, [0-9].*'
-      - assertVisible: 'Edit Event'
+      - runFlow: ../common/open-event-editor.yaml
       - tapOn:
           id: 'mode-task'
       - assertVisible: 'Convert to .*'

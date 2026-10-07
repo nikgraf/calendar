@@ -6,6 +6,7 @@ import {
   useEventEditorModel,
   useTaskEditorModel,
   type EventEditorSeed,
+  type TaskEditorSeed,
 } from '@calendar/app-state';
 import {
   type BirthdayOccurrence,
@@ -13,7 +14,7 @@ import {
   type TaskListInfo,
   type TaskRecord,
 } from '@calendar/core';
-import { useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, Modal, Pressable, SafeAreaView, Text, View } from 'react-native';
 import { BirthdayDetail } from './BirthdayDetail.tsx';
 import { useSheetStyles } from './editSheetShared.ts';
@@ -66,7 +67,8 @@ const wording = (
       return { message: undefined, no: 'Cancel', title: request.summary, yes: 'Delete' };
   }
 };
-const confirm = (request: EditorConfirmRequest): Promise<boolean> =>
+/** The native alert for an editor's lossy move, conversion, switch or delete. */
+export const confirmEditorRequest = (request: EditorConfirmRequest): Promise<boolean> =>
   new Promise((resolve) => {
     const { message, no, title, yes } = wording(request);
     Alert.alert(title, message, [
@@ -83,16 +85,20 @@ const confirm = (request: EditorConfirmRequest): Promise<boolean> =>
 export function EventEditSheet({
   birthday,
   calendars,
+  initialMode,
   onClose,
   onSaved,
   seed,
   task,
   taskLists,
+  taskPrefill,
   timeZone,
 }: {
   /** Present when opened from a birthday chip: a read-only detail, nothing to edit. */
   birthday?: BirthdayOccurrence | undefined;
   calendars: ReadonlyArray<CalendarInfo>;
+  /** Open on the task form: the detail sheet's Convert. */
+  initialMode?: 'task' | undefined;
   onClose: () => void;
   /** Save went through, as an event or a task (capture marks its row added). */
   onSaved?: (() => void) | undefined;
@@ -100,6 +106,8 @@ export function EventEditSheet({
   /** Present when the sheet was opened from a task chip (task edit mode). */
   task?: TaskRecord | undefined;
   taskLists: ReadonlyArray<TaskListInfo>;
+  /** A new task to open with (a quick-add phrase understood as a task). */
+  taskPrefill?: Pick<TaskEditorSeed, 'dated' | 'initialTime' | 'title'> | undefined;
   timeZone: string;
 }) {
   const styles = useSheetStyles();
@@ -113,48 +121,64 @@ export function EventEditSheet({
   // The Event | Task toggle: in create mode it picks the kind, on an
   // existing item it converts (Save then writes the other kind and
   // deletes the source). Both models stay mounted so a flip keeps state.
+  // An existing event asked to open as a task (the detail sheet's Convert)
+  // still starts as the event and switches below: the switch is what
+  // carries the title, notes, rule and URL over and asks about a loss.
+  const convertOnOpen = initialMode === 'task' && sourceKind === 'event';
   const [mode, setMode] = useState<'birthday' | 'event' | 'task'>(
-    birthday ? 'birthday' : task ? 'task' : 'event',
+    birthday ? 'birthday' : task || taskPrefill ? 'task' : 'event',
   );
   const mutations = useBackendMutations();
   const taskModel = useTaskEditorModel({
-    confirm,
+    confirm: confirmEditorRequest,
     onClose,
     onSaved,
     seed: {
       convertFromEvent: seed.event,
+      dated: taskPrefill?.dated,
       existing: task,
       initialDate: seed.initialDate.toString(),
-      initialTime: seed.initialTimes?.startTime,
+      initialTime: taskPrefill?.initialTime ?? seed.initialTimes?.startTime,
+      title: taskPrefill?.title,
     },
     taskLists,
   });
   const eventModel = useEventEditorModel({
     calendars,
-    confirm,
+    confirm: confirmEditorRequest,
     onClose,
     onSaved,
     seed: { ...seed, convertFromTask: task },
     timeZone,
   });
 
-  const switchTo = async (next: 'event' | 'task') => {
-    if (next === mode) {
-      return;
+  const switchTo = useCallback(
+    async (next: 'event' | 'task') => {
+      if (next === mode) {
+        return;
+      }
+      const switched = await switchEditorMode({
+        confirm: confirmEditorRequest,
+        eventModel,
+        next,
+        previewEventToTask: mutations.previewEventToTask,
+        sourceKind,
+        taskModel,
+        timeZone,
+      });
+      if (switched) {
+        setMode(next);
+      }
+    },
+    [eventModel, mode, mutations.previewEventToTask, sourceKind, taskModel, timeZone],
+  );
+  const converted = useRef(false);
+  useEffect(() => {
+    if (convertOnOpen && !converted.current) {
+      converted.current = true;
+      void switchTo('task');
     }
-    const switched = await switchEditorMode({
-      confirm,
-      eventModel,
-      next,
-      previewEventToTask: mutations.previewEventToTask,
-      sourceKind,
-      taskModel,
-      timeZone,
-    });
-    if (switched) {
-      setMode(next);
-    }
-  };
+  }, [convertOnOpen, switchTo]);
   const showToggle =
     mode !== 'birthday' &&
     !(sourceKind === 'event' && eventModel.readOnly) &&
@@ -180,18 +204,13 @@ export function EventEditSheet({
             : 'New Event';
 
   return (
-    <Modal
-      animationType="slide"
-      onRequestClose={onClose}
-      presentationStyle="overFullScreen"
-      visible
-    >
-      {/* overFullScreen draws under the status bar; inset it ourselves.
-          Only the header: the form's ScrollView runs to the bottom edge
-          and pads its own content past the home indicator, so its last
-          control is never clipped by a bottom inset while still reporting
-          an on-screen frame — a tap there used to land on nothing (CI
-          flows 08/16). */}
+    <Modal animationType="slide" onRequestClose={onClose} presentationStyle="pageSheet" visible>
+      {/* A page sheet sits below the status bar; the SafeAreaView adds no
+          top inset there, and only wraps the header: the form's ScrollView
+          runs to the bottom edge and pads its own content past the home
+          indicator, so its last control is never clipped by a bottom inset
+          while still reporting an on-screen frame — a tap there used to
+          land on nothing (CI flows 08/16). */}
       <View style={styles.container}>
         <SafeAreaView>
           <View style={styles.header}>

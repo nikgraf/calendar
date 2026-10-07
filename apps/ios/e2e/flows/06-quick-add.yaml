@@ -4,10 +4,12 @@ tags:
   - ci
 ---
 - runFlow: ../common/launch.yaml
-# The bar renders only after an async availability check resolves, so wait
-# for the marker the app emits either way before deciding to skip —
-# checking `quick-add-input` directly would race the mount and report a
-# silent pass on hardware that does have a model.
+# The "+" opens the quick-add sheet. Its field renders only after an async
+# availability check resolves, so wait for the marker the app emits either
+# way before deciding to skip — checking `quick-add-input` directly would
+# race the mount and report a silent pass on hardware that does have a model.
+- tapOn:
+    id: 'add'
 - extendedWaitUntil:
     visible:
       id: 'quick-add-state'
@@ -28,22 +30,31 @@ tags:
       # generate — the bar shows its "couldn't be read" copy. Either
       # outcome proves the bar, submit and error path; the prefilled
       # editor is asserted wherever a model actually answers.
+      # A parse is held for a look first: the "Understood as" card.
       - extendedWaitUntil:
-          visible: 'New Event|That couldn.t be read.*'
+          visible: 'Understood as|That couldn.t be read.*'
           timeout: 60000
       - runFlow:
           when:
-            visible: 'New Event'
+            visible: 'Understood as'
           commands:
-            # The phrase must have filled the form, not just opened it. The
-            # e2e bundle's fixture model (CI) makes the whole phrase the
-            # title; a real model extracts "Lunch with Sarah".
+            # The phrase must have been read, not just echoed. The e2e
+            # bundle's fixture model (CI) makes the whole phrase the title;
+            # a real model extracts "Lunch with Sarah".
+            - assertVisible: 'Lunch with Sarah.*'
+            - tapOn:
+                id: 'quick-add-edit'
+            - extendedWaitUntil:
+                visible: 'New Event'
+                timeout: 10000
             - assertVisible: 'Lunch with Sarah.*'
             - tapOn: 'Cancel'
       - runFlow:
           when:
             visible: 'That couldn.t be read.*'
           commands:
+            - tapOn:
+                id: 'quick-add-cancel'
             - assertVisible: 'Today'
       # Dictation is deliberately not asserted here: Maestro cannot inject
       # audio and simulators carry no speech assets, so the mic disables

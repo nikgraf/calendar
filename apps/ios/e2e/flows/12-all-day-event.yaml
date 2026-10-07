@@ -31,7 +31,7 @@ tags:
       - assertVisible:
           id: 'all-day-event-chip'
       - tapOn: 'Solunivo e2e all-day to delete'
-      - assertVisible: 'Edit Event'
+      - runFlow: ../common/open-event-editor.yaml
       # Clean up, so repeated runs don't pile up in a real calendar.
       - tapOn:
           id: 'event-delete'
