@@ -2196,3 +2196,52 @@ except where a test cannot fail on Node (noted).
       The helper runs each request in its own task, so a slow MapKit
       search no longer takes a pending permission prompt or a
       transcription with it.
+
+### Review fixes, fourth batch (2026-10-07)
+
+The rest of Tier 0's sync items and three groups of the review's Tier 2
+UX list, one PR each, grouped so none conflicts with another; each fix
+came with a failing test first.
+
+- [x] Deletes ask first — #129 (`todo/confirm-delete`). **Confirm, not
+      undo**: an undo would hold back the Google delete op and fake the
+      row's absence, and an Apple delete leaves EventKit at once. Both
+      editor models ask (`EditorConfirmRequest` kind `delete`) before any
+      write, inside the write slot, naming what goes (`deleteQuestion`:
+      the title, and for an occurrence of a series how much of it).
+      Desktop asks inline (Keep / Delete, test ids on the buttons), iOS
+      in an Alert (Cancel / Delete).
+- [x] Desktop dialogs — #130 (`todo/dialog-escape`). **One stack of open
+      dialogs; only the topmost (highest zIndex, then the last opened)
+      answers Escape and traps Tab** — stopPropagation does not stop
+      another window listener, so one Escape closed them all. Escape
+      stops with stopImmediatePropagation (review of #130): for a native
+      key React commits the closed dialog's unmount between listeners,
+      and the next one found itself on top. The
+      calendar's keys and its paste stand back for any dialog
+      (`isDialogOpen`), the agent approval App opens included; ⌘K opens
+      its bar over none.
+- [x] Sync leftovers — #131 (`todo/sync-leftovers`). **A calendar-list
+      410's full relist purges** (the pass knows it ran in full), against
+      the calendars stored after the pass — a delta page that landed
+      before the 410 may have added one the full list omits (review of
+      #131). **A
+      malformed `updated` reads as the sync time** instead of failing the
+      calendar's pass. **An unreached request (no status) gets one retry,
+      not five** — offline held the sync gate half a minute per account;
+      5xx and 429 keep five. **`listForEvent`** filters the queue in SQL
+      for every edit and ack. **One fn atom per mutation call**
+      (`runMutation`): Atom.fn runs latest-wins, so a second quick call
+      interrupted the first and both read its result.
+- [x] Sign-in — #132 (`todo/sign-in-feedback`). **The desktop's browser
+      tab is answered once the outcome is known** (after the code
+      exchange; state checked first, reason escaped). **Cancel** stops a
+      sign-in waiting on the browser (`auth:cancel` preload IPC — no
+      calendar data, so not rpc), and stays in force through the code
+      exchange, which races it (review of #132: a slow token endpoint
+      let the account be added after Cancel). **A cancellation is no error**:
+      `SignInCancelledError` (sheet dismissed, `access_denied`, Cancel)
+      crosses as BackendError's tag and neither app nor the mutation
+      toasts show it. **`addAccount({ loginHint })`**: a reconnect sends
+      `login_hint` with `prompt=consent` only, so Google opens on that
+      account.

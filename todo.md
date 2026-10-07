@@ -16,8 +16,9 @@ means the cited code was re-read and the defect is there, "reported" that
 one audit pass traced it — reproduce with a failing test first. Lines are
 from main on 2026-10-04. Fixed items are closed in `docs/decisions.md`
 under "Review fixes (2026-10-04)" (#110–#115), "Review fixes, second
-batch (2026-10-05)" (#117–#121) and "Review fixes, third batch
-(2026-10-05)" (#124–#127).
+batch (2026-10-05)" (#117–#121), "Review fixes, third batch
+(2026-10-05)" (#124–#127) and "Review fixes, fourth batch (2026-10-07)"
+(#129–#132).
 
 ### Time zones and recurrence
 
@@ -31,19 +32,10 @@ batch (2026-10-05)" (#117–#121) and "Review fixes, third batch
 
 ### Sync robustness
 
-- [ ] After a calendar-list 410, removed calendars are never purged
-      (reported) — `engine.ts:236,251` still takes the incremental branch
-      after the full relist; `syncEvents` tracks `fullPass`, this does not.
 - [ ] EventKit/Contacts observers die after `reloadAsync` (reported,
       medium) — the bridges return early when `changeObserver != nil`
       (`AppleCalendarBridge.swift:453-458` and siblings) while the
       closure's module instance is gone; "Load PR channel" triggers it.
-- [ ] Smaller — a malformed `updated` still throws for the whole pass
-      (`mapEvent.ts:160-161`); the offline 5× retry holds the sync gate
-      about 30 s per Google account (`engine.ts:96`), so Reminders passes
-      and the iOS background budget wait behind it; `opsForEvent` decodes
-      every queued op per edit — give it an
-      `(account_id, calendar_id, event_id)` query.
 
 ## Tier 1 — CI and distribution
 
@@ -157,25 +149,15 @@ comment` for inline-playable video: 10 MB on Free plans, 100 MB paid
       a real guest invitation at "ask".
 
 - [ ] UX and polish from the 2026-10-02 review (one PR per bullet group
-      is fine) —
-      **Deletes**: delete event/task/reminder is one tap with no confirm
-      or undo on both apps (verified on iOS: no `Alert` in the edit
-      forms); scope "All" removes a series, Apple deletes are immediate.
+      is fine; deletes, desktop dialogs and sign-in shipped in #129, #130
+      and #132) —
       **iOS gestures**: a second swipe within the 180 ms commit animation
       loses the first (`DayTimeline.tsx:265-272`, `onNavigate` runs only
       when the timing finishes — verified in code); resize can win over
       scroll on short events, a cancelled drag still commits
       (`DraggableEventBlock.tsx:80-94` ignores `success`) and the block
       flickers back before the optimistic write lands (reported).
-      **Desktop dialogs**: one Escape closes every open dialog
-      (`Dialog.tsx:53` uses `stopPropagation` on a shared `window`
-      listener — verified), so dismissing an agent request also closes a
-      half-edited event; calendar shortcuts fire behind the approval
-      dialog. **Sign-in**: the loopback page says "Signed in" before
-      `error`/`state` are checked (`loopbackFlow.ts:54-66`, verified) and
-      the flow cannot be cancelled; cancelling on iOS shows a red error;
-      "reconnect" passes no `login_hint`, so picking another account adds
-      one. **Notifications**: a tap does not open its event; the OS-denied
+      **Notifications**: a tap does not open its event; the OS-denied
       state shows only after a switch is flipped. **Accessibility and
       theme**: no Dynamic Type limits on fixed-height chips, toasts are
       not announced to VoiceOver, the conflict banner and toasts overlap,
@@ -184,8 +166,7 @@ comment` for inline-playable video: 10 MB on Free plans, 100 MB paid
       without a confirm. **Small**: newer Teams (`/meet/<id>`,
       `teams.live.com`) and Webex `j.php` links are not recognised
       (`meeting.ts`); `app.json` says 0.0.1 while `docs/distribution.md`
-      says 0.1.0; two quick calls to one mutation atom get each other's
-      result (`atoms.ts`, `hooks.ts:381-396`).
+      says 0.1.0.
 
 ## Tier 3 — AI features
 
