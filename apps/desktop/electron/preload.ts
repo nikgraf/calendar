@@ -11,6 +11,8 @@ contextBridge.exposeInMainWorld('calendarBridge', {
   agentsState: () => ipcRenderer.invoke('agents:state'),
   agentsUpdate: (id: string, changes: unknown) => ipcRenderer.invoke('agents:update', id, changes),
   appleCalendarStatus: () => ipcRenderer.invoke('appleCalendar:status'),
+  /** Stops a Google sign-in waiting on the browser (Accounts › Cancel). */
+  authCancel: () => ipcRenderer.invoke('auth:cancel'),
   contactsStatus: () => ipcRenderer.invoke('contacts:status'),
   logError: (text: string) => ipcRenderer.send('renderer-error', text),
   modelGenerate: (schema: unknown, prompt: string) =>

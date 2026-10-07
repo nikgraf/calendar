@@ -1,3 +1,4 @@
+import { SignInCancelledError } from '@calendar/core';
 import { AuthRequest, type AuthRequestConfig } from 'expo-auth-session';
 
 const DISCOVERY = {
@@ -24,14 +25,21 @@ export interface AuthGrant {
 /**
  * Runs the expo-auth-session PKCE flow (ASWebAuthenticationSession) and
  * returns the authorization code; the shared TokenManager does the exchange.
+ * A dismissed sheet or a refused consent throws SignInCancelledError, which
+ * the UI does not show as an error. `loginHint` (a reconnect) opens Google
+ * on that account rather than the chooser.
  */
-export const signInWithGoogle = async (clientId: string): Promise<AuthGrant> => {
+export const signInWithGoogle = async (
+  clientId: string,
+  loginHint?: string,
+): Promise<AuthGrant> => {
   const redirectUri = redirectUriFor(clientId);
   const config: AuthRequestConfig = {
     clientId,
     extraParams: {
       access_type: 'offline',
-      prompt: 'consent select_account',
+      ...(loginHint ? { login_hint: loginHint } : {}),
+      prompt: loginHint ? 'consent' : 'consent select_account',
     },
     redirectUri,
     scopes: SCOPES,
@@ -40,6 +48,13 @@ export const signInWithGoogle = async (clientId: string): Promise<AuthGrant> => 
   const request = new AuthRequest(config);
   const result = await request.promptAsync(DISCOVERY);
 
+  if (
+    result.type === 'cancel' ||
+    result.type === 'dismiss' ||
+    (result.type === 'error' && result.params['error'] === 'access_denied')
+  ) {
+    throw new SignInCancelledError({ message: `sign-in ${result.type}` });
+  }
   if (result.type !== 'success') {
     throw new Error(`sign-in ${result.type}`);
   }

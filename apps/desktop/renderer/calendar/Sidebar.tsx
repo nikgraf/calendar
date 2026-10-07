@@ -150,7 +150,7 @@ export function Sidebar({
               // re-consents and upgrades the account in place.
               <button
                 className="w-full rounded-md px-2 py-1 text-left text-xs text-neutral-400 hover:bg-neutral-200/60 hover:text-neutral-600"
-                onClick={() => void addAccount(undefined)}
+                onClick={() => void addAccount({ loginHint: account.email })}
                 type="button"
               >
                 Connect Google Tasks — sign in again
