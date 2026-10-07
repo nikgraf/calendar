@@ -113,6 +113,9 @@ const updateBody = (op: PendingOp, record: EventRecord) => ({
   // them, as explicit nulls (deleting the keys) when this edit dropped
   // them, and not at all otherwise.
   ...toGcalGeoPatch(record, op.geoCleared === true),
+  // "Does not repeat": an absent key would keep Google's rule, so the
+  // patch sends an empty list — unless a later edit gave it a rule again.
+  ...(op.recurrenceCleared === true && record.recurrence === undefined ? { recurrence: [] } : {}),
   ...toGcalRemindersPatch(record, op.remindersChanged === true),
   // The guest list rides along only when this edit changed it: Google
   // replaces the whole array, and our copy may lack fields we never

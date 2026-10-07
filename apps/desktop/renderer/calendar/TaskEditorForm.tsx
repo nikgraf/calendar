@@ -60,7 +60,7 @@ export function TaskEditorForm({
       </label>
       {task?.webViewLink ? (
         <button
-          className="self-start text-sm text-blue-600 hover:underline"
+          className="self-start text-sm text-primary hover:underline"
           onClick={() => window.open(task.webViewLink ?? '', '_blank', 'noopener')}
           type="button"
         >
@@ -83,7 +83,7 @@ export function TaskEditorForm({
         )}
         <div className="flex gap-2">
           <button
-            className="rounded-lg px-3 py-1.5 text-sm hover:bg-neutral-200"
+            className="rounded-lg px-3 py-1.5 text-sm hover:bg-fill"
             onClick={onClose}
             type="button"
           >
@@ -91,7 +91,7 @@ export function TaskEditorForm({
           </button>
           <button
             aria-busy={taskModel.busy}
-            className={`rounded-lg bg-blue-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-40 ${taskModel.busy ? 'opacity-40' : ''}`}
+            className={`rounded-lg bg-primary px-4 py-1.5 text-sm font-medium text-on-primary hover:bg-primary-hover disabled:opacity-40 ${taskModel.busy ? 'opacity-40' : ''}`}
             disabled={moveConfirmation.pending !== null}
             onClick={() => void taskModel.save()}
             type="button"

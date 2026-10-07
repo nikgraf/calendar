@@ -74,9 +74,9 @@ export function MonthView({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col" data-testid="month-grid">
-      <div className="grid shrink-0 grid-cols-7 border-b border-neutral-200 bg-white">
+      <div className="grid shrink-0 grid-cols-7 border-b border-hairline bg-surface">
         {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((label) => (
-          <div className="px-2 py-1.5 text-xs font-medium text-neutral-400" key={label}>
+          <div className="px-2 py-1.5 text-xs font-medium text-ink-secondary" key={label}>
             {label}
           </div>
         ))}
@@ -103,9 +103,9 @@ export function MonthView({
                 events: dayEvents.length,
                 tasks: dayTasks.length,
               })}
-              className={`flex min-h-0 flex-col items-stretch gap-0.5 border-r border-b border-neutral-100 p-1 text-left ${
-                inMonth ? 'bg-white' : 'bg-neutral-50'
-              } hover:bg-blue-50/40`}
+              className={`flex min-h-0 flex-col items-stretch gap-0.5 border-r border-b border-hairline p-1 text-left ${
+                inMonth ? 'bg-surface' : 'bg-surface-subtle'
+              } hover:bg-selection/40`}
               key={iso}
               onClick={() => onSelectDay(date)}
               type="button"
@@ -115,8 +115,8 @@ export function MonthView({
                   isToday
                     ? 'flex size-5 items-center justify-center rounded-full bg-red-500 text-white'
                     : inMonth
-                      ? 'text-neutral-700'
-                      : 'text-neutral-300'
+                      ? 'text-ink-secondary'
+                      : 'text-ink-secondary/70'
                 }`}
               >
                 {date.day}
@@ -131,8 +131,8 @@ export function MonthView({
                   const listColor = listColorOf(task);
                   return (
                     <span
-                      className={`truncate rounded border border-neutral-300 bg-neutral-50 px-1 text-[11px] leading-4 ${
-                        isOverdue ? 'text-red-600' : 'text-neutral-700'
+                      className={`truncate rounded border border-hairline-strong bg-surface-subtle px-1 text-[11px] leading-4 ${
+                        isOverdue ? 'text-red-600' : 'text-ink-secondary'
                       } ${done ? 'opacity-50' : ''}`}
                       data-overdue={isOverdue ? '' : undefined}
                       key={calendarTaskKey(task)}
@@ -157,7 +157,7 @@ export function MonthView({
                   const label = birthdayChipLabel(birthday);
                   return (
                     <span
-                      className="truncate rounded border border-neutral-300 bg-neutral-50 px-1 text-[11px] leading-4 text-neutral-700"
+                      className="truncate rounded border border-hairline-strong bg-surface-subtle px-1 text-[11px] leading-4 text-ink-secondary"
                       data-birthday={birthday.record.id}
                       key={`birthday:${birthday.record.id}:${birthday.date}`}
                       style={{ borderLeftColor: BIRTHDAY_ACCENT, borderLeftWidth: 3 }}
@@ -171,12 +171,12 @@ export function MonthView({
                 const color = colorOf(event);
                 return (
                   <span
-                    className="truncate rounded px-1 text-[11px] leading-4"
+                    className="truncate rounded px-1 text-[11px] leading-4 text-ink"
                     key={`${event.calendarId}:${event.id}`}
                     style={
                       event.isAllDay
                         ? { backgroundColor: color, color: chipTextColor(color) }
-                        : { color: '#404040' }
+                        : undefined
                     }
                   >
                     {event.isAllDay ? null : (
@@ -190,7 +190,7 @@ export function MonthView({
                 );
               })}
               {overflow > 0 ? (
-                <span className="px-1 text-[10px] text-neutral-400">+{overflow} more</span>
+                <span className="px-1 text-[10px] text-ink-secondary">+{overflow} more</span>
               ) : null}
             </button>
           );

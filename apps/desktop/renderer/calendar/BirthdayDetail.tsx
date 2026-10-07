@@ -47,14 +47,14 @@ function BirthdayReminders({ record }: { record: BirthdayRecord }) {
     );
   return (
     <div
-      className="rounded-lg border border-neutral-200 bg-white p-3"
+      className="rounded-lg border border-hairline bg-surface p-3"
       data-testid="birthday-reminders"
     >
       <div className="mb-1 flex items-center justify-between">
-        <p className="text-xs font-medium text-neutral-400 uppercase">Reminders</p>
+        <p className="text-xs font-medium text-ink-secondary uppercase">Reminders</p>
         {editor.overridden ? (
           <button
-            className="rounded px-1.5 text-xs text-blue-600 hover:bg-neutral-100"
+            className="rounded px-1.5 text-xs text-primary hover:bg-fill"
             data-testid="birthday-reminders-custom"
             onClick={() => run(editor.reset())}
             type="button"
@@ -77,7 +77,7 @@ function BirthdayReminders({ record }: { record: BirthdayRecord }) {
         ))}
       </div>
       {editor.enabled ? null : (
-        <p className="mt-2 text-xs text-neutral-500" data-testid="birthday-reminders-off">
+        <p className="mt-2 text-xs text-ink-secondary" data-testid="birthday-reminders-off">
           Birthday reminders are off — turn them on in Settings › Notifications.
         </p>
       )}
@@ -110,13 +110,13 @@ export function BirthdayDetail({
   return (
     <div className="flex flex-col gap-3" data-testid="birthday-detail">
       <p className="select-text text-base font-medium">{record.displayName}</p>
-      <p className="select-text text-sm text-neutral-700">
+      <p className="select-text text-sm text-ink-secondary">
         🎂 {monthDay(record)}
         {record.year === undefined ? '' : ` · born ${String(record.year)}`}
       </p>
-      <p className="text-sm text-neutral-500">{countdown(next.daysUntil, next.ageTurning)}</p>
-      <div className="rounded-lg border border-neutral-200 bg-white p-3">
-        <p className="mb-1 text-xs font-medium text-neutral-400 uppercase">Source</p>
+      <p className="text-sm text-ink-secondary">{countdown(next.daysUntil, next.ageTurning)}</p>
+      <div className="rounded-lg border border-hairline bg-surface p-3">
+        <p className="mb-1 text-xs font-medium text-ink-secondary uppercase">Source</p>
         <ul className="flex flex-col gap-1 text-sm">
           {record.sources.map((source) => (
             <li className="select-text" data-testid="birthday-source" key={source.id}>
@@ -128,12 +128,12 @@ export function BirthdayDetail({
         </ul>
       </div>
       <BirthdayReminders record={record} />
-      <p className="rounded-lg bg-neutral-100 p-2 text-sm text-neutral-600">
+      <p className="rounded-lg bg-fill p-2 text-sm text-ink-secondary">
         Birthdays are read-only here — edit them in Contacts or Google Contacts.
       </p>
       <div className="mt-2 flex justify-end">
         <button
-          className="rounded-lg px-3 py-1.5 text-sm hover:bg-neutral-200"
+          className="rounded-lg px-3 py-1.5 text-sm hover:bg-fill"
           onClick={onClose}
           type="button"
         >

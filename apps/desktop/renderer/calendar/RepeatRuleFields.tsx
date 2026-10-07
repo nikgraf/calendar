@@ -19,7 +19,7 @@ export type RepeatRuleState = Omit<ReturnType<typeof useRepeatState>, 'toSpec'>;
 
 const toggle = (active: boolean) =>
   `flex-1 rounded-md px-1 py-1 text-xs font-medium ${
-    active ? 'bg-blue-600 text-white' : 'text-neutral-600 hover:bg-neutral-200/60'
+    active ? 'bg-primary text-on-primary' : 'text-ink-secondary hover:bg-fill'
   }`;
 
 /** "Day 14" for the anchor date, or a neutral label while the date field is mid-edit. */
@@ -83,7 +83,7 @@ export function RepeatRuleFields({
       {state.repeat === 'weekly' ? (
         <div
           aria-label="Repeat on"
-          className="flex gap-1 rounded-lg border border-neutral-200 bg-neutral-100 p-1"
+          className="flex gap-1 rounded-lg border border-hairline bg-fill p-1"
           role="group"
         >
           {WEEKDAY_OPTIONS.map((option) => {
@@ -213,7 +213,7 @@ export function RepeatRuleFields({
         </div>
       )}
       {state.repeatSummary ? (
-        <p className="text-xs text-neutral-500" data-testid="repeat-summary">
+        <p className="text-xs text-ink-secondary" data-testid="repeat-summary">
           {state.repeatSummary}
         </p>
       ) : null}

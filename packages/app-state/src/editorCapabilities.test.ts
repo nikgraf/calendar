@@ -1,6 +1,6 @@
 import { CalendarInfo } from '@calendar/core';
 import { describe, expect, it } from 'vitest';
-import { editorCapabilities, recurringTimesError } from './editorModel.ts';
+import { editorCapabilities, recurringTimesError, repeatScopeError } from './editorModel.ts';
 
 const calendar = (provider: 'apple' | 'google', accessRole: CalendarInfo['accessRole'] = 'owner') =>
   new CalendarInfo({
@@ -104,6 +104,25 @@ describe('recurringTimesError', () => {
         opened: { date: '2026-07-04', isAllDay: false },
         scope: 'series',
       }),
+    ).toBeUndefined();
+  });
+});
+
+describe('repeatScopeError', () => {
+  it('asks for a series scope only once the rule was edited on an occurrence', () => {
+    expect(repeatScopeError({ dirty: true, isRecurring: true, scope: 'instance' })).toMatch(
+      /All events/,
+    );
+    expect(repeatScopeError({ dirty: true, isRecurring: true, scope: 'series' })).toBeUndefined();
+    expect(
+      repeatScopeError({ dirty: true, isRecurring: true, scope: 'following' }),
+    ).toBeUndefined();
+    expect(
+      repeatScopeError({ dirty: false, isRecurring: true, scope: 'instance' }),
+    ).toBeUndefined();
+    // A new event's rule is not scoped at all.
+    expect(
+      repeatScopeError({ dirty: true, isRecurring: false, scope: 'instance' }),
     ).toBeUndefined();
   });
 });

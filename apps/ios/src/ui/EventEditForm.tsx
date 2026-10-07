@@ -156,9 +156,9 @@ export function EventEditForm({ model }: { model: ReturnType<typeof useEventEdit
           />
         </View>
 
-        {existing ? null : (
+        {model.repeatLoaded ? (
           <RepeatRuleChips anchorDate={date} state={model} testIDPrefix="event-repeat" />
-        )}
+        ) : null}
 
         <View style={styles.pickerRow} testID="event-date">
           <Text style={styles.label}>Date</Text>

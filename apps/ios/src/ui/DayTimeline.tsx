@@ -1,4 +1,8 @@
-import { useGuardedMutations, useViewPreferences } from '@calendar/app-state';
+import {
+  useGuardedMutations,
+  useUpdateViewPreferences,
+  useViewPreferences,
+} from '@calendar/app-state';
 import {
   type BirthdayOccurrence,
   bufferedDays,
@@ -107,11 +111,12 @@ export function DayTimeline({
 }) {
   const scrollRef = useRef<ScrollView>(null);
   const containerRef = useRef<View>(null);
-  const { setViewPreferences, updateEvent, updateRecurring } = useGuardedMutations();
+  const { updateEvent, updateRecurring } = useGuardedMutations();
+  const updateViewPreferences = useUpdateViewPreferences();
   const [pageWidth, setPageWidth] = useState(0);
   // The collapsed lane is a device setting (shared with desktop); expanded by default.
   const collapsed = useViewPreferences()?.allDayLaneCollapsed ?? false;
-  const setCollapsed = (value: boolean) => void setViewPreferences({ allDayLaneCollapsed: value });
+  const setCollapsed = (value: boolean) => updateViewPreferences({ allDayLaneCollapsed: value });
   const panX = useSharedValue(0);
   // Columns get a divider whenever there is more than one; the dense text
   // treatment only once they are week-narrow (two columns fit the day layout).

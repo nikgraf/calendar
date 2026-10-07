@@ -51,9 +51,9 @@ export function BirthdayRemindersSection() {
     });
 
   return (
-    <section className="rounded-xl border border-neutral-200 bg-white p-4">
+    <section className="rounded-xl border border-hairline bg-surface p-4">
       <h2 className="font-medium">Birthday reminders</h2>
-      <p className="mt-1 text-sm text-neutral-500">
+      <p className="mt-1 text-sm text-ink-secondary">
         A notification for every contact birthday, at the lead times you pick.
       </p>
       <label className="mt-3 flex items-center gap-2 text-sm">
@@ -81,7 +81,7 @@ export function BirthdayRemindersSection() {
           at
           <input
             aria-label="Reminder time"
-            className="rounded-lg border border-neutral-200 bg-white px-2 py-1 text-sm"
+            className="rounded-lg border border-hairline bg-surface px-2 py-1 text-sm"
             onChange={(change) => change.target.value && save({ time: change.target.value })}
             type="time"
             value={settings.time}
@@ -90,7 +90,7 @@ export function BirthdayRemindersSection() {
       </fieldset>
       {overrides.length > 0 ? (
         <div className="mt-3" data-testid="birthday-overrides">
-          <p className="text-xs font-medium text-neutral-400 uppercase">Custom per person</p>
+          <p className="text-xs font-medium text-ink-secondary uppercase">Custom per person</p>
           <ul className="mt-1 flex flex-col gap-1">
             {overrides.map((override) => (
               <li
@@ -99,11 +99,14 @@ export function BirthdayRemindersSection() {
               >
                 <span className="min-w-0 truncate">
                   {override.displayName}
-                  <span className="text-neutral-500"> · {leadDaysSummary(override.leadDays)}</span>
+                  <span className="text-ink-secondary">
+                    {' '}
+                    · {leadDaysSummary(override.leadDays)}
+                  </span>
                 </span>
                 <button
                   aria-label={`Reset reminders for ${override.displayName}`}
-                  className="rounded px-1.5 text-xs text-blue-600 hover:bg-neutral-100"
+                  className="rounded px-1.5 text-xs text-primary hover:bg-fill"
                   onClick={() =>
                     void setBirthdayReminderOverride({ ...override, leadDays: null }).catch(
                       (error: unknown) =>
@@ -117,7 +120,7 @@ export function BirthdayRemindersSection() {
               </li>
             ))}
           </ul>
-          <p className="mt-1 text-xs text-neutral-400">
+          <p className="mt-1 text-xs text-ink-secondary">
             Change a person&apos;s reminders from their birthday in the calendar.
           </p>
         </div>
@@ -127,7 +130,7 @@ export function BirthdayRemindersSection() {
           {notice}
         </p>
       ) : null}
-      <p className="mt-3 text-xs text-neutral-400" data-testid="birthday-device-only">
+      <p className="mt-3 text-xs text-ink-secondary" data-testid="birthday-device-only">
         {DEVICE_ONLY_SETTING_COPY} Reminders arrive while Solunivo is running.
       </p>
     </section>

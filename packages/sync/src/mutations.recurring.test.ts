@@ -745,3 +745,158 @@ describe('EventMutations: a series Google has not seen yet', () => {
     }).pipe(noYield, Effect.provide(testLayer)),
   );
 });
+
+describe('EventMutations recurrence rule edits', () => {
+  const override = new EventRecord({
+    ...master,
+    etag: '"o-1"',
+    id: instanceId,
+    originalStartUtc: occurrence,
+    recurrence: undefined,
+    recurringEventId: 'master1',
+    title: 'Daily (this one moved)',
+  });
+
+  it.effect('a series takes the new rule and drops its exceptions', () =>
+    Effect.gen(function* () {
+      yield* seedMaster;
+      const events = yield* EventRepo;
+      yield* events.upsertMany([override]);
+      const mutations = yield* EventMutations;
+      yield* mutations.updateRecurring({
+        ...target,
+        changes: { recurrence: ['RRULE:FREQ=WEEKLY;COUNT=4'] },
+        scope: 'series',
+      });
+      const updated = yield* events.getById('acc-1', 'cal-1', 'master1');
+      expect(updated!.recurrence).toEqual(['RRULE:FREQ=WEEKLY;COUNT=4']);
+      expect(updated!.startUtc).toBe(master.startUtc);
+      // The exception belonged to the old rule's occurrences.
+      expect(yield* events.getById('acc-1', 'cal-1', instanceId)).toBeNull();
+      const ops = yield* listOps;
+      expect(ops.map((op) => op.kind).sort()).toEqual(['delete', 'update']);
+      const update = ops.find((op) => op.kind === 'update')!;
+      expect(update.payload?.recurrence).toEqual(['RRULE:FREQ=WEEKLY;COUNT=4']);
+      expect(update.recurrenceCleared).toBeUndefined();
+    }).pipe(Effect.provide(testLayer)),
+  );
+
+  it.effect('"does not repeat" on a series leaves one event and sends an empty rule', () =>
+    Effect.gen(function* () {
+      yield* seedMaster;
+      const mutations = yield* EventMutations;
+      yield* mutations.updateRecurring({
+        ...target,
+        changes: { recurrence: null, title: 'Once' },
+        scope: 'series',
+      });
+      const events = yield* EventRepo;
+      const updated = yield* events.getById('acc-1', 'cal-1', 'master1');
+      expect(updated!.recurrence).toBeUndefined();
+      expect(updated!.title).toBe('Once');
+      expect(updated!.startUtc).toBe(master.startUtc);
+      const ops = yield* listOps;
+      expect(ops).toHaveLength(1);
+      expect(ops[0]!.kind).toBe('update');
+      expect(ops[0]!.recurrenceCleared).toBe(true);
+      expect(ops[0]!.payload?.recurrence).toBeUndefined();
+    }).pipe(Effect.provide(testLayer)),
+  );
+
+  it.effect(
+    '"does not repeat" from an occurrence on ends the series there and keeps it alone',
+    () =>
+      Effect.gen(function* () {
+        yield* seedMaster;
+        const mutations = yield* EventMutations;
+        yield* mutations.updateRecurring({
+          ...target,
+          changes: { recurrence: null },
+          scope: 'following',
+        });
+        const events = yield* EventRepo;
+        const truncated = yield* events.getById('acc-1', 'cal-1', 'master1');
+        expect(truncated!.recurrence).toEqual(['RRULE:FREQ=DAILY;UNTIL=20260704T085959Z']);
+        const window = yield* events.getWindow(0, plainDateToUtcMs('2030-01-01'));
+        const single = window.singles.find((event) => event.id !== 'master1');
+        expect(single).toBeDefined();
+        expect(single!.recurrence).toBeUndefined();
+        expect(single!.recurringEventId).toBeUndefined();
+        expect(single!.startUtc).toBe(occurrence);
+        const ops = yield* listOps;
+        expect(ops.map((op) => op.kind).sort()).toEqual(['create', 'update']);
+      }).pipe(Effect.provide(testLayer)),
+  );
+
+  it.effect('a this-and-following edit can give the split-off half its own rule', () =>
+    Effect.gen(function* () {
+      yield* seedMaster;
+      const mutations = yield* EventMutations;
+      yield* mutations.updateRecurring({
+        ...target,
+        changes: { recurrence: ['RRULE:FREQ=WEEKLY;COUNT=3'] },
+        scope: 'following',
+      });
+      const events = yield* EventRepo;
+      const window = yield* events.getWindow(0, plainDateToUtcMs('2030-01-01'));
+      const newMaster = window.masters.find((event) => event.id !== 'master1');
+      expect(newMaster!.recurrence).toEqual(['RRULE:FREQ=WEEKLY;COUNT=3']);
+      expect(newMaster!.startUtc).toBe(occurrence);
+    }).pipe(Effect.provide(testLayer)),
+  );
+
+  it.effect('one occurrence cannot carry a rule, and a single event cannot take one', () =>
+    Effect.gen(function* () {
+      yield* seedMaster;
+      const events = yield* EventRepo;
+      yield* events.upsertMany([
+        new EventRecord({ ...master, id: 'single1', recurrence: undefined }),
+      ]);
+      const mutations = yield* EventMutations;
+      const instance = yield* Effect.flip(
+        mutations.updateRecurring({
+          ...target,
+          changes: { recurrence: ['RRULE:FREQ=WEEKLY'] },
+          scope: 'instance',
+        }),
+      );
+      expect(instance._tag).toBe('RecurringEditUnsupportedError');
+      const single = yield* Effect.flip(
+        mutations.updateEvent({
+          accountId: 'acc-1',
+          calendarId: 'cal-1',
+          changes: { recurrence: ['RRULE:FREQ=WEEKLY'] },
+          eventId: 'single1',
+        }),
+      );
+      expect(single._tag).toBe('RecurringEditUnsupportedError');
+      expect(yield* listOps).toHaveLength(0);
+    }).pipe(Effect.provide(testLayer)),
+  );
+});
+
+describe('a cleared series edited again before it synced', () => {
+  it.effect('keeps clearing the rule on Google when a later edit replaces the queued op', () =>
+    Effect.gen(function* () {
+      yield* seedMaster;
+      const mutations = yield* EventMutations;
+      yield* mutations.updateRecurring({
+        ...target,
+        changes: { recurrence: null },
+        scope: 'series',
+      });
+      // Locally a single event now, so the plain update path takes it.
+      yield* mutations.updateEvent({
+        accountId: 'acc-1',
+        calendarId: 'cal-1',
+        changes: { title: 'Once, renamed' },
+        eventId: 'master1',
+      });
+      const ops = yield* listOps;
+      expect(ops).toHaveLength(1);
+      expect(ops[0]!.payload?.title).toBe('Once, renamed');
+      expect(ops[0]!.payload?.recurrence).toBeUndefined();
+      expect(ops[0]!.recurrenceCleared).toBe(true);
+    }).pipe(Effect.provide(testLayer)),
+  );
+});

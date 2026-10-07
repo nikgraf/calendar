@@ -84,6 +84,14 @@ export const UpdateEventChanges = Schema.Struct({
   isAllDay: Schema.optional(Schema.Boolean),
   location: Schema.optional(Schema.String),
   /**
+   * The series' new rule (RFC 5545 lines) or null for "does not repeat";
+   * undefined leaves it alone. Only `updateRecurring` with scope `series`
+   * (the whole series takes the rule, its exceptions are dropped) or
+   * `following` (the split-off half takes it; null makes the occurrence a
+   * single event) accepts it; an `instance` edit and `updateEvent` refuse.
+   */
+  recurrence: Schema.optional(Schema.NullOr(Schema.Array(Schema.String))),
+  /**
    * Full replacement: undefined leaves the reminders alone. There is no
    * "clear" — `{ useDefault: true, overrides: [] }` is the Google reset and
    * `{ useDefault: false, overrides: [] }` means none.
@@ -321,7 +329,8 @@ export class AppBackendRpcs extends RpcGroup.make(
       accountId: Schema.String,
       // The fields after `dueDate` are Reminders-only; Google lists reject them.
       alarms: Schema.optional(Schema.Array(Schema.Number)),
-      dueDate: Schema.String,
+      /** Absent = no due day: the task shows on today until it is done. */
+      dueDate: Schema.optional(Schema.String),
       dueTime: Schema.optional(Schema.String),
       notes: Schema.optional(Schema.String),
       priority: Schema.optional(TaskPriority),
@@ -396,6 +405,16 @@ export class AppBackendRpcs extends RpcGroup.make(
     error: BackendError,
     payload: { endDate: Schema.String, startDate: Schema.String },
     success: Schema.Array(BirthdayOccurrence),
+  }),
+  /**
+   * One stored event by id — the editor reads a series' master this way
+   * for its rule, since an occurrence row never carries the lines. Apple
+   * events are read through, not stored: null for them.
+   */
+  Rpc.make('getEvent', {
+    error: BackendError,
+    payload: { accountId: Schema.String, calendarId: Schema.String, eventId: Schema.String },
+    success: Schema.NullOr(EventRecord),
   }),
   Rpc.make('getEventsInRange', {
     error: BackendError,

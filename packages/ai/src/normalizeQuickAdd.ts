@@ -22,9 +22,18 @@ export interface QuickAddPrefill {
   readonly title: string;
 }
 
+/** A phrase understood as a to-do: what the task editor opens with. */
+export interface QuickAddTaskPrefill {
+  readonly date: string;
+  /** `HH:MM` when the phrase named a time (only a Reminders list keeps it). */
+  readonly time?: string;
+  readonly title: string;
+}
+
 export type QuickAddResult =
   | { readonly kind: 'parsed'; readonly prefill: QuickAddPrefill }
-  | { readonly kind: 'rejected'; readonly reason: string };
+  | { readonly kind: 'rejected'; readonly reason: string }
+  | { readonly kind: 'task'; readonly prefill: QuickAddTaskPrefill };
 
 const FREQUENCIES = new Set<RecurrenceFrequency>(['daily', 'monthly', 'weekly', 'yearly']);
 
@@ -85,6 +94,13 @@ export const normalizeQuickAdd = (
   }
 
   const startTime = realTime(parse.startTime);
+  if (parse.kind === 'task') {
+    // A to-do: its day, and its time when one was said. No end, no repeat.
+    return {
+      kind: 'task',
+      prefill: { date: resolvedDate, ...(startTime ? { time: startTime } : {}), title },
+    };
+  }
   const endTime = realTime(parse.endTime);
   // No usable time at all means the phrase described a whole day.
   const isAllDay = parse.isAllDay === true || !startTime;

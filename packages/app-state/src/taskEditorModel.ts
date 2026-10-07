@@ -30,6 +30,8 @@ export interface TaskEditorSeed {
    * deleted — after confirming what the event holds that a task cannot.
    */
   readonly convertFromEvent?: EventRecord | undefined;
+  /** Creates: start without a due day (an inbox add); default true. */
+  readonly dated?: boolean | undefined;
   /** Present when editing; absent for create. */
   readonly existing?: TaskRecord | undefined;
   /** Default due day for creates ('YYYY-MM-DD') — usually the focused day. */
@@ -39,6 +41,8 @@ export interface TaskEditorSeed {
    * Only a Reminders list keeps it; Google Tasks are date-only.
    */
   readonly initialTime?: string | undefined;
+  /** Creates: the title to open with (a quick-add phrase understood as a task). */
+  readonly title?: string | undefined;
 }
 
 const listKeyOf = (accountId: string, listId: string) => `${accountId}:${listId}`;
@@ -79,11 +83,11 @@ export const seedDueTiming = (seed: TaskEditorSeed): { dueTime: string; timed: b
  * alarm and a repeat rule. Picking a list in another account or provider
  * moves the task on Save (a copy into the target and a delete of the
  * source, after `confirmMove` when the target cannot hold everything);
- * between two Reminders lists it re-homes in place. A new task always
- * gets a due day. An existing undated one (made in Reminders or Google
- * Tasks; the calendar draws it on today) opens as "no due date" and stays
- * that way unless a day is added: showing it today is not a due day, and
- * Save must not turn it into one.
+ * between two Reminders lists it re-homes in place. A new task gets a due
+ * day unless the seed says otherwise (an inbox add). An existing undated
+ * one (made in Reminders or Google Tasks; the calendar draws it on today)
+ * opens as "no due date" and stays that way unless a day is added:
+ * showing it today is not a due day, and Save must not turn it into one.
  */
 export const useTaskEditorModel = ({
   confirm,
@@ -103,10 +107,12 @@ export const useTaskEditorModel = ({
   const mutations = useBackendMutations();
   const isTaskReadOnly = useTaskReadOnlyLookup();
   const existing = seed.existing;
-  const [title, setTitle] = useState(existing?.title ?? '');
+  const [title, setTitle] = useState(existing?.title ?? seed.title ?? '');
   const [notes, setNotes] = useState(existing?.notes ?? '');
   const [dueDate, setDueDate] = useState(existing?.dueDate ?? seed.initialDate);
-  const [dated, setDated] = useState(existing === undefined || existing.dueDate !== undefined);
+  const [dated, setDated] = useState(
+    existing === undefined ? seed.dated !== false : existing.dueDate !== undefined,
+  );
   const [listKey, setListKey] = useState(
     existing
       ? listKeyOf(existing.accountId, existing.listId)
@@ -346,7 +352,14 @@ export const useTaskEditorModel = ({
           });
         }
       } else {
-        await mutations.createTask({ ...newDraft(), accountId, taskListId });
+        // An undated create sends no due day at all (the draft's is the form's default).
+        const { dueDate: draftDue, ...rest } = newDraft();
+        await mutations.createTask({
+          ...rest,
+          accountId,
+          ...(dated ? { dueDate: draftDue } : {}),
+          taskListId,
+        });
       }
       onSaved?.();
       onClose();

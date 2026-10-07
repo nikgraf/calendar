@@ -54,7 +54,7 @@ const isTyping = (target: EventTarget | null) => {
 export function CalendarApp() {
   const zones = useTimeZones();
   if (!zones.loaded) {
-    return <div className="flex h-screen bg-white" />;
+    return <div className="flex h-screen bg-surface" />;
   }
   return <CalendarBody primary={zones.primary} secondary={zones.secondary} />;
 }
@@ -179,7 +179,7 @@ function CalendarBody({
   }, [capture, dialogOpen]);
 
   return (
-    <div className="flex h-screen bg-white text-neutral-900">
+    <div className="flex h-screen bg-surface text-ink">
       <Sidebar
         accounts={accounts}
         calendars={calendars}
@@ -188,7 +188,7 @@ function CalendarBody({
 
       <div className="flex min-w-0 flex-1 flex-col">
         <header
-          className="flex shrink-0 items-center gap-3 border-b border-neutral-200 px-4 py-2.5"
+          className="flex shrink-0 items-center gap-3 border-b border-hairline px-4 py-2.5"
           style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}
         >
           <h1 className="min-w-56 text-lg font-semibold">{title}</h1>
@@ -198,14 +198,14 @@ function CalendarBody({
           >
             <button
               aria-label={`Previous ${view}`}
-              className="rounded-md px-2 py-1 text-neutral-500 hover:bg-neutral-100"
+              className="rounded-md px-2 py-1 text-ink-secondary hover:bg-fill"
               onClick={() => step(-1)}
               type="button"
             >
               ‹
             </button>
             <button
-              className="rounded-md px-2 py-1 text-sm hover:bg-neutral-100"
+              className="rounded-md px-2 py-1 text-sm hover:bg-fill"
               onClick={goToday}
               type="button"
             >
@@ -213,7 +213,7 @@ function CalendarBody({
             </button>
             <button
               aria-label={`Next ${view}`}
-              className="rounded-md px-2 py-1 text-neutral-500 hover:bg-neutral-100"
+              className="rounded-md px-2 py-1 text-ink-secondary hover:bg-fill"
               onClick={() => step(1)}
               type="button"
             >
@@ -222,15 +222,15 @@ function CalendarBody({
           </div>
           <div className="flex-1" />
           <div
-            className="flex rounded-lg bg-neutral-100 p-0.5 text-sm"
+            className="flex rounded-lg bg-fill p-0.5 text-sm"
             style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
           >
             {(['day', 'week', 'month'] as const).map((kind) => (
               <button
                 className={`rounded-md px-3 py-1 capitalize ${
                   view === kind
-                    ? 'bg-white font-medium shadow-sm'
-                    : 'text-neutral-500 hover:text-neutral-800'
+                    ? 'bg-surface font-medium shadow-sm'
+                    : 'text-ink-secondary hover:text-ink'
                 }`}
                 key={kind}
                 onClick={() => switchView(kind)}
@@ -242,7 +242,7 @@ function CalendarBody({
           </div>
           <button
             aria-label="New event"
-            className="rounded-md bg-blue-600 px-3 py-1 text-sm font-medium text-white hover:bg-blue-500"
+            className="rounded-md bg-primary px-3 py-1 text-sm font-medium text-on-primary hover:bg-primary-hover"
             onClick={() => setEditorSeed({ initialDate: focused, initialHour: 9 })}
             style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
             type="button"

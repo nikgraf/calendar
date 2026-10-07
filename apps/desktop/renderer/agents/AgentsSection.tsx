@@ -26,8 +26,8 @@ import { ARM_DELAY_MS } from './AgentApprovalDialog.tsx';
 import { useAgentsState } from './useAgentsState.ts';
 
 const BUTTON =
-  'rounded-lg border border-neutral-300 px-3 py-1.5 text-sm hover:bg-neutral-50 disabled:opacity-50';
-const SELECT = 'w-44 shrink-0 rounded-md border border-neutral-200 bg-white px-1.5 py-1 text-xs';
+  'rounded-lg border border-hairline-strong px-3 py-1.5 text-sm hover:bg-surface-subtle disabled:opacity-50';
+const SELECT = 'w-44 shrink-0 rounded-md border border-hairline bg-surface px-1.5 py-1 text-xs';
 const DEFAULT = '__default__';
 
 const shortPath = (path: string): string => path.replace(/^\/Users\/[^/]+/, '~');
@@ -78,8 +78,8 @@ function Copyable({ label, testId, text }: { label: string; testId: string; text
   return (
     <div className="mt-2">
       <div className="flex items-center justify-between">
-        <span className="text-xs font-medium text-neutral-600">{label}</span>
-        <button className="text-xs text-blue-600 hover:underline" onClick={copy} type="button">
+        <span className="text-xs font-medium text-ink-secondary">{label}</span>
+        <button className="text-xs text-primary hover:underline" onClick={copy} type="button">
           {copied ? 'Copied' : 'Copy'}
         </button>
       </div>
@@ -192,7 +192,7 @@ function GrantEditor({
   const accountOf = (id: string) => accounts.find((account) => account.id === id);
 
   return (
-    <div className="mt-3 space-y-4 border-t border-neutral-100 pt-3" data-testid="agent-grant">
+    <div className="mt-3 space-y-4 border-t border-hairline pt-3" data-testid="agent-grant">
       <div>
         <div className="flex items-center justify-between gap-2">
           <h4 className="text-sm font-medium">Calendars</h4>
@@ -222,7 +222,7 @@ function GrantEditor({
                 />
                 <span className="min-w-0 flex-1 truncate">
                   {calendar.summary}
-                  <span className="ml-1 text-xs text-neutral-400">
+                  <span className="ml-1 text-xs text-ink-secondary">
                     {accountLabel(accountOf(calendar.accountId))}
                   </span>
                 </span>
@@ -236,7 +236,9 @@ function GrantEditor({
                     value={calendarOverride(policy, target)}
                   />
                 ) : (
-                  <span className="text-xs text-neutral-400">Hidden — not available to agents</span>
+                  <span className="text-xs text-ink-secondary">
+                    Hidden — not available to agents
+                  </span>
                 )}
               </li>
             );
@@ -265,7 +267,7 @@ function GrantEditor({
               <li className="flex items-center gap-2 text-sm" key={`${list.accountId}:${list.id}`}>
                 <span className="min-w-0 flex-1 truncate">
                   {list.title}
-                  <span className="ml-1 text-xs text-neutral-400">
+                  <span className="ml-1 text-xs text-ink-secondary">
                     {accountLabel(accountOf(list.accountId))}
                   </span>
                 </span>
@@ -279,7 +281,9 @@ function GrantEditor({
                     value={taskListOverride(policy, target)}
                   />
                 ) : (
-                  <span className="text-xs text-neutral-400">Hidden — not available to agents</span>
+                  <span className="text-xs text-ink-secondary">
+                    Hidden — not available to agents
+                  </span>
                 )}
               </li>
             );
@@ -291,7 +295,7 @@ function GrantEditor({
         <label className="flex items-center justify-between gap-2 text-sm">
           <span>
             Events with guests
-            <span className="block text-xs text-neutral-500">
+            <span className="block text-xs text-ink-secondary">
               Creating, changing or deleting them emails the guests.
             </span>
           </span>
@@ -332,10 +336,10 @@ function RequestRow({ request }: { request: AgentRequestView }) {
         <span className="min-w-0 truncate">
           <span className="font-medium">{request.agentName}</span> · {request.summary.title}
         </span>
-        <span className="shrink-0 text-xs text-neutral-400">{timeLabel(request.createdAt)}</span>
+        <span className="shrink-0 text-xs text-ink-secondary">{timeLabel(request.createdAt)}</span>
       </div>
       <div
-        className={`text-xs ${request.status === 'done' ? 'text-neutral-500' : 'text-amber-700'}`}
+        className={`text-xs ${request.status === 'done' ? 'text-ink-secondary' : 'text-amber-700'}`}
       >
         {STATUS_LABEL[request.status]}
         {request.error ? ` — ${request.error.message}` : ''}
@@ -405,11 +409,11 @@ export function AgentsSection() {
 
   return (
     <section
-      className="rounded-xl border border-neutral-200 bg-white p-4"
+      className="rounded-xl border border-hairline bg-surface p-4"
       data-testid="agents-section"
     >
       <h2 className="font-medium">Agents</h2>
-      <p className="mt-1 text-sm text-neutral-500">
+      <p className="mt-1 text-sm text-ink-secondary">
         Let other agents on this Mac read and change your calendars and tasks through Solunivo, over
         MCP or the command line. Each agent gets its own token and only the access you give it here.
       </p>
@@ -418,7 +422,7 @@ export function AgentsSection() {
         <ul className="mt-3 space-y-3">
           {state.agents.map((agent) => (
             <li
-              className="rounded-lg border border-neutral-200 p-3"
+              className="rounded-lg border border-hairline p-3"
               data-agent-name={agent.name}
               data-testid="agent-row"
               key={agent.id}
@@ -426,7 +430,7 @@ export function AgentsSection() {
               <div className="flex items-center gap-3">
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-medium">{agent.name}</p>
-                  <p className="text-xs text-neutral-500">
+                  <p className="text-xs text-ink-secondary">
                     {agent.lastUsedAt === undefined
                       ? 'Never connected'
                       : `Last used ${timeLabel(agent.lastUsedAt)}`}
@@ -434,7 +438,7 @@ export function AgentsSection() {
                 </div>
                 <button
                   aria-expanded={openId === agent.id}
-                  className="text-xs text-blue-600 hover:underline"
+                  className="text-xs text-primary hover:underline"
                   data-testid="agent-edit"
                   onClick={() => setOpenId(openId === agent.id ? null : agent.id)}
                   type="button"
@@ -442,7 +446,7 @@ export function AgentsSection() {
                   {openId === agent.id ? 'Close' : 'Access…'}
                 </button>
                 <button
-                  className="text-xs text-blue-600 hover:underline disabled:opacity-50"
+                  className="text-xs text-primary hover:underline disabled:opacity-50"
                   data-testid="agent-rotate"
                   disabled={busy}
                   onClick={() => void rotate(agent)}
@@ -497,7 +501,7 @@ export function AgentsSection() {
       >
         <input
           aria-label="Agent name"
-          className="w-full rounded-lg border border-neutral-200 bg-white px-3 py-1.5 text-sm"
+          className="w-full rounded-lg border border-hairline bg-surface px-3 py-1.5 text-sm"
           data-testid="agent-name"
           maxLength={60}
           onChange={(event) => setName(event.target.value)}
@@ -527,7 +531,7 @@ export function AgentsSection() {
                 <p>
                   <span className="font-medium">{request.agentName}</span> · {request.summary.title}
                 </p>
-                <ul className="mt-1 max-h-40 overflow-y-auto text-xs break-words text-neutral-600">
+                <ul className="mt-1 max-h-40 overflow-y-auto text-xs break-words text-ink-secondary">
                   {request.summary.lines.map((line) => (
                     <li key={line}>{line}</li>
                   ))}
@@ -556,7 +560,7 @@ export function AgentsSection() {
         </div>
       ) : null}
 
-      <p className="mt-3 text-xs text-neutral-500" data-testid="agents-status">
+      <p className="mt-3 text-xs text-ink-secondary" data-testid="agents-status">
         {state.error
           ? `Not listening: ${state.error}`
           : state.listening
@@ -606,7 +610,7 @@ function PendingChoice({
         Decline
       </button>
       <button
-        className="rounded-lg bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50"
+        className="rounded-lg bg-primary px-3 py-1.5 text-sm font-medium text-on-primary hover:bg-primary-hover disabled:opacity-50"
         data-testid="agent-pending-approve"
         disabled={busy || !armed}
         onClick={onApprove}

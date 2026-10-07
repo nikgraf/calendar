@@ -15,5 +15,8 @@ export * from './mutationGuard.ts';
 export * from './pendingOpLabel.ts';
 export * from './permissionCopy.ts';
 export * from './quickAddModel.ts';
+export * from './quickAddReview.ts';
 export * from './repeatState.ts';
 export * from './taskDrop.ts';
+export * from './today.ts';
+export * from './viewPreferences.ts';

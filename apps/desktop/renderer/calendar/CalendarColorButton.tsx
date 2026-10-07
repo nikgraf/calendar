@@ -59,7 +59,7 @@ export function CalendarColorButton({ calendar }: { calendar: CalendarInfo }) {
             type="button"
           />
           <div
-            className="fixed z-50 rounded-xl border border-neutral-200 bg-white p-2 shadow-xl"
+            className="fixed z-50 rounded-xl border border-hairline bg-surface p-2 shadow-xl"
             role="dialog"
             style={{ left: anchor.x, top: anchor.y }}
           >
@@ -68,7 +68,7 @@ export function CalendarColorButton({ calendar }: { calendar: CalendarInfo }) {
                 <button
                   aria-label={`Set color ${hex}`}
                   className={`size-5 rounded ${
-                    hex === calendar.colorHex ? 'ring-2 ring-blue-500 ring-offset-1' : ''
+                    hex === calendar.colorHex ? 'ring-2 ring-focus ring-offset-1' : ''
                   }`}
                   key={hex}
                   onClick={() => choose(hex)}
@@ -77,7 +77,7 @@ export function CalendarColorButton({ calendar }: { calendar: CalendarInfo }) {
                 />
               ))}
             </div>
-            <label className="mt-2 flex items-center gap-2 text-xs text-neutral-500">
+            <label className="mt-2 flex items-center gap-2 text-xs text-ink-secondary">
               Custom
               <input
                 aria-label="Custom color"

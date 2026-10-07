@@ -74,9 +74,9 @@ function AllDayTaskChip({
   return (
     <div
       aria-label={facts.length > 0 ? `${task.title}, ${facts.join(', ')}` : undefined}
-      className={`absolute flex touch-none items-center gap-1 truncate rounded border border-neutral-300 bg-neutral-50 px-1 text-xs leading-5 outline-none select-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
+      className={`absolute flex touch-none items-center gap-1 truncate rounded border border-hairline-strong bg-surface-subtle px-1 text-xs leading-5 outline-none select-none focus-visible:ring-2 focus-visible:ring-focus ${
         readOnly ? 'cursor-pointer' : 'cursor-grab'
-      } ${overdue ? 'text-red-600' : 'text-neutral-700'} ${done ? 'opacity-50' : ''} ${
+      } ${overdue ? 'text-red-600' : 'text-ink-secondary'} ${done ? 'opacity-50' : ''} ${
         dragging ? 'z-20 shadow-lg ring-2 ring-white/60' : ''
       }`}
       data-overdue={overdue ? '' : undefined}
@@ -142,7 +142,7 @@ function LaneDropIndicator({
   }
   return (
     <div
-      className="pointer-events-none absolute inset-y-0 rounded bg-blue-500/10 ring-1 ring-blue-400 ring-inset"
+      className="pointer-events-none absolute inset-y-0 rounded bg-primary/10 ring-1 ring-focus ring-inset"
       data-testid="task-drop-lane"
       style={columnStyle(drop.target.dayIndex, drop.target.dayIndex + 1, stripLength)}
     />
@@ -213,19 +213,19 @@ export function AllDayLane({
 }) {
   return (
     <div
-      className="flex shrink-0 border-b border-neutral-200 bg-white"
+      className="flex shrink-0 border-b border-hairline bg-surface"
       data-testid="all-day-lane"
       ref={laneRef}
       style={{ height: Math.max(rowCount, 1) * 24 + 8, paddingRight: scrollbarWidth }}
     >
       <div
-        className={`shrink-0 py-1 pr-2 text-right text-[10px] text-neutral-400 ${gutterClassName}`}
+        className={`shrink-0 py-1 pr-2 text-right text-[10px] text-ink-secondary ${gutterClassName}`}
       >
         all-day
         {collapsible && !collapsed ? (
           <button
             aria-label="Collapse the all-day lane"
-            className="block w-full cursor-pointer text-right text-blue-600 hover:underline"
+            className="block w-full cursor-pointer text-right text-primary hover:underline"
             data-testid="all-day-less"
             onClick={() => onSetCollapsed(true)}
             type="button"
@@ -241,7 +241,7 @@ export function AllDayLane({
             hidden > 0 ? (
               <button
                 aria-label={`${String(hidden)} more all-day items, show all`}
-                className="absolute cursor-pointer truncate rounded bg-neutral-100 px-1 text-left text-xs leading-5 text-neutral-500 hover:bg-neutral-200"
+                className="absolute cursor-pointer truncate rounded bg-fill px-1 text-left text-xs leading-5 text-ink-secondary hover:bg-fill"
                 data-testid="all-day-more"
                 key={`more:${String(dayIndex)}`}
                 onClick={() => onSetCollapsed(false)}
@@ -282,7 +282,7 @@ export function AllDayLane({
               const label = birthdayChipLabel(birthday);
               return (
                 <div
-                  className="absolute cursor-pointer truncate rounded border border-neutral-300 bg-neutral-50 px-1 text-xs leading-5 text-neutral-700"
+                  className="absolute cursor-pointer truncate rounded border border-hairline-strong bg-surface-subtle px-1 text-xs leading-5 text-ink-secondary"
                   data-birthday={birthday.record.id}
                   key={span.id}
                   onClick={() => onBirthdayClick(birthday)}

@@ -158,6 +158,8 @@ export interface UpdateEventParams {
     readonly geo?: GeoLocation | null | undefined;
     readonly isAllDay?: boolean | undefined;
     readonly location?: string | undefined;
+    /** The series' new rule lines, or null for "does not repeat"; undefined leaves it alone. */
+    readonly recurrence?: ReadonlyArray<string> | null | undefined;
     /** Full replacement (see UpdateEventChanges): undefined leaves the reminders alone. */
     readonly reminders?: EventReminders | undefined;
     readonly startDate?: string | undefined;
@@ -223,7 +225,8 @@ export interface EventMutationsShape {
   readonly createTask: (params: {
     readonly accountId: string;
     readonly alarms?: ReadonlyArray<number> | undefined;
-    readonly dueDate: string;
+    /** Absent = no due day. */
+    readonly dueDate?: string | undefined;
     readonly dueTime?: string | undefined;
     readonly notes?: string | undefined;
     readonly priority?: TaskPriority | undefined;

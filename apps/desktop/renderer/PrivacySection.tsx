@@ -51,15 +51,15 @@ export function PrivacySection() {
   };
 
   return (
-    <section className="rounded-xl border border-neutral-200 bg-white p-4">
+    <section className="rounded-xl border border-hairline bg-surface p-4">
       <h2 className="font-medium">Privacy</h2>
-      <p className="mt-1 text-sm text-neutral-500">
+      <p className="mt-1 text-sm text-ink-secondary">
         Hide Solunivo&rsquo;s windows from screen sharing and recordings. They stay visible on your
         own display.
       </p>
       <div
         aria-label="Screen-sharing visibility"
-        className="mt-3 flex rounded-lg border border-neutral-200 bg-neutral-50 p-0.5"
+        className="mt-3 flex rounded-lg border border-hairline bg-surface-subtle p-0.5"
         role="radiogroup"
       >
         {options.map((option) => (
@@ -67,8 +67,8 @@ export function PrivacySection() {
             aria-checked={active === option.value}
             className={`flex-1 rounded-md px-2 py-1 text-xs font-medium ${
               active === option.value
-                ? 'bg-blue-600 text-white'
-                : 'text-neutral-600 hover:bg-neutral-200/60'
+                ? 'bg-primary text-on-primary'
+                : 'text-ink-secondary hover:bg-fill'
             }`}
             key={option.value}
             onClick={() => choose(option.value)}

@@ -58,3 +58,23 @@ describe('fixtureTextRecognizer', () => {
     ).rejects.toMatchObject({ _tag: 'TextRecognitionError' });
   });
 });
+
+describe('makeFixtureLanguageModel tasks', () => {
+  it('reads "todo:" as a task, with the grammar after it', async () => {
+    const model = makeFixtureLanguageModel();
+    const plain = await parseQuickAdd(model, {
+      fallbackDate: '2026-09-25',
+      phrase: 'todo: Buy milk',
+      ...CONTEXT,
+    });
+    expect(plain).toEqual({ kind: 'task', prefill: { date: '2026-09-25', title: 'Buy milk' } });
+    const timed = await parseQuickAdd(model, {
+      phrase: 'todo: Call bank | +1 | 09:30',
+      ...CONTEXT,
+    });
+    expect(timed).toEqual({
+      kind: 'task',
+      prefill: { date: '2026-09-21', time: '09:30', title: 'Call bank' },
+    });
+  });
+});

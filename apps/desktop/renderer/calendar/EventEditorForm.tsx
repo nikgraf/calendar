@@ -87,7 +87,7 @@ export function EventEditorForm({
       <fieldset className="flex min-w-0 flex-col gap-3" disabled={readOnly}>
         {readOnly ? (
           <p
-            className="rounded-lg bg-neutral-100 p-2 text-sm text-neutral-600"
+            className="rounded-lg bg-fill p-2 text-sm text-ink-secondary"
             data-testid="event-read-only"
           >
             This calendar is read-only.
@@ -99,7 +99,7 @@ export function EventEditorForm({
         {isRecurring ? (
           <div
             aria-label="Apply to"
-            className="flex rounded-lg border border-neutral-200 bg-white p-0.5"
+            className="flex rounded-lg border border-hairline bg-surface p-0.5"
             role="radiogroup"
           >
             {SCOPE_OPTIONS.map((option) => (
@@ -107,8 +107,8 @@ export function EventEditorForm({
                 aria-checked={scope === option.value}
                 className={`flex-1 rounded-md px-2 py-1 text-xs font-medium ${
                   scope === option.value
-                    ? 'bg-blue-600 text-white'
-                    : 'text-neutral-600 hover:bg-neutral-100'
+                    ? 'bg-primary text-on-primary'
+                    : 'text-ink-secondary hover:bg-fill'
                 }`}
                 key={option.value}
                 onClick={() => setScope(option.value)}
@@ -191,24 +191,24 @@ export function EventEditorForm({
           )}
         </div>
         {zoneLine ? (
-          <p className="-mt-2 text-xs text-neutral-400" data-testid="event-secondary-times">
+          <p className="-mt-2 text-xs text-ink-secondary" data-testid="event-secondary-times">
             {zoneLine}
           </p>
         ) : null}
         <LocationCombobox model={model} />
         <LocationMap model={model} />
-        {existing ? null : <RepeatRuleFields anchorDate={date} state={model} />}
+        {model.repeatLoaded ? <RepeatRuleFields anchorDate={date} state={model} /> : null}
         {canInvite ? (
-          <div className="rounded-lg border border-neutral-200 bg-white p-3">
-            <p className="mb-1 text-xs font-medium text-neutral-400 uppercase">Invitees</p>
+          <div className="rounded-lg border border-hairline bg-surface p-3">
+            <p className="mb-1 text-xs font-medium text-ink-secondary uppercase">Invitees</p>
             {canRsvp ? (
               <div className="mb-2 flex gap-1">
                 {RSVP_OPTIONS.map((option) => (
                   <button
                     className={`flex-1 rounded-md border px-2 py-1 text-xs font-medium ${
                       rsvp === option.value
-                        ? 'border-blue-600 bg-blue-600 text-white'
-                        : 'border-neutral-200 text-neutral-600 hover:bg-neutral-100'
+                        ? 'border-primary bg-primary text-on-primary'
+                        : 'border-hairline text-ink-secondary hover:bg-fill'
                     }`}
                     key={option.value}
                     onClick={() => void respond(option.value)}
@@ -229,11 +229,11 @@ export function EventEditorForm({
         ) : readOnlyGuests ? (
           // EventKit cannot write guests: shown as they are, never edited.
           <div
-            className="rounded-lg border border-neutral-200 bg-white p-3"
+            className="rounded-lg border border-hairline bg-surface p-3"
             data-testid="event-guests-read-only"
           >
-            <p className="mb-1 text-xs font-medium text-neutral-400 uppercase">Guests</p>
-            <ul className="text-sm text-neutral-700">
+            <p className="mb-1 text-xs font-medium text-ink-secondary uppercase">Guests</p>
+            <ul className="text-sm text-ink-secondary">
               {existing?.attendees?.map((attendee) => (
                 <li key={attendee.email}>{attendee.displayName ?? attendee.email}</li>
               ))}
@@ -260,7 +260,7 @@ export function EventEditorForm({
         )}
         <div className="flex gap-2">
           <button
-            className="rounded-lg px-3 py-1.5 text-sm hover:bg-neutral-200"
+            className="rounded-lg px-3 py-1.5 text-sm hover:bg-fill"
             onClick={onClose}
             type="button"
           >
@@ -269,7 +269,7 @@ export function EventEditorForm({
           {readOnly ? null : (
             <button
               aria-busy={busy}
-              className={`rounded-lg bg-blue-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-40 ${busy ? 'opacity-40' : ''}`}
+              className={`rounded-lg bg-primary px-4 py-1.5 text-sm font-medium text-on-primary hover:bg-primary-hover disabled:opacity-40 ${busy ? 'opacity-40' : ''}`}
               disabled={moveConfirmation.pending !== null}
               onClick={() => void save()}
               type="button"

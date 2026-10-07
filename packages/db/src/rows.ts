@@ -463,8 +463,10 @@ export interface PendingOpRow {
   /** Added by migration 5 (hence late). */
   readonly conflict_at: number | null;
   readonly server_payload: string | null;
-  /** Added by migration 6 (hence last). */
+  /** Added by migration 6 (hence after the baseline columns). */
   readonly carried_text: string | null;
+  /** Added by migration 9 (hence last). */
+  readonly recurrence_cleared: number;
 }
 
 /**
@@ -492,6 +494,7 @@ export const pendingOpFromRow = (row: PendingOpRow): PendingOp | undefined =>
         lastError: row.last_error ?? undefined,
         nextAttemptAt: row.next_attempt_at,
         payload: decodeOr(EventRecord, parseJson(row.payload)),
+        recurrenceCleared: row.recurrence_cleared === 1 ? true : undefined,
         remindersChanged: row.reminders_changed === 1 ? true : undefined,
         serverPayload: decodeOr(EventRecord, parseJson(row.server_payload)),
         targetCalendarId: row.target_calendar_id ?? undefined,

@@ -41,7 +41,7 @@ function ApprovalPanel({
 
   return (
     <div data-testid="agent-approval">
-      <p className="text-xs font-medium tracking-wide text-neutral-500 uppercase">
+      <p className="text-xs font-medium tracking-wide text-ink-secondary uppercase">
         {request.agentName} is asking
         {waiting > 1 ? ` · 1 of ${waiting}` : ''}
       </p>
@@ -49,21 +49,21 @@ function ApprovalPanel({
         {request.summary.title}
       </h3>
       {/* Everything that will be written is here in full — long text scrolls, it is never cut. */}
-      <ul className="mt-2 max-h-[50vh] space-y-1 overflow-y-auto text-sm break-words text-neutral-700 select-text">
+      <ul className="mt-2 max-h-[50vh] space-y-1 overflow-y-auto text-sm break-words text-ink-secondary select-text">
         {request.summary.lines.map((line) => (
           <li key={line}>{line}</li>
         ))}
       </ul>
       <div className="mt-4 flex justify-end gap-2">
         <button
-          className="rounded-lg px-3 py-1.5 text-sm text-neutral-600 hover:bg-neutral-100"
+          className="rounded-lg px-3 py-1.5 text-sm text-ink-secondary hover:bg-fill"
           onClick={onLater}
           type="button"
         >
           Later
         </button>
         <button
-          className="rounded-lg border border-neutral-300 px-3 py-1.5 text-sm hover:bg-neutral-50 disabled:opacity-50"
+          className="rounded-lg border border-hairline-strong px-3 py-1.5 text-sm hover:bg-surface-subtle disabled:opacity-50"
           data-testid="agent-deny"
           disabled={busy || !armed}
           onClick={() => void decide('deny')}
@@ -72,7 +72,7 @@ function ApprovalPanel({
           Decline
         </button>
         <button
-          className="rounded-lg bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50"
+          className="rounded-lg bg-primary px-3 py-1.5 text-sm font-medium text-on-primary hover:bg-primary-hover disabled:opacity-50"
           data-testid="agent-approve"
           disabled={busy || !armed}
           onClick={() => void decide('approve')}
@@ -108,7 +108,7 @@ export function AgentApprovalDialog() {
       key={request.id}
       label="Agent request"
       onClose={later}
-      panelClassName="w-[30rem] rounded-2xl bg-white p-5 shadow-xl"
+      panelClassName="w-[30rem] rounded-2xl bg-surface p-5 shadow-xl"
       zIndex={50}
     >
       <ApprovalPanel onLater={later} request={request} waiting={waiting.length} />

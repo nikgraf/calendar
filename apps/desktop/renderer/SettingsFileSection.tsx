@@ -17,7 +17,7 @@ const timeLabel = (epochMs: number): string =>
   new Date(epochMs).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
 
 const BUTTON =
-  'rounded-lg border border-neutral-300 px-3 py-1.5 text-sm hover:bg-neutral-50 disabled:opacity-50';
+  'rounded-lg border border-hairline-strong px-3 py-1.5 text-sm hover:bg-surface-subtle disabled:opacity-50';
 
 /** Runs one action at a time and keeps its outcome (or failure) as a line of text. */
 const useAction = () => {
@@ -89,11 +89,11 @@ export function SettingsTransferSection() {
 
   return (
     <section
-      className="rounded-xl border border-neutral-200 bg-white p-4"
+      className="rounded-xl border border-hairline bg-surface p-4"
       data-testid="settings-transfer"
     >
       <h2 className="font-medium">Export & import</h2>
-      <p className="mt-1 text-sm text-neutral-500">
+      <p className="mt-1 text-sm text-ink-secondary">
         Save these settings as a file to carry them to another Mac or iPhone, or load a file from
         another device. A one-off copy: nothing is kept in sync. It never contains passwords or
         tokens; a Google account from another device shows up as “Sign in”.
@@ -119,7 +119,7 @@ export function SettingsTransferSection() {
         </button>
       </div>
       {notice ? (
-        <p className="mt-2 text-xs text-neutral-600" data-testid="settings-transfer-notice">
+        <p className="mt-2 text-xs text-ink-secondary" data-testid="settings-transfer-notice">
           {notice}
         </p>
       ) : null}
@@ -127,20 +127,20 @@ export function SettingsTransferSection() {
         <Dialog
           label="Import settings"
           onClose={() => setPending(null)}
-          panelClassName="w-[28rem] rounded-2xl bg-white p-5 shadow-xl"
+          panelClassName="w-[28rem] rounded-2xl bg-surface p-5 shadow-xl"
           zIndex={40}
         >
           <div data-testid="settings-import-preview">
             <h3 className="font-medium">Import {shortPath(pending.path)}?</h3>
-            <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-neutral-700">
+            <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-ink-secondary">
               {describeImportSummary(pending.summary).map((line) => (
                 <li key={line}>{line}</li>
               ))}
             </ul>
-            <p className="mt-3 text-xs text-neutral-500">Nothing is removed by an import.</p>
+            <p className="mt-3 text-xs text-ink-secondary">Nothing is removed by an import.</p>
             <div className="mt-4 flex justify-end gap-2">
               <button
-                className="rounded-lg px-3 py-1.5 text-sm text-neutral-600 hover:bg-neutral-100"
+                className="rounded-lg px-3 py-1.5 text-sm text-ink-secondary hover:bg-fill"
                 onClick={() => setPending(null)}
                 type="button"
               >
@@ -148,7 +148,7 @@ export function SettingsTransferSection() {
               </button>
               <button
                 aria-label="Import settings"
-                className="rounded-lg bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-500"
+                className="rounded-lg bg-primary px-3 py-1.5 text-sm font-medium text-on-primary hover:bg-primary-hover"
                 onClick={confirmImport}
                 type="button"
               >
@@ -215,16 +215,16 @@ export function SettingsFileSection() {
 
   return (
     <section
-      className="rounded-xl border border-neutral-200 bg-white p-4"
+      className="rounded-xl border border-hairline bg-surface p-4"
       data-testid="settings-file"
     >
       <h2 className="font-medium">Settings file</h2>
-      <p className="mt-1 text-sm text-neutral-500">
+      <p className="mt-1 text-sm text-ink-secondary">
         Solunivo can keep its settings in a file at <span className="select-text">{path}</span>.
         While the file exists, the app applies it whenever it changes and writes changes made here
         back to it. Comments in the file are kept.
       </p>
-      <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-neutral-500">
+      <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-ink-secondary">
         <li>
           Set up a new Mac: put the file in place, for example from your dotfiles, and the app
           configures itself on launch. Each Google account then needs one sign-in.
@@ -243,7 +243,7 @@ export function SettingsFileSection() {
         can read it. Passwords and sign-in tokens are never written to it.
       </p>
       <p
-        className={`mt-3 text-xs ${status?.error ? 'text-amber-600' : 'text-neutral-500'}`}
+        className={`mt-3 text-xs ${status?.error ? 'text-amber-600' : 'text-ink-secondary'}`}
         data-testid="settings-file-status"
       >
         {statusLine()}
@@ -260,7 +260,7 @@ export function SettingsFileSection() {
         </button>
       ) : null}
       {notice ? (
-        <p className="mt-2 text-xs text-neutral-600" data-testid="settings-file-notice">
+        <p className="mt-2 text-xs text-ink-secondary" data-testid="settings-file-notice">
           {notice}
         </p>
       ) : null}

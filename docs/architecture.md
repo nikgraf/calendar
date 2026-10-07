@@ -495,10 +495,23 @@ an allow-list of fields, so a calendar can be shared without the details.
     deletes write `cancelled` tombstones. Using Google's own id makes the
     later sync upsert idempotent.
   - **series** — patch the master; time edits apply the occurrence's
-    wall-clock delta (`applyWallClockDelta`, DST-safe).
+    wall-clock delta (`applyWallClockDelta`, DST-safe). A new rule
+    (`changes.recurrence`, RFC 5545 lines) replaces the master's and
+    drops its exceptions — they belonged to occurrences of the old rule,
+    which is what Google does with them; `null` ("does not repeat")
+    leaves the master as a single event at its own start. Google keeps a
+    rule whose key is absent from a PATCH, so the op carries
+    `recurrenceCleared` and the patch sends `recurrence: []`.
   - **following** — truncate the old master's RRULE with `UNTIL = split−1s`
-    (COUNT dropped), spawn a new master (COUNT recomputed by expansion),
+    (COUNT dropped), spawn a new master (COUNT recomputed by expansion,
+    or the edit's own rule; `null` makes the occurrence a single event),
     cancel later overrides.
+  - An instance never carries a rule and a single event does not become a
+    series through an update (`RecurringEditUnsupportedError`).
+- The editor reads a series' master with `getEvent` (`useEventMaster`) to
+  seed its repeat fields — an occurrence row has no lines — and sends the
+  rule only when those fields were edited. A read-through Apple series
+  has no stored master, so its rule stays uneditable in the app.
 - Dragging a recurring instance commits an instance-scope override.
 
 ## Time-grid gestures
@@ -579,6 +592,20 @@ model: `docs/agent-gateway.md`.
   but inert: builds are signed now, so the remaining blocker is that the
   repo (and thus Releases) is private — update.electronjs.org only serves
   public repos.
+- Theme: `brand/tokens/tokens.json` is the one source. `pnpm brand:build`
+  writes `brand/tokens/tokens.css` (semantic variables under `:root` and
+  `[data-theme='dark']`) and `packages/core/src/theme/tokens.ts` (the same
+  as a typed `THEMES.light/dark`), both guarded by `brand:check`. The
+  desktop imports the CSS; `App.css` maps every variable into Tailwind's
+  theme (`bg-canvas`, `bg-fill`, `text-ink`, `border-hairline`,
+  `bg-primary`, …) and `renderer/theme.ts` mirrors `prefers-color-scheme`
+  — which Electron feeds from `nativeTheme`, no IPC — onto `data-theme`
+  on `<html>` before the first paint. iOS reads the TS module through
+  `useTheme()` (`useColorScheme`). Calendar colors are arbitrary hex, so
+  every calendar-colored block or chip goes through `eventTint(hex,
+scheme)`: hue and chroma from the calendar, lightness from the theme,
+  text on fill at 4.5:1 for every palette entry; the brand `event-*`
+  tokens are for items with no calendar.
 - Views: day/week (time grid with wheel-pan on desktop, swipe paging on
   iOS), month grid, and an all-day lane that hosts date-only tasks. Timed
   Apple Reminders share the day-column overlap layout with events as compact,

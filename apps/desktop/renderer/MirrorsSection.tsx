@@ -37,11 +37,11 @@ import { useEffect, useState } from 'react';
 import { Dialog } from './Dialog.tsx';
 
 const BUTTON =
-  'rounded-lg border border-neutral-300 px-3 py-1.5 text-sm hover:bg-neutral-50 disabled:opacity-50';
+  'rounded-lg border border-hairline-strong px-3 py-1.5 text-sm hover:bg-surface-subtle disabled:opacity-50';
 const PRIMARY =
-  'rounded-lg bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50';
-const FIELD = 'w-full rounded-lg border border-neutral-200 bg-white px-3 py-1.5 text-sm';
-const LABEL = 'text-xs font-medium text-neutral-500';
+  'rounded-lg bg-primary px-3 py-1.5 text-sm font-medium text-on-primary hover:bg-primary-hover disabled:opacity-50';
+const FIELD = 'w-full rounded-lg border border-hairline bg-surface px-3 py-1.5 text-sm';
+const LABEL = 'text-xs font-medium text-ink-secondary';
 
 const zoned = (ms: number, timeZone: string): Temporal.ZonedDateTime =>
   Temporal.Instant.fromEpochMilliseconds(ms).toZonedDateTimeISO(timeZone);
@@ -91,22 +91,22 @@ function MirrorRow({
       ? 'text-red-700'
       : status.state === 'waiting'
         ? 'text-amber-700'
-        : 'text-neutral-500';
+        : 'text-ink-secondary';
   return (
     <li
-      className="rounded-lg border border-neutral-200 p-3"
+      className="rounded-lg border border-hairline p-3"
       data-state={status.state}
       data-testid={`mirror-row-${definition.id}`}
     >
       <div className="flex items-center gap-3">
         <div className="min-w-0 flex-1">
           <p className="text-sm font-medium">{definition.name}</p>
-          <p className="truncate text-xs text-neutral-500">
+          <p className="truncate text-xs text-ink-secondary">
             {definition.sources.map(refLabel).join(', ')} → {refLabel(definition.destination)} ·{' '}
             {MIRROR_PRESET_COPY[mirrorPresetOf(definition)].title}
           </p>
         </div>
-        <label className="flex items-center gap-1.5 text-xs text-neutral-600">
+        <label className="flex items-center gap-1.5 text-xs text-ink-secondary">
           <input
             checked={enabled}
             data-testid={`mirror-enabled-${definition.id}`}
@@ -136,7 +136,7 @@ function MirrorRow({
           : ` Last run ${relativeTime(status.lastRunAt)}.`}
         {status.state === 'off' ? null : (
           <button
-            className="ml-2 text-blue-600 hover:underline"
+            className="ml-2 text-primary hover:underline"
             data-testid={`mirror-run-${definition.id}`}
             onClick={() => void mutations.runMirrorsNow(undefined)}
             type="button"
@@ -179,9 +179,9 @@ function NewCalendarDialog({
     }
   };
   return (
-    <Dialog label="New calendar" onClose={onClose} panelClassName="w-96 rounded-xl bg-white p-4">
+    <Dialog label="New calendar" onClose={onClose} panelClassName="w-96 rounded-xl bg-surface p-4">
       <h3 className="font-medium">New calendar</h3>
-      <p className="mt-1 text-sm text-neutral-500">
+      <p className="mt-1 text-sm text-ink-secondary">
         A calendar of its own for the copies. {MIRROR_COPY.sharing}
       </p>
       <label className={`${LABEL} mt-3 block`}>
@@ -300,7 +300,7 @@ function MirrorEditor({
 
   return (
     <div
-      className="mt-3 rounded-lg border border-neutral-200 bg-neutral-50 p-3"
+      className="mt-3 rounded-lg border border-hairline bg-surface-subtle p-3"
       data-testid="mirror-editor"
     >
       <label className={`${LABEL} block`}>
@@ -319,7 +319,7 @@ function MirrorEditor({
       <div className="mt-1 grid grid-cols-2 gap-x-4 gap-y-1">
         {groups.map((group) => (
           <div key={group}>
-            <p className="text-xs text-neutral-400">{group}</p>
+            <p className="text-xs text-ink-secondary">{group}</p>
             {sources
               .filter((option) => option.group === group)
               .map((option) => (
@@ -373,7 +373,7 @@ function MirrorEditor({
           </button>
         </div>
       </label>
-      <p className="mt-1 text-xs text-neutral-500">{MIRROR_COPY.dedicated}</p>
+      <p className="mt-1 text-xs text-ink-secondary">{MIRROR_COPY.dedicated}</p>
       {preview !== null && preview.otherEvents > 0 ? (
         <p
           className="mt-2 rounded-lg bg-amber-50 p-2 text-xs text-amber-800"
@@ -391,7 +391,7 @@ function MirrorEditor({
           <button
             aria-checked={preset === id}
             className={`rounded-lg border p-2 text-left ${
-              preset === id ? 'border-blue-500 bg-blue-50' : 'border-neutral-200 bg-white'
+              preset === id ? 'border-primary bg-selection' : 'border-hairline bg-surface'
             }`}
             data-testid={`mirror-preset-${id}`}
             key={id}
@@ -400,7 +400,7 @@ function MirrorEditor({
             type="button"
           >
             <span className="block text-sm font-medium">{MIRROR_PRESET_COPY[id].title}</span>
-            <span className="block text-xs text-neutral-500">
+            <span className="block text-xs text-ink-secondary">
               {MIRROR_PRESET_COPY[id].description}
             </span>
           </button>
@@ -408,7 +408,7 @@ function MirrorEditor({
       </div>
 
       <button
-        className="mt-2 text-xs text-blue-600 hover:underline"
+        className="mt-2 text-xs text-primary hover:underline"
         data-testid="mirror-advanced"
         onClick={() => setAdvanced(!advanced)}
         type="button"
@@ -416,7 +416,7 @@ function MirrorEditor({
         {advanced ? 'Hide advanced' : 'Advanced…'}
       </button>
       {advanced ? (
-        <div className="mt-2 grid grid-cols-2 gap-3 rounded-lg border border-neutral-200 bg-white p-3 text-sm">
+        <div className="mt-2 grid grid-cols-2 gap-3 rounded-lg border border-hairline bg-surface p-3 text-sm">
           <div>
             <p className={LABEL}>Fields</p>
             {(['title', 'location', 'description'] as const).map((field) => (
@@ -520,11 +520,11 @@ function MirrorEditor({
         </div>
       ) : null}
 
-      <p className="mt-3 text-xs text-neutral-500">{MIRROR_COPY.window(draft.monthsAhead)}</p>
+      <p className="mt-3 text-xs text-ink-secondary">{MIRROR_COPY.window(draft.monthsAhead)}</p>
 
       {preview !== null ? (
         <div
-          className="mt-3 rounded-lg border border-neutral-200 bg-white p-2 text-xs"
+          className="mt-3 rounded-lg border border-hairline bg-surface p-2 text-xs"
           data-testid="mirror-preview"
         >
           {preview.blocked ? (
@@ -534,16 +534,16 @@ function MirrorEditor({
             </p>
           ) : (
             <>
-              <p className="text-neutral-500">
+              <p className="text-ink-secondary">
                 {preview.copies} {preview.copies === 1 ? 'event' : 'events'} would be copied.
                 {preview.samples.length > 0 ? ' Others see, for example:' : ''}
               </p>
               <ul className="mt-1 flex flex-col gap-0.5">
                 {preview.samples.map((sample, index) => (
-                  <li className="text-neutral-800" key={index}>
+                  <li className="text-ink" key={index}>
                     <span className="font-medium">{sample.title}</span>
                     {sample.location ? ` · ${sample.location}` : ''}
-                    <span className="text-neutral-500">
+                    <span className="text-ink-secondary">
                       {' '}
                       · {sampleTime(sample, draft.timeZone)}
                     </span>
@@ -557,7 +557,7 @@ function MirrorEditor({
 
       {error ? <p className="mt-2 text-sm text-red-700">{error}</p> : null}
       <div className="mt-3 flex items-center justify-end gap-2">
-        {issue ? <span className="flex-1 text-xs text-neutral-500">{issue}</span> : null}
+        {issue ? <span className="flex-1 text-xs text-ink-secondary">{issue}</span> : null}
         <button className={BUTTON} onClick={onClose} type="button">
           Cancel
         </button>
@@ -600,7 +600,7 @@ function DeleteDialog({ onClose, view }: { onClose: () => void; view: MirrorView
     }
   };
   return (
-    <Dialog label="Delete mirror" onClose={onClose} panelClassName="w-96 rounded-xl bg-white p-4">
+    <Dialog label="Delete mirror" onClose={onClose} panelClassName="w-96 rounded-xl bg-surface p-4">
       <h3 className="font-medium">Delete “{view.definition.name}”?</h3>
       <label className="mt-3 flex items-start gap-2 text-sm">
         <input
@@ -612,7 +612,7 @@ function DeleteDialog({ onClose, view }: { onClose: () => void; view: MirrorView
         />
         <span>
           Also remove its copies from {refLabel(view.definition.destination)}.
-          <span className="block text-xs text-neutral-500">
+          <span className="block text-xs text-ink-secondary">
             If another device still runs this mirror, it will copy them again — delete it there too,
             or import the settings after.
           </span>
@@ -644,9 +644,9 @@ export function MirrorsSection() {
   const [deleting, setDeleting] = useState<MirrorView | null>(null);
 
   return (
-    <section className="rounded-xl border border-neutral-200 bg-white p-4" data-testid="mirrors">
+    <section className="rounded-xl border border-hairline bg-surface p-4" data-testid="mirrors">
       <h2 className="font-medium">Calendar mirrors</h2>
-      <p className="mt-1 text-sm text-neutral-500">{MIRROR_COPY.intro}</p>
+      <p className="mt-1 text-sm text-ink-secondary">{MIRROR_COPY.intro}</p>
       <ul className="mt-3 flex flex-col gap-2">
         {mirrors.map((view) => (
           <MirrorRow
@@ -674,7 +674,7 @@ export function MirrorsSection() {
           Add mirror…
         </button>
       )}
-      <div className="mt-4 flex flex-col gap-1 text-xs text-neutral-400">
+      <div className="mt-4 flex flex-col gap-1 text-xs text-ink-secondary">
         <p>{MIRROR_COPY.hidden}</p>
         <p>{MIRROR_COPY.freshness}</p>
         <p>{MIRROR_COPY.devices}</p>

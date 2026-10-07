@@ -147,11 +147,11 @@ export function SettingsWindow() {
 
   return (
     <div
-      className="flex h-screen flex-col bg-neutral-50 text-neutral-900"
+      className="flex h-screen flex-col bg-surface-subtle text-ink"
       data-testid="settings-window"
     >
       <header
-        className="shrink-0 border-b border-neutral-200 bg-neutral-100 pt-2 pb-1.5"
+        className="shrink-0 border-b border-hairline bg-fill pt-2 pb-1.5"
         style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}
       >
         <h1 className="text-center text-[13px] font-semibold" data-testid="settings-title">
@@ -164,8 +164,8 @@ export function SettingsWindow() {
               aria-selected={pane === entry.id}
               className={`flex w-[84px] flex-col items-center gap-0.5 rounded-md px-1 py-1 text-[11px] ${
                 pane === entry.id
-                  ? 'bg-neutral-200/80 text-blue-600'
-                  : 'text-neutral-500 hover:bg-neutral-200/50 hover:text-neutral-800'
+                  ? 'bg-fill text-primary'
+                  : 'text-ink-secondary hover:bg-fill hover:text-ink'
               }`}
               data-testid={`settings-tab-${entry.id}`}
               key={entry.id}

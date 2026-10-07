@@ -41,7 +41,7 @@ import {
 } from '@calendar/core';
 import { useCallback, useState } from 'react';
 import { deleteQuestion } from './deleteQuestion.ts';
-import { useAccounts, useBackendMutations, useLocationGeo } from './hooks.ts';
+import { useAccounts, useBackendMutations, useEventMaster, useLocationGeo } from './hooks.ts';
 import { useOneWrite } from './oneWrite.ts';
 import { useRepeatState } from './repeatState.ts';
 
@@ -94,6 +94,8 @@ let lastUsedCalendarKey: string | null = null;
 export const rememberCalendar = (calendarKey: string): void => {
   lastUsedCalendarKey = calendarKey;
 };
+/** The calendar a new event will default to (a quick-add review names it). */
+export const getLastUsedCalendarKey = (): string | null => lastUsedCalendarKey;
 
 /**
  * The start and end a new event opens with: a quick-add result first, then
@@ -204,6 +206,24 @@ export const recurringTimesError = ({
 };
 
 /**
+ * A changed rule needs a scope that can hold one: one occurrence cannot
+ * repeat on its own (the rule EventMutations enforces, said in words).
+ */
+export const repeatScopeError = ({
+  dirty,
+  isRecurring,
+  scope,
+}: {
+  /** The repeat fields were edited since the form opened. */
+  readonly dirty: boolean;
+  readonly isRecurring: boolean;
+  readonly scope: RecurringScope;
+}): string | undefined =>
+  isRecurring && dirty && scope === 'instance'
+    ? 'Choose “All events” or “This and following” to change how it repeats.'
+    : undefined;
+
+/**
  * What an editor asks before a write that drops something. The platform
  * words the buttons from `kind` and `subject`: a `move` keeps the item
  * where it is, a `convert` (an existing item changes kind on Save) or a
@@ -284,6 +304,8 @@ export const useEventEditorModel = ({
     (attendee) => attendee.isSelf === true || attendee.email.toLowerCase() === ownEmail,
   );
   const joinUrl = existing ? meetingUrl(existing) : undefined;
+  // The series' rule: a master row carries it, an occurrence's arrives by id.
+  const master = useEventMaster(existing);
   const writableCalendars = calendars.filter(isCalendarWritable);
 
   const prefill = seed.prefill;
@@ -446,13 +468,29 @@ export const useEventEditorModel = ({
       }),
     );
   const [rsvp, setRsvp] = useState(ownAttendee?.responseStatus);
-  const { toSpec: repeatSpec, ...repeatState } = useRepeatState(prefill?.recurrence, date);
-  // Fields a task carried in that the form has no control for: they go
-  // out with the create draft as they came.
-  const [carried, setCarried] = useState<{
-    readonly description?: string | undefined;
-    readonly url?: string | undefined;
-  }>({});
+  const [description, setDescription] = useState(existing?.description ?? '');
+  // An existing series seeds the repeat form from its master's lines once
+  // they are here (keyed, so the form re-seeds when they land); a new
+  // event from the quick-add prefill.
+  const masterLines = existing ? master.recurrence : undefined;
+  const { toSpec: repeatSpec, ...repeatState } = useRepeatState(
+    existing
+      ? taskRecurrenceFromLines(masterLines, { isAllDay: existing.isAllDay, startTime, timeZone })
+      : prefill?.recurrence,
+    date,
+    existing ? (masterLines?.join('\n') ?? '') : undefined,
+  );
+  // An untouched rule is never re-sent: only an edit puts `recurrence` on the update.
+  const [repeatDirty, setRepeatDirty] = useState(false);
+  const marking =
+    <A extends ReadonlyArray<unknown>>(set: (...args: A) => void) =>
+    (...args: A) => {
+      setRepeatDirty(true);
+      set(...args);
+    };
+  // The URL a task carried in: the form has no control for it, so it goes
+  // out with the create draft as it came.
+  const [carried, setCarried] = useState<{ readonly url?: string | undefined }>({});
   const [error, setError] = useState<string | null>(null);
   const write = useOneWrite();
 
@@ -463,7 +501,7 @@ export const useEventEditorModel = ({
       attendees,
       date,
       defaultReminderMinutes: calendarDefaultReminders,
-      description: carried.description ?? existing?.description,
+      description: description.trim() || undefined,
       endTime,
       hangoutLink: existing?.hangoutLink,
       isAllDay,
@@ -502,7 +540,8 @@ export const useEventEditorModel = ({
           timeZone,
         }),
     );
-    setCarried({ description: next.description, url: next.url });
+    setDescription(next.description ?? '');
+    setCarried({ url: next.url });
   };
 
   const addAttendee = (input: AttendeeInput): boolean => {
@@ -551,7 +590,12 @@ export const useEventEditorModel = ({
     const spec = repeatSpec();
     const invalid =
       validateEventDraft(fields, timeZone) ??
-      (spec ? (byDayError(spec) ?? repeatUntilError(spec, date)) : undefined) ??
+      // The rule is checked when it is being written: a new event's, or an
+      // edited one. An untouched series rule is not re-sent, and its UNTIL
+      // must not pin an occurrence that is being moved past the series end.
+      (spec && (!existing || repeatDirty)
+        ? (byDayError(spec) ?? repeatUntilError(spec, date))
+        : undefined) ??
       (existing && isRecurring && openedDate !== undefined
         ? recurringTimesError({
             date,
@@ -559,7 +603,12 @@ export const useEventEditorModel = ({
             opened: { date: openedDate, isAllDay: existing.isAllDay },
             scope,
           })
-        : undefined);
+        : undefined) ??
+      repeatScopeError({
+        dirty: repeatDirty,
+        isRecurring: existing !== undefined && isRecurring,
+        scope,
+      });
     if (invalid) {
       setError(invalid);
       return;
@@ -611,12 +660,17 @@ export const useEventEditorModel = ({
           calendarId,
           changes: {
             ...(attendeesDirty ? { attendees } : {}),
+            description: description.trim(),
             geo: savedGeo ?? null,
             // Sent so the times are read as what they are: a switch is
             // refused above, and by the mutation should one get past.
             isAllDay,
             // Empty string clears the field; undefined would read as "unchanged".
             location: location.trim(),
+            // The rule only when edited: lines for a new one, null for "does not repeat".
+            ...(repeatDirty
+              ? { recurrence: spec ? [buildRecurrenceRule(spec, isAllDay, timeZone)] : null }
+              : {}),
             ...(remindersDirty ? { reminders } : {}),
             title: title.trim(),
             ...times,
@@ -631,6 +685,7 @@ export const useEventEditorModel = ({
           calendarId,
           changes: {
             ...(attendeesDirty ? { attendees } : {}),
+            description: description.trim(),
             geo: savedGeo ?? null,
             isAllDay,
             location: location.trim(),
@@ -643,16 +698,16 @@ export const useEventEditorModel = ({
       } else {
         // A carried URL is the event's on Apple; on Google it rides in the description.
         const targetProvider = calendarOf(calendarKey)?.provider ?? 'google';
-        const description =
+        const draftDescription =
           targetProvider === 'google'
-            ? appendLink(carried.description, carried.url)
-            : carried.description;
+            ? appendLink(description.trim() || undefined, carried.url)
+            : description.trim() || undefined;
         const draft: EventDraft = {
           accountId,
           // Guests typed before switching to a calendar that cannot invite are not sent.
           ...(attendees.length > 0 && capabilities.canInvite ? { attendees } : {}),
           calendarId,
-          ...(description ? { description } : {}),
+          ...(draftDescription ? { description: draftDescription } : {}),
           geo: savedGeo,
           isAllDay,
           location: location.trim() || undefined,
@@ -770,6 +825,7 @@ export const useEventEditorModel = ({
     calendarKey,
     ...capabilities,
     date,
+    description,
     endTime,
     error,
     existing,
@@ -789,12 +845,21 @@ export const useEventEditorModel = ({
     removeAttendee,
     removeReminder,
     ...repeatState,
+    /** The repeat form was edited since it opened: Save sends the rule. */
+    repeatDirty,
+    /**
+     * The repeat fields can show: a new event right away, an existing
+     * series once its master's lines are here (never for a read-through
+     * Apple series, whose rule the app does not hold).
+     */
+    repeatLoaded: existing === undefined || (isRecurring && master.loaded),
     respond,
     rsvp,
     save: () => write.run(save),
     scope,
     setCalendarKey,
     setDate,
+    setDescription,
     setEndTime: (time: string) => {
       setEndTime(time);
       setTimeChosen(true);
@@ -805,6 +870,14 @@ export const useEventEditorModel = ({
     },
     setLocation,
     setReminderMinutes,
+    setRepeat: marking(repeatState.setRepeat),
+    setRepeatCount: marking(repeatState.setRepeatCount),
+    setRepeatEnds: marking(repeatState.setRepeatEnds),
+    setRepeatInterval: marking(repeatState.setRepeatInterval),
+    setRepeatMonthly: marking(repeatState.setRepeatMonthly),
+    setRepeatOrdinal: marking(repeatState.setRepeatOrdinal),
+    setRepeatOrdinalWeekday: marking(repeatState.setRepeatOrdinalWeekday),
+    setRepeatUntil: marking(repeatState.setRepeatUntil),
     setScope,
     setStartTime: (time: string) => {
       setStartTime(time);
@@ -818,6 +891,7 @@ export const useEventEditorModel = ({
     /** The primary zone the date/time fields are wall clock in. */
     timeZone,
     title,
+    toggleWeekday: marking(repeatState.toggleWeekday),
     values,
     writableCalendars,
   };

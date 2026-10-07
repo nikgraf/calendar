@@ -163,7 +163,7 @@ const makePendingOpRepo: Effect.Effect<PendingOpRepoShape, never, Reactivity | S
                                    task_title, task_notes, task_due, dispatched_at,
                                    attendees_changed, geo_cleared, target_calendar_id,
                                    reminders_changed, conflict_at, server_payload,
-                                   carried_text)
+                                   carried_text, recurrence_cleared)
           VALUES (${op.id}, ${op.accountId}, ${op.calendarId}, ${op.kind},
                   ${op.eventId},
                   ${op.payload ? JSON.stringify(eventPayloadJson(op.payload)) : null},
@@ -175,7 +175,8 @@ const makePendingOpRepo: Effect.Effect<PendingOpRepoShape, never, Reactivity | S
                   ${op.geoCleared ? 1 : 0}, ${op.targetCalendarId ?? null},
                   ${op.remindersChanged ? 1 : 0}, ${op.conflictAt ?? null},
                   ${op.serverPayload ? JSON.stringify(eventPayloadJson(op.serverPayload)) : null},
-                  ${op.carriedText ? JSON.stringify(carriedTextJson(op.carriedText)) : null})
+                  ${op.carriedText ? JSON.stringify(carriedTextJson(op.carriedText)) : null},
+                  ${op.recurrenceCleared ? 1 : 0})
         `),
         ),
       getById: (opId) =>

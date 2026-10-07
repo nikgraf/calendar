@@ -162,6 +162,7 @@ export const buildSettingsDocument: Effect.Effect<
     mirrors: yield* readMirrors,
     timeZones: yield* readTimeZoneSettings,
     version: SETTINGS_DOCUMENT_VERSION,
-    view: yield* readViewPreferences,
+    // Only the lane cap travels; the opening view and the sidebar are this device's taste.
+    view: { allDayLaneCollapsed: (yield* readViewPreferences).allDayLaneCollapsed },
   });
 });

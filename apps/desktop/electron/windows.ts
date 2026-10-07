@@ -1,7 +1,7 @@
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { app, BrowserWindow, ipcMain } from 'electron';
+import { app, BrowserWindow, ipcMain, nativeTheme } from 'electron';
 import { registerPrivacyWindow } from './privacy.ts';
 
 /**
@@ -62,8 +62,13 @@ let settings: SettingsWindow | null = null;
 
 export const hasMainWindow = (): boolean => mainWindow !== null;
 
+// The window's own color until the page paints, matching the canvas token of
+// the OS appearance so a launch (or a reload) never flashes white at night.
+const windowBackground = (): string => (nativeTheme.shouldUseDarkColors ? '#19171d' : '#ffffff');
+
 export const createMainWindow = (): BrowserWindow => {
   const window = new BrowserWindow({
+    backgroundColor: windowBackground(),
     height: 800,
     minHeight: 400,
     minWidth: 600,
@@ -171,6 +176,7 @@ export const showSettingsWindow = (pane?: string): void => {
   // (minimize and zoom dimmed), never full screen. The page draws the
   // title and the pane toolbar inside the hidden title bar.
   const window = new BrowserWindow({
+    backgroundColor: windowBackground(),
     fullscreenable: false,
     height: 620,
     maximizable: false,

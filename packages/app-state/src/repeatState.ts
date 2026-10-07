@@ -183,8 +183,24 @@ export const repeatDisplaySpec = (
  * weekday, and the monthly "weekday" mode from its ordinal and weekday.
  * `toSpec()` is the single exit.
  */
-export const useRepeatState = (seed: RepeatSeed | undefined, anchorIso: string) => {
+export const useRepeatState = (
+  seed: RepeatSeed | undefined,
+  anchorIso: string,
+  /**
+   * Names the seed: when it changes (a series' master arrived after the
+   * form opened), the form re-seeds from `seed`. Omitted, the first seed
+   * is the only one.
+   */
+  seedKey?: string,
+) => {
   const [fields, setFields] = useState<RepeatFields>(() => seedRepeatFields(seed));
+  // Adjusting state on a prop change, during render (the React-sanctioned
+  // form): the master's lines land once, after the editor opened.
+  const [appliedSeedKey, setAppliedSeedKey] = useState(seedKey);
+  if (seedKey !== appliedSeedKey) {
+    setAppliedSeedKey(seedKey);
+    setFields(seedRepeatFields(seed));
+  }
   // Functional updates: a handler may call two setters in one tick (Ends
   // "on date" then seeding "until"), and the second must see the first.
   const update = (

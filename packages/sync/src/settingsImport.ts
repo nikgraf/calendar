@@ -142,8 +142,13 @@ const planSettingsImport = (
         settingsChanged.push('birthdayReminderOverrides');
       }
     }
+    // Only the lane cap is imported; the device-local fields (opening view,
+    // sidebar) keep whatever this device chose.
+    const currentView = yield* readViewPreferences;
     const view =
-      document.view && !same(document.view, yield* readViewPreferences) ? document.view : undefined;
+      document.view && document.view.allDayLaneCollapsed !== currentView.allDayLaneCollapsed
+        ? { ...currentView, allDayLaneCollapsed: document.view.allDayLaneCollapsed }
+        : undefined;
     if (view) {
       settingsChanged.push('view');
     }

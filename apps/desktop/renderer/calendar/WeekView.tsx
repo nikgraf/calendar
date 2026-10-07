@@ -1,4 +1,4 @@
-import { useGuardedMutations, useViewPreferences } from '@calendar/app-state';
+import { useUpdateViewPreferences, useViewPreferences } from '@calendar/app-state';
 import {
   type BirthdayOccurrence,
   bufferedDays,
@@ -69,7 +69,7 @@ function GridDropIndicator({
   }
   return (
     <div
-      className="pointer-events-none absolute z-30 h-[22px] rounded border-2 border-dashed border-blue-500 bg-blue-500/10"
+      className="pointer-events-none absolute z-30 h-[22px] rounded border-2 border-dashed border-primary bg-primary/10"
       data-testid="task-drop-grid"
       style={{
         left: `calc(${(drop.target.dayIndex / stripLength) * 100}% + 1px)`,
@@ -279,7 +279,7 @@ export function WeekView({
   // Collapsed, the lane caps at MAX_ALL_DAY_ROWS with "+N more" chips; the
   // choice is a device setting, so it survives a relaunch. Expanded by default.
   const preferences = useViewPreferences();
-  const { setViewPreferences } = useGuardedMutations();
+  const updateViewPreferences = useUpdateViewPreferences();
   const collapsed = preferences?.allDayLaneCollapsed ?? false;
   const capped = collapsed ? capAllDayLane(allDayPlaced, strip.length, MAX_ALL_DAY_ROWS) : null;
   // Built once per render, not once per column: this component re-renders
@@ -328,7 +328,7 @@ export function WeekView({
         moreByDay={capped?.moreByDay ?? []}
         onBirthdayClick={onBirthdayClick}
         onEventClick={onEventClick}
-        onSetCollapsed={(value) => void setViewPreferences({ allDayLaneCollapsed: value })}
+        onSetCollapsed={(value) => updateViewPreferences({ allDayLaneCollapsed: value })}
         onTaskClick={onTaskClick}
         onToggleTask={onToggleTask}
         overdueKeys={overdueKeys}
@@ -348,7 +348,7 @@ export function WeekView({
           <div className={`relative shrink-0 ${gutterClassName}`}>
             {Array.from({ length: 23 }, (_, index) => (
               <span
-                className="absolute right-2 flex -translate-y-1/2 flex-col items-end text-[10px] leading-3 whitespace-nowrap text-neutral-400"
+                className="absolute right-2 flex -translate-y-1/2 flex-col items-end text-[10px] leading-3 whitespace-nowrap text-ink-secondary"
                 key={index + 1}
                 style={{ top: (index + 1) * HOUR_HEIGHT }}
               >
@@ -359,7 +359,7 @@ export function WeekView({
                 </span>
                 {secondaryLabels ? (
                   <span
-                    className="text-[9px] text-neutral-300"
+                    className="text-[9px] text-ink-secondary/70"
                     data-testid={`hour-secondary-${index + 1}`}
                   >
                     {secondaryLabels[index + 1]}
@@ -401,7 +401,7 @@ export function WeekView({
                 return (
                   <div
                     aria-label={`${day.toLocaleString('en-US', { day: 'numeric', month: 'long', weekday: 'long' })}: press Enter for a new event`}
-                    className="relative border-l border-neutral-100 outline-none focus-visible:bg-blue-50/40"
+                    className="relative border-l border-hairline outline-none focus-visible:bg-selection/40"
                     key={iso}
                     onClick={(clickEvent) => {
                       // Both flags are consumed, so neither leaks into the next click.
@@ -468,7 +468,7 @@ export function WeekView({
 
                     {drawn ? (
                       <div
-                        className="pointer-events-none absolute inset-x-1 z-10 overflow-hidden rounded-md border border-blue-500 bg-blue-500/15 px-1 text-[11px] leading-4 font-medium text-blue-700"
+                        className="pointer-events-none absolute inset-x-1 z-10 overflow-hidden rounded-md border border-primary bg-primary/15 px-1 text-[11px] leading-4 font-medium text-on-selection"
                         data-testid="slot-selection"
                         style={{
                           height: ((drawn.endMinute - drawn.startMinute) / 60) * HOUR_HEIGHT,

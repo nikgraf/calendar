@@ -126,7 +126,7 @@ export function EventEditor({
     <Dialog
       label={mode === 'birthday' ? 'Birthday' : mode === 'task' ? 'Task editor' : 'Event editor'}
       onClose={onClose}
-      panelClassName="w-[420px] rounded-2xl bg-neutral-50 p-6 shadow-2xl"
+      panelClassName="w-[420px] rounded-2xl bg-surface-subtle p-6 shadow-2xl"
       zIndex={30}
     >
       <>
@@ -144,11 +144,11 @@ export function EventEditor({
         </div>
 
         {showToggle ? (
-          <div className="mb-3 flex rounded-lg border border-neutral-200 bg-white p-0.5">
+          <div className="mb-3 flex rounded-lg border border-hairline bg-surface p-0.5">
             {(['event', 'task'] as const).map((option) => (
               <button
                 className={`flex-1 rounded-md px-2 py-1 text-xs font-medium disabled:opacity-50 ${
-                  mode === option ? 'bg-blue-600 text-white' : 'text-neutral-600'
+                  mode === option ? 'bg-primary text-on-primary' : 'text-ink-secondary'
                 }`}
                 data-testid={`mode-${option}`}
                 disabled={moveConfirmation.pending !== null || (option === 'task' && seriesOnly)}

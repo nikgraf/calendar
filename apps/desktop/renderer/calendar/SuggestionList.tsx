@@ -35,7 +35,7 @@ export function SuggestionList<T>({
 }) {
   return (
     <div
-      className="absolute top-full right-0 left-0 z-50 mt-1 overflow-hidden rounded-lg border border-neutral-200 bg-white shadow-xl"
+      className="absolute top-full right-0 left-0 z-50 mt-1 overflow-hidden rounded-lg border border-hairline bg-surface shadow-xl"
       id={listId}
       role="listbox"
     >
@@ -43,7 +43,7 @@ export function SuggestionList<T>({
         <button
           aria-selected={!stale && index === highlight}
           className={`flex w-full px-3 py-1.5 text-left text-sm ${rowClassName} ${
-            stale ? 'opacity-50' : index === highlight ? 'bg-blue-50' : 'hover:bg-neutral-50'
+            stale ? 'opacity-50' : index === highlight ? 'bg-selection' : 'hover:bg-surface-subtle'
           }`}
           data-stale={stale ? 'true' : undefined}
           id={`${listId}-${index}`}

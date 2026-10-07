@@ -25,7 +25,7 @@ const fakeModel = (
 const prefillOf = async (parse: QuickAddParse, phrase = 'anything') => {
   const result = await parseQuickAdd(fakeModel(parse), { phrase, ...CONTEXT });
   if (result.kind !== 'parsed') {
-    throw new Error(`expected a parse, got: ${result.reason}`);
+    throw new Error(`expected a parse, got: `);
   }
   return result.prefill;
 };
@@ -269,5 +269,35 @@ describe('parseQuickAdd', () => {
     // 2026-08-22 is a Saturday, so the next Tuesday is the 25th.
     expect(prompt).toContain('Sat 2026-08-22 (today)');
     expect(prompt).toContain('Tue 2026-08-25');
+  });
+});
+
+describe('parseQuickAdd for tasks', () => {
+  it('returns a task prefill with its day and the time it named', async () => {
+    const result = await parseQuickAdd(
+      fakeModel({ date: '2026-08-25', kind: 'task', startTime: '09:30', title: 'Call the bank' }),
+      { phrase: 'remind me to call the bank tue 9:30', ...CONTEXT },
+    );
+    expect(result).toEqual({
+      kind: 'task',
+      prefill: { date: '2026-08-25', time: '09:30', title: 'Call the bank' },
+    });
+  });
+
+  it('gives an undated to-do the fallback day and no time', async () => {
+    const result = await parseQuickAdd(fakeModel({ kind: 'task', title: 'Buy milk' }), {
+      fallbackDate: '2026-08-30',
+      phrase: 'todo buy milk',
+      ...CONTEXT,
+    });
+    expect(result).toEqual({ kind: 'task', prefill: { date: '2026-08-30', title: 'Buy milk' } });
+  });
+
+  it('still needs a title', async () => {
+    const result = await parseQuickAdd(fakeModel({ kind: 'task', title: '   ' }), {
+      phrase: 'todo',
+      ...CONTEXT,
+    });
+    expect(result.kind).toBe('rejected');
   });
 });

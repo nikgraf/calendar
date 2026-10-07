@@ -1,5 +1,6 @@
 import { type useEventEditorModel, useMapSnapshot } from '@calendar/app-state';
 import { isMappableLocation } from '@calendar/core';
+import { useColorScheme } from '../theme.ts';
 
 /** Points; the editor panel is 420 wide with 24 of padding per side. */
 const MAP_WIDTH = 372;
@@ -7,17 +8,18 @@ const MAP_HEIGHT = 160;
 
 /**
  * A static Apple Maps image of the event's place (MKMapSnapshotter in the
- * Swift helper, requested at the display's pixel density). Clicking it,
- * or the link, opens the Maps app. The renderer is light-only today, so
- * the image is too. Without a helper (or offline) it falls back to the
- * link; text MapKit cannot place shows nothing but a quiet note.
+ * Swift helper, requested at the display's pixel density) in the window's
+ * appearance. Clicking it, or the link, opens the Maps app. Without a
+ * helper (or offline) it falls back to the link; text MapKit cannot place
+ * shows nothing but a quiet note.
  */
 export function LocationMap({ model }: { model: ReturnType<typeof useEventEditorModel> }) {
   const { location, mapGeo, mapLoading, mapsUrl } = model;
+  const appearance = useColorScheme();
   const snapshot = useMapSnapshot(
     mapGeo
       ? {
-          appearance: 'light',
+          appearance,
           height: MAP_HEIGHT,
           lat: mapGeo.lat,
           lng: mapGeo.lng,
@@ -33,7 +35,7 @@ export function LocationMap({ model }: { model: ReturnType<typeof useEventEditor
   if (!mapGeo || !mapsUrl) {
     return mapLoading ? (
       <div
-        className="flex h-40 items-center justify-center rounded-lg bg-neutral-100 text-xs text-neutral-400"
+        className="flex h-40 items-center justify-center rounded-lg bg-fill text-xs text-ink-secondary"
         data-map-state="loading"
       >
         Locating…
@@ -46,7 +48,7 @@ export function LocationMap({ model }: { model: ReturnType<typeof useEventEditor
       {snapshot.pngBase64 ? (
         <button
           aria-label={`Open ${mapGeo.name ?? location} in Maps`}
-          className="overflow-hidden rounded-lg border border-neutral-200"
+          className="overflow-hidden rounded-lg border border-hairline"
           onClick={open}
           type="button"
         >
@@ -58,10 +60,10 @@ export function LocationMap({ model }: { model: ReturnType<typeof useEventEditor
           />
         </button>
       ) : snapshot.loading ? (
-        <div className="h-40 animate-pulse rounded-lg bg-neutral-100" data-map-state="loading" />
+        <div className="h-40 animate-pulse rounded-lg bg-fill" data-map-state="loading" />
       ) : null}
       <a
-        className="self-start text-xs text-blue-600 hover:underline"
+        className="self-start text-xs text-primary hover:underline"
         data-open-in-maps
         href={mapsUrl}
         onClick={(clickEvent) => {

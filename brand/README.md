@@ -4,18 +4,19 @@ The selected identity is **A1 soft ivory, with 24 in Inter Bold**: a near-white 
 
 ## Where files live
 
-| Location                           | Contents                                                               |
-| ---------------------------------- | ---------------------------------------------------------------------- |
-| `icons/`                           | Canonical vector icon variants; `solunivo.svg` is the selected default |
-| `logos/`                           | Outlined wordmarks and horizontal/stacked logo SVGs                    |
-| `fonts/`                           | Inter 4.1 source fonts, variable webfont and SIL Open Font License     |
-| `tokens/tokens.json`               | Authoritative brand and semantic UI tokens                             |
-| `tokens/tokens.css`                | Generated CSS for the preview and future UI integration                |
-| `preview/`                         | Curated brand preview with a sample calendar and event editor          |
-| `../scripts/brand/build.mjs`       | Export, validation and distribution build                              |
-| `../apps/desktop/assets/icon.icns` | Generated macOS icon used by Forge                                     |
-| `../apps/ios/assets/icon.png`      | Generated opaque 1024 × 1024 icon used by Expo                         |
-| `../output/branding/`              | Ignored studies, PNG sets, iconsets and distribution ZIPs              |
+| Location                               | Contents                                                                 |
+| -------------------------------------- | ------------------------------------------------------------------------ |
+| `icons/`                               | Canonical vector icon variants; `solunivo.svg` is the selected default   |
+| `logos/`                               | Outlined wordmarks and horizontal/stacked logo SVGs                      |
+| `fonts/`                               | Inter 4.1 source fonts, variable webfont and SIL Open Font License       |
+| `tokens/tokens.json`                   | Authoritative brand and semantic UI tokens                               |
+| `tokens/tokens.css`                    | Generated CSS variables (the preview and the desktop app)                |
+| `../packages/core/src/theme/tokens.ts` | Generated typed tokens for both apps (iOS reads these; Metro has no CSS) |
+| `preview/`                             | Curated brand preview with a sample calendar and event editor            |
+| `../scripts/brand/build.mjs`           | Export, validation and distribution build                                |
+| `../apps/desktop/assets/icon.icns`     | Generated macOS icon used by Forge                                       |
+| `../apps/ios/assets/icon.png`          | Generated opaque 1024 × 1024 icon used by Expo                           |
+| `../output/branding/`                  | Ignored studies, PNG sets, iconsets and distribution ZIPs                |
 
 The SVGs are editable vector sources with outlined lettering, gradients and filters. They have no linked images or font dependencies. Edit these masters and regenerate their raster exports. Earlier exploration galleries stay outside Git. Proposed artwork is clearly labeled in the preview and is not enabled as a native appearance.
 
@@ -28,7 +29,7 @@ pnpm brand:build
 pnpm brand:check
 ```
 
-`brand:build` refreshes the two tracked app icons and `tokens/tokens.css`, renders export sizes, checks 50 contrast pairs, and writes the complete distribution to `output/branding/solunivo-brand-kit/` and `output/branding/solunivo-brand-kit.zip`.
+`brand:build` refreshes the two tracked app icons, `tokens/tokens.css` and `packages/core/src/theme/tokens.ts`, renders export sizes, checks 54 contrast pairs, and writes the complete distribution to `output/branding/solunivo-brand-kit/` and `output/branding/solunivo-brand-kit.zip`.
 
 `brand:check` regenerates those tracked files in a temporary directory and compares their bytes. It fails on stale assets or insufficient contrast without changing the working tree. When updating a master, include the regenerated app assets and CSS in the same commit.
 

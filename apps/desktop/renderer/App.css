@@ -1,4 +1,73 @@
 @import 'tailwindcss';
+@import '../../../brand/tokens/tokens.css';
+@import './fonts.css';
+
+/*
+ * Dark mode follows the OS: theme.ts mirrors `prefers-color-scheme` onto
+ * `data-theme` on <html>, which is the selector tokens.css switches on.
+ */
+@custom-variant dark (&:where([data-theme='dark'], [data-theme='dark'] *));
+
+/*
+ * The brand tokens as Tailwind utilities (bg-canvas, text-ink, …). They
+ * alias the CSS variables rather than copy values, so one attribute flip
+ * re-themes every utility. Text colors are `ink` because Tailwind's own
+ * `--text-*` namespace is font sizes.
+ */
+@theme inline {
+  --font-sans: var(--font-sans);
+
+  --color-canvas: var(--canvas);
+  --color-surface: var(--surface);
+  --color-surface-subtle: var(--surface-subtle);
+  --color-surface-raised: var(--surface-raised);
+  --color-fill: var(--fill);
+  --color-hairline: var(--border);
+  --color-hairline-strong: var(--border-strong);
+  --color-ink: var(--text);
+  --color-ink-secondary: var(--text-secondary);
+  --color-primary: var(--primary);
+  --color-primary-hover: var(--primary-hover);
+  --color-on-primary: var(--on-primary);
+  --color-focus: var(--focus);
+  --color-selection: var(--selection);
+  --color-on-selection: var(--on-selection);
+  --color-success: var(--success);
+  --color-on-success: var(--on-success);
+  --color-warning: var(--warning);
+  --color-on-warning: var(--on-warning);
+  --color-danger: var(--danger);
+  --color-on-danger: var(--on-danger);
+  --color-info: var(--info);
+  --color-on-info: var(--on-info);
+  --color-event-mint: var(--event-mint);
+  --color-on-event-mint: var(--on-event-mint);
+  --color-event-mint-edge: var(--event-mint-edge);
+  --color-event-blush: var(--event-blush);
+  --color-on-event-blush: var(--on-event-blush);
+  --color-event-blush-edge: var(--event-blush-edge);
+  --color-event-lilac: var(--event-lilac);
+  --color-on-event-lilac: var(--on-event-lilac);
+  --color-event-lilac-edge: var(--event-lilac-edge);
+  --color-event-blue: var(--event-blue);
+  --color-on-event-blue: var(--on-event-blue);
+  --color-event-blue-edge: var(--event-blue-edge);
+
+  --radius-event: var(--radius-event);
+  --radius-control: var(--radius-control);
+  --radius-popover: var(--radius-popover);
+  --radius-window: var(--radius-window);
+}
+
+html {
+  background: var(--canvas);
+  color: var(--text);
+  color-scheme: light;
+}
+
+html[data-theme='dark'] {
+  color-scheme: dark;
+}
 
 /* Native-app feel: UI text is not selectable… */
 body {

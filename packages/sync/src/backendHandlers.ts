@@ -263,6 +263,12 @@ export const commonBackendHandlers: Omit<BackendHandlers<CommonBackendServices>,
   getBirthdaysInRange: ({ endDate, startDate }) =>
     Effect.map(loadMergedBirthdays, (records) => birthdaysInRange(records, startDate, endDate)),
 
+  getEvent: ({ accountId, calendarId, eventId }) =>
+    Effect.gen(function* () {
+      const eventRepo = yield* EventRepo;
+      return yield* eventRepo.getById(accountId, calendarId, eventId);
+    }),
+
   getEventNotificationSettings: () => readEventNotificationSettings,
 
   getEventsInRange: ({ rangeEndUtc, rangeStartUtc }) =>

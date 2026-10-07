@@ -324,6 +324,13 @@ const rdateSeriesEnd = Effect.gen(function* () {
   }
 });
 
+// recurrence_cleared = 1 when the queued series update must send Google an
+// empty rule list ("does not repeat"): an absent key would keep the rule.
+const recurrenceCleared = Effect.gen(function* () {
+  const sql = yield* SqlClient;
+  yield* sql`ALTER TABLE pending_ops ADD COLUMN recurrence_cleared INTEGER NOT NULL DEFAULT 0`;
+});
+
 // The third tuple element is a *loader* whose result is the migration effect.
 export const migrations: ReadonlyArray<ResolvedMigration> = [
   [1, 'baseline', Effect.succeed(baseline)],
@@ -334,4 +341,5 @@ export const migrations: ReadonlyArray<ResolvedMigration> = [
   [6, 'carried-text', Effect.succeed(carriedText)],
   [7, 'calendar-mirrors', Effect.succeed(calendarMirrors)],
   [8, 'rdate-series-end', Effect.succeed(rdateSeriesEnd)],
+  [9, 'recurrence-cleared', Effect.succeed(recurrenceCleared)],
 ];

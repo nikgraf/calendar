@@ -1,5 +1,28 @@
+import {
+  eventTint,
+  type EventTint,
+  THEMES,
+  type ThemeColors,
+  type ThemeScheme,
+} from '@calendar/core';
+import { useColorScheme } from 'react-native';
+
 export { contrastingTextColor as chipTextColor } from '@calendar/core';
 
+/**
+ * The brand tokens for the appearance the phone is in. Static layout stays
+ * in `StyleSheet.create`; colors come from here at render time so a flip
+ * of the system appearance re-themes every screen.
+ */
+export const useTheme = (): { colors: ThemeColors; scheme: ThemeScheme } => {
+  const scheme: ThemeScheme = useColorScheme() === 'dark' ? 'dark' : 'light';
+  return { colors: THEMES[scheme], scheme };
+};
+
+/** The fill, text and edge colors a calendar-colored item takes in the current appearance. */
+export const useEventTint = (hex: string): EventTint => eventTint(hex, useTheme().scheme);
+
+/** The light-only palette the screens were built on; `useTheme` replaces it screen by screen. */
 export const palette = {
   background: '#fafafa',
   border: '#e5e5e5',
@@ -11,5 +34,3 @@ export const palette = {
   overdue: '#dc2626',
   today: '#ef4444',
 };
-
-/** Readable foreground for chips on a calendar-colored background. */
