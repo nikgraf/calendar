@@ -2222,7 +2222,10 @@ came with a failing test first.
       (`isDialogOpen`), the agent approval App opens included; ⌘K opens
       its bar over none.
 - [x] Sync leftovers — #131 (`todo/sync-leftovers`). **A calendar-list
-      410's full relist purges** (the pass knows it ran in full). **A
+      410's full relist purges** (the pass knows it ran in full), against
+      the calendars stored after the pass — a delta page that landed
+      before the 410 may have added one the full list omits (review of
+      #131). **A
       malformed `updated` reads as the sync time** instead of failing the
       calendar's pass. **An unreached request (no status) gets one retry,
       not five** — offline held the sync gate half a minute per account;
