@@ -89,6 +89,16 @@ type SyncError = AppleCalendarError | GoogleRequestError | RemindersError | SqlE
 const TRANSIENT_RETRIES = 5;
 
 /**
+ * A request that never reached Google (offline, DNS, a refused
+ * connection: an ApiUnavailableError without a status) gets one quick
+ * retry for a blip, then the pass ends. Five spaced retries held the sync
+ * gate for half a minute per Google account while offline, and the
+ * Reminders pass and the iOS background budget waited behind it; the next
+ * poll, wake or reconnect tries again.
+ */
+const TRANSPORT_RETRIES = 1;
+
+/**
  * Retries rate limits and transient availability failures with jittered
  * exponential backoff — except that a 429's Retry-After, when Google
  * sends one, is the wait (it used to be parsed and then ignored).
@@ -102,7 +112,10 @@ const withTransientRetry = <A, E extends { readonly _tag: string }, R>(
       (error): error is E =>
         error._tag === 'RateLimitedError' || error._tag === 'ApiUnavailableError',
       (error) => {
-        if (n >= TRANSIENT_RETRIES) {
+        const unreached =
+          error._tag === 'ApiUnavailableError' &&
+          (error as { readonly status?: number | undefined }).status === undefined;
+        if (n >= (unreached ? TRANSPORT_RETRIES : TRANSIENT_RETRIES)) {
           return Effect.fail(error);
         }
         const retryAfterMs = (error as { readonly retryAfterMs?: number | undefined }).retryAfterMs;
@@ -239,8 +252,17 @@ const make: Effect.Effect<
           return { deletedIds, keptIds, nextSyncToken };
         });
 
+      // A 410 on the token falls back to a full list, and a full list never
+      // reports a deletion: the purge below must know which pass ran, or
+      // calendars removed meanwhile stay for good.
+      let fullPass = !state?.syncToken;
       const result = yield* runPass(state?.syncToken ?? null).pipe(
-        Effect.catchTag('SyncTokenExpiredError', () => runPass(null)),
+        Effect.catchTag('SyncTokenExpiredError', () =>
+          Effect.suspend(() => {
+            fullPass = true;
+            return runPass(null);
+          }),
+        ),
       );
 
       // A calendar we did not have starts from nothing: whatever events
@@ -255,7 +277,7 @@ const make: Effect.Effect<
       // state with them, in one transaction (CalendarRepo.purge): a
       // calendar that comes back (unhidden in Google) must list its
       // history again, not resume a token onto an empty table.
-      if (state?.syncToken) {
+      if (!fullPass) {
         const gone = result.deletedIds.filter((id) => previousVisibility.has(id));
         // An install that synced the Birthdays calendar before it was
         // skipped never gets it re-sent unchanged: drop the row once.
@@ -278,7 +300,7 @@ const make: Effect.Effect<
       yield* syncStateRepo.set(
         new SyncState({
           accountId: account.id,
-          lastFullSyncAt: state?.syncToken ? (state.lastFullSyncAt ?? now) : now,
+          lastFullSyncAt: fullPass ? now : (state?.lastFullSyncAt ?? now),
           lastSyncAt: now,
           scope: CALENDAR_LIST_SCOPE,
           status: 'idle',

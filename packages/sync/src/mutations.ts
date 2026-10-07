@@ -270,12 +270,7 @@ const make: Effect.Effect<
 
   /** One account's queued ops of an event: a shared calendar repeats its ids under every account. */
   const opsForEvent = (accountId: string, calendarId: string, eventId: string) =>
-    Effect.map(pendingOpRepo.listAll(), (ops) =>
-      ops.filter(
-        (op) =>
-          op.accountId === accountId && op.calendarId === calendarId && op.eventId === eventId,
-      ),
-    );
+    pendingOpRepo.listForEvent({ accountId, calendarId, eventId });
 
   /**
    * The carried text of the series edit a truncation replaces: its payload

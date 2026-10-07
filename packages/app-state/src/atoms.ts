@@ -12,8 +12,8 @@ import {
   TASKS_KEY,
 } from '@calendar/db/keys';
 import type { BackendClient, BackendPayload, BackendSuccess } from '@calendar/core';
-import { Context, Effect, Layer } from 'effect';
-import { Atom, AsyncResult, Reactivity, type AtomRegistry } from 'effect/reactivity';
+import { Cause, Context, Effect, Exit, Layer } from 'effect';
+import { Atom, AsyncResult, AtomRegistry, Reactivity } from 'effect/reactivity';
 
 /** The BackendClient as a service, so atom effects can yield it. */
 export class AppBackend extends Context.Service<AppBackend, BackendClient>()(
@@ -63,7 +63,7 @@ export interface BackendAtoms {
   readonly locationGeo: ReturnType<typeof buildAtoms>['locationGeo'];
   readonly mapSnapshot: ReturnType<typeof buildAtoms>['mapSnapshot'];
   readonly mirrors: ReturnType<typeof buildAtoms>['mirrors'];
-  readonly mutations: ReturnType<typeof buildAtoms>['mutations'];
+  readonly mutationCall: ReturnType<typeof buildAtoms>['mutationCall'];
   readonly overdueTasks: ReturnType<typeof buildAtoms>['overdueTasks'];
   readonly pendingOps: ReturnType<typeof buildAtoms>['pendingOps'];
   readonly placesSearch: ReturnType<typeof buildAtoms>['placesSearch'];
@@ -144,7 +144,6 @@ const MUTATION_REACTIVITY = {
 } satisfies Partial<Record<keyof BackendClient, ReadonlyArray<string>>>;
 
 export type MutationName = keyof typeof MUTATION_REACTIVITY;
-const mutationNames = Object.keys(MUTATION_REACTIVITY) as ReadonlyArray<MutationName>;
 
 const buildAtoms = (client: BackendClient) => {
   const runtime = Atom.runtime(Layer.succeed(AppBackend, client));
@@ -402,9 +401,14 @@ const buildAtoms = (client: BackendClient) => {
       { reactivityKeys },
     );
 
-  const mutations = Object.fromEntries(
-    mutationNames.map((name) => [name, mutation(name, MUTATION_REACTIVITY[name])]),
-  ) as { [M in MutationName]: ReturnType<typeof mutation<M>> };
+  /**
+   * A fresh fn atom for one call of a mutation (`runMutation`). One shared
+   * atom per mutation ran its calls "latest wins": a second call while the
+   * first was still running interrupted it — a quick second drag could drop
+   * the first write — and both callers read the second one's result.
+   */
+  const mutationCall = <M extends MutationName>(name: M) =>
+    mutation(name, MUTATION_REACTIVITY[name]);
 
   /** The runtime's own Reactivity — the bridge target for backend keys. */
   const reactivityAccessor = runtime.atom(
@@ -443,7 +447,7 @@ const buildAtoms = (client: BackendClient) => {
     locationGeo,
     mapSnapshot,
     mirrors,
-    mutations,
+    mutationCall,
     overdueTasks,
     pendingOps,
     placesSearch,
@@ -487,3 +491,26 @@ const boundedAtomCache = <A>(make: (key: string) => A, limit = ATOM_CACHE_LIMIT)
 };
 
 export const makeBackendAtoms = (client: BackendClient): BackendAtoms => buildAtoms(client);
+
+/**
+ * Runs one call of a backend mutation on an atom of its own and resolves
+ * with that call's result (or throws its failure). Concurrent calls of the
+ * same mutation run side by side, each to its own end.
+ */
+export const runMutation = async <M extends MutationName>(
+  registry: AtomRegistry.AtomRegistry,
+  atoms: Pick<BackendAtoms, 'mutationCall'>,
+  name: M,
+  payload: BackendPayload<M>,
+): Promise<BackendSuccess<M>> => {
+  const atom = atoms.mutationCall(name);
+  registry.set(atom, payload as never);
+  const result: Effect.Effect<BackendSuccess<M>, unknown> = AtomRegistry.getResult(registry, atom, {
+    suspendOnWaiting: true,
+  });
+  const exit = await Effect.runPromiseExit(result);
+  if (Exit.isSuccess(exit)) {
+    return exit.value;
+  }
+  throw Cause.squash(exit.cause);
+};

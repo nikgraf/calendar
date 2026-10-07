@@ -96,6 +96,20 @@ describe('mapGcalEvent', () => {
     ).toBeNull();
   });
 
+  it('reads a malformed updated as the sync time instead of throwing', () => {
+    expect(
+      mapGcalEvent(
+        {
+          end: { dateTime: '2026-07-02T13:00:00Z' },
+          id: 'odd',
+          start: { dateTime: '2026-07-02T12:00:00Z' },
+          updated: 'yesterday-ish',
+        },
+        { accountId: 'acc-1', calendarId: 'cal-1', defaultTimeZone: 'UTC', syncedAt: 42 },
+      )?.updatedAt,
+    ).toBe(42);
+  });
+
   it('returns null for tombstones without times', () => {
     expect(mapGcalEvent({ id: 'gone', status: 'cancelled' }, context)).toBeNull();
   });

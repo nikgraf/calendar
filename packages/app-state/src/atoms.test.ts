@@ -9,7 +9,7 @@ import { ACCOUNTS_KEY } from '@calendar/db/keys';
 import { Effect } from 'effect';
 import { AsyncResult, type Atom, AtomRegistry } from 'effect/reactivity';
 import { describe, expect, it } from 'vitest';
-import { makeBackendAtoms, mapSnapshotKey, rangeKey } from './atoms.ts';
+import { makeBackendAtoms, mapSnapshotKey, rangeKey, runMutation } from './atoms.ts';
 
 const account = new Account({
   contactsEnabled: false,
@@ -160,25 +160,61 @@ describe('backend atoms', () => {
     expect(calls.accounts).toBe(1);
 
     // setCalendarVisible invalidates CALENDARS_KEY + EVENTS_KEY, not accounts.
-    registry.set(atoms.mutations.setCalendarVisible, {
+    const visible = atoms.mutationCall('setCalendarVisible');
+    registry.set(visible, {
       accountId: 'acc-1',
       calendarId: 'cal-1',
       isVisible: false,
     });
     await waitFor(
-      () => registry.get(atoms.mutations.setCalendarVisible),
+      () => registry.get(visible),
       (result) => !AsyncResult.isInitial(result),
     );
     expect(calls.accounts).toBe(1); // untouched — fine-grained keys work
 
     // addAccount invalidates ACCOUNTS_KEY → accounts refetches.
-    registry.set(atoms.mutations.removeAccount, { accountId: 'acc-1' });
+    registry.set(atoms.mutationCall('removeAccount'), { accountId: 'acc-1' });
     await waitFor(
       () => registry.get(atoms.accounts),
       () => calls.accounts >= 2,
     );
     expect(calls.accounts).toBe(2);
     unmount();
+    registry.dispose();
+  });
+
+  it('two quick calls of one mutation both run, each to its own result', async () => {
+    const { client } = makeStubClient();
+    const finished: Array<string> = [];
+    // The first drag's write is the slower one: a second call used to
+    // interrupt it, and both callers read the second's result.
+    const slow: BackendClient = {
+      ...client,
+      previewMove: (params) =>
+        Effect.gen(function* () {
+          yield* Effect.sleep(params.eventId === 'first' ? '30 millis' : '5 millis');
+          finished.push(params.eventId);
+          return {
+            attendees: params.eventId === 'first' ? 1 : 2,
+            emailReminders: 0,
+            meetingLink: false,
+            modifiedOccurrences: 0,
+            unsupportedRuleParts: [],
+          };
+        }),
+    };
+    const atoms = makeBackendAtoms(slow);
+    const registry = AtomRegistry.make();
+    const call = (eventId: string) =>
+      runMutation(registry, atoms, 'previewMove', {
+        accountId: 'acc-1',
+        calendarId: 'cal-1',
+        eventId,
+        target: { accountId: 'acc-1', calendarId: 'cal-2' },
+      });
+    const [first, second] = await Promise.all([call('first'), call('second')]);
+    expect([first.attendees, second.attendees]).toEqual([1, 2]);
+    expect(finished.sort()).toEqual(['first', 'second']);
     registry.dispose();
   });
 
@@ -190,19 +226,20 @@ describe('backend atoms', () => {
     await waitFor(() => registry.get(atoms.eventsInRange(rangeKey(0, 1))), AsyncResult.isSuccess);
     expect(calls.events).toBe(1);
 
-    registry.set(atoms.mutations.setCalendarColor, {
+    const color = atoms.mutationCall('setCalendarColor');
+    registry.set(color, {
       accountId: 'acc-1',
       calendarId: 'cal-1',
       colorHex: '#123456',
     });
     await waitFor(
-      () => registry.get(atoms.mutations.setCalendarColor),
+      () => registry.get(color),
       (result) => !AsyncResult.isInitial(result) && !AsyncResult.isWaiting(result),
     );
     await new Promise((resolve) => setTimeout(resolve, 20));
     expect(calls.events).toBe(1);
 
-    registry.set(atoms.mutations.setCalendarVisible, {
+    registry.set(atoms.mutationCall('setCalendarVisible'), {
       accountId: 'acc-1',
       calendarId: 'cal-1',
       isVisible: false,
