@@ -163,6 +163,13 @@ function CalendarBody({
   const today = useToday(timeZone);
   const overdue = useOverdueTasksStable(today);
   const { completeTask } = useGuardedMutations();
+  const toggleTask = (task: TaskRecord) =>
+    void completeTask({
+      accountId: task.accountId,
+      status: task.status === 'completed' ? 'needsAction' : 'completed',
+      taskId: task.id,
+      taskListId: task.listId,
+    });
   const taskLists = useTaskLists();
   const listColorOf = useListColorLookup();
   const isTaskReadOnly = useTaskReadOnlyLookup();
@@ -244,6 +251,14 @@ function CalendarBody({
   }, [capture, dialogOpen]);
 
   const closePanel = () => setPanel(RAIL);
+  /** The event open in the panel: its block carries the grid's one outline. */
+  const selectedEvent =
+    panel.kind === 'inspector'
+      ? panel.event
+      : panel.kind === 'editEvent'
+        ? panel.seed.event
+        : undefined;
+  const selectedKey = selectedEvent ? `${selectedEvent.calendarId}:${selectedEvent.id}` : undefined;
   const panelKey =
     panel.kind === 'inspector'
       ? `inspect:${panel.event.id}`
@@ -291,11 +306,16 @@ function CalendarBody({
               colorOf={colorOf}
               events={events}
               listColorOf={listColorOf}
+              onBirthdayClick={(birthday) => setViewBirthday(birthday)}
+              onEventClick={(event) => setPanel({ event, kind: 'inspector' })}
               onSelectDay={(date) => {
                 setFocused(date);
                 changeView('day');
               }}
+              onTaskClick={(task) => setPanel({ kind: 'editTask', task })}
+              onToggleTask={toggleTask}
               overdue={overdue}
+              selectedKey={selectedKey}
               tasks={tasks}
               timeZone={timeZone}
               today={today}
@@ -316,16 +336,10 @@ function CalendarBody({
               onSlotClick={(date, hour) => openEditor({ initialDate: date, initialHour: hour })}
               onSlotDrag={(date, times) => openEditor({ initialDate: date, initialTimes: times })}
               onTaskClick={(task) => setPanel({ kind: 'editTask', task })}
-              onToggleTask={(task) =>
-                void completeTask({
-                  accountId: task.accountId,
-                  status: task.status === 'completed' ? 'needsAction' : 'completed',
-                  taskId: task.id,
-                  taskListId: task.listId,
-                })
-              }
+              onToggleTask={toggleTask}
               overdue={overdue}
               secondaryZones={secondaryZones}
+              selectedKey={selectedKey}
               tasks={tasks}
               timeZone={timeZone}
               today={today}

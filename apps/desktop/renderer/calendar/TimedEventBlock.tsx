@@ -5,7 +5,8 @@ import {
   type PositionedBox,
 } from '@calendar/core';
 import { useCallback, useSyncExternalStore } from 'react';
-import { chipTextColor } from './colors.ts';
+import { RepeatIcon, VideoIcon } from '../ui/icons.tsx';
+import { eventLook, stripes, useTint } from './tint.ts';
 import type { useEventDrag } from './useEventDrag.ts';
 
 const MINUTE_MS = 60 * 1000;
@@ -14,7 +15,8 @@ const MINUTE_MS = 60 * 1000;
  * A timed event in a day column, with its live drag/resize preview. Only
  * the block being dragged subscribes to the pointer offsets (the snapshot
  * for every other block is a stable null), so a pointermove re-renders one
- * block, not the grid.
+ * block, not the grid. Drawn in the calendar's tint, borderless; the
+ * selected one (open in the panel) carries the one outline.
  */
 export function TimedEventBlock({
   box,
@@ -25,6 +27,7 @@ export function TimedEventBlock({
   onEventClick,
   readOnly,
   secondaryZones,
+  selected,
   timeZone,
 }: {
   box: PositionedBox;
@@ -37,8 +40,12 @@ export function TimedEventBlock({
   readOnly: boolean;
   /** The non-primary zones; a tall block adds their start–end as a third line. */
   secondaryZones: ReadonlyArray<string>;
+  /** Open in the side panel (inspector or editor). */
+  selected: boolean;
   timeZone: string;
 }) {
+  const tint = useTint()(color);
+  const look = eventLook(event);
   const mine = drag.preview?.itemKey === box.id;
   const { getDeltas, subscribeDeltas } = drag;
   const subscribe = useCallback(
@@ -67,9 +74,13 @@ export function TimedEventBlock({
   return (
     <div
       aria-label={`${event.title}, ${formatClockTime(event.startUtc, timeZone)} to ${formatClockTime(event.endUtc, timeZone)}`}
-      className={`absolute touch-none overflow-hidden rounded-md px-1.5 py-0.5 outline-none select-none focus-visible:ring-2 focus-visible:ring-focus ${
+      className={`absolute touch-none overflow-hidden rounded-event px-1.5 py-0.5 outline-none select-none focus-visible:ring-2 focus-visible:ring-focus ${
         draggable ? 'cursor-grab' : 'cursor-pointer'
-      } ${dragging ? 'z-20 opacity-90 shadow-lg ring-2 ring-white/60' : ''}`}
+      } ${selected ? 'ring-2 ring-primary' : ''} ${look.declined ? 'opacity-60' : ''} ${
+        dragging ? 'z-20 opacity-90 shadow-lg' : ''
+      }`}
+      data-color={color}
+      data-selected={selected ? '' : undefined}
       key={box.id}
       onKeyDown={(keyEvent) => {
         if (keyEvent.key === 'Enter' || keyEvent.key === ' ') {
@@ -84,8 +95,9 @@ export function TimedEventBlock({
       onPointerUp={drag.onPointerUp}
       role="button"
       style={{
-        backgroundColor: color,
-        color: chipTextColor(color),
+        backgroundColor: tint.fill,
+        backgroundImage: look.tentative ? stripes(tint.edge) : undefined,
+        color: tint.text,
         height: `max(${(heightMinutes / dayMinutes) * 100}%, 14px)`,
         left: `calc(${(box.left + deltaDays) * 100}% + 1px)`,
         top: `${(topMinutes / dayMinutes) * 100}%`,
@@ -94,7 +106,13 @@ export function TimedEventBlock({
       tabIndex={0}
       title={`${event.title} · ${formatClockTime(event.startUtc, timeZone)}`}
     >
-      <p className="truncate text-xs leading-4 font-medium">{event.title}</p>
+      <p
+        className={`flex items-center gap-1 text-xs leading-4 font-medium ${look.declined ? 'line-through' : ''}`}
+      >
+        <span className="min-w-0 flex-1 truncate">{event.title}</span>
+        {look.repeats ? <RepeatIcon className="shrink-0 opacity-70" size={10} /> : null}
+        {look.hasMeeting ? <VideoIcon className="shrink-0 opacity-70" size={10} /> : null}
+      </p>
       {compact ? null : (
         <p className="truncate text-[10px] opacity-80">
           {formatClockTime(dragging ? previewStart : event.startUtc, timeZone)} –{' '}

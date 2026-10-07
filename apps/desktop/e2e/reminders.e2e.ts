@@ -311,7 +311,7 @@ describe('Apple Reminders UI', () => {
     ).toBe(1);
     const facts = await cdp.eval<string>(`(() => {
       const chip = document.querySelector('[data-overdue][title^="Overdue call"]');
-      const todayCell = document.querySelector('.bg-red-500')?.closest('.h-10');
+      const todayCell = document.querySelector('[data-testid="today-header"]');
       const chipRect = chip.getBoundingClientRect();
       const cellRect = todayCell.getBoundingClientRect();
       return JSON.stringify({

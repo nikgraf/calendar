@@ -36,7 +36,8 @@ import { useWheelPan } from './useWheelPan.ts';
 
 const HOUR_HEIGHT = 48;
 /** Hour lines as one repeating gradient (neutral-100), not 24 divs per column. */
-const HOUR_LINES = `repeating-linear-gradient(to bottom, #f5f5f5 0, #f5f5f5 1px, transparent 1px, transparent ${HOUR_HEIGHT}px)`;
+/** One hairline per hour, in the theme's border color so the dark grid stays quiet. */
+const HOUR_LINES = `repeating-linear-gradient(to bottom, var(--border) 0, var(--border) 1px, transparent 1px, transparent ${HOUR_HEIGHT}px)`;
 
 /** The occurrence date keys a birthday: one person recurs every year the strip crosses. */
 const birthdayKey = (birthday: BirthdayOccurrence): string =>
@@ -97,6 +98,7 @@ export function WeekView({
   onToggleTask,
   overdue,
   secondaryZones,
+  selectedKey,
   tasks,
   timeZone,
   today: todayIso,
@@ -123,6 +125,8 @@ export function WeekView({
   overdue: ReadonlyArray<TaskRecord>;
   /** The non-primary zones: a second line under each hour label and on tall event blocks. */
   secondaryZones: ReadonlyArray<string>;
+  /** `calendarId:id` of the event open in the side panel: its block gets the outline. */
+  selectedKey: string | undefined;
   tasks: ReadonlyArray<TaskRecord>;
   timeZone: string;
   /** Today's ISO date (rolls at local midnight). */
@@ -335,6 +339,7 @@ export function WeekView({
         placed={capped?.visible ?? allDayPlaced}
         rowCount={capped?.rowCount ?? rowCount}
         scrollbarWidth={scrollbarWidth}
+        selectedKey={selectedKey}
         stripLength={strip.length}
         stripStyle={stripStyle}
         taskById={taskById}
@@ -342,7 +347,7 @@ export function WeekView({
       />
 
       {/* Timed grid */}
-      <div className="min-h-0 flex-1 overflow-y-scroll" ref={scrollRef}>
+      <div className="min-h-0 flex-1 overflow-y-scroll" data-testid="week-scroller" ref={scrollRef}>
         <div className="flex" style={{ height: 24 * HOUR_HEIGHT }}>
           {/* Hour gutter */}
           <div className={`relative shrink-0 ${gutterClassName}`}>
@@ -372,6 +377,7 @@ export function WeekView({
           <div className="min-w-0 flex-1 overflow-hidden" ref={viewportRef}>
             <div
               className="relative grid h-full"
+              data-testid="week-grid"
               ref={gridRef}
               style={{
                 ...stripStyle,
@@ -459,6 +465,7 @@ export function WeekView({
                           onEventClick={onEventClick}
                           readOnly={isEventReadOnly(event)}
                           secondaryZones={secondaryZones}
+                          selected={selectedKey === box.id}
                           timeZone={timeZone}
                         />
                       );
@@ -468,7 +475,7 @@ export function WeekView({
 
                     {drawn ? (
                       <div
-                        className="pointer-events-none absolute inset-x-1 z-10 overflow-hidden rounded-md border border-primary bg-primary/15 px-1 text-[11px] leading-4 font-medium text-on-selection"
+                        className="pointer-events-none absolute inset-x-1 z-10 overflow-hidden rounded-event bg-selection px-1 text-[11px] leading-4 font-medium text-on-selection ring-2 ring-primary ring-inset"
                         data-testid="slot-selection"
                         style={{
                           height: ((drawn.endMinute - drawn.startMinute) / 60) * HOUR_HEIGHT,

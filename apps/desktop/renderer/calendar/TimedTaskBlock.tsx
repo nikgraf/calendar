@@ -52,9 +52,9 @@ export function TimedTaskBlock({
   return (
     <div
       aria-label={`${task.title}, due ${dueLabel}${repeats ? ', repeats' : ''}`}
-      className={`absolute flex h-[22px] touch-none items-center gap-1 overflow-hidden rounded border border-hairline-strong bg-surface-subtle px-1 text-xs text-ink-secondary outline-none select-none focus-visible:ring-2 focus-visible:ring-focus ${
+      className={`absolute flex h-[22px] touch-none items-center gap-1 overflow-hidden rounded-event bg-fill px-1 text-xs text-ink-secondary outline-none select-none focus-visible:ring-2 focus-visible:ring-focus ${
         readOnly ? 'cursor-pointer' : 'cursor-grab'
-      } ${done ? 'opacity-50' : ''} ${dragging ? 'z-20 shadow-lg ring-2 ring-white/60' : ''}`}
+      } ${done ? 'opacity-50' : ''} ${dragging ? 'z-20 shadow-lg' : ''}`}
       data-testid={`timed-task-${task.id}`}
       onKeyDown={(event) => {
         if (event.target === event.currentTarget && (event.key === 'Enter' || event.key === ' ')) {
@@ -71,7 +71,6 @@ export function TimedTaskBlock({
       onPointerUp={drag.onPointerUp}
       role="button"
       style={{
-        ...(listColor ? { borderLeftColor: listColor, borderLeftWidth: 3 } : {}),
         left: `calc(${(box.left + (dragging?.deltaDays ?? 0)) * 100}% + 1px)`,
         top: `calc(${box.top * 100}% + ${((dragging?.deltaMinutes ?? 0) / 60) * hourHeight}px)`,
         width: `calc(${box.width * 100}% - 3px)`,
@@ -91,6 +90,13 @@ export function TimedTaskBlock({
       >
         {done ? '☑' : '☐'}
       </button>
+      {listColor ? (
+        <span
+          aria-hidden
+          className="size-1.5 shrink-0 rounded-full"
+          style={{ backgroundColor: listColor }}
+        />
+      ) : null}
       <span className={`truncate ${done ? 'line-through' : ''}`}>{label}</span>
       {repeats ? (
         <span aria-hidden className="shrink-0 text-ink-secondary">

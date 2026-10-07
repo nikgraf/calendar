@@ -300,8 +300,15 @@ describe('calendar desktop e2e', () => {
       // seeded events, which lead the cell and push the task into "+N more".
       await cdp.waitFor(`document.body.textContent.includes('Mon')`);
       await cdp.waitFor(
-        `[...document.querySelectorAll('[data-testid="month-grid"] button')].some((cell) => (cell.getAttribute('aria-label') ?? '').includes('1 task'))`,
+        `[...document.querySelectorAll('[data-testid="month-grid"] [role="button"]')].some((cell) => (cell.getAttribute('aria-label') ?? '').includes('1 task'))`,
       );
+      // A chip is a real target: it opens its event's inspector, not the day.
+      await cdp.openInspector('[data-testid="month-grid"] [data-color]');
+      expect(
+        await cdp.eval<boolean>(`!!document.querySelector('[data-testid="month-grid"]')`),
+      ).toBe(true);
+      await cdp.pressEscape();
+      await cdp.waitFor(`!document.querySelector('[data-testid="inspector"]')`);
     } finally {
       await cdp.clickTestId('view-day');
     }
@@ -688,9 +695,7 @@ describe('calendar desktop e2e', () => {
     // hit-test landed on the line and the resize test timed out).
     const handle = await cdp.locate('[title^="Gym session"]', { atBottom: true });
     const reachesEvent = await cdp.eval<boolean>(`(() => {
-      const line = [...document.querySelectorAll('.border-red-500')].find((el) =>
-        el.className.includes('border-t-2'),
-      );
+      const line = document.querySelector('[data-testid="now-line"]');
       const column = line.parentElement;
       line.style.top = ${handle.y} - column.getBoundingClientRect().top - 1 + 'px';
       const hit = document.elementFromPoint(${handle.x}, ${handle.y});
@@ -1096,7 +1101,7 @@ describe('calendar desktop e2e', () => {
     );
     const inTodayColumn = await cdp.eval<boolean>(`(() => {
       const chip = document.querySelector('[data-overdue][title^="Old chore"]');
-      const cell = document.querySelector('.bg-red-500')?.closest('.h-10');
+      const cell = document.querySelector('[data-testid="today-header"]');
       const chipRect = chip.getBoundingClientRect();
       const cellRect = cell.getBoundingClientRect();
       return chipRect.left >= cellRect.left - 1 && chipRect.right <= cellRect.right + 1;
@@ -1122,7 +1127,7 @@ describe('calendar desktop e2e', () => {
     ).toBe(1);
     const placement = await cdp.eval<{ inToday: boolean; overdue: boolean }>(`(() => {
       const chip = document.querySelector('[data-testid="all-day-task-task-undated"]');
-      const cell = document.querySelector('.bg-red-500')?.closest('.h-10');
+      const cell = document.querySelector('[data-testid="today-header"]');
       const chipRect = chip.getBoundingClientRect();
       const cellRect = cell.getBoundingClientRect();
       return {
@@ -1198,7 +1203,7 @@ describe('calendar desktop e2e', () => {
     expect(colorOps[0]!.colorHex).toBe('#16a765');
     // The event chip repaints from the calendars atom.
     await cdp.waitFor(
-      `(() => { const el = document.querySelector('[title^="Gym session"]'); return el && getComputedStyle(el).backgroundColor === 'rgb(22, 167, 101)'; })()`,
+      `(() => { const el = document.querySelector('[title^="Gym session"]'); return el && el.dataset.color === '#16a765'; })()`,
     );
   });
 

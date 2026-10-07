@@ -1,5 +1,4 @@
 import {
-  BIRTHDAY_ACCENT,
   type BirthdayOccurrence,
   birthdayChipLabel,
   type EventRecord,
@@ -11,7 +10,9 @@ import {
   taskRepeats,
 } from '@calendar/core';
 import { useCallback, useSyncExternalStore, type CSSProperties, type RefObject } from 'react';
-import { chipTextColor, type ColorLookup } from './colors.ts';
+import { RepeatIcon } from '../ui/icons.tsx';
+import type { ColorLookup } from './colors.ts';
+import { eventLook, stripes, useTint } from './tint.ts';
 import { useDropTarget, type useEventDrag } from './useEventDrag.ts';
 
 /** One column's horizontal placement, as the strip's percentage geometry. */
@@ -74,10 +75,10 @@ function AllDayTaskChip({
   return (
     <div
       aria-label={facts.length > 0 ? `${task.title}, ${facts.join(', ')}` : undefined}
-      className={`absolute flex touch-none items-center gap-1 truncate rounded border border-hairline-strong bg-surface-subtle px-1 text-xs leading-5 outline-none select-none focus-visible:ring-2 focus-visible:ring-focus ${
+      className={`absolute flex touch-none items-center gap-1 truncate rounded-event bg-fill px-1 text-xs leading-5 outline-none select-none focus-visible:ring-2 focus-visible:ring-focus ${
         readOnly ? 'cursor-pointer' : 'cursor-grab'
-      } ${overdue ? 'text-red-600' : 'text-ink-secondary'} ${done ? 'opacity-50' : ''} ${
-        dragging ? 'z-20 shadow-lg ring-2 ring-white/60' : ''
+      } ${overdue ? 'text-danger' : 'text-ink-secondary'} ${done ? 'opacity-50' : ''} ${
+        dragging ? 'z-20 shadow-lg' : ''
       }`}
       data-overdue={overdue ? '' : undefined}
       data-testid={`all-day-task-${task.id}`}
@@ -101,9 +102,6 @@ function AllDayTaskChip({
       onPointerUp={drag.onPointerUp}
       role="button"
       style={{
-        // Reminders lists have colors; a left accent tells them apart from
-        // Google tasks without recoloring.
-        ...(listColor ? { borderLeftColor: listColor, borderLeftWidth: 3 } : {}),
         ...columnStyle(span.startDayIndex + shift, span.endDayIndex + shift, stripLength),
         top: span.row * 24 + 4,
       }}
@@ -122,6 +120,14 @@ function AllDayTaskChip({
       >
         {done ? '☑' : '☐'}
       </button>
+      {/* Reminders lists have colors; a dot tells them apart from Google tasks without recoloring. */}
+      {listColor ? (
+        <span
+          aria-hidden
+          className="size-1.5 shrink-0 rounded-full"
+          style={{ backgroundColor: listColor }}
+        />
+      ) : null}
       <span className={`truncate ${done ? 'line-through' : ''}`}>{label}</span>
     </div>
   );
@@ -176,6 +182,7 @@ export function AllDayLane({
   placed,
   rowCount,
   scrollbarWidth,
+  selectedKey,
   stripLength,
   stripStyle,
   taskById,
@@ -206,11 +213,14 @@ export function AllDayLane({
   placed: ReadonlyArray<PlacedSpan>;
   rowCount: number;
   scrollbarWidth: number;
+  /** The all-day event open in the side panel, as `calendarId:id`. */
+  selectedKey: string | undefined;
   stripLength: number;
   stripStyle: CSSProperties;
   taskById: ReadonlyMap<string, TaskRecord>;
   today: string;
 }) {
+  const tintOf = useTint();
   return (
     <div
       className="flex shrink-0 border-b border-hairline bg-surface"
@@ -282,15 +292,12 @@ export function AllDayLane({
               const label = birthdayChipLabel(birthday);
               return (
                 <div
-                  className="absolute cursor-pointer truncate rounded border border-hairline-strong bg-surface-subtle px-1 text-xs leading-5 text-ink-secondary"
+                  // Birthdays carry no calendar color: the brand's blush says "not an event".
+                  className="absolute cursor-pointer truncate rounded-event bg-event-blush px-1.5 text-xs leading-5 text-on-event-blush"
                   data-birthday={birthday.record.id}
                   key={span.id}
                   onClick={() => onBirthdayClick(birthday)}
                   style={{
-                    // Birthdays carry no calendar color: the neutral task
-                    // treatment with a fixed accent says "not an event".
-                    borderLeftColor: BIRTHDAY_ACCENT,
-                    borderLeftWidth: 3,
                     left: `calc(${(span.startDayIndex / stripLength) * 100}% + 2px)`,
                     top: span.row * 24 + 4,
                     width: `calc(${((span.endDayIndex - span.startDayIndex) / stripLength) * 100}% - 4px)`,
@@ -303,21 +310,31 @@ export function AllDayLane({
             }
             const event = allDayById.get(span.id)!;
             const color = colorOf(event);
+            const tint = tintOf(color);
+            const look = eventLook(event);
+            const selected = selectedKey === `${event.calendarId}:${event.id}`;
             return (
               <div
-                className="absolute cursor-pointer truncate rounded px-1.5 text-xs leading-5"
+                className={`absolute flex cursor-pointer items-center gap-1 truncate rounded-event px-1.5 text-xs leading-5 ${
+                  selected ? 'ring-2 ring-primary' : ''
+                } ${look.declined ? 'opacity-60' : ''}`}
+                data-color={color}
                 key={span.id}
                 onClick={() => onEventClick(event)}
                 style={{
-                  backgroundColor: color,
-                  color: chipTextColor(color),
+                  backgroundColor: tint.fill,
+                  backgroundImage: look.tentative ? stripes(tint.edge) : undefined,
+                  color: tint.text,
                   left: `calc(${(span.startDayIndex / stripLength) * 100}% + 2px)`,
                   top: span.row * 24 + 4,
                   width: `calc(${((span.endDayIndex - span.startDayIndex) / stripLength) * 100}% - 4px)`,
                 }}
                 title={event.title}
               >
-                {event.title}
+                <span className={`truncate ${look.declined ? 'line-through' : ''}`}>
+                  {event.title}
+                </span>
+                {look.repeats ? <RepeatIcon className="shrink-0 opacity-70" size={10} /> : null}
               </div>
             );
           })}
