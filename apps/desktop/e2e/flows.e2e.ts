@@ -513,9 +513,7 @@ describe('calendar desktop e2e', () => {
 
   it('edits an event title through the editor', async () => {
     const { cdp } = app;
-    const block = await cdp.locate('[title^="Coffee chat"]');
-    await cdp.click(block.x, block.y);
-    await cdp.waitFor(`document.body.textContent.includes('Edit event')`);
+    await cdp.openEditor('[title^="Coffee chat"]');
     await cdp.eval(`(() => {
       const input = document.querySelector('input[placeholder="Title"]');
       const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
@@ -764,6 +762,10 @@ describe('calendar desktop e2e', () => {
     // First matching block is the override created by the drag test.
     await clickNth('[title^="Daily sync"]', 0);
     await cdp.waitFor(`document.body.textContent.includes('This and following')`);
+    await cdp.clickTestId('inspector-edit');
+    await cdp.waitFor(
+      `document.querySelector('[data-testid="editor-title"]')?.textContent === 'Edit event'`,
+    );
     await setEditorTitle('Daily sync (solo)');
     await cdp.clickButtonWithText('Save');
 
@@ -779,6 +781,10 @@ describe('calendar desktop e2e', () => {
     // Second matching block is a generated (non-override) instance.
     await clickNth('[title^="Daily sync"]', 1);
     await cdp.waitFor(`document.body.textContent.includes('All events')`);
+    await cdp.clickTestId('inspector-edit');
+    await cdp.waitFor(
+      `document.querySelector('[data-testid="editor-title"]')?.textContent === 'Edit event'`,
+    );
     await cdp.clickButtonWithText('All events');
     await setEditorTitle('Daily standup');
     await cdp.clickButtonWithText('Save');
@@ -803,6 +809,10 @@ describe('calendar desktop e2e', () => {
     // rename reached it); the second is the next generated instance.
     await clickNth('[title^="Daily standup"]', 1);
     await cdp.waitFor(`document.body.textContent.includes('This and following')`);
+    await cdp.clickTestId('inspector-edit');
+    await cdp.waitFor(
+      `document.querySelector('[data-testid="editor-title"]')?.textContent === 'Edit event'`,
+    );
     await cdp.clickButtonWithText('This and following');
     await setEditorTitle('Daily standup v2');
     await cdp.clickButtonWithText('Save');
@@ -858,9 +868,7 @@ describe('calendar desktop e2e', () => {
 
   it('deletes an event through the editor, after asking', async () => {
     const { cdp } = app;
-    const block = await cdp.locate('[title^="Coffee chat (moved)"]');
-    await cdp.click(block.x, block.y);
-    await cdp.waitFor(`document.body.textContent.includes('Edit event')`);
+    await cdp.openEditor('[title^="Coffee chat (moved)"]');
     await cdp.clickButtonWithText('Delete');
     // Asked first, naming what goes; Keep leaves it alone.
     const question = await cdp.waitFor<string>(
@@ -986,7 +994,7 @@ describe('calendar desktop e2e', () => {
       updated!.attendees!.find((attendee) => attendee.email === 'organizer@example.com')!
         .responseStatus,
     ).toBe('accepted');
-    await cdp.clickButtonWithText('Cancel');
+    await cdp.clickTestId('inspector-close');
   });
 
   it('creates, renames, and deletes a task through the editor', async () => {
@@ -1348,6 +1356,48 @@ describe('calendar desktop e2e', () => {
     );
     expect(moved?.startUtc).toBe(expected);
     expect(await cdp.eval<boolean>(`document.body.textContent.includes('Edit event')`)).toBe(false);
+  });
+
+  it('edits notes through the editor and reads them back in the inspector', async () => {
+    const { cdp } = app;
+    await cdp.openEditor('[title^="Gym session"]');
+    await cdp.eval(`(() => {
+      const input = document.querySelector('[data-testid="editor-notes"]');
+      const setter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value').set;
+      setter.call(input, 'Bring the resistance bands');
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    })()`);
+    await cdp.clickButtonWithText('Save');
+    const updated = await waitForEvent(
+      (event) =>
+        event.title === 'Gym session' && event.description === 'Bring the resistance bands',
+    );
+    expect(updated).toBeDefined();
+    // The inspector shows the notes read-first; Escape leaves it.
+    await cdp.openInspector('[title^="Gym session"]');
+    await cdp.waitFor(
+      `document.querySelector('[data-testid="inspector-notes"]')?.textContent === 'Bring the resistance bands'`,
+    );
+    await cdp.pressEscape();
+    await cdp.waitFor(`!document.querySelector('[data-testid="inspector"]')`);
+  });
+
+  it('adds an undated task from the panel', async () => {
+    const { cdp } = app;
+    await cdp.type('[data-testid="panel-add-task"]', 'Sharpen the pencils');
+    await cdp.eval(`document.querySelector('[data-testid="panel-add-task"]').form.requestSubmit()`);
+    await expect
+      .poll(async () => {
+        const task = (await readTasks(app.userDataDir)).find(
+          (row) => row.title === 'Sharpen the pencils',
+        );
+        return task && { dueDate: task.dueDate ?? null, title: task.title };
+      })
+      .toEqual({ dueDate: null, title: 'Sharpen the pencils' });
+    // It lands in the inbox's "No date" group right away.
+    await cdp.waitFor(
+      `document.querySelector('[data-testid="task-inbox"]')?.textContent.includes('Sharpen the pencils')`,
+    );
   });
 });
 

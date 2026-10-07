@@ -6,7 +6,9 @@ import {
   type useTaskEditorModel,
 } from '@calendar/app-state';
 import type { TaskRecord } from '@calendar/core';
+import { Button } from '../ui/Button.tsx';
 import { MoveConfirm } from './MoveConfirm.tsx';
+import { TaskDoneToggle } from './TaskDoneToggle.tsx';
 import { NoDueDate } from './NoDueDate.tsx';
 import { RepeatRuleFields } from './RepeatRuleFields.tsx';
 import { FIELD_CLASS, LABEL_CLASS } from '../ui/fieldStyles.ts';
@@ -32,13 +34,13 @@ export function ReminderEditorForm({
   return (
     <fieldset className="flex flex-col gap-3" disabled={taskModel.readOnly}>
       {taskModel.error ? (
-        <p className="select-text rounded-lg bg-red-50 p-2 text-sm text-red-700">
+        <p className="select-text rounded-control bg-fill p-2 text-sm text-danger">
           {taskModel.error}
         </p>
       ) : null}
       {taskModel.readOnly ? (
         <p
-          className="rounded-lg bg-fill p-2 text-sm text-ink-secondary"
+          className="rounded-control bg-fill p-2 text-sm text-ink-secondary"
           data-testid="task-read-only"
         >
           This list is read-only in Reminders.
@@ -51,6 +53,7 @@ export function ReminderEditorForm({
         placeholder="Title"
         value={taskModel.title}
       />
+      {task ? <TaskDoneToggle task={task} /> : null}
       <TaskListSelect disabled={Boolean(task) && !taskModel.canMoveList} taskModel={taskModel} />
       {taskModel.dated ? (
         <div className="flex gap-3">
@@ -156,35 +159,31 @@ export function ReminderEditorForm({
       <MoveConfirm moveConfirmation={moveConfirmation} />
       <div className="mt-2 flex items-center justify-between">
         {task && !taskModel.readOnly ? (
-          <button
+          <Button
             aria-busy={taskModel.busy}
-            className={`text-sm text-red-600 hover:underline ${taskModel.busy ? 'opacity-40' : ''}`}
             onClick={() => void taskModel.remove()}
-            type="button"
+            size="sm"
+            variant="danger"
           >
             Delete
-          </button>
+          </Button>
         ) : (
           <span />
         )}
         <div className="flex gap-2">
-          <button
-            className="rounded-lg px-3 py-1.5 text-sm hover:bg-fill"
-            onClick={onClose}
-            type="button"
-          >
+          <Button onClick={onClose} size="sm" variant="ghost">
             Cancel
-          </button>
+          </Button>
           {taskModel.readOnly ? null : (
-            <button
+            <Button
               aria-busy={taskModel.busy}
-              className={`rounded-lg bg-primary px-4 py-1.5 text-sm font-medium text-on-primary hover:bg-primary-hover disabled:opacity-40 ${taskModel.busy ? 'opacity-40' : ''}`}
               disabled={moveConfirmation.pending !== null}
               onClick={() => void taskModel.save()}
-              type="button"
+              size="sm"
+              variant="primary"
             >
               Save
-            </button>
+            </Button>
           )}
         </div>
       </div>

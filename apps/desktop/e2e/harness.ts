@@ -635,6 +635,22 @@ export class Cdp {
     await this.eval(`${yes}.click()`);
   }
 
+  /** Clicks an event on the grid and waits for its inspector in the side panel. */
+  async openInspector(selector: string): Promise<void> {
+    const block = await this.locate(selector);
+    await this.click(block.x, block.y);
+    await this.waitFor<boolean>(`!!document.querySelector('[data-testid="inspector"]')`);
+  }
+
+  /** Opens an event's editor: the grid click, then the inspector's Edit button. */
+  async openEditor(selector: string): Promise<void> {
+    await this.openInspector(selector);
+    await this.clickTestId('inspector-edit');
+    await this.waitFor<boolean>(
+      `document.querySelector('[data-testid="editor-title"]')?.textContent === 'Edit event'`,
+    );
+  }
+
   /** Clicks the element carrying a `data-testid`, scrolled into view and hit-tested. */
   async clickTestId(id: string): Promise<void> {
     const target = await this.locate(`[data-testid=${JSON.stringify(id)}]`);

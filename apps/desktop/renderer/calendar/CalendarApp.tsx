@@ -1,5 +1,6 @@
 import {
   type BirthdayOccurrence,
+  type EventRecord,
   PAN_BUFFER_DAYS,
   type TaskRecord,
   Temporal,
@@ -29,17 +30,43 @@ import {
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { desktopLanguageModel } from '../ai/desktopModel.ts';
 import { desktopTextRecognizer } from '../ai/desktopTextRecognizer.ts';
-import { isDialogOpen } from '../Dialog.tsx';
-import { EventEditor, type EditorSeed } from './EventEditor.tsx';
+import { Dialog, isDialogOpen } from '../Dialog.tsx';
+import { BirthdayDetail } from './BirthdayDetail.tsx';
 import { CaptureDialog } from './CaptureDialog.tsx';
 import { captureSourceOf, isCapturable, readPaste } from './captureClipboard.ts';
 import { makeColorLookup } from './colors.ts';
 import { MonthView } from './MonthView.tsx';
+import { EditorPanel, type EditorSeed } from './panel/EditorPanel.tsx';
+import { EventInspector } from './panel/EventInspector.tsx';
+import { TodayRail } from './panel/TodayRail.tsx';
 import { Sidebar } from './sidebar/Sidebar.tsx';
 import { Toolbar } from './Toolbar.tsx';
 import { WeekView } from './WeekView.tsx';
 
 type MainView = 'day' | 'month' | 'week';
+
+/**
+ * What the side panel shows: the Today rail at rest, an event's inspector
+ * after a click on the grid, or an inline editor (Edit, a slot, New, a
+ * task chip, a quick-add phrase).
+ */
+type PanelState =
+  | { readonly kind: 'rail' }
+  | { readonly event: EventRecord; readonly kind: 'inspector' }
+  | {
+      /** The capture row this editor came from, so a save can mark it added. */
+      readonly captureRow?: string | undefined;
+      readonly kind: 'editEvent';
+      readonly mode?: 'task' | undefined;
+      readonly seed: EditorSeed;
+    }
+  | {
+      readonly kind: 'editTask';
+      readonly prefill?: TaskEditorSeed | undefined;
+      readonly task?: TaskRecord | undefined;
+    };
+
+const RAIL: PanelState = { kind: 'rail' };
 
 /** Keys and pastes inside a field belong to the field, not the calendar. */
 const isTyping = (target: EventTarget | null) => {
@@ -100,19 +127,20 @@ function CalendarBody({
     updatePrefs({ lastView: next });
   };
 
-  const [editorSeed, setEditorSeed] = useState<EditorSeed | null>(null);
-  const [editTask, setEditTask] = useState<TaskRecord | null>(null);
-  /** A quick-add phrase understood as a task: the task editor opens with it. */
-  const [taskSeed, setTaskSeed] = useState<TaskEditorSeed | null>(null);
+  const [panel, setPanel] = useState<PanelState>(RAIL);
   const [viewBirthday, setViewBirthday] = useState<BirthdayOccurrence | null>(null);
-  /** The capture row whose editor is open, so a save can mark it added. */
-  const [captureRow, setCaptureRow] = useState<string | null>(null);
   const quickAddRef = useRef<HTMLInputElement>(null);
+  const editing = panel.kind === 'editEvent' || panel.kind === 'editTask';
+  const openEditor = (seed: EditorSeed) => setPanel({ kind: 'editEvent', seed });
 
   // A parsed prefill (quick-add, or a single captured event) opens the
   // editor on its day: the user reviews it before anything is written.
-  const openPrefill = (prefill: EventEditorPrefill) => {
-    setEditorSeed({ initialDate: Temporal.PlainDate.from(prefill.date), prefill });
+  const openPrefill = (prefill: EventEditorPrefill, captureRow?: string) => {
+    setPanel({
+      captureRow,
+      kind: 'editEvent',
+      seed: { initialDate: Temporal.PlainDate.from(prefill.date), prefill },
+    });
   };
   const capture = useCaptureModel({
     model: desktopLanguageModel,
@@ -144,14 +172,24 @@ function CalendarBody({
   const colorOf = useMemo(() => makeColorLookup(calendars), [calendars]);
 
   const captureOpen = capture.state.kind !== 'idle';
-  const editorOpen = editorSeed !== null || editTask !== null || taskSeed !== null;
-  const dialogOpen = captureOpen || editorOpen || viewBirthday !== null;
+  // The window's own modal dialogs; the panel's editors are not dialogs
+  // (they never join the dialog stack, so a real dialog over them — the
+  // agent approval, a capture — keeps Escape and Enter).
+  const dialogOpen = captureOpen || viewBirthday !== null;
   useEffect(() => {
     const onKeyDown = (key: KeyboardEvent) => {
       const command = key.metaKey || key.ctrlKey;
       // Any dialog of this window counts — the agent approval dialog too,
       // which App opens over the calendar without it knowing.
       const anyDialog = dialogOpen || isDialogOpen();
+      if (key.key === 'Escape') {
+        // Escape leaves the panel's inspector or editor, from anywhere in
+        // the window but a dialog (which takes its own Escape first).
+        if (!anyDialog && panel.kind !== 'rail') {
+          setPanel(RAIL);
+        }
+        return;
+      }
       if (command && key.key.toLowerCase() === 'k') {
         key.preventDefault();
         // ⌘K goes to the quick-add field — not from under a dialog, whose
@@ -163,13 +201,13 @@ function CalendarBody({
         return;
       }
       // The rest are single keys for the calendar itself: not while a
-      // dialog is open (they close on Escape themselves) or while typing.
-      if (anyDialog || isTyping(key.target) || key.altKey) {
+      // dialog or an editor is open, or while typing.
+      if (anyDialog || editing || isTyping(key.target) || key.altKey) {
         return;
       }
       if (command && key.key.toLowerCase() === 'n') {
         key.preventDefault();
-        setEditorSeed({ initialDate: focused, initialHour: 9 });
+        openEditor({ initialDate: focused, initialHour: 9 });
       } else if (!command && key.key.toLowerCase() === 't') {
         goToday();
       } else if (!command && key.key === 'ArrowLeft') {
@@ -180,7 +218,7 @@ function CalendarBody({
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [dialogOpen, focused, goToday, step]);
+  }, [dialogOpen, editing, focused, goToday, panel.kind, step]);
 
   // ⌘V on the calendar itself: an email or a screenshot becomes events to
   // review. Not while a dialog is open or a field has focus — those pastes
@@ -205,24 +243,26 @@ function CalendarBody({
     return () => window.removeEventListener('paste', onPaste);
   }, [capture, dialogOpen]);
 
-  const closeEditor = () => {
-    setEditorSeed(null);
-    setEditTask(null);
-    setTaskSeed(null);
-    setViewBirthday(null);
-    setCaptureRow(null);
-  };
+  const closePanel = () => setPanel(RAIL);
+  const panelKey =
+    panel.kind === 'inspector'
+      ? `inspect:${panel.event.id}`
+      : panel.kind === 'editEvent'
+        ? `event:${panel.seed.event?.id ?? 'new'}`
+        : panel.kind === 'editTask'
+          ? `task:${panel.task?.id ?? 'new'}`
+          : 'rail';
 
   return (
     <div className="flex h-screen flex-col bg-canvas text-ink">
       <Toolbar
         focused={focused}
         onCapture={capture.start}
-        onNew={() => setEditorSeed({ initialDate: focused, initialHour: 9 })}
+        onNew={() => openEditor({ initialDate: focused, initialHour: 9 })}
         onParsed={openPrefill}
         onStep={step}
         onSwitchView={changeView}
-        onTaskParsed={setTaskSeed}
+        onTaskParsed={(prefill) => setPanel({ kind: 'editTask', prefill })}
         onToday={goToday}
         onToggleSidebar={() => updatePrefs({ sidebarCollapsed: !sidebarCollapsed })}
         quickAddRef={quickAddRef}
@@ -271,13 +311,11 @@ function CalendarBody({
               isTaskReadOnly={isTaskReadOnly}
               listColorOf={listColorOf}
               onBirthdayClick={(birthday) => setViewBirthday(birthday)}
-              onEventClick={(event) => setEditorSeed({ event, initialDate: focused })}
+              onEventClick={(event) => setPanel({ event, kind: 'inspector' })}
               onNavigate={panByDays}
-              onSlotClick={(date, hour) => setEditorSeed({ initialDate: date, initialHour: hour })}
-              onSlotDrag={(date, times) =>
-                setEditorSeed({ initialDate: date, initialTimes: times })
-              }
-              onTaskClick={(task) => setEditTask(task)}
+              onSlotClick={(date, hour) => openEditor({ initialDate: date, initialHour: hour })}
+              onSlotDrag={(date, times) => openEditor({ initialDate: date, initialTimes: times })}
+              onTaskClick={(task) => setPanel({ kind: 'editTask', task })}
               onToggleTask={(task) =>
                 void completeTask({
                   accountId: task.accountId,
@@ -294,46 +332,94 @@ function CalendarBody({
             />
           )}
         </div>
+
+        <aside
+          className={`flex shrink-0 flex-col border-l border-hairline bg-surface-subtle ${
+            editing ? 'w-[360px]' : 'w-[300px]'
+          }`}
+          data-panel-kind={panel.kind}
+          data-testid="panel"
+          key={panelKey}
+        >
+          {panel.kind === 'rail' ? (
+            <TodayRail
+              onEditTask={(task) => setPanel({ kind: 'editTask', task })}
+              onOpenEvent={(event) => setPanel({ event, kind: 'inspector' })}
+              timeZone={timeZone}
+            />
+          ) : panel.kind === 'inspector' ? (
+            <EventInspector
+              calendars={calendars}
+              event={panel.event}
+              onClose={closePanel}
+              onConvert={() =>
+                setPanel({
+                  kind: 'editEvent',
+                  mode: 'task',
+                  seed: { event: panel.event, initialDate: focused },
+                })
+              }
+              onEdit={() =>
+                setPanel({ kind: 'editEvent', seed: { event: panel.event, initialDate: focused } })
+              }
+              timeZone={timeZone}
+            />
+          ) : panel.kind === 'editEvent' ? (
+            <EditorPanel
+              calendars={calendars}
+              initialMode={panel.mode}
+              onClose={closePanel}
+              onSaved={
+                panel.captureRow === undefined
+                  ? undefined
+                  : () => capture.markAdded(panel.captureRow!)
+              }
+              seed={panel.seed}
+              taskLists={taskLists}
+              timeZone={timeZone}
+            />
+          ) : (
+            <EditorPanel
+              calendars={calendars}
+              onClose={closePanel}
+              seed={{
+                initialDate: panel.prefill
+                  ? Temporal.PlainDate.from(panel.prefill.initialDate)
+                  : focused,
+              }}
+              task={panel.task}
+              taskLists={taskLists}
+              taskPrefill={panel.prefill}
+              timeZone={timeZone}
+            />
+          )}
+        </aside>
       </div>
 
-      {/* Hidden while a row's editor is open: two dialogs would both close on one Escape. */}
-      {capture.state.kind !== 'idle' && !editorSeed ? (
+      {/* Hidden while a row's editor is open: the editor is the capture's next step. */}
+      {capture.state.kind !== 'idle' && panel.kind !== 'editEvent' ? (
         <CaptureDialog
           onClose={capture.dismiss}
-          onOpenRow={(row) => {
-            setCaptureRow(row.id);
-            openPrefill(row.prefill);
-          }}
+          onOpenRow={(row) => openPrefill(row.prefill, row.id)}
           state={capture.state}
         />
       ) : null}
 
-      {editorOpen || viewBirthday ? (
-        <EventEditor
-          birthday={viewBirthday ?? undefined}
-          calendars={calendars}
-          key={
-            viewBirthday
-              ? `birthday:${viewBirthday.record.id}:${viewBirthday.date}`
-              : editTask
-                ? `task:${editTask.id}`
-                : taskSeed
-                  ? 'new-task'
-                  : (editorSeed?.event?.id ?? 'new')
-          }
-          onClose={closeEditor}
-          onSaved={captureRow ? () => capture.markAdded(captureRow) : undefined}
-          seed={
-            editorSeed ??
-            (taskSeed ? { initialDate: Temporal.PlainDate.from(taskSeed.initialDate) } : null) ?? {
-              initialDate: focused,
-            }
-          }
-          task={editTask ?? undefined}
-          taskLists={taskLists}
-          taskPrefill={taskSeed ?? undefined}
-          timeZone={timeZone}
-        />
+      {viewBirthday ? (
+        <Dialog
+          key={`birthday:${viewBirthday.record.id}:${viewBirthday.date}`}
+          label="Birthday"
+          onClose={() => setViewBirthday(null)}
+          panelClassName="w-[420px] rounded-popover bg-surface-raised p-6 shadow-2xl"
+          zIndex={30}
+        >
+          <h2 className="mb-4 text-lg font-semibold">Birthday</h2>
+          <BirthdayDetail
+            occurrence={viewBirthday}
+            onClose={() => setViewBirthday(null)}
+            timeZone={timeZone}
+          />
+        </Dialog>
       ) : null}
     </div>
   );

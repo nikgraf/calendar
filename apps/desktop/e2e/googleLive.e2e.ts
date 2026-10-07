@@ -222,9 +222,7 @@ describe.skipIf(!LIVE)('Google live (real account)', { retry: 0, timeout: 120_00
   });
 
   it('edits the title through the editor; Google follows', async () => {
-    const block = await app.cdp.locate(`[title^=${JSON.stringify(title)}]`);
-    await app.cdp.click(block.x, block.y);
-    await app.cdp.waitFor(`document.body.textContent.includes('Edit event')`);
+    await app.cdp.openEditor(`[title^=${JSON.stringify(title)}]`);
     const edited = `${title} edited`;
     await setEditorTitle(edited);
     await app.cdp.clickButtonWithText('Save');
@@ -271,9 +269,7 @@ describe.skipIf(!LIVE)('Google live (real account)', { retry: 0, timeout: 120_00
     const theirs = `${title} google-${suffix}`;
     const mine = `${title} mine-${suffix}`;
     for (let attempt = 0; attempt < 3; attempt++) {
-      const block = await app.cdp.locate(`[title^=${JSON.stringify(title)}]`);
-      await app.cdp.click(block.x, block.y);
-      await app.cdp.waitFor(`document.body.textContent.includes('Edit event')`);
+      await app.cdp.openEditor(`[title^=${JSON.stringify(title)}]`);
       await setEditorTitle(mine);
       // Another device renames it now; the Save carries the stale etag.
       await google((scratch) => scratch.patchEvent(calendarId, row.id, { summary: theirs }));
@@ -323,9 +319,7 @@ describe.skipIf(!LIVE)('Google live (real account)', { retry: 0, timeout: 120_00
 
   it('deletes through the editor; Google answers cancelled', async () => {
     const row = (await eventByTitle(title))!;
-    const block = await app.cdp.locate(`[title^=${JSON.stringify(title)}]`);
-    await app.cdp.click(block.x, block.y);
-    await app.cdp.waitFor(`document.body.textContent.includes('Edit event')`);
+    await app.cdp.openEditor(`[title^=${JSON.stringify(title)}]`);
     await app.cdp.clickButtonWithText('Delete');
     await app.cdp.confirmDelete();
     await app.cdp.waitFor(`!document.querySelector('[title^=${JSON.stringify(title)}]')`);
