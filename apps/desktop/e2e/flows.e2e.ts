@@ -1402,6 +1402,54 @@ describe('calendar desktop e2e', () => {
     await cdp.waitFor(`!document.querySelector('[data-testid="inspector"]')`);
   });
 
+  it('converts from the inspector with the event carried into the task form', async () => {
+    const { cdp } = app;
+    await cdp.openInspector('[title^="Gym session"]');
+    await cdp.clickTestId('inspector-convert');
+    await cdp.waitFor(
+      `document.querySelector('[data-testid="editor-title"]')?.textContent === 'Convert to task'`,
+    );
+    expect(
+      await cdp.eval<string>(`document.querySelector('input[placeholder="Title"]').value`),
+    ).toBe('Gym session');
+    expect(
+      await cdp.eval<string>(`document.querySelector('textarea[placeholder="Add notes"]').value`),
+    ).toBe('Bring the resistance bands');
+    await cdp.clickButtonWithText('Cancel');
+    await cdp.waitFor(`!document.querySelector('[data-testid="editor"]')`);
+  });
+
+  it('closes only the color picker on Escape, keeping the editor and its draft', async () => {
+    const { cdp } = app;
+    await cdp.openEditor('[title^="Gym session"]');
+    await setEditorTitle('Gym session (draft)');
+    const swatch = await cdp.locate('[aria-label="Change color: Personal"]');
+    await cdp.click(swatch.x, swatch.y);
+    await cdp.waitFor(`!!document.querySelector('[aria-label="Close color picker"]')`);
+    await cdp.pressEscape();
+    await cdp.waitFor(`!document.querySelector('[aria-label="Close color picker"]')`);
+    expect(
+      await cdp.eval<string>(`document.querySelector('input[placeholder="Title"]')?.value`),
+    ).toBe('Gym session (draft)');
+    await cdp.pressEscape();
+    await cdp.waitFor(`!document.querySelector('[data-testid="editor"]')`);
+  });
+
+  it('reseeds the editor when another slot is clicked while it is open', async () => {
+    const { cdp } = app;
+    const block = await cdp.locate('[title^="Standup meeting"]');
+    const START = `document.querySelector('[data-testid="editor"] input[type="time"]')?.value`;
+    await cdp.click(block.x, block.y + 3 * HOUR_HEIGHT + 10);
+    await cdp.waitFor(
+      `document.querySelector('[data-testid="editor-title"]')?.textContent === 'New event'`,
+    );
+    const first = await cdp.eval<string>(START);
+    await cdp.click(block.x, block.y + 4 * HOUR_HEIGHT + 10);
+    await cdp.waitFor(`${START} !== ${JSON.stringify(first)}`);
+    await cdp.pressEscape();
+    await cdp.waitFor(`!document.querySelector('[data-testid="editor"]')`);
+  });
+
   it('adds an undated task from the panel', async () => {
     const { cdp } = app;
     await cdp.type('[data-testid="panel-add-task"]', 'Sharpen the pencils');
@@ -1433,6 +1481,24 @@ describe('calendar desktop e2e', () => {
       )
       .toBe(todayLocalIso());
     // The release was a drop, not a click: no editor opened.
+    expect(await cdp.eval<boolean>(`!!document.querySelector('[data-testid="editor"]')`)).toBe(
+      false,
+    );
+  });
+
+  it('leaves a panel row alone when it is released inside the panel', async () => {
+    const { cdp } = app;
+    const pencils = (await readTasks(app.userDataDir)).find(
+      (task) => task.title === 'Sharpen the pencils',
+    )!;
+    const row = await cdp.locate(`[data-testid="panel-task-${pencils.id}"]`);
+    const lane = await cdp.locate('[data-testid="all-day-lane"]');
+    // Down to the lane's height, but still over the panel: no column.
+    await cdp.drag(row, { x: row.x, y: lane.y });
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    expect(
+      (await readTasks(app.userDataDir)).find((task) => task.id === pencils.id)?.dueDate ?? null,
+    ).toBeNull();
     expect(await cdp.eval<boolean>(`!!document.querySelector('[data-testid="editor"]')`)).toBe(
       false,
     );

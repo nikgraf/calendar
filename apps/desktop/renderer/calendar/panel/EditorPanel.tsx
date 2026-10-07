@@ -9,7 +9,7 @@ import {
   type TaskEditorSeed,
 } from '@calendar/app-state';
 import { type CalendarInfo, type TaskListInfo, type TaskRecord } from '@calendar/core';
-import { useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Button } from '../../ui/Button.tsx';
 import { VideoIcon } from '../../ui/icons.tsx';
 import { SegmentedControl } from '../../ui/SegmentedControl.tsx';
@@ -54,8 +54,12 @@ export function EditorPanel({
   timeZone: string;
 }) {
   const sourceKind: EditorSourceKind = task ? 'task' : seed.event ? 'event' : 'new';
+  // An existing event asked to open as a task (the inspector's Convert)
+  // still starts as the event and switches below: the switch is what
+  // carries the title, notes, rule and URL over and asks about a loss.
+  const convertOnOpen = initialMode === 'task' && sourceKind === 'event';
   const [mode, setMode] = useState<'event' | 'task'>(
-    initialMode ?? (task || taskPrefill ? 'task' : 'event'),
+    convertOnOpen ? 'event' : (initialMode ?? (task || taskPrefill ? 'task' : 'event')),
   );
   const moveConfirmation = useMoveConfirmation();
   const mutations = useBackendMutations();
@@ -83,23 +87,41 @@ export function EditorPanel({
   });
   const { existing, joinUrl } = eventModel;
 
-  const switchTo = async (next: 'event' | 'task') => {
-    if (next === mode) {
-      return;
-    }
-    const switched = await switchEditorMode({
-      confirm: moveConfirmation.request,
+  const switchTo = useCallback(
+    async (next: 'event' | 'task') => {
+      if (next === mode) {
+        return;
+      }
+      const switched = await switchEditorMode({
+        confirm: moveConfirmation.request,
+        eventModel,
+        next,
+        previewEventToTask: mutations.previewEventToTask,
+        sourceKind,
+        taskModel,
+        timeZone,
+      });
+      if (switched) {
+        setMode(next);
+      }
+    },
+    [
       eventModel,
-      next,
-      previewEventToTask: mutations.previewEventToTask,
+      mode,
+      moveConfirmation.request,
+      mutations.previewEventToTask,
       sourceKind,
       taskModel,
       timeZone,
-    });
-    if (switched) {
-      setMode(next);
+    ],
+  );
+  const converted = useRef(false);
+  useEffect(() => {
+    if (convertOnOpen && !converted.current) {
+      converted.current = true;
+      void switchTo('task');
     }
-  };
+  }, [convertOnOpen, switchTo]);
   const showToggle =
     !(sourceKind === 'event' && eventModel.readOnly) &&
     !(sourceKind === 'task' && taskModel.readOnly);

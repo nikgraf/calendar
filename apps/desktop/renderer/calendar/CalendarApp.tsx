@@ -60,15 +60,25 @@ type PanelState =
       readonly captureRow?: string | undefined;
       readonly kind: 'editEvent';
       readonly mode?: 'task' | undefined;
+      /** Distinct per opening: a second slot click must not reuse the first draft. */
+      readonly opening: number;
       readonly seed: EditorSeed;
     }
   | {
       readonly kind: 'editTask';
+      readonly opening: number;
       readonly prefill?: TaskEditorSeed | undefined;
       readonly task?: TaskRecord | undefined;
     };
 
 const RAIL: PanelState = { kind: 'rail' };
+
+let openings = 0;
+/** A fresh identity for an editor opening; the panel is keyed by it. */
+const nextOpening = (): number => {
+  openings += 1;
+  return openings;
+};
 
 /** Keys and pastes inside a field belong to the field, not the calendar. */
 const isTyping = (target: EventTarget | null) => {
@@ -133,7 +143,8 @@ function CalendarBody({
   const [viewBirthday, setViewBirthday] = useState<BirthdayOccurrence | null>(null);
   const quickAddRef = useRef<HTMLInputElement>(null);
   const editing = panel.kind === 'editEvent' || panel.kind === 'editTask';
-  const openEditor = (seed: EditorSeed) => setPanel({ kind: 'editEvent', seed });
+  const openEditor = (seed: EditorSeed) =>
+    setPanel({ kind: 'editEvent', opening: nextOpening(), seed });
 
   // A parsed prefill (quick-add, or a single captured event) opens the
   // editor on its day: the user reviews it before anything is written.
@@ -141,6 +152,7 @@ function CalendarBody({
     setPanel({
       captureRow,
       kind: 'editEvent',
+      opening: nextOpening(),
       seed: { initialDate: Temporal.PlainDate.from(prefill.date), prefill },
     });
   };
@@ -192,7 +204,7 @@ function CalendarBody({
     isEventReadOnly,
     laneRef,
     onEventClick: (event) => setPanel({ event, kind: 'inspector' }),
-    onTaskClick: (task) => setPanel({ kind: 'editTask', task }),
+    onTaskClick: (task) => setPanel({ kind: 'editTask', opening: nextOpening(), task }),
     scrollerRef: scrollRef,
     strip,
   });
@@ -282,9 +294,9 @@ function CalendarBody({
     panel.kind === 'inspector'
       ? `inspect:${panel.event.id}`
       : panel.kind === 'editEvent'
-        ? `event:${panel.seed.event?.id ?? 'new'}`
+        ? `event:${panel.seed.event?.id ?? 'new'}:${String(panel.opening)}`
         : panel.kind === 'editTask'
-          ? `task:${panel.task?.id ?? 'new'}`
+          ? `task:${panel.task?.id ?? 'new'}:${String(panel.opening)}`
           : 'rail';
 
   return (
@@ -296,7 +308,7 @@ function CalendarBody({
         onParsed={openPrefill}
         onStep={step}
         onSwitchView={changeView}
-        onTaskParsed={(prefill) => setPanel({ kind: 'editTask', prefill })}
+        onTaskParsed={(prefill) => setPanel({ kind: 'editTask', opening: nextOpening(), prefill })}
         onToday={goToday}
         onToggleSidebar={() => updatePrefs({ sidebarCollapsed: !sidebarCollapsed })}
         quickAddRef={quickAddRef}
@@ -331,7 +343,7 @@ function CalendarBody({
                 setFocused(date);
                 changeView('day');
               }}
-              onTaskClick={(task) => setPanel({ kind: 'editTask', task })}
+              onTaskClick={(task) => setPanel({ kind: 'editTask', opening: nextOpening(), task })}
               onToggleTask={toggleTask}
               overdue={overdue}
               selectedKey={selectedKey}
@@ -357,7 +369,7 @@ function CalendarBody({
               onNavigate={panByDays}
               onSlotClick={(date, hour) => openEditor({ initialDate: date, initialHour: hour })}
               onSlotDrag={(date, times) => openEditor({ initialDate: date, initialTimes: times })}
-              onTaskClick={(task) => setPanel({ kind: 'editTask', task })}
+              onTaskClick={(task) => setPanel({ kind: 'editTask', opening: nextOpening(), task })}
               onToggleTask={toggleTask}
               overdue={overdue}
               scrollRef={scrollRef}
@@ -381,7 +393,7 @@ function CalendarBody({
           {panel.kind === 'rail' ? (
             <TodayRail
               drag={drag}
-              onEditTask={(task) => setPanel({ kind: 'editTask', task })}
+              onEditTask={(task) => setPanel({ kind: 'editTask', opening: nextOpening(), task })}
               onOpenEvent={(event) => setPanel({ event, kind: 'inspector' })}
               timeZone={timeZone}
             />
@@ -394,11 +406,16 @@ function CalendarBody({
                 setPanel({
                   kind: 'editEvent',
                   mode: 'task',
+                  opening: nextOpening(),
                   seed: { event: panel.event, initialDate: focused },
                 })
               }
               onEdit={() =>
-                setPanel({ kind: 'editEvent', seed: { event: panel.event, initialDate: focused } })
+                setPanel({
+                  kind: 'editEvent',
+                  opening: nextOpening(),
+                  seed: { event: panel.event, initialDate: focused },
+                })
               }
               timeZone={timeZone}
             />

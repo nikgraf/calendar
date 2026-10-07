@@ -236,6 +236,21 @@ export const useEventDrag = ({
     });
   };
 
+  /**
+   * `dropTargetAt` clamps the pointer into the nearest column, which a chip
+   * dragged along the lane past its edge wants. A panel row has no column
+   * of its own: released over the panel or the sidebar it must stay put,
+   * so its pointer has to be over the calendar (the scroller's width, the
+   * lane above included) to count.
+   */
+  const insideCalendar = (origin: DragOrigin, clientX: number): boolean => {
+    if (origin.target.kind !== 'task' || origin.target.from !== 'panel') {
+      return true;
+    }
+    const scroller = scrollerRef.current?.getBoundingClientRect();
+    return scroller !== undefined && clientX >= scroller.left && clientX <= scroller.right;
+  };
+
   const deltasFor = (origin: DragOrigin, clientX: number, clientY: number): DragDeltas => {
     const deltaMinutes = snapMinutes(((clientY - origin.startClientY) / hourHeight) * 60);
     if (origin.mode === 'resize') {
@@ -244,7 +259,10 @@ export const useEventDrag = ({
     const grid = gridRef.current?.getBoundingClientRect();
     const dayWidth = grid ? grid.width / strip.length : 0;
     const deltaDays = dayWidth > 0 ? Math.round((clientX - origin.startClientX) / dayWidth) : 0;
-    const pointed = origin.target.kind === 'task' ? targetAt(clientX, clientY) : null;
+    const pointed =
+      origin.target.kind === 'task' && insideCalendar(origin, clientX)
+        ? targetAt(clientX, clientY)
+        : null;
     // A block dragged from the grid moves by whole columns from where it
     // was pressed (it is drawn that way), so its drop day follows the same
     // delta rather than the column under the pointer — the two differ when

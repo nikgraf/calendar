@@ -1,4 +1,5 @@
-import { type ReactNode, useEffect } from 'react';
+import { type ReactNode, useEffect, useRef } from 'react';
+import { openDialogLayer } from '../Dialog.tsx';
 
 /**
  * A small panel anchored at a screen point, over a transparent backdrop
@@ -24,18 +25,20 @@ export function Popover({
   readonly onClose: () => void;
 }) {
   const open = anchor !== null;
+  // Callers pass inline closures; the layer is registered once per opening.
+  const onCloseRef = useRef(onClose);
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  }, [onClose]);
+  // On the dialog stack, like the modals: Escape reaches the topmost
+  // surface only, so a picker over an editor closes alone, and the
+  // calendar's own Escape (which leaves the side panel) stands back.
   useEffect(() => {
     if (!open) {
       return;
     }
-    const onKeyDown = (keyEvent: KeyboardEvent) => {
-      if (keyEvent.key === 'Escape') {
-        onClose();
-      }
-    };
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [open, onClose]);
+    return openDialogLayer(50, () => onCloseRef.current());
+  }, [open]);
 
   if (!anchor) {
     return null;
