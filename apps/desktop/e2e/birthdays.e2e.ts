@@ -91,7 +91,7 @@ describe('contact birthdays', () => {
 
   it('shows the birthday in the month view too', async () => {
     const { cdp } = app;
-    await cdp.clickButtonWithText('month');
+    await cdp.clickTestId('view-month');
     try {
       await cdp.waitFor(
         `document.querySelectorAll('[data-testid="month-grid"] [data-birthday]').length === 1`,
@@ -99,7 +99,7 @@ describe('contact birthdays', () => {
     } finally {
       // Back to the week lane whatever happened, so the next test's
       // `[data-birthday]` is the lane chip and not a month cell.
-      await cdp.clickButtonWithText('week');
+      await cdp.clickTestId('view-week');
       await cdp.waitFor(
         `document.querySelectorAll('[data-birthday]').length === 1 && !document.querySelector('[data-testid="month-grid"]')`,
       );

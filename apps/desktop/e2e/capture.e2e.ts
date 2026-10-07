@@ -153,17 +153,18 @@ describe('Capture from a paste', () => {
     await cdp.eval(
       `window.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', metaKey: true }))`,
     );
-    const INPUT = `document.querySelector('input[placeholder="Lunch with Sarah tomorrow at 1"]')`;
-    await cdp.waitFor(`!!${INPUT}`);
+    const INPUT = `document.querySelector('[data-testid="quick-add-input"]')`;
+    await cdp.waitFor(`document.activeElement === ${INPUT}`);
     await cdp.eval(paste({ text: 'Lunch | +1 | 12:00' }, INPUT));
-    // Nothing happened: no capture, the bar is still open.
+    // Nothing happened: no capture, the field keeps focus.
     await new Promise((resolve) => setTimeout(resolve, 300));
     expect(await cdp.eval<string>(STATE)).toBe('');
-    expect(await cdp.eval<boolean>(`!!${INPUT}`)).toBe(true);
+    expect(await cdp.eval<boolean>(`document.activeElement === ${INPUT}`)).toBe(true);
 
     await cdp.eval(paste({ text: MAIL }, INPUT));
     await cdp.waitFor(`${STATE} === 'review'`);
-    expect(await cdp.eval<boolean>(`!!${INPUT}`)).toBe(false);
+    // The field handed the paste to capture and let go of the focus.
+    expect(await cdp.eval<boolean>(`document.activeElement === ${INPUT}`)).toBe(false);
     await cdp.pressEscape();
     await cdp.waitFor(`${STATE} === ''`);
   });

@@ -293,7 +293,7 @@ describe('calendar desktop e2e', () => {
 
   it('switches views and navigates dates', async () => {
     const { cdp } = app;
-    await cdp.clickButtonWithText('month');
+    await cdp.clickTestId('view-month');
     try {
       // Month view: weekday header row appears, and today's cell announces
       // the seeded task. The label, not the chip: today also holds several
@@ -303,29 +303,29 @@ describe('calendar desktop e2e', () => {
         `[...document.querySelectorAll('[data-testid="month-grid"] button')].some((cell) => (cell.getAttribute('aria-label') ?? '').includes('1 task'))`,
       );
     } finally {
-      await cdp.clickButtonWithText('day');
+      await cdp.clickTestId('view-day');
     }
     await cdp.waitFor(`!!document.querySelector('[title^="Standup meeting"]')`);
 
     const titleBefore = await cdp.eval<string>(`document.querySelector('h1')?.textContent ?? ''`);
-    await cdp.clickButtonWithText('›');
+    await cdp.clickTestId('nav-next');
     const titleAfter = await cdp.waitFor<string>(
       `(document.querySelector('h1')?.textContent ?? '') !== ${JSON.stringify('')} && (document.querySelector('h1')?.textContent ?? '')`,
     );
     expect(titleAfter).not.toBe(titleBefore);
     await cdp.clickButtonWithText('Today');
-    await cdp.clickButtonWithText('week');
+    await cdp.clickTestId('view-week');
     await cdp.waitFor(`!!document.querySelector('[title^="Standup meeting"]')`);
   });
 
   it('renders an event three years back in the month view', async () => {
     const { cdp } = app;
-    await cdp.clickButtonWithText('month');
+    await cdp.clickTestId('view-month');
     await cdp.waitFor(`document.body.textContent.includes('Mon')`);
     try {
       for (let step = 0; step < 12 * YEARS_BACK; step += 1) {
         const before = await cdp.eval<string>(`document.querySelector('h1')?.textContent ?? ''`);
-        await cdp.clickButtonWithText('‹');
+        await cdp.clickTestId('nav-prev');
         await cdp.waitFor(
           `(document.querySelector('h1')?.textContent ?? '') !== ${JSON.stringify(before)}`,
         );
@@ -333,7 +333,7 @@ describe('calendar desktop e2e', () => {
       await cdp.waitFor(`document.body.textContent.includes('Ancient offsite')`);
     } finally {
       await cdp.clickButtonWithText('Today');
-      await cdp.clickButtonWithText('week');
+      await cdp.clickTestId('view-week');
       await cdp.waitFor(`!!document.querySelector('[title^="Standup meeting"]')`);
     }
   });
@@ -412,7 +412,7 @@ describe('calendar desktop e2e', () => {
     // A failure mid-test would leave the view panned weeks away and cascade
     // through every later test — always restore Today + week view.
     try {
-      await cdp.clickButtonWithText('day');
+      await cdp.clickTestId('view-day');
       await cdp.waitFor(`!!document.querySelector('[title^="Standup meeting"]')`);
       const point = await cdp.locate('.overflow-y-scroll');
 
@@ -428,7 +428,7 @@ describe('calendar desktop e2e', () => {
       await cdp.waitFor(`${h1} !== ${JSON.stringify(dayTitle)}`);
 
       await cdp.clickButtonWithText('Today');
-      await cdp.clickButtonWithText('week');
+      await cdp.clickTestId('view-week');
       const weekTitle = await cdp.waitFor<string>(h1);
 
       // Week view: horizontal pan slides the rolling 7-day window.
@@ -450,7 +450,7 @@ describe('calendar desktop e2e', () => {
     } finally {
       // Unconditional restore for the rest of the suite.
       await cdp.clickButtonWithText('Today');
-      await cdp.clickButtonWithText('week');
+      await cdp.clickTestId('view-week');
       await cdp
         .waitFor(`!!document.querySelector('[title^="Standup meeting"]')`)
         .catch(() => undefined);
@@ -1061,25 +1061,22 @@ describe('calendar desktop e2e', () => {
     }
   });
 
-  it('opens the command bar on Cmd-K and closes it on Escape', async () => {
+  it('focuses the quick-add field on Cmd-K and leaves it on Escape', async () => {
     const { cdp } = app;
+    const INPUT = `document.querySelector('[data-testid="quick-add-input"]')`;
     // Synthesize Cmd-K via the app's own handler (CDP key events don't
     // carry macOS meta reliably) — the listener is on window.
     await cdp.eval(
       `window.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', metaKey: true }))`,
     );
-    // Present in BOTH bar states: on a helper-less CI runner the bar
-    // explains unavailability; on a dev machine it shows the input. Either
-    // way the overlay mounts — assert something stable to each.
-    await cdp.waitFor(
-      `document.body.textContent.includes('on-device model is unavailable') ||
-       !!document.querySelector('input[placeholder="Lunch with Sarah tomorrow at 1"]')`,
-    );
-    await cdp.eval(`window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))`);
-    await cdp.waitFor(
-      `!document.body.textContent.includes('on-device model is unavailable') &&
-       !document.querySelector('input[placeholder="Lunch with Sarah tomorrow at 1"]')`,
-    );
+    // Stable in BOTH field states: on a helper-less CI runner the field is
+    // disabled (and cannot take focus); on a dev machine ⌘K focuses it.
+    await cdp.waitFor(`${INPUT}.disabled || document.activeElement === ${INPUT}`);
+    const focused = await cdp.eval<boolean>(`document.activeElement === ${INPUT}`);
+    if (focused) {
+      await cdp.pressEscape();
+      await cdp.waitFor(`document.activeElement !== ${INPUT}`);
+    }
   });
 
   it('moves an overdue task onto today and leaves a completed past task alone', async () => {

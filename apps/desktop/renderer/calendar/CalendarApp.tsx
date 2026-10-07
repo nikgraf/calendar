@@ -21,9 +21,12 @@ import {
   useTasksInRangeStable,
   useTimeZones,
   useToday,
+  useUpdateViewPreferences,
+  useViewPreferences,
   type EventEditorPrefill,
+  type TaskEditorSeed,
 } from '@calendar/app-state';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { desktopLanguageModel } from '../ai/desktopModel.ts';
 import { desktopTextRecognizer } from '../ai/desktopTextRecognizer.ts';
 import { isDialogOpen } from '../Dialog.tsx';
@@ -32,9 +35,11 @@ import { CaptureDialog } from './CaptureDialog.tsx';
 import { captureSourceOf, isCapturable, readPaste } from './captureClipboard.ts';
 import { makeColorLookup } from './colors.ts';
 import { MonthView } from './MonthView.tsx';
-import { Sidebar } from './Sidebar.tsx';
-import { CommandBar } from './CommandBar.tsx';
+import { Sidebar } from './sidebar/Sidebar.tsx';
+import { Toolbar } from './Toolbar.tsx';
 import { WeekView } from './WeekView.tsx';
+
+type MainView = 'day' | 'month' | 'week';
 
 /** Keys and pastes inside a field belong to the field, not the calendar. */
 const isTyping = (target: EventTarget | null) => {
@@ -44,41 +49,65 @@ const isTyping = (target: EventTarget | null) => {
   );
 };
 
+/** The desktop draws day, week and month; an iOS-only view falls back to the week. */
+const mainViewOf = (view: string | undefined): MainView =>
+  view === 'day' || view === 'month' ? view : 'week';
+
 /**
  * Waits for the device-local time zones before drawing anything: a first
  * frame in the device zone followed by a re-layout in the primary zone
  * would, near midnight with a distant primary, also seed the focused day
- * and "today" with the wrong date. The read resolves with the other
- * initial atoms, so the gate never shows.
+ * and "today" with the wrong date. The view preferences resolve with the
+ * same initial atoms, so the gate never shows — and the last view opens
+ * without a flash of the default.
  */
 export function CalendarApp() {
   const zones = useTimeZones();
-  if (!zones.loaded) {
-    return <div className="flex h-screen bg-surface" />;
+  const prefs = useViewPreferences();
+  if (!zones.loaded || prefs === null) {
+    return <div className="flex h-screen bg-canvas" />;
   }
-  return <CalendarBody primary={zones.primary} secondary={zones.secondary} />;
+  return (
+    <CalendarBody
+      initialView={mainViewOf(prefs.lastView)}
+      primary={zones.primary}
+      secondary={zones.secondary}
+    />
+  );
 }
 
 function CalendarBody({
+  initialView,
   primary: timeZone,
   secondary: secondaryZones,
 }: {
+  initialView: MainView;
   primary: string;
   secondary: ReadonlyArray<string>;
 }) {
   const { days, focused, goToday, panByDays, range, setFocused, step, switchView, title, view } =
     useCalendarNavigation({
       dayBuffer: PAN_BUFFER_DAYS,
-      initialView: 'week',
+      initialView,
       timeZone,
       titleStyle: 'long',
     });
+  const prefs = useViewPreferences();
+  const updatePrefs = useUpdateViewPreferences();
+  const sidebarCollapsed = prefs?.sidebarCollapsed ?? false;
+  const changeView = (next: MainView) => {
+    switchView(next);
+    updatePrefs({ lastView: next });
+  };
+
   const [editorSeed, setEditorSeed] = useState<EditorSeed | null>(null);
   const [editTask, setEditTask] = useState<TaskRecord | null>(null);
+  /** A quick-add phrase understood as a task: the task editor opens with it. */
+  const [taskSeed, setTaskSeed] = useState<TaskEditorSeed | null>(null);
   const [viewBirthday, setViewBirthday] = useState<BirthdayOccurrence | null>(null);
-  const [commandBarOpen, setCommandBarOpen] = useState(false);
   /** The capture row whose editor is open, so a save can mark it added. */
   const [captureRow, setCaptureRow] = useState<string | null>(null);
+  const quickAddRef = useRef<HTMLInputElement>(null);
 
   // A parsed prefill (quick-add, or a single captured event) opens the
   // editor on its day: the user reviews it before anything is written.
@@ -115,12 +144,8 @@ function CalendarBody({
   const colorOf = useMemo(() => makeColorLookup(calendars), [calendars]);
 
   const captureOpen = capture.state.kind !== 'idle';
-  const dialogOpen =
-    commandBarOpen ||
-    captureOpen ||
-    editorSeed !== null ||
-    editTask !== null ||
-    viewBirthday !== null;
+  const editorOpen = editorSeed !== null || editTask !== null || taskSeed !== null;
+  const dialogOpen = captureOpen || editorOpen || viewBirthday !== null;
   useEffect(() => {
     const onKeyDown = (key: KeyboardEvent) => {
       const command = key.metaKey || key.ctrlKey;
@@ -129,9 +154,11 @@ function CalendarBody({
       const anyDialog = dialogOpen || isDialogOpen();
       if (command && key.key.toLowerCase() === 'k') {
         key.preventDefault();
-        // ⌘K closes its own bar; it opens none over another dialog.
-        if (commandBarOpen || !anyDialog) {
-          setCommandBarOpen((open) => !open);
+        // ⌘K goes to the quick-add field — not from under a dialog, whose
+        // Escape and Enter the field would otherwise take.
+        if (!anyDialog) {
+          quickAddRef.current?.focus();
+          quickAddRef.current?.select();
         }
         return;
       }
@@ -153,7 +180,7 @@ function CalendarBody({
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [commandBarOpen, dialogOpen, focused, goToday, step]);
+  }, [dialogOpen, focused, goToday, step]);
 
   // ⌘V on the calendar itself: an email or a screenshot becomes events to
   // review. Not while a dialog is open or a field has focus — those pastes
@@ -178,136 +205,96 @@ function CalendarBody({
     return () => window.removeEventListener('paste', onPaste);
   }, [capture, dialogOpen]);
 
+  const closeEditor = () => {
+    setEditorSeed(null);
+    setEditTask(null);
+    setTaskSeed(null);
+    setViewBirthday(null);
+    setCaptureRow(null);
+  };
+
   return (
-    <div className="flex h-screen bg-surface text-ink">
-      <Sidebar
-        accounts={accounts}
-        calendars={calendars}
-        onManageAccounts={() => void window.calendarBridge.openSettings('accounts')}
+    <div className="flex h-screen flex-col bg-canvas text-ink">
+      <Toolbar
+        focused={focused}
+        onCapture={capture.start}
+        onNew={() => setEditorSeed({ initialDate: focused, initialHour: 9 })}
+        onParsed={openPrefill}
+        onStep={step}
+        onSwitchView={changeView}
+        onTaskParsed={setTaskSeed}
+        onToday={goToday}
+        onToggleSidebar={() => updatePrefs({ sidebarCollapsed: !sidebarCollapsed })}
+        quickAddRef={quickAddRef}
+        sidebarCollapsed={sidebarCollapsed}
+        timeZone={timeZone}
+        title={title}
+        view={view}
       />
 
-      <div className="flex min-w-0 flex-1 flex-col">
-        <header
-          className="flex shrink-0 items-center gap-3 border-b border-hairline px-4 py-2.5"
-          style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}
-        >
-          <h1 className="min-w-56 text-lg font-semibold">{title}</h1>
-          <div
-            className="flex items-center gap-1"
-            style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
-          >
-            <button
-              aria-label={`Previous ${view}`}
-              className="rounded-md px-2 py-1 text-ink-secondary hover:bg-fill"
-              onClick={() => step(-1)}
-              type="button"
-            >
-              ‹
-            </button>
-            <button
-              className="rounded-md px-2 py-1 text-sm hover:bg-fill"
-              onClick={goToday}
-              type="button"
-            >
-              Today
-            </button>
-            <button
-              aria-label={`Next ${view}`}
-              className="rounded-md px-2 py-1 text-ink-secondary hover:bg-fill"
-              onClick={() => step(1)}
-              type="button"
-            >
-              ›
-            </button>
-          </div>
-          <div className="flex-1" />
-          <div
-            className="flex rounded-lg bg-fill p-0.5 text-sm"
-            style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
-          >
-            {(['day', 'week', 'month'] as const).map((kind) => (
-              <button
-                className={`rounded-md px-3 py-1 capitalize ${
-                  view === kind
-                    ? 'bg-surface font-medium shadow-sm'
-                    : 'text-ink-secondary hover:text-ink'
-                }`}
-                key={kind}
-                onClick={() => switchView(kind)}
-                type="button"
-              >
-                {kind}
-              </button>
-            ))}
-          </div>
-          <button
-            aria-label="New event"
-            className="rounded-md bg-primary px-3 py-1 text-sm font-medium text-on-primary hover:bg-primary-hover"
-            onClick={() => setEditorSeed({ initialDate: focused, initialHour: 9 })}
-            style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
-            type="button"
-          >
-            +
-          </button>
-        </header>
-
-        {view === 'month' ? (
-          <MonthView
-            birthdays={birthdays}
-            colorOf={colorOf}
-            events={events}
-            listColorOf={listColorOf}
-            onSelectDay={(date) => {
-              setFocused(date);
-              switchView('day');
-            }}
-            overdue={overdue}
-            tasks={tasks}
-            timeZone={timeZone}
-            today={today}
-            yearMonth={Temporal.PlainYearMonth.from(focused)}
-          />
-        ) : (
-          <WeekView
-            birthdays={birthdays}
-            colorOf={colorOf}
-            days={days}
-            events={events}
-            isEventReadOnly={isEventReadOnly}
-            isTaskReadOnly={isTaskReadOnly}
-            listColorOf={listColorOf}
-            onBirthdayClick={(birthday) => setViewBirthday(birthday)}
-            onEventClick={(event) => setEditorSeed({ event, initialDate: focused })}
-            onNavigate={panByDays}
-            onSlotClick={(date, hour) => setEditorSeed({ initialDate: date, initialHour: hour })}
-            onSlotDrag={(date, times) => setEditorSeed({ initialDate: date, initialTimes: times })}
-            onTaskClick={(task) => setEditTask(task)}
-            onToggleTask={(task) =>
-              void completeTask({
-                accountId: task.accountId,
-                status: task.status === 'completed' ? 'needsAction' : 'completed',
-                taskId: task.id,
-                taskListId: task.listId,
-              })
-            }
-            overdue={overdue}
-            secondaryZones={secondaryZones}
-            tasks={tasks}
-            timeZone={timeZone}
-            today={today}
+      <div className="flex min-h-0 flex-1">
+        {sidebarCollapsed ? null : (
+          <Sidebar
+            accounts={accounts}
+            calendars={calendars}
+            focused={focused}
+            onManageAccounts={() => void window.calendarBridge.openSettings('accounts')}
+            onPickDay={setFocused}
+            today={Temporal.PlainDate.from(today)}
           />
         )}
-      </div>
 
-      {commandBarOpen ? (
-        <CommandBar
-          focusedDate={focused}
-          onCapture={capture.start}
-          onClose={() => setCommandBarOpen(false)}
-          onParsed={openPrefill}
-          timeZone={timeZone}
-        />
-      ) : null}
+        <div className="flex min-w-0 flex-1 flex-col">
+          {view === 'month' ? (
+            <MonthView
+              birthdays={birthdays}
+              colorOf={colorOf}
+              events={events}
+              listColorOf={listColorOf}
+              onSelectDay={(date) => {
+                setFocused(date);
+                changeView('day');
+              }}
+              overdue={overdue}
+              tasks={tasks}
+              timeZone={timeZone}
+              today={today}
+              yearMonth={Temporal.PlainYearMonth.from(focused)}
+            />
+          ) : (
+            <WeekView
+              birthdays={birthdays}
+              colorOf={colorOf}
+              days={days}
+              events={events}
+              isEventReadOnly={isEventReadOnly}
+              isTaskReadOnly={isTaskReadOnly}
+              listColorOf={listColorOf}
+              onBirthdayClick={(birthday) => setViewBirthday(birthday)}
+              onEventClick={(event) => setEditorSeed({ event, initialDate: focused })}
+              onNavigate={panByDays}
+              onSlotClick={(date, hour) => setEditorSeed({ initialDate: date, initialHour: hour })}
+              onSlotDrag={(date, times) =>
+                setEditorSeed({ initialDate: date, initialTimes: times })
+              }
+              onTaskClick={(task) => setEditTask(task)}
+              onToggleTask={(task) =>
+                void completeTask({
+                  accountId: task.accountId,
+                  status: task.status === 'completed' ? 'needsAction' : 'completed',
+                  taskId: task.id,
+                  taskListId: task.listId,
+                })
+              }
+              overdue={overdue}
+              secondaryZones={secondaryZones}
+              tasks={tasks}
+              timeZone={timeZone}
+              today={today}
+            />
+          )}
+        </div>
+      </div>
 
       {/* Hidden while a row's editor is open: two dialogs would both close on one Escape. */}
       {capture.state.kind !== 'idle' && !editorSeed ? (
@@ -321,7 +308,7 @@ function CalendarBody({
         />
       ) : null}
 
-      {editorSeed || editTask || viewBirthday ? (
+      {editorOpen || viewBirthday ? (
         <EventEditor
           birthday={viewBirthday ?? undefined}
           calendars={calendars}
@@ -330,18 +317,21 @@ function CalendarBody({
               ? `birthday:${viewBirthday.record.id}:${viewBirthday.date}`
               : editTask
                 ? `task:${editTask.id}`
-                : (editorSeed?.event?.id ?? 'new')
+                : taskSeed
+                  ? 'new-task'
+                  : (editorSeed?.event?.id ?? 'new')
           }
-          onClose={() => {
-            setEditorSeed(null);
-            setEditTask(null);
-            setViewBirthday(null);
-            setCaptureRow(null);
-          }}
+          onClose={closeEditor}
           onSaved={captureRow ? () => capture.markAdded(captureRow) : undefined}
-          seed={editorSeed ?? { initialDate: focused }}
+          seed={
+            editorSeed ??
+            (taskSeed ? { initialDate: Temporal.PlainDate.from(taskSeed.initialDate) } : null) ?? {
+              initialDate: focused,
+            }
+          }
           task={editTask ?? undefined}
           taskLists={taskLists}
+          taskPrefill={taskSeed ?? undefined}
           timeZone={timeZone}
         />
       ) : null}

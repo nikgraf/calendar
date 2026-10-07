@@ -424,7 +424,7 @@ describe('Apple Reminders UI', () => {
       await cdp.waitFor(`document.body.textContent.includes('Edit reminder')`);
       const facts = await cdp.waitFor<string>(`JSON.stringify({
         listEnabled: !document.querySelector('select[aria-label="Task list"]')?.disabled,
-        priorityHigh: document.querySelector('[role="radio"][aria-checked="true"]')?.textContent,
+        priorityHigh: document.querySelector('[aria-label="Priority"] [role="radio"][aria-checked="true"]')?.textContent,
         timeValue: document.querySelector('input[aria-label="Due time"]')?.value,
         timed: document.querySelector('input[aria-label="At a time"]')?.checked,
       })`);

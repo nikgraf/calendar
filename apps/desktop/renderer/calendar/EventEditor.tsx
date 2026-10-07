@@ -7,6 +7,7 @@ import {
   useMoveConfirmation,
   useTaskEditorModel,
   type EventEditorSeed,
+  type TaskEditorSeed,
 } from '@calendar/app-state';
 import { useState } from 'react';
 import { Dialog } from '../Dialog.tsx';
@@ -32,6 +33,7 @@ export function EventEditor({
   seed,
   task,
   taskLists,
+  taskPrefill,
   timeZone,
 }: {
   /** Present when opened from a birthday chip: a read-only detail, nothing to edit. */
@@ -44,6 +46,8 @@ export function EventEditor({
   /** Present when the editor was opened from a task chip (task edit mode). */
   task?: TaskRecord | undefined;
   taskLists: ReadonlyArray<TaskListInfo>;
+  /** A new task to open with (a quick-add phrase understood as a task): the editor starts in task mode. */
+  taskPrefill?: Pick<TaskEditorSeed, 'initialTime' | 'title'> | undefined;
   timeZone: string;
 }) {
   const sourceKind: EditorSourceKind = birthday
@@ -57,7 +61,7 @@ export function EventEditor({
   // existing item it converts (Save then writes the other kind and
   // deletes the source). Both models stay mounted so a flip keeps state.
   const [mode, setMode] = useState<'birthday' | 'event' | 'task'>(
-    birthday ? 'birthday' : task ? 'task' : 'event',
+    birthday ? 'birthday' : task || taskPrefill ? 'task' : 'event',
   );
   const moveConfirmation = useMoveConfirmation();
   const mutations = useBackendMutations();
@@ -69,7 +73,8 @@ export function EventEditor({
       convertFromEvent: seed.event,
       existing: task,
       initialDate: seed.initialDate.toString(),
-      initialTime: seed.initialTimes?.startTime,
+      initialTime: taskPrefill?.initialTime ?? seed.initialTimes?.startTime,
+      title: taskPrefill?.title,
     },
     taskLists,
   });

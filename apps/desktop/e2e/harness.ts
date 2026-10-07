@@ -635,6 +635,12 @@ export class Cdp {
     await this.eval(`${yes}.click()`);
   }
 
+  /** Clicks the element carrying a `data-testid`, scrolled into view and hit-tested. */
+  async clickTestId(id: string): Promise<void> {
+    const target = await this.locate(`[data-testid=${JSON.stringify(id)}]`);
+    await this.click(target.x, target.y);
+  }
+
   async clickButtonWithText(text: string): Promise<void> {
     await this.waitFor<boolean>(
       `[...document.querySelectorAll('button')].some(b => b.textContent?.trim() === ${JSON.stringify(text)})`,
