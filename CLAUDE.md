@@ -12,7 +12,10 @@ powers quick-add parsing, find-a-time, and dictation.
 
 - `packages/core` — domain types (Schema classes), rpc contract
   (`backend.ts`), recurrence math (expand/build/edit), drag/time math,
-  meeting-link + color helpers. Pure; no IO.
+  meeting-link + color helpers, the theme (`theme/tokens.ts`, generated
+  from `brand/`, never edited; `eventTint` turns a calendar color into a
+  fill/text/edge per scheme), up-next / task-inbox / agenda grouping.
+  Pure; no IO.
 - `packages/db` — SQLite repos (accounts/calendars/events/tasks/task_lists/
   pending_ops/sync_state), custom migration runner, Reactivity keys +
   invalidation forwarding.
@@ -73,9 +76,12 @@ powers quick-add parsing, find-a-time, and dictation.
   `modules/solunivo-contacts` (CNContactStore) and `modules/solunivo-geo`
   (MapKit); `expo-maps` draws the editor map.
 - `brand/` — SVG masters, logos, fonts and tokens; `pnpm brand:build`
-  (macOS) regenerates the committed app icons and `tokens.css`, and CI
-  fails on stale exports via `pnpm brand:check`. Edit the masters, never
-  the generated ICNS/PNG.
+  (macOS) regenerates the committed app icons, `tokens.css` (the desktop
+  imports it; `App.css` maps the variables to Tailwind utilities and
+  `data-theme` on `<html>` follows the OS appearance) and
+  `packages/core/src/theme/tokens.ts` (iOS reads it through `useTheme`),
+  and CI fails on stale exports via `pnpm brand:check`. Edit
+  `tokens/tokens.json` and the masters, never the generated files.
 
 ## Commands (gate must be green before any commit)
 

@@ -78,6 +78,56 @@ comment` for inline-playable video: 10 MB on Free plans, 100 MB paid
 
 ## Tier 2 — features (near-term, well-scoped)
 
+- [ ] Desktop redesign — the chosen direction from the 2026-10 design
+      review (canvas: "Chosen direction" row). Full-width toolbar with the
+      quick-add field always visible (replaces the ⌘K `CommandBar` Dialog,
+      `CalendarApp.tsx:302-310`; ⌘K focuses the field; `reviewFirst` card
+      from `useQuickAddModel`), collapsible sidebar with mini month, task
+      lists and a sync footer (`Sidebar.tsx:97`; `sidebarCollapsed` /
+      `lastView` via `useUpdateViewPreferences`), right panel (300px, 360px
+      while editing): `useUpNext` card + `useTaskInbox` rail by default,
+      the event inspector on click, the inline editors on Edit — the
+      centered `EventEditor` Dialog goes (`EventEditor.tsx:126-131`;
+      `MoveConfirm` and `BirthdayDetail` stay dialogs; the inline editor
+      never joins `dialogStack`, so the agent approval keeps winning
+      Escape). Forms gain the notes textarea (`model.description`), a done
+      checkbox, and the repeat fields on existing series (`repeatLoaded`).
+      Grid: `eventTint` fills, no borders, selection outline, striped
+      tentative, strikethrough declined, clickable month chips
+      (`MonthView.tsx:110-124`), tasks dragged from the panel
+      (`useEventDrag.ts:266-299` gains a `'panel'` origin; x-bounds guard
+      before `dropTargetAt`). Settings window: sidebar nav with search and
+      icon squares (`windows.ts:176-187` 680×620 → 780×560; hash stays
+      the source of truth). e2e: stable testids (`toolbar-title`,
+      `view-*`, `panel`, `inspector`, `editor-title`, `week-grid`,
+      `today-header`, `now-line`), harness `openInspector`/`openEditor`
+      replace the ~60 `body.textContent.includes('Edit event')` waits,
+      `[title^=…]` scoped to the grid, the `rgb(22,167,101)` assertion
+      reads `data-color`. Search stays a disabled placeholder (its own PR).
+- [ ] iOS redesign — the chosen direction: expo-router `NativeTabs`
+      Calendar · Tasks · Search (placeholder) with `@expo/ui` sheets
+      (BottomSheet, List, Switch, Menu, the datetimepicker drop-in) and
+      expo-system-ui; one native change → new `e2e-simulator` EAS build on
+      the first CI run and a TestFlight build on the next main push (PR
+      OTA previews will not load on old binaries). `index.ts` keeps
+      `polyfills`/`backgroundTask` before `'expo-router/entry'`
+      (`index.ts:1-10`); `+native-intent.tsx` routes the `expo-sharing`
+      and `capture-fixture` links back to `/` (`App.tsx:168-203`).
+      Calendar screen: month title + view `Menu` (Day/2 Days/Week/Month/
+      Agenda, `buildAgenda`) + settings button; `calendar-screen` testID
+      as the Maestro anchor (every flow waits on the "Today" text today,
+      `e2e/common/await-shell.yaml`); collapsed all-day row with a
+      "N tasks · M overdue" pill (`AllDayColumn.tsx:197-210`); floating
+      "+" → quick-add sheet with the `reviewFirst` card and a
+      `quick-add-new-event` button (the deterministic `open-new-event`
+      subflow path); event tap → read-first detail sheet → editor sheet
+      on `List` rows; Tasks tab over `useTaskInbox`; Settings as a modal
+      native Stack (Calendars/Task lists/Accounts/More; `SettingsSheet.
+tsx:214-219` split per screen, `visible` effects → `useFocusEffect`);
+      `useTheme` sweep of the 107 `palette.*` refs and 116 hex literals,
+      dark mode, toasts above the fab (`Toast.tsx:148-153`). Maestro:
+      `switch-view.yaml`, `today` id, settings sub-screen rows, `06`
+      review step and a `todo:` case.
 - [ ] Per-calendar "keep only N years" switch — only should storage ever
       matter (2026-10-04: 303 events in 380 KB; the RDATE and COUNT
       follow-ups shipped, see `docs/decisions.md`). Google calendars only

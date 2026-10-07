@@ -2245,3 +2245,51 @@ came with a failing test first.
       toasts show it. **`addAccount({ loginHint })`**: a reconnect sends
       `login_hint` with `prompt=consent` only, so Google opens on that
       account.
+
+## UI redesign (2026-10)
+
+The main views were redesigned on a canvas (desktop: toolbar + collapsible
+sidebar + grid + a right panel that is a task rail, an inspector or an
+inline editor; iOS: tabs, sheets, a detail-first event view) and the
+work split into three PRs: the shared foundation below, then the desktop,
+then iOS (both in `todo.md`).
+
+- [x] Design tokens + dark-mode foundation — done (2026-10-07, `todo/
+design-tokens`). **The brand kit is the one palette**: `tokens.json`
+      moved to the settled interface palette (white canvas, near-white
+      panels `#FCFBF9`, a `fill` token `#F4F2EE` for controls and cards,
+      hairlines `#EEECE7`, the darker plum `#584360` for filled actions,
+      event tints nudged for white) — a brighter purple and Serenity's
+      indigo were tried on the canvas and rejected. **Generated, never
+      edited**: `brand:build` writes `tokens.css` and
+      `packages/core/src/theme/tokens.ts`; `brand:check` guards both.
+      **Desktop maps the variables into Tailwind** (`bg-canvas`, `text-ink`,
+      `bg-fill`, `bg-primary`, …) and follows the OS appearance over
+      `prefers-color-scheme` → `data-theme` — no IPC, the "window-level
+      concerns" list is unchanged; Inter via `@font-face` from the kit.
+      **iOS keeps the system font** (`@expo/ui` controls render SF anyway)
+      and reads the tokens through `useTheme`. **Calendar colors are
+      tinted, not mapped**: `eventTint(hex, scheme)` keeps hue and chroma
+      and sets the lightness per theme; the brand `event-*` tokens are for
+      items without a calendar. **A series can change or drop its rule**
+      (`UpdateEventChanges.recurrence`, lines or null): the whole series
+      takes it and its exceptions are dropped — they belonged to the old
+      occurrences, as on Google; a this-and-following edit gives the
+      split-off half the rule or leaves the occurrence alone; an instance
+      cannot carry one and a single event does not become a series through
+      an update; Google needs `recurrence: []` to clear, so the op carries
+      `recurrenceCleared` (migration 9). The editor reads the master with
+      the new `getEvent` rpc and sends the rule only when edited; an Apple
+      series (read through, no stored master) keeps its rule uneditable.
+      **Notes are a field** of the event editor model (they only rode
+      along before). **Tasks can be created without a due day**
+      (`createTask.dueDate` optional; `TaskEditorSeed.dated`). **Quick add
+      understands to-dos** (`kind: 'task'` in the schema, "todo:" in the
+      fixture) and can hold a parse for review (`reviewFirst`,
+      `convertQuickAddItem` flips the kind). `ViewPreferences` gains
+      `lastView` and `sidebarCollapsed` as device taste: not exported, not
+      imported; `useUpdateViewPreferences` patches instead of replacing.
+      `CalendarViewKind` moved to core and gained `agenda` (14 days from
+      the focused day, no pan buffer). Pure helpers for the new surfaces:
+      `upNext`, `groupTaskInbox`, `buildAgenda`, with `useUpNext` /
+      `useTaskInbox` over them.
