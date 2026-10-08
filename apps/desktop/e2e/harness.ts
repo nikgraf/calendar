@@ -651,6 +651,15 @@ export class Cdp {
     );
   }
 
+  /** Shows the Today rail if the window is too narrow for it to be open by itself. */
+  async showRail(): Promise<void> {
+    if (await this.eval<boolean>(`!!document.querySelector('[data-panel-kind="rail"]')`)) {
+      return;
+    }
+    await this.clickTestId('panel-toggle');
+    await this.waitFor<boolean>(`!!document.querySelector('[data-panel-kind="rail"]')`);
+  }
+
   /** Clicks the element carrying a `data-testid`, scrolled into view and hit-tested. */
   async clickTestId(id: string): Promise<void> {
     const target = await this.locate(`[data-testid=${JSON.stringify(id)}]`);
@@ -771,6 +780,8 @@ export interface LaunchOptions {
    * developer's ~/.solunivo — absent means the app starts without one.
    */
   readonly settingsFile?: string;
+  /** The main window's size; CI's runner screen is 1024 wide, so a spec can ask for that. */
+  readonly window?: { readonly height: number; readonly width: number };
 }
 
 export interface LiveGoogleLaunch extends LiveAccountSeed {
@@ -909,6 +920,11 @@ export const launchApp = async (seed?: SeedData, options: LaunchOptions = {}): P
       CALENDAR_NOTIFICATIONS: 'off',
       CALENDAR_SETTINGS_FILE: settingsFilePath,
       CALENDAR_USERDATA: userDataDir,
+      ...(options.window
+        ? {
+            CALENDAR_E2E_WINDOW: `${String(options.window.width)}x${String(options.window.height)}`,
+          }
+        : {}),
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   });

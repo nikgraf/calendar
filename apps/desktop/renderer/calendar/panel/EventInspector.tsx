@@ -230,7 +230,18 @@ export function EventInspector({
         )}
         <div className="flex-1" />
         {readOnly ? null : (
-          <Button data-testid="inspector-convert" onClick={onConvert} size="sm" variant="ghost">
+          <Button
+            data-testid="inspector-convert"
+            disabled={isRecurring && scope !== 'series'}
+            onClick={onConvert}
+            size="sm"
+            title={
+              isRecurring && scope !== 'series'
+                ? 'Choose "All events" to convert a series'
+                : undefined
+            }
+            variant="ghost"
+          >
             Convert to task
           </Button>
         )}
