@@ -1,5 +1,4 @@
 import {
-  BIRTHDAY_ACCENT,
   type BirthdayOccurrence,
   birthdayChipLabel,
   calendarTaskKey,
@@ -11,7 +10,7 @@ import {
 } from '@calendar/core';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { GestureDetector } from 'react-native-gesture-handler';
-import { chipTextColor, palette } from './theme.ts';
+import { type ThemeColors, useEventTint, useStyles } from './theme.ts';
 import { ALL_DAY_ROW_HEIGHT } from './timelineLayout.ts';
 import type { TaskDrag } from './useTaskDrag.ts';
 
@@ -66,6 +65,7 @@ export function AllDayColumn({
   today: string;
   width: number;
 }) {
+  const styles = useStyles(makeStyles);
   const total = tasks.length + birthdays.length + events.length;
   // A column that fits shows everything; one that overflows gives its
   // last row to the "+N more" chip.
@@ -95,9 +95,6 @@ export function AllDayColumn({
             style={[
               styles.allDayChip,
               styles.taskChip,
-              // Reminders lists have colors; a left accent tells them apart
-              // from Google tasks without recoloring the whole chip.
-              listColor ? { borderLeftColor: listColor, borderLeftWidth: 3 } : null,
               done && styles.taskChipDone,
               draggingKey === key && styles.taskChipDragging,
             ]}
@@ -117,6 +114,8 @@ export function AllDayColumn({
             >
               <Text style={styles.taskCheckbox}>{done ? '☑' : '☐'}</Text>
             </Pressable>
+            {/* Reminders lists have colors; a dot tells them apart from Google tasks without recoloring the chip. */}
+            {listColor ? <View style={[styles.listDot, { backgroundColor: listColor }]} /> : null}
             <GestureDetector gesture={taskDrag.gestureFor(task, 'lane', isTaskReadOnly(task))}>
               <Pressable
                 accessibilityLabel={
@@ -167,33 +166,15 @@ export function AllDayColumn({
           </Pressable>
         );
       })}
-      {visibleEvents.map((event) => {
-        const color = colorOf(event);
-        // A Pressable like the task chip body: an all-day event opens
-        // its editor on the phone the way it does on desktop.
-        return (
-          <Pressable
-            accessibilityLabel={event.title}
-            accessibilityRole="button"
-            hitSlop={4}
-            key={`${event.calendarId}:${event.id}`}
-            onPress={() => onEventPress(event)}
-            style={[styles.allDayChip, { backgroundColor: color }]}
-            testID="all-day-event-chip"
-          >
-            <Text
-              numberOfLines={1}
-              style={[
-                styles.allDayText,
-                compact && styles.allDayTextCompact,
-                { color: chipTextColor(color) },
-              ]}
-            >
-              {event.title}
-            </Text>
-          </Pressable>
-        );
-      })}
+      {visibleEvents.map((event) => (
+        <AllDayEventChip
+          color={colorOf(event)}
+          compact={compact}
+          event={event}
+          key={`${event.calendarId}:${event.id}`}
+          onPress={onEventPress}
+        />
+      ))}
       {hidden > 0 ? (
         <Pressable
           accessibilityLabel={`${String(hidden)} more all-day items, show all`}
@@ -212,64 +193,100 @@ export function AllDayColumn({
   );
 }
 
-const styles = StyleSheet.create({
-  allDayChip: {
-    borderRadius: 5,
-    height: ALL_DAY_ROW_HEIGHT - 4,
-    justifyContent: 'center',
-    paddingHorizontal: 6,
-  },
-  allDayColumn: {
-    gap: 4,
-    paddingHorizontal: 2,
-    paddingVertical: 2,
-  },
-  allDayText: {
-    fontSize: 13,
-    fontWeight: '500',
-  },
-  allDayTextCompact: {
-    fontSize: 11,
-  },
-  birthdayChip: {
-    borderLeftColor: BIRTHDAY_ACCENT,
-    borderLeftWidth: 3,
-  },
-  moreChip: {
-    backgroundColor: '#f5f5f5',
-  },
-  moreText: {
-    color: palette.textMuted,
-    fontSize: 11,
-  },
-  taskBody: {
-    flexShrink: 1,
-  },
-  taskCheckbox: {
-    color: '#525252',
-    fontSize: 12,
-  },
-  taskChip: {
-    alignItems: 'center',
-    backgroundColor: '#f5f5f5',
-    borderColor: '#d4d4d4',
-    borderWidth: StyleSheet.hairlineWidth,
-    flexDirection: 'row',
-    gap: 3,
-  },
-  taskChipDone: {
-    opacity: 0.5,
-  },
-  taskChipDragging: {
-    opacity: 0.3,
-  },
-  taskText: {
-    color: '#404040',
-  },
-  taskTextDone: {
-    textDecorationLine: 'line-through',
-  },
-  taskTextOverdue: {
-    color: palette.overdue,
-  },
-});
+/** An all-day event in its calendar's tint: a Pressable like the task chip body, so it opens on the phone the way it does on desktop. */
+function AllDayEventChip({
+  color,
+  compact,
+  event,
+  onPress,
+}: {
+  color: string;
+  compact: boolean;
+  event: EventRecord;
+  onPress: (event: EventRecord) => void;
+}) {
+  const styles = useStyles(makeStyles);
+  const tint = useEventTint(color);
+  return (
+    <Pressable
+      accessibilityLabel={event.title}
+      accessibilityRole="button"
+      hitSlop={4}
+      onPress={() => onPress(event)}
+      style={[styles.allDayChip, { backgroundColor: tint.fill }]}
+      testID="all-day-event-chip"
+    >
+      <Text
+        numberOfLines={1}
+        style={[styles.allDayText, compact && styles.allDayTextCompact, { color: tint.text }]}
+      >
+        {event.title}
+      </Text>
+    </Pressable>
+  );
+}
+
+const makeStyles = (colors: ThemeColors) =>
+  StyleSheet.create({
+    allDayChip: {
+      borderRadius: 5,
+      height: ALL_DAY_ROW_HEIGHT - 4,
+      justifyContent: 'center',
+      paddingHorizontal: 6,
+    },
+    allDayColumn: {
+      gap: 4,
+      paddingHorizontal: 2,
+      paddingVertical: 2,
+    },
+    allDayText: {
+      fontSize: 13,
+      fontWeight: '500',
+    },
+    allDayTextCompact: {
+      fontSize: 11,
+    },
+    birthdayChip: {
+      backgroundColor: colors['event-blush'],
+    },
+    listDot: {
+      borderRadius: 3,
+      height: 6,
+      width: 6,
+    },
+    moreChip: {
+      backgroundColor: colors.fill,
+    },
+    moreText: {
+      color: colors['text-secondary'],
+      fontSize: 11,
+    },
+    taskBody: {
+      flexShrink: 1,
+    },
+    taskCheckbox: {
+      color: colors['text-secondary'],
+      fontSize: 12,
+    },
+    taskChip: {
+      alignItems: 'center',
+      backgroundColor: colors.fill,
+      flexDirection: 'row',
+      gap: 3,
+    },
+    taskChipDone: {
+      opacity: 0.5,
+    },
+    taskChipDragging: {
+      opacity: 0.3,
+    },
+    taskText: {
+      color: colors.text,
+    },
+    taskTextDone: {
+      textDecorationLine: 'line-through',
+    },
+    taskTextOverdue: {
+      color: colors.danger,
+    },
+  });

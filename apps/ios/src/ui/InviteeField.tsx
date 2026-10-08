@@ -4,14 +4,15 @@ import { Effect } from 'effect';
 import { useEffect } from 'react';
 import { Pressable, Text, TextInput, View } from 'react-native';
 import { iosContactsClient } from '../contactsClient.ts';
-import { sheetStyles as styles } from './editSheetShared.ts';
+import { useSheetStyles } from './editSheetShared.ts';
+import { type ThemeColors, useTheme } from './theme.ts';
 
-const STATUS_COLOR: Record<Attendee['responseStatus'], string> = {
-  accepted: '#22c55e',
-  declined: '#ef4444',
-  needsAction: '#d4d4d4',
-  tentative: '#f59e0b',
-};
+const statusColor = (colors: ThemeColors): Record<Attendee['responseStatus'], string> => ({
+  accepted: colors.success,
+  declined: colors.danger,
+  needsAction: colors.border,
+  tentative: colors.warning,
+});
 
 const contactsStatus = (): Promise<string> =>
   Effect.runPromise(
@@ -40,6 +41,8 @@ export function InviteeField({
   onAdd: (input: AttendeeInput) => boolean;
   onRemove: (email: string) => void;
 }) {
+  const { colors } = useTheme();
+  const styles = useSheetStyles();
   const {
     acceptEnter,
     addTyped,
@@ -78,7 +81,9 @@ export function InviteeField({
                 <View
                   style={[
                     styles.chipDot,
-                    { backgroundColor: STATUS_COLOR[status?.responseStatus ?? 'needsAction'] },
+                    {
+                      backgroundColor: statusColor(colors)[status?.responseStatus ?? 'needsAction'],
+                    },
                   ]}
                 />
                 <Text style={styles.chipLabel}>{attendee.displayName ?? attendee.email}</Text>

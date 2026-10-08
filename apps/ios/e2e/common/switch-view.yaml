@@ -1,0 +1,21 @@
+appId: com.solunivo.app.dev
+name: Switch the calendar to the view named VIEW (shared)
+---
+# The header's view button opens a native menu; its items are the view
+# names. A tap taken right after launch can report COMPLETED with nothing
+# opening (runs 37104577969 and its rerun): re-open while the item is
+# missing, the way a person would.
+- repeat:
+    times: 3
+    while:
+      notVisible: ${VIEW}
+    commands:
+      - tapOn:
+          id: 'view-menu'
+      - extendedWaitUntil:
+          visible: ${VIEW}
+          timeout: 3000
+          optional: true
+- tapOn: ${VIEW}
+- waitForAnimationToEnd:
+    timeout: 5000

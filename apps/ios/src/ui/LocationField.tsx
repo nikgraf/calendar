@@ -1,6 +1,6 @@
 import { useLocationField, type useEventEditorModel } from '@calendar/app-state';
 import { Pressable, Text, TextInput, View } from 'react-native';
-import { sheetStyles as styles } from './editSheetShared.ts';
+import { useSheetStyles } from './editSheetShared.ts';
 
 /**
  * The location input with MapKit suggestions under it, rendered as plain
@@ -10,6 +10,7 @@ import { sheetStyles as styles } from './editSheetShared.ts';
  * The state machine is useLocationField, shared with the desktop combobox.
  */
 export function LocationField({ model }: { model: ReturnType<typeof useEventEditorModel> }) {
+  const styles = useSheetStyles();
   const { acceptEnter, choose, dismiss, open, setText, stale, suggestions } = useLocationField({
     location: model.location,
     onPick: (suggestion) => void model.pickPlace(suggestion),

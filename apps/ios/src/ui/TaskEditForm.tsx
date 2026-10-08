@@ -2,7 +2,7 @@ import type { useTaskEditorModel } from '@calendar/app-state';
 import type { TaskRecord } from '@calendar/core';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { Linking, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
-import { dateFromParts, sheetStyles as styles, toDateString } from './editSheetShared.ts';
+import { dateFromParts, useSheetStyles, toDateString } from './editSheetShared.ts';
 import { NoDueDate } from './NoDueDate.tsx';
 import { TaskListPicker } from './TaskListPicker.tsx';
 
@@ -14,6 +14,7 @@ export function TaskEditForm({
   task: TaskRecord | undefined;
   taskModel: ReturnType<typeof useTaskEditorModel>;
 }) {
+  const styles = useSheetStyles();
   return (
     <ScrollView contentContainerStyle={styles.content}>
       {taskModel.error ? <Text style={styles.error}>{taskModel.error}</Text> : null}

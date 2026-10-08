@@ -1,7 +1,7 @@
 import { useNow } from '@calendar/app-state';
 import { Temporal, wallClockMinutes } from '@calendar/core';
 import { StyleSheet, View } from 'react-native';
-import { palette } from './theme.ts';
+import { type ThemeColors, useStyles } from './theme.ts';
 import { HOUR_HEIGHT } from './timelineLayout.ts';
 
 /**
@@ -11,6 +11,7 @@ import { HOUR_HEIGHT } from './timelineLayout.ts';
  * under it.
  */
 export function NowIndicator({ date, timeZone }: { date: Temporal.PlainDate; timeZone: string }) {
+  const styles = useStyles(makeStyles);
   const nowMs = useNow();
   // The column can outlive midnight until its parent re-renders.
   if (
@@ -29,22 +30,23 @@ export function NowIndicator({ date, timeZone }: { date: Temporal.PlainDate; tim
   );
 }
 
-const styles = StyleSheet.create({
-  dot: {
-    backgroundColor: palette.today,
-    borderRadius: 4,
-    height: 8,
-    left: -4,
-    position: 'absolute',
-    top: -3,
-    width: 8,
-  },
-  line: {
-    backgroundColor: palette.today,
-    height: 2,
-    left: 0,
-    position: 'absolute',
-    right: 0,
-    zIndex: 10,
-  },
-});
+const makeStyles = (colors: ThemeColors) =>
+  StyleSheet.create({
+    dot: {
+      backgroundColor: colors.primary,
+      borderRadius: 4,
+      height: 8,
+      left: -4,
+      position: 'absolute',
+      top: -3,
+      width: 8,
+    },
+    line: {
+      backgroundColor: colors.primary,
+      height: 2,
+      left: 0,
+      position: 'absolute',
+      right: 0,
+      zIndex: 10,
+    },
+  });

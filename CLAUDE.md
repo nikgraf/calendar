@@ -70,7 +70,7 @@ powers quick-add parsing, find-a-time, and dictation.
   `electron/helperProcess.ts`); the agent gateway host
   (`electron/agent/`: Unix socket, MCP server, CLI runner) and its relay
   `solunivo-cli` (`electron/cli.ts`, a third tsdown entry). `apps/ios` —
-  Expo dev client; zero-hop direct backend; @react-native-ai/apple for on-device model access;
+  Expo dev client on expo-router (`app/`: native tabs Calendar · Tasks · Search, Settings as a modal route, `+native-intent.tsx` keeps share/OAuth URLs off the router; `src/ui/EditorHost.tsx` owns every sheet); `@expo/ui` for drop-in native controls, expo-system-ui for the window background; zero-hop direct backend; @react-native-ai/apple for on-device model access;
   local Expo modules `modules/solunivo-reminders` (EventKit),
   `modules/solunivo-apple-calendar` (EventKit events),
   `modules/solunivo-contacts` (CNContactStore) and `modules/solunivo-geo`

@@ -23,7 +23,6 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   AppState,
   Linking,
-  Modal,
   Pressable,
   SafeAreaView,
   ScrollView,
@@ -44,7 +43,7 @@ import { MirrorsSection } from './MirrorsSection.tsx';
 import { PrPreviewSection } from './PrPreviewSection.tsx';
 import { SettingsFileSection } from './SettingsFileSection.tsx';
 import { TimeZonesSection } from './TimeZonesSection.tsx';
-import { palette } from './theme.ts';
+import { type ThemeColors, useStyles } from './theme.ts';
 import { MutationNoticeToast } from './Toast.tsx';
 
 const IOS_SETTINGS_PATH = 'Settings › Privacy & Security';
@@ -57,7 +56,13 @@ const STATUS_SETTLE_TRIES = 40;
 const STATUS_SETTLE_MS = 200;
 type Connection = 'calendar' | 'contacts' | 'google' | 'reminders';
 
-export function SettingsSheet({ onClose, visible }: { onClose: () => void; visible: boolean }) {
+/**
+ * The settings screen, presented as a modal route (`app/settings.tsx`)
+ * from the calendar's gear: accounts, connections and the sections.
+ * Mounted only while open, so what used to key on `visible` runs on mount.
+ */
+export function SettingsScreen({ onClose }: { onClose: () => void }) {
+  const styles = useStyles(makeStyles);
   const mutations = useBackendMutations();
   const guarded = useGuardedMutations();
   const accounts = useAccounts();
@@ -101,9 +106,6 @@ export function SettingsSheet({ onClose, visible }: { onClose: () => void; visib
   }, []);
 
   useEffect(() => {
-    if (!visible) {
-      return;
-    }
     void refreshPermissions();
     const subscription = AppState.addEventListener('change', (state) => {
       if (state === 'active') {
@@ -114,7 +116,7 @@ export function SettingsSheet({ onClose, visible }: { onClose: () => void; visib
       refreshVersion.current += 1;
       subscription.remove();
     };
-  }, [refreshPermissions, visible]);
+  }, [refreshPermissions]);
 
   const connectDevice = async (provider: 'calendar' | 'contacts' | 'reminders') => {
     if (busyRef.current) {
@@ -211,14 +213,8 @@ export function SettingsSheet({ onClose, visible }: { onClose: () => void; visib
   };
 
   return (
-    <Modal
-      animationType="slide"
-      onRequestClose={onClose}
-      presentationStyle="overFullScreen"
-      visible={visible}
-    >
-      {/* overFullScreen draws under the status bar; inset it ourselves. */}
-      <SafeAreaView style={styles.container}>
+    <>
+      <SafeAreaView style={styles.container} testID="settings-screen">
         <View style={styles.header}>
           <Text style={styles.title}>Accounts</Text>
           <Pressable onPress={onClose}>
@@ -361,106 +357,107 @@ export function SettingsSheet({ onClose, visible }: { onClose: () => void; visib
           <SettingsFileSection />
           <LocationsSection />
           <PrPreviewSection />
-          <DiagnosticsSection contacts={contacts} reminders={reminders} visible={visible} />
+          <DiagnosticsSection contacts={contacts} reminders={reminders} visible />
         </ScrollView>
         {/* RN Modals cover the root screen's toast, so this sheet mounts
             its own listener for failures triggered from inside it. */}
         <MutationNoticeToast />
       </SafeAreaView>
-    </Modal>
+    </>
   );
 }
 
-const styles = StyleSheet.create({
-  addBusy: {
-    opacity: 0.5,
-  },
-  addButton: {
-    alignItems: 'center',
-    backgroundColor: '#2563eb',
-    borderRadius: 10,
-    paddingVertical: 12,
-  },
-  addLabel: {
-    color: '#ffffff',
-    fontSize: 15,
-    fontWeight: '600',
-  },
-  addSecondary: {
-    backgroundColor: '#171717',
-    marginTop: 8,
-  },
-  connectionStatus: {
-    color: palette.textMuted,
-    fontSize: 13,
-    marginTop: 10,
-  },
-  container: {
-    backgroundColor: palette.background,
-    flex: 1,
-  },
-  content: {
-    padding: 16,
-  },
-  done: {
-    color: '#2563eb',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  error: {
-    color: '#b91c1c',
-    fontSize: 13,
-    marginBottom: 10,
-  },
-  header: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-  },
-  pendingCard: {
-    backgroundColor: '#fef3c7',
-    borderRadius: 10,
-    marginBottom: 14,
-    padding: 12,
-  },
-  pendingDiscard: {
-    color: '#dc2626',
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  pendingLabel: {
-    color: '#92400e',
-    flex: 1,
-    fontSize: 13,
-  },
-  pendingResolve: {
-    color: '#b45309',
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  pendingRow: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    gap: 8,
-    paddingVertical: 3,
-  },
-  pendingTitle: {
-    color: '#92400e',
-    fontSize: 14,
-    fontWeight: '700',
-    marginBottom: 4,
-  },
-  settingsLink: {
-    color: '#2563eb',
-    fontSize: 14,
-    fontWeight: '600',
-    marginTop: 10,
-    paddingVertical: 4,
-  },
-  title: {
-    fontSize: 17,
-    fontWeight: '700',
-  },
-});
+const makeStyles = (colors: ThemeColors) =>
+  StyleSheet.create({
+    addBusy: {
+      opacity: 0.5,
+    },
+    addButton: {
+      alignItems: 'center',
+      backgroundColor: colors.primary,
+      borderRadius: 10,
+      paddingVertical: 12,
+    },
+    addLabel: {
+      color: colors['on-primary'],
+      fontSize: 15,
+      fontWeight: '600',
+    },
+    addSecondary: {
+      backgroundColor: colors.text,
+      marginTop: 8,
+    },
+    connectionStatus: {
+      color: colors['text-secondary'],
+      fontSize: 13,
+      marginTop: 10,
+    },
+    container: {
+      backgroundColor: colors.canvas,
+      flex: 1,
+    },
+    content: {
+      padding: 16,
+    },
+    done: {
+      color: colors.primary,
+      fontSize: 16,
+      fontWeight: '600',
+    },
+    error: {
+      color: colors.danger,
+      fontSize: 13,
+      marginBottom: 10,
+    },
+    header: {
+      alignItems: 'center',
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      paddingHorizontal: 16,
+      paddingVertical: 14,
+    },
+    pendingCard: {
+      backgroundColor: colors.warning,
+      borderRadius: 10,
+      marginBottom: 14,
+      padding: 12,
+    },
+    pendingDiscard: {
+      color: colors.danger,
+      fontSize: 13,
+      fontWeight: '600',
+    },
+    pendingLabel: {
+      color: colors['text-secondary'],
+      flex: 1,
+      fontSize: 13,
+    },
+    pendingResolve: {
+      color: colors.primary,
+      fontSize: 13,
+      fontWeight: '600',
+    },
+    pendingRow: {
+      alignItems: 'center',
+      flexDirection: 'row',
+      gap: 8,
+      paddingVertical: 3,
+    },
+    pendingTitle: {
+      color: colors.text,
+      fontSize: 14,
+      fontWeight: '700',
+      marginBottom: 4,
+    },
+    settingsLink: {
+      color: colors.primary,
+      fontSize: 14,
+      fontWeight: '600',
+      marginTop: 10,
+      paddingVertical: 4,
+    },
+    title: {
+      fontSize: 17,
+      fontWeight: '700',
+    },
+  });

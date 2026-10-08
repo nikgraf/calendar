@@ -78,30 +78,6 @@ comment` for inline-playable video: 10 MB on Free plans, 100 MB paid
 
 ## Tier 2 — features (near-term, well-scoped)
 
-- [ ] iOS redesign — the chosen direction: expo-router `NativeTabs`
-      Calendar · Tasks · Search (placeholder) with `@expo/ui` sheets
-      (BottomSheet, List, Switch, Menu, the datetimepicker drop-in) and
-      expo-system-ui; one native change → new `e2e-simulator` EAS build on
-      the first CI run and a TestFlight build on the next main push (PR
-      OTA previews will not load on old binaries). `index.ts` keeps
-      `polyfills`/`backgroundTask` before `'expo-router/entry'`
-      (`index.ts:1-10`); `+native-intent.tsx` routes the `expo-sharing`
-      and `capture-fixture` links back to `/` (`App.tsx:168-203`).
-      Calendar screen: month title + view `Menu` (Day/2 Days/Week/Month/
-      Agenda, `buildAgenda`) + settings button; `calendar-screen` testID
-      as the Maestro anchor (every flow waits on the "Today" text today,
-      `e2e/common/await-shell.yaml`); collapsed all-day row with a
-      "N tasks · M overdue" pill (`AllDayColumn.tsx:197-210`); floating
-      "+" → quick-add sheet with the `reviewFirst` card and a
-      `quick-add-new-event` button (the deterministic `open-new-event`
-      subflow path); event tap → read-first detail sheet → editor sheet
-      on `List` rows; Tasks tab over `useTaskInbox`; Settings as a modal
-      native Stack (Calendars/Task lists/Accounts/More; `SettingsSheet.
-tsx:214-219` split per screen, `visible` effects → `useFocusEffect`);
-      `useTheme` sweep of the 107 `palette.*` refs and 116 hex literals,
-      dark mode, toasts above the fab (`Toast.tsx:148-153`). Maestro:
-      `switch-view.yaml`, `today` id, settings sub-screen rows, `06`
-      review step and a `todo:` case.
 - [ ] Per-calendar "keep only N years" switch — only should storage ever
       matter (2026-10-04: 303 events in 380 KB; the RDATE and COUNT
       follow-ups shipped, see `docs/decisions.md`). Google calendars only

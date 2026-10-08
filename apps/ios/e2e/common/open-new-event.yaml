@@ -1,21 +1,29 @@
 appId: com.solunivo.app.dev
-name: Open the new-event sheet from the header "+" (shared)
+name: Open the new-event sheet from the "+" button (shared)
 ---
-# One tap normally does it. Run 34852090635 tapped the button at the
-# right coordinates and no sheet followed (the screen stayed on the day
-# view, nothing crashed); the same tap passed in the two sibling flows
-# of that run. Re-tap while the sheet is missing, the way a person would.
+# The "+" opens the quick-add sheet; its "New event" row opens the empty
+# editor — the deterministic path, no model involved. One tap normally
+# does it. Run 34852090635 tapped the button at the right coordinates and
+# no sheet followed (the screen stayed on the day view, nothing crashed);
+# re-tap while the sheet is missing, the way a person would.
 - repeat:
     times: 3
     while:
-      notVisible: 'New Event'
+      notVisible:
+        id: 'quick-add-new-event'
     commands:
       - tapOn:
-          id: 'add-event'
+          id: 'add'
       - extendedWaitUntil:
-          visible: 'New Event'
+          visible:
+            id: 'quick-add-new-event'
           timeout: 5000
           optional: true
+- tapOn:
+    id: 'quick-add-new-event'
+- extendedWaitUntil:
+    visible: 'New Event'
+    timeout: 10000
 - assertVisible: 'New Event'
 # The sheet slides in; on a slow runner a tap taken mid-animation misses.
 - waitForAnimationToEnd:

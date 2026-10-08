@@ -116,6 +116,14 @@ the `runtime.version` of the latest finished main-channel build
 same hash, so equality means an OTA update reaches every install of the
 latest build.
 
+The iOS redesign (2026-10, `todo/ios-redesign`) moved the fingerprint
+once — expo-router, `@expo/ui`, expo-system-ui and their peers, plus the
+expo-router plugin — in its first commit; every later commit is JS only.
+The branch's first CI run requests the new `e2e-simulator` build, a
+local Maestro run needs a `development-simulator` build of that
+fingerprint, and a PR's OTA preview cannot load on a binary built
+before it.
+
 - **Unchanged** (JS/TS/docs-only merges — most of them): publishes
   `eas update --branch main` in ~30s; installed TestFlight builds load it
   on next launch. No cloud build, no build number.

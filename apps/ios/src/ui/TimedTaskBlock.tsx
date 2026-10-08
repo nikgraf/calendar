@@ -7,7 +7,7 @@ import {
 } from '@calendar/core';
 import { Pressable, StyleSheet, Text, View, type DimensionValue } from 'react-native';
 import { GestureDetector, type PanGesture } from 'react-native-gesture-handler';
-import { palette } from './theme.ts';
+import { type ThemeColors, useStyles } from './theme.ts';
 
 /**
  * A compact Apple Reminder with no duration. Its body long-presses into the
@@ -39,6 +39,7 @@ export function TimedTaskBlock({
   top: number;
   width: DimensionValue;
 }) {
+  const styles = useStyles(makeStyles);
   const done = task.status === 'completed';
   const marker = priorityMarker(task.priority);
   const repeats = taskRepeats(task);
@@ -47,13 +48,7 @@ export function TimedTaskBlock({
 
   return (
     <View
-      style={[
-        styles.block,
-        { left, top, width },
-        listColor ? { borderLeftColor: listColor, borderLeftWidth: 3 } : null,
-        done && styles.done,
-        dimmed && styles.dimmed,
-      ]}
+      style={[styles.block, { left, top, width }, done && styles.done, dimmed && styles.dimmed]}
       testID={`timed-task-${task.id}`}
     >
       <Pressable
@@ -67,6 +62,7 @@ export function TimedTaskBlock({
       >
         <Text style={styles.checkbox}>{done ? '☑' : '☐'}</Text>
       </Pressable>
+      {listColor ? <View style={[styles.listDot, { backgroundColor: listColor }]} /> : null}
       <GestureDetector gesture={gesture}>
         <Pressable
           accessibilityLabel={`${task.title}, due ${dueLabel}${repeats ? ', repeats' : ''}`}
@@ -88,41 +84,46 @@ export function TimedTaskBlock({
   );
 }
 
-const styles = StyleSheet.create({
-  block: {
-    alignItems: 'center',
-    backgroundColor: '#f5f5f5',
-    borderColor: '#d4d4d4',
-    borderRadius: 5,
-    borderWidth: StyleSheet.hairlineWidth,
-    flexDirection: 'row',
-    gap: 3,
-    height: 22,
-    paddingHorizontal: 4,
-    position: 'absolute',
-  },
-  body: {
-    flex: 1,
-  },
-  checkbox: {
-    color: '#525252',
-    fontSize: 12,
-  },
-  dimmed: {
-    opacity: 0.3,
-  },
-  done: {
-    opacity: 0.5,
-  },
-  title: {
-    color: palette.text,
-    fontSize: 13,
-    fontWeight: '500',
-  },
-  titleCompact: {
-    fontSize: 11,
-  },
-  titleDone: {
-    textDecorationLine: 'line-through',
-  },
-});
+const makeStyles = (colors: ThemeColors) =>
+  StyleSheet.create({
+    block: {
+      alignItems: 'center',
+      backgroundColor: colors.fill,
+      borderRadius: 5,
+      flexDirection: 'row',
+      gap: 3,
+      height: 22,
+      paddingHorizontal: 4,
+      position: 'absolute',
+    },
+    body: {
+      flex: 1,
+    },
+    checkbox: {
+      color: colors['text-secondary'],
+      fontSize: 12,
+    },
+    dimmed: {
+      opacity: 0.3,
+    },
+    done: {
+      opacity: 0.5,
+    },
+    listDot: {
+      borderRadius: 3,
+      height: 6,
+      marginRight: 4,
+      width: 6,
+    },
+    title: {
+      color: colors.text,
+      fontSize: 13,
+      fontWeight: '500',
+    },
+    titleCompact: {
+      fontSize: 11,
+    },
+    titleDone: {
+      textDecorationLine: 'line-through',
+    },
+  });

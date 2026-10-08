@@ -1,7 +1,7 @@
 import { Component, type ReactNode } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { recordRenderError } from '../crashLog.ts';
-import { palette } from './theme.ts';
+import { type ThemeColors, useStyles } from './theme.ts';
 
 interface State {
   readonly error: Error | null;
@@ -31,48 +31,55 @@ export class ErrorBoundary extends Component<{ children: ReactNode }, State> {
     if (!this.state.error) {
       return this.props.children;
     }
-    return (
-      <View style={styles.container}>
-        <Text style={styles.heading}>Something went wrong.</Text>
-        <Text numberOfLines={3} selectable style={styles.detail}>
-          {String(this.state.error)}
-        </Text>
-        <Pressable onPress={() => this.setState({ error: null })} style={styles.button}>
-          <Text style={styles.buttonLabel}>Try again</Text>
-        </Pressable>
-      </View>
-    );
+    return <ErrorView error={this.state.error} onRetry={() => this.setState({ error: null })} />;
   }
 }
 
-const styles = StyleSheet.create({
-  button: {
-    backgroundColor: '#2563eb',
-    borderRadius: 8,
-    paddingHorizontal: 16,
-    paddingVertical: 6,
-  },
-  buttonLabel: {
-    color: '#ffffff',
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  container: {
-    alignItems: 'center',
-    backgroundColor: palette.background,
-    flex: 1,
-    gap: 12,
-    justifyContent: 'center',
-    paddingHorizontal: 24,
-  },
-  detail: {
-    color: palette.textMuted,
-    fontSize: 13,
-    textAlign: 'center',
-  },
-  heading: {
-    color: palette.text,
-    fontSize: 17,
-    fontWeight: '600',
-  },
-});
+/** The boundary is a class (React has no hook for it); the themed view is not. */
+function ErrorView({ error, onRetry }: { error: Error; onRetry: () => void }) {
+  const styles = useStyles(makeStyles);
+  return (
+    <View style={styles.container}>
+      <Text style={styles.heading}>Something went wrong.</Text>
+      <Text numberOfLines={3} selectable style={styles.detail}>
+        {String(error)}
+      </Text>
+      <Pressable onPress={onRetry} style={styles.button}>
+        <Text style={styles.buttonLabel}>Try again</Text>
+      </Pressable>
+    </View>
+  );
+}
+
+const makeStyles = (colors: ThemeColors) =>
+  StyleSheet.create({
+    button: {
+      backgroundColor: colors.primary,
+      borderRadius: 8,
+      paddingHorizontal: 16,
+      paddingVertical: 6,
+    },
+    buttonLabel: {
+      color: colors['on-primary'],
+      fontSize: 14,
+      fontWeight: '600',
+    },
+    container: {
+      alignItems: 'center',
+      backgroundColor: colors.canvas,
+      flex: 1,
+      gap: 12,
+      justifyContent: 'center',
+      paddingHorizontal: 24,
+    },
+    detail: {
+      color: colors['text-secondary'],
+      fontSize: 13,
+      textAlign: 'center',
+    },
+    heading: {
+      color: colors.text,
+      fontSize: 17,
+      fontWeight: '600',
+    },
+  });

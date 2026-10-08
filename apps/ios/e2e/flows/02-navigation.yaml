@@ -4,38 +4,51 @@ tags:
   - ci
 ---
 - runFlow: ../common/launch.yaml
-# Same as the gear in open-settings.yaml: a tap taken right after launch
-# can report COMPLETED with nothing switching (runs 37104577969 and its
-# rerun sat on the day view). Re-tap while the month title is missing.
 # Month view titles are "July 2026"-style.
-- repeat:
-    times: 3
-    while:
-      notVisible: '.* 20\d\d'
-    commands:
-      - tapOn: 'Month'
-      - extendedWaitUntil:
-          visible: '.* 20\d\d'
-          timeout: 5000
-          optional: true
+- runFlow:
+    file: ../common/switch-view.yaml
+    env:
+      VIEW: 'Month'
 - assertVisible:
     text: '.* 20\d\d'
-- tapOn: '2 Days'
+- runFlow:
+    file: ../common/switch-view.yaml
+    env:
+      VIEW: '2 Days'
 # Two-day titles are "Sep 28 – 29, 2026" or "Sep 30 – Oct 1, 2026".
 - assertVisible:
     text: '.* – .*, 20\d\d'
 - assertVisible:
     id: 'day-timeline'
-- tapOn: 'Week'
+- runFlow:
+    file: ../common/switch-view.yaml
+    env:
+      VIEW: 'Week'
 # Week titles are "September 7 – 13, 2026" or "Aug 31 – Sep 6, 2026".
 - assertVisible:
     text: '.* – .*, 20\d\d'
 - assertVisible:
     id: 'day-timeline'
-- tapOn: 'Day'
+- runFlow:
+    file: ../common/switch-view.yaml
+    env:
+      VIEW: 'Day'
 - tapOn:
     id: 'nav-next'
 - tapOn:
     id: 'nav-prev'
-- tapOn: 'Today'
-- assertVisible: 'Day'
+- tapOn:
+    id: 'today'
+# The agenda lists two weeks from the focused day.
+- runFlow:
+    file: ../common/switch-view.yaml
+    env:
+      VIEW: 'Agenda'
+- assertVisible:
+    id: 'agenda-list'
+- runFlow:
+    file: ../common/switch-view.yaml
+    env:
+      VIEW: 'Day'
+- assertVisible:
+    id: 'day-timeline'

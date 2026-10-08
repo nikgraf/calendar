@@ -1,7 +1,7 @@
 import { useBackendMutations } from '@calendar/app-state';
 import { useState } from 'react';
 import { Pressable, Text, View } from 'react-native';
-import { sectionStyles } from './settingsShared.ts';
+import { useSectionStyles } from './settingsShared.ts';
 
 /**
  * The on-device geocode cache behind the editor map. Entries refresh on
@@ -9,6 +9,7 @@ import { sectionStyles } from './settingsShared.ts';
  * place Apple Maps got wrong and the user wants looked up afresh.
  */
 export function LocationsSection() {
+  const sectionStyles = useSectionStyles();
   const { clearLocationCache } = useBackendMutations();
   const [state, setState] = useState<'busy' | 'cleared' | 'idle'>('idle');
 

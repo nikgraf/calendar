@@ -12,7 +12,10 @@ tags:
 # the assertions below must never be skipped there.
 - runFlow: ../common/launch.yaml
 - tapOn: 'Today'
-- tapOn: 'Day'
+- runFlow:
+    file: ../common/switch-view.yaml
+    env:
+      VIEW: 'Day'
 - runFlow: ../common/open-new-event.yaml
 - runFlow: ../common/switch-to-task.yaml
 - evalScript: ${output.connectedReminders = false}
@@ -99,7 +102,10 @@ tags:
             # time and require it to survive an app restart (storage read).
             - stopApp
             - runFlow: ../common/launch.yaml
-            - tapOn: 'Day'
+            - runFlow:
+                file: ../common/switch-view.yaml
+                env:
+                  VIEW: 'Day'
             - scrollUntilVisible:
                 element:
                   text: '${output.movedReminderLabel}'

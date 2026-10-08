@@ -1,6 +1,7 @@
 import { type useEventEditorModel } from '@calendar/app-state';
 import { isMappableLocation } from '@calendar/core';
 import { Linking, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import { type ThemeColors, useStyles } from './theme.ts';
 
 /**
  * expo-maps' Apple Maps view is SwiftUI Map, available from iOS 17 — and
@@ -28,6 +29,7 @@ const AppleMaps = loadAppleMaps();
  * only the link shows.
  */
 export function LocationMap({ model }: { model: ReturnType<typeof useEventEditorModel> }) {
+  const styles = useStyles(makeStyles);
   const { location, mapGeo, mapLoading, mapsUrl } = model;
   if (!isMappableLocation(location)) {
     return null;
@@ -74,28 +76,29 @@ export function LocationMap({ model }: { model: ReturnType<typeof useEventEditor
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    gap: 6,
-    marginTop: 8,
-  },
-  link: {
-    color: '#2563eb',
-    fontSize: 14,
-  },
-  map: {
-    borderRadius: 10,
-    height: 160,
-    overflow: 'hidden',
-  },
-  placeholder: {
-    alignItems: 'center',
-    backgroundColor: '#f5f5f5',
-    justifyContent: 'center',
-    marginTop: 8,
-  },
-  placeholderLabel: {
-    color: '#a3a3a3',
-    fontSize: 13,
-  },
-});
+const makeStyles = (colors: ThemeColors) =>
+  StyleSheet.create({
+    container: {
+      gap: 6,
+      marginTop: 8,
+    },
+    link: {
+      color: colors.primary,
+      fontSize: 14,
+    },
+    map: {
+      borderRadius: 10,
+      height: 160,
+      overflow: 'hidden',
+    },
+    placeholder: {
+      alignItems: 'center',
+      backgroundColor: colors.fill,
+      justifyContent: 'center',
+      marginTop: 8,
+    },
+    placeholderLabel: {
+      color: colors['text-secondary'],
+      fontSize: 13,
+    },
+  });

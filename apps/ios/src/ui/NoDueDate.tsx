@@ -1,12 +1,14 @@
 import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { sheetStyles } from './editSheetShared.ts';
-import { palette } from './theme.ts';
+import { useSheetStyles } from './editSheetShared.ts';
+import { type ThemeColors, useStyles } from './theme.ts';
 
 /**
  * The Due row of a task that has no due day: the calendar shows it on
  * today until it is done, and it keeps no date unless one is added here.
  */
 export function NoDueDate({ onAdd }: { onAdd: () => void }) {
+  const sheetStyles = useSheetStyles();
+  const styles = useStyles(makeStyles);
   return (
     <View style={sheetStyles.pickerRow} testID="task-no-due-date">
       <View style={styles.text}>
@@ -20,17 +22,18 @@ export function NoDueDate({ onAdd }: { onAdd: () => void }) {
   );
 }
 
-const styles = StyleSheet.create({
-  action: {
-    color: '#2563eb',
-    fontSize: 15,
-  },
-  note: {
-    color: palette.textMuted,
-    fontSize: 13,
-  },
-  text: {
-    flex: 1,
-    paddingRight: 12,
-  },
-});
+const makeStyles = (colors: ThemeColors) =>
+  StyleSheet.create({
+    action: {
+      color: colors.primary,
+      fontSize: 15,
+    },
+    note: {
+      color: colors['text-secondary'],
+      fontSize: 13,
+    },
+    text: {
+      flex: 1,
+      paddingRight: 12,
+    },
+  });

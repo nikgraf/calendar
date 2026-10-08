@@ -10,8 +10,8 @@ import {
 } from '@calendar/core';
 import { useState } from 'react';
 import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
-import { sectionStyles } from './settingsShared.ts';
-import { palette } from './theme.ts';
+import { useSectionStyles } from './settingsShared.ts';
+import { type ThemeColors, useStyles } from './theme.ts';
 
 /** One account in Settings: header, calendar toggles + palette, task lists. */
 export function AccountCard({
@@ -32,6 +32,8 @@ export function AccountCard({
   syncStatus?: AccountSyncStatus | undefined;
   taskLists: ReadonlyArray<TaskListInfo>;
 }) {
+  const sectionStyles = useSectionStyles();
+  const styles = useStyles(makeStyles);
   // An account that cannot sync (re-auth pending) never finishes an
   // import, so "importing" would be a lie there; what it already holds
   // is still worth stating.
@@ -203,72 +205,73 @@ export function AccountCard({
   );
 }
 
-const styles = StyleSheet.create({
-  calendarHidden: {
-    color: palette.textFaint,
-  },
-  calendarName: {
-    fontSize: 14,
-  },
-  calendarRow: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    gap: 8,
-    paddingVertical: 5,
-  },
-  calendarToggle: {
-    flex: 1,
-  },
-  card: {
-    backgroundColor: '#ffffff',
-    borderColor: palette.border,
-    borderRadius: 12,
-    borderWidth: StyleSheet.hairlineWidth,
-    marginBottom: 12,
-    padding: 12,
-  },
-  email: {
-    color: palette.textMuted,
-    fontSize: 13,
-  },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 8,
-  },
-  info: {
-    flex: 1,
-  },
-  name: {
-    fontSize: 15,
-    fontWeight: '600',
-  },
-  paletteRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 6,
-    paddingBottom: 8,
-    paddingLeft: 22,
-  },
-  paletteSelected: {
-    borderColor: '#2563eb',
-    borderWidth: 2,
-  },
-  paletteSwatch: {
-    borderColor: 'transparent',
-    borderRadius: 5,
-    borderWidth: 2,
-    height: 20,
-    width: 20,
-  },
-  remove: {
-    color: '#dc2626',
-    fontSize: 13,
-  },
-  swatch: {
-    borderRadius: 4,
-    borderWidth: 2,
-    height: 16,
-    width: 16,
-  },
-});
+const makeStyles = (colors: ThemeColors) =>
+  StyleSheet.create({
+    calendarHidden: {
+      color: colors['text-secondary'],
+    },
+    calendarName: {
+      fontSize: 14,
+    },
+    calendarRow: {
+      alignItems: 'center',
+      flexDirection: 'row',
+      gap: 8,
+      paddingVertical: 5,
+    },
+    calendarToggle: {
+      flex: 1,
+    },
+    card: {
+      backgroundColor: colors.surface,
+      borderColor: colors.border,
+      borderRadius: 12,
+      borderWidth: StyleSheet.hairlineWidth,
+      marginBottom: 12,
+      padding: 12,
+    },
+    email: {
+      color: colors['text-secondary'],
+      fontSize: 13,
+    },
+    header: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      marginBottom: 8,
+    },
+    info: {
+      flex: 1,
+    },
+    name: {
+      fontSize: 15,
+      fontWeight: '600',
+    },
+    paletteRow: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: 6,
+      paddingBottom: 8,
+      paddingLeft: 22,
+    },
+    paletteSelected: {
+      borderColor: colors.primary,
+      borderWidth: 2,
+    },
+    paletteSwatch: {
+      borderColor: 'transparent',
+      borderRadius: 5,
+      borderWidth: 2,
+      height: 20,
+      width: 20,
+    },
+    remove: {
+      color: colors.danger,
+      fontSize: 13,
+    },
+    swatch: {
+      borderRadius: 4,
+      borderWidth: 2,
+      height: 16,
+      width: 16,
+    },
+  });

@@ -21,8 +21,8 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { sectionStyles } from './settingsShared.ts';
-import { palette } from './theme.ts';
+import { useSectionStyles } from './settingsShared.ts';
+import { type ThemeColors, useStyles, useTheme } from './theme.ts';
 
 /**
  * The zones this iPhone draws: the primary one is what the grid, "today"
@@ -32,6 +32,8 @@ import { palette } from './theme.ts';
  * opens a searchable sheet over the catalog.
  */
 export function TimeZonesSection() {
+  const sectionStyles = useSectionStyles();
+  const styles = useStyles(makeStyles);
   const { setTimeZoneSettings } = useBackendMutations();
   const [settings, persist] = useSettingsEditor(useTimeZoneSettings(), setTimeZoneSettings);
   const [picking, setPicking] = useState(false);
@@ -149,6 +151,9 @@ function TimeZonePickerSheet({
   onPick: (zone: string) => void;
   visible: boolean;
 }) {
+  const { colors } = useTheme();
+  const sectionStyles = useSectionStyles();
+  const styles = useStyles(makeStyles);
   const [query, setQuery] = useState('');
   const matches = searchTimeZones(query, exclude);
   const close = () => {
@@ -187,7 +192,7 @@ function TimeZonePickerSheet({
             autoFocus
             onChangeText={setQuery}
             placeholder="City or region"
-            placeholderTextColor={palette.textFaint}
+            placeholderTextColor={colors['text-secondary']}
             style={styles.search}
             testID="time-zone-search"
             value={query}
@@ -213,78 +218,79 @@ function TimeZonePickerSheet({
   );
 }
 
-const styles = StyleSheet.create({
-  addRow: {
-    marginTop: 10,
-  },
-  city: {
-    color: palette.text,
-    fontSize: 15,
-  },
-  link: {
-    color: '#2563eb',
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  list: {
-    flex: 1,
-  },
-  option: {
-    borderBottomColor: palette.border,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-  },
-  primaryBadge: {
-    backgroundColor: '#f5f5f5',
-    borderRadius: 10,
-    color: palette.textMuted,
-    fontSize: 12,
-    overflow: 'hidden',
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-  },
-  remove: {
-    color: '#dc2626',
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  row: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    gap: 12,
-    marginTop: 10,
-  },
-  rowText: {
-    flex: 1,
-  },
-  search: {
-    backgroundColor: '#ffffff',
-    borderColor: palette.border,
-    borderRadius: 10,
-    borderWidth: StyleSheet.hairlineWidth,
-    fontSize: 16,
-    marginHorizontal: 16,
-    marginVertical: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-  },
-  sheet: {
-    backgroundColor: palette.background,
-    flex: 1,
-  },
-  sheetHeader: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-  },
-  sheetHeaderSpacer: {
-    width: 48,
-  },
-  sheetTitle: {
-    fontSize: 17,
-    fontWeight: '700',
-  },
-});
+const makeStyles = (colors: ThemeColors) =>
+  StyleSheet.create({
+    addRow: {
+      marginTop: 10,
+    },
+    city: {
+      color: colors.text,
+      fontSize: 15,
+    },
+    link: {
+      color: colors.primary,
+      fontSize: 14,
+      fontWeight: '600',
+    },
+    list: {
+      flex: 1,
+    },
+    option: {
+      borderBottomColor: colors.border,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      paddingHorizontal: 16,
+      paddingVertical: 10,
+    },
+    primaryBadge: {
+      backgroundColor: colors.fill,
+      borderRadius: 10,
+      color: colors['text-secondary'],
+      fontSize: 12,
+      overflow: 'hidden',
+      paddingHorizontal: 8,
+      paddingVertical: 2,
+    },
+    remove: {
+      color: colors.danger,
+      fontSize: 14,
+      fontWeight: '600',
+    },
+    row: {
+      alignItems: 'center',
+      flexDirection: 'row',
+      gap: 12,
+      marginTop: 10,
+    },
+    rowText: {
+      flex: 1,
+    },
+    search: {
+      backgroundColor: colors.surface,
+      borderColor: colors.border,
+      borderRadius: 10,
+      borderWidth: StyleSheet.hairlineWidth,
+      fontSize: 16,
+      marginHorizontal: 16,
+      marginVertical: 8,
+      paddingHorizontal: 12,
+      paddingVertical: 10,
+    },
+    sheet: {
+      backgroundColor: colors.canvas,
+      flex: 1,
+    },
+    sheetHeader: {
+      alignItems: 'center',
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      paddingHorizontal: 16,
+      paddingVertical: 14,
+    },
+    sheetHeaderSpacer: {
+      width: 48,
+    },
+    sheetTitle: {
+      fontSize: 17,
+      fontWeight: '700',
+    },
+  });

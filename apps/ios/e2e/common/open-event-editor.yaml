@@ -1,0 +1,16 @@
+appId: com.solunivo.app.dev
+name: Open the editor of the event detail sheet that is up (shared)
+---
+# A tap on an event opens its detail sheet first; Edit opens the editor.
+- extendedWaitUntil:
+    visible:
+      id: 'event-edit'
+    timeout: 10000
+- tapOn:
+    id: 'event-edit'
+- extendedWaitUntil:
+    visible: 'Edit Event'
+    timeout: 10000
+- assertVisible: 'Edit Event'
+- waitForAnimationToEnd:
+    timeout: 5000

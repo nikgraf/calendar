@@ -1,5 +1,6 @@
 import { CAPTURE_MODEL_UNAVAILABLE, type CaptureState } from '@calendar/app-state';
 import { Pressable, StyleSheet, Text } from 'react-native';
+import { type ThemeColors, useStyles } from './theme.ts';
 
 /**
  * Progress and errors of a capture, as a banner rather than a sheet: a
@@ -14,6 +15,7 @@ export function CaptureBanner({
   onDismiss: () => void;
   state: CaptureState;
 }) {
+  const styles = useStyles(makeStyles);
   if (state.kind === 'idle' || state.kind === 'review') {
     return null;
   }
@@ -39,37 +41,38 @@ export function CaptureBanner({
   );
 }
 
-const styles = StyleSheet.create({
-  detail: {
-    color: '#ffffffcc',
-    fontSize: 11,
-    marginTop: 2,
-    textAlign: 'center',
-  },
-  error: {
-    backgroundColor: '#b91c1c',
-  },
-  info: {
-    backgroundColor: '#171717',
-  },
-  text: {
-    color: '#ffffff',
-    fontSize: 13,
-    textAlign: 'center',
-  },
-  toast: {
-    alignSelf: 'center',
-    borderRadius: 10,
-    bottom: 24,
-    elevation: 4,
-    maxWidth: '90%',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    position: 'absolute',
-    shadowColor: '#000000',
-    shadowOffset: { height: 2, width: 0 },
-    shadowOpacity: 0.25,
-    shadowRadius: 6,
-    zIndex: 40,
-  },
-});
+const makeStyles = (colors: ThemeColors) =>
+  StyleSheet.create({
+    detail: {
+      color: colors['on-primary'],
+      fontSize: 11,
+      marginTop: 2,
+      textAlign: 'center',
+    },
+    error: {
+      backgroundColor: colors.danger,
+    },
+    info: {
+      backgroundColor: colors.text,
+    },
+    text: {
+      color: colors['on-primary'],
+      fontSize: 13,
+      textAlign: 'center',
+    },
+    toast: {
+      alignSelf: 'center',
+      borderRadius: 10,
+      bottom: 24,
+      elevation: 4,
+      maxWidth: '90%',
+      paddingHorizontal: 16,
+      paddingVertical: 8,
+      position: 'absolute',
+      shadowColor: '#000000',
+      shadowOffset: { height: 2, width: 0 },
+      shadowOpacity: 0.25,
+      shadowRadius: 6,
+      zIndex: 40,
+    },
+  });

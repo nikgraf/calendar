@@ -2335,3 +2335,39 @@ design-tokens`). **The brand kit is the one palette**: `tokens.json`
       `panel-task-*`); color is asserted through `data-color`, never a
       computed rgb. Search stays a disabled toolbar placeholder (its own
       PR).
+- [x] iOS redesign — done (2026-10-08, `todo/ios-redesign`).
+      **expo-router owns the screens**: `app/_layout.tsx` holds the
+      providers and a native stack — the tab bar (`NativeTabs`: Calendar ·
+      Tasks · Search, the last a placeholder until search ships) and
+      Settings as a modal route from the calendar's gear, never a tab.
+      `+native-intent.tsx` keeps the share, capture-fixture and OAuth URLs
+      off the router; the host's `Linking` listener still handles them.
+      **One editor host** (`EditorHost.tsx`, under the providers) owns
+      every sheet and the capture model, so both tabs open the same
+      sheets: the "+" opens the quick-add sheet (a phrase held in an
+      "Understood as" card with an Event/Task toggle, Edit details or Add
+      as understood, Find a time, and a "New event" row — the e2e path),
+      a tap on an event opens the read-first detail (Join, RSVP, scope,
+      Convert, Delete, Edit), tasks and slots open the editor directly.
+      **Sheets stay React Native page sheets**: `@expo/ui`'s `BottomSheet`
+      hosts SwiftUI children, so the forms would have to go through
+      `RNHostView` and Maestro's tree with them — not worth it for the
+      look; `@expo/ui` is used where it is a drop-in (the header's view
+      menu). **The view is a menu** (Day · 2 Days · Week · Month · Agenda)
+      and device taste (`lastView`), read before the first paint. **The
+      agenda** lists two weeks from the focused day, free days included.
+      **Theme**: the light-only `palette` is gone; each file's
+      `StyleSheet` is a `makeStyles(colors)` factory read through
+      `useStyles` (rebuilt only when the appearance flips), the shared
+      sheet/section styles are hooks, blocks and chips take `eventTint`,
+      the status bar and the window behind every screen follow the
+      scheme. **Supply chain**: `@expo/ui@57.0.21` is an audited
+      `trustPolicyExclude` entry — Expo publishes some versions through
+      trusted publishing and others with a maintainer token, the same as
+      the `expo` package of the SDK release. **Deferred**: Settings
+      sub-screens (one scrolling screen remains), the collapsed all-day
+      row's "N tasks · M overdue" pill, `@expo/ui` date pickers. **Maestro**:
+      `common/open-new-event.yaml` ("+" → New event), `open-event-editor.yaml`
+      (the detail's Edit), `switch-view.yaml` (the header menu, `VIEW`);
+      the shell anchor stays the "Today" button. The native fingerprint
+      moved once, in the first commit (deps + the expo-router plugin).

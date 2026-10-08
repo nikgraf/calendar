@@ -11,12 +11,14 @@ import { useEffect, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { subscribeInvalidations } from '../backend.ts';
 import { askConflict } from './conflictAlert.ts';
+import { type ThemeColors, useStyles } from './theme.ts';
 
 /**
  * Transient banner for failed fire-and-forget mutations (mutationGuard).
  * Mirrors the desktop MutationNoticeToast in App.tsx.
  */
 export function MutationNoticeToast() {
+  const styles = useStyles(makeStyles);
   const [notice, setNotice] = useState<MutationNotice | null>(null);
   useEffect(() => subscribeMutationNotices(setNotice), []);
   useEffect(() => {
@@ -47,6 +49,7 @@ export function MutationNoticeToast() {
  * desktop NoticeToast.
  */
 function NoticeToast({ message, noticeKey }: { message: string; noticeKey: string }) {
+  const styles = useStyles(makeStyles);
   const [visible, setVisible] = useState(false);
   useEffect(
     () =>
@@ -81,6 +84,7 @@ function NoticeToast({ message, noticeKey }: { message: string; noticeKey: strin
  * Parity with the desktop ConflictBanner.
  */
 export function ConflictBanner() {
+  const styles = useStyles(makeStyles);
   const parked = usePendingOps().filter(isParkedOp);
   const { resolveConflict } = useGuardedMutations();
   const { primary: timeZone } = useTimeZones();
@@ -114,47 +118,48 @@ export function DroppedToast() {
   );
 }
 
-const styles = StyleSheet.create({
-  conflict: {
-    backgroundColor: '#fffbeb',
-    borderColor: '#fcd34d',
-    borderWidth: 1,
-  },
-  conflictText: {
-    color: '#78350f',
-    fontSize: 13,
-    textAlign: 'center',
-  },
-  detail: {
-    color: '#ffffffcc',
-    fontSize: 11,
-    marginTop: 2,
-    textAlign: 'center',
-  },
-  error: {
-    backgroundColor: '#b91c1c',
-  },
-  info: {
-    backgroundColor: '#171717',
-  },
-  text: {
-    color: '#ffffff',
-    fontSize: 13,
-    textAlign: 'center',
-  },
-  toast: {
-    alignSelf: 'center',
-    borderRadius: 10,
-    bottom: 24,
-    elevation: 4,
-    maxWidth: '90%',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    position: 'absolute',
-    shadowColor: '#000000',
-    shadowOffset: { height: 2, width: 0 },
-    shadowOpacity: 0.25,
-    shadowRadius: 6,
-    zIndex: 40,
-  },
-});
+const makeStyles = (colors: ThemeColors) =>
+  StyleSheet.create({
+    conflict: {
+      backgroundColor: colors.warning,
+      borderColor: colors.warning,
+      borderWidth: 1,
+    },
+    conflictText: {
+      color: colors['on-warning'],
+      fontSize: 13,
+      textAlign: 'center',
+    },
+    detail: {
+      color: colors['on-primary'],
+      fontSize: 11,
+      marginTop: 2,
+      textAlign: 'center',
+    },
+    error: {
+      backgroundColor: colors.danger,
+    },
+    info: {
+      backgroundColor: colors.text,
+    },
+    text: {
+      color: colors['on-primary'],
+      fontSize: 13,
+      textAlign: 'center',
+    },
+    toast: {
+      alignSelf: 'center',
+      borderRadius: 10,
+      bottom: 24,
+      elevation: 4,
+      maxWidth: '90%',
+      paddingHorizontal: 16,
+      paddingVertical: 8,
+      position: 'absolute',
+      shadowColor: '#000000',
+      shadowOffset: { height: 2, width: 0 },
+      shadowOpacity: 0.25,
+      shadowRadius: 6,
+      zIndex: 40,
+    },
+  });

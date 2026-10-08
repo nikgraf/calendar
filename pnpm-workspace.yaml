@@ -17,6 +17,11 @@ trustPolicyExclude:
   - semver@6.3.1
   - undici-types@6.21.0
   - '@octokit/endpoint@9.0.6'
+  # Expo publishes some @expo/ui versions through npm trusted publishing and
+  # others with a maintainer token; 57.0.21 is the latter, like the expo
+  # package of the same SDK release (same maintainer, same day). Audited
+  # 2026-10-07; re-audit on the next bump.
+  - '@expo/ui@57.0.21'
 blockExoticSubdeps: true
 
 catalog:

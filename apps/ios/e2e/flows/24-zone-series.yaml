@@ -11,7 +11,10 @@ tags:
 # so look below that first, then above (a DST change since the series
 # began shifts it by an hour).
 - runFlow: ../common/launch.yaml
-- tapOn: 'Day'
+- runFlow:
+    file: ../common/switch-view.yaml
+    env:
+      VIEW: 'Day'
 - scrollUntilVisible:
     element: 'Kolkata series.*'
     direction: DOWN

@@ -9,7 +9,10 @@ tags:
 # in-process fake API mid-flow, so every selector below is a title.
 - runFlow: ../common/launch.yaml
 - tapOn: 'Today'
-- tapOn: 'Day'
+- runFlow:
+    file: ../common/switch-view.yaml
+    env:
+      VIEW: 'Day'
 - runFlow: ../common/open-new-event.yaml
 - runFlow: ../common/switch-to-task.yaml
 - runFlow:
@@ -79,7 +82,7 @@ tags:
       # Event → reminder: the form follows the picked list; the Reminders
       # list keeps the time, so again no question.
       - tapOn: 'Solunivo e2e convert, [0-9].*'
-      - assertVisible: 'Edit Event'
+      - runFlow: ../common/open-event-editor.yaml
       - tapOn:
           id: 'mode-task'
       - assertVisible: 'Convert to .*'

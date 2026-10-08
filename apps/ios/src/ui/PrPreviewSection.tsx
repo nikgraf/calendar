@@ -9,8 +9,8 @@ import {
 } from 'expo-updates';
 import { useState } from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
-import { sectionStyles } from './settingsShared.ts';
-import { palette } from './theme.ts';
+import { useSectionStyles } from './settingsShared.ts';
+import { type ThemeColors, useStyles } from './theme.ts';
 
 /**
  * Internal-testing helper: loads a pull request's OTA update channel
@@ -20,6 +20,8 @@ import { palette } from './theme.ts';
  * Metro and show a hint instead.
  */
 export function PrPreviewSection() {
+  const sectionStyles = useSectionStyles();
+  const styles = useStyles(makeStyles);
   const [channelInput, setChannelInput] = useState('');
   const [status, setStatus] = useState<string | null>(null);
   const [switching, setSwitching] = useState(false);
@@ -87,41 +89,42 @@ export function PrPreviewSection() {
   );
 }
 
-const styles = StyleSheet.create({
-  buttons: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    gap: 14,
-    marginTop: 8,
-  },
-  input: {
-    borderColor: palette.border,
-    borderRadius: 8,
-    borderWidth: StyleSheet.hairlineWidth,
-    fontSize: 14,
-    marginTop: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-  },
-  load: {
-    backgroundColor: '#2563eb',
-    borderRadius: 8,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-  },
-  loadLabel: {
-    color: '#ffffff',
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  reset: {
-    color: '#2563eb',
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  status: {
-    color: palette.textMuted,
-    fontSize: 12,
-    marginTop: 8,
-  },
-});
+const makeStyles = (colors: ThemeColors) =>
+  StyleSheet.create({
+    buttons: {
+      alignItems: 'center',
+      flexDirection: 'row',
+      gap: 14,
+      marginTop: 8,
+    },
+    input: {
+      borderColor: colors.border,
+      borderRadius: 8,
+      borderWidth: StyleSheet.hairlineWidth,
+      fontSize: 14,
+      marginTop: 8,
+      paddingHorizontal: 10,
+      paddingVertical: 8,
+    },
+    load: {
+      backgroundColor: colors.primary,
+      borderRadius: 8,
+      paddingHorizontal: 14,
+      paddingVertical: 8,
+    },
+    loadLabel: {
+      color: colors['on-primary'],
+      fontSize: 14,
+      fontWeight: '600',
+    },
+    reset: {
+      color: colors.primary,
+      fontSize: 14,
+      fontWeight: '600',
+    },
+    status: {
+      color: colors['text-secondary'],
+      fontSize: 12,
+      marginTop: 8,
+    },
+  });

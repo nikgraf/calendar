@@ -7,7 +7,7 @@ import { appleLanguageModel } from '../appleModel.ts';
 import { appleSpeech } from '../appleSpeech.ts';
 import { clearLastRenderError, readLastRenderError } from '../crashLog.ts';
 import { iosRemindersClient } from '../remindersClient.ts';
-import { sectionStyles } from './settingsShared.ts';
+import { useSectionStyles } from './settingsShared.ts';
 
 /**
  * What the device actually reports, read from the device. The quick-add
@@ -26,6 +26,7 @@ export function DiagnosticsSection({
   reminders: string;
   visible: boolean;
 }) {
+  const sectionStyles = useSectionStyles();
   const [modelStatus, setModelStatus] = useState<ModelStatus | 'checking…'>('checking…');
   const [dictation, setDictation] = useState('checking…');
   const [reminderListCount, setReminderListCount] = useState<number | undefined>();

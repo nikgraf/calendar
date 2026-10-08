@@ -1,7 +1,7 @@
 import { describeCaptureRow, type CaptureRow } from '@calendar/app-state';
 import type { ReactNode } from 'react';
 import { Modal, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { palette } from './theme.ts';
+import { type ThemeColors, useStyles } from './theme.ts';
 
 /**
  * The review list for a capture: every event found in a shared screenshot
@@ -23,6 +23,7 @@ export function CaptureSheet({
   rows: ReadonlyArray<CaptureRow>;
   truncated: boolean;
 }) {
+  const styles = useStyles(makeStyles);
   const allAdded = rows.every((row) => row.status === 'added');
   return (
     <Modal animationType="slide" onRequestClose={onClose} presentationStyle="pageSheet" visible>
@@ -72,78 +73,79 @@ export function CaptureSheet({
   );
 }
 
-const styles = StyleSheet.create({
-  added: {
-    color: palette.textFaint,
-    fontSize: 13,
-  },
-  close: {
-    color: '#2563eb',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  container: {
-    backgroundColor: palette.background,
-    flex: 1,
-  },
-  header: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-  },
-  hint: {
-    color: palette.textMuted,
-    fontSize: 13,
-    paddingBottom: 8,
-    paddingHorizontal: 16,
-  },
-  list: {
-    gap: 8,
-    paddingBottom: 32,
-    paddingHorizontal: 16,
-  },
-  note: {
-    color: palette.textFaint,
-    fontSize: 12,
-    paddingTop: 8,
-  },
-  open: {
-    color: '#2563eb',
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  row: {
-    alignItems: 'center',
-    backgroundColor: '#ffffff',
-    borderColor: palette.border,
-    borderRadius: 10,
-    borderWidth: 1,
-    flexDirection: 'row',
-    gap: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-  },
-  rowAdded: {
-    opacity: 0.6,
-  },
-  rowMeta: {
-    color: palette.textMuted,
-    fontSize: 12,
-    marginTop: 2,
-  },
-  rowText: {
-    flex: 1,
-  },
-  rowTitle: {
-    color: palette.text,
-    fontSize: 15,
-    fontWeight: '600',
-  },
-  title: {
-    color: palette.text,
-    fontSize: 17,
-    fontWeight: '600',
-  },
-});
+const makeStyles = (colors: ThemeColors) =>
+  StyleSheet.create({
+    added: {
+      color: colors['text-secondary'],
+      fontSize: 13,
+    },
+    close: {
+      color: colors.primary,
+      fontSize: 16,
+      fontWeight: '600',
+    },
+    container: {
+      backgroundColor: colors.canvas,
+      flex: 1,
+    },
+    header: {
+      alignItems: 'center',
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      paddingHorizontal: 16,
+      paddingVertical: 12,
+    },
+    hint: {
+      color: colors['text-secondary'],
+      fontSize: 13,
+      paddingBottom: 8,
+      paddingHorizontal: 16,
+    },
+    list: {
+      gap: 8,
+      paddingBottom: 32,
+      paddingHorizontal: 16,
+    },
+    note: {
+      color: colors['text-secondary'],
+      fontSize: 12,
+      paddingTop: 8,
+    },
+    open: {
+      color: colors.primary,
+      fontSize: 13,
+      fontWeight: '600',
+    },
+    row: {
+      alignItems: 'center',
+      backgroundColor: colors.surface,
+      borderColor: colors.border,
+      borderRadius: 10,
+      borderWidth: 1,
+      flexDirection: 'row',
+      gap: 12,
+      paddingHorizontal: 12,
+      paddingVertical: 10,
+    },
+    rowAdded: {
+      opacity: 0.6,
+    },
+    rowMeta: {
+      color: colors['text-secondary'],
+      fontSize: 12,
+      marginTop: 2,
+    },
+    rowText: {
+      flex: 1,
+    },
+    rowTitle: {
+      color: colors.text,
+      fontSize: 15,
+      fontWeight: '600',
+    },
+    title: {
+      color: colors.text,
+      fontSize: 17,
+      fontWeight: '600',
+    },
+  });

@@ -10,7 +10,7 @@ import {
   chip,
   chipLabel,
   dateFromParts,
-  sheetStyles as styles,
+  useSheetStyles,
   toDateString,
   toTimeString,
 } from './editSheetShared.ts';
@@ -31,6 +31,7 @@ export function ReminderEditForm({
   task: TaskRecord | undefined;
   taskModel: ReturnType<typeof useTaskEditorModel>;
 }) {
+  const styles = useSheetStyles();
   return (
     <ScrollView
       contentContainerStyle={[styles.content, taskModel.readOnly && styles.readOnly]}
@@ -92,10 +93,12 @@ export function ReminderEditForm({
           <Pressable
             key={option.label}
             onPress={() => taskModel.setPriority(option.value)}
-            style={chip(taskModel.priority === option.value)}
+            style={chip(styles, taskModel.priority === option.value)}
             testID={`reminder-priority-${option.value ?? 'none'}`}
           >
-            <Text style={chipLabel(taskModel.priority === option.value)}>{option.label}</Text>
+            <Text style={chipLabel(styles, taskModel.priority === option.value)}>
+              {option.label}
+            </Text>
           </Pressable>
         ))}
       </View>
@@ -106,10 +109,10 @@ export function ReminderEditForm({
           <Pressable
             key={option.label}
             onPress={() => taskModel.setAlarm(option.value)}
-            style={chip(taskModel.alarm === option.value)}
+            style={chip(styles, taskModel.alarm === option.value)}
             testID={`reminder-alarm-${option.value ?? 'none'}`}
           >
-            <Text style={chipLabel(taskModel.alarm === option.value)}>{option.label}</Text>
+            <Text style={chipLabel(styles, taskModel.alarm === option.value)}>{option.label}</Text>
           </Pressable>
         ))}
       </View>
