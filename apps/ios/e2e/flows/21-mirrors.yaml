@@ -73,11 +73,13 @@ tags:
     timeout: 5000
 - waitForAnimationToEnd:
     timeout: 5000
+# No centerElement: the page runs to the screen edge, so a frame-visible
+# row is tappable, and a page short enough not to scroll can never centre
+# its last row (CI run 37852137291 waited out the timeout on it).
 - scrollUntilVisible:
     element:
       id: 'mirror-delete-.*'
     direction: DOWN
-    centerElement: true
     timeout: 10000
 - tapOn:
     id: 'mirror-delete-.*'
