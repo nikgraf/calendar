@@ -1,5 +1,7 @@
+import { Host, Switch } from '@expo/ui';
+import { labelsHidden } from '@expo/ui/swift-ui/modifiers';
 import { type Href, useRouter } from 'expo-router';
-import { type SFSymbol, SymbolView } from 'expo-symbols';
+import { type SFSymbol, SymbolView, type SymbolViewProps } from 'expo-symbols';
 import { Children, createContext, isValidElement, type ReactNode, useContext } from 'react';
 import {
   type AccessibilityActionEvent,
@@ -8,10 +10,10 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
-  Switch,
   Text,
   View,
 } from 'react-native';
+import { Pressable as GesturePressable } from 'react-native-gesture-handler';
 import ReanimatedSwipeable from 'react-native-gesture-handler/ReanimatedSwipeable';
 import { chipTextColor, groupedGround, type ThemeColors, useStyles, useTheme } from '../theme.ts';
 
@@ -19,9 +21,29 @@ import { chipTextColor, groupedGround, type ThemeColors, useStyles, useTheme } f
  * The building blocks of the Settings pages: iOS's inset grouped list —
  * sections of rows on a tinted ground, an uppercase header above a
  * section, explanations in its footer — drawn on the brand tokens. Rows
- * use the real controls (UISwitch via `Switch`) and a separator that starts
- * at the text, not under the icon.
+ * use the real controls (SwiftUI's toggle through `@expo/ui`) and a
+ * separator that starts at the text, not under the icon.
  */
+
+/**
+ * An SF Symbol that only decorates. Hidden from accessibility: a symbol's
+ * image carries its own label ("add", "Forward"), which a pressable row
+ * would read out before its title — and which Maestro's text match sees.
+ */
+export function Glyph(props: SymbolViewProps) {
+  return (
+    <View accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
+      <SymbolView {...props} />
+    </View>
+  );
+}
+
+/**
+ * Inside a swipeable row React Native's own Pressable never sees the tap —
+ * the swipe's pan gesture takes the touch first — so rows and actions
+ * there press through gesture-handler's twin (the same props).
+ */
+const SwipePressable = GesturePressable as unknown as typeof Pressable;
 
 /** Whether a row is its section's first, which draws no separator above it. */
 const FirstRowContext = createContext(true);
@@ -86,16 +108,23 @@ export function Section({
 /** A paragraph under a section; `tone="danger"` for a failure the page reports. */
 export function Footer({
   children,
+  selectable = false,
   testID,
   tone = 'secondary',
 }: {
   children: ReactNode;
+  /** Long-press to copy (an error's text). */
+  selectable?: boolean;
   testID?: string;
   tone?: 'danger' | 'secondary';
 }) {
   const styles = useStyles(makeStyles);
   return (
-    <Text style={[styles.footer, tone === 'danger' && styles.danger]} testID={testID}>
+    <Text
+      selectable={selectable}
+      style={[styles.footer, tone === 'danger' && styles.danger]}
+      testID={testID}
+    >
       {children}
     </Text>
   );
@@ -137,6 +166,8 @@ interface RowProps {
   /** Centres the title (a destructive button row). */
   centered?: boolean;
   disabled?: boolean;
+  /** Inside a SwipeRow: presses go through gesture-handler. */
+  inSwipe?: boolean;
   leading?: ReactNode;
   onPress?: () => void;
   subtitle?: string;
@@ -164,6 +195,7 @@ export function Row({
   accessory,
   centered = false,
   disabled = false,
+  inSwipe = false,
   leading,
   onPress,
   subtitle,
@@ -232,8 +264,9 @@ export function Row({
       </View>
     );
   }
+  const Press = inSwipe ? SwipePressable : Pressable;
   return (
-    <Pressable
+    <Press
       accessibilityActions={actions}
       accessibilityLabel={accessibilityLabel}
       accessibilityRole={accessibilityRole ?? 'button'}
@@ -245,7 +278,7 @@ export function Row({
       testID={testID}
     >
       {body}
-    </Pressable>
+    </Press>
   );
 }
 
@@ -253,12 +286,7 @@ export function Row({
 export function Chevron() {
   const { colors } = useTheme();
   return (
-    <SymbolView
-      name="chevron.right"
-      size={13}
-      tintColor={colors['border-strong']}
-      weight="semibold"
-    />
+    <Glyph name="chevron.right" size={13} tintColor={colors['border-strong']} weight="semibold" />
   );
 }
 
@@ -288,7 +316,13 @@ export function NavRow({
   );
 }
 
-/** A row with a switch; the row itself is not a button, the switch is. */
+/**
+ * A row with a switch; the row itself is not a button, the switch is.
+ * SwiftUI's toggle through `@expo/ui`, not React Native's `Switch`: on
+ * iOS 26 the system switch grew to 63 × 28 pt while React Native still
+ * lays it out at 51 × 31, so it drew 14 pt above and 22 pt left of its
+ * row's centre.
+ */
 export function SwitchRow({
   disabled = false,
   onValueChange,
@@ -305,17 +339,31 @@ export function SwitchRow({
     <Row
       {...row}
       accessory={
-        <Switch
-          accessibilityLabel={title}
-          disabled={disabled}
-          onValueChange={onValueChange}
-          testID={switchTestID}
-          value={value}
-        />
+        <Host matchContents>
+          <Switch
+            disabled={disabled}
+            label={title}
+            modifiers={[labelsHidden()]}
+            onValueChange={onValueChange}
+            testID={switchTestID}
+            value={value}
+          />
+        </Host>
       }
       disabled={disabled}
       title={title}
     />
+  );
+}
+
+/** The trailing checkmark of a chosen row (an empty slot of the same width when not chosen). */
+export function Checkmark({ checked }: { checked: boolean }) {
+  const { colors } = useTheme();
+  const styles = useStyles(makeStyles);
+  return checked ? (
+    <Glyph name="checkmark" size={17} tintColor={colors.primary} weight="semibold" />
+  ) : (
+    <View style={styles.checkSpace} />
   );
 }
 
@@ -328,20 +376,12 @@ export function CheckRow({
   checked: boolean;
   kind?: 'checkbox' | 'radio';
 }) {
-  const { colors } = useTheme();
-  const styles = useStyles(makeStyles);
   return (
     <Row
       {...row}
       accessibilityRole={kind}
       accessibilityState={kind === 'radio' ? { selected: checked } : { checked }}
-      accessory={
-        checked ? (
-          <SymbolView name="checkmark" size={17} tintColor={colors.primary} weight="semibold" />
-        ) : (
-          <View style={styles.checkSpace} />
-        )
-      }
+      accessory={<Checkmark checked={checked} />}
     />
   );
 }
@@ -367,7 +407,7 @@ export function SwipeRow({
   actionLabel,
   actionTestID,
   ...row
-}: Omit<RowProps, 'swipeAction'> & {
+}: Omit<RowProps, 'inSwipe' | 'swipeAction'> & {
   action: () => void;
   actionLabel: string;
   actionTestID: string;
@@ -378,7 +418,7 @@ export function SwipeRow({
       childrenContainerStyle={styles.swipeContent}
       overshootRight={false}
       renderRightActions={(_progress, _translation, swipeable) => (
-        <Pressable
+        <SwipePressable
           accessibilityRole="button"
           onPress={() => {
             swipeable.close();
@@ -388,31 +428,43 @@ export function SwipeRow({
           testID={actionTestID}
         >
           <Text style={styles.swipeActionLabel}>{actionLabel}</Text>
-        </Pressable>
+        </SwipePressable>
       )}
       rightThreshold={40}
     >
-      <Row {...row} swipeAction={{ label: actionLabel, run: action }} />
+      <Row {...row} inSwipe swipeAction={{ label: actionLabel, run: action }} />
     </ReanimatedSwipeable>
   );
 }
 
-/** The 30 pt rounded square with a symbol that leads a top-level row. */
+/** The rounded square with a symbol that leads a top-level row (30 pt), or a page's hero (56 pt). */
 export function IconTile({
   color,
   foreground,
   name,
+  size = 30,
 }: {
   color: string;
   /** The symbol's color; the canvas by default (white in light, near-black in dark). */
   foreground?: string;
   name: SFSymbol;
+  size?: number;
 }) {
   const { colors } = useTheme();
   const styles = useStyles(makeStyles);
   return (
-    <View style={[styles.tile, { backgroundColor: color }]}>
-      <SymbolView name={name} size={17} tintColor={foreground ?? colors.canvas} weight="medium" />
+    <View
+      style={[
+        styles.tile,
+        { backgroundColor: color, borderRadius: size * 0.27, height: size, width: size },
+      ]}
+    >
+      <Glyph
+        name={name}
+        size={Math.round(size * 0.57)}
+        tintColor={foreground ?? colors.canvas}
+        weight="medium"
+      />
     </View>
   );
 }
@@ -422,7 +474,7 @@ export function LeadingSymbol({ color, name }: { color: string; name: SFSymbol }
   const styles = useStyles(makeStyles);
   return (
     <View style={styles.tileSpace}>
-      <SymbolView name={name} size={20} tintColor={color} weight="medium" />
+      <Glyph name={name} size={20} tintColor={color} weight="medium" />
     </View>
   );
 }
@@ -471,7 +523,7 @@ export function ColorCheck({ color, visible }: { color: string; visible: boolean
       ]}
     >
       {visible ? (
-        <SymbolView name="checkmark" size={12} tintColor={chipTextColor(color)} weight="bold" />
+        <Glyph name="checkmark" size={12} tintColor={chipTextColor(color)} weight="bold" />
       ) : null}
     </View>
   );
@@ -541,7 +593,7 @@ export function VisibilityRow({
           ]}
           testID={infoTestID}
         >
-          <SymbolView name="info.circle" size={22} tintColor={colors.primary} />
+          <Glyph name="info.circle" size={22} tintColor={colors.primary} />
         </Pressable>
       ) : null}
     </View>
@@ -748,10 +800,7 @@ const makeStyles = (colors: ThemeColors) =>
     },
     tile: {
       alignItems: 'center',
-      borderRadius: 8,
-      height: 30,
       justifyContent: 'center',
-      width: 30,
     },
     tileSpace: {
       alignItems: 'center',

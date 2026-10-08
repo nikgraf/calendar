@@ -20,8 +20,9 @@ export class ErrorBoundary extends Component<{ children: ReactNode }, State> {
   }
 
   override componentDidCatch(error: Error): void {
-    // Persisted for Settings › Diagnostics: a TestFlight build has no Metro
-    // console, so this file is the only artifact of a render crash.
+    // Persisted for Settings › Advanced › Diagnostics: a TestFlight build
+    // has no Metro console, so this file is the only artifact of a render
+    // crash.
     recordRenderError(error);
     // eslint-disable-next-line no-console
     console.error('Uncaught render error', error);

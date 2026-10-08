@@ -4,7 +4,7 @@ import { File, Paths } from 'expo-file-system';
  * The last uncaught render error, kept in the app's documents directory.
  * Desktop writes its ErrorBoundary catches to the log file; a TestFlight
  * build has no Metro console, so without this a render crash on a tester's
- * phone left nothing to read. Settings › Diagnostics shows it.
+ * phone left nothing to read. Settings › Advanced › Diagnostics shows it.
  */
 const FILE_NAME = 'last-render-error.txt';
 

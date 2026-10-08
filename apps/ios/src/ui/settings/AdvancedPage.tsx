@@ -6,8 +6,9 @@ import {
 } from '@calendar/core';
 import { Effect } from 'effect';
 import { useState } from 'react';
-import { Alert, Pressable, Share, Text, View } from 'react-native';
-import { useSectionStyles } from './settingsShared.ts';
+import { Alert, Share } from 'react-native';
+import { useTheme } from '../theme.ts';
+import { Footer, Glyph, NavRow, Row, Section, SettingsPage } from './GroupedList.tsx';
 
 /**
  * Native modules are loaded lazily and inside a try: a static import of a
@@ -40,14 +41,14 @@ const confirmImport = (lines: ReadonlyArray<string>) =>
   });
 
 /**
- * Export/Import of the settings document on the phone. Export writes the
- * file to the cache folder and hands it to the share sheet (AirDrop it to
- * the Mac, save it to Files); Import picks a file and shows what it would
- * do before applying. The document never contains tokens: a Google
- * account from another device shows up as "reconnect".
+ * Advanced: the settings file and troubleshooting. Export writes the
+ * settings document to the cache folder and hands it to the share sheet
+ * (AirDrop it to the Mac, save it to Files); Import picks a file and shows
+ * what it would do before applying. The document never contains tokens: a
+ * Google account from another device shows up as "reconnect".
  */
-export function SettingsFileSection() {
-  const sectionStyles = useSectionStyles();
+export function AdvancedPage() {
+  const { colors } = useTheme();
   const mutations = useBackendMutations();
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
@@ -109,33 +110,50 @@ export function SettingsFileSection() {
     });
 
   return (
-    <View style={sectionStyles.card} testID="settings-file">
-      <Text style={sectionStyles.title}>Export & import</Text>
-      <Text style={sectionStyles.meta}>
-        Carry these settings to another iPhone or Mac as a file. It never contains passwords or
-        tokens; a Google account from another device shows up as “reconnect” until you sign in.
-      </Text>
-      <Pressable
-        disabled={busy}
-        onPress={() => void exportSettings()}
-        style={busy && sectionStyles.busy}
-        testID="settings-file-export"
+    <SettingsPage testID="settings-page-advanced">
+      <Section
+        footer={
+          <>
+            <Footer>
+              Carry these settings to another iPhone or Mac as a file. It never contains passwords
+              or tokens; a Google account from another device shows up as “reconnect” until you sign
+              in. An import never removes anything.
+            </Footer>
+            {notice ? <Footer testID="settings-file-notice">{notice}</Footer> : null}
+          </>
+        }
+        header="Settings File"
+        testID="settings-file"
       >
-        <Text style={[sectionStyles.action, { marginTop: 10 }]}>Export settings…</Text>
-      </Pressable>
-      <Pressable
-        disabled={busy}
-        onPress={() => void importSettings()}
-        style={busy && sectionStyles.busy}
-        testID="settings-file-import"
+        <Row
+          accessory={<Glyph name="square.and.arrow.up" size={18} tintColor={colors.primary} />}
+          disabled={busy}
+          onPress={() => void exportSettings()}
+          testID="settings-file-export"
+          title="Export Settings…"
+          tone="tint"
+        />
+        <Row
+          accessory={<Glyph name="square.and.arrow.down" size={18} tintColor={colors.primary} />}
+          disabled={busy}
+          onPress={() => void importSettings()}
+          testID="settings-file-import"
+          title="Import Settings…"
+          tone="tint"
+        />
+      </Section>
+
+      <Section
+        footer="PR Preview loads a pull request’s update into a TestFlight build."
+        header="Troubleshooting"
       >
-        <Text style={[sectionStyles.action, { marginTop: 8 }]}>Import settings…</Text>
-      </Pressable>
-      {notice ? (
-        <Text style={sectionStyles.meta} testID="settings-file-notice">
-          {notice}
-        </Text>
-      ) : null}
-    </View>
+        <NavRow
+          href="/settings/diagnostics"
+          testID="settings-row-diagnostics"
+          title="Diagnostics"
+        />
+        <NavRow href="/settings/pr-preview" testID="settings-row-pr-preview" title="PR Preview" />
+      </Section>
+    </SettingsPage>
   );
 }

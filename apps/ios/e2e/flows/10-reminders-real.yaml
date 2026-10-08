@@ -11,15 +11,20 @@ tags:
 - runFlow: ../common/launch.yaml
 
 # Connect: the grant is already answered, so no prompt appears and the
-# synthetic Apple account shows up in the accounts list.
+# synthetic Apple account shows up on the On This iPhone page.
 - runFlow: ../common/open-settings.yaml
-- assertVisible: 'Accounts'
+- runFlow:
+    file: ../common/open-settings-page.yaml
+    env:
+      PAGE: device
 - tapOn:
     id: 'connect-reminders'
+# The Reminders row's subtitle carries this id only while the account exists.
 - extendedWaitUntil:
-    visible: 'Apple Reminders'
+    visible:
+      id: 'apple-reminders-account'
     timeout: 20000
-- tapOn: 'Done'
+- runFlow: ../common/close-settings.yaml
 - assertVisible: 'Today'
 
 # Create through EventKit. The list picker shows the mirrored lists; the

@@ -10,20 +10,27 @@ tags:
 - runFlow: ../common/launch.yaml
 - runFlow: ../common/open-settings.yaml
 - runFlow:
+    file: ../common/open-settings-page.yaml
+    env:
+      PAGE: device
+- runFlow:
     when:
       visible:
         id: 'connect-apple-calendar'
     commands:
       - tapOn:
           id: 'connect-apple-calendar'
+      # The Calendar row's subtitle carries this id only while the account exists.
       - extendedWaitUntil:
-          visible: '^Apple Calendar$'
+          visible:
+            id: 'apple-calendar-account'
           timeout: 20000
 - runFlow:
     when:
-      visible: '^Apple Calendar$'
+      visible:
+        id: 'apple-calendar-account'
     commands:
-      - tapOn: 'Done'
+      - runFlow: ../common/close-settings.yaml
       - runFlow: ../common/open-new-event.yaml
       # Apple calendars are grouped under their EventKit source.
       - assertVisible: '(?i)apple calendar · .*'
@@ -31,12 +38,19 @@ tags:
       # Leave no Apple Calendar account behind: the other flows must not
       # find its calendars (flow 07 would start writing to it).
       - runFlow: ../common/open-settings.yaml
+      - runFlow:
+          file: ../common/open-settings-page.yaml
+          env:
+            PAGE: device
       - scrollUntilVisible:
           element:
             id: 'remove-account-apple-calendar'
+          direction: DOWN
+          timeout: 10000
       - tapOn:
           id: 'remove-account-apple-calendar'
       - extendedWaitUntil:
-          notVisible: '^Apple Calendar$'
+          notVisible:
+            id: 'apple-calendar-account'
           timeout: 20000
-      - tapOn: 'Done'
+      - runFlow: ../common/close-settings.yaml

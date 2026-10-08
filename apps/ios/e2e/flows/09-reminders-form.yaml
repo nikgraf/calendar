@@ -4,12 +4,13 @@ tags:
   - ci
 ---
 # Runs only when an Apple Reminders list is connected on the simulator
-# (Settings → Connect Apple Reminders, then allow the prompt). Without one
-# the flow is a no-op, like flow 08 without a tasks-enabled account —
-# except on CI (keyed on the fixture Google account, like 16 and 17),
-# where it connects Reminders itself and undoes that at the end: the
-# shard this flow runs on may hold no flow that leaves a connection, and
-# the assertions below must never be skipped there.
+# (Settings › On This iPhone › Reminders › Connect, then allow the
+# prompt). Without one the flow is a no-op, like flow 08 without a
+# tasks-enabled account — except on CI (keyed on the fixture Google
+# account, like 16 and 17), where it connects Reminders itself and undoes
+# that at the end: the shard this flow runs on may hold no flow that
+# leaves a connection, and the assertions below must never be skipped
+# there.
 - runFlow: ../common/launch.yaml
 - tapOn: 'Today'
 - runFlow:
@@ -27,12 +28,18 @@ tags:
       - evalScript: ${output.connectedReminders = true}
       - tapOn: 'Cancel'
       - runFlow: ../common/open-settings.yaml
+      - runFlow:
+          file: ../common/open-settings-page.yaml
+          env:
+            PAGE: device
       - tapOn:
           id: 'connect-reminders'
+      # The Reminders row's subtitle carries this id only while the account exists.
       - extendedWaitUntil:
-          visible: 'Apple Reminders'
+          visible:
+            id: 'apple-reminders-account'
           timeout: 20000
-      - tapOn: 'Done'
+      - runFlow: ../common/close-settings.yaml
       - assertVisible: 'Today'
       - runFlow: ../common/open-new-event.yaml
       - runFlow: ../common/switch-to-task.yaml
@@ -181,12 +188,22 @@ tags:
             true: ${output.connectedReminders === true}
           commands:
             - runFlow: ../common/open-settings.yaml
+            - runFlow:
+                file: ../common/open-settings-page.yaml
+                env:
+                  PAGE: device
+            - scrollUntilVisible:
+                element:
+                  id: 'remove-account-apple-reminders'
+                direction: DOWN
+                timeout: 10000
             - tapOn:
                 id: 'remove-account-apple-reminders'
             - extendedWaitUntil:
-                notVisible: '^Apple Reminders$'
+                notVisible:
+                  id: 'apple-reminders-account'
                 timeout: 20000
-            - tapOn: 'Done'
+            - runFlow: ../common/close-settings.yaml
             - assertVisible: 'Today'
 # Keyed on the sheet still being open (see 08): after the branch above
 # closed it, "no Reminders list visible" would be true for the wrong

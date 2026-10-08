@@ -1,0 +1,19 @@
+appId: com.solunivo.app.dev
+name: Push one page from the Settings root (shared)
+---
+# Run on the Settings root (open-settings.yaml). PAGE is the root row's
+# id suffix: device, general, notifications, mirrors, advanced or unsynced.
+- scrollUntilVisible:
+    element:
+      id: 'settings-row-${PAGE}'
+    direction: DOWN
+    timeout: 10000
+- tapOn:
+    id: 'settings-row-${PAGE}'
+- extendedWaitUntil:
+    visible:
+      id: 'settings-page-${PAGE}'
+    timeout: 5000
+# The page slides in; a tap taken mid-push misses.
+- waitForAnimationToEnd:
+    timeout: 5000

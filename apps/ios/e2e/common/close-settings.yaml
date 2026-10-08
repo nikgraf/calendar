@@ -1,0 +1,17 @@
+appId: com.solunivo.app.dev
+name: Close Settings from any of its pages, back on the calendar (shared)
+---
+# Done sits on the root page only: go back until the root shows (a page
+# under it is off the window, so the root counts as visible only on top).
+- repeat:
+    times: 4
+    while:
+      notVisible:
+        id: 'settings-root'
+    commands:
+      - tapOn:
+          id: 'BackButton'
+      - waitForAnimationToEnd:
+          timeout: 3000
+- tapOn: 'Done'
+- assertVisible: 'Today'

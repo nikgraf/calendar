@@ -1,13 +1,15 @@
 appId: com.solunivo.app.dev
-name: Accounts sheet opens and closes
+name: Settings opens on its root, pushes a page and closes
 tags:
   - ci
 ---
 - runFlow: ../common/launch.yaml
 - runFlow: ../common/open-settings.yaml
-- assertVisible: 'Accounts'
 - assertVisible: 'Add Google Account'
+- runFlow:
+    file: ../common/open-settings-page.yaml
+    env:
+      PAGE: device
 - assertVisible:
     id: 'connect-contacts|contacts-connected'
-- tapOn: 'Done'
-- assertVisible: 'Today'
+- runFlow: ../common/close-settings.yaml
