@@ -2405,7 +2405,9 @@ design-tokens`). **The brand kit is the one palette**: `tokens.json`
       **Done sits on the root only** (a toolbar button); a pushed page gets
       the native back button, the sheet's swipe closes Settings from any
       page, and the calendar's unsynced badge pushes `/settings/unsynced`
-      over the root (`initialRouteName`). **Shared state** lives in two
+      over the root (`initialRouteName`, loaded by a push only with
+      `withAnchor: true` — without it the page opened alone, no root and
+      no Done). **Shared state** lives in two
       providers in the stack's layout: `SettingsProvider` (the Apple
       permission statuses with their foreground refresh and settle loop,
       Google sign-in, the device connects, the last error) and

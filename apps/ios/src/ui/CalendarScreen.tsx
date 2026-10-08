@@ -119,8 +119,10 @@ function CalendarBody({
   });
   const router = useRouter();
   const openSettings = () => router.push('/settings');
-  // Straight to the list, with the Settings root under it (the stack's initialRouteName).
-  const openUnsynced = () => router.push('/settings/unsynced');
+  // Straight to the list, with the Settings root under it: a push loads the
+  // stack's initialRouteName only with an anchor, and without one the page
+  // opened alone — no root to go back to, no Done.
+  const openUnsynced = () => router.push('/settings/unsynced', { withAnchor: true });
   const host = useEditorHost();
   const updatePrefs = useUpdateViewPreferences();
   /** The view is device taste: it persists, and the app reopens on it. */

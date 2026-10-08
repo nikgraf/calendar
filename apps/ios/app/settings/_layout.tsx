@@ -6,7 +6,10 @@ import { SettingsProvider } from '../../src/ui/settings/SettingsContext.tsx';
 import { groupedGround, useTheme } from '../../src/ui/theme.ts';
 import { MutationNoticeToast } from '../../src/ui/Toast.tsx';
 
-/** A deep link (the calendar's unsynced badge → `/settings/unsynced`) still lands on top of the root page. */
+/**
+ * A page opened directly (the calendar's unsynced badge pushes
+ * `/settings/unsynced` with `withAnchor`) lands on top of the root page.
+ */
 export const unstable_settings = { initialRouteName: 'index' };
 
 /**

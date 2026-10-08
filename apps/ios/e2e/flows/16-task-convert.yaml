@@ -143,10 +143,18 @@ tags:
                 timeout: 10000
             - tapOn:
                 id: 'remove-account-apple-reminders'
+            # Gone: the row just tapped disappears with the account (the access row
+            # may be scrolled off by now, so its absence would prove nothing), and
+            # the access row offers Connect again.
             - extendedWaitUntil:
                 notVisible:
-                  id: 'apple-reminders-account'
+                  id: 'remove-account-apple-reminders'
                 timeout: 20000
+            - scrollUntilVisible:
+                element:
+                  id: 'connect-reminders'
+                direction: UP
+                timeout: 10000
             - runFlow: ../common/close-settings.yaml
             - assertVisible: 'Today'
 # No fixture account: leave the sheet as we found it (keyed on the sheet,
