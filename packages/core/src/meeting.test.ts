@@ -28,6 +28,24 @@ describe('meetingUrl', () => {
     ).toBe('https://teams.microsoft.com/l/meetup-join/19%3ameeting_x?context=y');
   });
 
+  it('finds the newer Teams and Webex link shapes', () => {
+    for (const link of [
+      'https://teams.microsoft.com/meet/2345678901234?p=AbCdEfGh',
+      'https://teams.live.com/meet/9876543210987?p=xYz123',
+      'https://teams.live.com/l/meetup-join/19%3ameeting_x?context=y',
+      'https://acme.webex.com/acme/j.php?MTID=m0123456789abcdef0123456789abcdef',
+    ]) {
+      expect(meetingUrl({ description: `Join: ${link} (by phone below)` }), link).toBe(link);
+    }
+    for (const location of [
+      'https://teams.microsoft.com.evil.example/meet/1',
+      'https://evilteams.live.com/meet/1',
+      'https://acme.webex.com.evil.example/acme/j.php?MTID=m1',
+    ]) {
+      expect(meetingUrl({ location }), location).toBeUndefined();
+    }
+  });
+
   it('takes a Zoom or Webex link only from the real domain or a subdomain of it', () => {
     expect(meetingUrl({ location: 'https://acme.webex.com/meet/ana' })).toBe(
       'https://acme.webex.com/meet/ana',
