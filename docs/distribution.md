@@ -60,10 +60,12 @@ can only show the UI. The desktop client secret is not confidential
 ## Versions
 
 Every package is `0.1.0` (`package.json`, the packager's
-CFBundleShortVersionString) and the testing build's CFBundleVersion is the
-short commit SHA; iOS build numbers come from EAS (`appVersionSource:
-remote`, auto-increment). Bump the package versions together when a
-release is worth a number; `CHANGELOG.md` collects what changed between
+CFBundleShortVersionString), and so is the iOS app's `expo.version` in
+`apps/ios/app.json` (its CFBundleShortVersionString); the testing build's
+CFBundleVersion is the short commit SHA, and iOS build numbers come from
+EAS (`appVersionSource: remote`, auto-increment). Bump the versions
+together when a release is worth a number — the iOS one is part of the
+native fingerprint, so its bump needs a new build; `CHANGELOG.md` collects what changed between
 bumps (the decision log in `docs/decisions.md` has the detail).
 
 ## Installing a testing build (testers)
