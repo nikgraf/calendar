@@ -17,25 +17,9 @@ one audit pass traced it — reproduce with a failing test first. Lines are
 from main on 2026-10-04. Fixed items are closed in `docs/decisions.md`
 under "Review fixes (2026-10-04)" (#110–#115), "Review fixes, second
 batch (2026-10-05)" (#117–#121), "Review fixes, third batch
-(2026-10-05)" (#124–#127) and "Review fixes, fourth batch (2026-10-07)"
-(#129–#132).
-
-### Time zones and recurrence
-
-- [ ] The device zone is read once per process, two places left (the
-      notification layer reads it per pass since #119) — the default zone
-      setting (`deviceSettings.ts:113-121`, not invalidated on foreground)
-      and the Reminders bridge's global formatter
-      (`RemindersBridge.swift:159-177`; the Apple Calendar bridge uses a
-      computed var). After travel the grid, "today" and new reminders'
-      times stay on the old zone until relaunch.
-
-### Sync robustness
-
-- [ ] EventKit/Contacts observers die after `reloadAsync` (reported,
-      medium) — the bridges return early when `changeObserver != nil`
-      (`AppleCalendarBridge.swift:453-458` and siblings) while the
-      closure's module instance is gone; "Load PR channel" triggers it.
+(2026-10-05)" (#124–#127), "Review fixes, fourth batch (2026-10-07)"
+(#129–#132) and "Review fixes, fifth batch (2026-10-08)" (#139–#142) — which
+closed the last of them.
 
 ## Tier 1 — CI and distribution
 
@@ -148,25 +132,12 @@ comment` for inline-playable video: 10 MB on Free plans, 100 MB paid
       under the notarized build from `/Applications`, relay auto-launch,
       a real guest invitation at "ask".
 
-- [ ] UX and polish from the 2026-10-02 review (one PR per bullet group
-      is fine; deletes, desktop dialogs and sign-in shipped in #129, #130
-      and #132) —
-      **iOS gestures**: a second swipe within the 180 ms commit animation
-      loses the first (`DayTimeline.tsx:265-272`, `onNavigate` runs only
-      when the timing finishes — verified in code); resize can win over
-      scroll on short events, a cancelled drag still commits
-      (`DraggableEventBlock.tsx:80-94` ignores `success`) and the block
-      flickers back before the optimistic write lands (reported).
-      **Notifications**: a tap does not open its event; the OS-denied
-      state shows only after a switch is flipped. **Accessibility and
-      theme**: no Dynamic Type limits on fixed-height chips, toasts are
-      not announced to VoiceOver, the conflict banner and toasts overlap,
-      native pickers turn dark inside the light-only UI. **Agents pane**:
-      blank when `agents:state` fails; "New token" and "Remove" act
-      without a confirm. **Small**: newer Teams (`/meet/<id>`,
-      `teams.live.com`) and Webex `j.php` links are not recognised
-      (`meeting.ts`); `app.json` says 0.0.1 while `docs/distribution.md`
-      says 0.1.0.
+- [ ] UX and polish from the 2026-10-02 review — deletes, desktop dialogs
+      and sign-in shipped in #129, #130 and #132; iOS gestures,
+      notifications, the Agents pane and the small items in #139–#142. Left:
+      **Accessibility and theme**: no Dynamic Type limits on fixed-height
+      chips, toasts are not announced to VoiceOver, the conflict banner and
+      toasts overlap, native pickers turn dark inside the light-only UI.
 
 ## Tier 3 — AI features
 
