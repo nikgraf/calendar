@@ -176,10 +176,13 @@ function CalendarBody({
   });
 
   // A clicked event reminder: the occurrence's day, with it in the
-  // inspector. An event deleted since opens nothing.
+  // inspector. An event deleted since opens nothing. A capture under way
+  // is dismissed, as on iOS: its dialog would cover the event, and a parse
+  // still running would replace the inspector with its editor.
   const openNotificationTarget = useEffectEvent((target: NotificationTarget) => {
     void findNotificationEvent(backend, target).then((event) => {
       if (event) {
+        capture.dismiss();
         setFocused(eventStartDay(event, timeZone));
         setPanel({ event, kind: 'inspector' });
       }

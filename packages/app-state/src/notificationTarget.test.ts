@@ -104,6 +104,31 @@ describe('findNotificationEvent', () => {
     expect(await findNotificationEvent(client([], [], [away]), occurrence)).toBe(away);
   });
 
+  it('opens nothing for a deleted occurrence, whose cancelled record stays stored', async () => {
+    // A deleted occurrence keeps a cancelled record under Google's instance
+    // id, so the series stops drawing it; the range read leaves it out.
+    const occurrence = {
+      ...target,
+      eventId: 'm__1000',
+      originalStartUtc: 1000,
+      recurringEventId: 'm',
+    };
+    const tombstone = event({
+      id: 'm_19700101T000001Z',
+      originalStartUtc: 1000,
+      recurringEventId: 'm',
+      status: 'cancelled',
+    });
+    expect(await findNotificationEvent(client([], [], [tombstone]), occurrence)).toBeNull();
+    // An occurrence edited before its delete: the reminder named that id.
+    expect(
+      await findNotificationEvent(client([], [], [tombstone]), {
+        ...occurrence,
+        eventId: tombstone.id,
+      }),
+    ).toBeNull();
+  });
+
   it('answers null when the event is gone or the read fails', async () => {
     expect(await findNotificationEvent(client([]), target)).toBeNull();
     expect(

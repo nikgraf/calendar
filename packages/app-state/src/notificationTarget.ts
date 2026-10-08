@@ -18,7 +18,8 @@ const DAY_MS = 86_400_000;
  * also matched by its series and original start. An event moved out of
  * that window is read by its stored id — a Google event's own, or the
  * instance id an edited occurrence is stored under (Apple events are read
- * through and never stored).
+ * through and never stored). A cancelled record found there is a deleted
+ * occurrence, kept so the series stops drawing it: gone too.
  */
 export const findNotificationEvent = (
   client: Pick<BackendClient, 'getEvent' | 'getEventsInRange'>,
@@ -57,7 +58,7 @@ export const findNotificationEvent = (
           calendarId: target.calendarId,
           eventId,
         });
-        if (stored) {
+        if (stored && stored.status !== 'cancelled') {
           return stored;
         }
       }
