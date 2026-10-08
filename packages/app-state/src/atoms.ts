@@ -11,7 +11,12 @@ import {
   TASKLISTS_KEY,
   TASKS_KEY,
 } from '@calendar/db/keys';
-import type { BackendClient, BackendPayload, BackendSuccess } from '@calendar/core';
+import {
+  type BackendClient,
+  type BackendPayload,
+  type BackendSuccess,
+  Temporal,
+} from '@calendar/core';
 import { Cause, Context, Effect, Exit, Layer } from 'effect';
 import { Atom, AsyncResult, AtomRegistry, Reactivity } from 'effect/reactivity';
 
@@ -146,7 +151,31 @@ const MUTATION_REACTIVITY = {
 
 export type MutationName = keyof typeof MUTATION_REACTIVITY;
 
-const buildAtoms = (client: BackendClient) => {
+/**
+ * The engine's time zone, read again once a minute and set only when it
+ * changed, so nothing downstream refetches on a tick. The stored time
+ * zones default to it: after a flight (or a zone picked in the OS
+ * settings) the grid and "today" must follow without a relaunch. A
+ * suspended app's timer fires on resume, so a foreground is covered too.
+ */
+export const deviceZoneAtom = (
+  read: () => string = () => Temporal.Now.timeZoneId(),
+  intervalMs = 60_000,
+): Atom.Atom<string> =>
+  Atom.readable((get) => {
+    let current = read();
+    const timer = setInterval(() => {
+      const zone = read();
+      if (zone !== current) {
+        current = zone;
+        get.setSelf(zone);
+      }
+    }, intervalMs);
+    get.addFinalizer(() => clearInterval(timer));
+    return current;
+  });
+
+const buildAtoms = (client: BackendClient, deviceZone: Atom.Atom<string>) => {
   const runtime = Atom.runtime(Layer.succeed(AppBackend, client));
 
   const accounts = runtime
@@ -290,14 +319,16 @@ const buildAtoms = (client: BackendClient) => {
     )
     .pipe(Atom.withReactivity([deviceSettingsKey('eventNotifications')]));
 
-  // Device-local time zones; refetched only when they are written.
+  // Device-local time zones; refetched when they are written and when the
+  // device's zone changes (nothing stored reads as the device zone).
   const timeZoneSettings = runtime
-    .atom(
-      Effect.gen(function* () {
+    .atom((get) => {
+      get(deviceZone);
+      return Effect.gen(function* () {
         const backend = yield* AppBackend;
         return yield* backend.getTimeZoneSettings(undefined);
-      }),
-    )
+      });
+    })
     .pipe(Atom.withReactivity([deviceSettingsKey('timeZones')]));
 
   // Device-local view preferences; refetched only when they are written.
@@ -508,7 +539,10 @@ const boundedAtomCache = <A>(make: (key: string) => A, limit = ATOM_CACHE_LIMIT)
   };
 };
 
-export const makeBackendAtoms = (client: BackendClient): BackendAtoms => buildAtoms(client);
+export const makeBackendAtoms = (
+  client: BackendClient,
+  deviceZone: Atom.Atom<string> = deviceZoneAtom(),
+): BackendAtoms => buildAtoms(client, deviceZone);
 
 /**
  * Runs one call of a backend mutation on an atom of its own and resolves

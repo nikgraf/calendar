@@ -343,6 +343,10 @@ func handleLine(_ line: String) {
     return
   }
   let params = request.params ?? [:]
+  // Foundation caches the system time zone until it is reset
+  // (NSTimeZone.h), and the bridges speak device-local wall clock: the
+  // helper outlives a flight, so every request reads the zone afresh.
+  NSTimeZone.resetSystemTimeZone()
   Task.detached {
     switch request.method {
     case "status": handleStatus(request.id)

@@ -155,26 +155,30 @@ enum RemindersBridgeError: Error, Sendable {
 }
 
 // MARK: - Date helpers (device zone, as the protocol specifies)
+//
+// Built on each use, never stored: a stored value keeps the zone it was
+// made in, and after travel every reminder would read and write in the
+// old zone until a relaunch.
 
-private let dayFormatter: DateFormatter = {
+private var dayFormatter: DateFormatter {
   let f = DateFormatter()
   f.calendar = Calendar(identifier: .gregorian)
   f.locale = Locale(identifier: "en_US_POSIX")
   f.timeZone = TimeZone.current
   f.dateFormat = "yyyy-MM-dd"
   return f
-}()
+}
 
 /// The wire format is ISO-8601 Gregorian whatever the device calendar is
 /// set to (Buddhist, Japanese, Hebrew …): resolving "2026-09-10" through
 /// `Calendar.current` on such a device would read 2026 as a year of that
 /// calendar. Every conversion between components and wire strings goes
 /// through this one.
-private let gregorian: Calendar = {
+private var gregorian: Calendar {
   var c = Calendar(identifier: .gregorian)
   c.timeZone = TimeZone.current
   return c
-}()
+}
 
 private func pad2(_ value: Int) -> String { value < 10 ? "0\(value)" : "\(value)" }
 
@@ -410,7 +414,10 @@ actor RemindersBridge {
   /// diff then finds unchanged). Latency only: the periodic pass stays
   /// the correctness mechanism, because this reaches a live observer only.
   func observeChanges(_ handler: @escaping @Sendable () -> Void) {
-    if changeObserver != nil { return }
+    // The latest caller wins: after a JS reload (`reloadAsync`, a PR
+    // channel) a new module instance asks again, and the old handler's
+    // module is gone, so keeping the first observer went silent.
+    if let changeObserver { NotificationCenter.default.removeObserver(changeObserver) }
     changeObserver = NotificationCenter.default.addObserver(
       forName: .EKEventStoreChanged, object: store, queue: nil
     ) { _ in handler() }

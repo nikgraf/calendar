@@ -7,9 +7,15 @@ import {
 } from '@calendar/core';
 import { ACCOUNTS_KEY } from '@calendar/db/keys';
 import { Effect } from 'effect';
-import { AsyncResult, type Atom, AtomRegistry } from 'effect/reactivity';
-import { describe, expect, it } from 'vitest';
-import { makeBackendAtoms, mapSnapshotKey, rangeKey, runMutation } from './atoms.ts';
+import { AsyncResult, Atom, AtomRegistry } from 'effect/reactivity';
+import { describe, expect, it, vi } from 'vitest';
+import {
+  deviceZoneAtom,
+  makeBackendAtoms,
+  mapSnapshotKey,
+  rangeKey,
+  runMutation,
+} from './atoms.ts';
 
 const account = new Account({
   contactsEnabled: false,
@@ -31,6 +37,7 @@ const makeStubClient = () => {
     resolved: [] as Array<string>,
     setVisible: 0,
     snapshots: [] as Array<unknown>,
+    timeZones: 0,
   };
   const client: BackendClient = {
     addAccount: () => fail('not stubbed'),
@@ -64,7 +71,11 @@ const makeStubClient = () => {
       }),
     getOverdueTasks: () => Effect.succeed([]),
     getTasksInRange: () => Effect.succeed([]),
-    getTimeZoneSettings: () => Effect.succeed({ primary: 'UTC', zones: ['UTC'] }),
+    getTimeZoneSettings: () =>
+      Effect.sync(() => {
+        calls.timeZones += 1;
+        return { primary: 'UTC', zones: ['UTC'] };
+      }),
     getViewPreferences: () => Effect.succeed({ allDayLaneCollapsed: false }),
     importSettings: () => fail('not stubbed'),
     listAccounts: () =>
@@ -342,6 +353,53 @@ describe('eventsInRange LRU', () => {
     for (const unmount of unmounts) {
       unmount();
     }
+    registry.dispose();
+  });
+});
+
+describe('device zone', () => {
+  it('is read again each interval and changes only when the zone does', () => {
+    vi.useFakeTimers();
+    try {
+      let zone = 'Europe/Vienna';
+      const atom = deviceZoneAtom(() => zone, 1000);
+      const registry = AtomRegistry.make();
+      const seen: Array<string> = [];
+      const unsubscribe = registry.subscribe(atom, (value) => seen.push(value), {
+        immediate: true,
+      });
+
+      vi.advanceTimersByTime(3000);
+      expect(seen).toEqual(['Europe/Vienna']);
+
+      zone = 'America/New_York';
+      vi.advanceTimersByTime(1000);
+      expect(registry.get(atom)).toBe('America/New_York');
+      expect(seen).toEqual(['Europe/Vienna', 'America/New_York']);
+
+      unsubscribe();
+      registry.dispose();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('a device zone change refetches the time zones (nothing stored follows the device)', async () => {
+    const { calls, client } = makeStubClient();
+    const deviceZone = Atom.make('Europe/Vienna');
+    const atoms = makeBackendAtoms(client, deviceZone);
+    const registry = AtomRegistry.make();
+    const unmount = registry.mount(atoms.timeZoneSettings);
+    await waitFor(() => registry.get(atoms.timeZoneSettings), AsyncResult.isSuccess);
+    expect(calls.timeZones).toBe(1);
+
+    registry.set(deviceZone, 'America/New_York');
+    await waitFor(
+      () => registry.get(atoms.timeZoneSettings),
+      () => calls.timeZones >= 2,
+    );
+    expect(calls.timeZones).toBe(2);
+    unmount();
     registry.dispose();
   });
 });

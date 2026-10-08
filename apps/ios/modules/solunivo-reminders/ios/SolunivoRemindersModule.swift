@@ -1,4 +1,5 @@
 import ExpoModulesCore
+import Foundation
 
 /// One generic entry point: the JS side speaks the same
 /// `reminders.<method>` + params protocol as the macOS helper, and both
@@ -9,6 +10,15 @@ public class SolunivoRemindersModule: Module {
     Name("SolunivoReminders")
 
     Events("remindersChanged")
+
+    // App-wide, here for want of a better home: Foundation caches the
+    // system time zone until it is reset (NSTimeZone.h), and both this
+    // bridge's `TimeZone.current` and Hermes's Intl, which the JS side's
+    // device zone comes from, read it. After a flight the app would keep
+    // the old zone until a relaunch.
+    OnAppEntersForeground {
+      NSTimeZone.resetSystemTimeZone()
+    }
 
     OnStartObserving {
       Task {
