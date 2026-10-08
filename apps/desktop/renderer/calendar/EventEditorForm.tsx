@@ -157,28 +157,35 @@ export function EventEditorForm({
           />
           All-day
         </label>
-        <div className="flex gap-2">
+        {/* The date gets its own line: beside both times it ran the end time past the panel's edge. */}
+        <div className="flex flex-col gap-2">
           <input
+            aria-label="Date"
             className={field}
             onChange={(changeEvent) => setDate(changeEvent.target.value)}
             type="date"
             value={date}
           />
           {isAllDay ? null : (
-            <>
+            <div className="flex items-center gap-2">
               <input
-                className={field}
+                aria-label="Start time"
+                className={`${field} min-w-0`}
                 onChange={(changeEvent) => setStartTime(changeEvent.target.value)}
                 type="time"
                 value={startTime}
               />
+              <span aria-hidden className="text-sm text-ink-secondary">
+                –
+              </span>
               <input
-                className={field}
+                aria-label="End time"
+                className={`${field} min-w-0`}
                 onChange={(changeEvent) => setEndTime(changeEvent.target.value)}
                 type="time"
                 value={endTime}
               />
-            </>
+            </div>
           )}
         </div>
         {zoneLine ? (
