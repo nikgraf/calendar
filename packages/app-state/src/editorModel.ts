@@ -79,6 +79,12 @@ export interface EventEditorSeed {
   readonly event?: EventRecord;
   readonly initialDate: Temporal.PlainDate;
   readonly initialHour?: number;
+  /**
+   * The scope an existing series opens in ('instance' by default). The
+   * detail views pass 'series' with a conversion: a series converts as a
+   * whole, so the editor must not start on the occurrence.
+   */
+  readonly initialScope?: RecurringScope | undefined;
   /** A slot drawn on the time grid (`HH:MM`); wins over `initialHour`. */
   readonly initialTimes?: { readonly endTime: string; readonly startTime: string };
   /** Quick-add result: the user reviews it before anything is written. */
@@ -390,7 +396,7 @@ export const useEventEditorModel = ({
       }),
   );
   const [remindersDirty, setRemindersDirty] = useState(false);
-  const [scope, setScopeState] = useState<RecurringScope>('instance');
+  const [scope, setScopeState] = useState<RecurringScope>(seed.initialScope ?? 'instance');
   const capabilities = editorCapabilities({
     hasOwnAttendee: ownAttendee !== undefined,
     isExisting: existing !== undefined,

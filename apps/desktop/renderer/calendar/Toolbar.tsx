@@ -5,6 +5,7 @@ import type { RefObject } from 'react';
 import { Button } from '../ui/Button.tsx';
 import { IconButton } from '../ui/IconButton.tsx';
 import {
+  CheckCircleIcon,
   ChevronLeftIcon,
   ChevronRightIcon,
   PlusIcon,
@@ -35,7 +36,9 @@ export function Toolbar({
   onSwitchView,
   onTaskParsed,
   onToday,
+  onTogglePanel,
   onToggleSidebar,
+  panelShown,
   quickAddRef,
   sidebarCollapsed,
   timeZone,
@@ -50,7 +53,10 @@ export function Toolbar({
   onSwitchView: (view: 'day' | 'month' | 'week') => void;
   onTaskParsed: (seed: TaskEditorSeed) => void;
   onToday: () => void;
+  /** The Today rail, shown or hidden (it hides by itself on a narrow window). */
+  onTogglePanel: () => void;
   onToggleSidebar: () => void;
+  panelShown: boolean;
   quickAddRef: RefObject<HTMLInputElement | null>;
   sidebarCollapsed: boolean;
   timeZone: string;
@@ -124,6 +130,15 @@ export function Toolbar({
       </div>
       <IconButton disabled label="Search (coming soon)" style={noDrag}>
         <SearchIcon />
+      </IconButton>
+      <IconButton
+        active={panelShown}
+        data-testid="panel-toggle"
+        label={panelShown ? 'Hide Today panel' : 'Show Today panel'}
+        onClick={onTogglePanel}
+        style={noDrag}
+      >
+        <CheckCircleIcon />
       </IconButton>
       <Button
         aria-label="New event"

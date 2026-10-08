@@ -115,19 +115,21 @@ export function EditorPanel({
       timeZone,
     ],
   );
-  const converted = useRef(false);
-  useEffect(() => {
-    if (convertOnOpen && !converted.current) {
-      converted.current = true;
-      void switchTo('task');
-    }
-  }, [convertOnOpen, switchTo]);
   const showToggle =
     !(sourceKind === 'event' && eventModel.readOnly) &&
     !(sourceKind === 'task' && taskModel.readOnly);
   // A series converts as a whole, like it moves: an occurrence-scoped edit stays an event.
   const seriesOnly =
     sourceKind === 'event' && eventModel.isRecurring && eventModel.scope !== 'series';
+  // A series converts as a whole: the inspector seeds `initialScope:
+  // 'series'`, so the switch never runs on an occurrence (`seriesOnly`).
+  const converted = useRef(false);
+  useEffect(() => {
+    if (convertOnOpen && !converted.current && !seriesOnly) {
+      converted.current = true;
+      void switchTo('task');
+    }
+  }, [convertOnOpen, seriesOnly, switchTo]);
   const taskWord = taskModel.provider === 'apple' ? 'reminder' : 'task';
   const title =
     mode === 'task'

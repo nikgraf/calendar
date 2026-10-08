@@ -66,16 +66,23 @@ export const hasMainWindow = (): boolean => mainWindow !== null;
 // the OS appearance so a launch (or a reload) never flashes white at night.
 const windowBackground = (): string => (nativeTheme.shouldUseDarkColors ? '#19171d' : '#ffffff');
 
+/** The e2e harness opens the window at a given size (`WxH`): CI's runner screen is smaller than a laptop's. */
+const windowSize = (): { readonly height: number; readonly width: number } => {
+  const match = /^(\d+)x(\d+)$/.exec(process.env['CALENDAR_E2E_WINDOW'] ?? '');
+  return match
+    ? { height: Number(match[2]), width: Number(match[1]) }
+    : { height: 800, width: 1280 };
+};
+
 export const createMainWindow = (): BrowserWindow => {
   const window = new BrowserWindow({
     backgroundColor: windowBackground(),
-    height: 800,
     minHeight: 400,
     minWidth: 600,
     show: false,
     titleBarStyle: 'hiddenInset',
     webPreferences,
-    width: 1280,
+    ...windowSize(),
   });
   mainWindow = window;
   window.once('closed', () => {

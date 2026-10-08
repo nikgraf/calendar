@@ -1452,6 +1452,7 @@ describe('calendar desktop e2e', () => {
 
   it('adds an undated task from the panel', async () => {
     const { cdp } = app;
+    await cdp.showRail();
     await cdp.type('[data-testid="panel-add-task"]', 'Sharpen the pencils');
     await cdp.eval(`document.querySelector('[data-testid="panel-add-task"]').form.requestSubmit()`);
     await expect
@@ -1470,6 +1471,7 @@ describe('calendar desktop e2e', () => {
 
   it('drags a task row from the panel onto the all-day lane and dates it', async () => {
     const { cdp } = app;
+    await cdp.showRail();
     const row = await cdp.locate('[data-testid="panel-task-task-undated"]');
     const column = await cdp.locate('[data-testid="today-header"]');
     const lane = await cdp.locate('[data-testid="all-day-lane"]');
@@ -1491,6 +1493,7 @@ describe('calendar desktop e2e', () => {
     const pencils = (await readTasks(app.userDataDir)).find(
       (task) => task.title === 'Sharpen the pencils',
     )!;
+    await cdp.showRail();
     const row = await cdp.locate(`[data-testid="panel-task-${pencils.id}"]`);
     const lane = await cdp.locate('[data-testid="all-day-lane"]');
     // Down to the lane's height, but still over the panel: no column.

@@ -31,6 +31,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { desktopLanguageModel } from '../ai/desktopModel.ts';
 import { desktopTextRecognizer } from '../ai/desktopTextRecognizer.ts';
 import { Dialog, isDialogOpen } from '../Dialog.tsx';
+import { useMediaQuery } from '../useMediaQuery.ts';
 import { BirthdayDetail } from './BirthdayDetail.tsx';
 import { CaptureDialog } from './CaptureDialog.tsx';
 import { captureSourceOf, isCapturable, readPaste } from './captureClipboard.ts';
@@ -134,6 +135,12 @@ function CalendarBody({
   const prefs = useViewPreferences();
   const updatePrefs = useUpdateViewPreferences();
   const sidebarCollapsed = prefs?.sidebarCollapsed ?? false;
+  // The Today rail yields on a narrow window (a 1024px laptop window with
+  // the sidebar open leaves the week ~60px a column with it) unless asked
+  // for; the inspector and the editors always get the panel.
+  const wide = useMediaQuery('(min-width: 1180px)');
+  const [railOpen, setRailOpen] = useState<boolean | null>(null);
+  const railShown = railOpen ?? wide;
   const changeView = (next: MainView) => {
     switchView(next);
     updatePrefs({ lastView: next });
@@ -310,7 +317,9 @@ function CalendarBody({
         onSwitchView={changeView}
         onTaskParsed={(prefill) => setPanel({ kind: 'editTask', opening: nextOpening(), prefill })}
         onToday={goToday}
+        onTogglePanel={() => setRailOpen(!railShown)}
         onToggleSidebar={() => updatePrefs({ sidebarCollapsed: !sidebarCollapsed })}
+        panelShown={railShown}
         quickAddRef={quickAddRef}
         sidebarCollapsed={sidebarCollapsed}
         timeZone={timeZone}
@@ -382,73 +391,75 @@ function CalendarBody({
           )}
         </div>
 
-        <aside
-          className={`flex shrink-0 flex-col border-l border-hairline bg-surface-subtle ${
-            editing ? 'w-[360px]' : 'w-[300px]'
-          }`}
-          data-panel-kind={panel.kind}
-          data-testid="panel"
-          key={panelKey}
-        >
-          {panel.kind === 'rail' ? (
-            <TodayRail
-              drag={drag}
-              onEditTask={(task) => setPanel({ kind: 'editTask', opening: nextOpening(), task })}
-              onOpenEvent={(event) => setPanel({ event, kind: 'inspector' })}
-              timeZone={timeZone}
-            />
-          ) : panel.kind === 'inspector' ? (
-            <EventInspector
-              calendars={calendars}
-              event={panel.event}
-              onClose={closePanel}
-              onConvert={() =>
-                setPanel({
-                  kind: 'editEvent',
-                  mode: 'task',
-                  opening: nextOpening(),
-                  seed: { event: panel.event, initialDate: focused },
-                })
-              }
-              onEdit={() =>
-                setPanel({
-                  kind: 'editEvent',
-                  opening: nextOpening(),
-                  seed: { event: panel.event, initialDate: focused },
-                })
-              }
-              timeZone={timeZone}
-            />
-          ) : panel.kind === 'editEvent' ? (
-            <EditorPanel
-              calendars={calendars}
-              initialMode={panel.mode}
-              onClose={closePanel}
-              onSaved={
-                panel.captureRow === undefined
-                  ? undefined
-                  : () => capture.markAdded(panel.captureRow!)
-              }
-              seed={panel.seed}
-              taskLists={taskLists}
-              timeZone={timeZone}
-            />
-          ) : (
-            <EditorPanel
-              calendars={calendars}
-              onClose={closePanel}
-              seed={{
-                initialDate: panel.prefill
-                  ? Temporal.PlainDate.from(panel.prefill.initialDate)
-                  : focused,
-              }}
-              task={panel.task}
-              taskLists={taskLists}
-              taskPrefill={panel.prefill}
-              timeZone={timeZone}
-            />
-          )}
-        </aside>
+        {panel.kind === 'rail' && !railShown ? null : (
+          <aside
+            className={`flex shrink-0 flex-col border-l border-hairline bg-surface-subtle ${
+              editing ? 'w-[360px]' : 'w-[300px]'
+            }`}
+            data-panel-kind={panel.kind}
+            data-testid="panel"
+            key={panelKey}
+          >
+            {panel.kind === 'rail' ? (
+              <TodayRail
+                drag={drag}
+                onEditTask={(task) => setPanel({ kind: 'editTask', opening: nextOpening(), task })}
+                onOpenEvent={(event) => setPanel({ event, kind: 'inspector' })}
+                timeZone={timeZone}
+              />
+            ) : panel.kind === 'inspector' ? (
+              <EventInspector
+                calendars={calendars}
+                event={panel.event}
+                onClose={closePanel}
+                onConvert={() =>
+                  setPanel({
+                    kind: 'editEvent',
+                    mode: 'task',
+                    opening: nextOpening(),
+                    seed: { event: panel.event, initialDate: focused, initialScope: 'series' },
+                  })
+                }
+                onEdit={() =>
+                  setPanel({
+                    kind: 'editEvent',
+                    opening: nextOpening(),
+                    seed: { event: panel.event, initialDate: focused },
+                  })
+                }
+                timeZone={timeZone}
+              />
+            ) : panel.kind === 'editEvent' ? (
+              <EditorPanel
+                calendars={calendars}
+                initialMode={panel.mode}
+                onClose={closePanel}
+                onSaved={
+                  panel.captureRow === undefined
+                    ? undefined
+                    : () => capture.markAdded(panel.captureRow!)
+                }
+                seed={panel.seed}
+                taskLists={taskLists}
+                timeZone={timeZone}
+              />
+            ) : (
+              <EditorPanel
+                calendars={calendars}
+                onClose={closePanel}
+                seed={{
+                  initialDate: panel.prefill
+                    ? Temporal.PlainDate.from(panel.prefill.initialDate)
+                    : focused,
+                }}
+                task={panel.task}
+                taskLists={taskLists}
+                taskPrefill={panel.prefill}
+                timeZone={timeZone}
+              />
+            )}
+          </aside>
+        )}
       </div>
 
       <DragGhost drag={drag} />
