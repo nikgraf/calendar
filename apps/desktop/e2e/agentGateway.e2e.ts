@@ -582,7 +582,22 @@ describe('agent gateway: other agents reach the app over the CLI and MCP', () =>
       ]);
 
     const row = `[data-agent-name="${name}"]`;
+    const confirm = `${row} [data-testid="agent-confirm"]`;
+    // A new token asks first; cancelling keeps the current one working.
+    await click(cdp, `${row} [data-testid="agent-rotate"]`);
+    await cdp.waitFor(
+      `document.querySelector(${JSON.stringify(confirm)})?.textContent.includes('Replace the token for')`,
+    );
+    await click(cdp, `${row} [data-testid="agent-confirm-no"]`);
+    await cdp.waitFor(`!document.querySelector(${JSON.stringify(confirm)})`);
+    expect((await runAgentCli(app, token, ['list_calendars'])).code).toBe(0);
+
+    // So does a removal.
     await click(cdp, `${row} [data-testid="agent-remove"]`);
+    await cdp.waitFor(
+      `document.querySelector(${JSON.stringify(confirm)})?.textContent.includes('Remove “${name}”?')`,
+    );
+    await click(cdp, `${row} [data-testid="agent-confirm-yes"]`);
     await cdp.waitFor(`!document.querySelector(${JSON.stringify(row)})`);
     const gone = await runAgentCli(app, token, ['list_calendars']);
     expect(gone.code).toBe(3);

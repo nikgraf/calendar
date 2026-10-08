@@ -22,8 +22,10 @@ import {
   isTaskListWritable,
 } from '@calendar/core';
 import { useEffect, useState } from 'react';
+import { Button } from '../ui/Button.tsx';
 import { ARM_DELAY_MS } from './AgentApprovalDialog.tsx';
-import { useAgentsState } from './useAgentsState.ts';
+import { type AgentAction, agentActionQuestion } from './agentActions.ts';
+import { useAgentsLoad } from './useAgentsState.ts';
 
 const BUTTON =
   'rounded-lg border border-hairline-strong px-3 py-1.5 text-sm hover:bg-surface-subtle disabled:opacity-50';
@@ -354,15 +356,32 @@ function RequestRow({ request }: { request: AgentRequestView }) {
  * nothing in the settings file, creates an agent or widens one.
  */
 export function AgentsSection() {
-  const state = useAgentsState();
+  const { error, retry, state } = useAgentsLoad();
   const [name, setName] = useState('');
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [openId, setOpenId] = useState<string | null>(null);
   const [fresh, setFresh] = useState<{ name: string; token: string } | null>(null);
+  const [asking, setAsking] = useState<{ action: AgentAction; id: string } | null>(null);
 
   if (!state) {
-    return null;
+    // A failed read says so: a blank pane read as "there is nothing here".
+    return error === null ? null : (
+      <section className="rounded-popover bg-surface-subtle p-4" data-testid="agents-section">
+        <h2 className="font-medium">Agents</h2>
+        <p className="mt-1 text-sm text-ink-secondary" data-testid="agents-error" role="alert">
+          The agents could not be loaded: {error}
+        </p>
+        <button
+          className={`${BUTTON} mt-3`}
+          data-testid="agents-retry"
+          onClick={retry}
+          type="button"
+        >
+          Try again
+        </button>
+      </section>
+    );
   }
 
   const attempt = async (task: () => Promise<void>) => {
@@ -414,6 +433,19 @@ export function AgentsSection() {
         Let other agents on this Mac read and change your calendars and tasks through Solunivo, over
         MCP or the command line. Each agent gets its own token and only the access you give it here.
       </p>
+      {error === null ? null : (
+        <p className="mt-2 text-xs text-danger" data-testid="agents-error" role="alert">
+          The agents could not be refreshed ({error}), so this may be out of date.{' '}
+          <button
+            className="text-primary hover:underline"
+            data-testid="agents-retry"
+            onClick={retry}
+            type="button"
+          >
+            Try again
+          </button>
+        </p>
+      )}
 
       {state.agents.length === 0 ? null : (
         <ul className="mt-3 space-y-3">
@@ -446,7 +478,7 @@ export function AgentsSection() {
                   className="text-xs text-primary hover:underline disabled:opacity-50"
                   data-testid="agent-rotate"
                   disabled={busy}
-                  onClick={() => void rotate(agent)}
+                  onClick={() => setAsking({ action: 'rotate', id: agent.id })}
                   type="button"
                 >
                   New token
@@ -456,12 +488,25 @@ export function AgentsSection() {
                   className="text-xs text-red-600 hover:underline disabled:opacity-50"
                   data-testid="agent-remove"
                   disabled={busy}
-                  onClick={() => void remove(agent)}
+                  onClick={() => setAsking({ action: 'remove', id: agent.id })}
                   type="button"
                 >
                   Remove
                 </button>
               </div>
+              {asking?.id === agent.id ? (
+                <AgentActionConfirm
+                  action={asking.action}
+                  busy={busy}
+                  name={agent.name}
+                  onCancel={() => setAsking(null)}
+                  onConfirm={() => {
+                    setAsking(null);
+                    void (asking.action === 'rotate' ? rotate(agent) : remove(agent));
+                  }}
+                  waiting={state.pending.filter((request) => request.agentId === agent.id).length}
+                />
+              ) : null}
               {openId === agent.id ? (
                 <GrantEditor
                   agent={agent}
@@ -615,6 +660,59 @@ function PendingChoice({
       >
         Approve
       </button>
+    </div>
+  );
+}
+
+/**
+ * Asks before a new token or a removal: both cut a connected agent off at
+ * once and cannot be undone. Cancel is focused, so Return keeps things as
+ * they are.
+ */
+function AgentActionConfirm({
+  action,
+  busy,
+  name,
+  onCancel,
+  onConfirm,
+  waiting,
+}: {
+  action: AgentAction;
+  busy: boolean;
+  name: string;
+  onCancel: () => void;
+  onConfirm: () => void;
+  waiting: number;
+}) {
+  const question = agentActionQuestion(action, name, waiting);
+  return (
+    <div
+      className="mt-2 rounded-control border border-hairline bg-fill p-2 text-sm"
+      data-testid="agent-confirm"
+      role="alertdialog"
+    >
+      <p className="font-medium">{question.title}</p>
+      <p className="mt-0.5 text-xs text-ink-secondary">{question.detail}</p>
+      <div className="mt-2 flex justify-end gap-2">
+        <Button
+          autoFocus
+          data-testid="agent-confirm-no"
+          onClick={onCancel}
+          size="sm"
+          variant="ghost"
+        >
+          Cancel
+        </Button>
+        <Button
+          data-testid="agent-confirm-yes"
+          disabled={busy}
+          onClick={onConfirm}
+          size="sm"
+          variant="danger"
+        >
+          {question.confirm}
+        </Button>
+      </div>
     </div>
   );
 }
