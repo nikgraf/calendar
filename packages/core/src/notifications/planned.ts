@@ -9,6 +9,12 @@ export const NotificationTarget = Schema.Struct({
   calendarId: Schema.String,
   eventId: Schema.String,
   kind: Schema.Literal('event'),
+  /**
+   * An occurrence of a series: its identity once edited, when its id
+   * changes from the drawn `<series>__<start>` to Google's instance id.
+   */
+  originalStartUtc: Schema.optional(Schema.Number),
+  recurringEventId: Schema.optional(Schema.String),
   /** The occurrence's start: which instance of a series, and the day it is on. */
   startUtc: Schema.Number,
 });

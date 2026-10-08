@@ -239,6 +239,12 @@ export const planEventReminders = (
             calendarId: event.calendarId,
             eventId: event.id,
             kind: 'event',
+            ...(event.recurringEventId === undefined
+              ? {}
+              : {
+                  originalStartUtc: event.originalStartUtc ?? event.startUtc,
+                  recurringEventId: event.recurringEventId,
+                }),
             startUtc: event.startUtc,
           },
           title: event.title,

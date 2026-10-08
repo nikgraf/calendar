@@ -172,6 +172,30 @@ describe('planEventReminders', () => {
     });
   });
 
+  it("an occurrence's target also names its series and original start", () => {
+    const start = utc('2026-03-04T09:00:00Z');
+    const [plan] = planEventReminders(
+      [
+        event({
+          id: `ev__${String(start)}`,
+          originalStartUtc: start,
+          recurringEventId: 'ev',
+          reminders: new EventReminders({ overrides: [popup(10)], useDefault: false }),
+        }),
+      ],
+      window,
+    );
+    expect(plan!.target).toEqual({
+      accountId: 'acc',
+      calendarId: 'cal',
+      eventId: `ev__${String(start)}`,
+      kind: 'event',
+      originalStartUtc: start,
+      recurringEventId: 'ev',
+      startUtc: start,
+    });
+  });
+
   it('names the day when the delivery falls on an earlier one', () => {
     const plans = planEventReminders(
       [

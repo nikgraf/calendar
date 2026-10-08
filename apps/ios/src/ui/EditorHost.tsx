@@ -169,10 +169,14 @@ export function EditorHostProvider({ children }: { children: ReactNode }) {
   }, []);
 
   // A tapped event reminder opens that occurrence's detail, over any tab
-  // and whatever sheet was open; an event deleted since opens nothing.
+  // and in place of whatever sheet was open — a capture's review included,
+  // which would otherwise stay up beside it (two sheets cannot present) and
+  // could replace the detail when its run finished. An event deleted since
+  // opens nothing and leaves the capture alone.
   const onNotificationTap = useEffectEvent((target: NotificationTarget) => {
     void findNotificationEvent(backendClient, target).then((event) => {
       if (event) {
+        capture.dismiss();
         setSheet({ event, kind: 'detail' });
       }
     });
