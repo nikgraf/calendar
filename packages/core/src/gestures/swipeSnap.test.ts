@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { swipeCommitColumns, swipeSnapDecision } from './swipeSnap.ts';
+import {
+  clampSwipeOffset,
+  swipeCommitColumns,
+  swipeLagAfterRender,
+  swipeReleaseColumns,
+  swipeSnapDecision,
+} from './swipeSnap.ts';
 
 const WIDTH = 400;
 
@@ -75,5 +81,43 @@ describe('swipeCommitColumns', () => {
 
   it('commits nothing before the column has been measured', () => {
     expect(swipeCommitColumns(-300, -2000, 0, 7)).toBe(0);
+  });
+});
+
+describe('a swipe that takes over the previous commit', () => {
+  const COLUMN = 100;
+
+  it('pans within the strip drawn around the rendered page', () => {
+    // Day view (buffer 1), one navigation not drawn yet: the strip still
+    // centres the previous day, so the navigated page sits one column left.
+    expect(clampSwipeOffset(-150, COLUMN, 1, 1)).toBe(0);
+    expect(clampSwipeOffset(150, COLUMN, 1, 1)).toBe(150);
+    expect(clampSwipeOffset(250, COLUMN, 1, 1)).toBe(200);
+    expect(clampSwipeOffset(-150, COLUMN, 1, 0)).toBe(-100);
+  });
+
+  it('measures the release from the navigated page and lands on a drawn column', () => {
+    // Nothing pending: the plain rule.
+    expect(swipeReleaseColumns(-60, 0, COLUMN, 1, 0)).toBe(1);
+    expect(swipeReleaseColumns(-160, 0, COLUMN, 7, 0)).toBe(2);
+    // One navigation not drawn: a further left swipe in the day view has
+    // no next day drawn yet, so it holds the page it already reached …
+    expect(swipeReleaseColumns(-60, 0, COLUMN, 1, 1)).toBe(0);
+    // … and a swipe back still goes back from the navigated page.
+    expect(swipeReleaseColumns(60, 0, COLUMN, 1, 1)).toBe(-1);
+    expect(swipeReleaseColumns(160, 0, COLUMN, 1, 1)).toBe(-2);
+    expect(swipeReleaseColumns(0, 0, 0, 1, 0)).toBe(0);
+  });
+
+  it("takes a render of the swipe's own navigation off the lag, and resets on any other", () => {
+    expect(swipeLagAfterRender(1, 1)).toBe(0);
+    expect(swipeLagAfterRender(2, 1)).toBe(1);
+    expect(swipeLagAfterRender(-2, -2)).toBe(0);
+    expect(swipeLagAfterRender(0, 0)).toBe(0);
+    expect(swipeLagAfterRender(1, 0)).toBe(1);
+    // Today, the chevrons or a tapped day.
+    expect(swipeLagAfterRender(0, 7)).toBeNull();
+    expect(swipeLagAfterRender(1, -3)).toBeNull();
+    expect(swipeLagAfterRender(1, 2)).toBeNull();
   });
 });

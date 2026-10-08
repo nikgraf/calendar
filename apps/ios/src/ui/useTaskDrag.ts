@@ -42,9 +42,10 @@ export interface TaskDragLayout {
   readonly laneHeight: number;
   /** Where the lane starts: below the week header, or at the top in the day view. */
   readonly laneTop: SharedValue<number>;
-  readonly panX: SharedValue<number>;
   readonly scrollY: SharedValue<number>;
   readonly strip: ReadonlyArray<Temporal.PlainDate>;
+  /** The strip's offset from its centred position (the swipe's pan). */
+  readonly stripOffset: Readonly<SharedValue<number>>;
 }
 
 const GHOST_HEIGHT = 22;
@@ -79,9 +80,9 @@ export const useTaskDrag = (layout: TaskDragLayout) => {
     gutterWidth,
     laneHeight,
     laneTop,
-    panX,
     scrollY,
     strip,
+    stripOffset,
   } = layout;
   const dayCount = strip.length;
 
@@ -95,7 +96,7 @@ export const useTaskDrag = (layout: TaskDragLayout) => {
       gridContentTop: laneBottom - scrollY.value,
       hourHeight: HOUR_HEIGHT,
       lane: { bottom: laneBottom, top: laneTop.value },
-      stripLeft: gutterWidth - buffer * columnWidth + panX.value,
+      stripLeft: gutterWidth - buffer * columnWidth + stripOffset.value,
     });
   };
 

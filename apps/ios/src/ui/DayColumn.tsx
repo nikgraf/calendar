@@ -74,7 +74,7 @@ export function DayColumn({
   isTaskReadOnly: (task: TaskRecord) => boolean;
   isToday: boolean;
   listColorOf: (task: TaskRecord) => string | undefined;
-  onCommit: (event: EventRecord, changes: { endUtc?: number; startUtc?: number }) => void;
+  onCommit: (event: EventRecord, changes: { endUtc?: number; startUtc?: number }) => Promise<void>;
   /** A slot drawn by holding on empty space (and dragging to stretch it). */
   onCreateSlot: (
     date: Temporal.PlainDate,
