@@ -175,7 +175,12 @@ const make = (options: {
         // Time and copy are part of the digest: a new delivery time or a
         // renamed contact changes what the OS should show, not which key.
         const digest = future
-          .map((plan) => `${plan.key}@${String(plan.fireAt)}:${plan.title}:${plan.body}`)
+          // The target marker reschedules once what was scheduled before
+          // a tap could open its event.
+          .map(
+            (plan) =>
+              `${plan.key}@${String(plan.fireAt)}:${plan.title}:${plan.body}${plan.target ? ':opens' : ''}`,
+          )
           .join('|');
         if ((yield* settingsRepo.get(SCHEDULED_KEY)) === digest) {
           return;

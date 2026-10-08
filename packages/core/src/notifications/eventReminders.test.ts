@@ -12,6 +12,7 @@ import {
   planEventReminders,
   reminderLabel,
 } from './eventReminders.ts';
+import { parseNotificationTarget } from './planned.ts';
 
 const utc = (iso: string): number => Date.parse(iso);
 
@@ -161,6 +162,38 @@ describe('planEventReminders', () => {
       ],
     ]);
     expect(plans[0]!.title).toBe('Standup');
+    // A tap opens this occurrence.
+    expect(plans[0]!.target).toEqual({
+      accountId: 'acc',
+      calendarId: 'cal',
+      eventId: 'ev',
+      kind: 'event',
+      startUtc: start,
+    });
+  });
+
+  it("an occurrence's target also names its series and original start", () => {
+    const start = utc('2026-03-04T09:00:00Z');
+    const [plan] = planEventReminders(
+      [
+        event({
+          id: `ev__${String(start)}`,
+          originalStartUtc: start,
+          recurringEventId: 'ev',
+          reminders: new EventReminders({ overrides: [popup(10)], useDefault: false }),
+        }),
+      ],
+      window,
+    );
+    expect(plan!.target).toEqual({
+      accountId: 'acc',
+      calendarId: 'cal',
+      eventId: `ev__${String(start)}`,
+      kind: 'event',
+      originalStartUtc: start,
+      recurringEventId: 'ev',
+      startUtc: start,
+    });
   });
 
   it('names the day when the delivery falls on an earlier one', () => {
@@ -282,5 +315,22 @@ describe('planEventReminders', () => {
     expect(plans.map((plan) => [plan.fireAt, plan.body])).toEqual([
       [utc('2026-03-04T08:45:00Z'), 'In 15 minutes · 9:00 AM'],
     ]);
+  });
+});
+
+describe('parseNotificationTarget', () => {
+  it('reads back a target and refuses anything else', () => {
+    const target = {
+      accountId: 'acc',
+      calendarId: 'cal',
+      eventId: 'ev',
+      kind: 'event',
+      startUtc: 1,
+    } as const;
+    expect(parseNotificationTarget(target)).toEqual(target);
+    expect(parseNotificationTarget({ ...target, kind: 'task' })).toBeUndefined();
+    expect(parseNotificationTarget({ ...target, startUtc: '1' })).toBeUndefined();
+    expect(parseNotificationTarget(null)).toBeUndefined();
+    expect(parseNotificationTarget('event:acc/cal/ev')).toBeUndefined();
   });
 });

@@ -6,6 +6,7 @@ import {
 import { DEVICE_ONLY_SETTING_COPY, type EventNotificationSettings } from '@calendar/core';
 import { useState } from 'react';
 import { StyleSheet, Switch, Text, View } from 'react-native';
+import { NotificationsDenied, useNotificationPermission } from './NotificationsDenied.tsx';
 import { useSectionStyles } from './settingsShared.ts';
 import { type ThemeColors, useStyles } from './theme.ts';
 
@@ -23,20 +24,24 @@ export function EventNotificationsSection() {
     useEventNotificationSettings(),
     setEventNotificationSettings,
   );
-  const [notice, setNotice] = useState<string | null>(null);
+  const [failure, setFailure] = useState<string | null>(null);
+  // The last save found notifications not allowed (it may have just asked).
+  const [refused, setRefused] = useState(false);
+  const [permission, recheck] = useNotificationPermission();
 
   if (!settings) {
     return null;
   }
+  const denied =
+    settings.enabled && permission !== 'granted' && (refused || permission === 'denied');
   const save = (next: Partial<EventNotificationSettings>) =>
     void persist(next).then(
-      ({ notificationsGranted }) =>
-        setNotice(
-          notificationsGranted
-            ? null
-            : 'Notifications are off — allow Solunivo under Settings › Notifications.',
-        ),
-      (error: unknown) => setNotice(String(error)),
+      ({ notificationsGranted }) => {
+        setFailure(null);
+        setRefused(!notificationsGranted);
+        recheck();
+      },
+      (error: unknown) => setFailure(String(error)),
     );
 
   return (
@@ -65,9 +70,10 @@ export function EventNotificationsSection() {
       <Text style={sectionStyles.meta}>
         Calendar already notifies you about these; on means you get both.
       </Text>
-      {notice ? (
-        <Text style={sectionStyles.action} testID="event-notifications-denied">
-          {notice}
+      {denied ? <NotificationsDenied testID="event-notifications-denied" /> : null}
+      {failure ? (
+        <Text style={sectionStyles.action} testID="event-notifications-failed">
+          {failure}
         </Text>
       ) : null}
       <Text style={sectionStyles.meta} testID="event-notifications-device-only">

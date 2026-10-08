@@ -234,6 +234,19 @@ export const planEventReminders = (
           expiresAt: startRef + (event.isAllDay ? ALL_DAY_GRACE_MS : TIMED_GRACE_MS),
           fireAt,
           key: `event:${event.accountId}/${event.calendarId}/${event.id}:${String(event.startUtc)}:${String(minutes)}`,
+          target: {
+            accountId: event.accountId,
+            calendarId: event.calendarId,
+            eventId: event.id,
+            kind: 'event',
+            ...(event.recurringEventId === undefined
+              ? {}
+              : {
+                  originalStartUtc: event.originalStartUtc ?? event.startUtc,
+                  recurringEventId: event.recurringEventId,
+                }),
+            startUtc: event.startUtc,
+          },
           title: event.title,
         });
       }
