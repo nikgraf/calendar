@@ -428,12 +428,12 @@ const makeStyles = (colors: ThemeColors) =>
       fontWeight: '600',
     },
     pendingLabel: {
-      color: colors['on-warning'],
+      color: colors['text-secondary'],
       flex: 1,
       fontSize: 13,
     },
     pendingResolve: {
-      color: colors['on-warning'],
+      color: colors.primary,
       fontSize: 13,
       fontWeight: '600',
     },
@@ -444,7 +444,7 @@ const makeStyles = (colors: ThemeColors) =>
       paddingVertical: 3,
     },
     pendingTitle: {
-      color: colors['on-warning'],
+      color: colors.text,
       fontSize: 14,
       fontWeight: '700',
       marginBottom: 4,

@@ -172,13 +172,6 @@ export function EventEditSheet({
     },
     [eventModel, mode, mutations.previewEventToTask, sourceKind, taskModel, timeZone],
   );
-  const converted = useRef(false);
-  useEffect(() => {
-    if (convertOnOpen && !converted.current) {
-      converted.current = true;
-      void switchTo('task');
-    }
-  }, [convertOnOpen, switchTo]);
   const showToggle =
     mode !== 'birthday' &&
     !(sourceKind === 'event' && eventModel.readOnly) &&
@@ -186,6 +179,15 @@ export function EventEditSheet({
   // A series converts as a whole, like it moves: an occurrence-scoped edit stays an event.
   const seriesOnly =
     sourceKind === 'event' && eventModel.isRecurring && eventModel.scope !== 'series';
+  // A series converts as a whole: the detail sheet seeds `initialScope:
+  // 'series'`, so the switch never runs on an occurrence (`seriesOnly`).
+  const converted = useRef(false);
+  useEffect(() => {
+    if (convertOnOpen && !converted.current && !seriesOnly) {
+      converted.current = true;
+      void switchTo('task');
+    }
+  }, [convertOnOpen, seriesOnly, switchTo]);
   const taskWord = taskModel.provider === 'apple' ? 'Reminder' : 'Task';
   const busy = mode === 'task' ? taskModel.busy : eventModel.busy;
   const title =

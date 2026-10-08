@@ -77,11 +77,14 @@ const reviewLine = (review: QuickAddReview): string => {
  * also what the e2e flows take. Nothing is written by the model itself.
  */
 export function QuickAddSheet({
+  focusedDate,
   onClose,
   onEditEvent,
   onEditTask,
   timeZone,
 }: {
+  /** The day being viewed: undated phrases and "New event" land on it, like the editor from a slot. */
+  focusedDate: Temporal.PlainDate;
   onClose: () => void;
   onEditEvent: (seed: EditSeed) => void;
   onEditTask: (seed: TaskEditorSeed) => void;
@@ -96,7 +99,6 @@ export function QuickAddSheet({
   const calendars = useCalendars();
   const taskLists = useTaskLists();
   const { createEvent, createTask } = useGuardedMutations();
-  const today = Temporal.Now.plainDateISO(timeZone);
   const {
     busy,
     confirmReview,
@@ -116,7 +118,7 @@ export function QuickAddSheet({
     voice,
     voiceAvailable,
   } = useQuickAddModel({
-    fallbackDate: today.toString(),
+    fallbackDate: focusedDate.toString(),
     findSlots,
     model: languageModel,
     onPrefill: (prefill) =>
@@ -363,7 +365,7 @@ export function QuickAddSheet({
 
           <Pressable
             accessibilityRole="button"
-            onPress={() => onEditEvent({ initialDate: today })}
+            onPress={() => onEditEvent({ initialDate: focusedDate })}
             style={styles.newEvent}
             testID="quick-add-new-event"
           >

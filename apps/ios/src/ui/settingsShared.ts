@@ -5,7 +5,7 @@ import { type ThemeColors, useStyles } from './theme.ts';
 const makeSectionStyles = (colors: ThemeColors) =>
   StyleSheet.create({
     action: {
-      color: colors['on-warning'],
+      color: colors.primary,
       fontSize: 13,
       fontWeight: '600',
       marginTop: 2,

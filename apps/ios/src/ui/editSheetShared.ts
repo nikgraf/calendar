@@ -151,6 +151,8 @@ const makeSheetStyles = (colors: ThemeColors) =>
       borderColor: colors.border,
       borderRadius: 10,
       borderWidth: StyleSheet.hairlineWidth,
+      // A TextInput's ink defaults to black whatever the appearance.
+      color: colors.text,
       fontSize: 16,
       marginBottom: 12,
       paddingHorizontal: 12,

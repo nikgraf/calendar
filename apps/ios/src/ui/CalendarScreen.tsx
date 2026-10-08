@@ -342,7 +342,7 @@ function CalendarBody({
       <Pressable
         accessibilityLabel="Add"
         accessibilityRole="button"
-        onPress={host.openQuickAdd}
+        onPress={() => host.openQuickAdd(focused)}
         style={styles.fab}
         testID="add"
       >

@@ -46,7 +46,8 @@ export interface EditorHost {
   readonly openBirthday: (birthday: BirthdayOccurrence) => void;
   /** The read-first event view; its Edit button opens the editor. */
   readonly openEvent: (event: EventRecord) => void;
-  readonly openQuickAdd: () => void;
+  /** The quick-add sheet; undated phrases and "New event" land on the day being viewed. */
+  readonly openQuickAdd: (focused: Temporal.PlainDate) => void;
 }
 
 /**
@@ -57,7 +58,7 @@ export interface EditorHost {
  */
 type Sheet =
   | { readonly kind: 'none' }
-  | { readonly kind: 'quickAdd' }
+  | { readonly focused: Temporal.PlainDate; readonly kind: 'quickAdd' }
   | { readonly event: EventRecord; readonly kind: 'detail' }
   | {
       readonly captureRow?: string | undefined;
@@ -178,7 +179,7 @@ export function EditorHostProvider({ children }: { children: ReactNode }) {
       ),
     openBirthday: (birthday) => setSheet({ birthday, kind: 'birthday' }),
     openEvent: (event) => setSheet({ event, kind: 'detail' }),
-    openQuickAdd: () => setSheet({ kind: 'quickAdd' }),
+    openQuickAdd: (focused) => setSheet({ focused, kind: 'quickAdd' }),
   };
   const close = host.closeAll;
 
@@ -230,6 +231,7 @@ export function EditorHostProvider({ children }: { children: ReactNode }) {
       {children}
       {sheet.kind === 'quickAdd' ? (
         <QuickAddSheet
+          focusedDate={sheet.focused}
           onClose={close}
           onEditEvent={(seed) => setSheet({ kind: 'editEvent', seed })}
           onEditTask={(seed) => setSheet({ kind: 'editTask', prefill: seed })}
@@ -246,7 +248,11 @@ export function EditorHostProvider({ children }: { children: ReactNode }) {
             setSheet({
               initialMode: 'task',
               kind: 'editEvent',
-              seed: { event: sheet.event, initialDate: Temporal.Now.plainDateISO(timeZone) },
+              seed: {
+                event: sheet.event,
+                initialDate: Temporal.Now.plainDateISO(timeZone),
+                initialScope: 'series',
+              },
             })
           }
           onEdit={() =>

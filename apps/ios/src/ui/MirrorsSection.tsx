@@ -680,7 +680,7 @@ const makeStyles = (colors: ThemeColors) =>
       fontWeight: '600',
     },
     waiting: {
-      color: colors['on-warning'],
+      color: colors['text-secondary'],
     },
     warning: {
       backgroundColor: colors.warning,

@@ -146,7 +146,7 @@ const makeStyles = (colors: ThemeColors) =>
       marginBottom: 6,
     },
     error: {
-      color: colors['on-warning'],
+      color: colors.danger,
       fontSize: 13,
       marginBottom: 8,
     },

@@ -21,6 +21,7 @@ import {
 } from 'react-native';
 import { useEditorHost } from '../../src/ui/EditorHost.tsx';
 import { type ThemeColors, useStyles } from '../../src/ui/theme.ts';
+import { MutationNoticeToast } from '../../src/ui/Toast.tsx';
 
 /**
  * The Tasks tab: the inbox — overdue, today, no date, the next month,
@@ -176,6 +177,8 @@ function TasksBody({ timeZone }: { timeZone: string }) {
           value={title}
         />
       </View>
+      {/* A failed write (a list that lost its access) is told here, not only on the calendar. */}
+      <MutationNoticeToast />
     </SafeAreaView>
   );
 }

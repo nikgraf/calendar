@@ -209,13 +209,23 @@ export function EventDetailSheet({
                   })}
                 </View>
               ) : null}
+              {/* A series converts as a whole, like it moves: Convert waits for "All events". */}
               <Pressable
                 accessibilityRole="button"
+                accessibilityState={{ disabled: isRecurring && scope !== 'series' }}
+                disabled={isRecurring && scope !== 'series'}
                 onPress={onConvert}
-                style={styles.secondaryButton}
+                style={[
+                  styles.secondaryButton,
+                  isRecurring && scope !== 'series' && styles.disabled,
+                ]}
                 testID="event-convert"
               >
-                <Text style={styles.secondaryLabel}>Convert to task</Text>
+                <Text style={styles.secondaryLabel}>
+                  {isRecurring && scope !== 'series'
+                    ? 'Convert to task (All events)'
+                    : 'Convert to task'}
+                </Text>
               </Pressable>
               <Pressable
                 accessibilityRole="button"
@@ -293,6 +303,9 @@ const makeStyles = (colors: ThemeColors) =>
       color: colors.danger,
       fontSize: 15,
       fontWeight: '600',
+    },
+    disabled: {
+      opacity: 0.4,
     },
     dot: {
       borderRadius: 5,
