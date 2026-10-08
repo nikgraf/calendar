@@ -465,7 +465,10 @@ actor AppleCalendarBridge {
   /// holds no Apple event rows, so this is what repaints the UI after an
   /// edit in Calendar.app; it reaches a live observer only.
   func observeChanges(_ handler: @escaping @Sendable () -> Void) {
-    if changeObserver != nil { return }
+    // The latest caller wins: after a JS reload (`reloadAsync`, a PR
+    // channel) a new module instance asks again, and the old handler's
+    // module is gone, so keeping the first observer went silent.
+    if let changeObserver { NotificationCenter.default.removeObserver(changeObserver) }
     changeObserver = NotificationCenter.default.addObserver(
       forName: .EKEventStoreChanged, object: store, queue: nil
     ) { _ in handler() }

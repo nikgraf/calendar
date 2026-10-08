@@ -67,7 +67,10 @@ actor ContactsBridge {
   /// Calls `handler` whenever the address book changes (any app). A hint
   /// to refetch the snapshot; it reaches a live observer only.
   func observeChanges(_ handler: @escaping @Sendable () -> Void) {
-    if changeObserver != nil { return }
+    // The latest caller wins: after a JS reload (`reloadAsync`, a PR
+    // channel) a new module instance asks again, and the old handler's
+    // module is gone, so keeping the first observer went silent.
+    if let changeObserver { NotificationCenter.default.removeObserver(changeObserver) }
     changeObserver = NotificationCenter.default.addObserver(
       forName: .CNContactStoreDidChange, object: nil, queue: nil
     ) { _ in handler() }

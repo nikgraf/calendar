@@ -489,6 +489,11 @@ export interface TimeZones {
   readonly secondary: ReadonlyArray<string>;
 }
 
+const sameZones = (a: TimeZoneSettings, b: TimeZoneSettings): boolean =>
+  a.primary === b.primary &&
+  a.zones.length === b.zones.length &&
+  a.zones.every((zone, index) => zone === b.zones[index]);
+
 /**
  * The zones the calendar draws. Before the first read this is a single
  * device zone; after it, the last loaded value survives the refetch that
@@ -497,11 +502,15 @@ export interface TimeZones {
 export const useTimeZones = (): TimeZones => {
   const stored = useTimeZoneSettings();
   const [last, setLast] = useState<TimeZoneSettings | null>(null);
-  if (stored !== null && stored !== last) {
+  // Compared by content: the refetch a device zone change triggers returns
+  // an equal copy of settings the user stored, which must not re-render
+  // the grid.
+  const unchanged = stored !== null && last !== null && sameZones(stored, last);
+  if (stored !== null && !unchanged) {
     // Render-phase state adjustment (the React "derive from props" pattern).
     setLast(stored);
   }
-  const settings = stored ?? last;
+  const settings = unchanged ? last : (stored ?? last);
   return useMemo(
     () =>
       settings === null
