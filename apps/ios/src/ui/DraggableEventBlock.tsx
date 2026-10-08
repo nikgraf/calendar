@@ -63,6 +63,12 @@ export function DraggableEventBlock({
   const lifted = useSharedValue(0);
   // Bumped by every drag, so a drop's late fallback leaves a newer drag alone.
   const drags = useSharedValue(0);
+  // 1 from a drop until the block is redrawn (or goes back): the block
+  // shows a time its `event` does not have yet, so a drag then would start
+  // from the wrong place and write a delta from the old time. It waits.
+  const held = useSharedValue(0);
+  // Whether the pan under way is a drag (0 while one waits for `held`).
+  const dragging = useSharedValue(0);
   // Recurring instances drag too — the commit becomes a single-instance
   // override. Nothing in a calendar we cannot write moves.
   const draggable = !event.recurrence && !readOnly;
@@ -73,13 +79,31 @@ export function DraggableEventBlock({
   useLayoutEffect(() => {
     translateY.value = 0;
     extraHeight.value = 0;
-  }, [top, height, translateY, extraHeight]);
+    held.value = 0;
+  }, [top, height, translateY, extraHeight, held]);
 
   const goBack = (drag: number) => {
     'worklet';
     if (drags.value === drag) {
+      held.value = 0;
       translateY.value = withTiming(0, { duration: 160 });
       extraHeight.value = withTiming(0, { duration: 160 });
+    }
+  };
+  const begin = () => {
+    'worklet';
+    if (held.value === 1) {
+      return;
+    }
+    dragging.value = 1;
+    drags.value += 1;
+    lifted.value = withTiming(1, { duration: 120 });
+  };
+  const finish = () => {
+    'worklet';
+    if (dragging.value === 1) {
+      dragging.value = 0;
+      lifted.value = withTiming(0, { duration: 120 });
     }
   };
   // The write resolves before its refetch redraws the block; a block still
@@ -114,47 +138,49 @@ export function DraggableEventBlock({
   const resizePan = Gesture.Pan()
     .enabled(draggable)
     .activateAfterLongPress(250)
-    .onStart(() => {
-      drags.value += 1;
-      lifted.value = withTiming(1, { duration: 120 });
-    })
+    .onStart(begin)
     .onUpdate((update) => {
-      extraHeight.value = Math.round(update.translationY / SNAP_PX) * SNAP_PX;
+      if (dragging.value === 1) {
+        extraHeight.value = Math.round(update.translationY / SNAP_PX) * SNAP_PX;
+      }
     })
     .onEnd((end, success) => {
+      if (dragging.value === 0) {
+        return;
+      }
       // A cancelled pan (the system took the touch) changes nothing.
       if (success) {
+        held.value = 1;
         runOnJS(commitResize)(end.translationY, drags.value);
       } else {
         goBack(drags.value);
       }
     })
-    .onFinalize(() => {
-      lifted.value = withTiming(0, { duration: 120 });
-    });
+    .onFinalize(finish);
 
   const movePan = Gesture.Pan()
     .enabled(draggable)
     .activateAfterLongPress(250)
     // A hold on the bottom edge is a resize.
     .requireExternalGestureToFail(resizePan)
-    .onStart(() => {
-      drags.value += 1;
-      lifted.value = withTiming(1, { duration: 120 });
-    })
+    .onStart(begin)
     .onUpdate((update) => {
-      translateY.value = Math.round(update.translationY / SNAP_PX) * SNAP_PX;
+      if (dragging.value === 1) {
+        translateY.value = Math.round(update.translationY / SNAP_PX) * SNAP_PX;
+      }
     })
     .onEnd((end, success) => {
+      if (dragging.value === 0) {
+        return;
+      }
       if (success) {
+        held.value = 1;
         runOnJS(commitMove)(end.translationY, drags.value);
       } else {
         goBack(drags.value);
       }
     })
-    .onFinalize(() => {
-      lifted.value = withTiming(0, { duration: 120 });
-    });
+    .onFinalize(finish);
 
   const tint = useEventTint(color);
   const animatedStyle = useAnimatedStyle(() => ({

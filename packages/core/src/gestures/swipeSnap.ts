@@ -88,11 +88,18 @@ export const clampSwipeOffset = (
 };
 
 /**
- * The columns a release navigates by from the navigated page: the same
- * rule as `swipeCommitColumns`, clamped so the landing column is drawn.
+ * The columns a release navigates by from the navigated page, clamped so
+ * the landing column is drawn. A pan that started on a page (`startPx` 0)
+ * follows `swipeCommitColumns`. One that took over a moving strip starts
+ * between pages: its own movement picks the direction — the next page
+ * that way, or the nearest one when it neither went far nor flicked, as a
+ * paging scroll view does. Measuring that from the navigated page instead
+ * read a second forward flick, still short of the first one's page, as a
+ * swipe back.
  */
 export const swipeReleaseColumns = (
-  offsetPx: number,
+  startPx: number,
+  translationPx: number,
   velocityPxPerSecond: number,
   columnWidthPx: number,
   buffer: number,
@@ -103,14 +110,24 @@ export const swipeReleaseColumns = (
   if (columnWidthPx <= 0 || buffer <= 0) {
     return 0;
   }
-  const commit = swipeCommitColumns(
-    offsetPx,
-    velocityPxPerSecond,
-    columnWidthPx,
-    Number.POSITIVE_INFINITY,
-    config,
-  );
-  return Math.max(-buffer - lag, Math.min(buffer - lag, commit));
+  let commit: number;
+  if (startPx === 0) {
+    commit = swipeCommitColumns(
+      translationPx,
+      velocityPxPerSecond,
+      columnWidthPx,
+      Number.POSITIVE_INFINITY,
+      config,
+    );
+  } else {
+    // Columns forward of the navigated page.
+    const position = -(startPx + translationPx) / columnWidthPx;
+    const intent = swipeSnapDecision(translationPx, velocityPxPerSecond, columnWidthPx, config);
+    commit =
+      intent > 0 ? Math.ceil(position) : intent < 0 ? Math.floor(position) : Math.round(position);
+  }
+  // `+ 0` turns a -0 from ceil or round into 0.
+  return Math.max(-buffer - lag, Math.min(buffer - lag, commit)) + 0;
 };
 
 /**

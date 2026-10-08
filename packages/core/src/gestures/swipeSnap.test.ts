@@ -97,16 +97,33 @@ describe('a swipe that takes over the previous commit', () => {
   });
 
   it('measures the release from the navigated page and lands on a drawn column', () => {
-    // Nothing pending: the plain rule.
-    expect(swipeReleaseColumns(-60, 0, COLUMN, 1, 0)).toBe(1);
-    expect(swipeReleaseColumns(-160, 0, COLUMN, 7, 0)).toBe(2);
-    // One navigation not drawn: a further left swipe in the day view has
-    // no next day drawn yet, so it holds the page it already reached …
-    expect(swipeReleaseColumns(-60, 0, COLUMN, 1, 1)).toBe(0);
+    // A pan from a page: the plain rule.
+    expect(swipeReleaseColumns(0, -60, 0, COLUMN, 1, 0)).toBe(1);
+    expect(swipeReleaseColumns(0, -160, 0, COLUMN, 7, 0)).toBe(2);
+    expect(swipeReleaseColumns(0, -110, 0, COLUMN, 7, 0)).toBe(1);
+    expect(swipeReleaseColumns(0, 0, 0, 0, 1, 0)).toBe(0);
+    // One navigation not drawn yet: the day view has no next day drawn, so
+    // a further left swipe holds the page it already reached …
+    expect(swipeReleaseColumns(0, -60, 0, COLUMN, 1, 1)).toBe(0);
     // … and a swipe back still goes back from the navigated page.
-    expect(swipeReleaseColumns(60, 0, COLUMN, 1, 1)).toBe(-1);
-    expect(swipeReleaseColumns(160, 0, COLUMN, 1, 1)).toBe(-2);
-    expect(swipeReleaseColumns(0, 0, 0, 1, 0)).toBe(0);
+    expect(swipeReleaseColumns(0, 60, 0, COLUMN, 1, 1)).toBe(-1);
+    expect(swipeReleaseColumns(0, 160, 0, COLUMN, 1, 1)).toBe(-2);
+  });
+
+  it('a pan that took over a commit goes the way it moved', () => {
+    // 400px columns, a forward commit interrupted 20% in: navigating at
+    // once rebases the strip to +320 from the new page.
+    const WIDE = 400;
+    // A second left flick lands on the first one's page — it used to read
+    // +280 as "most of a column back" and reverse the first swipe.
+    expect(swipeReleaseColumns(320, -40, -900, WIDE, 1, 1)).toBe(0);
+    // A right flick takes the first swipe back.
+    expect(swipeReleaseColumns(320, 40, 900, WIDE, 1, 1)).toBe(-1);
+    // A touch that stops the strip settles on the nearest page.
+    expect(swipeReleaseColumns(320, -5, 0, WIDE, 1, 1)).toBe(-1);
+    expect(swipeReleaseColumns(80, -5, 0, WIDE, 1, 1)).toBe(0);
+    // A long drag on through the week strip: the next page that way.
+    expect(swipeReleaseColumns(300, -800, 0, WIDE, 7, 1)).toBe(2);
   });
 
   it("takes a render of the swipe's own navigation off the lag, and resets on any other", () => {

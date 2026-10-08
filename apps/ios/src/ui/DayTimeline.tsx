@@ -325,7 +325,8 @@ export function DayTimeline({
       // system took the touch) commits nothing.
       const commit = success
         ? swipeReleaseColumns(
-            panStart.value + end.translationX,
+            panStart.value,
+            end.translationX,
             end.velocityX,
             columnWidth,
             buffer,
