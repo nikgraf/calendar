@@ -21,6 +21,10 @@ import { pxToMinutes, SNAP_PX } from './timelineLayout.ts';
  */
 const DROP_SETTLE_MS = 1500;
 
+/** The pan that owns a drag: the whole block moves it, the bottom edge resizes it. */
+const MOVE = 1;
+const RESIZE = 2;
+
 /**
  * A timed event in a timeline column: long-press-drag moves it (15-minute
  * snap), a long press on the bottom edge resizes it, a tap opens it.
@@ -67,7 +71,10 @@ export function DraggableEventBlock({
   // shows a time its `event` does not have yet, so a drag then would start
   // from the wrong place and write a delta from the old time. It waits.
   const held = useSharedValue(0);
-  // Whether the pan under way is a drag (0 while one waits for `held`).
+  // The pan that owns the drag under way, MOVE or RESIZE (0 for none, and
+  // while a pan waits for `held`). Only the owner updates, commits and ends
+  // it: a hold on the bottom edge also starts the move pan, which fails once
+  // the resize takes the touch and still finalizes.
   const dragging = useSharedValue(0);
   // Recurring instances drag too — the commit becomes a single-instance
   // override. Nothing in a calendar we cannot write moves.
@@ -90,18 +97,18 @@ export function DraggableEventBlock({
       extraHeight.value = withTiming(0, { duration: 160 });
     }
   };
-  const begin = () => {
+  const begin = (pan: number) => {
     'worklet';
-    if (held.value === 1) {
+    if (held.value === 1 || dragging.value !== 0) {
       return;
     }
-    dragging.value = 1;
+    dragging.value = pan;
     drags.value += 1;
     lifted.value = withTiming(1, { duration: 120 });
   };
-  const finish = () => {
+  const finish = (pan: number) => {
     'worklet';
-    if (dragging.value === 1) {
+    if (dragging.value === pan) {
       dragging.value = 0;
       lifted.value = withTiming(0, { duration: 120 });
     }
@@ -138,14 +145,16 @@ export function DraggableEventBlock({
   const resizePan = Gesture.Pan()
     .enabled(draggable)
     .activateAfterLongPress(250)
-    .onStart(begin)
+    .onStart(() => {
+      begin(RESIZE);
+    })
     .onUpdate((update) => {
-      if (dragging.value === 1) {
+      if (dragging.value === RESIZE) {
         extraHeight.value = Math.round(update.translationY / SNAP_PX) * SNAP_PX;
       }
     })
     .onEnd((end, success) => {
-      if (dragging.value === 0) {
+      if (dragging.value !== RESIZE) {
         return;
       }
       // A cancelled pan (the system took the touch) changes nothing.
@@ -156,21 +165,25 @@ export function DraggableEventBlock({
         goBack(drags.value);
       }
     })
-    .onFinalize(finish);
+    .onFinalize(() => {
+      finish(RESIZE);
+    });
 
   const movePan = Gesture.Pan()
     .enabled(draggable)
     .activateAfterLongPress(250)
     // A hold on the bottom edge is a resize.
     .requireExternalGestureToFail(resizePan)
-    .onStart(begin)
+    .onStart(() => {
+      begin(MOVE);
+    })
     .onUpdate((update) => {
-      if (dragging.value === 1) {
+      if (dragging.value === MOVE) {
         translateY.value = Math.round(update.translationY / SNAP_PX) * SNAP_PX;
       }
     })
     .onEnd((end, success) => {
-      if (dragging.value === 0) {
+      if (dragging.value !== MOVE) {
         return;
       }
       if (success) {
@@ -180,7 +193,9 @@ export function DraggableEventBlock({
         goBack(drags.value);
       }
     })
-    .onFinalize(finish);
+    .onFinalize(() => {
+      finish(MOVE);
+    });
 
   const tint = useEventTint(color);
   const animatedStyle = useAnimatedStyle(() => ({
