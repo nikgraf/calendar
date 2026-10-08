@@ -49,6 +49,8 @@ declare global {
         locale: string,
       ) => Promise<{ segments: ReadonlyArray<{ text: string }> }>;
       onAgentsChanged: (listener: () => void) => () => void;
+      /** Clicked event reminders, the one waiting first; decode with `parseNotificationTarget`. */
+      onNotificationOpen: (listener: (target: unknown) => void) => () => void;
       onPrivacyChanged: (listener: (state: PrivacyState) => void) => () => void;
       onRpcMessage: (listener: (data: string | Uint8Array) => void) => () => void;
       onSettingsFileChanged: (listener: (status: SettingsFileStatus) => void) => () => void;

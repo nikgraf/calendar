@@ -115,8 +115,9 @@ powers quick-add parsing, find-a-time, and dictation.
 - Window-level concerns (screen privacy, logging, open-external, the five
   `model:*` AI-helper channels, the `reminders:*` / `contacts:*` /
   `appleCalendar:*` permission-status channels, `settings:open`,
-  `auth:cancel` (stops a sign-in waiting on the browser) and `agents:*`)
-  use plain preload IPC;
+  `auth:cancel` (stops a sign-in waiting on the browser), `notifications:take`
+  (the event reminder clicked last — a ref; the event itself is read over
+  rpc) and `agents:*`) use plain preload IPC;
   calendar data — reminders, Apple events and contact rows included — goes
   through the typed rpc seam only.
 - The desktop has two windows on one renderer bundle: the calendar and

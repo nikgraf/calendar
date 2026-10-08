@@ -1,7 +1,7 @@
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { app, BrowserWindow, ipcMain, nativeTheme } from 'electron';
+import { app, BrowserWindow, ipcMain, nativeTheme, type WebContents } from 'electron';
 import { registerPrivacyWindow } from './privacy.ts';
 
 /**
@@ -61,6 +61,9 @@ interface SettingsWindow {
 let settings: SettingsWindow | null = null;
 
 export const hasMainWindow = (): boolean => mainWindow !== null;
+
+/** The calendar window's page, when it has one: pushes meant for it alone. */
+export const mainWindowContents = (): WebContents | undefined => mainWindow?.webContents;
 
 // The window's own color until the page paints, matching the canvas token of
 // the OS appearance so a launch (or a reload) never flashes white at night.

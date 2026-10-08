@@ -28,6 +28,22 @@ contextBridge.exposeInMainWorld('calendarBridge', {
     ipcRenderer.on('agents:changed', wrapped);
     return () => ipcRenderer.off('agents:changed', wrapped);
   },
+  /**
+   * Event reminders clicked in Notification Center: the one waiting at
+   * subscription (it may have opened this window), then one per click.
+   */
+  onNotificationOpen: (listener: (target: unknown) => void) => {
+    const take = () => {
+      void ipcRenderer.invoke('notifications:take').then((target: unknown) => {
+        if (target) {
+          listener(target);
+        }
+      });
+    };
+    ipcRenderer.on('notifications:open', take);
+    take();
+    return () => ipcRenderer.off('notifications:open', take);
+  },
   onPrivacyChanged: (listener: (state: unknown) => void) => {
     const wrapped = (_event: unknown, state: unknown) => listener(state);
     ipcRenderer.on('privacy:changed', wrapped);

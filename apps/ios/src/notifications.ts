@@ -1,3 +1,4 @@
+import { type NotificationTarget, parseNotificationTarget } from '@calendar/core';
 import { NotificationSink, noopNotificationSink, type NotificationSinkShape } from '@calendar/sync';
 import { Effect, Layer } from 'effect';
 
@@ -54,7 +55,12 @@ const makeSink = (notifications: typeof import('expo-notifications')): Notificat
         await notifications.cancelAllScheduledNotificationsAsync();
         for (const item of planned) {
           await notifications.scheduleNotificationAsync({
-            content: { body: item.body, title: item.title },
+            content: {
+              body: item.body,
+              // What a tap opens (subscribeNotificationTaps reads it back).
+              data: item.target ? { target: item.target } : {},
+              title: item.title,
+            },
             identifier: item.key,
             trigger: {
               date: new Date(item.fireAt),
@@ -72,3 +78,58 @@ export const iosNotificationSink: Layer.Layer<NotificationSink> = Layer.succeed(
   NotificationSink,
   native ? makeSink(native) : noopNotificationSink,
 );
+
+/** Responses already acted on: the launch response can arrive twice (listener and last response). */
+const handled = new Set<string>();
+
+/**
+ * Calls `listener` with the target of every notification the user taps —
+ * the one that launched the app too — once each.
+ */
+export const subscribeNotificationTaps = (
+  listener: (target: NotificationTarget) => void,
+): (() => void) => {
+  const notifications = native;
+  if (!notifications) {
+    return () => {};
+  }
+  const take = (response: import('expo-notifications').NotificationResponse | null) => {
+    if (!response || response.actionIdentifier !== notifications.DEFAULT_ACTION_IDENTIFIER) {
+      return;
+    }
+    const { date, request } = response.notification;
+    const id = `${request.identifier}@${String(date)}`;
+    if (handled.has(id)) {
+      return;
+    }
+    handled.add(id);
+    const target = parseNotificationTarget(request.content.data?.['target']);
+    if (target) {
+      listener(target);
+    }
+  };
+  const subscription = notifications.addNotificationResponseReceivedListener(take);
+  void notifications
+    .getLastNotificationResponseAsync()
+    .then((response) => {
+      take(response);
+      return notifications.clearLastNotificationResponseAsync();
+    })
+    .catch(() => undefined);
+  return () => subscription.remove();
+};
+
+export type NotificationPermission = 'denied' | 'granted' | 'undetermined' | 'unavailable';
+
+/** What iOS allows now, without asking: a denial only the Settings app can undo. */
+export const notificationPermission = async (): Promise<NotificationPermission> => {
+  if (!native) {
+    return 'unavailable';
+  }
+  try {
+    const current = await native.getPermissionsAsync();
+    return current.granted ? 'granted' : current.status === 'denied' ? 'denied' : 'undetermined';
+  } catch {
+    return 'unavailable';
+  }
+};

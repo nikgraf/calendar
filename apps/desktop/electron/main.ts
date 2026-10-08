@@ -7,6 +7,7 @@ import { initFileLogging, logRendererError } from './log.ts';
 import { installApplicationMenu } from './menu.ts';
 import { initPrivacy } from './privacy.ts';
 import { registerModelHelper } from './modelHelper.ts';
+import { registerNotificationIpc } from './notifications.ts';
 import { registerAppleCalendarIpc } from './appleCalendarIpc.ts';
 import { registerContactsIpc } from './contactsIpc.ts';
 import { registerRemindersIpc } from './remindersIpc.ts';
@@ -149,6 +150,7 @@ void app.whenReady().then(() => {
   registerContactsIpc();
   registerAppleCalendarIpc();
   registerSettingsIpc();
+  registerNotificationIpc();
   installApplicationMenu();
   if (!startInBackground) {
     createMainWindow();

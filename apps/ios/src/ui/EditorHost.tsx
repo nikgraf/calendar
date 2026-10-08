@@ -1,5 +1,6 @@
 import type { CaptureSource } from '@calendar/ai';
 import {
+  findNotificationEvent,
   useCalendars,
   useCaptureModel,
   useTaskLists,
@@ -10,6 +11,7 @@ import {
 import {
   type BirthdayOccurrence,
   type EventRecord,
+  type NotificationTarget,
   type TaskRecord,
   Temporal,
 } from '@calendar/core';
@@ -22,7 +24,9 @@ import {
   useState,
 } from 'react';
 import { AppState, Linking } from 'react-native';
+import { backendClient } from '../backend.ts';
 import { fixtureShareFromUrl, takeIncomingShare } from '../incomingShare.ts';
+import { subscribeNotificationTaps } from '../notifications.ts';
 import { languageModel, modelFixture, textRecognizer } from '../model.ts';
 import { CaptureBanner } from './CaptureBanner.tsx';
 import { CaptureSheet } from './CaptureSheet.tsx';
@@ -163,6 +167,17 @@ export function EditorHostProvider({ children }: { children: ReactNode }) {
       stateSubscription.remove();
     };
   }, []);
+
+  // A tapped event reminder opens that occurrence's detail, over any tab
+  // and whatever sheet was open; an event deleted since opens nothing.
+  const onNotificationTap = useEffectEvent((target: NotificationTarget) => {
+    void findNotificationEvent(backendClient, target).then((event) => {
+      if (event) {
+        setSheet({ event, kind: 'detail' });
+      }
+    });
+  });
+  useEffect(() => subscribeNotificationTaps((target) => onNotificationTap(target)), []);
 
   const host: EditorHost = {
     closeAll: () => setSheet(NONE),

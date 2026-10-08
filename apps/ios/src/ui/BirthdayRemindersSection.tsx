@@ -16,6 +16,7 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import { useState } from 'react';
 import { Pressable, StyleSheet, Switch, Text, View } from 'react-native';
 import { dateFromParts, toTimeString } from './editSheetShared.ts';
+import { NotificationsDenied, useNotificationPermission } from './NotificationsDenied.tsx';
 import { useSectionStyles } from './settingsShared.ts';
 import { type ThemeColors, useStyles } from './theme.ts';
 
@@ -32,20 +33,24 @@ export function BirthdayRemindersSection() {
     useBirthdayReminderSettings(),
     setBirthdayReminderSettings,
   );
-  const [notice, setNotice] = useState<string | null>(null);
+  const [failure, setFailure] = useState<string | null>(null);
+  // The last save found notifications not allowed (it may have just asked).
+  const [refused, setRefused] = useState(false);
+  const [permission, recheck] = useNotificationPermission();
 
   if (!settings) {
     return null;
   }
+  const denied =
+    settings.enabled && permission !== 'granted' && (refused || permission === 'denied');
   const save = (next: Partial<BirthdayReminderSettings>) =>
     void persist(next).then(
-      ({ notificationsGranted }) =>
-        setNotice(
-          notificationsGranted
-            ? null
-            : 'Notifications are off — allow Solunivo under Settings › Notifications.',
-        ),
-      (error: unknown) => setNotice(String(error)),
+      ({ notificationsGranted }) => {
+        setFailure(null);
+        setRefused(!notificationsGranted);
+        recheck();
+      },
+      (error: unknown) => setFailure(String(error)),
     );
   const toggleLead = (lead: BirthdayLeadDays) => {
     const on = settings.leadDays.includes(lead);
@@ -117,7 +122,7 @@ export function BirthdayRemindersSection() {
                 hitSlop={8}
                 onPress={() =>
                   void setBirthdayReminderOverride({ ...override, leadDays: null }).catch(
-                    (error: unknown) => setNotice(String(error)),
+                    (error: unknown) => setFailure(String(error)),
                   )
                 }
                 testID={`birthday-override-reset-${String(index)}`}
@@ -131,9 +136,10 @@ export function BirthdayRemindersSection() {
           </Text>
         </View>
       ) : null}
-      {notice ? (
-        <Text style={sectionStyles.action} testID="birthday-notifications-denied">
-          {notice}
+      {denied ? <NotificationsDenied testID="birthday-notifications-denied" /> : null}
+      {failure ? (
+        <Text style={sectionStyles.action} testID="birthday-notifications-failed">
+          {failure}
         </Text>
       ) : null}
       <Text style={sectionStyles.meta} testID="birthday-device-only">

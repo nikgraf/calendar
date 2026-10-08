@@ -12,6 +12,7 @@ export * from './mirrorEditorModel.ts';
 export * from './taskEditorModel.ts';
 export * from './modelAvailability.ts';
 export * from './mutationGuard.ts';
+export * from './notificationTarget.ts';
 export * from './pendingOpLabel.ts';
 export * from './permissionCopy.ts';
 export * from './quickAddCreate.ts';

@@ -1,3 +1,25 @@
+import { Option, Schema } from 'effect';
+
+/**
+ * What a tap on a notification opens: one occurrence of an event. Read
+ * back from the OS or across IPC, so it is decoded, never trusted.
+ */
+export const NotificationTarget = Schema.Struct({
+  accountId: Schema.String,
+  calendarId: Schema.String,
+  eventId: Schema.String,
+  kind: Schema.Literal('event'),
+  /** The occurrence's start: which instance of a series, and the day it is on. */
+  startUtc: Schema.Number,
+});
+export type NotificationTarget = typeof NotificationTarget.Type;
+
+const decodeTarget = Schema.decodeUnknownOption(NotificationTarget);
+
+/** A target from a notification's payload, or undefined when it is not one. */
+export const parseNotificationTarget = (value: unknown): NotificationTarget | undefined =>
+  Option.getOrUndefined(decodeTarget(value));
+
 /** One local notification the platform sink delivers or schedules. */
 export interface PlannedNotification {
   readonly body: string;
@@ -12,5 +34,7 @@ export interface PlannedNotification {
   readonly fireAt: number;
   /** Stable across runs and unique per producer, so a sink can dedupe. */
   readonly key: string;
+  /** What a tap opens; none just brings the app forward (a birthday). */
+  readonly target?: NotificationTarget | undefined;
   readonly title: string;
 }

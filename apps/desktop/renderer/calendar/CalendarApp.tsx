@@ -1,12 +1,16 @@
 import {
   type BirthdayOccurrence,
   type EventRecord,
+  type NotificationTarget,
   PAN_BUFFER_DAYS,
+  parseNotificationTarget,
   type TaskRecord,
   Temporal,
   utcMsToPlainDate,
 } from '@calendar/core';
 import {
+  eventStartDay,
+  findNotificationEvent,
   useAccounts,
   useCalendarNavigation,
   useCalendars,
@@ -27,8 +31,9 @@ import {
   type EventEditorPrefill,
   type TaskEditorSeed,
 } from '@calendar/app-state';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useEffectEvent, useMemo, useRef, useState } from 'react';
 import { desktopLanguageModel } from '../ai/desktopModel.ts';
+import { backend } from '../backend.ts';
 import { desktopTextRecognizer } from '../ai/desktopTextRecognizer.ts';
 import { Dialog, isDialogOpen } from '../Dialog.tsx';
 import { useMediaQuery } from '../useMediaQuery.ts';
@@ -169,6 +174,27 @@ function CalendarBody({
     recognizer: desktopTextRecognizer,
     timeZone,
   });
+
+  // A clicked event reminder: the occurrence's day, with it in the
+  // inspector. An event deleted since opens nothing.
+  const openNotificationTarget = useEffectEvent((target: NotificationTarget) => {
+    void findNotificationEvent(backend, target).then((event) => {
+      if (event) {
+        setFocused(eventStartDay(event, timeZone));
+        setPanel({ event, kind: 'inspector' });
+      }
+    });
+  });
+  useEffect(
+    () =>
+      window.calendarBridge.onNotificationOpen((value) => {
+        const target = parseNotificationTarget(value);
+        if (target) {
+          openNotificationTarget(target);
+        }
+      }),
+    [],
+  );
 
   const events = useEventsInRangeStable(range.startUtc, range.endUtc);
   // Tasks use date bounds even when a reminder also carries a due time.
