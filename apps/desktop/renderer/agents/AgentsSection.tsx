@@ -21,7 +21,7 @@ import {
   isCalendarWritable,
   isTaskListWritable,
 } from '@calendar/core';
-import { useEffect, useState } from 'react';
+import { useEffect, useId, useState } from 'react';
 import { Button } from '../ui/Button.tsx';
 import { ARM_DELAY_MS } from './AgentApprovalDialog.tsx';
 import { type AgentAction, agentActionQuestion } from './agentActions.ts';
@@ -685,14 +685,23 @@ function AgentActionConfirm({
   waiting: number;
 }) {
   const question = agentActionQuestion(action, name, waiting);
+  // Focus lands on Cancel: the dialog's name and description are what a
+  // screen reader announces with it — the question and what cannot be undone.
+  const id = useId();
   return (
     <div
+      aria-describedby={`${id}-detail`}
+      aria-labelledby={`${id}-title`}
       className="mt-2 rounded-control border border-hairline bg-fill p-2 text-sm"
       data-testid="agent-confirm"
       role="alertdialog"
     >
-      <p className="font-medium">{question.title}</p>
-      <p className="mt-0.5 text-xs text-ink-secondary">{question.detail}</p>
+      <p className="font-medium" id={`${id}-title`}>
+        {question.title}
+      </p>
+      <p className="mt-0.5 text-xs text-ink-secondary" id={`${id}-detail`}>
+        {question.detail}
+      </p>
       <div className="mt-2 flex justify-end gap-2">
         <Button
           autoFocus

@@ -588,6 +588,16 @@ describe('agent gateway: other agents reach the app over the CLI and MCP', () =>
     await cdp.waitFor(
       `document.querySelector(${JSON.stringify(confirm)})?.textContent.includes('Replace the token for')`,
     );
+    // The question and its consequence are the dialog's accessible name and
+    // description: focus lands on Cancel, so that is what is announced.
+    expect(
+      await cdp.eval<Array<string | undefined>>(
+        `(() => { const dialog = document.querySelector(${JSON.stringify(confirm)}); return ['aria-labelledby', 'aria-describedby'].map((attr) => document.getElementById(dialog.getAttribute(attr) ?? '')?.textContent); })()`,
+      ),
+    ).toEqual([
+      `Replace the token for “${name}”?`,
+      `The current token stops working now: ${name} cannot connect until you give it the new one.`,
+    ]);
     await click(cdp, `${row} [data-testid="agent-confirm-no"]`);
     await cdp.waitFor(`!document.querySelector(${JSON.stringify(confirm)})`);
     expect((await runAgentCli(app, token, ['list_calendars'])).code).toBe(0);
