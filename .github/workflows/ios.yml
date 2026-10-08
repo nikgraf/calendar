@@ -165,8 +165,9 @@ jobs:
             --non-interactive --message "main ${GITHUB_SHA::7}"
 
   # JS-only preview: publishes the PR's bundle to OTA channel pr-<number>
-  # (~30s). Load it on-device via Settings → PR preview. Skips quietly while
-  # EXPO_TOKEN is absent so agent PRs aren't blocked before setup.
+  # (~30s). Load it on-device via Settings › Advanced › PR Preview. Skips
+  # quietly while EXPO_TOKEN is absent so agent PRs aren't blocked before
+  # setup.
   preview-update:
     name: PR preview update (EAS)
     needs: [preflight, verify]
@@ -204,7 +205,7 @@ jobs:
         run: |
           MARKER="<!-- ios-preview -->"
           BODY="$MARKER
-          📱 **iOS preview**: channel \`pr-${{ github.event.number }}\` @ ${HEAD_SHA:0:7} — on your phone: Settings → PR preview → enter the channel → Load. Native changes need a real build instead: add the \`testflight\` label."
+          📱 **iOS preview**: channel \`pr-${{ github.event.number }}\` @ ${HEAD_SHA:0:7} — on your phone: Settings › Advanced › PR Preview → enter the channel → Load. Native changes need a real build instead: add the \`testflight\` label."
           EXISTING=$(gh api "repos/${{ github.repository }}/issues/${{ github.event.number }}/comments" \
             --jq ".[] | select(.body | startswith(\"$MARKER\")) | .id" | head -1)
           if [ -n "$EXISTING" ]; then
