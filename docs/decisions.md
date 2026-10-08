@@ -2365,9 +2365,62 @@ design-tokens`). **The brand kit is the one palette**: `tokens.json`
       `trustPolicyExclude` entry — Expo publishes some versions through
       trusted publishing and others with a maintainer token, the same as
       the `expo` package of the SDK release. **Deferred**: Settings
-      sub-screens (one scrolling screen remains), the collapsed all-day
-      row's "N tasks · M overdue" pill, `@expo/ui` date pickers. **Maestro**:
+      sub-screens (shipped as the iOS Settings pages below), the collapsed
+      all-day row's "N tasks · M overdue" pill, `@expo/ui` date pickers. **Maestro**:
       `common/open-new-event.yaml` ("+" → New event), `open-event-editor.yaml`
       (the detail's Edit), `switch-view.yaml` (the header menu, `VIEW`);
       the shell anchor stays the "Today" button. The native fingerprint
       moved once, in the first commit (deps + the expo-router plugin).
+- [x] iOS Settings pages — done (2026-10-08, `todo/ios-settings-pages`).
+      **One native stack inside the Settings modal** (`app/settings/`):
+      the root lists Unsynced Changes (only while there are any), the
+      Google accounts, On This iPhone and Add Google Account, then General
+      · Notifications · Mirrors · Advanced — the Mac's panes minus Agents,
+      which stays Mac-only. Below them: an account (sign-in state, history,
+      calendars and task lists — a tap shows or hides one, ⓘ opens a
+      calendar's 24-swatch color page — and Remove, confirmed in an action
+      sheet), On This iPhone (Calendar, Reminders and Contacts access with
+      a capsule Connect, the Apple calendars and reminder lists,
+      Disconnect), General (time zones as checkmark rows: a tap makes one
+      primary, a swipe removes it; the location cache), Notifications and
+      Remind Me (the birthday lead times as checkbox rows), Mirrors and one
+      mirror, Advanced (settings file, Diagnostics, PR Preview). **Rows are
+      React Native, not `@expo/ui` SwiftUI** (Nik's pick):
+      `settings/GroupedList.tsx` draws the inset grouped list on the brand tokens
+      (ground `fill` in light, `canvas` in dark, rows `surface`), with SF
+      Symbols through `expo-symbols` (already in the fingerprint since the
+      redesign) and `ReanimatedSwipeable` rows whose action VoiceOver offers
+      too. Rows inside a swipeable press through gesture-handler's
+      `Pressable`: React Native's never saw a tap there. The switches are
+      SwiftUI's toggle through `@expo/ui` (`Host` + `Switch`, labels
+      hidden), in its system green: on iOS 26 the system switch is 63 × 28
+      pt while React Native's `Switch` still lays it out at 51 × 31, so it
+      drew 14 pt above and 22 pt left of its row's centre (the editors
+      still use React Native's `Switch`; a separate change). The stack
+      sets no header background: on iOS 26 one hid the root's large title,
+      and the bar's glass edge already sits on the ground.
+      Decorative symbols sit in an accessibility-hidden `Glyph`: a symbol
+      image carries its own label ("add", "Forward"), which a pressable row
+      read out before its title — and which broke Maestro's text match.
+      **Done sits on the root only** (a toolbar button); a pushed page gets
+      the native back button, the sheet's swipe closes Settings from any
+      page, and the calendar's unsynced badge pushes `/settings/unsynced`
+      over the root (`initialRouteName`). **Shared state** lives in two
+      providers in the stack's layout: `SettingsProvider` (the Apple
+      permission statuses with their foreground refresh and settle loop,
+      Google sign-in, the device connects, the last error) and
+      `NotificationSettingsProvider` — the birthday settings are edited on
+      two pages, and two `useSettingsEditor`s would each send their own
+      stale whole struct over the other's change. The root reads the
+      accounts, sync status and mirrors, which keeps those atoms alive
+      under every push. **The mirror page is a summary** (Nik's pick): its
+      switch, Run Now and status, read-only rows that open the unchanged
+      editor sheet, Delete; mirror failures, silent before, show on the
+      page. "Add Mirror…" is a list row rather than a "+" in the nav bar.
+      **Maestro**: `common/open-settings.yaml` waits for the
+      `settings-root` id (not a title: the gear's label is "Settings" too),
+      `open-settings-page.yaml` pushes `settings-row-${PAGE}`,
+      `close-settings.yaml` taps `BackButton` until the root shows, then
+      Done; an Apple account's presence is the `apple-calendar-account` /
+      `apple-reminders-account` id on its access row, and zones and
+      per-person birthday times are removed by a swipe.
