@@ -1,5 +1,5 @@
 import { Account, APPLE_REMINDERS_ACCOUNT_ID, TaskListInfo, TaskRecord } from '@calendar/core';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import {
   type App,
   launchApp,
@@ -554,12 +554,29 @@ describe('Reminder repeat rules with weekdays', () => {
   afterAll(async () => {
     await app.stop();
   });
+  const EDITOR_OPEN = `!!document.querySelector('[data-testid="panel"][data-panel-kind="editTask"]')`;
+  afterEach(async (context) => {
+    if (context.task.result?.state === 'fail') {
+      await app.dump(context.task.name);
+    }
+    // A failure above must not strand its editor: `openChip` waits for it
+    // to close.
+    if (await app.cdp.eval<boolean>(EDITOR_OPEN)) {
+      await app.cdp.clickButtonWithText('Cancel');
+    }
+  });
 
   const POLL = { timeout: 5000 };
   const taskById = async (id: string) =>
     (await readTasks(app.userDataDir)).find((task) => task.id === id);
-  /** Opens a lane chip's editor by its body, past the leading checkbox. */
+  /**
+   * Opens a lane chip's editor by its body, past the leading checkbox. A
+   * saved editor closes only once the write's reply is back, after the
+   * database already shows it: measured while it is open, the chip sits in
+   * the week the panel narrowed, and the click lands beside it.
+   */
   const openChip = async (id: string) => {
+    await app.cdp.waitFor<boolean>(`!(${EDITOR_OPEN})`);
     const chip = await app.cdp.locate(`[data-testid="all-day-task-${id}"]`);
     await app.cdp.click(chip.x + 40, chip.y);
     await app.cdp.waitFor(`document.body.textContent.includes('Edit reminder')`);
