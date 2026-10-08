@@ -10,8 +10,11 @@ const MEETING_URL = new RegExp(
       // The domain itself or a subdomain of it ("us02web.zoom.us") — a
       // bare prefix also let "securezoom.us" pass as Zoom.
       String.raw`(?:[\w-]+\.)*zoom\.us/(?:j|my|s)/[\w?=&.-]+`,
-      String.raw`teams\.microsoft\.com/l/meetup-join/[\w%/?=&.-]+`,
-      String.raw`(?:[\w-]+\.)*webex\.com/(?:meet|join)/[\w?=&.-]+`,
+      // Classic join links, the short "/meet/<id>?p=<passcode>" ones, and
+      // Teams free (teams.live.com).
+      String.raw`teams\.(?:microsoft|live)\.com/(?:l/meetup-join|meet)/[\w%/?=&.-]+`,
+      // Personal rooms and "/<site>/j.php?MTID=…" meeting links.
+      String.raw`(?:[\w-]+\.)*webex\.com/(?:(?:meet|join)/[\w?=&.-]+|[\w-]+/j\.php\?[\w%=&.-]+)`,
       String.raw`whereby\.com/[\w-]+`,
     ].join('|') +
     ')',
