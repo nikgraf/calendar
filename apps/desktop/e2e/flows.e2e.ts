@@ -579,6 +579,27 @@ describe('calendar desktop e2e', () => {
     await cdp.waitFor(`!document.body.textContent.includes('New event')`);
   });
 
+  it("keeps the editor's date and times inside the panel", async () => {
+    const { cdp } = app;
+    const at = await todayGridPoint(2, 5);
+    await cdp.click(at.x, at.y);
+    await cdp.waitFor(`document.body.textContent.includes('New event')`);
+    const fit = await cdp.eval<{ overflow: number; pastEdge: Array<string> }>(`(() => {
+      const editor = document.querySelector('[data-testid="editor"]');
+      const edge = editor.getBoundingClientRect().right;
+      const fields = editor.querySelectorAll('input[type="date"], input[type="time"]');
+      return {
+        overflow: editor.scrollWidth - editor.clientWidth,
+        pastEdge: [...fields]
+          .filter((field) => field.getBoundingClientRect().right > edge)
+          .map((field) => field.getAttribute('aria-label')),
+      };
+    })()`);
+    expect(fit).toEqual({ overflow: 0, pastEdge: [] });
+    await cdp.pressEscape();
+    await cdp.waitFor(`!document.body.textContent.includes('New event')`);
+  });
+
   it('cancels drawing a slot with Escape', async () => {
     const { cdp } = app;
     const from = await todayGridPoint(3, 5);
