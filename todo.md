@@ -132,13 +132,6 @@ closed the last of them.
       under the notarized build from `/Applications`, relay auto-launch,
       a real guest invitation at "ask".
 
-- [ ] UX and polish from the 2026-10-02 review — deletes, desktop dialogs
-      and sign-in shipped in #129, #130 and #132; iOS gestures,
-      notifications, the Agents pane and the small items in #139–#142. Left:
-      **Accessibility and theme**: no Dynamic Type limits on fixed-height
-      chips, toasts are not announced to VoiceOver, the conflict banner and
-      toasts overlap, native pickers turn dark inside the light-only UI.
-
 ## Tier 3 — AI features
 
 Scope unchanged and all still open with zero code; the on-device-only

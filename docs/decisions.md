@@ -2307,6 +2307,81 @@ handoff.
       iOS Settings" shows as soon as it is true; Electron has no query, so
       the desktop's denied state is unchanged.
 
+### Review leftovers: accessibility (2026-10-09)
+
+The last group of the review's Tier 2 UX list, re-verified against the
+redesigned app (`todo/accessibility`, one commit per part). The
+"native pickers turn dark inside the light-only UI" claim was obsolete;
+the other three held, on both apps.
+
+- [x] Notices stack — **one column, never two notices in one spot.** The
+      failed-write toast, the dropped-change toast and the conflict
+      banner each had their own centred spot at the foot of the window
+      (desktop: the banner hid one toast, the other sat on its table, and
+      at 1024 px it reached into the 360 px editor over Delete; iOS: all
+      three at `bottom: 24` of a SafeAreaView whose frame runs under the
+      tab bar — inside the bar's band, under its items, "+" and Search;
+      the live suite's conflict flows tapped "Tasks" through the banner).
+      **Order, top to bottom: failed write, discarded change, banner** —
+      the banner holds the anchored edge because it stays until answered,
+      so toasts come and go above it and never move its buttons; one
+      notice per kind, so at most three. **Desktop**: `NoticeStack` sits
+      in the grid's column (`relative` in CalendarApp), so nothing in it
+      reaches the sidebar or the panel at any width; Settings shows its own
+      failed writes over its window. **iOS**: `NoticeStack` is a flow
+      child that stands on the edge it is mounted at and takes no room —
+      last in a tab screen's SafeAreaView (whose content ends at the tab
+      bar's top edge), above the Tasks tab's add field, over the home
+      indicator in the Settings modal; the calendar lifts it over the
+      floating "+" below iOS 26. A toast mounted on its own anchors itself
+      the same way, so another screen can keep mounting
+      `<MutationNoticeToast />` last in its SafeAreaView. The anchor
+      reaches a window's height up (a negative margin cancels it, touches
+      pass through): under a zero-height anchor the notices were drawn but
+      missing from the accessibility tree. **The capture banner moves to
+      the top**: the editor host draws it over every tab and cannot tell
+      whether a tab bar shows.
+- [x] Screen readers — **desktop**: each toast renders into a live region
+      mounted, empty, with the stack (a region inserted with its text is
+      not reliably read): a failed write is `role="alert"` (it answers what
+      the user just did), a discarded change `role="status"` (it comes
+      from sync). **The banner is a labelled region, not an alertdialog**
+      (it never took focus and does not stop the calendar) **and not a
+      live region** (its table and buttons would be re-read on every
+      change); its comparison is a table with headers. **Each parked
+      change is told once** (`useConflictAnnouncement`: on mount for what
+      is parked, then each new one — never a re-render or a resolution),
+      politely, through a status region beside the banner. **iOS**: toasts
+      and capture steps are announced with
+      `announceForAccessibilityWithOptions(…, { queue: true })`; every tab
+      and the Settings modal keep a failed-write toast mounted, so the
+      publish number decides who speaks (`firstToTell`), once.
+- [x] Theme — the desktop toasts and banner move from raw palette classes
+      (an amber-50 box in dark mode) to the tokens: a failure on
+      `danger`/`on-danger`, a discarded change inverted (`ink`/`canvas`),
+      the banner a raised surface with a `warning` edge, Keep mine
+      `primary`; iOS text colors become `on-danger`/`canvas`. **Pickers**:
+      the claim predates the redesign — both apps follow the system
+      appearance (`userInterfaceStyle: automatic` and `useColorScheme`;
+      `data-theme` sets `color-scheme` on the desktop), and no picker
+      forces one: the iOS editor's compact date/time pickers and the date
+      popover, and the desktop editor's date/time inputs (computed
+      `color-scheme: dark`), match light and dark. Checking them turned
+      up the iOS editor's title, which had no color and was black on the
+      dark sheet; it takes `text`.
+- [x] Dynamic Type — **one cap, `BOX_FONT_SCALE` = 1.35 (xxxLarge, the
+      largest standard size), only where the box cannot grow**: grid
+      blocks, all-day chips and "+N more", the hour gutter, the day
+      numbers in their circles, the drag ghost and slot label, the
+      calendar's header bar and "+", the sheets' Cancel · title · Save
+      bars, the dictation mic and the Settings avatar — at AX5 they had
+      clipped, and Save had left the screen. Bars follow the system's,
+      which do not grow at all; the capped header buttons and "+" offer
+      the Large Content Viewer. **Where a box can grow, it does**: the
+      unsynced badge and Connect capsule take a minimum height, the
+      agenda's time column a minimum width; sheet content, forms, lists,
+      Settings, the agenda, the Tasks tab and the notices scale fully.
+
 ## UI redesign (2026-10)
 
 The main views were redesigned on a canvas (desktop: toolbar + collapsible
