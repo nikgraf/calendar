@@ -25,14 +25,6 @@ import { useEditorHost } from './EditorHost.tsx';
 import { type ThemeColors, useEventTint, useStyles, useTheme } from './theme.ts';
 import { MutationNoticeToast } from './Toast.tsx';
 
-/**
- * UIKit's tab bar: 49pt above the bottom safe area on every iPhone, a frame
- * iOS 26's floating bar keeps. The Calendar and Tasks tabs get it as their
- * safe area; a stack inside the search tab does not (measured on iOS 26.5),
- * so the toast's container ends there itself.
- */
-const TAB_BAR_HEIGHT = 49;
-
 /** What a search cannot find: the window the backend reads. */
 const WINDOW_NOTE = `Events from ${SEARCH_WINDOW_YEARS} years back to ${SEARCH_WINDOW_YEARS} years ahead.`;
 
@@ -200,14 +192,13 @@ function SearchResultsList({
         stickySectionHeadersEnabled={false}
         testID="search-list"
       />
-      {/* A failed write from a result's sheet is told here, above the tab bar. */}
+      {/* A failed write from a result's sheet is told here, above the tab bar:
+          the screen runs under the bar, and its bottom inset already holds
+          the bar (83 pt on an iPhone 17 Pro, iOS 26.5), so the area ends at
+          the bar's top edge. */}
       <View
         pointerEvents="box-none"
-        style={[
-          StyleSheet.absoluteFill,
-          styles.toastArea,
-          { bottom: insets.bottom + TAB_BAR_HEIGHT },
-        ]}
+        style={[StyleSheet.absoluteFill, styles.toastArea, { bottom: insets.bottom }]}
       >
         <MutationNoticeToast />
       </View>

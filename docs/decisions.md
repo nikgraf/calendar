@@ -2550,9 +2550,11 @@ then iOS (both in `todo.md`).
       placeholder, so no React Native field was needed, and nothing native
       changed. Results are a SectionList whose rows are one accessibility
       element each; events open the detail sheet and tasks the editor
-      through the editor host. The mutation toast sits 49 pt above the
-      bottom inset: a stack inside the search tab gets no tab-bar safe area
-      (measured on iOS 26.5). **Found on the way**: `formatZoneTimeRange`
+      through the editor host. The mutation toast stands on the tab bar's
+      top edge: the screen runs under the bar and its bottom safe-area inset
+      already holds it (83 pt on iOS 26.5), so the toast's area ends at that
+      inset — adding the bar's 49 pt again floated it 49 pt higher than on
+      the other tabs. **Found on the way**: `formatZoneTimeRange`
       wrote "2:00 PM – 3:00 PM PM" on iOS — Apple's ICU puts a narrow
       no-break space before AM/PM — which also hit the secondary-zone lines
       under events since the time zones PR. **Deferred**: a search tool
