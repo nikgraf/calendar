@@ -15,8 +15,10 @@ rc.115 → 4.0.0 cost two: rc.118 moved every `effect/unstable/*` module to
 `effect/*` and removed the old paths (a mechanical import rewrite, ~100
 files), and renamed `Schema.isLengthBetween` → `Schema.isBetweenLength`.
 `effect` also dropped its runtime dependencies. The custom rpc protocol
-shapes were unchanged; `@effect/vitest` declares a Vitest 5 peer but runs
-fine on vite-plus's Vitest 4 for `it.effect` / `expect`.
+shapes were unchanged. `@effect/vitest` declares a Vitest 5 peer, which
+vite-plus 1.x bundles; tests import the runner from `vite-plus/test` and
+`@effect/vitest` resolves the same `vitest` through the workspace
+override.
 
 ## API renames / removals
 
@@ -77,7 +79,7 @@ fine on vite-plus's Vitest 4 for `it.effect` / `expect`.
 ## rpc (effect/rpc)
 
 - Groups: `RpcGroup.make(Rpc.make('name', { payload, success, error }),
-…)`; payloads may be struct-field records or Schemas; streams via
+  …)`; payloads may be struct-field records or Schemas; streams via
   `stream: true`.
 - Custom transports implement `RpcServer.Protocol` / `RpcClient.Protocol`
   with `Protocol.make` (`withRun` / `withRunClient`) — see below. Server

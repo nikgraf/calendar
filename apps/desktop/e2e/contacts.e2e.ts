@@ -1,5 +1,5 @@
 import { Account, Attendee, CalendarInfo, EventRecord, GoogleContact } from '@calendar/core';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vite-plus/test';
 import { type App, launchApp, readPendingOps } from './harness.ts';
 
 // Contact suggestions come from Google People rows seeded straight into

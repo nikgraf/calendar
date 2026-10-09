@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vite-plus/test';
 import { isTaskMoveLossy, taskMoveLoss, taskMoveLossSummary } from './taskMoveLoss.ts';
 
 const reminder = {

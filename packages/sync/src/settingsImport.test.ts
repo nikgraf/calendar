@@ -2,7 +2,7 @@ import type { MirrorDefinition, SettingsDocument } from '@calendar/core';
 import { AccountRepo, CalendarRepo, DeviceSettingsRepo, TaskRepo } from '@calendar/db';
 import { expect, it } from '@effect/vitest';
 import { Deferred, Effect, Fiber } from 'effect';
-import { describe } from 'vitest';
+import { describe } from 'vite-plus/test';
 import {
   readBirthdayReminderOverrides,
   readEventNotificationSettings,

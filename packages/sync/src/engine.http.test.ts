@@ -24,7 +24,7 @@ import { expect, it } from '@effect/vitest';
 import { Effect, Layer, Scheduler } from 'effect';
 import { TestClock } from 'effect/testing';
 import { layer as reactivityLayer } from 'effect/reactivity/Reactivity';
-import { describe } from 'vitest';
+import { describe } from 'vite-plus/test';
 import { SyncEngine } from './engine.ts';
 import { EventMutations } from './mutations.ts';
 import { FakeGoogle } from './testing/fakeGoogle.ts';
@@ -101,6 +101,47 @@ const writeStatus = <A, E extends { readonly _tag: string }>(
       (error) => Effect.succeed(error.status),
     ),
   );
+
+/** Synced event a, edit 1 landed, then Google moved on and edit 2 met a 412. */
+const parkedEdit = (google: FakeGoogle) =>
+  Effect.gen(function* () {
+    yield* seedAccount(false);
+    const engine = yield* SyncEngine;
+    const mutations = yield* EventMutations;
+    yield* engine.syncAll();
+
+    // Edit 1 lands: PATCH with the etag we hold.
+    yield* mutations.updateEvent({
+      accountId: 'acc-1',
+      calendarId: 'cal-1',
+      changes: { title: 'Local 1' },
+      eventId: 'a',
+    });
+    yield* mutations.processPendingOps();
+    expect(google.eventOf('cal-1', 'a')?.summary).toBe('Local 1');
+    expect(yield* (yield* PendingOpRepo).listAll()).toHaveLength(0);
+
+    // The server moves on behind our back; our next edit carries the
+    // old etag → 412 → parked with Google's version for the user.
+    google.putEvent('cal-1', timed('a', 9, 'Server 2'));
+    yield* mutations.updateEvent({
+      accountId: 'acc-1',
+      calendarId: 'cal-1',
+      changes: { title: 'Local 2' },
+      eventId: 'a',
+    });
+    yield* mutations.processPendingOps();
+    expect(google.eventOf('cal-1', 'a')?.summary).toBe('Server 2');
+    const [op] = yield* (yield* PendingOpRepo).listAll();
+    expect(op?.conflictAt).toBeDefined();
+    expect(op?.serverPayload?.title).toBe('Server 2');
+
+    // A pull while parked leaves the user's version alone.
+    yield* TestClock.adjust('1 minute');
+    yield* engine.syncAll();
+    expect(yield* eventTitles).toEqual(['a:Local 2']);
+    return { engine, mutations, opId: op!.id };
+  });
 
 describe('SyncEngine over HTTP (fake Google)', () => {
   it.effect('a same-account move lands through events.move and the next pass agrees', () => {
@@ -439,47 +480,6 @@ describe('SyncEngine over HTTP (fake Google)', () => {
       expect(google.requests.every((call) => !call.url.includes('timeMin='))).toBe(true);
     }).pipe(noYield, Effect.provide(engineLayer(google)));
   });
-
-  /** Synced event a, edit 1 landed, then Google moved on and edit 2 met a 412. */
-  const parkedEdit = (google: FakeGoogle) =>
-    Effect.gen(function* () {
-      yield* seedAccount(false);
-      const engine = yield* SyncEngine;
-      const mutations = yield* EventMutations;
-      yield* engine.syncAll();
-
-      // Edit 1 lands: PATCH with the etag we hold.
-      yield* mutations.updateEvent({
-        accountId: 'acc-1',
-        calendarId: 'cal-1',
-        changes: { title: 'Local 1' },
-        eventId: 'a',
-      });
-      yield* mutations.processPendingOps();
-      expect(google.eventOf('cal-1', 'a')?.summary).toBe('Local 1');
-      expect(yield* (yield* PendingOpRepo).listAll()).toHaveLength(0);
-
-      // The server moves on behind our back; our next edit carries the
-      // old etag → 412 → parked with Google's version for the user.
-      google.putEvent('cal-1', timed('a', 9, 'Server 2'));
-      yield* mutations.updateEvent({
-        accountId: 'acc-1',
-        calendarId: 'cal-1',
-        changes: { title: 'Local 2' },
-        eventId: 'a',
-      });
-      yield* mutations.processPendingOps();
-      expect(google.eventOf('cal-1', 'a')?.summary).toBe('Server 2');
-      const [op] = yield* (yield* PendingOpRepo).listAll();
-      expect(op?.conflictAt).toBeDefined();
-      expect(op?.serverPayload?.title).toBe('Server 2');
-
-      // A pull while parked leaves the user's version alone.
-      yield* TestClock.adjust('1 minute');
-      yield* engine.syncAll();
-      expect(yield* eventTitles).toEqual(['a:Local 2']);
-      return { engine, mutations, opId: op!.id };
-    });
 
   it.effect("a stale etag is a 412 that parks the edit; take theirs restores Google's copy", () => {
     const google = newFake();

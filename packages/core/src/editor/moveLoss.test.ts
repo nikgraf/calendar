@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vite-plus/test';
 import { Attendee, EventReminders, ReminderOverride } from '../types.ts';
 import { isLossy, isServerMove, moveLoss, moveLossSummary } from './moveLoss.ts';
 

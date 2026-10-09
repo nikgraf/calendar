@@ -1,6 +1,6 @@
 import { formatSettingsDocument, type SettingsDocument } from '@calendar/core';
 import { deviceSettingsKey } from '@calendar/db';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import {
   makeSettingsFileSync,
   type SettingsFileApplied,

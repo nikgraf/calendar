@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vite-plus/test';
 import { applyWallClockDelta, moveEventTimes, resizeEventEnd, snapMinutes } from './dragMath.ts';
 
 const HOUR = 60 * 60 * 1000;

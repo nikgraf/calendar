@@ -5,13 +5,13 @@
   "type": "module",
   "main": "dist-electron/main.mjs",
   "scripts": {
-    "build": "vp build && tsdown",
+    "build": "vp build && vp pack",
     "build:helper": "swift build -c release --package-path helper",
     "dev": "vp dev --host 127.0.0.1",
-    "dev:app": "tsdown && ELECTRON_RENDERER_URL=http://127.0.0.1:5173 electron .",
-    "make": "pnpm build:helper && vp build && tsdown && electron-forge make",
-    "package:app": "pnpm build:helper && vp build && tsdown && electron-forge package",
-    "start": "vp build && tsdown && electron ."
+    "dev:app": "vp pack && ELECTRON_RENDERER_URL=http://127.0.0.1:5173 electron .",
+    "make": "pnpm build:helper && vp build && vp pack && electron-forge make",
+    "package:app": "pnpm build:helper && vp build && vp pack && electron-forge package",
+    "start": "vp build && vp pack && electron ."
   },
   "dependencies": {
     "@calendar/agent": "workspace:*",
@@ -45,7 +45,6 @@
     "babel-plugin-react-compiler": "^1.0.0",
     "electron": "^44.5.1",
     "tailwindcss": "^4.3.3",
-    "tsdown": "^0.23.0",
     "typescript": "catalog:",
     "vite": "catalog:",
     "vite-plus": "catalog:"

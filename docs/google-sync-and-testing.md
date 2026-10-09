@@ -238,7 +238,7 @@ labelled `google-live`, one run at a time (`concurrency: google-live`).
   `GOOGLE_DESKTOP_CLIENT_ID/SECRET` and fails red when any is missing.
   The refresh token is bound to the desktop client, so iOS refreshes it
   with that client too (`EXPO_PUBLIC_CALENDAR_GOOGLE_LIVE_CLIENT_ID/
-SECRET`), not with `app.json`'s iOS client.
+  SECRET`), not with `app.json`'s iOS client.
 - **Isolation.** Every run gets its own scratch calendars and task lists,
   named `e2e-<unixSeconds>-<runTag>[-suffix]` (`GOOGLE_LIVE_RUN_TAG` —
   `gh-<run>-<attempt>` on CI, `local-<pid>` locally), **one set per job**:
@@ -280,7 +280,7 @@ SECRET`), not with `app.json`'s iOS client.
   `useDefault: false` reminders; `events.update` (PUT) clears what the
   body leaves out where PATCH keeps it; a deleted event keeps its id
   reserved (re-insert → 409) and comes back by a PUT with `status:
-'confirmed'`; a second delete answers 404/410. `events`: the events sync token and an
+  'confirmed'`; a second delete answers 404/410. `events`: the events sync token and an
   `idle` state, client ids and the ack's etag, a re-posted client id →
   409, an incremental pass applying a rename and a cancelled tombstone,
   PATCH-merge (a title-only patch keeps description/location), delete
@@ -375,7 +375,7 @@ SECRET`), not with `app.json`'s iOS client.
   chip's open/done glyph is not in the accessibility tree, so 04 proves a
   server-side reopen behaviourally: after two polls one tap must complete
   the task again on Google. Locally: `pnpm --filter @calendar/ios
-test:e2e:live` (dev client installed, Metro up with the live env;
+  test:e2e:live` (dev client installed, Metro up with the live env;
   `SIMULATOR_UDID` picks the device), which runs setup, the five flows
   and teardown.
 - **`400 failedPrecondition`.** Seen once, in a background pass of the
@@ -442,7 +442,7 @@ test:e2e:live` (dev client installed, Metro up with the live env;
   Reminders.app already deleted answers notFound — treated as done.
 - **Errors cross Expo as an envelope**: expo-modules-core rethrows a Swift
   throw as `FunctionCallException … → Caused by: RemindersBridgeError:
-<message>`; the client unwraps the last `Caused by:` segment before
+  <message>`; the client unwraps the last `Caused by:` segment before
   matching the `accessDenied:` / `notFound:` prefixes (the helper sends
   the message verbatim).
 - **Store lifetime**: the `EKEventStore` is created by the pre-prompt
@@ -616,7 +616,7 @@ Flakiness lessons (each caused a real CI failure — keep them enforced):
   seeds an Apple account/list/reminder straight into SQLite and asserts
   the chip and form; a real EventKit sync would replace those rows (and
   prompt for access on a developer's Mac). `launchApp(seed, { reminders:
-'real' })` opts a spec into the helper — only `remindersReal.e2e.ts`,
+  'real' })` opts a spec into the helper — only `remindersReal.e2e.ts`,
   which is `describe.skipIf` unless `CALENDAR_E2E_REMINDERS=real`.
 - `CALENDAR_CONTACTS=off` does the same for the address book bridge
   (`launchApp(seed, { contacts: 'real' })` to opt in; nothing does yet).
@@ -680,15 +680,15 @@ Flakiness lessons (each caused a real CI failure — keep them enforced):
   extracted `.app` lives in the Actions cache under that fingerprint
   (`ios-e2e-app-<hash>`), so JS-only pushes download nothing.
   `repack-app.sh` then bundles the commit's JS (`@expo/repack-app
---js-bundle-only`, about 20 s) into a copy of that app, switches
+  --js-bundle-only`, about 20 s) into a copy of that app, switches
   expo-updates off in its `Expo.plist` (a launch must never fetch a
   published update over the bundle under test) and re-signs it ad hoc.
   `EXPO_PUBLIC_CALENDAR_GOOGLE=fixture` is set on that step: it is inlined
   at bundle time. `prepare-simulator.sh boot` runs right after checkout —
   a runner's first boot spends two minutes in data migration, which then
   overlaps the install and the bundling — and `prepare-simulator.sh
-install` waits for it, installs, and pre-grants Reminders with `simctl
-privacy grant reminders` (supported). The whole job runs under
+  install` waits for it, installs, and pre-grants Reminders with `simctl
+  privacy grant reminders` (supported). The whole job runs under
   `APP_VARIANT=development`: the app is the dev variant
   (`com.solunivo.app.dev`, which is what every flow's `appId` and the
   `simctl` grants name), and its fingerprint differs from production's.
@@ -703,8 +703,8 @@ privacy grant reminders` (supported). The whole job runs under
   18 min before the first regular flow (simulator, Metro, bootstrapping
   the launcher) and about 30 s per `launchApp` re-downloading the bundle.
   To reproduce a CI run locally: `eas build:list --build-profile
-e2e-simulator`, `fetch-eas-build.sh <fingerprint> e2e-simulator
-build/e2e-app`, `repack-app.sh`, a fresh simulator, then `maestro test`
+  e2e-simulator`, `fetch-eas-build.sh <fingerprint> e2e-simulator
+  build/e2e-app`, `repack-app.sh`, a fresh simulator, then `maestro test`
   with the shard's files. `google-live.yml` still drives the dev client
   with Metro (the `development-simulator` profile, the bootstrap flow,
   `EXPO_RUNTIME_VERSION_PIN`).
@@ -725,7 +725,7 @@ build/e2e-app`, `repack-app.sh`, a fresh simulator, then `maestro test`
   best effort: the first night after the workflow reached `main` fired
   no run at all (2026-09-25) — dispatch it by hand when a night is
   missing. `concurrency:
-google-live` keeps runs from overlapping on the one account. See "Live
+  google-live` keeps runs from overlapping on the one account. See "Live
   Google suite" above.
 - Log lines may stringify effect causes containing HTTP requests; effect
   redacts auth headers (`"authorization":<redacted>` — verified), so

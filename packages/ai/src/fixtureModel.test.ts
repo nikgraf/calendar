@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vite-plus/test';
 import { FIND_TIME_JSON_SCHEMA } from './findTime.ts';
 import { fixtureTextRecognizer, makeFixtureLanguageModel } from './fixtureModel.ts';
 import { parseQuickAdd } from './parseQuickAdd.ts';

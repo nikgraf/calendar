@@ -16,7 +16,7 @@ import { SqliteClient } from '@effect/sql-sqlite-node';
 import { expect, it } from '@effect/vitest';
 import { Effect, Layer } from 'effect';
 import { layer as reactivityLayer } from 'effect/reactivity/Reactivity';
-import { describe, vi } from 'vitest';
+import { describe, vi } from 'vite-plus/test';
 import { commonBackendHandlers } from './backendHandlers.ts';
 import { LocalNotifications } from './localNotifications.ts';
 import { DeviceContacts } from './deviceContacts.ts';

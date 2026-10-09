@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vite-plus/test';
 import { filterPanes, paneFromHash, SETTINGS_PANES } from './settingsPanes.ts';
 
 describe('filterPanes', () => {

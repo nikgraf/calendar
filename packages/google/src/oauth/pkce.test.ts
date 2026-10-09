@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vite-plus/test';
 import { generatePkcePair, generateStateToken } from './pkce.ts';
 
 const BASE64URL = /^[A-Za-z0-9_-]+$/;

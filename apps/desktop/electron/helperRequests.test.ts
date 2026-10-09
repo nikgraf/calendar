@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import { HELPER_TIMED_OUT, makeHelperRequests, PROBE_TIMEOUT_MS } from './helperRequests.ts';
 
 /** A helper that answers only when the test says so. */

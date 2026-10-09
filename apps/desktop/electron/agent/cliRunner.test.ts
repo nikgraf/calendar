@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vite-plus/test';
 import { parseToolArgs, runCli } from './cliRunner.ts';
 import type { ToolCaller } from './mcp.ts';
 

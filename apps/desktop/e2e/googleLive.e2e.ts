@@ -9,7 +9,7 @@ import {
 } from '@calendar/sync/testing/liveGoogle';
 import { LiveScratchError } from '@calendar/sync/testing/liveScratchRest';
 import { Effect, type ManagedRuntime } from 'effect';
-import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vite-plus/test';
 import {
   type App,
   launchApp,

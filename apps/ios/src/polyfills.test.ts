@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vite-plus/test';
 
 const POLYFILL_UUID = '00000000-0000-4000-8000-000000000000';
 

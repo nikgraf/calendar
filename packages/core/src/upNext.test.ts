@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vite-plus/test';
 import { Attendee, EventRecord } from './types.ts';
 import { UP_NEXT_HORIZON_MS, upNext } from './upNext.ts';
 

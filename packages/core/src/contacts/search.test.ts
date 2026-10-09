@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vite-plus/test';
 import { Contact } from '../types.ts';
 import { isValidEmail } from './email.ts';
 import { rankContacts } from './search.ts';

@@ -1,5 +1,5 @@
 import type { EventRecord } from '@calendar/core';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 
 type Callback = (...args: Array<unknown>) => void;
 

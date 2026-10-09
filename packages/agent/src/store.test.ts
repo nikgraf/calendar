@@ -2,7 +2,7 @@ import { SqliteClient } from '@effect/sql-sqlite-node';
 import { expect, it } from '@effect/vitest';
 import { Effect, Layer } from 'effect';
 import { SqlClient } from 'effect/sql/SqlClient';
-import { describe } from 'vitest';
+import { describe } from 'vite-plus/test';
 import {
   authenticate,
   createAgent,

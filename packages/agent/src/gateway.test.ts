@@ -3,7 +3,7 @@ import { EventRepo, PendingOpRepo, TaskRepo } from '@calendar/db';
 import { expect, it } from '@effect/vitest';
 import { Effect, Fiber } from 'effect';
 import { TestClock } from 'effect/testing';
-import { describe } from 'vitest';
+import { describe } from 'vite-plus/test';
 import type { CalendarDto, EventDto, TaskDto } from './dto.ts';
 import { callTool, decideRequest, MAX_PENDING_PER_AGENT } from './gateway.ts';
 import { createAgent, removeAgent, updateAgent } from './manage.ts';

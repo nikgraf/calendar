@@ -1,5 +1,5 @@
 import { Effect } from 'effect';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vite-plus/test';
 import { makeContactsClient, unavailableContactsClient } from './client.ts';
 import { makeFakeContactsClient } from './fake.ts';
 

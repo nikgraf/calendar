@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vite-plus/test';
 import { Temporal } from '../time/temporal.ts';
 import { BirthdayOccurrence, BirthdayRecord, EventRecord, TaskRecord } from '../types.ts';
 import { type AgendaItem, buildAgenda } from './agenda.ts';

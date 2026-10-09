@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vite-plus/test';
 import { Temporal } from '../time/temporal.ts';
 import { EventRecord } from '../types.ts';
 import { groupByDate, groupEventsByDay } from './dayGrouping.ts';

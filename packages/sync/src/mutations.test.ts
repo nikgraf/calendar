@@ -39,7 +39,7 @@ import { expect, it } from '@effect/vitest';
 import { Effect, Exit, Layer, Scheduler } from 'effect';
 import { layer as reactivityLayer, type Reactivity } from 'effect/reactivity/Reactivity';
 import { SqlClient } from 'effect/sql/SqlClient';
-import { describe } from 'vitest';
+import { describe } from 'vite-plus/test';
 import { EventMutations } from './mutations.ts';
 
 type ClientOverrides = Partial<GoogleCalendarClientShape>;
@@ -223,6 +223,38 @@ const rowOf = (id: string) =>
     const events = yield* EventRepo;
     return yield* events.getById('acc-1', 'cal-1', id);
   });
+
+const attempt = (status: number) =>
+  Effect.gen(function* () {
+    const mutations = yield* EventMutations;
+    const record = yield* mutations.createEvent({
+      ...draft,
+      title: `evt-${status}`,
+    });
+    yield* mutations.processPendingOps();
+    const remaining = (yield* (yield* PendingOpRepo).listAll()).filter(
+      (op) => op.eventId === record.id,
+    );
+    return remaining;
+  }).pipe(
+    Effect.provide(
+      mutationsLayer(
+        stubClient({
+          // A 409 makes the drain fetch what the create already made.
+          getEvent: ({ eventId }) =>
+            Effect.succeed({
+              end: { dateTime: '2026-07-03T11:00:00Z', timeZone: 'Europe/Vienna' },
+              etag: '"landed"',
+              id: eventId,
+              start: { dateTime: '2026-07-03T10:00:00Z', timeZone: 'Europe/Vienna' },
+              status: 'confirmed',
+              summary: `evt-${status}`,
+            }),
+          insertEvent: () => Effect.fail(new GoogleApiError({ message: 'boom', status })),
+        }),
+      ),
+    ),
+  );
 
 describe('EventMutations', () => {
   it.effect('createEvent writes optimistically and syncs through the queue', () => {
@@ -857,38 +889,6 @@ describe('EventMutations', () => {
 
   it.effect('drops permanently-rejected ops but keeps transient failures queued', () =>
     Effect.gen(function* () {
-      const attempt = (status: number) =>
-        Effect.gen(function* () {
-          const mutations = yield* EventMutations;
-          const record = yield* mutations.createEvent({
-            ...draft,
-            title: `evt-${status}`,
-          });
-          yield* mutations.processPendingOps();
-          const remaining = (yield* (yield* PendingOpRepo).listAll()).filter(
-            (op) => op.eventId === record.id,
-          );
-          return remaining;
-        }).pipe(
-          Effect.provide(
-            mutationsLayer(
-              stubClient({
-                // A 409 makes the drain fetch what the create already made.
-                getEvent: ({ eventId }) =>
-                  Effect.succeed({
-                    end: { dateTime: '2026-07-03T11:00:00Z', timeZone: 'Europe/Vienna' },
-                    etag: '"landed"',
-                    id: eventId,
-                    start: { dateTime: '2026-07-03T10:00:00Z', timeZone: 'Europe/Vienna' },
-                    status: 'confirmed',
-                    summary: `evt-${status}`,
-                  }),
-                insertEvent: () => Effect.fail(new GoogleApiError({ message: 'boom', status })),
-              }),
-            ),
-          ),
-        );
-
       // 4xx (except 429) are the app's fault and would pin the queue forever.
       for (const status of [400, 403, 404]) {
         expect(yield* attempt(status), `status ${status}`).toHaveLength(0);

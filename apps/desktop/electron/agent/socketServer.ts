@@ -105,6 +105,11 @@ const finish = (socket: Socket, value: unknown): void => {
   setTimeout(() => socket.destroy(), FINISH_LINGER_MS).unref();
 };
 
+const reject = (socket: Socket, code: string, message: string): void => {
+  const reply: AgentHelloReply = { error: { code, message }, ok: false };
+  finish(socket, reply);
+};
+
 export const startAgentSocketServer = async (
   path: string,
   handlers: AgentSocketHandlers,
@@ -126,11 +131,6 @@ export const startAgentSocketServer = async (
   await clearStaleSocket(path);
 
   const sockets = new Map<Socket, string | undefined>();
-
-  const reject = (socket: Socket, code: string, message: string): void => {
-    const reply: AgentHelloReply = { error: { code, message }, ok: false };
-    finish(socket, reply);
-  };
 
   const onHello = async (socket: Socket, line: string, rest: Buffer): Promise<void> => {
     let hello: unknown;

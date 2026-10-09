@@ -1,6 +1,6 @@
 import { Account } from '@calendar/core';
 import type { GoogleFixture } from '@calendar/sync/testing/googleFixture';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vite-plus/test';
 import { type App, launchApp, readEvents, readMirrorCopies } from './harness.ts';
 
 // A calendar mirror against the fake Google API: the account is signed

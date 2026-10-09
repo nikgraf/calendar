@@ -44,6 +44,9 @@ const plainDateLabel = (isoDate: string): string =>
 const clock = (value: Temporal.ZonedDateTime): string =>
   value.toPlainTime().toLocaleString('en-US', { hour: 'numeric', minute: '2-digit' });
 
+const day = (value: Temporal.ZonedDateTime): string =>
+  plainDateLabel(value.toPlainDate().toString());
+
 /** "Tue, Sep 23, 9:00 AM – 10:30 AM" (timed) or "Tue, Sep 23 – Thu, Sep 25" (all-day). */
 export const conflictTimeLabel = (event: EventRecord, timeZone: string): string => {
   if (event.isAllDay && event.startDate) {
@@ -56,7 +59,6 @@ export const conflictTimeLabel = (event: EventRecord, timeZone: string): string 
   }
   const start = Temporal.Instant.fromEpochMilliseconds(event.startUtc).toZonedDateTimeISO(timeZone);
   const end = Temporal.Instant.fromEpochMilliseconds(event.endUtc).toZonedDateTimeISO(timeZone);
-  const day = (value: Temporal.ZonedDateTime) => plainDateLabel(value.toPlainDate().toString());
   const sameDay = Temporal.PlainDate.compare(start.toPlainDate(), end.toPlainDate()) === 0;
   return sameDay
     ? `${day(start)}, ${clock(start)} – ${clock(end)}`

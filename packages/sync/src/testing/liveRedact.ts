@@ -25,9 +25,9 @@ const MIN_SECRET_LENGTH = 8;
 const variants = (secrets: ReadonlyArray<string>): ReadonlyArray<string> =>
   [
     ...new Set(
-      secrets
-        .filter((secret) => secret.length >= MIN_SECRET_LENGTH)
-        .flatMap((secret) => [secret, secret.replaceAll('/', String.raw`\/`)]),
+      secrets.flatMap((secret) =>
+        secret.length >= MIN_SECRET_LENGTH ? [secret, secret.replaceAll('/', String.raw`\/`)] : [],
+      ),
     ),
   ].toSorted((a, b) => b.length - a.length);
 

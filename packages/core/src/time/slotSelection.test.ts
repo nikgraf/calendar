@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vite-plus/test';
 import { minuteOfDay, slotFromDrag, slotFromHold, slotTimes } from './slotSelection.ts';
 
 const at = (hours: number, minutes = 0) => hours * 60 + minutes;

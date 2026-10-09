@@ -1,5 +1,5 @@
 import { Effect, Exit } from 'effect';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vite-plus/test';
 import { isNotFound, makeAppleCalendarClient } from './client.ts';
 
 const failing = (message: string) =>

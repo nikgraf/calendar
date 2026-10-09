@@ -2,7 +2,7 @@ import { existsSync, mkdtempSync, rmSync, statSync, writeFileSync } from 'node:f
 import { connect, createServer, type Socket } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vite-plus/test';
 import { MAX_HELLO_BYTES } from './protocol.ts';
 import {
   type AgentSocketHandlers,

@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vite-plus/test';
 import { eventDraftFromPrefill, taskParamsFromPrefill } from './quickAddCreate.ts';
 
 const calendar = { accountId: 'acc', calendarId: 'cal' };

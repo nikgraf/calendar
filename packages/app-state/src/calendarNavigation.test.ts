@@ -1,5 +1,5 @@
 import { Temporal } from '@calendar/core';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vite-plus/test';
 import { AGENDA_DAYS, titleFor, viewColumns } from './calendarNavigation.ts';
 
 // Pure helpers over explicit dates: nothing here derives from "now".

@@ -26,7 +26,7 @@ closed the last of them.
 - [ ] PR videos (designed, not built) — every PR with a visible change
       attaches a short recording. `gh` ≥ 2.99.0 (2026-09-01; local is
       2.97.0, `brew upgrade gh`) adds `--attach` to `gh pr create/edit/
-comment` for inline-playable video: 10 MB on Free plans, 100 MB paid
+  comment` for inline-playable video: 10 MB on Free plans, 100 MB paid
       — design for 10 MB (≤ 20 s clips, 720p wide, `-crf 28` ≈ 1–3 MB).
       Tooling: `pnpm record ios <flow>` wraps `maestro test` in
       `xcrun simctl io $UDID recordVideo --codec h264 --mask black`

@@ -11,7 +11,7 @@ import { expect, it } from '@effect/vitest';
 import { Effect, Layer } from 'effect';
 import { TestClock } from 'effect/testing';
 import { layer as reactivityLayer } from 'effect/reactivity/Reactivity';
-import { describe } from 'vitest';
+import { describe } from 'vite-plus/test';
 import {
   LOCATION_MISS_TTL_MS,
   LOCATION_REFRESH_AFTER_MS,

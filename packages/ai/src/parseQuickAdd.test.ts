@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vite-plus/test';
 import type { LanguageModel, ModelStatus } from './model.ts';
 import { ModelUnavailableError } from './model.ts';
 import { parseQuickAdd } from './parseQuickAdd.ts';
@@ -29,6 +29,17 @@ const prefillOf = async (parse: QuickAddParse, phrase = 'anything') => {
   }
   return result.prefill;
 };
+
+// "every Monday until March", said in August: the model answers with
+// this year's March, which is already past.
+const untilOf = async (untilDate: string) =>
+  (
+    await prefillOf({
+      recurrence: { freq: 'weekly', untilDate },
+      startTime: '09:00',
+      title: 'Standup',
+    })
+  ).recurrence?.untilDate;
 
 describe('parseQuickAdd', () => {
   it('fills the editor from a typical English phrase', async () => {
@@ -140,16 +151,6 @@ describe('parseQuickAdd', () => {
   });
 
   it('reads a repeat end before the first day as next year', async () => {
-    // "every Monday until March", said in August: the model answers with
-    // this year's March, which is already past.
-    const untilOf = async (untilDate: string) =>
-      (
-        await prefillOf({
-          recurrence: { freq: 'weekly', untilDate },
-          startTime: '09:00',
-          title: 'Standup',
-        })
-      ).recurrence?.untilDate;
     expect(await untilOf('2026-03-31')).toBe('2027-03-31');
     expect(await untilOf('2026-12-31')).toBe('2026-12-31');
     expect(await untilOf('2026-08-22')).toBe('2026-08-22');

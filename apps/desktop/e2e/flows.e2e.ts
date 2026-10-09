@@ -6,7 +6,7 @@ import {
   TaskListInfo,
   TaskRecord,
 } from '@calendar/core';
-import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vite-plus/test';
 import {
   type App,
   launchApp,

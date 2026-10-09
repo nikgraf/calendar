@@ -1,5 +1,5 @@
 import { Effect } from 'effect';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vite-plus/test';
 import { makeGeoClient, unavailableGeoClient } from './client.ts';
 import { FAKE_MAP_PNG_BASE64, makeFakeGeoClient } from './fake.ts';
 

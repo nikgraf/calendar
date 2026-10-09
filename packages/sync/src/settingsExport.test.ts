@@ -1,7 +1,7 @@
 import { DeviceSettingsRepo } from '@calendar/db';
 import { expect, it } from '@effect/vitest';
 import { Effect } from 'effect';
-import { describe } from 'vitest';
+import { describe } from 'vite-plus/test';
 import { writeBirthdayReminderOverrides, writeTimeZoneSettings } from './deviceSettings.ts';
 import { IMPORTED_VISIBILITY_KEY } from './importedVisibility.ts';
 import { buildSettingsDocument } from './settingsExport.ts';

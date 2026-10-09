@@ -22,7 +22,7 @@ import { expect, it } from '@effect/vitest';
 import { Effect, Layer, Scheduler } from 'effect';
 import { layer as reactivityLayer } from 'effect/reactivity/Reactivity';
 import { SqlClient } from 'effect/sql/SqlClient';
-import { describe } from 'vitest';
+import { describe } from 'vite-plus/test';
 import { SyncEngine } from './engine.ts';
 import { EventMutations } from './mutations.ts';
 import { PendingOpRepo } from '@calendar/db';

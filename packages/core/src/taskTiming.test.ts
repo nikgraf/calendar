@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vite-plus/test';
 import { layoutDayColumn, timedEventBox } from './layout/dayGrid.ts';
 import { Temporal } from './time/temporal.ts';
 import { TaskRecord } from './types.ts';

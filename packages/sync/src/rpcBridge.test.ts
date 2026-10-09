@@ -3,7 +3,7 @@ import { makeInvalidationBus } from '@calendar/db';
 import { expect, it } from '@effect/vitest';
 import { Effect, Fiber, Layer, Option, Stream } from 'effect';
 import { RpcClient, RpcSerialization, RpcServer } from 'effect/rpc';
-import { describe } from 'vitest';
+import { describe } from 'vite-plus/test';
 import { makeAppBackendLayer } from './backendHandlers.ts';
 import { duplexClientProtocol, duplexServerProtocol, type RpcFrame } from './rpcDuplex.ts';
 

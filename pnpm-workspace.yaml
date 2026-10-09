@@ -36,9 +36,9 @@ catalog:
   '@types/react': ^19.2.17
   rrule-temporal: ^2.2.8
   typescript: ^7.0.2
-  vite: npm:@voidzero-dev/vite-plus-core@^0.3.1
-  vite-plus: ^0.3.1
-  vitest: 4.1.11
+  vite: npm:@voidzero-dev/vite-plus-core@1.1.0
+  vite-plus: 1.1.0
+  vitest: 5.0.3
 
 onlyBuiltDependencies:
   - '@swc/core'
@@ -53,8 +53,8 @@ overrides:
   # yauzl 2.x silently kills the process under modern Node during
   # electron-packager's zip extraction (same fix as codiff).
   'extract-zip>yauzl': ^3.4.0
-  vite: 'catalog:'
-  vitest: 'catalog:'
+  vite@*: 'catalog:'
+  vitest@*: 'catalog:'
 
 allowBuilds:
   # Optional native tracing inside eas-cli; the JS stub fallback is fine.
@@ -62,3 +62,10 @@ allowBuilds:
   msgpackr-extract: false
   # Pulled in by eas-cli 24; its postinstall only prints a notice.
   protobufjs: false
+peerDependencyRules:
+  allowAny:
+    - vite
+    - vitest
+  allowedVersions:
+    vite: '*'
+    vitest: '*'

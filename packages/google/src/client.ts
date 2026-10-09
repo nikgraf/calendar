@@ -127,12 +127,12 @@ export interface GoogleCalendarClientShape {
   }) => Effect.Effect<GcalEvent, GoogleRequestError>;
 }
 
+const eventsUrl = (calendarId: string, suffix = ''): string =>
+  `${BASE_URL}/calendars/${encodeURIComponent(calendarId)}/events${suffix}`;
+
 const make: Effect.Effect<GoogleCalendarClientShape, never, HttpClient.HttpClient | TokenManager> =
   Effect.gen(function* () {
     const { executeAuthed, failForStatus, requestJson } = yield* makeRequestCore;
-
-    const eventsUrl = (calendarId: string, suffix = ''): string =>
-      `${BASE_URL}/calendars/${encodeURIComponent(calendarId)}/events${suffix}`;
 
     const shape: GoogleCalendarClientShape = {
       deleteEvent: ({ accountId, baseEtag, calendarId, eventId }) =>

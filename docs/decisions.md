@@ -1197,7 +1197,7 @@ Performance:
       moved since the last completed run, on demand, or on the
       `google-live` PR label, one run at a time. Decisions: the fixture
       suites stay the PR gate, the live suites never run under `pnpm
-test`/`test:e2e`/`test:e2e:ios`; every file creates its own
+  test`/`test:e2e`/`test:e2e:ios`; every file creates its own
       `e2e-<ts>-<runTag>` calendar/list (one per file — Google throttles
       calendar creation), deletes it after, and sweeps leftovers older
       than six hours, so overlapping local and CI runs cannot collide;
@@ -2316,7 +2316,7 @@ work split into three PRs: the shared foundation below, then the desktop,
 then iOS (both in `todo.md`).
 
 - [x] Design tokens + dark-mode foundation — done (2026-10-07, `todo/
-design-tokens`). **The brand kit is the one palette**: `tokens.json`
+  design-tokens`). **The brand kit is the one palette**: `tokens.json`
       moved to the settled interface palette (white canvas, near-white
       panels `#FCFBF9`, a `fill` token `#F4F2EE` for controls and cards,
       hairlines `#EEECE7`, the darker plum `#584360` for filled actions,

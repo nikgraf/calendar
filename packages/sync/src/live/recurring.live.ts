@@ -3,7 +3,7 @@ import { EventRepo } from '@calendar/db';
 import type { EventMutationsShape } from '../mutationTypes.ts';
 import { expect, it } from '@effect/vitest';
 import { Effect } from 'effect';
-import { describe } from 'vitest';
+import { describe } from 'vite-plus/test';
 import {
   LIVE_ACCOUNT_ID,
   liveEngineLayer,

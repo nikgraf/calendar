@@ -152,6 +152,14 @@ export function MirrorEditSheet({
     }
   };
 
+  const createMirrorCalendar = (
+    target: Parameters<typeof mutations.createMirrorCalendar>[0]['target'],
+  ) =>
+    void mutations.createMirrorCalendar({ target }).then(
+      (ref) => setDraft((current) => ({ ...current, destination: ref })),
+      (error: unknown) => setError(String(error)),
+    );
+
   const createCalendar = () => {
     const googleAccounts = googleAccountsForNewCalendar(accounts);
     Alert.prompt('New calendar', 'A calendar of its own for the copies.', (title) => {
@@ -159,17 +167,13 @@ export function MirrorEditSheet({
       if (name === '') {
         return;
       }
-      const create = (target: Parameters<typeof mutations.createMirrorCalendar>[0]['target']) =>
-        void mutations.createMirrorCalendar({ target }).then(
-          (ref) => setDraft((current) => ({ ...current, destination: ref })),
-          (error: unknown) => setError(String(error)),
-        );
       Alert.alert('Where?', undefined, [
         ...googleAccounts.map((account) => ({
-          onPress: () => create({ accountId: account.id, kind: 'google', title: name }),
+          onPress: () =>
+            createMirrorCalendar({ accountId: account.id, kind: 'google', title: name }),
           text: `Google · ${account.email}`,
         })),
-        { onPress: () => create({ kind: 'apple', title: name }), text: 'iCloud' },
+        { onPress: () => createMirrorCalendar({ kind: 'apple', title: name }), text: 'iCloud' },
         { style: 'cancel' as const, text: 'Cancel' },
       ]);
     });

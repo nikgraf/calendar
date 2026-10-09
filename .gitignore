@@ -28,3 +28,4 @@ apps/desktop/out/
 # Claude Code: per-machine permissions and session checkpoints stay local
 .claude/settings.local.json
 .claude/RESUME.md
+.vitest/
