@@ -7,6 +7,7 @@ import {
   type BirthdayOccurrence,
   bufferedDays,
   calendarTaskKey,
+  clampSwipeOffset,
   type EventRecord,
   groupByDate,
   groupEventsByDay,
@@ -14,7 +15,8 @@ import {
   partitionCalendarTasks,
   taskCalendarDate,
   secondaryHourLabels,
-  swipeCommitColumns,
+  swipeLagAfterRender,
+  swipeReleaseColumns,
   taskChipLabel,
   type TaskRecord,
   Temporal,
@@ -23,8 +25,11 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
+  cancelAnimation,
   runOnJS,
+  runOnUI,
   useAnimatedStyle,
+  useDerivedValue,
   useSharedValue,
   withTiming,
   type SharedValue,
@@ -124,6 +129,17 @@ export function DayTimeline({
   const divided = days.length > 1;
   const compact = days.length > 2;
   const columnWidth = pageWidth / days.length;
+
+  // `panX` is measured from the page navigated to; the strip is drawn for
+  // the page React last rendered, `lag` columns behind it while a
+  // navigation is on its way to the screen. `pending` is a released
+  // swipe's commit while its animation runs: the page changes when the
+  // animation ends, so the re-render never competes with it.
+  const lag = useSharedValue(0);
+  const pending = useSharedValue(0);
+  const panStart = useSharedValue(0);
+  // Where the drawn strip sits: its transform and the task drag's drop geometry.
+  const stripOffset = useDerivedValue(() => panX.value - lag.value * columnWidth);
   const today = Temporal.PlainDate.from(todayIso);
   // The gutter widens with the zones it lists; the header, the lane and the
   // drag geometry all take the same width so the columns stay aligned.
@@ -142,9 +158,12 @@ export function DayTimeline({
     [firstDay, timeZone, secondaryZones],
   );
 
-  const commitChange = (event: EventRecord, changes: { endUtc?: number; startUtc?: number }) => {
+  const commitChange = (
+    event: EventRecord,
+    changes: { endUtc?: number; startUtc?: number },
+  ): Promise<void> => {
     if (event.recurringEventId) {
-      void updateRecurring({
+      return updateRecurring({
         accountId: event.accountId,
         calendarId: event.calendarId,
         changes,
@@ -152,14 +171,13 @@ export function DayTimeline({
         originalStartUtc: event.originalStartUtc ?? event.startUtc,
         scope: 'instance',
       });
-    } else {
-      void updateEvent({
-        accountId: event.accountId,
-        calendarId: event.calendarId,
-        changes,
-        eventId: event.id,
-      });
     }
+    return updateEvent({
+      accountId: event.accountId,
+      calendarId: event.calendarId,
+      changes,
+      eventId: event.id,
+    });
   };
 
   const strip = useMemo(() => bufferedDays(days[0]!, days.length, buffer), [days, buffer]);
@@ -233,9 +251,9 @@ export function DayTimeline({
     gutterWidth: gutter,
     laneHeight,
     laneTop,
-    panX,
     scrollY,
     strip,
+    stripOffset,
   });
   const measureContainer = () => {
     containerRef.current?.measureInWindow((x, y, _width, height) => {
@@ -245,48 +263,94 @@ export function DayTimeline({
     });
   };
 
-  // Re-centre once the new page has rendered — resetting in the same tick as
-  // the state update would briefly show the wrong day. Also clears a stray
-  // offset when the days change from outside (Today, chevrons, week strip).
+  // A navigation the strip has rendered: take it off the lag in the same
+  // pass that drew it — resetting before the render would briefly show the
+  // wrong day. A change from outside (Today, chevrons, a tapped day, a
+  // view switch) starts the strip centred.
   const firstIso = days[0]!.toString();
+  const rendered = useRef({ count: days.length, first: days[0]! });
   useLayoutEffect(() => {
-    setShared(panX, 0);
-  }, [firstIso, panX]);
+    const previous = rendered.current;
+    const first = Temporal.PlainDate.from(firstIso);
+    rendered.current = { count: days.length, first };
+    const delta = previous.count === days.length ? previous.first.until(first).days : null;
+    runOnUI((change: number | null) => {
+      'worklet';
+      const left = change === null ? null : swipeLagAfterRender(lag.value, change);
+      if (left === null) {
+        cancelAnimation(panX);
+        setShared(pending, 0);
+        setShared(lag, 0);
+        setShared(panX, 0);
+      } else {
+        setShared(lag, left);
+      }
+    })(delta);
+  }, [firstIso, days.length, lag, panX, pending]);
 
-  // The finger can drag as far as there are drawn columns: the buffer.
-  const maxPan = buffer * columnWidth;
+  // Navigates by `commit` columns now, keeping the strip where it is.
+  const navigate = (commit: number) => {
+    'worklet';
+    setShared(lag, lag.value + commit);
+    setShared(panX, panX.value + commit * columnWidth);
+    runOnJS(onNavigate)(commit);
+  };
+
   const swipe = Gesture.Pan()
     // Only clearly horizontal movement pans; vertical stays with the ScrollView,
     // and event blocks win the arena via their long-press activation.
     .activeOffsetX([-15, 15])
     .failOffsetY([-12, 12])
-    .onUpdate((update) => {
-      setShared(panX, Math.max(-maxPan, Math.min(maxPan, update.translationX)));
+    .onStart(() => {
+      // A second swipe inside the first one's commit animation: the first
+      // still counts. Its page is taken now, and this swipe carries on
+      // from wherever the strip is.
+      cancelAnimation(panX);
+      if (pending.value !== 0) {
+        const commit = pending.value;
+        setShared(pending, 0);
+        navigate(commit);
+      }
+      setShared(panStart, panX.value);
     })
-    .onEnd((end) => {
-      if (columnWidth === 0) {
+    .onUpdate((update) => {
+      setShared(
+        panX,
+        clampSwipeOffset(panStart.value + update.translationX, columnWidth, buffer, lag.value),
+      );
+    })
+    .onEnd((end, success) => {
+      // Snap to the nearest column boundary: whole columns crossed, plus
+      // the flick / quarter rule on the remainder. A cancelled pan (the
+      // system took the touch) commits nothing.
+      const commit = success
+        ? swipeReleaseColumns(
+            panStart.value,
+            end.translationX,
+            end.velocityX,
+            columnWidth,
+            buffer,
+            lag.value,
+          )
+        : 0;
+      if (commit === 0) {
         setShared(panX, withTiming(0, { duration: 160 }));
         return;
       }
-      // Snap to the nearest column boundary: whole columns crossed, plus
-      // the flick / quarter rule on the remainder.
-      const commit = swipeCommitColumns(end.translationX, end.velocityX, columnWidth, buffer);
-      if (commit !== 0) {
-        setShared(
-          panX,
-          withTiming(-commit * columnWidth, { duration: 180 }, (finished) => {
-            if (finished) {
-              runOnJS(onNavigate)(commit);
-            }
-          }),
-        );
-      } else {
-        setShared(panX, withTiming(0, { duration: 160 }));
-      }
+      setShared(pending, commit);
+      setShared(
+        panX,
+        withTiming(-commit * columnWidth, { duration: 180 }, (finished) => {
+          if (finished && pending.value === commit) {
+            setShared(pending, 0);
+            navigate(commit);
+          }
+        }),
+      );
     });
 
   const stripStyle = useAnimatedStyle(() => ({
-    transform: [{ translateX: -buffer * columnWidth + panX.value }],
+    transform: [{ translateX: -buffer * columnWidth + stripOffset.value }],
   }));
 
   return (

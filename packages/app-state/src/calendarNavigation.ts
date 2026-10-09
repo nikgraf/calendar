@@ -146,11 +146,15 @@ export const useCalendarNavigation = ({
     [view, dayCount],
   );
 
-  /** Pan commits: whole days crossed by a wheel pan or a swipe. */
+  /**
+   * Pan commits: whole days crossed by a wheel pan or a swipe. Two can
+   * land before a render (a swipe that takes over the previous one's
+   * commit), so both updates build on the current state.
+   */
   const panByDays = useCallback(
     (dayCount: number) => {
       if (view === 'week') {
-        setWeekWindowStart(windowStart.add({ days: dayCount }));
+        setWeekWindowStart((current) => (current ?? windowStart).add({ days: dayCount }));
       }
       setFocused((current) => current.add({ days: dayCount }));
     },
