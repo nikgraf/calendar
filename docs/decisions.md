@@ -419,8 +419,9 @@ design decisions it settled.
       in-process fake Google API (`testing/fakeGoogle.ts`) became an app
       fixture (`testing/googleFixture.ts`; desktop `CALENDAR_GOOGLE=fixture`,
       iOS `EXPO_PUBLIC_CALENDAR_GOOGLE=fixture`, on for the whole CI Maestro
-      batch), so `taskConvertGoogle.e2e.ts` and `16-task-convert.yaml`
-      watch the queued create push and the temp id become a server id —
+      batch), so `taskConvertGoogle.e2e.ts` and `16-task-convert.yaml` (now
+      part of `17-convert.yaml`) watch the queued create push and the temp
+      id become a server id —
       and the Google halves of iOS flows 07/08 run for the first time.
       Decided: no HTTP mock server; the fake sits behind effect's
       HttpClient and a pre-filled memory TokenStore keeps the real
@@ -1084,7 +1085,8 @@ Performance:
       the range atoms, which the bounded cache and the keep-previous hooks
       absorb. Verified on a simulator with the fingerprint's EAS dev
       client: one partial swipe moved the window two days with the
-      headers over their columns; `16-week-swipe.yaml` covers it in CI.
+      headers over their columns; `16-week-swipe.yaml` (now part of
+      `02-navigation.yaml`) covers it in CI.
 
 ### iOS location purpose string (2026-09-20)
 
@@ -1332,9 +1334,9 @@ Performance:
       title reuses the week format on a two-day span ("Sep 30 – Oct 1,
       2026"). Desktop keeps Day / Week / Month (the shared type gains the
       value, its segment is its own literal); the chosen view is still
-      not persisted, on either app. `18-two-day-view.yaml` covers the
-      chevrons, Today and a swipe in CI; `titleFor` and `viewColumns` are
-      exported for unit tests.
+      not persisted, on either app. `18-two-day-view.yaml` (now part of
+      `02-navigation.yaml`) covers the chevrons, Today and a swipe in CI;
+      `titleFor` and `viewColumns` are exported for unit tests.
 
 ### Multiple time zones (2026-09-29)
 
@@ -2817,3 +2819,53 @@ then iOS (both in `todo.md`).
       on desktop it is wrapped so the row's hover — the row opens the
       task — previews no tick. The desktop e2e checks a completion by
       `[data-done]`, not by the glyph.
+
+### Test pruning (2026-10-09)
+
+- [x] Remove tests that check nothing another test does not — done
+      (`todo/prune-tests`, three commits: unit, desktop e2e, iOS flows).
+      **The rule: a test goes only if a surviving test asserts everything
+      it did**; where one check was unique it moved first (the 410 resync's
+      stored token, the carry suite's "only the master is queued", the
+      undated reminder's mirror row, ⌘K-then-Escape on the quick-add
+      field). Regression and race tests stay even where they look alike.
+      Two tests could not fail: a notification test whose clock sat 25 h
+      past its reminder (outside the 5-minute grace), and a desktop ⌘K
+      test that accepted a disabled field — CI's e2e job builds no helper,
+      so the field is always disabled there. Dead code that only its own
+      test called went with it (`isValidEventId`, `eventKey`,
+      `canSeeBusy`, `listEvents`' `timeMin`/`timeMax`). **iOS flows are
+      merged per area, not dropped**: the CI shards spend about 16 min on
+      setup and 33 s–4 min per flow, billed as macOS minutes, while the
+      whole unit gate takes 1.5 min — so a launch, a Reminders connect or
+      a create-then-delete repeated across flows is the cost worth
+      cutting. 24 CI flows became 15: 01, 05, 16-week-swipe and 18 into
+      02 (navigation, which now also checks the previous chevron); 11 into
+      03 (one new-event sheet visit); 10 into 09 (the monthly rule is
+      added as an edit and its chips checked after EventKit hands it
+      back — create and update share the bridge's `apply`; 09 already
+      ran strict on CI, keyed on the fixture account); 16-task-convert
+      into 17 (one reminder takes both conversion paths); flows 13 and 04
+      into flow 23. Accepted: a flake in a merged flow reruns more, and 09
+      would skip silently if the fixture account vanished — 21 and 25
+      still fail hard without it. Kept: 07 (the only required check that
+      a created event lands on the timeline), 24, 14 (local-only). The
+      dead `MODELLESS` env went too; `ci-reminders` stays in
+      `apps/ios/package.json`'s exclude list, unused — its scripts feed
+      the native fingerprint, and a dead tag is not worth a dev-client
+      rebuild. Not done: table-driven merges of near-identical unit tests
+      and shared test helpers (`noYield` is defined in ten files).
+      **The reshuffle moved flows next to 04a**, which leaves device
+      Contacts connected on shard 1: the first CI run typed the invitee
+      address into 03 there and Return added "Kate Bell" (a partial
+      address takes the top suggestion), so 03 now retypes until the field
+      holds the whole address, like 07 does for titles. The same run's
+      Month pick in 23 reported COMPLETED with the menu still open; 23
+      re-picks until the header reads like a month, as 18 did for two
+      days. The retype loop hides no app race: typing that pauses until
+      the suggestions render still lands every letter, and Return then
+      adds the typed address, not the suggestion. Measured on the first
+      green run: 20m 5s and 14m 27s of flows (`25-search` included,
+      3m 39s) against 19m 24s and 22m 18s before. Billed minutes dropped,
+      but shard 1 (04a's 6 min plus its flows) stays the job that sets
+      the wall-clock time, at 38 of its 45 minutes.

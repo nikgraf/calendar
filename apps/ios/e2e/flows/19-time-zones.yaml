@@ -48,7 +48,7 @@ tags:
 # The gutter's second line under noon (in the primary zone, Honolulu)
 # names the device zone's hour and Kolkata's 3:30 AM. The localized
 # time's spacing (a narrow no-break space before AM) is not pinned, as in
-# flows 10 and 16.
+# flows 09 and 17.
 - scrollUntilVisible:
     element:
       id: 'hour-secondary-12'

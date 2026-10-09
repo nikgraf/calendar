@@ -1,5 +1,5 @@
 appId: com.solunivo.app.dev
-name: The Reminders form shows its extra fields and round-trips create/delete
+name: The Reminders form shows its extra fields and round-trips create, edits, a repeat rule and delete
 tags:
   - ci
 ---
@@ -7,10 +7,10 @@ tags:
 # (Settings › On This iPhone › Reminders › Connect, then allow the
 # prompt). Without one the flow is a no-op, like flow 08 without a
 # tasks-enabled account — except on CI (keyed on the fixture Google
-# account, like 16 and 17), where it connects Reminders itself and undoes
-# that at the end: the shard this flow runs on may hold no flow that
-# leaves a connection, and the assertions below must never be skipped
-# there.
+# account, like 17), where the simulator's Reminders grant is pre-seeded
+# (simctl privacy): it connects Reminders itself and undoes that at the
+# end, and every write below goes through real EventKit and must
+# succeed — the assertions are never skipped there.
 - runFlow: ../common/launch.yaml
 - tapOn: 'Today'
 - runFlow:
@@ -169,8 +169,52 @@ tags:
       - assertVisible: 'Edit Reminder'
       - waitForAnimationToEnd:
           timeout: 5000
+      # A monthly "2nd Tuesday" rule: these chips set rather than toggle, so
+      # the steps hold on any date (weekday chips start on today's weekday).
+      - scrollUntilVisible:
+          element:
+            id: 'reminder-repeat-monthly'
+          direction: DOWN
+      - tapOn:
+          id: 'reminder-repeat-monthly'
+      - tapOn:
+          id: 'reminder-repeat-monthly-weekday'
+      - tapOn:
+          id: 'reminder-repeat-ordinal-2'
+      - tapOn:
+          id: 'reminder-repeat-ordinal-weekday-TU'
+      # The summary sits under the chip rows, below the fold on a phone.
+      - scrollUntilVisible:
+          element:
+            id: 'reminder-repeat-summary'
+          direction: DOWN
+      - assertVisible: 'Monthly on the 2nd Tuesday.*'
+      - tapOn:
+          id: 'event-save'
+      - extendedWaitUntil:
+          notVisible: 'Edit Reminder'
+          timeout: 10000
+      # Still due today; the label now ends in ", repeats".
+      - extendedWaitUntil:
+          visible: 'Solunivo e2e reminder to delete, due .*'
+          timeout: 10000
+      - tapOn: 'Solunivo e2e reminder to delete, due .*'
+      - assertVisible: 'Edit Reminder'
+      - waitForAnimationToEnd:
+          timeout: 5000
+      # EventKit handed the rule back: the ordinal chips reopen selected.
+      - scrollUntilVisible:
+          element:
+            id: 'reminder-repeat-ordinal-2'
+          direction: DOWN
+      - assertVisible:
+          id: 'reminder-repeat-ordinal-2'
+          selected: true
+      - assertVisible:
+          id: 'reminder-repeat-ordinal-weekday-TU'
+          selected: true
       # With a second account in the list picker Delete is below the fold:
-      # scroll first, like 08 and 10.
+      # scroll first, like 08.
       - scrollUntilVisible:
           element:
             id: 'task-delete'
@@ -182,7 +226,12 @@ tags:
       - extendedWaitUntil:
           notVisible: 'Edit Reminder'
           timeout: 20000
-      # Undo the connection this flow made, like 16 does.
+      # The write-through removes the mirror row, so a broken
+      # reminders.delete would leave the block on screen.
+      - extendedWaitUntil:
+          notVisible: '.*Solunivo e2e reminder to delete.*'
+          timeout: 10000
+      # Undo the connection this flow made, like 17 does.
       - runFlow:
           when:
             true: ${output.connectedReminders === true}

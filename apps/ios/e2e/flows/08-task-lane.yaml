@@ -47,7 +47,7 @@ tags:
       - assertVisible: 'Edit (Task|Reminder)'
       # The Reminders form is long, and the list picker's per-account
       # groups push Delete below the fold (run 35591082639 tapped its
-      # cut-off edge and nothing happened): scroll first, like 10.
+      # cut-off edge and nothing happened): scroll first, like 09.
       - scrollUntilVisible:
           element:
             id: 'task-delete'
