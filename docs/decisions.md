@@ -2246,6 +2246,67 @@ came with a failing test first.
       `login_hint` with `prompt=consent` only, so Google opens on that
       account.
 
+### Review fixes, fifth batch (2026-10-08)
+
+The last two Tier 0 items and three groups of the review's Tier 2 UX list,
+one PR each on top of the iOS redesign (#137); each fix came with a failing
+test where one can run, and a Codex review (gpt-6-astra, xhigh) before
+handoff.
+
+- [x] Device zone and change observers — #139 (`todo/device-zone-observers`).
+      **The time zones atom depends on a device-zone atom** that reads the
+      engine's zone once a minute and changes only when it does (a
+      suspended app's timer fires on resume, which covers a foreground):
+      "nothing stored" follows the device after a flight, and
+      `useTimeZones` compares by content so an equal refetch of stored
+      zones does not re-render the grid. **The Reminders bridge builds its
+      day formatter and Gregorian calendar per use**, like the Apple
+      Calendar bridge. **Foundation caches the system zone until it is
+      reset** (NSTimeZone.h): the iOS module resets it on each foreground
+      (Hermes's Intl reads it), the desktop helper on each request.
+      **`observeChanges` replaces its observer** — after `reloadAsync` the
+      new module asked again and was ignored while the old handler's module
+      was gone. The iOS version is 0.1.0 like every package (part of the
+      fingerprint; this PR needed a build anyway). Not verified on a device:
+      a real zone change, and events after "Load PR channel".
+- [x] iOS gestures — #140 (`todo/ios-gestures`). **A swipe that starts
+      inside the previous one's commit animation takes that page at once**
+      and carries on from where the strip is: offsets are measured from the
+      navigated page, and a `lag` covers columns React has not drawn
+      (`clampSwipeOffset`, `swipeReleaseColumns`, `swipeLagAfterRender`); a
+      plain swipe still changes the page after its animation. Such a pan
+      starts between pages, so **its own movement picks the direction** —
+      the next page that way, or the nearest when it neither went far nor
+      flicked (review of #140: measured from the navigated page, a second
+      forward flick read as a swipe back). `panByDays` builds the week
+      window on the current state. **Event blocks**: a cancelled move or
+      resize springs back; resizing needs the same 250 ms hold as moving
+      (an immediate pan on the bottom edge took the touch from the
+      ScrollView); **a drop stays where it was let go until the block is
+      redrawn** (1.5 s after a write that changed nothing), and a new hold
+      waits for that (review of #140: it started from the old time).
+- [x] Agents pane — #141 (`todo/agents-pane`). **A failed `agents:state`
+      read says so** with Try again; a failed refresh keeps the last state,
+      flagged, so a token shown once does not vanish. **"New token" and
+      "Remove" ask inline** — both cut a connected agent off at once — with
+      the question and consequence as the alertdialog's accessible name and
+      description (review of #141). Newer Teams (`/meet/<id>`,
+      `teams.live.com`) and Webex `j.php` links get a Join button.
+- [x] Notifications — #142 (`todo/notification-taps`). **A planned
+      notification carries a `target`** (account, calendar, event id, the
+      occurrence's start, and for an occurrence its series id and original
+      start, since an edited occurrence changes id — review of #142);
+      `findNotificationEvent` reads it through the range query and then by
+      stored id (review of #142: an event moved more than a day was lost).
+      iOS: the target rides in the notification's data; a tap — the
+      launching one too — opens the detail sheet, dismissing a capture in
+      review (review of #142). Desktop: main keeps the clicked target until
+      the calendar window takes it (`notifications:take` preload IPC, a ref
+      only) and shows it in the inspector on its day. **iOS reads the
+      permission without asking** on mount and each foreground, so "off in
+      iOS Settings" shows as soon as it is true; Electron has no query, so
+      the desktop's denied state is unchanged.
+
 ## UI redesign (2026-10)
 
 The main views were redesigned on a canvas (desktop: toolbar + collapsible
