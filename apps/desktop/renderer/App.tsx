@@ -1,89 +1,22 @@
-import {
-  BackendProvider,
-  makeBackendAtoms,
-  type MutationNotice,
-  subscribeMutationNotices,
-  useBackendInvalidations,
-} from '@calendar/app-state';
-import { DROPPED_NOTICE_KEY } from '@calendar/db/keys';
-import { useEffect, useState } from 'react';
+import { BackendProvider, makeBackendAtoms, useBackendInvalidations } from '@calendar/app-state';
 import { AgentApprovalDialog } from './agents/AgentApprovalDialog.tsx';
 import { CalendarApp } from './calendar/CalendarApp.tsx';
-import { ConflictBanner } from './calendar/ConflictBanner.tsx';
 import { ErrorBoundary } from './ErrorBoundary.tsx';
+import { NoticeStack } from './NoticeStack.tsx';
 import { SettingsWindow } from './SettingsWindow.tsx';
 import { backend, subscribeInvalidations } from './backend.ts';
 
 const backendAtoms = makeBackendAtoms(backend);
 
 /**
- * Transient banner keyed on a broadcast invalidation: permanent
- * rejections (Google answered a queued change with a 4xx retrying cannot
- * fix). A 412 is not transient — it parks the change (ConflictBanner).
+ * The calendar window's root. Its notices (toasts and the conflict banner)
+ * live in the calendar's grid column — see NoticeStack.
  */
-function NoticeToast({ message, noticeKey }: { message: string; noticeKey: string }) {
-  const [visible, setVisible] = useState(false);
-  useEffect(
-    () =>
-      subscribeInvalidations((keys) => {
-        if (keys.includes(noticeKey)) {
-          setVisible(true);
-        }
-      }),
-    [noticeKey],
-  );
-  useEffect(() => {
-    if (!visible) {
-      return;
-    }
-    const timer = setTimeout(() => setVisible(false), 6000);
-    return () => clearTimeout(timer);
-  }, [visible]);
-
-  if (!visible) {
-    return null;
-  }
-  return (
-    <div className="fixed bottom-4 left-1/2 z-40 -translate-x-1/2 rounded-lg bg-neutral-900 px-4 py-2 text-sm text-white shadow-lg">
-      {message}
-    </div>
-  );
-}
-
-/** Transient banner for failed fire-and-forget mutations (mutationGuard). */
-function MutationNoticeToast() {
-  const [notice, setNotice] = useState<MutationNotice | null>(null);
-  useEffect(() => subscribeMutationNotices(setNotice), []);
-  useEffect(() => {
-    if (!notice) {
-      return;
-    }
-    const timer = setTimeout(() => setNotice(null), 6000);
-    return () => clearTimeout(timer);
-  }, [notice]);
-
-  if (!notice) {
-    return null;
-  }
-  return (
-    <div className="fixed bottom-16 left-1/2 z-40 -translate-x-1/2 rounded-lg bg-red-700 px-4 py-2 text-sm text-white shadow-lg">
-      <div>Couldn&rsquo;t {notice.action} — the change was not applied.</div>
-      {notice.detail ? <div className="mt-0.5 text-xs opacity-80">{notice.detail}</div> : null}
-    </div>
-  );
-}
-
 function Bridge() {
   useBackendInvalidations(subscribeInvalidations);
   return (
     <>
       <CalendarApp />
-      <ConflictBanner />
-      <NoticeToast
-        message="Google rejected a change and it was discarded."
-        noticeKey={DROPPED_NOTICE_KEY}
-      />
-      <MutationNoticeToast />
       <AgentApprovalDialog />
     </>
   );
@@ -103,14 +36,14 @@ export function App() {
  * The settings window's root. It is its own rpc client with its own atoms,
  * kept current by the same invalidation stream. The calendar's overlays
  * stay in the main window — above all the agent approval dialog, which
- * must exist exactly once.
+ * must exist exactly once; Settings shows only its own failed writes.
  */
 function SettingsBridge() {
   useBackendInvalidations(subscribeInvalidations);
   return (
     <>
       <SettingsWindow />
-      <MutationNoticeToast />
+      <NoticeStack placement="window" />
     </>
   );
 }
