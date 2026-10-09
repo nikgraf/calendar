@@ -15,7 +15,14 @@ import {
 } from 'react-native';
 import { Pressable as GesturePressable } from 'react-native-gesture-handler';
 import ReanimatedSwipeable from 'react-native-gesture-handler/ReanimatedSwipeable';
-import { chipTextColor, groupedGround, type ThemeColors, useStyles, useTheme } from '../theme.ts';
+import {
+  BOX_FONT_SCALE,
+  chipTextColor,
+  groupedGround,
+  type ThemeColors,
+  useStyles,
+  useTheme,
+} from '../theme.ts';
 
 /**
  * The building blocks of the Settings pages: iOS's inset grouped list —
@@ -505,7 +512,10 @@ export function Avatar({
         { backgroundColor: background, borderRadius: size / 2, height: size, width: size },
       ]}
     >
-      <Text style={[styles.avatarLabel, { color: foreground, fontSize: Math.round(size * 0.44) }]}>
+      <Text
+        maxFontSizeMultiplier={BOX_FONT_SCALE}
+        style={[styles.avatarLabel, { color: foreground, fontSize: Math.round(size * 0.44) }]}
+      >
         {label}
       </Text>
     </View>
@@ -641,12 +651,13 @@ const makeStyles = (colors: ThemeColors) =>
     avatarLabel: {
       fontWeight: '600',
     },
+    // Grows with the count's text size rather than clipping it.
     badge: {
       alignItems: 'center',
       backgroundColor: colors.danger,
       borderRadius: 11,
-      height: 22,
       justifyContent: 'center',
+      minHeight: 22,
       minWidth: 22,
       paddingHorizontal: 7,
     },
@@ -664,11 +675,12 @@ const makeStyles = (colors: ThemeColors) =>
       minHeight: 52,
       paddingRight: 16,
     },
+    // Grows with its label's text size rather than clipping it.
     capsule: {
       backgroundColor: colors.selection,
       borderRadius: 16,
-      height: 32,
       justifyContent: 'center',
+      minHeight: 32,
       paddingHorizontal: 14,
     },
     capsuleLabel: {

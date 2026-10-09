@@ -10,7 +10,7 @@ import {
 } from '@calendar/core';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { GestureDetector } from 'react-native-gesture-handler';
-import { type ThemeColors, useEventTint, useStyles } from './theme.ts';
+import { BOX_FONT_SCALE, type ThemeColors, useEventTint, useStyles } from './theme.ts';
 import { ALL_DAY_ROW_HEIGHT } from './timelineLayout.ts';
 import type { TaskDrag } from './useTaskDrag.ts';
 
@@ -112,7 +112,9 @@ export function AllDayColumn({
               onPress={() => onToggleTask(task)}
               testID={`task-chip-toggle-${task.id}`}
             >
-              <Text style={styles.taskCheckbox}>{done ? '☑' : '☐'}</Text>
+              <Text maxFontSizeMultiplier={BOX_FONT_SCALE} style={styles.taskCheckbox}>
+                {done ? '☑' : '☐'}
+              </Text>
             </Pressable>
             {/* Reminders lists have colors; a dot tells them apart from Google tasks without recoloring the chip. */}
             {listColor ? <View style={[styles.listDot, { backgroundColor: listColor }]} /> : null}
@@ -127,6 +129,7 @@ export function AllDayColumn({
                 testID={`task-chip-body-${task.id}`}
               >
                 <Text
+                  maxFontSizeMultiplier={BOX_FONT_SCALE}
                   numberOfLines={1}
                   style={[
                     styles.allDayText,
@@ -158,6 +161,7 @@ export function AllDayColumn({
             testID="birthday-chip"
           >
             <Text
+              maxFontSizeMultiplier={BOX_FONT_SCALE}
               numberOfLines={1}
               style={[styles.allDayText, compact && styles.allDayTextCompact, styles.taskText]}
             >
@@ -184,7 +188,11 @@ export function AllDayColumn({
           style={[styles.allDayChip, styles.moreChip]}
           testID="all-day-more"
         >
-          <Text numberOfLines={1} style={[styles.allDayText, styles.moreText]}>
+          <Text
+            maxFontSizeMultiplier={BOX_FONT_SCALE}
+            numberOfLines={1}
+            style={[styles.allDayText, styles.moreText]}
+          >
             +{hidden} more
           </Text>
         </Pressable>
@@ -217,6 +225,7 @@ function AllDayEventChip({
       testID="all-day-event-chip"
     >
       <Text
+        maxFontSizeMultiplier={BOX_FONT_SCALE}
         numberOfLines={1}
         style={[styles.allDayText, compact && styles.allDayTextCompact, { color: tint.text }]}
       >

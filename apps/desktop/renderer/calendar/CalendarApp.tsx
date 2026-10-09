@@ -38,6 +38,7 @@ import { desktopLanguageModel } from '../ai/desktopModel.ts';
 import { backend } from '../backend.ts';
 import { desktopTextRecognizer } from '../ai/desktopTextRecognizer.ts';
 import { Dialog, isDialogOpen } from '../Dialog.tsx';
+import { NoticeStack } from '../NoticeStack.tsx';
 import { useMediaQuery } from '../useMediaQuery.ts';
 import { BirthdayDetail } from './BirthdayDetail.tsx';
 import { CaptureDialog } from './CaptureDialog.tsx';
@@ -454,7 +455,9 @@ function CalendarBody({
           />
         )}
 
-        <div className="flex min-w-0 flex-1 flex-col">
+        {/* Positioned for the notice stack: toasts and the conflict banner
+            stay over the grid, clear of the sidebar and the panel. */}
+        <div className="relative flex min-w-0 flex-1 flex-col">
           {view === 'month' ? (
             <MonthView
               birthdays={birthdays}
@@ -504,6 +507,7 @@ function CalendarBody({
               today={today}
             />
           )}
+          <NoticeStack conflicts dropped placement="column" />
         </div>
 
         {panel.kind === 'rail' && !railShown ? null : (

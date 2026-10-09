@@ -163,6 +163,9 @@ function TasksBody({ timeZone }: { timeZone: string }) {
           <Text style={styles.doneNote}>{inbox.completedToday.filter(keep).length} done today</Text>
         ) : null}
       </ScrollView>
+      {/* A failed write (a list that lost its access) is told here, not only
+          on the calendar — standing on the add field, which it never covers. */}
+      <MutationNoticeToast />
       <View style={styles.addRow}>
         <Text style={styles.addPlus}>＋</Text>
         <TextInput
@@ -177,8 +180,6 @@ function TasksBody({ timeZone }: { timeZone: string }) {
           value={title}
         />
       </View>
-      {/* A failed write (a list that lost its access) is told here, not only on the calendar. */}
-      <MutationNoticeToast />
     </SafeAreaView>
   );
 }

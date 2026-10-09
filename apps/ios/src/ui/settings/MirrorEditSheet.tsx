@@ -38,7 +38,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { type ThemeColors, useStyles, useTheme } from '../theme.ts';
+import { BOX_FONT_SCALE, type ThemeColors, useStyles, useTheme } from '../theme.ts';
 
 const zoned = (ms: number, timeZone: string): Temporal.ZonedDateTime =>
   Temporal.Instant.fromEpochMilliseconds(ms).toZonedDateTimeISO(timeZone);
@@ -191,9 +191,11 @@ export function MirrorEditSheet({
             onPress={onClose}
             testID="mirror-cancel"
           >
-            <Text style={styles.link}>Cancel</Text>
+            <Text maxFontSizeMultiplier={BOX_FONT_SCALE} style={styles.link}>
+              Cancel
+            </Text>
           </Pressable>
-          <Text style={styles.sheetTitle}>
+          <Text maxFontSizeMultiplier={BOX_FONT_SCALE} style={styles.sheetTitle}>
             {initial.name === '' ? 'New mirror' : 'Edit mirror'}
           </Text>
           <Pressable
@@ -203,7 +205,10 @@ export function MirrorEditSheet({
             onPress={() => void save()}
             testID="mirror-save"
           >
-            <Text style={[styles.link, (issue !== undefined || busy) && styles.disabled]}>
+            <Text
+              maxFontSizeMultiplier={BOX_FONT_SCALE}
+              style={[styles.link, (issue !== undefined || busy) && styles.disabled]}
+            >
               Save
             </Text>
           </Pressable>

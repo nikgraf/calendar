@@ -1,10 +1,11 @@
 import { Stack } from 'expo-router';
 import { StyleSheet } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { NotificationSettingsProvider } from '../../src/ui/settings/NotificationSettings.tsx';
 import { SettingsProvider } from '../../src/ui/settings/SettingsContext.tsx';
 import { groupedGround, useTheme } from '../../src/ui/theme.ts';
-import { MutationNoticeToast } from '../../src/ui/Toast.tsx';
+import { MutationNoticeToast, NOTICE_GAP, NoticeStack } from '../../src/ui/Toast.tsx';
 
 /**
  * A page opened directly (the calendar's unsynced badge pushes
@@ -18,11 +19,13 @@ export const unstable_settings = { initialRouteName: 'index' };
  * under them. Done sits on the root only; a pushed page goes back, and the
  * sheet's swipe down closes Settings from anywhere. The providers hold the
  * connection state and the notification editors every page shares; the
- * toast covers every page, since the modal hides the tabs' own.
+ * toast covers every page, since the modal hides the tabs' own, and stands
+ * over the home indicator.
  */
 export default function SettingsLayout() {
   const { colors } = useTheme();
   const ground = groupedGround(colors);
+  const insets = useSafeAreaInsets();
   return (
     <GestureHandlerRootView style={styles.root}>
       <SettingsProvider>
@@ -58,7 +61,9 @@ export default function SettingsLayout() {
             <Stack.Screen name="pr-preview" options={{ title: 'PR Preview' }} />
           </Stack>
         </NotificationSettingsProvider>
-        <MutationNoticeToast />
+        <NoticeStack offset={insets.bottom + NOTICE_GAP}>
+          <MutationNoticeToast />
+        </NoticeStack>
       </SettingsProvider>
     </GestureHandlerRootView>
   );

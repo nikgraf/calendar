@@ -21,7 +21,7 @@ import { runOnJS, useSharedValue, type SharedValue } from 'react-native-reanimat
 import { DraggableEventBlock } from './DraggableEventBlock.tsx';
 import { NowIndicator } from './NowIndicator.tsx';
 import { TimedTaskBlock } from './TimedTaskBlock.tsx';
-import { type ThemeColors, useStyles } from './theme.ts';
+import { BOX_FONT_SCALE, type ThemeColors, useStyles } from './theme.ts';
 import { HOUR_HEIGHT } from './timelineLayout.ts';
 import type { TaskDrag } from './useTaskDrag.ts';
 
@@ -218,7 +218,7 @@ export function DayColumn({
           testID="slot-selection"
         >
           {compact ? null : (
-            <Text numberOfLines={1} style={styles.slotLabel}>
+            <Text maxFontSizeMultiplier={BOX_FONT_SCALE} numberOfLines={1} style={styles.slotLabel}>
               {formatPlainTime(slotTimes(selection).startTime)} –{' '}
               {formatPlainTime(slotTimes(selection).endTime)}
             </Text>

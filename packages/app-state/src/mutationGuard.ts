@@ -17,9 +17,15 @@ export interface MutationNotice {
   readonly detail: string;
 }
 
-type NoticeListener = (notice: MutationNotice) => void;
+/**
+ * `id` numbers the publish: the same notice published twice (a refused drop
+ * tried again) arrives with two ids, and every listener of one publish gets
+ * the same id — so a screen with several toasts mounted announces it once.
+ */
+type NoticeListener = (notice: MutationNotice, id: number) => void;
 
 const listeners = new Set<NoticeListener>();
+let published = 0;
 
 /** UI shells subscribe once and render notices as toasts. */
 export const subscribeMutationNotices = (listener: NoticeListener): (() => void) => {
@@ -35,8 +41,9 @@ export const subscribeMutationNotices = (listener: NoticeListener): (() => void)
  * the user learns why nothing moved.
  */
 export const publishMutationNotice = (notice: MutationNotice): void => {
+  published += 1;
   for (const listener of listeners) {
-    listener(notice);
+    listener(notice, published);
   }
 };
 

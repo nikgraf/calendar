@@ -697,7 +697,12 @@ Flakiness lessons (each caused a real CI failure — keep them enforced):
   a runner's first boot spends two minutes in data migration, which then
   overlaps the install and the bundling — and `prepare-simulator.sh
   install` waits for it, installs, and pre-grants Reminders with `simctl
-  privacy grant reminders` (supported). The whole job runs under
+  privacy grant reminders` (supported). Keep the two in separate steps:
+  `bootstatus -b` right after the background `simctl boot` asks for a
+  second boot, which CoreSimulator refuses ("Unable to boot device in
+  current state: Booted", exit 149 — 2 of 3 tries locally, three
+  `live-ios` nightlies in October); `install` now waits for a boot already
+  under way instead of failing. The whole job runs under
   `APP_VARIANT=development`: the app is the dev variant
   (`com.solunivo.app.dev`, which is what every flow's `appId` and the
   `simctl` grants name), and its fingerprint differs from production's.

@@ -30,7 +30,7 @@ import { appleSpeech } from '../appleSpeech.ts';
 import { backendClient } from '../backend.ts';
 import { languageModel } from '../model.ts';
 import type { EditSeed } from './EventEditSheet.tsx';
-import { type ThemeColors, useStyles } from './theme.ts';
+import { BOX_FONT_SCALE, type ThemeColors, useStyles } from './theme.ts';
 
 /** Foundation Models exist from iOS 26; below that there is nothing to say. */
 const MODEL_MIN_IOS = 26;
@@ -183,9 +183,13 @@ export function QuickAddSheet({
       <View style={styles.container} testID="quick-add-sheet">
         <View style={styles.header}>
           <Pressable accessibilityRole="button" onPress={onClose} testID="quick-add-cancel">
-            <Text style={styles.cancel}>Cancel</Text>
+            <Text maxFontSizeMultiplier={BOX_FONT_SCALE} style={styles.cancel}>
+              Cancel
+            </Text>
           </Pressable>
-          <Text style={styles.title}>{mode === 'find' ? 'Find a time' : 'Quick add'}</Text>
+          <Text maxFontSizeMultiplier={BOX_FONT_SCALE} style={styles.title}>
+            {mode === 'find' ? 'Find a time' : 'Quick add'}
+          </Text>
           <View style={styles.headerSpacer} />
         </View>
         <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
@@ -257,7 +261,9 @@ export function QuickAddSheet({
                         style={[styles.mic, voice === 'recording' && styles.micRecording]}
                         testID="quick-add-mic"
                       >
-                        <Text style={styles.micLabel}>{voice === 'recording' ? '■' : '🎙'}</Text>
+                        <Text maxFontSizeMultiplier={BOX_FONT_SCALE} style={styles.micLabel}>
+                          {voice === 'recording' ? '■' : '🎙'}
+                        </Text>
                       </Pressable>
                     ) : null}
                     {busy || voice === 'transcribing' || voice === 'preparing' ? (

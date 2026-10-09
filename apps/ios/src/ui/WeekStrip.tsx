@@ -1,6 +1,6 @@
 import { Temporal } from '@calendar/core';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { type ThemeColors, useStyles } from './theme.ts';
+import { BOX_FONT_SCALE, type ThemeColors, useStyles } from './theme.ts';
 
 /** One weekday + day-number cell: the strip's picker cell and the week timeline's column header. */
 export function WeekStripCell({
@@ -30,7 +30,9 @@ export function WeekStripCell({
       onPress={onPress}
       style={[styles.cell, width === undefined ? styles.cellFlex : { width }]}
     >
-      <Text style={styles.weekday}>{day.toLocaleString('en-US', { weekday: 'narrow' })}</Text>
+      <Text maxFontSizeMultiplier={BOX_FONT_SCALE} style={styles.weekday}>
+        {day.toLocaleString('en-US', { weekday: 'narrow' })}
+      </Text>
       <View
         style={[
           styles.dayWrap,
@@ -38,7 +40,10 @@ export function WeekStripCell({
           isToday && !isSelected && styles.todayWrap,
         ]}
       >
-        <Text style={[styles.day, isToday && styles.todayText, isSelected && styles.selectedText]}>
+        <Text
+          maxFontSizeMultiplier={BOX_FONT_SCALE}
+          style={[styles.day, isToday && styles.todayText, isSelected && styles.selectedText]}
+        >
           {day.day}
         </Text>
       </View>

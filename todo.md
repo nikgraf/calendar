@@ -144,13 +144,6 @@ closed the last of them.
       open moves an event from Upcoming to Past only when the next change
       re-runs the search.
 
-- [ ] UX and polish from the 2026-10-02 review — deletes, desktop dialogs
-      and sign-in shipped in #129, #130 and #132; iOS gestures,
-      notifications, the Agents pane and the small items in #139–#142. Left:
-      **Accessibility and theme**: no Dynamic Type limits on fixed-height
-      chips, toasts are not announced to VoiceOver, the conflict banner and
-      toasts overlap, native pickers turn dark inside the light-only UI.
-
 ## Tier 3 — AI features
 
 Scope unchanged and all still open with zero code; the on-device-only

@@ -280,6 +280,7 @@ const makeSheetStyles = (colors: ThemeColors) =>
       gap: 12,
     },
     title: {
+      color: colors.text,
       fontSize: 17,
       fontWeight: '700',
     },
