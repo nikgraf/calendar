@@ -105,6 +105,81 @@ const isFirst = (series: FakeSeries, ref: OccurrenceRef): boolean =>
   series.rules.length === 0 ||
   ref.originalStartUtc === (series.event.occurrenceStartUtc ?? series.event.startUtc);
 
+/** Occurrences of one series overlapping [start, end), EventKit-shaped. */
+const occurrencesOf = (series: FakeSeries, start: number, end: number): Array<AppleEventJson> => {
+  const { event } = series;
+  if (series.rules.length === 0) {
+    return event.startUtc < end && event.endUtc > start ? [event] : [];
+  }
+  const shadowed = new Set<number>([...series.deleted, ...series.detached.keys()]);
+  const generated = expandRecurringEvent(
+    {
+      endDate: event.endDate,
+      endUtc: event.endUtc,
+      id: event.id,
+      isAllDay: event.isAllDay,
+      recurrence: toRRuleLines(series.rules, event.isAllDay),
+      startDate: event.startDate,
+      startTimeZone: zoneOf(event),
+      startUtc: event.startUtc,
+    },
+    start,
+    end,
+    shadowed,
+  ).map((instance): AppleEventJson => ({
+    ...event,
+    endDate: instance.endDate,
+    endUtc: instance.endUtc,
+    occurrenceStartUtc: instance.originalStartUtc,
+    startDate: instance.startDate,
+    startUtc: instance.startUtc,
+  }));
+  const detached = [...series.detached.values()].filter(
+    (occurrence) => occurrence.startUtc < end && occurrence.endUtc > start,
+  );
+  return [...generated, ...detached];
+};
+
+/** Ends `series` before `slot`; returns the detached occurrences at/after it. */
+const truncateAt = (series: FakeSeries, slot: number): void => {
+  const lines = truncateRecurrence(
+    toRRuleLines(series.rules, series.event.isAllDay),
+    slot,
+    series.event.isAllDay,
+    zoneOf(series.event),
+  );
+  series.rules = toStructuredRules(lines, series.event.isAllDay, zoneOf(series.event)).rules;
+  for (const key of series.detached.keys()) {
+    if (key >= slot) {
+      series.detached.delete(key);
+    }
+  }
+  for (const key of series.deleted) {
+    if (key >= slot) {
+      series.deleted.delete(key);
+    }
+  }
+};
+
+/** The occurrence a ref names, as it currently looks. */
+const occurrence = (series: FakeSeries, ref: OccurrenceRef): AppleEventJson => {
+  if (ref.originalStartUtc === undefined || series.rules.length === 0) {
+    return series.event;
+  }
+  const slot = ref.originalStartUtc;
+  const detached = series.detached.get(slot);
+  if (detached) {
+    return detached;
+  }
+  if (series.deleted.has(slot)) {
+    return notFound(`occurrence ${ref.id}@${slot}`);
+  }
+  const [match] = occurrencesOf(series, slot - DAY_MS, slot + DAY_MS).filter(
+    (candidate) => candidate.occurrenceStartUtc === slot,
+  );
+  return match ?? notFound(`occurrence ${ref.id}@${slot}`);
+};
+
 export const makeFakeAppleCalendarClient = (
   initial: {
     readonly authorization?: CalendarAuthorization;
@@ -157,82 +232,7 @@ export const makeFakeAppleCalendarClient = (
       });
     });
 
-  /** Occurrences of one series overlapping [start, end), EventKit-shaped. */
-  const occurrencesOf = (series: FakeSeries, start: number, end: number): Array<AppleEventJson> => {
-    const { event } = series;
-    if (series.rules.length === 0) {
-      return event.startUtc < end && event.endUtc > start ? [event] : [];
-    }
-    const shadowed = new Set<number>([...series.deleted, ...series.detached.keys()]);
-    const generated = expandRecurringEvent(
-      {
-        endDate: event.endDate,
-        endUtc: event.endUtc,
-        id: event.id,
-        isAllDay: event.isAllDay,
-        recurrence: toRRuleLines(series.rules, event.isAllDay),
-        startDate: event.startDate,
-        startTimeZone: zoneOf(event),
-        startUtc: event.startUtc,
-      },
-      start,
-      end,
-      shadowed,
-    ).map((instance): AppleEventJson => ({
-      ...event,
-      endDate: instance.endDate,
-      endUtc: instance.endUtc,
-      occurrenceStartUtc: instance.originalStartUtc,
-      startDate: instance.startDate,
-      startUtc: instance.startUtc,
-    }));
-    const detached = [...series.detached.values()].filter(
-      (occurrence) => occurrence.startUtc < end && occurrence.endUtc > start,
-    );
-    return [...generated, ...detached];
-  };
-
   const findSeries = (id: string): FakeSeries => state.series.get(id) ?? notFound(`event ${id}`);
-
-  /** The occurrence a ref names, as it currently looks. */
-  const occurrence = (series: FakeSeries, ref: OccurrenceRef): AppleEventJson => {
-    if (ref.originalStartUtc === undefined || series.rules.length === 0) {
-      return series.event;
-    }
-    const slot = ref.originalStartUtc;
-    const detached = series.detached.get(slot);
-    if (detached) {
-      return detached;
-    }
-    if (series.deleted.has(slot)) {
-      return notFound(`occurrence ${ref.id}@${slot}`);
-    }
-    const [match] = occurrencesOf(series, slot - DAY_MS, slot + DAY_MS).filter(
-      (candidate) => candidate.occurrenceStartUtc === slot,
-    );
-    return match ?? notFound(`occurrence ${ref.id}@${slot}`);
-  };
-
-  /** Ends `series` before `slot`; returns the detached occurrences at/after it. */
-  const truncateAt = (series: FakeSeries, slot: number): void => {
-    const lines = truncateRecurrence(
-      toRRuleLines(series.rules, series.event.isAllDay),
-      slot,
-      series.event.isAllDay,
-      zoneOf(series.event),
-    );
-    series.rules = toStructuredRules(lines, series.event.isAllDay, zoneOf(series.event)).rules;
-    for (const key of series.detached.keys()) {
-      if (key >= slot) {
-        series.detached.delete(key);
-      }
-    }
-    for (const key of series.deleted) {
-      if (key >= slot) {
-        series.deleted.delete(key);
-      }
-    }
-  };
 
   const newId = (): string => `ek-${String(state.nextId++)}`;
 

@@ -1,5 +1,5 @@
 import { Effect, Layer } from 'effect';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 
 const native = vi.hoisted(() => ({
   calendar: vi.fn<() => Promise<boolean>>(),

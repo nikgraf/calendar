@@ -3,7 +3,7 @@ import { transformFileSync } from '@babel/core';
 import { createRequire } from 'node:module';
 import path from 'node:path';
 import vm from 'node:vm';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vite-plus/test';
 
 interface Worklet {
   (...args: Array<unknown>): unknown;

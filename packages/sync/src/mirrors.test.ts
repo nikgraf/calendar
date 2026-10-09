@@ -31,7 +31,7 @@ import { expect, it } from '@effect/vitest';
 import { Effect, Layer, type Scope } from 'effect';
 import { TestClock } from 'effect/testing';
 import { layer as reactivityLayer } from 'effect/reactivity/Reactivity';
-import { describe } from 'vitest';
+import { describe } from 'vite-plus/test';
 import { appleCalendarServicesLayer } from './appleCalendarEvents.ts';
 import { SyncEngine } from './engine.ts';
 import { appleMirrorDestination, MirrorWritePace } from './mirrorDestination.ts';

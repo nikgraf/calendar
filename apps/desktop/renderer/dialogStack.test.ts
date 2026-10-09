@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vite-plus/test';
 import { makeDialogStack } from './dialogStack.ts';
 
 const key = (name: string) => Object.assign(new Event('keydown'), { key: name });

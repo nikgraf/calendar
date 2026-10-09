@@ -2,7 +2,7 @@ import { TokenSet } from '@calendar/core/types';
 import { expect, it } from '@effect/vitest';
 import { Effect, Layer } from 'effect';
 import { HttpClient, HttpClientResponse, type HttpBody } from 'effect/http';
-import { describe } from 'vitest';
+import { describe } from 'vite-plus/test';
 import { GoogleOAuthConfig, TokenManager } from './tokenManager.ts';
 import { TokenStore } from './tokenStore.ts';
 

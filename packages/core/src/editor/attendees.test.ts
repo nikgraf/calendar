@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vite-plus/test';
 import { Attendee } from '../types.ts';
 import { mergeAttendees } from './attendees.ts';
 

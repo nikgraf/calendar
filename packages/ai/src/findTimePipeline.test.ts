@@ -1,7 +1,7 @@
 import type { LanguageModel } from './model.ts';
 import { EventRecord, plainDateToUtcMs, Temporal, type BackendClient } from '@calendar/core';
 import { Effect } from 'effect';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vite-plus/test';
 import { makeFindSlots } from './findTimePipeline.ts';
 
 const TZ = 'Europe/Vienna';

@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vite-plus/test';
 import { timedTaskSlot } from '../taskTiming.ts';
 import { Temporal } from '../time/temporal.ts';
 import { layoutAllDayLane } from './allDayLane.ts';

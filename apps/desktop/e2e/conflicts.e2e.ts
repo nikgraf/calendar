@@ -1,6 +1,6 @@
 import { Account, CalendarInfo, EventRecord, PendingOp } from '@calendar/core';
 import type { GoogleFixture } from '@calendar/sync/testing/googleFixture';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vite-plus/test';
 import { type App, launchApp, readEvents, readPendingOps } from './harness.ts';
 
 // Two edits a 412 parked (Google's copy moved on while they were queued),

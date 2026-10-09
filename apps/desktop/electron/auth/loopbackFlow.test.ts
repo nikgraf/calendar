@@ -1,7 +1,7 @@
 import { TokenSet } from '@calendar/core';
 import { TokenManager, TokenRefreshError, type TokenManagerShape } from '@calendar/google';
 import { Effect, Exit, Layer } from 'effect';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vite-plus/test';
 
 // The system browser is the test: it reads the auth URL Google would get.
 const opened: Array<string> = [];

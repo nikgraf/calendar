@@ -16,15 +16,16 @@ const subscribeScheme = (onChange: () => void): (() => void) => {
 /** The scheme the window is drawn in; re-renders when the OS appearance flips. */
 export const useColorScheme = (): ThemeScheme => useSyncExternalStore(subscribeScheme, readScheme);
 
+const applyScheme = () => {
+  document.documentElement.dataset.theme = readScheme();
+};
+
 /**
  * Keeps `data-theme` on <html> in step with the OS appearance. tokens.css
  * switches its variables on that attribute, and App.css maps them to the
  * Tailwind utilities, so this one attribute re-themes the whole window.
  */
 export const applyThemeAttribute = (): void => {
-  const apply = () => {
-    document.documentElement.dataset.theme = readScheme();
-  };
-  apply();
-  subscribeScheme(apply);
+  applyScheme();
+  subscribeScheme(applyScheme);
 };

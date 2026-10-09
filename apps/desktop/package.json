@@ -5,13 +5,13 @@
   "type": "module",
   "main": "dist-electron/main.mjs",
   "scripts": {
-    "build": "vp build && tsdown",
+    "build": "vp build && vp pack",
     "build:helper": "swift build -c release --package-path helper",
     "dev": "vp dev --host 127.0.0.1",
-    "dev:app": "tsdown && ELECTRON_RENDERER_URL=http://127.0.0.1:5173 electron .",
-    "make": "pnpm build:helper && vp build && tsdown && electron-forge make",
-    "package:app": "pnpm build:helper && vp build && tsdown && electron-forge package",
-    "start": "vp build && tsdown && electron ."
+    "dev:app": "vp pack && ELECTRON_RENDERER_URL=http://127.0.0.1:5173 electron .",
+    "make": "pnpm build:helper && vp build && vp pack && electron-forge make",
+    "package:app": "pnpm build:helper && vp build && vp pack && electron-forge package",
+    "start": "vp build && vp pack && electron ."
   },
   "dependencies": {
     "@calendar/agent": "workspace:*",
@@ -33,19 +33,18 @@
     "update-electron-app": "^3.3.0"
   },
   "devDependencies": {
-    "@electron-forge/cli": "^7.11.2",
-    "@electron-forge/maker-zip": "^7.11.2",
-    "@electron-forge/publisher-github": "^7.11.2",
+    "@electron-forge/cli": "^8.0.1",
+    "@electron-forge/maker-zip": "^8.0.1",
+    "@electron-forge/publisher-github": "^8.0.1",
     "@modelcontextprotocol/client": "2.3.1",
     "@rolldown/plugin-babel": "^0.2.4",
     "@tailwindcss/vite": "^4.3.3",
     "@types/react": "catalog:",
-    "@types/react-dom": "^19.2.3",
+    "@types/react-dom": "~19.2.7",
     "@vitejs/plugin-react": "^6.1.2",
     "babel-plugin-react-compiler": "^1.0.0",
-    "electron": "^44.5.1",
+    "electron": "^44.6.0",
     "tailwindcss": "^4.3.3",
-    "tsdown": "^0.23.0",
     "typescript": "catalog:",
     "vite": "catalog:",
     "vite-plus": "catalog:"

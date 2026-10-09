@@ -1,5 +1,5 @@
 import { Effect } from 'effect';
-import { expect } from 'vitest';
+import { expect } from 'vite-plus/test';
 import type { AgentError } from '../errors.ts';
 import type { GatewayServices } from '../gateway.ts';
 import { AgentSignals } from '../signals.ts';

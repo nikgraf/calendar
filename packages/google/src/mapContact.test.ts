@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vite-plus/test';
 import { mapPersonBirthday, mapPersonContacts } from './mapContact.ts';
 
 const context = { accountId: 'acc-1', isOther: false };

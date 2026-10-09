@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vite-plus/test';
 import { type DropGeometry, dropTargetAt } from './dropTarget.ts';
 
 // A 7-column strip 700px wide starting at x=100, of which columns 1..5 are

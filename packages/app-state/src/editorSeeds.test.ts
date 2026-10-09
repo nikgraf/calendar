@@ -1,5 +1,5 @@
 import { Temporal, TaskRecord, validateEventDraft } from '@calendar/core';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vite-plus/test';
 import { seedTimeFields } from './editorModel.ts';
 import { seedDueTiming } from './taskEditorModel.ts';
 

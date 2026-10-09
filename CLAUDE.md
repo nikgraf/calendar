@@ -62,14 +62,15 @@ powers quick-add parsing, find-a-time, and dictation.
   calendar.db). `callTool` is the single entry point for an agent.
 - `packages/app-state` — `@effect/atom-react` atoms + React hooks
   (`useBackendMutations`, `useEventsInRangeStable`, …).
-- `apps/desktop` — Electron (Forge, vite, tsdown main bundle); rpc over an
+- `apps/desktop` — Electron (Forge, vite, `vp pack` main bundle); rpc over an
   IPC frame channel; Swift helper (`helper/`, Foundation Models +
   SpeechAnalyzer + EventKit `reminders.*` / `calendar.*` + Contacts
   `contacts.*` over
   stdio; process owned by
   `electron/helperProcess.ts`); the agent gateway host
   (`electron/agent/`: Unix socket, MCP server, CLI runner) and its relay
-  `solunivo-cli` (`electron/cli.ts`, a third tsdown entry). `apps/ios` —
+  `solunivo-cli` (`electron/cli.ts`, a third `pack` entry in
+  `vite.config.ts`). `apps/ios` —
   Expo dev client on expo-router (`app/`: native tabs Calendar · Tasks · Search, Settings as a modal holding its own stack of pages (`app/settings/`), `+native-intent.tsx` keeps share/OAuth URLs off the router; `src/ui/EditorHost.tsx` owns every sheet); `@expo/ui` for drop-in native controls, expo-system-ui for the window background; zero-hop direct backend; @react-native-ai/apple for on-device model access;
   local Expo modules `modules/solunivo-reminders` (EventKit),
   `modules/solunivo-apple-calendar` (EventKit events),
@@ -92,7 +93,7 @@ powers quick-add parsing, find-a-time, and dictation.
 
 ## Hard rules (each learned the hard way — details in docs/)
 
-- Effect is pinned exactly to **4.0.0** (all `effect*` via catalog — the
+- Effect is pinned exactly to **4.0.1** (all `effect*` via catalog — the
   rpc/sql/http/reactivity modules are `@stability unstable` and may break
   in a minor). Use `Effect.forkChild`/`forkDetach`/`forkIn` — `Effect.fork`
   and `forkDaemon` do not exist. `Context.Service` is two-stage:

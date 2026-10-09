@@ -51,12 +51,12 @@ export interface GoogleTasksClientShape {
   }) => Effect.Effect<GcalTask, GoogleRequestError>;
 }
 
+const tasksUrl = (taskListId: string, suffix = ''): string =>
+  `${BASE_URL}/lists/${encodeURIComponent(taskListId)}/tasks${suffix}`;
+
 const make: Effect.Effect<GoogleTasksClientShape, never, HttpClient.HttpClient | TokenManager> =
   Effect.gen(function* () {
     const { executeAuthed, failForStatus, requestJson } = yield* makeRequestCore;
-
-    const tasksUrl = (taskListId: string, suffix = ''): string =>
-      `${BASE_URL}/lists/${encodeURIComponent(taskListId)}/tasks${suffix}`;
 
     return {
       deleteTask: ({ accountId, taskId, taskListId }) =>

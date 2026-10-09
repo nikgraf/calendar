@@ -1197,7 +1197,7 @@ Performance:
       moved since the last completed run, on demand, or on the
       `google-live` PR label, one run at a time. Decisions: the fixture
       suites stay the PR gate, the live suites never run under `pnpm
-test`/`test:e2e`/`test:e2e:ios`; every file creates its own
+  test`/`test:e2e`/`test:e2e:ios`; every file creates its own
       `e2e-<ts>-<runTag>` calendar/list (one per file — Google throttles
       calendar creation), deletes it after, and sweeps leftovers older
       than six hours, so overlapping local and CI runs cannot collide;
@@ -2316,7 +2316,7 @@ work split into three PRs: the shared foundation below, then the desktop,
 then iOS (both in `todo.md`).
 
 - [x] Design tokens + dark-mode foundation — done (2026-10-07, `todo/
-design-tokens`). **The brand kit is the one palette**: `tokens.json`
+  design-tokens`). **The brand kit is the one palette**: `tokens.json`
       moved to the settled interface palette (white canvas, near-white
       panels `#FCFBF9`, a `fill` token `#F4F2EE` for controls and cards,
       hairlines `#EEECE7`, the darker plum `#584360` for filled actions,
@@ -2487,3 +2487,48 @@ design-tokens`). **The brand kit is the one palette**: `tokens.json`
       Done; an Apple account's presence is the `apple-calendar-account` /
       `apple-reminders-account` id on its access row, and zones and
       per-person birthday times are removed by a swipe.
+
+### Dependency sweep (2026-10-09)
+
+- [x] Upgrade every dependency to the latest version the platform accepts
+      — done (`todo/dependency-sweep-2026-10`, one commit per group, each
+      droppable). **Vite+ 1.1 with Vitest 5.0.3**, migrated with
+      `vp migrate`: tests import the runner from `vite-plus/test` (like
+      codiff), `@effect/vitest` still imports `vitest`, which the override
+      pins to the catalog, and the catalog pins vite-plus exactly so its
+      bundled Vitest cannot drift from the catalog's. The migrator's
+      `minimumReleaseAgeExclude` for the toolchain is not kept (the 2-day
+      gate is never bypassed), nor its `clearMocks: false` shim (the suite
+      passes on Vitest 5's default). **`vp pack` builds the desktop main
+      bundle**: the tsdown config moved into `pack` in
+      `apps/desktop/vite.config.ts` with `deps.alwaysBundle` /
+      `deps.neverBundle` (the old names are deprecated); the cli and
+      preload bundles build byte-identical. oxlint 1.87 widened
+      unicorn/consistent-function-scoping: 24 helpers moved to the scope
+      that holds what they use. **Electron Forge 8** (ESM, `publish` →
+      `release`; this app only packages and makes) with Electron 44.6 and
+      eas-cli 24.11. **The Expo SDK 57 release of 2026-10-06** (expo
+      57.0.27): Expo publishes SDK 58 through npm trusted publishing since
+      2026-09-29 but SDK 57 patches with a maintainer token, so
+      `trustPolicy: no-downgrade` flags every SDK 57 package published
+      since. The release's 23 packages are excluded **by exact version**
+      after an audit (same maintainer as every earlier SDK 57 release, one
+      gitHead: the sdk-57 "Publish packages" commit) — the next SDK 57
+      patch is checked again, and the list goes with SDK 58. **react stays
+      19.2**: #144's caret had let the lockfile resolve react 19.3.0 past
+      RN 0.86's 19.2.3 renderer; the catalog now uses tilde ranges and a
+      `react-dom` override keeps Expo's optional web peer on the same
+      copy. Forge 8 left semver 5.7.2 and undici-types 6.21.0 out of the
+      lockfile, so their legacy trust exclusions are gone, and its own
+      dependencies made the `@electron/node-gyp` (git-SHA fork) and
+      `extract-zip>yauzl` overrides dead. Effect 4.0.1
+      and pnpm 12.10.1 needed no code change. The
+      GitHub Actions were already on their latest majors. Ceilings kept
+      for the next sweep: react 19.3, react-native 0.87, reanimated 4.7 /
+      worklets 0.13, gesture-handler 3, datetimepicker 9.2,
+      safe-area-context 5.10, screens 4.28 (Expo SDK 58, still `next`);
+      Babel 8 (the worklets 0.10 Babel plugin throws under it, and pnpm
+      hoists it over Metro's Babel 7); op-sqlite 18 (the Effect adapter's
+      peer is `<18`). Too young for the release-age gate on the day:
+      Effect 4.0.2 (Hermes HttpClient and React Native cookie fixes),
+      Electron 44.7, eas-cli 24.12.

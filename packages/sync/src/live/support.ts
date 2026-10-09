@@ -1,6 +1,6 @@
 import { AccountRepo, PendingOpRepo } from '@calendar/db';
 import { Effect, Scheduler } from 'effect';
-import { afterAll, inject } from 'vitest';
+import { afterAll, inject } from 'vite-plus/test';
 import { SyncEngine } from '../engine.ts';
 import { EventMutations } from '../mutations.ts';
 import {

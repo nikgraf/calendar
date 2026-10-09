@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vite-plus/test';
 import { CarriedText, EventReminders, GeoLocation, ReminderOverride } from '@calendar/core';
 import {
   eventFromRow,
@@ -73,6 +73,16 @@ const opRow = (overrides: Partial<PendingOpRow> = {}): PendingOpRow => ({
   ...overrides,
 });
 
+const master = (recurrence: ReadonlyArray<string> | null) =>
+  eventFromRow(
+    eventRow({
+      end_utc: Date.parse('2026-07-07T10:00:00Z'),
+      recurrence: recurrence === null ? null : JSON.stringify(recurrence),
+      start_time_zone: 'UTC',
+      start_utc: Date.parse('2026-07-07T09:00:00Z'),
+    }),
+  );
+
 describe('row decoders tolerate what the DB may hold', () => {
   it('eventFromRow degrades bad JSON columns and unknown enums instead of throwing', () => {
     const event = eventFromRow(
@@ -105,15 +115,6 @@ describe('row decoders tolerate what the DB may hold', () => {
   });
 
   it('eventToRow stores when a series ends: NULL for endless series and singles', () => {
-    const master = (recurrence: ReadonlyArray<string> | null) =>
-      eventFromRow(
-        eventRow({
-          end_utc: Date.parse('2026-07-07T10:00:00Z'),
-          recurrence: recurrence === null ? null : JSON.stringify(recurrence),
-          start_time_zone: 'UTC',
-          start_utc: Date.parse('2026-07-07T09:00:00Z'),
-        }),
-      );
     expect(eventToRow(master(['RRULE:FREQ=WEEKLY;COUNT=2'])).recurrence_end_utc).toBe(
       Date.parse('2026-07-14T10:00:00Z'),
     );

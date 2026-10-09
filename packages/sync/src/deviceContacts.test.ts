@@ -9,7 +9,7 @@ import { Effect, Layer } from 'effect';
 import { TestClock } from 'effect/testing';
 import { BIRTHDAYS_KEY } from '@calendar/db/keys';
 import { layer as reactivityLayer, Reactivity } from 'effect/reactivity/Reactivity';
-import { describe } from 'vitest';
+import { describe } from 'vite-plus/test';
 import { DeviceContacts } from './deviceContacts.ts';
 
 const alice = { contactId: 'c1', displayName: 'Alice', email: 'alice@example.com' };

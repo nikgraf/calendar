@@ -1,7 +1,7 @@
 import { BirthdayRepo, ContactRepo, SyncStateRepo } from '@calendar/db';
 import { expect, it } from '@effect/vitest';
 import { Effect } from 'effect';
-import { describe } from 'vitest';
+import { describe } from 'vite-plus/test';
 import {
   LIVE_ACCOUNT_ID,
   liveEngineLayer,

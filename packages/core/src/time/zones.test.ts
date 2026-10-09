@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vite-plus/test';
 import {
   allTimeZoneIds,
   canonicalZoneId,
@@ -16,6 +16,9 @@ import {
 /** Hermes as it is: some current names rejected, some legacy ones too. */
 const hermes = (id: string) =>
   id !== 'Asia/Kolkata' && id !== 'America/Buenos_Aires' && id !== 'Mars/Olympus';
+
+// Under Hermes a series' EXDATE in Asia/Kolkata would throw.
+const hermesSpell = (id: string) => runtimeZoneId(id, hermes) ?? id;
 
 describe('zones catalog', () => {
   it('holds only ids Temporal knows, without duplicates, sorted', () => {
@@ -53,8 +56,6 @@ describe('zones catalog', () => {
     // Node knows every spelling, so ids stand as they are.
     expect(engineZoneId('Asia/Kolkata')).toBe('Asia/Kolkata');
     expect(engineZoneId('Mars/Olympus')).toBe('Mars/Olympus');
-    // Under Hermes a series' EXDATE in Asia/Kolkata would throw.
-    const hermesSpell = (id: string) => runtimeZoneId(id, hermes) ?? id;
     expect(
       engineRecurrenceLines(
         [

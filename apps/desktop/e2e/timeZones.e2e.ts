@@ -1,5 +1,5 @@
 import { Account, CalendarInfo, EventRecord } from '@calendar/core';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vite-plus/test';
 import { type App, launchApp, readDeviceSetting } from './harness.ts';
 
 /** Today at the given UTC hour. */

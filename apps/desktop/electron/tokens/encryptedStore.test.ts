@@ -1,6 +1,6 @@
 import { TokenSet } from '@calendar/core';
 import { Effect } from 'effect';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vite-plus/test';
 import { type EncryptedStoreDeps, makeEncryptedTokenStore } from './encryptedStore.ts';
 
 const tokens = (accessToken: string): TokenSet =>

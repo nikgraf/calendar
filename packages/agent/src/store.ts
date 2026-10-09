@@ -290,11 +290,11 @@ export interface AgentRequestRepoShape {
 const jsonOrNull = (value: unknown): string | null =>
   value === undefined ? null : JSON.stringify(value);
 
+const first = (rows: ReadonlyArray<RequestRow>) => (rows[0] ? requestFromRow(rows[0]) : undefined);
+
 const makeAgentRequestRepo: Effect.Effect<AgentRequestRepoShape, never, SqlClient> = Effect.gen(
   function* () {
     const sql = yield* SqlClient;
-    const first = (rows: ReadonlyArray<RequestRow>) =>
-      rows[0] ? requestFromRow(rows[0]) : undefined;
     return {
       countPending: (agentId) =>
         Effect.map(

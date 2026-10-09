@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vite-plus/test';
 import { mapGcalTask } from './mapTask.ts';
 
 const CONTEXT = { accountId: 'acc-1', taskListId: 'list-1' };

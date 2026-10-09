@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vite-plus/test';
 import { type ClientPage, makeClientPages } from './rpcClientPages.ts';
 
 /** A page whose destroyed event the test fires. */

@@ -5,7 +5,7 @@ import {
   EventReminders,
   ReminderOverride,
 } from '@calendar/core';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vite-plus/test';
 import { type App, launchApp, readDeviceSetting, readEvents, readPendingOps } from './harness.ts';
 
 // Event reminders edited in the desktop editor and stored with the

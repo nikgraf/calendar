@@ -26,7 +26,7 @@ import { expect, it } from '@effect/vitest';
 import { Deferred, Duration, Effect, Fiber, Layer } from 'effect';
 import { TestClock } from 'effect/testing';
 import { layer as reactivityLayer } from 'effect/reactivity/Reactivity';
-import { describe } from 'vitest';
+import { describe } from 'vite-plus/test';
 import { appleCalendarServicesLayer } from './appleCalendarEvents.ts';
 import { backgroundRefresh } from './backgroundRefresh.ts';
 import { DeviceContacts } from './deviceContacts.ts';

@@ -1,5 +1,5 @@
 import { Effect } from 'effect';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vite-plus/test';
 import { makeFakeAppleCalendarClient } from './fake.ts';
 import type { AppleEventJson } from './protocol.ts';
 

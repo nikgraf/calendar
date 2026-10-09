@@ -11,7 +11,7 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { SettingsDocument } from '@calendar/core';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import { nodeSettingsFileFs as fs } from './settingsFileFs.ts';
 import {
   makeSettingsFileSync,

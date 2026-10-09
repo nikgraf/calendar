@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vite-plus/test';
 
 // A binary built without the pod: the package throws while being
 // *evaluated*, exactly as TurboModuleRegistry.getEnforcing does. A static

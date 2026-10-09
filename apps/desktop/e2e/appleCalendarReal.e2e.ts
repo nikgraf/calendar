@@ -2,7 +2,7 @@ import { spawn } from 'node:child_process';
 import { join } from 'node:path';
 import { createInterface } from 'node:readline';
 import { APPLE_CALENDAR_ACCOUNT_ID } from '@calendar/core';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vite-plus/test';
 import { type App, launchApp, readAccounts, readCalendars } from './harness.ts';
 
 // The real thing: no seed, the helper talks to EventKit, and the machine's

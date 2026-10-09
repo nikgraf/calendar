@@ -1,5 +1,5 @@
 import { Account, CalendarInfo, EventRecord, GeoLocation } from '@calendar/core';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vite-plus/test';
 import { type App, launchApp, readLocationGeoCount, readPendingOps } from './harness.ts';
 
 // Places come from the in-memory geo fixture (CALENDAR_GEO=fixture): the

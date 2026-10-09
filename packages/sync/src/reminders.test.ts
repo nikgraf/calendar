@@ -25,7 +25,7 @@ import { TestClock } from 'effect/testing';
 import { layer as reactivityLayer } from 'effect/reactivity/Reactivity';
 import { SqlClient } from 'effect/sql/SqlClient';
 import { SqlError, UnknownError } from 'effect/sql/SqlError';
-import { describe } from 'vitest';
+import { describe } from 'vite-plus/test';
 import { SyncEngine } from './engine.ts';
 import { EventMutations } from './mutations.ts';
 

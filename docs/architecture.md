@@ -262,7 +262,7 @@ Rules that keep the queue correct:
   back. Task rows work the same way (`setStatus`/`updateLocal`
   mark pending; `upsertTasks(…, { mode: 'pull' })`).
 - Cancelled events arrive as tombstones and are kept as `status:
-'cancelled'` rows when they shadow recurring instances.
+  'cancelled'` rows when they shadow recurring instances.
 - **Tasks** (per account, when the `tasks` scope is granted): task lists
   always sync as a full pass (they are few); tasks pull incrementally via
   an `updatedMin` watermark stored in `sync_state` — advanced to "now
@@ -606,7 +606,7 @@ model: `docs/agent-gateway.md`.
   on `<html>` before the first paint. iOS reads the TS module through
   `useTheme()` (`useColorScheme`). Calendar colors are arbitrary hex, so
   every calendar-colored block or chip goes through `eventTint(hex,
-scheme)`: hue and chroma from the calendar, lightness from the theme,
+  scheme)`: hue and chroma from the calendar, lightness from the theme,
   text on fill at 4.5:1 for every palette entry; the brand `event-*`
   tokens are for items with no calendar.
 - Desktop shell (`renderer/calendar/`): one toolbar (`Toolbar.tsx`:

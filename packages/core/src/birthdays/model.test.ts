@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vite-plus/test';
 import { BirthdayRecord } from '../types.ts';
 import { birthdayChipLabel } from './label.ts';
 import { birthdayMergeKey, birthdaysInRange, describeBirthday, mergeBirthdays } from './model.ts';

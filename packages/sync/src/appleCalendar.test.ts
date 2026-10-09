@@ -26,7 +26,7 @@ import { expect, it } from '@effect/vitest';
 import { Effect, Layer } from 'effect';
 import { TestClock } from 'effect/testing';
 import { layer as reactivityLayer, Reactivity } from 'effect/reactivity/Reactivity';
-import { describe } from 'vitest';
+import { describe } from 'vite-plus/test';
 import { AppleCalendarEvents, appleCalendarServicesLayer } from './appleCalendarEvents.ts';
 import { SyncEngine } from './engine.ts';
 import { EventMutations } from './mutations.ts';
@@ -331,12 +331,12 @@ describe('Apple Calendar mirror and read-through', () => {
   });
 });
 
-describe('Apple Calendar mutations', () => {
-  const series = (fake: ReturnType<typeof makeFakeAppleCalendarClient>) =>
-    Effect.runSync(fake.client.events({ endUtc: window.end, startUtc: window.start })).filter(
-      (entry) => entry.title.startsWith('Standup'),
-    );
+const series = (fake: ReturnType<typeof makeFakeAppleCalendarClient>) =>
+  Effect.runSync(fake.client.events({ endUtc: window.end, startUtc: window.start })).filter(
+    (entry) => entry.title.startsWith('Standup'),
+  );
 
+describe('Apple Calendar mutations', () => {
   it.effect('creates in EventKit and returns the final record', () => {
     const fake = fakeWith();
     return Effect.gen(function* () {
@@ -540,11 +540,12 @@ describe('Apple Calendar mutations', () => {
   });
 });
 
+const standups = (fake: ReturnType<typeof makeFakeAppleCalendarClient>) =>
+  Effect.runSync(fake.client.events({ endUtc: window.end, startUtc: window.start })).filter(
+    (entry) => entry.title === 'Standup',
+  );
+
 describe('Apple Calendar recurrence rule edits', () => {
-  const standups = (fake: ReturnType<typeof makeFakeAppleCalendarClient>) =>
-    Effect.runSync(fake.client.events({ endUtc: window.end, startUtc: window.start })).filter(
-      (entry) => entry.title === 'Standup',
-    );
   const target = {
     accountId: APPLE_CALENDAR_ACCOUNT_ID,
     calendarId: 'ek-home',

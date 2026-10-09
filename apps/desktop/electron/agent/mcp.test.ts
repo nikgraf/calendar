@@ -1,7 +1,7 @@
 import { TOOL_NAMES } from '@calendar/agent';
 import { Client, InMemoryTransport } from '@modelcontextprotocol/client';
 import { PassThrough } from 'node:stream';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vite-plus/test';
 import { MAX_LINE_BYTES } from './protocol.ts';
 import { serveMcpSession, socketTransport, type ToolCaller } from './mcp.ts';
 

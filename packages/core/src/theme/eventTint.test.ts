@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vite-plus/test';
 import { CALENDAR_PALETTE } from '../color.ts';
 import { eventTint } from './eventTint.ts';
 

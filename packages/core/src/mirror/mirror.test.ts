@@ -1,5 +1,5 @@
 import { Schema } from 'effect';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vite-plus/test';
 import { Temporal } from '../time/temporal.ts';
 import { Attendee, EventRecord, TaskRecord } from '../types.ts';
 import {
@@ -194,25 +194,25 @@ const task = (overrides: Partial<ConstructorParameters<typeof TaskRecord>[0]> = 
     ...overrides,
   });
 
-describe('mirror items', () => {
-  const event = (overrides: Partial<ConstructorParameters<typeof EventRecord>[0]> = {}) =>
-    new EventRecord({
-      accountId: 'acc',
-      calendarId: 'work@example.com',
-      endUtc: NOW + HOUR,
-      etag: null,
-      id: 'event-1',
-      isAllDay: false,
-      startUtc: NOW,
-      status: 'confirmed',
-      syncedAt: 1,
-      syncStatus: 'synced',
-      title: 'Board meeting',
-      updatedAt: 1,
-      visibility: 'default',
-      ...overrides,
-    });
+const event = (overrides: Partial<ConstructorParameters<typeof EventRecord>[0]> = {}) =>
+  new EventRecord({
+    accountId: 'acc',
+    calendarId: 'work@example.com',
+    endUtc: NOW + HOUR,
+    etag: null,
+    id: 'event-1',
+    isAllDay: false,
+    startUtc: NOW,
+    status: 'confirmed',
+    syncedAt: 1,
+    syncStatus: 'synced',
+    title: 'Board meeting',
+    updatedAt: 1,
+    visibility: 'default',
+    ...overrides,
+  });
 
+describe('mirror items', () => {
   it('keys an occurrence by its master and original start', () => {
     expect(googleEventMirrorItem(event(), 'me@example.com').key).toBe('g|work@example.com|event-1');
     const moved = event({

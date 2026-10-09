@@ -6,39 +6,66 @@ nodeLinker: hoisted
 
 # Supply-chain guards: newly published versions must be at least 2 days old
 # before they resolve, package trust levels can't silently downgrade, and
-# non-registry (git/url) subdeps are blocked for fresh resolutions —
-# lockfile-pinned entries (@electron/node-gyp's git tarball) stay allowed.
+# non-registry (git/url) subdeps are blocked for fresh resolutions.
 minimumReleaseAge: 2880 # 2 days
 trustPolicy: no-downgrade
 # Legacy transitive pins that predate their packages' provenance — they
 # register as trust downgrades without being ones. Audit when bumped.
 trustPolicyExclude:
-  - semver@5.7.2
   - semver@6.3.1
-  - undici-types@6.21.0
   - '@octokit/endpoint@9.0.6'
-  # Expo publishes some @expo/ui versions through npm trusted publishing and
-  # others with a maintainer token; 57.0.21 is the latter, like the expo
-  # package of the same SDK release (same maintainer, same day). Audited
-  # 2026-10-07; re-audit on the next bump.
-  - '@expo/ui@57.0.21'
+  # Expo moved SDK 58 to npm trusted publishing (GitHub Actions) on
+  # 2026-09-29, but still publishes SDK 57 patch releases with a maintainer
+  # token, so pnpm reads every SDK 57 package published since as a trust
+  # downgrade. These are the SDK 57 release of 2026-10-06, each audited on
+  # 2026-10-09: published by the same Expo maintainer as every earlier
+  # SDK 57 release, all from one gitHead (50ac74f, the "Publish packages"
+  # commit on expo/expo's sdk-57 branch). Pinned by version, so the next
+  # SDK 57 patch is checked again; drop the list with SDK 58.
+  - '@expo/cli@57.0.28'
+  - '@expo/config-plugins@57.0.10'
+  - '@expo/config@57.0.10'
+  - '@expo/image-utils@0.11.6'
+  - '@expo/metro-config@57.0.13'
+  - '@expo/metro-file-map@57.0.4'
+  - '@expo/prebuild-config@57.0.17'
+  - '@expo/require-utils@57.0.6'
+  - '@expo/router-server@57.0.12'
+  - '@expo/ui@57.0.22'
+  - 'babel-preset-expo@57.0.14'
+  - 'expo-asset@57.0.19'
+  - 'expo-auth-session@57.0.14'
+  - 'expo-constants@57.0.21'
+  - 'expo-eas-client@57.0.5'
+  - 'expo-linking@57.0.12'
+  - 'expo-maps@57.0.4'
+  - 'expo-modules-autolinking@57.0.14'
+  - 'expo-modules-core@57.0.21'
+  - 'expo-notifications@57.0.22'
+  - 'expo-router@57.0.25'
+  - 'expo-updates@57.0.25'
+  - 'expo@57.0.27'
 blockExoticSubdeps: true
 
 catalog:
-  effect: 4.0.0
-  '@effect/atom-react': 4.0.0
-  '@effect/sql-sqlite-node': 4.0.0
-  '@effect/sql-sqlite-react-native': 4.0.0
-  '@effect/vitest': 4.0.0
+  effect: 4.0.1
+  '@effect/atom-react': 4.0.1
+  '@effect/sql-sqlite-node': 4.0.1
+  '@effect/sql-sqlite-react-native': 4.0.1
+  '@effect/vitest': 4.0.1
   '@js-temporal/polyfill': ^0.5.1
-  react: ^19.2.8
-  react-dom: ^19.2.8
-  '@types/react': ^19.2.17
+  # react, react-dom and their types stay on 19.2 (tilde, not caret) for
+  # both apps: React Native 0.86 renders with a 19.2.3 renderer and Expo
+  # SDK 57 expects react 19.2 (`npx expo install --check`). A caret let the
+  # lockfile resolve 19.3.0 (#144).
+  react: ~19.2.8
+  react-dom: ~19.2.8
+  '@types/react': ~19.2.18
   rrule-temporal: ^2.2.8
   typescript: ^7.0.2
-  vite: npm:@voidzero-dev/vite-plus-core@^0.3.1
-  vite-plus: ^0.3.1
-  vitest: 4.1.11
+  vite: npm:@voidzero-dev/vite-plus-core@1.1.0
+  vite-plus: 1.1.0
+  vitest: 5.0.3
 
 onlyBuiltDependencies:
   - '@swc/core'
@@ -47,14 +74,11 @@ onlyBuiltDependencies:
   - unrs-resolver
 
 overrides:
-  # @electron/rebuild pins @electron/node-gyp to a git SHA; the registry
-  # publishes the same fork, and blockExoticSubdeps forbids git subdeps.
-  '@electron/node-gyp': 10.2.0-electron.2
-  # yauzl 2.x silently kills the process under modern Node during
-  # electron-packager's zip extraction (same fix as codiff).
-  'extract-zip>yauzl': ^3.4.0
-  vite: 'catalog:'
-  vitest: 'catalog:'
+  # The react-dom pnpm installs for Expo's optional web peer
+  # (@expo/metro-runtime) would otherwise be the newest, past the 19.2 hold.
+  react-dom: 'catalog:'
+  vite@*: 'catalog:'
+  vitest@*: 'catalog:'
 
 allowBuilds:
   # Optional native tracing inside eas-cli; the JS stub fallback is fine.
@@ -62,3 +86,10 @@ allowBuilds:
   msgpackr-extract: false
   # Pulled in by eas-cli 24; its postinstall only prints a notice.
   protobufjs: false
+peerDependencyRules:
+  allowAny:
+    - vite
+    - vitest
+  allowedVersions:
+    vite: '*'
+    vitest: '*'

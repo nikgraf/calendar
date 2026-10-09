@@ -13,7 +13,7 @@ import { expect, it } from '@effect/vitest';
 import { Effect, Layer } from 'effect';
 import { Reactivity } from 'effect/reactivity/Reactivity';
 import { layer as reactivityLayer } from 'effect/reactivity/Reactivity';
-import { describe } from 'vitest';
+import { describe } from 'vite-plus/test';
 import { EVENTS_KEY } from './keys.ts';
 import { runMigrations } from './migrate.ts';
 import { AccountRepo, CalendarRepo, EventRepo, reposLayer, SyncStateRepo } from './repos.ts';
@@ -93,6 +93,19 @@ const timedEvent = (overrides: Partial<EventRecord> = {}): EventRecord =>
     syncStatus: 'synced',
     title: 'Standup',
     updatedAt: 1,
+    ...overrides,
+  });
+
+const series = (overrides: Partial<EventRecord>) =>
+  timedEvent({ id: 'master-1', recurrence: ['RRULE:FREQ=WEEKLY'], ...overrides });
+
+const exception = (overrides: Partial<EventRecord>) =>
+  timedEvent({
+    endUtc: Date.parse('2026-07-09T16:00:00Z'),
+    id: 'master-1__ovr',
+    originalStartUtc: Date.parse('2026-07-09T12:00:00Z'),
+    recurringEventId: 'master-1',
+    startUtc: Date.parse('2026-07-09T15:00:00Z'),
     ...overrides,
   });
 
@@ -329,17 +342,6 @@ describe('repos', () => {
         calendar({ accountId: 'acc-2', id: 'shared', summary: 'Team' }),
         calendar({ id: 'cal-hidden', isVisible: false, summary: 'Hidden' }),
       ]);
-      const series = (overrides: Partial<EventRecord>) =>
-        timedEvent({ id: 'master-1', recurrence: ['RRULE:FREQ=WEEKLY'], ...overrides });
-      const exception = (overrides: Partial<EventRecord>) =>
-        timedEvent({
-          endUtc: Date.parse('2026-07-09T16:00:00Z'),
-          id: 'master-1__ovr',
-          originalStartUtc: Date.parse('2026-07-09T12:00:00Z'),
-          recurringEventId: 'master-1',
-          startUtc: Date.parse('2026-07-09T15:00:00Z'),
-          ...overrides,
-        });
       yield* events.upsertMany([
         series({ calendarId: 'shared' }),
         series({ accountId: 'acc-2', calendarId: 'shared' }),

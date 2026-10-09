@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vite-plus/test';
 import type { FindTimeParse } from './findTime.ts';
 import { buildFindTimePrompt, normalizeFindTime, parseFindTime } from './findTime.ts';
 import { ModelUnavailableError } from './model.ts';

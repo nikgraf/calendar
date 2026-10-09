@@ -8,7 +8,7 @@ import {
 import { ACCOUNTS_KEY } from '@calendar/db/keys';
 import { Effect } from 'effect';
 import { AsyncResult, Atom, AtomRegistry } from 'effect/reactivity';
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vite-plus/test';
 import {
   deviceZoneAtom,
   makeBackendAtoms,

@@ -248,6 +248,31 @@ const copyDraft = (
   };
 };
 
+/** The occurrence as it would render, keyed by its Google instance id. */
+const projectInstance = (master: EventRecord, originalStartUtc: number, now: number) => {
+  const durationDays =
+    master.isAllDay && master.startDate && master.endDate
+      ? Math.round((Date.parse(master.endDate) - Date.parse(master.startDate)) / DAY_MS)
+      : 0;
+  return new EventRecord({
+    ...master,
+    endDate: master.isAllDay ? isoDate(originalStartUtc + durationDays * DAY_MS) : undefined,
+    endUtc:
+      originalStartUtc +
+      (master.isAllDay ? durationDays * DAY_MS : master.endUtc - master.startUtc),
+    etag: null,
+    id: googleInstanceId(master.id, originalStartUtc, master.isAllDay),
+    originalStartUtc,
+    recurrence: undefined,
+    recurringEventId: master.id,
+    startDate: master.isAllDay ? isoDate(originalStartUtc) : undefined,
+    startUtc: originalStartUtc,
+    syncedAt: 0,
+    syncStatus: 'pending',
+    updatedAt: now,
+  });
+};
+
 const make: Effect.Effect<
   EventMutationsShape,
   never,
@@ -405,31 +430,6 @@ const make: Effect.Effect<
       }
       return { master, recurrence };
     });
-
-  /** The occurrence as it would render, keyed by its Google instance id. */
-  const projectInstance = (master: EventRecord, originalStartUtc: number, now: number) => {
-    const durationDays =
-      master.isAllDay && master.startDate && master.endDate
-        ? Math.round((Date.parse(master.endDate) - Date.parse(master.startDate)) / DAY_MS)
-        : 0;
-    return new EventRecord({
-      ...master,
-      endDate: master.isAllDay ? isoDate(originalStartUtc + durationDays * DAY_MS) : undefined,
-      endUtc:
-        originalStartUtc +
-        (master.isAllDay ? durationDays * DAY_MS : master.endUtc - master.startUtc),
-      etag: null,
-      id: googleInstanceId(master.id, originalStartUtc, master.isAllDay),
-      originalStartUtc,
-      recurrence: undefined,
-      recurringEventId: master.id,
-      startDate: master.isAllDay ? isoDate(originalStartUtc) : undefined,
-      startUtc: originalStartUtc,
-      syncedAt: 0,
-      syncStatus: 'pending',
-      updatedAt: now,
-    });
-  };
 
   /**
    * Drops override rows at/after the split and cancels them remotely —

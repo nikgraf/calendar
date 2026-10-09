@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vite-plus/test';
 
 const deleted: Array<string> = [];
 vi.mock('expo-file-system', () => ({

@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vite-plus/test';
 import { guardMutation, type MutationNotice, subscribeMutationNotices } from './mutationGuard.ts';
 
 describe('guardMutation', () => {

@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vite-plus/test';
 import { createWheelPan, isOwnPanShift, wheelDeltaToPx } from './wheelPan.ts';
 
 const DAY = 100;

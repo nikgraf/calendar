@@ -1,5 +1,5 @@
 import { TaskListInfo, TaskRecord } from '@calendar/core';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vite-plus/test';
 import { offeredTaskLists, taskEditorChanges, type TaskEditorValues } from './taskEditorChanges.ts';
 
 const listInfo = (overrides: Partial<TaskListInfo>) =>

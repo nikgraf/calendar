@@ -1,5 +1,5 @@
 import { Attendee, EventRecord, plainDateToUtcMs } from '@calendar/core';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vite-plus/test';
 import { isBusy, mergeBusy, otherGuests, toEventDto } from './dto.ts';
 import { decodeEventRef } from './refs.ts';
 

@@ -4,7 +4,7 @@ import { type AgentPolicy, EMPTY_POLICY } from '@calendar/agent';
 import { Account, Attendee, CalendarInfo, EventRecord } from '@calendar/core';
 import { Client } from '@modelcontextprotocol/client';
 import { StdioClientTransport } from '@modelcontextprotocol/client/stdio';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vite-plus/test';
 import {
   agentEnv,
   agentRelayPath,

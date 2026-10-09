@@ -1,5 +1,5 @@
 import { Account, CalendarInfo, GoogleBirthday } from '@calendar/core';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vite-plus/test';
 import { type App, launchApp, readDeviceSetting } from './harness.ts';
 
 // Birthdays come from two sources: a Google People row seeded into SQLite

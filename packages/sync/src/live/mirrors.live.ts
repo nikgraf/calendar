@@ -1,6 +1,6 @@
 import { expect, it } from '@effect/vitest';
 import { Effect } from 'effect';
-import { describe } from 'vitest';
+import { describe } from 'vite-plus/test';
 import {
   type LiveGoogleError,
   liveGoogleConfigFromEnv,

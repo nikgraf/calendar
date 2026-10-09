@@ -22,7 +22,7 @@ import { SqliteClient } from '@effect/sql-sqlite-node';
 import { expect, it } from '@effect/vitest';
 import { Effect, Layer, Scheduler } from 'effect';
 import { layer as reactivityLayer } from 'effect/reactivity/Reactivity';
-import { describe } from 'vitest';
+import { describe } from 'vite-plus/test';
 import { EventMutations } from './mutations.ts';
 
 const stubTasksClient: GoogleTasksClientShape = {
@@ -269,6 +269,7 @@ describe('EventMutations attendees', () => {
     'a content edit on a meeting notifies guests but leaves the attendee array alone',
     () => {
       const sent: Array<Sent> = [];
+      const byTitle = (title: string) => sent.find((entry) => entry.event.summary === title)!;
       return Effect.gen(function* () {
         yield* seed;
         const mutations = yield* EventMutations;
@@ -283,7 +284,6 @@ describe('EventMutations attendees', () => {
           eventId: 'evt-solo',
         });
         yield* mutations.processPendingOps();
-        const byTitle = (title: string) => sent.find((entry) => entry.event.summary === title)!;
         // Google replaces the whole array: a title patch must not carry it,
         // or a room (never in our copy's editor view) would be dropped.
         expect('attendees' in byTitle('Planning v2').event).toBe(false);

@@ -1,7 +1,7 @@
 import { TokenSet } from '@calendar/core';
 import { TokenStore } from '@calendar/google';
 import { Effect, Schema } from 'effect';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vite-plus/test';
 import { type KeychainStorage, makeKeychainTokenStore } from './tokenStore.ts';
 
 const tokens = (accessToken: string) =>

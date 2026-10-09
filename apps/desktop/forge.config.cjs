@@ -93,7 +93,6 @@ module.exports = {
       /^\/public(?:$|\/)/,
       /^\/forge\.config\.cjs$/,
       /^\/tsconfig\.json$/,
-      /^\/tsdown\.config\.ts$/,
       /^\/vite\.config\./,
       /^\/google-oauth\.local\.json$/,
       /^\/node_modules(?:$|\/)/,

@@ -1,5 +1,5 @@
 import { EventRecord, EventReminders, GeoLocation, ReminderOverride } from '@calendar/core';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vite-plus/test';
 import { draftToEventWrite, mapAppleCalendar, mapAppleEvent, toEventWrite } from './map.ts';
 import type { AppleEventJson } from './protocol.ts';
 

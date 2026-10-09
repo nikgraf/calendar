@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vite-plus/test';
 import { plainDateToUtcMs, toZonedDateTime } from '../time/convert.ts';
 import { Temporal } from '../time/temporal.ts';
 import { expandRecurringEvent, type RecurrenceMaster } from './expand.ts';
@@ -16,6 +16,16 @@ const weeklyLa: RecurrenceMaster = {
   startTimeZone: 'America/Los_Angeles',
   startUtc: instant('2026-03-03T17:00:00Z'), // 09:00 PST
 };
+
+// 09:00–10:00 Vienna on 2026-07-01, then explicit dates only.
+const rdateOnly = (recurrence: ReadonlyArray<string>): RecurrenceMaster => ({
+  endUtc: instant('2026-07-01T08:00:00Z'),
+  id: 'rdate',
+  isAllDay: false,
+  recurrence,
+  startTimeZone: 'Europe/Vienna',
+  startUtc: instant('2026-07-01T07:00:00Z'),
+});
 
 describe('expandRecurringEvent', () => {
   it('expands weekly occurrences across the DST boundary at fixed wall-clock time', () => {
@@ -138,16 +148,6 @@ describe('expandRecurringEvent', () => {
   });
 
   describe('a set of only RDATE lines', () => {
-    // 09:00–10:00 Vienna on 2026-07-01, then explicit dates only.
-    const rdateOnly = (recurrence: ReadonlyArray<string>): RecurrenceMaster => ({
-      endUtc: instant('2026-07-01T08:00:00Z'),
-      id: 'rdate',
-      isAllDay: false,
-      recurrence,
-      startTimeZone: 'Europe/Vienna',
-      startUtc: instant('2026-07-01T07:00:00Z'),
-    });
-
     it('expands DTSTART plus every RDATE value, in any value form', () => {
       const instances = expandRecurringEvent(
         rdateOnly([

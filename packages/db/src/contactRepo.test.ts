@@ -3,7 +3,7 @@ import { SqliteClient } from '@effect/sql-sqlite-node';
 import { expect, it } from '@effect/vitest';
 import { Effect, Layer } from 'effect';
 import { layer as reactivityLayer } from 'effect/reactivity/Reactivity';
-import { describe } from 'vitest';
+import { describe } from 'vite-plus/test';
 import { runMigrations } from './migrate.ts';
 import { AccountRepo, ContactRepo, reposLayer } from './repos.ts';
 

@@ -70,6 +70,64 @@ export interface RequestCore {
   ) => Effect.Effect<A, GoogleRequestError>;
 }
 
+/** Maps a failed Google response to its typed error. */
+const failForStatus: RequestCore['failForStatus'] = (response, context) =>
+  Effect.gen(function* () {
+    const status = response.status;
+    if (status === 410 || status === 404 || status === 412 || status === 429) {
+      // These arms never read the body; drain it so the connection is
+      // released instead of waiting on a stream nobody consumes.
+      yield* Effect.ignore(response.text);
+    }
+    if (status === 410) {
+      return yield* Effect.fail(
+        new SyncTokenExpiredError({ calendarId: context.calendarId ?? '' }),
+      );
+    }
+    if (status === 404) {
+      return yield* Effect.fail(
+        new NotFoundError({
+          resource: context.eventId ?? context.calendarId ?? 'resource',
+        }),
+      );
+    }
+    if (status === 412) {
+      return yield* Effect.fail(
+        new ConflictError({
+          calendarId: context.calendarId ?? '',
+          eventId: context.eventId ?? '',
+        }),
+      );
+    }
+    if (status === 429) {
+      return yield* Effect.fail(new RateLimitedError({ retryAfterMs: retryAfterMs(response) }));
+    }
+    const body = yield* response.json.pipe(Effect.catchCause(() => Effect.succeed(null)));
+    if (status === 403) {
+      const text = JSON.stringify(body ?? '');
+      if (text.includes('ateLimitExceeded')) {
+        return yield* Effect.fail(new RateLimitedError({ retryAfterMs: retryAfterMs(response) }));
+      }
+      // A token that never carried the needed scope: refreshing cannot
+      // fix it, only re-consent can.
+      if (
+        text.includes('ACCESS_TOKEN_SCOPE_INSUFFICIENT') ||
+        text.includes('insufficientPermissions')
+      ) {
+        return yield* Effect.fail(new InsufficientScopeError({ message: text }));
+      }
+    }
+    if (status >= 500) {
+      return yield* Effect.fail(new ApiUnavailableError({ cause: `http ${status}`, status }));
+    }
+    return yield* Effect.fail(
+      new GoogleApiError({
+        message: JSON.stringify(body ?? 'unknown error'),
+        status,
+      }),
+    );
+  });
+
 /**
  * The auth + status-mapping + decode stack shared by every Google API
  * client (Calendar, Tasks). Extracted from the calendar client verbatim,
@@ -86,17 +144,17 @@ export const makeRequestCore: Effect.Effect<
   const http = yield* HttpClient.HttpClient;
   const tokens = yield* TokenManager;
 
-  const executeAuthed: RequestCore['executeAuthed'] = (accountId, request) =>
-    Effect.gen(function* () {
-      const send = (token: string) =>
-        http
-          .execute(HttpClientRequest.setHeader(request, 'authorization', `Bearer ${token}`))
-          .pipe(
-            Effect.catchCause((cause) =>
-              Effect.fail(new ApiUnavailableError({ cause: String(cause) })),
-            ),
-          );
+  const executeAuthed: RequestCore['executeAuthed'] = (accountId, request) => {
+    const send = (token: string) =>
+      http
+        .execute(HttpClientRequest.setHeader(request, 'authorization', `Bearer ${token}`))
+        .pipe(
+          Effect.catchCause((cause) =>
+            Effect.fail(new ApiUnavailableError({ cause: String(cause) })),
+          ),
+        );
 
+    return Effect.gen(function* () {
       const token = yield* tokens.getAccessToken(accountId);
       const response = yield* send(token);
       if (response.status !== 401) {
@@ -111,63 +169,7 @@ export const makeRequestCore: Effect.Effect<
       }
       return retried;
     });
-
-  const failForStatus: RequestCore['failForStatus'] = (response, context) =>
-    Effect.gen(function* () {
-      const status = response.status;
-      if (status === 410 || status === 404 || status === 412 || status === 429) {
-        // These arms never read the body; drain it so the connection is
-        // released instead of waiting on a stream nobody consumes.
-        yield* Effect.ignore(response.text);
-      }
-      if (status === 410) {
-        return yield* Effect.fail(
-          new SyncTokenExpiredError({ calendarId: context.calendarId ?? '' }),
-        );
-      }
-      if (status === 404) {
-        return yield* Effect.fail(
-          new NotFoundError({
-            resource: context.eventId ?? context.calendarId ?? 'resource',
-          }),
-        );
-      }
-      if (status === 412) {
-        return yield* Effect.fail(
-          new ConflictError({
-            calendarId: context.calendarId ?? '',
-            eventId: context.eventId ?? '',
-          }),
-        );
-      }
-      if (status === 429) {
-        return yield* Effect.fail(new RateLimitedError({ retryAfterMs: retryAfterMs(response) }));
-      }
-      const body = yield* response.json.pipe(Effect.catchCause(() => Effect.succeed(null)));
-      if (status === 403) {
-        const text = JSON.stringify(body ?? '');
-        if (text.includes('ateLimitExceeded')) {
-          return yield* Effect.fail(new RateLimitedError({ retryAfterMs: retryAfterMs(response) }));
-        }
-        // A token that never carried the needed scope: refreshing cannot
-        // fix it, only re-consent can.
-        if (
-          text.includes('ACCESS_TOKEN_SCOPE_INSUFFICIENT') ||
-          text.includes('insufficientPermissions')
-        ) {
-          return yield* Effect.fail(new InsufficientScopeError({ message: text }));
-        }
-      }
-      if (status >= 500) {
-        return yield* Effect.fail(new ApiUnavailableError({ cause: `http ${status}`, status }));
-      }
-      return yield* Effect.fail(
-        new GoogleApiError({
-          message: JSON.stringify(body ?? 'unknown error'),
-          status,
-        }),
-      );
-    });
+  };
 
   const requestJson: RequestCore['requestJson'] = (accountId, request, schema, context = {}) =>
     Effect.gen(function* () {

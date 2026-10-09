@@ -1,5 +1,5 @@
 import { Account, CalendarInfo } from '@calendar/core';
-import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vite-plus/test';
 import { type App, launchApp, localIsoDaysAgo, readEvents } from './harness.ts';
 
 // Capture: a paste on the calendar (or into the ⌘K bar) becomes events to

@@ -1,6 +1,6 @@
 import { BackendError, type BackendClient, EventRecord } from '@calendar/core';
 import { Effect } from 'effect';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vite-plus/test';
 import { eventStartDay, findNotificationEvent } from './notificationTarget.ts';
 
 const event = (overrides: Partial<EventRecord> = {}): EventRecord =>
