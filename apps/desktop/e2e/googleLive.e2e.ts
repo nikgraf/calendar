@@ -352,7 +352,7 @@ describe.skipIf(!LIVE)('Google live (real account)', { retry: 0, timeout: 120_00
     const checkbox = await app.cdp.locate(`[title=${JSON.stringify(taskTitle)}] button`);
     await app.cdp.click(checkbox.x, checkbox.y);
     await app.cdp.waitFor(
-      `document.querySelector('[title=${JSON.stringify(taskTitle)}]')?.textContent?.includes('☑') === true`,
+      `document.querySelector('[title=${JSON.stringify(taskTitle)}] [data-done]') !== null`,
     );
     await expect
       .poll(() => google((scratch) => scratch.getTask(listId, task.id)).then((t) => t.status), POLL)

@@ -68,7 +68,7 @@ export function MonthGrid({
   const overdueKeys = new Set(calendarTasks.overdue.map(calendarTaskKey));
   const birthdaysByDay = groupByDate(birthdays, (birthday) => birthday.date);
 
-  // An outlined ring, like the lane's checkbox glyph: a task is not a
+  // An outlined ring, like the lane's task checkbox: a task is not a
   // calendar color. The ring takes the Reminders list color where the lane
   // draws that accent; Google lists stay neutral. Done tasks fade; an
   // overdue task on today's cell rings red like its chip.

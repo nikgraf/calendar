@@ -8,8 +8,9 @@ import {
 } from '@calendar/app-state';
 import { calendarTaskKey, overdueLabel, type TaskRecord } from '@calendar/core';
 import { useState } from 'react';
+import { TaskCheck } from '../TaskCheck.tsx';
 import type { useEventDrag } from '../useEventDrag.ts';
-import { CheckIcon, PlusIcon } from '../../ui/icons.tsx';
+import { PlusIcon } from '../../ui/icons.tsx';
 
 /**
  * The rail's task inbox: the late ones, today's and the undated ones,
@@ -60,7 +61,7 @@ export function TaskInbox({
     const dragging = drag.preview?.itemKey === `panel:${calendarTaskKey(task)}`;
     return (
       <li
-        className={`flex touch-none items-center gap-2 rounded-control px-2 py-1 select-none hover:bg-fill ${
+        className={`flex touch-none items-center gap-1 rounded-control py-0.5 pr-2 pl-0.5 select-none hover:bg-fill ${
           readOnly ? '' : 'cursor-grab'
         } ${dragging ? 'opacity-50' : ''}`}
         data-testid={`panel-task-${task.id}`}
@@ -77,19 +78,16 @@ export function TaskInbox({
         onPointerMove={drag.onPointerMove}
         onPointerUp={drag.onPointerUp}
       >
-        <button
+        <TaskCheck
           aria-label={`${done ? 'Reopen' : 'Mark done'}: ${task.title}`}
-          className={`flex size-4 shrink-0 items-center justify-center rounded-full border-2 ${
-            done ? 'border-primary bg-primary text-on-primary' : 'border-hairline-strong'
-          } disabled:opacity-50`}
+          checked={done}
           disabled={readOnly}
+          listColor={listColorOf(task)}
           onClick={() => toggle(task)}
           onPointerDown={(event) => event.stopPropagation()}
-          style={done ? undefined : { borderColor: listColorOf(task) }}
-          type="button"
-        >
-          {done ? <CheckIcon size={10} /> : null}
-        </button>
+          overdue={late}
+          size="row"
+        />
         {/* The press-and-release opens the editor through the drag hook; the button keeps the keyboard. */}
         <button
           className="flex min-w-0 flex-1 items-center gap-2 text-left text-sm outline-none focus-visible:underline"

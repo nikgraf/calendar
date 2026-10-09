@@ -10,6 +10,7 @@ import {
 } from '@calendar/core';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { GestureDetector } from 'react-native-gesture-handler';
+import { TaskCheck } from './TaskCheck.tsx';
 import { BOX_FONT_SCALE, type ThemeColors, useEventTint, useStyles } from './theme.ts';
 import { ALL_DAY_ROW_HEIGHT } from './timelineLayout.ts';
 import type { TaskDrag } from './useTaskDrag.ts';
@@ -95,7 +96,7 @@ export function AllDayColumn({
             style={[
               styles.allDayChip,
               styles.taskChip,
-              done && styles.taskChipDone,
+              styles.taskChipWithCheck,
               draggingKey === key && styles.taskChipDragging,
             ]}
             testID={`task-chip-${task.id}`}
@@ -112,12 +113,17 @@ export function AllDayColumn({
               onPress={() => onToggleTask(task)}
               testID={`task-chip-toggle-${task.id}`}
             >
-              <Text maxFontSizeMultiplier={BOX_FONT_SCALE} style={styles.taskCheckbox}>
-                {done ? '☑' : '☐'}
-              </Text>
+              {/* Reminders lists have colors; the box takes it, which tells them apart from Google tasks. */}
+              {({ pressed }) => (
+                <TaskCheck
+                  checked={done}
+                  listColor={listColor}
+                  overdue={overdue}
+                  pressed={pressed}
+                  size="chip"
+                />
+              )}
             </Pressable>
-            {/* Reminders lists have colors; a dot tells them apart from Google tasks without recoloring the chip. */}
-            {listColor ? <View style={[styles.listDot, { backgroundColor: listColor }]} /> : null}
             <GestureDetector gesture={taskDrag.gestureFor(task, 'lane', isTaskReadOnly(task))}>
               <Pressable
                 accessibilityLabel={
@@ -258,11 +264,6 @@ const makeStyles = (colors: ThemeColors) =>
     birthdayChip: {
       backgroundColor: colors['event-blush'],
     },
-    listDot: {
-      borderRadius: 3,
-      height: 6,
-      width: 6,
-    },
     moreChip: {
       backgroundColor: colors.fill,
     },
@@ -273,26 +274,27 @@ const makeStyles = (colors: ThemeColors) =>
     taskBody: {
       flexShrink: 1,
     },
-    taskCheckbox: {
-      color: colors['text-secondary'],
-      fontSize: 12,
-    },
+    // A row: the box leads at the chip's start, like an event's title,
+    // rather than centering with the text (the base chip centers a column).
     taskChip: {
       alignItems: 'center',
       backgroundColor: colors.fill,
       flexDirection: 'row',
-      gap: 3,
-    },
-    taskChipDone: {
-      opacity: 0.5,
+      gap: 4,
+      justifyContent: 'flex-start',
     },
     taskChipDragging: {
       opacity: 0.3,
+    },
+    // The box sits close to the edge; a birthday's text keeps the base inset.
+    taskChipWithCheck: {
+      paddingLeft: 3,
     },
     taskText: {
       color: colors.text,
     },
     taskTextDone: {
+      color: colors['text-secondary'],
       textDecorationLine: 'line-through',
     },
     taskTextOverdue: {

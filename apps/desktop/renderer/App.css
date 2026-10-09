@@ -80,3 +80,99 @@ textarea,
 [contenteditable='true'] {
   user-select: text;
 }
+
+/*
+ * The task checkbox (calendar/TaskCheck.tsx). Its colors are custom
+ * properties so a Reminders list color or the overdue red can replace the
+ * neutral ring; `data-done` fills it and draws the tick. A press scales it
+ * down and the release springs it back past full size, so a click pops it
+ * without a keyframe animation, which would also run whenever a done chip
+ * mounts.
+ */
+.task-check {
+  --task-check-fill: var(--primary);
+  --task-check-hover: var(--text-secondary);
+  --task-check-ring: var(--border-strong);
+  --task-check-tick: var(--on-primary);
+  --task-check-well: var(--surface);
+  align-items: center;
+  background: var(--task-check-well);
+  border: 1.5px solid var(--task-check-ring);
+  border-radius: 9999px;
+  box-sizing: border-box;
+  display: flex;
+  flex-shrink: 0;
+  height: var(--task-check-size);
+  justify-content: center;
+  transition:
+    background-color 160ms ease-out,
+    border-color 160ms ease-out,
+    transform 240ms cubic-bezier(0.34, 1.56, 0.64, 1);
+  width: var(--task-check-size);
+}
+
+html[data-theme='dark'] .task-check {
+  --task-check-well: var(--canvas);
+}
+
+.task-check svg {
+  fill: none;
+  height: 100%;
+  opacity: 0;
+  stroke: var(--task-check-tick);
+  stroke-dasharray: 11;
+  stroke-dashoffset: 11;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: var(--task-check-tick-width);
+  transition:
+    stroke-dashoffset 180ms ease-out 60ms,
+    opacity 0s 60ms;
+  width: 100%;
+}
+
+.task-check[data-done] {
+  background: var(--task-check-fill);
+  border-color: var(--task-check-fill);
+}
+
+.task-check[data-done] svg {
+  opacity: 1;
+  stroke-dashoffset: 0;
+}
+
+/* Hover darkens an open ring and previews the tick. */
+button:enabled:hover > .task-check:not([data-done]) {
+  border-color: var(--task-check-hover);
+}
+
+button:enabled:hover > .task-check:not([data-done]) svg {
+  opacity: 0.45;
+  stroke: var(--task-check-hover);
+  stroke-dashoffset: 0;
+  transition: none;
+}
+
+button:enabled:active > .task-check {
+  transform: scale(0.86);
+  transition:
+    background-color 160ms ease-out,
+    border-color 160ms ease-out,
+    transform 100ms ease-out;
+}
+
+button:focus-visible > .task-check {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .task-check,
+  .task-check svg {
+    transition: none;
+  }
+
+  button:enabled:active > .task-check {
+    transform: none;
+  }
+}

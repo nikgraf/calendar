@@ -20,7 +20,8 @@ import {
 } from 'react';
 import { IconButton } from '../../ui/IconButton.tsx';
 import { FIELD_CLASS } from '../../ui/fieldStyles.ts';
-import { CheckIcon, RepeatIcon, SearchIcon, XIcon } from '../../ui/icons.tsx';
+import { RepeatIcon, SearchIcon, XIcon } from '../../ui/icons.tsx';
+import { TaskCheckMark } from '../TaskCheck.tsx';
 import { useTint } from '../tint.ts';
 
 /** What a search cannot find: the window the backend reads. */
@@ -216,14 +217,9 @@ export function SearchPanel({
           onClick={() => onOpenTask(task)}
           type="button"
         >
-          <span
-            aria-hidden
-            className={`mt-0.5 flex size-4 shrink-0 items-center justify-center rounded-full border-2 ${
-              done ? 'border-primary bg-primary text-on-primary' : 'border-hairline-strong'
-            }`}
-            style={done || !list?.colorHex ? undefined : { borderColor: list.colorHex }}
-          >
-            {done ? <CheckIcon size={10} /> : null}
+          {/* Wrapped, so the row's hover does not preview a tick: the row opens the task. */}
+          <span className="mt-px shrink-0">
+            <TaskCheckMark checked={done} listColor={list?.colorHex} size="row" />
           </span>
           <span className="min-w-0 flex-1">
             <span
