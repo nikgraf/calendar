@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vite-plus/test';
+import { describe, expect, it, vi } from 'vite-plus/test';
 import { Temporal } from './temporal.ts';
 import {
   draftZoneRange,
@@ -54,6 +54,25 @@ describe('formatZoneTimeRange', () => {
     expect(formatZoneTimeRange(at('2026-01-15T11:30:00Z'), at('2026-01-15T12:30:00Z'), 'UTC')).toBe(
       '11:30 AM – 12:30 PM',
     );
+  });
+
+  it("drops the period after the narrow no-break space Apple's ICU writes, too", () => {
+    const format = Temporal.PlainTime.prototype.toLocaleString;
+    const spy = vi
+      .spyOn(Temporal.PlainTime.prototype, 'toLocaleString')
+      .mockImplementation(function (this: Temporal.PlainTime, ...args) {
+        return format.apply(this, args).replace(' ', '\u202f');
+      });
+    try {
+      expect(
+        formatZoneTimeRange(at('2026-01-15T13:00:00Z'), at('2026-01-15T14:00:00Z'), 'UTC'),
+      ).toBe('1:00 – 2:00 PM');
+      expect(
+        formatZoneTimeRange(at('2026-01-15T11:30:00Z'), at('2026-01-15T12:30:00Z'), 'UTC'),
+      ).toBe('11:30 AM – 12:30 PM');
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   it('never elides across a whole day', () => {

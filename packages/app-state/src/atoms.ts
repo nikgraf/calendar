@@ -15,6 +15,7 @@ import {
   type BackendClient,
   type BackendPayload,
   type BackendSuccess,
+  EMPTY_SEARCH_RESULTS,
   Temporal,
 } from '@calendar/core';
 import { Cause, Context, Effect, Exit, Layer } from 'effect';
@@ -27,6 +28,9 @@ export class AppBackend extends Context.Service<AppBackend, BackendClient>()(
 
 export const rangeKey = (rangeStartUtc: number, rangeEndUtc: number): string =>
   `${rangeStartUtc}:${rangeEndUtc}`;
+
+/** Atom key for a search: the zone first (zone ids never hold a '|'), then the query as typed. */
+export const searchKey = (query: string, timeZone: string): string => `${timeZone}|${query}`;
 
 export type MapSnapshotParams = BackendPayload<'mapSnapshot'>;
 
@@ -73,6 +77,7 @@ export interface BackendAtoms {
   readonly overdueTasks: ReturnType<typeof buildAtoms>['overdueTasks'];
   readonly pendingOps: ReturnType<typeof buildAtoms>['pendingOps'];
   readonly placesSearch: ReturnType<typeof buildAtoms>['placesSearch'];
+  readonly search: ReturnType<typeof buildAtoms>['search'];
   readonly syncStatus: ReturnType<typeof buildAtoms>['syncStatus'];
   readonly taskLists: ReturnType<typeof buildAtoms>['taskLists'];
   readonly tasksInRange: ReturnType<typeof buildAtoms>['tasksInRange'];
@@ -373,6 +378,28 @@ const buildAtoms = (client: BackendClient, deviceZone: Atom.Atom<string>) => {
       .pipe(Atom.withReactivity([CONTACTS_KEY]));
   });
 
+  // Event and task search, keyed by searchKey. EVENTS_KEY and TASKS_KEY
+  // re-run an open query, so an item edited or deleted from the results
+  // updates them, and so does a calendar or list shown or hidden (both
+  // invalidate those keys on the repo side). A blank query never reaches
+  // the backend, and never re-runs: the desktop holds it while search is
+  // closed, and every change would otherwise repaint the whole calendar.
+  const search = boundedAtomCache((key) => {
+    const separator = key.indexOf('|');
+    const timeZone = key.slice(0, separator);
+    const query = key.slice(separator + 1);
+    const blank = query.trim() === '';
+    const atom = runtime.atom(
+      blank
+        ? Effect.succeed(EMPTY_SEARCH_RESULTS)
+        : Effect.gen(function* () {
+            const backend = yield* AppBackend;
+            return yield* backend.search({ query, timeZone });
+          }),
+    );
+    return blank ? atom : atom.pipe(Atom.withReactivity([EVENTS_KEY, TASKS_KEY]));
+  });
+
   // Location typeahead, keyed `${limit}:${query}`. No reactivity: MapKit
   // results do not change with anything the backend stores. An empty
   // query never reaches the backend.
@@ -500,6 +527,7 @@ const buildAtoms = (client: BackendClient, deviceZone: Atom.Atom<string>) => {
     overdueTasks,
     pendingOps,
     placesSearch,
+    search,
     syncStatus,
     taskLists,
     tasksInRange,

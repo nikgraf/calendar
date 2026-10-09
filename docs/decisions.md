@@ -2482,11 +2482,12 @@ then iOS (both in `todo.md`).
       `editor-title`, `week-grid`, `today-header`, `now-line`,
       `panel-task-*`); color is asserted through `data-color`, never a
       computed rgb. Search stays a disabled toolbar placeholder (its own
-      PR).
+      PR; shipped, see Search below).
 - [x] iOS redesign — done (2026-10-08, `todo/ios-redesign`).
       **expo-router owns the screens**: `app/_layout.tsx` holds the
       providers and a native stack — the tab bar (`NativeTabs`: Calendar ·
-      Tasks · Search, the last a placeholder until search ships) and
+      Tasks · Search, the last a placeholder until search shipped, see
+      Search below) and
       Settings as a modal route from the calendar's gear, never a tab.
       `+native-intent.tsx` keeps the share, capture-fixture and OAuth URLs
       off the router; the host's `Linking` listener still handles them.
@@ -2574,6 +2575,81 @@ then iOS (both in `todo.md`).
       Done; an Apple account's presence is the `apple-calendar-account` /
       `apple-reminders-account` id on its access row, and zones and
       per-person birthday times are removed by a swipe.
+- [x] Search — done (2026-10-09, `todo/search`).
+      **One rpc reads what the views can show**: `search({ query,
+      timeZone })` (`searchCalendar`, both apps) reads the rows the views'
+      range query reads (`EventRepo.getWindow`), so visibility, hidden
+      mirror copies and cancelled events come with it, plus the Apple
+      read-through; tasks are every task of the visible lists
+      (`TaskRepo.getVisible`), Google Tasks and the Reminders mirror.
+      Birthdays are not searched. **A window, not the history**: events are
+      looked for two years either side of today in the primary zone
+      (`SEARCH_WINDOW_YEARS`). Older and farther events need full-text
+      search (todo.md, Tier 3). **A series is walked, not expanded**: over
+      the whole window an hourly series passes the expander's iteration
+      cap and `assembleWindow` drops it, so a matching series is walked
+      outward from now to its next occurrence that is not over, else its
+      latest (`seriesSearchOccurrences`: each direction one span for most
+      rules, a refused span retried a quarter as long). Its overrides are
+      rows of their own, matched on their own text, and their slots are
+      left out of the walk. On Node, 5,000 events in the window, 30 endless
+      series and 3,000 tasks take 55–115 ms a search. **Matching is TypeScript, not SQL**: NFD with the combining
+      marks dropped, lowercased without a locale, and every
+      whitespace-separated word must occur in one field — an event's title,
+      place, notes, guest names and addresses; a task's title and notes.
+      SQLite's LIKE folds neither accents nor non-ASCII case. A blank query
+      finds nothing and never reaches the backend. **One hit per series**,
+      keyed by account, calendar and `recurringEventId` (Google's expanded
+      instances and overrides carry the master's id, EventKit's occurrences
+      the series' `eventIdentifier`): the next occurrence that is not over
+      (one under way counts), else the latest past one, marked repeating; a
+      this-and-following split stays two series. **Order**: Upcoming
+      soonest first, Past most recent first, then Tasks (open ones by due
+      day, timed before untimed, the undated ones, completed ones latest
+      first); 50 per group, each with its total ("The first 50 of N").
+      All-day events are judged by their dates in the zone, not their UTC
+      midnights, for "over" and for sorting before the day's timed events
+      — which is why the payload carries the primary zone, like the date
+      payloads of the task reads. **`useSearch`** debounces 200 ms, keeps
+      one atom per query in the bounded LRU (a late answer for an earlier
+      query never shows), keeps the previous results up while the next one
+      loads (`stale`, never shown as "no matches") and re-runs on
+      EVENTS_KEY and TASKS_KEY, so an edit or a delete made from a result
+      updates the list. **Desktop**: the side panel's `search` kind,
+      opened by ⌘F (not under a dialog, not over an open editor, whose
+      draft it would drop) or the toolbar's Search, which toggles it. Enter
+      opens the top result and the arrow keys walk the list — once the rows
+      answer the text typed: Enter pressed sooner waits for them, and the
+      arrows do not walk into an earlier query's rows. An event result
+      shows its day in the grid — its own week even after a pan rolled the
+      window elsewhere (`goToDay`, which the mini month and a notification
+      click use too) — scrolls the time grid to it when it is out of view,
+      and opens that occurrence in the inspector, whose
+      "‹ Results" goes back; a task result opens its editor. A panel opened
+      from a result (`fromSearch`) closes back to the results (a delete
+      included); the inspector's ✕ closes to the rail, and Escape steps
+      back one level. The search runs in `CalendarBody`, not its panel, so
+      it stays current while a result is open and is on screen at once on
+      the way back, scrolled where it was; the text is kept when search
+      closes, and ⌘F selects it. **iOS**: the native pattern — the Search
+      tab (search role) is a stack of one screen with `Stack.SearchBar`,
+      which iOS 26 puts in the tab bar; Maestro drives that field by its
+      placeholder, so no React Native field was needed, and nothing native
+      changed. Results are a SectionList whose rows are one accessibility
+      element each; events open the detail sheet and tasks the editor
+      through the editor host. The mutation toast stands on the tab bar's
+      top edge: the screen runs under the bar and its bottom safe-area inset
+      already holds it (83 pt on iOS 26.5), so the toast's area ends at that
+      inset — adding the bar's 49 pt again floated it 49 pt higher than on
+      the other tabs. **Found on the way**: `formatZoneTimeRange`
+      wrote "2:00 PM – 3:00 PM PM" on iOS — Apple's ICU puts a narrow
+      no-break space before AM/PM — which also hit the secondary-zone lines
+      under events since the time zones PR. **Deferred**: a search tool
+      for the agent gateway, recall beyond the window, calendar names as
+      search text, highlighting the matched words (todo.md). **e2e**:
+      `search.e2e.ts` (desktop) and flow 25 with `common/search-for.yaml`
+      (iOS); the detail sheet's Delete stays in the tree behind the
+      confirmation alert's, so the flow taps the alert's by position.
 
 ### Dependency sweep (2026-10-09)
 

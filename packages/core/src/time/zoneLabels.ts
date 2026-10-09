@@ -42,8 +42,13 @@ const zonedTime = (epochMs: number, zone: string): Temporal.PlainTime =>
 
 const period = (time: Temporal.PlainTime): string => (time.hour < 12 ? 'AM' : 'PM');
 
+/**
+ * '2:00' without its period. Apple's ICU (Hermes on iOS) puts a narrow
+ * no-break space before AM/PM where Node's has a plain one; matching only
+ * the plain space left the period in, and a range read "2:00 PM – 3:00 PM PM".
+ */
 const minutes = (time: Temporal.PlainTime): string =>
-  clock(time, { hour: 'numeric', minute: '2-digit' }).replace(/ (AM|PM)$/, '');
+  clock(time, { hour: 'numeric', minute: '2-digit' }).replace(/\s(AM|PM)$/u, '');
 
 /** '2:00 – 3:00 PM' when both ends share a period, else '11:00 PM – 12:00 AM'. */
 export const formatZoneTimeRange = (startUtc: number, endUtc: number, zone: string): string => {

@@ -59,6 +59,7 @@ import { clearPendingVisibility } from './importedVisibility.ts';
 import { locationHandlers } from './locationHandlers.ts';
 import { EventMutations } from './mutations.ts';
 import { PlatformSettings } from './platformSettings.ts';
+import { searchCalendar } from './search.ts';
 import { buildSettingsDocument } from './settingsExport.ts';
 import { Mirrors } from './mirrors.ts';
 import { importSettings, previewSettingsImport } from './settingsImport.ts';
@@ -425,6 +426,8 @@ export const commonBackendHandlers: Omit<BackendHandlers<CommonBackendServices>,
       const mutations = yield* EventMutations;
       yield* mutations.respondToEvent(params);
     }),
+
+  search: ({ query, timeZone }) => searchCalendar(query, timeZone),
 
   searchContacts: ({ limit, query }) =>
     Effect.gen(function* () {

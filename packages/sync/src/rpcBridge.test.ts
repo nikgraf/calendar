@@ -1,4 +1,10 @@
-import { Account, AppBackendRpcs, BackendError, type BackendHandlers } from '@calendar/core';
+import {
+  Account,
+  AppBackendRpcs,
+  BackendError,
+  type BackendHandlers,
+  EMPTY_SEARCH_RESULTS,
+} from '@calendar/core';
 import { makeInvalidationBus } from '@calendar/db';
 import { expect, it } from '@effect/vitest';
 import { Effect, Fiber, Layer, Option, Stream } from 'effect';
@@ -90,6 +96,7 @@ const stubHandlers: BackendHandlers = {
   respondToEvent: () => Effect.void,
   runMirrorsNow: () => Effect.void,
   saveMirror: notStubbed,
+  search: () => Effect.succeed(EMPTY_SEARCH_RESULTS),
   searchContacts: () => Effect.succeed([]),
   searchPlaces: () => Effect.succeed([]),
   setBirthdayReminderOverride: () => Effect.void,
