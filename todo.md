@@ -211,6 +211,8 @@ decision and platform notes live in `docs/decisions.md`.
     - special feature: automatically sync those e.g. meetup event gets synced to family calendar
     - special feature: add in one calendar as normal even, but show in others as blocked or only share certain information
 - Prefetch week±1 in the range LRU (noted when the LRU landed)
-- Next Expo SDK: takes react-native 0.87, reanimated 4.6 / worklets 0.12,
-  gesture-handler 3, react 19.3, datetimepicker 9.2 with it (all held back
-  by the 2026-09-14 dependency sweep because SDK 57 bundles the older ones)
+- Next Expo SDK: takes react-native 0.87, reanimated 4.7 / worklets 0.13,
+  gesture-handler 3, react 19.3, datetimepicker 9.2, safe-area-context
+  5.10, screens 4.28 with it (all held back by the 2026-10-09 dependency
+  sweep because SDK 57 bundles the older ones), and drops the SDK 57
+  `trustPolicyExclude` list in `pnpm-workspace.yaml`

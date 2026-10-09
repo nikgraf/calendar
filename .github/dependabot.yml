@@ -28,8 +28,8 @@ updates:
       # vitest vite-plus bundles: the two move together, by hand.
       - dependency-name: 'vite-plus'
       - dependency-name: 'vitest'
-      # Majors (Electron Forge, Babel, op-sqlite — whose Effect adapter
-      # wants < 18 — and the like) come with the sweep, one commit each.
+      # Majors (Babel, op-sqlite — whose Effect adapter wants < 18 — and
+      # the like) come with the sweep, one commit each.
       - dependency-name: '*'
         update-types: ['version-update:semver-major']
       # The Expo SDK decides the React Native stack (`npx expo install

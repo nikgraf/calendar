@@ -12,9 +12,7 @@ trustPolicy: no-downgrade
 # Legacy transitive pins that predate their packages' provenance — they
 # register as trust downgrades without being ones. Audit when bumped.
 trustPolicyExclude:
-  - semver@5.7.2
   - semver@6.3.1
-  - undici-types@6.21.0
   - '@octokit/endpoint@9.0.6'
   # Expo moved SDK 58 to npm trusted publishing (GitHub Actions) on
   # 2026-09-29, but still publishes SDK 57 patch releases with a maintainer
