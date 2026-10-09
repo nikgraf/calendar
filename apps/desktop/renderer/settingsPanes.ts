@@ -1,8 +1,10 @@
+import { EXPERIMENTAL_COPY } from '@calendar/core';
+
 /**
  * The settings window's panes, in sidebar order (General first, as macOS
- * apps have it). `keywords` are what the sidebar's search matches besides
- * the label: the sections and settings a pane holds, as a user would name
- * them.
+ * apps have it; the experimental ones last, under their own heading).
+ * `keywords` are what the sidebar's search matches besides the label: the
+ * sections and settings a pane holds, as a user would name them.
  */
 export const SETTINGS_PANES = [
   {
@@ -21,6 +23,11 @@ export const SETTINGS_PANES = [
     label: 'Notifications',
   },
   {
+    id: 'advanced',
+    keywords: ['export', 'import', 'settings file', 'backup', 'transfer'],
+    label: 'Advanced',
+  },
+  {
     id: 'mirrors',
     keywords: ['shared calendar', 'copy', 'availability', 'busy'],
     label: 'Mirrors',
@@ -30,15 +37,19 @@ export const SETTINGS_PANES = [
     keywords: ['mcp', 'cli', 'token', 'ai', 'claude', 'permissions', 'grants'],
     label: 'Agents',
   },
-  {
-    id: 'advanced',
-    keywords: ['export', 'import', 'settings file', 'backup', 'transfer'],
-    label: 'Advanced',
-  },
 ] as const;
 
 export type SettingsPaneId = (typeof SETTINGS_PANES)[number]['id'];
 export type SettingsPane = (typeof SETTINGS_PANES)[number];
+
+/**
+ * The panes listed under "Experimental": features that may still change
+ * or go away. The heading names the group; each such pane says what it
+ * means at its top.
+ */
+const EXPERIMENTAL_PANES: ReadonlySet<SettingsPaneId> = new Set(['mirrors', 'agents']);
+
+export const isExperimentalPane = (id: SettingsPaneId): boolean => EXPERIMENTAL_PANES.has(id);
 
 /** The page's hash routes: `#settings` is the settings window, `#settings/<pane>` one of its panes. */
 export const SETTINGS_HASH = '#settings';
@@ -54,8 +65,9 @@ export const paneFromHash = (hash: string): SettingsPaneId | null => {
 
 /**
  * The panes a search shows: every pane for an empty query, otherwise
- * those whose label or keywords contain every word of it (case-folded).
- * Order is kept.
+ * those whose label or keywords contain every word of it (case-folded) —
+ * an experimental pane's heading counts as one of its words. Order is
+ * kept.
  */
 export const filterPanes = (query: string): ReadonlyArray<SettingsPane> => {
   const words = query.toLowerCase().split(/\s+/).filter(Boolean);
@@ -63,7 +75,13 @@ export const filterPanes = (query: string): ReadonlyArray<SettingsPane> => {
     return SETTINGS_PANES;
   }
   return SETTINGS_PANES.filter((pane) => {
-    const haystack = [pane.label, ...pane.keywords].join(' ').toLowerCase();
+    const haystack = [
+      pane.label,
+      ...pane.keywords,
+      isExperimentalPane(pane.id) ? EXPERIMENTAL_COPY.label : '',
+    ]
+      .join(' ')
+      .toLowerCase();
     return words.every((word) => haystack.includes(word));
   });
 };

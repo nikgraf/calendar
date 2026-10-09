@@ -9,6 +9,9 @@ tags:
     file: ../common/open-settings-page.yaml
     env:
       PAGE: mirrors
+# Listed under "Experimental" on the root, and the page says so.
+- assertVisible:
+    id: 'experimental-note'
 - scrollUntilVisible:
     element:
       id: 'mirror-add'

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vite-plus/test';
-import { filterPanes, paneFromHash, SETTINGS_PANES } from './settingsPanes.ts';
+import { filterPanes, isExperimentalPane, paneFromHash, SETTINGS_PANES } from './settingsPanes.ts';
 
 describe('filterPanes', () => {
   it('shows every pane for an empty or blank query', () => {
@@ -17,6 +17,25 @@ describe('filterPanes', () => {
   it('needs every word, so a longer query narrows', () => {
     expect(filterPanes('reminders birthdays').map((pane) => pane.id)).toEqual(['notifications']);
     expect(filterPanes('reminders nowhere')).toEqual([]);
+  });
+
+  it('finds the experimental panes by their heading', () => {
+    expect(filterPanes('experimental').map((pane) => pane.id)).toEqual(['mirrors', 'agents']);
+    expect(filterPanes('experimental token').map((pane) => pane.id)).toEqual(['agents']);
+  });
+});
+
+describe('isExperimentalPane', () => {
+  it('lists mirrors and agents last, after every other pane', () => {
+    expect(SETTINGS_PANES.map((pane) => isExperimentalPane(pane.id))).toEqual([
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+    ]);
+    expect(SETTINGS_PANES.slice(-2).map((pane) => pane.id)).toEqual(['mirrors', 'agents']);
   });
 });
 

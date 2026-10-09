@@ -1,3 +1,4 @@
+import { EXPERIMENTAL_COPY } from '@calendar/core';
 import { type ReactNode, useEffect, useState, useSyncExternalStore } from 'react';
 import { AccountsView } from './AccountsView.tsx';
 import { AgentsSection } from './agents/AgentsSection.tsx';
@@ -12,9 +13,11 @@ import { RemindersSection } from './RemindersSection.tsx';
 import { SettingsFileSection, SettingsTransferSection } from './SettingsFileSection.tsx';
 import {
   filterPanes,
+  isExperimentalPane,
   paneFromHash,
   SETTINGS_HASH,
   SETTINGS_PANES,
+  type SettingsPane,
   type SettingsPaneId,
 } from './settingsPanes.ts';
 import { TimeZonesSection } from './TimeZonesSection.tsx';
@@ -81,6 +84,21 @@ const readHash = (): string => window.location.hash;
 /** A tab click. A same-document navigation: `hashchange` follows, no reload, no history entry. */
 const showPane = (id: SettingsPaneId): void => window.location.replace(`${SETTINGS_HASH}/${id}`);
 
+/** What "Experimental" means, at the top of each pane listed under it. */
+function ExperimentalNote() {
+  return (
+    <p
+      className="flex items-center gap-2 text-xs text-ink-secondary"
+      data-testid="settings-experimental-note"
+    >
+      <span className="shrink-0 rounded-full bg-fill px-2 py-0.5 font-medium text-ink">
+        {EXPERIMENTAL_COPY.label}
+      </span>
+      {EXPERIMENTAL_COPY.note}
+    </p>
+  );
+}
+
 /**
  * The settings window's page (the main process loads it at `#settings`):
  * a sidebar of panes with a search field, the pane's title over its
@@ -100,6 +118,9 @@ const showPane = (id: SettingsPaneId): void => window.location.replace(`${SETTIN
  * agent name, a token shown once and each pane's scroll position survive a
  * look at another pane. The search only narrows the sidebar; the pane in
  * view stays, even when it is filtered out of the list.
+ *
+ * The experimental panes are a second tab list under their own heading,
+ * so a screen reader announces the group as well as the tab.
  */
 export function SettingsWindow() {
   const hash = useSyncExternalStore(subscribeHash, readHash);
@@ -108,6 +129,30 @@ export function SettingsWindow() {
   const label = SETTINGS_PANES.find((entry) => entry.id === pane)!.label;
   const [query, setQuery] = useState('');
   const shown = filterPanes(query);
+  const stable = shown.filter((entry) => !isExperimentalPane(entry.id));
+  const experimental = shown.filter((entry) => isExperimentalPane(entry.id));
+
+  const tab = (entry: SettingsPane) => (
+    <button
+      aria-controls={`settings-pane-${entry.id}`}
+      aria-selected={pane === entry.id}
+      className={`flex h-8 items-center gap-2.5 rounded-control px-2 text-left text-[13px] ${
+        pane === entry.id ? 'bg-selection text-on-selection' : 'hover:bg-fill'
+      }`}
+      data-testid={`settings-tab-${entry.id}`}
+      key={entry.id}
+      onClick={() => showPane(entry.id)}
+      role="tab"
+      type="button"
+    >
+      <span
+        className={`flex size-5.5 shrink-0 items-center justify-center rounded-[6px] ${PANE_TINT[entry.id]}`}
+      >
+        <PaneIcon pane={entry.id} size={13} />
+      </span>
+      {entry.label}
+    </button>
+  );
 
   useEffect(() => {
     document.title = label;
@@ -138,32 +183,32 @@ export function SettingsWindow() {
             value={query}
           />
         </label>
-        <div className="flex flex-col gap-0.5 px-2" role="tablist">
-          {shown.map((entry) => (
-            <button
-              aria-controls={`settings-pane-${entry.id}`}
-              aria-selected={pane === entry.id}
-              className={`flex h-8 items-center gap-2.5 rounded-control px-2 text-left text-[13px] ${
-                pane === entry.id ? 'bg-selection text-on-selection' : 'hover:bg-fill'
-              }`}
-              data-testid={`settings-tab-${entry.id}`}
-              key={entry.id}
-              onClick={() => showPane(entry.id)}
-              role="tab"
-              type="button"
+        {stable.length === 0 ? null : (
+          <div className="flex flex-col gap-0.5 px-2" role="tablist">
+            {stable.map(tab)}
+          </div>
+        )}
+        {shown.length === 0 ? (
+          <p className="px-4 py-3 text-xs text-ink-secondary">No settings match.</p>
+        ) : null}
+        {experimental.length === 0 ? null : (
+          <>
+            <h2
+              className={`${stable.length === 0 ? 'mt-1' : 'mt-4'} px-4 pb-1 text-[11px] font-semibold text-ink-secondary`}
+              data-testid="settings-experimental-heading"
+              id="settings-experimental-heading"
             >
-              <span
-                className={`flex size-5.5 shrink-0 items-center justify-center rounded-[6px] ${PANE_TINT[entry.id]}`}
-              >
-                <PaneIcon pane={entry.id} size={13} />
-              </span>
-              {entry.label}
-            </button>
-          ))}
-          {shown.length === 0 ? (
-            <p className="px-2 py-3 text-xs text-ink-secondary">No settings match.</p>
-          ) : null}
-        </div>
+              {EXPERIMENTAL_COPY.label}
+            </h2>
+            <div
+              aria-labelledby="settings-experimental-heading"
+              className="flex flex-col gap-0.5 px-2"
+              role="tablist"
+            >
+              {experimental.map(tab)}
+            </div>
+          </>
+        )}
       </nav>
       <div className="flex min-w-0 flex-1 flex-col">
         <header
@@ -184,7 +229,10 @@ export function SettingsWindow() {
             key={entry.id}
             role="tabpanel"
           >
-            <div className="flex flex-col gap-4">{PANE_CONTENT[entry.id]}</div>
+            <div className="flex flex-col gap-4">
+              {isExperimentalPane(entry.id) ? <ExperimentalNote /> : null}
+              {PANE_CONTENT[entry.id]}
+            </div>
           </div>
         ))}
       </div>

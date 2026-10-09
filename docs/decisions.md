@@ -2619,3 +2619,25 @@ then iOS (both in `todo.md`).
       peer is `<18`). Too young for the release-age gate on the day:
       Effect 4.0.2 (Hermes HttpClient and React Native cookie fixes),
       Electron 44.7, eas-cli 24.12.
+
+### Experimental: mirrors and agents (2026-10-09)
+
+- [x] Mark calendar mirrors and the agent gateway as experimental —
+      done (`todo/experimental-labels`). **A label in Settings, not a
+      switch**: both features already do nothing until someone sets one
+      up (a mirror definition, an agent token), so an "enable
+      experimental features" gate would guard nothing and would switch
+      off mirrors people already run; the agent socket keeps listening
+      at launch, harmless without a token. **Grouped, not badged**: the
+      desktop sidebar lists them last, under an "Experimental" heading
+      below Advanced — a second tab list labelled by that heading, so a
+      screen reader announces the group — and the sidebar search finds
+      both by the word; iOS moves Mirrors (Agents is Mac-only) into its
+      own section with that header, below Advanced, the version line
+      under it. **Each pane says what that means at its top** (a
+      capsule and "This feature may still change, or go away, in a later
+      version."; on iOS inside the page's hero), since the heading alone
+      only names the group. The words
+      live in core (`EXPERIMENTAL_COPY`) so both apps say the same thing.
+      Nothing else changes: the settings file, the MCP tools' descriptions
+      and the agent approval dialog carry no label.

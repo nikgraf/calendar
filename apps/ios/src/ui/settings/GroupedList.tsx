@@ -1,3 +1,4 @@
+import { EXPERIMENTAL_COPY } from '@calendar/core';
 import { Host, Switch } from '@expo/ui';
 import { labelsHidden } from '@expo/ui/swift-ui/modifiers';
 import { type Href, useRouter } from 'expo-router';
@@ -158,6 +159,22 @@ export function PageHero({
       </Text>
       {subtitle ? <Text style={styles.heroSubtitle}>{subtitle}</Text> : null}
       {children}
+    </View>
+  );
+}
+
+/**
+ * What "Experimental" on the Settings root means, inside the PageHero of
+ * each page listed under it: the capsule, then one line.
+ */
+export function ExperimentalNote() {
+  const styles = useStyles(makeStyles);
+  return (
+    <View style={styles.experimental} testID="experimental-note">
+      <View style={styles.experimentalCapsule}>
+        <Text style={styles.experimentalLabel}>{EXPERIMENTAL_COPY.label}</Text>
+      </View>
+      <Text style={styles.experimentalNote}>{EXPERIMENTAL_COPY.note}</Text>
     </View>
   );
 }
@@ -720,6 +737,28 @@ const makeStyles = (colors: ThemeColors) =>
     },
     disabled: {
       opacity: 0.4,
+    },
+    experimental: {
+      alignItems: 'center',
+      gap: 6,
+      marginTop: 6,
+    },
+    experimentalCapsule: {
+      backgroundColor: colors.fill,
+      borderRadius: 999,
+      paddingHorizontal: 10,
+      paddingVertical: 3,
+    },
+    experimentalLabel: {
+      color: colors['text-secondary'],
+      fontSize: 13,
+      fontWeight: '600',
+    },
+    experimentalNote: {
+      color: colors['text-secondary'],
+      fontSize: 13,
+      lineHeight: 18,
+      textAlign: 'center',
     },
     footer: {
       color: colors['text-secondary'],
