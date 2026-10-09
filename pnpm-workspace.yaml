@@ -17,11 +17,37 @@ trustPolicyExclude:
   - semver@6.3.1
   - undici-types@6.21.0
   - '@octokit/endpoint@9.0.6'
-  # Expo publishes some @expo/ui versions through npm trusted publishing and
-  # others with a maintainer token; 57.0.21 is the latter, like the expo
-  # package of the same SDK release (same maintainer, same day). Audited
-  # 2026-10-07; re-audit on the next bump.
-  - '@expo/ui@57.0.21'
+  # Expo moved SDK 58 to npm trusted publishing (GitHub Actions) on
+  # 2026-09-29, but still publishes SDK 57 patch releases with a maintainer
+  # token, so pnpm reads every SDK 57 package published since as a trust
+  # downgrade. These are the SDK 57 release of 2026-10-06, each audited on
+  # 2026-10-09: published by the same Expo maintainer as every earlier
+  # SDK 57 release, all from one gitHead (50ac74f, the "Publish packages"
+  # commit on expo/expo's sdk-57 branch). Pinned by version, so the next
+  # SDK 57 patch is checked again; drop the list with SDK 58.
+  - '@expo/cli@57.0.28'
+  - '@expo/config-plugins@57.0.10'
+  - '@expo/config@57.0.10'
+  - '@expo/image-utils@0.11.6'
+  - '@expo/metro-config@57.0.13'
+  - '@expo/metro-file-map@57.0.4'
+  - '@expo/prebuild-config@57.0.17'
+  - '@expo/require-utils@57.0.6'
+  - '@expo/router-server@57.0.12'
+  - '@expo/ui@57.0.22'
+  - 'babel-preset-expo@57.0.14'
+  - 'expo-asset@57.0.19'
+  - 'expo-auth-session@57.0.14'
+  - 'expo-constants@57.0.21'
+  - 'expo-eas-client@57.0.5'
+  - 'expo-linking@57.0.12'
+  - 'expo-maps@57.0.4'
+  - 'expo-modules-autolinking@57.0.14'
+  - 'expo-modules-core@57.0.21'
+  - 'expo-notifications@57.0.22'
+  - 'expo-router@57.0.25'
+  - 'expo-updates@57.0.25'
+  - 'expo@57.0.27'
 blockExoticSubdeps: true
 
 catalog:
