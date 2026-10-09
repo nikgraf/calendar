@@ -484,6 +484,11 @@ describe('The notice stack in a narrow window', () => {
   afterEach(async (context) => {
     if (context.task.result?.state === 'fail') {
       await app.dump(context.task.name);
+      // A retry starts from the grid: the editor this attempt left open
+      // squeezes away the reminder's chip the test begins with.
+      await app.cdp.eval(
+        `[...document.querySelectorAll('[data-testid="panel"] button')].find((b) => b.textContent?.trim() === 'Cancel')?.click()`,
+      );
     }
   });
   afterAll(async () => {
@@ -498,6 +503,11 @@ describe('The notice stack in a narrow window', () => {
     await cdp.click(complete.x, complete.y);
     await cdp.waitFor(`!!document.querySelector('[data-testid="mutation-toast"]')`);
     await cdp.openEditor('[title^="Budget review (mine)"]');
+    // The stack leaves the narrowed column once its ResizeObserver reports
+    // and React renders the new span (its inline width). A CI window renders
+    // in the background, where that took longer than the measurement below:
+    // the banner was read at 29 px, then laid out wide moments later.
+    await cdp.waitFor(`!!document.querySelector('[data-testid="notice-stack"]')?.style.width`);
     // The editor's buttons at the panel's foot, where the notices are.
     await cdp.eval(
       `[...document.querySelectorAll('[data-testid="panel"] button')].find((b) => b.textContent?.trim() === 'Save')?.scrollIntoView({ block: 'end' })`,
