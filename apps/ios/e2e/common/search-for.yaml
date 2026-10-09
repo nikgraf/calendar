@@ -1,0 +1,42 @@
+appId: com.solunivo.app.dev
+name: Search for QUERY in the Search tab until RESULT shows (shared)
+---
+# The system search field (in the tab bar on iOS 26) is found by its
+# placeholder, which stays its label while it holds text. A fresh
+# simulator may show the keyboard's one-time "slide to type" card; it is
+# dismissed wherever it turns up.
+- runFlow:
+    when:
+      visible: 'Continue'
+    commands:
+      - tapOn: 'Continue'
+- tapOn: 'Events and tasks'
+- runFlow:
+    when:
+      visible: 'Continue'
+    commands:
+      - tapOn: 'Continue'
+- runFlow:
+    when:
+      visible: 'Clear text'
+    commands:
+      - tapOn: 'Clear text'
+- inputText: ${QUERY}
+- extendedWaitUntil:
+    visible: ${RESULT}
+    timeout: 10000
+    optional: true
+# XCTest typing can drop or move letters (flow 07): type it again until
+# the result shows.
+- repeat:
+    times: 3
+    while:
+      notVisible: ${RESULT}
+    commands:
+      - tapOn: 'Clear text'
+      - inputText: ${QUERY}
+      - extendedWaitUntil:
+          visible: ${RESULT}
+          timeout: 10000
+          optional: true
+- assertVisible: ${RESULT}
