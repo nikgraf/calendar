@@ -6,8 +6,7 @@ nodeLinker: hoisted
 
 # Supply-chain guards: newly published versions must be at least 2 days old
 # before they resolve, package trust levels can't silently downgrade, and
-# non-registry (git/url) subdeps are blocked for fresh resolutions —
-# lockfile-pinned entries (@electron/node-gyp's git tarball) stay allowed.
+# non-registry (git/url) subdeps are blocked for fresh resolutions.
 minimumReleaseAge: 2880 # 2 days
 trustPolicy: no-downgrade
 # Legacy transitive pins that predate their packages' provenance — they
@@ -77,12 +76,6 @@ onlyBuiltDependencies:
   - unrs-resolver
 
 overrides:
-  # @electron/rebuild pins @electron/node-gyp to a git SHA; the registry
-  # publishes the same fork, and blockExoticSubdeps forbids git subdeps.
-  '@electron/node-gyp': 10.2.0-electron.2
-  # yauzl 2.x silently kills the process under modern Node during
-  # electron-packager's zip extraction (same fix as codiff).
-  'extract-zip>yauzl': ^3.4.0
   # The react-dom pnpm installs for Expo's optional web peer
   # (@expo/metro-runtime) would otherwise be the newest, past the 19.2 hold.
   react-dom: 'catalog:'
