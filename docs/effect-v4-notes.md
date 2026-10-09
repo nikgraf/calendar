@@ -1,6 +1,6 @@
 # Effect v4 notes
 
-The repo pins every `effect*` package exactly to **4.0.0** via the pnpm
+The repo pins every `effect*` package exactly to **4.0.1** via the pnpm
 catalog. v4 is a substantial break from v3 and was built here on its thinly
 documented pre-releases — this is the catalog of differences and traps we
 hit, each as symptom → cause → fix. The modules this app leans on hardest
@@ -15,7 +15,7 @@ rc.115 → 4.0.0 cost two: rc.118 moved every `effect/unstable/*` module to
 `effect/*` and removed the old paths (a mechanical import rewrite, ~100
 files), and renamed `Schema.isLengthBetween` → `Schema.isBetweenLength`.
 `effect` also dropped its runtime dependencies. The custom rpc protocol
-shapes were unchanged. `@effect/vitest` declares a Vitest 5 peer, which
+shapes were unchanged. 4.0.0 → 4.0.1 needed no code change. `@effect/vitest` declares a Vitest 5 peer, which
 vite-plus 1.x bundles; tests import the runner from `vite-plus/test` and
 `@effect/vitest` resolves the same `vitest` through the workspace
 override.
