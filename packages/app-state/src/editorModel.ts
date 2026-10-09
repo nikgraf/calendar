@@ -473,7 +473,18 @@ export const useEventEditorModel = ({
         useDefault: false,
       }),
     );
-  const [rsvp, setRsvp] = useState(ownAttendee?.responseStatus);
+  // The user's reply as last chosen here. It follows the record's reply
+  // whenever that changes: the refresh after this view's own answer, or
+  // an answer given elsewhere while a view of the live record (the
+  // desktop inspector) stays open.
+  const storedRsvp = ownAttendee?.responseStatus;
+  const [rsvp, setRsvp] = useState(storedRsvp);
+  const [rsvpSeen, setRsvpSeen] = useState(storedRsvp);
+  if (storedRsvp !== rsvpSeen) {
+    // Render-phase state adjustment (the React "derive from props" pattern).
+    setRsvpSeen(storedRsvp);
+    setRsvp(storedRsvp);
+  }
   const [description, setDescription] = useState(existing?.description ?? '');
   // An existing series seeds the repeat form from its master's lines once
   // they are here (keyed, so the form re-seeds when they land); a new

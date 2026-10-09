@@ -1,4 +1,5 @@
 import { Option, Schema } from 'effect';
+import type { EventRecord } from '../types.ts';
 
 /**
  * What a tap on a notification opens: one occurrence of an event. Read
@@ -19,6 +20,26 @@ export const NotificationTarget = Schema.Struct({
   startUtc: Schema.Number,
 });
 export type NotificationTarget = typeof NotificationTarget.Type;
+
+/** The target naming this occurrence of `event`: what a tap on its reminder opens. */
+export const eventNotificationTarget = (
+  event: Pick<
+    EventRecord,
+    'accountId' | 'calendarId' | 'id' | 'originalStartUtc' | 'recurringEventId' | 'startUtc'
+  >,
+): NotificationTarget => ({
+  accountId: event.accountId,
+  calendarId: event.calendarId,
+  eventId: event.id,
+  kind: 'event',
+  ...(event.recurringEventId === undefined
+    ? {}
+    : {
+        originalStartUtc: event.originalStartUtc ?? event.startUtc,
+        recurringEventId: event.recurringEventId,
+      }),
+  startUtc: event.startUtc,
+});
 
 const decodeTarget = Schema.decodeUnknownOption(NotificationTarget);
 

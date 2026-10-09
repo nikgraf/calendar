@@ -1,7 +1,7 @@
 import { BackendError, type BackendClient, EventRecord } from '@calendar/core';
 import { Effect } from 'effect';
 import { describe, expect, it } from 'vite-plus/test';
-import { eventStartDay, findNotificationEvent } from './notificationTarget.ts';
+import { eventStartDay, findCurrentEvent, findNotificationEvent } from './notificationTarget.ts';
 
 const event = (overrides: Partial<EventRecord> = {}): EventRecord =>
   new EventRecord({
@@ -140,6 +140,38 @@ describe('findNotificationEvent', () => {
         target,
       ),
     ).toBeNull();
+  });
+});
+
+describe('findCurrentEvent', () => {
+  it('reads an event on screen as it is now, an occurrence edited since included', async () => {
+    const shown = event();
+    const refreshed = event({ description: 'Bring the bands' });
+    expect(await findCurrentEvent(client([event({ id: 'other' }), refreshed]), shown)).toBe(
+      refreshed,
+    );
+    // Drawn as `m__1000`; edited on its own since, under Google's instance id.
+    const drawn = event({ id: 'm__1000', originalStartUtc: 1000, recurringEventId: 'm' });
+    const edited = event({
+      id: 'm_19700101T000001Z',
+      originalStartUtc: 1000,
+      recurringEventId: 'm',
+      startUtc: 4000,
+    });
+    expect(await findCurrentEvent(client([edited]), drawn)).toBe(edited);
+  });
+
+  it('answers null once the event is gone, and fails when the backend cannot say', async () => {
+    expect(await findCurrentEvent(client([]), event())).toBeNull();
+    await expect(
+      findCurrentEvent(
+        {
+          getEvent: () => Effect.fail(new BackendError({ message: 'x', tag: 'Stub' })),
+          getEventsInRange: () => Effect.fail(new BackendError({ message: 'x', tag: 'Stub' })),
+        },
+        event(),
+      ),
+    ).rejects.toBeDefined();
   });
 });
 

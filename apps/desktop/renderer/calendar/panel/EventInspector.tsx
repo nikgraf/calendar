@@ -1,7 +1,9 @@
 import {
+  eventReadout,
   RSVP_OPTIONS,
   SCOPE_OPTIONS,
   useEventEditorModel,
+  useEventPlace,
   useMoveConfirmation,
   useTimeZones,
 } from '@calendar/app-state';
@@ -34,6 +36,11 @@ const STATUS_LABEL: Record<string, string> = {
  * without a form — when, where, who, the meeting link, the notes — and
  * carries the two actions that need no form: RSVP and Delete (with the
  * series scope, when the event repeats).
+ *
+ * `event` is the record as it is now — the panel follows it through
+ * refreshes — so everything shown is read from it. The editor model seeds
+ * its fields once, when it mounts; it is here for the actions and their
+ * state (the scope, the reply just given, an error).
  */
 export function EventInspector({
   calendars,
@@ -59,29 +66,23 @@ export function EventInspector({
     seed: { event, initialDate: Temporal.PlainDate.from(utcMsToPlainDate(event.startUtc)) },
     timeZone,
   });
+  const place = useEventPlace(event);
   const { secondary: secondaryZones } = useTimeZones();
   const {
-    attendees,
-    attendeeStatus,
     busy,
     canRsvp,
-    date,
-    description,
-    endTime,
     error,
-    isAllDay,
     isRecurring,
     joinUrl,
-    location,
     readOnly,
     remove,
     respond,
     rsvp,
     scope,
     setScope,
-    startTime,
-    title,
   } = model;
+  const { attendees, date, description, endTime, isAllDay, location, startTime, title } =
+    eventReadout(event, timeZone);
   const calendar = calendars.find(
     (candidate) => candidate.accountId === event.accountId && candidate.id === event.calendarId,
   );
@@ -171,7 +172,7 @@ export function EventInspector({
               <MapPinIcon className="mt-0.5 shrink-0 text-ink-secondary" size={14} />
               <span className="min-w-0 break-words select-text">{location}</span>
             </p>
-            <LocationMap model={model} />
+            <LocationMap place={place} />
           </div>
         ) : null}
         {attendees.length > 0 ? (
@@ -199,19 +200,16 @@ export function EventInspector({
               />
             ) : null}
             <ul className="text-sm">
-              {attendees.map((attendee) => {
-                const status = attendeeStatus(attendee.email);
-                return (
-                  <li className="flex items-center justify-between gap-2" key={attendee.email}>
-                    <span className="min-w-0 truncate select-text">
-                      {attendee.displayName ?? attendee.email}
-                    </span>
-                    <span className="shrink-0 text-xs text-ink-secondary">
-                      {STATUS_LABEL[status?.responseStatus ?? 'needsAction']}
-                    </span>
-                  </li>
-                );
-              })}
+              {attendees.map((attendee) => (
+                <li className="flex items-center justify-between gap-2" key={attendee.email}>
+                  <span className="min-w-0 truncate select-text">
+                    {attendee.displayName ?? attendee.email}
+                  </span>
+                  <span className="shrink-0 text-xs text-ink-secondary">
+                    {STATUS_LABEL[attendee.responseStatus]}
+                  </span>
+                </li>
+              ))}
             </ul>
           </div>
         ) : null}

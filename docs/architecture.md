@@ -620,7 +620,17 @@ model: `docs/agent-gateway.md`.
   (`EditorPanel.tsx`, 360px) from Edit, a slot, New, a task chip or a
   task phrase. `CalendarApp.tsx` holds that as one `PanelState`; the
   panel never joins the dialog stack, so a real dialog over it (the agent
-  approval, capture, a birthday) keeps Escape. The drag hook
+  approval, capture, a birthday) keeps Escape. The inspector follows its
+  event by identity (core `eventIdentity`: account, calendar and id — or,
+  for an occurrence, its series and original start, since its id changes
+  once it is edited on its own). Every render it takes the grid's current
+  row and reads what it shows from that record, not from the editor
+  model's once-seeded fields: a refresh landing after it opened shows,
+  and Edit and Convert seed from the current record. A row the grid does
+  not have (another week, a range still loading) is looked up with
+  `findCurrentEvent`, the tapped-notification lookup; an event that is
+  gone closes the panel. An editor keeps its seed: it is where the draft
+  started. The drag hook
   (`useEventDrag`) is owned by the app, not the week view, so the panel's
   task rows drag onto the grid and lane too (a `'panel'` origin with a
   pointer-following ghost). `lastView` and `sidebarCollapsed` are read

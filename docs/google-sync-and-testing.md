@@ -607,6 +607,13 @@ Flakiness lessons (each caused a real CI failure — keep them enforced):
 - **Fire-and-forget UI mutations can silently drop**: poll for the effect
   and re-click after ~3s of no movement; assert relative change
   (`< before`), not exact counts.
+- **A view shows the data, not a snapshot of it.** A click right after
+  a write can open the inspector before the grid's refresh lands (the
+  notes test clicks once SQLite has the notes); the inspector follows
+  its event, so no test waits for the refresh. Reproduce such races with
+  the renderer throttled — `cdp.send('Emulation.setCPUThrottlingRate',
+  { rate: 6 })`, also 12× — and never commit the throttle: it made #146's
+  race and the stale inspector fail within a few rounds.
 - React inputs need the native value setter + `input`/`change` event
   dispatch; `<select>` likewise (`HTMLSelectElement` prototype setter).
 - Tests share one app instance and run in file order — later tests must

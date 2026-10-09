@@ -194,7 +194,7 @@ export function EventEditorForm({
           </p>
         ) : null}
         <LocationCombobox model={model} />
-        <LocationMap model={model} />
+        <LocationMap place={model} />
         {model.repeatLoaded ? <RepeatRuleFields anchorDate={date} state={model} /> : null}
         {canInvite ? (
           <div className="rounded-control bg-fill p-3">
