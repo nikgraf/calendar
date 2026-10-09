@@ -1,7 +1,7 @@
 import { describeCaptureRow, type CaptureRow } from '@calendar/app-state';
 import type { ReactNode } from 'react';
 import { Modal, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { type ThemeColors, useStyles } from './theme.ts';
+import { BOX_FONT_SCALE, type ThemeColors, useStyles } from './theme.ts';
 
 /**
  * The review list for a capture: every event found in a shared screenshot
@@ -29,11 +29,13 @@ export function CaptureSheet({
     <Modal animationType="slide" onRequestClose={onClose} presentationStyle="pageSheet" visible>
       <SafeAreaView style={styles.container} testID="capture-sheet">
         <View style={styles.header}>
-          <Text style={styles.title}>
+          <Text maxFontSizeMultiplier={BOX_FONT_SCALE} style={styles.title}>
             {rows.length} {rows.length === 1 ? 'event' : 'events'} found
           </Text>
           <Pressable accessibilityRole="button" onPress={onClose} testID="capture-close">
-            <Text style={styles.close}>{allAdded ? 'Done' : 'Close'}</Text>
+            <Text maxFontSizeMultiplier={BOX_FONT_SCALE} style={styles.close}>
+              {allAdded ? 'Done' : 'Close'}
+            </Text>
           </Pressable>
         </View>
         <Text style={styles.hint}>Open one to review it before it is added.</Text>

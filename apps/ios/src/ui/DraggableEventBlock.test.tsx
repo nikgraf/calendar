@@ -53,7 +53,10 @@ vi.mock('react-native-reanimated', () => ({
   useSharedValue: <T,>(value: T) => ({ value }),
   withTiming: <T,>(value: T) => value,
 }));
-vi.mock('./theme.ts', () => ({ useEventTint: () => ({ fill: '#ffffff', text: '#000000' }) }));
+vi.mock('./theme.ts', () => ({
+  BOX_FONT_SCALE: 1.35,
+  useEventTint: () => ({ fill: '#ffffff', text: '#000000' }),
+}));
 
 const { DraggableEventBlock } = await import('./DraggableEventBlock.tsx');
 

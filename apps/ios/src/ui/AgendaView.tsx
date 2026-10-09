@@ -242,16 +242,18 @@ const makeStyles = (colors: ThemeColors) =>
     taskTime: {
       color: colors['text-secondary'],
       fontSize: 13,
-      width: 64,
+      minWidth: 64,
     },
     taskTitle: {
       color: colors.text,
       flex: 1,
       fontSize: 15,
     },
+    // A column at the default size; at larger ones it widens instead of
+    // breaking "8:00 AM" across lines.
     time: {
       fontSize: 13,
-      width: 64,
+      minWidth: 64,
     },
     title: {
       flex: 1,

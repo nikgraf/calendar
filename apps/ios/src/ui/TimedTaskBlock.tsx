@@ -7,7 +7,7 @@ import {
 } from '@calendar/core';
 import { Pressable, StyleSheet, Text, View, type DimensionValue } from 'react-native';
 import { GestureDetector, type PanGesture } from 'react-native-gesture-handler';
-import { type ThemeColors, useStyles } from './theme.ts';
+import { BOX_FONT_SCALE, type ThemeColors, useStyles } from './theme.ts';
 
 /**
  * A compact Apple Reminder with no duration. Its body long-presses into the
@@ -60,7 +60,9 @@ export function TimedTaskBlock({
         onPress={onToggle}
         testID={`timed-task-toggle-${task.id}`}
       >
-        <Text style={styles.checkbox}>{done ? '☑' : '☐'}</Text>
+        <Text maxFontSizeMultiplier={BOX_FONT_SCALE} style={styles.checkbox}>
+          {done ? '☑' : '☐'}
+        </Text>
       </Pressable>
       {listColor ? <View style={[styles.listDot, { backgroundColor: listColor }]} /> : null}
       <GestureDetector gesture={gesture}>
@@ -73,6 +75,7 @@ export function TimedTaskBlock({
           testID={`timed-task-body-${task.id}`}
         >
           <Text
+            maxFontSizeMultiplier={BOX_FONT_SCALE}
             numberOfLines={1}
             style={[styles.title, compact && styles.titleCompact, done && styles.titleDone]}
           >

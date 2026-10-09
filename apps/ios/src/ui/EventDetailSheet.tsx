@@ -15,7 +15,7 @@ import {
 } from '@calendar/core';
 import { Linking, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { confirmEditorRequest } from './EventEditSheet.tsx';
-import { type ThemeColors, useEventTint, useStyles } from './theme.ts';
+import { BOX_FONT_SCALE, type ThemeColors, useEventTint, useStyles } from './theme.ts';
 
 const STATUS_LABEL: Record<string, string> = {
   accepted: 'accepted',
@@ -92,16 +92,24 @@ export function EventDetailSheet({
       <View style={styles.container} testID="event-detail">
         <View style={styles.header}>
           <Pressable accessibilityRole="button" onPress={onClose} testID="event-detail-close">
-            <Text style={styles.cancel}>Close</Text>
+            <Text maxFontSizeMultiplier={BOX_FONT_SCALE} style={styles.cancel}>
+              Close
+            </Text>
           </Pressable>
           <View style={styles.calendarPill}>
             <View style={[styles.dot, { backgroundColor: tint.edge }]} />
-            <Text numberOfLines={1} style={styles.calendarName}>
+            <Text
+              maxFontSizeMultiplier={BOX_FONT_SCALE}
+              numberOfLines={1}
+              style={styles.calendarName}
+            >
               {calendar?.summary ?? 'Calendar'}
             </Text>
           </View>
           <Pressable accessibilityRole="button" onPress={onEdit} testID="event-edit">
-            <Text style={styles.edit}>Edit</Text>
+            <Text maxFontSizeMultiplier={BOX_FONT_SCALE} style={styles.edit}>
+              Edit
+            </Text>
           </Pressable>
         </View>
         <ScrollView contentContainerStyle={styles.content}>

@@ -37,8 +37,14 @@ import { AgendaView } from './AgendaView.tsx';
 import { DayTimeline } from './DayTimeline.tsx';
 import { useEditorHost } from './EditorHost.tsx';
 import { MonthGrid } from './MonthGrid.tsx';
-import { ConflictBanner, DroppedToast, MutationNoticeToast } from './Toast.tsx';
-import { type ThemeColors, useStyles } from './theme.ts';
+import {
+  ConflictBanner,
+  DroppedToast,
+  MutationNoticeToast,
+  NOTICE_GAP,
+  NoticeStack,
+} from './Toast.tsx';
+import { BOX_FONT_SCALE, type ThemeColors, useStyles } from './theme.ts';
 import { WeekStrip } from './WeekStrip.tsx';
 
 /** The view menu's entries, in order. */
@@ -178,7 +184,12 @@ function CalendarBody({
     <SafeAreaView style={styles.safeArea} testID="calendar-screen">
       <StatusBar style="auto" />
       <View style={styles.header}>
-        <Text numberOfLines={1} style={styles.title} testID="day-title">
+        <Text
+          maxFontSizeMultiplier={BOX_FONT_SCALE}
+          numberOfLines={1}
+          style={styles.title}
+          testID="day-title"
+        >
           {title}
         </Text>
         <View style={styles.headerActions}>
@@ -187,12 +198,16 @@ function CalendarBody({
           {pendingOps.length > 0 ? (
             <Pressable
               accessibilityLabel={`${String(pendingOps.length)} unsynced ${pendingOps.length === 1 ? 'change' : 'changes'}, show them`}
+              accessibilityLargeContentTitle={`${String(pendingOps.length)} unsynced`}
               accessibilityRole="button"
+              accessibilityShowsLargeContentViewer
               onPress={openUnsynced}
               style={styles.pendingBadge}
               testID="pending-badge"
             >
-              <Text style={styles.pendingBadgeLabel}>{pendingOps.length} unsynced</Text>
+              <Text maxFontSizeMultiplier={BOX_FONT_SCALE} style={styles.pendingBadgeLabel}>
+                {pendingOps.length} unsynced
+              </Text>
             </Pressable>
           ) : null}
           {/* The view menu: Day · 2 Days · Week · Month · Agenda, the current one checked. */}
@@ -215,44 +230,65 @@ function CalendarBody({
               style={styles.viewButton}
               testID="view-menu"
             >
-              <Text style={styles.viewButtonLabel}>{viewLabel} ▾</Text>
+              <Text maxFontSizeMultiplier={BOX_FONT_SCALE} style={styles.viewButtonLabel}>
+                {viewLabel} ▾
+              </Text>
             </Pressable>
           </MenuView>
-          {/* Icon-only buttons: VoiceOver read the glyphs ("‹") without labels. */}
+          {/* Icon-only buttons: VoiceOver read the glyphs ("‹") without labels.
+              The header is a bar: its text stops at BOX_FONT_SCALE, and at
+              the accessibility sizes a long press shows a button enlarged
+              in the Large Content Viewer, as on the system's bars. */}
           <Pressable
             accessibilityLabel={`Previous ${unit}`}
+            accessibilityLargeContentTitle={`Previous ${unit}`}
             accessibilityRole="button"
+            accessibilityShowsLargeContentViewer
             onPress={() => step(-1)}
             style={styles.navButton}
             testID="nav-prev"
           >
-            <Text style={styles.navLabel}>‹</Text>
+            <Text maxFontSizeMultiplier={BOX_FONT_SCALE} style={styles.navLabel}>
+              ‹
+            </Text>
           </Pressable>
           <Pressable
+            accessibilityLargeContentTitle="Today"
             accessibilityRole="button"
+            accessibilityShowsLargeContentViewer
             onPress={goToday}
             style={styles.navButton}
             testID="today"
           >
-            <Text style={styles.todayLabel}>Today</Text>
+            <Text maxFontSizeMultiplier={BOX_FONT_SCALE} style={styles.todayLabel}>
+              Today
+            </Text>
           </Pressable>
           <Pressable
             accessibilityLabel={`Next ${unit}`}
+            accessibilityLargeContentTitle={`Next ${unit}`}
             accessibilityRole="button"
+            accessibilityShowsLargeContentViewer
             onPress={() => step(1)}
             style={styles.navButton}
             testID="nav-next"
           >
-            <Text style={styles.navLabel}>›</Text>
+            <Text maxFontSizeMultiplier={BOX_FONT_SCALE} style={styles.navLabel}>
+              ›
+            </Text>
           </Pressable>
           <Pressable
             accessibilityLabel="Settings"
+            accessibilityLargeContentTitle="Settings"
             accessibilityRole="button"
+            accessibilityShowsLargeContentViewer
             onPress={openSettings}
             style={styles.navButton}
             testID="open-settings"
           >
-            <Text style={styles.navLabel}>⚙</Text>
+            <Text maxFontSizeMultiplier={BOX_FONT_SCALE} style={styles.navLabel}>
+              ⚙
+            </Text>
           </Pressable>
         </View>
       </View>
@@ -351,17 +387,25 @@ function CalendarBody({
       <View pointerEvents="box-none" style={styles.tabBarRow}>
         <Pressable
           accessibilityLabel="Add"
+          accessibilityLargeContentTitle="Add"
           accessibilityRole="button"
+          accessibilityShowsLargeContentViewer
           onPress={() => host.openQuickAdd(focused)}
           style={[styles.fab, FLOATING_TAB_BAR ? styles.fabInBar : styles.fabAboveBar]}
           testID="add"
         >
-          <Text style={styles.fabLabel}>＋</Text>
+          <Text maxFontSizeMultiplier={BOX_FONT_SCALE} style={styles.fabLabel}>
+            ＋
+          </Text>
         </Pressable>
       </View>
-      <ConflictBanner />
-      <DroppedToast />
-      <MutationNoticeToast />
+      {/* The notices stand on the same row: above the tab bar on iOS 26,
+          where "+" hangs into the bar, and above the floating "+" before. */}
+      <NoticeStack offset={FLOATING_TAB_BAR ? NOTICE_GAP : FAB_INSET + FAB + NOTICE_GAP}>
+        <MutationNoticeToast />
+        <DroppedToast />
+        <ConflictBanner />
+      </NoticeStack>
     </SafeAreaView>
   );
 }

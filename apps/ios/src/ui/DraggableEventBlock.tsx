@@ -12,7 +12,7 @@ import Animated, {
   useSharedValue,
   withTiming,
 } from 'react-native-reanimated';
-import { useEventTint } from './theme.ts';
+import { BOX_FONT_SCALE, useEventTint } from './theme.ts';
 import { pxToMinutes, SNAP_PX } from './timelineLayout.ts';
 
 /**
@@ -217,19 +217,25 @@ export function DraggableEventBlock({
       >
         <Pressable onPress={onPress} style={styles.eventPressable}>
           <Text
+            maxFontSizeMultiplier={BOX_FONT_SCALE}
             numberOfLines={compact ? 2 : 1}
             style={[styles.eventTitle, compact && styles.eventTitleCompact, { color: tint.text }]}
           >
             {event.title}
           </Text>
           {!compact && height > 34 ? (
-            <Text numberOfLines={1} style={[styles.eventTime, { color: tint.text }]}>
+            <Text
+              maxFontSizeMultiplier={BOX_FONT_SCALE}
+              numberOfLines={1}
+              style={[styles.eventTime, { color: tint.text }]}
+            >
               {formatClockTime(event.startUtc, timeZone)} –{' '}
               {formatClockTime(event.endUtc, timeZone)}
             </Text>
           ) : null}
           {!compact && secondaryZones.length > 0 && height > 52 ? (
             <Text
+              maxFontSizeMultiplier={BOX_FONT_SCALE}
               numberOfLines={1}
               style={[styles.eventZones, { color: tint.text }]}
               testID="event-secondary-times"

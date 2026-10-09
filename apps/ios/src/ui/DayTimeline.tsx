@@ -36,7 +36,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import { AllDayColumn } from './AllDayColumn.tsx';
 import { DayColumn } from './DayColumn.tsx';
-import { type ThemeColors, useStyles } from './theme.ts';
+import { BOX_FONT_SCALE, type ThemeColors, useStyles } from './theme.ts';
 import { useTaskDrag } from './useTaskDrag.ts';
 import { WeekStripCell } from './WeekStrip.tsx';
 import { ALL_DAY_ROW_HEIGHT, EDGE_INSET, gutterWidth, HOUR_HEIGHT } from './timelineLayout.ts';
@@ -392,10 +392,17 @@ export function DayTimeline({
               onPress={() => setCollapsed(true)}
               testID="all-day-less"
             >
-              <Text style={[styles.gutterLabel, styles.gutterAction]}>less</Text>
+              <Text
+                maxFontSizeMultiplier={BOX_FONT_SCALE}
+                style={[styles.gutterLabel, styles.gutterAction]}
+              >
+                less
+              </Text>
             </Pressable>
           ) : (
-            <Text style={styles.gutterLabel}>all-day</Text>
+            <Text maxFontSizeMultiplier={BOX_FONT_SCALE} style={styles.gutterLabel}>
+              all-day
+            </Text>
           )}
         </View>
         <View style={styles.stripViewport}>
@@ -445,7 +452,7 @@ export function DayTimeline({
             {Array.from({ length: 24 }, (_, hour) => (
               <View key={hour} style={[styles.hourRow, { top: hour * HOUR_HEIGHT }]}>
                 <View style={[styles.hourLabels, { width: gutter - 12 }]}>
-                  <Text style={styles.hourLabel}>
+                  <Text maxFontSizeMultiplier={BOX_FONT_SCALE} style={styles.hourLabel}>
                     {hour === 0
                       ? ''
                       : new Temporal.PlainTime(hour).toLocaleString('en-US', {
@@ -454,6 +461,7 @@ export function DayTimeline({
                   </Text>
                   {secondaryLabels ? (
                     <Text
+                      maxFontSizeMultiplier={BOX_FONT_SCALE}
                       numberOfLines={1}
                       style={styles.hourLabelSecondary}
                       testID={`hour-secondary-${hour}`}
@@ -515,7 +523,7 @@ export function DayTimeline({
 
       {taskDrag.dragging ? (
         <Animated.View pointerEvents="none" style={[styles.ghost, taskDrag.ghostStyle]}>
-          <Text numberOfLines={1} style={styles.ghostText}>
+          <Text maxFontSizeMultiplier={BOX_FONT_SCALE} numberOfLines={1} style={styles.ghostText}>
             {taskChipLabel(taskDrag.dragging.task)}
           </Text>
         </Animated.View>

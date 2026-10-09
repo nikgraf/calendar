@@ -13,7 +13,7 @@ import {
   Temporal,
 } from '@calendar/core';
 import { Pressable, StyleSheet, Text, View, type ViewStyle } from 'react-native';
-import { type ThemeColors, useStyles, useTheme } from './theme.ts';
+import { BOX_FONT_SCALE, type ThemeColors, useStyles, useTheme } from './theme.ts';
 
 const MAX_DOTS = 4;
 
@@ -87,7 +87,7 @@ export function MonthGrid({
     <View style={styles.container}>
       <View style={styles.weekdayRow}>
         {['M', 'T', 'W', 'T', 'F', 'S', 'S'].map((label, index) => (
-          <Text key={index} style={styles.weekdayLabel}>
+          <Text key={index} maxFontSizeMultiplier={BOX_FONT_SCALE} style={styles.weekdayLabel}>
             {label}
           </Text>
         ))}
@@ -127,6 +127,7 @@ export function MonthGrid({
               >
                 <View style={[styles.dayNumberWrap, isToday && styles.todayWrap]}>
                   <Text
+                    maxFontSizeMultiplier={BOX_FONT_SCALE}
                     style={[
                       styles.dayNumber,
                       !inMonth && styles.outsideMonth,
