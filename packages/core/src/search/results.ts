@@ -65,11 +65,12 @@ export const searchWindow = (nowMs: number, timeZone: string): UtcRange => {
 type Timing = Pick<EventRecord, 'endDate' | 'endUtc' | 'isAllDay' | 'startDate' | 'startUtc'>;
 
 /**
- * Not over yet: an all-day event until its last day ends in the zone (its
- * UTC instants are midnight UTC, hours off the zone's day), a timed one
- * until it ends — one under way is the next occurrence, not a past one.
+ * Not over yet, which makes an event or occurrence upcoming: an all-day one
+ * until its last day ends in the zone whose date `today` is (its UTC
+ * instants are midnight UTC, hours off the zone's day), a timed one until
+ * it ends — one under way is the next occurrence, not a past one.
  */
-const isUpcoming = (event: Timing, nowMs: number, today: string): boolean =>
+export const isNotOver = (event: Timing, nowMs: number, today: string): boolean =>
   event.isAllDay && event.startDate !== undefined
     ? (event.endDate ?? addDaysToPlainDate(event.startDate, 1)) > today
     : event.endUtc > nowMs || event.startUtc >= nowMs;
@@ -136,7 +137,7 @@ const compareTasks = (a: TaskRecord, b: TaskRecord): number => {
  * Orders, collapses and caps what matched a search (see `eventMatchesSearch`
  * / `taskMatchesSearch`). All matching occurrences of one series become one
  * hit: the next occurrence not over yet, else the latest past one. A hit is
- * upcoming until it is over (`isUpcoming`), in `timeZone` for all-day ones.
+ * upcoming until it is over (`isNotOver`), in `timeZone` for all-day ones.
  */
 export const buildSearchResults = ({
   events,
@@ -155,7 +156,7 @@ export const buildSearchResults = ({
   const keyed = events.map((event) => ({
     event,
     start: startKey(event, timeZone),
-    upcoming: isUpcoming(event, nowMs, today),
+    upcoming: isNotOver(event, nowMs, today),
   }));
   type Keyed = (typeof keyed)[number];
   const soonestFirst = (a: Keyed, b: Keyed): number =>

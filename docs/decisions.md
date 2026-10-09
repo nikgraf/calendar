@@ -2490,19 +2490,23 @@ then iOS (both in `todo.md`).
       per-person birthday times are removed by a swipe.
 - [x] Search — done (2026-10-09, `todo/search`).
       **One rpc reads what the views can show**: `search({ query,
-      timeZone })` (`searchCalendar`, both apps) reads events through
-      `loadEventsInRange`, the views' own range query, so series expansion,
-      overrides, zones, visibility, hidden mirror copies, cancelled events
-      and the Apple read-through come with it; tasks are every task of the
-      visible lists (`TaskRepo.getVisible`), Google Tasks and the Reminders
-      mirror. Birthdays are not searched. **A window, not the history**:
-      events are looked for two years either side of today in the primary
-      zone (`SEARCH_WINDOW_YEARS`); the range query's new `keep` predicate
-      is asked before expansion, so only the series that match are expanded
-      (overrides stay whole, to shadow their slots). Older and farther
-      events need full-text search (todo.md, Tier 3). On Node, 5,000 events
-      in the window, 30 endless series and 3,000 tasks take 55–175 ms a
-      search. **Matching is TypeScript, not SQL**: NFD with the combining
+      timeZone })` (`searchCalendar`, both apps) reads the rows the views'
+      range query reads (`EventRepo.getWindow`), so visibility, hidden
+      mirror copies and cancelled events come with it, plus the Apple
+      read-through; tasks are every task of the visible lists
+      (`TaskRepo.getVisible`), Google Tasks and the Reminders mirror.
+      Birthdays are not searched. **A window, not the history**: events are
+      looked for two years either side of today in the primary zone
+      (`SEARCH_WINDOW_YEARS`). Older and farther events need full-text
+      search (todo.md, Tier 3). **A series is walked, not expanded**: over
+      the whole window an hourly series passes the expander's iteration
+      cap and `assembleWindow` drops it, so a matching series is walked
+      outward from now to its next occurrence that is not over, else its
+      latest (`seriesSearchOccurrences`: each direction one span for most
+      rules, a refused span retried a quarter as long). Its overrides are
+      rows of their own, matched on their own text, and their slots are
+      left out of the walk. On Node, 5,000 events in the window, 30 endless
+      series and 3,000 tasks take 55–115 ms a search. **Matching is TypeScript, not SQL**: NFD with the combining
       marks dropped, lowercased without a locale, and every
       whitespace-separated word must occur in one field — an event's title,
       place, notes, guest names and addresses; a task's title and notes.
@@ -2527,9 +2531,13 @@ then iOS (both in `todo.md`).
       updates the list. **Desktop**: the side panel's `search` kind,
       opened by ⌘F (not under a dialog, not over an open editor, whose
       draft it would drop) or the toolbar's Search, which toggles it. Enter
-      opens the top result and the arrow keys walk the list. An event
-      result focuses the grid on its day, scrolls the time grid to it when
-      it is out of view, and opens that occurrence in the inspector, whose
+      opens the top result and the arrow keys walk the list — once the rows
+      answer the text typed: Enter pressed sooner waits for them, and the
+      arrows do not walk into an earlier query's rows. An event result
+      shows its day in the grid — its own week even after a pan rolled the
+      window elsewhere (`goToDay`, which the mini month and a notification
+      click use too) — scrolls the time grid to it when it is out of view,
+      and opens that occurrence in the inspector, whose
       "‹ Results" goes back; a task result opens its editor. A panel opened
       from a result (`fromSearch`) closes back to the results (a delete
       included); the inspector's ✕ closes to the rail, and Escape steps

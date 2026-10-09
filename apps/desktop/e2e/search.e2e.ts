@@ -287,6 +287,27 @@ describe('Search', () => {
     ).toContain('Nothing matches “harbour nowhere”.');
   });
 
+  it('acts on Enter and the arrow keys only once the results answer what was typed', async () => {
+    const { cdp } = app;
+    const keydown = (key: string) =>
+      `document.querySelector(${JSON.stringify(INPUT)}).dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, key: ${JSON.stringify(key)} }))`;
+    await search('harbour');
+    // Typed over and acted on at once, inside the debounce: the list still
+    // shows the results for "harbour", Harbour standup on top.
+    await cdp.eval(`document.querySelector(${JSON.stringify(INPUT)}).select()`);
+    await cdp.type(INPUT, 'harbour lunch');
+    await cdp.eval(keydown('ArrowDown'));
+    expect(
+      await cdp.eval(`document.activeElement === document.querySelector(${JSON.stringify(INPUT)})`),
+    ).toBe(true);
+    await cdp.eval(keydown('Enter'));
+    await cdp.waitFor(
+      `document.querySelector('[data-testid="inspector-title"]')?.textContent === 'Harbour lunch at the pier'`,
+    );
+    await cdp.clickTestId('inspector-back');
+    await cdp.waitFor(`${PANEL_KIND} === 'search'`);
+  });
+
   it('opens an event result on its day, outlined in the grid, with a way back to the results', async () => {
     const { cdp } = app;
     await search('harbour');
@@ -334,6 +355,31 @@ describe('Search', () => {
         `document.querySelector('[data-testid="search-toggle"]').getAttribute('aria-pressed')`,
       ),
     ).toBe(null);
+  });
+
+  it('moves a panned week to a result in another week', async () => {
+    const { cdp } = app;
+    const title = `(document.querySelector('[data-testid="toolbar-title"]')?.textContent ?? '')`;
+    // A trackpad pan rolls the week by days; the window then stops following the focused day.
+    const before = await cdp.eval<string>(title);
+    await cdp.wheelBurst('[data-testid="week-scroller"]', { count: 12, deltaX: 240 });
+    await cdp.waitFor(`${title} !== ${JSON.stringify(before)}`);
+    await cdp.clickTestId('search-toggle');
+    await cdp.waitFor(
+      `${SETTLED} && !!document.querySelector('[data-testid="search-group-past"]')`,
+    );
+    // Ten days back, outside the panned week.
+    await openResult('Harbour retro');
+    await cdp.waitFor(
+      `document.querySelector('[data-testid="inspector-title"]')?.textContent === 'Harbour retro'`,
+    );
+    await cdp.waitFor(`!!document.querySelector('[data-selected][title^="Harbour retro"]')`);
+    // Leave the results closed and the grid on this week for the next test.
+    await cdp.pressEscape();
+    await cdp.waitFor(`${PANEL_KIND} === 'search'`);
+    await cdp.pressEscape();
+    await cdp.waitFor(`${PANEL_KIND} !== 'search'`);
+    await cdp.clickTestId('today');
   });
 
   it('drops an event deleted from its result, and the toolbar button reopens the same query', async () => {

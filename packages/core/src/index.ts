@@ -50,6 +50,7 @@ export * from './scheduling/findSlots.ts';
 export * from './search/label.ts';
 export * from './search/match.ts';
 export * from './search/results.ts';
+export * from './search/series.ts';
 export * from './settingsDocument.ts';
 export * from './syncStatus.ts';
 export * from './taskInbox.ts';

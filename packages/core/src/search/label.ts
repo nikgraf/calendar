@@ -35,15 +35,17 @@ export const searchEventWhen = (
       : `${dayLabel(first, today)} · All day`;
   }
   const startDay = toZonedDateTime(event.startUtc, timeZone).toPlainDate();
-  // An event ending at midnight still belongs to its start day.
-  const endDay = toZonedDateTime(
+  // An event ending at midnight still belongs to its start day: one date.
+  const lastDay = toZonedDateTime(
     Math.max(event.startUtc, event.endUtc - 1),
     timeZone,
   ).toPlainDate();
-  if (startDay.equals(endDay)) {
+  if (startDay.equals(lastDay)) {
     const times = formatZoneTimeRange(event.startUtc, event.endUtc, timeZone);
     return `${dayLabel(startDay, today)} · ${times}`;
   }
+  // Longer, its end is named by the day it falls on (midnight: the next one).
+  const endDay = toZonedDateTime(event.endUtc, timeZone).toPlainDate();
   const start = `${dayLabel(startDay, today)}, ${formatClockTime(event.startUtc, timeZone)}`;
   const end = `${dayLabel(endDay, today)}, ${formatClockTime(event.endUtc, timeZone)}`;
   return `${start} – ${end}`;

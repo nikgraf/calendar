@@ -171,11 +171,23 @@ export const useCalendarNavigation = ({
     setWeekWindowStart(null);
   }, [timeZone]);
 
+  /**
+   * Shows a given day: it becomes the focused day, and the week view drops
+   * a window a pan rolled, which would otherwise go on showing its own
+   * days, for the week holding it — what Today does for today.
+   * `setFocused` alone moves the focus within the days on screen.
+   */
+  const goToDay = useCallback((date: Temporal.PlainDate) => {
+    setFocused(date);
+    setWeekWindowStart(null);
+  }, []);
+
   return {
     /** Neighbour days drawn on each side of `days` (matches `range`). */
     buffer,
     days,
     focused,
+    goToDay,
     goToday,
     panByDays,
     range,

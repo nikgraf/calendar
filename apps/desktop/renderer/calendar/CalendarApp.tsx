@@ -156,13 +156,24 @@ function CalendarBody({
   primary: string;
   secondary: ReadonlyArray<string>;
 }) {
-  const { days, focused, goToday, panByDays, range, setFocused, step, switchView, title, view } =
-    useCalendarNavigation({
-      dayBuffer: PAN_BUFFER_DAYS,
-      initialView,
-      timeZone,
-      titleStyle: 'long',
-    });
+  const {
+    days,
+    focused,
+    goToDay,
+    goToday,
+    panByDays,
+    range,
+    setFocused,
+    step,
+    switchView,
+    title,
+    view,
+  } = useCalendarNavigation({
+    dayBuffer: PAN_BUFFER_DAYS,
+    initialView,
+    timeZone,
+    titleStyle: 'long',
+  });
   const prefs = useViewPreferences();
   const updatePrefs = useUpdateViewPreferences();
   const sidebarCollapsed = prefs?.sidebarCollapsed ?? false;
@@ -222,7 +233,7 @@ function CalendarBody({
     void findNotificationEvent(backend, target).then((event) => {
       if (event) {
         capture.dismiss();
-        setFocused(eventStartDay(event, timeZone));
+        goToDay(eventStartDay(event, timeZone));
         setPanel({ event, kind: 'inspector' });
       }
     });
@@ -372,11 +383,12 @@ function CalendarBody({
     setPanel({ kind: 'search', selectText: true });
     setSearchFocus((count) => count + 1);
   };
-  // A result: its day in the grid, and the occurrence in the inspector. A
-  // timed one out of the time grid's view is scrolled into it, so its
-  // outlined block shows (the grid rests on the morning).
+  // A result: its day in the grid (its own week, even after a pan rolled
+  // the window elsewhere), and the occurrence in the inspector. A timed one
+  // out of the time grid's view is scrolled into it, so its outlined block
+  // shows (the grid rests on the morning).
   const openSearchEvent = (event: EventRecord) => {
-    setFocused(eventStartDay(event, timeZone));
+    goToDay(eventStartDay(event, timeZone));
     setPanel({ event, fromSearch: true, kind: 'inspector' });
     const scroller = scrollRef.current;
     if (scroller && !event.isAllDay && view !== 'month') {
@@ -437,7 +449,7 @@ function CalendarBody({
             calendars={calendars}
             focused={focused}
             onManageAccounts={() => void window.calendarBridge.openSettings('accounts')}
-            onPickDay={setFocused}
+            onPickDay={goToDay}
             today={Temporal.PlainDate.from(today)}
           />
         )}

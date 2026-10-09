@@ -203,7 +203,11 @@ function SearchResultsList({
       {/* A failed write from a result's sheet is told here, above the tab bar. */}
       <View
         pointerEvents="box-none"
-        style={[StyleSheet.absoluteFill, { bottom: insets.bottom + TAB_BAR_HEIGHT }]}
+        style={[
+          StyleSheet.absoluteFill,
+          styles.toastArea,
+          { bottom: insets.bottom + TAB_BAR_HEIGHT },
+        ]}
       >
         <MutationNoticeToast />
       </View>
@@ -377,5 +381,9 @@ const makeStyles = (colors: ThemeColors) =>
       color: colors.text,
       fontSize: 16,
       fontWeight: '500',
+    },
+    // The toast stands on this area's bottom edge: the tab bar's top.
+    toastArea: {
+      justifyContent: 'flex-end',
     },
   });

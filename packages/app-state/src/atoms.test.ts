@@ -385,6 +385,28 @@ describe('search atoms', () => {
     registry.dispose();
   });
 
+  it('a blank search answers locally and does not re-run on changes', async () => {
+    const { client } = makeStubClient();
+    const atoms = makeBackendAtoms(client);
+    const registry = AtomRegistry.make();
+    const blank = atoms.search(searchKey('', 'UTC'));
+    const seen: Array<unknown> = [];
+    const unsubscribe = registry.subscribe(blank, (value) => seen.push(value), {
+      immediate: true,
+    });
+    await waitFor(() => registry.get(blank), AsyncResult.isSuccess);
+    const settled = seen.length;
+    await runMutation(registry, atoms, 'deleteTask', {
+      accountId: 'acc-1',
+      taskId: 'task-1',
+      taskListId: 'list-1',
+    });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(seen).toHaveLength(settled);
+    unsubscribe();
+    registry.dispose();
+  });
+
   it('a mounted search re-runs when an event or a task changes', async () => {
     const { calls, client } = makeStubClient();
     const atoms = makeBackendAtoms(client);

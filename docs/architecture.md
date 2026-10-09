@@ -483,15 +483,23 @@ an allow-list of fields, so a calendar can be shared without the details.
 
 - **One rpc**, `search({ query, timeZone })`, handled by `searchCalendar`
   for both apps, "now" from Effect's Clock. It reads what the views can
-  show: events through `loadEventsInRange` (visible calendars, series
-  expanded with their overrides, mirror copies and cancelled events left
-  out, Apple events through EventKit) over SEARCH_WINDOW_YEARS (two)
-  either side of today in the primary zone, and every task of the visible
-  lists (`TaskRepo.getVisible`). The range query's `keep` predicate is
-  asked before expansion, so only the series that match are expanded;
-  overrides stay whole so a cancelled or moved occurrence still shadows
-  its slot. Events outside the window are not found; full-text search over
-  the stored rows is the way past it (backlog, "Ask your calendar").
+  show over SEARCH_WINDOW_YEARS (two) either side of today in the primary
+  zone: the stored rows the range query reads (`EventRepo.getWindow`:
+  visible calendars, no mirror copies, no cancelled rows), the Apple
+  events EventKit answers for the window, and every task of the visible
+  lists (`TaskRepo.getVisible`). Events outside the window are not found;
+  full-text search over the stored rows is the way past it (backlog, "Ask
+  your calendar").
+- **A matching series is not expanded over the window** — an hourly one's
+  thousands of occurrences would pass the expander's iteration cap, and
+  `assembleWindow` drops a master that does. `seriesSearchOccurrences`
+  walks it outward from now instead, forward and then back only when
+  nothing is left ahead, to its next occurrence that is not over, else its
+  latest one; each direction is tried as one span, and a span the expander
+  refuses is retried a quarter as long. The slots its overrides took over
+  are left out of the walk: an override is a row of its own, matched on
+  its own text, so a renamed occurrence is found by its new name and never
+  stands for the series under the old one.
 - **Matching is TypeScript, not SQL** (`searchTerms`,
   `eventMatchesSearch`, `taskMatchesSearch`): NFD with the combining marks
   dropped, lowercased without a locale; every word of the query must occur
@@ -499,10 +507,10 @@ an allow-list of fields, so a calendar can be shared without the details.
   addresses, a task's title and notes. SQLite's LIKE folds neither accents
   nor non-ASCII case.
 - **Results** (`buildSearchResults`): one hit per series, keyed by account,
-  calendar and `recurringEventId` (Google's expanded instances and its
+  calendar and `recurringEventId` (Google's generated occurrences and its
   overrides carry the master's id, EventKit's occurrences the series'
-  `eventIdentifier`), at its next occurrence that is not over, else its
-  latest past one. Upcoming soonest first, past most recent first, tasks
+  `eventIdentifier`), at its next matching occurrence that is not over,
+  else its latest past one. Upcoming soonest first, past most recent first, tasks
   open by due day, then undated, then completed latest first; 50 per group,
   each with its total. All-day events are judged by their dates in the
   zone, not by their UTC midnights.

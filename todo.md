@@ -139,7 +139,7 @@ closed the last of them.
       calendar"); calendar and list names as search text; the matched words
       highlighted in the rows. Measure on a phone with a large calendar: on
       Node, 5,000 events in the window, 30 endless series and 3,000 tasks
-      take 55–175 ms a search, on the JS thread on iOS — FTS (or a folded
+      take 55–115 ms a search, on the JS thread on iOS — FTS (or a folded
       text column) is the way out if Hermes makes typing stutter. A list left
       open moves an event from Upcoming to Past only when the next change
       re-runs the search.

@@ -49,6 +49,13 @@ describe('searchEventWhen', () => {
     );
   });
 
+  it('dates the end of a longer event at midnight by the day it ends on', () => {
+    // Over two days into Monday's midnight: the end is Monday 12:00 AM, not Sunday's.
+    expect(searchEventWhen(timed('2026-10-24T12:00', '2026-10-26T00:00'), VIENNA, today)).toBe(
+      'Sat, Oct 24, 12:00 PM – Mon, Oct 26, 12:00 AM',
+    );
+  });
+
   it('says all day, with the last day of a longer one', () => {
     expect(searchEventWhen(allDay('2026-10-26', '2026-10-27'), VIENNA, today)).toBe(
       'Mon, Oct 26 · All day',

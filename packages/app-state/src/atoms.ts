@@ -382,21 +382,22 @@ const buildAtoms = (client: BackendClient, deviceZone: Atom.Atom<string>) => {
   // re-run an open query, so an item edited or deleted from the results
   // updates them, and so does a calendar or list shown or hidden (both
   // invalidate those keys on the repo side). A blank query never reaches
-  // the backend.
+  // the backend, and never re-runs: the desktop holds it while search is
+  // closed, and every change would otherwise repaint the whole calendar.
   const search = boundedAtomCache((key) => {
     const separator = key.indexOf('|');
     const timeZone = key.slice(0, separator);
     const query = key.slice(separator + 1);
-    return runtime
-      .atom(
-        query.trim() === ''
-          ? Effect.succeed(EMPTY_SEARCH_RESULTS)
-          : Effect.gen(function* () {
-              const backend = yield* AppBackend;
-              return yield* backend.search({ query, timeZone });
-            }),
-      )
-      .pipe(Atom.withReactivity([EVENTS_KEY, TASKS_KEY]));
+    const blank = query.trim() === '';
+    const atom = runtime.atom(
+      blank
+        ? Effect.succeed(EMPTY_SEARCH_RESULTS)
+        : Effect.gen(function* () {
+            const backend = yield* AppBackend;
+            return yield* backend.search({ query, timeZone });
+          }),
+    );
+    return blank ? atom : atom.pipe(Atom.withReactivity([EVENTS_KEY, TASKS_KEY]));
   });
 
   // Location typeahead, keyed `${limit}:${query}`. No reactivity: MapKit

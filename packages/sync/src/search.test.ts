@@ -350,6 +350,66 @@ describe('search handler', () => {
     }).pipe(Effect.provide(testLayer())),
   );
 
+  it.effect('finds a series too frequent to expand over the whole window at once', () =>
+    Effect.gen(function* () {
+      yield* TestClock.setTime(NOW);
+      yield* seed;
+      yield* (yield* EventRepo).upsertMany([
+        // Every hour since three weeks ago: tens of thousands of occurrences
+        // over the search window, past the expander's iteration cap.
+        event('hourly-ping', at('2026-10-03T00:30'), {
+          endUtc: at('2026-10-03T00:45'),
+          recurrence: ['RRULE:FREQ=HOURLY'],
+          title: 'Hourly ping',
+        }),
+        // Hourly too, but over since last year: its latest occurrence stands for it.
+        event('hourly-old', at('2025-01-01T00:30'), {
+          endUtc: at('2025-01-01T00:45'),
+          recurrence: ['RRULE:FREQ=HOURLY;UNTIL=20250601T000000Z'],
+          title: 'Hourly backup',
+        }),
+      ]);
+      const found = yield* search('hourly');
+      expect(found.upcoming.hits).toHaveLength(1);
+      expect(found.upcoming.hits[0]).toMatchObject({
+        // 17:30 is over at 18:00; the next one is half past six.
+        event: { recurringEventId: 'hourly-ping', startUtc: at('2026-10-24T18:30') },
+        repeating: true,
+      });
+      expect(found.past.hits).toHaveLength(1);
+      expect(found.past.hits[0]).toMatchObject({
+        event: { recurringEventId: 'hourly-old', startUtc: Date.UTC(2025, 4, 31, 23, 30) },
+        repeating: true,
+      });
+    }).pipe(Effect.provide(testLayer())),
+  );
+
+  it.effect('shows a series by its next matching occurrence, a renamed one on its own', () =>
+    Effect.gen(function* () {
+      yield* TestClock.setTime(NOW);
+      yield* seed;
+      // Mondays at ten; Monday's occurrence is renamed for an offsite.
+      const renamedSlot = at('2026-10-26T10:00');
+      yield* (yield* EventRepo).upsertMany([
+        event('weekly-sync', at('2026-10-05T10:00'), {
+          recurrence: ['RRULE:FREQ=WEEKLY'],
+          title: 'Weekly sync',
+        }),
+        event('weekly-sync_20261026T090000Z', renamedSlot, {
+          originalStartUtc: renamedSlot,
+          recurringEventId: 'weekly-sync',
+          title: 'Offsite',
+        }),
+      ]);
+      expect((yield* search('weekly')).upcoming.hits).toMatchObject([
+        { event: { startUtc: at('2026-11-02T10:00'), title: 'Weekly sync' }, repeating: true },
+      ]);
+      expect((yield* search('offsite')).upcoming.hits).toMatchObject([
+        { event: { id: 'weekly-sync_20261026T090000Z', title: 'Offsite' }, repeating: true },
+      ]);
+    }).pipe(Effect.provide(testLayer())),
+  );
+
   it.effect('finds nothing for a blank query', () =>
     Effect.gen(function* () {
       yield* TestClock.setTime(NOW);

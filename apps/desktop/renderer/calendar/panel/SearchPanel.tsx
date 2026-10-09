@@ -136,6 +136,17 @@ export function SearchPanel({
     }
   }, [saveScrollTop, search.query]);
 
+  // Enter pressed while the rows still answer an earlier text (the
+  // debounce, the lookup) opens the top result of what was typed once its
+  // results are in; typing on cancels it.
+  const enterWaits = useRef(false);
+  useEffect(() => {
+    if (enterWaits.current && !search.stale) {
+      enterWaits.current = false;
+      listRef.current?.querySelector<HTMLElement>(RESULT_SELECTOR)?.click();
+    }
+  }, [search.results, search.stale]);
+
   /** ArrowDown and ArrowUp walk from the field through the results and back. */
   const onArrow = (key: KeyboardEvent) => {
     if (key.key !== 'ArrowDown' && key.key !== 'ArrowUp') {
@@ -255,13 +266,24 @@ export function SearchPanel({
             autoComplete="off"
             className={`${FIELD_CLASS} pl-8`}
             data-testid="search-input"
-            onChange={(event) => onTextChange(event.target.value)}
+            onChange={(event) => {
+              enterWaits.current = false;
+              onTextChange(event.target.value);
+            }}
             onKeyDown={(key) => {
               // Enter opens the top result, as Spotlight does (not while an
-              // input method is still composing).
+              // input method is still composing) — of the text typed, not
+              // of the rows an earlier text left on screen.
               if (key.key === 'Enter' && !key.nativeEvent.isComposing) {
                 key.preventDefault();
-                listRef.current?.querySelector<HTMLElement>(RESULT_SELECTOR)?.click();
+                if (search.stale) {
+                  enterWaits.current = true;
+                } else {
+                  listRef.current?.querySelector<HTMLElement>(RESULT_SELECTOR)?.click();
+                }
+              } else if (search.stale && (key.key === 'ArrowDown' || key.key === 'ArrowUp')) {
+                // Nor do the arrows walk into those rows.
+                key.preventDefault();
               } else {
                 onArrow(key);
               }
