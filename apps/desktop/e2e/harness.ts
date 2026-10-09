@@ -464,10 +464,27 @@ export class Cdp {
    * first eval throws — a hard throw there would kill the whole run.
    */
   async waitFor<T>(expression: string, timeoutMs = 15_000): Promise<T> {
+    return this.poll<T>(expression, timeoutMs, false);
+  }
+
+  /**
+   * `waitFor`, drawing a frame before each try. A window behind another one
+   * (CI's can be) is hidden to its page, which then runs no rendering steps:
+   * a ResizeObserver reports only in one, so what the page sets from it
+   * waits for a frame that may never come. A screenshot draws one.
+   */
+  async waitForRendered<T>(expression: string, timeoutMs = 15_000): Promise<T> {
+    return this.poll<T>(expression, timeoutMs, true);
+  }
+
+  private async poll<T>(expression: string, timeoutMs: number, drawFrame: boolean): Promise<T> {
     const deadline = Date.now() + timeoutMs;
     let lastError = '';
     for (;;) {
       try {
+        if (drawFrame) {
+          await this.send('Page.captureScreenshot');
+        }
         const value = await this.eval<T>(expression);
         if (value) {
           return value;
