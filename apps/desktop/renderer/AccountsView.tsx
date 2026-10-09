@@ -14,6 +14,7 @@ import {
   isSignInCancelled,
 } from '@calendar/core';
 import { useState } from 'react';
+import { CALLOUT_CLASS } from './ui/calloutStyles.ts';
 
 /** The connected accounts and their calendars: the top of the settings window's Accounts pane. */
 export function AccountsView() {
@@ -92,7 +93,7 @@ export function AccountsView() {
       </header>
 
       {error ? (
-        <div className="select-text rounded-lg border border-red-200 bg-red-50 p-3 text-sm whitespace-pre-wrap text-red-700">
+        <div className="select-text rounded-control bg-fill p-3 text-sm whitespace-pre-wrap text-danger">
           {error}
         </div>
       ) : null}
@@ -120,7 +121,7 @@ export function AccountsView() {
                 {account.provider === 'apple' ? 'This Mac' : account.email}
                 {account.status === 'reauth_required' ? (
                   account.provider === 'apple' ? (
-                    <span className="ml-2 text-amber-600">
+                    <span className="ml-2 text-warning">
                       Access off — allow{' '}
                       {isAppleCalendarAccount(account) ? 'Calendars' : 'Reminders'} in System
                       Settings › Privacy & Security.
@@ -139,7 +140,7 @@ export function AccountsView() {
               </p>
             </div>
             <button
-              className="text-sm text-red-600 hover:underline"
+              className="text-sm text-danger hover:underline"
               data-testid={`remove-account-${account.id}`}
               onClick={() => remove(account)}
               type="button"
@@ -205,23 +206,23 @@ function RemoveAccountConfirm({
 }) {
   return (
     <div
-      className="mt-3 rounded-lg border border-red-200 bg-red-50 p-3 text-sm"
+      className={`${CALLOUT_CLASS.danger} mt-3 p-3 text-sm`}
       data-testid="remove-account-confirm"
       role="alertdialog"
     >
-      <p className="font-medium text-red-800">{question?.title}</p>
-      <p className="mt-1 text-red-700">{question?.message}</p>
+      <p className="font-medium">{question?.title}</p>
+      <p className="mt-1 text-ink-secondary">{question?.message}</p>
       <div className="mt-3 flex justify-end gap-2">
         <button
           autoFocus
-          className="rounded-md px-3 py-1 text-ink-secondary hover:bg-surface"
+          className="rounded-md px-3 py-1 text-ink-secondary hover:bg-fill"
           onClick={onCancel}
           type="button"
         >
           Cancel
         </button>
         <button
-          className="rounded-md bg-red-600 px-3 py-1 font-medium text-white hover:bg-red-500 disabled:opacity-50"
+          className="rounded-md bg-danger px-3 py-1 font-medium text-on-danger hover:bg-danger/90 disabled:opacity-50"
           data-testid="remove-account-yes"
           // Only once the unsynced changes were counted (removeAccountQuestion).
           disabled={!question?.canRemove}

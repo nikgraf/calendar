@@ -63,7 +63,7 @@ export function EventNotificationsSection() {
         Calendar already notifies you about these; on means you get both.
       </p>
       {notice ? (
-        <p className="mt-3 text-sm text-amber-700" data-testid="event-notice" role="status">
+        <p className="mt-3 text-sm text-warning" data-testid="event-notice" role="status">
           {notice}
         </p>
       ) : null}

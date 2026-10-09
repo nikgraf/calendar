@@ -13,6 +13,7 @@ import {
 } from '@calendar/core';
 import { useEffect, useId, useState } from 'react';
 import { makeAnnouncer } from '../announcer.ts';
+import { CALLOUT_CLASS } from '../ui/calloutStyles.ts';
 
 /** Keep-mine / take-theirs for one parked op (the banner and the queue panel). */
 export function ConflictActions({ op, size = 'md' }: { op: ParkedOpSummary; size?: 'md' | 'sm' }) {
@@ -91,7 +92,7 @@ export function ConflictBanner() {
       {first && description ? (
         <section
           aria-labelledby={headlineId}
-          className="pointer-events-auto mb-2 w-full max-w-[34rem] rounded-control border border-l-4 border-hairline border-l-warning bg-surface-raised p-3 text-sm text-ink shadow-lg"
+          className={`${CALLOUT_CLASS.warning} pointer-events-auto mb-2 w-full max-w-[34rem] p-3 text-sm shadow-lg`}
           data-testid="conflict-banner"
         >
           <h2 className="font-medium break-words" id={headlineId}>

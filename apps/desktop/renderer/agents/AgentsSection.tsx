@@ -23,6 +23,7 @@ import {
 } from '@calendar/core';
 import { useEffect, useId, useState } from 'react';
 import { Button } from '../ui/Button.tsx';
+import { CALLOUT_CLASS } from '../ui/calloutStyles.ts';
 import { ARM_DELAY_MS } from './AgentApprovalDialog.tsx';
 import { type AgentAction, agentActionQuestion } from './agentActions.ts';
 import { useAgentsLoad } from './useAgentsState.ts';
@@ -86,7 +87,7 @@ function Copyable({ label, testId, text }: { label: string; testId: string; text
         </button>
       </div>
       <pre
-        className="mt-1 max-h-72 overflow-auto rounded-lg bg-neutral-900 p-2 text-xs break-all whitespace-pre-wrap text-neutral-100 select-text"
+        className="mt-1 max-h-72 overflow-auto rounded-lg border border-hairline bg-fill p-2 text-xs break-all whitespace-pre-wrap text-ink select-text"
         data-testid={testId}
       >
         {text}
@@ -108,12 +109,9 @@ function TokenPanel({
   token: string;
 }) {
   return (
-    <div
-      className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3"
-      data-testid="agent-token-panel"
-    >
-      <p className="text-sm font-medium text-amber-900">Token for {name}</p>
-      <p className="mt-1 text-xs text-amber-800">
+    <div className={`${CALLOUT_CLASS.warning} mt-3 p-3`} data-testid="agent-token-panel">
+      <p className="text-sm font-medium">Token for {name}</p>
+      <p className="mt-1 text-xs text-ink-secondary">
         Copy it now — Solunivo keeps only a fingerprint and cannot show it again. Anyone with this
         token can do what this agent may do.
       </p>
@@ -341,7 +339,7 @@ function RequestRow({ request }: { request: AgentRequestView }) {
         <span className="shrink-0 text-xs text-ink-secondary">{timeLabel(request.createdAt)}</span>
       </div>
       <div
-        className={`text-xs ${request.status === 'done' ? 'text-ink-secondary' : 'text-amber-700'}`}
+        className={`text-xs ${request.status === 'done' ? 'text-ink-secondary' : 'text-warning'}`}
       >
         {STATUS_LABEL[request.status]}
         {request.error ? ` — ${request.error.message}` : ''}
@@ -485,7 +483,7 @@ export function AgentsSection() {
                 </button>
                 <button
                   aria-label={`Remove ${agent.name}`}
-                  className="text-xs text-red-600 hover:underline disabled:opacity-50"
+                  className="text-xs text-danger hover:underline disabled:opacity-50"
                   data-testid="agent-remove"
                   disabled={busy}
                   onClick={() => setAsking({ action: 'remove', id: agent.id })}
@@ -566,7 +564,7 @@ export function AgentsSection() {
           <ul className="mt-2 space-y-2">
             {state.pending.map((request) => (
               <li
-                className="rounded-lg border border-amber-200 bg-amber-50 p-2 text-sm"
+                className={`${CALLOUT_CLASS.warning} p-2 text-sm`}
                 data-testid="agent-pending-row"
                 key={request.id}
               >
@@ -612,7 +610,7 @@ export function AgentsSection() {
         running as you.
       </p>
       {notice ? (
-        <p className="mt-2 text-xs text-amber-700" role="status">
+        <p className="mt-2 text-xs text-warning" role="status">
           {notice}
         </p>
       ) : null}

@@ -2620,6 +2620,43 @@ then iOS (both in `todo.md`).
       Effect 4.0.2 (Hermes HttpClient and React Native cookie fixes),
       Electron 44.7, eas-cli 24.12.
 
+### Desktop colors follow the appearance (2026-10-09)
+
+- [x] The last raw Tailwind palette classes in the desktop renderer move
+      to the brand tokens — done (`todo/desktop-dark-mode-tokens`). In
+      dark mode `MoveConfirm`, the account removal question and its error
+      box, the settings-file note, the mirror editor's shared-calendar
+      warning and the agent token panel were amber-50 or red-50 boxes, and
+      a waiting agent request's title and its Decline and Done buttons
+      took the dark theme's near-white text on amber-50 and all but
+      vanished. **A box that asks or warns has the conflict banner's
+      look** (`CALLOUT_CLASS` in `ui/calloutStyles.ts`, which the banner
+      now uses too): a raised surface, a hairline border and a 4 px edge
+      in its tone — `warning` for the move/convert/delete/switch question,
+      the settings-file note, the shared-calendar warning, the token panel
+      and a waiting request; `danger` for removing an account — with
+      `ink` / `ink-secondary` text. Not a tint: the tones are text
+      colors that flip with the appearance (`warning` is dark amber in
+      light, pale amber in dark), so `bg-warning/10` came out beige in
+      light and almost nothing in dark, and a solid fill is the bright
+      box again.
+      **Filled buttons keep their tone** — Move anyway and its siblings on
+      `warning` / `on-warning`, Remove on `danger` / `on-danger`, hover at
+      `/90` (no hover tokens; not worth adding one). The add-account error
+      is the editors' error message (`fill`, `danger` text); red and amber
+      text is `danger` and `warning` (notes, notices, Remove links, the
+      mirror statuses, the agent activity); the invitee dots are
+      `success` / `danger` / `warning` as on iOS; the token and config
+      snippets sit in a `fill` well with a hairline instead of a black
+      block. **The dialog scrim stays `bg-black/30`**: it dims in either
+      appearance. **A guard**: `renderer/themeClasses.test.ts` fails on any
+      Tailwind palette shade or `white` in the renderer's sources. Checked
+      with CDP screenshots of every changed surface in both appearances
+      (`Emulation.setEmulatedMedia`; a window in the background runs no
+      rendering steps, so the media change is reported only once a capture
+      forces a frame), the notes and notices only an error shows forced on
+      in a scratch build.
+
 ### Experimental: mirrors and agents (2026-10-09)
 
 - [x] Mark calendar mirrors and the agent gateway as experimental —
@@ -2637,7 +2674,7 @@ then iOS (both in `todo.md`).
       under it. **Each pane says what that means at its top** (a
       capsule and "This feature may still change, or go away, in a later
       version."; on iOS inside the page's hero), since the heading alone
-      only names the group. The words
-      live in core (`EXPERIMENTAL_COPY`) so both apps say the same thing.
+      only names the group. The words live in core (`EXPERIMENTAL_COPY`)
+      so both apps say the same thing.
       Nothing else changes: the settings file, the MCP tools' descriptions
       and the agent approval dialog carry no label.

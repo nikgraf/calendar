@@ -82,7 +82,7 @@ function BirthdayReminders({ record }: { record: BirthdayRecord }) {
         </p>
       )}
       {error ? (
-        <p className="mt-2 text-xs text-amber-700" role="status">
+        <p className="mt-2 text-xs text-warning" role="status">
           {error}
         </p>
       ) : null}

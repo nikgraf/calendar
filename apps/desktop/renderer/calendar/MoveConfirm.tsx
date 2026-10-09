@@ -1,4 +1,5 @@
 import type { EditorConfirmRequest, useMoveConfirmation } from '@calendar/app-state';
+import { CALLOUT_CLASS } from '../ui/calloutStyles.ts';
 
 /**
  * The buttons for each question. The e2e suite relies on the test ids and
@@ -34,14 +35,14 @@ export function MoveConfirm({
   const { no, yes } = labels(pending);
   return (
     <div
-      className="mt-4 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900"
+      className={`${CALLOUT_CLASS.warning} mt-4 p-3 text-sm`}
       data-testid="move-confirm"
       role="alertdialog"
     >
       <p>{pending.summary}</p>
       <div className="mt-2 flex justify-end gap-2">
         <button
-          className="rounded-lg px-3 py-1 hover:bg-amber-100"
+          className="rounded-lg px-3 py-1 hover:bg-fill"
           data-testid="move-confirm-no"
           onClick={() => moveConfirmation.answer(false)}
           type="button"
@@ -49,7 +50,7 @@ export function MoveConfirm({
           {no}
         </button>
         <button
-          className="rounded-lg bg-amber-600 px-3 py-1 font-medium text-white hover:bg-amber-500"
+          className="rounded-lg bg-warning px-3 py-1 font-medium text-on-warning hover:bg-warning/90"
           data-testid="move-confirm-yes"
           onClick={() => moveConfirmation.answer(true)}
           type="button"
