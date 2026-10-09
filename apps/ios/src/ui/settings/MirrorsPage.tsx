@@ -9,6 +9,7 @@ import { useState } from 'react';
 import { useTheme } from '../theme.ts';
 import {
   ActionRow,
+  ExperimentalNote,
   Footer,
   IconTile,
   NavRow,
@@ -37,7 +38,9 @@ export function MirrorsPage() {
         }
         subtitle={MIRROR_COPY.intro}
         title="Mirrors"
-      />
+      >
+        <ExperimentalNote />
+      </PageHero>
       <Section
         footer={
           <>

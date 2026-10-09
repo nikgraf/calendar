@@ -1298,6 +1298,23 @@ describe('calendar desktop e2e', () => {
     await settings.waitFor(`${title} === 'Agents'`);
     expect(await settings.eval<string>('document.title')).toBe('Agents');
     expect(await app.windowCount()).toBe(2);
+    // Mirrors and Agents are listed last, under "Experimental", and each
+    // says so at its top; the other panes do not.
+    expect(
+      await settings.eval<Array<string>>(
+        `[...document.querySelectorAll('[role="tab"]')].map((tab) => tab.textContent)`,
+      ),
+    ).toEqual(['General', 'Accounts', 'Notifications', 'Advanced', 'Mirrors', 'Agents']);
+    expect(
+      await settings.eval<string | null>(
+        `document.querySelector('[data-testid="settings-experimental-heading"]')?.nextElementSibling?.textContent ?? null`,
+      ),
+    ).toBe('MirrorsAgents');
+    expect(
+      await settings.eval<Array<string>>(
+        `[...document.querySelectorAll('[data-testid="settings-experimental-note"]')].map((note) => note.closest('[role="tabpanel"]').id)`,
+      ),
+    ).toEqual(['settings-pane-mirrors', 'settings-pane-agents']);
     // The calendar is no longer covered by anything.
     expect(await cdp.eval(`!!document.querySelector('[role="dialog"]')`)).toBe(false);
 
