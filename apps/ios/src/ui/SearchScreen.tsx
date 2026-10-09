@@ -22,6 +22,7 @@ import { useMemo, useState } from 'react';
 import { Pressable, SectionList, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useEditorHost } from './EditorHost.tsx';
+import { TaskCheck } from './TaskCheck.tsx';
 import { type ThemeColors, useEventTint, useStyles, useTheme } from './theme.ts';
 import { MutationNoticeToast } from './Toast.tsx';
 
@@ -275,9 +276,9 @@ function TaskRow({
       style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
       testID="search-task"
     >
-      <Text style={[styles.checkbox, !done && list?.colorHex ? { color: list.colorHex } : null]}>
-        {done ? '☑' : '☐'}
-      </Text>
+      <View style={styles.check}>
+        <TaskCheck checked={done} listColor={list?.colorHex} size="agenda" />
+      </View>
       <View style={styles.rowBody}>
         <Text numberOfLines={1} style={[styles.title, done && styles.done]}>
           {task.title}
@@ -292,10 +293,9 @@ function TaskRow({
 
 const makeStyles = (colors: ThemeColors) =>
   StyleSheet.create({
-    checkbox: {
-      color: colors['text-secondary'],
-      fontSize: 18,
-      lineHeight: 22,
+    // Centered on the title's first line.
+    check: {
+      paddingTop: 1,
     },
     content: {
       paddingBottom: 24,

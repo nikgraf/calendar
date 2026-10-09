@@ -2754,3 +2754,44 @@ then iOS (both in `todo.md`).
       so both apps say the same thing.
       Nothing else changes: the settings file, the MCP tools' descriptions
       and the agent approval dialog carry no label.
+
+### Task checkboxes (2026-10-09)
+
+- [x] The task checkboxes are drawn, not typed — done
+      (`todo/task-checkboxes`). Every chip, timed block, agenda and list
+      row showed `☐` / `☑` at the text size, about 9 px of glyph that
+      read as a font fallback. Designed on a canvas first (before/after,
+      a state sheet in both appearances, the week view, the iOS day view
+      and Tasks tab) and approved as drawn. **One round box on both
+      platforms**, `TaskCheck` in `apps/desktop/renderer/calendar/` and
+      `apps/ios/src/ui/`: a 1.5 px `border-strong` ring around a `surface`
+      well (`canvas` in dark), filled with `primary` and an `on-primary`
+      tick when done. A circle because events are rounded rectangles, and
+      the rail already drew a ring (the month grid's task dots are rings
+      too). **Sizes per place**: desktop 14 px in the 20/22 px chip and
+      timed block, 12 px in the 16 px month chip, 18 px in the rail and
+      the task editor's Done (now the same box, `role="checkbox"`); iOS
+      16 pt in chips and timed blocks, 20 pt in the agenda and the mirror
+      editor's source list, 24 pt in the Tasks tab, whose box sits in a
+      44 pt square. **A Reminders list's color is the ring and the fill**
+      (tick by `contrastingTextColor`), so the separate list dot leaves
+      the chips and the Tasks tab; an open overdue task rings in
+      `danger`. **A done chip keeps its fill and its box at full
+      strength**; only the title turns `text-secondary` and struck
+      through — the whole chip at 50% made the checked state the hardest
+      thing to see. Open chip titles move from `ink-secondary` to `ink`
+      on desktop to match iOS and the design.
+      **Motion**: desktop hover darkens the ring and previews the tick;
+      a press scales the box to 0.86 and the release springs it back past
+      full size, so a click pops it without a keyframe animation, which
+      would replay whenever a done chip mounts; the tick draws in with
+      `stroke-dashoffset`. iOS shrinks the box while pressed and pops it
+      (0.8 → spring) only on the change to done. Reduced motion keeps the
+      color change only. Labels, test ids and hit areas stay as they were
+      — a chip's `hitSlop` is clipped to the chip, so its target stays
+      the chip's height. iOS task chips now lead with the box instead of
+      centering their row in the lane (the base chip centers a column).
+      Search results (both apps) draw the same mark for a task's state;
+      on desktop it is wrapped so the row's hover — the row opens the
+      task — previews no tick. The desktop e2e checks a completion by
+      `[data-done]`, not by the glyph.

@@ -12,6 +12,7 @@ import {
 import { useCallback, useSyncExternalStore, type CSSProperties, type RefObject } from 'react';
 import { RepeatIcon } from '../ui/icons.tsx';
 import type { ColorLookup } from './colors.ts';
+import { TaskCheck } from './TaskCheck.tsx';
 import { eventLook, stripes, useTint } from './tint.ts';
 import { useDropTarget, type useEventDrag } from './useEventDrag.ts';
 
@@ -75,11 +76,9 @@ function AllDayTaskChip({
   return (
     <div
       aria-label={facts.length > 0 ? `${task.title}, ${facts.join(', ')}` : undefined}
-      className={`absolute flex touch-none items-center gap-1 truncate rounded-event bg-fill px-1 text-xs leading-5 outline-none select-none focus-visible:ring-2 focus-visible:ring-focus ${
+      className={`absolute flex touch-none items-center gap-0.5 truncate rounded-event bg-fill pr-1.5 text-xs leading-5 outline-none select-none focus-visible:ring-2 focus-visible:ring-focus ${
         readOnly ? 'cursor-pointer' : 'cursor-grab'
-      } ${overdue ? 'text-danger' : 'text-ink-secondary'} ${done ? 'opacity-50' : ''} ${
-        dragging ? 'z-20 shadow-lg' : ''
-      }`}
+      } ${overdue ? 'text-danger' : 'text-ink'} ${dragging ? 'z-20 shadow-lg' : ''}`}
       data-overdue={overdue ? '' : undefined}
       data-testid={`all-day-task-${task.id}`}
       onKeyDown={(event) => {
@@ -108,27 +107,19 @@ function AllDayTaskChip({
       tabIndex={0}
       title={overdue ? `${task.title} · ${overdueLabel(task, today)}` : task.title}
     >
-      <button
+      {/* Reminders lists have colors; the box takes it, which tells them apart from Google tasks. */}
+      <TaskCheck
         aria-label={done ? `Reopen task ${task.title}` : `Complete task ${task.title}`}
-        className="shrink-0 cursor-pointer"
+        checked={done}
+        listColor={listColor}
         onClick={(mouse) => {
           mouse.stopPropagation();
           onToggleTask(task);
         }}
         onPointerDown={(event) => event.stopPropagation()}
-        type="button"
-      >
-        {done ? '☑' : '☐'}
-      </button>
-      {/* Reminders lists have colors; a dot tells them apart from Google tasks without recoloring. */}
-      {listColor ? (
-        <span
-          aria-hidden
-          className="size-1.5 shrink-0 rounded-full"
-          style={{ backgroundColor: listColor }}
-        />
-      ) : null}
-      <span className={`truncate ${done ? 'line-through' : ''}`}>{label}</span>
+        overdue={overdue}
+      />
+      <span className={`truncate ${done ? 'text-ink-secondary line-through' : ''}`}>{label}</span>
     </div>
   );
 }

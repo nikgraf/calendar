@@ -7,6 +7,7 @@ import {
 } from '@calendar/core';
 import { Pressable, StyleSheet, Text, View, type DimensionValue } from 'react-native';
 import { GestureDetector, type PanGesture } from 'react-native-gesture-handler';
+import { TaskCheck } from './TaskCheck.tsx';
 import { BOX_FONT_SCALE, type ThemeColors, useStyles } from './theme.ts';
 
 /**
@@ -48,7 +49,7 @@ export function TimedTaskBlock({
 
   return (
     <View
-      style={[styles.block, { left, top, width }, done && styles.done, dimmed && styles.dimmed]}
+      style={[styles.block, { left, top, width }, dimmed && styles.dimmed]}
       testID={`timed-task-${task.id}`}
     >
       <Pressable
@@ -60,11 +61,10 @@ export function TimedTaskBlock({
         onPress={onToggle}
         testID={`timed-task-toggle-${task.id}`}
       >
-        <Text maxFontSizeMultiplier={BOX_FONT_SCALE} style={styles.checkbox}>
-          {done ? '☑' : '☐'}
-        </Text>
+        {({ pressed }) => (
+          <TaskCheck checked={done} listColor={listColor} pressed={pressed} size="chip" />
+        )}
       </Pressable>
-      {listColor ? <View style={[styles.listDot, { backgroundColor: listColor }]} /> : null}
       <GestureDetector gesture={gesture}>
         <Pressable
           accessibilityLabel={`${task.title}, due ${dueLabel}${repeats ? ', repeats' : ''}`}
@@ -94,29 +94,17 @@ const makeStyles = (colors: ThemeColors) =>
       backgroundColor: colors.fill,
       borderRadius: 5,
       flexDirection: 'row',
-      gap: 3,
+      gap: 4,
       height: 22,
-      paddingHorizontal: 4,
+      paddingLeft: 3,
+      paddingRight: 4,
       position: 'absolute',
     },
     body: {
       flex: 1,
     },
-    checkbox: {
-      color: colors['text-secondary'],
-      fontSize: 12,
-    },
     dimmed: {
       opacity: 0.3,
-    },
-    done: {
-      opacity: 0.5,
-    },
-    listDot: {
-      borderRadius: 3,
-      height: 6,
-      marginRight: 4,
-      width: 6,
     },
     title: {
       color: colors.text,
@@ -127,6 +115,7 @@ const makeStyles = (colors: ThemeColors) =>
       fontSize: 11,
     },
     titleDone: {
+      color: colors['text-secondary'],
       textDecorationLine: 'line-through',
     },
   });

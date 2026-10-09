@@ -8,6 +8,7 @@ import {
   taskRepeats,
 } from '@calendar/core';
 import { useCallback, useSyncExternalStore } from 'react';
+import { TaskCheck } from './TaskCheck.tsx';
 import type { useEventDrag } from './useEventDrag.ts';
 
 /** A point-in-time Apple Reminder rendered as a compact, move-only block. */
@@ -52,9 +53,9 @@ export function TimedTaskBlock({
   return (
     <div
       aria-label={`${task.title}, due ${dueLabel}${repeats ? ', repeats' : ''}`}
-      className={`absolute flex h-[22px] touch-none items-center gap-1 overflow-hidden rounded-event bg-fill px-1 text-xs text-ink-secondary outline-none select-none focus-visible:ring-2 focus-visible:ring-focus ${
+      className={`absolute flex h-[22px] touch-none items-center gap-0.5 overflow-hidden rounded-event bg-fill pr-1.5 pl-px text-xs text-ink outline-none select-none focus-visible:ring-2 focus-visible:ring-focus ${
         readOnly ? 'cursor-pointer' : 'cursor-grab'
-      } ${done ? 'opacity-50' : ''} ${dragging ? 'z-20 shadow-lg' : ''}`}
+      } ${dragging ? 'z-20 shadow-lg' : ''}`}
       data-testid={`timed-task-${task.id}`}
       onKeyDown={(event) => {
         if (event.target === event.currentTarget && (event.key === 'Enter' || event.key === ' ')) {
@@ -78,26 +79,17 @@ export function TimedTaskBlock({
       tabIndex={0}
       title={`${task.title} · ${dueLabel}`}
     >
-      <button
+      <TaskCheck
         aria-label={done ? `Reopen reminder ${task.title}` : `Complete reminder ${task.title}`}
-        className="shrink-0 cursor-pointer"
+        checked={done}
+        listColor={listColor}
         onClick={(event) => {
           event.stopPropagation();
           onToggleTask(task);
         }}
         onPointerDown={(event) => event.stopPropagation()}
-        type="button"
-      >
-        {done ? '☑' : '☐'}
-      </button>
-      {listColor ? (
-        <span
-          aria-hidden
-          className="size-1.5 shrink-0 rounded-full"
-          style={{ backgroundColor: listColor }}
-        />
-      ) : null}
-      <span className={`truncate ${done ? 'line-through' : ''}`}>{label}</span>
+      />
+      <span className={`truncate ${done ? 'text-ink-secondary line-through' : ''}`}>{label}</span>
       {repeats ? (
         <span aria-hidden className="shrink-0 text-ink-secondary">
           {REPEAT_MARKER}

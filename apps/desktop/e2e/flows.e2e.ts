@@ -1183,9 +1183,7 @@ describe('calendar desktop e2e', () => {
     ).not.toContain('\u21bb');
     await cdp.click(checkbox.x, checkbox.y);
 
-    await cdp.waitFor(
-      `document.querySelector('[title="Pay rent"]')?.textContent?.includes('☑') === true`,
-    );
+    await cdp.waitFor(`document.querySelector('[title="Pay rent"] [data-done]') !== null`);
     // The optimistic write landed and the write-back op is queued.
     await expect
       .poll(async () => {

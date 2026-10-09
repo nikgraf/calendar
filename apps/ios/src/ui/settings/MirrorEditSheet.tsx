@@ -38,6 +38,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import { TaskCheck } from '../TaskCheck.tsx';
 import { BOX_FONT_SCALE, type ThemeColors, useStyles, useTheme } from '../theme.ts';
 
 const zoned = (ms: number, timeZone: string): Temporal.ZonedDateTime =>
@@ -75,8 +76,12 @@ function Check({
       style={styles.check}
       testID={testID}
     >
-      <Text style={styles.checkMark}>{checked ? '☑' : '☐'}</Text>
-      <Text style={styles.checkLabel}>{label}</Text>
+      {({ pressed }) => (
+        <>
+          <TaskCheck checked={checked} pressed={pressed} size="agenda" />
+          <Text style={styles.checkLabel}>{label}</Text>
+        </>
+      )}
     </Pressable>
   );
 }
@@ -438,10 +443,6 @@ const makeStyles = (colors: ThemeColors) =>
       color: colors.text,
       flex: 1,
       fontSize: 15,
-    },
-    checkMark: {
-      color: colors.text,
-      fontSize: 17,
     },
     content: {
       gap: 4,
