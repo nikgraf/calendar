@@ -16,6 +16,7 @@ import {
   mapSnapshotKey,
   rangeKey,
   runMutation,
+  searchKey,
 } from './atoms.ts';
 
 const account = new Account({
@@ -36,6 +37,7 @@ const makeStubClient = () => {
     events: 0,
     places: [] as Array<string>,
     resolved: [] as Array<string>,
+    searches: [] as Array<{ readonly query: string; readonly timeZone: string }>,
     setVisible: 0,
     snapshots: [] as Array<unknown>,
     timeZones: 0,
@@ -110,7 +112,11 @@ const makeStubClient = () => {
     respondToEvent: () => Effect.void,
     runMirrorsNow: () => Effect.void,
     saveMirror: () => fail('not stubbed'),
-    search: () => Effect.succeed(EMPTY_SEARCH_RESULTS),
+    search: (params) =>
+      Effect.sync(() => {
+        calls.searches.push(params);
+        return EMPTY_SEARCH_RESULTS;
+      }),
     searchContacts: () => Effect.succeed([]),
     searchPlaces: ({ query }) =>
       Effect.sync(() => {
@@ -355,6 +361,61 @@ describe('eventsInRange LRU', () => {
     for (const unmount of unmounts) {
       unmount();
     }
+    registry.dispose();
+  });
+});
+
+describe('search atoms', () => {
+  it('pass the query and zone through, answer a blank query locally, and memoize per key', async () => {
+    const { calls, client } = makeStubClient();
+    const atoms = makeBackendAtoms(client);
+    const registry = AtomRegistry.make();
+    const blank = atoms.search(searchKey('  ', 'Europe/Vienna'));
+    const lunch = atoms.search(searchKey('lunch | café', 'Europe/Vienna'));
+    expect(atoms.search(searchKey('lunch | café', 'Europe/Vienna'))).toBe(lunch);
+    const unmounts = [registry.mount(blank), registry.mount(lunch)];
+    expect(
+      AsyncResult.getOrThrow(await waitFor(() => registry.get(blank), AsyncResult.isSuccess)),
+    ).toEqual(EMPTY_SEARCH_RESULTS);
+    await waitFor(() => registry.get(lunch), AsyncResult.isSuccess);
+    expect(calls.searches).toEqual([{ query: 'lunch | café', timeZone: 'Europe/Vienna' }]);
+    for (const unmount of unmounts) {
+      unmount();
+    }
+    registry.dispose();
+  });
+
+  it('a mounted search re-runs when an event or a task changes', async () => {
+    const { calls, client } = makeStubClient();
+    const atoms = makeBackendAtoms(client);
+    const registry = AtomRegistry.make();
+    const atom = atoms.search(searchKey('lunch', 'UTC'));
+    const unmount = registry.mount(atom);
+    await waitFor(() => registry.get(atom), AsyncResult.isSuccess);
+    expect(calls.searches).toHaveLength(1);
+
+    // Deleting a task invalidates TASKS_KEY.
+    await runMutation(registry, atoms, 'deleteTask', {
+      accountId: 'acc-1',
+      taskId: 'task-1',
+      taskListId: 'list-1',
+    });
+    await waitFor(
+      () => registry.get(atom),
+      () => calls.searches.length >= 2,
+    );
+    // Showing or hiding a calendar invalidates EVENTS_KEY.
+    await runMutation(registry, atoms, 'setCalendarVisible', {
+      accountId: 'acc-1',
+      calendarId: 'cal-1',
+      isVisible: false,
+    });
+    await waitFor(
+      () => registry.get(atom),
+      () => calls.searches.length >= 3,
+    );
+    expect(calls.searches).toHaveLength(3);
+    unmount();
     registry.dispose();
   });
 });
