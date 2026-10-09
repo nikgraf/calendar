@@ -641,6 +641,15 @@ Flakiness lessons (each caused a real CI failure — keep them enforced):
   `panel` (`data-panel-kind`), `inspector`, `editor`, `editor-notes`,
   `task-done`, `panel-task-<id>`, `panel-add-task`, `week-scroller`,
   `week-grid`, `today-header`, `now-line`, `all-day-lane`, `month-grid`.
+  Search (`search.e2e.ts`, ⌘F synthesized like ⌘K): `search-toggle`
+  (`aria-pressed` while search or a result from it is open),
+  `search-input`, `search-results` (its `aria-busy` is "false" once the
+  results answer the field's text — wait for that before asserting),
+  `search-group-upcoming|past|tasks`, the rows (`[data-search-result]`,
+  `search-event` / `search-task`) with their `search-title`,
+  `search-when` and `search-repeats`, `search-hint`, `search-empty`, and
+  the inspector's `inspector-back` ("‹ Results"). Rows carry no `title`
+  attribute either; a block opened from a result is `[data-selected]`.
   A block's calendar color is its `data-color` attribute — never assert
   a computed `backgroundColor`, the tint is theme-dependent — and
   Tailwind classes are not selectors (they change with the design). The
@@ -839,6 +848,20 @@ simulator or device with a connected Reminders list:
    the editor, terminate and relaunch Solunivo, and check that both the
    time-grid block and reopened editor still show that date and time.
    Confirm the same due time in Apple Reminders, then delete the test item.
+
+The Search tab's field is the system one (`Stack.SearchBar`):
+`common/search-for.yaml` (`QUERY`, `RESULT`) finds it by its placeholder
+("Events and tasks", which stays its label while it holds text), clears
+it with its "Clear text" button and types again until `RESULT` shows,
+and taps away the keyboard's one-time "slide to type" card wherever it
+turns up. `hideKeyboard` cannot dismiss a search field's keyboard: the
+field's "Close" ends the search, which brings the tab bar (and its
+"Calendar" circle) back. A result row is one element labelled title
+first (`'Kolkata series.*'`, a series' label ends in "repeats"). The
+event detail sheet's own "Delete" stays in the tree behind the
+confirmation alert, whose button is "Delete" too and comes second: tap
+it with `below:` the alert's title (flow 25), unlike the editor's
+"Delete Event".
 
 Selector gotchas (each caused a real
 failure): Maestro text selectors are **whole-string regexes** — prefix

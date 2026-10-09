@@ -11,7 +11,7 @@ reconciles against Google / EventKit.
 ```
 React UI (desktop renderer / iOS)
   │  useAccounts / useCalendars / useEventsInRangeStable / usePendingOps
-  │  useTaskLists / useTasksInRangeStable / useNow
+  │  useTaskLists / useTasksInRangeStable / useNow / useSearch
   │  useBackendMutations()               (packages/app-state/src/hooks.ts)
   ▼
 @effect/atom-react atoms                 (packages/app-state/src/atoms.ts)
@@ -479,6 +479,39 @@ an allow-list of fields, so a calendar can be shared without the details.
   undated; completed on the due day, or the completion day when undated
   or late. A completed task's copy gets a "✓ " prefix.
 
+## Search (core `search/`, packages/sync/src/search.ts)
+
+- **One rpc**, `search({ query, timeZone })`, handled by `searchCalendar`
+  for both apps, "now" from Effect's Clock. It reads what the views can
+  show: events through `loadEventsInRange` (visible calendars, series
+  expanded with their overrides, mirror copies and cancelled events left
+  out, Apple events through EventKit) over SEARCH_WINDOW_YEARS (two)
+  either side of today in the primary zone, and every task of the visible
+  lists (`TaskRepo.getVisible`). The range query's `keep` predicate is
+  asked before expansion, so only the series that match are expanded;
+  overrides stay whole so a cancelled or moved occurrence still shadows
+  its slot. Events outside the window are not found; full-text search over
+  the stored rows is the way past it (backlog, "Ask your calendar").
+- **Matching is TypeScript, not SQL** (`searchTerms`,
+  `eventMatchesSearch`, `taskMatchesSearch`): NFD with the combining marks
+  dropped, lowercased without a locale; every word of the query must occur
+  in one field — an event's title, place, notes, guest names and
+  addresses, a task's title and notes. SQLite's LIKE folds neither accents
+  nor non-ASCII case.
+- **Results** (`buildSearchResults`): one hit per series, keyed by account,
+  calendar and `recurringEventId` (Google's expanded instances and its
+  overrides carry the master's id, EventKit's occurrences the series'
+  `eventIdentifier`), at its next occurrence that is not over, else its
+  latest past one. Upcoming soonest first, past most recent first, tasks
+  open by due day, then undated, then completed latest first; 50 per group,
+  each with its total. All-day events are judged by their dates in the
+  zone, not by their UTC midnights.
+- **UI**: `useSearch` (app-state) debounces 200 ms and keeps one atom per
+  query in the bounded LRU, so a late answer for an earlier query never
+  shows; the previous results stay up while the next load (`stale`), and
+  the atoms re-run on EVENTS_KEY and TASKS_KEY, so an edit or a delete made
+  from a result updates the list. The agent gateway has no search tool yet.
+
 ## Recurring events
 
 - Masters carry `recurrence` (raw RFC 5545 lines, no DTSTART — derived from
@@ -611,23 +644,31 @@ model: `docs/agent-gateway.md`.
   tokens are for items with no calendar.
 - Desktop shell (`renderer/calendar/`): one toolbar (`Toolbar.tsx`:
   sidebar toggle, title, ‹ Today ›, the always-visible quick-add field
-  with the "Understood as" review card, Day/Week/Month, New), a
+  with the "Understood as" review card, Day/Week/Month, Search, New), a
   collapsible sidebar (`sidebar/`: mini month, calendars and lists per
   account, the sync footer), the grid, and a side panel on the right
   (`panel/`): the Today rail at rest (Up next + task inbox + add-task),
-  an event's inspector after a grid click (`EventInspector.tsx`, read
-  first: Join, RSVP, series scope, Delete, Edit), or the inline editor
-  (`EditorPanel.tsx`, 360px) from Edit, a slot, New, a task chip or a
-  task phrase. `CalendarApp.tsx` holds that as one `PanelState`; the
-  panel never joins the dialog stack, so a real dialog over it (the agent
-  approval, capture, a birthday) keeps Escape. The drag hook
+  search (`SearchPanel.tsx`, ⌘F or the toolbar's Search), an event's
+  inspector after a grid click or a search result (`EventInspector.tsx`,
+  read first: Join, RSVP, series scope, Delete, Edit), or the inline
+  editor (`EditorPanel.tsx`, 360px) from Edit, a slot, New, a task chip
+  or result, or a task phrase. `CalendarApp.tsx` holds that as one
+  `PanelState`; a panel opened from a search result carries `fromSearch`
+  and closes back to the results (its inspector shows "‹ Results"), and
+  Escape steps back one level. The search itself runs in `CalendarBody`,
+  so it stays current while a result is open. The panel never joins the
+  dialog stack, so a real dialog over it (the agent approval, capture, a
+  birthday) keeps Escape, and ⌘F stands back under a dialog and over an
+  open editor. The drag hook
   (`useEventDrag`) is owned by the app, not the week view, so the panel's
   task rows drag onto the grid and lane too (a `'panel'` origin with a
   pointer-following ghost). `lastView` and `sidebarCollapsed` are read
   from the view preferences before the first paint.
 - iOS shell (`apps/ios/app/`, expo-router): `_layout.tsx` mounts the
   providers, the system background, the editor host and a native stack
-  with the tab bar (`(tabs)/`: Calendar · Tasks · Search) and Settings as
+  with the tab bar (`(tabs)/`: Calendar · Tasks · Search, the last a
+  stack of one screen whose `Stack.SearchBar` is the system search field,
+  which iOS 26 shows in the tab bar for the search role) and Settings as
   a modal route holding its own native stack (`settings/`: the root list,
   a page per pane, the pages under them; `src/ui/settings/`). `src/ui/CalendarScreen.tsx` is the calendar tab: a
   header (title, view menu, ‹ Today ›, gear), the week strip, the
