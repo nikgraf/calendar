@@ -35,5 +35,14 @@ export const useStyles = <T>(make: (colors: ThemeColors) => T): T => {
 /** The fill, text and edge colors a calendar-colored item takes in the current appearance. */
 export const useEventTint = (hex: string): EventTint => eventTint(hex, useTheme().scheme);
 
+/**
+ * The ground under grouped lists (Settings): iOS draws white rows on a
+ * tinted background in light mode and lighter rows on the canvas in dark,
+ * so light takes `fill` and dark stays on `canvas`. `THEMES[scheme]` is
+ * one object per scheme, which is what lets this tell them apart.
+ */
+export const groupedGround = (colors: ThemeColors): string =>
+  colors === THEMES.dark ? colors.canvas : colors.fill;
+
 /** Shared radii, matching the desktop's `--radius-*` tokens. */
 export const RADIUS = { control: 8, event: 6, popover: 12 } as const;

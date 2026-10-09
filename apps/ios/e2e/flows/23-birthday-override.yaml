@@ -47,25 +47,32 @@ tags:
     visible:
       id: 'birthday-override-14-on'
     timeout: 5000
-# Settings lists the person under "Custom per person".
+# Settings › Notifications lists the person under "Custom per Person".
 - tapOn: 'Done'
 - runFlow: ../common/open-settings.yaml
-- waitForAnimationToEnd:
-    timeout: 5000
+- runFlow:
+    file: ../common/open-settings-page.yaml
+    env:
+      PAGE: notifications
 - scrollUntilVisible:
     element:
       id: 'birthday-overrides'
     direction: DOWN
     timeout: 10000
 - assertVisible: 'Birthday Fixture.*'
-# Reset from Settings leaves the state as found for the next flow.
+# Reset from Settings (swipe the row, tap Reset) leaves the state as found
+# for the next flow.
+- swipe:
+    from:
+      id: 'birthday-override-row-0'
+    direction: LEFT
 - tapOn:
     id: 'birthday-override-reset-0'
 - extendedWaitUntil:
     notVisible:
       id: 'birthday-overrides'
     timeout: 5000
-- tapOn: 'Done'
+- runFlow: ../common/close-settings.yaml
 - runFlow:
     file: ../common/switch-view.yaml
     env:

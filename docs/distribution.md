@@ -225,7 +225,7 @@ copy of `com.solunivo.app`. You can't have several PR builds side by side.
 Instead:
 
 - **JS/TS changes (almost all agent PRs)** — keep the installed TestFlight
-  build and switch channels in-app: **Settings → PR preview** → enter
+  build and switch channels in-app: **Settings › Advanced › PR Preview** → enter
   `pr-<number>` (from the PR comment) → Load. "Back to main" returns to the
   main channel. If no update loads immediately, force-quit and reopen.
 - **Native changes** (new native deps, config plugins, Expo SDK bumps) change
@@ -296,7 +296,7 @@ crash on the settings screen. The local Expo module for Apple Reminders
 (`apps/ios/modules/solunivo-reminders`) is another: an older client reports
 Reminders as "unavailable" in Diagnostics until rebuilt.
 
-Updates are disabled in dev builds, so **Settings → PR preview** shows
+Updates are disabled in dev builds, so **Settings › Advanced › PR Preview** shows
 "Updates are disabled in this build" instead of channel controls. That is the
 quickest way to confirm a rebuild picked up `expo-updates`.
 

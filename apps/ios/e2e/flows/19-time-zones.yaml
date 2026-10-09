@@ -5,14 +5,12 @@ tags:
 ---
 - runFlow: ../common/launch.yaml
 - runFlow: ../common/open-settings.yaml
-- waitForAnimationToEnd:
-    timeout: 5000
-- scrollUntilVisible:
-    element:
-      id: 'time-zones'
-    direction: DOWN
-    timeout: 10000
-- assertVisible: 'Time zones'
+- runFlow:
+    file: ../common/open-settings-page.yaml
+    env:
+      PAGE: general
+- assertVisible:
+    id: 'time-zones'
 - assertVisible:
     id: 'time-zones-device-only'
 # Honolulu and Kolkata never observe DST and neither is a CI or developer
@@ -28,8 +26,9 @@ tags:
     visible:
       id: 'time-zone-row-Pacific-Honolulu'
     timeout: 5000
+# A tap on a zone's row makes it the primary (the checked one).
 - tapOn:
-    id: 'time-zone-make-primary-Pacific-Honolulu'
+    id: 'time-zone-row-Pacific-Honolulu'
 - extendedWaitUntil:
     visible:
       id: 'time-zone-row-Pacific-Honolulu-primary'
@@ -45,8 +44,7 @@ tags:
     visible:
       id: 'time-zone-row-Asia-Kolkata'
     timeout: 5000
-- tapOn: 'Done'
-- assertVisible: 'Today'
+- runFlow: ../common/close-settings.yaml
 # The gutter's second line under noon (in the primary zone, Honolulu)
 # names the device zone's hour and Kolkata's 3:30 AM. The localized
 # time's spacing (a narrow no-break space before AM) is not pinned, as in
@@ -61,28 +59,33 @@ tags:
     text: '.*3:30.AM'
 # Reopen: the choice was stored (device-local SQLite), not just React
 # state. Then leave the settings as found for the next flow: removing the
-# primary promotes the device zone back.
+# primary promotes the device zone back. A zone is removed the iOS way,
+# by swiping its row left and tapping the action that slides in.
 - runFlow: ../common/open-settings.yaml
-- waitForAnimationToEnd:
-    timeout: 5000
-- scrollUntilVisible:
-    element:
-      id: 'time-zone-remove-Asia-Kolkata'
-    direction: DOWN
-    timeout: 10000
+- runFlow:
+    file: ../common/open-settings-page.yaml
+    env:
+      PAGE: general
+- swipe:
+    from:
+      id: 'time-zone-row-Asia-Kolkata'
+    direction: LEFT
 - tapOn:
     id: 'time-zone-remove-Asia-Kolkata'
 - extendedWaitUntil:
     notVisible:
       id: 'time-zone-row-Asia-Kolkata'
     timeout: 5000
+- swipe:
+    from:
+      id: 'time-zone-row-Pacific-Honolulu-primary'
+    direction: LEFT
 - tapOn:
     id: 'time-zone-remove-Pacific-Honolulu'
 - extendedWaitUntil:
     notVisible:
       id: 'time-zone-row-Pacific-Honolulu-primary'
     timeout: 5000
-- tapOn: 'Done'
-- assertVisible: 'Today'
+- runFlow: ../common/close-settings.yaml
 - assertNotVisible:
     id: 'hour-secondary-12'

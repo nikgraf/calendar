@@ -734,7 +734,7 @@ google-live` keeps runs from overlapping on the one account. See "Live
 ### iOS e2e (Maestro, apps/ios/e2e/flows/)
 
 Text/testID-based flows (12: dev-client bootstrap, launch, navigation,
-new-event sheet, accounts sheet, day swipe, quick-add, create event, task
+new-event sheet, Settings pages, day swipe, quick-add, create event, task
 lane, reminders form, real reminders, invitees, all-day event chip).
 Flows carry `tags`: everything is `ci`; the strict
 `10-reminders-real.yaml` is also `ci-reminders` — it connects, creates
@@ -765,6 +765,17 @@ re-taps while the sheet is missing (run 34852090635 tapped once at the
 right coordinates and nothing opened); a tap on an event opens its
 detail sheet first, so `common/open-event-editor.yaml` taps Edit; views
 are picked through `common/switch-view.yaml` (the header's menu, `VIEW`);
+Settings is a stack of pages: `common/open-settings.yaml` waits for the
+root's `settings-root` id (never the "Settings" title — the gear's label
+is "Settings" too), `common/open-settings-page.yaml` pushes one page
+(`PAGE`: `device`, `general`, `notifications`, `mirrors`, `advanced`,
+`unsynced`; root rows are `settings-row-<page>`, pages
+`settings-page-<page>`), and `common/close-settings.yaml` taps the native
+back button (`BackButton`) until the root shows, then Done — a pressable
+row reads as one element (its title, subtitle and value together), so
+match its text with `.*` around it, and decorative symbols stay out of
+that label (`Glyph`); swipe-to-remove rows are swiped from their id and
+the revealed action tapped by its own;
 the shell anchor is still the "Today" button; and the
 quick-add flow accepts the sheet's "couldn't be read" outcome: a CI
 simulator passes the model availability check yet cannot generate,

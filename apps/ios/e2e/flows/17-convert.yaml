@@ -28,12 +28,18 @@ tags:
             - evalScript: ${output.connectedReminders = true}
             - tapOn: 'Cancel'
             - runFlow: ../common/open-settings.yaml
+            - runFlow:
+                file: ../common/open-settings-page.yaml
+                env:
+                  PAGE: device
             - tapOn:
                 id: 'connect-reminders'
+            # The Reminders row's subtitle carries this id only while the account exists.
             - extendedWaitUntil:
-                visible: 'Apple Reminders'
+                visible:
+                  id: 'apple-reminders-account'
                 timeout: 20000
-            - tapOn: 'Done'
+            - runFlow: ../common/close-settings.yaml
             - assertVisible: 'Today'
             - runFlow: ../common/open-new-event.yaml
             - runFlow: ../common/switch-to-task.yaml
@@ -120,12 +126,30 @@ tags:
             true: ${output.connectedReminders === true}
           commands:
             - runFlow: ../common/open-settings.yaml
+            - runFlow:
+                file: ../common/open-settings-page.yaml
+                env:
+                  PAGE: device
+            - scrollUntilVisible:
+                element:
+                  id: 'remove-account-apple-reminders'
+                direction: DOWN
+                timeout: 10000
             - tapOn:
                 id: 'remove-account-apple-reminders'
+            # Gone: the row just tapped disappears with the account (the access row
+            # may be scrolled off by now, so its absence would prove nothing), and
+            # the access row offers Connect again.
             - extendedWaitUntil:
-                notVisible: '^Apple Reminders$'
+                notVisible:
+                  id: 'remove-account-apple-reminders'
                 timeout: 20000
-            - tapOn: 'Done'
+            - scrollUntilVisible:
+                element:
+                  id: 'connect-reminders'
+                direction: UP
+                timeout: 10000
+            - runFlow: ../common/close-settings.yaml
             - assertVisible: 'Today'
 # No fixture account: leave the sheet as we found it (keyed on the sheet,
 # see 08).

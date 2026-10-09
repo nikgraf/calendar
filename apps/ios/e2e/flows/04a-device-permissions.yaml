@@ -14,7 +14,12 @@ tags:
       contacts: unset
 - runFlow: ../common/await-shell.yaml
 - runFlow: ../common/open-settings.yaml
-- assertVisible: 'Connect Contacts'
+- runFlow:
+    file: ../common/open-settings-page.yaml
+    env:
+      PAGE: device
+- assertVisible:
+    id: 'connect-contacts'
 - tapOn:
     id: 'connect-reminders'
 - assertVisible: '.*would like to access your Reminders.*'
@@ -28,25 +33,36 @@ tags:
 - assertVisible: 'Contacts: Access denied.*'
 - assertVisible:
     id: 'open-device-settings'
-- tapOn: 'Done'
+- runFlow: ../common/close-settings.yaml
 
 # A privacy reset keeps the Apple account in our database. Its presence
 # must not hide the action that asks iOS for permission again.
 - runFlow: ../common/launch.yaml
 - runFlow: ../common/open-settings.yaml
+- runFlow:
+    file: ../common/open-settings-page.yaml
+    env:
+      PAGE: device
 - tapOn:
     id: 'connect-reminders'
+# The Reminders row's subtitle carries this id only while the account exists.
 - extendedWaitUntil:
-    visible: '^Apple Reminders$'
+    visible:
+      id: 'apple-reminders-account'
     timeout: 20000
-- tapOn: 'Done'
+- runFlow: ../common/close-settings.yaml
 - launchApp:
     permissions:
       reminders: unset
       contacts: allow
 - runFlow: ../common/await-shell.yaml
 - runFlow: ../common/open-settings.yaml
-- assertVisible: '^Apple Reminders$'
+- runFlow:
+    file: ../common/open-settings-page.yaml
+    env:
+      PAGE: device
+- assertVisible:
+    id: 'apple-reminders-account'
 - tapOn:
     id: 'connect-reminders'
 - assertVisible: '.*would like to access your Reminders.*'
@@ -55,16 +71,28 @@ tags:
     notVisible:
       id: 'connect-reminders'
     timeout: 20000
-- assertVisible: '^Apple Reminders$'
+- assertVisible:
+    id: 'apple-reminders-account'
 # Leave no Apple account so flow 10 still exercises the initial connection.
-# By id: with the fixture Google account signed in (CI's Metro), the sheet
-# has two Remove buttons and a text tap hit the Google one first (run
-# 35587137817).
+- scrollUntilVisible:
+    element:
+      id: 'remove-account-apple-reminders'
+    direction: DOWN
+    timeout: 10000
 - tapOn:
     id: 'remove-account-apple-reminders'
+# Gone: the row just tapped disappears with the account (the access row
+# may be scrolled off by now, so its absence would prove nothing), and
+# the access row offers Connect again.
 - extendedWaitUntil:
-    notVisible: '^Apple Reminders$'
+    notVisible:
+      id: 'remove-account-apple-reminders'
     timeout: 20000
-- tapOn: 'Done'
+- scrollUntilVisible:
+    element:
+      id: 'connect-reminders'
+    direction: UP
+    timeout: 10000
+- runFlow: ../common/close-settings.yaml
 # Restore the ordinary suite's pre-granted permissions for subsequent flows.
 - runFlow: ../common/launch.yaml

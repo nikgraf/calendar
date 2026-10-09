@@ -5,8 +5,10 @@ tags:
 ---
 - runFlow: ../common/launch.yaml
 - runFlow: ../common/open-settings.yaml
-- waitForAnimationToEnd:
-    timeout: 5000
+- runFlow:
+    file: ../common/open-settings-page.yaml
+    env:
+      PAGE: mirrors
 - scrollUntilVisible:
     element:
       id: 'mirror-add'
@@ -46,33 +48,38 @@ tags:
     timeout: 10000
 - tapOn:
     id: 'mirror-save'
-# The editor closes; the new mirror's row then pushes "Add mirror" below
-# the sheet's fold, so scroll to it rather than wait for it in place
-# (run 37298882532).
 - extendedWaitUntil:
     notVisible:
       id: 'mirror-save'
     timeout: 10000
+# The copies land through the fake API and the mirror's row reports it
+# (one element: the row reads as its name, status and On together). The
+# count is whatever the source holds by now: an earlier flow that failed
+# before its clean-up leaves its event there (run 37314663224 mirrored 2).
 - scrollUntilVisible:
     element:
-      id: 'mirror-add'
+      id: 'mirror-row-.*'
     direction: DOWN
     timeout: 10000
-# The copies land through the fake API and the row reports it. The count
-# is whatever the source holds by now: an earlier flow that failed before
-# its clean-up leaves its event there (run 37314663224 mirrored 2).
 - extendedWaitUntil:
-    visible: 'Up to date — [1-9][0-9]* events? mirrored\.'
+    visible: '.*Up to date — [1-9][0-9]* events? mirrored\..*'
     timeout: 20000
-# Leave the settings as found for the next flow. The row's action line
-# sits at the sheet's bottom edge after the scroll above; XCTest reports a
-# clipped control as visible, so it is centred first or the tap lands on
-# nothing (CI run 37073975532).
+# Leave the settings as found for the next flow: delete it from its page.
+- tapOn:
+    id: 'mirror-row-.*'
+- extendedWaitUntil:
+    visible:
+      id: 'settings-page-mirror'
+    timeout: 5000
+- waitForAnimationToEnd:
+    timeout: 5000
+# No centerElement: the page runs to the screen edge, so a frame-visible
+# row is tappable, and a page short enough not to scroll can never centre
+# its last row (CI run 37852137291 waited out the timeout on it).
 - scrollUntilVisible:
     element:
       id: 'mirror-delete-.*'
     direction: DOWN
-    centerElement: true
     timeout: 10000
 - tapOn:
     id: 'mirror-delete-.*'
@@ -80,8 +87,13 @@ tags:
     visible: 'Delete and remove copies'
     timeout: 5000
 - tapOn: 'Delete and remove copies'
+# Gone, and back on the list.
 - extendedWaitUntil:
-    notVisible: 'Up to date — [1-9][0-9]* events? mirrored\.'
+    visible:
+      id: 'settings-page-mirrors'
     timeout: 10000
-- tapOn: 'Done'
-- assertVisible: 'Today'
+- extendedWaitUntil:
+    notVisible:
+      id: 'mirror-row-.*'
+    timeout: 10000
+- runFlow: ../common/close-settings.yaml

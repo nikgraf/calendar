@@ -628,7 +628,8 @@ scheme)`: hue and chroma from the calendar, lightness from the theme,
 - iOS shell (`apps/ios/app/`, expo-router): `_layout.tsx` mounts the
   providers, the system background, the editor host and a native stack
   with the tab bar (`(tabs)/`: Calendar · Tasks · Search) and Settings as
-  a modal route. `src/ui/CalendarScreen.tsx` is the calendar tab: a
+  a modal route holding its own native stack (`settings/`: the root list,
+  a page per pane, the pages under them; `src/ui/settings/`). `src/ui/CalendarScreen.tsx` is the calendar tab: a
   header (title, view menu, ‹ Today ›, gear), the week strip, the
   timeline / month grid / agenda, and the floating "+". `EditorHost.tsx`
   owns every sheet — quick add, event detail, the editors, the birthday

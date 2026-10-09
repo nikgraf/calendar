@@ -1,25 +1,19 @@
 import {
   definitionOf,
-  draftOf,
   googleAccountsForNewCalendar,
   hasSource,
   type MirrorDraft,
   mirrorDestinationOptions,
   mirrorDraftIssue,
   mirrorSourceOptions,
-  newMirrorDraft,
-  refLabel,
   refSlug,
   useAccounts,
   useBackendMutations,
   useCalendars,
-  useMirrors,
   useTaskLists,
-  useTimeZoneSettings,
   withSourceToggled,
 } from '@calendar/app-state';
 import {
-  describeMirrorStatus,
   MIRROR_COPY,
   MIRROR_MAX_MONTHS,
   MIRROR_PRESET_COPY,
@@ -40,134 +34,11 @@ import {
   SafeAreaView,
   ScrollView,
   StyleSheet,
-  Switch,
   Text,
   TextInput,
   View,
 } from 'react-native';
-import { useSectionStyles } from './settingsShared.ts';
-import { type ThemeColors, useStyles, useTheme } from './theme.ts';
-
-/**
- * Calendar mirrors on the iPhone: the list with each mirror's state here,
- * and a page sheet to add or edit one. The choices and checks come from
- * the shared editor model; only the controls are this platform's.
- */
-export function MirrorsSection() {
-  const sectionStyles = useSectionStyles();
-  const styles = useStyles(makeStyles);
-  const mirrors = useMirrors();
-  const mutations = useBackendMutations();
-  const timeZone = useTimeZoneSettings()?.primary ?? Temporal.Now.timeZoneId();
-  const [editing, setEditing] = useState<MirrorDraft | null>(null);
-
-  const confirmDelete = (view: MirrorView) => {
-    Alert.alert(
-      `Delete “${view.definition.name}”?`,
-      'If another device still runs this mirror, it will copy the events again — delete it there too.',
-      [
-        { style: 'cancel', text: 'Cancel' },
-        {
-          onPress: () =>
-            void mutations.deleteMirror({ id: view.definition.id, removeCopies: false }),
-          text: 'Keep the copies',
-        },
-        {
-          onPress: () =>
-            void mutations.deleteMirror({ id: view.definition.id, removeCopies: true }),
-          style: 'destructive',
-          text: 'Delete and remove copies',
-        },
-      ],
-    );
-  };
-
-  return (
-    <View style={sectionStyles.card} testID="mirrors">
-      <Text style={sectionStyles.title}>Calendar mirrors</Text>
-      <Text style={sectionStyles.meta}>{MIRROR_COPY.intro}</Text>
-      {mirrors.map((view) => (
-        <View
-          key={view.definition.id}
-          style={styles.row}
-          testID={`mirror-row-${view.definition.id}`}
-        >
-          <View style={styles.rowHeader}>
-            <View style={styles.rowText}>
-              <Text style={styles.name}>{view.definition.name}</Text>
-              <Text numberOfLines={1} style={sectionStyles.meta}>
-                {view.definition.sources.map(refLabel).join(', ')} →{' '}
-                {refLabel(view.definition.destination)} ·{' '}
-                {MIRROR_PRESET_COPY[mirrorPresetOf(view.definition)].title}
-              </Text>
-            </View>
-            <Switch
-              onValueChange={(enabled) =>
-                void mutations.setMirrorEnabled({ enabled, id: view.definition.id })
-              }
-              testID={`mirror-enabled-${view.definition.id}`}
-              value={view.enabled}
-            />
-          </View>
-          <Text
-            style={[
-              sectionStyles.meta,
-              view.status.state === 'paused' && styles.paused,
-              view.status.state === 'waiting' && styles.waiting,
-            ]}
-            testID={`mirror-status-${view.definition.id}`}
-          >
-            {describeMirrorStatus(view.status)}
-          </Text>
-          <View style={styles.actions}>
-            <Pressable
-              accessibilityRole="button"
-              onPress={() => setEditing(draftOf(view.definition))}
-              testID={`mirror-edit-${view.definition.id}`}
-            >
-              <Text style={styles.link}>Edit</Text>
-            </Pressable>
-            {view.status.state === 'off' ? null : (
-              <Pressable
-                accessibilityRole="button"
-                onPress={() => void mutations.runMirrorsNow(undefined)}
-                testID={`mirror-run-${view.definition.id}`}
-              >
-                <Text style={styles.link}>Run now</Text>
-              </Pressable>
-            )}
-            <Pressable
-              accessibilityRole="button"
-              onPress={() => confirmDelete(view)}
-              testID={`mirror-delete-${view.definition.id}`}
-            >
-              <Text style={styles.remove}>Delete</Text>
-            </Pressable>
-          </View>
-        </View>
-      ))}
-      <Pressable
-        accessibilityRole="button"
-        onPress={() => setEditing(newMirrorDraft(timeZone))}
-        style={styles.addRow}
-        testID="mirror-add"
-      >
-        <Text style={styles.link}>Add mirror…</Text>
-      </Pressable>
-      <Text style={styles.footer}>{MIRROR_COPY.hidden}</Text>
-      <Text style={styles.footer}>{MIRROR_COPY.freshness}</Text>
-      <Text style={styles.footer}>{MIRROR_COPY.devices}</Text>
-      {editing ? (
-        <MirrorEditSheet
-          initial={editing}
-          key={editing.id}
-          mirrors={mirrors}
-          onClose={() => setEditing(null)}
-        />
-      ) : null}
-    </View>
-  );
-}
+import { type ThemeColors, useStyles, useTheme } from '../theme.ts';
 
 const zoned = (ms: number, timeZone: string): Temporal.ZonedDateTime =>
   Temporal.Instant.fromEpochMilliseconds(ms).toZonedDateTimeISO(timeZone);
@@ -211,11 +82,13 @@ function Check({
 }
 
 /**
- * The editor as a page sheet over the settings sheet (which keeps taps
- * alive with keyboardShouldPersistTaps, or the first tap on a row would be
- * eaten — see TimeZonesSection).
+ * A mirror's editor: a page sheet over the Mirrors pages, which keep taps
+ * alive with keyboardShouldPersistTaps (SettingsPage) — this Modal is
+ * their child in the React tree, so without it the first tap on a row
+ * would be eaten. The choices and checks come from the shared editor
+ * model; only the controls are this platform's.
  */
-function MirrorEditSheet({
+export function MirrorEditSheet({
   initial,
   mirrors,
   onClose,
@@ -225,7 +98,6 @@ function MirrorEditSheet({
   onClose: () => void;
 }) {
   const { colors } = useTheme();
-  const sectionStyles = useSectionStyles();
   const styles = useStyles(makeStyles);
   const mutations = useBackendMutations();
   const accounts = useAccounts();
@@ -351,7 +223,7 @@ function MirrorEditSheet({
           <Text style={styles.label}>Copy from</Text>
           {groups.map((group) => (
             <View key={group}>
-              <Text style={sectionStyles.meta}>{group}</Text>
+              <Text style={styles.meta}>{group}</Text>
               {sources
                 .filter((option) => option.group === group)
                 .map((option) => (
@@ -367,7 +239,7 @@ function MirrorEditSheet({
           ))}
 
           <Text style={styles.label}>Copy into</Text>
-          <Text style={sectionStyles.meta}>{MIRROR_COPY.dedicated}</Text>
+          <Text style={styles.meta}>{MIRROR_COPY.dedicated}</Text>
           {destinations.map((option) => (
             <Pressable
               accessibilityRole="radio"
@@ -378,7 +250,7 @@ function MirrorEditSheet({
               testID={`mirror-destination-${refSlug(option.key)}`}
             >
               <Text style={styles.optionTitle}>{option.label}</Text>
-              <Text style={sectionStyles.meta}>{option.group}</Text>
+              <Text style={styles.meta}>{option.group}</Text>
             </Pressable>
           ))}
           <Pressable
@@ -409,7 +281,7 @@ function MirrorEditSheet({
               testID={`mirror-preset-${id}`}
             >
               <Text style={styles.optionTitle}>{MIRROR_PRESET_COPY[id].title}</Text>
-              <Text style={sectionStyles.meta}>{MIRROR_PRESET_COPY[id].description}</Text>
+              <Text style={styles.meta}>{MIRROR_PRESET_COPY[id].description}</Text>
             </Pressable>
           ))}
           <Pressable
@@ -507,7 +379,7 @@ function MirrorEditSheet({
             </View>
           ) : null}
 
-          <Text style={sectionStyles.meta}>{MIRROR_COPY.window(draft.monthsAhead)}</Text>
+          <Text style={styles.meta}>{MIRROR_COPY.window(draft.monthsAhead)}</Text>
           {preview !== null ? (
             <View style={styles.preview} testID="mirror-preview">
               {preview.blocked ? (
@@ -517,7 +389,7 @@ function MirrorEditSheet({
                 </Text>
               ) : (
                 <>
-                  <Text style={sectionStyles.meta}>
+                  <Text style={styles.meta}>
                     {preview.copies} {preview.copies === 1 ? 'event' : 'events'} would be copied.
                     {preview.samples.length > 0 ? ' Others see, for example:' : ''}
                   </Text>
@@ -532,7 +404,7 @@ function MirrorEditSheet({
               )}
             </View>
           ) : null}
-          {issue ? <Text style={sectionStyles.meta}>{issue}</Text> : null}
+          {issue ? <Text style={styles.meta}>{issue}</Text> : null}
           {error ? <Text style={styles.error}>{error}</Text> : null}
           <Text style={styles.footer}>{MIRROR_COPY.sharing}</Text>
           <Text style={styles.footer}>{MIRROR_COPY.appleMarker}</Text>
@@ -544,11 +416,6 @@ function MirrorEditSheet({
 
 const makeStyles = (colors: ThemeColors) =>
   StyleSheet.create({
-    actions: {
-      flexDirection: 'row',
-      gap: 16,
-      marginTop: 6,
-    },
     addRow: {
       marginTop: 10,
     },
@@ -607,10 +474,10 @@ const makeStyles = (colors: ThemeColors) =>
       fontSize: 14,
       fontWeight: '600',
     },
-    name: {
-      color: colors.text,
-      fontSize: 15,
-      fontWeight: '600',
+    meta: {
+      color: colors['text-secondary'],
+      fontSize: 12,
+      marginTop: 2,
     },
     option: {
       borderColor: colors.border,
@@ -627,34 +494,12 @@ const makeStyles = (colors: ThemeColors) =>
       color: colors.text,
       fontSize: 15,
     },
-    paused: {
-      color: colors.danger,
-    },
     preview: {
       borderColor: colors.border,
       borderRadius: 8,
       borderWidth: StyleSheet.hairlineWidth,
       marginTop: 10,
       padding: 10,
-    },
-    remove: {
-      color: colors.danger,
-      fontSize: 14,
-      fontWeight: '600',
-    },
-    row: {
-      borderTopColor: colors.border,
-      borderTopWidth: StyleSheet.hairlineWidth,
-      marginTop: 10,
-      paddingTop: 10,
-    },
-    rowHeader: {
-      alignItems: 'center',
-      flexDirection: 'row',
-      gap: 12,
-    },
-    rowText: {
-      flex: 1,
     },
     sample: {
       color: colors.text,
@@ -678,9 +523,6 @@ const makeStyles = (colors: ThemeColors) =>
       color: colors.text,
       fontSize: 16,
       fontWeight: '600',
-    },
-    waiting: {
-      color: colors['text-secondary'],
     },
     warning: {
       backgroundColor: colors.warning,

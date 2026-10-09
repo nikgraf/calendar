@@ -5,14 +5,12 @@ tags:
 ---
 - runFlow: ../common/launch.yaml
 - runFlow: ../common/open-settings.yaml
-- waitForAnimationToEnd:
-    timeout: 5000
-- scrollUntilVisible:
-    element:
-      id: 'settings-file'
-    direction: DOWN
-    timeout: 10000
-- assertVisible: 'Export & import'
+- runFlow:
+    file: ../common/open-settings-page.yaml
+    env:
+      PAGE: advanced
+- assertVisible:
+    id: 'settings-file'
 - assertVisible:
     id: 'settings-file-import'
 - tapOn:
@@ -39,15 +37,12 @@ tags:
       - waitForAnimationToEnd:
           timeout: 3000
 - assertNotVisible: 'Save to Files'
-- assertVisible: '^Accounts$'
+# Still on the Advanced page: the drag closed the share sheet, not Settings.
+- assertVisible:
+    id: 'settings-file-export'
 # Import hands off to the system document picker (any file type; the
 # parser judges the contents). Opening and cancelling it is as far as a
 # simulator without a seeded Files provider can go.
-- scrollUntilVisible:
-    element:
-      id: 'settings-file-import'
-    direction: DOWN
-    timeout: 10000
 - tapOn:
     id: 'settings-file-import'
 - extendedWaitUntil:
@@ -70,6 +65,7 @@ tags:
       - waitForAnimationToEnd:
           timeout: 3000
 - extendedWaitUntil:
-    visible: '^Accounts$'
+    visible:
+      id: 'settings-file-import'
     timeout: 5000
-- tapOn: 'Done'
+- runFlow: ../common/close-settings.yaml

@@ -119,6 +119,10 @@ function CalendarBody({
   });
   const router = useRouter();
   const openSettings = () => router.push('/settings');
+  // Straight to the list, with the Settings root under it: a push loads the
+  // stack's initialRouteName only with an anchor, and without one the page
+  // opened alone — no root to go back to, no Done.
+  const openUnsynced = () => router.push('/settings/unsynced', { withAnchor: true });
   const host = useEditorHost();
   const updatePrefs = useUpdateViewPreferences();
   /** The view is device taste: it persists, and the app reopens on it. */
@@ -179,12 +183,12 @@ function CalendarBody({
         </Text>
         <View style={styles.headerActions}>
           {/* Ambient counterpart of the desktop sidebar's SyncStatus; the
-              list itself (with Discard) lives in Settings. */}
+              list itself (with Discard) is Settings › Unsynced Changes. */}
           {pendingOps.length > 0 ? (
             <Pressable
-              accessibilityLabel={`${String(pendingOps.length)} unsynced ${pendingOps.length === 1 ? 'change' : 'changes'}, open settings`}
+              accessibilityLabel={`${String(pendingOps.length)} unsynced ${pendingOps.length === 1 ? 'change' : 'changes'}, show them`}
               accessibilityRole="button"
-              onPress={openSettings}
+              onPress={openUnsynced}
               style={styles.pendingBadge}
               testID="pending-badge"
             >
