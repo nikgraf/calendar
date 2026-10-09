@@ -78,8 +78,9 @@ powers quick-add parsing, find-a-time, and dictation.
   (MapKit); `expo-maps` draws the editor map.
 - `brand/` — SVG masters, logos, fonts and tokens; `pnpm brand:build`
   (macOS) regenerates the committed app icons, `tokens.css` (the desktop
-  imports it; `App.css` maps the variables to Tailwind utilities and
-  `data-theme` on `<html>` follows the OS appearance) and
+  imports it; `App.css` maps the variables to Tailwind utilities — the
+  renderer's only colors, `themeClasses.test.ts` fails on Tailwind's own
+  palette — and `data-theme` on `<html>` follows the OS appearance) and
   `packages/core/src/theme/tokens.ts` (iOS reads it through `useTheme`),
   and CI fails on stale exports via `pnpm brand:check`. Edit
   `tokens/tokens.json` and the masters, never the generated files.

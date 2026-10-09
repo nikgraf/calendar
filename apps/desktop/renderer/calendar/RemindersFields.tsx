@@ -106,7 +106,7 @@ export function RemindersFields({ model }: { model: ReturnType<typeof useEventEd
                 </select>
                 <button
                   aria-label={`Remove notification ${String(index + 1)}`}
-                  className="text-sm text-ink-secondary hover:text-red-600"
+                  className="text-sm text-ink-secondary hover:text-danger"
                   onClick={() => removeReminder(index)}
                   type="button"
                 >

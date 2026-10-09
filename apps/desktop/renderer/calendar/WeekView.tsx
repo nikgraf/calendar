@@ -35,8 +35,10 @@ import { useSlotDrag } from './useSlotDrag.ts';
 import { useWheelPan } from './useWheelPan.ts';
 
 export const HOUR_HEIGHT = 48;
-/** Hour lines as one repeating gradient (neutral-100), not 24 divs per column. */
-/** One hairline per hour, in the theme's border color so the dark grid stays quiet. */
+/**
+ * One hairline per hour, as one repeating gradient rather than 24 divs per
+ * column, in the theme's border color so the dark grid stays quiet.
+ */
 const HOUR_LINES = `repeating-linear-gradient(to bottom, var(--border) 0, var(--border) 1px, transparent 1px, transparent ${HOUR_HEIGHT}px)`;
 
 /** The occurrence date keys a birthday: one person recurs every year the strip crosses. */

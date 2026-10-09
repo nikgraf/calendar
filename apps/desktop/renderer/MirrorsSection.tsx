@@ -35,6 +35,7 @@ import {
 } from '@calendar/core';
 import { useEffect, useState } from 'react';
 import { Dialog } from './Dialog.tsx';
+import { CALLOUT_CLASS } from './ui/calloutStyles.ts';
 
 const BUTTON =
   'rounded-lg border border-hairline-strong px-3 py-1.5 text-sm hover:bg-surface-subtle disabled:opacity-50';
@@ -88,9 +89,9 @@ function MirrorRow({
   const { definition, enabled, status } = view;
   const tone =
     status.state === 'paused'
-      ? 'text-red-700'
+      ? 'text-danger'
       : status.state === 'waiting'
-        ? 'text-amber-700'
+        ? 'text-warning'
         : 'text-ink-secondary';
   return (
     <li
@@ -210,7 +211,7 @@ function NewCalendarDialog({
           <option value="apple">iCloud (Apple Calendar)</option>
         </select>
       </label>
-      {error ? <p className="mt-2 text-sm text-red-700">{error}</p> : null}
+      {error ? <p className="mt-2 text-sm text-danger">{error}</p> : null}
       <div className="mt-4 flex justify-end gap-2">
         <button className={BUTTON} onClick={onClose} type="button">
           Cancel
@@ -376,7 +377,7 @@ function MirrorEditor({
       <p className="mt-1 text-xs text-ink-secondary">{MIRROR_COPY.dedicated}</p>
       {preview !== null && preview.otherEvents > 0 ? (
         <p
-          className="mt-2 rounded-lg bg-amber-50 p-2 text-xs text-amber-800"
+          className={`${CALLOUT_CLASS.warning} mt-2 p-2 text-xs`}
           data-testid="mirror-shared-warning"
         >
           This calendar already holds {preview.otherEvents} other{' '}
@@ -528,7 +529,7 @@ function MirrorEditor({
           data-testid="mirror-preview"
         >
           {preview.blocked ? (
-            <p className="text-amber-800">
+            <p className="text-warning">
               Cannot preview yet: {preview.blocked.reason}
               {preview.blocked.detail ? ` (${preview.blocked.detail})` : ''}.
             </p>
@@ -555,7 +556,7 @@ function MirrorEditor({
         </div>
       ) : null}
 
-      {error ? <p className="mt-2 text-sm text-red-700">{error}</p> : null}
+      {error ? <p className="mt-2 text-sm text-danger">{error}</p> : null}
       <div className="mt-3 flex items-center justify-end gap-2">
         {issue ? <span className="flex-1 text-xs text-ink-secondary">{issue}</span> : null}
         <button className={BUTTON} onClick={onClose} type="button">
@@ -618,7 +619,7 @@ function DeleteDialog({ onClose, view }: { onClose: () => void; view: MirrorView
           </span>
         </span>
       </label>
-      {error ? <p className="mt-2 text-sm text-red-700">{error}</p> : null}
+      {error ? <p className="mt-2 text-sm text-danger">{error}</p> : null}
       <div className="mt-4 flex justify-end gap-2">
         <button className={BUTTON} onClick={onClose} type="button">
           Cancel
