@@ -132,6 +132,18 @@ closed the last of them.
       under the notarized build from `/Applications`, relay auto-launch,
       a real guest invitation at "ask".
 
+- [ ] Search follow-ups (shipped 2026-10-09, `docs/decisions.md`) — a
+      `search` tool for the agent gateway (a read grant; a hidden calendar or
+      list must answer nothing, as the range reads do), deliberately left out
+      of the first PR; recall beyond the two-year window (Tier 3, "Ask your
+      calendar"); calendar and list names as search text; the matched words
+      highlighted in the rows. Measure on a phone with a large calendar: on
+      Node, 5,000 events in the window, 30 endless series and 3,000 tasks
+      take 55–115 ms a search, on the JS thread on iOS — FTS (or a folded
+      text column) is the way out if Hermes makes typing stutter. A list left
+      open moves an event from Upcoming to Past only when the next change
+      re-runs the search.
+
 ## Tier 3 — AI features
 
 Scope unchanged and all still open with zero code; the on-device-only
@@ -156,9 +168,14 @@ decision and platform notes live in `docs/decisions.md`.
       cap.
 - [ ] Day briefing (iOS-first) — a short generated summary of the day; a
       widget or Live Activity candidate once it earns its place.
-- [ ] Ask your calendar — start with SQLite FTS5 (no virtual table exists
-      yet), which honestly covers most recall; on-device embeddings only if
-      fuzzy recall proves necessary.
+- [ ] Ask your calendar — plain search shipped (2026-10-09, see
+      `docs/decisions.md` → Search): every-word matching over what the views
+      show, events two years either side of today. Recall beyond that window
+      is this item: SQLite FTS5 over the stored events and tasks (no virtual
+      table exists yet), which honestly covers most recall; on-device
+      embeddings only if fuzzy recall proves necessary. Apple Calendar events
+      are read through, so they keep a window (EventKit answers only bounded
+      queries).
 - [ ] Week planning / rescheduling assistant (desktop) — "make room for 3h
       of deep work" proposes a _diff_ of moves to approve, executed through
       the op queue so it stays inspectable and undoable. Weakest fit for a

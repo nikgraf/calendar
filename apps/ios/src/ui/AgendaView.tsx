@@ -1,3 +1,4 @@
+import { useListColorLookup } from '@calendar/app-state';
 import {
   type AgendaItem,
   type BirthdayOccurrence,
@@ -12,6 +13,7 @@ import {
 } from '@calendar/core';
 import { useMemo } from 'react';
 import { Pressable, SectionList, StyleSheet, Text, View } from 'react-native';
+import { TaskCheck } from './TaskCheck.tsx';
 import { type ThemeColors, useEventTint, useStyles } from './theme.ts';
 
 /**
@@ -123,6 +125,7 @@ function AgendaRow({
   timeZone: string;
 }) {
   const styles = useStyles(makeStyles);
+  const listColorOf = useListColorLookup();
   const tint = useEventTint(item.kind === 'event' ? colorOf(item.event) : '#4285f4');
   if (item.kind === 'event') {
     const { event } = item;
@@ -166,7 +169,9 @@ function AgendaRow({
         hitSlop={8}
         onPress={() => onToggleTask(task)}
       >
-        <Text style={styles.checkbox}>{done ? '☑' : '☐'}</Text>
+        {({ pressed }) => (
+          <TaskCheck checked={done} listColor={listColorOf(task)} pressed={pressed} size="agenda" />
+        )}
       </Pressable>
       <Pressable
         accessibilityRole="button"
@@ -189,10 +194,6 @@ const makeStyles = (colors: ThemeColors) =>
     },
     birthdayText: {
       color: colors['on-event-blush'],
-    },
-    checkbox: {
-      color: colors['text-secondary'],
-      fontSize: 16,
     },
     content: {
       gap: 6,

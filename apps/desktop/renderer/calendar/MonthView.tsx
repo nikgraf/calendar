@@ -17,6 +17,7 @@ import {
   Temporal,
 } from '@calendar/core';
 import type { ColorLookup } from './colors.ts';
+import { TaskCheck } from './TaskCheck.tsx';
 import { eventLook, stripes, useTint } from './tint.ts';
 
 const MAX_CHIPS = 3;
@@ -98,33 +99,26 @@ export function MonthView({
       const listColor = listColorOf(task);
       return (
         <span
-          className={`${CHIP} bg-fill ${isOverdue ? 'text-danger' : 'text-ink-secondary'} ${
-            done ? 'opacity-50' : ''
-          }`}
+          className={`${CHIP} bg-fill ${isOverdue ? 'text-danger' : 'text-ink'}`}
           data-overdue={isOverdue ? '' : undefined}
           key={calendarTaskKey(task)}
           title={isOverdue ? `${task.title} · ${overdueLabel(task, todayIso)}` : task.title}
         >
-          <button
+          <TaskCheck
             aria-label={done ? `Reopen task ${task.title}` : `Complete task ${task.title}`}
-            className="shrink-0"
+            checked={done}
+            listColor={listColor}
             onClick={(mouse) => {
               mouse.stopPropagation();
               onToggleTask(task);
             }}
-            type="button"
-          >
-            {done ? '☑' : '☐'}
-          </button>
-          {listColor ? (
-            <span
-              aria-hidden
-              className="size-1.5 shrink-0 rounded-full"
-              style={{ backgroundColor: listColor }}
-            />
-          ) : null}
+            overdue={isOverdue}
+            size="month"
+          />
           <button
-            className={`min-w-0 flex-1 truncate text-left ${done ? 'line-through' : ''}`}
+            className={`min-w-0 flex-1 truncate text-left ${
+              done ? 'text-ink-secondary line-through' : ''
+            }`}
             onClick={(mouse) => {
               mouse.stopPropagation();
               onTaskClick(task);

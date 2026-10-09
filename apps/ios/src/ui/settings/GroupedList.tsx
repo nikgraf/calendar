@@ -1,12 +1,21 @@
+import { EXPERIMENTAL_COPY } from '@calendar/core';
 import { Host, Switch } from '@expo/ui';
 import { labelsHidden } from '@expo/ui/swift-ui/modifiers';
 import { type Href, useRouter } from 'expo-router';
 import { type SFSymbol, SymbolView, type SymbolViewProps } from 'expo-symbols';
-import { Children, createContext, isValidElement, type ReactNode, useContext } from 'react';
+import {
+  Children,
+  createContext,
+  isValidElement,
+  type ReactNode,
+  useContext,
+  useState,
+} from 'react';
 import {
   type AccessibilityActionEvent,
   type AccessibilityRole,
   type AccessibilityState,
+  Image,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -158,6 +167,22 @@ export function PageHero({
       </Text>
       {subtitle ? <Text style={styles.heroSubtitle}>{subtitle}</Text> : null}
       {children}
+    </View>
+  );
+}
+
+/**
+ * What "Experimental" on the Settings root means, inside the PageHero of
+ * each page listed under it: the capsule, then one line.
+ */
+export function ExperimentalNote() {
+  const styles = useStyles(makeStyles);
+  return (
+    <View style={styles.experimental} testID="experimental-note">
+      <View style={styles.experimentalCapsule}>
+        <Text style={styles.experimentalLabel}>{EXPERIMENTAL_COPY.label}</Text>
+      </View>
+      <Text style={styles.experimentalNote}>{EXPERIMENTAL_COPY.note}</Text>
     </View>
   );
 }
@@ -492,19 +517,26 @@ export function LeadingSpace() {
   return <View style={styles.tileSpace} />;
 }
 
-/** A person's or account's initial in a tinted circle. */
+/**
+ * A person's or account's initial in a tinted circle, under their photo
+ * when there is one (`uri`, a Google account's picture): the initial
+ * shows while the photo loads and stays when it cannot load (offline).
+ */
 export function Avatar({
   background,
   foreground,
   label,
   size = 30,
+  uri,
 }: {
   background: string;
   foreground: string;
   label: string;
   size?: number;
+  uri?: string | undefined;
 }) {
   const styles = useStyles(makeStyles);
+  const [failed, setFailed] = useState<string | null>(null);
   return (
     <View
       style={[
@@ -518,6 +550,14 @@ export function Avatar({
       >
         {label}
       </Text>
+      {uri !== undefined && failed !== uri ? (
+        <Image
+          accessibilityIgnoresInvertColors
+          onError={() => setFailed(uri)}
+          source={{ uri }}
+          style={[StyleSheet.absoluteFill, { borderRadius: size / 2 }]}
+        />
+      ) : null}
     </View>
   );
 }
@@ -720,6 +760,28 @@ const makeStyles = (colors: ThemeColors) =>
     },
     disabled: {
       opacity: 0.4,
+    },
+    experimental: {
+      alignItems: 'center',
+      gap: 6,
+      marginTop: 6,
+    },
+    experimentalCapsule: {
+      backgroundColor: colors.fill,
+      borderRadius: 999,
+      paddingHorizontal: 10,
+      paddingVertical: 3,
+    },
+    experimentalLabel: {
+      color: colors['text-secondary'],
+      fontSize: 13,
+      fontWeight: '600',
+    },
+    experimentalNote: {
+      color: colors['text-secondary'],
+      fontSize: 13,
+      lineHeight: 18,
+      textAlign: 'center',
     },
     footer: {
       color: colors['text-secondary'],

@@ -2482,11 +2482,12 @@ then iOS (both in `todo.md`).
       `editor-title`, `week-grid`, `today-header`, `now-line`,
       `panel-task-*`); color is asserted through `data-color`, never a
       computed rgb. Search stays a disabled toolbar placeholder (its own
-      PR).
+      PR; shipped, see Search below).
 - [x] iOS redesign — done (2026-10-08, `todo/ios-redesign`).
       **expo-router owns the screens**: `app/_layout.tsx` holds the
       providers and a native stack — the tab bar (`NativeTabs`: Calendar ·
-      Tasks · Search, the last a placeholder until search ships) and
+      Tasks · Search, the last a placeholder until search shipped, see
+      Search below) and
       Settings as a modal route from the calendar's gear, never a tab.
       `+native-intent.tsx` keeps the share, capture-fixture and OAuth URLs
       off the router; the host's `Linking` listener still handles them.
@@ -2574,6 +2575,103 @@ then iOS (both in `todo.md`).
       Done; an Apple account's presence is the `apple-calendar-account` /
       `apple-reminders-account` id on its access row, and zones and
       per-person birthday times are removed by a swipe.
+- [x] Search — done (2026-10-09, `todo/search`).
+      **One rpc reads what the views can show**: `search({ query,
+      timeZone })` (`searchCalendar`, both apps) reads the rows the views'
+      range query reads (`EventRepo.getWindow`), so visibility, hidden
+      mirror copies and cancelled events come with it, plus the Apple
+      read-through; tasks are every task of the visible lists
+      (`TaskRepo.getVisible`), Google Tasks and the Reminders mirror.
+      Birthdays are not searched. **A window, not the history**: events are
+      looked for two years either side of today in the primary zone
+      (`SEARCH_WINDOW_YEARS`). Older and farther events need full-text
+      search (todo.md, Tier 3). **A series is walked, not expanded**: over
+      the whole window an hourly series passes the expander's iteration
+      cap and `assembleWindow` drops it, so a matching series is walked
+      outward from now to its next occurrence that is not over, else its
+      latest (`seriesSearchOccurrences`: each direction one span for most
+      rules, a refused span retried a quarter as long). Its overrides are
+      rows of their own, matched on their own text, and their slots are
+      left out of the walk. On Node, 5,000 events in the window, 30 endless
+      series and 3,000 tasks take 55–115 ms a search. **Matching is TypeScript, not SQL**: NFD with the combining
+      marks dropped, lowercased without a locale, and every
+      whitespace-separated word must occur in one field — an event's title,
+      place, notes, guest names and addresses; a task's title and notes.
+      SQLite's LIKE folds neither accents nor non-ASCII case. A blank query
+      finds nothing and never reaches the backend. **One hit per series**,
+      keyed by account, calendar and `recurringEventId` (Google's expanded
+      instances and overrides carry the master's id, EventKit's occurrences
+      the series' `eventIdentifier`): the next occurrence that is not over
+      (one under way counts), else the latest past one, marked repeating; a
+      this-and-following split stays two series. **Order**: Upcoming
+      soonest first, Past most recent first, then Tasks (open ones by due
+      day, timed before untimed, the undated ones, completed ones latest
+      first); 50 per group, each with its total ("The first 50 of N").
+      All-day events are judged by their dates in the zone, not their UTC
+      midnights, for "over" and for sorting before the day's timed events
+      — which is why the payload carries the primary zone, like the date
+      payloads of the task reads. **`useSearch`** debounces 200 ms, keeps
+      one atom per query in the bounded LRU (a late answer for an earlier
+      query never shows), keeps the previous results up while the next one
+      loads (`stale`, never shown as "no matches") and re-runs on
+      EVENTS_KEY and TASKS_KEY, so an edit or a delete made from a result
+      updates the list. **Desktop**: the side panel's `search` kind,
+      opened by ⌘F (not under a dialog, not over an open editor, whose
+      draft it would drop) or the toolbar's Search, which toggles it. Enter
+      opens the top result and the arrow keys walk the list — once the rows
+      answer the text typed: Enter pressed sooner waits for them, and the
+      arrows do not walk into an earlier query's rows. An event result
+      shows its day in the grid — its own week even after a pan rolled the
+      window elsewhere (`goToDay`, which the mini month and a notification
+      click use too) — scrolls the time grid to it when it is out of view,
+      and opens that occurrence in the inspector, whose
+      "‹ Results" goes back; a task result opens its editor. A panel opened
+      from a result (`fromSearch`) closes back to the results (a delete
+      included); the inspector's ✕ closes to the rail, and Escape steps
+      back one level. The search runs in `CalendarBody`, not its panel, so
+      it stays current while a result is open and is on screen at once on
+      the way back, scrolled where it was; the text is kept when search
+      closes, and ⌘F selects it. **iOS**: the native pattern — the Search
+      tab (search role) is a stack of one screen with `Stack.SearchBar`,
+      which iOS 26 puts in the tab bar; Maestro drives that field by its
+      placeholder, so no React Native field was needed, and nothing native
+      changed. Results are a SectionList whose rows are one accessibility
+      element each; events open the detail sheet and tasks the editor
+      through the editor host. The mutation toast stands on the tab bar's
+      top edge: the screen runs under the bar and its bottom safe-area inset
+      already holds it (83 pt on iOS 26.5), so the toast's area ends at that
+      inset — adding the bar's 49 pt again floated it 49 pt higher than on
+      the other tabs. **Found on the way**: `formatZoneTimeRange`
+      wrote "2:00 PM – 3:00 PM PM" on iOS — Apple's ICU puts a narrow
+      no-break space before AM/PM — which also hit the secondary-zone lines
+      under events since the time zones PR. **Deferred**: a search tool
+      for the agent gateway, recall beyond the window, calendar names as
+      search text, highlighting the matched words (todo.md). **e2e**:
+      `search.e2e.ts` (desktop) and flow 25 with `common/search-for.yaml`
+      (iOS); the detail sheet's Delete stays in the tree behind the
+      confirmation alert's, so the flow taps the alert's by position.
+- [x] iOS account button — done (2026-10-09, `todo/ios-account-avatar`).
+      **Settings opens from an account avatar** at the top right of
+      Calendar and Tasks, where Apple's own apps (App Store, Music, Photos,
+      Health) and Google's put the account; it replaces the header's `⚙`,
+      a text glyph that drew like an emoji. Rejected: a Settings tab (the
+      HIG keeps tab bars for navigation, and the bar is full), an item in
+      the view menu (nobody looks for Settings there), a "…" menu holding
+      only Settings, and the system Settings app (ours are accounts and
+      sign-in). **The avatar is the first Google account's**: its photo
+      (`Account.avatarUrl`, from sign-in), else its initial in the tint
+      its Settings row has, else `person.crop.circle` with no Google
+      account; Settings rows and the account page draw the photo too, the
+      initial staying under it while it loads or when it cannot. **The
+      unsynced pill became the avatar's badge** (the count, as the App
+      Store badges updates), which gives the header the pill's width back;
+      a tap opens the Settings root, whose first row is Unsynced Changes —
+      one tap more than the pill's direct push. A dot says an account must
+      sign in again. The badge and dot are siblings of the button, not
+      children: the button is one accessibility element, so a child's id
+      would never reach Maestro, and the live suite waits on
+      `pending-badge` to go; VoiceOver hears the count in the button's
+      label. `02-navigation` opens Settings from the Tasks tab.
 
 ### Dependency sweep (2026-10-09)
 
@@ -2619,3 +2717,103 @@ then iOS (both in `todo.md`).
       peer is `<18`). Too young for the release-age gate on the day:
       Effect 4.0.2 (Hermes HttpClient and React Native cookie fixes),
       Electron 44.7, eas-cli 24.12.
+
+### Desktop colors follow the appearance (2026-10-09)
+
+- [x] The last raw Tailwind palette classes in the desktop renderer move
+      to the brand tokens — done (`todo/desktop-dark-mode-tokens`). In
+      dark mode `MoveConfirm`, the account removal question and its error
+      box, the settings-file note, the mirror editor's shared-calendar
+      warning and the agent token panel were amber-50 or red-50 boxes, and
+      a waiting agent request's title and its Decline and Done buttons
+      took the dark theme's near-white text on amber-50 and all but
+      vanished. **A box that asks or warns has the conflict banner's
+      look** (`CALLOUT_CLASS` in `ui/calloutStyles.ts`, which the banner
+      now uses too): a raised surface, a hairline border and a 4 px edge
+      in its tone — `warning` for the move/convert/delete/switch question,
+      the settings-file note, the shared-calendar warning, the token panel
+      and a waiting request; `danger` for removing an account — with
+      `ink` / `ink-secondary` text. Not a tint: the tones are text
+      colors that flip with the appearance (`warning` is dark amber in
+      light, pale amber in dark), so `bg-warning/10` came out beige in
+      light and almost nothing in dark, and a solid fill is the bright
+      box again.
+      **Filled buttons keep their tone** — Move anyway and its siblings on
+      `warning` / `on-warning`, Remove on `danger` / `on-danger`, hover at
+      `/90` (no hover tokens; not worth adding one). The add-account error
+      is the editors' error message (`fill`, `danger` text); red and amber
+      text is `danger` and `warning` (notes, notices, Remove links, the
+      mirror statuses, the agent activity); the invitee dots are
+      `success` / `danger` / `warning` as on iOS; the token and config
+      snippets sit in a `fill` well with a hairline instead of a black
+      block. **The dialog scrim stays `bg-black/30`**: it dims in either
+      appearance. **A guard**: `renderer/themeClasses.test.ts` fails on any
+      Tailwind palette shade or `white` in the renderer's sources. Checked
+      with CDP screenshots of every changed surface in both appearances
+      (`Emulation.setEmulatedMedia`; a window in the background runs no
+      rendering steps, so the media change is reported only once a capture
+      forces a frame), the notes and notices only an error shows forced on
+      in a scratch build.
+
+### Experimental: mirrors and agents (2026-10-09)
+
+- [x] Mark calendar mirrors and the agent gateway as experimental —
+      done (`todo/experimental-labels`). **A label in Settings, not a
+      switch**: both features already do nothing until someone sets one
+      up (a mirror definition, an agent token), so an "enable
+      experimental features" gate would guard nothing and would switch
+      off mirrors people already run; the agent socket keeps listening
+      at launch, harmless without a token. **Grouped, not badged**: the
+      desktop sidebar lists them last, under an "Experimental" heading
+      below Advanced — a second tab list labelled by that heading, so a
+      screen reader announces the group — and the sidebar search finds
+      both by the word; iOS moves Mirrors (Agents is Mac-only) into its
+      own section with that header, below Advanced, the version line
+      under it. **Each pane says what that means at its top** (a
+      capsule and "This feature may still change, or go away, in a later
+      version."; on iOS inside the page's hero), since the heading alone
+      only names the group. The words live in core (`EXPERIMENTAL_COPY`)
+      so both apps say the same thing.
+      Nothing else changes: the settings file, the MCP tools' descriptions
+      and the agent approval dialog carry no label.
+
+### Task checkboxes (2026-10-09)
+
+- [x] The task checkboxes are drawn, not typed — done
+      (`todo/task-checkboxes`). Every chip, timed block, agenda and list
+      row showed `☐` / `☑` at the text size, about 9 px of glyph that
+      read as a font fallback. Designed on a canvas first (before/after,
+      a state sheet in both appearances, the week view, the iOS day view
+      and Tasks tab) and approved as drawn. **One round box on both
+      platforms**, `TaskCheck` in `apps/desktop/renderer/calendar/` and
+      `apps/ios/src/ui/`: a 1.5 px `border-strong` ring around a `surface`
+      well (`canvas` in dark), filled with `primary` and an `on-primary`
+      tick when done. A circle because events are rounded rectangles, and
+      the rail already drew a ring (the month grid's task dots are rings
+      too). **Sizes per place**: desktop 14 px in the 20/22 px chip and
+      timed block, 12 px in the 16 px month chip, 18 px in the rail and
+      the task editor's Done (now the same box, `role="checkbox"`); iOS
+      16 pt in chips and timed blocks, 20 pt in the agenda and the mirror
+      editor's source list, 24 pt in the Tasks tab, whose box sits in a
+      44 pt square. **A Reminders list's color is the ring and the fill**
+      (tick by `contrastingTextColor`), so the separate list dot leaves
+      the chips and the Tasks tab; an open overdue task rings in
+      `danger`. **A done chip keeps its fill and its box at full
+      strength**; only the title turns `text-secondary` and struck
+      through — the whole chip at 50% made the checked state the hardest
+      thing to see. Open chip titles move from `ink-secondary` to `ink`
+      on desktop to match iOS and the design.
+      **Motion**: desktop hover darkens the ring and previews the tick;
+      a press scales the box to 0.86 and the release springs it back past
+      full size, so a click pops it without a keyframe animation, which
+      would replay whenever a done chip mounts; the tick draws in with
+      `stroke-dashoffset`. iOS shrinks the box while pressed and pops it
+      (0.8 → spring) only on the change to done. Reduced motion keeps the
+      color change only. Labels, test ids and hit areas stay as they were
+      — a chip's `hitSlop` is clipped to the chip, so its target stays
+      the chip's height. iOS task chips now lead with the box instead of
+      centering their row in the lane (the base chip centers a column).
+      Search results (both apps) draw the same mark for a task's state;
+      on desktop it is wrapped so the row's hover — the row opens the
+      task — previews no tick. The desktop e2e checks a completion by
+      `[data-done]`, not by the glyph.

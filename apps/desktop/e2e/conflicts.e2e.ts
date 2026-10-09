@@ -8,7 +8,7 @@ import {
   TaskRecord,
 } from '@calendar/core';
 import type { GoogleFixture } from '@calendar/sync/testing/googleFixture';
-import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vite-plus/test';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vite-plus/test';
 import { type App, launchApp, localIsoDaysAgo, readEvents, readPendingOps } from './harness.ts';
 
 // Two edits a 412 parked (Google's copy moved on while they were queued),
@@ -474,8 +474,11 @@ describe('The notice stack', () => {
 // leaves the grid's column a few pixels: the notices must still be
 // readable, and keep clear of the editor's Cancel and Save.
 describe('The notice stack in a narrow window', () => {
+  // An app per attempt, so a retry starts where the test does: the grid
+  // without a panel, the reminder's chip in reach and the stack measured
+  // against that column. A failed attempt leaves its editor open.
   let app: App;
-  beforeAll(async () => {
+  beforeEach(async () => {
     app = await launchApp(noticesSeed, {
       google: { fixture: noticesFixture },
       window: { height: 700, width: 600 },
@@ -485,8 +488,6 @@ describe('The notice stack in a narrow window', () => {
     if (context.task.result?.state === 'fail') {
       await app.dump(context.task.name);
     }
-  });
-  afterAll(async () => {
     await app.stop();
   });
 
@@ -498,6 +499,14 @@ describe('The notice stack in a narrow window', () => {
     await cdp.click(complete.x, complete.y);
     await cdp.waitFor(`!!document.querySelector('[data-testid="mutation-toast"]')`);
     await cdp.openEditor('[title^="Budget review (mine)"]');
+    // The stack leaves the narrowed column once its ResizeObserver reports
+    // and React renders the new span (its inline width). The observer
+    // reports only while the page renders, and a window behind another one,
+    // as CI's can be, renders nothing until a frame is drawn: there the
+    // banner was read at 29 px, and polling alone timed out.
+    await cdp.waitForRendered(
+      `!!document.querySelector('[data-testid="notice-stack"]')?.style.width`,
+    );
     // The editor's buttons at the panel's foot, where the notices are.
     await cdp.eval(
       `[...document.querySelectorAll('[data-testid="panel"] button')].find((b) => b.textContent?.trim() === 'Save')?.scrollIntoView({ block: 'end' })`,

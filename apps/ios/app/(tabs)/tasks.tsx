@@ -19,7 +19,9 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import { AccountButton } from '../../src/ui/AccountButton.tsx';
 import { useEditorHost } from '../../src/ui/EditorHost.tsx';
+import { TaskCheck } from '../../src/ui/TaskCheck.tsx';
 import { type ThemeColors, useStyles } from '../../src/ui/theme.ts';
 import { MutationNoticeToast } from '../../src/ui/Toast.tsx';
 
@@ -68,7 +70,7 @@ function TasksBody({ timeZone }: { timeZone: string }) {
 
   const row = (task: TaskRecord, late: boolean) => {
     const done = task.status === 'completed';
-    const listColor = listColorOf(task);
+    const readOnly = isReadOnly(task);
     const facts = [
       ...(late ? [overdueLabel(task, today)] : []),
       ...(task.dueDate && !late ? [`due ${task.dueDate}`] : []),
@@ -78,13 +80,21 @@ function TasksBody({ timeZone }: { timeZone: string }) {
         <Pressable
           accessibilityLabel={done ? `Reopen ${task.title}` : `Complete ${task.title}`}
           accessibilityRole="button"
-          disabled={isReadOnly(task)}
-          hitSlop={8}
+          disabled={readOnly}
           onPress={() => toggle(task)}
+          style={styles.check}
         >
-          <Text style={styles.checkbox}>{done ? '☑' : '☐'}</Text>
+          {({ pressed }) => (
+            <TaskCheck
+              checked={done}
+              disabled={readOnly}
+              listColor={listColorOf(task)}
+              overdue={late}
+              pressed={pressed}
+              size="list"
+            />
+          )}
         </Pressable>
-        {listColor ? <View style={[styles.listDot, { backgroundColor: listColor }]} /> : null}
         <Pressable
           accessibilityLabel={facts.length > 0 ? `${task.title}, ${facts.join(', ')}` : task.title}
           accessibilityRole="button"
@@ -126,6 +136,7 @@ function TasksBody({ timeZone }: { timeZone: string }) {
       <StatusBar style="auto" />
       <View style={styles.header}>
         <Text style={styles.title}>Tasks</Text>
+        <AccountButton />
       </View>
       {taskLists.length > 1 ? (
         <ScrollView
@@ -205,9 +216,13 @@ const makeStyles = (colors: ThemeColors) =>
       gap: 10,
       paddingHorizontal: 16,
     },
-    checkbox: {
-      color: colors['text-secondary'],
-      fontSize: 18,
+    // A 44 pt square; the box sits flush with the screen edge's inset.
+    check: {
+      alignItems: 'center',
+      height: 44,
+      justifyContent: 'center',
+      marginLeft: -10,
+      width: 44,
     },
     content: {
       gap: 18,
@@ -246,19 +261,16 @@ const makeStyles = (colors: ThemeColors) =>
       paddingHorizontal: 16,
     },
     header: {
+      alignItems: 'center',
+      flexDirection: 'row',
+      justifyContent: 'space-between',
       paddingHorizontal: 16,
       paddingVertical: 8,
-    },
-    listDot: {
-      borderRadius: 4,
-      height: 8,
-      width: 8,
     },
     row: {
       alignItems: 'center',
       flexDirection: 'row',
-      gap: 10,
-      paddingVertical: 8,
+      gap: 2,
     },
     rowBody: {
       alignItems: 'center',

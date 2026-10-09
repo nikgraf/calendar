@@ -110,6 +110,7 @@ export function AccountPage() {
             foreground={tint.foreground}
             label={(account.displayName ?? account.email).charAt(0).toUpperCase()}
             size={72}
+            uri={account.avatarUrl}
           />
         }
         subtitle={account.displayName ? `${account.displayName} · Google` : 'Google Account'}

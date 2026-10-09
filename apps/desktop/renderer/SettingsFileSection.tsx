@@ -10,6 +10,7 @@ import { Effect } from 'effect';
 import { useEffect, useState } from 'react';
 import type { SettingsFileStatus } from './backend.ts';
 import { Dialog } from './Dialog.tsx';
+import { CALLOUT_CLASS } from './ui/calloutStyles.ts';
 
 const shortPath = (path: string): string => path.replace(/^\/Users\/[^/]+/, '~');
 
@@ -229,7 +230,7 @@ export function SettingsFileSection() {
         </li>
       </ul>
       <p
-        className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800"
+        className={`${CALLOUT_CLASS.warning} mt-3 px-3 py-2 text-xs`}
         data-testid="settings-file-exposure"
       >
         The file holds your settings in plain text, including the email addresses of your connected
@@ -237,7 +238,7 @@ export function SettingsFileSection() {
         can read it. Passwords and sign-in tokens are never written to it.
       </p>
       <p
-        className={`mt-3 text-xs ${status?.error ? 'text-amber-600' : 'text-ink-secondary'}`}
+        className={`mt-3 text-xs ${status?.error ? 'text-warning' : 'text-ink-secondary'}`}
         data-testid="settings-file-status"
       >
         {statusLine()}

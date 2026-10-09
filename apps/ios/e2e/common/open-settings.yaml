@@ -1,11 +1,11 @@
 appId: com.solunivo.app.dev
-name: Open Settings from the header gear, on its root page (shared)
+name: Open Settings from the header's account button, on its root page (shared)
 ---
 # Same failure as the "+" in open-new-event.yaml: on a slow runner a tap
 # taken right after launch reports COMPLETED and no sheet follows (CI runs
 # 35462596043 and 35457704053 sat on the day view for 20 s). Re-tap while
 # the sheet is missing, the way a person would. By id, not the "Settings"
-# title: the gear's own label is "Settings" too.
+# title: the account button's own label starts with "Settings" too.
 - repeat:
     times: 3
     while:

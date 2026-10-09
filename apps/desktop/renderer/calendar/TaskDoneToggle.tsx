@@ -1,6 +1,7 @@
-import { useGuardedMutations } from '@calendar/app-state';
+import { useGuardedMutations, useListColorLookup } from '@calendar/app-state';
 import type { TaskRecord } from '@calendar/core';
 import { useState } from 'react';
+import { TaskCheckMark } from './TaskCheck.tsx';
 
 /**
  * The task editors' Done checkbox: it completes (or reopens) the task at
@@ -9,24 +10,27 @@ import { useState } from 'react';
  */
 export function TaskDoneToggle({ task }: { task: TaskRecord }) {
   const { completeTask } = useGuardedMutations();
+  const listColorOf = useListColorLookup();
   const [done, setDone] = useState(task.status === 'completed');
   return (
-    <label className="flex items-center gap-2 text-sm">
-      <input
-        checked={done}
-        data-testid="task-done"
-        onChange={(input) => {
-          setDone(input.target.checked);
-          void completeTask({
-            accountId: task.accountId,
-            status: input.target.checked ? 'completed' : 'needsAction',
-            taskId: task.id,
-            taskListId: task.listId,
-          });
-        }}
-        type="checkbox"
-      />
+    <button
+      aria-checked={done}
+      className="flex cursor-pointer items-center gap-2 self-start text-sm outline-none"
+      data-testid="task-done"
+      onClick={() => {
+        setDone(!done);
+        void completeTask({
+          accountId: task.accountId,
+          status: done ? 'needsAction' : 'completed',
+          taskId: task.id,
+          taskListId: task.listId,
+        });
+      }}
+      role="checkbox"
+      type="button"
+    >
+      <TaskCheckMark checked={done} listColor={listColorOf(task)} size="row" />
       Done
-    </label>
+    </button>
   );
 }

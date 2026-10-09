@@ -1,5 +1,10 @@
 import { useAccounts, useMirrors, usePendingOps, useSyncStatus } from '@calendar/app-state';
-import { type Account, isAppleCalendarAccount, isAppleRemindersAccount } from '@calendar/core';
+import {
+  type Account,
+  EXPERIMENTAL_COPY,
+  isAppleCalendarAccount,
+  isAppleRemindersAccount,
+} from '@calendar/core';
 import Constants from 'expo-constants';
 import { Stack, useRouter } from 'expo-router';
 import { type ThemeColors, useTheme } from '../theme.ts';
@@ -19,7 +24,7 @@ import { useSettingsConnections } from './SettingsContext.tsx';
 const AVATAR_TINTS = ['mint', 'blue', 'lilac', 'blush'] as const;
 
 /** An account's initial for its avatar. */
-const initialOf = (account: Account): string =>
+export const initialOf = (account: Account): string =>
   (account.displayName ?? account.email).trim().charAt(0).toUpperCase() || '?';
 
 /** The line under a Google account: what it syncs, or why it does not. */
@@ -45,9 +50,11 @@ export const avatarColors = (
 
 /**
  * The Settings root: unsynced changes when there are any, the accounts,
- * then one row per pane. Its reads (accounts, sync status, mirrors) stay
- * mounted under every pushed page, which keeps their data from being
- * dropped and fetched again on each push.
+ * then one row per pane — the experimental ones last, under their own
+ * header (each page says what that means at its top). Its reads
+ * (accounts, sync status, mirrors) stay mounted under every pushed page,
+ * which keeps their data from being dropped and fetched again on each
+ * push.
  */
 export function SettingsRoot() {
   const router = useRouter();
@@ -106,6 +113,7 @@ export function SettingsRoot() {
                     background={tint.background}
                     foreground={tint.foreground}
                     label={initialOf(account)}
+                    uri={account.avatarUrl}
                   />
                 }
                 subtitle={accountSubtitle(account)}
@@ -144,12 +152,14 @@ export function SettingsRoot() {
             testID="settings-row-notifications"
             title="Notifications"
           />
+        </Section>
+
+        <Section>
           <NavRow
-            href="/settings/mirrors"
-            leading={<IconTile color={colors['event-mint-edge']} name="rectangle.on.rectangle" />}
-            testID="settings-row-mirrors"
-            title="Mirrors"
-            value={mirrors.length > 0 ? `${String(mirrorsOn)} On` : undefined}
+            href="/settings/advanced"
+            leading={<IconTile color={colors['text-secondary']} name="slider.horizontal.3" />}
+            testID="settings-row-advanced"
+            title="Advanced"
           />
         </Section>
 
@@ -159,12 +169,14 @@ export function SettingsRoot() {
               {`Solunivo ${Constants.expoConfig?.version ?? ''}`.trim()}
             </Footer>
           }
+          header={EXPERIMENTAL_COPY.label}
         >
           <NavRow
-            href="/settings/advanced"
-            leading={<IconTile color={colors['text-secondary']} name="slider.horizontal.3" />}
-            testID="settings-row-advanced"
-            title="Advanced"
+            href="/settings/mirrors"
+            leading={<IconTile color={colors['event-mint-edge']} name="rectangle.on.rectangle" />}
+            testID="settings-row-mirrors"
+            title="Mirrors"
+            value={mirrors.length > 0 ? `${String(mirrorsOn)} On` : undefined}
           />
         </Section>
       </SettingsPage>

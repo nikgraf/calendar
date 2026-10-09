@@ -100,6 +100,8 @@ export function Dialog({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // The scrim is black in both appearances, not a token: it dims whatever
+  // is under it, light or dark.
   return (
     <div
       className={`fixed inset-0 flex justify-center bg-black/30 ${

@@ -75,7 +75,7 @@ export function TimeZonesSection() {
               {settings.zones.length > 1 ? (
                 <button
                   aria-label={`Remove ${city}`}
-                  className="text-xs text-red-600 hover:underline"
+                  className="text-xs text-danger hover:underline"
                   onClick={() => save(withZoneRemoved(settings, zone))}
                   type="button"
                 >
@@ -108,7 +108,7 @@ export function TimeZonesSection() {
         </button>
       )}
       {notice ? (
-        <p className="mt-3 text-sm text-amber-700" data-testid="time-zones-notice" role="status">
+        <p className="mt-3 text-sm text-warning" data-testid="time-zones-notice" role="status">
           {notice}
         </p>
       ) : null}

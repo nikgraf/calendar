@@ -6,7 +6,6 @@ import {
   useEventsInRangeStable,
   useListColorLookup,
   useOverdueTasksStable,
-  usePendingOps,
   useBirthdaysInRangeStable,
   useEventReadOnlyLookup,
   useTaskReadOnlyLookup,
@@ -28,11 +27,11 @@ import {
 } from '@calendar/core';
 import { useEffect, useMemo } from 'react';
 import { MenuView } from '@expo/ui/community/menu';
-import { useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { AppState, Platform, Pressable, SafeAreaView, StyleSheet, Text, View } from 'react-native';
 import { kickSync, runLocalNotifications, startSync, subscribeInvalidations } from '../backend.ts';
 import { registerBackgroundRefresh } from '../backgroundTask.ts';
+import { AccountButton } from './AccountButton.tsx';
 import { AgendaView } from './AgendaView.tsx';
 import { DayTimeline } from './DayTimeline.tsx';
 import { useEditorHost } from './EditorHost.tsx';
@@ -123,12 +122,6 @@ function CalendarBody({
     twoDayBuffer: TWO_DAY_SWIPE_BUFFER,
     weekBuffer: WEEK_SWIPE_BUFFER,
   });
-  const router = useRouter();
-  const openSettings = () => router.push('/settings');
-  // Straight to the list, with the Settings root under it: a push loads the
-  // stack's initialRouteName only with an anchor, and without one the page
-  // opened alone — no root to go back to, no Done.
-  const openUnsynced = () => router.push('/settings/unsynced', { withAnchor: true });
   const host = useEditorHost();
   const updatePrefs = useUpdateViewPreferences();
   /** The view is device taste: it persists, and the app reopens on it. */
@@ -155,7 +148,6 @@ function CalendarBody({
   const mutations = useGuardedMutations();
   const isTaskReadOnly = useTaskReadOnlyLookup();
   const isEventReadOnly = useEventReadOnlyLookup();
-  const pendingOps = usePendingOps();
   const listColorOf = useListColorLookup();
   const calendars = useCalendars();
 
@@ -193,23 +185,6 @@ function CalendarBody({
           {title}
         </Text>
         <View style={styles.headerActions}>
-          {/* Ambient counterpart of the desktop sidebar's SyncStatus; the
-              list itself (with Discard) is Settings › Unsynced Changes. */}
-          {pendingOps.length > 0 ? (
-            <Pressable
-              accessibilityLabel={`${String(pendingOps.length)} unsynced ${pendingOps.length === 1 ? 'change' : 'changes'}, show them`}
-              accessibilityLargeContentTitle={`${String(pendingOps.length)} unsynced`}
-              accessibilityRole="button"
-              accessibilityShowsLargeContentViewer
-              onPress={openUnsynced}
-              style={styles.pendingBadge}
-              testID="pending-badge"
-            >
-              <Text maxFontSizeMultiplier={BOX_FONT_SCALE} style={styles.pendingBadgeLabel}>
-                {pendingOps.length} unsynced
-              </Text>
-            </Pressable>
-          ) : null}
           {/* The view menu: Day · 2 Days · Week · Month · Agenda, the current one checked. */}
           <MenuView
             actions={VIEWS.map((entry) => ({
@@ -277,19 +252,9 @@ function CalendarBody({
               ›
             </Text>
           </Pressable>
-          <Pressable
-            accessibilityLabel="Settings"
-            accessibilityLargeContentTitle="Settings"
-            accessibilityRole="button"
-            accessibilityShowsLargeContentViewer
-            onPress={openSettings}
-            style={styles.navButton}
-            testID="open-settings"
-          >
-            <Text maxFontSizeMultiplier={BOX_FONT_SCALE} style={styles.navLabel}>
-              ⚙
-            </Text>
-          </Pressable>
+          {/* Settings, with the unsynced count as its badge (the ambient
+              counterpart of the desktop sidebar's SyncStatus). */}
+          <AccountButton />
         </View>
       </View>
 
@@ -482,18 +447,6 @@ const makeStyles = (colors: ThemeColors) =>
     navLabel: {
       color: colors['text-secondary'],
       fontSize: 18,
-    },
-    pendingBadge: {
-      backgroundColor: colors.warning,
-      borderRadius: 10,
-      marginRight: 4,
-      paddingHorizontal: 8,
-      paddingVertical: 3,
-    },
-    pendingBadgeLabel: {
-      color: colors['on-warning'],
-      fontSize: 12,
-      fontWeight: '600',
     },
     safeArea: {
       backgroundColor: colors.canvas,

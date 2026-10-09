@@ -1,0 +1,127 @@
+appId: com.solunivo.app.dev
+name: Search finds events and tasks, opens them, and drops what is deleted
+tags:
+  - ci
+---
+# Needs the fixture Google account (EXPO_PUBLIC_CALENDAR_GOOGLE=fixture, as
+# CI does): "Kolkata series" repeats weekly and "Fixture task" is open in
+# "Mock Tasks" (e2e/fixtures/google.ts). The flow creates its own event to
+# delete from the results, so it leaves the account as it found it.
+- runFlow: ../common/launch.yaml
+# The Search tab has the search role: iOS 26 draws it as its own circle
+# and, once it is open, shows its stack's search field in the tab bar.
+- tapOn: 'Search'
+- extendedWaitUntil:
+    visible:
+      id: 'search-hint'
+    timeout: 10000
+- runFlow:
+    file: ../common/search-for.yaml
+    env:
+      QUERY: 'kolkata'
+      RESULT: 'Kolkata series.*'
+# A weekly series is one row, marked as repeating (its label ends so).
+- assertVisible: 'Kolkata series.*repeats'
+- assertVisible:
+    id: 'search-section-upcoming'
+- tapOn: 'Kolkata series.*'
+- extendedWaitUntil:
+    visible:
+      id: 'event-detail-title'
+      text: 'Kolkata series'
+    timeout: 10000
+- tapOn:
+    id: 'event-detail-close'
+- extendedWaitUntil:
+    notVisible:
+      id: 'event-detail'
+    timeout: 10000
+# A task opens its editor.
+- runFlow:
+    file: ../common/search-for.yaml
+    env:
+      QUERY: 'fixture task'
+      RESULT: 'Fixture task.*'
+- assertVisible:
+    id: 'search-section-tasks'
+- tapOn: 'Fixture task.*'
+- extendedWaitUntil:
+    visible: 'Edit (Task|Reminder)'
+    timeout: 10000
+- waitForAnimationToEnd:
+    timeout: 5000
+- tapOn: 'Cancel'
+- extendedWaitUntil:
+    notVisible: 'Edit (Task|Reminder)'
+    timeout: 10000
+# Nothing found says so.
+- runFlow:
+    file: ../common/search-for.yaml
+    env:
+      QUERY: 'zzzq'
+      RESULT: 'Nothing matches.*'
+- assertVisible:
+    id: 'search-empty'
+# An event made on the calendar is found, and deleting it from its result
+# takes it out of the list. The field's "Close" (beside it, above the
+# keyboard) ends the search and brings the tab bar back; Maestro's
+# hideKeyboard cannot dismiss a search field's keyboard.
+- tapOn: 'Close'
+- tapOn: 'Calendar'
+- extendedWaitUntil:
+    visible: 'Today'
+    timeout: 10000
+- runFlow: ../common/open-new-event.yaml
+- tapOn:
+    id: 'calendar-option'
+    index: 0
+- tapOn:
+    id: 'event-title'
+# ASCII only — unicode through XCTest typing is a known flaky spot.
+- inputText: 'Solunivo search e2e'
+# XCTest typing can drop or move letters (see flow 07): retype until the
+# field holds the title.
+- repeat:
+    times: 3
+    while:
+      notVisible:
+        id: 'event-title'
+        text: 'Solunivo search e2e'
+    commands:
+      - tapOn: 'Clear text'
+      - inputText: 'Solunivo search e2e'
+- tapOn:
+    id: 'event-save'
+- extendedWaitUntil:
+    notVisible: 'New Event'
+    timeout: 20000
+- tapOn: 'Search'
+- extendedWaitUntil:
+    visible:
+      id: 'search-hint'
+    timeout: 10000
+- runFlow:
+    file: ../common/search-for.yaml
+    env:
+      QUERY: 'search e2e'
+      RESULT: 'Solunivo search e2e.*'
+- tapOn: 'Solunivo search e2e.*'
+- extendedWaitUntil:
+    visible:
+      id: 'event-delete'
+    timeout: 10000
+- tapOn:
+    id: 'event-delete'
+# The confirmation alert (deleteQuestion). Its button is "Delete" like the
+# sheet's own behind it, which Maestro would pick first: take the alert's.
+- extendedWaitUntil:
+    visible: 'Delete .Solunivo search e2e.\?'
+    timeout: 10000
+- tapOn:
+    text: 'Delete'
+    below: 'Delete .Solunivo search e2e.\?'
+- extendedWaitUntil:
+    visible:
+      id: 'search-empty'
+    timeout: 20000
+- assertNotVisible: 'Solunivo search e2e.*'

@@ -49,6 +49,12 @@ export interface TaskRepoShape {
   readonly getOverdue: (before: string) => Effect.Effect<ReadonlyArray<TaskRecord>, SqlError>;
   /** Open tasks without a due day, visible lists only — drawn on today until they are done. */
   readonly getUndatedOpen: () => Effect.Effect<ReadonlyArray<TaskRecord>, SqlError>;
+  /**
+   * Every task of the visible lists — open or completed, dated or not:
+   * what search looks through (it matches in TypeScript, since SQLite's
+   * LIKE folds neither accents nor non-ASCII case).
+   */
+  readonly getVisible: () => Effect.Effect<ReadonlyArray<TaskRecord>, SqlError>;
   /** Tasks with a due day inside [startDate, endDate], visible lists only. */
   readonly getWindow: (
     startDate: string,
@@ -284,6 +290,14 @@ const makeTaskRepo: Effect.Effect<TaskRepoShape, never, Reactivity | SqlClient> 
               AND t.status = 'needsAction'
               AND t.due_date IS NULL
             ORDER BY t.title`,
+          (rows) => rows.map(taskFromRow),
+        ),
+      getVisible: () =>
+        Effect.map(
+          sql<TaskRow>`
+            SELECT t.*, l.provider AS list_provider FROM tasks t
+            JOIN task_lists l ON l.account_id = t.account_id AND l.id = t.list_id
+            WHERE l.is_visible = 1`,
           (rows) => rows.map(taskFromRow),
         ),
       getWindow: (startDate, endDate) =>

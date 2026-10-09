@@ -14,8 +14,9 @@ powers quick-add parsing, find-a-time, and dictation.
   (`backend.ts`), recurrence math (expand/build/edit), drag/time math,
   meeting-link + color helpers, the theme (`theme/tokens.ts`, generated
   from `brand/`, never edited; `eventTint` turns a calendar color into a
-  fill/text/edge per scheme), up-next / task-inbox / agenda grouping.
-  Pure; no IO.
+  fill/text/edge per scheme), up-next / task-inbox / agenda grouping,
+  search (`search/`: accent- and case-folded every-word matching, one
+  hit per series, result order and labels). Pure; no IO.
 - `packages/db` — SQLite repos (accounts/calendars/events/tasks/task_lists/
   pending_ops/sync_state), custom migration runner, Reactivity keys +
   invalidation forwarding.
@@ -61,7 +62,7 @@ powers quick-add parsing, find-a-time, and dictation.
   approvals, and the agent store (its own `agents.db`, never
   calendar.db). `callTool` is the single entry point for an agent.
 - `packages/app-state` — `@effect/atom-react` atoms + React hooks
-  (`useBackendMutations`, `useEventsInRangeStable`, …).
+  (`useBackendMutations`, `useEventsInRangeStable`, `useSearch`, …).
 - `apps/desktop` — Electron (Forge, vite, `vp pack` main bundle); rpc over an
   IPC frame channel; Swift helper (`helper/`, Foundation Models +
   SpeechAnalyzer + EventKit `reminders.*` / `calendar.*` + Contacts
@@ -71,15 +72,16 @@ powers quick-add parsing, find-a-time, and dictation.
   (`electron/agent/`: Unix socket, MCP server, CLI runner) and its relay
   `solunivo-cli` (`electron/cli.ts`, a third `pack` entry in
   `vite.config.ts`). `apps/ios` —
-  Expo dev client on expo-router (`app/`: native tabs Calendar · Tasks · Search, Settings as a modal holding its own stack of pages (`app/settings/`), `+native-intent.tsx` keeps share/OAuth URLs off the router; `src/ui/EditorHost.tsx` owns every sheet); `@expo/ui` for drop-in native controls, expo-system-ui for the window background; zero-hop direct backend; @react-native-ai/apple for on-device model access;
+  Expo dev client on expo-router (`app/`: native tabs Calendar · Tasks · Search (a stack whose `Stack.SearchBar` is the system search field), Settings as a modal holding its own stack of pages (`app/settings/`), `+native-intent.tsx` keeps share/OAuth URLs off the router; `src/ui/EditorHost.tsx` owns every sheet); `@expo/ui` for drop-in native controls, expo-system-ui for the window background; zero-hop direct backend; @react-native-ai/apple for on-device model access;
   local Expo modules `modules/solunivo-reminders` (EventKit),
   `modules/solunivo-apple-calendar` (EventKit events),
   `modules/solunivo-contacts` (CNContactStore) and `modules/solunivo-geo`
   (MapKit); `expo-maps` draws the editor map.
 - `brand/` — SVG masters, logos, fonts and tokens; `pnpm brand:build`
   (macOS) regenerates the committed app icons, `tokens.css` (the desktop
-  imports it; `App.css` maps the variables to Tailwind utilities and
-  `data-theme` on `<html>` follows the OS appearance) and
+  imports it; `App.css` maps the variables to Tailwind utilities — the
+  renderer's only colors, `themeClasses.test.ts` fails on Tailwind's own
+  palette — and `data-theme` on `<html>` follows the OS appearance) and
   `packages/core/src/theme/tokens.ts` (iOS reads it through `useTheme`),
   and CI fails on stale exports via `pnpm brand:check`. Edit
   `tokens/tokens.json` and the masters, never the generated files.

@@ -598,6 +598,14 @@ Flakiness lessons (each caused a real CI failure — keep them enforced):
 - **`scrollIntoView` before measuring** (harness `locate`): CI runners
   land the week grid at different scroll offsets, leaving early-morning
   blocks under the sticky header where clicks hit the header.
+- **A window behind another one renders nothing**: its page is hidden and
+  runs no rendering steps, so `requestAnimationFrame`, ResizeObserver
+  and media-query changes wait for the next frame, which may never come.
+  CI's window can be behind one. What the page sets from them waits too:
+  the narrow-window notice stack stayed in its 8 px column, banner 29 px,
+  however long `waitFor` polled. `cdp.waitForRendered` draws a frame (a
+  screenshot) before each try. To reproduce locally, bring another app in
+  front of the test window right after launch (`open -a <app>`).
 - **Weekday-agnostic seeding**: recurring seeds start `today − 3 days` and
   expectations derive from the first _visible_ instance — absolute
   "today"-based expectations broke every Sunday.
@@ -648,6 +656,15 @@ Flakiness lessons (each caused a real CI failure — keep them enforced):
   `panel` (`data-panel-kind`), `inspector`, `editor`, `editor-notes`,
   `task-done`, `panel-task-<id>`, `panel-add-task`, `week-scroller`,
   `week-grid`, `today-header`, `now-line`, `all-day-lane`, `month-grid`.
+  Search (`search.e2e.ts`, ⌘F synthesized like ⌘K): `search-toggle`
+  (`aria-pressed` while search or a result from it is open),
+  `search-input`, `search-results` (its `aria-busy` is "false" once the
+  results answer the field's text — wait for that before asserting),
+  `search-group-upcoming|past|tasks`, the rows (`[data-search-result]`,
+  `search-event` / `search-task`) with their `search-title`,
+  `search-when` and `search-repeats`, `search-hint`, `search-empty`, and
+  the inspector's `inspector-back` ("‹ Results"). Rows carry no `title`
+  attribute either; a block opened from a result is `[data-selected]`.
   A block's calendar color is its `data-color` attribute — never assert
   a computed `backgroundColor`, the tint is theme-dependent — and
   Tailwind classes are not selectors (they change with the design). The
@@ -778,9 +795,9 @@ right coordinates and nothing opened); a tap on an event opens its
 detail sheet first, so `common/open-event-editor.yaml` taps Edit; views
 are picked through `common/switch-view.yaml` (the header's menu, `VIEW`);
 Settings is a stack of pages: `common/open-settings.yaml` waits for the
-root's `settings-root` id (never the "Settings" title — the gear's label
-is "Settings" too), `common/open-settings-page.yaml` pushes one page
-(`PAGE`: `device`, `general`, `notifications`, `mirrors`, `advanced`,
+root's `settings-root` id (never the "Settings" title — the account
+button's label starts with "Settings" too),
+`common/open-settings-page.yaml` pushes one page (`PAGE`: `device`, `general`, `notifications`, `mirrors`, `advanced`,
 `unsynced`; root rows are `settings-row-<page>`, pages
 `settings-page-<page>`), and `common/close-settings.yaml` taps the native
 back button (`BackButton`) until the root shows, then Done — a pressable
@@ -825,7 +842,7 @@ tap taken as soon as "Today" is visible lands ~60 pt too high — in the
 status bar — on every flow. On CI, `prepare-simulator.sh` also switches
 expo-dev-menu's floating "Dev tools" button off through UserDefaults
 (`EXDevMenuShowFloatingActionButton`): it sits exactly over the app's
-settings gear. Maestro needs a JDK on PATH (Apple's `/usr/bin/java` stub
+account button. Maestro needs a JDK on PATH (Apple's `/usr/bin/java` stub
 is not one: `brew install openjdk`, then
 `JAVA_HOME=/opt/homebrew/opt/openjdk`). Maestro does not expose a reliable
 press-hold-drag command, so the default suite checks timed/date-only
@@ -851,6 +868,20 @@ simulator or device with a connected Reminders list:
    the editor, terminate and relaunch Solunivo, and check that both the
    time-grid block and reopened editor still show that date and time.
    Confirm the same due time in Apple Reminders, then delete the test item.
+
+The Search tab's field is the system one (`Stack.SearchBar`):
+`common/search-for.yaml` (`QUERY`, `RESULT`) finds it by its placeholder
+("Events and tasks", which stays its label while it holds text), clears
+it with its "Clear text" button and types again until `RESULT` shows,
+and taps away the keyboard's one-time "slide to type" card wherever it
+turns up. `hideKeyboard` cannot dismiss a search field's keyboard: the
+field's "Close" ends the search, which brings the tab bar (and its
+"Calendar" circle) back. A result row is one element labelled title
+first (`'Kolkata series.*'`, a series' label ends in "repeats"). The
+event detail sheet's own "Delete" stays in the tree behind the
+confirmation alert, whose button is "Delete" too and comes second: tap
+it with `below:` the alert's title (flow 25), unlike the editor's
+"Delete Event".
 
 Selector gotchas (each caused a real
 failure): Maestro text selectors are **whole-string regexes** — prefix
