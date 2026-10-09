@@ -24,7 +24,7 @@ import { useSettingsConnections } from './SettingsContext.tsx';
 const AVATAR_TINTS = ['mint', 'blue', 'lilac', 'blush'] as const;
 
 /** An account's initial for its avatar. */
-const initialOf = (account: Account): string =>
+export const initialOf = (account: Account): string =>
   (account.displayName ?? account.email).trim().charAt(0).toUpperCase() || '?';
 
 /** The line under a Google account: what it syncs, or why it does not. */
@@ -113,6 +113,7 @@ export function SettingsRoot() {
                     background={tint.background}
                     foreground={tint.foreground}
                     label={initialOf(account)}
+                    uri={account.avatarUrl}
                   />
                 }
                 subtitle={accountSubtitle(account)}

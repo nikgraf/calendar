@@ -19,6 +19,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import { AccountButton } from '../../src/ui/AccountButton.tsx';
 import { useEditorHost } from '../../src/ui/EditorHost.tsx';
 import { TaskCheck } from '../../src/ui/TaskCheck.tsx';
 import { type ThemeColors, useStyles } from '../../src/ui/theme.ts';
@@ -135,6 +136,7 @@ function TasksBody({ timeZone }: { timeZone: string }) {
       <StatusBar style="auto" />
       <View style={styles.header}>
         <Text style={styles.title}>Tasks</Text>
+        <AccountButton />
       </View>
       {taskLists.length > 1 ? (
         <ScrollView
@@ -259,6 +261,9 @@ const makeStyles = (colors: ThemeColors) =>
       paddingHorizontal: 16,
     },
     header: {
+      alignItems: 'center',
+      flexDirection: 'row',
+      justifyContent: 'space-between',
       paddingHorizontal: 16,
       paddingVertical: 8,
     },

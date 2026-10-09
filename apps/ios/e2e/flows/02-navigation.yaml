@@ -52,3 +52,15 @@ tags:
       VIEW: 'Day'
 - assertVisible:
     id: 'day-timeline'
+# Settings opens from the Tasks tab too: the account button sits at the
+# top right of both tabs. Done brings back the tab it opened from.
+- tapOn: 'Tasks'
+- assertVisible:
+    id: 'tasks-screen'
+- runFlow: ../common/open-settings.yaml
+- tapOn: 'Done'
+- assertVisible:
+    id: 'tasks-screen'
+- tapOn: 'Calendar'
+- assertVisible:
+    id: 'day-timeline'

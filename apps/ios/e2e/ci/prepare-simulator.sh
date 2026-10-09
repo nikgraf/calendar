@@ -66,7 +66,7 @@ install() {
   xcrun simctl privacy "$UDID" grant calendar "$BUNDLE_ID"
   # expo-dev-menu preferences (UserDefaults keys from DevMenuPreferences.swift):
   # no floating "Dev tools" button — it sits exactly over the app's own
-  # settings gear and steals the tap — and no first-launch onboarding or
+  # account button and steals the tap — and no first-launch onboarding or
   # menu-at-launch sheets, which cover the app until dismissed. Only the
   # dev client reads them; harmless for the embedded-bundle build.
   for pref in "EXDevMenuShowFloatingActionButton -bool false" \

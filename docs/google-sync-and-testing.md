@@ -788,9 +788,9 @@ right coordinates and nothing opened); a tap on an event opens its
 detail sheet first, so `common/open-event-editor.yaml` taps Edit; views
 are picked through `common/switch-view.yaml` (the header's menu, `VIEW`);
 Settings is a stack of pages: `common/open-settings.yaml` waits for the
-root's `settings-root` id (never the "Settings" title — the gear's label
-is "Settings" too), `common/open-settings-page.yaml` pushes one page
-(`PAGE`: `device`, `general`, `notifications`, `mirrors`, `advanced`,
+root's `settings-root` id (never the "Settings" title — the account
+button's label starts with "Settings" too),
+`common/open-settings-page.yaml` pushes one page (`PAGE`: `device`, `general`, `notifications`, `mirrors`, `advanced`,
 `unsynced`; root rows are `settings-row-<page>`, pages
 `settings-page-<page>`), and `common/close-settings.yaml` taps the native
 back button (`BackButton`) until the root shows, then Done — a pressable
@@ -835,7 +835,7 @@ tap taken as soon as "Today" is visible lands ~60 pt too high — in the
 status bar — on every flow. On CI, `prepare-simulator.sh` also switches
 expo-dev-menu's floating "Dev tools" button off through UserDefaults
 (`EXDevMenuShowFloatingActionButton`): it sits exactly over the app's
-settings gear. Maestro needs a JDK on PATH (Apple's `/usr/bin/java` stub
+account button. Maestro needs a JDK on PATH (Apple's `/usr/bin/java` stub
 is not one: `brew install openjdk`, then
 `JAVA_HOME=/opt/homebrew/opt/openjdk`). Maestro does not expose a reliable
 press-hold-drag command, so the default suite checks timed/date-only

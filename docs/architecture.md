@@ -679,7 +679,7 @@ model: `docs/agent-gateway.md`.
   which iOS 26 shows in the tab bar for the search role) and Settings as
   a modal route holding its own native stack (`settings/`: the root list,
   a page per pane, the pages under them; `src/ui/settings/`). `src/ui/CalendarScreen.tsx` is the calendar tab: a
-  header (title, view menu, ‹ Today ›, gear), the week strip, the
+  header (title, view menu, ‹ Today ›, the account button into Settings), the week strip, the
   timeline / month grid / agenda, and the floating "+". `EditorHost.tsx`
   owns every sheet — quick add, event detail, the editors, the birthday
   detail, the capture review — and the capture model behind the share

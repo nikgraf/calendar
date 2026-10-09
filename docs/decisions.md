@@ -2650,6 +2650,28 @@ then iOS (both in `todo.md`).
       `search.e2e.ts` (desktop) and flow 25 with `common/search-for.yaml`
       (iOS); the detail sheet's Delete stays in the tree behind the
       confirmation alert's, so the flow taps the alert's by position.
+- [x] iOS account button — done (2026-10-09, `todo/ios-account-avatar`).
+      **Settings opens from an account avatar** at the top right of
+      Calendar and Tasks, where Apple's own apps (App Store, Music, Photos,
+      Health) and Google's put the account; it replaces the header's `⚙`,
+      a text glyph that drew like an emoji. Rejected: a Settings tab (the
+      HIG keeps tab bars for navigation, and the bar is full), an item in
+      the view menu (nobody looks for Settings there), a "…" menu holding
+      only Settings, and the system Settings app (ours are accounts and
+      sign-in). **The avatar is the first Google account's**: its photo
+      (`Account.avatarUrl`, from sign-in), else its initial in the tint
+      its Settings row has, else `person.crop.circle` with no Google
+      account; Settings rows and the account page draw the photo too, the
+      initial staying under it while it loads or when it cannot. **The
+      unsynced pill became the avatar's badge** (the count, as the App
+      Store badges updates), which gives the header the pill's width back;
+      a tap opens the Settings root, whose first row is Unsynced Changes —
+      one tap more than the pill's direct push. A dot says an account must
+      sign in again. The badge and dot are siblings of the button, not
+      children: the button is one accessibility element, so a child's id
+      would never reach Maestro, and the live suite waits on
+      `pending-badge` to go; VoiceOver hears the count in the button's
+      label. `02-navigation` opens Settings from the Tasks tab.
 
 ### Dependency sweep (2026-10-09)
 
