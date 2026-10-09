@@ -162,6 +162,9 @@ const calendarRef = async (app: App, token: string, name: string): Promise<strin
 const click = (cdp: App['cdp'], selector: string) =>
   cdp.eval(`document.querySelector(${JSON.stringify(selector)})?.click()`);
 
+const SEARCH_INPUT = '[data-testid="search-input"]';
+const PANEL_KIND = `document.querySelector('[data-testid="panel"]')?.dataset.panelKind`;
+
 /** An expression for the text of the inspector's `inspector-<part>` element. */
 const inspectorText = (part: string) =>
   `document.querySelector('[data-testid="inspector-${part}"]')?.textContent`;
@@ -369,6 +372,35 @@ describe('agent gateway: other agents reach the app over the CLI and MCP', () =>
     // Deleted elsewhere: the panel lets go of an event that is gone.
     json(await runAgentCli(app, WRITER, ['delete_event', '--ref', ref]));
     await cdp.waitFor(`!document.querySelector('[data-testid="inspector"]')`);
+  });
+
+  it('a search result an agent deletes goes back to the results', async () => {
+    const { cdp } = app;
+    const title = `Pier walk ${String(Date.now())}`;
+    const work = await calendarRef(app, WRITER, 'Work');
+    json(await runAgentCli(app, WRITER, newEvent(work, title, 15)));
+    await cdp.eval(
+      `window.dispatchEvent(new KeyboardEvent('keydown', { key: 'f', metaKey: true }))`,
+    );
+    await cdp.waitFor(`document.activeElement === document.querySelector('${SEARCH_INPUT}')`);
+    await cdp.type(SEARCH_INPUT, title);
+    // The one result the unique title matches, once the results answer it.
+    await cdp.waitFor(
+      `document.querySelector('[data-testid="search-results"]')?.getAttribute('aria-busy') === 'false' && [...document.querySelectorAll('[data-search-result] [data-testid="search-title"]')].some((cell) => cell.textContent === ${JSON.stringify(title)})`,
+    );
+    const row = await cdp.locate('[data-search-result]');
+    await cdp.click(row.x, row.y);
+    await cdp.waitFor(`${inspectorText('title')} === ${JSON.stringify(title)}`);
+    const { events } = json<{ events: ReadonlyArray<{ ref: string; title: string }> }>(
+      await runAgentCli(app, WRITER, ['list_events', '--from', today.from, '--to', today.to]),
+    );
+    const { ref } = events.find((entry) => entry.title === title)!;
+
+    json(await runAgentCli(app, WRITER, ['delete_event', '--ref', ref]));
+    await cdp.waitFor(`${PANEL_KIND} === 'search'`);
+    await cdp.waitFor(`!document.querySelector('[data-search-result]')`);
+    await cdp.pressEscape();
+    await cdp.waitFor(`${PANEL_KIND} !== 'search'`);
   });
 
   it('refuses what the grant, the provider or the guests switch does not allow', async () => {
