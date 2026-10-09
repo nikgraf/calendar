@@ -469,3 +469,89 @@ describe('The notice stack', () => {
     expect(log.filter((entry) => entry.id === 'notice-status' && entry.first)).toHaveLength(1);
   });
 });
+
+// The window's minimum width (600 px) with the sidebar and the editor open
+// leaves the grid's column a few pixels: the notices must still be
+// readable, and keep clear of the editor's Cancel and Save.
+describe('The notice stack in a narrow window', () => {
+  let app: App;
+  beforeAll(async () => {
+    app = await launchApp(noticesSeed, {
+      google: { fixture: noticesFixture },
+      window: { height: 700, width: 600 },
+    });
+  }, 60_000);
+  afterEach(async (context) => {
+    if (context.task.result?.state === 'fail') {
+      await app.dump(context.task.name);
+    }
+  });
+  afterAll(async () => {
+    await app.stop();
+  });
+
+  it('stays readable beside the sidebar and the open editor, clear of Cancel and Save', async () => {
+    const { cdp } = app;
+    await cdp.waitFor(`(${banner}).includes('Budget review (mine)')`);
+    // The reminder's chip is out of reach once the editor squeezes the grid.
+    const complete = await cdp.locate(COMPLETE_WATER);
+    await cdp.click(complete.x, complete.y);
+    await cdp.waitFor(`!!document.querySelector('[data-testid="mutation-toast"]')`);
+    await cdp.openEditor('[title^="Budget review (mine)"]');
+    // The editor's buttons at the panel's foot, where the notices are.
+    await cdp.eval(
+      `[...document.querySelectorAll('[data-testid="panel"] button')].find((b) => b.textContent?.trim() === 'Save')?.scrollIntoView({ block: 'end' })`,
+    );
+    const facts = JSON.parse(
+      await cdp.eval<string>(`(() => {
+        const box = (element) => {
+          if (!element) return null;
+          const { bottom, left, right, top } = element.getBoundingClientRect();
+          return { bottom, left, right, top };
+        };
+        const byId = (id) => document.querySelector('[data-testid="' + id + '"]');
+        const button = (text) =>
+          [...document.querySelectorAll('[data-testid="panel"] button')].find(
+            (b) => b.textContent?.trim() === text,
+          );
+        const bannerElement = byId('conflict-banner');
+        const overflowing = [bannerElement, ...bannerElement.querySelectorAll('*')].filter(
+          (element) => element.scrollWidth > element.clientWidth + 1,
+        ).length;
+        return JSON.stringify({
+          banner: box(bannerElement),
+          cancel: box(button('Cancel')),
+          overflowing,
+          save: box(button('Save')),
+          toast: box(byId('mutation-toast')),
+          width: window.innerWidth,
+        });
+      })()`),
+    ) as {
+      banner: Box;
+      cancel: Box | null;
+      overflowing: number;
+      save: Box | null;
+      toast: Box;
+      width: number;
+    };
+    expect(facts.width).toBe(600);
+    // Readable: as wide as a phone's banner, inside the window, nothing in it cut off.
+    expect(facts.banner.right - facts.banner.left).toBeGreaterThanOrEqual(300);
+    expect(facts.banner.left).toBeGreaterThanOrEqual(0);
+    expect(facts.banner.right).toBeLessThanOrEqual(facts.width);
+    expect(facts.overflowing).toBe(0);
+    // Still one stack, top to bottom.
+    expect(overlaps(facts.toast, facts.banner)).toBe(false);
+    expect(facts.toast.bottom).toBeLessThanOrEqual(facts.banner.top);
+    // The editor's own way out stays reachable.
+    for (const [name, control] of [
+      ['Cancel', facts.cancel],
+      ['Save', facts.save],
+    ] as const) {
+      expect(control, name).toBeTruthy();
+      expect(overlaps(facts.banner, control!), `banner covers ${name}`).toBe(false);
+      expect(overlaps(facts.toast, control!), `toast covers ${name}`).toBe(false);
+    }
+  });
+});

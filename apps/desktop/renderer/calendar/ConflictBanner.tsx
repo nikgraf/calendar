@@ -11,7 +11,8 @@ import {
   isParkedOp,
   type ParkedOpSummary,
 } from '@calendar/core';
-import { useEffect, useId, useRef, useState } from 'react';
+import { useEffect, useId, useState } from 'react';
+import { makeAnnouncer } from '../announcer.ts';
 
 /** Keep-mine / take-theirs for one parked op (the banner and the queue panel). */
 export function ConflictActions({ op, size = 'md' }: { op: ParkedOpSummary; size?: 'md' | 'sm' }) {
@@ -42,6 +43,7 @@ export function ConflictActions({ op, size = 'md' }: { op: ParkedOpSummary; size
  * How long a conflict's announcement waits before it reaches its live
  * region. The region mounts empty with the notice stack; a screen reader
  * needs a beat to register it before the words it should read arrive.
+ * Conflicts that park meanwhile are told with it (`makeAnnouncer`).
  */
 const ANNOUNCE_DELAY_MS = 100;
 
@@ -61,22 +63,15 @@ export function ConflictBanner() {
   const parked = usePendingOps().filter(isParkedOp);
   const { primary: timeZone } = useTimeZones();
   const headlineId = useId();
-  const [queued, setQueued] = useState<string | null>(null);
   // Numbered, so the same words told twice are a new node the region reads again.
   const [news, setNews] = useState<{ readonly id: number; readonly text: string } | null>(null);
-  const told = useRef(0);
-  useConflictAnnouncement(parked, timeZone, setQueued);
-  useEffect(() => {
-    if (queued === null) {
-      return;
-    }
-    const timer = setTimeout(() => {
-      told.current += 1;
-      setNews({ id: told.current, text: queued });
-      setQueued(null);
-    }, ANNOUNCE_DELAY_MS);
-    return () => clearTimeout(timer);
-  }, [queued]);
+  const [announcer] = useState(() =>
+    makeAnnouncer(ANNOUNCE_DELAY_MS, (texts) =>
+      setNews((current) => ({ id: (current?.id ?? 0) + 1, text: texts.join(' ') })),
+    ),
+  );
+  useEffect(() => announcer.stop, [announcer]);
+  useConflictAnnouncement(parked, timeZone, announcer.say);
   // Cleared once read, so the words do not linger in the reading order.
   useEffect(() => {
     if (news === null) {
@@ -99,7 +94,7 @@ export function ConflictBanner() {
           className="pointer-events-auto mb-2 w-full max-w-[34rem] rounded-control border border-l-4 border-hairline border-l-warning bg-surface-raised p-3 text-sm text-ink shadow-lg"
           data-testid="conflict-banner"
         >
-          <h2 className="font-medium" id={headlineId}>
+          <h2 className="font-medium break-words" id={headlineId}>
             {description.headline}
           </h2>
           {description.changes.length > 0 ? (
@@ -133,7 +128,7 @@ export function ConflictBanner() {
               </tbody>
             </table>
           ) : null}
-          <div className="mt-3 flex items-center justify-between gap-2">
+          <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
             <span className="text-xs text-ink-secondary">
               {parked.length > 1 ? `+${String(parked.length - 1)} more in unsynced changes` : ''}
             </span>

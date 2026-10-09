@@ -5,9 +5,10 @@ import {
   useMutationNotice,
 } from '@calendar/app-state';
 import { DROPPED_NOTICE_KEY } from '@calendar/db/keys';
-import type { ReactNode } from 'react';
+import { type ReactNode, type RefObject, useLayoutEffect, useRef, useState } from 'react';
 import { subscribeInvalidations } from './backend.ts';
 import { ConflictBanner } from './calendar/ConflictBanner.tsx';
+import { noticeArea, type Span } from './noticeArea.ts';
 
 /** A toast's colors: a failure in the danger fill, information inverted against the canvas. */
 const TONE = {
@@ -73,9 +74,12 @@ function DroppedToast() {
  * move its buttons from under the pointer. Each kind holds one notice at a
  * time (a newer one replaces it), so the column never grows past three.
  *
- * The calendar places it in the grid's column, so nothing in it can cover
- * the sidebar or the side panel and their controls, whatever the window's
- * width; the settings window places it over the whole window.
+ * The calendar places it in the grid's column, so nothing in it covers the
+ * sidebar or the side panel and their controls — while the column is wide
+ * enough to read it in. With the sidebar and the editor open in a small
+ * window it is not: then the stack spans the narrowest readable width
+ * (`noticeArea`), over the sidebar first and into the panel only as far as
+ * it must. The settings window places it over the whole window.
  *
  * Screen readers: each toast renders into a live region that is mounted
  * with the stack, empty — a region added together with its text is not
@@ -95,12 +99,16 @@ export function NoticeStack({
   /** `column`: the bottom of the nearest positioned box; `window`: the bottom of the window. */
   placement: 'column' | 'window';
 }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const area = useNoticeArea(ref, placement === 'column');
   return (
     <div
-      className={`pointer-events-none inset-x-0 bottom-0 z-40 flex flex-col items-center px-4 pt-4 pb-2 ${
-        placement === 'column' ? 'absolute' : 'fixed'
-      }`}
+      className={`pointer-events-none bottom-0 z-40 flex flex-col items-center px-4 pt-4 pb-2 ${
+        placement === 'column' && !area ? 'absolute inset-x-0' : 'fixed'
+      } ${placement === 'window' ? 'inset-x-0' : ''}`}
       data-testid="notice-stack"
+      ref={ref}
+      style={area ? { left: area.left, width: area.right - area.left } : undefined}
     >
       <div className="flex flex-col items-center" data-testid="notice-alerts" role="alert">
         <MutationNoticeToast />
@@ -111,4 +119,32 @@ export function NoticeStack({
       {conflicts ? <ConflictBanner /> : null}
     </div>
   );
+}
+
+/**
+ * The span the stack takes over its column when that is too narrow to read
+ * (`noticeArea`), or undefined while the column will do. Measured before
+ * paint and again whenever the column's width changes — the window, the
+ * sidebar or the panel.
+ */
+function useNoticeArea(ref: RefObject<HTMLDivElement | null>, enabled: boolean): Span | undefined {
+  const [area, setArea] = useState<Span | undefined>(undefined);
+  useLayoutEffect(() => {
+    const column = ref.current?.parentElement;
+    if (!enabled || !column) {
+      return;
+    }
+    const measure = () => {
+      const { left, right } = column.getBoundingClientRect();
+      const next = noticeArea({ left, right }, window.innerWidth);
+      setArea((current) =>
+        current?.left === next?.left && current?.right === next?.right ? current : next,
+      );
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(column);
+    return () => observer.disconnect();
+  }, [enabled, ref]);
+  return area;
 }

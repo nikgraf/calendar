@@ -2326,8 +2326,16 @@ the other three held, on both apps.
       the banner holds the anchored edge because it stays until answered,
       so toasts come and go above it and never move its buttons; one
       notice per kind, so at most three. **Desktop**: `NoticeStack` sits
-      in the grid's column (`relative` in CalendarApp), so nothing in it
-      reaches the sidebar or the panel at any width; Settings shows its own
+      in the grid's column (`relative` in CalendarApp), clear of the
+      sidebar and the panel — **while the column is at least 22rem
+      (352 px) wide** (`noticeArea`; Codex review: with the sidebar and
+      the editor open, a 600 px window left the column 8 px and squeezed
+      the banner to 29 px). Narrower, the stack takes 352 px ending at the
+      column's right edge, over the sidebar but not the panel; and when
+      everything left of the panel is narrower still, 352 px from the
+      window's left edge, into the panel only as far as it must — the
+      editor's Cancel and Save, at its right edge, stay clear (its Delete,
+      at the left, can be under it at 600 px). Settings shows its own
       failed writes over its window. **iOS**: `NoticeStack` is a flow
       child that stands on the edge it is mounted at and takes no room —
       last in a tab screen's SafeAreaView (whose content ends at the tab
@@ -2351,9 +2359,13 @@ the other three held, on both apps.
       change); its comparison is a table with headers. **Each parked
       change is told once** (`useConflictAnnouncement`: on mount for what
       is parked, then each new one — never a re-render or a resolution),
-      politely, through a status region beside the banner. **iOS**: toasts
-      and capture steps are announced with
-      `announceForAccessibilityWithOptions(…, { queue: true })`; every tab
+      politely, through a status region beside the banner, 100 ms after the
+      region could register; **conflicts that park meanwhile join the
+      waiting text** (`makeAnnouncer`; Codex review: a second conflict
+      within 100 ms replaced the first, already marked told, so it was
+      never read). **iOS**: toasts and capture steps are announced with
+      `announceForAccessibilityWithOptions(…, { queue: true })`, each
+      call queued behind the last, so nothing waits to be replaced; every tab
       and the Settings modal keep a failed-write toast mounted, so the
       publish number decides who speaks (`firstToTell`), once.
 - [x] Theme — the desktop toasts and banner move from raw palette classes
