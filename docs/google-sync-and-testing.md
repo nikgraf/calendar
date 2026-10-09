@@ -598,6 +598,14 @@ Flakiness lessons (each caused a real CI failure — keep them enforced):
 - **`scrollIntoView` before measuring** (harness `locate`): CI runners
   land the week grid at different scroll offsets, leaving early-morning
   blocks under the sticky header where clicks hit the header.
+- **A window behind another one renders nothing**: its page is hidden and
+  runs no rendering steps, so `requestAnimationFrame`, ResizeObserver
+  and media-query changes wait for the next frame, which may never come.
+  CI's window can be behind one. What the page sets from them waits too:
+  the narrow-window notice stack stayed in its 8 px column, banner 29 px,
+  however long `waitFor` polled. `cdp.waitForRendered` draws a frame (a
+  screenshot) before each try. To reproduce locally, bring another app in
+  front of the test window right after launch (`open -a <app>`).
 - **Weekday-agnostic seeding**: recurring seeds start `today − 3 days` and
   expectations derive from the first _visible_ instance — absolute
   "today"-based expectations broke every Sunday.
