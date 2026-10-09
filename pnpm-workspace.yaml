@@ -57,9 +57,13 @@ catalog:
   '@effect/sql-sqlite-react-native': 4.0.0
   '@effect/vitest': 4.0.0
   '@js-temporal/polyfill': ^0.5.1
-  react: ^19.2.8
-  react-dom: ^19.2.8
-  '@types/react': ^19.2.17
+  # react, react-dom and their types stay on 19.2 (tilde, not caret) for
+  # both apps: React Native 0.86 renders with a 19.2.3 renderer and Expo
+  # SDK 57 expects react 19.2 (`npx expo install --check`). A caret let the
+  # lockfile resolve 19.3.0 (#144).
+  react: ~19.2.8
+  react-dom: ~19.2.8
+  '@types/react': ~19.2.18
   rrule-temporal: ^2.2.8
   typescript: ^7.0.2
   vite: npm:@voidzero-dev/vite-plus-core@1.1.0
@@ -79,6 +83,9 @@ overrides:
   # yauzl 2.x silently kills the process under modern Node during
   # electron-packager's zip extraction (same fix as codiff).
   'extract-zip>yauzl': ^3.4.0
+  # The react-dom pnpm installs for Expo's optional web peer
+  # (@expo/metro-runtime) would otherwise be the newest, past the 19.2 hold.
+  react-dom: 'catalog:'
   vite@*: 'catalog:'
   vitest@*: 'catalog:'
 
