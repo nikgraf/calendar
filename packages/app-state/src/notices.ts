@@ -42,11 +42,27 @@ export const useMutationNotice = (): ShownNotice<MutationNotice> | null => {
 };
 
 let broadcasts = 0;
+const numbered = new WeakMap<ReadonlyArray<unknown>, number>();
+
+/**
+ * One number per broadcast batch. A shell hands the same array to every
+ * listener of one batch (iOS does), so two toasts that saw it agree on its
+ * number — and only one of them announces it.
+ */
+export const broadcastNumber = (keys: ReadonlyArray<unknown>): number => {
+  const known = numbered.get(keys);
+  if (known !== undefined) {
+    return known;
+  }
+  broadcasts += 1;
+  numbered.set(keys, broadcasts);
+  return broadcasts;
+};
 
 /**
  * A notice raised by a broadcast invalidation key (the dropped-change
- * toast): a number while it is on screen — a new one per broadcast — and
- * null NOTICE_MS after the latest.
+ * toast): the broadcast's number while it is on screen — a new one per
+ * broadcast — and null NOTICE_MS after the latest.
  */
 export const useBroadcastNotice = (
   subscribe: (listener: (keys: ReadonlyArray<unknown>) => void) => () => void,
@@ -57,8 +73,7 @@ export const useBroadcastNotice = (
     () =>
       subscribe((keys) => {
         if (keys.includes(key)) {
-          broadcasts += 1;
-          setShown(broadcasts);
+          setShown(broadcastNumber(keys));
         }
       }),
     [key, subscribe],
@@ -71,6 +86,22 @@ export const useBroadcastNotice = (
     return () => clearTimeout(timer);
   }, [shown]);
   return shown;
+};
+
+const lastTold = new Map<string, number>();
+
+/**
+ * Whether this offer is the first for a notice of `kind` numbered `id`:
+ * every toast mounted on a phone's screens receives the same publish, and
+ * only the first to offer it may announce it — an older or equal number
+ * has been told already.
+ */
+export const firstToTell = (kind: string, id: number): boolean => {
+  if (id <= (lastTold.get(kind) ?? 0)) {
+    return false;
+  }
+  lastTold.set(kind, id);
+  return true;
 };
 
 /**

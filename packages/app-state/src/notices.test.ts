@@ -44,8 +44,14 @@ vi.mock('react', async (importOriginal) => ({
   useState: react.useState,
 }));
 
-const { conflictAnnouncement, freshConflicts, mutationNoticeText, useConflictAnnouncement } =
-  await import('./notices.ts');
+const {
+  broadcastNumber,
+  conflictAnnouncement,
+  firstToTell,
+  freshConflicts,
+  mutationNoticeText,
+  useConflictAnnouncement,
+} = await import('./notices.ts');
 
 const TZ = 'Europe/Vienna';
 
@@ -140,6 +146,27 @@ describe('useConflictAnnouncement', () => {
     // The same event parking again later is a new conflict.
     render([parked('op-3', 'Budget')]);
     expect(heard).toHaveLength(3);
+  });
+});
+
+describe('broadcastNumber', () => {
+  it('gives every listener of one batch the same number, and the next batch a new one', () => {
+    const batch = ['notice:dropped'];
+    const first = broadcastNumber(batch);
+    expect(broadcastNumber(batch)).toBe(first);
+    expect(broadcastNumber(['notice:dropped'])).toBeGreaterThan(first);
+  });
+});
+
+describe('firstToTell', () => {
+  it('lets one of several toasts announce a publish, and none an older one', () => {
+    expect(firstToTell('test', 4)).toBe(true);
+    // The other mounted toasts offering the same publish.
+    expect(firstToTell('test', 4)).toBe(false);
+    expect(firstToTell('test', 3)).toBe(false);
+    expect(firstToTell('test', 5)).toBe(true);
+    // Kinds count apart: a broadcast and a mutation notice may share a number.
+    expect(firstToTell('other', 4)).toBe(true);
   });
 });
 

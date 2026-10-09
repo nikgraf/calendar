@@ -37,7 +37,13 @@ import { AgendaView } from './AgendaView.tsx';
 import { DayTimeline } from './DayTimeline.tsx';
 import { useEditorHost } from './EditorHost.tsx';
 import { MonthGrid } from './MonthGrid.tsx';
-import { ConflictBanner, DroppedToast, MutationNoticeToast } from './Toast.tsx';
+import {
+  ConflictBanner,
+  DroppedToast,
+  MutationNoticeToast,
+  NOTICE_GAP,
+  NoticeStack,
+} from './Toast.tsx';
 import { type ThemeColors, useStyles } from './theme.ts';
 import { WeekStrip } from './WeekStrip.tsx';
 
@@ -359,9 +365,13 @@ function CalendarBody({
           <Text style={styles.fabLabel}>＋</Text>
         </Pressable>
       </View>
-      <ConflictBanner />
-      <DroppedToast />
-      <MutationNoticeToast />
+      {/* The notices stand on the same row: above the tab bar on iOS 26,
+          where "+" hangs into the bar, and above the floating "+" before. */}
+      <NoticeStack offset={FLOATING_TAB_BAR ? NOTICE_GAP : FAB_INSET + FAB + NOTICE_GAP}>
+        <MutationNoticeToast />
+        <DroppedToast />
+        <ConflictBanner />
+      </NoticeStack>
     </SafeAreaView>
   );
 }
