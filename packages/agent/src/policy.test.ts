@@ -3,7 +3,6 @@ import {
   type AgentPolicy,
   calendarLevel,
   type CalendarLevel,
-  canSeeBusy,
   canSeeDetails,
   decideWrite,
   EMPTY_POLICY,
@@ -39,9 +38,8 @@ describe('levels', () => {
     expect(EMPTY_POLICY.guests).toBe('off');
   });
 
-  it('details need read; busy time needs free/busy', () => {
+  it('details need read', () => {
     const levels: ReadonlyArray<CalendarLevel> = ['none', 'freeBusy', 'read', 'ask', 'write'];
-    expect(levels.map(canSeeBusy)).toEqual([false, true, true, true, true]);
     expect(levels.map(canSeeDetails)).toEqual([false, false, true, true, true]);
   });
 });

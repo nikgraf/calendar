@@ -28,5 +28,3 @@ export const generateEventId = (): string => {
   }
   return id;
 };
-
-export const isValidEventId = (id: string): boolean => /^[0-9a-v]{5,1024}$/.test(id);

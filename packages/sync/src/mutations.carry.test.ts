@@ -190,6 +190,9 @@ describe('a series edit carries text onto the exceptions, undoably', () => {
         { etag: moved.etag, eventId: moved.id, title: 'Daily (moved)' },
         { etag: plain.etag, eventId: plain.id, title: 'Daily' },
       ]);
+      // No op for the exceptions: Google updates them itself.
+      const ops = yield* (yield* PendingOpRepo).listAll();
+      expect(ops.map((queued) => queued.eventId)).toEqual(['master1']);
     }).pipe(Effect.provide(layer({ patch: 'offline' }))),
   );
 

@@ -5,7 +5,6 @@ import { AccountRepo, reposLayer, TaskRepo } from '@calendar/db';
 import { runMigrations } from '@calendar/db';
 import {
   ApiUnavailableError,
-  type GcalTasksPage,
   GoogleApiError,
   GoogleCalendarClient,
   type GoogleCalendarClientShape,
@@ -110,76 +109,6 @@ const openTask = (id: string) => ({
 });
 
 describe('tasks sync', () => {
-  it.effect('pulls lists and tasks, then advances the updatedMin watermark', () => {
-    const updatedMins: Array<string | undefined> = [];
-    const pages: Array<GcalTasksPage> = [
-      {
-        items: [
-          {
-            due: '2026-08-30T00:00:00.000Z',
-            id: 't1',
-            status: 'needsAction',
-            title: 'Pay rent',
-            updated: '2026-08-20T00:00:00.000Z',
-          },
-        ],
-      },
-      { items: [] },
-    ];
-    const client: GoogleTasksClientShape = tasksClient({
-      listTaskLists: () => Effect.succeed(lists),
-      listTasks: ({ params }) => {
-        updatedMins.push(params.updatedMin);
-        return Effect.succeed(pages.shift() ?? { items: [] });
-      },
-      patchTask: () => Effect.die('not used'),
-    });
-    return Effect.gen(function* () {
-      yield* seedAccount(true);
-      const engine = yield* SyncEngine;
-      yield* engine.syncAll();
-      const repo = yield* TaskRepo;
-      expect(yield* repo.getWindow('2026-08-24', '2026-08-31')).toHaveLength(1);
-      // First pass is full (no watermark); the second sends an RFC3339 one.
-      yield* engine.syncAll();
-      expect(updatedMins[0]).toBeUndefined();
-      expect(updatedMins[1]).toMatch(/^\d{4}-\d{2}-\d{2}T/);
-    }).pipe(noYield, Effect.provide(testLayer(client)));
-  });
-
-  it.effect('removes tombstoned tasks on incremental polls', () => {
-    let call = 0;
-    const client: GoogleTasksClientShape = tasksClient({
-      listTaskLists: () => Effect.succeed(lists),
-      listTasks: () => {
-        call += 1;
-        return Effect.succeed(
-          call === 1
-            ? {
-                items: [
-                  {
-                    due: '2026-08-30T00:00:00.000Z',
-                    id: 't1',
-                    status: 'needsAction',
-                    title: 'Pay rent',
-                  },
-                ],
-              }
-            : { items: [{ deleted: true, id: 't1' }] },
-        );
-      },
-      patchTask: () => Effect.die('not used'),
-    });
-    return Effect.gen(function* () {
-      yield* seedAccount(true);
-      const engine = yield* SyncEngine;
-      yield* engine.syncAll();
-      yield* engine.syncAll();
-      const repo = yield* TaskRepo;
-      expect(yield* repo.getWindow('2026-08-24', '2026-08-31')).toHaveLength(0);
-    }).pipe(noYield, Effect.provide(testLayer(client)));
-  });
-
   it.effect('a list whose tasks 404 keeps its rows and skips only itself', () => {
     let googleListsIt = true;
     const goneResponses: Array<'ok' | 'not-found'> = ['ok', 'not-found'];

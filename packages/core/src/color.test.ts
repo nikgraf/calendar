@@ -1,11 +1,5 @@
 import { describe, expect, it } from 'vite-plus/test';
-import {
-  calendarKey,
-  contrastingTextColor,
-  eventKey,
-  makeColorLookup,
-  normalizeHexColor,
-} from './color.ts';
+import { calendarKey, contrastingTextColor, makeColorLookup, normalizeHexColor } from './color.ts';
 
 describe('color', () => {
   it('picks dark text on light backgrounds and light text on dark ones', () => {
@@ -32,9 +26,8 @@ describe('color', () => {
     expect(normalizeHexColor('')).toBeUndefined();
   });
 
-  it('builds composite keys the whole app agrees on', () => {
+  it('builds the calendar key the whole app agrees on', () => {
     expect(calendarKey({ accountId: 'acc', id: 'cal' })).toBe('acc:cal');
-    expect(eventKey({ calendarId: 'cal', id: 'evt' })).toBe('cal:evt');
   });
 
   it('maps events to their calendar color, falling back to Google blue', () => {

@@ -57,10 +57,6 @@ export const normalizeHexColor = (input: string): string | undefined => {
 export const calendarKey = (calendar: { accountId: string; id: string }): string =>
   `${calendar.accountId}:${calendar.id}`;
 
-/** `calendarId:eventId` — stable across accounts, used for React keys. */
-export const eventKey = (event: { calendarId: string; id: string }): string =>
-  `${event.calendarId}:${event.id}`;
-
 export type ColorLookup = (event: { accountId: string; calendarId: string }) => string;
 
 /** Maps an event to its calendar's color, falling back to Google's blue. */

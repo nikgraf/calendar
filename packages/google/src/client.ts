@@ -36,8 +36,6 @@ export interface ListEventsParams {
   readonly maxResults?: number | undefined;
   readonly pageToken?: string | undefined;
   readonly syncToken?: string | undefined;
-  readonly timeMax?: string | undefined;
-  readonly timeMin?: string | undefined;
 }
 
 export interface GoogleCalendarClientShape {
@@ -213,13 +211,7 @@ const make: Effect.Effect<GoogleCalendarClientShape, never, HttpClient.HttpClien
                 showDeleted: 'true',
                 // Sync tokens encode the original filters; incremental calls
                 // must send the token alone.
-                ...(params.syncToken
-                  ? { syncToken: params.syncToken }
-                  : {
-                      singleEvents: 'false',
-                      timeMax: params.timeMax,
-                      timeMin: params.timeMin,
-                    }),
+                ...(params.syncToken ? { syncToken: params.syncToken } : { singleEvents: 'false' }),
               }),
             ),
           ),

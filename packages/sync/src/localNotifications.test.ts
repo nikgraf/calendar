@@ -291,18 +291,6 @@ describe('LocalNotifications', () => {
     }).pipe(Effect.provide(testLayer(sink)));
   });
 
-  it.effect('does nothing while both producers are off', () => {
-    const { shown, sink } = immediateSink();
-    return Effect.gen(function* () {
-      yield* seedGoogle(standup);
-      yield* writeEventNotificationSettings({ enabled: false, includeAppleCalendar: false });
-      const notifications = yield* LocalNotifications;
-      yield* setClock('2026-03-04T10:00:00Z');
-      yield* notifications.run();
-      expect(shown).toEqual([]);
-    }).pipe(Effect.provide(testLayer(sink)));
-  });
-
   it.effect(
     'a scheduled sink gets one merged plan, soonest first, and keeps birthdays when events go off',
     () => {

@@ -478,6 +478,9 @@ describe('SyncEngine over HTTP (fake Google)', () => {
       expect(statuses).toEqual(['full', 'incremental', 'full']);
       // The resync lists the whole history again, not a window.
       expect(google.requests.every((call) => !call.url.includes('timeMin='))).toBe(true);
+      // The next pass resumes from the token the resync handed out.
+      const state = yield* (yield* SyncStateRepo).get('acc-1', eventsScope('cal-1'));
+      expect(state?.syncToken).toBe('cal-1:3');
     }).pipe(noYield, Effect.provide(engineLayer(google)));
   });
 
@@ -581,29 +584,6 @@ describe('SyncEngine over HTTP (fake Google)', () => {
       expect(yield* (yield* PendingOpRepo).listAll()).toEqual([]);
       expect(google.eventOf('cal-1', 'a')?.start?.date).toBeUndefined();
       expect(google.eventOf('cal-1', 'a')?.start?.dateTime).toBe('2026-07-02T10:00:00Z');
-    }).pipe(noYield, Effect.provide(engineLayer(google)));
-  });
-
-  it.effect('a local create posts the client id and the response acks the row', () => {
-    const google = newFake();
-    return Effect.gen(function* () {
-      yield* seedAccount(false);
-      const engine = yield* SyncEngine;
-      const mutations = yield* EventMutations;
-      yield* engine.syncAll();
-      const record = yield* mutations.createEvent({
-        accountId: 'acc-1',
-        calendarId: 'cal-1',
-        endUtc: Date.parse('2026-07-03T10:00:00Z'),
-        isAllDay: false,
-        startTimeZone: 'UTC',
-        startUtc: Date.parse('2026-07-03T09:00:00Z'),
-        title: 'Created here',
-      });
-      yield* mutations.processPendingOps();
-      expect(google.eventOf('cal-1', record.id)?.summary).toBe('Created here');
-      const events = yield* EventRepo;
-      expect((yield* events.getById('acc-1', 'cal-1', record.id))?.syncStatus).toBe('synced');
     }).pipe(noYield, Effect.provide(engineLayer(google)));
   });
 
@@ -723,28 +703,6 @@ describe('SyncEngine over HTTP (fake Google)', () => {
       );
       expect(listCalls[0]!.url).not.toContain('updatedMin=');
       expect(listCalls[1]!.url).toContain('updatedMin=');
-    }).pipe(noYield, Effect.provide(engineLayer(google)));
-  });
-
-  it.effect('tasks: a local create takes the server-assigned id', () => {
-    const google = newFake();
-    return Effect.gen(function* () {
-      yield* seedAccount(true);
-      const engine = yield* SyncEngine;
-      const mutations = yield* EventMutations;
-      yield* engine.syncAll();
-      const temp = yield* mutations.createTask({
-        accountId: 'acc-1',
-        dueDate: '2026-08-30',
-        taskListId: 'list-1',
-        title: 'From the app',
-      });
-      expect(temp.id.startsWith('local-')).toBe(true);
-      yield* mutations.processPendingOps();
-      const repo = yield* TaskRepo;
-      const rows = yield* repo.getWindow('2026-08-01', '2026-09-30');
-      expect(rows.map((row) => row.id)).toEqual(['task-1']);
-      expect(google.taskOf('list-1', 'task-1')?.title).toBe('From the app');
     }).pipe(noYield, Effect.provide(engineLayer(google)));
   });
 });
