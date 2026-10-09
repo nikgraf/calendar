@@ -3,11 +3,19 @@ import { Host, Switch } from '@expo/ui';
 import { labelsHidden } from '@expo/ui/swift-ui/modifiers';
 import { type Href, useRouter } from 'expo-router';
 import { type SFSymbol, SymbolView, type SymbolViewProps } from 'expo-symbols';
-import { Children, createContext, isValidElement, type ReactNode, useContext } from 'react';
+import {
+  Children,
+  createContext,
+  isValidElement,
+  type ReactNode,
+  useContext,
+  useState,
+} from 'react';
 import {
   type AccessibilityActionEvent,
   type AccessibilityRole,
   type AccessibilityState,
+  Image,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -509,19 +517,26 @@ export function LeadingSpace() {
   return <View style={styles.tileSpace} />;
 }
 
-/** A person's or account's initial in a tinted circle. */
+/**
+ * A person's or account's initial in a tinted circle, under their photo
+ * when there is one (`uri`, a Google account's picture): the initial
+ * shows while the photo loads and stays when it cannot load (offline).
+ */
 export function Avatar({
   background,
   foreground,
   label,
   size = 30,
+  uri,
 }: {
   background: string;
   foreground: string;
   label: string;
   size?: number;
+  uri?: string | undefined;
 }) {
   const styles = useStyles(makeStyles);
+  const [failed, setFailed] = useState<string | null>(null);
   return (
     <View
       style={[
@@ -535,6 +550,14 @@ export function Avatar({
       >
         {label}
       </Text>
+      {uri !== undefined && failed !== uri ? (
+        <Image
+          accessibilityIgnoresInvertColors
+          onError={() => setFailed(uri)}
+          source={{ uri }}
+          style={[StyleSheet.absoluteFill, { borderRadius: size / 2 }]}
+        />
+      ) : null}
     </View>
   );
 }
