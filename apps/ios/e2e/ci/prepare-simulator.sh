@@ -6,11 +6,12 @@
 #
 #   prepare-simulator.sh boot           start the boot, do not wait for it
 #   prepare-simulator.sh install <app>  wait for the boot, install, grant
-#   prepare-simulator.sh <app>          both
 #
 # The split lets a job start the boot first: a runner's first boot spends
 # two minutes in data migration, which then overlaps the install and the
-# bundling instead of preceding them.
+# bundling instead of preceding them. Run them as separate steps, never
+# back to back: `install` right after `boot` raced the boot it had just
+# started (see install below).
 set -euo pipefail
 
 # The dev variant (app.config.js): e2e always drives it.
@@ -44,8 +45,21 @@ install() {
   APP="${1:?path to the .app}"
   UDID="${SIMULATOR_UDID:?run the boot step first}"
   # -b boots the device if the background boot has not got that far (or
-  # failed), then waits for it.
-  xcrun simctl bootstatus "$UDID" -b
+  # failed), then waits for it. When the background boot starts the device
+  # between bootstatus's check and its own boot request, CoreSimulator
+  # refuses the second boot ("Unable to boot device in current state:
+  # Booted", exit 149) — the boot is under way, so wait for that one.
+  if ! xcrun simctl bootstatus "$UDID" -b; then
+    state=$(xcrun simctl list devices -j | jq -r --arg udid "$UDID" \
+      '.devices[][] | select(.udid == $udid) | .state')
+    case "$state" in
+      Booting | Booted) xcrun simctl bootstatus "$UDID" ;;
+      *)
+        echo "::error::simulator $UDID did not boot (state: ${state:-unknown})"
+        exit 1
+        ;;
+    esac
+  fi
   xcrun simctl install "$UDID" "$APP"
   xcrun simctl privacy "$UDID" grant reminders "$BUNDLE_ID"
   xcrun simctl privacy "$UDID" grant contacts "$BUNDLE_ID"
@@ -63,8 +77,11 @@ install() {
   done
 }
 
-case "${1:?boot | install <app> | <app>}" in
+case "${1:?boot | install <app>}" in
   boot) boot ;;
   install) install "${2:-}" ;;
-  *) boot; install "$1" ;;
+  *)
+    echo "usage: prepare-simulator.sh boot | install <app>" >&2
+    exit 2
+    ;;
 esac
