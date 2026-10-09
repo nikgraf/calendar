@@ -1,7 +1,7 @@
 import { searchTimeZones, zoneSlug } from '@calendar/core';
 import { useState } from 'react';
 import { Modal, Pressable, SafeAreaView, StyleSheet, Text, TextInput, View } from 'react-native';
-import { groupedGround, type ThemeColors, useStyles, useTheme } from '../theme.ts';
+import { BOX_FONT_SCALE, groupedGround, type ThemeColors, useStyles, useTheme } from '../theme.ts';
 import { Row, Section, SettingsPage } from './GroupedList.tsx';
 
 /**
@@ -48,9 +48,15 @@ export function TimeZonePickerSheet({
               style={styles.headerSide}
               testID="time-zone-cancel"
             >
-              <Text style={styles.cancel}>Cancel</Text>
+              <Text maxFontSizeMultiplier={BOX_FONT_SCALE} style={styles.cancel}>
+                Cancel
+              </Text>
             </Pressable>
-            <Text accessibilityRole="header" style={styles.title}>
+            <Text
+              accessibilityRole="header"
+              maxFontSizeMultiplier={BOX_FONT_SCALE}
+              style={styles.title}
+            >
               Add Time Zone
             </Text>
             <View style={styles.headerSide} />

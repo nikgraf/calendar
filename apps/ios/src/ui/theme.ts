@@ -46,3 +46,18 @@ export const groupedGround = (colors: ThemeColors): string =>
 
 /** Shared radii, matching the desktop's `--radius-*` tokens. */
 export const RADIUS = { control: 8, event: 6, popover: 12 } as const;
+
+/**
+ * The largest Dynamic Type scale for text whose box cannot grow — passed as
+ * `maxFontSizeMultiplier`: event and task blocks on the grid, all-day chips
+ * and "+N more", the hour gutter, the day numbers in their circles (the
+ * week strip, the timeline's header, the month), glyphs in fixed buttons
+ * ("+", the dictation mic, an avatar's initial), and the bars along the
+ * top — the calendar's header and the sheets' Cancel · title · Save rows,
+ * where the system's own bars do not grow with the text size at all. 1.35
+ * is xxxLarge, the largest standard size: the five accessibility sizes
+ * above it pushed that text out of its box, and Save off the screen.
+ * Everything else — sheet content, forms, lists, Settings, the agenda,
+ * the notices — scales fully, growing its box instead.
+ */
+export const BOX_FONT_SCALE = 1.35;

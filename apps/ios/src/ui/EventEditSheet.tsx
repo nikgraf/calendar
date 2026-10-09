@@ -21,6 +21,7 @@ import { useSheetStyles } from './editSheetShared.ts';
 import { EventEditForm } from './EventEditForm.tsx';
 import { ReminderEditForm } from './ReminderEditForm.tsx';
 import { TaskEditForm } from './TaskEditForm.tsx';
+import { BOX_FONT_SCALE } from './theme.ts';
 
 export type EditSeed = EventEditorSeed;
 
@@ -218,9 +219,13 @@ export function EventEditSheet({
           <View style={styles.header}>
             <Pressable onPress={onClose}>
               {/* A birthday's reminder chips save as they change: nothing to cancel. */}
-              <Text style={styles.cancel}>{mode === 'birthday' ? 'Done' : 'Cancel'}</Text>
+              <Text maxFontSizeMultiplier={BOX_FONT_SCALE} style={styles.cancel}>
+                {mode === 'birthday' ? 'Done' : 'Cancel'}
+              </Text>
             </Pressable>
-            <Text style={styles.title}>{title}</Text>
+            <Text maxFontSizeMultiplier={BOX_FONT_SCALE} style={styles.title}>
+              {title}
+            </Text>
             {mode === 'birthday' ||
             (mode === 'task' && taskModel.readOnly) ||
             (mode === 'event' && eventModel.readOnly) ? (
@@ -231,7 +236,9 @@ export function EventEditSheet({
                 style={busy ? styles.busy : undefined}
                 testID="event-save"
               >
-                <Text style={styles.save}>Save</Text>
+                <Text maxFontSizeMultiplier={BOX_FONT_SCALE} style={styles.save}>
+                  Save
+                </Text>
               </Pressable>
             )}
           </View>
