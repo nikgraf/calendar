@@ -2,6 +2,7 @@ import {
   Account,
   BackendError,
   type BackendClient,
+  EMPTY_SEARCH_RESULTS,
   type EventRecord,
   GeoLocation,
 } from '@calendar/core';
@@ -109,6 +110,7 @@ const makeStubClient = () => {
     respondToEvent: () => Effect.void,
     runMirrorsNow: () => Effect.void,
     saveMirror: () => fail('not stubbed'),
+    search: () => Effect.succeed(EMPTY_SEARCH_RESULTS),
     searchContacts: () => Effect.succeed([]),
     searchPlaces: ({ query }) =>
       Effect.sync(() => {
