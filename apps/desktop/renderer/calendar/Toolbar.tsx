@@ -24,14 +24,15 @@ const VIEWS: ReadonlyArray<{ label: string; value: 'day' | 'month' | 'week' }> =
 /**
  * The window's one toolbar: the drag region under the traffic lights,
  * the period title, navigation, the quick-add field, the view switcher,
- * search (not yet) and New. Everything else lives in the sidebar or the
- * side panel.
+ * search (⌘F, in the side panel) and New. Everything else lives in the
+ * sidebar or the side panel.
  */
 export function Toolbar({
   focused,
   onCapture,
   onNew,
   onParsed,
+  onSearch,
   onStep,
   onSwitchView,
   onTaskParsed,
@@ -40,6 +41,7 @@ export function Toolbar({
   onToggleSidebar,
   panelShown,
   quickAddRef,
+  searchActive,
   sidebarCollapsed,
   timeZone,
   title,
@@ -49,6 +51,8 @@ export function Toolbar({
   onCapture: (source: CaptureSource) => void;
   onNew: () => void;
   onParsed: (prefill: EventEditorPrefill) => void;
+  /** Opens the search panel, or closes it when it is open. */
+  onSearch: () => void;
   onStep: (direction: 1 | -1) => void;
   onSwitchView: (view: 'day' | 'month' | 'week') => void;
   onTaskParsed: (seed: TaskEditorSeed) => void;
@@ -58,6 +62,8 @@ export function Toolbar({
   onToggleSidebar: () => void;
   panelShown: boolean;
   quickAddRef: RefObject<HTMLInputElement | null>;
+  /** The panel shows search or a result opened from it. */
+  searchActive: boolean;
   sidebarCollapsed: boolean;
   timeZone: string;
   title: string;
@@ -128,7 +134,13 @@ export function Toolbar({
           value={view === 'day' || view === 'month' ? view : 'week'}
         />
       </div>
-      <IconButton disabled label="Search (coming soon)" style={noDrag}>
+      <IconButton
+        active={searchActive}
+        data-testid="search-toggle"
+        label="Search (⌘F)"
+        onClick={onSearch}
+        style={noDrag}
+      >
         <SearchIcon />
       </IconButton>
       <IconButton

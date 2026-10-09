@@ -16,7 +16,14 @@ import {
 } from '@calendar/core';
 import { Button } from '../../ui/Button.tsx';
 import { IconButton } from '../../ui/IconButton.tsx';
-import { MapPinIcon, RepeatIcon, UsersIcon, VideoIcon, XIcon } from '../../ui/icons.tsx';
+import {
+  ChevronLeftIcon,
+  MapPinIcon,
+  RepeatIcon,
+  UsersIcon,
+  VideoIcon,
+  XIcon,
+} from '../../ui/icons.tsx';
 import { SegmentedControl } from '../../ui/SegmentedControl.tsx';
 import { LocationMap } from '../LocationMap.tsx';
 import { MoveConfirm } from '../MoveConfirm.tsx';
@@ -30,14 +37,15 @@ const STATUS_LABEL: Record<string, string> = {
 
 /**
  * The read-first view of an event, in the side panel: a click on the
- * grid opens it, Edit opens the editor. It answers the quick questions
- * without a form — when, where, who, the meeting link, the notes — and
- * carries the two actions that need no form: RSVP and Delete (with the
- * series scope, when the event repeats).
+ * grid or a search result opens it, Edit opens the editor. It answers the
+ * quick questions without a form — when, where, who, the meeting link,
+ * the notes — and carries the two actions that need no form: RSVP and
+ * Delete (with the series scope, when the event repeats).
  */
 export function EventInspector({
   calendars,
   event,
+  onBack,
   onClose,
   onConvert,
   onEdit,
@@ -45,6 +53,8 @@ export function EventInspector({
 }: {
   calendars: ReadonlyArray<CalendarInfo>;
   event: EventRecord;
+  /** Opened from search: "Results" goes back there, and so does a delete. */
+  onBack?: (() => void) | undefined;
   onClose: () => void;
   /** Convert to a task: opens the editor in task mode. */
   onConvert: () => void;
@@ -55,7 +65,7 @@ export function EventInspector({
   const model = useEventEditorModel({
     calendars,
     confirm: moveConfirmation.request,
-    onClose,
+    onClose: onBack ?? onClose,
     seed: { event, initialDate: Temporal.PlainDate.from(utcMsToPlainDate(event.startUtc)) },
     timeZone,
   });
@@ -94,6 +104,14 @@ export function EventInspector({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col" data-testid="inspector">
+      {onBack ? (
+        <div className="px-2 pt-2">
+          <Button data-testid="inspector-back" onClick={onBack} size="sm" variant="ghost">
+            <ChevronLeftIcon size={14} />
+            Results
+          </Button>
+        </div>
+      ) : null}
       <div className="flex items-center gap-2 px-4 pt-3">
         <span
           aria-hidden

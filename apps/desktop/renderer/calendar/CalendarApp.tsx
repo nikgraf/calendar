@@ -6,6 +6,7 @@ import {
   parseNotificationTarget,
   type TaskRecord,
   Temporal,
+  toZonedDateTime,
   utcMsToPlainDate,
 } from '@calendar/core';
 import {
@@ -20,6 +21,7 @@ import {
   useGuardedMutations,
   useListColorLookup,
   useOverdueTasksStable,
+  useSearch,
   useTaskLists,
   useBirthdaysInRangeStable,
   useTaskReadOnlyLookup,
@@ -31,7 +33,7 @@ import {
   type EventEditorPrefill,
   type TaskEditorSeed,
 } from '@calendar/app-state';
-import { useEffect, useEffectEvent, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState } from 'react';
 import { desktopLanguageModel } from '../ai/desktopModel.ts';
 import { backend } from '../backend.ts';
 import { desktopTextRecognizer } from '../ai/desktopTextRecognizer.ts';
@@ -45,6 +47,7 @@ import { MonthView } from './MonthView.tsx';
 import { DragGhost } from './panel/DragGhost.tsx';
 import { EditorPanel, type EditorSeed } from './panel/EditorPanel.tsx';
 import { EventInspector } from './panel/EventInspector.tsx';
+import { SearchPanel } from './panel/SearchPanel.tsx';
 import { TodayRail } from './panel/TodayRail.tsx';
 import { Sidebar } from './sidebar/Sidebar.tsx';
 import { Toolbar } from './Toolbar.tsx';
@@ -54,16 +57,28 @@ import { HOUR_HEIGHT, useWeekStrip, WeekView } from './WeekView.tsx';
 type MainView = 'day' | 'month' | 'week';
 
 /**
- * What the side panel shows: the Today rail at rest, an event's inspector
- * after a click on the grid, or an inline editor (Edit, a slot, New, a
- * task chip, a quick-add phrase).
+ * What the side panel shows: the Today rail at rest, search (⌘F), an
+ * event's inspector after a click on the grid or a search result, or an
+ * inline editor (Edit, a slot, New, a task chip or result, a quick-add
+ * phrase). A panel opened from a search result goes back to the results
+ * when it closes (`fromSearch`).
  */
 type PanelState =
   | { readonly kind: 'rail' }
-  | { readonly event: EventRecord; readonly kind: 'inspector' }
+  | {
+      readonly kind: 'search';
+      /** Opened by ⌘F or the toolbar: the field's text is selected (typing replaces it). */
+      readonly selectText: boolean;
+    }
+  | {
+      readonly event: EventRecord;
+      readonly fromSearch?: boolean | undefined;
+      readonly kind: 'inspector';
+    }
   | {
       /** The capture row this editor came from, so a save can mark it added. */
       readonly captureRow?: string | undefined;
+      readonly fromSearch?: boolean | undefined;
       readonly kind: 'editEvent';
       readonly mode?: 'task' | undefined;
       /** Distinct per opening: a second slot click must not reuse the first draft. */
@@ -71,6 +86,7 @@ type PanelState =
       readonly seed: EditorSeed;
     }
   | {
+      readonly fromSearch?: boolean | undefined;
       readonly kind: 'editTask';
       readonly opening: number;
       readonly prefill?: TaskEditorSeed | undefined;
@@ -78,6 +94,16 @@ type PanelState =
     };
 
 const RAIL: PanelState = { kind: 'rail' };
+/** Back from a search result: the same results, the text left as it was. */
+const RESULTS: PanelState = { kind: 'search', selectText: false };
+
+/** Whether the panel is search or something opened from its results. */
+const isSearching = (panel: PanelState): boolean =>
+  panel.kind === 'search' || (panel.kind !== 'rail' && panel.fromSearch === true);
+
+/** Where closing a panel leads: from a search result back to the results, else the rail. */
+const backFrom = (panel: PanelState): PanelState =>
+  panel.kind !== 'search' && isSearching(panel) ? RESULTS : RAIL;
 
 let openings = 0;
 /** A fresh identity for an editor opening; the panel is keyed by it. */
@@ -152,6 +178,19 @@ function CalendarBody({
   };
 
   const [panel, setPanel] = useState<PanelState>(RAIL);
+  const searching = isSearching(panel);
+  // Search lives here, not in its panel: it stays current while a result
+  // is open (an edit or a delete made there updates it) and is there at
+  // once on the way back. Closed, it searches nothing; the text is kept
+  // for the next ⌘F.
+  const [searchText, setSearchText] = useState('');
+  const search = useSearch(searching ? searchText : '', timeZone);
+  const [searchFocus, setSearchFocus] = useState(0);
+  const searchScroll = useRef(0);
+  const readSearchScroll = useCallback(() => searchScroll.current, []);
+  const saveSearchScroll = useCallback((top: number) => {
+    searchScroll.current = top;
+  }, []);
   const [viewBirthday, setViewBirthday] = useState<BirthdayOccurrence | null>(null);
   const quickAddRef = useRef<HTMLInputElement>(null);
   const editing = panel.kind === 'editEvent' || panel.kind === 'editTask';
@@ -257,10 +296,21 @@ function CalendarBody({
       // which App opens over the calendar without it knowing.
       const anyDialog = dialogOpen || isDialogOpen();
       if (key.key === 'Escape') {
-        // Escape leaves the panel's inspector or editor, from anywhere in
-        // the window but a dialog (which takes its own Escape first).
+        // Escape leaves the panel's inspector, editor or search, from
+        // anywhere in the window but a dialog (which takes its own Escape
+        // first); a result opened from search goes back to the results.
         if (!anyDialog && panel.kind !== 'rail') {
-          setPanel(RAIL);
+          setPanel(backFrom(panel));
+        }
+        return;
+      }
+      if (command && key.key.toLowerCase() === 'f') {
+        key.preventDefault();
+        // ⌘F opens search, or takes it back to its field — not from under
+        // a dialog, and not over an open editor, whose draft it would drop.
+        if (!anyDialog && !editing) {
+          setPanel({ kind: 'search', selectText: true });
+          setSearchFocus((count) => count + 1);
         }
         return;
       }
@@ -292,7 +342,7 @@ function CalendarBody({
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [dialogOpen, editing, focused, goToday, panel.kind, step]);
+  }, [dialogOpen, editing, focused, goToday, panel, step]);
 
   // ⌘V on the calendar itself: an email or a screenshot becomes events to
   // review. Not while a dialog is open or a field has focus — those pastes
@@ -317,7 +367,29 @@ function CalendarBody({
     return () => window.removeEventListener('paste', onPaste);
   }, [capture, dialogOpen]);
 
-  const closePanel = () => setPanel(RAIL);
+  const closePanel = () => setPanel(backFrom(panel));
+  const openSearch = () => {
+    setPanel({ kind: 'search', selectText: true });
+    setSearchFocus((count) => count + 1);
+  };
+  // A result: its day in the grid, and the occurrence in the inspector. A
+  // timed one out of the time grid's view is scrolled into it, so its
+  // outlined block shows (the grid rests on the morning).
+  const openSearchEvent = (event: EventRecord) => {
+    setFocused(eventStartDay(event, timeZone));
+    setPanel({ event, fromSearch: true, kind: 'inspector' });
+    const scroller = scrollRef.current;
+    if (scroller && !event.isAllDay && view !== 'month') {
+      const start = toZonedDateTime(event.startUtc, timeZone);
+      const top = (start.hour + start.minute / 60) * HOUR_HEIGHT;
+      if (
+        top < scroller.scrollTop ||
+        top + HOUR_HEIGHT > scroller.scrollTop + scroller.clientHeight
+      ) {
+        scroller.scrollTo({ top: Math.max(0, top - HOUR_HEIGHT) });
+      }
+    }
+  };
   /** The event open in the panel: its block carries the grid's one outline. */
   const selectedEvent =
     panel.kind === 'inspector'
@@ -333,7 +405,7 @@ function CalendarBody({
         ? `event:${panel.seed.event?.id ?? 'new'}:${String(panel.opening)}`
         : panel.kind === 'editTask'
           ? `task:${panel.task?.id ?? 'new'}:${String(panel.opening)}`
-          : 'rail';
+          : panel.kind;
 
   return (
     <div className="flex h-screen flex-col bg-canvas text-ink">
@@ -342,6 +414,7 @@ function CalendarBody({
         onCapture={capture.start}
         onNew={() => openEditor({ initialDate: focused, initialHour: 9 })}
         onParsed={openPrefill}
+        onSearch={() => (panel.kind === 'search' ? setPanel(RAIL) : openSearch())}
         onStep={step}
         onSwitchView={changeView}
         onTaskParsed={(prefill) => setPanel({ kind: 'editTask', opening: nextOpening(), prefill })}
@@ -350,6 +423,7 @@ function CalendarBody({
         onToggleSidebar={() => updatePrefs({ sidebarCollapsed: !sidebarCollapsed })}
         panelShown={railShown}
         quickAddRef={quickAddRef}
+        searchActive={searching}
         sidebarCollapsed={sidebarCollapsed}
         timeZone={timeZone}
         title={title}
@@ -436,13 +510,33 @@ function CalendarBody({
                 onOpenEvent={(event) => setPanel({ event, kind: 'inspector' })}
                 timeZone={timeZone}
               />
+            ) : panel.kind === 'search' ? (
+              <SearchPanel
+                calendars={calendars}
+                focusSignal={searchFocus}
+                onClose={() => setPanel(RAIL)}
+                onOpenEvent={openSearchEvent}
+                onOpenTask={(task) =>
+                  setPanel({ fromSearch: true, kind: 'editTask', opening: nextOpening(), task })
+                }
+                onTextChange={setSearchText}
+                readScrollTop={readSearchScroll}
+                saveScrollTop={saveSearchScroll}
+                search={search}
+                selectText={panel.selectText}
+                taskLists={taskLists}
+                text={searchText}
+                timeZone={timeZone}
+              />
             ) : panel.kind === 'inspector' ? (
               <EventInspector
                 calendars={calendars}
                 event={panel.event}
-                onClose={closePanel}
+                onBack={panel.fromSearch ? () => setPanel(RESULTS) : undefined}
+                onClose={() => setPanel(RAIL)}
                 onConvert={() =>
                   setPanel({
+                    fromSearch: panel.fromSearch,
                     kind: 'editEvent',
                     mode: 'task',
                     opening: nextOpening(),
@@ -451,6 +545,7 @@ function CalendarBody({
                 }
                 onEdit={() =>
                   setPanel({
+                    fromSearch: panel.fromSearch,
                     kind: 'editEvent',
                     opening: nextOpening(),
                     seed: { event: panel.event, initialDate: focused },
