@@ -71,7 +71,7 @@ export function AppleCalendarSection() {
           {lists.length > 0 ? `: ${lists.map((calendar) => calendar.summary).join(', ')}` : ''}
         </p>
       ) : null}
-      {note ? <p className="mt-2 text-sm text-red-600">{note}</p> : null}
+      {note ? <p className="mt-2 text-sm text-danger">{note}</p> : null}
       {!connected && status !== 'unavailable' && status !== 'restricted' ? (
         <button
           className="mt-3 rounded-lg bg-primary px-3 py-1.5 text-sm font-medium text-on-primary hover:bg-primary-hover disabled:opacity-50"

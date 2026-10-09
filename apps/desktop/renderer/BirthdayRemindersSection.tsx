@@ -126,7 +126,7 @@ export function BirthdayRemindersSection() {
         </div>
       ) : null}
       {notice ? (
-        <p className="mt-3 text-sm text-amber-700" data-testid="birthday-notice" role="status">
+        <p className="mt-3 text-sm text-warning" data-testid="birthday-notice" role="status">
           {notice}
         </p>
       ) : null}

@@ -4,10 +4,10 @@ import { useEffect, useId, useState } from 'react';
 import { SuggestionList } from './SuggestionList.tsx';
 
 const STATUS_DOT: Record<Attendee['responseStatus'], string> = {
-  accepted: 'bg-green-500',
-  declined: 'bg-red-500',
+  accepted: 'bg-success',
+  declined: 'bg-danger',
   needsAction: 'bg-hairline-strong',
-  tentative: 'bg-amber-400',
+  tentative: 'bg-warning',
 };
 
 const contactsStatus = (): Promise<string> =>
