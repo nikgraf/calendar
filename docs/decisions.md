@@ -463,8 +463,9 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   for "All events", while a stored exception keeps its times and stays
   busy; everything from the split for "This and following", which is
   "All events" from the first occurrence; nothing of a series with
-  fixed RDATE dates, since a drawn row does not say what placed it and
-  the fixed ones stay put through both edits, and nothing of a series
+  fixed RDATE dates or a clock-pinning BYHOUR rule, since a drawn row
+  does not say what placed it and those stay put through both edits,
+  and nothing of a series
   whose master is not here — an Apple series never is, its rows being
   read through EventKit, so an Apple series edit searches around its
   own occurrences; too busy is the safe side). It works without Apple

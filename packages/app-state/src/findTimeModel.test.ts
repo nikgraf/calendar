@@ -25,6 +25,7 @@ const occurrence = (originalStartUtc: number, id = `series__${originalStartUtc}`
 
 const MASTER = { recurrence: ['RRULE:FREQ=DAILY'], startUtc: 1000 };
 const FIXED = { recurrence: ['RRULE:FREQ=WEEKLY', 'RDATE:20261013T090000Z'], startUtc: 1000 };
+const PINNED = { recurrence: ['RRULE:FREQ=DAILY;BYHOUR=9;BYMINUTE=0'], startUtc: 1000 };
 
 describe('rescheduledEventExclusion', () => {
   const first = occurrence(1000);
@@ -97,5 +98,7 @@ describe('rescheduledEventExclusion', () => {
     // and the fixed ones stay put through a shift and through a split.
     expect(freed(rescheduledEventExclusion(edited, 'series', FIXED)!)).toEqual([]);
     expect(freed(rescheduledEventExclusion(edited, 'following', FIXED)!)).toEqual([]);
+    // A rule that pins the clock keeps its occurrences where they are too.
+    expect(freed(rescheduledEventExclusion(edited, 'series', PINNED)!)).toEqual([]);
   });
 });
