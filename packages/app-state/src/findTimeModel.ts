@@ -12,12 +12,43 @@ import {
   finderWindowOf,
   type FindSlotsConstraints,
   type FreeSlot,
+  type RecurringScope,
   withFinderBounds,
   withFinderDays,
   withFinderWindow,
 } from '@calendar/core';
 import { useEffect, useRef, useState } from 'react';
 import { useToday } from './hooks.ts';
+
+/**
+ * Rows the finder must not count as busy: the event being rescheduled.
+ * Its own row always; for a series edit, the occurrences the edit
+ * covers — all of them for "All events", this one and the later ones
+ * for "This and following" (the earlier ones stay where they are when
+ * the series splits), only this one for "This event".
+ */
+export const rescheduledEventExclusion = (
+  existing: EventRecord | undefined,
+  scope: RecurringScope,
+): ((event: EventRecord) => boolean) | undefined => {
+  if (!existing) {
+    return undefined;
+  }
+  const masterId = existing.recurringEventId;
+  const from = existing.originalStartUtc ?? existing.startUtc;
+  return (event) => {
+    if (event.accountId !== existing.accountId || event.calendarId !== existing.calendarId) {
+      return false;
+    }
+    if (event.id === existing.id) {
+      return true;
+    }
+    if (masterId === undefined || scope === 'instance' || event.recurringEventId !== masterId) {
+      return false;
+    }
+    return scope === 'series' || (event.originalStartUtc ?? event.startUtc) >= from;
+  };
+};
 
 /**
  * The event form's "Find a time", shared by both shells: a few presets
@@ -29,6 +60,7 @@ import { useToday } from './hooks.ts';
  */
 export const useFindTimeModel = ({
   backend,
+  contextKey,
   durationMinutes,
   excludeEvent,
   model,
@@ -36,9 +68,14 @@ export const useFindTimeModel = ({
   timeZone,
 }: {
   readonly backend: BackendClient;
+  /**
+   * Names what `excludeEvent` depends on (the series edit's scope): when
+   * it changes, slots found under the old exclusion are dropped.
+   */
+  readonly contextKey?: string | undefined;
   /** The form's current duration (its start to its end), the finder's starting one. */
   readonly durationMinutes: number;
-  /** Rows that are not busy time: the event being rescheduled, so its own slot is free to it. */
+  /** Rows that are not busy time: the event being rescheduled (`rescheduledEventExclusion`). */
   readonly excludeEvent?: ((event: EventRecord) => boolean) | undefined;
   readonly model: LanguageModel;
   /** A phrase named what the time is for: the form may take it as its title. */
@@ -64,13 +101,28 @@ export const useFindTimeModel = ({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  /** A changed constraint drops the slots found for the old ones, and any answer still coming. */
-  const update = (next: FindSlotsConstraints) => {
+  /** Drops the slots on show and any answer still coming; nothing is busy after it. */
+  const invalidate = () => {
     request.current += 1;
-    setConstraints(next);
     setSlots(null);
     setError(null);
+    setBusy(false);
   };
+  /** A changed constraint drops the slots found for the old ones. */
+  const update = (next: FindSlotsConstraints) => {
+    invalidate();
+    setConstraints(next);
+  };
+  // The exclusion changed under the slots (the scope control): they were
+  // found with other rows free.
+  const seenContext = useRef(contextKey);
+  useEffect(() => {
+    if (seenContext.current !== contextKey) {
+      seenContext.current = contextKey;
+      invalidate();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only a changed key invalidates
+  }, [contextKey]);
 
   const search = async () => {
     const mine = ++request.current;
@@ -131,8 +183,7 @@ export const useFindTimeModel = ({
     bounds: finderBoundsOf(constraints),
     busy,
     close: () => {
-      request.current += 1;
-      setBusy(false);
+      invalidate();
       setOpen(false);
     },
     constraints,
