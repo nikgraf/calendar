@@ -471,6 +471,28 @@ const MODERN_TO_LEGACY: Readonly<Record<string, string>> = Object.fromEntries(
 /** The current IANA name for a stored id, whichever spelling the device kept. */
 export const canonicalZoneId = (id: string): string => LEGACY_TO_MODERN[id] ?? id;
 
+/**
+ * IANA's links to Etc/UTC. The catalog offers only `UTC`, but a device can
+ * report any of these as its own zone (a host set to UTC often says
+ * `Etc/UTC`); they are one zone. Kept out of LEGACY_TO_MODERN, whose
+ * reverse map picks the spelling an engine falls back to.
+ */
+const UTC_LINKS: ReadonlySet<string> = new Set([
+  'Etc/UCT',
+  'Etc/UTC',
+  'Etc/Universal',
+  'Etc/Zulu',
+  'UCT',
+  'Universal',
+  'Zulu',
+]);
+
+/** Equal for two ids naming the same zone: legacy spellings and UTC's links compare as one. */
+export const zoneKey = (id: string): string => {
+  const canonical = canonicalZoneId(id);
+  return UTC_LINKS.has(canonical) ? 'UTC' : canonical;
+};
+
 /** true when Temporal (and so tzdata) knows the zone id. */
 export const isValidTimeZone = (id: string): boolean => {
   try {
@@ -572,8 +594,6 @@ export interface TimeZoneMatch {
   readonly region: string;
 }
 
-const MAX_MATCHES = 50;
-
 const normalize = (value: string): string => value.toLowerCase().replaceAll('_', ' ');
 
 const words = (value: string): ReadonlyArray<string> => normalize(value).split(/[\s/]+/);
@@ -582,8 +602,9 @@ const words = (value: string): ReadonlyArray<string> => normalize(value).split(/
  * Picker search: a case- and underscore-insensitive word-prefix match on
  * the city, the region and the raw id. City matches rank first, then
  * region matches, then anything else; ties keep catalog order. An empty
- * query lists everything (capped). `exclude` drops the zones already
- * picked. `ids` defaults to the catalog as this engine accepts it.
+ * query lists the whole catalog — the pickers scroll it, and typing
+ * narrows it. `exclude` drops the zones already picked. `ids` defaults to
+ * the catalog as this engine accepts it.
  */
 export const searchTimeZones = (
   query: string,
@@ -613,8 +634,5 @@ export const searchTimeZones = (
       ranked.push({ match, rank });
     }
   }
-  return ranked
-    .sort((a, b) => a.rank - b.rank)
-    .slice(0, MAX_MATCHES)
-    .map((entry) => entry.match);
+  return ranked.sort((a, b) => a.rank - b.rank).map((entry) => entry.match);
 };

@@ -13,10 +13,18 @@ tags:
     id: 'time-zones'
 - assertVisible:
     id: 'time-zones-device-only'
+# Nothing stored: the iPhone's own zone is the one row, and the primary.
+- assertVisible:
+    id: 'time-zone-row-device-primary'
 # Honolulu and Kolkata never observe DST and neither is a CI or developer
 # device zone, so "noon Honolulu = 3:30 AM Kolkata" holds on any host.
 - tapOn:
     id: 'time-zone-add'
+# The sheet opens on the whole catalog, its first zone at the top.
+- extendedWaitUntil:
+    visible:
+      id: 'time-zone-option-Africa-Abidjan'
+    timeout: 5000
 - tapOn:
     id: 'time-zone-search'
 - inputText: 'Honolulu'
@@ -59,8 +67,9 @@ tags:
     text: '.*3:30.AM'
 # Reopen: the choice was stored (device-local SQLite), not just React
 # state. Then leave the settings as found for the next flow: removing the
-# primary promotes the device zone back. A zone is removed the iOS way,
-# by swiping its row left and tapping the action that slides in.
+# primary promotes the device zone back (it is never removed itself). A
+# zone is removed the iOS way, by swiping its row left and tapping the
+# action that slides in.
 - runFlow: ../common/open-settings.yaml
 - runFlow:
     file: ../common/open-settings-page.yaml
@@ -86,6 +95,8 @@ tags:
     notVisible:
       id: 'time-zone-row-Pacific-Honolulu-primary'
     timeout: 5000
+- assertVisible:
+    id: 'time-zone-row-device-primary'
 - runFlow: ../common/close-settings.yaml
 - assertNotVisible:
     id: 'hour-secondary-12'

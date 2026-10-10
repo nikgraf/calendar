@@ -67,6 +67,8 @@ export interface BackendAtoms {
   readonly birthdaysInRange: ReturnType<typeof buildAtoms>['birthdaysInRange'];
   readonly calendars: ReturnType<typeof buildAtoms>['calendars'];
   readonly contactsSearch: ReturnType<typeof buildAtoms>['contactsSearch'];
+  /** The zone this device is in, re-read once a minute; what the time zones' device entry resolves to. */
+  readonly deviceZone: Atom.Atom<string>;
   readonly eventById: ReturnType<typeof buildAtoms>['eventById'];
   readonly eventNotificationSettings: ReturnType<typeof buildAtoms>['eventNotificationSettings'];
   readonly eventsInRange: ReturnType<typeof buildAtoms>['eventsInRange'];
@@ -325,16 +327,17 @@ const buildAtoms = (client: BackendClient, deviceZone: Atom.Atom<string>) => {
     )
     .pipe(Atom.withReactivity([deviceSettingsKey('eventNotifications')]));
 
-  // Device-local time zones; refetched when they are written and when the
-  // device's zone changes (nothing stored reads as the device zone).
+  // Device-local time zones as stored entries; refetched only when they
+  // are written. The device entry resolves against `deviceZone` in the
+  // hook (`useTimeZones`), so a zone change after a flight redraws the
+  // grid without a read.
   const timeZoneSettings = runtime
-    .atom((get) => {
-      get(deviceZone);
-      return Effect.gen(function* () {
+    .atom(
+      Effect.gen(function* () {
         const backend = yield* AppBackend;
         return yield* backend.getTimeZoneSettings(undefined);
-      });
-    })
+      }),
+    )
     .pipe(Atom.withReactivity([deviceSettingsKey('timeZones')]));
 
   // Device-local view preferences; refetched only when they are written.
@@ -518,6 +521,7 @@ const buildAtoms = (client: BackendClient, deviceZone: Atom.Atom<string>) => {
     birthdaysInRange,
     calendars,
     contactsSearch,
+    deviceZone,
     eventById,
     eventNotificationSettings,
     eventsInRange,

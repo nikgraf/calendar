@@ -9,6 +9,7 @@ import {
   searchTimeZones,
   TIME_ZONE_IDS,
   zoneCity,
+  zoneKey,
   zoneRegion,
   zoneSlug,
 } from './zones.ts';
@@ -100,6 +101,16 @@ describe('zones catalog', () => {
   });
 });
 
+describe('zoneKey', () => {
+  it('compares legacy spellings and the links of UTC as one zone', () => {
+    expect(zoneKey('Asia/Calcutta')).toBe(zoneKey('Asia/Kolkata'));
+    expect(zoneKey('Etc/UTC')).toBe('UTC');
+    expect(zoneKey('Zulu')).toBe('UTC');
+    expect(zoneKey('UTC')).toBe('UTC');
+    expect(zoneKey('Europe/London')).not.toBe('UTC');
+  });
+});
+
 describe('searchTimeZones', () => {
   it('ranks city prefixes first', () => {
     expect(searchTimeZones('kolk')[0]?.id).toBe('Asia/Kolkata');
@@ -114,9 +125,11 @@ describe('searchTimeZones', () => {
     expect(searchTimeZones('asia/kol')[0]?.id).toBe('Asia/Kolkata');
   });
 
-  it('lists everything for an empty query, capped', () => {
-    expect(searchTimeZones('').length).toBe(50);
-    expect(searchTimeZones('   ').length).toBe(50);
+  it('lists the whole catalog for an empty query, in catalog order', () => {
+    const all = searchTimeZones('');
+    expect(all.map((match) => match.id)).toEqual(allTimeZoneIds());
+    expect(searchTimeZones('   ')).toEqual(all);
+    expect(searchTimeZones('', ['UTC'])).toHaveLength(all.length - 1);
   });
 
   it('drops excluded zones', () => {

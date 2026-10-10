@@ -121,6 +121,28 @@ export function Section({
   );
 }
 
+/**
+ * One row of a card a virtualized list draws, where a Section cannot wrap
+ * the rows (it would render them all): the first row takes the card's
+ * rounded top and draws no separator, the last its rounded bottom.
+ */
+export function CardRow({
+  children,
+  first,
+  last,
+}: {
+  children: ReactNode;
+  first: boolean;
+  last: boolean;
+}) {
+  const styles = useStyles(makeStyles);
+  return (
+    <View style={[styles.cardRow, first && styles.cardTop, last && styles.cardBottom]}>
+      <FirstRowContext.Provider value={first}>{children}</FirstRowContext.Provider>
+    </View>
+  );
+}
+
 /** A paragraph under a section; `tone="danger"` for a failure the page reports. */
 export function Footer({
   children,
@@ -777,6 +799,19 @@ const makeStyles = (colors: ThemeColors) =>
       borderRadius: 20,
       marginHorizontal: 16,
       overflow: 'hidden',
+    },
+    cardBottom: {
+      borderBottomLeftRadius: 20,
+      borderBottomRightRadius: 20,
+    },
+    cardRow: {
+      backgroundColor: colors.surface,
+      marginHorizontal: 16,
+      overflow: 'hidden',
+    },
+    cardTop: {
+      borderTopLeftRadius: 20,
+      borderTopRightRadius: 20,
     },
     centered: {
       textAlign: 'center',

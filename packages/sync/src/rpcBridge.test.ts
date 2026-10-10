@@ -74,7 +74,7 @@ const stubHandlers: BackendHandlers = {
   getEventsInRange: () => Effect.succeed([]),
   getOverdueTasks: () => Effect.succeed([]),
   getTasksInRange: () => Effect.succeed([]),
-  getTimeZoneSettings: () => Effect.succeed({ primary: 'UTC', zones: ['UTC'] }),
+  getTimeZoneSettings: () => Effect.succeed({ primary: 'device', zones: ['device'] }),
   getViewPreferences: () => Effect.succeed({ allDayLaneCollapsed: false }),
   importSettings: notStubbed,
   listAccounts: () => Effect.succeed([account]),

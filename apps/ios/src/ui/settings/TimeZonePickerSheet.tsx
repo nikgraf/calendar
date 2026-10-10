@@ -1,16 +1,26 @@
 import { searchTimeZones, zoneSlug } from '@calendar/core';
 import { useState } from 'react';
-import { Modal, Pressable, SafeAreaView, StyleSheet, Text, TextInput, View } from 'react-native';
+import {
+  FlatList,
+  Modal,
+  Pressable,
+  SafeAreaView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
 import { BOX_FONT_SCALE, groupedGround, type ThemeColors, useStyles, useTheme } from '../theme.ts';
-import { Row, Section, SettingsPage } from './GroupedList.tsx';
+import { CardRow, Footer, Row } from './GroupedList.tsx';
 
 /**
- * A search box over the zone catalog; a tap on a row picks it. The rows
- * live in a scroll view that keeps taps alive with
- * keyboardShouldPersistTaps (SettingsPage), and the General page's own
- * scroll view needs the same flag: this Modal is its child in the React
- * tree, so the responder capture that dismisses the keyboard runs there
- * first (it ate the first row tap).
+ * The zone catalog in a sheet: the whole list scrolls under a search box
+ * pinned above it, and typing narrows it; a tap on a row picks it. The
+ * list is virtualized (the catalog is a few hundred zones) and keeps taps
+ * alive with keyboardShouldPersistTaps, and the General page's own scroll
+ * view needs the same flag: this Modal is its child in the React tree,
+ * so the responder capture that dismisses the keyboard runs there first
+ * (it ate the first row tap).
  */
 export function TimeZonePickerSheet({
   exclude,
@@ -62,35 +72,46 @@ export function TimeZonePickerSheet({
             <View style={styles.headerSide} />
           </View>
         </SafeAreaView>
-        <SettingsPage testID="time-zone-picker">
-          <TextInput
-            autoCapitalize="none"
-            autoCorrect={false}
-            autoFocus
-            clearButtonMode="while-editing"
-            onChangeText={setQuery}
-            placeholder="City or Region"
-            placeholderTextColor={colors['text-secondary']}
-            returnKeyType="search"
-            style={styles.search}
-            testID="time-zone-search"
-            value={query}
-          />
-          <Section>
-            {matches.map((match) => (
+        <TextInput
+          autoCapitalize="none"
+          autoCorrect={false}
+          autoFocus
+          clearButtonMode="while-editing"
+          onChangeText={setQuery}
+          placeholder="City or Region"
+          placeholderTextColor={colors['text-secondary']}
+          returnKeyType="search"
+          style={styles.search}
+          testID="time-zone-search"
+          value={query}
+        />
+        <FlatList
+          automaticallyAdjustKeyboardInsets
+          contentContainerStyle={styles.list}
+          data={matches}
+          initialNumToRender={20}
+          keyboardDismissMode="on-drag"
+          keyboardShouldPersistTaps="handled"
+          keyExtractor={(match) => match.id}
+          ListEmptyComponent={
+            <Footer testID="time-zone-no-match">No time zone matches “{query.trim()}”.</Footer>
+          }
+          renderItem={({ index, item }) => (
+            <CardRow first={index === 0} last={index === matches.length - 1}>
               <Row
-                key={match.id}
                 onPress={() => {
                   setQuery('');
-                  onPick(match.id);
+                  onPick(item.id);
                 }}
-                subtitle={match.id}
-                testID={`time-zone-option-${zoneSlug(match.id)}`}
-                title={match.city}
+                subtitle={item.id}
+                testID={`time-zone-option-${zoneSlug(item.id)}`}
+                title={item.city}
               />
-            ))}
-          </Section>
-        </SettingsPage>
+            </CardRow>
+          )}
+          style={styles.listView}
+          testID="time-zone-picker"
+        />
       </View>
     </Modal>
   );
@@ -111,6 +132,13 @@ const makeStyles = (colors: ThemeColors) =>
     },
     headerSide: {
       minWidth: 64,
+    },
+    list: {
+      paddingBottom: 48,
+      paddingTop: 16,
+    },
+    listView: {
+      flex: 1,
     },
     search: {
       backgroundColor: colors.surface,

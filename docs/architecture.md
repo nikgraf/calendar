@@ -791,13 +791,23 @@ gateway carries all of it. Details, limits and the threat model:
   checklist, never tokens; an import never removes anything and never
   connects an Apple provider; visibility for rows not synced yet is
   parked in `importedVisibility` and applied after each list pass.
-- **Time zones**: up to three IANA zones per device, one primary, which
+- **Time zones**: up to three entries per device, one primary, which
   replaces the device zone for everything the UI draws (both roots gate
   on `useTimeZones()`); the others annotate the hour gutter and tall
-  blocks. The catalog is a checked-in canonical list; a device stores the
-  spelling its engine validates (`runtimeZoneId`) and displays through
-  `canonicalZoneId`. Notifications, EventKit's floating zone and timed
-  reminders stay on the device zone, read on every pass.
+  blocks. One entry is the word `device`: this device's own zone, kept as
+  the word and resolved against the OS on every read (`resolveTimeZones`
+  over the once-a-minute device zone atom), so the grid follows a flight
+  and an exported file reads right on another device. It is always
+  present and never removed (migration 11 and the document parser give an
+  older list one through `withDeviceEntry`); a fixed zone the device is in
+  right now draws once (`zoneKey` also folds UTC's links). A settings
+  file whose zones would not fit with the entry fails to parse rather
+  than losing one. The catalog is a checked-in canonical list; a
+  device stores the spelling its engine validates (`runtimeZoneId`) and
+  displays through `canonicalZoneId`. Both pickers open on the whole
+  catalog and narrow it as the user types (`searchTimeZones`, no cap): a
+  capped-height dropdown on the Mac, a virtualized list on iOS. Notifications, EventKit's floating
+  zone and timed reminders stay on the device zone, read on every pass.
 - **Local notifications**: `LocalNotifications` (packages/sync) runs its
   own loop — outside the sync pass — over two producers, `loadEventPlans`
   (visible calendars, a week ahead, `useDefault` resolved against the

@@ -105,6 +105,12 @@ export const ListIcon = (props: IconProps) => (
     <path d="M5 6h14M5 12h14M5 18h9" />
   </Icon>
 );
+/** A navigation arrow: the zone this device is in, which moves with it. */
+export const LocationIcon = (props: IconProps) => (
+  <Icon {...props}>
+    <path d="M3 11l19-9-9 19-2-8z" />
+  </Icon>
+);
 export const MapPinIcon = (props: IconProps) => (
   <Icon {...props}>
     <path d="M12 21s7-6.2 7-11a7 7 0 0 0-14 0c0 4.8 7 11 7 11z" />
