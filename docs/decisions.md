@@ -3029,3 +3029,27 @@ then iOS (both in `todo.md`).
       task conversion (its draft always carries the day); and a location
       a phrase set gets the one-time map lookup an opening location gets
       (`givenLocation`).
+
+### Unsynced changes say why (2026-10-10)
+
+- [x] An unsynced change shows why its last attempt failed, and a task
+      change names its task — done (`todo/gone-task-ops`). Two completed
+      Google tasks sat on a TestFlight iPhone at "retrying (40×)" under
+      their raw ids, after the owner had removed them elsewhere. The
+      queue records each failure in `pending_ops.last_error`, but neither
+      app showed it (the drain's comment said the panel did), and a
+      TestFlight build's database cannot be read from a Mac, so the cause
+      stayed on the phone. Ruled out on the live account first: a PATCH
+      of a task deleted on Google answers 200 with `deleted: true` (the
+      op settles), a task moved to another list or sitting in a deleted
+      list answers 404 (`gone`); the real engine against the real API
+      settled both "deleted elsewhere, completed here" orders on the
+      first drain. Only a network failure, a 5xx, a 429 / rate-limit 403,
+      a token refresh other than `invalid_grant`, or a defect retries.
+      **`pendingOpLabel` returns `reason`**: the first line of the
+      recorded error, capped at 160 characters, only for a retried op
+      that is not parked. iOS adds it as the row's second subtitle line;
+      desktop's sync footer as a second truncated line, full text in its
+      tooltip. **`listPendingOps` names task ops**: the title the op sets
+      (`taskTitle`), else the local row's, else nothing (the id, as
+      before — a pull that removed the row leaves no title).

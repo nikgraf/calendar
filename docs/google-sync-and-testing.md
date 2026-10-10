@@ -179,6 +179,11 @@ invariants.
   un-completing must clear `completed` via `status: 'needsAction'`.
 - A 403 insufficient-scope (grants that predate the tasks scope) disables
   tasks for the account instead of retrying.
+- A write to a task that is gone (verified 2026-10-10): PATCH of a task
+  deleted on Google answers **200** with `deleted: true` (the edit lands
+  on the tombstone; `mapGcalTask` maps it to null and the op settles), a
+  task moved to another list answers **404** at its old list, and so
+  does any task of a deleted list.
 
 ### Exercised end to end: the fake Google server
 
@@ -629,6 +634,15 @@ Flakiness lessons (each caused a real CI failure — keep them enforced):
   the renderer throttled — `cdp.send('Emulation.setCPUThrottlingRate',
   { rate: 6 })`, also 12× — and never commit the throttle: it made #146's
   race and the stale inspector fail within a few rounds.
+- **Measure layout only once the last write is drawn.** SQLite has a
+  reminder's move before the all-day lane redraws it, and the lane's
+  height moves the grid below it. The overdue-drop test measured the grid
+  right after a lane move that had only been polled in SQLite, and on CI
+  the row collapsed under its drag: dropped at 11:30, not 11:00 (one
+  24 px row is half an hour). A test whose successor measures geometry
+  waits for its own result on screen (`reminders.e2e.ts` waits for the
+  chip in its new column). At 12× throttling the lane is still a row
+  taller when SQLite shows the move.
 - React inputs need the native value setter + `input`/`change` event
   dispatch; `<select>` likewise (`HTMLSelectElement` prototype setter).
 - Tests share one app instance and run in file order — later tests must
