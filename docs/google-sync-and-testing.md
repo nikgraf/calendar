@@ -179,6 +179,11 @@ invariants.
   un-completing must clear `completed` via `status: 'needsAction'`.
 - A 403 insufficient-scope (grants that predate the tasks scope) disables
   tasks for the account instead of retrying.
+- A write to a task that is gone (verified 2026-10-10): PATCH of a task
+  deleted on Google answers **200** with `deleted: true` (the edit lands
+  on the tombstone; `mapGcalTask` maps it to null and the op settles), a
+  task moved to another list answers **404** at its old list, and so
+  does any task of a deleted list.
 
 ### Exercised end to end: the fake Google server
 

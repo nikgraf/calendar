@@ -4,8 +4,21 @@ import {
   makeFakeContactsClient,
   type ContactsClientShape,
 } from '@calendar/contacts';
-import { Account, APPLE_REMINDERS_ACCOUNT_ID, type BirthdayReminderSettings } from '@calendar/core';
-import { AccountRepo, DeviceSettingsRepo, runMigrations } from '@calendar/db';
+import {
+  Account,
+  APPLE_REMINDERS_ACCOUNT_ID,
+  type BirthdayReminderSettings,
+  PendingOp,
+  TaskListInfo,
+  TaskRecord,
+} from '@calendar/core';
+import {
+  AccountRepo,
+  DeviceSettingsRepo,
+  PendingOpRepo,
+  runMigrations,
+  TaskRepo,
+} from '@calendar/db';
 import {
   makeFakeRemindersClient,
   RemindersClient,
@@ -298,4 +311,80 @@ describe('setBirthdayReminderSettings', () => {
       expect(ensurePermission).toHaveBeenCalledTimes(2);
     }).pipe(Effect.provide(layer));
   });
+});
+
+const listPendingOps = commonBackendHandlers.listPendingOps(undefined) as Effect.Effect<
+  ReadonlyArray<{ readonly id: string; readonly title?: string | undefined }>,
+  unknown,
+  PendingOpRepo | TaskRepo
+>;
+
+const queueLayer = Layer.mergeAll(AccountRepo.layer, PendingOpRepo.layer, TaskRepo.layer).pipe(
+  Layer.provideMerge(Layer.effectDiscard(runMigrations)),
+  Layer.provideMerge(SqliteClient.layer({ filename: ':memory:' })),
+  Layer.provideMerge(reactivityLayer),
+);
+const taskOp = (id: string, kind: PendingOp['kind'], taskId: string, extra = {}) =>
+  new PendingOp({
+    accountId: 'acc-1',
+    attempts: 0,
+    calendarId: 'list-1',
+    createdAt: 1,
+    eventId: taskId,
+    id,
+    kind,
+    nextAttemptAt: 0,
+    taskListId: 'list-1',
+    ...extra,
+  });
+
+describe('listPendingOps', () => {
+  it.effect('names a task op by the title it sets, else by its row, else not at all', () =>
+    Effect.gen(function* () {
+      yield* (yield* AccountRepo).upsert(
+        new Account({
+          contactsEnabled: false,
+          createdAt: 1,
+          email: 'nik@nikgraf.com',
+          id: 'acc-1',
+          provider: 'google',
+          status: 'ok',
+          tasksEnabled: true,
+        }),
+      );
+      const tasks = yield* TaskRepo;
+      yield* tasks.upsertLists(
+        [
+          new TaskListInfo({
+            accountId: 'acc-1',
+            id: 'list-1',
+            isVisible: true,
+            provider: 'google',
+            title: 'My Tasks',
+          }),
+        ],
+        1,
+      );
+      yield* tasks.upsertTasks(
+        [
+          new TaskRecord({
+            accountId: 'acc-1',
+            id: 't1',
+            listId: 'list-1',
+            provider: 'google',
+            status: 'needsAction',
+            title: 'Pay rent',
+            updatedAt: 1,
+          }),
+        ],
+        1,
+      );
+      const queue = yield* PendingOpRepo;
+      yield* queue.enqueue(taskOp('complete', 'completeTask', 't1', { taskStatus: 'completed' }));
+      yield* queue.enqueue(taskOp('rename', 'updateTask', 't1', { taskTitle: 'Pay rent today' }));
+      yield* queue.enqueue(taskOp('gone', 'completeTask', 'gone-1', { taskStatus: 'completed' }));
+      const titles = Object.fromEntries((yield* listPendingOps).map((op) => [op.id, op.title]));
+      expect(titles).toEqual({ complete: 'Pay rent', gone: undefined, rename: 'Pay rent today' });
+    }).pipe(Effect.provide(queueLayer)),
+  );
 });
