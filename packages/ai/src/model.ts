@@ -6,12 +6,18 @@ import { Data } from 'effect';
  * anything useful, so it said nothing and hid itself.
  */
 export type ModelStatus =
+  /** Apple Intelligence is switched off in system settings; the user can turn it on. */
+  | 'disabled'
   /** The native module is missing from this binary; nothing to wait for. */
   | 'missing-module'
+  /** Switched on, but the system has not finished downloading the model. */
+  | 'not-ready'
   /** Usable now. */
   | 'ready'
-  /** Present, but the system reports it unavailable — often temporary. */
-  | 'unavailable';
+  /** Present, but the system reports it unavailable for no reason it names — often temporary. */
+  | 'unavailable'
+  /** This device or OS version cannot run the model at all. */
+  | 'unsupported';
 
 /**
  * The seam every AI feature talks to. Implementations are per-platform and
