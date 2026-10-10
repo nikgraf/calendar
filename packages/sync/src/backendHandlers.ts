@@ -321,8 +321,19 @@ export const commonBackendHandlers: Omit<BackendHandlers<CommonBackendServices>,
   listPendingOps: () =>
     Effect.gen(function* () {
       const pendingOps = yield* PendingOpRepo;
+      const taskRepo = yield* TaskRepo;
       const ops = yield* pendingOps.listAll();
-      return ops.map((op) => ({
+      // A task op carries no payload: its subject is the title it sets, or
+      // the local row's. Without one the list showed Google's task id.
+      const titles = yield* Effect.forEach(ops, (op) =>
+        op.payload !== undefined || op.taskTitle !== undefined || op.taskListId === undefined
+          ? Effect.succeed(op.payload?.title ?? op.taskTitle)
+          : Effect.map(
+              taskRepo.get(op.accountId, op.taskListId, op.eventId),
+              (task) => task?.title,
+            ),
+      );
+      return ops.map((op, index) => ({
         accountId: op.accountId,
         attempts: op.attempts,
         calendarId: op.calendarId,
@@ -341,7 +352,7 @@ export const commonBackendHandlers: Omit<BackendHandlers<CommonBackendServices>,
               },
             }),
         ...(op.lastError === undefined ? {} : { lastError: op.lastError }),
-        ...(op.payload?.title === undefined ? {} : { title: op.payload.title }),
+        ...(titles[index] === undefined ? {} : { title: titles[index] }),
       }));
     }),
 

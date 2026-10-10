@@ -3,6 +3,7 @@ import {
   eventIdentity,
   type EventRecord,
   findSameEvent,
+  type ItemKind,
   type NotificationTarget,
   PAN_BUFFER_DAYS,
   parseNotificationTarget,
@@ -12,6 +13,7 @@ import {
   utcMsToPlainDate,
 } from '@calendar/core';
 import {
+  defaultTodoKind,
   eventStartDay,
   findCurrentEvent,
   findNotificationEvent,
@@ -34,7 +36,6 @@ import {
   useUpdateViewPreferences,
   useViewPreferences,
   type EventEditorPrefill,
-  type TaskEditorSeed,
 } from '@calendar/app-state';
 import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState } from 'react';
 import { desktopLanguageModel } from '../ai/desktopModel.ts';
@@ -63,10 +64,10 @@ type MainView = 'day' | 'month' | 'week';
 /**
  * What the side panel shows: the Today rail at rest, search (⌘F), an
  * event's inspector after a click on the grid or a search result, or an
- * inline editor (Edit, a slot, New, a task chip or result, a quick-add
- * phrase). A panel opened from a search result goes back to the results
- * when it closes (`fromSearch`). The inspector's `event` is kept current
- * (see CalendarBody); an editor's seed is the draft's start and stays put.
+ * inline editor (Edit, a slot, New, a task chip or result). A panel
+ * opened from a search result goes back to the results when it closes
+ * (`fromSearch`). The inspector's `event` is kept current (see
+ * CalendarBody); an editor's seed is the draft's start and stays put.
  */
 type PanelState =
   | { readonly kind: 'rail' }
@@ -85,7 +86,8 @@ type PanelState =
       readonly captureRow?: string | undefined;
       readonly fromSearch?: boolean | undefined;
       readonly kind: 'editEvent';
-      readonly mode?: 'task' | undefined;
+      /** Convert from the inspector: the to-do kind to switch to on open. */
+      readonly mode?: ItemKind | undefined;
       /** Distinct per opening: a second slot click must not reuse the first draft. */
       readonly opening: number;
       readonly seed: EditorSeed;
@@ -94,8 +96,7 @@ type PanelState =
       readonly fromSearch?: boolean | undefined;
       readonly kind: 'editTask';
       readonly opening: number;
-      readonly prefill?: TaskEditorSeed | undefined;
-      readonly task?: TaskRecord | undefined;
+      readonly task: TaskRecord;
     };
 
 const RAIL: PanelState = { kind: 'rail' };
@@ -208,10 +209,21 @@ function CalendarBody({
     searchScroll.current = top;
   }, []);
   const [viewBirthday, setViewBirthday] = useState<BirthdayOccurrence | null>(null);
-  const quickAddRef = useRef<HTMLInputElement>(null);
+  // ⌘K: bumped per press, so an open new-item editor refocuses its field.
+  const [quickAddFocus, setQuickAddFocus] = useState(0);
   const editing = panel.kind === 'editEvent' || panel.kind === 'editTask';
   const openEditor = (seed: EditorSeed) =>
     setPanel({ kind: 'editEvent', opening: nextOpening(), seed });
+  /** A new item on the focused day: "+ New", ⌘N, and ⌘K into its quick-add field. */
+  const openNew = useCallback(
+    () =>
+      setPanel({
+        kind: 'editEvent',
+        opening: nextOpening(),
+        seed: { initialDate: focused, initialHour: 9 },
+      }),
+    [focused],
+  );
 
   // A parsed prefill (quick-add, or a single captured event) opens the
   // editor on its day: the user reviews it before anything is written.
@@ -382,11 +394,19 @@ function CalendarBody({
       }
       if (command && key.key.toLowerCase() === 'k') {
         key.preventDefault();
-        // ⌘K goes to the quick-add field — not from under a dialog, whose
-        // Escape and Enter the field would otherwise take.
-        if (!anyDialog) {
-          quickAddRef.current?.focus();
-          quickAddRef.current?.select();
+        // ⌘K goes to a new item's quick-add field: the open new-item
+        // editor's, else a fresh one — not from under a dialog, whose
+        // Escape and Enter the field would otherwise take, and not over
+        // another editor, whose draft it would drop.
+        if (anyDialog) {
+          return;
+        }
+        const newItem =
+          panel.kind === 'editEvent' && panel.seed.event === undefined && panel.mode === undefined;
+        if (newItem) {
+          setQuickAddFocus((count) => count + 1);
+        } else if (!editing) {
+          openNew();
         }
         return;
       }
@@ -397,7 +417,7 @@ function CalendarBody({
       }
       if (command && key.key.toLowerCase() === 'n') {
         key.preventDefault();
-        openEditor({ initialDate: focused, initialHour: 9 });
+        openNew();
       } else if (!command && key.key.toLowerCase() === 't') {
         goToday();
       } else if (!command && key.key === 'ArrowLeft') {
@@ -408,7 +428,7 @@ function CalendarBody({
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [dialogOpen, editing, focused, goToday, panel, step]);
+  }, [dialogOpen, editing, goToday, openNew, panel, step]);
 
   // ⌘V on the calendar itself: an email or a screenshot becomes events to
   // review. Not while a dialog is open or a field has focus — those pastes
@@ -478,22 +498,16 @@ function CalendarBody({
   return (
     <div className="flex h-screen flex-col bg-canvas text-ink">
       <Toolbar
-        focused={focused}
-        onCapture={capture.start}
-        onNew={() => openEditor({ initialDate: focused, initialHour: 9 })}
-        onParsed={openPrefill}
+        onNew={openNew}
         onSearch={() => (panel.kind === 'search' ? setPanel(RAIL) : openSearch())}
         onStep={step}
         onSwitchView={changeView}
-        onTaskParsed={(prefill) => setPanel({ kind: 'editTask', opening: nextOpening(), prefill })}
         onToday={goToday}
         onTogglePanel={() => setRailOpen(!railShown)}
         onToggleSidebar={() => updatePrefs({ sidebarCollapsed: !sidebarCollapsed })}
         panelShown={railShown}
-        quickAddRef={quickAddRef}
         searchActive={searching}
         sidebarCollapsed={sidebarCollapsed}
-        timeZone={timeZone}
         title={title}
         view={view}
       />
@@ -609,7 +623,7 @@ function CalendarBody({
                   setPanel({
                     fromSearch: panel.fromSearch,
                     kind: 'editEvent',
-                    mode: 'task',
+                    mode: defaultTodoKind(taskLists),
                     opening: nextOpening(),
                     seed: { event: panel.event, initialDate: focused, initialScope: 'series' },
                   })
@@ -627,13 +641,15 @@ function CalendarBody({
             ) : panel.kind === 'editEvent' ? (
               <EditorPanel
                 calendars={calendars}
-                initialMode={panel.mode}
+                initialKind={panel.mode}
+                onCapture={capture.start}
                 onClose={closePanel}
                 onSaved={
                   panel.captureRow === undefined
                     ? undefined
                     : () => capture.markAdded(panel.captureRow!)
                 }
+                quickAddFocus={quickAddFocus}
                 seed={panel.seed}
                 taskLists={taskLists}
                 timeZone={timeZone}
@@ -641,15 +657,11 @@ function CalendarBody({
             ) : (
               <EditorPanel
                 calendars={calendars}
+                onCapture={capture.start}
                 onClose={closePanel}
-                seed={{
-                  initialDate: panel.prefill
-                    ? Temporal.PlainDate.from(panel.prefill.initialDate)
-                    : focused,
-                }}
+                seed={{ initialDate: focused }}
                 task={panel.task}
                 taskLists={taskLists}
-                taskPrefill={panel.prefill}
                 timeZone={timeZone}
               />
             )}
@@ -660,7 +672,8 @@ function CalendarBody({
       <DragGhost drag={drag} />
 
       {/* Hidden while a row's editor is open: the editor is the capture's next step. */}
-      {capture.state.kind !== 'idle' && panel.kind !== 'editEvent' ? (
+      {capture.state.kind !== 'idle' &&
+      !(panel.kind === 'editEvent' && panel.captureRow !== undefined) ? (
         <CaptureDialog
           onClose={capture.dismiss}
           onOpenRow={(row) => openPrefill(row.prefill, row.id)}

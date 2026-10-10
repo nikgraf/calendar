@@ -22,15 +22,45 @@ export function NoDueDate({ onAdd }: { onAdd: () => void }) {
   );
 }
 
+/**
+ * The Due label of a dated task; for a new one, with the way to take the
+ * day away again (created undated, an inbox add). Nothing to take away on
+ * an existing task, whose stored due day cannot be cleared.
+ */
+export function DueLabel({ onRemove }: { onRemove: (() => void) | undefined }) {
+  const sheetStyles = useSheetStyles();
+  const styles = useStyles(makeStyles);
+  return (
+    <View style={styles.dueLabel}>
+      <Text style={sheetStyles.label}>Due</Text>
+      {onRemove ? (
+        <Pressable accessibilityRole="button" onPress={onRemove} testID="task-remove-due-date">
+          <Text style={styles.remove}>No due date</Text>
+        </Pressable>
+      ) : null}
+    </View>
+  );
+}
+
 const makeStyles = (colors: ThemeColors) =>
   StyleSheet.create({
     action: {
       color: colors.primary,
       fontSize: 15,
     },
+    dueLabel: {
+      alignItems: 'center',
+      flexDirection: 'row',
+      gap: 10,
+    },
     note: {
       color: colors['text-secondary'],
       fontSize: 13,
+    },
+    remove: {
+      color: colors.primary,
+      fontSize: 13,
+      marginBottom: 4,
     },
     text: {
       flex: 1,

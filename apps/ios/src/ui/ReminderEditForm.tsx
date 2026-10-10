@@ -14,7 +14,7 @@ import {
   toDateString,
   toTimeString,
 } from './editSheetShared.ts';
-import { NoDueDate } from './NoDueDate.tsx';
+import { DueLabel, NoDueDate } from './NoDueDate.tsx';
 import { RepeatRuleChips } from './RepeatRuleChips.tsx';
 import { TaskListPicker } from './TaskListPicker.tsx';
 
@@ -25,16 +25,23 @@ import { TaskListPicker } from './TaskListPicker.tsx';
  * Google form so the shell and the Maestro flows stay provider-agnostic.
  */
 export function ReminderEditForm({
+  autoFocusTitle = true,
   task,
   taskModel,
 }: {
+  /** Off when the quick-add field above the form takes the focus. */
+  autoFocusTitle?: boolean;
   task: TaskRecord | undefined;
   taskModel: ReturnType<typeof useTaskEditorModel>;
 }) {
   const styles = useSheetStyles();
   return (
+    // Keyboard insets: the quick-add field on top of a new item keeps the
+    // keyboard up, and the lower rows must still scroll into reach.
     <ScrollView
+      automaticallyAdjustKeyboardInsets
       contentContainerStyle={[styles.content, taskModel.readOnly && styles.readOnly]}
+      keyboardShouldPersistTaps="handled"
       pointerEvents={taskModel.readOnly ? 'none' : 'auto'}
     >
       {taskModel.error ? <Text style={styles.error}>{taskModel.error}</Text> : null}
@@ -42,7 +49,7 @@ export function ReminderEditForm({
         <Text style={styles.readOnlyNote}>This list is read-only in Reminders.</Text>
       ) : null}
       <TextInput
-        autoFocus={!task}
+        autoFocus={autoFocusTitle && !task}
         onChangeText={taskModel.setTitle}
         placeholder="Title"
         style={styles.input}
@@ -55,7 +62,7 @@ export function ReminderEditForm({
       {taskModel.dated ? (
         <>
           <View style={styles.pickerRow}>
-            <Text style={styles.label}>Due</Text>
+            <DueLabel onRemove={taskModel.clearDueDate} />
             <DateTimePicker
               display="compact"
               mode="date"

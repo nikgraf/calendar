@@ -3,23 +3,32 @@ import type { TaskRecord } from '@calendar/core';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { Linking, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import { dateFromParts, useSheetStyles, toDateString } from './editSheetShared.ts';
-import { NoDueDate } from './NoDueDate.tsx';
+import { DueLabel, NoDueDate } from './NoDueDate.tsx';
 import { TaskListPicker } from './TaskListPicker.tsx';
 
 /** The task half of EventEditSheet (mode === 'task'). */
 export function TaskEditForm({
+  autoFocusTitle = true,
   task,
   taskModel,
 }: {
+  /** Off when the quick-add field above the form takes the focus. */
+  autoFocusTitle?: boolean;
   task: TaskRecord | undefined;
   taskModel: ReturnType<typeof useTaskEditorModel>;
 }) {
   const styles = useSheetStyles();
   return (
-    <ScrollView contentContainerStyle={styles.content}>
+    // Keyboard insets: the quick-add field on top of a new item keeps the
+    // keyboard up, and the lower rows must still scroll into reach.
+    <ScrollView
+      automaticallyAdjustKeyboardInsets
+      contentContainerStyle={styles.content}
+      keyboardShouldPersistTaps="handled"
+    >
       {taskModel.error ? <Text style={styles.error}>{taskModel.error}</Text> : null}
       <TextInput
-        autoFocus={!task}
+        autoFocus={autoFocusTitle && !task}
         onChangeText={taskModel.setTitle}
         placeholder="Title"
         style={styles.input}
@@ -29,7 +38,7 @@ export function TaskEditForm({
 
       {taskModel.dated ? (
         <View style={styles.pickerRow}>
-          <Text style={styles.label}>Due</Text>
+          <DueLabel onRemove={taskModel.clearDueDate} />
           <DateTimePicker
             display="compact"
             mode="date"

@@ -24,7 +24,14 @@ const groupLabel = (calendar: CalendarInfo, emailOf: (accountId: string) => stri
     : emailOf(calendar.accountId);
 
 /** The event half of EventEditSheet (mode === 'event'). */
-export function EventEditForm({ model }: { model: ReturnType<typeof useEventEditorModel> }) {
+export function EventEditForm({
+  autoFocusTitle = true,
+  model,
+}: {
+  /** Off when the quick-add field above the form takes the focus. */
+  autoFocusTitle?: boolean;
+  model: ReturnType<typeof useEventEditorModel>;
+}) {
   const styles = useSheetStyles();
   const accounts = useAccounts();
   const { secondary: secondaryZones } = useTimeZones();
@@ -105,7 +112,7 @@ export function EventEditForm({ model }: { model: ReturnType<typeof useEventEdit
       ) : null}
       <>
         <TextInput
-          autoFocus={!existing}
+          autoFocus={autoFocusTitle && !existing}
           // The system ⓧ ("Clear text"): renaming starts from an empty field
           // instead of deleting the old title character by character.
           clearButtonMode="while-editing"

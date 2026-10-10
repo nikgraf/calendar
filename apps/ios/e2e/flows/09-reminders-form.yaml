@@ -23,7 +23,8 @@ tags:
 - runFlow:
     when:
       visible: 'fixture@solunivo.test'
-      notVisible: 'Reminders.*'
+      notVisible:
+        id: 'mode-reminder'
     commands:
       - evalScript: ${output.connectedReminders = true}
       - tapOn: 'Cancel'
@@ -43,17 +44,27 @@ tags:
       - assertVisible: 'Today'
       - runFlow: ../common/open-new-event.yaml
       - runFlow: ../common/switch-to-task.yaml
-      # The first pass after connecting has to land before the list shows.
+      # The first pass after connecting has to land before the Reminder kind shows.
       - extendedWaitUntil:
-          visible: 'Reminders.*'
+          visible:
+            id: 'mode-reminder'
           timeout: 30000
-# Pick the first Reminders list: its rows carry a color swatch, but the
-# stable handle is the list title. 'Reminders' is the default list name.
+# The Reminder kind opens the Reminders form on the default list
+# ('Reminders' is the default list name; the kind picks it).
 - runFlow:
     when:
-      visible: 'Reminders.*'
+      visible:
+        id: 'mode-reminder'
     commands:
-      - tapOn: 'Reminders.*'
+      - tapOn:
+          id: 'mode-reminder'
+      - assertVisible: 'New Reminder'
+      # The quick-add field's keyboard covers the lower rows and Maestro's
+      # visibility check ignores it (see 03): a tap on the priority chip
+      # would land on the keyboard. A plain label dismisses it first.
+      - tapOn: 'LIST'
+      - waitForAnimationToEnd:
+          timeout: 5000
       # The form morphed: Reminders-only controls are on screen.
       - assertVisible:
           id: 'reminder-timed'
@@ -72,13 +83,27 @@ tags:
       - tapOn:
           id: 'event-save'
       - extendedWaitUntil:
-          notVisible: 'New Task'
+          notVisible: 'New Reminder'
           timeout: 20000
       # Timed reminders live in the time grid. Their compact title keeps the
       # priority marker while the due time is exposed by the body label.
       - extendedWaitUntil:
           visible: 'Solunivo e2e reminder to delete, due .*'
           timeout: 10000
+      # Two task lists now (the Google one and Reminders), so the Tasks tab
+      # offers its list filter: the Reminders chip keeps the reminder and
+      # drops the Google task. It stays selected for the end of the flow.
+      - tapOn: 'Tasks'
+      - assertVisible:
+          id: 'tasks-screen'
+      - tapOn: 'Reminders'
+      - assertVisible:
+          text: 'Reminders'
+          selected: true
+      - assertVisible: '.*Solunivo e2e reminder to delete.*'
+      - assertNotVisible: 'Fixture task.*'
+      - tapOn: 'Calendar'
+      - assertVisible: 'Today'
       # Experimental: Maestro's slow swipe has no configurable hold phase, so
       # it is not a reliable substitute for the native long-press pan.
       # Opt in with -e REMINDER_DRAG_TEST=true; see the manual gesture check
@@ -262,12 +287,23 @@ tags:
                 timeout: 10000
             - runFlow: ../common/close-settings.yaml
             - assertVisible: 'Today'
+            # The Tasks tab still had the Reminders chip selected. With the
+            # list gone (and the chip row with it, one list left) the filter
+            # falls back to All rather than leaving "Nothing to do." with no
+            # chip to clear it.
+            - tapOn: 'Tasks'
+            - extendedWaitUntil:
+                visible: 'Fixture task.*'
+                timeout: 10000
+            - assertNotVisible: 'Nothing to do.'
+            - tapOn: 'Calendar'
+            - assertVisible: 'Today'
 # Keyed on the sheet still being open (see 08): after the branch above
-# closed it, "no Reminders list visible" would be true for the wrong
+# closed it, "no Reminder kind visible" would be true for the wrong
 # reason and the Cancel tap would fail.
 - runFlow:
     when:
-      visible: 'New Task'
+      visible: 'New (Task|Reminder)'
     commands:
       - tapOn: 'Cancel'
       - assertVisible: 'Today'

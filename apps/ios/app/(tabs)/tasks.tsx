@@ -1,4 +1,5 @@
 import {
+  getLastUsedTaskListKey,
   useGuardedMutations,
   useListColorLookup,
   useTaskInbox,
@@ -7,30 +8,32 @@ import {
   useTimeZones,
   useToday,
 } from '@calendar/app-state';
-import { overdueLabel, type TaskRecord, taskAddTarget, Temporal } from '@calendar/core';
+import {
+  defaultTodoList,
+  overdueLabel,
+  type TaskRecord,
+  taskListKeyOf,
+  Temporal,
+  todoKindOf,
+} from '@calendar/core';
 import { StatusBar } from 'expo-status-bar';
 import { useState } from 'react';
-import {
-  Pressable,
-  SafeAreaView,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { AccountButton } from '../../src/ui/AccountButton.tsx';
+import { AddButton } from '../../src/ui/AddButton.tsx';
 import { useEditorHost } from '../../src/ui/EditorHost.tsx';
 import { TaskCheck } from '../../src/ui/TaskCheck.tsx';
+import { taskListChips, taskListKey } from '../../src/ui/taskListChips.ts';
 import { type ThemeColors, useStyles } from '../../src/ui/theme.ts';
 import { MutationNoticeToast } from '../../src/ui/Toast.tsx';
 
 /**
  * The Tasks tab: the inbox — overdue, today, no date, the next month,
- * done today — filtered by list, with a field that adds an undated task
- * to the filtered list (the first writable one when it cannot take it).
- * Rows open the task editor; the checkbox completes at once, like the
- * chips on the calendar.
+ * done today — filtered by list. Its "+" opens the editor on a new
+ * undated to-do in the filtered list (else the last list used, else
+ * Reminders, then a Google list). Rows open the task editor; the checkbox
+ * completes at once, like the chips on the calendar.
  */
 export default function TasksScreen() {
   const zones = useTimeZones();
@@ -46,13 +49,12 @@ function TasksBody({ timeZone }: { timeZone: string }) {
   const taskLists = useTaskLists();
   const listColorOf = useListColorLookup();
   const isReadOnly = useTaskReadOnlyLookup();
-  const { completeTask, createTask } = useGuardedMutations();
+  const { completeTask } = useGuardedMutations();
   const [listFilter, setListFilter] = useState<string | null>(null);
-  const [title, setTitle] = useState('');
-  const target = taskAddTarget(taskLists, listFilter);
+  const { active, chips } = taskListChips(taskLists, listFilter);
 
   const keep = (task: TaskRecord) =>
-    listFilter === null || `${task.accountId}:${task.listId}` === listFilter;
+    active === null || taskListKey(task.accountId, task.listId) === active;
   const toggle = (task: TaskRecord) =>
     void completeTask({
       accountId: task.accountId,
@@ -60,13 +62,18 @@ function TasksBody({ timeZone }: { timeZone: string }) {
       taskId: task.id,
       taskListId: task.listId,
     });
-  const add = () => {
-    const trimmed = title.trim();
-    if (!target || !trimmed) {
-      return;
-    }
-    void createTask({ accountId: target.accountId, taskListId: target.id, title: trimmed });
-    setTitle('');
+  /** A new to-do where the user is looking: undated, in the filtered list. */
+  const addNew = () => {
+    const list = defaultTodoList(taskLists, {
+      filter: active,
+      lastUsedKey: getLastUsedTaskListKey(),
+    });
+    host.openNew({
+      dated: false,
+      focused: Temporal.PlainDate.from(today),
+      kind: list ? todoKindOf(list.provider) : 'reminder',
+      listKey: list ? taskListKeyOf(list) : undefined,
+    });
   };
 
   const row = (task: TaskRecord, late: boolean) => {
@@ -135,90 +142,61 @@ function TasksBody({ timeZone }: { timeZone: string }) {
   return (
     <SafeAreaView style={styles.screen} testID="tasks-screen">
       <StatusBar style="auto" />
-      <View style={styles.header}>
-        <Text style={styles.title}>Tasks</Text>
-        <AccountButton />
-      </View>
-      {taskLists.length > 1 ? (
-        // A ScrollView grows and shrinks by default: beside the list below it
-        // took half the screen when empty and was squeezed when full.
-        <ScrollView
-          contentContainerStyle={styles.filters}
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          style={styles.filterBar}
-        >
-          {[
-            { id: null, label: 'All' },
-            ...taskLists.map((list) => ({ id: `${list.accountId}:${list.id}`, label: list.title })),
-          ].map((entry) => (
-            <Pressable
-              accessibilityRole="button"
-              accessibilityState={{ selected: listFilter === entry.id }}
-              key={entry.id ?? 'all'}
-              onPress={() => setListFilter(entry.id)}
-              style={[styles.filter, listFilter === entry.id && styles.filterActive]}
-            >
-              <Text
-                style={[styles.filterLabel, listFilter === entry.id && styles.filterLabelActive]}
+      <View style={styles.body}>
+        <View style={styles.header}>
+          <Text style={styles.title}>Tasks</Text>
+          <AccountButton />
+        </View>
+        {chips.length > 0 ? (
+          // A ScrollView flexes by default; the chip row keeps its own height
+          // and leaves the rest to the list.
+          <ScrollView
+            contentContainerStyle={styles.filters}
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            style={styles.filterBar}
+          >
+            {chips.map((chip) => (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityState={{ selected: active === chip.id }}
+                key={chip.id ?? 'all'}
+                onPress={() => setListFilter(chip.id)}
+                style={[styles.filter, active === chip.id && styles.filterActive]}
               >
-                {entry.label}
-              </Text>
-            </Pressable>
-          ))}
-        </ScrollView>
-      ) : null}
-      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-        {section('Overdue', inbox.overdue, true)}
-        {section('Today', inbox.today)}
-        {section('No date', inbox.noDate)}
-        {section('Upcoming', inbox.upcoming)}
-        {empty ? <Text style={styles.empty}>Nothing to do.</Text> : null}
-        {inbox.completedToday.some(keep) ? (
-          <Text style={styles.doneNote}>{inbox.completedToday.filter(keep).length} done today</Text>
+                <Text style={[styles.filterLabel, active === chip.id && styles.filterLabelActive]}>
+                  {chip.label}
+                </Text>
+              </Pressable>
+            ))}
+          </ScrollView>
         ) : null}
-      </ScrollView>
-      {/* A failed write (a list that lost its access) is told here, not only
-          on the calendar — standing on the add field, which it never covers. */}
-      <MutationNoticeToast />
-      <View style={styles.addRow}>
-        <Text style={styles.addPlus}>＋</Text>
-        <TextInput
-          accessibilityLabel="Add a task"
-          editable={target !== undefined}
-          onChangeText={setTitle}
-          onSubmitEditing={add}
-          placeholder={target ? `Add a task to ${target.title}` : 'No task list to add to'}
-          returnKeyType="done"
-          style={styles.addInput}
-          testID="tasks-add"
-          value={title}
-        />
+        <ScrollView contentContainerStyle={styles.content}>
+          {section('Overdue', inbox.overdue, true)}
+          {section('Today', inbox.today)}
+          {section('No date', inbox.noDate)}
+          {section('Upcoming', inbox.upcoming)}
+          {empty ? <Text style={styles.empty}>Nothing to do.</Text> : null}
+          {inbox.completedToday.some(keep) ? (
+            <Text style={styles.doneNote}>
+              {inbox.completedToday.filter(keep).length} done today
+            </Text>
+          ) : null}
+        </ScrollView>
+        {/* A failed write (a list that lost its access) is told here, not only
+            on the calendar. */}
+        <MutationNoticeToast />
       </View>
+      {/* A new undated to-do in the list being looked at. */}
+      <AddButton onPress={addNew} />
     </SafeAreaView>
   );
 }
 
 const makeStyles = (colors: ThemeColors) =>
   StyleSheet.create({
-    addInput: {
-      color: colors.text,
+    body: {
       flex: 1,
-      fontSize: 16,
-      paddingVertical: 10,
-    },
-    addPlus: {
-      color: colors['text-secondary'],
-      fontSize: 18,
-    },
-    addRow: {
-      alignItems: 'center',
-      backgroundColor: colors['surface-subtle'],
-      borderTopColor: colors.border,
-      borderTopWidth: StyleSheet.hairlineWidth,
-      flexDirection: 'row',
-      gap: 10,
-      paddingHorizontal: 16,
     },
     // A 44 pt square; the box sits flush with the screen edge's inset.
     check: {

@@ -179,6 +179,11 @@ invariants.
   un-completing must clear `completed` via `status: 'needsAction'`.
 - A 403 insufficient-scope (grants that predate the tasks scope) disables
   tasks for the account instead of retrying.
+- A write to a task that is gone (verified 2026-10-10): PATCH of a task
+  deleted on Google answers **200** with `deleted: true` (the edit lands
+  on the tombstone; `mapGcalTask` maps it to null and the op settles), a
+  task moved to another list answers **404** at its old list, and so
+  does any task of a deleted list.
 
 ### Exercised end to end: the fake Google server
 
@@ -629,6 +634,15 @@ Flakiness lessons (each caused a real CI failure — keep them enforced):
   the renderer throttled — `cdp.send('Emulation.setCPUThrottlingRate',
   { rate: 6 })`, also 12× — and never commit the throttle: it made #146's
   race and the stale inspector fail within a few rounds.
+- **Measure layout only once the last write is drawn.** SQLite has a
+  reminder's move before the all-day lane redraws it, and the lane's
+  height moves the grid below it. The overdue-drop test measured the grid
+  right after a lane move that had only been polled in SQLite, and on CI
+  the row collapsed under its drag: dropped at 11:30, not 11:00 (one
+  24 px row is half an hour). A test whose successor measures geometry
+  waits for its own result on screen (`reminders.e2e.ts` waits for the
+  chip in its new column). At 12× throttling the lane is still a row
+  taller when SQLite shows the move.
 - **A local run is not alone at the keyboard.** The e2e window takes
   focus when it shows and opens under the cursor: a key typed or a
   trackpad touched during a run is input to the test window. A press
@@ -668,9 +682,12 @@ Flakiness lessons (each caused a real CI failure — keep them enforced):
   slots still open the editor directly, and `editor-title` /
   `body.textContent.includes('Edit task')` tell when it is up. The stable
   hooks: `toolbar-title` (the first `h1`), `view-day/week/month`,
-  `nav-prev/next`, `today`, `quick-add-input`, `sidebar`, `sync-footer`,
-  `panel` (`data-panel-kind`), `inspector`, `editor`, `editor-notes`,
-  `task-done`, `panel-task-<id>`, `panel-add-task`, `week-scroller`,
+  `nav-prev/next`, `today`, `quick-add-input` / `quick-add-apply` (a new
+  item's editor), `mode-event/task/reminder` (its kind control; a kind
+  with nowhere to go is not rendered, so a seed with only a Reminders
+  list has `mode-reminder` and no `mode-task`), `task-remove-due-date`,
+  `sidebar`, `sync-footer`, `panel` (`data-panel-kind`), `inspector`,
+  `editor`, `editor-notes`, `task-done`, `panel-task-<id>`, `week-scroller`,
   `week-grid`, `today-header`, `now-line`, `all-day-lane`, `month-grid`.
   Search (`search.e2e.ts`, ⌘F synthesized like ⌘K): `search-toggle`
   (`aria-pressed` while search or a result from it is open),
@@ -813,10 +830,14 @@ picked by `id: task-list-option`; a chip body is tapped by its full text
 also matches the checkbox's "Toggle <title>" label and toggles
 completion instead of opening the editor. Flows that open the edit sheet `waitForAnimationToEnd` before tapping
 inside it (a tap taken mid-slide missed on the runner); the editor is
-reached through `common/open-new-event.yaml` — the floating "+" opens
-the quick-add sheet, whose "New event" row opens the empty editor — which
-re-taps while the sheet is missing (run 34852090635 tapped once at the
-right coordinates and nothing opened); a tap on an event opens its
+reached through `common/open-new-event.yaml` — the "+" opens the editor
+on a new event, its quick-add field on top — which re-taps while the
+sheet is missing (run 34852090635 tapped once at the right coordinates
+and nothing opened); the kind control's segments are `mode-event` /
+`mode-task` / `mode-reminder` (a Reminders list behind `mode-reminder`,
+never in a task's list picker, so a flow that wants the Reminders form
+taps the segment, and a reminder moved to a Google list reads "Move to
+Task"); a tap on an event opens its
 detail sheet first, so `common/open-event-editor.yaml` taps Edit; views
 are picked through `common/switch-view.yaml` (the header's menu, `VIEW`);
 Settings is a stack of pages: `common/open-settings.yaml` waits for the
@@ -831,9 +852,10 @@ match its text with `.*` around it, and decorative symbols stay out of
 that label (`Glyph`); swipe-to-remove rows are swiped from their id and
 the revealed action tapped by its own;
 the shell anchor is still the "Today" button; and the
-quick-add flow accepts the sheet's "couldn't be read" outcome: a CI
+quick-add flow accepts the field's "couldn't be read" outcome: a CI
 simulator passes the model availability check yet cannot generate,
-so the prefilled editor is asserted only where a model answers.
+so the filled title is asserted (by id — the phrase in the field above
+holds the same words) only where a model answers.
 The bootstrap flow `launchApp`s the dev client and only then opens
 `solunivo-dev://expo-development-client/?url=…` (the dev variant's own
 scheme; `solunivo://` belongs to the production app). Relying on the URL to
