@@ -79,6 +79,20 @@ tags:
       - extendedWaitUntil:
           visible: 'Solunivo e2e reminder to delete, due .*'
           timeout: 10000
+      # Two task lists now (the Google one and Reminders), so the Tasks tab
+      # offers its list filter: the Reminders chip keeps the reminder and
+      # drops the Google task. It stays selected for the end of the flow.
+      - tapOn: 'Tasks'
+      - assertVisible:
+          id: 'tasks-screen'
+      - tapOn: 'Reminders'
+      - assertVisible:
+          text: 'Reminders'
+          selected: true
+      - assertVisible: '.*Solunivo e2e reminder to delete.*'
+      - assertNotVisible: 'Fixture task.*'
+      - tapOn: 'Calendar'
+      - assertVisible: 'Today'
       # Experimental: Maestro's slow swipe has no configurable hold phase, so
       # it is not a reliable substitute for the native long-press pan.
       # Opt in with -e REMINDER_DRAG_TEST=true; see the manual gesture check
@@ -261,6 +275,17 @@ tags:
                 direction: UP
                 timeout: 10000
             - runFlow: ../common/close-settings.yaml
+            - assertVisible: 'Today'
+            # The Tasks tab still had the Reminders chip selected. With the
+            # list gone (and the chip row with it, one list left) the filter
+            # falls back to All rather than leaving "Nothing to do." with no
+            # chip to clear it.
+            - tapOn: 'Tasks'
+            - extendedWaitUntil:
+                visible: 'Fixture task.*'
+                timeout: 10000
+            - assertNotVisible: 'Nothing to do.'
+            - tapOn: 'Calendar'
             - assertVisible: 'Today'
 # Keyed on the sheet still being open (see 08): after the branch above
 # closed it, "no Reminders list visible" would be true for the wrong
