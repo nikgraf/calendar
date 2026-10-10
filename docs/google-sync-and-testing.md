@@ -659,9 +659,12 @@ Flakiness lessons (each caused a real CI failure — keep them enforced):
   slots still open the editor directly, and `editor-title` /
   `body.textContent.includes('Edit task')` tell when it is up. The stable
   hooks: `toolbar-title` (the first `h1`), `view-day/week/month`,
-  `nav-prev/next`, `today`, `quick-add-input`, `sidebar`, `sync-footer`,
-  `panel` (`data-panel-kind`), `inspector`, `editor`, `editor-notes`,
-  `task-done`, `panel-task-<id>`, `panel-add-task`, `week-scroller`,
+  `nav-prev/next`, `today`, `quick-add-input` / `quick-add-apply` (a new
+  item's editor), `mode-event/task/reminder` (its kind control; a kind
+  with nowhere to go is not rendered, so a seed with only a Reminders
+  list has `mode-reminder` and no `mode-task`), `task-remove-due-date`,
+  `sidebar`, `sync-footer`, `panel` (`data-panel-kind`), `inspector`,
+  `editor`, `editor-notes`, `task-done`, `panel-task-<id>`, `week-scroller`,
   `week-grid`, `today-header`, `now-line`, `all-day-lane`, `month-grid`.
   Search (`search.e2e.ts`, ⌘F synthesized like ⌘K): `search-toggle`
   (`aria-pressed` while search or a result from it is open),
@@ -804,10 +807,14 @@ picked by `id: task-list-option`; a chip body is tapped by its full text
 also matches the checkbox's "Toggle <title>" label and toggles
 completion instead of opening the editor. Flows that open the edit sheet `waitForAnimationToEnd` before tapping
 inside it (a tap taken mid-slide missed on the runner); the editor is
-reached through `common/open-new-event.yaml` — the floating "+" opens
-the quick-add sheet, whose "New event" row opens the empty editor — which
-re-taps while the sheet is missing (run 34852090635 tapped once at the
-right coordinates and nothing opened); a tap on an event opens its
+reached through `common/open-new-event.yaml` — the "+" opens the editor
+on a new event, its quick-add field on top — which re-taps while the
+sheet is missing (run 34852090635 tapped once at the right coordinates
+and nothing opened); the kind control's segments are `mode-event` /
+`mode-task` / `mode-reminder` (a Reminders list behind `mode-reminder`,
+never in a task's list picker, so a flow that wants the Reminders form
+taps the segment, and a reminder moved to a Google list reads "Move to
+Task"); a tap on an event opens its
 detail sheet first, so `common/open-event-editor.yaml` taps Edit; views
 are picked through `common/switch-view.yaml` (the header's menu, `VIEW`);
 Settings is a stack of pages: `common/open-settings.yaml` waits for the
@@ -822,9 +829,10 @@ match its text with `.*` around it, and decorative symbols stay out of
 that label (`Glyph`); swipe-to-remove rows are swiped from their id and
 the revealed action tapped by its own;
 the shell anchor is still the "Today" button; and the
-quick-add flow accepts the sheet's "couldn't be read" outcome: a CI
+quick-add flow accepts the field's "couldn't be read" outcome: a CI
 simulator passes the model availability check yet cannot generate,
-so the prefilled editor is asserted only where a model answers.
+so the filled title is asserted (by id — the phrase in the field above
+holds the same words) only where a model answers.
 The bootstrap flow `launchApp`s the dev client and only then opens
 `solunivo-dev://expo-development-client/?url=…` (the dev variant's own
 scheme; `solunivo://` belongs to the production app). Relying on the URL to

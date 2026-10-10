@@ -651,16 +651,19 @@ model: `docs/agent-gateway.md`.
   text on fill at 4.5:1 for every palette entry; the brand `event-*`
   tokens are for items with no calendar.
 - Desktop shell (`renderer/calendar/`): one toolbar (`Toolbar.tsx`:
-  sidebar toggle, title, ‹ Today ›, the always-visible quick-add field
-  with the "Understood as" review card, Day/Week/Month, Search, New), a
+  sidebar toggle, title, ‹ Today ›, Day/Week/Month, Search, New), a
   collapsible sidebar (`sidebar/`: mini month, calendars and lists per
   account, the sync footer), the grid, and a side panel on the right
-  (`panel/`): the Today rail at rest (Up next + task inbox + add-task),
-  search (`SearchPanel.tsx`, ⌘F or the toolbar's Search), an event's
-  inspector after a grid click or a search result (`EventInspector.tsx`,
-  read first: Join, RSVP, series scope, Delete, Edit), or the inline
-  editor (`EditorPanel.tsx`, 360px) from Edit, a slot, New, a task chip
-  or result, or a task phrase. `CalendarApp.tsx` holds that as one
+  (`panel/`): the Today rail at rest (Up next + task inbox), search
+  (`SearchPanel.tsx`, ⌘F or the toolbar's Search), an event's inspector
+  after a grid click or a search result (`EventInspector.tsx`, read
+  first: Join, RSVP, series scope, Delete, Edit), or the inline editor
+  (`EditorPanel.tsx`, 360px) from Edit, a slot, New (⌘N; ⌘K goes
+  straight into its quick-add field), a task chip or result. A new item's
+  editor is the one add path: the quick-add field on top (`QuickAddBar`,
+  a phrase or a dictation fills the form; Find time lists free slots),
+  the Event | Task | Reminder control (`useEditorKinds`, only the kinds
+  something can hold), then the form. `CalendarApp.tsx` holds that as one
   `PanelState`; a panel opened from a search result carries `fromSearch`
   and closes back to the results (its inspector shows "‹ Results"), and
   Escape steps back one level. The search itself runs in `CalendarBody`,
@@ -690,10 +693,15 @@ model: `docs/agent-gateway.md`.
   a modal route holding its own native stack (`settings/`: the root list,
   a page per pane, the pages under them; `src/ui/settings/`). `src/ui/CalendarScreen.tsx` is the calendar tab: a
   header (title, view menu, ‹ Today ›, the account button into Settings), the week strip, the
-  timeline / month grid / agenda, and the floating "+". `EditorHost.tsx`
-  owns every sheet — quick add, event detail, the editors, the birthday
-  detail, the capture review — and the capture model behind the share
-  sheet and deep links; screens ask it through `useEditorHost()`.
+  timeline / month grid / agenda, and the "+" (`AddButton`, shared with
+  the Tasks tab: the calendar's opens a new event, the Tasks tab's an
+  undated to-do in the filtered list). `EditorHost.tsx` owns every sheet
+  — event detail, the editor (`EventEditSheet`: for a new item the
+  quick-add field on top, then the Event | Task | Reminder control, then
+  the form), the birthday detail, the capture review — and the capture
+  model behind the share sheet and deep links; screens ask it through
+  `useEditorHost()` (`openNew` resolves the kind a "+" wants to one that
+  is available).
   `+native-intent.tsx` keeps non-route URLs on the calendar.
 - Views: day/week (time grid with wheel-pan on desktop, swipe paging on
   iOS), month grid, and an all-day lane that hosts date-only tasks. Timed

@@ -1,7 +1,7 @@
 import type { QuickAddPrefill, QuickAddTaskPrefill } from '@calendar/ai';
 
-/** What a phrase was understood as, held for review before anything opens or is written. */
-export type QuickAddReview =
+/** What a phrase was understood as: the editor fills its form from it. */
+export type QuickAddItem =
   | { readonly kind: 'event'; readonly prefill: QuickAddPrefill }
   | { readonly kind: 'task'; readonly prefill: QuickAddTaskPrefill };
 
@@ -16,21 +16,22 @@ const addHour = (time: string): string => {
 /**
  * The same phrase as the other kind of item: a timed event becomes a task
  * due at its start, an all-day one a task on its day; a task becomes a
- * one-hour event at its time, or an all-day event without one. The
- * review's Event/Task toggle.
+ * one-hour event at its time, or an all-day event without one. Used when
+ * the editor stays on its kind (the user declined the switch, or the
+ * parsed kind has nowhere to go).
  */
 export const convertQuickAddItem = (
-  review: QuickAddReview,
-  kind: QuickAddReview['kind'],
-): QuickAddReview => {
-  if (review.kind === kind) {
-    return review;
+  item: QuickAddItem,
+  kind: QuickAddItem['kind'],
+): QuickAddItem => {
+  if (item.kind === kind) {
+    return item;
   }
-  if (review.kind === 'event') {
-    const { date, isAllDay, startTime, title } = review.prefill;
+  if (item.kind === 'event') {
+    const { date, isAllDay, startTime, title } = item.prefill;
     return { kind: 'task', prefill: { date, ...(isAllDay ? {} : { time: startTime }), title } };
   }
-  const { date, time, title } = review.prefill;
+  const { date, time, title } = item.prefill;
   return {
     kind: 'event',
     prefill: {

@@ -1,7 +1,4 @@
-import type { CaptureSource } from '@calendar/ai';
-import type { CalendarViewKind, EventEditorPrefill, TaskEditorSeed } from '@calendar/app-state';
-import type { Temporal } from '@calendar/core';
-import type { RefObject } from 'react';
+import type { CalendarViewKind } from '@calendar/app-state';
 import { Button } from '../ui/Button.tsx';
 import { IconButton } from '../ui/IconButton.tsx';
 import {
@@ -13,7 +10,6 @@ import {
   SidebarIcon,
 } from '../ui/icons.tsx';
 import { SegmentedControl } from '../ui/SegmentedControl.tsx';
-import { QuickAddField } from './QuickAddField.tsx';
 
 const VIEWS: ReadonlyArray<{ label: string; value: 'day' | 'month' | 'week' }> = [
   { label: 'Day', value: 'day' },
@@ -23,49 +19,37 @@ const VIEWS: ReadonlyArray<{ label: string; value: 'day' | 'month' | 'week' }> =
 
 /**
  * The window's one toolbar: the drag region under the traffic lights,
- * the period title, navigation, the quick-add field, the view switcher,
- * search (⌘F, in the side panel) and New. Everything else lives in the
- * sidebar or the side panel.
+ * the period title, navigation, the view switcher, search (⌘F, in the
+ * side panel) and New (⌘N, or ⌘K straight into its quick-add field).
+ * Everything else lives in the sidebar or the side panel.
  */
 export function Toolbar({
-  focused,
-  onCapture,
   onNew,
-  onParsed,
   onSearch,
   onStep,
   onSwitchView,
-  onTaskParsed,
   onToday,
   onTogglePanel,
   onToggleSidebar,
   panelShown,
-  quickAddRef,
   searchActive,
   sidebarCollapsed,
-  timeZone,
   title,
   view,
 }: {
-  focused: Temporal.PlainDate;
-  onCapture: (source: CaptureSource) => void;
   onNew: () => void;
-  onParsed: (prefill: EventEditorPrefill) => void;
   /** Opens the search panel, or closes it when it is open. */
   onSearch: () => void;
   onStep: (direction: 1 | -1) => void;
   onSwitchView: (view: 'day' | 'month' | 'week') => void;
-  onTaskParsed: (seed: TaskEditorSeed) => void;
   onToday: () => void;
   /** The Today rail, shown or hidden (it hides by itself on a narrow window). */
   onTogglePanel: () => void;
   onToggleSidebar: () => void;
   panelShown: boolean;
-  quickAddRef: RefObject<HTMLInputElement | null>;
   /** The panel shows search or a result opened from it. */
   searchActive: boolean;
   sidebarCollapsed: boolean;
-  timeZone: string;
   title: string;
   view: CalendarViewKind;
 }) {
@@ -113,14 +97,6 @@ export function Toolbar({
         </IconButton>
       </div>
       <div className="flex-1" />
-      <QuickAddField
-        focusedDate={focused}
-        inputRef={quickAddRef}
-        onCapture={onCapture}
-        onParsed={onParsed}
-        onTaskParsed={onTaskParsed}
-        timeZone={timeZone}
-      />
       <div style={noDrag}>
         <SegmentedControl
           label="View"

@@ -1,15 +1,15 @@
 appId: com.solunivo.app.dev
-name: Quick add turns a phrase into a prefilled editor
+name: Quick add fills the new-event form from a phrase
 tags:
   - ci
 ---
 - runFlow: ../common/launch.yaml
-# The "+" opens the quick-add sheet. Its field renders only after an async
-# availability check resolves, so wait for the marker the app emits either
-# way before deciding to skip — checking `quick-add-input` directly would
-# race the mount and report a silent pass on hardware that does have a model.
-- tapOn:
-    id: 'add'
+- runFlow: ../common/open-new-event.yaml
+# The quick-add field sits on top of the editor and renders only after an
+# async availability check resolves, so wait for the marker the app emits
+# either way before deciding to skip — checking `quick-add-input` directly
+# would race the mount and report a silent pass on hardware that does have
+# a model.
 - extendedWaitUntil:
     visible:
       id: 'quick-add-state'
@@ -23,41 +23,34 @@ tags:
           id: 'quick-add-input'
       - inputText: 'Lunch with Sarah next Tuesday at 1pm'
       - tapOn:
-          id: 'quick-add-submit'
+          id: 'quick-add-apply'
       # Generation runs locally and takes a few seconds. A simulator whose
       # host has no usable model (CI runners: Apple Intelligence is not
       # enabled) passes the availability check and then fails to
-      # generate — the bar shows its "couldn't be read" copy. Either
-      # outcome proves the bar, submit and error path; the prefilled
-      # editor is asserted wherever a model actually answers.
-      # A parse is held for a look first: the "Understood as" card.
+      # generate — the field shows its "couldn't be read" copy. Either
+      # outcome proves the field, Apply and the error path; the filled
+      # form is asserted wherever a model actually answers. The phrase
+      # must have been read, not just echoed: the e2e bundle's fixture
+      # model (CI) makes the whole phrase the title; a real model
+      # extracts "Lunch with Sarah". The title is checked by id — the
+      # quick-add field above it holds the same words.
       - extendedWaitUntil:
-          visible: 'Understood as|That couldn.t be read.*'
+          visible:
+            id: 'event-title'
+            text: 'Lunch with Sarah.*'
           timeout: 60000
+          optional: true
       - runFlow:
           when:
-            visible: 'Understood as'
+            notVisible:
+              id: 'event-title'
+              text: 'Lunch with Sarah.*'
           commands:
-            # The phrase must have been read, not just echoed. The e2e
-            # bundle's fixture model (CI) makes the whole phrase the title;
-            # a real model extracts "Lunch with Sarah".
-            - assertVisible: 'Lunch with Sarah.*'
-            - tapOn:
-                id: 'quick-add-edit'
-            - extendedWaitUntil:
-                visible: 'New Event'
-                timeout: 10000
-            - assertVisible: 'Lunch with Sarah.*'
-            - tapOn: 'Cancel'
-      - runFlow:
-          when:
-            visible: 'That couldn.t be read.*'
-          commands:
-            - tapOn:
-                id: 'quick-add-cancel'
-            - assertVisible: 'Today'
+            - assertVisible: 'That couldn.t be read.*'
       # Dictation is deliberately not asserted here: Maestro cannot inject
       # audio and simulators carry no speech assets, so the mic disables
       # itself once prepare() fails. Gating an assertion on the mic being
       # visible would pass whether or not it rendered — the transcript path
       # is verified on a real device instead.
+- tapOn: 'Cancel'
+- assertVisible: 'Today'

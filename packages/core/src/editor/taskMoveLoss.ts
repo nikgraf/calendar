@@ -49,8 +49,15 @@ export const taskMoveLoss = (
 export const isTaskMoveLossy = (loss: TaskMoveLoss): boolean =>
   loss.alarms > 0 || loss.dueTime || loss.priority || loss.recurrence || loss.url;
 
-/** One sentence for the move confirmation, or null when nothing is lost. */
-export const taskMoveLossSummary = (loss: TaskMoveLoss): string | null => {
+/**
+ * One sentence for the confirmation, or null when nothing is lost. `verb`
+ * names the action: a move on Save by default, or the create-mode switch
+ * from a reminder to a task ("Switching to a task").
+ */
+export const taskMoveLossSummary = (
+  loss: TaskMoveLoss,
+  verb = 'Moving this task to Google Tasks',
+): string | null => {
   const items: Array<string> = [];
   if (loss.dueTime) {
     items.push('the due time');
@@ -67,5 +74,5 @@ export const taskMoveLossSummary = (loss: TaskMoveLoss): string | null => {
   if (loss.url) {
     items.push('the URL');
   }
-  return items.length === 0 ? null : `Moving this task to Google Tasks drops ${joinList(items)}.`;
+  return items.length === 0 ? null : `${verb} drops ${joinList(items)}.`;
 };
