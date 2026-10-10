@@ -23,41 +23,46 @@ import { useEffect, useRef, useState } from 'react';
 import { useToday } from './hooks.ts';
 
 /**
- * Rows the finder must not count as busy: the event being rescheduled.
- * Its own row always; for a series edit, the occurrences the edit moves
- * — the drawn ones, all of them for "All events", this one and the
- * later ones for "This and following" (the earlier ones stay where they
- * are when the series splits), only this one for "This event". A
- * stored exception keeps its own times through a series edit, so it
- * stays busy unless it is the row being edited.
+ * Rows the finder must not count as busy: what the save will move or
+ * drop, read off `updateRecurring`. "This event": the row itself (by
+ * identity, not id — an occurrence's drawn id becomes Google's once it
+ * is edited on its own, which a sync can land mid-edit). "All events",
+ * and "This and following" from the series' first occurrence: the master
+ * shifts, so every drawn occurrence moves, while a stored exception
+ * keeps its own times — it stays busy, the opened row included. "This
+ * and following" later in the series: the split drops every row from
+ * the split point, drawn or stored, and the earlier ones stay. Until the
+ * master is here, a stored exception is kept busy either way.
  */
 export const rescheduledEventExclusion = (
   existing: EventRecord | undefined,
   scope: RecurringScope,
+  /** The series' first start (`useEventMaster`), undefined until loaded. */
+  masterStartUtc?: number | undefined,
 ): ((event: EventRecord) => boolean) | undefined => {
   if (!existing) {
     return undefined;
   }
   const masterId = existing.recurringEventId;
   const from = existing.originalStartUtc ?? existing.startUtc;
+  const shiftsSeries =
+    scope === 'series' ||
+    (scope === 'following' && masterStartUtc !== undefined && from <= masterStartUtc);
   return (event) => {
     if (event.accountId !== existing.accountId || event.calendarId !== existing.calendarId) {
       return false;
     }
-    // By identity, not id: an occurrence's drawn id becomes Google's once
-    // it is edited on its own, which a sync can land mid-edit.
-    if (isSameEvent(event, existing)) {
-      return true;
+    if (masterId === undefined || scope === 'instance') {
+      return isSameEvent(event, existing);
     }
-    if (
-      masterId === undefined ||
-      scope === 'instance' ||
-      event.recurringEventId !== masterId ||
-      !isDrawnOccurrence(event)
-    ) {
+    if (event.recurringEventId !== masterId) {
       return false;
     }
-    return scope === 'series' || (event.originalStartUtc ?? event.startUtc) >= from;
+    if (shiftsSeries) {
+      return isDrawnOccurrence(event);
+    }
+    const start = event.originalStartUtc ?? event.startUtc;
+    return start >= from && (isDrawnOccurrence(event) || masterStartUtc !== undefined);
   };
 };
 

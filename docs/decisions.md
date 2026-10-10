@@ -457,9 +457,13 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   / mornings / afternoons / evenings; any day / weekdays / weekends; a
   duration starting as the form's own), a Search, and the slots as
   buttons — a pick moves the event there (`applySlot`; an all-day series
-  keeps its kind, so it has no finder). The event being moved is not
-  its own busy time (its row, and its other occurrences for a series
-  edit). It works without Apple Intelligence; with it, a phrase fills
+  keeps its kind, so it has no finder). What the save will move or
+  drop is not its own busy time (`rescheduledEventExclusion`, read off
+  `updateRecurring`: the row for "This event"; every drawn occurrence
+  for "All events", while a stored exception keeps its times and stays
+  busy; everything from the split for "This and following", which is
+  "All events" from the first occurrence). It works without Apple
+  Intelligence; with it, a phrase fills
   the same presets (`parseFindTime`) — dates, hours or days outside
   them show as a note with nothing selected — and a title it names
   fills an empty title. An answer landing after a constraint changed or

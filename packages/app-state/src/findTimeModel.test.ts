@@ -23,58 +23,71 @@ const event = (id: string, overrides: Partial<EventRecord> = {}) =>
 const occurrence = (originalStartUtc: number, id = `series__${originalStartUtc}`) =>
   event(id, { originalStartUtc, recurringEventId: 'series', startUtc: originalStartUtc });
 
+const MASTER_START = 1000;
+
 describe('rescheduledEventExclusion', () => {
-  const earlier = occurrence(1000);
+  const first = occurrence(1000);
   const edited = occurrence(2000);
   const later = occurrence(3000);
-  // Edited on its own under Google's id: it keeps its times through a series edit.
-  const exception = occurrence(4000, 'series_20261014T090000Z');
+  // Edited on their own under Google's id: they keep their times through a series edit.
+  const earlierException = occurrence(500, 'series_x1');
+  const laterException = occurrence(4000, 'series_x2');
   const other = event('plain', { startUtc: 2000 });
   const elsewhere = event('series__2000', {
     calendarId: 'other',
     originalStartUtc: 2000,
     recurringEventId: 'series',
   });
+  const rows = [first, edited, later, earlierException, laterException, other, elsewhere];
+  const freed = (exclude: (row: EventRecord) => boolean) =>
+    rows.filter(exclude).map((row) => row.id);
 
-  it('is nothing for a new event', () => {
+  it('is nothing for a new event, and the row itself for a single event', () => {
     expect(rescheduledEventExclusion(undefined, 'instance')).toBeUndefined();
+    expect(freed(rescheduledEventExclusion(other, 'series')!)).toEqual(['plain']);
   });
 
-  it('frees only the edited row for one occurrence', () => {
-    const exclude = rescheduledEventExclusion(edited, 'instance')!;
-    expect([earlier, edited, later, exception, other, elsewhere].map(exclude)).toEqual([
-      false,
-      true,
-      false,
-      false,
-      false,
-      false,
-    ]);
+  it('frees only the edited row for one occurrence, by identity', () => {
+    const exclude = rescheduledEventExclusion(edited, 'instance', MASTER_START)!;
+    expect(freed(exclude)).toEqual(['series__2000']);
     // The same slot under Google's own instance id (a sync landed mid-edit).
     expect(exclude(occurrence(2000, 'series_20261013T090000Z'))).toBe(true);
   });
 
-  it('frees this and the later drawn occurrences for a following edit, every drawn one for the series', () => {
-    const following = rescheduledEventExclusion(edited, 'following')!;
-    expect([earlier, edited, later, exception, other].map(following)).toEqual([
-      false,
-      true,
-      true,
-      false,
-      false,
+  it('frees every drawn occurrence for all events; stored exceptions keep their times', () => {
+    expect(freed(rescheduledEventExclusion(edited, 'series', MASTER_START)!)).toEqual([
+      'series__1000',
+      'series__2000',
+      'series__3000',
     ]);
-    const series = rescheduledEventExclusion(edited, 'series')!;
-    expect([earlier, edited, later, exception, other].map(series)).toEqual([
-      true,
-      true,
-      true,
-      false,
-      false,
+    // Opened on an exception: the master shifts and the exception stays put.
+    expect(freed(rescheduledEventExclusion(laterException, 'series', MASTER_START)!)).toEqual([
+      'series__1000',
+      'series__2000',
+      'series__3000',
     ]);
   });
 
-  it('frees a stored exception only when it is the row being edited', () => {
-    expect(rescheduledEventExclusion(exception, 'series')!(exception)).toBe(true);
-    expect(rescheduledEventExclusion(edited, 'series')!(exception)).toBe(false);
+  it('frees everything from the split for this and following, drawn or stored', () => {
+    expect(freed(rescheduledEventExclusion(edited, 'following', MASTER_START)!)).toEqual([
+      'series__2000',
+      'series__3000',
+      'series_x2',
+    ]);
+  });
+
+  it('treats this and following from the first occurrence as all events', () => {
+    expect(freed(rescheduledEventExclusion(first, 'following', MASTER_START)!)).toEqual([
+      'series__1000',
+      'series__2000',
+      'series__3000',
+    ]);
+  });
+
+  it('keeps stored exceptions busy while the master is not here yet', () => {
+    expect(freed(rescheduledEventExclusion(edited, 'following')!)).toEqual([
+      'series__2000',
+      'series__3000',
+    ]);
   });
 });
