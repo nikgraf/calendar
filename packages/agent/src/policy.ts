@@ -85,9 +85,6 @@ export const taskListLevel = (
 export const canSeeDetails = (level: CalendarLevel | TaskListLevel): boolean =>
   level === 'read' || level === 'ask' || level === 'write';
 
-/** Busy blocks are visible from `freeBusy` up. */
-export const canSeeBusy = (level: CalendarLevel): boolean => level !== 'none';
-
 export type DeniedReason =
   /** The guests capability is off and the write would reach other people. */
   | 'guests'

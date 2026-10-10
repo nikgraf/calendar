@@ -206,7 +206,7 @@ seeded locally, everything else arrives through the first sync, and a
 pre-filled memory `TokenStore` keeps the real `TokenManager` and request
 core on the path. The fake stamps writes with the wall clock (`live`) so
 the device-time `updatedMin` watermark clears them. Desktop
-`taskConvertGoogle.e2e.ts` and iOS `16-task-convert.yaml` use it to watch
+`taskConvertGoogle.e2e.ts` and iOS `17-convert.yaml` use it to watch
 a queued task create push and its `local-…` id become a server id.
 
 ### Live Google suite (real account)
@@ -762,25 +762,34 @@ Flakiness lessons (each caused a real CI failure — keep them enforced):
 
 ### iOS e2e (Maestro, apps/ios/e2e/flows/)
 
-Text/testID-based flows (12: dev-client bootstrap, launch, navigation,
-new-event sheet, Settings pages, day swipe, quick-add, create event, task
-lane, reminders form, real reminders, invitees, all-day event chip).
-Flows carry `tags`: everything is `ci`; the strict
-`10-reminders-real.yaml` is also `ci-reminders` — it connects, creates
-through EventKit and deletes with no escape hatch, so `pnpm test:e2e:ios`
-excludes it (`--exclude-tags ci-reminders`) and CI includes it on a
-simulator whose grant `prepare-simulator.sh` seeded. Flow 09 is the
-tolerant local sibling (a no-op until the simulator has a connected
-list). Maestro runs a directory's flows in a non-deterministic order and
-`config.yaml`'s `executionOrder` is not honored (maestro#2231), so CI
-runs the bootstrap as its own invocation and every other flow must be
-independent of what ran before — the real-Reminders flow connects an
-account, after which the task form defaults to the Apple list, hence
-`Edit (Task|Reminder)` in flow 08. On CI Metro runs with
+Text/testID-based flows, one per area rather than one per check: each
+flow costs a launch and its setup, and the CI shards are billed macOS
+minutes, so a new check joins the flow that already reaches its screen
+(navigation and every view's paging in 02, the new-event sheet's fields
+in 03, the Reminders form and its repeat rule in 09, both conversion
+paths in 17, the birthday settings in 23). Flows carry `tags`: the ones
+CI shards are `ci`; `00-devclient-bootstrap` (`ci-bootstrap`) and
+`04a-device-permissions` (`ci-permissions`) run as their own steps and
+`pnpm test:e2e:ios` excludes them; `14-location` has no tag (real MapKit
+needs the network) and runs only locally. Reminders flows 09 and 17 are
+no-ops until the simulator has a connected list — except on CI, keyed on
+the fixture account, where the grant `prepare-simulator.sh` seeded lets
+them connect Reminders themselves, write through real EventKit with no
+escape hatch, and remove the account again. Maestro runs a directory's
+flows in a non-deterministic order and `config.yaml`'s `executionOrder`
+is not honored (maestro#2231), so CI runs the bootstrap as its own
+invocation and every other flow must be independent of what ran before —
+a Reminders flow that fails mid-way leaves the account connected, after
+which the task form defaults to the Apple list, hence
+`Edit (Task|Reminder)` in flow 08. 04a also leaves device Contacts
+connected on its shard (there is no in-app disconnect), so the
+simulator's sample contacts become invitee suggestions there: a flow
+that types an address retypes until the field holds all of it before
+Return, which otherwise takes the top suggestion for a partial one (03). On CI Metro runs with
 `EXPO_PUBLIC_CALENDAR_GOOGLE=fixture`, so a fixture Google account
 (`fixture@solunivo.test`, list "Mock Tasks", calendar "Mock Calendar") is
-signed in for every flow and the Google halves of 07/08 and the whole of
-16 (task convert) run against the in-process fake; locally they are
+signed in for every flow and the Google halves of 07/08 and 17 (task
+convert) run against the in-process fake; locally they are
 no-ops unless Metro was started with the same variable. Text selectors are whole-string
 regexes: a list row's label is title + swatch + check mark, so rows are
 picked by `id: task-list-option`; a chip body is tapped by its full text

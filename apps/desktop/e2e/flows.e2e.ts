@@ -1095,24 +1095,6 @@ describe('calendar desktop e2e', () => {
     }
   });
 
-  it('focuses the quick-add field on Cmd-K and leaves it on Escape', async () => {
-    const { cdp } = app;
-    const INPUT = `document.querySelector('[data-testid="quick-add-input"]')`;
-    // Synthesize Cmd-K via the app's own handler (CDP key events don't
-    // carry macOS meta reliably) — the listener is on window.
-    await cdp.eval(
-      `window.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', metaKey: true }))`,
-    );
-    // Stable in BOTH field states: on a helper-less CI runner the field is
-    // disabled (and cannot take focus); on a dev machine ⌘K focuses it.
-    await cdp.waitFor(`${INPUT}.disabled || document.activeElement === ${INPUT}`);
-    const focused = await cdp.eval<boolean>(`document.activeElement === ${INPUT}`);
-    if (focused) {
-      await cdp.pressEscape();
-      await cdp.waitFor(`document.activeElement !== ${INPUT}`);
-    }
-  });
-
   it('moves an overdue task onto today and leaves a completed past task alone', async () => {
     const { cdp } = app;
     await cdp.locate('[data-overdue][title^="Old chore"]');

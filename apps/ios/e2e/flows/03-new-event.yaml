@@ -1,5 +1,5 @@
 appId: com.solunivo.app.dev
-name: New-event sheet opens with the repeat picker
+name: The new-event sheet shows the repeat picker and turns a typed invitee into a chip
 tags:
   - ci
 ---
@@ -22,5 +22,51 @@ tags:
           timeout: 3000
           optional: true
 - assertVisible: 'EVERY \(N\)'
+
+# Invitees, further down the same sheet. The title auto-focuses, so its
+# keyboard is up and covers the invitee field (its top edge is right
+# where the keyboard starts on an iPhone 17 Pro). Maestro's visibility
+# check does not know about the keyboard, so a tap "on the input" lands
+# on the predictive bar and the text goes into the title. Dismiss the
+# keyboard first: a tap on a plain label is not handled by any child, so
+# keyboardShouldPersistTaps="handled" lets the ScrollView resign it.
+# CALENDAR sits right under the title, so it is never covered by the
+# keyboard itself — INVITEES was, once the calendar picker had an
+# account's rows above it (run 35591082639 typed the address into the
+# title).
+- tapOn: 'CALENDAR'
+- waitForAnimationToEnd:
+    timeout: 5000
+# The field sits below the location row; scroll it into view.
+- scrollUntilVisible:
+    element:
+      id: 'invitee-input'
+    direction: DOWN
+    timeout: 10000
+- tapOn:
+    id: 'invitee-input'
+- inputText: 'bob@example.com'
+# Retype until the field (whose value Maestro reads as its text) holds the
+# whole address. XCTest typing can drop letters on a loaded runner (see
+# flow 07), and on the shard where 04a connected device Contacts, Return
+# on a partial address takes the top suggestion instead: run 37944409989
+# added "Kate Bell". Spare backspaces are harmless — there is no chip yet.
+- repeat:
+    times: 3
+    while:
+      notVisible:
+        id: 'invitee-input'
+        text: 'bob@example.com'
+    commands:
+      - eraseText: 40
+      - inputText: 'bob@example.com'
+# Return turns the address into a chip; the input clears.
+- pressKey: Enter
+- extendedWaitUntil:
+    visible:
+      id: 'invitee-chip'
+    timeout: 5000
+- assertVisible: 'bob@example.com'
+# Nothing is saved: leave the sheet as we found it.
 - tapOn: 'Cancel'
 - assertVisible: 'Today'

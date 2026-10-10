@@ -314,14 +314,12 @@ jobs:
         run: maestro test --device "$SIMULATOR_UDID" e2e/flows/04a-device-permissions.yaml
       - name: Maestro flows
         working-directory: apps/ios
-        # MODELLESS: the runner's simulator has no usable on-device model
-        # (see 06-quick-add.yaml).
         run: |
           set -euo pipefail
           flows=$(node e2e/ci/shard-flows.mjs "${{ matrix.shard }}" 2)
           echo "$flows"
           # shellcheck disable=SC2086
-          maestro test -e MODELLESS=1 --device "$SIMULATOR_UDID" $flows
+          maestro test --device "$SIMULATOR_UDID" $flows
       - name: Wait for a simulator crash report
         # ReportCrash writes the .ips a minute or so after the process
         # dies (74 s on run 34013939965); the upload step ran before it

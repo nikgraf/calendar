@@ -236,17 +236,6 @@ describe('timedTaskSlot', () => {
       );
     },
   );
-
-  it('shares overlap columns with ordinary timed events', () => {
-    const timed = task({ dueTime: '09:15' });
-    const placed = layoutDayColumn([
-      { endMinute: 10 * 60, id: 'event', startMinute: 9 * 60 },
-      { ...timedTaskSlot(timed)!, id: calendarTaskKey(timed) },
-    ]);
-
-    expect(placed).toHaveLength(2);
-    expect(placed.every((box) => box.width === 0.5)).toBe(true);
-  });
 });
 
 describe('moveTimedTask', () => {

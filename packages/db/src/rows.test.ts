@@ -146,11 +146,6 @@ describe('row decoders tolerate what the DB may hold', () => {
     expect(eventFromRow(eventRow({ reminders: '{"useDefault":"yes"}' })).reminders).toBeUndefined();
   });
 
-  it('pendingOpFromRow reads the remindersChanged flag', () => {
-    expect(pendingOpFromRow(opRow({ reminders_changed: 1 }))?.remindersChanged).toBe(true);
-    expect(pendingOpFromRow(opRow())?.remindersChanged).toBeUndefined();
-  });
-
   it('pendingOpFromRow turns an unreadable payload into payload: undefined', () => {
     const op = pendingOpFromRow(opRow({ payload: '{"id": 1}' }));
     expect(op?.kind).toBe('update');

@@ -33,6 +33,9 @@ const eventsOf = async (model: LanguageModel, source = { kind: 'text', text: 'ma
   return events;
 };
 
+// `useCaptureModel.start` fires `onSettled` on the terminal event — the
+// moment a shared image may be deleted — so every path below must end in
+// exactly one, the unavailable model (no OCR ever ran) included.
 describe('runCapture', () => {
   it('reports the phases, then a review for several events', async () => {
     const events = await eventsOf(
@@ -70,32 +73,6 @@ describe('runCapture', () => {
     expect(await eventsOf(unavailable)).toEqual([
       { kind: 'error', message: CAPTURE_MODEL_UNAVAILABLE },
     ]);
-  });
-});
-
-const unavailableModel: LanguageModel = {
-  generateJson: async () => ({}),
-  status: async () => 'unavailable',
-};
-
-describe('runCapture ends with exactly one terminal event', () => {
-  // `useCaptureModel.start` fires `onSettled` on that event — the moment a
-  // shared image may be deleted — so every path must produce one, the
-  // unavailable model (no OCR ever ran) included.
-  it.each([
-    [
-      'review',
-      modelAnswering([
-        { date: ahead(1), title: 'A' },
-        { date: ahead(2), title: 'B' },
-      ]),
-    ],
-    ['single', modelAnswering([{ date: ahead(1), title: 'A' }])],
-    ['error', modelAnswering([])],
-    ['error', unavailableModel],
-  ] as const)('%s', async (kind, model) => {
-    const terminal = (await eventsOf(model)).filter((event) => event.kind !== 'phase');
-    expect(terminal.map((event) => event.kind)).toEqual([kind]);
   });
 });
 

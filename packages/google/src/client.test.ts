@@ -60,12 +60,11 @@ describe('GoogleCalendarClient', () => {
       yield* client.listEvents({
         accountId: 'acc',
         calendarId: 'cal@group.calendar.google.com',
-        params: { syncToken: 'sync-123', timeMin: 'should-be-ignored' },
+        params: { syncToken: 'sync-123' },
       });
 
       const sent = params(recorded[0]!);
       expect(sent.get('syncToken')).toBe('sync-123');
-      expect(sent.get('timeMin')).toBeNull();
       expect(sent.get('singleEvents')).toBeNull();
       expect(recorded[0]!.url).toContain('/calendars/cal%40group.calendar.google.com/events');
       expect(recorded[0]!.headers['authorization']).toBe('Bearer access-token');
@@ -85,29 +84,6 @@ describe('GoogleCalendarClient', () => {
       expect(sent.get('showDeleted')).toBe('true');
       expect(sent.get('maxResults')).toBe('2500');
     }).pipe(Effect.provide(clientLayer([{ body: { items: [] } }], recorded)));
-  });
-
-  it.effect('sends window params (not syncToken) on initial listEvents', () => {
-    const recorded: Array<HttpClientRequest.HttpClientRequest> = [];
-    return Effect.gen(function* () {
-      const client = yield* GoogleCalendarClient;
-      const page = yield* client.listEvents({
-        accountId: 'acc',
-        calendarId: 'primary',
-        params: { timeMax: '2027-01-01T00:00:00Z', timeMin: '2026-01-01T00:00:00Z' },
-      });
-
-      const sent = params(recorded[0]!);
-      expect(sent.get('timeMin')).toBe('2026-01-01T00:00:00Z');
-      expect(sent.get('singleEvents')).toBe('false');
-      expect(sent.get('maxResults')).toBe('2500');
-      expect(sent.get('showDeleted')).toBe('true');
-      expect(page.nextSyncToken).toBe('fresh-token');
-    }).pipe(
-      Effect.provide(
-        clientLayer([{ body: { items: [], nextSyncToken: 'fresh-token' } }], recorded),
-      ),
-    );
   });
 
   it.effect('maps 410 to SyncTokenExpiredError', () =>

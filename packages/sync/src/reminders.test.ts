@@ -181,13 +181,20 @@ describe('reminders sync', () => {
       ]);
 
       const rows = yield* windowRows;
-      // Due-day order, timed first within a day; undated never appears.
+      // Due-day order, timed first within a day: two years out and
+      // completed a year ago both show on their due day.
       expect(rows.map((row) => row.id)).toEqual([
         'rem-old-done',
         'rem-timed',
         'rem-allday',
         'rem-far',
       ]);
+      // Undated: mirrored (for the future list view) but in no due window.
+      const sql = yield* SqlClient;
+      const undated = yield* sql<{
+        n: number;
+      }>`SELECT COUNT(*) AS n FROM tasks WHERE id = 'rem-undated'`;
+      expect(undated[0]?.n).toBe(1);
       expect(rows[1]).toMatchObject({
         alarms: [-15],
         dueTime: '09:00',
@@ -276,25 +283,6 @@ describe('reminders sync', () => {
       const ids = (yield* windowRows).map((row) => row.id);
       expect(ids).not.toContain('gone');
       expect(ids).toContain('fresh');
-    }).pipe(Effect.provide(testLayer(fake)));
-  });
-
-  it.effect('the mirror is complete: far-future, long-ago completed, and undated reminders', () => {
-    const fake = fakeWith();
-    return Effect.gen(function* () {
-      yield* seedApple();
-      yield* (yield* SyncEngine).syncAll();
-      const ids = (yield* windowRows).map((row) => row.id);
-      // Two years out and completed a year ago both show on their due day.
-      expect(ids).toContain('rem-far');
-      expect(ids).toContain('rem-old-done');
-      // Undated: mirrored (for the future list view) but not in a due window.
-      expect(ids).not.toContain('rem-undated');
-      const sql = yield* SqlClient;
-      const undated = yield* sql<{
-        n: number;
-      }>`SELECT COUNT(*) AS n FROM tasks WHERE id = 'rem-undated'`;
-      expect(undated[0]?.n).toBe(1);
     }).pipe(Effect.provide(testLayer(fake)));
   });
 

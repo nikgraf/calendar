@@ -150,10 +150,16 @@ describe('Capture from a paste', () => {
 
   it('leaves a single-line paste to the ⌘K input and takes a multi-line one from it', async () => {
     const { cdp } = app;
-    await cdp.eval(
-      `window.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', metaKey: true }))`,
-    );
+    // CDP key events don't carry macOS meta reliably: dispatch ⌘K to the
+    // app's own window listener.
+    const commandK = `window.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', metaKey: true }))`;
     const INPUT = `document.querySelector('[data-testid="quick-add-input"]')`;
+    await cdp.eval(commandK);
+    await cdp.waitFor(`document.activeElement === ${INPUT}`);
+    // Escape leaves the field; ⌘K takes it back.
+    await cdp.pressEscape();
+    await cdp.waitFor(`document.activeElement !== ${INPUT}`);
+    await cdp.eval(commandK);
     await cdp.waitFor(`document.activeElement === ${INPUT}`);
     await cdp.eval(paste({ text: 'Lunch | +1 | 12:00' }, INPUT));
     // Nothing happened: no capture, the field keeps focus.

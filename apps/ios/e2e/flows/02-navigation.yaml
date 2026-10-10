@@ -1,9 +1,18 @@
 appId: com.solunivo.app.dev
-name: View switching and date navigation
+name: View switching, and each timeline view pages by arrow, swipe and Today
 tags:
   - ci
 ---
 - runFlow: ../common/launch.yaml
+# The shell is up: the screen, the view menu and "+".
+- assertVisible: 'Today'
+- assertVisible:
+    id: 'calendar-screen'
+- assertVisible:
+    id: 'view-menu'
+- assertVisible:
+    id: 'add'
+
 # Month view titles are "July 2026"-style.
 - runFlow:
     file: ../common/switch-view.yaml
@@ -11,34 +20,6 @@ tags:
       VIEW: 'Month'
 - assertVisible:
     text: '.* 20\d\d'
-- runFlow:
-    file: ../common/switch-view.yaml
-    env:
-      VIEW: '2 Days'
-# Two-day titles are "Sep 28 – 29, 2026" or "Sep 30 – Oct 1, 2026".
-- assertVisible:
-    text: '.* – .*, 20\d\d'
-- assertVisible:
-    id: 'day-timeline'
-- runFlow:
-    file: ../common/switch-view.yaml
-    env:
-      VIEW: 'Week'
-# Week titles are "September 7 – 13, 2026" or "Aug 31 – Sep 6, 2026".
-- assertVisible:
-    text: '.* – .*, 20\d\d'
-- assertVisible:
-    id: 'day-timeline'
-- runFlow:
-    file: ../common/switch-view.yaml
-    env:
-      VIEW: 'Day'
-- tapOn:
-    id: 'nav-next'
-- tapOn:
-    id: 'nav-prev'
-- tapOn:
-    id: 'today'
 # The agenda lists two weeks from the focused day.
 - runFlow:
     file: ../common/switch-view.yaml
@@ -46,12 +27,88 @@ tags:
       VIEW: 'Agenda'
 - assertVisible:
     id: 'agenda-list'
+
+# Two days. Titles are "Sep 28 – 29, 2026" or "Sep 30 – Oct 1, 2026" — the
+# agenda's range title has the same shape, so the timeline is what proves
+# the switch.
+- runFlow:
+    file: ../common/switch-view.yaml
+    env:
+      VIEW: '2 Days'
+- assertVisible:
+    id: 'day-timeline'
+- assertVisible:
+    text: '.* – .*, 20\d\d'
+- copyTextFrom:
+    id: 'day-title'
+# A chevron moves two days, so the title changes; Today brings it back.
+- tapOn:
+    id: 'nav-next'
+- assertNotVisible: '${maestro.copiedText}'
+- tapOn: 'Today'
+- assertVisible: '${maestro.copiedText}'
+# A quarter of the screen is half a column: the strip follows the finger
+# and the release commits the column crossed, so the window starts on a
+# new day and the title changes.
+- swipe:
+    start: 85%, 60%
+    end: 60%, 60%
+- assertNotVisible: '${maestro.copiedText}'
+- assertVisible:
+    text: '.* – .*, 20\d\d'
+- tapOn: 'Today'
+- assertVisible: '${maestro.copiedText}'
+
+# The week. Titles are "September 7 – 13, 2026" or "Aug 31 – Sep 6, 2026".
+- runFlow:
+    file: ../common/switch-view.yaml
+    env:
+      VIEW: 'Week'
+- assertVisible:
+    id: 'day-timeline'
+- assertVisible:
+    text: '.* – .*, 20\d\d'
+- copyTextFrom:
+    id: 'day-title'
+# A quarter of the screen is under two day columns: the strip follows the
+# finger and the release commits the columns crossed, so the window starts
+# on a new day and the title changes (whole-week paging would too, but a
+# tap on Today below proves the window is back on the Monday week).
+- swipe:
+    start: 85%, 60%
+    end: 60%, 60%
+- assertNotVisible: '${maestro.copiedText}'
+- assertVisible:
+    text: '.* – .*, 20\d\d'
+- tapOn: 'Today'
+- assertVisible: '${maestro.copiedText}'
+
+# One day. The header shows the focused day, e.g. "Fri, August 21".
 - runFlow:
     file: ../common/switch-view.yaml
     env:
       VIEW: 'Day'
 - assertVisible:
     id: 'day-timeline'
+- copyTextFrom:
+    id: 'day-title'
+# A left swipe moves forward a day, so the header must change; swiping
+# back returns to the original day.
+- swipe:
+    id: 'day-timeline'
+    direction: LEFT
+- assertNotVisible: '${maestro.copiedText}'
+- swipe:
+    id: 'day-timeline'
+    direction: RIGHT
+- assertVisible: '${maestro.copiedText}'
+# The chevrons step one day each way.
+- tapOn:
+    id: 'nav-prev'
+- assertNotVisible: '${maestro.copiedText}'
+- tapOn:
+    id: 'nav-next'
+- assertVisible: '${maestro.copiedText}'
 # Settings opens from the Tasks tab too: the account button sits at the
 # top right of both tabs. Done brings back the tab it opened from.
 - tapOn: 'Tasks'

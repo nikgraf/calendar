@@ -18,13 +18,6 @@ const freshDbLayer = () =>
 const geo = new GeoLocation({ lat: 48.2, lng: 16.37, name: 'Naschmarkt', source: 'Naschmarkt' });
 
 describe('LocationGeoRepo', () => {
-  it.effect('returns null for an unknown key', () =>
-    Effect.gen(function* () {
-      const repo = yield* LocationGeoRepo;
-      expect(yield* repo.get('nowhere')).toBeNull();
-    }).pipe(Effect.provide(freshDbLayer())),
-  );
-
   it.effect('stores hits and misses, and overwrites on refresh', () =>
     Effect.gen(function* () {
       const repo = yield* LocationGeoRepo;

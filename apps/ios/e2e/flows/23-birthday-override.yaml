@@ -1,5 +1,5 @@
 appId: com.solunivo.app.dev
-name: A birthday's own reminder lead days persist and reset
+name: Birthday reminder lead days persist and reset, per person and for everyone
 tags:
   - ci
 ---
@@ -7,12 +7,28 @@ tags:
 # as CI does): its contacts hold "Birthday Fixture", a week from today in
 # today's month (e2e/fixtures/google.ts), reached from the month grid.
 - runFlow: ../common/launch.yaml
-# Straight to the month grid: the app reopens on the last view it was in
-# (a two-day title also ends in a year, so a title guard would skip this).
-- runFlow:
-    file: ../common/switch-view.yaml
-    env:
-      VIEW: 'Month'
+# Straight to the month grid: the app reopens on the last view it was in.
+# A tap on a menu item can report COMPLETED with the menu still open (run
+# 37944409989 sat on the day view behind it): re-pick until the header
+# reads like a month ("October 2026" — two-day and week titles carry day
+# numbers and a comma).
+- repeat:
+    times: 3
+    while:
+      notVisible:
+        id: 'day-title'
+        text: '[A-Z][a-z]+ 20\d\d'
+    commands:
+      - runFlow:
+          file: ../common/switch-view.yaml
+          env:
+            VIEW: 'Month'
+      - extendedWaitUntil:
+          visible:
+            id: 'day-title'
+            text: '[A-Z][a-z]+ 20\d\d'
+          timeout: 5000
+          optional: true
 # The cell's label counts its items ("Friday, October 9, 1 birthday");
 # the People sync lands shortly after launch.
 - extendedWaitUntil:
@@ -50,10 +66,15 @@ tags:
 # Settings › Notifications lists the person under "Custom per Person".
 - tapOn: 'Done'
 - runFlow: ../common/open-settings.yaml
+# The root offers another Google account even with one signed in.
+- assertVisible: 'Add Google Account'
 - runFlow:
     file: ../common/open-settings-page.yaml
     env:
       PAGE: notifications
+- assertVisible:
+    id: 'birthday-reminders'
+- assertVisible: 'Birthday Reminders'
 - scrollUntilVisible:
     element:
       id: 'birthday-overrides'
@@ -71,6 +92,61 @@ tags:
 - extendedWaitUntil:
     notVisible:
       id: 'birthday-overrides'
+    timeout: 5000
+# The general lead days, for everyone without their own, persist too.
+# The row's id carries its state ("-on" when checked). "On the day" is
+# the default; add a week ahead. The enable switch is never touched: it
+# would raise the notification permission alert on the simulator.
+- scrollUntilVisible:
+    element:
+      id: 'birthday-lead-times'
+    direction: UP
+    timeout: 10000
+- tapOn:
+    id: 'birthday-lead-times'
+- extendedWaitUntil:
+    visible:
+      id: 'birthday-lead-7'
+    timeout: 5000
+- waitForAnimationToEnd:
+    timeout: 5000
+- tapOn:
+    id: 'birthday-lead-7'
+- extendedWaitUntil:
+    visible:
+      id: 'birthday-lead-7-on'
+    timeout: 5000
+- runFlow: ../common/close-settings.yaml
+# Reopen: the choice was stored (device-local SQLite), not just React state.
+- runFlow: ../common/open-settings.yaml
+- runFlow:
+    file: ../common/open-settings-page.yaml
+    env:
+      PAGE: notifications
+- scrollUntilVisible:
+    element:
+      id: 'notifications-device-only'
+    direction: DOWN
+    timeout: 10000
+- scrollUntilVisible:
+    element:
+      id: 'birthday-lead-times'
+    direction: UP
+    timeout: 10000
+- tapOn:
+    id: 'birthday-lead-times'
+- extendedWaitUntil:
+    visible:
+      id: 'birthday-lead-7-on'
+    timeout: 5000
+- waitForAnimationToEnd:
+    timeout: 5000
+# Leave the settings as found for the next flow.
+- tapOn:
+    id: 'birthday-lead-7-on'
+- extendedWaitUntil:
+    visible:
+      id: 'birthday-lead-7'
     timeout: 5000
 - runFlow: ../common/close-settings.yaml
 - runFlow:

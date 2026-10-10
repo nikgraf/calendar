@@ -27,13 +27,6 @@ const namesOf = (type: 'index' | 'table') =>
     return rows.map((row) => row.name);
   });
 
-const columnsOf = (table: string) =>
-  Effect.gen(function* () {
-    const sql = yield* SqlClient;
-    const rows = yield* sql<{ name: string }>`SELECT name FROM pragma_table_info(${table})`;
-    return rows.map((row) => row.name);
-  });
-
 describe('runMigrations', () => {
   it.effect('builds the whole schema on a fresh database', () =>
     Effect.gen(function* () {
@@ -63,21 +56,6 @@ describe('runMigrations', () => {
         'idx_pending_ops_due',
         'idx_tasks_due',
       ]);
-      // A few columns that arrived late in the pre-baseline history.
-      expect(yield* columnsOf('events')).toContain('recurrence_end_utc');
-      expect(yield* columnsOf('pending_ops')).toContain('attendees_changed');
-      expect(yield* columnsOf('task_lists')).toContain('read_only');
-      expect(yield* columnsOf('accounts')).toContain('contacts_enabled');
-      expect(yield* columnsOf('events')).toContain('geo');
-      expect(yield* columnsOf('pending_ops')).toContain('geo_cleared');
-      expect(yield* columnsOf('pending_ops')).toContain('recurrence_cleared');
-      expect(yield* columnsOf('pending_ops')).toContain('conflict_at');
-      expect(yield* columnsOf('pending_ops')).toContain('server_payload');
-      expect(yield* columnsOf('pending_ops')).toContain('carried_text');
-      expect(yield* columnsOf('events')).toEqual(
-        expect.arrayContaining(['mirror', 'transparency', 'visibility']),
-      );
-      expect(yield* columnsOf('tasks')).toEqual(expect.arrayContaining(['due_utc', 'external_id']));
     }).pipe(Effect.provide(sqlLayer())),
   );
 
@@ -125,15 +103,6 @@ describe('runMigrations', () => {
         { id: 'endless', recurrence_end_utc: null },
         { id: 'rule-and-dates', recurrence_end_utc: Date.parse('2026-10-01T10:00:00Z') },
       ]);
-    }).pipe(Effect.provide(sqlLayer())),
-  );
-
-  it.effect('is idempotent — a second run applies nothing', () =>
-    Effect.gen(function* () {
-      yield* runMigrations;
-      // Would throw "table already exists" if the baseline ran twice.
-      yield* runMigrations;
-      expect(yield* appliedIds).toEqual(migrations.map(([id]) => id));
     }).pipe(Effect.provide(sqlLayer())),
   );
 

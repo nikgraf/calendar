@@ -4,8 +4,9 @@ tags:
   - ci
   - ci-permissions
 ---
-# Run on a test install with no Apple account connected yet (before flow
-# 10). Unlike ordinary launchApp, unset does not silently pre-grant access.
+# Run on a test install with no Apple account connected yet (before the
+# sharded flows). Unlike ordinary launchApp, unset does not silently
+# pre-grant access.
 # Check denial guidance before exercising recovery with a retained account.
 # Recover without another launchApp: its default would pre-grant access.
 - launchApp:
@@ -73,7 +74,7 @@ tags:
     timeout: 20000
 - assertVisible:
     id: 'apple-reminders-account'
-# Leave no Apple account so flow 10 still exercises the initial connection.
+# Leave no Apple account so flow 09 still exercises the initial connection.
 - scrollUntilVisible:
     element:
       id: 'remove-account-apple-reminders'
