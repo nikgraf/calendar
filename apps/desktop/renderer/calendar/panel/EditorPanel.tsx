@@ -20,6 +20,7 @@ import { Button } from '../../ui/Button.tsx';
 import { VideoIcon } from '../../ui/icons.tsx';
 import { SegmentedControl } from '../../ui/SegmentedControl.tsx';
 import { EventEditorForm } from '../EventEditorForm.tsx';
+import { MoveConfirm } from '../MoveConfirm.tsx';
 import { QuickAddBar } from '../QuickAddBar.tsx';
 import { ReminderEditorForm } from '../ReminderEditorForm.tsx';
 import { TaskEditorForm } from '../TaskEditorForm.tsx';
@@ -39,7 +40,10 @@ const KIND_LABELS: Record<ItemKind, string> = {
  * hold), then the form. In create mode the control picks the kind; on an
  * existing item it converts (Save writes the other kind and deletes the
  * source) or moves a to-do to the other provider. Both models stay
- * mounted so a flip keeps state. The e2e suite relies on the title text
+ * mounted so a flip keeps state. A question before a lossy switch, move,
+ * conversion or delete is a footer below the scrolling body, on screen
+ * whatever the scroll position (the kind control that asked may be at
+ * the top, Save at the bottom). The e2e suite relies on the title text
  * ("New event", "Edit reminder", …) and the mode test ids.
  */
 export function EditorPanel({
@@ -123,75 +127,86 @@ export function EditorPanel({
   return (
     <div
       aria-label={mode === 'todo' ? 'Task editor' : 'Event editor'}
-      className="flex min-h-0 flex-1 flex-col overflow-y-auto px-4 pt-3 pb-4"
+      className="flex min-h-0 flex-1 flex-col"
       data-testid="editor"
     >
-      <div className="mb-3 flex items-center justify-between">
-        <h2 className="text-lg font-semibold" data-testid="editor-title">
-          {title}
-        </h2>
-        {joinUrl ? (
-          <Button onClick={() => window.open(joinUrl, '_blank', 'noopener')} size="sm">
-            <VideoIcon size={14} />
-            Join meeting
-          </Button>
+      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-4 pt-3 pb-4">
+        <div className="mb-3 flex items-center justify-between">
+          <h2 className="text-lg font-semibold" data-testid="editor-title">
+            {title}
+          </h2>
+          {joinUrl ? (
+            <Button onClick={() => window.open(joinUrl, '_blank', 'noopener')} size="sm">
+              <VideoIcon size={14} />
+              Join meeting
+            </Button>
+          ) : null}
+        </div>
+
+        {sourceKind === 'new' ? (
+          <QuickAddBar
+            fallbackDate={seed.initialDate.toString()}
+            focusSignal={quickAddFocus}
+            onApply={(item) => void apply(item)}
+            onCapture={onCapture}
+            timeZone={timeZone}
+          />
         ) : null}
-      </div>
 
-      {sourceKind === 'new' ? (
-        <QuickAddBar
-          fallbackDate={seed.initialDate.toString()}
-          focusSignal={quickAddFocus}
-          onApply={(item) => void apply(item)}
-          onCapture={onCapture}
-          timeZone={timeZone}
-        />
-      ) : null}
-
-      {showToggle ? (
-        <SegmentedControl
-          className="mb-3 w-full"
-          grow
-          label="Kind"
-          onChange={(option) => void switchTo(option)}
-          options={available.map((option) => ({
-            disabled: moveConfirmation.pending !== null || (option !== 'event' && seriesOnly),
-            label: KIND_LABELS[option],
-            testId: `mode-${option}`,
-            title:
-              option !== 'event' && seriesOnly
-                ? 'Choose "All events" to convert a series'
-                : undefined,
-            value: option,
-          }))}
-          size="sm"
-          value={kind}
-        />
-      ) : null}
-
-      {mode === 'todo' ? (
-        // The selected list's provider picks the form: a Reminders list
-        // exposes time/priority/alert/repeat/URL; a Google list gets the
-        // plain title/date/notes form. The kind control moves between the
-        // providers; the list picker stays within one.
-        taskModel.provider === 'apple' ? (
-          <ReminderEditorForm
-            moveConfirmation={moveConfirmation}
-            onClose={onClose}
-            task={task}
-            taskModel={taskModel}
+        {showToggle ? (
+          <SegmentedControl
+            className="mb-3 w-full"
+            grow
+            label="Kind"
+            onChange={(option) => void switchTo(option)}
+            options={available.map((option) => ({
+              disabled: moveConfirmation.pending !== null || (option !== 'event' && seriesOnly),
+              label: KIND_LABELS[option],
+              testId: `mode-${option}`,
+              title:
+                option !== 'event' && seriesOnly
+                  ? 'Choose "All events" to convert a series'
+                  : undefined,
+              value: option,
+            }))}
+            size="sm"
+            value={kind}
           />
+        ) : null}
+
+        {mode === 'todo' ? (
+          // The selected list's provider picks the form: a Reminders list
+          // exposes time/priority/alert/repeat/URL; a Google list gets the
+          // plain title/date/notes form. The kind control moves between the
+          // providers; the list picker stays within one.
+          taskModel.provider === 'apple' ? (
+            <ReminderEditorForm
+              moveConfirmation={moveConfirmation}
+              onClose={onClose}
+              task={task}
+              taskModel={taskModel}
+            />
+          ) : (
+            <TaskEditorForm
+              moveConfirmation={moveConfirmation}
+              onClose={onClose}
+              task={task}
+              taskModel={taskModel}
+            />
+          )
         ) : (
-          <TaskEditorForm
+          <EventEditorForm
+            model={eventModel}
             moveConfirmation={moveConfirmation}
             onClose={onClose}
-            task={task}
-            taskModel={taskModel}
           />
-        )
-      ) : (
-        <EventEditorForm model={eventModel} moveConfirmation={moveConfirmation} onClose={onClose} />
-      )}
+        )}
+      </div>
+      {moveConfirmation.pending ? (
+        <div className="shrink-0 px-4 pt-2 pb-4">
+          <MoveConfirm moveConfirmation={moveConfirmation} />
+        </div>
+      ) : null}
     </div>
   );
 }

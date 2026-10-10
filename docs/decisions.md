@@ -301,6 +301,15 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   to-do in the filtered list, #164). The inline add fields went; the
   cost is one tap. The iOS control is drawn in RN so each segment can
   carry a test id.
+- **Editor question footer** (2026-10-10) — the desktop editor's inline
+  question (a lossy switch, move, conversion or delete) is a footer of
+  the panel below the scrolling form, not the form's last row, so it is
+  on screen whatever the scroll position; its text is capped at a few
+  lines and scrolls on its own, so the answers stay in view at the
+  smallest window. Not next to whatever asked (split between the panel
+  and the forms, and still hidden when Save is), not a modal (the panel
+  stays off the dialog stack). iOS needs nothing: its question is a
+  native alert.
 - **Experimental: mirrors and agents** (2026-10-09, #153) — a label in
   Settings, not a switch: both do nothing until set up, so a gate would
   guard nothing and switch off mirrors people run. Grouped under an

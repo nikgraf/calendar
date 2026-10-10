@@ -14,7 +14,6 @@ import { Button } from '../ui/Button.tsx';
 import { FIELD_CLASS as field, LABEL_CLASS } from '../ui/fieldStyles.ts';
 import { LocationCombobox } from './LocationCombobox.tsx';
 import { LocationMap } from './LocationMap.tsx';
-import { MoveConfirm } from './MoveConfirm.tsx';
 import { RemindersFields } from './RemindersFields.tsx';
 import { RepeatRuleFields } from './RepeatRuleFields.tsx';
 
@@ -247,8 +246,6 @@ export function EventEditorForm({
           />
         </label>
       </fieldset>
-
-      <MoveConfirm moveConfirmation={moveConfirmation} />
 
       <div className="mt-5 flex items-center justify-between">
         {existing && !readOnly ? (

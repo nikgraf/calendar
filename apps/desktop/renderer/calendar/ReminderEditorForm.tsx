@@ -7,7 +7,6 @@ import {
 } from '@calendar/app-state';
 import type { TaskRecord } from '@calendar/core';
 import { Button } from '../ui/Button.tsx';
-import { MoveConfirm } from './MoveConfirm.tsx';
 import { TaskDoneToggle } from './TaskDoneToggle.tsx';
 import { NoDueDate, RemoveDueDate } from './NoDueDate.tsx';
 import { RepeatRuleFields } from './RepeatRuleFields.tsx';
@@ -159,7 +158,6 @@ export function ReminderEditorForm({
           value={taskModel.notes}
         />
       </label>
-      <MoveConfirm moveConfirmation={moveConfirmation} />
       <div className="mt-2 flex items-center justify-between">
         {task && !taskModel.readOnly ? (
           <Button

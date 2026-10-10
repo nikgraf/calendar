@@ -1,7 +1,6 @@
 import type { useMoveConfirmation, useTaskEditorModel } from '@calendar/app-state';
 import type { TaskRecord } from '@calendar/core';
 import { Button } from '../ui/Button.tsx';
-import { MoveConfirm } from './MoveConfirm.tsx';
 import { TaskDoneToggle } from './TaskDoneToggle.tsx';
 import { NoDueDate, RemoveDueDate } from './NoDueDate.tsx';
 import { FIELD_CLASS, LABEL_CLASS } from '../ui/fieldStyles.ts';
@@ -73,7 +72,6 @@ export function TaskEditorForm({
           Open in Google Tasks
         </button>
       ) : null}
-      <MoveConfirm moveConfirmation={moveConfirmation} />
       <div className="mt-2 flex items-center justify-between">
         {task ? (
           <Button
