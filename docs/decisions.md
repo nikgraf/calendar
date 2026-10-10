@@ -2869,3 +2869,37 @@ then iOS (both in `todo.md`).
       3m 39s) against 19m 24s and 22m 18s before. Billed minutes dropped,
       but shard 1 (04a's 6 min plus its flows) stays the job that sets
       the wall-clock time, at 38 of its 45 minutes.
+
+### Swipe jumps (2026-10-10)
+
+- [x] iOS timeline: a swipe no longer jumps when it lands — done
+      (`todo/ios-swipe-jump`). Reproduced on the simulator with
+      `simctl io recordVideo` and per-frame analysis of the 2-day view;
+      **two separate jumps**. (1) **A column off for one frame**: the
+      strip was laid out relative to the page React last drew, and a
+      UI-thread `lag` reset (`runOnUI` from a layout effect) undid the
+      shift the new days brought. Nothing orders that call against the
+      Fabric mount, so in 4 of 52 recorded swipes a frame showed the
+      next day (title "Oct 12 – 13" over 13 | 14). Now the UI thread adds
+      up the pixels each swipe navigated (`navigatedPx`) and hands the
+      sum to React with the page change; the strips are drawn at
+      `left: swiped.px − buffer·column` with the transform
+      `panX − navigatedPx`, so the render that draws a swipe's page moves
+      them by exactly as much as the new days move them back, in one
+      mount. A navigation from outside (Today, chevrons, a tapped day, a
+      view switch) needs no UI-thread step at all; it only stops a swipe
+      still settling. `swipeLagAfterRender` is gone; `swipeLag` derives
+      the lag from the two sums. (2) **The grid jumping a row after the
+      swipe settled**: the all-day lane was sized to the busiest _drawn_
+      day, so a busy neighbour entering or leaving the ±buffer strip
+      resized it on commit, even when nothing visible changed. The lane
+      now fits the visible page (`pageMaxima`), and mid-swipe its height
+      blends toward the incoming page (`interpolatePages`, a Reanimated
+      height), so the grid moves with the finger and is in place when the
+      swipe lands. The "less" toggle follows the visible page too.
+      Measured on the simulator: the old code moved the grid at 10 of 49
+      swipe page changes, the new code at 0 of 74; dropped frames during
+      swipes unchanged (4–8 % of vsyncs in both, simulator noise). Not
+      checked: a task drag across days after a swipe (the simulator
+      tool's touch path does not start it on the old code either; the
+      drop geometry at rest is unchanged), and a real device.

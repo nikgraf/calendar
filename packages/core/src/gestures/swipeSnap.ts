@@ -131,16 +131,39 @@ export const swipeReleaseColumns = (
 };
 
 /**
- * The lag left once the strip rendered a page `delta` days from the last
- * one, or null when the change was not (only) a swipe's navigation — Today,
- * the chevrons, a tapped day — and the strip should start centred.
+ * The columns a swipe has navigated that React has not drawn yet. The UI
+ * thread counts a swipe's navigation in pixels the moment it happens; the
+ * render that draws it reports the count it drew. Rounded, so pixel sums
+ * of fractional column widths still give whole columns.
  */
-export const swipeLagAfterRender = (lag: number, delta: number): number | null => {
+export const swipeLag = (
+  navigatedPx: number,
+  renderedPx: number,
+  columnWidthPx: number,
+): number => {
   'worklet';
-  if (delta === 0) {
-    return lag;
+  if (columnWidthPx <= 0) {
+    return 0;
   }
-  return lag !== 0 && Math.sign(delta) === Math.sign(lag) && Math.abs(delta) <= Math.abs(lag)
-    ? lag - delta
-    : null;
+  // `+ 0` turns a -0 from round into 0.
+  return Math.round((navigatedPx - renderedPx) / columnWidthPx) + 0;
+};
+
+/**
+ * A per-page value — the all-day lane's height — for a strip panned to
+ * `position`: the index of the drawn page at the viewport's left edge,
+ * fractional mid-pan. Between two pages it blends linearly, so the value
+ * follows the finger and is the next page's own once the pan lands there;
+ * past the drawn pages it holds the nearest one.
+ */
+export const interpolatePages = (values: ReadonlyArray<number>, position: number): number => {
+  'worklet';
+  if (values.length === 0) {
+    return 0;
+  }
+  const last = values.length - 1;
+  const at = Number.isFinite(position) ? Math.max(0, Math.min(last, position)) : 0;
+  const below = Math.floor(at);
+  const above = Math.min(last, below + 1);
+  return values[below]! + (values[above]! - values[below]!) * (at - below);
 };

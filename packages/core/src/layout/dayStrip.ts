@@ -32,3 +32,14 @@ export const bufferedRange = (
   timeZone: string,
 ): UtcRange =>
   daySpanRange(firstVisible.subtract({ days: buffer }), visibleCount + 2 * buffer, timeZone);
+
+/**
+ * The largest of each run of `pageSize` consecutive values: per page the
+ * strip can show, first page first, what its busiest day needs (the
+ * all-day lane's rows). A strip of `visibleCount + 2 * buffer` days holds
+ * `2 * buffer + 1` pages, the visible one in the middle.
+ */
+export const pageMaxima = (values: ReadonlyArray<number>, pageSize: number): Array<number> =>
+  Array.from({ length: Math.max(values.length - pageSize + 1, 0) }, (_, start) =>
+    Math.max(...values.slice(start, start + pageSize)),
+  );
