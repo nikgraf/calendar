@@ -34,6 +34,29 @@ export const bufferedRange = (
   daySpanRange(firstVisible.subtract({ days: buffer }), visibleCount + 2 * buffer, timeZone);
 
 /**
+ * The days a slide to a picked first day travels across, signed (positive
+ * = forward): the whole way up to two windows, so a nearby pick slides on
+ * from exactly the days on screen; a farther one starts that far short of
+ * its target instead of drawing every day in between.
+ */
+export const clampSlide = (shift: number, visibleCount: number): number =>
+  Math.max(-2 * visibleCount, Math.min(2 * visibleCount, shift));
+
+/**
+ * The visible days plus the `slide` days a slide to them travels across,
+ * on the side it comes from: what the strip draws and the range fetches
+ * until the slide ends. No slide, just the visible days.
+ */
+export const slideSpan = (
+  firstVisible: Temporal.PlainDate,
+  visibleCount: number,
+  slide: number,
+): { readonly count: number; readonly first: Temporal.PlainDate } => ({
+  count: visibleCount + Math.abs(slide),
+  first: firstVisible.subtract({ days: Math.max(slide, 0) }),
+});
+
+/**
  * The largest of each run of `pageSize` consecutive values: per page the
  * strip can show, first page first, what its busiest day needs (the
  * all-day lane's rows). A strip of `visibleCount + 2 * buffer` days holds

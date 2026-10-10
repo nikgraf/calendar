@@ -6,6 +6,12 @@ const SETTLE_MS = 200;
 
 const easeOutCubic = (t: number): number => 1 - (1 - t) ** 3;
 
+/** A slide to a picked day: quick for a column or two, longer the farther it travels. */
+const slideMs = (days: number): number => Math.min(240 + 12 * days, 400);
+
+const prefersReducedMotion = (): boolean =>
+  window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
 /**
  * Continuous horizontal trackpad panning across days. The day strip follows
  * the fingers 1:1 via a `--pan-x` CSS variable written imperatively (no
@@ -13,13 +19,19 @@ const easeOutCubic = (t: number): number => 1 - (1 - t) ** 3;
  * shift to app state, and a layout effect re-anchors the offset before
  * paint when the shifted days arrive. When the wheel goes quiet the offset
  * snaps to the nearest day boundary with an ease-out animation.
+ *
+ * A picked first day (`slide` ≠ 0) arrives with the days it travels across
+ * drawn on the side it comes from: the offset starts where the old days
+ * sat and eases to 0, a scroll to the day. A pan grabs a slide mid-way.
  */
 export const useWheelPan = ({
   enabled,
   firstDay,
   onCommitDays,
+  onSlideEnd,
   rootRef,
   scrollerRef,
+  slide,
   viewportRef,
   visibleDayCount,
 }: {
@@ -27,6 +39,8 @@ export const useWheelPan = ({
   /** First visible day — day shifts are detected by watching it change. */
   firstDay: Temporal.PlainDate;
   onCommitDays: (dayCount: number) => void;
+  /** The slide reached its day (or a pan took it over): the strip can drop the days it crossed. */
+  onSlideEnd: () => void;
   /** Gets the wheel listener and the `--pan-x` variable. */
   rootRef: RefObject<HTMLElement | null>;
   /**
@@ -34,18 +48,22 @@ export const useWheelPan = ({
    * here manually, so diagonal gestures scroll both dimensions at once.
    */
   scrollerRef: RefObject<HTMLElement | null>;
+  /** Signed days a slide to the first day travels (0: none), drawn before (forward) or after it. */
+  slide: number;
   /** Clipped strip container; its width / visibleDayCount = day width. */
   viewportRef: RefObject<HTMLElement | null>;
   visibleDayCount: number;
 }): void => {
   const enabledRef = useRef(enabled);
   const onCommitDaysRef = useRef(onCommitDays);
+  const onSlideEndRef = useRef(onSlideEnd);
   const visibleDayCountRef = useRef(visibleDayCount);
   useEffect(() => {
     enabledRef.current = enabled;
     onCommitDaysRef.current = onCommitDays;
+    onSlideEndRef.current = onSlideEnd;
     visibleDayCountRef.current = visibleDayCount;
-  }, [enabled, onCommitDays, visibleDayCount]);
+  }, [enabled, onCommitDays, onSlideEnd, visibleDayCount]);
 
   // One controller for the hook's lifetime: it closes over the (stable) ref
   // objects only, so the effects below have honest dependency arrays.
@@ -55,6 +73,8 @@ export const useWheelPan = ({
     let settleFrame: number | null = null;
     // A release() committed days; the settle starts once they re-anchor.
     let awaitingSettle = false;
+    // The running settle is a slide's: ending it ends the slide.
+    let sliding = false;
     let previous: { count: number; firstIso: string } | null = null;
 
     const setVar = (px: number) => {
@@ -74,8 +94,13 @@ export const useWheelPan = ({
         settleFrame = null;
       }
       awaitingSettle = false;
+      sliding = false;
     };
-    const startSettle = () => {
+    const endSlide = () => {
+      sliding = false;
+      onSlideEndRef.current();
+    };
+    const startSettle = (durationMs = SETTLE_MS) => {
       cancelSettle();
       const from = pan.offset();
       if (Math.abs(from) < 0.5) {
@@ -85,13 +110,37 @@ export const useWheelPan = ({
       }
       const startedAt = performance.now();
       const frame = (nowMs: number) => {
-        const t = Math.min((nowMs - startedAt) / SETTLE_MS, 1);
+        const t = Math.min((nowMs - startedAt) / durationMs, 1);
         const value = from * (1 - easeOutCubic(t));
         pan.setOffset(value);
         setVar(value);
         settleFrame = t < 1 ? requestAnimationFrame(frame) : null;
+        if (t === 1 && sliding) {
+          endSlide();
+        }
       };
       settleFrame = requestAnimationFrame(frame);
+    };
+    const startSlide = (days: number) => {
+      clearReleaseTimer();
+      cancelSettle();
+      pan.reset();
+      if (prefersReducedMotion()) {
+        setVar(0);
+        endSlide();
+        return;
+      }
+      // Before paint, the strip shows where the slide comes from: for a
+      // nearby day, the days that were on screen, right where they were.
+      pan.setOffset(days * dayWidth());
+      setVar(pan.offset());
+      startSettle(slideMs(Math.abs(days)));
+      if (settleFrame === null) {
+        // Nothing to animate (no width yet): the slide is over at once.
+        endSlide();
+      } else {
+        sliding = true;
+      }
     };
     const release = () => {
       releaseTimer = null;
@@ -106,6 +155,9 @@ export const useWheelPan = ({
     };
 
     return {
+      // A drag mid-slide keeps the slide's extra days drawn: dropping them
+      // would move the drop target's day index under the pointer. The next
+      // navigation clears them.
       disable: () => {
         clearReleaseTimer();
         cancelSettle();
@@ -136,7 +188,13 @@ export const useWheelPan = ({
         if (deltaY !== 0 && scrollerRef.current) {
           scrollerRef.current.scrollTop += deltaY;
         }
+        // A pan grabbing a slide takes its offset as is (the settle frames
+        // wrote it to the pan): its commits shift back over the slide's days.
+        const grabbedSlide = sliding;
         cancelSettle();
+        if (grabbedSlide) {
+          onSlideEndRef.current();
+        }
         setVar(result.offsetPx);
         if (result.commitDays !== 0) {
           onCommitDaysRef.current(result.commitDays);
@@ -146,10 +204,11 @@ export const useWheelPan = ({
       },
       /**
        * Called before paint whenever the rendered day window changes:
-       * re-anchors the offset for shifts this pan committed; any external
-       * navigation (buttons, Today, view switch) resets the pan instead.
+       * re-anchors the offset for shifts this pan committed; a picked day
+       * (`slide` set) slides in; any other navigation (buttons, Today, view
+       * switch) resets the pan instead.
        */
-      onDaysChanged: (firstIso: string, count: number) => {
+      onDaysChanged: (firstIso: string, count: number, slide: number) => {
         const prev = previous;
         previous = { count, firstIso };
         if (!prev) {
@@ -158,10 +217,12 @@ export const useWheelPan = ({
         const shiftedDays = Temporal.PlainDate.from(prev.firstIso).until(
           Temporal.PlainDate.from(firstIso),
         ).days;
-        if (
-          prev.count !== count ||
-          (shiftedDays !== 0 && !isOwnPanShift(shiftedDays, pan.pendingDays()))
-        ) {
+        const ownShift = isOwnPanShift(shiftedDays, pan.pendingDays());
+        if (prev.count === count && shiftedDays !== 0 && !ownShift && slide !== 0) {
+          startSlide(slide);
+          return;
+        }
+        if (prev.count !== count || (shiftedDays !== 0 && !ownShift)) {
           cancelSettle();
           pan.reset();
           setVar(0);
@@ -181,8 +242,8 @@ export const useWheelPan = ({
 
   const firstDayIso = firstDay.toString();
   useLayoutEffect(() => {
-    controller.onDaysChanged(firstDayIso, visibleDayCount);
-  }, [controller, firstDayIso, visibleDayCount]);
+    controller.onDaysChanged(firstDayIso, visibleDayCount, slide);
+  }, [controller, firstDayIso, visibleDayCount, slide]);
 
   useEffect(() => {
     const element = rootRef.current;

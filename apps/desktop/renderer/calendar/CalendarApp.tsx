@@ -164,12 +164,15 @@ function CalendarBody({
 }) {
   const {
     days,
+    endSlide,
     focused,
     goToDay,
     goToday,
     panByDays,
     range,
+    scrollToDay,
     setFocused,
+    slide,
     step,
     switchView,
     title,
@@ -350,7 +353,7 @@ function CalendarBody({
   const gridRef = useRef<HTMLDivElement>(null);
   const laneRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
-  const strip = useWeekStrip(days);
+  const strip = useWeekStrip(days, slide);
   const drag = useEventDrag({
     gridRef,
     hourHeight: HOUR_HEIGHT,
@@ -519,8 +522,9 @@ function CalendarBody({
             calendars={calendars}
             focused={focused}
             onManageAccounts={() => void window.calendarBridge.openSettings('accounts')}
-            onPickDay={goToDay}
+            onPickDay={scrollToDay}
             today={Temporal.PlainDate.from(today)}
+            visible={view === 'month' ? null : { end: days.at(-1)!, start: days[0]! }}
           />
         )}
 
@@ -563,6 +567,7 @@ function CalendarBody({
               onBirthdayClick={(birthday) => setViewBirthday(birthday)}
               onEventClick={(event) => setPanel({ event, kind: 'inspector' })}
               onNavigate={panByDays}
+              onSlideEnd={endSlide}
               onSlotClick={(date, hour) => openEditor({ initialDate: date, initialHour: hour })}
               onSlotDrag={(date, times) => openEditor({ initialDate: date, initialTimes: times })}
               onTaskClick={(task) => setPanel({ kind: 'editTask', opening: nextOpening(), task })}
@@ -571,6 +576,7 @@ function CalendarBody({
               scrollRef={scrollRef}
               secondaryZones={secondaryZones}
               selectedKey={selectedKey}
+              slide={slide}
               tasks={tasks}
               timeZone={timeZone}
               today={today}

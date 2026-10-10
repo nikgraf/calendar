@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vite-plus/test';
 import { Temporal } from '../time/temporal.ts';
-import { bufferedDays, bufferedRange, pageMaxima, TWO_DAY_SWIPE_BUFFER } from './dayStrip.ts';
+import {
+  bufferedDays,
+  bufferedRange,
+  clampSlide,
+  pageMaxima,
+  slideSpan,
+  TWO_DAY_SWIPE_BUFFER,
+} from './dayStrip.ts';
 
 const MONDAY = Temporal.PlainDate.from('2026-08-17');
 
@@ -38,6 +45,40 @@ describe('dayStrip', () => {
       .startOfDay();
     expect(range.startUtc).toBe(firstStart.toInstant().epochMilliseconds);
     expect(range.endUtc).toBe(afterLast.toInstant().epochMilliseconds);
+  });
+});
+
+describe('slides', () => {
+  it('travels the whole way up to two windows, and two windows beyond', () => {
+    expect(clampSlide(3, 7)).toBe(3);
+    expect(clampSlide(-14, 7)).toBe(-14);
+    expect(clampSlide(40, 7)).toBe(14);
+    expect(clampSlide(-40, 7)).toBe(-14);
+    expect(clampSlide(5, 1)).toBe(2);
+  });
+
+  it('draws the days a forward slide comes from before the visible ones', () => {
+    // Mon Aug 17 → Thu Aug 20: the strip starts at the old first day.
+    const span = slideSpan(MONDAY.add({ days: 3 }), 7, 3);
+    expect(span.first.toString()).toBe('2026-08-17');
+    expect(span.count).toBe(10);
+    const strip = bufferedDays(span.first, span.count, 2);
+    expect(strip[2]!.toString()).toBe('2026-08-17');
+    expect(strip[2 + 3]!.toString()).toBe('2026-08-20');
+  });
+
+  it('draws the days a backward slide comes from after the visible ones', () => {
+    const span = slideSpan(MONDAY, 7, -4);
+    expect(span.first.toString()).toBe('2026-08-17');
+    expect(span.count).toBe(11);
+    // The old window, Fri Aug 21 – Thu Aug 27, is the span's tail.
+    expect(span.first.add({ days: span.count - 7 }).toString()).toBe('2026-08-21');
+  });
+
+  it('is the visible days alone without a slide', () => {
+    const span = slideSpan(MONDAY, 7, 0);
+    expect(span.first.toString()).toBe('2026-08-17');
+    expect(span.count).toBe(7);
   });
 });
 
