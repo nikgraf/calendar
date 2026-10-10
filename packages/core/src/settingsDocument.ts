@@ -165,7 +165,11 @@ const describeParseError = (text: string, error: ParseError): string => {
  * fails decoding with a clear message. The device entry is a word, not an
  * id, and passes through. A file from before the entry existed lists
  * only ids: the one this device is in becomes the entry, else the entry
- * is added first (`withDeviceEntry`).
+ * is added first (`withDeviceEntry`) — but only when every zone the file
+ * names still fits. A file that would lose one (it is full, or longer
+ * than the cap) is left as written and fails decoding with the schema's
+ * message: the desktop writes the watched file back, so a silent trim
+ * would delete what the user wrote.
  */
 const normalizeZones = (
   raw: { primary?: unknown; zones?: unknown },
@@ -185,7 +189,14 @@ const normalizeZones = (
     zones.every((zone): zone is string => typeof zone === 'string') &&
     !zones.includes(DEVICE_ZONE)
   ) {
-    return withDeviceEntry({ primary, zones }, options.deviceZone ?? Temporal.Now.timeZoneId());
+    const withEntry = withDeviceEntry(
+      { primary, zones },
+      options.deviceZone ?? Temporal.Now.timeZoneId(),
+    );
+    // Swapping an id for the entry keeps the length; adding it grows it by one.
+    if (withEntry.zones.length >= zones.length) {
+      return withEntry;
+    }
   }
   return { ...raw, primary, zones };
 };

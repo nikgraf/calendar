@@ -800,9 +800,13 @@ gateway carries all of it. Details, limits and the threat model:
   and an exported file reads right on another device. It is always
   present and never removed (migration 11 and the document parser give an
   older list one through `withDeviceEntry`); a fixed zone the device is in
-  right now draws once. The catalog is a checked-in canonical list; a
+  right now draws once (`zoneKey` also folds UTC's links). A settings
+  file whose zones would not fit with the entry fails to parse rather
+  than losing one. The catalog is a checked-in canonical list; a
   device stores the spelling its engine validates (`runtimeZoneId`) and
-  displays through `canonicalZoneId`. Notifications, EventKit's floating
+  displays through `canonicalZoneId`. Both pickers open on the whole
+  catalog and narrow it as the user types (`searchTimeZones`, no cap): a
+  capped-height dropdown on the Mac, a virtualized list on iOS. Notifications, EventKit's floating
   zone and timed reminders stay on the device zone, read on every pass.
 - **Local notifications**: `LocalNotifications` (packages/sync) runs its
   own loop — outside the sync pass — over two producers, `loadEventPlans`

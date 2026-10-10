@@ -1,6 +1,6 @@
 import { searchTimeZones, type TimeZoneMatch, zoneSlug } from '@calendar/core';
 import { useState } from 'react';
-import { SuggestionList } from './calendar/SuggestionList.tsx';
+import { revealOption, SuggestionList } from './calendar/SuggestionList.tsx';
 import { SETTINGS_BUTTON_CLASS } from './ui/buttonStyles.ts';
 
 const LIST_ID = 'time-zone-options';
@@ -41,14 +41,18 @@ export function TimeZonePicker({
             onChange={(change) => {
               setQuery(change.target.value);
               setHighlight(0);
+              // A new query starts the narrowed list at its top.
+              document.getElementById(LIST_ID)?.scrollTo({ top: 0 });
             }}
             onKeyDown={(keyEvent) => {
-              if (keyEvent.key === 'ArrowDown') {
+              if (keyEvent.key === 'ArrowDown' || keyEvent.key === 'ArrowUp') {
                 keyEvent.preventDefault();
-                setHighlight((index) => Math.min(index + 1, Math.max(matches.length - 1, 0)));
-              } else if (keyEvent.key === 'ArrowUp') {
-                keyEvent.preventDefault();
-                setHighlight((index) => Math.max(index - 1, 0));
+                const next =
+                  keyEvent.key === 'ArrowDown'
+                    ? Math.min(highlight + 1, Math.max(matches.length - 1, 0))
+                    : Math.max(highlight - 1, 0);
+                setHighlight(next);
+                revealOption(LIST_ID, next);
               } else if (keyEvent.key === 'Enter') {
                 keyEvent.preventDefault();
                 const match = matches[highlight];

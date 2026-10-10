@@ -9,6 +9,7 @@ import {
   searchTimeZones,
   TIME_ZONE_IDS,
   zoneCity,
+  zoneKey,
   zoneRegion,
   zoneSlug,
 } from './zones.ts';
@@ -97,6 +98,16 @@ describe('zones catalog', () => {
     expect(zoneRegion('America/Argentina/Buenos_Aires')).toBe('America');
     expect(zoneRegion('UTC')).toBe('');
     expect(zoneSlug('Asia/Kolkata')).toBe('Asia-Kolkata');
+  });
+});
+
+describe('zoneKey', () => {
+  it('compares legacy spellings and the links of UTC as one zone', () => {
+    expect(zoneKey('Asia/Calcutta')).toBe(zoneKey('Asia/Kolkata'));
+    expect(zoneKey('Etc/UTC')).toBe('UTC');
+    expect(zoneKey('Zulu')).toBe('UTC');
+    expect(zoneKey('UTC')).toBe('UTC');
+    expect(zoneKey('Europe/London')).not.toBe('UTC');
   });
 });
 

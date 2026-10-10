@@ -1,5 +1,5 @@
 import { Schema } from 'effect';
-import { canonicalZoneId, isValidTimeZone, MAX_TIME_ZONES } from './time/zones.ts';
+import { isValidTimeZone, MAX_TIME_ZONES, zoneKey } from './time/zones.ts';
 
 /**
  * The entry that stands for this device's own zone, whatever the OS says
@@ -64,8 +64,9 @@ export interface ResolvedTimeZones {
 /**
  * Entries → IANA ids, the device entry as `deviceZone`. A fixed zone that
  * is the device's right now (home, pinned before a trip) is left out of
- * the secondaries, compared by canonical name since the device may spell
- * its zone the legacy way: the gutter never shows one hour twice.
+ * the secondaries, compared by `zoneKey` since the device may spell its
+ * zone the legacy way or as a link (Etc/UTC for UTC): the gutter never
+ * shows one hour twice.
  */
 export const resolveTimeZones = (
   settings: TimeZoneSettings,
@@ -73,14 +74,14 @@ export const resolveTimeZones = (
 ): ResolvedTimeZones => {
   const resolve = (zone: string): string => (isDeviceZone(zone) ? deviceZone : zone);
   const primary = resolve(settings.primary);
-  const seen = new Set([canonicalZoneId(primary)]);
+  const seen = new Set([zoneKey(primary)]);
   const secondary: Array<string> = [];
   for (const zone of settings.zones) {
     if (zone === settings.primary) {
       continue;
     }
     const id = resolve(zone);
-    const key = canonicalZoneId(id);
+    const key = zoneKey(id);
     if (!seen.has(key)) {
       seen.add(key);
       secondary.push(id);
@@ -103,7 +104,7 @@ export const withDeviceEntry = (
   if (settings.zones.includes(DEVICE_ZONE)) {
     return settings;
   }
-  const own = settings.zones.find((zone) => canonicalZoneId(zone) === canonicalZoneId(deviceZone));
+  const own = settings.zones.find((zone) => zoneKey(zone) === zoneKey(deviceZone));
   if (own !== undefined) {
     return {
       primary: settings.primary === own ? DEVICE_ZONE : settings.primary,

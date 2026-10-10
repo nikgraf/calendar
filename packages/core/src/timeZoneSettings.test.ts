@@ -69,6 +69,10 @@ describe('resolveTimeZones', () => {
     expect(
       resolveTimeZones({ primary: 'device', zones: ['device', 'Asia/Kolkata'] }, 'Asia/Calcutta'),
     ).toEqual({ primary: 'Asia/Calcutta', secondary: [] });
+    // A host that reports UTC by one of its links.
+    expect(
+      resolveTimeZones({ primary: 'device', zones: ['device', 'UTC'] }, 'Etc/UTC').secondary,
+    ).toEqual([]);
   });
 });
 
@@ -91,6 +95,10 @@ describe('withDeviceEntry', () => {
     ).toEqual({
       primary: 'device',
       zones: ['device'],
+    });
+    expect(withDeviceEntry({ primary: 'UTC', zones: ['UTC', 'Asia/Kolkata'] }, 'Etc/UTC')).toEqual({
+      primary: 'device',
+      zones: ['device', 'Asia/Kolkata'],
     });
   });
 

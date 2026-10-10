@@ -150,6 +150,27 @@ describe('time zones: the settings section', () => {
         `(() => { const list = document.querySelector('${LIST}'); return list.scrollHeight > list.clientHeight; })()`,
       ),
     ).toBe(true);
+    // The arrows scroll the list to keep the highlighted row in view, and
+    // only the list: the Settings pane around it stays where it was.
+    const ancestorScroll = `(() => { let sum = 0; for (let node = document.querySelector('${LIST}').parentElement; node; node = node.parentElement) sum += node.scrollTop; return sum + (document.scrollingElement?.scrollTop ?? 0); })()`;
+    const paneBefore = await cdp.eval<number>(ancestorScroll);
+    for (let step = 0; step < 15; step += 1) {
+      await cdp.send('Input.dispatchKeyEvent', {
+        code: 'ArrowDown',
+        key: 'ArrowDown',
+        type: 'rawKeyDown',
+        windowsVirtualKeyCode: 40,
+      });
+    }
+    await cdp.waitFor(
+      `document.querySelector('${LIST} [role="option"][aria-selected="true"]')?.id === 'time-zone-options-15'`,
+    );
+    expect(
+      await cdp.eval<boolean>(
+        `(() => { const list = document.querySelector('${LIST}'); const row = document.getElementById('time-zone-options-15'); return list.scrollTop > 0 && row.offsetTop >= list.scrollTop && row.offsetTop + row.offsetHeight <= list.scrollTop + list.clientHeight; })()`,
+      ),
+    ).toBe(true);
+    expect(await cdp.eval<number>(ancestorScroll)).toBe(paneBefore);
     await cdp.type('input[aria-label="Search time zones"]', 'zzzz');
     await cdp.waitFor(`!!document.querySelector('[data-testid="time-zone-no-match"]')`);
     await cdp.clickTestId('time-zone-cancel');

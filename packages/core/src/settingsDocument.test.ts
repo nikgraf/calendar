@@ -49,6 +49,12 @@ const full: SettingsDocument = {
 const zonesText = (primary: string, zones: ReadonlyArray<string>) =>
   `{ "version": 1, "timeZones": { "primary": "${primary}", "zones": ${JSON.stringify(zones)} } }`;
 
+/** The exit of parsing a zone list on a device in Vienna. */
+const parseZones = (primary: string, zones: ReadonlyArray<string>) =>
+  Effect.runSyncExit(
+    parseSettingsDocument(zonesText(primary, zones), { deviceZone: 'Europe/Vienna' }),
+  );
+
 describe('parseSettingsDocument', () => {
   it('accepts the minimal document', () => {
     expect(parse('{ "version": 1 }')).toEqual({ version: 1 });
@@ -99,6 +105,23 @@ describe('parseSettingsDocument', () => {
     expect(
       parse(zonesText('Asia/Kolkata', ['Asia/Kolkata']), { deviceZone: 'Asia/Calcutta' }).timeZones,
     ).toEqual({ primary: 'device', zones: ['device'] });
+    // Full, one of them this device's zone: Vienna becomes the entry, nothing is lost.
+    expect(parse(zonesText('UTC', ['UTC', 'Europe/Vienna', 'Asia/Tokyo'])).timeZones).toEqual({
+      primary: 'UTC',
+      zones: ['UTC', 'device', 'Asia/Tokyo'],
+    });
+  });
+
+  it('rejects a zone list that would lose a zone instead of trimming it', () => {
+    // Full without the device's zone: adding the entry would drop Tokyo.
+    expect(String(parseZones('UTC', ['UTC', 'Asia/Kolkata', 'Asia/Tokyo']))).toContain('device');
+    // Longer than the cap, the device entry included or not.
+    expect(Exit.isFailure(parseZones('UTC', ['device', 'UTC', 'Asia/Kolkata', 'Asia/Tokyo']))).toBe(
+      true,
+    );
+    expect(
+      Exit.isFailure(parseZones('UTC', ['UTC', 'Europe/Vienna', 'Asia/Kolkata', 'Asia/Tokyo'])),
+    ).toBe(true);
   });
 
   it('rejects an unknown account kind and reports the path', () => {

@@ -276,14 +276,14 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   device line); a label alone (the gap was the model, not the row).
   Migration 11 and the document parser give an older list the entry: the
   id equal to the device zone becomes it, else it goes first.
-- **Time zone picker shows the catalog** (2026-10-10, #PR) — the picker
-  opens on every zone in a scrolling list and typing narrows it (the
-  50-result cap is gone): a capped-height dropdown on the Mac, a
-  virtualized list under a pinned search field on iOS. "Add time zone…"
-  is the Settings panes' bordered button. A way back to the device zone
-  after removing it was asked for; with #174 it cannot be removed, so no
-  extra button. #174 had merged into the already-merged #173 branch and
-  never reached main; this PR re-lands it as its first commit.
+- **The time zone picker lists every zone** (2026-10-10, #177) — it opens
+  on the whole catalog, which scrolls, and typing narrows it, so a zone
+  can be found by browsing as well as by name; "Add time zone…" is a
+  button. Rejected: keeping the 50-result cap (the list looked like the
+  catalog and was not); an "Add device time zone" button (the device
+  zone cannot be removed since #174, re-landed here after it merged into
+  the dead #173 branch). Left open: the list is in catalog order, grouped
+  by region, not sorted by city.
 - **Design tokens and dark mode** (2026-10-07, #135) — the brand kit is
   the one palette (a brighter purple and Serenity's indigo were tried and
   rejected); generated, never edited; the desktop maps tokens into
