@@ -62,8 +62,9 @@ conversions, accounts, settings, conflicts, the pending-op queue.
   errors.
 - CLI: `solunivo-cli <tool> [--flag value …]` or `--args '<json>'`; flags
   are derived from the schema. `solunivo-cli tools` prints the schemas.
-  Exit codes: 0 ok, 1 refused/failed, 2 usage or invalid input, 3 unknown
-  token.
+  Exit codes: 0 ok (a `pending_approval` answer included), 1 refused or
+  failed, 2 usage, invalid input or no token in the environment, 3 the
+  token was rejected.
 
 ## Permissions
 
@@ -196,7 +197,7 @@ never through MCP elicitation, which the agent's own client could answer.
   drops its connections.
 - Limits: 64 KiB hello within 5 s, 1 MiB per MCP message, 32
   connections (8 per agent), 120 calls a minute per agent, 400-day
-  ranges, 2000 events. A refused or finished connection is destroyed,
+  ranges (92 days for a slot search), 2000 events. A refused or finished connection is destroyed,
   not just ended — a peer that keeps its half open must not hold a slot —
   and an MCP session that closes itself (an oversize message) takes its
   socket with it.
@@ -249,7 +250,7 @@ rather than behind safeStorage.
   shared read), and an agent granted the destination can see and change
   them like any event there.
 - The relay needs the RunAsNode fuse enabled. A Swift relay would allow
-  flipping it (see todo.md).
+  flipping it (todo.md).
 
 ## Tests
 

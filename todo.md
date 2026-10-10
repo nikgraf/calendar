@@ -2,24 +2,17 @@
 
 How to read: tiers are ordered by impact, top item first within a tier.
 Each item is one `todo/<slug>` PR unless it says otherwise. When an item
-lands, its `[x]` entry moves to `docs/decisions.md` with the decisions it
-settled — this file stays a backlog. File:line evidence is from the
+lands it leaves this file and `docs/decisions.md` gets a short record of
+the decisions it settled — this file stays a backlog. File:line evidence is from the
 2026-09-10 audit; re-verify before starting an item. The 2026-09-11
 sweep (`todo/backlog-tiers`) closed every item of the former tiers 1–6
 except the two below; their entries are in `docs/decisions.md` under
 "Backlog sweep (2026-09-11)".
 
-## Tier 0 — bugs (review 2026-10-02)
+## Tier 0 — bugs
 
-From a read-only review of the whole app; nothing was run. "Verified"
-means the cited code was re-read and the defect is there, "reported" that
-one audit pass traced it — reproduce with a failing test first. Lines are
-from main on 2026-10-04. Fixed items are closed in `docs/decisions.md`
-under "Review fixes (2026-10-04)" (#110–#115), "Review fixes, second
-batch (2026-10-05)" (#117–#121), "Review fixes, third batch
-(2026-10-05)" (#124–#127), "Review fixes, fourth batch (2026-10-07)"
-(#129–#132) and "Review fixes, fifth batch (2026-10-08)" (#139–#142) — which
-closed the last of them.
+Empty. The 2026-10-02 review's findings are closed in `docs/decisions.md`
+(Review fixes, #110–#142).
 
 ## Tier 1 — CI and distribution
 

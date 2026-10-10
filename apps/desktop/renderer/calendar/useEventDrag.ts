@@ -88,8 +88,8 @@ interface DragOrigin {
 }
 
 // Recurring instances are draggable too — a drag commits a single-instance
-// override, like Fantastical. All-day chips stay fixed, and nothing in a
-// calendar or list we cannot write moves.
+// override. All-day chips stay fixed, and nothing in a calendar or list we
+// cannot write moves.
 const isDraggable = (origin: DragOrigin): boolean =>
   !origin.target.readOnly &&
   (origin.target.kind === 'task' ||

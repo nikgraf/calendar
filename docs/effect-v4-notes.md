@@ -1,36 +1,29 @@
 # Effect v4 notes
 
-The repo pins every `effect*` package exactly to **4.0.1** via the pnpm
-catalog. v4 is a substantial break from v3 and was built here on its thinly
-documented pre-releases — this is the catalog of differences and traps we
-hit, each as symptom → cause → fix. The modules this app leans on hardest
-(rpc, sql, http, reactivity) are still tagged `@stability unstable` and may
-break in a minor release, so the pin stays exact. The beta.93 → rc.111 bump cost
-exactly two code changes (`Schema.ErrorClass` rename, `supportsNotifications`
-on the custom rpc protocol); rc.111 → rc.115 cost one: custom rpc protocols
-must expose `codecFor` (forward `serialization.codecFor`, as effect's own
-socket/worker protocols do) — the client failed at runtime with
-"codecFor is not a function" before the typecheck error was read.
-rc.115 → 4.0.0 cost two: rc.118 moved every `effect/unstable/*` module to
-`effect/*` and removed the old paths (a mechanical import rewrite, ~100
-files), and renamed `Schema.isLengthBetween` → `Schema.isBetweenLength`.
-`effect` also dropped its runtime dependencies. The custom rpc protocol
-shapes were unchanged. 4.0.0 → 4.0.1 needed no code change. `@effect/vitest` declares a Vitest 5 peer, which
-vite-plus 1.x bundles; tests import the runner from `vite-plus/test` and
-`@effect/vitest` resolves the same `vitest` through the workspace
-override.
+Every `effect*` package is pinned exactly to **4.0.1** through the pnpm
+catalog, and Dependabot ignores them: the modules this app leans on
+hardest (rpc, sql, http, reactivity) are still tagged `@stability
+unstable` and may break in a minor release, so every bump is a deliberate,
+all-packages-together change. v4 is a substantial break from v3; this is
+the catalog of differences and traps we hit, each as symptom → cause →
+fix. Tests import the runner from `vite-plus/test`; `@effect/vitest`
+resolves the same `vitest` through the workspace override.
 
 ## API renames / removals
 
 - **`Effect.fork` / `Effect.forkDaemon` don't exist.** Use
   `Effect.forkChild` (scoped to parent), `Effect.forkDetach` (daemon-like),
   or `Effect.forkIn`.
+- **`Effect.dieMessage` is gone.** Symptom: `TypeError: yield*
+  (intermediate value)... is not iterable` at the call site (the undefined
+  import is invoked, then yield\*ed). Use `Effect.die(new Error('…'))`.
 - **`HttpClientRequest.del` is now `delete`** (exported keyword-style:
   `HttpClientRequest.delete`).
 - **`RpcClient.FromGroup` is a module-level type**, not nested under a
   namespace.
 - **No `it.scoped` in @effect/vitest** — `it.effect` already provides a
   Scope.
+- `Schema.isLengthBetween` became `Schema.isBetweenLength`.
 
 ## Service / Layer patterns
 
@@ -49,10 +42,8 @@ override.
 - Lives at `effect/Schema`. `Schema.Literals` takes an **array**
   (`Schema.Literals(['a', 'b'])`). Decoding via
   `Schema.decodeUnknownEffect` / `decodeUnknownSync`, encoding via
-  `Schema.encodeSync`. Error classes: `Schema.Error` / `Schema.TaggedError`
-  (renamed from `ErrorClass` / `TaggedErrorClass` in beta.104; the JS
-  `Error` instance schema is `Schema.ErrorInstance`); plain tagged errors
-  via `Data.TaggedError`.
+  `Schema.encodeSync`. Error classes: `Schema.Error` / `Schema.TaggedError`;
+  plain tagged errors via `Data.TaggedError`.
 - `Schema.Class` instances spread cleanly (`new X({ ...existing, field })`)
   — used everywhere for record updates.
 - With `exactOptionalPropertyTypes`, building values for
@@ -62,17 +53,18 @@ override.
 ## Reactivity / atoms
 
 - The Reactivity **class and its `layer`** live at the deep path
-  `effect/reactivity/Reactivity` (the barrel
-  `effect/reactivity` exposes the namespace, and `layer` is a
-  module-level export, not a static).
+  `effect/reactivity/Reactivity` (the barrel `effect/reactivity` exposes
+  the namespace, and `layer` is a module-level export, not a static).
 - `Atom.family` memoizes per key **forever** — unbounded key spaces leak.
-  We replaced it with a 32-entry LRU for range atoms
-  (`packages/app-state/src/atoms.ts`).
-- `AsyncResult.value(result)` returns an Option carrying
-  `previousSuccess` during refetch — the hooks unwrap it so lists never
-  flicker to empty.
+  We use a 32-entry LRU for range and query atoms instead
+  (`boundedAtomCache` in `packages/app-state/src/atoms.ts`).
+- `AsyncResult.value(result)` carries the previous success during a
+  refetch — the hooks read it so lists never flicker to empty.
 - Mutations are `runtime.fn(effectFn, { reactivityKeys })`; reads are
-  `runtime.atom(effect).pipe(Atom.withReactivity([keys]))`.
+  `runtime.atom(effect).pipe(Atom.withReactivity([keys]))`. `Atom.fn` runs
+  latest-wins, so each mutation _call_ gets its own fn atom
+  (`runMutation`) — a second quick call would otherwise interrupt the
+  first and both read its result.
 - `Reactivity.mutation(keys, effect)` invalidates after the effect;
   `invalidate`/`invalidateUnsafe` fire listeners directly.
 
@@ -82,13 +74,14 @@ override.
   …)`; payloads may be struct-field records or Schemas; streams via
   `stream: true`.
 - Custom transports implement `RpcServer.Protocol` / `RpcClient.Protocol`
-  with `Protocol.make` (`withRun` / `withRunClient`) — see below. Server
-  protocol records need `supportsNotifications` (added ~rc.108): `true` for
-  any transport that preserves message boundaries and supports server push
-  (buffered/unframed HTTP is the case that can't). See
-  `packages/sync/src/rpcDuplex.ts` for the Electron IPC duplex pair.
-  Routing: track requestId→clientId from `'Request'` frames; `'Exit'`
-  deletes; everything else broadcasts.
+  with `Protocol.make` (`withRun` / `withRunClient`). A protocol record
+  needs `supportsNotifications` (`true` for any transport that preserves
+  message boundaries and supports server push) and must expose `codecFor`
+  (forward `serialization.codecFor`, as effect's own socket/worker
+  protocols do — without it the client fails at runtime with "codecFor is
+  not a function"). See `packages/sync/src/rpcDuplex.ts` for the Electron
+  IPC duplex pair. Routing: track requestId→clientId from `'Request'`
+  frames; `'Exit'` deletes; everything else broadcasts.
 - Serialization: `RpcSerialization.layerNdjson`. Pass
   `disableFatalDefects: true` to `RpcServer.layer` so handler defects
   surface as errors instead of killing the server.
@@ -98,13 +91,10 @@ override.
 
 ## SQL / migrations
 
-- `SqlClient` deep import: `effect/sql/SqlClient` (the barrel
-  re-exports `Migrator`, which Metro cannot parse — see below).
-- `@effect/sql-sqlite-node` switched from better-sqlite3 to Node's
-  built-in `node:sqlite` somewhere on the rc line — silently, via the
-  version bump. It removed every Electron-ABI concern (electron-rebuild,
-  the Node-ABI test twin, native build allowances) but also broke the
-  Forge packaging copy list, which nothing before `make` exercises.
+- `SqlClient` deep import: `effect/sql/SqlClient` (the barrel re-exports
+  `Migrator`, which Metro cannot parse — see below).
+- `@effect/sql-sqlite-node` uses Node's built-in `node:sqlite`: no native
+  module, no Electron-ABI rebuilds.
 - Effect's `Migrator` uses a dynamic-import glob
   (`__rewriteRelativeImportExtension`) that **Metro cannot parse** → the
   repo has a hand-rolled `runMigrations` (`packages/db/src/migrate.ts`)
@@ -115,11 +105,11 @@ override.
 
 ## Misc
 
-- `Semaphore.makeUnsafe(1).withPermits(1)(effect)` is the single-flight
+- `Semaphore.makeUnsafe(1)` + `withPermits(1)(effect)` is the single-flight
   pattern (op queue, syncAll).
 - `Stream.callback` + `Queue.offerUnsafe` + `Effect.acquireRelease` is the
   bridge from callback-world into a stream (the invalidations rpc).
-- `Cause.reasons` + `Cause.isFailReason` to dig typed failures out of a
+- `cause.reasons` + `Cause.isFailReason` to dig typed failures out of a
   Cause at the rpc boundary.
 - `ManagedRuntime.make(layer)` per platform entry point; top-level await
   of runtime setup is fine in the renderer, **not** in Electron main.
@@ -134,9 +124,3 @@ override.
   build crashes. Resolve the default in the body (`step ?? DRAG_SNAP_MINUTES`);
   `apps/ios/src/workletClosures.test.ts` runs core worklets the way the UI
   runtime does.
-
-## `Effect.dieMessage` is gone
-
-Symptom: `TypeError: yield* (intermediate value)... is not iterable` at the
-call site (the undefined import is invoked, then yield\*ed). v4 ships only
-`Effect.die` — use `Effect.die(new Error('…'))`.
