@@ -83,14 +83,14 @@ describe('mapAppleEvent', () => {
         attendees: [
           { email: 'ana@example.com', isOrganizer: false, isSelf: false, status: 'accepted' },
         ],
-        organizerEmail: 'me@icloud.com',
+        organizerEmail: 'me@example.com',
         organizerIsSelf: true,
       }),
       context,
     );
     expect(record.attendees?.map((a) => [a.email, a.isOrganizer, a.isSelf])).toEqual([
       ['ana@example.com', undefined, undefined],
-      ['me@icloud.com', true, true],
+      ['me@example.com', true, true],
     ]);
     // Someone else's invitation: no self entry is invented.
     const invited = mapAppleEvent(

@@ -28,7 +28,7 @@ const serverEvent = (id: string, summary: string) => ({
 });
 
 const googleFixture: GoogleFixture = {
-  accounts: [{ email: 'e2e@nikgraf.com', id: 'acc-e2e', tasksEnabled: false }],
+  accounts: [{ email: 'e2e@example.com', id: 'acc-e2e', tasksEnabled: false }],
   calendars: [{ accessRole: 'owner', id: 'cal-e2e', primary: true, summary: 'Work' }],
   events: {
     'cal-e2e': [
@@ -80,7 +80,7 @@ const seed = {
     new Account({
       contactsEnabled: false,
       createdAt: 1,
-      email: 'e2e@nikgraf.com',
+      email: 'e2e@example.com',
       id: 'acc-e2e',
       provider: 'google',
       status: 'ok',
@@ -168,7 +168,7 @@ const todayAt = (hour: number): number => {
 const parkedStart = todayAt(10);
 
 const noticesFixture: GoogleFixture = {
-  accounts: [{ email: 'e2e@nikgraf.com', id: 'acc-e2e', tasksEnabled: false }],
+  accounts: [{ email: 'e2e@example.com', id: 'acc-e2e', tasksEnabled: false }],
   calendars: [
     { accessRole: 'owner', id: 'cal-e2e', primary: true, summary: 'Work' },
     { accessRole: 'owner', id: 'cal-other', summary: 'Other' },

@@ -36,7 +36,7 @@ const today = { from: iso(todayAt(0)), to: iso(todayAt(24)) };
 const account = new Account({
   contactsEnabled: false,
   createdAt: 1,
-  email: 'e2e@nikgraf.com',
+  email: 'e2e@example.com',
   id: ACCOUNT,
   provider: 'google',
   status: 'ok',
@@ -94,14 +94,14 @@ const seed = {
     event('evt-lunch', 'cal-work', 'Lunch with Ana', todayAt(12), {
       attendees: [
         new Attendee({
-          email: 'e2e@nikgraf.com',
+          email: 'e2e@example.com',
           isOrganizer: true,
           isSelf: true,
           responseStatus: 'accepted',
         }),
         new Attendee({ email: 'ana@example.com', responseStatus: 'accepted' }),
       ],
-      organizerEmail: 'e2e@nikgraf.com',
+      organizerEmail: 'e2e@example.com',
     }),
     event('evt-therapy', 'cal-private', 'Therapy session', todayAt(14)),
     event('evt-offsite', 'cal-team', 'Team offsite', todayAt(16)),
@@ -480,7 +480,7 @@ describe('agent gateway: other agents reach the app over the CLI and MCP', () =>
     );
     expect(dialog).toContain('Asker is asking');
     expect(dialog).toContain('Create event “Asked breakfast”');
-    expect(dialog).toContain('Calendar: Work (e2e@nikgraf.com)');
+    expect(dialog).toContain('Calendar: Work (e2e@example.com)');
     // Nothing is written while the question is open.
     expect((await readEvents(app.userDataDir)).map((row) => row.title)).not.toContain(
       'Asked breakfast',

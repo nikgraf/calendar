@@ -23,7 +23,7 @@ const seed = {
     new Account({
       contactsEnabled: true,
       createdAt: 1,
-      email: 'e2e@nikgraf.com',
+      email: 'e2e@example.com',
       id: 'acc-e2e',
       provider: 'google',
       status: 'ok',
@@ -114,7 +114,7 @@ describe('contact birthdays', () => {
     const sources = await cdp.eval<Array<string>>(
       `[...document.querySelectorAll('[data-testid="birthday-source"]')].map(el => el.textContent)`,
     );
-    expect(sources).toEqual(['Google contact · e2e@nikgraf.com', 'Device contact (this Mac)']);
+    expect(sources).toEqual(['Google contact · e2e@example.com', 'Device contact (this Mac)']);
     expect(
       await cdp.eval<boolean>(`document.body.textContent.includes('Today — turns ${YEARS_AGO}')`),
     ).toBe(true);

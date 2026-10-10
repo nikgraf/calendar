@@ -175,7 +175,7 @@ const googleEvent = (overrides: Partial<EventRecord> = {}) =>
     etag: '"e1"',
     id: 'evt-a',
     isAllDay: false,
-    organizerEmail: 'nik@nikgraf.com',
+    organizerEmail: 'nik@example.com',
     startTimeZone: 'UTC',
     startUtc: base,
     status: 'confirmed',
@@ -188,7 +188,7 @@ const googleEvent = (overrides: Partial<EventRecord> = {}) =>
 
 const seed = Effect.gen(function* () {
   const accounts = yield* AccountRepo;
-  yield* accounts.upsert(account('acc-1', 'nik@nikgraf.com'));
+  yield* accounts.upsert(account('acc-1', 'nik@example.com'));
   yield* accounts.upsert(account(APPLE_CAL, '', 'apple'));
   yield* accounts.upsert(account(APPLE_REM, '', 'apple'));
   yield* (yield* CalendarRepo).upsertMany([
@@ -270,7 +270,7 @@ const seed = Effect.gen(function* () {
     googleEvent({
       attendees: [
         new Attendee({
-          email: 'nik@nikgraf.com',
+          email: 'nik@example.com',
           isOrganizer: true,
           isSelf: true,
           responseStatus: 'accepted',
@@ -293,7 +293,7 @@ const seed = Effect.gen(function* () {
     }),
     googleEvent({
       attendees: [
-        new Attendee({ email: 'nik@nikgraf.com', isSelf: true, responseStatus: 'accepted' }),
+        new Attendee({ email: 'nik@example.com', isSelf: true, responseStatus: 'accepted' }),
       ],
       id: 'evt-invite',
       organizerEmail: 'boss@example.com',

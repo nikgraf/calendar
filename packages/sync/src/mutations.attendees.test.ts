@@ -96,7 +96,7 @@ const meeting = new EventRecord({
   accountId: 'acc-1',
   attendees: [
     new Attendee({
-      email: 'nik@nikgraf.com',
+      email: 'nik@example.com',
       isOrganizer: true,
       isSelf: true,
       responseStatus: 'accepted',
@@ -129,7 +129,7 @@ const seed = Effect.gen(function* () {
     new Account({
       contactsEnabled: false,
       createdAt: 1,
-      email: 'nik@nikgraf.com',
+      email: 'nik@example.com',
       id: 'acc-1',
       provider: 'google',
       status: 'ok',
@@ -219,7 +219,7 @@ describe('EventMutations attendees', () => {
         ...target,
         changes: {
           attendees: [
-            { email: 'nik@nikgraf.com' },
+            { email: 'nik@example.com' },
             { email: 'ALICE@example.com' },
             { email: 'carol@example.com' },
           ],
@@ -229,7 +229,7 @@ describe('EventMutations attendees', () => {
 
       const row = yield* (yield* EventRepo).getById('acc-1', 'cal-1', 'evt-meeting');
       expect(emails(row!.attendees)).toEqual([
-        'nik@nikgraf.com',
+        'nik@example.com',
         'alice@example.com',
         'carol@example.com',
       ]);
@@ -242,7 +242,7 @@ describe('EventMutations attendees', () => {
       expect(sent[0]!.kind).toBe('patch');
       expect(sent[0]!.sendUpdates).toBe('all');
       expect(emails(sent[0]!.event.attendees)).toEqual([
-        'nik@nikgraf.com',
+        'nik@example.com',
         'alice@example.com',
         'carol@example.com',
       ]);
@@ -318,7 +318,7 @@ describe('EventMutations attendees', () => {
         const mutations = yield* EventMutations;
         yield* mutations.updateEvent({
           ...target,
-          changes: { attendees: [{ email: 'nik@nikgraf.com' }, { email: 'bob@example.com' }] },
+          changes: { attendees: [{ email: 'nik@example.com' }, { email: 'bob@example.com' }] },
           eventId: 'evt-room',
         });
         // Coalesces into one op that still carries the guest edit.
@@ -335,7 +335,7 @@ describe('EventMutations attendees', () => {
         expect(sent).toHaveLength(1);
         expect(sent[0]!.event.summary).toBe('Roomy');
         expect(emails(sent[0]!.event.attendees)).toEqual([
-          'nik@nikgraf.com',
+          'nik@example.com',
           'bob@example.com',
           'room@resource.calendar.google.com',
         ]);
