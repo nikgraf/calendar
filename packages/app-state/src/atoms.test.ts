@@ -77,7 +77,7 @@ const makeStubClient = () => {
     getTimeZoneSettings: () =>
       Effect.sync(() => {
         calls.timeZones += 1;
-        return { primary: 'UTC', zones: ['UTC'] };
+        return { primary: 'device', zones: ['device'] };
       }),
     getViewPreferences: () => Effect.succeed({ allDayLaneCollapsed: false }),
     importSettings: () => fail('not stubbed'),
@@ -469,7 +469,7 @@ describe('device zone', () => {
     }
   });
 
-  it('a device zone change refetches the time zones (nothing stored follows the device)', async () => {
+  it('a device zone change does not refetch the time zones: the stored entries resolve against it', async () => {
     const { calls, client } = makeStubClient();
     const deviceZone = Atom.make('Europe/Vienna');
     const atoms = makeBackendAtoms(client, deviceZone);
@@ -479,11 +479,9 @@ describe('device zone', () => {
     expect(calls.timeZones).toBe(1);
 
     registry.set(deviceZone, 'America/New_York');
-    await waitFor(
-      () => registry.get(atoms.timeZoneSettings),
-      () => calls.timeZones >= 2,
-    );
-    expect(calls.timeZones).toBe(2);
+    expect(registry.get(atoms.deviceZone)).toBe('America/New_York');
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(calls.timeZones).toBe(1);
     unmount();
     registry.dispose();
   });

@@ -8,8 +8,11 @@ import {
   withCanonicalZones,
 } from './settingsDocument.ts';
 
-const parse = (text: string, options?: { isValidZone?: (id: string) => boolean }) =>
-  Effect.runSync(parseSettingsDocument(text, options));
+/** Parses as a device in Vienna, so a file without the device entry reads the same on every host. */
+const parse = (
+  text: string,
+  options?: { deviceZone?: string; isValidZone?: (id: string) => boolean },
+) => Effect.runSync(parseSettingsDocument(text, { deviceZone: 'Europe/Vienna', ...options }));
 
 /** An engine whose ICU lacks the modern Kolkata name, as Hermes does. */
 const hermes = (id: string) => id !== 'Asia/Kolkata';
@@ -37,10 +40,14 @@ const full: SettingsDocument = {
   birthdayReminders: { enabled: true, leadDays: [0, 7], time: '08:30' },
   desktop: { screenPrivacy: 'visible' },
   eventNotifications: { enabled: false, includeAppleCalendar: true },
-  timeZones: { primary: 'Europe/Vienna', zones: ['Europe/Vienna', 'UTC'] },
+  timeZones: { primary: 'device', zones: ['device', 'UTC'] },
   version: 1,
   view: { allDayLaneCollapsed: true },
 };
+
+/** A document holding only a zone list. */
+const zonesText = (primary: string, zones: ReadonlyArray<string>) =>
+  `{ "version": 1, "timeZones": { "primary": "${primary}", "zones": ${JSON.stringify(zones)} } }`;
 
 describe('parseSettingsDocument', () => {
   it('accepts the minimal document', () => {
@@ -70,13 +77,28 @@ describe('parseSettingsDocument', () => {
     ).toContain('Mars/Olympus');
   });
 
-  it('maps zones to the spelling this engine accepts', () => {
+  it('maps zones to the spelling this engine accepts, the device entry untouched', () => {
     const text =
-      '{ "version": 1, "timeZones": { "primary": "Asia/Kolkata", "zones": ["Asia/Kolkata", "Asia/Calcutta", "UTC"] } }';
+      '{ "version": 1, "timeZones": { "primary": "Asia/Kolkata", "zones": ["device", "Asia/Kolkata", "Asia/Calcutta", "UTC"] } }';
     expect(parse(text, { isValidZone: hermes }).timeZones).toEqual({
       primary: 'Asia/Calcutta',
-      zones: ['Asia/Calcutta', 'UTC'],
+      zones: ['device', 'Asia/Calcutta', 'UTC'],
     });
+  });
+
+  it('gives a file from before the device entry one: the zone this device is in, else first', () => {
+    expect(parse(zonesText('Europe/Vienna', ['Europe/Vienna', 'UTC'])).timeZones).toEqual({
+      primary: 'device',
+      zones: ['device', 'UTC'],
+    });
+    expect(parse(zonesText('UTC', ['UTC', 'Asia/Kolkata'])).timeZones).toEqual({
+      primary: 'UTC',
+      zones: ['device', 'UTC', 'Asia/Kolkata'],
+    });
+    // The device spells its zone the legacy way: still the same zone.
+    expect(
+      parse(zonesText('Asia/Kolkata', ['Asia/Kolkata']), { deviceZone: 'Asia/Calcutta' }).timeZones,
+    ).toEqual({ primary: 'device', zones: ['device'] });
   });
 
   it('rejects an unknown account kind and reports the path', () => {
@@ -115,7 +137,7 @@ describe('mergeSettingsDocument', () => {
     '  "custom": "left alone",',
     '  "timeZones": {',
     '    "primary": "UTC", // primary comment',
-    '    "zones": ["UTC"]',
+    '    "zones": ["device", "UTC"]',
     '  },',
     '  "accounts": [',
     '    // lost, documented',
@@ -131,14 +153,17 @@ describe('mergeSettingsDocument', () => {
 
   it('changes a leaf while keeping comments and unknown keys', () => {
     const merged = mergeSettingsDocument(text, {
-      timeZones: { primary: 'UTC', zones: ['UTC', 'Europe/Vienna'] },
+      timeZones: { primary: 'UTC', zones: ['device', 'UTC', 'Asia/Kolkata'] },
       version: 1,
     });
     expect(merged).toContain('// keep me');
     expect(merged).toContain('// primary comment');
     expect(merged).toContain('"custom": "left alone"');
-    expect(merged).toContain('"Europe/Vienna"');
-    expect(parse(merged).timeZones).toEqual({ primary: 'UTC', zones: ['UTC', 'Europe/Vienna'] });
+    expect(merged).toContain('"Asia/Kolkata"');
+    expect(parse(merged).timeZones).toEqual({
+      primary: 'UTC',
+      zones: ['device', 'UTC', 'Asia/Kolkata'],
+    });
     expect(parse(merged).accounts).toEqual([{ email: 'old@example.com', kind: 'google' }]);
   });
 

@@ -774,6 +774,8 @@ export interface LaunchOptions {
    * device contacts or birthdays without touching a developer's address book.
    */
   readonly contacts?: 'off' | 'real' | { readonly fixture: ContactsFixture };
+  /** A spec's own variables for the app process (`TZ` pins the device zone); the isolation below still wins. */
+  readonly env?: Readonly<Record<string, string>>;
   /**
    * 'off' (default): no MapKit, so no suggestions and no map. 'real': the
    * helper (network-dependent). A fixture: the in-memory geo client with
@@ -932,6 +934,7 @@ export const launchApp = async (seed?: SeedData, options: LaunchOptions = {}): P
   const child: ChildProcess = spawn(electronPath, [appDir, `--remote-debugging-port=${port}`], {
     env: {
       ...process.env,
+      ...options.env,
       // Seeded Apple rows must not be replaced by (or prompt for) the
       // developer's real Reminders — see remindersClient.ts.
       ...remindersEnv,
