@@ -23,9 +23,10 @@ export const SETTINGS_PANES = [
     label: 'Notifications',
   },
   {
-    id: 'advanced',
-    keywords: ['export', 'import', 'settings file', 'backup', 'transfer'],
-    label: 'Advanced',
+    // Not `settings-file`: windows.ts accepts letters only in a pane id.
+    id: 'file',
+    keywords: ['export', 'import', 'backup', 'transfer', 'dotfiles', 'jsonc'],
+    label: 'Settings File',
   },
   {
     id: 'mirrors',

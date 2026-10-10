@@ -273,6 +273,15 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   size and drew off-centre; no header background (it hid the large
   title). Done sits on the root only. The mirror page is a summary with
   the unchanged editor sheet behind it (Nik's pick).
+- **Settings File, not Advanced** (2026-10-10, #171) — the Mac's
+  Advanced pane held only Export & import and the watched file, so it is
+  now Settings File; iOS gets a page of that name and keeps Advanced for
+  Diagnostics and PR Preview. One pane, not two: each half is too small
+  alone and they explain each other. Rejected names: Export & Import (the
+  watched file is neither), Transfer (hides the file's scripting use),
+  Backup (no calendar data in it). The pane id is `file`, since
+  `settings:open` takes letters only; the desktop's watched-file card is
+  now "Linked file" so it does not repeat the pane title.
 - **Search** (2026-10-09, #152) — one rpc over what the views can show:
   a two-year window either side of today, not the history (full-text
   recall is a backlog item); a matching series is walked outward from

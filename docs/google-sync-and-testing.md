@@ -703,7 +703,7 @@ while the sheet is missing), `open-event-editor.yaml` (Edit on the detail
 sheet a tap opens), `switch-view.yaml` (the header's menu, `VIEW`),
 `switch-to-task.yaml`, `open-settings.yaml` (waits for `settings-root`),
 `open-settings-page.yaml` (`PAGE`: `device`, `general`, `notifications`,
-`mirrors`, `advanced`, `unsynced`; rows `settings-row-<page>`, pages
+`file`, `advanced`, `mirrors`, `unsynced`; rows `settings-row-<page>`, pages
 `settings-page-<page>`), `close-settings.yaml` (`BackButton` until the
 root shows, then Done), `search-for.yaml` (`QUERY` typed into the Search
 tab's system field until `RESULT` shows), `confirm-open.yaml` and

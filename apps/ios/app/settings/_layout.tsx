@@ -56,6 +56,7 @@ export default function SettingsLayout() {
             <Stack.Screen name="birthday-leads" options={{ title: 'Remind Me' }} />
             <Stack.Screen name="mirrors" options={{ title: '' }} />
             <Stack.Screen name="mirror" options={{ title: '' }} />
+            <Stack.Screen name="file" options={{ title: 'Settings File' }} />
             <Stack.Screen name="advanced" options={{ title: 'Advanced' }} />
             <Stack.Screen name="diagnostics" options={{ title: 'Diagnostics' }} />
             <Stack.Screen name="pr-preview" options={{ title: 'PR Preview' }} />

@@ -2,7 +2,8 @@ appId: com.solunivo.app.dev
 name: Push one page from the Settings root (shared)
 ---
 # Run on the Settings root (open-settings.yaml). PAGE is the root row's
-# id suffix: device, general, notifications, mirrors, advanced or unsynced.
+# id suffix: device, general, notifications, file, advanced, mirrors or
+# unsynced.
 - scrollUntilVisible:
     element:
       id: 'settings-row-${PAGE}'

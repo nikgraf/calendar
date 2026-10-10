@@ -213,7 +213,7 @@ export function SettingsFileSection() {
 
   return (
     <section className="rounded-popover bg-surface-subtle p-4" data-testid="settings-file">
-      <h2 className="font-medium">Settings file</h2>
+      <h2 className="font-medium">Linked file</h2>
       <p className="mt-1 text-sm text-ink-secondary">
         Solunivo can keep its settings in a file at <span className="select-text">{path}</span>.
         While the file exists, the app applies it whenever it changes and writes changes made here

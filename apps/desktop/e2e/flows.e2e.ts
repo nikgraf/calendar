@@ -1284,7 +1284,7 @@ describe('calendar desktop e2e', () => {
       await settings.eval<Array<string>>(
         `[...document.querySelectorAll('[role="tab"]')].map((tab) => tab.textContent)`,
       ),
-    ).toEqual(['General', 'Accounts', 'Notifications', 'Advanced', 'Mirrors', 'Agents']);
+    ).toEqual(['General', 'Accounts', 'Notifications', 'Settings File', 'Mirrors', 'Agents']);
     expect(
       await settings.eval<string | null>(
         `document.querySelector('[data-testid="settings-experimental-heading"]')?.nextElementSibling?.textContent ?? null`,
