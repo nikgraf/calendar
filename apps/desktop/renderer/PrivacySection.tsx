@@ -1,44 +1,16 @@
 import { SegmentedControl } from './ui/SegmentedControl.tsx';
-import { useEffect, useState } from 'react';
-import type { PrivacyState } from './backend.ts';
-
-type Choice = 'hidden' | 'pause10m' | 'visible';
+import { type PrivacyChoice, usePrivacy } from './usePrivacy.ts';
 
 /** Screen-sharing privacy control backed by the main-process window state. */
 export function PrivacySection() {
-  const [state, setState] = useState<PrivacyState | null>(null);
-  const [now, setNow] = useState(() => Date.now());
-
-  useEffect(() => {
-    let mounted = true;
-    void window.calendarBridge.privacyGet().then((current) => {
-      if (mounted) {
-        setState(current);
-      }
-    });
-    const unsubscribe = window.calendarBridge.onPrivacyChanged(setState);
-    return () => {
-      mounted = false;
-      unsubscribe();
-    };
-  }, []);
-
-  const paused = state?.visibleUntil !== undefined && state.visibleUntil > now;
-  useEffect(() => {
-    if (!paused) {
-      return;
-    }
-    const timer = setInterval(() => setNow(Date.now()), 30_000);
-    return () => clearInterval(timer);
-  }, [paused]);
-
-  if (!state) {
+  const privacy = usePrivacy();
+  if (!privacy) {
     return null;
   }
 
-  const active: Choice = paused ? 'pause10m' : state.mode;
-  const minutesLeft = paused ? Math.max(1, Math.ceil((state.visibleUntil! - now) / 60_000)) : 0;
-  const options: ReadonlyArray<{ label: string; value: Choice }> = [
+  const { active, choose, minutesLeft } = privacy;
+  const paused = active === 'pause10m';
+  const options: ReadonlyArray<{ label: string; value: PrivacyChoice }> = [
     { label: 'Hidden', value: 'hidden' },
     {
       label: paused ? `Visible · ${minutesLeft} min left` : 'Visible for 10 min',
@@ -46,10 +18,6 @@ export function PrivacySection() {
     },
     { label: 'Always visible', value: 'visible' },
   ];
-
-  const choose = (choice: Choice) => {
-    void window.calendarBridge.privacySet(choice).then(setState);
-  };
 
   return (
     <section className="rounded-popover bg-surface-subtle p-4">

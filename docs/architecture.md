@@ -650,7 +650,8 @@ gateway carries all of it. Details, limits and the threat model:
   included). Window-level concerns use plain preload IPC
   (`apps/desktop/electron/preload.ts`): `renderer-error` (→
   `userData/logs/main.log`, 1 MB rotation), `privacy:*` (screen-capture
-  protection, default hidden, stored in `userData/settings.json`), the
+  protection, default hidden, stored in `userData/settings.json`; the
+  main window's toolbar shows it and pauses it), the
   `model:*` channels, the `reminders:status` / `contacts:status` /
   `appleCalendar:status` permission asks, `settings:open`,
   `settingsFile:*`, `auth:cancel`, `notifications:take`, `rpc:document`

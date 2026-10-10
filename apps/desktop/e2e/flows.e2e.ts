@@ -280,6 +280,10 @@ const editorTimes = (): Promise<Array<string>> =>
     `[...document.querySelectorAll('input[type="time"]')].map((input) => input.value)`,
   );
 
+/** Whether the toolbar's screen-privacy indicator shows `state` (`hidden` or `paused`). */
+const privacyIndicator = (state: string): string =>
+  `!!document.querySelector('[data-testid="privacy-indicator"][data-state="${state}"]')`;
+
 describe('calendar desktop e2e', () => {
   it('renders the seeded week: sidebar, calendars, events', async () => {
     const { cdp } = app;
@@ -1239,22 +1243,25 @@ describe('calendar desktop e2e', () => {
     expect(after).toBeLessThan(count);
   });
 
-  it('controls screen-sharing privacy from the settings window', async () => {
+  it('controls screen-sharing privacy from the settings window and the toolbar', async () => {
+    const main = app.cdp;
     const cdp = await app.openSettings('general');
 
-    // Hidden is the default and nothing is persisted yet.
+    // Hidden is the default and nothing is persisted yet; the toolbar says so.
     await cdp.waitFor(
       `[...document.querySelectorAll('[role="radio"]')].some(b => b.textContent === 'Hidden' && b.getAttribute('aria-checked') === 'true')`,
     );
     expect(readSettings(app.userDataDir)['screenPrivacy']).toBeUndefined();
+    await main.waitFor(privacyIndicator('hidden'));
 
-    // Always visible persists.
+    // Always visible persists, and the toolbar has nothing to warn about.
     await cdp.clickButtonWithText('Always visible');
     const deadline = Date.now() + 10_000;
     while (readSettings(app.userDataDir)['screenPrivacy'] !== 'visible' && Date.now() < deadline) {
       await new Promise((resolve) => setTimeout(resolve, 200));
     }
     expect(readSettings(app.userDataDir)['screenPrivacy']).toBe('visible');
+    await main.waitFor(`!document.querySelector('[data-testid="privacy-indicator"]')`);
 
     // The 10-minute pause is runtime-only: mode stays hidden on disk.
     await cdp.clickButtonWithText('Hidden');
@@ -1266,9 +1273,24 @@ describe('calendar desktop e2e', () => {
     expect(state.visibleUntil).toBeGreaterThan(Date.now());
     await cdp.waitFor(`document.body.textContent.includes('min left')`);
     expect(readSettings(app.userDataDir)['screenPrivacy']).toBe('hidden');
+    await main.waitFor(privacyIndicator('paused'));
+
+    // The toolbar ends the pause with one click and starts one with the next.
+    await main.clickTestId('privacy-indicator');
+    await main.waitFor(privacyIndicator('hidden'));
+    await cdp.waitFor(`!document.body.textContent.includes('min left')`);
+    expect(
+      (await main.eval<{ visibleUntil?: number }>(`window.calendarBridge.privacyGet()`))
+        .visibleUntil,
+    ).toBeUndefined();
+    await main.clickTestId('privacy-indicator');
+    await main.waitFor(privacyIndicator('paused'));
+    await cdp.waitFor(`document.body.textContent.includes('min left')`);
+    expect(readSettings(app.userDataDir)['screenPrivacy']).toBe('hidden');
 
     // Back to the default for the remaining flows.
     await cdp.clickButtonWithText('Hidden');
+    await main.waitFor(privacyIndicator('hidden'));
     await cdp.waitFor(
       `[...document.querySelectorAll('[role="radio"]')].some(b => b.textContent === 'Hidden' && b.getAttribute('aria-checked') === 'true')`,
     );

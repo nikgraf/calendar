@@ -94,6 +94,18 @@ export const CloudUpIcon = (props: IconProps) => (
     <path d="M12 16v-5M9.5 13.5 12 11l2.5 2.5" />
   </Icon>
 );
+export const EyeIcon = (props: IconProps) => (
+  <Icon {...props}>
+    <path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z" />
+    <circle cx="12" cy="12" r="3" />
+  </Icon>
+);
+export const EyeOffIcon = (props: IconProps) => (
+  <Icon {...props}>
+    <path d="M9.9 5.8A9.4 9.4 0 0 1 12 5.5c6 0 9.5 6.5 9.5 6.5a17 17 0 0 1-2.6 3.4M14.1 14.2a3 3 0 0 1-4.2-4.2M6.6 7.6A16.4 16.4 0 0 0 2.5 12s3.5 6.5 9.5 6.5a9.2 9.2 0 0 0 5.4-1.6" />
+    <path d="M3 3l18 18" />
+  </Icon>
+);
 export const GlobeIcon = (props: IconProps) => (
   <Icon {...props}>
     <circle cx="12" cy="12" r="9" />
