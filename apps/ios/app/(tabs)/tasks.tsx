@@ -139,10 +139,13 @@ function TasksBody({ timeZone }: { timeZone: string }) {
         <AccountButton />
       </View>
       {taskLists.length > 1 ? (
+        // A ScrollView grows and shrinks by default: beside the list below it
+        // took half the screen when empty and was squeezed when full.
         <ScrollView
           contentContainerStyle={styles.filters}
           horizontal
           showsHorizontalScrollIndicator={false}
+          style={styles.filterBar}
         >
           {[
             { id: null, label: 'All' },
@@ -248,6 +251,10 @@ const makeStyles = (colors: ThemeColors) =>
     filterActive: {
       backgroundColor: colors.primary,
     },
+    filterBar: {
+      flexGrow: 0,
+      flexShrink: 0,
+    },
     filterLabel: {
       color: colors['text-secondary'],
       fontSize: 14,
@@ -256,6 +263,7 @@ const makeStyles = (colors: ThemeColors) =>
       color: colors['on-primary'],
     },
     filters: {
+      alignItems: 'center',
       gap: 8,
       paddingBottom: 12,
       paddingHorizontal: 16,
