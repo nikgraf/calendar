@@ -381,6 +381,9 @@ chasing a code bug.
   `unavailableRemindersClient('test')`.
 - `getWindow` joins visible calendars: tests asserting through it must
   seed a calendar row, not just events.
+- A test is removed only when a surviving test asserts everything it did;
+  regression and race tests stay even where they look alike. Dead code
+  that only its own test called goes with it.
 
 ### The fake Google server
 
@@ -611,7 +614,8 @@ Flakiness lessons (each caused a real CI failure — keep them enforced):
 `ci.yml` on pushes to main and PRs; a `changes` job classifies the diff
 (`desktop` / `ios` flags; docs-only skips every macOS job, `apps/ios/`
 alone skips the desktop jobs, `apps/desktop/` or `packages/agent/` alone
-skips the iOS shards). The macOS jobs wait for the gate, prefetch the
+skips the iOS shards) and the jobs carry `if:` guards — not
+`paths-ignore`, which would leave required checks unreported. The macOS jobs wait for the gate, prefetch the
 Electron binary (`electron --version`) and run spec files sequentially.
 
 - `gate` (ubuntu, reusable `gate.yml`, also called by `ios.yml`): check +

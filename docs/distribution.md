@@ -136,6 +136,17 @@ local only, so `apps/ios/plugins/withLocalNotificationsOnly.cjs` (listed
 last in `app.json` plugins) removes the entitlement again; the resolved
 entitlements are visible with `expo config --type introspect`.
 
+`apps/ios/app.json` declares `NSLocationWhenInUseUsageDescription`
+although nothing in the app asks for location: App Store Connect's static
+scan sees `CLLocationManager` referenced by expo-maps and the CoreLocation
+links of the geo and apple-calendar pods, and warns (ITMS-90683) without
+it — do not delete the key as unused, the warning returns on the next
+upload. Its wording must not claim "nothing leaves your device": place
+search is `MKLocalSearch`, a call to Apple's servers. It is declared
+directly rather than through expo-maps' `requestLocationPermission`
+option, which would also claim Android location permissions. `ios.infoPlist`
+feeds the fingerprint, so a change there forces a TestFlight build.
+
 Two comparison caveats, both fail-safe. The baseline is the latest
 _finished_ build, not "what testers run": installs still on an older
 fingerprint silently stop receiving updates until they install the newer

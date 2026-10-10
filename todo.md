@@ -2,8 +2,8 @@
 
 How to read: tiers are ordered by impact, top item first within a tier.
 Each item is one `todo/<slug>` PR unless it says otherwise. When an item
-lands, its `[x]` entry moves to `docs/decisions.md` with the decisions it
-settled — this file stays a backlog. File:line evidence is from the
+lands it leaves this file and `docs/decisions.md` gets a short record of
+the decisions it settled — this file stays a backlog. File:line evidence is from the
 2026-09-10 audit; re-verify before starting an item. The 2026-09-11
 sweep (`todo/backlog-tiers`) closed every item of the former tiers 1–6
 except the two below; their entries are in `docs/decisions.md` under
@@ -12,7 +12,7 @@ except the two below; their entries are in `docs/decisions.md` under
 ## Tier 0 — bugs
 
 Empty. The 2026-10-02 review's findings are closed in `docs/decisions.md`
-under the "Review fixes" entries (#110–#142).
+(Review fixes, #110–#142).
 
 ## Tier 1 — CI and distribution
 

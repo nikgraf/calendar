@@ -18,7 +18,7 @@ The selected identity is **A1 soft ivory, with 24 in Inter Bold**: a near-white 
 | `../apps/ios/assets/icon.png`          | Generated opaque 1024 × 1024 icon used by Expo                           |
 | `../output/branding/`                  | Ignored studies, PNG sets, iconsets and distribution ZIPs                |
 
-The SVGs are editable vector sources with outlined lettering, gradients and filters. They have no linked images or font dependencies. Edit these masters and regenerate their raster exports. Earlier exploration galleries stay outside Git.
+The SVGs are editable vector sources with outlined lettering, gradients and filters. They have no linked images or font dependencies. Edit these masters and regenerate their raster exports; the iOS export fills an opaque square and lets iOS apply its mask, and its adapter fails loudly if a master's named shapes change, so a new master needs an explicit look at the platform conversion. Earlier exploration galleries stay outside Git.
 
 ## Build and check
 

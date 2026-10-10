@@ -1,2988 +1,581 @@
 # Decision log
 
-Shipped work and the decisions taken with it, moved here from `todo.md`
-(2026-09-10) so the backlog stays a backlog. Each entry is from the day it
-was closed (PR numbers where they were recorded) and keeps the decisions,
-the rejected alternatives and what was left unverified; test inventories
-and measurements were pruned on 2026-10-10. This is history, not the
-current state — `docs/architecture.md` is. When a backlog item lands, its
-`[x]` entry moves here under the matching area with the design decisions
-it settled.
+What was decided when each shipped item landed: the choice, the
+alternatives rejected, what it left open, and the PR or branch for the
+detail. Grouped by area, dated inside each record. This is history — the
+current state is `docs/architecture.md`, the rules are in `AGENTS.md`,
+and the mechanism of anything here lives there, not in this file. A new
+record is ten lines at most (see the workflow rule in `AGENTS.md`).
 
-## Product and naming
+## Product and distribution
 
-- [x] App name — decided: **Solunivo** (no trademark hits, solunivo.com
-      purchased; latent sol+luna+novo reading). Renamed product surfaces:
-      packager name/executable, bundle ids (desktop com.solunivo.desktop,
-      iOS com.solunivo.app), window/OAuth-page titles, sidebar brand,
-      core appName, CI artifact + verify paths, docs. Internal @calendar/\*
-      package scopes and the GitHub repo name intentionally kept. The
-      Google Cloud iOS OAuth client was recreated for the new bundle id
-      (#23); packaged-app userData moved (Application Support/Solunivo)
-      so testers re-authed once.
+- **App name Solunivo** (2026-08) — no trademark hits, solunivo.com
+  bought; latent sol+luna+novo reading. Bundle ids `com.solunivo.desktop`
+  and `com.solunivo.app`; the internal `@calendar/*` package scopes and
+  the GitHub repo name were deliberately kept (#23).
+- **macOS distribution** — a signed + notarized arm64 zip as a CI
+  artifact on every main push (`docs/distribution.md`). No universal
+  build (Intel Macs are outside the target group), no GitHub releases, no
+  auto-update while the repo is private (`update-electron-app` is wired
+  and inert — update.electronjs.org serves public repos only), crash
+  reporting off (privacy posture). The testing build embeds the RFC 8252
+  desktop OAuth client from a secret-fed file.
+- **iOS distribution** — EAS Build + TestFlight on native changes,
+  otherwise an OTA update, decided by the native fingerprint; every PR
+  gets a `pr-<n>` OTA channel loadable in-app; the `testflight` label
+  ships a real build for a native PR. No per-PR TestFlight builds by
+  default (cost and latency).
+- **Production and dev side by side** (2026-10-01, #100) — the real
+  accounts live in the production app, test accounts in a dev variant
+  next to it, on the Mac (a run from source) and on the phone
+  (`com.solunivo.app.dev`). **Two variants, not three**: no separately
+  packaged desktop dev app and no "beta" app in App Store Connect (a
+  second record and update channel, and the binary tested would no longer
+  be the one shipped). `APP_VARIANT` unset means production, so a release
+  job that forgets it cannot ship the dev identity, while a dev consumer
+  that forgets it fails visibly. `app.config.js` is plain CommonJS: a
+  `.ts` config is transpiled with Babel on every manifest request, which
+  pushed the dev client's first request past its 10 s budget on CI. Apple
+  data is not separated by nature; withhold the permissions from the dev
+  app or start a dev run with the `CALENDAR_*=off` switches.
+- **Versions** (2026-09-11) — the apps are `0.1.0` with a CHANGELOG;
+  bump together when a release is worth a number.
+- **Schema baseline** (2026-09-15) — the twelve pre-release migrations
+  were collapsed into one, since nothing had shipped. The runner keeps
+  its "ahead of this build" guard rather than a self-wipe (a pre-baseline
+  database refuses to open and names `pnpm reset:local`). A one-time
+  cleanup, not a policy: schema changes are appended migrations again.
 
-## Distribution and infrastructure
+## CI and dependencies
 
-- [x] Signing/notarization for the macOS app — done: the `testing-build` job
-      ships a signed + notarized arm64 zip artifact on every main push and has
-      been green since the secrets landed. Decisions: no universal build,
-      artifact-only, no auto-update while the repo is private. See
-      `docs/distribution.md`.
-- [x] EAS build / TestFlight distribution for the iOS app — done: EAS
-      Build+Submit on every main push (fire-and-forget from ubuntu CI) plus
-      per-PR OTA preview channels (pr-<n>, ~30s) with an in-app channel
-      switcher (Settings → PR preview, expo-updates header override);
-      `testflight` PR label ships a real build for native changes
-      (fingerprint runtimeVersion keeps incompatible OTA updates away).
-      Decisions: single bundle id (one install per device — platform
-      constraint), no per-PR TestFlight builds by default (cost/latency).
-      One-time setup (first interactive build, EXPO_TOKEN secret, ASC
-      app) is complete and the pipeline has shipped builds + OTA updates.
-      See docs/distribution.md. Note: the OAuth consent
-      screen is in Testing, where refresh tokens expire after 7 days —
-      publish to Production before adding outside testers, or they hit a
-      weekly forced re-sign-in — and Production requires Google's app
-      verification for the sensitive `contacts.*` scopes.
-- [x] CI — done: `.github/workflows/ci.yml` with a `gate` job (ubuntu:
-      check + typecheck + unit tests), an `e2e` job (macos-15: desktop
-      build, CDP e2e suite — no native rebuilds since node:sqlite), and a
-      `testing-build` job (macos-26: signed+notarized zip) on pushes to
-      main and PRs; `.github/workflows/ios.yml` handles fingerprint-gated
-      iOS publishing.
-- [x] Electron auto-update — done: `update-electron-app` runs in packaged
-      builds (GitHub releases, 1h interval) and the Forge GitHub publisher
-      is configured (draft releases). Signing/notarization is done; the
-      remaining blocker is that the repo is private — update.electronjs.org
-      only serves public repos, so this stays a no-op until the repo goes
-      public or a token-fed feed replaces it.
-- [x] iOS e2e via Maestro — done: eight flows in `apps/ios/e2e/flows/`
-      with testIDs on the icon-only header buttons;
-      `pnpm test:e2e:ios` runs them. Needs the Maestro CLI + dev-client on
-      a simulator with Metro running; gesture (drag) flows remain future
-      work — Maestro can't synthesize long-press pans reliably.
-- [x] Renderer error boundary + a log file — done: ErrorBoundary with a
-      reload screen around the renderer root (errors forwarded to main via
-      a `logError` preload channel); `userData/logs/main.log` with 1 MB
-      rotation tees console.warn/error (where Effect's default logger
-      writes) plus fatal process events and renderer errors.
-- [x] PR-only unsigned `package:app` smoke job — done: `package-smoke`
-      in ci.yml (macos-26, needs gate) packages unsigned and asserts the
-      .app exists, the model helper landed in Resources, and none of
-      helper/e2e/e2e-artifacts leaked into the bundle.
-- [x] Real-EventKit e2e on CI, every PR + main, both required — done:
-      `ios-e2e` runs Maestro against the EAS development-simulator
-      build for the commit's fingerprint (cached in Actions; CI never
-      runs xcodebuild) with `simctl privacy grant reminders`;
-      `e2e-reminders` runs the helper against the runner's Reminders
-      with a seeded TCC grant and a hard fullAccess probe. Decisions:
-      hard failures, not skip-with-warning (a broken TCC seed must be
-      seen); the strict flow/spec are CI-only siblings of the tolerant
-      local ones. First catch: the helper's main thread sat in
-      readLine(), so EKEventStoreChanged never fired — the desktop
-      change push had never worked.
-- [x] Production and dev side by side — done (2026-10-01): the real
-      accounts live in the production app, test accounts in a dev variant
-      that runs next to it, on the Mac and on the phone. This replaces the
-      "single bundle id" decision above. **Two variants, not three**: no
-      separately packaged desktop dev app (signing, TCC, auto-update and
-      an icon for something a run from source already is) and no "beta"
-      app in App Store Connect (a second record and update channel, and
-      the binary tested would no longer be the one shipped) — TestFlight
-      on the production id stays the pre-release path. **Desktop** was
-      nearly there: a run from source already had its own userData and
-      agent socket. The watched settings file was still shared, and its
-      sync is two-way, so each app would have listed the other's accounts
-      as `reauth_required`; a dev build now watches `solunivo-dev.jsonc`
-      (`settingsFilePath`, the same `packaged` switch as
-      `agentSocketPath`) and names its MCP entry `solunivo-dev`, so one
-      agent's configuration can hold both. **iOS**: `com.solunivo.app`
-      stays production (the installed TestFlight app keeps its data) and
-      the dev client becomes `com.solunivo.app.dev`, "Solunivo Dev", with
-      the dark icon master. `app.json` stays the production app as
-      written and `app.config.js` layers the dev variant on top under
-      `APP_VARIANT=development`; **unset means production**, so a release
-      job that forgets the variable cannot ship the dev identity, while a
-      dev consumer that forgets it fails visibly (no matching dev client,
-      or a sign-in that cannot return). The variants need their own URL
-      scheme and their own Google iOS client — two installed apps
-      claiming one scheme get the redirect at iOS's whim — and production
-      drops expo-dev-client's generated `exp+solunivo` scheme. The CI
-      runtime-version pin, until now a CI-only overlay copied to
-      `app.config.js`, became part of that file. **The config is plain
-      CommonJS, not TypeScript**: it was `app.config.ts` first, and
-      `ios-e2e` then ran past its 60 minutes twice. Expo evaluates the
-      config for every manifest request, once more in a fresh process
-      each time, and a `.ts` config is transpiled with Babel there.
-      After nearly every launch the dev client's first request
-      missed the launcher's 10 s budget, fell back to the launcher home
-      and had to be recovered by the flows — which main never does. The
-      Babel modules also landed in the fingerprint as loaded sources, so
-      a `caniuse-lite` bump would have asked for a new dev client.
-      Fingerprints differ per variant, so the e2e jobs compute theirs
-      under the dev variant.
-      Not separated, by nature: Apple Calendar, Reminders and Contacts
-      belong to the device — withhold the permissions from the dev app
-      (iOS) or start a dev run with the `CALENDAR_*=off` switches
-      (desktop). The dev icon was first the same artwork on a plum ground,
-      which rendered identical: the artwork covers the whole square.
+- **CI shape** (2026-09-11) — one reusable `gate.yml` called by both
+  workflows (GitHub cannot `needs:` across workflow files); docs-only
+  changes skip the macOS jobs through `if:` guards, never `paths-ignore`
+  (required checks would go unreported); later (#117) the classifier
+  splits `desktop` from `ios` so a change under one app skips the other's
+  jobs. One retry per desktop e2e spec. Maestro pinned with a sha256,
+  `pnpm/action-setup` SHA-pinned, Dependabot for actions and npm with a
+  weekly group holding only what can merge as is.
+- **Real EventKit on CI** (2026-09) — the desktop helper runs against the
+  runner's Reminders and Calendars with a seeded TCC grant and a hard
+  fullAccess probe; iOS runs against a simulator with `simctl privacy
+  grant`. Hard failures, not skip-with-warning: a broken TCC seed must be
+  seen. The strict specs are CI-only siblings of the tolerant local ones.
+  First catch: the helper's main thread sat in `readLine()`, so
+  `EKEventStoreChanged` had never fired on desktop.
+- **Packaging smoke on PRs** (2026-09) — an unsigned `package:app` on
+  every code PR, after two packaging failures surfaced only post-merge;
+  `brand:check` runs there too, the one macOS job every code PR pays for.
+- **iOS e2e without Metro** (2026-10-05, #117 and later) — CI drives the
+  dev variant as an `e2e-simulator` Release build with the commit's JS
+  repacked in, two shards; with the dev client a run took 49 minutes,
+  18 before the first flow. The dev client with Metro stays for local
+  runs and the live suite.
+- **Test pruning** (2026-10-09, `todo/prune-tests`) — a test goes only
+  if a surviving test asserts everything it did; iOS flows are merged per
+  area, not dropped, because a launch or a Reminders connect repeated
+  across flows is the cost worth cutting (CI shards spend ~16 minutes on
+  setup and are billed macOS minutes). Not done: table-driven merges of
+  near-identical unit tests, shared test helpers.
+- **Dependencies** (2026-09-14, 2026-10-09, 2026-10-03) — every sweep is
+  one commit per group, each droppable. `effect*` exact (the pin stays
+  exact on 4.x: rpc, sql, http and reactivity are `@stability unstable`),
+  Dependabot ignores them; the deep SQL imports stay deep for Metro. React
+  is held to the React Native renderer's version with tilde ranges (a
+  caret once let the lockfile resolve past it); the Expo-bound RN stack
+  moves only with the SDK. Vite+ 1.1 brought Vitest 5, `vp pack` for the
+  main bundle and tests importing from `vite-plus/test`; vitest must equal
+  what vite-plus bundles. The 2-day release-age gate is never bypassed
+  (stable Effect was waited out); Expo SDK 57 patches are trust-excluded
+  by exact version after an audit (`pnpm-workspace.yaml`).
+
+## Architecture and sync path
+
+- **Effect-first** — I/O, orchestration and validation are Effect
+  services and Layers; pure math and React are plain TS. UI state is
+  `@effect/atom-react` over Reactivity keys; the backend seam is an
+  `effect/rpc` group (`AppBackendRpcs`) with custom duplex protocols over
+  Electron IPC (a MessagePort transport is a drop-in swap) and a typed
+  invalidation stream, replacing a hand-rolled Schema-typed IPC bridge.
+  The rpc plumbing is derived: adding a method is the `Rpc.make`, its
+  handler and a reactivity-keys entry — everything else follows or
+  type-errors.
+- **Migrations** — a hand-rolled runner (effect's `Migrator` is
+  Metro-incompatible), each migration transactional with its bookkeeping
+  row, duplicate-id and downgrade guards that die loudly.
+- **Op queue invariants** (2026-09-11 sweep, #110, #118, #125) — the
+  local write and the queue change commit in one transaction, with the
+  drain kicked after commit (`Effect.suspend(forkDetach)` so a failed
+  transaction never starts a drain); pulls skip rows with a queued local
+  edit; a permanent rejection drops the op _and_ announces it; a row
+  whose payload no longer decodes is quarantined by being skipped (no
+  payload version tag — the schema is the tag); a response writes its row
+  only while no later op of the event is queued; an update that lands
+  moves its followers to the etag it produced, an RSVP only when its
+  If-Match held; a 412 is done only when Google's copy yields exactly the
+  PATCH body; only a never-sent create is folded into or dropped; a sent
+  create stays in its calendar on a move; a 410 on a write is "gone".
+- **Full event history** (2026-09-14) — the events pass sends no
+  `timeMin`: one unbounded first pass rather than a quick window plus a
+  background backfill (Nik chose the simpler shape; pages land
+  progressively and Settings explains the wait). `recurrence_end_utc`
+  bounds the masters query so ended series are never expanded. The
+  per-calendar "keep only N years" switch stays in `todo.md`.
+- **RDATE and COUNT series** (2026-10-04, #109) — no RDATE parser of our
+  own: an RDATE-only set gets `RRULE:FREQ=DAILY;COUNT=1` and the library
+  does the rest; DTSTART is always an occurrence, listed as an RDATE too
+  (Google draws it even on a day the rule skips, outside COUNT — probed
+  live). Long COUNT series were measured and left alone; revisit only if
+  a profile shows expansion in a window read.
+- **A master edit reaches the exceptions** (2026-09-26, review of
+  #88/#90) — Google copies a master's _changed_ title, description or
+  location onto every exception, so the app mirrors that at save as a
+  projection of the queued op, storing Google's master text and each
+  exception's own (nothing could be recomputed otherwise); discard,
+  take-theirs and a permanent rejection restore the exceptions.
+- **Conflicts with a choice** (2026-09-23, #85) — a 412 parks the op
+  instead of dropping it (server-wins deleted the user's version and lost
+  server changes a pull had skipped). Show Google's version, not just the
+  title (Nik's pick); the stored copy is a preview and take-theirs
+  re-fetches live; keep-mine re-sends without If-Match (the user saw the
+  comparison); an edit of an event Google deleted is restored under a new
+  id; a parked op survives a move. The old `notice:conflict` toasts are
+  gone.
+- **A gone calendar** (2026-09-29, #96) — a 404 from one calendar skips
+  it for the pass and drops the calendarList token so the next pass lists
+  in full; purging on the 404 was rejected in review (Google says to retry
+  404s, and a delta never brings an unchanged calendar back).
+- **Re-auth and sync kicks** — a 401 flags the account `reauth_required`
+  and keeps its ops queued for after the reconnect (same id, by email);
+  wake/unlock/focus/foreground kick a sync, throttled to one per 15 s,
+  and a user-caused sync makes waiting ops due at once (#118).
+- **Overrides scoped to their master's account and calendar**
+  (2026-09-10) — event ids are Google-global, so two accounts on one
+  shared calendar carried same-id masters and one account's exception hid
+  the other's occurrence.
+- **Adapter drift** (2026-09-11) — the bridge client factories and
+  `finishAddAccount` live in the packages; iOS gets no `CALENDAR_*=off`
+  switch by design (its e2e runs against the real bridges), while the
+  `EXPO_PUBLIC_CALENDAR_GOOGLE/MODEL=fixture` bundle flags swap a JS-level
+  fake for a remote API and leave every bridge real.
+- **Desktop hardening** (2026-09-11, #121, #127) — a CSP outside dev
+  (which reaches the packaged `file://` page, so a `blob:` worklet had to
+  become a public file), `will-navigate` and window-open allow-lists,
+  bounded `model:*` payloads, atomic settings writes; a reload
+  re-registers the page as an rpc client (`rpc:document`, not
+  did-start-navigation, which fires before a refused navigation); a
+  helper timeout fails that request alone and probes before killing.
+- **Settings as a file** (2026-09-30, #97) — a versioned
+  `SettingsDocument` with Export/Import on both apps and the desktop's
+  watched `~/.solunivo/solunivo.jsonc`. The document never holds tokens
+  (the platforms use different OAuth clients anyway, and a desktop refresh
+  token is a non-expiring bearer); an unknown Google account imports as
+  `reauth_required`; an import never removes anything and never connects
+  an Apple provider (no TCC prompt from a file); accounts are keyed by
+  kind + email since both Apple accounts share `provider: 'apple'`. The
+  file is opt-in ("Create file" in Settings) — auto-creating it would put
+  account emails in a dotfolder nobody asked for and switch the two-way
+  mirror on for everyone; a symlinked file is written at its target; a
+  periodic stat is the source of truth and directory watchers only the
+  fast path (watching the home directory was rejected: noisy). Rejected:
+  iCloud key-value sync of the document.
 
 ## Calendar: editing, gestures, views
 
-- [x] Native iOS date/time pickers in the event editor — done (#33):
-      `@react-native-community/datetimepicker` inline date + spinner time
-      pickers replace the text inputs (event editor + task due date);
-      repeat-until seeds on switching Ends→on so it can't silently stay
-      unbounded.
-- [x] Drag-to-move / drag-to-resize events — done: pointer-event drag on
-      desktop (move across days + resize, 15-min snap, Escape cancels,
-      click-through preserved), long-press pan + resize handle on iOS via
-      gesture-handler/reanimated; shared snap math in core/time/dragMath.ts.
-      Out of v1 scope: all-day chips, month view, recurring events
-- [x] Recurring-event editing — done: `updateRecurring`/`deleteRecurring`
-      rpcs with scope `instance` (exception rows under Google's canonical
-      `master_basetime` instance id, cancelled tombstones for deletes),
-      `series` (delta-shifted master patch), and `following` (RRULE UNTIL
-      truncation + new master with recomputed COUNT; later overrides
-      cancelled). Scope picker in both editors; dragging a recurring
-      instance commits a single-instance override.
-- [x] Create recurring events — done: `buildRecurrenceRule` in core
-      (freq + interval + end-after-count / end-on-date; RFC 5545 defaults
-      keep the series on DTSTART's weekday/day-of-month), optional
-      `recurrence` on `EventDraft`, repeat pickers in both editors
-      (create mode). Custom BYDAY combinations stayed out of scope until
-      the by-day repeat rules entry under Apple Reminders (2026-09-20).
-- [x] RSVP on invitations — done: `respondToEvent` rpc + dedicated `rsvp`
-      op kind sending an attendees-only patch (no If-Match — a response
-      shouldn't lose to unrelated content edits), own entry matched via
-      `isSelf`/account email, RSVPs survive content-edit coalescing.
-      Accept/Maybe/Decline buttons in both editors; responding from a
-      recurring instance answers for the whole series.
-- [x] "Join meeting" detection — done: `hangoutLink` mapped from Google
-      (`hangoutLink` or the conferenceData video entry point, new
-      `hangout_link` column via migration 2), `meetingUrl()` in core also
-      scans location/description for Meet/Zoom/Teams/Webex/Whereby URLs;
-      Join button in both editors (desktop opens via the system browser
-      through a window-open handler, iOS via `Linking`).
-- [x] Native text selection (desktop) — body-level `user-select: none`;
-      re-enabled for inputs/textareas/contenteditable plus copy-worthy
-      read-only text (error messages, account emails, invitee list).
-      UI chrome (headers, labels, day numbers, buttons) is unselectable.
-- [x] Screen-sharing privacy — done: the desktop window is excluded from
-      screen shares/recordings by default (`setContentProtection`, macOS
-      `NSWindowSharingNone`); Privacy section in the settings modal offers
-      Hidden / Visible for 10 min (runtime-only, fails closed on restart) /
-      Always visible (persisted in `userData/settings.json`).
-- [x] Per-calendar colors — done: swatch in the desktop sidebar opens a
-      picker (Google's 24-color palette + native color input; palette
-      chips on iOS settings); optimistic local update, then write-back via
-      `calendarList.patch?colorRgbFormat=true` through a new
-      `calendarColor` op kind (account-scoped coalescing, response upsert
-      self-heals a backoff-window pull overwrite, invalid hex rejected,
-      4xx dropped instead of retried forever). Custom colors round-trip:
-      `mapGcalCalendar` already prefers `backgroundColor` over `colorId`.
-- [x] Horizontal trackpad scroll pans days (desktop day/week) — done:
-      continuous pan that follows the fingers 1:1, then eases to the
-      nearest day when the wheel goes quiet (Nik rejected discrete-step
-      snapping). Day columns render inside a clipped viewport as a wider
-      strip (±`PAN_BUFFER_DAYS` buffer columns, fetch range extended to
-      match) translated by a `--pan-x` CSS var written imperatively — no
-      React render per wheel event. Pure pan machine in
-      `core/gestures/wheelPan.ts` (axis lock per gesture, commit-on-day-
-      crossing with `compensate()` re-anchoring in a pre-paint layout
-      effect, snap-rounding on release); native non-passive listener
-      (React's delegated onWheel is passive, preventDefault needs it).
-      Week view is a rolling 7-day window via nullable `weekWindowStart` —
-      Today/view switches snap back to the Monday week, ‹ › keep ±7d.
-      `useEventsInRangeStable` holds the previous range's events while a
-      new range atom loads so panning never flashes empty.
+- **Drag to move and resize** — pointer drag on desktop, long-press pan
+  plus a resize handle on iOS, shared snap math in core; gestures track
+  input 1:1 and snap on release — Nik rejected discrete-step snapping
+  everywhere (the trackpad pan eases to the nearest day only when the
+  wheel goes quiet). All-day chips and the month view do not drag.
+- **Recurring editing** — scopes instance / series / following; an
+  instance edit materializes an exception under Google's canonical
+  instance id so the later pull upserts idempotently; following truncates
+  with UNTIL and spawns a new master; the editor seeds repeat fields from
+  the master (`getEvent`), and a series can change or drop its rule, which
+  drops its exceptions as Google does (#135). Custom BYDAY came later
+  with the by-day rules (below). Dragging an instance commits an
+  instance-scope override.
+- **Drag to create** (2026-09-16, #69) — desktop draws with a press and
+  drag on empty grid space, a click under the threshold still opens the
+  hour; iOS keeps a plain drag for scrolling, so creating is a 300 ms hold
+  that shows a one-hour slot stretched by dragging (Apple Calendar's hold
+  default, stretched instead of moved, Nik's choice). The slot is
+  anchored where the finger touched down and only grows (review: holds
+  near a quarter line opened shifted slots); a slot reaching midnight
+  ends at 23:59 because the editor is same-day. Out of scope: auto-scroll
+  at the grid's edges, slots across days, keyboard slot selection.
+- **Overdue tasks on today only** (2026-09-20) — never also on the
+  original day (Nik's pick over showing both); a dedicated
+  `getOverdueTasks` rpc merged with the range query. **Drag tasks between
+  the lane and the grid**: the drop is judged by where the pointer is
+  released, the rules live in one pure function, and a Google task
+  dropped into the grid is reported `unsupported` and snaps back — never
+  a silent day-only move. **The all-day lane collapses** to three rows
+  with "+N more", a device setting (`ViewPreferences`, typed, never
+  syncs). Undated tasks show on today and a task completed late stays on
+  its completion day (2026-10-02). No auto-scroll at the grid edge.
+- **Screen-sharing privacy** — the desktop window is excluded from
+  captures by default; "Visible for 10 min" is runtime-only and fails
+  closed on restart; "Always visible" persists.
+- **Per-calendar colors** — optimistic local update, write-back through
+  `calendarList.patch?colorRgbFormat=true` as a `calendarColor` op kind
+  coalescing per account; invalid hex rejected, 4xx dropped.
+- **RSVP** — a dedicated `rsvp` op sending an attendees-only patch that
+  survives content-edit coalescing; responding from an occurrence answers
+  the series. It carries If-Match on the queued etag since #125 (so an
+  edit right behind it follows), resent unchecked on a 412.
+- **Join meeting** — `hangoutLink` or the conference video entry point,
+  plus Meet/Zoom/Teams/Webex/Whereby URLs scanned from location and
+  description; opened in the system browser.
+- **Native text selection (desktop)** — body-level `user-select: none`,
+  re-enabled for inputs and copy-worthy read-only text.
+- **iOS week pages day by day** (2026-09-20) — the strip follows the
+  finger across a drawn buffer of seven columns and commits the columns
+  crossed; the week's headers pan in lockstep. **2 Days** (2026-09-28,
+  #94) is the same timeline with two columns anchored on the focused day
+  (as Apple's and Google's multi-day views), so it needs no state of its
+  own. **Swipe jumps** (2026-10-10, #163): the strip is placed by React
+  with the swiped pixel sum (no UI-thread lag reset racing the Fabric
+  mount) and the all-day lane fits the visible page, interpolating
+  mid-swipe. Not checked: a real device.
+- **Multiple time zones** (2026-09-29, #95) — up to three, one primary
+  that replaces the device zone for everything the UI draws (the roots
+  gate on it rather than falling back: a first frame in the device zone
+  near midnight would seed "today" wrong); the others annotate. A
+  checked-in canonical IANA list, since Hermes lacks
+  `Intl.supportedValuesOf`, and a device stores the spelling its engine
+  validates (Hermes rejects `Asia/Kolkata`). Notifications, EventKit's
+  floating zone and timed reminders stay on the device zone.
+- **Design tokens and dark mode** (2026-10-07, #135) — the brand kit is
+  the one palette (a brighter purple and Serenity's indigo were tried and
+  rejected); generated, never edited; the desktop maps tokens into
+  Tailwind and follows the OS over `prefers-color-scheme`, iOS reads the
+  typed tokens; calendar colors are tinted per theme, not mapped. Rode
+  along: notes as an editor field, undated task creation, quick-add
+  understanding to-dos, `lastView` / `sidebarCollapsed` as device taste
+  (never exported), an agenda view kind.
+- **Desktop redesign** (2026-10-07, #136) — one toolbar, one side panel
+  that is the Today rail, search, a read-first inspector or the inline
+  editor; the ⌘K command bar and the centered editor dialog are gone.
+  Click = inspector, Edit = editor; the panel never joins the dialog
+  stack, so a real dialog over it keeps Escape. Tasks drag from the panel
+  too. Settings became a sidebar window with search.
+- **iOS redesign** (2026-10-08, #137) — expo-router owns the screens
+  (native tabs Calendar · Tasks · Search, Settings as a modal route, never
+  a tab); one editor host owns every sheet so both tabs open the same
+  ones; sheets stay React Native page sheets (`@expo/ui`'s BottomSheet
+  would put the forms behind `RNHostView` and out of Maestro's tree);
+  `@expo/ui` where it is a drop-in. The view is a menu and device taste.
+- **iOS Settings pages** (2026-10-08, #148) — one native stack in the
+  modal, a page per Mac pane minus Agents. Rows are React Native drawn on
+  the tokens, not `@expo/ui` SwiftUI (Nik's pick); the switches _are_
+  `@expo/ui`'s, because React Native's `Switch` lays out at the pre-iOS 26
+  size and drew off-centre; no header background (it hid the large
+  title). Done sits on the root only. The mirror page is a summary with
+  the unchanged editor sheet behind it (Nik's pick).
+- **Search** (2026-10-09, #152) — one rpc over what the views can show:
+  a two-year window either side of today, not the history (full-text
+  recall is a backlog item); a matching series is walked outward from
+  now, not expanded (an hourly series would pass the expander's cap);
+  matching is TypeScript, not SQL (LIKE folds neither accents nor
+  non-ASCII case); one hit per series at its next occurrence; iOS uses
+  the native `Stack.SearchBar`, so nothing native changed. Deferred: an
+  agent search tool, calendar names as search text, highlighting.
+- **iOS account button** (2026-10-09, #157) — Settings opens from an
+  account avatar at the top right, as Apple's and Google's apps do; the
+  unsynced pill became its badge. Rejected: a Settings tab (the bar is
+  full and tabs are navigation), an item in the view menu, a "…" menu
+  holding only Settings, the system Settings app.
+- **Task checkboxes** (2026-10-09, #158) — drawn, not typed glyphs: one
+  round box on both platforms (a circle because events are rounded
+  rectangles), the Reminders list color as ring and fill, a done chip
+  keeps its fill at full strength and only the title fades (the whole
+  chip at 50 % hid the checked state). Designed on a canvas first.
+- **Add flow** (2026-10-10, #167) — "+" opens the editor with the
+  quick-add field on top and an Event | Task | Reminder control: the
+  editor is the review step, so iOS's three surfaces for one intent and
+  its direct-create path are gone, as is the desktop toolbar field (⌘K
+  opens a new item). A phrase fills the form; Apply is not a required
+  tap. **Reminder is a kind, not a list** — a list pick never changes the
+  kind. Defaults follow the view (the Tasks tab's "+" opens an undated
+  to-do in the filtered list, #164). The inline add fields went; the
+  cost is one tap. The iOS control is drawn in RN so each segment can
+  carry a test id.
+- **Experimental: mirrors and agents** (2026-10-09, #153) — a label in
+  Settings, not a switch: both do nothing until set up, so a gate would
+  guard nothing and switch off mirrors people run. Grouped under an
+  "Experimental" heading, not badged; each pane says what that means.
+- **Accessibility leftovers** (2026-10-09, #151) — notices stack in one
+  column, failed write / discarded change / banner top to bottom (the
+  banner holds the anchored edge because it stays until answered); the
+  conflict banner is a labelled region, not an alertdialog and not a
+  live region (its table would be re-read on every change), each parked
+  change announced once; Dynamic Type is capped only where a box cannot
+  grow (`BOX_FONT_SCALE`), everything else scales fully.
 
-## Invitees and contacts
+## Invitees, contacts and birthdays
 
-- [x] Attendee add/remove — done: `attendees` (replacement list) on
-      `EventDraft`/`UpdateEventChanges`, `mergeAttendees` in core keeps
-      server facts for retained guests, `toGcalEventInput` emits the list
-      (undefined = untouched, [] = clear), and every insert/patch of a
-      record with attendees sends `sendUpdates=all` — decided: always
-      notify, never ask. Organizer chip is not removable.
-- [x] Invitation autocomplete from device contacts (macOS/iOS) — done
-      via the Swift helper / an Expo module, not `node-mac-contacts` or
-      `expo-contacts`: `packages/contacts` mirrors the reminders seam
-      read-only (`contacts.status/requestAccess/snapshot`, one
-      `ContactsBridge.swift` over CNContactStore symlinked into both
-      hosts). The backend holds the snapshot in memory (`DeviceContacts`,
-      refreshed on CNContactStoreDidChange and when stale) — nothing
-      written to SQLite. Hardened runtime requires the Address Book
-      entitlement on the app and helper even without App Sandbox;
-      `NSContactsUsageDescription` in the helper's embedded plist,
-      forge `extendInfo`, and app.json. Permission ask lives inline in the
-      combobox (first focus) plus a Settings section; e2e runs with
-      `CALENDAR_CONTACTS=off`, real-contacts stays untested in CI.
-- [x] Invitation autocomplete from Google contacts — done: cached, not
-      live. `GooglePeopleClient` lists saved contacts and "other
-      contacts" with sync tokens (People reports expiry as 400
-      `EXPIRED_SYNC_TOKEN`, folded into `SyncTokenExpiredError`); the
-      engine keeps both tiers per account in a `contacts` table (one row
-      per person × email, tier replaced atomically on full passes).
-      `contactsEnabled` mirrors `tasksEnabled` — existing accounts
-      re-consent via "Add Google Account"; the People API (not the
-      retired Contacts API) must be enabled in the GCP project. One
-      `searchContacts` rpc merges SQLite + device rows through
-      `rankContacts` (prefix > substring, saved/device >
-      other, dedupe by email) behind a hand-rolled combobox on both
-      platforms (chips, ArrowUp/Down/Enter, comma/blur accept typed
-      addresses, Backspace removes the last chip).
-- [x] Show contact birthdays — done (2026-09-12): from the People API
-      `birthdays` field (connections only) and `CNContactBirthdayKey`
-      through the shared bridge (`contacts.birthdays`), merged per person
-      by folded name + MM-DD so someone in both address books is one
-      chip with two sources; the detail view is read-only and names each
-      source with the account email. Decisions: People, not Google's
-      read-only Birthdays calendar — that calendar is now skipped in
-      `syncCalendarList` (it would show everything twice and carries no
-      year); a person needs no email to have a birthday, so
-      `contact_birthdays` is its own table under `BIRTHDAYS_KEY` (the
-      typeahead never refetches on a birthday change); neutral chip with a
-      fixed pink accent because birthdays have no calendar color; Feb 29
-      renders on Feb 28 in common years; no cross-column spanning on the
-      phone; month views followed on 2026-09-15 (entry below).
-- [x] Birthday reminders — done (2026-09-12): a multi-select of lead
-      days {0, 1, 3, 7, 14} plus one delivery time, stored in the new
-      `device_settings` key/value table and shown as "stored only on this
-      device" — the first preference that never syncs. Decisions: SQLite
-      via rpc rather than a per-platform settings file (per-device and
-      never uploaded; the consumer is a backend job in both hosts);
-      `BirthdayReminders` runs its own 60 s loop outside the sync pass
-      and narrows on a `NotificationSink` — desktop fires Electron
-      notifications while running (24 h catch-up, fired keys remembered),
-      iOS pre-schedules the next ≤ 60 through expo-notifications and only
-      reschedules when the plan changed; per-person overrides deferred.
-      Permission: iOS asks through expo-notifications on every enabled
-      save; Electron has no authorization query, so desktop asks only as
-      the reminders turn on, by posting a "Birthday reminders are on"
-      banner — 'show' means granted, 'failed' means denied (inline notice
-      in Settings), an unanswered prompt counts as granted after 60 s.
+- **Attendees** — a replacement guest list on the draft; every write with
+  guests sends `sendUpdates=all` — decided: always notify, never ask. The
+  organizer chip is not removable.
+- **Device contacts** — our own bridge over CNContactStore, not
+  `node-mac-contacts` or `expo-contacts`; read-only, held in memory,
+  never written to SQLite. The hardened runtime needs the Address Book
+  entitlement on app and helper even without App Sandbox.
+- **Google contacts** — cached, not live: saved contacts and "other
+  contacts" with People sync tokens in a `contacts` table; existing
+  accounts re-consent through "Add Google Account"; the People API, not
+  the retired Contacts API.
+- **Birthdays** (2026-09-12) — from People `birthdays` and
+  `CNContactBirthdayKey`, merged per person by folded name + MM-DD, not
+  from Google's Birthdays calendar (skipped: it would show everything
+  twice and carries no year); their own table, since a person needs no
+  email to have a birthday; a neutral chip with a fixed pink accent;
+  Feb 29 renders on Feb 28; no cross-column spanning on the phone. Month
+  views list events first (they carry the calendar's color), then
+  birthdays, then tasks, as read-only summaries (2026-09-15).
+- **Birthday reminders** (2026-09-12) — lead days + one delivery time in
+  `device_settings`, the first preference that never syncs (SQLite via
+  rpc, not a per-platform settings file: the consumer is a backend job in
+  both hosts). Electron has no permission query, so the desktop asks by
+  posting the banner — "show" means granted, "failed" denied, an
+  unanswered prompt counts as granted.
+- **Per-person overrides** (2026-10-04, #108) — a per-person list that
+  inherits until touched (an empty list mutes; "Use defaults" removes the
+  entry), keyed by name + month + day (`birthdayMergeKey`), not the merged
+  record id, which changes when a source comes or goes and differs per
+  device. Accepted: a rename drops the override. Travels in the settings
+  document; an import joins by person and never removes one.
 
-## Google Tasks
+## Google Tasks and Apple Reminders
 
-- [x] Sync Google Tasks — done: task lists + tasks poll on `updatedMin`
-      (watermark in sync_state.sync_token, captured pre-pass; tombstones
-      via showDeleted; daily full pass + deleteStale because tombstones
-      expire), `completeTask` op through the queue (optimistic setStatus,
-      latest-wins coalescing, response upsert — which also picks up the
-      server-materialized next occurrence of repeating tasks), chips with
-      checkboxes in both all-day lanes, per-list visibility toggles.
-      Decisions: separate GoogleTasksClient service (request core
-      extracted; scope-insufficient 403 now maps to
-      InsufficientScopeError instead of being silently dropped);
-      `auth/tasks` scope added to the now-shared scope list — existing
-      accounts re-consent by re-running "Add Google Account" (in-place
-      upgrade), gated per account via `tasksEnabled` derived from granted
-      scopes, so calendar-only tokens keep syncing untouched. `due` is
-      date-only → date-string storage/query end to end.
-- [x] Tasks: create/edit/delete from the app — done: both editors gained
-      an Event | Task toggle (create) and open in task mode from a chip
-      tap (edit/delete, incl. "Open in Google Tasks"). New op kinds
-      createTask/updateTask/deleteTask; the Tasks API assigns ids
-      server-side, so creates live under a temp local- id that the push
-      swaps everywhere (row + queued ops; oldest-first draining makes
-      the order safe). Edits fold into a still-queued create; deleting
-      an unpushed create sends nothing. tasks.sync_status keeps the
-      daily full-pass reconcile from eating unpushed local rows. Due
-      date required (no task-list view yet); list fixed after create
-      (moving needs tasks.move) — superseded 2026-09-21 by the task
-      move below (copy-then-delete, no `tasks.move` needed).
-- [x] Tasks: detail sheet on chip tap — done as part of task
-      create/edit/delete: the chip body opens the shared editor in task
-      mode (notes, list, due, delete, open-in-Google via `webViewLink`).
-- [x] Tasks: iOS Maestro flow for the all-day lane — done:
-      `08-task-lane.yaml` creates a task via the editor toggle, asserts
-      the chip renders, toggles the checkbox twice (restores state),
-      opens the editor from the chip body, deletes. Targets the created
-      chip via Maestro's regex ids matching the temp `local-.*` id, so it
-      is deterministic even on accounts with real tasks — and traceless
-      server-side because deleting an unpushed create sends nothing.
-      No-ops without a tasks-enabled account (`task-list-option` guard,
-      same shape as 06/07).
-
-## Apple Reminders
-
-- [x] Apple Reminders integration — done: personal reminders appear in
-      the calendar alongside Google Tasks. Decisions: EventKit via the
-      existing Swift helper on macOS and a local Expo module on iOS (one
-      shared Swift source; expo-calendar rejected — no priority, no
-      all-day/timed distinction); a synthetic `apple-reminders` account
-      with provider-dispatched mutations (no pending-op queue — EventKit
-      is local); per-provider forms (Google: title/day/notes/fixed list;
-      Reminders: time, priority, alert, repeat, URL, movable list). Date-only
-      reminders render in the all-day lane; timed reminders now render as
-      compact, draggable blocks in the time grid. See
-      docs/architecture.md + docs/google-sync-and-testing.md.
-      Google Tasks still make sense when working with Gmail.
-- [x] Complete mirror + EKEventStoreChanged push — done: no date
-      window (paging 1.5 years ahead reads locally, like Google Tasks);
-      id-list + delta protocol keeps the bridge payload proportional to
-      change; transactional snapshot reconciliation (newer wins,
-      stamp-guarded removal, no giant NOT IN); the notification is
-      latency, the 90 s pass is correctness.
-- [x] Review round 2 fixes — done: Save sends only dirty fields
-      (diffed against the opening snapshot, both providers); a mirror
-      write failing after EventKit committed is logged, not raised (a
-      retry would duplicate); mirror INSERTs are guarded on the account
-      row so removal cannot be undone by an in-flight pass (Google had
-      the same race); Gregorian wire dates; `boundedInt` before every
-      native conversion; read-only lists carried as
-      `TaskListInfo.readOnly` and opened as viewers. Decision: EventKit
-      enforces read-only — no mutation-layer error, the rare slip
-      surfaces as saveFailed.
-- [x] Timed-reminder grid review fixes (#73 follow-up) — done: the day
-      column is a fixed 24-hour wall clock, so `layoutDayColumn` places
-      every box — events, reminders, the "now" line — by wall-clock minute
-      instead of elapsed time; on a DST day an event sits beside its hour
-      label (spring-forward 01:30–03:30 draws two rows tall, the repeated
-      fall-back hour overlaps, as in Google Calendar). Reminders never go
-      through a time zone: their due date/time are EventKit date
-      components, so a time inside the spring-forward gap is kept as
-      stored and drawn at its label. A reminder drag starts from where the
-      block is drawn (a 23:50 reminder sits at 23:30 to stay on its day),
-      so it lands where it was dropped; a day-only move keeps the stored
-      time. The drag's click suppressor is cleared by the next
-      `pointerdown`: a suppressed click belongs to the gesture that set
-      it, so a cancelled pointer that never delivers its click cannot
-      swallow the user's next one.
-
-- [x] By-day repeat rules — done (2026-09-20): weekly rules name their
-      weekdays ("Weekends", "every Tue and Thu") and monthly rules may
-      name one "Nth weekday" (1st…4th or last), for Apple Reminders and
-      for events (Google via RRULE BYDAY, Apple Calendar via the
-      structured rule it already carried), in both editors on both
-      platforms. Nik's pick over weekly-only and reminders-only after his
-      "Weekends" reminder opened as "cannot edit". Decisions: one `ByDay`
-      type (`packages/core/src/recurrence/byDay.ts`) shared by the
-      structured rule, `TaskRecurrence` and the editor spec, with
-      `byDayError` stating the allowed shapes once for the editors and the
-      Swift write path (and again in the reminder mutations, so the fake
-      and the real bridge agree); the wire stays minimal — a weekly rule
-      sends its weekdays only once they are explicit (the source rule named
-      them, or the user toggled one), so scalar fixtures stay scalar, an
-      untouched Save never rewrites a rule Reminders.app stored explicitly,
-      and moving the date of an untouched rule never pins it to the weekday
-      it started on; the shared repeat state (`useRepeatState`) takes the
-      anchor date, shows its weekday and ordinal until the user picks, and
-      is pure underneath (`seedRepeatFields`, `repeatSpecFrom`, tested);
-      the last selected weekday cannot be removed; a monthly rule on a
-      plain weekday without an ordinal stays unsupported (Reminders.app
-      cannot create one; rewriting it as weekly would be a silent change);
-      the Reminders bridge reads a monthly ordinal whether
-      EventKit stored it as the day's week number or as a set position
-      and writes it as the week number; yearly positional rules, several
-      rules and day-of-month lists still round-trip as `recurrenceUnsupported`.
-      Repeat controls live in one component per platform
-      (`RepeatRuleFields`, `RepeatRuleChips`), which also gave the reminder
-      form its aria-labels and Maestro-assertable chip selection; labels
-      use Reminders.app's words ("Weekly on weekends", "Monthly on the 2nd
-      Tuesday"). The Swift change moves the iOS fingerprint: a
-      development-simulator build was queued for CI and the merge triggers
-      TestFlight. The strict Maestro flow exercises the monthly path (its
-      chips set rather than toggle, so it holds on any date).
-
-- [x] Convert a Reminder ↔ Google Task — done (2026-09-21): the task
-      editor's list picker offers every writable list of every account,
-      grouped per account like the event editor's calendar picker, and
-      picking a list elsewhere moves the task on Save. Decisions: one
-      `moveTask` rpc mirroring `moveEvent` — Apple → Apple stays
-      EventKit's in-place list change (identifier kept); every other
-      route, Google → Google across lists or accounts included, creates
-      the task in the target and then deletes the source, so a failure in
-      between leaves a duplicate, never a lost task (Apple → Google:
-      queue the create in a transaction, then EventKit delete; Google →
-      Apple: EventKit create, then queue the delete; Google → Google: both
-      queue writes in one transaction). Unlike an event move the rpc
-      carries the _draft_: the editor flips to the target provider's form
-      the moment a list in the other provider is picked, so a Google task
-      can get a due time or priority on its way into Reminders, and the
-      form's values — not the source row — are what gets written.
-      Completion follows the task (a `completeTask` op queued behind the
-      create on the temp id, or `setCompleted` on the new reminder). The
-      loss preview is pure core (`taskMoveLoss` on the source record: due
-      time, alerts, priority, repeat rule incl. `recurrenceUnsupported`,
-      URL — only Apple → Google drops anything; the Google web link is
-      not carried, it points at the task being deleted) so no preview
-      rpc exists; the same `confirmMove` seam as events asks before
-      anything is written. Google → Google is not a server move: the
-      task gets a new id and `parent`/`position` (unmodeled) do not
-      follow. Read-only Reminders lists are never offered as a target.
-      Follow-up in the same PR: the
-      in-process fake Google API (`testing/fakeGoogle.ts`) became an app
-      fixture (`testing/googleFixture.ts`; desktop `CALENDAR_GOOGLE=fixture`,
-      iOS `EXPO_PUBLIC_CALENDAR_GOOGLE=fixture`, on for the whole CI Maestro
-      batch).
-      Decided: no HTTP mock server; the fake sits behind effect's
-      HttpClient and a pre-filled memory TokenStore keeps the real
-      TokenManager and request core on the path.
-- [x] Convert events ↔ tasks/reminders, new and existing — done
-      (2026-09-28): the editor's Event | Task toggle now carries the draft
-      across in create mode (title, day, time, notes, notifications,
-      repeat rule, links) and shows for existing items too, where Save
-      converts: `convertEventToTask` / `convertTaskToEvent` rpcs create
-      the other kind from the form and delete the source, copy-then-delete
-      with the same route-ordered transaction as the moves (one shared
-      `crossStore` helper now serves both moves and both conversions).
-      Decisions: the confirmation asks only when a field that is actually
-      set has no home on the other side — the end time never counts (a
-      task has no duration), nor do calendar-default notifications or
-      links (a meeting link becomes the reminder's URL, or is appended to
-      a Google task's notes; a reminder's URL becomes an Apple event's URL
-      or rides in a Google event's description); guests, the location,
-      email notifications (any notification toward Google Tasks), an
-      inexpressible repeat rule (any rule toward Google Tasks), modified
-      occurrences, a priority, alerts after the due time and the
-      completed status do count. A timed event heading for Google Tasks
-      (date-only) counts its time as lost and asks; toward Reminders the
-      time is kept and nothing is asked. Only a chosen time counts: a
-      stored event's, a drawn slot's, a parsed phrase's or an edited one —
-      the editor's own 09:00 / clicked-hour default is neither carried nor
-      asked about, so "+ → Task" still opens an untimed task. In create mode the
-      question comes at the flip (Save would otherwise drop what the other
-      form no longer shows; both models stay mounted, so flipping back
-      finds the old state); for an existing item it comes at Save, from
-      the stored record and the list or calendar picked by then
-      (`previewEventToTask`, pure `taskToEventLoss`). A recurring event
-      converts as its whole series only (the toggle needs scope "All
-      events", like a move); the series' rule and an Apple event's plain
-      URL reach the task form through the preview, since an occurrence row
-      never carries its master's lines and the record shows only meeting
-      URLs. A link travels as the task's URL and is folded into the notes
-      (or a task's URL into the event description) only when the draft
-      finally saves to Google, so changing the list or calendar after the
-      flip cannot lose it; a task's rule reaches the event's repeat form as
-      it is, never re-read from an UNTIL line. Per-occurrence conversion is
-      a follow-up. The
-      confirmation seam carries a structured request (move / convert /
-      switch + subject) so each platform words its own buttons; the move
-      strings stay as they were. The task draft now carries every alarm,
-      not only the first, so a move keeps a reminder's further alerts.
+- **Google Tasks sync** — `updatedMin` watermark with tombstones plus a
+  daily full pass; a separate `GoogleTasksClient`; the `tasks` scope is
+  gated per account by `tasksEnabled` from the granted scopes, so
+  calendar-only tokens keep syncing; `due` is date-only end to end.
+  Creates live under a temp `local-` id the push swaps everywhere; an
+  edit folds into a create only while it is undispatched, else queues
+  behind it so the retry's adopt check still matches (2026-09-10); a
+  later edit of another field merges field by field (#111).
+- **Apple Reminders** (2026-09) — EventKit through the existing Swift
+  helper on macOS and a local Expo module on iOS, one shared Swift source;
+  `expo-calendar` rejected (no priority, no all-day/timed distinction). A
+  synthetic `apple-reminders` account with provider-dispatched mutations
+  and no pending-op queue (EventKit is local); per-provider forms. SQLite
+  holds the complete snapshot (no date window) refreshed by an id-list +
+  delta protocol; `EKEventStoreChanged` is latency, the 90 s pass is
+  correctness. Writes are EventKit-first and EventKit is the truth: a
+  mirror write failing after the commit is logged, not raised (a retry
+  would duplicate); Save sends only dirty fields; read-only lists open as
+  viewers and EventKit stays the enforcement. Timed reminders draw as
+  compact move-only blocks on a fixed 24-hour wall-clock column and never
+  go through a time zone.
+- **By-day repeat rules** (2026-09-20, #81) — weekly weekday sets and one
+  monthly ordinal for reminders and events, Nik's pick over weekly-only or
+  reminders-only after his "Weekends" reminder opened as "cannot edit".
+  One `ByDay` type shared by the structured rule, `TaskRecurrence` and
+  the editors; the wire stays minimal — weekdays are sent only once
+  explicit, so an untouched Save never rewrites a rule Reminders.app
+  stored and moving a date never pins the weekday; a monthly rule on a
+  plain weekday stays unsupported (Reminders.app cannot create one;
+  rewriting it as weekly would be a silent change).
+- **Move a task between lists and providers** (2026-09-21, #82) — one
+  `moveTask` rpc mirroring `moveEvent`: Apple → Apple is EventKit's
+  in-place list change, every other route creates in the target and then
+  deletes the source (a failure leaves a duplicate, never a lost task);
+  the rpc carries the editor's draft, so a task can gain a time on its way
+  into Reminders; the loss preview is pure core, no preview rpc. Google →
+  Google is not a server move (`parent`/`position` do not follow). The
+  fake Google API became an app fixture for both e2e suites — no HTTP
+  mock server; it sits behind effect's HttpClient with a memory
+  TokenStore.
+- **Convert events ↔ tasks** (2026-09-28, #93) — the same copy-then-delete
+  through a shared `crossStore` ordering. The confirmation asks only when
+  a set field has no home on the other side: the end time never counts, a
+  link finds a home; only a chosen time counts (the editor's default hour
+  is neither carried nor asked about); a recurring event converts as its
+  whole series; a per-occurrence conversion is a follow-up.
 
 ## Apple Calendar
 
-- [x] Apple Calendar calendars + events, and moving events between
-      calendars — done: the device's Calendar app calendars (every
-      EventKit source: iCloud, Exchange, On My Mac, subscribed) appear
-      next to Google, with create/update/delete, and an event can move
-      Google↔Google, Google↔Apple and Apple↔Apple. Decisions: a third
-      EventKit seam (`packages/apple-calendar`, one Swift source for the
-      helper and an Expo module) under one synthetic `apple-calendar`
-      account; skip the Birthdays calendar and sources named like a
-      connected Google account; calendars mirrored, **events read
-      through** (no local rows, no window, EventKit expands series — Nik
-      wanted neither a rolling window nor drift from Calendar.app, and the
-      backend rpc stays the one query surface for a future CLI/agent);
-      EventKit-first writes with scopes mapped to spans; guests/RSVP are
-      Google-only (hidden, and rejected by the mutation layer); moves take
-      the whole series — a server `events.move` inside one Google account,
-      EventKit's own calendar change between Apple calendars, otherwise
-      copy-then-delete that drops guests and modified occurrences **after
-      a confirmation** (`previewMove` → `moveLossSummary`); a move and the
-      edits of its series keep queue order even through backoff
-      (`earlierInSeries`, rowid tiebreak). Open: the two _(verify)_ items
-      in docs/google-sync-and-testing.md.
-
-## AI features
-
-Decision: **on-device models only** — no data leaves the device, no API keys, no
-per-request cost, works offline. This matches the app's existing posture (client-only,
-screen-share protection, tokens outside SQLite). Apple's Foundation Models (~3B,
-iOS/macOS 26) handle extraction and classification well but not multi-step reasoning,
-so the rule throughout is: **the model parses intent, deterministic code does the
-work** — which also keeps the valuable logic in `packages/*` where it is unit-testable
-with a fake provider.
-
-Platform notes: iOS reaches the models through `@react-native-ai/apple` (structured
-JSON output, embeddings, transcription; RN 0.80+ and the new architecture, both
-already in place). Speech is `SpeechAnalyzer`/`SpeechTranscriber`, on-device on **iOS
-26 and macOS 26**, ahead of Whisper Small on accuracy, installing per-locale assets on
-first use. Electron has no on-device path yet — Foundation Models is Swift-only — so
-desktop waits on a helper binary (below).
-
-- [x] Natural-language quick add — done on BOTH platforms: iOS text +
-      dictation in the quick-add bar (shipped earlier), desktop via the
-      ⌘K command bar on the helper runtime (below). One shared parser
-      (`parseQuickAdd`), one prefilled-editor hand-off, never an
-      auto-save.
-- [x] Find a time (iOS) — done: a ⏱ mode in the quick-add bar; the model
-      only parses the constraint sentence (`parseFindTime`, mirroring the
-      quick-add stack: dated-weekday prompt list, vocabulary anchors like
-      "mornings" → 08:00–12:00, placeholder stripping, normalize/reject),
-      and the pure `findFreeSlots` solver in core does the work over the
-      already-assembled `getEventsInRange` window — wall-clock daily
-      bounds (DST-correct), all-day events don't block, no past slots,
-      one chronological slot per gap, capped at 10. Tapping a slot chip
-      prefills the editor via the existing EventEditorPrefill path.
-      Decisions: chronological ranking v1 (constraints are the
-      preference language), window defaults to the coming week, duration
-      required. Desktop follows via the helper binary below — parser and
-      solver are already shared; the ⌘K bar then carries quick add AND
-      find-a-time.
-- [x] Voice capture (iOS) — done: mic in the quick-add bar records WAV/LPCM
-      (`expo-audio`), transcribes on device via `SpeechAnalyzer` and feeds the
-      transcript straight into the same parser; the recording file is deleted
-      immediately. Availability is decided by attempting `prepare()` (which installs
-      the locale's assets) rather than by the platform's readiness flag, because that
-      flag is false until assets exist — gating on it would hide dictation on a
-      capable device that had simply never used it. Reaches desktop with the helper
-      binary, since macOS 26 exposes the same API — which it now has: desktop
-      dictation ships in the ⌘K bar via the helper. Siri/App Intent entry point later.
-      NOTE: the simulator has no speech assets, so dictation self-disables there —
-      the transcript path needs a TestFlight check on a real device.
-- [x] Desktop model runtime — done: one Swift helper
-      (`apps/desktop/helper/`, SPM) exposing Foundation Models AND
-      SpeechAnalyzer over a newline-JSON stdio protocol (status /
-      generateJson via runtime-built DynamicGenerationSchema at temp 0 /
-      prepareSpeech / transcribe). Weak-linked + #available-guarded, so
-      the binary runs on any macOS and reports unavailable below 26.
-      Main spawns it lazily (crash restart w/ backoff, request timeout),
-      renderer reaches it over plain preload IPC (window-level concern —
-      not the rpc seam); `desktopLanguageModel`/`desktopSpeech` implement
-      the shared seams, with the renderer owning the microphone
-      (getUserMedia → 16 kHz LPCM WAV, the iOS shape). Packaged via
-      extraResource; `make`/`package:app` build it first; testing-build
-      CI moved to macos-26 (only image with the SDK), e2e to macos-15
-      (macos-14 deprecated). The ⌘K bar (quick add + find-a-time +
-      dictation) is the proof feature. Swift 6 gotchas recorded in the
-      helper commit: top-level code is MainActor-isolated (detach the
-      per-request Task or the semaphore deadlocks), own-and-return
-      accumulators across tasks.
-- [x] Desktop says why the model is unavailable — done (2026-10-10,
-      `todo/model-unavailable-reason`). The ⌘K field read "Model
-      unavailable" on a Mac whose Apple Intelligence had switched itself
-      off: Siri was on English (UK), the Mac on English (US), and a
-      language mismatch turns Apple Intelligence off (Writing Tools went
-      too). The helper already sent Foundation Models' reason; the
-      renderer dropped it. **`ModelStatus` carries the reason**:
-      `disabled` (switched off — the user can act), `not-ready` (assets
-      still downloading), `unsupported` (device not eligible, or macOS
-      below 26); `unavailable` stays for a reason the app doesn't know
-      (no helper, a crash, a case a newer macOS adds). `modelStatusOf`
-      maps the helper's `detail`; iOS's module answers only a boolean, so
-      it keeps `ready`/`unavailable`. The editor's quick-add field
-      (placeholder and tooltip) and the capture dialog's error say the
-      reason (`modelUnavailableCopy`), and `useModelAvailability` polls a
-      `not-ready` model every 30 s — the download ends with no event and
-      often while the app is in front. No "Open System Settings" button:
-      the tooltip names the pane, and focus re-checks on the way back.
-
-## Robustness
-
-- [x] Surface failed/pending ops — done: reactive `OPS_KEY` on the op
-      queue, `listPendingOps`/`discardPendingOp` rpcs, "N unsynced changes"
-      panel in the desktop sidebar and iOS settings (per-op discard, retry
-      count). 412 server-wins now broadcasts `notice:conflict` over the
-      invalidation stream and the desktop shows a toast. (Superseded
-      2026-09-23: a 412 parks the op — see "Conflicts with a choice".)
-- [x] Re-auth flow when a refresh token dies — done: ops hitting a 401 now
-      flag the account `reauth_required` (and stay queued for after the
-      reconnect); iOS settings gets a tappable "Session expired — reconnect"
-      running OAuth for the same account (stable id by email); desktop
-      already had the AccountsView button, sidebar hint now reads as a
-      warning.
-- [x] Sync on wake/focus — done: Electron kicks `syncAll` on
-      `powerMonitor` resume/unlock and window focus; iOS on `AppState`
-      returning to active. Debounced to one kick per 15s; syncAll is
-      semaphore-serialized so overlapping kicks are safe.
-- [x] DST-aware drag/series math — done: `moveEventTimes` does wall-clock
-      arithmetic in the event's zone (a 09:00 event dragged across the
-      spring-forward day stays at 09:00; absolute duration preserved), and
-      series-scope edits apply the occurrence's wall-clock delta via
-      `applyWallClockDelta` instead of raw ms.
-- [x] `eventsInRange` atom-family growth — done: replaced `Atom.family`
-      with a 32-entry LRU keyed by range; revisiting an evicted range just
-      refetches. (Prefetching week±1 remains a possible follow-up.)
-
-## Architecture
-
-- [x] Migrate UI state/data flow to `@effect/atom-react` — done: atoms
-      subscribe to fine-grained Reactivity keys (`accounts`/`calendars`/
-      `events`); backend invalidations flow through a forwarding bridge
-- [x] Replace the hand-rolled Schema-typed IPC bridge with
-      `effect/unstable/rpc` — done: `AppBackendRpcs` RpcGroup in core,
-      custom duplex protocols over the Electron IPC frame channel
-      (`packages/sync/src/rpcDuplex.ts`; a MessagePort transport is a
-      drop-in duplex swap), and the invalidation stream is a typed
-      `stream: true` rpc
-
-### Project review (2026-08-28), closed items
-
-- [x] Surface mutation failures in the UI — done: `useGuardedMutations`
-      (packages/app-state/src/mutationGuard.ts) wraps fire-and-forget
-      mutations so failures publish a MutationNotice instead of
-      vanishing as unhandled rejections; both apps render it as a toast
-      (desktop App.tsx, iOS ui/Toast.tsx — also mounted inside the
-      Settings modal, which covers the root toast). Editors with inline
-      error UI keep using `useBackendMutations`.
-- [x] Transactional migrations — done: each migration + bookkeeping row
-      commits in one `sql.withTransaction` (mid-failure rolls back to
-      the last applied migration and retries next launch); duplicate-id
-      and downgrade guards die loudly. Runner parameterized for tests
-      (`runMigrationsWith`).
-- [x] Dedup the findTime pipeline + quick-add state machine — done:
-      and `apps/ios/src/findTime.ts` are byte-identical → move into
-      `packages/ai`); extract a shared `useQuickAddModel` — QuickAddBar
-      and CommandBar re-implement one state machine and have already
-      diverged (MicrophoneDeniedError is handled in different phases →
-      wrong copy on iOS).
-- [x] Derive the rpc plumbing — done: `BackendMethodName` is
-      `Exclude<RpcGroup.Rpcs<…>['_tag'], 'invalidations'>`,
-      `backendMethodNames` reads the group's runtime request map, and the
-      direct client / handler layer / mutation atoms are built from it
-      (atoms from a single `MUTATION_REACTIVITY` keys map). Adding a
-      method = the Rpc.make, its handler, and a keys entry — everything
-      else follows or type-errors.
-- [x] Housekeeping batch (the structural half) — done: mutations.ts
-      split into mutationTypes/applyOp/taskMutations + a 644-line core;
-      EventEditSheet split into shell + EventEditForm/TaskEditForm +
-      editSheetShared; iOS ErrorBoundary + ConflictToast parity (a 412
-      server-wins was silent data loss on iPhone).
-
-### Project review (2026-09-10), closed items
-
-- [x] Recurring overrides scoped to their master's account and calendar —
-      done: `EventRepo.getWindow` joins the master row on (account,
-      calendar, id) and the calendar on visibility for its override query;
-      `assembleWindow` keys shadowing by account + calendar + master id.
-      Event ids are Google-global, so two accounts on one shared calendar
-      carried same-id masters and one account's exception hid the other's
-      occurrence.
-- [x] Dispatched task creates stay intact under edits — done: an edit
-      folds into a createTask only while it is undispatched (fresh attempt
-      counters); behind a dispatched create it queues as an updateTask, so
-      the retry's exact-field adopt check still matches and never inserts
-      twice. Decision: task ops still carrying a temp `local-` id wait in
-      applyOp until the create swaps it — a follower that ran first patched
-      the temp id and the 404 dropped the local row.
-- [x] WeekView builds its timed-event lookup once per render (was once per
-      column, on every drag pointermove).
-- [x] iOS all-day event chips open the editor (were a plain View; task
-      chips beside them were pressable). VoiceOver label + testID.
-
-### Backlog sweep (2026-09-11), closed items
-
-One PR (`todo/backlog-tiers`), one commit per item, tiers 1–6 of the
-2026-09-10 backlog minus PR videos and app icons.
-
-Correctness and the sync path:
-
-- [x] Permanent rejections are announced — done: a non-409 4xx drops the
-      op _and_ broadcasts `notice:dropped` (DroppedToast on both apps);
-      `markFailed` stores the real reason (`describeFailure`) so the
-      unsynced-changes list can show it; `processPendingOps` logs the
-      squashed cause instead of swallowing it. `InsufficientScopeError`
-      disables tasks only for task ops. A permanently rejected createTask
-      also removes its optimistic `local-` row.
-- [x] Tolerant row decoders — done: `pendingOpFromRow` returns `undefined`
-      for a payload that no longer decodes and the queue skips it (logged),
-      instead of throwing out of `listAll()` on every mutation. Enum
-      columns go through `oneOf` guards, not bare `as` casts. Decision: no
-      payload version tag — the schema is the tag; a row that fails it is
-      quarantined by being ignored, and the Discard UI still lists it.
-- [x] Pulls skip rows with a queued local edit — done: `upsertMany` /
-      `upsertTasks` take `{ mode: 'pull' }` and leave `pending` rows alone;
-      `setStatus`/`updateLocal` now mark tasks pending (the docs had claimed
-      it); an abandoned op hands its row back via `releaseRow`
-      (`markSynced`, or delete for a create). Documented in architecture.md.
-- [x] Local write and queue change commit in one transaction — done:
-      every coalesce-then-enqueue path runs inside `sql.withTransaction`
-      with the drain kicked after commit (`transactional` helper).
-      Decision: the kick is
-      `Effect.suspend(forkDetach)` so a failed transaction never starts a
-      drain; the color test is pinned with `noYield` (see
-      docs/google-sync-and-testing.md).
-- [x] `truncateRecurrence` prunes RDATE — done: a this-and-following split
-      drops RDATE values at or after the split (`parseDateList`,
-      `listValueMs`), honouring the series time zone for floating values.
-- [x] Malformed timestamps degrade the row, not the pass — done:
-      `instantMs`/`plainDateMs` return `undefined` and the mapper skips
-      the row with a warning; the calendar's pass completes.
-- [x] Desktop token store — done: temp-file + rename writes,
-      `isEncryptionAvailable()` guard with a typed failure, an in-memory
-      cache so authed requests stop hitting file + Keychain, one
-      serialized read-modify-write.
-- [x] Indexes and bounds — done: migration 10 adds the `pending_ops`
-      drain index, `tasks(due_date)` and an events window index that leads
-      with the range; `listDue` pages at 200. (The masters query got its
-      lower bound only with the full-history work below — this entry
-      claimed it too early.) `CREATE INDEX IF NOT EXISTS` because the
-      migration test re-runs against a seeded schema.
-- [x] Sync-loop nits — done in one commit: per-account `catchCause` in
-      `syncRemindersOnly`; the second full pass re-checks `skipped`;
-      `Retry-After` is honoured by the transient retry loop; every error
-      branch drains `response.json`; `DeviceContacts.list()` is
-      single-flighted and a failed snapshot retries after `FAILURE_RETRY_MS`
-      instead of caching `[]`; migrations enforce monotonic ids; an
-      undecodable 2xx drops the op instead of retrying forever.
-- [x] Electron hardening — done: a CSP via `onHeadersReceived` outside
-      dev, `will-navigate` + `setWindowOpenHandler` allow-lists on every
-      web-contents, `model:*` payloads validated and bounded, the helper is
-      killed on request timeout, `renderer-error` is capped, settings are
-      written atomically.
-- [x] Adapter drift — done: `finishAddAccount`, `makeSyncKicker`, the
-      bridge client factories (`remindersClientFrom`/`contactsClientFrom` + layers, `helperTransport(killSwitch)`) live in the packages;
-      `changesFromSubscription`/`bridgeMessage` moved to
-      `@calendar/core/bridge`. iOS gets no `CALENDAR_*=off` switch — its
-      e2e runs against the real bridges by design. The two
-      `EXPO_PUBLIC_CALENDAR_GOOGLE=fixture` / `EXPO_PUBLIC_CALENDAR_MODEL=fixture`
-      bundle flags are not that: they swap a JS-level fake in for a
-      remote API and for the on-device model, and leave every bridge
-      real.
-
-Cost, CI and distribution:
-
-- [x] Docs-only changes skip the macOS jobs — done: a `changes` job
-      classifies the push via the GitHub compare API and the macOS jobs
-      carry `if:` guards (not `paths-ignore`, which would leave required
-      checks unreported).
-- [x] One reusable gate — done: `gate.yml` (`workflow_call`) replaces the
-      duplicated steps in ci.yml and ios.yml. The check is now named
-      "Gate / Lint, typecheck, unit tests" — branch protection must be
-      pointed at it.
-- [x] Caches — done: `apps/desktop/helper/.build`, the Electron binary and
-      `~/.maestro` are cached; the hoisted `node_modules` link phase is
-      left alone (pnpm's store cache already covers the download).
-- [x] Supply chain — done: Maestro pinned to 2.10.0 with a sha256,
-      `EXPO_TOKEN` scoped to the steps that need it, `pnpm/action-setup`
-      SHA-pinned, `dependabot.yml` for actions and npm.
-- [x] Flake budget — done: `retry: 1` on the desktop e2e specs.
-- [x] Distribution — done: the testing build embeds the RFC 8252 desktop
-      OAuth client from a secret-fed `google-oauth.json`; versions start
-      at 0.1.0 on both platforms with a CHANGELOG. Crash reporting stays
-      off (privacy posture); auto-update remains blocked on the private repo.
-
-Developer workflow and tests:
-
-- [x] Tests for untested pure code — done: all-day lane packing, the
-      Google API schemas' tolerance, the Tasks client, the device contacts
-      cache, the token store, `assembleWindow`, row decoders.
-- [x] A fake Google server — done: `packages/sync/src/testing/fakeGoogle.ts`
-      behind `HttpClient.make` replays calendar/events/tasks fixtures with
-      410 sync-token expiry, tombstones, watermarks and 412. Engine tests must
-      `TestClock.adjust` between passes.
-- [x] Hooks and scripts — done: `vp config` installs a pre-commit hook
-      that runs `vp staged` (`vp check --fix` on staged files);
-      `test:run`, root `lint`, incremental typecheck, root `test:e2e` runs
-      the helper guard first. Note: the hook commits the whole index, so
-      split commits by staging deliberately.
-- [x] Guards for manual steps — done: `check-helper.mjs` (desktop e2e
-      against a stale/absent helper) and `check-devclient.mjs` (installed
-      dev client fingerprint ≠ working tree) warn before the suites run;
-      README notes the JDK for Maestro.
-- [x] Housekeeping leftovers — done: `packages/ai` errors are
-      `Data.TaggedError`s, one `boundedAtomCache`, `uncaughtException`
-      exits after logging, `app.json` updates get `checkAutomatically` +
-      a fallback timeout (changes the native fingerprint), a checked month
-      grid, `@types/react` from the catalog.
-
-Parity, UX and accessibility:
-
-- [x] Desktop keyboard and dialogs — done: one `Dialog` (role, focus trap
-      and restore, Escape via a window capture listener, backdrop close
-      button) wraps the editor, settings and ⌘K; shortcuts ⌘K, ⌘,, ⌘N, T,
-      ←/→; day columns and event blocks are focusable buttons.
-- [x] iOS VoiceOver — done: labels on the icon-only header buttons,
-      selected state on the segment, labelled WeekStrip/MonthGrid cells.
-- [x] Quick-add divergence — done: `useModelAvailability` (re-check on
-      window focus / AppState active, Retry) shared by both bars; the
-      desktop CommandBar resolves relative dates against the viewed day.
-- [x] Invitee field parity — done: `useInviteeField` owns the debounce,
-      arrow/comma/Backspace handling and stale dimming; InviteeCombobox and
-      the iOS InviteeField are thin views over it.
-- [x] Shared-code moves — done: editor option labels, `pendingOpLabel`,
-      permission-status copy, `useCalendarNavigation`, `formatClockTime`/
-      `formatSlotLabel`, `useListColorLookup` live once in app-state/core.
-- [x] Add flow picks the right calendar — done: the editor seeds from
-      `calendarKey` when given and otherwise defaults to the last-used
-      calendar (module-level, remembered on save).
-- [x] iOS parity — done: a Week view (the timeline renders `days` visible
-      columns with a `WEEK_SWIPE_BUFFER` of seven so a swipe pages by whole
-      weeks; the week strip is the column header and tapping a day drops
-      into Day), an "N unsynced" header badge that opens Settings, an
-      all-day lane that grows to three rows with "+N more" (chips stack one
-      per row), permission copy shared with desktop, and the ErrorBoundary
-      writes the last render error to the documents directory for
-      Diagnostics to show and clear. Decision: no cross-column spanning of
-      multi-day all-day events on the phone — each column lists its own
-      day, which the per-column paging strip makes the honest choice.
-- [x] Splits — done: one repo file per table under `packages/db/src`
-      (`repos.ts` only assembles the layer), SettingsSheet → AccountCard +
-      PrPreviewSection + DiagnosticsSection, DayTimeline →
-      DraggableEventBlock + DayColumn + AllDayColumn, WeekView →
-      DayHeaders + AllDayLane + TimedEventBlock, EventEditor →
-      EventEditorForm.
-
-Performance:
-
-- [x] Drag, clock and hour lines — done: `useEventDrag` keeps only "which
-      block, which mode" in state and publishes offsets through an external
-      store; the dragged block alone subscribes (`useSyncExternalStore`),
-      so a pointermove re-renders one block. `NowIndicator` owns the minute
-      tick on both platforms. Desktop hour lines are one
-      `repeating-linear-gradient` per column.
-- [x] Month grouping — done: `groupEventsByDay` buckets a window's events
-      per ISO day in one pass; both month views and the iOS timeline read
-      from it.
-- [x] Atom fan-out — done: `eventsInRange` watches `EVENTS_KEY` only and
-      `tasksInRange` `TASKS_KEY` only; the repos invalidate those keys from
-      the operations that change a window's contents (calendar visibility
-      and removal). `useBackendMutations` builds its promise setters once
-      per registry (`registry.set` + `AtomRegistry.getResult`) instead of
-      nineteen `useAtomSet` mounts per consumer.
-
-### Full event history (2026-09-14)
-
-- [x] Events: the 12-months-back floor — done: the events pass sends no
-      `timeMin`; a full list (first sync, 410 resync) fetches every event
-      ever and the token then covers all of them; nothing prunes by age.
-      Decisions: one unbounded first pass rather than a quick window plus
-      a background backfill — Nik chose the simpler shape (pages land
-      progressively, the Settings line explains the wait); migration 12
-      clears every stored events token because a windowed token cannot be
-      widened; each 2,500-event page is one transaction and one
-      invalidation; `recurrence_end_utc` (UNTIL, or the last COUNT
-      occurrence computed once at write time) bounds the masters query
-      over a partial index; expansion has an iteration cap and a skipped
-      master no longer blanks the window; calendars that vanish take their
-      rows and their sync_state row with them (a calendar that comes back
-      lists its history again); `listSyncStatus` shows "Importing history…
-      N events so far" / "History complete" per account, only for
-      calendars that still exist and accounts that can sync. Rode along:
-      the event INSERT had never written `hangout_link`, so meeting links
-      from Google were never persisted — fixed in the same statement.
-      Follow-ups: series with RDATE lines stay unbounded, long-lived COUNT
-      series still iterate from DTSTART on every read, no per-calendar
-      history opt-out.
-
-### Dependency sweep (2026-09-14)
-
-- [x] Upgrade every dependency to the latest version the platform accepts
-      — done (one commit per group, each droppable): vite-plus 0.3.1 with
-      vitest 4.1.11 (the workspace overrides vitest to the catalog, so it
-      must equal the version vite-plus bundles — vitest 5 is off the table
-      until vite-plus moves), tsdown 0.23, plugin-react 6.1.1,
-      oxlint-config 2 (its React Compiler immutability rule is disabled
-      in the one file that writes Reanimated shared values); TypeScript
-      7.0.2 (nothing in tsconfig needed to change); Electron 44, eas-cli
-      24; the SDK 57 patch set for iOS with react-native 0.86.3,
-      reanimated 4.5.1, worklets 0.10.1 and op-sqlite 17.2.0 (the
-      @effect/sql-sqlite-react-native peer range is >=17.1.2 <18);
-      rrule-temporal 2.2.5 with the app's Temporal namespace passed via
-      its `temporal` option; Effect rc.115 (custom rpc protocols expose
-      `codecFor`); the GitHub Actions majors; pnpm 12. Ceilings kept for
-      the next sweep: react 19.2 (RN 0.86's renderer), gesture-handler
-      2.32 / reanimated 4.5 / worklets 0.10 / react-native 0.86 /
-      datetimepicker 9.1 (what Expo SDK 57 bundles; the oracle is
-      `npx expo install --check`), op-sqlite < 18, vitest = vite-plus's.
-      Expo still lists react 19.2.3 exact and typescript ~6.0.3 as
-      "expected"; both are advisory and everything builds.
-
-### Schema baseline (2026-09-15)
-
-- [x] Collapse the twelve SQLite migrations into one — done: nothing had
-      shipped, so the upgrade paths between them served nobody; one
-      migration now creates the final schema and the one-off data fixes
-      (token reset, orphan deletes) are gone with the history they fixed.
-      Decisions: the runner keeps its "ahead of this build" guard rather
-      than gaining a self-wipe — a pre-baseline database refuses to open,
-      and the message names the reset; `pnpm reset:local`
-      (`scripts/reset-local-data.sh`) wipes every local store on a Mac
-      (both desktop builds, keychain keys, Squirrel caches, booted
-      simulators) and TestFlight testers delete + reinstall once, noted in
-      `docs/distribution.md`. From here on, schema changes are appended
-      migrations again — the collapse is a one-time pre-release cleanup,
-      not a policy.
-
-### Tasks and birthdays in the month views (2026-09-15)
-
-- [x] Tasks (and birthdays) in month view — done: both month views now
-      receive the tasks and birthday occurrences their hooks were already
-      fetching for the grid (`monthGridRange` and the fetch range share
-      one `buildMonthGrid`). Decisions: each platform keeps its month
-      idiom — desktop draws chips (task: checkbox glyph, the Reminders
-      list accent where the lane draws one, struck through when done;
-      birthday: pink accent, `data-birthday`) under the existing
-      three-chip cap and "+N more", iOS draws dots (an outlined ring per
-      task in the list color or grey, pink per birthday) under the
-      four-dot cap; both cells carry the same accessible name from
-      `monthCellLabel` ("Tuesday, September 15, 2 events, 1 task"); items
-      are read-only summaries and the cell still opens the day, so no
-      nested buttons on desktop and no new gestures on iOS; cells list the
-      day's events first, then birthdays, then tasks — events keep the cap
-      because they carry the calendar's color and a day full of tasks must
-      not hide them (the review caught tasks-first doing exactly that);
-      `groupByDate` in core replaces the iOS lane's two hand-rolled maps
-      and feeds both month views.
-      The seeded task is due on the local date (the UTC date is yesterday
-      between local and UTC midnight); iOS has no seed path, the
-      navigation flow stays as is.
-
-### App icons and brand kit (2026-09-16)
-
-- [x] Real app icons and logo design — done (#67): the selected "24"
-      identity ships as the macOS icon (`apps/desktop/assets/icon.icns`,
-      Forge `packagerConfig.icon`) and the iOS icon
-      (`apps/ios/assets/icon.png`, `expo.ios.icon`), with a versioned kit in
-      `brand/` (SVG masters, outlined logos, Inter fonts under the OFL,
-      `tokens.json`, a preview) — usage rules in `brand/README.md`.
-      Decisions: the SVG masters are the source and every raster is
-      generated by `pnpm brand:build` (macOS only, it needs `iconutil`);
-      the iOS export fills an opaque square and lets iOS apply its mask,
-      while macOS keeps the folded silhouette on a transparent canvas; the
-      iOS adapter fails loudly if the master's named shapes change, so a
-      new master needs an explicit look at the platform conversion; the
-      UI palette and the dark icon stay proposals, not applied to the app.
-      Follow-ups: `pnpm brand:check` runs in the packaging smoke job (the
-      one macOS job on every code PR), so a master or token edited without
-      a rebuild fails CI; the published kit folder is replaced on rebuild
-      instead of merged (renamed or removed exports used to survive
-      there). An icon change alters the native fingerprint, so it reaches
-      testers only through a TestFlight build, never an OTA update.
-
-### Soft ivory identity (2026-09-17)
-
-- [x] Adopt the A1 soft ivory study across the brand kit and native icons.
-      Decisions: lighten the paper toward white (`#FFFAEC`), keeping the
-      mint fold, blush backing and original Inter Bold 24 placement and
-      size. The centered, smaller numeral study was not selected. Keep
-      the 115% horizontal lockup ratio. Update the flat icon, reversed
-      wordmarks, proposed dark icon's ivory numerals, palette and guide
-      to the same soft ivory; native dark switching remains a proposal.
-
-### Drag to create on the time grid (2026-09-16)
-
-- [x] Draw a new event's slot on the week/day grid — done. Decisions:
-      desktop draws with a press-and-drag on empty grid space, and a plain
-      click below the 4 px threshold keeps opening the clicked hour; iOS
-      keeps a plain drag for scrolling and swiping, so creating needs a
-      300 ms hold on empty space, after which a one-hour slot appears and
-      dragging while holding stretches it (Apple Calendar's hold default,
-      stretched instead of moved, by Nik's choice); the hold slot is
-      anchored where the finger touched down (not where it rests after the
-      hold), only grows — past the hour's end, or a full quarter above the
-      touch-down point — and the release creates exactly the slot shown,
-      because a phone minute is about one point and fingers drift (the
-      review of #69 found holds near a quarter line opening 30-minute or
-      shifted slots); desktop counts only vertical travel toward the drag
-      threshold (a sideways-drifting trackpad click stays the hour click)
-      and drops a drag whose column left the page mid-drag; both snap to 15
-      minutes like the event drag and stay in the column the gesture
-      started in; the quarter the gesture started in always stays part of
-      the slot, so dragging up from 23:05 by an hour opens 22:00–23:15; a
-      slot reaching midnight ends at 23:59, because the editor is same-day
-      and rejects 24:00; a gesture that starts on an event keeps moving it
-      (desktop blocks stop propagation, iOS blocks sit above the column's
-      gesture layer); flipping the form to Task keeps the slot's start as
-      the due time, which only a Reminders list stores. iOS has no
-      Maestro flow because Maestro cannot hold and
-      then drag, so the check there is the exported bundle workletizing the
-      gesture callbacks plus a manual run. Out of scope: auto-scroll at the
-      grid's edges, slots across days, keyboard slot selection.
-
-### Event locations with maps (2026-09-19)
-
-- [x] Structured locations and a map in the event editor — done.
-      Decisions: Google's `location` is free text and stays the source of
-      truth (no place ids exist in the API); coordinates are derived
-      on-device with MapKit only — no API keys, no third-party geocoder,
-      and no location permission (only CLLocationManager prompts, and it
-      is never used). One PR ships the typeahead picker, geocoding and the
-      map on both platforms. Coordinates are mirrored into the event's
-      private extendedProperties with the source text, so other devices
-      skip the lookup and an edit elsewhere visibly invalidates them.
-      Review of #77 tightened two rules: only coordinates the user
-      vouched for (a pick, or the event's own) are pushed — the lookup
-      the editor runs for free text on open is device-local, so MapKit's
-      guess for "Room 4B" never becomes every device's truth — and the
-      null-deleting PATCH is sent only by the edit that dropped the
-      coordinates (`PendingOp.geoCleared`), never on unrelated edits,
-      since null-for-absent-key was only verified against the fake.
-      Nik then asked for cache hits to expire: places open, move and
-      close, so a hit older than 14 days is shown at once and refreshed
-      in the background (stale-while-revalidate; a place in constant use
-      refreshes on the same cadence because every refresh restamps it),
-      and Settings on both platforms has "Clear location cache". Misses
-      retry after 3 days (Nik's pick over the first 7/30: nothing in
-      Apple's guidance names a number; both stay far from the geocoder's
-      rate limit).
-      The desktop map is a static `MKMapSnapshotter` image from the Swift
-      helper (native look, no MapKit JS token or tile policy); iOS uses
-      `expo-maps`. The desktop image is light-only until the renderer has
-      a dark theme (the protocol already takes an appearance). Free-text
-      lookups can land on a wrong place for nonsense text — accepted: the
-      map shows what was found, and the picker gives exact results. The
-      desktop helper's main loop moved from `dispatchMain()` to
-      `RunLoop.main.run()`, which MKLocalSearchCompleter requires.
-      The iOS Maestro
-      flow is local-only because it needs MapKit's network. Out of
-      scope: location-based reminder alarms, `eventType` /
-      `workingLocationProperties`, travel time.
-
-### Task lane polish (2026-09-20)
-
-- [x] Overdue tasks and reminders surface on today — done: an open
-      task whose due day has passed shows only in today's all-day
-      section (week, day and month, both apps) with a red text-presentation
-      `⚠︎` and "Overdue · due <date>" in the tooltip/label; a timed
-      overdue reminder becomes an all-day chip there. Decisions: on today
-      only, never also on its original day (Nik's pick over showing both —
-      no duplicates, one chip to complete or drag); a dedicated
-      `getOverdueTasks({ before })` rpc (visible lists, `needsAction`, no
-      cap — the collapsible lane handles a backlog) merged with the range
-      query in `partitionCalendarTasks(tasks, today)`, which de-duplicates
-      by key and never re-dates a record (every mutation still compares
-      against the stored `dueDate`); `useToday` re-reads the date once at
-      local midnight rather than ticking every minute.
-- [x] Repeat marker on task chips — done: `↻` after the title on lane
-      chips, timed blocks and month chips whenever `recurrence` or
-      `recurrenceUnsupported` is set, "repeats" in accessibility labels.
-      Google tasks carry no rule on the wire, so nothing shows for them.
-- [x] Drag tasks between the all-day lane and the time grid — done on
-      both platforms. Decisions: the drop is judged by where the pointer
-      is released (`dropTargetAt` over the lane, grid viewport and scroll
-      offset; a worklet, so iOS judges it on the UI thread) and the rules
-      live in one pure function, `dropTaskChanges`: a grid drop sets the
-      day and 15-minute time, a lane drop clears the time (also for an
-      overdue timed reminder dragged along the lane it is drawn in), a
-      lane drop on another day moves the day for both providers, and a
-      Google task dropped into the grid is reported `unsupported` — the
-      chip snaps back and a notice says Google Tasks are date-only, never
-      a silent day-only move (the mutation layer's
-      `UnsupportedForProviderError` stays as the second line of defence).
-      Overdue chips drag by absolute target day, since their chip sits on
-      today while `dueDate` is past. Desktop keeps the timed block's live
-      translation for grid-to-grid moves and
-      adds drop indicators for lane-origin and lane-target drags; iOS
-      hosts a ghost at the timeline level because the lane and the
-      ScrollView are different containers, so the timed reminder drag
-      moved from "block follows the finger vertically" to ghost +
-      indicator (event blocks unchanged). All-day event chips stay fixed.
-      No auto-scroll at the grid edge. iOS has no Maestro flow
-      (hold-then-drag).
-- [x] Collapsible all-day lane, persisted — done: default expanded on
-      both platforms (iOS previously defaulted to its 3-row cap);
-      collapsed caps at 3 rows with "+N more" per overflowing column
-      (`capAllDayLane`: a multi-day chip counts in every column it covers,
-      the cap row of an overflowing column gives way to the "+N more"
-      chip, a lane that fits changes nothing); "less" sits beside the
-      `all-day` gutter label. The choice is a device setting — the first
-      entry of a typed `ViewPreferences` struct
-      (`getViewPreferences`/`setViewPreferences`) rather than per-boolean
-      or untyped rpcs — and never syncs.
-- [x] iOS week view pages day by day — done: the seven-column strip
-      follows the finger 1:1 across its drawn buffer, and a release
-      commits the columns crossed (whole columns plus the existing
-      flick/quarter rule on the remainder, `swipeCommitColumns`, clamped
-      to the buffer); the day view is the same code with one column. The
-      week's day headers moved inside the timeline so they pan in
-      lockstep, and tapping one opens that day; the day view keeps the
-      Monday-week strip as its picker. `WEEK_SWIPE_BUFFER` stays seven so
-      a full-page drag reveals drawn columns; each committed day re-keys
-      the range atoms, which the bounded cache and the keep-previous hooks
-      absorb.
-
-### iOS location purpose string (2026-09-20)
-
-- [x] `NSLocationWhenInUseUsageDescription` in the iOS Info.plist — done:
-      App Store Connect accepted build 24 with an ITMS-90683 warning, so
-      the string ships in `apps/ios/app.json` under `ios.infoPlist`
-      beside the other five. Nothing in the app prompts for location:
-      Apple's scan is static and only sees that `CLLocationManager` is
-      referenced by expo-maps' `MapPermissionRequester` (never called —
-      `LocationMap` sets `isMyLocationEnabled: false`) and that the geo
-      and apple-calendar podspecs link CoreLocation. Decisions: the key
-      is declared directly rather than through expo-maps'
-      `requestLocationPermission` plugin option, which would also add
-      `ACCESS_COARSE_LOCATION` / `ACCESS_FINE_LOCATION` to the Android
-      manifest and claim a permission the app never asks for; the
-      wording describes MapKit biasing search results toward nearby
-      places, which is all location would ever be used for here. It is
-      the one string here that does not end in "Nothing leaves your
-      device": place search is `MKLocalSearch`, which is a call to
-      Apple's servers, so that sentence would be false — do not restore
-      it for symmetry with the EventKit and Contacts strings. Do not
-      delete the key as unused either; the warning returns on the next
-      upload.
-      `ios.infoPlist` feeds the fingerprint, so this alone forces a
-      TestFlight build (build number auto-increments) and a fresh
-      `development-simulator` dev client for CI.
-
-### Event notifications (2026-09-22)
-
-- [x] Event reminders on macOS and iOS — done: `EventRecord.reminders`
-      in Google's `useDefault`/`overrides` shape (also what EventKit
-      alarms map onto, with `useDefault` always false), mirrored both
-      ways (Google `reminders` + calendarList `defaultReminders`;
-      relative `EKAlarm`s through the shared Swift bridge, absolute ones
-      untouched), edited in both editors (desktop: a "calendar default"
-      checkbox naming what it resolves to, else preset rows up to five;
-      iOS: toggle chips plus the switch; email reminders listed, never
-      edited) and delivered by `LocalNotifications`, the renamed birthday
-      scheduler, now with two producers merged into one fired map and
-      one OS schedule. Decisions: a `remindersChanged` flag on the
-      pending op (mirror of `attendeesChanged`) because Google's PATCH
-      replaces the object and email overrides must survive an unrelated
-      title edit; `useDefault:false, overrides:[]` is "none" and stays
-      distinct from the field being absent, which reads as the calendar
-      default for a Google row synced before this shipped; a copy-move to Apple resolves the
-      calendar default into explicit popups and `previewMove` names the
-      email reminders that cannot follow; Apple writes refuse
-      `useDefault` and email rather than dropping them. Notifications:
-      `PlannedNotification.expiresAt` lets each producer own its
-      catch-up rule (a birthday all day, a meeting until five minutes
-      in) instead of one 24 h window; the loop sleeps until the next
-      delivery (5 s..60 s) and re-plans, debounced, on event/birthday
-      invalidations; a producer whose setting is off returns nothing,
-      so disabling one no longer wipes the other's OS schedule (a bug
-      the birthday-only scheduler had in waiting). Settings: a new
-      device-local `eventNotifications` key, on by default, with a
-      second switch for Apple Calendar events that is off by default
-      because Calendar.app already fires those alarms; the desktop
-      permission banner now speaks of notifications in general and is
-      posted once on the first start (`localNotifications.permissionAsked`
-      is set before the ask, so a crash mid-prompt never nags), not
-      when the first due reminder happens to fire. Hidden
-      calendars do not notify (the range loader is the rpc's). iOS
-      background refresh followed on 2026-09-27 (entry below).
-
-### Conflicts with a choice (2026-09-23)
-
-- [x] Manage conflicts with a choice — done (2026-09-23): a 412 used to
-      drop the op (server wins) and delete the user's version before
-      anyone could offer it; worse, a server change a pull had skipped
-      while the row was pending never came back. Now the op is parked
-      (migration 5: `pending_ops.conflict_at` + `server_payload`) with
-      Google's copy fetched at park time, and a persistent banner names
-      the event and lists what differs (title, time, location, notes,
-      guests — `describeConflict` in core, shared by both apps) with
-      Keep mine / Take theirs; the queue rows offer the same instead of
-      Discard. Decisions: fetch and show Google's version rather than
-      the title alone (chosen by Nik); the stored copy is only a preview
-      and take-theirs re-fetches live, because the pull that carried a
-      newer change may already have advanced the token; keep-mine
-      re-sends without If-Match rather than with the new etag (the user
-      saw the comparison — a further change in between is theirs to
-      overwrite); an edit of an event Google deleted is restored as a
-      new standalone event under a fresh id, since the NotFound arm
-      would otherwise drop it; delete ops now snapshot the deleted row
-      so a parked delete can be named; a failed fetch retries instead of
-      parking blind; parked ops survive a move (dropping the park with
-      the etag would decide for the user) and take-theirs is refused
-      until the move lands; the `notice:conflict` key and both conflict
-      toasts are gone — the banner derives from `listPendingOps`.
-      Fixed on the way: `discardPendingOp` never released the row, so a
-      discarded edit stayed `pending` and pulls skipped it forever.
-      iOS has no Maestro flow for it (seeding a parked op there
-      is not worth a 40-minute CI slot); verify on a device.
-
-### Live Google suite (2026-09-24)
-
-- [x] Tests against a real Google account — done (2026-09-24): the fake
-      pinned what we believed Google does; nothing checked it. Now three
-      opt-in suites sign in as a dedicated throwaway account over the real
-      API — the Node engine suite (`packages/sync/src/live`, eight files:
-      events, calendarList, recurring, move, attendees, conflicts, tasks,
-      People), the desktop spec `googleLive.e2e.ts` and six iOS Maestro
-      flows — and `google-live.yml` runs them nightly only when `main`
-      moved since the last completed run, on demand, or on the
-      `google-live` PR label, one run at a time. Decisions: the fixture
-      suites stay the PR gate, the live suites never run under `pnpm
-  test`/`test:e2e`/`test:e2e:ios`; every file creates its own
-      `e2e-<ts>-<runTag>` calendar/list (one per file — Google throttles
-      calendar creation), deletes it after, and sweeps leftovers older
-      than six hours, so overlapping local and CI runs cannot collide;
-      `calendars.insert/delete` and `tasklists.insert/delete` stay
-      test-only (`liveScratchRest.ts`, plain fetch, shared by Node,
-      the Electron harness and the iOS sidecar) rather than widening the
-      app's clients and every stub; guests are `guest-<runTag>@example.com`
-      with `sendUpdates=none` through a new `GuestNotifications`
-      reference (default `'all'`, unchanged for the apps) instead of a
-      second real account; a `SyncInterval` reference lets the UI suites
-      watch a pull land; one refresh token serves all three suites, minted
-      by `scripts/google-live-token.mjs` against the desktop OAuth client
-      (which iOS therefore also uses in live mode — the iOS client's
-      custom-scheme redirect cannot be driven by a loopback script);
-      Maestro gets a one-hour access token from the sidecar as
-      `MAESTRO_LIVE_*`, never the refresh token; behind-the-back edits
-      run inside the flows via `runScript` + `http`. Not covered on iOS:
-      drag-to-move and resize (Maestro 2.10 has no drag command and a
-      swipe from an element starts at its centre). Secrets: `GOOGLE_LIVE_EMAIL`, `GOOGLE_LIVE_REFRESH_TOKEN`
-      (new) + `GOOGLE_DESKTOP_CLIENT_ID/SECRET`; the consent screen must
-      be In production or the token dies in seven days. The iOS
-      flows found an app bug: turning a timed Google event all-day (or
-      back) sent a PATCH Google refused — it merges start/end fields, so
-      the old `dateTime` stayed next to the new `date` (400 "Invalid start
-      time") and the op was dropped, all-day here and timed on Google.
-      `toGcalTimesPatch` now nulls the unused form; the fake merges times
-      like Google. The iOS title field gained
-      the system clear button (also what the flows use to rename).
-
-### Live suite review fixes (2026-09-26)
-
-- [x] Six findings from a review of #88/#90 — done (2026-09-26,
-      `todo/review-findings`). Maestro records every `MAESTRO_*` value,
-      the live access token included, in each flow's `commands.json` and
-      `maestro.log`; `::add-mask::` covers only the job log, so the
-      failure artifacts now pass `scripts/redact-live-reports.ts` (exact
-      secrets plus token shapes, binaries holding one and symlinks
-      removed, a re-scan gating the upload), and the Maestro cache holds
-      only `bin/` and `lib/` (it was shared with `ci.yml`, so a live job's
-      reports could reach ordinary CI). The series-edit carry became a
-      projection of the queued op rather than a plain overwrite: the op
-      stores Google's master text and each exception's own text
-      (`CarriedText`, migration 6), "changed" is measured against that
-      across coalesced edits (an offline A→B→A is no change, as on Google),
-      and discard, take-theirs and a permanent rejection restore the
-      exceptions (coordinates included) except fields edited on them
-      since and rows whose etag moved on (a pull already brought Google's
-      version, e.g. another device's identical rename); storing values was
-      necessary because Google overwrites custom exception text too, so
-      nothing could be recomputed. An empty field now equals a missing one
-      in that diff: the editor always sends `location: ''`, which used to
-      wipe the exceptions' own locations locally. The iOS sidecar records
-      each scratch id as it is created and keeps what a delete missed
-      (teardown exits 1). A click on the 23:00 row opened the editor at
-      23:00–24:00, which validation rejects; the clicked hour now goes
-      through `slotTimes` like a drawn slot (ends 23:59).
-
-### iOS background refresh for notifications (2026-09-27)
-
-- [x] iOS background refresh for local notifications — done
-      (2026-09-27): the ≤ 60-slot OS schedule only updated while the app
-      ran, so a dense calendar ran dry within days and an event added
-      elsewhere never notified until the next launch. Now a background
-      task (`expo-background-task`, registered on mount with a 30-minute
-      minimum interval) runs `backgroundRefresh`: `syncAll` bounded to
-      20 s, then `LocalNotifications.run()` regardless — a pull that is
-      slow, offline or dies (a Keychain read while locked) still leaves
-      a schedule refilled from local data. Decisions: the effect lives
-      in `packages/sync` so the ordering and the budget are unit-tested
-      against a stub engine; the task is defined in `index.ts` before
-      `registerRootComponent`, because a background launch runs it
-      before anything mounts, and it reuses the app's one runtime (a
-      mount on the same launch is harmless: `syncAll` is gated, `run`
-      serialized); both modules load through a guarded `require` so OTA
-      previews on older binaries keep working. expo-background-task
-      submits a `BGProcessingTask` (network required, no power
-      requirement), not the `BGAppRefreshTask` the backlog named — iOS
-      tends to grant it overnight or while idle, which is when slots run
-      out; the foreground refresh stays the correctness path. Google
-      tokens are now stored `AFTER_FIRST_UNLOCK` (chosen by Nik) so a
-      pull can run while the phone is locked; the Keychain keeps an
-      item's accessibility on update, so tokens move to a new key
-      (`tokens.v2.<id>`, `apps/ios/src/tokenStore.ts`): the new item is
-      written first and the old one deleted only after that succeeded
-      (the refresh token is the only copy — deleting first lost it on a
-      failed write, caught in review), reads fall back to the old key
-      and migrate it the same way. No Maestro flow: BGTasks cannot be
-      triggered from it; verify with `triggerBackgroundRefreshForTesting`
-      in a debug build or the debugger's `_simulateLaunchForTaskWithIdentifier:`
-      on `com.expo.modules.backgroundtask.processing`. Fixed on the way
-      (CI caught it): the four notification settings sections merged a
-      change into the atom's last read, so a second toggle before the
-      re-read undid the first; `useSettingsEditor` keeps the last value
-      sent as the section's truth (the UI is the only writer of those
-      keys) and falls back to the stored one on a failed save.
-
-### iOS two-day view (2026-09-28)
-
-- [x] iOS "2 Days" view between Day and Week — done (2026-09-28): a
-      fourth segment shows the focused day and the next one side by
-      side. It is the week timeline with two columns: `DayTimeline`
-      already draws `days.length` columns with per-day swipe paging and
-      its own header cells, so the change is in the shared
-      `useCalendarNavigation` (`'twoDay'` in `CalendarViewKind`, a
-      `viewColumns` helper replacing the scattered `7` / `=== 'week'`
-      literals) plus the iOS segment. Decisions: the window is anchored
-      on the focused day (`[focused, focused + 1]`, as Apple's and
-      Google's multi-day views do), so unlike the week's Monday-snapped
-      window it needs no state of its own — a swipe moves `focused` by
-      the columns crossed, a chevron by two, Today shows today and
-      tomorrow, and a header tap opens that day in the Day view as in the
-      week. `TWO_DAY_SWIPE_BUFFER` is two, the week's rule of buffer =
-      visible columns, so a full-page drag reveals drawn columns and can
-      commit both days. Two columns (~170 pt on a phone) keep the day
-      view's block layout: the column divider now follows
-      `days.length > 1` and the dense text only `days.length > 2`. The
-      title reuses the week format on a two-day span ("Sep 30 – Oct 1,
-      2026"). Desktop keeps Day / Week / Month (the shared type gains the
-      value, its segment is its own literal); the chosen view is still
-      not persisted, on either app.
-
-### Multiple time zones (2026-09-29)
-
-- [x] Time zones in settings — done (2026-09-29): up to three IANA zones
-      per device, one primary. The primary zone replaces the device zone
-      for everything the UI draws: both roots (`CalendarApp`,
-      `CalendarScreen`) gate on `useTimeZones()` and hand the primary
-      to the body where `Temporal.Now.timeZoneId()` used to be, so the
-      hour axis, event placement, "today", the now-line, navigation,
-      quick add, find-a-time and the editors all follow it, and new
-      events carry `startTimeZone = primary`. The other zones annotate:
-      a dimmer second line under each hour label (built from the instant
-      of that hour on the first visible day, so half-hour zones show
-      minutes and a DST gap resolves; a DST change inside a multi-day
-      strip can put another column an hour off, which the blocks' own
-      times never are), a third line on tall event blocks and a helper
-      line under the editor's time inputs. Decisions: a new
-      `timeZones` device_settings key (`ViewPreferences` is replaced
-      wholesale by its callers), decoded through a schema that validates
-      every id against Temporal so a zone tzdata dropped reads as the
-      default single device zone rather than a grid that throws; the
-      picker's catalog is a checked-in canonical IANA list with modern
-      spellings (ICU's `Asia/Calcutta` → `Asia/Kolkata`), the same on
-      both apps since Hermes lacks `Intl.supportedValuesOf` — but engines
-      accept different spellings (Hermes rejects `Asia/Kolkata` and takes
-      `Asia/Calcutta`; V8 takes both), so a device stores whichever
-      spelling its engine validates (`runtimeZoneId`) while display,
-      search and test ids go through `canonicalZoneId`. The first iOS
-      run stored `Asia/Kolkata`, failed the schema's Temporal check on
-      the next read and reset the whole list; zone labels
-      are the city part of the id (Intl's short names are inconsistent on
-      Hermes). Gating rather than falling back to the device zone: a
-      first frame in the device zone would, near midnight with a distant
-      primary, seed the focused day and "today" with the wrong date.
-      Stays on the device zone: `LocalNotifications` (alarms are
-      instants; a birthday "09:00" means the phone's 9:00; the layer is
-      built at startup), EventKit's floating-event zone, and timed Apple
-      reminders (`dueTime` is floating wall clock, drawn at that hour in
-      whatever zone the grid uses). iOS event pickers pass
-      `timeZoneName={primary}` and convert through `pickerDates.ts`, so
-      a primary that differs from the device zone round-trips exactly;
-      reminder, task and birthday pickers keep the device-local helpers.
-      The gutter widens per zone (desktop `w-16`→`w-24`→`w-32` shared by
-      header and lane; iOS `gutterWidth()` also fed to the task drag so
-      drops land in the right column).
-
-### A gone calendar no longer stalls the account (2026-09-29)
-
-- [x] Nightly live runs 36374700458 and 36517901490 went red — done
-      (2026-09-29, `todo/live-nightly-gone-calendar`). The three live jobs
-      share one account, so each app lists the other jobs' scratch
-      calendars too, and Google keeps listing a deleted calendar for
-      minutes (docs/google-sync-and-testing.md, calendarList). Once its
-      `events.list` answers 404, `syncAccount` used to fail at that
-      calendar, and because it syncs calendars one after another, the
-      calendars sorted after it, tasks and contacts never synced. An
-      incremental list never reports a deletion older than its token, so
-      the account stayed stuck. A real user who deletes a
-      calendar elsewhere could hit the same. Decisions: a 404 from one
-      calendar's `events.list` skips that calendar for the pass, keeps its
-      rows and drops the calendarList sync token, so the next pass lists
-      calendars in full; that removes the calendar once Google stops naming
-      it. The first cut purged the calendar on the 404, which a review
-      rejected: Google says to retry 404s, and after a transient one an
-      unchanged calendar would never have come back through the delta. A
-      404 from one list's `tasks.list` skips that list and keeps its rows
-      (task lists are listed in full every pass). Any other failure still
-      fails the account pass as before. The Node calendarList test
-      polls up to three minutes for the removal instead of asserting after
-      one pass, and the desktop live spec now dumps screenshot, DOM and app
-      log on a failure. The desktop failure of 36517901490 (a created
-      event never rendered; the later tests chained on it) did not
-      reproduce locally, not after a fresh deletion and not at the
-      nightly's 16:00 slot, so its cause is still open; the dump is there
-      for the next time.
-
-### Settings export/import and the watched settings file (2026-09-30)
-
-- [x] Settings as a file — done (2026-09-30,
-      `todo/settings-export-import`): a versioned `SettingsDocument`
-      (`packages/core/src/settingsDocument.ts`) carrying the device
-      settings (time zones, event notifications, birthday reminders, view
-      preferences), the desktop's screen privacy under `desktop`, and
-      every account as a sign-in checklist with its calendar/list
-      visibility. Export… / Import… on both apps (desktop: file dialogs
-      over preload IPC, the document itself over the rpc seam; iOS: the
-      share sheet via React Native's `Share` with a file in the cache
-      folder, and `expo-document-picker` for the pick — a native module,
-      so the iOS fingerprint moved), plus the desktop's watched
-      `~/.solunivo/solunivo.jsonc` (`CALENDAR_SETTINGS_FILE` overrides it)
-      that is applied on start and on every save and written back when
-      settings change in the UI. Decisions: **the document never holds
-      tokens or secrets** — desktop and iOS use different Google OAuth
-      clients, so refresh tokens could not cross platforms anyway, and a
-      desktop refresh token is a non-expiring bearer credential; a Google
-      account the file lists that is unknown here is created as
-      `reauth_required` with no token, so the existing "Sign in again"
-      row is the checklist and `finishAddAccount` (now case-insensitive
-      on the email) keeps the id. An import never removes anything and
-      never connects Apple providers (no TCC prompt from a file);
-      sections are written only when they differ, notification toggles
-      go through the setters' permission + reschedule path
-      (`notificationSettings.ts`), and `desktop.screenPrivacy` reaches
-      the Electron main process through the `PlatformSettings` seam (iOS
-      provides `none` and notes the section as desktop-only). Accounts
-      are keyed by `kind` (`google` + email, `apple-calendar`,
-      `apple-reminders`) because both Apple accounts share
-      `provider: 'apple'` and an empty email. Apple calendar ids are per
-      device, so Apple calendars match by EventKit source title + title
-      and Reminders lists by title, best-effort. Visibility for rows not
-      in the database yet (account not signed in, Apple not connected,
-      first sync pending) is parked in `device_settings.importedVisibility`
-      and applied after each calendar/list sync pass (`applyPendingVisibility`
-      in the engine, under one semaphore shared with the import so a pass
-      cannot drop what an import just parked); the export merges the
-      parked entries back in, or the desktop write-back right after an
-      import would erase them from the file. The watched file is two-way:
-      file → app on change (directory watch, since editors save by
-      rename; hash of the last applied/written text tells our own writes
-      apart, a parse error is reported and not recorded so the next good
-      save applies, an unapplied edit on disk wins over a pending
-      write-back), app → file via `jsonc-parser` edits leaf by leaf so
-      comments and unknown keys survive (`accounts` is replaced as a
-      whole; comments inside it are lost). A minimal file fills in to the
-      full state after the first write-back, and a deleted account entry
-      comes back — the file mirrors the device. The app never creates the
-      file on its own ("Create file" in Settings does). The e2e harness
-      always points `CALENDAR_SETTINGS_FILE` under its temp profile: HOME
-      is not isolated, and no run may touch a developer's real file. Core
-      imports `jsonc-parser/lib/esm/main.js` directly: the package's
-      `main` is a UMD build whose parts are
-      required through the wrapper's own `require` argument, which both
-      rolldown (the Electron main bundle) and Metro bundle without them —
-      the first iOS CI run died at launch with "Requiring unknown module
-      ./impl/format". One deep import fixes every bundler; a per-bundler
-      alias did not.
-      Directory watchers are only the fast path; the source of truth is a
-      periodic check (every 5 s, on window focus and when Settings asks
-      for the status): one stat of the file, a reload when its identity
-      or modification time moved, a re-attach when the folders to watch
-      changed. It covers what a watcher cannot — the folder created after
-      the app started (the app never creates it itself, and a watch
-      cannot attach to a missing folder), a folder deleted and recreated
-      (the old watch goes silent), events dropped on synced volumes.
-      Watching the home directory for the folder to appear was rejected:
-      it solves one of those cases, and home is noisy (every shell
-      history append fires there). The file stays opt-in: auto-creating
-      it would put account emails and calendar names in a dotfolder
-      nobody asked for, switch on the two-way mirror for everyone, and
-      collide with a setup script that links the real file later. A
-      symlinked file (a dotfiles repo) is written at its resolved target
-      — renaming over the link would replace it with a regular file and
-      silently detach the repo — and both the link's folder and the
-      target's folder are watched, since an in-place edit at the target
-      fires only there.
-      The desktop shows two cards so the two ideas stay apart: "Export &
-      import" is a one-off copy for another device, nothing watched;
-      "Settings file" explains the watched file — what it is good for (a
-      new Mac set up from dotfiles, scripts and coding agents changing
-      settings by editing a file), what it exposes (the settings in plain
-      text, including connected accounts' email addresses and calendar
-      names, readable by anything that can read the home folder — never
-      passwords or tokens) — and holds the one button that creates it.
-      Local account ids come from `crypto.randomUUID()` everywhere: native
-      in Node and Electron, and on Hermes filled in by the Web Crypto
-      polyfill (`apps/ios/src/polyfills.ts`, expo-crypto's native
-      `randomUUID` next to the `getRandomValues` it already installed) —
-      the hand-rolled `Math.random` UUID the iOS host carried is gone, and
-      an import no longer names accounts differently from a sign-in.
-
-### Agent gateway: MCP and CLI access for other agents (2026-10-01)
-
-- [x] Let other agents on the Mac use the app — done (2026-10-01,
-      `todo/agent-gateway`): a gateway in the Electron main process that
-      Hermes, OpenClaw or a script reach over MCP or a CLI, with a
-      per-agent grant set in Settings → Agents. New package
-      `packages/agent` (policy, refs, tool contract, enforced reads,
-      planned writes, approvals, store), the host in
-      `apps/desktop/electron/agent/`, and `solunivo-cli`, a dependency-free
-      relay the packaged app ships in `Contents/Resources`.
-      Decisions: **one gateway, two front ends** — MCP and the CLI are the
-      same 15 tools over the same `callTool`, so neither can drift or skip
-      a check; the tool set is curated (no accounts, settings, conflicts,
-      queue, moves or conversions), not the ~55 backend rpcs. **MCP is
-      served in main, the relay only pipes**: `@modelcontextprotocol/server`
-      2.2.0 implements the 2026-07-28 revision and still answers the 2025
-      `initialize` handshake (effect's bundled `McpServer` stops at
-      2025-11-25); it brings zod into the main bundle, while the relay
-      stays 6 kB of node built-ins and runs under the app's own binary
-      (`ELECTRON_RUN_AS_NODE`), so agents need no Node — at the price of
-      keeping the RunAsNode fuse enabled until a Swift relay exists. The
-      SDK is handed a pass-through Standard Schema that only advertises
-      the JSON Schema: the gateway's Effect decoder is the one validator.
-      **Levels are per calendar and per list** (none < free/busy < read <
-      ask < write), with guests and contacts as separate switches; `none`
-      answers NotFound so a denial never confirms a hidden calendar;
-      calendars hidden in the app are `none` for every agent (range reads
-      filter on `is_visible`, and a grant should not show more than the
-      UI). **The gateway resolves a write's real container first**:
-      EventKit and Reminders address items by id alone and ignore the
-      calendar or list passed in, so without that a ref pairing a granted
-      calendar with another calendar's event would have written it — the
-      backend has no permission checks of its own below the UI. Guests are
-      gated on create, edit and delete (all three reach other people);
-      RSVP only needs the calendar level. **Ask-first** stores the planned
-      write with a summary the app wrote, waits ~25 s, then hands back a
-      request id to poll; approval is a conditional status transition
-      (two clicks execute once) and re-plans from the stored input, so a
-      narrowed grant or a removed agent still stops it; it is never asked
-      through MCP elicitation, which the agent's own client could answer.
-      **Storage is a separate `agents.db`**, not a migration in
-      `packages/db`: the phone never has agents, `migrate.test.ts` and the
-      yield-point-sensitive sync tests stay untouched, and grants cannot
-      ride along with anything that syncs or exports — they are edited
-      only over `agents:*` IPC and are not in `SettingsDocument`, so an
-      agent with a shell cannot widen itself through the watched settings
-      file. The token is 256 random bits shown once; only its SHA-256 is
-      stored, in SQLite — a hash cannot authenticate, and safeStorage
-      would add nothing while any same-user process can read calendar.db.
-      That is the stated threat model: a guardrail for agents that connect
-      through it, not a sandbox. **Transport**: a Unix socket under
-      `~/.solunivo/run` (0700 dir, 0600 socket created under a umask),
-      open only while an agent exists, one authenticating hello line, the
-      agent looked up again on every call; same Mac only. **No window**:
-      the app already kept running after its last window closed; it now
-      takes a single-instance lock (after the userData override), starts
-      without a window on `--background` (what the relay passes when it
-      launches the app via `open -g`), and opens a window on demand for a
-      notification click. A login item and a menu-bar item are follow-ups.
-      An adversarial review before the first push found no way past a
-      grant and no existence oracle, but did find: summaries that
-      clipped guests and text (an approved invitation could carry a ninth
-      guest and a payload past character 160) — summaries are now never
-      shortened and inputs are capped instead; a summary that went stale
-      while it waited (the same agent could rewrite an event between the
-      question and the answer) — **an approval now only runs a plan whose
-      summary equals the approved one**, and adding a guest shows the
-      location and notes that guest will get; refused and finished socket
-      connections that were ended but never destroyed, so a peer without
-      a token could pin every slot; series-wide edits made through a
-      moved exception dragging the whole series (now based on the slot);
-      all-day series date changes answered "done" and dropped (now
-      refused); Apple occurrences resolved from the series' first
-      occurrence; occurrence slots that were never validated; CLI replies
-      over 1 MiB; a log that stored every input and could be flooded by
-      refusals; the request age limit only enforced by the hourly sweep.
-      A second review of the PR found four more
-      of the same family: a `series`/`following` write ignored guests on
-      the other exceptions it rewrites or cancels; its summary showed the
-      clicked occurrence's text while the master's is what gets written
-      (and mailed to a new guest); existing guests were only counted, so
-      swapping one for another did not void a waiting approval; and an
-      MCP session that closed itself kept its socket and slot. A summary
-      is now built from the written event and names every guest reached.
-      Found on the way: two quick edits in the grant editor overwrote each
-      other (each built on the last state main had sent back) — the
-      editor now builds on its own last edit; the e2e spec caught it.
-      Not verified here: the relay under the hardened runtime
-      (first signed CI build), a real Hermes/OpenClaw session, relay
-      auto-launch of the installed app, a real guest invitation.
-
-### Settings in its own window (2026-10-02)
-
-- [x] Settings as a macOS settings window — done (2026-10-02,
-      `todo/settings-window`): Settings left the main window's modal for
-      a window of its own, opened from the application menu
-      (Settings…, ⌘,) as the HIG asks. The app had no menu of its own
-      before (Electron's default), so ⌘, was a renderer key handler that
-      needed a focused main window; as a menu accelerator it now also
-      works with no window open. Decisions: **toolbar panes, not a
-      sidebar** — five panes (General, Accounts, Notifications, Agents,
-      Advanced) replace the single twelve-section scroll; a System
-      Settings-style sidebar only pays off with many more. The window
-      follows the HIG's settings-window rules: one at most, fixed size,
-      minimize and zoom dimmed, title = the pane in view, reopens on the
-      pane viewed last (`localStorage`), changes apply at once. **One
-      bundle, a hash route** (`#settings/<pane>`) instead of a second
-      vite entry: the rpc seam was already per-`webContents` and every
-      broadcast already went to all windows, so the second window needed
-      no backend change. **The pane lives in the URL hash**: the main
-      process moves an open window to a pane by navigating the hash
-      (same-document, the page gets `hashchange`), so no message can
-      arrive before the page listens. Review found the two ways that
-      still lost a request made while the window was opening: the main
-      process parsed `getURL()`, which is empty until the first
-      navigation commits (`Invalid URL`, request rejected), and the page
-      wrote its own pane back over the hash after its first render,
-      undoing a navigation that landed in between. Now a pane asked for
-      during loading is kept and applied on `did-stop-loading`, and the
-      page only ever reads the hash (`useSyncExternalStore`; a tab click
-      navigates it) — nothing writes state back over it. All panes stay
-      mounted (hidden),
-      so an agent token shown once or a half-typed name survives a look
-      at another pane. **The toolbar is HTML** in a hidden title bar —
-      Electron cannot host an `NSToolbar`. **No settings button in the main
-      window's toolbar**, as the HIG has it: the gear is gone, the menu
-      is the way in; the sidebar's "Manage accounts…" stays and opens the
-      Accounts pane.
-      `windows.ts` now tracks the main window explicitly:
-      `getAllWindows()[0]` would have focused Settings on a notification
-      click, and a Dock click with only Settings open now reopens the
-      calendar. The approval dialog, conflict banner and dropped-change
-      toast stay main-window only. Not done: auto-sizing the window to
-      each pane's height (fixed 680×620, panes scroll). The menu item
-      itself is not in the suite (CDP cannot press a native menu
-      accelerator).
-
-### Calendar mirrors (2026-10-02)
-
-- [x] Calendar mirrors — done (2026-10-02, `todo/calendar-mirrors`): a
-      mirror copies several sources (Google and Apple calendars, Google
-      task lists, Reminders lists) one way into one destination calendar,
-      reduced to an allow-list of fields, so a calendar can be shared
-      without the details: a "Busy"-only calendar for friends, household
-      reminders as events with their done state, title and place of a
-      work calendar in a family calendar — all on the user's devices, no
-      service. Also: undated tasks show on today in both apps (and a task
-      completed late stays on the day it was completed), the editor opens
-      an undated task as "No due date" rather than silently giving it one.
-      Decisions: **a mirror, not a workflow** — one way, the app owns the
-      copies and overwrites them; no rule engine, three presets
-      (Availability, Title and location, Full details) and an Advanced
-      disclosure with fields, the busy label, months ahead (1–24, default 3) and filters. **Reconcile with no mapping table**: the destination
-      is the state, any device can run a mirror, a cut-off run runs again;
-      the price is that every input must be device-independent (own
-      queries past local visibility, the mirror's own time zone, portable
-      keys — EventKit's external identifier is new on both bridges).
-      **Google writes bypass the pending-op queue** (copies are derived;
-      the queue would list every one as an unsynced change) and use
-      `events.update` (PUT), since a switched-off field must leave the
-      copy and PATCH keeps omitted fields; a derived id (`slnvmr` +
-      hash) makes a second device's insert a 409 and a confirming replace
-      revives a deleted copy.
-      **Markers are opaque** (the key is salted with the mirror id, the
-      content hash covers only what was written): the destination is
-      shared with people who can read both carriers. **Setting a mirror
-      up by hand on two devices does not cooperate** — the settings file
-      is the only way across, an imported mirror arrives switched off,
-      and a device whose definition is older than a copy's revision stands
-      back. **Availability merges overlapping events** into one block
-      (`mergeBusy`, moved to core from the agent package), so nobody can
-      count meetings; **private events copy as the busy label** by
-      default, and until the one-time re-list after the upgrade every
-      event counts as private. **Two backstops** for what cannot be
-      checked (EventKit never says whether iCloud caught up): a large
-      removal waits ten minutes, a third identical write within a day
-      pauses the mirror. **Apple destinations are iCloud, CalDAV or
-      local** (Exchange drops the URL that carries the marker). **The
-      editor can create the destination**: Google under the new
-      `calendar.app.created` scope (the narrowest that allows
-      `calendars.insert`; sign-in now asks for it, an older sign-in is
-      told to sign in again), Apple in the default account. **Copies are
-      hidden in the app** — the originals are already drawn — in every
-      shared read. **An empty pull page no longer invalidates
-      EVENTS_KEY**, or every quiet poll would recompute. Rejected: a
-      Zapier-style workflow; cutting the app-side undated-task change
-      (asked for); iCloud key-value sync of definitions (a new
-      entitlement in every build). Review (2026-10-03) found and fixed: a stale device's 409
-      path replaced a copy blindly (now it reads the event and stands back
-      from a newer revision, else replaces with If-Match); a definition
-      that excludes everything leaves no revision carrier (bounded: deletes
-      are not counted by the breaker, so the right device keeps deleting
-      while the stale one trips its own after two rounds); refused Apple
-      batch writes counted as applied; moving a mirror to another calendar
-      left its copies in the old one (now removed first); a zoned reminder
-      was placed by this device's wall clock instead of its instant. Open:
-      the `calendar.app.created` scope is on the consent screen (added
-      2026-10-03) but a narrow-scope sign-in creating a calendar is
-      untested; a real two-device run, reminder external ids across
-      devices, the new Swift paths against real EventKit.
-
-### Effect 4.0.0 stable (2026-10-03)
-
-- [x] Move off the release candidates onto stable Effect 4.0.0 — done
-      (`todo/effect-4-stable`): all five `effect*` packages pinned
-      exactly to `4.0.0` in the catalog. Decisions: **the pin stays
-      exact** — rpc, sql, http and reactivity, the modules this app
-      leans on most, are still `@stability unstable` and may break in a
-      minor, so every bump stays a deliberate, all-packages-together
-      change (Dependabot keeps ignoring `effect*`). **No release-age
-      exclusion**: stable shipped 2026-10-01 and the 2-day
-      `minimumReleaseAge` was waited out rather than bypassed; the code
-      was migrated against rc.118, which already carried every change
-      that needed an edit. The cost from rc.115: rc.118 moved every
-      `effect/unstable/*` module to `effect/*` and removed the old paths
-      (~100 files, imports and one `vi.mock` only); the deep SQL imports
-      stay deep (`effect/sql/SqlClient`, never the barrel — the Metro
-      rule is unchanged); `Schema.isLengthBetween` became
-      `isBetweenLength`. The custom rpc protocols in `rpcDuplex.ts`
-      needed nothing — both `Protocol` shapes are field-for-field what
-      rc.115 required. `effect` no longer has runtime dependencies.
-      **Vitest stays 4**: `@effect/vitest`
-      declares a Vitest 5 peer (it already did at rc.115) but the suites
-      only use `it.effect` / `expect` and pass unchanged, so vite-plus 1.0
-      (Vitest 5) stays a separate sweep item. The iOS native fingerprint
-      did not move, so the existing EAS dev client covers the change.
-
-### Capture from text or photo (2026-10-04)
-
-- [x] Paste an email (desktop) or share a screenshot/poster (iOS share
-      sheet) → the events it describes, reviewed before anything is
-      written — done (`todo/capture-text-photo`). Decisions: **OCR first,
-      not image input**: Apple Vision reads the image on-device
-      (`RecognizeDocumentsRequest`, paragraphs in reading order, OS 26 —
-      the model needs 26 anyway) and the text goes through the existing
-      text-only `generateJson`; native image input exists only on OS 27
-      and `@react-native-ai/apple` 0.12 is text-only, so it is a backlog
-      follow-up, and `TextRecognizer` is its own seam in `packages/ai`
-      (the permanent OS 26 path, fakeable) rather than an image field on
-      `LanguageModel`. **The quick-add item shape, minus recurrence, in an
-      `{events: […]}` array** (the Swift `dynamicSchema` already did
-      arrays; `maxItems` now maps to `maximumElements`); every item goes
-      through `normalizeQuickAdd`, an undated item is dropped — never
-      placed on today — and a date the model wrote without a stated year
-      that lands well in the past rolls forward a year (deterministic,
-      `resolveUnstatedYear`). **Text is prepared deterministically**
-      (`prepareCaptureText`: quoted replies cut, over-long tokens clipped,
-      a 6000-char cap at a line boundary for the ~4k-token context, the
-      cut reported as `truncated`). **Review is a list whose rows open the
-      existing editor**; only that editor's Save marks a row added
-      (`onSaved` on both editor models), so calendar choice, the Event |
-      Task flip and the create path are unchanged and "never an auto-save"
-      holds; a single event skips the list, like quick-add. **Desktop
-      entry is ⌘V** (the stock Edit › Paste role delivers the same event):
-      on the grid any text or image, in the ⌘K input only an image or
-      multi-line text; a menu item and a main-process clipboard read were
-      not worth their cost. One dialog at a time: the list unmounts while
-      a row's editor is open (both `Dialog`s close on one Escape), and on
-      iOS the edit sheet renders inside the capture sheet (sibling Modals
-      never present together) while progress and errors are a banner.
-      **iOS share sheet via `expo-sharing`'s receive support** (first
-      party, experimental): its plugin is wrapped
-      (`plugins/withShareExtension.cjs`) because it writes the array of
-      schemes into the extension's plist and the extension crashes on a
-      non-string, and because the share sheet would show the target
-      name; the extension's bundle id and app group are pinned per
-      variant. The extension opens the app over an unofficial responder-
-      chain call (upstream's choice, documented as a review risk). Only
-      `getSharedPayloads()` is used — the hook reads native state on
-      every render and the "resolved" variant makes a network request —
-      and `expo-sharing` is required lazily so an older binary under new
-      JS does not crash. A shared image is deleted once read. **A model
-      fixture for both e2e suites**: `CALENDAR_MODEL=fixture` is answered
-      in Electron main after the same validation (IPC stays on the tested
-      path), `EXPO_PUBLIC_CALENDAR_MODEL=fixture` is bundled for CI; the
-      fixture is a one-line-per-event grammar with dates relative to the
-      prompt's "today", so specs stay date-independent, and it accepts a
-      `capture-fixture` deep link as the stand-in for a share. Open: the
-      real share sheet and extension on a device (both variants), HEIC
-      from Photos, whether 6000 chars / 8 events fit the context, and the
-      interactive EAS credentials run for the extension App IDs.
-
-### Per-person birthday reminders (2026-10-04)
-
-- [x] Per-person birthday reminder overrides — done
-      (`todo/birthday-reminder-overrides`): the birthday detail view on
-      both platforms edits that person's lead days, saved as they change
-      (no Save button; the iOS sheet's header reads Done for a birthday).
-      Decisions: **a per-person list that inherits until touched**, not
-      extra lead days on top of the general ones: the boxes start on the
-      general list, the first change stores the person's own, an empty
-      list mutes them, "Use defaults" removes the entry — so "Mom: 2
-      weeks before as well" and "never for this colleague" are one
-      control. The general switch still gates everything, and an
-      override never asks for permission (it cannot turn reminders on).
-      **Keyed by name + month + day (`birthdayMergeKey`), not the merged
-      record id** the backlog proposed: that id is the first source's and
-      changes when a Google contact appears or goes, when an account is
-      re-added (generated account id), and differs between the Mac and
-      the iPhone; the merge key is what makes two sources one person in
-      the first place. Accepted cost: a rename in the address book drops
-      the override, and two people with the same name and birthday share
-      one. **Travels in the settings document** (`birthdayReminderOverrides`,
-      a list replaced as a whole in the JSONC like `mirrors`); an import
-      joins by person — the file's entry wins for the same person —
-      and never removes one. One `device_settings` row
-      (`birthdayReminderOverrides`), per-entry decode so one bad hand
-      edit does not drop the rest, canonical order so an unchanged set
-      writes identical text. A write runs a `LocalNotifications` pass
-      itself, since its loop re-plans only on birthday and event
-      invalidations. Both Settings sections list the people with their
-      own lead days, with a Reset each, so a muted person stays
-      findable. **The detail view re-reads both settings as it opens**
-      and enables its controls only once they are back: on desktop the
-      main window held an idle copy of the general lead days changed
-      meanwhile in the Settings window (the e2e caught it — first open
-      after the change showed the old list, a reopen the new one), and a
-      toggle would have saved an override built from it. Review fixes:
-      every partial write of the list goes through one locked
-      read-modify-write (`updateBirthdayReminderOverrides`), and an import
-      joins the file's entries into what is stored when it runs, not into
-      the list it planned against — it can sit on the iOS permission
-      prompt while the user mutes someone. The detail view's optimistic
-      value lasts only until its save's refetch lands; after that the
-      stored list is the truth, so a Reset in Settings with the detail
-      open shows up instead of being shadowed. Open: on-device check of
-      the pending iOS notifications after an override.
-
-### Full-history follow-ups (2026-10-04)
-
-- [x] RDATE series and long COUNT series — done
-      (`todo/full-history-follow-ups`). **A set of only RDATE lines never
-      rendered**, which the follow-up note undersold as "unbounded":
-      rrule-temporal refuses a rule without FREQ, `assembleWindow` skipped
-      the master on every read and logged it, and its NULL end kept it in
-      every window's masters query. Such sets come from other clients,
-      ICS imports and agent writes. Decisions: **no RDATE parser of our
-      own** — `buildRuleString` adds `RRULE:FREQ=DAILY;COUNT=1` (exactly
-      DTSTART) and the library adds the RDATEs and takes the EXDATEs as
-      for any rule, every value form included; the live suite proves
-      Google counts DTSTART as the first instance (an instance PATCH on
-      it lands) and draws what we expand. **DTSTART is always an
-      occurrence**: probed live, Google draws an event's start even on a
-      day its rule skips (Tuesday start, `BYDAY=SU;COUNT=2` → the Tuesday
-      plus two Sundays — DTSTART outside COUNT), where rrule-temporal
-      drops it. `buildRuleString` lists DTSTART as an RDATE too, which
-      the library dedupes on a rule day. The review of #109
-      found the visible case: a this-and-following split on an RDATE
-      occurrence the rule skips starts the new master there, and the
-      calendar drew neither half's copy of it while Google drew it.
-      COUNT arithmetic for a split counts the RRULE line alone from the
-      original DTSTART (`ruleOccurrencesBefore`), so an off-rule start is
-      never consumed. **The stored end reads RDATE
-      values**: a plain UNTIL is still read off the rule (a long UNTIL
-      series is never enumerated); COUNT, RDATE-only and UNTIL/COUNT with
-      RDATE enumerate the set once through that same rule string, so the
-      bound and the drawing cannot disagree; an endless rule stays
-      endless whatever its RDATEs say. Migration 8 recomputes the column
-      for stored masters with an RDATE line — sync never rewrites an
-      unchanged row, so an ended series would have stayed NULL, and a
-      re-list of every calendar was not worth it. **Two split bugs rode
-      along** in `remainingRecurrence`: the new half kept every RDATE
-      value (the library emits values before DTSTART, so the old half's
-      showed twice) — it now keeps only values after the split; and the
-      remaining COUNT subtracted the full set's instances up to the
-      split, RDATEs added and EXDATEs taken away, where RFC 5545 counts
-      only what the rule generated — it now expands the RRULE line alone.
-      **A split of an RDATE-only set** can leave a half with nothing to
-      repeat: the old half becomes a one-instance series through the same
-      COUNT=1 rule (it keeps its exceptions, and its update is a PATCH,
-      where an absent `recurrence` would keep the old dates on Google);
-      the new half, a create, becomes a single event (`isRecurringSet`).
-      Left as it was: a this-and-following edit that moves a rule
-      occurrence onto a day an explicit BYDAY skips keeps the old COUNT,
-      so the new series ends one occurrence late — on Google too (its own
-      UI rewrites BYDAY instead).
-      **Long COUNT series: measured, no change.** Revisit only if a profile
-      shows expansion in a window read; the fix then is caching
-      `RRuleTemporal` instances per master so the library's plan and
-      `all()` caches outlive one read. The per-calendar "keep only N
-      years" switch stays in `todo.md`: 303 events in 380 KB locally is
-      no storage problem.
-
-### Review fixes (2026-10-04)
-
-The first seven Tier 0 items of the 2026-10-02 review, as separate PRs
-(two shared `updateRecurring`, so they went together). Each fix came with
-a failing test first.
-
-- [x] A series keeps its kind; edits before the create lands — #110
-      (`todo/recurring-edit-fixes`). The all-day switch on an occurrence
-      built UTC-midnight times but never sent `isAllDay`: "This event"
-      wrote a timed 24 h block at 00:00Z, "All events" shifted the whole
-      series by that delta, all-day → timed was dropped. Decisions: **the
-      switch is refused, not supported** — Google keys occurrences and
-      exceptions by date or date-time to match the series, so a real
-      switch is a new series and needs a live-verified design. Refused
-      in `updateRecurring` (`RecurringAllDaySwitchError`, Google and
-      Apple), the editor model (`recurringTimesError`) and the UI
-      (`canSwitchAllDay`: the switch is disabled on an existing repeating
-      event); the agent gateway already had the rule. **An all-day series
-      moves one occurrence at a time** (`RecurringAllDayMoveError`): the
-      Google path compares against the date the occurrence shows (its
-      exception's, else its slot's); Apple slots are device-local
-      midnights, so there only the editor and the agent refuse. A
-      series/following edit, or a following delete, of a series whose
-      create had not reached Google replaced the create with a PATCH that
-      404'd, and the NotFound arm deleted the series locally. **The edit
-      folds into the queued create**, which keeps its `createdAt`; a
-      series delete of it queues nothing; a split truncates inside the
-      create and queues no instance deletes; text is not carried onto
-      exceptions Google does not have yet. **Occurrence edits and RSVPs
-      wait for a create queued ahead in their series** (`applyOp`, the
-      same hold as for moves). **Only a never-sent create is folded into
-      or dropped** (review of #110): an insert that landed with its
-      response lost stays queued, and its retry's 409 counts as done
-      without sending a folded edit. `applyOp` stamps an event create as
-      dispatched before the insert (as for tasks); behind a sent create
-      the PATCH or DELETE queues as before and waits for it. `updateEvent`
-      and `deleteEvent` follow the same rule for single events. A
-      create's response no longer overwrites its row while a later op of
-      the event is queued — it would restore an edited or deleted event.
-      A create the token never let out is stamped too (the stamp is set
-      before the request): the edit then queues behind it, one request
-      more than needed, never one too few.
-- [x] A newer task edit of another field keeps the queued one's — #111
-      (`todo/task-edit-merge`). "Latest wins" removed the queued
-      `updateTask` while an op carries only the fields its edit changed:
-      rename, then a new due day, sent only the day and the response
-      reverted the title. Decision: latest wins field by field — still
-      one patch per task in the queue.
-- [x] Read-only calendars: events there neither drag nor change — #112
-      (`todo/readonly-calendar-writes`). A dragged event in a reader
-      calendar got a 403, the op was dropped, and the drop marked the
-      moved row synced. Decisions: **the mutation layer refuses**
-      (`writable` around update/delete in both providers, and moving or
-      converting out of such a calendar) with the existing
-      `CalendarNotWritableError`; a calendar with no row passes. Both
-      apps stop the drag before it starts (`useEventReadOnlyLookup`); the
-      block still opens the viewer. Desktop: a press on a block that
-      cannot move now captures the pointer — without it the release
-      landed on the grid as a click on an empty slot.
-- [x] Removing a Google account asks first — #113
-      (`todo/confirm-account-removal`). Decision: only a Google account
-      asks (`removeAccountQuestion`), naming the account and how many
-      unsynced changes would be lost; an Apple account only disconnects
-      (EventKit keeps everything, reconnecting is a tap) and still goes
-      on one tap.
-      `PendingOpSummary` carries `accountId` for the count. **Remove waits
-      for a successful queue read** (review of #113): `usePendingOps`
-      falls back to `[]` while loading or after a failed read, which read
-      as "nothing unsynced"; `usePendingOpsRead` keeps 'loading' /
-      'failed' (a failed refresh included — the last count may be stale),
-      the desktop button stays disabled until the read lands, and the
-      iOS alert, which cannot update once shown, offers only OK until
-      then.
-- [x] Agent text that would pass an approval unseen is refused — #114
-      (`todo/agent-hidden-text`). The summary dropped invisible
-      characters while the write kept them, and tag characters were not
-      even dropped: a sentence could ride in an event's notes to every
-      guest. Decisions: **refuse, don't strip** (`hiddenCharacter`, in
-      `checkText`, the former length-only `within` every free-text field
-      already went through): control characters other than line breaks
-      and tabs, and every default-ignorable code point. **A joiner or
-      variation selector only inside a complete emoji** (review of #114:
-      `\p{RGI_Emoji}`, Unicode's recommended sequences): a joiner between
-      pictographs that form no emoji draws as nothing, and its presence or
-      absence spelled "PIN=1234" between visible apples. The summary keeps
-      complete emoji whole, so it shows the family emoji the write holds.
-      The pattern is built with `new RegExp(…, 'gv')` — a `v` literal needs
-      an ES2024 target; the agent runs only on Node and Electron. Tabs
-      show as a space in the summary. Invitation text keeps being stripped
-      for display.
-- [x] Repeat until ends in the series' own zone — #115
-      (`todo/repeat-until-zone`). `UNTIL=<date>T235959Z` lost the last
-      day west of UTC and added one east of it. Decision:
-      `buildRecurrenceRule` takes the series' zone and writes the last
-      second of the chosen day there (start of the next day minus one
-      second, safe across a midnight DST change); all-day keeps the DATE.
-      The read side (`parseUntil`, `lastDayOf`) already read UNTIL in the
-      series' zone.
-
-### Review fixes, second batch (2026-10-05)
-
-The next items of the 2026-10-02 review, grouped by the code they share
-into five PRs so none conflicts with another; each fix came with a
-failing test first. All five also carry one identical commit that made
-main typecheck again: #112's read-only test put the mutations' effects in
-one array, and #110's `RecurringUpdateError` broke its inferred type once
-both had merged.
-
-- [x] CI minutes and Dependabot — #117 (`todo/ci-minutes`). The change
-      classifier reports `desktop` and `ios` instead of one `code` flag: a
-      change only under `apps/ios/` skips the desktop jobs, one only under
-      `apps/desktop/` or `packages/agent/` skips the iOS e2e; shared
-      packages, root config, the lockfile, workflows and `brand/` run
-      both, and `apps/ios/assets/` also runs packaging smoke (it checks
-      the brand exports there). Desktop e2e waits for the gate. An iOS
-      label run has its own concurrency group (it cancelled the push's
-      OTA preview) and runs the gate only for `testflight`; another label
-      on a `google-live` PR no longer reruns the live suite. Dependabot's
-      weekly group holds only what can merge as is — majors, vite-plus
-      with vitest, and minors of the Expo-bound React Native stack are
-      the deliberate sweep's. An iOS e2e shard may run 45 minutes.
-- [x] Sync queue integrity — #118 (`todo/sync-queue-integrity`).
-      **A response writes its row only while no later op of the event is
-      queued** (`settleRow`: create, update, RSVP, move) — the guard #110
-      added for creates, shared. **An update that lands moves the queued
-      ops built on the etag it sent to the etag it produced**
-      (`advanceBaseEtag`): Google checked that etag, so nothing else
-      changed in between; an RSVP moves nothing (no If-Match, Google's
-      prior state unknown). The row a later edit still holds moves too
-      (`advanceEtag`), so a third drag that replaces the second starts from
-      the new etag (review of #118). Every ack settles in one transaction
-      with its queue check (`settle`). **A 412 is done only when Google's
-      copy yields exactly the PATCH body the update would send**
-      (`updateBody` from both): a lost response's retry; any difference
-      still parks — and its followers keep their etag (review of #118: the
-      match covers only the fields this update sends, so a follower moved
-      to the new etag overwrote another client's reminders unasked). **A
-      create answered 409 fetches the event** (or drops the row if Google
-      has none) instead of leaving it `pending`, checking the queue again
-      after the fetch. **Queue cleanup is scoped
-      by account** (a shared calendar repeats its ids). **A sync the user
-      caused makes waiting ops due** (`SyncEngine.syncNow`: wake, focus,
-      foreground, a reconnect; `retryNow` keeps the attempt count; the
-      timed poll keeps the backoff).
-- [x] Notification time zones — #119 (`todo/notification-zones`). The
-      text ("Tomorrow 3:00 PM") is in the device's zone; an all-day
-      reminder still counts from midnight in the calendar's zone, as
-      Google's do. `LocalNotifications` reads the device zone on every
-      pass (`timeZone: () => string`): the 2026-09-29 decision is "follow
-      the device", and capturing it at startup was where it was read, not
-      a choice. A zone the engine cannot load is read under its other
-      spelling (`runtimeZoneId`, both ways round since the review of #119:
-      Google can store a legacy name Hermes rejects, such as
-      America/Buenos_Aires), else as the device's; an event that
-      still cannot be planned is skipped, never the whole pass.
-- [x] Untitled events, meeting hosts, one sync start — #120
-      (`todo/small-verified-fixes`). **The placeholder stays in the
-      record and is never written**: `UNTITLED_EVENT` is what both mappers
-      read an untitled event as (the editors require a title, so an empty
-      one would make it uneditable). Google gets an empty title instead —
-      no change on an untitled event, untitled on an insert, and (review of
-      #120) a remote title cleared when "keep mine" restores an untitled
-      version; left out, Google kept its title and the response overwrote
-      the user's choice. An empty summary reads back as untitled. EventKit
-      gets no title (no conflict path there). Zoom and Webex links count
-      only from the domain itself or a dotted subdomain. iOS `startSync`
-      runs once per process.
-- [x] Desktop hardening — #121 (`todo/desktop-hardening`). **The CSP
-      does reach the packaged app's `file://` page** (an inline script is
-      blocked; the review doubted it, and an `eval` probe misled: CDP's own
-      evaluation is exempt from a page's eval rules) — **so it blocked
-      dictation's `blob:` worklet**, and dictation worked only from source.
-      The worklet is `public/pcm-collector.worklet.js` (copied next to
-      `index.html`; not a `?url` import, which may inline as `data:`).
-      Settings › Agents arms Decline/Approve 700 ms after the waiting list
-      changes (keyed by the whole list: the row that slides up was mounted,
-      and armed, long before). A ⌘K bar closed while dictation prepared or
-      while the microphone was granted no longer turns the microphone on.
-      **Each start owns what it opens**: `startRecording` takes an
-      `AbortSignal`, the bar aborts its start on close, and an aborted start
-      stops its own stream (review of #121: the adapters keep one shared
-      recording, so the closed bar's late `cancelRecording()` stopped a
-      reopened bar's). A new recording stops the one it replaces when it
-      commits.
-
-### Review fixes, third batch (2026-10-05)
-
-Four more Tier 0 items of the 2026-10-02 review, one PR each, grouped so
-none conflicts with another; each fix came with a failing test first,
-except where a test cannot fail on Node (noted).
-
-- [x] Save once — #124 (`todo/save-once`). **One write at a time per
-      editor**: Save and Delete run through one slot (`useOneWrite`), and
-      a press while a write is in flight starts nothing; a second tap
-      used to create a second event or task. The slot is a ref set
-      synchronously, so two clicks in one tick count once.
-      `busy` only dims the buttons: disabled, a button came back on the
-      next render only, and CI's convert e2e showed a press right after a
-      declined confirmation landing on it and doing nothing.
-- [x] Queue leftovers after #110 and #118 — #125
-      (`todo/queue-leftovers`). **A sent create stays in its calendar on
-      a move** (`googleServerMove`), with the move queued behind it: it
-      may have landed there, and re-keyed into the destination its retry
-      inserted a second copy. **A 410 on a write is "gone", like a 404**
-      (failForStatus reads every 410 as an expired sync token; taken as
-      done, the row stayed pending for good). **Losing the tasks scope
-      drops the op through `drop`**, which releases the row and tells the
-      UI. **An RSVP sends If-Match** on the etag it was queued against:
-      when that holds, the edits built on it move to the etag it produced
-      (an edit right behind an RSVP no longer parks against it); a 412
-      resends it unchecked — an RSVP never loses to an unrelated edit —
-      and moves nothing. **Only ops queued after the one that landed
-      follow its etag** (review of #125: an RSVP that overtook a guest-list
-      edit in backoff moved it too, and the edit then undid the RSVP). **A
-      delete answered 404 or 410 is done and keeps the local state**: for
-      an occurrence that is the cancelled override, whose loss brought the
-      occurrence back. **Dropping a create drops a move queued behind it**
-      and the rows it put at the destination, which the move's 404 would
-      have put back in the source as synced.
-- [x] Event zones and repeat ends — #126 (`todo/event-zones`). **A pulled
-      event without a zone takes its calendar's** (the zone Google sends
-      with each page, then the stored calendar's), not UTC. **Zones are
-      spelled for the engine where events come in and where rows are
-      read** (`engineZoneId`, `engineRecurrenceLines`: the start zone and
-      every TZID): Hermes rejects `Asia/Kolkata`, and such a series was
-      left out of every iOS view; decoding covers rows stored before. A
-      zone known under no spelling stays as it was. Node knows every
-      spelling, so iOS flow 24 (a fixture series in that zone) is the
-      only check on the engine that rejects it; its series is anchored to
-      noon on the simulator's today (review of #126: a UTC anchor missed
-      today where the local date differs). **A repeat end before the
-      first day** is read by quick-add as next year's ("until March" in
-      October), dropped if still before; the editors refuse one
-      (`repeatUntilError`) and the until pickers start at the first day.
-- [x] Desktop robustness — #127 (`todo/desktop-robustness`). **A page
-      leaves as an rpc client when its new document says so**: the
-      preload sends `rpc:document` before any rpc frame (⌘R; a hash change
-      runs no preload, so the Settings panes stay one client). Not on
-      did-start-navigation (review of #127): it fires before main.ts's
-      will-navigate refuses a navigation, and a refused one keeps its
-      document — and must keep its streams. The review's
-      "stops receiving invalidations" did not reproduce — the reloaded
-      page reuses the old stream's request id and gets its batches by
-      accident — but every reload leaked that stream, and the server
-      drops a new request whose id is still running, so a query could
-      hang. **A helper timeout fails that request alone** and sends a
-      `status` probe; only a probe that times out too kills the helper.
-      The helper runs each request in its own task, so a slow MapKit
-      search no longer takes a pending permission prompt or a
-      transcription with it.
-
-### Review fixes, fourth batch (2026-10-07)
-
-The rest of Tier 0's sync items and three groups of the review's Tier 2
-UX list, one PR each, grouped so none conflicts with another; each fix
-came with a failing test first.
-
-- [x] Deletes ask first — #129 (`todo/confirm-delete`). **Confirm, not
-      undo**: an undo would hold back the Google delete op and fake the
-      row's absence, and an Apple delete leaves EventKit at once. Both
-      editor models ask (`EditorConfirmRequest` kind `delete`) before any
-      write, inside the write slot, naming what goes (`deleteQuestion`:
-      the title, and for an occurrence of a series how much of it).
-      Desktop asks inline (Keep / Delete, test ids on the buttons), iOS
-      in an Alert (Cancel / Delete).
-- [x] Desktop dialogs — #130 (`todo/dialog-escape`). **One stack of open
-      dialogs; only the topmost (highest zIndex, then the last opened)
-      answers Escape and traps Tab** — stopPropagation does not stop
-      another window listener, so one Escape closed them all. Escape
-      stops with stopImmediatePropagation (review of #130): for a native
-      key React commits the closed dialog's unmount between listeners,
-      and the next one found itself on top. The
-      calendar's keys and its paste stand back for any dialog
-      (`isDialogOpen`), the agent approval App opens included; ⌘K opens
-      its bar over none.
-- [x] Sync leftovers — #131 (`todo/sync-leftovers`). **A calendar-list
-      410's full relist purges** (the pass knows it ran in full), against
-      the calendars stored after the pass — a delta page that landed
-      before the 410 may have added one the full list omits (review of
-      #131). **A
-      malformed `updated` reads as the sync time** instead of failing the
-      calendar's pass. **An unreached request (no status) gets one retry,
-      not five** — offline held the sync gate half a minute per account;
-      5xx and 429 keep five. **`listForEvent`** filters the queue in SQL
-      for every edit and ack. **One fn atom per mutation call**
-      (`runMutation`): Atom.fn runs latest-wins, so a second quick call
-      interrupted the first and both read its result.
-- [x] Sign-in — #132 (`todo/sign-in-feedback`). **The desktop's browser
-      tab is answered once the outcome is known** (after the code
-      exchange; state checked first, reason escaped). **Cancel** stops a
-      sign-in waiting on the browser (`auth:cancel` preload IPC — no
-      calendar data, so not rpc), and stays in force through the code
-      exchange, which races it (review of #132: a slow token endpoint
-      let the account be added after Cancel). **A cancellation is no error**:
-      `SignInCancelledError` (sheet dismissed, `access_denied`, Cancel)
-      crosses as BackendError's tag and neither app nor the mutation
-      toasts show it. **`addAccount({ loginHint })`**: a reconnect sends
-      `login_hint` with `prompt=consent` only, so Google opens on that
-      account.
-
-### Review fixes, fifth batch (2026-10-08)
-
-The last two Tier 0 items and three groups of the review's Tier 2 UX list,
-one PR each on top of the iOS redesign (#137); each fix came with a failing
-test where one can run, and a Codex review (gpt-6-astra, xhigh) before
-handoff.
-
-- [x] Device zone and change observers — #139 (`todo/device-zone-observers`).
-      **The time zones atom depends on a device-zone atom** that reads the
-      engine's zone once a minute and changes only when it does (a
-      suspended app's timer fires on resume, which covers a foreground):
-      "nothing stored" follows the device after a flight, and
-      `useTimeZones` compares by content so an equal refetch of stored
-      zones does not re-render the grid. **The Reminders bridge builds its
-      day formatter and Gregorian calendar per use**, like the Apple
-      Calendar bridge. **Foundation caches the system zone until it is
-      reset** (NSTimeZone.h): the iOS module resets it on each foreground
-      (Hermes's Intl reads it), the desktop helper on each request.
-      **`observeChanges` replaces its observer** — after `reloadAsync` the
-      new module asked again and was ignored while the old handler's module
-      was gone. The iOS version is 0.1.0 like every package (part of the
-      fingerprint; this PR needed a build anyway). Not verified on a device:
-      a real zone change, and events after "Load PR channel".
-- [x] iOS gestures — #140 (`todo/ios-gestures`). **A swipe that starts
-      inside the previous one's commit animation takes that page at once**
-      and carries on from where the strip is: offsets are measured from the
-      navigated page, and a `lag` covers columns React has not drawn
-      (`clampSwipeOffset`, `swipeReleaseColumns`, `swipeLagAfterRender`); a
-      plain swipe still changes the page after its animation. Such a pan
-      starts between pages, so **its own movement picks the direction** —
-      the next page that way, or the nearest when it neither went far nor
-      flicked (review of #140: measured from the navigated page, a second
-      forward flick read as a swipe back). `panByDays` builds the week
-      window on the current state. **Event blocks**: a cancelled move or
-      resize springs back; resizing needs the same 250 ms hold as moving
-      (an immediate pan on the bottom edge took the touch from the
-      ScrollView); **a drop stays where it was let go until the block is
-      redrawn** (1.5 s after a write that changed nothing), and a new hold
-      waits for that (review of #140: it started from the old time).
-- [x] Agents pane — #141 (`todo/agents-pane`). **A failed `agents:state`
-      read says so** with Try again; a failed refresh keeps the last state,
-      flagged, so a token shown once does not vanish. **"New token" and
-      "Remove" ask inline** — both cut a connected agent off at once — with
-      the question and consequence as the alertdialog's accessible name and
-      description (review of #141). Newer Teams (`/meet/<id>`,
-      `teams.live.com`) and Webex `j.php` links get a Join button.
-- [x] Notifications — #142 (`todo/notification-taps`). **A planned
-      notification carries a `target`** (account, calendar, event id, the
-      occurrence's start, and for an occurrence its series id and original
-      start, since an edited occurrence changes id — review of #142);
-      `findNotificationEvent` reads it through the range query and then by
-      stored id (review of #142: an event moved more than a day was lost).
-      iOS: the target rides in the notification's data; a tap — the
-      launching one too — opens the detail sheet, dismissing a capture in
-      review (review of #142). Desktop: main keeps the clicked target until
-      the calendar window takes it (`notifications:take` preload IPC, a ref
-      only) and shows it in the inspector on its day. **iOS reads the
-      permission without asking** on mount and each foreground, so "off in
-      iOS Settings" shows as soon as it is true; Electron has no query, so
-      the desktop's denied state is unchanged.
-
-### Review leftovers: accessibility (2026-10-09)
-
-The last group of the review's Tier 2 UX list, re-verified against the
-redesigned app (`todo/accessibility`, one commit per part). The
-"native pickers turn dark inside the light-only UI" claim was obsolete;
-the other three held, on both apps.
-
-- [x] Notices stack — **one column, never two notices in one spot.** The
-      failed-write toast, the dropped-change toast and the conflict
-      banner each had their own centred spot at the foot of the window
-      (desktop: the banner hid one toast, the other sat on its table, and
-      at 1024 px it reached into the 360 px editor over Delete; iOS: all
-      three at `bottom: 24` of a SafeAreaView whose frame runs under the
-      tab bar — inside the bar's band, under its items, "+" and Search).
-      **Order, top to bottom: failed write, discarded change, banner** —
-      the banner holds the anchored edge because it stays until answered,
-      so toasts come and go above it and never move its buttons; one
-      notice per kind, so at most three. **Desktop**: `NoticeStack` sits
-      in the grid's column (`relative` in CalendarApp), clear of the
-      sidebar and the panel — **while the column is at least 22rem
-      (352 px) wide** (`noticeArea`; Codex review: with the sidebar and
-      the editor open, a 600 px window left the column 8 px and squeezed
-      the banner to 29 px). Narrower, the stack takes 352 px ending at the
-      column's right edge, over the sidebar but not the panel; and when
-      everything left of the panel is narrower still, 352 px from the
-      window's left edge, into the panel only as far as it must — the
-      editor's Cancel and Save, at its right edge, stay clear (its Delete,
-      at the left, can be under it at 600 px). Settings shows its own
-      failed writes over its window. **iOS**: `NoticeStack` is a flow
-      child that stands on the edge it is mounted at and takes no room —
-      last in a tab screen's SafeAreaView (whose content ends at the tab
-      bar's top edge), above the Tasks tab's add field, over the home
-      indicator in the Settings modal; the calendar lifts it over the
-      floating "+" below iOS 26. A toast mounted on its own anchors itself
-      the same way, so another screen can keep mounting
-      `<MutationNoticeToast />` last in its SafeAreaView. The anchor
-      reaches a window's height up (a negative margin cancels it, touches
-      pass through): under a zero-height anchor the notices were drawn but
-      missing from the accessibility tree. **The capture banner moves to
-      the top**: the editor host draws it over every tab and cannot tell
-      whether a tab bar shows.
-- [x] Screen readers — **desktop**: each toast renders into a live region
-      mounted, empty, with the stack (a region inserted with its text is
-      not reliably read): a failed write is `role="alert"` (it answers what
-      the user just did), a discarded change `role="status"` (it comes
-      from sync). **The banner is a labelled region, not an alertdialog**
-      (it never took focus and does not stop the calendar) **and not a
-      live region** (its table and buttons would be re-read on every
-      change); its comparison is a table with headers. **Each parked
-      change is told once** (`useConflictAnnouncement`: on mount for what
-      is parked, then each new one — never a re-render or a resolution),
-      politely, through a status region beside the banner, 100 ms after the
-      region could register; **conflicts that park meanwhile join the
-      waiting text** (`makeAnnouncer`; Codex review: a second conflict
-      within 100 ms replaced the first, already marked told, so it was
-      never read). **iOS**: toasts and capture steps are announced with
-      `announceForAccessibilityWithOptions(…, { queue: true })`, each
-      call queued behind the last, so nothing waits to be replaced; every tab
-      and the Settings modal keep a failed-write toast mounted, so the
-      publish number decides who speaks (`firstToTell`), once.
-- [x] Theme — the desktop toasts and banner move from raw palette classes
-      (an amber-50 box in dark mode) to the tokens: a failure on
-      `danger`/`on-danger`, a discarded change inverted (`ink`/`canvas`),
-      the banner a raised surface with a `warning` edge, Keep mine
-      `primary`; iOS text colors become `on-danger`/`canvas`. **Pickers**:
-      the claim predates the redesign — both apps follow the system
-      appearance (`userInterfaceStyle: automatic` and `useColorScheme`;
-      `data-theme` sets `color-scheme` on the desktop), and no picker
-      forces one: the iOS editor's compact date/time pickers and the date
-      popover, and the desktop editor's date/time inputs (computed
-      `color-scheme: dark`), match light and dark. Checking them turned
-      up the iOS editor's title, which had no color and was black on the
-      dark sheet; it takes `text`.
-- [x] Dynamic Type — **one cap, `BOX_FONT_SCALE` = 1.35 (xxxLarge, the
-      largest standard size), only where the box cannot grow**: grid
-      blocks, all-day chips and "+N more", the hour gutter, the day
-      numbers in their circles, the drag ghost and slot label, the
-      calendar's header bar and "+", the sheets' Cancel · title · Save
-      bars, the dictation mic and the Settings avatar — at AX5 they had
-      clipped, and Save had left the screen. Bars follow the system's,
-      which do not grow at all; the capped header buttons and "+" offer
-      the Large Content Viewer. **Where a box can grow, it does**: the
-      unsynced badge and Connect capsule take a minimum height, the
-      agenda's time column a minimum width; sheet content, forms, lists,
-      Settings, the agenda, the Tasks tab and the notices scale fully.
-
-## UI redesign (2026-10)
-
-The main views were redesigned on a canvas (desktop: toolbar + collapsible
-sidebar + grid + a right panel that is a task rail, an inspector or an
-inline editor; iOS: tabs, sheets, a detail-first event view) and the
-work split into three PRs: the shared foundation below, then the desktop,
-then iOS.
-
-- [x] Design tokens + dark-mode foundation — done (2026-10-07, `todo/
-  design-tokens`). **The brand kit is the one palette**: `tokens.json`
-      moved to the settled interface palette (white canvas, near-white
-      panels `#FCFBF9`, a `fill` token `#F4F2EE` for controls and cards,
-      hairlines `#EEECE7`, the darker plum `#584360` for filled actions,
-      event tints nudged for white) — a brighter purple and Serenity's
-      indigo were tried on the canvas and rejected. **Generated, never
-      edited**: `brand:build` writes `tokens.css` and
-      `packages/core/src/theme/tokens.ts`; `brand:check` guards both.
-      **Desktop maps the variables into Tailwind** (`bg-canvas`, `text-ink`,
-      `bg-fill`, `bg-primary`, …) and follows the OS appearance over
-      `prefers-color-scheme` → `data-theme` — no IPC, the "window-level
-      concerns" list is unchanged; Inter via `@font-face` from the kit.
-      **iOS keeps the system font** (`@expo/ui` controls render SF anyway)
-      and reads the tokens through `useTheme`. **Calendar colors are
-      tinted, not mapped**: `eventTint(hex, scheme)` keeps hue and chroma
-      and sets the lightness per theme; the brand `event-*` tokens are for
-      items without a calendar. **A series can change or drop its rule**
-      (`UpdateEventChanges.recurrence`, lines or null): the whole series
-      takes it and its exceptions are dropped — they belonged to the old
-      occurrences, as on Google; a this-and-following edit gives the
-      split-off half the rule or leaves the occurrence alone; an instance
-      cannot carry one and a single event does not become a series through
-      an update; Google needs `recurrence: []` to clear, so the op carries
-      `recurrenceCleared` (migration 9). The editor reads the master with
-      the new `getEvent` rpc and sends the rule only when edited; an Apple
-      series (read through, no stored master) keeps its rule uneditable.
-      **Notes are a field** of the event editor model (they only rode
-      along before). **Tasks can be created without a due day**
-      (`createTask.dueDate` optional; `TaskEditorSeed.dated`). **Quick add
-      understands to-dos** (`kind: 'task'` in the schema, "todo:" in the
-      fixture) and can hold a parse for review (`reviewFirst`,
-      `convertQuickAddItem` flips the kind). `ViewPreferences` gains
-      `lastView` and `sidebarCollapsed` as device taste: not exported, not
-      imported; `useUpdateViewPreferences` patches instead of replacing.
-      `CalendarViewKind` moved to core and gained `agenda` (14 days from
-      the focused day, no pan buffer). Pure helpers for the new surfaces:
-      `upNext`, `groupTaskInbox`, `buildAgenda`, with `useUpNext` /
-      `useTaskInbox` over them.
-- [x] Desktop redesign — done (2026-10-07, `todo/desktop-redesign`).
-      **One toolbar, one panel.** The window is toolbar / sidebar + grid +
-      side panel; the ⌘K `CommandBar` dialog and the centered editor
-      dialog are gone. The quick-add field is always in the toolbar (⌘K
-      focuses it; on a machine without the model it is disabled, with
-      Retry) and holds a parse for a look — the "Understood as" card with
-      an Event/Task toggle, "Edit details" (the editor) or "Add
-      event/task" (written as understood, into the last-used calendar or
-      the first writable list). **Click = inspector, Edit = editor**: a
-      grid click opens the read-first inspector in the panel (when, where,
-      who, notes, Join, RSVP, the series scope and Delete), its Edit
-      button the inline editor; a slot, New, ⌘N, a task chip and a task
-      phrase open the editor directly. The panel at rest is the Today rail
-      (Up next with Join, the inbox — overdue / today / no date — and an
-      add-task field that creates undated). **The inline panel is not a
-      dialog**: it never joins `dialogStack`, so a real dialog over it (the
-      agent approval, capture, a birthday) keeps Escape and Enter; the
-      calendar's own Escape leaves the panel only when no dialog is open.
-      Birthdays and `MoveConfirm` stay as they were. **Forms**: notes on
-      events, a Done checkbox on existing tasks (applies at once, like the
-      chip), the repeat fields on existing series. **Grid**: every
-      calendar-colored block and chip goes through `eventTint`
-      (borderless, `data-color` carries the hex); the event open in the
-      panel carries the one outline; tentative = striped, declined =
-      struck through; today, the now line and the month's today number
-      are primary plum. Month cells are divs with chip buttons inside (a
-      chip opens its item, the cell the day). Task chips sit on `fill`
-      with a list-colored dot. **Tasks drag from the panel** too: the drag
-      hook moved to the app (`useEventDrag` with a `'panel'` origin), a
-      ghost follows the pointer, both drop indicators light up, the drop is
-      judged by the pointer like a lane chip's; a release elsewhere changes
-      nothing. **Settings** is a sidebar window (780×560): search narrows
-      the panes by label and keyword (`filterPanes`), the pane in view
-      stays; the hash is still the one place the pane lives. **Device
-      taste persists**: `lastView` and `sidebarCollapsed` through the view
-      preferences, read before the first paint. Search stays a disabled
-      toolbar placeholder (its own PR; shipped, see Search below).
-- [x] iOS redesign — done (2026-10-08, `todo/ios-redesign`).
-      **expo-router owns the screens**: `app/_layout.tsx` holds the
-      providers and a native stack — the tab bar (`NativeTabs`: Calendar ·
-      Tasks · Search, the last a placeholder until search shipped, see
-      Search below) and
-      Settings as a modal route from the calendar's gear, never a tab.
-      `+native-intent.tsx` keeps the share, capture-fixture and OAuth URLs
-      off the router; the host's `Linking` listener still handles them.
-      **One editor host** (`EditorHost.tsx`, under the providers) owns
-      every sheet and the capture model, so both tabs open the same
-      sheets: the "+" opens the quick-add sheet (a phrase held in an
-      "Understood as" card with an Event/Task toggle, Edit details or Add
-      as understood, Find a time, and a "New event" row),
-      a tap on an event opens the read-first detail (Join, RSVP, scope,
-      Convert, Delete, Edit), tasks and slots open the editor directly.
-      **Sheets stay React Native page sheets**: `@expo/ui`'s `BottomSheet`
-      hosts SwiftUI children, so the forms would have to go through
-      `RNHostView` and Maestro's tree with them — not worth it for the
-      look; `@expo/ui` is used where it is a drop-in (the header's view
-      menu). **The view is a menu** (Day · 2 Days · Week · Month · Agenda)
-      and device taste (`lastView`), read before the first paint. **The
-      agenda** lists two weeks from the focused day, free days included.
-      **Theme**: the light-only `palette` is gone; each file's
-      `StyleSheet` is a `makeStyles(colors)` factory read through
-      `useStyles` (rebuilt only when the appearance flips), the shared
-      sheet/section styles are hooks, blocks and chips take `eventTint`,
-      the status bar and the window behind every screen follow the
-      scheme. **Supply chain**: `@expo/ui@57.0.21` is an audited
-      `trustPolicyExclude` entry — Expo publishes some versions through
-      trusted publishing and others with a maintainer token, the same as
-      the `expo` package of the SDK release. **Deferred**: Settings
-      sub-screens (shipped as the iOS Settings pages below), the collapsed
-      all-day row's "N tasks · M overdue" pill, `@expo/ui` date pickers.
-      The native fingerprint moved once, in the first commit (deps + the
-      expo-router plugin).
-- [x] iOS Settings pages — done (2026-10-08, `todo/ios-settings-pages`).
-      **One native stack inside the Settings modal** (`app/settings/`):
-      the root lists Unsynced Changes (only while there are any), the
-      Google accounts, On This iPhone and Add Google Account, then General
-      · Notifications · Mirrors · Advanced — the Mac's panes minus Agents,
-      which stays Mac-only. Below them: an account (sign-in state, history,
-      calendars and task lists — a tap shows or hides one, ⓘ opens a
-      calendar's 24-swatch color page — and Remove, confirmed in an action
-      sheet), On This iPhone (Calendar, Reminders and Contacts access with
-      a capsule Connect, the Apple calendars and reminder lists,
-      Disconnect), General (time zones as checkmark rows: a tap makes one
-      primary, a swipe removes it; the location cache), Notifications and
-      Remind Me (the birthday lead times as checkbox rows), Mirrors and one
-      mirror, Advanced (settings file, Diagnostics, PR Preview). **Rows are
-      React Native, not `@expo/ui` SwiftUI** (Nik's pick):
-      `settings/GroupedList.tsx` draws the inset grouped list on the brand tokens
-      (ground `fill` in light, `canvas` in dark, rows `surface`), with SF
-      Symbols through `expo-symbols` (already in the fingerprint since the
-      redesign) and `ReanimatedSwipeable` rows whose action VoiceOver offers
-      too. Rows inside a swipeable press through gesture-handler's
-      `Pressable`: React Native's never saw a tap there. The switches are
-      SwiftUI's toggle through `@expo/ui` (`Host` + `Switch`, labels
-      hidden), in its system green: on iOS 26 the system switch is 63 × 28
-      pt while React Native's `Switch` still lays it out at 51 × 31, so it
-      drew 14 pt above and 22 pt left of its row's centre (the editors
-      still use React Native's `Switch`; a separate change). The stack
-      sets no header background: on iOS 26 one hid the root's large title,
-      and the bar's glass edge already sits on the ground.
-      Decorative symbols sit in an accessibility-hidden `Glyph`: a symbol
-      image carries its own label ("add", "Forward"), which a pressable row
-      read out before its title — and which broke Maestro's text match.
-      **Done sits on the root only** (a toolbar button); a pushed page gets
-      the native back button, the sheet's swipe closes Settings from any
-      page, and the calendar's unsynced badge pushes `/settings/unsynced`
-      over the root (`initialRouteName`, loaded by a push only with
-      `withAnchor: true` — without it the page opened alone, no root and
-      no Done). **Shared state** lives in two
-      providers in the stack's layout: `SettingsProvider` (the Apple
-      permission statuses with their foreground refresh and settle loop,
-      Google sign-in, the device connects, the last error) and
-      `NotificationSettingsProvider` — the birthday settings are edited on
-      two pages, and two `useSettingsEditor`s would each send their own
-      stale whole struct over the other's change. The root reads the
-      accounts, sync status and mirrors, which keeps those atoms alive
-      under every push. **The mirror page is a summary** (Nik's pick): its
-      switch, Run Now and status, read-only rows that open the unchanged
-      editor sheet, Delete; mirror failures, silent before, show on the
-      page. "Add Mirror…" is a list row rather than a "+" in the nav bar.
-- [x] Search — done (2026-10-09, `todo/search`).
-      **One rpc reads what the views can show**: `search({ query,
-      timeZone })` (`searchCalendar`, both apps) reads the rows the views'
-      range query reads (`EventRepo.getWindow`), so visibility, hidden
-      mirror copies and cancelled events come with it, plus the Apple
-      read-through; tasks are every task of the visible lists
-      (`TaskRepo.getVisible`), Google Tasks and the Reminders mirror.
-      Birthdays are not searched. **A window, not the history**: events are
-      looked for two years either side of today in the primary zone
-      (`SEARCH_WINDOW_YEARS`). Older and farther events need full-text
-      search (todo.md, Tier 3). **A series is walked, not expanded**: over
-      the whole window an hourly series passes the expander's iteration
-      cap and `assembleWindow` drops it, so a matching series is walked
-      outward from now to its next occurrence that is not over, else its
-      latest (`seriesSearchOccurrences`: each direction one span for most
-      rules, a refused span retried a quarter as long). Its overrides are
-      rows of their own, matched on their own text, and their slots are
-      left out of the walk. **Matching is TypeScript, not SQL**: NFD with
-      the combining marks dropped, lowercased without a locale, and every
-      whitespace-separated word must occur in one field — an event's title,
-      place, notes, guest names and addresses; a task's title and notes.
-      SQLite's LIKE folds neither accents nor non-ASCII case. A blank query
-      finds nothing and never reaches the backend. **One hit per series**,
-      keyed by account, calendar and `recurringEventId` (Google's expanded
-      instances and overrides carry the master's id, EventKit's occurrences
-      the series' `eventIdentifier`): the next occurrence that is not over
-      (one under way counts), else the latest past one, marked repeating; a
-      this-and-following split stays two series. **Order**: Upcoming
-      soonest first, Past most recent first, then Tasks (open ones by due
-      day, timed before untimed, the undated ones, completed ones latest
-      first); 50 per group, each with its total ("The first 50 of N").
-      All-day events are judged by their dates in the zone, not their UTC
-      midnights, for "over" and for sorting before the day's timed events
-      — which is why the payload carries the primary zone, like the date
-      payloads of the task reads. **`useSearch`** debounces 200 ms, keeps
-      one atom per query in the bounded LRU (a late answer for an earlier
-      query never shows), keeps the previous results up while the next one
-      loads (`stale`, never shown as "no matches") and re-runs on
-      EVENTS_KEY and TASKS_KEY, so an edit or a delete made from a result
-      updates the list. **Desktop**: the side panel's `search` kind,
-      opened by ⌘F (not under a dialog, not over an open editor, whose
-      draft it would drop) or the toolbar's Search, which toggles it. Enter
-      opens the top result and the arrow keys walk the list — once the rows
-      answer the text typed: Enter pressed sooner waits for them, and the
-      arrows do not walk into an earlier query's rows. An event result
-      shows its day in the grid — its own week even after a pan rolled the
-      window elsewhere (`goToDay`, which the mini month and a notification
-      click use too) — scrolls the time grid to it when it is out of view,
-      and opens that occurrence in the inspector, whose
-      "‹ Results" goes back; a task result opens its editor. A panel opened
-      from a result (`fromSearch`) closes back to the results (a delete
-      included); the inspector's ✕ closes to the rail, and Escape steps
-      back one level. The search runs in `CalendarBody`, not its panel, so
-      it stays current while a result is open and is on screen at once on
-      the way back, scrolled where it was; the text is kept when search
-      closes, and ⌘F selects it. **iOS**: the native pattern — the Search
-      tab (search role) is a stack of one screen with `Stack.SearchBar`,
-      which iOS 26 puts in the tab bar; Maestro drives that field by its
-      placeholder, so no React Native field was needed, and nothing native
-      changed. Results are a SectionList whose rows are one accessibility
-      element each; events open the detail sheet and tasks the editor
-      through the editor host. The mutation toast stands on the tab bar's
-      top edge: the screen runs under the bar and its bottom safe-area inset
-      already holds it (83 pt on iOS 26.5), so the toast's area ends at that
-      inset — adding the bar's 49 pt again floated it 49 pt higher than on
-      the other tabs. **Found on the way**: `formatZoneTimeRange`
-      wrote "2:00 PM – 3:00 PM PM" on iOS — Apple's ICU puts a narrow
-      no-break space before AM/PM — which also hit the secondary-zone lines
-      under events since the time zones PR. **Deferred**: a search tool
-      for the agent gateway, recall beyond the window, calendar names as
-      search text, highlighting the matched words (todo.md).
-- [x] iOS account button — done (2026-10-09, `todo/ios-account-avatar`).
-      **Settings opens from an account avatar** at the top right of
-      Calendar and Tasks, where Apple's own apps (App Store, Music, Photos,
-      Health) and Google's put the account; it replaces the header's `⚙`,
-      a text glyph that drew like an emoji. Rejected: a Settings tab (the
-      HIG keeps tab bars for navigation, and the bar is full), an item in
-      the view menu (nobody looks for Settings there), a "…" menu holding
-      only Settings, and the system Settings app (ours are accounts and
-      sign-in). **The avatar is the first Google account's**: its photo
-      (`Account.avatarUrl`, from sign-in), else its initial in the tint
-      its Settings row has, else `person.crop.circle` with no Google
-      account; Settings rows and the account page draw the photo too, the
-      initial staying under it while it loads or when it cannot. **The
-      unsynced pill became the avatar's badge** (the count, as the App
-      Store badges updates), which gives the header the pill's width back;
-      a tap opens the Settings root, whose first row is Unsynced Changes —
-      one tap more than the pill's direct push. A dot says an account must
-      sign in again. The badge and dot are siblings of the button, not
-      children: the button is one accessibility element, so a child's id
-      would never reach Maestro, and the live suite waits on
-      `pending-badge` to go; VoiceOver hears the count in the button's
-      label.
-- [x] iOS Tasks filter chips — done (2026-10-10, `todo/task-filter-chips`).
-      **The chip row keeps its own height.** It is a horizontal
-      `ScrollView`, and React Native gives every ScrollView `flexGrow: 1`
-      and `flexShrink: 1`, so the row and the task list below it split the
-      screen: a long list squeezed the chips until their labels were cut
-      off, and an empty one let the row take half the screen with the
-      chips stretched down it. The row now has `flexGrow: 0` and
-      `flexShrink: 0`, and its chips are centered rather than stretched.
-- [x] iOS Tasks screen review fixes — done (2026-10-10,
-      `todo/tasks-screen-fixes`), from the review of #160. **Chips are the
-      visible lists** (`taskListChips`): the inbox leaves hidden lists
-      out, so a hidden list's chip always read "Nothing to do.", and it
-      counted toward the two lists that show the row. **The selection holds
-      only while its chip is on screen**: disconnecting Reminders with its
-      chip selected left the tab filtered to a list that was gone, with the
-      row hidden (one list left) and so no chip to clear it — derived each
-      render rather than reset in an effect, so it never draws one stale
-      frame. **The add field stays above the keyboard**: a padding
-      `KeyboardAvoidingView` inside the safe area, which already keeps the
-      tab bar clear, so the lift is the keyboard's height less the bar.
-      **A chip works while the keyboard is up** (`keyboardShouldPersistTaps`,
-      like the list). **The screen's `SafeAreaView` is
-      react-native-safe-area-context's**: React Native's is deprecated.
-      Not in a flow: the keyboard (Maestro's visibility ignores it).
-
-### Dependency sweep (2026-10-09)
-
-- [x] Upgrade every dependency to the latest version the platform accepts
-      — done (`todo/dependency-sweep-2026-10`, one commit per group, each
-      droppable). **Vite+ 1.1 with Vitest 5.0.3**, migrated with
-      `vp migrate`: tests import the runner from `vite-plus/test` (like
-      codiff), `@effect/vitest` still imports `vitest`, which the override
-      pins to the catalog, and the catalog pins vite-plus exactly so its
-      bundled Vitest cannot drift from the catalog's. The migrator's
-      `minimumReleaseAgeExclude` for the toolchain is not kept (the 2-day
-      gate is never bypassed), nor its `clearMocks: false` shim (the suite
-      passes on Vitest 5's default). **`vp pack` builds the desktop main
-      bundle**: the tsdown config moved into `pack` in
-      `apps/desktop/vite.config.ts` with `deps.alwaysBundle` /
-      `deps.neverBundle` (the old names are deprecated); the cli and
-      preload bundles build byte-identical. oxlint 1.87 widened
-      unicorn/consistent-function-scoping: 24 helpers moved to the scope
-      that holds what they use. **Electron Forge 8** (ESM, `publish` →
-      `release`; this app only packages and makes) with Electron 44.6 and
-      eas-cli 24.11. **The Expo SDK 57 release of 2026-10-06** (expo
-      57.0.27): Expo publishes SDK 58 through npm trusted publishing since
-      2026-09-29 but SDK 57 patches with a maintainer token, so
-      `trustPolicy: no-downgrade` flags every SDK 57 package published
-      since. The release's 23 packages are excluded **by exact version**
-      after an audit (same maintainer as every earlier SDK 57 release, one
-      gitHead: the sdk-57 "Publish packages" commit) — the next SDK 57
-      patch is checked again, and the list goes with SDK 58. **react stays
-      19.2**: #144's caret had let the lockfile resolve react 19.3.0 past
-      RN 0.86's 19.2.3 renderer; the catalog now uses tilde ranges and a
-      `react-dom` override keeps Expo's optional web peer on the same
-      copy. Forge 8 left semver 5.7.2 and undici-types 6.21.0 out of the
-      lockfile, so their legacy trust exclusions are gone, and its own
-      dependencies made the `@electron/node-gyp` (git-SHA fork) and
-      `extract-zip>yauzl` overrides dead. Effect 4.0.1
-      and pnpm 12.10.1 needed no code change. The
-      GitHub Actions were already on their latest majors. Ceilings kept
-      for the next sweep: react 19.3, react-native 0.87, reanimated 4.7 /
-      worklets 0.13, gesture-handler 3, datetimepicker 9.2,
-      safe-area-context 5.10, screens 4.28 (Expo SDK 58, still `next`);
-      Babel 8 (the worklets 0.10 Babel plugin throws under it, and pnpm
-      hoists it over Metro's Babel 7); op-sqlite 18 (the Effect adapter's
-      peer is `<18`). Too young for the release-age gate on the day:
-      Effect 4.0.2 (Hermes HttpClient and React Native cookie fixes),
-      Electron 44.7, eas-cli 24.12.
-
-### Desktop colors follow the appearance (2026-10-09)
-
-- [x] The last raw Tailwind palette classes in the desktop renderer move
-      to the brand tokens — done (`todo/desktop-dark-mode-tokens`). In
-      dark mode `MoveConfirm`, the account removal question and its error
-      box, the settings-file note, the mirror editor's shared-calendar
-      warning and the agent token panel were amber-50 or red-50 boxes, and
-      a waiting agent request's title and its Decline and Done buttons
-      took the dark theme's near-white text on amber-50 and all but
-      vanished. **A box that asks or warns has the conflict banner's
-      look** (`CALLOUT_CLASS` in `ui/calloutStyles.ts`, which the banner
-      now uses too): a raised surface, a hairline border and a 4 px edge
-      in its tone — `warning` for the move/convert/delete/switch question,
-      the settings-file note, the shared-calendar warning, the token panel
-      and a waiting request; `danger` for removing an account — with
-      `ink` / `ink-secondary` text. Not a tint: the tones are text
-      colors that flip with the appearance (`warning` is dark amber in
-      light, pale amber in dark), so `bg-warning/10` came out beige in
-      light and almost nothing in dark, and a solid fill is the bright
-      box again.
-      **Filled buttons keep their tone** — Move anyway and its siblings on
-      `warning` / `on-warning`, Remove on `danger` / `on-danger`, hover at
-      `/90` (no hover tokens; not worth adding one). The add-account error
-      is the editors' error message (`fill`, `danger` text); red and amber
-      text is `danger` and `warning` (notes, notices, Remove links, the
-      mirror statuses, the agent activity); the invitee dots are
-      `success` / `danger` / `warning` as on iOS; the token and config
-      snippets sit in a `fill` well with a hairline instead of a black
-      block. **The dialog scrim stays `bg-black/30`**: it dims in either
-      appearance. **A guard**: `renderer/themeClasses.test.ts` fails on any
-      Tailwind palette shade or `white` in the renderer's sources.
-
-### Experimental: mirrors and agents (2026-10-09)
-
-- [x] Mark calendar mirrors and the agent gateway as experimental —
-      done (`todo/experimental-labels`). **A label in Settings, not a
-      switch**: both features already do nothing until someone sets one
-      up (a mirror definition, an agent token), so an "enable
-      experimental features" gate would guard nothing and would switch
-      off mirrors people already run; the agent socket keeps listening
-      at launch, harmless without a token. **Grouped, not badged**: the
-      desktop sidebar lists them last, under an "Experimental" heading
-      below Advanced — a second tab list labelled by that heading, so a
-      screen reader announces the group — and the sidebar search finds
-      both by the word; iOS moves Mirrors (Agents is Mac-only) into its
-      own section with that header, below Advanced, the version line
-      under it. **Each pane says what that means at its top** (a
-      capsule and "This feature may still change, or go away, in a later
-      version."; on iOS inside the page's hero), since the heading alone
-      only names the group. The words live in core (`EXPERIMENTAL_COPY`)
-      so both apps say the same thing.
-      Nothing else changes: the settings file, the MCP tools' descriptions
-      and the agent approval dialog carry no label.
-
-### Task checkboxes (2026-10-09)
-
-- [x] The task checkboxes are drawn, not typed — done
-      (`todo/task-checkboxes`). Every chip, timed block, agenda and list
-      row showed `☐` / `☑` at the text size, about 9 px of glyph that
-      read as a font fallback. Designed on a canvas first (before/after,
-      a state sheet in both appearances, the week view, the iOS day view
-      and Tasks tab) and approved as drawn. **One round box on both
-      platforms**, `TaskCheck` in `apps/desktop/renderer/calendar/` and
-      `apps/ios/src/ui/`: a 1.5 px `border-strong` ring around a `surface`
-      well (`canvas` in dark), filled with `primary` and an `on-primary`
-      tick when done. A circle because events are rounded rectangles, and
-      the rail already drew a ring (the month grid's task dots are rings
-      too). **Sizes per place**: desktop 14 px in the 20/22 px chip and
-      timed block, 12 px in the 16 px month chip, 18 px in the rail and
-      the task editor's Done (now the same box, `role="checkbox"`); iOS
-      16 pt in chips and timed blocks, 20 pt in the agenda and the mirror
-      editor's source list, 24 pt in the Tasks tab, whose box sits in a
-      44 pt square. **A Reminders list's color is the ring and the fill**
-      (tick by `contrastingTextColor`), so the separate list dot leaves
-      the chips and the Tasks tab; an open overdue task rings in
-      `danger`. **A done chip keeps its fill and its box at full
-      strength**; only the title turns `text-secondary` and struck
-      through — the whole chip at 50% made the checked state the hardest
-      thing to see. Open chip titles move from `ink-secondary` to `ink`
-      on desktop to match iOS and the design.
-      **Motion**: desktop hover darkens the ring and previews the tick;
-      a press scales the box to 0.86 and the release springs it back past
-      full size, so a click pops it without a keyframe animation, which
-      would replay whenever a done chip mounts; the tick draws in with
-      `stroke-dashoffset`. iOS shrinks the box while pressed and pops it
-      (0.8 → spring) only on the change to done. Reduced motion keeps the
-      color change only. Labels, test ids and hit areas stay as they were
-      — a chip's `hitSlop` is clipped to the chip, so its target stays
-      the chip's height. iOS task chips now lead with the box instead of
-      centering their row in the lane (the base chip centers a column).
-      Search results (both apps) draw the same mark for a task's state;
-      on desktop it is wrapped so the row's hover — the row opens the
-      task — previews no tick.
-
-### Test pruning (2026-10-09)
-
-- [x] Remove tests that check nothing another test does not — done
-      (`todo/prune-tests`, three commits: unit, desktop e2e, iOS flows).
-      **The rule: a test goes only if a surviving test asserts everything
-      it did**; where one check was unique it moved first (the 410 resync's
-      stored token, the carry suite's "only the master is queued", the
-      undated reminder's mirror row, ⌘K-then-Escape on the quick-add
-      field). Regression and race tests stay even where they look alike.
-      Two tests could not fail: a notification test whose clock sat 25 h
-      past its reminder (outside the 5-minute grace), and a desktop ⌘K
-      test that accepted a disabled field — CI's e2e job builds no helper,
-      so the field is always disabled there. Dead code that only its own
-      test called went with it (`isValidEventId`, `eventKey`,
-      `canSeeBusy`, `listEvents`' `timeMin`/`timeMax`). **iOS flows are
-      merged per area, not dropped**: the CI shards spend about 16 min on
-      setup and 33 s–4 min per flow, billed as macOS minutes, while the
-      whole unit gate takes 1.5 min — so a launch, a Reminders connect or
-      a create-then-delete repeated across flows is the cost worth
-      cutting. 24 CI flows became 15: 01, 05, 16-week-swipe and 18 into
-      02 (navigation, which now also checks the previous chevron); 11 into
-      03 (one new-event sheet visit); 10 into 09 (the monthly rule is
-      added as an edit and its chips checked after EventKit hands it
-      back — create and update share the bridge's `apply`; 09 already
-      ran strict on CI, keyed on the fixture account); 16-task-convert
-      into 17 (one reminder takes both conversion paths); flows 13 and 04
-      into flow 23. Accepted: a flake in a merged flow reruns more, and 09
-      would skip silently if the fixture account vanished — 21 and 25
-      still fail hard without it. Kept: 07 (the only required check that
-      a created event lands on the timeline), 24, 14 (local-only). The
-      dead `MODELLESS` env went too; `ci-reminders` stays in
-      `apps/ios/package.json`'s exclude list, unused — its scripts feed
-      the native fingerprint, and a dead tag is not worth a dev-client
-      rebuild. Not done: table-driven merges of near-identical unit tests
-      and shared test helpers (`noYield` is defined in ten files).
-
-### Swipe jumps (2026-10-10)
-
-- [x] iOS timeline: a swipe no longer jumps when it lands — done
-      (`todo/ios-swipe-jump`). **Two separate jumps**. (1) **A column off
-      for one frame**: the
-      strip was laid out relative to the page React last drew, and a
-      UI-thread `lag` reset (`runOnUI` from a layout effect) undid the
-      shift the new days brought. Nothing orders that call against the
-      Fabric mount. Now the UI thread adds
-      up the pixels each swipe navigated (`navigatedPx`) and hands the
-      sum to React with the page change; the strips are drawn at
-      `left: swiped.px − buffer·column` with the transform
-      `panX − navigatedPx`, so the render that draws a swipe's page moves
-      them by exactly as much as the new days move them back, in one
-      mount. A navigation from outside (Today, chevrons, a tapped day, a
-      view switch) needs no UI-thread step at all; it only stops a swipe
-      still settling. `swipeLagAfterRender` is gone; `swipeLag` derives
-      the lag from the two sums. (2) **The grid jumping a row after the
-      swipe settled**: the all-day lane was sized to the busiest _drawn_
-      day, so a busy neighbour entering or leaving the ±buffer strip
-      resized it on commit, even when nothing visible changed. The lane
-      now fits the visible page (`pageMaxima`), and mid-swipe its height
-      blends toward the incoming page (`interpolatePages`, a Reanimated
-      height), so the grid moves with the finger and is in place when the
-      swipe lands. The "less" toggle follows the visible page too. Not
-      checked: a task drag across days after a swipe (the simulator
-      tool's touch path does not start it on the old code either; the
-      drop geometry at rest is unchanged), and a real device.
-
-### Tasks add field (2026-10-10)
-
-- [x] iOS Tasks: the add field adds to the filtered list — done
-      (`todo/tasks-add-target`). **The field writes where the user is
-      looking.** It always took the first visible writable list, so with
-      the "Mock Tasks" chip selected it said "Add a task to Reminders"
-      and the new task landed there, out of the filtered view. Now
-      `taskAddTarget` (core, beside `groupTaskInbox`) picks the filtered
-      list when it is visible and writable, for the placeholder and the
-      write alike; with "All", or a filter on a read-only or hidden list,
-      it keeps the first visible writable list. The desktop rail's inbox
-      has no list filter, so it keeps the first writable list, as do both
-      quick-add paths. Unit-tested only: no Maestro flow covers the add
-      field.
-
-### Add flow (2026-10-10)
-
-- [x] One add flow on both platforms: the editor is the review step —
-      done (`todo/add-flow`). **"+" opens the editor on a new item, with
-      the quick-add field on top, focused, then the Event | Task |
-      Reminder control, then the form.** iOS had three surfaces for one
-      intent (the quick-add sheet, its "Understood as" card with a second
-      Event/Task flip, then the editor) and a direct-create path
-      (`quickAddCreate.ts`) that picked a different default list than the
-      editor did; the desktop kept the field in the toolbar with the card
-      as a popover. Now a phrase, typed or dictated, fills the form
-      (`applyPrefill` on both models; `useQuickAddModel` hands a
-      `QuickAddItem` to `useEditorKinds.apply`): the title, the day, the
-      times or all-day, the location and the repeat rule are the phrase's
-      — all of them, a phrase without a place clears one typed before —
-      while the calendar or list, guests, notes and notifications stay.
-      Apply is not a required tap: Return applies, stopping a dictation
-      applies, and the Apply button re-applies after edits. The phrase
-      stays in the field, so what was read can be compared with the
-      form. A phrase read as the other kind switches the editor first (a
-      to-do lands on the kind a new to-do would open in, `defaultTodoKind`)
-      with the switch's own question about a loss; declined, or with that
-      kind unavailable, the phrase is read as the kind the editor shows
-      (`convertQuickAddItem`). Without the model the field says so and
-      the form is still there: no more dead end. **Reminder is a kind,
-      not a list.** A reminder was a task whose list happened to be an
-      Apple one, and picking that list silently swapped the whole form.
-      `ItemKind` (core `editor/itemKinds.ts`) names event / task /
-      reminder; the task model's selected list still decides the
-      provider, so `kind` reads it, and the list picker offers the
-      selected provider's lists only — the kind control moves between
-      providers (`switchEditorMode`, three-way: event ↔ to-do carries the
-      form over as before; task ↔ reminder keeps the task model's fields
-      and picks the kind's default list), a pick never changes the kind.
-      A new reminder switched to a task asks what has no home on a Google
-      list (its time, alerts, priority, rule — `taskMoveLossSummary` with
-      the verb "Switching to a task"; the URL folds into the notes); an
-      existing to-do switched to the other kind reads "Move to task" /
-      "Move to reminder" and moves on Save, which asks as a move always
-      did. `availableItemKinds` shows a kind only when something can hold
-      it: no Reminder without a connected Reminders list, no Task without
-      a Google account with Tasks, no Event without a writable calendar;
-      one kind means no control. The model keeps saying "event or to-do"
-      (`kind: 'task'`); the app maps a to-do onto Reminder or Task, never
-      the model. **Defaults follow the view.** The calendar's "+" wants an
-      event. The Tasks tab's "+" (new; it had none, only the inline add
-      field) opens an undated to-do in the filtered list, else the last
-      list used (`rememberTaskList`, like the last calendar), else a
-      Reminders list, then a Google one (`defaultTodoList`, which replaces
-      `taskAddTarget`); a kind with nowhere to go falls back in that
-      "+"'s order (`resolveItemKind`). The Tasks tab's inline add field
-      and the desktop rail's are gone, so there is one add path; the cost
-      is one tap ("+", type, Return, Save against tap, type, Return), and
-      the undated add they made is "No due date" beside Due on a new
-      task (`clearDueDate`, creates only: `updateTask` cannot clear a
-      stored due day). The desktop toolbar field is gone too — the
-      editor's field would have been a duplicate — and ⌘K opens a new
-      item with its field focused (or refocuses an open new item's; not
-      over another editor, whose draft it would drop), ⌘N and "+ New" the
-      same editor; the paste-to-capture the toolbar field had moved with
-      it (an email or image pasted into the editor's field goes to
-      capture, and the capture list stays up over a new item's editor —
-      it hides only behind the editor of one of its own rows). Find time
-      stays beside the field as its Add | Find time mode; a picked slot
-      fills the event's day and times. The quick-add field is for new
-      items only; the kind control on an existing item converts, as the
-      Event/Task toggle did. The iOS control is drawn in RN
-      (`SegmentedControl`, the desktop's look) rather than SwiftUI's,
-      because each segment carries the test id the flows tap.
-      Review (Codex) found four things the probes had
-      not: a list picked for a kind now survives a round trip through the
-      event form (it was reset to the default); a parse that lands after
-      the kind flipped applies to the editor as it is then (the submit's
-      closure saw the old kind); "No due date" is hidden on an event →
-      task conversion (its draft always carries the day); and a location
-      a phrase set gets the one-time map lookup an opening location gets
-      (`givenLocation`).
-
-### Unsynced changes say why (2026-10-10)
-
-- [x] An unsynced change shows why its last attempt failed, and a task
-      change names its task — done (`todo/gone-task-ops`). Two completed
-      Google tasks sat on a TestFlight iPhone at "retrying (40×)" under
-      their raw ids, after the owner had removed them elsewhere. The
-      queue records each failure in `pending_ops.last_error`, but neither
-      app showed it (the drain's comment said the panel did), and a
-      TestFlight build's database cannot be read from a Mac, so the cause
-      stayed on the phone. Ruled out on the live account first: a PATCH
-      of a task deleted on Google answers 200 with `deleted: true` (the
-      op settles), a task moved to another list or sitting in a deleted
-      list answers 404 (`gone`); the real engine against the real API
-      settled both "deleted elsewhere, completed here" orders on the
-      first drain. Only a network failure, a 5xx, a 429 / rate-limit 403,
-      a token refresh other than `invalid_grant`, or a defect retries.
-      **`pendingOpLabel` returns `reason`**: the first line of the
-      recorded error, capped at 160 characters, only for a retried op
-      that is not parked. iOS adds it as the row's second subtitle line;
-      desktop's sync footer as a second truncated line, full text in its
-      tooltip. **`listPendingOps` names task ops**: the title the op sets
-      (`taskTitle`), else the local row's, else nothing (the id, as
-      before — a pull that removed the row leaves no title).
-
-### Drags meet other input (2026-10-10)
-
-- [x] Desktop: a drag survives a key or a lost capture in the middle of
-      it — done (`todo/drag-other-input`). Investigated after
-      PR #162's local repro: with `TZ=Etc/GMT+2` and the OAuth file
-      present, the first lane-chip drag after launch failed, either
-      dropping nothing or landing three days late. **No re-render was
-      involved.** Neither failure changed the strip or remounted the chip.
-      Both were input the harness never sent, reaching the e2e window,
-      which has focus and sits under the cursor:
-      (1) **No drop**: pointer moves with fractional coordinates (a
-      trackpad; CDP sends whole pixels) and no button arrived mid-drag.
-      Chromium dropped the chip's capture, the release went to the grid,
-      and the chip **stayed lifted**: preview, drop slot and the
-      disabled wheel pan held until the next press.
-      (2) **Three days late**: the task editor opened mid-drag with no
-      pointerup. Only Enter or Space on the chip opens it that way, and
-      the press had focused the chip. The 360 px panel narrowed the
-      grid, so the release x fell past the last column and was clamped
-      to the strip's end (Oct 13 = index 10). The drop matched the
-      indicator, which followed the narrowed grid.
-      **Fixes, in the drag hook**: while a press is under way,
-      Enter and Space do nothing (a window capture listener, ahead of
-      every block's, chip's and row's own handler). A `lostpointercapture`
-      for the pressed pointer ends the press like Escape or a
-      pointercancel, and the stray release's click is still suppressed.
-      A lost capture ends the drag instead of trying to finish it: the
-      input says the button went up somewhere the chip never heard.
-      TZ and the OAuth file play no part (neither changes a render during
-      the drag). The correlation came from when the runs happened.
-
-### e2e windows take CDP input only (2026-10-10)
-
-- [x] Desktop e2e: a local run is immune to the developer's own keys and
-      trackpad — done (`todo/e2e-input-isolation`). Follow-up to #166,
-      which hardened the drag but could not finish a gesture whose input
-      says the button went up. **Harness only**: `launchApp` sets
-      `CALENDAR_E2E_INPUT=cdp`, and nothing changes for a normal run.
-      In that mode `windows.ts` shows the main and Settings windows with
-      `showInactive()` and orders them to the back with `blur()` (Nik
-      asked for the background over the top). The app never activates.
-      `setIgnoreMouseEvents(true)` passes clicks, moves and scrolls to the
-      window below. `Cdp.connect` enables
-      `Emulation.setFocusEmulationEnabled`, and the page still acts as
-      focused: programmatic focus, `:focus`/`:focus-visible` and
-      `document.hasFocus()` all failed in an unfocused window without it.
-      Chromium implements the emulation as a page capture, so a covered
-      window keeps drawing. That is why the background order is safe and
-      #159's hidden-window cause is gone. **`setIgnoreMouseEvents` was not
-      enough.** macOS still sends the window tracking-area enter/exit, and
-      Chromium makes them a
-      buttonless `mouseMove` plus a `mouseLeave` at the real cursor
-      position. Mid-drag that dropped the capture. A `before-mouse-event`
-      listener drops every
-      enter, leave and fractional position, since CDP can send no
-      enter/leave and the harness dispatches whole pixels. `Cdp.send`
-      rounds every `Input.dispatchMouseEvent`, so the integer rule holds
-      for a spec's own raw dispatch too, such as #166's buttonless move.
-      The OS's positions are fractions of a point. `clickCount` or the
-      button were rejected as the mark,
-      because #166's test sends a buttonless, clickless move on purpose.
-      `focusable: false` was not needed: keys never reached a window that
-      is never key.
-      **Side effect**: `browser-window-focus` no longer fires in e2e, so
-      the sync kick (`backendHost.ts`) and the settings-file check
-      (`settingsFile.ts`) never run from focus there. Not fixed here:
-      an e2e run from another checkout without this change still takes
-      focus.
+- **Calendars mirrored, events read through** (2026-09-19, #78) — a third
+  EventKit seam under one synthetic `apple-calendar` account. No local
+  rows and no window: EventKit already is a local database and expands
+  series itself — Nik wanted neither a rolling window nor drift from
+  Calendar.app, and the backend rpc stays the one query surface for
+  search and agents. Birthdays and sources named like a connected Google
+  account are skipped. EventKit-first writes with scopes mapped to spans;
+  guests and RSVP are Google-only, hidden in the editor and rejected by
+  the mutation layer. Moves take the whole series: a server `events.move`
+  inside one Google account, EventKit's own calendar change between Apple
+  calendars, otherwise copy-then-delete that drops guests and modified
+  occurrences after a confirmation (`previewMove`). Open: the two
+  _(verify)_ items in `docs/google-sync-and-testing.md`.
+
+## AI
+
+- **On-device models only** — no data leaves the device, no API keys, no
+  per-request cost, works offline; this matches the app's posture. Apple's
+  ~3B Foundation Models handle extraction and classification, not
+  multi-step reasoning, so **the model parses intent, deterministic code
+  does the work** — which keeps the valuable logic in `packages/*`,
+  unit-testable with a fake provider. iOS through `@react-native-ai/apple`,
+  desktop through a Swift helper over stdio (Foundation Models is
+  Swift-only), weak-linked so the binary runs on any macOS and reports
+  unavailable below 26; the renderer owns the microphone.
+- **Quick add, find a time, dictation** — one shared parser and a
+  prefilled-editor hand-off, never an auto-save; find-a-time parses only
+  the constraint sentence and a pure solver does the rest, chronological
+  ranking v1; dictation availability is decided by attempting `prepare()`
+  (the readiness flag is false until assets exist) and the recording is
+  deleted immediately. The simulator has no speech assets.
+- **The model says why it is unavailable** (2026-10-10, #168) —
+  `ModelStatus` carries disabled / not-ready / unsupported (Apple
+  Intelligence switches itself off on a Siri-vs-Mac language mismatch); a
+  not-ready model is re-polled; no "Open System Settings" button, the
+  tooltip names the pane.
+- **Capture from text or photo** (2026-10-04, #107) — OCR first, not
+  image input: Vision reads the image on-device and the text goes through
+  the existing `generateJson`; native image input exists only on OS 27 and
+  `@react-native-ai/apple` is text-only, so `TextRecognizer` is its own
+  seam (the permanent OS 26 path) rather than an image field on
+  `LanguageModel`. An undated item is dropped, never placed on today; a
+  past date without a stated year rolls forward. Review is a list whose
+  rows open the existing editor, so "never an auto-save" holds. Desktop
+  entry is ⌘V (a menu item and a main-process clipboard read were not
+  worth it); iOS uses `expo-sharing`'s receive support with a wrapped
+  plugin. Open: the real share sheet on a device (both variants), HEIC
+  from Photos, whether 6000 chars / 8 events fit the context.
+
+## Notifications
+
+- **Event reminders** (2026-09-22, #84) — reminders are data on the
+  record in Google's `useDefault`/`overrides` shape (also what EventKit
+  alarms map onto), edited in both editors and delivered by
+  `LocalNotifications`, two producers merged into one OS schedule; a
+  producer whose setting is off returns nothing, so disabling one no
+  longer wipes the other's schedule. `remindersChanged` on the op because
+  Google's PATCH replaces the object; `useDefault:false, overrides:[]` is
+  "none", distinct from the field being absent. Apple Calendar events
+  notify only when switched on (Calendar.app already fires those). The
+  desktop permission banner is posted once on first start.
+- **iOS background refresh** (2026-09-27, #92) — a `BGProcessingTask`
+  (not the `BGAppRefreshTask` the backlog named) runs a bounded pull then
+  a notification pass, in `packages/sync` so the ordering is unit-tested;
+  defined before the root component registers. Google tokens moved to
+  `AFTER_FIRST_UNLOCK` (chosen by Nik) so a pull can run while locked.
+- **Notification taps and zones** (#119, #142) — the text is in the
+  device's zone, an all-day reminder counts from midnight in the
+  calendar's; a planned notification carries a target the tap resolves
+  through the range query and then by stored id. iOS reads the permission
+  without asking; Electron has no query.
+
+## Calendar mirrors
+
+- **Calendar mirrors** (2026-10-02, #103) — a mirror, not a workflow: one
+  way, the app owns the copies, three presets and an Advanced
+  disclosure, no rule engine (a Zapier-style workflow rejected). A
+  reconcile with no mapping table: the destination is the state, any
+  device can run it, a cut-off run runs again; the price is that every
+  input must be device-independent (own queries past local visibility,
+  the mirror's own zone, portable keys — EventKit's external identifier).
+  Google writes bypass the pending-op queue (copies are derived) and use
+  PUT (a switched-off field must leave the copy); a derived id makes a
+  second device's insert a 409. Markers are opaque: the destination is
+  shared with people who can read both carriers. Two devices set up by
+  hand do not cooperate — the settings file is the only way across, an
+  imported mirror arrives switched off. Two backstops for what EventKit
+  cannot confirm: a large removal waits ten minutes, a third identical
+  write within a day pauses the mirror. Apple destinations are iCloud,
+  CalDAV or local (Exchange drops the URL). The editor can create the
+  destination under `calendar.app.created`. Rejected: iCloud key-value
+  sync of definitions (a new entitlement in every build). Open: a
+  narrow-scope sign-in creating a calendar, a real two-device run, the
+  new Swift paths against real EventKit.
+
+## Agent gateway
+
+- **MCP and CLI access for other agents** (2026-10-01, #99) — one gateway,
+  two front ends over the same `callTool`, a curated tool set (no
+  accounts, settings, conflicts, queue, moves or conversions). MCP is
+  served in Electron main and the relay only pipes, running under the
+  app's own binary (`ELECTRON_RUN_AS_NODE`) so agents need no Node — at
+  the price of keeping the RunAsNode fuse enabled until a Swift relay
+  exists. Levels per calendar and list (none < free/busy < read < ask <
+  write), guests and contacts as separate switches; `none` answers
+  NotFound so a denial never confirms a hidden calendar; hidden in the
+  app = `none`. The gateway resolves a write's real container first:
+  EventKit and Reminders address items by id alone. Ask-first stores a
+  summary the app wrote, re-plans from the stored input on approval and
+  runs only a plan whose summary equals the approved one; never through
+  MCP elicitation, which the agent's own client could answer; summaries
+  are never shortened, inputs are capped. A separate `agents.db`: the
+  phone never has agents, and grants must not ride along with anything
+  that syncs or exports. Token stored as SHA-256 only; a guardrail for
+  agents that connect through it, not a sandbox. The app took a
+  single-instance lock and a `--background` start so the relay can launch
+  it. Hidden text is refused, not stripped (#114). Open: a real
+  Hermes/OpenClaw session, the relay under the notarized build, a real
+  guest invitation at "ask".
+- **Settings window** (2026-10-02, #102) — Settings left the main window
+  for a window of its own opened from the application menu (⌘,), as the
+  HIG asks; panes, not a System Settings sidebar at first (five panes),
+  later a sidebar with search (#136). One bundle and a hash route
+  (`#settings/<pane>`) rather than a second vite entry; the pane lives in
+  the URL hash and the page never writes its own state over it (review
+  found the two ways a request made while the window opened was lost).
+  No gear in the main toolbar — the menu is the way in.
+
+## Review fixes (2026-10-04 … 2026-10-08, #110–#142)
+
+Tier 0 of the 2026-10-02 read-only review, one PR each, a failing test
+first. The decisions, one line each:
+
+- The all-day switch on an existing series is refused, not supported —
+  Google keys occurrences by date or date-time, so a real switch is a new
+  series and needs a live-verified design; an all-day series moves one
+  occurrence at a time (#110).
+- A newer task edit of another field keeps the queued one's: latest wins
+  field by field (#111).
+- Read-only calendars: the mutation layer refuses writes, not just the
+  UI; both apps stop the drag before it starts (#112).
+- Only a Google account asks before removal, naming its unsynced changes;
+  an Apple account only disconnects (#113).
+- Agent text that would draw as nothing is refused, not stripped; a
+  joiner or variation selector only inside a complete emoji (#114).
+- Repeat-until ends in the series' own zone (#115).
+- Notification text in the device's zone; an unloadable zone is read
+  under its other spelling, else the device's (#119).
+- The untitled placeholder stays in the record and is never written to
+  Google (#120).
+- Every editor write runs through one slot; `busy` only dims buttons
+  (disabled swallowed the next click) (#124).
+- A pulled event without a zone takes its calendar's, not UTC; a repeat
+  end before the first day is refused by the editors (#126).
+- Deletes confirm rather than undo — an undo would hold back the Google
+  op and fake the row's absence, and an Apple delete is immediate (#129).
+- One stack of dialogs; only the topmost answers Escape and traps Tab
+  (#130).
+- A calendar-list 410's full relist purges; an unreached request gets
+  one retry, not five (#131).
+- A sign-in can be cancelled, a cancellation is no error, and a reconnect
+  sends `login_hint` (#132).
+- The device zone is an atom read once a minute; Foundation's cached zone
+  is reset per foreground/request (#139).
+- A swipe that starts inside the previous commit animation takes that
+  page at once; resizing needs the same hold as moving (#140).
+- "New token" and "Remove" ask inline in the Agents pane (#141).
+- Unsynced changes show why the last attempt failed and name their task
+  (2026-10-10, #162).
+- A key or a lost pointer capture mid-drag ends the drag instead of
+  moving the drop; the e2e windows take CDP input only (Nik asked for the
+  background over the top) (#166, #169).
+
+## Brand
+
+- **App icons and brand kit** (2026-09-16, #67) — the "24" identity in
+  soft ivory (lightened toward white, mint fold, blush backing); SVG
+  masters are the source and every raster is generated by
+  `pnpm brand:build`; the dark icon is the iOS dev variant's. An icon
+  change alters the native fingerprint, so it reaches testers only
+  through a TestFlight build.

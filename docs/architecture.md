@@ -658,7 +658,8 @@ gateway carries all of it. Details, limits and the threat model:
   search (⌘F), an event's read-first inspector after a grid click or a
   search result (`EventInspector.tsx`), or the inline editor
   (`EditorPanel.tsx`, 360 px) from Edit, a slot, New (⌘N; ⌘K goes
-  straight into its quick-add field), a task chip or a result. A new
+  straight into its quick-add field), a task chip or a result. Single
+  keys: T = today, ←/→ step the view; ⌘, opens Settings from the menu. A new
   item's editor is the one add path: the quick-add field on top
   (`QuickAddBar`, a phrase or a dictation fills the form; Find time lists
   free slots), the Event | Task | Reminder control (`useEditorKinds`, only
@@ -772,7 +773,12 @@ gateway carries all of it. Details, limits and the threat model:
   `expo-background-task`, 30-minute minimum) runs `backgroundRefresh`: a
   pull bounded to 20 s, then one notification pass and a budgeted mirror
   pass; Google tokens are stored `AFTER_FIRST_UNLOCK` so that pull can run
-  while the phone is locked.
+  while the phone is locked (`apps/ios/src/tokenStore.ts`; a key change
+  writes the new item before deleting the old — the refresh token is the
+  only copy). The OS grants the `BGProcessingTask` when it likes; to
+  exercise it, call `triggerBackgroundRefreshForTesting` in a debug build
+  or the debugger's `_simulateLaunchForTaskWithIdentifier:` on
+  `com.expo.modules.backgroundtask.processing`.
 - **Event reminders** are data on the record (`EventRecord.reminders`,
   Google's `useDefault`/`overrides` shape; `useDefault:false` with no
   overrides is "none", distinct from the field being absent), mirrored

@@ -296,13 +296,23 @@ deliberately.
   `dispatchMain()`: MKLocalSearchCompleter never calls back without
   run-loop timers, and a main thread blocked in `readLine()` never
   delivers `EKEventStoreChanged` (stdin is read on a background thread).
+- Dependencies: `effect*` exact through the catalog (Dependabot ignores
+  them); `react` tilde-pinned to the React Native renderer's version; the
+  Expo-bound React Native stack moves only with the SDK (`npx expo install
+  --check` is the oracle); `vitest` equals the version vite-plus bundles.
+  The 2-day `minimumReleaseAge` gate is never bypassed, and a
+  `trustPolicyExclude` entry is added only by exact version after an audit
+  (the comments in `pnpm-workspace.yaml` say how).
 - Secrets: `google-oauth.local.json` is gitignored — never commit OAuth
   client config. OAuth tokens live only in TokenStore
   (Keychain/safeStorage), never in SQLite.
 - Workflow: one commit per task on a `todo/<slug>` branch → PR to `main` →
   CI green (gate + macOS e2e) → Nik merges. Direct pushes to main are
-  blocked. A shipped item's `[x]` entry moves from `todo.md` to
-  `docs/decisions.md` with the decisions it settled.
+  blocked. A shipped item leaves `todo.md` and gets a short record in
+  `docs/decisions.md` under its area: the decision, the alternatives
+  rejected, what it leaves open, and the PR for the detail — ten lines at
+  most. The mechanism goes in the current-state doc it belongs to, never
+  in the log, and the test list goes nowhere.
 - e2e tests must be date- and scroll-independent: seed relative to "today
   minus N days", locate elements via `scrollIntoView` (harness `locate`),
   and assert relative counts. Desktop specs open an event through the
