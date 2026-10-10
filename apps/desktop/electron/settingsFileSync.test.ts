@@ -253,7 +253,7 @@ describe('makeSettingsFileSync', () => {
     await sync.start();
     // The file changed underneath us without a watcher event.
     world.file = '{ "version": 1, "view": { "allDayLaneCollapsed": true } }';
-    world.state = { timeZones: { primary: 'UTC', zones: ['UTC'] }, version: 1 };
+    world.state = { timeZones: { primary: 'device', zones: ['device'] }, version: 1 };
     sync.onInvalidation([deviceSettingsKey('timeZones')]);
     await settle();
     expect(world.imports.at(-1)).toEqual({ version: 1, view: { allDayLaneCollapsed: true } });

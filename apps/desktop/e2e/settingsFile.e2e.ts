@@ -57,7 +57,7 @@ describe('settings file: applied at launch and while running, written back on ed
         '// the machine setup file',
         '{',
         '  "version": 1,',
-        '  "timeZones": { "primary": "UTC", "zones": ["UTC", "Asia/Kolkata"] },',
+        '  "timeZones": { "primary": "UTC", "zones": ["device", "UTC", "Asia/Kolkata"] },',
         '  "view": { "allDayLaneCollapsed": true },',
         '  "desktop": { "screenPrivacy": "visible" },',
         '  "accounts": [',
@@ -77,7 +77,7 @@ describe('settings file: applied at launch and while running, written back on ed
     const { cdp } = app;
     await expect
       .poll(() => readDeviceSetting(app.userDataDir, 'timeZones'), { timeout: 15_000 })
-      .toEqual({ primary: 'UTC', zones: ['UTC', 'Asia/Kolkata'] });
+      .toEqual({ primary: 'UTC', zones: ['device', 'UTC', 'Asia/Kolkata'] });
     expect(await readDeviceSetting(app.userDataDir, 'viewPreferences')).toEqual({
       allDayLaneCollapsed: true,
     });

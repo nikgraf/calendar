@@ -88,7 +88,7 @@ const seed = {
     calendar('cal-team', 'Team', 'reader'),
   ],
   // A fixed primary zone: the times the gateway prints do not depend on the machine.
-  deviceSettings: { timeZones: { primary: 'UTC', zones: ['UTC'] } },
+  deviceSettings: { timeZones: { primary: 'UTC', zones: ['device', 'UTC'] } },
   events: [
     event('evt-standup', 'cal-work', 'Standup meeting', todayAt(9)),
     event('evt-lunch', 'cal-work', 'Lunch with Ana', todayAt(12), {

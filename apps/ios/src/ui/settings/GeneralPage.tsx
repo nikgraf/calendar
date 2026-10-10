@@ -1,8 +1,13 @@
-import { useBackendMutations, useSettingsEditor, useTimeZoneSettings } from '@calendar/app-state';
+import {
+  useBackendMutations,
+  useDeviceZone,
+  useSettingsEditor,
+  useTimeZoneSettings,
+} from '@calendar/app-state';
 import {
   DEVICE_ONLY_SETTING_COPY,
+  isDeviceZone,
   MAX_TIME_ZONES,
-  Temporal,
   withPrimary,
   withZoneAdded,
   withZoneRemoved,
@@ -10,10 +15,13 @@ import {
   zoneSlug,
 } from '@calendar/core';
 import { useState } from 'react';
+import { useTheme } from '../theme.ts';
 import {
   ActionRow,
   Checkmark,
   Footer,
+  LeadingSpace,
+  LeadingSymbol,
   Section,
   SettingsPage,
   SwipeRow,
@@ -25,10 +33,13 @@ import { TimeZonePickerSheet } from './TimeZonePickerSheet.tsx';
  * General: the time zones this iPhone draws and the location cache. The
  * primary zone (the checked row) is what the grid, "today" and the editors
  * use; the others annotate the hour gutter, tall event blocks and the
- * editor. Every change sends the whole struct through the core editors so
- * `primary` and `zones` never drift apart.
+ * editor. The first row is the iPhone's own zone, resolved against the OS
+ * so it moves when the iPhone travels; it is never removed. Every change
+ * sends the whole struct through the core editors so `primary` and
+ * `zones` never drift apart.
  */
 export function GeneralPage() {
+  const { colors } = useTheme();
   const mutations = useBackendMutations();
   const [settings, persist] = useSettingsEditor(
     useTimeZoneSettings(),
@@ -48,7 +59,7 @@ export function GeneralPage() {
     }
   };
 
-  const deviceZone = Temporal.Now.timeZoneId();
+  const deviceZone = useDeviceZone();
   const full = settings !== null && settings.zones.length >= MAX_TIME_ZONES;
   const save = (next: NonNullable<typeof settings>) =>
     void persist(next).then(
@@ -64,7 +75,8 @@ export function GeneralPage() {
             <>
               <Footer>
                 The calendar is drawn in the checked zone; tap another to switch. The others appear
-                under each hour and on events. Swipe left on a zone to remove it.
+                under each hour and on events. The first zone is this iPhone&apos;s own and follows
+                it when you travel; swipe left on any other to remove it.
               </Footer>
               {notice ? (
                 <Footer testID="time-zones-notice" tone="danger">
@@ -79,21 +91,29 @@ export function GeneralPage() {
         >
           {settings.zones.map((zone) => {
             const primary = zone === settings.primary;
-            const slug = zoneSlug(zone);
+            const device = isDeviceZone(zone);
+            const slug = device ? 'device' : zoneSlug(zone);
             const row = {
               accessibilityRole: 'radio' as const,
               accessibilityState: { selected: primary },
               accessory: <Checkmark checked={primary} />,
+              leading: device ? (
+                <LeadingSymbol color={colors.primary} name="location.fill" />
+              ) : (
+                <LeadingSpace />
+              ),
               onPress: () => {
                 if (!primary) {
                   save(withPrimary(settings, zone));
                 }
               },
-              subtitle: zone === deviceZone ? `${zone} · This iPhone` : zone,
+              subtitle: device ? 'Follows this iPhone when you travel' : zone,
               testID: `time-zone-row-${slug}${primary ? '-primary' : ''}`,
-              title: zoneCity(zone),
+              title: zoneCity(device ? deviceZone : zone),
             };
-            return settings.zones.length > 1 ? (
+            return device ? (
+              <Row {...row} key={zone} />
+            ) : (
               <SwipeRow
                 {...row}
                 action={() => save(withZoneRemoved(settings, zone))}
@@ -101,12 +121,11 @@ export function GeneralPage() {
                 actionTestID={`time-zone-remove-${slug}`}
                 key={zone}
               />
-            ) : (
-              <Row {...row} key={zone} />
             );
           })}
           <ActionRow
             disabled={full}
+            leading={<LeadingSpace />}
             onPress={() => setPicking(true)}
             testID="time-zone-add"
             title={full ? `Up to ${String(MAX_TIME_ZONES)} Time Zones` : 'Add Time Zone…'}

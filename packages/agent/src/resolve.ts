@@ -19,7 +19,7 @@ import {
 } from '@calendar/core';
 import { AccountRepo, CalendarRepo, DeviceSettingsRepo, EventRepo, TaskRepo } from '@calendar/db';
 import { deviceTimeZone } from '@calendar/sync';
-import { readTimeZoneSettings } from '@calendar/sync/deviceSettings';
+import { readPrimaryTimeZone } from '@calendar/sync/deviceSettings';
 import { Clock, Effect } from 'effect';
 import type { SqlError } from 'effect/sql/SqlError';
 import {
@@ -109,13 +109,13 @@ export const loadDirectory = (
         list,
       }))
       .filter((entry) => entry.level !== 'none');
-    const zones = yield* readTimeZoneSettings;
+    const timeZone = yield* readPrimaryTimeZone;
     return {
       accountLabel: (accountId) => accountLabelOf(accounts.get(accountId)),
       accounts,
       calendars,
       taskLists,
-      timeZone: zones.primary,
+      timeZone,
     };
   });
 

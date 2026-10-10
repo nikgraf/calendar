@@ -36,7 +36,10 @@ describe('buildSettingsDocument', () => {
           taskList('apple-reminders', 'ek-groceries', 'Groceries', false),
         ],
       });
-      yield* writeTimeZoneSettings({ primary: 'Asia/Calcutta', zones: ['Asia/Calcutta', 'UTC'] });
+      yield* writeTimeZoneSettings({
+        primary: 'Asia/Calcutta',
+        zones: ['device', 'Asia/Calcutta', 'UTC'],
+      });
       yield* writeBirthdayReminderOverrides([
         { day: 4, displayName: 'Alice', leadDays: [14], month: 3 },
       ]);
@@ -48,7 +51,7 @@ describe('buildSettingsDocument', () => {
       expect(document.desktop).toEqual({ screenPrivacy: 'visible' });
       expect(document.timeZones).toEqual({
         primary: 'Asia/Kolkata',
-        zones: ['Asia/Kolkata', 'UTC'],
+        zones: ['device', 'Asia/Kolkata', 'UTC'],
       });
       expect(document.eventNotifications).toEqual({ enabled: true, includeAppleCalendar: false });
       expect(document.view).toEqual({ allDayLaneCollapsed: false });
