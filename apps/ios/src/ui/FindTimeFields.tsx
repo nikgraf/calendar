@@ -16,6 +16,7 @@ import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from 
 import { backendClient } from '../backend.ts';
 import { languageModel } from '../model.ts';
 import { chip, chipLabel, useSheetStyles } from './editSheetShared.ts';
+import { onAppActive } from './QuickAddBar.tsx';
 import { BOX_FONT_SCALE, type ThemeColors, useStyles } from './theme.ts';
 
 /**
@@ -28,7 +29,7 @@ import { BOX_FONT_SCALE, type ThemeColors, useStyles } from './theme.ts';
 export function FindTimeFields({ model }: { model: ReturnType<typeof useEventEditorModel> }) {
   const sheetStyles = useSheetStyles();
   const styles = useStyles(makeStyles);
-  const { status } = useModelAvailability(languageModel);
+  const { status } = useModelAvailability(languageModel, onAppActive);
   const { existing, scope } = model;
   const finder = useFindTimeModel({
     backend: backendClient,

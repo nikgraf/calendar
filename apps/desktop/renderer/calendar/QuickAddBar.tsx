@@ -13,7 +13,7 @@ import { captureSourceOf, isCapturableInPhrase, readPaste } from './captureClipb
 export const QUICK_ADD_PLACEHOLDER = 'Lunch with Sarah tomorrow at 1';
 
 /** Re-check the model when the window regains focus (Apple Intelligence is switched on in System Settings). */
-const onWindowFocus = (onActive: () => void): (() => void) => {
+export const onWindowFocus = (onActive: () => void): (() => void) => {
   window.addEventListener('focus', onActive);
   return () => window.removeEventListener('focus', onActive);
 };

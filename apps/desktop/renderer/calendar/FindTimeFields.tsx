@@ -17,6 +17,7 @@ import { backend } from '../backend.ts';
 import { Button } from '../ui/Button.tsx';
 import { FIELD_CLASS, LABEL_CLASS } from '../ui/fieldStyles.ts';
 import { SegmentedControl } from '../ui/SegmentedControl.tsx';
+import { onWindowFocus } from './QuickAddBar.tsx';
 
 /**
  * "Find a time" beside the event's date and times: a few presets over
@@ -26,7 +27,7 @@ import { SegmentedControl } from '../ui/SegmentedControl.tsx';
  * works the same. The duration starts as the form's own.
  */
 export function FindTimeFields({ model }: { model: ReturnType<typeof useEventEditorModel> }) {
-  const { status } = useModelAvailability(desktopLanguageModel);
+  const { status } = useModelAvailability(desktopLanguageModel, onWindowFocus);
   const { existing, scope } = model;
   const finder = useFindTimeModel({
     backend,

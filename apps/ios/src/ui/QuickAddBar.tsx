@@ -28,7 +28,7 @@ const UNAVAILABLE_NOTICE =
  * app: re-check on the way back so the field appears without a relaunch.
  * Model downloads finish out of process too.
  */
-const onAppActive = (onActive: () => void): (() => void) => {
+export const onAppActive = (onActive: () => void): (() => void) => {
   const subscription = AppState.addEventListener('change', (next) => {
     if (next === 'active') {
       onActive();

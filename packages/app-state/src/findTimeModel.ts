@@ -12,6 +12,8 @@ import {
   finderWindowOf,
   type FindSlotsConstraints,
   type FreeSlot,
+  isDrawnOccurrence,
+  isSameEvent,
   type RecurringScope,
   withFinderBounds,
   withFinderDays,
@@ -22,10 +24,12 @@ import { useToday } from './hooks.ts';
 
 /**
  * Rows the finder must not count as busy: the event being rescheduled.
- * Its own row always; for a series edit, the occurrences the edit
- * covers — all of them for "All events", this one and the later ones
- * for "This and following" (the earlier ones stay where they are when
- * the series splits), only this one for "This event".
+ * Its own row always; for a series edit, the occurrences the edit moves
+ * — the drawn ones, all of them for "All events", this one and the
+ * later ones for "This and following" (the earlier ones stay where they
+ * are when the series splits), only this one for "This event". A
+ * stored exception keeps its own times through a series edit, so it
+ * stays busy unless it is the row being edited.
  */
 export const rescheduledEventExclusion = (
   existing: EventRecord | undefined,
@@ -40,10 +44,17 @@ export const rescheduledEventExclusion = (
     if (event.accountId !== existing.accountId || event.calendarId !== existing.calendarId) {
       return false;
     }
-    if (event.id === existing.id) {
+    // By identity, not id: an occurrence's drawn id becomes Google's once
+    // it is edited on its own, which a sync can land mid-edit.
+    if (isSameEvent(event, existing)) {
       return true;
     }
-    if (masterId === undefined || scope === 'instance' || event.recurringEventId !== masterId) {
+    if (
+      masterId === undefined ||
+      scope === 'instance' ||
+      event.recurringEventId !== masterId ||
+      !isDrawnOccurrence(event)
+    ) {
       return false;
     }
     return scope === 'series' || (event.originalStartUtc ?? event.startUtc) >= from;
@@ -113,6 +124,14 @@ export const useFindTimeModel = ({
     invalidate();
     setConstraints(next);
   };
+  // Gone (the kind flipped to a task): an answer still coming must not
+  // touch the form, which stays mounted.
+  useEffect(
+    () => () => {
+      request.current += 1;
+    },
+    [],
+  );
   // The exclusion changed under the slots (the scope control): they were
   // found with other rows free.
   const seenContext = useRef(contextKey);
