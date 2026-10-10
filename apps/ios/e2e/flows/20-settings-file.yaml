@@ -8,7 +8,7 @@ tags:
 - runFlow:
     file: ../common/open-settings-page.yaml
     env:
-      PAGE: advanced
+      PAGE: file
 - assertVisible:
     id: 'settings-file'
 - assertVisible:
@@ -37,7 +37,7 @@ tags:
       - waitForAnimationToEnd:
           timeout: 3000
 - assertNotVisible: 'Save to Files'
-# Still on the Advanced page: the drag closed the share sheet, not Settings.
+# Still on the Settings File page: the drag closed the share sheet, not Settings.
 - assertVisible:
     id: 'settings-file-export'
 # Import hands off to the system document picker (any file type; the

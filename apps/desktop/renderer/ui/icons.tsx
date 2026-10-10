@@ -198,18 +198,16 @@ export const PANE_ICON_PATHS = {
       <path d="M5 19.5c.6-3.4 3.4-5.5 7-5.5s6.4 2.1 7 5.5" />
     </>
   ),
-  advanced: (
-    <>
-      <path d="M4 7h9m5 0h2M4 12h3m5 0h8M4 17h7m5 0h4" />
-      <circle cx="15.5" cy="7" r="2" />
-      <circle cx="9.5" cy="12" r="2" />
-      <circle cx="13.5" cy="17" r="2" />
-    </>
-  ),
   agents: (
     <>
       <rect height="15" rx="3" width="18" x="3" y="4.5" />
       <path d="m7.5 10 2.5 2.25L7.5 14.5M12.5 14.5h4" />
+    </>
+  ),
+  file: (
+    <>
+      <path d="M13.5 3.5h-6a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h9a2 2 0 0 0 2-2V8.5z" />
+      <path d="M13.5 3.5v5h5M9 13h6M9 16.5h4" />
     </>
   ),
   general: (

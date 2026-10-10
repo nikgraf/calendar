@@ -36,9 +36,9 @@ const seed = { accounts: [account], calendars: [calendar], events: [] };
 
 const fileText = (app: App): string => readFileSync(app.settingsFilePath, 'utf8');
 
-/** The settings window on Advanced, where the file's card lives. */
+/** The settings window on Settings File, where the file's card lives. */
 const openSettings = async (app: App): Promise<App['cdp']> => {
-  const settings = await app.openSettings('advanced');
+  const settings = await app.openSettings('file');
   await settings.waitFor(`!!document.querySelector('[data-testid="settings-file"]')`);
   return settings;
 };

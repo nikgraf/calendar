@@ -43,13 +43,13 @@ const PANE_CONTENT: Record<SettingsPaneId, ReactNode> = {
       <ContactsSection />
     </>
   ),
-  advanced: (
+  agents: <AgentsSection />,
+  file: (
     <>
       <SettingsTransferSection />
       <SettingsFileSection />
     </>
   ),
-  agents: <AgentsSection />,
   general: (
     <>
       <TimeZonesSection />
@@ -69,8 +69,8 @@ const PANE_CONTENT: Record<SettingsPaneId, ReactNode> = {
 /** The icon squares' tints: one hue per pane, like System Settings. */
 const PANE_TINT: Record<SettingsPaneId, string> = {
   accounts: 'bg-event-blue text-on-event-blue',
-  advanced: 'bg-fill text-ink-secondary',
   agents: 'bg-event-lilac text-on-event-lilac',
+  file: 'bg-fill text-ink-secondary',
   general: 'bg-fill text-ink',
   mirrors: 'bg-event-mint text-on-event-mint',
   notifications: 'bg-event-blush text-on-event-blush',

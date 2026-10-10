@@ -156,6 +156,12 @@ export function SettingsRoot() {
 
         <Section>
           <NavRow
+            href="/settings/file"
+            leading={<IconTile color={colors['event-blue-edge']} name="doc.fill" />}
+            testID="settings-row-file"
+            title="Settings File"
+          />
+          <NavRow
             href="/settings/advanced"
             leading={<IconTile color={colors['text-secondary']} name="slider.horizontal.3" />}
             testID="settings-row-advanced"

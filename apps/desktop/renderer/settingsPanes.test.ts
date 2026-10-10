@@ -10,6 +10,8 @@ describe('filterPanes', () => {
   it('matches labels and keywords, case-folded, keeping the sidebar order', () => {
     expect(filterPanes('ACCOUNTS').map((pane) => pane.id)).toEqual(['accounts']);
     expect(filterPanes('time zone').map((pane) => pane.id)).toEqual(['general']);
+    expect(filterPanes('settings file').map((pane) => pane.id)).toEqual(['file']);
+    expect(filterPanes('import').map((pane) => pane.id)).toEqual(['file']);
     // "reminders" is both an Accounts connection and a Notifications setting.
     expect(filterPanes('reminders').map((pane) => pane.id)).toEqual(['accounts', 'notifications']);
   });
