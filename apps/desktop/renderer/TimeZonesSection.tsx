@@ -16,6 +16,7 @@ import {
 } from '@calendar/core';
 import { useState } from 'react';
 import { TimeZonePicker } from './TimeZonePicker.tsx';
+import { SETTINGS_BUTTON_CLASS } from './ui/buttonStyles.ts';
 import { LocationIcon } from './ui/icons.tsx';
 
 /**
@@ -113,13 +114,13 @@ export function TimeZonesSection() {
       ) : (
         <button
           aria-label="Add time zone"
-          className="mt-3 text-sm text-primary hover:underline disabled:text-ink-secondary disabled:no-underline"
+          className={`${SETTINGS_BUTTON_CLASS} mt-3`}
           disabled={full}
           onClick={() => setPicking(true)}
           title={full ? `Up to ${MAX_TIME_ZONES} time zones.` : undefined}
           type="button"
         >
-          Add time zone
+          Add time zone…
         </button>
       )}
       {notice ? (

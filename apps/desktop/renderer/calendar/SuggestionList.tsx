@@ -1,12 +1,15 @@
-import type { ReactNode } from 'react';
+import { type ReactNode, useEffect } from 'react';
 
 /**
- * The dropdown under a typeahead input, shared by the invitee and location
- * comboboxes so their chrome cannot drift: rows are `role="option"`
- * buttons the input's aria-activedescendant points at, the highlighted
- * row is tinted, stale rows (an earlier query's, see useStaleSearch) show
- * dimmed and never select, and mousedown is swallowed so a click does not
- * blur the input before it lands. Keyboard handling stays on each input.
+ * The dropdown under a typeahead input, shared by the invitee, location
+ * and time zone comboboxes so their chrome cannot drift: rows are
+ * `role="option"` buttons the input's aria-activedescendant points at,
+ * the highlighted row is tinted, stale rows (an earlier query's, see
+ * useStaleSearch) show dimmed and never select, and mousedown is
+ * swallowed so a click does not blur the input before it lands. Keyboard
+ * handling stays on each input. A `scrollable` list (the whole time zone
+ * catalog) caps its height and keeps the highlighted row in view as the
+ * arrows move it.
  */
 export function SuggestionList<T>({
   children,
@@ -17,6 +20,7 @@ export function SuggestionList<T>({
   onChoose,
   renderItem,
   rowClassName = 'items-baseline gap-2',
+  scrollable = false,
   setHighlight,
   stale,
 }: {
@@ -30,12 +34,25 @@ export function SuggestionList<T>({
   renderItem: (item: T) => ReactNode;
   /** Layout classes for a row's content (flex is always on). */
   rowClassName?: string;
+  /** A long list: capped height, scrolls, follows the highlight. */
+  scrollable?: boolean;
   setHighlight: (index: number) => void;
   stale: boolean;
 }) {
+  // `items` is a dependency so a new query (highlight back at 0) scrolls
+  // the narrowed list back to its top.
+  useEffect(() => {
+    if (scrollable) {
+      document.getElementById(`${listId}-${highlight}`)?.scrollIntoView({ block: 'nearest' });
+    }
+  }, [highlight, items, listId, scrollable]);
+
   return (
     <div
-      className="absolute top-full right-0 left-0 z-50 mt-1 overflow-hidden rounded-lg border border-hairline bg-surface shadow-xl"
+      className={`absolute top-full right-0 left-0 z-50 mt-1 rounded-lg border border-hairline bg-surface shadow-xl ${
+        scrollable ? 'max-h-72 overflow-y-auto overscroll-contain' : 'overflow-hidden'
+      }`}
+      data-testid={scrollable ? `${listId}-list` : undefined}
       id={listId}
       role="listbox"
     >

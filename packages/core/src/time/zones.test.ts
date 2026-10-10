@@ -114,9 +114,11 @@ describe('searchTimeZones', () => {
     expect(searchTimeZones('asia/kol')[0]?.id).toBe('Asia/Kolkata');
   });
 
-  it('lists everything for an empty query, capped', () => {
-    expect(searchTimeZones('').length).toBe(50);
-    expect(searchTimeZones('   ').length).toBe(50);
+  it('lists the whole catalog for an empty query, in catalog order', () => {
+    const all = searchTimeZones('');
+    expect(all.map((match) => match.id)).toEqual(allTimeZoneIds());
+    expect(searchTimeZones('   ')).toEqual(all);
+    expect(searchTimeZones('', ['UTC'])).toHaveLength(all.length - 1);
   });
 
   it('drops excluded zones', () => {

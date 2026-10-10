@@ -36,9 +36,8 @@ import {
 import { useEffect, useState } from 'react';
 import { Dialog } from './Dialog.tsx';
 import { CALLOUT_CLASS } from './ui/calloutStyles.ts';
+import { SETTINGS_BUTTON_CLASS as BUTTON } from './ui/buttonStyles.ts';
 
-const BUTTON =
-  'rounded-lg border border-hairline-strong px-3 py-1.5 text-sm hover:bg-surface-subtle disabled:opacity-50';
 const PRIMARY =
   'rounded-lg bg-primary px-3 py-1.5 text-sm font-medium text-on-primary hover:bg-primary-hover disabled:opacity-50';
 const FIELD = 'w-full rounded-lg border border-hairline bg-surface px-3 py-1.5 text-sm';

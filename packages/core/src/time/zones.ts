@@ -572,8 +572,6 @@ export interface TimeZoneMatch {
   readonly region: string;
 }
 
-const MAX_MATCHES = 50;
-
 const normalize = (value: string): string => value.toLowerCase().replaceAll('_', ' ');
 
 const words = (value: string): ReadonlyArray<string> => normalize(value).split(/[\s/]+/);
@@ -582,8 +580,9 @@ const words = (value: string): ReadonlyArray<string> => normalize(value).split(/
  * Picker search: a case- and underscore-insensitive word-prefix match on
  * the city, the region and the raw id. City matches rank first, then
  * region matches, then anything else; ties keep catalog order. An empty
- * query lists everything (capped). `exclude` drops the zones already
- * picked. `ids` defaults to the catalog as this engine accepts it.
+ * query lists the whole catalog — the pickers scroll it, and typing
+ * narrows it. `exclude` drops the zones already picked. `ids` defaults to
+ * the catalog as this engine accepts it.
  */
 export const searchTimeZones = (
   query: string,
@@ -613,8 +612,5 @@ export const searchTimeZones = (
       ranked.push({ match, rank });
     }
   }
-  return ranked
-    .sort((a, b) => a.rank - b.rank)
-    .slice(0, MAX_MATCHES)
-    .map((entry) => entry.match);
+  return ranked.sort((a, b) => a.rank - b.rank).map((entry) => entry.match);
 };

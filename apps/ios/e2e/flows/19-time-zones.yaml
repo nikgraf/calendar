@@ -20,6 +20,11 @@ tags:
 # device zone, so "noon Honolulu = 3:30 AM Kolkata" holds on any host.
 - tapOn:
     id: 'time-zone-add'
+# The sheet opens on the whole catalog, its first zone at the top.
+- extendedWaitUntil:
+    visible:
+      id: 'time-zone-option-Africa-Abidjan'
+    timeout: 5000
 - tapOn:
     id: 'time-zone-search'
 - inputText: 'Honolulu'

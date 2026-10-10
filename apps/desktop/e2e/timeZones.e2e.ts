@@ -136,9 +136,31 @@ describe('time zones: the settings section', () => {
       await calendar.eval(`!!document.querySelector('[data-testid="hour-secondary-12"]')`),
     ).toBe(false);
 
-    // Add Kolkata through the search.
+    // The picker opens on the whole catalog in a list that scrolls; a
+    // query no zone matches says so, and Cancel brings the button back.
+    const LIST = '[data-testid="time-zone-options-list"]';
+    const optionCount = () =>
+      cdp.eval<number>(`document.querySelectorAll('${LIST} [role="option"]').length`);
+    await clickButton('Add time zone');
+    await cdp.waitFor(`!!document.querySelector('${LIST}')`);
+    const catalog = await optionCount();
+    expect(catalog).toBeGreaterThan(300);
+    expect(
+      await cdp.eval<boolean>(
+        `(() => { const list = document.querySelector('${LIST}'); return list.scrollHeight > list.clientHeight; })()`,
+      ),
+    ).toBe(true);
+    await cdp.type('input[aria-label="Search time zones"]', 'zzzz');
+    await cdp.waitFor(`!!document.querySelector('[data-testid="time-zone-no-match"]')`);
+    await cdp.clickTestId('time-zone-cancel');
+    await cdp.waitFor(`!!document.querySelector('button[aria-label="Add time zone"]')`);
+
+    // Add Kolkata through the search: typing narrows the list.
     await clickButton('Add time zone');
     await cdp.type('input[aria-label="Search time zones"]', 'kolk');
+    await cdp.waitFor(
+      `document.querySelectorAll('${LIST} [role="option"]').length < ${String(catalog)}`,
+    );
     const option = await cdp.locate('[data-testid="time-zone-option-Asia-Kolkata"]');
     await cdp.click(option.x, option.y);
     await expect
