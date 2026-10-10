@@ -1468,11 +1468,23 @@ describe('calendar desktop e2e', () => {
     await cdp.waitFor(`!document.querySelector('[data-testid="editor"]')`);
   });
 
-  it('adds an undated task from the panel', async () => {
+  it('adds an undated task through New › Task › No due date', async () => {
     const { cdp } = app;
     await cdp.showRail();
-    await cdp.type('[data-testid="panel-add-task"]', 'Sharpen the pencils');
-    await cdp.eval(`document.querySelector('[data-testid="panel-add-task"]').form.requestSubmit()`);
+    const add = await cdp.locate('button[aria-label="New event"]');
+    await cdp.click(add.x, add.y);
+    await cdp.waitFor(`document.body.textContent.includes('New event')`);
+    await cdp.clickButtonWithText('Task');
+    await cdp.waitFor(`document.body.textContent.includes('New task')`);
+    await cdp.clickTestId('task-remove-due-date');
+    await cdp.waitFor(`!!document.querySelector('[data-testid="task-no-due-date"]')`);
+    await cdp.eval(`(() => {
+      const input = document.querySelector('input[placeholder="Title"]');
+      const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+      setter.call(input, 'Sharpen the pencils');
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    })()`);
+    await cdp.clickButtonWithText('Save');
     await expect
       .poll(async () => {
         const task = (await readTasks(app.userDataDir)).find(
