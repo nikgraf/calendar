@@ -20,8 +20,10 @@ const labels = (request: EditorConfirmRequest): { readonly no: string; readonly 
 };
 
 /**
- * The inline question the event and task editors show before a lossy
- * move, conversion or create-mode switch, and before a delete.
+ * The inline question the editor shows before a lossy move, conversion
+ * or create-mode switch, and before a delete. The panel renders it as a
+ * footer below the scrolling form, so it is on screen wherever the form
+ * is scrolled to; the footer never grows past a few lines of text.
  */
 export function MoveConfirm({
   moveConfirmation,
@@ -35,11 +37,13 @@ export function MoveConfirm({
   const { no, yes } = labels(pending);
   return (
     <div
-      className={`${CALLOUT_CLASS.warning} mt-4 p-3 text-sm`}
+      className={`${CALLOUT_CLASS.warning} p-3 text-sm`}
       data-testid="move-confirm"
       role="alertdialog"
     >
-      <p>{pending.summary}</p>
+      {/* A delete question carries the whole title: the text scrolls past
+          a few lines so the answers stay in view at the smallest window. */}
+      <p className="max-h-24 overflow-y-auto">{pending.summary}</p>
       <div className="mt-2 flex justify-end gap-2">
         <button
           className="rounded-lg px-3 py-1 hover:bg-fill"
