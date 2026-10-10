@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vite-plus/test';
-import { buildMonthGrid, dayRange, daySpanRange, weekStart } from './ranges.ts';
+import { buildMonthGrid, dayRange, daySpanRange, weekRun, weekStart } from './ranges.ts';
 import { Temporal } from './temporal.ts';
 
 describe('ranges', () => {
@@ -39,5 +39,21 @@ describe('ranges', () => {
     expect(weeks.at(-1)![6]!.date.toString()).toBe('2026-08-02');
     const today = weeks.flat().find((day) => day.isToday);
     expect(today?.date.toString()).toBe('2026-07-02');
+  });
+
+  it('weekRun finds the columns of a week row a window of days covers', () => {
+    const weeks = buildMonthGrid(
+      Temporal.PlainYearMonth.from('2026-10'),
+      Temporal.PlainDate.from('2026-10-10'),
+    );
+    // weeks[2] is Mon Oct 12 – Sun Oct 18, weeks[3] Mon Oct 19 – Sun Oct 25.
+    const wed = Temporal.PlainDate.from('2026-10-14');
+    const tue = Temporal.PlainDate.from('2026-10-20');
+    expect(weekRun(weeks[2]!, wed, tue)).toEqual({ from: 2, to: 6 });
+    expect(weekRun(weeks[3]!, wed, tue)).toEqual({ from: 0, to: 1 });
+    expect(weekRun(weeks[1]!, wed, tue)).toBeNull();
+    const monday = Temporal.PlainDate.from('2026-10-12');
+    expect(weekRun(weeks[2]!, monday, monday.add({ days: 6 }))).toEqual({ from: 0, to: 6 });
+    expect(weekRun(weeks[2]!, wed, wed)).toEqual({ from: 2, to: 2 });
   });
 });

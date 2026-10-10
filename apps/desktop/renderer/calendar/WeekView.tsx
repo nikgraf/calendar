@@ -14,6 +14,8 @@ import {
   partitionCalendarTasks,
   taskCalendarDate,
   secondaryHourLabels,
+  type Slide,
+  slideSpan,
   type SlotRange,
   slotTimes,
   type TaskRecord,
@@ -85,15 +87,20 @@ function GridDropIndicator({
 }
 
 /**
- * The rendered day columns, buffer included — what the drag hook and the
- * strip share. Empty in the month view, which has no day columns (the app
- * owns the hook, so it computes this in every view).
+ * The rendered day columns, buffer and a slide's travelled days included —
+ * what the drag hook and the strip share. Empty in the month view, which
+ * has no day columns (the app owns the hook, so it computes this in every
+ * view).
  */
-export const useWeekStrip = (days: ReadonlyArray<Temporal.PlainDate>) =>
+export const useWeekStrip = (days: ReadonlyArray<Temporal.PlainDate>, slide: Slide) =>
   useMemo(() => {
     const first = days[0];
-    return first === undefined ? [] : bufferedDays(first, days.length, PAN_BUFFER_DAYS);
-  }, [days]);
+    if (first === undefined) {
+      return [];
+    }
+    const span = slideSpan(first, days.length, slide);
+    return bufferedDays(span.first, span.count, PAN_BUFFER_DAYS);
+  }, [days, slide]);
 
 export function WeekView({
   birthdays,
@@ -109,6 +116,7 @@ export function WeekView({
   onBirthdayClick,
   onEventClick,
   onNavigate,
+  onSlideEnd,
   onSlotClick,
   onSlotDrag,
   onTaskClick,
@@ -117,6 +125,7 @@ export function WeekView({
   scrollRef,
   secondaryZones,
   selectedKey,
+  slide,
   tasks,
   timeZone,
   today: todayIso,
@@ -136,6 +145,8 @@ export function WeekView({
   onBirthdayClick: (birthday: BirthdayOccurrence) => void;
   onEventClick: (event: EventRecord) => void;
   onNavigate: (dayCount: number) => void;
+  /** A slide to a picked first day is over: drop the days it travelled across. */
+  onSlideEnd: () => void;
   onSlotClick: (date: Temporal.PlainDate, hour: number) => void;
   /** A slot drawn by dragging on empty grid space. */
   onSlotDrag: (
@@ -151,6 +162,8 @@ export function WeekView({
   secondaryZones: ReadonlyArray<string>;
   /** `calendarId:id` of the event open in the side panel: its block gets the outline. */
   selectedKey: string | undefined;
+  /** The extra days drawn on each side while the view slides to a picked first day. */
+  slide: Slide;
   tasks: ReadonlyArray<TaskRecord>;
   timeZone: string;
   /** Today's ISO date (rolls at local midnight). */
@@ -161,13 +174,16 @@ export function WeekView({
   const today = Temporal.PlainDate.from(todayIso);
 
   // The pan strip renders buffer columns on both sides of the visible days
-  // so horizontal panning reveals fully drawn neighbours.
-  const strip = useWeekStrip(days);
+  // so horizontal panning reveals fully drawn neighbours (and, during a
+  // slide, the days it travels across).
+  const strip = useWeekStrip(days, slide);
   // Strips are (buffered/visible)× as wide as their clipped viewport and
-  // sit shifted left by the leading buffer; `--pan-x` (set imperatively by
-  // useWheelPan on the root) adds the live gesture offset.
+  // sit shifted left by the columns before the first visible day;
+  // `--pan-x` (set imperatively by useWheelPan on the root) adds the live
+  // gesture or slide offset.
+  const leading = PAN_BUFFER_DAYS + slide.lead;
   const stripStyle = {
-    transform: `translateX(calc(${-(PAN_BUFFER_DAYS / strip.length) * 100}% + var(--pan-x, 0px)))`,
+    transform: `translateX(calc(${-(leading / strip.length) * 100}% + var(--pan-x, 0px)))`,
     width: `${(strip.length / days.length) * 100}%`,
   };
 
@@ -199,8 +215,10 @@ export function WeekView({
     enabled: drag.preview === null && slot.selection === null,
     firstDay: days[0]!,
     onCommitDays: onNavigate,
+    onSlideEnd,
     rootRef,
     scrollerRef: scrollRef,
+    slide,
     viewportRef,
     visibleDayCount: days.length,
   });
@@ -320,7 +338,7 @@ export function WeekView({
     [firstDay, timeZone, secondaryZones],
   );
   return (
-    <div className="flex min-h-0 flex-1 flex-col" ref={rootRef}>
+    <div className="flex min-h-0 flex-1 flex-col" data-testid="week-view" ref={rootRef}>
       <DayHeaders
         gutterClassName={gutterClassName}
         scrollbarWidth={scrollbarWidth}

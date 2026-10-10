@@ -37,6 +37,7 @@ export function DayHeaders({
                 // Fixed height: the today-circle is taller than plain text,
                 // and a header that resizes while panning shifts the grid.
                 className="flex h-10 items-center gap-1.5 border-l border-hairline px-2"
+                data-date={day.toString()}
                 data-testid={isToday ? 'today-header' : undefined}
                 key={day.toString()}
               >

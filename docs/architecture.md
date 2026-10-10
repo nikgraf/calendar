@@ -625,7 +625,14 @@ details, or Custom), so a calendar can be shared without the details.
   would otherwise turn into an hour click.
 - **Paging**: the desktop trackpad pans day columns 1:1 inside a clipped
   strip (`core/gestures/wheelPan.ts`, `--pan-x` written imperatively) and
-  eases to the nearest day when the wheel goes quiet; iOS swipes page day
+  eases to the nearest day when the wheel goes quiet. A mini-month day
+  (`scrollToDay`) becomes the first column: the strip and the range also
+  draw the days slid across (`slideSpan`, at most two windows — farther
+  picks start that far short), the offset eases from where they sit — a
+  second pick mid-slide carries on from there — a pan grabs a slide
+  mid-way, and a held pointer keeps the extra days until it comes up (a
+  press holds its strip column). The mini month highlights the visible
+  days, so a rolled week crosses two rows. iOS swipes page day
   by day over a drawn buffer per view (`core/layout/dayStrip.ts`), the
   UI thread handing React the pixels navigated so the page change and the
   strip move land in one mount.

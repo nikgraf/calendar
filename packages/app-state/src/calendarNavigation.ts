@@ -2,6 +2,10 @@ import {
   bufferedRange,
   type CalendarViewKind,
   monthGridRange,
+  nextSlide,
+  NO_SLIDE,
+  type Slide,
+  slideSpan,
   Temporal,
   type UtcRange,
   weekStart,
@@ -80,10 +84,13 @@ export const titleFor = (
  * View + focused day + the week window, and everything derived from them:
  * the fetch range, the visible days, the header title, stepping, panning
  * and the Today reset. Both apps carried this block; the week view's
- * rolling window (only wheel/swipe navigation sets it; Today and view
- * switches snap back to the Monday week) is the same on both. The day
+ * rolling window (only wheel/swipe navigation and a picked day set it;
+ * Today and view switches snap back to the Monday week) is the same on
+ * both. The day
  * and two-day views anchor on the focused day itself, so they need no
- * window state: the focused day is the first column.
+ * window state: the focused day is the first column. A picked day
+ * (`scrollToDay`) leads the strip instead, and `slide` holds the days the
+ * view draws to slide to it until the view calls `endSlide`.
  */
 export const useCalendarNavigation = ({
   dayBuffer,
@@ -96,6 +103,10 @@ export const useCalendarNavigation = ({
   const [view, setView] = useState<CalendarViewKind>(initialView);
   const [focused, setFocused] = useState(() => Temporal.Now.plainDateISO(timeZone));
   const [weekWindowStart, setWeekWindowStart] = useState<Temporal.PlainDate | null>(null);
+  // The extra days a slide to a picked first day draws. Every other
+  // navigation clears it, so a first day that changes while it is set is
+  // that slide's, never a jump's.
+  const [slide, setSlide] = useState<Slide>(NO_SLIDE);
 
   const windowStart = useMemo(
     () => (view === 'week' ? (weekWindowStart ?? weekStart(focused)) : focused),
@@ -113,17 +124,18 @@ export const useCalendarNavigation = ({
           : dayBuffer;
   const dayCount = visibleDays(view);
 
-  const range: UtcRange = useMemo(
-    () =>
-      view === 'month'
-        ? monthGridRange(
-            Temporal.PlainYearMonth.from(focused),
-            Temporal.Now.plainDateISO(timeZone),
-            timeZone,
-          )
-        : bufferedRange(windowStart, dayCount, buffer, timeZone),
-    [view, focused, windowStart, dayCount, buffer, timeZone],
-  );
+  const range: UtcRange = useMemo(() => {
+    if (view === 'month') {
+      return monthGridRange(
+        Temporal.PlainYearMonth.from(focused),
+        Temporal.Now.plainDateISO(timeZone),
+        timeZone,
+      );
+    }
+    // A slide draws the days it travels across too.
+    const span = slideSpan(windowStart, dayCount, slide);
+    return bufferedRange(span.first, span.count, buffer, timeZone);
+  }, [view, focused, windowStart, dayCount, slide, buffer, timeZone]);
 
   const days = useMemo(
     () => Array.from({ length: dayCount }, (_, index) => windowStart.add({ days: index })),
@@ -142,6 +154,7 @@ export const useCalendarNavigation = ({
       if (view === 'week') {
         setWeekWindowStart((current) => current?.add({ days: 7 * direction }) ?? null);
       }
+      setSlide(NO_SLIDE);
     },
     [view, dayCount],
   );
@@ -157,18 +170,21 @@ export const useCalendarNavigation = ({
         setWeekWindowStart((current) => (current ?? windowStart).add({ days: dayCount }));
       }
       setFocused((current) => current.add({ days: dayCount }));
+      setSlide(NO_SLIDE);
     },
     [view, windowStart],
   );
 
   const switchView = useCallback((kind: CalendarViewKind) => {
     setWeekWindowStart(null);
+    setSlide(NO_SLIDE);
     setView(kind);
   }, []);
 
   const goToday = useCallback(() => {
     setFocused(Temporal.Now.plainDateISO(timeZone));
     setWeekWindowStart(null);
+    setSlide(NO_SLIDE);
   }, [timeZone]);
 
   /**
@@ -180,18 +196,51 @@ export const useCalendarNavigation = ({
   const goToDay = useCallback((date: Temporal.PlainDate) => {
     setFocused(date);
     setWeekWindowStart(null);
+    setSlide(NO_SLIDE);
   }, []);
+
+  /**
+   * A day picked to lead the strip (the desktop's mini month): it becomes
+   * the first column — in the week view a window rolled to start there,
+   * like a pan's — and `slide` tells the view how far to slide to it. The
+   * month view just shows the day's month.
+   */
+  const scrollToDay = useCallback(
+    (date: Temporal.PlainDate) => {
+      if (view === 'month') {
+        goToDay(date);
+        return;
+      }
+      setFocused(date);
+      const shift = windowStart.until(date).days;
+      if (shift === 0) {
+        return;
+      }
+      if (view === 'week') {
+        setWeekWindowStart(date);
+      }
+      setSlide((current) => nextSlide(current, shift, dayCount));
+    },
+    [view, windowStart, dayCount, goToDay],
+  );
+
+  /** The view finished sliding: the strip and the range drop the days it crossed. */
+  const endSlide = useCallback(() => setSlide(NO_SLIDE), []);
 
   return {
     /** Neighbour days drawn on each side of `days` (matches `range`). */
     buffer,
     days,
+    endSlide,
     focused,
     goToDay,
     goToday,
     panByDays,
     range,
+    scrollToDay,
     setFocused,
+    /** The extra days the view draws while it slides to a picked first day. */
+    slide,
     step,
     switchView,
     title: titleFor(view, focused, windowStart, titleStyle),

@@ -11,6 +11,7 @@ export function Sidebar({
   onManageAccounts,
   onPickDay,
   today,
+  visible,
 }: {
   accounts: ReadonlyArray<Account>;
   calendars: ReadonlyArray<CalendarInfo>;
@@ -18,6 +19,8 @@ export function Sidebar({
   onManageAccounts: () => void;
   onPickDay: (date: Temporal.PlainDate) => void;
   today: Temporal.PlainDate;
+  /** The main view's first and last day, highlighted in the month; null in the month view. */
+  visible: { readonly end: Temporal.PlainDate; readonly start: Temporal.PlainDate } | null;
 }) {
   return (
     <aside
@@ -29,6 +32,7 @@ export function Sidebar({
         key={`${String(focused.year)}-${String(focused.month)}`}
         onPick={onPickDay}
         today={today}
+        visible={visible}
       />
       <CalendarList accounts={accounts} calendars={calendars} />
       <SyncFooter onManageAccounts={onManageAccounts} />
