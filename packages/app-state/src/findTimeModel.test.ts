@@ -23,7 +23,8 @@ const event = (id: string, overrides: Partial<EventRecord> = {}) =>
 const occurrence = (originalStartUtc: number, id = `series__${originalStartUtc}`) =>
   event(id, { originalStartUtc, recurringEventId: 'series', startUtc: originalStartUtc });
 
-const MASTER_START = 1000;
+const MASTER = { recurrence: ['RRULE:FREQ=DAILY'], startUtc: 1000 };
+const FIXED = { recurrence: ['RRULE:FREQ=WEEKLY', 'RDATE:20261013T090000Z'], startUtc: 1000 };
 
 describe('rescheduledEventExclusion', () => {
   const first = occurrence(1000);
@@ -48,20 +49,20 @@ describe('rescheduledEventExclusion', () => {
   });
 
   it('frees only the edited row for one occurrence, by identity', () => {
-    const exclude = rescheduledEventExclusion(edited, 'instance', MASTER_START)!;
+    const exclude = rescheduledEventExclusion(edited, 'instance', MASTER)!;
     expect(freed(exclude)).toEqual(['series__2000']);
     // The same slot under Google's own instance id (a sync landed mid-edit).
     expect(exclude(occurrence(2000, 'series_20261013T090000Z'))).toBe(true);
   });
 
   it('frees every drawn occurrence for all events; stored exceptions keep their times', () => {
-    expect(freed(rescheduledEventExclusion(edited, 'series', MASTER_START)!)).toEqual([
+    expect(freed(rescheduledEventExclusion(edited, 'series', MASTER)!)).toEqual([
       'series__1000',
       'series__2000',
       'series__3000',
     ]);
     // Opened on an exception: the master shifts and the exception stays put.
-    expect(freed(rescheduledEventExclusion(laterException, 'series', MASTER_START)!)).toEqual([
+    expect(freed(rescheduledEventExclusion(laterException, 'series', MASTER)!)).toEqual([
       'series__1000',
       'series__2000',
       'series__3000',
@@ -69,7 +70,7 @@ describe('rescheduledEventExclusion', () => {
   });
 
   it('frees everything from the split for this and following, drawn or stored', () => {
-    expect(freed(rescheduledEventExclusion(edited, 'following', MASTER_START)!)).toEqual([
+    expect(freed(rescheduledEventExclusion(edited, 'following', MASTER)!)).toEqual([
       'series__2000',
       'series__3000',
       'series_x2',
@@ -77,7 +78,7 @@ describe('rescheduledEventExclusion', () => {
   });
 
   it('treats this and following from the first occurrence as all events', () => {
-    expect(freed(rescheduledEventExclusion(first, 'following', MASTER_START)!)).toEqual([
+    expect(freed(rescheduledEventExclusion(first, 'following', MASTER)!)).toEqual([
       'series__1000',
       'series__2000',
       'series__3000',
@@ -88,6 +89,19 @@ describe('rescheduledEventExclusion', () => {
     expect(freed(rescheduledEventExclusion(edited, 'following')!)).toEqual([
       'series__2000',
       'series__3000',
+    ]);
+  });
+
+  it('keeps every row busy for a series edit of a series with fixed dates, or an unknown master', () => {
+    // A drawn row does not say whether the rule or a fixed RDATE placed it;
+    // the fixed ones stay put when the master shifts.
+    expect(freed(rescheduledEventExclusion(edited, 'series', FIXED)!)).toEqual([]);
+    expect(freed(rescheduledEventExclusion(edited, 'series')!)).toEqual([]);
+    // The split drops rows whatever placed them.
+    expect(freed(rescheduledEventExclusion(edited, 'following', FIXED)!)).toEqual([
+      'series__2000',
+      'series__3000',
+      'series_x2',
     ]);
   });
 });

@@ -898,9 +898,12 @@ export const useEventEditorModel = ({
     location,
     /** Coordinates to map for the current text, if known. */
     mapGeo,
-    /** An existing series' first start, once its master is here (the finder's exclusion reads it). */
     mapLoading,
-    masterStartUtc: existing?.recurringEventId !== undefined ? master.startUtc : undefined,
+    /** An existing series' master, once here: its first start and its lines (the finder's exclusion reads them). */
+    masterSeries:
+      existing?.recurringEventId !== undefined && master.loaded
+        ? { recurrence: master.recurrence, startUtc: master.startUtc }
+        : undefined,
     /** Apple Maps link for the mapped place (https: routes to Maps on macOS and iOS). */
     mapsUrl: mapGeo ? openInMapsUrl(mapGeo) : undefined,
     ownAttendee,

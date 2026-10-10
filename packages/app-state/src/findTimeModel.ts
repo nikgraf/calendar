@@ -22,32 +22,46 @@ import {
 import { useEffect, useRef, useState } from 'react';
 import { useToday } from './hooks.ts';
 
+/** What the finder's exclusion knows of an existing series' master (`useEventMaster`). */
+export interface MasterSeries {
+  readonly recurrence: ReadonlyArray<string> | undefined;
+  readonly startUtc: number | undefined;
+}
+
+const hasFixedDates = (recurrence: ReadonlyArray<string> | undefined): boolean =>
+  (recurrence ?? []).some((line) => line.toUpperCase().startsWith('RDATE'));
+
 /**
  * Rows the finder must not count as busy: what the save will move or
  * drop, read off `updateRecurring`. "This event": the row itself (by
  * identity, not id — an occurrence's drawn id becomes Google's once it
  * is edited on its own, which a sync can land mid-edit). "All events",
  * and "This and following" from the series' first occurrence: the master
- * shifts, so every drawn occurrence moves, while a stored exception
- * keeps its own times — it stays busy, the opened row included. "This
- * and following" later in the series: the split drops every row from
- * the split point, drawn or stored, and the earlier ones stay. Until the
- * master is here, a stored exception is kept busy either way.
+ * shifts, so every occurrence drawn from its rule moves, while a stored
+ * exception keeps its own times — it stays busy, the opened row
+ * included — and so does an occurrence drawn from a fixed RDATE, which
+ * the drawn rows do not tell apart from the rule's: a series with fixed
+ * dates keeps every row busy. "This and following" later in the series:
+ * the split drops every row from the split point, drawn or stored, and
+ * the earlier ones stay. Until the master is here, a stored exception is
+ * kept busy either way.
  */
 export const rescheduledEventExclusion = (
   existing: EventRecord | undefined,
   scope: RecurringScope,
-  /** The series' first start (`useEventMaster`), undefined until loaded. */
-  masterStartUtc?: number | undefined,
+  /** The series' master, undefined until loaded. */
+  master?: MasterSeries | undefined,
 ): ((event: EventRecord) => boolean) | undefined => {
   if (!existing) {
     return undefined;
   }
   const masterId = existing.recurringEventId;
   const from = existing.originalStartUtc ?? existing.startUtc;
+  const masterStartUtc = master?.startUtc;
   const shiftsSeries =
     scope === 'series' ||
     (scope === 'following' && masterStartUtc !== undefined && from <= masterStartUtc);
+  const fixedDates = master === undefined || hasFixedDates(master.recurrence);
   return (event) => {
     if (event.accountId !== existing.accountId || event.calendarId !== existing.calendarId) {
       return false;
@@ -59,7 +73,7 @@ export const rescheduledEventExclusion = (
       return false;
     }
     if (shiftsSeries) {
-      return isDrawnOccurrence(event);
+      return !fixedDates && isDrawnOccurrence(event);
     }
     const start = event.originalStartUtc ?? event.startUtc;
     return start >= from && (isDrawnOccurrence(event) || masterStartUtc !== undefined);

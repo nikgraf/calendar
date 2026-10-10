@@ -31,10 +31,10 @@ export function FindTimeFields({ model }: { model: ReturnType<typeof useEventEdi
   const { existing, scope } = model;
   const finder = useFindTimeModel({
     backend,
-    contextKey: `${scope}:${model.masterStartUtc ?? ''}`,
+    contextKey: `${scope}:${model.masterSeries?.startUtc ?? ''}:${model.masterSeries?.recurrence?.join('|') ?? ''}`,
     durationMinutes: model.isAllDay ? 60 : minutesBetween(model.startTime, model.endTime),
     // What the save will move or drop is not in its own way.
-    excludeEvent: rescheduledEventExclusion(existing, scope, model.masterStartUtc),
+    excludeEvent: rescheduledEventExclusion(existing, scope, model.masterSeries),
     model: desktopLanguageModel,
     onTitle: (title) => {
       if (model.title.trim() === '') {

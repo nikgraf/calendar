@@ -461,8 +461,10 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   drop is not its own busy time (`rescheduledEventExclusion`, read off
   `updateRecurring`: the row for "This event"; every drawn occurrence
   for "All events", while a stored exception keeps its times and stays
-  busy; everything from the split for "This and following", which is
-  "All events" from the first occurrence). It works without Apple
+  busy — and so does every row of a series with fixed RDATE dates,
+  since a drawn row does not say what placed it; everything from the
+  split for "This and following", which is "All events" from the first
+  occurrence). It works without Apple
   Intelligence; with it, a phrase fills
   the same presets (`parseFindTime`) — dates, hours or days outside
   them show as a note with nothing selected — and a title it names
