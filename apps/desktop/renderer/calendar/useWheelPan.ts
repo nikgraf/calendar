@@ -1,4 +1,11 @@
-import { createWheelPan, isOwnPanShift, Temporal, wheelDeltaToPx } from '@calendar/core';
+import {
+  createWheelPan,
+  isOwnPanShift,
+  isSliding,
+  type Slide,
+  Temporal,
+  wheelDeltaToPx,
+} from '@calendar/core';
 import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from 'react';
 
 const GESTURE_GAP_MS = 150;
@@ -20,9 +27,11 @@ const prefersReducedMotion = (): boolean =>
  * paint when the shifted days arrive. When the wheel goes quiet the offset
  * snaps to the nearest day boundary with an ease-out animation.
  *
- * A picked first day (`slide` ≠ 0) arrives with the days it travels across
- * drawn on the side it comes from: the offset starts where the old days
- * sat and eases to 0, a scroll to the day. A pan grabs a slide mid-way.
+ * A picked first day (`slide` set) arrives with the days it slides from
+ * drawn around it: the offset starts where they sit on screen — mid-way
+ * through a previous slide included — and eases to 0, a scroll to the day.
+ * A pan grabs a slide mid-way. The extra days stay drawn while a pointer
+ * is held: a press or a drag keeps the strip column it started in.
  */
 export const useWheelPan = ({
   enabled,
@@ -48,8 +57,8 @@ export const useWheelPan = ({
    * here manually, so diagonal gestures scroll both dimensions at once.
    */
   scrollerRef: RefObject<HTMLElement | null>;
-  /** Signed days a slide to the first day travels (0: none), drawn before (forward) or after it. */
-  slide: number;
+  /** The extra days drawn on each side while sliding to a picked first day. */
+  slide: Slide;
   /** Clipped strip container; its width / visibleDayCount = day width. */
   viewportRef: RefObject<HTMLElement | null>;
   visibleDayCount: number;
@@ -75,6 +84,11 @@ export const useWheelPan = ({
     let awaitingSettle = false;
     // The running settle is a slide's: ending it ends the slide.
     let sliding = false;
+    // A pointer is down somewhere in the window, and a slide that ended
+    // meanwhile keeps its extra days until it comes up.
+    let pointerHeld = false;
+    let endPending = false;
+    let endTimer: ReturnType<typeof setTimeout> | null = null;
     let previous: { count: number; firstIso: string } | null = null;
 
     const setVar = (px: number) => {
@@ -96,9 +110,25 @@ export const useWheelPan = ({
       awaitingSettle = false;
       sliding = false;
     };
-    const endSlide = () => {
+    const cancelPendingEnd = () => {
+      endPending = false;
+      if (endTimer !== null) {
+        clearTimeout(endTimer);
+        endTimer = null;
+      }
+    };
+    /**
+     * The slide is over: the strip drops its extra days — unless a pointer
+     * is held, whose press (a drag about to start, or under way) holds a
+     * strip column index that dropping them would shift.
+     */
+    const finishSlide = () => {
       sliding = false;
-      onSlideEndRef.current();
+      if (pointerHeld) {
+        endPending = true;
+      } else {
+        onSlideEndRef.current();
+      }
     };
     const startSettle = (durationMs = SETTLE_MS) => {
       cancelSettle();
@@ -116,28 +146,35 @@ export const useWheelPan = ({
         setVar(value);
         settleFrame = t < 1 ? requestAnimationFrame(frame) : null;
         if (t === 1 && sliding) {
-          endSlide();
+          finishSlide();
         }
       };
       settleFrame = requestAnimationFrame(frame);
     };
-    const startSlide = (days: number) => {
+    const startSlide = (shiftedDays: number, slide: Slide) => {
+      const width = dayWidth();
+      // Where the days on screen sit once the first day has moved — a pan's
+      // settle or a previous slide still under way included — kept within
+      // the days the slide draws (a far pick starts that far short).
+      const from = Math.min(
+        Math.max(shiftedDays * width + pan.offset(), -slide.trail * width),
+        slide.lead * width,
+      );
       clearReleaseTimer();
       cancelSettle();
+      cancelPendingEnd();
       pan.reset();
-      if (prefersReducedMotion()) {
+      if (prefersReducedMotion() || width <= 0) {
         setVar(0);
-        endSlide();
+        finishSlide();
         return;
       }
-      // Before paint, the strip shows where the slide comes from: for a
-      // nearby day, the days that were on screen, right where they were.
-      pan.setOffset(days * dayWidth());
-      setVar(pan.offset());
-      startSettle(slideMs(Math.abs(days)));
+      // Before paint, so the picked days never flash first.
+      pan.setOffset(from);
+      setVar(from);
+      startSettle(slideMs(Math.abs(from) / width));
       if (settleFrame === null) {
-        // Nothing to animate (no width yet): the slide is over at once.
-        endSlide();
+        finishSlide();
       } else {
         sliding = true;
       }
@@ -155,18 +192,22 @@ export const useWheelPan = ({
     };
 
     return {
-      // A drag mid-slide keeps the slide's extra days drawn: dropping them
-      // would move the drop target's day index under the pointer. The next
-      // navigation clears them.
+      // A drag taking over mid-slide lands it at once; its extra days stay
+      // until the pointer comes up (finishSlide).
       disable: () => {
+        const wasSliding = sliding;
         clearReleaseTimer();
         cancelSettle();
         pan.reset();
         setVar(0);
+        if (wasSliding) {
+          finishSlide();
+        }
       },
       dispose: () => {
         clearReleaseTimer();
         cancelSettle();
+        cancelPendingEnd();
       },
       handleWheel: (event: WheelEvent) => {
         if (!enabledRef.current) {
@@ -189,10 +230,11 @@ export const useWheelPan = ({
           scrollerRef.current.scrollTop += deltaY;
         }
         // A pan grabbing a slide takes its offset as is (the settle frames
-        // wrote it to the pan): its commits shift back over the slide's days.
+        // wrote it to the pan): its commits shift back over the slide's days
+        // and clear the slide; held down, the extra days wait for those.
         const grabbedSlide = sliding;
         cancelSettle();
-        if (grabbedSlide) {
+        if (grabbedSlide && !pointerHeld) {
           onSlideEndRef.current();
         }
         setVar(result.offsetPx);
@@ -202,13 +244,29 @@ export const useWheelPan = ({
         clearReleaseTimer();
         releaseTimer = setTimeout(release, GESTURE_GAP_MS);
       },
+      pointerDown: () => {
+        pointerHeld = true;
+      },
+      pointerUp: () => {
+        pointerHeld = false;
+        if (endPending) {
+          endPending = false;
+          // After this event's own handlers: a drop reads the strip it
+          // started on.
+          endTimer = setTimeout(() => {
+            endTimer = null;
+            onSlideEndRef.current();
+          }, 0);
+        }
+      },
       /**
-       * Called before paint whenever the rendered day window changes:
-       * re-anchors the offset for shifts this pan committed; a picked day
-       * (`slide` set) slides in; any other navigation (buttons, Today, view
-       * switch) resets the pan instead.
+       * Called before paint whenever the rendered day window or the
+       * slide changes: re-anchors the offset for shifts this pan
+       * committed; a picked day (`slide` set) slides in; any other
+       * navigation (buttons, Today, view switch) resets the pan instead —
+       * also when it clears a slide under way without moving the first day.
        */
-      onDaysChanged: (firstIso: string, count: number, slide: number) => {
+      onDaysChanged: (firstIso: string, count: number, slide: Slide) => {
         const prev = previous;
         previous = { count, firstIso };
         if (!prev) {
@@ -218,12 +276,17 @@ export const useWheelPan = ({
           Temporal.PlainDate.from(firstIso),
         ).days;
         const ownShift = isOwnPanShift(shiftedDays, pan.pendingDays());
-        if (prev.count === count && shiftedDays !== 0 && !ownShift && slide !== 0) {
-          startSlide(slide);
+        if (prev.count === count && shiftedDays !== 0 && !ownShift && isSliding(slide)) {
+          startSlide(shiftedDays, slide);
           return;
         }
-        if (prev.count !== count || (shiftedDays !== 0 && !ownShift)) {
+        if (
+          prev.count !== count ||
+          (shiftedDays !== 0 && !ownShift) ||
+          (shiftedDays === 0 && (sliding || endPending) && !isSliding(slide))
+        ) {
           cancelSettle();
+          cancelPendingEnd();
           pan.reset();
           setVar(0);
           return;
@@ -253,8 +316,16 @@ export const useWheelPan = ({
     // Native non-passive listener: React's delegated onWheel is passive, so
     // preventDefault() (stops horizontal rubber-band/history swipe) needs it.
     element.addEventListener('wheel', controller.handleWheel, { passive: false });
+    // Window-wide and capturing: a block stops its pointerdown, and a
+    // panel row's drag ends over the grid too.
+    window.addEventListener('pointerdown', controller.pointerDown, true);
+    window.addEventListener('pointerup', controller.pointerUp, true);
+    window.addEventListener('pointercancel', controller.pointerUp, true);
     return () => {
       element.removeEventListener('wheel', controller.handleWheel);
+      window.removeEventListener('pointerdown', controller.pointerDown, true);
+      window.removeEventListener('pointerup', controller.pointerUp, true);
+      window.removeEventListener('pointercancel', controller.pointerUp, true);
       controller.dispose();
     };
   }, [controller, rootRef]);

@@ -1,8 +1,10 @@
 import {
   bufferedRange,
   type CalendarViewKind,
-  clampSlide,
   monthGridRange,
+  nextSlide,
+  NO_SLIDE,
+  type Slide,
   slideSpan,
   Temporal,
   type UtcRange,
@@ -88,7 +90,7 @@ export const titleFor = (
  * and two-day views anchor on the focused day itself, so they need no
  * window state: the focused day is the first column. A picked day
  * (`scrollToDay`) leads the strip instead, and `slide` holds the days the
- * view slides across to it until the view calls `endSlide`.
+ * view draws to slide to it until the view calls `endSlide`.
  */
 export const useCalendarNavigation = ({
   dayBuffer,
@@ -101,10 +103,10 @@ export const useCalendarNavigation = ({
   const [view, setView] = useState<CalendarViewKind>(initialView);
   const [focused, setFocused] = useState(() => Temporal.Now.plainDateISO(timeZone));
   const [weekWindowStart, setWeekWindowStart] = useState<Temporal.PlainDate | null>(null);
-  // Signed days a slide to a picked first day travels (0: none). Every
-  // other navigation clears it, so a first day that changes while it is
-  // set is that slide's, never a jump's.
-  const [slide, setSlide] = useState(0);
+  // The extra days a slide to a picked first day draws. Every other
+  // navigation clears it, so a first day that changes while it is set is
+  // that slide's, never a jump's.
+  const [slide, setSlide] = useState<Slide>(NO_SLIDE);
 
   const windowStart = useMemo(
     () => (view === 'week' ? (weekWindowStart ?? weekStart(focused)) : focused),
@@ -152,7 +154,7 @@ export const useCalendarNavigation = ({
       if (view === 'week') {
         setWeekWindowStart((current) => current?.add({ days: 7 * direction }) ?? null);
       }
-      setSlide(0);
+      setSlide(NO_SLIDE);
     },
     [view, dayCount],
   );
@@ -168,21 +170,21 @@ export const useCalendarNavigation = ({
         setWeekWindowStart((current) => (current ?? windowStart).add({ days: dayCount }));
       }
       setFocused((current) => current.add({ days: dayCount }));
-      setSlide(0);
+      setSlide(NO_SLIDE);
     },
     [view, windowStart],
   );
 
   const switchView = useCallback((kind: CalendarViewKind) => {
     setWeekWindowStart(null);
-    setSlide(0);
+    setSlide(NO_SLIDE);
     setView(kind);
   }, []);
 
   const goToday = useCallback(() => {
     setFocused(Temporal.Now.plainDateISO(timeZone));
     setWeekWindowStart(null);
-    setSlide(0);
+    setSlide(NO_SLIDE);
   }, [timeZone]);
 
   /**
@@ -194,7 +196,7 @@ export const useCalendarNavigation = ({
   const goToDay = useCallback((date: Temporal.PlainDate) => {
     setFocused(date);
     setWeekWindowStart(null);
-    setSlide(0);
+    setSlide(NO_SLIDE);
   }, []);
 
   /**
@@ -217,13 +219,13 @@ export const useCalendarNavigation = ({
       if (view === 'week') {
         setWeekWindowStart(date);
       }
-      setSlide(clampSlide(shift, dayCount));
+      setSlide((current) => nextSlide(current, shift, dayCount));
     },
     [view, windowStart, dayCount, goToDay],
   );
 
   /** The view finished sliding: the strip and the range drop the days it crossed. */
-  const endSlide = useCallback(() => setSlide(0), []);
+  const endSlide = useCallback(() => setSlide(NO_SLIDE), []);
 
   return {
     /** Neighbour days drawn on each side of `days` (matches `range`). */
@@ -237,7 +239,7 @@ export const useCalendarNavigation = ({
     range,
     scrollToDay,
     setFocused,
-    /** Signed days the view is sliding across to a picked first day (0: none). */
+    /** The extra days the view draws while it slides to a picked first day. */
     slide,
     step,
     switchView,

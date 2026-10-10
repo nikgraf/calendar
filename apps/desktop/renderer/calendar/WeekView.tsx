@@ -14,6 +14,7 @@ import {
   partitionCalendarTasks,
   taskCalendarDate,
   secondaryHourLabels,
+  type Slide,
   slideSpan,
   type SlotRange,
   slotTimes,
@@ -91,7 +92,7 @@ function GridDropIndicator({
  * has no day columns (the app owns the hook, so it computes this in every
  * view).
  */
-export const useWeekStrip = (days: ReadonlyArray<Temporal.PlainDate>, slide: number) =>
+export const useWeekStrip = (days: ReadonlyArray<Temporal.PlainDate>, slide: Slide) =>
   useMemo(() => {
     const first = days[0];
     if (first === undefined) {
@@ -161,8 +162,8 @@ export function WeekView({
   secondaryZones: ReadonlyArray<string>;
   /** `calendarId:id` of the event open in the side panel: its block gets the outline. */
   selectedKey: string | undefined;
-  /** Signed days a slide to the first day travels (0: none); they're drawn on the side it comes from. */
-  slide: number;
+  /** The extra days drawn on each side while the view slides to a picked first day. */
+  slide: Slide;
   tasks: ReadonlyArray<TaskRecord>;
   timeZone: string;
   /** Today's ISO date (rolls at local midnight). */
@@ -180,7 +181,7 @@ export function WeekView({
   // sit shifted left by the columns before the first visible day;
   // `--pan-x` (set imperatively by useWheelPan on the root) adds the live
   // gesture or slide offset.
-  const leading = PAN_BUFFER_DAYS + Math.max(slide, 0);
+  const leading = PAN_BUFFER_DAYS + slide.lead;
   const stripStyle = {
     transform: `translateX(calc(${-(leading / strip.length) * 100}% + var(--pan-x, 0px)))`,
     width: `${(strip.length / days.length) * 100}%`,

@@ -34,26 +34,47 @@ export const bufferedRange = (
   daySpanRange(firstVisible.subtract({ days: buffer }), visibleCount + 2 * buffer, timeZone);
 
 /**
- * The days a slide to a picked first day travels across, signed (positive
- * = forward): the whole way up to two windows, so a nearby pick slides on
- * from exactly the days on screen; a farther one starts that far short of
- * its target instead of drawing every day in between.
+ * The days a slide to a picked first day draws beyond the visible ones:
+ * `lead` before them, `trail` after. A slide comes from the days on screen,
+ * so the strip holds them too; while a slide is still under way they can be
+ * anywhere in its span, so the next one keeps covering all of it.
  */
-export const clampSlide = (shift: number, visibleCount: number): number =>
-  Math.max(-2 * visibleCount, Math.min(2 * visibleCount, shift));
+export interface Slide {
+  readonly lead: number;
+  readonly trail: number;
+}
+
+export const NO_SLIDE: Slide = { lead: 0, trail: 0 };
+
+export const isSliding = (slide: Slide): boolean => slide.lead + slide.trail > 0;
 
 /**
- * The visible days plus the `slide` days a slide to them travels across,
- * on the side it comes from: what the strip draws and the range fetches
- * until the slide ends. No slide, just the visible days.
+ * The slide to a first day `shift` days from the current one, given the
+ * slide (if any) still under way: the whole way up to two windows on each
+ * side, so a nearby pick slides on from exactly the days on screen; a
+ * farther one starts that far short of its target instead of drawing every
+ * day in between.
+ */
+export const nextSlide = (current: Slide, shift: number, visibleCount: number): Slide => {
+  const cap = 2 * visibleCount;
+  return {
+    lead: Math.min(Math.max(current.lead + shift, 0), cap),
+    trail: Math.min(Math.max(current.trail - shift, 0), cap),
+  };
+};
+
+/**
+ * The visible days plus a slide's extra days on each side: what the strip
+ * draws and the range fetches until the slide ends. No slide, just the
+ * visible days.
  */
 export const slideSpan = (
   firstVisible: Temporal.PlainDate,
   visibleCount: number,
-  slide: number,
+  slide: Slide,
 ): { readonly count: number; readonly first: Temporal.PlainDate } => ({
-  count: visibleCount + Math.abs(slide),
-  first: firstVisible.subtract({ days: Math.max(slide, 0) }),
+  count: visibleCount + slide.lead + slide.trail,
+  first: firstVisible.subtract({ days: slide.lead }),
 });
 
 /**

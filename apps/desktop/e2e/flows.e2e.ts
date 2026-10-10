@@ -513,6 +513,7 @@ describe('calendar desktop e2e', () => {
     const { cdp } = app;
     const h1 = `(document.querySelector('h1')?.textContent ?? '')`;
     const panX = `document.querySelector('[data-testid="week-view"]').style.getPropertyValue('--pan-x')`;
+    const columns = `document.querySelector('[data-testid="week-grid"]').style.gridTemplateColumns`;
     const monday = weekStart(Temporal.PlainDate.from(todayLocalIso()));
     /** The window a week title names: titles are unique per first day. */
     const windowStartOf = (title: string): Temporal.PlainDate => {
@@ -551,9 +552,7 @@ describe('calendar desktop e2e', () => {
       await watchOffsets();
       await cdp.clickTestId(`mini-day-${day.toString()}`);
       await cdp.waitFor(`${h1} === ${JSON.stringify(weekTitle(day))}`);
-      await cdp.waitFor(
-        `document.querySelector('[data-testid="week-grid"]').style.gridTemplateColumns === 'repeat(11, 1fr)'`,
-      );
+      await cdp.waitFor(`${columns} === 'repeat(11, 1fr)'`);
       await cdp.waitFor(`${panX} === '0px'`);
       return cdp.eval<Array<number>>('window.__offsets');
     };
@@ -617,9 +616,76 @@ describe('calendar desktop e2e', () => {
       })()`);
       expect(maxDrift).toBeLessThanOrEqual(1);
 
+      // Today mid-slide back to today's own Monday: the first day stays, so
+      // only the cleared slide says to stop — the strip lands at once.
+      await cdp.clickButtonWithText('Today');
+      await cdp.waitFor(`${h1} === ${JSON.stringify(weekTitle(monday))}`);
+      await pick(thursday);
+      const cleared = await cdp.eval<{ after: string; columns: string; during: string }>(
+        `(async () => {
+          const root = document.querySelector('[data-testid="week-view"]');
+          document.querySelector('[data-testid="mini-day-${monday.toString()}"]').click();
+          await null;
+          const during = root.style.getPropertyValue('--pan-x');
+          [...document.querySelectorAll('button')].find((b) => b.textContent?.trim() === 'Today').click();
+          await null;
+          return {
+            after: root.style.getPropertyValue('--pan-x'),
+            columns: document.querySelector('[data-testid="week-grid"]').style.gridTemplateColumns,
+            during,
+          };
+        })()`,
+      );
+      expect(cleared.during).not.toBe('0px');
+      expect(cleared.after).toBe('0px');
+      expect(cleared.columns).toBe('repeat(11, 1fr)');
+
+      // A second pick mid-slide carries on from where the strip is: the
+      // first day on screen (fractional, in days) doesn't jump. Only
+      // microtasks run between the reads, never an animation frame.
+      const friday = thursday.add({ days: 1 });
+      const retarget = await cdp.eval<{ after: number; before: number }>(`(async () => {
+        const position = () => {
+          const header = document.querySelector('[data-date]').parentElement;
+          const left = header.parentElement.getBoundingClientRect().x;
+          const cell = [...header.children].find((child) => {
+            const rect = child.getBoundingClientRect();
+            return rect.x <= left && left < rect.x + rect.width;
+          });
+          const rect = cell.getBoundingClientRect();
+          return Date.parse(cell.dataset.date) / 86400000 + (left - rect.x) / rect.width;
+        };
+        document.querySelector('[data-testid="mini-day-${thursday.toString()}"]').click();
+        await new Promise((resolve) => setTimeout(resolve, 100));
+        const before = position();
+        document.querySelector('[data-testid="mini-day-${friday.toString()}"]').click();
+        await null;
+        return { after: position(), before };
+      })()`);
+      expect(Math.abs(retarget.after - retarget.before)).toBeLessThan(0.05);
+      await cdp.waitFor(`${h1} === ${JSON.stringify(weekTitle(friday))}`);
+      await cdp.waitFor(`${columns} === 'repeat(11, 1fr)'`);
+
+      // A press held through a slide's end keeps the extra days drawn (a
+      // drag holds the strip column it started in) until it comes up. The
+      // hour gutter takes the press without opening anything.
+      const gutter = await cdp.eval<{ x: number; y: number }>(`(() => {
+        const rect = document.querySelector('[data-testid="week-scroller"]').getBoundingClientRect();
+        return { x: Math.round(rect.x + 16), y: Math.round(rect.y + 120) };
+      })()`);
+      await cdp.clickTestId(`mini-day-${monday.toString()}`);
+      await cdp.mouse('mousePressed', gutter.x, gutter.y);
+      try {
+        await cdp.waitFor(`${h1} === ${JSON.stringify(weekTitle(monday))} && ${panX} === '0px'`);
+        expect(await cdp.eval<string>(columns)).not.toBe('repeat(11, 1fr)');
+      } finally {
+        await cdp.mouse('mouseReleased', gutter.x, gutter.y);
+      }
+      await cdp.waitFor(`${columns} === 'repeat(11, 1fr)'`);
+
       // Reduced motion: the picked day leads at once, nothing slides.
       await reducedMotion('reduce');
-      const still = await pick(back.add({ days: 2 }));
+      const still = await pick(monday.add({ days: 2 }));
       expect(still.every((offset) => offset === 0)).toBe(true);
     } finally {
       await cdp.send('Emulation.setEmulatedMedia', { features: [] });

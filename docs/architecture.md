@@ -628,8 +628,10 @@ details, or Custom), so a calendar can be shared without the details.
   eases to the nearest day when the wheel goes quiet. A mini-month day
   (`scrollToDay`) becomes the first column: the strip and the range also
   draw the days slid across (`slideSpan`, at most two windows — farther
-  picks start that far short), the offset eases from where they sat, and
-  a pan grabs a slide mid-way. The mini month highlights the visible
+  picks start that far short), the offset eases from where they sit — a
+  second pick mid-slide carries on from there — a pan grabs a slide
+  mid-way, and a held pointer keeps the extra days until it comes up (a
+  press holds its strip column). The mini month highlights the visible
   days, so a rolled week crosses two rows. iOS swipes page day
   by day over a drawn buffer per view (`core/layout/dayStrip.ts`), the
   UI thread handing React the pixels navigated so the page change and the

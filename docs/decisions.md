@@ -356,7 +356,9 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   slide the last two windows instead of every day between (a gapped strip
   would break the all-day spans and the range). Search results,
   notification taps and Today still jump; the month view highlights
-  nothing. Open: the all-day lane can resize when a slide ends.
+  nothing. Codex review: a held press keeps the slide's columns, a second
+  pick continues mid-slide. Open: the all-day lane can resize when a slide
+  ends.
 
 ## Invitees, contacts and birthdays
 
