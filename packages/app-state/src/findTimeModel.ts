@@ -28,8 +28,19 @@ export interface MasterSeries {
   readonly startUtc: number | undefined;
 }
 
-const hasFixedDates = (recurrence: ReadonlyArray<string> | undefined): boolean =>
-  (recurrence ?? []).some((line) => line.toUpperCase().startsWith('RDATE'));
+/**
+ * Lines whose occurrences do not follow a shifted master: fixed dates
+ * (RDATE) and rules that pin the clock (BYHOUR / BYMINUTE / BYSECOND),
+ * which `updateRecurring` keeps as they are.
+ */
+const hasFixedClock = (recurrence: ReadonlyArray<string> | undefined): boolean =>
+  (recurrence ?? []).some((line) => {
+    const upper = line.toUpperCase();
+    return (
+      upper.startsWith('RDATE') ||
+      (upper.startsWith('RRULE') && /BY(HOUR|MINUTE|SECOND)=/.test(upper))
+    );
+  });
 
 /**
  * Rows the finder must not count as busy: what the save will move or
@@ -41,9 +52,10 @@ const hasFixedDates = (recurrence: ReadonlyArray<string> | undefined): boolean =
  * exception keeps its own times — it stays busy, the opened row
  * included. "This and following" later in the series: the split drops
  * every row from the split point, drawn or stored, and the earlier ones
- * stay. An occurrence placed by a fixed RDATE stays put through either
- * edit, and a drawn row does not say what placed it, so a series with
- * fixed dates keeps every row busy; so does a series whose master is
+ * stay. An occurrence placed by a fixed RDATE, or by a rule that pins
+ * the clock (BYHOUR), stays put through either edit, and a drawn row
+ * does not say what placed it, so such a series keeps every row busy;
+ * so does a series whose master is
  * not here — Google's until it loads, an Apple series always, since its
  * rows are read through EventKit and never stored (a detached Apple
  * occurrence cannot be told apart either). Too busy is the safe side:
@@ -63,7 +75,7 @@ export const rescheduledEventExclusion = (
   const shiftsSeries =
     scope === 'series' ||
     (scope === 'following' && master?.startUtc !== undefined && from <= master.startUtc);
-  const seriesStaysBusy = master === undefined || hasFixedDates(master.recurrence);
+  const seriesStaysBusy = master === undefined || hasFixedClock(master.recurrence);
   return (event) => {
     if (event.accountId !== existing.accountId || event.calendarId !== existing.calendarId) {
       return false;
