@@ -28,6 +28,7 @@ import {
   type EventDraft,
   type EventRecord,
   EventReminders,
+  type FreeSlot,
   GeoLocation,
   type ItemKind,
   MAX_REMINDER_OVERRIDES,
@@ -567,6 +568,23 @@ export const useEventEditorModel = ({
   };
 
   /**
+   * A free slot the finder found: the event moves to its day and times.
+   * An all-day series keeps its kind (`canSwitchAllDay`), so a slot
+   * cannot make it timed; the forms hide the finder there.
+   */
+  const applySlot = (slot: FreeSlot) => {
+    if (isAllDay && !capabilities.canSwitchAllDay) {
+      return;
+    }
+    setIsAllDay(false);
+    setDate(slot.date);
+    setStartTime(slot.startTime);
+    setEndTime(slot.endTime);
+    setTimeChosen(true);
+    setError(null);
+  };
+
+  /**
    * Takes a parsed phrase over the fields a phrase can say: the title,
    * the day, the times or all-day, the location and the repeat rule —
    * all of them, since the phrase is the whole understanding (a phrase
@@ -860,6 +878,7 @@ export const useEventEditorModel = ({
     addReminder,
     adopt,
     applyPrefill,
+    applySlot,
     attendees,
     attendeeStatus,
     /** A save or delete is running: Save and Delete are dimmed (a press does nothing). */
@@ -880,6 +899,11 @@ export const useEventEditorModel = ({
     /** Coordinates to map for the current text, if known. */
     mapGeo,
     mapLoading,
+    /** An existing series' master, once here: its first start and its lines (the finder's exclusion reads them). */
+    masterSeries:
+      existing?.recurringEventId !== undefined && master.loaded
+        ? { recurrence: master.recurrence, startUtc: master.startUtc }
+        : undefined,
     /** Apple Maps link for the mapped place (https: routes to Maps on macOS and iOS). */
     mapsUrl: mapGeo ? openInMapsUrl(mapGeo) : undefined,
     ownAttendee,

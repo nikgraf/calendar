@@ -592,7 +592,9 @@ Flakiness lessons (each caused a real CI failure — keep them enforced):
   `cdp.openEditor(selector)` (… → `inspector-edit` → `editor-title` reads
   "Edit event"); tasks and slots open the editor directly. Stable hooks:
   `toolbar-title`, `view-day/week/month`, `nav-prev/next`, `today`,
-  `quick-add-input` / `quick-add-apply`, `mode-event/task/reminder` (a
+  `quick-add-input` / `quick-add-apply`, `find-time` and its
+  `find-time-window/bounds/days/duration-*`, `find-time-search`,
+  `find-time-slot-<n>` (the event form's finder), `mode-event/task/reminder` (a
   kind with nowhere to go is not rendered), `task-remove-due-date`,
   `sidebar`, `sync-footer`, `panel` (`data-panel-kind`), `inspector`,
   `editor`, `editor-notes`, `task-done`, `panel-task-<id>`,

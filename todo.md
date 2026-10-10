@@ -137,6 +137,13 @@ Empty. The 2026-10-02 review's findings are closed in `docs/decisions.md`
 
 ## Tier 3 — AI features
 
+- [ ] Find-a-time follow-ups — the finder keeps a whole Apple series
+      busy through a series edit (its rows are read through EventKit, no
+      master to read, detached occurrences not told apart): an
+      EventKit-aware exclusion; timed reminders do not count as busy;
+      guests' free/busy is not fetched (Google freeBusy), which is where
+      "when everyone is free" would go.
+
 Scope unchanged and all still open with zero code; the on-device-only
 decision and platform notes live in `docs/decisions.md`.
 

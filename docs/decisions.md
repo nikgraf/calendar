@@ -465,6 +465,37 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   ranking v1; dictation availability is decided by attempting `prepare()`
   (the readiness flag is false until assets exist) and the recording is
   deleted immediately. The simulator has no speech assets.
+- **Find a time is the event form's tool** (2026-10-10) — not a mode of
+  the quick-add field. The two modes shared a field and a title and
+  nothing else: different prompts, a calendar read and a solver only on
+  one side, and results of different shapes. "Find a time" sits beside
+  the date and times (`FindTimeFields`, `useFindTimeModel`): presets
+  over the pure solver (today / this week / next week / 2 weeks;
+  daytime (08–20, the solver's default, named rather than called "any")
+  / mornings / afternoons / evenings; any day / weekdays / weekends; a
+  duration starting as the form's own), a Search, and the slots as
+  buttons — a pick moves the event there (`applySlot`; an all-day series
+  keeps its kind, so it has no finder). What the save will move or
+  drop is not its own busy time (`rescheduledEventExclusion`, read off
+  `updateRecurring`: the row for "This event"; every drawn occurrence
+  for "All events", while a stored exception keeps its times and stays
+  busy; everything from the split for "This and following", which is
+  "All events" from the first occurrence; nothing of a series with
+  fixed RDATE dates or a clock-pinning BYHOUR rule, since a drawn row
+  does not say what placed it and those stay put through both edits,
+  and nothing of a series
+  whose master is not here — an Apple series never is, its rows being
+  read through EventKit, so an Apple series edit searches around its
+  own occurrences; too busy is the safe side). It works without Apple
+  Intelligence; with it, a phrase fills
+  the same presets (`parseFindTime`) — dates, hours or days outside
+  them show as a note with nothing selected — and a title it names
+  fills an empty title. An answer landing after a constraint changed or
+  the finder closed is dropped.
+  Not merged into the quick-add prompt: the on-device model is small
+  and the two prompts are tuned apart. Timed reminders still do not
+  count as busy, and guests' free/busy is not fetched — the finder is
+  where both would go.
 - **The model says why it is unavailable** (2026-10-10, #168) —
   `ModelStatus` carries disabled / not-ready / unsupported (Apple
   Intelligence switches itself off on a Siri-vs-Mac language mismatch); a

@@ -2,31 +2,26 @@ import {
   MicrophoneDeniedError,
   parseQuickAdd,
   SpeechUnsupportedError,
-  type FindTimeOutcome,
   type LanguageModel,
   type SpeechToText,
 } from '@calendar/ai';
-import { Temporal, type FreeSlot } from '@calendar/core';
+import { Temporal } from '@calendar/core';
 import { useEffect, useRef, useState } from 'react';
 import type { QuickAddItem } from './quickAddItem.ts';
 
 /** A forgotten recording stops itself rather than running until the app dies. */
 const MAX_RECORDING_MS = 60_000;
 
-export type QuickAddMode = 'add' | 'find';
 export type VoiceState = 'idle' | 'preparing' | 'recording' | 'transcribing';
 
 export interface QuickAddModelOptions {
   /** Undated phrases land on this day (the day being viewed, or the editor's). */
   readonly fallbackDate?: string | undefined;
-  /** The find-a-time pipeline (`makeFindSlots` from @calendar/ai). */
-  readonly findSlots: (phrase: string) => Promise<FindTimeOutcome | { readonly reason: string }>;
   readonly model: LanguageModel;
   /**
-   * Receives what the phrase was understood as (or the slot that was
-   * picked, as an event): the editor below the field fills its form from
-   * it. The phrase stays in the field, so what was read can be compared
-   * with what the form shows.
+   * Receives what the phrase was understood as: the editor below the
+   * field fills its form from it. The phrase stays in the field, so what
+   * was read can be compared with what the form shows.
    */
   readonly onApply: (item: QuickAddItem) => void;
   readonly speech: SpeechToText;
@@ -35,8 +30,9 @@ export interface QuickAddModelOptions {
 
 /**
  * The state machine behind the editors' quick-add field on both
- * platforms: mode, phrase, submit (parse or find-a-time), slot pick, and
- * the dictation lifecycle. The two shells re-implemented this separately
+ * platforms: phrase, submit (parse) and the dictation lifecycle (find a
+ * time is the event form's own tool, `useFindTimeModel`). The two shells
+ * re-implemented this separately
  * once and drifted — MicrophoneDeniedError was handled in different
  * phases on each platform, so whichever phase a platform's speech impl
  * threw it in, one of them showed the wrong copy. The hook checks it in
@@ -45,17 +41,14 @@ export interface QuickAddModelOptions {
  */
 export const useQuickAddModel = ({
   fallbackDate,
-  findSlots,
   model,
   onApply,
   speech,
   timeZone,
 }: QuickAddModelOptions) => {
-  const [mode, setModeState] = useState<QuickAddMode>('add');
   const [phrase, setPhrase] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [found, setFound] = useState<FindTimeOutcome | null>(null);
   const [voice, setVoice] = useState<VoiceState>('idle');
   const [voiceAvailable, setVoiceAvailable] = useState(false);
   // A parse takes seconds; the kind may be flipped meanwhile. The result
@@ -76,13 +69,6 @@ export const useQuickAddModel = ({
     };
   }, [speech]);
 
-  /** Switching modes clears results and errors from the other one. */
-  const setMode = (next: QuickAddMode) => {
-    setModeState(next);
-    setError(null);
-    setFound(null);
-  };
-
   /** Reads the phrase (Enter, Apply, or the end of a dictation) and hands it on. */
   const submit = async (text: string = phrase) => {
     if (!text.trim()) {
@@ -90,21 +76,7 @@ export const useQuickAddModel = ({
     }
     setBusy(true);
     setError(null);
-    setFound(null);
     try {
-      if (mode === 'find') {
-        const result = await findSlots(text);
-        if ('reason' in result) {
-          setError(result.reason);
-          return;
-        }
-        if (result.slots.length === 0) {
-          setError('No free slots match — widen the window?');
-          return;
-        }
-        setFound(result);
-        return;
-      }
       const result = await parseQuickAdd(model, {
         ...(fallbackDate === undefined ? {} : { fallbackDate }),
         phrase: text,
@@ -125,22 +97,6 @@ export const useQuickAddModel = ({
     } finally {
       setBusy(false);
     }
-  };
-
-  /** A free slot: the event form takes its day and times, titled as the phrase said. */
-  const pickSlot = (slot: FreeSlot) => {
-    const title = found?.title ?? '';
-    setFound(null);
-    applyRef.current({
-      kind: 'event',
-      prefill: {
-        date: slot.date,
-        endTime: slot.endTime,
-        isAllDay: false,
-        startTime: slot.startTime,
-        title,
-      },
-    });
   };
 
   /**
@@ -240,11 +196,7 @@ export const useQuickAddModel = ({
   return {
     busy,
     error,
-    found,
-    mode,
     phrase,
-    pickSlot,
-    setMode,
     setPhrase,
     startRecording,
     stopRecording,

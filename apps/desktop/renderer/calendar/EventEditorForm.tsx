@@ -12,6 +12,7 @@ import { type CalendarInfo, draftZoneRange, type RsvpResponse } from '@calendar/
 import { InviteeCombobox } from './InviteeCombobox.tsx';
 import { Button } from '../ui/Button.tsx';
 import { FIELD_CLASS as field, LABEL_CLASS } from '../ui/fieldStyles.ts';
+import { FindTimeFields } from './FindTimeFields.tsx';
 import { LocationCombobox } from './LocationCombobox.tsx';
 import { LocationMap } from './LocationMap.tsx';
 import { RemindersFields } from './RemindersFields.tsx';
@@ -192,6 +193,7 @@ export function EventEditorForm({
             {zoneLine}
           </p>
         ) : null}
+        {readOnly ? null : <FindTimeFields model={model} />}
         <LocationCombobox model={model} />
         <LocationMap place={model} />
         {model.repeatLoaded ? <RepeatRuleFields anchorDate={date} state={model} /> : null}

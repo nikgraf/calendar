@@ -214,16 +214,25 @@ export const useMapSnapshot = (
  */
 export const useEventMaster = (
   event: EventRecord | undefined,
-): { readonly loaded: boolean; readonly recurrence: ReadonlyArray<string> | undefined } => {
+): {
+  readonly loaded: boolean;
+  readonly recurrence: ReadonlyArray<string> | undefined;
+  /** The series' first start: a "following" edit from there is a series edit. */
+  readonly startUtc: number | undefined;
+} => {
   const masterId = event?.recurringEventId;
   const key = event && masterId ? `${event.accountId}|${event.calendarId}|${masterId}` : '';
   const result = useAtomValue(useBackendAtoms().eventById(key));
   if (key === '') {
-    return { loaded: true, recurrence: event?.recurrence };
+    return { loaded: true, recurrence: event?.recurrence, startUtc: event?.startUtc };
   }
   return AsyncResult.isSuccess(result)
-    ? { loaded: result.value !== null, recurrence: result.value?.recurrence }
-    : { loaded: false, recurrence: undefined };
+    ? {
+        loaded: result.value !== null,
+        recurrence: result.value?.recurrence,
+        startUtc: result.value?.startUtc,
+      }
+    : { loaded: false, recurrence: undefined, startUtc: undefined };
 };
 
 /** Task lists across accounts (for visibility toggles + connect rows). */

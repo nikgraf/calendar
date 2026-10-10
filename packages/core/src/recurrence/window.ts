@@ -52,13 +52,28 @@ export const occurrenceRecord = (master: EventRecord, instance: EventInstance): 
     ...master,
     endDate: instance.endDate,
     endUtc: instance.endUtc,
-    id: `${master.id}__${instance.originalStartUtc}`,
+    id: drawnOccurrenceId(master.id, instance.originalStartUtc),
     originalStartUtc: instance.originalStartUtc,
     recurrence: undefined,
     recurringEventId: master.id,
     startDate: instance.startDate,
     startUtc: instance.startUtc,
   });
+
+const drawnOccurrenceId = (masterId: string, originalStartUtc: number): string =>
+  `${masterId}__${originalStartUtc}`;
+
+/**
+ * An occurrence the window drew from its master's rule, as opposed to a
+ * stored exception (an occurrence edited on its own, under the
+ * provider's own id), which keeps its own times through a series edit.
+ */
+export const isDrawnOccurrence = (
+  event: Pick<EventRecord, 'id' | 'originalStartUtc' | 'recurringEventId'>,
+): boolean =>
+  event.recurringEventId !== undefined &&
+  event.originalStartUtc !== undefined &&
+  event.id === drawnOccurrenceId(event.recurringEventId, event.originalStartUtc);
 
 /**
  * Assembles the renderable events for a range from a DB window: concrete

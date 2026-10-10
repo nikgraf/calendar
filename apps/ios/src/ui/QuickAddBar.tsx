@@ -1,7 +1,5 @@
-import { makeFindSlots } from '@calendar/ai';
 import { useModelAvailability, useQuickAddModel, type QuickAddItem } from '@calendar/app-state';
-import { formatSlotLabel } from '@calendar/core';
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useRef } from 'react';
 import {
   ActivityIndicator,
   AppState,
@@ -13,9 +11,7 @@ import {
   View,
 } from 'react-native';
 import { appleSpeech } from '../appleSpeech.ts';
-import { backendClient } from '../backend.ts';
 import { languageModel } from '../model.ts';
-import { SegmentedControl } from './SegmentedControl.tsx';
 import { BOX_FONT_SCALE, type ThemeColors, useStyles } from './theme.ts';
 
 /** Foundation Models exist from iOS 26; below that there is nothing to say. */
@@ -32,7 +28,7 @@ const UNAVAILABLE_NOTICE =
  * app: re-check on the way back so the field appears without a relaunch.
  * Model downloads finish out of process too.
  */
-const onAppActive = (onActive: () => void): (() => void) => {
+export const onAppActive = (onActive: () => void): (() => void) => {
   const subscription = AppState.addEventListener('change', (next) => {
     if (next === 'active') {
       onActive();
@@ -44,9 +40,9 @@ const onAppActive = (onActive: () => void): (() => void) => {
 /**
  * The quick-add field on top of a new item's editor: a phrase, typed or
  * dictated, fills the form below (Return, Apply, or the end of a
- * dictation). Find a time lists free slots; a picked one fills the
- * event's day and times. Nothing is written by the model itself, and
- * without it the field says why and the form below is still there.
+ * dictation). Nothing is written by the model itself, and without it the
+ * field says why and the form below is still there. Find a time is the
+ * event form's own tool (`FindTimeFields`).
  */
 export function QuickAddBar({
   fallbackDate,
@@ -61,18 +57,10 @@ export function QuickAddBar({
   const styles = useStyles(makeStyles);
   const inputRef = useRef<TextInput>(null);
   const { checking, retry, status } = useModelAvailability(languageModel, onAppActive);
-  const findSlots = useMemo(
-    () => makeFindSlots(languageModel, backendClient, timeZone),
-    [timeZone],
-  );
   const {
     busy,
     error,
-    found,
-    mode,
     phrase,
-    pickSlot,
-    setMode,
     setPhrase,
     startRecording,
     stopRecording,
@@ -81,7 +69,6 @@ export function QuickAddBar({
     voiceAvailable,
   } = useQuickAddModel({
     fallbackDate,
-    findSlots,
     model: languageModel,
     onApply,
     speech: appleSpeech,
@@ -128,31 +115,14 @@ export function QuickAddBar({
       ) : null}
       {unavailable ? null : (
         <>
-          <View style={styles.modeRow}>
-            <Text style={styles.eyebrow}>{mode === 'find' ? 'Find a time' : 'Describe it'}</Text>
-            <SegmentedControl
-              accessibilityLabel="Quick-add mode"
-              onChange={setMode}
-              options={[
-                { label: 'Add', testID: 'quick-add-mode', value: 'add' },
-                { label: 'Find time', testID: 'find-time-mode', value: 'find' },
-              ]}
-              value={mode}
-            />
-          </View>
+          <Text style={styles.eyebrow}>Describe it</Text>
           <View style={styles.row}>
             <TextInput
-              accessibilityLabel={
-                mode === 'find' ? 'Describe the time you need' : 'Describe what to add'
-              }
+              accessibilityLabel="Describe what to add"
               editable={!busy}
               onChangeText={setPhrase}
               onSubmitEditing={() => void submit()}
-              placeholder={
-                mode === 'find'
-                  ? '90 min focus this week, mornings'
-                  : 'Lunch with Sarah tomorrow at 1'
-              }
+              placeholder="Lunch with Sarah tomorrow at 1"
               ref={inputRef}
               returnKeyType="go"
               style={styles.input}
@@ -177,9 +147,7 @@ export function QuickAddBar({
               <ActivityIndicator style={styles.spinner} />
             ) : (
               <Pressable
-                accessibilityLabel={
-                  mode === 'find' ? 'Find free slots' : 'Fill the form from the phrase'
-                }
+                accessibilityLabel="Fill the form from the phrase"
                 accessibilityRole="button"
                 disabled={phrase.trim() === '' || voice === 'recording'}
                 onPress={() => void submit()}
@@ -190,7 +158,7 @@ export function QuickAddBar({
                 testID="quick-add-apply"
               >
                 <Text maxFontSizeMultiplier={BOX_FONT_SCALE} style={styles.buttonLabel}>
-                  {mode === 'find' ? 'Find' : 'Apply'}
+                  Apply
                 </Text>
               </Pressable>
             )}
@@ -203,24 +171,6 @@ export function QuickAddBar({
             <Text style={styles.hint}>Transcribing…</Text>
           ) : null}
           {error ? <Text style={styles.error}>{error}</Text> : null}
-          {found ? (
-            <View style={styles.slots}>
-              <Text style={styles.eyebrow}>Free slots</Text>
-              <View style={styles.slotRow}>
-                {found.slots.map((slot, index) => (
-                  <Pressable
-                    accessibilityRole="button"
-                    key={`${slot.date}T${slot.startTime}`}
-                    onPress={() => pickSlot(slot)}
-                    style={styles.slotChip}
-                    testID={`find-time-slot-${index}`}
-                  >
-                    <Text style={styles.slotLabel}>{formatSlotLabel(slot)}</Text>
-                  </Pressable>
-                ))}
-              </View>
-            </View>
-          ) : null}
         </>
       )}
     </View>
@@ -284,11 +234,6 @@ const makeStyles = (colors: ThemeColors) =>
     micRecording: {
       backgroundColor: colors['event-blush'],
     },
-    modeRow: {
-      alignItems: 'center',
-      flexDirection: 'row',
-      justifyContent: 'space-between',
-    },
     notice: {
       backgroundColor: colors.fill,
       borderRadius: 12,
@@ -315,25 +260,6 @@ const makeStyles = (colors: ThemeColors) =>
       color: colors.text,
       fontSize: 15,
       fontWeight: '600',
-    },
-    slotChip: {
-      backgroundColor: colors.selection,
-      borderRadius: 16,
-      paddingHorizontal: 12,
-      paddingVertical: 6,
-    },
-    slotLabel: {
-      color: colors['on-selection'],
-      fontSize: 14,
-    },
-    slotRow: {
-      flexDirection: 'row',
-      flexWrap: 'wrap',
-      gap: 8,
-      marginTop: 6,
-    },
-    slots: {
-      gap: 2,
     },
     spinner: {
       marginHorizontal: 8,
