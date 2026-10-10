@@ -2947,3 +2947,78 @@ then iOS (both in `todo.md`).
       field. Checked on the simulator with the fixture Google account and
       Reminders connected: each chip names its own list, and a task added
       under "Mock Tasks" shows there and not under "Reminders".
+
+### Add flow (2026-10-10)
+
+- [x] One add flow on both platforms: the editor is the review step —
+      done (`todo/add-flow`). **"+" opens the editor on a new item, with
+      the quick-add field on top, focused, then the Event | Task |
+      Reminder control, then the form.** iOS had three surfaces for one
+      intent (the quick-add sheet, its "Understood as" card with a second
+      Event/Task flip, then the editor) and a direct-create path
+      (`quickAddCreate.ts`) that picked a different default list than the
+      editor did; the desktop kept the field in the toolbar with the card
+      as a popover. Now a phrase, typed or dictated, fills the form
+      (`applyPrefill` on both models; `useQuickAddModel` hands a
+      `QuickAddItem` to `useEditorKinds.apply`): the title, the day, the
+      times or all-day, the location and the repeat rule are the phrase's
+      — all of them, a phrase without a place clears one typed before —
+      while the calendar or list, guests, notes and notifications stay.
+      Apply is not a required tap: Return applies, stopping a dictation
+      applies, and the Apply button re-applies after edits. The phrase
+      stays in the field, so what was read can be compared with the
+      form. A phrase read as the other kind switches the editor first (a
+      to-do lands on the kind a new to-do would open in, `defaultTodoKind`)
+      with the switch's own question about a loss; declined, or with that
+      kind unavailable, the phrase is read as the kind the editor shows
+      (`convertQuickAddItem`). Without the model the field says so and
+      the form is still there: no more dead end. **Reminder is a kind,
+      not a list.** A reminder was a task whose list happened to be an
+      Apple one, and picking that list silently swapped the whole form.
+      `ItemKind` (core `editor/itemKinds.ts`) names event / task /
+      reminder; the task model's selected list still decides the
+      provider, so `kind` reads it, and the list picker offers the
+      selected provider's lists only — the kind control moves between
+      providers (`switchEditorMode`, three-way: event ↔ to-do carries the
+      form over as before; task ↔ reminder keeps the task model's fields
+      and picks the kind's default list), a pick never changes the kind.
+      A new reminder switched to a task asks what has no home on a Google
+      list (its time, alerts, priority, rule — `taskMoveLossSummary` with
+      the verb "Switching to a task"; the URL folds into the notes); an
+      existing to-do switched to the other kind reads "Move to task" /
+      "Move to reminder" and moves on Save, which asks as a move always
+      did. `availableItemKinds` shows a kind only when something can hold
+      it: no Reminder without a connected Reminders list, no Task without
+      a Google account with Tasks, no Event without a writable calendar;
+      one kind means no control. The model keeps saying "event or to-do"
+      (`kind: 'task'`); the app maps a to-do onto Reminder or Task, never
+      the model. **Defaults follow the view.** The calendar's "+" wants an
+      event. The Tasks tab's "+" (new; it had none, only the inline add
+      field) opens an undated to-do in the filtered list, else the last
+      list used (`rememberTaskList`, like the last calendar), else a
+      Reminders list, then a Google one (`defaultTodoList`, which replaces
+      `taskAddTarget`); a kind with nowhere to go falls back in that
+      "+"'s order (`resolveItemKind`). The Tasks tab's inline add field
+      and the desktop rail's are gone, so there is one add path; the cost
+      is one tap ("+", type, Return, Save against tap, type, Return), and
+      the undated add they made is "No due date" beside Due on a new
+      task (`clearDueDate`, creates only: `updateTask` cannot clear a
+      stored due day). The desktop toolbar field is gone too — the
+      editor's field would have been a duplicate — and ⌘K opens a new
+      item with its field focused (or refocuses an open new item's; not
+      over another editor, whose draft it would drop), ⌘N and "+ New" the
+      same editor; the paste-to-capture the toolbar field had moved with
+      it (an email or image pasted into the editor's field goes to
+      capture, and the capture list stays up over a new item's editor —
+      it hides only behind the editor of one of its own rows). Find time
+      stays beside the field as its Add | Find time mode; a picked slot
+      fills the event's day and times. The quick-add field is for new
+      items only; the kind control on an existing item converts, as the
+      Event/Task toggle did. The iOS control is drawn in RN
+      (`SegmentedControl`, the desktop's look) rather than SwiftUI's,
+      because each segment carries the test id the flows tap. Checked:
+      the gate, the desktop convert / taskConvert / taskConvertGoogle /
+      capture / flows specs (the list-select moves became kind taps:
+      a reminder's picker no longer offers Google lists), and the iOS
+      flows 03/06/08/09/17 on the simulator with the fixture model and
+      Google.
