@@ -1,6 +1,7 @@
 import {
   appendLink,
   byDayError,
+  defaultTodoList,
   repeatUntilError,
   type EventRecord,
   eventToTaskLossSummary,
@@ -14,6 +15,8 @@ import {
   type TaskPriority,
   type TaskProvider,
   type TaskRecord,
+  taskListKeyOf,
+  type TodoKind,
 } from '@calendar/core';
 import { useState } from 'react';
 import { deleteQuestion } from './deleteQuestion.ts';
@@ -41,11 +44,29 @@ export interface TaskEditorSeed {
    * Only a Reminders list keeps it; Google Tasks are date-only.
    */
   readonly initialTime?: string | undefined;
-  /** Creates: the title to open with (a quick-add phrase understood as a task). */
+  /** Creates: a task or a reminder, which picks the default list's provider (see `listKey`). */
+  readonly kind?: TodoKind | undefined;
+  /**
+   * Creates: the list to open in (`accountId:listId`), when the caller
+   * knows one (the Tasks tab's filter); otherwise the kind's default list
+   * (`defaultTodoList`: the last one created in, then Reminders over Google).
+   */
+  readonly listKey?: string | undefined;
+  /** Creates: the title to open with. */
   readonly title?: string | undefined;
 }
 
 const listKeyOf = (accountId: string, listId: string) => `${accountId}:${listId}`;
+
+/**
+ * The list the last to-do was created in, for this session: a new one
+ * defaults to it, like a new event defaults to its last calendar.
+ */
+let lastUsedTaskListKey: string | null = null;
+export const rememberTaskList = (listKey: string): void => {
+  lastUsedTaskListKey = listKey;
+};
+export const getLastUsedTaskListKey = (): string | null => lastUsedTaskListKey;
 
 /** Alarm offsets the Reminders form offers (minutes relative to the due time). */
 export const REMINDER_ALARM_OPTIONS: ReadonlyArray<{ label: string; value: number | undefined }> = [
@@ -76,16 +97,19 @@ export const seedDueTiming = (seed: TaskEditorSeed): { dueTime: string; timed: b
     : { dueTime: seed.initialTime ?? '09:00', timed: seed.initialTime !== undefined };
 
 /**
- * Shared editor state for the Task mode of both platforms' edit sheets —
- * the small sibling of useEventEditorModel. The selected list decides the
- * provider, and the provider decides the form: Google Tasks are title /
- * due day / notes; Apple Reminders add a due time, priority, URL, an
- * alarm and a repeat rule. Picking a list in another account or provider
- * moves the task on Save (a copy into the target and a delete of the
- * source, after `confirmMove` when the target cannot hold everything);
- * between two Reminders lists it re-homes in place. A new task gets a due
- * day unless the seed says otherwise (an inbox add). An existing undated
- * one (made in Reminders or Google Tasks; the calendar draws it on today)
+ * Shared editor state for the Task and Reminder kinds of both platforms'
+ * edit sheets — the small sibling of useEventEditorModel. The selected
+ * list decides the provider, and the provider decides the form: Google
+ * Tasks are title / due day / notes; Apple Reminders add a due time,
+ * priority, URL, an alarm and a repeat rule. The list picker offers the
+ * selected provider's lists (the Task | Reminder switch moves between
+ * providers, see `switchEditorMode`); picking a list in another account
+ * or provider moves the task on Save (a copy into the target and a
+ * delete of the source, after `confirm` when the target cannot hold
+ * everything); between two Reminders lists it re-homes in place. A new
+ * task gets a due day unless the seed says otherwise (the Tasks tab's
+ * "+") or it is taken away (`clearDueDate`). An existing undated one
+ * (made in Reminders or Google Tasks; the calendar draws it on today)
  * opens as "no due date" and stays that way unless a day is added:
  * showing it today is not a due day, and Save must not turn it into one.
  */
@@ -113,13 +137,17 @@ export const useTaskEditorModel = ({
   const [dated, setDated] = useState(
     existing === undefined ? seed.dated !== false : existing.dueDate !== undefined,
   );
-  const [listKey, setListKey] = useState(
-    existing
-      ? listKeyOf(existing.accountId, existing.listId)
-      : taskLists[0]
-        ? listKeyOf(taskLists[0].accountId, taskLists[0].id)
-        : '',
-  );
+  const [listKey, setListKey] = useState(() => {
+    if (existing) {
+      return listKeyOf(existing.accountId, existing.listId);
+    }
+    const target = defaultTodoList(offeredTaskLists(taskLists, undefined), {
+      filter: seed.listKey,
+      kind: seed.kind,
+      lastUsedKey: lastUsedTaskListKey,
+    });
+    return target ? taskListKeyOf(target) : '';
+  });
   // Reminders-only state. Kept even while a Google list is selected so a
   // flip between lists in create mode does not lose what was typed.
   const [timed, setTimed] = useState(() => seedDueTiming(seed).timed);
@@ -157,8 +185,8 @@ export const useTaskEditorModel = ({
 
   const offeredLists = offeredTaskLists(taskLists, existing);
   const selectedList = taskLists.find((list) => listKeyOf(list.accountId, list.id) === listKey);
-  // The picked list's provider, so the form flips to the target's fields
-  // as soon as a list in the other provider is chosen.
+  // The picked list's provider: it decides the form (and the kind the
+  // shell shows, task or reminder).
   const provider: TaskProvider = selectedList?.provider ?? existing?.provider ?? 'google';
   const recurrenceUnsupported = existing?.recurrenceUnsupported === true;
   /** The task sits in a list EventKit will not let us write: the form is a viewer. */
@@ -232,6 +260,24 @@ export const useTaskEditorModel = ({
     setExtraAlarms(next.alarms.slice(1));
     setUrl(next.url ?? '');
     repeatState.resetRepeat(next.recurrence);
+  };
+
+  /**
+   * Takes a parsed phrase over the fields a phrase can say: the title,
+   * the due day and whether there is a due time. The list, notes and the
+   * Reminders-only fields stay as they are.
+   */
+  const applyPrefill = (next: {
+    readonly date: string;
+    readonly time?: string | undefined;
+    readonly title: string;
+  }) => {
+    setTitle(next.title);
+    setDueDate(next.date);
+    setDated(true);
+    setTimed(next.time !== undefined);
+    setDueTime(next.time ?? '09:00');
+    setError(null);
   };
 
   const save = async () => {
@@ -360,6 +406,7 @@ export const useTaskEditorModel = ({
           ...(dated ? { dueDate: draftDue } : {}),
           taskListId,
         });
+        rememberTaskList(listKey);
       }
       onSaved?.();
       onClose();
@@ -394,10 +441,17 @@ export const useTaskEditorModel = ({
     addDueDate: () => setDated(true),
     adopt,
     alarm,
+    applyPrefill,
     /** A save or delete is running: Save and Delete are dimmed (a press does nothing). */
     busy: write.busy,
     canMoveList,
-    /** False for an existing task without a due day, until one is added. */
+    /**
+     * Takes a new task's due day away: it is created undated and shown on
+     * today until done. Creates only — `updateTask` cannot clear a stored
+     * due day, so an existing task keeps the control hidden.
+     */
+    clearDueDate: existing === undefined ? () => setDated(false) : undefined,
+    /** False for a task without a due day, until one is added. */
     dated,
     dueDate,
     dueTime,
@@ -405,6 +459,8 @@ export const useTaskEditorModel = ({
     existing,
     listKey,
     notes,
+    /** Every writable list of every provider (the Task | Reminder switch picks among them). */
+    offeredLists,
     priority,
     provider,
     readOnly,
@@ -421,7 +477,8 @@ export const useTaskEditorModel = ({
     setTimed,
     setTitle,
     setUrl,
-    taskLists: offeredLists,
+    /** The picker's lists: the selected provider's, so a pick never changes the kind. */
+    taskLists: offeredLists.filter((list) => list.provider === provider),
     timed,
     title,
     url,

@@ -29,6 +29,7 @@ import {
   type EventRecord,
   EventReminders,
   GeoLocation,
+  type ItemKind,
   MAX_REMINDER_OVERRIDES,
   type PlaceSuggestion,
   type RecurrenceFrequency,
@@ -239,8 +240,10 @@ export const repeatScopeError = ({
  */
 export interface EditorConfirmRequest {
   readonly kind: 'convert' | 'delete' | 'move' | 'switch';
-  readonly subject: 'event' | 'task';
+  readonly subject: 'event' | 'reminder' | 'task';
   readonly summary: string;
+  /** A `switch`: the kind being switched to (the dialog names it). */
+  readonly target?: ItemKind | undefined;
 }
 
 /**
@@ -561,6 +564,26 @@ export const useEventEditorModel = ({
     setCarried({ url: next.url });
   };
 
+  /**
+   * Takes a parsed phrase over the fields a phrase can say: the title,
+   * the day, the times or all-day, the location and the repeat rule —
+   * all of them, since the phrase is the whole understanding (a phrase
+   * without a place clears one typed before). The calendar, guests,
+   * notes and notifications are not a phrase's to change.
+   */
+  const applyPrefill = (next: EventEditorPrefill) => {
+    setTitle(next.title);
+    setIsAllDay(next.isAllDay);
+    setDate(next.date);
+    setStartTime(next.startTime);
+    setEndTime(next.endTime);
+    setTimeChosen(true);
+    setLocation(next.location ?? '');
+    setRepeatDirty(true);
+    repeatState.resetRepeat(next.recurrence);
+    setError(null);
+  };
+
   const addAttendee = (input: AttendeeInput): boolean => {
     const key = emailKey(input.email);
     if (key === '' || attendees.some((attendee) => emailKey(attendee.email) === key)) {
@@ -833,6 +856,7 @@ export const useEventEditorModel = ({
     addAttendee,
     addReminder,
     adopt,
+    applyPrefill,
     attendees,
     attendeeStatus,
     /** A save or delete is running: Save and Delete are dimmed (a press does nothing). */

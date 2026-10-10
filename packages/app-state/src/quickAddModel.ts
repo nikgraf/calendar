@@ -4,13 +4,11 @@ import {
   SpeechUnsupportedError,
   type FindTimeOutcome,
   type LanguageModel,
-  type QuickAddTaskPrefill,
   type SpeechToText,
 } from '@calendar/ai';
 import { Temporal, type FreeSlot } from '@calendar/core';
 import { useEffect, useRef, useState } from 'react';
-import type { EventEditorPrefill } from './editorModel.ts';
-import { convertQuickAddItem, type QuickAddReview } from './quickAddReview.ts';
+import type { QuickAddItem } from './quickAddItem.ts';
 
 /** A forgotten recording stops itself rather than running until the app dies. */
 const MAX_RECORDING_MS = 60_000;
@@ -19,44 +17,37 @@ export type QuickAddMode = 'add' | 'find';
 export type VoiceState = 'idle' | 'preparing' | 'recording' | 'transcribing';
 
 export interface QuickAddModelOptions {
-  /** Undated phrases land on this day (iOS: the day being viewed). */
+  /** Undated phrases land on this day (the day being viewed, or the editor's). */
   readonly fallbackDate?: string | undefined;
   /** The find-a-time pipeline (`makeFindSlots` from @calendar/ai). */
   readonly findSlots: (phrase: string) => Promise<FindTimeOutcome | { readonly reason: string }>;
   readonly model: LanguageModel;
-  /** Receives the parsed prefill; the caller opens its editor (and may close the bar). */
-  readonly onPrefill: (prefill: EventEditorPrefill) => void;
   /**
-   * Receives a phrase understood as a to-do; the caller opens its task
-   * editor. Without it a to-do is handed to `onPrefill` as an event.
+   * Receives what the phrase was understood as (or the slot that was
+   * picked, as an event): the editor below the field fills its form from
+   * it. The phrase stays in the field, so what was read can be compared
+   * with what the form shows.
    */
-  readonly onTaskPrefill?: ((prefill: QuickAddTaskPrefill) => void) | undefined;
-  /**
-   * Hold a parse in `review` (an "Understood as" card with an Event/Task
-   * toggle) instead of handing it on at once; `confirmReview` hands it on.
-   */
-  readonly reviewFirst?: boolean | undefined;
+  readonly onApply: (item: QuickAddItem) => void;
   readonly speech: SpeechToText;
   readonly timeZone: string;
 }
 
 /**
- * The state machine behind the quick-add bars (iOS QuickAddBar, desktop
- * ⌘K CommandBar): mode, phrase, submit (parse or find-a-time), slot
- * pick, and the dictation lifecycle. The two bars re-implemented this
- * separately and drifted — MicrophoneDeniedError was handled in
- * different phases on each platform, so whichever phase a platform's
- * speech impl threw it in, one of them showed the wrong copy. The hook
- * checks it in BOTH phases. Platform-specific model *availability*
- * (status checks, retry affordances) stays in the components.
+ * The state machine behind the editors' quick-add field on both
+ * platforms: mode, phrase, submit (parse or find-a-time), slot pick, and
+ * the dictation lifecycle. The two shells re-implemented this separately
+ * once and drifted — MicrophoneDeniedError was handled in different
+ * phases on each platform, so whichever phase a platform's speech impl
+ * threw it in, one of them showed the wrong copy. The hook checks it in
+ * BOTH phases. Platform-specific model *availability* (status checks,
+ * retry affordances) stays in the components.
  */
 export const useQuickAddModel = ({
   fallbackDate,
   findSlots,
   model,
-  onPrefill,
-  onTaskPrefill,
-  reviewFirst = false,
+  onApply,
   speech,
   timeZone,
 }: QuickAddModelOptions) => {
@@ -65,22 +56,8 @@ export const useQuickAddModel = ({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [found, setFound] = useState<FindTimeOutcome | null>(null);
-  const [review, setReview] = useState<QuickAddReview | null>(null);
   const [voice, setVoice] = useState<VoiceState>('idle');
   const [voiceAvailable, setVoiceAvailable] = useState(false);
-
-  /** Hands an understood item to the caller's editor and clears the phrase. */
-  const deliver = (item: QuickAddReview) => {
-    setPhrase('');
-    setReview(null);
-    if (item.kind === 'event') {
-      onPrefill(item.prefill);
-    } else if (onTaskPrefill) {
-      onTaskPrefill(item.prefill);
-    } else {
-      onPrefill(convertQuickAddItem(item, 'event').prefill as EventEditorPrefill);
-    }
-  };
 
   useEffect(() => {
     let cancelled = false;
@@ -99,9 +76,9 @@ export const useQuickAddModel = ({
     setModeState(next);
     setError(null);
     setFound(null);
-    setReview(null);
   };
 
+  /** Reads the phrase (Enter, Apply, or the end of a dictation) and hands it on. */
   const submit = async (text: string = phrase) => {
     if (!text.trim()) {
       return;
@@ -133,15 +110,11 @@ export const useQuickAddModel = ({
         setError(result.reason);
         return;
       }
-      const item: QuickAddReview =
+      onApply(
         result.kind === 'task'
           ? { kind: 'task', prefill: result.prefill }
-          : { kind: 'event', prefill: result.prefill };
-      if (reviewFirst) {
-        setReview(item);
-        return;
-      }
-      deliver(item);
+          : { kind: 'event', prefill: result.prefill },
+      );
     } catch {
       setError('On-device model unavailable.');
     } finally {
@@ -149,16 +122,19 @@ export const useQuickAddModel = ({
     }
   };
 
+  /** A free slot: the event form takes its day and times, titled as the phrase said. */
   const pickSlot = (slot: FreeSlot) => {
     const title = found?.title ?? '';
     setFound(null);
-    setPhrase('');
-    onPrefill({
-      date: slot.date,
-      endTime: slot.endTime,
-      isAllDay: false,
-      startTime: slot.startTime,
-      title,
+    onApply({
+      kind: 'event',
+      prefill: {
+        date: slot.date,
+        endTime: slot.endTime,
+        isAllDay: false,
+        startTime: slot.startTime,
+        title,
+      },
     });
   };
 
@@ -167,7 +143,7 @@ export const useQuickAddModel = ({
    * recording that already started; one still preparing or waiting for
    * the microphone is aborted instead, and the adapter stops only what
    * that start opened. Cancelling it late would stop whichever recording
-   * is current by then — possibly a newer bar's.
+   * is current by then — possibly a newer field's.
    */
   const starting = useRef<AbortController | null>(null);
 
@@ -180,7 +156,7 @@ export const useQuickAddModel = ({
       // Prepare first: asking for the microphone before knowing dictation
       // can run would extract a permanent permission for nothing.
       await speech.prepare();
-      // Preparing can take minutes (the locale's models download): a bar
+      // Preparing can take minutes (the locale's models download): a field
       // closed meanwhile must not switch the microphone on afterwards.
       if (controller.signal.aborted) {
         return;
@@ -217,6 +193,7 @@ export const useQuickAddModel = ({
     }
   };
 
+  /** Stopping applies the transcript at once: no second tap after the microphone. */
   const stopRecording = async () => {
     setVoice('transcribing');
     try {
@@ -234,8 +211,8 @@ export const useQuickAddModel = ({
     }
   };
 
-  // Stop a forgotten recording, and never leave one running when the bar
-  // goes away (unmount cancels below).
+  // Stop a forgotten recording, and never leave one running when the
+  // field goes away (unmount cancels below).
   useEffect(() => {
     if (voice !== 'recording') {
       return;
@@ -257,26 +234,13 @@ export const useQuickAddModel = ({
 
   return {
     busy,
-    /** Hands the reviewed item to the caller's editor (as the kind it shows now). */
-    confirmReview: () => {
-      if (review) {
-        deliver(review);
-      }
-    },
-    /** Drops the review; the phrase stays for another try. */
-    dismissReview: () => setReview(null),
     error,
     found,
     mode,
     phrase,
     pickSlot,
-    /** What the phrase was understood as, while `reviewFirst` holds it for a look. */
-    review,
     setMode,
     setPhrase,
-    /** The review's Event/Task toggle: the same phrase as the other kind. */
-    setReviewKind: (kind: QuickAddReview['kind']) =>
-      setReview((current) => (current ? convertQuickAddItem(current, kind) : current)),
     startRecording,
     stopRecording,
     submit,
