@@ -349,7 +349,7 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   change announced once; Dynamic Type is capped only where a box cannot
   grow (`BOX_FONT_SCALE`), everything else scales fully.
 
-- **Mini month follows the view** (2026-10-10, `todo/mini-month-follows-view`)
+- **Mini month follows the view** (2026-10-10, #176)
   — the desktop mini month highlights the days on screen, not the focused
   day's Monday row (a rolled Wed–Tue week crosses two rows); a picked day
   leads the strip and is slid to, not jumped to its Monday week. Far picks
