@@ -29,10 +29,21 @@ export function SyncFooter({ onManageAccounts }: { onManageAccounts: () => void 
             const label = pendingOpLabel(op);
             return (
               <li className="flex items-center gap-2 px-3 py-1.5" key={op.id}>
-                <span className="min-w-0 flex-1 truncate">
-                  {label.text}
-                  {label.retry ? (
-                    <span className="text-xs text-warning"> — {label.retry}</span>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate">
+                    {label.text}
+                    {label.retry ? (
+                      <span className="text-xs text-warning"> — {label.retry}</span>
+                    ) : null}
+                  </span>
+                  {label.reason ? (
+                    <span
+                      className="block truncate text-xs text-ink-secondary"
+                      data-testid="pending-op-reason"
+                      title={label.reason}
+                    >
+                      {label.reason}
+                    </span>
                   ) : null}
                 </span>
                 {isParkedOp(op) ? (

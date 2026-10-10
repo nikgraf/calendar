@@ -558,6 +558,24 @@ desktop waits on a helper binary (below).
       helper commit: top-level code is MainActor-isolated (detach the
       per-request Task or the semaphore deadlocks), own-and-return
       accumulators across tasks.
+- [x] Desktop says why the model is unavailable — done (2026-10-10,
+      `todo/model-unavailable-reason`). The ⌘K field read "Model
+      unavailable" on a Mac whose Apple Intelligence had switched itself
+      off: Siri was on English (UK), the Mac on English (US), and a
+      language mismatch turns Apple Intelligence off (Writing Tools went
+      too). The helper already sent Foundation Models' reason; the
+      renderer dropped it. **`ModelStatus` carries the reason**:
+      `disabled` (switched off — the user can act), `not-ready` (assets
+      still downloading), `unsupported` (device not eligible, or macOS
+      below 26); `unavailable` stays for a reason the app doesn't know
+      (no helper, a crash, a case a newer macOS adds). `modelStatusOf`
+      maps the helper's `detail`; iOS's module answers only a boolean, so
+      it keeps `ready`/`unavailable`. The editor's quick-add field
+      (placeholder and tooltip) and the capture dialog's error say the
+      reason (`modelUnavailableCopy`), and `useModelAvailability` polls a
+      `not-ready` model every 30 s — the download ends with no event and
+      often while the app is in front. No "Open System Settings" button:
+      the tooltip names the pane, and focus re-checks on the way back.
 
 ## Robustness
 
@@ -2947,6 +2965,112 @@ then iOS (both in `todo.md`).
       field. Checked on the simulator with the fixture Google account and
       Reminders connected: each chip names its own list, and a task added
       under "Mock Tasks" shows there and not under "Reminders".
+
+### Add flow (2026-10-10)
+
+- [x] One add flow on both platforms: the editor is the review step —
+      done (`todo/add-flow`). **"+" opens the editor on a new item, with
+      the quick-add field on top, focused, then the Event | Task |
+      Reminder control, then the form.** iOS had three surfaces for one
+      intent (the quick-add sheet, its "Understood as" card with a second
+      Event/Task flip, then the editor) and a direct-create path
+      (`quickAddCreate.ts`) that picked a different default list than the
+      editor did; the desktop kept the field in the toolbar with the card
+      as a popover. Now a phrase, typed or dictated, fills the form
+      (`applyPrefill` on both models; `useQuickAddModel` hands a
+      `QuickAddItem` to `useEditorKinds.apply`): the title, the day, the
+      times or all-day, the location and the repeat rule are the phrase's
+      — all of them, a phrase without a place clears one typed before —
+      while the calendar or list, guests, notes and notifications stay.
+      Apply is not a required tap: Return applies, stopping a dictation
+      applies, and the Apply button re-applies after edits. The phrase
+      stays in the field, so what was read can be compared with the
+      form. A phrase read as the other kind switches the editor first (a
+      to-do lands on the kind a new to-do would open in, `defaultTodoKind`)
+      with the switch's own question about a loss; declined, or with that
+      kind unavailable, the phrase is read as the kind the editor shows
+      (`convertQuickAddItem`). Without the model the field says so and
+      the form is still there: no more dead end. **Reminder is a kind,
+      not a list.** A reminder was a task whose list happened to be an
+      Apple one, and picking that list silently swapped the whole form.
+      `ItemKind` (core `editor/itemKinds.ts`) names event / task /
+      reminder; the task model's selected list still decides the
+      provider, so `kind` reads it, and the list picker offers the
+      selected provider's lists only — the kind control moves between
+      providers (`switchEditorMode`, three-way: event ↔ to-do carries the
+      form over as before; task ↔ reminder keeps the task model's fields
+      and picks the kind's default list), a pick never changes the kind.
+      A new reminder switched to a task asks what has no home on a Google
+      list (its time, alerts, priority, rule — `taskMoveLossSummary` with
+      the verb "Switching to a task"; the URL folds into the notes); an
+      existing to-do switched to the other kind reads "Move to task" /
+      "Move to reminder" and moves on Save, which asks as a move always
+      did. `availableItemKinds` shows a kind only when something can hold
+      it: no Reminder without a connected Reminders list, no Task without
+      a Google account with Tasks, no Event without a writable calendar;
+      one kind means no control. The model keeps saying "event or to-do"
+      (`kind: 'task'`); the app maps a to-do onto Reminder or Task, never
+      the model. **Defaults follow the view.** The calendar's "+" wants an
+      event. The Tasks tab's "+" (new; it had none, only the inline add
+      field) opens an undated to-do in the filtered list, else the last
+      list used (`rememberTaskList`, like the last calendar), else a
+      Reminders list, then a Google one (`defaultTodoList`, which replaces
+      `taskAddTarget`); a kind with nowhere to go falls back in that
+      "+"'s order (`resolveItemKind`). The Tasks tab's inline add field
+      and the desktop rail's are gone, so there is one add path; the cost
+      is one tap ("+", type, Return, Save against tap, type, Return), and
+      the undated add they made is "No due date" beside Due on a new
+      task (`clearDueDate`, creates only: `updateTask` cannot clear a
+      stored due day). The desktop toolbar field is gone too — the
+      editor's field would have been a duplicate — and ⌘K opens a new
+      item with its field focused (or refocuses an open new item's; not
+      over another editor, whose draft it would drop), ⌘N and "+ New" the
+      same editor; the paste-to-capture the toolbar field had moved with
+      it (an email or image pasted into the editor's field goes to
+      capture, and the capture list stays up over a new item's editor —
+      it hides only behind the editor of one of its own rows). Find time
+      stays beside the field as its Add | Find time mode; a picked slot
+      fills the event's day and times. The quick-add field is for new
+      items only; the kind control on an existing item converts, as the
+      Event/Task toggle did. The iOS control is drawn in RN
+      (`SegmentedControl`, the desktop's look) rather than SwiftUI's,
+      because each segment carries the test id the flows tap. Checked:
+      the gate, the desktop convert / taskConvert / taskConvertGoogle /
+      capture / flows specs (the list-select moves became kind taps:
+      a reminder's picker no longer offers Google lists), and the iOS
+      flows 03/06/07/08/09/12/14/17/25 on the simulator with the fixture
+      model and Google. Review (Codex) found four things the probes had
+      not: a list picked for a kind now survives a round trip through the
+      event form (it was reset to the default); a parse that lands after
+      the kind flipped applies to the editor as it is then (the submit's
+      closure saw the old kind); "No due date" is hidden on an event →
+      task conversion (its draft always carries the day); and a location
+      a phrase set gets the one-time map lookup an opening location gets
+      (`givenLocation`).
+
+### Unsynced changes say why (2026-10-10)
+
+- [x] An unsynced change shows why its last attempt failed, and a task
+      change names its task — done (`todo/gone-task-ops`). Two completed
+      Google tasks sat on a TestFlight iPhone at "retrying (40×)" under
+      their raw ids, after the owner had removed them elsewhere. The
+      queue records each failure in `pending_ops.last_error`, but neither
+      app showed it (the drain's comment said the panel did), and a
+      TestFlight build's database cannot be read from a Mac, so the cause
+      stayed on the phone. Ruled out on the live account first: a PATCH
+      of a task deleted on Google answers 200 with `deleted: true` (the
+      op settles), a task moved to another list or sitting in a deleted
+      list answers 404 (`gone`); the real engine against the real API
+      settled both "deleted elsewhere, completed here" orders on the
+      first drain. Only a network failure, a 5xx, a 429 / rate-limit 403,
+      a token refresh other than `invalid_grant`, or a defect retries.
+      **`pendingOpLabel` returns `reason`**: the first line of the
+      recorded error, capped at 160 characters, only for a retried op
+      that is not parked. iOS adds it as the row's second subtitle line;
+      desktop's sync footer as a second truncated line, full text in its
+      tooltip. **`listPendingOps` names task ops**: the title the op sets
+      (`taskTitle`), else the local row's, else nothing (the id, as
+      before — a pull that removed the row leaves no title).
 
 ### Drags meet other input (2026-10-10)
 

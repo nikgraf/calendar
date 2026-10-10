@@ -62,7 +62,11 @@ export function UnsyncedPage() {
                 actionTestID={`pending-discard-${op.id}`}
                 key={op.id}
                 leading={<LeadingSymbol color={colors['text-secondary']} name="clock" />}
-                subtitle={label.retry ?? 'Waiting to sync'}
+                subtitle={
+                  label.reason
+                    ? `${label.retry ?? 'Waiting to sync'}\n${label.reason}`
+                    : (label.retry ?? 'Waiting to sync')
+                }
                 testID={`pending-op-${op.id}`}
                 title={label.text}
               />

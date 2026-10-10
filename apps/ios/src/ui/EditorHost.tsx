@@ -1,5 +1,6 @@
 import type { CaptureSource } from '@calendar/ai';
 import {
+  defaultTodoKind,
   findNotificationEvent,
   useCalendars,
   useCaptureModel,
@@ -9,9 +10,12 @@ import {
   type TaskEditorSeed,
 } from '@calendar/app-state';
 import {
+  availableItemKinds,
   type BirthdayOccurrence,
   type EventRecord,
+  type ItemKind,
   type NotificationTarget,
+  resolveItemKind,
   type TaskRecord,
   Temporal,
 } from '@calendar/core';
@@ -32,48 +36,54 @@ import { CaptureBanner } from './CaptureBanner.tsx';
 import { CaptureSheet } from './CaptureSheet.tsx';
 import { EventDetailSheet } from './EventDetailSheet.tsx';
 import { EventEditSheet, type EditSeed } from './EventEditSheet.tsx';
-import { QuickAddSheet } from './QuickAddSheet.tsx';
 
 /** The share extension opens the app at `<scheme>://expo-sharing` once the payload is stored. */
 const isShareUrl = (url: string) => /^[a-z-]+:\/\/expo-sharing/i.test(url);
 
+/** What a "+" asks for: a new item on the day being viewed. */
+export interface NewItemRequest {
+  /** A to-do that starts without a due day (the Tasks tab's inbox add). */
+  readonly dated?: boolean | undefined;
+  readonly focused: Temporal.PlainDate;
+  /** The kind this "+" wants; one that is not available falls back (`resolveItemKind`). */
+  readonly kind: ItemKind;
+  /** A to-do's list (`accountId:listId`), when the screen knows one (the Tasks tab's filter). */
+  readonly listKey?: string | undefined;
+}
+
 /** What every screen can ask the host to open. */
 export interface EditorHost {
   readonly closeAll: () => void;
-  /** The event editor: a slot, a prefill, an existing event (`initialMode: 'task'` converts). */
+  /** The event editor: a slot, a prefill, an existing event (a to-do `initialKind` converts). */
   readonly editEvent: (
     seed: EditSeed,
-    options?: { readonly captureRow?: string; readonly initialMode?: 'task' },
+    options?: { readonly captureRow?: string; readonly initialKind?: ItemKind },
   ) => void;
-  /** The task editor for an existing task, or a new one from a seed (a quick-add phrase). */
-  readonly editTask: (task: TaskRecord | { readonly seed: TaskEditorSeed }) => void;
+  /** The task editor for an existing task. */
+  readonly editTask: (task: TaskRecord) => void;
   readonly openBirthday: (birthday: BirthdayOccurrence) => void;
   /** The read-first event view; its Edit button opens the editor. */
   readonly openEvent: (event: EventRecord) => void;
-  /** The quick-add sheet; undated phrases and "New event" land on the day being viewed. */
-  readonly openQuickAdd: (focused: Temporal.PlainDate) => void;
+  /** The editor on a new item: the quick-add field on top, the kind control, the form. */
+  readonly openNew: (request: NewItemRequest) => void;
 }
 
 /**
- * One sheet at a time, in a small set of states. The quick-add sheet and
- * the detail sheet hand over to the editor by replacing themselves: two
- * sibling Modals never present together on iOS, and a sheet over a sheet
- * only happens where the capture list hosts the editor as its child.
+ * One sheet at a time, in a small set of states. The detail sheet hands
+ * over to the editor by replacing itself: two sibling Modals never
+ * present together on iOS, and a sheet over a sheet only happens where
+ * the capture list hosts the editor as its child.
  */
 type Sheet =
   | { readonly kind: 'none' }
-  | { readonly focused: Temporal.PlainDate; readonly kind: 'quickAdd' }
   | { readonly event: EventRecord; readonly kind: 'detail' }
   | {
       readonly captureRow?: string | undefined;
-      readonly initialMode?: 'task' | undefined;
-      readonly kind: 'editEvent';
+      readonly initialKind?: ItemKind | undefined;
+      readonly kind: 'edit';
       readonly seed: EditSeed;
-    }
-  | {
-      readonly kind: 'editTask';
-      readonly prefill?: TaskEditorSeed | undefined;
       readonly task?: TaskRecord | undefined;
+      readonly taskSeed?: Pick<TaskEditorSeed, 'dated' | 'listKey'> | undefined;
     }
   | { readonly birthday: BirthdayOccurrence; readonly kind: 'birthday' };
 
@@ -90,10 +100,11 @@ export const useEditorHost = (): EditorHost => {
 };
 
 /**
- * Owns every sheet of the app — quick add, the event detail, the editors,
- * the birthday detail, the capture review — and the capture model behind
- * the share sheet and deep links, so the Calendar and Tasks tabs open the
- * same sheets without owning them. Mounted once, under the providers.
+ * Owns every sheet of the app — the event detail, the editor (with the
+ * quick-add field on top of a new item), the birthday detail, the capture
+ * review — and the capture model behind the share sheet and deep links,
+ * so the Calendar and Tasks tabs open the same sheets without owning
+ * them. Mounted once, under the providers.
  */
 export function EditorHostProvider({ children }: { children: ReactNode }) {
   const zones = useTimeZones();
@@ -107,7 +118,7 @@ export function EditorHostProvider({ children }: { children: ReactNode }) {
   const openPrefill = (prefill: EventEditorPrefill, captureRow?: string) =>
     setSheet({
       captureRow,
-      kind: 'editEvent',
+      kind: 'edit',
       seed: { initialDate: Temporal.PlainDate.from(prefill.date), prefill },
     });
   const capture = useCaptureModel({
@@ -188,49 +199,48 @@ export function EditorHostProvider({ children }: { children: ReactNode }) {
     editEvent: (seed, options) =>
       setSheet({
         captureRow: options?.captureRow,
-        initialMode: options?.initialMode,
-        kind: 'editEvent',
+        initialKind: options?.initialKind,
+        kind: 'edit',
         seed,
       }),
     editTask: (task) =>
-      setSheet(
-        'seed' in task ? { kind: 'editTask', prefill: task.seed } : { kind: 'editTask', task },
-      ),
+      setSheet({ kind: 'edit', seed: { initialDate: Temporal.Now.plainDateISO(timeZone) }, task }),
     openBirthday: (birthday) => setSheet({ birthday, kind: 'birthday' }),
     openEvent: (event) => setSheet({ event, kind: 'detail' }),
-    openQuickAdd: (focused) => setSheet({ focused, kind: 'quickAdd' }),
+    openNew: ({ dated, focused, kind, listKey }) => {
+      // The calendar's "+" wants an event, the Tasks tab's a reminder and
+      // then a task; what is not here falls back to what is.
+      const resolved = resolveItemKind(kind, availableItemKinds({ calendars, taskLists }));
+      setSheet({
+        initialKind: resolved,
+        kind: 'edit',
+        seed: { initialDate: focused },
+        taskSeed: resolved === 'event' ? undefined : { dated, listKey },
+      });
+    },
   };
   const close = host.closeAll;
 
   // Keyed + conditionally mounted: a sheet seeds its form fields from its
   // seed in useState initializers, which only run on mount.
   const editSheet =
-    sheet.kind === 'editEvent' ? (
+    sheet.kind === 'edit' ? (
       <EventEditSheet
         calendars={calendars}
-        initialMode={sheet.initialMode}
-        key={`event:${sheet.seed.event?.id ?? `new:${sheet.seed.initialDate.toString()}:${sheet.seed.initialTimes?.startTime ?? ''}`}`}
+        initialKind={sheet.initialKind}
+        key={
+          sheet.task
+            ? `task:${sheet.task.id}`
+            : `event:${sheet.seed.event?.id ?? `new:${sheet.seed.initialDate.toString()}:${sheet.seed.initialTimes?.startTime ?? ''}`}`
+        }
         onClose={close}
         onSaved={
           sheet.captureRow === undefined ? undefined : () => capture.markAdded(sheet.captureRow!)
         }
         seed={sheet.seed}
-        taskLists={taskLists}
-        timeZone={timeZone}
-      />
-    ) : sheet.kind === 'editTask' ? (
-      <EventEditSheet
-        calendars={calendars}
-        key={`task:${sheet.task?.id ?? 'new'}`}
-        onClose={close}
-        seed={{
-          initialDate: sheet.prefill
-            ? Temporal.PlainDate.from(sheet.prefill.initialDate)
-            : Temporal.Now.plainDateISO(timeZone),
-        }}
         task={sheet.task}
         taskLists={taskLists}
-        taskPrefill={sheet.prefill}
+        taskSeed={sheet.taskSeed}
         timeZone={timeZone}
       />
     ) : sheet.kind === 'birthday' ? (
@@ -248,15 +258,6 @@ export function EditorHostProvider({ children }: { children: ReactNode }) {
   return (
     <EditorHostContext.Provider value={host}>
       {children}
-      {sheet.kind === 'quickAdd' ? (
-        <QuickAddSheet
-          focusedDate={sheet.focused}
-          onClose={close}
-          onEditEvent={(seed) => setSheet({ kind: 'editEvent', seed })}
-          onEditTask={(seed) => setSheet({ kind: 'editTask', prefill: seed })}
-          timeZone={timeZone}
-        />
-      ) : null}
       {sheet.kind === 'detail' ? (
         <EventDetailSheet
           calendars={calendars}
@@ -265,8 +266,8 @@ export function EditorHostProvider({ children }: { children: ReactNode }) {
           onClose={close}
           onConvert={() =>
             setSheet({
-              initialMode: 'task',
-              kind: 'editEvent',
+              initialKind: defaultTodoKind(taskLists),
+              kind: 'edit',
               seed: {
                 event: sheet.event,
                 initialDate: Temporal.Now.plainDateISO(timeZone),
@@ -276,7 +277,7 @@ export function EditorHostProvider({ children }: { children: ReactNode }) {
           }
           onEdit={() =>
             setSheet({
-              kind: 'editEvent',
+              kind: 'edit',
               seed: { event: sheet.event, initialDate: Temporal.Now.plainDateISO(timeZone) },
             })
           }

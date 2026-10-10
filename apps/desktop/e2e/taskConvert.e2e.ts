@@ -141,20 +141,27 @@ describe('Converting tasks between Google Tasks and Reminders', () => {
     await app.cdp.click(chip.x + 40, chip.y);
     await app.cdp.waitFor(`document.body.textContent.includes(${JSON.stringify(heading)})`);
   };
+  const clickTestId = async (testId: string) => {
+    const point = await app.cdp.locate(`[data-testid="${testId}"]`);
+    await app.cdp.click(point.x, point.y);
+  };
 
-  it('offers the lists of both providers, grouped per account', async () => {
+  it('offers the Google lists in the picker and Reminders as its own kind', async () => {
     const { cdp } = app;
     await open('all-day-task-task-rent', 'Edit task');
     try {
       const groups = await cdp.waitFor<string>(
         `JSON.stringify([...document.querySelectorAll('${LIST_SELECT} optgroup')].map(g => [g.label, [...g.querySelectorAll('option')].map(o => o.value)]))`,
       );
+      // Lists come back sorted by title; the Reminders list is behind the
+      // Reminder kind, never in a Google task's picker.
       expect(JSON.parse(groups)).toEqual([
-        // Lists come back sorted by title.
         ['e2e@example.com', ['acc-e2e:list-errands', 'acc-e2e:list-e2e']],
-        ['Apple Reminders', [`${APPLE_REMINDERS_ACCOUNT_ID}:ek-list-1`]],
       ]);
       expect(await cdp.eval(`document.querySelector('${LIST_SELECT}').disabled`)).toBe(false);
+      expect(await cdp.eval(`!!document.querySelector('[data-testid="mode-reminder"]')`)).toBe(
+        true,
+      );
     } finally {
       await cdp.clickButtonWithText('Cancel');
     }
@@ -163,10 +170,12 @@ describe('Converting tasks between Google Tasks and Reminders', () => {
   it('moves a reminder to a Google list after confirming what is dropped', async () => {
     const { cdp } = app;
     await open('timed-task-ek-rem-1', 'Edit reminder');
-    await cdp.eval(setSelect(LIST_SELECT, 'acc-e2e:list-e2e'));
-    // The form follows the picked list: the Google one has no time field.
-    await cdp.waitFor(`document.body.textContent.includes('Edit task')`);
+    await clickTestId('mode-task');
+    // The form follows the kind: the Google one has no time field, and
+    // the first Google list is picked.
+    await cdp.waitFor(`document.body.textContent.includes('Move to task')`);
     expect(await cdp.eval(`!!document.querySelector('input[aria-label="Due time"]')`)).toBe(false);
+    await cdp.eval(setSelect(LIST_SELECT, 'acc-e2e:list-e2e'));
     await cdp.clickButtonWithText('Save');
     const summary = await cdp.waitFor<string>(
       `document.querySelector('[data-testid="move-confirm"]')?.textContent ?? ''`,
@@ -206,8 +215,11 @@ describe('Converting tasks between Google Tasks and Reminders', () => {
   it('moves a Google task into Reminders with a due time, no confirmation needed', async () => {
     const { cdp } = app;
     await open('all-day-task-task-rent', 'Edit task');
-    await cdp.eval(setSelect(LIST_SELECT, `${APPLE_REMINDERS_ACCOUNT_ID}:ek-list-1`));
-    await cdp.waitFor(`document.body.textContent.includes('Edit reminder')`);
+    await clickTestId('mode-reminder');
+    await cdp.waitFor(`document.body.textContent.includes('Move to reminder')`);
+    expect(await cdp.eval(`document.querySelector('${LIST_SELECT}').value`)).toBe(
+      `${APPLE_REMINDERS_ACCOUNT_ID}:ek-list-1`,
+    );
     await cdp.eval(`document.querySelector('input[aria-label="At a time"]').click()`);
     await cdp.clickButtonWithText('Save');
     await expect

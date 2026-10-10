@@ -1,10 +1,19 @@
 import {
   CAPTURE_MODEL_UNAVAILABLE,
   describeCaptureRow,
+  useModelAvailability,
   type CaptureRow,
   type CaptureState,
 } from '@calendar/app-state';
+import { desktopLanguageModel } from '../ai/desktopModel.ts';
+import { modelUnavailableCopy } from '../ai/modelUnavailableCopy.ts';
 import { Dialog } from '../Dialog.tsx';
+
+/** Why the model could not read the paste, in the quick-add field's words. */
+function ModelUnavailableReason() {
+  const { status } = useModelAvailability(desktopLanguageModel);
+  return modelUnavailableCopy(status).long;
+}
 
 /**
  * The review list for a capture: every event the model found in a pasted
@@ -39,9 +48,11 @@ export function CaptureDialog({
         ) : state.kind === 'error' ? (
           <div className="flex items-center gap-3">
             <p className="flex-1 text-sm text-ink-secondary">
-              {state.message === CAPTURE_MODEL_UNAVAILABLE
-                ? 'The on-device model is unavailable — Solunivo’s AI features need macOS 26 with Apple Intelligence enabled.'
-                : state.message}
+              {state.message === CAPTURE_MODEL_UNAVAILABLE ? (
+                <ModelUnavailableReason />
+              ) : (
+                state.message
+              )}
             </p>
             <button
               className="rounded-lg border border-hairline px-3 py-1.5 text-sm"

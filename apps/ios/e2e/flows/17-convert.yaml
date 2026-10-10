@@ -6,8 +6,8 @@ tags:
 # Needs the fixture Google account (Metro started with
 # EXPO_PUBLIC_CALENDAR_GOOGLE=fixture, as CI does) beside a connected
 # Reminders list. Without the fixture the flow is a no-op, like 07/08.
-# One reminder takes both paths: the editor's kind toggle (to an event and
-# back) and the list picker (to a Google list and back). Google writes go
+# One reminder takes both paths of the editor's kind control: to an event
+# and back, and to a Google task and back. Google writes go
 # to the in-process fake API, so each converted item's create pushes and
 # its temp id becomes a server id mid-flow — every selector below is a
 # title, never an id.
@@ -29,7 +29,8 @@ tags:
       - evalScript: ${output.connectedReminders = false}
       - runFlow:
           when:
-            notVisible: 'Reminders.*'
+            notVisible:
+              id: 'mode-reminder'
           commands:
             - evalScript: ${output.connectedReminders = true}
             - tapOn: 'Cancel'
@@ -50,11 +51,14 @@ tags:
             - runFlow: ../common/open-new-event.yaml
             - runFlow: ../common/switch-to-task.yaml
       - extendedWaitUntil:
-          visible: 'Reminders.*'
+          visible:
+            id: 'mode-reminder'
           timeout: 30000
 
       # A timed reminder to convert.
-      - tapOn: 'Reminders.*'
+      - tapOn:
+          id: 'mode-reminder'
+      - assertVisible: 'New Reminder'
       - assertVisible:
           id: 'reminder-timed'
       - tapOn:
@@ -66,7 +70,7 @@ tags:
       - tapOn:
           id: 'event-save'
       - extendedWaitUntil:
-          notVisible: 'New Task'
+          notVisible: 'New Reminder'
           timeout: 20000
       # A timed reminder's block is "<title>, due <time>".
       - extendedWaitUntil:
@@ -91,14 +95,12 @@ tags:
           timeout: 10000
       - assertNotVisible: 'Solunivo e2e convert, due .*'
 
-      # Event → reminder: the form follows the picked list; the Reminders
-      # list keeps the time, so again no question.
+      # Event → reminder: the Reminder kind keeps the time, so again no
+      # question.
       - tapOn: 'Solunivo e2e convert, [0-9].*'
       - runFlow: ../common/open-event-editor.yaml
       - tapOn:
-          id: 'mode-task'
-      - assertVisible: 'Convert to .*'
-      - tapOn: 'Reminders.*'
+          id: 'mode-reminder'
       - assertVisible: 'Convert to Reminder'
       - tapOn:
           id: 'event-save'
@@ -111,10 +113,11 @@ tags:
       - tapOn: 'Solunivo e2e convert, due .*'
       - assertVisible: 'Edit Reminder'
 
-      # Reminder → Google list: the form flips to the Task form as soon
-      # as the list is picked; Save asks what the move drops (the time).
-      - tapOn: 'Mock Tasks'
-      - assertVisible: 'Edit Task'
+      # Reminder → task: the Task kind flips to the Task form on the
+      # Google list at once; Save asks what the move drops (the time).
+      - tapOn:
+          id: 'mode-task'
+      - assertVisible: 'Move to Task'
       - tapOn:
           id: 'event-save'
       - extendedWaitUntil:
@@ -122,7 +125,7 @@ tags:
           timeout: 10000
       - tapOn: 'Move'
       - extendedWaitUntil:
-          notVisible: 'Edit Task'
+          notVisible: 'Move to Task'
           timeout: 20000
       # Date-only now: an all-day chip, no due time in its label.
       - extendedWaitUntil:
@@ -133,13 +136,14 @@ tags:
       - tapOn: 'Solunivo e2e convert'
       - assertVisible: 'Edit Task'
 
-      # Google task → Reminders: nothing is lost, so no question.
-      - tapOn: 'Reminders.*'
-      - assertVisible: 'Edit Reminder'
+      # Google task → reminder: nothing is lost, so no question.
+      - tapOn:
+          id: 'mode-reminder'
+      - assertVisible: 'Move to Reminder'
       - tapOn:
           id: 'event-save'
       - extendedWaitUntil:
-          notVisible: 'Edit Reminder'
+          notVisible: 'Move to Reminder'
           timeout: 20000
       - extendedWaitUntil:
           visible: 'Solunivo e2e convert'
@@ -197,7 +201,7 @@ tags:
 # see 08).
 - runFlow:
     when:
-      visible: 'New Task'
+      visible: 'New (Task|Reminder)'
     commands:
       - tapOn: 'Cancel'
       - assertVisible: 'Today'
