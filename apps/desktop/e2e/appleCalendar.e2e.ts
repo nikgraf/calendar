@@ -98,7 +98,7 @@ const seed = {
     new Account({
       contactsEnabled: false,
       createdAt: 1,
-      email: 'e2e@nikgraf.com',
+      email: 'e2e@example.com',
       id: 'acc-e2e',
       provider: 'google',
       status: 'ok',
@@ -135,7 +135,7 @@ const seed = {
       accountId: 'acc-e2e',
       attendees: [
         new Attendee({
-          email: 'e2e@nikgraf.com',
+          email: 'e2e@example.com',
           isOrganizer: true,
           isSelf: true,
           responseStatus: 'accepted',
@@ -147,7 +147,7 @@ const seed = {
       etag: '"e1"',
       id: 'gmove1',
       isAllDay: false,
-      organizerEmail: 'e2e@nikgraf.com',
+      organizerEmail: 'e2e@example.com',
       startTimeZone: zone,
       startUtc: at(15),
       status: 'confirmed',

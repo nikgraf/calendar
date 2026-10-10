@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vite-plus/test';
-import { groupTaskInbox } from './taskInbox.ts';
-import { TaskRecord } from './types.ts';
+import { groupTaskInbox, taskAddTarget } from './taskInbox.ts';
+import { TaskListInfo, TaskRecord } from './types.ts';
 
 const TODAY = '2026-10-02';
 const ZONE = 'Europe/Vienna';
@@ -74,5 +74,44 @@ describe('groupTaskInbox', () => {
   it('drops a task the window and overdue queries both returned', () => {
     const late = task('rent', { dueDate: '2026-09-17' });
     expect(groupTaskInbox([late, late], TODAY, ZONE).overdue).toHaveLength(1);
+  });
+});
+
+const list = (accountId: string, id: string, overrides: Partial<TaskListInfo> = {}) =>
+  new TaskListInfo({
+    accountId,
+    id,
+    isVisible: true,
+    provider: accountId === 'apple-reminders' ? 'apple' : 'google',
+    title: id,
+    ...overrides,
+  });
+const keyOf = (target: TaskListInfo | undefined) => target && `${target.accountId}:${target.id}`;
+
+describe('taskAddTarget', () => {
+  const lists = [
+    list('apple-reminders', 'reminders'),
+    list('google-a', 'inbox'),
+    list('google-b', 'inbox'),
+    list('apple-reminders', 'shared', { readOnly: true }),
+    list('google-a', 'hidden', { isVisible: false }),
+  ];
+
+  it('adds to the first visible writable list when no list is filtered', () => {
+    expect(keyOf(taskAddTarget(lists, null))).toBe('apple-reminders:reminders');
+  });
+
+  it('adds to the filtered list, told apart by account', () => {
+    expect(keyOf(taskAddTarget(lists, 'google-b:inbox'))).toBe('google-b:inbox');
+  });
+
+  it('falls back when the filtered list is read-only, hidden or gone', () => {
+    for (const filter of ['apple-reminders:shared', 'google-a:hidden', 'google-c:inbox']) {
+      expect(keyOf(taskAddTarget(lists, filter))).toBe('apple-reminders:reminders');
+    }
+  });
+
+  it('has no target without a visible writable list', () => {
+    expect(taskAddTarget(lists.slice(3), null)).toBeUndefined();
   });
 });

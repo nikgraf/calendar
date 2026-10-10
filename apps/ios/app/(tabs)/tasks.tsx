@@ -7,7 +7,7 @@ import {
   useTimeZones,
   useToday,
 } from '@calendar/app-state';
-import { overdueLabel, type TaskRecord, Temporal } from '@calendar/core';
+import { overdueLabel, type TaskRecord, taskAddTarget, Temporal } from '@calendar/core';
 import { StatusBar } from 'expo-status-bar';
 import { useState } from 'react';
 import {
@@ -30,8 +30,9 @@ import { MutationNoticeToast } from '../../src/ui/Toast.tsx';
 /**
  * The Tasks tab: the inbox — overdue, today, no date, the next month,
  * done today — filtered by list, with a field that adds an undated task
- * to the first writable list. Rows open the task editor; the checkbox
- * completes at once, like the chips on the calendar.
+ * to the filtered list (the first writable one when it cannot take it).
+ * Rows open the task editor; the checkbox completes at once, like the
+ * chips on the calendar.
  */
 export default function TasksScreen() {
   const zones = useTimeZones();
@@ -50,8 +51,8 @@ function TasksBody({ timeZone }: { timeZone: string }) {
   const { completeTask, createTask } = useGuardedMutations();
   const [listFilter, setListFilter] = useState<string | null>(null);
   const [title, setTitle] = useState('');
-  const target = taskLists.find((list) => list.isVisible && !list.readOnly);
   const { active, chips } = taskListChips(taskLists, listFilter);
+  const target = taskAddTarget(taskLists, active);
 
   const keep = (task: TaskRecord) =>
     active === null || taskListKey(task.accountId, task.listId) === active;

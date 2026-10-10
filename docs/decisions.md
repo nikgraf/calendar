@@ -2930,3 +2930,20 @@ then iOS (both in `todo.md`).
       checked: a task drag across days after a swipe (the simulator
       tool's touch path does not start it on the old code either; the
       drop geometry at rest is unchanged), and a real device.
+
+### Tasks add field (2026-10-10)
+
+- [x] iOS Tasks: the add field adds to the filtered list — done
+      (`todo/tasks-add-target`). **The field writes where the user is
+      looking.** It always took the first visible writable list, so with
+      the "Mock Tasks" chip selected it said "Add a task to Reminders"
+      and the new task landed there, out of the filtered view. Now
+      `taskAddTarget` (core, beside `groupTaskInbox`) picks the filtered
+      list when it is visible and writable, for the placeholder and the
+      write alike; with "All", or a filter on a read-only or hidden list,
+      it keeps the first visible writable list. The desktop rail's inbox
+      has no list filter, so it keeps the first writable list, as do both
+      quick-add paths. Unit-tested only: no Maestro flow covers the add
+      field. Checked on the simulator with the fixture Google account and
+      Reminders connected: each chip names its own list, and a task added
+      under "Mock Tasks" shows there and not under "Reminders".

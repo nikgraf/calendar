@@ -88,7 +88,7 @@ const seedAccount = (tasksEnabled: boolean) =>
       new Account({
         contactsEnabled: false,
         createdAt: 1,
-        email: 'nik@nikgraf.com',
+        email: 'nik@example.com',
         id: 'acc-1',
         provider: 'google',
         status: 'ok',

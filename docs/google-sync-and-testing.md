@@ -531,6 +531,13 @@ against a real store — confirm them there before relying on them more.
 
 ## Testing conventions
 
+Email addresses in tests are made up: `@example.com`, the fixture
+account's `@solunivo.test`, or one of Google's own formats
+(`…@resource.calendar.google.com`, `…@group.calendar.google.com`) where
+the shape matters. Never a real person's or domain's address. Nothing
+needs one: the live suites take their account from `GOOGLE_LIVE_EMAIL`
+and generate their guests (`guest-<runTag>@example.com`).
+
 ### Unit tests (`vp test`, @effect/vitest)
 
 - Layer recipe: `EventMutations.layer` + `reposLayer` +

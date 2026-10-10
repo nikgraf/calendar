@@ -20,7 +20,7 @@ const seed = {
     new Account({
       contactsEnabled: false,
       createdAt: 1,
-      email: 'e2e@nikgraf.com',
+      email: 'e2e@example.com',
       id: 'acc-e2e',
       provider: 'google',
       status: 'ok',
@@ -151,7 +151,7 @@ describe('Converting tasks between Google Tasks and Reminders', () => {
       );
       expect(JSON.parse(groups)).toEqual([
         // Lists come back sorted by title.
-        ['e2e@nikgraf.com', ['acc-e2e:list-errands', 'acc-e2e:list-e2e']],
+        ['e2e@example.com', ['acc-e2e:list-errands', 'acc-e2e:list-e2e']],
         ['Apple Reminders', [`${APPLE_REMINDERS_ACCOUNT_ID}:ek-list-1`]],
       ]);
       expect(await cdp.eval(`document.querySelector('${LIST_SELECT}').disabled`)).toBe(false);

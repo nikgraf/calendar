@@ -31,7 +31,7 @@ const dayAt = (days: number, hour: number): number => {
 const account = new Account({
   contactsEnabled: false,
   createdAt: 1,
-  email: 'e2e@nikgraf.com',
+  email: 'e2e@example.com',
   id: 'acc-e2e',
   provider: 'google',
   status: 'ok',
