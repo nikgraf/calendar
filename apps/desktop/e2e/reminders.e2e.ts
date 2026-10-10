@@ -740,14 +740,26 @@ describe('Reminder chips drag between the all-day lane and the grid', () => {
     expect(await cdp.eval(`!!document.querySelector('[data-testid="task-drop-lane"]')`)).toBe(
       false,
     );
+    // Drawn, not just stored: see the next test.
+    await cdp.locate('[data-testid="all-day-task-ek-rem-1"]');
   });
 
   it('moves an all-day reminder to another day along the lane', async () => {
     const { cdp } = app;
     const from = await cdp.locate('[data-testid="all-day-task-ek-rem-milk"]');
-    await cdp.drag(from, { x: from.x + (await dayWidth()), y: from.y });
+    const width = await dayWidth();
+    await cdp.drag(from, { x: from.x + width, y: from.y });
     await expect.poll(() => taskById('ek-rem-milk'), POLL).toMatchObject({ dueDate: isoTomorrow });
     expect((await taskById('ek-rem-milk'))?.dueTime).toBeUndefined();
+    // SQLite has the move before the lane redraws it, and the lane's height
+    // moves the grid below it. The next test measures the grid: on CI a row
+    // collapsing under its drag dropped the reminder half an hour late.
+    // Wait for the chip in tomorrow's column.
+    await cdp.waitFor<boolean>(`(() => {
+      const chip = document.querySelector('[data-testid="all-day-task-ek-rem-milk"]');
+      const r = chip?.getBoundingClientRect();
+      return r !== undefined && r.x + r.width / 2 > ${from.x + width / 2};
+    })()`);
   });
 
   it('re-dates an overdue reminder to today at the dropped time', async () => {

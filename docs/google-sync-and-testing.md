@@ -627,6 +627,15 @@ Flakiness lessons (each caused a real CI failure — keep them enforced):
   the renderer throttled — `cdp.send('Emulation.setCPUThrottlingRate',
   { rate: 6 })`, also 12× — and never commit the throttle: it made #146's
   race and the stale inspector fail within a few rounds.
+- **Measure layout only once the last write is drawn.** SQLite has a
+  reminder's move before the all-day lane redraws it, and the lane's
+  height moves the grid below it. The overdue-drop test measured the grid
+  right after a lane move that had only been polled in SQLite, and on CI
+  the row collapsed under its drag: dropped at 11:30, not 11:00 (one
+  24 px row is half an hour). A test whose successor measures geometry
+  waits for its own result on screen (`reminders.e2e.ts` waits for the
+  chip in its new column). At 12× throttling the lane is still a row
+  taller when SQLite shows the move.
 - React inputs need the native value setter + `input`/`change` event
   dispatch; `<select>` likewise (`HTMLSelectElement` prototype setter).
 - Tests share one app instance and run in file order — later tests must
