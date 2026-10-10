@@ -200,10 +200,54 @@ it whenever a kind is added. Rules that keep the queue correct:
   `created_at` break by `rowid`.
 - The drain loop re-reads each op by id before dispatching: a missing row
   means the user discarded it (skip), and coalescing rewrites stay
-  visible. Discarding an op (`discardPendingOp`) hands its row back to
-  sync the same way a dropped op does (`releaseRow`). Each failure is
-  recorded in `last_error`; the unsynced-changes list shows it as the
-  row's reason.
+  visible. Each failure is recorded in `last_error`; the unsynced-changes
+  list shows it as the row's reason.
+- **An op remembers what it replaced**: `beforePayload` (the event row
+  before the local write; `null` when there was none — an occurrence edit
+  or delete that materialized its override), `beforeOverrides` (a series
+  delete's exception rows, which queue no op of their own), `beforeTask`
+  and `beforeColorHex`. When a newer edit replaces a queued op it inherits
+  that op's snapshot, so the snapshot always names the last state Google
+  acknowledged, however many edits piled up offline; a move re-keys it to
+  the destination with the op. The unsynced-changes list diffs an op
+  against it (`pendingOpDiff`, computed in `listPendingOps` as display
+  lines) and an abandoned op puts it back (`releaseRow`): a discard, a
+  permanent rejection and keep-mine with nothing left all restore the row
+  — an op puts back only the fields it owns (an RSVP the answers it
+  changed; an edit the fields it changed, the guest list only when it
+  edited it, and each guest's answer stays the row's), so it cannot
+  resurrect what another op of the event changed and was discarded
+  meanwhile, keeping the row's own etag; a delete re-inserts the row
+  unless a synced one sits there already (a pull put Google's copy back)
+  and the exceptions a series delete took with it (checked one by one); a
+  task edit or toggle restores the fields it owns; a color goes back only
+  while the calendar still shows the op's own (calendar-list pulls do not
+  skip a queued color) — and the row stays `pending` while another op of
+  the item, or a queued move of it, still owns it. A row a pull deleted
+  meanwhile is not resurrected, and a pull that confirms an item deleted
+  upstream (a cancelled occurrence included) clears the queued delete's
+  snapshot (`forgetDeleted`): the sync token has seen the deletion and
+  will never send it again. When an op lands while others of the item are
+  queued, every queued snapshot of the item moves to what Google
+  acknowledged (`advanceBefore`, `advanceBeforeTask`; the ones queued
+  earlier never held the landed change either), so discarding one of
+  them never undoes it (a landed series edit moves its exceptions' queued
+  snapshots to the carried text as well); a discarded op takes its owned
+  fields out of the other queued snapshots and out of what they send (an
+  RSVP rides in a guest-list edit's attendees, and the other way round);
+  an op replaced while its request was in flight puts nothing back when
+  that request is refused — the replacement owns the row. Known gap: a
+  full re-list after an expired sync token confirms a deletion only by
+  absence, which clears no snapshot. A snapshot
+  built while other ops of the item are replaced, or under a queued
+  series edit, is assembled from theirs (a series delete takes each
+  exception's acknowledged state, an occurrence edit or delete the
+  exception's own text under a queued series rename — `withOwnText` —
+  and a series delete leaves out an exception this device only
+  materialized; a task delete takes each queued op's fields), never from
+  the optimistic rows. Two exceptions keep today's content: a 2xx whose body did
+  not decode (the write landed) and an op queued before the snapshot
+  existed, which can only be marked synced.
 
 ## Sync engine (packages/sync/src/engine.ts)
 
@@ -248,8 +292,9 @@ it whenever a kind is added. Rules that keep the queue correct:
   protected by sync_status). Local writes mark their row `pending`; pulls
   write in `mode: 'pull'`, which skips pending rows, so a queued edit is
   never clobbered by a page carrying the server's older copy. The push
-  response (ack upsert), an abandoned op (`markSynced` on drop or discard)
-  or a resolved conflict hands the row back. Task rows work the same way
+  response (ack upsert), an abandoned op (`releaseRow`: the op's snapshot
+  of the row goes back, or `markSynced` when it has none) or a resolved
+  conflict hands the row back. Task rows work the same way
   (`setStatus`/`updateLocal` mark pending; `upsertTasks(…, { mode:
   'pull' })`).
 - Cancelled events arrive as tombstones and are kept as `status:

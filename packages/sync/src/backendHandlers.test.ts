@@ -8,14 +8,19 @@ import {
   Account,
   APPLE_REMINDERS_ACCOUNT_ID,
   type BirthdayReminderSettings,
+  CalendarInfo,
+  EventRecord,
   PendingOp,
+  type PendingOpDiffLine,
   TaskListInfo,
   TaskRecord,
 } from '@calendar/core';
 import {
   AccountRepo,
+  CalendarRepo,
   DeviceSettingsRepo,
   PendingOpRepo,
+  reposLayer,
   runMigrations,
   TaskRepo,
 } from '@calendar/db';
@@ -314,16 +319,46 @@ describe('setBirthdayReminderSettings', () => {
 });
 
 const listPendingOps = commonBackendHandlers.listPendingOps(undefined) as Effect.Effect<
-  ReadonlyArray<{ readonly id: string; readonly title?: string | undefined }>,
+  ReadonlyArray<{
+    readonly diff?: ReadonlyArray<PendingOpDiffLine> | undefined;
+    readonly id: string;
+    readonly title?: string | undefined;
+  }>,
   unknown,
-  PendingOpRepo | TaskRepo
+  CalendarRepo | DeviceSettingsRepo | PendingOpRepo | TaskRepo
 >;
 
-const queueLayer = Layer.mergeAll(AccountRepo.layer, PendingOpRepo.layer, TaskRepo.layer).pipe(
+const queueLayer = reposLayer.pipe(
   Layer.provideMerge(Layer.effectDiscard(runMigrations)),
   Layer.provideMerge(SqliteClient.layer({ filename: ':memory:' })),
   Layer.provideMerge(reactivityLayer),
 );
+
+const googleAccount = new Account({
+  contactsEnabled: false,
+  createdAt: 1,
+  email: 'nik@example.com',
+  id: 'acc-1',
+  provider: 'google',
+  status: 'ok',
+  tasksEnabled: true,
+});
+
+const eventRow = (title: string) =>
+  new EventRecord({
+    accountId: 'acc-1',
+    calendarId: 'cal-1',
+    endUtc: 2,
+    etag: '"e"',
+    id: 'evt-1',
+    isAllDay: false,
+    startUtc: 1,
+    status: 'confirmed',
+    syncedAt: 1,
+    syncStatus: 'pending',
+    title,
+    updatedAt: 1,
+  });
 const taskOp = (id: string, kind: PendingOp['kind'], taskId: string, extra = {}) =>
   new PendingOp({
     accountId: 'acc-1',
@@ -386,5 +421,71 @@ describe('listPendingOps', () => {
       const titles = Object.fromEntries((yield* listPendingOps).map((op) => [op.id, op.title]));
       expect(titles).toEqual({ complete: 'Pay rent', gone: undefined, rename: 'Pay rent today' });
     }).pipe(Effect.provide(queueLayer)),
+  );
+
+  it.effect(
+    'says what each op does, naming calendars, and nothing for an op without a snapshot',
+    () =>
+      Effect.gen(function* () {
+        yield* (yield* AccountRepo).upsert(googleAccount);
+        yield* (yield* CalendarRepo).upsertMany(
+          [
+            ['cal-1', 'Work'],
+            ['cal-2', 'Home'],
+          ].map(
+            ([id, summary]) =>
+              new CalendarInfo({
+                accessRole: 'owner',
+                accountId: 'acc-1',
+                colorHex: '#3b82f6',
+                id: id ?? '',
+                isPrimary: id === 'cal-1',
+                isVisible: true,
+                provider: 'google',
+                summary: summary ?? '',
+                timeZone: 'UTC',
+              }),
+          ),
+        );
+        const queue = yield* PendingOpRepo;
+        const base = { accountId: 'acc-1', attempts: 0, calendarId: 'cal-1', nextAttemptAt: 0 };
+        yield* queue.enqueue(
+          new PendingOp({
+            ...base,
+            beforePayload: eventRow('Standup'),
+            createdAt: 1,
+            eventId: 'evt-1',
+            id: 'edit',
+            kind: 'update',
+            payload: eventRow('Standup (moved)'),
+          }),
+        );
+        yield* queue.enqueue(
+          new PendingOp({
+            ...base,
+            createdAt: 2,
+            eventId: 'evt-1',
+            id: 'legacy',
+            kind: 'update',
+            payload: eventRow('Standup (moved)'),
+          }),
+        );
+        yield* queue.enqueue(
+          new PendingOp({
+            ...base,
+            createdAt: 3,
+            eventId: 'evt-1',
+            id: 'move',
+            kind: 'move',
+            targetCalendarId: 'cal-2',
+          }),
+        );
+        const diffs = Object.fromEntries((yield* listPendingOps).map((op) => [op.id, op.diff]));
+        expect(diffs['edit']).toEqual([
+          { after: 'Standup (moved)', before: 'Standup', label: 'Title' },
+        ]);
+        expect(diffs['legacy']).toBeUndefined();
+        expect(diffs['move']).toEqual([{ after: 'Home', before: 'Work', label: 'Calendar' }]);
+      }).pipe(Effect.provide(queueLayer)),
   );
 });

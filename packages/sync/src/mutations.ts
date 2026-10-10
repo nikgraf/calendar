@@ -52,7 +52,7 @@ import type { SqlError } from 'effect/sql/SqlError';
 import { makeApplyOp } from './applyOp.ts';
 import { AppleCalendarEvents, deviceTimeZone } from './appleCalendarEvents.ts';
 import { makeAppleEventMutations } from './appleEventMutations.ts';
-import { planCarry, restoreCarriedText } from './carriedText.ts';
+import { planCarry, restoreCarriedText, withOwnText } from './carriedText.ts';
 import {
   CALENDAR_COLOR_EVENT_ID,
   CalendarNotWritableError,
@@ -97,6 +97,32 @@ const foldIntoCreate = (create: PendingOp, payload: EventRecord) =>
     nextAttemptAt: 0,
     payload,
   });
+
+/**
+ * What a new update or delete of the event diffs against and a discard
+ * puts back: the before of the queued update or delete it replaces — the
+ * last state Google acknowledged, also when edits pile up offline — else
+ * the row as it is now (`null` when there is none: an occurrence edit
+ * materializing its override). A replaced op from before the snapshot
+ * leaves it unknown: the row already holds that op's edit.
+ */
+const inheritedBefore = (
+  queued: ReadonlyArray<PendingOp>,
+  current: EventRecord | null | undefined,
+): PendingOp['beforePayload'] => {
+  const prior = queued.find((op) => op.kind === 'update' || op.kind === 'delete');
+  return prior ? prior.beforePayload : (current ?? null);
+};
+
+/** The queued series edit whose text the exceptions show locally, if any. */
+const seriesEditOf = (queued: ReadonlyArray<PendingOp>): PendingOp | undefined =>
+  queued.findLast((op) => op.kind === 'update' && op.carriedText !== undefined);
+
+/** `before` as Google has it: a queued series edit's carried text taken out. */
+const ownTextOf = (
+  before: PendingOp['beforePayload'],
+  seriesEdit: PendingOp | undefined,
+): PendingOp['beforePayload'] => (before && seriesEdit ? withOwnText(before, seriesEdit) : before);
 
 /**
  * The defined fields of an update, ready to spread over an EventRecord.
@@ -311,12 +337,6 @@ const make: Effect.Effect<
    * The carried text of the series edit a truncation replaces: its payload
    * still shows that edit's text, so abandoning it must still undo the carry.
    */
-  const queuedCarriedText = (accountId: string, calendarId: string, masterId: string) =>
-    Effect.map(
-      opsForEvent(accountId, calendarId, masterId),
-      (ops) => ops.findLast((op) => op.kind === 'update')?.carriedText,
-    );
-
   const enqueue = (op: PendingOp) => pendingOpRepo.enqueue(op);
 
   /**
@@ -360,9 +380,10 @@ const make: Effect.Effect<
     now: number,
   ) =>
     Effect.gen(function* () {
+      const queued = yield* opsForEvent(accountId, calendarId, master.id);
       const carriedText = unsentCreate
         ? undefined
-        : yield* queuedCarriedText(accountId, calendarId, master.id);
+        : queued.findLast((op) => op.kind === 'update')?.carriedText;
       if (unsentCreate) {
         yield* pendingOpRepo.removeForEvent(accountId, calendarId, master.id);
       } else {
@@ -375,6 +396,7 @@ const make: Effect.Effect<
               accountId,
               attempts: 0,
               baseEtag: master.etag ?? undefined,
+              beforePayload: inheritedBefore(queued, master),
               calendarId,
               carriedText,
               createdAt: now,
@@ -446,10 +468,19 @@ const make: Effect.Effect<
   ) =>
     Effect.gen(function* () {
       const overrides = yield* eventRepo.listOverrides(accountId, calendarId, masterId);
+      // A queued series edit carried its text onto the exceptions locally;
+      // what Google has is their own text.
+      const seriesEdit = (yield* opsForEvent(accountId, calendarId, masterId)).findLast(
+        (op) => op.kind === 'update' && op.carriedText !== undefined,
+      );
       for (const override of overrides) {
         if ((override.originalStartUtc ?? override.startUtc) < fromOriginalStartUtc) {
           continue;
         }
+        // What a discard puts back: the exception as Google has it, not an
+        // offline edit of it whose op goes with it here.
+        const queued = yield* opsForEvent(accountId, calendarId, override.id);
+        const acked = inheritedBefore(queued, override);
         yield* pendingOpRepo.removeForEvent(accountId, calendarId, override.id);
         yield* eventRepo.deleteEvent(accountId, calendarId, override.id);
         if (!remote) {
@@ -460,6 +491,7 @@ const make: Effect.Effect<
             accountId,
             attempts: 0,
             baseEtag: override.etag ?? undefined,
+            beforePayload: acked && seriesEdit ? withOwnText(acked, seriesEdit) : acked,
             calendarId,
             createdAt: now,
             eventId: override.id,
@@ -799,7 +831,10 @@ const make: Effect.Effect<
         if (existing.recurringEventId || existing.recurrence) {
           return yield* Effect.fail(new RecurringEditUnsupportedError({ eventId }));
         }
-        const unsentCreate = yield* unsentCreateOf(accountId, calendarId, eventId);
+        const queued = yield* opsForEvent(accountId, calendarId, eventId);
+        const unsentCreate = queued.find(
+          (op) => op.kind === 'create' && op.dispatchedAt === undefined,
+        );
         yield* eventRepo.deleteEvent(accountId, calendarId, eventId);
         if (unsentCreate) {
           // Never sent: dropping its create is the whole delete.
@@ -813,6 +848,7 @@ const make: Effect.Effect<
               accountId,
               attempts: 0,
               baseEtag: existing.etag ?? undefined,
+              beforePayload: inheritedBefore(queued, existing),
               calendarId,
               createdAt: now,
               eventId,
@@ -843,12 +879,15 @@ const make: Effect.Effect<
             updatedAt: now,
           });
           yield* eventRepo.upsertMany([tombstone]);
+          const queued = yield* opsForEvent(accountId, calendarId, instanceId);
+          const seriesEdit = seriesEditOf(yield* opsForEvent(accountId, calendarId, masterId));
           yield* pendingOpRepo.removeForEvent(accountId, calendarId, instanceId);
           yield* enqueue(
             new PendingOp({
               accountId,
               attempts: 0,
               baseEtag: existing?.etag ?? undefined,
+              beforePayload: ownTextOf(inheritedBefore(queued, existing), seriesEdit),
               calendarId,
               createdAt: now,
               eventId: instanceId,
@@ -864,8 +903,27 @@ const make: Effect.Effect<
         const unsentCreate = yield* unsentCreateOf(accountId, calendarId, masterId);
         if (scope === 'series' || originalStartUtc <= master.startUtc) {
           // Deleting the master cascades to its exceptions server-side.
+          // They go with the master locally and come back with it on a
+          // discard — as Google has them: an exception edited offline goes
+          // back to its acknowledged state (its op goes with it here), one
+          // this device only materialized does not come back at all.
           const overrides = yield* eventRepo.listOverrides(accountId, calendarId, masterId);
+          const queued = yield* opsForEvent(accountId, calendarId, masterId);
+          // A queued series edit carried its text onto them locally; that
+          // op goes with the master too, so their own text is taken now.
+          const seriesEdit = queued.findLast(
+            (op) => op.kind === 'update' && op.carriedText !== undefined,
+          );
+          const beforeOverrides: Array<EventRecord> = [];
           for (const override of overrides) {
+            const acked = inheritedBefore(
+              yield* opsForEvent(accountId, calendarId, override.id),
+              override,
+            );
+            if (acked !== null) {
+              const own = acked ?? override;
+              beforeOverrides.push(seriesEdit ? withOwnText(own, seriesEdit) : own);
+            }
             yield* pendingOpRepo.removeForEvent(accountId, calendarId, override.id);
             yield* eventRepo.deleteEvent(accountId, calendarId, override.id);
           }
@@ -881,6 +939,8 @@ const make: Effect.Effect<
               accountId,
               attempts: 0,
               baseEtag: master.etag ?? undefined,
+              beforeOverrides,
+              beforePayload: inheritedBefore(queued, master),
               calendarId,
               createdAt: now,
               eventId: masterId,
@@ -943,6 +1003,7 @@ const make: Effect.Effect<
         yield* eventRepo.upsertMany([merged]);
         // Only the latest response needs to reach Google.
         const queued = yield* opsForEvent(accountId, calendarId, eventId);
+        const priorRsvp = queued.find((op) => op.kind === 'rsvp');
         for (const op of queued) {
           if (op.kind === 'rsvp') {
             yield* pendingOpRepo.remove(op.id);
@@ -955,6 +1016,7 @@ const make: Effect.Effect<
             // Sent as If-Match, retried without on a 412 (applyOp): when it
             // holds, the edits queued on this etag can follow the RSVP.
             baseEtag: existing.etag ?? undefined,
+            beforePayload: priorRsvp ? priorRsvp.beforePayload : existing,
             calendarId,
             createdAt: now,
             eventId,
@@ -981,10 +1043,14 @@ const make: Effect.Effect<
         if (!normalized) {
           return yield* Effect.fail(new InvalidColorError({ colorHex }));
         }
+        const current = (yield* calendarRepo.list(accountId)).find(
+          (calendar) => calendar.id === calendarId,
+        )?.colorHex;
         yield* calendarRepo.setColor(accountId, calendarId, normalized);
         // Only the latest color needs to reach Google — scoped by account:
         // the same shared calendar id can exist under several accounts.
         const queued = yield* opsForEvent(accountId, calendarId, CALENDAR_COLOR_EVENT_ID);
+        const prior = queued.find((op) => op.accountId === accountId);
         for (const op of queued) {
           if (op.accountId === accountId) {
             yield* pendingOpRepo.remove(op.id);
@@ -995,6 +1061,10 @@ const make: Effect.Effect<
           new PendingOp({
             accountId,
             attempts: 0,
+            // The replaced change's baseline carries over while the calendar
+            // still shows that change; a color a pull installed meanwhile is
+            // Google's and becomes the baseline.
+            beforeColorHex: prior && current === prior.colorHex ? prior.beforeColorHex : current,
             calendarId,
             colorHex: normalized,
             createdAt: now,
@@ -1049,6 +1119,7 @@ const make: Effect.Effect<
             attempts: 0,
             attendeesChanged: attendeesFlag(changes, queued),
             baseEtag: existing.etag ?? undefined,
+            beforePayload: inheritedBefore(queued, existing),
             calendarId,
             createdAt: now,
             eventId,
@@ -1107,6 +1178,11 @@ const make: Effect.Effect<
               attempts: 0,
               attendeesChanged: attendeesFlag(changes, queued),
               baseEtag: existing?.etag ?? undefined,
+              // Its own text, not what a queued series edit carried onto it.
+              beforePayload: ownTextOf(
+                inheritedBefore(queued, existing),
+                seriesEditOf(yield* opsForEvent(accountId, calendarId, masterId)),
+              ),
               calendarId,
               createdAt: now,
               eventId: instanceId,
@@ -1207,6 +1283,7 @@ const make: Effect.Effect<
               attempts: 0,
               attendeesChanged: attendeesFlag(changes, queued),
               baseEtag: master.etag ?? undefined,
+              beforePayload: inheritedBefore(queued, master),
               calendarId,
               carriedText,
               createdAt: now,
@@ -1437,13 +1514,19 @@ const make: Effect.Effect<
       // not send its pre-move If-Match: it would 412 and park. A parked op
       // stays parked (conflictAt rides along): dropping the park with the
       // etag would silently decide the conflict for the user.
-      const retarget = (record: EventRecord | undefined) =>
-        record ? new EventRecord({ ...record, calendarId: target.calendarId }) : undefined;
+      function retarget(record: EventRecord): EventRecord;
+      function retarget(record: EventRecord | undefined): EventRecord | undefined;
+      function retarget(record: EventRecord | undefined): EventRecord | undefined {
+        return record ? new EventRecord({ ...record, calendarId: target.calendarId }) : undefined;
+      }
       const rekey = (op: PendingOp, createdAt: number) =>
         new PendingOp({
           ...op,
           attempts: 0,
           baseEtag: undefined,
+          // What a discard puts back lives in the target now too.
+          beforeOverrides: op.beforeOverrides?.map((row) => retarget(row)),
+          beforePayload: op.beforePayload ? retarget(op.beforePayload) : op.beforePayload,
           calendarId: target.calendarId,
           createdAt,
           id: generateEventId(),

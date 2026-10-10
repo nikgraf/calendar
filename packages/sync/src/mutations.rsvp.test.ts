@@ -321,3 +321,251 @@ describe('EventMutations.respondToEvent', () => {
     }).pipe(Effect.provide(makeLayer({}))),
   );
 });
+
+describe('discarding an edit of an invitation', () => {
+  it.effect('keeps the answer given before it and leaves the row to the queued RSVP', () =>
+    Effect.gen(function* () {
+      yield* seed;
+      const mutations = yield* EventMutations;
+      yield* mutations.respondToEvent({ ...respond, response: 'accepted' });
+      yield* mutations.updateEvent({ ...respond, changes: { title: 'Planning v2' } });
+      const queue = yield* PendingOpRepo;
+      const edit = (yield* queue.listAll()).find((op) => op.kind === 'update');
+      expect(edit?.beforePayload?.title).toBe('Planning');
+
+      yield* mutations.discardPendingOp(edit!.id);
+      const row = yield* (yield* EventRepo).getById('acc-1', 'cal-1', 'evt-invite');
+      expect(row?.title).toBe('Planning');
+      const own = row?.attendees?.find((attendee) => attendee.email === 'nik@example.com');
+      expect(own?.responseStatus).toBe('accepted');
+      // The RSVP still owns the row: pulls must keep skipping it.
+      expect(row?.syncStatus).toBe('pending');
+      expect((yield* queue.listAll()).map((op) => op.kind)).toEqual(['rsvp']);
+    }).pipe(
+      Effect.provide(
+        makeLayer({ patchEvent: () => Effect.fail(new ApiUnavailableError({ cause: 'offline' })) }),
+      ),
+    ),
+  );
+});
+
+describe('discarding a rename and an RSVP made offline, in either order', () => {
+  const offline = makeLayer({
+    patchEvent: () => Effect.fail(new ApiUnavailableError({ cause: 'offline' })),
+  });
+  const rowNow = Effect.gen(function* () {
+    const row = yield* (yield* EventRepo).getById('acc-1', 'cal-1', 'evt-invite');
+    const own = row?.attendees?.find((attendee) => attendee.email === 'nik@example.com');
+    return { response: own?.responseStatus, syncStatus: row?.syncStatus, title: row?.title };
+  });
+
+  it.effect('puts back only what each change did: neither resurrects the other', () =>
+    Effect.gen(function* () {
+      yield* seed;
+      const mutations = yield* EventMutations;
+      const queue = yield* PendingOpRepo;
+      const opOf = (kind: 'rsvp' | 'update') =>
+        Effect.map(queue.listAll(), (ops) => ops.find((op) => op.kind === kind)!.id);
+      // Rename, then RSVP: the RSVP's snapshot carries the new title.
+      yield* mutations.updateEvent({ ...respond, changes: { title: 'Planning v2' } });
+      yield* mutations.respondToEvent({ ...respond, response: 'accepted' });
+      yield* mutations.discardPendingOp(yield* opOf('update'));
+      expect(yield* rowNow).toEqual({
+        response: 'accepted',
+        syncStatus: 'pending',
+        title: 'Planning',
+      });
+      yield* mutations.discardPendingOp(yield* opOf('rsvp'));
+      expect(yield* rowNow).toEqual({
+        response: 'needsAction',
+        syncStatus: 'synced',
+        title: 'Planning',
+      });
+      expect(yield* queue.listAll()).toEqual([]);
+
+      // RSVP, then rename: the rename's snapshot carries the answer.
+      yield* mutations.respondToEvent({ ...respond, response: 'tentative' });
+      yield* mutations.updateEvent({ ...respond, changes: { title: 'Planning v3' } });
+      yield* mutations.discardPendingOp(yield* opOf('rsvp'));
+      expect(yield* rowNow).toEqual({
+        response: 'needsAction',
+        syncStatus: 'pending',
+        title: 'Planning v3',
+      });
+      yield* mutations.discardPendingOp(yield* opOf('update'));
+      expect(yield* rowNow).toEqual({
+        response: 'needsAction',
+        syncStatus: 'synced',
+        title: 'Planning',
+      });
+      expect(yield* queue.listAll()).toEqual([]);
+    }).pipe(Effect.provide(offline)),
+  );
+});
+
+/** The id of the queued op of this kind (one at most: they coalesce). */
+const queuedOpOf = (kind: 'rsvp' | 'update') =>
+  Effect.map(
+    Effect.flatMap(PendingOpRepo, (queue) => queue.listAll()),
+    (ops) => ops.find((op) => op.kind === kind)!.id,
+  );
+
+describe('an RSVP and an edit queued around each other own different fields', () => {
+  const offline = makeLayer({
+    patchEvent: () => Effect.fail(new ApiUnavailableError({ cause: 'offline' })),
+  });
+  const rowNow = Effect.gen(function* () {
+    const row = yield* (yield* EventRepo).getById('acc-1', 'cal-1', 'evt-invite');
+    const own = row?.attendees?.find((attendee) => attendee.email === 'nik@example.com');
+    return { response: own?.responseStatus, syncStatus: row?.syncStatus, title: row?.title };
+  });
+
+  it.effect('a second RSVP discarded puts back only its answer, not the rename between', () =>
+    Effect.gen(function* () {
+      yield* seed;
+      const mutations = yield* EventMutations;
+      yield* mutations.respondToEvent({ ...respond, response: 'accepted' });
+      yield* mutations.updateEvent({ ...respond, changes: { title: 'Planning v2' } });
+      yield* mutations.respondToEvent({ ...respond, response: 'tentative' });
+      yield* mutations.discardPendingOp(yield* queuedOpOf('rsvp'));
+      expect(yield* rowNow).toEqual({
+        response: 'needsAction',
+        syncStatus: 'pending',
+        title: 'Planning v2',
+      });
+      yield* mutations.discardPendingOp(yield* queuedOpOf('update'));
+      expect(yield* rowNow).toEqual({
+        response: 'needsAction',
+        syncStatus: 'synced',
+        title: 'Planning',
+      });
+    }).pipe(Effect.provide(offline)),
+  );
+
+  it.effect('a second rename discarded leaves the answer given between the two renames', () =>
+    Effect.gen(function* () {
+      yield* seed;
+      const mutations = yield* EventMutations;
+      yield* mutations.updateEvent({ ...respond, changes: { title: 'Planning v2' } });
+      yield* mutations.respondToEvent({ ...respond, response: 'accepted' });
+      yield* mutations.updateEvent({ ...respond, changes: { title: 'Planning v3' } });
+      yield* mutations.discardPendingOp(yield* queuedOpOf('update'));
+      expect(yield* rowNow).toEqual({
+        response: 'accepted',
+        syncStatus: 'pending',
+        title: 'Planning',
+      });
+      yield* mutations.discardPendingOp(yield* queuedOpOf('rsvp'));
+      expect(yield* rowNow).toEqual({
+        response: 'needsAction',
+        syncStatus: 'synced',
+        title: 'Planning',
+      });
+    }).pipe(Effect.provide(offline)),
+  );
+});
+
+describe('an RSVP discarded after a delete took the row', () => {
+  it.effect('comes out of the delete’s snapshot, so discarding the delete does not keep it', () =>
+    Effect.gen(function* () {
+      yield* seed;
+      const mutations = yield* EventMutations;
+      yield* mutations.respondToEvent({ ...respond, response: 'accepted' });
+      yield* mutations.deleteEvent(respond);
+      const queue = yield* PendingOpRepo;
+      const rsvp = (yield* queue.listAll()).find((op) => op.kind === 'rsvp');
+      yield* mutations.discardPendingOp(rsvp!.id);
+      const remove = (yield* queue.listAll()).find((op) => op.kind === 'delete');
+      const own = remove?.beforePayload?.attendees?.find(
+        (attendee) => attendee.email === 'nik@example.com',
+      );
+      expect(own?.responseStatus).toBe('needsAction');
+
+      yield* mutations.discardPendingOp(remove!.id);
+      const row = yield* (yield* EventRepo).getById('acc-1', 'cal-1', 'evt-invite');
+      expect(
+        row?.attendees?.find((attendee) => attendee.email === 'nik@example.com')?.responseStatus,
+      ).toBe('needsAction');
+      expect(row?.syncStatus).toBe('synced');
+    }).pipe(
+      Effect.provide(
+        makeLayer({
+          deleteEvent: () => Effect.fail(new ApiUnavailableError({ cause: 'offline' })),
+          patchEvent: () => Effect.fail(new ApiUnavailableError({ cause: 'offline' })),
+        }),
+      ),
+    ),
+  );
+});
+
+/** The account's own answer in a record's guest list. */
+const ownResponseOf = (
+  record: { readonly attendees?: ReadonlyArray<Attendee> | undefined } | undefined,
+) => record?.attendees?.find((attendee) => attendee.email === 'nik@example.com')?.responseStatus;
+
+describe('a discarded change leaves what the other queued op sends', () => {
+  const offline = makeLayer({
+    patchEvent: () => Effect.fail(new ApiUnavailableError({ cause: 'offline' })),
+  });
+
+  it.effect('a discarded RSVP is not sent along by a queued guest-list edit', () =>
+    Effect.gen(function* () {
+      yield* seed;
+      const mutations = yield* EventMutations;
+      yield* mutations.respondToEvent({ ...respond, response: 'accepted' });
+      yield* mutations.updateEvent({
+        ...respond,
+        changes: {
+          attendees: [
+            new Attendee({
+              email: 'organizer@example.com',
+              isOrganizer: true,
+              responseStatus: 'accepted',
+            }),
+            new Attendee({ email: 'nik@example.com', responseStatus: 'accepted' }),
+            new Attendee({ email: 'ann@example.com', responseStatus: 'needsAction' }),
+          ],
+        },
+      });
+      const queue = yield* PendingOpRepo;
+      const rsvp = (yield* queue.listAll()).find((op) => op.kind === 'rsvp');
+      yield* mutations.discardPendingOp(rsvp!.id);
+      const edit = (yield* queue.listAll()).find((op) => op.kind === 'update');
+      expect(edit?.attendeesChanged).toBe(true);
+      expect(ownResponseOf(edit?.payload)).toBe('needsAction');
+      expect(
+        edit?.payload?.attendees?.some((attendee) => attendee.email === 'ann@example.com'),
+      ).toBe(true);
+    }).pipe(Effect.provide(offline)),
+  );
+
+  it.effect('a discarded guest-list edit is not sent along by a queued RSVP', () =>
+    Effect.gen(function* () {
+      yield* seed;
+      const mutations = yield* EventMutations;
+      yield* mutations.updateEvent({
+        ...respond,
+        changes: {
+          attendees: [
+            new Attendee({
+              email: 'organizer@example.com',
+              isOrganizer: true,
+              responseStatus: 'accepted',
+            }),
+            new Attendee({ email: 'nik@example.com', responseStatus: 'needsAction' }),
+            new Attendee({ email: 'ann@example.com', responseStatus: 'needsAction' }),
+          ],
+        },
+      });
+      yield* mutations.respondToEvent({ ...respond, response: 'accepted' });
+      const queue = yield* PendingOpRepo;
+      const edit = (yield* queue.listAll()).find((op) => op.kind === 'update');
+      yield* mutations.discardPendingOp(edit!.id);
+      const rsvp = (yield* queue.listAll()).find((op) => op.kind === 'rsvp');
+      expect(ownResponseOf(rsvp?.payload)).toBe('accepted');
+      expect(
+        rsvp?.payload?.attendees?.some((attendee) => attendee.email === 'ann@example.com'),
+      ).toBe(false);
+    }).pipe(Effect.provide(offline)),
+  );
+});

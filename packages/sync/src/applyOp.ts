@@ -1,4 +1,12 @@
-import { contrastingTextColor, EventRecord, type PendingOp } from '@calendar/core';
+import {
+  Attendee,
+  contrastingTextColor,
+  EventRecord,
+  normalizeHexColor,
+  type PendingOp,
+  TaskRecord,
+  withConsistentGeo,
+} from '@calendar/core';
 import type {
   AccountRepoShape,
   CalendarRepoShape,
@@ -123,10 +131,96 @@ const updateBody = (op: PendingOp, record: EventRecord) => ({
   ...(op.attendeesChanged ? { attendees: toGcalAttendees(record) } : {}),
 });
 
+/** `revert: false` keeps the row's content and only hands it back to sync. */
+export interface ReleaseOptions {
+  readonly revert?: boolean;
+}
+
+/** Row bookkeeping no edit changes: left out when looking for what an edit touched. */
+const ROW_BOOKKEEPING: ReadonlySet<string> = new Set([
+  'accountId',
+  'calendarId',
+  'etag',
+  'id',
+  'mirror',
+  'syncStatus',
+  'syncedAt',
+  'updatedAt',
+]);
+
+/**
+ * The fields an edit changed, with their values before it: where what the
+ * op sends differs from the row it replaced. A discard puts back only
+ * these, so it cannot resurrect what another op of the event changed and
+ * was discarded meanwhile (a rename discarded before the RSVP made after
+ * it, whose snapshot still carries the new title).
+ */
+const changedFields = (before: EventRecord, payload: EventRecord): Partial<EventRecord> => {
+  const was = before as unknown as Record<string, unknown>;
+  const sent = payload as unknown as Record<string, unknown>;
+  const patch: Record<string, unknown> = {};
+  for (const key of new Set([...Object.keys(was), ...Object.keys(sent)])) {
+    if (!ROW_BOOKKEEPING.has(key) && JSON.stringify(was[key]) !== JSON.stringify(sent[key])) {
+      patch[key] = was[key];
+    }
+  }
+  return patch as Partial<EventRecord>;
+};
+
+const responseOf = (
+  attendees: ReadonlyArray<Attendee> | undefined,
+  email: string,
+): Attendee['responseStatus'] | undefined =>
+  attendees?.find((attendee) => attendee.email === email)?.responseStatus;
+
+/**
+ * What an abandoned edit or RSVP puts back, over the row as it is now.
+ * An RSVP owns only the answers it changed (its snapshot may carry a
+ * rename made between two RSVPs, which still belongs to the queued
+ * edit). An edit owns the fields it changed, and the guest list only when
+ * it edited it — and even then each guest's answer stays what the row
+ * shows, since answers belong to RSVPs.
+ */
+const ownedFields = (
+  op: PendingOp,
+  current: EventRecord,
+  before: EventRecord,
+  payload: EventRecord,
+): Partial<EventRecord> => {
+  if (op.kind === 'rsvp') {
+    const changed = (payload.attendees ?? []).filter((attendee) => {
+      const was = responseOf(before.attendees, attendee.email);
+      return was !== undefined && was !== attendee.responseStatus;
+    });
+    if (changed.length === 0 || !current.attendees) {
+      return {};
+    }
+    return {
+      attendees: current.attendees.map((attendee) => {
+        const was = changed.some((guest) => guest.email === attendee.email)
+          ? responseOf(before.attendees, attendee.email)
+          : undefined;
+        return was === undefined ? attendee : new Attendee({ ...attendee, responseStatus: was });
+      }),
+    };
+  }
+  const { attendees: _attendees, ...rest } = changedFields(before, payload);
+  if (!op.attendeesChanged) {
+    return rest;
+  }
+  return {
+    ...rest,
+    attendees: before.attendees?.map((guest) => {
+      const now = responseOf(current.attendees, guest.email);
+      return now === undefined ? guest : new Attendee({ ...guest, responseStatus: now });
+    }),
+  };
+};
+
 export interface ApplyOp {
   readonly apply: (op: PendingOp) => Effect.Effect<ApplyOutcome>;
-  /** Hands an abandoned op's local row back to sync (also used by discard). */
-  readonly releaseRow: (op: PendingOp) => Effect.Effect<void>;
+  /** Puts back what an abandoned op changed locally and hands its row to sync (also used by discard). */
+  readonly releaseRow: (op: PendingOp, options?: ReleaseOptions) => Effect.Effect<void>;
 }
 
 export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
@@ -143,13 +237,227 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
   } = deps;
 
   /**
-   * The local row an abandoned op left `pending`: a dropped create takes
-   * its optimistic row with it (deleteStale never collects pending rows,
-   * so it would render forever as something Google never had); an
-   * abandoned edit hands its row back to sync — pulls skip pending rows,
-   * so without this the server's version could never land again.
+   * Where a put-back row stands with sync: still pending while another op
+   * of the item owns it — one in its calendar, or a queued move of the
+   * event, which sits in the source calendar and settles the row itself
+   * once it lands (or fails and re-keys it back).
    */
-  const releaseRow = (op: PendingOp): Effect.Effect<void> => {
+  const releasedStatus = (op: PendingOp): Effect.Effect<EventRecord['syncStatus'], SqlError> =>
+    Effect.map(
+      Effect.all([othersQueued(op), pendingOpRepo.earlierInSeries(op)]),
+      ([others, earlier]) => (others || earlier.includes('move') ? 'pending' : 'synced'),
+    );
+
+  /** Today's hand-back, for an op with no snapshot: the exceptions' own text, then the flag. */
+  const handBack = (op: PendingOp) =>
+    Effect.andThen(
+      Effect.ignore(restoreCarriedText(eventRepo, op)),
+      eventRepo.markSynced(op.accountId, op.calendarId, op.eventId),
+    );
+
+  /**
+   * An abandoned update or RSVP: the row goes back to what the edit
+   * replaced. The etag stays the row's own — an earlier op of ours that
+   * landed moved it (`advanceEtag`), and whatever that op changed on
+   * Google comes back with the next incremental pull. A row a pull
+   * deleted meanwhile is not resurrected (pulls delete pending rows too).
+   */
+  const revertEdit = (op: PendingOp) =>
+    Effect.gen(function* () {
+      if (op.beforePayload === undefined) {
+        return yield* handBack(op);
+      }
+      yield* Effect.ignore(restoreCarriedText(eventRepo, op));
+      // The other queued ops of the event took their snapshots — and what
+      // they send — with this change in: it goes out of both (an RSVP
+      // rides in a guest-list edit's attendees and the other way round),
+      // and out of a queued delete's snapshot, all that is left once the
+      // row is gone.
+      if (op.beforePayload !== null && op.payload) {
+        const before = op.beforePayload;
+        const payload = op.payload;
+        for (const other of yield* pendingOpRepo.listForEvent(op)) {
+          if (other.id === op.id || other.conflictAt !== undefined) {
+            continue;
+          }
+          if (other.beforePayload) {
+            yield* pendingOpRepo.setBefore(
+              other.id,
+              new EventRecord({
+                ...other.beforePayload,
+                ...ownedFields(op, other.beforePayload, before, payload),
+              }),
+            );
+          }
+          if (other.payload && other.kind !== 'delete') {
+            yield* pendingOpRepo.setPayload(
+              other.id,
+              new EventRecord({
+                ...other.payload,
+                ...ownedFields(op, other.payload, before, payload),
+              }),
+            );
+          }
+        }
+      }
+      const current = yield* eventRepo.getById(op.accountId, op.calendarId, op.eventId);
+      if (!current) {
+        return;
+      }
+      if (op.beforePayload === null) {
+        // The edit materialized this override from a plain occurrence; it
+        // goes unless another op (an RSVP on the occurrence) still owns it
+        // — that op's landing settles the row with Google's copy.
+        if (!(yield* othersQueued(op))) {
+          yield* eventRepo.deleteEvent(op.accountId, op.calendarId, op.eventId);
+        }
+        return;
+      }
+      const syncStatus = yield* releasedStatus(op);
+      // Only what this op owns goes back; the rest of the row is whatever
+      // other ops of the event (still queued, or landed) made it.
+      const restored = op.payload
+        ? ownedFields(op, current, op.beforePayload, op.payload)
+        : op.beforePayload;
+      yield* eventRepo.upsertMany([
+        new EventRecord({
+          ...current,
+          ...restored,
+          calendarId: op.calendarId,
+          etag: current.etag,
+          id: op.eventId,
+          syncStatus,
+        }),
+      ]);
+    });
+
+  /**
+   * An abandoned delete: the row comes back as it was, unless a synced
+   * row sits there already (a pull put Google's copy back, or never saw
+   * it go). An instance delete's tombstone sits over its override under
+   * the same id, so a pending row is the delete's own and is replaced; a
+   * tombstone over a plain occurrence is simply removed.
+   */
+  const revertDelete = (op: PendingOp) =>
+    Effect.gen(function* () {
+      if (op.beforePayload === undefined) {
+        return;
+      }
+      const current = yield* eventRepo.getById(op.accountId, op.calendarId, op.eventId);
+      if (op.beforePayload === null) {
+        if (current?.syncStatus === 'pending') {
+          yield* eventRepo.deleteEvent(op.accountId, op.calendarId, op.eventId);
+        }
+        return;
+      }
+      // A synced row here is a pull's (Google's copy came back, or never
+      // left): it stays. The exceptions below are checked one by one —
+      // an incremental pull that re-sent the master need not have re-sent
+      // its unchanged exceptions.
+      if (!current || current.syncStatus === 'pending') {
+        const syncStatus = yield* releasedStatus(op);
+        yield* eventRepo.upsertMany([
+          new EventRecord({
+            ...op.beforePayload,
+            calendarId: op.calendarId,
+            id: op.eventId,
+            syncStatus,
+          }),
+        ]);
+      }
+      // A series delete took the exceptions with it; a pull may have
+      // brought one back since (synced), which stays.
+      for (const override of op.beforeOverrides ?? []) {
+        const row = yield* eventRepo.getById(op.accountId, op.calendarId, override.id);
+        if (row && row.syncStatus !== 'pending') {
+          continue;
+        }
+        // An RSVP on the occurrence survived the series delete: it owns the row.
+        const owned = yield* pendingOpRepo.listForEvent({
+          accountId: op.accountId,
+          calendarId: op.calendarId,
+          eventId: override.id,
+        });
+        yield* eventRepo.upsertMany([
+          new EventRecord({
+            ...override,
+            calendarId: op.calendarId,
+            syncStatus: owned.length > 0 ? 'pending' : 'synced',
+          }),
+        ]);
+      }
+    });
+
+  /**
+   * An abandoned task edit or toggle: the fields the op carries go back
+   * to what they were; the rest of the row stays (a completion queued
+   * after a discarded rename keeps its tick). The row stays pending while
+   * another op of the task is queued.
+   */
+  const revertTaskEdit = (op: PendingOp, listId: string, before: TaskRecord) =>
+    Effect.gen(function* () {
+      const current = yield* taskRepo.get(op.accountId, listId, op.eventId);
+      if (!current) {
+        return;
+      }
+      const restored = new TaskRecord({
+        ...current,
+        ...(op.kind === 'completeTask'
+          ? { completedAt: before.completedAt, status: before.status }
+          : {}),
+        ...(op.taskDue === undefined ? {} : { dueDate: before.dueDate }),
+        ...(op.taskNotes === undefined ? {} : { notes: before.notes }),
+        ...(op.taskTitle === undefined ? {} : { title: before.title }),
+      });
+      yield* taskRepo.upsertTasks([restored], yield* Clock.currentTimeMillis);
+      if (yield* othersQueued(op)) {
+        yield* taskRepo.markPending(op.accountId, listId, op.eventId);
+      }
+    });
+
+  /**
+   * An abandoned color change: the previous color comes back while the
+   * calendar still shows this op's. Calendar-list pulls do not skip a
+   * calendar with a queued color (there is no pending flag on it), so a
+   * color another device chose meanwhile is Google's and stays.
+   */
+  const revertColor = (op: PendingOp, before: string) =>
+    Effect.gen(function* () {
+      const calendar = (yield* calendarRepo.list(op.accountId)).find(
+        (candidate) => candidate.id === op.calendarId,
+      );
+      if (
+        calendar &&
+        op.colorHex !== undefined &&
+        normalizeHexColor(calendar.colorHex) === normalizeHexColor(op.colorHex)
+      ) {
+        yield* calendarRepo.setColor(op.accountId, op.calendarId, before);
+      }
+    });
+
+  /** An abandoned task delete: the row comes back unless a pull already put it back. */
+  const revertTaskDelete = (op: PendingOp, listId: string, before: TaskRecord) =>
+    Effect.gen(function* () {
+      const current = yield* taskRepo.get(op.accountId, listId, op.eventId);
+      if (current) {
+        return;
+      }
+      const now = yield* Clock.currentTimeMillis;
+      yield* taskRepo.upsertTasks([new TaskRecord({ ...before, id: op.eventId, listId })], now);
+    });
+
+  /**
+   * The local row an abandoned op left `pending` (a discard, a permanent
+   * rejection, keep-mine with nothing left to keep): what the op changed
+   * is put back from its snapshot, so the screen shows what Google has,
+   * and the row is handed back to sync — pulls skip pending rows, so
+   * without this the server's version could never land again. A dropped
+   * create takes its optimistic row with it (deleteStale never collects
+   * pending rows, so it would render forever as something Google never
+   * had). An op from before the snapshot can only mark its row synced.
+   */
+  const releaseRow = (op: PendingOp, options: ReleaseOptions = {}): Effect.Effect<void> => {
+    const revert = options.revert ?? true;
     switch (op.kind) {
       case 'move':
         // The server still has the event in the source calendar: put the
@@ -198,16 +506,25 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
       case 'completeTask':
       case 'updateTask':
         return op.taskListId
-          ? Effect.ignore(taskRepo.markSynced(op.accountId, op.taskListId, op.eventId))
+          ? Effect.ignore(
+              revert && op.beforeTask
+                ? revertTaskEdit(op, op.taskListId, op.beforeTask)
+                : taskRepo.markSynced(op.accountId, op.taskListId, op.eventId),
+            )
+          : Effect.void;
+      case 'deleteTask':
+        return op.taskListId && revert && op.beforeTask
+          ? Effect.ignore(revertTaskDelete(op, op.taskListId, op.beforeTask))
           : Effect.void;
       case 'rsvp':
-        return Effect.ignore(eventRepo.markSynced(op.accountId, op.calendarId, op.eventId));
       case 'update':
-        // A series edit's exceptions get their own text back too.
-        return Effect.andThen(
-          Effect.ignore(restoreCarriedText(eventRepo, op)),
-          Effect.ignore(eventRepo.markSynced(op.accountId, op.calendarId, op.eventId)),
-        );
+        return Effect.ignore(revert ? revertEdit(op) : handBack(op));
+      case 'delete':
+        return revert ? Effect.ignore(revertDelete(op)) : Effect.void;
+      case 'calendarColor':
+        return revert && op.beforeColorHex
+          ? Effect.ignore(revertColor(op, op.beforeColorHex))
+          : Effect.void;
       default:
         return Effect.void;
     }
@@ -234,12 +551,27 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
   }
 
   /** A rejection retrying cannot fix: say so, tell the UI, drop the op. */
-  const drop = (op: PendingOp, reason: string): Effect.Effect<ApplyOutcome> =>
-    Effect.logWarning('pending op dropped', { eventId: op.eventId, kind: op.kind, reason }).pipe(
-      Effect.andThen(releaseRow(op)),
-      Effect.andThen(Effect.ignore(notifyDropped)),
-      Effect.as('done' as const),
-    );
+  const drop = (
+    op: PendingOp,
+    reason: string,
+    options: ReleaseOptions = {},
+  ): Effect.Effect<ApplyOutcome> =>
+    Effect.gen(function* () {
+      yield* Effect.logWarning('pending op dropped', {
+        eventId: op.eventId,
+        kind: op.kind,
+        reason,
+      });
+      // Replaced while this request was in flight: the replacement owns
+      // the row now (and meets the same answer itself); nothing to put back.
+      const queued = yield* Effect.orElseSucceed(pendingOpRepo.getById(op.id), () => op);
+      if (queued === undefined) {
+        return 'done' as const;
+      }
+      yield* releaseRow(op, options);
+      yield* Effect.ignore(notifyDropped);
+      return 'done' as const;
+    });
 
   /** Google no longer has what the op writes to (404, or a 410 on a write). */
   const gone = (op: PendingOp) =>
@@ -311,11 +643,75 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
           yield* pendingOpRepo.advanceBaseEtag(event, options.sentEtag, produced, op);
           yield* eventRepo.advanceEtag(event, options.sentEtag, produced);
         }
-        if (synced && !(yield* othersQueued(op, calendarId))) {
+        if (!synced) {
+          return;
+        }
+        yield* advanceCarried(op, synced, calendarId);
+        if (yield* othersQueued(op, calendarId)) {
+          // The row is theirs; what they replace is now what just landed.
+          yield* pendingOpRepo.advanceBefore(event, synced, op);
+        } else {
           yield* eventRepo.upsertMany([synced]);
         }
       }),
     );
+
+  /**
+   * A series edit that carried text onto its exceptions landed: Google
+   * carried it there too, so the queued edits of those exceptions now
+   * replace the carried text, not the text the exceptions had before.
+   */
+  const advanceCarried = (op: PendingOp, synced: EventRecord, calendarId: string) =>
+    Effect.gen(function* () {
+      const carriedText = op.carriedText;
+      if (!carriedText) {
+        return;
+      }
+      // Google keeps no empty text: an empty field and a missing one are the same value.
+      const changed = (field: 'description' | 'location' | 'title') =>
+        (synced[field] ?? '') !== (carriedText.base[field] ?? '');
+      const carried: Partial<EventRecord> = {
+        ...(changed('description') ? { description: synced.description } : {}),
+        ...(changed('location') ? { location: synced.location } : {}),
+        ...(changed('title') ? { title: synced.title } : {}),
+      };
+      if (Object.keys(carried).length === 0) {
+        return;
+      }
+      for (const entry of carriedText.overrides) {
+        const queued = yield* pendingOpRepo.listForEvent({
+          accountId: op.accountId,
+          calendarId,
+          eventId: entry.eventId,
+        });
+        for (const other of queued) {
+          if (other.beforePayload && other.conflictAt === undefined) {
+            yield* pendingOpRepo.setBefore(
+              other.id,
+              withConsistentGeo(new EventRecord({ ...other.beforePayload, ...carried })),
+            );
+          }
+        }
+      }
+    });
+
+  /**
+   * A task edit or toggle landed: Google's copy settles the row — unless a
+   * later op of the task owns it (an edit made while this one was in
+   * flight), in which case it is what that op replaces now.
+   */
+  const settleTask = (op: PendingOp, listId: string, synced: TaskRecord) =>
+    Effect.gen(function* () {
+      if (yield* othersQueued(op)) {
+        yield* pendingOpRepo.advanceBeforeTask(
+          { accountId: op.accountId, listId, taskId: op.eventId },
+          synced,
+          op,
+        );
+      } else {
+        yield* taskRepo.upsertTasks([synced], yield* Clock.currentTimeMillis);
+      }
+    });
 
   /**
    * A create answered 409: an earlier attempt landed and its response was
@@ -347,6 +743,13 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
       yield* transaction(
         Effect.gen(function* () {
           if (yield* othersQueued(op)) {
+            if (landed) {
+              yield* pendingOpRepo.advanceBefore(
+                { accountId: op.accountId, calendarId: op.calendarId, eventId: op.eventId },
+                landed,
+                op,
+              );
+            }
             return;
           }
           if (landed) {
@@ -483,7 +886,7 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
             taskListId: op.taskListId,
           });
           if (synced) {
-            yield* taskRepo.upsertTasks([synced], yield* Clock.currentTimeMillis);
+            yield* settleTask(op, op.taskListId, synced);
           }
           return 'done' as const;
         }
@@ -756,7 +1159,7 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
             taskListId: op.taskListId,
           });
           if (patchedRecord) {
-            yield* taskRepo.upsertTasks([patchedRecord], yield* Clock.currentTimeMillis);
+            yield* settleTask(op, op.taskListId, patchedRecord);
           }
           return 'done' as const;
         }
@@ -773,13 +1176,15 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
             ? op.kind === 'create'
               ? settleLanded(op)
               : Effect.succeed('done' as const)
-            : (error.status >= 400 && error.status < 500 && error.status !== 429) ||
-                // A 2xx whose body did not decode is a schema bug on our
+            : error.status >= 200 && error.status < 300
+              ? // A 2xx whose body did not decode is a schema bug on our
                 // side; retrying it forever at the 30-minute cap fixes
-                // nothing. The response landed, so the next pull has it.
-                (error.status >= 200 && error.status < 300)
-              ? drop(op, `${error.status}: ${error.message}`)
-              : Effect.succeed(retry(`${error.status}: ${error.message}`)),
+                // nothing. The write landed, so the row keeps the change
+                // and the next pull settles it.
+                drop(op, `${error.status}: ${error.message}`, { revert: false })
+              : error.status >= 400 && error.status < 500 && error.status !== 429
+                ? drop(op, `${error.status}: ${error.message}`)
+                : Effect.succeed(retry(`${error.status}: ${error.message}`)),
         // The scope vanished after the op was queued (consent revoked, or
         // the enable flag was stale): this push can never succeed, so
         // retrying would pin the queue forever. Drop it, which hands the

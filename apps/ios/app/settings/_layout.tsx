@@ -8,8 +8,9 @@ import { groupedGround, useTheme } from '../../src/ui/theme.ts';
 import { MutationNoticeToast, NOTICE_GAP, NoticeStack } from '../../src/ui/Toast.tsx';
 
 /**
- * A page opened directly (the calendar's unsynced badge pushes
- * `/settings/unsynced` with `withAnchor`) lands on top of the root page.
+ * A page opened directly (a deep link into Settings) lands on top of the
+ * root page. The calendar's unsynced badge opens the root itself, where
+ * Unsynced Changes is the first row while there are any.
  */
 export const unstable_settings = { initialRouteName: 'index' };
 

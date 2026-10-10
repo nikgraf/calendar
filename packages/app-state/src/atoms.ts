@@ -108,7 +108,8 @@ const MUTATION_REACTIVITY = {
   deleteMirror: [MIRRORS_KEYS, MIRRORS_LOCAL_KEY],
   deleteRecurring: [EVENTS_KEY],
   deleteTask: [TASKS_KEY],
-  discardPendingOp: [OPS_KEY],
+  // A discard puts the row back as it was: events, tasks or a calendar's color.
+  discardPendingOp: [CALENDARS_KEY, EVENTS_KEY, OPS_KEY, TASKS_KEY],
   // Reads the document; changes nothing.
   exportSettings: [],
   importSettings: [

@@ -124,6 +124,18 @@ export const PendingOpConflict = Schema.Struct({
 });
 export type PendingOpConflict = Schema.Schema.Type<typeof PendingOpConflict>;
 
+/**
+ * One line of what a queued change does, as the unsynced-changes list
+ * shows it: a field, its value before the change and after. `null` on a
+ * side that has no record (before a create, after a delete).
+ */
+export const PendingOpDiffLine = Schema.Struct({
+  after: Schema.NullOr(Schema.String),
+  before: Schema.NullOr(Schema.String),
+  label: Schema.String,
+});
+export type PendingOpDiffLine = Schema.Schema.Type<typeof PendingOpDiffLine>;
+
 /** Queue entry surfaced to the UI (payload stripped; title pulled out). */
 export const PendingOpSummary = Schema.Struct({
   /** Whose queue it is: removing that account drops the change. */
@@ -133,6 +145,11 @@ export const PendingOpSummary = Schema.Struct({
   /** Set while a 412 has the op parked, waiting for keep-mine / take-theirs. */
   conflict: Schema.optional(PendingOpConflict),
   createdAt: Schema.Number,
+  /**
+   * What the change does, field by field (`pendingOpDiff`). Absent for an
+   * op queued before the app kept what a change replaced: no details.
+   */
+  diff: Schema.optional(Schema.Array(PendingOpDiffLine)),
   eventId: Schema.String,
   id: Schema.String,
   kind: Schema.Literals([

@@ -197,3 +197,66 @@ describe('EventMutations.setCalendarColor', () => {
     }).pipe(Effect.provide(makeLayer({}))),
   );
 });
+
+describe('discarding a color change', () => {
+  it.effect('puts the color back that the first queued change replaced', () =>
+    Effect.gen(function* () {
+      yield* seed;
+      const mutations = yield* EventMutations;
+      const paint = (colorHex: string) =>
+        mutations.setCalendarColor({ accountId: 'acc-1', calendarId: 'cal-1', colorHex });
+      yield* paint('#16a765');
+      yield* paint('#4986e7');
+      const queue = yield* PendingOpRepo;
+      const [op] = yield* queue.listAll();
+      expect(op?.beforeColorHex).toBe('#3b82f6');
+      expect(yield* colorOf('acc-1')).toBe('#4986e7');
+
+      yield* mutations.discardPendingOp(op!.id);
+      expect(yield* colorOf('acc-1')).toBe('#3b82f6');
+      expect(yield* queue.listAll()).toEqual([]);
+    }).pipe(noYield, Effect.provide(makeLayer({}))),
+  );
+});
+
+describe('discarding a color change after a pull changed the color', () => {
+  it.effect('keeps the color another device chose meanwhile', () =>
+    Effect.gen(function* () {
+      yield* seed;
+      const mutations = yield* EventMutations;
+      yield* mutations.setCalendarColor({
+        accountId: 'acc-1',
+        calendarId: 'cal-1',
+        colorHex: '#16a765',
+      });
+      // A calendar-list pull: no pending flag keeps it off a calendar.
+      yield* (yield* CalendarRepo).upsertMany([
+        new CalendarInfo({ ...workCalendar('acc-1'), colorHex: '#7bd148' }),
+      ]);
+      const [op] = yield* (yield* PendingOpRepo).listAll();
+      yield* mutations.discardPendingOp(op!.id);
+      expect(yield* colorOf('acc-1')).toBe('#7bd148');
+    }).pipe(noYield, Effect.provide(makeLayer({}))),
+  );
+});
+
+describe('a color change queued over a pulled color', () => {
+  it.effect('takes the pulled color as its baseline, not the replaced change’s', () =>
+    Effect.gen(function* () {
+      yield* seed;
+      const mutations = yield* EventMutations;
+      const paint = (colorHex: string) =>
+        mutations.setCalendarColor({ accountId: 'acc-1', calendarId: 'cal-1', colorHex });
+      yield* paint('#16a765');
+      // Another device chose a color; the calendar-list pull installed it.
+      yield* (yield* CalendarRepo).upsertMany([
+        new CalendarInfo({ ...workCalendar('acc-1'), colorHex: '#7bd148' }),
+      ]);
+      yield* paint('#4986e7');
+      const [op] = yield* (yield* PendingOpRepo).listAll();
+      expect(op?.beforeColorHex).toBe('#7bd148');
+      yield* mutations.discardPendingOp(op!.id);
+      expect(yield* colorOf('acc-1')).toBe('#7bd148');
+    }).pipe(noYield, Effect.provide(makeLayer({}))),
+  );
+});

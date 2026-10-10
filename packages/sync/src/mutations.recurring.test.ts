@@ -148,6 +148,11 @@ const listOps = Effect.gen(function* () {
   return yield* (yield* PendingOpRepo).listAll();
 });
 
+const rowOf = (id: string) =>
+  Effect.gen(function* () {
+    return yield* (yield* EventRepo).getById('acc-1', 'cal-1', id);
+  });
+
 describe('EventMutations recurring scopes', () => {
   it.effect('createEvent with recurrence writes a master and syncs the rule', () =>
     Effect.gen(function* () {
@@ -497,6 +502,386 @@ describe('EventMutations recurring scopes', () => {
       expect(ops[0]!.kind).toBe('delete');
       expect(ops[0]!.eventId).toBe('master1');
       expect(ops[0]!.baseEtag).toBe('"m-1"');
+    }).pipe(Effect.provide(testLayer)),
+  );
+});
+
+describe('discarding a change of a series', () => {
+  const override = new EventRecord({
+    ...master,
+    etag: '"o-1"',
+    id: instanceId,
+    originalStartUtc: occurrence,
+    recurrence: undefined,
+    recurringEventId: 'master1',
+    startUtc: occurrence,
+    title: 'Daily (moved)',
+  });
+  it.effect('an occurrence edit that made the override removes it again', () =>
+    Effect.gen(function* () {
+      yield* seedMaster;
+      const mutations = yield* EventMutations;
+      yield* mutations.updateRecurring({
+        ...target,
+        changes: { title: 'Moved' },
+        scope: 'instance',
+      });
+      const [op] = yield* listOps;
+      expect(op?.beforePayload).toBeNull();
+      expect(yield* rowOf(instanceId)).not.toBeNull();
+
+      yield* mutations.discardPendingOp(op!.id);
+      expect(yield* rowOf(instanceId)).toBeNull();
+      expect(yield* listOps).toEqual([]);
+    }).pipe(Effect.provide(testLayer)),
+  );
+
+  it.effect('an occurrence delete over an override puts the override back', () =>
+    Effect.gen(function* () {
+      yield* seedMaster;
+      yield* (yield* EventRepo).upsertMany([override]);
+      const mutations = yield* EventMutations;
+      yield* mutations.deleteRecurring({ ...target, scope: 'instance' });
+      expect((yield* rowOf(instanceId))?.status).toBe('cancelled');
+      const [op] = yield* listOps;
+      expect(op?.beforePayload?.title).toBe('Daily (moved)');
+
+      yield* mutations.discardPendingOp(op!.id);
+      const row = yield* rowOf(instanceId);
+      expect(row?.status).toBe('confirmed');
+      expect(row?.title).toBe('Daily (moved)');
+      expect(row?.syncStatus).toBe('synced');
+    }).pipe(Effect.provide(testLayer)),
+  );
+
+  it.effect('a series delete puts the exceptions back as Google has them', () =>
+    Effect.gen(function* () {
+      yield* seedMaster;
+      yield* (yield* EventRepo).upsertMany([override]);
+      const mutations = yield* EventMutations;
+      // One exception edited offline, another materialized offline.
+      yield* mutations.updateRecurring({
+        ...target,
+        changes: { title: 'Edited offline' },
+        scope: 'instance',
+      });
+      const materializedAt = Date.parse('2026-07-06T09:00:00Z');
+      yield* mutations.updateRecurring({
+        ...target,
+        changes: { title: 'Only here' },
+        originalStartUtc: materializedAt,
+        scope: 'instance',
+      });
+      yield* mutations.deleteRecurring({ ...target, scope: 'series' });
+      const [op] = yield* listOps;
+      // Only the exception Google has, in the state Google has it.
+      expect(op?.beforeOverrides?.map((row) => [row.id, row.title])).toEqual([
+        [instanceId, 'Daily (moved)'],
+      ]);
+
+      yield* mutations.discardPendingOp(op!.id);
+      expect((yield* rowOf(instanceId))?.title).toBe('Daily (moved)');
+      expect(yield* rowOf('master1_20260706T090000Z')).toBeNull();
+    }).pipe(Effect.provide(testLayer)),
+  );
+
+  it.effect(
+    'a series delete discarded after a pull put the master back still restores the exceptions',
+    () =>
+      Effect.gen(function* () {
+        yield* seedMaster;
+        const events = yield* EventRepo;
+        yield* events.upsertMany([override]);
+        const mutations = yield* EventMutations;
+        yield* mutations.deleteRecurring({ ...target, scope: 'series' });
+        // An incremental pull re-sent the master (changed on Google) but
+        // not its unchanged exception.
+        yield* events.upsertMany([
+          new EventRecord({ ...master, etag: '"m-2"', title: 'Daily (Google)' }),
+        ]);
+        const [op] = yield* listOps;
+
+        yield* mutations.discardPendingOp(op!.id);
+        expect((yield* rowOf('master1'))?.title).toBe('Daily (Google)');
+        expect((yield* rowOf(instanceId))?.title).toBe('Daily (moved)');
+      }).pipe(Effect.provide(testLayer)),
+  );
+
+  it.effect('a series delete after an offline series rename keeps the exceptions’ own text', () =>
+    Effect.gen(function* () {
+      yield* seedMaster;
+      yield* (yield* EventRepo).upsertMany([override]);
+      const mutations = yield* EventMutations;
+      yield* mutations.updateRecurring({
+        ...target,
+        changes: { title: 'Renamed' },
+        scope: 'series',
+      });
+      // The rename was carried onto the exception locally, as Google would.
+      expect((yield* rowOf(instanceId))?.title).toBe('Renamed');
+      yield* mutations.deleteRecurring({ ...target, scope: 'series' });
+      const [op] = yield* listOps;
+      expect(op?.beforeOverrides?.map((row) => row.title)).toEqual(['Daily (moved)']);
+
+      yield* mutations.discardPendingOp(op!.id);
+      expect((yield* rowOf('master1'))?.title).toBe('Daily');
+      expect((yield* rowOf(instanceId))?.title).toBe('Daily (moved)');
+    }).pipe(Effect.provide(testLayer)),
+  );
+
+  it.effect(
+    'a following delete after an offline series rename snapshots the exception’s own text',
+    () =>
+      Effect.gen(function* () {
+        yield* seedMaster;
+        yield* (yield* EventRepo).upsertMany([override]);
+        const mutations = yield* EventMutations;
+        yield* mutations.updateRecurring({
+          ...target,
+          changes: { title: 'Renamed' },
+          scope: 'series',
+        });
+        yield* mutations.deleteRecurring({ ...target, scope: 'following' });
+        const drop = (yield* listOps).find(
+          (op) => op.kind === 'delete' && op.eventId === instanceId,
+        );
+        expect(drop?.beforePayload?.title).toBe('Daily (moved)');
+      }).pipe(Effect.provide(testLayer)),
+  );
+
+  it.effect(
+    'an occurrence edit under a queued series rename snapshots the exception’s own text',
+    () =>
+      Effect.gen(function* () {
+        yield* seedMaster;
+        yield* (yield* EventRepo).upsertMany([override]);
+        const mutations = yield* EventMutations;
+        yield* mutations.updateRecurring({
+          ...target,
+          changes: { title: 'Renamed' },
+          scope: 'series',
+        });
+        yield* mutations.updateRecurring({
+          ...target,
+          changes: { title: 'Edited' },
+          scope: 'instance',
+        });
+        const ops = yield* listOps;
+        const series = ops.find((op) => op.eventId === 'master1');
+        const instance = ops.find((op) => op.eventId === instanceId);
+        expect(instance?.beforePayload?.title).toBe('Daily (moved)');
+
+        yield* mutations.discardPendingOp(series!.id);
+        expect((yield* rowOf(instanceId))?.title).toBe('Edited');
+        yield* mutations.discardPendingOp(instance!.id);
+        const row = yield* rowOf(instanceId);
+        expect(row?.title).toBe('Daily (moved)');
+        expect(row?.syncStatus).toBe('synced');
+      }).pipe(Effect.provide(testLayer)),
+  );
+
+  it.effect('an RSVP that lands on an occurrence keeps the override its queued edit made', () =>
+    Effect.gen(function* () {
+      const invitedMaster = new EventRecord({
+        ...master,
+        attendees: [
+          new Attendee({
+            email: 'organizer@example.com',
+            isOrganizer: true,
+            responseStatus: 'accepted',
+          }),
+          new Attendee({ email: 'acc-1@example.com', responseStatus: 'needsAction' }),
+        ],
+      });
+      yield* seedMaster;
+      yield* (yield* EventRepo).upsertMany([invitedMaster]);
+      const mutations = yield* EventMutations;
+      // The edit materializes the override and stays offline; the RSVP lands.
+      yield* mutations.updateRecurring({
+        ...target,
+        changes: { title: 'Moved' },
+        scope: 'instance',
+      });
+      yield* mutations.respondToEvent({
+        accountId: 'acc-1',
+        calendarId: 'cal-1',
+        eventId: instanceId,
+        response: 'accepted',
+      });
+      yield* mutations.processPendingOps();
+      const [edit] = yield* listOps;
+      expect(edit?.kind).toBe('update');
+      // What Google acknowledged is what the edit replaces now, no longer "nothing".
+      expect(edit?.beforePayload?.title).toBe('Daily');
+
+      yield* mutations.discardPendingOp(edit!.id);
+      const row = yield* rowOf(instanceId);
+      expect(row?.title).toBe('Daily');
+      expect(
+        row?.attendees?.find((attendee) => attendee.email === 'acc-1@example.com')?.responseStatus,
+      ).toBe('accepted');
+    }).pipe(
+      Effect.provide(
+        testLayerWith({
+          ...stubClient,
+          patchEvent: ({ event, eventId }) =>
+            'attendees' in event
+              ? Effect.succeed({
+                  attendees: event.attendees,
+                  end: { dateTime: '2026-07-04T10:00:00Z' },
+                  etag: '"o-2"',
+                  id: eventId,
+                  recurringEventId: 'master1',
+                  start: { dateTime: '2026-07-04T09:00:00Z' },
+                  status: 'confirmed',
+                  summary: 'Daily',
+                })
+              : Effect.fail(new ApiUnavailableError({ cause: 'offline' })),
+        }),
+      ),
+    ),
+  );
+
+  it.effect(
+    'a landed series rename moves a queued occurrence edit’s snapshot to the carried text',
+    () =>
+      Effect.gen(function* () {
+        yield* seedMaster;
+        yield* (yield* EventRepo).upsertMany([override]);
+        const mutations = yield* EventMutations;
+        yield* mutations.updateRecurring({
+          ...target,
+          changes: { title: 'Renamed' },
+          scope: 'series',
+        });
+        yield* mutations.updateRecurring({
+          ...target,
+          changes: { location: 'Room 9' },
+          scope: 'instance',
+        });
+        // Only the series patch lands; the occurrence edit stays offline.
+        yield* mutations.processPendingOps();
+        const [edit] = yield* listOps;
+        expect(edit?.eventId).toBe(instanceId);
+        // Google carried the rename onto the exception: that is what the edit replaces now.
+        expect(edit?.beforePayload?.title).toBe('Renamed');
+
+        yield* mutations.discardPendingOp(edit!.id);
+        const row = yield* rowOf(instanceId);
+        expect(row?.title).toBe('Renamed');
+        expect(row?.location).toBeUndefined();
+        expect(row?.syncStatus).toBe('synced');
+      }).pipe(
+        Effect.provide(
+          testLayerWith({
+            ...stubClient,
+            patchEvent: ({ event, eventId }) =>
+              eventId === 'master1'
+                ? Effect.succeed({
+                    end: { dateTime: '2026-07-01T10:00:00Z' },
+                    etag: '"m-2"',
+                    id: eventId,
+                    recurrence: ['RRULE:FREQ=DAILY;COUNT=10'],
+                    start: { dateTime: '2026-07-01T09:00:00Z', timeZone: 'UTC' },
+                    status: 'confirmed',
+                    summary: typeof event.summary === 'string' ? event.summary : 'Daily',
+                  })
+                : Effect.fail(new ApiUnavailableError({ cause: 'offline' })),
+          }),
+        ),
+      ),
+  );
+
+  it.effect('an occurrence edit discarded under a queued RSVP keeps the override for it', () =>
+    Effect.gen(function* () {
+      yield* seedMaster;
+      yield* (yield* EventRepo).upsertMany([
+        new EventRecord({
+          ...master,
+          attendees: [
+            new Attendee({
+              email: 'organizer@example.com',
+              isOrganizer: true,
+              responseStatus: 'accepted',
+            }),
+            new Attendee({ email: 'acc-1@example.com', responseStatus: 'needsAction' }),
+          ],
+        }),
+      ]);
+      const mutations = yield* EventMutations;
+      yield* mutations.updateRecurring({
+        ...target,
+        changes: { title: 'Moved' },
+        scope: 'instance',
+      });
+      yield* mutations.respondToEvent({
+        accountId: 'acc-1',
+        calendarId: 'cal-1',
+        eventId: instanceId,
+        response: 'accepted',
+      });
+      const edit = (yield* listOps).find((op) => op.kind === 'update');
+      yield* mutations.discardPendingOp(edit!.id);
+      const row = yield* rowOf(instanceId);
+      expect(row?.syncStatus).toBe('pending');
+      expect(
+        row?.attendees?.find((attendee) => attendee.email === 'acc-1@example.com')?.responseStatus,
+      ).toBe('accepted');
+      expect((yield* listOps).map((op) => op.kind)).toEqual(['rsvp']);
+    }).pipe(Effect.provide(testLayer)),
+  );
+
+  it.effect(
+    'a series delete discarded under an occurrence RSVP leaves that exception pending',
+    () =>
+      Effect.gen(function* () {
+        yield* seedMaster;
+        const events = yield* EventRepo;
+        yield* events.upsertMany([
+          new EventRecord({
+            ...override,
+            attendees: [
+              new Attendee({
+                email: 'organizer@example.com',
+                isOrganizer: true,
+                responseStatus: 'accepted',
+              }),
+              new Attendee({ email: 'acc-1@example.com', responseStatus: 'needsAction' }),
+            ],
+          }),
+        ]);
+        const mutations = yield* EventMutations;
+        yield* mutations.respondToEvent({
+          accountId: 'acc-1',
+          calendarId: 'cal-1',
+          eventId: instanceId,
+          response: 'accepted',
+        });
+        yield* mutations.deleteRecurring({ ...target, scope: 'series' });
+        const remove = (yield* listOps).find((op) => op.kind === 'delete');
+        yield* mutations.discardPendingOp(remove!.id);
+        const row = yield* rowOf(instanceId);
+        expect(row?.syncStatus).toBe('pending');
+        expect((yield* listOps).map((op) => op.kind)).toEqual(['rsvp']);
+      }).pipe(Effect.provide(testLayer)),
+  );
+
+  it.effect('a series delete brings the master and its exceptions back', () =>
+    Effect.gen(function* () {
+      yield* seedMaster;
+      yield* (yield* EventRepo).upsertMany([override]);
+      const mutations = yield* EventMutations;
+      yield* mutations.deleteRecurring({ ...target, scope: 'series' });
+      expect(yield* rowOf('master1')).toBeNull();
+      expect(yield* rowOf(instanceId)).toBeNull();
+      const [op] = yield* listOps;
+      expect(op?.beforeOverrides?.map((row) => row.id)).toEqual([instanceId]);
+
+      yield* mutations.discardPendingOp(op!.id);
+      expect((yield* rowOf('master1'))?.title).toBe('Daily');
+      expect((yield* rowOf('master1'))?.syncStatus).toBe('synced');
+      expect((yield* rowOf(instanceId))?.title).toBe('Daily (moved)');
+      expect(yield* listOps).toEqual([]);
     }).pipe(Effect.provide(testLayer)),
   );
 });

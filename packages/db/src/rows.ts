@@ -465,9 +465,30 @@ export interface PendingOpRow {
   readonly server_payload: string | null;
   /** Added by migration 6 (hence after the baseline columns). */
   readonly carried_text: string | null;
-  /** Added by migration 9 (hence last). */
+  /** Added by migration 9 (hence after carried_text). */
   readonly recurrence_cleared: number;
+  /** Added by migration 10 (hence last). */
+  readonly before_payload: string | null;
+  readonly before_overrides: string | null;
+  readonly before_task: string | null;
+  readonly before_color_hex: string | null;
 }
+
+const eventListSchema = Schema.Array(EventRecord);
+
+/**
+ * The three states of `before_payload`: SQL NULL = an op from before the
+ * column (undefined: a discard can only mark the row synced), the JSON
+ * text `null` = there was no row before the change, a record otherwise.
+ * Unreadable JSON degrades to undefined like every other JSON column.
+ */
+const beforePayloadFromColumn = (text: string | null): EventRecord | null | undefined => {
+  if (text === null) {
+    return undefined;
+  }
+  const parsed = parseJson(text);
+  return parsed === null ? null : decodeOr(EventRecord, parsed);
+};
 
 /**
  * Undefined for a row with an unknown op kind (nothing could apply it);
@@ -481,6 +502,10 @@ export const pendingOpFromRow = (row: PendingOpRow): PendingOp | undefined =>
         attempts: row.attempts,
         attendeesChanged: row.attendees_changed === 1 ? true : undefined,
         baseEtag: row.base_etag ?? undefined,
+        beforeColorHex: row.before_color_hex ?? undefined,
+        beforeOverrides: decodeOr(eventListSchema, parseJson(row.before_overrides)),
+        beforePayload: beforePayloadFromColumn(row.before_payload),
+        beforeTask: decodeOr(TaskRecord, parseJson(row.before_task)),
         calendarId: row.calendar_id,
         carriedText: decodeOr(CarriedText, parseJson(row.carried_text)),
         colorHex: row.color_hex ?? undefined,

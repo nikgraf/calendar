@@ -469,6 +469,47 @@ export function SwipeRow({
   );
 }
 
+/** One field of an expanded row: what it was (struck through) and what it becomes. */
+export interface DetailLine {
+  readonly after: string | null;
+  readonly before: string | null;
+  readonly label: string;
+}
+
+/**
+ * The lines under an expanded row, indented to its text: a field's name,
+ * its value before (struck through, secondary) and after. With no lines,
+ * `emptyText` says why.
+ */
+export function DetailLines({
+  emptyText,
+  lines,
+  testID,
+}: {
+  emptyText: string;
+  lines: ReadonlyArray<DetailLine>;
+  testID?: string;
+}) {
+  const styles = useStyles(makeStyles);
+  return (
+    <View style={styles.detail} testID={testID}>
+      {lines.length === 0 ? (
+        <Text style={styles.detailEmpty}>{emptyText}</Text>
+      ) : (
+        lines.map((line, index) => (
+          <View key={`${line.label}-${String(index)}`} style={styles.detailLine}>
+            <Text style={styles.detailLabel}>{line.label}</Text>
+            {line.before === null ? null : (
+              <Text style={[styles.detailValue, styles.detailBefore]}>{line.before}</Text>
+            )}
+            {line.after === null ? null : <Text style={styles.detailValue}>{line.after}</Text>}
+          </View>
+        ))
+      )}
+    </View>
+  );
+}
+
 /** The rounded square with a symbol that leads a top-level row (30 pt), or a page's hero (56 pt). */
 export function IconTile({
   color,
@@ -757,6 +798,35 @@ const makeStyles = (colors: ThemeColors) =>
     },
     danger: {
       color: colors.danger,
+    },
+    // Indented to a row's text: the leading column (30) and its gap (14).
+    detail: {
+      gap: 8,
+      paddingBottom: 12,
+      paddingLeft: 60,
+      paddingRight: 16,
+    },
+    detailBefore: {
+      color: colors['text-secondary'],
+      textDecorationLine: 'line-through',
+    },
+    detailEmpty: {
+      color: colors['text-secondary'],
+      fontSize: 15,
+      lineHeight: 20,
+    },
+    detailLabel: {
+      color: colors['text-secondary'],
+      fontSize: 13,
+      lineHeight: 18,
+    },
+    detailLine: {
+      gap: 1,
+    },
+    detailValue: {
+      color: colors.text,
+      fontSize: 15,
+      lineHeight: 20,
     },
     disabled: {
       opacity: 0.4,

@@ -331,6 +331,19 @@ const recurrenceCleared = Effect.gen(function* () {
   yield* sql`ALTER TABLE pending_ops ADD COLUMN recurrence_cleared INTEGER NOT NULL DEFAULT 0`;
 });
 
+// What a queued op replaced: the event row (JSON EventRecord; the JSON text
+// `null` = there was no row, SQL NULL = an op from before this column, which
+// a discard can only mark synced), a series delete's exception rows, the
+// task row and a calendar's previous color. The unsynced-changes list diffs
+// an op against it and a discard puts it back.
+const beforeSnapshot = Effect.gen(function* () {
+  const sql = yield* SqlClient;
+  yield* sql`ALTER TABLE pending_ops ADD COLUMN before_payload TEXT`;
+  yield* sql`ALTER TABLE pending_ops ADD COLUMN before_overrides TEXT`;
+  yield* sql`ALTER TABLE pending_ops ADD COLUMN before_task TEXT`;
+  yield* sql`ALTER TABLE pending_ops ADD COLUMN before_color_hex TEXT`;
+});
+
 // The third tuple element is a *loader* whose result is the migration effect.
 export const migrations: ReadonlyArray<ResolvedMigration> = [
   [1, 'baseline', Effect.succeed(baseline)],
@@ -342,4 +355,5 @@ export const migrations: ReadonlyArray<ResolvedMigration> = [
   [7, 'calendar-mirrors', Effect.succeed(calendarMirrors)],
   [8, 'rdate-series-end', Effect.succeed(rdateSeriesEnd)],
   [9, 'recurrence-cleared', Effect.succeed(recurrenceCleared)],
+  [10, 'before-snapshot', Effect.succeed(beforeSnapshot)],
 ];

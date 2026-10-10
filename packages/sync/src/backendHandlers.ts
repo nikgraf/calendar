@@ -14,6 +14,7 @@ import {
   type BackendPayload,
   type BackendSuccess,
   birthdaysInRange,
+  pendingOpDiff,
   rankContacts,
 } from '@calendar/core';
 import { AppleCalendarClient } from '@calendar/apple-calendar';
@@ -333,27 +334,42 @@ export const commonBackendHandlers: Omit<BackendHandlers<CommonBackendServices>,
               (task) => task?.title,
             ),
       );
-      return ops.map((op, index) => ({
-        accountId: op.accountId,
-        attempts: op.attempts,
-        calendarId: op.calendarId,
-        createdAt: op.createdAt,
-        eventId: op.eventId,
-        id: op.id,
-        kind: op.kind,
-        nextAttemptAt: op.nextAttemptAt,
-        ...(op.conflictAt === undefined
-          ? {}
-          : {
-              conflict: {
-                at: op.conflictAt,
-                ...(op.payload === undefined ? {} : { mine: op.payload }),
-                theirs: op.serverPayload ?? null,
-              },
-            }),
-        ...(op.lastError === undefined ? {} : { lastError: op.lastError }),
-        ...(titles[index] === undefined ? {} : { title: titles[index] }),
-      }));
+      // The diff is computed here, not shipped as records: the list is
+      // re-read on every drain step, and the UIs only render lines.
+      const calendars = yield* (yield* CalendarRepo).list();
+      const { primary: timeZone } = yield* readTimeZoneSettings;
+      const context = {
+        calendarName: (accountId: string, calendarId: string) =>
+          calendars.find(
+            (calendar) => calendar.accountId === accountId && calendar.id === calendarId,
+          )?.summary,
+        timeZone,
+      };
+      return ops.map((op, index) => {
+        const diff = pendingOpDiff(op, context);
+        return {
+          accountId: op.accountId,
+          attempts: op.attempts,
+          calendarId: op.calendarId,
+          createdAt: op.createdAt,
+          eventId: op.eventId,
+          id: op.id,
+          kind: op.kind,
+          nextAttemptAt: op.nextAttemptAt,
+          ...(op.conflictAt === undefined
+            ? {}
+            : {
+                conflict: {
+                  at: op.conflictAt,
+                  ...(op.payload === undefined ? {} : { mine: op.payload }),
+                  theirs: op.serverPayload ?? null,
+                },
+              }),
+          ...(diff === undefined ? {} : { diff }),
+          ...(op.lastError === undefined ? {} : { lastError: op.lastError }),
+          ...(titles[index] === undefined ? {} : { title: titles[index] }),
+        };
+      });
     }),
 
   listSyncStatus: () =>

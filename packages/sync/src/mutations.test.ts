@@ -36,7 +36,7 @@ import {
 import { RemindersClient, unavailableRemindersClient } from '@calendar/reminders';
 import { SqliteClient } from '@effect/sql-sqlite-node';
 import { expect, it } from '@effect/vitest';
-import { Effect, Exit, Layer, Scheduler } from 'effect';
+import { Effect, Exit, Fiber, Layer, Scheduler } from 'effect';
 import { layer as reactivityLayer, type Reactivity } from 'effect/reactivity/Reactivity';
 import { SqlClient } from 'effect/sql/SqlClient';
 import { describe } from 'vite-plus/test';
@@ -787,6 +787,10 @@ describe('EventMutations', () => {
       const ops = yield* (yield* PendingOpRepo).listAll();
       expect(ops).toHaveLength(0);
       expect(seen).toContain(DROPPED_NOTICE_KEY);
+      // The row shows what Google has, not the edit it refused.
+      const row = yield* rowOf(record.id);
+      expect(row?.title).toBe('New event');
+      expect(row?.syncStatus).toBe('synced');
     }).pipe(
       Effect.provide(
         mutationsLayer(
@@ -797,6 +801,42 @@ describe('EventMutations', () => {
         ),
       ),
     );
+  });
+
+  it.effect('a write that landed with an unreadable response keeps the change', () => {
+    const client = stubClient({
+      insertEvent: ({ event }) =>
+        Effect.succeed({
+          end: event.end as GcalEvent['end'],
+          etag: '"server-1"',
+          id: event.id ?? 'x',
+          start: event.start as GcalEvent['start'],
+          status: 'confirmed',
+          summary: event.summary,
+        }),
+      // What the client reports for a 2xx whose body did not decode.
+      patchEvent: () =>
+        Effect.fail(new GoogleApiError({ message: 'unexpected body', status: 200 })),
+    });
+    return Effect.gen(function* () {
+      yield* seedCalendar;
+      const mutations = yield* EventMutations;
+      const record = yield* mutations.createEvent(draft);
+      yield* mutations.processPendingOps();
+      yield* mutations.updateEvent({
+        accountId: 'acc-1',
+        calendarId: 'cal-1',
+        changes: { title: 'Landed edit' },
+        eventId: record.id,
+      });
+      yield* mutations.processPendingOps();
+
+      expect(yield* (yield* PendingOpRepo).listAll()).toHaveLength(0);
+      // Google has the edit: putting the old title back would lie until the next pull.
+      const row = yield* rowOf(record.id);
+      expect(row?.title).toBe('Landed edit');
+      expect(row?.syncStatus).toBe('synced');
+    }).pipe(Effect.provide(mutationsLayer(client)));
   });
 
   it.effect('a create Google rejects for good takes its optimistic event with it', () => {
@@ -1398,6 +1438,215 @@ describe('EventMutations', () => {
       expect(deletes).toEqual(['"server-9"']);
       const singles = yield* eventsNow;
       expect(singles).toHaveLength(0);
+    }).pipe(Effect.provide(mutationsLayer(client)));
+  });
+});
+
+describe('discarding a change puts the row back', () => {
+  // The create lands; edits and deletes stay queued (offline).
+  const landing = stubClient({
+    deleteEvent: () => Effect.fail(new ApiUnavailableError({ cause: 'offline' })),
+    insertEvent: ({ event }) =>
+      Effect.succeed({
+        end: event.end as GcalEvent['end'],
+        etag: '"server-1"',
+        id: event.id ?? 'x',
+        start: event.start as GcalEvent['start'],
+        status: 'confirmed',
+        summary: event.summary,
+      }),
+    patchEvent: () => Effect.fail(new ApiUnavailableError({ cause: 'offline' })),
+  });
+
+  const synced = Effect.gen(function* () {
+    yield* seedCalendar;
+    const mutations = yield* EventMutations;
+    const record = yield* mutations.createEvent(draft);
+    yield* mutations.processPendingOps();
+    return { mutations, record };
+  });
+
+  const ops = Effect.gen(function* () {
+    return yield* (yield* PendingOpRepo).listAll();
+  });
+
+  it.effect('an edit: the row shows what Google acknowledged, with its etag', () =>
+    Effect.gen(function* () {
+      const { mutations, record } = yield* synced;
+      yield* mutations.updateEvent({
+        accountId: 'acc-1',
+        calendarId: 'cal-1',
+        changes: { location: 'Room 4', title: 'Edited' },
+        eventId: record.id,
+      });
+      const [op] = yield* ops;
+      expect(op?.beforePayload?.title).toBe('New event');
+      expect((yield* rowOf(record.id))?.title).toBe('Edited');
+
+      yield* mutations.discardPendingOp(op!.id);
+      const row = yield* rowOf(record.id);
+      expect(row?.title).toBe('New event');
+      expect(row?.location).toBeUndefined();
+      expect(row?.etag).toBe('"server-1"');
+      expect(row?.syncStatus).toBe('synced');
+      expect(yield* ops).toEqual([]);
+    }).pipe(noYield, Effect.provide(mutationsLayer(landing))),
+  );
+
+  it.effect('a second edit keeps the first one’s snapshot: one discard undoes both', () =>
+    Effect.gen(function* () {
+      const { mutations, record } = yield* synced;
+      const edit = (title: string) =>
+        mutations.updateEvent({
+          accountId: 'acc-1',
+          calendarId: 'cal-1',
+          changes: { title },
+          eventId: record.id,
+        });
+      yield* edit('First');
+      yield* edit('Second');
+      const queued = yield* ops;
+      expect(queued).toHaveLength(1);
+      expect(queued[0]?.beforePayload?.title).toBe('New event');
+
+      yield* mutations.discardPendingOp(queued[0]!.id);
+      expect((yield* rowOf(record.id))?.title).toBe('New event');
+    }).pipe(noYield, Effect.provide(mutationsLayer(landing))),
+  );
+
+  it.effect('a delete: the event comes back', () =>
+    Effect.gen(function* () {
+      const { mutations, record } = yield* synced;
+      yield* mutations.deleteEvent({ accountId: 'acc-1', calendarId: 'cal-1', eventId: record.id });
+      expect(yield* rowOf(record.id)).toBeNull();
+      const [op] = yield* ops;
+      expect(op?.kind).toBe('delete');
+
+      yield* mutations.discardPendingOp(op!.id);
+      const row = yield* rowOf(record.id);
+      expect(row?.title).toBe('New event');
+      expect(row?.syncStatus).toBe('synced');
+    }).pipe(noYield, Effect.provide(mutationsLayer(landing))),
+  );
+
+  it.effect('an edit of a row a pull deleted meanwhile does not bring it back', () =>
+    Effect.gen(function* () {
+      const { mutations, record } = yield* synced;
+      yield* mutations.updateEvent({
+        accountId: 'acc-1',
+        calendarId: 'cal-1',
+        changes: { title: 'Edited' },
+        eventId: record.id,
+      });
+      // Google deleted the event; the pull removed the row, pending or not.
+      yield* (yield* EventRepo).deleteEvent('acc-1', 'cal-1', record.id);
+      const [op] = yield* ops;
+      yield* mutations.discardPendingOp(op!.id);
+      expect(yield* rowOf(record.id)).toBeNull();
+    }).pipe(noYield, Effect.provide(mutationsLayer(landing))),
+  );
+});
+
+describe('a snapshot follows what lands', () => {
+  it.effect('a second edit discarded after the first one landed keeps what landed', () => {
+    let release: (() => void) | undefined;
+    let patches = 0;
+    const client = stubClient({
+      insertEvent: ({ event }) => Effect.succeed(echo(event, event.id ?? 'x', '"server-1"')),
+      // The first patch hangs until the test releases it; later ones are offline.
+      patchEvent: ({ event, eventId }) =>
+        patches++ === 0
+          ? Effect.promise(
+              () =>
+                new Promise<GcalEvent>((resolve) => {
+                  release = () => resolve(echo(event, eventId, '"server-2"'));
+                }),
+            )
+          : Effect.fail(new ApiUnavailableError({ cause: 'offline' })),
+    });
+    return Effect.gen(function* () {
+      yield* seedCalendar;
+      const mutations = yield* EventMutations;
+      const record = yield* mutations.createEvent(draft);
+      yield* mutations.processPendingOps();
+      const edit = (title: string) =>
+        mutations.updateEvent({
+          accountId: 'acc-1',
+          calendarId: 'cal-1',
+          changes: { title },
+          eventId: record.id,
+        });
+      yield* edit('First');
+      const drain = yield* Effect.forkChild(mutations.processPendingOps());
+      while (release === undefined) {
+        yield* Effect.yieldNow;
+      }
+      // The second edit replaces the first while its PATCH is in flight.
+      yield* edit('Second');
+      release();
+      yield* Fiber.join(drain);
+
+      const [second] = yield* (yield* PendingOpRepo).listAll();
+      expect(second?.payload?.title).toBe('Second');
+      // What landed is what the second edit replaces now.
+      expect(second?.beforePayload?.title).toBe('First');
+      expect(second?.baseEtag).toBe('"server-2"');
+
+      yield* mutations.discardPendingOp(second!.id);
+      const row = yield* rowOf(record.id);
+      expect(row?.title).toBe('First');
+      expect(row?.etag).toBe('"server-2"');
+      expect(row?.syncStatus).toBe('synced');
+    }).pipe(Effect.provide(mutationsLayer(client)));
+  });
+});
+
+describe('a rejection of an edit replaced while in flight', () => {
+  it.effect('puts nothing back: the replacement owns the row', () => {
+    let release: (() => void) | undefined;
+    let patches = 0;
+    const client = stubClient({
+      insertEvent: ({ event }) => Effect.succeed(echo(event, event.id ?? 'x', '"server-1"')),
+      // The first patch hangs, then Google refuses it for good; later ones are offline.
+      patchEvent: () =>
+        patches++ === 0
+          ? Effect.flatMap(
+              Effect.promise(
+                () =>
+                  new Promise<void>((resolve) => {
+                    release = resolve;
+                  }),
+              ),
+              () => Effect.fail(new GoogleApiError({ message: 'Invalid value', status: 400 })),
+            )
+          : Effect.fail(new ApiUnavailableError({ cause: 'offline' })),
+    });
+    return Effect.gen(function* () {
+      yield* seedCalendar;
+      const mutations = yield* EventMutations;
+      const record = yield* mutations.createEvent(draft);
+      yield* mutations.processPendingOps();
+      const edit = (title: string) =>
+        mutations.updateEvent({
+          accountId: 'acc-1',
+          calendarId: 'cal-1',
+          changes: { title },
+          eventId: record.id,
+        });
+      yield* edit('First');
+      const drain = yield* Effect.forkChild(mutations.processPendingOps());
+      while (release === undefined) {
+        yield* Effect.yieldNow;
+      }
+      yield* edit('Second');
+      release();
+      yield* Fiber.join(drain);
+
+      const ops = yield* (yield* PendingOpRepo).listAll();
+      expect(ops.map((op) => op.payload?.title)).toEqual(['Second']);
+      const row = yield* rowOf(record.id);
+      expect(row?.title).toBe('Second');
+      expect(row?.syncStatus).toBe('pending');
     }).pipe(Effect.provide(mutationsLayer(client)));
   });
 });
