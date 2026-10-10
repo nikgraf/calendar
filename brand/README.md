@@ -1,6 +1,6 @@
 # Solunivo brand assets
 
-The selected identity is **A1 soft ivory, with 24 in Inter Bold**: a near-white paper face, mint curl and continuous blush backing. A1 retains the original numeral size and position; the centered studies are not part of the selected identity. The horizontal logo uses **Inter SemiBold**, with the icon at **115% of the lettering’s visible height**. The interface palette and dark icon remain proposed foundations.
+The selected identity is **A1 soft ivory, with 24 in Inter Bold**: a near-white paper face, mint curl and continuous blush backing. A1 retains the original numeral size and position; the centered studies are not part of the selected identity. The horizontal logo uses **Inter SemiBold**, with the icon at **115% of the lettering’s visible height**. The interface palette in `tokens/tokens.json` is the one palette both apps draw with (light and dark follow the OS appearance); the dark icon is the iOS dev variant's.
 
 ## Where files live
 
@@ -18,7 +18,7 @@ The selected identity is **A1 soft ivory, with 24 in Inter Bold**: a near-white 
 | `../apps/ios/assets/icon.png`          | Generated opaque 1024 × 1024 icon used by Expo                           |
 | `../output/branding/`                  | Ignored studies, PNG sets, iconsets and distribution ZIPs                |
 
-The SVGs are editable vector sources with outlined lettering, gradients and filters. They have no linked images or font dependencies. Edit these masters and regenerate their raster exports. Earlier exploration galleries stay outside Git. Proposed artwork is clearly labeled in the preview and is not enabled as a native appearance.
+The SVGs are editable vector sources with outlined lettering, gradients and filters. They have no linked images or font dependencies. Edit these masters and regenerate their raster exports. Earlier exploration galleries stay outside Git.
 
 ## Build and check
 
@@ -54,7 +54,7 @@ Open `http://127.0.0.1:8765/solunivo-brand-kit/preview/`. The preview loads its 
 | One-color wordmark                | `logos/wordmark-black.svg`, `logos/wordmark-white.svg`            |
 | One-color symbol                  | `icons/solunivo-monochrome.svg`                                   |
 
-Light/dark lockup filenames describe their intended **background**. Both use the selected soft ivory icon. The plum-faced `icons/solunivo-dark.svg` is a separate proposed app appearance, with soft ivory numerals.
+Light/dark lockup filenames describe their intended **background**. Both use the selected soft ivory icon. The plum-faced `icons/solunivo-dark.svg`, with soft ivory numerals, is the icon of the iOS dev variant ("Solunivo Dev").
 
 - The horizontal icon-to-lettering height ratio is **1.15:1**. Its gap is **0.33×** the visible wordmark height. Alignment uses visible artwork centers, excluding transparent canvas padding and the shadow.
 - The wordmark uses Inter SemiBold 600 with −0.013 em tracking. The outlined icon numerals use Inter Bold 700. The static 24 represents a complete day, not today’s date.
@@ -94,7 +94,7 @@ The approved A1 paper gradient uses `#FFFDF5` at 0%, `#FFFAEC` at 43%, `#FFF8E6`
 | Essential control boundary | `#948899` | `#82718C` |
 | Focus ring                 | `#85658E` | `#D6BDE5` |
 
-Use semantic token pairs from `tokens.json` for text and controls. The build requires at least **4.5:1** for the checked normal-text pairs and **3:1** for focus rings and essential control borders on their intended surfaces. Decorative dividers have lower contrast and cannot be the only way to identify an input. Calculated color contrast is not a complete accessibility audit.
+Use semantic token pairs from `tokens.json` for text and controls (the desktop maps them to Tailwind utilities, iOS reads them through `useTheme`). The build requires at least **4.5:1** for the checked normal-text pairs and **3:1** for focus rings and essential control borders on their intended surfaces. Decorative dividers have lower contrast and cannot be the only way to identify an input. Calculated color contrast is not a complete accessibility audit.
 
 Use labels and state indicators alongside color. The sample mint/personal, lilac/work and blush/focus assignments are examples, not permanent product rules.
 

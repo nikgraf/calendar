@@ -1,10 +1,13 @@
 # Decision log
 
 Shipped work and the decisions taken with it, moved here from `todo.md`
-(2026-09-10) so the backlog stays a backlog. Entries are verbatim from the
-day they were closed; PR numbers where they were recorded. When a backlog
-item lands, its `[x]` entry moves here under the matching area with the
-design decisions it settled.
+(2026-09-10) so the backlog stays a backlog. Each entry is from the day it
+was closed (PR numbers where they were recorded) and keeps the decisions,
+the rejected alternatives and what was left unverified; test inventories
+and measurements were pruned on 2026-10-10. This is history, not the
+current state — `docs/architecture.md` is. When a backlog item lands, its
+`[x]` entry moves here under the matching area with the design decisions
+it settled.
 
 ## Product and naming
 
@@ -53,13 +56,10 @@ design decisions it settled.
       only serves public repos, so this stays a no-op until the repo goes
       public or a token-fed feed replaces it.
 - [x] iOS e2e via Maestro — done: eight flows in `apps/ios/e2e/flows/`
-      (launch, navigation, new-event sheet, accounts sheet, day swipe,
-      quick add, create-event save path, task lane) with testIDs on the
-      icon-only header buttons;
+      with testIDs on the icon-only header buttons;
       `pnpm test:e2e:ios` runs them. Needs the Maestro CLI + dev-client on
       a simulator with Metro running; gesture (drag) flows remain future
       work — Maestro can't synthesize long-press pans reliably.
-      (Since grown to 12 flows; the list in `AGENTS.md` is the current one.)
 - [x] Renderer error boundary + a log file — done: ErrorBoundary with a
       reload screen around the renderer root (errors forwarded to main via
       a `logError` preload channel); `userData/logs/main.log` with 1 MB
@@ -112,9 +112,8 @@ design decisions it settled.
       CommonJS, not TypeScript**: it was `app.config.ts` first, and
       `ios-e2e` then ran past its 60 minutes twice. Expo evaluates the
       config for every manifest request, once more in a fresh process
-      each time, and a `.ts` config is transpiled with Babel there
-      (manifest 0.12 s → 0.23 s on a laptop, 0.2–0.9 s → 0.5–3 s on the
-      runner). After nearly every launch the dev client's first request
+      each time, and a `.ts` config is transpiled with Babel there.
+      After nearly every launch the dev client's first request
       missed the launcher's 10 s budget, fell back to the launcher home
       and had to be recovered by the flows — which main never does. The
       Babel modules also landed in the fingerprint as loaded sources, so
@@ -279,8 +278,7 @@ design decisions it settled.
       accounts re-consent by re-running "Add Google Account" (in-place
       upgrade), gated per account via `tasksEnabled` derived from granted
       scopes, so calendar-only tokens keep syncing untouched. `due` is
-      date-only → date-string storage/query end to end. Out of v1: see
-      the "Tasks:" follow-ups above.
+      date-only → date-string storage/query end to end.
 - [x] Tasks: create/edit/delete from the app — done: both editors gained
       an Event | Task toggle (create) and open in task mode from a chip
       tap (edit/delete, incl. "Open in Google Tasks"). New op kinds
@@ -385,8 +383,7 @@ design decisions it settled.
       Tuesday"). The Swift change moves the iOS fingerprint: a
       development-simulator build was queued for CI and the merge triggers
       TestFlight. The strict Maestro flow exercises the monthly path (its
-      chips set rather than toggle, so it holds on any date); the
-      real-helper desktop suite round-trips both rule kinds.
+      chips set rather than toggle, so it holds on any date).
 
 - [x] Convert a Reminder ↔ Google Task — done (2026-09-21): the task
       editor's list picker offers every writable list of every account,
@@ -414,15 +411,11 @@ design decisions it settled.
       anything is written. Google → Google is not a server move: the
       task gets a new id and `parent`/`position` (unmodeled) do not
       follow. Read-only Reminders lists are never offered as a target.
-      Desktop e2e (`taskConvert.e2e.ts`) seeds a Google account beside the
-      Reminders fixture for the first time. Follow-up in the same PR: the
+      Follow-up in the same PR: the
       in-process fake Google API (`testing/fakeGoogle.ts`) became an app
       fixture (`testing/googleFixture.ts`; desktop `CALENDAR_GOOGLE=fixture`,
       iOS `EXPO_PUBLIC_CALENDAR_GOOGLE=fixture`, on for the whole CI Maestro
-      batch), so `taskConvertGoogle.e2e.ts` and `16-task-convert.yaml` (now
-      part of `17-convert.yaml`) watch the queued create push and the temp
-      id become a server id —
-      and the Google halves of iOS flows 07/08 run for the first time.
+      batch).
       Decided: no HTTP mock server; the fake sits behind effect's
       HttpClient and a pre-filled memory TokenStore keeps the real
       TokenManager and request core on the path.
@@ -657,7 +650,7 @@ desktop waits on a helper binary (below).
       `assembleWindow` keys shadowing by account + calendar + master id.
       Event ids are Google-global, so two accounts on one shared calendar
       carried same-id masters and one account's exception hid the other's
-      occurrence. First direct tests for `assembleWindow`.
+      occurrence.
 - [x] Dispatched task creates stay intact under edits — done: an edit
       folds into a createTask only while it is undispatched (fresh attempt
       counters); behind a dispatched create it queues as an updateTask, so
@@ -668,8 +661,7 @@ desktop waits on a helper binary (below).
 - [x] WeekView builds its timed-event lookup once per render (was once per
       column, on every drag pointermove).
 - [x] iOS all-day event chips open the editor (were a plain View; task
-      chips beside them were pressable). VoiceOver label + testID, Maestro
-      flow 12.
+      chips beside them were pressable). VoiceOver label + testID.
 
 ### Backlog sweep (2026-09-11), closed items
 
@@ -698,8 +690,8 @@ Correctness and the sync path:
       (`markSynced`, or delete for a create). Documented in architecture.md.
 - [x] Local write and queue change commit in one transaction — done:
       every coalesce-then-enqueue path runs inside `sql.withTransaction`
-      with the drain kicked after commit (`transactional` helper); a
-      rollback test drops `pending_ops` mid-mutation. Decision: the kick is
+      with the drain kicked after commit (`transactional` helper).
+      Decision: the kick is
       `Effect.suspend(forkDetach)` so a failed transaction never starts a
       drain; the color test is pinned with `noYield` (see
       docs/google-sync-and-testing.md).
@@ -712,8 +704,7 @@ Correctness and the sync path:
 - [x] Desktop token store — done: temp-file + rename writes,
       `isEncryptionAvailable()` guard with a typed failure, an in-memory
       cache so authed requests stop hitting file + Keychain, one
-      serialized read-modify-write. `makeEncryptedTokenStore(deps)` is unit
-      tested with a fake safeStorage.
+      serialized read-modify-write.
 - [x] Indexes and bounds — done: migration 10 adds the `pending_ops`
       drain index, `tasks(due_date)` and an events window index that leads
       with the range; `listDue` pages at 200. (The masters query got its
@@ -736,7 +727,7 @@ Correctness and the sync path:
       bridge client factories (`remindersClientFrom`/`contactsClientFrom` + layers, `helperTransport(killSwitch)`) live in the packages;
       `changesFromSubscription`/`bridgeMessage` moved to
       `@calendar/core/bridge`. iOS gets no `CALENDAR_*=off` switch — its
-      e2e runs against the real bridges by design (flow 10). The two
+      e2e runs against the real bridges by design. The two
       `EXPO_PUBLIC_CALENDAR_GOOGLE=fixture` / `EXPO_PUBLIC_CALENDAR_MODEL=fixture`
       bundle flags are not that: they swap a JS-level fake in for a
       remote API and for the on-device model, and leave every bridge
@@ -771,8 +762,7 @@ Developer workflow and tests:
       cache, the token store, `assembleWindow`, row decoders.
 - [x] A fake Google server — done: `packages/sync/src/testing/fakeGoogle.ts`
       behind `HttpClient.make` replays calendar/events/tasks fixtures with
-      410 sync-token expiry, tombstones, watermarks and 412; `engine.http.test.ts`
-      drives the real poll/push/pull loop through it. Engine tests must
+      410 sync-token expiry, tombstones, watermarks and 412. Engine tests must
       `TestClock.adjust` between passes.
 - [x] Hooks and scripts — done: `vp config` installs a pre-commit hook
       that runs `vp staged` (`vp check --fix` on staged files);
@@ -794,9 +784,7 @@ Parity, UX and accessibility:
 - [x] Desktop keyboard and dialogs — done: one `Dialog` (role, focus trap
       and restore, Escape via a window capture listener, backdrop close
       button) wraps the editor, settings and ⌘K; shortcuts ⌘K, ⌘,, ⌘N, T,
-      ←/→; day columns and event blocks are focusable buttons. The
-      settings button keeps `title="Accounts"` — the e2e suite finds it by
-      that.
+      ←/→; day columns and event blocks are focusable buttons.
 - [x] iOS VoiceOver — done: labels on the icon-only header buttons,
       selected state on the segment, labelled WeekStrip/MonthGrid cells.
 - [x] Quick-add divergence — done: `useModelAvailability` (re-check on
@@ -928,11 +916,8 @@ Performance:
       because they carry the calendar's color and a day full of tasks must
       not hide them (the review caught tasks-first doing exactly that);
       `groupByDate` in core replaces the iOS lane's two hand-rolled maps
-      and feeds both month views. Desktop e2e asserts the seeded task
-      through today's cell label (the day's seeded events push its chip
-      into "+N more") and the birthday chip inside
-      `[data-testid="month-grid"]`, and
-      the seeded task is due on the local date (the UTC date is yesterday
+      and feeds both month views.
+      The seeded task is due on the local date (the UTC date is yesterday
       between local and UTC midnight); iOS has no seed path, the
       navigation flow stays as is.
 
@@ -992,9 +977,8 @@ Performance:
       and rejects 24:00; a gesture that starts on an event keeps moving it
       (desktop blocks stop propagation, iOS blocks sit above the column's
       gesture layer); flipping the form to Task keeps the slot's start as
-      the due time, which only a Reminders list stores. Desktop e2e covers
-      dragging down, dragging up, Escape and "a drag on an event draws
-      nothing"; iOS has no Maestro flow because Maestro cannot hold and
+      the due time, which only a Reminders list stores. iOS has no
+      Maestro flow because Maestro cannot hold and
       then drag, so the check there is the exported bundle workletizing the
       gesture callbacks plus a manual run. Out of scope: auto-scroll at the
       grid's edges, slots across days, keyboard slot selection.
@@ -1033,8 +1017,7 @@ Performance:
       map shows what was found, and the picker gives exact results. The
       desktop helper's main loop moved from `dispatchMain()` to
       `RunLoop.main.run()`, which MKLocalSearchCompleter requires.
-      Desktop e2e covers pick → map → queued coordinates, stored
-      coordinates without a lookup, and meeting links; the iOS Maestro
+      The iOS Maestro
       flow is local-only because it needs MapKit's network. Out of
       scope: location-based reminder alarms, `eventType` /
       `workingLocationProperties`, travel time.
@@ -1072,15 +1055,14 @@ Performance:
       `UnsupportedForProviderError` stays as the second line of defence).
       Overdue chips drag by absolute target day, since their chip sits on
       today while `dueDate` is past. Desktop keeps the timed block's live
-      translation for grid-to-grid moves (the existing e2e asserts it) and
+      translation for grid-to-grid moves and
       adds drop indicators for lane-origin and lane-target drags; iOS
       hosts a ghost at the timeline level because the lane and the
       ScrollView are different containers, so the timed reminder drag
       moved from "block follows the finger vertically" to ghost +
       indicator (event blocks unchanged). All-day event chips stay fixed.
-      No auto-scroll at the grid edge. Desktop e2e covers every drop
-      kind, the Google refusal (rows and op queue unchanged, toast text)
-      and a read-only list; iOS has no Maestro flow (hold-then-drag).
+      No auto-scroll at the grid edge. iOS has no Maestro flow
+      (hold-then-drag).
 - [x] Collapsible all-day lane, persisted — done: default expanded on
       both platforms (iOS previously defaulted to its 3-row cap);
       collapsed caps at 3 rows with "+N more" per overflowing column
@@ -1101,10 +1083,7 @@ Performance:
       Monday-week strip as its picker. `WEEK_SWIPE_BUFFER` stays seven so
       a full-page drag reveals drawn columns; each committed day re-keys
       the range atoms, which the bounded cache and the keep-previous hooks
-      absorb. Verified on a simulator with the fingerprint's EAS dev
-      client: one partial swipe moved the window two days with the
-      headers over their columns; `16-week-swipe.yaml` (now part of
-      `02-navigation.yaml`) covers it in CI.
+      absorb.
 
 ### iOS location purpose string (2026-09-20)
 
@@ -1149,9 +1128,7 @@ Performance:
       replaces the object and email overrides must survive an unrelated
       title edit; `useDefault:false, overrides:[]` is "none" and stays
       distinct from the field being absent, which reads as the calendar
-      default for a Google row synced before this shipped — migration 4
-      drops the events sync tokens so every calendar re-lists once and
-      no row stays absent for long; a copy-move to Apple resolves the
+      default for a Google row synced before this shipped; a copy-move to Apple resolves the
       calendar default into explicit popups and `previewMove` names the
       email reminders that cannot follow; Apple writes refuse
       `useDefault` and email rather than dropping them. Notifications:
@@ -1199,10 +1176,7 @@ Performance:
       toasts are gone — the banner derives from `listPendingOps`.
       Fixed on the way: `discardPendingOp` never released the row, so a
       discarded edit stayed `pending` and pulls skipped it forever.
-      Tests: unit (park, fetch failure, both choices, restore, re-edit,
-      move), HTTP against the fake (both choices, a parked delete whose
-      row a pull re-inserted), desktop e2e `conflicts.e2e.ts` on fixture
-      Google. iOS has no Maestro flow for it (seeding a parked op there
+      iOS has no Maestro flow for it (seeding a parked op there
       is not worth a 40-minute CI slot); verify on a device.
 
 ### Live Google suite (2026-09-24)
@@ -1238,23 +1212,13 @@ Performance:
       drag-to-move and resize (Maestro 2.10 has no drag command and a
       swipe from an element starts at its centre). Secrets: `GOOGLE_LIVE_EMAIL`, `GOOGLE_LIVE_REFRESH_TOKEN`
       (new) + `GOOGLE_DESKTOP_CLIENT_ID/SECRET`; the consent screen must
-      be In production or the token dies in seven days. First real run
-      (2026-09-24, 33/33 after fixes) settled: a stale-etag PATCH of a
-      deleted event and a stale If-Match DELETE are 412s (so both park);
-      Google rate-limits a burst of writes (403, handled by the op
-      backoff — the suite drains until only parked ops remain); an API
-      insert never adds the organizer to `attendees`, so the organizer
-      cannot RSVP and a guest-side RSVP needs a second account (left on
-      the fake); a series rename overwrites existing exceptions' titles
-      on Google — the app now mirrors that at save (2026-09-25: Google
-      copies a master's _changed_ title, description or location onto
-      every exception, and leaves unchanged fields alone). The iOS
+      be In production or the token dies in seven days. The iOS
       flows found an app bug: turning a timed Google event all-day (or
       back) sent a PATCH Google refused — it merges start/end fields, so
       the old `dateTime` stayed next to the new `date` (400 "Invalid start
       time") and the op was dropped, all-day here and timed on Google.
       `toGcalTimesPatch` now nulls the unused form; the fake merges times
-      like Google and has a regression test. The iOS title field gained
+      like Google. The iOS title field gained
       the system clear button (also what the flows use to rename).
 
 ### Live suite review fixes (2026-09-26)
@@ -1283,11 +1247,7 @@ Performance:
       each scratch id as it is created and keeps what a delete missed
       (teardown exits 1). A click on the 23:00 row opened the editor at
       23:00–24:00, which validation rejects; the clicked hour now goes
-      through `slotTimes` like a drawn slot (ends 23:59). The live
-      recurring-delete test asserts the assembled occurrences, `drain`
-      fails with the leftover ops instead of returning, and the desktop
-      spec's free slot no longer wraps to 23:00. Deferred items are one
-      Tier 1 entry in `todo.md`.
+      through `slotTimes` like a drawn slot (ends 23:59).
 
 ### iOS background refresh for notifications (2026-09-27)
 
@@ -1318,8 +1278,7 @@ Performance:
       written first and the old one deleted only after that succeeded
       (the refresh token is the only copy — deleting first lost it on a
       failed write, caught in review), reads fall back to the old key
-      and migrate it the same way. Added the
-      missing 60-slot cap test. No Maestro flow: BGTasks cannot be
+      and migrate it the same way. No Maestro flow: BGTasks cannot be
       triggered from it; verify with `triggerBackgroundRefreshForTesting`
       in a debug build or the debugger's `_simulateLaunchForTaskWithIdentifier:`
       on `com.expo.modules.backgroundtask.processing`. Fixed on the way
@@ -1352,9 +1311,7 @@ Performance:
       title reuses the week format on a two-day span ("Sep 30 – Oct 1,
       2026"). Desktop keeps Day / Week / Month (the shared type gains the
       value, its segment is its own literal); the chosen view is still
-      not persisted, on either app. `18-two-day-view.yaml` (now part of
-      `02-navigation.yaml`) covers the chevrons, Today and a swipe in CI;
-      `titleFor` and `viewColumns` are exported for unit tests.
+      not persisted, on either app.
 
 ### Multiple time zones (2026-09-29)
 
@@ -1399,11 +1356,7 @@ Performance:
       reminder, task and birthday pickers keep the device-local helpers.
       The gutter widens per zone (desktop `w-16`→`w-24`→`w-32` shared by
       header and lane; iOS `gutterWidth()` also fed to the task drag so
-      drops land in the right column). Tests: core catalog / label /
-      schema units, sync round-trip, `timeZones.e2e.ts` (a seeded
-      UTC + Kolkata pair, host-independent, plus the section's add /
-      promote / remove / cap), Maestro `19-time-zones.yaml` (Honolulu
-      primary, Kolkata secondary: "3:30 AM" under noon).
+      drops land in the right column).
 
 ### A gone calendar no longer stalls the account (2026-09-29)
 
@@ -1416,8 +1369,7 @@ Performance:
       calendar, and because it syncs calendars one after another, the
       calendars sorted after it, tasks and contacts never synced. An
       incremental list never reports a deletion older than its token, so
-      the account stayed stuck (iOS: every pass for 11 min; its run list
-      and a server-side event never arrived). A real user who deletes a
+      the account stayed stuck. A real user who deletes a
       calendar elsewhere could hit the same. Decisions: a 404 from one
       calendar's `events.list` skips that calendar for the pass, keeps its
       rows and drops the calendarList sync token, so the next pass lists
@@ -1514,8 +1466,7 @@ Performance:
       — renaming over the link would replace it with a regular file and
       silently detach the repo — and both the link's folder and the
       target's folder are watched, since an in-place edit at the target
-      fires only there. `settingsFileFs.test.ts` proves both against a
-      real temp directory.
+      fires only there.
       The desktop shows two cards so the two ideas stay apart: "Export &
       import" is a one-off copy for another device, nothing watched;
       "Settings file" explains the watched file — what it is good for (a
@@ -1530,17 +1481,6 @@ Performance:
       `randomUUID` next to the `getRandomValues` it already installed) —
       the hand-rolled `Math.random` UUID the iOS host carried is gone, and
       an import no longer names accounts differently from a sign-in.
-      Tests: `settingsDocument.test.ts` (parse, version gate, Hermes zone
-      spelling, comment-preserving merge), `settingsExport.test.ts`,
-      `settingsImport.test.ts` (preview = import, reauth row, parked and
-      applied visibility, Apple matching), `settingsFileSync.test.ts`
-      (loop guard with a fake disk), desktop `settingsFile.e2e.ts` (file
-      at launch, live edit, write-back with comments, Create file) and
-      Maestro `20-settings-file.yaml` (export opens the share sheet,
-      import opens the document picker). The share sheet titles the file
-      without its extension and hides the app's elements from the
-      accessibility tree while it is up, so the flow keys on "Save to
-      Files" and dismisses with a swipe that starts inside the sheet.
 
 ### Agent gateway: MCP and CLI access for other agents (2026-10-01)
 
@@ -1618,8 +1558,7 @@ Performance:
       occurrence; occurrence slots that were never validated; CLI replies
       over 1 MiB; a log that stored every input and could be flooded by
       refusals; the request age limit only enforced by the hourly sweep.
-      Each has a regression test (`gateway.hardening.test.ts`,
-      `socketServer.test.ts`). A second review of the PR found four more
+      A second review of the PR found four more
       of the same family: a `series`/`following` write ignored guests on
       the other exceptions it rewrites or cancels; its summary showed the
       clicked occurrence's text while the master's is what gets written
@@ -1630,14 +1569,7 @@ Performance:
       Found on the way: two quick edits in the grant editor overwrote each
       other (each built on the last state main had sent back) — the
       editor now builds on its own last edit; the e2e spec caught it.
-      Tests: `packages/agent` (policy matrix, refs, times, DTO redaction,
-      store, and the gateway over the Apple Calendar and Reminders fakes:
-      forged refs, read-only, guests, occurrence routing, approvals),
-      `apps/desktop/electron/agent` (a real socket, MCP against the
-      official client in both eras, CLI flags), desktop
-      `agentGateway.e2e.ts` (the built relay spawned against the launched
-      app), and `solunivo-cli --version` from the packaged and the signed
-      app in CI. Not verified here: the relay under the hardened runtime
+      Not verified here: the relay under the hardened runtime
       (first signed CI build), a real Hermes/OpenClaw session, relay
       auto-launch of the installed app, a real guest invitation.
 
@@ -1683,16 +1615,9 @@ Performance:
       click, and a Dock click with only Settings open now reopens the
       calendar. The approval dialog, conflict banner and dropped-change
       toast stay main-window only. Not done: auto-sizing the window to
-      each pane's height (fixed 680×620, panes scroll). Tests: the e2e
-      harness attaches to the settings window as a second CDP target
-      (`app.openSettings(pane)` / `closeSettings`); every spec that used
-      the modal drives the window instead, `timeZones.e2e.ts` asserts a
-      change made there redraws the calendar window, and `flows.e2e.ts`
-      covers one-window-at-most, pane moves without a reload and the
-      last-viewed pane. The menu item itself is not in the suite (CDP
-      cannot press a native menu accelerator); it was checked by hand
-      through the main-process inspector: Settings… opens the window,
-      also with the main window closed.
+      each pane's height (fixed 680×620, panes scroll). The menu item
+      itself is not in the suite (CDP cannot press a native menu
+      accelerator).
 
 ### Calendar mirrors (2026-10-02)
 
@@ -1719,7 +1644,7 @@ Performance:
       `events.update` (PUT), since a switched-off field must leave the
       copy and PATCH keeps omitted fields; a derived id (`slnvmr` +
       hash) makes a second device's insert a 409 and a confirming replace
-      revives a deleted copy — all pinned live first (`mirrors.live.ts`).
+      revives a deleted copy.
       **Markers are opaque** (the key is salted with the mirror id, the
       content hash covers only what was written): the destination is
       shared with people who can read both carriers. **Setting a mirror
@@ -1744,15 +1669,7 @@ Performance:
       EVENTS_KEY**, or every quiet poll would recompute. Rejected: a
       Zapier-style workflow; cutting the app-side undated-task change
       (asked for); iCloud key-value sync of definitions (a new
-      entitlement in every build). Tests: core `mirror/mirror.test.ts`,
-      `sync/mirrors.test.ts` (two devices — each its own database and
-      engine — over one fake Google and one fake EventKit store: sync
-      lag, a stale device, an older definition, another mirror, unsynced
-      edits, the large-removal brake, the rewrite breaker, reminders with
-      done state, a raced Apple duplicate, a hidden source), repo and
-      fake tests, `mirrors.live.ts`, desktop `mirrors.e2e.ts`, Maestro
-      `21-mirrors.yaml` (not run locally: the dev client needs the Swift
-      changes). Review (2026-10-03) found and fixed: a stale device's 409
+      entitlement in every build). Review (2026-10-03) found and fixed: a stale device's 409
       path replaced a copy blindly (now it reads the event and stands back
       from a newer revision, else replaces with If-Match); a definition
       that excludes everything leaves no revision carrier (bounded: deletes
@@ -1785,8 +1702,8 @@ Performance:
       rule is unchanged); `Schema.isLengthBetween` became
       `isBetweenLength`. The custom rpc protocols in `rpcDuplex.ts`
       needed nothing — both `Protocol` shapes are field-for-field what
-      rc.115 required. `effect` no longer has runtime dependencies (159
-      fewer packages installed). **Vitest stays 4**: `@effect/vitest`
+      rc.115 required. `effect` no longer has runtime dependencies.
+      **Vitest stays 4**: `@effect/vitest`
       declares a Vitest 5 peer (it already did at rc.115) but the suites
       only use `it.effect` / `expect` and pass unchanged, so vite-plus 1.0
       (Vitest 5) stays a separate sweep item. The iOS native fingerprint
@@ -1890,11 +1807,7 @@ Performance:
       prompt while the user mutes someone. The detail view's optimistic
       value lasts only until its save's refetch lands; after that the
       stored list is the truth, so a Reset in Settings with the detail
-      open shows up instead of being shadowed. iOS e2e seeds
-      the person through the fixture Google account's People
-      connections (`GoogleFixture.people`, contacts on), a week from
-      today inside today's month so no day-view flow meets the chip;
-      flow 23 reaches it from the month grid. Open: on-device check of
+      open shows up instead of being shadowed. Open: on-device check of
       the pending iOS notifications after an override.
 
 ### Full-history follow-ups (2026-10-04)
@@ -1915,8 +1828,7 @@ Performance:
       day its rule skips (Tuesday start, `BYDAY=SU;COUNT=2` → the Tuesday
       plus two Sundays — DTSTART outside COUNT), where rrule-temporal
       drops it. `buildRuleString` lists DTSTART as an RDATE too, which
-      the library dedupes on a rule day; it costs the COUNT query plan
-      nothing and an endless rule ~0.02 ms per read. The review of #109
+      the library dedupes on a rule day. The review of #109
       found the visible case: a this-and-following split on an RDATE
       occurrence the rule skips starts the new master there, and the
       calendar drew neither half's copy of it while Google drew it.
@@ -1946,16 +1858,7 @@ Performance:
       occurrence onto a day an explicit BYDAY skips keeps the old COUNT,
       so the new series ends one occurrence late — on Google too (its own
       UI rewrites BYDAY instead).
-      **Long COUNT series: measured, no change.** A one-week window two
-      years into a series starting ten years back, a fresh `RRuleTemporal`
-      per read as `expandRecurringEvent` builds it (rrule-temporal 2.2.5,
-      Node 24, M-series Mac): DAILY COUNT=5000 0.02 ms, WEEKLY MO/WE/FR
-      COUNT=2000 0.015 ms, MONTHLY BYMONTHDAY COUNT=240 0.03 ms, YEARLY
-      COUNT=50 0.02 ms — the library's COUNT query plan (since 2.2.3, not
-      2.1 as the note said) jumps to the window. The shapes without a
-      plan walk from DTSTART, capped at 10k periods: plain MONTHLY
-      COUNT=240 (what our repeat picker writes) 0.29 ms, WEEKLY
-      BYDAY+BYSETPOS COUNT=2000 9 ms (rare). Revisit only if a profile
+      **Long COUNT series: measured, no change.** Revisit only if a profile
       shows expansion in a window read; the fix then is caching
       `RRuleTemporal` instances per master so the library's plan and
       `all()` caches outlive one read. The per-calendar "keep only N
@@ -2026,7 +1929,7 @@ a failing test first.
       asks (`removeAccountQuestion`), naming the account and how many
       unsynced changes would be lost; an Apple account only disconnects
       (EventKit keeps everything, reconnecting is a tap) and still goes
-      on one tap — the five Maestro flows that remove one are unchanged.
+      on one tap.
       `PendingOpSummary` carries `accountId` for the count. **Remove waits
       for a successful queue read** (review of #113): `usePendingOps`
       falls back to `[]` while loading or after a failed read, which read
@@ -2082,11 +1985,7 @@ both had merged.
       on a `google-live` PR no longer reruns the live suite. Dependabot's
       weekly group holds only what can merge as is — majors, vite-plus
       with vitest, and minors of the Expo-bound React Native stack are
-      the deliberate sweep's. An iOS e2e shard may run 45 minutes (green
-      ones take 25–34, half of it setup; at 35 a slow runner was cancelled
-      two flows short). Flow 07 retypes a title XCTest garbled, and flow
-      21 counts any mirrored events, since a flow that failed before its
-      clean-up leaves its event behind.
+      the deliberate sweep's. An iOS e2e shard may run 45 minutes.
 - [x] Sync queue integrity — #118 (`todo/sync-queue-integrity`).
       **A response writes its row only while no later op of the event is
       queued** (`settleRow`: create, update, RSVP, move) — the guard #110
@@ -2161,7 +2060,7 @@ except where a test cannot fail on Node (noted).
       editor**: Save and Delete run through one slot (`useOneWrite`), and
       a press while a write is in flight starts nothing; a second tap
       used to create a second event or task. The slot is a ref set
-      synchronously, so two clicks in one tick count once (desktop e2e).
+      synchronously, so two clicks in one tick count once.
       `busy` only dims the buttons: disabled, a button came back on the
       next render only, and CI's convert e2e showed a press right after a
       declined confirmation landing on it and doing nothing.
@@ -2340,8 +2239,7 @@ the other three held, on both apps.
       (desktop: the banner hid one toast, the other sat on its table, and
       at 1024 px it reached into the 360 px editor over Delete; iOS: all
       three at `bottom: 24` of a SafeAreaView whose frame runs under the
-      tab bar — inside the bar's band, under its items, "+" and Search;
-      the live suite's conflict flows tapped "Tasks" through the banner).
+      tab bar — inside the bar's band, under its items, "+" and Search).
       **Order, top to bottom: failed write, discarded change, banner** —
       the banner holds the anchored edge because it stays until answered,
       so toasts come and go above it and never move its buttons; one
@@ -2420,7 +2318,7 @@ The main views were redesigned on a canvas (desktop: toolbar + collapsible
 sidebar + grid + a right panel that is a task rail, an inspector or an
 inline editor; iOS: tabs, sheets, a detail-first event view) and the
 work split into three PRs: the shared foundation below, then the desktop,
-then iOS (both in `todo.md`).
+then iOS.
 
 - [x] Design tokens + dark-mode foundation — done (2026-10-07, `todo/
   design-tokens`). **The brand kit is the one palette**: `tokens.json`
@@ -2496,13 +2394,8 @@ then iOS (both in `todo.md`).
       the panes by label and keyword (`filterPanes`), the pane in view
       stays; the hash is still the one place the pane lives. **Device
       taste persists**: `lastView` and `sidebarCollapsed` through the view
-      preferences, read before the first paint. **e2e** opens editors
-      through `openInspector` / `openEditor` and locates by testid
-      (`toolbar-title`, `view-*`, `nav-*`, `panel`, `inspector`, `editor`,
-      `editor-title`, `week-grid`, `today-header`, `now-line`,
-      `panel-task-*`); color is asserted through `data-color`, never a
-      computed rgb. Search stays a disabled toolbar placeholder (its own
-      PR; shipped, see Search below).
+      preferences, read before the first paint. Search stays a disabled
+      toolbar placeholder (its own PR; shipped, see Search below).
 - [x] iOS redesign — done (2026-10-08, `todo/ios-redesign`).
       **expo-router owns the screens**: `app/_layout.tsx` holds the
       providers and a native stack — the tab bar (`NativeTabs`: Calendar ·
@@ -2515,7 +2408,7 @@ then iOS (both in `todo.md`).
       every sheet and the capture model, so both tabs open the same
       sheets: the "+" opens the quick-add sheet (a phrase held in an
       "Understood as" card with an Event/Task toggle, Edit details or Add
-      as understood, Find a time, and a "New event" row — the e2e path),
+      as understood, Find a time, and a "New event" row),
       a tap on an event opens the read-first detail (Join, RSVP, scope,
       Convert, Delete, Edit), tasks and slots open the editor directly.
       **Sheets stay React Native page sheets**: `@expo/ui`'s `BottomSheet`
@@ -2535,11 +2428,9 @@ then iOS (both in `todo.md`).
       trusted publishing and others with a maintainer token, the same as
       the `expo` package of the SDK release. **Deferred**: Settings
       sub-screens (shipped as the iOS Settings pages below), the collapsed
-      all-day row's "N tasks · M overdue" pill, `@expo/ui` date pickers. **Maestro**:
-      `common/open-new-event.yaml` ("+" → New event), `open-event-editor.yaml`
-      (the detail's Edit), `switch-view.yaml` (the header menu, `VIEW`);
-      the shell anchor stays the "Today" button. The native fingerprint
-      moved once, in the first commit (deps + the expo-router plugin).
+      all-day row's "N tasks · M overdue" pill, `@expo/ui` date pickers.
+      The native fingerprint moved once, in the first commit (deps + the
+      expo-router plugin).
 - [x] iOS Settings pages — done (2026-10-08, `todo/ios-settings-pages`).
       **One native stack inside the Settings modal** (`app/settings/`):
       the root lists Unsynced Changes (only while there are any), the
@@ -2588,13 +2479,6 @@ then iOS (both in `todo.md`).
       switch, Run Now and status, read-only rows that open the unchanged
       editor sheet, Delete; mirror failures, silent before, show on the
       page. "Add Mirror…" is a list row rather than a "+" in the nav bar.
-      **Maestro**: `common/open-settings.yaml` waits for the
-      `settings-root` id (not a title: the gear's label is "Settings" too),
-      `open-settings-page.yaml` pushes `settings-row-${PAGE}`,
-      `close-settings.yaml` taps `BackButton` until the root shows, then
-      Done; an Apple account's presence is the `apple-calendar-account` /
-      `apple-reminders-account` id on its access row, and zones and
-      per-person birthday times are removed by a swipe.
 - [x] Search — done (2026-10-09, `todo/search`).
       **One rpc reads what the views can show**: `search({ query,
       timeZone })` (`searchCalendar`, both apps) reads the rows the views'
@@ -2612,9 +2496,8 @@ then iOS (both in `todo.md`).
       latest (`seriesSearchOccurrences`: each direction one span for most
       rules, a refused span retried a quarter as long). Its overrides are
       rows of their own, matched on their own text, and their slots are
-      left out of the walk. On Node, 5,000 events in the window, 30 endless
-      series and 3,000 tasks take 55–115 ms a search. **Matching is TypeScript, not SQL**: NFD with the combining
-      marks dropped, lowercased without a locale, and every
+      left out of the walk. **Matching is TypeScript, not SQL**: NFD with
+      the combining marks dropped, lowercased without a locale, and every
       whitespace-separated word must occur in one field — an event's title,
       place, notes, guest names and addresses; a task's title and notes.
       SQLite's LIKE folds neither accents nor non-ASCII case. A blank query
@@ -2666,10 +2549,7 @@ then iOS (both in `todo.md`).
       no-break space before AM/PM — which also hit the secondary-zone lines
       under events since the time zones PR. **Deferred**: a search tool
       for the agent gateway, recall beyond the window, calendar names as
-      search text, highlighting the matched words (todo.md). **e2e**:
-      `search.e2e.ts` (desktop) and flow 25 with `common/search-for.yaml`
-      (iOS); the detail sheet's Delete stays in the tree behind the
-      confirmation alert's, so the flow taps the alert's by position.
+      search text, highlighting the matched words (todo.md).
 - [x] iOS account button — done (2026-10-09, `todo/ios-account-avatar`).
       **Settings opens from an account avatar** at the top right of
       Calendar and Tasks, where Apple's own apps (App Store, Music, Photos,
@@ -2691,7 +2571,7 @@ then iOS (both in `todo.md`).
       children: the button is one accessibility element, so a child's id
       would never reach Maestro, and the live suite waits on
       `pending-badge` to go; VoiceOver hears the count in the button's
-      label. `02-navigation` opens Settings from the Tasks tab.
+      label.
 - [x] iOS Tasks filter chips — done (2026-10-10, `todo/task-filter-chips`).
       **The chip row keeps its own height.** It is a horizontal
       `ScrollView`, and React Native gives every ScrollView `flexGrow: 1`
@@ -2715,10 +2595,7 @@ then iOS (both in `todo.md`).
       **A chip works while the keyboard is up** (`keyboardShouldPersistTaps`,
       like the list). **The screen's `SafeAreaView` is
       react-native-safe-area-context's**: React Native's is deprecated.
-      Flow 09, which connects Reminders on CI, taps the Reminders chip and,
-      after it disconnects Reminders, expects the Google task back. Not in
-      a flow: the keyboard (Maestro's visibility ignores it), checked on
-      the simulator.
+      Not in a flow: the keyboard (Maestro's visibility ignores it).
 
 ### Dependency sweep (2026-10-09)
 
@@ -2795,12 +2672,7 @@ then iOS (both in `todo.md`).
       snippets sit in a `fill` well with a hairline instead of a black
       block. **The dialog scrim stays `bg-black/30`**: it dims in either
       appearance. **A guard**: `renderer/themeClasses.test.ts` fails on any
-      Tailwind palette shade or `white` in the renderer's sources. Checked
-      with CDP screenshots of every changed surface in both appearances
-      (`Emulation.setEmulatedMedia`; a window in the background runs no
-      rendering steps, so the media change is reported only once a capture
-      forces a frame), the notes and notices only an error shows forced on
-      in a scratch build.
+      Tailwind palette shade or `white` in the renderer's sources.
 
 ### Experimental: mirrors and agents (2026-10-09)
 
@@ -2862,8 +2734,7 @@ then iOS (both in `todo.md`).
       centering their row in the lane (the base chip centers a column).
       Search results (both apps) draw the same mark for a task's state;
       on desktop it is wrapped so the row's hover — the row opens the
-      task — previews no tick. The desktop e2e checks a completion by
-      `[data-done]`, not by the glyph.
+      task — previews no tick.
 
 ### Test pruning (2026-10-09)
 
@@ -2900,32 +2771,16 @@ then iOS (both in `todo.md`).
       the native fingerprint, and a dead tag is not worth a dev-client
       rebuild. Not done: table-driven merges of near-identical unit tests
       and shared test helpers (`noYield` is defined in ten files).
-      **The reshuffle moved flows next to 04a**, which leaves device
-      Contacts connected on shard 1: the first CI run typed the invitee
-      address into 03 there and Return added "Kate Bell" (a partial
-      address takes the top suggestion), so 03 now retypes until the field
-      holds the whole address, like 07 does for titles. The same run's
-      Month pick in 23 reported COMPLETED with the menu still open; 23
-      re-picks until the header reads like a month, as 18 did for two
-      days. The retype loop hides no app race: typing that pauses until
-      the suggestions render still lands every letter, and Return then
-      adds the typed address, not the suggestion. Measured on the first
-      green run: 20m 5s and 14m 27s of flows (`25-search` included,
-      3m 39s) against 19m 24s and 22m 18s before. Billed minutes dropped,
-      but shard 1 (04a's 6 min plus its flows) stays the job that sets
-      the wall-clock time, at 38 of its 45 minutes.
 
 ### Swipe jumps (2026-10-10)
 
 - [x] iOS timeline: a swipe no longer jumps when it lands — done
-      (`todo/ios-swipe-jump`). Reproduced on the simulator with
-      `simctl io recordVideo` and per-frame analysis of the 2-day view;
-      **two separate jumps**. (1) **A column off for one frame**: the
+      (`todo/ios-swipe-jump`). **Two separate jumps**. (1) **A column off
+      for one frame**: the
       strip was laid out relative to the page React last drew, and a
       UI-thread `lag` reset (`runOnUI` from a layout effect) undid the
       shift the new days brought. Nothing orders that call against the
-      Fabric mount, so in 4 of 52 recorded swipes a frame showed the
-      next day (title "Oct 12 – 13" over 13 | 14). Now the UI thread adds
+      Fabric mount. Now the UI thread adds
       up the pixels each swipe navigated (`navigatedPx`) and hands the
       sum to React with the page change; the strips are drawn at
       `left: swiped.px − buffer·column` with the transform
@@ -2941,10 +2796,7 @@ then iOS (both in `todo.md`).
       now fits the visible page (`pageMaxima`), and mid-swipe its height
       blends toward the incoming page (`interpolatePages`, a Reanimated
       height), so the grid moves with the finger and is in place when the
-      swipe lands. The "less" toggle follows the visible page too.
-      Measured on the simulator: the old code moved the grid at 10 of 49
-      swipe page changes, the new code at 0 of 74; dropped frames during
-      swipes unchanged (4–8 % of vsyncs in both, simulator noise). Not
+      swipe lands. The "less" toggle follows the visible page too. Not
       checked: a task drag across days after a swipe (the simulator
       tool's touch path does not start it on the old code either; the
       drop geometry at rest is unchanged), and a real device.
@@ -2962,9 +2814,7 @@ then iOS (both in `todo.md`).
       it keeps the first visible writable list. The desktop rail's inbox
       has no list filter, so it keeps the first writable list, as do both
       quick-add paths. Unit-tested only: no Maestro flow covers the add
-      field. Checked on the simulator with the fixture Google account and
-      Reminders connected: each chip names its own list, and a task added
-      under "Mock Tasks" shows there and not under "Reminders".
+      field.
 
 ### Add flow (2026-10-10)
 
@@ -3034,12 +2884,8 @@ then iOS (both in `todo.md`).
       items only; the kind control on an existing item converts, as the
       Event/Task toggle did. The iOS control is drawn in RN
       (`SegmentedControl`, the desktop's look) rather than SwiftUI's,
-      because each segment carries the test id the flows tap. Checked:
-      the gate, the desktop convert / taskConvert / taskConvertGoogle /
-      capture / flows specs (the list-select moves became kind taps:
-      a reminder's picker no longer offers Google lists), and the iOS
-      flows 03/06/07/08/09/12/14/17/25 on the simulator with the fixture
-      model and Google. Review (Codex) found four things the probes had
+      because each segment carries the test id the flows tap.
+      Review (Codex) found four things the probes had
       not: a list picked for a kind now survives a round trip through the
       event form (it was reset to the default); a parse that lands after
       the kind flipped applies to the editor as it is then (the submit's
@@ -3077,14 +2923,11 @@ then iOS (both in `todo.md`).
 - [x] Desktop: a drag survives a key or a lost capture in the middle of
       it — done (`todo/drag-other-input`). Investigated after
       PR #162's local repro: with `TZ=Etc/GMT+2` and the OAuth file
-      present, the first lane-chip drag after launch failed 5 of 22
-      times, either dropping nothing or landing three days late. **No
-      re-render was involved.** Reproduced 3 of 40 times (2 no-drop, 1
-      wrong day), with mount, render and drop logging in the renderer
-      and a pointer, key and focus trace. Neither failure changed the
-      strip or remounted the chip. Both were input the harness never
-      sent, reaching the e2e window, which has focus and sits under the
-      cursor:
+      present, the first lane-chip drag after launch failed, either
+      dropping nothing or landing three days late. **No re-render was
+      involved.** Neither failure changed the strip or remounted the chip.
+      Both were input the harness never sent, reaching the e2e window,
+      which has focus and sits under the cursor:
       (1) **No drop**: pointer moves with fractional coordinates (a
       trackpad; CDP sends whole pixels) and no button arrived mid-drag.
       Chromium dropped the chip's capture, the release went to the grid,
@@ -3096,8 +2939,7 @@ then iOS (both in `todo.md`).
       grid, so the release x fell past the last column and was clamped
       to the strip's end (Oct 13 = index 10). The drop matched the
       indicator, which followed the narrowed grid.
-      Injecting either input through CDP reproduces its failure every
-      time. **Fixes, in the drag hook**: while a press is under way,
+      **Fixes, in the drag hook**: while a press is under way,
       Enter and Space do nothing (a window capture listener, ahead of
       every block's, chip's and row's own handler). A `lostpointercapture`
       for the pressed pointer ends the press like Escape or a
@@ -3105,10 +2947,7 @@ then iOS (both in `todo.md`).
       A lost capture ends the drag instead of trying to finish it: the
       input says the button went up somewhere the chip never heard.
       TZ and the OAuth file play no part (neither changes a render during
-      the drag; quiet-machine loops in that setup ran 0 of 110). The
-      correlation came from when the runs happened. Regression tests: "A
-      chip drag meets other input" in `reminders.e2e.ts`, both failing on
-      main every run (also at 6× throttling and at 1024 px).
+      the drag). The correlation came from when the runs happened.
 
 ### e2e windows take CDP input only (2026-10-10)
 
@@ -3126,36 +2965,24 @@ then iOS (both in `todo.md`).
       focused: programmatic focus, `:focus`/`:focus-visible` and
       `document.hasFocus()` all failed in an unfocused window without it.
       Chromium implements the emulation as a page capture, so a covered
-      window keeps drawing. Fully covered, it drew 120 frames/s with the
-      emulation and 0 without, also 0 ResizeObserver callbacks. That is
-      why the background order is safe and #159's hidden-window cause is
-      gone. **`setIgnoreMouseEvents` was not enough.** macOS still sends
-      the window tracking-area enter/exit, and Chromium makes them a
+      window keeps drawing. That is why the background order is safe and
+      #159's hidden-window cause is gone. **`setIgnoreMouseEvents` was not
+      enough.** macOS still sends the window tracking-area enter/exit, and
+      Chromium makes them a
       buttonless `mouseMove` plus a `mouseLeave` at the real cursor
-      position. Mid-drag that dropped the capture: 3 of 25 drags failed
-      with only that layer. A `before-mouse-event` listener drops every
+      position. Mid-drag that dropped the capture. A `before-mouse-event`
+      listener drops every
       enter, leave and fractional position, since CDP can send no
       enter/leave and the harness dispatches whole pixels. `Cdp.send`
       rounds every `Input.dispatchMouseEvent`, so the integer rule holds
       for a spec's own raw dispatch too, such as #166's buttonless move.
-      The OS's positions are fractions of a point (logged down to
-      1/65536). `clickCount` or the button were rejected as the mark,
+      The OS's positions are fractions of a point. `clickCount` or the
+      button were rejected as the mark,
       because #166's test sends a buttonless, clickless move on purpose.
       `focusable: false` was not needed: keys never reached a window that
-      is never key. **Proof** (scratch loop of the first "Reminder chips
-      drag" test, one launch per round, Nik circling the cursor over the
-      window and tapping Space twice a second, a window-level trace of
-      fractional pointer events and keys): before, 5 of 25 drops failed.
-      The app activated every round, keys reached the page in 18 rounds
-      and moves in 12. After, 30 of 30 passed. The cursor travelled
-      72,578 pt and was over the window in 326 of 410 samples. The main
-      process dropped 144 OS events (86 moves, 58 leaves), none reached
-      the page, and the app never activated or took window focus.
+      is never key.
       **Side effect**: `browser-window-focus` no longer fires in e2e, so
       the sync kick (`backendHost.ts`) and the settings-file check
-      (`settingsFile.ts`) never run from focus there. The whole suite
-      passed without them, at 1280×800 and at `CALENDAR_E2E_WINDOW=1024x768`.
-      The only failure is the known Thu–Sun "reseeds the editor…" first
-      attempt, which fails the same way on the baseline. Not fixed here:
+      (`settingsFile.ts`) never run from focus there. Not fixed here:
       an e2e run from another checkout without this change still takes
-      focus (one was seen during the proof, from the main checkout).
+      focus.

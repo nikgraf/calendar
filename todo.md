@@ -9,17 +9,10 @@ sweep (`todo/backlog-tiers`) closed every item of the former tiers 1–6
 except the two below; their entries are in `docs/decisions.md` under
 "Backlog sweep (2026-09-11)".
 
-## Tier 0 — bugs (review 2026-10-02)
+## Tier 0 — bugs
 
-From a read-only review of the whole app; nothing was run. "Verified"
-means the cited code was re-read and the defect is there, "reported" that
-one audit pass traced it — reproduce with a failing test first. Lines are
-from main on 2026-10-04. Fixed items are closed in `docs/decisions.md`
-under "Review fixes (2026-10-04)" (#110–#115), "Review fixes, second
-batch (2026-10-05)" (#117–#121), "Review fixes, third batch
-(2026-10-05)" (#124–#127), "Review fixes, fourth batch (2026-10-07)"
-(#129–#132) and "Review fixes, fifth batch (2026-10-08)" (#139–#142) — which
-closed the last of them.
+Empty. The 2026-10-02 review's findings are closed in `docs/decisions.md`
+under the "Review fixes" entries (#110–#142).
 
 ## Tier 1 — CI and distribution
 

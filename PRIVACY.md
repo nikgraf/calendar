@@ -1,6 +1,6 @@
 # Privacy Policy
 
-_Last updated: 2026-09-24_
+_Last updated: 2026-10-10_
 
 Solunivo is a calendar and task app for macOS and iOS. It has no server
 of its own: the app talks directly from your device to Google and Apple,
@@ -11,7 +11,8 @@ and nothing you do in it is sent to us.
 When you connect a Google account, Solunivo asks for access to:
 
 - **Google Calendar** — your calendar list and events, to show, create,
-  edit, move and delete them.
+  edit, move and delete them, and to create a calendar when you set up a
+  calendar mirror (below).
 - **Google Tasks** — your task lists and tasks, to show and edit them.
 - **Google Contacts** (read-only) — names, email addresses and birthdays
   of your contacts and "other contacts", to suggest guests when you
@@ -52,8 +53,13 @@ Calendar, Apple Reminders and your address book, for the same purposes.
   copies carry an opaque marker so the app can find them again; it names
   nothing about the original.
 - **Stays on your device, too:** quick-add parsing, find-a-time
-  suggestions and dictation use Apple's on-device models; your text and
-  voice are not sent anywhere for this.
+  suggestions, dictation, and reading events out of a pasted text or a
+  shared screenshot use Apple's on-device models and text recognition;
+  your text, voice and images are not sent anywhere for this.
+- **Goes where you send it.** Settings can be exported as a file, and the
+  Mac can keep a settings file in your home folder. That file lists your
+  connected accounts' email addresses and calendar names, never passwords
+  or sign-in tokens.
 
 We do not run analytics, crash reporting or advertising, and we do not
 sell, share or transfer your data to anyone. We have no servers that

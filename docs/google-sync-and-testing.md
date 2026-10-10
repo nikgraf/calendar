@@ -2,9 +2,9 @@
 
 ## Verified Google Calendar API semantics
 
-Everything below is either verified against the reference docs or proven by
-the implementation + tests. When touching sync code, treat these as
-invariants.
+Everything below is either verified against the reference docs, proven by
+the implementation + tests, or probed against a real account (the live
+suite). When touching sync code, treat these as invariants.
 
 ### Events & recurrence
 
@@ -21,41 +21,36 @@ invariants.
   (`YYYYMMDDTHHMMSSZ`) for timed events, `YYYYMMDD` for all-day; `COUNT`
   and `UNTIL` are mutually exclusive (RFC 5545) — truncation drops COUNT.
   Recurrence lines never include DTSTART; it derives from the event start.
+  Google draws DTSTART as the first occurrence even on a day the rule
+  skips, outside COUNT (probed live) — see architecture.md, Recurring
+  events, for how `buildRuleString` matches that.
 - **Client-generated event ids** (base32hex) make creates idempotent: a
-  409 on insert means the create already landed — treat as success.
-- **PATCH semantics**: omitted fields stay unchanged. Attendee arrays
-  merge by email for non-organizer callers, and `responseStatus` changes
-  for entries other than your own are ignored — RSVP therefore sends an
-  attendees-only body and deliberately omits If-Match (a response should
-  not lose to unrelated content edits).
-- **PATCH merges `start`/`end` field by field** (verified live
-  2026-09-24): a timed → all-day edit that sends only `{date}` keeps the
-  stored `dateTime`, and a time carrying both is a 400 "Invalid start
-  time". `toGcalTimesPatch` sends the unused form as null
-  (`{date, dateTime: null, timeZone: null}` and the reverse); the fake
-  merges and refuses the same way.
-- **A master edit reaches the exceptions** (verified live 2026-09-25):
-  when a master's title, description or location **changes**, Google
-  copies the new value onto every exception of the series, overridden
-  ones included; a field re-sent with its old value leaves the
-  exceptions' own values alone. `updateRecurring` (series scope) mirrors
-  the changed fields onto the local override rows at save, as a
-  projection of the queued op (`carriedText.ts`): the op keeps the text
-  Google's master had and each exception's own text (`carried_text`).
-  "Changed" is measured against Google's text, not the local row, so an
-  offline rename and its revert coalesce into a no-change patch and the
-  exceptions keep their own titles, as on Google; an empty field equals a
-  missing one (Google stores no empty text, and the editor sends `''`).
-  Discard, take-theirs and a permanent rejection put the exceptions' text
-  back, with the coordinates a carried location dropped, except a field
-  the user has since edited on the exception and a row a pull or push
-  replaced since (its etag moved on: that is Google's version, e.g. another
-  device's identical rename, and no later incremental pull would resend
-  it). A this-and-following split inherits the carry of the op it
-  replaces.
-  Known gap: a queued instance op's payload is not rewritten, so it can
-  still push carried text of an abandoned series edit; the next pull
-  converges.
+  409 on insert means the create already landed — treat as success. A
+  deleted event keeps its id reserved (re-insert → 409) and comes back by
+  a PUT with `status: 'confirmed'`.
+- **PATCH semantics**: omitted fields stay unchanged; PUT (`events.update`)
+  clears what the body leaves out. Attendee arrays merge by email for
+  non-organizer callers, and `responseStatus` changes for entries other
+  than your own are ignored — RSVP therefore sends an attendees-only body.
+- **PATCH merges `start`/`end` field by field** (verified live): a timed →
+  all-day edit that sends only `{date}` keeps the stored `dateTime`, and a
+  time carrying both is a 400 "Invalid start time". `toGcalTimesPatch`
+  sends the unused form as null (`{date, dateTime: null, timeZone: null}`
+  and the reverse); the fake merges and refuses the same way.
+- **A master edit reaches the exceptions** (verified live): when a
+  master's title, description or location **changes**, Google copies the
+  new value onto every exception of the series, overridden ones included;
+  a field re-sent with its old value leaves the exceptions' own values
+  alone. `updateRecurring` (series scope) mirrors the changed fields onto
+  the local override rows at save, as a projection of the queued op
+  (`carriedText.ts`: the op keeps the text Google's master had and each
+  exception's own text, so "changed" is measured against Google's text
+  across coalesced edits, an empty field equals a missing one, and
+  discard, take-theirs and a permanent rejection put the exceptions' text
+  back except where the user has since edited the exception or a pull
+  replaced the row). Known gap: a queued instance op's payload is not
+  rewritten, so it can still push carried text of an abandoned series
+  edit; the next pull converges.
 - **Attendee editing**: `attendees` on `EventDraft`/`UpdateEventChanges`
   is a replacement guest list (`[]` clears). Google **replaces the whole
   array** on write and our copy lacks fields we never model (`optional`,
@@ -67,27 +62,26 @@ invariants.
   the server facts (response, organizer, self) of retained emails so a
   guest edit never resets an RSVP. Inserts/patches send `sendUpdates=all`
   when guests exist (rooms alone do not count) or the guest list was
-  edited (removed guests get their cancellation) — guests get emailed
-  about time/location edits too. The organizer is never added
-  client-side: Google puts it on the insert response.
-- **412 (etag mismatch)**: we use If-Match on content updates/deletes when
-  an etag is known; on 412 the op is parked with Google's copy
-  (`events.get`) and the user keeps theirs (re-sent without If-Match) or
-  takes Google's (re-fetched live). `events.get` answers a deleted event
-  with 404 or 410 — the client maps both to `NotFoundError` (a 410 is not
-  an expired sync token there).
-
+  edited (removed guests get their cancellation). An API insert never
+  adds the organizer to `attendees` (the web UI does): the organizer is
+  the calendar itself (`organizer.self`), so the app refuses an RSVP
+  there (`NotAttendeeError`).
+- **412 (etag mismatch)**: we use If-Match on content updates/deletes and
+  RSVPs when an etag is known; on 412 an update or delete is parked with
+  Google's copy (`events.get`) and the user keeps theirs (re-sent without
+  If-Match) or takes Google's (re-fetched live); an RSVP is resent
+  unchecked. A stale-etag PATCH of a deleted event and a stale If-Match
+  DELETE are 412s too. `events.get` answers a deleted event with 404 or
+  410 — the client maps both to `NotFoundError`, and a 410 on any write
+  means "gone", like a 404 (never an expired sync token there).
 - **events.move** (`POST …/events/{id}/move?destination=`): re-homes an
   event into another calendar _of the same account_, keeping its id,
-  guests, conference data and exceptions. Organizer only (403
-  `forbiddenForNonOrganizer` otherwise) and whole events only — an
-  instance id is refused. We send `sendUpdates=all` when the event has
-  guests. The fake server implements exactly this (source tombstone,
-  destination upsert, 403/400/404 arms).
-
+  guests, conference data and exceptions, and leaves a tombstone at the
+  source. Organizer only (403 `forbiddenForNonOrganizer` otherwise) and
+  whole events only — an instance id is refused. We send
+  `sendUpdates=all` when the event has guests.
 - **reminders**: `{useDefault, overrides?: [{method, minutes}]}` on
-  every event resource (no `fields` param is sent, so it always
-  arrives). `useDefault: true` means the calendarList entry's
+  every event resource. `useDefault: true` means the calendarList entry's
   `defaultReminders` apply; `useDefault: false` with no overrides means
   none — keep the two apart. `overrides` holds at most five, `minutes`
   0..40320 (four weeks); methods `email` and `popup` (an `sms` override
@@ -95,9 +89,12 @@ invariants.
   object, so a flagged update always sends `useDefault` plus every
   override, email ones included, and an unrelated edit sends none. For
   an all-day event `minutes` count from local midnight of the start day
-  in the calendar's time zone _(verify against the web UI: 420 should
-  read "the day before at 5:00 PM")_. Local delivery only fires
-  `popup` reminders; `email` is Google's to send.
+  in the calendar's time zone. Local delivery only fires `popup`
+  reminders; `email` is Google's to send.
+- **Rate limits**: a burst of writes gets 403 `rateLimitExceeded`; the op
+  backs off like any transient failure. Google also caps secondary
+  calendar creation per account and day (403 `usageLimits` /
+  `quotaExceeded` after ~40).
 
 ### calendarList
 
@@ -105,73 +102,65 @@ invariants.
   `backgroundColor`/`foregroundColor` hex; send **both** (foreground is
   not documented optional; omitting it has 400 reports). Google sets the
   nearest palette `colorId` automatically and subsequent lists return the
-  custom `backgroundColor` — and `mapGcalCalendar` prefers
-  `backgroundColor` over `colorId`, so custom colors round-trip with no
-  mapper changes.
+  custom `backgroundColor` — `mapGcalCalendar` prefers `backgroundColor`
+  over `colorId`, so custom colors round-trip. Colors must be full
+  6-digit hex; Google normalizes casing — we store lowercase
+  (`normalizeHexColor`) so pull-after-push is byte-identical. The
+  calendarList entry is per-user metadata: color patches work for any
+  accessRole, including read-only calendars.
 - **URL-encode calendar ids** in paths: birthday/holiday calendars contain
   `#` (`addressbook#contacts@group.v.calendar.google.com`) — unencoded,
   the id is truncated as a URL fragment.
-- Colors must be full 6-digit hex; Google normalizes casing — we store
-  lowercase (`normalizeHexColor`) so pull-after-push is byte-identical.
-- The calendarList entry is per-user metadata: color patches work for any
-  accessRole, including read-only calendars.
 - **A deleted calendar lingers.** After `calendars.delete`, a full
-  `calendarList.list` kept naming the calendar for minutes (a probe on
-  2026-09-29: both calendars deleted 5–6 min earlier were still listed, and
-  `events.list` on them still answered 200). Later `events.list` turns
-  404 while the list may still name it, and an incremental list never
-  reports a deletion that predates its token: nightly 36517901490's iOS
-  install did its first full list during that window, and every pass
-  failed on that calendar's 404 for the rest of the run (11 min). A 404
-  is no proof of deletion, though: Google's error guide says to retry it
-  with backoff (it also covers "a calendar the user can not access"). So
-  the engine skips that calendar for the pass, keeps its rows, and drops
-  the calendarList token so the next pass lists calendars in full
-  (`syncAccount`): that removes the calendar once Google stops naming it,
-  and keeps it, retrying its events, if it recovers. A delta would never
-  bring an unchanged calendar back, which is why a purge on the 404 was
-  wrong (review of #96). A `tasks.list` 404 skips that list the same way;
-  task lists are listed in full every pass anyway.
+  `calendarList.list` keeps naming the calendar for minutes and
+  `events.list` still answers 200; later `events.list` turns 404 while the
+  list may still name it, and an incremental list never reports a
+  deletion that predates its token. A 404 is no proof of deletion either
+  (Google's error guide says to retry it; it also covers "a calendar the
+  user can not access"). So the engine skips that calendar for the pass,
+  keeps its rows, and drops the calendarList token so the next pass
+  lists calendars in full — which removes the calendar once Google stops
+  naming it, and keeps it, retrying its events, if it recovers. A
+  `tasks.list` 404 skips that list the same way.
 
 ### Misc
 
 - Locations: `location` is free-form text and the only location field
-  on a regular event — no place id, no coordinates (Google's own clients
-  geocode the string too). The app mirrors coordinates it derived into
-  `extendedProperties.private` (`solunivo.geo` = `lat,lng`,
-  `solunivo.geoName`, `solunivo.geoSource` = the exact location text).
-  Limits: keys ≤ 44 chars (longer keys are silently dropped), values ≤
-  1024 chars (silently truncated — so a longer location is never
-  mirrored), ≤ 300 properties / 32 kB per event. PATCH merges private
-  keys; a key is deleted only by sending it as `null`. Private
-  properties belong to one copy of the event: an attendee's copy on a
-  calendar we cannot write never gets them, which is why a local
-  `location_geo` cache exists. The fake Google server mirrors the merge
-  and null-delete semantics.
+  on a regular event — no place id, no coordinates. The app mirrors
+  coordinates it derived into `extendedProperties.private`
+  (`solunivo.geo` = `lat,lng`, `solunivo.geoName`, `solunivo.geoSource` =
+  the exact location text). Limits: keys ≤ 44 chars (longer keys are
+  silently dropped), values ≤ 1024 chars (silently truncated — so a
+  longer location is never mirrored), ≤ 300 properties / 32 kB per
+  event. PATCH merges private keys; a key is deleted only by sending it
+  as `null`. Private properties belong to one copy of the event: an
+  attendee's copy on a calendar we cannot write never gets them, which is
+  why a local `location_geo` cache exists.
 - Meeting links: `hangoutLink`, else `conferenceData.entryPoints[]` with
   `entryPointType === 'video'`; `meetingUrl()` in core also scans
-  location/description for Meet/Zoom/Teams/Webex/Whereby URLs.
+  location/description for Meet/Zoom/Teams/Webex/Whereby URLs (Zoom and
+  Webex only from the domain itself or a dotted subdomain).
 - Sync: incremental via syncTokens; 410 → drop token, full resync,
   `deleteStale`. A sync token is bound to the query parameters of the list
   that issued it: a token from a `timeMin` list only ever reports changes
   inside that window and cannot be widened later. The events pass
   therefore sends no `timeMin` at all (full history), and a stored token
-  is only ever one from such a list. `singleEvents=false` + `showDeleted=true` on the
-  full list; `maxResults=2500` (the API's cap) — a 50k-event calendar is
-  ~20 requests. The special birthday/holiday calendars flow through the
-  normal calendarList (the Birthdays calendar is skipped, see contacts).
+  is only ever one from such a list. `singleEvents=false` +
+  `showDeleted=true` on the full list; `maxResults=2500` (the API's cap).
+  The Birthdays calendar is skipped (see contacts).
 
-### Google Tasks (shipped)
+### Google Tasks
 
 - Separate API with no syncTokens: we poll with an `updatedMin` watermark
   (stored per account in `sync_state`, advanced to now−60s for clock
   skew) + `showCompleted/showHidden/showDeleted` so completions and
   deletions arrive as tombstones; a daily full pass catches anything a
   watermark can miss, then `deleteStale` (only `sync_status='synced'`
-  rows).
+  rows). `updated` stamps can lag a write by a moment.
 - `due` is **date-only** (RFC 3339 with a meaningless time part) and
   there is **no recurrence exposure** — Google materializes the next
   occurrence of a repeating task when the current one completes.
+  `parent`/`position` are decoded and not modeled (todo.md).
 - **Task ids are server-assigned** — creates are NOT idempotent (no
   client-id trick like events). See architecture.md for the temp-id +
   adopt-before-retry protocol.
@@ -179,227 +168,11 @@ invariants.
   un-completing must clear `completed` via `status: 'needsAction'`.
 - A 403 insufficient-scope (grants that predate the tasks scope) disables
   tasks for the account instead of retrying.
-- A write to a task that is gone (verified 2026-10-10): PATCH of a task
-  deleted on Google answers **200** with `deleted: true` (the edit lands
-  on the tombstone; `mapGcalTask` maps it to null and the op settles), a
-  task moved to another list answers **404** at its old list, and so
-  does any task of a deleted list.
-
-### Exercised end to end: the fake Google server
-
-`packages/sync/src/testing/fakeGoogle.ts` is an in-process Calendar +
-Tasks API behind effect's `HttpClient`, and `engine.http.test.ts` runs
-the real clients, request core and sync engine against it: full then
-incremental passes with sync tokens, a 410 forcing a full resync whose
-`deleteStale` drops vanished rows, cancelled tombstones, If-Match → 412
-parking the op and both resolutions (single-event `GET` included), client-generated event ids, the `updatedMin`
-watermark with deleted task tombstones, and server-assigned task ids.
-Before this the semantics above were documented prose only. The fake
-pages event lists (`pageSize`, default 2,500; the sync token rides only on
-the last page) and reports a removed calendar as a `deleted` calendarList
-entry on incremental passes. Note: the engine reads `Clock`, and
-`it.effect` runs under `TestClock` — advance it between passes or
-`passStartedAt` never moves.
-
-Both apps can run against the same fake (`testing/googleFixture.ts`):
-desktop with `CALENDAR_GOOGLE=fixture` + `CALENDAR_GOOGLE_FIXTURE=<json>`
-(the e2e harness's `google: { fixture }` launch option), iOS with
-`EXPO_PUBLIC_CALENDAR_GOOGLE=fixture` at Metro start (CI does; the
-fixture is `apps/ios/e2e/fixtures/google.ts`). A `GoogleFixture` names
-accounts, calendars, task lists and tasks; only the account rows are
-seeded locally, everything else arrives through the first sync, and a
-pre-filled memory `TokenStore` keeps the real `TokenManager` and request
-core on the path. The fake stamps writes with the wall clock (`live`) so
-the device-time `updatedMin` watermark clears them. Desktop
-`taskConvertGoogle.e2e.ts` and iOS `17-convert.yaml` use it to watch
-a queued task create push and its `local-…` id become a server id.
-
-### Live Google suite (real account)
-
-The fake pins what we _believe_ Google does; the live suite checks it
-against Google itself, signed in as a dedicated throwaway account, at
-three levels: the Node engine suite (`packages/sync/src/live/*.live.ts`
-— the real clients, request core, `SyncEngine` and `EventMutations` over
-`FetchHttpClient` with a fresh in-memory database per test), the desktop
-spec `apps/desktop/e2e/googleLive.e2e.ts` (the built Electron app signed
-in as that account) and the iOS flows under `apps/ios/e2e/live/`. None of
-them run in `pnpm test`, `pnpm test:e2e` or `pnpm test:e2e:ios`: they
-need the token, they write to the account, and they take minutes.
-`.github/workflows/google-live.yml` runs all three nightly when `main`
-moved since the last completed run, on `workflow_dispatch`, and on PRs
-labelled `google-live`, one run at a time (`concurrency: google-live`).
-
-- **Setup (once).** A fresh Gmail account (sign into Calendar and Tasks
-  once; unsubscribe the holiday calendars — every pass lists every
-  calendar). The GCP project's OAuth consent screen must be **In
-  production**: in Testing status refresh tokens expire after seven days.
-  Then `node scripts/google-live-token.mjs --write` — the desktop OAuth
-  client (`GOOGLE_DESKTOP_CLIENT_ID/SECRET` or
-  `apps/desktop/google-oauth.local.json`), a loopback PKCE flow, the
-  app's scopes plus the full `calendar` scope (calendars.insert/delete
-  need it). It writes the gitignored `google-live.local.json` and prints
-  the `gh secret set` lines for `GOOGLE_LIVE_EMAIL` and
-  `GOOGLE_LIVE_REFRESH_TOKEN`; the workflow reuses
-  `GOOGLE_DESKTOP_CLIENT_ID/SECRET` and fails red when any is missing.
-  The refresh token is bound to the desktop client, so iOS refreshes it
-  with that client too (`EXPO_PUBLIC_CALENDAR_GOOGLE_LIVE_CLIENT_ID/
-  SECRET`), not with `app.json`'s iOS client.
-- **Isolation.** Every run gets its own scratch calendars and task lists,
-  named `e2e-<unixSeconds>-<runTag>[-suffix]` (`GOOGLE_LIVE_RUN_TAG` —
-  `gh-<run>-<attempt>` on CI, `local-<pid>` locally), **one set per job**:
-  the Node job's `live/globalSetup.ts` creates two calendars and two lists
-  once and hands them to every file (`inject('liveScratch')`), the desktop
-  spec and the iOS sidecar create one calendar and one list each; only
-  `calendarList.live.ts` creates (and deletes) its own, since that is what
-  it tests — about five calendars per full run. Google caps secondary-
-  calendar creation per account and day (403 `usageLimits`/`quotaExceeded`
-  "Calendar usage limits exceeded" after ~40 on a debugging day, blocking
-  creation for up to a day) — a calendar per file did not scale. Each job
-  deletes its set at the end and first sweeps anything older than six
-  hours that a crashed run left behind (`sweep`; younger ones may belong
-  to a run in flight — a local run overlapping CI is fine).
-  Titles carry `live-<runTag>-…`; tests assert on their own ids and
-  never touch the primary calendar. Guests are `guest-<runTag>@example.com`
-  (reserved, never delivered) and every write with guests goes out with
-  `sendUpdates=none`: `GuestNotifications` (`packages/google`, a
-  `Context.Reference` defaulting to `'all'`) is `'none'` in the live
-  layers only.
-- **Recipe.** `packages/sync/src/testing/liveScratchRest.ts` is the
-  admin side as plain `fetch` (no Effect, no workspace imports, so Node
-  24 runs it unbundled): scratch calendars/lists, the sweep, and "the
-  other device" — raw event/task writes without If-Match. `liveWire.ts`
-  is the host half (`liveWireLayer`: `FetchHttpClient` + a memory
-  `TokenStore` holding the refresh token with `expiresAt: 0`, so the very
-  first request goes through the `TokenManager` refresh; `seedLiveAccount`)
-  — free of Node imports so the iOS bundle can carry it. `liveGoogle.ts`
-  adds the Effect `LiveScratch` service over the app's own
-  `TokenManager`, `liveEngineLayer` (engine.http.test.ts's recipe with the
-  live wire) and `makeScratchRuntime` for `beforeAll`/`afterAll`. Tests
-  use `it.live` (real `Clock` — the tasks watermark, `passStartedAt`
-  and token expiry all read it); never `TestClock`. `vite.config.ts`
-  switches on `GOOGLE_LIVE=1`: only `packages/sync/src/live/**/*.live.ts`,
-  one file at a time, 120 s timeouts, no retry (a retry repeats real
-  writes).
-- **What the Node files pin.** `mirrors` (2026-10-02): a calendar
-  mirror's copy under a derived id with its private marker property and
-  `useDefault: false` reminders; `events.update` (PUT) clears what the
-  body leaves out where PATCH keeps it; a deleted event keeps its id
-  reserved (re-insert → 409) and comes back by a PUT with `status:
-  'confirmed'`; a second delete answers 404/410. `events`: the events sync token and an
-  `idle` state, client ids and the ack's etag, a re-posted client id →
-  409, an incremental pass applying a rename and a cancelled tombstone,
-  PATCH-merge (a title-only patch keeps description/location), delete
-  with If-Match (then `events.get` answers `cancelled` or 404/410), the
-  geo extended-property keys (insert, untouched by an unrelated edit,
-  nulled by a location change), reminder overrides replaced whole, the
-  calendarList colour patch. `calendarList`: a calendar created after
-  the first pass arrives incrementally and its deletion cascades (rows,
-  events, `events:<id>` sync state). `recurring`: a weekly master, an
-  instance edit under `<master>_<basetime>` with `recurringEventId`, a
-  cancelled instance the pull keeps hidden, this-and-following (UNTIL
-  master + new master), a series rename — which Google copies onto
-  existing exceptions, overridden titles included (the local override
-  row catches up on the next pull). `move`:
-  `events.move` keeps the id and leaves a tombstone, an edit queued
-  before a move lands after it in the destination, a master takes its
-  exception along. `attendees`: an API insert keeps the guest list as
-  sent — Google does not add the organizer as an attendee (the web UI
-  does); the organizer is the calendar itself (`organizer.self`), so the
-  app refuses an RSVP there (`NotAttendeeError`); a title-only edit keeps
-  guests, `attendees: []` removes them, a content edit on a stale etag
-  parks. A guest-side RSVP needs a second account to invite this one (an
-  invitation from the account's own calendar never reaches its primary),
-  so that path stays on the fake. `conflicts`: `parkedEdit` against Google
-  (park with Google's copy, pull leaves the local version, take theirs,
-  keep mine without If-Match, a parked delete, an edit of a deleted event
-  restored under a new id). `tasks`: both lists, temp id → server id,
-  date-only due, complete/uncomplete, the watermark pass picking a rename
-  and a deleted tombstone (`syncUntil`: `updated` stamps can lag),
-  adopt-before-retry (an identical task inserted "by the first attempt"
-  is adopted, not duplicated — `noYield` stamps the op before the drain),
-  a copy-then-delete move. `people`: both tiers finish with a sync token
-  on an empty address book (`GOOGLE_LIVE_BIRTHDAY_NAME` names a contact
-  with a birthday when one was added by hand). Not reachable on demand
-  and therefore fake-only: 410 sync-token expiry, People
-  `EXPIRED_SYNC_TOKEN`, 403 insufficient scope, 429/5xx, paging.
-- **Desktop.** `CALENDAR_GOOGLE=live` + `CALENDAR_GOOGLE_LIVE=<json>`
-  (`{email, refreshToken, tasksEnabled, contactsEnabled}` — the harness
-  writes it into the run's temp profile, mode 600, deleted with it) and
-  `CALENDAR_SYNC_INTERVAL_MS` (`SyncInterval`, a `Context.Reference` in
-  `engine.ts`; the spec uses 10 s so a pull lands inside a poll). The
-  spec always sets `select[aria-label="Calendar"]` / `"Task list"` to the
-  run's own — a new event defaults to the last-used or first writable
-  calendar, which on a real account is the primary. For a 412 it fills
-  the sheet first and patches Google just before Save (the app's own
-  poll could otherwise refresh the etag and defuse the conflict), and
-  retries the round when a poll still won. Run:
-  `E2E=1 CALENDAR_E2E_GOOGLE=live pnpm exec vp test run apps/desktop/e2e/googleLive.e2e.ts`.
-- **iOS.** Metro must start with `EXPO_PUBLIC_CALENDAR_GOOGLE=live`, the
-  four `EXPO_PUBLIC_CALENDAR_GOOGLE_LIVE_*` values and
-  `EXPO_PUBLIC_CALENDAR_SYNC_INTERVAL_MS=30000` (inlined at bundle
-  time — CI and local only, never an EAS update). The sidecar
-  `scripts/google-live-scratch.ts setup --suffix ios` sweeps, creates the
-  run's calendar and list, mints a one-hour access token and exports
-  them as `MAESTRO_LIVE_*` (`--github-env` masks the token; `--export`
-  prints shell lines) — the Maestro CLI injects every `MAESTRO_*` shell
-  variable into each flow, and the refresh token never reaches Maestro.
-  The mask covers the job log only: Maestro records every `MAESTRO_*`
-  value, the token included, in each flow's `commands.json` and in
-  `maestro.log`. So a failed job's artifacts pass through
-  `scripts/redact-live-reports.ts` first (exact secrets plus token
-  shapes, then a re-scan; the upload runs only if that step passed), and
-  the Maestro cache holds `~/.maestro/bin` and `lib` only, never the
-  reports.
-  The flows (`e2e/live/flows/01…05`, tag `live`, outside `e2e/flows/` so
-  the default suite never picks them up) run as explicit files in that
-  order; behind-the-back edits and Google-side checks are `runScript`s
-  (`e2e/live/scripts/*.js`, GraalJS with `http`, `json`, `output`)
-  polled through `wait-for-event*.yaml` / `wait-for-task.yaml`, paced by
-  `scripts/pause.js` (a spin — GraalJS has no timers, and an optional
-  wait for a never-visible element returns after ~0.5 s, not its
-  timeout: a "72 s" wait measured 19.8 s). Blocks are opened through
-  `open-event.yaml` (centre, tap, repeat until "Edit Event" — a block
-  outside the grid's viewport counts as visible and swallows the tap),
-  titles are cleared with the field's system ⓧ ("Clear text": `eraseText`
-  only deletes what sits before the cursor, which the tap puts
-  mid-title), and the pulled event in 05 is all-day so it shows in the
-  lane whatever the hour. Calendar and list are picked by their unique names
-  through `pick-row.yaml` (rows share `id: calendar-option` /
-  `task-list-option`; a row reads `<name>` or, selected, `<name>, ✓`, so
-  the match is `<name>.*`; the row is centred first and the tap repeats
-  until the check mark shows — a row clipped at the sheet's edge counts
-  as visible and swallowed the tap on the first CI run, sending the task
-  to the default list). The sweep also deletes stale `live-…` tasks from
-  the account's own lists for that reason. Maestro 2.10
-  has no drag command, `longPressOn` releases after its press and a
-  `swipe` from an element always starts at its centre, so neither the
-  block's long-press-then-pan move nor its bottom-edge resize can be
-  driven: 02 changes the event's shape through the all-day switch
-  instead (the drag math has unit tests and the desktop live spec).
-  `conflict-round.yaml` retries a round whose banner a poll defused. The
-  chip's open/done glyph is not in the accessibility tree, so 04 proves a
-  server-side reopen behaviourally: after two polls one tap must complete
-  the task again on Google. Locally: `pnpm --filter @calendar/ios
-  test:e2e:live` (dev client installed, Metro up with the live env;
-  `SIMULATOR_UDID` picks the device), which runs setup, the five flows
-  and teardown.
-- **`400 failedPrecondition`.** Seen once, in a background pass of the
-  run where the account had just exhausted its calendar-creation quota
-  (the same run then got `Calendar usage limits exceeded`); neither a
-  deleted task list (404) nor a deleted calendar (still lists) reproduces
-  it. The quota is a suspected cause, not an established one: the probes
-  only ruled the other explanations out. If it recurs, record the
-  request (endpoint, sync scope, the error body) before assuming the
-  next pass recovers.
-- **Rate limits.** A full run writes fast enough that Google answers some
-  writes with 403 `rateLimitExceeded`; the op backs off (30 s, 60 s) like
-  in the app. `drain` in `live/support.ts` keeps draining until only
-  parked ops are left; after two minutes it fails, listing each op still
-  queued with its attempts, next retry and last error (hence the 300 s
-  live test timeout).
-- **Leaks.** Effect redacts `authorization` headers in logged causes; the
-  desktop token file lives only in the temp profile; the iOS bundle on
-  the CI simulator carries the secrets inlined (never shipped).
+- A write to a task that is gone (verified live): PATCH of a task deleted
+  on Google answers **200** with `deleted: true` (the edit lands on the
+  tombstone; `mapGcalTask` maps it to null and the op settles); a task
+  moved to another list answers **404** at its old list, and so does any
+  task of a deleted list.
 
 ### Google People API (contacts cache)
 
@@ -411,22 +184,31 @@ labelled `google-live`, one run at a time (`concurrency: google-live`).
   400 `EXPIRED_SYNC_TOKEN` and the engine runs one full pass, so a field
   added later self-heals on every install. Birthdays arrive as
   `birthdays[].date {year?, month, day}` with `year` 0 or absent for
-  year-less dates; the primary entry wins, text-only entries are ignored. Both are _sensitive_
-  scopes: existing accounts stay `contacts_enabled=0` until "Add Google
-  Account" is re-run (in-place upgrade, same as tasks), and the People
-  API must be enabled in the GCP project — the _People API_, not the
-  library's _Contacts API_ (the retired GData product; the `contacts.*`
-  scopes authorize People API calls). A disabled API answers 403
-  `SERVICE_DISABLED`, which is a plain `GoogleApiError` (logged, flag
-  left on), not the scope error that disables contacts. Both scopes are
-  sensitive: Testing mode grants them to test users, Production needs
-  Google's app verification.
+  year-less dates; the primary entry wins, text-only entries are ignored.
+- Both are _sensitive_ scopes: existing accounts stay
+  `contacts_enabled=0` until "Add Google Account" is re-run (in-place
+  upgrade, same as tasks), Testing mode grants them to test users,
+  Production needs Google's app verification. The _People API_ must be
+  enabled in the GCP project — not the library's _Contacts API_ (the
+  retired GData product); a disabled API answers 403 `SERVICE_DISABLED`,
+  a plain `GoogleApiError` (logged, flag left on), not the scope error
+  that disables contacts.
 - `requestSyncToken=true` returns `nextSyncToken` on the last page;
   incremental lists return tombstones as persons with
   `metadata.deleted: true`. Sync tokens expire after ~7 days; the People
   API reports that as **400 with `EXPIRED_SYNC_TOKEN`** (Calendar uses 410) — `GooglePeopleClient` folds both into `SyncTokenExpiredError`.
-- `pageSize` max is 1000; the cache holds one row per (person, email),
+  `pageSize` max is 1000; the cache holds one row per (person, email),
   lowercased email for identity, original casing for display.
+
+### OAuth
+
+- The consent screen in Testing status issues refresh tokens that expire
+  after seven days; Production needs Google's verification for the
+  sensitive `contacts.*` scopes.
+- Adding a scope later does not touch accounts already signed in: their
+  tokens never carried it. Re-running **Add Google Account** for the same
+  address re-consents and upgrades the account in place (`finishAddAccount`,
+  case-insensitive on the email); a reconnect sends `login_hint`.
 
 ## Verified Apple Reminders (EventKit) semantics
 
@@ -437,14 +219,16 @@ labelled `google-live`, one run at a time (`concurrency: google-live`).
   account's health, not the initial grant.
 - **The helper is a bare executable**, so its usage strings ride in an
   embedded `__TEXT,__info_plist` (Package.swift `-sectcreate`); the app's
-  Info.plist carries them too (forge `extendInfo`). Verified: both the
-  dev Electron binary and the packaged .app obtain full access through
-  the helper child and read the user's lists.
+  Info.plist carries them too (forge `extendInfo`). Hardened runtime
+  needs the Address Book and Calendars entitlements on the app and the
+  helper even without App Sandbox.
 - **Ids**: `calendarItemIdentifier` is stable enough for a mirror but can
   change after an iCloud sync — the snapshot reconciliation makes that a
-  delete + reinsert, never a stale row. Ids are server-assigned: no
-  client-side idempotency trick, hence no queue. Deleting something
-  Reminders.app already deleted answers notFound — treated as done.
+  delete + reinsert, never a stale row. `calendarItemExternalIdentifier`
+  is the portable key (the same on every device) and is what calendar
+  mirrors use. Ids are server-assigned: no client-side idempotency trick,
+  hence no queue. Deleting something Reminders.app already deleted
+  answers notFound — treated as done.
 - **Errors cross Expo as an envelope**: expo-modules-core rethrows a Swift
   throw as `FunctionCallException … → Caused by: RemindersBridgeError:
   <message>`; the client unwraps the last `Caused by:` segment before
@@ -461,34 +245,39 @@ labelled `google-live`, one run at a time (`concurrency: google-live`).
   6–9 low. We keep the buckets and write back 1/5/9/0.
 - **Alarms**: only relative-offset alarms are surfaced (minutes, ≤ 0 =
   before/at); absolute-date alarms are preserved untouched by writes.
-- **Recurrence**: freq/interval/count|until round-trip through
-  `TaskRecurrence`; by-day / positional / multiple rules come back as
-  `{ unsupported: true }`, the form shows them read-only, and writes
-  never overwrite them.
+- **Recurrence**: freq/interval/count|until, weekly by-day sets and one
+  monthly ordinal ("2nd Tuesday", "last Friday") round-trip through
+  `TaskRecurrence` (one `ByDay` type shared with events); the bridge
+  reads a monthly ordinal whether EventKit stored it as the day's week
+  number or as a set position and writes it as the week number. Yearly
+  positional rules, several rules, day-of-month lists and a monthly rule
+  on a plain weekday without an ordinal come back as `{ unsupported:
+  true }`, the form shows them read-only, and writes never overwrite
+  them.
 - **Fetch**: one `predicateForReminders(in: nil)` — every reminder, open
   and completed, dated and undated. EventKit is local, so the fetch is
   cheap; the cost is the bridge payload on desktop, so `reminders.snapshot`
   returns all (listId, id) pairs plus full rows only for reminders whose
-  `lastModifiedDate` ≥ `changedSince − 60 s` (the Google watermark's skew
-  lag; re-reading the overlap is harmless — upserts apply only when
-  strictly newer). Measured on a 9-reminder database: full 3.2 KB, idle
-  delta 0.9 KB. The engine logs `reminders snapshot` at debug level with
-  ids/changed/lists counts and fetch/apply ms; if a large completed
-  archive ever makes a pass measurably expensive, the fallback is hybrid
-  retention (all open, recent completed) — not built.
-- **Change push**: `EKEventStoreChanged` fires for any EventKit change,
-  including our own write-throughs and iCloud bursts; the engine
-  debounces it (1 s) and runs a reminders-only delta pass under the sync
-  gate, so bursts coalesce into one pass. It only reaches a live observer
-  (the helper child can be respawned; iOS is suspended in the
-  background), which is why the 90 s pass stays.
+  `lastModifiedDate` ≥ `changedSince − 60 s` (re-reading the overlap is
+  harmless — upserts apply only when strictly newer).
+- **Change push**: `EKEventStoreChanged` fires for any EventKit change in
+  any process (reminders and events alike), including our own
+  write-throughs and iCloud bursts; the engine debounces it (1 s) and
+  runs a reminders-only delta pass under the sync gate. It only reaches a
+  live observer (the helper child can be respawned; iOS is suspended in
+  the background), which is why the 90 s pass stays. EventKit posts it on
+  the main queue, so the helper reads stdin on a background thread and
+  keeps its main thread in `RunLoop.main.run()`.
+- **Wire dates are Gregorian** whatever the device calendar; Foundation
+  caches the system zone until it is reset, so the iOS module resets it
+  on each foreground and the helper on each request.
 
 ## Apple Calendar (EventKit events) semantics
 
 Designed from Apple's EventKit documentation; the real-EventKit CI spec
 (`appleCalendarReal.e2e.ts`) asserts connect, change push, edit and
 delete through the helper. Items marked _(verify)_ are not yet asserted
-against a real store — confirm them there before relying on them more.
+against a real store.
 
 - **Access** is its own TCC entity: `requestFullAccessToEvents` /
   `authorizationStatus(for: .event)`, independent of the Reminders
@@ -526,13 +315,12 @@ against a real store — confirm them there before relying on them more.
   +540 min, which Google cannot express) — never shown, never dropped. For an
   all-day event the offset counts from local midnight, which matches
   Google's convention. There is no per-calendar default alarm in
-  EventKit (Calendar.app's defaults are app preferences), so a Google
-  "calendar default" is resolved into explicit popups when an event is
-  copied to an Apple calendar, and `useDefault` or an email reminder on
-  an Apple event is refused with `UnsupportedForProviderError`.
-- **`EKEventStoreChanged`** fires for any EventKit change in any process
-  (reminders and events alike) and only reaches a live observer; the
-  Reminders bridge's observer and this one each react to both.
+  EventKit, so a Google "calendar default" is resolved into explicit
+  popups when an event is copied to an Apple calendar, and `useDefault`
+  or an email reminder on an Apple event is refused with
+  `UnsupportedForProviderError`.
+- **Exchange** drops the URL field, which is why an Exchange calendar
+  cannot be a mirror destination.
 
 ## Testing conventions
 
@@ -543,6 +331,17 @@ the shape matters. Never a real person's or domain's address. Nothing
 needs one: the live suites take their account from `GOOGLE_LIVE_EMAIL`
 and generate their guests (`guest-<runTag>@example.com`).
 
+**Date-independence is a hard rule for every test involving "now"**:
+inject the clock (`nowUtc` parameter) or build dates relative to today
+with wall-clock times via Temporal in an explicit zone — never pinned
+dates or UTC-offset literals. Three CI breakages came from tests that
+passed on the day they were written and decayed. The desktop e2e seeds
+place "today" by the UTC date (`todayAt`), which matches the local date
+on CI (UTC) and in Vienna except between local midnight and 02:00 CEST —
+a run in that window creates tasks on yesterday's column and fails
+`convert` and the task editor test; rerun with `TZ=UTC` rather than
+chasing a code bug.
+
 ### Unit tests (`vp test`, @effect/vitest)
 
 - Layer recipe: `EventMutations.layer` + `reposLayer` +
@@ -550,18 +349,19 @@ and generate their guests (`guest-<runTag>@example.com`).
   `SqliteClient.layer({ filename: ':memory:' })` + reactivity layer +
   `Layer.succeed(GoogleCalendarClient, stub)` (+
   `Layer.succeed(GoogleTasksClient, tasksStub)` where tasks are
-  exercised).
-- The stubbed `GoogleCalendarClientShape` / `GoogleTasksClientShape` are
-  **complete records** — every new client method must be added to every
-  stub (typecheck enumerates them).
-- AI pipelines never hit a real model in tests: the seams take a fake
-  `LanguageModel`/`SpeechToText`/`TextRecognizer` returning canned JSON,
-  so prompt-building, normalization, and error paths are fully
-  unit-tested (see `packages/ai/*.test.ts` and
-  `findTimePipeline.test.ts`). The e2e suites use the shared fixture
-  model (`makeFixtureLanguageModel`, `fixtureTextRecognizer`): one event
-  per line, `Title | +N or YYYY-MM-DD | HH:MM-HH:MM | Location`, with
-  `+N` counted from the prompt's own "Today is" line so no spec computes a
+  exercised). The stubbed client shapes are **complete records** — every
+  new client method must be added to every stub (typecheck enumerates
+  them).
+- The engine reads `Clock`, and `it.effect` runs under `TestClock` —
+  advance it between passes or `passStartedAt` never moves. Two-mutation
+  queue tests pin the fiber yield point with the `noYield` helper (a
+  migration can move it and flip the test).
+- AI pipelines never hit a real model: the seams take a fake
+  `LanguageModel`/`SpeechToText`/`TextRecognizer` returning canned JSON
+  (`packages/ai/*.test.ts`). The e2e suites use the shared fixture model
+  (`makeFixtureLanguageModel`, `fixtureTextRecognizer`): one event per
+  line, `Title | +N or YYYY-MM-DD | HH:MM-HH:MM | Location`, with `+N`
+  counted from the prompt's own "Today is" line so no spec computes a
   date; desktop `launchApp(seed, { model: 'fixture' })`, iOS
   `EXPO_PUBLIC_CALENDAR_MODEL=fixture` in the bundle (CI), which also
   accepts `solunivo-dev://capture-fixture?text=…` as a stand-in for a
@@ -573,27 +373,141 @@ and generate their guests (`guest-<runTag>@example.com`).
   scope and move tests assert what EventKit "saw" via `fake.state`.
   Layer recipes that build `EventMutations` provide
   `appleCalendarServicesLayer(unavailableAppleCalendarClient('test'))`.
-  The desktop e2e reuses the fake in `CALENDAR_APPLE_CALENDAR=fixture`.
+  The desktop e2e reuses the fake under `CALENDAR_APPLE_CALENDAR=fixture`.
 - Reminders never hit EventKit in tests: `makeFakeRemindersClient`
   (`packages/reminders/src/fake.ts`) is an in-memory store with the
   bridge's semantics (server-assigned ids, null clears, list moves,
-  windowed listing, switchable authorization); sync/mutation tests read
-  `fake.state` to assert what EventKit "saw". Every other layer recipe
-  provides `unavailableRemindersClient('test')`.
-- **Date-independence is a hard rule for every test involving "now"**:
-  inject the clock (`nowUtc` parameter) or build dates relative to today
-  with wall-clock times via Temporal in an explicit zone — never pinned
-  dates or UTC-offset literals. Three CI breakages came from tests that
-  passed on the day they were written and decayed.
-  The desktop e2e seeds place "today" by the UTC date (`todayAt`), which
-  matches the local date on CI (UTC) and in Vienna except between local
-  midnight and 02:00 CEST — a run in that window creates tasks on
-  yesterday's column ("Overdue" titles) and fails `convert` and the task
-  editor test. Rerun with `TZ=UTC` rather than chasing a code bug.
+  switchable authorization); every other layer recipe provides
+  `unavailableRemindersClient('test')`.
 - `getWindow` joins visible calendars: tests asserting through it must
   seed a calendar row, not just events.
-- The SQLite driver is Node's built-in `node:sqlite` (same in tests,
-  Electron, and CI) — no ABI split, no alias twin.
+
+### The fake Google server
+
+`packages/sync/src/testing/fakeGoogle.ts` is an in-process Calendar +
+Tasks (+ People) API behind effect's `HttpClient`, and `engine.http.test.ts`
+runs the real clients, request core and sync engine against it: full then
+incremental passes with sync tokens, a 410 forcing a full resync whose
+`deleteStale` drops vanished rows, cancelled tombstones, If-Match → 412
+parking and both resolutions, client-generated event ids, the `updatedMin`
+watermark with deleted task tombstones, server-assigned task ids, PATCH
+merge and null-delete of private properties. The fake pages event lists
+(`pageSize`, default 2,500; the sync token rides only on the last page)
+and reports a removed calendar as a `deleted` calendarList entry on
+incremental passes.
+
+Both apps can run against the same fake (`testing/googleFixture.ts`):
+desktop with `CALENDAR_GOOGLE=fixture` + `CALENDAR_GOOGLE_FIXTURE=<json>`
+(the e2e harness's `google: { fixture }` launch option), iOS with
+`EXPO_PUBLIC_CALENDAR_GOOGLE=fixture` at bundle time (CI does; the
+fixture is `apps/ios/e2e/fixtures/google.ts`). A `GoogleFixture` names
+accounts, calendars, task lists, tasks and People connections; only the
+account rows are seeded locally, everything else arrives through the
+first sync, and a pre-filled memory `TokenStore` keeps the real
+`TokenManager` and request core on the path. The fake stamps writes with
+the wall clock (`live`) so the device-time `updatedMin` watermark clears
+them.
+
+### Live Google suite (real account)
+
+The fake pins what we _believe_ Google does; the live suite checks it
+against Google itself, signed in as a dedicated throwaway account, at
+three levels: the Node engine suite (`packages/sync/src/live/*.live.ts`
+— the real clients, request core, `SyncEngine` and `EventMutations` over
+`FetchHttpClient` with a fresh in-memory database per test), the desktop
+spec `apps/desktop/e2e/googleLive.e2e.ts` and the iOS flows under
+`apps/ios/e2e/live/`. None of them run in `pnpm test`, `pnpm test:e2e` or
+`pnpm test:e2e:ios`: they need the token, they write to the account, and
+they take minutes. `.github/workflows/google-live.yml` runs all three
+nightly when `main` moved since the last completed run, on
+`workflow_dispatch`, and on PRs labelled `google-live`, one run at a time
+(`concurrency: google-live`). GitHub's `schedule` is best effort —
+dispatch it by hand when a night is missing. What cannot be reached on
+demand stays fake-only: 410 sync-token expiry, People
+`EXPIRED_SYNC_TOKEN`, 403 insufficient scope, 429/5xx, paging, a
+guest-side RSVP (needs a second account).
+
+- **Setup (once).** A fresh Gmail account (sign into Calendar and Tasks
+  once; unsubscribe the holiday calendars). The GCP project's OAuth
+  consent screen must be **In production** (Testing tokens expire in
+  seven days). Then `node scripts/google-live-token.mjs --write` — the
+  desktop OAuth client, a loopback PKCE flow, the app's scopes plus the
+  full `calendar` scope (calendars.insert/delete need it). It writes the
+  gitignored `google-live.local.json` and prints the `gh secret set`
+  lines for `GOOGLE_LIVE_EMAIL` and `GOOGLE_LIVE_REFRESH_TOKEN`; the
+  workflow reuses `GOOGLE_DESKTOP_CLIENT_ID/SECRET` and fails red when
+  any is missing. The refresh token is bound to the desktop client, so
+  iOS refreshes it with that client too
+  (`EXPO_PUBLIC_CALENDAR_GOOGLE_LIVE_CLIENT_ID/SECRET`).
+- **Isolation.** Every run gets its own scratch calendars and task lists,
+  named `e2e-<unixSeconds>-<runTag>[-suffix]` (`GOOGLE_LIVE_RUN_TAG` —
+  `gh-<run>-<attempt>` on CI, `local-<pid>` locally), **one set per job**
+  (Google caps calendar creation per day): the Node job's
+  `live/globalSetup.ts` creates two calendars and two lists once and
+  hands them to every file (`inject('liveScratch')`), the desktop spec
+  and the iOS sidecar create one calendar and one list each; only
+  `calendarList.live.ts` creates (and deletes) its own, since that is what
+  it tests. Each job deletes its set at the end and first sweeps anything
+  older than six hours that a crashed run left behind (`sweep`). Titles
+  carry `live-<runTag>-…`; tests assert on their own ids and never touch
+  the primary calendar. Guests are `guest-<runTag>@example.com` and every
+  write with guests goes out with `sendUpdates=none`: `GuestNotifications`
+  (`packages/google`, a `Context.Reference` defaulting to `'all'`) is
+  `'none'` in the live layers only.
+- **Recipe.** `packages/sync/src/testing/liveScratchRest.ts` is the
+  admin side as plain `fetch` (no Effect, no workspace imports, so Node
+  runs it unbundled): scratch calendars/lists, the sweep, and "the other
+  device" — raw event/task writes without If-Match. `liveWire.ts` is the
+  host half (`liveWireLayer`: `FetchHttpClient` + a memory `TokenStore`
+  holding the refresh token with `expiresAt: 0`, so the very first
+  request goes through the `TokenManager` refresh; `seedLiveAccount`) —
+  free of Node imports so the iOS bundle can carry it. `liveGoogle.ts`
+  adds the Effect `LiveScratch` service, `liveEngineLayer` and
+  `makeScratchRuntime` for `beforeAll`/`afterAll`. Tests use `it.live`
+  (real `Clock`); never `TestClock`. `vite.config.ts` switches on
+  `GOOGLE_LIVE=1`: only `live/**/*.live.ts`, one file at a time, 120 s
+  hooks, 300 s tests, no retry (a retry repeats real writes). `drain` in
+  `live/support.ts` keeps draining until only parked ops are left and
+  fails after two minutes, listing each op still queued.
+- **Desktop.** `CALENDAR_GOOGLE=live` + `CALENDAR_GOOGLE_LIVE=<json>`
+  (`{email, refreshToken, tasksEnabled, contactsEnabled}` — the harness
+  writes it into the run's temp profile, mode 600, deleted with it) and
+  `CALENDAR_SYNC_INTERVAL_MS` (the spec uses 10 s so a pull lands inside
+  a poll). The spec always picks the run's own calendar and list — a new
+  event defaults to the last-used or first writable calendar, which on a
+  real account is the primary. For a 412 it fills the sheet first and
+  patches Google just before Save (the app's own poll could otherwise
+  refresh the etag and defuse the conflict), and retries the round when
+  a poll still won. Run:
+  `E2E=1 CALENDAR_E2E_GOOGLE=live pnpm exec vp test run apps/desktop/e2e/googleLive.e2e.ts`.
+- **iOS.** Metro must start with `EXPO_PUBLIC_CALENDAR_GOOGLE=live`, the
+  four `EXPO_PUBLIC_CALENDAR_GOOGLE_LIVE_*` values and
+  `EXPO_PUBLIC_CALENDAR_SYNC_INTERVAL_MS=30000` (inlined at bundle
+  time — CI and local only, never an EAS update). The sidecar
+  `scripts/google-live-scratch.ts setup --suffix ios` sweeps, creates the
+  run's calendar and list, mints a one-hour access token and exports
+  them as `MAESTRO_LIVE_*` — the Maestro CLI injects every `MAESTRO_*`
+  shell variable into each flow, and the refresh token never reaches
+  Maestro. Maestro records every `MAESTRO_*` value, the token included, in
+  each flow's `commands.json` and `maestro.log`, so a failed job's
+  artifacts pass through `scripts/redact-live-reports.ts` first and the
+  Maestro cache holds `~/.maestro/bin` and `lib` only. The flows
+  (`e2e/live/flows/01…05`, tag `live`, outside `e2e/flows/` so the
+  default suite never picks them up) run as explicit files in that
+  order (`e2e/live/run.sh`); behind-the-back edits and Google-side
+  checks are `runScript`s (`e2e/live/scripts/*.js`, GraalJS with `http`,
+  `json`, `output`) polled through `wait-for-event*.yaml` /
+  `wait-for-task.yaml`, paced by `scripts/pause.js` (a spin — GraalJS has
+  no timers). Blocks are opened through `open-event.yaml`, calendar and
+  list picked by their unique names through `pick-row.yaml`,
+  `conflict-round.yaml` retries a round whose banner a poll defused.
+  Maestro has no drag command, so 02 changes the event's shape through
+  the all-day switch instead. Locally: `pnpm --filter @calendar/ios
+  test:e2e:live` (dev client installed, Metro up with the live env;
+  `SIMULATOR_UDID` picks the device).
+- **Leaks.** Effect redacts `authorization` headers in logged causes; the
+  desktop token file lives only in the temp profile; the iOS bundle on
+  the CI simulator carries the secrets inlined (never shipped).
 
 ### Desktop e2e (`pnpm test:e2e`, apps/desktop/e2e/)
 
@@ -601,364 +515,240 @@ Raw CDP over Node's native WebSocket (no Playwright): the harness launches
 the built Electron app with `--remote-debugging-port` and an isolated
 `CALENDAR_USERDATA` profile, seeds SQLite through the app's own
 migrations/repos, drives real input events, and asserts against both the
-DOM and the database.
+DOM and the database. Specs run with `retry: 1`, share one app instance
+per file and run in file order — later tests must tolerate earlier
+tests' data (relative assertions, unique titles). The harness always
+sets `CALENDAR_REMINDERS=off`, `CALENDAR_CONTACTS=off`,
+`CALENDAR_APPLE_CALENDAR=off`, `CALENDAR_GEO=off` and
+`CALENDAR_NOTIFICATIONS=off`, points `CALENDAR_SETTINGS_FILE` and
+`CALENDAR_AGENT_SOCKET` under the temp profile, and sets
+`CALENDAR_E2E_INPUT=cdp`; `launchApp(seed, options)` opts a spec into a
+fixture or a real bridge (`appleCalendar`, `contacts`, `geo`, `google`,
+`model`, `reminders`, `agents`, `settingsFile`, `window`).
+
+The specs: `flows` (rendering, views, trackpad pan, editor CRUD, drag
+move/resize/cancel, slot drag, recurring scopes, RSVP, visibility,
+calendar color, month view, task lane and editor, the sync footer, the
+privacy modal, the settings window, the inspector and inline editor, ⌘K);
+`capture` (paste-to-events on the fixture model); `reminders` and
+`contacts` (seeded Apple/Google rows); `appleCalendar` (the in-memory
+EventKit, read-only viewer, moves both ways); `location` (the picker and
+map over the geo fixture); `birthdays` (device-contacts fixture, chip,
+detail, device-only reminder settings); `eventReminders`; `timeZones`;
+`settingsFile`; `mirrors`; `taskConvert` (Google writes left queued) and
+`taskConvertGoogle` (the fake Google API, so pushes land); `convert`;
+`conflicts` (seeded parked 412s resolved through the banner, plus the
+notice stack at 1024 px and 600 px); `search`; `agentGateway` (seeded
+agents, the built relay against the run's socket: CLI + MCP reads, a
+write, refusals, the approval dialog, Settings → Agents); `remindersReal`
+and `appleCalendarReal` (CI-only real-EventKit siblings, `describe.skipIf`
+unless `CALENDAR_E2E_REMINDERS=real` / `CALENDAR_E2E_APPLE_CALENDAR=real`);
+`googleLive` (opt-in, above).
 
 Flakiness lessons (each caused a real CI failure — keep them enforced):
 
-- **Integer coordinates only** for `Input.dispatchMouseEvent` — fractional
-  coords mis-fire, and the app now drops them as the OS cursor's.
-  `Cdp.send` rounds them.
+- **Integer coordinates only** for `Input.dispatchMouseEvent` — the app
+  drops fractional positions as the OS cursor's. `Cdp.send` rounds them.
 - **`scrollIntoView` before measuring** (harness `locate`): CI runners
-  land the week grid at different scroll offsets, leaving early-morning
-  blocks under the sticky header where clicks hit the header.
-- **A window behind another one renders nothing**: its page is hidden and
-  runs no rendering steps, so `requestAnimationFrame`, ResizeObserver
-  and media-query changes wait for the next frame, which may never come.
-  CI's window can be behind one. What the page sets from them waits too:
-  the narrow-window notice stack stayed in its 8 px column, banner 29 px,
-  however long `waitFor` polled. `cdp.waitForRendered` draws a frame (a
-  screenshot) before each try. To reproduce locally, bring another app in
-  front of the test window right after launch (`open -a <app>`). Since
-  the harness emulates focus ("A local run is not alone at the
-  keyboard", below), a page with a CDP client attached stays visible and
-  draws while covered. A fully covered window drew 120 frames/s with the
-  emulation and none without it, and the e2e windows now open at the
-  back on purpose. `waitForRendered` predates that and still draws a
-  frame before each try.
+  land the week grid at different scroll offsets.
+- **The windows take CDP input only.** `CALENDAR_E2E_INPUT=cdp` opens
+  them at the back without activating the app, ignores the OS mouse and
+  drops the tracking-area enter/leave events macOS still sends;
+  `Cdp.connect` turns on `Emulation.setFocusEmulationEnabled`, so the
+  page acts as the focused window and keeps drawing while covered. A
+  developer's keys and trackpad used to reach the test window (a Space
+  opened the editor mid-drag, a moving trackpad dropped the capture).
+  Consequence: `browser-window-focus` never fires in e2e, so no spec may
+  count on the sync kick or the settings-file check it runs.
+- **A window behind another one renders nothing** without that
+  emulation: `cdp.waitForRendered` still draws a frame (a screenshot)
+  before each try.
 - **Weekday-agnostic seeding**: recurring seeds start `today − 3 days` and
-  expectations derive from the first _visible_ instance — absolute
-  "today"-based expectations broke every Sunday.
+  expectations derive from the first _visible_ instance.
 - **Teardown**: await the Electron process `exit` (with timeout) before
-  deleting the temp profile, and `rmSync` with retries — otherwise
-  ENOTEMPTY races on slower runners.
+  deleting the temp profile, and `rmSync` with retries.
 - **Fire-and-forget UI mutations can silently drop**: poll for the effect
   and re-click after ~3s of no movement; assert relative change
   (`< before`), not exact counts.
-- **A view shows the data, not a snapshot of it.** A click right after
-  a write can open the inspector before the grid's refresh lands (the
-  notes test clicks once SQLite has the notes); the inspector follows
-  its event, so no test waits for the refresh. Reproduce such races with
-  the renderer throttled — `cdp.send('Emulation.setCPUThrottlingRate',
-  { rate: 6 })`, also 12× — and never commit the throttle: it made #146's
-  race and the stale inspector fail within a few rounds.
+- **A view shows the data, not a snapshot of it.** A click right after a
+  write can open the inspector before the grid's refresh lands; the
+  inspector follows its event, so no test waits for the refresh.
+  Reproduce such races with the renderer throttled
+  (`Emulation.setCPUThrottlingRate`, 6× or 12×) and never commit the
+  throttle.
 - **Measure layout only once the last write is drawn.** SQLite has a
   reminder's move before the all-day lane redraws it, and the lane's
-  height moves the grid below it. The overdue-drop test measured the grid
-  right after a lane move that had only been polled in SQLite, and on CI
-  the row collapsed under its drag: dropped at 11:30, not 11:00 (one
-  24 px row is half an hour). A test whose successor measures geometry
-  waits for its own result on screen (`reminders.e2e.ts` waits for the
-  chip in its new column). At 12× throttling the lane is still a row
-  taller when SQLite shows the move.
-- **A local run is not alone at the keyboard, so the windows take CDP
-  input only.** The e2e window used to take focus when it showed and open
-  on top, under the cursor: a key typed or a trackpad touched during a
-  run was input to the test window. A press focuses its chip, so a Space
-  opened the editor mid-drag, and a moving trackpad dropped the drag's
-  capture. A loop of the first drag after launch failed 3 of 40 times
-  that way, and a wrong theory (a re-render from sync) explained it at
-  first. Now `launchApp` sets `CALENDAR_E2E_INPUT=cdp` (`windows.ts`):
-  the windows open at the back without activating the app (`showInactive`,
-  then `blur`, which orders a window back on macOS) and ignore the OS
-  mouse (`setIgnoreMouseEvents`). That alone still let the cursor
-  through: macOS tells a window when the cursor crosses it, and Chromium
-  makes that a buttonless move, which failed 3 of 25 drags. So
-  `before-mouse-event` drops every enter, leave and fractional position.
-  CDP sends none of them: `Cdp.send` rounds every
-  `Input.dispatchMouseEvent`, a spec's own included. `Cdp.connect` turns
-  on `Emulation.setFocusEmulationEnabled`, so the page acts as the
-  focused window (focus events, `:focus-visible`, `document.hasFocus()`)
-  and keeps drawing while covered. Under a cursor circling the window and
-  Space tapped twice a second, the first drag after launch failed 5 of
-  25 before. After the change it passed 30 of 30: the app dropped 144 OS
-  mouse events, none reached the page, and the app never activated.
-  Consequences: `browser-window-focus` never fires in e2e, so no spec
-  may count on the sync kick or the settings-file check it runs. A run
-  from a checkout without this (another worktree on an older main)
-  still takes focus. To check for foreign input, trace window
-  `pointermove`/`keydown` in capture: input the harness never sent
-  shows as fractional coordinates or keys.
+  height moves the grid below it; a test whose successor measures
+  geometry waits for its own result on screen.
 - React inputs need the native value setter + `input`/`change` event
-  dispatch; `<select>` likewise (`HTMLSelectElement` prototype setter).
-- Tests share one app instance and run in file order — later tests must
-  tolerate earlier tests' data (relative assertions, unique titles).
-- The harness launches the app with `CALENDAR_REMINDERS=off` by default,
-  which makes the desktop RemindersClient unavailable: `reminders.e2e.ts`
-  seeds an Apple account/list/reminder straight into SQLite and asserts
-  the chip and form; a real EventKit sync would replace those rows (and
-  prompt for access on a developer's Mac). `launchApp(seed, { reminders:
-  'real' })` opts a spec into the helper — only `remindersReal.e2e.ts`,
-  which is `describe.skipIf` unless `CALENDAR_E2E_REMINDERS=real`.
-- `CALENDAR_CONTACTS=off` does the same for the address book bridge
-  (`launchApp(seed, { contacts: 'real' })` to opt in; nothing does yet).
-  `launchApp(seed, { contacts: { fixture } })` writes a JSON address book
-  (`CALENDAR_CONTACTS=fixture` + `CALENDAR_CONTACTS_FIXTURE=<path>`) that
-  the app serves through the in-memory fake client — `birthdays.e2e.ts`
-  uses it for device birthdays. The harness always sets
-  `CALENDAR_NOTIFICATIONS=off` so a seeded birthday with reminders on
-  never posts a real banner.
-  `contacts.e2e.ts` seeds Google contact rows (`SeedData.contacts`) and
-  drives the combobox through `input[aria-label="Invitees"]`: value
-  setter + `input` event to type, synthetic `keydown` for ArrowDown /
-  Enter, `[role="option"]` rows and `[data-invitee]` chips to assert.
+  dispatch; `<select>` likewise. The invitee combobox is driven through
+  `input[aria-label="Invitees"]`, synthetic `keydown` for ArrowDown /
+  Enter, `[role="option"]` rows and `[data-invitee]` chips.
 - **Open items through the harness, locate by testid.** A grid click
-  opens the inspector, not the editor: `cdp.openInspector(selector)`
-  (click → `[data-testid="inspector"]`) and `cdp.openEditor(selector)`
-  (… → `inspector-edit` → `editor-title` reads "Edit event"); tasks and
-  slots still open the editor directly, and `editor-title` /
-  `body.textContent.includes('Edit task')` tell when it is up. The stable
-  hooks: `toolbar-title` (the first `h1`), `view-day/week/month`,
-  `nav-prev/next`, `today`, `quick-add-input` / `quick-add-apply` (a new
-  item's editor), `mode-event/task/reminder` (its kind control; a kind
-  with nowhere to go is not rendered, so a seed with only a Reminders
-  list has `mode-reminder` and no `mode-task`), `task-remove-due-date`,
+  opens the inspector, not the editor: `cdp.openInspector(selector)` and
+  `cdp.openEditor(selector)` (… → `inspector-edit` → `editor-title` reads
+  "Edit event"); tasks and slots open the editor directly. Stable hooks:
+  `toolbar-title`, `view-day/week/month`, `nav-prev/next`, `today`,
+  `quick-add-input` / `quick-add-apply`, `mode-event/task/reminder` (a
+  kind with nowhere to go is not rendered), `task-remove-due-date`,
   `sidebar`, `sync-footer`, `panel` (`data-panel-kind`), `inspector`,
-  `editor`, `editor-notes`, `task-done`, `panel-task-<id>`, `week-scroller`,
-  `week-grid`, `today-header`, `now-line`, `all-day-lane`, `month-grid`.
-  Search (`search.e2e.ts`, ⌘F synthesized like ⌘K): `search-toggle`
-  (`aria-pressed` while search or a result from it is open),
-  `search-input`, `search-results` (its `aria-busy` is "false" once the
-  results answer the field's text — wait for that before asserting),
-  `search-group-upcoming|past|tasks`, the rows (`[data-search-result]`,
-  `search-event` / `search-task`) with their `search-title`,
-  `search-when` and `search-repeats`, `search-hint`, `search-empty`, and
-  the inspector's `inspector-back` ("‹ Results"). Rows carry no `title`
-  attribute either; a block opened from a result is `[data-selected]`.
-  A block's calendar color is its `data-color` attribute — never assert
-  a computed `backgroundColor`, the tint is theme-dependent — and
-  Tailwind classes are not selectors (they change with the design). The
-  `[title^="…"]` selectors match grid blocks and chips only: nothing in
-  the panel carries a `title` attribute.
+  `editor`, `editor-notes`, `task-done`, `panel-task-<id>`,
+  `week-scroller`, `week-grid`, `today-header`, `now-line`,
+  `all-day-lane`, `month-grid`, and for search `search-toggle`,
+  `search-input`, `search-results` (`aria-busy` "false" once the results
+  answer the field's text), `search-group-upcoming|past|tasks`,
+  `[data-search-result]` rows with `search-title` / `search-when` /
+  `search-repeats`, `search-hint`, `search-empty`, `inspector-back`. A
+  block's calendar color is its `data-color` attribute — never assert a
+  computed color, the tint is theme-dependent — and Tailwind classes are
+  not selectors. `[title^="…"]` matches grid blocks and chips only;
+  completion is `[data-done]`, a block opened from a result
+  `[data-selected]`. The settings window is a second CDP target
+  (`app.openSettings(pane)` / `app.closeSettings()`).
 
-### CI (.github/workflows/ci.yml + ios.yml)
+### CI (.github/workflows/)
 
-- `gate` (ubuntu): check + typecheck + unit tests.
-- `e2e` (macos-15): desktop build → e2e suite. GUI Electron runs fine on
-  macOS runners; content protection does not affect CDP automation.
-- `package-smoke` (macos-26, PRs only): unsigned `package:app` + packaged-
-  contents assertions — packaging failures used to surface only post-merge.
+`ci.yml` on pushes to main and PRs; a `changes` job classifies the diff
+(`desktop` / `ios` flags; docs-only skips every macOS job, `apps/ios/`
+alone skips the desktop jobs, `apps/desktop/` or `packages/agent/` alone
+skips the iOS shards). The macOS jobs wait for the gate, prefetch the
+Electron binary (`electron --version`) and run spec files sequentially.
+
+- `gate` (ubuntu, reusable `gate.yml`, also called by `ios.yml`): check +
+  typecheck + unit tests. The check is "Gate / Lint, typecheck, unit tests".
+- `e2e` (macos-15): desktop build → `pnpm test:e2e`.
 - `e2e-reminders` (macos-26): the **real** EventKit path on the desktop.
   Builds the helper, seeds the runner's per-user TCC database
-  (`apps/desktop/e2e/ci/grant-reminders-tcc.sh` — named columns so the
-  per-macOS column drift does not matter; every plausible client identity,
-  since TCC may attribute to the helper's signing identifier, bundle id or
-  path, to Electron, or to the runner's responsible process; bundle-id
-  rows carry the helper's compiled csreq), then `probe-helper-access.sh` requires
-  `reminders.status` = fullAccess before `remindersReal.e2e.ts` runs. The
-  seed is not an Apple-supported interface: when a new runner image
-  breaks it the job is red with the `access` schema, tccd's own rows and
-  its log lines in the output — adjust the seed to the identity tccd
-  recorded, never make the probe optional. The e2e jobs prefetch the
-  Electron binary (`electron --version`) and run spec files sequentially:
-  two Electron apps starting together on a small runner raced the lazy
-  binary download into "CDP page target not found". Locally:
+  (`apps/desktop/e2e/ci/grant-reminders-tcc.sh`, Reminders and
+  Calendars; named columns, every plausible client identity), then
+  `probe-helper-access.sh` requires `reminders.status` = fullAccess
+  before `remindersReal` and `appleCalendarReal` run. The seed is not an
+  Apple-supported interface: when a new runner image breaks it the job
+  is red with tccd's own rows in the output — adjust the seed, never
+  make the probe optional. Locally:
   `CALENDAR_E2E_REMINDERS=real E2E=1 pnpm exec vp test run apps/desktop/e2e/remindersReal.e2e.ts`
   (creates and deletes reminders in _your_ database).
-- `ios-e2e` (macos-26, two shards): Maestro against an **EAS** build with
-  the commit's JS embedded — no Metro, no dev launcher. CI never compiles
-  the app: `apps/ios/e2e/ci/fetch-eas-build.sh` looks up the
-  `e2e-simulator` build (the dev variant in Release configuration) for the
-  commit's native fingerprint (`expo-updates fingerprint:generate`, the
-  hash `ios.yml` compares), requests one only if none exists, and the
-  extracted `.app` lives in the Actions cache under that fingerprint
-  (`ios-e2e-app-<hash>`), so JS-only pushes download nothing.
-  `repack-app.sh` then bundles the commit's JS (`@expo/repack-app
-  --js-bundle-only`, about 20 s) into a copy of that app, switches
-  expo-updates off in its `Expo.plist` (a launch must never fetch a
-  published update over the bundle under test) and re-signs it ad hoc.
-  `EXPO_PUBLIC_CALENDAR_GOOGLE=fixture` is set on that step: it is inlined
-  at bundle time. `prepare-simulator.sh boot` runs right after checkout —
-  a runner's first boot spends two minutes in data migration, which then
-  overlaps the install and the bundling — and `prepare-simulator.sh
-  install` waits for it, installs, and pre-grants Reminders with `simctl
-  privacy grant reminders` (supported). Keep the two in separate steps:
-  `bootstatus -b` right after the background `simctl boot` asks for a
-  second boot, which CoreSimulator refuses ("Unable to boot device in
-  current state: Booted", exit 149 — 2 of 3 tries locally, three
-  `live-ios` nightlies in October); `install` now waits for a boot already
-  under way instead of failing. The whole job runs under
-  `APP_VARIANT=development`: the app is the dev variant
-  (`com.solunivo.app.dev`, which is what every flow's `appId` and the
-  `simctl` grants name), and its fingerprint differs from production's.
-  The flows are split over two runners by `e2e/ci/shard-flows.mjs` (every
-  `ci` flow, by position in the sorted file list — a new flow needs no
-  registration); shard 1 first runs the permissions flow in its own
-  Maestro invocation, since Maestro ignores `config.yaml` execution order
-  (maestro#2231). Only shard 1 may request a missing EAS build; shard 2
-  waits for it (`--wait-only`). The required check keeps the old job name:
-  a small ubuntu job that passes when the shards passed or were skipped.
-  Why this shape: with the dev client a run took 49 min on one runner —
-  18 min before the first regular flow (simulator, Metro, bootstrapping
-  the launcher) and about 30 s per `launchApp` re-downloading the bundle.
-  To reproduce a CI run locally: `eas build:list --build-profile
-  e2e-simulator`, `fetch-eas-build.sh <fingerprint> e2e-simulator
-  build/e2e-app`, `repack-app.sh`, a fresh simulator, then `maestro test`
-  with the shard's files. `google-live.yml` still drives the dev client
-  with Metro (the `development-simulator` profile, the bootstrap flow,
-  `EXPO_RUNTIME_VERSION_PIN`).
+- `ios-e2e-shards` (macos-26, two shards; the required check `ios-e2e`
+  passes when the shards passed or were skipped): Maestro against an
+  **EAS** build with the commit's JS embedded — no Metro, no dev
+  launcher. `apps/ios/e2e/ci/fetch-eas-build.sh` looks up the
+  `e2e-simulator` build for the commit's native fingerprint, requests one
+  only if none exists (shard 1 only; shard 2 waits), and caches the
+  extracted `.app` under `ios-e2e-app-<hash>`; `repack-app.sh` bundles
+  the commit's JS (`@expo/repack-app --js-bundle-only`) into a copy,
+  switches expo-updates off in its `Expo.plist` and re-signs it ad hoc;
+  `EXPO_PUBLIC_CALENDAR_GOOGLE=fixture` and `…_MODEL=fixture` are inlined
+  at that step. `prepare-simulator.sh boot` runs right after checkout (a
+  runner's first boot spends two minutes in data migration) and
+  `prepare-simulator.sh install` waits for it, installs, pre-grants
+  Reminders, Calendars and Contacts with `simctl privacy grant`, and
+  switches expo-dev-menu's floating button off. The whole job runs under
+  `APP_VARIANT=development`. `shard-flows.mjs` splits every `ci` flow by
+  position in the sorted file list (a new flow needs no registration);
+  shard 1 first runs the permissions flow in its own Maestro invocation,
+  since Maestro ignores `config.yaml` execution order. To reproduce a CI
+  run locally: `eas build:list --build-profile e2e-simulator`,
+  `fetch-eas-build.sh <fingerprint> e2e-simulator build/e2e-app`,
+  `repack-app.sh`, a fresh simulator, then `maestro test` with the
+  shard's files.
+- `package-smoke` (macos-26, PRs only): unsigned `package:app`,
+  packaged-contents assertions, `pnpm brand:check`, `solunivo-cli
+  --version`.
 - `testing-build` (macos-26, main only): signed + notarized arm64 zip
-  incl. the Swift model helper — macos-26 is the only runner image with
-  the FoundationModels SDK. See docs/distribution.md.
+  incl. the Swift helper — macos-26 is the only runner image with the
+  FoundationModels SDK. See docs/distribution.md.
 - `ios.yml` (main + PRs): fingerprint-gated — TestFlight build when the
   native fingerprint changed, otherwise `eas update`; PRs get a `pr-<n>`
   preview channel.
 - `google-live.yml` (nightly-if-changed, `workflow_dispatch`, the
-  `google-live` PR label): the real-account suites — `live-node`
-  (ubuntu, `GOOGLE_LIVE=1`), `live-desktop` (macos-15, the one spec) and
-  `live-ios` (macos-26, the ios-e2e steps with a live Metro plus the
-  sidecar's setup/teardown around the five flows). `decide` fails red
-  without the secrets and, on the schedule, compares `github.sha` with
-  the last completed run's `headSha` (`gh run list`, `actions: read`) —
-  a skipped night still completes at that sha. GitHub's `schedule` is
-  best effort: the first night after the workflow reached `main` fired
-  no run at all (2026-09-25) — dispatch it by hand when a night is
-  missing. `concurrency:
-  google-live` keeps runs from overlapping on the one account. See "Live
-  Google suite" above.
+  `google-live` PR label): `live-node` (ubuntu, `GOOGLE_LIVE=1`),
+  `live-desktop` (macos-15, the one spec) and `live-ios` (macos-26: the
+  dev client with Metro — the `development-simulator` profile fetched by
+  fingerprint, the bootstrap flow — plus the sidecar's setup/teardown
+  around the five flows).
 - Log lines may stringify effect causes containing HTTP requests; effect
-  redacts auth headers (`"authorization":<redacted>` — verified), so
-  tokens cannot leak into CI logs this way.
+  redacts auth headers, so tokens cannot leak into CI logs this way.
 
-### iOS e2e (Maestro, apps/ios/e2e/flows/)
+### iOS e2e (Maestro, apps/ios/e2e/)
 
-Text/testID-based flows, one per area rather than one per check: each
-flow costs a launch and its setup, and the CI shards are billed macOS
-minutes, so a new check joins the flow that already reaches its screen
-(navigation and every view's paging in 02, the new-event sheet's fields
-in 03, the Reminders form and its repeat rule in 09, both conversion
-paths in 17, the birthday settings in 23). Flows carry `tags`: the ones
-CI shards are `ci`; `00-devclient-bootstrap` (`ci-bootstrap`) and
-`04a-device-permissions` (`ci-permissions`) run as their own steps and
-`pnpm test:e2e:ios` excludes them; `14-location` has no tag (real MapKit
-needs the network) and runs only locally. Reminders flows 09 and 17 are
-no-ops until the simulator has a connected list — except on CI, keyed on
-the fixture account, where the grant `prepare-simulator.sh` seeded lets
-them connect Reminders themselves, write through real EventKit with no
-escape hatch, and remove the account again. Maestro runs a directory's
-flows in a non-deterministic order and `config.yaml`'s `executionOrder`
-is not honored (maestro#2231), so CI runs the bootstrap as its own
-invocation and every other flow must be independent of what ran before —
-a Reminders flow that fails mid-way leaves the account connected, after
-which the task form defaults to the Apple list, hence
-`Edit (Task|Reminder)` in flow 08. 04a also leaves device Contacts
-connected on its shard (there is no in-app disconnect), so the
-simulator's sample contacts become invitee suggestions there: a flow
-that types an address retypes until the field holds all of it before
-Return, which otherwise takes the top suggestion for a partial one (03). On CI Metro runs with
-`EXPO_PUBLIC_CALENDAR_GOOGLE=fixture`, so a fixture Google account
-(`fixture@solunivo.test`, list "Mock Tasks", calendar "Mock Calendar") is
-signed in for every flow and the Google halves of 07/08 and 17 (task
-convert) run against the in-process fake; locally they are
-no-ops unless Metro was started with the same variable. Text selectors are whole-string
-regexes: a list row's label is title + swatch + check mark, so rows are
-picked by `id: task-list-option`; a chip body is tapped by its full text
-(`[0-9]+:[0-9]+ !!! <title>` for a timed reminder), because `.*<title>`
-also matches the checkbox's "Toggle <title>" label and toggles
-completion instead of opening the editor. Flows that open the edit sheet `waitForAnimationToEnd` before tapping
-inside it (a tap taken mid-slide missed on the runner); the editor is
-reached through `common/open-new-event.yaml` — the "+" opens the editor
-on a new event, its quick-add field on top — which re-taps while the
-sheet is missing (run 34852090635 tapped once at the right coordinates
-and nothing opened); the kind control's segments are `mode-event` /
-`mode-task` / `mode-reminder` (a Reminders list behind `mode-reminder`,
-never in a task's list picker, so a flow that wants the Reminders form
-taps the segment, and a reminder moved to a Google list reads "Move to
-Task"); a tap on an event opens its
-detail sheet first, so `common/open-event-editor.yaml` taps Edit; views
-are picked through `common/switch-view.yaml` (the header's menu, `VIEW`);
-Settings is a stack of pages: `common/open-settings.yaml` waits for the
-root's `settings-root` id (never the "Settings" title — the account
-button's label starts with "Settings" too),
-`common/open-settings-page.yaml` pushes one page (`PAGE`: `device`, `general`, `notifications`, `mirrors`, `advanced`,
-`unsynced`; root rows are `settings-row-<page>`, pages
-`settings-page-<page>`), and `common/close-settings.yaml` taps the native
-back button (`BackButton`) until the root shows, then Done — a pressable
-row reads as one element (its title, subtitle and value together), so
-match its text with `.*` around it, and decorative symbols stay out of
-that label (`Glyph`); swipe-to-remove rows are swiped from their id and
-the revealed action tapped by its own;
-the shell anchor is still the "Today" button; and the
-quick-add flow accepts the field's "couldn't be read" outcome: a CI
-simulator passes the model availability check yet cannot generate,
-so the filled title is asserted (by id — the phrase in the field above
-holds the same words) only where a model answers.
-The bootstrap flow `launchApp`s the dev client and only then opens
-`solunivo-dev://expo-development-client/?url=…` (the dev variant's own
-scheme; `solunivo://` belongs to the production app). Relying on the URL to
-launch the app was not reliable on a runner: run 34851193180 confirmed
-the "Open in Solunivo?" alert and no launch followed, because the
-diagnostics step had left Safari in front with a modal "download
-'status'?" sheet (the CI step now terminates Safari after its screenshot,
-and no longer sends the URL itself). With the client already running,
-confirming the alert delivers the URL to a live process; the alert may
-still appear (one per `simctl openurl`, and they stack), so
-`common/confirm-open.yaml` confirms exactly one and cancels the rest: every further "Open" re-delivered the same URL to
-the client while its first bundle was still starting, it re-fetched the
-manifest mid-load and the process died with SIGSEGV ~150 ms after the
-bundle ran (two runs that tapped "Open" four times failed; the runs that
-tapped once passed). The flow's recovery loop also re-sends the link
-when the launcher sits on a blank home screen (a launch request once sat
-in SpringBoard for a minute), confirms an "Open in Solunivo?" alert that
-arrives after `confirm-open.yaml` stopped waiting (while the alert is up
-Maestro sees only the alert, so no other recovery branch can match), and
-its waits are `optional` so one slow attempt cannot end the flow before
-the final "Today" assertion. On failure the job waits
-for the simulator's crash report (`~/Library/Logs/DiagnosticReports/
-Solunivo-*.ips`, written a minute or so after the crash) and prints
-its exception and faulting thread before uploading it.
-Every flow starts with `runFlow: ../common/launch.yaml`
-(launch, recover the dev client if its 10 s auto-reopen fell back to
-the launcher home or its error screen, wait for "Today",
-`waitForAnimationToEnd`): React Native's
-SafeAreaView applies the top inset a beat after the first paint, so an id
-tap taken as soon as "Today" is visible lands ~60 pt too high — in the
-status bar — on every flow. On CI, `prepare-simulator.sh` also switches
-expo-dev-menu's floating "Dev tools" button off through UserDefaults
-(`EXDevMenuShowFloatingActionButton`): it sits exactly over the app's
-account button. Maestro needs a JDK on PATH (Apple's `/usr/bin/java` stub
-is not one: `brew install openjdk`, then
-`JAVA_HOME=/opt/homebrew/opt/openjdk`). Maestro does not expose a reliable
-press-hold-drag command, so the default suite checks timed/date-only
-editor transitions; unit tests cover the shared drag math. Flow 09's
-slow-swipe experiment requires an explicit opt-in:
-`maestro test -e REMINDER_DRAG_TEST=true apps/ios/e2e/flows/09-reminders-form.yaml`.
-A Reminders list must already be connected. A long swipe duration does
-not configure a stationary hold before movement, so native gesture
-activation is unverified and this experiment is excluded by default.
-If it activates, the test requires a later quarter-hour, then checks the
-same due time after an app restart and a reopened-editor save. The exact
-delta is not asserted: a [selector swipe](https://docs.maestro.dev/api-reference/commands/swipe)
-ends at a screen-relative position and cannot be combined with explicit
-start/end coordinates. This experiment does not replace a native check.
+Text/testID-based flows under `flows/`, one per area rather than one per
+check: each flow costs a launch and its setup, and the CI shards are
+billed macOS minutes, so a new check joins the flow that already reaches
+its screen. Flows carry `tags`: the ones CI shards are `ci`;
+`00-devclient-bootstrap` (`ci-bootstrap`, the live job's dev-client
+launch) and `04a-device-permissions` (`ci-permissions`) run as their own
+steps and `pnpm test:e2e:ios` excludes them; `14-location` has no tag
+(real MapKit needs the network) and runs only locally. Maestro runs a
+directory's flows in a non-deterministic order, so every flow must be
+independent of what ran before. Locally the flows run against the dev
+client and Metro (`pnpm --filter @calendar/ios start`); the Google halves
+are no-ops unless Metro was started with
+`EXPO_PUBLIC_CALENDAR_GOOGLE=fixture`, and the Reminders flows (09, 17)
+are no-ops until the simulator has a connected list — on CI, keyed on
+the fixture account (`fixture@solunivo.test`, list "Mock Tasks", calendar
+"Mock Calendar"), they connect Reminders themselves, write through real
+EventKit and remove the account again. Maestro needs a JDK on PATH
+(Apple's `/usr/bin/java` stub is not one; see AGENTS.md).
 
-Before claiming iOS reminder-drag coverage, run this manual check on a
-simulator or device with a connected Reminders list:
+Shared subflows (`common/`): `launch.yaml` (every flow starts with it:
+launch, recover the dev client if it fell back to the launcher, wait for
+"Today", `waitForAnimationToEnd` — SafeAreaView applies the top inset a
+beat after the first paint, so an earlier tap lands in the status bar),
+`open-new-event.yaml` (the "+" → the editor on a new event, re-tapping
+while the sheet is missing), `open-event-editor.yaml` (Edit on the detail
+sheet a tap opens), `switch-view.yaml` (the header's menu, `VIEW`),
+`switch-to-task.yaml`, `open-settings.yaml` (waits for `settings-root`),
+`open-settings-page.yaml` (`PAGE`: `device`, `general`, `notifications`,
+`mirrors`, `advanced`, `unsynced`; rows `settings-row-<page>`, pages
+`settings-page-<page>`), `close-settings.yaml` (`BackButton` until the
+root shows, then Done), `search-for.yaml` (`QUERY` typed into the Search
+tab's system field until `RESULT` shows), `confirm-open.yaml` and
+`await-shell.yaml` (the bootstrap flow's URL alert and shell wait).
 
-1. In today's Day view, create a reminder due at 9:00 AM. Hold its title
-   until it lifts (at least 250 ms), move it down by one hour of grid
-   spacing, and release. It must land at 10:00 AM on the same day.
-2. Reopen the reminder editor and check its date and 10:00 AM time. Close
-   the editor, terminate and relaunch Solunivo, and check that both the
-   time-grid block and reopened editor still show that date and time.
-   Confirm the same due time in Apple Reminders, then delete the test item.
+Selector gotchas (each caused a real failure):
 
-The Search tab's field is the system one (`Stack.SearchBar`):
-`common/search-for.yaml` (`QUERY`, `RESULT`) finds it by its placeholder
-("Events and tasks", which stays its label while it holds text), clears
-it with its "Clear text" button and types again until `RESULT` shows,
-and taps away the keyboard's one-time "slide to type" card wherever it
-turns up. `hideKeyboard` cannot dismiss a search field's keyboard: the
-field's "Close" ends the search, which brings the tab bar (and its
-"Calendar" circle) back. A result row is one element labelled title
-first (`'Kolkata series.*'`, a series' label ends in "repeats"). The
-event detail sheet's own "Delete" stays in the tree behind the
-confirmation alert, whose button is "Delete" too and comes second: tap
-it with `below:` the alert's title (flow 25), unlike the editor's
-"Delete Event".
+- Text selectors are **whole-string regexes**: prefix text does not
+  match, regex metacharacters in titles must be escaped, and a pressable
+  row reads as one element (title, subtitle and value together), so match
+  with `.*` around the text. Decorative symbols stay out of labels
+  (`Glyph`).
+- A list row's label is title + swatch + check mark, so rows are picked
+  by `id: task-list-option`; a chip body is tapped by its full text
+  (`[0-9]+:[0-9]+ !!! <title>` for a timed reminder), because
+  `.*<title>` also matches the checkbox's "Toggle <title>" label.
+- Never select by `local-…` task ids (the op push swaps them to server
+  ids mid-flow); avoid non-ASCII punctuation in typed text, and retype a
+  title or address until the field holds all of it (XCTest garbles
+  input, and Return on a partial address takes the top contact
+  suggestion once 04a has left device Contacts connected on its shard).
+- The kind control's segments are `mode-event` / `mode-task` /
+  `mode-reminder` (a Reminders list sits behind `mode-reminder`, never in
+  a task's list picker); a tap on an event opens its detail sheet first.
+  Flows that open a sheet `waitForAnimationToEnd` before tapping inside
+  it. Maestro's visibility ignores the keyboard and clipping: dismiss the
+  keyboard before tapping a lower input, and a control clipped by a
+  ScrollView edge counts as visible and swallows the tap (centre rows
+  first, repeat the tap until its effect shows).
+- The Search tab's field is found by its placeholder ("Events and
+  tasks"); `hideKeyboard` cannot dismiss it — the field's "Close" ends
+  the search. The detail sheet's own "Delete" stays in the tree behind
+  the confirmation alert's, so the alert's is tapped `below:` its title.
+- The quick-add flow accepts the field's "couldn't be read" outcome: a
+  CI simulator passes the model availability check yet cannot generate
+  without the fixture model, so the filled title is asserted only where
+  a model answers.
+- The bootstrap flow (live job only) `launchApp`s the dev client and only
+  then opens `solunivo-dev://expo-development-client/?url=…`; it
+  confirms exactly one "Open in Solunivo?" alert — every further "Open"
+  re-delivered the URL mid-load and crashed the client — and its waits
+  are `optional` so one slow attempt cannot end the flow early. On
+  failure the job prints the simulator's crash report
+  (`~/Library/Logs/DiagnosticReports/Solunivo-*.ips`).
 
-Selector gotchas (each caused a real
-failure): Maestro text selectors are **whole-string regexes** — prefix
-text does not match, and regex metacharacters in titles must be escaped;
-never select by `local-…` task ids (the op push swaps them to server ids
-mid-flow) — select by title/label text; avoid non-ASCII punctuation in
-typed text (XCTest typing flakiness).
+Maestro has no reliable press-hold-drag command, so the flows check
+timed/date-only editor transitions and unit tests cover the shared drag
+math. Before claiming iOS reminder-drag coverage, check by hand on a
+device with a connected Reminders list: in today's Day view create a
+reminder due at 9:00, hold its title until it lifts, move it down one
+hour and release — it must land at 10:00; reopen the editor, relaunch
+the app, and confirm the time in Apple Reminders.

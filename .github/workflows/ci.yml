@@ -28,7 +28,7 @@ jobs:
   #
   # Code is split by platform too: a change only under apps/ios/ cannot
   # affect the desktop jobs, and one only under apps/desktop/ or
-  # packages/agent/ (desktop-only, see CLAUDE.md) cannot affect iOS — a
+  # packages/agent/ (desktop-only, see AGENTS.md) cannot affect iOS — a
   # desktop-only PR ran the ~40-minute iOS e2e anyway. Everything else
   # (the shared packages, root config, the lockfile, workflows, brand/)
   # runs both. apps/ios/assets/ holds brand exports that packaging smoke
