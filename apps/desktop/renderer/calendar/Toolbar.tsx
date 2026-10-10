@@ -10,6 +10,7 @@ import {
   SidebarIcon,
 } from '../ui/icons.tsx';
 import { SegmentedControl } from '../ui/SegmentedControl.tsx';
+import { PrivacyIndicator } from './PrivacyIndicator.tsx';
 
 const VIEWS: ReadonlyArray<{ label: string; value: 'day' | 'month' | 'week' }> = [
   { label: 'Day', value: 'day' },
@@ -19,9 +20,10 @@ const VIEWS: ReadonlyArray<{ label: string; value: 'day' | 'month' | 'week' }> =
 
 /**
  * The window's one toolbar: the drag region under the traffic lights,
- * the period title, navigation, the view switcher, search (⌘F, in the
- * side panel) and New (⌘N, or ⌘K straight into its quick-add field).
- * Everything else lives in the sidebar or the side panel.
+ * the period title, navigation, the view switcher, whether the window
+ * is hidden from screen captures, search (⌘F, in the side panel) and New
+ * (⌘N, or ⌘K straight into its quick-add field). Everything else lives in
+ * the sidebar or the side panel.
  */
 export function Toolbar({
   onNew,
@@ -110,6 +112,7 @@ export function Toolbar({
           value={view === 'day' || view === 'month' ? view : 'week'}
         />
       </div>
+      <PrivacyIndicator />
       <IconButton
         active={searchActive}
         data-testid="search-toggle"

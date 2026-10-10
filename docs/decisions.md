@@ -234,7 +234,14 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   its completion day (2026-10-02). No auto-scroll at the grid edge.
 - **Screen-sharing privacy** — the desktop window is excluded from
   captures by default; "Visible for 10 min" is runtime-only and fails
-  closed on restart; "Always visible" persists.
+  closed on restart; "Always visible" persists. **The toolbar shows it**
+  (2026-10-10): an eye-slash while the window is left out of captures,
+  one click pauses for 10 min (Nik's pick over a menu), a second ends the
+  pause. macOS gives no signal that a capture is starting, so no
+  capture-only overlay; an unprotected stand-in window behind the main
+  one (showing in captures, peeking out on drag and in Mission Control)
+  and a Spotlight `kMDItemIsScreenCapture` toast (after the fact, blind
+  to clipboard shots) were rejected (#178).
 - **Per-calendar colors** — optimistic local update, write-back through
   `calendarList.patch?colorRgbFormat=true` as a `calendarColor` op kind
   coalescing per account; invalid hex rejected, 4xx dropped.
