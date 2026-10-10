@@ -2985,3 +2985,53 @@ then iOS (both in `todo.md`).
       correlation came from when the runs happened. Regression tests: "A
       chip drag meets other input" in `reminders.e2e.ts`, both failing on
       main every run (also at 6× throttling and at 1024 px).
+
+### e2e windows take CDP input only (2026-10-10)
+
+- [x] Desktop e2e: a local run is immune to the developer's own keys and
+      trackpad — done (`todo/e2e-input-isolation`). Follow-up to #166,
+      which hardened the drag but could not finish a gesture whose input
+      says the button went up. **Harness only**: `launchApp` sets
+      `CALENDAR_E2E_INPUT=cdp`, and nothing changes for a normal run.
+      In that mode `windows.ts` shows the main and Settings windows with
+      `showInactive()` and orders them to the back with `blur()` (Nik
+      asked for the background over the top). The app never activates.
+      `setIgnoreMouseEvents(true)` passes clicks, moves and scrolls to the
+      window below. `Cdp.connect` enables
+      `Emulation.setFocusEmulationEnabled`, and the page still acts as
+      focused: programmatic focus, `:focus`/`:focus-visible` and
+      `document.hasFocus()` all failed in an unfocused window without it.
+      Chromium implements the emulation as a page capture, so a covered
+      window keeps drawing. Fully covered, it drew 120 frames/s with the
+      emulation and 0 without, also 0 ResizeObserver callbacks. That is
+      why the background order is safe and #159's hidden-window cause is
+      gone. **`setIgnoreMouseEvents` was not enough.** macOS still sends
+      the window tracking-area enter/exit, and Chromium makes them a
+      buttonless `mouseMove` plus a `mouseLeave` at the real cursor
+      position. Mid-drag that dropped the capture: 3 of 25 drags failed
+      with only that layer. A `before-mouse-event` listener drops every
+      enter, leave and fractional position, since CDP can send no
+      enter/leave and the harness dispatches whole pixels. `Cdp.send`
+      rounds every `Input.dispatchMouseEvent`, so the integer rule holds
+      for a spec's own raw dispatch too, such as #166's buttonless move.
+      The OS's positions are fractions of a point (logged down to
+      1/65536). `clickCount` or the button were rejected as the mark,
+      because #166's test sends a buttonless, clickless move on purpose.
+      `focusable: false` was not needed: keys never reached a window that
+      is never key. **Proof** (scratch loop of the first "Reminder chips
+      drag" test, one launch per round, Nik circling the cursor over the
+      window and tapping Space twice a second, a window-level trace of
+      fractional pointer events and keys): before, 5 of 25 drops failed.
+      The app activated every round, keys reached the page in 18 rounds
+      and moves in 12. After, 30 of 30 passed. The cursor travelled
+      72,578 pt and was over the window in 326 of 410 samples. The main
+      process dropped 144 OS events (86 moves, 58 leaves), none reached
+      the page, and the app never activated or took window focus.
+      **Side effect**: `browser-window-focus` no longer fires in e2e, so
+      the sync kick (`backendHost.ts`) and the settings-file check
+      (`settingsFile.ts`) never run from focus there. The whole suite
+      passed without them, at 1280×800 and at `CALENDAR_E2E_WINDOW=1024x768`.
+      The only failure is the known Thu–Sun "reseeds the editor…" first
+      attempt, which fails the same way on the baseline. Not fixed here:
+      an e2e run from another checkout without this change still takes
+      focus (one was seen during the proof, from the main checkout).

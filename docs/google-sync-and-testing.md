@@ -601,7 +601,8 @@ DOM and the database.
 Flakiness lessons (each caused a real CI failure — keep them enforced):
 
 - **Integer coordinates only** for `Input.dispatchMouseEvent` — fractional
-  coords mis-fire.
+  coords mis-fire, and the app now drops them as the OS cursor's.
+  `Cdp.send` rounds them.
 - **`scrollIntoView` before measuring** (harness `locate`): CI runners
   land the week grid at different scroll offsets, leaving early-morning
   blocks under the sticky header where clicks hit the header.
@@ -612,7 +613,13 @@ Flakiness lessons (each caused a real CI failure — keep them enforced):
   the narrow-window notice stack stayed in its 8 px column, banner 29 px,
   however long `waitFor` polled. `cdp.waitForRendered` draws a frame (a
   screenshot) before each try. To reproduce locally, bring another app in
-  front of the test window right after launch (`open -a <app>`).
+  front of the test window right after launch (`open -a <app>`). Since
+  the harness emulates focus ("A local run is not alone at the
+  keyboard", below), a page with a CDP client attached stays visible and
+  draws while covered. A fully covered window drew 120 frames/s with the
+  emulation and none without it, and the e2e windows now open at the
+  back on purpose. `waitForRendered` predates that and still draws a
+  frame before each try.
 - **Weekday-agnostic seeding**: recurring seeds start `today − 3 days` and
   expectations derive from the first _visible_ instance — absolute
   "today"-based expectations broke every Sunday.
@@ -629,15 +636,34 @@ Flakiness lessons (each caused a real CI failure — keep them enforced):
   the renderer throttled — `cdp.send('Emulation.setCPUThrottlingRate',
   { rate: 6 })`, also 12× — and never commit the throttle: it made #146's
   race and the stale inspector fail within a few rounds.
-- **A local run is not alone at the keyboard.** The e2e window takes
-  focus when it shows and opens under the cursor: a key typed or a
-  trackpad touched during a run is input to the test window. A press
-  focuses its chip, so a Space opened the editor mid-drag, and a moving
-  trackpad dropped the drag's capture. A loop of the first drag after
-  launch failed 3 of 40 times that way, and a wrong theory (a re-render
-  from sync) explained it at first. Leave the Mac alone while a loop
-  runs. To tell, trace window `pointermove`/`keydown` in capture: input
-  the harness never sent shows as fractional coordinates or keys.
+- **A local run is not alone at the keyboard, so the windows take CDP
+  input only.** The e2e window used to take focus when it showed and open
+  on top, under the cursor: a key typed or a trackpad touched during a
+  run was input to the test window. A press focuses its chip, so a Space
+  opened the editor mid-drag, and a moving trackpad dropped the drag's
+  capture. A loop of the first drag after launch failed 3 of 40 times
+  that way, and a wrong theory (a re-render from sync) explained it at
+  first. Now `launchApp` sets `CALENDAR_E2E_INPUT=cdp` (`windows.ts`):
+  the windows open at the back without activating the app (`showInactive`,
+  then `blur`, which orders a window back on macOS) and ignore the OS
+  mouse (`setIgnoreMouseEvents`). That alone still let the cursor
+  through: macOS tells a window when the cursor crosses it, and Chromium
+  makes that a buttonless move, which failed 3 of 25 drags. So
+  `before-mouse-event` drops every enter, leave and fractional position.
+  CDP sends none of them: `Cdp.send` rounds every
+  `Input.dispatchMouseEvent`, a spec's own included. `Cdp.connect` turns
+  on `Emulation.setFocusEmulationEnabled`, so the page acts as the
+  focused window (focus events, `:focus-visible`, `document.hasFocus()`)
+  and keeps drawing while covered. Under a cursor circling the window and
+  Space tapped twice a second, the first drag after launch failed 5 of
+  25 before. After the change it passed 30 of 30: the app dropped 144 OS
+  mouse events, none reached the page, and the app never activated.
+  Consequences: `browser-window-focus` never fires in e2e, so no spec
+  may count on the sync kick or the settings-file check it runs. A run
+  from a checkout without this (another worktree on an older main)
+  still takes focus. To check for foreign input, trace window
+  `pointermove`/`keydown` in capture: input the harness never sent
+  shows as fractional coordinates or keys.
 - React inputs need the native value setter + `input`/`change` event
   dispatch; `<select>` likewise (`HTMLSelectElement` prototype setter).
 - Tests share one app instance and run in file order — later tests must

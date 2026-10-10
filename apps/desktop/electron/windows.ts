@@ -77,6 +77,55 @@ const windowSize = (): { readonly height: number; readonly width: number } => {
     : { height: 800, width: 1280 };
 };
 
+/**
+ * The e2e harness's windows take input from CDP only (`CALENDAR_E2E_INPUT=cdp`):
+ * they show without activating the app and keep the OS mouse out, so a key
+ * typed or a trackpad touched during a local run goes to whatever the
+ * developer is using, not to the test. CDP input enters below the window,
+ * at the page itself, and still arrives; the harness emulates page focus.
+ */
+const cdpInputOnly = process.env['CALENDAR_E2E_INPUT'] === 'cdp';
+
+/**
+ * Keeps the OS mouse out of an e2e window. Ignoring mouse events passes
+ * clicks, moves and scrolls through to the window below, but macOS still
+ * tells the window when the cursor crosses it, and Chromium turns that into
+ * a buttonless move: mid-drag, the page then drops the pointer capture.
+ * What is left arrives as an enter or a leave, or at a fractional position
+ * (the cursor moves in fractions of a point). CDP sends neither — the
+ * harness dispatches whole pixels — so those are dropped before the page
+ * sees them.
+ */
+const keepOsMouseOut = (window: BrowserWindow): void => {
+  window.setIgnoreMouseEvents(true);
+  window.webContents.on('before-mouse-event', (event, mouse) => {
+    if (
+      mouse.type === 'mouseEnter' ||
+      mouse.type === 'mouseLeave' ||
+      !Number.isInteger(mouse.x) ||
+      !Number.isInteger(mouse.y)
+    ) {
+      event.preventDefault();
+    }
+  });
+};
+
+/** Shows a window, focused unless the e2e harness drives it (cdpInputOnly). */
+const showWindow = (window: BrowserWindow, focus: boolean): void => {
+  if (cdpInputOnly) {
+    // Behind every other window (blur orders it to the back on macOS). A
+    // covered page would run no rendering steps, but the harness's focus
+    // emulation keeps it visible to itself, and it draws on.
+    window.showInactive();
+    window.blur();
+    return;
+  }
+  window.show();
+  if (focus) {
+    window.focus();
+  }
+};
+
 export const createMainWindow = (): BrowserWindow => {
   const window = new BrowserWindow({
     backgroundColor: windowBackground(),
@@ -93,8 +142,11 @@ export const createMainWindow = (): BrowserWindow => {
       mainWindow = null;
     }
   });
+  if (cdpInputOnly) {
+    keepOsMouseOut(window);
+  }
 
-  window.once('ready-to-show', () => window.show());
+  window.once('ready-to-show', () => showWindow(window, false));
 
   // Hidden from screen shares by default; the CALENDAR_CAPTURE debug hook
   // needs an unprotected window or its screenshot comes out black.
@@ -134,8 +186,7 @@ export const showMainWindow = (): void => {
   if (window.isMinimized()) {
     window.restore();
   }
-  window.show();
-  window.focus();
+  showWindow(window, true);
 };
 
 const settingsHash = (pane: string | undefined): string => (pane ? `settings/${pane}` : 'settings');
@@ -178,8 +229,7 @@ export const showSettingsWindow = (pane?: string): void => {
     if (pane) {
       moveSettingsTo(pane);
     }
-    settings.window.show();
-    settings.window.focus();
+    showWindow(settings.window, true);
     return;
   }
   // A settings window as macOS draws them: fixed size, close button only
@@ -200,6 +250,9 @@ export const showSettingsWindow = (pane?: string): void => {
   });
   const opened: SettingsWindow = { window };
   settings = opened;
+  if (cdpInputOnly) {
+    keepOsMouseOut(window);
+  }
   window.once('closed', () => {
     if (settings === opened) {
       settings = null;
@@ -212,7 +265,7 @@ export const showSettingsWindow = (pane?: string): void => {
       moveSettingsTo(pending);
     }
   });
-  window.once('ready-to-show', () => window.show());
+  window.once('ready-to-show', () => showWindow(window, false));
   registerPrivacyWindow(window);
   loadRenderer(window, settingsHash(pane));
 };
