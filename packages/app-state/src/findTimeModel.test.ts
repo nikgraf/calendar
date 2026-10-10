@@ -85,23 +85,17 @@ describe('rescheduledEventExclusion', () => {
     ]);
   });
 
-  it('keeps stored exceptions busy while the master is not here yet', () => {
-    expect(freed(rescheduledEventExclusion(edited, 'following')!)).toEqual([
-      'series__2000',
-      'series__3000',
-    ]);
+  it('frees nothing of a series while its master is not here (an Apple series never is)', () => {
+    expect(freed(rescheduledEventExclusion(edited, 'following')!)).toEqual([]);
+    expect(freed(rescheduledEventExclusion(edited, 'series')!)).toEqual([]);
+    // "This event" needs no master.
+    expect(freed(rescheduledEventExclusion(edited, 'instance')!)).toEqual(['series__2000']);
   });
 
-  it('keeps every row busy for a series edit of a series with fixed dates, or an unknown master', () => {
-    // A drawn row does not say whether the rule or a fixed RDATE placed it;
-    // the fixed ones stay put when the master shifts.
+  it('frees nothing of a series with fixed dates, whichever edit', () => {
+    // A drawn row does not say whether the rule or a fixed RDATE placed it,
+    // and the fixed ones stay put through a shift and through a split.
     expect(freed(rescheduledEventExclusion(edited, 'series', FIXED)!)).toEqual([]);
-    expect(freed(rescheduledEventExclusion(edited, 'series')!)).toEqual([]);
-    // The split drops rows whatever placed them.
-    expect(freed(rescheduledEventExclusion(edited, 'following', FIXED)!)).toEqual([
-      'series__2000',
-      'series__3000',
-      'series_x2',
-    ]);
+    expect(freed(rescheduledEventExclusion(edited, 'following', FIXED)!)).toEqual([]);
   });
 });
