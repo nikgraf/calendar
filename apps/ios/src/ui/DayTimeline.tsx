@@ -11,11 +11,13 @@ import {
   type EventRecord,
   groupByDate,
   groupEventsByDay,
+  interpolatePages,
   MAX_ALL_DAY_ROWS,
+  pageMaxima,
   partitionCalendarTasks,
   taskCalendarDate,
   secondaryHourLabels,
-  swipeLagAfterRender,
+  swipeLag,
   swipeReleaseColumns,
   taskChipLabel,
   type TaskRecord,
@@ -130,16 +132,24 @@ export function DayTimeline({
   const compact = days.length > 2;
   const columnWidth = pageWidth / days.length;
 
-  // `panX` is measured from the page navigated to; the strip is drawn for
-  // the page React last rendered, `lag` columns behind it while a
-  // navigation is on its way to the screen. `pending` is a released
-  // swipe's commit while its animation runs: the page changes when the
-  // animation ends, so the re-render never competes with it.
-  const lag = useSharedValue(0);
+  // `panX` is measured from the page navigated to. A swipe navigates on
+  // the UI thread first: `navigatedPx` adds up every column it moved, and
+  // the swipe hands that sum to React with the page change (`swiped`). The
+  // strips sit `swiped.px` along, so the render that draws a swipe's page
+  // moves them forward by exactly as much as its new days move them back:
+  // no drawn column moves when React catches up, whichever frame its mount
+  // lands in. (A UI-thread reset after the render raced the mount, and a
+  // frame showed the strip a column off.) `pending` is a released swipe's
+  // commit while its animation runs: the page changes when the animation
+  // ends, so the re-render never competes with it.
+  const navigatedPx = useSharedValue(0);
+  const [swiped, setSwiped] = useState({ columns: 0, px: 0 });
   const pending = useSharedValue(0);
   const panStart = useSharedValue(0);
-  // Where the drawn strip sits: its transform and the task drag's drop geometry.
-  const stripOffset = useDerivedValue(() => panX.value - lag.value * columnWidth);
+  // The strips' place as React draws them; the swipe's transform moves them from there.
+  const stripLeft = swiped.px - buffer * columnWidth;
+  // How far the drawn strip sits from its centred place: the task drag's drop geometry.
+  const stripOffset = useDerivedValue(() => swiped.px - navigatedPx.value + panX.value);
   const today = Temporal.PlainDate.from(todayIso);
   // The gutter widens with the zones it lists; the header, the lane and the
   // drag geometry all take the same width so the columns stay aligned.
@@ -212,22 +222,32 @@ export function DayTimeline({
     [birthdays],
   );
 
-  // The lane sizes itself to the busiest drawn day (neighbours included)
-  // so a swipe never shifts the grid; only a committed page change can.
-  const rowsNeeded = Math.max(
-    0,
-    ...strip.map((day) => {
-      const iso = day.toString();
-      return (
-        (tasksByDay.get(iso)?.length ?? 0) +
-        (birthdaysByDay.get(iso)?.length ?? 0) +
-        (byDay.get(iso) ?? []).filter((event) => event.isAllDay).length
-      );
-    }),
+  // The lane fits the visible page's busiest day. Mid-swipe it blends
+  // toward the page coming in, so the grid below moves with the finger
+  // and is already in place when the swipe lands. (Sized to every drawn
+  // day instead, the lane changed whenever a neighbour entered or left
+  // the strip, and the grid jumped a row after the swipe had settled.)
+  const pageRows = useMemo(
+    () =>
+      pageMaxima(
+        strip.map((day) => {
+          const iso = day.toString();
+          return (
+            (tasksByDay.get(iso)?.length ?? 0) +
+            (birthdaysByDay.get(iso)?.length ?? 0) +
+            (byDay.get(iso) ?? []).filter((event) => event.isAllDay).length
+          );
+        }),
+        days.length,
+      ),
+    [strip, tasksByDay, birthdaysByDay, byDay, days.length],
   );
-  const capped = collapsed && rowsNeeded > MAX_ALL_DAY_ROWS;
-  const laneHeight = Math.max(capped ? MAX_ALL_DAY_ROWS : rowsNeeded, 1) * ALL_DAY_ROW_HEIGHT + 4;
-  const maxChips = capped ? MAX_ALL_DAY_ROWS : Number.POSITIVE_INFINITY;
+  const laneHeightFor = (rows: number) =>
+    Math.max(collapsed ? Math.min(rows, MAX_ALL_DAY_ROWS) : rows, 1) * ALL_DAY_ROW_HEIGHT + 4;
+  const pageHeights = pageRows.map(laneHeightFor);
+  const rowsNeeded = pageRows[buffer] ?? 0;
+  const laneHeight = laneHeightFor(rowsNeeded);
+  const maxChips = collapsed ? MAX_ALL_DAY_ROWS : Number.POSITIVE_INFINITY;
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ animated: false, y: 7.5 * HOUR_HEIGHT });
@@ -263,37 +283,40 @@ export function DayTimeline({
     });
   };
 
-  // A navigation the strip has rendered: take it off the lag in the same
-  // pass that drew it — resetting before the render would briefly show the
-  // wrong day. A change from outside (Today, chevrons, a tapped day, a
-  // view switch) starts the strip centred.
+  // A change from outside (Today, chevrons, a tapped day, a view switch)
+  // needs nothing from the strips, which React places with the new days;
+  // it only stops a swipe still settling, whose commit would otherwise
+  // move on from the new page. A swipe's own page change moved the first
+  // day by exactly the columns it reported.
   const firstIso = days[0]!.toString();
-  const rendered = useRef({ count: days.length, first: days[0]! });
+  const rendered = useRef({ columns: swiped.columns, count: days.length, first: days[0]! });
   useLayoutEffect(() => {
     const previous = rendered.current;
     const first = Temporal.PlainDate.from(firstIso);
-    rendered.current = { count: days.length, first };
-    const delta = previous.count === days.length ? previous.first.until(first).days : null;
-    runOnUI((change: number | null) => {
-      'worklet';
-      const left = change === null ? null : swipeLagAfterRender(lag.value, change);
-      if (left === null) {
+    rendered.current = { columns: swiped.columns, count: days.length, first };
+    if (
+      previous.count !== days.length ||
+      previous.first.until(first).days !== swiped.columns - previous.columns
+    ) {
+      runOnUI(() => {
+        'worklet';
         cancelAnimation(panX);
         setShared(pending, 0);
-        setShared(lag, 0);
         setShared(panX, 0);
-      } else {
-        setShared(lag, left);
-      }
-    })(delta);
-  }, [firstIso, days.length, lag, panX, pending]);
+      })();
+    }
+  }, [firstIso, days.length, swiped.columns, panX, pending]);
 
+  const reportSwipe = (commit: number, px: number) => {
+    setSwiped((current) => ({ columns: current.columns + commit, px }));
+    onNavigate(commit);
+  };
   // Navigates by `commit` columns now, keeping the strip where it is.
   const navigate = (commit: number) => {
     'worklet';
-    setShared(lag, lag.value + commit);
+    setShared(navigatedPx, navigatedPx.value + commit * columnWidth);
     setShared(panX, panX.value + commit * columnWidth);
-    runOnJS(onNavigate)(commit);
+    runOnJS(reportSwipe)(commit, navigatedPx.value);
   };
 
   const swipe = Gesture.Pan()
@@ -316,7 +339,12 @@ export function DayTimeline({
     .onUpdate((update) => {
       setShared(
         panX,
-        clampSwipeOffset(panStart.value + update.translationX, columnWidth, buffer, lag.value),
+        clampSwipeOffset(
+          panStart.value + update.translationX,
+          columnWidth,
+          buffer,
+          swipeLag(navigatedPx.value, swiped.px, columnWidth),
+        ),
       );
     })
     .onEnd((end, success) => {
@@ -330,7 +358,7 @@ export function DayTimeline({
             end.velocityX,
             columnWidth,
             buffer,
-            lag.value,
+            swipeLag(navigatedPx.value, swiped.px, columnWidth),
           )
         : 0;
       if (commit === 0) {
@@ -350,7 +378,15 @@ export function DayTimeline({
     });
 
   const stripStyle = useAnimatedStyle(() => ({
-    transform: [{ translateX: -buffer * columnWidth + stripOffset.value }],
+    transform: [{ translateX: panX.value - navigatedPx.value }],
+  }));
+  // The lane's height for the page at the viewport's left edge: an index
+  // into `pageHeights`, fractional mid-swipe.
+  const laneStyle = useAnimatedStyle(() => ({
+    height: interpolatePages(
+      pageHeights,
+      columnWidth > 0 ? (navigatedPx.value - panX.value - stripLeft) / columnWidth : buffer,
+    ),
   }));
 
   return (
@@ -364,7 +400,7 @@ export function DayTimeline({
         <View style={styles.weekHeader}>
           <View style={{ width: gutter }} />
           <View style={styles.stripViewport}>
-            <Animated.View style={[styles.strip, stripStyle]}>
+            <Animated.View style={[styles.strip, { left: stripLeft }, stripStyle]}>
               {strip.map((day) => (
                 <WeekStripCell
                   day={day}
@@ -379,9 +415,9 @@ export function DayTimeline({
           </View>
         </View>
       ) : null}
-      <View
+      <Animated.View
         onLayout={(layout) => setShared(laneTop, layout.nativeEvent.layout.y)}
-        style={[styles.allDayLane, { height: laneHeight }]}
+        style={[styles.allDayLane, laneStyle]}
       >
         <View style={{ width: gutter }}>
           {!collapsed && rowsNeeded > MAX_ALL_DAY_ROWS ? (
@@ -406,7 +442,7 @@ export function DayTimeline({
           )}
         </View>
         <View style={styles.stripViewport}>
-          <Animated.View style={[styles.strip, stripStyle]}>
+          <Animated.View style={[styles.strip, { left: stripLeft }, stripStyle]}>
             <Animated.View
               pointerEvents="none"
               style={[styles.laneIndicator, { width: columnWidth }, taskDrag.laneIndicatorStyle]}
@@ -439,7 +475,7 @@ export function DayTimeline({
             })}
           </Animated.View>
         </View>
-      </View>
+      </Animated.View>
 
       <GestureDetector gesture={swipe}>
         <ScrollView
@@ -478,7 +514,7 @@ export function DayTimeline({
               onLayout={(layout) => setPageWidth(layout.nativeEvent.layout.width)}
               style={[styles.eventsArea, { left: gutter }]}
             >
-              <Animated.View style={[styles.strip, stripStyle]}>
+              <Animated.View style={[styles.strip, { left: stripLeft }, stripStyle]}>
                 <Animated.View
                   pointerEvents="none"
                   style={[

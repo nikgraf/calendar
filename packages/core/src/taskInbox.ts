@@ -1,6 +1,6 @@
 import { isOverdue, partitionCalendarTasks } from './taskTiming.ts';
 import { toZonedDateTime } from './time/convert.ts';
-import type { TaskRecord } from './types.ts';
+import type { TaskListInfo, TaskRecord } from './types.ts';
 
 /** The day a task was completed on, in the zone. */
 const completionDay = (task: TaskRecord, timeZone: string): string =>
@@ -53,4 +53,18 @@ export const groupTaskInbox = (
       .filter((task) => task.dueDate !== undefined && task.dueDate > today)
       .sort(byDueThenTitle),
   };
+};
+
+/**
+ * The list the inbox's add field writes to. A filter (`accountId:listId`,
+ * null for every list) names the list the user is looking at, so a new
+ * task goes there and stays in view; when that list is hidden or read-only,
+ * and with no filter, it is the first visible writable list.
+ */
+export const taskAddTarget = (
+  lists: ReadonlyArray<TaskListInfo>,
+  filter: string | null,
+): TaskListInfo | undefined => {
+  const writable = lists.filter((list) => list.isVisible && !list.readOnly);
+  return writable.find((list) => `${list.accountId}:${list.id}` === filter) ?? writable[0];
 };

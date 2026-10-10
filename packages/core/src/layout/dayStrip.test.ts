@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vite-plus/test';
 import { Temporal } from '../time/temporal.ts';
-import { bufferedDays, bufferedRange, TWO_DAY_SWIPE_BUFFER } from './dayStrip.ts';
+import { bufferedDays, bufferedRange, pageMaxima, TWO_DAY_SWIPE_BUFFER } from './dayStrip.ts';
 
 const MONDAY = Temporal.PlainDate.from('2026-08-17');
 
@@ -38,5 +38,20 @@ describe('dayStrip', () => {
       .startOfDay();
     expect(range.startUtc).toBe(firstStart.toInstant().epochMilliseconds);
     expect(range.endUtc).toBe(afterLast.toInstant().epochMilliseconds);
+  });
+});
+
+describe('pageMaxima', () => {
+  it("gives each page the strip can show its busiest day's value", () => {
+    // The two-day view: six drawn days, five pages, the visible one third.
+    expect(pageMaxima([2, 0, 0, 0, 3, 1], 2)).toEqual([2, 0, 0, 3, 3]);
+    // The day view: each day is its own page.
+    expect(pageMaxima([1, 4, 0], 1)).toEqual([1, 4, 0]);
+    expect(pageMaxima([1, 4, 0, 2, 0, 0, 1, 0, 0], 7)).toEqual([4, 4, 2]);
+  });
+
+  it('has no page when the strip is shorter than one', () => {
+    expect(pageMaxima([1], 2)).toEqual([]);
+    expect(pageMaxima([], 1)).toEqual([]);
   });
 });

@@ -16,7 +16,7 @@ const WORK = 'cal-work';
 const iso = (ms: number) => new Date(ms).toISOString();
 
 const googleFixture: GoogleFixture = {
-  accounts: [{ email: 'e2e@nikgraf.com', id: 'acc-e2e', tasksEnabled: false }],
+  accounts: [{ email: 'e2e@example.com', id: 'acc-e2e', tasksEnabled: false }],
   calendars: [
     { accessRole: 'owner', id: WORK, primary: true, summary: 'Work' },
     { accessRole: 'owner', id: SHARED, summary: 'Shared' },
@@ -34,7 +34,7 @@ const googleFixture: GoogleFixture = {
         summary: 'Planning',
       },
       {
-        attendees: [{ email: 'e2e@nikgraf.com', responseStatus: 'declined', self: true }],
+        attendees: [{ email: 'e2e@example.com', responseStatus: 'declined', self: true }],
         end: { dateTime: iso(todayAt(15)) },
         id: 'evt-declined',
         start: { dateTime: iso(todayAt(14)) },
@@ -50,7 +50,7 @@ const seed = {
     new Account({
       contactsEnabled: false,
       createdAt: 1,
-      email: 'e2e@nikgraf.com',
+      email: 'e2e@example.com',
       id: 'acc-e2e',
       provider: 'google',
       status: 'ok',
@@ -95,11 +95,11 @@ describe('Calendar mirrors (fake Google)', () => {
     await cdp.click(add.x, add.y);
     await cdp.eval(setInput('[data-testid="mirror-name"]', 'Family'));
     const source = await cdp.locate(
-      '[data-testid="mirror-source-google-e2e-nikgraf-com-cal-work"]',
+      '[data-testid="mirror-source-google-e2e-example-com-cal-work"]',
     );
     await cdp.click(source.x, source.y);
     await cdp.eval(
-      setSelect('[data-testid="mirror-destination"]', 'google|e2e@nikgraf.com|cal-shared'),
+      setSelect('[data-testid="mirror-destination"]', 'google|e2e@example.com|cal-shared'),
     );
     // The preview says what others would see: the title and the place, nothing else.
     await cdp.waitFor(

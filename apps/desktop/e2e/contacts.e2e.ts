@@ -18,7 +18,7 @@ const seed = {
     new Account({
       contactsEnabled: true,
       createdAt: 1,
-      email: 'e2e@nikgraf.com',
+      email: 'e2e@example.com',
       id: 'acc-e2e',
       provider: 'google',
       status: 'ok',
@@ -64,7 +64,7 @@ const seed = {
     new EventRecord({
       accountId: 'acc-e2e',
       attendees: [
-        new Attendee({ email: 'e2e@nikgraf.com', isOrganizer: true, responseStatus: 'accepted' }),
+        new Attendee({ email: 'e2e@example.com', isOrganizer: true, responseStatus: 'accepted' }),
       ],
       calendarId: 'cal-work',
       endUtc: todayAt(13) + HOUR_MS,
@@ -115,9 +115,9 @@ describe('invitee combobox', () => {
     await cdp.openEditor('[title^="Planning session"]');
     await cdp.waitFor(`document.body.textContent.includes('Invitees')`);
     // The organizer is already a chip and cannot be removed.
-    expect(await chips()).toEqual(['e2e@nikgraf.com']);
+    expect(await chips()).toEqual(['e2e@example.com']);
     expect(
-      await cdp.eval(`!!document.querySelector('[aria-label="Remove e2e@nikgraf.com"]')`),
+      await cdp.eval(`!!document.querySelector('[aria-label="Remove e2e@example.com"]')`),
     ).toBe(false);
 
     await cdp.eval(`${INPUT}.focus()`);
@@ -133,7 +133,7 @@ describe('invitee combobox', () => {
     await pressKey('ArrowDown');
     await pressKey('Enter');
     await cdp.waitFor(`document.querySelectorAll('[data-invitee]').length === 2`);
-    expect(await chips()).toEqual(['e2e@nikgraf.com', 'alistair@example.com']);
+    expect(await chips()).toEqual(['e2e@example.com', 'alistair@example.com']);
     // Chosen guests drop out of the suggestions.
     await typeInvitee('ali');
     await cdp.waitFor(`document.querySelectorAll('[role="option"]').length === 1`);
@@ -149,7 +149,7 @@ describe('invitee combobox', () => {
     expect(await chips()).toContain('bob@example.com');
     await cdp.eval(`document.querySelector('[aria-label="Remove alistair@example.com"]').click()`);
     await cdp.waitFor(`document.querySelectorAll('[data-invitee]').length === 2`);
-    expect(await chips()).toEqual(['e2e@nikgraf.com', 'bob@example.com']);
+    expect(await chips()).toEqual(['e2e@example.com', 'bob@example.com']);
   });
 
   it('saves the guest list as an update op that keeps the organizer intact', async () => {
@@ -164,7 +164,7 @@ describe('invitee combobox', () => {
       })
       .toEqual([
         expect.objectContaining({
-          email: 'e2e@nikgraf.com',
+          email: 'e2e@example.com',
           isOrganizer: true,
           responseStatus: 'accepted',
         }),

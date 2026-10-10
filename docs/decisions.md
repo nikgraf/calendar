@@ -2674,6 +2674,33 @@ then iOS (both in `todo.md`).
       would never reach Maestro, and the live suite waits on
       `pending-badge` to go; VoiceOver hears the count in the button's
       label. `02-navigation` opens Settings from the Tasks tab.
+- [x] iOS Tasks filter chips — done (2026-10-10, `todo/task-filter-chips`).
+      **The chip row keeps its own height.** It is a horizontal
+      `ScrollView`, and React Native gives every ScrollView `flexGrow: 1`
+      and `flexShrink: 1`, so the row and the task list below it split the
+      screen: a long list squeezed the chips until their labels were cut
+      off, and an empty one let the row take half the screen with the
+      chips stretched down it. The row now has `flexGrow: 0` and
+      `flexShrink: 0`, and its chips are centered rather than stretched.
+- [x] iOS Tasks screen review fixes — done (2026-10-10,
+      `todo/tasks-screen-fixes`), from the review of #160. **Chips are the
+      visible lists** (`taskListChips`): the inbox leaves hidden lists
+      out, so a hidden list's chip always read "Nothing to do.", and it
+      counted toward the two lists that show the row. **The selection holds
+      only while its chip is on screen**: disconnecting Reminders with its
+      chip selected left the tab filtered to a list that was gone, with the
+      row hidden (one list left) and so no chip to clear it — derived each
+      render rather than reset in an effect, so it never draws one stale
+      frame. **The add field stays above the keyboard**: a padding
+      `KeyboardAvoidingView` inside the safe area, which already keeps the
+      tab bar clear, so the lift is the keyboard's height less the bar.
+      **A chip works while the keyboard is up** (`keyboardShouldPersistTaps`,
+      like the list). **The screen's `SafeAreaView` is
+      react-native-safe-area-context's**: React Native's is deprecated.
+      Flow 09, which connects Reminders on CI, taps the Reminders chip and,
+      after it disconnects Reminders, expects the Google task back. Not in
+      a flow: the keyboard (Maestro's visibility ignores it), checked on
+      the simulator.
 
 ### Dependency sweep (2026-10-09)
 
@@ -2869,6 +2896,57 @@ then iOS (both in `todo.md`).
       3m 39s) against 19m 24s and 22m 18s before. Billed minutes dropped,
       but shard 1 (04a's 6 min plus its flows) stays the job that sets
       the wall-clock time, at 38 of its 45 minutes.
+
+### Swipe jumps (2026-10-10)
+
+- [x] iOS timeline: a swipe no longer jumps when it lands — done
+      (`todo/ios-swipe-jump`). Reproduced on the simulator with
+      `simctl io recordVideo` and per-frame analysis of the 2-day view;
+      **two separate jumps**. (1) **A column off for one frame**: the
+      strip was laid out relative to the page React last drew, and a
+      UI-thread `lag` reset (`runOnUI` from a layout effect) undid the
+      shift the new days brought. Nothing orders that call against the
+      Fabric mount, so in 4 of 52 recorded swipes a frame showed the
+      next day (title "Oct 12 – 13" over 13 | 14). Now the UI thread adds
+      up the pixels each swipe navigated (`navigatedPx`) and hands the
+      sum to React with the page change; the strips are drawn at
+      `left: swiped.px − buffer·column` with the transform
+      `panX − navigatedPx`, so the render that draws a swipe's page moves
+      them by exactly as much as the new days move them back, in one
+      mount. A navigation from outside (Today, chevrons, a tapped day, a
+      view switch) needs no UI-thread step at all; it only stops a swipe
+      still settling. `swipeLagAfterRender` is gone; `swipeLag` derives
+      the lag from the two sums. (2) **The grid jumping a row after the
+      swipe settled**: the all-day lane was sized to the busiest _drawn_
+      day, so a busy neighbour entering or leaving the ±buffer strip
+      resized it on commit, even when nothing visible changed. The lane
+      now fits the visible page (`pageMaxima`), and mid-swipe its height
+      blends toward the incoming page (`interpolatePages`, a Reanimated
+      height), so the grid moves with the finger and is in place when the
+      swipe lands. The "less" toggle follows the visible page too.
+      Measured on the simulator: the old code moved the grid at 10 of 49
+      swipe page changes, the new code at 0 of 74; dropped frames during
+      swipes unchanged (4–8 % of vsyncs in both, simulator noise). Not
+      checked: a task drag across days after a swipe (the simulator
+      tool's touch path does not start it on the old code either; the
+      drop geometry at rest is unchanged), and a real device.
+
+### Tasks add field (2026-10-10)
+
+- [x] iOS Tasks: the add field adds to the filtered list — done
+      (`todo/tasks-add-target`). **The field writes where the user is
+      looking.** It always took the first visible writable list, so with
+      the "Mock Tasks" chip selected it said "Add a task to Reminders"
+      and the new task landed there, out of the filtered view. Now
+      `taskAddTarget` (core, beside `groupTaskInbox`) picks the filtered
+      list when it is visible and writable, for the placeholder and the
+      write alike; with "All", or a filter on a read-only or hidden list,
+      it keeps the first visible writable list. The desktop rail's inbox
+      has no list filter, so it keeps the first writable list, as do both
+      quick-add paths. Unit-tested only: no Maestro flow covers the add
+      field. Checked on the simulator with the fixture Google account and
+      Reminders connected: each chip names its own list, and a task added
+      under "Mock Tasks" shows there and not under "Reminders".
 
 ### Unsynced changes say why (2026-10-10)
 

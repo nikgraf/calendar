@@ -65,7 +65,7 @@ const invited = new EventRecord({
   accountId: 'acc-1',
   attendees: [
     new Attendee({ email: 'organizer@example.com', isOrganizer: true, responseStatus: 'accepted' }),
-    new Attendee({ email: 'nik@nikgraf.com', responseStatus: 'needsAction' }),
+    new Attendee({ email: 'nik@example.com', responseStatus: 'needsAction' }),
   ],
   calendarId: 'cal-1',
   endUtc: Date.parse('2026-07-08T11:00:00Z'),
@@ -87,7 +87,7 @@ const seed = Effect.gen(function* () {
     new Account({
       contactsEnabled: false,
       createdAt: 1,
-      email: 'nik@nikgraf.com',
+      email: 'nik@example.com',
       id: 'acc-1',
       provider: 'google',
       status: 'ok',
@@ -188,7 +188,7 @@ describe('EventMutations.respondToEvent', () => {
       const events = yield* EventRepo;
       const row = yield* events.getById('acc-1', 'cal-1', 'evt-invite');
       expect(
-        row!.attendees!.find((attendee) => attendee.email === 'nik@nikgraf.com')!.responseStatus,
+        row!.attendees!.find((attendee) => attendee.email === 'nik@example.com')!.responseStatus,
       ).toBe('accepted');
       expect(
         row!.attendees!.find((attendee) => attendee.email === 'organizer@example.com')!
@@ -201,7 +201,7 @@ describe('EventMutations.respondToEvent', () => {
       expect(Object.keys(patches[0]!)).toEqual(['attendees']);
       expect(patches[0]!.attendees).toEqual([
         { email: 'organizer@example.com', responseStatus: 'accepted' },
-        { email: 'nik@nikgraf.com', responseStatus: 'accepted' },
+        { email: 'nik@example.com', responseStatus: 'accepted' },
       ]);
 
       const ops = yield* (yield* PendingOpRepo).listAll();
@@ -222,7 +222,7 @@ describe('EventMutations.respondToEvent', () => {
       expect(ops.map((op) => op.kind).sort()).toEqual(['rsvp', 'update']);
       const rsvpOp = ops.find((op) => op.kind === 'rsvp');
       expect(
-        rsvpOp?.payload?.attendees?.find((attendee) => attendee.email === 'nik@nikgraf.com')
+        rsvpOp?.payload?.attendees?.find((attendee) => attendee.email === 'nik@example.com')
           ?.responseStatus,
       ).toBe('tentative');
     }).pipe(Effect.provide(makeLayer({}))),

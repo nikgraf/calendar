@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vite-plus/test';
 import {
   clampSwipeOffset,
+  interpolatePages,
   swipeCommitColumns,
-  swipeLagAfterRender,
+  swipeLag,
   swipeReleaseColumns,
   swipeSnapDecision,
 } from './swipeSnap.ts';
@@ -126,15 +127,45 @@ describe('a swipe that takes over the previous commit', () => {
     expect(swipeReleaseColumns(300, -800, 0, WIDE, 7, 1)).toBe(2);
   });
 
-  it("takes a render of the swipe's own navigation off the lag, and resets on any other", () => {
-    expect(swipeLagAfterRender(1, 1)).toBe(0);
-    expect(swipeLagAfterRender(2, 1)).toBe(1);
-    expect(swipeLagAfterRender(-2, -2)).toBe(0);
-    expect(swipeLagAfterRender(0, 0)).toBe(0);
-    expect(swipeLagAfterRender(1, 0)).toBe(1);
-    // Today, the chevrons or a tapped day.
-    expect(swipeLagAfterRender(0, 7)).toBeNull();
-    expect(swipeLagAfterRender(1, -3)).toBeNull();
-    expect(swipeLagAfterRender(1, 2)).toBeNull();
+  it('counts the navigated columns a render has not drawn yet', () => {
+    expect(swipeLag(0, 0, COLUMN)).toBe(0);
+    expect(swipeLag(COLUMN, 0, COLUMN)).toBe(1);
+    expect(swipeLag(-2 * COLUMN, 0, COLUMN)).toBe(-2);
+    // Drawn: the render reported the pixels the UI thread counted.
+    expect(swipeLag(3 * COLUMN, 3 * COLUMN, COLUMN)).toBe(0);
+    // Fractional widths summed over several swipes still give whole columns.
+    expect(swipeLag(175.5 * 3 + 175.5, 175.5 * 3, 175.5)).toBe(1);
+    expect(swipeLag(175.5, 175.5, 175.5)).toBe(0);
+    expect(Object.is(swipeLag(-0.1, 0, COLUMN), 0)).toBe(true);
+    // Not measured yet.
+    expect(swipeLag(COLUMN, 0, 0)).toBe(0);
+  });
+});
+
+describe('interpolatePages', () => {
+  const HEIGHTS = [52, 28, 28, 76, 28];
+
+  it("is a drawn page's own value on that page", () => {
+    expect(interpolatePages(HEIGHTS, 0)).toBe(52);
+    expect(interpolatePages(HEIGHTS, 2)).toBe(28);
+    expect(interpolatePages(HEIGHTS, 3)).toBe(76);
+  });
+
+  it('blends between two pages as the pan crosses from one to the next', () => {
+    expect(interpolatePages(HEIGHTS, 2.25)).toBe(40);
+    expect(interpolatePages(HEIGHTS, 2.5)).toBe(52);
+    expect(interpolatePages(HEIGHTS, 0.5)).toBe(40);
+  });
+
+  it('holds the outermost pages past the drawn strip', () => {
+    expect(interpolatePages(HEIGHTS, -1)).toBe(52);
+    expect(interpolatePages(HEIGHTS, 4)).toBe(28);
+    expect(interpolatePages(HEIGHTS, 9)).toBe(28);
+  });
+
+  it('survives an unmeasured strip and an empty one', () => {
+    expect(interpolatePages(HEIGHTS, Number.NaN)).toBe(52);
+    expect(interpolatePages([], 1)).toBe(0);
+    expect(interpolatePages([30], 0.5)).toBe(30);
   });
 });
