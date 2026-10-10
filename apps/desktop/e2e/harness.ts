@@ -416,6 +416,11 @@ export class Cdp {
           const cdp = new Cdp(ws);
           await cdp.send('Runtime.enable');
           await cdp.send('Page.enable');
+          // The window never takes OS focus and opens behind every other
+          // (CALENDAR_E2E_INPUT=cdp). The page acts as the focused one anyway
+          // (focus events, :focus-visible, document.hasFocus()) and keeps
+          // drawing while covered.
+          await cdp.send('Emulation.setFocusEmulationEnabled', { enabled: true });
           return cdp;
         }
       } catch {
@@ -438,9 +443,16 @@ export class Cdp {
 
   send(method: string, params: Record<string, unknown> = {}): Promise<unknown> {
     const id = ++this.nextId;
+    // Mouse input in whole pixels, also from a spec's own dispatch: a
+    // fractional position mis-fires, and the app takes it for the OS's
+    // cursor and drops it (CALENDAR_E2E_INPUT=cdp, windows.ts).
+    const sent =
+      method === 'Input.dispatchMouseEvent'
+        ? { ...params, x: Math.round(Number(params['x'])), y: Math.round(Number(params['y'])) }
+        : params;
     return new Promise((resolve, reject) => {
       this.pending.set(id, { reject, resolve });
-      this.ws.send(JSON.stringify({ id, method, params }));
+      this.ws.send(JSON.stringify({ id, method, params: sent }));
     });
   }
 
@@ -933,6 +945,9 @@ export const launchApp = async (seed?: SeedData, options: LaunchOptions = {}): P
       ...googleEnv,
       ...(options.model === 'fixture' ? { CALENDAR_MODEL: 'fixture' } : {}),
       CALENDAR_AGENT_SOCKET: agentSocketPath,
+      // The windows take no OS input: a developer typing or touching the
+      // trackpad during a run must not reach the test (windows.ts).
+      CALENDAR_E2E_INPUT: 'cdp',
       // A seeded birthday with reminders on must never post a real banner.
       CALENDAR_NOTIFICATIONS: 'off',
       CALENDAR_SETTINGS_FILE: settingsFilePath,
