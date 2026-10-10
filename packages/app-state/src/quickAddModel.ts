@@ -58,6 +58,11 @@ export const useQuickAddModel = ({
   const [found, setFound] = useState<FindTimeOutcome | null>(null);
   const [voice, setVoice] = useState<VoiceState>('idle');
   const [voiceAvailable, setVoiceAvailable] = useState(false);
+  // A parse takes seconds; the kind may be flipped meanwhile. The result
+  // goes to the latest render's apply, which sees the editor as it is
+  // then, not to the one submit was called from.
+  const applyRef = useRef(onApply);
+  applyRef.current = onApply;
 
   useEffect(() => {
     let cancelled = false;
@@ -110,7 +115,7 @@ export const useQuickAddModel = ({
         setError(result.reason);
         return;
       }
-      onApply(
+      applyRef.current(
         result.kind === 'task'
           ? { kind: 'task', prefill: result.prefill }
           : { kind: 'event', prefill: result.prefill },
@@ -126,7 +131,7 @@ export const useQuickAddModel = ({
   const pickSlot = (slot: FreeSlot) => {
     const title = found?.title ?? '';
     setFound(null);
-    onApply({
+    applyRef.current({
       kind: 'event',
       prefill: {
         date: slot.date,

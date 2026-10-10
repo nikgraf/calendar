@@ -16,6 +16,7 @@ import {
   taskToEventLossSummary,
   taskValuesToEventValues,
   todoKindOf,
+  todoProviderOf,
 } from '@calendar/core';
 import type { EditorConfirmRequest, useEventEditorModel } from './editorModel.ts';
 import { getLastUsedTaskListKey, type useTaskEditorModel } from './taskEditorModel.ts';
@@ -92,17 +93,23 @@ export const switchEditorMode = async ({
     return true;
   }
 
-  // A task or a reminder: the list decides the provider, so the kind's
-  // default list is picked first. The kind is only offered when one exists.
+  // A task or a reminder: the list decides the provider. A list already
+  // picked for that provider stays (a round trip through the event form,
+  // or the Tasks tab's filtered list); otherwise the kind's default list
+  // is picked. The kind is only offered when one exists.
   const existingTask = taskModel.existing;
   const ownKind = existingTask ? todoKindOf(existingTask.provider) : undefined;
+  const picked = taskModel.offeredLists.find(
+    (list) => taskListKeyOf(list) === taskModel.listKey && list.provider === todoProviderOf(next),
+  );
   const target =
     next === ownKind && existingTask
       ? undefined
-      : defaultTodoList(taskModel.offeredLists, {
+      : (picked ??
+        defaultTodoList(taskModel.offeredLists, {
           kind: next,
           lastUsedKey: getLastUsedTaskListKey(),
-        });
+        }));
   const targetKey =
     next === ownKind && existingTask
       ? taskListKeyOf({ accountId: existingTask.accountId, id: existingTask.listId })

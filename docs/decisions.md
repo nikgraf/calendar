@@ -3020,5 +3020,12 @@ then iOS (both in `todo.md`).
       the gate, the desktop convert / taskConvert / taskConvertGoogle /
       capture / flows specs (the list-select moves became kind taps:
       a reminder's picker no longer offers Google lists), and the iOS
-      flows 03/06/08/09/17 on the simulator with the fixture model and
-      Google.
+      flows 03/06/07/08/09/12/14/17/25 on the simulator with the fixture
+      model and Google. Review (Codex) found four things the probes had
+      not: a list picked for a kind now survives a round trip through the
+      event form (it was reset to the default); a parse that lands after
+      the kind flipped applies to the editor as it is then (the submit's
+      closure saw the old kind); "No due date" is hidden on an event →
+      task conversion (its draft always carries the day); and a location
+      a phrase set gets the one-time map lookup an opening location gets
+      (`givenLocation`).

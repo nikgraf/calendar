@@ -447,10 +447,14 @@ export const useTaskEditorModel = ({
     canMoveList,
     /**
      * Takes a new task's due day away: it is created undated and shown on
-     * today until done. Creates only — `updateTask` cannot clear a stored
-     * due day, so an existing task keeps the control hidden.
+     * today until done. Plain creates only — `updateTask` cannot clear a
+     * stored due day, and a conversion keeps the event's day (its draft
+     * always carries one), so both keep the control hidden.
      */
-    clearDueDate: existing === undefined ? () => setDated(false) : undefined,
+    clearDueDate:
+      existing === undefined && seed.convertFromEvent === undefined
+        ? () => setDated(false)
+        : undefined,
     /** False for a task without a due day, until one is added. */
     dated,
     dueDate,
