@@ -2674,6 +2674,14 @@ then iOS (both in `todo.md`).
       would never reach Maestro, and the live suite waits on
       `pending-badge` to go; VoiceOver hears the count in the button's
       label. `02-navigation` opens Settings from the Tasks tab.
+- [x] iOS Tasks filter chips — done (2026-10-10, `todo/task-filter-chips`).
+      **The chip row keeps its own height.** It is a horizontal
+      `ScrollView`, and React Native gives every ScrollView `flexGrow: 1`
+      and `flexShrink: 1`, so the row and the task list below it split the
+      screen: a long list squeezed the chips until their labels were cut
+      off, and an empty one let the row take half the screen with the
+      chips stretched down it. The row now has `flexGrow: 0` and
+      `flexShrink: 0`, and its chips are centered rather than stretched.
 
 ### Dependency sweep (2026-10-09)
 
