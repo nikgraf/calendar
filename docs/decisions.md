@@ -2928,3 +2928,41 @@ then iOS (both in `todo.md`).
       field. Checked on the simulator with the fixture Google account and
       Reminders connected: each chip names its own list, and a task added
       under "Mock Tasks" shows there and not under "Reminders".
+
+### Drags meet other input (2026-10-10)
+
+- [x] Desktop: a drag survives a key or a lost capture in the middle of
+      it — done (`todo/drag-other-input`). Investigated after
+      PR #162's local repro: with `TZ=Etc/GMT+2` and the OAuth file
+      present, the first lane-chip drag after launch failed 5 of 22
+      times, either dropping nothing or landing three days late. **No
+      re-render was involved.** Reproduced 3 of 40 times (2 no-drop, 1
+      wrong day), with mount, render and drop logging in the renderer
+      and a pointer, key and focus trace. Neither failure changed the
+      strip or remounted the chip. Both were input the harness never
+      sent, reaching the e2e window, which has focus and sits under the
+      cursor:
+      (1) **No drop**: pointer moves with fractional coordinates (a
+      trackpad; CDP sends whole pixels) and no button arrived mid-drag.
+      Chromium dropped the chip's capture, the release went to the grid,
+      and the chip **stayed lifted**: preview, drop slot and the
+      disabled wheel pan held until the next press.
+      (2) **Three days late**: the task editor opened mid-drag with no
+      pointerup. Only Enter or Space on the chip opens it that way, and
+      the press had focused the chip. The 360 px panel narrowed the
+      grid, so the release x fell past the last column and was clamped
+      to the strip's end (Oct 13 = index 10). The drop matched the
+      indicator, which followed the narrowed grid.
+      Injecting either input through CDP reproduces its failure every
+      time. **Fixes, in the drag hook**: while a press is under way,
+      Enter and Space do nothing (a window capture listener, ahead of
+      every block's, chip's and row's own handler). A `lostpointercapture`
+      for the pressed pointer ends the press like Escape or a
+      pointercancel, and the stray release's click is still suppressed.
+      A lost capture ends the drag instead of trying to finish it: the
+      input says the button went up somewhere the chip never heard.
+      TZ and the OAuth file play no part (neither changes a render during
+      the drag; quiet-machine loops in that setup ran 0 of 110). The
+      correlation came from when the runs happened. Regression tests: "A
+      chip drag meets other input" in `reminders.e2e.ts`, both failing on
+      main every run (also at 6× throttling and at 1024 px).

@@ -187,19 +187,44 @@ export const useEventDrag = ({
   // Suppresses the day column's slot-click that follows a drag's pointerup.
   const suppressClickRef = useRef(false);
 
+  /** Ends a press without changing anything: Escape, a cancelled pointer, a lost capture. */
+  const abandonPress = () => {
+    // The abandoned release still emits a click — keep it from falling
+    // through to the day column's slot-click.
+    if (originRef.current?.active) {
+      suppressClickRef.current = true;
+    }
+    originRef.current = null;
+    setPreview(null);
+    publishDeltas(NO_DELTAS);
+    publishPointer(null);
+    activeItemKeyRef.current = null;
+  };
+
   useEffect(() => {
     const onKeyDown = (keyEvent: KeyboardEvent) => {
       if (keyEvent.key === 'Escape' && originRef.current) {
-        // The abandoned pointerup still emits a click — keep it from
-        // falling through to the day column's slot-click.
-        if (originRef.current.active) {
-          suppressClickRef.current = true;
-        }
-        originRef.current = null;
-        setPreview(null);
-        publishDeltas(NO_DELTAS);
-        publishPointer(null);
-        activeItemKeyRef.current = null;
+        abandonPress();
+      }
+    };
+    // Enter and Space open the focused block, chip or row, and a press
+    // focuses what it lands on: hit mid-drag, they would open its editor,
+    // whose panel narrows the grid under the pointer and so moves the drop.
+    // Captured here, ahead of the item's own key handler.
+    const onActivationKey = (keyEvent: KeyboardEvent) => {
+      if (originRef.current && (keyEvent.key === 'Enter' || keyEvent.key === ' ')) {
+        keyEvent.preventDefault();
+        keyEvent.stopPropagation();
+      }
+    };
+    // A capture lost without a pointerup (the button went up where the item
+    // never heard it: a second mouse or trackpad moving mid-drag does that)
+    // would leave the press lifted, holding its drop indicator and the wheel
+    // pan, until the next one. A release ends the press before its capture
+    // goes, so only an abandoned press gets here.
+    const onLostCapture = (pointerEvent: PointerEvent) => {
+      if (originRef.current?.pointerId === pointerEvent.pointerId) {
+        abandonPress();
       }
     };
     // A suppressed click belongs to the gesture that set it. A cancelled
@@ -209,9 +234,13 @@ export const useEventDrag = ({
       suppressClickRef.current = false;
     };
     window.addEventListener('keydown', onKeyDown);
+    window.addEventListener('keydown', onActivationKey, true);
+    window.addEventListener('lostpointercapture', onLostCapture, true);
     window.addEventListener('pointerdown', onPressStart, true);
     return () => {
       window.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener('keydown', onActivationKey, true);
+      window.removeEventListener('lostpointercapture', onLostCapture, true);
       window.removeEventListener('pointerdown', onPressStart, true);
     };
   }, []);
@@ -379,14 +408,7 @@ export const useEventDrag = ({
     if (!origin || origin.pointerId !== domEvent.pointerId) {
       return;
     }
-    if (origin.active) {
-      suppressClickRef.current = true;
-    }
-    originRef.current = null;
-    setPreview(null);
-    publishDeltas(NO_DELTAS);
-    publishPointer(null);
-    activeItemKeyRef.current = null;
+    abandonPress();
   };
 
   const onPointerUp = (domEvent: React.PointerEvent) => {

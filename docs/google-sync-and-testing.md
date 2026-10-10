@@ -629,6 +629,15 @@ Flakiness lessons (each caused a real CI failure — keep them enforced):
   the renderer throttled — `cdp.send('Emulation.setCPUThrottlingRate',
   { rate: 6 })`, also 12× — and never commit the throttle: it made #146's
   race and the stale inspector fail within a few rounds.
+- **A local run is not alone at the keyboard.** The e2e window takes
+  focus when it shows and opens under the cursor: a key typed or a
+  trackpad touched during a run is input to the test window. A press
+  focuses its chip, so a Space opened the editor mid-drag, and a moving
+  trackpad dropped the drag's capture. A loop of the first drag after
+  launch failed 3 of 40 times that way, and a wrong theory (a re-render
+  from sync) explained it at first. Leave the Mac alone while a loop
+  runs. To tell, trace window `pointermove`/`keydown` in capture: input
+  the harness never sent shows as fractional coordinates or keys.
 - React inputs need the native value setter + `input`/`change` event
   dispatch; `<select>` likewise (`HTMLSelectElement` prototype setter).
 - Tests share one app instance and run in file order — later tests must
