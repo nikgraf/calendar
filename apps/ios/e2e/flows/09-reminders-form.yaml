@@ -23,7 +23,8 @@ tags:
 - runFlow:
     when:
       visible: 'fixture@solunivo.test'
-      notVisible: 'Reminders.*'
+      notVisible:
+        id: 'mode-reminder'
     commands:
       - evalScript: ${output.connectedReminders = true}
       - tapOn: 'Cancel'
@@ -43,17 +44,27 @@ tags:
       - assertVisible: 'Today'
       - runFlow: ../common/open-new-event.yaml
       - runFlow: ../common/switch-to-task.yaml
-      # The first pass after connecting has to land before the list shows.
+      # The first pass after connecting has to land before the Reminder kind shows.
       - extendedWaitUntil:
-          visible: 'Reminders.*'
+          visible:
+            id: 'mode-reminder'
           timeout: 30000
-# Pick the first Reminders list: its rows carry a color swatch, but the
-# stable handle is the list title. 'Reminders' is the default list name.
+# The Reminder kind opens the Reminders form on the default list
+# ('Reminders' is the default list name; the kind picks it).
 - runFlow:
     when:
-      visible: 'Reminders.*'
+      visible:
+        id: 'mode-reminder'
     commands:
-      - tapOn: 'Reminders.*'
+      - tapOn:
+          id: 'mode-reminder'
+      - assertVisible: 'New Reminder'
+      # The quick-add field's keyboard covers the lower rows and Maestro's
+      # visibility check ignores it (see 03): a tap on the priority chip
+      # would land on the keyboard. A plain label dismisses it first.
+      - tapOn: 'LIST'
+      - waitForAnimationToEnd:
+          timeout: 5000
       # The form morphed: Reminders-only controls are on screen.
       - assertVisible:
           id: 'reminder-timed'
@@ -72,7 +83,7 @@ tags:
       - tapOn:
           id: 'event-save'
       - extendedWaitUntil:
-          notVisible: 'New Task'
+          notVisible: 'New Reminder'
           timeout: 20000
       # Timed reminders live in the time grid. Their compact title keeps the
       # priority marker while the due time is exposed by the body label.
@@ -288,11 +299,11 @@ tags:
             - tapOn: 'Calendar'
             - assertVisible: 'Today'
 # Keyed on the sheet still being open (see 08): after the branch above
-# closed it, "no Reminders list visible" would be true for the wrong
+# closed it, "no Reminder kind visible" would be true for the wrong
 # reason and the Cancel tap would fail.
 - runFlow:
     when:
-      visible: 'New Task'
+      visible: 'New (Task|Reminder)'
     commands:
       - tapOn: 'Cancel'
       - assertVisible: 'Today'

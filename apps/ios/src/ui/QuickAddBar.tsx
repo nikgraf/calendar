@@ -1,26 +1,12 @@
 import { makeFindSlots } from '@calendar/ai';
-import {
-  eventDraftFromPrefill,
-  getLastUsedCalendarKey,
-  rememberCalendar,
-  taskParamsFromPrefill,
-  useCalendars,
-  useGuardedMutations,
-  useModelAvailability,
-  useQuickAddModel,
-  useTaskLists,
-  type QuickAddReview,
-  type TaskEditorSeed,
-} from '@calendar/app-state';
-import { formatPlainTime, formatSlotLabel, isCalendarWritable, Temporal } from '@calendar/core';
-import { useMemo } from 'react';
+import { useModelAvailability, useQuickAddModel, type QuickAddItem } from '@calendar/app-state';
+import { formatSlotLabel } from '@calendar/core';
+import { useEffect, useMemo, useRef } from 'react';
 import {
   ActivityIndicator,
   AppState,
-  Modal,
   Platform,
   Pressable,
-  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -29,7 +15,7 @@ import {
 import { appleSpeech } from '../appleSpeech.ts';
 import { backendClient } from '../backend.ts';
 import { languageModel } from '../model.ts';
-import type { EditSeed } from './EventEditSheet.tsx';
+import { SegmentedControl } from './SegmentedControl.tsx';
 import { BOX_FONT_SCALE, type ThemeColors, useStyles } from './theme.ts';
 
 /** Foundation Models exist from iOS 26; below that there is nothing to say. */
@@ -55,304 +41,171 @@ const onAppActive = (onActive: () => void): (() => void) => {
   return () => subscription.remove();
 };
 
-const reviewLine = (review: QuickAddReview): string => {
-  const day = Temporal.PlainDate.from(review.prefill.date).toLocaleString('en-US', {
-    day: 'numeric',
-    month: 'short',
-    weekday: 'short',
-  });
-  if (review.kind === 'task') {
-    return review.prefill.time ? `${day} · ${formatPlainTime(review.prefill.time)}` : day;
-  }
-  return review.prefill.isAllDay
-    ? `${day} · all day`
-    : `${day} · ${formatPlainTime(review.prefill.startTime)} – ${formatPlainTime(review.prefill.endTime)}`;
-};
-
 /**
- * The "+" sheet: a phrase, typed or dictated, becomes an event or a task
- * — held for a look first ("Understood as", with an Event/Task toggle),
- * then added as it stands or opened in the editor. Find a time lists free
- * slots. "New event" opens the empty editor without the model, which is
- * also what the e2e flows take. Nothing is written by the model itself.
+ * The quick-add field on top of a new item's editor: a phrase, typed or
+ * dictated, fills the form below (Return, Apply, or the end of a
+ * dictation). Find a time lists free slots; a picked one fills the
+ * event's day and times. Nothing is written by the model itself, and
+ * without it the field says why and the form below is still there.
  */
-export function QuickAddSheet({
-  focusedDate,
-  onClose,
-  onEditEvent,
-  onEditTask,
+export function QuickAddBar({
+  fallbackDate,
+  onApply,
   timeZone,
 }: {
-  /** The day being viewed: undated phrases and "New event" land on it, like the editor from a slot. */
-  focusedDate: Temporal.PlainDate;
-  onClose: () => void;
-  onEditEvent: (seed: EditSeed) => void;
-  onEditTask: (seed: TaskEditorSeed) => void;
+  /** Undated phrases land on this day (the editor's). */
+  fallbackDate: string;
+  onApply: (item: QuickAddItem) => void;
   timeZone: string;
 }) {
   const styles = useStyles(makeStyles);
+  const inputRef = useRef<TextInput>(null);
   const { checking, retry, status } = useModelAvailability(languageModel, onAppActive);
   const findSlots = useMemo(
     () => makeFindSlots(languageModel, backendClient, timeZone),
     [timeZone],
   );
-  const calendars = useCalendars();
-  const taskLists = useTaskLists();
-  const { createEvent, createTask } = useGuardedMutations();
   const {
     busy,
-    confirmReview,
-    dismissReview,
     error,
     found,
     mode,
     phrase,
     pickSlot,
-    review,
     setMode,
     setPhrase,
-    setReviewKind,
     startRecording,
     stopRecording,
     submit,
     voice,
     voiceAvailable,
   } = useQuickAddModel({
-    fallbackDate: focusedDate.toString(),
+    fallbackDate,
     findSlots,
     model: languageModel,
-    onPrefill: (prefill) =>
-      onEditEvent({ initialDate: Temporal.PlainDate.from(prefill.date), prefill }),
-    onTaskPrefill: (prefill) =>
-      onEditTask({
-        dated: true,
-        initialDate: prefill.date,
-        initialTime: prefill.time,
-        title: prefill.title,
-      }),
-    reviewFirst: true,
+    onApply,
     speech: appleSpeech,
     timeZone,
   });
 
-  const writableCalendar = () => {
-    const writable = calendars.filter(isCalendarWritable);
-    const last = getLastUsedCalendarKey();
-    return (
-      writable.find((calendar) => `${calendar.accountId}:${calendar.id}` === last) ?? writable[0]
-    );
-  };
-  const targetList = taskLists.find((list) => list.isVisible && !list.readOnly);
-
-  /** "Add event" / "Add task": the item as understood, written without the editor. */
-  const addNow = () => {
-    if (!review) {
-      return;
-    }
-    if (review.kind === 'event') {
-      const calendar = writableCalendar();
-      if (!calendar) {
-        return;
-      }
-      rememberCalendar(`${calendar.accountId}:${calendar.id}`);
-      void createEvent(
-        eventDraftFromPrefill(
-          review.prefill,
-          { accountId: calendar.accountId, calendarId: calendar.id },
-          timeZone,
-        ),
-      );
-    } else {
-      if (!targetList) {
-        return;
-      }
-      void createTask(taskParamsFromPrefill(review.prefill, targetList));
-    }
-    dismissReview();
-    onClose();
-  };
-
   // A build without the framework, or an OS too old for it, gives the
   // user nothing to act on; otherwise say why the field is missing — the
-  // silence is what made this hard to diagnose. "New event" stays either way.
+  // silence is what made this hard to diagnose. The form stays either way.
   const unavailable = status !== null && status !== 'ready';
   const explain = unavailable && status !== 'missing-module' && iosMajorVersion() >= MODEL_MIN_IOS;
 
+  // The field is what a new item opens on. `autoFocus` inside a page
+  // sheet is not reliable while it is still sliding in, so the focus is
+  // asked for once the sheet has settled.
+  useEffect(() => {
+    if (status !== 'ready') {
+      return;
+    }
+    const timer = setTimeout(() => inputRef.current?.focus(), 400);
+    return () => clearTimeout(timer);
+  }, [status]);
+
+  // The marker renders once the availability check resolved, whatever it said.
+  if (status === null) {
+    return null;
+  }
   return (
-    <Modal animationType="slide" onRequestClose={onClose} presentationStyle="pageSheet" visible>
-      <View style={styles.container} testID="quick-add-sheet">
-        <View style={styles.header}>
-          <Pressable accessibilityRole="button" onPress={onClose} testID="quick-add-cancel">
-            <Text maxFontSizeMultiplier={BOX_FONT_SCALE} style={styles.cancel}>
-              Cancel
-            </Text>
+    <View style={styles.bar} testID="quick-add-state">
+      {explain ? (
+        <View style={styles.notice}>
+          <Text style={styles.noticeText}>{UNAVAILABLE_NOTICE}</Text>
+          <Pressable
+            accessibilityLabel="Check for the on-device model again"
+            accessibilityRole="button"
+            disabled={checking}
+            onPress={retry}
+            style={[styles.secondaryButton, checking && styles.disabled]}
+            testID="quick-add-recheck"
+          >
+            <Text style={styles.secondaryLabel}>Retry</Text>
           </Pressable>
-          <Text maxFontSizeMultiplier={BOX_FONT_SCALE} style={styles.title}>
-            {mode === 'find' ? 'Find a time' : 'Quick add'}
-          </Text>
-          <View style={styles.headerSpacer} />
         </View>
-        <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-          {/* The marker renders once the availability check resolved, whatever it said. */}
-          {status === null ? null : (
-            <View testID="quick-add-state">
-              {explain ? (
-                <View style={styles.notice}>
-                  <Text style={styles.noticeText}>{UNAVAILABLE_NOTICE}</Text>
-                  <Pressable
-                    accessibilityLabel="Check for the on-device model again"
-                    accessibilityRole="button"
-                    disabled={checking}
-                    onPress={retry}
-                    style={[styles.secondaryButton, checking && styles.disabled]}
-                    testID="quick-add-recheck"
-                  >
-                    <Text style={styles.secondaryLabel}>Retry</Text>
-                  </Pressable>
-                </View>
-              ) : null}
-              {unavailable ? null : (
-                <>
-                  <View style={styles.modeRow}>
-                    {(['add', 'find'] as const).map((option) => (
-                      <Pressable
-                        accessibilityRole="button"
-                        accessibilityState={{ selected: mode === option }}
-                        key={option}
-                        onPress={() => setMode(option)}
-                        style={[styles.modeChip, mode === option && styles.modeChipActive]}
-                        testID={option === 'find' ? 'find-time-mode' : 'quick-add-mode'}
-                      >
-                        <Text style={[styles.modeLabel, mode === option && styles.modeLabelActive]}>
-                          {option === 'add' ? 'Add' : 'Find time'}
-                        </Text>
-                      </Pressable>
-                    ))}
-                  </View>
-                  <View style={styles.row}>
-                    <TextInput
-                      accessibilityLabel={
-                        mode === 'find' ? 'Describe the time you need' : 'Describe an event to add'
-                      }
-                      autoFocus
-                      editable={!busy}
-                      onChangeText={setPhrase}
-                      onSubmitEditing={() => void submit()}
-                      placeholder={
-                        mode === 'find'
-                          ? '90 min focus this week, mornings'
-                          : 'Lunch with Sarah tomorrow at 1'
-                      }
-                      returnKeyType="go"
-                      style={styles.input}
-                      testID="quick-add-input"
-                      value={phrase}
-                    />
-                    {voiceAvailable && !busy && voice !== 'transcribing' ? (
-                      <Pressable
-                        accessibilityLabel={
-                          voice === 'recording' ? 'Stop dictating' : 'Dictate an event'
-                        }
-                        accessibilityRole="button"
-                        disabled={voice === 'preparing'}
-                        onPress={() =>
-                          void (voice === 'recording' ? stopRecording() : startRecording())
-                        }
-                        style={[styles.mic, voice === 'recording' && styles.micRecording]}
-                        testID="quick-add-mic"
-                      >
-                        <Text maxFontSizeMultiplier={BOX_FONT_SCALE} style={styles.micLabel}>
-                          {voice === 'recording' ? '■' : '🎙'}
-                        </Text>
-                      </Pressable>
-                    ) : null}
-                    {busy || voice === 'transcribing' || voice === 'preparing' ? (
-                      <ActivityIndicator style={styles.spinner} />
-                    ) : (
-                      <Pressable
-                        accessibilityLabel="Add the described event"
-                        accessibilityRole="button"
-                        disabled={phrase.trim() === '' || voice === 'recording'}
-                        onPress={() => void submit()}
-                        style={[
-                          styles.button,
-                          (phrase.trim() === '' || voice === 'recording') && styles.disabled,
-                        ]}
-                        testID="quick-add-submit"
-                      >
-                        <Text style={styles.buttonLabel}>{mode === 'find' ? 'Find' : 'Add'}</Text>
-                      </Pressable>
-                    )}
-                  </View>
-                  {voice === 'preparing' ? (
-                    <Text style={styles.hint}>Preparing dictation…</Text>
-                  ) : voice === 'recording' ? (
-                    <Text style={styles.hint}>Listening — tap ■ when finished.</Text>
-                  ) : voice === 'transcribing' ? (
-                    <Text style={styles.hint}>Transcribing…</Text>
-                  ) : null}
-                  {error ? <Text style={styles.error}>{error}</Text> : null}
-                </>
-              )}
-            </View>
-          )}
-
-          {review ? (
-            <View style={styles.card} testID="quick-add-review">
-              <View style={styles.cardHeader}>
-                <Text style={styles.cardEyebrow}>Understood as</Text>
-                <View style={styles.modeRow}>
-                  {(['event', 'task'] as const).map((kind) => (
-                    <Pressable
-                      accessibilityRole="button"
-                      accessibilityState={{ selected: review.kind === kind }}
-                      key={kind}
-                      onPress={() => setReviewKind(kind)}
-                      style={[styles.modeChip, review.kind === kind && styles.modeChipActive]}
-                      testID={`quick-add-kind-${kind}`}
-                    >
-                      <Text
-                        style={[styles.modeLabel, review.kind === kind && styles.modeLabelActive]}
-                      >
-                        {kind === 'event' ? 'Event' : 'Task'}
-                      </Text>
-                    </Pressable>
-                  ))}
-                </View>
-              </View>
-              <Text style={styles.cardTitle}>{review.prefill.title}</Text>
-              <Text style={styles.cardMeta}>{reviewLine(review)}</Text>
-              <Text style={styles.cardMeta}>
-                {review.kind === 'event'
-                  ? (writableCalendar()?.summary ?? 'No calendar')
-                  : (targetList?.title ?? 'No task list')}
-              </Text>
-              <View style={styles.cardActions}>
-                <Pressable
-                  accessibilityRole="button"
-                  onPress={confirmReview}
-                  style={styles.secondaryButton}
-                  testID="quick-add-edit"
-                >
-                  <Text style={styles.secondaryLabel}>Edit details</Text>
-                </Pressable>
-                <Pressable
-                  accessibilityRole="button"
-                  onPress={addNow}
-                  style={styles.button}
-                  testID="quick-add-confirm"
-                >
-                  <Text style={styles.buttonLabel}>
-                    {review.kind === 'event' ? 'Add event' : 'Add task'}
-                  </Text>
-                </Pressable>
-              </View>
-            </View>
+      ) : null}
+      {unavailable ? null : (
+        <>
+          <View style={styles.modeRow}>
+            <Text style={styles.eyebrow}>{mode === 'find' ? 'Find a time' : 'Describe it'}</Text>
+            <SegmentedControl
+              accessibilityLabel="Quick-add mode"
+              onChange={setMode}
+              options={[
+                { label: 'Add', testID: 'quick-add-mode', value: 'add' },
+                { label: 'Find time', testID: 'find-time-mode', value: 'find' },
+              ]}
+              value={mode}
+            />
+          </View>
+          <View style={styles.row}>
+            <TextInput
+              accessibilityLabel={
+                mode === 'find' ? 'Describe the time you need' : 'Describe what to add'
+              }
+              editable={!busy}
+              onChangeText={setPhrase}
+              onSubmitEditing={() => void submit()}
+              placeholder={
+                mode === 'find'
+                  ? '90 min focus this week, mornings'
+                  : 'Lunch with Sarah tomorrow at 1'
+              }
+              ref={inputRef}
+              returnKeyType="go"
+              style={styles.input}
+              testID="quick-add-input"
+              value={phrase}
+            />
+            {voiceAvailable && !busy && voice !== 'transcribing' ? (
+              <Pressable
+                accessibilityLabel={voice === 'recording' ? 'Stop dictating' : 'Dictate'}
+                accessibilityRole="button"
+                disabled={voice === 'preparing'}
+                onPress={() => void (voice === 'recording' ? stopRecording() : startRecording())}
+                style={[styles.mic, voice === 'recording' && styles.micRecording]}
+                testID="quick-add-mic"
+              >
+                <Text maxFontSizeMultiplier={BOX_FONT_SCALE} style={styles.micLabel}>
+                  {voice === 'recording' ? '■' : '🎙'}
+                </Text>
+              </Pressable>
+            ) : null}
+            {busy || voice === 'transcribing' || voice === 'preparing' ? (
+              <ActivityIndicator style={styles.spinner} />
+            ) : (
+              <Pressable
+                accessibilityLabel={
+                  mode === 'find' ? 'Find free slots' : 'Fill the form from the phrase'
+                }
+                accessibilityRole="button"
+                disabled={phrase.trim() === '' || voice === 'recording'}
+                onPress={() => void submit()}
+                style={[
+                  styles.button,
+                  (phrase.trim() === '' || voice === 'recording') && styles.disabled,
+                ]}
+                testID="quick-add-apply"
+              >
+                <Text maxFontSizeMultiplier={BOX_FONT_SCALE} style={styles.buttonLabel}>
+                  {mode === 'find' ? 'Find' : 'Apply'}
+                </Text>
+              </Pressable>
+            )}
+          </View>
+          {voice === 'preparing' ? (
+            <Text style={styles.hint}>Preparing dictation…</Text>
+          ) : voice === 'recording' ? (
+            <Text style={styles.hint}>Listening — tap ■ when finished.</Text>
+          ) : voice === 'transcribing' ? (
+            <Text style={styles.hint}>Transcribing…</Text>
           ) : null}
-
+          {error ? <Text style={styles.error}>{error}</Text> : null}
           {found ? (
-            <View style={styles.card}>
-              <Text style={styles.cardEyebrow}>Free slots</Text>
+            <View style={styles.slots}>
+              <Text style={styles.eyebrow}>Free slots</Text>
               <View style={styles.slotRow}>
                 {found.slots.map((slot, index) => (
                   <Pressable
@@ -368,24 +221,19 @@ export function QuickAddSheet({
               </View>
             </View>
           ) : null}
-
-          <Pressable
-            accessibilityRole="button"
-            onPress={() => onEditEvent({ initialDate: focusedDate })}
-            style={styles.newEvent}
-            testID="quick-add-new-event"
-          >
-            <Text style={styles.newEventLabel}>New event</Text>
-            <Text style={styles.newEventHint}>Open the empty editor</Text>
-          </Pressable>
-        </ScrollView>
-      </View>
-    </Modal>
+        </>
+      )}
+    </View>
   );
 }
 
 const makeStyles = (colors: ThemeColors) =>
   StyleSheet.create({
+    bar: {
+      gap: 8,
+      paddingHorizontal: 16,
+      paddingVertical: 8,
+    },
     button: {
       backgroundColor: colors.primary,
       borderRadius: 8,
@@ -397,50 +245,6 @@ const makeStyles = (colors: ThemeColors) =>
       fontSize: 15,
       fontWeight: '600',
     },
-    cancel: {
-      color: colors['text-secondary'],
-      fontSize: 16,
-    },
-    card: {
-      backgroundColor: colors['surface-subtle'],
-      borderRadius: 12,
-      gap: 6,
-      padding: 14,
-    },
-    cardActions: {
-      flexDirection: 'row',
-      gap: 8,
-      justifyContent: 'flex-end',
-      marginTop: 6,
-    },
-    cardEyebrow: {
-      color: colors.primary,
-      fontSize: 12,
-      fontWeight: '600',
-    },
-    cardHeader: {
-      alignItems: 'center',
-      flexDirection: 'row',
-      justifyContent: 'space-between',
-    },
-    cardMeta: {
-      color: colors['text-secondary'],
-      fontSize: 14,
-    },
-    cardTitle: {
-      color: colors.text,
-      fontSize: 17,
-      fontWeight: '600',
-    },
-    container: {
-      backgroundColor: colors.canvas,
-      flex: 1,
-    },
-    content: {
-      gap: 14,
-      padding: 16,
-      paddingBottom: 48,
-    },
     disabled: {
       opacity: 0.4,
     },
@@ -448,15 +252,10 @@ const makeStyles = (colors: ThemeColors) =>
       color: colors.danger,
       fontSize: 13,
     },
-    header: {
-      alignItems: 'center',
-      flexDirection: 'row',
-      justifyContent: 'space-between',
-      paddingHorizontal: 16,
-      paddingVertical: 14,
-    },
-    headerSpacer: {
-      width: 56,
+    eyebrow: {
+      color: colors.primary,
+      fontSize: 12,
+      fontWeight: '600',
     },
     hint: {
       color: colors['text-secondary'],
@@ -485,44 +284,10 @@ const makeStyles = (colors: ThemeColors) =>
     micRecording: {
       backgroundColor: colors['event-blush'],
     },
-    modeChip: {
-      borderRadius: 7,
-      paddingHorizontal: 12,
-      paddingVertical: 5,
-    },
-    modeChipActive: {
-      backgroundColor: colors.surface,
-    },
-    modeLabel: {
-      color: colors['text-secondary'],
-      fontSize: 13,
-      fontWeight: '500',
-    },
-    modeLabelActive: {
-      color: colors.text,
-      fontWeight: '600',
-    },
     modeRow: {
-      alignSelf: 'flex-start',
-      backgroundColor: colors.fill,
-      borderRadius: 9,
+      alignItems: 'center',
       flexDirection: 'row',
-      padding: 2,
-    },
-    newEvent: {
-      backgroundColor: colors.fill,
-      borderRadius: 12,
-      padding: 14,
-    },
-    newEventHint: {
-      color: colors['text-secondary'],
-      fontSize: 13,
-      marginTop: 2,
-    },
-    newEventLabel: {
-      color: colors.text,
-      fontSize: 16,
-      fontWeight: '600',
+      justifyContent: 'space-between',
     },
     notice: {
       backgroundColor: colors.fill,
@@ -538,11 +303,10 @@ const makeStyles = (colors: ThemeColors) =>
       alignItems: 'center',
       flexDirection: 'row',
       gap: 8,
-      marginTop: 10,
     },
     secondaryButton: {
       alignSelf: 'flex-start',
-      backgroundColor: colors.fill,
+      backgroundColor: colors.surface,
       borderRadius: 8,
       paddingHorizontal: 14,
       paddingVertical: 8,
@@ -568,12 +332,10 @@ const makeStyles = (colors: ThemeColors) =>
       gap: 8,
       marginTop: 6,
     },
+    slots: {
+      gap: 2,
+    },
     spinner: {
       marginHorizontal: 8,
-    },
-    title: {
-      color: colors.text,
-      fontSize: 17,
-      fontWeight: '600',
     },
   });
