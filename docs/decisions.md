@@ -2682,6 +2682,25 @@ then iOS (both in `todo.md`).
       off, and an empty one let the row take half the screen with the
       chips stretched down it. The row now has `flexGrow: 0` and
       `flexShrink: 0`, and its chips are centered rather than stretched.
+- [x] iOS Tasks screen review fixes — done (2026-10-10,
+      `todo/tasks-screen-fixes`), from the review of #160. **Chips are the
+      visible lists** (`taskListChips`): the inbox leaves hidden lists
+      out, so a hidden list's chip always read "Nothing to do.", and it
+      counted toward the two lists that show the row. **The selection holds
+      only while its chip is on screen**: disconnecting Reminders with its
+      chip selected left the tab filtered to a list that was gone, with the
+      row hidden (one list left) and so no chip to clear it — derived each
+      render rather than reset in an effect, so it never draws one stale
+      frame. **The add field stays above the keyboard**: a padding
+      `KeyboardAvoidingView` inside the safe area, which already keeps the
+      tab bar clear, so the lift is the keyboard's height less the bar.
+      **A chip works while the keyboard is up** (`keyboardShouldPersistTaps`,
+      like the list). **The screen's `SafeAreaView` is
+      react-native-safe-area-context's**: React Native's is deprecated.
+      Flow 09, which connects Reminders on CI, taps the Reminders chip and,
+      after it disconnects Reminders, expects the Google task back. Not in
+      a flow: the keyboard (Maestro's visibility ignores it), checked on
+      the simulator.
 
 ### Dependency sweep (2026-10-09)
 

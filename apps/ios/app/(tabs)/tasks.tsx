@@ -11,17 +11,19 @@ import { overdueLabel, type TaskRecord, Temporal } from '@calendar/core';
 import { StatusBar } from 'expo-status-bar';
 import { useState } from 'react';
 import {
+  KeyboardAvoidingView,
   Pressable,
-  SafeAreaView,
   ScrollView,
   StyleSheet,
   Text,
   TextInput,
   View,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { AccountButton } from '../../src/ui/AccountButton.tsx';
 import { useEditorHost } from '../../src/ui/EditorHost.tsx';
 import { TaskCheck } from '../../src/ui/TaskCheck.tsx';
+import { taskListChips, taskListKey } from '../../src/ui/taskListChips.ts';
 import { type ThemeColors, useStyles } from '../../src/ui/theme.ts';
 import { MutationNoticeToast } from '../../src/ui/Toast.tsx';
 
@@ -49,9 +51,10 @@ function TasksBody({ timeZone }: { timeZone: string }) {
   const [listFilter, setListFilter] = useState<string | null>(null);
   const [title, setTitle] = useState('');
   const target = taskLists.find((list) => list.isVisible && !list.readOnly);
+  const { active, chips } = taskListChips(taskLists, listFilter);
 
   const keep = (task: TaskRecord) =>
-    listFilter === null || `${task.accountId}:${task.listId}` === listFilter;
+    active === null || taskListKey(task.accountId, task.listId) === active;
   const toggle = (task: TaskRecord) =>
     void completeTask({
       accountId: task.accountId,
@@ -134,66 +137,70 @@ function TasksBody({ timeZone }: { timeZone: string }) {
   return (
     <SafeAreaView style={styles.screen} testID="tasks-screen">
       <StatusBar style="auto" />
-      <View style={styles.header}>
-        <Text style={styles.title}>Tasks</Text>
-        <AccountButton />
-      </View>
-      {taskLists.length > 1 ? (
-        // A ScrollView grows and shrinks by default: beside the list below it
-        // took half the screen when empty and was squeezed when full.
-        <ScrollView
-          contentContainerStyle={styles.filters}
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          style={styles.filterBar}
-        >
-          {[
-            { id: null, label: 'All' },
-            ...taskLists.map((list) => ({ id: `${list.accountId}:${list.id}`, label: list.title })),
-          ].map((entry) => (
-            <Pressable
-              accessibilityRole="button"
-              accessibilityState={{ selected: listFilter === entry.id }}
-              key={entry.id ?? 'all'}
-              onPress={() => setListFilter(entry.id)}
-              style={[styles.filter, listFilter === entry.id && styles.filterActive]}
-            >
-              <Text
-                style={[styles.filterLabel, listFilter === entry.id && styles.filterLabelActive]}
+      {/* The add field sits at the bottom, where the keyboard it raises
+          would cover it: the padding lifts the whole column above the
+          keyboard, less the tab bar the safe area already keeps clear. */}
+      <KeyboardAvoidingView behavior="padding" style={styles.body}>
+        <View style={styles.header}>
+          <Text style={styles.title}>Tasks</Text>
+          <AccountButton />
+        </View>
+        {chips.length > 0 ? (
+          // A ScrollView flexes by default; the chip row keeps its own height
+          // and leaves the rest to the list. Taps go through while the add
+          // field holds the keyboard, like the list's.
+          <ScrollView
+            contentContainerStyle={styles.filters}
+            horizontal
+            keyboardShouldPersistTaps="handled"
+            showsHorizontalScrollIndicator={false}
+            style={styles.filterBar}
+          >
+            {chips.map((chip) => (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityState={{ selected: active === chip.id }}
+                key={chip.id ?? 'all'}
+                onPress={() => setListFilter(chip.id)}
+                style={[styles.filter, active === chip.id && styles.filterActive]}
               >
-                {entry.label}
-              </Text>
-            </Pressable>
-          ))}
-        </ScrollView>
-      ) : null}
-      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-        {section('Overdue', inbox.overdue, true)}
-        {section('Today', inbox.today)}
-        {section('No date', inbox.noDate)}
-        {section('Upcoming', inbox.upcoming)}
-        {empty ? <Text style={styles.empty}>Nothing to do.</Text> : null}
-        {inbox.completedToday.some(keep) ? (
-          <Text style={styles.doneNote}>{inbox.completedToday.filter(keep).length} done today</Text>
+                <Text style={[styles.filterLabel, active === chip.id && styles.filterLabelActive]}>
+                  {chip.label}
+                </Text>
+              </Pressable>
+            ))}
+          </ScrollView>
         ) : null}
-      </ScrollView>
-      {/* A failed write (a list that lost its access) is told here, not only
-          on the calendar — standing on the add field, which it never covers. */}
-      <MutationNoticeToast />
-      <View style={styles.addRow}>
-        <Text style={styles.addPlus}>＋</Text>
-        <TextInput
-          accessibilityLabel="Add a task"
-          editable={target !== undefined}
-          onChangeText={setTitle}
-          onSubmitEditing={add}
-          placeholder={target ? `Add a task to ${target.title}` : 'No task list to add to'}
-          returnKeyType="done"
-          style={styles.addInput}
-          testID="tasks-add"
-          value={title}
-        />
-      </View>
+        <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+          {section('Overdue', inbox.overdue, true)}
+          {section('Today', inbox.today)}
+          {section('No date', inbox.noDate)}
+          {section('Upcoming', inbox.upcoming)}
+          {empty ? <Text style={styles.empty}>Nothing to do.</Text> : null}
+          {inbox.completedToday.some(keep) ? (
+            <Text style={styles.doneNote}>
+              {inbox.completedToday.filter(keep).length} done today
+            </Text>
+          ) : null}
+        </ScrollView>
+        {/* A failed write (a list that lost its access) is told here, not only
+            on the calendar — standing on the add field, which it never covers. */}
+        <MutationNoticeToast />
+        <View style={styles.addRow}>
+          <Text style={styles.addPlus}>＋</Text>
+          <TextInput
+            accessibilityLabel="Add a task"
+            editable={target !== undefined}
+            onChangeText={setTitle}
+            onSubmitEditing={add}
+            placeholder={target ? `Add a task to ${target.title}` : 'No task list to add to'}
+            returnKeyType="done"
+            style={styles.addInput}
+            testID="tasks-add"
+            value={title}
+          />
+        </View>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
@@ -220,6 +227,9 @@ const makeStyles = (colors: ThemeColors) =>
       paddingHorizontal: 16,
     },
     // A 44 pt square; the box sits flush with the screen edge's inset.
+    body: {
+      flex: 1,
+    },
     check: {
       alignItems: 'center',
       height: 44,
