@@ -264,6 +264,18 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   `Intl.supportedValuesOf`, and a device stores the spelling its engine
   validates (Hermes rejects `Asia/Kolkata`). Notifications, EventKit's
   floating zone and timed reminders stay on the device zone.
+- **The device's own zone is an entry, not an id** (2026-10-10, #174) — the
+  stored list names this device's zone by the word `device`, resolved
+  against the OS on every read: the grid follows a flight even once a
+  second zone was added (before, adding one froze the list to ids and
+  nothing followed the device again), and an exported file reads right
+  on another device. Always present and never removed, first by
+  construction, primary or not; the cap of three includes it; a fixed
+  zone the device is in right now draws once. Rejected: a removable entry
+  with a pinned picker row (one more state for the one user who wants no
+  device line); a label alone (the gap was the model, not the row).
+  Migration 11 and the document parser give an older list the entry: the
+  id equal to the device zone becomes it, else it goes first.
 - **Design tokens and dark mode** (2026-10-07, #135) — the brand kit is
   the one palette (a brighter purple and Serenity's indigo were tried and
   rejected); generated, never edited; the desktop maps tokens into

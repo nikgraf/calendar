@@ -1,10 +1,5 @@
-import {
-  type MirrorDraft,
-  newMirrorDraft,
-  useMirrors,
-  useTimeZoneSettings,
-} from '@calendar/app-state';
-import { describeMirrorStatus, MIRROR_COPY, Temporal } from '@calendar/core';
+import { type MirrorDraft, newMirrorDraft, useMirrors, useTimeZones } from '@calendar/app-state';
+import { describeMirrorStatus, MIRROR_COPY } from '@calendar/core';
 import { useState } from 'react';
 import { useTheme } from '../theme.ts';
 import {
@@ -27,7 +22,7 @@ import { MirrorEditSheet } from './MirrorEditSheet.tsx';
 export function MirrorsPage() {
   const { colors } = useTheme();
   const mirrors = useMirrors();
-  const timeZone = useTimeZoneSettings()?.primary ?? Temporal.Now.timeZoneId();
+  const { primary: timeZone } = useTimeZones();
   const [editing, setEditing] = useState<MirrorDraft | null>(null);
 
   return (

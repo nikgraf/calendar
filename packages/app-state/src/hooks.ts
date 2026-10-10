@@ -26,7 +26,7 @@ import {
   findBirthdayOverride,
   isCalendarWritable,
   msUntilNextMidnight,
-  secondaryZones,
+  resolveTimeZones,
   Temporal,
 } from '@calendar/core';
 import { RegistryContext, useAtomValue } from '@effect/atom-react';
@@ -483,11 +483,14 @@ export const useSettingsEditor = <A extends object, R>(
   return [current, save];
 };
 
-/** The device-local time zones as stored; null until the first read resolves. For the settings editor. */
+/** The device-local time zones as stored (the device entry unresolved); null until the first read resolves. For the settings editor. */
 export const useTimeZoneSettings = (): TimeZoneSettings | null => {
   const result = useAtomValue(useBackendAtoms().timeZoneSettings);
   return Option.getOrNull(AsyncResult.value(result));
 };
+
+/** The IANA zone this device is in right now; changes within a minute of the OS. */
+export const useDeviceZone = (): string => useAtomValue(useBackendAtoms().deviceZone);
 
 export interface TimeZones {
   /** false only before the first read; the roots gate on it so the grid never draws in the wrong zone. */
@@ -504,16 +507,18 @@ const sameZones = (a: TimeZoneSettings, b: TimeZoneSettings): boolean =>
   a.zones.every((zone, index) => zone === b.zones[index]);
 
 /**
- * The zones the calendar draws. Before the first read this is a single
- * device zone; after it, the last loaded value survives the refetch that
- * follows a write, so a primary never falls back mid-session.
+ * The zones the calendar draws, as IANA ids: the stored entries resolved
+ * against the device zone, so the grid follows the OS after a flight when
+ * the device entry is the primary. Before the first read this is the
+ * device zone alone; after it, the last loaded value survives the refetch
+ * that follows a write, so a primary never falls back mid-session.
  */
 export const useTimeZones = (): TimeZones => {
   const stored = useTimeZoneSettings();
+  const deviceZone = useDeviceZone();
   const [last, setLast] = useState<TimeZoneSettings | null>(null);
-  // Compared by content: the refetch a device zone change triggers returns
-  // an equal copy of settings the user stored, which must not re-render
-  // the grid.
+  // Compared by content: the refetch that follows a write returns an
+  // equal copy of what was stored, which must not re-render the grid.
   const unchanged = stored !== null && last !== null && sameZones(stored, last);
   if (stored !== null && !unchanged) {
     // Render-phase state adjustment (the React "derive from props" pattern).
@@ -523,9 +528,9 @@ export const useTimeZones = (): TimeZones => {
   return useMemo(
     () =>
       settings === null
-        ? { loaded: false, primary: Temporal.Now.timeZoneId(), secondary: [] }
-        : { loaded: true, primary: settings.primary, secondary: secondaryZones(settings) },
-    [settings],
+        ? { loaded: false, primary: deviceZone, secondary: [] }
+        : { loaded: true, ...resolveTimeZones(settings, deviceZone) },
+    [deviceZone, settings],
   );
 };
 

@@ -1,8 +1,13 @@
-import { useBackendMutations, useSettingsEditor, useTimeZoneSettings } from '@calendar/app-state';
+import {
+  useBackendMutations,
+  useDeviceZone,
+  useSettingsEditor,
+  useTimeZoneSettings,
+} from '@calendar/app-state';
 import {
   DEVICE_ONLY_SETTING_COPY,
+  isDeviceZone,
   MAX_TIME_ZONES,
-  Temporal,
   withPrimary,
   withZoneAdded,
   withZoneRemoved,
@@ -11,23 +16,26 @@ import {
 } from '@calendar/core';
 import { useState } from 'react';
 import { TimeZonePicker } from './TimeZonePicker.tsx';
+import { LocationIcon } from './ui/icons.tsx';
 
 /**
  * The zones this device draws: the primary one is what the grid, "today"
  * and the editors use; the others annotate the hour gutter, tall event
- * blocks and the editor. Every change sends the whole struct through the
- * core editors so `primary` and `zones` never drift apart.
+ * blocks and the editor. The first row is the Mac's own zone, resolved
+ * against the OS so it moves when the Mac travels; it is never removed.
+ * Every change sends the whole struct through the core editors so
+ * `primary` and `zones` never drift apart.
  */
 export function TimeZonesSection() {
   const { setTimeZoneSettings } = useBackendMutations();
   const [settings, persist] = useSettingsEditor(useTimeZoneSettings(), setTimeZoneSettings);
+  const deviceZone = useDeviceZone();
   const [picking, setPicking] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
 
   if (!settings) {
     return null;
   }
-  const deviceZone = Temporal.Now.timeZoneId();
   const full = settings.zones.length >= MAX_TIME_ZONES;
   const save = (next: typeof settings) =>
     void persist(next).then(
@@ -40,22 +48,29 @@ export function TimeZonesSection() {
       <h2 className="font-medium">Time zones</h2>
       <p className="mt-1 text-sm text-ink-secondary">
         The calendar is drawn in the primary zone; the others appear under each hour and on events.
+        The first zone is this Mac&apos;s own and follows it when you travel.
       </p>
       <ul className="mt-3 flex flex-col gap-1">
         {settings.zones.map((zone) => {
           const primary = zone === settings.primary;
-          const city = zoneCity(zone);
+          const device = isDeviceZone(zone);
+          const city = zoneCity(device ? deviceZone : zone);
+          const name = device ? "this Mac's zone" : city;
           return (
             <li
               className="flex items-center gap-2 text-sm"
               data-primary={primary ? 'true' : undefined}
-              data-testid={`time-zone-row-${zoneSlug(zone)}`}
+              data-testid={`time-zone-row-${device ? 'device' : zoneSlug(zone)}`}
               key={zone}
             >
+              {device ? (
+                <LocationIcon className="shrink-0 text-primary" size={14} />
+              ) : (
+                <span className="w-3.5 shrink-0" />
+              )}
               <span className="font-medium">{city}</span>
               <span className="text-xs text-ink-secondary">
-                {zone}
-                {zone === deviceZone ? ' (this device)' : ''}
+                {device ? 'Follows this Mac' : zone}
               </span>
               <span className="flex-1" />
               {primary ? (
@@ -64,7 +79,7 @@ export function TimeZonesSection() {
                 </span>
               ) : (
                 <button
-                  aria-label={`Make ${city} primary`}
+                  aria-label={`Make ${name} primary`}
                   className="text-xs text-primary hover:underline"
                   onClick={() => save(withPrimary(settings, zone))}
                   type="button"
@@ -72,7 +87,7 @@ export function TimeZonesSection() {
                   Make primary
                 </button>
               )}
-              {settings.zones.length > 1 ? (
+              {device ? null : (
                 <button
                   aria-label={`Remove ${city}`}
                   className="text-xs text-danger hover:underline"
@@ -81,7 +96,7 @@ export function TimeZonesSection() {
                 >
                   Remove
                 </button>
-              ) : null}
+              )}
             </li>
           );
         })}

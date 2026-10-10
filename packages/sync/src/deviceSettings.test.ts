@@ -1,7 +1,8 @@
 import {
   DEFAULT_BIRTHDAY_REMINDER_SETTINGS,
+  DEFAULT_TIME_ZONE_SETTINGS,
   DEFAULT_VIEW_PREFERENCES,
-  isValidTimeZone,
+  Temporal,
 } from '@calendar/core';
 import { DeviceSettingsRepo, reposLayer, runMigrations } from '@calendar/db';
 import { SqliteClient } from '@effect/sql-sqlite-node';
@@ -14,6 +15,7 @@ import {
   BIRTHDAY_REMINDERS_KEY,
   readBirthdayReminderOverrides,
   readBirthdayReminderSettings,
+  readPrimaryTimeZone,
   readTimeZoneSettings,
   readViewPreferences,
   TIME_ZONES_KEY,
@@ -112,25 +114,26 @@ describe('view preferences', () => {
 });
 
 describe('time zone settings', () => {
-  it.effect('defaults to a single valid zone that is the primary', () =>
+  it.effect('defaults to the device entry alone, which reads as the zone the device is in', () =>
     Effect.gen(function* () {
-      const settings = yield* readTimeZoneSettings;
-      expect(settings.zones).toHaveLength(1);
-      expect(settings.primary).toBe(settings.zones[0]);
-      expect(isValidTimeZone(settings.primary)).toBe(true);
+      expect(yield* readTimeZoneSettings).toEqual(DEFAULT_TIME_ZONE_SETTINGS);
+      expect(yield* readPrimaryTimeZone).toBe(Temporal.Now.timeZoneId());
     }).pipe(Effect.provide(dbLayer())),
   );
 
-  it.effect('round-trips the list in the stored order', () =>
+  it.effect('round-trips the list in the stored order, the device entry unresolved', () =>
     Effect.gen(function* () {
       yield* writeTimeZoneSettings({
         primary: 'Asia/Kolkata',
-        zones: ['Europe/Vienna', 'Asia/Kolkata'],
+        zones: ['Europe/Vienna', 'device', 'Asia/Kolkata'],
       });
       expect(yield* readTimeZoneSettings).toEqual({
         primary: 'Asia/Kolkata',
-        zones: ['Europe/Vienna', 'Asia/Kolkata'],
+        zones: ['Europe/Vienna', 'device', 'Asia/Kolkata'],
       });
+      expect(yield* readPrimaryTimeZone).toBe('Asia/Kolkata');
+      yield* writeTimeZoneSettings({ primary: 'device', zones: ['device', 'Asia/Kolkata'] });
+      expect(yield* readPrimaryTimeZone).toBe(Temporal.Now.timeZoneId());
     }).pipe(Effect.provide(dbLayer())),
   );
 
@@ -138,11 +141,13 @@ describe('time zone settings', () => {
     Effect.gen(function* () {
       const repo = yield* DeviceSettingsRepo;
       yield* repo.set(TIME_ZONES_KEY, { primary: 'x' });
-      const fallback = yield* readTimeZoneSettings;
-      expect(fallback.zones).toHaveLength(1);
+      expect(yield* readTimeZoneSettings).toEqual(DEFAULT_TIME_ZONE_SETTINGS);
       // A zone tzdata dropped must not reach the grid.
-      yield* repo.set(TIME_ZONES_KEY, { primary: 'Mars/Olympus', zones: ['Mars/Olympus'] });
-      expect(yield* readTimeZoneSettings).toEqual(fallback);
+      yield* repo.set(TIME_ZONES_KEY, { primary: 'device', zones: ['device', 'Mars/Olympus'] });
+      expect(yield* readTimeZoneSettings).toEqual(DEFAULT_TIME_ZONE_SETTINGS);
+      // A list without the device entry (from before migration 11 ran) is not patched here.
+      yield* repo.set(TIME_ZONES_KEY, { primary: 'UTC', zones: ['UTC'] });
+      expect(yield* readTimeZoneSettings).toEqual(DEFAULT_TIME_ZONE_SETTINGS);
     }).pipe(Effect.provide(dbLayer())),
   );
 });

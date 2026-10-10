@@ -1,7 +1,8 @@
+import { Temporal, withDeviceEntry } from '@calendar/core';
 import { Effect } from 'effect';
 import { SqlClient } from 'effect/sql/SqlClient';
 import type { ResolvedMigration } from 'effect/sql/Migrator';
-import { eventFromRow, type EventRow, seriesEndUtc } from './rows.ts';
+import { type DeviceSettingRow, eventFromRow, type EventRow, seriesEndUtc } from './rows.ts';
 
 // The whole schema in one migration. Twelve incremental migrations accreted
 // while building and were collapsed before the first release (2026-09-15);
@@ -344,6 +345,40 @@ const beforeSnapshot = Effect.gen(function* () {
   yield* sql`ALTER TABLE pending_ops ADD COLUMN before_color_hex TEXT`;
 });
 
+// The time zones' device entry: the stored list named this device's zone
+// by its IANA id, so after a flight nothing followed the OS any more. The
+// entry that is the device's zone now becomes the word 'device'; a list
+// without one gets it first (core `withDeviceEntry`). A row that does not
+// read as a list is left alone — the reader falls back to the default.
+const deviceTimeZone = Effect.gen(function* () {
+  const sql = yield* SqlClient;
+  const rows = yield* sql<DeviceSettingRow>`SELECT * FROM device_settings WHERE key = 'timeZones'`;
+  const row = rows[0];
+  if (!row) {
+    return;
+  }
+  let stored: unknown;
+  try {
+    stored = JSON.parse(row.value);
+  } catch {
+    return;
+  }
+  if (!isZoneList(stored)) {
+    return;
+  }
+  const next = withDeviceEntry(stored, Temporal.Now.timeZoneId());
+  yield* sql`UPDATE device_settings SET value = ${JSON.stringify(next)} WHERE key = 'timeZones'`;
+});
+
+const isZoneList = (
+  value: unknown,
+): value is { readonly primary: string; readonly zones: ReadonlyArray<string> } =>
+  typeof value === 'object' &&
+  value !== null &&
+  typeof (value as { primary?: unknown }).primary === 'string' &&
+  Array.isArray((value as { zones?: unknown }).zones) &&
+  (value as { zones: ReadonlyArray<unknown> }).zones.every((zone) => typeof zone === 'string');
+
 // The third tuple element is a *loader* whose result is the migration effect.
 export const migrations: ReadonlyArray<ResolvedMigration> = [
   [1, 'baseline', Effect.succeed(baseline)],
@@ -356,4 +391,5 @@ export const migrations: ReadonlyArray<ResolvedMigration> = [
   [8, 'rdate-series-end', Effect.succeed(rdateSeriesEnd)],
   [9, 'recurrence-cleared', Effect.succeed(recurrenceCleared)],
   [10, 'before-snapshot', Effect.succeed(beforeSnapshot)],
+  [11, 'device-time-zone', Effect.succeed(deviceTimeZone)],
 ];

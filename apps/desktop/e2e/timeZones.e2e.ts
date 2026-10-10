@@ -32,11 +32,13 @@ const calendar = new CalendarInfo({
 
 // A UTC primary keeps the seeded noon on today's date on every host, and
 // neither UTC nor Kolkata observes DST, so 12:00 UTC is 5:30 PM in Kolkata
-// whatever the date.
+// whatever the date. The device entry resolves to the host's zone; the
+// launch pins that to UTC too (TZ), so it folds into the primary and the
+// gutter's second line is Kolkata alone on every host.
 const seed = {
   accounts: [account],
   calendars: [calendar],
-  deviceSettings: { timeZones: { primary: 'UTC', zones: ['UTC', 'Asia/Kolkata'] } },
+  deviceSettings: { timeZones: { primary: 'UTC', zones: ['device', 'UTC', 'Asia/Kolkata'] } },
   events: [
     new EventRecord({
       accountId: 'acc-e2e',
@@ -65,7 +67,7 @@ describe('time zones: a stored secondary zone', () => {
   let app: App;
 
   beforeAll(async () => {
-    app = await launchApp(seed);
+    app = await launchApp(seed, { env: { TZ: 'UTC' } });
   });
 
   afterAll(async () => {
@@ -105,12 +107,14 @@ describe('time zones: the settings section', () => {
     await app?.stop();
   });
 
-  it('adds, promotes and removes zones on this device only', async () => {
+  it('adds, promotes and removes zones on this device only; the device zone stays', async () => {
     // The settings window edits; the calendar window's grid follows.
     const { cdp: calendar } = app;
     const cdp = await app.openSettings('general');
     const stored = () => readDeviceSetting(app.userDataDir, 'timeZones');
     const deviceZone = await cdp.eval<string>(`Intl.DateTimeFormat().resolvedOptions().timeZone`);
+    const deviceCity = deviceZone.slice(deviceZone.lastIndexOf('/') + 1).replaceAll('_', ' ');
+    const DEVICE_ROW = '[data-testid="time-zone-row-device"]';
     const clickButton = (label: string) =>
       cdp.eval(`document.querySelector('button[aria-label=${JSON.stringify(label)}]')?.click()`);
 
@@ -121,6 +125,12 @@ describe('time zones: the settings section', () => {
       ),
     ).toBe(true);
     expect(await stored()).toBeNull();
+    // Nothing stored: the device's own zone, named by the city it is in, is the primary and has no Remove.
+    expect(await text(cdp, `${DEVICE_ROW} .font-medium`)).toBe(deviceCity);
+    expect(await cdp.eval(`document.querySelector('${DEVICE_ROW}')?.dataset.primary`)).toBe('true');
+    expect(
+      await cdp.eval(`!!document.querySelector('${DEVICE_ROW} button[aria-label^="Remove"]')`),
+    ).toBe(false);
     // No secondary zone yet: the gutter has a single line.
     expect(
       await calendar.eval(`!!document.querySelector('[data-testid="hour-secondary-12"]')`),
@@ -133,7 +143,7 @@ describe('time zones: the settings section', () => {
     await cdp.click(option.x, option.y);
     await expect
       .poll(stored, { timeout: 10_000 })
-      .toEqual({ primary: deviceZone, zones: [deviceZone, 'Asia/Kolkata'] });
+      .toEqual({ primary: 'device', zones: ['device', 'Asia/Kolkata'] });
     await cdp.waitFor(`!!document.querySelector('[data-testid="time-zone-row-Asia-Kolkata"]')`);
     // The grid in the calendar window already lists it under each hour.
     await calendar.waitFor(`!!document.querySelector('[data-testid="hour-secondary-12"]')`);
@@ -142,22 +152,21 @@ describe('time zones: the settings section', () => {
     await clickButton('Make Kolkata primary');
     await expect
       .poll(stored, { timeout: 10_000 })
-      .toEqual({ primary: 'Asia/Kolkata', zones: [deviceZone, 'Asia/Kolkata'] });
+      .toEqual({ primary: 'Asia/Kolkata', zones: ['device', 'Asia/Kolkata'] });
     await cdp.waitFor(
       `document.querySelector('[data-testid="time-zone-row-Asia-Kolkata"]')?.dataset.primary === 'true'`,
     );
+    expect(
+      await cdp.eval(`document.querySelector('${DEVICE_ROW}')?.dataset.primary`),
+    ).toBeUndefined();
 
-    // Drop the device zone: Kolkata stays, the gutter's second line goes.
-    const deviceCity = deviceZone.slice(deviceZone.lastIndexOf('/') + 1).replaceAll('_', ' ');
-    await clickButton(`Remove ${deviceCity}`);
+    // Remove the primary: the device zone takes over again, the gutter's second line goes.
+    await clickButton('Remove Kolkata');
     await expect
       .poll(stored, { timeout: 10_000 })
-      .toEqual({ primary: 'Asia/Kolkata', zones: ['Asia/Kolkata'] });
+      .toEqual({ primary: 'device', zones: ['device'] });
+    await cdp.waitFor(`document.querySelector('${DEVICE_ROW}')?.dataset.primary === 'true'`);
     await calendar.waitFor(`!document.querySelector('[data-testid="hour-secondary-12"]')`);
-    // The only zone cannot be removed.
-    expect(await cdp.eval(`!!document.querySelector('button[aria-label="Remove Kolkata"]')`)).toBe(
-      false,
-    );
 
     // Fill up to three: the add button switches off.
     for (const [query, slug] of [
@@ -172,7 +181,7 @@ describe('time zones: the settings section', () => {
     }
     await expect
       .poll(stored, { timeout: 10_000 })
-      .toEqual({ primary: 'Asia/Kolkata', zones: ['Asia/Kolkata', 'Pacific/Honolulu', 'UTC'] });
+      .toEqual({ primary: 'device', zones: ['device', 'Pacific/Honolulu', 'UTC'] });
     await cdp.waitFor(
       `document.querySelector('button[aria-label="Add time zone"]')?.disabled === true`,
     );

@@ -15,7 +15,7 @@ import {
   useCalendars,
   useMirrors,
   useTaskLists,
-  useTimeZoneSettings,
+  useTimeZones,
   withSourceToggled,
 } from '@calendar/app-state';
 import {
@@ -640,7 +640,7 @@ function DeleteDialog({ onClose, view }: { onClose: () => void; view: MirrorView
 
 export function MirrorsSection() {
   const mirrors = useMirrors();
-  const timeZone = useTimeZoneSettings()?.primary ?? Temporal.Now.timeZoneId();
+  const { primary: timeZone } = useTimeZones();
   const [editing, setEditing] = useState<MirrorDraft | null>(null);
   const [deleting, setDeleting] = useState<MirrorView | null>(null);
 
