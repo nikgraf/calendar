@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process';
 import { createInterface } from 'node:readline';
 import { join } from 'node:path';
-import { afterAll, beforeAll, describe, expect, it } from 'vite-plus/test';
+import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vite-plus/test';
 import {
   type App,
   launchApp,
@@ -65,6 +65,17 @@ describe.skipIf(!REAL)('Apple Reminders through the real helper', () => {
   afterAll(async () => {
     await app.stop();
   });
+  const EDITOR_OPEN = `!!document.querySelector('[data-testid="editor"]')`;
+  afterEach(async (context) => {
+    if (context.task.result?.state === 'fail') {
+      await app.dump(context.task.name);
+    }
+    // A failure above must not strand its editor: `openChip` waits for it
+    // to close.
+    if (await app.cdp.eval<boolean>(EDITOR_OPEN)) {
+      await app.cdp.clickButtonWithText('Cancel');
+    }
+  });
 
   const setTitle = async (title: string): Promise<void> => {
     await app.cdp.eval(`(() => {
@@ -73,6 +84,21 @@ describe.skipIf(!REAL)('Apple Reminders through the real helper', () => {
       setter.call(input, ${JSON.stringify(title)});
       input.dispatchEvent(new Event('input', { bubbles: true }));
     })()`);
+  };
+
+  /**
+   * Opens a lane chip's editor by its body, past the leading checkbox. A
+   * saved editor closes only once the write's reply is back, after the
+   * database already shows it: measured while it is open, the chip sits in
+   * the week the 360 px panel narrowed (at CI's 1024 px, a chip narrower
+   * than the 40 px offset), and the click lands beside it — on a slot,
+   * which opens "New event" and narrows the next try too.
+   */
+  const openChip = async (title: string) => {
+    await app.cdp.waitFor<boolean>(`!(${EDITOR_OPEN})`);
+    const chip = await app.cdp.locate(`[title=${JSON.stringify(title)}]`);
+    await app.cdp.click(chip.x + 40, chip.y);
+    await app.cdp.waitFor(`document.body.textContent.includes('Edit reminder')`);
   };
 
   it('connects without a prompt and mirrors the lists', async () => {
@@ -127,16 +153,12 @@ describe.skipIf(!REAL)('Apple Reminders through the real helper', () => {
       .toEqual({ id: false, priority: 'high', provider: 'apple' });
     expect(await readPendingOpsCount(app.userDataDir)).toBe(0);
 
-    const chip = await cdp.locate('[title="Solunivo ci reminder"]');
-    await cdp.click(chip.x + 40, chip.y);
-    await cdp.waitFor(`document.body.textContent.includes('Edit reminder')`);
+    await openChip('Solunivo ci reminder');
     await setTitle('Solunivo ci reminder edited');
     await cdp.clickButtonWithText('Save');
     await cdp.waitFor(`!!document.querySelector('[title="Solunivo ci reminder edited"]')`);
 
-    const renamed = await cdp.locate('[title="Solunivo ci reminder edited"]');
-    await cdp.click(renamed.x + 40, renamed.y);
-    await cdp.waitFor(`document.body.textContent.includes('Edit reminder')`);
+    await openChip('Solunivo ci reminder edited');
     await cdp.clickButtonWithText('Delete');
     await cdp.confirmDelete();
     await cdp.waitFor(`!document.querySelector('[title="Solunivo ci reminder edited"]')`);
@@ -165,8 +187,10 @@ describe.skipIf(!REAL)('Apple Reminders through the real helper', () => {
         await cdp.click(button.x, button.y);
       }
     };
-    const row = async () =>
-      (await readTasks(app.userDataDir)).find((task) => task.title === 'Solunivo ci weekends');
+    // Unique per attempt: a retry must not find (or delete) a reminder an
+    // earlier attempt left behind.
+    const title = `Solunivo ci weekends ${String(Date.now())}`;
+    const row = async () => (await readTasks(app.userDataDir)).find((task) => task.title === title);
 
     const cell = await cdp.eval<{ x: number; y: number }>(`(() => {
       const scroller = document.querySelector('.overflow-y-scroll').getBoundingClientRect();
@@ -177,7 +201,7 @@ describe.skipIf(!REAL)('Apple Reminders through the real helper', () => {
     await cdp.waitFor(`document.body.textContent.includes('New event')`);
     await cdp.clickButtonWithText('Task');
     await cdp.waitFor(`!!document.querySelector('select[aria-label="Task list"]')`);
-    await setTitle('Solunivo ci weekends');
+    await setTitle(title);
     await setSelect('Repeat', 'weekly');
     await pressWeekday('SA');
     await pressWeekday('SU');
@@ -199,9 +223,7 @@ describe.skipIf(!REAL)('Apple Reminders through the real helper', () => {
       });
       expect((await row())?.recurrenceUnsupported).toBeUndefined();
 
-      const chip = await cdp.locate('[title="Solunivo ci weekends"]');
-      await cdp.click(chip.x + 40, chip.y);
-      await cdp.waitFor(`document.body.textContent.includes('Edit reminder')`);
+      await openChip(title);
       await setSelect('Repeat', 'monthly');
       await setSelect('Monthly on', 'weekday');
       await setSelect('Ordinal', '2');
@@ -211,12 +233,15 @@ describe.skipIf(!REAL)('Apple Reminders through the real helper', () => {
         recurrence: { byDay: [{ ordinal: 2, weekday: 'TU' }], freq: 'monthly', interval: 1 },
       });
     } finally {
-      const chip = await cdp.locate('[title="Solunivo ci weekends"]');
-      await cdp.click(chip.x + 40, chip.y);
-      await cdp.waitFor(`document.body.textContent.includes('Edit reminder')`);
+      // A failure above can leave an editor open; it would hide the chip's
+      // real place from `openChip`.
+      if (await cdp.eval<boolean>(EDITOR_OPEN)) {
+        await cdp.clickButtonWithText('Cancel');
+      }
+      await openChip(title);
       await cdp.clickButtonWithText('Delete');
       await cdp.confirmDelete();
-      await cdp.waitFor(`!document.querySelector('[title="Solunivo ci weekends"]')`);
+      await cdp.waitFor(`!document.querySelector(${JSON.stringify(`[title="${title}"]`)})`);
     }
   });
 

@@ -1,6 +1,8 @@
 import {
   type BirthdayOccurrence,
+  eventIdentity,
   type EventRecord,
+  findSameEvent,
   type NotificationTarget,
   PAN_BUFFER_DAYS,
   parseNotificationTarget,
@@ -11,6 +13,7 @@ import {
 } from '@calendar/core';
 import {
   eventStartDay,
+  findCurrentEvent,
   findNotificationEvent,
   useAccounts,
   useCalendarNavigation,
@@ -62,7 +65,8 @@ type MainView = 'day' | 'month' | 'week';
  * event's inspector after a click on the grid or a search result, or an
  * inline editor (Edit, a slot, New, a task chip or result, a quick-add
  * phrase). A panel opened from a search result goes back to the results
- * when it closes (`fromSearch`).
+ * when it closes (`fromSearch`). The inspector's `event` is kept current
+ * (see CalendarBody); an editor's seed is the draft's start and stays put.
  */
 type PanelState =
   | { readonly kind: 'rail' }
@@ -251,6 +255,56 @@ function CalendarBody({
   );
 
   const events = useEventsInRangeStable(range.startUtc, range.endUtc);
+  // The inspector follows its event: it shows the row the grid has now,
+  // not the one that was clicked — a refresh landing after it opened (the
+  // write it was opened right after, a sync pass, an agent's edit) shows
+  // there, and Edit and Convert start from it. While the grid has no such
+  // row (another week, a range still loading, a deleted event) the last
+  // version seen stays up, and the backend is asked where the event is
+  // now: an edit made since shows, and an event that is gone closes the
+  // inspector — back to the results when it was opened from one, as its
+  // own Delete does.
+  const inspected = panel.kind === 'inspector' ? findSameEvent(events, panel.event) : undefined;
+  if (panel.kind === 'inspector' && inspected !== undefined && inspected !== panel.event) {
+    // Render-phase state adjustment (the React "derive from props" pattern).
+    setPanel({ ...panel, event: inspected });
+  }
+  const unlisted =
+    panel.kind === 'inspector' && inspected === undefined ? eventIdentity(panel.event) : undefined;
+  const lookUpInspected = useEffectEvent((isCurrent: () => boolean) => {
+    if (panel.kind !== 'inspector') {
+      return;
+    }
+    const identity = eventIdentity(panel.event);
+    void findCurrentEvent(backend, panel.event).then(
+      (found) => {
+        if (!isCurrent()) {
+          return;
+        }
+        setPanel((current) =>
+          current.kind !== 'inspector' || eventIdentity(current.event) !== identity
+            ? current
+            : found === null
+              ? backFrom(current)
+              : { ...current, event: found },
+        );
+      },
+      // The backend could not say: the last version seen stays up.
+      () => {},
+    );
+  });
+  useEffect(() => {
+    if (unlisted === undefined) {
+      return;
+    }
+    // Asked again with every list the grid gets while the row is missing;
+    // an answer overtaken by a newer list (or by the row's return) is dropped.
+    let current = true;
+    lookUpInspected(() => current);
+    return () => {
+      current = false;
+    };
+  }, [events, unlisted]);
   // Tasks use date bounds even when a reminder also carries a due time.
   const tasks = useTasksInRangeStable(
     utcMsToPlainDate(range.startUtc),
@@ -413,7 +467,8 @@ function CalendarBody({
   const selectedKey = selectedEvent ? `${selectedEvent.calendarId}:${selectedEvent.id}` : undefined;
   const panelKey =
     panel.kind === 'inspector'
-      ? `inspect:${panel.event.id}`
+      ? // By identity: an occurrence edited on its own keeps its inspector.
+        `inspect:${eventIdentity(panel.event)}`
       : panel.kind === 'editEvent'
         ? `event:${panel.seed.event?.id ?? 'new'}:${String(panel.opening)}`
         : panel.kind === 'editTask'

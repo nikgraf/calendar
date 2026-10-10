@@ -8,7 +8,7 @@ import {
   isAppleCalendarAccount,
   ReminderOverride,
 } from '../types.ts';
-import type { PlannedNotification } from './planned.ts';
+import { eventNotificationTarget, type PlannedNotification } from './planned.ts';
 
 /** Google's ceiling: four weeks. */
 export const MAX_REMINDER_MINUTES = 40_320;
@@ -234,19 +234,7 @@ export const planEventReminders = (
           expiresAt: startRef + (event.isAllDay ? ALL_DAY_GRACE_MS : TIMED_GRACE_MS),
           fireAt,
           key: `event:${event.accountId}/${event.calendarId}/${event.id}:${String(event.startUtc)}:${String(minutes)}`,
-          target: {
-            accountId: event.accountId,
-            calendarId: event.calendarId,
-            eventId: event.id,
-            kind: 'event',
-            ...(event.recurringEventId === undefined
-              ? {}
-              : {
-                  originalStartUtc: event.originalStartUtc ?? event.startUtc,
-                  recurringEventId: event.recurringEventId,
-                }),
-            startUtc: event.startUtc,
-          },
+          target: eventNotificationTarget(event),
           title: event.title,
         });
       }

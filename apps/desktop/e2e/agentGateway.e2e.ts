@@ -162,6 +162,13 @@ const calendarRef = async (app: App, token: string, name: string): Promise<strin
 const click = (cdp: App['cdp'], selector: string) =>
   cdp.eval(`document.querySelector(${JSON.stringify(selector)})?.click()`);
 
+const SEARCH_INPUT = '[data-testid="search-input"]';
+const PANEL_KIND = `document.querySelector('[data-testid="panel"]')?.dataset.panelKind`;
+
+/** An expression for the text of the inspector's `inspector-<part>` element. */
+const inspectorText = (part: string) =>
+  `document.querySelector('[data-testid="inspector-${part}"]')?.textContent`;
+
 /** Changes a <select> the way a user would, so React sees it. */
 const choose = (cdp: App['cdp'], selector: string, value: string) =>
   cdp.eval(`(() => {
@@ -325,6 +332,75 @@ describe('agent gateway: other agents reach the app over the CLI and MCP', () =>
       summary: { title: 'Create event “Agent dinner”' },
       tool: 'create_event',
     });
+  });
+
+  it('an agent’s edit shows in the open inspector, and its delete closes it', async () => {
+    const { cdp } = app;
+    // Unique per attempt, so a retry never opens the previous attempt's event.
+    const title = `Desk review ${String(Date.now())}`;
+    const work = await calendarRef(app, WRITER, 'Work');
+    json(await runAgentCli(app, WRITER, newEvent(work, title, 10)));
+    await cdp.openInspector(`[title^=${JSON.stringify(title)}]`);
+    await cdp.waitFor(`${inspectorText('title')} === ${JSON.stringify(title)}`);
+    const { events } = json<{ events: ReadonlyArray<{ ref: string; title: string }> }>(
+      await runAgentCli(app, WRITER, ['list_events', '--from', today.from, '--to', today.to]),
+    );
+    const { ref } = events.find((entry) => entry.title === title)!;
+
+    // Changed while it is open, by something other than the panel: it shows
+    // the event as it is now, without being opened again.
+    json(
+      await runAgentCli(app, WRITER, [
+        'update_event',
+        '--ref',
+        ref,
+        '--title',
+        `${title} (moved)`,
+        '--description',
+        'Bring the slides',
+        '--start',
+        iso(todayAt(11)),
+      ]),
+    );
+    await cdp.waitFor(`${inspectorText('title')} === ${JSON.stringify(`${title} (moved)`)}`);
+    await cdp.waitFor(`${inspectorText('notes')} === 'Bring the slides'`);
+    // Moved an hour later, the length kept: 11:00 to 12:00, no longer 10 to 11.
+    expect(
+      await cdp.eval<string>(`document.querySelector('[data-testid="inspector"]').textContent`),
+    ).toMatch(/11:00\D+12:00/u);
+
+    // Deleted elsewhere: the panel lets go of an event that is gone.
+    json(await runAgentCli(app, WRITER, ['delete_event', '--ref', ref]));
+    await cdp.waitFor(`!document.querySelector('[data-testid="inspector"]')`);
+  });
+
+  it('a search result an agent deletes goes back to the results', async () => {
+    const { cdp } = app;
+    const title = `Pier walk ${String(Date.now())}`;
+    const work = await calendarRef(app, WRITER, 'Work');
+    json(await runAgentCli(app, WRITER, newEvent(work, title, 15)));
+    await cdp.eval(
+      `window.dispatchEvent(new KeyboardEvent('keydown', { key: 'f', metaKey: true }))`,
+    );
+    await cdp.waitFor(`document.activeElement === document.querySelector('${SEARCH_INPUT}')`);
+    await cdp.type(SEARCH_INPUT, title);
+    // The one result the unique title matches, once the results answer it.
+    await cdp.waitFor(
+      `document.querySelector('[data-testid="search-results"]')?.getAttribute('aria-busy') === 'false' && [...document.querySelectorAll('[data-search-result] [data-testid="search-title"]')].some((cell) => cell.textContent === ${JSON.stringify(title)})`,
+    );
+    const row = await cdp.locate('[data-search-result]');
+    await cdp.click(row.x, row.y);
+    await cdp.waitFor(`${inspectorText('title')} === ${JSON.stringify(title)}`);
+    const { events } = json<{ events: ReadonlyArray<{ ref: string; title: string }> }>(
+      await runAgentCli(app, WRITER, ['list_events', '--from', today.from, '--to', today.to]),
+    );
+    const { ref } = events.find((entry) => entry.title === title)!;
+
+    json(await runAgentCli(app, WRITER, ['delete_event', '--ref', ref]));
+    await cdp.waitFor(`${PANEL_KIND} === 'search'`);
+    await cdp.waitFor(`!document.querySelector('[data-search-result]')`);
+    await cdp.pressEscape();
+    await cdp.waitFor(`${PANEL_KIND} !== 'search'`);
   });
 
   it('refuses what the grant, the provider or the guests switch does not allow', async () => {

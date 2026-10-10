@@ -1,4 +1,4 @@
-import { type useEventEditorModel, useMapSnapshot } from '@calendar/app-state';
+import { type EventPlace, useMapSnapshot } from '@calendar/app-state';
 import { isMappableLocation } from '@calendar/core';
 import { useColorScheme } from '../theme.ts';
 
@@ -13,8 +13,8 @@ const MAP_HEIGHT = 160;
  * helper (or offline) it falls back to the link; text MapKit cannot place
  * shows nothing but a quiet note.
  */
-export function LocationMap({ model }: { model: ReturnType<typeof useEventEditorModel> }) {
-  const { location, mapGeo, mapLoading, mapsUrl } = model;
+export function LocationMap({ place }: { place: EventPlace }) {
+  const { location, mapGeo, mapLoading, mapsUrl } = place;
   const appearance = useColorScheme();
   const snapshot = useMapSnapshot(
     mapGeo
