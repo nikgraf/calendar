@@ -28,6 +28,7 @@ import {
   type EventDraft,
   type EventRecord,
   EventReminders,
+  type FreeSlot,
   GeoLocation,
   type ItemKind,
   MAX_REMINDER_OVERRIDES,
@@ -566,6 +567,16 @@ export const useEventEditorModel = ({
     setCarried({ url: next.url });
   };
 
+  /** A free slot the finder found: the event moves to its day and times. */
+  const applySlot = (slot: FreeSlot) => {
+    setIsAllDay(false);
+    setDate(slot.date);
+    setStartTime(slot.startTime);
+    setEndTime(slot.endTime);
+    setTimeChosen(true);
+    setError(null);
+  };
+
   /**
    * Takes a parsed phrase over the fields a phrase can say: the title,
    * the day, the times or all-day, the location and the repeat rule —
@@ -860,6 +871,7 @@ export const useEventEditorModel = ({
     addReminder,
     adopt,
     applyPrefill,
+    applySlot,
     attendees,
     attendeeStatus,
     /** A save or delete is running: Save and Delete are dimmed (a press does nothing). */

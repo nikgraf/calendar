@@ -5,6 +5,7 @@ export * from './captureModel.ts';
 export * from './editorKinds.ts';
 export * from './editorOptions.ts';
 export * from './editorSwitch.ts';
+export * from './findTimeModel.ts';
 export * from './eventReadout.ts';
 export * from './hooks.ts';
 export * from './inviteeField.ts';

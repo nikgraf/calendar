@@ -661,8 +661,8 @@ gateway carries all of it. Details, limits and the threat model:
   straight into its quick-add field), a task chip or a result. Single
   keys: T = today, ←/→ step the view; ⌘, opens Settings from the menu. A new
   item's editor is the one add path: the quick-add field on top
-  (`QuickAddBar`, a phrase or a dictation fills the form; Find time lists
-  free slots), the Event | Task | Reminder control (`useEditorKinds`, only
+  (`QuickAddBar`, a phrase or a dictation fills the form), the Event |
+  Task | Reminder control (`useEditorKinds`, only
   the kinds something can hold), then the form; on an existing item the
   control converts. The panel never joins the dialog stack
   (`dialogStack.ts`: the topmost dialog alone answers Escape and traps

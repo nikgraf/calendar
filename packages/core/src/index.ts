@@ -49,6 +49,7 @@ export * from './recurrence/structured.ts';
 export * from './recurrence/taskRecurrence.ts';
 export * from './recurrence/window.ts';
 export * from './scheduling/busy.ts';
+export * from './scheduling/finder.ts';
 export * from './scheduling/findSlots.ts';
 export * from './search/label.ts';
 export * from './search/match.ts';

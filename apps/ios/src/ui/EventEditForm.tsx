@@ -11,6 +11,7 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import { Linking, Pressable, ScrollView, Switch, Text, TextInput, View } from 'react-native';
 import { useSheetStyles } from './editSheetShared.ts';
 import { dateForPicker, dateStringFromPicker, timeStringFromPicker } from './pickerDates.ts';
+import { FindTimeFields } from './FindTimeFields.tsx';
 import { InviteeField } from './InviteeField.tsx';
 import { LocationField } from './LocationField.tsx';
 import { LocationMap } from './LocationMap.tsx';
@@ -213,6 +214,7 @@ export function EventEditForm({
             {zoneLine}
           </Text>
         ) : null}
+        {readOnly ? null : <FindTimeFields model={model} />}
 
         <Text style={styles.label}>Location</Text>
         <LocationField model={model} />

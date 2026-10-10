@@ -447,6 +447,21 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   ranking v1; dictation availability is decided by attempting `prepare()`
   (the readiness flag is false until assets exist) and the recording is
   deleted immediately. The simulator has no speech assets.
+- **Find a time is the event form's tool** (2026-10-10) — not a mode of
+  the quick-add field. The two modes shared a field and a title and
+  nothing else: different prompts, a calendar read and a solver only on
+  one side, and results of different shapes. "Find a time" sits beside
+  the date and times (`FindTimeFields`, `useFindTimeModel`): presets
+  over the pure solver (today / this week / next week / 2 weeks; any
+  hours / mornings / afternoons / evenings; any day / weekdays /
+  weekends; a duration starting as the form's own), a Search, and the
+  slots as buttons — a pick moves the event there (`applySlot`). It
+  works without Apple Intelligence; with it, a phrase fills the same
+  presets (`parseFindTime`) and a title it names fills an empty title.
+  Not merged into the quick-add prompt: the on-device model is small
+  and the two prompts are tuned apart. Timed reminders still do not
+  count as busy, and guests' free/busy is not fetched — the finder is
+  where both would go.
 - **The model says why it is unavailable** (2026-10-10, #168) —
   `ModelStatus` carries disabled / not-ready / unsupported (Apple
   Intelligence switches itself off on a Siri-vs-Mac language mismatch); a

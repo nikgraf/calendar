@@ -1,5 +1,5 @@
 appId: com.solunivo.app.dev
-name: The new-event sheet shows the repeat picker and turns a typed invitee into a chip
+name: The new-event sheet shows the repeat picker, finds a free slot, and turns a typed invitee into a chip
 tags:
   - ci
 ---
@@ -37,6 +37,45 @@ tags:
 - tapOn: 'CALENDAR'
 - waitForAnimationToEnd:
     timeout: 5000
+
+# Find a time: the presets over the pure solver, no model involved. Next
+# week always has free mornings in the fixture calendar, whatever today
+# is; the pick closes the finder and moves the draft there.
+- scrollUntilVisible:
+    element:
+      id: 'find-time'
+    direction: DOWN
+    timeout: 10000
+- tapOn:
+    id: 'find-time'
+- assertVisible:
+    id: 'find-time-fields'
+- tapOn:
+    id: 'find-time-window-nextWeek'
+# The rows below the fold are not in Maestro's reach until scrolled to.
+- scrollUntilVisible:
+    element:
+      id: 'find-time-bounds-mornings'
+    direction: DOWN
+    timeout: 10000
+- tapOn:
+    id: 'find-time-bounds-mornings'
+- scrollUntilVisible:
+    element:
+      id: 'find-time-search'
+    direction: DOWN
+    timeout: 10000
+- tapOn:
+    id: 'find-time-search'
+- extendedWaitUntil:
+    visible:
+      id: 'find-time-slot-0'
+    timeout: 20000
+- tapOn:
+    id: 'find-time-slot-0'
+- assertNotVisible:
+    id: 'find-time-fields'
+
 # The field sits below the location row; scroll it into view.
 - scrollUntilVisible:
     element:

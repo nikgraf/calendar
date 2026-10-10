@@ -32,6 +32,9 @@ const todayAt = (hour: number, minute = 0): number => {
 };
 /** Today's local ISO date, for date-only records. */
 const todayLocalIso = (): string => localIsoDaysAgo(0);
+/** `HH:MM` as minutes since midnight. */
+const minuteOfDay = (time: string): number =>
+  Number(time.slice(0, 2)) * 60 + Number(time.slice(3, 5));
 
 // The daily series starts three days back so several instances are visible
 // in the current week no matter which weekday the suite runs on. All seeded
@@ -1449,6 +1452,39 @@ describe('calendar desktop e2e', () => {
     expect(
       await cdp.eval<string>(`document.querySelector('input[placeholder="Title"]')?.value`),
     ).toBe('Gym session (draft)');
+    await cdp.pressEscape();
+    await cdp.waitFor(`!document.querySelector('[data-testid="editor"]')`);
+  });
+
+  it('finds a free slot for a new event and moves it there', async () => {
+    const { cdp } = app;
+    const add = await cdp.locate('button[aria-label="New event"]');
+    await cdp.click(add.x, add.y);
+    await cdp.waitFor(`document.body.textContent.includes('New event')`);
+    await cdp.clickTestId('find-time');
+    await cdp.waitFor(`!!document.querySelector('[data-testid="find-time-fields"]')`);
+    // Next week, mornings: a window with free time whatever today is.
+    await cdp.clickTestId('find-time-window-nextWeek');
+    await cdp.clickTestId('find-time-bounds-mornings');
+    await cdp.clickTestId('find-time-duration-90');
+    await cdp.clickTestId('find-time-search');
+    await cdp.waitFor(`!!document.querySelector('[data-testid="find-time-slot-0"]')`);
+    await cdp.clickTestId('find-time-slot-0');
+    // The pick moves the draft and closes the finder.
+    await cdp.waitFor(`!document.querySelector('[data-testid="find-time-fields"]')`);
+    const fields = await cdp.eval<{ date: string; end: string; start: string }>(`({
+      date: document.querySelector('[data-testid="editor"] input[type="date"]').value,
+      end: document.querySelectorAll('[data-testid="editor"] input[type="time"]')[1].value,
+      start: document.querySelectorAll('[data-testid="editor"] input[type="time"]')[0].value,
+    })`);
+    // Next Monday to Sunday, in the app's local days.
+    const isoWeekday = ((new Date().getDay() + 6) % 7) + 1;
+    const toSunday = 7 - isoWeekday;
+    const nextMonday = localIsoDaysAgo(-(toSunday + 1));
+    const nextSunday = localIsoDaysAgo(-(toSunday + 7));
+    expect(fields.date >= nextMonday && fields.date <= nextSunday).toBe(true);
+    expect(fields.start >= '08:00' && fields.start < '12:00').toBe(true);
+    expect(minuteOfDay(fields.end) - minuteOfDay(fields.start)).toBe(90);
     await cdp.pressEscape();
     await cdp.waitFor(`!document.querySelector('[data-testid="editor"]')`);
   });
