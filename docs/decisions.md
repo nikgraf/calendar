@@ -179,6 +179,24 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   periodic stat is the source of truth and directory watchers only the
   fast path (watching the home directory was rejected: noisy). Rejected:
   iCloud key-value sync of the document.
+- **Unsynced changes diff and revert** (2026-10-10) — a queued op keeps
+  the row it replaced (`before*` columns, inherited across coalescing, so
+  the diff is always against what Google last acknowledged); the list's
+  rows expand to the diff and the discard action lives only there,
+  and discarding — like a permanent rejection — puts the row back instead
+  of marking the edit synced. The diff ships as display lines computed in
+  the handler, not as records. Rejected: a server-copy column on
+  events/tasks (every pull would write it), a per-op detail rpc, and
+  whole-row restore — four Codex rounds showed a discard resurrecting
+  another change discarded meanwhile, a landed one, a pulled color or a
+  remotely deleted item: an op puts back only the fields it owns (and
+  takes them out of the other queued snapshots and payloads), a landed
+  op moves every queued snapshot of the item, a confirming pull clears a
+  delete's, a superseded op refused in flight puts nothing back. Open: an
+  op queued before the snapshot can only mark its row synced; a deletion
+  a full re-list confirms only by absence clears no snapshot; a per-item
+  acknowledged copy would replace the per-op snapshots if more
+  interleavings turn up.
 
 ## Calendar: editing, gestures, views
 

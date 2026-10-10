@@ -1,4 +1,11 @@
-import { Attendee, CarriedText, EventRecord, GeoLocation, PendingOp } from '@calendar/core';
+import {
+  Attendee,
+  CarriedText,
+  EventRecord,
+  GeoLocation,
+  PendingOp,
+  TaskRecord,
+} from '@calendar/core';
 import { SqliteClient } from '@effect/sql-sqlite-node';
 import { expect, it } from '@effect/vitest';
 import { Effect, Layer } from 'effect';
@@ -25,6 +32,35 @@ const op = (id: string, overrides: Partial<PendingOp> = {}) =>
     kind: 'update',
     nextAttemptAt: 0,
     ...overrides,
+  });
+
+/** A synced event row titled `title`, the shape a snapshot holds. */
+const eventRow = (title: string) =>
+  new EventRecord({
+    accountId: 'acc-1',
+    calendarId: 'cal-1',
+    endUtc: 2,
+    etag: '"e"',
+    id: 'evt-1',
+    isAllDay: false,
+    startUtc: 1,
+    status: 'confirmed',
+    syncedAt: 1,
+    syncStatus: 'synced',
+    title,
+    updatedAt: 1,
+  });
+
+/** An open task row titled `title`, the shape a task snapshot holds. */
+const taskRow = (title: string) =>
+  new TaskRecord({
+    accountId: 'acc-1',
+    id: 't-1',
+    listId: 'list-1',
+    provider: 'google',
+    status: 'needsAction',
+    title,
+    updatedAt: 1,
   });
 
 describe('PendingOpRepo', () => {
@@ -76,9 +112,23 @@ describe('PendingOpRepo', () => {
           },
         ],
       });
+      const beforeTask = new TaskRecord({
+        accountId: 'acc-1',
+        dueDate: '2026-08-30',
+        id: 't-1',
+        listId: 'list-1',
+        provider: 'google',
+        status: 'needsAction',
+        title: 'Pay rent',
+        updatedAt: 1,
+      });
       yield* repo.enqueue(
         op('op-1', {
           baseEtag: '"server"',
+          beforeColorHex: '#00ff00',
+          beforeOverrides: [new EventRecord({ ...payload, id: 'evt-1_x', title: 'Moved' })],
+          beforePayload: new EventRecord({ ...payload, title: 'Before' }),
+          beforeTask,
           carriedText,
           colorHex: '#ff0000',
           lastError: 'boom',
@@ -96,6 +146,109 @@ describe('PendingOpRepo', () => {
       expect(stored?.payload?.location).toBe('Room 1');
       expect(stored?.payload?.attendees?.[0]?.email).toBe('guest@example.com');
       expect(stored?.carriedText).toEqual(carriedText);
+      expect(stored?.beforePayload?.title).toBe('Before');
+      expect(stored?.beforeOverrides?.map((row) => row.title)).toEqual(['Moved']);
+      expect(stored?.beforeTask).toEqual(beforeTask);
+      expect(stored?.beforeColorHex).toBe('#00ff00');
+    }).pipe(Effect.provide(freshDbLayer())),
+  );
+
+  it.effect('keeps "no row before" apart from "unknown" on the way through SQLite', () =>
+    Effect.gen(function* () {
+      const repo = yield* PendingOpRepo;
+      yield* repo.enqueue(op('none', { beforePayload: null }));
+      yield* repo.enqueue(op('unknown'));
+      const stored = Object.fromEntries(
+        (yield* repo.listAll()).map((entry) => [entry.id, entry.beforePayload]),
+      );
+      expect(stored['none']).toBeNull();
+      expect(stored['unknown']).toBeUndefined();
+    }).pipe(Effect.provide(freshDbLayer())),
+  );
+
+  it.effect('advanceBefore moves the snapshots of every op queued with a landed one', () =>
+    Effect.gen(function* () {
+      const repo = yield* PendingOpRepo;
+      const event = { accountId: 'acc-1', calendarId: 'cal-1', eventId: 'evt-1' };
+      yield* repo.enqueue(
+        op('landed', { beforePayload: eventRow('A'), createdAt: 1, eventId: 'evt-1' }),
+      );
+      yield* repo.enqueue(
+        op('earlier', { beforePayload: eventRow('A'), createdAt: 0, eventId: 'evt-1' }),
+      );
+      yield* repo.enqueue(
+        op('after', { beforePayload: eventRow('A'), createdAt: 2, eventId: 'evt-1' }),
+      );
+      yield* repo.enqueue(op('legacy', { createdAt: 3, eventId: 'evt-1' }));
+      yield* repo.enqueue(
+        op('parked', {
+          beforePayload: eventRow('A'),
+          conflictAt: 5,
+          createdAt: 4,
+          eventId: 'evt-1',
+        }),
+      );
+      yield* repo.enqueue(
+        op('other', { beforePayload: eventRow('A'), createdAt: 5, eventId: 'evt-2' }),
+      );
+      yield* repo.advanceBefore(event, eventRow('B'), { id: 'landed' });
+      const titles = Object.fromEntries(
+        (yield* repo.listAll()).map((entry) => [entry.id, entry.beforePayload?.title]),
+      );
+      expect(titles).toEqual({
+        after: 'B',
+        // Queued before the landed op: it never held that change either.
+        earlier: 'B',
+        landed: 'A',
+        legacy: 'B',
+        other: 'A',
+        parked: 'A',
+      });
+    }).pipe(Effect.provide(freshDbLayer())),
+  );
+
+  it.effect('advanceBeforeTask and setBefore replace one snapshot each way', () =>
+    Effect.gen(function* () {
+      const repo = yield* PendingOpRepo;
+      const taskOp = (id: string, kind: PendingOp['kind']) =>
+        op(id, {
+          beforeTask: taskRow('A'),
+          calendarId: 'list-1',
+          eventId: 't-1',
+          kind,
+          taskListId: 'list-1',
+        });
+      yield* repo.enqueue(taskOp('landed', 'updateTask'));
+      yield* repo.enqueue(taskOp('toggle', 'completeTask'));
+      yield* repo.enqueue(op('event', { beforePayload: eventRow('A'), eventId: 'evt-1' }));
+      yield* repo.advanceBeforeTask(
+        { accountId: 'acc-1', listId: 'list-1', taskId: 't-1' },
+        taskRow('B'),
+        { id: 'landed' },
+      );
+      yield* repo.setBefore('event', eventRow('C'));
+      const stored = Object.fromEntries(
+        (yield* repo.listAll()).map((entry) => [
+          entry.id,
+          entry.beforeTask?.title ?? entry.beforePayload?.title,
+        ]),
+      );
+      expect(stored).toEqual({ event: 'C', landed: 'A', toggle: 'B' });
+    }).pipe(Effect.provide(freshDbLayer())),
+  );
+
+  it.effect('forgetDeleted drops the snapshots of queued deletes of the deleted items', () =>
+    Effect.gen(function* () {
+      const repo = yield* PendingOpRepo;
+      const before = eventRow('A');
+      yield* repo.enqueue(op('del', { beforePayload: before, eventId: 'evt-1', kind: 'delete' }));
+      yield* repo.enqueue(op('upd', { beforePayload: before, eventId: 'evt-1', kind: 'update' }));
+      yield* repo.enqueue(op('other', { beforePayload: before, eventId: 'evt-2', kind: 'delete' }));
+      yield* repo.forgetDeleted('acc-1', 'cal-1', ['evt-1']);
+      const kept = Object.fromEntries(
+        (yield* repo.listAll()).map((entry) => [entry.id, entry.beforePayload !== undefined]),
+      );
+      expect(kept).toEqual({ del: false, other: true, upd: true });
     }).pipe(Effect.provide(freshDbLayer())),
   );
 

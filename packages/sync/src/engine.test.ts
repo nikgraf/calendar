@@ -209,6 +209,85 @@ describe('SyncEngine', () => {
     }).pipe(Effect.provide(engineLayer(client)));
   });
 
+  it.effect('a pull that confirms a deletion leaves a queued delete nothing to put back', () => {
+    const client: GoogleCalendarClientShape = {
+      ...stubClient([
+        { items: [timedItem('evt-1', 10)], nextSyncToken: 's1' },
+        // Deleted on Google by another client while the local delete waited.
+        { items: [{ id: 'evt-1', status: 'cancelled' }], nextSyncToken: 's2' },
+      ]),
+      deleteEvent: () => Effect.fail(new ApiUnavailableError({ cause: 'offline' })),
+    };
+    return Effect.gen(function* () {
+      yield* seedAccount;
+      const engine = yield* SyncEngine;
+      const mutations = yield* EventMutations;
+      const events = yield* EventRepo;
+      yield* engine.syncAll();
+      yield* mutations.deleteEvent({ accountId: 'acc-1', calendarId: 'cal-1', eventId: 'evt-1' });
+      const ops = yield* PendingOpRepo;
+      expect((yield* ops.listAll())[0]?.beforePayload?.title).toBe('Event evt-1');
+
+      yield* engine.syncAll();
+      const [op] = yield* ops.listAll();
+      expect(op?.kind).toBe('delete');
+      expect(op?.beforePayload).toBeUndefined();
+      // Discarding it now must not bring back an event Google removed: the
+      // sync token has seen the deletion and will never send it again.
+      yield* mutations.discardPendingOp(op!.id);
+      expect(yield* events.getById('acc-1', 'cal-1', 'evt-1')).toBeNull();
+    }).pipe(Effect.provide(engineLayer(client)));
+  });
+
+  it.effect(
+    'a pull that confirms an occurrence cancelled leaves its queued delete nothing to put back',
+    () => {
+      const series = { ...timedItem('evt-r', 10), recurrence: ['RRULE:FREQ=DAILY;COUNT=5'] };
+      const instanceId = 'evt-r_20260703T100000Z';
+      const client: GoogleCalendarClientShape = {
+        ...stubClient([
+          { items: [series], nextSyncToken: 's1' },
+          // Another client cancelled the same occurrence meanwhile.
+          {
+            items: [
+              {
+                id: instanceId,
+                originalStartTime: { dateTime: '2026-07-03T10:00:00Z' },
+                recurringEventId: 'evt-r',
+                status: 'cancelled',
+              },
+            ],
+            nextSyncToken: 's2',
+          },
+        ]),
+        deleteEvent: () => Effect.fail(new ApiUnavailableError({ cause: 'offline' })),
+      };
+      return Effect.gen(function* () {
+        yield* seedAccount;
+        const engine = yield* SyncEngine;
+        const mutations = yield* EventMutations;
+        const events = yield* EventRepo;
+        yield* engine.syncAll();
+        yield* mutations.deleteRecurring({
+          accountId: 'acc-1',
+          calendarId: 'cal-1',
+          masterId: 'evt-r',
+          originalStartUtc: Date.parse('2026-07-03T10:00:00Z'),
+          scope: 'instance',
+        });
+        const ops = yield* PendingOpRepo;
+        expect((yield* ops.listAll())[0]?.beforePayload).toBeNull();
+
+        yield* engine.syncAll();
+        const [op] = yield* ops.listAll();
+        expect(op?.beforePayload).toBeUndefined();
+        yield* mutations.discardPendingOp(op!.id);
+        // The tombstone stays: the occurrence is gone on Google for good.
+        expect((yield* events.getById('acc-1', 'cal-1', instanceId))?.status).toBe('cancelled');
+      }).pipe(Effect.provide(engineLayer(client)));
+    },
+  );
+
   it.effect('an event without a zone of its own is stored in its calendar zone', () => {
     // timedItem sends no start.timeZone. The page names the calendar's zone;
     // without one, the stored calendar's (calendarListPage: Europe/Vienna).

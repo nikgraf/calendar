@@ -1,10 +1,24 @@
-import { CarriedText, type EventRecord, EventRecord as EventRecordSchema } from '@calendar/core';
+import {
+  CarriedText,
+  type EventRecord,
+  EventRecord as EventRecordSchema,
+  type TaskRecord,
+  TaskRecord as TaskRecordSchema,
+} from '@calendar/core';
 import { Schema } from 'effect';
 import { SqlClient } from 'effect/sql/SqlClient';
 
 /** PendingOp payloads are stored as encoded EventRecord JSON. */
 export const eventPayloadJson = (event: EventRecord): unknown =>
   Schema.encodeSync(EventRecordSchema)(event);
+
+const eventListSchema = Schema.Array(EventRecordSchema);
+
+export const eventListJson = (events: ReadonlyArray<EventRecord>): unknown =>
+  Schema.encodeSync(eventListSchema)(events);
+
+export const taskPayloadJson = (task: TaskRecord): unknown =>
+  Schema.encodeSync(TaskRecordSchema)(task);
 
 export const carriedTextJson = (carried: CarriedText): unknown =>
   Schema.encodeSync(CarriedText)(carried);

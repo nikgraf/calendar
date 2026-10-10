@@ -1,11 +1,11 @@
-import { type PendingOp } from '@calendar/core';
+import { type EventRecord, type PendingOp, type TaskRecord } from '@calendar/core';
 import { Context, Effect, Layer } from 'effect';
 import { Reactivity } from 'effect/reactivity/Reactivity';
 import { SqlClient } from 'effect/sql/SqlClient';
 import type { SqlError } from 'effect/sql/SqlError';
 import { OPS_KEY } from './keys.ts';
 import { pendingOpFromRow, type PendingOpRow } from './rows.ts';
-import { carriedTextJson, eventPayloadJson } from './repoShared.ts';
+import { carriedTextJson, eventListJson, eventPayloadJson, taskPayloadJson } from './repoShared.ts';
 
 export interface PendingOpRepoShape {
   /**
@@ -23,6 +23,25 @@ export interface PendingOpRepoShape {
     from: string,
     to: string,
     landed: { readonly createdAt: number; readonly id: string },
+  ) => Effect.Effect<void, SqlError>;
+  /**
+   * After an op (`landed`) landed while others of the event were queued:
+   * what Google acknowledged (`synced`) is now what every one of them
+   * replaces — the ones queued after it took their snapshot with its
+   * change in, the ones before it never held that change — so their
+   * snapshots move to it; a discard must not undo the landed change along
+   * with its own. Parked ops are left alone.
+   */
+  readonly advanceBefore: (
+    event: { readonly accountId: string; readonly calendarId: string; readonly eventId: string },
+    synced: EventRecord,
+    landed: { readonly id: string },
+  ) => Effect.Effect<void, SqlError>;
+  /** The task counterpart of `advanceBefore`, for the ops of one task of one list. */
+  readonly advanceBeforeTask: (
+    task: { readonly accountId: string; readonly listId: string; readonly taskId: string },
+    synced: TaskRecord,
+    landed: { readonly id: string },
   ) => Effect.Effect<void, SqlError>;
   /**
    * Kinds of the ops queued before `op` for the same series — the event
@@ -47,6 +66,17 @@ export interface PendingOpRepoShape {
     op: PendingOp,
   ) => Effect.Effect<ReadonlyArray<PendingOp['kind']>, SqlError>;
   readonly enqueue: (op: PendingOp) => Effect.Effect<void, SqlError>;
+  /**
+   * A pull confirmed these items deleted upstream (`containerId`: the
+   * calendar or task list): a queued delete of one has nothing left to put
+   * back, so its snapshot goes — a discard would otherwise restore an
+   * event or task the sync token has already seen removed.
+   */
+  readonly forgetDeleted: (
+    accountId: string,
+    containerId: string,
+    ids: ReadonlyArray<string>,
+  ) => Effect.Effect<void, SqlError>;
   readonly getById: (opId: string) => Effect.Effect<PendingOp | undefined, SqlError>;
   readonly listAll: () => Effect.Effect<ReadonlyArray<PendingOp>, SqlError>;
   readonly listDue: (now: number) => Effect.Effect<ReadonlyArray<PendingOp>, SqlError>;
@@ -103,6 +133,17 @@ export interface PendingOpRepoShape {
     newEventId: string,
   ) => Effect.Effect<void, SqlError>;
   /**
+   * Replaces one op's event snapshot: a discarded op of the same event
+   * takes its change out of the snapshots the others hold.
+   */
+  readonly setBefore: (opId: string, before: EventRecord) => Effect.Effect<void, SqlError>;
+  /**
+   * Replaces what one op sends: a discarded op of the same event takes
+   * its change out of what the others would send too (an RSVP rides in a
+   * guest-list edit's attendees, a guest-list edit in an RSVP's).
+   */
+  readonly setPayload: (opId: string, payload: EventRecord) => Effect.Effect<void, SqlError>;
+  /**
    * Keep-mine: clears the park and the If-Match etag so the next drain
    * overwrites the server copy, and makes the op due immediately.
    */
@@ -111,6 +152,14 @@ export interface PendingOpRepoShape {
 
 /** Ops one drain pass takes on; a larger backlog continues on the next kick. */
 const DRAIN_PAGE_SIZE = 200;
+
+/**
+ * `before_payload` keeps its three states apart: absent → SQL NULL, "no
+ * row before" → the JSON text `null`, a record → its JSON (rows.ts reads
+ * them back the same way).
+ */
+const beforePayloadColumn = (before: PendingOp['beforePayload']): string | null =>
+  before === undefined ? null : before === null ? 'null' : JSON.stringify(eventPayloadJson(before));
 
 /** Rows of an unknown op kind are skipped: nothing could apply them. */
 const decodedOps = (row: PendingOpRow): Array<PendingOp> => {
@@ -163,7 +212,8 @@ const makePendingOpRepo: Effect.Effect<PendingOpRepoShape, never, Reactivity | S
                                    task_title, task_notes, task_due, dispatched_at,
                                    attendees_changed, geo_cleared, target_calendar_id,
                                    reminders_changed, conflict_at, server_payload,
-                                   carried_text, recurrence_cleared)
+                                   carried_text, recurrence_cleared, before_payload,
+                                   before_overrides, before_task, before_color_hex)
           VALUES (${op.id}, ${op.accountId}, ${op.calendarId}, ${op.kind},
                   ${op.eventId},
                   ${op.payload ? JSON.stringify(eventPayloadJson(op.payload)) : null},
@@ -176,7 +226,11 @@ const makePendingOpRepo: Effect.Effect<PendingOpRepoShape, never, Reactivity | S
                   ${op.remindersChanged ? 1 : 0}, ${op.conflictAt ?? null},
                   ${op.serverPayload ? JSON.stringify(eventPayloadJson(op.serverPayload)) : null},
                   ${op.carriedText ? JSON.stringify(carriedTextJson(op.carriedText)) : null},
-                  ${op.recurrenceCleared ? 1 : 0})
+                  ${op.recurrenceCleared ? 1 : 0},
+                  ${beforePayloadColumn(op.beforePayload)},
+                  ${op.beforeOverrides ? JSON.stringify(eventListJson(op.beforeOverrides)) : null},
+                  ${op.beforeTask ? JSON.stringify(taskPayloadJson(op.beforeTask)) : null},
+                  ${op.beforeColorHex ?? null})
         `),
         ),
       getById: (opId) =>
@@ -205,6 +259,35 @@ const makePendingOpRepo: Effect.Effect<PendingOpRepoShape, never, Reactivity | S
                       (SELECT rowid FROM pending_ops WHERE id = ${landed.id}), -1)))`,
           ),
         ),
+      advanceBefore: ({ accountId, calendarId, eventId }, synced, landed) =>
+        invalidating(
+          Effect.asVoid(
+            sql`UPDATE pending_ops SET before_payload = ${JSON.stringify(eventPayloadJson(synced))}
+              WHERE account_id = ${accountId} AND calendar_id = ${calendarId}
+                AND event_id = ${eventId} AND conflict_at IS NULL
+                AND kind IN ('delete', 'rsvp', 'update') AND id != ${landed.id}`,
+          ),
+        ),
+      advanceBeforeTask: ({ accountId, listId, taskId }, synced, landed) =>
+        invalidating(
+          Effect.asVoid(
+            sql`UPDATE pending_ops SET before_task = ${JSON.stringify(taskPayloadJson(synced))}
+              WHERE account_id = ${accountId} AND calendar_id = ${listId}
+                AND event_id = ${taskId} AND conflict_at IS NULL
+                AND kind IN ('completeTask', 'deleteTask', 'updateTask') AND id != ${landed.id}`,
+          ),
+        ),
+      forgetDeleted: (accountId, containerId, ids) =>
+        ids.length === 0
+          ? Effect.void
+          : invalidating(
+              Effect.asVoid(
+                sql`UPDATE pending_ops SET before_payload = NULL, before_overrides = NULL,
+                  before_task = NULL
+                  WHERE account_id = ${accountId} AND calendar_id = ${containerId}
+                    AND event_id IN ${sql.in(ids)} AND kind IN ('delete', 'deleteTask')`,
+              ),
+            ),
       listDue: (now) =>
         Effect.map(
           // rowid breaks created_at ties in insertion order (two ops of one
@@ -273,6 +356,20 @@ const makePendingOpRepo: Effect.Effect<PendingOpRepoShape, never, Reactivity | S
             sql`UPDATE pending_ops SET event_id = ${newEventId}
               WHERE account_id = ${accountId} AND calendar_id = ${calendarId}
                 AND event_id = ${oldEventId}`,
+          ),
+        ),
+      setBefore: (opId, before) =>
+        invalidating(
+          Effect.asVoid(
+            sql`UPDATE pending_ops SET before_payload = ${JSON.stringify(eventPayloadJson(before))}
+              WHERE id = ${opId}`,
+          ),
+        ),
+      setPayload: (opId, payload) =>
+        invalidating(
+          Effect.asVoid(
+            sql`UPDATE pending_ops SET payload = ${JSON.stringify(eventPayloadJson(payload))}
+              WHERE id = ${opId}`,
           ),
         ),
       unpark: (opId, now) =>

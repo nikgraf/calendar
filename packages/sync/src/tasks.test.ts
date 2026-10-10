@@ -18,7 +18,7 @@ import {
 import { RemindersClient, unavailableRemindersClient } from '@calendar/reminders';
 import { SqliteClient } from '@effect/sql-sqlite-node';
 import { expect, it } from '@effect/vitest';
-import { Effect, Layer, Scheduler } from 'effect';
+import { Effect, Fiber, Layer, Scheduler } from 'effect';
 import { layer as reactivityLayer } from 'effect/reactivity/Reactivity';
 import { SqlClient } from 'effect/sql/SqlClient';
 import { describe } from 'vite-plus/test';
@@ -98,6 +98,16 @@ const seedAccount = (tasksEnabled: boolean) =>
   });
 
 const lists = { items: [{ id: 'list-1', title: 'My Tasks' }] };
+
+/** The task's row with its sync flag, which TaskRecord does not carry. */
+const taskRow = (id: string) =>
+  Effect.gen(function* () {
+    const row = yield* (yield* TaskRepo).get('acc-1', 'list-1', id);
+    const sql = yield* SqlClient;
+    const [status] = yield* sql<{ sync_status: string }>`SELECT sync_status FROM tasks
+      WHERE account_id = 'acc-1' AND list_id = 'list-1' AND id = ${id}`;
+    return row ? { ...row, syncStatus: status?.sync_status } : undefined;
+  });
 
 /** An open task due 2026-08-30, as Google lists it. */
 const openTask = (id: string) => ({
@@ -859,6 +869,189 @@ describe('completeTask', () => {
       expect(yield* ops.listAll()).toHaveLength(0);
     }).pipe(noYield, Effect.provide(testLayer(client)));
   });
+
+  it.effect('discarding a completion puts the task back open', () =>
+    Effect.gen(function* () {
+      yield* seedTasks;
+      const mutations = yield* EventMutations;
+      yield* mutations.completeTask({
+        accountId: 'acc-1',
+        status: 'completed',
+        taskId: 't1',
+        taskListId: 'list-1',
+      });
+      const ops = yield* PendingOpRepo;
+      const [op] = yield* ops.listAll();
+      expect(op?.beforeTask?.status).toBe('needsAction');
+
+      yield* mutations.discardPendingOp(op!.id);
+      const row = yield* taskRow('t1');
+      expect(row?.status).toBe('needsAction');
+      expect(row?.completedAt).toBeUndefined();
+      expect(row?.syncStatus).toBe('synced');
+      expect(yield* ops.listAll()).toEqual([]);
+    }).pipe(noYield, Effect.provide(testLayer(tasksClient({})))),
+  );
+
+  it.effect('discarding a rename keeps a completion queued after it, and its tick', () =>
+    Effect.gen(function* () {
+      yield* seedTasks;
+      const mutations = yield* EventMutations;
+      yield* mutations.updateTask({
+        accountId: 'acc-1',
+        changes: { title: 'Renamed' },
+        taskId: 't1',
+        taskListId: 'list-1',
+      });
+      yield* mutations.completeTask({
+        accountId: 'acc-1',
+        status: 'completed',
+        taskId: 't1',
+        taskListId: 'list-1',
+      });
+      const ops = yield* PendingOpRepo;
+      const rename = (yield* ops.listAll()).find((op) => op.kind === 'updateTask');
+      expect(rename?.beforeTask?.title).toBe('Pay rent');
+
+      yield* mutations.discardPendingOp(rename!.id);
+      const afterRename = yield* taskRow('t1');
+      expect(afterRename?.title).toBe('Pay rent');
+      expect(afterRename?.status).toBe('completed');
+      expect(afterRename?.syncStatus).toBe('pending');
+
+      const completion = (yield* ops.listAll()).find((op) => op.kind === 'completeTask');
+      yield* mutations.discardPendingOp(completion!.id);
+      const afterBoth = yield* taskRow('t1');
+      expect(afterBoth?.status).toBe('needsAction');
+      expect(afterBoth?.syncStatus).toBe('synced');
+    }).pipe(noYield, Effect.provide(testLayer(tasksClient({})))),
+  );
+
+  it.effect('a delete after coalesced edits and a toggle remembers the acknowledged task', () =>
+    Effect.gen(function* () {
+      yield* seedTasks;
+      const mutations = yield* EventMutations;
+      const rename = (title: string) =>
+        mutations.updateTask({
+          accountId: 'acc-1',
+          changes: { title },
+          taskId: 't1',
+          taskListId: 'list-1',
+        });
+      // A rename, a completion, a second rename (which re-queues the edit
+      // behind the completion), then the delete.
+      yield* rename('Pay rent (B)');
+      yield* mutations.completeTask({
+        accountId: 'acc-1',
+        status: 'completed',
+        taskId: 't1',
+        taskListId: 'list-1',
+      });
+      yield* rename('Pay rent (C)');
+      yield* mutations.deleteTask({ accountId: 'acc-1', taskId: 't1', taskListId: 'list-1' });
+      const ops = yield* PendingOpRepo;
+      const [op] = yield* ops.listAll();
+      expect(op?.kind).toBe('deleteTask');
+
+      yield* mutations.discardPendingOp(op!.id);
+      const row = yield* taskRow('t1');
+      expect(row?.title).toBe('Pay rent');
+      expect(row?.status).toBe('needsAction');
+      expect(row?.syncStatus).toBe('synced');
+    }).pipe(noYield, Effect.provide(testLayer(tasksClient({})))),
+  );
+
+  it.effect(
+    'a pull that confirms a deletion leaves a queued task delete nothing to put back',
+    () => {
+      const client: GoogleTasksClientShape = tasksClient({
+        deleteTask: () => Effect.fail(new ApiUnavailableError({ cause: 'offline' })),
+        listTaskLists: () => Effect.succeed(lists),
+        // Deleted on Google by another client while the local delete waited.
+        listTasks: () =>
+          Effect.succeed({
+            items: [{ deleted: true, id: 't1', updated: '2026-08-23T10:00:00.000Z' }],
+          }),
+      });
+      return Effect.gen(function* () {
+        yield* seedTasks;
+        const mutations = yield* EventMutations;
+        yield* mutations.deleteTask({ accountId: 'acc-1', taskId: 't1', taskListId: 'list-1' });
+        yield* (yield* SyncEngine).syncAll();
+        const ops = yield* PendingOpRepo;
+        const [op] = yield* ops.listAll();
+        expect(op?.kind).toBe('deleteTask');
+        expect(op?.beforeTask).toBeUndefined();
+        yield* mutations.discardPendingOp(op!.id);
+        expect(yield* taskRow('t1')).toBeUndefined();
+      }).pipe(noYield, Effect.provide(testLayer(client)));
+    },
+  );
+
+  it.effect(
+    'a rename that lands while its replacement is queued becomes what that replaces',
+    () => {
+      let release: (() => void) | undefined;
+      let patches = 0;
+      const client: GoogleTasksClientShape = tasksClient({
+        patchTask: ({ changes, taskId }) =>
+          patches++ === 0
+            ? Effect.flatMap(
+                Effect.promise(
+                  () =>
+                    new Promise<void>((resolve) => {
+                      release = resolve;
+                    }),
+                ),
+                () => Effect.succeed({ id: taskId, status: 'needsAction', title: changes.title }),
+              )
+            : Effect.fail(new ApiUnavailableError({ cause: 'offline' })),
+      });
+      return Effect.gen(function* () {
+        yield* seedTasks;
+        const mutations = yield* EventMutations;
+        const rename = (title: string) =>
+          mutations.updateTask({
+            accountId: 'acc-1',
+            changes: { title },
+            taskId: 't1',
+            taskListId: 'list-1',
+          });
+        yield* rename('Pay rent (B)');
+        const drain = yield* Effect.forkChild(mutations.processPendingOps());
+        while (release === undefined) {
+          yield* Effect.yieldNow;
+        }
+        yield* rename('Pay rent (C)');
+        release();
+        yield* Fiber.join(drain);
+
+        const [op] = yield* (yield* PendingOpRepo).listAll();
+        expect(op?.taskTitle).toBe('Pay rent (C)');
+        expect(op?.beforeTask?.title).toBe('Pay rent (B)');
+        yield* mutations.discardPendingOp(op!.id);
+        expect((yield* taskRow('t1'))?.title).toBe('Pay rent (B)');
+      }).pipe(Effect.provide(testLayer(client)));
+    },
+  );
+
+  it.effect('discarding a delete brings the task back', () =>
+    Effect.gen(function* () {
+      yield* seedTasks;
+      const mutations = yield* EventMutations;
+      yield* mutations.deleteTask({ accountId: 'acc-1', taskId: 't1', taskListId: 'list-1' });
+      expect(yield* taskRow('t1')).toBeUndefined();
+      const ops = yield* PendingOpRepo;
+      const [op] = yield* ops.listAll();
+      expect(op?.beforeTask?.title).toBe('Pay rent');
+
+      yield* mutations.discardPendingOp(op!.id);
+      const row = yield* taskRow('t1');
+      expect(row?.title).toBe('Pay rent');
+      expect(row?.dueDate).toBe('2026-08-30');
+      expect(row?.syncStatus).toBe('synced');
+    }).pipe(noYield, Effect.provide(testLayer(tasksClient({})))),
+  );
 
   it.effect('rejects unknown task lists', () =>
     Effect.gen(function* () {

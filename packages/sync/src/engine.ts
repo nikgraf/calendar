@@ -16,6 +16,7 @@ import {
   ContactRepo,
   DeviceSettingsRepo,
   EventRepo,
+  PendingOpRepo,
   SyncStateRepo,
   TaskRepo,
 } from '@calendar/db';
@@ -166,6 +167,7 @@ const make: Effect.Effect<
   | GoogleCalendarClient
   | GooglePeopleClient
   | GoogleTasksClient
+  | PendingOpRepo
   | RemindersClient
   | SyncStateRepo
   | TaskRepo
@@ -179,6 +181,7 @@ const make: Effect.Effect<
   const calendarRepo = yield* CalendarRepo;
   const contactRepo = yield* ContactRepo;
   const eventRepo = yield* EventRepo;
+  const pendingOpRepo = yield* PendingOpRepo;
   const taskRepo = yield* TaskRepo;
   const remindersClient = yield* RemindersClient;
   const appleCalendarClient = yield* AppleCalendarClient;
@@ -336,11 +339,14 @@ const make: Effect.Effect<
           };
           const upserts: Array<EventRecord> = [];
           const deletions: Array<string> = [];
+          // Occurrences Google cancelled, kept as tombstones: gone all the same.
+          const cancelled: Array<string> = [];
           for (const item of items) {
             if (item.status === 'cancelled') {
               const tombstone = cancelledOverrideTombstone(item, context);
               if (tombstone) {
                 upserts.push(tombstone);
+                cancelled.push(item.id);
               } else {
                 deletions.push(item.id);
               }
@@ -362,6 +368,11 @@ const make: Effect.Effect<
               mode: 'pull',
               upserts,
             });
+            // A queued delete of one of these has nothing left to put back.
+            yield* pendingOpRepo.forgetDeleted(account.id, calendarId, [
+              ...deletions,
+              ...cancelled,
+            ]);
           }
           // A full list of a big calendar is many pages: let rpc handlers
           // and the UI interleave between them.
@@ -491,6 +502,8 @@ const make: Effect.Effect<
         // A pull never overwrites a row with a local edit still queued.
         yield* taskRepo.upsertTasks(upserts, passStartedAt, { mode: 'pull' });
         yield* taskRepo.removeTasksByIds(account.id, taskListId, deletions);
+        // A queued delete of one of these has nothing left to put back.
+        yield* pendingOpRepo.forgetDeleted(account.id, taskListId, deletions);
         pageToken = page.nextPageToken;
       } while (pageToken !== undefined);
 
@@ -1033,6 +1046,7 @@ export class SyncEngine extends Context.Service<SyncEngine, SyncEngineShape>()('
     | GoogleCalendarClient
     | GooglePeopleClient
     | GoogleTasksClient
+    | PendingOpRepo
     | RemindersClient
     | SyncStateRepo
     | TaskRepo

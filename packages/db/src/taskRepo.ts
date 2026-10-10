@@ -63,6 +63,16 @@ export interface TaskRepoShape {
   /** Optimistic local create (sync_status 'pending' until the push lands). */
   readonly insertLocal: (task: TaskRecord) => Effect.Effect<void, SqlError>;
   readonly listLists: (accountId?: string) => Effect.Effect<ReadonlyArray<TaskListInfo>, SqlError>;
+  /**
+   * Keeps a row out of the pulls' way: a discarded op put the row back
+   * whole (`upsertTasks`, which writes it synced) while another op of the
+   * task is still queued and owns it.
+   */
+  readonly markPending: (
+    accountId: string,
+    listId: string,
+    taskId: string,
+  ) => Effect.Effect<void, SqlError>;
   /** Hands a row back to sync after its queued edit was abandoned. */
   readonly markSynced: (
     accountId: string,
@@ -335,6 +345,13 @@ const makeTaskRepo: Effect.Effect<TaskRepoShape, never, Reactivity | SqlClient> 
           (rows) => rows.map(taskListFromRow),
         ),
 
+      markPending: (accountId, listId, taskId) =>
+        tasksMutation(
+          Effect.asVoid(
+            sql`UPDATE tasks SET sync_status = 'pending'
+              WHERE account_id = ${accountId} AND list_id = ${listId} AND id = ${taskId}`,
+          ),
+        ),
       markSynced: (accountId, listId, taskId) =>
         tasksMutation(
           Effect.asVoid(

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vite-plus/test';
 import { CarriedText, EventReminders, GeoLocation, ReminderOverride } from '@calendar/core';
+import { eventPayloadJson } from './repoShared.ts';
 import {
   eventFromRow,
   type EventRow,
@@ -48,6 +49,10 @@ const opRow = (overrides: Partial<PendingOpRow> = {}): PendingOpRow => ({
   attempts: 0,
   attendees_changed: 0,
   base_etag: null,
+  before_color_hex: null,
+  before_overrides: null,
+  before_payload: null,
+  before_task: null,
   calendar_id: 'cal-1',
   carried_text: null,
   color_hex: null,
@@ -164,6 +169,22 @@ describe('row decoders tolerate what the DB may hold', () => {
     );
     expect(pendingOpFromRow(opRow({ carried_text: '{"base":1}' }))?.carriedText).toBeUndefined();
     expect(pendingOpFromRow(opRow())?.carriedText).toBeUndefined();
+  });
+
+  it('pendingOpFromRow keeps the three states of before_payload apart', () => {
+    // SQL NULL: an op from before the column — nothing to put back.
+    expect(pendingOpFromRow(opRow())?.beforePayload).toBeUndefined();
+    // The JSON text null: there was no row before the change.
+    expect(pendingOpFromRow(opRow({ before_payload: 'null' }))?.beforePayload).toBeNull();
+    const before = eventFromRow(eventRow({ title: 'Before' }));
+    expect(
+      pendingOpFromRow(opRow({ before_payload: JSON.stringify(eventPayloadJson(before)) }))
+        ?.beforePayload?.title,
+    ).toBe('Before');
+    // Unreadable JSON degrades like every other JSON column.
+    expect(pendingOpFromRow(opRow({ before_payload: '{not json' }))?.beforePayload).toBeUndefined();
+    expect(pendingOpFromRow(opRow({ before_task: '{"id": 1}' }))?.beforeTask).toBeUndefined();
+    expect(pendingOpFromRow(opRow({ before_overrides: '[1]' }))?.beforeOverrides).toBeUndefined();
   });
 
   it('pendingOpFromRow skips a row whose op kind nothing could apply', () => {

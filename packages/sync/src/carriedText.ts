@@ -133,10 +133,29 @@ export const planCarry = ({
 };
 
 /**
- * Puts back the exceptions' own text when `op` is abandoned. A field the
- * user has edited on the exception since keeps the newer value, and a row
- * a pull or push has replaced since keeps Google's version.
+ * The exception `row` with its own text back, as if `op` (a series edit
+ * that carried text onto it) had never been: what abandoning the op puts
+ * back, and what a snapshot of the exception must hold while the op is
+ * queued. A field the user has edited on the exception since keeps the
+ * newer value, and a row a pull or push has replaced since keeps Google's
+ * version. The row itself when `op` carried nothing onto it.
  */
+export const withOwnText = (row: EventRecord, op: PendingOp): EventRecord => {
+  const entry = op.carriedText?.overrides.find((candidate) => candidate.eventId === row.id);
+  if (op.kind !== 'update' || !entry || row.status === 'cancelled') {
+    return row;
+  }
+  const text: Text = {};
+  for (const field of FIELDS) {
+    const own = entry[field];
+    if (own !== undefined && stillCarried(row, op, entry, field)) {
+      text[field] = own;
+    }
+  }
+  return withText(row, text, text.location === undefined ? undefined : entry.geo);
+};
+
+/** Puts back the exceptions' own text when `op` is abandoned (`withOwnText`, row by row). */
 export const restoreCarriedText = (
   eventRepo: EventRepoShape,
   op: PendingOp,
@@ -148,17 +167,10 @@ export const restoreCarriedText = (
     const rows: Array<EventRecord> = [];
     for (const entry of op.carriedText.overrides) {
       const row = yield* eventRepo.getById(op.accountId, op.calendarId, entry.eventId);
-      if (!row || row.status === 'cancelled') {
+      if (!row) {
         continue;
       }
-      const text: Text = {};
-      for (const field of FIELDS) {
-        const own = entry[field];
-        if (own !== undefined && stillCarried(row, op, entry, field)) {
-          text[field] = own;
-        }
-      }
-      const restored = withText(row, text, text.location === undefined ? undefined : entry.geo);
+      const restored = withOwnText(row, op);
       if (restored !== row) {
         rows.push(restored);
       }

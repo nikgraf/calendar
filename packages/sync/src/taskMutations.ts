@@ -47,6 +47,38 @@ const patchFields = (source: {
   ...(source.taskTitle === undefined ? {} : { taskTitle: source.taskTitle }),
 });
 
+/**
+ * The task as Google last acknowledged it, for a delete that replaces the
+ * queued ops: each op's snapshot holds the acknowledged value of the
+ * fields it owns — an edit's title, notes and due day (the ones it
+ * carries), a toggle's status — whatever order coalescing left the ops
+ * in. A field no op touched is the row's.
+ */
+const acknowledgedTask = (
+  queued: ReadonlyArray<PendingOp>,
+  current: TaskRecord,
+  accountId: string,
+): TaskRecord => {
+  let acked = current;
+  for (const op of queued) {
+    const before = op.beforeTask;
+    if (op.accountId !== accountId || !before) {
+      continue;
+    }
+    if (op.kind === 'completeTask') {
+      acked = new TaskRecord({ ...acked, completedAt: before.completedAt, status: before.status });
+    } else if (op.kind === 'updateTask') {
+      acked = new TaskRecord({
+        ...acked,
+        ...(op.taskDue === undefined ? {} : { dueDate: before.dueDate }),
+        ...(op.taskNotes === undefined ? {} : { notes: before.notes }),
+        ...(op.taskTitle === undefined ? {} : { title: before.title }),
+      });
+    }
+  }
+  return acked;
+};
+
 export const makeTaskMutations = (deps: TaskMutationDeps): TaskMutations => {
   const { enqueue, opsForEvent, pendingOpRepo, taskRepo } = deps;
   return {
@@ -57,6 +89,9 @@ export const makeTaskMutations = (deps: TaskMutationDeps): TaskMutations => {
           return yield* Effect.fail(new TaskNotFoundError({ taskId }));
         }
         const now = yield* Clock.currentTimeMillis;
+        // The row before the toggle, for the diff and a discard; a replaced
+        // toggle's before stays — the row already holds that toggle.
+        const current = yield* taskRepo.get(accountId, taskListId, taskId);
         yield* taskRepo.setStatus({
           accountId,
           completedAt: status === 'completed' ? now : undefined,
@@ -66,6 +101,7 @@ export const makeTaskMutations = (deps: TaskMutationDeps): TaskMutations => {
         });
         // Only the latest toggle needs to reach Google.
         const queued = yield* opsForEvent(accountId, taskListId, taskId);
+        const prior = queued.find((op) => op.accountId === accountId && op.kind === 'completeTask');
         for (const op of queued) {
           if (op.accountId === accountId && op.kind === 'completeTask') {
             yield* pendingOpRepo.remove(op.id);
@@ -75,6 +111,7 @@ export const makeTaskMutations = (deps: TaskMutationDeps): TaskMutations => {
           new PendingOp({
             accountId,
             attempts: 0,
+            beforeTask: prior ? prior.beforeTask : current,
             // Op identity reuses the event columns as opaque ids, like
             // calendarColor's sentinel does.
             calendarId: taskListId,
@@ -133,10 +170,14 @@ export const makeTaskMutations = (deps: TaskMutationDeps): TaskMutations => {
 
     deleteTask: ({ accountId, taskId, taskListId }) =>
       Effect.gen(function* () {
+        // The row as deleted — or as it was before the queued edits this
+        // delete replaces — so a discard can put it back.
+        const current = yield* taskRepo.get(accountId, taskListId, taskId);
         yield* taskRepo.removeTask(accountId, taskListId, taskId);
         // Everything queued for this task is moot now — and if its create
         // never pushed, the task never existed upstream: no server op.
         const queued = yield* opsForEvent(accountId, taskListId, taskId);
+        const beforeTask = current ? acknowledgedTask(queued, current, accountId) : undefined;
         let unsentCreate = false;
         for (const queuedOp of queued) {
           if (queuedOp.accountId !== accountId) {
@@ -155,6 +196,7 @@ export const makeTaskMutations = (deps: TaskMutationDeps): TaskMutations => {
           new PendingOp({
             accountId,
             attempts: 0,
+            beforeTask,
             calendarId: taskListId,
             createdAt: now,
             eventId: taskId,
@@ -168,6 +210,8 @@ export const makeTaskMutations = (deps: TaskMutationDeps): TaskMutations => {
 
     updateTask: ({ accountId, changes, taskId, taskListId }) =>
       Effect.gen(function* () {
+        // The row before the edit, for the diff and a discard.
+        const current = yield* taskRepo.get(accountId, taskListId, taskId);
         // Google knows title/notes/due only; the dispatcher already rejected
         // Reminders-only fields, so this narrows rather than drops.
         yield* taskRepo.updateLocal({
@@ -208,6 +252,10 @@ export const makeTaskMutations = (deps: TaskMutationDeps): TaskMutations => {
         // but each op carries only the fields its edit changed — a rename
         // followed by a new due day must still send the rename.
         let fields: TaskPatchFields = {};
+        // The earliest replaced edit's before: the row holds every later one.
+        const prior = queued.find(
+          (queuedOp) => queuedOp.accountId === accountId && queuedOp.kind === 'updateTask',
+        );
         for (const queuedOp of queued) {
           if (queuedOp.accountId === accountId && queuedOp.kind === 'updateTask') {
             fields = { ...fields, ...patchFields(queuedOp) };
@@ -226,6 +274,7 @@ export const makeTaskMutations = (deps: TaskMutationDeps): TaskMutations => {
           new PendingOp({
             accountId,
             attempts: 0,
+            beforeTask: prior ? prior.beforeTask : current,
             calendarId: taskListId,
             createdAt: now,
             eventId: taskId,

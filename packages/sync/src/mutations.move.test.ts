@@ -772,3 +772,31 @@ describe('moveEvent across accounts and providers', () => {
     }).pipe(Effect.provide(testLayer(recordingGoogle([]), appleFake())));
   });
 });
+
+describe('discarding an edit re-queued behind a move', () => {
+  it.effect('puts the row back in the destination, still pending for the move', () => {
+    const calls: Array<Call> = [];
+    return Effect.gen(function* () {
+      const original = googleEvent();
+      yield* seed([original]);
+      const mutations = yield* EventMutations;
+      yield* mutations.updateEvent({
+        accountId: 'acc-1',
+        calendarId: 'cal-1',
+        changes: { title: 'Planning (edited)' },
+        eventId: 'evt-a',
+      });
+      yield* mutations.moveEvent(move(['acc-1', 'cal-1', 'evt-a'], ['acc-1', 'cal-2']));
+      const edit = (yield* queued).find((op) => op.kind === 'update');
+      // The snapshot moved with the op: a discard writes where the row is now.
+      expect(edit?.beforePayload?.calendarId).toBe('cal-2');
+      expect(edit?.beforePayload?.title).toBe(original.title);
+
+      yield* mutations.discardPendingOp(edit!.id);
+      const row = yield* rowAt('acc-1', 'cal-2', 'evt-a');
+      expect(row?.title).toBe(original.title);
+      expect(row?.syncStatus).toBe('pending');
+      expect((yield* queued).map((op) => op.kind)).toEqual(['move']);
+    }).pipe(noYield, Effect.provide(testLayer(recordingGoogle(calls), appleFake())));
+  });
+});

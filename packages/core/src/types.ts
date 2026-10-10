@@ -380,6 +380,26 @@ export class PendingOp extends Schema.Class<PendingOp>('PendingOp')({
   attendeesChanged: Schema.optional(Schema.Boolean),
   /** If-Match etag captured when the op was enqueued (update/delete). */
   baseEtag: Schema.optional(Schema.String),
+  /** Kind 'calendarColor': the color the calendar had, so a discard puts it back. */
+  beforeColorHex: Schema.optional(Schema.String),
+  /**
+   * A series delete only: the exception rows it removed locally along with
+   * the master (Google cascades, so they queue no op of their own). A
+   * discard re-inserts them with the master.
+   */
+  beforeOverrides: Schema.optional(Schema.Array(EventRecord)),
+  /**
+   * The event row as it was before this change was made locally — what the
+   * unsynced-changes list diffs against and what a discard (or a permanent
+   * rejection) puts back. Inherited when a newer edit replaces a queued op,
+   * so it always names the last state Google acknowledged. `null`: there
+   * was no row (an occurrence edit or delete materialized its override), so
+   * a discard removes the row. Absent: the op predates the snapshot — a
+   * discard can only mark the row synced.
+   */
+  beforePayload: Schema.optional(Schema.NullOr(EventRecord)),
+  /** The task row before an updateTask / completeTask / deleteTask, for the same purposes. */
+  beforeTask: Schema.optional(TaskRecord),
   calendarId: Schema.String,
   /**
    * Set on a series update that mirrored changed text onto the local

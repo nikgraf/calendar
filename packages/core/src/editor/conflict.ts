@@ -34,7 +34,8 @@ export interface ConflictInput {
   readonly title?: string | undefined;
 }
 
-const plainDateLabel = (isoDate: string): string =>
+/** "Tue, Sep 23". */
+export const plainDateLabel = (isoDate: string): string =>
   Temporal.PlainDate.from(isoDate).toLocaleString('en-US', {
     day: 'numeric',
     month: 'short',
@@ -72,7 +73,24 @@ const guestsLabel = (event: EventRecord): string => {
   return emails.length === 0 ? 'none' : emails.join(', ');
 };
 
-const orNone = (value: string | undefined): string => (value?.trim() ? value.trim() : 'none');
+/** "none" for an empty text field, so a cleared field reads as a change. */
+export const orNone = (value: string | undefined): string =>
+  value?.trim() ? value.trim() : 'none';
+
+/**
+ * The fields a user would recognize, as they are displayed: what the
+ * conflict banner and the unsynced-changes diff compare, in this order.
+ */
+export const eventFieldPairs = (
+  event: EventRecord,
+  timeZone: string,
+): ReadonlyArray<readonly [ConflictChange['label'], string]> => [
+  ['Title', event.title || UNTITLED_EVENT],
+  ['Time', conflictTimeLabel(event, timeZone)],
+  ['Location', orNone(event.location)],
+  ['Notes', orNone(event.description)],
+  ['Guests', guestsLabel(event)],
+];
 
 /** The fields a user would recognize, compared as they are displayed. */
 export const conflictChanges = (
@@ -80,16 +98,11 @@ export const conflictChanges = (
   theirs: EventRecord,
   timeZone: string,
 ): ReadonlyArray<ConflictChange> => {
-  const pairs: ReadonlyArray<readonly [ConflictChange['label'], string, string]> = [
-    ['Title', mine.title || UNTITLED_EVENT, theirs.title || UNTITLED_EVENT],
-    ['Time', conflictTimeLabel(mine, timeZone), conflictTimeLabel(theirs, timeZone)],
-    ['Location', orNone(mine.location), orNone(theirs.location)],
-    ['Notes', orNone(mine.description), orNone(theirs.description)],
-    ['Guests', guestsLabel(mine), guestsLabel(theirs)],
-  ];
-  return pairs
-    .filter(([, left, right]) => left !== right)
-    .map(([label, left, right]) => ({ label, mine: left, theirs: right }));
+  const theirPairs = eventFieldPairs(theirs, timeZone);
+  return eventFieldPairs(mine, timeZone).flatMap(([label, left], index) => {
+    const right = theirPairs[index]?.[1] ?? '';
+    return left === right ? [] : [{ label, mine: left, theirs: right }];
+  });
 };
 
 /**
