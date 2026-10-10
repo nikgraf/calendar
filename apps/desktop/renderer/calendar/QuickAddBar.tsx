@@ -4,6 +4,7 @@ import { formatSlotLabel } from '@calendar/core';
 import { useEffect, useRef } from 'react';
 import { desktopLanguageModel } from '../ai/desktopModel.ts';
 import { desktopSpeech } from '../ai/desktopSpeech.ts';
+import { modelUnavailableCopy } from '../ai/modelUnavailableCopy.ts';
 import { backend } from '../backend.ts';
 import { Button } from '../ui/Button.tsx';
 import { IconButton } from '../ui/IconButton.tsx';
@@ -71,6 +72,7 @@ export function QuickAddBar({
     timeZone,
   });
   const unavailable = status !== null && status !== 'ready';
+  const unavailableCopy = modelUnavailableCopy(status);
 
   // Focused on open and on ⌘K — not while the model is missing, when the
   // title is the first thing to type into.
@@ -116,11 +118,7 @@ export function QuickAddBar({
         className={`flex h-8 items-center gap-2 rounded-control bg-fill pr-1 pl-2.5 text-sm text-ink-secondary focus-within:ring-2 focus-within:ring-focus ${
           unavailable ? 'opacity-70' : ''
         }`}
-        title={
-          unavailable
-            ? "The on-device model is unavailable — Solunivo's AI features need macOS 26 with Apple Intelligence enabled."
-            : undefined
-        }
+        title={unavailable ? unavailableCopy.long : undefined}
       >
         <input
           aria-label={mode === 'find' ? 'Find a time' : 'Quick add'}
@@ -151,7 +149,7 @@ export function QuickAddBar({
           }}
           placeholder={
             unavailable
-              ? 'Model unavailable'
+              ? unavailableCopy.short
               : mode === 'find'
                 ? FIND_PLACEHOLDER
                 : QUICK_ADD_PLACEHOLDER

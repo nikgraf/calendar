@@ -558,6 +558,24 @@ desktop waits on a helper binary (below).
       helper commit: top-level code is MainActor-isolated (detach the
       per-request Task or the semaphore deadlocks), own-and-return
       accumulators across tasks.
+- [x] Desktop says why the model is unavailable — done (2026-10-10,
+      `todo/model-unavailable-reason`). The ⌘K field read "Model
+      unavailable" on a Mac whose Apple Intelligence had switched itself
+      off: Siri was on English (UK), the Mac on English (US), and a
+      language mismatch turns Apple Intelligence off (Writing Tools went
+      too). The helper already sent Foundation Models' reason; the
+      renderer dropped it. **`ModelStatus` carries the reason**:
+      `disabled` (switched off — the user can act), `not-ready` (assets
+      still downloading), `unsupported` (device not eligible, or macOS
+      below 26); `unavailable` stays for a reason the app doesn't know
+      (no helper, a crash, a case a newer macOS adds). `modelStatusOf`
+      maps the helper's `detail`; iOS's module answers only a boolean, so
+      it keeps `ready`/`unavailable`. The editor's quick-add field
+      (placeholder and tooltip) and the capture dialog's error say the
+      reason (`modelUnavailableCopy`), and `useModelAvailability` polls a
+      `not-ready` model every 30 s — the download ends with no event and
+      often while the app is in front. No "Open System Settings" button:
+      the tooltip names the pane, and focus re-checks on the way back.
 
 ## Robustness
 
