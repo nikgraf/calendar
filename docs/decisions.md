@@ -452,12 +452,18 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   nothing else: different prompts, a calendar read and a solver only on
   one side, and results of different shapes. "Find a time" sits beside
   the date and times (`FindTimeFields`, `useFindTimeModel`): presets
-  over the pure solver (today / this week / next week / 2 weeks; any
-  hours / mornings / afternoons / evenings; any day / weekdays /
-  weekends; a duration starting as the form's own), a Search, and the
-  slots as buttons — a pick moves the event there (`applySlot`). It
-  works without Apple Intelligence; with it, a phrase fills the same
-  presets (`parseFindTime`) and a title it names fills an empty title.
+  over the pure solver (today / this week / next week / 2 weeks;
+  daytime (08–20, the solver's default, named rather than called "any")
+  / mornings / afternoons / evenings; any day / weekdays / weekends; a
+  duration starting as the form's own), a Search, and the slots as
+  buttons — a pick moves the event there (`applySlot`; an all-day series
+  keeps its kind, so it has no finder). The event being moved is not
+  its own busy time (its row, and its other occurrences for a series
+  edit). It works without Apple Intelligence; with it, a phrase fills
+  the same presets (`parseFindTime`) — dates, hours or days outside
+  them show as a note with nothing selected — and a title it names
+  fills an empty title. An answer landing after a constraint changed or
+  the finder closed is dropped.
   Not merged into the quick-add prompt: the on-device model is small
   and the two prompts are tuned apart. Timed reminders still do not
   count as busy, and guests' free/busy is not fetched — the finder is

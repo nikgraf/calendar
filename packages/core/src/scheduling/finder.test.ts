@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vite-plus/test';
 import {
   defaultFinderConstraints,
   finderBoundsOf,
+  finderCustomNote,
   finderDaysOf,
   finderWindowDates,
   finderWindowOf,
@@ -56,17 +57,23 @@ describe('finderWindowDates', () => {
 });
 
 describe('finder constraints', () => {
-  it('starts with this week, any day and time, and the form duration', () => {
+  it('starts with this week, any day, daytime hours and the form duration', () => {
     const constraints = defaultFinderConstraints(45, WEDNESDAY);
     expect(constraints).toEqual({
       durationMinutes: 45,
+      earliestTime: '08:00',
+      latestTime: '20:00',
       windowEndDate: '2026-10-11',
       windowStartDate: WEDNESDAY,
     });
     expect(finderWindowOf(constraints, WEDNESDAY)).toBe('week');
-    expect(finderBoundsOf(constraints)).toBe('any');
+    expect(finderBoundsOf(constraints)).toBe('daytime');
     expect(finderDaysOf(constraints)).toBe('any');
     expect(defaultFinderConstraints(0, WEDNESDAY).durationMinutes).toBe(60);
+    // A phrase that names no hours searches the solver's daytime too.
+    expect(
+      finderBoundsOf({ durationMinutes: 30, windowEndDate: SUNDAY, windowStartDate: SUNDAY }),
+    ).toBe('daytime');
   });
 
   it('sets and reads back the presets', () => {
@@ -85,12 +92,15 @@ describe('finder constraints', () => {
     expect(finderWindowOf(constraints, WEDNESDAY)).toBe('nextWeek');
     expect(finderBoundsOf(constraints)).toBe('mornings');
     expect(finderDaysOf(constraints)).toBe('weekdays');
-    // Back to any: the fields go, they are not left at a preset's values.
-    expect(withFinderBounds(withFinderDays(constraints, 'any'), 'any')).toEqual({
+    // Back to any day: the field goes; daytime is spelled out as the hours it is.
+    expect(withFinderBounds(withFinderDays(constraints, 'any'), 'daytime')).toEqual({
       durationMinutes: 60,
+      earliestTime: '08:00',
+      latestTime: '20:00',
       windowEndDate: '2026-10-18',
       windowStartDate: '2026-10-12',
     });
+    expect(finderCustomNote(constraints, WEDNESDAY)).toBeNull();
   });
 
   it('reads no preset for dates, hours or days a phrase named freely', () => {
@@ -105,6 +115,13 @@ describe('finder constraints', () => {
     expect(finderWindowOf(custom, WEDNESDAY)).toBeUndefined();
     expect(finderBoundsOf(custom)).toBeUndefined();
     expect(finderDaysOf(custom)).toBeUndefined();
+    expect(finderCustomNote(custom, WEDNESDAY)).toBe('Oct 13 · 09:30–11:00 · Tue');
+    expect(
+      finderCustomNote(
+        { ...custom, daysOfWeek: undefined, earliestTime: undefined, windowEndDate: '2026-10-15' },
+        WEDNESDAY,
+      ),
+    ).toBe('Oct 13 – Oct 15 · 08:00–11:00');
   });
 });
 

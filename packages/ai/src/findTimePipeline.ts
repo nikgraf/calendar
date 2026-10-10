@@ -2,6 +2,7 @@ import { parseFindTime } from './findTime.ts';
 import type { LanguageModel } from './model.ts';
 import { Effect } from 'effect';
 import {
+  type EventRecord,
   findFreeSlots,
   plainDateToUtcMs,
   Temporal,
@@ -25,6 +26,12 @@ export const findSlotsFor = async (
   backend: BackendClient,
   constraints: FindSlotsConstraints,
   timeZone: string,
+  {
+    exclude,
+  }: {
+    /** Rows that are not busy time: the event being rescheduled (its own occurrences). */
+    readonly exclude?: ((event: EventRecord) => boolean) | undefined;
+  } = {},
 ): Promise<ReadonlyArray<FreeSlot> | { readonly reason: string }> => {
   // The zone-exact day bounds matter to the solver, not the fetch; a
   // UTC-day fetch window padded by a day on each side always covers the
@@ -38,7 +45,10 @@ export const findSlotsFor = async (
   } catch {
     return { reason: "Couldn't load your calendar — try again." };
   }
-  return findFreeSlots(events, constraints, { nowUtc: Date.now(), timeZone });
+  return findFreeSlots(exclude ? events.filter((event) => !exclude(event)) : events, constraints, {
+    nowUtc: Date.now(),
+    timeZone,
+  });
 };
 
 /**

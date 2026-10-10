@@ -2,7 +2,7 @@ import type { LanguageModel } from './model.ts';
 import { EventRecord, plainDateToUtcMs, Temporal, type BackendClient } from '@calendar/core';
 import { Effect } from 'effect';
 import { describe, expect, it } from 'vite-plus/test';
-import { makeFindSlots } from './findTimePipeline.ts';
+import { findSlotsFor, makeFindSlots } from './findTimePipeline.ts';
 
 const TZ = 'Europe/Vienna';
 
@@ -109,5 +109,24 @@ describe('makeFindSlots (shared pipeline)', () => {
     );
     const result = await find('an hour');
     expect(result).toEqual({ reason: "Couldn't load your calendar — try again." });
+  });
+});
+
+describe('findSlotsFor (the model-free half)', () => {
+  it('leaves out the rows the caller excludes — the event being rescheduled', async () => {
+    const constraints = {
+      durationMinutes: 60,
+      earliestTime: '09:00',
+      latestTime: '11:00',
+      windowEndDate: tomorrow.toString(),
+      windowStartDate: tomorrow.toString(),
+    };
+    const own = busyEvent(atWallClock(tomorrow, 9), atWallClock(tomorrow, 10));
+    const other = busyEvent(atWallClock(tomorrow, 10), atWallClock(tomorrow, 11));
+    const backend = backendWith(() => Effect.succeed([own, other]));
+    expect(await findSlotsFor(backend, constraints, TZ)).toEqual([]);
+    expect(
+      await findSlotsFor(backend, constraints, TZ, { exclude: (event) => event.id === own.id }),
+    ).toEqual([{ date: tomorrow.toString(), endTime: '10:00', startTime: '09:00' }]);
   });
 });

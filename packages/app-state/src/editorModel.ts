@@ -567,8 +567,15 @@ export const useEventEditorModel = ({
     setCarried({ url: next.url });
   };
 
-  /** A free slot the finder found: the event moves to its day and times. */
+  /**
+   * A free slot the finder found: the event moves to its day and times.
+   * An all-day series keeps its kind (`canSwitchAllDay`), so a slot
+   * cannot make it timed; the forms hide the finder there.
+   */
   const applySlot = (slot: FreeSlot) => {
+    if (isAllDay && !capabilities.canSwitchAllDay) {
+      return;
+    }
     setIsAllDay(false);
     setDate(slot.date);
     setStartTime(slot.startTime);

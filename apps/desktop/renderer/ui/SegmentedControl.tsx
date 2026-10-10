@@ -35,7 +35,8 @@ export function SegmentedControl<T extends string>({
   readonly onChange: (value: T) => void;
   readonly options: ReadonlyArray<SegmentedOption<T>>;
   readonly size?: keyof typeof SIZE;
-  readonly value: T;
+  /** Undefined selects no segment: the choice is outside the presets. */
+  readonly value: T | undefined;
 }) {
   return (
     <div

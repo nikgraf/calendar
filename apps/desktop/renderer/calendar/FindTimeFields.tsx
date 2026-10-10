@@ -26,9 +26,20 @@ import { SegmentedControl } from '../ui/SegmentedControl.tsx';
  */
 export function FindTimeFields({ model }: { model: ReturnType<typeof useEventEditorModel> }) {
   const { status } = useModelAvailability(desktopLanguageModel);
+  const { existing, scope } = model;
   const finder = useFindTimeModel({
     backend,
     durationMinutes: model.isAllDay ? 60 : minutesBetween(model.startTime, model.endTime),
+    // The event being moved is not in its own way: its row, and for a
+    // series edit beyond this occurrence, its other occurrences too.
+    excludeEvent: existing
+      ? (event) =>
+          event.calendarId === existing.calendarId &&
+          (event.id === existing.id ||
+            (scope !== 'instance' &&
+              existing.recurringEventId !== undefined &&
+              event.recurringEventId === existing.recurringEventId))
+      : undefined,
     model: desktopLanguageModel,
     onTitle: (title) => {
       if (model.title.trim() === '') {
@@ -38,6 +49,10 @@ export function FindTimeFields({ model }: { model: ReturnType<typeof useEventEdi
     timeZone: model.timeZone,
   });
 
+  // An all-day series keeps its kind: no slot could be applied.
+  if (model.isAllDay && !model.canSwitchAllDay) {
+    return null;
+  }
   if (!finder.open) {
     return (
       <div>
@@ -92,7 +107,7 @@ export function FindTimeFields({ model }: { model: ReturnType<typeof useEventEdi
           value: option.value,
         }))}
         size="sm"
-        value={finder.window ?? 'week'}
+        value={finder.window}
       />
       <SegmentedControl
         className="w-full"
@@ -105,7 +120,7 @@ export function FindTimeFields({ model }: { model: ReturnType<typeof useEventEdi
           value: option.value,
         }))}
         size="sm"
-        value={finder.bounds ?? 'any'}
+        value={finder.bounds}
       />
       <SegmentedControl
         className="w-full"
@@ -118,8 +133,13 @@ export function FindTimeFields({ model }: { model: ReturnType<typeof useEventEdi
           value: option.value,
         }))}
         size="sm"
-        value={finder.days ?? 'any'}
+        value={finder.days}
       />
+      {finder.customNote ? (
+        <p className="text-xs text-ink-secondary" data-testid="find-time-custom">
+          From the phrase: {finder.customNote}
+        </p>
+      ) : null}
       <div>
         <span className={LABEL_CLASS}>Duration</span>
         <div className="mt-1 flex flex-wrap gap-1.5">

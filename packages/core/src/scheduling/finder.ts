@@ -9,7 +9,7 @@ import type { FindSlotsConstraints } from './findSlots.ts';
  */
 
 export type FinderWindow = 'fortnight' | 'nextWeek' | 'today' | 'week';
-export type FinderBounds = 'afternoons' | 'any' | 'evenings' | 'mornings';
+export type FinderBounds = 'afternoons' | 'daytime' | 'evenings' | 'mornings';
 export type FinderDays = 'any' | 'weekdays' | 'weekends';
 
 export const FINDER_WINDOWS: ReadonlyArray<{
@@ -22,13 +22,17 @@ export const FINDER_WINDOWS: ReadonlyArray<{
   { label: '2 weeks', value: 'fortnight' },
 ];
 
-/** The daily bounds, the same hours the find-time prompt reads "mornings" as. */
+/**
+ * The daily bounds, the same hours the find-time prompt reads "mornings"
+ * as. Daytime is the solver's own default (08:00–20:00), named rather
+ * than left as "any": a search never looks at the night.
+ */
 export const FINDER_BOUNDS: ReadonlyArray<{
   readonly label: string;
-  readonly times: { readonly earliestTime: string; readonly latestTime: string } | undefined;
+  readonly times: { readonly earliestTime: string; readonly latestTime: string };
   readonly value: FinderBounds;
 }> = [
-  { label: 'Any time', times: undefined, value: 'any' },
+  { label: 'Daytime', times: { earliestTime: '08:00', latestTime: '20:00' }, value: 'daytime' },
   { label: 'Mornings', times: { earliestTime: '08:00', latestTime: '12:00' }, value: 'mornings' },
   {
     label: 'Afternoons',
@@ -95,12 +99,13 @@ export const finderWindowDates = (
   }
 };
 
-/** What a new finder searches for: this week, any day, any time, the form's duration. */
+/** What a new finder searches for: this week, any day, daytime, the form's duration. */
 export const defaultFinderConstraints = (
   durationMinutes: number,
   today: string,
 ): FindSlotsConstraints => ({
   durationMinutes: durationMinutes > 0 ? durationMinutes : 60,
+  ...FINDER_BOUNDS[0]!.times,
   ...finderWindowDates('week', today),
 });
 
@@ -113,11 +118,10 @@ export const withFinderWindow = (
 export const withFinderBounds = (
   constraints: FindSlotsConstraints,
   bounds: FinderBounds,
-): FindSlotsConstraints => {
-  const { earliestTime: _earliest, latestTime: _latest, ...rest } = constraints;
-  const times = FINDER_BOUNDS.find((option) => option.value === bounds)?.times;
-  return times ? { ...rest, ...times } : rest;
-};
+): FindSlotsConstraints => ({
+  ...constraints,
+  ...FINDER_BOUNDS.find((option) => option.value === bounds)?.times,
+});
 
 export const withFinderDays = (
   constraints: FindSlotsConstraints,
@@ -141,13 +145,17 @@ export const finderWindowOf = (
     );
   });
 
-export const finderBoundsOf = (constraints: FindSlotsConstraints): FinderBounds | undefined =>
-  FINDER_BOUNDS.find((option) =>
-    option.times
-      ? option.times.earliestTime === constraints.earliestTime &&
-        option.times.latestTime === constraints.latestTime
-      : constraints.earliestTime === undefined && constraints.latestTime === undefined,
+/** Unset bounds are the solver's daytime; a phrase that names only one edge is custom. */
+export const finderBoundsOf = (constraints: FindSlotsConstraints): FinderBounds | undefined => {
+  const { earliestTime, latestTime } = constraints;
+  if (earliestTime === undefined && latestTime === undefined) {
+    return 'daytime';
+  }
+  return FINDER_BOUNDS.find(
+    (option) =>
+      option.times.earliestTime === earliestTime && option.times.latestTime === latestTime,
   )?.value;
+};
 
 export const finderDaysOf = (constraints: FindSlotsConstraints): FinderDays | undefined => {
   const chosen = constraints.daysOfWeek;
@@ -158,4 +166,40 @@ export const finderDaysOf = (constraints: FindSlotsConstraints): FinderDays | un
         option.days.every((day) => chosen.includes(day))
       : chosen === undefined || chosen.length === 0,
   )?.value;
+};
+
+const WEEKDAY_NAMES = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+
+const shortDate = (iso: string): string =>
+  Temporal.PlainDate.from(iso).toLocaleString('en-US', { day: 'numeric', month: 'short' });
+
+/**
+ * The parts of the constraints no preset describes, in words, so the
+ * finder can say what a phrase set ("Oct 13 · 09:30–11:00 · Tue") where
+ * its controls show nothing selected. Null when every part is a preset.
+ */
+export const finderCustomNote = (
+  constraints: FindSlotsConstraints,
+  today: string,
+): string | null => {
+  const parts: Array<string> = [];
+  if (finderWindowOf(constraints, today) === undefined) {
+    parts.push(
+      constraints.windowStartDate === constraints.windowEndDate
+        ? shortDate(constraints.windowStartDate)
+        : `${shortDate(constraints.windowStartDate)} – ${shortDate(constraints.windowEndDate)}`,
+    );
+  }
+  if (finderBoundsOf(constraints) === undefined) {
+    parts.push(`${constraints.earliestTime ?? '08:00'}–${constraints.latestTime ?? '20:00'}`);
+  }
+  if (finderDaysOf(constraints) === undefined) {
+    parts.push(
+      (constraints.daysOfWeek ?? [])
+        .map((day) => WEEKDAY_NAMES[day - 1])
+        .filter((name) => name !== undefined)
+        .join(', '),
+    );
+  }
+  return parts.length === 0 ? null : parts.join(' · ');
 };

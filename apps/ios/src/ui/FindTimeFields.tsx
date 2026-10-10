@@ -28,9 +28,20 @@ export function FindTimeFields({ model }: { model: ReturnType<typeof useEventEdi
   const sheetStyles = useSheetStyles();
   const styles = useStyles(makeStyles);
   const { status } = useModelAvailability(languageModel);
+  const { existing, scope } = model;
   const finder = useFindTimeModel({
     backend: backendClient,
     durationMinutes: model.isAllDay ? 60 : minutesBetween(model.startTime, model.endTime),
+    // The event being moved is not in its own way: its row, and for a
+    // series edit beyond this occurrence, its other occurrences too.
+    excludeEvent: existing
+      ? (event) =>
+          event.calendarId === existing.calendarId &&
+          (event.id === existing.id ||
+            (scope !== 'instance' &&
+              existing.recurringEventId !== undefined &&
+              event.recurringEventId === existing.recurringEventId))
+      : undefined,
     model: languageModel,
     onTitle: (title) => {
       if (model.title.trim() === '') {
@@ -40,6 +51,10 @@ export function FindTimeFields({ model }: { model: ReturnType<typeof useEventEdi
     timeZone: model.timeZone,
   });
 
+  // An all-day series keeps its kind: no slot could be applied.
+  if (model.isAllDay && !model.canSwitchAllDay) {
+    return null;
+  }
   if (!finder.open) {
     return (
       <Pressable
@@ -116,6 +131,11 @@ export function FindTimeFields({ model }: { model: ReturnType<typeof useEventEdi
       {row('When', FINDER_WINDOWS, finder.window, finder.setWindow, 'find-time-window')}
       {row('Hours', FINDER_BOUNDS, finder.bounds, finder.setBounds, 'find-time-bounds')}
       {row('Days', FINDER_DAYS, finder.days, finder.setDays, 'find-time-days')}
+      {finder.customNote ? (
+        <Text style={styles.status} testID="find-time-custom">
+          From the phrase: {finder.customNote}
+        </Text>
+      ) : null}
       {row(
         'Duration',
         FINDER_DURATIONS.map((option) => ({ label: option.label, value: String(option.minutes) })),
