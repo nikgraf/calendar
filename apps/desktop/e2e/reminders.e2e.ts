@@ -786,6 +786,90 @@ describe('Reminder chips drag between the all-day lane and the grid', () => {
   });
 });
 
+// Input from outside the gesture, landing in the middle of it: a key, or a
+// mouse whose button-up never reaches the chip. Each used to leave the drag
+// committing somewhere else, or lifted for good.
+describe('A chip drag meets other input', () => {
+  let app: App;
+  beforeAll(async () => {
+    app = await launchApp(seed, { reminders: { fixture: remindersFixture } });
+  }, 60_000);
+  afterAll(async () => {
+    await app.stop();
+  });
+  afterEach(async (context) => {
+    if (context.task.result?.state === 'fail') {
+      await app.dump(context.task.name);
+    }
+  });
+
+  const gridY = (hour: number) =>
+    app.cdp.eval<number>(`(() => {
+      const scroller = document.querySelector('[data-testid="week-scroller"]');
+      return scroller.getBoundingClientRect().top + ${hour * 48} - scroller.scrollTop;
+    })()`);
+  const taskById = async (id: string) =>
+    (await readTasks(app.userDataDir)).find((task) => task.id === id);
+  const EDITOR_OPEN = `!!document.querySelector('[data-testid="panel"][data-panel-kind^="edit"]')`;
+
+  it('ignores Space pressed mid-drag: no editor opens, and the chip lands where it is released', async () => {
+    const { cdp } = app;
+    const from = await cdp.locate('[data-testid="all-day-task-ek-rem-allday"]');
+    const to = { x: from.x, y: await gridY(10) };
+    await cdp.mouse('mousePressed', from.x, from.y);
+    await cdp.mouse('mouseMoved', from.x, from.y + 20);
+    // The press focused the chip, so the key reaches the chip's own handler,
+    // which opens the editor on Space — and its panel narrows the grid under
+    // the pointer.
+    await cdp.send('Input.dispatchKeyEvent', {
+      code: 'Space',
+      key: ' ',
+      text: ' ',
+      type: 'keyDown',
+      windowsVirtualKeyCode: 32,
+    });
+    await cdp.send('Input.dispatchKeyEvent', {
+      code: 'Space',
+      key: ' ',
+      type: 'keyUp',
+      windowsVirtualKeyCode: 32,
+    });
+    await cdp.mouse('mouseMoved', to.x, to.y);
+    await cdp.mouse('mouseReleased', to.x, to.y);
+    await expect
+      .poll(() => taskById('ek-rem-allday'))
+      .toMatchObject({ dueDate: isoToday, dueTime: '10:00' });
+    expect(await cdp.eval<boolean>(EDITOR_OPEN)).toBe(false);
+  });
+
+  it('ends a drag whose pointer capture is lost without a release', async () => {
+    const { cdp } = app;
+    const from = await cdp.locate('[data-testid="all-day-task-ek-rem-milk"]');
+    const to = { x: from.x, y: await gridY(11) };
+    await cdp.mouse('mousePressed', from.x, from.y);
+    await cdp.mouse('mouseMoved', to.x, to.y);
+    await cdp.waitFor(`!!document.querySelector('[data-testid="task-drop-grid"]')`);
+    // A second pointing device moves with no button down — the browser takes
+    // the button as released, drops the capture, and no pointerup reaches
+    // the chip. A developer's own trackpad did exactly this to a local run.
+    await cdp.send('Input.dispatchMouseEvent', {
+      button: 'none',
+      buttons: 0,
+      pointerType: 'mouse',
+      type: 'mouseMoved',
+      x: to.x,
+      y: to.y + 1,
+    });
+    // Ended, not left lifted over the grid with its drop slot drawn.
+    await cdp.waitFor(`!document.querySelector('[data-testid="task-drop-grid"]')`, 3000);
+    await cdp.mouse('mouseReleased', to.x, to.y);
+    const task = await taskById('ek-rem-milk');
+    expect(task).toMatchObject({ dueDate: isoToday });
+    expect(task?.dueTime).toBeUndefined();
+    expect(await cdp.eval<boolean>(EDITOR_OPEN)).toBe(false);
+  });
+});
+
 describe('Apple Reminders mutation failures', () => {
   let app: App;
   beforeAll(async () => {
