@@ -129,9 +129,9 @@ describe.skipIf(!REAL)('Apple Reminders through the real helper', () => {
     })()`);
     await cdp.click(cell.x, cell.y);
     await cdp.waitFor(`document.body.textContent.includes('New event')`);
-    await cdp.clickButtonWithText('Task');
-    await cdp.waitFor(`document.body.textContent.includes('New task')`);
-    // Only Apple lists exist, so this is the Reminders form.
+    // Only Apple lists exist, so Reminder is the one to-do kind on offer.
+    await cdp.clickButtonWithText('Reminder');
+    await cdp.waitFor(`document.body.textContent.includes('New reminder')`);
     await cdp.waitFor(`!!document.querySelector('select[aria-label="Task list"]')`);
     await setTitle('Solunivo ci reminder');
     await cdp.eval(
@@ -199,7 +199,7 @@ describe.skipIf(!REAL)('Apple Reminders through the real helper', () => {
     })()`);
     await cdp.click(cell.x, cell.y);
     await cdp.waitFor(`document.body.textContent.includes('New event')`);
-    await cdp.clickButtonWithText('Task');
+    await cdp.clickButtonWithText('Reminder');
     await cdp.waitFor(`!!document.querySelector('select[aria-label="Task list"]')`);
     await setTitle(title);
     await setSelect('Repeat', 'weekly');

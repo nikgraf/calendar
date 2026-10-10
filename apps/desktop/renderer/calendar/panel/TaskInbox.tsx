@@ -2,22 +2,19 @@ import {
   useGuardedMutations,
   useListColorLookup,
   useTaskInbox,
-  useTaskLists,
   useTaskReadOnlyLookup,
   useToday,
 } from '@calendar/app-state';
 import { calendarTaskKey, overdueLabel, type TaskRecord } from '@calendar/core';
-import { useState } from 'react';
 import { TaskCheck } from '../TaskCheck.tsx';
 import type { useEventDrag } from '../useEventDrag.ts';
-import { PlusIcon } from '../../ui/icons.tsx';
 
 /**
- * The rail's task inbox: the late ones, today's and the undated ones,
- * then a field that adds an undated task to the first writable list. A
- * row's checkbox completes it; the row itself opens the task editor.
- * Rows carry no `title` attribute: the grid's `[title^=…]` selectors must
- * keep matching the grid alone.
+ * The rail's task inbox: the late ones, today's and the undated ones. A
+ * row's checkbox completes it; the row itself opens the task editor. New
+ * tasks come from "+ New" (its Task kind, with "No due date" for an
+ * inbox add). Rows carry no `title` attribute: the grid's `[title^=…]`
+ * selectors must keep matching the grid alone.
  */
 export function TaskInbox({
   drag,
@@ -31,12 +28,9 @@ export function TaskInbox({
 }) {
   const inbox = useTaskInbox(timeZone);
   const today = useToday(timeZone);
-  const { completeTask, createTask } = useGuardedMutations();
+  const { completeTask } = useGuardedMutations();
   const listColorOf = useListColorLookup();
   const isReadOnly = useTaskReadOnlyLookup();
-  const taskLists = useTaskLists();
-  const target = taskLists.find((list) => list.isVisible && !list.readOnly);
-  const [title, setTitle] = useState('');
 
   const toggle = (task: TaskRecord) =>
     void completeTask({
@@ -45,15 +39,6 @@ export function TaskInbox({
       taskId: task.id,
       taskListId: task.listId,
     });
-
-  const add = () => {
-    const trimmed = title.trim();
-    if (!target || !trimmed) {
-      return;
-    }
-    void createTask({ accountId: target.accountId, taskListId: target.id, title: trimmed });
-    setTitle('');
-  };
 
   const row = (task: TaskRecord, late: boolean) => {
     const done = task.status === 'completed';
@@ -139,24 +124,6 @@ export function TaskInbox({
           </p>
         ) : null}
       </div>
-      <form
-        className="flex items-center gap-2 border-t border-hairline px-3 py-2"
-        onSubmit={(event) => {
-          event.preventDefault();
-          add();
-        }}
-      >
-        <PlusIcon className="shrink-0 text-ink-secondary" size={14} />
-        <input
-          aria-label="Add a task"
-          className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-ink-secondary"
-          data-testid="panel-add-task"
-          disabled={!target}
-          onChange={(event) => setTitle(event.target.value)}
-          placeholder={target ? `Add a task to ${target.title}` : 'No task list to add to'}
-          value={title}
-        />
-      </form>
     </div>
   );
 }

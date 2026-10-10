@@ -1,8 +1,9 @@
 import {
   type EditorConfirmRequest,
   type EditorSourceKind,
-  switchEditorMode,
+  editorTitle,
   useBackendMutations,
+  useEditorKinds,
   useEventEditorModel,
   useTaskEditorModel,
   type EventEditorSeed,
@@ -11,21 +12,29 @@ import {
 import {
   type BirthdayOccurrence,
   type CalendarInfo,
+  type ItemKind,
   type TaskListInfo,
   type TaskRecord,
 } from '@calendar/core';
-import { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, Modal, Pressable, SafeAreaView, Text, View } from 'react-native';
 import { BirthdayDetail } from './BirthdayDetail.tsx';
 import { useSheetStyles } from './editSheetShared.ts';
 import { EventEditForm } from './EventEditForm.tsx';
+import { QuickAddBar } from './QuickAddBar.tsx';
 import { ReminderEditForm } from './ReminderEditForm.tsx';
+import { SegmentedControl } from './SegmentedControl.tsx';
 import { TaskEditForm } from './TaskEditForm.tsx';
 import { BOX_FONT_SCALE } from './theme.ts';
 
 export type EditSeed = EventEditorSeed;
 
 const capitalize = (word: string) => word.charAt(0).toUpperCase() + word.slice(1);
+
+const KIND_LABELS: Record<ItemKind, string> = {
+  event: 'Event',
+  reminder: 'Reminder',
+  task: 'Task',
+};
 
 /**
  * The alert for a move, conversion or create-mode switch that drops
@@ -41,7 +50,7 @@ const wording = (
   readonly yes: string;
 } => {
   const subject = capitalize(request.subject);
-  const other = request.subject === 'event' ? 'task' : 'event';
+  const other = request.target ?? (request.subject === 'event' ? 'task' : 'event');
   switch (request.kind) {
     case 'move':
       return {
@@ -79,27 +88,29 @@ export const confirmEditorRequest = (request: EditorConfirmRequest): Promise<boo
   });
 
 /**
- * Modal shell for creating/editing events and tasks. The two forms live in
- * EventEditForm/TaskEditForm; this file owns the mode toggle, the header,
- * and both editor models (state must survive a mode flip).
+ * Modal shell for creating/editing events, tasks and reminders. For a new
+ * item the quick-add field sits on top, then the Event | Task | Reminder
+ * control (only the kinds something can hold), then the form. The forms
+ * live in EventEditForm / TaskEditForm / ReminderEditForm; this file owns
+ * the header and both editor models (state must survive a kind flip).
  */
 export function EventEditSheet({
   birthday,
   calendars,
-  initialMode,
+  initialKind,
   onClose,
   onSaved,
   seed,
   task,
   taskLists,
-  taskPrefill,
+  taskSeed,
   timeZone,
 }: {
   /** Present when opened from a birthday chip: a read-only detail, nothing to edit. */
   birthday?: BirthdayOccurrence | undefined;
   calendars: ReadonlyArray<CalendarInfo>;
-  /** Open on the task form: the detail sheet's Convert. */
-  initialMode?: 'task' | undefined;
+  /** The kind to open on: a to-do for the Tasks tab's "+", or the detail sheet's Convert. */
+  initialKind?: ItemKind | undefined;
   onClose: () => void;
   /** Save went through, as an event or a task (capture marks its row added). */
   onSaved?: (() => void) | undefined;
@@ -107,8 +118,8 @@ export function EventEditSheet({
   /** Present when the sheet was opened from a task chip (task edit mode). */
   task?: TaskRecord | undefined;
   taskLists: ReadonlyArray<TaskListInfo>;
-  /** A new task to open with (a quick-add phrase understood as a task). */
-  taskPrefill?: Pick<TaskEditorSeed, 'dated' | 'initialTime' | 'title'> | undefined;
+  /** A new to-do's start: undated (the Tasks tab's "+") and the list to open in. */
+  taskSeed?: Pick<TaskEditorSeed, 'dated' | 'listKey'> | undefined;
   timeZone: string;
 }) {
   const styles = useSheetStyles();
@@ -119,16 +130,6 @@ export function EventEditSheet({
       : seed.event
         ? 'event'
         : 'new';
-  // The Event | Task toggle: in create mode it picks the kind, on an
-  // existing item it converts (Save then writes the other kind and
-  // deletes the source). Both models stay mounted so a flip keeps state.
-  // An existing event asked to open as a task (the detail sheet's Convert)
-  // still starts as the event and switches below: the switch is what
-  // carries the title, notes, rule and URL over and asks about a loss.
-  const convertOnOpen = initialMode === 'task' && sourceKind === 'event';
-  const [mode, setMode] = useState<'birthday' | 'event' | 'task'>(
-    birthday ? 'birthday' : task || taskPrefill ? 'task' : 'event',
-  );
   const mutations = useBackendMutations();
   const taskModel = useTaskEditorModel({
     confirm: confirmEditorRequest,
@@ -136,11 +137,12 @@ export function EventEditSheet({
     onSaved,
     seed: {
       convertFromEvent: seed.event,
-      dated: taskPrefill?.dated,
+      dated: taskSeed?.dated,
       existing: task,
       initialDate: seed.initialDate.toString(),
-      initialTime: taskPrefill?.initialTime ?? seed.initialTimes?.startTime,
-      title: taskPrefill?.title,
+      initialTime: seed.initialTimes?.startTime,
+      kind: initialKind === 'event' ? undefined : initialKind,
+      listKey: taskSeed?.listKey,
     },
     taskLists,
   });
@@ -152,59 +154,28 @@ export function EventEditSheet({
     seed: { ...seed, convertFromTask: task },
     timeZone,
   });
+  const { apply, available, kind, mode, seriesOnly, switchTo } = useEditorKinds({
+    calendars,
+    confirm: confirmEditorRequest,
+    eventModel,
+    initialKind,
+    previewEventToTask: mutations.previewEventToTask,
+    sourceKind,
+    taskLists,
+    taskModel,
+    timeZone,
+  });
 
-  const switchTo = useCallback(
-    async (next: 'event' | 'task') => {
-      if (next === mode) {
-        return;
-      }
-      const switched = await switchEditorMode({
-        confirm: confirmEditorRequest,
-        eventModel,
-        next,
-        previewEventToTask: mutations.previewEventToTask,
-        sourceKind,
-        taskModel,
-        timeZone,
-      });
-      if (switched) {
-        setMode(next);
-      }
-    },
-    [eventModel, mode, mutations.previewEventToTask, sourceKind, taskModel, timeZone],
-  );
   const showToggle =
-    mode !== 'birthday' &&
+    !birthday &&
+    available.length > 1 &&
     !(sourceKind === 'event' && eventModel.readOnly) &&
     !(sourceKind === 'task' && taskModel.readOnly);
-  // A series converts as a whole, like it moves: an occurrence-scoped edit stays an event.
-  const seriesOnly =
-    sourceKind === 'event' && eventModel.isRecurring && eventModel.scope !== 'series';
-  // A series converts as a whole: the detail sheet seeds `initialScope:
-  // 'series'`, so the switch never runs on an occurrence (`seriesOnly`).
-  const converted = useRef(false);
-  useEffect(() => {
-    if (convertOnOpen && !converted.current && !seriesOnly) {
-      converted.current = true;
-      void switchTo('task');
-    }
-  }, [convertOnOpen, seriesOnly, switchTo]);
-  const taskWord = taskModel.provider === 'apple' ? 'Reminder' : 'Task';
-  const busy = mode === 'task' ? taskModel.busy : eventModel.busy;
-  const title =
-    mode === 'birthday'
-      ? 'Birthday'
-      : mode === 'task'
-        ? sourceKind === 'event'
-          ? `Convert to ${taskWord}`
-          : task
-            ? `Edit ${taskWord}`
-            : 'New Task'
-        : sourceKind === 'task'
-          ? 'Convert to Event'
-          : eventModel.existing
-            ? 'Edit Event'
-            : 'New Event';
+  const busy = mode === 'todo' ? taskModel.busy : eventModel.busy;
+  // A new item: the quick-add field on top takes the focus, not the title.
+  const quickAdd = sourceKind === 'new';
+  const { noun, verb } = editorTitle({ kind, sourceKind, sourceProvider: task?.provider });
+  const title = birthday ? 'Birthday' : `${verb} ${capitalize(noun)}`;
 
   return (
     <Modal animationType="slide" onRequestClose={onClose} presentationStyle="pageSheet" visible>
@@ -220,19 +191,19 @@ export function EventEditSheet({
             <Pressable onPress={onClose}>
               {/* A birthday's reminder chips save as they change: nothing to cancel. */}
               <Text maxFontSizeMultiplier={BOX_FONT_SCALE} style={styles.cancel}>
-                {mode === 'birthday' ? 'Done' : 'Cancel'}
+                {birthday ? 'Done' : 'Cancel'}
               </Text>
             </Pressable>
             <Text maxFontSizeMultiplier={BOX_FONT_SCALE} style={styles.title}>
               {title}
             </Text>
-            {mode === 'birthday' ||
-            (mode === 'task' && taskModel.readOnly) ||
+            {birthday ||
+            (mode === 'todo' && taskModel.readOnly) ||
             (mode === 'event' && eventModel.readOnly) ? (
               <View />
             ) : (
               <Pressable
-                onPress={() => void (mode === 'task' ? taskModel.save() : eventModel.save())}
+                onPress={() => void (mode === 'todo' ? taskModel.save() : eventModel.save())}
                 style={busy ? styles.busy : undefined}
                 testID="event-save"
               >
@@ -243,45 +214,45 @@ export function EventEditSheet({
             )}
           </View>
 
+          {sourceKind === 'new' ? (
+            <QuickAddBar
+              fallbackDate={seed.initialDate.toString()}
+              onApply={(item) => void apply(item)}
+              timeZone={timeZone}
+            />
+          ) : null}
+
           {showToggle ? (
             <View style={styles.modeRow}>
-              {(['event', 'task'] as const).map((option) => {
-                const disabled = option === 'task' && seriesOnly;
-                return (
-                  <Pressable
-                    disabled={disabled}
-                    key={option}
-                    onPress={() => void switchTo(option)}
-                    style={[
-                      styles.scopeChip,
-                      mode === option && styles.scopeChipActive,
-                      disabled && styles.scopeChipDisabled,
-                    ]}
-                    testID={`mode-${option}`}
-                  >
-                    <Text style={[styles.scopeLabel, mode === option && styles.scopeLabelActive]}>
-                      {option === 'event' ? 'Event' : 'Task'}
-                    </Text>
-                  </Pressable>
-                );
-              })}
+              <SegmentedControl
+                accessibilityLabel="Kind"
+                grow
+                onChange={(next) => void switchTo(next)}
+                options={available.map((option) => ({
+                  disabled: option !== 'event' && seriesOnly,
+                  label: KIND_LABELS[option],
+                  testID: `mode-${option}`,
+                  value: option,
+                }))}
+                value={kind}
+              />
             </View>
           ) : null}
         </SafeAreaView>
-        {mode === 'birthday' && birthday ? (
+        {birthday ? (
           <BirthdayDetail occurrence={birthday} timeZone={timeZone} />
-        ) : mode === 'task' ? (
+        ) : mode === 'todo' ? (
           // The selected list's provider picks the form: a Reminders list
           // exposes time/priority/alert/repeat/URL; a Google list gets the
-          // plain title/date/notes form. Either list can be in another
-          // account or provider — Save then moves the task.
+          // plain title/date/notes form. The kind control moves between the
+          // providers; the list picker stays within one.
           taskModel.provider === 'apple' ? (
-            <ReminderEditForm task={task} taskModel={taskModel} />
+            <ReminderEditForm autoFocusTitle={!quickAdd} task={task} taskModel={taskModel} />
           ) : (
-            <TaskEditForm task={task} taskModel={taskModel} />
+            <TaskEditForm autoFocusTitle={!quickAdd} task={task} taskModel={taskModel} />
           )
         ) : (
-          <EventEditForm model={eventModel} />
+          <EventEditForm autoFocusTitle={!quickAdd} model={eventModel} />
         )}
       </View>
     </Modal>

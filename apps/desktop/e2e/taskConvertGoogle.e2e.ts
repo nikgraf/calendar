@@ -137,6 +137,10 @@ describe('Converting tasks against the fake Google API', () => {
     await app.cdp.click(chip.x + 40, chip.y);
     await app.cdp.waitFor(`document.body.textContent.includes(${JSON.stringify(heading)})`);
   };
+  const clickTestId = async (testId: string) => {
+    const point = await app.cdp.locate(`[data-testid="${testId}"]`);
+    await app.cdp.click(point.x, point.y);
+  };
 
   it('mirrors the fixture lists and tasks on launch', async () => {
     expect(await app.cdp.locate('[title="Pay rent"]')).toBeTruthy();
@@ -152,8 +156,9 @@ describe('Converting tasks against the fake Google API', () => {
     const chip = await cdp.locate('[data-testid="timed-task-ek-rem-1"]');
     await cdp.click(chip.x + 40, chip.y);
     await cdp.waitFor(`document.body.textContent.includes('Edit reminder')`);
+    await clickTestId('mode-task');
+    await cdp.waitFor(`document.body.textContent.includes('Move to task')`);
     await cdp.eval(setSelect(LIST_SELECT, 'acc-e2e:list-e2e'));
-    await cdp.waitFor(`document.body.textContent.includes('Edit task')`);
     await cdp.clickButtonWithText('Save');
     await cdp.waitFor(`!!document.querySelector('[data-testid="move-confirm"]')`);
     await cdp.clickButtonWithText('Move anyway');
@@ -175,8 +180,11 @@ describe('Converting tasks against the fake Google API', () => {
   it('a Google task moved to Reminders is deleted upstream', async () => {
     const { cdp } = app;
     await open('Pay rent', 'Edit task');
-    await cdp.eval(setSelect(LIST_SELECT, `${APPLE_REMINDERS_ACCOUNT_ID}:ek-list-1`));
-    await cdp.waitFor(`document.body.textContent.includes('Edit reminder')`);
+    await clickTestId('mode-reminder');
+    await cdp.waitFor(`document.body.textContent.includes('Move to reminder')`);
+    expect(await cdp.eval(`document.querySelector('${LIST_SELECT}').value`)).toBe(
+      `${APPLE_REMINDERS_ACCOUNT_ID}:ek-list-1`,
+    );
     await cdp.clickButtonWithText('Save');
     await expect
       .poll(async () => {

@@ -29,6 +29,7 @@ import {
   type EventRecord,
   EventReminders,
   GeoLocation,
+  type ItemKind,
   MAX_REMINDER_OVERRIDES,
   type PlaceSuggestion,
   type RecurrenceFrequency,
@@ -239,8 +240,10 @@ export const repeatScopeError = ({
  */
 export interface EditorConfirmRequest {
   readonly kind: 'convert' | 'delete' | 'move' | 'switch';
-  readonly subject: 'event' | 'task';
+  readonly subject: 'event' | 'reminder' | 'task';
   readonly summary: string;
+  /** A `switch`: the kind being switched to (the dialog names it). */
+  readonly target?: ItemKind | undefined;
 }
 
 /**
@@ -352,19 +355,21 @@ export const useEventEditorModel = ({
   const [timeChosen, setTimeChosen] = useState(
     existing !== undefined || seed.initialTimes !== undefined || prefill !== undefined,
   );
-  const initialLocation = existing?.location ?? prefill?.location ?? '';
-  const [location, setLocation] = useState(initialLocation);
+  const [location, setLocation] = useState(existing?.location ?? prefill?.location ?? '');
+  // The text the editor opened with, or a parsed phrase set (see
+  // `applyPrefill`): the one text that is looked up without a pick.
+  const [givenLocation, setGivenLocation] = useState(location);
   // Coordinates for the location text, from the event (server-mirrored) or
   // a picked suggestion. Never cleared on typing: they count only while
   // geoMatches, so retyping the original text brings the map back.
   const [geo, setGeo] = useState<GeoLocation | undefined>(existing?.geo);
   const [picking, setPicking] = useState(false);
-  // Text the editor was opened with and has no coordinates for (an event
-  // from before this feature, another client's edit, a quick-add
-  // location): geocoded once on open. Typing never geocodes — the picker
-  // does that — so an edit away from the opening text stops the lookup.
+  // Text the editor was given and has no coordinates for (an event from
+  // before this feature, another client's edit, a quick-add location):
+  // geocoded once. Typing never geocodes — the picker does that — so an
+  // edit away from the given text stops the lookup.
   const lookupLocation =
-    location === initialLocation && !geoMatches(geo, location) && isMappableLocation(location)
+    location === givenLocation && !geoMatches(geo, location) && isMappableLocation(location)
       ? location
       : '';
   const lookup = useLocationGeo(lookupLocation);
@@ -559,6 +564,27 @@ export const useEventEditorModel = ({
     );
     setDescription(next.description ?? '');
     setCarried({ url: next.url });
+  };
+
+  /**
+   * Takes a parsed phrase over the fields a phrase can say: the title,
+   * the day, the times or all-day, the location and the repeat rule —
+   * all of them, since the phrase is the whole understanding (a phrase
+   * without a place clears one typed before). The calendar, guests,
+   * notes and notifications are not a phrase's to change.
+   */
+  const applyPrefill = (next: EventEditorPrefill) => {
+    setTitle(next.title);
+    setIsAllDay(next.isAllDay);
+    setDate(next.date);
+    setStartTime(next.startTime);
+    setEndTime(next.endTime);
+    setTimeChosen(true);
+    setLocation(next.location ?? '');
+    setGivenLocation(next.location ?? '');
+    setRepeatDirty(true);
+    repeatState.resetRepeat(next.recurrence);
+    setError(null);
   };
 
   const addAttendee = (input: AttendeeInput): boolean => {
@@ -833,6 +859,7 @@ export const useEventEditorModel = ({
     addAttendee,
     addReminder,
     adopt,
+    applyPrefill,
     attendees,
     attendeeStatus,
     /** A save or delete is running: Save and Delete are dimmed (a press does nothing). */

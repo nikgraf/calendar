@@ -3,7 +3,7 @@ import type { TaskRecord } from '@calendar/core';
 import { Button } from '../ui/Button.tsx';
 import { MoveConfirm } from './MoveConfirm.tsx';
 import { TaskDoneToggle } from './TaskDoneToggle.tsx';
-import { NoDueDate } from './NoDueDate.tsx';
+import { NoDueDate, RemoveDueDate } from './NoDueDate.tsx';
 import { FIELD_CLASS, LABEL_CLASS } from '../ui/fieldStyles.ts';
 import { TaskListSelect } from './TaskListSelect.tsx';
 
@@ -40,7 +40,10 @@ export function TaskEditorForm({
       {task ? <TaskDoneToggle task={task} /> : null}
       {taskModel.dated ? (
         <label className={LABEL_CLASS}>
-          Due
+          <span className="flex items-center justify-between">
+            Due
+            <RemoveDueDate onRemove={taskModel.clearDueDate} />
+          </span>
           <input
             className={`${FIELD_CLASS} mt-1`}
             onChange={(input) => taskModel.setDueDate(input.target.value)}

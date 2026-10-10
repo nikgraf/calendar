@@ -95,12 +95,10 @@ closed the last of them.
       Apple bridge does not read availability, so "marked free" is Google
       only; definitions could sync through iCloud key-value storage
       instead of the settings file (a new entitlement in every build).
-- [ ] Reminders follow-ups — undated tasks are drawn on today, but the
-      editor can neither create one nor take a due day away again
-      (`TaskDraft.dueDate` is required, `updateTask` cannot clear it);
-      quick-add/⌘K creating
-      reminders (`QUICK_ADD_JSON_SCHEMA` is events-only — though a parsed
-      event is now one Event | Task flip away from a reminder); subtasks/flags/
+- [ ] Reminders follow-ups — undated tasks are drawn on today and the
+      editor creates one (New › No due date, the Tasks tab's "+"), but
+      cannot take an existing task's due day away (`updateTask` cannot
+      clear it); subtasks/flags/
       tags; location alarms; multiple editable alarms (`alarms` is already
       `number[]` end to end); yearly positional rules, several rules,
       day-of-month lists and a monthly rule on a plain weekday without an

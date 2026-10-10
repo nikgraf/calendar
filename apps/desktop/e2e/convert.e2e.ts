@@ -81,8 +81,9 @@ const seed = {
       updatedAt: 1,
     }),
   ],
-  // Only the Reminders list: a new task defaults to it, and a timed draft
-  // switches without a question (a Google list would drop the time).
+  // A Reminders list and a Google one: a new to-do defaults to Reminders,
+  // so a timed draft switches to it without a question, and Task is on
+  // offer for the switch that drops the time.
   taskLists: [
     new TaskListInfo({
       accountId: APPLE_REMINDERS_ACCOUNT_ID,
@@ -91,6 +92,13 @@ const seed = {
       isVisible: true,
       provider: 'apple',
       title: 'Reminders',
+    }),
+    new TaskListInfo({
+      accountId: 'acc-e2e',
+      id: 'list-e2e',
+      isVisible: true,
+      provider: 'google',
+      title: 'Errands',
     }),
   ],
   tasks: [
@@ -165,8 +173,8 @@ describe('Converting between events and tasks', () => {
     // A chosen time (the untouched 09:00 default is not one) follows the draft.
     await cdp.eval(setField('input[type="time"]', '10:30', 'input'));
     // Title, day and time all fit a reminder: no question.
-    await clickTestId('mode-task');
-    await cdp.waitFor(heading('New task'));
+    await clickTestId('mode-reminder');
+    await cdp.waitFor(heading('New reminder'));
     expect(await cdp.eval(`!!${CONFIRM}`)).toBe(false);
     expect(await cdp.eval(`document.querySelector('${TITLE}').value`)).toBe('Water plants');
     expect(await cdp.eval(`document.querySelector('input[aria-label="At a time"]').checked`)).toBe(
@@ -179,16 +187,29 @@ describe('Converting between events and tasks', () => {
     await clickTestId('mode-event');
     await cdp.waitFor(heading('New event'));
     await cdp.eval(setField('input[aria-label="Location"]', 'Room 4B', 'input'));
-    await clickTestId('mode-task');
+    await clickTestId('mode-reminder');
     const summary = await cdp.waitFor<string>(`${CONFIRM}?.textContent ?? ''`);
-    expect(summary).toContain('Switching to a task drops the location.');
+    expect(summary).toContain('Switching to a reminder drops the location.');
     await cdp.clickButtonWithText('Keep as event');
     expect(await cdp.eval(heading('New event'))).toBe(true);
+    await clickTestId('mode-reminder');
+    await cdp.waitFor(`!!${CONFIRM}`);
+    await cdp.clickButtonWithText('Switch');
+    await cdp.waitFor(heading('New reminder'));
+    expect(await cdp.eval(`document.querySelector('${TITLE}').value`)).toBe('Water plants');
+    // Reminder → Task keeps the fields; the time has no home on a Google
+    // list, so it asks — and the Task form is date-only once switched.
+    await clickTestId('mode-task');
+    const dropped = await cdp.waitFor<string>(`${CONFIRM}?.textContent ?? ''`);
+    expect(dropped).toContain('Switching to a task drops the due time.');
+    await cdp.clickButtonWithText('Keep as reminder');
+    expect(await cdp.eval(heading('New reminder'))).toBe(true);
     await clickTestId('mode-task');
     await cdp.waitFor(`!!${CONFIRM}`);
     await cdp.clickButtonWithText('Switch');
     await cdp.waitFor(heading('New task'));
     expect(await cdp.eval(`document.querySelector('${TITLE}').value`)).toBe('Water plants');
+    expect(await cdp.eval(`!!document.querySelector('input[aria-label="Due time"]')`)).toBe(false);
     await cdp.clickButtonWithText('Cancel');
     await cdp.waitFor(`!${heading('New task')}`);
   });
@@ -196,7 +217,7 @@ describe('Converting between events and tasks', () => {
   it('converts an event into a reminder without asking when nothing is lost', async () => {
     const { cdp } = app;
     await cdp.openEditor('[title^="Plain event"]');
-    await clickTestId('mode-task');
+    await clickTestId('mode-reminder');
     await cdp.waitFor(heading('Convert to reminder'));
     expect(await cdp.eval(`document.querySelector('${TITLE}').value`)).toBe('Plain event');
     expect(await cdp.eval(`document.querySelector('input[aria-label="At a time"]').checked`)).toBe(

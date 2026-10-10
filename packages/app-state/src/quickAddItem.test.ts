@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vite-plus/test';
-import { convertQuickAddItem, type QuickAddReview } from './quickAddReview.ts';
+import { convertQuickAddItem, type QuickAddItem } from './quickAddItem.ts';
 
-const lunch: QuickAddReview = {
+const lunch: QuickAddItem = {
   kind: 'event',
   prefill: {
     date: '2026-10-03',
@@ -23,7 +23,7 @@ describe('convertQuickAddItem', () => {
       kind: 'task',
       prefill: { date: '2026-10-03', time: '13:00', title: 'Lunch with Sarah' },
     });
-    const allDay: QuickAddReview = {
+    const allDay: QuickAddItem = {
       kind: 'event',
       prefill: { ...lunch.prefill, endTime: '01:00', isAllDay: true, startTime: '00:00' },
     };
