@@ -18,7 +18,7 @@ import {
 const isoToday = localIsoDaysAgo(0);
 
 const googleFixture: GoogleFixture = {
-  accounts: [{ email: 'e2e@nikgraf.com', id: 'acc-e2e', tasksEnabled: true }],
+  accounts: [{ email: 'e2e@example.com', id: 'acc-e2e', tasksEnabled: true }],
   taskLists: [
     { id: 'list-e2e', title: 'My Tasks' },
     { id: 'list-errands', title: 'Errands' },
@@ -48,7 +48,7 @@ const seed = {
     new Account({
       contactsEnabled: false,
       createdAt: 1,
-      email: 'e2e@nikgraf.com',
+      email: 'e2e@example.com',
       id: 'acc-e2e',
       provider: 'google',
       status: 'ok',

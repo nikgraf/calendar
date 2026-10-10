@@ -592,7 +592,7 @@ describe('reminder mutations', () => {
         new Account({
           contactsEnabled: false,
           createdAt: 1,
-          email: 'nik@nikgraf.com',
+          email: 'nik@example.com',
           id: 'acc-google',
           provider: 'google',
           status: 'ok',

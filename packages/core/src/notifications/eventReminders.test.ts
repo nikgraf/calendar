@@ -286,7 +286,7 @@ describe('planEventReminders', () => {
 
   it('skips cancelled and declined events and keeps delivery inside the window', () => {
     const declined = event({
-      attendees: [{ email: 'me@x.com', isSelf: true, responseStatus: 'declined' }],
+      attendees: [{ email: 'me@example.com', isSelf: true, responseStatus: 'declined' }],
       id: 'declined',
     });
     const cancelled = event({ id: 'cancelled', status: 'cancelled' });

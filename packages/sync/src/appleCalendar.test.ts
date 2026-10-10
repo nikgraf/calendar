@@ -114,7 +114,7 @@ const calendars: ReadonlyArray<AppleCalendarJson> = [
     type: 'birthday',
   }),
   // A Google account the user also added to Calendar.app.
-  calendar({ id: 'ek-google-dup', isDefault: false, sourceTitle: 'NIK@nikgraf.com', title: 'Nik' }),
+  calendar({ id: 'ek-google-dup', isDefault: false, sourceTitle: 'NIK@example.com', title: 'Nik' }),
 ];
 
 const event = (overrides: Partial<AppleEventJson>): AppleEventJson => ({
@@ -169,7 +169,7 @@ const connected = Effect.gen(function* () {
     new Account({
       contactsEnabled: false,
       createdAt: 1,
-      email: 'nik@nikgraf.com',
+      email: 'nik@example.com',
       id: 'acc-google',
       provider: 'google',
       status: 'ok',

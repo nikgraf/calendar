@@ -51,7 +51,7 @@ const ancientAt = (hour: number): number => {
 const account = new Account({
   contactsEnabled: false,
   createdAt: 1,
-  email: 'e2e@nikgraf.com',
+  email: 'e2e@example.com',
   id: 'acc-e2e',
   provider: 'google',
   status: 'ok',
@@ -125,7 +125,7 @@ const seed = {
           isOrganizer: true,
           responseStatus: 'accepted',
         }),
-        new Attendee({ email: 'e2e@nikgraf.com', responseStatus: 'needsAction' }),
+        new Attendee({ email: 'e2e@example.com', responseStatus: 'needsAction' }),
       ],
       location: 'https://us02web.zoom.us/j/8881234567?pwd=e2e',
     }),
@@ -280,7 +280,7 @@ const editorTimes = (): Promise<Array<string>> =>
 describe('calendar desktop e2e', () => {
   it('renders the seeded week: sidebar, calendars, events', async () => {
     const { cdp } = app;
-    await cdp.waitFor(`document.body.textContent.includes('e2e@nikgraf.com')`);
+    await cdp.waitFor(`document.body.textContent.includes('e2e@example.com')`);
     await cdp.waitFor(`document.body.textContent.includes('Work')`);
     await cdp.waitFor(`!!document.querySelector('[title^="Standup meeting"]')`);
     await cdp.waitFor(`!!document.querySelector('[title^="Gym session"]')`);
@@ -396,7 +396,7 @@ describe('calendar desktop e2e', () => {
       const remove = await settings.locate('[data-testid="remove-account-acc-e2e"]');
       await settings.click(remove.x, remove.y);
       await settings.waitFor(
-        `document.querySelector('[data-testid="remove-account-confirm"]')?.textContent.includes('Remove e2e@nikgraf.com?')`,
+        `document.querySelector('[data-testid="remove-account-confirm"]')?.textContent.includes('Remove e2e@example.com?')`,
       );
       await settings.clickButtonWithText('Cancel');
       await settings.waitFor(`!document.querySelector('[data-testid="remove-account-confirm"]')`);
@@ -1011,7 +1011,7 @@ describe('calendar desktop e2e', () => {
     const updated = await waitForEvent(
       (event) =>
         event.id === 'evt-review' &&
-        event.attendees?.find((attendee) => attendee.email === 'e2e@nikgraf.com')
+        event.attendees?.find((attendee) => attendee.email === 'e2e@example.com')
           ?.responseStatus === 'accepted',
     );
     expect(updated).toBeDefined();

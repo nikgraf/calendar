@@ -13,7 +13,7 @@ import {
 const account = new Account({
   contactsEnabled: false,
   createdAt: 1,
-  email: 'e2e@nikgraf.com',
+  email: 'e2e@example.com',
   id: 'acc-e2e',
   provider: 'google',
   status: 'ok',
@@ -61,7 +61,7 @@ describe('settings file: applied at launch and while running, written back on ed
         '  "view": { "allDayLaneCollapsed": true },',
         '  "desktop": { "screenPrivacy": "visible" },',
         '  "accounts": [',
-        '    { "kind": "google", "email": "file@nikgraf.com", "calendars": [] }',
+        '    { "kind": "google", "email": "file@example.com", "calendars": [] }',
         '  ]',
         '}',
         '',
@@ -88,10 +88,10 @@ describe('settings file: applied at launch and while running, written back on ed
     await cdp.waitFor(`!!document.querySelector('[data-testid="hour-secondary-12"]')`);
 
     const accounts = await readAccounts(app.userDataDir);
-    const added = accounts.find((entry) => entry.email === 'file@nikgraf.com');
+    const added = accounts.find((entry) => entry.email === 'file@example.com');
     expect(added?.status).toBe('reauth_required');
     expect(added?.provider).toBe('google');
-    await cdp.waitFor(`document.body.textContent.includes('file@nikgraf.com')`);
+    await cdp.waitFor(`document.body.textContent.includes('file@example.com')`);
     await cdp.waitFor(`document.body.textContent.includes('sign in again')`);
 
     const applied = (await readDeviceSetting(app.userDataDir, 'settingsFile')) as {
@@ -104,7 +104,7 @@ describe('settings file: applied at launch and while running, written back on ed
       .poll(() => statusText(settings), { timeout: 10_000 })
       .toMatch(/^Watching .*solunivo\.jsonc/);
     // The write-back filled the file in with the seeded account and its calendar.
-    await expect.poll(() => fileText(app), { timeout: 10_000 }).toContain('"e2e@nikgraf.com"');
+    await expect.poll(() => fileText(app), { timeout: 10_000 }).toContain('"e2e@example.com"');
     expect(fileText(app)).toContain('// the machine setup file');
     expect(fileText(app)).toContain('"cal-work"');
   });
@@ -117,7 +117,7 @@ describe('settings file: applied at launch and while running, written back on ed
     };
     parsed.view.allDayLaneCollapsed = false;
     const work = parsed.accounts
-      .find((entry) => entry.email === 'e2e@nikgraf.com')
+      .find((entry) => entry.email === 'e2e@example.com')
       ?.calendars?.find((entry) => entry.id === 'cal-work');
     expect(work?.visible).toBe(true);
     work!.visible = false;
@@ -215,7 +215,7 @@ describe('settings file: created on request', () => {
     };
     expect(parsed.version).toBe(1);
     expect(parsed.accounts).toEqual([
-      expect.objectContaining({ email: 'e2e@nikgraf.com', kind: 'google' }),
+      expect.objectContaining({ email: 'e2e@example.com', kind: 'google' }),
     ]);
 
     // A later change lands in the file.

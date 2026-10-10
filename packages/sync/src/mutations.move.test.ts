@@ -71,7 +71,7 @@ const recordingGoogle = (
         end: { dateTime: new Date(base + HOUR).toISOString() },
         etag: '"moved"',
         id: eventId,
-        organizer: { email: 'nik@nikgraf.com', self: true },
+        organizer: { email: 'nik@example.com', self: true },
         start: { dateTime: new Date(base).toISOString() },
         status: 'confirmed',
         summary: 'Moved',
@@ -204,7 +204,7 @@ const googleEvent = (overrides: Partial<EventRecord> = {}) =>
     etag: '"e1"',
     id: 'evt-a',
     isAllDay: false,
-    organizerEmail: 'nik@nikgraf.com',
+    organizerEmail: 'nik@example.com',
     startTimeZone: 'Europe/Vienna',
     startUtc: base,
     status: 'confirmed',
@@ -218,7 +218,7 @@ const googleEvent = (overrides: Partial<EventRecord> = {}) =>
 const seed = (events: ReadonlyArray<EventRecord> = []) =>
   Effect.gen(function* () {
     const accounts = yield* AccountRepo;
-    yield* accounts.upsert(account('acc-1', 'nik@nikgraf.com'));
+    yield* accounts.upsert(account('acc-1', 'nik@example.com'));
     yield* accounts.upsert(account('acc-2', 'other@example.com'));
     yield* accounts.upsert(account(APPLE_CALENDAR_ACCOUNT_ID, '', 'apple'));
     yield* (yield* CalendarRepo).upsertMany([
@@ -519,7 +519,7 @@ describe('moveEvent across accounts and providers', () => {
       const invited = googleEvent({
         attendees: [
           new Attendee({
-            email: 'nik@nikgraf.com',
+            email: 'nik@example.com',
             isOrganizer: true,
             isSelf: true,
             responseStatus: 'accepted',
@@ -616,7 +616,7 @@ describe('moveEvent across accounts and providers', () => {
                 end: { dateTime: new Date(base + HOUR).toISOString() },
                 etag: `"moved-${destination}"`,
                 id: eventId,
-                organizer: { email: 'nik@nikgraf.com', self: true },
+                organizer: { email: 'nik@example.com', self: true },
                 start: { dateTime: new Date(base).toISOString() },
                 status: 'confirmed',
                 summary: 'Planning',
@@ -674,7 +674,7 @@ describe('moveEvent across accounts and providers', () => {
               id: 'ek-mine',
               isAllDay: false,
               isDetached: false,
-              organizerEmail: 'me@icloud.com',
+              organizerEmail: 'me@example.com',
               organizerIsSelf: true,
               startUtc: base,
               status: 'confirmed',
@@ -686,7 +686,7 @@ describe('moveEvent across accounts and providers', () => {
           {
             event: {
               attendees: [
-                { email: 'me@icloud.com', isOrganizer: false, isSelf: true, status: 'accepted' },
+                { email: 'me@example.com', isOrganizer: false, isSelf: true, status: 'accepted' },
               ],
               calendarId: 'ek-home',
               endUtc: base + HOUR,
