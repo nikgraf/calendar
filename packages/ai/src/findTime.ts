@@ -1,7 +1,7 @@
 import { Temporal, type FindSlotsConstraints } from '@calendar/core';
 import {
   groundBounds,
-  namedDays,
+  groundDays,
   type Period,
   periodTimes,
   statesDuration,
@@ -98,10 +98,11 @@ export type FindTimeResult =
  * the phrase, the parse is also held against it (`grounding.ts`): the
  * duration is the model's only when the phrase says how long, else the
  * fallback (the form's own); a window the phrase names in words is taken
- * from the words; the daily bounds stand only beside a stated clock time,
- * are a named meal's or part of the day's window, or are dropped; and
- * weekdays count only when the phrase names them — the model answered
- * "Tuesday" to every phrase.
+ * from the words; the daily bounds stand only beside a written clock
+ * time, are a named meal's or part of the day's window, or are dropped;
+ * and weekdays count only when the phrase names them — the model answered
+ * "Tuesday" to every phrase — unless it excludes days, which the code
+ * cannot read, so the model's answer stands.
  */
 export const normalizeFindTime = (
   parse: FindTimeParse,
@@ -145,12 +146,10 @@ export const normalizeFindTime = (
   if (earliestTime && latestTime && latestTime <= earliestTime) {
     return { kind: 'rejected', reason: "That time window couldn't be read — try rephrasing." };
   }
-  const daysOfWeek =
-    phrase === undefined
-      ? parse.daysOfWeek?.filter(
-          (dayNumber) => Number.isInteger(dayNumber) && dayNumber >= 1 && dayNumber <= 7,
-        )
-      : namedDays(phrase);
+  const modelDays = parse.daysOfWeek?.filter(
+    (dayNumber) => Number.isInteger(dayNumber) && dayNumber >= 1 && dayNumber <= 7,
+  );
+  const daysOfWeek = phrase === undefined ? modelDays : groundDays(modelDays, phrase);
   const title = meaningfulText(parse.title);
   return {
     constraints: {

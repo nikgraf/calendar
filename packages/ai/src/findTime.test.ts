@@ -126,6 +126,42 @@ describe('normalizeFindTime holds the parse against the phrase', () => {
     expect(withPhrase({ daysOfWeek: [2], durationMinutes: 60 }, 'weekdays')).toMatchObject({
       constraints: { daysOfWeek: [1, 2, 3, 4, 5] },
     });
+    // Review: an exclusion keeps the model's (validated) days.
+    expect(
+      withPhrase(
+        { daysOfWeek: [1, 3, 4, 5, 6, 7, 9], durationMinutes: 60 },
+        'any day except Tuesday',
+      ),
+    ).toMatchObject({ constraints: { daysOfWeek: [1, 3, 4, 5, 6, 7] } });
+  });
+
+  it('keeps the model duration for a written or hyphenated length', () => {
+    // Review: "two hours" fell back to the form's duration.
+    expect(withPhrase({ durationMinutes: 120 }, 'two hours of focus')).toMatchObject({
+      constraints: { durationMinutes: 120 },
+    });
+    expect(withPhrase({ durationMinutes: 90 }, '90-minute workshop')).toMatchObject({
+      constraints: { durationMinutes: 90 },
+    });
+  });
+
+  it('keeps the model bounds when only an end is written', () => {
+    // Review: "until 5pm" lost its latestTime and the solver ran to 20:00.
+    expect(
+      withPhrase({ durationMinutes: 30, latestTime: '17:00' }, '30 min focus until 5pm'),
+    ).toMatchObject({ constraints: { latestTime: '17:00' } });
+  });
+
+  it('keeps the model window for an offset or a span with two ends', () => {
+    // Review: "in two weeks" became the next two weeks.
+    const dates = { windowEndDate: '2026-09-07', windowStartDate: '2026-09-07' };
+    expect(withPhrase({ durationMinutes: 60, ...dates }, 'an hour in two weeks')).toMatchObject({
+      constraints: dates,
+    });
+    const span = { windowEndDate: '2026-08-25', windowStartDate: '2026-08-24' };
+    expect(
+      withPhrase({ durationMinutes: 60, ...span }, 'an hour between today and tomorrow'),
+    ).toMatchObject({ constraints: span });
   });
 
   it('bounds a named meal or part of the day by its window', () => {

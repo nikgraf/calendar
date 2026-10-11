@@ -3,13 +3,14 @@ import { describe, expect, it } from 'vite-plus/test';
 import {
   groundBounds,
   groundDate,
+  groundDays,
   groundTime,
   isTodoPhrase,
-  namedDays,
   namedWeekdays,
   periodOf,
   periodTimes,
   statedTimes,
+  statesClockTime,
   statesDuration,
   windowOf,
 } from './grounding.ts';
@@ -86,12 +87,63 @@ describe('statedTimes', () => {
     });
   });
 
+  it('gives the end its unit without pushing the start past it', () => {
+    // Review: "from 9 to 5pm" read as 21:00–, and "11-1pm" as 23:00–.
+    expect(statedTimes('Workshop from 9 to 5pm')).toEqual({
+      end: { exact: true, hour: 17, minute: 0 },
+      start: { exact: false, hour: 9, minute: 0 },
+    });
+    expect(statedTimes('Lunch 11-1pm')).toEqual({
+      end: { exact: true, hour: 13, minute: 0 },
+      start: { exact: false, hour: 11, minute: 0 },
+    });
+    expect(statedTimes('from 12 to 2pm')).toEqual({
+      end: { exact: true, hour: 14, minute: 0 },
+      start: { exact: true, hour: 12, minute: 0 },
+    });
+    expect(statedTimes('9am-5pm')).toEqual({
+      end: { exact: true, hour: 17, minute: 0 },
+      start: { exact: true, hour: 9, minute: 0 },
+    });
+  });
+
+  it('reads a compound time with its unit, and not its fragments', () => {
+    // Review: "two pm" inside "half past two pm" outranked the compound.
+    expect(statedTimes('Call at half past two pm').start).toEqual({
+      exact: true,
+      hour: 14,
+      minute: 30,
+    });
+    expect(statedTimes('um halb drei uhr').start).toEqual({ exact: false, hour: 2, minute: 30 });
+    // Review: "to three" inside "quarter to three" is not an end.
+    expect(statedTimes('Call at quarter to three')).toEqual({
+      start: { exact: false, hour: 2, minute: 45 },
+    });
+    expect(statedTimes('Call at quarter to three until four')).toEqual({
+      end: { exact: false, hour: 4, minute: 0 },
+      start: { exact: false, hour: 2, minute: 45 },
+    });
+  });
+
+  it('knows a bare closer is a written time', () => {
+    expect(statesClockTime('30 min focus until 5pm')).toBe(true);
+    expect(statesClockTime('Fokus bis 17 Uhr')).toBe(true);
+    expect(statesClockTime('90 min focus')).toBe(false);
+  });
+
   it('does not mistake dates, years, durations or German "am" for times', () => {
     expect(statedTimes('Treffen am 17.10.')).toEqual({});
     expect(statedTimes('Offsite Oct 20')).toEqual({});
     expect(statedTimes('Dates 17-18 Oct')).toEqual({});
     expect(statedTimes('Retro in 2026')).toEqual({});
     expect(statedTimes('Workshop 2h tomorrow')).toEqual({});
+    // Review: "pm" is never German, so a date right after it is no reason to drop it.
+    expect(statedTimes('Call 3pm 20 Oct').start).toEqual({ exact: true, hour: 15, minute: 0 });
+    expect(statedTimes('Treffen um 7 am 17.')).toEqual({
+      start: { exact: false, hour: 7, minute: 0 },
+    });
+    // Review: "ein" is a number only before "Uhr".
+    expect(statedTimes('kümmere mich um ein paar Dinge')).toEqual({});
     expect(statedTimes('Treffen um 7 am Montag').start).toEqual({
       exact: false,
       hour: 7,
@@ -191,6 +243,24 @@ describe('groundTime', () => {
       source: 'stated',
       startTime: '09:00',
     });
+    expect(groundTime('09:00', 'Workshop from 9 to 5pm')).toEqual({
+      endTime: '17:00',
+      source: 'stated',
+      startTime: '09:00',
+    });
+    expect(groundTime('11:00', 'Lunch 11-1pm')).toEqual({
+      endTime: '13:00',
+      source: 'stated',
+      startTime: '11:00',
+    });
+    expect(groundTime('14:30', 'Call at half past two pm')).toEqual({
+      source: 'stated',
+      startTime: '14:30',
+    });
+    expect(groundTime('14:45', 'Call at quarter to three')).toEqual({
+      source: 'stated',
+      startTime: '14:45',
+    });
     // An end before the start in every reading is no end.
     expect(groundTime('14:00', 'Workshop at 2pm to 1pm')).toEqual({
       source: 'stated',
@@ -258,17 +328,31 @@ describe('groundDate', () => {
   });
 });
 
-describe('namedWeekdays and namedDays', () => {
+describe('namedWeekdays and groundDays', () => {
   it('lists the weekdays named, in week order', () => {
     expect(namedWeekdays('Wednesdays and Mondays')).toEqual([1, 3]);
     expect(namedWeekdays('Standup every weekday morning')).toEqual([]);
   });
 
   it("reads the finder's day sets", () => {
-    expect(namedDays('weekdays next week')).toEqual([1, 2, 3, 4, 5]);
-    expect(namedDays('am Wochenende')).toEqual([6, 7]);
-    expect(namedDays('Tuesdays and Thursdays')).toEqual([2, 4]);
-    expect(namedDays('dinner with Teo next week')).toBeUndefined();
+    expect(groundDays([2], 'weekdays next week')).toEqual([1, 2, 3, 4, 5]);
+    expect(groundDays([2], 'am Wochenende')).toEqual([6, 7]);
+    expect(groundDays([2], 'Tuesdays and Thursdays')).toEqual([2, 4]);
+    expect(groundDays([2], 'dinner with Teo next week')).toBeUndefined();
+  });
+
+  it('expands a range of weekdays', () => {
+    // Review: "Monday through Friday" came out as [1, 5].
+    expect(groundDays([2], 'Monday through Friday')).toEqual([1, 2, 3, 4, 5]);
+    expect(groundDays(undefined, 'Freitag bis Montag')).toEqual([5, 6, 7, 1]);
+    expect(groundDays(undefined, 'Tue-Thu mornings')).toEqual([2, 3, 4]);
+  });
+
+  it('leaves an exclusion to the model', () => {
+    // Review: "any day except Tuesday" came out as exactly Tuesday.
+    const model = [1, 3, 4, 5, 6, 7];
+    expect(groundDays(model, 'an hour any day except Tuesday')).toEqual(model);
+    expect(groundDays(undefined, 'jeden Tag ausser Dienstag')).toBeUndefined();
   });
 });
 
@@ -295,7 +379,13 @@ describe('statesDuration', () => {
     expect(statesDuration('half an hour with Anna')).toBe(true);
     expect(statesDuration('eineinhalb Stunden')).toBe(true);
     expect(statesDuration('1.5 hours')).toBe(true);
+    // Review: written and hyphenated durations.
+    expect(statesDuration('two hours of focus')).toBe(true);
+    expect(statesDuration('zwei Stunden')).toBe(true);
+    expect(statesDuration('eine Stunde')).toBe(true);
+    expect(statesDuration('90-minute workshop')).toBe(true);
     expect(statesDuration('dinner with Teo next week')).toBe(false);
+    expect(statesDuration('a hike on Sunday')).toBe(false);
   });
 });
 
@@ -329,6 +419,16 @@ describe('windowOf', () => {
     expect(windowOf('focus', REFERENCE)).toBeUndefined();
     expect(windowOf('on Oct 20', REFERENCE)).toBeUndefined();
   });
+
+  it('leaves what it cannot read to the model', () => {
+    // Review: "in two weeks" is an offset, not a span.
+    expect(windowOf('Find an hour in two weeks', REFERENCE)).toBeUndefined();
+    expect(windowOf('in zwei Wochen', REFERENCE)).toBeUndefined();
+    // Review: "tomorrow" as one end of a span, or beside another day word.
+    expect(windowOf('an hour between today and tomorrow', REFERENCE)).toBeUndefined();
+    expect(windowOf('starting tomorrow for two weeks', REFERENCE)).toBeUndefined();
+    expect(windowOf('ab morgen', REFERENCE)).toBeUndefined();
+  });
 });
 
 describe('groundBounds', () => {
@@ -344,5 +444,9 @@ describe('groundBounds', () => {
     expect(groundBounds({ earliestTime: '08:00', latestTime: '12:00' }, '90 min focus')).toEqual(
       {},
     );
+    // Review: a bare closer is a written time too.
+    expect(groundBounds({ latestTime: '17:00' }, '30 min focus until 5pm')).toEqual({
+      latestTime: '17:00',
+    });
   });
 });
