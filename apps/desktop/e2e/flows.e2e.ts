@@ -1690,9 +1690,18 @@ describe('calendar desktop e2e', () => {
     // Two empty slots in today's column, which is on screen whatever the
     // weekday. Standup, which this test used to aim from, is in tomorrow's
     // column after the drag test: on a Sunday that is off the week, and
-    // from Thursday on the editor the first click opens covered it. Each
-    // slot is found right before its click, since the editor narrows the grid.
+    // from Thursday on the editor the first click opens covered it.
+    // Each slot is found right before its click, once today's column sits
+    // inside the grid: the editor narrows the grid, and a window at the
+    // back only lays the narrower columns out in a drawn frame.
+    const todayInGrid = `(() => {
+      const view = document.querySelector('[data-testid="week-grid"]').parentElement.getBoundingClientRect();
+      const header = document.querySelector('[data-testid="today-header"]').getBoundingClientRect();
+      const center = header.x + header.width / 2;
+      return center > view.x && center < view.x + view.width;
+    })()`;
     const emptySlot = async (fromHour: number) => {
+      await cdp.waitForRendered<boolean>(todayInGrid);
       const slot = await cdp.eval<{ hour: number; x: number; y: number } | null>(`(() => {
         const scroller = document.querySelector('[data-testid="week-scroller"]');
         const header = document.querySelector('[data-testid="today-header"]').getBoundingClientRect();
@@ -1715,17 +1724,22 @@ describe('calendar desktop e2e', () => {
       return slot;
     };
     const START = `document.querySelector('[data-testid="editor"] input[type="time"]')?.value`;
-    const first = await emptySlot(8);
-    await cdp.click(first.x, first.y);
-    await cdp.waitFor(
-      `document.querySelector('[data-testid="editor-title"]')?.textContent === 'New event'`,
-    );
-    const firstStart = await cdp.eval<string>(START);
-    const second = await emptySlot(first.hour + 1);
-    await cdp.click(second.x, second.y);
-    await cdp.waitFor(`${START} !== ${JSON.stringify(firstStart)}`);
-    await cdp.pressEscape();
-    await cdp.waitFor(`!document.querySelector('[data-testid="editor"]')`);
+    try {
+      const first = await emptySlot(8);
+      await cdp.click(first.x, first.y);
+      await cdp.waitFor(
+        `document.querySelector('[data-testid="editor-title"]')?.textContent === 'New event'`,
+      );
+      const firstStart = await cdp.eval<string>(START);
+      const second = await emptySlot(first.hour + 1);
+      await cdp.click(second.x, second.y);
+      await cdp.waitFor(`${START} !== ${JSON.stringify(firstStart)}`);
+    } finally {
+      // Closed even when an attempt fails, so the retry and the next tests
+      // start without an editor in the panel.
+      await cdp.pressEscape();
+      await cdp.waitFor(`!document.querySelector('[data-testid="editor"]')`);
+    }
   });
 
   it('adds an undated task through New › Task › No due date', async () => {
