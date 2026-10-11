@@ -129,6 +129,43 @@ describe('statedTimes', () => {
     expect(statesClockTime('30 min focus until 5pm')).toBe(true);
     expect(statesClockTime('Fokus bis 17 Uhr')).toBe(true);
     expect(statesClockTime('90 min focus')).toBe(false);
+    // Review: "before 10" and "after 5" are written times too.
+    expect(statesClockTime('Find an hour before 10')).toBe(true);
+    expect(statesClockTime('Find an hour after 5')).toBe(true);
+    expect(statedTimes('Call after 5').start).toEqual({ exact: false, hour: 5, minute: 0 });
+    expect(statedTimes('Call before 10')).toEqual({});
+    // A number before a length of time is a duration, not a clock.
+    expect(statesClockTime('Follow-up nach 2 Tagen')).toBe(false);
+    expect(statesClockTime('um 5 Minuten verschieben')).toBe(false);
+  });
+
+  it('takes noon and midnight as range ends', () => {
+    // Review: "from 8 to noon" lost its start.
+    expect(statedTimes('Workshop from 8 to noon')).toEqual({
+      end: { exact: true, hour: 12, minute: 0 },
+      start: { exact: false, hour: 8, minute: 0 },
+    });
+    expect(statedTimes('open until midnight')).toEqual({});
+    expect(statedTimes('from noon to 2')).toEqual({
+      end: { exact: false, hour: 2, minute: 0 },
+      start: { exact: true, hour: 12, minute: 0 },
+    });
+  });
+
+  it('resolves the hour before subtracting a quarter or a half', () => {
+    // Review: "quarter to twelve pm" came out as 23:45.
+    expect(statedTimes('Call at quarter to twelve pm').start).toEqual({
+      exact: true,
+      hour: 11,
+      minute: 45,
+    });
+    expect(statedTimes('quarter to twelve am').start).toEqual({
+      exact: true,
+      hour: 23,
+      minute: 45,
+    });
+    expect(statedTimes('quarter to one').start).toEqual({ exact: false, hour: 0, minute: 45 });
+    expect(statedTimes('halb eins').start).toEqual({ exact: false, hour: 0, minute: 30 });
   });
 
   it('does not mistake dates, years, durations or German "am" for times', () => {
@@ -261,6 +298,20 @@ describe('groundTime', () => {
       source: 'stated',
       startTime: '14:45',
     });
+    expect(groundTime('08:00', 'Workshop from 8 to noon')).toEqual({
+      endTime: '12:00',
+      source: 'stated',
+      startTime: '08:00',
+    });
+    // An open "quarter to one" reads as 12:45, not 00:45.
+    expect(groundTime(undefined, 'Call at quarter to one')).toEqual({
+      source: 'stated',
+      startTime: '12:45',
+    });
+    expect(groundTime('12:30', 'Treffen um halb eins')).toEqual({
+      source: 'stated',
+      startTime: '12:30',
+    });
     // An end before the start in every reading is no end.
     expect(groundTime('14:00', 'Workshop at 2pm to 1pm')).toEqual({
       source: 'stated',
@@ -280,6 +331,19 @@ describe('groundTime', () => {
     expect(groundTime('00:00', 'Kino heute abend')).toEqual({
       source: 'period',
       startTime: '18:00',
+    });
+  });
+
+  it('leaves a meal used as a boundary to the model', () => {
+    // Review: "before lunch" was read as lunch itself.
+    expect(groundTime('11:00', 'Call before lunch')).toEqual({
+      source: 'model',
+      startTime: '11:00',
+    });
+    expect(groundTime(undefined, 'Call after dinner')).toEqual({ source: 'model' });
+    expect(groundTime('13:30', 'Anruf nach dem Mittagessen')).toEqual({
+      source: 'model',
+      startTime: '13:30',
     });
   });
 
@@ -320,6 +384,12 @@ describe('groundDate', () => {
 
   it('has no opinion on dates it cannot read', () => {
     expect(ground('2026-10-20', 'Offsite Oct 20')).toBeUndefined();
+    // Review: a day word as the anchor of an offset, a weekday that has passed.
+    expect(ground('2026-09-05', 'Call two weeks from today')).toBeUndefined();
+    expect(ground('2026-08-30', 'Call a week from tomorrow')).toBeUndefined();
+    expect(ground('2026-08-21', 'Dentist last Friday at 9am')).toBeUndefined();
+    expect(ground('2026-08-21', 'Zahnarzt letzten Freitag')).toBeUndefined();
+    expect(ground(undefined, 'Call yesterday')).toBe('2026-08-21');
     expect(ground(undefined, 'Zahnarzt morgen')).toBeUndefined();
     // Two weekdays: not one day.
     expect(ground(undefined, 'Gym Monday and Wednesday')).toBeUndefined();
@@ -341,17 +411,23 @@ describe('namedWeekdays and groundDays', () => {
     expect(groundDays([2], 'dinner with Teo next week')).toBeUndefined();
   });
 
-  it('expands a range of weekdays', () => {
-    // Review: "Monday through Friday" came out as [1, 5].
+  it('expands a range of weekdays, with any day named beside it', () => {
+    // Review: "Monday through Friday" came out as [1, 5], and a day beside the range was dropped.
     expect(groundDays([2], 'Monday through Friday')).toEqual([1, 2, 3, 4, 5]);
-    expect(groundDays(undefined, 'Freitag bis Montag')).toEqual([5, 6, 7, 1]);
+    expect(groundDays(undefined, 'Freitag bis Montag')).toEqual([1, 5, 6, 7]);
     expect(groundDays(undefined, 'Tue-Thu mornings')).toEqual([2, 3, 4]);
+    expect(groundDays(undefined, 'Monday through Friday and Sunday')).toEqual([1, 2, 3, 4, 5, 7]);
   });
 
   it('leaves an exclusion to the model', () => {
-    // Review: "any day except Tuesday" came out as exactly Tuesday.
+    // Review: "any day except Tuesday" came out as exactly Tuesday — and so
+    // did "but Tuesday", "not on Tuesday" and "außer Dienstag".
     const model = [1, 3, 4, 5, 6, 7];
     expect(groundDays(model, 'an hour any day except Tuesday')).toEqual(model);
+    expect(groundDays(model, 'any day but Tuesday')).toEqual(model);
+    expect(groundDays(model, 'not on Tuesday')).toEqual(model);
+    expect(groundDays(model, 'jeden Tag außer Dienstag')).toEqual(model);
+    expect(groundDays(model, 'nicht am Dienstag')).toEqual(model);
     expect(groundDays(undefined, 'jeden Tag ausser Dienstag')).toBeUndefined();
   });
 });
@@ -418,6 +494,10 @@ describe('windowOf', () => {
     });
     expect(windowOf('focus', REFERENCE)).toBeUndefined();
     expect(windowOf('on Oct 20', REFERENCE)).toBeUndefined();
+    expect(windowOf('the day after tomorrow', REFERENCE)).toEqual({
+      windowEndDate: '2026-08-24',
+      windowStartDate: '2026-08-24',
+    });
   });
 
   it('leaves what it cannot read to the model', () => {
@@ -428,6 +508,10 @@ describe('windowOf', () => {
     expect(windowOf('an hour between today and tomorrow', REFERENCE)).toBeUndefined();
     expect(windowOf('starting tomorrow for two weeks', REFERENCE)).toBeUndefined();
     expect(windowOf('ab morgen', REFERENCE)).toBeUndefined();
+    // Review: a span whose other end the code cannot read, an offset from today.
+    expect(windowOf('Find an hour between tomorrow and August 28', REFERENCE)).toBeUndefined();
+    expect(windowOf('from tomorrow to Friday', REFERENCE)).toBeUndefined();
+    expect(windowOf('a week from today', REFERENCE)).toBeUndefined();
   });
 });
 
@@ -447,6 +531,19 @@ describe('groundBounds', () => {
     // Review: a bare closer is a written time too.
     expect(groundBounds({ latestTime: '17:00' }, '30 min focus until 5pm')).toEqual({
       latestTime: '17:00',
+    });
+    expect(groundBounds({ latestTime: '10:00' }, 'Find an hour before 10')).toEqual({
+      latestTime: '10:00',
+    });
+    expect(groundBounds({ earliestTime: '17:00' }, 'Find an hour after 5')).toEqual({
+      earliestTime: '17:00',
+    });
+    // Review: a meal as a boundary is not the meal's window.
+    expect(groundBounds({ latestTime: '11:30' }, 'Find an hour before lunch next week')).toEqual({
+      latestTime: '11:30',
+    });
+    expect(groundBounds({ earliestTime: '20:00' }, 'after dinner')).toEqual({
+      earliestTime: '20:00',
     });
   });
 });

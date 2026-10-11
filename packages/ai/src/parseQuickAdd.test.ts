@@ -412,6 +412,31 @@ describe('parseQuickAdd holds the answer against the phrase', () => {
     expect((await prefillOf({ date: '2026-10-20', title: 'Offsite' }, 'Offsite Oct 20')).date).toBe(
       '2026-10-20',
     );
+    // Review: a past weekday stays in the past; an offset's anchor is not the date.
+    expect(
+      (
+        await prefillOf(
+          { date: '2026-08-21', startTime: '09:00', title: 'Dentist' },
+          'Dentist last Friday at 9am',
+        )
+      ).date,
+    ).toBe('2026-08-21');
+    expect(
+      (await prefillOf({ date: '2026-09-05', title: 'Call' }, 'Call two weeks from today')).date,
+    ).toBe('2026-09-05');
+  });
+
+  it('leaves a meal used as a boundary to the model', async () => {
+    // Review: "before lunch" was read as lunch itself.
+    expect(
+      await prefillOf(
+        { date: '2026-08-24', startTime: '11:00', title: 'Call' },
+        'Call before lunch Monday',
+      ),
+    ).toMatchObject({ date: '2026-08-24', endTime: '12:00', startTime: '11:00' });
+    expect(await prefillOf({ title: 'Call' }, 'Call after dinner')).toMatchObject({
+      isAllDay: true,
+    });
   });
 });
 
