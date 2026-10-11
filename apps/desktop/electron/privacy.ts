@@ -25,7 +25,8 @@ let mode: PrivacyMode = 'hidden';
 let visibleUntil: number | null = null;
 let pauseTimer: NodeJS.Timeout | null = null;
 
-const isProtected = (): boolean =>
+/** Whether the windows are kept out of captures right now (hidden, not paused). */
+export const isProtected = (): boolean =>
   mode === 'hidden' && (visibleUntil === null || Date.now() >= visibleUntil);
 
 export const getPrivacyState = (): PrivacyState => ({

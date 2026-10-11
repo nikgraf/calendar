@@ -6,7 +6,9 @@
 // transcribe {audioBase64,locale} | reminders.* (see RemindersBridge.swift,
 // shared with the iOS Expo module) | contacts.* (ContactsBridge.swift) |
 // geo.* (GeoBridge.swift: MapKit place search, geocoding, map images) |
-// calendar.* (AppleCalendarBridge.swift: EventKit calendars and events).
+// calendar.* (AppleCalendarBridge.swift: EventKit calendars and events) |
+// capture.watch {on} (CaptureWatch.swift: screen captures under way, as
+// capture.started / capture.ended events).
 // Version 2.
 import Foundation
 
@@ -353,6 +355,14 @@ func handleLine(_ line: String) {
     case "generateJson": await handleGenerate(request.id, params)
     case "prepareSpeech": await handlePrepareSpeech(request.id, params)
     case "transcribe": await handleTranscribe(request.id, params)
+    case "capture.watch":
+      do {
+        emitResult(request.id, try CaptureWatchDispatch.invoke(params: params))
+      } catch let error as HelperError {
+        emitError(request.id, error.message)
+      } catch {
+        emitError(request.id, "capture failed: \(error.localizedDescription)")
+      }
     case let method where method.hasPrefix("reminders."):
       do {
         let result = try await RemindersDispatch.invoke(

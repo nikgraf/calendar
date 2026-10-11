@@ -51,6 +51,8 @@ declare global {
       onAgentsChanged: (listener: () => void) => () => void;
       /** Clicked event reminders, the one waiting first; decode with `parseNotificationTarget`. */
       onNotificationOpen: (listener: (target: unknown) => void) => () => void;
+      /** True while a screen capture runs that leaves the windows out. */
+      onPrivacyCapture: (listener: (capturing: boolean) => void) => () => void;
       onPrivacyChanged: (listener: (state: PrivacyState) => void) => () => void;
       onRpcMessage: (listener: (data: string | Uint8Array) => void) => () => void;
       onSettingsFileChanged: (listener: (status: SettingsFileStatus) => void) => () => void;

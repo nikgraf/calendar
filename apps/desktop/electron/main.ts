@@ -6,6 +6,7 @@ import { startSettingsFile } from './settingsFile.ts';
 import { initFileLogging, logRendererError } from './log.ts';
 import { installApplicationMenu } from './menu.ts';
 import { initPrivacy } from './privacy.ts';
+import { startCaptureHint } from './captureHint.ts';
 import { registerModelHelper } from './modelHelper.ts';
 import { registerNotificationIpc } from './notifications.ts';
 import { registerAppleCalendarIpc } from './appleCalendarIpc.ts';
@@ -151,6 +152,7 @@ void app.whenReady().then(() => {
   registerAppleCalendarIpc();
   registerSettingsIpc();
   registerNotificationIpc();
+  startCaptureHint(app.getPath('userData'));
   installApplicationMenu();
   if (!startInBackground) {
     createMainWindow();

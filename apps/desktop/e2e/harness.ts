@@ -716,6 +716,11 @@ export interface App {
    * window is moved to the pane and its client reused.
    */
   readonly openSettings: (pane: SettingsPane) => Promise<Cdp>;
+  /**
+   * Starts or ends a screen capture as the app sees one — needs
+   * `captureWatch: 'fixture'` (captureHint.ts reads the marker file).
+   */
+  readonly setCapturing: (active: boolean) => void;
   /** Where this run's watched settings file lives (may not exist). */
   readonly settingsFilePath: string;
   /** A client attached to the settings window something else opened (a button, the menu). */
@@ -762,6 +767,12 @@ export interface LaunchOptions {
    * sees them without reading a developer's calendars.
    */
   readonly appleCalendar?: 'off' | 'real' | { readonly fixture: AppleCalendarFixture };
+  /**
+   * 'off' (default): the app never watches for screen captures, so a
+   * developer's screenshot mid-run cannot draw the capture hint. 'fixture':
+   * captures start and end through `App.setCapturing`.
+   */
+  readonly captureWatch?: 'fixture' | 'off';
   /**
    * 'off' (default): no bridge at all. 'real': the helper. A fixture: the
    * in-memory fake client seeded with these rows — the only way e2e sees
@@ -939,6 +950,7 @@ export const launchApp = async (seed?: SeedData, options: LaunchOptions = {}): P
       ...googleEnv,
       ...(options.model === 'fixture' ? { CALENDAR_MODEL: 'fixture' } : {}),
       CALENDAR_AGENT_SOCKET: agentSocketPath,
+      CALENDAR_CAPTURE_WATCH: options.captureWatch ?? 'off',
       // The windows take no OS input: a developer typing or touching the
       // trackpad during a run must not reach the test (windows.ts).
       CALENDAR_E2E_INPUT: 'cdp',
@@ -1027,6 +1039,15 @@ export const launchApp = async (seed?: SeedData, options: LaunchOptions = {}): P
         `document.querySelector('[data-testid="settings-pane-${pane}"]')?.hidden === false`,
       );
       return page;
+    },
+    setCapturing: (active: boolean) => {
+      // The marker captureHint.ts polls under CALENDAR_CAPTURE_WATCH=fixture.
+      const marker = join(userDataDir, 'capture-active');
+      if (active) {
+        writeFileSync(marker, '');
+      } else {
+        rmSync(marker, { force: true });
+      }
     },
     settingsFilePath,
     settingsPage,

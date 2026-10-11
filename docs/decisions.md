@@ -234,7 +234,14 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   its completion day (2026-10-02). No auto-scroll at the grid edge.
 - **Screen-sharing privacy** — the desktop window is excluded from
   captures by default; "Visible for 10 min" is runtime-only and fails
-  closed on restart; "Always visible" persists.
+  closed on restart; "Always visible" persists. **The capture hint**
+  (2026-10-11): a window left out of a screenshot or recording says so
+  on screen, with the 10-minute pause one click away. The signal is the
+  `screencapture` process every ⌘⇧3/4/5 runs (probed: the screenshot UI
+  never activates, and the ⌘⇧4 crosshair has no window). Rejected: a
+  toolbar indicator (always-on noise, #178), a stand-in window behind
+  the main one, a Spotlight toast after the file lands. Third-party
+  capture tools stay unannounced (#179).
 - **Per-calendar colors** — optimistic local update, write-back through
   `calendarList.patch?colorRgbFormat=true` as a `calendarColor` op kind
   coalescing per account; invalid hex rejected, 4xx dropped.
