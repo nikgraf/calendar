@@ -5,9 +5,10 @@ import {
   canonicalBirthdayOverrides,
   DEFAULT_BIRTHDAY_REMINDER_SETTINGS,
   DEFAULT_EVENT_NOTIFICATION_SETTINGS,
+  DEFAULT_TIME_ZONE_SETTINGS,
   DEFAULT_VIEW_PREFERENCES,
-  defaultTimeZoneSettings,
   EventNotificationSettings,
+  resolveTimeZones,
   Temporal,
   TimeZoneSettings,
   ViewPreferences,
@@ -169,21 +170,27 @@ export const TIME_ZONES_KEY = 'timeZones';
 const decodeTimeZoneSettings = Schema.decodeUnknownEffect(TimeZoneSettings);
 
 /**
- * The stored time zones, or a single device zone when nothing (or nothing
- * decodable) is stored — a zone id tzdata no longer knows fails the
- * schema's Temporal check and so also reads as the default, never as a
- * grid that throws.
+ * The stored time zones as entries (the device entry unresolved), or the
+ * device entry alone when nothing (or nothing decodable) is stored — a
+ * zone id tzdata no longer knows fails the schema's Temporal check and so
+ * also reads as the default, never as a grid that throws.
  */
 export const readTimeZoneSettings: Effect.Effect<TimeZoneSettings, SqlError, DeviceSettingsRepo> =
   Effect.gen(function* () {
     const raw = yield* (yield* DeviceSettingsRepo).get(TIME_ZONES_KEY);
     if (raw === null) {
-      return defaultTimeZoneSettings(Temporal.Now.timeZoneId());
+      return DEFAULT_TIME_ZONE_SETTINGS;
     }
     return yield* decodeTimeZoneSettings(raw).pipe(
-      Effect.orElseSucceed(() => defaultTimeZoneSettings(Temporal.Now.timeZoneId())),
+      Effect.orElseSucceed(() => DEFAULT_TIME_ZONE_SETTINGS),
     );
   });
+
+/** The primary zone as an IANA id, the device entry read as the zone the device is in right now. */
+export const readPrimaryTimeZone: Effect.Effect<string, SqlError, DeviceSettingsRepo> = Effect.map(
+  readTimeZoneSettings,
+  (settings) => resolveTimeZones(settings, Temporal.Now.timeZoneId()).primary,
+);
 
 export const writeTimeZoneSettings = (
   settings: TimeZoneSettings,

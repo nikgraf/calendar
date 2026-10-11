@@ -1,3 +1,4 @@
+import { Temporal } from '@calendar/core';
 import { SqliteClient } from '@effect/sql-sqlite-node';
 import { expect, it } from '@effect/vitest';
 import { Effect } from 'effect';
@@ -104,6 +105,26 @@ describe('runMigrations', () => {
         { id: 'rule-and-dates', recurrence_end_utc: Date.parse('2026-10-01T10:00:00Z') },
       ]);
     }).pipe(Effect.provide(sqlLayer())),
+  );
+
+  it.effect(
+    "names this device's zone by the device entry in the stored time zones (migration 11)",
+    () =>
+      Effect.gen(function* () {
+        const sql = yield* SqlClient;
+        yield* runMigrationsWith(migrations.filter(([id]) => id < 11));
+        const deviceZone = Temporal.Now.timeZoneId();
+        const other = deviceZone === 'UTC' ? 'Asia/Kolkata' : 'UTC';
+        yield* sql`
+        INSERT INTO device_settings (key, value, updated_at)
+        VALUES ('timeZones', ${JSON.stringify({ primary: deviceZone, zones: [other, deviceZone] })}, 1)`;
+
+        yield* runMigrations;
+
+        const rows = yield* sql<{ value: string }>`
+        SELECT value FROM device_settings WHERE key = 'timeZones'`;
+        expect(JSON.parse(rows[0]!.value)).toEqual({ primary: 'device', zones: [other, 'device'] });
+      }).pipe(Effect.provide(sqlLayer())),
   );
 
   it.effect('rolls back a failing migration atomically and retries it next run', () =>

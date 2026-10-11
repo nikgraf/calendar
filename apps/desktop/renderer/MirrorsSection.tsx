@@ -15,7 +15,7 @@ import {
   useCalendars,
   useMirrors,
   useTaskLists,
-  useTimeZoneSettings,
+  useTimeZones,
   withSourceToggled,
 } from '@calendar/app-state';
 import {
@@ -36,9 +36,8 @@ import {
 import { useEffect, useState } from 'react';
 import { Dialog } from './Dialog.tsx';
 import { CALLOUT_CLASS } from './ui/calloutStyles.ts';
+import { SETTINGS_BUTTON_CLASS as BUTTON } from './ui/buttonStyles.ts';
 
-const BUTTON =
-  'rounded-lg border border-hairline-strong px-3 py-1.5 text-sm hover:bg-surface-subtle disabled:opacity-50';
 const PRIMARY =
   'rounded-lg bg-primary px-3 py-1.5 text-sm font-medium text-on-primary hover:bg-primary-hover disabled:opacity-50';
 const FIELD = 'w-full rounded-lg border border-hairline bg-surface px-3 py-1.5 text-sm';
@@ -640,7 +639,7 @@ function DeleteDialog({ onClose, view }: { onClose: () => void; view: MirrorView
 
 export function MirrorsSection() {
   const mirrors = useMirrors();
-  const timeZone = useTimeZoneSettings()?.primary ?? Temporal.Now.timeZoneId();
+  const { primary: timeZone } = useTimeZones();
   const [editing, setEditing] = useState<MirrorDraft | null>(null);
   const [deleting, setDeleting] = useState<MirrorView | null>(null);
 

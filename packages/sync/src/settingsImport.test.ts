@@ -62,7 +62,7 @@ describe('importSettings', () => {
       const document: SettingsDocument = {
         desktop: { screenPrivacy: 'visible' },
         eventNotifications: { enabled: true, includeAppleCalendar: false },
-        timeZones: { primary: 'UTC', zones: ['UTC', 'Europe/Vienna'] },
+        timeZones: { primary: 'UTC', zones: ['device', 'UTC', 'Europe/Vienna'] },
         version: 1,
       };
       const preview = yield* previewSettingsImport(document);
@@ -71,7 +71,7 @@ describe('importSettings', () => {
       expect(summary).toEqual(preview);
       expect(yield* readTimeZoneSettings).toEqual({
         primary: 'UTC',
-        zones: ['UTC', 'Europe/Vienna'],
+        zones: ['device', 'UTC', 'Europe/Vienna'],
       });
       expect(yield* readEventNotificationSettings).toEqual({
         enabled: true,

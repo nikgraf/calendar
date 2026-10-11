@@ -44,6 +44,7 @@ import {
   readBirthdayReminderOverrides,
   readBirthdayReminderSettings,
   readEventNotificationSettings,
+  readPrimaryTimeZone,
   readTimeZoneSettings,
   readViewPreferences,
   writeTimeZoneSettings,
@@ -337,7 +338,7 @@ export const commonBackendHandlers: Omit<BackendHandlers<CommonBackendServices>,
       // The diff is computed here, not shipped as records: the list is
       // re-read on every drain step, and the UIs only render lines.
       const calendars = yield* (yield* CalendarRepo).list();
-      const { primary: timeZone } = yield* readTimeZoneSettings;
+      const timeZone = yield* readPrimaryTimeZone;
       const context = {
         calendarName: (accountId: string, calendarId: string) =>
           calendars.find(

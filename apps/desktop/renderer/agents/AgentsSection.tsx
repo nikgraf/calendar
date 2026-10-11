@@ -27,9 +27,8 @@ import { CALLOUT_CLASS } from '../ui/calloutStyles.ts';
 import { ARM_DELAY_MS } from './AgentApprovalDialog.tsx';
 import { type AgentAction, agentActionQuestion } from './agentActions.ts';
 import { useAgentsLoad } from './useAgentsState.ts';
+import { SETTINGS_BUTTON_CLASS as BUTTON } from '../ui/buttonStyles.ts';
 
-const BUTTON =
-  'rounded-lg border border-hairline-strong px-3 py-1.5 text-sm hover:bg-surface-subtle disabled:opacity-50';
 const SELECT = 'w-44 shrink-0 rounded-md border border-hairline bg-surface px-1.5 py-1 text-xs';
 const DEFAULT = '__default__';
 

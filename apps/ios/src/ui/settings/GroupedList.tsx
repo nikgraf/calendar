@@ -121,6 +121,28 @@ export function Section({
   );
 }
 
+/**
+ * One row of a card a virtualized list draws, where a Section cannot wrap
+ * the rows (it would render them all): the first row takes the card's
+ * rounded top and draws no separator, the last its rounded bottom.
+ */
+export function CardRow({
+  children,
+  first,
+  last,
+}: {
+  children: ReactNode;
+  first: boolean;
+  last: boolean;
+}) {
+  const styles = useStyles(makeStyles);
+  return (
+    <View style={[styles.cardRow, first && styles.cardTop, last && styles.cardBottom]}>
+      <FirstRowContext.Provider value={first}>{children}</FirstRowContext.Provider>
+    </View>
+  );
+}
+
 /** A paragraph under a section; `tone="danger"` for a failure the page reports. */
 export function Footer({
   children,
@@ -172,6 +194,19 @@ export function PageHero({
 }
 
 /**
+ * A small grey capsule that names a state ("Experimental", a time zone's
+ * "Primary"); the desktop draws the same pill.
+ */
+export function Tag({ label, testID }: { label: string; testID?: string }) {
+  const styles = useStyles(makeStyles);
+  return (
+    <View style={styles.tag} testID={testID}>
+      <Text style={styles.tagLabel}>{label}</Text>
+    </View>
+  );
+}
+
+/**
  * What "Experimental" on the Settings root means, inside the PageHero of
  * each page listed under it: the capsule, then one line.
  */
@@ -179,9 +214,7 @@ export function ExperimentalNote() {
   const styles = useStyles(makeStyles);
   return (
     <View style={styles.experimental} testID="experimental-note">
-      <View style={styles.experimentalCapsule}>
-        <Text style={styles.experimentalLabel}>{EXPERIMENTAL_COPY.label}</Text>
-      </View>
+      <Tag label={EXPERIMENTAL_COPY.label} />
       <Text style={styles.experimentalNote}>{EXPERIMENTAL_COPY.note}</Text>
     </View>
   );
@@ -778,6 +811,19 @@ const makeStyles = (colors: ThemeColors) =>
       marginHorizontal: 16,
       overflow: 'hidden',
     },
+    cardBottom: {
+      borderBottomLeftRadius: 20,
+      borderBottomRightRadius: 20,
+    },
+    cardRow: {
+      backgroundColor: colors.surface,
+      marginHorizontal: 16,
+      overflow: 'hidden',
+    },
+    cardTop: {
+      borderTopLeftRadius: 20,
+      borderTopRightRadius: 20,
+    },
     centered: {
       textAlign: 'center',
     },
@@ -835,17 +881,6 @@ const makeStyles = (colors: ThemeColors) =>
       alignItems: 'center',
       gap: 6,
       marginTop: 6,
-    },
-    experimentalCapsule: {
-      backgroundColor: colors.fill,
-      borderRadius: 999,
-      paddingHorizontal: 10,
-      paddingVertical: 3,
-    },
-    experimentalLabel: {
-      color: colors['text-secondary'],
-      fontSize: 13,
-      fontWeight: '600',
     },
     experimentalNote: {
       color: colors['text-secondary'],
@@ -937,6 +972,17 @@ const makeStyles = (colors: ThemeColors) =>
     },
     swipeContent: {
       backgroundColor: colors.surface,
+    },
+    tag: {
+      backgroundColor: colors.fill,
+      borderRadius: 999,
+      paddingHorizontal: 10,
+      paddingVertical: 3,
+    },
+    tagLabel: {
+      color: colors['text-secondary'],
+      fontSize: 13,
+      fontWeight: '600',
     },
     text: {
       flex: 1,

@@ -1,5 +1,6 @@
 import { useBackendMutations } from '@calendar/app-state';
 import { useState } from 'react';
+import { SETTINGS_BUTTON_CLASS } from './ui/buttonStyles.ts';
 
 /**
  * The on-device geocode cache behind the editor map. Entries refresh on
@@ -28,7 +29,7 @@ export function LocationsSection() {
         opens instantly. Remembered places refresh every two weeks.
       </p>
       <button
-        className="mt-3 rounded-lg border border-hairline bg-surface px-3 py-1.5 text-sm hover:bg-fill disabled:opacity-50"
+        className={`${SETTINGS_BUTTON_CLASS} mt-3`}
         disabled={state === 'busy'}
         onClick={() => void clear()}
         type="button"

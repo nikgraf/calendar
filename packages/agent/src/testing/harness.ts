@@ -299,7 +299,7 @@ const seed = Effect.gen(function* () {
     1,
   );
   // A fixed primary zone keeps every formatted time independent of the machine.
-  yield* (yield* DeviceSettingsRepo).set('timeZones', { primary: 'UTC', zones: ['UTC'] });
+  yield* (yield* DeviceSettingsRepo).set('timeZones', { primary: 'UTC', zones: ['device', 'UTC'] });
 });
 
 // Queued Google writes never land: the tests assert the local row and the queue.

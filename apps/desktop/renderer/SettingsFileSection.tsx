@@ -11,14 +11,12 @@ import { useEffect, useState } from 'react';
 import type { SettingsFileStatus } from './backend.ts';
 import { Dialog } from './Dialog.tsx';
 import { CALLOUT_CLASS } from './ui/calloutStyles.ts';
+import { SETTINGS_BUTTON_CLASS as BUTTON } from './ui/buttonStyles.ts';
 
 const shortPath = (path: string): string => path.replace(/^\/Users\/[^/]+/, '~');
 
 const timeLabel = (epochMs: number): string =>
   new Date(epochMs).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
-
-const BUTTON =
-  'rounded-lg border border-hairline-strong px-3 py-1.5 text-sm hover:bg-surface-subtle disabled:opacity-50';
 
 /** Runs one action at a time and keeps its outcome (or failure) as a line of text. */
 const useAction = () => {
