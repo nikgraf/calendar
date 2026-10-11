@@ -64,6 +64,23 @@ export const buildMonthGrid = (
   return weeks;
 };
 
+/**
+ * The columns of `week` (0–6) that fall within [start, end], as one run:
+ * a window of consecutive days crosses a week row once. Null when none do.
+ */
+export const weekRun = (
+  week: ReadonlyArray<{ readonly date: Temporal.PlainDate }>,
+  start: Temporal.PlainDate,
+  end: Temporal.PlainDate,
+): { readonly from: number; readonly to: number } | null => {
+  const inside = week.map(
+    ({ date }) =>
+      Temporal.PlainDate.compare(date, start) >= 0 && Temporal.PlainDate.compare(date, end) <= 0,
+  );
+  const from = inside.indexOf(true);
+  return from === -1 ? null : { from, to: inside.lastIndexOf(true) };
+};
+
 export const monthGridRange = (
   yearMonth: Temporal.PlainYearMonth,
   today: Temporal.PlainDate,
