@@ -107,7 +107,7 @@ export function GeneralPage() {
                   save(withPrimary(settings, zone));
                 }
               },
-              subtitle: device ? 'Follows this iPhone when you travel' : zone,
+              subtitle: device ? 'Current time zone' : zone,
               testID: `time-zone-row-${slug}${primary ? '-primary' : ''}`,
               title: zoneCity(device ? deviceZone : zone),
             };

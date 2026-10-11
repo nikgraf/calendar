@@ -71,7 +71,7 @@ export function TimeZonesSection() {
               )}
               <span className="font-medium">{city}</span>
               <span className="text-xs text-ink-secondary">
-                {device ? 'Follows this Mac' : zone}
+                {device ? 'Current time zone' : zone}
               </span>
               <span className="flex-1" />
               {primary ? (
