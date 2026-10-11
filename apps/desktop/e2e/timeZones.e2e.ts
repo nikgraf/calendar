@@ -30,15 +30,16 @@ const calendar = new CalendarInfo({
   timeZone: 'UTC',
 });
 
-// A UTC primary keeps the seeded noon on today's date on every host, and
-// neither UTC nor Kolkata observes DST, so 12:00 UTC is 5:30 PM in Kolkata
-// whatever the date. The device entry resolves to the host's zone; the
-// launch pins that to UTC too (TZ), so it folds into the primary and the
-// gutter's second line is Kolkata alone on every host.
+// The device entry is the primary, and the launch pins the device zone to
+// UTC (TZ): that keeps the seeded noon on today's date on every host. No
+// zone here observes DST, so 12:00 UTC is 5:30 PM in Kolkata and 9 PM in
+// Tokyo whatever the date.
 const seed = {
   accounts: [account],
   calendars: [calendar],
-  deviceSettings: { timeZones: { primary: 'UTC', zones: ['device', 'UTC', 'Asia/Kolkata'] } },
+  deviceSettings: {
+    timeZones: { primary: 'device', zones: ['device', 'Asia/Kolkata', 'Asia/Tokyo'] },
+  },
   events: [
     new EventRecord({
       accountId: 'acc-e2e',
@@ -63,6 +64,12 @@ const text = (cdp: App['cdp'], selector: string) =>
     `document.querySelector(${JSON.stringify(selector)})?.textContent ?? null`,
   );
 
+/** Every match's text, in document order. */
+const texts = (cdp: App['cdp'], selector: string) =>
+  cdp.eval<ReadonlyArray<string>>(
+    `[...document.querySelectorAll(${JSON.stringify(selector)})].map((node) => node.textContent)`,
+  );
+
 describe('time zones: a stored secondary zone', () => {
   let app: App;
 
@@ -74,23 +81,40 @@ describe('time zones: a stored secondary zone', () => {
     await app?.stop();
   });
 
-  it('annotates the hour gutter, the event block and the editor in the other zone', async () => {
+  it('annotates the hour gutter, the event block, the inspector and the editor in the other zones', async () => {
     const { cdp } = app;
     await cdp.locate('[title^="Noon sync"]');
-    expect(await text(cdp, '[data-testid="hour-secondary-12"]')).toBe('5:30 PM');
-    expect(await text(cdp, '[data-testid="hour-secondary-1"]')).toBe('6:30 AM');
-    // The primary line is untouched; the third line carries the other zone.
+    // Each other zone has its own line under the hour, in settings order.
+    expect(await texts(cdp, '[data-testid="hour-secondary-12"] > *')).toEqual(['5:30 PM', '9 PM']);
+    expect(await text(cdp, '[data-testid="hour-secondary-12-Asia-Kolkata"]')).toBe('5:30 PM');
+    expect(await text(cdp, '[data-testid="hour-secondary-1-Asia-Tokyo"]')).toBe('10 AM');
+    // The cities head the gutter in the same order, the primary first.
+    expect(
+      await cdp.eval<ReadonlyArray<string>>(
+        `[...document.querySelector('[data-testid="zone-cities"]').children].map((node) => node.dataset.testid)`,
+      ),
+    ).toEqual([
+      expect.stringMatching(/^zone-city-/),
+      'zone-city-Asia-Kolkata',
+      'zone-city-Asia-Tokyo',
+    ]);
+    expect(await text(cdp, '[data-testid="zone-city-Asia-Kolkata"]')).toBe('Kolkata');
+    // The primary line is untouched; the block's third line joins the other zones.
     expect(await text(cdp, '[title^="Noon sync"]')).toContain('12:00 PM – 1:00 PM');
     expect(await text(cdp, '[title^="Noon sync"] [data-testid="event-secondary-times"]')).toBe(
-      '5:30 – 6:30 PM Kolkata',
+      '5:30 – 6:30 PM Kolkata · 9:00 – 10:00 PM Tokyo',
     );
 
-    await cdp.openEditor('[title^="Noon sync"]');
+    // The inspector and the editor stack them, one line per zone.
+    const LINES = ['5:30 – 6:30 PM Kolkata', '9:00 – 10:00 PM Tokyo'];
+    await cdp.openInspector('[title^="Noon sync"]');
+    expect(
+      await texts(cdp, '[data-testid="inspector"] [data-testid="event-secondary-times"] > p'),
+    ).toEqual(LINES);
+    await cdp.clickTestId('inspector-edit');
     const EDITOR = '[data-testid="editor"]';
     await cdp.waitFor(`!!document.querySelector('${EDITOR} input[type="time"]')`);
-    expect(await text(cdp, `${EDITOR} [data-testid="event-secondary-times"]`)).toBe(
-      '5:30 – 6:30 PM Kolkata',
-    );
+    expect(await texts(cdp, `${EDITOR} [data-testid="event-secondary-times"] > p`)).toEqual(LINES);
     await cdp.pressEscape();
     await cdp.waitFor(`!document.querySelector('${EDITOR} input[type="time"]')`);
   });
@@ -202,14 +226,22 @@ describe('time zones: the settings section', () => {
     expect(
       await cdp.eval(`document.querySelector('${DEVICE_ROW}')?.dataset.primary`),
     ).toBeUndefined();
+    // The primary's city heads the gutter.
+    await calendar.waitFor(
+      `document.querySelector('[data-testid="zone-cities"]')?.firstElementChild?.dataset.testid === 'zone-city-Asia-Kolkata'`,
+    );
 
-    // Remove the primary: the device zone takes over again, the gutter's second line goes.
+    // Remove the primary: the device zone takes over again, the gutter's
+    // other lines and its city header go.
     await clickButton('Remove Kolkata');
     await expect
       .poll(stored, { timeout: 10_000 })
       .toEqual({ primary: 'device', zones: ['device'] });
     await cdp.waitFor(`document.querySelector('${DEVICE_ROW}')?.dataset.primary === 'true'`);
     await calendar.waitFor(`!document.querySelector('[data-testid="hour-secondary-12"]')`);
+    expect(await calendar.eval(`!!document.querySelector('[data-testid="zone-cities"]')`)).toBe(
+      false,
+    );
 
     // Fill up to three: the add button switches off.
     for (const [query, slug] of [

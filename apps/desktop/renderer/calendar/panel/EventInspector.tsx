@@ -9,7 +9,7 @@ import {
 } from '@calendar/app-state';
 import {
   type CalendarInfo,
-  draftZoneRange,
+  draftZoneRanges,
   type EventRecord,
   formatPlainTime,
   type RsvpResponse,
@@ -29,6 +29,7 @@ import {
 import { SegmentedControl } from '../../ui/SegmentedControl.tsx';
 import { LocationMap } from '../LocationMap.tsx';
 import { MoveConfirm } from '../MoveConfirm.tsx';
+import { ZoneLines } from '../ZoneLines.tsx';
 
 const STATUS_LABEL: Record<string, string> = {
   accepted: 'accepted',
@@ -101,7 +102,11 @@ export function EventInspector({
     month: 'long',
     weekday: 'long',
   });
-  const zoneLine = draftZoneRange({ date, endTime, isAllDay, startTime }, timeZone, secondaryZones);
+  const zoneLines = draftZoneRanges(
+    { date, endTime, isAllDay, startTime },
+    timeZone,
+    secondaryZones,
+  );
 
   return (
     <div className="flex min-h-0 flex-1 flex-col" data-testid="inspector">
@@ -135,11 +140,7 @@ export function EventInspector({
           <p className="text-ink-secondary">
             {isAllDay ? 'All day' : `${formatPlainTime(startTime)} – ${formatPlainTime(endTime)}`}
           </p>
-          {zoneLine ? (
-            <p className="text-xs text-ink-secondary" data-testid="event-secondary-times">
-              {zoneLine}
-            </p>
-          ) : null}
+          {zoneLines ? <ZoneLines lines={zoneLines} /> : null}
         </div>
         {readOnly ? (
           <p

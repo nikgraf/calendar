@@ -804,8 +804,13 @@ gateway carries all of it. Details, limits and the threat model:
   parked in `importedVisibility` and applied after each list pass.
 - **Time zones**: up to three entries per device, one primary, which
   replaces the device zone for everything the UI draws (both roots gate
-  on `useTimeZones()`); the others annotate the hour gutter and tall
-  blocks. One entry is the word `device`: this device's own zone, kept as
+  on `useTimeZones()`); the others hang under each hour in the gutter,
+  one line each, under a header naming the cities in the same order, and
+  a shade per place ties a line to its city (primary `text`, then
+  `text-secondary`, then `text-tertiary`: `zoneInk` on the Mac,
+  `zoneColor` on iOS; iOS Day view gives the cities a row of their own).
+  The inspector or detail sheet and the editor list them one per line
+  (`draftZoneRanges`); a tall block joins them on one. One entry is the word `device`: this device's own zone, kept as
   the word and resolved against the OS on every read (`resolveTimeZones`
   over the once-a-minute device zone atom), so the grid follows a flight
   and an exported file reads right on another device. It is always

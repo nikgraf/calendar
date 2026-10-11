@@ -1,11 +1,12 @@
 import { describe, expect, it, vi } from 'vite-plus/test';
 import { Temporal } from './temporal.ts';
 import {
-  draftZoneRange,
+  draftZoneRanges,
   formatZoneRange,
   formatZoneTimeRange,
   secondaryHourLabels,
   zoneHourLabel,
+  zoneRanges,
 } from './zoneLabels.ts';
 
 const vienna = 'Europe/Vienna';
@@ -32,11 +33,11 @@ describe('zoneHourLabel', () => {
     expect(zoneHourLabel(Temporal.PlainDate.from('2026-03-29'), 2, vienna, 'UTC')).toBe('1 AM');
   });
 
-  it('joins the secondary zones in settings order', () => {
-    expect(secondaryHourLabels(winterDay, 8, vienna, ['Asia/Tokyo', 'America/Los_Angeles'])).toBe(
-      '4 PM · 11 PM',
-    );
-    expect(secondaryHourLabels(winterDay, 8, vienna, [])).toBe('');
+  it('lists the secondary zones in settings order, one line each', () => {
+    expect(
+      secondaryHourLabels(winterDay, 8, vienna, ['Asia/Tokyo', 'America/Los_Angeles']),
+    ).toEqual(['4 PM', '11 PM']);
+    expect(secondaryHourLabels(winterDay, 8, vienna, [])).toEqual([]);
   });
 });
 
@@ -81,7 +82,16 @@ describe('formatZoneTimeRange', () => {
     );
   });
 
-  it('labels every zone with its city', () => {
+  it('labels every zone with its city, one line each', () => {
+    expect(
+      zoneRanges(at('2026-01-15T13:00:00Z'), at('2026-01-15T14:00:00Z'), [
+        'America/Los_Angeles',
+        'Asia/Kolkata',
+      ]),
+    ).toEqual(['5:00 – 6:00 AM Los Angeles', '6:30 – 7:30 PM Kolkata']);
+  });
+
+  it("joins the lines for an event block's single line", () => {
     expect(
       formatZoneRange(at('2026-01-15T13:00:00Z'), at('2026-01-15T14:00:00Z'), [
         'America/Los_Angeles',
@@ -91,17 +101,20 @@ describe('formatZoneTimeRange', () => {
   });
 });
 
-describe('draftZoneRange', () => {
+describe('draftZoneRanges', () => {
   const fields = { date: '2026-01-15', endTime: '10:00', isAllDay: false, startTime: '09:00' };
 
-  it('formats a timed draft in the secondary zones', () => {
-    expect(draftZoneRange(fields, vienna, ['Asia/Kolkata'])).toBe('1:30 – 2:30 PM Kolkata');
+  it('formats a timed draft in the secondary zones, one line each', () => {
+    expect(draftZoneRanges(fields, vienna, ['Asia/Kolkata', 'Asia/Tokyo'])).toEqual([
+      '1:30 – 2:30 PM Kolkata',
+      '5:00 – 6:00 PM Tokyo',
+    ]);
   });
 
   it('is null for all-day, empty times, no zones or an unbuildable draft', () => {
-    expect(draftZoneRange({ ...fields, isAllDay: true }, vienna, ['Asia/Kolkata'])).toBeNull();
-    expect(draftZoneRange({ ...fields, startTime: '' }, vienna, ['Asia/Kolkata'])).toBeNull();
-    expect(draftZoneRange(fields, vienna, [])).toBeNull();
-    expect(draftZoneRange({ ...fields, endTime: 'nope' }, vienna, ['Asia/Kolkata'])).toBeNull();
+    expect(draftZoneRanges({ ...fields, isAllDay: true }, vienna, ['Asia/Kolkata'])).toBeNull();
+    expect(draftZoneRanges({ ...fields, startTime: '' }, vienna, ['Asia/Kolkata'])).toBeNull();
+    expect(draftZoneRanges(fields, vienna, [])).toBeNull();
+    expect(draftZoneRanges({ ...fields, endTime: 'nope' }, vienna, ['Asia/Kolkata'])).toBeNull();
   });
 });

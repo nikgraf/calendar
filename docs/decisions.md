@@ -291,6 +291,15 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   zone cannot be removed since #174, re-landed here after it merged into
   the dead #173 branch). Left open: the list is in catalog order, grouped
   by region, not sorted by city.
+- **Zone labels stack under their cities** (2026-10-11, #181) — with a
+  second zone the gutter said what time it was, not where: each zone now
+  has its own line under the hour, the header over the gutter names the
+  cities in that order, and a shade per place (primary in ink, then two
+  greys) matches line to city; the inspector, detail sheet and editor
+  stack the same way, a tall block keeps one joined line. The third grey
+  is a new token at 3:1, the non-text bar: three steps that all clear
+  4.5:1 at 9 px read the same. Rejected: the `·`-joined line (it needed
+  the order memorized). Left open: a long city name truncates.
 - **Design tokens and dark mode** (2026-10-07, #135) — the brand kit is
   the one palette (a brighter purple and Serenity's indigo were tried and
   rejected); generated, never edited; the desktop maps tokens into

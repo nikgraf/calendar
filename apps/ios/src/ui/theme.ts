@@ -44,6 +44,15 @@ export const useEventTint = (hex: string): EventTint => eventTint(hex, useTheme(
 export const groupedGround = (colors: ThemeColors): string =>
   colors === THEMES.dark ? colors.canvas : colors.fill;
 
+/**
+ * Each zone's text color by its place in the list, primary first: the same
+ * in the hour gutter, its city header, the detail sheet and the editor, so
+ * a shade says which zone a time belongs to (the desktop's `zoneInk`).
+ * Only drawn while there is more than one zone.
+ */
+export const zoneColor = (colors: ThemeColors, index: number): string =>
+  [colors.text, colors['text-secondary'], colors['text-tertiary']][Math.min(index, 2)]!;
+
 /** Shared radii, matching the desktop's `--radius-*` tokens. */
 export const RADIUS = { control: 8, event: 6, popover: 12 } as const;
 

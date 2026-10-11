@@ -22,6 +22,7 @@ import {
   taskChipLabel,
   type TaskRecord,
   Temporal,
+  zoneSlug,
 } from '@calendar/core';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
@@ -38,9 +39,10 @@ import Animated, {
 } from 'react-native-reanimated';
 import { AllDayColumn } from './AllDayColumn.tsx';
 import { DayColumn } from './DayColumn.tsx';
-import { BOX_FONT_SCALE, type ThemeColors, useStyles } from './theme.ts';
+import { BOX_FONT_SCALE, type ThemeColors, useStyles, useTheme, zoneColor } from './theme.ts';
 import { useTaskDrag } from './useTaskDrag.ts';
 import { WeekStripCell } from './WeekStrip.tsx';
+import { ZoneCities } from './ZoneCities.tsx';
 import { ALL_DAY_ROW_HEIGHT, EDGE_INSET, gutterWidth, HOUR_HEIGHT } from './timelineLayout.ts';
 
 /**
@@ -107,7 +109,7 @@ export function DayTimeline({
   onToggleTask: (task: TaskRecord) => void;
   /** Open tasks due before today; drawn as overdue chips in today's column. */
   overdue: ReadonlyArray<TaskRecord>;
-  /** The non-primary zones: a second line under each hour label and on tall event blocks. */
+  /** The non-primary zones: a line each under every hour label, one joined line on tall event blocks. */
   secondaryZones: ReadonlyArray<string>;
   /** The focused day, ringed in the week header. */
   selected: Temporal.PlainDate;
@@ -117,6 +119,7 @@ export function DayTimeline({
   today: string;
 }) {
   const styles = useStyles(makeStyles);
+  const { colors } = useTheme();
   const scrollRef = useRef<ScrollView>(null);
   const containerRef = useRef<View>(null);
   const { updateEvent, updateRecurring } = useGuardedMutations();
@@ -167,6 +170,8 @@ export function DayTimeline({
           ),
     [firstDay, timeZone, secondaryZones],
   );
+  // Primary first: the cities over the gutter, with one zone none at all.
+  const zoneCities = secondaryZones.length === 0 ? null : [timeZone, ...secondaryZones];
 
   const commitChange = (
     event: EventRecord,
@@ -398,7 +403,11 @@ export function DayTimeline({
     >
       {days.length > 1 ? (
         <View style={styles.weekHeader}>
-          <View style={{ width: gutter }} />
+          {zoneCities ? (
+            <ZoneCities width={gutter} zones={zoneCities} />
+          ) : (
+            <View style={{ width: gutter }} />
+          )}
           <View style={styles.stripViewport}>
             <Animated.View style={[styles.strip, { left: stripLeft }, stripStyle]}>
               {strip.map((day) => (
@@ -413,6 +422,12 @@ export function DayTimeline({
               ))}
             </Animated.View>
           </View>
+        </View>
+      ) : zoneCities ? (
+        // The day view has no header over its gutter (the week strip above
+        // spans the screen), so the cities get a row of their own.
+        <View style={styles.zoneHeader}>
+          <ZoneCities width={gutter} zones={zoneCities} />
         </View>
       ) : null}
       <Animated.View
@@ -487,23 +502,36 @@ export function DayTimeline({
           <View style={{ height: 24 * HOUR_HEIGHT }}>
             {Array.from({ length: 24 }, (_, hour) => (
               <View key={hour} style={[styles.hourRow, { top: hour * HOUR_HEIGHT }]}>
+                {/* The primary hour sits on its line; the other zones hang
+                    below it, one line each, in their header's shades. */}
                 <View style={[styles.hourLabels, { width: gutter - 12 }]}>
-                  <Text maxFontSizeMultiplier={BOX_FONT_SCALE} style={styles.hourLabel}>
+                  <Text
+                    maxFontSizeMultiplier={BOX_FONT_SCALE}
+                    style={[styles.hourLabel, secondaryLabels && { color: zoneColor(colors, 0) }]}
+                  >
                     {hour === 0
                       ? ''
                       : new Temporal.PlainTime(hour).toLocaleString('en-US', {
                           hour: 'numeric',
                         })}
                   </Text>
-                  {secondaryLabels ? (
-                    <Text
-                      maxFontSizeMultiplier={BOX_FONT_SCALE}
-                      numberOfLines={1}
-                      style={styles.hourLabelSecondary}
-                      testID={`hour-secondary-${hour}`}
-                    >
-                      {hour === 0 ? '' : secondaryLabels[hour]}
-                    </Text>
+                  {secondaryLabels && hour > 0 ? (
+                    <View testID={`hour-secondary-${hour}`}>
+                      {secondaryLabels[hour]!.map((label, zoneIndex) => (
+                        <Text
+                          key={secondaryZones[zoneIndex]}
+                          maxFontSizeMultiplier={BOX_FONT_SCALE}
+                          numberOfLines={1}
+                          style={[
+                            styles.hourLabelSecondary,
+                            { color: zoneColor(colors, zoneIndex + 1) },
+                          ]}
+                          testID={`hour-secondary-${hour}-${zoneSlug(secondaryZones[zoneIndex]!)}`}
+                        >
+                          {label}
+                        </Text>
+                      ))}
+                    </View>
                   ) : null}
                 </View>
                 <View style={styles.hourLine} />
@@ -637,9 +665,7 @@ const makeStyles = (colors: ThemeColors) =>
       transform: [{ translateY: -6 }],
     },
     hourLabelSecondary: {
-      color: colors['text-secondary'],
       fontSize: 8,
-      opacity: 0.8,
       textAlign: 'right',
     },
     hourLine: {
@@ -681,5 +707,9 @@ const makeStyles = (colors: ThemeColors) =>
       borderBottomWidth: StyleSheet.hairlineWidth,
       flexDirection: 'row',
       paddingBottom: 6,
+    },
+    zoneHeader: {
+      flexDirection: 'row',
+      paddingVertical: 4,
     },
   });

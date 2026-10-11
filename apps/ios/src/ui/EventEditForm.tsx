@@ -6,7 +6,7 @@ import {
   type useEventEditorModel,
   useTimeZones,
 } from '@calendar/app-state';
-import { type CalendarInfo, draftZoneRange } from '@calendar/core';
+import { type CalendarInfo, draftZoneRanges } from '@calendar/core';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { Linking, Pressable, ScrollView, Switch, Text, TextInput, View } from 'react-native';
 import { useSheetStyles } from './editSheetShared.ts';
@@ -17,6 +17,7 @@ import { LocationField } from './LocationField.tsx';
 import { LocationMap } from './LocationMap.tsx';
 import { ReminderChips } from './ReminderChips.tsx';
 import { RepeatRuleChips } from './RepeatRuleChips.tsx';
+import { ZoneLines } from './ZoneLines.tsx';
 
 /** Which account (or, for Apple, which EventKit source) a calendar belongs to. */
 const groupLabel = (calendar: CalendarInfo, emailOf: (accountId: string) => string): string =>
@@ -74,7 +75,11 @@ export function EventEditForm({
   } = model;
   const { timeZone } = model;
   // The draft's times in the other zones; null for all-day or before the times build.
-  const zoneLine = draftZoneRange({ date, endTime, isAllDay, startTime }, timeZone, secondaryZones);
+  const zoneLines = draftZoneRanges(
+    { date, endTime, isAllDay, startTime },
+    timeZone,
+    secondaryZones,
+  );
 
   return (
     // Keyboard insets: the invitee field and its suggestions sit at the
@@ -209,11 +214,7 @@ export function EventEditForm({
             </View>
           </View>
         )}
-        {zoneLine ? (
-          <Text style={styles.hint} testID="event-secondary-times">
-            {zoneLine}
-          </Text>
-        ) : null}
+        {zoneLines ? <ZoneLines lines={zoneLines} textStyle={styles.hint} /> : null}
         {readOnly ? null : <FindTimeFields model={model} />}
 
         <Text style={styles.label}>Location</Text>
