@@ -657,7 +657,11 @@ gateway carries all of it. Details, limits and the threat model:
   included). Window-level concerns use plain preload IPC
   (`apps/desktop/electron/preload.ts`): `renderer-error` (→
   `userData/logs/main.log`, 1 MB rotation), `privacy:*` (screen-capture
-  protection, default hidden, stored in `userData/settings.json`), the
+  protection, default hidden, stored in `userData/settings.json`;
+  `privacy:capture` says a screenshot or recording is leaving the windows
+  out — macOS gives no such signal, so while privacy is on and a window is
+  on screen the helper's `capture.watch` polls the process table for the
+  system's `screencapture` tool, `electron/captureHint.ts`), the
   `model:*` channels, the `reminders:status` / `contacts:status` /
   `appleCalendar:status` permission asks, `settings:open`,
   `settingsFile:*`, `auth:cancel`, `notifications:take`, `rpc:document`
@@ -682,8 +686,8 @@ gateway carries all of it. Details, limits and the threat model:
   field (`filterPanes`). The pane is the URL hash (`#settings/<pane>`): the main
   process moves an open window by navigating the hash, the page only ever
   reads it. Each window is its own rpc client with its own atoms, kept in
-  step by the invalidation stream; `privacy:changed`, `agents:changed` and
-  `settingsFile:changed` go to every window. The agent approval dialog,
+  step by the invalidation stream; `privacy:changed`, `privacy:capture`,
+  `agents:changed` and `settingsFile:changed` go to every window. The agent approval dialog,
   the conflict banner and the dropped-change toast live in the main
   window only. Find the main window through `showMainWindow` /
   `hasMainWindow`, never `getAllWindows()[0]`.

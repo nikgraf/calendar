@@ -522,12 +522,13 @@ DOM and the database. Specs run with `retry: 1`, share one app instance
 per file and run in file order — later tests must tolerate earlier
 tests' data (relative assertions, unique titles). The harness always
 sets `CALENDAR_REMINDERS=off`, `CALENDAR_CONTACTS=off`,
-`CALENDAR_APPLE_CALENDAR=off`, `CALENDAR_GEO=off` and
-`CALENDAR_NOTIFICATIONS=off`, points `CALENDAR_SETTINGS_FILE` and
+`CALENDAR_APPLE_CALENDAR=off`, `CALENDAR_GEO=off`,
+`CALENDAR_CAPTURE_WATCH=off` and `CALENDAR_NOTIFICATIONS=off`, points `CALENDAR_SETTINGS_FILE` and
 `CALENDAR_AGENT_SOCKET` under the temp profile, and sets
 `CALENDAR_E2E_INPUT=cdp`; `launchApp(seed, options)` opts a spec into a
-fixture or a real bridge (`appleCalendar`, `contacts`, `geo`, `google`,
-`model`, `reminders`, `agents`, `settingsFile`, `window`).
+fixture or a real bridge (`appleCalendar`, `captureWatch`, `contacts`,
+`geo`, `google`, `model`, `reminders`, `agents`, `settingsFile`,
+`window`).
 
 The specs: `flows` (rendering, views, trackpad pan, editor CRUD, drag
 move/resize/cancel, slot drag, recurring scopes, RSVP, visibility,

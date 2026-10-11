@@ -60,8 +60,8 @@ dictation and capture from text or photo.
   the editor models shared by both apps.
 - `apps/desktop` — Electron (Forge, vite, `vp pack` main bundle); rpc over
   an IPC frame channel; the Swift helper (`helper/`, Foundation Models +
-  SpeechAnalyzer + Vision + EventKit + Contacts + MapKit over stdio;
-  process owned by `electron/helperProcess.ts`); the agent gateway host
+  SpeechAnalyzer + Vision + EventKit + Contacts + MapKit + a screen-capture
+  watch over stdio; process owned by `electron/helperProcess.ts`); the agent gateway host
   (`electron/agent/`: Unix socket, MCP server, CLI runner) and its relay
   `solunivo-cli` (`electron/cli.ts`, a third `pack` entry in
   `vite.config.ts`).
@@ -211,10 +211,12 @@ deliberately.
   `apple-calendar`): branch with `isAppleRemindersAccount` /
   `isAppleCalendarAccount`, never on `provider === 'apple'` alone.
 - The e2e harness sets `CALENDAR_REMINDERS=off`, `CALENDAR_CONTACTS=off`,
-  `CALENDAR_APPLE_CALENDAR=off` and `CALENDAR_GEO=off`: seeded Apple rows
-  must never be replaced by a real EventKit sync, no bridge may trigger a
-  TCC prompt or read a developer's data, and no run may depend on
-  MapKit's network. Apple events come from a fixture
+  `CALENDAR_APPLE_CALENDAR=off`, `CALENDAR_GEO=off` and
+  `CALENDAR_CAPTURE_WATCH=off`: seeded Apple rows must never be replaced
+  by a real EventKit sync, no bridge may trigger a TCC prompt or read a
+  developer's data, no run may depend on MapKit's network, and a
+  developer's screenshot mid-run must not draw the capture hint
+  (`captureWatch: 'fixture'` drives it instead). Apple events come from a fixture
   (`CALENDAR_APPLE_CALENDAR=fixture`), since nothing stores them. Google
   is real by default (a seeded account has no token, so writes stay
   queued); `CALENDAR_GOOGLE=fixture` (desktop) /

@@ -34,6 +34,7 @@ const TIMEOUTS_MS: Record<string, number> = {
   'calendar.setColor': 15_000,
   'calendar.status': 10_000,
   'calendar.update': 15_000,
+  'capture.watch': 10_000,
   'contacts.birthdays': 30_000,
   'contacts.requestAccess': 600_000,
   'contacts.snapshot': 30_000,
@@ -82,6 +83,15 @@ let child: { readonly process: Helper; readonly requests: HelperRequests } | nul
 let lastSpawnFailedAt = 0;
 /** Subscribers to the helper's unsolicited `{"event": name}` lines. */
 const eventListeners = new Map<string, Set<() => void>>();
+/** Subscribers to the helper's exit: state it held (a running watch) is gone with it. */
+const exitListeners = new Set<() => void>();
+
+export const onHelperExit = (listener: () => void): (() => void) => {
+  exitListeners.add(listener);
+  return () => {
+    exitListeners.delete(listener);
+  };
+};
 
 export const onHelperEvent = (name: string, listener: () => void): (() => void) => {
   const listeners = eventListeners.get(name) ?? new Set<() => void>();
@@ -141,6 +151,9 @@ const ensureHelper = (): HelperRequests | null => {
       lastSpawnFailedAt = Date.now();
     }
     requests.failAll(message);
+    for (const listener of exitListeners) {
+      listener();
+    }
   };
   spawned.on('exit', () => ended('model helper exited'));
   spawned.on('error', () => ended('model helper failed to start'));

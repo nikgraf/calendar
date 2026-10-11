@@ -197,7 +197,7 @@ const seed = {
 let app: App;
 
 beforeAll(async () => {
-  app = await launchApp(seed);
+  app = await launchApp(seed, { captureWatch: 'fixture' });
 }, 60_000);
 
 // Capture diagnostics for whatever failed before the app is torn down.
@@ -1466,6 +1466,48 @@ describe('calendar desktop e2e', () => {
       `[...document.querySelectorAll('[role="radio"]')].some(b => b.textContent === 'Hidden' && b.getAttribute('aria-checked') === 'true')`,
     );
     await app.closeSettings();
+  });
+
+  it('says so while a screen capture leaves the window out, and pauses privacy from there', async () => {
+    const { cdp } = app;
+    const phase = () =>
+      cdp.eval<string>(`document.querySelector('[data-testid="capture-hint"]').dataset.phase`);
+    const waitForPhase = (expected: string, timeoutMs?: number) =>
+      cdp.waitFor(
+        `document.querySelector('[data-testid="capture-hint"]')?.dataset.phase === ${JSON.stringify(expected)}`,
+        timeoutMs,
+      );
+
+    // Hidden (the default): the hint shows during a capture and lingers
+    // after it — ⌘⇧3 is over before anything can be drawn — then goes.
+    await waitForPhase('off');
+    app.setCapturing(true);
+    await waitForPhase('capturing');
+    app.setCapturing(false);
+    await waitForPhase('after');
+    await waitForPhase('off', 10_000);
+
+    // Its button makes the window visible for 10 minutes.
+    app.setCapturing(true);
+    await waitForPhase('capturing');
+    app.setCapturing(false);
+    await waitForPhase('after');
+    await cdp.clickTestId('capture-hint-show');
+    await waitForPhase('off');
+    const state = await cdp.eval<{ mode: string; visibleUntil?: number }>(
+      `window.calendarBridge.privacyGet()`,
+    );
+    expect(state.mode).toBe('hidden');
+    expect(state.visibleUntil).toBeGreaterThan(Date.now());
+
+    // A capture that includes the window says nothing.
+    app.setCapturing(true);
+    await new Promise((resolve) => setTimeout(resolve, 600));
+    expect(await phase()).toBe('off');
+    app.setCapturing(false);
+
+    // Back to the default for the remaining flows.
+    await cdp.eval(`window.calendarBridge.privacySet('hidden')`);
   });
 
   it('opens settings as its own window: one at most, on the pane asked for', async () => {
