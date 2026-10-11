@@ -1,7 +1,13 @@
 import { Temporal } from '@calendar/core';
 import type { CSSProperties } from 'react';
 
-/** Weekday + day-number cells over the strip's columns. */
+/**
+ * Weekday + day-number cells over the strip's columns. The tracks may
+ * shrink below a label (`minmax(0, 1fr)`): with plain `1fr` a label that
+ * did not fit widened its column, and in a narrow grid (the editor open
+ * at 1024 px) the headers drifted off the columns below them. A column
+ * too narrow for both shows the day number alone.
+ */
 export function DayHeaders({
   gutterClassName,
   scrollbarWidth,
@@ -27,7 +33,7 @@ export function DayHeaders({
           className="grid"
           style={{
             ...stripStyle,
-            gridTemplateColumns: `repeat(${strip.length}, 1fr)`,
+            gridTemplateColumns: `repeat(${strip.length}, minmax(0, 1fr))`,
           }}
         >
           {strip.map((day) => {
@@ -36,12 +42,13 @@ export function DayHeaders({
               <div
                 // Fixed height: the today-circle is taller than plain text,
                 // and a header that resizes while panning shifts the grid.
-                className="flex h-10 items-center gap-1.5 border-l border-hairline px-2"
+                className="@container flex h-10 min-w-0 items-center gap-1.5 overflow-hidden border-l border-hairline px-2"
+                data-date={day.toString()}
                 data-testid={isToday ? 'today-header' : undefined}
                 key={day.toString()}
               >
                 <span
-                  className={`text-xs font-medium uppercase ${isToday ? 'text-primary' : 'text-ink-secondary'}`}
+                  className={`text-xs font-medium uppercase @max-[4.5rem]:hidden ${isToday ? 'text-primary' : 'text-ink-secondary'}`}
                 >
                   {day.toLocaleString('en-US', { weekday: 'short' })}
                 </span>

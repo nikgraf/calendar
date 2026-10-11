@@ -729,11 +729,21 @@ describe('Reminder chips drag between the all-day lane and the grid', () => {
   it('clears the time of a timed reminder dropped into the lane on another day', async () => {
     const { cdp } = app;
     const from = await cdp.locate('[data-testid="timed-task-ek-rem-1"]');
-    await cdp.drag(from, { x: from.x + (await dayWidth()), y: await laneY() });
+    // The neighbouring day on screen: tomorrow, or yesterday when today is
+    // the week's last column (a Sunday). Tomorrow is then the clipped pan
+    // buffer, and the chip it lands in is out of sight.
+    const tomorrowShown = await cdp.eval<boolean>(`(() => {
+      const view = document.querySelector('[data-testid="week-grid"]').parentElement.getBoundingClientRect();
+      const header = document.querySelector('[data-date="${isoTomorrow}"]')?.getBoundingClientRect();
+      const center = header ? header.x + header.width / 2 : -1;
+      return center > view.x && center < view.x + view.width;
+    })()`);
+    const step = tomorrowShown ? 1 : -1;
+    await cdp.drag(from, { x: from.x + step * (await dayWidth()), y: await laneY() });
     await expect
       .poll(() => taskById('ek-rem-1'))
       .toMatchObject({
-        dueDate: isoTomorrow,
+        dueDate: tomorrowShown ? isoTomorrow : isoYesterday,
         recurrence: { freq: 'weekly', interval: 1 },
       });
     expect((await taskById('ek-rem-1'))?.dueTime).toBeUndefined();

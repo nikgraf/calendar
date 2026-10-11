@@ -1,6 +1,14 @@
 import { describe, expect, it } from 'vite-plus/test';
 import { Temporal } from '../time/temporal.ts';
-import { bufferedDays, bufferedRange, pageMaxima, TWO_DAY_SWIPE_BUFFER } from './dayStrip.ts';
+import {
+  bufferedDays,
+  bufferedRange,
+  NO_SLIDE,
+  nextSlide,
+  pageMaxima,
+  slideSpan,
+  TWO_DAY_SWIPE_BUFFER,
+} from './dayStrip.ts';
 
 const MONDAY = Temporal.PlainDate.from('2026-08-17');
 
@@ -38,6 +46,48 @@ describe('dayStrip', () => {
       .startOfDay();
     expect(range.startUtc).toBe(firstStart.toInstant().epochMilliseconds);
     expect(range.endUtc).toBe(afterLast.toInstant().epochMilliseconds);
+  });
+});
+
+describe('slides', () => {
+  it('draws the days a slide from rest comes from on the side it comes from', () => {
+    expect(nextSlide(NO_SLIDE, 3, 7)).toEqual({ lead: 3, trail: 0 });
+    expect(nextSlide(NO_SLIDE, -4, 7)).toEqual({ lead: 0, trail: 4 });
+  });
+
+  it('travels the whole way up to two windows, and two windows beyond', () => {
+    expect(nextSlide(NO_SLIDE, 14, 7)).toEqual({ lead: 14, trail: 0 });
+    expect(nextSlide(NO_SLIDE, 40, 7)).toEqual({ lead: 14, trail: 0 });
+    expect(nextSlide(NO_SLIDE, -40, 7)).toEqual({ lead: 0, trail: 14 });
+    expect(nextSlide(NO_SLIDE, 5, 1)).toEqual({ lead: 2, trail: 0 });
+  });
+
+  it('keeps covering a slide still under way, wherever it has got to', () => {
+    // Mon → Thu under way (lead 3), then Wed: Monday stays two days before
+    // it and Thursday one day after its first day.
+    expect(nextSlide({ lead: 3, trail: 0 }, -1, 7)).toEqual({ lead: 2, trail: 1 });
+    // Then Fri: the strip still reaches back to Monday.
+    expect(nextSlide({ lead: 3, trail: 0 }, 1, 7)).toEqual({ lead: 4, trail: 0 });
+    expect(nextSlide({ lead: 14, trail: 0 }, 30, 7)).toEqual({ lead: 14, trail: 0 });
+  });
+
+  it('draws the lead before the visible days and the trail after them', () => {
+    // Mon Aug 17 → Thu Aug 20: the strip starts at the old first day.
+    const forward = slideSpan(MONDAY.add({ days: 3 }), 7, { lead: 3, trail: 0 });
+    expect(forward.first.toString()).toBe('2026-08-17');
+    expect(forward.count).toBe(10);
+    const strip = bufferedDays(forward.first, forward.count, 2);
+    expect(strip[2]!.toString()).toBe('2026-08-17');
+    expect(strip[2 + 3]!.toString()).toBe('2026-08-20');
+    const both = slideSpan(MONDAY, 7, { lead: 2, trail: 1 });
+    expect(both.first.toString()).toBe('2026-08-15');
+    expect(both.count).toBe(10);
+  });
+
+  it('is the visible days alone without a slide', () => {
+    const span = slideSpan(MONDAY, 7, NO_SLIDE);
+    expect(span.first.toString()).toBe('2026-08-17');
+    expect(span.count).toBe(7);
   });
 });
 
