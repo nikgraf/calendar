@@ -1687,17 +1687,59 @@ describe('calendar desktop e2e', () => {
 
   it('reseeds the editor when another slot is clicked while it is open', async () => {
     const { cdp } = app;
-    const block = await cdp.locate('[title^="Standup meeting"]');
+    // Two empty slots in today's column, which is on screen whatever the
+    // weekday. Standup, which this test used to aim from, is in tomorrow's
+    // column after the drag test: on a Sunday that is off the week, and
+    // from Thursday on the editor the first click opens covered it.
+    // Each slot is found right before its click, once today's column sits
+    // inside the grid: the editor narrows the grid, and a window at the
+    // back only lays the narrower columns out in a drawn frame.
+    const todayInGrid = `(() => {
+      const view = document.querySelector('[data-testid="week-grid"]').parentElement.getBoundingClientRect();
+      const header = document.querySelector('[data-testid="today-header"]').getBoundingClientRect();
+      const center = header.x + header.width / 2;
+      return center > view.x && center < view.x + view.width;
+    })()`;
+    const emptySlot = async (fromHour: number) => {
+      await cdp.waitForRendered<boolean>(todayInGrid);
+      const slot = await cdp.eval<{ hour: number; x: number; y: number } | null>(`(() => {
+        const scroller = document.querySelector('[data-testid="week-scroller"]');
+        const header = document.querySelector('[data-testid="today-header"]').getBoundingClientRect();
+        const x = Math.round(header.x + header.width / 2);
+        for (let hour = ${fromHour}; hour < 22; hour += 1) {
+          scroller.scrollTop = hour * ${HOUR_HEIGHT} - 120;
+          const y = Math.round(
+            scroller.getBoundingClientRect().top + hour * ${HOUR_HEIGHT} - scroller.scrollTop + 10,
+          );
+          const hit = document.elementFromPoint(x, y);
+          if (hit?.closest('[data-testid="week-grid"]') && !hit.closest('[title]')) {
+            return { hour, x, y };
+          }
+        }
+        return null;
+      })()`);
+      if (!slot) {
+        throw new Error(`no empty slot in today's column from ${String(fromHour)}:00`);
+      }
+      return slot;
+    };
     const START = `document.querySelector('[data-testid="editor"] input[type="time"]')?.value`;
-    await cdp.click(block.x, block.y + 3 * HOUR_HEIGHT + 10);
-    await cdp.waitFor(
-      `document.querySelector('[data-testid="editor-title"]')?.textContent === 'New event'`,
-    );
-    const first = await cdp.eval<string>(START);
-    await cdp.click(block.x, block.y + 4 * HOUR_HEIGHT + 10);
-    await cdp.waitFor(`${START} !== ${JSON.stringify(first)}`);
-    await cdp.pressEscape();
-    await cdp.waitFor(`!document.querySelector('[data-testid="editor"]')`);
+    try {
+      const first = await emptySlot(8);
+      await cdp.click(first.x, first.y);
+      await cdp.waitFor(
+        `document.querySelector('[data-testid="editor-title"]')?.textContent === 'New event'`,
+      );
+      const firstStart = await cdp.eval<string>(START);
+      const second = await emptySlot(first.hour + 1);
+      await cdp.click(second.x, second.y);
+      await cdp.waitFor(`${START} !== ${JSON.stringify(firstStart)}`);
+    } finally {
+      // Closed even when an attempt fails, so the retry and the next tests
+      // start without an editor in the panel.
+      await cdp.pressEscape();
+      await cdp.waitFor(`!document.querySelector('[data-testid="editor"]')`);
+    }
   });
 
   it('adds an undated task through New › Task › No due date', async () => {
