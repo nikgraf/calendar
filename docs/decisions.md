@@ -543,6 +543,24 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   and the two prompts are tuned apart. Timed reminders still do not
   count as busy, and guests' free/busy is not fetched — the finder is
   where both would go.
+- **The phrase grounds the model's answer** (2026-10-11, #182) — probed
+  on device, the ~3B model filled
+  every optional field: 13:00 for "dinner", 00:00 with isAllDay false for
+  a timeless phrase, "task" for a lunch, a Thursday for "next Friday", a
+  Tuesday and 120 minutes in every finder answer. So `grounding.ts` reads
+  the phrase itself and the normalizers keep a model value only where the
+  phrase supports it: a start must be a stated clock time (corrected or
+  filled when the model disagrees or omits it) or a named meal's or part
+  of the day's default (one table, also the finder's bounds), else the
+  event is all day; the end comes only from a stated range; a named
+  weekday is where the date lands; a to-do needs a cue word, so `kind`
+  left the schema; the finder's duration is the form's unless stated,
+  its window the words' when named, its weekdays only when named.
+  Rejected: a larger model (it would guess 19:00 instead of 13:00 — a
+  better guess, still a guess), prompt-only fixes (the prompt already
+  forbade inventing), asking the model where a value came from. Open:
+  capture items (no phrase per item), German "morgen" (also "morning"),
+  an "assumed" badge for the default times — with the draft thread.
 - **The model says why it is unavailable** (2026-10-10, #168) —
   `ModelStatus` carries disabled / not-ready / unsupported (Apple
   Intelligence switches itself off on a Siri-vs-Mac language mismatch); a

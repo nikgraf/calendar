@@ -1,4 +1,5 @@
 import { Temporal, validateEventDraft, type RecurrenceFrequency } from '@calendar/core';
+import { groundDate, groundTime, isTodoPhrase } from './grounding.ts';
 import type { QuickAddParse } from './quickAdd.ts';
 import { meaningfulText, realDate, realTime } from './shared.ts';
 
@@ -64,12 +65,37 @@ const addHour = (time: string): string => {
  *
  * The model is trusted only for extraction; every value is re-checked here,
  * because a schema-shaped answer can still be nonsense (23:70, a title of
- * whitespace, an end before its start).
+ * whitespace, an end before its start). Given the phrase, the answer is
+ * also held against it (`grounding.ts`): the start must be a clock time
+ * the phrase states or the default of a meal or part of the day it names,
+ * else the event is all day; the end comes only from a stated range; a
+ * weekday the phrase names is where the date lands; and the phrase is a
+ * to-do only on a to-do cue. Capture has no one phrase per item, so it
+ * passes none and the model's times stand as validated.
  */
+/**
+ * The cue that made the phrase a to-do, when the model left it in the
+ * title ("remind me to call the bank" came back whole): the title is the
+ * thing to do.
+ */
+const TODO_CUE_PREFIX =
+  /^(?:remind me to|reminder:?|to-?do:?|don'?t forget to|i (?:need|have) to|i must|ich muss|nicht vergessen:?)\s+/i;
+
+/**
+ * A location that only repeats the title ("Dentist" for "Dentist
+ * Thursday", "offsite" for "Team offsite") is a word copied over, not a
+ * place.
+ */
+const placeOf = (location: string | undefined, title: string): string | undefined =>
+  location !== undefined && title.toLowerCase().includes(location.toLowerCase())
+    ? undefined
+    : location;
+
 export const normalizeQuickAdd = (
   parse: QuickAddParse,
   {
     fallbackDate,
+    phrase,
     referenceDate,
     timeZone,
   }: {
@@ -79,6 +105,8 @@ export const normalizeQuickAdd = (
      * relative phrases like "tomorrow".
      */
     fallbackDate?: string | undefined;
+    /** The words the answer came from; when given, the answer is checked against them. */
+    phrase?: string | undefined;
     referenceDate: string;
     timeZone: string;
   },
@@ -88,27 +116,41 @@ export const normalizeQuickAdd = (
     return { kind: 'rejected', reason: 'No event title was recognised.' };
   }
 
-  const resolvedDate = realDate(parse.date?.trim()) ?? realDate(fallbackDate) ?? referenceDate;
+  const modelDate = realDate(parse.date?.trim());
+  const groundedDate =
+    phrase === undefined ? undefined : groundDate(modelDate, { phrase, referenceDate });
+  const resolvedDate = groundedDate ?? modelDate ?? realDate(fallbackDate) ?? referenceDate;
   if (!realDate(resolvedDate)) {
     return { kind: 'rejected', reason: 'That date could not be understood.' };
   }
 
-  const startTime = realTime(parse.startTime);
-  if (parse.kind === 'task') {
+  const modelStart = realTime(parse.startTime);
+  const times =
+    phrase === undefined
+      ? { endTime: realTime(parse.endTime), startTime: modelStart }
+      : groundTime(modelStart, phrase);
+  const { startTime } = times;
+  if (phrase !== undefined && isTodoPhrase(phrase)) {
     // A to-do: its day, and its time when one was said. No end, no repeat.
     return {
       kind: 'task',
-      prefill: { date: resolvedDate, ...(startTime ? { time: startTime } : {}), title },
+      prefill: {
+        date: resolvedDate,
+        ...(startTime ? { time: startTime } : {}),
+        title: title.replace(TODO_CUE_PREFIX, '') || title,
+      },
     };
   }
-  const endTime = realTime(parse.endTime);
-  // No usable time at all means the phrase described a whole day.
-  const isAllDay = parse.isAllDay === true || !startTime;
+  // No usable time at all means the phrase described a whole day. Without
+  // a phrase the model may also say so outright.
+  const isAllDay = !startTime || (phrase === undefined && parse.isAllDay === true);
   const resolvedStart = isAllDay ? '00:00' : startTime!;
   // A missing or backwards end becomes a one-hour event rather than an error:
   // "lunch at 1" is a complete thought.
   const resolvedEnd =
-    !isAllDay && endTime && endTime > resolvedStart ? endTime : addHour(resolvedStart);
+    !isAllDay && times.endTime && times.endTime > resolvedStart
+      ? times.endTime
+      : addHour(resolvedStart);
   if (!isAllDay && resolvedEnd <= resolvedStart) {
     // Only reachable in the final minute of the day: the editor puts start
     // and end on one date, so nothing after 23:59 can be expressed.
@@ -134,7 +176,7 @@ export const normalizeQuickAdd = (
   const count = parse.recurrence?.count;
   // "Repeats once" is not a repeat: models attach one to phrases like
   // "next Tuesday", which names a single day.
-  const location = meaningfulText(parse.location);
+  const location = placeOf(meaningfulText(parse.location), title);
   const parsedFreq = parse.recurrence?.freq;
   const freq = count === 1 || !parsedFreq || !FREQUENCIES.has(parsedFreq) ? undefined : parsedFreq;
   const untilDate = untilOnOrAfter(realDate(parse.recurrence?.untilDate), resolvedDate);

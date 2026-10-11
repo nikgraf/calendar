@@ -19,13 +19,19 @@ const PLACEHOLDERS = new Set(['-', 'n/a', 'na', 'none', 'null', 'tbd', 'unknown'
 /** Days of dated weekdays given to the model to choose from. */
 const CALENDAR_HINT_DAYS = 14;
 
-/** A real calendar date, not merely a date-shaped string ('2026-02-30'). */
+/**
+ * A real calendar date, not merely a date-shaped string ('2026-02-30').
+ * A timestamp in a date field ("2026-10-19T08:00:00+01:00" — observed for
+ * a window start) counts for its day: the day is what was asked.
+ */
 export const realDate = (value: string | undefined): string | undefined => {
-  if (!value || !DATE.test(value)) {
+  const day =
+    value === undefined ? undefined : (/^\d{4}-\d{2}-\d{2}(?=T)/.exec(value)?.[0] ?? value);
+  if (!day || !DATE.test(day)) {
     return undefined;
   }
   try {
-    return Temporal.PlainDate.from(value, { overflow: 'reject' }).toString();
+    return Temporal.PlainDate.from(day, { overflow: 'reject' }).toString();
   } catch {
     return undefined;
   }

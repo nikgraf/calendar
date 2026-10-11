@@ -93,6 +93,85 @@ describe('normalizeFindTime', () => {
   });
 });
 
+// The finder's own duration stands in for one the phrase does not state.
+const withPhrase = (parse: FindTimeParse, phrase: string, fallbackDurationMinutes = 60) =>
+  normalizeFindTime(parse, { fallbackDurationMinutes, phrase, ...CONTEXT });
+
+const constraintsOf = (result: ReturnType<typeof normalizeFindTime>) => {
+  if (result.kind !== 'parsed') {
+    throw new Error(result.reason);
+  }
+  return result.constraints;
+};
+
+describe('normalizeFindTime holds the parse against the phrase', () => {
+  it('searches the duration on show unless the phrase says how long', () => {
+    // Observed: "dinner with Teo next week" came back as 120 minutes.
+    expect(withPhrase({ durationMinutes: 120 }, 'dinner with Teo next week')).toMatchObject({
+      constraints: { durationMinutes: 60 },
+    });
+    expect(withPhrase({ durationMinutes: 90 }, '90 min focus')).toMatchObject({
+      constraints: { durationMinutes: 90 },
+    });
+    expect(withPhrase({}, 'dinner next week')).toMatchObject({
+      constraints: { durationMinutes: 60 },
+    });
+  });
+
+  it('counts weekdays only when the phrase names them', () => {
+    // Observed: daysOfWeek [2] in every answer.
+    const tuesday = { daysOfWeek: [2], durationMinutes: 60 };
+    expect(constraintsOf(withPhrase(tuesday, 'dinner next week'))).not.toHaveProperty('daysOfWeek');
+    expect(withPhrase(tuesday, 'Tuesdays')).toMatchObject({ constraints: { daysOfWeek: [2] } });
+    expect(withPhrase({ daysOfWeek: [2], durationMinutes: 60 }, 'weekdays')).toMatchObject({
+      constraints: { daysOfWeek: [1, 2, 3, 4, 5] },
+    });
+  });
+
+  it('bounds a named meal or part of the day by its window', () => {
+    // Observed: dinner came back as 12:00–17:00.
+    const afternoon = { durationMinutes: 60, earliestTime: '12:00', latestTime: '17:00' };
+    expect(withPhrase(afternoon, 'dinner with Teo next week')).toMatchObject({
+      constraints: { earliestTime: '18:00', latestTime: '21:00' },
+    });
+    expect(withPhrase(afternoon, 'mornings')).toMatchObject({
+      constraints: { earliestTime: '08:00', latestTime: '12:00' },
+    });
+    // A stated clock time keeps the model's bounds; nothing stated drops them.
+    expect(withPhrase({ durationMinutes: 60, earliestTime: '17:00' }, 'after 5pm')).toMatchObject({
+      constraints: { earliestTime: '17:00' },
+    });
+    const dropped = constraintsOf(withPhrase(afternoon, '90 min focus'));
+    expect(dropped).not.toHaveProperty('earliestTime');
+    expect(dropped).not.toHaveProperty('latestTime');
+  });
+
+  it('takes a window the phrase names in words', () => {
+    // 2026-08-24 is a Monday: next week is the 31st to the 6th, whatever the model said.
+    expect(
+      withPhrase(
+        { durationMinutes: 60, windowEndDate: '2026-08-31', windowStartDate: '2026-08-24' },
+        'dinner with Teo next week',
+      ),
+    ).toMatchObject({
+      constraints: { windowEndDate: '2026-09-06', windowStartDate: '2026-08-31' },
+    });
+    expect(withPhrase({ durationMinutes: 60 }, 'an hour tomorrow')).toMatchObject({
+      constraints: { windowEndDate: '2026-08-25', windowStartDate: '2026-08-25' },
+    });
+  });
+
+  it('reads a timestamp in a date field for its day', () => {
+    // Observed: "2026-08-26T08:00:00+01:00" as a window start.
+    expect(
+      withPhrase(
+        { durationMinutes: 60, windowStartDate: '2026-08-26T08:00:00+01:00' },
+        '90 min focus',
+      ),
+    ).toMatchObject({ constraints: { windowStartDate: '2026-08-26' } });
+  });
+});
+
 describe('parseFindTime', () => {
   it('resolves through the model and carries the reference date in the prompt', async () => {
     const model = fakeModel({ durationMinutes: 90 });
@@ -129,6 +208,7 @@ describe('buildFindTimePrompt', () => {
   it('includes vocabulary anchors and the phrase', () => {
     const prompt = buildFindTimePrompt({ phrase: 'mornings next week', ...CONTEXT });
     expect(prompt).toContain('"mornings" is 08:00–12:00');
+    expect(prompt).toContain('"dinner" 18:00–21:00');
     expect(prompt).toContain('Phrase: mornings next week');
   });
 });

@@ -362,7 +362,11 @@ chasing a code bug.
   (`makeFixtureLanguageModel`, `fixtureTextRecognizer`): one event per
   line, `Title | +N or YYYY-MM-DD | HH:MM-HH:MM | Location`, with `+N`
   counted from the prompt's own "Today is" line so no spec computes a
-  date; desktop `launchApp(seed, { model: 'fixture' })`, iOS
+  date. A phrase outside the grammar is a title on the fallback day, all
+  day — unless its own words say otherwise: the normalizer reads
+  "tomorrow", "at 1", a weekday or a meal off the phrase for every model,
+  the fixture included (`packages/ai/src/grounding.ts`). Desktop
+  `launchApp(seed, { model: 'fixture' })`, iOS
   `EXPO_PUBLIC_CALENDAR_MODEL=fixture` in the bundle (CI), which also
   accepts `solunivo-dev://capture-fixture?text=…` as a stand-in for a
   share.
