@@ -82,14 +82,12 @@ const TODO_CUE_PREFIX =
   /^(?:remind me to|reminder:?|to-?do:?|don'?t forget to|i (?:need|have) to|i must|ich muss|nicht vergessen:?)\s+/i;
 
 /**
- * A location that only repeats the title ("Dentist" for "Dentist
- * Thursday", "offsite" for "Team offsite") is a word copied over, not a
- * place.
+ * A location that is the title over again ("Dentist" for "Dentist
+ * Thursday") is the title copied over, not a place. Only the whole title
+ * counts: "New York" is the place of "New York trip".
  */
 const placeOf = (location: string | undefined, title: string): string | undefined =>
-  location !== undefined && title.toLowerCase().includes(location.toLowerCase())
-    ? undefined
-    : location;
+  location !== undefined && location.toLowerCase() === title.toLowerCase() ? undefined : location;
 
 export const normalizeQuickAdd = (
   parse: QuickAddParse,
@@ -176,7 +174,9 @@ export const normalizeQuickAdd = (
   const count = parse.recurrence?.count;
   // "Repeats once" is not a repeat: models attach one to phrases like
   // "next Tuesday", which names a single day.
-  const location = placeOf(meaningfulText(parse.location), title);
+  const place = meaningfulText(parse.location);
+  // Capture passes no phrase and keeps its locations as before.
+  const location = phrase === undefined ? place : placeOf(place, title);
   const parsedFreq = parse.recurrence?.freq;
   const freq = count === 1 || !parsedFreq || !FREQUENCIES.has(parsedFreq) ? undefined : parsedFreq;
   const untilDate = untilOnOrAfter(realDate(parse.recurrence?.untilDate), resolvedDate);

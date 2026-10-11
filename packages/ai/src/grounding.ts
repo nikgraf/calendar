@@ -12,9 +12,9 @@ import { finderWindowDates, foldSearchText, Temporal } from '@calendar/core';
  * correct one the phrase contradicts, and drop the rest. The words are
  * English and German; a phrase in another language falls back to the safe
  * reading (all day, any day), never to the model's guess. Where the code
- * can see that it cannot read a construction (an excluded weekday, a
- * window with two ends, "before lunch", "two weeks from today"), it has
- * no opinion and the model's answer stands.
+ * can see that it cannot read a construction (a negation, a window with
+ * two ends, "before lunch", "two weeks from today", "two days after
+ * Monday"), it has no opinion and the model's answer stands.
  */
 
 /** Lower-case, accent-free text with straight apostrophes and "ss" for ß: what every pattern here is matched against. */
@@ -22,6 +22,13 @@ const words = (phrase: string): string =>
   foldSearchText(phrase)
     .replaceAll(/[‘’`]/g, "'")
     .replaceAll('ß', 'ss');
+
+/**
+ * Something ruled out ("not in the morning", "any day but Tuesday",
+ * "außer Dienstag"): the words after it are named without being meant,
+ * which the code does not read.
+ */
+const NEGATION = /\b(?:not|except|but|other than|nicht|ausser|ohne|keine?n?)\b/;
 
 // --- Meals and parts of the day ------------------------------------------
 
@@ -106,6 +113,10 @@ const PERIOD_AS_BOUND = new RegExp(
   `\\b(?:before|after|until|till|bis|vor|nach|ab)\\s+(?:the\\s+|dem\\s+|der\\s+)?(?:${PERIOD_NAMES})`,
 );
 
+/** A named period the code cannot place: a boundary, or ruled out. */
+const periodUnreadable = (text: string): boolean =>
+  PERIOD_AS_BOUND.test(text) || NEGATION.test(text);
+
 /** The meal or part of the day the phrase names, if any. */
 export const periodOf = (phrase: string): Period | undefined => {
   const text = words(phrase);
@@ -177,8 +188,18 @@ const MERIDIEM = `(a\\.m\\.|am(?!\\s+(?:montag|dienstag|mittwoch|donnerstag|frei
 const UNIT = `(?:\\s*${MERIDIEM}(?![a-z])|\\s*(uhr)\\b)?`;
 /** The same unit, required. */
 const SOME_UNIT = UNIT.slice(0, -1);
-/** A number followed by a length of time is a duration, not a clock time ("um 5 Minuten", "nach 2 Tagen"). */
-const NOT_A_DURATION = `(?!\\s*(?:tagen?|days?|wochen?|weeks?|minuten|mins?|minutes?|stunden?|hours?|hrs?|h)\\b)`;
+/** Where a time ends: no letter or digit may follow — unlike `\b`, true after "a.m." too. */
+const END = String.raw`(?![a-z\d])`;
+const MONTHS =
+  'january|february|march|april|may|june|july|august|september|october|november|december|jan|feb|mar|apr|jun|jul|aug|sep|sept|oct|nov|dec|januar|februar|marz|mai|juni|juli|oktober|dezember';
+const LENGTH_UNITS = 'min|mins|minutes?|minuten|h|hr|hrs|hours?|stunden?|std';
+/**
+ * A bare number that is part of a date or a length of time is not a
+ * clock: "17.10.", "17. Oktober", "17 October", "nach 2 Tagen", "um 5
+ * Minuten". The number must end here too, or "18 October" would be read
+ * back as "1" and the lookaheads skipped.
+ */
+const NOT_A_QUANTITY = `(?!\\d)(?![./]\\d)(?!\\.?\\s*(?:${MONTHS})\\b)(?!\\s*(?:${LENGTH_UNITS}|tagen?|days?|wochen?|weeks?)\\b)`;
 const CLOSER = `(?:to|until|till|bis|and|und|-|–)`;
 
 const numberOf = (token: string): number =>
@@ -287,11 +308,11 @@ const PATTERNS: ReadonlyArray<{
     build: (match) => [clock(numberOf(match[1]!), 0, match[2])],
     regex: new RegExp(`\\b(ein|\\d{1,2}|${NUMBER_WORD})${SOME_UNIT}`, 'g'),
   },
-  // at 1, um 7, @7, at three, um drei, at 3pm, at noon — not "at 17.10." (a date) or "um 5 Minuten"
+  // at 1, um 7, @7, at three, um drei, at 3pm, at noon — not "at 17.10." or "um 5 Minuten"
   {
     build: (match) => [clockOf(match[1]!, minutesOf(match[2]), match[3])],
     regex: new RegExp(
-      `(?:\\b(?:at|um)|@)\\s*${TOKEN}(?::(\\d{2}))?(?![./]\\d)${NOT_A_DURATION}${UNIT}\\b`,
+      `(?:\\b(?:at|um)|@)\\s*${TOKEN}(?::(\\d{2}))?${NOT_A_QUANTITY}${UNIT}${END}`,
       'g',
     ),
   },
@@ -299,7 +320,7 @@ const PATTERNS: ReadonlyArray<{
   {
     build: (match) => [clockOf(match[1]!, minutesOf(match[2]), match[3])],
     regex: new RegExp(
-      `\\b(?:after|nach|ab)\\s+${TOKEN}(?::(\\d{2}))?(?![./]\\d)${NOT_A_DURATION}${UNIT}\\b`,
+      `\\b(?:after|nach|ab)\\s+${TOKEN}(?::(\\d{2}))?${NOT_A_QUANTITY}${UNIT}${END}`,
       'g',
     ),
   },
@@ -307,19 +328,19 @@ const PATTERNS: ReadonlyArray<{
   {
     build: (match) => [clockOf(match[1]!, minutesOf(match[2]), match[3], true)],
     regex: new RegExp(
-      `\\b(?:before|vor)\\s+${TOKEN}(?::(\\d{2}))?(?![./]\\d)${NOT_A_DURATION}${UNIT}\\b`,
+      `\\b(?:before|vor)\\s+${TOKEN}(?::(\\d{2}))?${NOT_A_QUANTITY}${UNIT}${END}`,
       'g',
     ),
   },
   // half past two (pm)
   {
     build: (match) => [clock(numberOf(match[1]!), 30, match[2])],
-    regex: new RegExp(`\\bhalf past ${NUMBER}${UNIT}\\b`, 'g'),
+    regex: new RegExp(`\\bhalf past ${NUMBER}${UNIT}${END}`, 'g'),
   },
   // halb drei (half to three: 2:30)
   {
     build: (match) => [shifted(clock(numberOf(match[1]!), 0, match[2]), -30)],
-    regex: new RegExp(`\\bhalb ${NUMBER}${UNIT}\\b`, 'g'),
+    regex: new RegExp(`\\bhalb ${NUMBER}${UNIT}${END}`, 'g'),
   },
   // quarter past / to three
   {
@@ -328,7 +349,7 @@ const PATTERNS: ReadonlyArray<{
         ? clock(numberOf(match[2]!), 15, match[3])
         : shifted(clock(numberOf(match[2]!), 0, match[3]), -15),
     ],
-    regex: new RegExp(`\\b(?:a )?quarter (past|to) ${NUMBER}${UNIT}\\b`, 'g'),
+    regex: new RegExp(`\\b(?:a )?quarter (past|to) ${NUMBER}${UNIT}${END}`, 'g'),
   },
   // viertel nach / vor drei
   {
@@ -337,12 +358,12 @@ const PATTERNS: ReadonlyArray<{
         ? clock(numberOf(match[2]!), 15, match[3])
         : shifted(clock(numberOf(match[2]!), 0, match[3]), -15),
     ],
-    regex: new RegExp(`\\bviertel (nach|vor) ${NUMBER}${UNIT}\\b`, 'g'),
+    regex: new RegExp(`\\bviertel (nach|vor) ${NUMBER}${UNIT}${END}`, 'g'),
   },
   // three o'clock
   {
     build: (match) => [clock(numberOf(match[1]!), 0, match[2])],
-    regex: new RegExp(`\\b${NUMBER}\\s*o'?clock${UNIT}\\b`, 'g'),
+    regex: new RegExp(`\\b${NUMBER}\\s*o'?clock${UNIT}${END}`, 'g'),
   },
   {
     build: () => [clock(12, 0, 'pm')],
@@ -352,14 +373,14 @@ const PATTERNS: ReadonlyArray<{
     build: () => [clock(0, 0, undefined)],
     regex: /\b(?:midnight|mitternacht)\b/g,
   },
-  // from 2 to 4pm, von 14 bis 16 Uhr, between 9 and 11, from 8 to noon
+  // from 2 to 4pm, von 14 bis 16 Uhr, between 9 and 11, from 8 to noon — not "from 17 to 18 October"
   {
     build: (match) => {
       const end = clockOf(match[5]!, minutesOf(match[6]), match[7], true);
       return [rangeStart(match[1]!, minutesOf(match[2]), match[3], match[7], end), end];
     },
     regex: new RegExp(
-      `\\b(?:from|von|between|zwischen)\\s+${TOKEN}(?::(\\d{2}))?${UNIT}\\s*${CLOSER}\\s*${TOKEN}(?::(\\d{2}))?${UNIT}`,
+      `\\b(?:from|von|between|zwischen)\\s+${TOKEN}(?::(\\d{2}))?${NOT_A_QUANTITY}${UNIT}\\s*${CLOSER}\\s*${TOKEN}(?::(\\d{2}))?${NOT_A_QUANTITY}${UNIT}`,
       'g',
     ),
   },
@@ -377,11 +398,11 @@ const PATTERNS: ReadonlyArray<{
       'g',
     ),
   },
-  // until 5pm, bis 17 Uhr, to 4, until noon
+  // until 5pm, bis 17 Uhr, to 4, until noon — not "bis 17. Oktober"
   {
     build: (match) => [clockOf(match[1]!, minutesOf(match[2]), match[3], true)],
     regex: new RegExp(
-      `\\b(?:until|till|bis|to)\\s+${TOKEN}(?::(\\d{2}))?${NOT_A_DURATION}${UNIT}\\b`,
+      `\\b(?:until|till|bis|to)\\s+${TOKEN}(?::(\\d{2}))?${NOT_A_QUANTITY}${UNIT}${END}`,
       'g',
     ),
   },
@@ -525,8 +546,8 @@ export interface GroundedTimes {
   /**
    * Where the start came from: a stated clock time, a named period's
    * default, the model (the phrase qualifies a period the code cannot
-   * place: "after lunch"), or `none` — the phrase named no time and the
-   * event is all day.
+   * place: "after lunch", "not in the morning"), or `none` — the phrase
+   * named no time and the event is all day.
    */
   readonly source: 'model' | 'none' | 'period' | 'stated';
   readonly startTime?: string;
@@ -538,9 +559,9 @@ export interface GroundedTimes {
  * choice of the half of the day when that choice is one the stated hour
  * allows ("drinks at 9" may be 21:00 if the model says so; "breakfast at
  * 8" is 08:00 whatever it says). Only a meal or part of the day named:
- * its default — unless it is a boundary ("after lunch"), which the code
- * cannot place, so the model's time stands. Nothing stated: nothing,
- * whatever the model returned.
+ * its default — unless it is a boundary ("after lunch") or ruled out
+ * ("not in the morning"), which the code cannot place, so the model's
+ * time stands. Nothing stated: nothing, whatever the model returned.
  */
 export const groundTime = (modelStart: string | undefined, phrase: string): GroundedTimes => {
   const { end, start } = statedTimes(phrase);
@@ -554,7 +575,7 @@ export const groundTime = (modelStart: string | undefined, phrase: string): Grou
     return { ...(endTime ? { endTime } : {}), source: 'stated', startTime };
   }
   if (period) {
-    if (PERIOD_AS_BOUND.test(words(phrase))) {
+    if (periodUnreadable(words(phrase))) {
       return { source: 'model', ...(modelStart ? { startTime: modelStart } : {}) };
     }
     return { source: 'period', startTime: periodTimes(period).startTime };
@@ -596,8 +617,14 @@ const NEXT = /\b(?:next|nachsten?|kommenden?)\b/;
 const PAST_WEEKDAY = new RegExp(
   `\\b(?:last|past|previous|letzten?|vergangenen?|vorigen?)\\s+(?:${DAY_NAMES})\\b`,
 );
-/** A day word as the anchor of an offset ("two weeks from today", "a week from tomorrow"): the model's date. */
-const DAY_AS_ANCHOR = /\b(?:from|(?<!day )after|nach)\s+(?:today|tomorrow|tonight|heute)\b/;
+/**
+ * A day as the anchor of an offset or a boundary ("two weeks from today",
+ * "a week from tomorrow", "two days after Monday", "before Friday"): not
+ * the date itself, so the model's stands.
+ */
+const DAY_AS_ANCHOR = new RegExp(
+  `\\b(?:from|(?<!day )after|nach)\\s+(?:today|tomorrow|tonight|heute)\\b|\\b(?:after|before|from|nach|vor|ab)\\s+(?:the\\s+|dem\\s+)?(?:${DAY_NAMES})\\b`,
+);
 
 /**
  * The day the phrase states, if it states one: "yesterday", "today" and
@@ -605,8 +632,9 @@ const DAY_AS_ANCHOR = /\b(?:from|(?<!day )after|nach)\s+(?:today|tomorrow|tonigh
  * the model's date when that date is not on it, so "next Friday" never
  * lands on a Thursday; "next <weekday>" said on that weekday is a week
  * on. Undefined when the phrase gives no day the code can read (a month
- * and day, "last Friday", "two weeks from today", or German "morgen",
- * which is also "morning"), and the model's date stands.
+ * and day, "last Friday", "two weeks from today", "two days after
+ * Monday", or German "morgen", which is also "morning"), and the model's
+ * date stands.
  */
 export const groundDate = (
   modelDate: string | undefined,
@@ -658,13 +686,12 @@ export const isTodoPhrase = (phrase: string): boolean => TODO_CUES.test(words(ph
 const WEEKDAY_RANGE = new RegExp(
   `\\b(${DAY_NAMES})\\s*(?:to|through|thru|until|till|bis|-|–)\\s*(${DAY_NAMES})\\b`,
 );
-/** Days left out: a construction the code does not read, so the model's answer stands. */
-const EXCLUDES_DAYS = /\b(?:except|but|other than|not|ausser|ohne|nicht|keine?n?)\b/;
 
 /**
- * The weekdays a finder phrase allows: a set word, a range (plus any day
- * named beside it), or the days named; undefined for any day. A phrase
- * that excludes days keeps the model's answer — "any day except Tuesday"
+ * The weekdays a finder phrase allows, all of them together: set words
+ * ("weekdays", "weekends"), a range, and the days named ("weekdays and
+ * Saturdays" is Monday to Saturday); undefined for any day. A phrase that
+ * rules days out keeps the model's answer — "any day except Tuesday"
  * names Tuesday without allowing it.
  */
 export const groundDays = (
@@ -672,19 +699,23 @@ export const groundDays = (
   phrase: string,
 ): ReadonlyArray<number> | undefined => {
   const text = words(phrase);
-  if (EXCLUDES_DAYS.test(text)) {
+  if (NEGATION.test(text)) {
     return modelDays;
   }
+  const days = new Set<number>();
   if (/\b(?:weekdays|wochentags|werktags|unter der woche)\b/.test(text)) {
-    return [1, 2, 3, 4, 5];
+    for (const day of [1, 2, 3, 4, 5]) {
+      days.add(day);
+    }
   }
   if (/\b(?:weekends?|wochenende)\b/.test(text)) {
-    return [6, 7];
+    days.add(6);
+    days.add(7);
   }
   const range = WEEKDAY_RANGE.exec(text);
   const from = range ? dayOf(range[1]!) : undefined;
   const to = range ? dayOf(range[2]!) : undefined;
-  const days = new Set<number>();
+  let rest = text;
   if (range && from !== undefined && to !== undefined) {
     for (let day = from; ; day = (day % 7) + 1) {
       days.add(day);
@@ -692,22 +723,22 @@ export const groundDays = (
         break;
       }
     }
-    for (const day of weekdaysIn(text.replace(range[0], ' '))) {
-      days.add(day);
-    }
-  } else {
-    for (const day of weekdaysIn(text)) {
-      days.add(day);
-    }
+    rest = text.replace(range[0], ' ');
+  }
+  for (const day of weekdaysIn(rest)) {
+    days.add(day);
   }
   return days.size === 0 ? undefined : [...days].sort((left, right) => left - right);
 };
 
+/** Number words a length is written in, beyond the clock's one to twelve. */
+const LENGTH_WORDS =
+  'thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|forty-five|fifty|sixty|ninety|hundred|zwanzig|dreissig|vierzig|funfundvierzig|funfzig|sechzig|neunzig|hundert';
 const DURATION = new RegExp(
-  `\\b(?:\\d+(?:[.,]\\d+)?|${NUMBER_WORD}|an?|eine?r?)[\\s-]*(?:min|mins|minutes?|minuten|h|hr|hrs|hours?|stunden?|std)\\b|\\b(?:half an hour|halbe stunde|eineinhalb|anderthalb)\\b`,
+  `\\b(?:\\d+(?:[.,]\\d+)?|${NUMBER_WORD}|${LENGTH_WORDS}|an?|eine?r?)[\\s-]*(?:${LENGTH_UNITS})\\b|\\b(?:half an hour|halbe stunde|eineinhalb|anderthalb)\\b`,
 );
 
-/** Whether the phrase says how long ("90 min", "2h", "two hours", "90-minute", "zwei Stunden"). */
+/** Whether the phrase says how long ("90 min", "2h", "two hours", "thirty minutes", "90-minute", "zwei Stunden"). */
 export const statesDuration = (phrase: string): boolean => DURATION.test(words(phrase));
 
 const WINDOW_WORDS: ReadonlyArray<{
@@ -747,19 +778,22 @@ function sameDay(date: Temporal.PlainDate): {
   return { windowEndDate: day, windowStartDate: day };
 }
 
+const WINDOW_TERMS =
+  'tomorrow|today|tonight|heute|next week|this week|nachste woche|diese woche|kommende woche';
 /**
- * A day word as one end of a span ("starting tomorrow", "between tomorrow
- * and August 28", "until today") or as the anchor of an offset ("a week
- * from today"): not the window.
+ * A window word as one end of a span or the anchor of an offset
+ * ("starting tomorrow", "between tomorrow and August 28", "before next
+ * week", "a week from today"): not the window.
  */
-const DAY_AS_END =
-  /\b(?:starting|from|beginning|ab|until|till|bis|to|between|zwischen|von|(?<!day )after|nach)\s+(?:tomorrow|today|tonight|heute)\b|\b(?:tomorrow|today|tonight|heute)\s+(?:and|to|until|till|through|bis|und|-|–)\s/;
+const WINDOW_AS_END = new RegExp(
+  `\\b(?:starting|from|beginning|ab|until|till|bis|to|between|zwischen|von|(?<!day )after|nach|before|vor)\\s+(?:${WINDOW_TERMS})\\b|\\b(?:${WINDOW_TERMS})\\s+(?:and|to|until|till|through|bis|und|-|–)\\s`,
+);
 
 /**
  * The date window a finder phrase names in words the code can read: one
  * day, this or next week, a span of two weeks. Undefined when it names
- * none, more than one ("between today and tomorrow"), a day as one end
- * of a span, or a date the model has to resolve.
+ * none, more than one ("between today and tomorrow"), one as the end of
+ * a span ("before next week"), or a date the model has to resolve.
  */
 export const windowOf = (
   phrase: string,
@@ -767,7 +801,7 @@ export const windowOf = (
 ): { readonly windowEndDate: string; readonly windowStartDate: string } | undefined => {
   const text = words(phrase);
   const named = WINDOW_WORDS.filter((entry) => entry.words.test(text));
-  if (named.length !== 1 || DAY_AS_END.test(text)) {
+  if (named.length !== 1 || WINDOW_AS_END.test(text)) {
     return undefined;
   }
   return named[0]!.dates(Temporal.PlainDate.from(referenceDate), referenceDate);
@@ -776,16 +810,16 @@ export const windowOf = (
 /**
  * The finder's daily bounds the phrase supports: the model's where a
  * clock time is written ("after 5pm", "until 5pm", "before 10") or a
- * meal is a boundary ("before lunch"), the period's window where only a
- * meal or part of the day is named, none otherwise (the solver's daytime
- * default).
+ * meal is a boundary or ruled out ("before lunch", "not in the
+ * morning"), the period's window where only a meal or part of the day is
+ * named, none otherwise (the solver's daytime default).
  */
 export const groundBounds = (
   bounds: { readonly earliestTime?: string | undefined; readonly latestTime?: string | undefined },
   phrase: string,
 ): { readonly earliestTime?: string; readonly latestTime?: string } => {
   const text = words(phrase);
-  if (statesClockTime(phrase) || PERIOD_AS_BOUND.test(text)) {
+  if (statesClockTime(phrase) || periodUnreadable(text)) {
     return {
       ...(bounds.earliestTime ? { earliestTime: bounds.earliestTime } : {}),
       ...(bounds.latestTime ? { latestTime: bounds.latestTime } : {}),

@@ -115,6 +115,12 @@ describe('statedTimes', () => {
       minute: 30,
     });
     expect(statedTimes('um halb drei uhr').start).toEqual({ exact: false, hour: 2, minute: 30 });
+    // Review: the dotted a.m. ends in punctuation, which a word boundary cannot follow.
+    expect(statedTimes('Call at half past seven a.m.').start).toEqual({
+      exact: true,
+      hour: 7,
+      minute: 30,
+    });
     // Review: "to three" inside "quarter to three" is not an end.
     expect(statedTimes('Call at quarter to three')).toEqual({
       start: { exact: false, hour: 2, minute: 45 },
@@ -170,6 +176,14 @@ describe('statedTimes', () => {
 
   it('does not mistake dates, years, durations or German "am" for times', () => {
     expect(statedTimes('Treffen am 17.10.')).toEqual({});
+    // Review: a span of dates is not a span of hours.
+    expect(statedTimes('Vacation from 17 to 18 October')).toEqual({});
+    expect(statesClockTime('Urlaub bis 17. Oktober')).toBe(false);
+    expect(statesClockTime('Offsite after 20 Oct')).toBe(false);
+    expect(statedTimes('from 17 to 18 Uhr')).toEqual({
+      end: { exact: true, hour: 18, minute: 0 },
+      start: { exact: true, hour: 17, minute: 0 },
+    });
     expect(statedTimes('Offsite Oct 20')).toEqual({});
     expect(statedTimes('Dates 17-18 Oct')).toEqual({});
     expect(statedTimes('Retro in 2026')).toEqual({});
@@ -334,8 +348,12 @@ describe('groundTime', () => {
     });
   });
 
-  it('leaves a meal used as a boundary to the model', () => {
-    // Review: "before lunch" was read as lunch itself.
+  it('leaves a meal used as a boundary, or ruled out, to the model', () => {
+    // Review: "before lunch" was read as lunch itself, "not in the morning" as the morning.
+    expect(groundTime('14:00', 'Call tomorrow, not in the morning')).toEqual({
+      source: 'model',
+      startTime: '14:00',
+    });
     expect(groundTime('11:00', 'Call before lunch')).toEqual({
       source: 'model',
       startTime: '11:00',
@@ -390,6 +408,9 @@ describe('groundDate', () => {
     expect(ground('2026-08-21', 'Dentist last Friday at 9am')).toBeUndefined();
     expect(ground('2026-08-21', 'Zahnarzt letzten Freitag')).toBeUndefined();
     expect(ground(undefined, 'Call yesterday')).toBe('2026-08-21');
+    // Review: a weekday as the anchor of an offset or a boundary.
+    expect(ground('2026-08-26', 'Call two days after Monday')).toBeUndefined();
+    expect(ground('2026-08-27', 'Call before Friday')).toBeUndefined();
     expect(ground(undefined, 'Zahnarzt morgen')).toBeUndefined();
     // Two weekdays: not one day.
     expect(ground(undefined, 'Gym Monday and Wednesday')).toBeUndefined();
@@ -417,6 +438,9 @@ describe('namedWeekdays and groundDays', () => {
     expect(groundDays(undefined, 'Freitag bis Montag')).toEqual([1, 5, 6, 7]);
     expect(groundDays(undefined, 'Tue-Thu mornings')).toEqual([2, 3, 4]);
     expect(groundDays(undefined, 'Monday through Friday and Sunday')).toEqual([1, 2, 3, 4, 5, 7]);
+    // Review: a set word beside named days.
+    expect(groundDays(undefined, 'weekdays and Saturdays')).toEqual([1, 2, 3, 4, 5, 6]);
+    expect(groundDays(undefined, 'Mondays and weekends')).toEqual([1, 6, 7]);
   });
 
   it('leaves an exclusion to the model', () => {
@@ -460,6 +484,10 @@ describe('statesDuration', () => {
     expect(statesDuration('zwei Stunden')).toBe(true);
     expect(statesDuration('eine Stunde')).toBe(true);
     expect(statesDuration('90-minute workshop')).toBe(true);
+    // Review: lengths written in words beyond twelve.
+    expect(statesDuration('thirty minutes this week')).toBe(true);
+    expect(statesDuration('ninety minutes')).toBe(true);
+    expect(statesDuration('dreissig Minuten')).toBe(true);
     expect(statesDuration('dinner with Teo next week')).toBe(false);
     expect(statesDuration('a hike on Sunday')).toBe(false);
   });
@@ -512,6 +540,9 @@ describe('windowOf', () => {
     expect(windowOf('Find an hour between tomorrow and August 28', REFERENCE)).toBeUndefined();
     expect(windowOf('from tomorrow to Friday', REFERENCE)).toBeUndefined();
     expect(windowOf('a week from today', REFERENCE)).toBeUndefined();
+    // Review: a week word as the end of a span.
+    expect(windowOf('Find an hour before next week', REFERENCE)).toBeUndefined();
+    expect(windowOf('starting next week for two weeks', REFERENCE)).toBeUndefined();
   });
 });
 
@@ -545,5 +576,12 @@ describe('groundBounds', () => {
     expect(groundBounds({ earliestTime: '20:00' }, 'after dinner')).toEqual({
       earliestTime: '20:00',
     });
+    // Review: a period ruled out is not the window either.
+    expect(
+      groundBounds(
+        { earliestTime: '12:00', latestTime: '20:00' },
+        'Find an hour next week, not in the morning',
+      ),
+    ).toEqual({ earliestTime: '12:00', latestTime: '20:00' });
   });
 });

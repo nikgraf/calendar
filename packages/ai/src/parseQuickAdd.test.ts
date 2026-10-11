@@ -184,23 +184,19 @@ describe('parseQuickAdd', () => {
     ).toMatchObject({ kind: 'rejected' });
   });
 
-  it('drops a location that only repeats the title', async () => {
-    // Observed on device: "Dentist" as the location of "Dentist Thursday",
-    // "offsite" for "Team offsite Oct 20".
+  it('drops a location that is the title over again', async () => {
+    // Observed on device: "Dentist" as the location of "Dentist Thursday".
     expect(
       (await prefillOf({ location: 'Dentist', title: 'Dentist' }, 'Dentist Thursday')).location,
     ).toBeUndefined();
     expect(
-      (
-        await prefillOf(
-          { location: 'offsite', title: 'Team offsite Oct 20' },
-          'Team offsite Oct 20',
-        )
-      ).location,
-    ).toBeUndefined();
-    expect(
       (await prefillOf({ location: 'Figlmüller', title: 'Lunch' }, 'Lunch at Figlmüller')).location,
     ).toBe('Figlmüller');
+    // Review: a place that is part of the title is still a place.
+    expect(
+      (await prefillOf({ location: 'New York', title: 'New York trip' }, 'New York trip in May'))
+        .location,
+    ).toBe('New York');
   });
 
   it('drops a repeat that only happens once', async () => {
