@@ -18,7 +18,6 @@ import { useState } from 'react';
 import { useTheme } from '../theme.ts';
 import {
   ActionRow,
-  Checkmark,
   Footer,
   LeadingSpace,
   LeadingSymbol,
@@ -26,14 +25,15 @@ import {
   SettingsPage,
   SwipeRow,
   Row,
+  Tag,
 } from './GroupedList.tsx';
 import { TimeZonePickerSheet } from './TimeZonePickerSheet.tsx';
 
 /**
  * General: the time zones this iPhone draws and the location cache. The
- * primary zone (the checked row) is what the grid, "today" and the editors
- * use; the others annotate the hour gutter, tall event blocks and the
- * editor. The first row is the iPhone's own zone, resolved against the OS
+ * primary zone (the row tagged Primary) is what the grid, "today" and the
+ * editors use; the others annotate the hour gutter, tall event blocks and
+ * the editor. The first row is the iPhone's own zone, resolved against the OS
  * so it moves when the iPhone travels; it is never removed. Every change
  * sends the whole struct through the core editors so `primary` and
  * `zones` never drift apart.
@@ -74,9 +74,9 @@ export function GeneralPage() {
           footer={
             <>
               <Footer>
-                The calendar is drawn in the checked zone; tap another to switch. The others appear
-                under each hour and on events. The first zone is this iPhone&apos;s own and follows
-                it when you travel; swipe left on any other to remove it.
+                The calendar is drawn in the primary zone; tap another zone to make it primary. The
+                others appear under each hour and on events. The first zone is this iPhone&apos;s
+                own and follows it when you travel; swipe left on any other to remove it.
               </Footer>
               {notice ? (
                 <Footer testID="time-zones-notice" tone="danger">
@@ -96,7 +96,7 @@ export function GeneralPage() {
             const row = {
               accessibilityRole: 'radio' as const,
               accessibilityState: { selected: primary },
-              accessory: <Checkmark checked={primary} />,
+              accessory: primary ? <Tag label="Primary" testID="time-zone-primary-tag" /> : null,
               leading: device ? (
                 <LeadingSymbol color={colors.primary} name="location.fill" />
               ) : (

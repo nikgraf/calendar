@@ -194,6 +194,19 @@ export function PageHero({
 }
 
 /**
+ * A small grey capsule that names a state ("Experimental", a time zone's
+ * "Primary"); the desktop draws the same pill.
+ */
+export function Tag({ label, testID }: { label: string; testID?: string }) {
+  const styles = useStyles(makeStyles);
+  return (
+    <View style={styles.tag} testID={testID}>
+      <Text style={styles.tagLabel}>{label}</Text>
+    </View>
+  );
+}
+
+/**
  * What "Experimental" on the Settings root means, inside the PageHero of
  * each page listed under it: the capsule, then one line.
  */
@@ -201,9 +214,7 @@ export function ExperimentalNote() {
   const styles = useStyles(makeStyles);
   return (
     <View style={styles.experimental} testID="experimental-note">
-      <View style={styles.experimentalCapsule}>
-        <Text style={styles.experimentalLabel}>{EXPERIMENTAL_COPY.label}</Text>
-      </View>
+      <Tag label={EXPERIMENTAL_COPY.label} />
       <Text style={styles.experimentalNote}>{EXPERIMENTAL_COPY.note}</Text>
     </View>
   );
@@ -871,17 +882,6 @@ const makeStyles = (colors: ThemeColors) =>
       gap: 6,
       marginTop: 6,
     },
-    experimentalCapsule: {
-      backgroundColor: colors.fill,
-      borderRadius: 999,
-      paddingHorizontal: 10,
-      paddingVertical: 3,
-    },
-    experimentalLabel: {
-      color: colors['text-secondary'],
-      fontSize: 13,
-      fontWeight: '600',
-    },
     experimentalNote: {
       color: colors['text-secondary'],
       fontSize: 13,
@@ -972,6 +972,17 @@ const makeStyles = (colors: ThemeColors) =>
     },
     swipeContent: {
       backgroundColor: colors.surface,
+    },
+    tag: {
+      backgroundColor: colors.fill,
+      borderRadius: 999,
+      paddingHorizontal: 10,
+      paddingVertical: 3,
+    },
+    tagLabel: {
+      color: colors['text-secondary'],
+      fontSize: 13,
+      fontWeight: '600',
     },
     text: {
       flex: 1,
