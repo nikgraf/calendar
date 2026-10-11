@@ -1,5 +1,5 @@
-import { searchTimeZones, zoneSlug } from '@calendar/core';
-import { useState } from 'react';
+import { searchTimeZones, type TimeZoneMatch, zoneSlug } from '@calendar/core';
+import { useRef, useState } from 'react';
 import {
   FlatList,
   Modal,
@@ -15,7 +15,8 @@ import { CardRow, Footer, Row } from './GroupedList.tsx';
 
 /**
  * The zone catalog in a sheet: the whole list scrolls under a search box
- * pinned above it, and typing narrows it; a tap on a row picks it. The
+ * pinned above it, and typing narrows it (from the top: a FlatList keeps
+ * its offset when its data changes); a tap on a row picks it. The
  * list is virtualized (the catalog is a few hundred zones) and keeps taps
  * alive with keyboardShouldPersistTaps, and the General page's own scroll
  * view needs the same flag: this Modal is its child in the React tree,
@@ -36,6 +37,7 @@ export function TimeZonePickerSheet({
   const { colors } = useTheme();
   const styles = useStyles(makeStyles);
   const [query, setQuery] = useState('');
+  const list = useRef<FlatList<TimeZoneMatch>>(null);
   const matches = searchTimeZones(query, exclude);
   const close = () => {
     setQuery('');
@@ -77,7 +79,10 @@ export function TimeZonePickerSheet({
           autoCorrect={false}
           autoFocus
           clearButtonMode="while-editing"
-          onChangeText={setQuery}
+          onChangeText={(text) => {
+            setQuery(text);
+            list.current?.scrollToOffset({ animated: false, offset: 0 });
+          }}
           placeholder="City or Region"
           placeholderTextColor={colors['text-secondary']}
           returnKeyType="search"
@@ -96,6 +101,7 @@ export function TimeZonePickerSheet({
           ListEmptyComponent={
             <Footer testID="time-zone-no-match">No time zone matches “{query.trim()}”.</Footer>
           }
+          ref={list}
           renderItem={({ index, item }) => (
             <CardRow first={index === 0} last={index === matches.length - 1}>
               <Row

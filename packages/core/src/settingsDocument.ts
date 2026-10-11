@@ -14,7 +14,7 @@ import { BirthdayReminderOverrides, BirthdayReminderSettings } from './birthdays
 import { MirrorDefinition } from './mirror/definition.ts';
 import { EventNotificationSettings } from './notifications/settings.ts';
 import { Temporal } from './time/temporal.ts';
-import { canonicalZoneId, runtimeZoneId } from './time/zones.ts';
+import { canonicalZoneId, runtimeZoneId, zoneKey } from './time/zones.ts';
 import {
   DEVICE_ZONE,
   isDeviceZone,
@@ -189,12 +189,13 @@ const normalizeZones = (
     zones.every((zone): zone is string => typeof zone === 'string') &&
     !zones.includes(DEVICE_ZONE)
   ) {
-    const withEntry = withDeviceEntry(
-      { primary, zones },
-      options.deviceZone ?? Temporal.Now.timeZoneId(),
+    const deviceZone = options.deviceZone ?? Temporal.Now.timeZoneId();
+    const withEntry = withDeviceEntry({ primary, zones }, deviceZone);
+    // Every zone the file names is still there, or became the device entry.
+    const kept = zones.every(
+      (zone) => withEntry.zones.includes(zone) || zoneKey(zone) === zoneKey(deviceZone),
     );
-    // Swapping an id for the entry keeps the length; adding it grows it by one.
-    if (withEntry.zones.length >= zones.length) {
+    if (kept) {
       return withEntry;
     }
   }

@@ -25,8 +25,24 @@ tags:
     visible:
       id: 'time-zone-option-Africa-Abidjan'
     timeout: 5000
+# Typing after scrolling down shows the narrowed list from its top: a
+# FlatList keeps its offset when its data changes unless reset.
+- swipe:
+    from:
+      id: 'time-zone-option-Africa-Abidjan'
+    direction: UP
+- swipe:
+    from:
+      id: 'time-zone-picker'
+    direction: UP
 - tapOn:
     id: 'time-zone-search'
+- inputText: 'Europe'
+- extendedWaitUntil:
+    visible:
+      id: 'time-zone-option-Europe-Amsterdam'
+    timeout: 5000
+- eraseText
 - inputText: 'Honolulu'
 - tapOn:
     id: 'time-zone-option-Pacific-Honolulu'

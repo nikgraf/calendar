@@ -114,7 +114,7 @@ describe('parseSettingsDocument', () => {
 
   it('rejects a zone list that would lose a zone instead of trimming it', () => {
     // Full without the device's zone: adding the entry would drop Tokyo.
-    expect(String(parseZones('UTC', ['UTC', 'Asia/Kolkata', 'Asia/Tokyo']))).toContain('device');
+    expect(Exit.isFailure(parseZones('UTC', ['UTC', 'Asia/Kolkata', 'Asia/Tokyo']))).toBe(true);
     // Longer than the cap, the device entry included or not.
     expect(Exit.isFailure(parseZones('UTC', ['device', 'UTC', 'Asia/Kolkata', 'Asia/Tokyo']))).toBe(
       true,
