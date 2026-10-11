@@ -12,8 +12,9 @@ type Phase = 'after' | 'capturing' | 'off';
  * leaves this window out (captureHint.ts), a light scrim and a card say
  * so. Only the display shows them — the window itself is out of the
  * capture. The card stays a few seconds after the capture ends and offers
- * the 10-minute pause, so the next shot includes the calendar. The scrim
- * lets clicks through: a long recording never blocks the app.
+ * the 10-minute pause, so the next shot includes the calendar — and goes
+ * the moment the window is shown in captures again, in every window. The
+ * scrim lets clicks through: a long recording never blocks the app.
  */
 export function CaptureHint() {
   const [phase, setPhase] = useState<Phase>('off');
@@ -23,6 +24,20 @@ export function CaptureHint() {
       window.calendarBridge.onPrivacyCapture((capturing) =>
         setPhase((current) => (capturing ? 'capturing' : current === 'off' ? 'off' : 'after')),
       ),
+    [],
+  );
+
+  // A window shown in captures again (its pause, or one started from the
+  // other window's hint) drops the hint at once: lingering would say
+  // "hidden" about a window the capture now includes. privacy:changed
+  // arrives before the capture's end, so that end finds the hint off.
+  useEffect(
+    () =>
+      window.calendarBridge.onPrivacyChanged((state) => {
+        if (state.mode === 'visible' || state.visibleUntil !== undefined) {
+          setPhase('off');
+        }
+      }),
     [],
   );
 

@@ -285,6 +285,10 @@ const editorTimes = (): Promise<Array<string>> =>
     `[...document.querySelectorAll('input[type="time"]')].map((input) => input.value)`,
   );
 
+/** Whether a window's screen-capture hint is in `phase` (`off`, `capturing` or `after`). */
+const captureHintIs = (phase: string): string =>
+  `document.querySelector('[data-testid="capture-hint"]')?.dataset.phase === ${JSON.stringify(phase)}`;
+
 describe('calendar desktop e2e', () => {
   it('renders the seeded week: sidebar, calendars, events', async () => {
     const { cdp } = app;
@@ -1508,6 +1512,26 @@ describe('calendar desktop e2e', () => {
 
     // Back to the default for the remaining flows.
     await cdp.eval(`window.calendarBridge.privacySet('hidden')`);
+  });
+
+  it('keeps the capture hint true in every window, the one opened mid-capture included', async () => {
+    const { cdp } = app;
+    // Settings opened while a capture runs is left out of it too, and says so.
+    app.setCapturing(true);
+    await cdp.waitFor(captureHintIs('capturing'));
+    const settings = await app.openSettings('general');
+    await settings.waitFor(captureHintIs('capturing'));
+
+    // Showing the windows from one hint clears the other at once: it must
+    // not linger on "hidden" while the capture now includes it.
+    await cdp.clickTestId('capture-hint-show');
+    await cdp.waitFor(captureHintIs('off'));
+    await settings.waitFor(captureHintIs('off'), 2000);
+    app.setCapturing(false);
+
+    // Back to the default for the remaining flows.
+    await cdp.eval(`window.calendarBridge.privacySet('hidden')`);
+    await app.closeSettings();
   });
 
   it('opens settings as its own window: one at most, on the pane asked for', async () => {

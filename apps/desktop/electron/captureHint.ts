@@ -1,6 +1,6 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { app, BrowserWindow } from 'electron';
+import { app, BrowserWindow, ipcMain } from 'electron';
 import { callHelper, helperAvailable, onHelperEvent, onHelperExit } from './helperProcess.ts';
 import { isProtected, subscribePrivacy } from './privacy.ts';
 
@@ -9,8 +9,9 @@ import { isProtected, subscribePrivacy } from './privacy.ts';
  * shows whatever was behind them — noticed only afterwards. macOS tells an
  * app nothing when a capture starts, so the helper watches for the system
  * screenshot tool's process (`capture.watch`), and while a capture runs
- * every window hears `privacy:capture` and shows that it is left out. The
- * hint is drawn inside the protected window, so no capture ever holds it.
+ * every window hears `privacy:capture` and shows that it is left out — a
+ * window opened mid-capture asks `privacy:capture-state` first. The hint
+ * is drawn inside the protected window, so no capture ever holds it.
  *
  * The watch runs only while it can matter: privacy on and a window on
  * screen. CALENDAR_CAPTURE_WATCH=off (the e2e default) never starts it;
@@ -108,6 +109,8 @@ const fixtureSource = (path: string): CaptureSource => {
 
 /** Wire once from main, before any window exists. */
 export const startCaptureHint = (userDataDir: string): void => {
+  // Answered with or without a source: a page asks on every subscribe.
+  ipcMain.handle('privacy:capture-state', () => capturing);
   const mode = process.env['CALENDAR_CAPTURE_WATCH'];
   source =
     mode === 'off'

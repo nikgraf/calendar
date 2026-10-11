@@ -44,10 +44,22 @@ contextBridge.exposeInMainWorld('calendarBridge', {
     take();
     return () => ipcRenderer.off('notifications:open', take);
   },
-  /** True while a screen capture runs that leaves the windows out (captureHint.ts). */
+  /**
+   * True while a screen capture runs that leaves the windows out
+   * (captureHint.ts): the state at subscription — this window may open
+   * mid-capture — then every change.
+   */
   onPrivacyCapture: (listener: (capturing: boolean) => void) => {
     const wrapped = (_event: unknown, capturing: boolean) => listener(capturing === true);
     ipcRenderer.on('privacy:capture', wrapped);
+    void ipcRenderer.invoke('privacy:capture-state').then(
+      (capturing: unknown) => {
+        if (capturing === true) {
+          listener(true);
+        }
+      },
+      () => undefined,
+    );
     return () => ipcRenderer.off('privacy:capture', wrapped);
   },
   onPrivacyChanged: (listener: (state: unknown) => void) => {
