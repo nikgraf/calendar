@@ -8,7 +8,7 @@ import {
   type useMoveConfirmation,
   useTimeZones,
 } from '@calendar/app-state';
-import { type CalendarInfo, draftZoneRange, type RsvpResponse } from '@calendar/core';
+import { type CalendarInfo, draftZoneRanges, type RsvpResponse } from '@calendar/core';
 import { InviteeCombobox } from './InviteeCombobox.tsx';
 import { Button } from '../ui/Button.tsx';
 import { FIELD_CLASS as field, LABEL_CLASS } from '../ui/fieldStyles.ts';
@@ -17,6 +17,7 @@ import { LocationCombobox } from './LocationCombobox.tsx';
 import { LocationMap } from './LocationMap.tsx';
 import { RemindersFields } from './RemindersFields.tsx';
 import { RepeatRuleFields } from './RepeatRuleFields.tsx';
+import { ZoneLines } from './ZoneLines.tsx';
 
 /**
  * The event half of EventEditor (mode === 'event'), extracted like the iOS
@@ -80,7 +81,7 @@ export function EventEditorForm({
     accounts.find((account) => account.id === accountId)?.email ?? accountId;
   const readOnlyGuests = !canInvite && (existing?.attendees ?? []).length > 0;
   // The draft's times in the other zones; null for all-day or before the times build.
-  const zoneLine = draftZoneRange(
+  const zoneLines = draftZoneRanges(
     { date, endTime, isAllDay, startTime },
     model.timeZone,
     secondaryZones,
@@ -188,11 +189,7 @@ export function EventEditorForm({
             </div>
           )}
         </div>
-        {zoneLine ? (
-          <p className="-mt-2 text-xs text-ink-secondary" data-testid="event-secondary-times">
-            {zoneLine}
-          </p>
-        ) : null}
+        {zoneLines ? <ZoneLines className="-mt-2" lines={zoneLines} /> : null}
         {readOnly ? null : <FindTimeFields model={model} />}
         <LocationCombobox model={model} />
         <LocationMap place={model} />

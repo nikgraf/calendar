@@ -1,4 +1,5 @@
-import { Temporal } from '@calendar/core';
+import { Temporal, zoneCity, zoneSlug } from '@calendar/core';
+import { zoneInk } from './zoneInk.ts';
 import type { CSSProperties } from 'react';
 
 /**
@@ -14,6 +15,7 @@ export function DayHeaders({
   strip,
   stripStyle,
   today,
+  zones,
 }: {
   /** The hour gutter's width class, so the header's spacer matches it. */
   gutterClassName: string;
@@ -21,13 +23,31 @@ export function DayHeaders({
   strip: ReadonlyArray<Temporal.PlainDate>;
   stripStyle: CSSProperties;
   today: Temporal.PlainDate;
+  /** Primary first, then the others; empty with one zone. Their cities head the gutter. */
+  zones: ReadonlyArray<string>;
 }) {
   return (
     <div
       className="flex shrink-0 border-b border-hairline bg-surface"
       style={{ paddingRight: scrollbarWidth }}
     >
-      <div className={`shrink-0 ${gutterClassName}`} />
+      {/* Which zone each gutter line is: the cities in the lines' order and
+          shades, the primary on top. */}
+      <div
+        className={`flex shrink-0 flex-col items-end justify-center pr-2 pl-1 text-[10px] leading-3 ${gutterClassName}`}
+        data-testid={zones.length > 0 ? 'zone-cities' : undefined}
+      >
+        {zones.map((zone, index) => (
+          <span
+            className={`max-w-full truncate ${index === 0 ? '' : 'text-[9px]'} ${zoneInk(index)}`}
+            data-testid={`zone-city-${zoneSlug(zone)}`}
+            key={zone}
+            title={zoneCity(zone)}
+          >
+            {zoneCity(zone)}
+          </span>
+        ))}
+      </div>
       <div className="min-w-0 flex-1 overflow-hidden">
         <div
           className="grid"

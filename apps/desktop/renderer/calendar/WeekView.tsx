@@ -24,6 +24,7 @@ import {
   type TimedBox,
   timedTaskSlot,
   utcMsToPlainDate,
+  zoneSlug,
 } from '@calendar/core';
 import { type RefObject, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { AllDayLane } from './AllDayLane.tsx';
@@ -35,6 +36,7 @@ import { TimedTaskBlock } from './TimedTaskBlock.tsx';
 import { useDropTarget, type useEventDrag } from './useEventDrag.ts';
 import { useSlotDrag } from './useSlotDrag.ts';
 import { useWheelPan } from './useWheelPan.ts';
+import { zoneInk } from './zoneInk.ts';
 
 export const HOUR_HEIGHT = 48;
 /**
@@ -320,9 +322,10 @@ export function WeekView({
   const eventsById = new Map(
     timedEvents.map((event) => [`${event.calendarId}:${event.id}`, event]),
   );
-  // The gutter widens with the zones it lists; the header and the all-day
-  // lane carry the same spacer so the three stay column-aligned.
-  const gutterClassName = ['w-16', 'w-24', 'w-32'][Math.min(secondaryZones.length, 2)]!;
+  // The zones stack under each hour, so the gutter only widens enough for
+  // the city names over it; the header and the all-day lane carry the same
+  // spacer so the three stay column-aligned.
+  const gutterClassName = secondaryZones.length === 0 ? 'w-16' : 'w-20';
   // One label per hour for the first *visible* day (not the strip's, which
   // starts PAN_BUFFER_DAYS earlier and can sit on the other side of a DST
   // change): a change inside a multi-day strip can still put another
@@ -345,6 +348,7 @@ export function WeekView({
         strip={strip}
         stripStyle={stripStyle}
         today={today}
+        zones={secondaryZones.length === 0 ? [] : [timeZone, ...secondaryZones]}
       />
 
       <AllDayLane
@@ -380,23 +384,33 @@ export function WeekView({
         <div className="flex" style={{ height: 24 * HOUR_HEIGHT }}>
           {/* Hour gutter */}
           <div className={`relative shrink-0 ${gutterClassName}`}>
+            {/* The primary hour sits on its line (half its 12 px line up);
+                the other zones hang below it, one line each. */}
             {Array.from({ length: 23 }, (_, index) => (
               <span
-                className="absolute right-2 flex -translate-y-1/2 flex-col items-end text-[10px] leading-3 whitespace-nowrap text-ink-secondary"
+                className="absolute right-2 flex -translate-y-1.5 flex-col items-end text-[10px] leading-3 whitespace-nowrap"
                 key={index + 1}
                 style={{ top: (index + 1) * HOUR_HEIGHT }}
               >
-                <span>
+                <span className={secondaryLabels ? zoneInk(0) : 'text-ink-secondary'}>
                   {new Temporal.PlainTime(index + 1).toLocaleString('en-US', {
                     hour: 'numeric',
                   })}
                 </span>
                 {secondaryLabels ? (
                   <span
-                    className="text-[9px] text-ink-secondary/70"
+                    className="flex flex-col items-end text-[9px]"
                     data-testid={`hour-secondary-${index + 1}`}
                   >
-                    {secondaryLabels[index + 1]}
+                    {secondaryLabels[index + 1]!.map((label, zoneIndex) => (
+                      <span
+                        className={zoneInk(zoneIndex + 1)}
+                        data-testid={`hour-secondary-${index + 1}-${zoneSlug(secondaryZones[zoneIndex]!)}`}
+                        key={secondaryZones[zoneIndex]}
+                      >
+                        {label}
+                      </span>
+                    ))}
                   </span>
                 ) : null}
               </span>

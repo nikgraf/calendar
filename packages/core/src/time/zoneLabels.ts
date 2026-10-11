@@ -29,13 +29,13 @@ export const zoneHourLabel = (
       .toPlainTime(),
   );
 
-/** The gutter's second line: every secondary zone's hour, in settings order, '·'-joined. */
+/** The gutter's lines under each hour: every secondary zone's hour, in settings order. */
 export const secondaryHourLabels = (
   date: Temporal.PlainDate,
   hour: number,
   primaryZone: string,
   zones: ReadonlyArray<string>,
-): string => zones.map((zone) => zoneHourLabel(date, hour, primaryZone, zone)).join(' · ');
+): ReadonlyArray<string> => zones.map((zone) => zoneHourLabel(date, hour, primaryZone, zone));
 
 const zonedTime = (epochMs: number, zone: string): Temporal.PlainTime =>
   Temporal.Instant.fromEpochMilliseconds(epochMs).toZonedDateTimeISO(zone).toPlainTime();
@@ -59,31 +59,37 @@ export const formatZoneTimeRange = (startUtc: number, endUtc: number, zone: stri
     : `${minutes(start)} ${period(start)} – ${minutes(end)} ${period(end)}`;
 };
 
-/** '2:00 – 3:00 PM Los Angeles · 11:00 PM – 12:00 AM Tokyo' — the chip and editor line. */
+/** ['2:00 – 3:00 PM Los Angeles', '11:00 PM – 12:00 AM Tokyo']: one line per zone, in settings order. */
+export const zoneRanges = (
+  startUtc: number,
+  endUtc: number,
+  zones: ReadonlyArray<string>,
+): ReadonlyArray<string> =>
+  zones.map((zone) => `${formatZoneTimeRange(startUtc, endUtc, zone)} ${zoneCity(zone)}`);
+
+/** '2:00 – 3:00 PM Los Angeles · 11:00 PM – 12:00 AM Tokyo' — an event block's one line. */
 export const formatZoneRange = (
   startUtc: number,
   endUtc: number,
   zones: ReadonlyArray<string>,
-): string =>
-  zones
-    .map((zone) => `${formatZoneTimeRange(startUtc, endUtc, zone)} ${zoneCity(zone)}`)
-    .join(' · ');
+): string => zoneRanges(startUtc, endUtc, zones).join(' · ');
 
 /**
- * The editor's helper line for a draft, or null when there is nothing to
- * show: all-day, no secondary zones, or a draft that does not build yet.
+ * The detail view's and the editor's lines for a draft, one per secondary
+ * zone, or null when there is nothing to show: all-day, no secondary
+ * zones, or a draft that does not build yet.
  */
-export const draftZoneRange = (
+export const draftZoneRanges = (
   fields: EditorTimeFields,
   primaryZone: string,
   zones: ReadonlyArray<string>,
-): string | null => {
+): ReadonlyArray<string> | null => {
   if (fields.isAllDay || zones.length === 0 || !fields.date || !fields.startTime) {
     return null;
   }
   try {
     const times = buildEventTimes(fields, primaryZone);
-    return formatZoneRange(times.startUtc, times.endUtc, zones);
+    return zoneRanges(times.startUtc, times.endUtc, zones);
   } catch {
     return null;
   }

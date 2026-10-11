@@ -43,6 +43,7 @@ export const THEMES = {
     'surface-subtle': '#211e26',
     text: '#f5f0f5',
     'text-secondary': '#bbb0c1',
+    'text-tertiary': '#8a8290',
     warning: '#f1d38e',
   },
   light: {
@@ -80,6 +81,7 @@ export const THEMES = {
     'surface-subtle': '#fcfbf9',
     text: '#302a34',
     'text-secondary': '#706875',
+    'text-tertiary': '#8d8691',
     warning: '#76520c',
   },
 } as const;

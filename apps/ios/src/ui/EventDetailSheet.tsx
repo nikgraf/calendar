@@ -6,7 +6,7 @@ import {
 } from '@calendar/app-state';
 import {
   type CalendarInfo,
-  draftZoneRange,
+  draftZoneRanges,
   type EventRecord,
   formatPlainTime,
   type RsvpResponse,
@@ -16,6 +16,7 @@ import {
 import { Linking, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { confirmEditorRequest } from './EventEditSheet.tsx';
 import { BOX_FONT_SCALE, type ThemeColors, useEventTint, useStyles } from './theme.ts';
+import { ZoneLines } from './ZoneLines.tsx';
 
 const STATUS_LABEL: Record<string, string> = {
   accepted: 'accepted',
@@ -85,7 +86,11 @@ export function EventDetailSheet({
     month: 'long',
     weekday: 'long',
   });
-  const zoneLine = draftZoneRange({ date, endTime, isAllDay, startTime }, timeZone, secondaryZones);
+  const zoneLines = draftZoneRanges(
+    { date, endTime, isAllDay, startTime },
+    timeZone,
+    secondaryZones,
+  );
 
   return (
     <Modal animationType="slide" onRequestClose={onClose} presentationStyle="pageSheet" visible>
@@ -121,7 +126,7 @@ export function EventDetailSheet({
             <Text style={styles.secondaryLine}>
               {isAllDay ? 'All day' : `${formatPlainTime(startTime)} – ${formatPlainTime(endTime)}`}
             </Text>
-            {zoneLine ? <Text style={styles.secondaryLine}>{zoneLine}</Text> : null}
+            {zoneLines ? <ZoneLines lines={zoneLines} textStyle={styles.secondaryLine} /> : null}
             {isRecurring ? <Text style={styles.secondaryLine}>Repeating event</Text> : null}
           </View>
           {readOnly ? (

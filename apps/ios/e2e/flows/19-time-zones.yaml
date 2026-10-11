@@ -69,18 +69,25 @@ tags:
       id: 'time-zone-row-Asia-Kolkata'
     timeout: 5000
 - runFlow: ../common/close-settings.yaml
-# The gutter's second line under noon (in the primary zone, Honolulu)
-# names the device zone's hour and Kolkata's 3:30 AM. The localized
-# time's spacing (a narrow no-break space before AM) is not pinned, as in
-# flows 09 and 17.
+# The cities head the gutter, the primary (Honolulu) first.
+- assertVisible:
+    id: 'zone-city-Pacific-Honolulu'
+    text: 'Honolulu'
+- assertVisible:
+    id: 'zone-city-Asia-Kolkata'
+    text: 'Kolkata'
+# Under noon in the primary zone each other zone has a line of its own:
+# the device zone's hour and Kolkata's 3:30 AM. The localized time's
+# spacing (a narrow no-break space before AM) is not pinned, as in flows
+# 09 and 17.
 - scrollUntilVisible:
     element:
       id: 'hour-secondary-12'
     direction: DOWN
     timeout: 10000
 - assertVisible:
-    id: 'hour-secondary-12'
-    text: '.*3:30.AM'
+    id: 'hour-secondary-12-Asia-Kolkata'
+    text: '3:30.AM'
 # Reopen: the choice was stored (device-local SQLite), not just React
 # state. Then leave the settings as found for the next flow: removing the
 # primary promotes the device zone back (it is never removed itself). A
@@ -116,3 +123,5 @@ tags:
 - runFlow: ../common/close-settings.yaml
 - assertNotVisible:
     id: 'hour-secondary-12'
+- assertNotVisible:
+    id: 'zone-cities'

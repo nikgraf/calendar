@@ -158,6 +158,11 @@ function contrastReport(tokens) {
     for (const state of ['success', 'warning', 'danger', 'info']) {
       pairs.push([`on-${state}`, state, 4.5]);
     }
+    // The third zone's gutter labels: supplementary text a step under
+    // text-secondary, held to the non-text bar so it stays legible.
+    for (const background of ['canvas', 'surface', 'surface-subtle', 'surface-raised', 'fill']) {
+      pairs.push(['text-tertiary', background, 3]);
+    }
     for (const foreground of ['focus', 'border-strong']) {
       for (const background of ['surface', 'canvas', 'surface-raised']) {
         pairs.push([foreground, background, 3]);
