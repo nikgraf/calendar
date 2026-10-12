@@ -1,5 +1,5 @@
 appId: com.solunivo.app.dev
-name: A shared text becomes events to review; a row is added through the editor
+name: A shared text becomes one thread of drafts; the pager steps through them, Add all writes them
 tags:
   - ci
 ---
@@ -10,8 +10,10 @@ tags:
 # one event per line, days relative to today: `Standup | +0 | 09:00-10:00 |
 # Room 4` and `Planning | +1 | 14:00-15:00`, URL-encoded. A bundle without
 # the fixture ignores the link, and the flow passes without asserting. The
-# saved event is an hour long on purpose: a half-hour block's title text
-# is taller than the block, and XCTest taps the text's centre, below it.
+# events open the editor as one thread of drafts, as on the desktop — no
+# review list. The saved events are an hour long on purpose: a half-hour
+# block's title text is taller than the block, and XCTest taps the text's
+# centre, below it.
 - runFlow: ../common/launch.yaml
 - tapOn: 'Today'
 - runFlow:
@@ -19,46 +21,79 @@ tags:
     env:
       VIEW: 'Day'
 - openLink: 'solunivo-dev://capture-fixture?text=Standup%20%7C%20%2B0%20%7C%2009%3A00-10%3A00%20%7C%20Room%204%0APlanning%20%7C%20%2B1%20%7C%2014%3A00-15%3A00'
-- runFlow: ../common/confirm-open.yaml
+# The "Open in Solunivo Dev?" alert, confirmed once — inline, not through
+# confirm-open.yaml, whose clean-up taps every "Cancel" on screen and the
+# editor that opens has one: a leftover alert is cancelled only while an
+# "Open" (an alert) is still up.
+- extendedWaitUntil:
+    visible: 'Open'
+    timeout: 15000
+    optional: true
+- runFlow:
+    when:
+      visible: 'Open'
+    commands:
+      - tapOn: 'Open'
+- repeat:
+    times: 5
+    while:
+      visible: 'Open'
+    commands:
+      - tapOn: 'Cancel'
 - extendedWaitUntil:
     visible:
-      id: 'capture-sheet'
+      id: 'draft-position'
     timeout: 30000
     optional: true
 - runFlow:
     when:
       visible:
-        id: 'capture-sheet'
+        id: 'draft-position'
     commands:
-      - assertVisible: '2 events found'
-      # A row reads as one label: title, when (and where), status.
-      - assertVisible: 'Standup, .*Room 4, Open'
+      - assertVisible: 'New Event'
+      - waitForAnimationToEnd:
+          timeout: 5000
+      - assertVisible:
+          id: 'draft-position'
+          text: '1 of 2'
+      - assertVisible:
+          id: 'event-title'
+          text: 'Standup'
+      - assertVisible:
+          id: 'draft-turn-summary'
+          text: '2 drafts'
+      # The pager steps through the drafts; the form follows.
       - tapOn:
-          id: 'capture-row-0'
+          id: 'draft-next'
       - extendedWaitUntil:
-          visible: 'New Event'
+          visible:
+            id: 'event-title'
+            text: 'Planning'
           timeout: 10000
-      # Prefilled, not merely opened.
-      - assertVisible: 'Standup'
-      # Saving needs a writable calendar: the fixture Google account (CI).
+      - assertVisible:
+          id: 'draft-position'
+          text: '2 of 2'
+      - tapOn:
+          id: 'draft-prev'
+      - extendedWaitUntil:
+          visible:
+            id: 'event-title'
+            text: 'Standup'
+          timeout: 10000
+      # Writing needs a writable calendar: the fixture Google account (CI).
       - runFlow:
           when:
             visible:
               id: 'calendar-option'
           commands:
             - tapOn:
-                id: 'event-save'
+                id: 'draft-add-all'
             - extendedWaitUntil:
                 notVisible: 'New Event'
                 timeout: 20000
-            # Back on the list: the saved row is marked, the other still open.
-            - assertVisible: 'Standup, .*, Added'
-            - assertVisible: 'Planning, .*, Open'
-            - tapOn:
-                id: 'capture-close'
             - assertVisible: 'Today'
-            # On today's timeline, too; then clean up. The sheet is still
-            # sliding away when the block first reports visible.
+            # Both on the calendar; then clean up. The sheet is still
+            # sliding away when a block first reports visible.
             - extendedWaitUntil:
                 visible: 'Standup.*'
                 timeout: 10000
@@ -78,11 +113,28 @@ tags:
             - extendedWaitUntil:
                 notVisible: 'Standup.*'
                 timeout: 20000
+            - tapOn:
+                id: 'nav-next'
+            - extendedWaitUntil:
+                visible: 'Planning.*'
+                timeout: 10000
+            - waitForAnimationToEnd:
+                timeout: 5000
+            - tapOn: 'Planning.*'
+            - runFlow: ../common/open-event-editor.yaml
+            - scrollUntilVisible:
+                element:
+                  id: 'event-delete'
+                direction: DOWN
+            - tapOn:
+                id: 'event-delete'
+            - tapOn: 'Delete'
+            - extendedWaitUntil:
+                notVisible: 'Planning.*'
+                timeout: 20000
       - runFlow:
           when:
             visible: 'New Event'
           commands:
             - tapOn: 'Cancel'
-            - tapOn:
-                id: 'capture-close'
             - assertVisible: 'Today'

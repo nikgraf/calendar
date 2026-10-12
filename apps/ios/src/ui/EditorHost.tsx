@@ -33,7 +33,6 @@ import { fixtureShareFromUrl, takeIncomingShare } from '../incomingShare.ts';
 import { subscribeNotificationTaps } from '../notifications.ts';
 import { languageModel, modelFixture, textRecognizer } from '../model.ts';
 import { CaptureBanner } from './CaptureBanner.tsx';
-import { CaptureSheet } from './CaptureSheet.tsx';
 import { EventDetailSheet } from './EventDetailSheet.tsx';
 import { EventEditSheet, type EditSeed } from './EventEditSheet.tsx';
 
@@ -55,10 +54,7 @@ export interface NewItemRequest {
 export interface EditorHost {
   readonly closeAll: () => void;
   /** The event editor: a slot, a prefill, an existing event (a to-do `initialKind` converts). */
-  readonly editEvent: (
-    seed: EditSeed,
-    options?: { readonly captureRow?: string; readonly initialKind?: ItemKind },
-  ) => void;
+  readonly editEvent: (seed: EditSeed, options?: { readonly initialKind?: ItemKind }) => void;
   /** The task editor for an existing task. */
   readonly editTask: (task: TaskRecord) => void;
   readonly openBirthday: (birthday: BirthdayOccurrence) => void;
@@ -71,16 +67,16 @@ export interface EditorHost {
 /**
  * One sheet at a time, in a small set of states. The detail sheet hands
  * over to the editor by replacing itself: two sibling Modals never
- * present together on iOS, and a sheet over a sheet only happens where
- * the capture list hosts the editor as its child.
+ * present together on iOS. An editor carries its opening's number: each
+ * opening mounts a fresh editor (its forms and thread seed once).
  */
 type Sheet =
   | { readonly kind: 'none' }
   | { readonly event: EventRecord; readonly kind: 'detail' }
   | {
-      readonly captureRow?: string | undefined;
       readonly initialKind?: ItemKind | undefined;
       readonly kind: 'edit';
+      readonly opening: number;
       readonly seed: EditSeed;
       readonly task?: TaskRecord | undefined;
       readonly taskSeed?: Pick<TaskEditorSeed, 'dated' | 'listKey'> | undefined;
@@ -88,6 +84,17 @@ type Sheet =
   | { readonly birthday: BirthdayOccurrence; readonly kind: 'birthday' };
 
 const NONE: Sheet = { kind: 'none' };
+
+let openings = 0;
+const nextOpening = (): number => {
+  openings += 1;
+  return openings;
+};
+
+/** The utterance a capture's thread starts with, as the desktop's paste does. */
+const FROM_SHARE = 'From your share';
+const TRUNCATED_NOTE =
+  'The text was long, so only its beginning was read — later events may be missing.';
 
 const EditorHostContext = createContext<EditorHost | null>(null);
 
@@ -101,10 +108,11 @@ export const useEditorHost = (): EditorHost => {
 
 /**
  * Owns every sheet of the app — the event detail, the editor (with the
- * quick-add field on top of a new item), the birthday detail, the capture
- * review — and the capture model behind the share sheet and deep links,
- * so the Calendar and Tasks tabs open the same sheets without owning
- * them. Mounted once, under the providers.
+ * quick-add field and the draft thread on top of a new item), the
+ * birthday detail — and the capture model behind the share sheet and deep
+ * links, whose events open the editor as one thread of drafts, so the
+ * Calendar and Tasks tabs open the same sheets without owning them.
+ * Mounted once, under the providers.
  */
 export function EditorHostProvider({ children }: { children: ReactNode }) {
   const zones = useTimeZones();
@@ -113,17 +121,32 @@ export function EditorHostProvider({ children }: { children: ReactNode }) {
   const calendars = useCalendars();
   const taskLists = useTaskLists();
 
-  // A parsed prefill (quick-add, or a single captured event) opens the
-  // editor: the user reviews it before anything is written.
-  const openPrefill = (prefill: EventEditorPrefill, captureRow?: string) =>
+  // What a capture found opens the editor as one thread of drafts on the
+  // first one's day, as on the desktop: each is seen in the editor before
+  // anything is written; the pager steps through them, "Add all" writes
+  // them.
+  const openThread = (prefills: ReadonlyArray<EventEditorPrefill>, note?: string) => {
+    const first = prefills[0];
+    if (!first) {
+      return;
+    }
     setSheet({
-      captureRow,
       kind: 'edit',
-      seed: { initialDate: Temporal.PlainDate.from(prefill.date), prefill },
+      opening: nextOpening(),
+      seed: {
+        initialDate: Temporal.PlainDate.from(first.date),
+        thread: {
+          items: prefills.map((prefill) => ({ kind: 'event', prefill })),
+          ...(note ? { note } : {}),
+          utterance: FROM_SHARE,
+        },
+      },
     });
+  };
   const capture = useCaptureModel({
     model: languageModel,
-    onSingle: openPrefill,
+    onMany: (prefills, truncated) => openThread(prefills, truncated ? TRUNCATED_NOTE : undefined),
+    onSingle: (prefill) => openThread([prefill]),
     recognizer: textRecognizer,
     timeZone,
   });
@@ -198,13 +221,18 @@ export function EditorHostProvider({ children }: { children: ReactNode }) {
     closeAll: () => setSheet(NONE),
     editEvent: (seed, options) =>
       setSheet({
-        captureRow: options?.captureRow,
         initialKind: options?.initialKind,
         kind: 'edit',
+        opening: nextOpening(),
         seed,
       }),
     editTask: (task) =>
-      setSheet({ kind: 'edit', seed: { initialDate: Temporal.Now.plainDateISO(timeZone) }, task }),
+      setSheet({
+        kind: 'edit',
+        opening: nextOpening(),
+        seed: { initialDate: Temporal.Now.plainDateISO(timeZone) },
+        task,
+      }),
     openBirthday: (birthday) => setSheet({ birthday, kind: 'birthday' }),
     openEvent: (event) => setSheet({ event, kind: 'detail' }),
     openNew: ({ dated, focused, kind, listKey }) => {
@@ -214,6 +242,7 @@ export function EditorHostProvider({ children }: { children: ReactNode }) {
       setSheet({
         initialKind: resolved,
         kind: 'edit',
+        opening: nextOpening(),
         seed: { initialDate: focused },
         taskSeed: resolved === 'event' ? undefined : { dated, listKey },
       });
@@ -221,22 +250,15 @@ export function EditorHostProvider({ children }: { children: ReactNode }) {
   };
   const close = host.closeAll;
 
-  // Keyed + conditionally mounted: a sheet seeds its form fields from its
-  // seed in useState initializers, which only run on mount.
+  // Keyed per opening + conditionally mounted: a sheet seeds its form
+  // fields (and its thread) from its seed once, on mount.
   const editSheet =
     sheet.kind === 'edit' ? (
       <EventEditSheet
         calendars={calendars}
         initialKind={sheet.initialKind}
-        key={
-          sheet.task
-            ? `task:${sheet.task.id}`
-            : `event:${sheet.seed.event?.id ?? `new:${sheet.seed.initialDate.toString()}:${sheet.seed.initialTimes?.startTime ?? ''}`}`
-        }
+        key={`edit:${String(sheet.opening)}`}
         onClose={close}
-        onSaved={
-          sheet.captureRow === undefined ? undefined : () => capture.markAdded(sheet.captureRow!)
-        }
         seed={sheet.seed}
         task={sheet.task}
         taskLists={taskLists}
@@ -268,6 +290,7 @@ export function EditorHostProvider({ children }: { children: ReactNode }) {
             setSheet({
               initialKind: defaultTodoKind(taskLists),
               kind: 'edit',
+              opening: nextOpening(),
               seed: {
                 event: sheet.event,
                 initialDate: Temporal.Now.plainDateISO(timeZone),
@@ -278,24 +301,14 @@ export function EditorHostProvider({ children }: { children: ReactNode }) {
           onEdit={() =>
             setSheet({
               kind: 'edit',
+              opening: nextOpening(),
               seed: { event: sheet.event, initialDate: Temporal.Now.plainDateISO(timeZone) },
             })
           }
           timeZone={timeZone}
         />
       ) : null}
-      {capture.state.kind === 'review' ? (
-        <CaptureSheet
-          onClose={capture.dismiss}
-          onOpenRow={(row) => openPrefill(row.prefill, row.id)}
-          rows={capture.state.rows}
-          truncated={capture.state.truncated}
-        >
-          {editSheet}
-        </CaptureSheet>
-      ) : (
-        editSheet
-      )}
+      {editSheet}
       <CaptureBanner onDismiss={capture.dismiss} state={capture.state} />
     </EditorHostContext.Provider>
   );
