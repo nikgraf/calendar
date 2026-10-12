@@ -84,6 +84,11 @@ export const queryTerms = (query: SearchQuery): ReadonlyArray<string> =>
 export const isBlankSearchQuery = (query: SearchQuery): boolean =>
   queryTerms(query).length === 0 && !hasSearchFilters(query);
 
+/** A query of the words typed, kept as written (the labels show them); matching folds them. */
+export const searchQueryFromText = (text: string): SearchQuery => ({
+  terms: text.split(/\s+/u).filter((term) => term !== ''),
+});
+
 /**
  * One string per distinct search: the cleaned query as JSON, its keys in
  * order (`cleanSearchQuery` writes them sorted) and its key lists sorted —

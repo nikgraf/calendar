@@ -12,6 +12,7 @@ import {
   REPEAT_MARKER,
   SEARCH_WINDOW_YEARS,
   searchEventWhen,
+  searchQueryFromText,
   searchTaskWhen,
   type TaskListInfo,
   type TaskRecord,
@@ -51,7 +52,7 @@ export function SearchScreen() {
   const zones = useTimeZones();
   const timeZone = zones.loaded ? zones.primary : Temporal.Now.timeZoneId();
   const [text, setText] = useState('');
-  const search = useSearch(text, timeZone);
+  const search = useSearch(searchQueryFromText(text), timeZone);
   const { colors } = useTheme();
   return (
     <>
@@ -137,7 +138,7 @@ function SearchResultsList({
       </View>
     ) : (
       <View style={styles.note} testID="search-empty">
-        <Text style={styles.noteText}>Nothing matches “{search.query}”.</Text>
+        <Text style={styles.noteText}>Nothing matches “{search.query.terms.join(' ')}”.</Text>
         <Text style={styles.noteSmall}>{WINDOW_NOTE}</Text>
       </View>
     );

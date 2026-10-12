@@ -1,5 +1,6 @@
 import {
   type BirthdayOccurrence,
+  EMPTY_SEARCH_QUERY,
   eventIdentity,
   type EventRecord,
   findSameEvent,
@@ -7,6 +8,7 @@ import {
   type NotificationTarget,
   PAN_BUFFER_DAYS,
   parseNotificationTarget,
+  searchQueryFromText,
   type TaskRecord,
   Temporal,
   toZonedDateTime,
@@ -204,7 +206,10 @@ function CalendarBody({
   // once on the way back. Closed, it searches nothing; the text is kept
   // for the next ⌘F.
   const [searchText, setSearchText] = useState('');
-  const search = useSearch(searching ? searchText : '', timeZone);
+  const search = useSearch(
+    searching ? searchQueryFromText(searchText) : EMPTY_SEARCH_QUERY,
+    timeZone,
+  );
   const [searchFocus, setSearchFocus] = useState(0);
   const searchScroll = useRef(0);
   const readSearchScroll = useCallback(() => searchScroll.current, []);

@@ -12,6 +12,7 @@ import { PlaceSuggestion } from './geo/location.ts';
 import { MirrorCalendarRef, MirrorDefinition } from './mirror/definition.ts';
 import { MirrorPreview, MirrorView } from './mirror/status.ts';
 import { EventNotificationSettings } from './notifications/settings.ts';
+import { SearchQuery } from './search/query.ts';
 import { SearchResults } from './search/results.ts';
 import { SettingsDocument, SettingsImportSummary } from './settingsDocument.ts';
 import { AccountSyncStatus } from './syncStatus.ts';
@@ -618,17 +619,19 @@ export class AppBackendRpcs extends RpcGroup.make(
     },
   }),
   /**
-   * Events and tasks holding every word of `query`, case and accents
-   * ignored (`searchTerms`), read the way the views read them: visible
+   * Events and tasks answering `query`: every word in their text, case and
+   * accents ignored (`queryTerms`), and every filter set (dates, place,
+   * people, calendars and lists, kind, all-day — `eventMatchesQuery`,
+   * `taskMatchesQuery`), read the way the views read them: visible
    * calendars and lists only, no mirror copies, no cancelled events, Apple
    * events through EventKit. Events are looked for SEARCH_WINDOW_YEARS
-   * either side of today in `timeZone` (the primary zone), a series
-   * collapsed into one hit (`buildSearchResults`). A blank query finds
-   * nothing.
+   * either side of today in `timeZone` (the primary zone), or the query's
+   * days inside that window, a series collapsed into one hit
+   * (`buildSearchResults`). A blank query finds nothing.
    */
   Rpc.make('search', {
     error: BackendError,
-    payload: { query: Schema.String, timeZone: Schema.String },
+    payload: { query: SearchQuery, timeZone: Schema.String },
     success: SearchResults,
   }),
   /** Invitee typeahead: device + cached Google contacts, ranked, deduped by email. */

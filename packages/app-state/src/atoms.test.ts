@@ -5,6 +5,7 @@ import {
   EMPTY_SEARCH_RESULTS,
   type EventRecord,
   GeoLocation,
+  type SearchQuery,
 } from '@calendar/core';
 import { ACCOUNTS_KEY } from '@calendar/db/keys';
 import { Effect } from 'effect';
@@ -37,7 +38,7 @@ const makeStubClient = () => {
     events: 0,
     places: [] as Array<string>,
     resolved: [] as Array<string>,
-    searches: [] as Array<{ readonly query: string; readonly timeZone: string }>,
+    searches: [] as Array<{ readonly query: SearchQuery; readonly timeZone: string }>,
     setVisible: 0,
     snapshots: [] as Array<unknown>,
     timeZones: 0,
@@ -370,15 +371,19 @@ describe('search atoms', () => {
     const { calls, client } = makeStubClient();
     const atoms = makeBackendAtoms(client);
     const registry = AtomRegistry.make();
-    const blank = atoms.search(searchKey('  ', 'Europe/Vienna'));
-    const lunch = atoms.search(searchKey('lunch | café', 'Europe/Vienna'));
-    expect(atoms.search(searchKey('lunch | café', 'Europe/Vienna'))).toBe(lunch);
+    const blank = atoms.search(searchKey({ terms: ['  '] }, 'Europe/Vienna'));
+    const lunch = atoms.search(searchKey({ location: 'café', terms: ['lunch'] }, 'Europe/Vienna'));
+    expect(atoms.search(searchKey({ location: 'café', terms: ['lunch'] }, 'Europe/Vienna'))).toBe(
+      lunch,
+    );
     const unmounts = [registry.mount(blank), registry.mount(lunch)];
     expect(
       AsyncResult.getOrThrow(await waitFor(() => registry.get(blank), AsyncResult.isSuccess)),
     ).toEqual(EMPTY_SEARCH_RESULTS);
     await waitFor(() => registry.get(lunch), AsyncResult.isSuccess);
-    expect(calls.searches).toEqual([{ query: 'lunch | café', timeZone: 'Europe/Vienna' }]);
+    expect(calls.searches).toEqual([
+      { query: { location: 'café', terms: ['lunch'] }, timeZone: 'Europe/Vienna' },
+    ]);
     for (const unmount of unmounts) {
       unmount();
     }
@@ -389,7 +394,7 @@ describe('search atoms', () => {
     const { client } = makeStubClient();
     const atoms = makeBackendAtoms(client);
     const registry = AtomRegistry.make();
-    const blank = atoms.search(searchKey('', 'UTC'));
+    const blank = atoms.search(searchKey({ terms: [] }, 'UTC'));
     const seen: Array<unknown> = [];
     const unsubscribe = registry.subscribe(blank, (value) => seen.push(value), {
       immediate: true,
@@ -411,7 +416,7 @@ describe('search atoms', () => {
     const { calls, client } = makeStubClient();
     const atoms = makeBackendAtoms(client);
     const registry = AtomRegistry.make();
-    const atom = atoms.search(searchKey('lunch', 'UTC'));
+    const atom = atoms.search(searchKey({ terms: ['lunch'] }, 'UTC'));
     const unmount = registry.mount(atom);
     await waitFor(() => registry.get(atom), AsyncResult.isSuccess);
     expect(calls.searches).toHaveLength(1);

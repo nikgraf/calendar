@@ -126,16 +126,16 @@ export function SearchPanel({
       listRef.current.scrollTop = readScrollTop();
     }
   }, [readScrollTop]);
-  const listedQuery = useRef(search.query);
+  const listedQuery = useRef(search.key);
   useLayoutEffect(() => {
-    if (listedQuery.current !== search.query) {
-      listedQuery.current = search.query;
+    if (listedQuery.current !== search.key) {
+      listedQuery.current = search.key;
       saveScrollTop(0);
       if (listRef.current) {
         listRef.current.scrollTop = 0;
       }
     }
-  }, [saveScrollTop, search.query]);
+  }, [saveScrollTop, search.key]);
 
   // Enter pressed while the rows still answer an earlier text (the
   // debounce, the lookup) opens the top result of what was typed once its
@@ -319,7 +319,7 @@ export function SearchPanel({
           <p className="px-3 py-4 text-sm text-ink-secondary">Searching…</p>
         ) : found === 0 ? (
           <div className="px-3 py-4 text-sm text-ink-secondary" data-testid="search-empty">
-            <p>Nothing matches “{search.query}”.</p>
+            <p>Nothing matches “{search.query.terms.join(' ')}”.</p>
             <p className="mt-2 text-xs">{WINDOW_NOTE}</p>
           </div>
         ) : (

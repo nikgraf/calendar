@@ -13,6 +13,8 @@ import {
   encodeMirrorUrl,
   mirrorKeyHash,
   mirrorTag,
+  type SearchQuery,
+  searchQueryFromText,
   type SearchResults,
   TaskListInfo,
   TaskRecord,
@@ -48,12 +50,11 @@ const NOW = at('2026-10-24T18:00');
 
 // The exported handler map widens each method to every backend service;
 // search needs only these.
-const search = (query: string) =>
-  commonBackendHandlers.search({ query, timeZone: VIENNA }) as Effect.Effect<
-    SearchResults,
-    unknown,
-    AppleCalendarEvents | EventRepo | TaskRepo
-  >;
+const search = (query: string | SearchQuery) =>
+  commonBackendHandlers.search({
+    query: typeof query === 'string' ? searchQueryFromText(query) : query,
+    timeZone: VIENNA,
+  }) as Effect.Effect<SearchResults, unknown, AppleCalendarEvents | EventRepo | TaskRepo>;
 
 const account = (id: string, provider: 'apple' | 'google') =>
   new Account({
@@ -410,11 +411,107 @@ describe('search handler', () => {
     }).pipe(Effect.provide(testLayer())),
   );
 
+  it.effect('finds by filters alone: calendars, kind, all-day, people, place', () =>
+    Effect.gen(function* () {
+      yield* TestClock.setTime(NOW);
+      yield* seed;
+      yield* (yield* EventRepo).upsertMany([
+        event('Harbour walk', at('2026-10-30T15:00'), {
+          attendees: [
+            { displayName: 'Ana Ëxample', email: 'ana@example.com', responseStatus: 'accepted' },
+          ],
+          calendarId: 'family',
+          organizerEmail: 'teo@example.com',
+        }),
+        event('Hafen day', at('2026-10-31T00:00'), {
+          endDate: '2026-11-01',
+          isAllDay: true,
+          startDate: '2026-10-31',
+        }),
+      ]);
+      // Only the family calendar: its own event, no tasks.
+      const family = yield* search({ calendars: ['acc:family'], terms: [] });
+      // (the mirror copy in it stays hidden, as everywhere)
+      expect(titles(family.upcoming)).toEqual(['Harbour walk']);
+      expect(family.tasks.total).toBe(0);
+      // A guest's name (accents folded) or the organizer's address.
+      expect(titles((yield* search({ people: ['ana example'], terms: [] })).upcoming)).toEqual([
+        'Harbour walk',
+      ]);
+      expect(titles((yield* search({ people: ['teo@'], terms: [] })).upcoming)).toEqual([
+        'Harbour walk',
+      ]);
+      // All-day only, with a word.
+      expect(titles((yield* search({ allDay: true, terms: ['hafen'] })).upcoming)).toEqual([
+        'Hafen day',
+      ]);
+      // The place text.
+      expect(titles((yield* search({ location: 'central', terms: [] })).upcoming)).toEqual([
+        'Lunch with Anna',
+      ]);
+      // Tasks only: no event read at all; a list picks tasks.
+      const onlyTasks = yield* search({ kind: 'task', terms: ['lunch'] });
+      expect(onlyTasks.upcoming.total + onlyTasks.past.total).toBe(0);
+      expect(onlyTasks.tasks.tasks.map((entry) => entry.title)).toEqual([
+        'Book a lunch table',
+        'Groceries',
+        'Lunch receipts',
+      ]);
+      const reminders = yield* search({
+        lists: [`${APPLE_REMINDERS_ACCOUNT_ID}:ek-reminders`],
+        terms: [],
+      });
+      expect(reminders.upcoming.total).toBe(0);
+      expect(reminders.tasks.tasks.map((entry) => entry.title)).toEqual([
+        'Groceries',
+        'Lunch receipts',
+      ]);
+      // A place filter leaves tasks out: a task has none.
+      expect((yield* search({ location: 'central', terms: ['lunch'] })).tasks.total).toBe(0);
+    }).pipe(Effect.provide(testLayer())),
+  );
+
+  it.effect(
+    'a date range narrows the read: a past range finds a series by its occurrence there',
+    () =>
+      Effect.gen(function* () {
+        yield* TestClock.setTime(NOW);
+        yield* seed;
+        // Team lunch is weekly on Saturdays; Oct 10 is its occurrence in this past week.
+        const lastWeek = yield* search({ from: '2026-10-05', terms: ['team'], to: '2026-10-11' });
+        expect(lastWeek.upcoming.total).toBe(0);
+        expect(lastWeek.past.hits).toMatchObject([
+          { event: { startUtc: at('2026-10-10T12:00'), title: 'Team lunch' }, repeating: true },
+        ]);
+        // A range ahead finds the first occurrence in it, the cancelled slot skipped.
+        const ahead = yield* search({ from: '2026-10-30', terms: ['team'], to: '2026-11-10' });
+        expect(ahead.upcoming.hits).toMatchObject([
+          { event: { startUtc: at('2026-11-07T12:00') }, repeating: true },
+        ]);
+        // Singles by their day; tasks by their due day, undated ones out.
+        const week = yield* search({ from: '2026-10-26', terms: ['lunch'], to: '2026-10-29' });
+        // Monday's yoga (Apple, its own series) and the standup renamed for that day come along.
+        expect(titles(week.upcoming)).toEqual([
+          'Yoga before lunch',
+          'Standup over lunch',
+          'Lunch at the lake',
+          'Lunch with Anna',
+        ]);
+        expect(week.tasks.tasks.map((entry) => entry.title)).toEqual(['Book a lunch table']);
+        // Outside the window: no event read, nothing found.
+        const far = yield* search({ from: '2031-01-01', terms: ['lunch'] });
+        expect(far.upcoming.total + far.past.total).toBe(0);
+      }).pipe(Effect.provide(testLayer())),
+  );
+
   it.effect('finds nothing for a blank query', () =>
     Effect.gen(function* () {
       yield* TestClock.setTime(NOW);
       yield* seed;
       expect(yield* search('   ')).toEqual(EMPTY_SEARCH_RESULTS);
+      expect(yield* search({ location: ' ', people: [], terms: [' '] })).toEqual(
+        EMPTY_SEARCH_RESULTS,
+      );
     }).pipe(Effect.provide(testLayer())),
   );
 });
