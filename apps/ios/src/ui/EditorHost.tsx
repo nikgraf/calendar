@@ -62,11 +62,15 @@ export interface EditorHost {
   readonly editTask: (task: TaskRecord) => void;
   /** The editor's form-sheet route went away (Cancel, Save, or a swipe down). */
   readonly onEditorDismissed: () => void;
+  /** The editor's form-sheet route mounted. */
+  readonly onEditorShown: () => void;
   readonly openBirthday: (birthday: BirthdayOccurrence) => void;
   /** The read-first event view; its Edit button opens the editor. */
   readonly openEvent: (event: EventRecord) => void;
   /** The editor on a new item: the quick-add field on top, the kind control, the form. */
   readonly openNew: (request: NewItemRequest) => void;
+  /** Settings — after the editor, when one is up behind the calendar's avatar, has closed. */
+  readonly openSettings: () => void;
   /** What the editor route shows: the open editor (kept while the sheet slides away). */
   readonly renderEditor: () => ReactNode;
 }
@@ -203,14 +207,27 @@ export function EditorHostProvider({ children }: { children: ReactNode }) {
   const [formSheetLeaving, setFormSheetLeaving] = useState(false);
   const formSheetTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   useEffect(() => () => clearTimeout(formSheetTimer.current), []);
+  // A route to push once the form sheet is gone (Settings, asked for from
+  // behind a half-height editor).
+  const afterFormSheet = useRef<(() => void) | undefined>(undefined);
+  const routeMounted = useRef(false);
+  const onEditorShown = useCallback(() => {
+    routeMounted.current = true;
+  }, []);
   // Cancel, Save or a swipe down: the route went away, and the editor with it.
   const onEditorDismissed = useCallback(() => {
+    routeMounted.current = false;
     presented.current = false;
     setRouteSheet(null);
     setSheet((current) => (current.kind === 'edit' ? NONE : current));
     setFormSheetLeaving(true);
     clearTimeout(formSheetTimer.current);
-    formSheetTimer.current = setTimeout(() => setFormSheetLeaving(false), FORM_SHEET_DISMISS_MS);
+    formSheetTimer.current = setTimeout(() => {
+      setFormSheetLeaving(false);
+      const next = afterFormSheet.current;
+      afterFormSheet.current = undefined;
+      next?.();
+    }, FORM_SHEET_DISMISS_MS);
   }, []);
 
   // What a capture found opens the editor as one thread of drafts on the
@@ -326,6 +343,7 @@ export function EditorHostProvider({ children }: { children: ReactNode }) {
         task,
       }),
     onEditorDismissed,
+    onEditorShown,
     openBirthday: (birthday) => setSheet({ birthday, kind: 'birthday' }),
     openEvent: (event) => setSheet({ event, kind: 'detail' }),
     openNew: ({ dated, focused, kind, listKey }) => {
@@ -339,6 +357,21 @@ export function EditorHostProvider({ children }: { children: ReactNode }) {
         seed: { initialDate: focused },
         taskSeed: resolved === 'event' ? undefined : { dated, listKey },
       });
+    },
+    // Settings is a route of its own: pushed over a half-height editor it
+    // would stack on the sheet, and the editor's pop would take Settings
+    // instead. The avatar closes the editor first — Cancel, as a tap on an
+    // event behind it is — and Settings opens once the sheet has gone.
+    openSettings: () => {
+      if (routeMounted.current) {
+        afterFormSheet.current = () => router.push('/settings');
+        setSheet(NONE);
+        return;
+      }
+      if (sheet.kind === 'edit') {
+        setSheet(NONE);
+      }
+      router.push('/settings');
     },
     // Keyed per opening: an editor seeds its form fields (and its thread)
     // from its seed once, on mount.

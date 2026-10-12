@@ -366,6 +366,7 @@ function CalendarBody({
             }
             overdue={overdue}
             revealMinute={revealMinute}
+            revealUtc={focusedDraft?.startUtc}
             secondaryZones={secondaryZones}
             selected={focused}
             tasks={tasks}

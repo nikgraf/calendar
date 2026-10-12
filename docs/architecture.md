@@ -851,7 +851,10 @@ gateway carries all of it. Details, limits and the threat model:
   presents one sheet at a time, so the push waits for a page sheet
   (detail, birthday) to slide away, and a page sheet opened from the
   calendar behind a half-height editor waits for the form sheet (the
-  route unmounts as its sheet starts to leave, not after). The quick-add
+  route unmounts as its sheet starts to leave, not after). Nothing
+  stacks on the editor: the avatar closes it before Settings opens, as
+  a tap on an event behind it does, so the host's pop is always the
+  editor's. The quick-add
   field does not take the focus there (the keyboard raises a half sheet
   to full; once it hides, the sheet returns to the detent it had). The
   sheet lays its content out once, as at most two subviews: a header
@@ -863,8 +866,9 @@ gateway carries all of it. Details, limits and the threat model:
   grid, the free slots as fainter dotted "Option" blocks, a ring on the
   focused one; a tap focuses a draft or moves it to the slot
   (`useRequestDraftFocus`). The focused draft's day is shown
-  (`useOnDraftReveal`) and the grid scrolls to it, padded by half a
-  screen while drafts are drawn so an evening draft clears the sheet.
+  (`useOnDraftReveal`) and the grid scrolls to it whenever its start
+  changes, padded by half a screen while drafts are drawn so an evening
+  draft clears the sheet.
   `+native-intent.tsx` keeps non-route URLs on the calendar. The other
   sheets are React Native page sheets; `@expo/ui` is used where it is a
   drop-in.

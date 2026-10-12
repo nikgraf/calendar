@@ -11,7 +11,10 @@ import { useEditorHost } from '../src/ui/EditorHost.tsx';
  */
 export default function EditorRoute() {
   const host = useEditorHost();
-  const { onEditorDismissed } = host;
-  useEffect(() => () => onEditorDismissed(), [onEditorDismissed]);
+  const { onEditorDismissed, onEditorShown } = host;
+  useEffect(() => {
+    onEditorShown();
+    return () => onEditorDismissed();
+  }, [onEditorDismissed, onEditorShown]);
   return host.renderEditor();
 }

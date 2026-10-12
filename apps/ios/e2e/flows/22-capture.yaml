@@ -61,6 +61,16 @@ tags:
       - assertVisible:
           id: 'draft-block'
           text: 'Draft: Standup.*'
+      # Scrolled away first: the next draft starts at the same minute, and
+      # the grid still brings it into view (the tap on the first draft
+      # below lands only if it did). A quick swipe: Maestro holds before it
+      # drags, and a long hold on the grid is hold-to-create.
+      - swipe:
+          start: 50%, 40%
+          end: 50%, 20%
+          duration: 200
+      - waitForAnimationToEnd:
+          timeout: 3000
       - tapOn:
           id: 'draft-next'
       - extendedWaitUntil:

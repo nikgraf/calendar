@@ -84,6 +84,7 @@ export function DayTimeline({
   onToggleTask,
   overdue,
   revealMinute,
+  revealUtc,
   secondaryZones,
   selected,
   tasks,
@@ -125,6 +126,12 @@ export function DayTimeline({
    * so an evening draft can come up that far.
    */
   revealMinute?: number | undefined;
+  /**
+   * The focused draft's start instant: the scroll runs again whenever it
+   * changes — another draft focused at the same minute on another day
+   * still comes into view after the grid was scrolled away.
+   */
+  revealUtc?: number | undefined;
   /** The non-primary zones: a line each under every hour label, one joined line on tall event blocks. */
   secondaryZones: ReadonlyArray<string>;
   /** The focused day, ringed in the week header. */
@@ -288,7 +295,7 @@ export function DayTimeline({
         y: Math.max(0, (revealMinute / 60 - 1) * HOUR_HEIGHT),
       });
     }
-  }, [revealMinute]);
+  }, [revealMinute, revealUtc]);
 
   // Geometry the task drag judges drops against; measured, never rendered.
   // (The chip drags and this swipe are exclusive in the gesture arena: a
