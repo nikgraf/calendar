@@ -1,11 +1,15 @@
-import { type SearchState, useToday } from '@calendar/app-state';
+import { isSearchFilterPhrase } from '@calendar/ai';
+import { type SearchState, type useSearchThread, useToday } from '@calendar/app-state';
 import {
   type CalendarInfo,
   type EventRecord,
   type EventSearchHit,
+  hasSearchFilters,
+  isBlankSearchQuery,
   makeColorLookup,
   SEARCH_WINDOW_YEARS,
   searchEventWhen,
+  searchQuerySentence,
   searchTaskWhen,
   type TaskListInfo,
   type TaskRecord,
@@ -17,12 +21,15 @@ import {
   useLayoutEffect,
   useMemo,
   useRef,
+  useState,
 } from 'react';
 import { IconButton } from '../../ui/IconButton.tsx';
 import { FIELD_CLASS } from '../../ui/fieldStyles.ts';
-import { RepeatIcon, SearchIcon, XIcon } from '../../ui/icons.tsx';
+import { RepeatIcon, SearchIcon, SparkleIcon, XIcon } from '../../ui/icons.tsx';
 import { TaskCheckMark } from '../TaskCheck.tsx';
+import { ThreadTurns } from '../ThreadTurns.tsx';
 import { useTint } from '../tint.ts';
+import { SearchFilterChips } from './SearchFilterChips.tsx';
 
 /** What a search cannot find: the window the backend reads. */
 const WINDOW_NOTE = `Events from ${SEARCH_WINDOW_YEARS} years back to ${SEARCH_WINDOW_YEARS} years ahead.`;
@@ -61,34 +68,42 @@ function ResultGroup({
 }
 
 /**
- * The side panel's search: a field at the top and what matches it below —
- * upcoming events, past ones, then tasks, a series once. An event opens
- * its inspector (with a way back here), a task its editor. The app owns
- * the text and the search (`useSearch`), so going back from a result
- * finds the same query and results, and the list where it was scrolled.
+ * The side panel's search: a field at the top, the filters as chips under
+ * it, the turns a sentence made, and what matches below — upcoming
+ * events, past ones, then tasks, a series once. An event opens its
+ * inspector (with a way back here), a task its editor. The app owns the
+ * thread and the search (`useSearchThread`, `useSearch`), so going back
+ * from a result finds the same query, chips and results, and the list
+ * where it was scrolled.
+ *
+ * Enter opens the top result of plain words, as Spotlight does; words
+ * with a filter in them ("lunch with Anna last month" — the router is
+ * code, `isSearchFilterPhrase`) are read into filters by the model when
+ * it is ready. ⌘↩ and the ✦ button always read them.
  */
 export function SearchPanel({
   calendars,
   focusSignal,
+  modelReady,
   onClose,
   onOpenEvent,
   onOpenTask,
-  onTextChange,
   readScrollTop,
   saveScrollTop,
   search,
   selectText,
   taskLists,
-  text,
+  thread,
   timeZone,
 }: {
   calendars: ReadonlyArray<CalendarInfo>;
   /** Changes each time ⌘F or the toolbar asks for the field, which then takes focus. */
   focusSignal: number;
+  /** A model can read a sentence into filters. */
+  modelReady: boolean;
   onClose: () => void;
   onOpenEvent: (event: EventRecord) => void;
   onOpenTask: (task: TaskRecord) => void;
-  onTextChange: (text: string) => void;
   /** Where the list was scrolled, kept by the app across a visit to a result. */
   readScrollTop: () => number;
   saveScrollTop: (top: number) => void;
@@ -96,9 +111,21 @@ export function SearchPanel({
   /** Opened by ⌘F or the toolbar: the text is selected, so typing replaces it. */
   selectText: boolean;
   taskLists: ReadonlyArray<TaskListInfo>;
-  text: string;
+  thread: ReturnType<typeof useSearchThread>;
   timeZone: string;
 }) {
+  const { text } = thread.state;
+  const blank = isBlankSearchQuery(thread.state.query);
+  const [threadError, setThreadError] = useState<string | null>(null);
+  const asks = modelReady && isSearchFilterPhrase(text);
+  /** The sentence in the field, read into filters: a turn. */
+  const ask = async () => {
+    if (!modelReady || text.trim() === '' || thread.busy) {
+      return;
+    }
+    setThreadError(null);
+    setThreadError((await thread.phrase()) ?? null);
+  };
   const today = useToday(timeZone);
   const tint = useTint();
   const colorOf = useMemo(() => makeColorLookup(calendars), [calendars]);
@@ -126,16 +153,16 @@ export function SearchPanel({
       listRef.current.scrollTop = readScrollTop();
     }
   }, [readScrollTop]);
-  const listedQuery = useRef(search.query);
+  const listedQuery = useRef(search.key);
   useLayoutEffect(() => {
-    if (listedQuery.current !== search.query) {
-      listedQuery.current = search.query;
+    if (listedQuery.current !== search.key) {
+      listedQuery.current = search.key;
       saveScrollTop(0);
       if (listRef.current) {
         listRef.current.scrollTop = 0;
       }
     }
-  }, [saveScrollTop, search.query]);
+  }, [saveScrollTop, search.key]);
 
   // Enter pressed while the rows still answer an earlier text (the
   // debounce, the lookup) opens the top result of what was typed once its
@@ -243,7 +270,7 @@ export function SearchPanel({
     results === null ? 0 : results.upcoming.total + results.past.total + results.tasks.total;
   // Read out once the latest query's results are in.
   const status =
-    text.trim() === '' || results === null || search.stale
+    blank || results === null || search.stale
       ? ''
       : found === 0
         ? 'No results'
@@ -261,18 +288,24 @@ export function SearchPanel({
             aria-label="Search events and tasks"
             autoComplete="off"
             className={`${FIELD_CLASS} pl-8`}
+            data-routes={asks ? 'ask' : 'open'}
             data-testid="search-input"
             onChange={(event) => {
               enterWaits.current = false;
-              onTextChange(event.target.value);
+              setThreadError(null);
+              thread.setText(event.target.value);
             }}
             onKeyDown={(key) => {
               // Enter opens the top result, as Spotlight does (not while an
               // input method is still composing) — of the text typed, not
-              // of the rows an earlier text left on screen.
+              // of the rows an earlier text left on screen. Words with a
+              // filter in them, or ⌘↩, go to the model instead.
               if (key.key === 'Enter' && !key.nativeEvent.isComposing) {
                 key.preventDefault();
-                if (search.stale) {
+                if (key.metaKey || asks) {
+                  enterWaits.current = false;
+                  void ask();
+                } else if (search.stale) {
                   enterWaits.current = true;
                 } else {
                   listRef.current?.querySelector<HTMLElement>(RESULT_SELECTOR)?.click();
@@ -291,12 +324,63 @@ export function SearchPanel({
             value={text}
           />
         </div>
+        {modelReady && text.trim() !== '' ? (
+          <IconButton
+            aria-busy={thread.busy}
+            className={asks ? 'text-primary' : ''}
+            data-testid="search-ask"
+            disabled={thread.busy}
+            label="Read filters from the words (⌘↩)"
+            onClick={() => void ask()}
+            size="sm"
+          >
+            <SparkleIcon size={14} />
+          </IconButton>
+        ) : null}
         <IconButton data-testid="search-close" label="Close search" onClick={onClose} size="sm">
           <XIcon size={14} />
         </IconButton>
         <p aria-live="polite" className="sr-only">
           {status}
         </p>
+      </div>
+      <div className="flex flex-col gap-2 px-3 pb-2">
+        <SearchFilterChips
+          calendars={calendars}
+          names={thread.names}
+          onChange={thread.setQuery}
+          onClear={() => {
+            setThreadError(null);
+            thread.clear();
+            inputRef.current?.focus();
+          }}
+          query={thread.state.query}
+          showClear={
+            !blank || hasSearchFilters(thread.state.query) || thread.state.turns.length > 0
+          }
+          taskLists={taskLists}
+        />
+        {thread.state.turns.length > 0 ? (
+          <ThreadTurns
+            onUndo={() => {
+              setThreadError(null);
+              thread.undo();
+            }}
+            testIdPrefix="search"
+            // The header does not scroll: the latest two turns, the history
+            // stays in the thread (Undo walks it back one at a time).
+            turns={thread.state.turns.slice(-2)}
+            undoDisabled={thread.busy}
+          />
+        ) : null}
+        {thread.busy || threadError ? (
+          <p
+            className={`text-xs ${threadError ? 'text-danger' : 'text-ink-secondary'}`}
+            data-testid="search-thread-status"
+          >
+            {threadError ?? 'Reading the filters…'}
+          </p>
+        ) : null}
       </div>
       <div
         aria-busy={search.stale}
@@ -306,9 +390,14 @@ export function SearchPanel({
         onScroll={(event) => saveScrollTop(event.currentTarget.scrollTop)}
         ref={listRef}
       >
-        {text.trim() === '' ? (
+        {blank ? (
           <div className="px-3 py-4 text-sm text-ink-secondary" data-testid="search-hint">
             <p>Search event titles, places, notes and guests, and task titles and notes.</p>
+            {modelReady ? (
+              <p className="mt-2 text-xs">
+                Or say what you want: “lunch with Anna last month”, “only tasks”, then Enter.
+              </p>
+            ) : null}
             <p className="mt-2 text-xs">{WINDOW_NOTE}</p>
           </div>
         ) : search.failed ? (
@@ -319,7 +408,7 @@ export function SearchPanel({
           <p className="px-3 py-4 text-sm text-ink-secondary">Searching…</p>
         ) : found === 0 ? (
           <div className="px-3 py-4 text-sm text-ink-secondary" data-testid="search-empty">
-            <p>Nothing matches “{search.query}”.</p>
+            <p>Nothing matches {searchQuerySentence(search.query, thread.names)}.</p>
             <p className="mt-2 text-xs">{WINDOW_NOTE}</p>
           </div>
         ) : (

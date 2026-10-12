@@ -2,6 +2,11 @@ import { Temporal } from '@calendar/core';
 import { CAPTURE_TEXT_MARKER, type CaptureItemParse, type CaptureParse } from './capture.ts';
 import { FIND_TIME_PHRASE_MARKER, type FindTimeParse } from './findTime.ts';
 import type { LanguageModel } from './model.ts';
+import {
+  SEARCH_QUERY_CURRENT_MARKER,
+  SEARCH_QUERY_PHRASE_MARKER,
+  type SearchQueryParse,
+} from './searchQuery.ts';
 import { QUICK_ADD_PHRASE_MARKER, type QuickAddParse } from './quickAdd.ts';
 import { REFINE_CHANGE_MARKER, REFINE_CURRENT_MARKER } from './refine.ts';
 import { TextRecognitionError, type ImageInput, type TextRecognizer } from './textRecognition.ts';
@@ -25,6 +30,11 @@ import { TextRecognitionError, type ImageInput, type TextRecognizer } from './te
  * finder sentence (`find 30 min tomorrow morning | Focus`) answers with
  * the title after the bar and an hour; the normalizer reads the length,
  * the window and the hours from the sentence itself, as for every model.
+ * A search turn is `terms | from..to | location | people | calendar |
+ * kind` — days as `+N`, `-N` or ISO, a single day alone, people and
+ * calendars comma-separated, kind `tasks` or `events` — applied to the
+ * current filters, an empty part unchanged; a sentence without a bar
+ * replaces the words only.
  */
 
 const TODAY = /Today is (\d{4}-\d{2}-\d{2})/;
@@ -73,6 +83,49 @@ const textAfter = (prompt: string, marker: string): string => {
   return prompt.slice(index + marker.length);
 };
 
+/** A day in the search grammar: `+N` / `-N` days from the reference date, or ISO. */
+const searchDay = (token: string, referenceDate: string): string | undefined => {
+  const relative = /^([+-]\d+)$/.exec(token);
+  if (relative) {
+    return Temporal.PlainDate.from(referenceDate)
+      .add({ days: Number(relative[1]) })
+      .toString();
+  }
+  return /^\d{4}-\d{2}-\d{2}$/.test(token) ? token : undefined;
+};
+
+const list = (part: string): ReadonlyArray<string> =>
+  part
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter((entry) => entry !== '');
+
+const searchTurn = (
+  current: SearchQueryParse,
+  phrase: string,
+  referenceDate: string,
+): SearchQueryParse => {
+  if (!phrase.includes('|')) {
+    return { ...current, terms: phrase.split(/\s+/).filter((word) => word !== '') };
+  }
+  const [terms = '', days = '', location = '', people = '', calendars = '', kind = ''] = phrase
+    .split('|')
+    .map((part) => part.trim());
+  const [first = '', last = first] = days.split('..').map((part) => part.trim());
+  const from = searchDay(first, referenceDate);
+  const to = searchDay(last, referenceDate);
+  return {
+    ...current,
+    ...(terms ? { terms: terms.split(/\s+/) } : {}),
+    ...(from ? { from } : {}),
+    ...(to ? { to } : {}),
+    ...(location ? { location } : {}),
+    ...(people ? { people: list(people) } : {}),
+    ...(calendars ? { calendars: list(calendars) } : {}),
+    ...(kind === 'tasks' ? { kind: 'task' } : kind === 'events' ? { kind: 'event' } : {}),
+  };
+};
+
 export const makeFixtureLanguageModel = (): LanguageModel => ({
   generateJson: async ({ jsonSchema, prompt }) => {
     const properties = isRecord(jsonSchema) ? jsonSchema.properties : undefined;
@@ -111,6 +164,12 @@ export const makeFixtureLanguageModel = (): LanguageModel => ({
           : {}),
         ...(location ? { location } : {}),
       };
+    }
+    if (isRecord(properties) && 'terms' in properties) {
+      const currentLine = textAfter(prompt, SEARCH_QUERY_CURRENT_MARKER).split('\n')[0] ?? '{}';
+      const current = JSON.parse(currentLine) as SearchQueryParse;
+      const phrase = textAfter(prompt, SEARCH_QUERY_PHRASE_MARKER).trim();
+      return searchTurn(current, phrase, referenceDate);
     }
     if (isRecord(properties) && 'windowStartDate' in properties) {
       const title = textAfter(prompt, FIND_TIME_PHRASE_MARKER).split('|')[1]?.trim();

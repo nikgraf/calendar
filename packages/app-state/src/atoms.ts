@@ -16,6 +16,10 @@ import {
   type BackendPayload,
   type BackendSuccess,
   EMPTY_SEARCH_RESULTS,
+  isBlankSearchQuery,
+  type SearchQuery,
+  searchQueryKey,
+  searchQueryOfKey,
   Temporal,
 } from '@calendar/core';
 import { Cause, Context, Effect, Exit, Layer } from 'effect';
@@ -29,8 +33,9 @@ export class AppBackend extends Context.Service<AppBackend, BackendClient>()(
 export const rangeKey = (rangeStartUtc: number, rangeEndUtc: number): string =>
   `${rangeStartUtc}:${rangeEndUtc}`;
 
-/** Atom key for a search: the zone first (zone ids never hold a '|'), then the query as typed. */
-export const searchKey = (query: string, timeZone: string): string => `${timeZone}|${query}`;
+/** Atom key for a search: the zone first (zone ids never hold a '|'), then the query's key. */
+export const searchKey = (query: SearchQuery, timeZone: string): string =>
+  `${timeZone}|${searchQueryKey(query)}`;
 
 export type MapSnapshotParams = BackendPayload<'mapSnapshot'>;
 
@@ -391,8 +396,8 @@ const buildAtoms = (client: BackendClient, deviceZone: Atom.Atom<string>) => {
   const search = boundedAtomCache((key) => {
     const separator = key.indexOf('|');
     const timeZone = key.slice(0, separator);
-    const query = key.slice(separator + 1);
-    const blank = query.trim() === '';
+    const query = searchQueryOfKey(key.slice(separator + 1));
+    const blank = isBlankSearchQuery(query);
     const atom = runtime.atom(
       blank
         ? Effect.succeed(EMPTY_SEARCH_RESULTS)

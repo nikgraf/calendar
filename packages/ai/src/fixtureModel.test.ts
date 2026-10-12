@@ -4,6 +4,7 @@ import { fixtureTextRecognizer, makeFixtureLanguageModel } from './fixtureModel.
 import { parseQuickAdd } from './parseQuickAdd.ts';
 import { buildQuickAddPrompt, QUICK_ADD_JSON_SCHEMA } from './quickAdd.ts';
 import { parseRefine } from './refine.ts';
+import { buildSearchQueryPrompt, SEARCH_QUERY_JSON_SCHEMA } from './searchQuery.ts';
 
 const CONTEXT = { referenceDate: '2026-09-20', timeZone: 'Europe/Vienna' };
 
@@ -67,6 +68,40 @@ describe('makeFixtureLanguageModel', () => {
         prompt: buildFindTimePrompt({ phrase: 'find a slot tomorrow', ...CONTEXT }),
       }),
     ).resolves.toEqual({ durationMinutes: 60 });
+  });
+
+  /** A search turn put to the fixture as the app puts it. */
+  const ask = (phrase: string, current: object = { terms: [] }) =>
+    model.generateJson({
+      jsonSchema: SEARCH_QUERY_JSON_SCHEMA,
+      prompt: buildSearchQueryPrompt({
+        calendars: [],
+        current: current as never,
+        lists: [],
+        phrase,
+        ...CONTEXT,
+      }),
+    });
+
+  it('answers a search turn in its grammar, applied to the current filters', async () => {
+    await expect(ask('harbour | -15..-5')).resolves.toEqual({
+      from: '2026-09-05',
+      terms: ['harbour'],
+      to: '2026-09-15',
+    });
+    await expect(
+      ask('| | hafen | anna, bob | Work | tasks', { terms: ['harbour'] }),
+    ).resolves.toEqual({
+      calendars: ['Work'],
+      kind: 'task',
+      location: 'hafen',
+      people: ['anna', 'bob'],
+      terms: ['harbour'],
+    });
+    await expect(ask('lunch salad', { location: 'Wien', terms: ['x'] })).resolves.toEqual({
+      location: 'Wien',
+      terms: ['lunch', 'salad'],
+    });
   });
 
   it('refuses a schema it does not know', async () => {

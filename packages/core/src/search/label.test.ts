@@ -1,7 +1,14 @@
 import { describe, expect, it } from 'vite-plus/test';
 import { plainDateToUtcMs } from '../time/convert.ts';
 import { Temporal } from '../time/temporal.ts';
-import { searchEventWhen, searchTaskWhen } from './label.ts';
+import {
+  searchDateLabel,
+  searchEventWhen,
+  searchFilterChips,
+  searchQuerySentence,
+  searchTaskWhen,
+  summarizeSearchChange,
+} from './label.ts';
 
 const VIENNA = 'Europe/Vienna';
 const today = '2026-10-24';
@@ -73,5 +80,81 @@ describe('searchTaskWhen', () => {
       'Due Sun, Mar 2, 2025, 2:15 PM',
     );
     expect(searchTaskWhen({}, today)).toBe('No due date');
+  });
+});
+
+const names = {
+  calendars: [
+    { accountId: 'acc', id: 'work', summary: 'Work' },
+    { accountId: 'acc', id: 'home', summary: 'Home' },
+  ],
+  taskLists: [{ accountId: 'acc', id: 'groceries', title: 'Groceries' }],
+  today,
+};
+
+describe('searchDateLabel', () => {
+  it('names a range, a day, an open start or end', () => {
+    expect(searchDateLabel('2026-10-01', '2026-10-31', today)).toBe('Oct 1 – Oct 31');
+    expect(searchDateLabel('2026-10-14', '2026-10-14', today)).toBe('Oct 14');
+    expect(searchDateLabel('2026-10-01', undefined, today)).toBe('from Oct 1');
+    expect(searchDateLabel(undefined, '2027-01-05', today)).toBe('until Jan 5, 2027');
+    expect(searchDateLabel(undefined, undefined, today)).toBeUndefined();
+  });
+});
+
+describe('searchFilterChips', () => {
+  it('lists the filters in the row’s order, calendars and lists by name', () => {
+    expect(
+      searchFilterChips(
+        {
+          allDay: false,
+          calendars: ['acc:work', 'acc:gone'],
+          from: '2026-10-01',
+          kind: 'event',
+          lists: ['acc:groceries'],
+          location: 'Vienna',
+          people: ['Anna', 'Bob'],
+          terms: ['harbour'],
+          to: '2026-10-31',
+        },
+        names,
+      ),
+    ).toEqual([
+      { field: 'dates', label: 'Oct 1 – Oct 31' },
+      { field: 'kind', label: 'Events only' },
+      { field: 'calendar', key: 'acc:work', label: 'Work' },
+      { field: 'calendar', key: 'acc:gone', label: 'Calendar' },
+      { field: 'list', key: 'acc:groceries', label: 'Groceries' },
+      { field: 'location', label: 'in Vienna' },
+      { field: 'people', label: 'with Anna, Bob' },
+      { field: 'allDay', label: 'Timed' },
+    ]);
+    expect(searchFilterChips({ terms: ['harbour'] }, names)).toEqual([]);
+  });
+
+  it('says the query in one line', () => {
+    expect(searchQuerySentence({ location: 'Vienna', terms: ['harbour', 'lunch'] }, names)).toBe(
+      '“harbour lunch” · in Vienna',
+    );
+  });
+});
+
+describe('summarizeSearchChange', () => {
+  it('lists what changed, and what was taken away', () => {
+    expect(
+      summarizeSearchChange(
+        { terms: ['harbour'] },
+        { from: '2026-10-01', location: 'Hafen', terms: ['harbour'], to: '2026-10-31' },
+        names,
+      ),
+    ).toBe('→ Oct 1 – Oct 31 · → in Hafen');
+    expect(
+      summarizeSearchChange(
+        { calendars: ['acc:work'], from: '2026-10-01', kind: 'task', terms: ['a'] },
+        { terms: ['b'] },
+        names,
+      ),
+    ).toBe('→ “b” · → any time · → events and tasks · → any calendar');
+    expect(summarizeSearchChange({ terms: ['a'] }, { terms: ['a'] }, names)).toBe('no change');
   });
 });

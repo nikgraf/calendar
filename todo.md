@@ -140,7 +140,7 @@ Empty. The 2026-10-02 review's findings are closed in `docs/decisions.md`
 AI redesign (agreed 2026-10-11, one PR each, in this order; the
 grounding PR that opened it, #182, the desktop draft thread (#183),
 the served model (#184) and slot proposals (#185) are in
-`docs/decisions.md` → AI):
+`docs/decisions.md` → AI; search filters (#186) under Search):
 
 - [ ] Draft thread on iOS — the shared thread (`useDraftThread`,
       shipped on the desktop in #183, `docs/decisions.md`
@@ -163,14 +163,6 @@ the served model (#184) and slot proposals (#185) are in
       `ModelInfo` capability record beyond the context (modalities, guided
       JSON) once a feature reads it; the bench's phrase set grown from real
       misreads.
-- [ ] Search filters — a `SearchQuery` struct in core (terms, date range,
-      location, people, calendar/list, kind, all-day) and the rpc takes it;
-      the struct renders as chips the user edits by hand; an AI turn edits
-      the same struct (guided JSON, dates from the day list, `realDate`),
-      so the search thread is the create thread's component with another
-      state type; plain words are terms, "Clear" resets; without a model
-      the field is today's search. Retrieval stays deterministic (FTS5 is
-      the "Ask your calendar" item below); later, term expansion only.
 - [ ] Gemma 4 on iOS — opt-in download via llama.rn (JSON schema →
       grammar maps onto `generateJson`), load on demand, unload on
       background; only if the bench shows the model is the bottleneck.

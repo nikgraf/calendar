@@ -63,11 +63,19 @@ export const seriesSearchOccurrences = (
   master: EventRecord,
   slots: ReadonlySet<number> | undefined,
   {
+    accept = () => true,
     nowMs,
     rangeEndUtc,
     rangeStartUtc,
     timeZone,
   }: {
+    /**
+     * Occurrences that may stand for the series (a search's filters, its
+     * days): the walk picks among these only, so an occurrence the span
+     * merely touches — an all-day one ending as a zone's day begins —
+     * never hides the one the query asked for.
+     */
+    readonly accept?: ((occurrence: EventRecord) => boolean) | undefined;
     readonly nowMs: number;
     readonly rangeEndUtc: number;
     readonly rangeStartUtc: number;
@@ -87,13 +95,13 @@ export const seriesSearchOccurrences = (
   // Both walks start a day past now: today's all-day occurrence ends (in
   // UTC) before the evening in a zone behind UTC, and is still not over.
   const next = walk(expand, Math.max(rangeStartUtc, nowMs - DAY_MS), rangeEndUtc, (span) =>
-    span.find(notOver),
+    span.find((occurrence) => notOver(occurrence) && accept(occurrence)),
   );
   if (next) {
     return [next];
   }
   const latest = walk(expand, Math.min(rangeEndUtc, nowMs + DAY_MS), rangeStartUtc, (span) =>
-    span.filter((occurrence) => !notOver(occurrence)).at(-1),
+    span.filter((occurrence) => !notOver(occurrence) && accept(occurrence)).at(-1),
   );
   return latest ? [latest] : [];
 };

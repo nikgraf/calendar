@@ -551,7 +551,11 @@ the pager, Remove, Add all); `slotProposals` (a finder phrase on the
 fixture model against seeded busy blocks, TZ pinned: the draft in the
 best slot, the chip row and candidate blocks, a chip and a candidate
 moving it, a change dropping the proposals and Undo restoring them, a
-finder phrase as a later turn); `modelProvider` (a served model: a fake
+finder phrase as a later turn); `searchFilters` (the fixture model: a
+sentence to a date chip with its words left in the field, Undo; Enter
+routed by the words, a place and a person read, plain words opening the
+top result; Clear; kind and a calendar added by hand with no turn; the
+dates popover); `modelProvider` (a served model: a fake
 Ollama in the spec's own process with the fixture model behind it, the
 quick-add field over HTTP, Settings › General's kind, Test and Save, the
 wording when the server is down); `reminders` and
@@ -624,7 +628,12 @@ Flakiness lessons (each caused a real CI failure — keep them enforced):
   `search-input`, `search-results` (`aria-busy` "false" once the results
   answer the field's text), `search-group-upcoming|past|tasks`,
   `[data-search-result]` rows with `search-title` / `search-when` /
-  `search-repeats`, `search-hint`, `search-empty`, `inspector-back`. A
+  `search-repeats`, `search-hint`, `search-empty`, the filters
+  `search-chips`, `search-chip-<field>[-<key>]` with `search-chip-remove`,
+  `search-add-filter` → `search-add-<field>` → `search-filter-*`,
+  `search-clear`, `search-ask` (the field's `data-routes` says whether
+  Enter reads or opens), `search-turn` / `search-turn-summary` /
+  `search-undo`, `search-thread-status`, `inspector-back`. A
   block's calendar color is its `data-color` attribute — never assert a
   computed color, the tint is theme-dependent — and Tailwind classes are
   not selectors. `[title^="…"]` matches grid blocks and chips only;
@@ -729,7 +738,9 @@ sheet a tap opens), `switch-view.yaml` (the header's menu, `VIEW`),
 `file`, `advanced`, `mirrors`, `unsynced`; rows `settings-row-<page>`, pages
 `settings-page-<page>`), `close-settings.yaml` (`BackButton` until the
 root shows, then Done), `search-for.yaml` (`QUERY` typed into the Search
-tab's system field until `RESULT` shows), `confirm-open.yaml` and
+tab's system field until `RESULT` shows; a sentence for the search
+thread is typed the same way and sent with `pressKey: Enter`, the
+keyboard's Search key; the chips' × is "Remove <label>"), `confirm-open.yaml` and
 `await-shell.yaml` (the bootstrap flow's URL alert and shell wait).
 
 Selector gotchas (each caused a real failure):

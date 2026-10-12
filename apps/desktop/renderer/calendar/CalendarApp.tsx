@@ -1,5 +1,6 @@
 import {
   type BirthdayOccurrence,
+  EMPTY_SEARCH_QUERY,
   eventIdentity,
   type EventRecord,
   findSameEvent,
@@ -28,7 +29,9 @@ import {
   useGuardedMutations,
   useListColorLookup,
   useOverdueTasksStable,
+  useModelAvailability,
   useSearch,
+  useSearchThread,
   useTaskLists,
   useBirthdaysInRangeStable,
   useTaskReadOnlyLookup,
@@ -55,6 +58,7 @@ import { DragGhost } from './panel/DragGhost.tsx';
 import { type DraftFocusRequest, EditorPanel, type EditorSeed } from './panel/EditorPanel.tsx';
 import { EventInspector } from './panel/EventInspector.tsx';
 import { SearchPanel } from './panel/SearchPanel.tsx';
+import { onWindowFocus } from './QuickAddBar.tsx';
 import { TodayRail } from './panel/TodayRail.tsx';
 import { Sidebar } from './sidebar/Sidebar.tsx';
 import { Toolbar } from './Toolbar.tsx';
@@ -199,12 +203,6 @@ function CalendarBody({
 
   const [panel, setPanel] = useState<PanelState>(RAIL);
   const searching = isSearching(panel);
-  // Search lives here, not in its panel: it stays current while a result
-  // is open (an edit or a delete made there updates it) and is there at
-  // once on the way back. Closed, it searches nothing; the text is kept
-  // for the next ⌘F.
-  const [searchText, setSearchText] = useState('');
-  const search = useSearch(searching ? searchText : '', timeZone);
   const [searchFocus, setSearchFocus] = useState(0);
   const searchScroll = useRef(0);
   const readSearchScroll = useCallback(() => searchScroll.current, []);
@@ -375,6 +373,19 @@ function CalendarBody({
   const calendars = useCalendars();
   const accounts = useAccounts();
   const colorOf = useMemo(() => makeColorLookup(calendars), [calendars]);
+
+  // Search lives here, not in its panel: it stays current while a result
+  // is open (an edit or a delete made there updates it) and is there at
+  // once on the way back, words, chips and turns. Closed, it searches
+  // nothing; the thread is kept for the next ⌘F.
+  const searchThread = useSearchThread({
+    calendars,
+    model: desktopLanguageModel,
+    taskLists,
+    timeZone,
+  });
+  const search = useSearch(searching ? searchThread.state.query : EMPTY_SEARCH_QUERY, timeZone);
+  const searchModel = useModelAvailability(desktopLanguageModel, onWindowFocus);
 
   // The drag hook lives here, not in the week view: the panel's task rows
   // drag onto the grid and lane too, and the hook reads their rects.
@@ -637,18 +648,18 @@ function CalendarBody({
               <SearchPanel
                 calendars={calendars}
                 focusSignal={searchFocus}
+                modelReady={searchModel.status === 'ready'}
                 onClose={() => setPanel(RAIL)}
                 onOpenEvent={openSearchEvent}
                 onOpenTask={(task) =>
                   setPanel({ fromSearch: true, kind: 'editTask', opening: nextOpening(), task })
                 }
-                onTextChange={setSearchText}
                 readScrollTop={readSearchScroll}
                 saveScrollTop={saveSearchScroll}
                 search={search}
                 selectText={panel.selectText}
                 taskLists={taskLists}
-                text={searchText}
+                thread={searchThread}
                 timeZone={timeZone}
               />
             ) : panel.kind === 'inspector' ? (
