@@ -1,6 +1,7 @@
 import { GeoLocation, plainDateToUtcMs, Temporal, toZonedDateTime } from '@calendar/core';
 import { describe, expect, it } from 'vite-plus/test';
 import {
+  candidatePreviews,
   draftOccurrences,
   draftPreview,
   eventDraftFromPrefill,
@@ -196,5 +197,62 @@ describe('eventDraftFromPrefill', () => {
     expect(
       prefillError({ ...dinner, recurrence: { freq: 'weekly', untilDate: '2026-08-01' } }, context),
     ).toBe('The repeat must end on or after its first day.');
+  });
+});
+
+describe('candidatePreviews', () => {
+  const slots = [
+    { date: '2026-08-28', endTime: '10:30', startTime: '10:00' },
+    { date: '2026-08-28', endTime: '11:30', startTime: '11:00' },
+    { date: '2026-08-29', endTime: '09:30', startTime: '09:00' },
+  ];
+  const draft = {
+    id: 'd1',
+    item: { kind: 'event' as const, prefill: { ...dinner, endTime: '10:30', startTime: '10:00' } },
+    slots,
+  };
+
+  it('offers every slot but the one the form sits in, titled as the form is', () => {
+    const previews = candidatePreviews(
+      draft,
+      { ...draft.item.prefill, title: 'Focus' },
+      { color: '#123456' },
+    );
+    expect(previews.map((preview) => preview.startTime)).toEqual(['11:00', '09:00']);
+    expect(previews[0]).toMatchObject({
+      candidate: slots[1],
+      color: '#123456',
+      date: '2026-08-28',
+      focused: false,
+      id: 'd1',
+      isAllDay: false,
+      title: 'Focus',
+    });
+  });
+
+  it('offers them all once the form moved off every slot', () => {
+    expect(candidatePreviews(draft, dinner, { color: '#123456' })).toHaveLength(3);
+  });
+
+  it('is nothing for a draft without slots', () => {
+    expect(candidatePreviews({ id: 'd2', item: draft.item }, dinner, { color: '#123456' })).toEqual(
+      [],
+    );
+  });
+
+  it('draws as blocks keyed by slot, the slot carried for the click', () => {
+    const previews = candidatePreviews(draft, draft.item.prefill, { color: '#123456' });
+    const occurrences = draftOccurrences(
+      previews,
+      plainDateToUtcMs('2026-08-27'),
+      plainDateToUtcMs('2026-08-30'),
+      TZ,
+    );
+    expect(occurrences.map((occurrence) => occurrence.key)).toEqual([
+      'd1:slot:2026-08-28T11:00',
+      'd1:slot:2026-08-29T09:00',
+    ]);
+    expect(occurrences[0]).toMatchObject({ candidate: slots[1], draftId: 'd1', focused: false });
+    expect(occurrences[0]?.startUtc).toBe(wallClock('2026-08-28', '11:00'));
   });
 });

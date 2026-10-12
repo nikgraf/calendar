@@ -1,10 +1,12 @@
-import { type CaptureSource, ModelUnavailableError, parseQuickAdd } from '@calendar/ai';
+import { type CaptureSource, ModelUnavailableError } from '@calendar/ai';
 import {
+  candidatePreviews,
   type DraftPreview,
   draftPreview,
   type EditorSourceKind,
   editorTitle,
   eventDraftFromPrefill,
+  isAtSlot,
   prefillError,
   previewOfPrefill,
   type QuickAddItem,
@@ -22,6 +24,8 @@ import {
 } from '@calendar/app-state';
 import {
   type CalendarInfo,
+  formatSlotLabel,
+  type FreeSlot,
   type ItemKind,
   type TaskListInfo,
   type TaskRecord,
@@ -29,6 +33,7 @@ import {
 } from '@calendar/core';
 import { useEffect, useRef, useState } from 'react';
 import { desktopLanguageModel } from '../../ai/desktopModel.ts';
+import { backend } from '../../backend.ts';
 import { Button } from '../../ui/Button.tsx';
 import { IconButton } from '../../ui/IconButton.tsx';
 import { ChevronLeftIcon, ChevronRightIcon, VideoIcon } from '../../ui/icons.tsx';
@@ -54,6 +59,8 @@ export type EditorSeed = EventEditorSeed & { readonly thread?: ThreadSeed | unde
 export interface DraftFocusRequest {
   readonly id: string;
   readonly nonce: number;
+  /** A candidate block was clicked: the free slot to move the draft into. */
+  readonly slot?: FreeSlot | undefined;
 }
 
 const KIND_LABELS: Record<ItemKind, string> = {
@@ -81,7 +88,10 @@ const CHANGE_PLACEHOLDER = 'Change it: "at 8", "Thursday instead", "call it…"'
  * A new item is a thread (`useDraftThread`): the first phrase makes the
  * draft(s), every later phrase in the same field changes them, Undo takes
  * a turn back, and the calendar draws every draft hatched (`onPreview`),
- * the focused one outlined and scrolled to (`onReveal`). The form is the
+ * the focused one outlined and scrolled to (`onReveal`). A phrase that
+ * asks for free time puts the draft in the best free slot and offers the
+ * others as a chip row here and as fainter candidate blocks on the grid;
+ * a chip or a candidate moves the draft there. The form is the
  * focused draft's view: its edits go back into the thread, and a focus
  * change (the pager, or a click on a block — `focusDraft`) swaps the form.
  * Save writes the focused draft; with several, "Add all" writes the rest
@@ -132,7 +142,7 @@ export function EditorPanel({
   const sourceKind: EditorSourceKind = task ? 'task' : seed.event ? 'event' : 'new';
   const moveConfirmation = useMoveConfirmation();
   const mutations = useBackendMutations();
-  const thread = useDraftThread({ model: desktopLanguageModel, timeZone });
+  const thread = useDraftThread({ backend, model: desktopLanguageModel, timeZone });
   const { drafts, focused, turns, version } = thread.state;
   const focusedDraft = drafts[focused];
   const threadRef = useRef(thread.state);
@@ -309,41 +319,29 @@ export function EditorPanel({
     if (index !== -1) {
       // Mid-write the click is dropped (`switchFocus` checks), like the pager.
       switchFocus(index);
+      // A candidate of the focused draft: the form moves into its slot.
+      if (focusDraft.slot && index === focused && mode === 'event' && settled) {
+        eventModel.applySlot(focusDraft.slot);
+      }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- a click is handled once, when it arrives
   }, [focusDraft?.nonce]);
 
   // The phrase goes to the thread: the first makes the draft(s), the rest
-  // change them. The model's own failure modes become the field's message.
+  // change them, one that asks for free time proposes slots. The model's
+  // own failure modes become the field's message.
   const onPhrase = async (text: string): Promise<string | undefined> => {
     try {
-      if (threadRef.current.drafts.length === 0) {
-        const result = await parseQuickAdd(desktopLanguageModel, {
-          fallbackDate: seed.initialDate.toString(),
-          phrase: text,
-          referenceDate: Temporal.Now.plainDateISO(timeZone).toString(),
-          timeZone,
-        });
-        if (result.kind === 'rejected') {
-          return result.reason;
-        }
-        // Guests, notes or notifications typed before the phrase are the draft's.
-        thread.start(
-          [
-            result.kind === 'task'
-              ? { kind: 'task', prefill: result.prefill }
-              : { kind: 'event', prefill: result.prefill },
-          ],
-          text,
-          currentExtras(),
-        );
-        return undefined;
-      }
       const item = currentItem();
       // An undated to-do: its stored day is a placeholder the form had let go of.
       undated.current =
-        item.kind === 'task' && !taskModel.dated ? { date: item.prefill.date } : null;
-      return await thread.refine(text, readForm);
+        threadRef.current.drafts.length > 0 && item.kind === 'task' && !taskModel.dated
+          ? { date: item.prefill.date }
+          : null;
+      return await thread.phrase(text, {
+        fallbackDate: seed.initialDate.toString(),
+        read: readForm,
+      });
     } catch (error) {
       return error instanceof ModelUnavailableError
         ? 'On-device model unavailable.'
@@ -352,15 +350,20 @@ export function EditorPanel({
   };
 
   // Every draft as the calendar draws it: the focused one from the live
-  // form, the others as the thread holds them, all in the picked calendar's
-  // color. Sent up only when something changed.
+  // form, with the free slots offered beside it as candidates, the others
+  // as the thread holds them, all in the picked calendar's color. Sent up
+  // only when something changed.
   const color =
     calendars.find((calendar) => `${calendar.accountId}:${calendar.id}` === eventModel.calendarKey)
       ?.colorHex ?? NO_CALENDAR_COLOR;
+  const liveItem = currentItem();
   const previews: ReadonlyArray<DraftPreview> = drafts.flatMap((draft, index) => {
     if (index === focused) {
-      return mode === 'event'
-        ? [previewOfPrefill(draft.id, eventModel.toPrefill(), { color, focused: true, timeZone })]
+      return liveItem.kind === 'event'
+        ? [
+            previewOfPrefill(draft.id, liveItem.prefill, { color, focused: true, timeZone }),
+            ...candidatePreviews(draft, liveItem.prefill, { color }),
+          ]
         : [];
     }
     const preview = draftPreview(draft, { color, focused: false, timeZone });
@@ -522,6 +525,31 @@ export function EditorPanel({
               <p className="text-xs text-ink-secondary" data-testid="draft-thread-note">
                 {seed.thread.note}
               </p>
+            ) : null}
+            {focusedDraft?.slots && focusedDraft.slots.length > 1 && liveItem.kind === 'event' ? (
+              // The free slots a finder phrase found: the draft sits in the
+              // pressed one; another moves it there, like its block on the grid.
+              <div className="flex flex-col gap-1" data-testid="draft-slots">
+                <span className="text-xs text-ink-secondary">Free slots</span>
+                <div className="flex flex-wrap gap-1.5">
+                  {focusedDraft.slots.map((slot, index) => {
+                    const chosen = isAtSlot(liveItem, slot);
+                    return (
+                      <Button
+                        aria-pressed={chosen}
+                        className={chosen ? 'ring-2 ring-focus' : ''}
+                        data-testid={`draft-slot-${String(index)}`}
+                        disabled={!settled}
+                        key={`${slot.date}T${slot.startTime}`}
+                        onClick={() => eventModel.applySlot(slot)}
+                        size="sm"
+                      >
+                        {formatSlotLabel(slot)}
+                      </Button>
+                    );
+                  })}
+                </div>
+              </div>
             ) : null}
             {drafts.length > 1 ? (
               <div className="flex items-center justify-between" data-testid="draft-pager">

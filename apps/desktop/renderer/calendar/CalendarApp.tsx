@@ -594,7 +594,9 @@ function CalendarBody({
               laneRef={laneRef}
               listColorOf={listColorOf}
               onBirthdayClick={(birthday) => setViewBirthday(birthday)}
-              onDraftClick={(id) => setDraftFocus({ id, nonce: Date.now() })}
+              onDraftClick={(id, slot) =>
+                setDraftFocus({ id, nonce: Date.now(), ...(slot ? { slot } : {}) })
+              }
               onEventClick={(event) => setPanel({ event, kind: 'inspector' })}
               onNavigate={panByDays}
               onSlideEnd={endSlide}
