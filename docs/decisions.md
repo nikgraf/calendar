@@ -561,6 +561,21 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   forbade inventing), asking the model where a value came from. Open:
   capture items (no phrase per item), German "morgen" (also "morning"),
   an "assumed" badge for the default times — with the draft thread.
+- **The draft thread** (2026-10-12, #183) — a new item is
+  a thread of drafts, not a one-shot prefill: the first phrase makes the
+  draft(s), every later phrase in the same field changes them, Undo takes
+  a turn back, and the grid draws every event draft hatched in its
+  calendar's hue before anything is written; the form is the focused
+  draft's view, "Add all" writes several; capture's events open as one
+  such thread, its review list gone. A refinement is stateless — the
+  draft as JSON plus the change, merged by the grounding rules with the
+  draft as the anchor — not a `LanguageModelSession` transcript (4K
+  context, session state across IPC, nothing the fixture could play).
+  Rejected: letting the model resolve an open hour in a change (the
+  draft's own start decides: a dinner "at 8" is 20:00), a `draft` tint
+  variant (pattern over color — the hatch reads in both schemes).
+  Desktop first; open: the iOS sheet (todo.md), drafts in the month
+  view, a slot editor drawing its form as a draft, to-dos in "Add all".
 - **The model says why it is unavailable** (2026-10-10, #168) —
   `ModelStatus` carries disabled / not-ready / unsupported (Apple
   Intelligence switches itself off on a Siri-vs-Mac language mismatch); a

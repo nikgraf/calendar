@@ -365,7 +365,10 @@ chasing a code bug.
   date. A phrase outside the grammar is a title on the fallback day, all
   day — unless its own words say otherwise: the normalizer reads
   "tomorrow", "at 1", a weekday or a meal off the phrase for every model,
-  the fixture included (`packages/ai/src/grounding.ts`). Desktop
+  the fixture included (`packages/ai/src/grounding.ts`). A refinement is
+  the same grammar with empty parts meaning "unchanged" (`| | 10:00-11:00`
+  moves the times only); a sentence leaves the draft to the normalizer.
+  Desktop
   `launchApp(seed, { model: 'fixture' })`, iOS
   `EXPO_PUBLIC_CALENDAR_MODEL=fixture` in the bundle (CI), which also
   accepts `solunivo-dev://capture-fixture?text=…` as a stand-in for a
@@ -538,7 +541,9 @@ The specs: `flows` (rendering, views, trackpad pan, editor CRUD, drag
 move/resize/cancel, slot drag, recurring scopes, RSVP, visibility,
 calendar color, month view, task lane and editor, the sync footer, the
 privacy modal, the settings window, the inspector and inline editor, ⌘K);
-`capture` (paste-to-events on the fixture model); `reminders` and
+`capture` (paste-to-drafts on the fixture model); `draftThread` (a
+phrase's draft on the grid, a change, Undo, Save; a pasted mail's thread,
+the pager, Remove, Add all); `reminders` and
 `contacts` (seeded Apple/Google rows); `appleCalendar` (the in-memory
 EventKit, read-only viewer, moves both ways); `location` (the picker and
 map over the geo fixture); `birthdays` (device-contacts fixture, chip,

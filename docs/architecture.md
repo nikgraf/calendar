@@ -44,7 +44,12 @@ meal and part-of-day words (one table: quick-add defaults and the
 finder's bounds), weekdays, to-do cues, the finder's windows and
 durations — and the normalizers keep a model value only where the phrase
 supports it, correct one it contradicts and drop the rest (a phrase
-without a time is an all-day event, whatever the model returned).
+without a time is an all-day event, whatever the model returned). A
+refinement (`refine.ts`) is one more bounded prompt — the draft as a
+line of JSON and the change — merged by the same rules with the draft as
+the anchor (an open "at 8" reads next to the draft's own start); the
+model keeps no session, so a turn works the same over every provider
+and the fixture model plays it in its grammar.
 Desktop: renderer → preload IPC (the five
 `model:*` channels: status, generate, prepare-speech, transcribe,
 recognize-text) → main → the Swift helper child process
@@ -727,7 +732,20 @@ gateway carries all of it. Details, limits and the threat model:
   (`QuickAddBar`, a phrase or a dictation fills the form), the Event |
   Task | Reminder control (`useEditorKinds`, only
   the kinds something can hold), then the form; on an existing item the
-  control converts. The panel never joins the dialog stack
+  control converts. A new item is a thread of drafts
+  (`useDraftThread`, `packages/app-state/src/draftThread.ts`): the first
+  phrase makes the draft(s), every later phrase in the same field changes
+  them (`parseRefine`), the turns are listed with what each changed and
+  the last has Undo; the grid draws every event draft hatched and dashed
+  in its calendar's hue with a "Draft" tag (`DraftBlock`, `DraftChip` in
+  the lane; `draftPreview.ts` derives them from the thread, the focused
+  one from the live form, every occurrence of a repeating one), the
+  focused draft outlined and its day shown; a click on a block or the
+  pager swaps the form; Save writes the focused draft (and keeps the
+  editor on the next while there are more), "Add all" the others as they
+  stand. Capture opens its events as one such thread
+  (`useCaptureModel.onMany`) rather than a review list. The panel never
+  joins the dialog stack
   (`dialogStack.ts`: the topmost dialog alone answers Escape and traps
   Tab), so a real dialog over it keeps Escape; a panel opened from a
   search result closes back to the results. The inspector follows its
