@@ -189,7 +189,10 @@ describe('focus, update and remove', () => {
     expect(edited.version).toBe(state.version);
     expect(updateDraft(state, 5, later)).toBe(state);
     expect(focusDraft(state, 1).version).toBe(state.version + 1);
-    expect(removeDraft(state, 1).version).toBe(state.version + 1);
+    // Review: another draft going must not re-apply the focused one to the form.
+    expect(removeDraft(state, 1).version).toBe(state.version);
+    expect(removeDraft(state, 0).version).toBe(state.version + 1);
+    expect(removeDrafts(state, ['d1', 'd2']).version).toBe(state.version + 1);
   });
 
   it('drops several drafts by id, the focus following its draft', () => {

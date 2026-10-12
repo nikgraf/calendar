@@ -237,7 +237,7 @@ function CalendarBody({
 
   // Captured events open the editor as one thread of drafts on the first
   // one's day: each is seen on the grid before anything is written.
-  const openThread = (items: ReadonlyArray<QuickAddItem>, utterance: string) => {
+  const openThread = (items: ReadonlyArray<QuickAddItem>, utterance: string, note?: string) => {
     const first = items[0];
     if (!first) {
       return;
@@ -248,18 +248,21 @@ function CalendarBody({
       opening: nextOpening(),
       seed: {
         initialDate: Temporal.PlainDate.from(first.prefill.date),
-        thread: { items, utterance },
+        thread: { items, ...(note ? { note } : {}), utterance },
       },
     });
   };
   // Several events found: the same thread, with a draft each (the review
-  // list the dialog used to show).
+  // list the dialog used to show), and its warning when the text was cut.
   const capture = useCaptureModel({
     model: desktopLanguageModel,
-    onMany: (prefills) =>
+    onMany: (prefills, truncated) =>
       openThread(
         prefills.map((prefill) => ({ kind: 'event', prefill })),
         'From your paste',
+        truncated
+          ? 'The text was long, so only its beginning was read — later events may be missing.'
+          : undefined,
       ),
     onSingle: (prefill) => openThread([{ kind: 'event', prefill }], 'From your paste'),
     recognizer: desktopTextRecognizer,

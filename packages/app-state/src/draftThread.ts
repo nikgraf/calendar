@@ -256,7 +256,8 @@ const without = (snapshot: Snapshot, gone: ReadonlySet<string>): Snapshot => {
  * Drafts dropped by id, all at once (the ones "Add all" has written, or
  * one Save wrote). The focus follows its draft. The history loses them
  * too: a written draft must not come back through Undo, to be written
- * twice.
+ * twice. The version moves only when the form must change — the focused
+ * draft left, or none is left — never for another draft going.
  */
 export const removeDrafts = (
   state: DraftThreadState,
@@ -266,11 +267,14 @@ export const removeDrafts = (
   if (!state.drafts.some((draft) => gone.has(draft.id))) {
     return state;
   }
+  const focusedId = state.drafts[state.focused]?.id;
+  const next = without(state, gone);
+  const formChanges = focusedId === undefined || gone.has(focusedId) || next.drafts.length === 0;
   return {
     ...state,
-    ...without(state, gone),
+    ...next,
     history: state.history.map((snapshot) => without(snapshot, gone)),
-    version: state.version + 1,
+    version: formChanges ? state.version + 1 : state.version,
   };
 };
 
@@ -300,10 +304,11 @@ export const useDraftThread = ({ model, timeZone }: { model: LanguageModel; time
   const refine = async (
     utterance: string,
     focusedNow?: QuickAddItem,
+    extras?: DraftExtras,
   ): Promise<string | undefined> => {
     const mine = ++request.current;
     const current =
-      focusedNow === undefined ? state : updateDraft(state, state.focused, focusedNow);
+      focusedNow === undefined ? state : updateDraft(state, state.focused, focusedNow, extras);
     const focusedId = current.drafts[current.focused]?.id;
     const targets = refineTargets(current, utterance);
     if (targets.length === 0) {
@@ -354,7 +359,7 @@ export const useDraftThread = ({ model, timeZone }: { model: LanguageModel; time
         const index = latest.drafts.findIndex((draft) => draft.id === focusedId);
         const base =
           focusedNow !== undefined && index !== -1
-            ? updateDraft(latest, index, focusedNow)
+            ? updateDraft(latest, index, focusedNow, extras)
             : latest;
         return refineThread(base, utterance, changes);
       });

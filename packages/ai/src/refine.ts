@@ -2,6 +2,7 @@ import { foldSearchText, validateEventDraft } from '@calendar/core';
 import {
   type ClockTime,
   clearsRepeat,
+  defersDate,
   durationMinutesOf,
   groundDate,
   groundTime,
@@ -175,7 +176,9 @@ export const normalizeRefine = (
   const modelDate = realDate(parse.date?.trim());
   const date =
     groundDate(modelDate, { phrase: utterance, referenceDate }) ??
-    (modelDate !== undefined && mentionsDate(utterance) ? modelDate : draft.date);
+    (modelDate !== undefined && (mentionsDate(utterance) || defersDate(utterance))
+      ? modelDate
+      : draft.date);
 
   const times = timesOf(utterance, realTime(parse.startTime), draft);
   const length = durationMinutesOf(utterance);

@@ -2,6 +2,7 @@ import { FINDER_BOUNDS } from '@calendar/core';
 import { describe, expect, it } from 'vite-plus/test';
 import {
   clearsRepeat,
+  defersDate,
   durationMinutesOf,
   groundBounds,
   groundDate,
@@ -489,6 +490,10 @@ describe('durationMinutesOf', () => {
     expect(durationMinutesOf('forty-five minutes')).toBe(45);
     expect(durationMinutesOf('90-minute workshop')).toBe(90);
     expect(durationMinutesOf('dinner with Teo next week')).toBeUndefined();
+    // Review: tens and ones are one number, in either language.
+    expect(durationMinutesOf('twenty-five minutes')).toBe(25);
+    expect(durationMinutesOf('twenty five minutes')).toBe(25);
+    expect(durationMinutesOf('fünfundzwanzig Minuten')).toBe(25);
     // Review: the parts of one length add up; a second length is another matter.
     expect(durationMinutesOf('1 hour 30 minutes of focus')).toBe(90);
     expect(durationMinutesOf('2h and 15 min')).toBe(135);
@@ -508,6 +513,15 @@ describe('the words of a change', () => {
     expect(clearsRepeat('just once')).toBe(true);
     expect(clearsRepeat("doesn't repeat")).toBe(true);
     expect(clearsRepeat('every week')).toBe(false);
+  });
+
+  it('knows a day it leaves to the model on purpose', () => {
+    expect(defersDate('Zahnarzt morgen')).toBe(true);
+    expect(defersDate('two weeks from today')).toBe(true);
+    expect(defersDate('two days after Monday')).toBe(true);
+    expect(defersDate('last Friday')).toBe(true);
+    expect(defersDate('at 8')).toBe(false);
+    expect(defersDate('tomorrow')).toBe(false);
   });
 
   it('knows a date the model has to resolve from a bare clock digit', () => {

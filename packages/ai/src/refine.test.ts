@@ -69,6 +69,10 @@ describe('normalizeRefine', () => {
     expect(refined({ date: '2026-10-20' }, 'on Oct 20').date).toBe('2026-10-20');
     // The model moved the date without being asked.
     expect(refined({ date: '2026-09-04' }, 'call it team dinner').date).toBe('2026-08-28');
+    // Review: a day the code leaves to the model on purpose is the model's to move.
+    expect(refined({ date: '2026-08-23' }, 'morgen').date).toBe('2026-08-23');
+    expect(refined({ date: '2026-09-05' }, 'two weeks from today').date).toBe('2026-09-05');
+    expect(refined({ date: '2026-08-21' }, 'last Friday').date).toBe('2026-08-21');
   });
 
   it('keeps the times when the utterance says nothing about them, whatever the model did', () => {

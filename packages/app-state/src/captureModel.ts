@@ -149,7 +149,9 @@ export const useCaptureModel = ({
    * opens them as one thread of drafts); without it the state goes to
    * `review` and the caller shows the list.
    */
-  readonly onMany?: ((drafts: ReadonlyArray<EventEditorPrefill>) => void) | undefined;
+  readonly onMany?:
+    | ((drafts: ReadonlyArray<EventEditorPrefill>, truncated: boolean) => void)
+    | undefined;
   readonly onSingle: (prefill: EventEditorPrefill) => void;
   readonly recognizer: TextRecognizer;
   readonly timeZone: string;
@@ -178,7 +180,7 @@ export const useCaptureModel = ({
         onSingle(event.prefill);
       }
       if (event.kind === 'review' && onMany) {
-        onMany(event.drafts);
+        onMany(event.drafts, event.truncated);
         setState(IDLE);
         return;
       }

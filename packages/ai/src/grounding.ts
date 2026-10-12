@@ -760,11 +760,41 @@ const LENGTH_WORDS = {
 const LENGTH_WORD = Object.keys(LENGTH_WORDS)
   .sort((left, right) => right.length - left.length)
   .join('|');
+/** "twenty-five", "twenty five", "fünfundzwanzig": tens and ones as one number. */
+const COMPOUND_NUMBER =
+  '(?:twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety)[- ](?:one|two|three|four|five|six|seven|eight|nine)|(?:ein|zwei|drei|vier|funf|sechs|sieben|acht|neun)und(?:zwanzig|dreissig|vierzig|funfzig|sechzig)';
 const DURATION = new RegExp(
-  `\\b(\\d+(?:[.,]\\d+)?|${NUMBER_WORD}|${LENGTH_WORD}|an?|eine?r?)[\\s-]*(${LENGTH_UNITS})\\b|\\b(half an hour|halbe stunde|eineinhalb|anderthalb)\\b`,
+  `\\b(\\d+(?:[.,]\\d+)?|${COMPOUND_NUMBER}|${NUMBER_WORD}|${LENGTH_WORD}|an?|eine?r?)[\\s-]*(${LENGTH_UNITS})\\b|\\b(half an hour|halbe stunde|eineinhalb|anderthalb)\\b`,
 );
 
+const TENS = {
+  dreissig: 30,
+  eighty: 80,
+  fifty: 50,
+  forty: 40,
+  funfzig: 50,
+  ninety: 90,
+  sechzig: 60,
+  seventy: 70,
+  sixty: 60,
+  thirty: 30,
+  twenty: 20,
+  vierzig: 40,
+  zwanzig: 20,
+} as const;
+
 const quantityOf = (token: string): number => {
+  const compound = /^([a-z]+)[- ]([a-z]+)$/.exec(token) ?? /^([a-z]+)und([a-z]+)$/.exec(token);
+  if (compound) {
+    const [, first = '', second = ''] = compound;
+    // English says the tens first, German the ones ("fünfundzwanzig").
+    const tens = first in TENS ? first : second;
+    const ones = tens === first ? second : first;
+    return (
+      (TENS[tens as keyof typeof TENS] ?? 0) +
+      (ones === 'ein' ? 1 : (NUMBER_WORDS[ones as keyof typeof NUMBER_WORDS] ?? 0))
+    );
+  }
   if (token in LENGTH_WORDS) {
     return LENGTH_WORDS[token as keyof typeof LENGTH_WORDS];
   }
@@ -822,6 +852,18 @@ export const clearsRepeat = (phrase: string): boolean =>
   /\b(?:no repeat|not repeat|stop repeating|only once|just once|once only|does ?n[o']t repeat|nicht wiederholen|einmalig|keine wiederholung)\b/.test(
     words(phrase),
   );
+
+/**
+ * The phrase names a day the code reads but leaves to the model on
+ * purpose: German "morgen" (also "morning"), a day as the anchor of an
+ * offset ("two weeks from today", "two days after Monday"), a weekday
+ * that has passed ("last Friday"). With one of these, a date the model
+ * changed is the answer to the words, not an invention.
+ */
+export const defersDate = (phrase: string): boolean => {
+  const text = words(phrase);
+  return /\bmorgen\b/.test(text) || DAY_AS_ANCHOR.test(text) || PAST_WEEKDAY.test(text);
+};
 
 /**
  * The phrase names a day in a form the code does not read but the model
