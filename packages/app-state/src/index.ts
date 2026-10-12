@@ -26,6 +26,7 @@ export * from './quickAddItem.ts';
 export * from './quickAddModel.ts';
 export * from './repeatState.ts';
 export * from './search.ts';
+export * from './searchThread.ts';
 export * from './taskDrop.ts';
 export * from './today.ts';
 export * from './viewPreferences.ts';
