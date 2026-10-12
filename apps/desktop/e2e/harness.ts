@@ -806,6 +806,16 @@ export interface LaunchOptions {
    */
   readonly model?: 'fixture';
   /**
+   * The served-model provider as the app finds it on launch (its
+   * `model-provider.json`): a spec's own fake server on this machine. Not
+   * with `model: 'fixture'`, which answers before any provider.
+   */
+  readonly modelProvider?: {
+    readonly baseUrl: string;
+    readonly kind: 'ollama' | 'openai';
+    readonly model: string;
+  };
+  /**
    * 'off' (default): no EventKit. 'real': the helper. A fixture uses the
    * in-memory Reminders client so mutation e2e tests never touch personal data.
    */
@@ -925,6 +935,10 @@ export const launchApp = async (seed?: SeedData, options: LaunchOptions = {}): P
             writeFileSync(fixturePath, JSON.stringify(options.geo.fixture));
             return { CALENDAR_GEO: 'fixture', CALENDAR_GEO_FIXTURE: fixturePath };
           })();
+
+  if (options.modelProvider) {
+    writeFileSync(join(userDataDir, 'model-provider.json'), JSON.stringify(options.modelProvider));
+  }
 
   // The watched settings file stays inside the temp profile: HOME is not
   // isolated here, and a run must never read or rewrite a developer's file.

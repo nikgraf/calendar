@@ -8,6 +8,7 @@ import { ContactsSection } from './ContactsSection.tsx';
 import { EventNotificationsSection } from './EventNotificationsSection.tsx';
 import { LocationsSection } from './LocationsSection.tsx';
 import { MirrorsSection } from './MirrorsSection.tsx';
+import { ModelSection } from './ModelSection.tsx';
 import { PrivacySection } from './PrivacySection.tsx';
 import { RemindersSection } from './RemindersSection.tsx';
 import { SettingsFileSection, SettingsTransferSection } from './SettingsFileSection.tsx';
@@ -54,6 +55,7 @@ const PANE_CONTENT: Record<SettingsPaneId, ReactNode> = {
     <>
       <TimeZonesSection />
       <LocationsSection />
+      <ModelSection />
       <PrivacySection />
     </>
   ),
