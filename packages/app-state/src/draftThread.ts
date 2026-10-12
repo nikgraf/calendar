@@ -539,6 +539,21 @@ export const removeDraft = (state: DraftThreadState, index: number): DraftThread
 /** What the form holds of the focused draft, read by a turn before and after its model call. */
 export type ReadForm = () => FormSnapshot;
 
+/**
+ * What the form held before the first phrase, as the first draft keeps
+ * it: guests, notes, notifications — but not an undated to-do's state.
+ * The phrase dates the draft (quick-add always did); an inbox add opened
+ * undated must not clear the day the words gave ("call the bank
+ * tomorrow"). Undefined stays undefined.
+ */
+export const firstDraftExtras = (extras: DraftExtras | undefined): DraftExtras | undefined => {
+  if (extras === undefined) {
+    return undefined;
+  }
+  const { undated: _undated, ...kept } = extras;
+  return kept;
+};
+
 /** A finder phrase on an all-day draft, or none: the length searched for. */
 const DEFAULT_SLOT_MINUTES = 60;
 
@@ -682,7 +697,7 @@ export const useDraftThread = ({
         return NO_SLOT_FITS;
       }
       if (target === undefined) {
-        const extras = read?.().extras;
+        const extras = firstDraftExtras(read?.().extras);
         setState(
           startThread([slotItem(best, result.title)], utterance, { extras, slots: result.slots }),
         );
@@ -754,7 +769,7 @@ export const useDraftThread = ({
           : { kind: 'event', prefill: result.prefill },
       ],
       text,
-      { extras: read?.().extras },
+      { extras: firstDraftExtras(read?.().extras) },
     );
     return undefined;
   };
