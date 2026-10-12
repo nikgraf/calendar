@@ -47,6 +47,58 @@ tags:
               text: 'Lunch with Sarah.*'
           commands:
             - assertVisible: 'That couldn.t be read.*'
+      # The thread, under the fixture model (CI's bundle) — its signal is the
+      # whole phrase as the title; a real model extracts "Lunch with Sarah"
+      # and the steps below are skipped. A change in the fixture's grammar
+      # (empty parts unchanged) moves the times and lists a turn; Undo takes
+      # it back; a finder phrase as a later turn puts the draft in the best
+      # free slot of next week's mornings and offers the others as chips.
+      - runFlow:
+          when:
+            visible:
+              id: 'event-title'
+              text: 'Lunch with Sarah next Tuesday at 1pm'
+          commands:
+            - assertVisible:
+                id: 'draft-thread'
+            - tapOn:
+                id: 'quick-add-input'
+            - inputText: '| | 20:00-21:00'
+            - tapOn:
+                id: 'quick-add-apply'
+            - extendedWaitUntil:
+                visible:
+                  id: 'draft-turn-summary'
+                  text: '.*20:00.21:00.*'
+                timeout: 20000
+            - tapOn:
+                id: 'draft-undo'
+            - extendedWaitUntil:
+                notVisible:
+                  id: 'draft-turn-summary'
+                  text: '.*20:00.21:00.*'
+                timeout: 10000
+            - tapOn:
+                id: 'quick-add-input'
+            - inputText: 'find 30 min next week mornings | Focus'
+            - tapOn:
+                id: 'quick-add-apply'
+            - extendedWaitUntil:
+                visible:
+                  id: 'draft-slots'
+                timeout: 20000
+            - assertVisible:
+                id: 'draft-slot-0'
+                selected: true
+            # The draft keeps its title; only its time moved.
+            - assertVisible:
+                id: 'event-title'
+                text: 'Lunch with Sarah next Tuesday at 1pm'
+            - tapOn:
+                id: 'draft-slot-1'
+            - assertVisible:
+                id: 'draft-slot-1'
+                selected: true
       # Dictation is deliberately not asserted here: Maestro cannot inject
       # audio and simulators carry no speech assets, so the mic disables
       # itself once prepare() fails. Gating an assertion on the mic being

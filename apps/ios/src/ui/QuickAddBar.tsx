@@ -3,6 +3,7 @@ import { useEffect, useRef } from 'react';
 import {
   ActivityIndicator,
   AppState,
+  Keyboard,
   Platform,
   Pressable,
   StyleSheet,
@@ -47,11 +48,21 @@ export const onAppActive = (onActive: () => void): (() => void) => {
 export function QuickAddBar({
   fallbackDate,
   onApply,
+  onPhrase,
+  placeholder = 'Lunch with Sarah tomorrow at 1',
   timeZone,
 }: {
   /** Undated phrases land on this day (the editor's). */
   fallbackDate: string;
   onApply: (item: QuickAddItem) => void;
+  /**
+   * Takes the phrase over (the editor's draft thread): resolves a message
+   * for the field, or nothing when it was taken — the field clears and the
+   * keyboard goes, so the form shows what the words did.
+   */
+  onPhrase?: ((text: string) => Promise<string | undefined>) | undefined;
+  /** The field's hint: a change once there are drafts. */
+  placeholder?: string | undefined;
   timeZone: string;
 }) {
   const styles = useStyles(makeStyles);
@@ -71,6 +82,16 @@ export function QuickAddBar({
     fallbackDate,
     model: languageModel,
     onApply,
+    onPhrase:
+      onPhrase === undefined
+        ? undefined
+        : async (text) => {
+            const message = await onPhrase(text);
+            if (message === undefined) {
+              Keyboard.dismiss();
+            }
+            return message;
+          },
     speech: appleSpeech,
     timeZone,
   });
@@ -122,7 +143,7 @@ export function QuickAddBar({
               editable={!busy}
               onChangeText={setPhrase}
               onSubmitEditing={() => void submit()}
-              placeholder="Lunch with Sarah tomorrow at 1"
+              placeholder={placeholder}
               ref={inputRef}
               returnKeyType="go"
               style={styles.input}
