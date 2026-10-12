@@ -368,6 +368,10 @@ chasing a code bug.
   the fixture included (`packages/ai/src/grounding.ts`). A refinement is
   the same grammar with empty parts meaning "unchanged" (`| | 10:00-11:00`
   moves the times only); a sentence leaves the draft to the normalizer.
+  Real models are measured, never gated: the bench
+  (`apps/desktop/e2e/bench/modelBench.e2e.ts`, `MODEL_BENCH=1 E2E=1`,
+  run by path) prints how Apple's model and any Ollama models
+  (`MODEL_BENCH_OLLAMA=gemma3:4b,gemma3:12b`) do on its phrase set.
   Desktop
   `launchApp(seed, { model: 'fixture' })`, iOS
   `EXPO_PUBLIC_CALENDAR_MODEL=fixture` in the bundle (CI), which also
@@ -543,7 +547,10 @@ calendar color, month view, task lane and editor, the sync footer, the
 privacy modal, the settings window, the inspector and inline editor, ⌘K);
 `capture` (paste-to-drafts on the fixture model); `draftThread` (a
 phrase's draft on the grid, a change, Undo, Save; a pasted mail's thread,
-the pager, Remove, Add all); `reminders` and
+the pager, Remove, Add all); `modelProvider` (a served model: a fake
+Ollama in the spec's own process with the fixture model behind it, the
+quick-add field over HTTP, Settings › General's kind, Test and Save, the
+wording when the server is down); `reminders` and
 `contacts` (seeded Apple/Google rows); `appleCalendar` (the in-memory
 EventKit, read-only viewer, moves both ways); `location` (the picker and
 map over the geo fixture); `birthdays` (device-contacts fixture, chip,

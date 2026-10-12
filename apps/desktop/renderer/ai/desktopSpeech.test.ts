@@ -110,3 +110,32 @@ describe('desktopSpeech recording ownership', () => {
     expect(stream.stopped).toBe(true);
   });
 });
+
+/** `isSupported` with the helper answering this status. */
+const supportedWith = async (status: {
+  readonly detail?: string;
+  readonly helper: boolean;
+  readonly status: string;
+}) => {
+  vi.stubGlobal('window', { calendarBridge: { modelHelperStatus: async () => status } });
+  return (await loadSpeech()).isSupported();
+};
+
+describe('desktopSpeech availability', () => {
+  it('needs the helper and the OS, not Apple Intelligence', async () => {
+    expect(await supportedWith({ helper: true, status: 'ready' })).toBe(true);
+    // Apple Intelligence off or its model still downloading: SpeechAnalyzer transcribes anyway.
+    expect(
+      await supportedWith({ detail: 'deviceNotEligible', helper: true, status: 'unavailable' }),
+    ).toBe(true);
+    expect(
+      await supportedWith({ detail: 'modelNotReady', helper: true, status: 'unavailable' }),
+    ).toBe(true);
+    expect(await supportedWith({ detail: 'osTooOld', helper: true, status: 'unavailable' })).toBe(
+      false,
+    );
+    expect(
+      await supportedWith({ detail: 'helperUnavailable', helper: false, status: 'unavailable' }),
+    ).toBe(false);
+  });
+});

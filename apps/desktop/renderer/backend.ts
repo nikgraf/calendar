@@ -12,6 +12,35 @@ export interface PrivacyState {
   readonly visibleUntil?: number;
 }
 
+/** Which model answers the AI features (electron/modelProvider.ts). */
+export type ModelProviderKind = 'apple' | 'ollama' | 'openai';
+
+/** The provider as Settings shows it: whether a key is set, never the key. */
+export interface ModelProviderView {
+  readonly baseUrl: string;
+  readonly hasApiKey: boolean;
+  readonly kind: ModelProviderKind;
+  readonly model: string;
+}
+
+/** The model's status with who answered and, for a served model, where. */
+export interface ModelStatusReply {
+  readonly detail?: string;
+  readonly endpoint?: string;
+  readonly model?: string;
+  readonly provider: ModelProviderKind;
+  readonly status: string;
+}
+
+/** What a probe of an endpoint found (Settings › Test). */
+export interface EndpointProbe {
+  readonly error?: string;
+  readonly models: ReadonlyArray<string>;
+  readonly reachable: boolean;
+  /** The server refused the API key (or wants one). */
+  readonly unauthorized?: boolean;
+}
+
 /** The watched settings file, as the main process reports it. */
 export interface SettingsFileStatus {
   readonly error?: string;
@@ -41,14 +70,29 @@ declare global {
       contactsStatus: () => Promise<string>;
       logError?: (text: string) => void;
       modelGenerate: (schema: unknown, prompt: string) => Promise<{ json: string }>;
+      modelHelperStatus: () => Promise<{ detail?: string; helper: boolean; status: string }>;
+      modelInfo: () => Promise<{ contextTokens?: number; name: string }>;
       modelPrepareSpeech: (locale: string) => Promise<{ denied?: boolean; prepared?: boolean }>;
+      modelProviderGet: () => Promise<ModelProviderView>;
+      modelProviderSet: (changes: {
+        apiKey?: string | null;
+        baseUrl?: string;
+        kind?: ModelProviderKind;
+        model?: string;
+      }) => Promise<ModelProviderView>;
+      modelProviderTest: (candidate: {
+        apiKey?: string;
+        baseUrl: string;
+        kind: ModelProviderKind;
+      }) => Promise<EndpointProbe>;
       modelRecognizeText: (imageBase64: string) => Promise<{ text: string }>;
-      modelStatus: () => Promise<{ detail?: string; status: string }>;
+      modelStatus: () => Promise<ModelStatusReply>;
       modelTranscribe: (
         audioBase64: string,
         locale: string,
       ) => Promise<{ segments: ReadonlyArray<{ text: string }> }>;
       onAgentsChanged: (listener: () => void) => () => void;
+      onModelProviderChanged: (listener: (view: ModelProviderView) => void) => () => void;
       /** Clicked event reminders, the one waiting first; decode with `parseNotificationTarget`. */
       onNotificationOpen: (listener: (target: unknown) => void) => () => void;
       /** True while a screen capture runs that leaves the windows out. */

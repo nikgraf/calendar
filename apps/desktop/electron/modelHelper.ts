@@ -1,12 +1,24 @@
 import { fixtureTextRecognizer, makeFixtureLanguageModel } from '@calendar/ai';
 import { ipcMain, systemPreferences } from 'electron';
 import { callHelper, registerHelperLifecycle } from './helperProcess.ts';
+import {
+  getModelProvider,
+  providerGenerate,
+  providerInfo,
+  providerStatus,
+  servedModelActive,
+  setModelProvider,
+  testModelProvider,
+} from './modelProvider.ts';
 
 /**
- * Exposes the Swift helper's model methods (Foundation Models +
- * SpeechAnalyzer + Vision OCR) to the renderer over plain preload IPC —
- * model calls are a window-level concern, not calendar data, so they stay
- * off the rpc seam by design. The process itself lives in helperProcess.ts.
+ * Exposes the model seam to the renderer over plain preload IPC — model
+ * calls are a window-level concern, not calendar data, so they stay off
+ * the rpc seam by design. `model:generate` and `model:status` go to the
+ * active provider (modelProvider.ts): the Swift helper's Foundation
+ * Models by default, or a model served over HTTP; dictation and text
+ * recognition always go to the helper. The process itself lives in
+ * helperProcess.ts.
  */
 /**
  * Input bounds for the renderer-facing handlers. `privacy:set` allowlists
@@ -14,7 +26,8 @@ import { callHelper, registerHelperLifecycle } from './helperProcess.ts';
  * unbounded audio payload — straight onto the helper's stdin.
  */
 const MAX_SCHEMA_CHARS = 64_000;
-const MAX_PROMPT_CHARS = 32_000;
+/** Room for capture's largest budget (60k characters of a paste) plus the prompt's own words. */
+const MAX_PROMPT_CHARS = 80_000;
 /** ~18 MB of 16 kHz mono 16-bit WAV, several minutes of dictation. */
 const MAX_AUDIO_BASE64_CHARS = 24_000_000;
 /** ~18 MB of image: a full Retina screenshot as PNG is a few. */
@@ -23,9 +36,9 @@ const LOCALE = /^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$/;
 
 /**
  * CALENDAR_MODEL=fixture (the e2e harness): the deterministic model and
- * recognizer from @calendar/ai answer in place of the helper, after the same
- * validation, so preload and IPC stay on the tested path while a run no
- * longer depends on the machine having Apple Intelligence.
+ * recognizer from @calendar/ai answer in place of any provider, after the
+ * same validation, so preload and IPC stay on the tested path while a run
+ * no longer depends on the machine having Apple Intelligence.
  */
 const fixture =
   process.env['CALENDAR_MODEL'] === 'fixture'
@@ -38,18 +51,36 @@ const isJsonObject = (value: unknown): value is Record<string, unknown> =>
 const invalid = (what: string): Promise<never> =>
   Promise.reject(new Error(`model: invalid ${what}`));
 
+/** The helper's status, or what its absence means (no binary, a crash): the renderer maps both. */
+const appleStatus = async (): Promise<{ detail?: string; status: string }> => {
+  try {
+    return (await callHelper('status')) as { detail?: string; status: string };
+  } catch {
+    return { detail: 'helperUnavailable', status: 'unavailable' };
+  }
+};
+
 export const registerModelHelper = (): void => {
   ipcMain.handle('model:status', async () => {
     if (fixture) {
-      return { status: 'ready' };
+      return { provider: 'apple', status: 'ready' };
     }
-    try {
-      return await callHelper('status');
-    } catch {
-      // No helper binary or a crash: same shape the renderer maps to
-      // 'missing-module' / 'unavailable'.
-      return { detail: 'helperUnavailable', status: 'unavailable' };
+    return providerStatus(appleStatus);
+  });
+  ipcMain.handle('model:info', () =>
+    fixture ? { contextTokens: 4096, name: 'Fixture model' } : providerInfo(),
+  );
+  // The helper itself, whatever provider answers generation: dictation and
+  // text recognition are its alone, so their support is read here.
+  // `helper` says the binary answered at all: SpeechAnalyzer needs macOS 26
+  // and the helper, not Apple Intelligence, so dictation reads that and the
+  // OS reason, never the model's availability.
+  ipcMain.handle('model:helper-status', async () => {
+    if (fixture) {
+      return { helper: true, status: 'ready' };
     }
+    const apple = await appleStatus();
+    return { ...apple, helper: apple.detail !== 'helperUnavailable' };
   });
   ipcMain.handle('model:generate', async (_event, schema: unknown, prompt: unknown) => {
     if (!isJsonObject(schema) || JSON.stringify(schema).length > MAX_SCHEMA_CHARS) {
@@ -62,6 +93,9 @@ export const registerModelHelper = (): void => {
       return {
         json: JSON.stringify(await fixture.model.generateJson({ jsonSchema: schema, prompt })),
       };
+    }
+    if (servedModelActive()) {
+      return providerGenerate(schema, prompt);
     }
     return callHelper('generateJson', { prompt, schema });
   });
@@ -99,5 +133,12 @@ export const registerModelHelper = (): void => {
     }
     return callHelper('ocr.recognizeText', { imageBase64 });
   });
+  // The provider itself: read, changed (checked field by field in
+  // modelProvider.ts) and probed from the settings window.
+  ipcMain.handle('model:provider-get', () => getModelProvider());
+  ipcMain.handle('model:provider-set', (_event, changes: unknown) => setModelProvider(changes));
+  ipcMain.handle('model:provider-test', (_event, candidate: unknown) =>
+    testModelProvider(candidate),
+  );
   registerHelperLifecycle();
 };

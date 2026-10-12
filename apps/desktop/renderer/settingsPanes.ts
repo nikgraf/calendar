@@ -9,7 +9,18 @@ import { EXPERIMENTAL_COPY } from '@calendar/core';
 export const SETTINGS_PANES = [
   {
     id: 'general',
-    keywords: ['time zones', 'clock', 'location', 'map', 'privacy', 'screen'],
+    keywords: [
+      'time zones',
+      'clock',
+      'location',
+      'map',
+      'privacy',
+      'screen',
+      'ai',
+      'model',
+      'ollama',
+      'apple intelligence',
+    ],
     label: 'General',
   },
   {

@@ -154,18 +154,13 @@ grounding PR that opened it, #182, and the desktop draft thread
       slot or ⌘N editor without a phrase drawing its form as a draft too,
       to-do drafts in "Add all" (today it waits until each is the focused
       one).
-- [ ] Model providers — `LanguageModel` becomes a provider with a
-      capability record (context tokens, input modalities, guided JSON);
-      an OpenAI-compatible endpoint provider in Electron main beside the
-      helper dispatch (`model:*` stays), with an Ollama preset (`/v1`,
-      `response_format: json_schema`; LM Studio and llama-server come
-      free): endpoint URL + model name device-local (beside
-      `mirrors.local`, never the settings document), an API key only in
-      safeStorage, a notice whenever the host is not loopback, status
-      `not-ready` for a model not pulled. The fixture provider stays. It
-      is also the bench: a fixture file of real phrases with expected
-      drafts run through Apple's model and Gemma 4 E2B/E4B before any
-      iOS download is considered.
+- [ ] Served-model follow-ups (shipped in #184,
+      `docs/decisions.md` → AI) — the model's own context from Ollama's
+      `/api/show` instead of the fixed `num_ctx`; image input for a served
+      model (Gemma 4 takes images, so capture could skip OCR); the
+      `ModelInfo` capability record beyond the context (modalities, guided
+      JSON) once a feature reads it; the bench's phrase set grown from real
+      misreads.
 - [ ] Slot proposals in the create thread — a deterministic router by
       phrase (find / slot / free / fit / "when can I", German too) sends a
       sentence to the finder prompt, the two prompts stay tuned apart;

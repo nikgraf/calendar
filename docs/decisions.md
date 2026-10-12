@@ -561,6 +561,22 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   forbade inventing), asking the model where a value came from. Open:
   capture items (no phrase per item), German "morgen" (also "morning"),
   an "assumed" badge for the default times — with the draft thread.
+- **A served model beside Apple's** (2026-10-12, #184)
+  — the desktop can answer `generateJson` from a model served over HTTP
+  on this Mac: Ollama through its own API (the schema as `format`,
+  grammar-constrained like the helper's guided generation; `num_ctx` per
+  call since Ollama's default context is small; `keep_alive` so a
+  thread's turns do not reload the model) or any OpenAI-compatible
+  endpoint; picked in Settings › General, with a Test that lists the
+  server's models. The choice, endpoint and model name are device-local
+  (`userData/model-provider.json`, never the settings document); a key is
+  safeStorage ciphertext only. Rejected: the provider in the renderer
+  (the CSP and the window-level rule keep HTTP in main), Ollama-only (the
+  OpenAI shape is free), an iOS endpoint over the LAN (another privacy
+  posture; left out). The bench runs a phrase set through the models side
+  by side — the evidence a Gemma download on iOS would need. Open: a
+  per-model context from `/api/show`, image input for a served model,
+  the `ModelInfo` capability record beyond the context.
 - **The draft thread** (2026-10-12, #183) — a new item is
   a thread of drafts, not a one-shot prefill: the first phrase makes the
   draft(s), every later phrase in the same field changes them, Undo takes

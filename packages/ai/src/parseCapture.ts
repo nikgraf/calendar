@@ -1,6 +1,7 @@
 import {
   buildCapturePrompt,
   CAPTURE_JSON_SCHEMA,
+  captureTextBudget,
   normalizeCapture,
   prepareCaptureText,
   type CaptureParse,
@@ -68,7 +69,9 @@ export const parseCapture = async (
     raw = source.text;
   }
 
-  const { text, truncated } = prepareCaptureText(raw);
+  // A provider with a larger context reads more of a long paste.
+  const info = await model.info?.().catch(() => undefined);
+  const { text, truncated } = prepareCaptureText(raw, captureTextBudget(info?.contextTokens));
   if (!text) {
     return { kind: 'rejected', reason: 'There was nothing to read.' };
   }

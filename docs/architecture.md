@@ -50,12 +50,25 @@ line of JSON and the change — merged by the same rules with the draft as
 the anchor (an open "at 8" reads next to the draft's own start); the
 model keeps no session, so a turn works the same over every provider
 and the fixture model plays it in its grammar.
-Desktop: renderer → preload IPC (the five
-`model:*` channels: status, generate, prepare-speech, transcribe,
-recognize-text) → main → the Swift helper child process
-(`apps/desktop/helper`, Foundation Models + SpeechAnalyzer + Vision over
-newline-JSON stdio; spawned lazily and supervised with restart backoff by
-`apps/desktop/electron/helperProcess.ts`). iOS reaches the same models via
+Desktop: renderer → preload IPC (the `model:*` channels: status, info,
+generate, prepare-speech, transcribe, recognize-text) → main → the
+active provider (`apps/desktop/electron/modelProvider.ts`): by default
+the Swift helper child process (`apps/desktop/helper`, Foundation
+Models + SpeechAnalyzer + Vision over newline-JSON stdio; spawned lazily
+and supervised with restart backoff by
+`apps/desktop/electron/helperProcess.ts`), or — picked in Settings ›
+General — a model served over HTTP on this Mac: Ollama's own API (the
+JSON schema as `format`, `num_ctx` per call, `keep_alive`) or any
+OpenAI-compatible endpoint (`response_format: json_schema`; LM Studio,
+llama-server). Only `generateJson` and `status` have that second home;
+dictation and text recognition stay with the helper. `ModelInfo`
+(`LanguageModel.info`) says the model's context, and capture sizes its
+text by it (`captureTextBudget`). A served model's failure is worded by
+server (`modelUnavailableCopy`), and a host that is not loopback gets a
+notice in Settings: text typed into the AI fields leaves the Mac then.
+The bench (`apps/desktop/e2e/bench/modelBench.e2e.ts`, run by path with
+`MODEL_BENCH=1 E2E=1`) runs a phrase set through Apple's model and any
+Ollama models side by side. iOS reaches the same models via
 `@react-native-ai/apple` and Vision through the `solunivo-ocr` Expo
 module. Dictation audio is captured by the UI layer (renderer
 `getUserMedia` → 16 kHz WAV) and only transcribed natively.
@@ -676,6 +689,10 @@ gateway carries all of it. Details, limits and the threat model:
   system's `screencapture` tool, `electron/captureHint.ts`), the
   `model:*` channels, the `reminders:status` / `contacts:status` /
   `appleCalendar:status` permission asks, `settings:open`,
+  `model:provider-*` (which model answers — Apple's helper or a model
+  served over HTTP, `electron/modelProvider.ts`: the choice, endpoint and
+  model name in `userData/model-provider.json`, an API key only as
+  safeStorage ciphertext, every window hears `model:providerChanged`),
   `settingsFile:*`, `auth:cancel`, `notifications:take`, `rpc:document`
   (a reload re-registers the page as an rpc client) and `agents:*`
   (device-local, never rpc, never exported). The window-open handler sends

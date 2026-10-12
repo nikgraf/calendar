@@ -68,11 +68,15 @@ export const desktopSpeech: SpeechToText = {
 
   isSupported: async () => {
     // Same reasoning as iOS: readiness flags are false before first use;
-    // status tells us whether the helper generation stack exists at all,
-    // and prepare() decides the rest at use time.
+    // the helper's own status tells us whether its stack exists at all —
+    // not the model provider's, since a served model answers phrases on a
+    // Mac whose helper cannot transcribe — and prepare() decides the rest
+    // at use time.
     try {
-      const result = await window.calendarBridge.modelStatus();
-      return result.status === 'ready';
+      const result = await window.calendarBridge.modelHelperStatus();
+      // The helper runs and the OS has SpeechAnalyzer: Apple Intelligence
+      // being off does not take dictation away.
+      return result.helper && result.detail !== 'osTooOld';
     } catch {
       return false;
     }

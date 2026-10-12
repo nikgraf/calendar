@@ -8,6 +8,7 @@ import { installApplicationMenu } from './menu.ts';
 import { initPrivacy } from './privacy.ts';
 import { startCaptureHint } from './captureHint.ts';
 import { registerModelHelper } from './modelHelper.ts';
+import { initModelProvider } from './modelProvider.ts';
 import { registerNotificationIpc } from './notifications.ts';
 import { registerAppleCalendarIpc } from './appleCalendarIpc.ts';
 import { registerContactsIpc } from './contactsIpc.ts';
@@ -80,6 +81,7 @@ app.on('second-instance', (_event, argv) => {
 
 initFileLogging(app.getPath('userData'));
 initPrivacy(app.getPath('userData'));
+initModelProvider(app.getPath('userData'));
 ipcMain.on('renderer-error', (_event, text: unknown) => {
   logRendererError(String(text).slice(0, MAX_RENDERER_ERROR_CHARS));
 });

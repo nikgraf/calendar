@@ -25,6 +25,18 @@ export type ModelStatus =
  * helper binary on macOS. Nothing here imports platform code, so the
  * features built on top stay testable with a fake.
  */
+/** What a provider's model can take: the pipelines size their input by it. */
+export interface ModelInfo {
+  /**
+   * The tokens prompt and answer share, when the provider knows: Apple's
+   * on-device model has about 4K, a served Gemma whatever context it was
+   * started with. Undefined means "assume small".
+   */
+  readonly contextTokens?: number | undefined;
+  /** The model as the provider names it ("Apple Intelligence", "gemma3:4b"). */
+  readonly name: string;
+}
+
 export interface LanguageModel {
   /**
    * Generates JSON matching `jsonSchema`. Implementations use guided
@@ -35,6 +47,8 @@ export interface LanguageModel {
     readonly jsonSchema: unknown;
     readonly prompt: string;
   }) => Promise<unknown>;
+  /** The model behind the seam, when the provider can say (capture sizes its text by it). */
+  readonly info?: (() => Promise<ModelInfo>) | undefined;
   /**
    * Whether a model can actually run here, and if not, why — so callers
    * can explain the gap instead of silently dropping AI entry points.

@@ -17,7 +17,14 @@ contextBridge.exposeInMainWorld('calendarBridge', {
   logError: (text: string) => ipcRenderer.send('renderer-error', text),
   modelGenerate: (schema: unknown, prompt: string) =>
     ipcRenderer.invoke('model:generate', schema, prompt),
+  /** The Swift helper's own status: what dictation and text recognition depend on. */
+  modelHelperStatus: () => ipcRenderer.invoke('model:helper-status'),
+  modelInfo: () => ipcRenderer.invoke('model:info'),
   modelPrepareSpeech: (locale: string) => ipcRenderer.invoke('model:prepare-speech', locale),
+  /** The model provider (Settings › General): the view, changes, and a probe of unsaved settings. */
+  modelProviderGet: () => ipcRenderer.invoke('model:provider-get'),
+  modelProviderSet: (changes: unknown) => ipcRenderer.invoke('model:provider-set', changes),
+  modelProviderTest: (candidate: unknown) => ipcRenderer.invoke('model:provider-test', candidate),
   modelRecognizeText: (imageBase64: string) =>
     ipcRenderer.invoke('model:recognize-text', imageBase64),
   modelStatus: () => ipcRenderer.invoke('model:status'),
@@ -27,6 +34,11 @@ contextBridge.exposeInMainWorld('calendarBridge', {
     const wrapped = () => listener();
     ipcRenderer.on('agents:changed', wrapped);
     return () => ipcRenderer.off('agents:changed', wrapped);
+  },
+  onModelProviderChanged: (listener: (view: unknown) => void) => {
+    const wrapped = (_event: unknown, view: unknown) => listener(view);
+    ipcRenderer.on('model:providerChanged', wrapped);
+    return () => ipcRenderer.off('model:providerChanged', wrapped);
   },
   /**
    * Event reminders clicked in Notification Center: the one waiting at
