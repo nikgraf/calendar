@@ -843,10 +843,31 @@ gateway carries all of it. Details, limits and the threat model:
   all"), the birthday detail — and the capture model behind the share
   sheet and deep links, whose events open the editor as one thread of
   drafts; each opening is keyed by its own number; screens ask it
-  through `useEditorHost()`. The drafts are not drawn on the iOS calendar
-  yet (todo.md).
-  `+native-intent.tsx` keeps non-route URLs on the calendar. Sheets are
-  React Native page sheets; `@expo/ui` is used where it is a drop-in.
+  through `useEditorHost()`. The editor is the `editor` route
+  (`app/editor.tsx`), a react-native-screens form sheet with a half and
+  a full detent: a new item opens at half height over the live calendar,
+  an existing one at full; the host pushes the route and pops it on
+  Cancel or Save, and a swipe that dismisses it is Cancel. UIKit
+  presents one sheet at a time, so the push waits for a page sheet
+  (detail, birthday) to slide away, and a page sheet opened from the
+  calendar behind a half-height editor waits for the form sheet (the
+  route unmounts as its sheet starts to leave, not after). The quick-add
+  field does not take the focus there (the keyboard raises a half sheet
+  to full; once it hides, the sheet returns to the detent it had). The
+  sheet lays its content out once, as at most two subviews: a header
+  that must not be flattened (`collapsable={false}`) and one scroll view
+  that stays across a kind switch — the forms render `bare` inside it
+  (`FormScroll`). The calendar draws the thread's drafts from
+  `useDraftPreviews` (`DraftBlock.tsx`): dashed blocks tagged "Draft" in
+  the timeline, chips in the all-day lane, a ringed dot in the month
+  grid, the free slots as fainter dotted "Option" blocks, a ring on the
+  focused one; a tap focuses a draft or moves it to the slot
+  (`useRequestDraftFocus`). The focused draft's day is shown
+  (`useOnDraftReveal`) and the grid scrolls to it, padded by half a
+  screen while drafts are drawn so an evening draft clears the sheet.
+  `+native-intent.tsx` keeps non-route URLs on the calendar. The other
+  sheets are React Native page sheets; `@expo/ui` is used where it is a
+  drop-in.
   Text that cannot grow (grid blocks, chips, the gutter, bars) is capped
   at `BOX_FONT_SCALE` for Dynamic Type; the rest scales fully.
 - **Views**: day/week time grid (with "2 Days" and a two-week agenda on
