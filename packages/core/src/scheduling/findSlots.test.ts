@@ -124,3 +124,34 @@ describe('findFreeSlots', () => {
     expect(slots.filter((slot) => slot.startTime >= '17:00')).toHaveLength(0);
   });
 });
+
+describe('findFreeSlots with a preferred time', () => {
+  it('centres each gap’s slot on the time as far as the gap allows, to the quarter hour', () => {
+    const busy = [
+      event('2026-08-25T06:45:00Z', '2026-08-25T07:15:00Z'), // 08:45–09:15 local
+      event('2026-08-25T08:15:00Z', '2026-08-25T08:45:00Z'), // 10:15–10:45 local
+    ];
+    const slots = findFreeSlots(
+      busy,
+      { durationMinutes: 30, earliestTime: '08:00', latestTime: '12:00', ...week },
+      { ...context, preferredTime: '10:00' },
+    );
+    expect(slots).toEqual([
+      // 08:00–08:45 cannot reach 09:45: the latest start it holds.
+      { date: '2026-08-25', endTime: '08:45', startTime: '08:15' },
+      // 09:15–10:15 holds the centred start.
+      { date: '2026-08-25', endTime: '10:15', startTime: '09:45' },
+      // 10:45–12:00 opens after the centre: its own start.
+      { date: '2026-08-25', endTime: '11:15', startTime: '10:45' },
+    ]);
+  });
+
+  it('starts slots where their gap opens without one', () => {
+    const slots = findFreeSlots(
+      [],
+      { durationMinutes: 30, earliestTime: '08:00', latestTime: '12:00', ...week },
+      context,
+    );
+    expect(slots).toEqual([{ date: '2026-08-25', endTime: '08:30', startTime: '08:00' }]);
+  });
+});

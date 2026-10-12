@@ -1,8 +1,18 @@
-import { type LanguageModel, parseRefine } from '@calendar/ai';
+import {
+  isFinderPhrase,
+  type LanguageModel,
+  NO_SLOT_FITS,
+  parseQuickAdd,
+  parseRefine,
+  proposeSlots,
+} from '@calendar/ai';
 import {
   type AttendeeInput,
+  type BackendClient,
   type EventReminders,
+  type FreeSlot,
   type GeoLocation,
+  minutesBetween,
   Temporal,
 } from '@calendar/core';
 import { useRef, useState } from 'react';
@@ -43,6 +53,26 @@ export interface Draft {
   readonly extras?: DraftExtras | undefined;
   readonly id: string;
   readonly item: QuickAddItem;
+  /**
+   * The free slots a finder phrase found for the draft, best first, the
+   * draft sitting in one of them: the form offers them as chips, the grid
+   * draws the others as candidates. Found for that phrase's constraints,
+   * so the next turn drops them (Undo brings them back).
+   */
+  readonly slots?: ReadonlyArray<FreeSlot> | undefined;
+}
+
+/**
+ * What a turn did to one draft: its item as it should be, the slots found
+ * for it (if any), and its extras where the turn changed them (a to-do
+ * placed in a slot is dated) — so the state before the turn, which Undo
+ * restores, is the one the thread held.
+ */
+export interface DraftChange {
+  readonly extras?: DraftExtras | undefined;
+  readonly id: string;
+  readonly item: QuickAddItem;
+  readonly slots?: ReadonlyArray<FreeSlot> | undefined;
 }
 
 export interface DraftTurn {
@@ -145,21 +175,41 @@ export const summarizeChange = (before: QuickAddItem, after: QuickAddItem): stri
   return parts.length === 0 ? 'no change' : parts.join(' · ');
 };
 
+/** "… · 3 free slots" when a turn found alternatives beside the draft's own. */
+const withSlots = (summary: string, slots: ReadonlyArray<FreeSlot> | undefined): string =>
+  slots && slots.length > 1 ? `${summary} · ${String(slots.length)} free slots` : summary;
+
+export interface StartOptions {
+  /** What the form already held: the first draft's. */
+  readonly extras?: DraftExtras | undefined;
+  readonly id?: (() => string) | undefined;
+  /** A finder phrase's slots: the first draft's (it sits in the best one). */
+  readonly slots?: ReadonlyArray<FreeSlot> | undefined;
+}
+
 /**
  * The first turn: the phrase (or the paste) and every draft it made. What
  * the form already held (guests typed before the phrase) goes with the
- * draft — a phrase makes one draft, so the extras are its.
+ * draft — a phrase makes one draft, so the extras are its, as are the
+ * slots a finder phrase found.
  */
 export const startThread = (
   items: ReadonlyArray<QuickAddItem>,
   utterance: string,
-  id: () => string = nextDraftId,
-  extras?: DraftExtras,
+  { extras, id = nextDraftId, slots }: StartOptions = {},
 ): DraftThreadState => {
-  const drafts = items.map((item) => ({ ...(extras ? { extras } : {}), id: id(), item }));
+  const drafts = items.map((item, index) => ({
+    ...(extras ? { extras } : {}),
+    id: id(),
+    item,
+    ...(index === 0 && slots ? { slots } : {}),
+  }));
   const summary =
     drafts.length === 1 && drafts[0]
-      ? `${drafts[0].item.prefill.title} · ${describeDraftItem(drafts[0].item)}`
+      ? withSlots(
+          `${drafts[0].item.prefill.title || 'Untitled'} · ${describeDraftItem(drafts[0].item)}`,
+          slots,
+        )
       : `${String(drafts.length)} drafts`;
   return {
     drafts,
@@ -184,29 +234,44 @@ export const refineTargets = (state: DraftThreadState, utterance: string): Reado
   return focused ? [focused] : [];
 };
 
+/** The draft without the slots a turn found for it. */
+const withoutSlots = ({ slots: _slots, ...draft }: Draft): Draft => draft;
+
 /**
  * A turn's results folded in: the changed drafts replace their old
- * selves, the rest stay, and the state before goes to the history. The
- * summary lists what changed on the focused draft, or how many changed.
+ * selves, the rest stay, and the state before goes to the history. A
+ * changed draft keeps slots only when the turn brings its own — the old
+ * ones were found for other words. The summary lists what changed on
+ * the focused draft, or how many changed.
  */
 export const refineThread = (
   state: DraftThreadState,
   utterance: string,
-  changes: ReadonlyArray<{ readonly id: string; readonly item: QuickAddItem }>,
+  changes: ReadonlyArray<DraftChange>,
   id: () => string = nextDraftId,
 ): DraftThreadState => {
-  const changed = new Map(changes.map((change) => [change.id, change.item]));
+  const changed = new Map(changes.map((change) => [change.id, change]));
   const drafts = state.drafts.map((draft) => {
-    const item = changed.get(draft.id);
-    return item === undefined ? draft : { ...draft, item };
+    const change = changed.get(draft.id);
+    return change === undefined
+      ? draft
+      : {
+          ...withoutSlots(draft),
+          ...(change.extras ? { extras: change.extras } : {}),
+          item: change.item,
+          ...(change.slots ? { slots: change.slots } : {}),
+        };
   });
   const focused = state.drafts[state.focused];
   const focusedChange = focused ? changed.get(focused.id) : undefined;
   const summary =
     focused && focusedChange
-      ? changes.length > 1
-        ? `${summarizeChange(focused.item, focusedChange)} (${String(changes.length)} drafts)`
-        : summarizeChange(focused.item, focusedChange)
+      ? withSlots(
+          changes.length > 1
+            ? `${summarizeChange(focused.item, focusedChange.item)} (${String(changes.length)} drafts)`
+            : summarizeChange(focused.item, focusedChange.item),
+          focusedChange.slots,
+        )
       : `${String(changes.length)} drafts changed`;
   return {
     drafts,
@@ -216,6 +281,53 @@ export const refineThread = (
     version: state.version + 1,
   };
 };
+
+/**
+ * The item moved into a free slot: an event takes the slot's day and
+ * times (timed, its default-time mark gone), a to-do is due at the slot's
+ * start. A nameless item takes the title the phrase gave, if any.
+ */
+export const itemAtSlot = (item: QuickAddItem, slot: FreeSlot, title?: string): QuickAddItem => {
+  const named = item.prefill.title.trim() === '' && title ? title : item.prefill.title;
+  if (item.kind === 'task') {
+    return {
+      kind: 'task',
+      prefill: { ...item.prefill, date: slot.date, time: slot.startTime, title: named },
+    };
+  }
+  const { assumedTime: _assumed, ...prefill } = item.prefill;
+  return {
+    kind: 'event',
+    prefill: {
+      ...prefill,
+      date: slot.date,
+      endTime: slot.endTime,
+      isAllDay: false,
+      startTime: slot.startTime,
+      title: named,
+    },
+  };
+};
+
+/** A new event draft in a free slot, titled as the phrase said, if it said. */
+export const slotItem = (slot: FreeSlot, title?: string): QuickAddItem => ({
+  kind: 'event',
+  prefill: {
+    date: slot.date,
+    endTime: slot.endTime,
+    isAllDay: false,
+    startTime: slot.startTime,
+    title: title ?? '',
+  },
+});
+
+/** Whether an event item sits in the slot: the chosen one among a draft's proposals. */
+export const isAtSlot = (item: QuickAddItem, slot: FreeSlot): boolean =>
+  item.kind === 'event' &&
+  !item.prefill.isAllDay &&
+  item.prefill.date === slot.date &&
+  item.prefill.startTime === slot.startTime &&
+  item.prefill.endTime === slot.endTime;
 
 /** A prefill field by field: the two kinds share no keys but the ones compared. */
 const fields = (item: QuickAddItem): Record<string, unknown> =>
@@ -248,6 +360,97 @@ export const mergeRefinement = (
     }
   }
   return { kind: after.kind, prefill: merged } as unknown as QuickAddItem;
+};
+
+/** What the form holds of the focused draft at one moment: its item and extras. */
+export interface FormSnapshot {
+  readonly extras?: DraftExtras | undefined;
+  readonly item: QuickAddItem;
+}
+
+/**
+ * A refinement's changes folded in once the model answered. The form as
+ * it is now (`fresh`) goes into the draft it shows first — the target
+ * while that is still the focused one, else the draft focused meanwhile,
+ * whose edits the turn's re-apply would otherwise wipe. Then the change
+ * lands on the target: on the form's copy when it is the focused draft,
+ * edits made while the model answered kept, else on its stored copy —
+ * what the form held when it left — and only what the turn changed is
+ * taken over.
+ */
+export const landRefinement = (
+  state: DraftThreadState,
+  {
+    changes,
+    fresh,
+    submitted,
+    targetId,
+    utterance,
+  }: {
+    readonly changes: ReadonlyArray<DraftChange>;
+    /** The form now, if it was read. */
+    readonly fresh?: FormSnapshot | undefined;
+    /** The form when the turn was sent, if it was read. */
+    readonly submitted?: FormSnapshot | undefined;
+    readonly targetId: string | undefined;
+    readonly utterance: string;
+  },
+): DraftThreadState => {
+  const index = state.drafts.findIndex((draft) => draft.id === targetId);
+  if (submitted === undefined || fresh === undefined || index === -1) {
+    return refineThread(state, utterance, changes);
+  }
+  const base = updateDraft(state, state.focused, fresh.item, fresh.extras);
+  const current = base.drafts[index]!.item;
+  return refineThread(
+    base,
+    utterance,
+    changes.map((change) =>
+      change.id === targetId
+        ? { ...change, item: mergeRefinement(current, submitted.item, change.item) }
+        : change,
+    ),
+  );
+};
+
+/**
+ * A finder turn's slots folded in: the form as it is now goes into the
+ * draft it shows (as above), then the target draft moves into the best
+ * slot — its title kept, the slots on it. A to-do placed in a slot is
+ * dated: an undated state the form held goes (and comes back with Undo).
+ */
+export const landPlacement = (
+  state: DraftThreadState,
+  {
+    fresh,
+    slots,
+    targetId,
+    title,
+    utterance,
+  }: {
+    readonly fresh?: FormSnapshot | undefined;
+    readonly slots: ReadonlyArray<FreeSlot>;
+    readonly targetId: string;
+    readonly title?: string | undefined;
+    readonly utterance: string;
+  },
+): DraftThreadState => {
+  const index = state.drafts.findIndex((draft) => draft.id === targetId);
+  const [best] = slots;
+  if (index === -1 || best === undefined) {
+    return state;
+  }
+  const based =
+    fresh === undefined ? state : updateDraft(state, state.focused, fresh.item, fresh.extras);
+  const draft = based.drafts[index]!;
+  return refineThread(based, utterance, [
+    {
+      ...(draft.extras?.undated ? { extras: { ...draft.extras, undated: false } } : {}),
+      id: draft.id,
+      item: itemAtSlot(draft.item, best, title),
+      slots,
+    },
+  ]);
 };
 
 /** The last turn taken back; taking back the first one leaves no drafts. */
@@ -333,21 +536,38 @@ export const removeDraft = (state: DraftThreadState, index: number): DraftThread
   return draft === undefined ? state : removeDrafts(state, [draft.id]);
 };
 
+/** What the form holds of the focused draft, read by a turn before and after its model call. */
+export type ReadForm = () => FormSnapshot;
+
+/** A finder phrase on an all-day draft, or none: the length searched for. */
+const DEFAULT_SLOT_MINUTES = 60;
+
 /**
- * The thread as a hook: the state above, the model call for a turn, and
- * the stale-answer guard. A turn that lands after the thread was cleared
- * or another turn began is dropped; a form snapshot of the focused draft
- * (`focusedNow`) is folded in first, so a turn starts from what the user
- * sees and its summary lists only what the words changed.
+ * The thread as a hook: the state above, what a phrase does (`phrase`:
+ * the router, quick-add for a first phrase, a refinement for a later one,
+ * slot proposals for one that asks for free time), and the stale-answer
+ * guard. A turn that lands after the thread was cleared or another turn
+ * began is dropped; a form snapshot of the focused draft (`read`) is
+ * folded in first, so a turn starts from what the user sees and its
+ * summary lists only what the words changed.
  */
-export const useDraftThread = ({ model, timeZone }: { model: LanguageModel; timeZone: string }) => {
+export const useDraftThread = ({
+  backend,
+  model,
+  timeZone,
+}: {
+  /** The events a finder phrase searches between. */
+  backend: BackendClient;
+  model: LanguageModel;
+  timeZone: string;
+}) => {
   const [state, setState] = useState<DraftThreadState>(EMPTY_THREAD);
   const [busy, setBusy] = useState(false);
   const request = useRef(0);
 
-  const start = (items: ReadonlyArray<QuickAddItem>, utterance: string, extras?: DraftExtras) => {
+  const start = (items: ReadonlyArray<QuickAddItem>, utterance: string, options?: StartOptions) => {
     request.current += 1;
-    setState(startThread(items, utterance, nextDraftId, extras));
+    setState(startThread(items, utterance, options));
   };
 
   /**
@@ -356,10 +576,8 @@ export const useDraftThread = ({ model, timeZone }: { model: LanguageModel; time
    * form holds by then), so an edit made meanwhile is kept and only what
    * the turn changed is taken over (`mergeRefinement`).
    */
-  const refine = async (
-    utterance: string,
-    read?: () => { readonly extras?: DraftExtras | undefined; readonly item: QuickAddItem },
-  ): Promise<string | undefined> => {
+  const refine = async (utterance: string, read?: ReadForm): Promise<string | undefined> => {
+    // A draft focused meanwhile is not where the answer lands (`landRefinement`).
     const mine = ++request.current;
     const submitted = read?.();
     const current =
@@ -413,23 +631,9 @@ export const useDraftThread = ({ model, timeZone }: { model: LanguageModel; time
           : "That couldn't be read — try rephrasing.";
       }
       const fresh = read?.();
-      setState((latest) => {
-        const index = latest.drafts.findIndex((draft) => draft.id === focusedId);
-        if (submitted === undefined || fresh === undefined || index === -1) {
-          return refineThread(latest, utterance, changes);
-        }
-        // The focused draft's change lands on the form as it is now.
-        const base = updateDraft(latest, index, fresh.item, fresh.extras);
-        return refineThread(
-          base,
-          utterance,
-          changes.map((change) =>
-            change.id === focusedId
-              ? { ...change, item: mergeRefinement(fresh.item, submitted.item, change.item) }
-              : change,
-          ),
-        );
-      });
+      setState((latest) =>
+        landRefinement(latest, { changes, fresh, submitted, targetId: focusedId, utterance }),
+      );
       return undefined;
     } catch {
       return 'On-device model unavailable.';
@@ -440,6 +644,121 @@ export const useDraftThread = ({ model, timeZone }: { model: LanguageModel; time
     }
   };
 
+  /**
+   * A finder phrase: the free slots it finds, the best one as the draft.
+   * With no draft yet a new event draft sits in it, titled as the phrase
+   * said (if it said); otherwise the focused draft moves there, its title
+   * kept and its own length searched for unless the phrase states one. The
+   * slots go with the draft for the form to offer; the next turn drops them.
+   */
+  const place = async (utterance: string, read?: ReadForm): Promise<string | undefined> => {
+    const mine = ++request.current;
+    const submitted = read?.();
+    const current =
+      submitted === undefined
+        ? state
+        : updateDraft(state, state.focused, submitted.item, submitted.extras);
+    const target = current.drafts[current.focused];
+    const length =
+      target?.item.kind === 'event' && !target.item.prefill.isAllDay
+        ? minutesBetween(target.item.prefill.startTime, target.item.prefill.endTime)
+        : 0;
+    setBusy(true);
+    try {
+      const result = await proposeSlots(model, backend, {
+        fallbackDurationMinutes: length > 0 ? length : DEFAULT_SLOT_MINUTES,
+        phrase: utterance,
+        referenceDate: Temporal.Now.plainDateISO(timeZone).toString(),
+        timeZone,
+      });
+      if (mine !== request.current) {
+        return undefined;
+      }
+      if (result.kind === 'rejected') {
+        return result.reason;
+      }
+      const [best] = result.slots;
+      if (best === undefined) {
+        return NO_SLOT_FITS;
+      }
+      if (target === undefined) {
+        const extras = read?.().extras;
+        setState(
+          startThread([slotItem(best, result.title)], utterance, { extras, slots: result.slots }),
+        );
+        return undefined;
+      }
+      const fresh = read?.();
+      setState((latest) =>
+        landPlacement(latest, {
+          fresh,
+          slots: result.slots,
+          targetId: target.id,
+          title: result.title,
+          utterance,
+        }),
+      );
+      return undefined;
+    } catch {
+      return 'On-device model unavailable.';
+    } finally {
+      if (mine === request.current) {
+        setBusy(false);
+      }
+    }
+  };
+
+  /**
+   * What a phrase in the field does: one that asks for free time proposes
+   * slots (`isFinderPhrase`, read by the code, so a phrase never has to
+   * say which it is); otherwise the first phrase makes the draft(s)
+   * through quick-add — what the form held before it goes with them — and
+   * every later one refines. Resolves the message for the field, or
+   * nothing when the phrase was taken. A model that cannot answer throws.
+   */
+  const phrase = async (
+    text: string,
+    {
+      fallbackDate,
+      read,
+    }: {
+      /** Where an undated first phrase lands (the day being viewed). */
+      readonly fallbackDate: string;
+      readonly read?: ReadForm | undefined;
+    },
+  ): Promise<string | undefined> => {
+    if (isFinderPhrase(text)) {
+      return place(text, read);
+    }
+    if (state.drafts.length > 0) {
+      return refine(text, read);
+    }
+    const mine = request.current;
+    const result = await parseQuickAdd(model, {
+      fallbackDate,
+      phrase: text,
+      referenceDate: Temporal.Now.plainDateISO(timeZone).toString(),
+      timeZone,
+    });
+    // Cleared or undone meanwhile: a draft from before must not come back.
+    if (mine !== request.current) {
+      return undefined;
+    }
+    if (result.kind === 'rejected') {
+      return result.reason;
+    }
+    start(
+      [
+        result.kind === 'task'
+          ? { kind: 'task', prefill: result.prefill }
+          : { kind: 'event', prefill: result.prefill },
+      ],
+      text,
+      { extras: read?.().extras },
+    );
+    return undefined;
+  };
+
   return {
     busy,
     clear: () => {
@@ -447,6 +766,7 @@ export const useDraftThread = ({ model, timeZone }: { model: LanguageModel; time
       setState(EMPTY_THREAD);
     },
     focus: (index: number) => setState((latest) => focusDraft(latest, index)),
+    phrase,
     refine,
     remove: (index: number) => setState((latest) => removeDraft(latest, index)),
     removeMany: (ids: ReadonlyArray<string>) => setState((latest) => removeDrafts(latest, ids)),

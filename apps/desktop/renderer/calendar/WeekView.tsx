@@ -157,8 +157,8 @@ export function WeekView({
   laneRef: RefObject<HTMLDivElement | null>;
   listColorOf: (task: TaskRecord) => string | undefined;
   onBirthdayClick: (birthday: BirthdayOccurrence) => void;
-  /** A draft block was clicked: the editor focuses that draft. */
-  onDraftClick: (draftId: string) => void;
+  /** A draft block was clicked: the editor focuses that draft — and moves it into the slot, for a candidate. */
+  onDraftClick: (draftId: string, slot?: DraftOccurrence['candidate']) => void;
   onEventClick: (event: EventRecord) => void;
   onNavigate: (dayCount: number) => void;
   /** A slide to a picked first day is over: drop the days it travelled across. */

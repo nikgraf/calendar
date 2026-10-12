@@ -28,9 +28,15 @@ export const findSlotsFor = async (
   timeZone: string,
   {
     exclude,
+    maxSlots,
+    preferredTime,
   }: {
     /** Rows that are not busy time: the event being rescheduled (its own occurrences). */
     readonly exclude?: ((event: EventRecord) => boolean) | undefined;
+    /** How many slots to list; the solver's own ten by default. */
+    readonly maxSlots?: number | undefined;
+    /** Each gap's slot placed as near this wall-clock time as the gap allows. */
+    readonly preferredTime?: string | undefined;
   } = {},
 ): Promise<ReadonlyArray<FreeSlot> | { readonly reason: string }> => {
   // The zone-exact day bounds matter to the solver, not the fetch; a
@@ -46,7 +52,9 @@ export const findSlotsFor = async (
     return { reason: "Couldn't load your calendar — try again." };
   }
   return findFreeSlots(exclude ? events.filter((event) => !exclude(event)) : events, constraints, {
+    maxSlots,
     nowUtc: Date.now(),
+    preferredTime,
     timeZone,
   });
 };

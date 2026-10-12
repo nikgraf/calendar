@@ -680,6 +680,16 @@ const TODO_CUES =
 /** A to-do rather than an appointment: the phrase carries one of the cues the prompt names. */
 export const isTodoPhrase = (phrase: string): boolean => TODO_CUES.test(words(phrase));
 
+/**
+ * A rename ("call it team dinner", "nenn es Teamessen"): the new title is
+ * all there is — a meal word, a weekday or a finder cue in the name must
+ * not move the event or go looking for a slot.
+ */
+const RENAME =
+  /\b(?:call it|name it|rename|retitle|titled?|nenn(?:e|t)?\s+(?:es|ihn|sie)?|umbenennen|heisst)\b/;
+
+export const isRenamePhrase = (phrase: string): boolean => RENAME.test(words(phrase));
+
 // --- The finder's constraints ---------------------------------------------
 
 /** "Monday through Friday", "Freitag bis Montag": both ends named, every day between. */

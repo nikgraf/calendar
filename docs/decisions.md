@@ -592,6 +592,22 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   variant (pattern over color — the hatch reads in both schemes).
   Desktop first; open: the iOS sheet (todo.md), drafts in the month
   view, a slot editor drawing its form as a draft, to-dos in "Add all".
+- **Slot proposals in the create thread** (2026-10-12, #185) — a phrase
+  that asks for free time is routed by code (`isFinderPhrase`: English
+  and German cues, a search verb or question beside a time word) to the
+  finder prompt, never by the model, so the two prompts stay tuned apart;
+  the solver places each gap's slot at the named part of the day
+  (`preferredTime`, the middle of the bounds the finder settled on) and
+  `rankSlotsAround` orders the slots around it, half an hour counting the
+  same, soonest first among equals; the thread takes the best as the
+  draft and keeps the rest on it — a "Free slots" chip row and fainter
+  dotted "Option" blocks, either moving the draft; the next turn drops
+  them, Undo restores them. Rejected: a slider over the slots, asking the
+  model whether a phrase is a search, a centre without a named period
+  (chronological stays, as in the form's finder), turning a to-do into an
+  event on a finder turn (it moves to the slot's start, no row). Open:
+  the iOS thread's chips and candidates, a centre for the form finder's
+  own presets, proposals for several drafts at once.
 - **The model says why it is unavailable** (2026-10-10, #168) —
   `ModelStatus` carries disabled / not-ready / unsupported (Apple
   Intelligence switches itself off on a Siri-vs-Mac language mismatch); a

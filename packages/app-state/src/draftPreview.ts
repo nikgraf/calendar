@@ -4,24 +4,28 @@ import {
   byDayError,
   type EventDraft,
   expandRecurringEvent,
+  type FreeSlot,
   GeoLocation,
   geoMatches,
   repeatUntilError,
   validateEventDraft,
 } from '@calendar/core';
-import type { Draft, DraftExtras } from './draftThread.ts';
+import { type Draft, type DraftExtras, isAtSlot } from './draftThread.ts';
 import type { EventEditorPrefill } from './editorModel.ts';
 import { repeatSpecFrom, seedRepeatFields } from './repeatState.ts';
 
 /**
  * What the calendar draws for the thread's drafts: each event draft as a
  * block in its calendar's color, every occurrence of a repeating one in
- * the visible range, the focused one marked. Nothing here is stored —
- * the previews are derived from the drafts (and the live form for the
- * focused one) on every change.
+ * the visible range, the focused one marked, and the free slots a finder
+ * phrase offered beside the focused draft as fainter candidates. Nothing
+ * here is stored — the previews are derived from the drafts (and the live
+ * form for the focused one) on every change.
  */
 
 export interface DraftPreview {
+  /** Set for a block that offers a free slot beside the focused draft: a click moves the draft there. */
+  readonly candidate?: FreeSlot | undefined;
   /** The hex of the calendar the draft would be created in. */
   readonly color: string;
   readonly date: string;
@@ -35,8 +39,10 @@ export interface DraftPreview {
   readonly title: string;
 }
 
-/** One block to draw: a draft, or one occurrence of a repeating draft. */
+/** One block to draw: a draft, one occurrence of a repeating draft, or a free slot offered beside one. */
 export interface DraftOccurrence {
+  /** The free slot this block offers; a click moves the draft (`draftId`) into it. */
+  readonly candidate?: FreeSlot | undefined;
   readonly color: string;
   readonly draftId: string;
   readonly endDate?: string | undefined;
@@ -87,9 +93,34 @@ export const previewOfPrefill = (
 });
 
 /**
+ * The free slots offered beside the focused draft, as blocks: every slot
+ * of the draft's proposals but the one it sits in (as the form has it),
+ * each a click away from becoming the draft's own times. Not drawn for
+ * a draft out of focus — its slots wait until it is.
+ */
+export const candidatePreviews = (
+  draft: Draft,
+  current: EventEditorPrefill,
+  { color }: { color: string },
+): ReadonlyArray<DraftPreview> =>
+  (draft.slots ?? [])
+    .filter((slot) => !isAtSlot({ kind: 'event', prefill: current }, slot))
+    .map((slot) => ({
+      candidate: slot,
+      color,
+      date: slot.date,
+      endTime: slot.endTime,
+      focused: false,
+      id: draft.id,
+      isAllDay: false,
+      startTime: slot.startTime,
+      title: current.title,
+    }));
+
+/**
  * The blocks to draw for a range: a draft once, a repeating draft at every
  * occurrence the range holds (through the same expander the grid uses for
- * stored series).
+ * stored series), a candidate once.
  */
 export const draftOccurrences = (
   previews: ReadonlyArray<DraftPreview>,
@@ -108,6 +139,7 @@ export const draftOccurrences = (
       return [];
     }
     const shared = {
+      ...(preview.candidate ? { candidate: preview.candidate } : {}),
       color: preview.color,
       draftId: preview.id,
       endTime: preview.endTime,
@@ -123,7 +155,10 @@ export const draftOccurrences = (
               ...shared,
               ...('endDate' in times ? { endDate: times.endDate, startDate: times.startDate } : {}),
               endUtc: times.endUtc,
-              key: preview.id,
+              // A candidate's key names its slot: a draft can have several beside it.
+              key: preview.candidate
+                ? `${preview.id}:slot:${preview.date}T${preview.startTime}`
+                : preview.id,
               startUtc: times.startUtc,
             },
           ]
