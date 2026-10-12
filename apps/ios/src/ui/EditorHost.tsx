@@ -160,9 +160,15 @@ export function EditorHostProvider({ children }: { children: ReactNode }) {
   const previousKind = useRef<Sheet['kind']>('none');
   // When the last page sheet (detail, birthday) has slid away.
   const pageSheetGone = useRef(0);
+  // A route to push once the form sheet is gone (Settings, asked for from
+  // behind a half-height editor); any sheet asked for meanwhile takes over.
+  const afterFormSheet = useRef<(() => void) | undefined>(undefined);
   useEffect(() => {
     const from = previousKind.current;
     previousKind.current = sheet.kind;
+    if (sheet.kind !== 'none') {
+      afterFormSheet.current = undefined;
+    }
     if (from === 'detail' || from === 'birthday') {
       pageSheetGone.current = Date.now() + PAGE_SHEET_DISMISS_MS;
     }
@@ -207,9 +213,6 @@ export function EditorHostProvider({ children }: { children: ReactNode }) {
   const [formSheetLeaving, setFormSheetLeaving] = useState(false);
   const formSheetTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   useEffect(() => () => clearTimeout(formSheetTimer.current), []);
-  // A route to push once the form sheet is gone (Settings, asked for from
-  // behind a half-height editor).
-  const afterFormSheet = useRef<(() => void) | undefined>(undefined);
   const routeMounted = useRef(false);
   const onEditorShown = useCallback(() => {
     routeMounted.current = true;
@@ -363,6 +366,9 @@ export function EditorHostProvider({ children }: { children: ReactNode }) {
     // instead. The avatar closes the editor first — Cancel, as a tap on an
     // event behind it is — and Settings opens once the sheet has gone.
     openSettings: () => {
+      if (afterFormSheet.current) {
+        return;
+      }
       if (routeMounted.current) {
         afterFormSheet.current = () => router.push('/settings');
         setSheet(NONE);
