@@ -258,6 +258,10 @@ const makeSheetStyles = (colors: ThemeColors) =>
       color: colors.text,
       fontSize: 16,
     },
+    // The form-sheet editor's header: the sheet's own color behind it.
+    sheetHeader: {
+      backgroundColor: colors.canvas,
+    },
     swatch: {
       borderRadius: 4,
       height: 14,

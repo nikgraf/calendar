@@ -1,0 +1,16 @@
+appId: com.solunivo.app.dev
+name: Raise a half-height editor to full height (shared)
+---
+# A new item's editor opens as a half-height form sheet: the calendar
+# behind it draws the drafts and takes taps. A form field below the half
+# is out of reach then — off the screen, and Maestro's scrolls swipe at
+# the screen's centre, which is the calendar. The sheet's grabber reads
+# "Half screen" there; a tap raises the sheet, and it stays up (a chosen
+# detent survives the keyboard).
+- runFlow:
+    when:
+      visible: 'Half screen'
+    commands:
+      - tapOn: 'Half screen'
+      - waitForAnimationToEnd:
+          timeout: 3000

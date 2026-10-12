@@ -53,6 +53,9 @@ tags:
       - assertVisible: 'New Event'
       - waitForAnimationToEnd:
           timeout: 5000
+      # The thread opens the editor at half height over the calendar;
+      # the form's fields lie below the half.
+      - runFlow: ../common/expand-editor.yaml
       - assertVisible:
           id: 'draft-position'
           text: '1 of 2'

@@ -8,7 +8,8 @@ import {
 } from '@calendar/app-state';
 import { type CalendarInfo, draftZoneRanges } from '@calendar/core';
 import DateTimePicker from '@react-native-community/datetimepicker';
-import { Linking, Pressable, ScrollView, Switch, Text, TextInput, View } from 'react-native';
+import { Linking, Pressable, Switch, Text, TextInput, View } from 'react-native';
+import { FormScroll } from './FormScroll.tsx';
 import { useSheetStyles } from './editSheetShared.ts';
 import { dateForPicker, dateStringFromPicker, timeStringFromPicker } from './pickerDates.ts';
 import { FindTimeFields } from './FindTimeFields.tsx';
@@ -28,10 +29,13 @@ const groupLabel = (calendar: CalendarInfo, emailOf: (accountId: string) => stri
 /** The event half of EventEditSheet (mode === 'event'). */
 export function EventEditForm({
   autoFocusTitle = true,
+  bare,
   model,
 }: {
   /** Off when the quick-add field above the form takes the focus. */
   autoFocusTitle?: boolean;
+  /** The content only: the sheet around it owns the scroll view (`FormScroll`). */
+  bare?: boolean | undefined;
   model: ReturnType<typeof useEventEditorModel>;
 }) {
   const styles = useSheetStyles();
@@ -85,11 +89,7 @@ export function EventEditForm({
     // Keyboard insets: the invitee field and its suggestions sit at the
     // bottom of the form, under the keyboard the auto-focused title
     // raises; without the inset they cannot be scrolled into reach.
-    <ScrollView
-      automaticallyAdjustKeyboardInsets
-      contentContainerStyle={styles.content}
-      keyboardShouldPersistTaps="handled"
-    >
+    <FormScroll bare={bare} contentStyle={styles.content}>
       {error ? <Text style={styles.error}>{error}</Text> : null}
       {readOnly ? (
         <Text style={styles.label} testID="event-read-only">
@@ -272,6 +272,6 @@ export function EventEditForm({
           </Pressable>
         ) : null}
       </>
-    </ScrollView>
+    </FormScroll>
   );
 }

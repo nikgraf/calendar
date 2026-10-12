@@ -26,6 +26,7 @@ function SystemBackground() {
  * and the share pickup still start inside the calendar screen.
  */
 export default function RootLayout() {
+  const { colors } = useTheme();
   return (
     <GestureHandlerRootView style={styles.root}>
       <ErrorBoundary>
@@ -35,6 +36,22 @@ export default function RootLayout() {
             <Stack screenOptions={{ headerShown: false }}>
               <Stack.Screen name="(tabs)" />
               <Stack.Screen name="settings" options={{ presentation: 'modal' }} />
+              {/* The editor: a form sheet at half height for a new item (the
+                  calendar behind stays live and draws the drafts), full for
+                  an existing one; `detent` comes with the push. */}
+              <Stack.Screen
+                name="editor"
+                options={({ route }) => ({
+                  contentStyle: { backgroundColor: colors.canvas },
+                  presentation: 'formSheet',
+                  sheetAllowedDetents: [0.5, 1],
+                  sheetExpandsWhenScrolledToEdge: false,
+                  sheetGrabberVisible: true,
+                  sheetInitialDetentIndex:
+                    (route.params as { detent?: string } | undefined)?.detent === 'half' ? 0 : 1,
+                  sheetLargestUndimmedDetentIndex: 0,
+                })}
+              />
             </Stack>
           </EditorHostProvider>
         </BackendProvider>

@@ -5,7 +5,7 @@ import {
 } from '@calendar/app-state';
 import type { TaskRecord } from '@calendar/core';
 import DateTimePicker from '@react-native-community/datetimepicker';
-import { Linking, Pressable, ScrollView, Switch, Text, TextInput, View } from 'react-native';
+import { Linking, Pressable, Switch, Text, TextInput, View } from 'react-native';
 import {
   chip,
   chipLabel,
@@ -14,6 +14,7 @@ import {
   toDateString,
   toTimeString,
 } from './editSheetShared.ts';
+import { FormScroll } from './FormScroll.tsx';
 import { DueLabel, NoDueDate } from './NoDueDate.tsx';
 import { RepeatRuleChips } from './RepeatRuleChips.tsx';
 import { TaskListPicker } from './TaskListPicker.tsx';
@@ -26,22 +27,22 @@ import { TaskListPicker } from './TaskListPicker.tsx';
  */
 export function ReminderEditForm({
   autoFocusTitle = true,
+  bare,
   task,
   taskModel,
 }: {
   /** Off when the quick-add field above the form takes the focus. */
   autoFocusTitle?: boolean;
+  /** The content only: the sheet around it owns the scroll view (`FormScroll`). */
+  bare?: boolean | undefined;
   task: TaskRecord | undefined;
   taskModel: ReturnType<typeof useTaskEditorModel>;
 }) {
   const styles = useSheetStyles();
   return (
-    // Keyboard insets: the quick-add field on top of a new item keeps the
-    // keyboard up, and the lower rows must still scroll into reach.
-    <ScrollView
-      automaticallyAdjustKeyboardInsets
-      contentContainerStyle={[styles.content, taskModel.readOnly && styles.readOnly]}
-      keyboardShouldPersistTaps="handled"
+    <FormScroll
+      bare={bare}
+      contentStyle={[styles.content, taskModel.readOnly && styles.readOnly]}
       pointerEvents={taskModel.readOnly ? 'none' : 'auto'}
     >
       {taskModel.error ? <Text style={styles.error}>{taskModel.error}</Text> : null}
@@ -175,6 +176,6 @@ export function ReminderEditForm({
           <Text style={styles.deleteLabel}>Delete Reminder</Text>
         </Pressable>
       ) : null}
-    </ScrollView>
+    </FormScroll>
   );
 }

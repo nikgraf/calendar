@@ -13,7 +13,7 @@ import {
   type TaskListInfo,
   type TaskRecord,
 } from '@calendar/core';
-import { Alert, Modal, Pressable, SafeAreaView, Text, View } from 'react-native';
+import { Alert, Modal, Pressable, SafeAreaView, ScrollView, Text, View } from 'react-native';
 import { backendClient } from '../backend.ts';
 import { languageModel } from '../model.ts';
 import { BirthdayDetail } from './BirthdayDetail.tsx';
@@ -108,6 +108,7 @@ export function EventEditSheet({
   initialKind,
   onClose,
   onSaved,
+  presentation = 'modal',
   seed,
   task,
   taskLists,
@@ -122,6 +123,11 @@ export function EventEditSheet({
   onClose: () => void;
   /** Save went through, as an event or a task (capture marks its row added). */
   onSaved?: (() => void) | undefined;
+  /**
+   * 'modal': its own page sheet (the birthday detail). 'route': the body
+   * of the editor's form-sheet route (`app/editor.tsx`), which presents it.
+   */
+  presentation?: 'modal' | 'route' | undefined;
   seed: EditSeed;
   /** Present when the sheet was opened from a task chip (task edit mode). */
   task?: TaskRecord | undefined;
@@ -167,6 +173,106 @@ export function EventEditSheet({
   const { noun, verb } = editorTitle({ kind, sourceKind, sourceProvider: task?.provider });
   const title = birthday ? 'Birthday' : `${verb} ${capitalize(noun)}`;
 
+  // The header: the Cancel · title · Save row, then for a new item the
+  // quick-add field and the thread, then the kind control.
+  const headerRow = (
+    <View style={styles.header}>
+      <Pressable onPress={onClose}>
+        {/* A birthday's reminder chips save as they change: nothing to cancel. */}
+        <Text maxFontSizeMultiplier={BOX_FONT_SCALE} style={styles.cancel}>
+          {birthday ? 'Done' : 'Cancel'}
+        </Text>
+      </Pressable>
+      <Text maxFontSizeMultiplier={BOX_FONT_SCALE} style={styles.title}>
+        {title}
+      </Text>
+      {birthday ||
+      (mode === 'todo' && taskModel.readOnly) ||
+      (mode === 'event' && eventModel.readOnly) ? (
+        <View />
+      ) : (
+        <Pressable
+          disabled={write.busy}
+          onPress={() => void (mode === 'todo' ? taskModel.save() : eventModel.save())}
+          style={busy ? styles.busy : undefined}
+          testID="event-save"
+        >
+          <Text maxFontSizeMultiplier={BOX_FONT_SCALE} style={styles.save}>
+            Save
+          </Text>
+        </Pressable>
+      )}
+    </View>
+  );
+  const headerRest = (
+    <>
+      {sourceKind === 'new' ? (
+        <>
+          <QuickAddBar
+            autoFocus={presentation !== 'route'}
+            fallbackDate={seed.initialDate.toString()}
+            onApply={(item) => void apply(item)}
+            onPhrase={onPhrase}
+            placeholder={drafts.length > 0 ? CHANGE_PLACEHOLDER : undefined}
+            timeZone={timeZone}
+          />
+          <DraftThreadSection editor={editor} note={seed.thread?.note} />
+        </>
+      ) : null}
+
+      {showToggle ? (
+        <View style={styles.modeRow}>
+          <SegmentedControl
+            accessibilityLabel="Kind"
+            grow
+            onChange={(next) => void switchTo(next)}
+            options={available.map((option) => ({
+              disabled: option !== 'event' && seriesOnly,
+              label: KIND_LABELS[option],
+              testID: `mode-${option}`,
+              value: option,
+            }))}
+            value={kind}
+          />
+        </View>
+      ) : null}
+    </>
+  );
+  const bare = presentation === 'route';
+  const form = birthday ? (
+    <BirthdayDetail occurrence={birthday} timeZone={timeZone} />
+  ) : mode === 'todo' ? (
+    // The selected list's provider picks the form: a Reminders list
+    // exposes time/priority/alert/repeat/URL; a Google list gets the
+    // plain title/date/notes form. The kind control moves between the
+    // providers; the list picker stays within one.
+    taskModel.provider === 'apple' ? (
+      <ReminderEditForm autoFocusTitle={!quickAdd} bare={bare} task={task} taskModel={taskModel} />
+    ) : (
+      <TaskEditForm autoFocusTitle={!quickAdd} bare={bare} task={task} taskModel={taskModel} />
+    )
+  ) : (
+    <EventEditForm autoFocusTitle={!quickAdd} bare={bare} model={eventModel} />
+  );
+  // The form-sheet route (`app/editor.tsx`): react-native-screens lays a
+  // sheet out once, as at most a header and a scroll view — the header must
+  // not be flattened away (`collapsable={false}`), the scroll view follows
+  // it directly, and it stays the same view across a kind switch (the
+  // forms render bare inside it): anything wrapped around them, or a
+  // scroll view swapped in later, it places over the header.
+  if (presentation === 'route') {
+    return (
+      <>
+        <View collapsable={false} style={styles.sheetHeader}>
+          {headerRow}
+          {headerRest}
+        </View>
+        <ScrollView automaticallyAdjustKeyboardInsets keyboardShouldPersistTaps="handled">
+          {form}
+        </ScrollView>
+      </>
+    );
+  }
   return (
     <Modal animationType="slide" onRequestClose={onClose} presentationStyle="pageSheet" visible>
       {/* A page sheet sits below the status bar; the SafeAreaView adds no
@@ -177,79 +283,10 @@ export function EventEditSheet({
           land on nothing (CI flows 08/16). */}
       <View style={styles.container}>
         <SafeAreaView>
-          <View style={styles.header}>
-            <Pressable onPress={onClose}>
-              {/* A birthday's reminder chips save as they change: nothing to cancel. */}
-              <Text maxFontSizeMultiplier={BOX_FONT_SCALE} style={styles.cancel}>
-                {birthday ? 'Done' : 'Cancel'}
-              </Text>
-            </Pressable>
-            <Text maxFontSizeMultiplier={BOX_FONT_SCALE} style={styles.title}>
-              {title}
-            </Text>
-            {birthday ||
-            (mode === 'todo' && taskModel.readOnly) ||
-            (mode === 'event' && eventModel.readOnly) ? (
-              <View />
-            ) : (
-              <Pressable
-                disabled={write.busy}
-                onPress={() => void (mode === 'todo' ? taskModel.save() : eventModel.save())}
-                style={busy ? styles.busy : undefined}
-                testID="event-save"
-              >
-                <Text maxFontSizeMultiplier={BOX_FONT_SCALE} style={styles.save}>
-                  Save
-                </Text>
-              </Pressable>
-            )}
-          </View>
-
-          {sourceKind === 'new' ? (
-            <>
-              <QuickAddBar
-                fallbackDate={seed.initialDate.toString()}
-                onApply={(item) => void apply(item)}
-                onPhrase={onPhrase}
-                placeholder={drafts.length > 0 ? CHANGE_PLACEHOLDER : undefined}
-                timeZone={timeZone}
-              />
-              <DraftThreadSection editor={editor} note={seed.thread?.note} />
-            </>
-          ) : null}
-
-          {showToggle ? (
-            <View style={styles.modeRow}>
-              <SegmentedControl
-                accessibilityLabel="Kind"
-                grow
-                onChange={(next) => void switchTo(next)}
-                options={available.map((option) => ({
-                  disabled: option !== 'event' && seriesOnly,
-                  label: KIND_LABELS[option],
-                  testID: `mode-${option}`,
-                  value: option,
-                }))}
-                value={kind}
-              />
-            </View>
-          ) : null}
+          {headerRow}
+          {headerRest}
         </SafeAreaView>
-        {birthday ? (
-          <BirthdayDetail occurrence={birthday} timeZone={timeZone} />
-        ) : mode === 'todo' ? (
-          // The selected list's provider picks the form: a Reminders list
-          // exposes time/priority/alert/repeat/URL; a Google list gets the
-          // plain title/date/notes form. The kind control moves between the
-          // providers; the list picker stays within one.
-          taskModel.provider === 'apple' ? (
-            <ReminderEditForm autoFocusTitle={!quickAdd} task={task} taskModel={taskModel} />
-          ) : (
-            <TaskEditForm autoFocusTitle={!quickAdd} task={task} taskModel={taskModel} />
-          )
-        ) : (
-          <EventEditForm autoFocusTitle={!quickAdd} model={eventModel} />
-        )}
+        {form}
       </View>
     </Modal>
   );

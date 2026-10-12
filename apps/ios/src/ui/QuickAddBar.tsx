@@ -46,12 +46,19 @@ export const onAppActive = (onActive: () => void): (() => void) => {
  * event form's own tool (`FindTimeFields`).
  */
 export function QuickAddBar({
+  autoFocus = true,
   fallbackDate,
   onApply,
   onPhrase,
   placeholder = 'Lunch with Sarah tomorrow at 1',
   timeZone,
 }: {
+  /**
+   * Take the focus once the sheet settled. Off in the half-height editor:
+   * the keyboard would raise the sheet over the calendar it is half
+   * height for; a tap on the field brings it.
+   */
+  autoFocus?: boolean | undefined;
   /** Undated phrases land on this day (the editor's). */
   fallbackDate: string;
   onApply: (item: QuickAddItem) => void;
@@ -106,12 +113,12 @@ export function QuickAddBar({
   // sheet is not reliable while it is still sliding in, so the focus is
   // asked for once the sheet has settled.
   useEffect(() => {
-    if (status !== 'ready') {
+    if (status !== 'ready' || !autoFocus) {
       return;
     }
     const timer = setTimeout(() => inputRef.current?.focus(), 400);
     return () => clearTimeout(timer);
-  }, [status]);
+  }, [status, autoFocus]);
 
   // The marker renders once the availability check resolved, whatever it said.
   if (status === null) {

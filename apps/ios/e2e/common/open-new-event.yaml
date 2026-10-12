@@ -22,3 +22,6 @@ name: Open the editor on a new event from the "+" button (shared)
 # The sheet slides in; on a slow runner a tap taken mid-animation misses.
 - waitForAnimationToEnd:
     timeout: 5000
+# A new item opens at half height over the calendar; the flows work the
+# form, so raise it.
+- runFlow: expand-editor.yaml
