@@ -2,6 +2,8 @@ export * from './accountRemoval.ts';
 export * from './atoms.ts';
 export * from './calendarNavigation.ts';
 export * from './captureModel.ts';
+export * from './draftPreview.ts';
+export * from './draftThread.ts';
 export * from './editorKinds.ts';
 export * from './editorOptions.ts';
 export * from './editorSwitch.ts';
