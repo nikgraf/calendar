@@ -155,21 +155,28 @@ const keysOf = (
   names: ReadonlyArray<string> | undefined,
   containers: ReadonlyArray<SearchContainer>,
   phrase: string,
+  kept: ReadonlyArray<string> | undefined,
 ): ReadonlyArray<string> | undefined => {
   if (names === undefined) {
     return undefined;
   }
   const keys = names.flatMap((raw) => {
     const name = meaningfulText(raw);
-    if (name === undefined || !inPhrase(name, phrase)) {
+    if (name === undefined) {
       return [];
     }
     const exact = containers.filter((container) => fold(container.name) === fold(name));
-    if (exact.length > 0) {
-      return exact.map((container) => container.key);
+    const matched =
+      exact.length > 0
+        ? exact
+        : containers.filter((container) => fold(container.name).startsWith(fold(name)));
+    if (exact.length === 0 && matched.length !== 1) {
+      return [];
     }
-    const prefixed = containers.filter((container) => fold(container.name).startsWith(fold(name)));
-    return prefixed.length === 1 ? [prefixed[0]!.key] : [];
+    // A name the words say now, or one already chosen ("also Family").
+    return matched
+      .filter((container) => inPhrase(name, phrase) || (kept ?? []).includes(container.key))
+      .map((container) => container.key);
   });
   return keys.length > 0 ? [...new Set(keys)] : undefined;
 };
@@ -251,15 +258,19 @@ export const normalizeSearchQuery = (
     place !== undefined && inPhrase(place, phrase) && !NOT_A_PLACE.test(fold(place))
       ? place
       : was.location;
+  // A person the words name now, or one already chosen ("also with Bob" keeps Anna).
   const said = (parse.people ?? []).flatMap((person) => {
     const name = meaningfulText(person);
-    return name !== undefined && inPhrase(name, phrase) ? [name] : [];
+    return name !== undefined &&
+      (inPhrase(name, phrase) || (was.people ?? []).some((before) => fold(before) === fold(name)))
+      ? [name]
+      : [];
   });
   const people = said.length > 0 ? [...new Set(said)] : was.people;
 
   // Calendars and lists the words name.
-  const calendarKeys = keysOf(parse.calendars, calendars, phrase) ?? was.calendars;
-  const listKeys = keysOf(parse.lists, lists, phrase) ?? was.lists;
+  const calendarKeys = keysOf(parse.calendars, calendars, phrase, was.calendars) ?? was.calendars;
+  const listKeys = keysOf(parse.lists, lists, phrase, was.lists) ?? was.lists;
 
   // Words: typed now or before; none left, the ones before stay.
   const terms = (parse.terms ?? []).flatMap((term) => {

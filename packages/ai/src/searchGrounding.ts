@@ -224,6 +224,35 @@ const READERS: ReadonlyArray<Reader> = [
   },
 ];
 
+/** Day words, each counted once ("today" and "tonight" are one). */
+const DAY_WORDS: ReadonlyArray<RegExp> = [
+  /\b(?:today|heute|tonight)\b/,
+  /\b(?<!day after )tomorrow\b|\bmorgen\b/,
+  /\b(?<!day before )yesterday\b|\bgestern\b/,
+  /\b(?:day after tomorrow|ubermorgen)\b/,
+  /\b(?:day before yesterday|vorgestern)\b/,
+];
+
+const PERIOD =
+  /\b(?:this|next|last|past|previous|coming|diese[nmrs]?|nachste[nmrs]?|kommende[nmrs]?|letzte[nmrs]?|vergangene[nmrs]?|vorige[nmrs]?)\s+(?:week|month|year|woche|monat|jahr)\b/g;
+
+/**
+ * How many things in the sentence name days: day words, weeks, months
+ * and years, weekdays, month names, written dates. One reader reads one;
+ * a sentence naming two ("Friday next week", "today through Friday") is a
+ * composite the code does not read, and the model's dates stand.
+ */
+const dateMentions = (text: string, phrase: string): number =>
+  DAY_WORDS.filter((pattern) => pattern.test(text)).length +
+  (text.match(PERIOD) ?? []).length +
+  namedWeekdays(phrase).length +
+  MONTH_NAMES.filter((entry) =>
+    new RegExp(
+      `\\b(?<!(?:with|mit|and|und) )(?:${entry.month === 5 ? 'mai' : entry.names})\\b`,
+    ).test(text),
+  ).length +
+  (text.match(/\b\d{1,2}[./]\d{1,2}\b|\b\d{4}-\d{2}-\d{2}\b/g) ?? []).length;
+
 /**
  * The days a search sentence names in words the code reads: a day
  * (yesterday, today, tomorrow and the days either side), this / last /
@@ -234,7 +263,7 @@ const READERS: ReadonlyArray<Reader> = [
  */
 export const searchWindowOf = (phrase: string, referenceDate: string): SearchWindow | undefined => {
   const text = words(phrase);
-  if (SPAN.test(text) || MONTH_DAY.test(text)) {
+  if (SPAN.test(text) || MONTH_DAY.test(text) || dateMentions(text, phrase) > 1) {
     return undefined;
   }
   const today = Temporal.PlainDate.from(referenceDate);
@@ -253,7 +282,9 @@ export const statesSearchDate = (phrase: string, referenceDate: string): boolean
     searchWindowOf(phrase, referenceDate) !== undefined ||
     mentionsDate(phrase) ||
     namedWeekdays(phrase).length > 0 ||
-    /\b(?:yesterday|today|tomorrow|tonight|gestern|heute|vorgestern|ubermorgen|since|seit|ago|until|bis)\b/.test(
+    // German "morgen" (tomorrow, and "morning"): the code does not read it,
+    // the model's dates for it count.
+    /\b(?:yesterday|today|tomorrow|tonight|gestern|heute|morgen|vorgestern|ubermorgen|since|seit|ago|until|bis)\b/.test(
       text,
     ) ||
     // A signed day count, and an ISO date: the fixture grammar's days.
@@ -309,7 +340,7 @@ export const isSearchFilterPhrase = (phrase: string): boolean => {
     isAllDayPhrase(phrase) ||
     searchAllDayOf(phrase) !== undefined ||
     clearsSearchDates(phrase) ||
-    /\b(?:yesterday|today|tomorrow|tonight|gestern|heute|vorgestern|ubermorgen|since|seit|ago)\b/.test(
+    /\b(?:yesterday|today|tomorrow|tonight|gestern|heute|morgen|vorgestern|ubermorgen|since|seit|ago)\b/.test(
       text,
     ) ||
     /\b(?:last|past|previous|letzten|vergangenen|vorigen)\s+\w+/.test(text) ||

@@ -60,6 +60,9 @@ describe('searchWindowOf', () => {
     'what may happen',
     'events October to November',
     'Oktober bis Dezember',
+    'events Friday next week',
+    'today through Friday',
+    'Termine morgen',
     'on Friday',
   ])('reads no window from: %s', (phrase) => {
     expect(window(phrase)).toBeUndefined();
@@ -72,6 +75,7 @@ describe('the other readers', () => {
     expect(statesSearchDate('on Friday', TODAY)).toBe(true);
     expect(statesSearchDate('Oct 20', TODAY)).toBe(true);
     expect(statesSearchDate('since March', TODAY)).toBe(true);
+    expect(statesSearchDate('Termine morgen', TODAY)).toBe(true);
     expect(statesSearchDate('harbour with anna', TODAY)).toBe(false);
   });
 
@@ -113,6 +117,7 @@ describe('isSearchFilterPhrase — the router', () => {
     'trips in October',
     'any time',
     'timed only',
+    'Termine morgen',
   ])('reads a filter in: %s', (phrase) => {
     expect(isSearchFilterPhrase(phrase)).toBe(true);
   });

@@ -125,6 +125,34 @@ describe('normalizeSearchQuery — what and where', () => {
     ]);
   });
 
+  it('keeps people, calendars and lists already chosen when the model keeps them', () => {
+    expect(
+      query(
+        normalize({ people: ['Anna', 'Bob'], terms: [] }, 'also with Bob', {
+          people: ['Anna'],
+          terms: [],
+        }),
+      ).people,
+    ).toEqual(['Anna', 'Bob']);
+    expect(
+      query(
+        normalize({ calendars: ['Work', 'Family'], terms: [] }, 'and family', {
+          calendars: ['acc:work'],
+          terms: [],
+        }),
+      ).calendars,
+    ).toEqual(['acc:work', 'acc:family']);
+    // One the model makes up stays out.
+    expect(
+      query(
+        normalize({ people: ['Anna', 'Carl'], terms: [] }, 'also with Anna', {
+          people: ['Bob'],
+          terms: [],
+        }),
+      ).people,
+    ).toEqual(['Anna']);
+  });
+
   it('keeps words typed now or before, and the ones before when none are left', () => {
     expect(query(normalize({ terms: ['lunch', 'salad'] }, 'lunch last week')).terms).toEqual([
       'lunch',

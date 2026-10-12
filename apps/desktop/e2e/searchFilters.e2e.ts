@@ -1,19 +1,21 @@
 import { Account, CalendarInfo, EventRecord, TaskListInfo, TaskRecord } from '@calendar/core';
 import { afterAll, beforeAll, describe, expect, it } from 'vite-plus/test';
-import { type App, launchApp, localIsoDaysAgo } from './harness.ts';
+import { type App, launchApp } from './harness.ts';
 
 // Search filters: a sentence read into chips (the fixture model, so the
 // sentences are in its grammar — `terms | from..to | location | people |
 // calendar | kind`, days as ±N from today), the chips edited by hand, the
-// turns with Undo, Clear, and Enter routed by the words. Everything sits
-// relative to today at UTC hours from 09:00 to 18:00, so the local date
-// agrees with the UTC one in the zones the runs use.
+// turns with Undo, Clear, and Enter routed by the words. The app runs in
+// UTC (TZ) and every day here is a UTC day — the seeds, the due dates and
+// the dates typed into the filter — so one basis holds at any hour.
 const HOUR_MS = 60 * 60 * 1000;
 const DAY_MS = 24 * HOUR_MS;
 const dayAt = (days: number, hour: number): number => {
   const now = new Date();
   return Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), hour) + days * DAY_MS;
 };
+/** The UTC day `days` from today, as `YYYY-MM-DD`. */
+const utcDay = (days: number): string => new Date(dayAt(days, 12)).toISOString().slice(0, 10);
 
 const calendar = (overrides: Partial<CalendarInfo>) =>
   new CalendarInfo({
@@ -53,7 +55,7 @@ const list = (id: string, title: string) =>
 const task = (id: string, title: string, listId: string, due: number) =>
   new TaskRecord({
     accountId: 'acc-e2e',
-    dueDate: localIsoDaysAgo(-due),
+    dueDate: utcDay(due),
     id,
     listId,
     provider: 'google',
@@ -106,7 +108,7 @@ const enter = `document.querySelector(${JSON.stringify(INPUT)}).dispatchEvent(ne
 describe('Search filters', () => {
   let app: App;
   beforeAll(async () => {
-    app = await launchApp(seed, { model: 'fixture' });
+    app = await launchApp(seed, { env: { TZ: 'UTC' }, model: 'fixture' });
   }, 60_000);
   afterAll(async () => {
     await app.stop();
@@ -243,9 +245,9 @@ describe('Search filters', () => {
         setter.call(input, ${JSON.stringify(value)});
         input.dispatchEvent(new Event('input', { bubbles: true }));
       })()`);
-    await setDate('search-filter-from', localIsoDaysAgo(-1));
+    await setDate('search-filter-from', utcDay(1));
     await cdp.waitFor(has('search-chip-dates'));
-    await setDate('search-filter-to', localIsoDaysAgo(-2));
+    await setDate('search-filter-to', utcDay(2));
     await cdp.pressEscape();
     await cdp.waitFor(SETTLED);
     // Tomorrow's standup and the day after's planning; the tasks due on those days.
