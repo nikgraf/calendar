@@ -17,6 +17,8 @@ contextBridge.exposeInMainWorld('calendarBridge', {
   logError: (text: string) => ipcRenderer.send('renderer-error', text),
   modelGenerate: (schema: unknown, prompt: string) =>
     ipcRenderer.invoke('model:generate', schema, prompt),
+  /** The Swift helper's own status: what dictation and text recognition depend on. */
+  modelHelperStatus: () => ipcRenderer.invoke('model:helper-status'),
   modelInfo: () => ipcRenderer.invoke('model:info'),
   modelPrepareSpeech: (locale: string) => ipcRenderer.invoke('model:prepare-speech', locale),
   /** The model provider (Settings › General): the view, changes, and a probe of unsaved settings. */

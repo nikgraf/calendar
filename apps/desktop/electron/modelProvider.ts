@@ -72,6 +72,12 @@ const MAX_KEY_CHARS = 512;
 interface StoredSettings extends ModelProviderSettings {
   /** safeStorage ciphertext, base64. */
   readonly apiKey?: string | undefined;
+  /**
+   * The origin the key was entered for: it is sent there and nowhere
+   * else. A URL on another origin drops it — a key must never follow the
+   * user to a server they are only trying.
+   */
+  readonly apiKeyOrigin?: string | undefined;
 }
 
 let storePath: string | null = null;
@@ -101,6 +107,8 @@ export const initModelProvider = (userData: string): void => {
       const defaults = PROVIDER_DEFAULTS[parsed['kind']];
       stored = {
         apiKey: typeof parsed['apiKey'] === 'string' ? parsed['apiKey'] : undefined,
+        apiKeyOrigin:
+          typeof parsed['apiKeyOrigin'] === 'string' ? parsed['apiKeyOrigin'] : undefined,
         baseUrl: validBaseUrl(parsed['baseUrl']) ? parsed['baseUrl'] : defaults.baseUrl,
         kind: parsed['kind'],
         model:
@@ -126,9 +134,29 @@ const persist = () => {
   renameSync(temp, storePath);
 };
 
+const originOf = (url: string): string | undefined => {
+  try {
+    return new URL(url).origin;
+  } catch {
+    return undefined;
+  }
+};
+
+/** The stored key, only for the origin it was entered for. */
+const keyFor = (settings: StoredSettings, url: string): string | undefined =>
+  settings.apiKey !== undefined && settings.apiKeyOrigin === originOf(url)
+    ? settings.apiKey
+    : undefined;
+
+/** The settings without their key. */
+const withoutKey = (settings: StoredSettings): StoredSettings => {
+  const { apiKey: _key, apiKeyOrigin: _origin, ...rest } = settings;
+  return rest;
+};
+
 export const getModelProvider = (): ModelProviderView => ({
   baseUrl: stored.baseUrl,
-  hasApiKey: stored.apiKey !== undefined,
+  hasApiKey: keyFor(stored, stored.baseUrl) !== undefined,
   kind: stored.kind,
   model: stored.model,
 });
@@ -156,7 +184,12 @@ export const setModelProvider = (changes: unknown): ModelProviderView => {
     if (!validBaseUrl(next['baseUrl'])) {
       throw new Error('model provider: invalid base URL');
     }
-    draft = { ...draft, baseUrl: next['baseUrl'].replace(/\/+$/, '') };
+    const baseUrl = next['baseUrl'].replace(/\/+$/, '');
+    // Another origin: the key entered for the old one does not come along.
+    draft =
+      originOf(baseUrl) === draft.apiKeyOrigin
+        ? { ...draft, baseUrl }
+        : { ...withoutKey(draft), baseUrl };
   }
   if ('model' in next) {
     const model = next['model'];
@@ -168,13 +201,16 @@ export const setModelProvider = (changes: unknown): ModelProviderView => {
   if ('apiKey' in next) {
     const key = next['apiKey'];
     if (key === null || key === '') {
-      const { apiKey: _gone, ...rest } = draft;
-      draft = rest;
+      draft = withoutKey(draft);
     } else if (typeof key === 'string' && key.length <= MAX_KEY_CHARS) {
       if (!safeStorage.isEncryptionAvailable()) {
         throw new Error('model provider: the keychain is not available to keep the key');
       }
-      draft = { ...draft, apiKey: safeStorage.encryptString(key).toString('base64') };
+      draft = {
+        ...draft,
+        apiKey: safeStorage.encryptString(key).toString('base64'),
+        apiKeyOrigin: originOf(draft.baseUrl),
+      };
     } else {
       throw new Error('model provider: invalid API key');
     }
@@ -188,12 +224,14 @@ export const setModelProvider = (changes: unknown): ModelProviderView => {
   return view;
 };
 
-const apiKey = (): string | undefined => {
-  if (stored.apiKey === undefined) {
+/** The key in clear, for a request to `url` — none for any other origin. */
+const apiKey = (settings: StoredSettings, url: string): string | undefined => {
+  const ciphertext = keyFor(settings, url);
+  if (ciphertext === undefined) {
     return undefined;
   }
   try {
-    return safeStorage.decryptString(Buffer.from(stored.apiKey, 'base64'));
+    return safeStorage.decryptString(Buffer.from(ciphertext, 'base64'));
   } catch {
     return undefined;
   }
@@ -217,7 +255,7 @@ const sameModel = (listed: string, wanted: string): boolean =>
  */
 export const probeEndpoint = async (
   settings: ModelProviderSettings,
-  key: string | undefined = apiKey(),
+  key: string | undefined,
 ): Promise<EndpointProbe> => {
   const base = settings.baseUrl.replace(/\/+$/, '');
   try {
@@ -245,11 +283,13 @@ export const probeEndpoint = async (
       };
     }
     if (!response.ok) {
-      // A server without the route (404, 405, 501) is up with nothing to list.
+      // A server without the route (404, 405, 501) is up with nothing to
+      // list; any other failure is the server's.
+      const noRoute = response.status < 500 || response.status === 501;
       return {
-        ...(response.status >= 500 ? { error: `HTTP ${String(response.status)}` } : {}),
+        ...(noRoute ? {} : { error: `HTTP ${String(response.status)}` }),
         models: [],
-        reachable: response.status < 500,
+        reachable: noRoute,
       };
     }
     const body = (await response.json()) as { data?: Array<{ id?: string }> };
@@ -262,33 +302,45 @@ export const probeEndpoint = async (
   }
 };
 
-/** Whether the active provider can answer now, and if not, why. */
+/**
+ * Whether the active provider can answer now, and if not, why. The
+ * provider can change while a probe is out (Settings, a slow server): an
+ * answer for settings that are no longer current is thrown away and the
+ * current ones asked instead.
+ */
 export const providerStatus = async (
   appleStatus: () => Promise<{ detail?: string; status: string }>,
 ): Promise<ProviderStatusReply> => {
-  if (stored.kind === 'apple') {
+  const current = stored;
+  if (current.kind === 'apple') {
     const apple = await appleStatus();
+    if (stored !== current) {
+      return providerStatus(appleStatus);
+    }
     return {
       ...(apple.detail ? { detail: apple.detail } : {}),
       provider: 'apple',
       status: apple.status === 'ready' ? 'ready' : 'unavailable',
     };
   }
-  const probe = await probeEndpoint(stored);
-  const served = { endpoint: stored.baseUrl, model: stored.model, provider: stored.kind };
+  const probe = await probeEndpoint(current, apiKey(current, current.baseUrl));
+  if (stored !== current) {
+    return providerStatus(appleStatus);
+  }
+  const served = { endpoint: current.baseUrl, model: current.model, provider: current.kind };
   if (probe.unauthorized) {
     return { ...served, detail: 'authRejected', status: 'unavailable' };
   }
   if (!probe.reachable) {
     return { ...served, detail: 'endpointUnreachable', status: 'unavailable' };
   }
-  if (stored.model === '') {
+  if (current.model === '') {
     return { ...served, detail: 'modelMissing', status: 'unavailable' };
   }
   // Ollama's list is the whole truth (a fresh install lists nothing); an
   // OpenAI-compatible server may just not implement the route.
-  const listed = stored.kind === 'ollama' || probe.models.length > 0;
-  if (listed && !probe.models.some((name) => sameModel(name, stored.model))) {
+  const listed = current.kind === 'ollama' || probe.models.length > 0;
+  if (listed && !probe.models.some((name) => sameModel(name, current.model))) {
     return { ...served, detail: 'modelMissing', status: 'unavailable' };
   }
   return { ...served, status: 'ready' };
@@ -328,7 +380,7 @@ export const providerGenerate = async (
   prompt: string,
 ): Promise<{ readonly json: string }> => {
   const base = stored.baseUrl.replace(/\/+$/, '');
-  const key = apiKey();
+  const key = apiKey(stored, stored.baseUrl);
   if (stored.kind === 'ollama') {
     const response = await fetch(`${base}/api/chat`, {
       body: JSON.stringify({
@@ -385,12 +437,11 @@ export const testModelProvider = async (candidate: unknown): Promise<EndpointPro
   if (!isKind(next['kind']) || next['kind'] === 'apple' || !validBaseUrl(next['baseUrl'])) {
     throw new Error('model provider: invalid settings');
   }
+  const baseUrl = next['baseUrl'].replace(/\/+$/, '');
+  // A key typed in the window is tried; the stored one only on its own origin.
   const key =
     typeof next['apiKey'] === 'string' && next['apiKey'].length <= MAX_KEY_CHARS
       ? next['apiKey']
-      : apiKey();
-  return probeEndpoint(
-    { baseUrl: next['baseUrl'].replace(/\/+$/, ''), kind: next['kind'], model: '' },
-    key,
-  );
+      : apiKey(stored, baseUrl);
+  return probeEndpoint({ baseUrl, kind: next['kind'], model: '' }, key);
 };

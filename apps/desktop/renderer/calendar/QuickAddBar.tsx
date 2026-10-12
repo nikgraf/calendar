@@ -12,10 +12,18 @@ import { captureSourceOf, isCapturableInPhrase, readPaste } from './captureClipb
 /** The field's placeholder; the e2e specs find the field by it. */
 export const QUICK_ADD_PLACEHOLDER = 'Lunch with Sarah tomorrow at 1';
 
-/** Re-check the model when the window regains focus (Apple Intelligence is switched on in System Settings). */
+/**
+ * Re-check the model when the window regains focus (Apple Intelligence is
+ * switched on in System Settings) and when the provider changes
+ * (Settings › General picked another model while this editor was open).
+ */
 export const onWindowFocus = (onActive: () => void): (() => void) => {
   window.addEventListener('focus', onActive);
-  return () => window.removeEventListener('focus', onActive);
+  const unsubscribe = window.calendarBridge.onModelProviderChanged(onActive);
+  return () => {
+    window.removeEventListener('focus', onActive);
+    unsubscribe();
+  };
 };
 
 /**

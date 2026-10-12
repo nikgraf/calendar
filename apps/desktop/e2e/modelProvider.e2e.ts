@@ -41,6 +41,8 @@ const seed = {
 };
 
 const MODEL = 'fixture-model';
+/** The key the fake's /v1 routes want. */
+const SECRET = 'e2e-secret';
 const INPUT = '[data-testid="quick-add-input"]';
 const COMMAND_N = `window.dispatchEvent(new KeyboardEvent('keydown', { key: 'n', metaKey: true }))`;
 const blockAt = (start: string) =>
@@ -54,16 +56,35 @@ interface ChatRequest {
   readonly options: { readonly num_ctx?: number; readonly temperature?: number };
 }
 
-/** Ollama as the app sees it, with the fixture model answering; `tags` is what it lists. */
+interface Completion {
+  readonly messages: Array<{ readonly content: string }>;
+  readonly response_format: {
+    readonly json_schema: { readonly schema: unknown; readonly strict: boolean };
+  };
+}
+
+/**
+ * Ollama as the app sees it, with the fixture model answering; `tags` is
+ * what it lists. The same server speaks the OpenAI shape under /v1,
+ * behind a key, so the custom-endpoint path runs here too.
+ */
 const fakeOllama = async (): Promise<{
   readonly chats: Array<ChatRequest>;
+  readonly completions: Array<Completion>;
   readonly port: number;
   readonly server: Server;
   tags: Array<string>;
 }> => {
   const model = makeFixtureLanguageModel();
   const chats: Array<ChatRequest> = [];
-  const fake = { chats, port: 0, server: null as unknown as Server, tags: [`${MODEL}:latest`] };
+  const completions: Array<Completion> = [];
+  const fake = {
+    chats,
+    completions,
+    port: 0,
+    server: null as unknown as Server,
+    tags: [`${MODEL}:latest`],
+  };
   const server = createServer((request, response) => {
     const send = (status: number, body: unknown) => {
       response.writeHead(status, { 'Content-Type': 'application/json' });
@@ -90,6 +111,47 @@ const fakeOllama = async (): Promise<{
           );
       });
       return;
+    }
+    if (request.url?.startsWith('/v1/')) {
+      if (request.headers.authorization !== `Bearer ${SECRET}`) {
+        send(401, { error: { message: 'bad key' } });
+        return;
+      }
+      if (request.method === 'GET' && request.url === '/v1/models') {
+        send(200, { data: [{ id: MODEL, object: 'model' }] });
+        return;
+      }
+      if (request.method === 'POST' && request.url === '/v1/chat/completions') {
+        let raw = '';
+        request.on('data', (chunk: Buffer) => {
+          raw += chunk.toString();
+        });
+        request.on('end', () => {
+          const completion = JSON.parse(raw) as Completion;
+          completions.push(completion);
+          // Strict structured outputs: the answer carries null for what is not said.
+          void model
+            .generateJson({
+              jsonSchema: completion.response_format.json_schema.schema,
+              prompt: completion.messages[0]?.content ?? '',
+            })
+            .then(
+              (answer) =>
+                send(200, {
+                  choices: [
+                    {
+                      message: {
+                        content: JSON.stringify({ location: null, ...(answer as object) }),
+                        role: 'assistant',
+                      },
+                    },
+                  ],
+                }),
+              (error: unknown) => send(500, { error: String(error) }),
+            );
+        });
+        return;
+      }
     }
     send(404, { error: 'not found' });
   });
@@ -210,6 +272,80 @@ describe('A served model', () => {
         `!!document.querySelector('[data-testid="model-remote-notice"]')`,
       ),
     ).toBe(false);
+    await app.closeSettings();
+  });
+
+  it('speaks the OpenAI shape to a custom endpoint, strictly, with the key bound to its origin', async () => {
+    const settings = await app.openSettings('general');
+    await settings.waitFor(`!!document.querySelector('[data-testid="model-section"]')`);
+    await settings.clickTestId('model-kind-openai');
+    await settings.waitFor(`!!document.querySelector('[data-testid="model-key"]')`);
+    const base = `http://127.0.0.1:${String(ollama.port)}/v1`;
+    await settings.eval(`document.querySelector('[data-testid="model-url"]').focus()`);
+    await settings.eval(`document.execCommand('selectAll')`);
+    await settings.type('[data-testid="model-url"]', base);
+    // Without the key the server refuses; with it, it lists its model.
+    await settings.clickTestId('model-test');
+    await settings.waitFor(
+      `document.querySelector('[data-testid="model-test-result"]')?.textContent === 'The server refused the API key'`,
+    );
+    await settings.type('[data-testid="model-key"]', SECRET);
+    await settings.clickTestId('model-test');
+    await settings.waitFor(
+      `document.querySelector('[data-testid="model-test-result"]')?.textContent === 'Reachable · 1 model'`,
+    );
+    await settings.waitFor(
+      `document.querySelector('[data-testid="model-name"]')?.value === ${JSON.stringify(MODEL)}`,
+    );
+    await settings.clickTestId('model-save');
+    await settings.waitFor(`!!document.querySelector('[data-testid="model-saved"]')`);
+    // The file holds the key only as ciphertext, bound to this origin.
+    const stored = JSON.parse(
+      readFileSync(join(app.userDataDir, 'model-provider.json'), 'utf8'),
+    ) as { apiKey?: string; apiKeyOrigin?: string; kind: string };
+    expect(stored.kind).toBe('openai');
+    expect(stored.apiKeyOrigin).toBe(`http://127.0.0.1:${String(ollama.port)}`);
+    expect(stored.apiKey).toBeDefined();
+    expect(stored.apiKey).not.toContain(SECRET);
+
+    // Review: the stored key must not follow a Test of another origin.
+    await settings.eval(`document.querySelector('[data-testid="model-url"]').focus()`);
+    await settings.eval(`document.execCommand('selectAll')`);
+    await settings.type('[data-testid="model-url"]', `http://localhost:${String(ollama.port)}/v1`);
+    await settings.clickTestId('model-test');
+    await settings.waitFor(
+      `document.querySelector('[data-testid="model-test-result"]')?.textContent === 'The server refused the API key'`,
+    );
+    await app.closeSettings();
+
+    // A phrase over the OpenAI shape: strict schema out, nulls stripped on the way back.
+    const { cdp } = app;
+    await cdp.eval(COMMAND_N);
+    await cdp.waitFor(`${placeholder}.startsWith('Lunch')`);
+    await cdp.type(INPUT, 'Review | +1 | 10:00-11:00');
+    await cdp.clickTestId('quick-add-apply');
+    await cdp.waitFor(blockAt('10:00'));
+    const completion = ollama.completions.at(-1)!;
+    expect(completion.response_format.json_schema.strict).toBe(true);
+    expect(completion.response_format.json_schema.schema).toMatchObject({
+      properties: { location: { type: ['string', 'null'] }, title: { type: 'string' } },
+    });
+    await cdp.pressEscape();
+
+    // Back to Ollama for the tests below.
+    const again = await app.openSettings('general');
+    await again.clickTestId('model-kind-ollama');
+    await again.waitFor(
+      `document.querySelector('[data-testid="model-url"]')?.value === 'http://localhost:11434'`,
+    );
+    await again.eval(`document.querySelector('[data-testid="model-url"]').focus()`);
+    await again.eval(`document.execCommand('selectAll')`);
+    await again.type('[data-testid="model-url"]', `http://127.0.0.1:${String(ollama.port)}`);
+    await again.eval(`document.querySelector('[data-testid="model-name"]').focus()`);
+    await again.eval(`document.execCommand('selectAll')`);
+    await again.type('[data-testid="model-name"]', MODEL);
+    await again.clickTestId('model-save');
+    await again.waitFor(`!!document.querySelector('[data-testid="model-saved"]')`);
     await app.closeSettings();
   });
 

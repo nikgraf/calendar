@@ -70,6 +70,9 @@ export const registerModelHelper = (): void => {
   ipcMain.handle('model:info', () =>
     fixture ? { contextTokens: 4096, name: 'Fixture model' } : providerInfo(),
   );
+  // The helper itself, whatever provider answers generation: dictation and
+  // text recognition are its alone, so their support is read here.
+  ipcMain.handle('model:helper-status', () => (fixture ? { status: 'ready' } : appleStatus()));
   ipcMain.handle('model:generate', async (_event, schema: unknown, prompt: unknown) => {
     if (!isJsonObject(schema) || JSON.stringify(schema).length > MAX_SCHEMA_CHARS) {
       return invalid('schema');
