@@ -1,5 +1,5 @@
 import { type LanguageModel, parseRefine } from '@calendar/ai';
-import { Temporal } from '@calendar/core';
+import { type AttendeeInput, type EventReminders, Temporal } from '@calendar/core';
 import { useRef, useState } from 'react';
 import { convertQuickAddItem, type QuickAddItem } from './quickAddItem.ts';
 
@@ -15,7 +15,21 @@ import { convertQuickAddItem, type QuickAddItem } from './quickAddItem.ts';
  * threads them into a hook with the model calls.
  */
 
+/**
+ * What the form holds of an event draft beyond its prefill — guests,
+ * notes, notifications — kept per draft so they never follow the form to
+ * the next draft, and written with it by "Add all".
+ */
+export interface DraftExtras {
+  readonly attendees: ReadonlyArray<AttendeeInput>;
+  readonly description: string;
+  /** The notifications as edited; undefined while untouched (the calendar's default). */
+  readonly reminders: EventReminders | undefined;
+}
+
 export interface Draft {
+  /** Set once the form held the draft; absent for a draft the form never showed. */
+  readonly extras?: DraftExtras | undefined;
   readonly id: string;
   readonly item: QuickAddItem;
 }
@@ -143,10 +157,11 @@ export const startThread = (
 /**
  * The drafts an utterance addresses: all of them when it says so ("all",
  * "both", "alle", "beide"), else the focused one. A word like "every"
- * is left alone — "every week" is a repeat, not an address.
+ * is left alone — "every week" is a repeat, not an address — and so is
+ * the "all" of "all day".
  */
 export const refineTargets = (state: DraftThreadState, utterance: string): ReadonlyArray<Draft> => {
-  if (/\b(?:all|both|all of them|alle|beide)\b/i.test(utterance)) {
+  if (/\b(?:all(?![- ]day)|both|alle|beide)\b/i.test(utterance)) {
     return state.drafts;
   }
   const focused = state.drafts[state.focused];
@@ -206,54 +221,63 @@ export const focusDraft = (state: DraftThreadState, index: number): DraftThreadS
     ? { ...state, focused: index, version: state.version + 1 }
     : state;
 
-/** The form's edits to the focused draft, kept so a later turn starts from them. Not a turn. */
+/**
+ * The form's edits to the focused draft — its fields and what the form
+ * holds beyond them — kept so a later turn starts from them and another
+ * draft's turn in the form never shows them. Not a turn.
+ */
 export const updateDraft = (
   state: DraftThreadState,
   index: number,
   item: QuickAddItem,
+  extras?: DraftExtras,
 ): DraftThreadState =>
   state.drafts[index] === undefined
     ? state
     : {
         ...state,
-        drafts: state.drafts.map((draft, at) => (at === index ? { ...draft, item } : draft)),
+        drafts: state.drafts.map((draft, at) =>
+          at === index ? { ...draft, ...(extras ? { extras } : {}), item } : draft,
+        ),
       };
 
-/** Drafts dropped by id, all at once (the ones "Add all" has written). The focus follows its draft. */
+/** A snapshot without the drafts named, its focus clamped. */
+const without = (snapshot: Snapshot, gone: ReadonlySet<string>): Snapshot => {
+  const drafts = snapshot.drafts.filter((draft) => !gone.has(draft.id));
+  const focusedId = snapshot.drafts[snapshot.focused]?.id;
+  const kept = drafts.findIndex((draft) => draft.id === focusedId);
+  return {
+    drafts,
+    focused: kept === -1 ? Math.min(snapshot.focused, Math.max(drafts.length - 1, 0)) : kept,
+  };
+};
+
+/**
+ * Drafts dropped by id, all at once (the ones "Add all" has written, or
+ * one Save wrote). The focus follows its draft. The history loses them
+ * too: a written draft must not come back through Undo, to be written
+ * twice.
+ */
 export const removeDrafts = (
   state: DraftThreadState,
   ids: ReadonlyArray<string>,
 ): DraftThreadState => {
   const gone = new Set(ids);
-  const drafts = state.drafts.filter((draft) => !gone.has(draft.id));
-  if (drafts.length === state.drafts.length) {
+  if (!state.drafts.some((draft) => gone.has(draft.id))) {
     return state;
   }
-  const focusedId = state.drafts[state.focused]?.id;
-  const kept = drafts.findIndex((draft) => draft.id === focusedId);
   return {
     ...state,
-    drafts,
-    focused: kept === -1 ? Math.min(state.focused, Math.max(drafts.length - 1, 0)) : kept,
+    ...without(state, gone),
+    history: state.history.map((snapshot) => without(snapshot, gone)),
     version: state.version + 1,
   };
 };
 
 /** A draft dropped from the thread (saved, or not wanted). Not a turn: nothing to undo into. */
 export const removeDraft = (state: DraftThreadState, index: number): DraftThreadState => {
-  if (state.drafts[index] === undefined) {
-    return state;
-  }
-  const drafts = state.drafts.filter((_, at) => at !== index);
-  return {
-    ...state,
-    drafts,
-    focused: Math.min(
-      state.focused > index ? state.focused - 1 : state.focused,
-      Math.max(drafts.length - 1, 0),
-    ),
-    version: state.version + 1,
-  };
+  const draft = state.drafts[index];
+  return draft === undefined ? state : removeDrafts(state, [draft.id]);
 };
 
 /**
@@ -360,7 +384,7 @@ export const useDraftThread = ({ model, timeZone }: { model: LanguageModel; time
       request.current += 1;
       setState((latest) => undoTurn(latest));
     },
-    update: (index: number, item: QuickAddItem) =>
-      setState((latest) => updateDraft(latest, index, item)),
+    update: (index: number, item: QuickAddItem, extras?: DraftExtras) =>
+      setState((latest) => updateDraft(latest, index, item, extras)),
   };
 };

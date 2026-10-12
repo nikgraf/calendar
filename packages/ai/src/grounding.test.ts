@@ -489,6 +489,11 @@ describe('durationMinutesOf', () => {
     expect(durationMinutesOf('forty-five minutes')).toBe(45);
     expect(durationMinutesOf('90-minute workshop')).toBe(90);
     expect(durationMinutesOf('dinner with Teo next week')).toBeUndefined();
+    // Review: the parts of one length add up; a second length is another matter.
+    expect(durationMinutesOf('1 hour 30 minutes of focus')).toBe(90);
+    expect(durationMinutesOf('2h and 15 min')).toBe(135);
+    expect(durationMinutesOf('eine Stunde und 30 Minuten')).toBe(90);
+    expect(durationMinutesOf('30 min focus, then 2h deep work')).toBe(30);
   });
 });
 

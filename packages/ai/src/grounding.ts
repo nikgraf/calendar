@@ -780,17 +780,28 @@ const quantityOf = (token: string): number => {
  * undefined when it states none.
  */
 export const durationMinutesOf = (phrase: string): number | undefined => {
-  const match = DURATION.exec(words(phrase));
-  if (!match) {
-    return undefined;
+  const text = words(phrase);
+  const every = new RegExp(DURATION.source, 'g');
+  let total = 0;
+  let end = -1;
+  let match: RegExpExecArray | null;
+  while ((match = every.exec(text)) !== null) {
+    // Parts of one length add up ("1 hour 30 minutes", "1h and 15 min");
+    // a second length further on is another matter ("30 min, then 2h").
+    if (end !== -1 && !/^(?:\s|and|und|,)*$/.test(text.slice(end, match.index))) {
+      break;
+    }
+    end = match.index + match[0].length;
+    if (match[3] !== undefined) {
+      total += match[3] === 'half an hour' || match[3] === 'halbe stunde' ? 30 : 90;
+      continue;
+    }
+    const amount = quantityOf(match[1]!);
+    const hours = /^(?:h|hr|hrs|hours?|stunden?|std)$/.test(match[2]!);
+    total += hours ? amount * 60 : amount;
   }
-  if (match[3] !== undefined) {
-    return match[3] === 'half an hour' || match[3] === 'halbe stunde' ? 30 : 90;
-  }
-  const amount = quantityOf(match[1]!);
-  const hours = /^(?:h|hr|hrs|hours?|stunden?|std)$/.test(match[2]!);
-  const total = Math.round(hours ? amount * 60 : amount);
-  return Number.isFinite(total) && total > 0 ? total : undefined;
+  const minutes = Math.round(total);
+  return end === -1 || !Number.isFinite(minutes) || minutes <= 0 ? undefined : minutes;
 };
 
 /** Whether the phrase says how long. */

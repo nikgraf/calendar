@@ -14,11 +14,14 @@ import { TaskListSelect } from './TaskListSelect.tsx';
 export function TaskEditorForm({
   moveConfirmation,
   onClose,
+  saveDisabled = false,
   task,
   taskModel,
 }: {
   moveConfirmation: ReturnType<typeof useMoveConfirmation>;
   onClose: () => void;
+  /** Another write of the editor's is running (the thread's "Add all"): one at a time. */
+  saveDisabled?: boolean | undefined;
   task: TaskRecord | undefined;
   taskModel: ReturnType<typeof useTaskEditorModel>;
 }) {
@@ -91,7 +94,7 @@ export function TaskEditorForm({
           </Button>
           <Button
             aria-busy={taskModel.busy}
-            disabled={moveConfirmation.pending !== null}
+            disabled={moveConfirmation.pending !== null || saveDisabled}
             onClick={() => void taskModel.save()}
             size="sm"
             variant="primary"

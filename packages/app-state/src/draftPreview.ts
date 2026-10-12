@@ -1,10 +1,13 @@
 import {
   buildEventTimes,
   buildRecurrenceRule,
+  byDayError,
   type EventDraft,
   expandRecurringEvent,
+  repeatUntilError,
+  validateEventDraft,
 } from '@calendar/core';
-import type { Draft } from './draftThread.ts';
+import type { Draft, DraftExtras } from './draftThread.ts';
 import type { EventEditorPrefill } from './editorModel.ts';
 import { repeatSpecFrom, seedRepeatFields } from './repeatState.ts';
 
@@ -93,7 +96,15 @@ export const draftOccurrences = (
   timeZone: string,
 ): ReadonlyArray<DraftOccurrence> =>
   previews.flatMap((preview): ReadonlyArray<DraftOccurrence> => {
-    const times = buildEventTimes(preview, timeZone);
+    // The focused draft is the live form: a date or time field mid-edit
+    // ('' or partial) builds no times. Such a draft is simply not drawn
+    // until the field is whole again — never a crash in the grid.
+    let times;
+    try {
+      times = buildEventTimes(preview, timeZone);
+    } catch {
+      return [];
+    }
     const shared = {
       color: preview.color,
       draftId: preview.id,
@@ -140,21 +151,56 @@ export const draftOccurrences = (
   });
 
 /**
+ * Why a draft cannot be written as it stands, in the editor's own words,
+ * or undefined: the checks Save runs on the form, for a draft that is
+ * not in the form ("Add all").
+ */
+export const prefillError = (
+  prefill: EventEditorPrefill,
+  { calendarKey, timeZone }: { calendarKey: string; timeZone: string },
+): string | undefined => {
+  const invalid = validateEventDraft({ ...prefill, calendarKey }, timeZone);
+  if (invalid) {
+    return invalid;
+  }
+  const spec = repeatSpecFrom(seedRepeatFields(prefill.recurrence), prefill.date);
+  return spec ? (byDayError(spec) ?? repeatUntilError(spec, prefill.date)) : undefined;
+};
+
+/**
  * A draft as the create would write it, for the drafts that are not in
- * the form ("Add all"): the fields a prefill holds, in the calendar the
- * form has picked, with that calendar's default reminders.
+ * the form ("Add all"): the fields a prefill holds and what the form held
+ * beyond them while it showed the draft, in the calendar the form has
+ * picked (guests only where it can invite), the calendar's default
+ * notifications unless they were edited.
  */
 export const eventDraftFromPrefill = (
   prefill: EventEditorPrefill,
-  { accountId, calendarId, timeZone }: { accountId: string; calendarId: string; timeZone: string },
-): EventDraft => {
-  const recurrence = prefillRecurrence(prefill, timeZone);
-  return {
+  {
     accountId,
     calendarId,
+    canInvite = false,
+    extras,
+    timeZone,
+  }: {
+    accountId: string;
+    calendarId: string;
+    canInvite?: boolean | undefined;
+    extras?: DraftExtras | undefined;
+    timeZone: string;
+  },
+): EventDraft => {
+  const recurrence = prefillRecurrence(prefill, timeZone);
+  const description = extras?.description.trim();
+  return {
+    accountId,
+    ...(canInvite && extras && extras.attendees.length > 0 ? { attendees: extras.attendees } : {}),
+    calendarId,
+    ...(description ? { description } : {}),
     isAllDay: prefill.isAllDay,
     ...(prefill.location ? { location: prefill.location } : {}),
     ...(recurrence ? { recurrence } : {}),
+    ...(extras?.reminders ? { reminders: extras.reminders } : {}),
     title: prefill.title.trim(),
     ...buildEventTimes(prefill, timeZone),
   };

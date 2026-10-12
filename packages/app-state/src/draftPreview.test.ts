@@ -4,6 +4,7 @@ import {
   draftOccurrences,
   draftPreview,
   eventDraftFromPrefill,
+  prefillError,
   prefillRecurrence,
 } from './draftPreview.ts';
 
@@ -55,6 +56,21 @@ describe('draftPreview and draftOccurrences', () => {
         { color: '#000', focused: false, timeZone: TZ },
       ),
     ).toBeUndefined();
+  });
+
+  it('draws nothing for a draft whose date or time is mid-edit, rather than throwing', () => {
+    // Review: a cleared date field reached buildEventTimes and took the grid down.
+    for (const broken of [
+      { ...dinner, date: '' },
+      { ...dinner, startTime: '' },
+      { ...dinner, endTime: '1' },
+    ]) {
+      const preview = draftPreview(
+        { id: 'd1', item: { kind: 'event', prefill: broken } },
+        { color: '#3b82f6', focused: true, timeZone: TZ },
+      );
+      expect(draftOccurrences([preview!], range.start, range.end, TZ)).toEqual([]);
+    }
   });
 
   it('leaves out a draft outside the range', () => {
@@ -127,5 +143,36 @@ describe('eventDraftFromPrefill', () => {
         { accountId: 'acc', calendarId: 'cal', timeZone: TZ },
       ),
     ).toMatchObject({ endDate: '2026-08-29', isAllDay: true, startDate: '2026-08-28' });
+    // What the form held beyond the fields goes with the draft; guests only where the calendar can invite.
+    const extras = {
+      attendees: [{ email: 'anna@example.com' }],
+      description: ' bring slides ',
+      reminders: undefined,
+    };
+    expect(
+      eventDraftFromPrefill(dinner, {
+        accountId: 'acc',
+        calendarId: 'cal',
+        canInvite: true,
+        extras,
+        timeZone: TZ,
+      }),
+    ).toMatchObject({ attendees: [{ email: 'anna@example.com' }], description: 'bring slides' });
+    expect(
+      eventDraftFromPrefill(dinner, { accountId: 'acc', calendarId: 'cal', extras, timeZone: TZ }),
+    ).not.toHaveProperty('attendees');
+  });
+
+  it('says why a draft cannot be written, as Save would', () => {
+    // Review: "Add all" wrote drafts Save would have refused.
+    const context = { calendarKey: 'acc:cal', timeZone: TZ };
+    expect(prefillError(dinner, context)).toBeUndefined();
+    expect(prefillError({ ...dinner, title: ' ' }, context)).toBe(
+      'A title and calendar are required.',
+    );
+    expect(prefillError({ ...dinner, endTime: '18:00' }, context)).toBeTruthy();
+    expect(
+      prefillError({ ...dinner, recurrence: { freq: 'weekly', untilDate: '2026-08-01' } }, context),
+    ).toBe('The repeat must end on or after its first day.');
   });
 });

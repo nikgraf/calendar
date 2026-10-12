@@ -1,4 +1,4 @@
-import { validateEventDraft } from '@calendar/core';
+import { foldSearchText, validateEventDraft } from '@calendar/core';
 import {
   type ClockTime,
   clearsRepeat,
@@ -23,6 +23,12 @@ import {
 } from './normalizeQuickAdd.ts';
 import { QUICK_ADD_JSON_SCHEMA, type QuickAddParse } from './quickAdd.ts';
 import { meaningfulText, realDate, realTime, upcomingDays } from './shared.ts';
+
+/** Lower-case, accent-free text with straight apostrophes: what the change's own words are matched against. */
+const words = (phrase: string): string =>
+  foldSearchText(phrase)
+    .replaceAll(/[‘’`]/g, "'")
+    .replaceAll('ß', 'ss');
 
 /**
  * A refinement: the draft as it stands, a sentence about what to change
@@ -133,6 +139,18 @@ const timesOf = (
  * and stay as they were when the utterance says nothing about them —
  * whatever the model returned. A moved start keeps the draft's length.
  */
+/**
+ * A rename ("call it team dinner", "nenn es Teamessen"): the new title is
+ * all there is — a meal word or a weekday in the name must not move the
+ * event.
+ */
+const RENAME =
+  /\b(?:call it|name it|rename|retitle|titled?|nenn(?:e|t)?\s+(?:es|ihn|sie)?|umbenennen|heisst)\b/;
+
+/** The place taken away ("remove the location", "ohne Ort"). */
+const CLEAR_PLACE =
+  /\b(?:remove|drop|clear|delete|without|no|ohne|keine?n?|entferne?|losche?)\s+(?:the\s+|den\s+|das\s+|die\s+)?(?:location|place|venue|address|ort|adresse)\b/;
+
 export const normalizeRefine = (
   parse: QuickAddParse,
   {
@@ -143,8 +161,16 @@ export const normalizeRefine = (
   }: { draft: RefineDraft; referenceDate: string; timeZone: string; utterance: string },
 ): RefineResult => {
   const title = meaningfulText(parse.title) ?? draft.title;
+  const text = words(utterance);
+  if (RENAME.test(text)) {
+    return { kind: 'parsed', prefill: { ...draft, title } };
+  }
   const place = meaningfulText(parse.location);
-  const location = place === undefined ? draft.location : placeOf(place, title);
+  const location = CLEAR_PLACE.test(text)
+    ? undefined
+    : place === undefined
+      ? draft.location
+      : placeOf(place, title);
 
   const modelDate = realDate(parse.date?.trim());
   const date =

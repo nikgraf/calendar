@@ -101,10 +101,25 @@ describe('normalizeRefine', () => {
     ).not.toHaveProperty('assumedTime');
   });
 
-  it('takes a place the model extracted and keeps one it left alone', () => {
+  it('takes a place the model extracted, keeps one it left alone, and clears one on request', () => {
     expect(refined({ location: "Luigi's" }, "at Luigi's").location).toBe("Luigi's");
     const placed = { ...DINNER, location: 'Figlmüller' };
     expect(refined({}, 'at 8', placed).location).toBe('Figlmüller');
+    // Review: an omitted field used to mean "unchanged", so a place could never go.
+    expect(refined({}, 'remove the location', placed).location).toBeUndefined();
+    expect(refined({ location: 'Figlmüller' }, 'ohne Ort', placed).location).toBeUndefined();
+  });
+
+  it('changes nothing but the title on a rename', () => {
+    // Review: "call it team dinner" moved a 21:00 dinner to the meal's default.
+    const late = { ...DINNER, endTime: '22:00', startTime: '21:00' };
+    expect(refined({ title: 'Team dinner' }, 'call it team dinner', late)).toEqual({
+      ...late,
+      title: 'Team dinner',
+    });
+    expect(refined({ date: '2026-08-28', title: 'Friday fun' }, 'name it Friday fun').date).toBe(
+      '2026-08-28',
+    );
   });
 
   it('sets, keeps and clears a repeat by the words', () => {

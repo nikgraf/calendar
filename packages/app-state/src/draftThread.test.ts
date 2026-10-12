@@ -118,6 +118,9 @@ describe('refineTargets', () => {
 
   it('addresses the focused draft unless the words say all', () => {
     expect(refineTargets(state, 'at 8').map((draft) => draft.id)).toEqual(['d1']);
+    // Review: "all day" is a length, not an address.
+    expect(refineTargets(state, 'make it all day').map((draft) => draft.id)).toEqual(['d1']);
+    expect(refineTargets(state, 'all-day').map((draft) => draft.id)).toEqual(['d1']);
     expect(refineTargets(focusDraft(state, 1), 'at 8').map((draft) => draft.id)).toEqual(['d2']);
     expect(refineTargets(state, 'move both to 8').map((draft) => draft.id)).toEqual(['d1', 'd2']);
     expect(refineTargets(state, 'alle auf 8').map((draft) => draft.id)).toEqual(['d1', 'd2']);
@@ -209,5 +212,29 @@ describe('focus, update and remove', () => {
     const withoutLast = removeDraft(second, 1);
     expect(withoutLast.focused).toBe(0);
     expect(removeDraft(EMPTY_THREAD, 0)).toBe(EMPTY_THREAD);
+  });
+
+  it('keeps a written draft out of the history, so Undo cannot bring it back', () => {
+    // Review: after a turn, saving one draft and undoing the turn restored it.
+    const id = ids();
+    const started = startThread([dinner, planning], 'x', id);
+    const refined = refineThread(started, 'at 8', [{ id: 'd1', item: later }], id);
+    const saved = removeDraft(refined, 0);
+    expect(saved.drafts.map((draft) => draft.id)).toEqual(['d2']);
+    const undone = undoTurn(saved);
+    expect(undone.drafts.map((draft) => draft.id)).toEqual(['d2']);
+    expect(undone.turns).toHaveLength(1);
+  });
+
+  it('keeps what the form holds beyond the fields with the draft', () => {
+    const extras = {
+      attendees: [{ email: 'anna@example.com' }],
+      description: 'bring slides',
+      reminders: undefined,
+    };
+    const edited = updateDraft(state, 0, later, extras);
+    expect(edited.drafts[0]?.extras).toEqual(extras);
+    // A later edit without extras keeps them.
+    expect(updateDraft(edited, 0, dinner).drafts[0]?.extras).toEqual(extras);
   });
 });

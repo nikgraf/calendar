@@ -596,6 +596,38 @@ export const useEventEditorModel = ({
   };
 
   /**
+   * What the form holds beyond the prefill — guests, notes, notifications
+   * (as edited, else undefined) — for a thread to keep with its draft.
+   */
+  const extras = () => ({
+    attendees,
+    description,
+    reminders: remindersDirty ? reminders : undefined,
+  });
+
+  /**
+   * Another draft's extras take the form over (undefined: a draft the form
+   * never held, which starts clean), so nothing typed for one draft shows
+   * on the next.
+   */
+  const restoreExtras = (next: ReturnType<typeof extras> | undefined) => {
+    setAttendees(next?.attendees ?? []);
+    setAttendeesDirty((next?.attendees.length ?? 0) > 0);
+    setDescription(next?.description ?? '');
+    if (next?.reminders) {
+      updateReminders(next.reminders);
+    } else {
+      setReminders(
+        new EventReminders({
+          overrides: [],
+          useDefault: calendarOf(calendarKey)?.provider !== 'apple',
+        }),
+      );
+      setRemindersDirty(false);
+    }
+  };
+
+  /**
    * The form as a prefill: what a thread keeps of the focused draft, and
    * what a refinement starts from. The repeat fields come back as a seed
    * (weekdays included), so a draft round-trips through the form whole.
@@ -935,6 +967,8 @@ export const useEventEditorModel = ({
     endTime,
     error,
     existing,
+    /** Guests, notes and edited notifications, for a thread to keep with its draft. */
+    extras,
     isAllDay,
     isRecurring,
     joinUrl,
@@ -965,6 +999,7 @@ export const useEventEditorModel = ({
      */
     repeatLoaded: existing === undefined || (isRecurring && master.loaded),
     respond,
+    restoreExtras,
     rsvp,
     save: () => write.run(save),
     scope,

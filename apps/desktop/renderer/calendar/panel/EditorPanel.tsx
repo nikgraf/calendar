@@ -5,6 +5,7 @@ import {
   type EditorSourceKind,
   editorTitle,
   eventDraftFromPrefill,
+  prefillError,
   previewOfPrefill,
   type QuickAddItem,
   useBackendMutations,
@@ -24,7 +25,7 @@ import {
   type TaskRecord,
   Temporal,
 } from '@calendar/core';
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { desktopLanguageModel } from '../../ai/desktopModel.ts';
 import { Button } from '../../ui/Button.tsx';
 import { IconButton } from '../../ui/IconButton.tsx';
@@ -134,7 +135,9 @@ export function EditorPanel({
   threadRef.current = thread.state;
 
   // A save among several drafts writes the focused one and keeps the
-  // editor open on the next: the model's own close is held back once.
+  // editor open on the next: the model's own close is held back once. The
+  // focus cannot move while a write runs (`settled` below), so the draft
+  // removed is the one that was written.
   const keepOpen = useRef(false);
   const closingAll = useRef(false);
   const saved = () => {
@@ -189,6 +192,11 @@ export function EditorPanel({
     timeZone,
   });
   const { apply, available, kind, mode, seriesOnly, switchTo } = kinds;
+  // "Add all" and a Save never overlap, and the focus stays put while
+  // either runs: a draft written is the one that was shown.
+  const write = useOneWrite();
+  const settled = !eventModel.busy && !taskModel.busy && !write.busy;
+  const [batchError, setBatchError] = useState<string | null>(null);
 
   /** The form as the thread's item: what a turn starts from and what the preview draws. */
   const currentItem = (): QuickAddItem =>
@@ -223,17 +231,20 @@ export function EditorPanel({
     applied.current = version;
     if (focusedDraft) {
       void apply(focusedDraft.item);
+      // The form starts clean for a draft it never held: nothing typed
+      // for another draft — guests, notes, notifications — follows it.
+      eventModel.restoreExtras(focusedDraft.extras);
       onReveal?.(Temporal.PlainDate.from(focusedDraft.item.prefill.date));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- the version names exactly what the form must take over
   }, [version]);
 
-  /** Another draft takes the form; the form's edits stay on the one leaving it. */
+  /** Another draft takes the form; the form's edits stay on the one leaving it. Not mid-write. */
   const switchFocus = (index: number) => {
-    if (index === focused || drafts[index] === undefined) {
+    if (index === focused || drafts[index] === undefined || !settled) {
       return;
     }
-    thread.update(focused, currentItem());
+    thread.update(focused, currentItem(), eventModel.extras());
     thread.focus(index);
   };
   useEffect(() => {
@@ -242,6 +253,7 @@ export function EditorPanel({
     }
     const index = threadRef.current.drafts.findIndex((draft) => draft.id === focusDraft.id);
     if (index !== -1) {
+      // Mid-write the click is dropped (`switchFocus` checks), like the pager.
       switchFocus(index);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- a click is handled once, when it arrives
@@ -307,26 +319,57 @@ export function EditorPanel({
     [],
   );
 
-  // "Add all": the other event drafts as they stand, then the focused one
-  // through its form, which closes the editor. A to-do among the others
-  // has no form here, so the button waits until each is the focused one.
-  const write = useOneWrite();
+  // "Add all": the other event drafts as they stand — each checked as
+  // Save would check the form, the first one that fails shown in the form
+  // with the reason — then the focused one through its form, which closes
+  // the editor. A to-do among the others has no form here, so the button
+  // waits until each is the focused one. A failed write stops the batch
+  // with its reason; what was written has left the thread, the rest stays.
   const canAddAll =
     drafts.length > 1 &&
     drafts.every((draft, index) => index === focused || draft.item.kind === 'event');
   const addAll = () =>
     write.run(async () => {
-      const [accountId = '', calendarId = ''] = eventModel.calendarKey.split(':', 2);
+      setBatchError(null);
+      const { calendarKey, canInvite } = eventModel;
+      const [accountId = '', calendarId = ''] = calendarKey.split(':', 2);
       const current = threadRef.current;
-      const others = current.drafts.filter((_, index) => index !== current.focused);
-      for (const draft of others) {
-        if (draft.item.kind === 'event') {
-          await mutations.createEvent(
-            eventDraftFromPrefill(draft.item.prefill, { accountId, calendarId, timeZone }),
-          );
-          // Written: out of the thread, so a failing form save cannot add it twice.
-          thread.removeMany([draft.id]);
+      const invalid = current.drafts.findIndex(
+        (draft, index) =>
+          index !== current.focused &&
+          draft.item.kind === 'event' &&
+          prefillError(draft.item.prefill, { calendarKey, timeZone }) !== undefined,
+      );
+      if (invalid !== -1) {
+        const draft = current.drafts[invalid]!;
+        setBatchError(
+          draft.item.kind === 'event'
+            ? prefillError(draft.item.prefill, { calendarKey, timeZone })!
+            : 'A draft cannot be written.',
+        );
+        thread.update(current.focused, currentItem(), eventModel.extras());
+        thread.focus(invalid);
+        return;
+      }
+      try {
+        for (const draft of current.drafts.filter((_, index) => index !== current.focused)) {
+          if (draft.item.kind === 'event') {
+            await mutations.createEvent(
+              eventDraftFromPrefill(draft.item.prefill, {
+                accountId,
+                calendarId,
+                canInvite,
+                extras: draft.extras,
+                timeZone,
+              }),
+            );
+            // Written: out of the thread, so a failing form save cannot add it twice.
+            thread.removeMany([draft.id]);
+          }
         }
+      } catch (error) {
+        setBatchError(String(error));
+        return;
       }
       closingAll.current = true;
       try {
@@ -412,7 +455,7 @@ export function EditorPanel({
                 <div className="flex items-center gap-1">
                   <IconButton
                     data-testid="draft-prev"
-                    disabled={focused === 0}
+                    disabled={focused === 0 || !settled}
                     label="Previous draft"
                     onClick={() => switchFocus(focused - 1)}
                     size="sm"
@@ -424,7 +467,7 @@ export function EditorPanel({
                   </span>
                   <IconButton
                     data-testid="draft-next"
-                    disabled={focused >= drafts.length - 1}
+                    disabled={focused >= drafts.length - 1 || !settled}
                     label="Next draft"
                     onClick={() => switchFocus(focused + 1)}
                     size="sm"
@@ -435,6 +478,7 @@ export function EditorPanel({
                 <div className="flex items-center gap-1">
                   <Button
                     data-testid="draft-remove"
+                    disabled={!settled}
                     onClick={() => thread.remove(focused)}
                     size="sm"
                     variant="ghost"
@@ -445,7 +489,7 @@ export function EditorPanel({
                     <Button
                       aria-busy={write.busy}
                       data-testid="draft-add-all"
-                      disabled={moveConfirmation.pending !== null}
+                      disabled={moveConfirmation.pending !== null || !settled}
                       onClick={() => void addAll()}
                       size="sm"
                       variant="primary"
@@ -455,6 +499,14 @@ export function EditorPanel({
                   ) : null}
                 </div>
               </div>
+            ) : null}
+            {batchError ? (
+              <p
+                className="select-text rounded-control bg-fill p-2 text-sm text-danger"
+                data-testid="draft-batch-error"
+              >
+                {batchError}
+              </p>
             ) : null}
           </div>
         ) : null}
@@ -489,6 +541,7 @@ export function EditorPanel({
             <ReminderEditorForm
               moveConfirmation={moveConfirmation}
               onClose={onClose}
+              saveDisabled={write.busy}
               task={task}
               taskModel={taskModel}
             />
@@ -496,6 +549,7 @@ export function EditorPanel({
             <TaskEditorForm
               moveConfirmation={moveConfirmation}
               onClose={onClose}
+              saveDisabled={write.busy}
               task={task}
               taskModel={taskModel}
             />
@@ -505,6 +559,7 @@ export function EditorPanel({
             model={eventModel}
             moveConfirmation={moveConfirmation}
             onClose={onClose}
+            saveDisabled={write.busy}
           />
         )}
       </div>
