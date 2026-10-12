@@ -142,6 +142,23 @@ describe('normalizeSearchQuery — what and where', () => {
         }),
       ).calendars,
     ).toEqual(['acc:work', 'acc:family']);
+    // A turn about something else keeps the whole selection, whatever the model echoes.
+    expect(
+      query(
+        normalize({ location: 'Vienna', people: ['Anna'], terms: [] }, 'in Vienna', {
+          people: ['Anna', 'Bob'],
+          terms: [],
+        }),
+      ).people,
+    ).toEqual(['Anna', 'Bob']);
+    expect(
+      query(
+        normalize({ calendars: ['Work'], location: 'Vienna', terms: [] }, 'in Vienna', {
+          calendars: ['acc:work', 'acc:family'],
+          terms: [],
+        }),
+      ).calendars,
+    ).toEqual(['acc:work', 'acc:family']);
     // One the model makes up stays out.
     expect(
       query(

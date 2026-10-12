@@ -367,7 +367,9 @@ export function SearchPanel({
               thread.undo();
             }}
             testIdPrefix="search"
-            turns={thread.state.turns}
+            // The header does not scroll: the latest two turns, the history
+            // stays in the thread (Undo walks it back one at a time).
+            turns={thread.state.turns.slice(-2)}
             undoDisabled={thread.busy}
           />
         ) : null}

@@ -76,6 +76,7 @@ describe('the other readers', () => {
     expect(statesSearchDate('Oct 20', TODAY)).toBe(true);
     expect(statesSearchDate('since March', TODAY)).toBe(true);
     expect(statesSearchDate('Termine morgen', TODAY)).toBe(true);
+    expect(statesSearchDate('events before last week', TODAY)).toBe(true);
     expect(statesSearchDate('harbour with anna', TODAY)).toBe(false);
   });
 
@@ -118,6 +119,8 @@ describe('isSearchFilterPhrase — the router', () => {
     'any time',
     'timed only',
     'Termine morgen',
+    'Groceries list',
+    'Work calendar',
   ])('reads a filter in: %s', (phrase) => {
     expect(isSearchFilterPhrase(phrase)).toBe(true);
   });

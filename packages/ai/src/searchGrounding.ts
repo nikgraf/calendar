@@ -281,6 +281,8 @@ export const statesSearchDate = (phrase: string, referenceDate: string): boolean
   return (
     searchWindowOf(phrase, referenceDate) !== undefined ||
     mentionsDate(phrase) ||
+    // "before last week": a period the code may not read as a whole is still a when.
+    new RegExp(PERIOD.source).test(text) ||
     namedWeekdays(phrase).length > 0 ||
     // German "morgen" (tomorrow, and "morning"): the code does not read it,
     // the model's dates for it count.
@@ -344,6 +346,8 @@ export const isSearchFilterPhrase = (phrase: string): boolean => {
       text,
     ) ||
     /\b(?:last|past|previous|letzten|vergangenen|vorigen)\s+\w+/.test(text) ||
-    /\b(?:with|mit|in|at|near|bei|im|am)\s+\S/.test(text)
+    /\b(?:with|mit|in|at|near|bei|im|am)\s+\S/.test(text) ||
+    // "Groceries list", "Work calendar": a container by name.
+    /\b(?:calendars?|kalender|lists?|listen?)\b/.test(text)
   );
 };

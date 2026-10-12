@@ -176,9 +176,13 @@ const keysOf = (
     // A name the words say now, or one already chosen ("also Family").
     return matched
       .filter((container) => inPhrase(name, phrase) || (kept ?? []).includes(container.key))
-      .map((container) => container.key);
+      .map((container) => ({ key: container.key, said: inPhrase(name, phrase) }));
   });
-  return keys.length > 0 ? [...new Set(keys)] : undefined;
+  // Only a name the words say changes the selection: echoes of what was
+  // chosen alone ("in Vienna" answered with one of two calendars) do not.
+  return keys.some((entry) => entry.said)
+    ? [...new Set(keys.map((entry) => entry.key))]
+    : undefined;
 };
 
 const yearsFrom = (referenceDate: string, years: number): string =>
@@ -266,7 +270,9 @@ export const normalizeSearchQuery = (
       ? [name]
       : [];
   });
-  const people = said.length > 0 ? [...new Set(said)] : was.people;
+  // Only a person the words name changes the selection: an echo of some of
+  // the people already chosen (a turn about a place) keeps them all.
+  const people = said.some((name) => inPhrase(name, phrase)) ? [...new Set(said)] : was.people;
 
   // Calendars and lists the words name.
   const calendarKeys = keysOf(parse.calendars, calendars, phrase, was.calendars) ?? was.calendars;
