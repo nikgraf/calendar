@@ -9,9 +9,11 @@ import {
   type TaskRecord,
   taskRepeats,
 } from '@calendar/core';
+import type { DraftOccurrence } from '@calendar/app-state';
 import { useCallback, useSyncExternalStore, type CSSProperties, type RefObject } from 'react';
 import { RepeatIcon } from '../ui/icons.tsx';
 import type { ColorLookup } from './colors.ts';
+import { DraftChip } from './DraftBlock.tsx';
 import { TaskCheck } from './TaskCheck.tsx';
 import { eventLook, stripes, useTint } from './tint.ts';
 import { useDropTarget, type useEventDrag } from './useEventDrag.ts';
@@ -158,6 +160,7 @@ export function AllDayLane({
   collapsed,
   collapsible,
   colorOf,
+  draftById,
   drag,
   gutterClassName,
   isTaskReadOnly,
@@ -165,6 +168,7 @@ export function AllDayLane({
   listColorOf,
   moreByDay,
   onBirthdayClick,
+  onDraftClick,
   onEventClick,
   onSetCollapsed,
   onTaskClick,
@@ -185,6 +189,8 @@ export function AllDayLane({
   /** Whether the uncapped lane would exceed the cap — only then is "less" offered. */
   collapsible: boolean;
   colorOf: ColorLookup;
+  /** The editor's all-day drafts in the lane, by span id. */
+  draftById: ReadonlyMap<string, DraftOccurrence>;
   drag: ReturnType<typeof useEventDrag>;
   /** The hour gutter's width class, so the lane's label cell matches it. */
   gutterClassName: string;
@@ -195,6 +201,7 @@ export function AllDayLane({
   /** Hidden chips per strip column while collapsed (empty when expanded). */
   moreByDay: ReadonlyArray<number>;
   onBirthdayClick: (birthday: BirthdayOccurrence) => void;
+  onDraftClick: (draftId: string) => void;
   onEventClick: (event: EventRecord) => void;
   onSetCollapsed: (collapsed: boolean) => void;
   onTaskClick: (task: TaskRecord) => void;
@@ -276,8 +283,23 @@ export function AllDayLane({
                 />
               );
             }
-            // Every non-task, non-birthday span is an event: the `!` below
-            // relies on this branch coming first.
+            const draft = draftById.get(span.id);
+            if (draft) {
+              return (
+                <DraftChip
+                  key={span.id}
+                  occurrence={draft}
+                  onClick={onDraftClick}
+                  style={{
+                    left: `calc(${(span.startDayIndex / stripLength) * 100}% + 2px)`,
+                    top: span.row * 24 + 4,
+                    width: `calc(${((span.endDayIndex - span.startDayIndex) / stripLength) * 100}% - 4px)`,
+                  }}
+                />
+              );
+            }
+            // Every non-task, non-birthday, non-draft span is an event: the
+            // `!` below relies on these branches coming first.
             const birthday = birthdayById.get(span.id);
             if (birthday) {
               const label = birthdayChipLabel(birthday);

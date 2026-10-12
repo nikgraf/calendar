@@ -1,4 +1,8 @@
-import { useUpdateViewPreferences, useViewPreferences } from '@calendar/app-state';
+import {
+  type DraftOccurrence,
+  useUpdateViewPreferences,
+  useViewPreferences,
+} from '@calendar/app-state';
 import {
   type BirthdayOccurrence,
   bufferedDays,
@@ -30,6 +34,7 @@ import { type RefObject, useEffect, useLayoutEffect, useMemo, useRef, useState }
 import { AllDayLane } from './AllDayLane.tsx';
 import { type ColorLookup } from './colors.ts';
 import { DayHeaders } from './DayHeaders.tsx';
+import { DraftBlock } from './DraftBlock.tsx';
 import { NowIndicator } from './NowIndicator.tsx';
 import { TimedEventBlock } from './TimedEventBlock.tsx';
 import { TimedTaskBlock } from './TimedTaskBlock.tsx';
@@ -44,6 +49,9 @@ export const HOUR_HEIGHT = 48;
  * column, in the theme's border color so the dark grid stays quiet.
  */
 const HOUR_LINES = `repeating-linear-gradient(to bottom, var(--border) 0, var(--border) 1px, transparent 1px, transparent ${HOUR_HEIGHT}px)`;
+
+/** A draft's id in the lane and column layouts, apart from every stored row's. */
+const draftKey = (draft: DraftOccurrence): string => `draft:${draft.key}`;
 
 /** The occurrence date keys a birthday: one person recurs every year the strip crosses. */
 const birthdayKey = (birthday: BirthdayOccurrence): string =>
@@ -108,6 +116,7 @@ export function WeekView({
   birthdays,
   colorOf,
   days,
+  drafts,
   drag,
   events,
   gridRef,
@@ -116,6 +125,7 @@ export function WeekView({
   laneRef,
   listColorOf,
   onBirthdayClick,
+  onDraftClick,
   onEventClick,
   onNavigate,
   onSlideEnd,
@@ -135,6 +145,8 @@ export function WeekView({
   birthdays: ReadonlyArray<BirthdayOccurrence>;
   colorOf: ColorLookup;
   days: ReadonlyArray<Temporal.PlainDate>;
+  /** The editor's drafts, one per occurrence in the strip: drawn hatched, never stored. */
+  drafts: ReadonlyArray<DraftOccurrence>;
   /** The drag hook, owned by the app so the side panel's rows can drag too. */
   drag: ReturnType<typeof useEventDrag>;
   events: ReadonlyArray<EventRecord>;
@@ -145,6 +157,8 @@ export function WeekView({
   laneRef: RefObject<HTMLDivElement | null>;
   listColorOf: (task: TaskRecord) => string | undefined;
   onBirthdayClick: (birthday: BirthdayOccurrence) => void;
+  /** A draft block was clicked: the editor focuses that draft. */
+  onDraftClick: (draftId: string) => void;
   onEventClick: (event: EventRecord) => void;
   onNavigate: (dayCount: number) => void;
   /** A slide to a picked first day is over: drop the days it travelled across. */
@@ -249,6 +263,21 @@ export function WeekView({
 
   const allDayEvents = events.filter((event) => event.isAllDay);
   const timedEvents = events.filter((event) => !event.isAllDay);
+  // Drafts share the lane and the day-column layout with events, keyed
+  // apart so a draft can never be mistaken for a stored row.
+  const draftByKey = new Map(drafts.map((draft) => [draftKey(draft), draft]));
+  const timedDrafts = drafts.filter((draft) => !draft.isAllDay);
+  const draftSpans = drafts.flatMap((draft) => {
+    if (!draft.isAllDay || draft.startDate === undefined || draft.endDate === undefined) {
+      return [];
+    }
+    const first = strip[0]!;
+    const start = Math.max(first.until(Temporal.PlainDate.from(draft.startDate)).days, 0);
+    const end = Math.min(first.until(Temporal.PlainDate.from(draft.endDate)).days, strip.length);
+    return end > start && start < strip.length
+      ? [{ endDayIndex: end, id: draftKey(draft), startDayIndex: start }]
+      : [];
+  });
 
   // Date-only tasks join one-day spans in the all-day lane. Timed reminders
   // are projected into the ordinary day-column overlap layout below.
@@ -288,6 +317,7 @@ export function WeekView({
     overdueSpans.concat(
       taskSpans,
       birthdaySpans,
+      draftSpans,
       allDayEvents.map((event) => {
         const startIndex = event.startDate ? dayIndexOf(event.startDate, strip) : -1;
         const endIso = event.endDate ?? utcMsToPlainDate(event.endUtc);
@@ -357,6 +387,7 @@ export function WeekView({
         collapsed={collapsed}
         collapsible={rowCount > MAX_ALL_DAY_ROWS}
         colorOf={colorOf}
+        draftById={draftByKey}
         drag={drag}
         gutterClassName={gutterClassName}
         isTaskReadOnly={isTaskReadOnly}
@@ -364,6 +395,7 @@ export function WeekView({
         listColorOf={listColorOf}
         moreByDay={capped?.moreByDay ?? []}
         onBirthdayClick={onBirthdayClick}
+        onDraftClick={onDraftClick}
         onEventClick={onEventClick}
         onSetCollapsed={(value) => updateViewPreferences({ allDayLaneCollapsed: value })}
         onTaskClick={onTaskClick}
@@ -439,7 +471,14 @@ export function WeekView({
                     .map((event) =>
                       timedEventBox(event, `${event.calendarId}:${event.id}`, day, timeZone),
                     )
-                    .concat(timedTaskLayout.byDay.get(iso) ?? []),
+                    .concat(
+                      timedTaskLayout.byDay.get(iso) ?? [],
+                      timedDrafts
+                        .filter(
+                          (draft) => draft.startUtc < range.endUtc && draft.endUtc > range.startUtc,
+                        )
+                        .map((draft) => timedEventBox(draft, draftKey(draft), day, timeZone)),
+                    ),
                 );
                 const isToday = Temporal.PlainDate.compare(day, today) === 0;
                 const drawn =
@@ -493,6 +532,19 @@ export function WeekView({
                             onToggleTask={onToggleTask}
                             readOnly={isTaskReadOnly(task)}
                             task={task}
+                          />
+                        );
+                      }
+                      const draft = draftByKey.get(box.id);
+                      if (draft) {
+                        return (
+                          <DraftBlock
+                            box={box}
+                            hourHeight={HOUR_HEIGHT}
+                            key={box.id}
+                            occurrence={draft}
+                            onClick={onDraftClick}
+                            timeZone={timeZone}
                           />
                         );
                       }

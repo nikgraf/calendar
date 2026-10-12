@@ -2,8 +2,9 @@ import { Account, CalendarInfo } from '@calendar/core';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vite-plus/test';
 import { type App, launchApp, localIsoDaysAgo, readEvents } from './harness.ts';
 
-// Capture: a paste on the calendar (or into the ⌘K bar) becomes events to
-// review. The model is the deterministic fixture, so the "email" is written
+// Capture: a paste on the calendar (or into the ⌘K bar) becomes drafts to
+// review — one thread in the editor, a hatched block per event on the
+// grid. The model is the deterministic fixture, so the "email" is written
 // in its grammar — `Title | +N | HH:MM-HH:MM | Location`, days relative to
 // today — and nothing here depends on the date or on Apple Intelligence.
 const seed = {
@@ -37,9 +38,13 @@ const seed = {
 const TITLE = 'input[placeholder="Title"]';
 // Parenthesised: `??` binds looser than `===`, so an unwrapped expression
 // compared in a waitFor would be truthy as soon as the element existed.
+// Only a capture's progress and error states show a dialog now.
 const STATE = `(document.querySelector('[data-capture-state]')?.dataset.captureState ?? '')`;
-const rowStatus = (id: string) =>
-  `(document.querySelector('[data-capture-row="${id}"]')?.dataset.status ?? '')`;
+const EDITOR = `!!document.querySelector('[data-testid="editor"]')`;
+const position = `(document.querySelector('[data-testid="draft-position"]')?.textContent ?? '')`;
+const blocks = `document.querySelectorAll('[data-testid="draft-block"]').length`;
+const titleIs = (title: string) =>
+  `document.querySelector(${JSON.stringify(TITLE)})?.value === ${JSON.stringify(title)}`;
 
 /**
  * A paste as the OS would deliver it, dispatched where `target` says: the
@@ -77,9 +82,11 @@ describe('Capture from a paste', () => {
     await app.stop();
   });
   afterEach(async () => {
-    // A failure above must not strand a dialog for the next test.
+    // A failure above must not strand a dialog or an editor for the next test.
     for (let attempt = 0; attempt < 3; attempt += 1) {
-      if (!(await app.cdp.eval<boolean>(`!!document.querySelector('[role="dialog"]')`))) {
+      if (
+        !(await app.cdp.eval<boolean>(`!!document.querySelector('[role="dialog"]') || ${EDITOR}`))
+      ) {
         return;
       }
       await app.cdp.pressEscape();
@@ -87,29 +94,19 @@ describe('Capture from a paste', () => {
     }
   });
 
-  it('lists the events in a pasted mail, and a row opens the editor whose save marks it added', async () => {
+  it('opens the events in a pasted mail as drafts of one thread; a save writes the focused one and keeps the rest', async () => {
     const { cdp } = app;
     await cdp.eval(paste({ text: MAIL }));
-    await cdp.waitFor(`${STATE} === 'review'`);
-    expect(await cdp.eval<string>(`document.body.textContent`)).toContain('2 events found');
-    expect(await cdp.eval<string>(rowStatus('capture-0'))).toBe('open');
-    expect(await cdp.eval<string>(rowStatus('capture-1'))).toBe('open');
-    // The row's text is what the user checks before opening it.
-    expect(
-      await cdp.eval<string>(
-        `document.querySelector('[data-capture-row="capture-0"]').textContent`,
-      ),
-    ).toContain('Room 4');
+    await cdp.waitFor(`${position} === '1 of 2'`);
+    await cdp.waitFor(`${blocks} === 2`);
+    expect(await cdp.eval<string>(STATE)).toBe('');
+    await cdp.waitFor(titleIs('Standup'));
 
-    const row = await cdp.locate('[data-capture-row="capture-0"]');
-    await cdp.click(row.x, row.y);
-    // The list steps aside for the editor: one Escape must close one dialog.
-    await cdp.waitFor(`!document.querySelector('[data-capture-state]')`);
-    await cdp.waitFor(`document.querySelector(${JSON.stringify(TITLE)})?.value === 'Standup'`);
     await cdp.clickButtonWithText('Save');
-
-    await cdp.waitFor(`${rowStatus('capture-0')} === 'added'`);
-    expect(await cdp.eval<string>(rowStatus('capture-1'))).toBe('open');
+    // The next draft takes the form; the thread is down to it.
+    await cdp.waitFor(titleIs('Planning'));
+    expect(await cdp.eval<string>(position)).toBe('');
+    await cdp.waitFor(`${blocks} === 1`);
     await expect
       .poll(async () => {
         const events = await readEvents(app.userDataDir);
@@ -119,19 +116,24 @@ describe('Capture from a paste', () => {
     const saved = (await readEvents(app.userDataDir)).find((event) => event.title === 'Standup')!;
     // `+0` in the fixture grammar is today in the app's zone.
     expect(new Date(saved.startUtc).toISOString().slice(0, 10)).toBe(localIsoDaysAgo(0));
-    await cdp.clickButtonWithText('Close');
-    await cdp.waitFor(`${STATE} === ''`);
-    // On the grid, too (the dialog's backdrop would have blocked the hit-test).
+    await cdp.clickButtonWithText('Cancel');
+    await cdp.waitFor(`!${EDITOR}`);
+    expect((await readEvents(app.userDataDir)).some((event) => event.title === 'Planning')).toBe(
+      false,
+    );
+    // On the grid, too, as a stored event now.
     await cdp.locate('[title^="Standup ·"]');
   });
 
-  it('opens the editor directly for a single event, with the list skipped', async () => {
+  it('opens the editor directly for a single event, as a thread of one', async () => {
     const { cdp } = app;
     await cdp.eval(paste({ text: 'Dentist | +3 | 14:30' }));
-    await cdp.waitFor(`document.querySelector(${JSON.stringify(TITLE)})?.value === 'Dentist'`);
+    await cdp.waitFor(titleIs('Dentist'));
     expect(await cdp.eval<string>(STATE)).toBe('');
+    expect(await cdp.eval<string>(position)).toBe('');
+    await cdp.waitFor(`${blocks} === 1`);
     await cdp.clickButtonWithText('Cancel');
-    await cdp.waitFor(`!document.querySelector(${JSON.stringify(TITLE)})`);
+    await cdp.waitFor(`!${EDITOR}`);
     expect((await readEvents(app.userDataDir)).some((event) => event.title === 'Dentist')).toBe(
       false,
     );
@@ -142,10 +144,10 @@ describe('Capture from a paste', () => {
     await cdp.eval(
       paste({ imageBytes: 'Keynote | +2 | 10:00-11:00 | Hall A\nWorkshop | +2 | 13:00-16:00' }),
     );
-    await cdp.waitFor(`${STATE} === 'review'`);
-    expect(await cdp.eval<string>(`document.body.textContent`)).toContain('Hall A');
+    await cdp.waitFor(`${position} === '1 of 2'`);
+    await cdp.waitFor(titleIs('Keynote'));
     await cdp.pressEscape();
-    await cdp.waitFor(`${STATE} === ''`);
+    await cdp.waitFor(`!${EDITOR}`);
   });
 
   it('leaves a single-line paste to the ⌘K input and takes a multi-line one from it', async () => {
@@ -162,16 +164,17 @@ describe('Capture from a paste', () => {
     await cdp.eval(commandK);
     await cdp.waitFor(`document.activeElement === ${INPUT}`);
     await cdp.eval(paste({ text: 'Lunch | +1 | 12:00' }, INPUT));
-    // Nothing happened: no capture, the field keeps focus.
+    // Nothing happened: no capture, no draft, the field keeps focus.
     await new Promise((resolve) => setTimeout(resolve, 300));
     expect(await cdp.eval<string>(STATE)).toBe('');
+    expect(await cdp.eval<number>(blocks)).toBe(0);
     expect(await cdp.eval<boolean>(`document.activeElement === ${INPUT}`)).toBe(true);
 
     await cdp.eval(paste({ text: MAIL }, INPUT));
-    await cdp.waitFor(`${STATE} === 'review'`);
-    // The field handed the paste to capture and let go of the focus.
-    expect(await cdp.eval<boolean>(`document.activeElement === ${INPUT}`)).toBe(false);
+    // The field handed the paste to capture, which reopened the editor on the thread.
+    await cdp.waitFor(`${position} === '1 of 2'`);
+    await cdp.waitFor(titleIs('Standup'));
     await cdp.pressEscape();
-    await cdp.waitFor(`${STATE} === ''`);
+    await cdp.waitFor(`!${EDITOR}`);
   });
 });

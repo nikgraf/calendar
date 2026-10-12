@@ -8,19 +8,21 @@ import { upcomingDays } from './shared.ts';
  */
 export interface QuickAddParse {
   /** `YYYY-MM-DD`, resolved against the reference date in the prompt. */
-  readonly date?: string;
+  readonly date?: string | undefined;
   /** `HH:MM`, 24-hour. Absent for all-day or unspecified. */
-  readonly endTime?: string;
-  readonly isAllDay?: boolean;
-  readonly location?: string;
-  readonly recurrence?: {
-    readonly count?: number;
-    readonly freq?: RecurrenceFrequency;
-    readonly interval?: number;
-    readonly untilDate?: string;
-  };
-  readonly startTime?: string;
-  readonly title?: string;
+  readonly endTime?: string | undefined;
+  readonly isAllDay?: boolean | undefined;
+  readonly location?: string | undefined;
+  readonly recurrence?:
+    | {
+        readonly count?: number | undefined;
+        readonly freq?: RecurrenceFrequency | undefined;
+        readonly interval?: number | undefined;
+        readonly untilDate?: string | undefined;
+      }
+    | undefined;
+  readonly startTime?: string | undefined;
+  readonly title?: string | undefined;
 }
 
 /** Guided-generation schema; kept in sync with QuickAddParse by hand. */

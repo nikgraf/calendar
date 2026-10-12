@@ -36,9 +36,21 @@ export interface DraftThreadState extends Snapshot {
   /** The drafts as they were before each turn, oldest first: what Undo restores. */
   readonly history: ReadonlyArray<Snapshot>;
   readonly turns: ReadonlyArray<DraftTurn>;
+  /**
+   * Moves on every change the form must take over (a turn, an undo, a
+   * focus, a removal) and stays on the form's own edits (`updateDraft`),
+   * so a panel re-applies the focused draft exactly when it should.
+   */
+  readonly version: number;
 }
 
-export const EMPTY_THREAD: DraftThreadState = { drafts: [], focused: 0, history: [], turns: [] };
+export const EMPTY_THREAD: DraftThreadState = {
+  drafts: [],
+  focused: 0,
+  history: [],
+  turns: [],
+  version: 0,
+};
 
 let counter = 0;
 /** A fresh id for a draft or a turn; injectable so tests read stable ids. */
@@ -124,6 +136,7 @@ export const startThread = (
     focused: 0,
     history: [{ drafts: [], focused: 0 }],
     turns: [{ id: id(), summary, utterance }],
+    version: 1,
   };
 };
 
@@ -169,6 +182,7 @@ export const refineThread = (
     focused: state.focused,
     history: [...state.history, { drafts: state.drafts, focused: state.focused }],
     turns: [...state.turns, { id: id(), summary, utterance }],
+    version: state.version + 1,
   };
 };
 
@@ -183,12 +197,13 @@ export const undoTurn = (state: DraftThreadState): DraftThreadState => {
     focused: Math.min(previous.focused, Math.max(previous.drafts.length - 1, 0)),
     history: state.history.slice(0, -1),
     turns: state.turns.slice(0, -1),
+    version: state.version + 1,
   };
 };
 
 export const focusDraft = (state: DraftThreadState, index: number): DraftThreadState =>
   index >= 0 && index < state.drafts.length && index !== state.focused
-    ? { ...state, focused: index }
+    ? { ...state, focused: index, version: state.version + 1 }
     : state;
 
 /** The form's edits to the focused draft, kept so a later turn starts from them. Not a turn. */
@@ -204,6 +219,26 @@ export const updateDraft = (
         drafts: state.drafts.map((draft, at) => (at === index ? { ...draft, item } : draft)),
       };
 
+/** Drafts dropped by id, all at once (the ones "Add all" has written). The focus follows its draft. */
+export const removeDrafts = (
+  state: DraftThreadState,
+  ids: ReadonlyArray<string>,
+): DraftThreadState => {
+  const gone = new Set(ids);
+  const drafts = state.drafts.filter((draft) => !gone.has(draft.id));
+  if (drafts.length === state.drafts.length) {
+    return state;
+  }
+  const focusedId = state.drafts[state.focused]?.id;
+  const kept = drafts.findIndex((draft) => draft.id === focusedId);
+  return {
+    ...state,
+    drafts,
+    focused: kept === -1 ? Math.min(state.focused, Math.max(drafts.length - 1, 0)) : kept,
+    version: state.version + 1,
+  };
+};
+
 /** A draft dropped from the thread (saved, or not wanted). Not a turn: nothing to undo into. */
 export const removeDraft = (state: DraftThreadState, index: number): DraftThreadState => {
   if (state.drafts[index] === undefined) {
@@ -217,6 +252,7 @@ export const removeDraft = (state: DraftThreadState, index: number): DraftThread
       state.focused > index ? state.focused - 1 : state.focused,
       Math.max(drafts.length - 1, 0),
     ),
+    version: state.version + 1,
   };
 };
 
@@ -317,6 +353,7 @@ export const useDraftThread = ({ model, timeZone }: { model: LanguageModel; time
     focus: (index: number) => setState((latest) => focusDraft(latest, index)),
     refine,
     remove: (index: number) => setState((latest) => removeDraft(latest, index)),
+    removeMany: (ids: ReadonlyArray<string>) => setState((latest) => removeDrafts(latest, ids)),
     start,
     state,
     undo: () => {

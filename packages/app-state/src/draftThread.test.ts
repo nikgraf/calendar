@@ -6,6 +6,7 @@ import {
   refineTargets,
   refineThread,
   removeDraft,
+  removeDrafts,
   startThread,
   summarizeChange,
   undoTurn,
@@ -142,6 +143,8 @@ describe('refineThread and undoTurn', () => {
     expect(empty.drafts).toEqual([]);
     expect(empty.turns).toEqual([]);
     expect(undoTurn(empty)).toBe(empty);
+    // Every step the form must take over moved the version.
+    expect([started.version, refined.version, undone.version, empty.version]).toEqual([1, 2, 3, 4]);
   });
 
   it('counts the drafts a turn changed when more than one did', () => {
@@ -176,11 +179,26 @@ describe('focus, update and remove', () => {
     expect(focusDraft(state, -1)).toBe(state);
   });
 
-  it('keeps the form edits on the draft without a turn', () => {
+  it('keeps the form edits on the draft without a turn, and without moving the version', () => {
     const edited = updateDraft(state, 0, later);
     expect(edited.drafts[0]?.item).toEqual(later);
     expect(edited.turns).toEqual(state.turns);
+    expect(edited.version).toBe(state.version);
     expect(updateDraft(state, 5, later)).toBe(state);
+    expect(focusDraft(state, 1).version).toBe(state.version + 1);
+    expect(removeDraft(state, 1).version).toBe(state.version + 1);
+  });
+
+  it('drops several drafts by id, the focus following its draft', () => {
+    const three = startThread([dinner, planning, later], 'x', ids());
+    const second = focusDraft(three, 1);
+    const kept = removeDrafts(second, ['d1', 'd3']);
+    expect(kept.drafts.map((draft) => draft.id)).toEqual(['d2']);
+    expect(kept.focused).toBe(0);
+    const focusedGone = removeDrafts(second, ['d2']);
+    expect(focusedGone.drafts.map((draft) => draft.id)).toEqual(['d1', 'd3']);
+    expect(focusedGone.focused).toBe(1);
+    expect(removeDrafts(three, ['nope'])).toBe(three);
   });
 
   it('drops a draft and keeps the focus on the same draft where it can', () => {

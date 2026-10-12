@@ -9,21 +9,23 @@ export interface QuickAddPrefill {
    * The times came from a meal or part of the day the phrase named, not a
    * clock time it stated: the editor marks them so, until they are set.
    */
-  readonly assumedTime?: boolean;
+  readonly assumedTime?: boolean | undefined;
   readonly date: string;
   readonly endTime: string;
   readonly isAllDay: boolean;
-  readonly location?: string;
+  readonly location?: string | undefined;
   /**
    * Recurrence as the editor's own fields, not a built RRULE — the editor
    * shows them and builds the rule itself on save.
    */
-  readonly recurrence?: {
-    readonly count?: number;
-    readonly freq: RecurrenceFrequency;
-    readonly interval?: number;
-    readonly untilDate?: string;
-  };
+  readonly recurrence?:
+    | {
+        readonly count?: number | undefined;
+        readonly freq: RecurrenceFrequency;
+        readonly interval?: number | undefined;
+        readonly untilDate?: string | undefined;
+      }
+    | undefined;
   readonly startTime: string;
   readonly title: string;
 }
