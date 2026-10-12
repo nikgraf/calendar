@@ -28,6 +28,8 @@ const SOLVER_SLOTS = 24;
 /** The solver's own daytime, the bounds a phrase without any searches. */
 const DEFAULT_EARLIEST = '08:00';
 const DEFAULT_LATEST = '20:00';
+/** 23:59, the last minute a wall-clock time can name. */
+const LAST_MINUTE = 23 * 60 + 59;
 
 /** Lower-case, accent-free text with straight apostrophes: what the cues are matched against. */
 const words = (phrase: string): string =>
@@ -106,7 +108,10 @@ export const proposalCentre = (
   }
   const earliest = minuteOf(bounds.earliestTime ?? DEFAULT_EARLIEST);
   const latest = minuteOf(bounds.latestTime ?? DEFAULT_LATEST);
-  return format(Math.round((earliest + latest) / 2 / 15) * 15);
+  // The exact middle minute, never past the day's last one: the solver
+  // rounds the slot it places to the quarter hour itself, and a centre of
+  // "24:00" (a 23:50–23:59 window) is no clock time it can place.
+  return format(Math.min(Math.floor((earliest + latest) / 2), LAST_MINUTE));
 };
 
 export type SlotProposalResult =

@@ -112,7 +112,11 @@ describe('isFinderPhrase', () => {
 });
 
 describe('proposalCentre', () => {
-  it('is the middle of the named period’s bounds, to the quarter hour', () => {
+  it('stays a clock time of the day for a window ending at midnight', () => {
+    expect(proposalCentre('tonight', { earliestTime: '23:50', latestTime: '23:59' })).toBe('23:54');
+  });
+
+  it('is the middle of the named period’s bounds', () => {
     expect(
       proposalCentre('mornings next week', { earliestTime: '08:00', latestTime: '12:00' }),
     ).toBe('10:00');
@@ -189,6 +193,18 @@ describe('proposeSlots', () => {
   it('passes the finder’s own rejection through', async () => {
     const result = await proposeSlots(model({}), morning, { ...context, phrase: 'sometime' });
     expect(result).toMatchObject({ kind: 'rejected', reason: expect.stringContaining('how long') });
+  });
+
+  it('places a slot in the last minutes of the day', async () => {
+    const result = await proposeSlots(
+      model({ durationMinutes: 5, earliestTime: '23:50', latestTime: '23:59' }),
+      backendWith([]),
+      { ...context, phrase: 'find 5 min tomorrow night between 23:50 and 23:59' },
+    );
+    expect(result).toMatchObject({
+      kind: 'proposed',
+      slots: [{ date: tomorrow.toString(), startTime: '23:50' }],
+    });
   });
 
   it('turns a failed event read into a reason', async () => {
