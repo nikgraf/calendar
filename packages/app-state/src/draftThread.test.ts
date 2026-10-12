@@ -446,7 +446,7 @@ describe('landRefinement — the answer lands on the draft it was asked about', 
     expect(landed.drafts[1]?.item).toEqual(planning);
   });
 
-  it('after a switch, the form is another draft’s: the target keeps its stored copy, the other draft is untouched', () => {
+  it('after a switch, the form is another draft’s: the target lands on its stored copy, the form’s edits stay with the draft it shows', () => {
     const id = ids();
     // The user left d1 with an edit (switchFocus stores it) and opened d2.
     const state = focusDraft(
@@ -466,9 +466,9 @@ describe('landRefinement — the answer lands on the draft it was asked about', 
       startTime: '20:00',
       title: 'Dinner with Teo and Ana',
     });
-    // d2 as the thread holds it: the form's own edit goes in on the next switch, not here.
-    expect(landed.drafts[1]?.item).toEqual(planning);
-    expect(landed.history.at(-1)?.drafts[1]?.item).toEqual(planning);
+    // d2 keeps what the form typed into it meanwhile: the turn's re-apply must not wipe it.
+    expect(landed.drafts[1]?.item).toEqual(planningEdited);
+    expect(landed.history.at(-1)?.drafts[1]?.item).toEqual(planningEdited);
     expect(landed.focused).toBe(1);
   });
 
@@ -505,13 +505,15 @@ describe('landPlacement — the finder turn lands on the draft it was asked for'
     expect(landed.drafts[0]?.slots).toEqual(slots);
   });
 
-  it('after a switch, moves the target from its stored copy and leaves the draft in the form alone', () => {
+  it('after a switch, moves the target from its stored copy and keeps the form’s edits on the draft it shows', () => {
     const id = ids();
     const state = focusDraft(startThread([dinner, planning], 'x', { id }), 1);
+    const planningEdited: QuickAddItem = {
+      kind: 'event',
+      prefill: { ...planning.prefill, title: 'Planning (edited)' },
+    };
     const landed = landPlacement(state, {
-      fresh: {
-        item: { kind: 'event', prefill: { ...planning.prefill, title: 'Planning (edited)' } },
-      },
+      fresh: { item: planningEdited },
       slots,
       targetId: 'd1',
       utterance: 'find a slot tomorrow morning',
@@ -521,7 +523,8 @@ describe('landPlacement — the finder turn lands on the draft it was asked for'
       startTime: '10:00',
       title: 'Dinner with Teo',
     });
-    expect(landed.drafts[1]?.item).toEqual(planning);
+    expect(landed.drafts[1]?.item).toEqual(planningEdited);
+    expect(landed.drafts[1]).not.toHaveProperty('slots');
   });
 
   it('dates a to-do the form had let go of', () => {

@@ -120,7 +120,13 @@ describe('Slot proposals in the create thread', () => {
     expect(await cdp.eval<boolean>(candidateAt('08:15'))).toBe(true);
     expect(await cdp.eval<string>(lastSummary)).toContain('3 free slots');
 
-    // A chip moves the draft; the slot it left becomes a candidate.
+    // A chip moves the draft and shows its day: with the view weeks back
+    // (past the pan buffer), the draft leaves the grid until the chip
+    // brings it back. The slot it left becomes a candidate.
+    for (let week = 0; week < 3; week += 1) {
+      await cdp.clickTestId('nav-prev');
+    }
+    await cdp.waitFor(`${blocks} === 0 && ${candidates} === 0`);
     await cdp.clickTestId('draft-slot-1');
     await cdp.waitFor(blockAt('10:45'));
     await cdp.waitFor(`document.querySelector(${JSON.stringify(START)})?.value === '10:45'`);

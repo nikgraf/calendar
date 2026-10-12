@@ -369,13 +369,14 @@ export interface FormSnapshot {
 }
 
 /**
- * A refinement's changes folded in once the model answered. The form is
- * the target draft's only while that draft is still the focused one:
- * then the change lands on the form as it is now (`fresh`), edits made
- * while the model answered kept, and only what the turn changed is taken
- * over. After a switch the form shows another draft, so the target's own
- * stored copy — what the form held when it left — is the base, and the
- * draft now in the form is never touched.
+ * A refinement's changes folded in once the model answered. The form as
+ * it is now (`fresh`) goes into the draft it shows first — the target
+ * while that is still the focused one, else the draft focused meanwhile,
+ * whose edits the turn's re-apply would otherwise wipe. Then the change
+ * lands on the target: on the form's copy when it is the focused draft,
+ * edits made while the model answered kept, else on its stored copy —
+ * what the form held when it left — and only what the turn changed is
+ * taken over.
  */
 export const landRefinement = (
   state: DraftThreadState,
@@ -399,8 +400,7 @@ export const landRefinement = (
   if (submitted === undefined || fresh === undefined || index === -1) {
     return refineThread(state, utterance, changes);
   }
-  const base =
-    state.focused === index ? updateDraft(state, index, fresh.item, fresh.extras) : state;
+  const base = updateDraft(state, state.focused, fresh.item, fresh.extras);
   const current = base.drafts[index]!.item;
   return refineThread(
     base,
@@ -414,10 +414,10 @@ export const landRefinement = (
 };
 
 /**
- * A finder turn's slots folded in: the target draft moves into the best
- * slot — from the form as it is now while it is still the focused draft,
- * else from its stored copy — its title kept, the slots on it. A to-do
- * placed in a slot is dated: an undated state the form held goes.
+ * A finder turn's slots folded in: the form as it is now goes into the
+ * draft it shows (as above), then the target draft moves into the best
+ * slot — its title kept, the slots on it. A to-do placed in a slot is
+ * dated: an undated state the form held goes (and comes back with Undo).
  */
 export const landPlacement = (
   state: DraftThreadState,
@@ -440,8 +440,8 @@ export const landPlacement = (
   if (index === -1 || best === undefined) {
     return state;
   }
-  const live = fresh !== undefined && state.focused === index ? fresh : undefined;
-  const based = live === undefined ? state : updateDraft(state, index, live.item, live.extras);
+  const based =
+    fresh === undefined ? state : updateDraft(state, state.focused, fresh.item, fresh.extras);
   const draft = based.drafts[index]!;
   return refineThread(based, utterance, [
     {

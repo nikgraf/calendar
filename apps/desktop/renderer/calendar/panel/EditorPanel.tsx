@@ -263,11 +263,13 @@ export function EditorPanel({
       void apply(focusedDraft.item).then(() => {
         if (focusedDraft.item.kind === 'task') {
           // A to-do's own: its notes, and a day the form had let go of —
-          // unless the turn gave it a time (a slot, "at 3pm"), which dates it.
+          // unless the thread dated it itself (a slot placement says so in
+          // the extras; a retained time says nothing, a reminder keeps its
+          // time while undated).
           taskModel.setNotes(extras?.taskNotes ?? '');
-          const timed = focusedDraft.item.prefill.time !== undefined;
+          const placed = extras?.undated === false;
           if (
-            !timed &&
+            !placed &&
             (extras?.undated || undated.current?.date === focusedDraft.item.prefill.date)
           ) {
             taskModel.clearDueDate?.();
@@ -308,6 +310,16 @@ export function EditorPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- the version names exactly what the form must take over
   }, [version]);
 
+  /**
+   * The form moves into a free slot the thread offered (a chip, a
+   * candidate block), and the calendar shows its day — a slot can lie
+   * outside the days on view, and only a turn reveals on its own.
+   */
+  const moveToSlot = (slot: FreeSlot) => {
+    eventModel.applySlot(slot);
+    onReveal?.(Temporal.PlainDate.from(slot.date));
+  };
+
   /** Another draft takes the form; the form's edits stay on the one leaving it. Not mid-write. */
   const switchFocus = (index: number) => {
     if (index === focused || drafts[index] === undefined || !settled) {
@@ -326,7 +338,7 @@ export function EditorPanel({
       switchFocus(index);
       // A candidate of the focused draft: the form moves into its slot.
       if (focusDraft.slot && index === focused && mode === 'event' && settled) {
-        eventModel.applySlot(focusDraft.slot);
+        moveToSlot(focusDraft.slot);
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- a click is handled once, when it arrives
@@ -546,7 +558,7 @@ export function EditorPanel({
                         data-testid={`draft-slot-${String(index)}`}
                         disabled={!settled}
                         key={`${slot.date}T${slot.startTime}`}
-                        onClick={() => eventModel.applySlot(slot)}
+                        onClick={() => moveToSlot(slot)}
                         size="sm"
                       >
                         {formatSlotLabel(slot)}
