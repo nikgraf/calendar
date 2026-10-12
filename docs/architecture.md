@@ -49,7 +49,15 @@ refinement (`refine.ts`) is one more bounded prompt — the draft as a
 line of JSON and the change — merged by the same rules with the draft as
 the anchor (an open "at 8" reads next to the draft's own start); the
 model keeps no session, so a turn works the same over every provider
-and the fixture model plays it in its grammar.
+and the fixture model plays it in its grammar. A phrase that asks for
+free time ("find 90 min for focus next week, mornings", "wann habe ich
+Zeit für …") is routed by code (`slotProposals.ts`, `isFinderPhrase`:
+English and German cues) to the finder prompt instead, so the two
+prompts stay tuned apart; the solver then places each gap's slot at the
+named part of the day (`preferredTime`, the middle of the bounds the
+finder settled on) and `rankSlotsAround` orders the slots by distance
+from it, half an hour counting the same, soonest first among equals —
+without a named period they stay in the solver's chronological order.
 Desktop: renderer → preload IPC (the `model:*` channels: status, info,
 generate, prepare-speech, transcribe, recognize-text) → main → the
 active provider (`apps/desktop/electron/modelProvider.ts`): by default
@@ -753,7 +761,12 @@ gateway carries all of it. Details, limits and the threat model:
   (`useDraftThread`, `packages/app-state/src/draftThread.ts`): the first
   phrase makes the draft(s), every later phrase in the same field changes
   them (`parseRefine`), the turns are listed with what each changed and
-  the last has Undo; the grid draws every event draft hatched and dashed
+  the last has Undo; a phrase that asks for free time (`proposeSlots`)
+  puts the draft in the best free slot and keeps the others on it — a
+  "Free slots" chip row under the turns, the chosen one pressed, and
+  fainter dotted candidate blocks tagged "Option" on the grid, either of
+  which moves the draft; the next turn drops them, Undo brings them
+  back; the grid draws every event draft hatched and dashed
   in its calendar's hue with a "Draft" tag (`DraftBlock`, `DraftChip` in
   the lane; `draftPreview.ts` derives them from the thread, the focused
   one from the live form, every occurrence of a repeating one), the

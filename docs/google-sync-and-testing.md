@@ -547,7 +547,11 @@ calendar color, month view, task lane and editor, the sync footer, the
 privacy modal, the settings window, the inspector and inline editor, ⌘K);
 `capture` (paste-to-drafts on the fixture model); `draftThread` (a
 phrase's draft on the grid, a change, Undo, Save; a pasted mail's thread,
-the pager, Remove, Add all); `modelProvider` (a served model: a fake
+the pager, Remove, Add all); `slotProposals` (a finder phrase on the
+fixture model against seeded busy blocks, TZ pinned: the draft in the
+best slot, the chip row and candidate blocks, a chip and a candidate
+moving it, a change dropping the proposals and Undo restoring them, a
+finder phrase as a later turn); `modelProvider` (a served model: a fake
 Ollama in the spec's own process with the fixture model behind it, the
 quick-add field over HTTP, Settings › General's kind, Test and Save, the
 wording when the server is down); `reminders` and

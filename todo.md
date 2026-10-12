@@ -138,13 +138,15 @@ Empty. The 2026-10-02 review's findings are closed in `docs/decisions.md`
 ## Tier 3 — AI features
 
 AI redesign (agreed 2026-10-11, one PR each, in this order; the
-grounding PR that opened it, #182, and the desktop draft thread
-(#183) are in `docs/decisions.md` → AI):
+grounding PR that opened it, #182, the desktop draft thread (#183),
+the served model (#184) and slot proposals (#185) are in
+`docs/decisions.md` → AI):
 
 - [ ] Draft thread on iOS — the shared thread (`useDraftThread`,
       shipped on the desktop in #183, `docs/decisions.md`
       → AI) in the edit sheet: the field takes changes, the turns with
-      Undo, the pager and "Add all"; then the hard part, the calendar
+      Undo, the pager and "Add all", the free-slot chip row and candidate
+      blocks of #185; then the hard part, the calendar
       behind the sheet — the editor as a half-height detent form sheet
       (react-native-screens' `sheetAllowedDetents`) scrolled to the
       focused draft's day, the drafts drawn hatched in the timeline and
@@ -161,12 +163,6 @@ grounding PR that opened it, #182, and the desktop draft thread
       `ModelInfo` capability record beyond the context (modalities, guided
       JSON) once a feature reads it; the bench's phrase set grown from real
       misreads.
-- [ ] Slot proposals in the create thread — a deterministic router by
-      phrase (find / slot / free / fit / "when can I", German too) sends a
-      sentence to the finder prompt, the two prompts stay tuned apart;
-      the chosen slot is the draft, the alternatives are fainter candidate
-      blocks in the grid and a chip row in the form (not a slider);
-      ranking biased to the named period's centre.
 - [ ] Search filters — a `SearchQuery` struct in core (terms, date range,
       location, people, calendar/list, kind, all-day) and the rpc takes it;
       the struct renders as chips the user edits by hand; an AI turn edits
