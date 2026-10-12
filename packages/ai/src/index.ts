@@ -6,6 +6,7 @@ export * from './speech.ts';
 export * from './findTime.ts';
 export * from './findTimePipeline.ts';
 export * from './parseQuickAdd.ts';
+export * from './refine.ts';
 export * from './textRecognition.ts';
 export * from './capture.ts';
 export * from './parseCapture.ts';

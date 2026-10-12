@@ -138,22 +138,22 @@ Empty. The 2026-10-02 review's findings are closed in `docs/decisions.md`
 ## Tier 3 — AI features
 
 AI redesign (agreed 2026-10-11, one PR each, in this order; the
-grounding PR that opened it, #182, is in `docs/decisions.md` → AI):
+grounding PR that opened it, #182, and the desktop draft thread
+(#183) are in `docs/decisions.md` → AI):
 
-- [ ] Draft thread — one `DraftThread` model (`drafts[]`, `focused`,
-      `turns[]`) behind quick-add, capture and the finder's result; a
-      refine turn is stateless (reference date + the current draft as JSON + the utterance → the updated draft, only the mentioned fields
-      changed), so the thread is an undo stack of drafts and the form and
-      the field are two views of one draft; nothing is saved until Save.
-      Previews in the calendar: every draft drawn as a hatched,
-      dashed-edge block in its calendar's hue with a "Draft" tag (a
-      `draft` variant of `eventTint`), every occurrence of a repeat in the
-      visible window; focusing a draft navigates to its day, clicking a
-      block focuses its draft; "Add all" primary. A refinement applies to
-      the focused draft unless it says all / both / every. Fields set by a
-      default (the meal table) carry an "assumed" badge. Desktop first;
-      iOS needs the editor as a half-height detent sheet so the calendar
-      shows behind it (the hard part).
+- [ ] Draft thread on iOS — the shared thread (`useDraftThread`,
+      shipped on the desktop in #183, `docs/decisions.md`
+      → AI) in the edit sheet: the field takes changes, the turns with
+      Undo, the pager and "Add all"; then the hard part, the calendar
+      behind the sheet — the editor as a half-height detent form sheet
+      (react-native-screens' `sheetAllowedDetents`) scrolled to the
+      focused draft's day, the drafts drawn hatched in the timeline and
+      the month grid like the desktop's `DraftBlock`; the capture review
+      sheet goes the way of the desktop's list once the sheet shows the
+      thread. Also open from the desktop: drafts in the month view, a
+      slot or ⌘N editor without a phrase drawing its form as a draft too,
+      to-do drafts in "Add all" (today it waits until each is the focused
+      one).
 - [ ] Model providers — `LanguageModel` becomes a provider with a
       capability record (context tokens, input modalities, guided JSON);
       an OpenAI-compatible endpoint provider in Electron main beside the

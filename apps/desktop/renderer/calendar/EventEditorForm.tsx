@@ -34,15 +34,19 @@ export function EventEditorForm({
   model,
   moveConfirmation,
   onClose,
+  saveDisabled = false,
 }: {
   model: ReturnType<typeof useEventEditorModel>;
   moveConfirmation: ReturnType<typeof useMoveConfirmation>;
   onClose: () => void;
+  /** Another write of the editor's is running (the thread's "Add all"): one at a time. */
+  saveDisabled?: boolean | undefined;
 }) {
   const accounts = useAccounts();
   const { secondary: secondaryZones } = useTimeZones();
   const {
     addAttendee,
+    assumedTime,
     attendees,
     attendeeStatus,
     busy,
@@ -189,6 +193,11 @@ export function EventEditorForm({
             </div>
           )}
         </div>
+        {assumedTime && !isAllDay ? (
+          <p className="-mt-1 text-xs text-ink-secondary" data-testid="assumed-time">
+            Time assumed from the phrase — set it, or say one.
+          </p>
+        ) : null}
         {zoneLines ? <ZoneLines className="-mt-2" lines={zoneLines} /> : null}
         {readOnly ? null : <FindTimeFields model={model} />}
         <LocationCombobox model={model} />
@@ -261,7 +270,7 @@ export function EventEditorForm({
           {readOnly ? null : (
             <Button
               aria-busy={busy}
-              disabled={moveConfirmation.pending !== null}
+              disabled={moveConfirmation.pending !== null || saveDisabled}
               onClick={() => void save()}
               size="sm"
               variant="primary"

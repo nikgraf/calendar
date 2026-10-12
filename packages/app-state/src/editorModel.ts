@@ -23,6 +23,7 @@ import {
   validateEventDraft,
   type Attendee,
   type AttendeeInput,
+  type ByDay,
   type CalendarInfo,
   type EventConvertValues,
   type EventDraft,
@@ -54,16 +55,21 @@ import { useRepeatState } from './repeatState.ts';
 export type { RepeatEnds } from './repeatState.ts';
 
 export interface EventEditorPrefill {
+  /** The times came from a meal or part-of-day word, not a stated clock time: shown as assumed until set. */
+  readonly assumedTime?: boolean | undefined;
   readonly date: string;
   readonly endTime: string;
   readonly isAllDay: boolean;
-  readonly location?: string;
-  readonly recurrence?: {
-    readonly count?: number;
-    readonly freq: RecurrenceFrequency;
-    readonly interval?: number;
-    readonly untilDate?: string;
-  };
+  readonly location?: string | undefined;
+  readonly recurrence?:
+    | {
+        readonly byDay?: ReadonlyArray<ByDay> | undefined;
+        readonly count?: number | undefined;
+        readonly freq: RecurrenceFrequency;
+        readonly interval?: number | undefined;
+        readonly untilDate?: string | undefined;
+      }
+    | undefined;
   readonly startTime: string;
   readonly title: string;
 }
@@ -356,6 +362,9 @@ export const useEventEditorModel = ({
   const [timeChosen, setTimeChosen] = useState(
     existing !== undefined || seed.initialTimes !== undefined || prefill !== undefined,
   );
+  // A phrase's meal or part-of-day word set the times, not a clock time it
+  // stated: the form says so until the times are set by hand or by a slot.
+  const [assumedTime, setAssumedTime] = useState(prefill?.assumedTime === true);
   const [location, setLocation] = useState(existing?.location ?? prefill?.location ?? '');
   // The text the editor opened with, or a parsed phrase set (see
   // `applyPrefill`): the one text that is looked up without a pick.
@@ -552,6 +561,7 @@ export const useEventEditorModel = ({
     setStartTime(next.startTime);
     setEndTime(next.endTime);
     setTimeChosen(next.timeChosen);
+    setAssumedTime(false);
     updateReminders(next.reminders);
     // A task's rule comes as the form holds it; lines are parsed back only
     // when that is all there is.
@@ -581,7 +591,81 @@ export const useEventEditorModel = ({
     setStartTime(slot.startTime);
     setEndTime(slot.endTime);
     setTimeChosen(true);
+    setAssumedTime(false);
     setError(null);
+  };
+
+  /**
+   * What the form holds beyond the prefill — guests, notes, notifications
+   * (as edited, else undefined) — for a thread to keep with its draft.
+   */
+  const extras = () => ({
+    attendees,
+    description,
+    // The picked coordinates, while they still match the text (`geoMatches`).
+    geo: geoMatches(geo, location.trim()) ? geo : undefined,
+    reminders: remindersDirty ? reminders : undefined,
+  });
+
+  /**
+   * Another draft's extras take the form over (undefined: a draft the form
+   * never held, which starts clean), so nothing typed for one draft shows
+   * on the next.
+   */
+  const restoreExtras = (
+    next:
+      | {
+          readonly attendees: ReadonlyArray<AttendeeInput>;
+          readonly description: string;
+          readonly geo?: GeoLocation | undefined;
+          readonly reminders: EventReminders | undefined;
+        }
+      | undefined,
+  ) => {
+    setAttendees(next?.attendees ?? []);
+    setAttendeesDirty((next?.attendees.length ?? 0) > 0);
+    setDescription(next?.description ?? '');
+    setGeo(next?.geo);
+    if (next?.reminders) {
+      updateReminders(next.reminders);
+    } else {
+      setReminders(
+        new EventReminders({
+          overrides: [],
+          useDefault: calendarOf(calendarKey)?.provider !== 'apple',
+        }),
+      );
+      setRemindersDirty(false);
+    }
+  };
+
+  /**
+   * The form as a prefill: what a thread keeps of the focused draft, and
+   * what a refinement starts from. The repeat fields come back as a seed
+   * (weekdays included), so a draft round-trips through the form whole.
+   */
+  const toPrefill = (): EventEditorPrefill => {
+    const spec = repeatSpec();
+    return {
+      ...(assumedTime ? { assumedTime: true } : {}),
+      date,
+      endTime,
+      isAllDay,
+      ...(location.trim() ? { location: location.trim() } : {}),
+      ...(spec
+        ? {
+            recurrence: {
+              ...(spec.byDay ? { byDay: spec.byDay } : {}),
+              ...(spec.count !== undefined ? { count: spec.count } : {}),
+              freq: spec.freq,
+              ...(spec.interval !== undefined ? { interval: spec.interval } : {}),
+              ...(spec.untilDate ? { untilDate: spec.untilDate } : {}),
+            },
+          }
+        : {}),
+      startTime,
+      title: title.trim(),
+    };
   };
 
   /**
@@ -598,6 +682,7 @@ export const useEventEditorModel = ({
     setStartTime(next.startTime);
     setEndTime(next.endTime);
     setTimeChosen(true);
+    setAssumedTime(next.assumedTime === true);
     setLocation(next.location ?? '');
     setGivenLocation(next.location ?? '');
     setRepeatDirty(true);
@@ -879,6 +964,8 @@ export const useEventEditorModel = ({
     adopt,
     applyPrefill,
     applySlot,
+    /** The times came from a phrase's meal or part-of-day word and have not been set since. */
+    assumedTime,
     attendees,
     attendeeStatus,
     /** A save or delete is running: Save and Delete are dimmed (a press does nothing). */
@@ -892,6 +979,8 @@ export const useEventEditorModel = ({
     endTime,
     error,
     existing,
+    /** Guests, notes and edited notifications, for a thread to keep with its draft. */
+    extras,
     isAllDay,
     isRecurring,
     joinUrl,
@@ -922,6 +1011,7 @@ export const useEventEditorModel = ({
      */
     repeatLoaded: existing === undefined || (isRecurring && master.loaded),
     respond,
+    restoreExtras,
     rsvp,
     save: () => write.run(save),
     scope,
@@ -931,10 +1021,12 @@ export const useEventEditorModel = ({
     setEndTime: (time: string) => {
       setEndTime(time);
       setTimeChosen(true);
+      setAssumedTime(false);
     },
     setIsAllDay: (allDay: boolean) => {
       setIsAllDay(allDay);
       setTimeChosen(true);
+      setAssumedTime(false);
     },
     setLocation,
     setReminderMinutes,
@@ -950,6 +1042,7 @@ export const useEventEditorModel = ({
     setStartTime: (time: string) => {
       setStartTime(time);
       setTimeChosen(true);
+      setAssumedTime(false);
     },
     setTitle,
     setUseDefaultReminders,
@@ -960,6 +1053,7 @@ export const useEventEditorModel = ({
     timeZone,
     title,
     toggleWeekday: marking(repeatState.toggleWeekday),
+    toPrefill,
     values,
     writableCalendars,
   };

@@ -732,14 +732,169 @@ export const groundDays = (
 };
 
 /** Number words a length is written in, beyond the clock's one to twelve. */
-const LENGTH_WORDS =
-  'thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|forty-five|fifty|sixty|ninety|hundred|zwanzig|dreissig|vierzig|funfundvierzig|funfzig|sechzig|neunzig|hundert';
+const LENGTH_WORDS = {
+  dreissig: 30,
+  eighteen: 18,
+  fifteen: 15,
+  fifty: 50,
+  forty: 40,
+  'forty-five': 45,
+  fourteen: 14,
+  funfundvierzig: 45,
+  funfzig: 50,
+  hundert: 100,
+  hundred: 100,
+  neunzig: 90,
+  nineteen: 19,
+  ninety: 90,
+  sechzig: 60,
+  seventeen: 17,
+  sixteen: 16,
+  sixty: 60,
+  thirteen: 13,
+  thirty: 30,
+  twenty: 20,
+  vierzig: 40,
+  zwanzig: 20,
+} as const;
+const LENGTH_WORD = Object.keys(LENGTH_WORDS)
+  .sort((left, right) => right.length - left.length)
+  .join('|');
+/** "twenty-five", "twenty five", "fünfundzwanzig": tens and ones as one number. */
+const COMPOUND_NUMBER =
+  '(?:twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety)[- ](?:one|two|three|four|five|six|seven|eight|nine)|(?:ein|zwei|drei|vier|funf|sechs|sieben|acht|neun)und(?:zwanzig|dreissig|vierzig|funfzig|sechzig)';
 const DURATION = new RegExp(
-  `\\b(?:\\d+(?:[.,]\\d+)?|${NUMBER_WORD}|${LENGTH_WORDS}|an?|eine?r?)[\\s-]*(?:${LENGTH_UNITS})\\b|\\b(?:half an hour|halbe stunde|eineinhalb|anderthalb)\\b`,
+  `\\b(\\d+(?:[.,]\\d+)?|${COMPOUND_NUMBER}|${NUMBER_WORD}|${LENGTH_WORD}|an?|eine?r?)[\\s-]*(${LENGTH_UNITS})\\b|\\b(half an hour|halbe stunde|eineinhalb|anderthalb)\\b`,
 );
 
-/** Whether the phrase says how long ("90 min", "2h", "two hours", "thirty minutes", "90-minute", "zwei Stunden"). */
-export const statesDuration = (phrase: string): boolean => DURATION.test(words(phrase));
+const TENS = {
+  dreissig: 30,
+  eighty: 80,
+  fifty: 50,
+  forty: 40,
+  funfzig: 50,
+  ninety: 90,
+  sechzig: 60,
+  seventy: 70,
+  sixty: 60,
+  thirty: 30,
+  twenty: 20,
+  vierzig: 40,
+  zwanzig: 20,
+} as const;
+
+const quantityOf = (token: string): number => {
+  const compound = /^([a-z]+)[- ]([a-z]+)$/.exec(token) ?? /^([a-z]+)und([a-z]+)$/.exec(token);
+  if (compound) {
+    const [, first = '', second = ''] = compound;
+    // English says the tens first, German the ones ("fünfundzwanzig").
+    const tens = first in TENS ? first : second;
+    const ones = tens === first ? second : first;
+    return (
+      (TENS[tens as keyof typeof TENS] ?? 0) +
+      (ones === 'ein' ? 1 : (NUMBER_WORDS[ones as keyof typeof NUMBER_WORDS] ?? 0))
+    );
+  }
+  if (token in LENGTH_WORDS) {
+    return LENGTH_WORDS[token as keyof typeof LENGTH_WORDS];
+  }
+  if (token in NUMBER_WORDS) {
+    return NUMBER_WORDS[token as keyof typeof NUMBER_WORDS];
+  }
+  return /^(?:an?|eine?r?)$/.test(token) ? 1 : Number(token.replace(',', '.'));
+};
+
+/**
+ * The length the phrase states, in minutes ("90 min", "2h", "two hours",
+ * "thirty minutes", "90-minute", "zwei Stunden", "half an hour"), or
+ * undefined when it states none.
+ */
+/** "an hour and a half", "two and a half hours", "zweieinhalb Stunden": a half on top of the hours. */
+const HOURS_AND_A_HALF = new RegExp(
+  `\\b(?:(an?|one|eine?)\\s+(?:hour|stunde)\\s+and\\s+a\\s+half|(\\d+|${NUMBER_WORD})\\s+and\\s+a\\s+half\\s+(?:hours?|h)|(\\d+|${NUMBER_WORD})\\s+(?:und\\s+eine\\s+halbe|einhalb)\\s+stunden?|(zwei|drei|vier)einhalb\\s+stunden?)\\b`,
+);
+
+export const durationMinutesOf = (phrase: string): number | undefined => {
+  const text = words(phrase);
+  const half = HOURS_AND_A_HALF.exec(text);
+  if (half) {
+    const hours = half[1] !== undefined ? 1 : quantityOf(half[2] ?? half[3] ?? half[4]!);
+    return hours * 60 + 30;
+  }
+  const every = new RegExp(DURATION.source, 'g');
+  let total = 0;
+  let end = -1;
+  let match: RegExpExecArray | null;
+  while ((match = every.exec(text)) !== null) {
+    // Parts of one length add up ("1 hour 30 minutes", "1h and 15 min");
+    // a second length further on is another matter ("30 min, then 2h").
+    if (end !== -1 && !/^(?:\s|and|und|,)*$/.test(text.slice(end, match.index))) {
+      break;
+    }
+    end = match.index + match[0].length;
+    if (match[3] !== undefined) {
+      total += match[3] === 'half an hour' || match[3] === 'halbe stunde' ? 30 : 90;
+      continue;
+    }
+    const amount = quantityOf(match[1]!);
+    const hours = /^(?:h|hr|hrs|hours?|stunden?|std)$/.test(match[2]!);
+    total += hours ? amount * 60 : amount;
+  }
+  const minutes = Math.round(total);
+  return end === -1 || !Number.isFinite(minutes) || minutes <= 0 ? undefined : minutes;
+};
+
+/** Whether the phrase says how long. */
+export const statesDuration = (phrase: string): boolean => durationMinutesOf(phrase) !== undefined;
+
+/** The phrase makes the event last the whole day ("all day", "ganztägig"). */
+export const isAllDayPhrase = (phrase: string): boolean =>
+  /\b(?:all[- ]day|whole day|ganztag(?:ig|s)?|ganzen tag)\b/.test(words(phrase));
+
+/** The phrase speaks of a repeat ("every Monday", "weekly", "wöchentlich"). */
+export const mentionsRepeat = (phrase: string): boolean =>
+  /\b(?:every|each|weekly|daily|monthly|yearly|annually|repeat\w*|recurring|jede[nmrs]?|wochentlich|taglich|monatlich|jahrlich|wiederhol\w*)\b/.test(
+    words(phrase),
+  );
+
+/** The phrase takes a repeat away ("just once", "no repeat", "einmalig"). */
+export const clearsRepeat = (phrase: string): boolean =>
+  /\b(?:no repeat|not repeat|stop repeating|only once|just once|once only|does ?n[o']t repeat|nicht wiederholen|einmalig|keine wiederholung)\b/.test(
+    words(phrase),
+  );
+
+/**
+ * The phrase names a day the code reads but leaves to the model on
+ * purpose: German "morgen" (also "morning"), a day as the anchor of an
+ * offset ("two weeks from today", "two days after Monday"), a weekday
+ * that has passed ("last Friday"). With one of these, a date the model
+ * changed is the answer to the words, not an invention.
+ */
+export const defersDate = (phrase: string): boolean => {
+  const text = words(phrase);
+  return /\bmorgen\b/.test(text) || DAY_AS_ANCHOR.test(text) || PAST_WEEKDAY.test(text);
+};
+
+/**
+ * The phrase names a day in a form the code does not read but the model
+ * may ("Oct 20", "17.10.", "in two weeks", "next month"); a bare digit
+ * is not one, since a clock time has digits too.
+ */
+export const mentionsDate = (phrase: string): boolean => {
+  const text = words(phrase);
+  return (
+    new RegExp(`\\b(?:${MONTHS})\\b`).test(text) ||
+    /\b\d{1,2}[./]\d{1,2}\b/.test(text) ||
+    // An ISO date, and the fixture grammar's day count ("+5").
+    /\b\d{4}-\d{2}-\d{2}\b|(?:^|\s)\+\d+\b/.test(text) ||
+    /\b(?:next|this|coming|nachste[nrs]?|kommende[nrs]?|diese[nrs]?)\s+(?:week|month|year|woche|monat|jahr)\b/.test(
+      text,
+    ) ||
+    new RegExp(
+      `\\bin\\s+(?:an?|\\d+|${NUMBER_WORD})\\s+(?:days?|weeks?|months?|tagen?|wochen?|monaten?)\\b`,
+    ).test(text)
+  );
+};
 
 const WINDOW_WORDS: ReadonlyArray<{
   readonly dates: (

@@ -24,6 +24,12 @@ export interface QuickAddModelOptions {
    * was read can be compared with what the form shows.
    */
   readonly onApply: (item: QuickAddItem) => void;
+  /**
+   * Takes the phrase over instead of `parseQuickAdd` + `onApply`: a thread
+   * reads it as a first phrase or a refinement. Resolves an error message,
+   * or nothing when the phrase was taken; the field is cleared then.
+   */
+  readonly onPhrase?: ((text: string) => Promise<string | undefined>) | undefined;
   readonly speech: SpeechToText;
   readonly timeZone: string;
 }
@@ -43,6 +49,7 @@ export const useQuickAddModel = ({
   fallbackDate,
   model,
   onApply,
+  onPhrase,
   speech,
   timeZone,
 }: QuickAddModelOptions) => {
@@ -56,6 +63,8 @@ export const useQuickAddModel = ({
   // then, not to the one submit was called from.
   const applyRef = useRef(onApply);
   applyRef.current = onApply;
+  const phraseRef = useRef(onPhrase);
+  phraseRef.current = onPhrase;
 
   useEffect(() => {
     let cancelled = false;
@@ -77,6 +86,17 @@ export const useQuickAddModel = ({
     setBusy(true);
     setError(null);
     try {
+      const takeOver = phraseRef.current;
+      if (takeOver) {
+        const message = await takeOver(text);
+        if (message === undefined) {
+          // A thread keeps the words as a turn: the field is free for the next one.
+          setPhrase('');
+        } else {
+          setError(message);
+        }
+        return;
+      }
       const result = await parseQuickAdd(model, {
         ...(fallbackDate === undefined ? {} : { fallbackDate }),
         phrase: text,

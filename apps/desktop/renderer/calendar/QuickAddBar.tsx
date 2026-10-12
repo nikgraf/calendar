@@ -31,6 +31,8 @@ export function QuickAddBar({
   focusSignal,
   onApply,
   onCapture,
+  onPhrase,
+  placeholder = QUICK_ADD_PLACEHOLDER,
   timeZone,
 }: {
   /** Undated phrases land on this day (the editor's). */
@@ -40,6 +42,10 @@ export function QuickAddBar({
   onApply: (item: QuickAddItem) => void;
   /** A pasted email or image is not a phrase: it goes to capture. */
   onCapture: (source: CaptureSource) => void;
+  /** The thread takes the phrase (a first phrase or a change) instead of the one-shot apply. */
+  onPhrase?: ((text: string) => Promise<string | undefined>) | undefined;
+  /** What the empty field says; a thread with drafts asks for a change. */
+  placeholder?: string | undefined;
   timeZone: string;
 }) {
   const { checking, retry, status } = useModelAvailability(desktopLanguageModel, onWindowFocus);
@@ -58,6 +64,7 @@ export function QuickAddBar({
     fallbackDate,
     model: desktopLanguageModel,
     onApply,
+    onPhrase,
     speech: desktopSpeech,
     timeZone,
   });
@@ -123,7 +130,7 @@ export function QuickAddBar({
               }
             });
           }}
-          placeholder={unavailable ? unavailableCopy.short : QUICK_ADD_PLACEHOLDER}
+          placeholder={unavailable ? unavailableCopy.short : placeholder}
           ref={inputRef}
           value={phrase}
         />

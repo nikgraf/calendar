@@ -14,6 +14,8 @@ import {
 } from '@calendar/core';
 import {
   defaultTodoKind,
+  type DraftPreview,
+  draftOccurrences,
   eventStartDay,
   findCurrentEvent,
   findNotificationEvent,
@@ -35,7 +37,7 @@ import {
   useToday,
   useUpdateViewPreferences,
   useViewPreferences,
-  type EventEditorPrefill,
+  type QuickAddItem,
 } from '@calendar/app-state';
 import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState } from 'react';
 import { desktopLanguageModel } from '../ai/desktopModel.ts';
@@ -50,7 +52,7 @@ import { captureSourceOf, isCapturable, readPaste } from './captureClipboard.ts'
 import { makeColorLookup } from './colors.ts';
 import { MonthView } from './MonthView.tsx';
 import { DragGhost } from './panel/DragGhost.tsx';
-import { EditorPanel, type EditorSeed } from './panel/EditorPanel.tsx';
+import { type DraftFocusRequest, EditorPanel, type EditorSeed } from './panel/EditorPanel.tsx';
 import { EventInspector } from './panel/EventInspector.tsx';
 import { SearchPanel } from './panel/SearchPanel.tsx';
 import { TodayRail } from './panel/TodayRail.tsx';
@@ -82,8 +84,6 @@ type PanelState =
       readonly kind: 'inspector';
     }
   | {
-      /** The capture row this editor came from, so a save can mark it added. */
-      readonly captureRow?: string | undefined;
       readonly fromSearch?: boolean | undefined;
       readonly kind: 'editEvent';
       /** Convert from the inspector: the to-do kind to switch to on open. */
@@ -228,19 +228,43 @@ function CalendarBody({
     [focused],
   );
 
-  // A parsed prefill (quick-add, or a single captured event) opens the
-  // editor on its day: the user reviews it before anything is written.
-  const openPrefill = (prefill: EventEditorPrefill, captureRow?: string) => {
+  // The editor's drafts, as the grid draws them: every event draft of the
+  // thread (and every occurrence of a repeating one), hatched, the focused
+  // one outlined. The panel sends them up whenever they change.
+  const [draftPreviews, setDraftPreviews] = useState<ReadonlyArray<DraftPreview>>([]);
+  // A click on a draft block asks the editor to focus that draft.
+  const [draftFocus, setDraftFocus] = useState<DraftFocusRequest | null>(null);
+
+  // Captured events open the editor as one thread of drafts on the first
+  // one's day: each is seen on the grid before anything is written.
+  const openThread = (items: ReadonlyArray<QuickAddItem>, utterance: string, note?: string) => {
+    const first = items[0];
+    if (!first) {
+      return;
+    }
+    goToDay(Temporal.PlainDate.from(first.prefill.date));
     setPanel({
-      captureRow,
       kind: 'editEvent',
       opening: nextOpening(),
-      seed: { initialDate: Temporal.PlainDate.from(prefill.date), prefill },
+      seed: {
+        initialDate: Temporal.PlainDate.from(first.prefill.date),
+        thread: { items, ...(note ? { note } : {}), utterance },
+      },
     });
   };
+  // Several events found: the same thread, with a draft each (the review
+  // list the dialog used to show), and its warning when the text was cut.
   const capture = useCaptureModel({
     model: desktopLanguageModel,
-    onSingle: openPrefill,
+    onMany: (prefills, truncated) =>
+      openThread(
+        prefills.map((prefill) => ({ kind: 'event', prefill })),
+        'From your paste',
+        truncated
+          ? 'The text was long, so only its beginning was read — later events may be missing.'
+          : undefined,
+      ),
+    onSingle: (prefill) => openThread([{ kind: 'event', prefill }], 'From your paste'),
     recognizer: desktopTextRecognizer,
     timeZone,
   });
@@ -270,6 +294,10 @@ function CalendarBody({
   );
 
   const events = useEventsInRangeStable(range.startUtc, range.endUtc);
+  const drafts = useMemo(
+    () => draftOccurrences(draftPreviews, range.startUtc, range.endUtc, timeZone),
+    [draftPreviews, range.startUtc, range.endUtc, timeZone],
+  );
   // The inspector follows its event: it shows the row the grid has now,
   // not the one that was clicked — a refresh landing after it opened (the
   // write it was opened right after, a sync pass, an agent's edit) shows
@@ -557,6 +585,7 @@ function CalendarBody({
               birthdays={birthdays}
               colorOf={colorOf}
               days={days}
+              drafts={drafts}
               drag={drag}
               events={events}
               gridRef={gridRef}
@@ -565,6 +594,7 @@ function CalendarBody({
               laneRef={laneRef}
               listColorOf={listColorOf}
               onBirthdayClick={(birthday) => setViewBirthday(birthday)}
+              onDraftClick={(id) => setDraftFocus({ id, nonce: Date.now() })}
               onEventClick={(event) => setPanel({ event, kind: 'inspector' })}
               onNavigate={panByDays}
               onSlideEnd={endSlide}
@@ -647,14 +677,12 @@ function CalendarBody({
             ) : panel.kind === 'editEvent' ? (
               <EditorPanel
                 calendars={calendars}
+                focusDraft={draftFocus}
                 initialKind={panel.mode}
                 onCapture={capture.start}
                 onClose={closePanel}
-                onSaved={
-                  panel.captureRow === undefined
-                    ? undefined
-                    : () => capture.markAdded(panel.captureRow!)
-                }
+                onPreview={setDraftPreviews}
+                onReveal={goToDay}
                 quickAddFocus={quickAddFocus}
                 seed={panel.seed}
                 taskLists={taskLists}
@@ -677,14 +705,9 @@ function CalendarBody({
 
       <DragGhost drag={drag} />
 
-      {/* Hidden while a row's editor is open: the editor is the capture's next step. */}
-      {capture.state.kind !== 'idle' &&
-      !(panel.kind === 'editEvent' && panel.captureRow !== undefined) ? (
-        <CaptureDialog
-          onClose={capture.dismiss}
-          onOpenRow={(row) => openPrefill(row.prefill, row.id)}
-          state={capture.state}
-        />
+      {/* Progress and errors only: the events found open the editor as drafts. */}
+      {capture.state.kind !== 'idle' && capture.state.kind !== 'review' ? (
+        <CaptureDialog onClose={capture.dismiss} state={capture.state} />
       ) : null}
 
       {viewBirthday ? (

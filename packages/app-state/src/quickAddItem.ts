@@ -1,8 +1,14 @@
-import type { QuickAddPrefill, QuickAddTaskPrefill } from '@calendar/ai';
+import type { QuickAddTaskPrefill } from '@calendar/ai';
+import type { EventEditorPrefill } from './editorModel.ts';
 
-/** What a phrase was understood as: the editor fills its form from it. */
+/**
+ * What a phrase was understood as: the editor fills its form from it, and
+ * a thread keeps its drafts as these. The event half is the editor's own
+ * prefill (a parsed one is a subset of it), so a draft round-trips
+ * through the form whole, repeat weekdays included.
+ */
 export type QuickAddItem =
-  | { readonly kind: 'event'; readonly prefill: QuickAddPrefill }
+  | { readonly kind: 'event'; readonly prefill: EventEditorPrefill }
   | { readonly kind: 'task'; readonly prefill: QuickAddTaskPrefill };
 
 const addHour = (time: string): string => {

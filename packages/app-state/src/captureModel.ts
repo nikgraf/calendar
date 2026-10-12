@@ -138,11 +138,20 @@ export const markCaptureRowAdded = (state: CaptureState, id: string): CaptureSta
  */
 export const useCaptureModel = ({
   model,
+  onMany,
   onSingle,
   recognizer,
   timeZone,
 }: {
   readonly model: LanguageModel;
+  /**
+   * Takes several found events instead of the review list (the desktop
+   * opens them as one thread of drafts); without it the state goes to
+   * `review` and the caller shows the list.
+   */
+  readonly onMany?:
+    | ((drafts: ReadonlyArray<EventEditorPrefill>, truncated: boolean) => void)
+    | undefined;
   readonly onSingle: (prefill: EventEditorPrefill) => void;
   readonly recognizer: TextRecognizer;
   readonly timeZone: string;
@@ -169,6 +178,11 @@ export const useCaptureModel = ({
       }
       if (event.kind === 'single') {
         onSingle(event.prefill);
+      }
+      if (event.kind === 'review' && onMany) {
+        onMany(event.drafts, event.truncated);
+        setState(IDLE);
+        return;
       }
       setState(applyCaptureEvent(event));
     });
