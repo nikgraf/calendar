@@ -1,4 +1,4 @@
-import { Temporal, validateEventDraft, type RecurrenceFrequency } from '@calendar/core';
+import { type ByDay, type RecurrenceFrequency, Temporal, validateEventDraft } from '@calendar/core';
 import { groundDate, groundTime, isTodoPhrase } from './grounding.ts';
 import type { QuickAddParse } from './quickAdd.ts';
 import { meaningfulText, realDate, realTime } from './shared.ts';
@@ -20,6 +20,8 @@ export interface QuickAddPrefill {
    */
   readonly recurrence?:
     | {
+        /** Weekdays the editor chose; a parsed phrase never sets them, a refinement keeps them. */
+        readonly byDay?: ReadonlyArray<ByDay> | undefined;
         readonly count?: number | undefined;
         readonly freq: RecurrenceFrequency;
         readonly interval?: number | undefined;

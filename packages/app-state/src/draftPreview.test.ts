@@ -1,4 +1,4 @@
-import { plainDateToUtcMs, Temporal, toZonedDateTime } from '@calendar/core';
+import { GeoLocation, plainDateToUtcMs, Temporal, toZonedDateTime } from '@calendar/core';
 import { describe, expect, it } from 'vite-plus/test';
 import {
   draftOccurrences,
@@ -161,6 +161,28 @@ describe('eventDraftFromPrefill', () => {
     expect(
       eventDraftFromPrefill(dinner, { accountId: 'acc', calendarId: 'cal', extras, timeZone: TZ }),
     ).not.toHaveProperty('attendees');
+    // Review: picked coordinates go with the draft, only while they match its text.
+    const geo = new GeoLocation({ lat: 48.2, lng: 16.4, source: "Luigi's" });
+    const placed = { ...dinner, location: "Luigi's" };
+    expect(
+      eventDraftFromPrefill(placed, {
+        accountId: 'acc',
+        calendarId: 'cal',
+        extras: { ...extras, geo },
+        timeZone: TZ,
+      }),
+    ).toMatchObject({ geo: { lat: 48.2, lng: 16.4, source: "Luigi's" } });
+    expect(
+      eventDraftFromPrefill(
+        { ...placed, location: 'Elsewhere' },
+        {
+          accountId: 'acc',
+          calendarId: 'cal',
+          extras: { ...extras, geo },
+          timeZone: TZ,
+        },
+      ),
+    ).not.toHaveProperty('geo');
   });
 
   it('says why a draft cannot be written, as Save would', () => {

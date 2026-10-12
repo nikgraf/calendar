@@ -602,6 +602,8 @@ export const useEventEditorModel = ({
   const extras = () => ({
     attendees,
     description,
+    // The picked coordinates, while they still match the text (`geoMatches`).
+    geo: geoMatches(geo, location.trim()) ? geo : undefined,
     reminders: remindersDirty ? reminders : undefined,
   });
 
@@ -610,10 +612,20 @@ export const useEventEditorModel = ({
    * never held, which starts clean), so nothing typed for one draft shows
    * on the next.
    */
-  const restoreExtras = (next: ReturnType<typeof extras> | undefined) => {
+  const restoreExtras = (
+    next:
+      | {
+          readonly attendees: ReadonlyArray<AttendeeInput>;
+          readonly description: string;
+          readonly geo?: GeoLocation | undefined;
+          readonly reminders: EventReminders | undefined;
+        }
+      | undefined,
+  ) => {
     setAttendees(next?.attendees ?? []);
     setAttendeesDirty((next?.attendees.length ?? 0) > 0);
     setDescription(next?.description ?? '');
+    setGeo(next?.geo);
     if (next?.reminders) {
       updateReminders(next.reminders);
     } else {

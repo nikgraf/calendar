@@ -61,6 +61,17 @@ describe('normalizeRefine', () => {
     expect(refined({}, '90 minutes at 8')).toMatchObject({ endTime: '21:30', startTime: '20:00' });
   });
 
+  it('moves the whole event on "later" and "earlier"', () => {
+    // Review: "30 minutes later" shortened the event to 19:00–19:30.
+    expect(
+      refined({ endTime: '20:30', startTime: '19:30' }, 'move it 30 minutes later'),
+    ).toMatchObject({ endTime: '20:30', startTime: '19:30' });
+    expect(refined({}, 'eine Stunde früher')).toMatchObject({
+      endTime: '19:00',
+      startTime: '18:00',
+    });
+  });
+
   it('moves the day the utterance names and leaves one it does not', () => {
     expect(refined({ date: '2026-08-27' }, 'Thursday instead').date).toBe('2026-08-27');
     expect(refined({ date: '2026-08-25' }, 'Thursday instead').date).toBe('2026-08-27');
@@ -135,6 +146,24 @@ describe('normalizeRefine', () => {
     const weekly = { ...DINNER, recurrence: { freq: 'weekly' as const } };
     expect(refined({}, 'at 8', weekly).recurrence).toEqual({ freq: 'weekly' });
     expect(refined({}, 'just once', weekly).recurrence).toBeUndefined();
+    // Review: the editor's weekdays survive a change of interval.
+    const days = {
+      ...DINNER,
+      recurrence: {
+        byDay: [{ weekday: 'MO' as const }, { weekday: 'WE' as const }],
+        freq: 'weekly' as const,
+      },
+    };
+    expect(
+      refined(
+        { recurrence: { freq: 'weekly', interval: 2 } },
+        'make it repeat every two weeks',
+        days,
+      ).recurrence,
+    ).toEqual({ byDay: [{ weekday: 'MO' }, { weekday: 'WE' }], freq: 'weekly', interval: 2 });
+    expect(refined({ recurrence: { freq: 'daily' } }, 'every day', days).recurrence).toEqual({
+      freq: 'daily',
+    });
   });
 
   it('rejects a change that cannot be an event', () => {

@@ -3,6 +3,7 @@ import {
   describeDraftItem,
   EMPTY_THREAD,
   focusDraft,
+  mergeRefinement,
   refineTargets,
   refineThread,
   removeDraft,
@@ -227,6 +228,41 @@ describe('focus, update and remove', () => {
     const undone = undoTurn(saved);
     expect(undone.drafts.map((draft) => draft.id)).toEqual(['d2']);
     expect(undone.turns).toHaveLength(1);
+  });
+
+  it('starts a phrase draft with what the form already held', () => {
+    const extras = {
+      attendees: [{ email: 'anna@example.com' }],
+      description: '',
+      reminders: undefined,
+    };
+    expect(startThread([dinner], 'x', ids(), extras).drafts[0]?.extras).toEqual(extras);
+    expect(startThread([dinner], 'x', ids()).drafts[0]).not.toHaveProperty('extras');
+  });
+
+  it('merges a turn onto the form as it is now', () => {
+    // Review: an edit made while the model answered was overwritten by the turn.
+    const before = dinner;
+    const fresh = {
+      kind: 'event' as const,
+      prefill: { ...dinner.prefill, title: 'Dinner with Teo & Anna' },
+    };
+    const after = later;
+    expect(mergeRefinement(fresh, before, after)).toEqual({
+      kind: 'event',
+      prefill: {
+        ...dinner.prefill,
+        endTime: '21:00',
+        startTime: '20:00',
+        title: 'Dinner with Teo & Anna',
+      },
+    });
+    // A field the turn cleared is cleared.
+    const placed = { kind: 'event' as const, prefill: { ...dinner.prefill, location: "Luigi's" } };
+    expect(mergeRefinement(placed, placed, dinner).prefill).not.toHaveProperty('location');
+    // A kind change takes the turn whole.
+    const todo = { kind: 'task' as const, prefill: { date: '2026-08-28', title: 'Dinner' } };
+    expect(mergeRefinement(fresh, before, todo)).toBe(todo);
   });
 
   it('keeps what the form holds beyond the fields with the draft', () => {

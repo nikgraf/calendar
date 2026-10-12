@@ -490,6 +490,10 @@ describe('durationMinutesOf', () => {
     expect(durationMinutesOf('forty-five minutes')).toBe(45);
     expect(durationMinutesOf('90-minute workshop')).toBe(90);
     expect(durationMinutesOf('dinner with Teo next week')).toBeUndefined();
+    // Review: a half on top of the hours.
+    expect(durationMinutesOf('an hour and a half of focus')).toBe(90);
+    expect(durationMinutesOf('two and a half hours')).toBe(150);
+    expect(durationMinutesOf('zweieinhalb Stunden')).toBe(150);
     // Review: tens and ones are one number, in either language.
     expect(durationMinutesOf('twenty-five minutes')).toBe(25);
     expect(durationMinutesOf('twenty five minutes')).toBe(25);

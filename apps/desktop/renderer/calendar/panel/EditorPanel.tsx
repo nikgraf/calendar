@@ -214,6 +214,15 @@ export function EditorPanel({
             title: taskModel.title,
           },
         };
+  /** What the form holds beyond the item: the event form's extras, and a to-do's notes and undated state. */
+  const currentExtras = () => ({
+    ...eventModel.extras(),
+    ...(mode === 'todo' ? { taskNotes: taskModel.notes, undated: !taskModel.dated } : {}),
+  });
+  // The latest render's readers, for a turn that reads the form after an await.
+  const latest = useRef({ extras: currentExtras, item: currentItem });
+  latest.current = { extras: currentExtras, item: currentItem };
+  const readForm = () => ({ extras: latest.current.extras(), item: latest.current.item() });
 
   // Drafts the editor opened with (a capture) start the thread once.
   const { start } = thread;
@@ -240,18 +249,20 @@ export function EditorPanel({
     }
     applied.current = version;
     if (focusedDraft) {
+      const { extras } = focusedDraft;
       void apply(focusedDraft.item).then(() => {
-        if (
-          focusedDraft.item.kind === 'task' &&
-          undated.current?.date === focusedDraft.item.prefill.date
-        ) {
-          taskModel.clearDueDate?.();
+        if (focusedDraft.item.kind === 'task') {
+          // A to-do's own: its notes, and a day the form had let go of.
+          taskModel.setNotes(extras?.taskNotes ?? '');
+          if (extras?.undated || undated.current?.date === focusedDraft.item.prefill.date) {
+            taskModel.clearDueDate?.();
+          }
         }
         undated.current = null;
       });
       // The form starts clean for a draft it never held: nothing typed
       // for another draft — guests, notes, notifications — follows it.
-      eventModel.restoreExtras(focusedDraft.extras);
+      eventModel.restoreExtras(extras);
       // A day the form cleared is stored as '' until repaired: nothing to show.
       try {
         onReveal?.(Temporal.PlainDate.from(focusedDraft.item.prefill.date));
@@ -272,6 +283,12 @@ export function EditorPanel({
         title: '',
       });
       eventModel.restoreExtras(undefined);
+      // The to-do form too, back to the blank it opened as.
+      taskModel.applyPrefill({ date: seed.initialDate.toString(), title: '' });
+      taskModel.setNotes('');
+      if (taskSeed?.dated === false) {
+        taskModel.clearDueDate?.();
+      }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- the version names exactly what the form must take over
   }, [version]);
@@ -281,7 +298,7 @@ export function EditorPanel({
     if (index === focused || drafts[index] === undefined || !settled) {
       return;
     }
-    thread.update(focused, currentItem(), eventModel.extras());
+    thread.update(focused, currentItem(), currentExtras());
     thread.focus(index);
   };
   useEffect(() => {
@@ -310,6 +327,7 @@ export function EditorPanel({
         if (result.kind === 'rejected') {
           return result.reason;
         }
+        // Guests, notes or notifications typed before the phrase are the draft's.
         thread.start(
           [
             result.kind === 'task'
@@ -317,6 +335,7 @@ export function EditorPanel({
               : { kind: 'event', prefill: result.prefill },
           ],
           text,
+          currentExtras(),
         );
         return undefined;
       }
@@ -324,7 +343,7 @@ export function EditorPanel({
       // An undated to-do: its stored day is a placeholder the form had let go of.
       undated.current =
         item.kind === 'task' && !taskModel.dated ? { date: item.prefill.date } : null;
-      return await thread.refine(text, item, eventModel.extras());
+      return await thread.refine(text, readForm);
     } catch (error) {
       return error instanceof ModelUnavailableError
         ? 'On-device model unavailable.'
@@ -380,9 +399,9 @@ export function EditorPanel({
         threadRef.current,
         threadRef.current.focused,
         currentItem(),
-        eventModel.extras(),
+        currentExtras(),
       );
-      thread.update(current.focused, currentItem(), eventModel.extras());
+      thread.update(current.focused, currentItem(), currentExtras());
       const invalid = current.drafts.findIndex(
         (draft, index) =>
           index !== current.focused &&
@@ -396,7 +415,7 @@ export function EditorPanel({
             ? prefillError(draft.item.prefill, { calendarKey, timeZone })!
             : 'A draft cannot be written.',
         );
-        thread.update(current.focused, currentItem(), eventModel.extras());
+        thread.update(current.focused, currentItem(), currentExtras());
         thread.focus(invalid);
         return;
       }

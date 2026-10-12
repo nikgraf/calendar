@@ -1,5 +1,10 @@
 import { type LanguageModel, parseRefine } from '@calendar/ai';
-import { type AttendeeInput, type EventReminders, Temporal } from '@calendar/core';
+import {
+  type AttendeeInput,
+  type EventReminders,
+  type GeoLocation,
+  Temporal,
+} from '@calendar/core';
 import { useRef, useState } from 'react';
 import { convertQuickAddItem, type QuickAddItem } from './quickAddItem.ts';
 
@@ -23,8 +28,14 @@ import { convertQuickAddItem, type QuickAddItem } from './quickAddItem.ts';
 export interface DraftExtras {
   readonly attendees: ReadonlyArray<AttendeeInput>;
   readonly description: string;
+  /** Coordinates picked for the location text, while they still match it. */
+  readonly geo?: GeoLocation | undefined;
   /** The notifications as edited; undefined while untouched (the calendar's default). */
   readonly reminders: EventReminders | undefined;
+  /** A to-do's notes, when the form showed the draft as one. */
+  readonly taskNotes?: string | undefined;
+  /** A to-do whose due day the form let go of: its stored day is a placeholder. */
+  readonly undated?: boolean | undefined;
 }
 
 export interface Draft {
@@ -134,13 +145,18 @@ export const summarizeChange = (before: QuickAddItem, after: QuickAddItem): stri
   return parts.length === 0 ? 'no change' : parts.join(' · ');
 };
 
-/** The first turn: the phrase (or the paste) and every draft it made. */
+/**
+ * The first turn: the phrase (or the paste) and every draft it made. What
+ * the form already held (guests typed before the phrase) goes with the
+ * draft — a phrase makes one draft, so the extras are its.
+ */
 export const startThread = (
   items: ReadonlyArray<QuickAddItem>,
   utterance: string,
   id: () => string = nextDraftId,
+  extras?: DraftExtras,
 ): DraftThreadState => {
-  const drafts = items.map((item) => ({ id: id(), item }));
+  const drafts = items.map((item) => ({ ...(extras ? { extras } : {}), id: id(), item }));
   const summary =
     drafts.length === 1 && drafts[0]
       ? `${drafts[0].item.prefill.title} · ${describeDraftItem(drafts[0].item)}`
@@ -199,6 +215,39 @@ export const refineThread = (
     turns: [...state.turns, { id: id(), summary, utterance }],
     version: state.version + 1,
   };
+};
+
+/** A prefill field by field: the two kinds share no keys but the ones compared. */
+const fields = (item: QuickAddItem): Record<string, unknown> =>
+  item.prefill as unknown as Record<string, unknown>;
+
+/**
+ * A turn's result folded into the form as it is now, not as it was when
+ * the turn was sent: the fields the turn changed are the result's, the
+ * rest the form's — an edit made while the model was answering stays.
+ */
+export const mergeRefinement = (
+  fresh: QuickAddItem,
+  before: QuickAddItem,
+  after: QuickAddItem,
+): QuickAddItem => {
+  if (fresh.kind !== before.kind || before.kind !== after.kind) {
+    return after;
+  }
+  const changed = (field: string): boolean =>
+    JSON.stringify(fields(before)[field]) !== JSON.stringify(fields(after)[field]);
+  const merged: Record<string, unknown> = { ...fields(fresh) };
+  for (const field of new Set([...Object.keys(fields(before)), ...Object.keys(fields(after))])) {
+    if (changed(field)) {
+      const value = fields(after)[field];
+      if (value === undefined) {
+        delete merged[field];
+      } else {
+        merged[field] = value;
+      }
+    }
+  }
+  return { kind: after.kind, prefill: merged } as unknown as QuickAddItem;
 };
 
 /** The last turn taken back; taking back the first one leaves no drafts. */
@@ -296,19 +345,27 @@ export const useDraftThread = ({ model, timeZone }: { model: LanguageModel; time
   const [busy, setBusy] = useState(false);
   const request = useRef(0);
 
-  const start = (items: ReadonlyArray<QuickAddItem>, utterance: string) => {
+  const start = (items: ReadonlyArray<QuickAddItem>, utterance: string, extras?: DraftExtras) => {
     request.current += 1;
-    setState(startThread(items, utterance));
+    setState(startThread(items, utterance, nextDraftId, extras));
   };
 
+  /**
+   * A turn. `read` gives the form's current item and extras: once before
+   * the model call (what the turn starts from) and once after (what the
+   * form holds by then), so an edit made meanwhile is kept and only what
+   * the turn changed is taken over (`mergeRefinement`).
+   */
   const refine = async (
     utterance: string,
-    focusedNow?: QuickAddItem,
-    extras?: DraftExtras,
+    read?: () => { readonly extras?: DraftExtras | undefined; readonly item: QuickAddItem },
   ): Promise<string | undefined> => {
     const mine = ++request.current;
+    const submitted = read?.();
     const current =
-      focusedNow === undefined ? state : updateDraft(state, state.focused, focusedNow, extras);
+      submitted === undefined
+        ? state
+        : updateDraft(state, state.focused, submitted.item, submitted.extras);
     const focusedId = current.drafts[current.focused]?.id;
     const targets = refineTargets(current, utterance);
     if (targets.length === 0) {
@@ -355,13 +412,23 @@ export const useDraftThread = ({ model, timeZone }: { model: LanguageModel; time
           ? rejected.reason
           : "That couldn't be read — try rephrasing.";
       }
+      const fresh = read?.();
       setState((latest) => {
         const index = latest.drafts.findIndex((draft) => draft.id === focusedId);
-        const base =
-          focusedNow !== undefined && index !== -1
-            ? updateDraft(latest, index, focusedNow, extras)
-            : latest;
-        return refineThread(base, utterance, changes);
+        if (submitted === undefined || fresh === undefined || index === -1) {
+          return refineThread(latest, utterance, changes);
+        }
+        // The focused draft's change lands on the form as it is now.
+        const base = updateDraft(latest, index, fresh.item, fresh.extras);
+        return refineThread(
+          base,
+          utterance,
+          changes.map((change) =>
+            change.id === focusedId
+              ? { ...change, item: mergeRefinement(fresh.item, submitted.item, change.item) }
+              : change,
+          ),
+        );
       });
       return undefined;
     } catch {

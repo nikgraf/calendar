@@ -81,11 +81,15 @@ const minuteOf = (time: string): number => {
   return hour * 60 + minute;
 };
 
+const format = (total: number): string =>
+  `${String(Math.floor(total / 60)).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`;
+
 /** `start` plus `minutes`, held on the start's day (the editor works on one date). */
-const plusMinutes = (start: string, minutes: number): string => {
-  const total = Math.min(minuteOf(start) + minutes, MINUTES_IN_DAY - 1);
-  return `${String(Math.floor(total / 60)).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`;
-};
+const plusMinutes = (start: string, minutes: number): string =>
+  format(Math.min(minuteOf(start) + minutes, MINUTES_IN_DAY - 1));
+
+/** A length that moves the event rather than sizing it ("30 minutes later", "eine Stunde früher"). */
+const SHIFT = /\b(?:later|earlier|spater|fruher)\b/;
 
 /**
  * An open hour ("at 8") read next to the draft's own start: the reading
@@ -204,7 +208,15 @@ export const normalizeRefine = (
     assumedTime = false;
   }
   if (length !== undefined && !isAllDay && times?.endTime === undefined) {
-    endTime = plusMinutes(startTime, length);
+    if (SHIFT.test(text)) {
+      // "30 minutes later": the whole event moves, its length kept.
+      const by = /\b(?:earlier|fruher)\b/.test(text) ? -length : length;
+      const shiftedStart = Math.min(Math.max(minuteOf(startTime) + by, 0), MINUTES_IN_DAY - 1);
+      endTime = plusMinutes(format(shiftedStart), minuteOf(endTime) - minuteOf(startTime));
+      startTime = format(shiftedStart);
+    } else {
+      endTime = plusMinutes(startTime, length);
+    }
   }
   if (!isAllDay && endTime <= startTime) {
     return { kind: 'rejected', reason: 'That would end after midnight — pick an earlier time.' };
@@ -223,10 +235,19 @@ export const normalizeRefine = (
     return { kind: 'rejected', reason: invalid };
   }
 
+  const parsedRepeat = mentionsRepeat(utterance)
+    ? recurrenceFromParse(parse.recurrence, date)
+    : undefined;
+  // A changed repeat keeps the weekdays the editor chose while the
+  // frequency stays the same ("every two weeks" on Mondays and Wednesdays).
+  const keptDays =
+    parsedRepeat && draft.recurrence?.byDay && draft.recurrence.freq === parsedRepeat.freq
+      ? { byDay: draft.recurrence.byDay }
+      : {};
   const recurrence = clearsRepeat(utterance)
     ? undefined
-    : mentionsRepeat(utterance)
-      ? recurrenceFromParse(parse.recurrence, date)
+    : parsedRepeat
+      ? { ...parsedRepeat, ...keptDays }
       : draft.recurrence;
 
   return {

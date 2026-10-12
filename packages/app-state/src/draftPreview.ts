@@ -4,6 +4,8 @@ import {
   byDayError,
   type EventDraft,
   expandRecurringEvent,
+  GeoLocation,
+  geoMatches,
   repeatUntilError,
   validateEventDraft,
 } from '@calendar/core';
@@ -192,11 +194,18 @@ export const eventDraftFromPrefill = (
 ): EventDraft => {
   const recurrence = prefillRecurrence(prefill, timeZone);
   const description = extras?.description.trim();
+  const location = prefill.location?.trim();
+  // Only coordinates picked for this very text reach the write, as Save does it.
+  const geo =
+    extras?.geo && location && geoMatches(extras.geo, location)
+      ? new GeoLocation({ ...extras.geo, source: location })
+      : undefined;
   return {
     accountId,
     ...(canInvite && extras && extras.attendees.length > 0 ? { attendees: extras.attendees } : {}),
     calendarId,
     ...(description ? { description } : {}),
+    ...(geo ? { geo } : {}),
     isAllDay: prefill.isAllDay,
     ...(prefill.location ? { location: prefill.location } : {}),
     ...(recurrence ? { recurrence } : {}),

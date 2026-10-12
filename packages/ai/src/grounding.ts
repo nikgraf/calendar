@@ -809,8 +809,18 @@ const quantityOf = (token: string): number => {
  * "thirty minutes", "90-minute", "zwei Stunden", "half an hour"), or
  * undefined when it states none.
  */
+/** "an hour and a half", "two and a half hours", "zweieinhalb Stunden": a half on top of the hours. */
+const HOURS_AND_A_HALF = new RegExp(
+  `\\b(?:(an?|one|eine?)\\s+(?:hour|stunde)\\s+and\\s+a\\s+half|(\\d+|${NUMBER_WORD})\\s+and\\s+a\\s+half\\s+(?:hours?|h)|(\\d+|${NUMBER_WORD})\\s+(?:und\\s+eine\\s+halbe|einhalb)\\s+stunden?|(zwei|drei|vier)einhalb\\s+stunden?)\\b`,
+);
+
 export const durationMinutesOf = (phrase: string): number | undefined => {
   const text = words(phrase);
+  const half = HOURS_AND_A_HALF.exec(text);
+  if (half) {
+    const hours = half[1] !== undefined ? 1 : quantityOf(half[2] ?? half[3] ?? half[4]!);
+    return hours * 60 + 30;
+  }
   const every = new RegExp(DURATION.source, 'g');
   let total = 0;
   let end = -1;
