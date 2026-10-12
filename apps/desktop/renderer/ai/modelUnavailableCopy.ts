@@ -43,6 +43,12 @@ const servedCopy = (reply: ModelStatusReply): Copy | undefined => {
   }
   const server = SERVER_NAME[reply.provider];
   const where = reply.endpoint ? ` at ${reply.endpoint}` : '';
+  if (reply.detail === 'authRejected') {
+    return {
+      long: `${server}${where} refused the API key — set the right one in Settings › General.`,
+      short: 'API key refused',
+    };
+  }
   if (reply.detail === 'endpointUnreachable') {
     return {
       long: `${server}${where} is not reachable — start it, or choose Apple Intelligence in Settings › General.`,

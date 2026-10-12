@@ -1,6 +1,7 @@
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { BrowserWindow, safeStorage } from 'electron';
+import { strictSchema, withoutNulls } from './strictSchema.ts';
 
 /**
  * Which model answers the renderer's `model:generate`: Apple's on-device
@@ -39,6 +40,8 @@ export interface EndpointProbe {
   /** The models the server lists; empty when it does not say. */
   readonly models: ReadonlyArray<string>;
   readonly reachable: boolean;
+  /** The server refused the API key (or wants one). */
+  readonly unauthorized?: boolean | undefined;
 }
 
 /** The status reply the renderer maps to `ModelStatus`, with who answered. */
@@ -233,8 +236,21 @@ export const probeEndpoint = async (
       headers: headers(key),
       signal: withTimeout(PROBE_TIMEOUT_MS),
     });
+    if (response.status === 401 || response.status === 403) {
+      return {
+        error: `HTTP ${String(response.status)} — the API key was refused`,
+        models: [],
+        reachable: false,
+        unauthorized: true,
+      };
+    }
     if (!response.ok) {
-      return { models: [], reachable: response.status < 500 };
+      // A server without the route (404, 405, 501) is up with nothing to list.
+      return {
+        ...(response.status >= 500 ? { error: `HTTP ${String(response.status)}` } : {}),
+        models: [],
+        reachable: response.status < 500,
+      };
     }
     const body = (await response.json()) as { data?: Array<{ id?: string }> };
     return {
@@ -260,13 +276,19 @@ export const providerStatus = async (
   }
   const probe = await probeEndpoint(stored);
   const served = { endpoint: stored.baseUrl, model: stored.model, provider: stored.kind };
+  if (probe.unauthorized) {
+    return { ...served, detail: 'authRejected', status: 'unavailable' };
+  }
   if (!probe.reachable) {
     return { ...served, detail: 'endpointUnreachable', status: 'unavailable' };
   }
   if (stored.model === '') {
     return { ...served, detail: 'modelMissing', status: 'unavailable' };
   }
-  if (probe.models.length > 0 && !probe.models.some((name) => sameModel(name, stored.model))) {
+  // Ollama's list is the whole truth (a fresh install lists nothing); an
+  // OpenAI-compatible server may just not implement the route.
+  const listed = stored.kind === 'ollama' || probe.models.length > 0;
+  if (listed && !probe.models.some((name) => sameModel(name, stored.model))) {
     return { ...served, detail: 'modelMissing', status: 'unavailable' };
   }
   return { ...served, status: 'ready' };
@@ -275,11 +297,18 @@ export const providerStatus = async (
 /** The active provider is a served model, not the helper. */
 export const servedModelActive = (): boolean => stored.kind !== 'apple';
 
-/** What the renderer reports as the model behind the seam. */
+/**
+ * What the renderer reports as the model behind the seam. Ollama is asked
+ * for the context per call, so that is known; a custom endpoint's is not
+ * (the server loaded the model with whatever it has), so none is claimed
+ * and capture keeps to the small budget.
+ */
 export const providerInfo = (): { contextTokens?: number; name: string } =>
   stored.kind === 'apple'
     ? { contextTokens: 4096, name: 'Apple Intelligence' }
-    : { contextTokens: SERVED_CONTEXT_TOKENS, name: stored.model };
+    : stored.kind === 'ollama'
+      ? { contextTokens: SERVED_CONTEXT_TOKENS, name: stored.model }
+      : { name: stored.model };
 
 const contentOf = (value: unknown): string => {
   if (typeof value === 'string') {
@@ -320,12 +349,15 @@ export const providerGenerate = async (
     const body = (await response.json()) as { message?: { content?: unknown } };
     return { json: contentOf(body.message?.content) };
   }
+  // Strict structured outputs want every property required and the
+  // optional ones nullable; the nulls come back out before the
+  // normalizers see the answer (strictSchema.ts).
   const response = await fetch(`${base}/chat/completions`, {
     body: JSON.stringify({
       messages: [{ content: prompt, role: 'user' }],
       model: stored.model,
       response_format: {
-        json_schema: { name: 'answer', schema, strict: true },
+        json_schema: { name: 'answer', schema: strictSchema(schema), strict: true },
         type: 'json_schema',
       },
       temperature: 0,
@@ -340,7 +372,8 @@ export const providerGenerate = async (
   const body = (await response.json()) as {
     choices?: Array<{ message?: { content?: unknown } }>;
   };
-  return { json: contentOf(body.choices?.[0]?.message?.content) };
+  const content = contentOf(body.choices?.[0]?.message?.content);
+  return { json: JSON.stringify(withoutNulls(JSON.parse(content))) };
 };
 
 /** A probe of settings not yet saved (the window's Test button), with the stored key if any. */

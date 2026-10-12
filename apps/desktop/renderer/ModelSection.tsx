@@ -30,6 +30,7 @@ type Probe =
       readonly kind: 'done';
       readonly models: ReadonlyArray<string>;
       readonly reachable: boolean;
+      readonly unauthorized?: boolean | undefined;
     };
 
 /**
@@ -239,7 +240,9 @@ export function ModelSection() {
                   ? probe.models.length > 0
                     ? `Reachable · ${String(probe.models.length)} ${probe.models.length === 1 ? 'model' : 'models'}`
                     : 'Reachable'
-                  : `Not reachable${probe.error ? ` — ${probe.error}` : ''}`}
+                  : probe.unauthorized
+                    ? 'The server refused the API key'
+                    : `Not reachable${probe.error ? ` — ${probe.error}` : ''}`}
               </span>
             ) : saved && !dirty ? (
               <span className="text-xs text-ink-secondary" data-testid="model-saved">

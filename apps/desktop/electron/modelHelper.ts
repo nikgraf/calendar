@@ -26,7 +26,8 @@ import {
  * unbounded audio payload — straight onto the helper's stdin.
  */
 const MAX_SCHEMA_CHARS = 64_000;
-const MAX_PROMPT_CHARS = 32_000;
+/** Room for capture's largest budget (60k characters of a paste) plus the prompt's own words. */
+const MAX_PROMPT_CHARS = 80_000;
 /** ~18 MB of 16 kHz mono 16-bit WAV, several minutes of dictation. */
 const MAX_AUDIO_BASE64_CHARS = 24_000_000;
 /** ~18 MB of image: a full Retina screenshot as PNG is a few. */

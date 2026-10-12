@@ -12,6 +12,7 @@ import type { ModelStatusReply } from '../backend.ts';
  */
 const STATUS_BY_DETAIL: ReadonlyMap<string, ModelStatus> = new Map<string, ModelStatus>([
   ['appleIntelligenceNotEnabled', 'disabled'],
+  ['authRejected', 'unavailable'],
   ['deviceNotEligible', 'unsupported'],
   ['endpointUnreachable', 'unavailable'],
   ['modelMissing', 'not-ready'],

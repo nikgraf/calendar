@@ -37,6 +37,8 @@ export interface EndpointProbe {
   readonly error?: string;
   readonly models: ReadonlyArray<string>;
   readonly reachable: boolean;
+  /** The server refused the API key (or wants one). */
+  readonly unauthorized?: boolean;
 }
 
 /** The watched settings file, as the main process reports it. */

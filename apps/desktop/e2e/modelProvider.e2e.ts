@@ -54,21 +54,23 @@ interface ChatRequest {
   readonly options: { readonly num_ctx?: number; readonly temperature?: number };
 }
 
-/** Ollama as the app sees it, with the fixture model answering. */
+/** Ollama as the app sees it, with the fixture model answering; `tags` is what it lists. */
 const fakeOllama = async (): Promise<{
   readonly chats: Array<ChatRequest>;
   readonly port: number;
   readonly server: Server;
+  tags: Array<string>;
 }> => {
   const model = makeFixtureLanguageModel();
   const chats: Array<ChatRequest> = [];
+  const fake = { chats, port: 0, server: null as unknown as Server, tags: [`${MODEL}:latest`] };
   const server = createServer((request, response) => {
     const send = (status: number, body: unknown) => {
       response.writeHead(status, { 'Content-Type': 'application/json' });
       response.end(JSON.stringify(body));
     };
     if (request.method === 'GET' && request.url === '/api/tags') {
-      send(200, { models: [{ model: `${MODEL}:latest`, name: `${MODEL}:latest` }] });
+      send(200, { models: fake.tags.map((name) => ({ model: name, name })) });
       return;
     }
     if (request.method === 'POST' && request.url === '/api/chat') {
@@ -93,8 +95,9 @@ const fakeOllama = async (): Promise<{
   });
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
   const address = server.address();
-  const port = typeof address === 'object' && address ? address.port : 0;
-  return { chats, port, server };
+  fake.port = typeof address === 'object' && address ? address.port : 0;
+  fake.server = server;
+  return fake;
 };
 
 describe('A served model', () => {
@@ -208,6 +211,16 @@ describe('A served model', () => {
       ),
     ).toBe(false);
     await app.closeSettings();
+  });
+
+  it('says the model is not on the server when Ollama lists nothing', async () => {
+    // Review: a fresh Ollama lists no models at all, which used to read as ready.
+    ollama.tags = [];
+    const { cdp } = app;
+    await cdp.eval(COMMAND_N);
+    await cdp.waitFor(`${placeholder} === 'Model not on the server'`);
+    await cdp.pressEscape();
+    ollama.tags = [`${MODEL}:latest`];
   });
 
   it('says which server is down when the endpoint cannot be reached', async () => {
