@@ -62,6 +62,75 @@ tags:
       RESULT: 'Nothing matches.*'
 - assertVisible:
     id: 'search-empty'
+# Filters by hand: "fixture" finds an event and a task; the Filters sheet
+# narrows it to tasks, a chip says so, and its × takes it away.
+- runFlow:
+    file: ../common/search-for.yaml
+    env:
+      QUERY: 'fixture'
+      RESULT: 'Fixture planning.*'
+- assertVisible:
+    id: 'search-section-tasks'
+- tapOn:
+    id: 'search-filters'
+- extendedWaitUntil:
+    visible:
+      id: 'search-filters-sheet'
+    timeout: 10000
+- waitForAnimationToEnd:
+    timeout: 5000
+- tapOn:
+    id: 'search-filter-kind-task'
+- tapOn:
+    id: 'search-filters-done'
+- extendedWaitUntil:
+    visible:
+      id: 'search-chip-kind'
+    timeout: 10000
+- extendedWaitUntil:
+    notVisible:
+      id: 'search-section-upcoming'
+    timeout: 10000
+- assertVisible:
+    id: 'search-section-tasks'
+- tapOn: 'Remove Tasks only'
+- extendedWaitUntil:
+    visible:
+      id: 'search-section-upcoming'
+    timeout: 10000
+# A sentence read into a chip on the keyboard's Search key — the fixture
+# model's grammar (`terms | days | place | people | calendar | kind`), so
+# only under the fixture bundle CI runs; a real model's answer is its own.
+- tapOn: 'Events and tasks'
+- runFlow:
+    when:
+      visible: 'Clear text'
+    commands:
+      - tapOn: 'Clear text'
+- inputText: 'fixture | | | | Mock Calendar'
+- pressKey: Enter
+- extendedWaitUntil:
+    visible:
+      id: 'search-chip-calendar-.*'
+    timeout: 10000
+    optional: true
+- runFlow:
+    when:
+      visible:
+        id: 'search-chip-calendar-.*'
+    commands:
+      - assertVisible:
+          id: 'search-turn'
+      - assertVisible: 'Mock Calendar'
+      - assertNotVisible:
+          id: 'search-section-tasks'
+      - assertVisible: 'Fixture planning.*'
+      - tapOn:
+          id: 'search-undo'
+      - extendedWaitUntil:
+          notVisible:
+            id: 'search-chip-calendar-.*'
+          timeout: 10000
 # An event made on the calendar is found, and deleting it from its result
 # takes it out of the list. The field's "Close" (beside it, above the
 # keyboard) ends the search and brings the tab bar back; Maestro's

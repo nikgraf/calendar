@@ -6,6 +6,8 @@ import {
   type SearchNames,
   type SearchQuery,
   type TaskListInfo,
+  toggleSearchKey,
+  withoutSearchFilter,
 } from '@calendar/core';
 import { useState } from 'react';
 import { Button } from '../../ui/Button.tsx';
@@ -31,35 +33,6 @@ type Editing = {
   readonly anchor: { readonly x: number; readonly y: number };
   readonly field: SearchFilterField | 'add';
 };
-
-/** The query without one filter (a calendar or list chip names its key). */
-const withoutFilter = (query: SearchQuery, field: SearchFilterField, key?: string): SearchQuery => {
-  const { allDay, calendars, from, kind, lists, location, people, to, ...rest } = query;
-  const kept: SearchQuery = {
-    ...rest,
-    ...(field === 'allDay' || allDay === undefined ? {} : { allDay }),
-    ...(field === 'calendar' ? {} : calendars ? { calendars } : {}),
-    ...(field === 'dates' || from === undefined ? {} : { from }),
-    ...(field === 'kind' || kind === undefined ? {} : { kind }),
-    ...(field === 'list' ? {} : lists ? { lists } : {}),
-    ...(field === 'location' || location === undefined ? {} : { location }),
-    ...(field === 'people' || people === undefined ? {} : { people }),
-    ...(field === 'dates' || to === undefined ? {} : { to }),
-  };
-  // One calendar or list chip goes; the others stay.
-  if (field === 'calendar' && key !== undefined && calendars) {
-    const left = calendars.filter((entry) => entry !== key);
-    return left.length > 0 ? { ...kept, calendars: left } : kept;
-  }
-  if (field === 'list' && key !== undefined && lists) {
-    const left = lists.filter((entry) => entry !== key);
-    return left.length > 0 ? { ...kept, lists: left } : kept;
-  }
-  return kept;
-};
-
-const toggled = (keys: ReadonlyArray<string> | undefined, key: string): ReadonlyArray<string> =>
-  keys?.includes(key) ? keys.filter((entry) => entry !== key) : [...(keys ?? []), key];
 
 /**
  * The search's filters as chips under the field: a click edits one in a
@@ -130,7 +103,7 @@ export function SearchFilterChips({
                 data-testid="search-filter-from"
                 onChange={(input) =>
                   onChange({
-                    ...withoutFilter(query, 'dates'),
+                    ...withoutSearchFilter(query, 'dates'),
                     ...(input.target.value ? { from: input.target.value } : {}),
                     ...(query.to ? { to: query.to } : {}),
                   })
@@ -146,7 +119,7 @@ export function SearchFilterChips({
                 data-testid="search-filter-to"
                 onChange={(input) =>
                   onChange({
-                    ...withoutFilter(query, 'dates'),
+                    ...withoutSearchFilter(query, 'dates'),
                     ...(query.from ? { from: query.from } : {}),
                     ...(input.target.value ? { to: input.target.value } : {}),
                   })
@@ -164,7 +137,9 @@ export function SearchFilterChips({
             grow
             label="Events or tasks"
             onChange={(value: 'any' | 'event' | 'task') =>
-              onChange(value === 'any' ? withoutFilter(query, 'kind') : { ...query, kind: value })
+              onChange(
+                value === 'any' ? withoutSearchFilter(query, 'kind') : { ...query, kind: value },
+              )
             }
             options={[
               { label: 'Both', testId: 'search-filter-kind-any', value: 'any' as const },
@@ -184,7 +159,7 @@ export function SearchFilterChips({
             onChange={(value: 'allDay' | 'any' | 'timed') =>
               onChange(
                 value === 'any'
-                  ? withoutFilter(query, 'allDay')
+                  ? withoutSearchFilter(query, 'allDay')
                   : { ...query, allDay: value === 'allDay' },
               )
             }
@@ -210,11 +185,11 @@ export function SearchFilterChips({
                       checked={query.calendars?.includes(key) ?? false}
                       data-testid={`search-filter-calendar-${key}`}
                       onChange={() => {
-                        const next = toggled(query.calendars, key);
+                        const next = toggleSearchKey(query.calendars, key);
                         onChange(
                           next.length > 0
                             ? { ...query, calendars: next }
-                            : withoutFilter(query, 'calendar'),
+                            : withoutSearchFilter(query, 'calendar'),
                         );
                       }}
                       type="checkbox"
@@ -238,11 +213,11 @@ export function SearchFilterChips({
                       checked={query.lists?.includes(key) ?? false}
                       data-testid={`search-filter-list-${key}`}
                       onChange={() => {
-                        const next = toggled(query.lists, key);
+                        const next = toggleSearchKey(query.lists, key);
                         onChange(
                           next.length > 0
                             ? { ...query, lists: next }
-                            : withoutFilter(query, 'list'),
+                            : withoutSearchFilter(query, 'list'),
                         );
                       }}
                       type="checkbox"
@@ -264,7 +239,7 @@ export function SearchFilterChips({
               onChange(
                 input.target.value.trim()
                   ? { ...query, location: input.target.value }
-                  : withoutFilter(query, 'location'),
+                  : withoutSearchFilter(query, 'location'),
               )
             }
             placeholder="A place the event is at"
@@ -284,7 +259,9 @@ export function SearchFilterChips({
                 .split(',')
                 .map((person) => person.trim())
                 .filter((person) => person !== '');
-              onChange(people.length > 0 ? { ...query, people } : withoutFilter(query, 'people'));
+              onChange(
+                people.length > 0 ? { ...query, people } : withoutSearchFilter(query, 'people'),
+              );
             }}
             placeholder="Names or addresses, comma-separated"
             value={peopleText}
@@ -312,7 +289,7 @@ export function SearchFilterChips({
             aria-label={`Remove ${chip.label}`}
             className="rounded-r-md px-1 py-0.5 text-ink-secondary hover:bg-hairline hover:text-ink focus-visible:ring-2 focus-visible:ring-focus focus-visible:outline-none"
             data-testid="search-chip-remove"
-            onClick={() => onChange(withoutFilter(query, chip.field, chip.key))}
+            onClick={() => onChange(withoutSearchFilter(query, chip.field, chip.key))}
             type="button"
           >
             <XIcon size={10} />

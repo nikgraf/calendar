@@ -13,6 +13,8 @@ import {
   searchQueryKey,
   searchQueryOfKey,
   taskMatchesQuery,
+  toggleSearchKey,
+  withoutSearchFilter,
 } from './query.ts';
 
 const VIENNA = 'Europe/Vienna';
@@ -187,5 +189,39 @@ describe('taskMatchesQuery', () => {
     expect(taskMatchesQuery(task({ dueDate: '2026-11-01' }), { terms: [], to: '2026-10-31' })).toBe(
       false,
     );
+  });
+});
+
+describe('withoutSearchFilter and toggleSearchKey', () => {
+  const full = {
+    allDay: true,
+    calendars: ['acc:work', 'acc:home'],
+    from: '2026-10-01',
+    kind: 'event' as const,
+    location: 'Hafen',
+    people: ['Anna'],
+    terms: ['x'],
+    to: '2026-10-31',
+  };
+
+  it('takes one filter away, a calendar by its key, the rest kept', () => {
+    expect(withoutSearchFilter(full, 'dates')).not.toHaveProperty('from');
+    expect(withoutSearchFilter(full, 'dates')).not.toHaveProperty('to');
+    expect(withoutSearchFilter(full, 'calendar', 'acc:work').calendars).toEqual(['acc:home']);
+    expect(
+      withoutSearchFilter({ calendars: ['acc:work'], terms: [] }, 'calendar', 'acc:work'),
+    ).toEqual({
+      terms: [],
+    });
+    expect(withoutSearchFilter(full, 'people')).toEqual({
+      ...full,
+      people: undefined,
+      terms: ['x'],
+    });
+  });
+
+  it('toggles a key', () => {
+    expect(toggleSearchKey(undefined, 'a')).toEqual(['a']);
+    expect(toggleSearchKey(['a', 'b'], 'a')).toEqual(['b']);
   });
 });

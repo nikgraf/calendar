@@ -260,3 +260,45 @@ export const taskMatchesQuery = (task: TaskRecord, query: SearchQuery): boolean 
   const terms = queryTerms(query);
   return (terms.length === 0 || taskMatchesSearch(task, terms)) && taskMatchesFilters(task, query);
 };
+
+/** A filter as the chips name it: one field, a calendar or list by its key. */
+export type SearchFilterField =
+  | 'allDay'
+  | 'calendar'
+  | 'dates'
+  | 'kind'
+  | 'list'
+  | 'location'
+  | 'people';
+
+/**
+ * The query without one filter — a chip's ×. A calendar or list chip
+ * names its key: only that one goes, the others stay.
+ */
+export const withoutSearchFilter = (
+  query: SearchQuery,
+  field: SearchFilterField,
+  key?: string,
+): SearchQuery => {
+  const clean = cleanSearchQuery(query);
+  const left = (keys: ReadonlyArray<string> | undefined) =>
+    key === undefined ? undefined : keys?.filter((entry) => entry !== key);
+  return cleanSearchQuery({
+    ...clean,
+    allDay: field === 'allDay' ? undefined : clean.allDay,
+    calendars: field === 'calendar' ? left(clean.calendars) : clean.calendars,
+    from: field === 'dates' ? undefined : clean.from,
+    kind: field === 'kind' ? undefined : clean.kind,
+    lists: field === 'list' ? left(clean.lists) : clean.lists,
+    location: field === 'location' ? undefined : clean.location,
+    people: field === 'people' ? undefined : clean.people,
+    to: field === 'dates' ? undefined : clean.to,
+  });
+};
+
+/** A calendar or list key added to the filter, or taken out when it was in. */
+export const toggleSearchKey = (
+  keys: ReadonlyArray<string> | undefined,
+  key: string,
+): ReadonlyArray<string> =>
+  keys?.includes(key) ? keys.filter((entry) => entry !== key) : [...(keys ?? []), key];

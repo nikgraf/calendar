@@ -1,28 +1,41 @@
+import { isSearchFilterPhrase } from '@calendar/ai';
 import {
   type SearchState,
   useCalendars,
+  useModelAvailability,
   useSearch,
+  useSearchThread,
   useTaskLists,
   useTimeZones,
   useToday,
 } from '@calendar/app-state';
 import {
   type EventSearchHit,
+  isBlankSearchQuery,
   makeColorLookup,
   REPEAT_MARKER,
   SEARCH_WINDOW_YEARS,
   searchEventWhen,
-  searchQueryFromText,
+  searchFilterChips,
+  type SearchNames,
+  type SearchQuery,
+  searchQuerySentence,
   searchTaskWhen,
   type TaskListInfo,
   type TaskRecord,
   Temporal,
+  withoutSearchFilter,
 } from '@calendar/core';
 import { Stack } from 'expo-router';
-import { useMemo, useState } from 'react';
+import { type ReactElement, useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, SectionList, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import type { SearchBarCommands } from 'react-native-screens';
+import { languageModel } from '../model.ts';
 import { useEditorHost } from './EditorHost.tsx';
+import { onAppActive } from './QuickAddBar.tsx';
+import { SearchFilterChips } from './SearchFilterChips.tsx';
+import { SearchFiltersSheet } from './SearchFiltersSheet.tsx';
 import { TaskCheck } from './TaskCheck.tsx';
 import { type ThemeColors, useEventTint, useStyles, useTheme } from './theme.ts';
 import { MutationNoticeToast } from './Toast.tsx';
@@ -51,32 +64,170 @@ interface Section {
 export function SearchScreen() {
   const zones = useTimeZones();
   const timeZone = zones.loaded ? zones.primary : Temporal.Now.timeZoneId();
-  const [text, setText] = useState('');
-  const search = useSearch(searchQueryFromText(text), timeZone);
+  const calendars = useCalendars();
+  const taskLists = useTaskLists();
+  const thread = useSearchThread({ calendars, model: languageModel, taskLists, timeZone });
+  const search = useSearch(thread.state.query, timeZone);
+  const { status } = useModelAvailability(languageModel, onAppActive);
+  const modelReady = status === 'ready';
   const { colors } = useTheme();
+  const searchBar = useRef<SearchBarCommands>(null);
+  const [threadError, setThreadError] = useState<string | null>(null);
+  const [filtersOpen, setFiltersOpen] = useState(false);
+
+  // A turn, an Undo or Clear: the native field takes the thread's text
+  // over (it is not controlled; typing never moves the version).
+  const { text, version } = thread.state;
+  useEffect(() => {
+    if (version > 0) {
+      searchBar.current?.setText(text);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only a moved version rewrites the field
+  }, [version]);
+
+  /** The sentence in the field, read into filters: a turn. */
+  const ask = async () => {
+    if (!modelReady || text.trim() === '' || thread.busy) {
+      return;
+    }
+    setThreadError(null);
+    setThreadError((await thread.phrase()) ?? null);
+  };
+
   return (
     <>
       <Stack.SearchBar
         autoCapitalize="none"
         hideWhenScrolling={false}
-        onCancelButtonPress={() => setText('')}
-        onChangeText={(event) => setText(event.nativeEvent.text)}
+        onCancelButtonPress={() => {
+          setThreadError(null);
+          thread.clear();
+        }}
+        onChangeText={(event) => {
+          setThreadError(null);
+          thread.setText(event.nativeEvent.text);
+        }}
+        // The keyboard's Search key reads a sentence with a filter in it;
+        // plain words are searched as typed already.
+        onSearchButtonPress={() => {
+          if (modelReady && isSearchFilterPhrase(text)) {
+            void ask();
+          }
+        }}
         placeholder="Events and tasks"
+        ref={searchBar}
         textColor={colors.text}
         tintColor={colors.primary}
       />
-      <SearchResultsList search={search} text={text} timeZone={timeZone} />
+      <SearchResultsList
+        header={
+          <SearchThreadHeader
+            error={threadError}
+            onClear={() => {
+              setThreadError(null);
+              thread.clear();
+            }}
+            onOpenFilters={() => setFiltersOpen(true)}
+            onUndo={() => {
+              setThreadError(null);
+              thread.undo();
+            }}
+            thread={thread}
+          />
+        }
+        modelReady={modelReady}
+        names={thread.names}
+        query={thread.state.query}
+        search={search}
+        timeZone={timeZone}
+      />
+      {filtersOpen ? (
+        <SearchFiltersSheet
+          calendars={calendars}
+          onChange={thread.setQuery}
+          onClose={() => setFiltersOpen(false)}
+          query={thread.state.query}
+          taskLists={taskLists}
+          timeZone={timeZone}
+          today={thread.names.today}
+        />
+      ) : null}
     </>
   );
 }
 
+/** The chips, the last turn with Undo, and a line while a sentence is read or why it was not. */
+function SearchThreadHeader({
+  error,
+  onClear,
+  onOpenFilters,
+  onUndo,
+  thread,
+}: {
+  error: string | null;
+  onClear: () => void;
+  onOpenFilters: () => void;
+  onUndo: () => void;
+  thread: ReturnType<typeof useSearchThread>;
+}) {
+  const styles = useStyles(makeStyles);
+  const { query, turns } = thread.state;
+  const last = turns.at(-1);
+  return (
+    <View style={styles.threadHeader}>
+      <SearchFilterChips
+        chips={searchFilterChips(query, thread.names)}
+        onClear={onClear}
+        onOpenFilters={onOpenFilters}
+        onRemove={(chip) => thread.setQuery(withoutSearchFilter(query, chip.field, chip.key))}
+        showClear={!isBlankSearchQuery(query) || turns.length > 0}
+      />
+      {last ? (
+        <View style={styles.turn} testID="search-turn">
+          <View style={styles.turnBody}>
+            <Text numberOfLines={1} style={styles.turnUtterance}>
+              “{last.utterance}”
+            </Text>
+            <Text numberOfLines={1} style={styles.meta} testID="search-turn-summary">
+              {last.summary}
+            </Text>
+          </View>
+          <Pressable
+            accessibilityRole="button"
+            disabled={thread.busy}
+            hitSlop={8}
+            onPress={onUndo}
+            testID="search-undo"
+          >
+            <Text style={styles.undo}>Undo</Text>
+          </Pressable>
+        </View>
+      ) : null}
+      {thread.busy || error ? (
+        <Text
+          style={[styles.meta, error ? styles.failed : undefined]}
+          testID="search-thread-status"
+        >
+          {error ?? 'Reading the filters…'}
+        </Text>
+      ) : null}
+    </View>
+  );
+}
+
 function SearchResultsList({
+  header,
+  modelReady,
+  names,
+  query,
   search,
-  text,
   timeZone,
 }: {
+  header: ReactElement;
+  modelReady: boolean;
+  names: SearchNames;
+  query: SearchQuery;
   search: SearchState;
-  text: string;
   timeZone: string;
 }) {
   const styles = useStyles(makeStyles);
@@ -118,30 +269,36 @@ function SearchResultsList({
     return all.filter((section) => section.data.length > 0);
   }, [results]);
 
-  const empty =
-    text.trim() === '' ? (
-      <View style={styles.note} testID="search-hint">
-        <Text style={styles.noteText}>
-          Search event titles, places, notes and guests, and task titles and notes.
+  const empty = isBlankSearchQuery(query) ? (
+    <View style={styles.note} testID="search-hint">
+      <Text style={styles.noteText}>
+        Search event titles, places, notes and guests, and task titles and notes.
+      </Text>
+      {modelReady ? (
+        <Text style={styles.noteSmall}>
+          Or say what you want — “lunch with Anna last month”, “only tasks” — and tap Search.
         </Text>
-        <Text style={styles.noteSmall}>{WINDOW_NOTE}</Text>
-      </View>
-    ) : search.failed ? (
-      <View style={styles.note} testID="search-failed">
-        <Text style={[styles.noteText, styles.failed]}>
-          The search did not go through. Change the text to try again.
-        </Text>
-      </View>
-    ) : results === null || search.stale ? (
-      <View style={styles.note}>
-        <Text style={styles.noteText}>Searching…</Text>
-      </View>
-    ) : (
-      <View style={styles.note} testID="search-empty">
-        <Text style={styles.noteText}>Nothing matches “{search.query.terms.join(' ')}”.</Text>
-        <Text style={styles.noteSmall}>{WINDOW_NOTE}</Text>
-      </View>
-    );
+      ) : null}
+      <Text style={styles.noteSmall}>{WINDOW_NOTE}</Text>
+    </View>
+  ) : search.failed ? (
+    <View style={styles.note} testID="search-failed">
+      <Text style={[styles.noteText, styles.failed]}>
+        The search did not go through. Change the text to try again.
+      </Text>
+    </View>
+  ) : results === null || search.stale ? (
+    <View style={styles.note}>
+      <Text style={styles.noteText}>Searching…</Text>
+    </View>
+  ) : (
+    <View style={styles.note} testID="search-empty">
+      <Text style={styles.noteText}>
+        Nothing matches {searchQuerySentence(search.query, names)}.
+      </Text>
+      <Text style={styles.noteSmall}>{WINDOW_NOTE}</Text>
+    </View>
+  );
 
   return (
     <View style={styles.screen} testID="search-screen">
@@ -156,6 +313,7 @@ function SearchResultsList({
             : `task:${row.task.accountId}:${row.task.listId}:${row.task.id}`
         }
         ListEmptyComponent={empty}
+        ListHeaderComponent={header}
         renderItem={({ item }) =>
           item.kind === 'event' ? (
             <EventRow
@@ -369,10 +527,35 @@ const makeStyles = (colors: ThemeColors) =>
       paddingTop: 16,
       textTransform: 'uppercase',
     },
+    threadHeader: {
+      gap: 6,
+      paddingBottom: 4,
+    },
     title: {
       color: colors.text,
       fontSize: 16,
       fontWeight: '500',
+    },
+    turn: {
+      alignItems: 'center',
+      backgroundColor: colors.fill,
+      borderRadius: 8,
+      flexDirection: 'row',
+      gap: 8,
+      paddingHorizontal: 10,
+      paddingVertical: 6,
+    },
+    turnBody: {
+      flex: 1,
+    },
+    turnUtterance: {
+      color: colors.text,
+      fontSize: 13,
+    },
+    undo: {
+      color: colors.primary,
+      fontSize: 15,
+      fontWeight: '600',
     },
     // The toast stands on this area's bottom edge: the tab bar's top.
     toastArea: {

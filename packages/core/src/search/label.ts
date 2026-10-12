@@ -3,7 +3,7 @@ import { addDaysToPlainDate, toZonedDateTime } from '../time/convert.ts';
 import { Temporal } from '../time/temporal.ts';
 import { formatZoneTimeRange } from '../time/zoneLabels.ts';
 import type { EventRecord, TaskRecord } from '../types.ts';
-import { cleanSearchQuery, type SearchQuery } from './query.ts';
+import { cleanSearchQuery, type SearchFilterField, type SearchQuery } from './query.ts';
 
 /** "Tue, Oct 14", with the year once it is not `today`'s. */
 const dayLabel = (date: Temporal.PlainDate, today: string): string =>
@@ -104,15 +104,6 @@ export interface SearchNames {
   }>;
   readonly today: string;
 }
-
-export type SearchFilterField =
-  | 'allDay'
-  | 'calendar'
-  | 'dates'
-  | 'kind'
-  | 'list'
-  | 'location'
-  | 'people';
 
 /** One filter as the chip row shows it; a calendar or list chip names its key. */
 export interface SearchFilterChip {
