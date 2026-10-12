@@ -21,9 +21,29 @@ export interface CaptureParse {
 /**
  * Characters of source text the model is given. The OS 26 on-device model
  * has a ~4k-token context that prompt, text and answer share; 6000 chars of
- * prose is roughly 1500 tokens, which leaves room for eight events.
+ * prose is roughly 1500 tokens, which leaves room for eight events. A
+ * provider with a larger context (`ModelInfo.contextTokens`) gets more
+ * (`captureTextBudget`), up to a cap — a poster is never a book.
  */
 export const MAX_CAPTURE_TEXT_CHARS = 6000;
+/** The most text any model is given: beyond it the paste is a document, not a schedule. */
+const MAX_CAPTURE_TEXT_CHARS_LARGE = 60_000;
+/** Tokens kept for the prompt's own words and the answer. */
+const CAPTURE_RESERVED_TOKENS = 1500;
+/** Characters of prose per token, roughly. */
+const CHARS_PER_TOKEN = 3;
+
+/** How much source text fits a model's context, chars: the default for a small or unknown one. */
+export const captureTextBudget = (contextTokens: number | undefined): number =>
+  contextTokens === undefined
+    ? MAX_CAPTURE_TEXT_CHARS
+    : Math.min(
+        Math.max(
+          (contextTokens - CAPTURE_RESERVED_TOKENS) * CHARS_PER_TOKEN,
+          MAX_CAPTURE_TEXT_CHARS,
+        ),
+        MAX_CAPTURE_TEXT_CHARS_LARGE,
+      );
 /** Events per capture; more than this is a schedule, not an email. */
 export const MAX_CAPTURE_EVENTS = 8;
 /** Longest token kept whole; tracking URLs and base64 junk are clipped. */
@@ -77,7 +97,10 @@ const QUOTED_REPLY = [
  * cap at a line boundary. Deterministic on purpose — what the model sees
  * is reproducible from what the user pasted.
  */
-export const prepareCaptureText = (raw: string): { text: string; truncated: boolean } => {
+export const prepareCaptureText = (
+  raw: string,
+  maxChars: number = MAX_CAPTURE_TEXT_CHARS,
+): { text: string; truncated: boolean } => {
   const lines = raw
     .replaceAll(/\r\n?/g, '\n')
     .replaceAll(/[ ​⁠﻿]/g, ' ')
@@ -107,10 +130,10 @@ export const prepareCaptureText = (raw: string): { text: string; truncated: bool
   }
   const kept = (cutAt === -1 ? lines : lines.slice(0, cutAt)).join('\n');
   const text = kept.replaceAll(/\n{3,}/g, '\n\n').trim();
-  if (text.length <= MAX_CAPTURE_TEXT_CHARS) {
+  if (text.length <= maxChars) {
     return { text, truncated: false };
   }
-  const head = text.slice(0, MAX_CAPTURE_TEXT_CHARS);
+  const head = text.slice(0, maxChars);
   const lastBreak = head.lastIndexOf('\n');
   return { text: (lastBreak > 0 ? head.slice(0, lastBreak) : head).trim(), truncated: true };
 };
