@@ -548,10 +548,22 @@ details, or Custom), so a calendar can be shared without the details.
 
 ## Search (core `search/`, packages/sync/src/search.ts)
 
+- **The query is a struct** (`SearchQuery`, core `search/query.ts`): the
+  words typed, and filters — a date range (inclusive days), a place,
+  people, calendars and lists by key, events or tasks only, all-day or
+  timed. An unset field is "any"; `cleanSearchQuery` drops blanks so
+  equal searches are equal values, and `searchQueryKey` is the atom's
+  key. Calendars pick events and lists pick tasks; a filter only an
+  event can answer (place, people, all-day, calendars alone) leaves tasks
+  out; a date range needs a task's due day inside it. With no words, only
+  the filters decide.
 - **One rpc**, `search({ query, timeZone })`, handled by `searchCalendar`
   for both apps, "now" from Effect's Clock. It reads what the views can
   show over `SEARCH_WINDOW_YEARS` (two) either side of today in the
-  primary zone: the stored rows the range query reads (`EventRepo.getWindow`:
+  primary zone, narrowed to the query's days when it has a range (a past
+  range finds a series by its last occurrence there, through the walk's
+  backward half; a query only for tasks reads no events, one only for
+  events no tasks): the stored rows the range query reads (`EventRepo.getWindow`:
   visible calendars, no mirror copies, no cancelled rows), the Apple
   events EventKit answers for the window, and every task of the visible
   lists (`TaskRepo.getVisible`). Events outside the window are not found;
@@ -580,6 +592,26 @@ details, or Custom), so a calendar can be shared without the details.
   shows; the previous results stay up while the next load (`stale`), and
   the atoms re-run on EVENTS_KEY and TASKS_KEY. The agent gateway has no
   search tool yet.
+- **The search thread** (`useSearchThread`, app-state `searchThread.ts`):
+  the field is the words, chips are the filters, a sentence the model
+  reads is a turn. Typing sets the words and a chip edit sets a filter,
+  neither a turn (the user's own edits, like the form's edits to a
+  draft); a turn sends the field's sentence with the filters as they
+  stand and no words (`parseSearchQuery`, `packages/ai/src/searchQuery.ts`)
+  and leaves what is left of the words in the field; Undo restores the
+  query before the last turn; Clear empties everything. The normalizer
+  holds the answer to the words: dates are the code's where it reads them
+  (`searchWindowOf`: yesterday, last week, this month, the past N days,
+  last Friday, "October 2025" …), else the model's valid days only when
+  the words say when, held to the search window; kind and all-day come
+  from the words alone; a place, people and calendar or list names count
+  only when they are in the words. The router is code
+  (`isSearchFilterPhrase`): the desktop's Enter opens the top result of
+  plain words and reads words with a filter cue in them, ⌘↩ and ✦ always
+  read; iOS reads on the keyboard's Search key. Without a model the field
+  is plain search and the chips still edit by hand (desktop: a popover
+  per chip; iOS: a Filters sheet). The fixture model plays a turn in the
+  grammar `terms | from..to | location | people | calendar | kind`.
 
 ## Recurring events
 

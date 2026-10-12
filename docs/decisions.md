@@ -344,6 +344,17 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   non-ASCII case); one hit per series at its next occurrence; iOS uses
   the native `Stack.SearchBar`, so nothing native changed. Deferred: an
   agent search tool, calendar names as search text, highlighting.
+- **Search filters** (2026-10-12, #186) — search takes a `SearchQuery`
+  (words and filters), shown as chips edited by hand, and a sentence the
+  model reads edits the same struct as a turn with Undo — the create
+  thread's shape over another state. Chip edits are not turns (the
+  user's own); the model's answer is held to the words (dates the code
+  reads win, a place, people or a calendar name must be in the words,
+  kind and all-day are the code's); a filter only an event answers
+  leaves tasks out. Enter is routed by code: plain words open the top
+  result, a filter cue reads. Rejected: Enter always asking (a model
+  round trip per Enter), only a button, FTS5 here. Open: term expansion,
+  German prompt lines, an agent search tool, retrieval past the window.
 - **iOS account button** (2026-10-09, #157) — Settings opens from an
   account avatar at the top right, as Apple's and Google's apps do; the
   unsynced pill became its badge. Rejected: a Settings tab (the bar is
