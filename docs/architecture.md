@@ -806,7 +806,13 @@ gateway carries all of it. Details, limits and the threat model:
   pager swaps the form; Save writes the focused draft (and keeps the
   editor on the next while there are more), "Add all" the others as they
   stand. Capture opens its events as one such thread
-  (`useCaptureModel.onMany`) rather than a review list. The panel never
+  (`useCaptureModel.onMany`) rather than a review list. The panel renders
+  `useThreadEditor` (`packages/app-state/src/threadEditor.ts`), which the
+  iOS edit sheet shares: both editor models, the kind control, the thread
+  and everything between; the calendar and the editor exchange drafts, a
+  day to show and a clicked draft through kept-alive atoms
+  (`draftAtoms.ts`: `useDraftPreviews`, `useOnDraftReveal`,
+  `useRequestDraftFocus`). The panel never
   joins the dialog stack
   (`dialogStack.ts`: the topmost dialog alone answers Escape and traps
   Tab), so a real dialog over it keeps Escape; a panel opened from a
@@ -831,9 +837,14 @@ gateway carries all of it. Details, limits and the threat model:
   and the "+" (`AddButton`, shared with the Tasks tab: the calendar's
   opens a new event, the Tasks tab's an undated to-do in the filtered
   list). `EditorHost.tsx` owns every sheet — event detail, the editor
-  (`EventEditSheet`, the same add path as the desktop), the birthday
-  detail, the capture review — and the capture model behind the share
-  sheet and deep links; screens ask it through `useEditorHost()`.
+  (`EventEditSheet`, the same add path as the desktop and the same
+  thread: `useThreadEditor`, with `DraftThreadSection` under the quick-add
+  field — the turns with Undo, the free-slot chips, the pager, "Add
+  all"), the birthday detail — and the capture model behind the share
+  sheet and deep links, whose events open the editor as one thread of
+  drafts; each opening is keyed by its own number; screens ask it
+  through `useEditorHost()`. The drafts are not drawn on the iOS calendar
+  yet (todo.md).
   `+native-intent.tsx` keeps non-route URLs on the calendar. Sheets are
   React Native page sheets; `@expo/ui` is used where it is a drop-in.
   Text that cannot grow (grid blocks, chips, the gutter, bars) is capped

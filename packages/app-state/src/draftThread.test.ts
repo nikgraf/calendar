@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vite-plus/test';
 import {
   describeDraftItem,
   EMPTY_THREAD,
+  firstDraftExtras,
   focusDraft,
   isAtSlot,
   itemAtSlot,
@@ -553,5 +554,24 @@ describe('landPlacement — the finder turn lands on the draft it was asked for'
     const state = startThread([dinner], 'x', { id: ids() });
     expect(landPlacement(state, { slots, targetId: 'gone', utterance: 'x' })).toBe(state);
     expect(landPlacement(state, { slots: [], targetId: 'd1', utterance: 'x' })).toBe(state);
+  });
+});
+
+describe('firstDraftExtras', () => {
+  it('keeps what the form held but an undated to-do’s state: the phrase dates the draft', () => {
+    const extras = {
+      attendees: [],
+      description: 'notes',
+      reminders: undefined,
+      taskNotes: 'bring the card',
+      undated: true,
+    };
+    expect(firstDraftExtras(extras)).toEqual({
+      attendees: [],
+      description: 'notes',
+      reminders: undefined,
+      taskNotes: 'bring the card',
+    });
+    expect(firstDraftExtras(undefined)).toBeUndefined();
   });
 });

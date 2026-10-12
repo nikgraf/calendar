@@ -15,7 +15,7 @@ import {
 } from '@calendar/core';
 import {
   defaultTodoKind,
-  type DraftPreview,
+  type EditorSeed,
   draftOccurrences,
   eventStartDay,
   findCurrentEvent,
@@ -24,12 +24,15 @@ import {
   useCalendarNavigation,
   useCalendars,
   useCaptureModel,
+  useDraftPreviews,
   useEventReadOnlyLookup,
   useEventsInRangeStable,
   useGuardedMutations,
   useListColorLookup,
   useOverdueTasksStable,
+  useRequestDraftFocus,
   useModelAvailability,
+  useOnDraftReveal,
   useSearch,
   useSearchThread,
   useTaskLists,
@@ -55,7 +58,7 @@ import { captureSourceOf, isCapturable, readPaste } from './captureClipboard.ts'
 import { makeColorLookup } from './colors.ts';
 import { MonthView } from './MonthView.tsx';
 import { DragGhost } from './panel/DragGhost.tsx';
-import { type DraftFocusRequest, EditorPanel, type EditorSeed } from './panel/EditorPanel.tsx';
+import { EditorPanel } from './panel/EditorPanel.tsx';
 import { EventInspector } from './panel/EventInspector.tsx';
 import { SearchPanel } from './panel/SearchPanel.tsx';
 import { onWindowFocus } from './QuickAddBar.tsx';
@@ -228,10 +231,11 @@ function CalendarBody({
 
   // The editor's drafts, as the grid draws them: every event draft of the
   // thread (and every occurrence of a repeating one), hatched, the focused
-  // one outlined. The panel sends them up whenever they change.
-  const [draftPreviews, setDraftPreviews] = useState<ReadonlyArray<DraftPreview>>([]);
-  // A click on a draft block asks the editor to focus that draft.
-  const [draftFocus, setDraftFocus] = useState<DraftFocusRequest | null>(null);
+  // one outlined. The editor publishes them (the draft atoms), asks for
+  // its focused draft's day, and hears about a click on a draft block.
+  const draftPreviews = useDraftPreviews();
+  const requestDraftFocus = useRequestDraftFocus();
+  useOnDraftReveal(goToDay);
 
   // Captured events open the editor as one thread of drafts on the first
   // one's day: each is seen on the grid before anything is written.
@@ -605,9 +609,7 @@ function CalendarBody({
               laneRef={laneRef}
               listColorOf={listColorOf}
               onBirthdayClick={(birthday) => setViewBirthday(birthday)}
-              onDraftClick={(id, slot) =>
-                setDraftFocus({ id, nonce: Date.now(), ...(slot ? { slot } : {}) })
-              }
+              onDraftClick={requestDraftFocus}
               onEventClick={(event) => setPanel({ event, kind: 'inspector' })}
               onNavigate={panByDays}
               onSlideEnd={endSlide}
@@ -690,12 +692,9 @@ function CalendarBody({
             ) : panel.kind === 'editEvent' ? (
               <EditorPanel
                 calendars={calendars}
-                focusDraft={draftFocus}
                 initialKind={panel.mode}
                 onCapture={capture.start}
                 onClose={closePanel}
-                onPreview={setDraftPreviews}
-                onReveal={goToDay}
                 quickAddFocus={quickAddFocus}
                 seed={panel.seed}
                 taskLists={taskLists}

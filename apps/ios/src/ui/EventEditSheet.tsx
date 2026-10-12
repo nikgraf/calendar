@@ -1,12 +1,9 @@
 import {
   type EditorConfirmRequest,
+  type EditorSeed,
   type EditorSourceKind,
   editorTitle,
-  useBackendMutations,
-  useEditorKinds,
-  useEventEditorModel,
-  useTaskEditorModel,
-  type EventEditorSeed,
+  useThreadEditor,
   type TaskEditorSeed,
 } from '@calendar/app-state';
 import {
@@ -17,7 +14,10 @@ import {
   type TaskRecord,
 } from '@calendar/core';
 import { Alert, Modal, Pressable, SafeAreaView, Text, View } from 'react-native';
+import { backendClient } from '../backend.ts';
+import { languageModel } from '../model.ts';
 import { BirthdayDetail } from './BirthdayDetail.tsx';
+import { DraftThreadSection } from './DraftThreadSection.tsx';
 import { useSheetStyles } from './editSheetShared.ts';
 import { EventEditForm } from './EventEditForm.tsx';
 import { QuickAddBar } from './QuickAddBar.tsx';
@@ -26,7 +26,10 @@ import { SegmentedControl } from './SegmentedControl.tsx';
 import { TaskEditForm } from './TaskEditForm.tsx';
 import { BOX_FONT_SCALE } from './theme.ts';
 
-export type EditSeed = EventEditorSeed;
+/** An existing item, a prefilled slot, or a thread of drafts (a capture's events). */
+export type EditSeed = EditorSeed;
+
+const CHANGE_PLACEHOLDER = 'Change it: “at 8”, “Thursday instead”…';
 
 const capitalize = (word: string) => word.charAt(0).toUpperCase() + word.slice(1);
 
@@ -89,10 +92,15 @@ export const confirmEditorRequest = (request: EditorConfirmRequest): Promise<boo
 
 /**
  * Modal shell for creating/editing events, tasks and reminders. For a new
- * item the quick-add field sits on top, then the Event | Task | Reminder
- * control (only the kinds something can hold), then the form. The forms
- * live in EventEditForm / TaskEditForm / ReminderEditForm; this file owns
- * the header and both editor models (state must survive a kind flip).
+ * item the quick-add field sits on top, then the thread (the turns with
+ * Undo, the free slots, the pager and "Add all"), then the Event | Task |
+ * Reminder control (only the kinds something can hold), then the form. A
+ * new item is a thread of drafts, as on the desktop (`useThreadEditor`):
+ * the first phrase makes the draft(s), every later phrase in the same
+ * field changes them, and Save on one of several writes it and moves to
+ * the next. The forms live in EventEditForm / TaskEditForm /
+ * ReminderEditForm; this file owns the header and the thread editor (both
+ * models stay mounted, so state survives a kind flip).
  */
 export function EventEditSheet({
   birthday,
@@ -130,48 +138,30 @@ export function EventEditSheet({
       : seed.event
         ? 'event'
         : 'new';
-  const mutations = useBackendMutations();
-  const taskModel = useTaskEditorModel({
-    confirm: confirmEditorRequest,
-    onClose,
-    onSaved,
-    seed: {
-      convertFromEvent: seed.event,
-      dated: taskSeed?.dated,
-      existing: task,
-      initialDate: seed.initialDate.toString(),
-      initialTime: seed.initialTimes?.startTime,
-      kind: initialKind === 'event' ? undefined : initialKind,
-      listKey: taskSeed?.listKey,
-    },
-    taskLists,
-  });
-  const eventModel = useEventEditorModel({
+  const editor = useThreadEditor({
+    backend: backendClient,
     calendars,
     confirm: confirmEditorRequest,
-    onClose,
-    onSaved,
-    seed: { ...seed, convertFromTask: task },
-    timeZone,
-  });
-  const { apply, available, kind, mode, seriesOnly, switchTo } = useEditorKinds({
-    calendars,
-    confirm: confirmEditorRequest,
-    eventModel,
     initialKind,
-    previewEventToTask: mutations.previewEventToTask,
+    model: languageModel,
+    onClose,
+    onSaved,
+    seed,
     sourceKind,
+    task,
     taskLists,
-    taskModel,
+    taskSeed,
     timeZone,
   });
+  const { drafts, eventModel, kinds, onPhrase, taskModel, write } = editor;
+  const { apply, available, kind, mode, seriesOnly, switchTo } = kinds;
 
   const showToggle =
     !birthday &&
     available.length > 1 &&
     !(sourceKind === 'event' && eventModel.readOnly) &&
     !(sourceKind === 'task' && taskModel.readOnly);
-  const busy = mode === 'todo' ? taskModel.busy : eventModel.busy;
+  const busy = (mode === 'todo' ? taskModel.busy : eventModel.busy) || write.busy;
   // A new item: the quick-add field on top takes the focus, not the title.
   const quickAdd = sourceKind === 'new';
   const { noun, verb } = editorTitle({ kind, sourceKind, sourceProvider: task?.provider });
@@ -203,6 +193,7 @@ export function EventEditSheet({
               <View />
             ) : (
               <Pressable
+                disabled={write.busy}
                 onPress={() => void (mode === 'todo' ? taskModel.save() : eventModel.save())}
                 style={busy ? styles.busy : undefined}
                 testID="event-save"
@@ -215,11 +206,16 @@ export function EventEditSheet({
           </View>
 
           {sourceKind === 'new' ? (
-            <QuickAddBar
-              fallbackDate={seed.initialDate.toString()}
-              onApply={(item) => void apply(item)}
-              timeZone={timeZone}
-            />
+            <>
+              <QuickAddBar
+                fallbackDate={seed.initialDate.toString()}
+                onApply={(item) => void apply(item)}
+                onPhrase={onPhrase}
+                placeholder={drafts.length > 0 ? CHANGE_PLACEHOLDER : undefined}
+                timeZone={timeZone}
+              />
+              <DraftThreadSection editor={editor} note={seed.thread?.note} />
+            </>
           ) : null}
 
           {showToggle ? (
