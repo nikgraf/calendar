@@ -16,12 +16,32 @@ describe('makeFixtureLanguageModel', () => {
   it('answers quick-add with the phrase as the title', async () => {
     const result = await parseQuickAdd(model, {
       fallbackDate: '2026-09-25',
+      phrase: 'Conference call',
+      ...CONTEXT,
+    });
+    expect(result).toMatchObject({
+      kind: 'parsed',
+      prefill: { date: '2026-09-25', isAllDay: true, title: 'Conference call' },
+    });
+  });
+
+  it('leaves the phrase words to the normalizer, like any model', async () => {
+    // The fixture says nothing about the day or time; the normalizer reads
+    // "tomorrow" and "at 1" off the phrase itself.
+    const result = await parseQuickAdd(model, {
+      fallbackDate: '2026-09-25',
       phrase: 'Lunch with Sarah tomorrow at 1',
       ...CONTEXT,
     });
     expect(result).toMatchObject({
       kind: 'parsed',
-      prefill: { date: '2026-09-25', isAllDay: true, title: 'Lunch with Sarah tomorrow at 1' },
+      prefill: {
+        date: '2026-09-21',
+        endTime: '14:00',
+        isAllDay: false,
+        startTime: '13:00',
+        title: 'Lunch with Sarah tomorrow at 1',
+      },
     });
   });
 
@@ -61,6 +81,8 @@ describe('fixtureTextRecognizer', () => {
 
 describe('makeFixtureLanguageModel tasks', () => {
   it('reads "todo:" as a task, with the grammar after it', async () => {
+    // The marker is a to-do cue for the normalizer; the fixture only keeps
+    // it out of the title.
     const model = makeFixtureLanguageModel();
     const plain = await parseQuickAdd(model, {
       fallbackDate: '2026-09-25',

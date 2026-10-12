@@ -1,15 +1,17 @@
 import type { RecurrenceFrequency } from '@calendar/core';
 import { upcomingDays } from './shared.ts';
 
-/** What the model is asked to extract from one phrase. */
+/**
+ * What the model is asked to extract from one phrase. Whether the phrase
+ * is a to-do is not asked: the normalizer reads the cue words itself
+ * (`isTodoPhrase`), since the model called plain appointments tasks.
+ */
 export interface QuickAddParse {
   /** `YYYY-MM-DD`, resolved against the reference date in the prompt. */
   readonly date?: string;
   /** `HH:MM`, 24-hour. Absent for all-day or unspecified. */
   readonly endTime?: string;
   readonly isAllDay?: boolean;
-  /** A to-do ("remind me to…", "todo: …") rather than an appointment; absent = event. */
-  readonly kind?: 'event' | 'task';
   readonly location?: string;
   readonly recurrence?: {
     readonly count?: number;
@@ -28,7 +30,6 @@ export const QUICK_ADD_JSON_SCHEMA = {
     date: { description: 'YYYY-MM-DD', type: 'string' },
     endTime: { description: 'HH:MM, 24-hour', type: 'string' },
     isAllDay: { type: 'boolean' },
-    kind: { enum: ['event', 'task'], type: 'string' },
     location: { type: 'string' },
     recurrence: {
       additionalProperties: false,
@@ -70,19 +71,19 @@ export const buildQuickAddPrompt = ({
 }): string =>
   [
     'Extract calendar details from the phrase.',
-    'It is an event (kind "event") unless it describes something to do rather',
-    'than attend — "remind me to", "todo", "don\'t forget to", "I need to" —',
-    'then it is a task (kind "task"): a task has a date and maybe a time, no end.',
     `Today is ${referenceDate} in time zone ${timeZone}.`,
     'Resolve relative dates ("tomorrow", "next Tuesday") by picking from',
     `this list, never by computing: ${upcomingDays(referenceDate)}.`,
     'Use 24-hour HH:MM times: 1pm is 13:00, 12pm is 12:00, midnight is 00:00.',
+    'A meal or a part of the day ("dinner", "morning") is not a time: give a',
+    'startTime only for a clock time the phrase states.',
     'Omit fields the phrase does not state — never invent a location, a time,',
     'or a repeat, and never write placeholders like "unknown".',
     'The title is only what the event is: leave date, time and location words',
     'out of it ("Lunch with Sarah next Tuesday at 1pm" has the title',
-    '"Lunch with Sarah"). The phrase may be in any language; the title keeps',
-    'its original language.',
+    '"Lunch with Sarah"; "Remind me to call the bank" has the title "Call the',
+    'bank"). The phrase may be in any language; the title keeps its original',
+    'language.',
     `${QUICK_ADD_PHRASE_MARKER}${phrase}`,
   ]
     .filter(Boolean)

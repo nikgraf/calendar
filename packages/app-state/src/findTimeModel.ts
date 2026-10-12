@@ -207,7 +207,13 @@ export const useFindTimeModel = ({
     setBusy(true);
     setError(null);
     try {
-      const parsed = await parseFindTime(model, { phrase, referenceDate: today, timeZone });
+      // A phrase that does not say how long searches for the duration on show.
+      const parsed = await parseFindTime(model, {
+        fallbackDurationMinutes: constraints.durationMinutes,
+        phrase,
+        referenceDate: today,
+        timeZone,
+      });
       if (mine !== request.current) {
         return;
       }

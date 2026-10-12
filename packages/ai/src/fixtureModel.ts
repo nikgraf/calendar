@@ -14,7 +14,9 @@ import { TextRecognitionError, type ImageInput, type TextRecognizer } from './te
  * — and `+N` counts days from the prompt's "Today is" line, so a spec
  * never computes a date. A quick-add phrase in the same grammar yields one
  * event; any other phrase becomes a title on its own, which the normalizer
- * places on the fallback day as an all-day event.
+ * places on the fallback day as an all-day event — unless the phrase's own
+ * words say otherwise, which the normalizer reads the same way for every
+ * model ("Lunch tomorrow at 1" lands tomorrow at 13:00).
  */
 
 const TODAY = /Today is (\d{4}-\d{2}-\d{2})/;
@@ -76,13 +78,13 @@ export const makeFixtureLanguageModel = (): LanguageModel => ({
     }
     if (isRecord(properties) && 'startTime' in properties) {
       const full = textAfter(prompt, QUICK_ADD_PHRASE_MARKER).trim();
-      // "todo: …" is the fixture's deterministic task marker.
-      const task = /^todo:\s*/i.exec(full);
-      const phrase = task ? full.slice(task[0].length) : full;
+      // "todo: …" is the fixture's to-do marker: the normalizer reads the
+      // cue itself, so the fixture only keeps it out of the title.
+      const phrase = full.replace(/^todo:\s*/i, '');
       const parsed: QuickAddParse = (phrase.includes('|')
         ? parseLine(phrase, referenceDate)
         : undefined) ?? { title: phrase };
-      return task ? { ...parsed, kind: 'task' } : parsed;
+      return parsed;
     }
     throw new Error('fixture model: unsupported schema');
   },

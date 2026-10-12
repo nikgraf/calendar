@@ -1,4 +1,12 @@
 import { Temporal, type FindSlotsConstraints } from '@calendar/core';
+import {
+  groundBounds,
+  groundDays,
+  type Period,
+  periodTimes,
+  statesDuration,
+  windowOf,
+} from './grounding.ts';
 import { ModelUnavailableError, type LanguageModel } from './model.ts';
 import { meaningfulText, realDate, realTime, upcomingDays } from './shared.ts';
 
@@ -37,6 +45,12 @@ export const FIND_TIME_JSON_SCHEMA = {
   type: 'object',
 } as const;
 
+/** The bounds line's vocabulary comes from the one table the normalizer reads. */
+const bounds = (period: Period): string => {
+  const { earliestTime, latestTime } = periodTimes(period);
+  return `${earliestTime}–${latestTime}`;
+};
+
 export const buildFindTimePrompt = ({
   phrase,
   referenceDate,
@@ -55,8 +69,9 @@ export const buildFindTimePrompt = ({
     `computing: ${upcomingDays(referenceDate)}.`,
     '"this week" ends on the coming Sunday; "next week" is Monday–Sunday',
     'after that.',
-    'Daily bounds: "mornings" is 08:00–12:00, "afternoons" 12:00–17:00,',
-    '"evenings" 17:00–21:00 (earliestTime/latestTime, 24-hour HH:MM).',
+    `Daily bounds: "mornings" is ${bounds('morning')}, "afternoons" ${bounds('afternoon')},`,
+    `"evenings" ${bounds('evening')}, "breakfast" ${bounds('breakfast')}, "lunch"`,
+    `${bounds('lunch')}, "dinner" ${bounds('dinner')} (earliestTime/latestTime, 24-hour HH:MM).`,
     'durationMinutes is required: "90 min" is 90, "2h" is 120, "half an',
     'hour" is 30 ("eineinhalb Stunden" is 90).',
     'daysOfWeek only when weekdays are named ("Tuesdays" → [2],',
@@ -78,34 +93,63 @@ export type FindTimeResult =
     }
   | { readonly kind: 'rejected'; readonly reason: string };
 
-/** Validates the raw parse; defaults the window to the coming week. */
+/**
+ * Validates the raw parse; defaults the window to the coming week. Given
+ * the phrase, the parse is also held against it (`grounding.ts`): the
+ * duration is the model's only when the phrase says how long, else the
+ * fallback (the form's own); a window the phrase names in words is taken
+ * from the words; the daily bounds stand only beside a written clock
+ * time, are a named meal's or part of the day's window, or are dropped;
+ * and weekdays count only when the phrase names them — the model answered
+ * "Tuesday" to every phrase — unless it excludes days, which the code
+ * cannot read, so the model's answer stands.
+ */
 export const normalizeFindTime = (
   parse: FindTimeParse,
-  { referenceDate }: { referenceDate: string },
+  {
+    fallbackDurationMinutes,
+    phrase,
+    referenceDate,
+  }: {
+    /** Searched for when the phrase does not say how long. */
+    fallbackDurationMinutes?: number | undefined;
+    /** The words the parse came from; when given, the parse is checked against them. */
+    phrase?: string | undefined;
+    referenceDate: string;
+  },
 ): FindTimeResult => {
-  const duration = parse.durationMinutes;
+  const duration =
+    phrase !== undefined && fallbackDurationMinutes !== undefined && !statesDuration(phrase)
+      ? fallbackDurationMinutes
+      : parse.durationMinutes;
   if (typeof duration !== 'number' || !Number.isFinite(duration) || duration <= 0) {
     return { kind: 'rejected', reason: 'Say how long you need — e.g. "90 min".' };
   }
   if (duration > MAX_DURATION_MINUTES) {
     return { kind: 'rejected', reason: 'Durations above 12 hours are not supported.' };
   }
-  const start = realDate(parse.windowStartDate) ?? referenceDate;
+  const window = phrase === undefined ? undefined : windowOf(phrase, referenceDate);
+  const start = window?.windowStartDate ?? realDate(parse.windowStartDate) ?? referenceDate;
   const fallbackEnd = Temporal.PlainDate.from(start)
     .add({ days: DEFAULT_WINDOW_DAYS - 1 })
     .toString();
-  let end = realDate(parse.windowEndDate) ?? fallbackEnd;
+  let end = window?.windowEndDate ?? realDate(parse.windowEndDate) ?? fallbackEnd;
   if (Temporal.PlainDate.compare(end, start) < 0) {
     end = fallbackEnd;
   }
-  const earliestTime = realTime(parse.earliestTime);
-  const latestTime = realTime(parse.latestTime);
+  const modelBounds = {
+    earliestTime: realTime(parse.earliestTime),
+    latestTime: realTime(parse.latestTime),
+  };
+  const { earliestTime, latestTime } =
+    phrase === undefined ? modelBounds : groundBounds(modelBounds, phrase);
   if (earliestTime && latestTime && latestTime <= earliestTime) {
     return { kind: 'rejected', reason: "That time window couldn't be read — try rephrasing." };
   }
-  const daysOfWeek = parse.daysOfWeek?.filter(
+  const modelDays = parse.daysOfWeek?.filter(
     (dayNumber) => Number.isInteger(dayNumber) && dayNumber >= 1 && dayNumber <= 7,
   );
+  const daysOfWeek = phrase === undefined ? modelDays : groundDays(modelDays, phrase);
   const title = meaningfulText(parse.title);
   return {
     constraints: {
@@ -128,7 +172,18 @@ export const normalizeFindTime = (
  */
 export const parseFindTime = async (
   model: LanguageModel,
-  { phrase, referenceDate, timeZone }: { phrase: string; referenceDate: string; timeZone: string },
+  {
+    fallbackDurationMinutes,
+    phrase,
+    referenceDate,
+    timeZone,
+  }: {
+    /** The finder's current duration, searched for when the phrase does not say how long. */
+    fallbackDurationMinutes?: number | undefined;
+    phrase: string;
+    referenceDate: string;
+    timeZone: string;
+  },
 ): Promise<FindTimeResult> => {
   if (!phrase.trim()) {
     return { kind: 'rejected', reason: 'Describe the time you need.' };
@@ -148,5 +203,9 @@ export const parseFindTime = async (
   if (typeof raw !== 'object' || raw === null) {
     return { kind: 'rejected', reason: "That couldn't be read — try rephrasing." };
   }
-  return normalizeFindTime(raw as FindTimeParse, { referenceDate });
+  return normalizeFindTime(raw as FindTimeParse, {
+    fallbackDurationMinutes,
+    phrase,
+    referenceDate,
+  });
 };

@@ -137,6 +137,53 @@ Empty. The 2026-10-02 review's findings are closed in `docs/decisions.md`
 
 ## Tier 3 — AI features
 
+AI redesign (agreed 2026-10-11, one PR each, in this order; the
+grounding PR that opened it, #182, is in `docs/decisions.md` → AI):
+
+- [ ] Draft thread — one `DraftThread` model (`drafts[]`, `focused`,
+      `turns[]`) behind quick-add, capture and the finder's result; a
+      refine turn is stateless (reference date + the current draft as JSON + the utterance → the updated draft, only the mentioned fields
+      changed), so the thread is an undo stack of drafts and the form and
+      the field are two views of one draft; nothing is saved until Save.
+      Previews in the calendar: every draft drawn as a hatched,
+      dashed-edge block in its calendar's hue with a "Draft" tag (a
+      `draft` variant of `eventTint`), every occurrence of a repeat in the
+      visible window; focusing a draft navigates to its day, clicking a
+      block focuses its draft; "Add all" primary. A refinement applies to
+      the focused draft unless it says all / both / every. Fields set by a
+      default (the meal table) carry an "assumed" badge. Desktop first;
+      iOS needs the editor as a half-height detent sheet so the calendar
+      shows behind it (the hard part).
+- [ ] Model providers — `LanguageModel` becomes a provider with a
+      capability record (context tokens, input modalities, guided JSON);
+      an OpenAI-compatible endpoint provider in Electron main beside the
+      helper dispatch (`model:*` stays), with an Ollama preset (`/v1`,
+      `response_format: json_schema`; LM Studio and llama-server come
+      free): endpoint URL + model name device-local (beside
+      `mirrors.local`, never the settings document), an API key only in
+      safeStorage, a notice whenever the host is not loopback, status
+      `not-ready` for a model not pulled. The fixture provider stays. It
+      is also the bench: a fixture file of real phrases with expected
+      drafts run through Apple's model and Gemma 4 E2B/E4B before any
+      iOS download is considered.
+- [ ] Slot proposals in the create thread — a deterministic router by
+      phrase (find / slot / free / fit / "when can I", German too) sends a
+      sentence to the finder prompt, the two prompts stay tuned apart;
+      the chosen slot is the draft, the alternatives are fainter candidate
+      blocks in the grid and a chip row in the form (not a slider);
+      ranking biased to the named period's centre.
+- [ ] Search filters — a `SearchQuery` struct in core (terms, date range,
+      location, people, calendar/list, kind, all-day) and the rpc takes it;
+      the struct renders as chips the user edits by hand; an AI turn edits
+      the same struct (guided JSON, dates from the day list, `realDate`),
+      so the search thread is the create thread's component with another
+      state type; plain words are terms, "Clear" resets; without a model
+      the field is today's search. Retrieval stays deterministic (FTS5 is
+      the "Ask your calendar" item below); later, term expansion only.
+- [ ] Gemma 4 on iOS — opt-in download via llama.rn (JSON schema →
+      grammar maps onto `generateJson`), load on demand, unload on
+      background; only if the bench shows the model is the bottleneck.
+
 - [ ] Find-a-time follow-ups — the finder keeps a whole Apple series
       busy through a series edit (its rows are read through EventKit, no
       master to read, detached occurrences not told apart): an

@@ -38,7 +38,14 @@ SQLite (node:sqlite / op-sqlite)
 parsing live in `packages/ai` behind the `LanguageModel`, `SpeechToText`
 and `TextRecognizer` seams; the pure `findFreeSlots` solver
 (`packages/core/src/scheduling/`) computes free slots from the
-already-synced local events. Desktop: renderer → preload IPC (the five
+already-synced local events. The model extracts, the code decides:
+`packages/ai/src/grounding.ts` reads the phrase itself — clock times,
+meal and part-of-day words (one table: quick-add defaults and the
+finder's bounds), weekdays, to-do cues, the finder's windows and
+durations — and the normalizers keep a model value only where the phrase
+supports it, correct one it contradicts and drop the rest (a phrase
+without a time is an all-day event, whatever the model returned).
+Desktop: renderer → preload IPC (the five
 `model:*` channels: status, generate, prepare-speech, transcribe,
 recognize-text) → main → the Swift helper child process
 (`apps/desktop/helper`, Foundation Models + SpeechAnalyzer + Vision over

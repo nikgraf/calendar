@@ -5,7 +5,8 @@ import { buildQuickAddPrompt, QUICK_ADD_JSON_SCHEMA, type QuickAddParse } from '
 /**
  * One phrase in, an editor prefill out. The only impure step is the model
  * call; prompt building and normalization either side of it are pure, so
- * this is testable end to end with a fake model.
+ * this is testable end to end with a fake model. The normalizer gets the
+ * phrase too: the model's answer is held against the words it came from.
  */
 export const parseQuickAdd = async (
   model: LanguageModel,
@@ -42,5 +43,5 @@ export const parseQuickAdd = async (
   if (typeof raw !== 'object' || raw === null) {
     return { kind: 'rejected', reason: "That couldn't be read — try rephrasing." };
   }
-  return normalizeQuickAdd(raw as QuickAddParse, { fallbackDate, referenceDate, timeZone });
+  return normalizeQuickAdd(raw as QuickAddParse, { fallbackDate, phrase, referenceDate, timeZone });
 };
