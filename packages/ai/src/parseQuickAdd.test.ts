@@ -342,7 +342,7 @@ describe('parseQuickAdd', () => {
 });
 
 describe('parseQuickAdd holds the answer against the phrase', () => {
-  it('puts a meal at its usual time, on the weekday named', async () => {
+  it('puts a meal at its usual time, on the weekday named, and says the time is assumed', async () => {
     // The reported bug: "Dinner with Teo" came back at 13:00, and "next
     // Friday" on a Thursday.
     const prefill = await prefillOf(
@@ -350,6 +350,7 @@ describe('parseQuickAdd holds the answer against the phrase', () => {
       'Dinner with Teo next Friday',
     );
     expect(prefill).toEqual({
+      assumedTime: true,
       date: '2026-08-28',
       endTime: '20:00',
       isAllDay: false,

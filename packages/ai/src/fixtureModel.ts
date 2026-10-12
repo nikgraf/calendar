@@ -2,6 +2,7 @@ import { Temporal } from '@calendar/core';
 import { CAPTURE_TEXT_MARKER, type CaptureItemParse, type CaptureParse } from './capture.ts';
 import type { LanguageModel } from './model.ts';
 import { QUICK_ADD_PHRASE_MARKER, type QuickAddParse } from './quickAdd.ts';
+import { REFINE_CHANGE_MARKER, REFINE_CURRENT_MARKER } from './refine.ts';
 import { TextRecognitionError, type ImageInput, type TextRecognizer } from './textRecognition.ts';
 
 /**
@@ -16,7 +17,10 @@ import { TextRecognitionError, type ImageInput, type TextRecognizer } from './te
  * event; any other phrase becomes a title on its own, which the normalizer
  * places on the fallback day as an all-day event — unless the phrase's own
  * words say otherwise, which the normalizer reads the same way for every
- * model ("Lunch tomorrow at 1" lands tomorrow at 13:00).
+ * model ("Lunch tomorrow at 1" lands tomorrow at 13:00). A refinement is
+ * the same grammar with empty parts meaning "unchanged" — `| | 10:00-11:00`
+ * moves the times only — applied to the draft in the prompt; a sentence
+ * leaves the draft as it is, and the normalizer reads the sentence.
  */
 
 const TODAY = /Today is (\d{4}-\d{2}-\d{2})/;
@@ -75,6 +79,34 @@ export const makeFixtureLanguageModel = (): LanguageModel => ({
         .map((line) => parseLine(line, referenceDate))
         .filter((item): item is CaptureItemParse => item !== undefined);
       return { events } satisfies CaptureParse;
+    }
+    if (
+      isRecord(properties) &&
+      'startTime' in properties &&
+      prompt.includes(REFINE_CHANGE_MARKER)
+    ) {
+      const currentLine = textAfter(prompt, REFINE_CURRENT_MARKER).split('\n')[0] ?? '{}';
+      const current = JSON.parse(currentLine) as QuickAddParse;
+      const change = textAfter(prompt, REFINE_CHANGE_MARKER).trim();
+      if (!change.includes('|')) {
+        return current;
+      }
+      const [title = '', when = '', time = '', location = ''] = change
+        .split('|')
+        .map((part) => part.trim());
+      const parsed = parseLine(
+        `${title || current.title} | ${when} | ${time} | ${location}`,
+        referenceDate,
+      );
+      return {
+        ...current,
+        ...(title ? { title } : {}),
+        ...(parsed?.date ? { date: parsed.date } : {}),
+        ...(parsed?.startTime
+          ? { endTime: parsed.endTime, isAllDay: false, startTime: parsed.startTime }
+          : {}),
+        ...(location ? { location } : {}),
+      };
     }
     if (isRecord(properties) && 'startTime' in properties) {
       const full = textAfter(prompt, QUICK_ADD_PHRASE_MARKER).trim();

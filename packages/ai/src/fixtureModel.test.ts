@@ -3,6 +3,7 @@ import { FIND_TIME_JSON_SCHEMA } from './findTime.ts';
 import { fixtureTextRecognizer, makeFixtureLanguageModel } from './fixtureModel.ts';
 import { parseQuickAdd } from './parseQuickAdd.ts';
 import { buildQuickAddPrompt, QUICK_ADD_JSON_SCHEMA } from './quickAdd.ts';
+import { parseRefine } from './refine.ts';
 
 const CONTEXT = { referenceDate: '2026-09-20', timeZone: 'Europe/Vienna' };
 
@@ -76,6 +77,44 @@ describe('fixtureTextRecognizer', () => {
     await expect(
       fixtureTextRecognizer.recognizeText({ kind: 'uri', uri: 'file:///x' }),
     ).rejects.toMatchObject({ _tag: 'TextRecognitionError' });
+  });
+});
+
+describe('makeFixtureLanguageModel refinements', () => {
+  const model = makeFixtureLanguageModel();
+  const draft = {
+    date: '2026-09-23',
+    endTime: '15:30',
+    isAllDay: false,
+    startTime: '14:30',
+    title: 'Dentist',
+  };
+
+  it('applies the non-empty parts of the grammar to the draft in the prompt', async () => {
+    expect(
+      await parseRefine(model, { draft, utterance: '| | 10:00-11:00', ...CONTEXT }),
+    ).toMatchObject({
+      kind: 'parsed',
+      prefill: { date: '2026-09-23', endTime: '11:00', startTime: '10:00', title: 'Dentist' },
+    });
+    expect(
+      await parseRefine(model, { draft, utterance: 'Checkup | +5 | | Room 2', ...CONTEXT }),
+    ).toMatchObject({
+      prefill: {
+        date: '2026-09-25',
+        endTime: '15:30',
+        location: 'Room 2',
+        startTime: '14:30',
+        title: 'Checkup',
+      },
+    });
+  });
+
+  it('leaves a sentence to the normalizer', async () => {
+    // The fixture returns the draft as it is; the normalizer reads "at 4pm".
+    expect(await parseRefine(model, { draft, utterance: 'at 4pm', ...CONTEXT })).toMatchObject({
+      prefill: { endTime: '17:00', startTime: '16:00', title: 'Dentist' },
+    });
   });
 });
 

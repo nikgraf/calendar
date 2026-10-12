@@ -1,10 +1,10 @@
 import { Temporal, type FindSlotsConstraints } from '@calendar/core';
 import {
+  durationMinutesOf,
   groundBounds,
   groundDays,
   type Period,
   periodTimes,
-  statesDuration,
   windowOf,
 } from './grounding.ts';
 import { ModelUnavailableError, type LanguageModel } from './model.ts';
@@ -118,10 +118,12 @@ export const normalizeFindTime = (
     referenceDate: string;
   },
 ): FindTimeResult => {
+  // The phrase's own length first; the form's when it states none; the
+  // model's only without either.
   const duration =
-    phrase !== undefined && fallbackDurationMinutes !== undefined && !statesDuration(phrase)
-      ? fallbackDurationMinutes
-      : parse.durationMinutes;
+    phrase === undefined
+      ? parse.durationMinutes
+      : (durationMinutesOf(phrase) ?? fallbackDurationMinutes ?? parse.durationMinutes);
   if (typeof duration !== 'number' || !Number.isFinite(duration) || duration <= 0) {
     return { kind: 'rejected', reason: 'Say how long you need — e.g. "90 min".' };
   }

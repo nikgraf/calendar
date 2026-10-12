@@ -732,14 +732,106 @@ export const groundDays = (
 };
 
 /** Number words a length is written in, beyond the clock's one to twelve. */
-const LENGTH_WORDS =
-  'thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|forty-five|fifty|sixty|ninety|hundred|zwanzig|dreissig|vierzig|funfundvierzig|funfzig|sechzig|neunzig|hundert';
+const LENGTH_WORDS = {
+  dreissig: 30,
+  eighteen: 18,
+  fifteen: 15,
+  fifty: 50,
+  forty: 40,
+  'forty-five': 45,
+  fourteen: 14,
+  funfundvierzig: 45,
+  funfzig: 50,
+  hundert: 100,
+  hundred: 100,
+  neunzig: 90,
+  nineteen: 19,
+  ninety: 90,
+  sechzig: 60,
+  seventeen: 17,
+  sixteen: 16,
+  sixty: 60,
+  thirteen: 13,
+  thirty: 30,
+  twenty: 20,
+  vierzig: 40,
+  zwanzig: 20,
+} as const;
+const LENGTH_WORD = Object.keys(LENGTH_WORDS)
+  .sort((left, right) => right.length - left.length)
+  .join('|');
 const DURATION = new RegExp(
-  `\\b(?:\\d+(?:[.,]\\d+)?|${NUMBER_WORD}|${LENGTH_WORDS}|an?|eine?r?)[\\s-]*(?:${LENGTH_UNITS})\\b|\\b(?:half an hour|halbe stunde|eineinhalb|anderthalb)\\b`,
+  `\\b(\\d+(?:[.,]\\d+)?|${NUMBER_WORD}|${LENGTH_WORD}|an?|eine?r?)[\\s-]*(${LENGTH_UNITS})\\b|\\b(half an hour|halbe stunde|eineinhalb|anderthalb)\\b`,
 );
 
-/** Whether the phrase says how long ("90 min", "2h", "two hours", "thirty minutes", "90-minute", "zwei Stunden"). */
-export const statesDuration = (phrase: string): boolean => DURATION.test(words(phrase));
+const quantityOf = (token: string): number => {
+  if (token in LENGTH_WORDS) {
+    return LENGTH_WORDS[token as keyof typeof LENGTH_WORDS];
+  }
+  if (token in NUMBER_WORDS) {
+    return NUMBER_WORDS[token as keyof typeof NUMBER_WORDS];
+  }
+  return /^(?:an?|eine?r?)$/.test(token) ? 1 : Number(token.replace(',', '.'));
+};
+
+/**
+ * The length the phrase states, in minutes ("90 min", "2h", "two hours",
+ * "thirty minutes", "90-minute", "zwei Stunden", "half an hour"), or
+ * undefined when it states none.
+ */
+export const durationMinutesOf = (phrase: string): number | undefined => {
+  const match = DURATION.exec(words(phrase));
+  if (!match) {
+    return undefined;
+  }
+  if (match[3] !== undefined) {
+    return match[3] === 'half an hour' || match[3] === 'halbe stunde' ? 30 : 90;
+  }
+  const amount = quantityOf(match[1]!);
+  const hours = /^(?:h|hr|hrs|hours?|stunden?|std)$/.test(match[2]!);
+  const total = Math.round(hours ? amount * 60 : amount);
+  return Number.isFinite(total) && total > 0 ? total : undefined;
+};
+
+/** Whether the phrase says how long. */
+export const statesDuration = (phrase: string): boolean => durationMinutesOf(phrase) !== undefined;
+
+/** The phrase makes the event last the whole day ("all day", "ganztägig"). */
+export const isAllDayPhrase = (phrase: string): boolean =>
+  /\b(?:all[- ]day|whole day|ganztag(?:ig|s)?|ganzen tag)\b/.test(words(phrase));
+
+/** The phrase speaks of a repeat ("every Monday", "weekly", "wöchentlich"). */
+export const mentionsRepeat = (phrase: string): boolean =>
+  /\b(?:every|each|weekly|daily|monthly|yearly|annually|repeat\w*|recurring|jede[nmrs]?|wochentlich|taglich|monatlich|jahrlich|wiederhol\w*)\b/.test(
+    words(phrase),
+  );
+
+/** The phrase takes a repeat away ("just once", "no repeat", "einmalig"). */
+export const clearsRepeat = (phrase: string): boolean =>
+  /\b(?:no repeat|not repeat|stop repeating|only once|just once|once only|does ?n[o']t repeat|nicht wiederholen|einmalig|keine wiederholung)\b/.test(
+    words(phrase),
+  );
+
+/**
+ * The phrase names a day in a form the code does not read but the model
+ * may ("Oct 20", "17.10.", "in two weeks", "next month"); a bare digit
+ * is not one, since a clock time has digits too.
+ */
+export const mentionsDate = (phrase: string): boolean => {
+  const text = words(phrase);
+  return (
+    new RegExp(`\\b(?:${MONTHS})\\b`).test(text) ||
+    /\b\d{1,2}[./]\d{1,2}\b/.test(text) ||
+    // An ISO date, and the fixture grammar's day count ("+5").
+    /\b\d{4}-\d{2}-\d{2}\b|(?:^|\s)\+\d+\b/.test(text) ||
+    /\b(?:next|this|coming|nachste[nrs]?|kommende[nrs]?|diese[nrs]?)\s+(?:week|month|year|woche|monat|jahr)\b/.test(
+      text,
+    ) ||
+    new RegExp(
+      `\\bin\\s+(?:an?|\\d+|${NUMBER_WORD})\\s+(?:days?|weeks?|months?|tagen?|wochen?|monaten?)\\b`,
+    ).test(text)
+  );
+};
 
 const WINDOW_WORDS: ReadonlyArray<{
   readonly dates: (

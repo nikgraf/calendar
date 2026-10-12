@@ -5,6 +5,11 @@ import { meaningfulText, realDate, realTime } from './shared.ts';
 
 /** Editor prefill: exactly the fields the shared editor model seeds from. */
 export interface QuickAddPrefill {
+  /**
+   * The times came from a meal or part of the day the phrase named, not a
+   * clock time it stated: the editor marks them so, until they are set.
+   */
+  readonly assumedTime?: boolean;
   readonly date: string;
   readonly endTime: string;
   readonly isAllDay: boolean;
@@ -52,12 +57,53 @@ const untilOnOrAfter = (until: string | undefined, start: string): string | unde
   return nextYear >= start ? nextYear : undefined;
 };
 
-const addHour = (time: string): string => {
+/** One hour on, clamped to the day: the editor works on one date. */
+export const addHour = (time: string): string => {
   const [hour, minute] = time.split(':').map(Number) as [number, number];
-  // Clamp instead of spilling into the next day: the editor works on one date.
   return hour >= 23
     ? '23:59'
     : `${String(hour + 1).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+};
+
+/**
+ * The cue that made the phrase a to-do, when the model left it in the
+ * title ("remind me to call the bank" came back whole): the title is the
+ * thing to do.
+ */
+const TODO_CUE_PREFIX =
+  /^(?:remind me to|reminder:?|to-?do:?|don'?t forget to|i (?:need|have) to|i must|ich muss|nicht vergessen:?)\s+/i;
+
+/**
+ * A location that is the title over again ("Dentist" for "Dentist
+ * Thursday") is the title copied over, not a place. Only the whole title
+ * counts: "New York" is the place of "New York trip".
+ */
+export const placeOf = (location: string | undefined, title: string): string | undefined =>
+  location !== undefined && location.toLowerCase() === title.toLowerCase() ? undefined : location;
+
+/**
+ * The repeat the model returned, as the editor's fields, or none.
+ * "Repeats once" is not a repeat (models attach one to phrases like
+ * "next Tuesday"), an unknown frequency is dropped, and an end before
+ * the first day reads as next year's.
+ */
+export const recurrenceFromParse = (
+  parsed: QuickAddParse['recurrence'],
+  firstDay: string,
+): QuickAddPrefill['recurrence'] => {
+  const count = parsed?.count;
+  const parsedFreq = parsed?.freq;
+  const freq = count === 1 || !parsedFreq || !FREQUENCIES.has(parsedFreq) ? undefined : parsedFreq;
+  if (!freq) {
+    return undefined;
+  }
+  const untilDate = untilOnOrAfter(realDate(parsed?.untilDate), firstDay);
+  return {
+    ...(typeof count === 'number' && count > 1 ? { count } : {}),
+    freq,
+    ...(typeof parsed?.interval === 'number' ? { interval: parsed.interval } : {}),
+    ...(untilDate ? { untilDate } : {}),
+  };
 };
 
 /**
@@ -73,22 +119,6 @@ const addHour = (time: string): string => {
  * to-do only on a to-do cue. Capture has no one phrase per item, so it
  * passes none and the model's times stand as validated.
  */
-/**
- * The cue that made the phrase a to-do, when the model left it in the
- * title ("remind me to call the bank" came back whole): the title is the
- * thing to do.
- */
-const TODO_CUE_PREFIX =
-  /^(?:remind me to|reminder:?|to-?do:?|don'?t forget to|i (?:need|have) to|i must|ich muss|nicht vergessen:?)\s+/i;
-
-/**
- * A location that is the title over again ("Dentist" for "Dentist
- * Thursday") is the title copied over, not a place. Only the whole title
- * counts: "New York" is the place of "New York trip".
- */
-const placeOf = (location: string | undefined, title: string): string | undefined =>
-  location !== undefined && location.toLowerCase() === title.toLowerCase() ? undefined : location;
-
 export const normalizeQuickAdd = (
   parse: QuickAddParse,
   {
@@ -125,7 +155,7 @@ export const normalizeQuickAdd = (
   const modelStart = realTime(parse.startTime);
   const times =
     phrase === undefined
-      ? { endTime: realTime(parse.endTime), startTime: modelStart }
+      ? { endTime: realTime(parse.endTime), source: 'model' as const, startTime: modelStart }
       : groundTime(modelStart, phrase);
   const { startTime } = times;
   if (phrase !== undefined && isTodoPhrase(phrase)) {
@@ -171,29 +201,15 @@ export const normalizeQuickAdd = (
     return { kind: 'rejected', reason: invalid };
   }
 
-  const count = parse.recurrence?.count;
-  // "Repeats once" is not a repeat: models attach one to phrases like
-  // "next Tuesday", which names a single day.
   const place = meaningfulText(parse.location);
   // Capture passes no phrase and keeps its locations as before.
   const location = phrase === undefined ? place : placeOf(place, title);
-  const parsedFreq = parse.recurrence?.freq;
-  const freq = count === 1 || !parsedFreq || !FREQUENCIES.has(parsedFreq) ? undefined : parsedFreq;
-  const untilDate = untilOnOrAfter(realDate(parse.recurrence?.untilDate), resolvedDate);
-  const recurrence = freq
-    ? {
-        ...(typeof count === 'number' && count > 1 ? { count } : {}),
-        freq,
-        ...(typeof parse.recurrence?.interval === 'number'
-          ? { interval: parse.recurrence.interval }
-          : {}),
-        ...(untilDate ? { untilDate } : {}),
-      }
-    : undefined;
+  const recurrence = recurrenceFromParse(parse.recurrence, resolvedDate);
 
   return {
     kind: 'parsed',
     prefill: {
+      ...(times.source === 'period' ? { assumedTime: true } : {}),
       date: resolvedDate,
       endTime: resolvedEnd,
       isAllDay,

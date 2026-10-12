@@ -1,11 +1,16 @@
 import { FINDER_BOUNDS } from '@calendar/core';
 import { describe, expect, it } from 'vite-plus/test';
 import {
+  clearsRepeat,
+  durationMinutesOf,
   groundBounds,
   groundDate,
   groundDays,
   groundTime,
+  isAllDayPhrase,
   isTodoPhrase,
+  mentionsDate,
+  mentionsRepeat,
   namedWeekdays,
   periodOf,
   periodTimes,
@@ -468,6 +473,45 @@ describe('isTodoPhrase', () => {
     expect(isTodoPhrase('Lunch with Sarah tomorrow at 1')).toBe(false);
     expect(isTodoPhrase('Dentist Thursday')).toBe(false);
     expect(isTodoPhrase('Call with Anna tomorrow')).toBe(false);
+  });
+});
+
+describe('durationMinutesOf', () => {
+  it('reads the length in minutes', () => {
+    expect(durationMinutesOf('90 min focus')).toBe(90);
+    expect(durationMinutesOf('2h deep work')).toBe(120);
+    expect(durationMinutesOf('an hour tomorrow')).toBe(60);
+    expect(durationMinutesOf('half an hour with Anna')).toBe(30);
+    expect(durationMinutesOf('eineinhalb Stunden')).toBe(90);
+    expect(durationMinutesOf('1.5 hours')).toBe(90);
+    expect(durationMinutesOf('two hours of focus')).toBe(120);
+    expect(durationMinutesOf('thirty minutes this week')).toBe(30);
+    expect(durationMinutesOf('forty-five minutes')).toBe(45);
+    expect(durationMinutesOf('90-minute workshop')).toBe(90);
+    expect(durationMinutesOf('dinner with Teo next week')).toBeUndefined();
+  });
+});
+
+describe('the words of a change', () => {
+  it('reads all day, a repeat and its removal', () => {
+    expect(isAllDayPhrase('make it all day')).toBe(true);
+    expect(isAllDayPhrase('ganztägig')).toBe(true);
+    expect(isAllDayPhrase('at 8')).toBe(false);
+    expect(mentionsRepeat('every week')).toBe(true);
+    expect(mentionsRepeat('wöchentlich')).toBe(true);
+    expect(mentionsRepeat('at 8')).toBe(false);
+    expect(clearsRepeat('just once')).toBe(true);
+    expect(clearsRepeat("doesn't repeat")).toBe(true);
+    expect(clearsRepeat('every week')).toBe(false);
+  });
+
+  it('knows a date the model has to resolve from a bare clock digit', () => {
+    expect(mentionsDate('on Oct 20')).toBe(true);
+    expect(mentionsDate('am 17.10.')).toBe(true);
+    expect(mentionsDate('in two weeks')).toBe(true);
+    expect(mentionsDate('next month')).toBe(true);
+    expect(mentionsDate('at 8')).toBe(false);
+    expect(mentionsDate('call it team dinner')).toBe(false);
   });
 });
 
