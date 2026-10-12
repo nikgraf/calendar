@@ -262,9 +262,14 @@ export function EditorPanel({
       const { extras } = focusedDraft;
       void apply(focusedDraft.item).then(() => {
         if (focusedDraft.item.kind === 'task') {
-          // A to-do's own: its notes, and a day the form had let go of.
+          // A to-do's own: its notes, and a day the form had let go of —
+          // unless the turn gave it a time (a slot, "at 3pm"), which dates it.
           taskModel.setNotes(extras?.taskNotes ?? '');
-          if (extras?.undated || undated.current?.date === focusedDraft.item.prefill.date) {
+          const timed = focusedDraft.item.prefill.time !== undefined;
+          if (
+            !timed &&
+            (extras?.undated || undated.current?.date === focusedDraft.item.prefill.date)
+          ) {
             taskModel.clearDueDate?.();
           }
         }

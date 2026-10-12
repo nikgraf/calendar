@@ -62,8 +62,14 @@ export interface Draft {
   readonly slots?: ReadonlyArray<FreeSlot> | undefined;
 }
 
-/** What a turn did to one draft: its item as it should be, and the slots found for it, if any. */
+/**
+ * What a turn did to one draft: its item as it should be, the slots found
+ * for it (if any), and its extras where the turn changed them (a to-do
+ * placed in a slot is dated) — so the state before the turn, which Undo
+ * restores, is the one the thread held.
+ */
 export interface DraftChange {
+  readonly extras?: DraftExtras | undefined;
   readonly id: string;
   readonly item: QuickAddItem;
   readonly slots?: ReadonlyArray<FreeSlot> | undefined;
@@ -251,6 +257,7 @@ export const refineThread = (
       ? draft
       : {
           ...withoutSlots(draft),
+          ...(change.extras ? { extras: change.extras } : {}),
           item: change.item,
           ...(change.slots ? { slots: change.slots } : {}),
         };
@@ -355,6 +362,97 @@ export const mergeRefinement = (
   return { kind: after.kind, prefill: merged } as unknown as QuickAddItem;
 };
 
+/** What the form holds of the focused draft at one moment: its item and extras. */
+export interface FormSnapshot {
+  readonly extras?: DraftExtras | undefined;
+  readonly item: QuickAddItem;
+}
+
+/**
+ * A refinement's changes folded in once the model answered. The form is
+ * the target draft's only while that draft is still the focused one:
+ * then the change lands on the form as it is now (`fresh`), edits made
+ * while the model answered kept, and only what the turn changed is taken
+ * over. After a switch the form shows another draft, so the target's own
+ * stored copy — what the form held when it left — is the base, and the
+ * draft now in the form is never touched.
+ */
+export const landRefinement = (
+  state: DraftThreadState,
+  {
+    changes,
+    fresh,
+    submitted,
+    targetId,
+    utterance,
+  }: {
+    readonly changes: ReadonlyArray<DraftChange>;
+    /** The form now, if it was read. */
+    readonly fresh?: FormSnapshot | undefined;
+    /** The form when the turn was sent, if it was read. */
+    readonly submitted?: FormSnapshot | undefined;
+    readonly targetId: string | undefined;
+    readonly utterance: string;
+  },
+): DraftThreadState => {
+  const index = state.drafts.findIndex((draft) => draft.id === targetId);
+  if (submitted === undefined || fresh === undefined || index === -1) {
+    return refineThread(state, utterance, changes);
+  }
+  const base =
+    state.focused === index ? updateDraft(state, index, fresh.item, fresh.extras) : state;
+  const current = base.drafts[index]!.item;
+  return refineThread(
+    base,
+    utterance,
+    changes.map((change) =>
+      change.id === targetId
+        ? { ...change, item: mergeRefinement(current, submitted.item, change.item) }
+        : change,
+    ),
+  );
+};
+
+/**
+ * A finder turn's slots folded in: the target draft moves into the best
+ * slot — from the form as it is now while it is still the focused draft,
+ * else from its stored copy — its title kept, the slots on it. A to-do
+ * placed in a slot is dated: an undated state the form held goes.
+ */
+export const landPlacement = (
+  state: DraftThreadState,
+  {
+    fresh,
+    slots,
+    targetId,
+    title,
+    utterance,
+  }: {
+    readonly fresh?: FormSnapshot | undefined;
+    readonly slots: ReadonlyArray<FreeSlot>;
+    readonly targetId: string;
+    readonly title?: string | undefined;
+    readonly utterance: string;
+  },
+): DraftThreadState => {
+  const index = state.drafts.findIndex((draft) => draft.id === targetId);
+  const [best] = slots;
+  if (index === -1 || best === undefined) {
+    return state;
+  }
+  const live = fresh !== undefined && state.focused === index ? fresh : undefined;
+  const based = live === undefined ? state : updateDraft(state, index, live.item, live.extras);
+  const draft = based.drafts[index]!;
+  return refineThread(based, utterance, [
+    {
+      ...(draft.extras?.undated ? { extras: { ...draft.extras, undated: false } } : {}),
+      id: draft.id,
+      item: itemAtSlot(draft.item, best, title),
+      slots,
+    },
+  ]);
+};
+
 /** The last turn taken back; taking back the first one leaves no drafts. */
 export const undoTurn = (state: DraftThreadState): DraftThreadState => {
   const previous = state.history.at(-1);
@@ -439,10 +537,7 @@ export const removeDraft = (state: DraftThreadState, index: number): DraftThread
 };
 
 /** What the form holds of the focused draft, read by a turn before and after its model call. */
-export type ReadForm = () => {
-  readonly extras?: DraftExtras | undefined;
-  readonly item: QuickAddItem;
-};
+export type ReadForm = () => FormSnapshot;
 
 /** A finder phrase on an all-day draft, or none: the length searched for. */
 const DEFAULT_SLOT_MINUTES = 60;
@@ -482,6 +577,7 @@ export const useDraftThread = ({
    * the turn changed is taken over (`mergeRefinement`).
    */
   const refine = async (utterance: string, read?: ReadForm): Promise<string | undefined> => {
+    // A draft focused meanwhile is not where the answer lands (`landRefinement`).
     const mine = ++request.current;
     const submitted = read?.();
     const current =
@@ -535,23 +631,9 @@ export const useDraftThread = ({
           : "That couldn't be read — try rephrasing.";
       }
       const fresh = read?.();
-      setState((latest) => {
-        const index = latest.drafts.findIndex((draft) => draft.id === focusedId);
-        if (submitted === undefined || fresh === undefined || index === -1) {
-          return refineThread(latest, utterance, changes);
-        }
-        // The focused draft's change lands on the form as it is now.
-        const base = updateDraft(latest, index, fresh.item, fresh.extras);
-        return refineThread(
-          base,
-          utterance,
-          changes.map((change) =>
-            change.id === focusedId
-              ? { ...change, item: mergeRefinement(fresh.item, submitted.item, change.item) }
-              : change,
-          ),
-        );
-      });
+      setState((latest) =>
+        landRefinement(latest, { changes, fresh, submitted, targetId: focusedId, utterance }),
+      );
       return undefined;
     } catch {
       return 'On-device model unavailable.';
@@ -606,20 +688,16 @@ export const useDraftThread = ({
         );
         return undefined;
       }
-      // The draft moves from the form as it is now, edits made meanwhile kept.
       const fresh = read?.();
-      setState((latest) => {
-        const index = latest.drafts.findIndex((draft) => draft.id === target.id);
-        if (index === -1) {
-          return latest;
-        }
-        const base =
-          fresh === undefined ? latest : updateDraft(latest, index, fresh.item, fresh.extras);
-        const draft = base.drafts[index]!;
-        return refineThread(base, utterance, [
-          { id: draft.id, item: itemAtSlot(draft.item, best, result.title), slots: result.slots },
-        ]);
-      });
+      setState((latest) =>
+        landPlacement(latest, {
+          fresh,
+          slots: result.slots,
+          targetId: target.id,
+          title: result.title,
+          utterance,
+        }),
+      );
       return undefined;
     } catch {
       return 'On-device model unavailable.';

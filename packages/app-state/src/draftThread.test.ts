@@ -5,6 +5,8 @@ import {
   focusDraft,
   isAtSlot,
   itemAtSlot,
+  landPlacement,
+  landRefinement,
   mergeRefinement,
   refineTargets,
   refineThread,
@@ -412,5 +414,141 @@ describe('itemAtSlot, slotItem and isAtSlot', () => {
         slot,
       ),
     ).toBe(false);
+  });
+});
+
+describe('landRefinement — the answer lands on the draft it was asked about', () => {
+  const edited: QuickAddItem = {
+    kind: 'event',
+    prefill: { ...dinner.prefill, title: 'Dinner with Teo and Ana' },
+  };
+  const planningEdited: QuickAddItem = {
+    kind: 'event',
+    prefill: { ...planning.prefill, title: 'Planning (edited)' },
+  };
+  const change = { id: 'd1', item: later };
+
+  it('while the draft is still focused, the change lands on the form as it is now', () => {
+    const state = startThread([dinner, planning], 'x', { id: ids() });
+    const landed = landRefinement(state, {
+      changes: [change],
+      fresh: { item: edited },
+      submitted: { item: dinner },
+      targetId: 'd1',
+      utterance: 'at 8',
+    });
+    // The title typed meanwhile stays; the times are the turn's.
+    expect(landed.drafts[0]?.item.prefill).toMatchObject({
+      endTime: '21:00',
+      startTime: '20:00',
+      title: 'Dinner with Teo and Ana',
+    });
+    expect(landed.drafts[1]?.item).toEqual(planning);
+  });
+
+  it('after a switch, the form is another draft’s: the target keeps its stored copy, the other draft is untouched', () => {
+    const id = ids();
+    // The user left d1 with an edit (switchFocus stores it) and opened d2.
+    const state = focusDraft(
+      updateDraft(startThread([dinner, planning], 'x', { id }), 0, edited),
+      1,
+    );
+    const landed = landRefinement(state, {
+      changes: [change],
+      // The form now shows d2, edited.
+      fresh: { item: planningEdited },
+      submitted: { item: dinner },
+      targetId: 'd1',
+      utterance: 'at 8',
+    });
+    expect(landed.drafts[0]?.item.prefill).toMatchObject({
+      endTime: '21:00',
+      startTime: '20:00',
+      title: 'Dinner with Teo and Ana',
+    });
+    // d2 as the thread holds it: the form's own edit goes in on the next switch, not here.
+    expect(landed.drafts[1]?.item).toEqual(planning);
+    expect(landed.history.at(-1)?.drafts[1]?.item).toEqual(planning);
+    expect(landed.focused).toBe(1);
+  });
+
+  it('without a form, the change is folded in as it is', () => {
+    const state = startThread([dinner], 'x', { id: ids() });
+    expect(
+      landRefinement(state, { changes: [change], targetId: 'd1', utterance: 'at 8' }).drafts[0]
+        ?.item,
+    ).toEqual(later);
+  });
+});
+
+describe('landPlacement — the finder turn lands on the draft it was asked for', () => {
+  const slots = [
+    { date: '2026-08-29', endTime: '10:30', startTime: '10:00' },
+    { date: '2026-08-29', endTime: '11:30', startTime: '11:00' },
+  ];
+
+  it('moves the focused draft from the form as it is now, slots along', () => {
+    const state = startThread([dinner], 'x', { id: ids() });
+    const landed = landPlacement(state, {
+      fresh: { item: { kind: 'event', prefill: { ...dinner.prefill, title: 'Dinner (edited)' } } },
+      slots,
+      targetId: 'd1',
+      title: 'Focus',
+      utterance: 'find a slot tomorrow morning',
+    });
+    expect(landed.drafts[0]?.item.prefill).toMatchObject({
+      date: '2026-08-29',
+      endTime: '10:30',
+      startTime: '10:00',
+      title: 'Dinner (edited)',
+    });
+    expect(landed.drafts[0]?.slots).toEqual(slots);
+  });
+
+  it('after a switch, moves the target from its stored copy and leaves the draft in the form alone', () => {
+    const id = ids();
+    const state = focusDraft(startThread([dinner, planning], 'x', { id }), 1);
+    const landed = landPlacement(state, {
+      fresh: {
+        item: { kind: 'event', prefill: { ...planning.prefill, title: 'Planning (edited)' } },
+      },
+      slots,
+      targetId: 'd1',
+      utterance: 'find a slot tomorrow morning',
+    });
+    expect(landed.drafts[0]?.item.prefill).toMatchObject({
+      date: '2026-08-29',
+      startTime: '10:00',
+      title: 'Dinner with Teo',
+    });
+    expect(landed.drafts[1]?.item).toEqual(planning);
+  });
+
+  it('dates a to-do the form had let go of', () => {
+    const todo: QuickAddItem = {
+      kind: 'task',
+      prefill: { date: '2026-08-28', title: 'Call the bank' },
+    };
+    const extras = { attendees: [], description: '', reminders: undefined, undated: true };
+    const state = startThread([todo], 'x', { extras, id: ids() });
+    const landed = landPlacement(state, {
+      fresh: { extras, item: todo },
+      slots,
+      targetId: 'd1',
+      utterance: 'find a slot tomorrow morning',
+    });
+    expect(landed.drafts[0]?.item).toEqual({
+      kind: 'task',
+      prefill: { date: '2026-08-29', time: '10:00', title: 'Call the bank' },
+    });
+    expect(landed.drafts[0]?.extras?.undated).toBe(false);
+    // Undo: undated again.
+    expect(undoTurn(landed).drafts[0]?.extras?.undated).toBe(true);
+  });
+
+  it('is a no-op for a draft that left the thread, or no slot', () => {
+    const state = startThread([dinner], 'x', { id: ids() });
+    expect(landPlacement(state, { slots, targetId: 'gone', utterance: 'x' })).toBe(state);
+    expect(landPlacement(state, { slots: [], targetId: 'd1', utterance: 'x' })).toBe(state);
   });
 });

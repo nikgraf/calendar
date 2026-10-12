@@ -68,6 +68,9 @@ describe('isFinderPhrase', () => {
     'look for a free hour on Friday',
     'where can I fit 45 min of yoga',
     'find 30 min tomorrow morning | Focus',
+    'find 1h for yoga tomorrow',
+    'find 90min for focus next week',
+    'finde 2h für den Bericht',
     'finde 90 Minuten für Fokus nächste Woche',
     'Finde einen Termin für Mittagessen mit Sarah',
     'wann habe ich Zeit für einen Haarschnitt',
@@ -100,6 +103,9 @@ describe('isFinderPhrase', () => {
     'Abendessen mit Teo morgen um 7',
     'Freibad mit den Kindern Samstag',
     'Anna fragen wann sie kommt',
+    'call it Free time',
+    'rename it to find a slot',
+    'nenn es Freie Zeit',
   ])('names an event or a change: %s', (phrase) => {
     expect(isFinderPhrase(phrase)).toBe(false);
   });

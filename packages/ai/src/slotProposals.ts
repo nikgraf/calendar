@@ -7,7 +7,7 @@ import {
 } from '@calendar/core';
 import { parseFindTime } from './findTime.ts';
 import { findSlotsFor } from './findTimePipeline.ts';
-import { periodOf } from './grounding.ts';
+import { isRenamePhrase, periodOf } from './grounding.ts';
 import type { LanguageModel } from './model.ts';
 
 /**
@@ -42,8 +42,8 @@ const words = (phrase: string): string =>
  * "Finders Keepers screening" stay quick-add phrases.
  */
 const FINDER_CUES: ReadonlyArray<RegExp> = [
-  // "find (me) (a/some) 90 min / time / a slot / an hour …" — up to three words between.
-  /\bfind(?:s|ing)? (?:me |us )?(?:a |an |some |the )?(?:\S+ ){0,3}?(?:time|slot|gap|hour|hours|window|opening|spot|moment|minutes?|mins?|h)\b/,
+  // "find (me) (a/some) 90 min / 1h / time / a slot / an hour …" — up to three words between.
+  /\bfind(?:s|ing)? (?:me |us )?(?:a |an |some |the )?(?:\S+ ){0,3}?(?:time|slot|gap|hour|hours|window|opening|spot|moment|minutes?|mins?|h|\d+(?:h|hrs?|min(?:ute)?s?))\b/,
   /\b(?:look|looking|search|searching) for (?:a |an |some )?(?:free |open |quiet )?(?:time|slot|gap|hour|window|opening|spot)\b/,
   // "when can I …", "when am I free", "when do we have time"
   /\bwhen (?:can|could|do|does|would|should|am|are|will|might) (?:i|we)\b/,
@@ -54,7 +54,7 @@ const FINDER_CUES: ReadonlyArray<RegExp> = [
   /\bfit (?:in\b|a\b|an\b|some\b|\d)|\bfit\b.*\bin\b/,
   /\bsometime\b|\bany (?:openings?|availability)\b|\ban opening for\b/,
   // German
-  /\bfinde?(?:n|t|st)? (?:mir |uns )?(?:\S+ ){0,3}?(?:zeit|termin|slot|lucke|platz|fenster|zeitfenster|stunden?|minuten|min)\b/,
+  /\bfinde?(?:n|t|st)? (?:mir |uns )?(?:\S+ ){0,3}?(?:zeit|termin|slot|lucke|platz|fenster|zeitfenster|stunden?|minuten|min|\d+(?:h|min|std))\b/,
   /\b(?:zeit|termin|lucke|slot|platz) (?:finden|suchen)\b/,
   // "wann habe ich Zeit", "wann kann ich", "wann passt", "wo passt … rein"
   /\bwann (?:habe?|hab|kann|konnte|konnen|konnten|passt|ware|hatte|hatten|bin|sind|soll|sollte|geht|ginge)\b/,
@@ -69,9 +69,13 @@ const FINDER_CUES: ReadonlyArray<RegExp> = [
  * "when can I fit a call with Anna", "wann habe ich Zeit für …") rather
  * than describing an event. Read by the code, never the model: a finder
  * sentence goes to the finder prompt, every other phrase to quick-add or
- * the refinement.
+ * the refinement. A rename is never one — "call it Free time" names the
+ * event, whatever the name says.
  */
 export const isFinderPhrase = (phrase: string): boolean => {
+  if (isRenamePhrase(phrase)) {
+    return false;
+  }
   const text = words(phrase);
   return FINDER_CUES.some((cue) => cue.test(text));
 };
