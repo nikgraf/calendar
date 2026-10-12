@@ -117,9 +117,9 @@ export const clearSearchThread = (state: SearchThreadState): SearchThreadState =
  * The thread as a hook. A sentence (`phrase`, the field's text unless
  * given) goes to the model with the filters as they stand and no words —
  * the field holds every word, so the sentence is the words — and lands as
- * a turn; an answer that comes after Clear, Undo or another sentence is
- * dropped. Resolves the message for the field, or nothing when the turn
- * landed.
+ * a turn; an answer that comes after Clear, Undo, another sentence, or an
+ * edit to the words or a chip is dropped (the edit wins). Resolves the
+ * message for the field, or nothing when the turn landed.
  */
 export const useSearchThread = ({
   calendars,
@@ -196,8 +196,18 @@ export const useSearchThread = ({
     },
     names,
     phrase,
-    setQuery: (query: SearchQuery) => setState((latest) => setSearchQuery(latest, query)),
-    setText: (text: string) => setState((latest) => setSearchText(latest, text)),
+    // An edit while a sentence is read wins: the answer, for the words and
+    // filters as they were, is dropped rather than laid over the edit.
+    setQuery: (query: SearchQuery) => {
+      request.current += 1;
+      setBusy(false);
+      setState((latest) => setSearchQuery(latest, query));
+    },
+    setText: (text: string) => {
+      request.current += 1;
+      setBusy(false);
+      setState((latest) => setSearchText(latest, text));
+    },
     state,
     undo: () => {
       request.current += 1;

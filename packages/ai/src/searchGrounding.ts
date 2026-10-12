@@ -189,8 +189,15 @@ const READERS: ReadonlyArray<Reader> = [
     return day(today.subtract({ days: back }));
   },
   // A month: this year's; "last October" the latest before this month,
-  // "next October" the first after it, "October 2025" that year's.
+  // "next October" the first after it, "October 2025" that year's. Two
+  // months ("October to November") are a span: the model's.
   (text, today) => {
+    const named = MONTH_NAMES.filter((entry) =>
+      new RegExp(`\\b(?:${entry.month === 5 ? 'mai' : entry.names})\\b`).test(text),
+    );
+    if (named.length > 1) {
+      return undefined;
+    }
     for (const entry of MONTH_NAMES) {
       const names =
         entry.month === 5 ? 'mai|(?<=(?:in|im|during|last|next|this) )may' : entry.names;
@@ -300,6 +307,8 @@ export const isSearchFilterPhrase = (phrase: string): boolean => {
     namedWeekdays(phrase).length > 0 ||
     searchKindOf(phrase) !== undefined ||
     isAllDayPhrase(phrase) ||
+    searchAllDayOf(phrase) !== undefined ||
+    clearsSearchDates(phrase) ||
     /\b(?:yesterday|today|tomorrow|tonight|gestern|heute|vorgestern|ubermorgen|since|seit|ago)\b/.test(
       text,
     ) ||

@@ -498,6 +498,25 @@ describe('search handler', () => {
           'Lunch with Anna',
         ]);
         expect(week.tasks.tasks.map((entry) => entry.title)).toEqual(['Book a lunch table']);
+        // A daily all-day series on one day in Vienna: the day's span starts
+        // at 23:00 UTC the evening before, where yesterday's occurrence still
+        // runs; the walk takes the occurrence the day asked for.
+        yield* (yield* EventRepo).upsertMany([
+          event('daily-journal', Date.UTC(2026, 9, 1), {
+            endDate: '2026-10-02',
+            endUtc: Date.UTC(2026, 9, 2),
+            isAllDay: true,
+            recurrence: ['RRULE:FREQ=DAILY'],
+            startDate: '2026-10-01',
+            title: 'Daily journal',
+          }),
+        ]);
+        const onDay = yield* search({ from: '2026-11-01', terms: ['journal'], to: '2026-11-01' });
+        expect(onDay.upcoming.hits).toMatchObject([
+          { event: { startDate: '2026-11-01' }, repeating: true },
+        ]);
+        const pastDay = yield* search({ from: '2026-10-10', terms: ['journal'], to: '2026-10-10' });
+        expect(pastDay.past.hits).toMatchObject([{ event: { startDate: '2026-10-10' } }]);
         // Outside the window: no event read, nothing found.
         const far = yield* search({ from: '2031-01-01', terms: ['lunch'] });
         expect(far.upcoming.total + far.past.total).toBe(0);

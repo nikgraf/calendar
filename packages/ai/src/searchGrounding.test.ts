@@ -58,6 +58,8 @@ describe('searchWindowOf', () => {
     'lunch with June',
     'lunch with Jan',
     'what may happen',
+    'events October to November',
+    'Oktober bis Dezember',
     'on Friday',
   ])('reads no window from: %s', (phrase) => {
     expect(window(phrase)).toBeUndefined();
@@ -109,6 +111,8 @@ describe('isSearchFilterPhrase — the router', () => {
     'planning on Friday',
     'Termine mit Anna',
     'trips in October',
+    'any time',
+    'timed only',
   ])('reads a filter in: %s', (phrase) => {
     expect(isSearchFilterPhrase(phrase)).toBe(true);
   });

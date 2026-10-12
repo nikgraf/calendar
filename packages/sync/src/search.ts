@@ -96,7 +96,10 @@ export const searchCalendar = (
         )
         .flatMap((master) => {
           try {
+            // The walk picks among occurrences that answer the query, its
+            // days included: one hit per series, the right one.
             return seriesSearchOccurrences(master, slotsOf(master), {
+              accept: matches,
               nowMs,
               rangeEndUtc: endUtc,
               rangeStartUtc: startUtc,
@@ -107,8 +110,7 @@ export const searchCalendar = (
             skipped.push(`${master.calendarId}/${master.id}: ${String(error)}`);
             return [];
           }
-        })
-        .filter(matches);
+        });
       if (skipped.length > 0) {
         yield* Effect.logWarning('recurring masters skipped in search', { skipped });
       }
