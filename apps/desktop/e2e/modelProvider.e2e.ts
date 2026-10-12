@@ -297,6 +297,19 @@ describe('A served model', () => {
     await settings.waitFor(
       `document.querySelector('[data-testid="model-name"]')?.value === ${JSON.stringify(MODEL)}`,
     );
+    // The result and the server's list describe the endpoint as tested: an
+    // edited URL drops both, and the model field is free text again.
+    await settings.eval(`document.querySelector('[data-testid="model-url"]').focus()`);
+    await settings.type('[data-testid="model-url"]', '/');
+    await settings.waitFor(
+      `!document.querySelector('[data-testid="model-test-result"]') && document.querySelector('[data-testid="model-name"]')?.tagName === 'INPUT'`,
+    );
+    await settings.eval(`document.querySelector('[data-testid="model-url"]').focus()`);
+    await settings.eval(`document.execCommand('selectAll')`);
+    await settings.type('[data-testid="model-url"]', base);
+    await settings.waitFor(
+      `document.querySelector('[data-testid="model-test-result"]')?.textContent === 'Reachable · 1 model'`,
+    );
     await settings.clickTestId('model-save');
     await settings.waitFor(`!!document.querySelector('[data-testid="model-saved"]')`);
     // The file holds the key only as ciphertext, bound to this origin.

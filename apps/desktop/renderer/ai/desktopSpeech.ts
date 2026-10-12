@@ -74,7 +74,9 @@ export const desktopSpeech: SpeechToText = {
     // at use time.
     try {
       const result = await window.calendarBridge.modelHelperStatus();
-      return result.status === 'ready';
+      // The helper runs and the OS has SpeechAnalyzer: Apple Intelligence
+      // being off does not take dictation away.
+      return result.helper && result.detail !== 'osTooOld';
     } catch {
       return false;
     }

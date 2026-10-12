@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import type { ModelProviderKind, ModelProviderView } from './backend.ts';
+import { useEffect, useRef, useState } from 'react';
+import type { EndpointProbe, ModelProviderKind, ModelProviderView } from './backend.ts';
 import { Button } from './ui/Button.tsx';
 import { FIELD_CLASS as field, LABEL_CLASS } from './ui/fieldStyles.ts';
 import { SegmentedControl } from './ui/SegmentedControl.tsx';
@@ -22,16 +22,27 @@ export const isLoopbackUrl = (value: string): boolean => {
   }
 };
 
+/** What a probe was asked about: its result shows only while the fields still say this. */
+interface ProbeInputs {
+  readonly apiKey: string;
+  readonly baseUrl: string;
+  readonly kind: ModelProviderKind;
+}
+
 type Probe =
   | { readonly kind: 'idle' }
-  | { readonly kind: 'probing' }
+  | { readonly for: ProbeInputs; readonly kind: 'probing' }
   | {
       readonly error?: string | undefined;
+      readonly for: ProbeInputs;
       readonly kind: 'done';
       readonly models: ReadonlyArray<string>;
       readonly reachable: boolean;
       readonly unauthorized?: boolean | undefined;
     };
+
+const sameInputs = (left: ProbeInputs, right: ProbeInputs): boolean =>
+  left.baseUrl === right.baseUrl && left.kind === right.kind && left.apiKey === right.apiKey;
 
 /**
  * Which model answers the AI features: Apple's on-device one (nothing to
@@ -46,8 +57,18 @@ export function ModelSection() {
   const [model, setModel] = useState('');
   const [apiKey, setApiKey] = useState('');
   const [probe, setProbe] = useState<Probe>({ kind: 'idle' });
+  // Only the latest probe's answer is taken.
+  const probeId = useRef(0);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // What the fields say now, and the latest render's copy of it for a
+  // probe landing after an edit.
+  const kind = view?.kind ?? 'apple';
+  const now: ProbeInputs = { apiKey, baseUrl, kind };
+  const fields = useRef(now);
+  useEffect(() => {
+    fields.current = { apiKey, baseUrl, kind };
+  }, [apiKey, baseUrl, kind]);
 
   useEffect(() => {
     let mounted = true;
@@ -80,22 +101,32 @@ export function ModelSection() {
     });
   };
 
+  // A probe answers for the fields as they were when it was sent. Its
+  // result shows only while the fields still name that endpoint, and only
+  // that endpoint's own list fills an empty model field — an answer from
+  // one server never describes, or picks a model on, another.
   const test = async () => {
-    setProbe({ kind: 'probing' });
+    const asked = now;
+    const mine = ++probeId.current;
+    setProbe({ for: asked, kind: 'probing' });
     setError(null);
+    let result: EndpointProbe;
     try {
-      const result = await window.calendarBridge.modelProviderTest({
-        ...(apiKey ? { apiKey } : {}),
-        baseUrl,
-        kind: view.kind,
+      result = await window.calendarBridge.modelProviderTest({
+        ...(asked.apiKey ? { apiKey: asked.apiKey } : {}),
+        baseUrl: asked.baseUrl,
+        kind: asked.kind,
       });
-      setProbe({ kind: 'done', ...result });
-      // The server's own list: the first entry stands in for an empty model field.
-      if (result.reachable && model === '' && result.models[0] !== undefined) {
-        setModel(result.models[0]);
-      }
     } catch (error) {
-      setProbe({ error: String(error), kind: 'done', models: [], reachable: false });
+      result = { error: String(error), models: [], reachable: false };
+    }
+    if (mine !== probeId.current) {
+      return;
+    }
+    setProbe({ for: asked, kind: 'done', ...result });
+    const [first] = result.models;
+    if (result.reachable && first !== undefined && sameInputs(fields.current, asked)) {
+      setModel((current) => (current === '' ? first : current));
     }
   };
 
@@ -115,7 +146,10 @@ export function ModelSection() {
   };
 
   const served = view.kind !== 'apple';
-  const listed = probe.kind === 'done' ? probe.models : [];
+  // The probe on show: the one for the fields as they are now.
+  const shownProbe: Probe =
+    probe.kind !== 'idle' && sameInputs(probe.for, now) ? probe : { kind: 'idle' };
+  const listed = shownProbe.kind === 'done' ? shownProbe.models : [];
   const remote = served && baseUrl !== '' && !isLoopbackUrl(baseUrl);
   const dirty = baseUrl !== view.baseUrl || model !== view.model || apiKey !== '';
 
@@ -214,7 +248,7 @@ export function ModelSection() {
           <div className="flex items-center gap-2">
             <Button
               data-testid="model-test"
-              disabled={probe.kind === 'probing' || baseUrl === ''}
+              disabled={shownProbe.kind === 'probing' || baseUrl === ''}
               onClick={() => void test()}
               size="sm"
             >
@@ -229,20 +263,20 @@ export function ModelSection() {
             >
               Save
             </Button>
-            {probe.kind === 'probing' ? (
+            {shownProbe.kind === 'probing' ? (
               <span className="text-xs text-ink-secondary">Checking…</span>
-            ) : probe.kind === 'done' ? (
+            ) : shownProbe.kind === 'done' ? (
               <span
-                className={`text-xs ${probe.reachable ? 'text-ink-secondary' : 'text-danger'}`}
+                className={`text-xs ${shownProbe.reachable ? 'text-ink-secondary' : 'text-danger'}`}
                 data-testid="model-test-result"
               >
-                {probe.reachable
-                  ? probe.models.length > 0
-                    ? `Reachable · ${String(probe.models.length)} ${probe.models.length === 1 ? 'model' : 'models'}`
+                {shownProbe.reachable
+                  ? shownProbe.models.length > 0
+                    ? `Reachable · ${String(shownProbe.models.length)} ${shownProbe.models.length === 1 ? 'model' : 'models'}`
                     : 'Reachable'
-                  : probe.unauthorized
+                  : shownProbe.unauthorized
                     ? 'The server refused the API key'
-                    : `Not reachable${probe.error ? ` — ${probe.error}` : ''}`}
+                    : `Not reachable${shownProbe.error ? ` — ${shownProbe.error}` : ''}`}
               </span>
             ) : saved && !dirty ? (
               <span className="text-xs text-ink-secondary" data-testid="model-saved">
