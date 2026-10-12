@@ -603,6 +603,17 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   variant (pattern over color — the hatch reads in both schemes).
   Desktop first; open: the iOS sheet (todo.md), drafts in the month
   view, a slot editor drawing its form as a draft, to-dos in "Add all".
+- **The draft thread on iOS, in the sheet** (2026-10-12, #187) — the
+  desktop panel's logic became `useThreadEditor`, which the iOS edit
+  sheet runs too: the field takes changes, the turns with Undo, the
+  free-slot chips, the pager and "Add all", the desktop's test ids; a
+  share opens the editor as one thread of drafts and the capture review
+  sheet is gone, as on the desktop. The editor and the calendar talk
+  through kept-alive draft atoms (drafts to draw, a day to show, a click)
+  instead of props, the desktop moved onto them. Rejected: a second
+  iOS copy of the panel's effects (the quick-add field's two copies
+  drifted once, which is why `useQuickAddModel` exists). Open: the
+  drafts drawn behind a half-height sheet (todo.md).
 - **Slot proposals in the create thread** (2026-10-12, #185) — a phrase
   that asks for free time is routed by code (`isFinderPhrase`: English
   and German cues, a search verb or question beside a time word) to the

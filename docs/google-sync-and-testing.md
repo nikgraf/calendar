@@ -376,7 +376,8 @@ chasing a code bug.
   `launchApp(seed, { model: 'fixture' })`, iOS
   `EXPO_PUBLIC_CALENDAR_MODEL=fixture` in the bundle (CI), which also
   accepts `solunivo-dev://capture-fixture?text=…` as a stand-in for a
-  share.
+  share (flow 22: the events open the editor as one thread, `draft-*`
+  ids as on the desktop).
 - Apple Calendar never hits EventKit in tests: `makeFakeAppleCalendarClient`
   (`packages/apple-calendar/src/fake.ts`) keeps series the way EventKit
   does (master + rules, detached and deleted occurrences), expands them
@@ -745,6 +746,10 @@ keyboard's Search key; the chips' × is "Remove <label>"), `confirm-open.yaml` a
 
 Selector gotchas (each caused a real failure):
 
+- `confirm-open.yaml` cancels every "Cancel" on screen to clear stacked
+  URL alerts; a flow whose link opens a sheet with its own Cancel (the
+  editor, flow 22) confirms the alert inline and cancels only while an
+  "Open" is still up.
 - Text selectors are **whole-string regexes**: prefix text does not
   match, regex metacharacters in titles must be escaped, and a pressable
   row reads as one element (title, subtitle and value together), so match
