@@ -170,8 +170,10 @@ function CalendarBody({
   );
   const requestDraftFocus = useRequestDraftFocus();
   useOnDraftReveal(goToDay);
-  // The focused timed draft's start, for the grid to scroll to.
-  const focusedDraft = drafts.find(
+  // The focused timed draft's start, for the grid to scroll to — read off
+  // the draft itself, not an occurrence in the loaded range: a repeating
+  // draft's first loaded occurrence moves as the calendar pages.
+  const focusedDraft = draftPreviews.find(
     (draft) => draft.focused && !draft.isAllDay && draft.candidate === undefined,
   );
   const revealMinute =
@@ -179,6 +181,10 @@ function CalendarBody({
       ? undefined
       : Number(focusedDraft.startTime.slice(0, 2)) * 60 +
         Number(focusedDraft.startTime.slice(3, 5));
+  const revealKey =
+    focusedDraft === undefined
+      ? undefined
+      : `${focusedDraft.id}|${focusedDraft.date}|${focusedDraft.startTime}`;
 
   // Day view: the focused day's Monday week as a date picker. The two-day
   // and week views draw their own headers inside the timeline, panning
@@ -365,8 +371,8 @@ function CalendarBody({
               })
             }
             overdue={overdue}
+            revealKey={revealKey}
             revealMinute={revealMinute}
-            revealUtc={focusedDraft?.startUtc}
             secondaryZones={secondaryZones}
             selected={focused}
             tasks={tasks}

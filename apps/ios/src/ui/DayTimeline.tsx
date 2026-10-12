@@ -83,8 +83,8 @@ export function DayTimeline({
   onTaskPress,
   onToggleTask,
   overdue,
+  revealKey,
   revealMinute,
-  revealUtc,
   secondaryZones,
   selected,
   tasks,
@@ -120,18 +120,19 @@ export function DayTimeline({
   /** Open tasks due before today; drawn as overdue chips in today's column. */
   overdue: ReadonlyArray<TaskRecord>;
   /**
+   * The focused draft and its start (id, date, time): the scroll runs
+   * again whenever it changes — another draft focused at the same minute
+   * on another day still comes into view after the grid was scrolled
+   * away — and only then, so paging the calendar leaves the grid alone.
+   */
+  revealKey?: string | undefined;
+  /**
    * The open editor's focused draft starts at this minute of its day: the
    * grid scrolls it near the top, where a half-height editor leaves the
    * calendar in view — with room below midnight while drafts are shown,
    * so an evening draft can come up that far.
    */
   revealMinute?: number | undefined;
-  /**
-   * The focused draft's start instant: the scroll runs again whenever it
-   * changes — another draft focused at the same minute on another day
-   * still comes into view after the grid was scrolled away.
-   */
-  revealUtc?: number | undefined;
   /** The non-primary zones: a line each under every hour label, one joined line on tall event blocks. */
   secondaryZones: ReadonlyArray<string>;
   /** The focused day, ringed in the week header. */
@@ -295,7 +296,7 @@ export function DayTimeline({
         y: Math.max(0, (revealMinute / 60 - 1) * HOUR_HEIGHT),
       });
     }
-  }, [revealMinute, revealUtc]);
+  }, [revealKey, revealMinute]);
 
   // Geometry the task drag judges drops against; measured, never rendered.
   // (The chip drags and this swipe are exclusive in the gesture arena: a
