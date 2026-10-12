@@ -43,6 +43,7 @@ import { MoveConfirm } from '../MoveConfirm.tsx';
 import { QuickAddBar } from '../QuickAddBar.tsx';
 import { ReminderEditorForm } from '../ReminderEditorForm.tsx';
 import { TaskEditorForm } from '../TaskEditorForm.tsx';
+import { ThreadTurns } from '../ThreadTurns.tsx';
 
 /** Drafts an editor opens with already made — a capture's events, as one thread. */
 export interface ThreadSeed {
@@ -473,7 +474,6 @@ export function EditorPanel({
     !(sourceKind === 'task' && taskModel.readOnly);
   const { noun, verb } = editorTitle({ kind, sourceKind, sourceProvider: task?.provider });
   const title = `${verb} ${noun}`;
-  const lastTurn = turns.at(-1);
 
   return (
     <div
@@ -508,36 +508,11 @@ export function EditorPanel({
 
         {turns.length > 0 ? (
           <div className="mb-3 flex flex-col gap-2" data-testid="draft-thread">
-            <ol className="flex flex-col gap-1">
-              {turns.map((turn) => (
-                <li
-                  className="flex items-start gap-2 rounded-control bg-fill px-2 py-1 text-xs"
-                  data-testid="draft-turn"
-                  key={turn.id}
-                >
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate text-ink">“{turn.utterance}”</span>
-                    <span
-                      className="block truncate text-ink-secondary"
-                      data-testid="draft-turn-summary"
-                    >
-                      {turn.summary}
-                    </span>
-                  </span>
-                  {turn === lastTurn ? (
-                    <Button
-                      data-testid="draft-undo"
-                      disabled={thread.busy || !settled}
-                      onClick={thread.undo}
-                      size="sm"
-                      variant="ghost"
-                    >
-                      Undo
-                    </Button>
-                  ) : null}
-                </li>
-              ))}
-            </ol>
+            <ThreadTurns
+              onUndo={thread.undo}
+              turns={turns}
+              undoDisabled={thread.busy || !settled}
+            />
             {seed.thread?.note && drafts.length > 0 ? (
               <p className="text-xs text-ink-secondary" data-testid="draft-thread-note">
                 {seed.thread.note}
