@@ -45,6 +45,9 @@ export const FIND_TIME_JSON_SCHEMA = {
   type: 'object',
 } as const;
 
+/** The line the user's words follow in the prompt; the fixture model reads them there. */
+export const FIND_TIME_PHRASE_MARKER = 'Phrase: ';
+
 /** The bounds line's vocabulary comes from the one table the normalizer reads. */
 const bounds = (period: Period): string => {
   const { earliestTime, latestTime } = periodTimes(period);
@@ -79,7 +82,7 @@ export const buildFindTimePrompt = ({
     'title is what the time is FOR, if stated ("focus", "call with Anna"),',
     'in its original language. Omit fields the phrase does not state —',
     'never invent, never write placeholders like "unknown".',
-    `Phrase: ${phrase}`,
+    `${FIND_TIME_PHRASE_MARKER}${phrase}`,
   ].join('\n');
 
 const MAX_DURATION_MINUTES = 12 * 60;

@@ -1,5 +1,6 @@
 import { Temporal } from '@calendar/core';
 import { CAPTURE_TEXT_MARKER, type CaptureItemParse, type CaptureParse } from './capture.ts';
+import { FIND_TIME_PHRASE_MARKER, type FindTimeParse } from './findTime.ts';
 import type { LanguageModel } from './model.ts';
 import { QUICK_ADD_PHRASE_MARKER, type QuickAddParse } from './quickAdd.ts';
 import { REFINE_CHANGE_MARKER, REFINE_CURRENT_MARKER } from './refine.ts';
@@ -20,7 +21,10 @@ import { TextRecognitionError, type ImageInput, type TextRecognizer } from './te
  * model ("Lunch tomorrow at 1" lands tomorrow at 13:00). A refinement is
  * the same grammar with empty parts meaning "unchanged" — `| | 10:00-11:00`
  * moves the times only — applied to the draft in the prompt; a sentence
- * leaves the draft as it is, and the normalizer reads the sentence.
+ * leaves the draft as it is, and the normalizer reads the sentence. A
+ * finder sentence (`find 30 min tomorrow morning | Focus`) answers with
+ * the title after the bar and an hour; the normalizer reads the length,
+ * the window and the hours from the sentence itself, as for every model.
  */
 
 const TODAY = /Today is (\d{4}-\d{2}-\d{2})/;
@@ -107,6 +111,10 @@ export const makeFixtureLanguageModel = (): LanguageModel => ({
           : {}),
         ...(location ? { location } : {}),
       };
+    }
+    if (isRecord(properties) && 'windowStartDate' in properties) {
+      const title = textAfter(prompt, FIND_TIME_PHRASE_MARKER).split('|')[1]?.trim();
+      return { durationMinutes: 60, ...(title ? { title } : {}) } satisfies FindTimeParse;
     }
     if (isRecord(properties) && 'startTime' in properties) {
       const full = textAfter(prompt, QUICK_ADD_PHRASE_MARKER).trim();

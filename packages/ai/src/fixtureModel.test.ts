@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vite-plus/test';
-import { FIND_TIME_JSON_SCHEMA } from './findTime.ts';
+import { buildFindTimePrompt, FIND_TIME_JSON_SCHEMA } from './findTime.ts';
 import { fixtureTextRecognizer, makeFixtureLanguageModel } from './fixtureModel.ts';
 import { parseQuickAdd } from './parseQuickAdd.ts';
 import { buildQuickAddPrompt, QUICK_ADD_JSON_SCHEMA } from './quickAdd.ts';
@@ -54,11 +54,29 @@ describe('makeFixtureLanguageModel', () => {
     });
   });
 
+  it('answers a finder sentence with the title after the bar and an hour', async () => {
+    await expect(
+      model.generateJson({
+        jsonSchema: FIND_TIME_JSON_SCHEMA,
+        prompt: buildFindTimePrompt({ phrase: 'find 30 min tomorrow morning | Focus', ...CONTEXT }),
+      }),
+    ).resolves.toEqual({ durationMinutes: 60, title: 'Focus' });
+    await expect(
+      model.generateJson({
+        jsonSchema: FIND_TIME_JSON_SCHEMA,
+        prompt: buildFindTimePrompt({ phrase: 'find a slot tomorrow', ...CONTEXT }),
+      }),
+    ).resolves.toEqual({ durationMinutes: 60 });
+  });
+
   it('refuses a schema it does not know', async () => {
     const prompt = buildQuickAddPrompt({ phrase: 'x', ...CONTEXT });
-    await expect(model.generateJson({ jsonSchema: FIND_TIME_JSON_SCHEMA, prompt })).rejects.toThrow(
-      'unsupported schema',
-    );
+    await expect(
+      model.generateJson({
+        jsonSchema: { properties: { mood: { type: 'string' } }, type: 'object' },
+        prompt,
+      }),
+    ).rejects.toThrow('unsupported schema');
     await expect(
       model.generateJson({ jsonSchema: QUICK_ADD_JSON_SCHEMA, prompt: 'no date here' }),
     ).rejects.toThrow('reference date');

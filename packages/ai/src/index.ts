@@ -5,6 +5,7 @@ export * from './quickAdd.ts';
 export * from './speech.ts';
 export * from './findTime.ts';
 export * from './findTimePipeline.ts';
+export * from './slotProposals.ts';
 export * from './parseQuickAdd.ts';
 export * from './refine.ts';
 export * from './textRecognition.ts';

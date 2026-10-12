@@ -24,6 +24,12 @@ export interface FindSlotsContext {
   readonly maxSlots?: number | undefined;
   /** Slots never start in the past. */
   readonly nowUtc: number;
+  /**
+   * `HH:MM` wall clock: each gap's slot is placed as near this time as
+   * the gap allows — a lunch slot sits at lunchtime, not where the gap
+   * opens. Absent, a slot starts where its gap does.
+   */
+  readonly preferredTime?: string | undefined;
   readonly timeZone: string;
 }
 
@@ -56,7 +62,8 @@ const formatTime = (epochMs: number, timeZone: string): string => {
  * instances already expanded — the shape `getEventsInRange` returns). Wall
  * clock throughout: the daily bounds are interpreted per day in the given
  * zone, so DST days behave like their calendars, not like their UTC math.
- * Ranking is chronological — the constraints are the preference language.
+ * Ranking is chronological — the constraints are the preference language;
+ * `rankSlotsAround` reorders for a named time of day.
  */
 export const findFreeSlots = (
   events: ReadonlyArray<EventRecord>,
@@ -84,6 +91,30 @@ export const findFreeSlots = (
   const windowEnd = Temporal.PlainDate.from(constraints.windowEndDate);
   let day = Temporal.PlainDate.from(constraints.windowStartDate);
 
+  /**
+   * The slot a gap holds, or none when it is too short. With a preferred
+   * time the slot is centred on it, to the quarter hour, as far as the gap
+   * allows; otherwise it starts where the gap does.
+   */
+  const slotIn = (gapStart: number, gapEnd: number): FreeSlot | undefined => {
+    if (gapEnd - gapStart < durationMs) {
+      return undefined;
+    }
+    let start = gapStart;
+    if (context.preferredTime !== undefined) {
+      const centred =
+        Math.round(
+          (wallClockMs(day, context.preferredTime, context.timeZone) - durationMs / 2) / roundingMs,
+        ) * roundingMs;
+      start = Math.min(Math.max(centred, gapStart), gapEnd - durationMs);
+    }
+    return {
+      date: day.toString(),
+      endTime: formatTime(start + durationMs, context.timeZone),
+      startTime: formatTime(start, context.timeZone),
+    };
+  };
+
   while (Temporal.PlainDate.compare(day, windowEnd) <= 0 && slots.length < maxSlots) {
     const allowed =
       !constraints.daysOfWeek ||
@@ -106,12 +137,9 @@ export const findFreeSlots = (
       if (interval.startUtc >= dayEnd) {
         break;
       }
-      if (interval.startUtc - cursor >= durationMs) {
-        slots.push({
-          date: day.toString(),
-          endTime: formatTime(cursor + durationMs, context.timeZone),
-          startTime: formatTime(cursor, context.timeZone),
-        });
+      const slot = slotIn(cursor, interval.startUtc);
+      if (slot) {
+        slots.push(slot);
         if (slots.length >= maxSlots) {
           return slots;
         }
@@ -119,12 +147,9 @@ export const findFreeSlots = (
       cursor = Math.max(cursor, interval.endUtc);
     }
 
-    if (dayEnd - cursor >= durationMs && slots.length < maxSlots) {
-      slots.push({
-        date: day.toString(),
-        endTime: formatTime(cursor + durationMs, context.timeZone),
-        startTime: formatTime(cursor, context.timeZone),
-      });
+    const tail = slotIn(cursor, dayEnd);
+    if (tail && slots.length < maxSlots) {
+      slots.push(tail);
     }
 
     day = day.add({ days: 1 });
