@@ -145,7 +145,6 @@ export function QuickAddBar({
       ) : null}
       {unavailable ? null : (
         <>
-          <Text style={styles.eyebrow}>Describe it</Text>
           <View style={styles.row}>
             <TextInput
               accessibilityLabel="Describe what to add"
@@ -214,9 +213,9 @@ export function QuickAddBar({
 const makeStyles = (colors: ThemeColors) =>
   StyleSheet.create({
     bar: {
-      gap: 8,
+      gap: 6,
       paddingHorizontal: 16,
-      paddingVertical: 8,
+      paddingVertical: 4,
     },
     button: {
       backgroundColor: colors.primary,
@@ -235,11 +234,6 @@ const makeStyles = (colors: ThemeColors) =>
     error: {
       color: colors.danger,
       fontSize: 13,
-    },
-    eyebrow: {
-      color: colors.primary,
-      fontSize: 12,
-      fontWeight: '600',
     },
     hint: {
       color: colors['text-secondary'],

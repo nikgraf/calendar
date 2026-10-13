@@ -176,7 +176,7 @@ export function EventEditSheet({
   // The header: the Cancel · title · Save row, then for a new item the
   // quick-add field and the thread, then the kind control.
   const headerRow = (
-    <View style={styles.header}>
+    <View style={[styles.header, styles.headerCompact]}>
       <Pressable onPress={onClose}>
         {/* A birthday's reminder chips save as they change: nothing to cancel. */}
         <Text maxFontSizeMultiplier={BOX_FONT_SCALE} style={styles.cancel}>
