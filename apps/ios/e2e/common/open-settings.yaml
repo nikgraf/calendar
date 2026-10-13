@@ -6,21 +6,24 @@ name: Open Settings from the header's account button, on its root page (shared)
 # 35462596043 and 35457704053 sat on the day view for 20 s). Re-tap while
 # the sheet is missing, the way a person would. By id, not the "Settings"
 # title: the account button's own label starts with "Settings" too.
-- repeat:
-    times: 3
-    while:
-      notVisible:
-        id: 'settings-root'
+#
+# The sheet proves the tap (see open-new-event.yaml): the guard is true
+# while no sheet is up, so it answers at once, and it keeps a sheet that
+# came up late from taking a second tap.
+- retry:
+    maxRetries: 2
     commands:
-      - tapOn:
-          id: 'open-settings'
+      - runFlow:
+          when:
+            notVisible:
+              id: 'settings-root'
+          commands:
+            - tapOn:
+                id: 'open-settings'
       - extendedWaitUntil:
           visible:
             id: 'settings-root'
           timeout: 5000
-          optional: true
-- assertVisible:
-    id: 'settings-root'
 # The sheet slides in; a tap taken mid-animation misses.
 - waitForAnimationToEnd:
     timeout: 5000

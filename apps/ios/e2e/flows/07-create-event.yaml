@@ -26,15 +26,28 @@ tags:
       # 37314663224, "Sunivo … deleteol" before): retype until the field
       # (whose value Maestro reads as its text) holds the title, so the
       # checks below test saving rather than typing.
-      - repeat:
-          times: 3
-          while:
-            notVisible:
-              id: 'event-title'
-              text: 'Solunivo e2e event to delete'
+      #
+      # The field proves the typing and a failed wait retypes; the flag
+      # keeps the first pass from typing twice. A `while: notVisible:`
+      # loop did this before, but Maestro waits up to 7 s (from the last
+      # tap or typing) for a condition to come true, so its exit check,
+      # with the title right, cost that every time.
+      - evalScript: ${output.retype = false}
+      - retry:
+          maxRetries: 3
           commands:
-            - tapOn: 'Clear text'
-            - inputText: 'Solunivo e2e event to delete'
+            - runFlow:
+                when:
+                  true: ${output.retype}
+                commands:
+                  - tapOn: 'Clear text'
+                  - inputText: 'Solunivo e2e event to delete'
+            - evalScript: ${output.retype = true}
+            - extendedWaitUntil:
+                visible:
+                  id: 'event-title'
+                  text: 'Solunivo e2e event to delete'
+                timeout: 3000
       - tapOn:
           id: 'event-save'
       # The sheet closes only after the whole create path ran, id

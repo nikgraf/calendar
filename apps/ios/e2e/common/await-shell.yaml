@@ -7,14 +7,28 @@ name: Recover the running dev client and wait for a settled shell
 # that occasionally fails and it falls back to its launcher home (the
 # server under "Recently opened") or to its error screen ("Reload").
 # Recover from either until the shell is there.
+#
+# Every flow starts here, so the common path asks Maestro nothing it has
+# to wait on: a `while`/`when` condition waits up to 7 s (from the last
+# tap or script) for its true outcome, and `notVisible: 'Today'` once the
+# shell is up, or `visible:` on a recovery screen that is not there, cost
+# ~5 s per launch. The loop runs on a script flag instead, set by a
+# `visible: 'Today'` that comes true at once when the shell is what
+# showed; the recovery guards run only when it is not.
+- evalScript: ${output.shellUp = false}
 - repeat:
     times: 6
     while:
-      notVisible: 'Today'
+      true: ${output.shellUp !== true}
     commands:
       - extendedWaitUntil:
           visible: "Today|There was a problem loading the project|http://(127\\.0\\.0\\.1|localhost):8081|Continue|Toggle performance monitor|Error loading app"
           timeout: 60000
+      - runFlow:
+          when:
+            visible: 'Today'
+          commands:
+            - evalScript: ${output.shellUp = true}
       # Guards key on text unique to each screen: "Reload"/"Go home" exist
       # on both the error screen and the dev menu, and the error view
       # lingers in the accessibility tree behind the loaded app. Each tap
@@ -24,46 +38,69 @@ name: Recover the running dev client and wait for a settled shell
       # guard matched the recent-server row) — the loop simply re-waits.
       - runFlow:
           when:
-            visible: 'Error loading app'
+            true: ${output.shellUp !== true}
           commands:
-            - tapOn:
-                text: 'OK'
-                optional: true
-      - runFlow:
-          when:
-            visible: 'There was a problem loading the project'
-          commands:
-            - tapOn:
-                text: 'Reload'
-                optional: true
-      - runFlow:
-          when:
-            visible: "http://(127\\.0\\.0\\.1|localhost):8081"
-          commands:
-            - tapOn:
-                text: "http://(127\\.0\\.0\\.1|localhost):8081"
-                optional: true
-      - runFlow:
-          when:
-            visible: 'Continue'
-          commands:
-            - tapOn:
-                text: 'Continue'
-                optional: true
-      - runFlow:
-          when:
-            visible: 'Toggle performance monitor'
-          commands:
-            - tapOn:
-                optional: true
-                point: '50%,15%'
-- extendedWaitUntil:
-    visible: 'Today'
-    timeout: 60000
+            - runFlow:
+                when:
+                  visible: 'Error loading app'
+                commands:
+                  - tapOn:
+                      text: 'OK'
+                      optional: true
+            - runFlow:
+                when:
+                  visible: 'There was a problem loading the project'
+                commands:
+                  - tapOn:
+                      text: 'Reload'
+                      optional: true
+            # The launcher home shows while the dev client is still
+            # reopening the server by itself (left alone, "Today" came ~9 s
+            # after launch). A tap then starts a second load, which tears
+            # down the shell just after it showed ("Downloading 60%…"
+            # under the flow's first tap). Let the request's 10 s budget
+            # run out first: this wait, like it, counts from the launch
+            # or the last tap, and ends as soon as the row goes.
+            - runFlow:
+                when:
+                  visible: "http://(127\\.0\\.0\\.1|localhost):8081"
+                commands:
+                  - extendedWaitUntil:
+                      notVisible: "http://(127\\.0\\.0\\.1|localhost):8081"
+                      timeout: 12000
+                      optional: true
+                  - tapOn:
+                      text: "http://(127\\.0\\.0\\.1|localhost):8081"
+                      optional: true
+            - runFlow:
+                when:
+                  visible: 'Continue'
+                commands:
+                  - tapOn:
+                      text: 'Continue'
+                      optional: true
+            - runFlow:
+                when:
+                  visible: 'Toggle performance monitor'
+                commands:
+                  - tapOn:
+                      optional: true
+                      point: '50%,15%'
 # React Native's SafeAreaView applies the top inset a beat after the
 # first paint: "Today" is already visible while the header still sits
 # under the status bar, so an id tap taken right away lands ~60 pt too
 # high (it hit the status bar on every flow). Wait for the layout to stop
 # moving before anything taps.
+#
+# The guards' 7 s waits used to cover that beat; without them, flows
+# tapped the header at y=10 after a bundle load although the screen had
+# gone still. So wait for the header itself to sit below the status
+# bar's clock, which is in the tree: its `today` button, since an agenda
+# row can read "Today" too.
+- extendedWaitUntil:
+    visible:
+      id: 'today'
+      below: '[0-9]{1,2}:[0-9]{2}'
+    timeout: 60000
 - waitForAnimationToEnd:
     timeout: 5000

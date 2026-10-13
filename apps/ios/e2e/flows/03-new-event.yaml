@@ -10,18 +10,19 @@ tags:
 # Tap until the interval row appears: on the runner the sheet's content
 # still shifted (its own inset) after the animation-end wait, so the
 # first tap landed above the chip. Assertions are regexes — the
-# parentheses must be escaped.
-- repeat:
-    times: 4
-    while:
-      notVisible: 'EVERY \(N\)'
+# parentheses must be escaped. The row proves the tap, the way
+# common/open-new-event.yaml proves its own.
+- retry:
+    maxRetries: 3
     commands:
-      - tapOn: 'Daily'
+      - runFlow:
+          when:
+            notVisible: 'EVERY \(N\)'
+          commands:
+            - tapOn: 'Daily'
       - extendedWaitUntil:
           visible: 'EVERY \(N\)'
           timeout: 3000
-          optional: true
-- assertVisible: 'EVERY \(N\)'
 
 # Invitees, further down the same sheet. The title auto-focuses, so its
 # keyboard is up and covers the invitee field (its top edge is right
@@ -90,15 +91,24 @@ tags:
 # flow 07), and on the shard where 04a connected device Contacts, Return
 # on a partial address takes the top suggestion instead: run 37944409989
 # added "Kate Bell". Spare backspaces are harmless — there is no chip yet.
-- repeat:
-    times: 3
-    while:
-      notVisible:
-        id: 'invitee-input'
-        text: 'bob@example.com'
+# The field proves the typing and a failed wait retypes (the same shape
+# as flow 07).
+- evalScript: ${output.retype = false}
+- retry:
+    maxRetries: 3
     commands:
-      - eraseText: 40
-      - inputText: 'bob@example.com'
+      - runFlow:
+          when:
+            true: ${output.retype}
+          commands:
+            - eraseText: 40
+            - inputText: 'bob@example.com'
+      - evalScript: ${output.retype = true}
+      - extendedWaitUntil:
+          visible:
+            id: 'invitee-input'
+            text: 'bob@example.com'
+          timeout: 3000
 # Return turns the address into a chip; the input clears.
 - pressKey: Enter
 - extendedWaitUntil:
