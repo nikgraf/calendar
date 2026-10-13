@@ -2,6 +2,7 @@ import { useModelAvailability, useQuickAddModel, type QuickAddItem } from '@cale
 import { SymbolView } from 'expo-symbols';
 import { useEffect, useRef } from 'react';
 import {
+  AccessibilityInfo,
   ActivityIndicator,
   AppState,
   Keyboard,
@@ -45,8 +46,16 @@ export const onAppActive = (onActive: () => void): (() => void) => {
  * dictation). Nothing is written by the model itself, and without it the
  * field says why and the form below is still there. Find a time is the
  * event form's own tool (`FindTimeFields`).
+ *
+ * The field, the microphone and Apply are one box, and nothing under it
+ * moves while it works: dictation's hints and a failure show in the field
+ * itself (its placeholder, red for a failure, Apply out of the way),
+ * reading and transcribing as a spinner in Apply. A tap on a failed field
+ * brings its words back, selected. `attached`: the thread's turns hang
+ * under the box (`ThreadTurnList`), so its bottom corners are square.
  */
 export function QuickAddBar({
+  attached = false,
   autoFocus = true,
   fallbackDate,
   onApply,
@@ -54,6 +63,8 @@ export function QuickAddBar({
   placeholder = 'Lunch with Sarah tomorrow at 1',
   timeZone,
 }: {
+  /** The thread's turns hang under the field: one card with it. */
+  attached?: boolean | undefined;
   /**
    * Take the focus once the sheet settled. Off in the half-height editor:
    * the keyboard would raise the sheet over the calendar it is half
@@ -79,6 +90,7 @@ export function QuickAddBar({
   const { checking, retry, status } = useModelAvailability(languageModel, onAppActive);
   const {
     busy,
+    dismissError,
     error,
     phrase,
     setPhrase,
@@ -110,6 +122,32 @@ export function QuickAddBar({
   // silence is what made this hard to diagnose. The form stays either way.
   const unavailable = status !== null && status !== 'ready';
   const working = busy || voice === 'transcribing';
+  // What the field says instead of its words: dictation's hint, or why
+  // the last phrase failed (until the field is tapped or typed into).
+  const note: { readonly text: string; readonly tone: 'error' | 'hint' } | null =
+    voice === 'preparing'
+      ? { text: 'Preparing dictation…', tone: 'hint' }
+      : voice === 'recording'
+        ? { text: 'Listening… tap the mic to stop', tone: 'hint' }
+        : !working && error
+          ? { text: error, tone: 'error' }
+          : null;
+  const failed = note?.tone === 'error';
+  /** The failed words back in the field, selected, to fix or type over. */
+  const takeBack = () => {
+    if (failed) {
+      dismissError();
+      // After the tap has placed its caret, or it would win over the selection.
+      setTimeout(() => inputRef.current?.setSelection(0, phrase.length), 120);
+    }
+  };
+  // The placeholder is not read out when it changes: VoiceOver hears it here.
+  const noteText = note?.text;
+  useEffect(() => {
+    if (noteText) {
+      AccessibilityInfo.announceForAccessibility(noteText);
+    }
+  }, [noteText]);
   const explain = unavailable && status !== 'missing-module' && iosMajorVersion() >= MODEL_MIN_IOS;
 
   // The field is what a new item opens on. `autoFocus` inside a page
@@ -128,7 +166,7 @@ export function QuickAddBar({
     return null;
   }
   return (
-    <View style={styles.bar} testID="quick-add-state">
+    <View style={[styles.bar, attached && styles.barAttached]} testID="quick-add-state">
       {explain ? (
         <View style={styles.notice}>
           <Text style={styles.noticeText}>{UNAVAILABLE_NOTICE}</Text>
@@ -146,21 +184,27 @@ export function QuickAddBar({
       ) : null}
       {unavailable ? null : (
         <>
-          <View style={styles.row}>
+          <View style={[styles.box, attached && styles.boxAttached]}>
             <TextInput
+              accessibilityHint={note?.text}
               accessibilityLabel="Describe what to add"
-              editable={!busy}
-              onChangeText={setPhrase}
+              editable={!busy && voice !== 'preparing' && voice !== 'recording'}
+              onChangeText={(text) => {
+                // Typed into a failed field: a new phrase, from the key pressed.
+                dismissError();
+                setPhrase(text);
+              }}
+              onFocus={takeBack}
+              onPressIn={takeBack}
               onSubmitEditing={() => void submit()}
-              placeholder={placeholder}
+              placeholder={note?.text ?? placeholder}
+              placeholderTextColor={failed ? colors.danger : colors['text-secondary']}
               ref={inputRef}
               returnKeyType="go"
               style={styles.input}
               testID="quick-add-input"
-              value={phrase}
+              value={note ? '' : phrase}
             />
-            {/* Reading or transcribing shows in place: the microphone stays, Apply
-                turns into a spinner of its own size — nothing under the field moves. */}
             {voiceAvailable ? (
               <Pressable
                 accessibilityLabel={voice === 'recording' ? 'Stop dictating' : 'Dictate'}
@@ -183,42 +227,39 @@ export function QuickAddBar({
                 />
               </Pressable>
             ) : null}
-            <Pressable
-              accessibilityLabel={
-                voice === 'transcribing'
-                  ? 'Transcribing'
-                  : busy
-                    ? 'Reading the phrase'
-                    : 'Fill the form from the phrase'
-              }
-              accessibilityRole="button"
-              accessibilityState={{ busy: working }}
-              disabled={working || phrase.trim() === '' || voice === 'recording'}
-              onPress={() => void submit()}
-              style={[
-                styles.button,
-                !working && (phrase.trim() === '' || voice === 'recording') && styles.disabled,
-              ]}
-              testID="quick-add-apply"
-            >
-              {/* The label keeps the button's size while the spinner stands in for it. */}
-              <Text
-                maxFontSizeMultiplier={BOX_FONT_SCALE}
-                style={[styles.buttonLabel, working && styles.hidden]}
+            {/* Out of the way while the field says why it failed: the room is the message's. */}
+            {failed ? null : (
+              <Pressable
+                accessibilityLabel={
+                  voice === 'transcribing'
+                    ? 'Transcribing'
+                    : busy
+                      ? 'Reading the phrase'
+                      : 'Fill the form from the phrase'
+                }
+                accessibilityRole="button"
+                accessibilityState={{ busy: working }}
+                disabled={working || phrase.trim() === '' || voice === 'recording'}
+                onPress={() => void submit()}
+                style={[
+                  styles.button,
+                  !working && (phrase.trim() === '' || voice === 'recording') && styles.disabled,
+                ]}
+                testID="quick-add-apply"
               >
-                Apply
-              </Text>
-              {working ? (
-                <ActivityIndicator color={colors['on-primary']} style={styles.spinner} />
-              ) : null}
-            </Pressable>
+                {/* The label keeps the button's size while the spinner stands in for it. */}
+                <Text
+                  maxFontSizeMultiplier={BOX_FONT_SCALE}
+                  style={[styles.buttonLabel, working && styles.hidden]}
+                >
+                  Apply
+                </Text>
+                {working ? (
+                  <ActivityIndicator color={colors['on-primary']} style={styles.spinner} />
+                ) : null}
+              </Pressable>
+            )}
           </View>
-          {voice === 'preparing' ? (
-            <Text style={styles.hint}>Preparing dictation…</Text>
-          ) : voice === 'recording' ? (
-            <Text style={styles.hint}>Listening — tap the microphone when finished.</Text>
-          ) : null}
-          {error ? <Text style={styles.error}>{error}</Text> : null}
         </>
       )}
     </View>
@@ -231,6 +272,24 @@ const makeStyles = (colors: ThemeColors) =>
       gap: 6,
       paddingHorizontal: 16,
       paddingVertical: 4,
+    },
+    // Nothing between the field and the turns hanging under it.
+    barAttached: {
+      paddingBottom: 0,
+    },
+    // The field, the microphone and Apply in one box.
+    box: {
+      alignItems: 'center',
+      backgroundColor: colors.fill,
+      borderRadius: 10,
+      flexDirection: 'row',
+      gap: 2,
+      paddingRight: 4,
+    },
+    // The turns hang under it: square at the bottom, no gap.
+    boxAttached: {
+      borderBottomLeftRadius: 0,
+      borderBottomRightRadius: 0,
     },
     button: {
       backgroundColor: colors.primary,
@@ -246,33 +305,22 @@ const makeStyles = (colors: ThemeColors) =>
     disabled: {
       opacity: 0.4,
     },
-    error: {
-      color: colors.danger,
-      fontSize: 13,
-    },
     hidden: {
       opacity: 0,
     },
-    hint: {
-      color: colors['text-secondary'],
-      fontSize: 13,
-    },
     input: {
-      backgroundColor: colors.fill,
-      borderRadius: 10,
       color: colors.text,
       flex: 1,
       fontSize: 16,
       paddingHorizontal: 12,
-      paddingVertical: 10,
+      paddingVertical: 12,
     },
     mic: {
       alignItems: 'center',
-      backgroundColor: colors.fill,
-      borderRadius: 10,
-      height: 40,
+      borderRadius: 8,
+      height: 36,
       justifyContent: 'center',
-      width: 40,
+      width: 36,
     },
     micRecording: {
       backgroundColor: colors['event-blush'],
@@ -286,11 +334,6 @@ const makeStyles = (colors: ThemeColors) =>
     noticeText: {
       color: colors['text-secondary'],
       fontSize: 14,
-    },
-    row: {
-      alignItems: 'center',
-      flexDirection: 'row',
-      gap: 8,
     },
     secondaryButton: {
       alignSelf: 'flex-start',

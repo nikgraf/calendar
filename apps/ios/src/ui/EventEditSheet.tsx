@@ -210,6 +210,8 @@ export function EventEditSheet({
       {sourceKind === 'new' ? (
         <>
           <QuickAddBar
+            // The thread's turns hang under the field (`DraftThreadSection`).
+            attached={editor.turns.length > 0}
             autoFocus={presentation !== 'route'}
             fallbackDate={seed.initialDate.toString()}
             onApply={(item) => void apply(item)}

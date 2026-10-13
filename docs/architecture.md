@@ -604,7 +604,9 @@ details, or Custom), so a calendar can be shared without the details.
   query before the last turn; Clear empties everything. Turns list as in
   the create thread (newest first, two, "+N earlier queries"); a sentence
   being read turns the desktop's ✦ and iOS's "Filters" into a spinner in
-  place (no line under the field), and the
+  place (no line under the field); on the desktop the turns, and why a
+  sentence was not read, hang under the field as one card with it (iOS's
+  field is the system's, so its turns are a card of their own), and the
   chips a turn added or relabelled flash (`changedSearchChips`, carried
   on the turn; an Undo flashes nothing). The normalizer
   holds the answer to the words: dates are the code's where it reads them
@@ -803,8 +805,12 @@ gateway carries all of it. Details, limits and the threat model:
   changed, wrapped in full, the newest with Undo — two, then "+N
   earlier queries ⌄" (a link in the tint color with a chevron) opens the
   rest (`visibleTurns`, app-state `threadTurns.ts`; a new row eases in);
-  a phrase being read turns Apply into a spinner of its own size, so
-  nothing under the field moves — and the form fields a turn
+  the turns hang under the field as one card with it (a hairline
+  between, "+N earlier queries" its last row); nothing under the card
+  moves while it works — reading turns Apply into a spinner of its own
+  size, and dictation's hints and a failure show in the field itself
+  (its placeholder, red for a failure; a click or tap brings the failed
+  words back, selected) — and the form fields a turn
   changed tint and fade back (`changedDraftFields`, the comparison the
   summary is built on; `useThreadEditor().flash`, spent once it played);
   a phrase that asks for free time (`proposeSlots`)

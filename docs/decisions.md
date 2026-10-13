@@ -631,15 +631,15 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   plain presented controller), a "show on calendar" toggle on the page
   sheet. Open: the desktop leftovers (todo.md), a detent set from code.
 - **Thread turns newest first, two shown, changes flash** (2026-10-13, #191)
-  — both threads, both apps: the newest turn on top with Undo, wrapped,
-  two then "+N earlier queries ⌄" (tinted, a chevron: a link, not a
-  button); a new row eases in. Reverses #190's one-line iOS row at Nik's
-  call. Reading shows in place (Apply, ✦ or "Filters" turns into a
-  spinner), never as a line that pushes the form down. The fields and
-  chips a turn changed tint and fade back over 1.1 s, also under reduced
-  motion (a color fade). Rejected: a lasting mark per changed field (the
-  summary is the record; a mark goes stale on the first edit), layout
-  transitions in the iOS sheet header. Open: flashing other drafts.
+  — both threads, both apps: newest on top with Undo, wrapped, two then
+  "+N earlier queries ⌄", hung under the field as one card with it.
+  Nothing under the field moves: reading is a spinner in place, hints
+  and failures are the field's placeholder (a click restores the words).
+  Changed fields and chips tint and fade (1.1 s, kept under reduced
+  motion). Reverses #190's one-line iOS row at Nik's call. Rejected: a
+  lasting mark per field (the summary is the record), a status line
+  under the field, layout transitions in the iOS sheet header. Open:
+  long failures truncate in the field (tooltip/VoiceOver say all).
 - **A tighter iOS editor header** (2026-10-13, #190) — the sheet's fixed
   header left the half-height form little room once a thread showed:
   the "Describe it" label went (the placeholder says it), the thread

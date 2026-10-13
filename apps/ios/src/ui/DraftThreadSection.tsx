@@ -45,7 +45,9 @@ export function DraftThreadSection({
   const slots = focusedDraft?.slots;
   return (
     <View style={styles.section} testID="draft-thread">
+      {/* Hung under the quick-add field, as part of it (its `attached`). */}
       <ThreadTurnList
+        attached
         maxHeight={Math.round(height * 0.3)}
         onUndo={thread.undo}
         testIDPrefix="draft"

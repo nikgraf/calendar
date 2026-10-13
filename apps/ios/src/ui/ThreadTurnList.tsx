@@ -19,23 +19,30 @@ const ENTER = FadeInUp.duration(220)
 const ENTER_STILL = FadeIn.duration(200).reduceMotion(ReduceMotion.Never);
 
 /**
- * A thread's turns, newest first, as on the desktop: what was said and
- * what it changed, wrapped in full, the newest with Undo. Two show until
- * "+N earlier queries ⌄" opens the rest — a link in the tint color with a
- * disclosure chevron, the way "Show More" reads in Apple's own apps. A row eases in when it comes
- * into the list (Reanimated's `entering` runs on mount only, so an Undo
- * or the list opening never replays the top row's). The create thread
- * (`draft-*`) and the search thread (`search-*`) share it. In a header
- * that does not scroll (the edit sheet's), `maxHeight` caps the rows and
- * they scroll inside it; "Show less" stays under them, in reach.
+ * A thread's turns as one card, newest first, as on the desktop: what was
+ * said and what it changed, wrapped in full, the newest with Undo, a
+ * hairline between rows. Two show until the last row, "+N earlier
+ * queries ⌄" (the tint color and a disclosure chevron, the way "Show
+ * More" reads in Apple's own apps), opens the rest. `attached`: the card
+ * hangs under the field the words were typed into (the edit sheet's),
+ * square on top with a hairline between — an extension of the field;
+ * Search's field is the system's, so its card stands on its own. A row
+ * eases in when it comes into the list (Reanimated's `entering` runs on
+ * mount only, so an Undo or the list opening never replays the top
+ * row's). In a header that does not scroll (the edit sheet's),
+ * `maxHeight` caps the rows and they scroll inside it; the last row stays
+ * in reach. The create thread (`draft-*`) and the search thread
+ * (`search-*`) share it.
  */
 export function ThreadTurnList({
+  attached = false,
   maxHeight,
   onUndo,
   testIDPrefix,
   turns,
   undoDisabled,
 }: {
+  attached?: boolean | undefined;
   maxHeight?: number | undefined;
   onUndo: () => void;
   testIDPrefix: string;
@@ -58,7 +65,7 @@ export function ThreadTurnList({
     <Animated.View
       entering={reduceMotion ? ENTER_STILL : ENTER}
       key={turn.id}
-      style={styles.turn}
+      style={[styles.turn, index > 0 && styles.separated]}
       testID={`${testIDPrefix}-turn`}
     >
       <View style={styles.body}>
@@ -86,26 +93,23 @@ export function ThreadTurnList({
     </Animated.View>
   ));
   return (
-    <View style={styles.list}>
+    <View style={[styles.card, attached && styles.cardAttached]}>
+      {/* Its own view: a top-only border on a rounded view bevels its corners. */}
+      {attached ? <View style={styles.rule} /> : null}
       {maxHeight === undefined ? (
         rows
       ) : (
-        <ScrollView
-          contentContainerStyle={styles.list}
-          keyboardShouldPersistTaps="handled"
-          style={{ flexGrow: 0, maxHeight }}
-        >
+        <ScrollView keyboardShouldPersistTaps="handled" style={{ flexGrow: 0, maxHeight }}>
           {rows}
         </ScrollView>
       )}
       {turns.length > TURNS_SHOWN ? (
-        // One control both ways, so VoiceOver stays on it.
+        // The card's last row; one control both ways, so VoiceOver stays on it.
         <Pressable
           accessibilityRole="button"
           accessibilityState={{ expanded }}
-          hitSlop={6}
           onPress={() => setExpanded(!expanded)}
-          style={styles.more}
+          style={({ pressed }) => [styles.more, styles.separated, pressed && styles.pressed]}
           testID={`${testIDPrefix}-turns-${expanded ? 'less' : 'more'}`}
         >
           <Text maxFontSizeMultiplier={BOX_FONT_SCALE} style={styles.moreLabel}>
@@ -129,24 +133,42 @@ const makeStyles = (colors: ThemeColors) =>
       flex: 1,
       gap: 1,
     },
+    card: {
+      backgroundColor: colors.fill,
+      borderRadius: 10,
+      overflow: 'hidden',
+    },
+    // Under the field: square on top, a hairline (`rule`) between it and the rows.
+    cardAttached: {
+      borderTopLeftRadius: 0,
+      borderTopRightRadius: 0,
+    },
     disabled: {
       opacity: 0.35,
     },
-    list: {
-      gap: 4,
-    },
     more: {
       alignItems: 'center',
-      alignSelf: 'flex-start',
       flexDirection: 'row',
       gap: 4,
-      paddingHorizontal: 4,
-      paddingVertical: 2,
+      paddingHorizontal: 12,
+      paddingVertical: 9,
     },
     moreLabel: {
       color: colors.primary,
       fontSize: 13,
       fontWeight: '600',
+    },
+    pressed: {
+      backgroundColor: colors.border,
+    },
+    rule: {
+      backgroundColor: colors['border-strong'],
+      height: StyleSheet.hairlineWidth,
+    },
+    // A hairline in the strong border color: the plain one is all but the fill.
+    separated: {
+      borderColor: colors['border-strong'],
+      borderTopWidth: StyleSheet.hairlineWidth,
     },
     summary: {
       color: colors['text-secondary'],
@@ -154,12 +176,10 @@ const makeStyles = (colors: ThemeColors) =>
     },
     turn: {
       alignItems: 'center',
-      backgroundColor: colors.fill,
-      borderRadius: 8,
       flexDirection: 'row',
       gap: 8,
-      paddingHorizontal: 10,
-      paddingVertical: 6,
+      paddingHorizontal: 12,
+      paddingVertical: 8,
     },
     undo: {
       color: colors.primary,

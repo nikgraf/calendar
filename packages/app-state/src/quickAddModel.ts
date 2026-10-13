@@ -215,6 +215,8 @@ export const useQuickAddModel = ({
 
   return {
     busy,
+    /** The field took the error in (focused or typed into): it shows the words again. */
+    dismissError: () => setError(null),
     error,
     phrase,
     setPhrase,
