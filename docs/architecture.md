@@ -458,8 +458,10 @@ it whenever a kind is added. Rules that keep the queue correct:
   a create is refused (`UnsupportedForProviderError`), a move drops them
   after confirmation.
 - **Capabilities**: EventKit cannot write guests or RSVPs — the editor
-  hides both for Apple events (existing guests show read-only), and the
-  mutation layer rejects them. A `reader` calendar opens as a viewer, on
+  hides RSVP for Apple events and shows the invitee field disabled, with
+  existing guests read-only and a note whose "Open Calendar" brings
+  Calendar.app forward (desktop, `appleCalendar:open`; nothing opens
+  under the e2e fixture); the mutation layer rejects both. A `reader` calendar opens as a viewer, on
   either provider (`writable` guard, `CalendarNotWritableError`; both
   apps also refuse to start a drag there).
 - **Moving between calendars** (`moveEvent`, always the whole series):

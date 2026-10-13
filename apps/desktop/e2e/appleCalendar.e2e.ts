@@ -188,15 +188,26 @@ describe('Apple Calendar', () => {
     expect(sidebar).toContain('Subscribed Calendars');
   });
 
-  it('edits an Apple event without guest or RSVP controls', async () => {
+  it('edits an Apple event with the invitee field disabled and no RSVP', async () => {
     const { cdp } = app;
     await open('Apple dentist');
     try {
       const facts = await cdp.eval<string>(`JSON.stringify({
         calendarEnabled: !document.querySelector('select[aria-label="Calendar"]')?.disabled,
-        invitees: document.body.textContent.includes('Invitees'),
+        inviteesDisabled: document.querySelector('input[aria-label="Invitees"]')?.disabled,
+        note: document.querySelector('[data-testid="event-invitees-apple"]')?.textContent.includes('add them in Calendar'),
+        openCalendar: [...document.querySelectorAll('[data-testid="event-invitees-apple"] button')].some(b => b.textContent?.trim() === 'Open Calendar'),
+        rsvp: !!document.querySelector('[aria-label="RSVP"]'),
       })`);
-      expect(JSON.parse(facts)).toEqual({ calendarEnabled: true, invitees: false });
+      expect(JSON.parse(facts)).toEqual({
+        calendarEnabled: true,
+        inviteesDisabled: true,
+        note: true,
+        openCalendar: true,
+        rsvp: false,
+      });
+      // The button's channel reaches main, which opens nothing under the fixture.
+      expect(await cdp.eval(`window.calendarBridge.appleCalendarOpen()`)).toBe(false);
       await cdp.eval(setField('input[placeholder="Title"]', 'Apple dentist (edited)', 'input'));
     } finally {
       await cdp.clickButtonWithText('Save');

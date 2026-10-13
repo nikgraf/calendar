@@ -64,6 +64,8 @@ declare global {
         id: string,
         changes: { name?: string; policy?: AgentPolicy },
       ) => Promise<AgentView | undefined>;
+      /** Brings Calendar.app forward; false when nothing opened (the e2e fixture). */
+      appleCalendarOpen: () => Promise<boolean>;
       appleCalendarStatus: () => Promise<string>;
       /** Stops a Google sign-in waiting on the browser: it fails as cancelled. */
       authCancel: () => Promise<void>;

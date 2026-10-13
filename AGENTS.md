@@ -170,7 +170,8 @@ deliberately.
   write literals sorted or `vp check` fails.
 - Window-level concerns (screen privacy, logging, open-external, the five
   `model:*` AI-helper channels, the `reminders:*` / `contacts:*` /
-  `appleCalendar:*` permission-status channels, `settings:open`,
+  `appleCalendar:*` permission-status channels, `appleCalendar:open`
+  (brings Calendar.app forward), `settings:open`,
   `settingsFile:*`, `auth:cancel` (stops a sign-in waiting on the
   browser), `notifications:take` (the event reminder clicked last — a
   ref; the event itself is read over rpc) and `agents:*`) use plain

@@ -83,7 +83,7 @@ export function EventEditorForm({
   } = model;
   const accountLabel = (accountId: string) =>
     accounts.find((account) => account.id === accountId)?.email ?? accountId;
-  const readOnlyGuests = !canInvite && (existing?.attendees ?? []).length > 0;
+  const hasGuests = (existing?.attendees ?? []).length > 0;
   // The draft's times in the other zones; null for all-day or before the times build.
   const zoneLines = draftZoneRanges(
     { date, endTime, isAllDay, startTime },
@@ -231,17 +231,43 @@ export function EventEditorForm({
               onRemove={removeAttendee}
             />
           </div>
-        ) : readOnlyGuests ? (
-          // EventKit cannot write guests: shown as they are, never edited.
-          <div className="rounded-control bg-fill p-3" data-testid="event-guests-read-only">
-            <p className="mb-1 text-xs font-medium text-ink-secondary uppercase">Guests</p>
-            <ul className="text-sm text-ink-secondary">
-              {existing?.attendees?.map((attendee) => (
-                <li key={attendee.email}>{attendee.displayName ?? attendee.email}</li>
-              ))}
-            </ul>
+        ) : readOnly && !hasGuests ? null : (
+          // EventKit cannot write guests: existing ones show as they are, and
+          // the field stays in sight, disabled, pointing at Calendar.app — a
+          // missing field reads as a bug.
+          <div className="rounded-control bg-fill p-3" data-testid="event-invitees-apple">
+            <p className="mb-1 text-xs font-medium text-ink-secondary uppercase">Invitees</p>
+            {hasGuests ? (
+              <ul className="mb-2 text-sm text-ink-secondary" data-testid="event-guests-read-only">
+                {existing?.attendees?.map((attendee) => (
+                  <li key={attendee.email}>{attendee.displayName ?? attendee.email}</li>
+                ))}
+              </ul>
+            ) : null}
+            {readOnly ? null : (
+              <>
+                <input
+                  aria-label="Invitees"
+                  className="w-full rounded-lg border border-hairline bg-surface px-3 py-1 text-sm outline-none placeholder:text-ink-secondary disabled:opacity-50"
+                  disabled
+                  placeholder="Add guests"
+                />
+                <p className="mt-2 text-xs text-ink-secondary">
+                  {existing
+                    ? 'Apple calendars can’t add invitees here — add them in Calendar.'
+                    : 'Apple calendars can’t add invitees here — save, then add them in Calendar.'}{' '}
+                  <button
+                    className="text-primary hover:underline"
+                    onClick={() => void window.calendarBridge.appleCalendarOpen()}
+                    type="button"
+                  >
+                    Open Calendar
+                  </button>
+                </p>
+              </>
+            )}
           </div>
-        ) : null}
+        )}
         <RemindersFields model={model} />
         <label className={LABEL_CLASS}>
           Notes

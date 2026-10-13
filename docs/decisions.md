@@ -505,6 +505,12 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   calendars, otherwise copy-then-delete that drops guests and modified
   occurrences after a confirmation (`previewMove`). Open: the two
   _(verify)_ items in `docs/google-sync-and-testing.md`.
+- **Invitees on Apple events** (2026-10-13, #189, desktop) — the field stays in
+  sight, disabled, with a note and "Open Calendar", instead of vanishing:
+  a missing field read as a bug. Rejected: writing attendees through
+  private EventKit API (fragile, no reliable invitation) and AppleScript
+  (attendees are read-only there too). The button opens Calendar.app, not
+  the event: no deep link is verified. Open: the same on iOS.
 
 ## AI
 
