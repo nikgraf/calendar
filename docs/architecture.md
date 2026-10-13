@@ -780,11 +780,12 @@ gateway carries all of it. Details, limits and the threat model:
   sidebar toggle, title, ‹ Today ›, Day/Week/Month, Search, the Today
   panel toggle, New), a collapsible sidebar (mini month, calendars and
   lists per account, the sync footer with the unsynced changes), the
-  grid, and a side panel (`panel/`) that is one `PanelState` in
-  `CalendarApp.tsx`: the Today rail at rest (`UpNextCard` + `TaskInbox`),
+  grid, and a side panel (`panel/`, 360 px whatever it shows) that is
+  one `PanelState` in `CalendarApp.tsx`: the Today rail at rest
+  (`UpNextCard` + `TaskInbox`),
   search (⌘F), an event's read-first inspector after a grid click or a
   search result (`EventInspector.tsx`), or the inline editor
-  (`EditorPanel.tsx`, 360 px) from Edit, a slot, New (⌘N; ⌘K goes
+  (`EditorPanel.tsx`) from Edit, a slot, New (⌘N; ⌘K goes
   straight into its quick-add field), a task chip or a result. Single
   keys: T = today, ←/→ step the view; ⌘, opens Settings from the menu. A new
   item's editor is the one add path: the quick-add field on top
