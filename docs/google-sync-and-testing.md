@@ -377,7 +377,12 @@ chasing a code bug.
   `EXPO_PUBLIC_CALENDAR_MODEL=fixture` in the bundle (CI), which also
   accepts `solunivo-dev://capture-fixture?text=…` as a stand-in for a
   share (flow 22: the events open the editor as one thread, `draft-*`
-  ids as on the desktop).
+  ids as on the desktop; the calendar behind the half-height sheet draws
+  them as `draft-block`, labelled "Draft: <title>, <times>", and
+  `draft-dot` in the month grid; a tap on a draft behind the sheet
+  focuses it, a tap on an event there opens its detail; flow 06 lowers
+  the sheet and follows the block through a change; an all-day draft is
+  a `draft-chip` in the lane, and a free slot a `slot-candidate`).
 - Apple Calendar never hits EventKit in tests: `makeFakeAppleCalendarClient`
   (`packages/apple-calendar/src/fake.ts`) keeps series the way EventKit
   does (master + rules, detached and deleted occurrences), expands them
@@ -732,8 +737,10 @@ launch, recover the dev client if it fell back to the launcher, wait for
 "Today", `waitForAnimationToEnd` — SafeAreaView applies the top inset a
 beat after the first paint, so an earlier tap lands in the status bar),
 `open-new-event.yaml` (the "+" → the editor on a new event, re-tapping
-while the sheet is missing), `open-event-editor.yaml` (Edit on the detail
-sheet a tap opens), `switch-view.yaml` (the header's menu, `VIEW`),
+while the sheet is missing, then `expand-editor.yaml`: a new item's
+editor opens at half height, and the subflow taps the sheet's grabber,
+whose value reads "Half screen", up to full), `open-event-editor.yaml`
+(Edit on the detail sheet a tap opens), `switch-view.yaml` (the header's menu, `VIEW`),
 `switch-to-task.yaml`, `open-settings.yaml` (waits for `settings-root`),
 `open-settings-page.yaml` (`PAGE`: `device`, `general`, `notifications`,
 `file`, `advanced`, `mirrors`, `unsynced`; rows `settings-row-<page>`, pages
@@ -750,6 +757,11 @@ Selector gotchas (each caused a real failure):
   URL alerts; a flow whose link opens a sheet with its own Cancel (the
   editor, flow 22) confirms the alert inline and cancels only while an
   "Open" is still up.
+- The editor is a form sheet: at half height the calendar above it is
+  live, and Maestro's scrolls swipe at the screen's centre — on the
+  calendar. A flow that fills the form expands the sheet first
+  (`expand-editor.yaml`); to look at the calendar behind it, tap the
+  grabber while its value reads "Expanded".
 - Text selectors are **whole-string regexes**: prefix text does not
   match, regex metacharacters in titles must be escaped, and a pressable
   row reads as one element (title, subtitle and value together), so match

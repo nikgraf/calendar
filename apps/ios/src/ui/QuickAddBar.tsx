@@ -1,4 +1,5 @@
 import { useModelAvailability, useQuickAddModel, type QuickAddItem } from '@calendar/app-state';
+import { SymbolView } from 'expo-symbols';
 import { useEffect, useRef } from 'react';
 import {
   ActivityIndicator,
@@ -13,7 +14,7 @@ import {
 } from 'react-native';
 import { appleSpeech } from '../appleSpeech.ts';
 import { languageModel } from '../model.ts';
-import { BOX_FONT_SCALE, type ThemeColors, useStyles } from './theme.ts';
+import { BOX_FONT_SCALE, type ThemeColors, useStyles, useTheme } from './theme.ts';
 
 /** Foundation Models exist from iOS 26; below that there is nothing to say. */
 const MODEL_MIN_IOS = 26;
@@ -46,12 +47,19 @@ export const onAppActive = (onActive: () => void): (() => void) => {
  * event form's own tool (`FindTimeFields`).
  */
 export function QuickAddBar({
+  autoFocus = true,
   fallbackDate,
   onApply,
   onPhrase,
   placeholder = 'Lunch with Sarah tomorrow at 1',
   timeZone,
 }: {
+  /**
+   * Take the focus once the sheet settled. Off in the half-height editor:
+   * the keyboard would raise the sheet over the calendar it is half
+   * height for; a tap on the field brings it.
+   */
+  autoFocus?: boolean | undefined;
   /** Undated phrases land on this day (the editor's). */
   fallbackDate: string;
   onApply: (item: QuickAddItem) => void;
@@ -66,6 +74,7 @@ export function QuickAddBar({
   timeZone: string;
 }) {
   const styles = useStyles(makeStyles);
+  const { colors } = useTheme();
   const inputRef = useRef<TextInput>(null);
   const { checking, retry, status } = useModelAvailability(languageModel, onAppActive);
   const {
@@ -106,12 +115,12 @@ export function QuickAddBar({
   // sheet is not reliable while it is still sliding in, so the focus is
   // asked for once the sheet has settled.
   useEffect(() => {
-    if (status !== 'ready') {
+    if (status !== 'ready' || !autoFocus) {
       return;
     }
     const timer = setTimeout(() => inputRef.current?.focus(), 400);
     return () => clearTimeout(timer);
-  }, [status]);
+  }, [status, autoFocus]);
 
   // The marker renders once the availability check resolved, whatever it said.
   if (status === null) {
@@ -159,9 +168,13 @@ export function QuickAddBar({
                 style={[styles.mic, voice === 'recording' && styles.micRecording]}
                 testID="quick-add-mic"
               >
-                <Text maxFontSizeMultiplier={BOX_FONT_SCALE} style={styles.micLabel}>
-                  {voice === 'recording' ? '■' : '🎙'}
-                </Text>
+                {/* The desktop's microphone: a line icon, red while recording. */}
+                <SymbolView
+                  name="mic"
+                  size={20}
+                  tintColor={voice === 'recording' ? colors.danger : colors.text}
+                  weight="medium"
+                />
               </Pressable>
             ) : null}
             {busy || voice === 'transcribing' || voice === 'preparing' ? (
@@ -187,7 +200,7 @@ export function QuickAddBar({
           {voice === 'preparing' ? (
             <Text style={styles.hint}>Preparing dictation…</Text>
           ) : voice === 'recording' ? (
-            <Text style={styles.hint}>Listening — tap ■ when finished.</Text>
+            <Text style={styles.hint}>Listening — tap the microphone when finished.</Text>
           ) : voice === 'transcribing' ? (
             <Text style={styles.hint}>Transcribing…</Text>
           ) : null}
@@ -248,9 +261,6 @@ const makeStyles = (colors: ThemeColors) =>
       height: 40,
       justifyContent: 'center',
       width: 40,
-    },
-    micLabel: {
-      fontSize: 16,
     },
     micRecording: {
       backgroundColor: colors['event-blush'],

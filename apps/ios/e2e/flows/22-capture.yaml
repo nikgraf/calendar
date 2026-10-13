@@ -8,7 +8,7 @@ tags:
 # bundles it) accepts a deep link that feeds the same path a share takes
 # after the extension stored its payload. The text is the fixture grammar,
 # one event per line, days relative to today: `Standup | +0 | 09:00-10:00 |
-# Room 4` and `Planning | +1 | 14:00-15:00`, URL-encoded. A bundle without
+# Room 4` and `Planning | +1 | 09:00-10:00`, URL-encoded. A bundle without
 # the fixture ignores the link, and the flow passes without asserting. The
 # events open the editor as one thread of drafts, as on the desktop — no
 # review list. The saved events are an hour long on purpose: a half-hour
@@ -20,7 +20,7 @@ tags:
     file: ../common/switch-view.yaml
     env:
       VIEW: 'Day'
-- openLink: 'solunivo-dev://capture-fixture?text=Standup%20%7C%20%2B0%20%7C%2009%3A00-10%3A00%20%7C%20Room%204%0APlanning%20%7C%20%2B1%20%7C%2014%3A00-15%3A00'
+- openLink: 'solunivo-dev://capture-fixture?text=Standup%20%7C%20%2B0%20%7C%2009%3A00-10%3A00%20%7C%20Room%204%0APlanning%20%7C%20%2B1%20%7C%2009%3A00-10%3A00'
 # The "Open in Solunivo Dev?" alert, confirmed once — inline, not through
 # confirm-open.yaml, whose clean-up taps every "Cancel" on screen and the
 # editor that opens has one: a leftover alert is cancelled only while an
@@ -53,6 +53,59 @@ tags:
       - assertVisible: 'New Event'
       - waitForAnimationToEnd:
           timeout: 5000
+      # The thread opens the editor at half height over the calendar,
+      # which shows the focused draft's day and draws it dashed; the pager
+      # moves the calendar to the other draft's day, and a tap on a draft
+      # behind the sheet focuses it. The month grid marks a draft's day
+      # with a ringed dot. The form's fields lie below the half.
+      - assertVisible:
+          id: 'draft-block'
+          text: 'Draft: Standup.*'
+      # Scrolled away first: the next draft starts at the same minute, and
+      # the grid still brings it into view (the tap on the first draft
+      # below lands only if it did). A quick swipe: Maestro holds before it
+      # drags, and a long hold on the grid is hold-to-create.
+      - swipe:
+          start: 50%, 40%
+          end: 50%, 20%
+          duration: 200
+      - waitForAnimationToEnd:
+          timeout: 3000
+      - tapOn:
+          id: 'draft-next'
+      - extendedWaitUntil:
+          visible:
+            id: 'draft-block'
+            text: 'Draft: Planning.*'
+          timeout: 10000
+      - tapOn:
+          id: 'nav-prev'
+      - extendedWaitUntil:
+          visible:
+            id: 'draft-block'
+            text: 'Draft: Standup.*'
+          timeout: 10000
+      - waitForAnimationToEnd:
+          timeout: 3000
+      - tapOn:
+          id: 'draft-block'
+          text: 'Draft: Standup.*'
+      - extendedWaitUntil:
+          visible:
+            id: 'draft-position'
+            text: '1 of 2'
+          timeout: 5000
+      - runFlow:
+          file: ../common/switch-view.yaml
+          env:
+            VIEW: 'Month'
+      - assertVisible:
+          id: 'draft-dot'
+      - runFlow:
+          file: ../common/switch-view.yaml
+          env:
+            VIEW: 'Day'
+      - runFlow: ../common/expand-editor.yaml
       - assertVisible:
           id: 'draft-position'
           text: '1 of 2'
@@ -97,6 +150,15 @@ tags:
             - extendedWaitUntil:
                 visible: 'Standup.*'
                 timeout: 10000
+            - waitForAnimationToEnd:
+                timeout: 5000
+            # A tap on an event behind a half-height editor opens its
+            # detail once the editor has slid away.
+            - tapOn:
+                id: 'add'
+            - extendedWaitUntil:
+                visible: 'New Event'
+                timeout: 5000
             - waitForAnimationToEnd:
                 timeout: 5000
             - tapOn: 'Standup.*'

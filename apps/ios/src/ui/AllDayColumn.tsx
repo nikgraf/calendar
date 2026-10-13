@@ -1,3 +1,4 @@
+import type { DraftOccurrence } from '@calendar/app-state';
 import {
   type BirthdayOccurrence,
   birthdayChipLabel,
@@ -10,13 +11,15 @@ import {
 } from '@calendar/core';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { GestureDetector } from 'react-native-gesture-handler';
+import { DraftChip } from './DraftBlock.tsx';
 import { TaskCheck } from './TaskCheck.tsx';
 import { BOX_FONT_SCALE, type ThemeColors, useEventTint, useStyles } from './theme.ts';
 import { ALL_DAY_ROW_HEIGHT } from './timelineLayout.ts';
 import type { TaskDrag } from './useTaskDrag.ts';
 
 /**
- * One day's all-day chips (date-only tasks, then birthdays, then events), one
+ * One day's all-day chips (the open editor's drafts first — what is being
+ * made — then date-only tasks, birthdays and events), one
  * chip per row. Past `maxChips` the column shows the first rows and a
  * "+N more" chip that expands the lane. A task chip's body long-presses
  * into a drag (another day, or a time in the grid); the chip dims while
@@ -26,12 +29,14 @@ export function AllDayColumn({
   birthdays,
   colorOf,
   compact,
+  drafts,
   draggingKey,
   events,
   isTaskReadOnly,
   listColorOf,
   maxChips,
   onBirthdayPress,
+  onDraftPress,
   onEventPress,
   onShowMore,
   onTaskPress,
@@ -46,6 +51,8 @@ export function AllDayColumn({
   birthdays: ReadonlyArray<BirthdayOccurrence>;
   colorOf: (event: EventRecord) => string;
   compact: boolean;
+  /** The open editor's all-day drafts on this day. */
+  drafts: ReadonlyArray<DraftOccurrence>;
   /** The task being dragged, if any: its source chip dims. */
   draggingKey: string | null;
   /** All-day events on this day. */
@@ -54,6 +61,8 @@ export function AllDayColumn({
   listColorOf: (task: TaskRecord) => string | undefined;
   maxChips: number;
   onBirthdayPress: (birthday: BirthdayOccurrence) => void;
+  /** A draft chip tapped: the editor focuses that draft. */
+  onDraftPress: (draftId: string) => void;
   onEventPress: (event: EventRecord) => void;
   onShowMore: () => void;
   onTaskPress: (task: TaskRecord) => void;
@@ -67,19 +76,36 @@ export function AllDayColumn({
   width: number;
 }) {
   const styles = useStyles(makeStyles);
-  const total = tasks.length + birthdays.length + events.length;
+  const total = drafts.length + tasks.length + birthdays.length + events.length;
   // A column that fits shows everything; one that overflows gives its
   // last row to the "+N more" chip.
   const limit = total > maxChips ? maxChips - 1 : total;
-  const visibleTasks = tasks.slice(0, limit);
-  const visibleBirthdays = birthdays.slice(0, Math.max(limit - visibleTasks.length, 0));
+  const visibleDrafts = drafts.slice(0, limit);
+  const visibleTasks = tasks.slice(0, Math.max(limit - visibleDrafts.length, 0));
+  const visibleBirthdays = birthdays.slice(
+    0,
+    Math.max(limit - visibleDrafts.length - visibleTasks.length, 0),
+  );
   const visibleEvents = events.slice(
     0,
-    Math.max(limit - visibleTasks.length - visibleBirthdays.length, 0),
+    Math.max(limit - visibleDrafts.length - visibleTasks.length - visibleBirthdays.length, 0),
   );
-  const hidden = total - visibleTasks.length - visibleBirthdays.length - visibleEvents.length;
+  const hidden =
+    total -
+    visibleDrafts.length -
+    visibleTasks.length -
+    visibleBirthdays.length -
+    visibleEvents.length;
   return (
     <View style={[styles.allDayColumn, { width }]}>
+      {visibleDrafts.map((draft) => (
+        <DraftChip
+          height={ALL_DAY_ROW_HEIGHT - 4}
+          key={draft.key}
+          occurrence={draft}
+          onPress={onDraftPress}
+        />
+      ))}
       {visibleTasks.map((task) => {
         const key = calendarTaskKey(task);
         const done = task.status === 'completed';

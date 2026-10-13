@@ -614,6 +614,16 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   iOS copy of the panel's effects (the quick-add field's two copies
   drifted once, which is why `useQuickAddModel` exists). Open: the
   drafts drawn behind a half-height sheet (todo.md).
+- **Drafts on the iOS calendar** (2026-10-12, #188) — the editor became a
+  form-sheet route (react-native-screens, half and full detents): a new
+  item opens at half height over the live calendar, which draws the
+  drafts dashed and tagged "Draft" (React Native has no repeating
+  gradient for the desktop's hatch), the free slots dotted, a tap
+  focusing or moving; the quick-add field leaves the focus alone so the
+  keyboard does not raise the sheet. Rejected: `@expo/ui`'s BottomSheet
+  (its SwiftUI host hides the form from Maestro, #137 — this sheet is a
+  plain presented controller), a "show on calendar" toggle on the page
+  sheet. Open: the desktop leftovers (todo.md), a detent set from code.
 - **Slot proposals in the create thread** (2026-10-12, #185) — a phrase
   that asks for free time is routed by code (`isFinderPhrase`: English
   and German cues, a search verb or question beside a time word) to the

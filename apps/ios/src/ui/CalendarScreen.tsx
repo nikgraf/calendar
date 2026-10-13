@@ -1,11 +1,15 @@
 import {
+  draftOccurrences,
   useGuardedMutations,
   useBackendInvalidations,
   useCalendarNavigation,
   useCalendars,
+  useDraftPreviews,
   useEventsInRangeStable,
   useListColorLookup,
+  useOnDraftReveal,
   useOverdueTasksStable,
+  useRequestDraftFocus,
   useBirthdaysInRangeStable,
   useEventReadOnlyLookup,
   useTaskReadOnlyLookup,
@@ -107,6 +111,7 @@ function CalendarBody({
     buffer,
     days,
     focused,
+    goToDay,
     goToday,
     panByDays,
     range,
@@ -153,6 +158,33 @@ function CalendarBody({
   const calendars = useCalendars();
 
   const colorOf = useMemo(() => makeColorLookup(calendars), [calendars]);
+
+  // The open editor's drafts, drawn dashed in the timeline, the lane and
+  // the month grid (the free slots beside the focused one fainter); the
+  // editor asks for its focused draft's day, and a tap on a draft
+  // focuses it there (the draft atoms, shared with the desktop).
+  const draftPreviews = useDraftPreviews();
+  const drafts = useMemo(
+    () => draftOccurrences(draftPreviews, range.startUtc, range.endUtc, timeZone),
+    [draftPreviews, range.startUtc, range.endUtc, timeZone],
+  );
+  const requestDraftFocus = useRequestDraftFocus();
+  useOnDraftReveal(goToDay);
+  // The focused timed draft's start, for the grid to scroll to — read off
+  // the draft itself, not an occurrence in the loaded range: a repeating
+  // draft's first loaded occurrence moves as the calendar pages.
+  const focusedDraft = draftPreviews.find(
+    (draft) => draft.focused && !draft.isAllDay && draft.candidate === undefined,
+  );
+  const revealMinute =
+    focusedDraft === undefined
+      ? undefined
+      : Number(focusedDraft.startTime.slice(0, 2)) * 60 +
+        Number(focusedDraft.startTime.slice(3, 5));
+  const revealKey =
+    focusedDraft === undefined
+      ? undefined
+      : `${focusedDraft.id}|${focusedDraft.date}|${focusedDraft.startTime}`;
 
   // Day view: the focused day's Monday week as a date picker. The two-day
   // and week views draw their own headers inside the timeline, panning
@@ -263,6 +295,7 @@ function CalendarBody({
         <MonthGrid
           birthdays={birthdays}
           colorOf={colorOf}
+          drafts={drafts}
           events={events}
           listColorOf={listColorOf}
           onSelectDay={(date) => {
@@ -312,6 +345,7 @@ function CalendarBody({
             buffer={buffer}
             colorOf={colorOf}
             days={days}
+            drafts={drafts}
             events={events}
             isEventReadOnly={isEventReadOnly}
             isTaskReadOnly={isTaskReadOnly}
@@ -320,6 +354,7 @@ function CalendarBody({
             onCreateSlot={(date, times) =>
               host.editEvent({ initialDate: date, initialTimes: times })
             }
+            onDraftPress={requestDraftFocus}
             onEventPress={host.openEvent}
             onNavigate={panByDays}
             onSelectDay={(day) => {
@@ -336,6 +371,8 @@ function CalendarBody({
               })
             }
             overdue={overdue}
+            revealKey={revealKey}
+            revealMinute={revealMinute}
             secondaryZones={secondaryZones}
             selected={focused}
             tasks={tasks}

@@ -28,6 +28,30 @@ const days = Array.from({ length: 7 }, (_, index) =>
 );
 
 describe('groupEventsByDay', () => {
+  it('groups anything with an event’s timing, keeping its own shape (a draft occurrence)', () => {
+    const drafts = [
+      {
+        endUtc: instant('2026-07-08T11:00:00Z'),
+        isAllDay: false,
+        key: 'd1',
+        startUtc: instant('2026-07-08T10:00:00Z'),
+      },
+      {
+        endDate: '2026-07-11',
+        endUtc: instant('2026-07-11T00:00:00Z'),
+        isAllDay: true,
+        key: 'd2',
+        startDate: '2026-07-09',
+        startUtc: instant('2026-07-09T00:00:00Z'),
+      },
+    ];
+    const byDay = groupEventsByDay(drafts, days, 'UTC');
+    expect(byDay.get('2026-07-08')?.map((draft) => draft.key)).toEqual(['d1']);
+    expect(byDay.get('2026-07-09')?.map((draft) => draft.key)).toEqual(['d2']);
+    expect(byDay.get('2026-07-10')?.map((draft) => draft.key)).toEqual(['d2']);
+    expect(byDay.get('2026-07-11')).toEqual([]);
+  });
+
   const events = [
     record({ id: 'timed' }),
     // Crosses local midnight in Vienna: 23:30–00:30 local.

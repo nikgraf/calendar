@@ -1,6 +1,6 @@
 import { useAccounts, usePendingOps } from '@calendar/app-state';
-import { useRouter } from 'expo-router';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { useEditorHost } from './EditorHost.tsx';
 import { Avatar, Glyph } from './settings/GroupedList.tsx';
 import { avatarColors, initialOf } from './settings/SettingsRoot.tsx';
 import { BOX_FONT_SCALE, type ThemeColors, useStyles, useTheme } from './theme.ts';
@@ -17,7 +17,7 @@ const SIZE = 30;
  * row), and a dot says an account must sign in again.
  */
 export function AccountButton() {
-  const router = useRouter();
+  const { openSettings } = useEditorHost();
   const { colors } = useTheme();
   const styles = useStyles(makeStyles);
   const accounts = useAccounts();
@@ -42,7 +42,7 @@ export function AccountButton() {
         accessibilityRole="button"
         accessibilityShowsLargeContentViewer
         hitSlop={7}
-        onPress={() => router.push('/settings')}
+        onPress={openSettings}
         style={({ pressed }) => pressed && styles.pressed}
         testID="open-settings"
       >

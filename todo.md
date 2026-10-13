@@ -140,17 +140,10 @@ Empty. The 2026-10-02 review's findings are closed in `docs/decisions.md`
 AI redesign (agreed 2026-10-11, one PR each, in this order; the
 grounding PR that opened it, #182, the desktop draft thread (#183),
 the served model (#184) and slot proposals (#185) are in
-`docs/decisions.md` → AI, with the iOS thread in the sheet (#187); search filters (#186) under Search):
+`docs/decisions.md` → AI, with the iOS thread in the sheet (#187) and on the calendar (#188); search filters (#186) under Search):
 
-- [ ] Drafts on the iOS calendar — the thread is in the edit sheet
-      (#187, `docs/decisions.md` → AI); now the calendar behind it: the
-      editor as a half-height detent form sheet (an expo-router route
-      with react-native-screens' `sheetAllowedDetents` [0.5, 1]) on the
-      focused draft's day (`useOnDraftReveal`), the drafts drawn in the
-      timeline, the lane and the month grid from `useDraftPreviews`
-      (dashed, no hatch: RN has no repeating gradient), a tap on a block
-      focusing it (`useRequestDraftFocus`), the free slots as candidate
-      blocks. Also open from the desktop: drafts in the month view, a
+- [ ] Draft thread leftovers on the desktop (both platforms draw the
+      thread now, `docs/decisions.md` → AI): drafts in the month view, a
       slot or ⌘N editor without a phrase drawing its form as a draft too,
       to-do drafts in "Add all" (today it waits until each is the focused
       one).

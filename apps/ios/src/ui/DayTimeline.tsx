@@ -1,4 +1,5 @@
 import {
+  type DraftOccurrence,
   useGuardedMutations,
   useUpdateViewPreferences,
   useViewPreferences,
@@ -9,6 +10,7 @@ import {
   calendarTaskKey,
   clampSwipeOffset,
   type EventRecord,
+  type FreeSlot,
   groupByDate,
   groupEventsByDay,
   interpolatePages,
@@ -25,7 +27,7 @@ import {
   zoneSlug,
 } from '@calendar/core';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
   cancelAnimation,
@@ -67,18 +69,22 @@ export function DayTimeline({
   buffer,
   colorOf,
   days,
+  drafts,
   events,
   isEventReadOnly,
   isTaskReadOnly,
   listColorOf,
   onBirthdayPress,
   onCreateSlot,
+  onDraftPress,
   onEventPress,
   onNavigate,
   onSelectDay,
   onTaskPress,
   onToggleTask,
   overdue,
+  revealKey,
+  revealMinute,
   secondaryZones,
   selected,
   tasks,
@@ -89,6 +95,8 @@ export function DayTimeline({
   buffer: number;
   colorOf: (event: EventRecord) => string;
   days: ReadonlyArray<Temporal.PlainDate>;
+  /** The open editor's drafts (and free slots beside one), one per occurrence: drawn dashed, never stored. */
+  drafts: ReadonlyArray<DraftOccurrence>;
   events: ReadonlyArray<EventRecord>;
   /** An event in a calendar we cannot write opens on tap but never drags. */
   isEventReadOnly: (event: EventRecord) => boolean;
@@ -100,6 +108,8 @@ export function DayTimeline({
     date: Temporal.PlainDate,
     times: { readonly endTime: string; readonly startTime: string },
   ) => void;
+  /** A draft tapped: the editor focuses it (a free slot: moves the draft there). */
+  onDraftPress: (draftId: string, slot?: FreeSlot) => void;
   onEventPress: (event: EventRecord) => void;
   /** A swipe committed: whole days crossed, positive forward in time. */
   onNavigate: (dayCount: number) => void;
@@ -109,6 +119,20 @@ export function DayTimeline({
   onToggleTask: (task: TaskRecord) => void;
   /** Open tasks due before today; drawn as overdue chips in today's column. */
   overdue: ReadonlyArray<TaskRecord>;
+  /**
+   * The focused draft and its start (id, date, time): the scroll runs
+   * again whenever it changes — another draft focused at the same minute
+   * on another day still comes into view after the grid was scrolled
+   * away — and only then, so paging the calendar leaves the grid alone.
+   */
+  revealKey?: string | undefined;
+  /**
+   * The open editor's focused draft starts at this minute of its day: the
+   * grid scrolls it near the top, where a half-height editor leaves the
+   * calendar in view — with room below midnight while drafts are shown,
+   * so an evening draft can come up that far.
+   */
+  revealMinute?: number | undefined;
   /** The non-primary zones: a line each under every hour label, one joined line on tall event blocks. */
   secondaryZones: ReadonlyArray<string>;
   /** The focused day, ringed in the week header. */
@@ -121,6 +145,7 @@ export function DayTimeline({
   const styles = useStyles(makeStyles);
   const { colors } = useTheme();
   const scrollRef = useRef<ScrollView>(null);
+  const { height: windowHeight } = useWindowDimensions();
   const containerRef = useRef<View>(null);
   const { updateEvent, updateRecurring } = useGuardedMutations();
   const updateViewPreferences = useUpdateViewPreferences();
@@ -198,6 +223,10 @@ export function DayTimeline({
   const strip = useMemo(() => bufferedDays(days[0]!, days.length, buffer), [days, buffer]);
   // One pass over the window's events, not one filter per column.
   const byDay = useMemo(() => groupEventsByDay(events, strip, timeZone), [events, strip, timeZone]);
+  const draftsByDay = useMemo(
+    () => groupEventsByDay(drafts, strip, timeZone),
+    [drafts, strip, timeZone],
+  );
   const calendarTasks = useMemo(
     () => partitionCalendarTasks([...tasks, ...overdue], todayIso, timeZone),
     [tasks, overdue, todayIso, timeZone],
@@ -240,12 +269,13 @@ export function DayTimeline({
           return (
             (tasksByDay.get(iso)?.length ?? 0) +
             (birthdaysByDay.get(iso)?.length ?? 0) +
-            (byDay.get(iso) ?? []).filter((event) => event.isAllDay).length
+            (byDay.get(iso) ?? []).filter((event) => event.isAllDay).length +
+            (draftsByDay.get(iso) ?? []).filter((draft) => draft.isAllDay).length
           );
         }),
         days.length,
       ),
-    [strip, tasksByDay, birthdaysByDay, byDay, days.length],
+    [strip, tasksByDay, birthdaysByDay, byDay, draftsByDay, days.length],
   );
   const laneHeightFor = (rows: number) =>
     Math.max(collapsed ? Math.min(rows, MAX_ALL_DAY_ROWS) : rows, 1) * ALL_DAY_ROW_HEIGHT + 4;
@@ -257,6 +287,16 @@ export function DayTimeline({
   useEffect(() => {
     scrollRef.current?.scrollTo({ animated: false, y: 7.5 * HOUR_HEIGHT });
   }, []);
+  // A draft the editor focused (made, moved, paged to): its start an hour
+  // below the top of the grid.
+  useEffect(() => {
+    if (revealMinute !== undefined) {
+      scrollRef.current?.scrollTo({
+        animated: true,
+        y: Math.max(0, (revealMinute / 60 - 1) * HOUR_HEIGHT),
+      });
+    }
+  }, [revealKey, revealMinute]);
 
   // Geometry the task drag judges drops against; measured, never rendered.
   // (The chip drags and this swipe are exclusive in the gesture arena: a
@@ -469,6 +509,7 @@ export function DayTimeline({
                   birthdays={birthdaysByDay.get(iso) ?? []}
                   colorOf={colorOf}
                   compact={compact}
+                  drafts={(draftsByDay.get(iso) ?? []).filter((draft) => draft.isAllDay)}
                   draggingKey={taskDrag.dragging?.key ?? null}
                   events={(byDay.get(iso) ?? []).filter((event) => event.isAllDay)}
                   isTaskReadOnly={isTaskReadOnly}
@@ -476,6 +517,7 @@ export function DayTimeline({
                   listColorOf={listColorOf}
                   maxChips={maxChips}
                   onBirthdayPress={onBirthdayPress}
+                  onDraftPress={(draftId) => onDraftPress(draftId)}
                   onEventPress={onEventPress}
                   onShowMore={() => setCollapsed(false)}
                   onTaskPress={onTaskPress}
@@ -494,6 +536,9 @@ export function DayTimeline({
 
       <GestureDetector gesture={swipe}>
         <ScrollView
+          contentContainerStyle={
+            drafts.length > 0 ? { paddingBottom: windowHeight / 2 } : undefined
+          }
           onScroll={(scroll) => setShared(scrollY, scroll.nativeEvent.contentOffset.y)}
           ref={scrollRef}
           scrollEventThrottle={16}
@@ -559,6 +604,7 @@ export function DayTimeline({
                       compact={compact}
                       date={day}
                       divided={divided}
+                      drafts={(draftsByDay.get(iso) ?? []).filter((draft) => !draft.isAllDay)}
                       draggingKey={taskDrag.dragging?.key ?? null}
                       events={(byDay.get(iso) ?? []).filter((event) => !event.isAllDay)}
                       isEventReadOnly={isEventReadOnly}
@@ -568,6 +614,7 @@ export function DayTimeline({
                       listColorOf={listColorOf}
                       onCommit={commitChange}
                       onCreateSlot={onCreateSlot}
+                      onDraftPress={onDraftPress}
                       onEventPress={onEventPress}
                       onTaskPress={onTaskPress}
                       onToggleTask={onToggleTask}

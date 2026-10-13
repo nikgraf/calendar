@@ -7,20 +7,23 @@ import type { EventRecord } from '../types.ts';
  * Events keyed by the ISO dates they occupy within `days`, each list
  * ordered like `eventsOnDay` (all-day first, then by start). One pass over
  * the events instead of one `eventsOnDay` filter + sort per cell — the
- * month views called that 42 times per render.
+ * month views called that 42 times per render. Anything with an event's
+ * timing groups the same way (the editor's draft occurrences too).
  */
-export const groupEventsByDay = (
-  events: ReadonlyArray<EventRecord>,
+export const groupEventsByDay = <
+  T extends Pick<EventRecord, 'endDate' | 'endUtc' | 'isAllDay' | 'startDate' | 'startUtc'>,
+>(
+  events: ReadonlyArray<T>,
   days: ReadonlyArray<Temporal.PlainDate>,
   timeZone: string,
-): ReadonlyMap<string, ReadonlyArray<EventRecord>> => {
+): ReadonlyMap<string, ReadonlyArray<T>> => {
   if (days.length === 0) {
     return new Map();
   }
   const first = days[0]!;
   const last = days.at(-1)!;
-  const buckets = new Map<string, Array<EventRecord>>(days.map((day) => [day.toString(), []]));
-  const push = (iso: string, event: EventRecord) => {
+  const buckets = new Map<string, Array<T>>(days.map((day) => [day.toString(), []]));
+  const push = (iso: string, event: T) => {
     buckets.get(iso)?.push(event);
   };
 

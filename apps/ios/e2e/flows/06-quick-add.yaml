@@ -4,6 +4,11 @@ tags:
   - ci
 ---
 - runFlow: ../common/launch.yaml
+# The drafts are drawn on the day timeline and its all-day lane.
+- runFlow:
+    file: ../common/switch-view.yaml
+    env:
+      VIEW: 'Day'
 - runFlow: ../common/open-new-event.yaml
 # The quick-add field sits on top of the editor and renders only after an
 # async availability check resolves, so wait for the marker the app emits
@@ -53,6 +58,10 @@ tags:
       # (empty parts unchanged) moves the times and lists a turn; Undo takes
       # it back; a finder phrase as a later turn puts the draft in the best
       # free slot of next week's mornings and offers the others as chips.
+      # The calendar behind the sheet draws the draft: lowered to half
+      # height (a tap on the grabber), it shows the draft's day with a
+      # dashed block the grid scrolled to above the sheet, and the block
+      # follows a change.
       - runFlow:
           when:
             visible:
@@ -61,6 +70,12 @@ tags:
           commands:
             - assertVisible:
                 id: 'draft-thread'
+            - tapOn: 'Expanded'
+            - waitForAnimationToEnd:
+                timeout: 3000
+            - assertVisible:
+                id: 'draft-block'
+                text: 'Draft: Lunch with Sarah.*'
             - tapOn:
                 id: 'quick-add-input'
             - inputText: '| | 20:00-21:00'
@@ -71,6 +86,12 @@ tags:
                   id: 'draft-turn-summary'
                   text: '.*20:00.21:00.*'
                 timeout: 20000
+            - waitForAnimationToEnd:
+                timeout: 3000
+            - assertVisible:
+                id: 'draft-block'
+                text: 'Draft: Lunch with Sarah.*(8:00.PM|20:00).*'
+            - runFlow: ../common/expand-editor.yaml
             - tapOn:
                 id: 'draft-undo'
             - extendedWaitUntil:
