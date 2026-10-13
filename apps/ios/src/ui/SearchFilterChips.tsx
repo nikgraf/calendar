@@ -1,5 +1,5 @@
 import { type SearchFilterChip, searchChipId } from '@calendar/core';
-import { Pressable, ScrollView, StyleSheet, Text } from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text } from 'react-native';
 import { FlashView } from './FlashView.tsx';
 import { BOX_FONT_SCALE, type ThemeColors, useStyles } from './theme.ts';
 
@@ -8,9 +8,13 @@ import { BOX_FONT_SCALE, type ThemeColors, useStyles } from './theme.ts';
  * the Filters sheet, × takes one away, "Filters" opens the sheet to add
  * one, "Clear" resets words, filters and turns. Scrolls sideways like
  * the Tasks tab's list chips; a chip never stretches. The chips a
- * sentence added or changed flash (`flash`).
+ * sentence added or changed flash (`flash`). While a sentence is read,
+ * "Filters" turns into a spinner of its own size (`busy`): the system
+ * search field has no room for one, and this is where the filters land —
+ * nothing in the row or under it moves.
  */
 export function SearchFilterChips({
+  busy,
   chips,
   flash,
   onClear,
@@ -18,6 +22,7 @@ export function SearchFilterChips({
   onRemove,
   showClear,
 }: {
+  busy: boolean;
   chips: ReadonlyArray<SearchFilterChip>;
   /** The newest turn's chips, while their flash plays (`useSearchThread().flash`). */
   flash: { readonly chips: ReadonlySet<string>; readonly key: string } | null;
@@ -67,14 +72,21 @@ export function SearchFilterChips({
         </FlashView>
       ))}
       <Pressable
+        accessibilityLabel={busy ? 'Reading the filters' : undefined}
         accessibilityRole="button"
+        accessibilityState={{ busy, disabled: busy }}
+        disabled={busy}
         onPress={onOpenFilters}
         style={styles.add}
         testID="search-filters"
       >
-        <Text maxFontSizeMultiplier={BOX_FONT_SCALE} style={styles.addLabel}>
+        <Text
+          maxFontSizeMultiplier={BOX_FONT_SCALE}
+          style={[styles.addLabel, busy && styles.hidden]}
+        >
           + Filters
         </Text>
+        {busy ? <ActivityIndicator style={styles.spinner} /> : null}
       </Pressable>
       {showClear ? (
         <Pressable
@@ -113,6 +125,9 @@ const makeStyles = (colors: ThemeColors) =>
       paddingHorizontal: 10,
       paddingVertical: 5,
     },
+    hidden: {
+      opacity: 0,
+    },
     label: {
       color: colors.text,
       fontSize: 14,
@@ -131,5 +146,13 @@ const makeStyles = (colors: ThemeColors) =>
     scroller: {
       flexGrow: 0,
       flexShrink: 0,
+    },
+    // Over the hidden label, so "Filters" keeps its size while a sentence is read.
+    spinner: {
+      bottom: 0,
+      left: 0,
+      position: 'absolute',
+      right: 0,
+      top: 0,
     },
   });

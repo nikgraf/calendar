@@ -1,11 +1,13 @@
 import { earlierTurnsLabel, TURNS_SHOWN, visibleTurns } from '@calendar/app-state';
 import { useState } from 'react';
 import { Button } from '../ui/Button.tsx';
+import { ChevronDownIcon } from '../ui/icons.tsx';
 
 /**
  * A thread's turns, newest first: each with what was said and what it
- * changed, wrapped in full, the newest with Undo. Three show until "+N
- * earlier queries" opens the rest. A row eases in when it comes into the
+ * changed, wrapped in full, the newest with Undo. Two show until "+N
+ * earlier queries ⌄" opens the rest — a link in the tint color with a
+ * disclosure chevron, the way "Show More" reads on Apple's platforms. A row eases in when it comes into the
  * list (`turn-in` in App.css) — a new turn at the top, older ones as the
  * list opens; the list itself mounts with its first turn, and `resting`
  * names turns already seen (a panel shown again) that just stand. The create
@@ -78,12 +80,17 @@ export function ThreadTurns({
         // One button for both ways, so the keyboard focus stays on it.
         <button
           aria-expanded={expanded}
-          className="self-start rounded-md px-1 py-0.5 text-xs text-ink-secondary hover:bg-fill hover:text-ink focus-visible:ring-2 focus-visible:ring-focus focus-visible:outline-none"
+          className="-mx-1 inline-flex items-center gap-0.5 self-start rounded-md px-1 py-0.5 text-xs font-medium text-primary hover:bg-fill focus-visible:ring-2 focus-visible:ring-focus focus-visible:outline-none"
           data-testid={`${testIdPrefix}-turns-${expanded ? 'less' : 'more'}`}
           onClick={() => setExpanded(!expanded)}
           type="button"
         >
           {expanded ? 'Show less' : earlierTurnsLabel(hidden)}
+          <ChevronDownIcon
+            className={`transition-transform motion-reduce:transition-none ${expanded ? 'rotate-180' : ''}`}
+            size={12}
+            strokeWidth={2.25}
+          />
         </button>
       ) : null}
     </div>

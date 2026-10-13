@@ -8,7 +8,7 @@ import { useEffect, useState } from 'react';
  */
 
 /** The turns a collapsed list shows. */
-export const TURNS_SHOWN = 3;
+export const TURNS_SHOWN = 2;
 
 /** The turns to draw, newest first, and how many older ones the collapsed list leaves out. */
 export const visibleTurns = <T>(

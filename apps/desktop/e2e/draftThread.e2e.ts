@@ -127,7 +127,7 @@ describe('The draft thread', () => {
     await cdp.locate('[title^="Dinner ·"]');
   });
 
-  it('lists the turns newest first, three until "+1 earlier query" opens the rest, and flashes the field a turn changed', async () => {
+  it('lists the turns newest first, two until "+2 earlier queries" opens the rest, and flashes the field a turn changed', async () => {
     const { cdp } = app;
     await cdp.eval(COMMAND_N);
     await cdp.waitFor(
@@ -149,10 +149,10 @@ describe('The draft thread', () => {
     await cdp.waitFor(
       `document.querySelector(${JSON.stringify(START)})?.getAnimations().length === 1`,
     );
-    expect(await cdp.eval<number>(turns)).toBe(3);
+    expect(await cdp.eval<number>(turns)).toBe(2);
     expect(await cdp.eval<string>(newestSummary)).toContain('10:00–11:00');
     const more = `document.querySelector('[data-testid="draft-turns-more"]')?.textContent ?? ''`;
-    expect(await cdp.eval<string>(more)).toBe('+1 earlier query');
+    expect(await cdp.eval<string>(more)).toBe('+2 earlier queries');
     await cdp.clickTestId('draft-turns-more');
     await cdp.waitFor(`${turns} === 4`);
     expect(
@@ -161,7 +161,7 @@ describe('The draft thread', () => {
       ),
     ).toContain('Gym');
     await cdp.clickTestId('draft-turns-less');
-    await cdp.waitFor(`${turns} === 3`);
+    await cdp.waitFor(`${turns} === 2`);
   });
 
   it('opens a pasted mail as one thread of drafts: the pager and the blocks switch the form, Remove drops one, Add all writes the rest', async () => {

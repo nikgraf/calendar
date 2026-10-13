@@ -1,4 +1,5 @@
 import { earlierTurnsLabel, TURNS_SHOWN, visibleTurns } from '@calendar/app-state';
+import { SymbolView } from 'expo-symbols';
 import { useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import Animated, {
@@ -8,7 +9,7 @@ import Animated, {
   ReduceMotion,
   useReducedMotion,
 } from 'react-native-reanimated';
-import { BOX_FONT_SCALE, type ThemeColors, useStyles } from './theme.ts';
+import { BOX_FONT_SCALE, type ThemeColors, useStyles, useTheme } from './theme.ts';
 
 /** A turn arriving: it settles into the top row from just above it. */
 const ENTER = FadeInUp.duration(220)
@@ -19,8 +20,9 @@ const ENTER_STILL = FadeIn.duration(200).reduceMotion(ReduceMotion.Never);
 
 /**
  * A thread's turns, newest first, as on the desktop: what was said and
- * what it changed, wrapped in full, the newest with Undo. Three show
- * until "+N earlier queries" opens the rest. A row eases in when it comes
+ * what it changed, wrapped in full, the newest with Undo. Two show until
+ * "+N earlier queries ⌄" opens the rest — a link in the tint color with a
+ * disclosure chevron, the way "Show More" reads in Apple's own apps. A row eases in when it comes
  * into the list (Reanimated's `entering` runs on mount only, so an Undo
  * or the list opening never replays the top row's). The create thread
  * (`draft-*`) and the search thread (`search-*`) share it. In a header
@@ -45,6 +47,7 @@ export function ThreadTurnList({
   undoDisabled: boolean;
 }) {
   const styles = useStyles(makeStyles);
+  const { colors } = useTheme();
   const reduceMotion = useReducedMotion();
   const [expanded, setExpanded] = useState(false);
   const { hidden, shown } = visibleTurns(turns, expanded);
@@ -108,6 +111,12 @@ export function ThreadTurnList({
           <Text maxFontSizeMultiplier={BOX_FONT_SCALE} style={styles.moreLabel}>
             {expanded ? 'Show less' : earlierTurnsLabel(hidden)}
           </Text>
+          <SymbolView
+            name={expanded ? 'chevron.up' : 'chevron.down'}
+            size={11}
+            tintColor={colors.primary}
+            weight="semibold"
+          />
         </Pressable>
       ) : null}
     </View>
@@ -127,14 +136,17 @@ const makeStyles = (colors: ThemeColors) =>
       gap: 4,
     },
     more: {
+      alignItems: 'center',
       alignSelf: 'flex-start',
+      flexDirection: 'row',
+      gap: 4,
       paddingHorizontal: 4,
       paddingVertical: 2,
     },
     moreLabel: {
-      color: colors['text-secondary'],
+      color: colors.primary,
       fontSize: 13,
-      fontWeight: '500',
+      fontWeight: '600',
     },
     summary: {
       color: colors['text-secondary'],

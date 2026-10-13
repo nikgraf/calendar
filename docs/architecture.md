@@ -602,7 +602,9 @@ details, or Custom), so a calendar can be shared without the details.
   stand and no words (`parseSearchQuery`, `packages/ai/src/searchQuery.ts`)
   and leaves what is left of the words in the field; Undo restores the
   query before the last turn; Clear empties everything. Turns list as in
-  the create thread (newest first, three, "+N earlier queries"), and the
+  the create thread (newest first, two, "+N earlier queries"); a sentence
+  being read turns the desktop's ✦ and iOS's "Filters" into a spinner in
+  place (no line under the field), and the
   chips a turn added or relabelled flash (`changedSearchChips`, carried
   on the turn; an Undo flashes nothing). The normalizer
   holds the answer to the words: dates are the code's where it reads them
@@ -798,9 +800,11 @@ gateway carries all of it. Details, limits and the threat model:
   (`useDraftThread`, `packages/app-state/src/draftThread.ts`): the first
   phrase makes the draft(s), every later phrase in the same field changes
   them (`parseRefine`), the turns are listed newest first with what each
-  changed, wrapped in full, the newest with Undo — three, then "+N
-  earlier queries" opens the rest (`visibleTurns`, app-state
-  `threadTurns.ts`; a new row eases in) — and the form fields a turn
+  changed, wrapped in full, the newest with Undo — two, then "+N
+  earlier queries ⌄" (a link in the tint color with a chevron) opens the
+  rest (`visibleTurns`, app-state `threadTurns.ts`; a new row eases in);
+  a phrase being read turns Apply into a spinner of its own size, so
+  nothing under the field moves — and the form fields a turn
   changed tint and fade back (`changedDraftFields`, the comparison the
   summary is built on; `useThreadEditor().flash`, spent once it played);
   a phrase that asks for free time (`proposeSlots`)

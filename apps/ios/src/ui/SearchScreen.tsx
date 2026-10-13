@@ -157,7 +157,7 @@ export function SearchScreen() {
   );
 }
 
-/** The chips, the turns newest first with Undo, and a line while a sentence is read or why it was not. */
+/** The chips ("Filters" a spinner while a sentence is read), the turns newest first with Undo, and why a sentence was not read. */
 function SearchThreadHeader({
   error,
   onClear,
@@ -176,6 +176,7 @@ function SearchThreadHeader({
   return (
     <View style={styles.threadHeader}>
       <SearchFilterChips
+        busy={thread.busy}
         chips={searchFilterChips(query, thread.names)}
         flash={thread.flash}
         onClear={onClear}
@@ -189,12 +190,9 @@ function SearchThreadHeader({
         turns={turns}
         undoDisabled={thread.busy}
       />
-      {thread.busy || error ? (
-        <Text
-          style={[styles.meta, error ? styles.failed : undefined]}
-          testID="search-thread-status"
-        >
-          {error ?? 'Reading the filters…'}
+      {error ? (
+        <Text style={[styles.meta, styles.failed]} testID="search-thread-status">
+          {error}
         </Text>
       ) : null}
     </View>

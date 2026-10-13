@@ -25,7 +25,7 @@ import {
 } from 'react';
 import { IconButton } from '../../ui/IconButton.tsx';
 import { FIELD_CLASS } from '../../ui/fieldStyles.ts';
-import { RepeatIcon, SearchIcon, SparkleIcon, XIcon } from '../../ui/icons.tsx';
+import { RepeatIcon, SearchIcon, SparkleIcon, SpinnerIcon, XIcon } from '../../ui/icons.tsx';
 import { TaskCheckMark } from '../TaskCheck.tsx';
 import { ThreadTurns } from '../ThreadTurns.tsx';
 import { useTint } from '../tint.ts';
@@ -271,8 +271,11 @@ export function SearchPanel({
   const found =
     results === null ? 0 : results.upcoming.total + results.past.total + results.tasks.total;
   // Read out once the latest query's results are in.
-  const status =
-    blank || results === null || search.stale
+  // A sentence being read shows as the ✦ turning into a spinner, so
+  // nothing under the field moves; a screen reader hears it here.
+  const status = thread.busy
+    ? 'Reading the filters…'
+    : blank || results === null || search.stale
       ? ''
       : found === 0
         ? 'No results'
@@ -327,16 +330,17 @@ export function SearchPanel({
           />
         </div>
         {modelReady && text.trim() !== '' ? (
+          // While a sentence is read the ✦ turns into a spinner in its place
+          // (`ask` ignores a press then; not `disabled`, which would fade it).
           <IconButton
             aria-busy={thread.busy}
-            className={asks ? 'text-primary' : ''}
+            className={asks || thread.busy ? 'text-primary' : ''}
             data-testid="search-ask"
-            disabled={thread.busy}
-            label="Read filters from the words (⌘↩)"
+            label={thread.busy ? 'Reading the filters…' : 'Read filters from the words (⌘↩)'}
             onClick={() => void ask()}
             size="sm"
           >
-            <SparkleIcon size={14} />
+            {thread.busy ? <SpinnerIcon size={14} strokeWidth={2.25} /> : <SparkleIcon size={14} />}
           </IconButton>
         ) : null}
         <IconButton data-testid="search-close" label="Close search" onClick={onClose} size="sm">
@@ -377,12 +381,9 @@ export function SearchPanel({
             undoDisabled={thread.busy}
           />
         ) : null}
-        {thread.busy || threadError ? (
-          <p
-            className={`text-xs ${threadError ? 'text-danger' : 'text-ink-secondary'}`}
-            data-testid="search-thread-status"
-          >
-            {threadError ?? 'Reading the filters…'}
+        {threadError ? (
+          <p className="text-xs text-danger" data-testid="search-thread-status">
+            {threadError}
           </p>
         ) : null}
       </div>

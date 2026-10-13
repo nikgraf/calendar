@@ -2,15 +2,15 @@ import { describe, expect, it } from 'vite-plus/test';
 import { earlierTurnsLabel, visibleTurns } from './threadTurns.ts';
 
 describe('visibleTurns', () => {
-  it('lists the turns newest first, all of them while there are three or fewer', () => {
-    expect(visibleTurns(['a', 'b', 'c'], false)).toEqual({ hidden: 0, shown: ['c', 'b', 'a'] });
+  it('lists the turns newest first, all of them while there are two or fewer', () => {
+    expect(visibleTurns(['a', 'b'], false)).toEqual({ hidden: 0, shown: ['b', 'a'] });
     expect(visibleTurns([], false)).toEqual({ hidden: 0, shown: [] });
   });
 
-  it('shows the newest three and counts the rest until expanded', () => {
+  it('shows the newest two and counts the rest until expanded', () => {
     expect(visibleTurns(['a', 'b', 'c', 'd', 'e'], false)).toEqual({
-      hidden: 2,
-      shown: ['e', 'd', 'c'],
+      hidden: 3,
+      shown: ['e', 'd'],
     });
     expect(visibleTurns(['a', 'b', 'c', 'd', 'e'], true)).toEqual({
       hidden: 0,

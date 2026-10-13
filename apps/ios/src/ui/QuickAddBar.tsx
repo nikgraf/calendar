@@ -109,6 +109,7 @@ export function QuickAddBar({
   // user nothing to act on; otherwise say why the field is missing — the
   // silence is what made this hard to diagnose. The form stays either way.
   const unavailable = status !== null && status !== 'ready';
+  const working = busy || voice === 'transcribing';
   const explain = unavailable && status !== 'missing-module' && iosMajorVersion() >= MODEL_MIN_IOS;
 
   // The field is what a new item opens on. `autoFocus` inside a page
@@ -158,13 +159,19 @@ export function QuickAddBar({
               testID="quick-add-input"
               value={phrase}
             />
-            {voiceAvailable && !busy && voice !== 'transcribing' ? (
+            {/* Reading or transcribing shows in place: the microphone stays, Apply
+                turns into a spinner of its own size — nothing under the field moves. */}
+            {voiceAvailable ? (
               <Pressable
                 accessibilityLabel={voice === 'recording' ? 'Stop dictating' : 'Dictate'}
                 accessibilityRole="button"
-                disabled={voice === 'preparing'}
+                disabled={working || voice === 'preparing'}
                 onPress={() => void (voice === 'recording' ? stopRecording() : startRecording())}
-                style={[styles.mic, voice === 'recording' && styles.micRecording]}
+                style={[
+                  styles.mic,
+                  voice === 'recording' && styles.micRecording,
+                  working && styles.disabled,
+                ]}
                 testID="quick-add-mic"
               >
                 {/* The desktop's microphone: a line icon, red while recording. */}
@@ -176,32 +183,40 @@ export function QuickAddBar({
                 />
               </Pressable>
             ) : null}
-            {busy || voice === 'transcribing' || voice === 'preparing' ? (
-              <ActivityIndicator style={styles.spinner} />
-            ) : (
-              <Pressable
-                accessibilityLabel="Fill the form from the phrase"
-                accessibilityRole="button"
-                disabled={phrase.trim() === '' || voice === 'recording'}
-                onPress={() => void submit()}
-                style={[
-                  styles.button,
-                  (phrase.trim() === '' || voice === 'recording') && styles.disabled,
-                ]}
-                testID="quick-add-apply"
+            <Pressable
+              accessibilityLabel={
+                voice === 'transcribing'
+                  ? 'Transcribing'
+                  : busy
+                    ? 'Reading the phrase'
+                    : 'Fill the form from the phrase'
+              }
+              accessibilityRole="button"
+              accessibilityState={{ busy: working }}
+              disabled={working || phrase.trim() === '' || voice === 'recording'}
+              onPress={() => void submit()}
+              style={[
+                styles.button,
+                !working && (phrase.trim() === '' || voice === 'recording') && styles.disabled,
+              ]}
+              testID="quick-add-apply"
+            >
+              {/* The label keeps the button's size while the spinner stands in for it. */}
+              <Text
+                maxFontSizeMultiplier={BOX_FONT_SCALE}
+                style={[styles.buttonLabel, working && styles.hidden]}
               >
-                <Text maxFontSizeMultiplier={BOX_FONT_SCALE} style={styles.buttonLabel}>
-                  Apply
-                </Text>
-              </Pressable>
-            )}
+                Apply
+              </Text>
+              {working ? (
+                <ActivityIndicator color={colors['on-primary']} style={styles.spinner} />
+              ) : null}
+            </Pressable>
           </View>
           {voice === 'preparing' ? (
             <Text style={styles.hint}>Preparing dictation…</Text>
           ) : voice === 'recording' ? (
             <Text style={styles.hint}>Listening — tap the microphone when finished.</Text>
-          ) : voice === 'transcribing' ? (
-            <Text style={styles.hint}>Transcribing…</Text>
           ) : null}
           {error ? <Text style={styles.error}>{error}</Text> : null}
         </>
@@ -234,6 +249,9 @@ const makeStyles = (colors: ThemeColors) =>
     error: {
       color: colors.danger,
       fontSize: 13,
+    },
+    hidden: {
+      opacity: 0,
     },
     hint: {
       color: colors['text-secondary'],
@@ -286,7 +304,12 @@ const makeStyles = (colors: ThemeColors) =>
       fontSize: 15,
       fontWeight: '600',
     },
+    // Over the hidden label, so Apply keeps its size while it reads.
     spinner: {
-      marginHorizontal: 8,
+      bottom: 0,
+      left: 0,
+      position: 'absolute',
+      right: 0,
+      top: 0,
     },
   });

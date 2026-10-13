@@ -6,7 +6,7 @@ import { desktopSpeech } from '../ai/desktopSpeech.ts';
 import { modelUnavailableCopy } from '../ai/modelUnavailableCopy.ts';
 import { Button } from '../ui/Button.tsx';
 import { IconButton } from '../ui/IconButton.tsx';
-import { MicIcon, SparkleIcon } from '../ui/icons.tsx';
+import { MicIcon, SparkleIcon, SpinnerIcon } from '../ui/icons.tsx';
 import { captureSourceOf, isCapturableInPhrase, readPaste } from './captureClipboard.ts';
 
 /** The field's placeholder; the e2e specs find the field by it. */
@@ -88,16 +88,19 @@ export function QuickAddBar({
     }
   }, [focusSignal, unavailable]);
 
+  // Reading a phrase or transcribing one is shown in place — Apply turns
+  // into a spinner of its own size and the microphone stays where it is —
+  // so nothing under the field moves; a screen reader hears it instead.
+  const working = busy || voice === 'transcribing';
+  const workingCopy = voice === 'transcribing' ? 'Transcribing…' : busy ? 'Reading…' : '';
   const statusLine =
     voice === 'preparing'
       ? 'Preparing dictation…'
       : voice === 'recording'
         ? 'Listening — click the microphone when finished.'
-        : voice === 'transcribing'
-          ? 'Transcribing…'
-          : busy
-            ? 'Reading…'
-            : error;
+        : working
+          ? null
+          : error;
 
   return (
     <div className="mb-3 flex flex-col gap-2" data-testid="quick-add">
@@ -147,12 +150,12 @@ export function QuickAddBar({
             Retry
           </Button>
         ) : null}
-        {voiceAvailable && !busy && !unavailable && voice !== 'transcribing' ? (
+        {voiceAvailable && !unavailable ? (
           <IconButton
             active={voice === 'recording'}
             className={voice === 'recording' ? 'text-danger' : ''}
             data-testid="quick-add-mic"
-            disabled={voice === 'preparing'}
+            disabled={working || voice === 'preparing'}
             label={voice === 'recording' ? 'Stop dictating' : 'Dictate'}
             onClick={() => void (voice === 'recording' ? stopRecording() : startRecording())}
             size="sm"
@@ -162,16 +165,23 @@ export function QuickAddBar({
         ) : null}
         {unavailable ? null : (
           <Button
+            aria-busy={working}
+            className="relative"
             data-testid="quick-add-apply"
-            disabled={busy || phrase.trim() === '' || voice === 'recording'}
+            disabled={working || phrase.trim() === '' || voice === 'recording'}
             onClick={() => void submit()}
             size="sm"
             variant="primary"
           >
-            Apply
+            {/* The label keeps the button's width while the spinner stands in for it. */}
+            <span className={working ? 'invisible' : ''}>Apply</span>
+            {working ? <SpinnerIcon className="absolute" size={14} strokeWidth={2.25} /> : null}
           </Button>
         )}
       </label>
+      <p className="sr-only" role="status">
+        {workingCopy}
+      </p>
       {statusLine ? (
         <p className={`text-xs ${error ? 'text-danger' : 'text-ink-secondary'}`} role="status">
           {statusLine}
