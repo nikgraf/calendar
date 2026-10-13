@@ -164,6 +164,24 @@ const makeSheetStyles = (colors: ThemeColors) =>
       paddingHorizontal: 12,
       paddingVertical: 10,
     },
+    /**
+     * A text field's box drawn by a `FieldFlash` around it (`inputBox` +
+     * `inputInBox`), so a turn's tint fills the field as it does on the
+     * desktop: the input inside is transparent and borderless.
+     */
+    inputBox: {
+      backgroundColor: colors.surface,
+      borderColor: colors.border,
+      borderRadius: 10,
+      borderWidth: StyleSheet.hairlineWidth,
+      marginBottom: 12,
+      overflow: 'hidden',
+    },
+    inputInBox: {
+      backgroundColor: 'transparent',
+      borderWidth: 0,
+      marginBottom: 0,
+    },
     joinButton: {
       alignItems: 'center',
       backgroundColor: colors.success,
@@ -182,6 +200,9 @@ const makeSheetStyles = (colors: ThemeColors) =>
       fontWeight: '600',
       marginBottom: 4,
       textTransform: 'uppercase',
+    },
+    modeFlash: {
+      flex: 1,
     },
     modeRow: {
       flexDirection: 'row',

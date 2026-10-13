@@ -1,15 +1,16 @@
 import { isAtSlot, type useThreadEditor } from '@calendar/app-state';
 import { formatSlotLabel } from '@calendar/core';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ThreadTurnList } from './ThreadTurnList.tsx';
 import { BOX_FONT_SCALE, type ThemeColors, useStyles } from './theme.ts';
 
 /**
- * The thread above a new item's form: the last turn on one line — what
- * was said, what it changed, Undo (the sheet's header does not scroll,
- * and Undo takes back only the last turn) — a caveat the drafts came
- * with, the free slots a finder phrase offered (the one the form sits in
- * selected; a tap moves the draft), and with several drafts the pager,
- * Remove and "Add all". The same test ids as the desktop's panel.
+ * The thread above a new item's form: the turns newest first, three
+ * until "+N earlier queries" opens the rest (`ThreadTurnList`, Undo on
+ * the newest), a caveat the drafts came with, the free slots a finder
+ * phrase offered (the one the form sits in selected; a tap moves the
+ * draft), and with several drafts the pager, Remove and "Add all". The
+ * same test ids as the desktop's panel.
  */
 export function DraftThreadSection({
   editor,
@@ -35,32 +36,18 @@ export function DraftThreadSection({
     turns,
     write,
   } = editor;
-  const last = turns.at(-1);
-  if (last === undefined) {
+  if (turns.length === 0) {
     return null;
   }
   const slots = focusedDraft?.slots;
   return (
     <View style={styles.section} testID="draft-thread">
-      <View style={styles.turn} testID="draft-turn">
-        <Text numberOfLines={1} style={styles.utterance}>
-          “{last.utterance}”
-        </Text>
-        <Text numberOfLines={1} style={styles.summary} testID="draft-turn-summary">
-          {last.summary}
-        </Text>
-        <Pressable
-          accessibilityRole="button"
-          disabled={thread.busy || !settled}
-          hitSlop={8}
-          onPress={thread.undo}
-          testID="draft-undo"
-        >
-          <Text maxFontSizeMultiplier={BOX_FONT_SCALE} style={styles.action}>
-            Undo
-          </Text>
-        </Pressable>
-      </View>
+      <ThreadTurnList
+        onUndo={thread.undo}
+        testIDPrefix="draft"
+        turns={turns}
+        undoDisabled={thread.busy || !settled}
+      />
       {note && drafts.length > 0 ? (
         <Text style={styles.note} testID="draft-thread-note">
           {note}
@@ -167,11 +154,6 @@ export function DraftThreadSection({
 
 const makeStyles = (colors: ThemeColors) =>
   StyleSheet.create({
-    action: {
-      color: colors.primary,
-      fontSize: 15,
-      fontWeight: '600',
-    },
     addAll: {
       backgroundColor: colors.primary,
       borderRadius: 8,
@@ -247,26 +229,5 @@ const makeStyles = (colors: ThemeColors) =>
       gap: 6,
       paddingBottom: 2,
       paddingHorizontal: 16,
-    },
-    // What changed takes the room; what was said gives way first.
-    summary: {
-      color: colors.text,
-      flex: 1,
-      fontSize: 13,
-    },
-    turn: {
-      alignItems: 'center',
-      backgroundColor: colors.fill,
-      borderRadius: 8,
-      flexDirection: 'row',
-      gap: 8,
-      paddingHorizontal: 10,
-      paddingVertical: 7,
-    },
-    utterance: {
-      color: colors['text-secondary'],
-      flexShrink: 1,
-      fontSize: 13,
-      maxWidth: '45%',
     },
   });

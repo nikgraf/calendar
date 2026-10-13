@@ -1,7 +1,8 @@
 import type { useTaskEditorModel } from '@calendar/app-state';
 import type { TaskRecord } from '@calendar/core';
 import DateTimePicker from '@react-native-community/datetimepicker';
-import { Linking, Pressable, Text, TextInput, View } from 'react-native';
+import { Linking, Pressable, Text, TextInput } from 'react-native';
+import { FieldFlash } from './FlashView.tsx';
 import { FormScroll } from './FormScroll.tsx';
 import { dateFromParts, useSheetStyles, toDateString } from './editSheetShared.ts';
 import { DueLabel, NoDueDate } from './NoDueDate.tsx';
@@ -25,17 +26,19 @@ export function TaskEditForm({
   return (
     <FormScroll bare={bare} contentStyle={styles.content}>
       {taskModel.error ? <Text style={styles.error}>{taskModel.error}</Text> : null}
-      <TextInput
-        autoFocus={autoFocusTitle && !task}
-        onChangeText={taskModel.setTitle}
-        placeholder="Title"
-        style={styles.input}
-        testID="task-title"
-        value={taskModel.title}
-      />
+      <FieldFlash bleedX={0} bleedY={0} field="title" style={styles.inputBox}>
+        <TextInput
+          autoFocus={autoFocusTitle && !task}
+          onChangeText={taskModel.setTitle}
+          placeholder="Title"
+          style={[styles.input, styles.inputInBox]}
+          testID="task-title"
+          value={taskModel.title}
+        />
+      </FieldFlash>
 
       {taskModel.dated ? (
-        <View style={styles.pickerRow}>
+        <FieldFlash field="date" style={styles.pickerRow}>
           <DueLabel onRemove={taskModel.clearDueDate} />
           <DateTimePicker
             display="compact"
@@ -43,7 +46,7 @@ export function TaskEditForm({
             onChange={(_, picked) => picked && taskModel.setDueDate(toDateString(picked))}
             value={dateFromParts(taskModel.dueDate)}
           />
-        </View>
+        </FieldFlash>
       ) : (
         <NoDueDate onAdd={taskModel.addDueDate} />
       )}

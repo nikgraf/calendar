@@ -1,21 +1,26 @@
-import type { SearchFilterChip } from '@calendar/core';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { type SearchFilterChip, searchChipId } from '@calendar/core';
+import { Pressable, ScrollView, StyleSheet, Text } from 'react-native';
+import { FlashView } from './FlashView.tsx';
 import { BOX_FONT_SCALE, type ThemeColors, useStyles } from './theme.ts';
 
 /**
  * The search's filters as a row of chips under the header: a tap opens
  * the Filters sheet, × takes one away, "Filters" opens the sheet to add
  * one, "Clear" resets words, filters and turns. Scrolls sideways like
- * the Tasks tab's list chips; a chip never stretches.
+ * the Tasks tab's list chips; a chip never stretches. The chips a
+ * sentence added or changed flash (`flash`).
  */
 export function SearchFilterChips({
   chips,
+  flash,
   onClear,
   onOpenFilters,
   onRemove,
   showClear,
 }: {
   chips: ReadonlyArray<SearchFilterChip>;
+  /** The newest turn's chips, while their flash plays (`useSearchThread().flash`). */
+  flash: { readonly chips: ReadonlySet<string>; readonly key: string } | null;
   onClear: () => void;
   onOpenFilters: () => void;
   onRemove: (chip: SearchFilterChip) => void;
@@ -32,7 +37,14 @@ export function SearchFilterChips({
       testID="search-chips"
     >
       {chips.map((chip) => (
-        <View key={`${chip.field}:${chip.key ?? ''}`} style={styles.chip}>
+        <FlashView
+          bleedX={0}
+          bleedY={0}
+          flash={flash?.chips.has(searchChipId(chip)) ? flash.key : null}
+          key={searchChipId(chip)}
+          radius={8}
+          style={styles.chip}
+        >
           <Pressable
             accessibilityRole="button"
             hitSlop={4}
@@ -52,7 +64,7 @@ export function SearchFilterChips({
           >
             <Text style={styles.remove}>×</Text>
           </Pressable>
-        </View>
+        </FlashView>
       ))}
       <Pressable
         accessibilityRole="button"

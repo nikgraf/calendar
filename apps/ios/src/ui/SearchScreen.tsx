@@ -37,6 +37,7 @@ import { onAppActive } from './QuickAddBar.tsx';
 import { SearchFilterChips } from './SearchFilterChips.tsx';
 import { SearchFiltersSheet } from './SearchFiltersSheet.tsx';
 import { TaskCheck } from './TaskCheck.tsx';
+import { ThreadTurnList } from './ThreadTurnList.tsx';
 import { type ThemeColors, useEventTint, useStyles, useTheme } from './theme.ts';
 import { MutationNoticeToast } from './Toast.tsx';
 
@@ -156,7 +157,7 @@ export function SearchScreen() {
   );
 }
 
-/** The chips, the last turn with Undo, and a line while a sentence is read or why it was not. */
+/** The chips, the turns newest first with Undo, and a line while a sentence is read or why it was not. */
 function SearchThreadHeader({
   error,
   onClear,
@@ -172,37 +173,22 @@ function SearchThreadHeader({
 }) {
   const styles = useStyles(makeStyles);
   const { query, turns } = thread.state;
-  const last = turns.at(-1);
   return (
     <View style={styles.threadHeader}>
       <SearchFilterChips
         chips={searchFilterChips(query, thread.names)}
+        flash={thread.flash}
         onClear={onClear}
         onOpenFilters={onOpenFilters}
         onRemove={(chip) => thread.setQuery(withoutSearchFilter(query, chip.field, chip.key))}
         showClear={!isBlankSearchQuery(query) || turns.length > 0}
       />
-      {last ? (
-        <View style={styles.turn} testID="search-turn">
-          <View style={styles.turnBody}>
-            <Text numberOfLines={1} style={styles.turnUtterance}>
-              “{last.utterance}”
-            </Text>
-            <Text numberOfLines={1} style={styles.meta} testID="search-turn-summary">
-              {last.summary}
-            </Text>
-          </View>
-          <Pressable
-            accessibilityRole="button"
-            disabled={thread.busy}
-            hitSlop={8}
-            onPress={onUndo}
-            testID="search-undo"
-          >
-            <Text style={styles.undo}>Undo</Text>
-          </Pressable>
-        </View>
-      ) : null}
+      <ThreadTurnList
+        onUndo={onUndo}
+        testIDPrefix="search"
+        turns={turns}
+        undoDisabled={thread.busy}
+      />
       {thread.busy || error ? (
         <Text
           style={[styles.meta, error ? styles.failed : undefined]}
@@ -535,27 +521,6 @@ const makeStyles = (colors: ThemeColors) =>
       color: colors.text,
       fontSize: 16,
       fontWeight: '500',
-    },
-    turn: {
-      alignItems: 'center',
-      backgroundColor: colors.fill,
-      borderRadius: 8,
-      flexDirection: 'row',
-      gap: 8,
-      paddingHorizontal: 10,
-      paddingVertical: 6,
-    },
-    turnBody: {
-      flex: 1,
-    },
-    turnUtterance: {
-      color: colors.text,
-      fontSize: 13,
-    },
-    undo: {
-      color: colors.primary,
-      fontSize: 15,
-      fontWeight: '600',
     },
     // The toast stands on this area's bottom edge: the tab bar's top.
     toastArea: {
