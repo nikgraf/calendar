@@ -29,6 +29,7 @@ const backendWith = (events: ReadonlyArray<EventRecord> | Error): BackendClient 
   ({
     getEventsInRange: () =>
       events instanceof Error ? (Effect.fail(events) as never) : Effect.succeed(events),
+    listAccounts: () => Effect.succeed([]),
   }) as unknown as BackendClient;
 
 const busy = (startUtc: number, endUtc: number) =>

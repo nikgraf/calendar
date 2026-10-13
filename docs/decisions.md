@@ -822,6 +822,11 @@ first. The decisions, one line each:
 - A key or a lost pointer capture mid-drag ends the drag instead of
   moving the drop; the e2e windows take CDP input only (Nik asked for the
   background over the top) (#166, #169).
+- One availability rule, `blocksTime`: find-a-time, the agent's
+  free/busy and slots skip events marked free and declined invitations;
+  mirrors flag items with the same predicates and keep their own
+  copy/skip filters. The finder reads account emails for the declined
+  check, like the agent (2026-10-13, #197).
 
 ## Brand
 

@@ -1,5 +1,6 @@
 import { Temporal } from '../time/temporal.ts';
 import type { EventRecord } from '../types.ts';
+import { blocksTime } from './busy.ts';
 
 /** A bookable gap, in the caller's wall clock. */
 export interface FreeSlot {
@@ -21,6 +22,11 @@ export interface FindSlotsConstraints {
 }
 
 export interface FindSlotsContext {
+  /**
+   * The signed-in email per account id: an invitation the user declined is
+   * found by it when the guest list does not mark their own entry.
+   */
+  readonly accountEmails?: ReadonlyMap<string, string> | undefined;
   readonly maxSlots?: number | undefined;
   /** Slots never start in the past. */
   readonly nowUtc: number;
@@ -80,10 +86,11 @@ export const findFreeSlots = (
   const durationMs = durationMinutes * 60_000;
   const roundingMs = ROUNDING_MINUTES * 60_000;
 
-  // All-day entries mark days, they don't occupy hours; cancelled rows are
-  // filtered defensively (assembleWindow already drops shadowed ones).
+  // Only what blocks time (`blocksTime`): all-day entries mark days, free
+  // and declined events block nothing, and cancelled rows are filtered
+  // defensively (assembleWindow already drops shadowed ones).
   const busy = events
-    .filter((event) => !event.isAllDay && event.status !== 'cancelled')
+    .filter((event) => blocksTime(event, context.accountEmails?.get(event.accountId)))
     .map((event) => ({ endUtc: event.endUtc, startUtc: event.startUtc }))
     .sort((a, b) => a.startUtc - b.startUtc);
 

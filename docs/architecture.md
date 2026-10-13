@@ -38,7 +38,9 @@ SQLite (node:sqlite / op-sqlite)
 parsing live in `packages/ai` behind the `LanguageModel`, `SpeechToText`
 and `TextRecognizer` seams; the pure `findFreeSlots` solver
 (`packages/core/src/scheduling/`) computes free slots from the
-already-synced local events. The model extracts, the code decides:
+already-synced local events — busy is what `blocksTime` says (timed, not
+cancelled, not marked free, not declined), the rule the agent gateway's
+free/busy shares. The model extracts, the code decides:
 `packages/ai/src/grounding.ts` reads the phrase itself — clock times,
 meal and part-of-day words (one table: quick-add defaults and the
 finder's bounds), weekdays, to-do cues, the finder's windows and
