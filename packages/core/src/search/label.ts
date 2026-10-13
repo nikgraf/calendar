@@ -155,6 +155,25 @@ export const searchFilterChips = (
   ];
 };
 
+/** A chip's identity across queries: its field, and the calendar or list it names. */
+export const searchChipId = (chip: SearchFilterChip): string => `${chip.field}:${chip.key ?? ''}`;
+
+/**
+ * The chips a turn put in the row or changed — new ones and ones whose
+ * label moved ("Last week" → "Last month") — for the row to flash. A
+ * filter the turn took away flashes nothing: its chip is gone.
+ */
+export const changedSearchChips = (
+  before: SearchQuery,
+  after: SearchQuery,
+  names: SearchNames,
+): ReadonlyArray<string> => {
+  const was = new Map(searchFilterChips(before, names).map((chip) => [searchChipId(chip), chip]));
+  return searchFilterChips(after, names)
+    .filter((chip) => was.get(searchChipId(chip))?.label !== chip.label)
+    .map(searchChipId);
+};
+
 /** The query in one line, for "nothing matches …": the words quoted, then the chips. */
 export const searchQuerySentence = (query: SearchQuery, names: SearchNames): string => {
   const words = cleanSearchQuery(query).terms.join(' ');

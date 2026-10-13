@@ -18,7 +18,14 @@ import {
   prefillError,
   previewOfPrefill,
 } from './draftPreview.ts';
-import { type Draft, type DraftThreadState, updateDraft, useDraftThread } from './draftThread.ts';
+import {
+  changedDraftFields,
+  type Draft,
+  type DraftField,
+  type DraftThreadState,
+  updateDraft,
+  useDraftThread,
+} from './draftThread.ts';
 import {
   type EditorConfirmRequest,
   type EventEditorSeed,
@@ -31,6 +38,7 @@ import { useBackendMutations } from './hooks.ts';
 import { useOneWrite } from './oneWrite.ts';
 import type { QuickAddItem } from './quickAddItem.ts';
 import { type TaskEditorSeed, useTaskEditorModel } from './taskEditorModel.ts';
+import { useFleetingFlash } from './threadTurns.ts';
 
 export type { DraftFocusRequest } from './draftAtoms.ts';
 
@@ -40,6 +48,16 @@ export interface ThreadSeed {
   /** A caveat about the drafts, shown with the thread (the text was cut short). */
   readonly note?: string | undefined;
   readonly utterance: string;
+}
+
+/**
+ * The fields a turn just changed in the form, for it to flash once: `key`
+ * is the turn's id, so the same turn never flashes twice and the next one
+ * always does.
+ */
+export interface DraftFlash {
+  readonly fields: ReadonlySet<DraftField>;
+  readonly key: string;
 }
 
 /** Existing event (edit mode), a prefilled slot (create mode), or a thread of drafts. */
@@ -255,16 +273,29 @@ export const useThreadEditor = ({
   // form takes the focused draft over and the calendar shows its day.
   // The form's own edits leave the version alone, so they never re-apply.
   // The thread emptied (the first turn undone): the form goes back to
-  // the blank it opened as, so nothing undone can still be saved.
+  // the blank it opened as, so nothing undone can still be saved. A turn
+  // that landed (the list grew — an Undo shrinks it, a focus or a removal
+  // leaves it) flashes the fields it changed in the form as it stood.
   const applied = useRef(0);
+  // A thread the editor opens with (a capture) fills a form that is only
+  // appearing: its first turn counts as seen, nothing flashes.
+  const turnsSeen = useRef(seed.thread ? 1 : 0);
+  const [flash, setFlash] = useState<DraftFlash | null>(null);
   useEffect(() => {
     if (version === applied.current) {
       return;
     }
     applied.current = version;
+    const { turns } = thread.state;
+    const landed = turns.length > turnsSeen.current ? turns.at(-1) : undefined;
+    turnsSeen.current = turns.length;
     if (focusedDraft) {
       const { extras } = focusedDraft;
-      void apply(focusedDraft.item).then(() => {
+      const before = currentItem();
+      void apply(focusedDraft.item).then((after) => {
+        if (landed) {
+          setFlash({ fields: new Set(changedDraftFields(before, after)), key: landed.id });
+        }
         if (focusedDraft.item.kind === 'task') {
           // A to-do's own: its notes, and a day the form had let go of —
           // unless the thread dated it itself (a slot placement says so in
@@ -447,12 +478,16 @@ export const useThreadEditor = ({
       }
     });
 
+  const playing = useFleetingFlash(flash);
+
   return {
     addAll,
     batchError,
     canAddAll,
     drafts,
     eventModel,
+    /** The fields the last turn changed, for the form to flash — while the flash plays. */
+    flash: playing,
     focused,
     focusedDraft,
     kinds,

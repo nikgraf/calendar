@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vite-plus/test';
 import {
+  changedDraftFields,
   describeDraftItem,
   EMPTY_THREAD,
   firstDraftExtras,
@@ -115,6 +116,47 @@ describe('summarizeChange', () => {
         prefill: { date: '2026-08-28', title: 'Dinner with Teo' },
       }),
     ).toBe('→ a to-do · → no time');
+    // A rule changed within its frequency still says so.
+    expect(
+      summarizeChange(
+        { kind: 'event', prefill: { ...dinner.prefill, recurrence: { freq: 'weekly' } } },
+        {
+          kind: 'event',
+          prefill: {
+            ...dinner.prefill,
+            recurrence: { byDay: [{ weekday: 'MO' }], freq: 'weekly' },
+          },
+        },
+      ),
+    ).toBe('→ repeats weekly');
+  });
+});
+
+describe('changedDraftFields', () => {
+  it('names the fields that differ, for the form to flash', () => {
+    expect(changedDraftFields(dinner, dinner)).toEqual([]);
+    expect(changedDraftFields(dinner, later)).toEqual(['time']);
+    expect(
+      changedDraftFields(dinner, {
+        kind: 'event',
+        prefill: { ...later.prefill, date: '2026-08-27', location: "Luigi's", title: 'Team' },
+      }),
+    ).toEqual(['title', 'date', 'time', 'location']);
+    expect(
+      changedDraftFields(dinner, { kind: 'event', prefill: { ...dinner.prefill, isAllDay: true } }),
+    ).toEqual(['time']);
+    expect(
+      changedDraftFields(dinner, {
+        kind: 'event',
+        prefill: { ...dinner.prefill, recurrence: { freq: 'daily' } },
+      }),
+    ).toEqual(['repeat']);
+    expect(
+      changedDraftFields(dinner, {
+        kind: 'task',
+        prefill: { date: '2026-08-28', title: 'Dinner' },
+      }),
+    ).toEqual(['kind', 'title', 'time']);
   });
 });
 

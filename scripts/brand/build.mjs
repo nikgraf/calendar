@@ -151,6 +151,8 @@ function contrastReport(tokens) {
       ['on-primary', 'primary', 4.5],
       ['on-primary', 'primary-hover', 4.5],
       ['on-selection', 'selection', 4.5],
+      // A field's text while a turn's change flashes behind it.
+      ['text', 'highlight', 4.5],
     );
     for (const color of ['mint', 'blush', 'lilac', 'blue']) {
       pairs.push([`on-event-${color}`, `event-${color}`, 4.5]);

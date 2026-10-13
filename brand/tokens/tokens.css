@@ -36,6 +36,7 @@
   --focus: #85658e;
   --selection: #eee7f1;
   --on-selection: #594263;
+  --highlight: #e4d5ec;
   --event-mint: #d7eae0;
   --on-event-mint: #285a4a;
   --event-mint-edge: #6c9c88;
@@ -74,6 +75,7 @@
   --focus: #d6bde5;
   --selection: #3d3046;
   --on-selection: #e4d4ec;
+  --highlight: #4b3b58;
   --event-mint: #253d35;
   --on-event-mint: #c6e8d7;
   --event-mint-edge: #689c83;

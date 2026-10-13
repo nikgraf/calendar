@@ -139,9 +139,9 @@ export const useEditorKinds = ({
    * the other kind switches the editor first — a to-do lands on the kind
    * a new to-do would open in — with the switch's own question about a
    * loss; declined, or with that kind unavailable, the phrase is read as
-   * the kind the editor shows.
+   * the kind the editor shows. Resolves to the item as the form took it.
    */
-  const apply = async (item: QuickAddItem) => {
+  const apply = async (item: QuickAddItem): Promise<QuickAddItem> => {
     const wanted: ItemKind =
       item.kind === 'event'
         ? 'event'
@@ -158,6 +158,7 @@ export const useEditorKinds = ({
     } else {
       taskModel.applyPrefill(read.prefill);
     }
+    return read;
   };
 
   return {

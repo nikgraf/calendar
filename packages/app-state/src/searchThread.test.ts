@@ -34,14 +34,19 @@ describe('the search thread', () => {
       typed,
       'harbour last month',
       { from: '2026-09-01', terms: ['harbour'], to: '2026-09-30' },
-      '→ “harbour” · → Sep 1 – Sep 30',
+      { chips: ['dates:'], summary: '→ “harbour” · → Sep 1 – Sep 30' },
       't1',
     );
     expect(turned.history).toEqual([{ terms: ['harbour', 'last', 'month'] }]);
     expect(turned.text).toBe('harbour');
     expect(turned.settledTerms).toEqual(['harbour']);
     expect(turned.turns).toEqual([
-      { id: 't1', summary: '→ “harbour” · → Sep 1 – Sep 30', utterance: 'harbour last month' },
+      {
+        chips: ['dates:'],
+        id: 't1',
+        summary: '→ “harbour” · → Sep 1 – Sep 30',
+        utterance: 'harbour last month',
+      },
     ]);
     expect(turned.version).toBe(1);
   });
@@ -52,7 +57,7 @@ describe('the search thread', () => {
       typed,
       'harbour last month',
       { from: '2026-09-01', terms: ['harbour'] },
-      's',
+      { summary: 's' },
       't1',
     );
     const edited = setSearchQuery(turned, { from: '2026-09-01', kind: 'event', terms: [] });
@@ -69,7 +74,7 @@ describe('the search thread', () => {
       setSearchText(EMPTY_SEARCH_THREAD, 'x'),
       'x',
       { kind: 'task', terms: ['x'] },
-      's',
+      { summary: 's' },
     );
     expect(clearSearchThread(turned)).toEqual({ ...EMPTY_SEARCH_THREAD, version: 2 });
   });
