@@ -29,6 +29,8 @@ export interface DraftPreview {
   /** The hex of the calendar the draft would be created in. */
   readonly color: string;
   readonly date: string;
+  /** The day it ends on, when not `date` (a multi-day or overnight draft). */
+  readonly endDate?: string | undefined;
   readonly endTime: string;
   readonly focused: boolean;
   readonly id: string;
@@ -83,6 +85,7 @@ export const previewOfPrefill = (
 ): DraftPreview => ({
   color,
   date: prefill.date,
+  ...(prefill.endDate === undefined ? {} : { endDate: prefill.endDate }),
   endTime: prefill.endTime,
   focused,
   id,

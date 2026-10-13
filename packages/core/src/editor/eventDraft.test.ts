@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vite-plus/test';
-import { buildEventTimes, validateEventDraft } from './eventDraft.ts';
+import {
+  buildEventTimes,
+  editorDatesOf,
+  timeFieldsChanged,
+  validateEventDraft,
+} from './eventDraft.ts';
 
 const TZ = 'Europe/Vienna';
 const timed = { date: '2026-08-22', endTime: '10:30', isAllDay: false, startTime: '09:00' };
@@ -31,6 +36,80 @@ describe('eventDraft', () => {
     expect((times.endUtc - times.startUtc) / (60 * 60 * 1000)).toBeCloseTo(22.98, 1);
   });
 
+  it('builds a multi-day all-day event from its last day', () => {
+    const times = buildEventTimes({ ...timed, endDate: '2026-08-24', isAllDay: true }, TZ);
+    expect(times.startDate).toBe('2026-08-22');
+    expect(times.endDate).toBe('2026-08-25');
+  });
+
+  it('builds an overnight event on its end date', () => {
+    const times = buildEventTimes(
+      {
+        date: '2026-08-22',
+        endDate: '2026-08-23',
+        endTime: '01:00',
+        isAllDay: false,
+        startTime: '23:00',
+      },
+      TZ,
+    );
+    expect(times.startUtc).toBe(Date.parse('2026-08-22T21:00:00Z'));
+    expect(times.endUtc).toBe(Date.parse('2026-08-22T23:00:00Z'));
+  });
+
+  it('reads stored times back into the dates they were built from', () => {
+    const allDay = buildEventTimes({ ...timed, endDate: '2026-08-24', isAllDay: true }, TZ);
+    expect(editorDatesOf({ ...allDay, isAllDay: true }, TZ)).toEqual({
+      date: '2026-08-22',
+      endDate: '2026-08-24',
+    });
+    const overnight = buildEventTimes(
+      {
+        date: '2026-08-22',
+        endDate: '2026-08-23',
+        endTime: '01:00',
+        isAllDay: false,
+        startTime: '23:00',
+      },
+      TZ,
+    );
+    expect(editorDatesOf({ ...overnight, isAllDay: false }, TZ)).toEqual({
+      date: '2026-08-22',
+      endDate: '2026-08-23',
+    });
+    // The same instants are another day in another zone.
+    expect(editorDatesOf({ ...overnight, isAllDay: false }, 'America/New_York')).toEqual({
+      date: '2026-08-22',
+      endDate: '2026-08-22',
+    });
+    // A malformed all-day end (not after the start) still reads as one day.
+    expect(
+      editorDatesOf(
+        {
+          endDate: '2026-08-22',
+          endUtc: Date.parse('2026-08-22T00:00:00Z'),
+          isAllDay: true,
+          startDate: '2026-08-22',
+          startUtc: Date.parse('2026-08-22T00:00:00Z'),
+        },
+        TZ,
+      ),
+    ).toEqual({ date: '2026-08-22', endDate: '2026-08-22' });
+  });
+
+  it('tells an untouched form from a changed one', () => {
+    const opened = { ...timed, endDate: '2026-08-24', isAllDay: true };
+    expect(timeFieldsChanged(opened, opened)).toBe(false);
+    // An all-day event's hidden times do not count.
+    expect(timeFieldsChanged({ ...opened, startTime: '11:00' }, opened)).toBe(false);
+    expect(timeFieldsChanged({ ...opened, endDate: '2026-08-23' }, opened)).toBe(true);
+    expect(timeFieldsChanged({ ...opened, date: '2026-08-21' }, opened)).toBe(true);
+    expect(timeFieldsChanged({ ...opened, isAllDay: false }, opened)).toBe(true);
+    expect(timeFieldsChanged({ ...timed, endTime: '11:00' }, timed)).toBe(true);
+    // No end date reads as the start's.
+    expect(timeFieldsChanged({ ...timed, endDate: '2026-08-22' }, timed)).toBe(false);
+  });
+
   it('requires a title and a calendar', () => {
     expect(validateEventDraft({ ...timed, calendarKey: 'acc:cal', title: '  ' }, TZ)).toBe(
       'A title and calendar are required.',
@@ -49,6 +128,26 @@ describe('eventDraft', () => {
     expect(validateEventDraft(backwards, TZ)).toBe('End must be after start.');
     // All-day ignores the times entirely.
     expect(validateEventDraft({ ...backwards, isAllDay: true }, TZ)).toBeNull();
+  });
+
+  it('takes an end on a later day, and refuses an end date before the start', () => {
+    const draft = { ...timed, calendarKey: 'acc:cal', title: 'Night shift' };
+    expect(
+      validateEventDraft(
+        { ...draft, endDate: '2026-08-23', endTime: '01:00', startTime: '23:00' },
+        TZ,
+      ),
+    ).toBeNull();
+    expect(validateEventDraft({ ...draft, endDate: '2026-08-21' }, TZ)).toBe(
+      'End must be after start.',
+    );
+    expect(validateEventDraft({ ...draft, endDate: '2026-08-24', isAllDay: true }, TZ)).toBeNull();
+    expect(validateEventDraft({ ...draft, endDate: '2026-08-22', isAllDay: true }, TZ)).toBeNull();
+    expect(validateEventDraft({ ...draft, endDate: '2026-08-21', isAllDay: true }, TZ)).toBe(
+      'End must not be before start.',
+    );
+    // A cleared end date field is a missing date, not a crash.
+    expect(validateEventDraft({ ...draft, endDate: '' }, TZ)).toBe('A date is required.');
   });
 
   it('reports unusable dates instead of throwing', () => {

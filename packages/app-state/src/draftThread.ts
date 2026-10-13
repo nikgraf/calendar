@@ -114,15 +114,36 @@ export const nextDraftId = (): string => {
   return `draft-${counter}`;
 };
 
-/** "Fri, Aug 28 · 19:00–20:00", "Fri, Aug 28" for an all-day event, "Tue, Aug 25 · 09:30" for a to-do. */
-export const describeDraftItem = (item: QuickAddItem): string => {
-  const day = Temporal.PlainDate.from(item.prefill.date).toLocaleString('en-US', {
+const dayLabel = (date: string): string =>
+  Temporal.PlainDate.from(date).toLocaleString('en-US', {
     day: 'numeric',
     month: 'short',
     weekday: 'short',
   });
+
+/** The day an event draft ends on, when it is not the day it starts. */
+const lastDayOf = (item: QuickAddItem): string | undefined =>
+  item.kind === 'event' &&
+  item.prefill.endDate !== undefined &&
+  item.prefill.endDate !== item.prefill.date
+    ? item.prefill.endDate
+    : undefined;
+
+/**
+ * "Fri, Aug 28 · 19:00–20:00", "Fri, Aug 28" for an all-day event, "Tue,
+ * Aug 25 · 09:30" for a to-do; a draft over several days names both
+ * ("Fri, Aug 28 – Sun, Aug 30", "Fri, Aug 28 · 23:00 – Sat, Aug 29 · 01:00").
+ */
+export const describeDraftItem = (item: QuickAddItem): string => {
+  const day = dayLabel(item.prefill.date);
   if (item.kind === 'task') {
     return item.prefill.time === undefined ? day : `${day} · ${item.prefill.time}`;
+  }
+  const last = lastDayOf(item);
+  if (last !== undefined) {
+    return item.prefill.isAllDay
+      ? `${day} – ${dayLabel(last)}`
+      : `${day} · ${item.prefill.startTime} – ${dayLabel(last)} · ${item.prefill.endTime}`;
   }
   return item.prefill.isAllDay ? day : `${day} · ${item.prefill.startTime}–${item.prefill.endTime}`;
 };
@@ -134,12 +155,12 @@ const timesOf = (item: QuickAddItem): string =>
       ? 'all day'
       : `${item.prefill.startTime}–${item.prefill.endTime}`;
 
-const dayOf = (item: QuickAddItem): string =>
-  Temporal.PlainDate.from(item.prefill.date).toLocaleString('en-US', {
-    day: 'numeric',
-    month: 'short',
-    weekday: 'short',
-  });
+const dayOf = (item: QuickAddItem): string => {
+  const last = lastDayOf(item);
+  return last === undefined
+    ? dayLabel(item.prefill.date)
+    : `${dayLabel(item.prefill.date)} – ${dayLabel(last)}`;
+};
 
 const repeatOf = (item: QuickAddItem): string | undefined =>
   item.kind === 'event' && item.prefill.recurrence
@@ -177,7 +198,9 @@ export const changedDraftFields = (
 ): ReadonlyArray<DraftField> => [
   ...(before.kind === after.kind ? [] : ['kind' as const]),
   ...(before.prefill.title === after.prefill.title ? [] : ['title' as const]),
-  ...(before.prefill.date === after.prefill.date ? [] : ['date' as const]),
+  ...(before.prefill.date === after.prefill.date && lastDayOf(before) === lastDayOf(after)
+    ? []
+    : ['date' as const]),
   ...(timesOf(before) === timesOf(after) ? [] : ['time' as const]),
   ...(placeOf(before) === placeOf(after) ? [] : ['location' as const]),
   ...(ruleOf(before) === ruleOf(after) ? [] : ['repeat' as const]),
@@ -323,7 +346,8 @@ export const itemAtSlot = (item: QuickAddItem, slot: FreeSlot, title?: string): 
       prefill: { ...item.prefill, date: slot.date, time: slot.startTime, title: named },
     };
   }
-  const { assumedTime: _assumed, ...prefill } = item.prefill;
+  // A slot is one day: a span the draft had ends with it.
+  const { assumedTime: _assumed, endDate: _endDate, ...prefill } = item.prefill;
   return {
     kind: 'event',
     prefill: {
@@ -353,6 +377,7 @@ export const slotItem = (slot: FreeSlot, title?: string): QuickAddItem => ({
 export const isAtSlot = (item: QuickAddItem, slot: FreeSlot): boolean =>
   item.kind === 'event' &&
   !item.prefill.isAllDay &&
+  lastDayOf(item) === undefined &&
   item.prefill.date === slot.date &&
   item.prefill.startTime === slot.startTime &&
   item.prefill.endTime === slot.endTime;

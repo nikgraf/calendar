@@ -1,4 +1,9 @@
-import { foldSearchText, validateEventDraft } from '@calendar/core';
+import {
+  addDaysToPlainDate,
+  daysBetweenPlainDates,
+  foldSearchText,
+  validateEventDraft,
+} from '@calendar/core';
 import {
   type ClockTime,
   clearsRepeat,
@@ -212,13 +217,24 @@ export const normalizeRefine = (
       endTime = plusMinutes(startTime, length);
     }
   }
-  if (!isAllDay && endTime <= startTime) {
+  // A span of days the form gave the draft moves with its start, while
+  // the turn leaves its times and kind alone; restated times read as one day.
+  const kept =
+    draft.endDate !== undefined &&
+    times === undefined &&
+    length === undefined &&
+    isAllDay === draft.isAllDay
+      ? daysBetweenPlainDates(draft.date, draft.endDate)
+      : 0;
+  const endDate = kept > 0 ? addDaysToPlainDate(date, kept) : undefined;
+  if (!isAllDay && endDate === undefined && endTime <= startTime) {
     return { kind: 'rejected', reason: 'That would end after midnight — pick an earlier time.' };
   }
 
   const fields = {
     calendarKey: 'placeholder:placeholder',
     date,
+    endDate,
     endTime,
     isAllDay,
     startTime,
@@ -249,6 +265,7 @@ export const normalizeRefine = (
     prefill: {
       ...(assumedTime ? { assumedTime } : {}),
       date,
+      ...(endDate === undefined ? {} : { endDate }),
       endTime,
       isAllDay,
       ...(location ? { location } : {}),

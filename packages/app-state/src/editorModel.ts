@@ -9,9 +9,13 @@ import {
   taskRecurrenceFromLines,
   taskToEventLoss,
   taskToEventLossSummary,
+  timeFieldsChanged,
+  addDaysToPlainDate,
   buildRecurrenceRule,
   buildEventTimes,
   canonicalReminders,
+  daysBetweenPlainDates,
+  editorDatesOf,
   emailKey,
   geoMatches,
   isMappableLocation,
@@ -26,6 +30,7 @@ import {
   type ByDay,
   type CalendarInfo,
   type EventConvertValues,
+  type EditorTimeFields,
   type EventDraft,
   type EventRecord,
   EventReminders,
@@ -58,6 +63,8 @@ export interface EventEditorPrefill {
   /** The times came from a meal or part-of-day word, not a stated clock time: shown as assumed until set. */
   readonly assumedTime?: boolean | undefined;
   readonly date: string;
+  /** The day it ends on, when not `date` (see `EditorTimeFields`): only the form sets one. */
+  readonly endDate?: string | undefined;
   readonly endTime: string;
   readonly isAllDay: boolean;
   readonly location?: string | undefined;
@@ -199,21 +206,26 @@ export const editorCapabilities = ({
  */
 export const recurringTimesError = ({
   date,
+  endDate,
   isAllDay,
   opened,
   scope,
 }: {
   /** The editor's date field now. */
   readonly date: string;
+  /** The editor's end date field now. */
+  readonly endDate: string;
   readonly isAllDay: boolean;
   /** The occurrence as the editor opened it. */
-  readonly opened: { readonly date: string; readonly isAllDay: boolean };
+  readonly opened: { readonly date: string; readonly endDate: string; readonly isAllDay: boolean };
   readonly scope: RecurringScope;
 }): string | undefined => {
   if (isAllDay !== opened.isAllDay) {
     return 'A repeating event cannot switch between all-day and timed.';
   }
-  if (isAllDay && scope !== 'instance' && date !== opened.date) {
+  // A series write keeps an all-day master's dates (EventMutations), so a
+  // new first or last day would be dropped there.
+  if (isAllDay && scope !== 'instance' && (date !== opened.date || endDate !== opened.endDate)) {
     return 'An all-day repeating event moves one occurrence at a time: choose “This event”.';
   }
   return undefined;
@@ -277,6 +289,33 @@ export const useMoveConfirmation = () => {
 
 const timeString = (epochMs: number, timeZone: string): string =>
   toZonedDateTime(epochMs, timeZone).toPlainTime().toString({ smallestUnit: 'minute' });
+
+/** Days from one form date to another, or undefined while either field is mid-edit. */
+const daysFrom = (from: string, until: string): number | undefined => {
+  try {
+    return daysBetweenPlainDates(from, until);
+  } catch {
+    return undefined;
+  }
+};
+
+const shiftDate = (date: string, days: number): string | undefined => {
+  try {
+    return addDaysToPlainDate(date, days);
+  } catch {
+    return undefined;
+  }
+};
+
+/** A timed form's length in minutes, start day to end day; 0 while it does not build. */
+const spanMinutes = (fields: EditorTimeFields, timeZone: string): number => {
+  try {
+    const times = buildEventTimes(fields, timeZone);
+    return Math.max(0, Math.round((times.endUtc - times.startUtc) / 60_000));
+  } catch {
+    return 0;
+  }
+};
 
 /**
  * Everything the event editors do that isn't JSX: field state, validation,
@@ -342,10 +381,14 @@ export const useEventEditorModel = ({
     return preferred ?? writableKeys[0] ?? '';
   });
   const [isAllDay, setIsAllDay] = useState(existing?.isAllDay ?? prefill?.isAllDay ?? false);
-  const openedDate = existing
-    ? (existing.startDate ?? toZonedDateTime(existing.startUtc, timeZone).toPlainDate().toString())
-    : undefined;
+  // An existing event's span in days: a multi-day event ends on a later
+  // day, an overnight one on the next.
+  const openedDates = existing ? editorDatesOf(existing, timeZone) : undefined;
+  const openedDate = openedDates?.date;
   const [date, setDate] = useState(openedDate ?? prefill?.date ?? seed.initialDate.toString());
+  const [endDate, setEndDate] = useState(
+    openedDates?.endDate ?? prefill?.endDate ?? prefill?.date ?? seed.initialDate.toString(),
+  );
   const [startTime, setStartTime] = useState(
     existing && !existing.isAllDay
       ? timeString(existing.startUtc, timeZone)
@@ -356,6 +399,17 @@ export const useEventEditorModel = ({
       ? timeString(existing.endUtc, timeZone)
       : seedTimeFields(seed).endTime,
   );
+  // The time fields as the form opened (`timeFieldsChanged`).
+  const [openedTimes] = useState(() => ({ date, endDate, endTime, isAllDay, startTime }));
+  /** A new start day: the end day moves with it, so the event keeps its length. */
+  const moveDate = (next: string) => {
+    const span = daysFrom(date, endDate);
+    const moved = span === undefined ? undefined : shiftDate(next, span);
+    if (moved !== undefined) {
+      setEndDate(moved);
+    }
+    setDate(next);
+  };
   // A stored event, a drawn slot or a parsed phrase chose the time; the
   // clicked hour and the 09:00 fallback are the editor's own defaults.
   // Only a chosen time follows the draft into a task.
@@ -558,6 +612,8 @@ export const useEventEditorModel = ({
     setTitle(next.title);
     setIsAllDay(next.isAllDay);
     setDate(next.date);
+    // A task has one day.
+    setEndDate(next.date);
     setStartTime(next.startTime);
     setEndTime(next.endTime);
     setTimeChosen(next.timeChosen);
@@ -588,6 +644,7 @@ export const useEventEditorModel = ({
     }
     setIsAllDay(false);
     setDate(slot.date);
+    setEndDate(slot.date);
     setStartTime(slot.startTime);
     setEndTime(slot.endTime);
     setTimeChosen(true);
@@ -649,6 +706,7 @@ export const useEventEditorModel = ({
     return {
       ...(assumedTime ? { assumedTime: true } : {}),
       date,
+      ...(endDate === date ? {} : { endDate }),
       endTime,
       isAllDay,
       ...(location.trim() ? { location: location.trim() } : {}),
@@ -679,6 +737,7 @@ export const useEventEditorModel = ({
     setTitle(next.title);
     setIsAllDay(next.isAllDay);
     setDate(next.date);
+    setEndDate(next.endDate ?? next.date);
     setStartTime(next.startTime);
     setEndTime(next.endTime);
     setTimeChosen(true);
@@ -732,7 +791,7 @@ export const useEventEditorModel = ({
     existing?.attendees?.find((attendee) => emailKey(attendee.email) === emailKey(email));
 
   const save = async () => {
-    const fields = { calendarKey, date, endTime, isAllDay, startTime, title };
+    const fields = { calendarKey, date, endDate, endTime, isAllDay, startTime, title };
     const spec = repeatSpec();
     const invalid =
       validateEventDraft(fields, timeZone) ??
@@ -745,8 +804,9 @@ export const useEventEditorModel = ({
       (existing && isRecurring && openedDate !== undefined
         ? recurringTimesError({
             date,
+            endDate,
             isAllDay,
-            opened: { date: openedDate, isAllDay: existing.isAllDay },
+            opened: { date: openedDate, endDate: openedTimes.endDate, isAllDay: existing.isAllDay },
             scope,
           })
         : undefined) ??
@@ -768,7 +828,10 @@ export const useEventEditorModel = ({
       existing && calendarKey !== originalCalendarKey && capabilities.canMoveCalendar
         ? (calendarKey.split(':', 2) as [string, string])
         : undefined;
-    const times = buildEventTimes(fields, timeZone);
+    const built = buildEventTimes(fields, timeZone);
+    // A title-only edit must not rebuild the span: untouched times stay out
+    // of an update, and the stored ones are kept as they are.
+    const times = existing && !timeFieldsChanged(fields, openedTimes) ? {} : built;
     // Only coordinates the user vouched for reach Google: the event's own
     // (mirrored) ones or a picked suggestion, and only while they match the
     // text being saved. The open-time lookup of free text stays on this
@@ -867,7 +930,7 @@ export const useEventEditorModel = ({
             ? { reminders: resolvedReminders }
             : {}),
           title: title.trim(),
-          ...times,
+          ...built,
           ...(targetProvider === 'apple' && carried.url ? { url: carried.url } : {}),
         };
         const task = seed.convertFromTask;
@@ -976,6 +1039,11 @@ export const useEventEditorModel = ({
     ...capabilities,
     date,
     description,
+    /** The form's span in minutes, for the finder's starting duration (an hour for all-day). */
+    durationMinutes: isAllDay
+      ? 60
+      : spanMinutes({ date, endDate, endTime, isAllDay, startTime }, timeZone),
+    endDate,
     endTime,
     error,
     existing,
@@ -1016,8 +1084,9 @@ export const useEventEditorModel = ({
     save: () => write.run(save),
     scope,
     setCalendarKey,
-    setDate,
+    setDate: moveDate,
     setDescription,
+    setEndDate,
     setEndTime: (time: string) => {
       setEndTime(time);
       setTimeChosen(true);

@@ -55,6 +55,7 @@ export function EventEditForm({
     canRsvp,
     canSwitchAllDay,
     date,
+    endDate,
     endTime,
     error,
     existing,
@@ -69,6 +70,7 @@ export function EventEditForm({
     scope,
     setCalendarKey,
     setDate,
+    setEndDate,
     setEndTime,
     setIsAllDay,
     setScope,
@@ -81,7 +83,7 @@ export function EventEditForm({
   const { timeZone } = model;
   // The draft's times in the other zones; null for all-day or before the times build.
   const zoneLines = draftZoneRanges(
-    { date, endTime, isAllDay, startTime },
+    { date, endDate, endTime, isAllDay, startTime },
     timeZone,
     secondaryZones,
   );
@@ -179,47 +181,64 @@ export function EventEditForm({
           </FieldFlash>
         ) : null}
 
-        {/* The date and time rows touch: their tints meet rather than overlap. */}
-        <FieldFlash bleedY={0} field="date" style={styles.pickerRow} testID="event-date">
-          <Text style={styles.label}>Date</Text>
-          <DateTimePicker
-            display="compact"
-            mode="date"
-            onChange={(_, picked) => picked && setDate(dateStringFromPicker(picked, timeZone))}
-            timeZoneName={timeZone}
-            value={dateForPicker(date, undefined, timeZone)}
-          />
-        </FieldFlash>
-        {isAllDay ? null : (
-          <FieldFlash bleedY={0} field="time" style={styles.timesRow}>
-            <View style={styles.timeField} testID="event-start">
-              <Text style={styles.label}>Start</Text>
+        {/* Start and end each get a row, a day and a time: a multi-day or
+            overnight event ends on a later day (Calendar's Starts/Ends). */}
+        <View style={styles.pickerRow} testID="event-start">
+          <Text style={styles.label}>Starts</Text>
+          <View style={styles.pickerPair}>
+            <FieldFlash bleedY={2} field="date" testID="event-date">
               <DateTimePicker
                 display="compact"
-                mode="time"
-                onChange={(_, picked) =>
-                  picked && setStartTime(timeStringFromPicker(picked, timeZone))
-                }
-                style={styles.timePicker}
+                mode="date"
+                onChange={(_, picked) => picked && setDate(dateStringFromPicker(picked, timeZone))}
                 timeZoneName={timeZone}
-                value={dateForPicker(date, startTime, timeZone)}
+                value={dateForPicker(date, undefined, timeZone)}
               />
-            </View>
-            <View style={styles.timeField} testID="event-end">
-              <Text style={styles.label}>End</Text>
+            </FieldFlash>
+            {isAllDay ? null : (
+              <FieldFlash bleedY={2} field="time">
+                <DateTimePicker
+                  display="compact"
+                  mode="time"
+                  onChange={(_, picked) =>
+                    picked && setStartTime(timeStringFromPicker(picked, timeZone))
+                  }
+                  timeZoneName={timeZone}
+                  value={dateForPicker(date, startTime, timeZone)}
+                />
+              </FieldFlash>
+            )}
+          </View>
+        </View>
+        <View style={styles.pickerRow} testID="event-end">
+          <Text style={styles.label}>Ends</Text>
+          <View style={styles.pickerPair}>
+            <FieldFlash bleedY={2} field="date" testID="event-end-date">
               <DateTimePicker
                 display="compact"
-                mode="time"
+                mode="date"
                 onChange={(_, picked) =>
-                  picked && setEndTime(timeStringFromPicker(picked, timeZone))
+                  picked && setEndDate(dateStringFromPicker(picked, timeZone))
                 }
-                style={styles.timePicker}
                 timeZoneName={timeZone}
-                value={dateForPicker(date, endTime, timeZone)}
+                value={dateForPicker(endDate, undefined, timeZone)}
               />
-            </View>
-          </FieldFlash>
-        )}
+            </FieldFlash>
+            {isAllDay ? null : (
+              <FieldFlash bleedY={2} field="time">
+                <DateTimePicker
+                  display="compact"
+                  mode="time"
+                  onChange={(_, picked) =>
+                    picked && setEndTime(timeStringFromPicker(picked, timeZone))
+                  }
+                  timeZoneName={timeZone}
+                  value={dateForPicker(endDate, endTime, timeZone)}
+                />
+              </FieldFlash>
+            )}
+          </View>
+        </View>
         {zoneLines ? <ZoneLines lines={zoneLines} textStyle={styles.hint} /> : null}
         {readOnly ? null : <FindTimeFields model={model} />}
 

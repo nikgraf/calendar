@@ -668,6 +668,16 @@ details, or Custom), so a calendar can be shared without the details.
   seed its repeat fields — an occurrence row has no lines — and sends the
   rule only when those fields were edited. A read-through Apple series
   has no stored master, so its rule stays uneditable in the app.
+- The event form's times are two rows, Starts and Ends, each a date and
+  (unless all-day) a time: `EditorTimeFields.endDate` is an all-day
+  event's last day (inclusive) or a timed one's end day, so a multi-day
+  or overnight event round-trips (`editorDatesOf` reads stored times
+  back). A new start date carries the end date along. An update whose
+  time fields still read as the form opened them sends no times at all
+  (`timeFieldsChanged`): a title edit keeps the stored span to the second
+  and in its own zone. An all-day series keeps its dates on a series or
+  following edit, so a changed end date asks for "This event" like a
+  changed start date.
 - Dragging a recurring instance commits an instance-scope override.
 
 ## Time-grid gestures

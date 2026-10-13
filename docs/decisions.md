@@ -822,6 +822,11 @@ first. The decisions, one line each:
 - A key or a lost pointer capture mid-drag ends the drag instead of
   moving the drop; the e2e windows take CDP input only (Nik asked for the
   background over the top) (#166, #169).
+- The event form has an end date (Starts/Ends rows, both apps) and an
+  update leaves untouched times out: a title edit no longer cut a
+  multi-day all-day event to one day or refused an overnight one.
+  Rejected: inferring the end day from the times alone, which cannot
+  say how many days an all-day event spans (2026-10-13, #200).
 
 ## Brand
 

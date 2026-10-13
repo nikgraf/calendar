@@ -222,6 +222,12 @@ const makeSheetStyles = (colors: ThemeColors) =>
       flexDirection: 'row',
       justifyContent: 'space-between',
     },
+    /** A date picker and its time picker, side by side at a row's end. */
+    pickerPair: {
+      alignItems: 'center',
+      flexDirection: 'row',
+      gap: 4,
+    },
     readOnly: {
       opacity: 0.6,
     },
@@ -305,9 +311,6 @@ const makeSheetStyles = (colors: ThemeColors) =>
     },
     timeField: {
       flex: 1,
-    },
-    timePicker: {
-      alignSelf: 'flex-start',
     },
     timesRow: {
       flexDirection: 'row',
