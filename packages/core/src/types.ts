@@ -466,8 +466,11 @@ export class PendingOp extends Schema.Class<PendingOp>('PendingOp')({
    * means the event was deleted on Google.
    */
   serverPayload: Schema.optional(EventRecord),
-  /** Due day (YYYY-MM-DD) for kind 'createTask'/'updateTask'. */
-  taskDue: Schema.optional(Schema.String),
+  /**
+   * Due day (YYYY-MM-DD) for kind 'createTask'/'updateTask'; null on an
+   * update that takes the day away (the patch sends `due: null`).
+   */
+  taskDue: Schema.optional(Schema.NullOr(Schema.String)),
   /** Task-list id for the task op kinds (eventId carries the task id). */
   taskListId: Schema.optional(Schema.String),
   /** Notes for kind 'createTask'/'updateTask'. */

@@ -108,7 +108,8 @@ export const seedDueTiming = (seed: TaskEditorSeed): { dueTime: string; timed: b
  * delete of the source, after `confirm` when the target cannot hold
  * everything); between two Reminders lists it re-homes in place. A new
  * task gets a due day unless the seed says otherwise (the Tasks tab's
- * "+") or it is taken away (`clearDueDate`). An existing undated one
+ * "+"); any task's day can be taken away (`clearDueDate`), and a
+ * reminder's time and repeat rule go with it. An existing undated one
  * (made in Reminders or Google Tasks; the calendar draws it on today)
  * opens as "no due date" and stays that way unless a day is added:
  * showing it today is not a due day, and Save must not turn it into one.
@@ -302,14 +303,15 @@ export const useTaskEditorModel = ({
       setError('The URL is not valid.');
       return;
     }
-    if (provider === 'apple' && repeatState.repeat !== 'none') {
+    // An undated reminder does not repeat: its hidden rule is not saved.
+    if (provider === 'apple' && dated && repeatState.repeat !== 'none') {
       const invalid =
         repeatNumberError(repeatState.repeatInterval, 'The repeat interval') ??
         (repeatState.repeatEnds === 'after'
           ? repeatNumberError(repeatState.repeatCount, 'The occurrence count')
           : undefined) ??
         byDayError(repeatSpec() ?? { freq: repeatState.repeat }) ??
-        (dated ? repeatUntilError(repeatSpec() ?? {}, dueDate) : undefined);
+        repeatUntilError(repeatSpec() ?? {}, dueDate);
       if (invalid) {
         setError(invalid);
         return;
@@ -398,12 +400,24 @@ export const useTaskEditorModel = ({
           });
         }
       } else {
-        // An undated create sends no due day at all (the draft's is the form's default).
-        const { dueDate: draftDue, ...rest } = newDraft();
+        // An undated create sends no due day at all (the draft's is the
+        // form's default), and so no time or repeat rule either.
+        const {
+          dueDate: draftDue,
+          dueTime: draftTime,
+          recurrence: draftRule,
+          ...rest
+        } = newDraft();
         await mutations.createTask({
           ...rest,
           accountId,
-          ...(dated ? { dueDate: draftDue } : {}),
+          ...(dated
+            ? {
+                dueDate: draftDue,
+                ...(draftTime === undefined ? {} : { dueTime: draftTime }),
+                ...(draftRule === undefined ? {} : { recurrence: draftRule }),
+              }
+            : {}),
           taskListId,
         });
         rememberTaskList(listKey);
@@ -446,13 +460,15 @@ export const useTaskEditorModel = ({
     busy: write.busy,
     canMoveList,
     /**
-     * Takes a new task's due day away: it is created undated and shown on
-     * today until done. Plain creates only — `updateTask` cannot clear a
-     * stored due day, and a conversion keeps the event's day (its draft
-     * always carries one), so both keep the control hidden.
+     * Takes the due day away: the task is saved undated ("No due date")
+     * and shown on today until done; a reminder's time and repeat rule go
+     * with it. Not for a conversion, which keeps the event's day (its
+     * draft always carries one), a read-only reminder, or one whose rule
+     * the form cannot show (EventKit refuses a repeat without a day, and
+     * that rule is never overwritten) — the control stays hidden there.
      */
     clearDueDate:
-      existing === undefined && seed.convertFromEvent === undefined
+      seed.convertFromEvent === undefined && !readOnly && !recurrenceUnsupported
         ? () => setDated(false)
         : undefined,
     /** False for a task without a due day, until one is added. */

@@ -22,7 +22,7 @@ import {
 
 /**
  * Google Tasks on the real API: server-assigned ids and the temp-id swap,
- * date-only dues, completion, the `updatedMin` watermark with deleted
+ * date-only dues (and taking one away), completion, the `updatedMin` watermark with deleted
  * tombstones, adopt-before-retry for a create whose response was lost,
  * and a copy-then-delete move between lists.
  */
@@ -91,6 +91,21 @@ describe('live Google: tasks', () => {
       expect(server.title).toBe(`${temp.title} (edited)`);
       expect(server.notes).toBe('bring the charger');
       expect(server.due?.slice(0, 10)).toBe(isoDay(2));
+
+      // `due: null` takes the day away again.
+      yield* mutations.updateTask({
+        accountId: LIVE_ACCOUNT_ID,
+        changes: { dueDate: null },
+        taskId: row.id,
+        taskListId: listA(),
+      });
+      yield* drain(mutations);
+      server = yield* google.getTask(listA(), row.id);
+      expect(server.due).toBeUndefined();
+      expect(server.title).toBe(`${temp.title} (edited)`);
+      expect((yield* (yield* TaskRepo).get(LIVE_ACCOUNT_ID, listA(), row.id))?.dueDate).toBe(
+        undefined,
+      );
 
       yield* mutations.completeTask({
         accountId: LIVE_ACCOUNT_ID,

@@ -180,6 +180,10 @@ describe('pendingOpDiff', () => {
         context,
       ),
     ).toEqual([{ after: 'Pay rent today', before: 'Pay rent', label: 'Title' }]);
+    // A due day taken away reads as "none".
+    expect(
+      pendingOpDiff(taskOp({ beforeTask: task(), kind: 'updateTask', taskDue: null }), context),
+    ).toEqual([{ after: 'none', before: 'Sun, Aug 30', label: 'Due' }]);
     expect(
       pendingOpDiff(
         taskOp({ beforeTask: task(), kind: 'completeTask', taskStatus: 'completed' }),

@@ -734,11 +734,12 @@ export class AppBackendRpcs extends RpcGroup.make(
     error: BackendError,
     payload: {
       accountId: Schema.String,
-      // Reminders-only fields use null to clear; `moveToListId` moves the
-      // reminder to another list (Google lists are fixed after create).
+      // null clears a field (the due day too: the task goes back to "No
+      // due date"); `moveToListId` moves the reminder to another list
+      // (Google lists are fixed after create).
       changes: Schema.Struct({
         alarms: Schema.optional(Schema.NullOr(Schema.Array(Schema.Number))),
-        dueDate: Schema.optional(Schema.String),
+        dueDate: Schema.optional(Schema.NullOr(Schema.String)),
         dueTime: Schema.optional(Schema.NullOr(Schema.String)),
         moveToListId: Schema.optional(Schema.String),
         notes: Schema.optional(Schema.String),

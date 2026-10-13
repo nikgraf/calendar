@@ -518,6 +518,84 @@ describe('reminder mutations', () => {
     }).pipe(Effect.provide(testLayer(fake)));
   });
 
+  it.effect("updateTask takes a timed reminder's due day away, its time with it", () => {
+    const fake = fakeWith();
+    return Effect.gen(function* () {
+      yield* seedApple();
+      yield* (yield* SyncEngine).syncAll();
+      const mutations = yield* EventMutations;
+      yield* mutations.updateTask({
+        accountId: APPLE_REMINDERS_ACCOUNT_ID,
+        changes: { dueDate: null },
+        taskId: 'rem-timed',
+        taskListId: 'list-a',
+      });
+      const stored = fake.state.reminders.get('rem-timed');
+      expect(stored && { dueDate: stored.dueDate, dueTime: stored.dueTime }).toEqual({
+        dueDate: undefined,
+        dueTime: undefined,
+      });
+      const row = yield* (yield* TaskRepo).get(APPLE_REMINDERS_ACCOUNT_ID, 'list-a', 'rem-timed');
+      expect(row && { dueDate: row.dueDate, dueTime: row.dueTime }).toEqual({
+        dueDate: undefined,
+        dueTime: undefined,
+      });
+      // Nothing queued: EventKit took it synchronously.
+      expect(yield* (yield* PendingOpRepo).listAll()).toEqual([]);
+    }).pipe(Effect.provide(testLayer(fake)));
+  });
+
+  it.effect('a repeating reminder keeps its due day unless its rule goes too', () => {
+    const fake = fakeWith();
+    return Effect.gen(function* () {
+      yield* seedApple();
+      yield* (yield* SyncEngine).syncAll();
+      const mutations = yield* EventMutations;
+      const daily = { freq: 'daily' as const, interval: 1 };
+      const created = yield* mutations.createTask({
+        accountId: APPLE_REMINDERS_ACCOUNT_ID,
+        dueDate: tomorrow,
+        recurrence: daily,
+        taskListId: 'list-a',
+        title: 'Stretch',
+      });
+      const clear = (changes: { dueDate: null; recurrence?: null }) =>
+        mutations.updateTask({
+          accountId: APPLE_REMINDERS_ACCOUNT_ID,
+          changes,
+          taskId: created.id,
+          taskListId: 'list-a',
+        });
+      // EventKit refuses a repeat without a due day: refused before the bridge.
+      expect(String(yield* Effect.flip(clear({ dueDate: null })))).toContain(
+        'a repeating reminder needs a due date',
+      );
+      expect(fake.state.reminders.get(created.id)).toMatchObject({
+        dueDate: tomorrow,
+        recurrence: daily,
+      });
+      yield* clear({ dueDate: null, recurrence: null });
+      const stored = fake.state.reminders.get(created.id);
+      expect(stored && { dueDate: stored.dueDate, recurrence: stored.recurrence }).toEqual({
+        dueDate: undefined,
+        recurrence: undefined,
+      });
+      // Nor can an undated one be created repeating.
+      expect(
+        String(
+          yield* Effect.flip(
+            mutations.createTask({
+              accountId: APPLE_REMINDERS_ACCOUNT_ID,
+              recurrence: daily,
+              taskListId: 'list-a',
+              title: 'Undated rule',
+            }),
+          ),
+        ),
+      ).toContain('a repeating reminder needs a due date');
+    }).pipe(Effect.provide(testLayer(fake)));
+  });
+
   it.effect('completeTask and deleteTask round-trip through EventKit', () => {
     const fake = fakeWith();
     return Effect.gen(function* () {

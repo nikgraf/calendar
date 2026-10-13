@@ -161,8 +161,23 @@ describe('taskEditorChanges', () => {
       });
     expect(changes({ title: 'Renamed' })).toEqual({ title: 'Renamed' });
     expect(changes({ dueDate: '2030-03-11' })).toEqual({ dueDate: '2030-03-11' });
-    // A due day cannot be taken away again: the rpc has no way to clear one.
-    expect(diff({ dueDate: undefined })).toEqual({});
+  });
+
+  it("takes a due day away with null, and the reminder's time and repeat rule with it", () => {
+    // The time goes with the day; EventKit refuses a repeat without one.
+    expect(diff({ dueDate: undefined, dueTime: undefined })).toEqual({
+      dueDate: null,
+      recurrence: null,
+    });
+    // Whatever the hidden rows still hold.
+    expect(diff({ dueDate: undefined })).toEqual({ dueDate: null, recurrence: null });
+    expect(diff({ dueDate: undefined }, { provider: 'google' })).toEqual({ dueDate: null });
+    // The rest of the form still counts.
+    expect(diff({ dueDate: undefined, title: 'Dentist, some day' })).toEqual({
+      dueDate: null,
+      recurrence: null,
+      title: 'Dentist, some day',
+    });
   });
 
   it('a Google task only ever sends title, notes, and due date', () => {

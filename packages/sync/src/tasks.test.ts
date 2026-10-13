@@ -1053,6 +1053,112 @@ describe('completeTask', () => {
     }).pipe(noYield, Effect.provide(testLayer(tasksClient({})))),
   );
 
+  it.effect('taking the due day away patches `due: null` and leaves the task undated', () => {
+    const patches: Array<Record<string, unknown>> = [];
+    const client: GoogleTasksClientShape = tasksClient({
+      patchTask: ({ changes, taskId }) => {
+        patches.push({ ...changes });
+        // Google answers without a due once it is cleared.
+        return Effect.succeed({ id: taskId, status: 'needsAction', title: 'Pay rent' });
+      },
+    });
+    return Effect.gen(function* () {
+      yield* seedTasks;
+      const mutations = yield* EventMutations;
+      yield* mutations.updateTask({
+        accountId: 'acc-1',
+        changes: { dueDate: null },
+        taskId: 't1',
+        taskListId: 'list-1',
+      });
+      // Undated at once, before the push: drawn on today with the inbox.
+      const repo = yield* TaskRepo;
+      expect((yield* repo.getUndatedOpen()).map((task) => task.id)).toEqual(['t1']);
+      const ops = yield* PendingOpRepo;
+      expect((yield* ops.listAll()).map((op) => op.taskDue)).toEqual([null]);
+
+      yield* mutations.processPendingOps();
+      expect(patches).toEqual([{ due: null }]);
+      const row = yield* taskRow('t1');
+      expect(row?.dueDate).toBeUndefined();
+      expect(row?.syncStatus).toBe('synced');
+      expect(yield* ops.listAll()).toEqual([]);
+    }).pipe(noYield, Effect.provide(testLayer(client)));
+  });
+
+  it.effect('the latest edit decides the due day: a clear replaces a day, a day a clear', () =>
+    Effect.gen(function* () {
+      yield* seedTasks;
+      const mutations = yield* EventMutations;
+      const edit = (changes: { dueDate?: string | null; title?: string }) =>
+        mutations.updateTask({ accountId: 'acc-1', changes, taskId: 't1', taskListId: 'list-1' });
+      const ops = yield* PendingOpRepo;
+      const queued = Effect.map(ops.listAll(), (all) =>
+        all.map((op) => ({ taskDue: op.taskDue, taskTitle: op.taskTitle })),
+      );
+      yield* edit({ title: 'Renamed' });
+      yield* edit({ dueDate: null });
+      expect(yield* queued).toEqual([{ taskDue: null, taskTitle: 'Renamed' }]);
+      yield* edit({ dueDate: '2026-09-01' });
+      expect(yield* queued).toEqual([{ taskDue: '2026-09-01', taskTitle: 'Renamed' }]);
+      yield* edit({ dueDate: null });
+      expect(yield* queued).toEqual([{ taskDue: null, taskTitle: 'Renamed' }]);
+      expect((yield* taskRow('t1'))?.dueDate).toBeUndefined();
+    }).pipe(noYield, Effect.provide(testLayer(tasksClient({})))),
+  );
+
+  it.effect('a due day taken away from a still-queued create leaves the create undated', () => {
+    const bodies: Array<Record<string, unknown>> = [];
+    const client: GoogleTasksClientShape = tasksClient({
+      insertTask: ({ task }) => {
+        bodies.push({ ...task });
+        return Effect.succeed({ id: 'server-3', status: 'needsAction', title: task.title });
+      },
+    });
+    return Effect.gen(function* () {
+      yield* seedTasks;
+      const mutations = yield* EventMutations;
+      const temp = yield* mutations.createTask({
+        accountId: 'acc-1',
+        dueDate: '2026-08-30',
+        taskListId: 'list-1',
+        title: 'Someday',
+      });
+      yield* mutations.updateTask({
+        accountId: 'acc-1',
+        changes: { dueDate: null },
+        taskId: temp.id,
+        taskListId: 'list-1',
+      });
+      const [create] = yield* (yield* PendingOpRepo).listAll();
+      expect(create?.kind).toBe('createTask');
+      expect(create?.taskDue).toBeUndefined();
+      yield* mutations.processPendingOps();
+      expect(bodies).toEqual([{ title: 'Someday' }]);
+      expect((yield* taskRow('server-3'))?.dueDate).toBeUndefined();
+    }).pipe(noYield, Effect.provide(testLayer(client)));
+  });
+
+  it.effect('discarding a cleared due day puts the day back', () =>
+    Effect.gen(function* () {
+      yield* seedTasks;
+      const mutations = yield* EventMutations;
+      yield* mutations.updateTask({
+        accountId: 'acc-1',
+        changes: { dueDate: null },
+        taskId: 't1',
+        taskListId: 'list-1',
+      });
+      const ops = yield* PendingOpRepo;
+      const [op] = yield* ops.listAll();
+      expect(op?.beforeTask?.dueDate).toBe('2026-08-30');
+      yield* mutations.discardPendingOp(op!.id);
+      const row = yield* taskRow('t1');
+      expect(row?.dueDate).toBe('2026-08-30');
+      expect(row?.syncStatus).toBe('synced');
+    }).pipe(noYield, Effect.provide(testLayer(tasksClient({})))),
+  );
+
   it.effect('rejects unknown task lists', () =>
     Effect.gen(function* () {
       yield* seedTasks;

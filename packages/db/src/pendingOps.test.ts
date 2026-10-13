@@ -166,6 +166,22 @@ describe('PendingOpRepo', () => {
     }).pipe(Effect.provide(freshDbLayer())),
   );
 
+  it.effect('keeps a due day taken away apart from one left alone', () =>
+    Effect.gen(function* () {
+      const repo = yield* PendingOpRepo;
+      const task = { kind: 'updateTask' as const, taskListId: 'list-1' };
+      yield* repo.enqueue(op('cleared', { ...task, taskDue: null }));
+      yield* repo.enqueue(op('dated', { ...task, taskDue: '2026-08-30' }));
+      yield* repo.enqueue(op('untouched', { ...task, taskTitle: 'Renamed' }));
+      const stored = Object.fromEntries(
+        (yield* repo.listAll()).map((entry) => [entry.id, entry.taskDue]),
+      );
+      expect(stored['cleared']).toBeNull();
+      expect(stored['dated']).toBe('2026-08-30');
+      expect(stored['untouched']).toBeUndefined();
+    }).pipe(Effect.provide(freshDbLayer())),
+  );
+
   it.effect('advanceBefore moves the snapshots of every op queued with a landed one', () =>
     Effect.gen(function* () {
       const repo = yield* PendingOpRepo;

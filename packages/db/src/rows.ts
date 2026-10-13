@@ -472,6 +472,8 @@ export interface PendingOpRow {
   readonly before_overrides: string | null;
   readonly before_task: string | null;
   readonly before_color_hex: string | null;
+  /** Added by migration 12 (hence last). */
+  readonly task_due_cleared: number;
 }
 
 const eventListSchema = Schema.Array(EventRecord);
@@ -523,7 +525,7 @@ export const pendingOpFromRow = (row: PendingOpRow): PendingOp | undefined =>
         remindersChanged: row.reminders_changed === 1 ? true : undefined,
         serverPayload: decodeOr(EventRecord, parseJson(row.server_payload)),
         targetCalendarId: row.target_calendar_id ?? undefined,
-        taskDue: row.task_due ?? undefined,
+        taskDue: row.task_due_cleared === 1 ? null : (row.task_due ?? undefined),
         taskListId: row.task_list_id ?? undefined,
         taskNotes: row.task_notes ?? undefined,
         taskStatus: TASK_STATUSES.has(row.task_status ?? '')
