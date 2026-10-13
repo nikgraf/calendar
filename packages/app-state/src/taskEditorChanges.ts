@@ -125,9 +125,10 @@ export const taskEditorChanges = ({
   if (current.priority !== initial.priority) {
     changes.priority = current.priority ?? null;
   }
-  // Never overwrite a rule the form could not show. A day taken away
-  // takes the rule with it (EventKit refuses a repeat without one).
-  const recurrence = dayTakenAway ? undefined : current.recurrence;
+  // Never overwrite a rule the form could not show. An undated reminder
+  // does not repeat (EventKit refuses one): the hidden rule is never
+  // sent, and a day taken away takes the stored rule with it.
+  const recurrence = !undated ? current.recurrence : dayTakenAway ? undefined : initial.recurrence;
   if (!recurrenceUnsupported && !sameRecurrence(recurrence, initial.recurrence)) {
     changes.recurrence = recurrence ?? null;
   }

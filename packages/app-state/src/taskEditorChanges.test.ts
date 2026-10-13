@@ -161,6 +161,17 @@ describe('taskEditorChanges', () => {
       });
     expect(changes({ title: 'Renamed' })).toEqual({ title: 'Renamed' });
     expect(changes({ dueDate: '2030-03-11' })).toEqual({ dueDate: '2030-03-11' });
+    // A day and a rule picked, then the day taken away again before Save:
+    // the hidden rule is not sent (EventKit refuses a repeat without a day).
+    expect(
+      taskEditorChanges({
+        current: { ...undated, recurrence: { freq: 'daily', interval: 1 } },
+        initial: { ...undated, recurrence: undefined },
+        initialAlarms: [],
+        provider: 'apple',
+        recurrenceUnsupported: false,
+      }),
+    ).toEqual({});
   });
 
   it("takes a due day away with null, and the reminder's time and repeat rule with it", () => {
