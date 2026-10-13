@@ -79,7 +79,8 @@ const candidateAt = (start: string) =>
   `!!document.querySelector('[data-testid="slot-candidate"][data-draft-start="${start}"]')`;
 const chips = `document.querySelectorAll('[data-testid^="draft-slot-"]').length`;
 const pressedChip = `[...document.querySelectorAll('[data-testid^="draft-slot-"]')].findIndex((chip) => chip.getAttribute('aria-pressed') === 'true')`;
-const lastSummary = `[...document.querySelectorAll('[data-testid="draft-turn-summary"]')].at(-1)?.textContent ?? ''`;
+// The list runs newest first: the first summary is the last turn's.
+const lastSummary = `document.querySelector('[data-testid="draft-turn-summary"]')?.textContent ?? ''`;
 const titleIs = (title: string) =>
   `document.querySelector(${JSON.stringify(TITLE)})?.value === ${JSON.stringify(title)}`;
 

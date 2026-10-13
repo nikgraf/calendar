@@ -1,6 +1,7 @@
 import { useLocationField, type useEventEditorModel } from '@calendar/app-state';
 import { Pressable, Text, TextInput, View } from 'react-native';
 import { useSheetStyles } from './editSheetShared.ts';
+import { FieldFlash } from './FlashView.tsx';
 
 /**
  * The location input with MapKit suggestions under it, rendered as plain
@@ -19,20 +20,22 @@ export function LocationField({ model }: { model: ReturnType<typeof useEventEdit
 
   return (
     <View>
-      <TextInput
-        accessibilityLabel="Location"
-        autoCorrect={false}
-        // Deferred: a tap on a suggestion row blurs the input first, and an
-        // immediate dismiss would unmount the row under the finger.
-        onBlur={() => setTimeout(dismiss, 200)}
-        onChangeText={setText}
-        onSubmitEditing={acceptEnter}
-        placeholder="Add a location"
-        returnKeyType="done"
-        style={styles.input}
-        testID="location-input"
-        value={model.location}
-      />
+      <FieldFlash bleedX={0} bleedY={0} field="location" style={styles.inputBox}>
+        <TextInput
+          accessibilityLabel="Location"
+          autoCorrect={false}
+          // Deferred: a tap on a suggestion row blurs the input first, and an
+          // immediate dismiss would unmount the row under the finger.
+          onBlur={() => setTimeout(dismiss, 200)}
+          onChangeText={setText}
+          onSubmitEditing={acceptEnter}
+          placeholder="Add a location"
+          returnKeyType="done"
+          style={[styles.input, styles.inputInBox]}
+          testID="location-input"
+          value={model.location}
+        />
+      </FieldFlash>
       {open ? (
         <View style={styles.suggestions}>
           {suggestions.map((place) => (

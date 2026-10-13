@@ -33,6 +33,7 @@
   --color-focus: var(--focus);
   --color-selection: var(--selection);
   --color-on-selection: var(--on-selection);
+  --color-highlight: var(--highlight);
   --color-success: var(--success);
   --color-on-success: var(--on-success);
   --color-warning: var(--warning);
@@ -175,5 +176,39 @@ button:focus-visible > .task-check {
 
   button:enabled:active > .task-check {
     transform: none;
+  }
+}
+
+/*
+ * A thread's newest turn (calendar/ThreadTurns.tsx) opens its row's
+ * height from nothing while it fades in, so the turns under it slide
+ * down rather than jump; with reduced motion it only fades. The row is a
+ * one-track grid whose child clips (`min-height: 0; overflow: hidden`).
+ */
+@keyframes turn-in {
+  from {
+    grid-template-rows: 0fr;
+    opacity: 0;
+  }
+
+  to {
+    grid-template-rows: 1fr;
+    opacity: 1;
+  }
+}
+
+@keyframes turn-fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+.turn-in {
+  animation: turn-in 240ms cubic-bezier(0.2, 0, 0, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .turn-in {
+    animation: turn-fade-in 200ms ease-out;
   }
 }

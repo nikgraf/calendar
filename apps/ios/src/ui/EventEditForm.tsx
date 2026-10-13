@@ -13,6 +13,7 @@ import { FormScroll } from './FormScroll.tsx';
 import { useSheetStyles } from './editSheetShared.ts';
 import { dateForPicker, dateStringFromPicker, timeStringFromPicker } from './pickerDates.ts';
 import { FindTimeFields } from './FindTimeFields.tsx';
+import { FieldFlash } from './FlashView.tsx';
 import { InviteeField } from './InviteeField.tsx';
 import { LocationField } from './LocationField.tsx';
 import { LocationMap } from './LocationMap.tsx';
@@ -117,18 +118,20 @@ export function EventEditForm({
         </View>
       ) : null}
       <>
-        <TextInput
-          autoFocus={autoFocusTitle && !existing}
-          // The system ⓧ ("Clear text"): renaming starts from an empty field
-          // instead of deleting the old title character by character.
-          clearButtonMode="while-editing"
-          editable={!readOnly}
-          onChangeText={setTitle}
-          placeholder="Title"
-          style={styles.input}
-          testID="event-title"
-          value={title}
-        />
+        <FieldFlash bleedX={0} bleedY={0} field="title" style={styles.inputBox}>
+          <TextInput
+            autoFocus={autoFocusTitle && !existing}
+            // The system ⓧ ("Clear text"): renaming starts from an empty field
+            // instead of deleting the old title character by character.
+            clearButtonMode="while-editing"
+            editable={!readOnly}
+            onChangeText={setTitle}
+            placeholder="Title"
+            style={[styles.input, styles.inputInBox]}
+            testID="event-title"
+            value={title}
+          />
+        </FieldFlash>
 
         {readOnly ? null : <Text style={styles.label}>Calendar</Text>}
         {readOnly
@@ -159,7 +162,7 @@ export function EventEditForm({
               </View>
             ))}
 
-        <View style={styles.switchRow}>
+        <FieldFlash field={isAllDay ? 'time' : null} style={styles.switchRow}>
           <Text style={styles.label}>All-day</Text>
           <Switch
             // A repeating event keeps its kind (timed or all-day).
@@ -168,13 +171,16 @@ export function EventEditForm({
             testID="event-all-day"
             value={isAllDay}
           />
-        </View>
+        </FieldFlash>
 
         {model.repeatLoaded ? (
-          <RepeatRuleChips anchorDate={date} state={model} testIDPrefix="event-repeat" />
+          <FieldFlash field="repeat">
+            <RepeatRuleChips anchorDate={date} state={model} testIDPrefix="event-repeat" />
+          </FieldFlash>
         ) : null}
 
-        <View style={styles.pickerRow} testID="event-date">
+        {/* The date and time rows touch: their tints meet rather than overlap. */}
+        <FieldFlash bleedY={0} field="date" style={styles.pickerRow} testID="event-date">
           <Text style={styles.label}>Date</Text>
           <DateTimePicker
             display="compact"
@@ -183,9 +189,9 @@ export function EventEditForm({
             timeZoneName={timeZone}
             value={dateForPicker(date, undefined, timeZone)}
           />
-        </View>
+        </FieldFlash>
         {isAllDay ? null : (
-          <View style={styles.timesRow}>
+          <FieldFlash bleedY={0} field="time" style={styles.timesRow}>
             <View style={styles.timeField} testID="event-start">
               <Text style={styles.label}>Start</Text>
               <DateTimePicker
@@ -212,7 +218,7 @@ export function EventEditForm({
                 value={dateForPicker(date, endTime, timeZone)}
               />
             </View>
-          </View>
+          </FieldFlash>
         )}
         {zoneLines ? <ZoneLines lines={zoneLines} textStyle={styles.hint} /> : null}
         {readOnly ? null : <FindTimeFields model={model} />}

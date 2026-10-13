@@ -14,6 +14,7 @@ import {
   toDateString,
   toTimeString,
 } from './editSheetShared.ts';
+import { FieldFlash } from './FlashView.tsx';
 import { FormScroll } from './FormScroll.tsx';
 import { DueLabel, NoDueDate } from './NoDueDate.tsx';
 import { RepeatRuleChips } from './RepeatRuleChips.tsx';
@@ -49,20 +50,22 @@ export function ReminderEditForm({
       {taskModel.readOnly ? (
         <Text style={styles.readOnlyNote}>This list is read-only in Reminders.</Text>
       ) : null}
-      <TextInput
-        autoFocus={autoFocusTitle && !task}
-        onChangeText={taskModel.setTitle}
-        placeholder="Title"
-        style={styles.input}
-        testID="task-title"
-        value={taskModel.title}
-      />
+      <FieldFlash bleedX={0} bleedY={0} field="title" style={styles.inputBox}>
+        <TextInput
+          autoFocus={autoFocusTitle && !task}
+          onChangeText={taskModel.setTitle}
+          placeholder="Title"
+          style={[styles.input, styles.inputInBox]}
+          testID="task-title"
+          value={taskModel.title}
+        />
+      </FieldFlash>
 
       <TaskListPicker disabled={Boolean(task) && !taskModel.canMoveList} taskModel={taskModel} />
 
       {taskModel.dated ? (
         <>
-          <View style={styles.pickerRow}>
+          <FieldFlash field="date" style={styles.pickerRow}>
             <DueLabel onRemove={taskModel.clearDueDate} />
             <DateTimePicker
               display="compact"
@@ -70,7 +73,7 @@ export function ReminderEditForm({
               onChange={(_, picked) => picked && taskModel.setDueDate(toDateString(picked))}
               value={dateFromParts(taskModel.dueDate)}
             />
-          </View>
+          </FieldFlash>
           <View style={styles.switchRow}>
             <Text style={styles.label}>At a time</Text>
             <Switch
@@ -80,7 +83,7 @@ export function ReminderEditForm({
             />
           </View>
           {taskModel.timed ? (
-            <View style={styles.pickerRow} testID="reminder-time">
+            <FieldFlash field="time" style={styles.pickerRow} testID="reminder-time">
               <Text style={styles.label}>Time</Text>
               <DateTimePicker
                 display="compact"
@@ -88,7 +91,7 @@ export function ReminderEditForm({
                 onChange={(_, picked) => picked && taskModel.setDueTime(toTimeString(picked))}
                 value={dateFromParts(taskModel.dueDate, taskModel.dueTime)}
               />
-            </View>
+            </FieldFlash>
           ) : null}
         </>
       ) : (

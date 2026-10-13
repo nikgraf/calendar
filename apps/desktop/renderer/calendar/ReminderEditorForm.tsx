@@ -12,6 +12,7 @@ import { NoDueDate, RemoveDueDate } from './NoDueDate.tsx';
 import { RepeatRuleFields } from './RepeatRuleFields.tsx';
 import { FIELD_CLASS, LABEL_CLASS } from '../ui/fieldStyles.ts';
 import { TaskListSelect } from './TaskListSelect.tsx';
+import { useFieldFlash } from '../ui/useFlash.ts';
 
 /**
  * The Reminders form — what EventKit can do that Google Tasks cannot: a
@@ -33,6 +34,10 @@ export function ReminderEditorForm({
   task: TaskRecord | undefined;
   taskModel: ReturnType<typeof useTaskEditorModel>;
 }) {
+  // What the last turn changed tints and fades back (the thread's flash).
+  const titleFlash = useFieldFlash<HTMLInputElement>('title');
+  const dateFlash = useFieldFlash<HTMLInputElement>('date');
+  const timeFlash = useFieldFlash<HTMLInputElement>('time');
   return (
     <fieldset className="flex flex-col gap-3" disabled={taskModel.readOnly}>
       {taskModel.error ? (
@@ -53,6 +58,7 @@ export function ReminderEditorForm({
         className={FIELD_CLASS}
         onChange={(input) => taskModel.setTitle(input.target.value)}
         placeholder="Title"
+        ref={titleFlash}
         value={taskModel.title}
       />
       {task ? <TaskDoneToggle task={task} /> : null}
@@ -67,6 +73,7 @@ export function ReminderEditorForm({
             <input
               className={`${FIELD_CLASS} mt-1`}
               onChange={(input) => taskModel.setDueDate(input.target.value)}
+              ref={dateFlash}
               type="date"
               value={taskModel.dueDate}
             />
@@ -86,6 +93,7 @@ export function ReminderEditorForm({
               className={`${FIELD_CLASS} mt-1`}
               disabled={!taskModel.timed}
               onChange={(input) => taskModel.setDueTime(input.target.value)}
+              ref={timeFlash}
               type="time"
               value={taskModel.dueTime}
             />

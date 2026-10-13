@@ -184,7 +184,8 @@ describe('Search filters', () => {
     expect(await titles('upcoming')).toEqual(['Harbour walk']);
     expect(
       await cdp.eval<string>(
-        `[...document.querySelectorAll('[data-testid="search-turn-summary"]')].at(-1).textContent`,
+        // Newest first.
+        `document.querySelector('[data-testid="search-turn-summary"]').textContent`,
       ),
     ).toContain('with anna');
 

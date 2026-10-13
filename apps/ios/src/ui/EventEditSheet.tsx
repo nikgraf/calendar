@@ -20,6 +20,7 @@ import { BirthdayDetail } from './BirthdayDetail.tsx';
 import { DraftThreadSection } from './DraftThreadSection.tsx';
 import { useSheetStyles } from './editSheetShared.ts';
 import { EventEditForm } from './EventEditForm.tsx';
+import { FieldFlashContext, FlashView } from './FlashView.tsx';
 import { QuickAddBar } from './QuickAddBar.tsx';
 import { ReminderEditForm } from './ReminderEditForm.tsx';
 import { SegmentedControl } from './SegmentedControl.tsx';
@@ -159,7 +160,7 @@ export function EventEditSheet({
     taskSeed,
     timeZone,
   });
-  const { drafts, eventModel, kinds, onPhrase, taskModel, write } = editor;
+  const { drafts, eventModel, flash, kinds, onPhrase, taskModel, write } = editor;
   const { apply, available, kind, mode, seriesOnly, switchTo } = kinds;
 
   const showToggle =
@@ -209,6 +210,8 @@ export function EventEditSheet({
       {sourceKind === 'new' ? (
         <>
           <QuickAddBar
+            // The thread's turns hang under the field (`DraftThreadSection`).
+            attached={editor.turns.length > 0}
             autoFocus={presentation !== 'route'}
             fallbackDate={seed.initialDate.toString()}
             onApply={(item) => void apply(item)}
@@ -222,37 +225,55 @@ export function EventEditSheet({
 
       {showToggle ? (
         <View style={styles.modeRow}>
-          <SegmentedControl
-            accessibilityLabel="Kind"
-            grow
-            onChange={(next) => void switchTo(next)}
-            options={available.map((option) => ({
-              disabled: option !== 'event' && seriesOnly,
-              label: KIND_LABELS[option],
-              testID: `mode-${option}`,
-              value: option,
-            }))}
-            value={kind}
-          />
+          {/* A turn that made the item the other kind: the control tints and fades back. */}
+          <FlashView
+            bleedX={4}
+            bleedY={4}
+            flash={flash?.fields.has('kind') ? flash.key : null}
+            style={styles.modeFlash}
+          >
+            <SegmentedControl
+              accessibilityLabel="Kind"
+              grow
+              onChange={(next) => void switchTo(next)}
+              options={available.map((option) => ({
+                disabled: option !== 'event' && seriesOnly,
+                label: KIND_LABELS[option],
+                testID: `mode-${option}`,
+                value: option,
+              }))}
+              value={kind}
+            />
+          </FlashView>
         </View>
       ) : null}
     </>
   );
   const bare = presentation === 'route';
-  const form = birthday ? (
-    <BirthdayDetail occurrence={birthday} timeZone={timeZone} />
-  ) : mode === 'todo' ? (
-    // The selected list's provider picks the form: a Reminders list
-    // exposes time/priority/alert/repeat/URL; a Google list gets the
-    // plain title/date/notes form. The kind control moves between the
-    // providers; the list picker stays within one.
-    taskModel.provider === 'apple' ? (
-      <ReminderEditForm autoFocusTitle={!quickAdd} bare={bare} task={task} taskModel={taskModel} />
-    ) : (
-      <TaskEditForm autoFocusTitle={!quickAdd} bare={bare} task={task} taskModel={taskModel} />
-    )
-  ) : (
-    <EventEditForm autoFocusTitle={!quickAdd} bare={bare} model={eventModel} />
+  // The fields the last turn changed flash (`FieldFlash` in the forms).
+  const form = (
+    <FieldFlashContext value={flash}>
+      {birthday ? (
+        <BirthdayDetail occurrence={birthday} timeZone={timeZone} />
+      ) : mode === 'todo' ? (
+        // The selected list's provider picks the form: a Reminders list
+        // exposes time/priority/alert/repeat/URL; a Google list gets the
+        // plain title/date/notes form. The kind control moves between the
+        // providers; the list picker stays within one.
+        taskModel.provider === 'apple' ? (
+          <ReminderEditForm
+            autoFocusTitle={!quickAdd}
+            bare={bare}
+            task={task}
+            taskModel={taskModel}
+          />
+        ) : (
+          <TaskEditForm autoFocusTitle={!quickAdd} bare={bare} task={task} taskModel={taskModel} />
+        )
+      ) : (
+        <EventEditForm autoFocusTitle={!quickAdd} bare={bare} model={eventModel} />
+      )}
+    </FieldFlashContext>
   );
   // The form-sheet route (`app/editor.tsx`): react-native-screens lays a
   // sheet out once, as at most a header and a scroll view — the header must

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vite-plus/test';
 import { plainDateToUtcMs } from '../time/convert.ts';
 import { Temporal } from '../time/temporal.ts';
 import {
+  changedSearchChips,
   searchDateLabel,
   searchEventWhen,
   searchFilterChips,
@@ -156,5 +157,30 @@ describe('summarizeSearchChange', () => {
       ),
     ).toBe('→ “b” · → any time · → events and tasks · → any calendar');
     expect(summarizeSearchChange({ terms: ['a'] }, { terms: ['a'] }, names)).toBe('no change');
+  });
+});
+
+describe('changedSearchChips', () => {
+  it('names the chips a turn added or relabelled, not the ones it kept or took away', () => {
+    expect(
+      changedSearchChips(
+        { calendars: ['acc:work'], from: '2026-10-01', terms: [], to: '2026-10-31' },
+        {
+          calendars: ['acc:work', 'acc:family'],
+          from: '2026-09-01',
+          location: 'Hafen',
+          terms: [],
+          to: '2026-09-30',
+        },
+        names,
+      ),
+    ).toEqual(['dates:', 'calendar:acc:family', 'location:']);
+    // Taken away only: nothing left to flash.
+    expect(
+      changedSearchChips({ kind: 'task', location: 'Hafen', terms: [] }, { terms: [] }, names),
+    ).toEqual([]);
+    expect(
+      changedSearchChips({ kind: 'task', terms: [] }, { kind: 'event', terms: [] }, names),
+    ).toEqual(['kind:']);
   });
 });

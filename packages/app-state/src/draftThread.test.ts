@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vite-plus/test';
 import {
+  changedDraftFields,
   describeDraftItem,
   EMPTY_THREAD,
   firstDraftExtras,
@@ -45,6 +46,10 @@ const later: QuickAddItem = {
   kind: 'event',
   prefill: { ...dinner.prefill, endTime: '21:00', startTime: '20:00' },
 };
+
+/** Dinner repeating by a rule given as written (its parts in any order). */
+const rule = (recurrence: Record<string, unknown>): QuickAddItem =>
+  ({ kind: 'event', prefill: { ...dinner.prefill, recurrence } }) as QuickAddItem;
 
 /** Stable ids: d1, d2, … in the order they are asked for. */
 const ids = () => {
@@ -115,6 +120,70 @@ describe('summarizeChange', () => {
         prefill: { date: '2026-08-28', title: 'Dinner with Teo' },
       }),
     ).toBe('→ a to-do · → no time');
+    // A rule changed within its frequency still says so.
+    expect(
+      summarizeChange(
+        { kind: 'event', prefill: { ...dinner.prefill, recurrence: { freq: 'weekly' } } },
+        {
+          kind: 'event',
+          prefill: {
+            ...dinner.prefill,
+            recurrence: { byDay: [{ weekday: 'MO' }], freq: 'weekly' },
+          },
+        },
+      ),
+    ).toBe('→ repeats weekly');
+  });
+});
+
+describe('changedDraftFields', () => {
+  it('names the fields that differ, for the form to flash', () => {
+    expect(changedDraftFields(dinner, dinner)).toEqual([]);
+    expect(changedDraftFields(dinner, later)).toEqual(['time']);
+    expect(
+      changedDraftFields(dinner, {
+        kind: 'event',
+        prefill: { ...later.prefill, date: '2026-08-27', location: "Luigi's", title: 'Team' },
+      }),
+    ).toEqual(['title', 'date', 'time', 'location']);
+    expect(
+      changedDraftFields(dinner, { kind: 'event', prefill: { ...dinner.prefill, isAllDay: true } }),
+    ).toEqual(['time']);
+    expect(
+      changedDraftFields(dinner, {
+        kind: 'event',
+        prefill: { ...dinner.prefill, recurrence: { freq: 'daily' } },
+      }),
+    ).toEqual(['repeat']);
+    expect(
+      changedDraftFields(dinner, {
+        kind: 'task',
+        prefill: { date: '2026-08-28', title: 'Dinner' },
+      }),
+    ).toEqual(['kind', 'title', 'time']);
+  });
+
+  it('reads a repeat rule by its values, not the order its parts were written in', () => {
+    const form = rule({
+      byDay: [{ weekday: 'MO' }, { weekday: 'TH' }],
+      freq: 'weekly',
+      interval: 2,
+    });
+    const restated = rule({
+      freq: 'weekly',
+      interval: 2,
+      // eslint-disable-next-line perfectionist/sort-objects -- the model's order, on purpose
+      byDay: [{ weekday: 'TH' }, { weekday: 'MO' }],
+    });
+    expect(changedDraftFields(form, restated)).toEqual([]);
+    expect(summarizeChange(form, restated)).toBe('no change');
+    // An interval of one is the default either way.
+    expect(
+      changedDraftFields(rule({ freq: 'daily' }), rule({ freq: 'daily', interval: 1 })),
+    ).toEqual([]);
+    expect(
+      changedDraftFields(form, rule({ byDay: [{ weekday: 'MO' }], freq: 'weekly', interval: 2 })),
+    ).toEqual(['repeat']);
   });
 });
 

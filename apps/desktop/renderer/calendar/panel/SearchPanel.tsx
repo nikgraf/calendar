@@ -24,8 +24,7 @@ import {
   useState,
 } from 'react';
 import { IconButton } from '../../ui/IconButton.tsx';
-import { FIELD_CLASS } from '../../ui/fieldStyles.ts';
-import { RepeatIcon, SearchIcon, SparkleIcon, XIcon } from '../../ui/icons.tsx';
+import { RepeatIcon, SearchIcon, SparkleIcon, SpinnerIcon, XIcon } from '../../ui/icons.tsx';
 import { TaskCheckMark } from '../TaskCheck.tsx';
 import { ThreadTurns } from '../ThreadTurns.tsx';
 import { useTint } from '../tint.ts';
@@ -115,6 +114,8 @@ export function SearchPanel({
   timeZone: string;
 }) {
   const { text } = thread.state;
+  // Back from a result, the turns stand where they were; only new ones ease in.
+  const [restingTurns] = useState(() => new Set(thread.state.turns.map((turn) => turn.id)));
   const blank = isBlankSearchQuery(thread.state.query);
   const [threadError, setThreadError] = useState<string | null>(null);
   const asks = modelReady && isSearchFilterPhrase(text);
@@ -269,8 +270,11 @@ export function SearchPanel({
   const found =
     results === null ? 0 : results.upcoming.total + results.past.total + results.tasks.total;
   // Read out once the latest query's results are in.
-  const status =
-    blank || results === null || search.stale
+  // A sentence being read shows as the ✦ turning into a spinner, so
+  // nothing under the field moves; a screen reader hears it here.
+  const status = thread.busy
+    ? 'Reading the filters…'
+    : blank || results === null || search.stale
       ? ''
       : found === 0
         ? 'No results'
@@ -278,68 +282,101 @@ export function SearchPanel({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col" data-testid="search-panel">
-      <div className="flex items-center gap-2 px-3 pt-3 pb-2">
-        <div className="relative flex min-w-0 flex-1 items-center">
-          <SearchIcon
-            className="pointer-events-none absolute left-2.5 text-ink-secondary"
-            size={14}
-          />
-          <input
-            aria-label="Search events and tasks"
-            autoComplete="off"
-            className={`${FIELD_CLASS} pl-8`}
-            data-routes={asks ? 'ask' : 'open'}
-            data-testid="search-input"
-            onChange={(event) => {
-              enterWaits.current = false;
-              setThreadError(null);
-              thread.setText(event.target.value);
-            }}
-            onKeyDown={(key) => {
-              // Enter opens the top result, as Spotlight does (not while an
-              // input method is still composing) — of the text typed, not
-              // of the rows an earlier text left on screen. Words with a
-              // filter in them, or ⌘↩, go to the model instead.
-              if (key.key === 'Enter' && !key.nativeEvent.isComposing) {
-                key.preventDefault();
-                if (key.metaKey || asks) {
-                  enterWaits.current = false;
-                  void ask();
-                } else if (search.stale) {
-                  enterWaits.current = true;
+      <div className="flex items-start gap-2 px-3 pt-3 pb-2">
+        {/* One card: the field, the turns its sentences made, and why the
+            last one was not read — hung under it as part of it. */}
+        <div className="min-w-0 flex-1 overflow-hidden rounded-control bg-fill has-[input:focus]:ring-2 has-[input:focus]:ring-focus">
+          <div className="relative flex items-center">
+            <SearchIcon
+              className="pointer-events-none absolute left-2.5 text-ink-secondary"
+              size={14}
+            />
+            <input
+              aria-label="Search events and tasks"
+              autoComplete="off"
+              className="w-full bg-transparent py-1.5 pr-3 pl-8 text-sm text-ink outline-none placeholder:text-ink-secondary"
+              data-routes={asks ? 'ask' : 'open'}
+              data-testid="search-input"
+              onChange={(event) => {
+                enterWaits.current = false;
+                setThreadError(null);
+                thread.setText(event.target.value);
+              }}
+              onKeyDown={(key) => {
+                // Enter opens the top result, as Spotlight does (not while an
+                // input method is still composing) — of the text typed, not
+                // of the rows an earlier text left on screen. Words with a
+                // filter in them, or ⌘↩, go to the model instead.
+                if (key.key === 'Enter' && !key.nativeEvent.isComposing) {
+                  key.preventDefault();
+                  if (key.metaKey || asks) {
+                    enterWaits.current = false;
+                    void ask();
+                  } else if (search.stale) {
+                    enterWaits.current = true;
+                  } else {
+                    listRef.current?.querySelector<HTMLElement>(RESULT_SELECTOR)?.click();
+                  }
+                } else if (search.stale && (key.key === 'ArrowDown' || key.key === 'ArrowUp')) {
+                  // Nor do the arrows walk into those rows.
+                  key.preventDefault();
                 } else {
-                  listRef.current?.querySelector<HTMLElement>(RESULT_SELECTOR)?.click();
+                  onArrow(key);
                 }
-              } else if (search.stale && (key.key === 'ArrowDown' || key.key === 'ArrowUp')) {
-                // Nor do the arrows walk into those rows.
-                key.preventDefault();
-              } else {
-                onArrow(key);
-              }
-            }}
-            placeholder="Search events and tasks"
-            ref={inputRef}
-            spellCheck={false}
-            type="text"
-            value={text}
-          />
+              }}
+              placeholder="Search events and tasks"
+              ref={inputRef}
+              spellCheck={false}
+              type="text"
+              value={text}
+            />
+          </div>
+          {thread.state.turns.length > 0 ? (
+            <ThreadTurns
+              // The header does not scroll: an opened list scrolls in itself.
+              listClassName="max-h-48 overflow-y-auto"
+              onUndo={() => {
+                setThreadError(null);
+                thread.undo();
+              }}
+              resting={restingTurns}
+              testIdPrefix="search"
+              turns={thread.state.turns}
+              undoDisabled={thread.busy}
+            />
+          ) : null}
+          {threadError ? (
+            <p
+              className="border-t border-ink/10 py-1.5 pr-1 pl-2.5 text-xs text-danger"
+              data-testid="search-thread-status"
+            >
+              {threadError}
+            </p>
+          ) : null}
         </div>
-        {modelReady && text.trim() !== '' ? (
-          <IconButton
-            aria-busy={thread.busy}
-            className={asks ? 'text-primary' : ''}
-            data-testid="search-ask"
-            disabled={thread.busy}
-            label="Read filters from the words (⌘↩)"
-            onClick={() => void ask()}
-            size="sm"
-          >
-            <SparkleIcon size={14} />
+        <div className="flex h-8 shrink-0 items-center gap-2">
+          {modelReady && text.trim() !== '' ? (
+            // While a sentence is read the ✦ turns into a spinner in its place
+            // (`ask` ignores a press then; not `disabled`, which would fade it).
+            <IconButton
+              aria-busy={thread.busy}
+              className={asks || thread.busy ? 'text-primary' : ''}
+              data-testid="search-ask"
+              label={thread.busy ? 'Reading the filters…' : 'Read filters from the words (⌘↩)'}
+              onClick={() => void ask()}
+              size="sm"
+            >
+              {thread.busy ? (
+                <SpinnerIcon size={14} strokeWidth={2.25} />
+              ) : (
+                <SparkleIcon size={14} />
+              )}
+            </IconButton>
+          ) : null}
+          <IconButton data-testid="search-close" label="Close search" onClick={onClose} size="sm">
+            <XIcon size={14} />
           </IconButton>
-        ) : null}
-        <IconButton data-testid="search-close" label="Close search" onClick={onClose} size="sm">
-          <XIcon size={14} />
-        </IconButton>
+        </div>
         <p aria-live="polite" className="sr-only">
           {status}
         </p>
@@ -347,6 +384,7 @@ export function SearchPanel({
       <div className="flex flex-col gap-2 px-3 pb-2">
         <SearchFilterChips
           calendars={calendars}
+          flash={thread.flash}
           names={thread.names}
           onChange={thread.setQuery}
           onClear={() => {
@@ -360,27 +398,6 @@ export function SearchPanel({
           }
           taskLists={taskLists}
         />
-        {thread.state.turns.length > 0 ? (
-          <ThreadTurns
-            onUndo={() => {
-              setThreadError(null);
-              thread.undo();
-            }}
-            testIdPrefix="search"
-            // The header does not scroll: the latest two turns, the history
-            // stays in the thread (Undo walks it back one at a time).
-            turns={thread.state.turns.slice(-2)}
-            undoDisabled={thread.busy}
-          />
-        ) : null}
-        {thread.busy || threadError ? (
-          <p
-            className={`text-xs ${threadError ? 'text-danger' : 'text-ink-secondary'}`}
-            data-testid="search-thread-status"
-          >
-            {threadError ?? 'Reading the filters…'}
-          </p>
-        ) : null}
       </div>
       <div
         aria-busy={search.stale}

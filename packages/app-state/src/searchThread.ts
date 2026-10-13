@@ -2,6 +2,7 @@ import { type LanguageModel, ModelUnavailableError, parseSearchQuery } from '@ca
 import {
   type CalendarInfo,
   calendarKey,
+  changedSearchChips,
   EMPTY_SEARCH_QUERY,
   type SearchNames,
   type SearchQuery,
@@ -12,6 +13,7 @@ import {
 } from '@calendar/core';
 import { useRef, useState } from 'react';
 import { useToday } from './hooks.ts';
+import { useFleetingFlash } from './threadTurns.ts';
 
 /**
  * The search field as a thread: the query it searches for, what the
@@ -27,6 +29,8 @@ import { useToday } from './hooks.ts';
  */
 
 export interface SearchTurn {
+  /** The chips the turn added or changed (`changedSearchChips`): the row flashes them once. */
+  readonly chips: ReadonlyArray<string>;
   readonly id: string;
   /** What the turn changed, in words (`summarizeSearchChange`). */
   readonly summary: string;
@@ -80,14 +84,14 @@ export const applySearchTurn = (
   state: SearchThreadState,
   utterance: string,
   next: SearchQuery,
-  summary: string,
+  { chips = [], summary }: { readonly chips?: ReadonlyArray<string>; readonly summary: string },
   id: string = nextSearchTurnId(),
 ): SearchThreadState => ({
   history: [...state.history, state.query],
   query: next,
   settledTerms: next.terms,
   text: next.terms.join(' '),
-  turns: [...state.turns, { id, summary, utterance }],
+  turns: [...state.turns, { chips, id, summary, utterance }],
   version: state.version + 1,
 });
 
@@ -134,6 +138,9 @@ export const useSearchThread = ({
 }) => {
   const [state, setState] = useState<SearchThreadState>(EMPTY_SEARCH_THREAD);
   const [busy, setBusy] = useState(false);
+  // The turn that landed last: its chips flash while it is the newest (an
+  // Undo that brings an older one back to the top flashes nothing).
+  const [landed, setLanded] = useState<string | null>(null);
   const request = useRef(0);
   const today = useToday(timeZone);
   const names: SearchNames = {
@@ -170,8 +177,13 @@ export const useSearchThread = ({
       if (result.kind === 'rejected') {
         return result.reason;
       }
-      const summary = summarizeSearchChange(before, result.query, names);
-      setState((latest) => applySearchTurn(latest, utterance, result.query, summary));
+      const change = {
+        chips: changedSearchChips(before, result.query, names),
+        summary: summarizeSearchChange(before, result.query, names),
+      };
+      const id = nextSearchTurnId();
+      setState((latest) => applySearchTurn(latest, utterance, result.query, change, id));
+      setLanded(id);
       return undefined;
     } catch (error) {
       if (mine !== request.current) {
@@ -187,6 +199,13 @@ export const useSearchThread = ({
     }
   };
 
+  const newest = state.turns.at(-1);
+  const flash = useFleetingFlash(
+    newest !== undefined && newest.id === landed
+      ? { chips: new Set(newest.chips), key: newest.id }
+      : null,
+  );
+
   return {
     busy,
     clear: () => {
@@ -194,6 +213,8 @@ export const useSearchThread = ({
       setBusy(false);
       setState((latest) => clearSearchThread(latest));
     },
+    /** The chips the newest turn added or changed, while their flash plays. */
+    flash,
     names,
     phrase,
     // An edit while a sentence is read wins: the answer, for the words and

@@ -2,6 +2,7 @@ import {
   type CalendarInfo,
   calendarKey,
   type SearchFilterField,
+  searchChipId,
   searchFilterChips,
   type SearchNames,
   type SearchQuery,
@@ -9,12 +10,14 @@ import {
   toggleSearchKey,
   withoutSearchFilter,
 } from '@calendar/core';
+import type { ReactNode } from 'react';
 import { useState } from 'react';
 import { Button } from '../../ui/Button.tsx';
 import { FIELD_CLASS } from '../../ui/fieldStyles.ts';
 import { PlusIcon, XIcon } from '../../ui/icons.tsx';
 import { Popover } from '../../ui/Popover.tsx';
 import { SegmentedControl } from '../../ui/SegmentedControl.tsx';
+import { useFlash } from '../../ui/useFlash.ts';
 
 /** The filters a chip edits, in the order "+ Filter" offers them. */
 const FIELDS: ReadonlyArray<{ readonly field: SearchFilterField; readonly label: string }> = [
@@ -34,13 +37,25 @@ type Editing = {
   readonly field: SearchFilterField | 'add';
 };
 
+/** One filter's chip; it tints and fades back when a turn put it there or changed it. */
+function FilterChip({ children, flash }: { children: ReactNode; flash: string | null }) {
+  const ref = useFlash<HTMLSpanElement>(flash);
+  return (
+    <span className="inline-flex items-center rounded-md bg-fill text-xs" ref={ref}>
+      {children}
+    </span>
+  );
+}
+
 /**
  * The search's filters as chips under the field: a click edits one in a
  * popover, × takes it away, "+ Filter" adds one, "Clear" resets the words,
- * the filters and the turns. Every edit is the user's own — not a turn.
+ * the filters and the turns. Every edit is the user's own — not a turn;
+ * the chips a turn added or changed flash (`flash`).
  */
 export function SearchFilterChips({
   calendars,
+  flash,
   names,
   onChange,
   onClear,
@@ -49,6 +64,8 @@ export function SearchFilterChips({
   taskLists,
 }: {
   calendars: ReadonlyArray<CalendarInfo>;
+  /** The newest turn's chips, while their flash plays (`useSearchThread().flash`). */
+  flash: { readonly chips: ReadonlySet<string>; readonly key: string } | null;
   names: SearchNames;
   onChange: (query: SearchQuery) => void;
   onClear: () => void;
@@ -273,9 +290,9 @@ export function SearchFilterChips({
   return (
     <div className="flex flex-wrap items-center gap-1" data-testid="search-chips">
       {chips.map((chip) => (
-        <span
-          className="inline-flex items-center rounded-md bg-fill text-xs"
-          key={`${chip.field}:${chip.key ?? ''}`}
+        <FilterChip
+          flash={flash?.chips.has(searchChipId(chip)) ? flash.key : null}
+          key={searchChipId(chip)}
         >
           <button
             className="rounded-l-md px-2 py-0.5 hover:bg-hairline focus-visible:ring-2 focus-visible:ring-focus focus-visible:outline-none"
@@ -294,7 +311,7 @@ export function SearchFilterChips({
           >
             <XIcon size={10} />
           </button>
-        </span>
+        </FilterChip>
       ))}
       <button
         className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs text-ink-secondary hover:bg-fill hover:text-ink focus-visible:ring-2 focus-visible:ring-focus focus-visible:outline-none"

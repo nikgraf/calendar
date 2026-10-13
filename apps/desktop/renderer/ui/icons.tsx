@@ -179,6 +179,12 @@ export const SparkleIcon = (props: IconProps) => (
     <path d="M19 16l.7 2.3L22 19l-2.3.7L19 22l-.7-2.3L16 19l2.3-.7z" />
   </Icon>
 );
+/** An open ring that turns: the work in progress, in place of the control that started it. */
+export const SpinnerIcon = ({ className = '', ...props }: IconProps) => (
+  <Icon className={`animate-spin ${className}`} {...props}>
+    <path d="M21 12a9 9 0 1 1-6.2-8.56" />
+  </Icon>
+);
 export const TrashIcon = (props: IconProps) => (
   <Icon {...props}>
     <path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 11v5M14 11v5" />

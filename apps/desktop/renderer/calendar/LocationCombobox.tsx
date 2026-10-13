@@ -1,6 +1,7 @@
 import { useLocationField, type useEventEditorModel } from '@calendar/app-state';
 import { useId } from 'react';
 import { FIELD_CLASS } from '../ui/fieldStyles.ts';
+import { useFieldFlash } from '../ui/useFlash.ts';
 import { SuggestionList } from './SuggestionList.tsx';
 
 /**
@@ -12,6 +13,7 @@ import { SuggestionList } from './SuggestionList.tsx';
  */
 export function LocationCombobox({ model }: { model: ReturnType<typeof useEventEditorModel> }) {
   const listId = useId();
+  const flash = useFieldFlash<HTMLInputElement>('location');
   const {
     acceptEnter,
     choose,
@@ -62,6 +64,7 @@ export function LocationCombobox({ model }: { model: ReturnType<typeof useEventE
           }
         }}
         placeholder="Location (optional)"
+        ref={flash}
         role="combobox"
         value={model.location}
       />

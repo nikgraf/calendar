@@ -146,32 +146,60 @@ const repeatOf = (item: QuickAddItem): string | undefined =>
     ? `repeats ${item.prefill.recurrence.freq}`
     : undefined;
 
+const placeOf = (item: QuickAddItem): string | undefined =>
+  item.kind === 'event' ? item.prefill.location : undefined;
+
+/**
+ * A repeat rule by its values, whatever order its parts were written in
+ * (the form and the model's answer list them differently): an interval of
+ * one is the default, the weekdays a set.
+ */
+const ruleOf = (item: QuickAddItem): string => {
+  const rule = item.kind === 'event' ? item.prefill.recurrence : undefined;
+  return rule === undefined
+    ? 'none'
+    : JSON.stringify([
+        rule.freq,
+        rule.interval ?? 1,
+        rule.count ?? null,
+        rule.untilDate ?? null,
+        (rule.byDay ?? []).map((day) => `${String(day.ordinal ?? '')}${day.weekday}`).sort(),
+      ]);
+};
+
+/** A part of the form a turn can change: what the summary names and the form flashes. */
+export type DraftField = 'date' | 'kind' | 'location' | 'repeat' | 'time' | 'title';
+
+/** The fields that differ between two items, in the order the summary names them. */
+export const changedDraftFields = (
+  before: QuickAddItem,
+  after: QuickAddItem,
+): ReadonlyArray<DraftField> => [
+  ...(before.kind === after.kind ? [] : ['kind' as const]),
+  ...(before.prefill.title === after.prefill.title ? [] : ['title' as const]),
+  ...(before.prefill.date === after.prefill.date ? [] : ['date' as const]),
+  ...(timesOf(before) === timesOf(after) ? [] : ['time' as const]),
+  ...(placeOf(before) === placeOf(after) ? [] : ['location' as const]),
+  ...(ruleOf(before) === ruleOf(after) ? [] : ['repeat' as const]),
+];
+
 /**
  * What a refinement changed, field by field ("→ 20:00–21:00 · → Thu, Aug
  * 27"), or "no change" when the words changed nothing the form holds.
  */
 export const summarizeChange = (before: QuickAddItem, after: QuickAddItem): string => {
-  const parts: Array<string> = [];
-  if (before.kind !== after.kind) {
-    parts.push(`→ ${after.kind === 'task' ? 'a to-do' : 'an event'}`);
-  }
-  if (before.prefill.title !== after.prefill.title) {
-    parts.push(`→ “${after.prefill.title}”`);
-  }
-  if (before.prefill.date !== after.prefill.date) {
-    parts.push(`→ ${dayOf(after)}`);
-  }
-  if (timesOf(before) !== timesOf(after)) {
-    parts.push(`→ ${timesOf(after)}`);
-  }
-  const placeBefore = before.kind === 'event' ? before.prefill.location : undefined;
-  const placeAfter = after.kind === 'event' ? after.prefill.location : undefined;
-  if (placeBefore !== placeAfter) {
-    parts.push(placeAfter === undefined ? '→ no place' : `→ ${placeAfter}`);
-  }
-  if (repeatOf(before) !== repeatOf(after)) {
-    parts.push(`→ ${repeatOf(after) ?? 'does not repeat'}`);
-  }
+  const said: Record<DraftField, () => string> = {
+    date: () => `→ ${dayOf(after)}`,
+    kind: () => `→ ${after.kind === 'task' ? 'a to-do' : 'an event'}`,
+    location: () => {
+      const place = placeOf(after);
+      return place === undefined ? '→ no place' : `→ ${place}`;
+    },
+    repeat: () => `→ ${repeatOf(after) ?? 'does not repeat'}`,
+    time: () => `→ ${timesOf(after)}`,
+    title: () => `→ “${after.prefill.title}”`,
+  };
+  const parts = changedDraftFields(before, after).map((field) => said[field]());
   return parts.length === 0 ? 'no change' : parts.join(' · ');
 };
 

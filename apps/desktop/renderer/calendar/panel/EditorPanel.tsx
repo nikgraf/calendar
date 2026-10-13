@@ -27,6 +27,7 @@ import { QuickAddBar } from '../QuickAddBar.tsx';
 import { ReminderEditorForm } from '../ReminderEditorForm.tsx';
 import { TaskEditorForm } from '../TaskEditorForm.tsx';
 import { ThreadTurns } from '../ThreadTurns.tsx';
+import { FieldFlashContext, useFlash } from '../../ui/useFlash.ts';
 
 const KIND_LABELS: Record<ItemKind, string> = {
   event: 'Event',
@@ -100,6 +101,7 @@ export function EditorPanel({
     canAddAll,
     drafts,
     eventModel,
+    flash,
     focused,
     focusedDraft,
     kinds,
@@ -129,6 +131,8 @@ export function EditorPanel({
   });
   const { joinUrl } = eventModel;
   const { apply, available, kind, mode, seriesOnly, switchTo } = kinds;
+  // A turn that made the item the other kind: the control tints and fades back.
+  const kindFlash = useFlash<HTMLDivElement>(flash?.fields.has('kind') ? flash.key : null);
 
   const showToggle =
     available.length > 1 &&
@@ -136,6 +140,12 @@ export function EditorPanel({
     !(sourceKind === 'task' && taskModel.readOnly);
   const { noun, verb } = editorTitle({ kind, sourceKind, sourceProvider: task?.provider });
   const title = `${verb} ${noun}`;
+  // What the thread shows under the field's card: a caveat, the free slots, the pager.
+  const threadNote = seed.thread?.note && drafts.length > 0 ? seed.thread.note : undefined;
+  const threadSlots =
+    focusedDraft?.slots && focusedDraft.slots.length > 1 && liveItem.kind === 'event'
+      ? focusedDraft.slots
+      : undefined;
 
   return (
     <div
@@ -165,28 +175,32 @@ export function EditorPanel({
             onPhrase={onPhrase}
             placeholder={drafts.length > 0 ? CHANGE_PLACEHOLDER : undefined}
             timeZone={timeZone}
-          />
+          >
+            {/* The turns hang under the field, as part of it. */}
+            {turns.length > 0 ? (
+              <ThreadTurns
+                onUndo={thread.undo}
+                turns={turns}
+                undoDisabled={thread.busy || !settled}
+              />
+            ) : null}
+          </QuickAddBar>
         ) : null}
 
-        {turns.length > 0 ? (
+        {threadNote || threadSlots || drafts.length > 1 || batchError ? (
           <div className="mb-3 flex flex-col gap-2" data-testid="draft-thread">
-            <ThreadTurns
-              onUndo={thread.undo}
-              turns={turns}
-              undoDisabled={thread.busy || !settled}
-            />
-            {seed.thread?.note && drafts.length > 0 ? (
+            {threadNote ? (
               <p className="text-xs text-ink-secondary" data-testid="draft-thread-note">
-                {seed.thread.note}
+                {threadNote}
               </p>
             ) : null}
-            {focusedDraft?.slots && focusedDraft.slots.length > 1 && liveItem.kind === 'event' ? (
+            {threadSlots ? (
               // The free slots a finder phrase found: the draft sits in the
               // pressed one; another moves it there, like its block on the grid.
               <div className="flex flex-col gap-1" data-testid="draft-slots">
                 <span className="text-xs text-ink-secondary">Free slots</span>
                 <div className="flex flex-wrap gap-1.5">
-                  {focusedDraft.slots.map((slot, index) => {
+                  {threadSlots.map((slot, index) => {
                     const chosen = isAtSlot(liveItem, slot);
                     return (
                       <Button
@@ -282,41 +296,45 @@ export function EditorPanel({
                   : undefined,
               value: option,
             }))}
+            ref={kindFlash}
             size="sm"
             value={kind}
           />
         ) : null}
 
-        {mode === 'todo' ? (
-          // The selected list's provider picks the form: a Reminders list
-          // exposes time/priority/alert/repeat/URL; a Google list gets the
-          // plain title/date/notes form. The kind control moves between the
-          // providers; the list picker stays within one.
-          taskModel.provider === 'apple' ? (
-            <ReminderEditorForm
-              moveConfirmation={moveConfirmation}
-              onClose={onClose}
-              saveDisabled={write.busy}
-              task={task}
-              taskModel={taskModel}
-            />
+        {/* The fields the last turn changed flash (`useFieldFlash`). */}
+        <FieldFlashContext value={flash}>
+          {mode === 'todo' ? (
+            // The selected list's provider picks the form: a Reminders list
+            // exposes time/priority/alert/repeat/URL; a Google list gets the
+            // plain title/date/notes form. The kind control moves between the
+            // providers; the list picker stays within one.
+            taskModel.provider === 'apple' ? (
+              <ReminderEditorForm
+                moveConfirmation={moveConfirmation}
+                onClose={onClose}
+                saveDisabled={write.busy}
+                task={task}
+                taskModel={taskModel}
+              />
+            ) : (
+              <TaskEditorForm
+                moveConfirmation={moveConfirmation}
+                onClose={onClose}
+                saveDisabled={write.busy}
+                task={task}
+                taskModel={taskModel}
+              />
+            )
           ) : (
-            <TaskEditorForm
+            <EventEditorForm
+              model={eventModel}
               moveConfirmation={moveConfirmation}
               onClose={onClose}
               saveDisabled={write.busy}
-              task={task}
-              taskModel={taskModel}
             />
-          )
-        ) : (
-          <EventEditorForm
-            model={eventModel}
-            moveConfirmation={moveConfirmation}
-            onClose={onClose}
-            saveDisabled={write.busy}
-          />
-        )}
+          )}
+        </FieldFlashContext>
       </div>
       {moveConfirmation.pending ? (
         <div className="shrink-0 px-4 pt-2 pb-4">
