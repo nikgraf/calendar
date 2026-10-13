@@ -28,7 +28,7 @@ and the rules; the deep docs are listed at its end.
 **Brand:** [Brand assets and usage](brand/README.md) covers the logo, app icons,
 Inter fonts, color tokens, and `pnpm brand:build` exports. **Privacy:**
 [PRIVACY.md](PRIVACY.md); the desktop window is hidden from screen shares
-and recordings by default (Settings → General), and says so on screen when a
+and recordings by default (Settings → Screen Sharing), and says so on screen when a
 screenshot leaves it out.
 
 ## Setup

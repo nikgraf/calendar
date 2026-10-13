@@ -209,8 +209,8 @@ describe('A served model', () => {
     expect(chat.messages[0]?.content).toContain('Dinner | +2 | 19:00-20:00');
   });
 
-  it('is set up in Settings › General: the kind, a test of the server, the saved endpoint', async () => {
-    const settings = await app.openSettings('general');
+  it('is set up in Settings › AI Model: the kind, a test of the server, the saved endpoint', async () => {
+    const settings = await app.openSettings('model');
     await settings.waitFor(`!!document.querySelector('[data-testid="model-section"]')`);
     expect(
       await settings.eval<string>(
@@ -276,7 +276,7 @@ describe('A served model', () => {
   });
 
   it('speaks the OpenAI shape to a custom endpoint, strictly, with the key bound to its origin', async () => {
-    const settings = await app.openSettings('general');
+    const settings = await app.openSettings('model');
     await settings.waitFor(`!!document.querySelector('[data-testid="model-section"]')`);
     await settings.clickTestId('model-kind-openai');
     await settings.waitFor(`!!document.querySelector('[data-testid="model-key"]')`);
@@ -346,7 +346,7 @@ describe('A served model', () => {
     await cdp.pressEscape();
 
     // Back to Ollama for the tests below.
-    const again = await app.openSettings('general');
+    const again = await app.openSettings('model');
     await again.clickTestId('model-kind-ollama');
     await again.waitFor(
       `document.querySelector('[data-testid="model-url"]')?.value === 'http://localhost:11434'`,
@@ -373,7 +373,7 @@ describe('A served model', () => {
   });
 
   it('says which server is down when the endpoint cannot be reached', async () => {
-    const settings = await app.openSettings('general');
+    const settings = await app.openSettings('model');
     await settings.waitFor(`!!document.querySelector('[data-testid="model-url"]')`);
     await settings.eval(`document.querySelector('[data-testid="model-url"]').focus()`);
     await settings.eval(`document.execCommand('selectAll')`);

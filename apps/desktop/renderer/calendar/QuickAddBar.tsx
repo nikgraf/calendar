@@ -15,7 +15,7 @@ export const QUICK_ADD_PLACEHOLDER = 'Lunch with Sarah tomorrow at 1';
 /**
  * Re-check the model when the window regains focus (Apple Intelligence is
  * switched on in System Settings) and when the provider changes
- * (Settings › General picked another model while this editor was open).
+ * (Settings › AI Model picked another model while this editor was open).
  */
 export const onWindowFocus = (onActive: () => void): (() => void) => {
   window.addEventListener('focus', onActive);

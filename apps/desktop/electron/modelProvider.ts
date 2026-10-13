@@ -8,7 +8,7 @@ import { strictSchema, withoutNulls } from './strictSchema.ts';
  * Foundation Models through the Swift helper (the default, nothing to
  * configure), or a model served over HTTP on this Mac — Ollama's own API
  * with its preset, or any OpenAI-compatible endpoint (LM Studio,
- * llama-server, vLLM) — picked in Settings › General. The choice, the
+ * llama-server, vLLM) — picked in Settings › AI Model. The choice, the
  * endpoint and the model name are device-local: this Mac's own, never
  * part of the settings document that travels between devices. An API
  * key, when a server wants one, is kept encrypted by safeStorage, never

@@ -1437,7 +1437,7 @@ describe('calendar desktop e2e', () => {
   });
 
   it('controls screen-sharing privacy from the settings window', async () => {
-    const cdp = await app.openSettings('general');
+    const cdp = await app.openSettings('sharing');
 
     // Hidden is the default and nothing is persisted yet.
     await cdp.waitFor(
@@ -1519,7 +1519,7 @@ describe('calendar desktop e2e', () => {
     // Settings opened while a capture runs is left out of it too, and says so.
     app.setCapturing(true);
     await cdp.waitFor(captureHintIs('capturing'));
-    const settings = await app.openSettings('general');
+    const settings = await app.openSettings('sharing');
     await settings.waitFor(captureHintIs('capturing'));
 
     // Showing the windows from one hint clears the other at once: it must
@@ -1549,7 +1549,17 @@ describe('calendar desktop e2e', () => {
       await settings.eval<Array<string>>(
         `[...document.querySelectorAll('[role="tab"]')].map((tab) => tab.textContent)`,
       ),
-    ).toEqual(['General', 'Accounts', 'Notifications', 'Settings File', 'Mirrors', 'Agents']);
+    ).toEqual([
+      'Accounts',
+      'Notifications',
+      'Time Zones',
+      'AI Model',
+      'Screen Sharing',
+      'Settings File',
+      'Advanced',
+      'Mirrors',
+      'Agents',
+    ]);
     expect(
       await settings.eval<string | null>(
         `document.querySelector('[data-testid="settings-experimental-heading"]')?.nextElementSibling?.textContent ?? null`,
@@ -1598,7 +1608,7 @@ describe('calendar desktop e2e', () => {
       setter.call(input, '');
       input.dispatchEvent(new Event('input', { bubbles: true }));
     })()`);
-    await settings.waitFor(`document.querySelectorAll('[role="tab"]').length === 6`);
+    await settings.waitFor(`document.querySelectorAll('[role="tab"]').length === 9`);
 
     // The main process reads the pane from the window's URL, so it must
     // have followed the tab click: asking for Accounts again moves back.
@@ -1627,7 +1637,7 @@ describe('calendar desktop e2e', () => {
     // render. Neither request may fail, and the later one wins.
     for (const gapMs of [0, 30, 60, 90, 150]) {
       const outcomes = await cdp.eval<Array<string>>(`(async () => {
-        const first = window.calendarBridge.openSettings('general');
+        const first = window.calendarBridge.openSettings('timezones');
         await new Promise((resolve) => setTimeout(resolve, ${gapMs}));
         const second = window.calendarBridge.openSettings('accounts');
         return (await Promise.allSettled([first, second])).map((result) => result.status);

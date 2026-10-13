@@ -172,7 +172,7 @@ const planSettingsImport = (
     if (document.desktop?.screenPrivacy !== undefined) {
       const current = yield* platform.read;
       if (current.screenPrivacy === undefined) {
-        notes.push('Screen privacy is a desktop setting and was ignored here.');
+        notes.push('Screen sharing is a desktop setting and was ignored here.');
       } else if (current.screenPrivacy !== document.desktop.screenPrivacy) {
         screenPrivacy = document.desktop.screenPrivacy;
         settingsChanged.push('screenPrivacy');

@@ -9,7 +9,10 @@ describe('filterPanes', () => {
 
   it('matches labels and keywords, case-folded, keeping the sidebar order', () => {
     expect(filterPanes('ACCOUNTS').map((pane) => pane.id)).toEqual(['accounts']);
-    expect(filterPanes('time zone').map((pane) => pane.id)).toEqual(['general']);
+    expect(filterPanes('time zone').map((pane) => pane.id)).toEqual(['timezones']);
+    expect(filterPanes('ollama').map((pane) => pane.id)).toEqual(['model']);
+    expect(filterPanes('privacy').map((pane) => pane.id)).toEqual(['sharing']);
+    expect(filterPanes('location').map((pane) => pane.id)).toEqual(['advanced']);
     expect(filterPanes('settings file').map((pane) => pane.id)).toEqual(['file']);
     expect(filterPanes('import').map((pane) => pane.id)).toEqual(['file']);
     // "reminders" is both an Accounts connection and a Notifications setting.
@@ -34,10 +37,21 @@ describe('isExperimentalPane', () => {
       false,
       false,
       false,
+      false,
+      false,
+      false,
       true,
       true,
     ]);
     expect(SETTINGS_PANES.slice(-2).map((pane) => pane.id)).toEqual(['mirrors', 'agents']);
+  });
+});
+
+describe('SETTINGS_PANES', () => {
+  it('uses ids windows.ts accepts in settings:open: letters only', () => {
+    for (const pane of SETTINGS_PANES) {
+      expect(pane.id).toMatch(/^[a-z]{1,32}$/);
+    }
   });
 });
 
@@ -46,5 +60,7 @@ describe('paneFromHash', () => {
     expect(paneFromHash('#settings/agents')).toBe('agents');
     expect(paneFromHash('#settings')).toBeNull();
     expect(paneFromHash('#settings/nope')).toBeNull();
+    // General is gone: a window remembered on it falls back like any unknown id.
+    expect(paneFromHash('#settings/general')).toBeNull();
   });
 });

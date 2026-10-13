@@ -354,7 +354,16 @@ export const runAgentCli = (
 const isSettingsUrl = (url: string): boolean => /#settings(\/|$)/.test(url);
 
 /** The settings window's panes (renderer/settingsPanes.ts). */
-export type SettingsPane = 'accounts' | 'agents' | 'file' | 'general' | 'mirrors' | 'notifications';
+export type SettingsPane =
+  | 'accounts'
+  | 'advanced'
+  | 'agents'
+  | 'file'
+  | 'mirrors'
+  | 'model'
+  | 'notifications'
+  | 'sharing'
+  | 'timezones';
 
 export class Cdp {
   private nextId = 0;

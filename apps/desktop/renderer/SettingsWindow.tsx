@@ -44,6 +44,7 @@ const PANE_CONTENT: Record<SettingsPaneId, ReactNode> = {
       <ContactsSection />
     </>
   ),
+  advanced: <LocationsSection />,
   agents: <AgentsSection />,
   file: (
     <>
@@ -51,31 +52,29 @@ const PANE_CONTENT: Record<SettingsPaneId, ReactNode> = {
       <SettingsFileSection />
     </>
   ),
-  general: (
-    <>
-      <TimeZonesSection />
-      <LocationsSection />
-      <ModelSection />
-      <PrivacySection />
-    </>
-  ),
   mirrors: <MirrorsSection />,
+  model: <ModelSection />,
   notifications: (
     <>
       <EventNotificationsSection />
       <BirthdayRemindersSection />
     </>
   ),
+  sharing: <PrivacySection />,
+  timezones: <TimeZonesSection />,
 };
 
 /** The icon squares' tints: one hue per pane, like System Settings. */
 const PANE_TINT: Record<SettingsPaneId, string> = {
   accounts: 'bg-event-blue text-on-event-blue',
+  advanced: 'bg-fill text-ink-secondary',
   agents: 'bg-event-lilac text-on-event-lilac',
   file: 'bg-fill text-ink-secondary',
-  general: 'bg-fill text-ink',
   mirrors: 'bg-event-mint text-on-event-mint',
+  model: 'bg-event-lilac text-on-event-lilac',
   notifications: 'bg-event-blush text-on-event-blush',
+  sharing: 'bg-fill text-ink',
+  timezones: 'bg-event-mint text-on-event-mint',
 };
 
 const subscribeHash = (onChange: () => void): (() => void) => {
@@ -126,7 +125,7 @@ function ExperimentalNote() {
  */
 export function SettingsWindow() {
   const hash = useSyncExternalStore(subscribeHash, readHash);
-  const [fallback] = useState<SettingsPaneId>(() => storedPane() ?? 'general');
+  const [fallback] = useState<SettingsPaneId>(() => storedPane() ?? 'accounts');
   const pane = paneFromHash(hash) ?? fallback;
   const label = SETTINGS_PANES.find((entry) => entry.id === pane)!.label;
   const [query, setQuery] = useState('');
@@ -161,7 +160,7 @@ export function SettingsWindow() {
     try {
       window.localStorage.setItem(LAST_PANE_KEY, pane);
     } catch {
-      // Without storage the window just reopens on General.
+      // Without storage the window just reopens on Accounts.
     }
   }, [label, pane]);
 

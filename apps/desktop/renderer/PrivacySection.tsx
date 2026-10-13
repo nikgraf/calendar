@@ -4,7 +4,11 @@ import type { PrivacyState } from './backend.ts';
 
 type Choice = 'hidden' | 'pause10m' | 'visible';
 
-/** Screen-sharing privacy control backed by the main-process window state. */
+/**
+ * Settings › Screen Sharing: whether Solunivo's windows show up in screen
+ * sharing, recordings and screenshots, backed by the main-process window
+ * state.
+ */
 export function PrivacySection() {
   const [state, setState] = useState<PrivacyState | null>(null);
   const [now, setNow] = useState(() => Date.now());
@@ -53,8 +57,7 @@ export function PrivacySection() {
 
   return (
     <section className="rounded-popover bg-surface-subtle p-4">
-      <h2 className="font-medium">Privacy</h2>
-      <p className="mt-1 text-sm text-ink-secondary">
+      <p className="text-sm text-ink-secondary">
         Hide Solunivo&rsquo;s windows from screen sharing and recordings. They stay visible on your
         own display.
       </p>

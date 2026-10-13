@@ -219,7 +219,7 @@ describe('settings file: created on request', () => {
     ]);
 
     // A later change lands in the file.
-    await app.openSettings('general');
+    await app.openSettings('sharing');
     await cdp.clickButtonWithText('Always visible');
     await expect
       .poll(() => fileText(app), { timeout: 10_000 })

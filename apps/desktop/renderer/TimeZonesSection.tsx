@@ -46,8 +46,7 @@ export function TimeZonesSection() {
 
   return (
     <section className="rounded-popover bg-surface-subtle p-4" data-testid="time-zones">
-      <h2 className="font-medium">Time zones</h2>
-      <p className="mt-1 text-sm text-ink-secondary">
+      <p className="text-sm text-ink-secondary">
         The calendar is drawn in the primary zone; the others appear under each hour and on events.
         The first zone is this Mac&apos;s own and follows it when you travel.
       </p>
