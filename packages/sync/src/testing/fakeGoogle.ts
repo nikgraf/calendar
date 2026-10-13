@@ -135,6 +135,8 @@ export class FakeGoogle {
   private readonly live: boolean;
   /** The fake's clock for task `updated` stamps; advance it between passes. */
   now = Date.parse('2026-08-24T10:00:00.000Z');
+  /** This many `tasks.move` calls answer 503 first (a move held in backoff). */
+  failTaskMoves = 0;
 
   constructor(options: FakeGoogleOptions) {
     this.calendars = [...options.calendars];
@@ -553,6 +555,10 @@ export class FakeGoogle {
     destination: string | null,
     reply: (status: number, json?: unknown) => HttpClientResponse.HttpClientResponse,
   ): HttpClientResponse.HttpClientResponse {
+    if (this.failTaskMoves > 0) {
+      this.failTaskMoves -= 1;
+      return reply(503, { error: { message: 'Backend Error' } });
+    }
     const source = this.tasksOf(listId);
     const existing = source.get(taskId);
     if (!existing || existing.task.deleted) {

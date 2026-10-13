@@ -313,10 +313,13 @@ export const makeTaskMutations = (deps: TaskMutationDeps): TaskMutations => {
           );
         }
         // What was queued for them follows the move, in the destination.
+        // A create of the task itself nests under nothing there (it leaves
+        // its parent); its subtasks' creates keep theirs.
         for (const op of queued) {
           yield* enqueue(
             new PendingOp({
               ...op,
+              ...(op.eventId === taskId ? { taskParent: undefined } : {}),
               attempts: 0,
               ...(op.beforeTask
                 ? { beforeTask: new TaskRecord({ ...op.beforeTask, listId: targetTaskListId }) }

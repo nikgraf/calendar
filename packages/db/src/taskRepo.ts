@@ -89,6 +89,12 @@ export interface TaskRepoShape {
     accountId: string,
     keepIds: ReadonlyArray<string>,
   ) => Effect.Effect<void, SqlError>;
+  /** Removes a row only when it is a pulled copy (synced), never one a queued op owns. */
+  readonly removeSyncedTask: (
+    accountId: string,
+    listId: string,
+    taskId: string,
+  ) => Effect.Effect<void, SqlError>;
   readonly removeTask: (
     accountId: string,
     listId: string,
@@ -404,6 +410,13 @@ const makeTaskRepo: Effect.Effect<TaskRepoShape, never, Reactivity | SqlClient> 
           }),
         ),
 
+      removeSyncedTask: (accountId, listId, taskId) =>
+        tasksMutation(
+          Effect.asVoid(
+            sql`DELETE FROM tasks WHERE account_id = ${accountId}
+              AND list_id = ${listId} AND id = ${taskId} AND sync_status = 'synced'`,
+          ),
+        ),
       removeTask: (accountId, listId, taskId) =>
         tasksMutation(
           Effect.asVoid(

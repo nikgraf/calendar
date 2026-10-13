@@ -477,6 +477,17 @@ const make: Effect.Effect<
         watermark === null ||
         (state?.lastFullSyncAt ?? 0) < passStartedAt - TASKS_FULL_PASS_INTERVAL_MS;
 
+      // Tasks a queued move takes out of this list: Google lists them here
+      // until it lands (and never says when they leave), so a pull must
+      // not put back the rows the move already took — nor their subtasks.
+      const leaving = new Set(
+        (yield* pendingOpRepo.listAll())
+          .filter(
+            (op) =>
+              op.kind === 'moveTask' && op.accountId === account.id && op.calendarId === taskListId,
+          )
+          .map((op) => op.eventId),
+      );
       let pageToken: string | undefined;
       do {
         const page = yield* withTransientRetry(
@@ -493,6 +504,9 @@ const make: Effect.Effect<
         const deletions: Array<string> = [];
         for (const item of page.items ?? []) {
           const record = mapGcalTask(item, { accountId: account.id, taskListId });
+          if (record && (leaving.has(record.id) || leaving.has(record.parentId ?? ''))) {
+            continue;
+          }
           if (record) {
             upserts.push(record);
           } else {

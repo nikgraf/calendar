@@ -713,6 +713,10 @@ describe('SyncEngine over HTTP (fake Google)', () => {
         yield* engine.syncAll();
         expect(yield* rows('list-1')).toEqual(['c1<p', 'c2<p', 'p<']);
 
+        // The first attempt meets a 503: the move waits in backoff, while
+        // Google still lists the tasks in the source — a pull must not
+        // put back the rows the move took.
+        google.failTaskMoves = 1;
         yield* mutations.moveTask({
           accountId: 'acc-1',
           draft: { dueDate: '2026-08-30', title: 'Trip' },
@@ -720,6 +724,11 @@ describe('SyncEngine over HTTP (fake Google)', () => {
           taskId: 'p',
           taskListId: 'list-1',
         });
+        yield* engine.syncAll();
+        expect(google.taskOf('list-1', 'p')).toBeDefined();
+        expect(yield* rows('list-1')).toEqual([]);
+        expect(yield* rows('list-2')).toEqual(['c1<p', 'c2<p', 'p<']);
+        yield* TestClock.adjust('5 minutes');
         yield* mutations.processPendingOps();
         expect(google.taskOf('list-2', 'c1')?.parent).toBe('p');
         expect(google.taskOf('list-1', 'p')).toBeUndefined();

@@ -3,7 +3,7 @@ import {
   contrastingTextColor,
   EventRecord,
   normalizeHexColor,
-  type PendingOp,
+  PendingOp,
   TaskRecord,
   withConsistentGeo,
 } from '@calendar/core';
@@ -15,6 +15,7 @@ import type {
   TaskRepoShape,
 } from '@calendar/db';
 import {
+  type GcalTask,
   type GoogleCalendarClientShape,
   type GoogleRequestError,
   type GoogleTasksClientShape,
@@ -451,10 +452,37 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
         return;
       }
       const moved = yield* taskRepo.get(op.accountId, from, op.eventId);
+      const subtasks = moved ? yield* taskRepo.listSubtasks(op.accountId, from, op.eventId) : [];
+      const ids = new Set([op.eventId, ...subtasks.map((subtask) => subtask.id)]);
+      // What was queued for them behind the move (edits, a further move)
+      // goes back with them: Google still has them in the source.
+      const owned = new Set<string>();
+      for (const other of yield* pendingOpRepo.listAll()) {
+        if (
+          other.id === op.id ||
+          other.accountId !== op.accountId ||
+          other.calendarId !== from ||
+          !ids.has(other.eventId)
+        ) {
+          continue;
+        }
+        owned.add(other.eventId);
+        yield* pendingOpRepo.remove(other.id);
+        yield* pendingOpRepo.enqueue(
+          new PendingOp({
+            ...other,
+            ...(other.beforeTask
+              ? { beforeTask: new TaskRecord({ ...other.beforeTask, listId: to }) }
+              : {}),
+            calendarId: to,
+            taskListId: to,
+          }),
+        );
+      }
+      // Moved on or deleted since: the later ops own the rows.
       if (!moved) {
         return;
       }
-      const subtasks = yield* taskRepo.listSubtasks(op.accountId, from, op.eventId);
       const now = yield* Clock.currentTimeMillis;
       for (const row of [moved, ...subtasks]) {
         const { parentId: current, ...rest } = row;
@@ -470,6 +498,67 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
           ],
           now,
         );
+        if (owned.has(row.id)) {
+          yield* taskRepo.markPending(op.accountId, to, row.id);
+        }
+      }
+    });
+
+  /**
+   * A move whose 404 may only mean an earlier attempt landed and its
+   * answer was lost: Google then has the task in the destination already.
+   * Found there, the move is settled; otherwise it is put back.
+   */
+  const settleOrRevertTaskMove = (op: PendingOp) =>
+    Effect.gen(function* () {
+      const destination = op.targetTaskListId;
+      if (destination !== undefined) {
+        const page = yield* Effect.orElseSucceed(
+          tasksClient.listTasks({
+            accountId: op.accountId,
+            params: { updatedMin: new Date(op.createdAt - 60_000).toISOString() },
+            taskListId: destination,
+          }),
+          () => undefined,
+        );
+        const landed = page?.items?.find((item) => item.id === op.eventId && !item.deleted);
+        if (landed) {
+          yield* settleTaskMove(op, destination, landed);
+          return;
+        }
+      }
+      yield* revertTaskMove(op);
+    });
+
+  /**
+   * A task move landed (`task` is Google's copy in `destination`): the row
+   * there settles, its subtasks' rows are handed back to sync, and copies
+   * a pull put back into the source while the move waited go — Google
+   * sends no tombstone for a task that left a list.
+   */
+  const settleTaskMove = (op: PendingOp, destination: string, task: GcalTask) =>
+    Effect.gen(function* () {
+      const synced = mapGcalTask(task, { accountId: op.accountId, taskListId: destination });
+      // No row at the destination: the user moved it on (or deleted it)
+      // while this op waited, and those ops own it now.
+      if (synced && (yield* taskRepo.get(op.accountId, destination, op.eventId))) {
+        yield* settleTask(op, destination, synced);
+      }
+      const subtasks = yield* taskRepo.listSubtasks(op.accountId, destination, op.eventId);
+      for (const subtask of subtasks) {
+        const queued = yield* pendingOpRepo.listForEvent({
+          accountId: op.accountId,
+          calendarId: destination,
+          eventId: subtask.id,
+        });
+        if (queued.length === 0) {
+          yield* taskRepo.markSynced(op.accountId, destination, subtask.id);
+        }
+      }
+      if (op.taskListId !== undefined) {
+        for (const id of [op.eventId, ...subtasks.map((subtask) => subtask.id)]) {
+          yield* taskRepo.removeSyncedTask(op.accountId, op.taskListId, id);
+        }
       }
     });
 
@@ -537,10 +626,32 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
             }
           }),
         );
-      case 'createTask':
-        return op.taskListId
-          ? Effect.ignore(taskRepo.removeTask(op.accountId, op.taskListId, op.eventId))
+      case 'createTask': {
+        const listId = op.taskListId;
+        return listId
+          ? Effect.ignore(
+              Effect.gen(function* () {
+                yield* taskRepo.removeTask(op.accountId, listId, op.eventId);
+                // Subtasks a move carried along under it wait for its server
+                // id, which it will never get: they go with it.
+                for (const subtask of yield* taskRepo.listSubtasks(
+                  op.accountId,
+                  listId,
+                  op.eventId,
+                )) {
+                  yield* taskRepo.removeTask(op.accountId, listId, subtask.id);
+                  for (const queued of yield* pendingOpRepo.listForEvent({
+                    accountId: op.accountId,
+                    calendarId: listId,
+                    eventId: subtask.id,
+                  })) {
+                    yield* pendingOpRepo.remove(queued.id);
+                  }
+                }
+              }),
+            )
           : Effect.void;
+      }
       case 'completeTask':
       case 'updateTask':
         return op.taskListId
@@ -629,7 +740,7 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
       // Google last had them. A task really gone there arrives as the
       // source list's tombstone; deleting here could hide one that exists.
       if (op.kind === 'moveTask') {
-        yield* Effect.ignore(revertTaskMove(op));
+        yield* Effect.ignore(settleOrRevertTaskMove(op));
         return 'done' as const;
       }
       // Deleted remotely — drop the local copy too. (For deleteTask
@@ -878,11 +989,13 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
       if (op.kind === 'createTask' && op.taskParent?.startsWith('local-') === true) {
         return retry('waiting for its parent task to land');
       }
-      // An op addressing a list a queued task move goes into (the moved
-      // task's own later edits, its subtasks') waits for that move even
-      // when backoff lets the drain skip it: Google has nothing there yet,
-      // and the 404 would drop the edit and its row.
-      if (TASK_KINDS.has(op.kind) && op.kind !== 'moveTask') {
+      // Task ops keep their order around a move even when backoff lets the
+      // drain skip one: an op addressing a list a queued move goes into
+      // (the moved task's later edits, its subtasks', a move onwards) waits
+      // for that move — Google has nothing there yet, and the 404 would
+      // drop the op and its row — and a move waits for what was queued
+      // before it in its source list (a subtask's delete, say).
+      if (TASK_KINDS.has(op.kind)) {
         const earlier = yield* pendingOpRepo.earlierTaskOps(op);
         if (
           earlier.some(
@@ -890,6 +1003,9 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
           )
         ) {
           return retry('waiting for the move ahead of it');
+        }
+        if (op.kind === 'moveTask' && earlier.some((other) => other.calendarId === op.calendarId)) {
+          return retry('waiting for earlier changes in its list');
         }
       }
       // A move and the edits of the same series keep their queue order even
@@ -1095,31 +1211,7 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
             taskId: op.eventId,
             taskListId: op.taskListId,
           });
-          const synced = mapGcalTask(response, {
-            accountId: op.accountId,
-            taskListId: destination,
-          });
-          // No row at the destination: the user moved it on (or deleted it)
-          // while this op waited, and those ops own it now.
-          if (synced && (yield* taskRepo.get(op.accountId, destination, op.eventId))) {
-            yield* settleTask(op, destination, synced);
-          }
-          // Its subtasks came along on Google: their rows are settled too,
-          // unless an op of theirs still owns one.
-          for (const subtask of yield* taskRepo.listSubtasks(
-            op.accountId,
-            destination,
-            op.eventId,
-          )) {
-            const queued = yield* pendingOpRepo.listForEvent({
-              accountId: op.accountId,
-              calendarId: destination,
-              eventId: subtask.id,
-            });
-            if (queued.length === 0) {
-              yield* taskRepo.markSynced(op.accountId, destination, subtask.id);
-            }
-          }
+          yield* settleTaskMove(op, destination, response);
           return 'done' as const;
         }
         case 'deleteTask': {

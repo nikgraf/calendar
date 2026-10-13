@@ -196,8 +196,12 @@ const makePendingOpRepo: Effect.Effect<PendingOpRepoShape, never, Reactivity | S
         }
         const inCalendars =
           calendarIds.length === 0 ? sql`0` : sql`calendar_id IN ${sql.in(calendarIds)}`;
+        // A task move counts for the list it goes into too.
         const inLists =
-          taskListIds.length === 0 ? sql`0` : sql`task_list_id IN ${sql.in(taskListIds)}`;
+          taskListIds.length === 0
+            ? sql`0`
+            : sql`(task_list_id IN ${sql.in(taskListIds)}
+                OR target_task_list_id IN ${sql.in(taskListIds)})`;
         return Effect.map(
           sql<{ readonly count: number }>`SELECT COUNT(*) AS count FROM pending_ops
             WHERE account_id = ${accountId} AND (${inCalendars} OR ${inLists})`,

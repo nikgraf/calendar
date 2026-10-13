@@ -620,6 +620,8 @@ describe('moveTask across providers', () => {
     const fake = fakeWith();
     const gone: GoogleTasksClientShape = {
       ...recordingTasks([]),
+      // Nor is it in the destination: the move never happened.
+      listTasks: () => Effect.succeed({ items: [] }),
       moveTask: () => Effect.fail(new NotFoundError({ resource: 'task t1' })),
     };
     return Effect.gen(function* () {
@@ -687,6 +689,151 @@ describe('moveTask across providers', () => {
         expect(yield* rowAt('acc-1', 'list-2', id)).toBeUndefined();
       }
       expect((yield* rowAt('acc-1', 'list-1', 's2'))?.parentId).toBe('t1');
+    }).pipe(noYield, Effect.provide(testLayer(fake.client, recordingTasks([]))));
+  });
+
+  it.effect('a 404 after a move that landed unanswered settles it in the destination', () => {
+    const fake = fakeWith();
+    const landed: GoogleTasksClientShape = {
+      ...recordingTasks([]),
+      listTasks: ({ taskListId }) =>
+        Effect.succeed({
+          items:
+            taskListId === 'list-2'
+              ? [
+                  {
+                    id: 't1',
+                    status: 'needsAction',
+                    title: 'Pay rent',
+                    updated: '2030-01-01T00:00:00.000Z',
+                  },
+                ]
+              : [],
+        }),
+      moveTask: () => Effect.fail(new NotFoundError({ resource: 'task t1' })),
+    };
+    return Effect.gen(function* () {
+      yield* seed;
+      yield* withSubtasks;
+      yield* move(['acc-1', 'list-1', 't1'], ['acc-1', 'list-2'], {
+        dueDate: tomorrow,
+        notes: 'transfer first',
+        title: 'Pay rent',
+      });
+      yield* (yield* EventMutations).processPendingOps();
+      expect(yield* queued).toEqual([]);
+      for (const id of ['t1', 's1', 's2']) {
+        expect(yield* rowAt('acc-1', 'list-2', id)).toBeDefined();
+        expect(yield* rowAt('acc-1', 'list-1', id)).toBeUndefined();
+      }
+    }).pipe(noYield, Effect.provide(testLayer(fake.client, landed)));
+  });
+
+  it.effect('a second move waits behind the first, and a discard sends what followed back', () => {
+    const fake = fakeWith();
+    const calls: Array<string> = [];
+    const flaky: GoogleTasksClientShape = {
+      ...recordingTasks(calls),
+      moveTask: () => Effect.fail(new ApiUnavailableError({ cause: 'try later' })),
+    };
+    return Effect.gen(function* () {
+      yield* seed;
+      yield* (yield* TaskRepo).upsertLists([list('acc-1', 'list-3', 'google')], 100);
+      const draft = { dueDate: tomorrow, notes: 'transfer first', title: 'Pay the rent' };
+      yield* move(['acc-1', 'list-1', 't1'], ['acc-1', 'list-2'], draft);
+      // Onwards before the first move landed.
+      yield* move(['acc-1', 'list-2', 't1'], ['acc-1', 'list-3'], draft);
+      const mutations = yield* EventMutations;
+      yield* mutations.processPendingOps();
+      // Only the first move was tried; the second and the rename wait.
+      expect(calls).toEqual([]);
+      expect(yield* queued).toEqual([
+        'moveTask acc-1/list-1/t1',
+        'moveTask acc-1/list-2/t1',
+        'updateTask acc-1/list-3/t1',
+      ]);
+      // Discarding the first sends the second back to the source: 1 → 3.
+      const [first] = yield* (yield* PendingOpRepo).listAll();
+      yield* mutations.discardPendingOp(first!.id);
+      expect(yield* queued).toEqual(['moveTask acc-1/list-1/t1', 'updateTask acc-1/list-3/t1']);
+      const [onwards] = yield* (yield* PendingOpRepo).listAll();
+      expect(onwards?.targetTaskListId).toBe('list-3');
+      expect(yield* rowAt('acc-1', 'list-3', 't1')).toBeDefined();
+    }).pipe(noYield, Effect.provide(testLayer(fake.client, flaky)));
+  });
+
+  it.effect('a pulled copy left in the source while the move waited goes when it lands', () => {
+    const fake = fakeWith();
+    return Effect.gen(function* () {
+      yield* seed;
+      yield* withSubtasks;
+      yield* move(['acc-1', 'list-1', 't1'], ['acc-1', 'list-2'], {
+        dueDate: tomorrow,
+        notes: 'transfer first',
+        title: 'Pay rent',
+      });
+      yield* (yield* TaskRepo).upsertTasks(
+        [
+          new TaskRecord({
+            accountId: 'acc-1',
+            id: 's1',
+            listId: 'list-1',
+            parentId: 't1',
+            provider: 'google',
+            status: 'needsAction',
+            title: 'First step',
+            updatedAt: 200,
+          }),
+        ],
+        200,
+        { mode: 'pull' },
+      );
+      yield* (yield* EventMutations).processPendingOps();
+      expect(yield* rowAt('acc-1', 'list-1', 's1')).toBeUndefined();
+      expect(yield* rowAt('acc-1', 'list-2', 's1')).toBeDefined();
+    }).pipe(noYield, Effect.provide(testLayer(fake.client, recordingTasks([]))));
+  });
+
+  it.effect('an unsent subtask copy moved on its own nests under nothing there', () => {
+    const fake = fakeWith();
+    return Effect.gen(function* () {
+      yield* seed;
+      yield* withSubtasks;
+      yield* (yield* TaskRepo).upsertLists([list('acc-2', 'list-y', 'google')], 100);
+      yield* move(['acc-1', 'list-1', 't1'], ['acc-2', 'list-x'], {
+        dueDate: tomorrow,
+        title: 'Pay rent',
+      });
+      const [copy] = (yield* (yield* TaskRepo).getMirrorSource('acc-2', ['list-x'])).filter(
+        (task) => task.title === 'First step',
+      );
+      yield* move(['acc-2', 'list-x', copy!.id], ['acc-2', 'list-y'], {
+        dueDate: tomorrow,
+        title: 'First step',
+      });
+      const create = (yield* (yield* PendingOpRepo).listAll()).find(
+        (op) => op.kind === 'createTask' && op.eventId === copy!.id,
+      );
+      expect(create).toMatchObject({ calendarId: 'list-y' });
+      expect(create?.taskParent).toBeUndefined();
+    }).pipe(noYield, Effect.provide(testLayer(fake.client, recordingTasks([]))));
+  });
+
+  it.effect('a parent create that is discarded takes the subtask creates waiting on it', () => {
+    const fake = fakeWith();
+    return Effect.gen(function* () {
+      yield* seed;
+      yield* withSubtasks;
+      const copied = yield* move(['acc-1', 'list-1', 't1'], ['acc-2', 'list-x'], {
+        dueDate: tomorrow,
+        title: 'Pay rent',
+      });
+      const parentCreate = (yield* (yield* PendingOpRepo).listAll()).find(
+        (op) => op.kind === 'createTask' && op.eventId === copied.id,
+      );
+      yield* (yield* EventMutations).discardPendingOp(parentCreate!.id);
+      expect(yield* (yield* TaskRepo).getMirrorSource('acc-2', ['list-x'])).toEqual([]);
+      expect((yield* queued).filter((entry) => entry.includes('acc-2/'))).toEqual([]);
     }).pipe(noYield, Effect.provide(testLayer(fake.client, recordingTasks([]))));
   });
 
