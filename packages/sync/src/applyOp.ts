@@ -452,7 +452,10 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
         return;
       }
       const moved = yield* taskRepo.get(op.accountId, from, op.eventId);
-      const subtasks = moved ? yield* taskRepo.listSubtasks(op.accountId, from, op.eventId) : [];
+      // Its subtasks' rows go back even when the task's own is gone (deleted
+      // there since): Google still has them in the source. Moved on, they
+      // went along, and none are left here.
+      const subtasks = yield* taskRepo.listSubtasks(op.accountId, from, op.eventId);
       const ids = new Set([op.eventId, ...subtasks.map((subtask) => subtask.id)]);
       // What was queued for them behind the move (edits, a further move)
       // goes back with them: Google still has them in the source. A subtask
@@ -480,12 +483,9 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
           }),
         );
       }
-      // Moved on or deleted since: the later ops own the rows.
-      if (!moved) {
-        return;
-      }
+      // Moved on or deleted since: the later ops own the task's row.
       const now = yield* Clock.currentTimeMillis;
-      for (const row of [moved, ...subtasks]) {
+      for (const row of moved ? [moved, ...subtasks] : subtasks) {
         const { parentId: current, ...rest } = row;
         const parentId = row.id === op.eventId ? op.beforeTask?.parentId : current;
         yield* taskRepo.removeTask(op.accountId, from, row.id);
@@ -530,6 +530,13 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
             }),
           );
           if (page._tag === 'Failure') {
+            // The destination list itself is gone: the move cannot land.
+            if (
+              page.failure._tag === 'NotFoundError' ||
+              page.failure._tag === 'SyncTokenExpiredError'
+            ) {
+              break;
+            }
             return retry('Google did not say where the task is');
           }
           landed = page.success.items?.find((item) => item.id === op.eventId && !item.deleted);

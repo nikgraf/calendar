@@ -27,7 +27,7 @@ import {
 } from '@calendar/reminders';
 import { SqliteClient } from '@effect/sql-sqlite-node';
 import { expect, it } from '@effect/vitest';
-import { Effect, Layer, Scheduler } from 'effect';
+import { Deferred, Effect, Fiber, Layer, Scheduler } from 'effect';
 import { TestClock } from 'effect/testing';
 import { layer as reactivityLayer } from 'effect/reactivity/Reactivity';
 import { describe } from 'vite-plus/test';
@@ -958,6 +958,76 @@ describe('moveTask across providers', () => {
         'insert list-x/First step under srv-1',
       ]);
     }).pipe(noYield, Effect.provide(testLayer(fake.client, flakyInsert)));
+  });
+
+  it.effect('a move into a list that is gone is put back, not retried forever', () => {
+    const fake = fakeWith();
+    const goneList: GoogleTasksClientShape = {
+      ...recordingTasks([]),
+      listTasks: () => Effect.fail(new NotFoundError({ resource: 'task list list-2' })),
+      moveTask: () => Effect.fail(new NotFoundError({ resource: 'task list list-2' })),
+    };
+    return Effect.gen(function* () {
+      yield* seed;
+      yield* move(['acc-1', 'list-1', 't1'], ['acc-1', 'list-2'], {
+        dueDate: tomorrow,
+        notes: 'transfer first',
+        title: 'Pay rent',
+      });
+      yield* (yield* EventMutations).processPendingOps();
+      expect(yield* queued).toEqual([]);
+      expect(yield* rowAt('acc-1', 'list-1', 't1')).toBeDefined();
+      expect(yield* rowAt('acc-1', 'list-2', 't1')).toBeUndefined();
+    }).pipe(noYield, Effect.provide(testLayer(fake.client, goneList)));
+  });
+
+  it.effect('a discarded move brings the subtasks back even after their parent was deleted', () => {
+    const fake = fakeWith();
+    const flaky: GoogleTasksClientShape = {
+      ...recordingTasks([]),
+      moveTask: () => Effect.fail(new ApiUnavailableError({ cause: 'try later' })),
+    };
+    return Effect.gen(function* () {
+      yield* seed;
+      yield* withSubtasks;
+      yield* move(['acc-1', 'list-1', 't1'], ['acc-1', 'list-2'], {
+        dueDate: tomorrow,
+        notes: 'transfer first',
+        title: 'Pay rent',
+      });
+      const mutations = yield* EventMutations;
+      yield* mutations.deleteTask({ accountId: 'acc-1', taskId: 't1', taskListId: 'list-2' });
+      const moveOp = (yield* (yield* PendingOpRepo).listAll()).find((op) => op.kind === 'moveTask');
+      yield* mutations.discardPendingOp(moveOp!.id);
+      // The delete goes to the source, where Google takes the subtasks with it.
+      expect(yield* queued).toEqual(['deleteTask acc-1/list-1/t1']);
+      expect(yield* rowAt('acc-1', 'list-1', 's1')).toBeDefined();
+      expect(yield* rowAt('acc-1', 'list-2', 's1')).toBeUndefined();
+    }).pipe(noYield, Effect.provide(testLayer(fake.client, flaky)));
+  });
+
+  it.effect('a pull holding the queue keeps a move from landing mid-request', () => {
+    const fake = fakeWith();
+    const calls: Array<string> = [];
+    return Effect.gen(function* () {
+      yield* seed;
+      const mutations = yield* EventMutations;
+      const release = yield* Deferred.make<void>();
+      const pull = yield* Effect.forkChild(mutations.whileQueueHeld(Deferred.await(release)));
+      yield* Effect.yieldNow;
+      yield* move(['acc-1', 'list-1', 't1'], ['acc-1', 'list-2'], {
+        dueDate: tomorrow,
+        notes: 'transfer first',
+        title: 'Pay rent',
+      });
+      const drain = yield* Effect.forkChild(mutations.processPendingOps());
+      yield* Effect.yieldNow;
+      expect(calls).toEqual([]);
+      yield* Deferred.succeed(release, undefined);
+      yield* Fiber.join(pull);
+      yield* Fiber.join(drain);
+      expect(calls).toEqual(['move list-1/t1 -> list-2']);
+    }).pipe(Effect.provide(testLayer(fake.client, recordingTasks(calls))));
   });
 
   it.effect(

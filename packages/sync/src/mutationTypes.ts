@@ -341,6 +341,12 @@ export interface EventMutationsShape {
     readonly taskId: string;
     readonly taskListId: string;
   }) => Effect.Effect<void, SqlError | TaskProviderError>;
+  /**
+   * Runs `effect` while no drain can push: a task list's pull, which a
+   * move landing while its request is out would make stale (Google sends
+   * no tombstone for a task that left a list).
+   */
+  readonly whileQueueHeld: <A, E, R>(effect: Effect.Effect<A, E, R>) => Effect.Effect<A, E, R>;
 }
 
 /** Backoff for transient op failures: 30s · 2^attempts, capped at 30min. */

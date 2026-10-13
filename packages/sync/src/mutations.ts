@@ -1388,6 +1388,8 @@ const make: Effect.Effect<
           }),
         );
       }),
+
+    whileQueueHeld: (effect) => gate.withPermits(1)(effect),
   };
 
   // Every queue-backed method runs inside one transaction (see

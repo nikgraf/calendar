@@ -204,13 +204,16 @@ it whenever a kind is added. Rules that keep the queue correct:
   waits for it, and a move waits for what was queued before it in its
   source list (`earlierTaskOps`). While a move waits, a pull of the source
   does not put its rows back (Google sends no tombstone when a task leaves
-  a list); a copy that slipped in goes when the move lands. A create still
+  a list): a Google list's pull holds the drain (`whileQueueHeld`), so no
+  move lands while its request is out, and reads the queued moves after
+  each answer; a copy that slipped in anyway goes when the move lands. A create still
   in flight refuses the move (`TaskCreatePendingError`); an unsent one is
   simply created in the destination. A discard or a 404 puts the rows
   back, with what was queued behind the move (a subtask deleted since
   included) — unless the 404 answers a retry whose first attempt landed:
   then the task is in the destination already and the move settles
-  there; a destination Google does not answer for keeps the move queued.
+  there; a destination Google does not answer for keeps the move queued,
+  and one that is gone puts it back.
   Mirrors count a queued move for both lists. Every other route —
   Reminders ↔ Google, another Google account — creates the task in the
   target from the editor's draft, then its subtasks (nested under the
