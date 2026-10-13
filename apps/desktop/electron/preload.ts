@@ -10,6 +10,8 @@ contextBridge.exposeInMainWorld('calendarBridge', {
   agentsRotate: (id: string) => ipcRenderer.invoke('agents:rotate', id),
   agentsState: () => ipcRenderer.invoke('agents:state'),
   agentsUpdate: (id: string, changes: unknown) => ipcRenderer.invoke('agents:update', id, changes),
+  /** Brings Calendar.app forward (false under the e2e fixture, which opens nothing). */
+  appleCalendarOpen: () => ipcRenderer.invoke('appleCalendar:open'),
   appleCalendarStatus: () => ipcRenderer.invoke('appleCalendar:status'),
   /** Stops a Google sign-in waiting on the browser (Accounts › Cancel). */
   authCancel: () => ipcRenderer.invoke('auth:cancel'),
