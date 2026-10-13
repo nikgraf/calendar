@@ -198,7 +198,8 @@ it whenever a kind is added. Rules that keep the queue correct:
   `destinationTasklist`) keeps the id, takes the subtasks along nested as
   they were, and the task leaves a parent it had. The form's edits are
   queued first; the rows move at once and every op queued for the task or
-  its subtasks is re-queued in the destination behind the move. An op
+  its subtasks is re-queued in the destination behind the move (an
+  earlier move out of that list stays where it is). An op
   addressing a list a queued move goes into (a move onwards included)
   waits for it, and a move waits for what was queued before it in its
   source list (`earlierTaskOps`). While a move waits, a pull of the source
@@ -206,14 +207,16 @@ it whenever a kind is added. Rules that keep the queue correct:
   a list); a copy that slipped in goes when the move lands. A create still
   in flight refuses the move (`TaskCreatePendingError`); an unsent one is
   simply created in the destination. A discard or a 404 puts the rows
-  back, with what was queued behind the move — unless the 404 answers a
-  retry whose first attempt landed: then the task is in the destination
-  already and the move settles there. Mirrors count a queued move for
-  both lists. Every other route —
+  back, with what was queued behind the move (a subtask deleted since
+  included) — unless the 404 answers a retry whose first attempt landed:
+  then the task is in the destination already and the move settles
+  there; a destination Google does not answer for keeps the move queued.
+  Mirrors count a queued move for both lists. Every other route —
   Reminders ↔ Google, another Google account — creates the task in the
   target from the editor's draft, then its subtasks (nested under the
   copy on Google, `createTask` with `taskParent`, last to first since
-  Google inserts a subtask first among its siblings; as reminders of their
+  Google inserts a subtask first among its siblings, each waiting for the
+  one before it so a retry cannot swap them; as reminders of their
   own in Reminders), and then deletes the source, subtasks first; a
   failure in between leaves a duplicate, never a lost task. Completion
   follows. What a route drops — reminder fields, a subtask leaving its

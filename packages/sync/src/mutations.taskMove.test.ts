@@ -837,6 +837,129 @@ describe('moveTask across providers', () => {
     }).pipe(noYield, Effect.provide(testLayer(fake.client, recordingTasks([]))));
   });
 
+  it.effect('a task that comes back to a list and moves on keeps every move in order', () => {
+    const fake = fakeWith();
+    const calls: Array<string> = [];
+    return Effect.gen(function* () {
+      yield* seed;
+      yield* (yield* TaskRepo).upsertLists([list('acc-1', 'list-3', 'google')], 100);
+      const draft = { dueDate: tomorrow, notes: 'transfer first', title: 'Pay rent' };
+      yield* move(['acc-1', 'list-1', 't1'], ['acc-1', 'list-2'], draft);
+      yield* move(['acc-1', 'list-2', 't1'], ['acc-1', 'list-1'], draft);
+      yield* move(['acc-1', 'list-1', 't1'], ['acc-1', 'list-3'], draft);
+      yield* (yield* EventMutations).processPendingOps();
+      expect(calls).toEqual([
+        'move list-1/t1 -> list-2',
+        'move list-2/t1 -> list-1',
+        'move list-1/t1 -> list-3',
+      ]);
+      expect(yield* rowAt('acc-1', 'list-3', 't1')).toBeDefined();
+    }).pipe(noYield, Effect.provide(testLayer(fake.client, recordingTasks(calls))));
+  });
+
+  it.effect('a discarded move takes back the delete of a subtask removed after it', () => {
+    const fake = fakeWith();
+    const flaky: GoogleTasksClientShape = {
+      ...recordingTasks([]),
+      moveTask: () => Effect.fail(new ApiUnavailableError({ cause: 'try later' })),
+    };
+    return Effect.gen(function* () {
+      yield* seed;
+      yield* withSubtasks;
+      yield* move(['acc-1', 'list-1', 't1'], ['acc-1', 'list-2'], {
+        dueDate: tomorrow,
+        notes: 'transfer first',
+        title: 'Pay rent',
+      });
+      const mutations = yield* EventMutations;
+      yield* mutations.deleteTask({ accountId: 'acc-1', taskId: 's1', taskListId: 'list-2' });
+      const [moveOp] = yield* (yield* PendingOpRepo).listAll();
+      yield* mutations.discardPendingOp(moveOp!.id);
+      expect(yield* queued).toEqual(['deleteTask acc-1/list-1/s1']);
+    }).pipe(noYield, Effect.provide(testLayer(fake.client, flaky)));
+  });
+
+  it.effect('a 404 whose destination cannot be checked keeps the move queued', () => {
+    const fake = fakeWith();
+    const unsure: GoogleTasksClientShape = {
+      ...recordingTasks([]),
+      listTasks: () => Effect.fail(new ApiUnavailableError({ cause: 'try later' })),
+      moveTask: () => Effect.fail(new NotFoundError({ resource: 'task t1' })),
+    };
+    return Effect.gen(function* () {
+      yield* seed;
+      yield* move(['acc-1', 'list-1', 't1'], ['acc-1', 'list-2'], {
+        dueDate: tomorrow,
+        notes: 'transfer first',
+        title: 'Pay rent',
+      });
+      yield* (yield* EventMutations).processPendingOps();
+      expect(yield* queued).toEqual(['moveTask acc-1/list-1/t1']);
+      expect(yield* rowAt('acc-1', 'list-2', 't1')).toBeDefined();
+    }).pipe(noYield, Effect.provide(testLayer(fake.client, unsure)));
+  });
+
+  it.effect('a landed move is found on a later page of the destination', () => {
+    const fake = fakeWith();
+    const paged: GoogleTasksClientShape = {
+      ...recordingTasks([]),
+      listTasks: ({ params }) =>
+        Effect.succeed(
+          params.pageToken === undefined
+            ? { items: [{ id: 'other', title: 'Other' }], nextPageToken: 'p2' }
+            : { items: [{ id: 't1', status: 'needsAction', title: 'Pay rent' }] },
+        ),
+      moveTask: () => Effect.fail(new NotFoundError({ resource: 'task t1' })),
+    };
+    return Effect.gen(function* () {
+      yield* seed;
+      yield* move(['acc-1', 'list-1', 't1'], ['acc-1', 'list-2'], {
+        dueDate: tomorrow,
+        notes: 'transfer first',
+        title: 'Pay rent',
+      });
+      yield* (yield* EventMutations).processPendingOps();
+      expect(yield* queued).toEqual([]);
+      expect(yield* rowAt('acc-1', 'list-2', 't1')).toBeDefined();
+      expect(yield* rowAt('acc-1', 'list-1', 't1')).toBeUndefined();
+    }).pipe(noYield, Effect.provide(testLayer(fake.client, paged)));
+  });
+
+  it.effect('subtask copies go in one after another, so a retry cannot swap them', () => {
+    const fake = fakeWith();
+    const calls: Array<string> = [];
+    let refused = 0;
+    const base = recordingTasks(calls);
+    const flakyInsert: GoogleTasksClientShape = {
+      ...base,
+      // The retry first checks whether the refused insert landed after all.
+      insertTask: (params) =>
+        params.task.title === 'Second step' && refused++ === 0
+          ? Effect.fail(new ApiUnavailableError({ cause: 'try later' }))
+          : base.insertTask(params),
+      listTasks: () => Effect.succeed({ items: [] }),
+    };
+    return Effect.gen(function* () {
+      yield* seed;
+      yield* withSubtasks;
+      yield* move(['acc-1', 'list-1', 't1'], ['acc-2', 'list-x'], {
+        dueDate: tomorrow,
+        title: 'Pay rent',
+      });
+      const mutations = yield* EventMutations;
+      yield* mutations.processPendingOps();
+      // The second step backs off; the first waits behind it.
+      expect(calls.filter((call) => call.startsWith('insert'))).toEqual(['insert list-x/Pay rent']);
+      yield* TestClock.adjust('1 hour');
+      yield* mutations.processPendingOps();
+      expect(calls.filter((call) => call.startsWith('insert'))).toEqual([
+        'insert list-x/Pay rent',
+        'insert list-x/Second step under srv-1',
+        'insert list-x/First step under srv-1',
+      ]);
+    }).pipe(noYield, Effect.provide(testLayer(fake.client, flakyInsert)));
+  });
+
   it.effect(
     'deleting a parent whose create never went out drops the subtasks waiting on it',
     () => {

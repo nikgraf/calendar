@@ -264,8 +264,14 @@ export const makeTaskMutations = (deps: TaskMutationDeps): TaskMutations => {
         }
         const subtasks = yield* taskRepo.listSubtasks(accountId, taskListId, taskId);
         const ids = new Set([taskId, ...subtasks.map((subtask) => subtask.id)]);
+        // An earlier move out of this list (the task was here before, and
+        // came back) stays as it is: it runs before this one.
         const queued = (yield* pendingOpRepo.listAll()).filter(
-          (op) => op.accountId === accountId && op.calendarId === taskListId && ids.has(op.eventId),
+          (op) =>
+            op.accountId === accountId &&
+            op.calendarId === taskListId &&
+            ids.has(op.eventId) &&
+            op.kind !== 'moveTask',
         );
         // A create that went out may land in the source list after the
         // move: where the task ends up is not known until Google answers.

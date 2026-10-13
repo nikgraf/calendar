@@ -455,14 +455,15 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
       const subtasks = moved ? yield* taskRepo.listSubtasks(op.accountId, from, op.eventId) : [];
       const ids = new Set([op.eventId, ...subtasks.map((subtask) => subtask.id)]);
       // What was queued for them behind the move (edits, a further move)
-      // goes back with them: Google still has them in the source.
+      // goes back with them: Google still has them in the source. A subtask
+      // deleted since has no row; its delete names its parent.
       const owned = new Set<string>();
       for (const other of yield* pendingOpRepo.listAll()) {
         if (
           other.id === op.id ||
           other.accountId !== op.accountId ||
           other.calendarId !== from ||
-          !ids.has(other.eventId)
+          !(ids.has(other.eventId) || other.beforeTask?.parentId === op.eventId)
         ) {
           continue;
         }
@@ -509,25 +510,38 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
    * answer was lost: Google then has the task in the destination already.
    * Found there, the move is settled; otherwise it is put back.
    */
-  const settleOrRevertTaskMove = (op: PendingOp) =>
+  const settleOrRevertTaskMove = (op: PendingOp): Effect.Effect<ApplyOutcome> =>
     Effect.gen(function* () {
       const destination = op.targetTaskListId;
       if (destination !== undefined) {
-        const page = yield* Effect.orElseSucceed(
-          tasksClient.listTasks({
-            accountId: op.accountId,
-            params: { updatedMin: new Date(op.createdAt - 60_000).toISOString() },
-            taskListId: destination,
-          }),
-          () => undefined,
-        );
-        const landed = page?.items?.find((item) => item.id === op.eventId && !item.deleted);
+        // Every page touched since the move was queued; an unanswered
+        // lookup decides nothing — the move stays queued and asks again.
+        let landed: GcalTask | undefined;
+        let pageToken: string | undefined;
+        do {
+          const page = yield* Effect.result(
+            tasksClient.listTasks({
+              accountId: op.accountId,
+              params: {
+                pageToken,
+                updatedMin: new Date(op.createdAt - 60_000).toISOString(),
+              },
+              taskListId: destination,
+            }),
+          );
+          if (page._tag === 'Failure') {
+            return retry('Google did not say where the task is');
+          }
+          landed = page.success.items?.find((item) => item.id === op.eventId && !item.deleted);
+          pageToken = page.success.nextPageToken;
+        } while (landed === undefined && pageToken !== undefined);
         if (landed) {
-          yield* settleTaskMove(op, destination, landed);
-          return;
+          yield* Effect.ignore(settleTaskMove(op, destination, landed));
+          return 'done' as const;
         }
       }
-      yield* revertTaskMove(op);
+      yield* Effect.ignore(revertTaskMove(op));
+      return 'done' as const;
     });
 
   /**
@@ -740,8 +754,7 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
       // Google last had them. A task really gone there arrives as the
       // source list's tombstone; deleting here could hide one that exists.
       if (op.kind === 'moveTask') {
-        yield* Effect.ignore(settleOrRevertTaskMove(op));
-        return 'done' as const;
+        return yield* settleOrRevertTaskMove(op);
       }
       // Deleted remotely — drop the local copy too. (For deleteTask
       // this is simply "already gone".)
@@ -1006,6 +1019,16 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
         }
         if (op.kind === 'moveTask' && earlier.some((other) => other.calendarId === op.calendarId)) {
           return retry('waiting for earlier changes in its list');
+        }
+        // Google inserts a subtask first among its siblings: they are
+        // queued last to first, and each waits for the one before it so a
+        // retry cannot swap them.
+        if (
+          op.kind === 'createTask' &&
+          op.taskParent !== undefined &&
+          earlier.some((other) => other.kind === 'createTask' && other.taskParent === op.taskParent)
+        ) {
+          return retry('waiting for the subtask before it');
         }
       }
       // A move and the edits of the same series keep their queue order even

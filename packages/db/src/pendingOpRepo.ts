@@ -73,7 +73,9 @@ export interface PendingOpRepoShape {
   readonly earlierTaskOps: (
     op: PendingOp,
   ) => Effect.Effect<
-    ReadonlyArray<Pick<PendingOp, 'calendarId' | 'eventId' | 'kind' | 'targetTaskListId'>>,
+    ReadonlyArray<
+      Pick<PendingOp, 'calendarId' | 'eventId' | 'kind' | 'targetTaskListId' | 'taskParent'>
+    >,
     SqlError
   >;
   readonly enqueue: (op: PendingOp) => Effect.Effect<void, SqlError>;
@@ -227,7 +229,8 @@ const makePendingOpRepo: Effect.Effect<PendingOpRepoShape, never, Reactivity | S
             readonly event_id: string;
             readonly kind: PendingOp['kind'];
             readonly target_task_list_id: string | null;
-          }>`SELECT kind, calendar_id, event_id, target_task_list_id FROM pending_ops
+            readonly task_parent: string | null;
+          }>`SELECT kind, calendar_id, event_id, target_task_list_id, task_parent FROM pending_ops
             WHERE account_id = ${op.accountId} AND id != ${op.id}
               AND kind IN ('completeTask', 'createTask', 'deleteTask', 'moveTask', 'updateTask')
               AND (created_at < ${op.createdAt} OR (created_at = ${op.createdAt}
@@ -241,6 +244,7 @@ const makePendingOpRepo: Effect.Effect<PendingOpRepoShape, never, Reactivity | S
               ...(row.target_task_list_id === null
                 ? {}
                 : { targetTaskListId: row.target_task_list_id }),
+              ...(row.task_parent === null ? {} : { taskParent: row.task_parent }),
             })),
         ),
       enqueue: (op) =>
