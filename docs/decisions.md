@@ -639,6 +639,13 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   (its SwiftUI host hides the form from Maestro, #137 — this sheet is a
   plain presented controller), a "show on calendar" toggle on the page
   sheet. Open: the desktop leftovers (todo.md), a detent set from code.
+- **A changed field's tint holds, then fades** (2026-10-13) — #191's
+  1.1 s fade was over before the eye reached the form: the tint now holds
+  at full for 1 s and eases out over 1.5 s (`TURN_FLASH_HOLD_MS`,
+  `TURN_FLASH_FADE_MS`), Settings' highlight on the row a link lands on.
+  Rejected: just a longer fade (it spends its length half-faded and still
+  reads as a blink), a tint that stays until the next edit (#191 turned
+  down a lasting mark).
 - **Thread turns newest first, two shown, changes flash** (2026-10-13, #191)
   — both threads, both apps: newest on top with Undo, wrapped, two then
   "+N earlier queries ⌄", hung under the field as one card with it.
