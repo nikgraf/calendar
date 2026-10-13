@@ -630,6 +630,16 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   (its SwiftUI host hides the form from Maestro, #137 — this sheet is a
   plain presented controller), a "show on calendar" toggle on the page
   sheet. Open: the desktop leftovers (todo.md), a detent set from code.
+- **Thread turns newest first, three shown, changes flash** (2026-10-13, #191)
+  — both threads, both apps: the newest turn on top with Undo, wrapped
+  in full, three then "+N earlier queries"; a new row eases in (fades
+  only under reduced motion). Reverses #190's one-line iOS row at Nik's
+  call: the half-height header grows by up to two rows. When a turn
+  lands, the fields and chips it changed tint (`highlight` token) and
+  fade back over 1.1 s, kept under reduced motion (a color fade).
+  Rejected: a lasting mark per changed field (the summary is the record;
+  a mark goes stale on the first edit), layout transitions in the iOS
+  sheet header. Open: flashing other drafts a turn changed.
 - **A tighter iOS editor header** (2026-10-13, #190) — the sheet's fixed
   header left the half-height form little room once a thread showed:
   the "Describe it" label went (the placeholder says it), the thread

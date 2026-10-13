@@ -552,7 +552,8 @@ move/resize/cancel, slot drag, recurring scopes, RSVP, visibility,
 calendar color, month view, task lane and editor, the sync footer, the
 privacy modal, the settings window, the inspector and inline editor, ⌘K);
 `capture` (paste-to-drafts on the fixture model); `draftThread` (a
-phrase's draft on the grid, a change, Undo, Save; a pasted mail's thread,
+phrase's draft on the grid, a change, Undo, Save; four turns folding to
+three under "+1 earlier query", the changed time flashing; a pasted mail's thread,
 the pager, Remove, Add all); `slotProposals` (a finder phrase on the
 fixture model against seeded busy blocks, TZ pinned: the draft in the
 best slot, the chip row and candidate blocks, a chip and a candidate

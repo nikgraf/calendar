@@ -601,7 +601,10 @@ details, or Custom), so a calendar can be shared without the details.
   draft); a turn sends the field's sentence with the filters as they
   stand and no words (`parseSearchQuery`, `packages/ai/src/searchQuery.ts`)
   and leaves what is left of the words in the field; Undo restores the
-  query before the last turn; Clear empties everything. The normalizer
+  query before the last turn; Clear empties everything. Turns list as in
+  the create thread (newest first, three, "+N earlier queries"), and the
+  chips a turn added or relabelled flash (`changedSearchChips`, carried
+  on the turn; an Undo flashes nothing). The normalizer
   holds the answer to the words: dates are the code's where it reads them
   (`searchWindowOf`: yesterday, last week, this month, the past N days,
   last Friday, "October 2025" …), else the model's valid days only when
@@ -794,8 +797,13 @@ gateway carries all of it. Details, limits and the threat model:
   control converts. A new item is a thread of drafts
   (`useDraftThread`, `packages/app-state/src/draftThread.ts`): the first
   phrase makes the draft(s), every later phrase in the same field changes
-  them (`parseRefine`), the turns are listed with what each changed and
-  the last has Undo; a phrase that asks for free time (`proposeSlots`)
+  them (`parseRefine`), the turns are listed newest first with what each
+  changed, wrapped in full, the newest with Undo — three, then "+N
+  earlier queries" opens the rest (`visibleTurns`, app-state
+  `threadTurns.ts`; a new row eases in) — and the form fields a turn
+  changed tint and fade back (`changedDraftFields`, the comparison the
+  summary is built on; `useThreadEditor().flash`, spent once it played);
+  a phrase that asks for free time (`proposeSlots`)
   puts the draft in the best free slot and keeps the others on it — a
   "Free slots" chip row under the turns, the chosen one pressed, and
   fainter dotted candidate blocks tagged "Option" on the grid, either of
@@ -841,8 +849,9 @@ gateway carries all of it. Details, limits and the threat model:
   list). `EditorHost.tsx` owns every sheet — event detail, the editor
   (`EventEditSheet`, the same add path as the desktop and the same
   thread: `useThreadEditor`, with `DraftThreadSection` under the quick-add
-  field — the last turn on one line with Undo (the desktop lists them
-  all), the free-slot chips, the pager, "Add all"), the birthday detail — and the capture model behind the share
+  field — the turns as on the desktop (`ThreadTurnList`, shared with
+  Search), the free-slot chips, the pager, "Add all"; the rows a turn
+  changed flash, `FlashView`), the birthday detail — and the capture model behind the share
   sheet and deep links, whose events open the editor as one thread of
   drafts; each opening is keyed by its own number; screens ask it
   through `useEditorHost()`. The editor is the `editor` route
