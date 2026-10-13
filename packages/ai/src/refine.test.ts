@@ -187,6 +187,24 @@ describe('normalizeRefine', () => {
     expect(refined({}, 'from 6 to 7pm', night).endDate).toBeUndefined();
   });
 
+  it('shifts both ends of a draft over several days, its whole length kept', () => {
+    const long = { ...DINNER, endDate: '2026-08-29', endTime: '10:00', startTime: '09:00' };
+    expect(refined({}, '30 minutes later', long)).toMatchObject({
+      date: '2026-08-28',
+      endDate: '2026-08-29',
+      endTime: '10:30',
+      startTime: '09:30',
+    });
+    // Across midnight both ways.
+    const night = { ...DINNER, endDate: '2026-08-29', endTime: '01:00', startTime: '23:00' };
+    expect(refined({}, 'an hour later', night)).toMatchObject({
+      date: '2026-08-29',
+      endTime: '02:00',
+      startTime: '00:00',
+    });
+    expect(refined({}, 'an hour later', night).endDate).toBeUndefined();
+  });
+
   it('rejects a change that cannot be an event', () => {
     expect(
       normalizeRefine({ ...DINNER, title: '  ' }, { draft: DINNER, utterance: 'x', ...CONTEXT }),

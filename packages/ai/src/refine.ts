@@ -2,6 +2,7 @@ import {
   addDaysToPlainDate,
   daysBetweenPlainDates,
   foldSearchText,
+  Temporal,
   validateEventDraft,
 } from '@calendar/core';
 import {
@@ -177,7 +178,7 @@ export const normalizeRefine = (
       : placeOf(place, title);
 
   const modelDate = realDate(parse.date?.trim());
-  const date =
+  let date =
     groundDate(modelDate, { phrase: utterance, referenceDate }) ??
     (modelDate !== undefined && (mentionsDate(utterance) || defersDate(utterance))
       ? modelDate
@@ -206,10 +207,24 @@ export const normalizeRefine = (
     endTime = addHour(startTime);
     assumedTime = false;
   }
+  // Days the form gave a draft that ends on a later day.
+  const spanDays =
+    draft.endDate === undefined ? 0 : daysBetweenPlainDates(draft.date, draft.endDate);
+  let shiftedEnd: string | undefined;
   if (length !== undefined && !isAllDay && times?.endTime === undefined) {
-    if (SHIFT.test(text)) {
+    const by = /\b(?:earlier|fruher)\b/.test(text) ? -length : length;
+    if (SHIFT.test(text) && spanDays > 0 && times === undefined && !draft.isAllDay) {
+      // A draft over several days moves both ends, whole days included.
+      const start = Temporal.PlainDateTime.from(`${date}T${startTime}`).add({ minutes: by });
+      const end = Temporal.PlainDateTime.from(
+        `${addDaysToPlainDate(date, spanDays)}T${endTime}`,
+      ).add({ minutes: by });
+      date = start.toPlainDate().toString();
+      startTime = start.toPlainTime().toString({ smallestUnit: 'minute' });
+      endTime = end.toPlainTime().toString({ smallestUnit: 'minute' });
+      shiftedEnd = end.toPlainDate().toString();
+    } else if (SHIFT.test(text)) {
       // "30 minutes later": the whole event moves, its length kept.
-      const by = /\b(?:earlier|fruher)\b/.test(text) ? -length : length;
       const shiftedStart = Math.min(Math.max(minuteOf(startTime) + by, 0), MINUTES_IN_DAY - 1);
       endTime = plusMinutes(format(shiftedStart), minuteOf(endTime) - minuteOf(startTime));
       startTime = format(shiftedStart);
@@ -218,15 +233,18 @@ export const normalizeRefine = (
     }
   }
   // A span of days the form gave the draft moves with its start, while
-  // the turn leaves its times and kind alone; restated times read as one day.
+  // the turn leaves its times and kind alone; restated times or a new
+  // length read as one day.
   const kept =
-    draft.endDate !== undefined &&
-    times === undefined &&
-    length === undefined &&
-    isAllDay === draft.isAllDay
-      ? daysBetweenPlainDates(draft.date, draft.endDate)
-      : 0;
-  const endDate = kept > 0 ? addDaysToPlainDate(date, kept) : undefined;
+    times === undefined && length === undefined && isAllDay === draft.isAllDay ? spanDays : 0;
+  const endDate =
+    shiftedEnd !== undefined
+      ? shiftedEnd === date
+        ? undefined
+        : shiftedEnd
+      : kept > 0
+        ? addDaysToPlainDate(date, kept)
+        : undefined;
   if (!isAllDay && endDate === undefined && endTime <= startTime) {
     return { kind: 'rejected', reason: 'That would end after midnight — pick an earlier time.' };
   }
