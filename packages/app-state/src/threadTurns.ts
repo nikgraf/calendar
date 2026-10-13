@@ -25,8 +25,15 @@ export const visibleTurns = <T>(
 export const earlierTurnsLabel = (hidden: number): string =>
   `+${String(hidden)} earlier ${hidden === 1 ? 'query' : 'queries'}`;
 
-/** How long a changed field or chip stays tinted after a turn lands, fading back to its own color. */
-export const TURN_FLASH_MS = 1100;
+/**
+ * A field or chip a turn changed: tinted at full for `TURN_FLASH_HOLD_MS`
+ * (long enough to be seen while the eye moves from the field to the
+ * form), then eased back to its own color over `TURN_FLASH_FADE_MS` —
+ * the hold-then-fade of Settings' highlight on the row a link lands on.
+ * A plain fade spends its whole length half-faded and reads as a blink.
+ */
+export const TURN_FLASH_HOLD_MS = 1000;
+export const TURN_FLASH_FADE_MS = 1500;
 
 /**
  * A turn's flash while it plays, then nothing: a field or chip that
@@ -41,7 +48,7 @@ export const useFleetingFlash = <T extends { readonly key: string }>(flash: T | 
       return undefined;
     }
     // A beat past the fade, so it ends on its own rather than cut short.
-    const timer = setTimeout(() => setSpent(key), TURN_FLASH_MS + 250);
+    const timer = setTimeout(() => setSpent(key), TURN_FLASH_HOLD_MS + TURN_FLASH_FADE_MS + 250);
     return () => clearTimeout(timer);
   }, [key]);
   return flash !== null && flash.key !== spent ? flash : null;

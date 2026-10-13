@@ -811,9 +811,10 @@ gateway carries all of it. Details, limits and the threat model:
   moves while it works — reading turns Apply into a spinner of its own
   size, and dictation's hints and a failure show in the field itself
   (its placeholder, red for a failure; a click or tap brings the failed
-  words back, selected) — and the form fields a turn
-  changed tint and fade back (`changedDraftFields`, the comparison the
-  summary is built on; `useThreadEditor().flash`, spent once it played);
+  words back, selected) — and the form fields a turn changed tint,
+  hold for a second and fade back (`changedDraftFields`, the comparison
+  the summary is built on; `useThreadEditor().flash`, spent once it
+  played);
   a phrase that asks for free time (`proposeSlots`)
   puts the draft in the best free slot and keeps the others on it — a
   "Free slots" chip row under the turns, the chosen one pressed, and

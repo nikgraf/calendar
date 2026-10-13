@@ -1,12 +1,17 @@
-import { type DraftField, type DraftFlash, TURN_FLASH_MS } from '@calendar/app-state';
+import {
+  type DraftField,
+  type DraftFlash,
+  TURN_FLASH_FADE_MS,
+  TURN_FLASH_HOLD_MS,
+} from '@calendar/app-state';
 import { createContext, type RefObject, useContext, useEffect, useRef } from 'react';
 
 /**
- * A brief tint behind an element a turn just changed: its background
- * starts at the `highlight` token and eases back to its own over
- * `TURN_FLASH_MS` — once per `key` (a turn's id), nothing while it is
- * null. A color fade, not movement, so reduced motion keeps it. The next
- * key (or the element leaving) cancels one still running, so its own
+ * A tint behind an element a turn just changed: its background holds the
+ * `highlight` token for `TURN_FLASH_HOLD_MS`, then eases back to its own
+ * over `TURN_FLASH_FADE_MS` — once per `key` (a turn's id), nothing while
+ * it is null. A color fade, not movement, so reduced motion keeps it. The
+ * next key (or the element leaving) cancels one still running, so its own
  * color is read clean.
  */
 export const useFlash = <T extends HTMLElement>(key: string | null): RefObject<T | null> => {
@@ -20,10 +25,20 @@ export const useFlash = <T extends HTMLElement>(key: string | null): RefObject<T
       .getPropertyValue('--highlight')
       .trim();
     const own = getComputedStyle(element).backgroundColor;
-    const animation = element.animate([{ backgroundColor: highlight }, { backgroundColor: own }], {
-      duration: TURN_FLASH_MS,
-      easing: 'ease-out',
-    });
+    const duration = TURN_FLASH_HOLD_MS + TURN_FLASH_FADE_MS;
+    const animation = element.animate(
+      [
+        { backgroundColor: highlight },
+        // Held, then the fade: the easing names the segment that follows.
+        {
+          backgroundColor: highlight,
+          easing: 'ease-in-out',
+          offset: TURN_FLASH_HOLD_MS / duration,
+        },
+        { backgroundColor: own },
+      ],
+      { duration },
+    );
     return () => animation.cancel();
   }, [key]);
   return ref;
