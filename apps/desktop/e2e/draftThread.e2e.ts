@@ -45,6 +45,8 @@ const blocks = `document.querySelectorAll('[data-testid="draft-block"]').length`
 const blockAt = (start: string) =>
   `!!document.querySelector('[data-testid="draft-block"][data-draft-start="${start}"]')`;
 const turns = `document.querySelectorAll('[data-testid="draft-turn"]').length`;
+// The list runs newest first: the first summary is the last turn's.
+const newestSummary = `document.querySelector('[data-testid="draft-turn-summary"]')?.textContent ?? ''`;
 const position = `(document.querySelector('[data-testid="draft-position"]')?.textContent ?? '')`;
 const titleIs = (title: string) =>
   `document.querySelector(${JSON.stringify(TITLE)})?.value === ${JSON.stringify(title)}`;
@@ -100,11 +102,13 @@ describe('The draft thread', () => {
     expect(await cdp.eval<number>(blocks)).toBe(1);
     await cdp.waitFor(`document.querySelector(${JSON.stringify(START)})?.value === '20:00'`);
     expect(await cdp.eval<number>(turns)).toBe(2);
+    // The newest turn on top, with the Undo.
+    expect(await cdp.eval<string>(newestSummary)).toContain('20:00–21:00');
     expect(
-      await cdp.eval<string>(
-        `[...document.querySelectorAll('[data-testid="draft-turn-summary"]')].at(-1).textContent`,
+      await cdp.eval<boolean>(
+        `!!document.querySelector('[data-testid="draft-turn"] [data-testid="draft-undo"]')`,
       ),
-    ).toContain('20:00–21:00');
+    ).toBe(true);
 
     // Undo: the turn is gone, the block and the form are back.
     await cdp.clickTestId('draft-undo');
@@ -121,6 +125,43 @@ describe('The draft thread', () => {
       )
       .toMatchObject({ calendarId: 'cal-e2e', isAllDay: false });
     await cdp.locate('[title^="Dinner ·"]');
+  });
+
+  it('lists the turns newest first, three until "+1 earlier query" opens the rest, and flashes the field a turn changed', async () => {
+    const { cdp } = app;
+    await cdp.eval(COMMAND_N);
+    await cdp.waitFor(
+      `document.querySelector('[data-testid="editor-title"]')?.textContent === 'New event'`,
+    );
+    await cdp.type(INPUT, 'Gym | +3 | 07:00-08:00');
+    await cdp.clickTestId('quick-add-apply');
+    await cdp.waitFor(blockAt('07:00'));
+    for (const [start, end] of [
+      ['08:00', '09:00'],
+      ['09:00', '10:00'],
+      ['10:00', '11:00'],
+    ] as const) {
+      await cdp.type(INPUT, `| | ${start}-${end}`);
+      await cdp.clickTestId('quick-add-apply');
+      await cdp.waitFor(blockAt(start));
+    }
+    // The start time the last turn moved tints and fades back.
+    await cdp.waitFor(
+      `document.querySelector(${JSON.stringify(START)})?.getAnimations().length === 1`,
+    );
+    expect(await cdp.eval<number>(turns)).toBe(3);
+    expect(await cdp.eval<string>(newestSummary)).toContain('10:00–11:00');
+    const more = `document.querySelector('[data-testid="draft-turns-more"]')?.textContent ?? ''`;
+    expect(await cdp.eval<string>(more)).toBe('+1 earlier query');
+    await cdp.clickTestId('draft-turns-more');
+    await cdp.waitFor(`${turns} === 4`);
+    expect(
+      await cdp.eval<string>(
+        `[...document.querySelectorAll('[data-testid="draft-turn-summary"]')].at(-1).textContent`,
+      ),
+    ).toContain('Gym');
+    await cdp.clickTestId('draft-turns-less');
+    await cdp.waitFor(`${turns} === 3`);
   });
 
   it('opens a pasted mail as one thread of drafts: the pager and the blocks switch the form, Remove drops one, Add all writes the rest', async () => {

@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import type { ReactNode, Ref } from 'react';
 
 export interface SegmentedOption<T extends string> {
   readonly disabled?: boolean | undefined;
@@ -25,6 +25,7 @@ export function SegmentedControl<T extends string>({
   label,
   onChange,
   options,
+  ref,
   size = 'md',
   value,
 }: {
@@ -34,6 +35,7 @@ export function SegmentedControl<T extends string>({
   readonly label: string;
   readonly onChange: (value: T) => void;
   readonly options: ReadonlyArray<SegmentedOption<T>>;
+  readonly ref?: Ref<HTMLDivElement> | undefined;
   readonly size?: keyof typeof SIZE;
   /** Undefined selects no segment: the choice is outside the presets. */
   readonly value: T | undefined;
@@ -42,6 +44,7 @@ export function SegmentedControl<T extends string>({
     <div
       aria-label={label}
       className={`inline-flex rounded-control bg-fill p-0.5 ${className}`}
+      ref={ref}
       role="radiogroup"
     >
       {options.map((option) => {

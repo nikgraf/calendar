@@ -27,6 +27,7 @@ import { QuickAddBar } from '../QuickAddBar.tsx';
 import { ReminderEditorForm } from '../ReminderEditorForm.tsx';
 import { TaskEditorForm } from '../TaskEditorForm.tsx';
 import { ThreadTurns } from '../ThreadTurns.tsx';
+import { FieldFlashContext, useFlash } from '../../ui/useFlash.ts';
 
 const KIND_LABELS: Record<ItemKind, string> = {
   event: 'Event',
@@ -100,6 +101,7 @@ export function EditorPanel({
     canAddAll,
     drafts,
     eventModel,
+    flash,
     focused,
     focusedDraft,
     kinds,
@@ -129,6 +131,8 @@ export function EditorPanel({
   });
   const { joinUrl } = eventModel;
   const { apply, available, kind, mode, seriesOnly, switchTo } = kinds;
+  // A turn that made the item the other kind: the control tints and fades back.
+  const kindFlash = useFlash<HTMLDivElement>(flash?.fields.has('kind') ? flash.key : null);
 
   const showToggle =
     available.length > 1 &&
@@ -282,41 +286,45 @@ export function EditorPanel({
                   : undefined,
               value: option,
             }))}
+            ref={kindFlash}
             size="sm"
             value={kind}
           />
         ) : null}
 
-        {mode === 'todo' ? (
-          // The selected list's provider picks the form: a Reminders list
-          // exposes time/priority/alert/repeat/URL; a Google list gets the
-          // plain title/date/notes form. The kind control moves between the
-          // providers; the list picker stays within one.
-          taskModel.provider === 'apple' ? (
-            <ReminderEditorForm
-              moveConfirmation={moveConfirmation}
-              onClose={onClose}
-              saveDisabled={write.busy}
-              task={task}
-              taskModel={taskModel}
-            />
+        {/* The fields the last turn changed flash (`useFieldFlash`). */}
+        <FieldFlashContext value={flash}>
+          {mode === 'todo' ? (
+            // The selected list's provider picks the form: a Reminders list
+            // exposes time/priority/alert/repeat/URL; a Google list gets the
+            // plain title/date/notes form. The kind control moves between the
+            // providers; the list picker stays within one.
+            taskModel.provider === 'apple' ? (
+              <ReminderEditorForm
+                moveConfirmation={moveConfirmation}
+                onClose={onClose}
+                saveDisabled={write.busy}
+                task={task}
+                taskModel={taskModel}
+              />
+            ) : (
+              <TaskEditorForm
+                moveConfirmation={moveConfirmation}
+                onClose={onClose}
+                saveDisabled={write.busy}
+                task={task}
+                taskModel={taskModel}
+              />
+            )
           ) : (
-            <TaskEditorForm
+            <EventEditorForm
+              model={eventModel}
               moveConfirmation={moveConfirmation}
               onClose={onClose}
               saveDisabled={write.busy}
-              task={task}
-              taskModel={taskModel}
             />
-          )
-        ) : (
-          <EventEditorForm
-            model={eventModel}
-            moveConfirmation={moveConfirmation}
-            onClose={onClose}
-            saveDisabled={write.busy}
-          />
-        )}
+          )}
+        </FieldFlashContext>
       </div>
       {moveConfirmation.pending ? (
         <div className="shrink-0 px-4 pt-2 pb-4">

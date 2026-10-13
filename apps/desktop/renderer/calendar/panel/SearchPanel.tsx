@@ -115,6 +115,8 @@ export function SearchPanel({
   timeZone: string;
 }) {
   const { text } = thread.state;
+  // Back from a result, the turns stand where they were; only new ones ease in.
+  const [restingTurns] = useState(() => new Set(thread.state.turns.map((turn) => turn.id)));
   const blank = isBlankSearchQuery(thread.state.query);
   const [threadError, setThreadError] = useState<string | null>(null);
   const asks = modelReady && isSearchFilterPhrase(text);
@@ -347,6 +349,7 @@ export function SearchPanel({
       <div className="flex flex-col gap-2 px-3 pb-2">
         <SearchFilterChips
           calendars={calendars}
+          flash={thread.flash}
           names={thread.names}
           onChange={thread.setQuery}
           onClear={() => {
@@ -362,14 +365,15 @@ export function SearchPanel({
         />
         {thread.state.turns.length > 0 ? (
           <ThreadTurns
+            // The header does not scroll: an opened list scrolls in itself.
+            className="max-h-48 overflow-y-auto"
             onUndo={() => {
               setThreadError(null);
               thread.undo();
             }}
+            resting={restingTurns}
             testIdPrefix="search"
-            // The header does not scroll: the latest two turns, the history
-            // stays in the thread (Undo walks it back one at a time).
-            turns={thread.state.turns.slice(-2)}
+            turns={thread.state.turns}
             undoDisabled={thread.busy}
           />
         ) : null}

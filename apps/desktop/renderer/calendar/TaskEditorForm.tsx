@@ -5,6 +5,7 @@ import { TaskDoneToggle } from './TaskDoneToggle.tsx';
 import { NoDueDate, RemoveDueDate } from './NoDueDate.tsx';
 import { FIELD_CLASS, LABEL_CLASS } from '../ui/fieldStyles.ts';
 import { TaskListSelect } from './TaskListSelect.tsx';
+import { useFieldFlash } from '../ui/useFlash.ts';
 
 /**
  * The Google Tasks form: title, due day, list, notes. Picking a list in
@@ -25,6 +26,9 @@ export function TaskEditorForm({
   task: TaskRecord | undefined;
   taskModel: ReturnType<typeof useTaskEditorModel>;
 }) {
+  // What the last turn changed tints and fades back (the thread's flash).
+  const titleFlash = useFieldFlash<HTMLInputElement>('title');
+  const dateFlash = useFieldFlash<HTMLInputElement>('date');
   return (
     <div className="flex flex-col gap-3">
       {taskModel.error ? (
@@ -37,6 +41,7 @@ export function TaskEditorForm({
         className={FIELD_CLASS}
         onChange={(input) => taskModel.setTitle(input.target.value)}
         placeholder="Title"
+        ref={titleFlash}
         value={taskModel.title}
       />
       {task ? <TaskDoneToggle task={task} /> : null}
@@ -50,6 +55,7 @@ export function TaskEditorForm({
             className={`${FIELD_CLASS} mt-1`}
             onChange={(input) => taskModel.setDueDate(input.target.value)}
             placeholder="YYYY-MM-DD"
+            ref={dateFlash}
             value={taskModel.dueDate}
           />
         </label>

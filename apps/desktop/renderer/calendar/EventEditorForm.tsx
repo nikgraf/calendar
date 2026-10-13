@@ -12,6 +12,7 @@ import { type CalendarInfo, draftZoneRanges, type RsvpResponse } from '@calendar
 import { InviteeCombobox } from './InviteeCombobox.tsx';
 import { Button } from '../ui/Button.tsx';
 import { FIELD_CLASS as field, LABEL_CLASS } from '../ui/fieldStyles.ts';
+import { useFieldFlash } from '../ui/useFlash.ts';
 import { FindTimeFields } from './FindTimeFields.tsx';
 import { LocationCombobox } from './LocationCombobox.tsx';
 import { LocationMap } from './LocationMap.tsx';
@@ -83,6 +84,12 @@ export function EventEditorForm({
   } = model;
   const accountLabel = (accountId: string) =>
     accounts.find((account) => account.id === accountId)?.email ?? accountId;
+  // What the last turn changed tints and fades back (the thread's flash).
+  const titleFlash = useFieldFlash<HTMLInputElement>('title');
+  const allDayFlash = useFieldFlash<HTMLLabelElement>(isAllDay ? 'time' : null);
+  const dateFlash = useFieldFlash<HTMLInputElement>('date');
+  const startFlash = useFieldFlash<HTMLInputElement>('time');
+  const endFlash = useFieldFlash<HTMLInputElement>('time');
   const hasGuests = (existing?.attendees ?? []).length > 0;
   // The draft's times in the other zones; null for all-day or before the times build.
   const zoneLines = draftZoneRanges(
@@ -121,6 +128,7 @@ export function EventEditorForm({
           className={field}
           onChange={(changeEvent) => setTitle(changeEvent.target.value)}
           placeholder="Title"
+          ref={titleFlash}
           value={title}
         />
         {readOnly ? null : (
@@ -151,7 +159,8 @@ export function EventEditorForm({
           </select>
         )}
         <label
-          className="flex items-center gap-2 text-sm"
+          className="-mx-1 flex items-center gap-2 rounded-control px-1 text-sm"
+          ref={allDayFlash}
           title={canSwitchAllDay ? undefined : 'A repeating event stays timed or all-day'}
         >
           <input
@@ -168,6 +177,7 @@ export function EventEditorForm({
             aria-label="Date"
             className={field}
             onChange={(changeEvent) => setDate(changeEvent.target.value)}
+            ref={dateFlash}
             type="date"
             value={date}
           />
@@ -177,6 +187,7 @@ export function EventEditorForm({
                 aria-label="Start time"
                 className={`${field} min-w-0`}
                 onChange={(changeEvent) => setStartTime(changeEvent.target.value)}
+                ref={startFlash}
                 type="time"
                 value={startTime}
               />
@@ -187,6 +198,7 @@ export function EventEditorForm({
                 aria-label="End time"
                 className={`${field} min-w-0`}
                 onChange={(changeEvent) => setEndTime(changeEvent.target.value)}
+                ref={endFlash}
                 type="time"
                 value={endTime}
               />

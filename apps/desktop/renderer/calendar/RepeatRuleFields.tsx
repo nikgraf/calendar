@@ -13,6 +13,7 @@ import {
   type Weekday,
 } from '@calendar/core';
 import { FIELD_CLASS, LABEL_CLASS } from '../ui/fieldStyles.ts';
+import { useFieldFlash } from '../ui/useFlash.ts';
 
 /** The repeat form state both editors expose (everything but the spec exit). */
 export type RepeatRuleState = Omit<ReturnType<typeof useRepeatState>, 'toSpec'>;
@@ -46,6 +47,7 @@ export function RepeatRuleFields({
   anchorDate: string;
   state: RepeatRuleState;
 }) {
+  const flash = useFieldFlash<HTMLSelectElement>('repeat');
   return (
     <div className="flex flex-col gap-3">
       <div className="flex gap-3">
@@ -57,6 +59,7 @@ export function RepeatRuleFields({
             onChange={(input) =>
               state.setRepeat(input.target.value as RecurrenceFrequency | 'none')
             }
+            ref={flash}
             value={state.repeat}
           >
             {REPEAT_OPTIONS.map((option) => (
