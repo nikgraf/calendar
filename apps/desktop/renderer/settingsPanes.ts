@@ -1,28 +1,14 @@
 import { EXPERIMENTAL_COPY } from '@calendar/core';
 
 /**
- * The settings window's panes, in sidebar order (General first, as macOS
- * apps have it; the experimental ones last, under their own heading).
+ * The settings window's panes, in sidebar order: Accounts first, Advanced
+ * last of the stable ones, and the experimental ones after them under
+ * their own heading. There is no General pane — each of its old sections
+ * is a pane of its own, and the location cache sits under Advanced.
  * `keywords` are what the sidebar's search matches besides the label: the
  * sections and settings a pane holds, as a user would name them.
  */
 export const SETTINGS_PANES = [
-  {
-    id: 'general',
-    keywords: [
-      'time zones',
-      'clock',
-      'location',
-      'map',
-      'privacy',
-      'screen',
-      'ai',
-      'model',
-      'ollama',
-      'apple intelligence',
-    ],
-    label: 'General',
-  },
   {
     id: 'accounts',
     keywords: ['google', 'apple', 'calendar', 'reminders', 'contacts', 'sign in', 'tasks'],
@@ -34,10 +20,30 @@ export const SETTINGS_PANES = [
     label: 'Notifications',
   },
   {
+    id: 'timezones',
+    keywords: ['clock', 'primary', 'travel', 'world'],
+    label: 'Time Zones',
+  },
+  {
+    id: 'model',
+    keywords: ['ai', 'apple intelligence', 'ollama', 'openai', 'endpoint', 'llm', 'quick add'],
+    label: 'AI Model',
+  },
+  {
+    id: 'sharing',
+    keywords: ['privacy', 'screen', 'hide', 'recording', 'screenshot', 'zoom', 'meeting'],
+    label: 'Screen Sharing',
+  },
+  {
     // Not `settings-file`: windows.ts accepts letters only in a pane id.
     id: 'file',
     keywords: ['export', 'import', 'backup', 'transfer', 'dotfiles', 'jsonc'],
     label: 'Settings File',
+  },
+  {
+    id: 'advanced',
+    keywords: ['location', 'map', 'cache', 'places'],
+    label: 'Advanced',
   },
   {
     id: 'mirrors',

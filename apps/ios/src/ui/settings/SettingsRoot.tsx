@@ -141,10 +141,10 @@ export function SettingsRoot() {
 
         <Section>
           <NavRow
-            href="/settings/general"
-            leading={<IconTile color={colors['border-strong']} name="gearshape.fill" />}
-            testID="settings-row-general"
-            title="General"
+            href="/settings/time-zones"
+            leading={<IconTile color={colors['event-mint-edge']} name="globe" />}
+            testID="settings-row-time-zones"
+            title="Time Zones"
           />
           <NavRow
             href="/settings/notifications"

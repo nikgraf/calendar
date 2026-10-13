@@ -155,8 +155,7 @@ export function ModelSection() {
 
   return (
     <section className="rounded-popover bg-surface-subtle p-4" data-testid="model-section">
-      <h2 className="font-medium">AI model</h2>
-      <p className="mt-1 text-sm text-ink-secondary">
+      <p className="text-sm text-ink-secondary">
         What reads your phrases, pastes and changes. Apple Intelligence runs on this Mac with
         nothing to set up; Ollama or another server on this Mac can run a larger model, such as
         Gemma 4.

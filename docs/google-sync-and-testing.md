@@ -563,7 +563,7 @@ routed by the words, a place and a person read, plain words opening the
 top result; Clear; kind and a calendar added by hand with no turn; the
 dates popover); `modelProvider` (a served model: a fake
 Ollama in the spec's own process with the fixture model behind it, the
-quick-add field over HTTP, Settings › General's kind, Test and Save, the
+quick-add field over HTTP, Settings › AI Model's kind, Test and Save, the
 wording when the server is down); `reminders` and
 `contacts` (seeded Apple/Google rows); `appleCalendar` (the in-memory
 EventKit, read-only viewer, moves both ways); `location` (the picker and

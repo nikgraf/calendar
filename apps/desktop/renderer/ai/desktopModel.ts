@@ -38,7 +38,7 @@ export const lastModelStatusReply = (): ModelStatusReply | null => lastReply;
 /**
  * The desktop LanguageModel: the active provider in the main process —
  * Apple's on-device Foundation Models through the bundled Swift helper,
- * or a model served over HTTP (Settings › General) — reached over preload
+ * or a model served over HTTP (Settings › AI Model) — reached over preload
  * IPC. The mirror of apps/ios/src/appleModel.ts, including the
  * degradation philosophy: a missing helper, an old macOS or a server that
  * is down reports unavailable instead of breaking the features built on

@@ -364,7 +364,7 @@ const SECTION_LABELS: Record<SettingsSection, string> = {
   birthdayReminders: 'birthday reminders',
   eventNotifications: 'event notifications',
   mirrors: 'calendar mirrors',
-  screenPrivacy: 'screen privacy',
+  screenPrivacy: 'screen sharing',
   timeZones: 'time zones',
   view: 'view preferences',
 };

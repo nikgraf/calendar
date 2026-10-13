@@ -65,7 +65,7 @@ the Swift helper child process (`apps/desktop/helper`, Foundation
 Models + SpeechAnalyzer + Vision over newline-JSON stdio; spawned lazily
 and supervised with restart backoff by
 `apps/desktop/electron/helperProcess.ts`), or — picked in Settings ›
-General — a model served over HTTP on this Mac: Ollama's own API (the
+AI Model — a model served over HTTP on this Mac: Ollama's own API (the
 JSON schema as `format`, `num_ctx` per call, `keep_alive`) or any
 OpenAI-compatible endpoint (`response_format: json_schema`; LM Studio,
 llama-server). Only `generateJson` and `status` have that second home;
@@ -752,9 +752,9 @@ gateway carries all of it. Details, limits and the threat model:
   (`showSettingsWindow`: one at most, fixed 780×560, not minimizable or
   maximizable). Settings opens from the application menu (`menu.ts`:
   Settings…, ⌘,) — also with no main window — or over `settings:open`. It
-  is a sidebar of panes (General, Accounts, Notifications, Settings File,
-  then Mirrors and Agents under an "Experimental" heading) with a search
-  field (`filterPanes`). The pane is the URL hash (`#settings/<pane>`): the main
+  is a sidebar of panes (Accounts, Notifications, Time Zones, AI Model,
+  Screen Sharing, Settings File, Advanced, then Mirrors and Agents under
+  an "Experimental" heading) with a search field (`filterPanes`). The pane is the URL hash (`#settings/<pane>`): the main
   process moves an open window by navigating the hash, the page only ever
   reads it. Each window is its own rpc client with its own atoms, kept in
   step by the invalidation stream; `privacy:changed`, `privacy:capture`,

@@ -336,6 +336,15 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   Backup (no calendar data in it). The pane id is `file`, since
   `settings:open` takes letters only; the desktop's watched-file card is
   now "Linked file" so it does not repeat the pane title.
+- **No General pane** (2026-10-13, #192) — General held four unrelated
+  cards, so each is now found by its own name: Time Zones, AI Model and
+  Screen Sharing are panes on the Mac (iOS has only Time Zones of the
+  three), and the location cache moved under Advanced on both, which the
+  Mac regains for it. "Screen Sharing", not "Privacy" (the OS's own pane
+  is Privacy & Security) or "Screen Privacy": the options read "Screen
+  Sharing: Hidden", and it is where someone looks before a call. A
+  single-card pane drops the card's heading rather than repeat the title;
+  a window remembered on `general` falls back to Accounts.
 - **Search** (2026-10-09, #152) — one rpc over what the views can show:
   a two-year window either side of today, not the history (full-text
   recall is a backlog item); a matching series is walked outward from

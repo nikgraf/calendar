@@ -45,13 +45,13 @@ const servedCopy = (reply: ModelStatusReply): Copy | undefined => {
   const where = reply.endpoint ? ` at ${reply.endpoint}` : '';
   if (reply.detail === 'authRejected') {
     return {
-      long: `${server}${where} refused the API key — set the right one in Settings › General.`,
+      long: `${server}${where} refused the API key — set the right one in Settings › AI Model.`,
       short: 'API key refused',
     };
   }
   if (reply.detail === 'endpointUnreachable') {
     return {
-      long: `${server}${where} is not reachable — start it, or choose Apple Intelligence in Settings › General.`,
+      long: `${server}${where} is not reachable — start it, or choose Apple Intelligence in Settings › AI Model.`,
       short: `${server} unreachable`,
     };
   }
@@ -59,13 +59,13 @@ const servedCopy = (reply: ModelStatusReply): Copy | undefined => {
     return {
       long:
         reply.model && reply.model !== ''
-          ? `${server}${where} does not have "${reply.model}" — pull it there, or pick one it lists in Settings › General.`
-          : `No model is picked for ${server}${where} — choose one in Settings › General.`,
+          ? `${server}${where} does not have "${reply.model}" — pull it there, or pick one it lists in Settings › AI Model.`
+          : `No model is picked for ${server}${where} — choose one in Settings › AI Model.`,
       short: 'Model not on the server',
     };
   }
   return {
-    long: `${server}${where} could not answer — check it, or choose Apple Intelligence in Settings › General.`,
+    long: `${server}${where} could not answer — check it, or choose Apple Intelligence in Settings › AI Model.`,
     short: `${server} unavailable`,
   };
 };

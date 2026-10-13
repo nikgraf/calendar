@@ -23,7 +23,7 @@ contextBridge.exposeInMainWorld('calendarBridge', {
   modelHelperStatus: () => ipcRenderer.invoke('model:helper-status'),
   modelInfo: () => ipcRenderer.invoke('model:info'),
   modelPrepareSpeech: (locale: string) => ipcRenderer.invoke('model:prepare-speech', locale),
-  /** The model provider (Settings › General): the view, changes, and a probe of unsaved settings. */
+  /** The model provider (Settings › AI Model): the view, changes, and a probe of unsaved settings. */
   modelProviderGet: () => ipcRenderer.invoke('model:provider-get'),
   modelProviderSet: (changes: unknown) => ipcRenderer.invoke('model:provider-set', changes),
   modelProviderTest: (candidate: unknown) => ipcRenderer.invoke('model:provider-test', candidate),

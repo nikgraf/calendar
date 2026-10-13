@@ -196,7 +196,7 @@ describe('importSettings', () => {
     return Effect.gen(function* () {
       const summary = yield* importSettings({ desktop: { screenPrivacy: 'visible' }, version: 1 });
       expect(summary.settingsChanged).toEqual([]);
-      expect(summary.notes).toEqual(['Screen privacy is a desktop setting and was ignored here.']);
+      expect(summary.notes).toEqual(['Screen sharing is a desktop setting and was ignored here.']);
       expect(applied).toEqual([]);
     }).pipe(Effect.provide(layer));
   });

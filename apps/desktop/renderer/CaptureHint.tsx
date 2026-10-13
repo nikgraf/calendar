@@ -68,8 +68,8 @@ export function CaptureHint() {
         <EyeOffIcon className="text-ink-secondary" size={22} />
         <p className="font-medium">Solunivo is hidden from screenshots</p>
         <p className="text-sm text-ink-secondary">
-          Screen privacy keeps it out of screenshots and recordings. It stays visible on your own
-          display.
+          Settings › Screen Sharing keeps it out of screenshots and recordings. It stays visible on
+          your own display.
         </p>
         <div className="mt-2 flex gap-2">
           <Button onClick={() => setPhase('off')} size="sm" variant="ghost">

@@ -8,7 +8,7 @@ tags:
 - runFlow:
     file: ../common/open-settings-page.yaml
     env:
-      PAGE: general
+      PAGE: time-zones
 - assertVisible:
     id: 'time-zones'
 - assertVisible:
@@ -97,7 +97,7 @@ tags:
 - runFlow:
     file: ../common/open-settings-page.yaml
     env:
-      PAGE: general
+      PAGE: time-zones
 - swipe:
     from:
       id: 'time-zone-row-Asia-Kolkata'

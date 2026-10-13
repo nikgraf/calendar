@@ -171,7 +171,7 @@ describe('location picker and map', () => {
   it('clears the lookup cache from Settings', async () => {
     // The pick above cached its place.
     expect(await readLocationGeoCount(app.userDataDir)).toBeGreaterThan(0);
-    const cdp = await app.openSettings('general');
+    const cdp = await app.openSettings('advanced');
     await cdp.waitFor(`document.body.textContent.includes('Clear location cache')`);
     await cdp.clickButtonWithText('Clear location cache');
     await cdp.waitFor(`!!document.querySelector('[data-location-cache="cleared"]')`);

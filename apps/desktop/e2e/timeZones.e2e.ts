@@ -134,7 +134,7 @@ describe('time zones: the settings section', () => {
   it('adds, promotes and removes zones on this device only; the device zone stays', async () => {
     // The settings window edits; the calendar window's grid follows.
     const { cdp: calendar } = app;
-    const cdp = await app.openSettings('general');
+    const cdp = await app.openSettings('timezones');
     const stored = () => readDeviceSetting(app.userDataDir, 'timeZones');
     const deviceZone = await cdp.eval<string>(`Intl.DateTimeFormat().resolvedOptions().timeZone`);
     const deviceCity = deviceZone.slice(deviceZone.lastIndexOf('/') + 1).replaceAll('_', ' ');
