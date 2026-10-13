@@ -76,6 +76,7 @@ const inertTasks: GoogleTasksClientShape = {
   insertTask: () => Effect.die('unexpected insertTask'),
   listTaskLists: () => Effect.die('unexpected listTaskLists'),
   listTasks: () => Effect.die('unexpected listTasks'),
+  moveTask: () => Effect.die('unexpected moveTask'),
   patchTask: () => Effect.die('unexpected patchTask'),
 };
 

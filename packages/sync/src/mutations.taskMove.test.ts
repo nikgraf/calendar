@@ -14,7 +14,10 @@ import {
   GooglePeopleClient,
   type GooglePeopleClientShape,
   GoogleTasksClient,
+  ApiUnavailableError,
+  type GcalTask,
   type GoogleTasksClientShape,
+  NotFoundError,
 } from '@calendar/google';
 import {
   makeFakeRemindersClient,
@@ -25,6 +28,7 @@ import {
 import { SqliteClient } from '@effect/sql-sqlite-node';
 import { expect, it } from '@effect/vitest';
 import { Effect, Layer, Scheduler } from 'effect';
+import { TestClock } from 'effect/testing';
 import { layer as reactivityLayer } from 'effect/reactivity/Reactivity';
 import { describe } from 'vite-plus/test';
 import { appleCalendarServicesLayer } from './appleCalendarEvents.ts';
@@ -53,37 +57,56 @@ const inertPeopleClient: GooglePeopleClientShape = {
   listOtherContacts: () => Effect.die('people not used in this test'),
 };
 
-/** Records what the drain pushes; nothing here is ever pulled. */
-const recordingTasks = (calls: Array<string>): GoogleTasksClientShape => ({
-  deleteTask: ({ taskId, taskListId }) =>
-    Effect.sync(() => {
-      calls.push(`delete ${taskListId}/${taskId}`);
-    }),
-  insertTask: ({ task, taskListId }) =>
-    Effect.sync(() => {
-      calls.push(`insert ${taskListId}/${task.title}`);
-      return {
-        id: `srv-${String(calls.length)}`,
-        status: 'needsAction' as const,
-        title: task.title,
-        updated: '2030-01-01T00:00:00.000Z',
-        ...(task.due === undefined ? {} : { due: task.due }),
-        ...(task.notes === undefined ? {} : { notes: task.notes }),
-      };
-    }),
-  listTaskLists: () => Effect.die('unexpected listTaskLists'),
-  listTasks: () => Effect.die('unexpected listTasks'),
-  patchTask: ({ changes, taskId }) =>
-    Effect.sync(() => {
-      calls.push(`patch ${taskId}/${String(changes.status)}`);
-      return {
-        id: taskId,
-        status: changes.status ?? ('needsAction' as const),
-        title: 'patched',
-        updated: '2030-01-01T00:00:00.000Z',
-      };
-    }),
-});
+/** Records what the drain pushes and answers like Google; nothing here is ever pulled. */
+const recordingTasks = (calls: Array<string>): GoogleTasksClientShape => {
+  const stored = new Map<string, GcalTask>();
+  return {
+    deleteTask: ({ taskId, taskListId }) =>
+      Effect.sync(() => {
+        calls.push(`delete ${taskListId}/${taskId}`);
+      }),
+    insertTask: ({ parent, task, taskListId }) =>
+      Effect.sync(() => {
+        calls.push(
+          `insert ${taskListId}/${task.title}${parent === undefined ? '' : ` under ${parent}`}`,
+        );
+        const created: GcalTask = {
+          id: `srv-${String(calls.length)}`,
+          status: 'needsAction' as const,
+          title: task.title,
+          updated: '2030-01-01T00:00:00.000Z',
+          ...(task.due === undefined ? {} : { due: task.due }),
+          ...(task.notes === undefined ? {} : { notes: task.notes }),
+          ...(parent === undefined ? {} : { parent }),
+        };
+        stored.set(created.id, created);
+        return created;
+      }),
+    listTaskLists: () => Effect.die('unexpected listTaskLists'),
+    listTasks: () => Effect.die('unexpected listTasks'),
+    moveTask: ({ destinationTaskListId, taskId, taskListId }) =>
+      Effect.sync(() => {
+        calls.push(`move ${taskListId}/${taskId} -> ${destinationTaskListId}`);
+        return {
+          id: taskId,
+          status: 'needsAction' as const,
+          title: 'moved',
+          updated: '2030-01-01T00:00:00.000Z',
+        };
+      }),
+    patchTask: ({ changes, taskId }) =>
+      Effect.sync(() => {
+        calls.push(`patch ${taskId}/${String(changes.status)}`);
+        const base = stored.get(taskId) ?? {
+          id: taskId,
+          status: 'needsAction' as const,
+          title: 'patched',
+          updated: '2030-01-01T00:00:00.000Z',
+        };
+        return { ...base, status: changes.status ?? base.status };
+      }),
+  };
+};
 
 const testLayer = (reminders: RemindersClientShape, tasks: GoogleTasksClientShape) =>
   EventMutations.layer.pipe(
@@ -214,6 +237,38 @@ const seed = Effect.gen(function* () {
     100,
   );
 });
+
+/** Two subtasks of `t1`, the second done. */
+const withSubtasks = Effect.flatMap(TaskRepo, (repo) =>
+  repo.upsertTasks(
+    [
+      new TaskRecord({
+        accountId: 'acc-1',
+        id: 's1',
+        listId: 'list-1',
+        parentId: 't1',
+        position: '00000000000000000000',
+        provider: 'google',
+        status: 'needsAction',
+        title: 'First step',
+        updatedAt: 100,
+      }),
+      new TaskRecord({
+        accountId: 'acc-1',
+        completedAt: 50,
+        id: 's2',
+        listId: 'list-1',
+        parentId: 't1',
+        position: '00000000000000000001',
+        provider: 'google',
+        status: 'completed',
+        title: 'Second step',
+        updatedAt: 100,
+      }),
+    ],
+    100,
+  ),
+);
 
 const rowAt = (accountId: string, listId: string, taskId: string) =>
   Effect.flatMap(TaskRepo, (repo) => repo.get(accountId, listId, taskId));
@@ -372,36 +427,288 @@ describe('moveTask across providers', () => {
   });
 
   it.effect(
-    'Google → Google (another list, another account) copies and deletes through the queue',
+    'Google → Google inside one account moves on Google: the id stays, the edits go first, the subtasks come along',
     () => {
       const fake = fakeWith();
       const calls: Array<string> = [];
       return Effect.gen(function* () {
         yield* seed;
-        const inList2 = yield* move(['acc-1', 'list-1', 't1'], ['acc-1', 'list-2'], {
+        yield* withSubtasks;
+        const moved = yield* move(['acc-1', 'list-1', 't1'], ['acc-1', 'list-2'], {
           dueDate: tomorrow,
           notes: 'transfer first',
-          title: 'Pay rent',
+          title: 'Pay the rent',
         });
-        expect(inList2).toMatchObject({ accountId: 'acc-1', listId: 'list-2', provider: 'google' });
-        expect(yield* rowAt('acc-1', 'list-1', 't1')).toBeUndefined();
-        expect(yield* queued).toEqual([
-          `createTask acc-1/list-2/${inList2.id}`,
-          'deleteTask acc-1/list-1/t1',
-        ]);
+        expect(moved).toMatchObject({ id: 't1', listId: 'list-2', title: 'Pay the rent' });
+        for (const id of ['t1', 's1', 's2']) {
+          expect(yield* rowAt('acc-1', 'list-1', id)).toBeUndefined();
+        }
+        // The task left no parent behind; its subtasks keep theirs.
+        expect((yield* rowAt('acc-1', 'list-2', 't1'))?.parentId).toBeUndefined();
+        expect((yield* rowAt('acc-1', 'list-2', 's1'))?.parentId).toBe('t1');
+        expect((yield* rowAt('acc-1', 'list-2', 's2'))?.parentId).toBe('t1');
+        // The rename was queued first, in the source list; it follows the move.
+        expect(yield* queued).toEqual(['moveTask acc-1/list-1/t1', 'updateTask acc-1/list-2/t1']);
         yield* (yield* EventMutations).processPendingOps();
-        expect(calls).toEqual(['insert list-2/Pay rent', 'delete list-1/t1']);
-        const inAcc2 = yield* move(['acc-1', 'list-2', 'srv-1'], ['acc-2', 'list-x'], {
+        expect(calls).toEqual(['move list-1/t1 -> list-2', 'patch t1/undefined']);
+        expect(yield* queued).toEqual([]);
+      }).pipe(noYield, Effect.provide(testLayer(fake.client, recordingTasks(calls))));
+    },
+  );
+
+  it.effect(
+    'Google → Google across accounts copies the task and its subtasks, nested and in order, then deletes them',
+    () => {
+      const fake = fakeWith();
+      const calls: Array<string> = [];
+      return Effect.gen(function* () {
+        yield* seed;
+        yield* withSubtasks;
+        const copied = yield* move(['acc-1', 'list-1', 't1'], ['acc-2', 'list-x'], {
           dueDate: tomorrow,
           title: 'Pay rent',
         });
-        expect(inAcc2).toMatchObject({ accountId: 'acc-2', listId: 'list-x' });
-        expect(yield* rowAt('acc-1', 'list-2', 'srv-1')).toBeUndefined();
-        expect(yield* queued).toEqual([
-          `createTask acc-2/list-x/${inAcc2.id}`,
-          'deleteTask acc-1/list-2/srv-1',
+        expect(copied).toMatchObject({ accountId: 'acc-2', listId: 'list-x' });
+        expect(yield* rowAt('acc-1', 'list-1', 't1')).toBeUndefined();
+        expect(yield* rowAt('acc-1', 'list-1', 's1')).toBeUndefined();
+        yield* (yield* EventMutations).processPendingOps();
+        // Google puts a new subtask first among its siblings: last one in first.
+        expect(calls).toEqual([
+          'insert list-x/Pay rent',
+          'insert list-x/Second step under srv-1',
+          'patch srv-2/completed',
+          'insert list-x/First step under srv-1',
+          'delete list-1/s1',
+          'delete list-1/s2',
+          'delete list-1/t1',
         ]);
+        const copies = (yield* (yield* TaskRepo).getMirrorSource('acc-2', ['list-x'])).map(
+          (task) => [task.title, task.parentId ?? null, task.status],
+        );
+        expect(copies).toEqual(
+          expect.arrayContaining([
+            ['Pay rent', null, 'needsAction'],
+            ['First step', 'srv-1', 'needsAction'],
+            ['Second step', 'srv-1', 'completed'],
+          ]),
+        );
       }).pipe(noYield, Effect.provide(testLayer(fake.client, recordingTasks(calls))));
+    },
+  );
+
+  it.effect('Google → Apple brings the subtasks along as reminders of their own', () => {
+    const fake = fakeWith();
+    const calls: Array<string> = [];
+    return Effect.gen(function* () {
+      yield* seed;
+      yield* withSubtasks;
+      yield* move(['acc-1', 'list-1', 't1'], [APPLE, 'list-b'], {
+        dueDate: tomorrow,
+        title: 'Pay rent',
+      });
+      const inB = [...fake.state.reminders.values()].filter((entry) => entry.listId === 'list-b');
+      expect(inB.map((entry) => [entry.title, entry.completed]).sort()).toEqual([
+        ['First step', false],
+        ['Pay rent', false],
+        ['Second step', true],
+      ]);
+      // Subtasks first: Google would otherwise delete them with their parent.
+      expect(yield* queued).toEqual([
+        'deleteTask acc-1/list-1/s1',
+        'deleteTask acc-1/list-1/s2',
+        'deleteTask acc-1/list-1/t1',
+      ]);
+    }).pipe(noYield, Effect.provide(testLayer(fake.client, recordingTasks(calls))));
+  });
+
+  it.effect(
+    'the preview names a subtask leaving its parent and subtasks Reminders flattens',
+    () => {
+      const fake = fakeWith();
+      return Effect.gen(function* () {
+        yield* seed;
+        yield* withSubtasks;
+        const mutations = yield* EventMutations;
+        const preview = (taskId: string, target: [string, string]) =>
+          mutations.previewMoveTask({
+            accountId: 'acc-1',
+            target: { accountId: target[0], taskListId: target[1] },
+            taskId,
+            taskListId: 'list-1',
+          });
+        expect(yield* preview('t1', [APPLE, 'list-b'])).toMatchObject({
+          leavesParent: false,
+          subtasksUnnested: 2,
+        });
+        expect(yield* preview('t1', ['acc-1', 'list-2'])).toMatchObject({
+          leavesParent: false,
+          subtasksUnnested: 0,
+        });
+        expect(yield* preview('s1', ['acc-1', 'list-2'])).toMatchObject({
+          leavesParent: true,
+          subtasksUnnested: 0,
+        });
+      }).pipe(noYield, Effect.provide(testLayer(fake.client, recordingTasks([]))));
+    },
+  );
+
+  it.effect('a subtask moved inside one account becomes a task of its own there', () => {
+    const fake = fakeWith();
+    const calls: Array<string> = [];
+    return Effect.gen(function* () {
+      yield* seed;
+      yield* withSubtasks;
+      yield* move(['acc-1', 'list-1', 's1'], ['acc-1', 'list-2'], {
+        dueDate: tomorrow,
+        title: 'First step',
+      });
+      expect((yield* rowAt('acc-1', 'list-2', 's1'))?.parentId).toBeUndefined();
+      // Its parent and sibling stay.
+      expect(yield* rowAt('acc-1', 'list-1', 't1')).toBeDefined();
+      expect(yield* rowAt('acc-1', 'list-1', 's2')).toBeDefined();
+      // The form gave it a due day: that edit follows the move.
+      expect(yield* queued).toEqual(['moveTask acc-1/list-1/s1', 'updateTask acc-1/list-2/s1']);
+    }).pipe(noYield, Effect.provide(testLayer(fake.client, recordingTasks(calls))));
+  });
+
+  it.effect('a task whose create never went out moves without a server move', () => {
+    const fake = fakeWith();
+    return Effect.gen(function* () {
+      yield* seed;
+      const mutations = yield* EventMutations;
+      const local = yield* mutations.createTask({
+        accountId: 'acc-1',
+        dueDate: tomorrow,
+        taskListId: 'list-1',
+        title: 'Fresh',
+      });
+      yield* move(['acc-1', 'list-1', local.id], ['acc-1', 'list-2'], {
+        dueDate: tomorrow,
+        title: 'Fresh',
+      });
+      expect(yield* rowAt('acc-1', 'list-2', local.id)).toBeDefined();
+      expect(yield* queued).toEqual([`createTask acc-1/list-2/${local.id}`]);
+    }).pipe(noYield, Effect.provide(testLayer(fake.client, recordingTasks([]))));
+  });
+
+  it.effect('refuses to move a task whose create went out and has not been answered', () => {
+    const fake = fakeWith();
+    return Effect.gen(function* () {
+      yield* seed;
+      const mutations = yield* EventMutations;
+      const local = yield* mutations.createTask({
+        accountId: 'acc-1',
+        dueDate: tomorrow,
+        taskListId: 'list-1',
+        title: 'In flight',
+      });
+      const ops = yield* PendingOpRepo;
+      const [create] = yield* ops.listAll();
+      yield* ops.markDispatched(create!.id, 1);
+      const error = yield* Effect.flip(
+        move(['acc-1', 'list-1', local.id], ['acc-1', 'list-2'], {
+          dueDate: tomorrow,
+          title: 'In flight',
+        }),
+      );
+      expect(error._tag).toBe('TaskCreatePendingError');
+      expect(yield* rowAt('acc-1', 'list-1', local.id)).toBeDefined();
+    }).pipe(noYield, Effect.provide(testLayer(fake.client, recordingTasks([]))));
+  });
+
+  it.effect('a move Google answers 404 puts the task and its subtasks back in the source', () => {
+    const fake = fakeWith();
+    const gone: GoogleTasksClientShape = {
+      ...recordingTasks([]),
+      moveTask: () => Effect.fail(new NotFoundError({ resource: 'task t1' })),
+    };
+    return Effect.gen(function* () {
+      yield* seed;
+      yield* withSubtasks;
+      yield* move(['acc-1', 'list-1', 't1'], ['acc-1', 'list-2'], {
+        dueDate: tomorrow,
+        notes: 'transfer first',
+        title: 'Pay rent',
+      });
+      yield* (yield* EventMutations).processPendingOps();
+      expect(yield* queued).toEqual([]);
+      expect((yield* rowAt('acc-1', 'list-1', 't1'))?.parentId).toBeUndefined();
+      expect((yield* rowAt('acc-1', 'list-1', 's1'))?.parentId).toBe('t1');
+      expect(yield* rowAt('acc-1', 'list-2', 't1')).toBeUndefined();
+      expect(yield* rowAt('acc-1', 'list-2', 's2')).toBeUndefined();
+    }).pipe(noYield, Effect.provide(testLayer(fake.client, gone)));
+  });
+
+  it.effect(
+    'an edit queued into the destination waits for the move, even after a failed attempt',
+    () => {
+      const fake = fakeWith();
+      const calls: Array<string> = [];
+      const flaky: GoogleTasksClientShape = {
+        ...recordingTasks(calls),
+        moveTask: () => Effect.fail(new ApiUnavailableError({ cause: 'try later' })),
+      };
+      return Effect.gen(function* () {
+        yield* seed;
+        yield* move(['acc-1', 'list-1', 't1'], ['acc-1', 'list-2'], {
+          dueDate: tomorrow,
+          notes: 'transfer first',
+          title: 'Pay the rent',
+        });
+        const mutations = yield* EventMutations;
+        yield* mutations.processPendingOps();
+        // The move backs off; the rename behind it must not patch a list
+        // Google has no such task in yet.
+        yield* TestClock.adjust('1 hour');
+        yield* mutations.processPendingOps();
+        expect(calls).toEqual([]);
+        expect(yield* queued).toEqual(['moveTask acc-1/list-1/t1', 'updateTask acc-1/list-2/t1']);
+        expect(yield* rowAt('acc-1', 'list-2', 't1')).toBeDefined();
+      }).pipe(noYield, Effect.provide(testLayer(fake.client, flaky)));
+    },
+  );
+
+  it.effect('discarding a queued move puts the task and its subtasks back', () => {
+    const fake = fakeWith();
+    return Effect.gen(function* () {
+      yield* seed;
+      yield* withSubtasks;
+      yield* move(['acc-1', 'list-1', 't1'], ['acc-1', 'list-2'], {
+        dueDate: tomorrow,
+        notes: 'transfer first',
+        title: 'Pay rent',
+      });
+      const [moveOp] = yield* (yield* PendingOpRepo).listAll();
+      expect(moveOp?.kind).toBe('moveTask');
+      yield* (yield* EventMutations).discardPendingOp(moveOp!.id);
+      expect(yield* queued).toEqual([]);
+      for (const id of ['t1', 's1', 's2']) {
+        expect(yield* rowAt('acc-1', 'list-1', id)).toBeDefined();
+        expect(yield* rowAt('acc-1', 'list-2', id)).toBeUndefined();
+      }
+      expect((yield* rowAt('acc-1', 'list-1', 's2'))?.parentId).toBe('t1');
+    }).pipe(noYield, Effect.provide(testLayer(fake.client, recordingTasks([]))));
+  });
+
+  it.effect(
+    'deleting a parent whose create never went out drops the subtasks waiting on it',
+    () => {
+      const fake = fakeWith();
+      return Effect.gen(function* () {
+        yield* seed;
+        yield* withSubtasks;
+        const copied = yield* move(['acc-1', 'list-1', 't1'], ['acc-2', 'list-x'], {
+          dueDate: tomorrow,
+          title: 'Pay rent',
+        });
+        yield* (yield* EventMutations).deleteTask({
+          accountId: 'acc-2',
+          taskId: copied.id,
+          taskListId: 'list-x',
+        });
+        expect(yield* (yield* TaskRepo).getMirrorSource('acc-2', ['list-x'])).toEqual([]);
+        expect((yield* queued).filter((entry) => entry.includes('acc-2/'))).toEqual([]);
+      }).pipe(noYield, Effect.provide(testLayer(fake.client, recordingTasks([]))));
     },
   );
 

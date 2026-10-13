@@ -367,6 +367,7 @@ export const makeWorld = (
         insertTask: never,
         listTaskLists: never,
         listTasks: never,
+        moveTask: never,
         patchTask: never,
       }),
     ),

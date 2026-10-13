@@ -678,6 +678,62 @@ describe('SyncEngine over HTTP (fake Google)', () => {
     }).pipe(Effect.provide(engineLayer(google)));
   });
 
+  it.effect(
+    'tasks: a parent moved to another list takes its subtasks along on Google, and the next pass agrees',
+    () => {
+      const google = new FakeGoogle({
+        calendars: [{ accessRole: 'owner', id: 'cal-1', primary: true, summary: 'Personal' }],
+        taskLists: [
+          { id: 'list-1', title: 'My Tasks' },
+          { id: 'list-2', title: 'Errands' },
+        ],
+      });
+      google.putTask('list-1', { due: '2026-08-30T00:00:00.000Z', id: 'p', title: 'Trip' });
+      google.putTask('list-1', {
+        id: 'c1',
+        parent: 'p',
+        position: '00000000000000000000',
+        title: 'Pack',
+      });
+      google.putTask('list-1', {
+        id: 'c2',
+        parent: 'p',
+        position: '00000000000000000001',
+        title: 'Book',
+      });
+      return Effect.gen(function* () {
+        yield* seedAccount(true);
+        const engine = yield* SyncEngine;
+        const mutations = yield* EventMutations;
+        const repo = yield* TaskRepo;
+        const rows = (listId: string) =>
+          Effect.map(repo.getMirrorSource('acc-1', [listId]), (tasks) =>
+            tasks.map((task) => `${task.id}<${task.parentId ?? ''}`).sort(),
+          );
+        yield* engine.syncAll();
+        expect(yield* rows('list-1')).toEqual(['c1<p', 'c2<p', 'p<']);
+
+        yield* mutations.moveTask({
+          accountId: 'acc-1',
+          draft: { dueDate: '2026-08-30', title: 'Trip' },
+          target: { accountId: 'acc-1', taskListId: 'list-2' },
+          taskId: 'p',
+          taskListId: 'list-1',
+        });
+        yield* mutations.processPendingOps();
+        expect(google.taskOf('list-2', 'c1')?.parent).toBe('p');
+        expect(google.taskOf('list-1', 'p')).toBeUndefined();
+
+        google.now += 60_000;
+        yield* TestClock.adjust('1 minute');
+        yield* engine.syncAll();
+        expect(yield* rows('list-1')).toEqual([]);
+        expect(yield* rows('list-2')).toEqual(['c1<p', 'c2<p', 'p<']);
+        expect(yield* (yield* PendingOpRepo).listAll()).toEqual([]);
+      }).pipe(noYield, Effect.provide(engineLayer(google)));
+    },
+  );
+
   it.effect('tasks: full pass, then a watermark pass applies a deleted tombstone', () => {
     const google = newFake();
     google.putTask('list-1', { due: '2026-08-30T00:00:00.000Z', id: 't1', title: 'Pay rent' });

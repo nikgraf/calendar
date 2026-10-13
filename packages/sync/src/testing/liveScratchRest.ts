@@ -75,6 +75,7 @@ export interface LiveTask {
   readonly hidden?: boolean;
   readonly id: string;
   readonly notes?: string;
+  readonly parent?: string;
   readonly status?: string;
   readonly title?: string;
   readonly updated?: string;
@@ -363,11 +364,22 @@ export const listInstances = async (
 export const getTask = (token: string, listId: string, taskId: string): Promise<LiveTask> =>
   request(token, 'GET', listUrl(listId, `/tasks/${encodeURIComponent(taskId)}`));
 
+/** `parent`: inserted as a subtask of that task. */
 export const insertTask = (
   token: string,
   listId: string,
   task: Record<string, unknown>,
-): Promise<LiveTask> => request(token, 'POST', listUrl(listId, '/tasks'), task);
+  parent?: string,
+): Promise<LiveTask> =>
+  request(
+    token,
+    'POST',
+    listUrl(
+      listId,
+      parent === undefined ? '/tasks' : `/tasks?parent=${encodeURIComponent(parent)}`,
+    ),
+    task,
+  );
 
 export const patchTask = (
   token: string,

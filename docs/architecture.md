@@ -193,13 +193,27 @@ it whenever a kind is added. Rules that keep the queue correct:
   `moveToListId`) on a Google list fail with `UnsupportedForProviderError`.
   `updateTask` cannot clear a stored due day; only a create may be undated.
 - **Task moves** (`moveTask`, the task twin of `moveEvent`): between two
-  Reminders lists EventKit changes the list in place; every other route —
-  Reminders ↔ Google and Google → another Google list or account — creates
-  the task in the target from the editor's draft and then deletes the
-  source, so a failure in between leaves a duplicate, never a lost task.
-  Completion follows the task. What a route drops is computed in core
-  (`taskMoveLoss`) from the source record and confirmed in the editor
-  before anything is written.
+  Reminders lists EventKit changes the list in place, and so does Google
+  inside one account — a `moveTask` op (`tasks.move` with
+  `destinationTasklist`) keeps the id, takes the subtasks along nested as
+  they were, and the task leaves a parent it had. The form's edits are
+  queued first; the rows move at once and every op queued for the task or
+  its subtasks is re-queued in the destination behind the move, and an
+  op addressing a list a queued move goes into waits for it
+  (`earlierTaskOps`). A create still in flight refuses the move
+  (`TaskCreatePendingError`); an unsent one is simply created in the
+  destination. A discard or a 404 puts the rows back. Every other route —
+  Reminders ↔ Google, another Google account — creates the task in the
+  target from the editor's draft, then its subtasks (nested under the
+  copy on Google, `createTask` with `taskParent`, last to first since
+  Google inserts a subtask first among its siblings; as reminders of their
+  own in Reminders), and then deletes the source, subtasks first; a
+  failure in between leaves a duplicate, never a lost task. Completion
+  follows. What a route drops — reminder fields, a subtask leaving its
+  parent, subtasks Reminders cannot nest — is `previewMoveTask` (core
+  `taskMoveLoss` over the stored record and its subtasks), confirmed in
+  the editor before anything is written. `parentId`/`position` are stored
+  for Google tasks; nothing draws the hierarchy yet (todo.md).
 - **Conversions** (`convertEventToTask`, `convertTaskToEvent`): an event
   becomes a task (the whole series for a recurring one) or a task an event
   by creating the other kind from the editor's draft and then deleting the

@@ -21,6 +21,16 @@ describe('mapGcalTask', () => {
     expect(task?.dueDate).toBe('2026-08-30');
   });
 
+  it('keeps a subtask’s parent and every task’s place among its siblings', () => {
+    expect(
+      mapGcalTask(
+        { id: 'c1', parent: 'p1', position: '00000000000000000001', title: 'Step' },
+        CONTEXT,
+      ),
+    ).toMatchObject({ parentId: 'p1', position: '00000000000000000001' });
+    expect(mapGcalTask({ id: 'p1', title: 'Top' }, CONTEXT)?.parentId).toBeUndefined();
+  });
+
   it('returns null for tombstones', () => {
     expect(mapGcalTask({ deleted: true, id: 't1' }, CONTEXT)).toBeNull();
   });

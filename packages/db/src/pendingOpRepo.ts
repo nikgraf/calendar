@@ -65,6 +65,17 @@ export interface PendingOpRepoShape {
   readonly earlierInSeries: (
     op: PendingOp,
   ) => Effect.Effect<ReadonlyArray<PendingOp['kind']>, SqlError>;
+  /**
+   * The task ops of the op's account queued before it, in queue order: a
+   * task move and the task ops around it keep that order even when
+   * backoff lets the drain skip an older one.
+   */
+  readonly earlierTaskOps: (
+    op: PendingOp,
+  ) => Effect.Effect<
+    ReadonlyArray<Pick<PendingOp, 'calendarId' | 'eventId' | 'kind' | 'targetTaskListId'>>,
+    SqlError
+  >;
   readonly enqueue: (op: PendingOp) => Effect.Effect<void, SqlError>;
   /**
    * A pull confirmed these items deleted upstream (`containerId`: the
@@ -125,7 +136,10 @@ export interface PendingOpRepoShape {
    * before. Parked ops wait for the user.
    */
   readonly retryNow: (accountId?: string) => Effect.Effect<void, SqlError>;
-  /** Re-keys queued ops after a server-assigned id replaces a temp id. */
+  /**
+   * Re-keys queued ops after a server-assigned id replaces a temp id — and
+   * points the creates of subtasks carried along under it at the new id.
+   */
   readonly rewriteEventId: (
     accountId: string,
     calendarId: string,
@@ -202,6 +216,29 @@ const makePendingOpRepo: Effect.Effect<PendingOpRepoShape, never, Reactivity | S
             ORDER BY created_at, rowid`,
           (rows) => rows.map((row) => row.kind),
         ),
+      earlierTaskOps: (op) =>
+        Effect.map(
+          sql<{
+            readonly calendar_id: string;
+            readonly event_id: string;
+            readonly kind: PendingOp['kind'];
+            readonly target_task_list_id: string | null;
+          }>`SELECT kind, calendar_id, event_id, target_task_list_id FROM pending_ops
+            WHERE account_id = ${op.accountId} AND id != ${op.id}
+              AND kind IN ('completeTask', 'createTask', 'deleteTask', 'moveTask', 'updateTask')
+              AND (created_at < ${op.createdAt} OR (created_at = ${op.createdAt}
+                AND rowid < (SELECT rowid FROM pending_ops WHERE id = ${op.id})))
+            ORDER BY created_at, rowid`,
+          (rows) =>
+            rows.map((row) => ({
+              calendarId: row.calendar_id,
+              eventId: row.event_id,
+              kind: row.kind,
+              ...(row.target_task_list_id === null
+                ? {}
+                : { targetTaskListId: row.target_task_list_id }),
+            })),
+        ),
       enqueue: (op) =>
         invalidating(
           Effect.asVoid(sql`
@@ -213,7 +250,8 @@ const makePendingOpRepo: Effect.Effect<PendingOpRepoShape, never, Reactivity | S
                                    attendees_changed, geo_cleared, target_calendar_id,
                                    reminders_changed, conflict_at, server_payload,
                                    carried_text, recurrence_cleared, before_payload,
-                                   before_overrides, before_task, before_color_hex)
+                                   before_overrides, before_task, before_color_hex,
+                                   target_task_list_id, task_parent)
           VALUES (${op.id}, ${op.accountId}, ${op.calendarId}, ${op.kind},
                   ${op.eventId},
                   ${op.payload ? JSON.stringify(eventPayloadJson(op.payload)) : null},
@@ -230,7 +268,8 @@ const makePendingOpRepo: Effect.Effect<PendingOpRepoShape, never, Reactivity | S
                   ${beforePayloadColumn(op.beforePayload)},
                   ${op.beforeOverrides ? JSON.stringify(eventListJson(op.beforeOverrides)) : null},
                   ${op.beforeTask ? JSON.stringify(taskPayloadJson(op.beforeTask)) : null},
-                  ${op.beforeColorHex ?? null})
+                  ${op.beforeColorHex ?? null}, ${op.targetTaskListId ?? null},
+                  ${op.taskParent ?? null})
         `),
         ),
       getById: (opId) =>
@@ -352,11 +391,13 @@ const makePendingOpRepo: Effect.Effect<PendingOpRepoShape, never, Reactivity | S
         ),
       rewriteEventId: (accountId, calendarId, oldEventId, newEventId) =>
         invalidating(
-          Effect.asVoid(
-            sql`UPDATE pending_ops SET event_id = ${newEventId}
+          Effect.gen(function* () {
+            yield* sql`UPDATE pending_ops SET event_id = ${newEventId}
               WHERE account_id = ${accountId} AND calendar_id = ${calendarId}
-                AND event_id = ${oldEventId}`,
-          ),
+                AND event_id = ${oldEventId}`;
+            yield* sql`UPDATE pending_ops SET task_parent = ${newEventId}
+              WHERE account_id = ${accountId} AND task_parent = ${oldEventId}`;
+          }),
         ),
       setBefore: (opId, before) =>
         invalidating(

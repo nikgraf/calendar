@@ -8,51 +8,63 @@ import { joinList, type MoveRoute, plural } from './moveLoss.ts';
  * (its time, alerts, priority, repeat rule and URL) has no home there.
  * A move between two Reminders lists keeps the reminder as it is, and a
  * Google task carries nothing Reminders cannot store (its web link points
- * at the task being deleted, so it is not a loss).
+ * at the task being deleted, so it is not a loss) — except its place in
+ * a hierarchy: Google keeps a subtask's parent only within its list, and
+ * Reminders has no subtasks at all.
  */
 export const TaskMoveLoss = Schema.Struct({
   /** Alerts (relative alarms) that will not follow the task. */
   alarms: Schema.Number,
   dueTime: Schema.Boolean,
+  /** A subtask: in the new list it is a task of its own (Google moves it that way too). */
+  leavesParent: Schema.Boolean,
   priority: Schema.Boolean,
   /** A repeat rule, expressible by the app or not. */
   recurrence: Schema.Boolean,
+  /** Subtasks that come along as tasks of their own: Reminders cannot nest them. */
+  subtasksUnnested: Schema.Number,
   url: Schema.Boolean,
 });
 export type TaskMoveLoss = typeof TaskMoveLoss.Type;
 
-const NO_LOSS: TaskMoveLoss = {
-  alarms: 0,
-  dueTime: false,
-  priority: false,
-  recurrence: false,
-  url: false,
-};
-
+/**
+ * `subtasks`: how many subtasks the task has (they move with it — nested
+ * under it again on Google, as tasks of their own in Reminders).
+ */
 export const taskMoveLoss = (
   task: Pick<
     TaskRecord,
-    'alarms' | 'dueTime' | 'priority' | 'recurrence' | 'recurrenceUnsupported' | 'url'
+    'alarms' | 'dueTime' | 'parentId' | 'priority' | 'recurrence' | 'recurrenceUnsupported' | 'url'
   >,
   route: MoveRoute,
-): TaskMoveLoss =>
-  route.source === 'apple' && route.target === 'google'
-    ? {
-        alarms: task.alarms?.length ?? 0,
-        dueTime: task.dueTime !== undefined,
-        priority: task.priority !== undefined,
-        recurrence: task.recurrence !== undefined || task.recurrenceUnsupported === true,
-        url: task.url !== undefined && task.url !== '',
-      }
-    : NO_LOSS;
+  subtasks = 0,
+): TaskMoveLoss => {
+  const intoGoogle = route.source === 'apple' && route.target === 'google';
+  return {
+    alarms: intoGoogle ? (task.alarms?.length ?? 0) : 0,
+    dueTime: intoGoogle && task.dueTime !== undefined,
+    leavesParent: route.source === 'google' && task.parentId !== undefined,
+    priority: intoGoogle && task.priority !== undefined,
+    recurrence:
+      intoGoogle && (task.recurrence !== undefined || task.recurrenceUnsupported === true),
+    subtasksUnnested: route.source === 'google' && route.target === 'apple' ? subtasks : 0,
+    url: intoGoogle && task.url !== undefined && task.url !== '',
+  };
+};
 
 export const isTaskMoveLossy = (loss: TaskMoveLoss): boolean =>
-  loss.alarms > 0 || loss.dueTime || loss.priority || loss.recurrence || loss.url;
+  loss.alarms > 0 ||
+  loss.dueTime ||
+  loss.leavesParent ||
+  loss.priority ||
+  loss.recurrence ||
+  loss.subtasksUnnested > 0 ||
+  loss.url;
 
 /**
- * One sentence for the confirmation, or null when nothing is lost. `verb`
- * names the action: a move on Save by default, or the create-mode switch
- * from a reminder to a task ("Switching to a task").
+ * The confirmation's words, or null when nothing is lost. `verb` names
+ * the action: a move on Save by default, or the create-mode switch from
+ * a reminder to a task ("Switching to a task").
  */
 export const taskMoveLossSummary = (
   loss: TaskMoveLoss,
@@ -74,5 +86,19 @@ export const taskMoveLossSummary = (
   if (loss.url) {
     items.push('the URL');
   }
-  return items.length === 0 ? null : `${verb} drops ${joinList(items)}.`;
+  const sentences: Array<string> = [];
+  if (items.length > 0) {
+    sentences.push(`${verb} drops ${joinList(items)}.`);
+  }
+  if (loss.leavesParent) {
+    sentences.push('It is a subtask: in the new list it becomes a task of its own.');
+  }
+  if (loss.subtasksUnnested > 0) {
+    sentences.push(
+      loss.subtasksUnnested === 1
+        ? 'Its subtask comes along as a reminder of its own.'
+        : `Its ${String(loss.subtasksUnnested)} subtasks come along as reminders of their own.`,
+    );
+  }
+  return sentences.length === 0 ? null : sentences.join(' ');
 };

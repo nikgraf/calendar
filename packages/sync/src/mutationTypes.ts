@@ -21,6 +21,8 @@ import type {
   MoveLoss,
   MoveTaskParams,
   PreviewEventToTaskParams,
+  PreviewMoveTaskParams,
+  TaskMoveLoss,
 } from '@calendar/core';
 import type { GoogleRequestError } from '@calendar/google';
 import type { RemindersError } from '@calendar/reminders';
@@ -80,6 +82,15 @@ export class TaskNotFoundError extends Data.TaggedError('TaskNotFoundError')<{
 
 export class TaskListNotFoundError extends Data.TaggedError('TaskListNotFoundError')<{
   readonly taskListId: string;
+}> {}
+
+/**
+ * A Google task cannot move yet: its create (or a subtask's) went out and
+ * Google has not answered, so where it will land is not known.
+ */
+export class TaskCreatePendingError extends Data.TaggedError('TaskCreatePendingError')<{
+  readonly message: string;
+  readonly taskId: string;
 }> {}
 
 /**
@@ -262,15 +273,21 @@ export interface EventMutationsShape {
   readonly moveEvent: (params: MoveEventParams) => Effect.Effect<void, MoveError>;
   /**
    * Moves a task to another list: EventKit's own list change between
-   * Reminders lists (identity kept), otherwise a create in the target
-   * from `draft` followed by a delete of the source. Completion follows
-   * the task. Returns the record now in the target list.
+   * Reminders lists and Google's `tasks.move` inside one Google account
+   * (identity kept, subtasks along), otherwise a create in the target
+   * from `draft` — and of each subtask, nested again on Google — followed
+   * by a delete of the source. Completion follows the task. Returns the
+   * record now in the target list.
    */
   readonly moveTask: (
     params: MoveTaskParams,
   ) => Effect.Effect<
     TaskRecord,
-    SqlError | TaskListNotFoundError | TaskNotFoundError | TaskProviderError
+    | SqlError
+    | TaskCreatePendingError
+    | TaskListNotFoundError
+    | TaskNotFoundError
+    | TaskProviderError
   >;
   /** What convertEventToTask with this source and target would drop (see core eventToTaskLoss). */
   readonly previewEventToTask: (
@@ -278,6 +295,10 @@ export interface EventMutationsShape {
   ) => Effect.Effect<EventToTaskPreview, MoveError>;
   /** What moveEvent with these params would drop (see core moveLoss). */
   readonly previewMove: (params: MoveEventParams) => Effect.Effect<MoveLoss, MoveError>;
+  /** What moveTask with this source and target would drop (see core taskMoveLoss). */
+  readonly previewMoveTask: (
+    params: PreviewMoveTaskParams,
+  ) => Effect.Effect<TaskMoveLoss, SqlError | TaskNotFoundError>;
   /** Drains due pending ops (serialized); safe to call concurrently. */
   readonly processPendingOps: () => Effect.Effect<void>;
   /**

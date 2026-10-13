@@ -63,6 +63,12 @@ export interface TaskRepoShape {
   /** Optimistic local create (sync_status 'pending' until the push lands). */
   readonly insertLocal: (task: TaskRecord) => Effect.Effect<void, SqlError>;
   readonly listLists: (accountId?: string) => Effect.Effect<ReadonlyArray<TaskListInfo>, SqlError>;
+  /** A Google task's subtasks, in Google's order. */
+  readonly listSubtasks: (
+    accountId: string,
+    listId: string,
+    parentId: string,
+  ) => Effect.Effect<ReadonlyArray<TaskRecord>, SqlError>;
   /**
    * Keeps a row out of the pulls' way: a discarded op put the row back
    * whole (`upsertTasks`, which writes it synced) while another op of the
@@ -118,6 +124,12 @@ export interface TaskRepoShape {
     readonly lists: ReadonlyArray<TaskListInfo>;
     readonly syncedAt: number;
   }) => Effect.Effect<{ readonly needsFull: boolean; readonly skipped: boolean }, SqlError>;
+  /** Points subtasks at their parent's server id once its temp id is swapped. */
+  readonly replaceParent: (
+    accountId: string,
+    tempId: string,
+    serverId: string,
+  ) => Effect.Effect<void, SqlError>;
   readonly setListVisible: (
     accountId: string,
     listId: string,
@@ -143,6 +155,8 @@ export interface TaskRepoShape {
       readonly dueTime?: string | null | undefined;
       readonly listId?: string | undefined;
       readonly notes?: string | undefined;
+      /** Google: the task it is a subtask of; null makes it a task of its own. */
+      readonly parentId?: string | null | undefined;
       readonly priority?: TaskRecord['priority'] | null | undefined;
       readonly recurrence?: TaskRecord['recurrence'] | null | undefined;
       readonly title?: string | undefined;
@@ -197,14 +211,15 @@ const makeTaskRepo: Effect.Effect<TaskRepoShape, never, Reactivity | SqlClient> 
               INSERT INTO tasks (account_id, list_id, id, title, notes, status, due_date,
                                  completed_at, web_view_link, updated_at, synced_at,
                                  sync_status, due_time, priority, url, alarms, recurrence,
-                                 external_id, due_utc)
+                                 external_id, due_utc, parent_id, position)
               SELECT ${task.accountId}, ${task.listId}, ${task.id}, ${task.title},
                      ${task.notes ?? null}, ${task.status}, ${task.dueDate ?? null},
                      ${task.completedAt ?? null}, ${task.webViewLink ?? null},
                      ${task.updatedAt}, ${syncedAt}, 'synced',
                      ${task.dueTime ?? null}, ${task.priority ?? null}, ${task.url ?? null},
                      ${json.alarms}, ${json.recurrence},
-                     ${task.externalId ?? null}, ${task.dueUtc ?? null}
+                     ${task.externalId ?? null}, ${task.dueUtc ?? null},
+                     ${task.parentId ?? null}, ${task.position ?? null}
               ${accountGuard(sql, task.accountId)}
               ON CONFLICT (account_id, list_id, id) DO UPDATE SET
                 sync_status = 'synced',
@@ -222,7 +237,9 @@ const makeTaskRepo: Effect.Effect<TaskRepoShape, never, Reactivity | SqlClient> 
                 alarms = excluded.alarms,
                 recurrence = excluded.recurrence,
                 external_id = excluded.external_id,
-                due_utc = excluded.due_utc
+                due_utc = excluded.due_utc,
+                parent_id = excluded.parent_id,
+                position = excluded.position
               ${guard}`;
     };
 
@@ -327,14 +344,16 @@ const makeTaskRepo: Effect.Effect<TaskRepoShape, never, Reactivity | SqlClient> 
             sql`
             INSERT INTO tasks (account_id, list_id, id, title, notes, status, due_date,
                                completed_at, web_view_link, updated_at, synced_at, sync_status,
-                               due_time, priority, url, alarms, recurrence, external_id, due_utc)
+                               due_time, priority, url, alarms, recurrence, external_id, due_utc,
+                               parent_id, position)
             VALUES (${task.accountId}, ${task.listId}, ${task.id}, ${task.title},
                     ${task.notes ?? null}, ${task.status}, ${task.dueDate ?? null},
                     ${task.completedAt ?? null}, ${task.webViewLink ?? null},
                     ${task.updatedAt}, ${task.updatedAt}, 'pending',
                     ${task.dueTime ?? null}, ${task.priority ?? null}, ${task.url ?? null},
                     ${taskJsonColumns(task).alarms}, ${taskJsonColumns(task).recurrence},
-                    ${task.externalId ?? null}, ${task.dueUtc ?? null})`,
+                    ${task.externalId ?? null}, ${task.dueUtc ?? null},
+                    ${task.parentId ?? null}, ${task.position ?? null})`,
           ),
         ),
       listLists: (accountId) =>
@@ -343,6 +362,17 @@ const makeTaskRepo: Effect.Effect<TaskRepoShape, never, Reactivity | SqlClient> 
             ? sql<TaskListRow>`SELECT * FROM task_lists ORDER BY account_id, title`
             : sql<TaskListRow>`SELECT * FROM task_lists WHERE account_id = ${accountId} ORDER BY title`,
           (rows) => rows.map(taskListFromRow),
+        ),
+
+      listSubtasks: (accountId, listId, parentId) =>
+        Effect.map(
+          sql<TaskRow>`
+            SELECT t.*, l.provider AS list_provider FROM tasks t
+            JOIN task_lists l ON l.account_id = t.account_id AND l.id = t.list_id
+            WHERE t.account_id = ${accountId} AND t.list_id = ${listId}
+              AND t.parent_id = ${parentId}
+            ORDER BY t.position IS NULL, t.position, t.id`,
+          (rows) => rows.map(taskFromRow),
         ),
 
       markPending: (accountId, listId, taskId) =>
@@ -448,6 +478,13 @@ const makeTaskRepo: Effect.Effect<TaskRepoShape, never, Reactivity | SqlClient> 
             }),
           ),
         ),
+      replaceParent: (accountId, tempId, serverId) =>
+        tasksMutation(
+          Effect.asVoid(
+            sql`UPDATE tasks SET parent_id = ${serverId}
+              WHERE account_id = ${accountId} AND parent_id = ${tempId}`,
+          ),
+        ),
       setListVisible: (accountId, listId, isVisible) =>
         listsMutation(
           Effect.asVoid(
@@ -503,6 +540,10 @@ const makeTaskRepo: Effect.Effect<TaskRepoShape, never, Reactivity | SqlClient> 
               const encoded =
                 changes.recurrence === null ? null : JSON.stringify(changes.recurrence);
               yield* sql`UPDATE tasks SET recurrence = ${encoded}
+                WHERE account_id = ${accountId} AND list_id = ${listId} AND id = ${taskId}`;
+            }
+            if (changes.parentId !== undefined) {
+              yield* sql`UPDATE tasks SET parent_id = ${changes.parentId}
                 WHERE account_id = ${accountId} AND list_id = ${listId} AND id = ${taskId}`;
             }
             if (changes.listId !== undefined && changes.listId !== listId) {

@@ -11,8 +11,15 @@ except the two below; their entries are in `docs/decisions.md` under
 
 ## Tier 0 — bugs
 
-Empty. The 2026-10-02 review's findings are closed in `docs/decisions.md`
+The 2026-10-02 review's findings are closed in `docs/decisions.md`
 (Review fixes, #110–#142).
+
+- [ ] A delete or a task → event conversion of a Google parent task takes
+      its subtasks with it — Google deletes them with their parent
+      (verified live, `docs/google-sync-and-testing.md`) — and neither the
+      delete question (`deleteQuestion`) nor the conversion preview
+      (`taskToEventLoss`) says so. Count them like `previewMoveTask` does,
+      and carry them along on a conversion or name them in the question.
 
 ## Tier 1 — CI and distribution
 
@@ -69,14 +76,10 @@ Empty. The 2026-10-02 review's findings are closed in `docs/decisions.md`
       `is_visible`; a field on `GoogleCalendarPref` in `SettingsDocument`
       (the import's visibility-specific parking in `importedVisibility.ts`
       widens with it); the "History complete" label says what is kept.
-- [ ] Tasks: subtask hierarchy — `parent`/`position` are decoded
-      (`apiTypes.ts:139-140`) and dropped by `mapGcalTask`; `TaskRecord` has
-      no such fields; `tasksClient.ts` has no `move`. Render indentation,
-      keep ordering via `tasks.move`.
-- [ ] Google → Google task moves flatten subtasks silently — the move is
-      copy-then-delete (`moveTask`, #82) and `parent`/`position` are not
-      modeled, so no warning is possible; fixed by the subtask item above
-      (`tasks.move` keeps hierarchy and id).
+- [ ] Tasks: subtask hierarchy in the UI — `TaskRecord.parentId`/`position`
+      are stored and a move keeps them (#201), but every list draws
+      subtasks flat and unordered. Render indentation, order by
+      `position`, reorder through `tasks.move` (`parent`/`previous`).
 - [ ] Conversion follow-ups — convert one occurrence of a series into a
       task (today the whole series converts, like a move; an instance
       would be `deleteRecurring(scope: 'instance')` plus a create from that

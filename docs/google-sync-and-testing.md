@@ -160,7 +160,15 @@ suite). When touching sync code, treat these as invariants.
 - `due` is **date-only** (RFC 3339 with a meaningless time part) and
   there is **no recurrence exposure** — Google materializes the next
   occurrence of a repeating task when the current one completes.
-  `parent`/`position` are decoded and not modeled (todo.md).
+  `parent`/`position` are stored (`TaskRecord.parentId`/`position`); a
+  subtask's parent is always in its own list.
+- Moves and deletes in a hierarchy (verified live, 2026-10-13):
+  `tasks.move?destinationTasklist=` keeps the task's id and takes its
+  subtasks along, still nested; a subtask moved on its own lands as a task
+  of its own; afterwards the source list lists none of them, not even as
+  tombstones, and answers 404. Deleting a parent deletes its subtasks
+  (both come back as tombstones). An insert with `?parent=` nests the new
+  task first among its siblings.
 - **Task ids are server-assigned** — creates are NOT idempotent (no
   client-id trick like events). See architecture.md for the temp-id +
   adopt-before-retry protocol.

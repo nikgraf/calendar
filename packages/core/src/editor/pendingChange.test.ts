@@ -61,6 +61,8 @@ const taskOp = (overrides: Partial<PendingOp> & Pick<PendingOp, 'kind'>) =>
 
 const context = {
   calendarName: (_accountId: string, calendarId: string) => ({ c: 'Work', d: 'Home' })[calendarId],
+  taskListName: (_accountId: string, taskListId: string) =>
+    ({ errands: 'Errands', inbox: 'Inbox' })[taskListId],
   timeZone: TZ,
 };
 
@@ -162,6 +164,20 @@ describe('pendingOpDiff', () => {
     expect(pendingOpDiff(op({ kind: 'move', targetCalendarId: 'x' }), context)).toEqual([
       { after: 'x', before: 'Work', label: 'Calendar' },
     ]);
+  });
+
+  it('names a task move by its lists', () => {
+    expect(
+      pendingOpDiff(
+        op({
+          calendarId: 'inbox',
+          kind: 'moveTask',
+          targetTaskListId: 'errands',
+          taskListId: 'inbox',
+        }),
+        context,
+      ),
+    ).toEqual([{ after: 'Errands', before: 'Inbox', label: 'List' }]);
   });
 
   it('shows a calendar color change', () => {

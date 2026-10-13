@@ -15,6 +15,8 @@ import { eventFieldPairs, orNone, plainDateLabel } from './conflict.ts';
 export interface PendingOpDiffContext {
   /** A calendar's name for a move's "from → to"; ids are unique per account only. */
   readonly calendarName: (accountId: string, calendarId: string) => string | undefined;
+  /** A task list's name, for a task move's "from → to". */
+  readonly taskListName: (accountId: string, taskListId: string) => string | undefined;
   /** The zone times read in — the primary zone, like the conflict banner. */
   readonly timeZone: string;
 }
@@ -256,5 +258,17 @@ export const pendingOpDiff = (
         : undefined;
     case 'deleteTask':
       return op.beforeTask ? taskLines(op.beforeTask, null) : undefined;
+    case 'moveTask': {
+      const source = op.taskListId ?? op.calendarId;
+      return op.targetTaskListId === undefined
+        ? undefined
+        : [
+            {
+              after: context.taskListName(op.accountId, op.targetTaskListId) ?? op.targetTaskListId,
+              before: context.taskListName(op.accountId, source) ?? source,
+              label: 'List',
+            },
+          ];
+    }
   }
 };

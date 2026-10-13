@@ -138,6 +138,7 @@ const MUTATION_REACTIVITY = {
   previewEventToTask: [],
   previewMirror: [],
   previewMove: [],
+  previewMoveTask: [],
   previewSettingsImport: [],
   removeAccount: [ACCOUNTS_KEY, BIRTHDAYS_KEY, CALENDARS_KEY, EVENTS_KEY, TASKS_KEY, TASKLISTS_KEY],
   resolveConflict: [EVENTS_KEY, OPS_KEY],

@@ -127,6 +127,28 @@ describe('runMigrations', () => {
       }).pipe(Effect.provide(sqlLayer())),
   );
 
+  it.effect(
+    'makes every Google task list pass a full one, to pick up the hierarchy (migration 12)',
+    () =>
+      Effect.gen(function* () {
+        const sql = yield* SqlClient;
+        yield* runMigrationsWith(migrations.filter(([id]) => id < 12));
+        yield* sql`
+        INSERT INTO sync_state (account_id, scope, sync_token, last_full_sync_at, last_sync_at, status)
+        VALUES ('acc', 'tasks:list-1', '2026-10-01T00:00:00.000Z', 1000, 1000, 'idle'),
+               ('acc', 'events:cal-1', 'token', 1000, 1000, 'idle')`;
+
+        yield* runMigrations;
+
+        const rows = yield* sql<{ last_full_sync_at: number; scope: string; sync_token: string }>`
+        SELECT scope, last_full_sync_at, sync_token FROM sync_state ORDER BY scope`;
+        expect(rows).toEqual([
+          { last_full_sync_at: 1000, scope: 'events:cal-1', sync_token: 'token' },
+          { last_full_sync_at: 0, scope: 'tasks:list-1', sync_token: '2026-10-01T00:00:00.000Z' },
+        ]);
+      }).pipe(Effect.provide(sqlLayer())),
+  );
+
   it.effect('rolls back a failing migration atomically and retries it next run', () =>
     Effect.gen(function* () {
       const sql = yield* SqlClient;

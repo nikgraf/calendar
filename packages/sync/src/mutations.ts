@@ -26,7 +26,10 @@ import {
   normalizeHexColor,
   PendingOp,
   type PreviewEventToTaskParams,
+  type PreviewMoveTaskParams,
   remainingRecurrence,
+  taskMoveLoss,
+  TaskRecord,
   taskRecurrenceFromLines,
   toZonedDateTime,
   type ReminderOverride,
@@ -771,6 +774,7 @@ const make: Effect.Effect<
     | 'moveTask'
     | 'previewEventToTask'
     | 'previewMove'
+    | 'previewMoveTask'
   > = {
     ...taskMutations,
     createEvent: (draft) =>
@@ -1626,14 +1630,36 @@ const make: Effect.Effect<
       return moveLoss(source.master, route, source.modifiedOccurrences);
     });
 
+  /** A created task completed like its source, if that was done. */
+  const completedLike = (provider: 'apple' | 'google', created: TaskRecord, like: TaskRecord) =>
+    Effect.gen(function* () {
+      if (like.status !== 'completed') {
+        return created;
+      }
+      const complete = {
+        accountId: created.accountId,
+        status: 'completed' as const,
+        taskId: created.id,
+        taskListId: created.listId,
+      };
+      yield* provider === 'apple'
+        ? reminders.completeTask(complete)
+        : googleTasks.completeTask(complete);
+      return new TaskRecord({ ...created, status: 'completed' });
+    });
+
   /**
    * Moving a task: between two Reminders lists EventKit changes the list
-   * in place and the identifier survives; every other route creates the
-   * task in the target from the draft and then deletes the source, so a
-   * failure between the two leaves a duplicate, never a lost task. The
+   * in place and the identifier survives, and inside one Google account
+   * `tasks.move` does the same — the subtasks come along, nested as they
+   * were, and the task leaves a parent it had. Every other route creates
+   * the task in the target from the draft and then deletes the source, so
+   * a failure between the two leaves a duplicate, never a lost task. The
    * draft, not the source row, is what gets written: the editor showed
    * the target provider's form, and its fields are the user's intent.
-   * Completion follows the task.
+   * A Google task's subtasks are created too — nested under the copy on
+   * Google, as reminders of their own in Reminders — and deleted with it
+   * (Google deletes a parent's subtasks with it). Completion follows.
    */
   const moveTask = (params: MoveTaskParams) =>
     Effect.gen(function* () {
@@ -1669,28 +1695,105 @@ const make: Effect.Effect<
         const moved = yield* taskRepo.get(accountId, target.taskListId, taskId);
         return moved ?? source;
       }
+      if (
+        sourceProvider === 'google' &&
+        targetProvider === 'google' &&
+        accountId === target.accountId
+      ) {
+        return yield* transactional(
+          Effect.gen(function* () {
+            // The form's edits land first, in the source list; the move
+            // takes them along (the drain keeps the order).
+            yield* rejectReminderFields(draft);
+            const changes = {
+              ...(draft.dueDate === source.dueDate ? {} : { dueDate: draft.dueDate }),
+              ...((draft.notes ?? '') === (source.notes ?? '') ? {} : { notes: draft.notes ?? '' }),
+              ...(draft.title === source.title ? {} : { title: draft.title }),
+            };
+            if (Object.keys(changes).length > 0) {
+              yield* googleTasks.updateTask({ accountId, changes, taskId, taskListId });
+            }
+            return yield* googleTasks.moveWithinAccount({
+              accountId,
+              targetTaskListId: target.taskListId,
+              taskId,
+              taskListId,
+            });
+          }),
+        );
+      }
+      const subtasks =
+        sourceProvider === 'google'
+          ? yield* taskRepo.listSubtasks(accountId, taskListId, taskId)
+          : [];
       const createParams = { ...draft, accountId: target.accountId, taskListId: target.taskListId };
       const createIn = (provider: 'apple' | 'google') =>
         Effect.gen(function* () {
-          const created = yield* createTaskIn(provider, createParams);
-          if (source.status === 'completed') {
-            const complete = {
-              accountId: created.accountId,
-              status: 'completed' as const,
-              taskId: created.id,
-              taskListId: created.listId,
+          const created = yield* completedLike(
+            provider,
+            yield* createTaskIn(provider, createParams),
+            source,
+          );
+          // Its subtasks follow. Google inserts a subtask first among its
+          // siblings, so they go in last to first and keep their order.
+          const ordered = provider === 'google' ? [...subtasks].reverse() : subtasks;
+          for (const subtask of ordered) {
+            const fields = {
+              accountId: target.accountId,
+              ...(subtask.dueDate === undefined ? {} : { dueDate: subtask.dueDate }),
+              ...(subtask.notes === undefined ? {} : { notes: subtask.notes }),
+              taskListId: target.taskListId,
+              title: subtask.title,
             };
-            yield* provider === 'apple'
-              ? reminders.completeTask(complete)
-              : googleTasks.completeTask(complete);
-            return { ...created, status: 'completed' as const };
+            yield* completedLike(
+              provider,
+              provider === 'google'
+                ? yield* googleTasks.createSubtask({ ...fields, parentId: created.id })
+                : yield* reminders.createTask(fields),
+              subtask,
+            );
           }
           return created;
         });
+      const deleteAll = Effect.gen(function* () {
+        // Google would delete the subtasks with their parent; deleting
+        // them first keeps the local rows and the queue in step with it.
+        for (const subtask of subtasks) {
+          yield* deleteTaskFrom(sourceProvider, {
+            accountId,
+            taskId: subtask.id,
+            taskListId,
+          });
+        }
+        yield* deleteTaskFrom(sourceProvider, { accountId, taskId, taskListId });
+      });
       return yield* crossStore(
         { source: sourceProvider, target: targetProvider },
         createIn(targetProvider),
-        deleteTaskFrom(sourceProvider, { accountId, taskId, taskListId }),
+        deleteAll,
+      );
+    });
+
+  const previewMoveTask = (params: PreviewMoveTaskParams) =>
+    Effect.gen(function* () {
+      const { accountId, target, taskId, taskListId } = params;
+      const source = yield* taskRepo.get(accountId, taskListId, taskId);
+      if (!source) {
+        return yield* Effect.fail(new TaskNotFoundError({ taskId }));
+      }
+      const sourceProvider = yield* providerOf(accountId);
+      const subtasks =
+        sourceProvider === 'google'
+          ? yield* taskRepo.listSubtasks(accountId, taskListId, taskId)
+          : [];
+      return taskMoveLoss(
+        source,
+        {
+          sameAccount: accountId === target.accountId,
+          source: sourceProvider,
+          target: yield* providerOf(target.accountId),
+        },
+        subtasks.length,
       );
     });
 
@@ -1796,6 +1899,7 @@ const make: Effect.Effect<
     moveTask,
     previewEventToTask,
     previewMove,
+    previewMoveTask,
     respondToEvent: byProvider(apple.respondToEvent, google.respondToEvent),
     setCalendarColor: byProvider(apple.setCalendarColor, google.setCalendarColor),
     updateEvent: writable(byProvider(apple.updateEvent, google.updateEvent)),
