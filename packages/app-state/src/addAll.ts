@@ -38,6 +38,10 @@ export const draftCalendarKey = (
   fallback: string,
 ): string => writableCalendarKey(calendars, draft.extras?.calendarKey, fallback);
 
+/** Whether a new to-do can go to the list: it is here and writable. */
+const takesTodos = (taskLists: ReadonlyArray<TaskListInfo>, key: string): boolean =>
+  offeredTaskLists(taskLists, undefined).some((list) => taskListKeyOf(list) === key);
+
 /** The list a to-do draft goes to: the one it was given, while it still takes to-dos, else the form's. */
 export const draftListKey = (
   draft: Draft,
@@ -45,10 +49,7 @@ export const draftListKey = (
   fallback: string,
 ): string => {
   const key = draft.extras?.listKey;
-  return key !== undefined &&
-    offeredTaskLists(taskLists, undefined).some((list) => taskListKeyOf(list) === key)
-    ? key
-    : fallback;
+  return key !== undefined && takesTodos(taskLists, key) ? key : fallback;
 };
 
 /** A to-do as `createTask` takes it: a draft's fields on a list, no due day for an undated one. */
@@ -168,9 +169,11 @@ export type DraftWrite =
  * What "Add all" will do: write the drafts beside the focused one, in
  * order — or nothing, when one of them could not be written, which the
  * form then shows with the reason. A draft whose calendar or list went
- * away (or turned read-only) since it was picked is one: another place
- * may not hold what it holds — guests, a reminder's time — and nothing
- * is dropped unasked; the form shows it in the form's pick to confirm.
+ * away (or turned read-only) since it was picked is one — the one it was
+ * given, or the form's for a draft never given one: another place may
+ * not hold what it holds (guests, a reminder's time), and nothing is
+ * dropped unasked; the form shows it, in a place that takes it, to
+ * confirm. No place at all is Save's own "required" message.
  */
 export type AddAllPlan =
   | { readonly index: number; readonly kind: 'blocked'; readonly reason: string }
@@ -200,8 +203,9 @@ export const planAddAll = (
     }
     const { extras, item } = draft;
     if (item.kind === 'event') {
-      const calendarKey = draftCalendarKey(draft, calendars, defaults.calendarKey);
-      if (extras?.calendarKey !== undefined && calendarKey !== extras.calendarKey) {
+      // Checked as given, never through a fallback, which may be the same gone calendar.
+      const calendarKey = extras?.calendarKey ?? defaults.calendarKey;
+      if (calendarKey !== '' && writableCalendarKey(calendars, calendarKey, '') !== calendarKey) {
         return { index, kind: 'blocked', reason: GONE_CALENDAR };
       }
       const reason = prefillError(item.prefill, { calendarKey, timeZone });
@@ -225,8 +229,8 @@ export const planAddAll = (
         kind: 'event',
       });
     } else {
-      const listKey = draftListKey(draft, taskLists, defaults.listKey);
-      if (extras?.listKey !== undefined && listKey !== extras.listKey) {
+      const listKey = extras?.listKey ?? defaults.listKey;
+      if (listKey !== '' && !takesTodos(taskLists, listKey)) {
         return { index, kind: 'blocked', reason: GONE_LIST };
       }
       const provider =

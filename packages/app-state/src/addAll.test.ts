@@ -241,6 +241,25 @@ describe('planAddAll', () => {
       index: 1,
       reason: 'The calendar picked for this draft is no longer available — pick another.',
     });
+    // Review: gone as well when it is the form's pick too — given, or taken by a draft never shown.
+    const goneEverywhere = {
+      ...context,
+      defaults: { calendarKey: 'acc:holidays', listKey: 'apple-reminders:shared' },
+    };
+    expect(
+      planAddAll(
+        thread([event('Ok')], [todo('Milk'), { listKey: 'apple-reminders:shared' }]),
+        goneEverywhere,
+      ),
+    ).toMatchObject({ index: 1, kind: 'blocked' });
+    expect(planAddAll(thread([event('Ok')], [todo('Milk')]), goneEverywhere)).toMatchObject({
+      index: 1,
+      reason: 'The list picked for this draft is no longer available — pick another.',
+    });
+    expect(planAddAll(thread([todo('Milk')], [event('Lunch')]), goneEverywhere)).toMatchObject({
+      index: 1,
+      reason: 'The calendar picked for this draft is no longer available — pick another.',
+    });
   });
 });
 
