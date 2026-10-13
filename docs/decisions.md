@@ -630,6 +630,15 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   (its SwiftUI host hides the form from Maestro, #137 — this sheet is a
   plain presented controller), a "show on calendar" toggle on the page
   sheet. Open: the desktop leftovers (todo.md), a detent set from code.
+- **A tighter iOS editor header** (2026-10-13, #190) — the sheet's fixed
+  header left the half-height form little room once a thread showed:
+  the "Describe it" label went (the placeholder says it), the thread
+  shows only its last turn, on one line with Undo (Undo takes back only
+  that one; the desktop keeps the list), and the rows sit closer — the
+  title field moved up about 100 pt. Rejected: starting at 60 % or 75 %
+  height, which buys one or three form rows and costs the calendar the
+  half sheet is for (on an iPhone 17 Pro about 3.5 or 1 hour of timeline
+  stay in view instead of 5).
 - **Slot proposals in the create thread** (2026-10-12, #185) — a phrase
   that asks for free time is routed by code (`isFinderPhrase`: English
   and German cues, a search verb or question beside a time word) to the

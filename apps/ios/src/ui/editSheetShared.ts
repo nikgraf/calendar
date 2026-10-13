@@ -141,6 +141,12 @@ const makeSheetStyles = (colors: ThemeColors) =>
       paddingHorizontal: 16,
       paddingVertical: 14,
     },
+    // The editor's Cancel · title · Save row: tighter than the other
+    // sheets', the header above its form holds the quick-add field, the
+    // thread and the kind control too.
+    headerCompact: {
+      paddingVertical: 10,
+    },
     hint: {
       color: colors['text-secondary'],
       fontSize: 13,
@@ -180,8 +186,9 @@ const makeSheetStyles = (colors: ThemeColors) =>
     modeRow: {
       flexDirection: 'row',
       gap: 8,
+      paddingBottom: 8,
       paddingHorizontal: 16,
-      paddingVertical: 8,
+      paddingTop: 4,
     },
     notesInput: {
       minHeight: 72,

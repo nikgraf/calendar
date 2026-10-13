@@ -841,8 +841,8 @@ gateway carries all of it. Details, limits and the threat model:
   list). `EditorHost.tsx` owns every sheet — event detail, the editor
   (`EventEditSheet`, the same add path as the desktop and the same
   thread: `useThreadEditor`, with `DraftThreadSection` under the quick-add
-  field — the turns with Undo, the free-slot chips, the pager, "Add
-  all"), the birthday detail — and the capture model behind the share
+  field — the last turn on one line with Undo (the desktop lists them
+  all), the free-slot chips, the pager, "Add all"), the birthday detail — and the capture model behind the share
   sheet and deep links, whose events open the editor as one thread of
   drafts; each opening is keyed by its own number; screens ask it
   through `useEditorHost()`. The editor is the `editor` route

@@ -3,15 +3,13 @@ import { formatSlotLabel } from '@calendar/core';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { BOX_FONT_SCALE, type ThemeColors, useStyles } from './theme.ts';
 
-/** The turns on show: the latest few, the sheet's header does not scroll. */
-const TURNS_SHOWN = 2;
-
 /**
- * The thread above a new item's form: what was said and what it changed
- * (the last turn with Undo), a caveat the drafts came with, the free
- * slots a finder phrase offered (the one the form sits in selected; a tap
- * moves the draft), and with several drafts the pager, Remove and "Add
- * all". The same test ids as the desktop's panel.
+ * The thread above a new item's form: the last turn on one line — what
+ * was said, what it changed, Undo (the sheet's header does not scroll,
+ * and Undo takes back only the last turn) — a caveat the drafts came
+ * with, the free slots a finder phrase offered (the one the form sits in
+ * selected; a tap moves the draft), and with several drafts the pager,
+ * Remove and "Add all". The same test ids as the desktop's panel.
  */
 export function DraftThreadSection({
   editor,
@@ -37,38 +35,32 @@ export function DraftThreadSection({
     turns,
     write,
   } = editor;
-  if (turns.length === 0) {
+  const last = turns.at(-1);
+  if (last === undefined) {
     return null;
   }
-  const last = turns.at(-1);
   const slots = focusedDraft?.slots;
   return (
     <View style={styles.section} testID="draft-thread">
-      {turns.slice(-TURNS_SHOWN).map((turn) => (
-        <View key={turn.id} style={styles.turn} testID="draft-turn">
-          <View style={styles.turnBody}>
-            <Text numberOfLines={1} style={styles.utterance}>
-              “{turn.utterance}”
-            </Text>
-            <Text numberOfLines={1} style={styles.summary} testID="draft-turn-summary">
-              {turn.summary}
-            </Text>
-          </View>
-          {turn === last ? (
-            <Pressable
-              accessibilityRole="button"
-              disabled={thread.busy || !settled}
-              hitSlop={8}
-              onPress={thread.undo}
-              testID="draft-undo"
-            >
-              <Text maxFontSizeMultiplier={BOX_FONT_SCALE} style={styles.action}>
-                Undo
-              </Text>
-            </Pressable>
-          ) : null}
-        </View>
-      ))}
+      <View style={styles.turn} testID="draft-turn">
+        <Text numberOfLines={1} style={styles.utterance}>
+          “{last.utterance}”
+        </Text>
+        <Text numberOfLines={1} style={styles.summary} testID="draft-turn-summary">
+          {last.summary}
+        </Text>
+        <Pressable
+          accessibilityRole="button"
+          disabled={thread.busy || !settled}
+          hitSlop={8}
+          onPress={thread.undo}
+          testID="draft-undo"
+        >
+          <Text maxFontSizeMultiplier={BOX_FONT_SCALE} style={styles.action}>
+            Undo
+          </Text>
+        </Pressable>
+      </View>
       {note && drafts.length > 0 ? (
         <Text style={styles.note} testID="draft-thread-note">
           {note}
@@ -184,7 +176,7 @@ const makeStyles = (colors: ThemeColors) =>
       backgroundColor: colors.primary,
       borderRadius: 8,
       paddingHorizontal: 12,
-      paddingVertical: 6,
+      paddingVertical: 4,
     },
     addAllLabel: {
       color: colors['on-primary'],
@@ -193,8 +185,8 @@ const makeStyles = (colors: ThemeColors) =>
     },
     arrow: {
       color: colors.primary,
-      fontSize: 24,
-      lineHeight: 26,
+      fontSize: 22,
+      lineHeight: 24,
       paddingHorizontal: 6,
     },
     chip: {
@@ -253,12 +245,14 @@ const makeStyles = (colors: ThemeColors) =>
     },
     section: {
       gap: 6,
-      paddingBottom: 6,
+      paddingBottom: 2,
       paddingHorizontal: 16,
     },
+    // What changed takes the room; what was said gives way first.
     summary: {
-      color: colors['text-secondary'],
-      fontSize: 12,
+      color: colors.text,
+      flex: 1,
+      fontSize: 13,
     },
     turn: {
       alignItems: 'center',
@@ -267,13 +261,12 @@ const makeStyles = (colors: ThemeColors) =>
       flexDirection: 'row',
       gap: 8,
       paddingHorizontal: 10,
-      paddingVertical: 6,
-    },
-    turnBody: {
-      flex: 1,
+      paddingVertical: 7,
     },
     utterance: {
-      color: colors.text,
+      color: colors['text-secondary'],
+      flexShrink: 1,
       fontSize: 13,
+      maxWidth: '45%',
     },
   });
