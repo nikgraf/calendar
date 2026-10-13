@@ -1,6 +1,6 @@
 import { isAtSlot, type useThreadEditor } from '@calendar/app-state';
 import { formatSlotLabel } from '@calendar/core';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { ThreadTurnList } from './ThreadTurnList.tsx';
 import { BOX_FONT_SCALE, type ThemeColors, useStyles } from './theme.ts';
 
@@ -21,6 +21,9 @@ export function DraftThreadSection({
   note?: string | undefined;
 }) {
   const styles = useStyles(makeStyles);
+  // The sheet's header does not scroll: the turns get at most a third of
+  // the screen and scroll inside it, so the form under them stays in reach.
+  const { height } = useWindowDimensions();
   const {
     addAll,
     batchError,
@@ -43,6 +46,7 @@ export function DraftThreadSection({
   return (
     <View style={styles.section} testID="draft-thread">
       <ThreadTurnList
+        maxHeight={Math.round(height * 0.3)}
         onUndo={thread.undo}
         testIDPrefix="draft"
         turns={turns}

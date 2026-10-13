@@ -201,8 +201,10 @@ const makeSheetStyles = (colors: ThemeColors) =>
       marginBottom: 4,
       textTransform: 'uppercase',
     },
+    // A row, so the kind control's own `flex: 1` (grow) stays horizontal.
     modeFlash: {
       flex: 1,
+      flexDirection: 'row',
     },
     modeRow: {
       flexDirection: 'row',

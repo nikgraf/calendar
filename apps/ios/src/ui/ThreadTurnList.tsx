@@ -1,6 +1,6 @@
 import { earlierTurnsLabel, TURNS_SHOWN, visibleTurns } from '@calendar/app-state';
 import { useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import Animated, {
   Easing,
   FadeIn,
@@ -23,14 +23,18 @@ const ENTER_STILL = FadeIn.duration(200).reduceMotion(ReduceMotion.Never);
  * until "+N earlier queries" opens the rest. A row eases in when it comes
  * into the list (Reanimated's `entering` runs on mount only, so an Undo
  * or the list opening never replays the top row's). The create thread
- * (`draft-*`) and the search thread (`search-*`) share it.
+ * (`draft-*`) and the search thread (`search-*`) share it. In a header
+ * that does not scroll (the edit sheet's), `maxHeight` caps the rows and
+ * they scroll inside it; "Show less" stays under them, in reach.
  */
 export function ThreadTurnList({
+  maxHeight,
   onUndo,
   testIDPrefix,
   turns,
   undoDisabled,
 }: {
+  maxHeight?: number | undefined;
   onUndo: () => void;
   testIDPrefix: string;
   turns: ReadonlyArray<{
@@ -47,39 +51,50 @@ export function ThreadTurnList({
   if (shown.length === 0) {
     return null;
   }
+  const rows = shown.map((turn, index) => (
+    <Animated.View
+      entering={reduceMotion ? ENTER_STILL : ENTER}
+      key={turn.id}
+      style={styles.turn}
+      testID={`${testIDPrefix}-turn`}
+    >
+      <View style={styles.body}>
+        <Text style={styles.utterance}>“{turn.utterance}”</Text>
+        <Text style={styles.summary} testID={`${testIDPrefix}-turn-summary`}>
+          {turn.summary}
+        </Text>
+      </View>
+      {index === 0 ? (
+        <Pressable
+          accessibilityRole="button"
+          disabled={undoDisabled}
+          hitSlop={8}
+          onPress={onUndo}
+          testID={`${testIDPrefix}-undo`}
+        >
+          <Text
+            maxFontSizeMultiplier={BOX_FONT_SCALE}
+            style={[styles.undo, undoDisabled && styles.disabled]}
+          >
+            Undo
+          </Text>
+        </Pressable>
+      ) : null}
+    </Animated.View>
+  ));
   return (
     <View style={styles.list}>
-      {shown.map((turn, index) => (
-        <Animated.View
-          entering={reduceMotion ? ENTER_STILL : ENTER}
-          key={turn.id}
-          style={styles.turn}
-          testID={`${testIDPrefix}-turn`}
+      {maxHeight === undefined ? (
+        rows
+      ) : (
+        <ScrollView
+          contentContainerStyle={styles.list}
+          keyboardShouldPersistTaps="handled"
+          style={{ flexGrow: 0, maxHeight }}
         >
-          <View style={styles.body}>
-            <Text style={styles.utterance}>“{turn.utterance}”</Text>
-            <Text style={styles.summary} testID={`${testIDPrefix}-turn-summary`}>
-              {turn.summary}
-            </Text>
-          </View>
-          {index === 0 ? (
-            <Pressable
-              accessibilityRole="button"
-              disabled={undoDisabled}
-              hitSlop={8}
-              onPress={onUndo}
-              testID={`${testIDPrefix}-undo`}
-            >
-              <Text
-                maxFontSizeMultiplier={BOX_FONT_SCALE}
-                style={[styles.undo, undoDisabled && styles.disabled]}
-              >
-                Undo
-              </Text>
-            </Pressable>
-          ) : null}
-        </Animated.View>
-      ))}
+          {rows}
+        </ScrollView>
+      )}
       {turns.length > TURNS_SHOWN ? (
         // One control both ways, so VoiceOver stays on it.
         <Pressable

@@ -850,7 +850,8 @@ gateway carries all of it. Details, limits and the threat model:
   (`EventEditSheet`, the same add path as the desktop and the same
   thread: `useThreadEditor`, with `DraftThreadSection` under the quick-add
   field — the turns as on the desktop (`ThreadTurnList`, shared with
-  Search), the free-slot chips, the pager, "Add all"; the rows a turn
+  Search; the header does not scroll, so they get at most 30 % of the
+  screen and scroll inside it), the free-slot chips, the pager, "Add all"; the rows a turn
   changed flash, `FlashView`), the birthday detail — and the capture model behind the share
   sheet and deep links, whose events open the editor as one thread of
   drafts; each opening is keyed by its own number; screens ask it
