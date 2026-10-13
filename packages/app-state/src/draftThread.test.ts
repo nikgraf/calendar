@@ -47,6 +47,10 @@ const later: QuickAddItem = {
   prefill: { ...dinner.prefill, endTime: '21:00', startTime: '20:00' },
 };
 
+/** Dinner repeating by a rule given as written (its parts in any order). */
+const rule = (recurrence: Record<string, unknown>): QuickAddItem =>
+  ({ kind: 'event', prefill: { ...dinner.prefill, recurrence } }) as QuickAddItem;
+
 /** Stable ids: d1, d2, … in the order they are asked for. */
 const ids = () => {
   let count = 0;
@@ -157,6 +161,29 @@ describe('changedDraftFields', () => {
         prefill: { date: '2026-08-28', title: 'Dinner' },
       }),
     ).toEqual(['kind', 'title', 'time']);
+  });
+
+  it('reads a repeat rule by its values, not the order its parts were written in', () => {
+    const form = rule({
+      byDay: [{ weekday: 'MO' }, { weekday: 'TH' }],
+      freq: 'weekly',
+      interval: 2,
+    });
+    const restated = rule({
+      freq: 'weekly',
+      interval: 2,
+      // eslint-disable-next-line perfectionist/sort-objects -- the model's order, on purpose
+      byDay: [{ weekday: 'TH' }, { weekday: 'MO' }],
+    });
+    expect(changedDraftFields(form, restated)).toEqual([]);
+    expect(summarizeChange(form, restated)).toBe('no change');
+    // An interval of one is the default either way.
+    expect(
+      changedDraftFields(rule({ freq: 'daily' }), rule({ freq: 'daily', interval: 1 })),
+    ).toEqual([]);
+    expect(
+      changedDraftFields(form, rule({ byDay: [{ weekday: 'MO' }], freq: 'weekly', interval: 2 })),
+    ).toEqual(['repeat']);
   });
 });
 

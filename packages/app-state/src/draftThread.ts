@@ -149,8 +149,23 @@ const repeatOf = (item: QuickAddItem): string | undefined =>
 const placeOf = (item: QuickAddItem): string | undefined =>
   item.kind === 'event' ? item.prefill.location : undefined;
 
-const ruleOf = (item: QuickAddItem): string =>
-  item.kind === 'event' ? JSON.stringify(item.prefill.recurrence ?? null) : 'null';
+/**
+ * A repeat rule by its values, whatever order its parts were written in
+ * (the form and the model's answer list them differently): an interval of
+ * one is the default, the weekdays a set.
+ */
+const ruleOf = (item: QuickAddItem): string => {
+  const rule = item.kind === 'event' ? item.prefill.recurrence : undefined;
+  return rule === undefined
+    ? 'none'
+    : JSON.stringify([
+        rule.freq,
+        rule.interval ?? 1,
+        rule.count ?? null,
+        rule.untilDate ?? null,
+        (rule.byDay ?? []).map((day) => `${String(day.ordinal ?? '')}${day.weekday}`).sort(),
+      ]);
+};
 
 /** A part of the form a turn can change: what the summary names and the form flashes. */
 export type DraftField = 'date' | 'kind' | 'location' | 'repeat' | 'time' | 'title';
