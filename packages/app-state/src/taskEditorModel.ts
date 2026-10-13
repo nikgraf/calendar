@@ -16,6 +16,7 @@ import {
   type TaskProvider,
   type TaskRecord,
   taskListKeyOf,
+  type TaskRecurrence,
   type TodoKind,
 } from '@calendar/core';
 import { useState } from 'react';
@@ -57,6 +58,21 @@ export interface TaskEditorSeed {
 }
 
 const listKeyOf = (accountId: string, listId: string) => `${accountId}:${listId}`;
+
+/**
+ * The Reminders-only fields the form holds — kept whatever list is
+ * picked, see `useTaskEditorModel` — as a thread keeps them per draft, so
+ * one reminder's alerts, priority, rule and link never follow the form to
+ * the next draft, and "Add all" writes each with its own.
+ */
+export interface ReminderFields {
+  /** Minutes relative to the due time, the form's own first. */
+  readonly alarms: ReadonlyArray<number>;
+  readonly priority?: TaskPriority | undefined;
+  readonly recurrence?: TaskRecurrence | undefined;
+  /** As typed: trimmed (and checked) when written. */
+  readonly url: string;
+}
 
 /**
  * The list the last to-do was created in, for this session: a new one
@@ -260,6 +276,26 @@ export const useTaskEditorModel = ({
     setExtraAlarms(next.alarms.slice(1));
     setUrl(next.url ?? '');
     repeatState.resetRepeat(next.recurrence);
+  };
+
+  /** The Reminders-only fields as they stand, for a thread to keep with its draft. */
+  const reminderFields = (): ReminderFields => ({
+    alarms: alarms(),
+    priority,
+    recurrence: repeatSpec(),
+    url,
+  });
+
+  /**
+   * Another draft's Reminders-only fields take the form over (undefined: a
+   * draft the form never showed as a to-do, which starts without any).
+   */
+  const restoreReminderFields = (next: ReminderFields | undefined) => {
+    setAlarm(next?.alarms[0]);
+    setExtraAlarms(next?.alarms.slice(1) ?? []);
+    setPriority(next?.priority);
+    setUrl(next?.url ?? '');
+    repeatState.resetRepeat(next?.recurrence);
   };
 
   /**
@@ -469,8 +505,11 @@ export const useTaskEditorModel = ({
     provider,
     readOnly,
     recurrenceUnsupported,
+    /** The Reminders-only fields, for a thread to keep with its draft. */
+    reminderFields,
     remove: () => write.run(remove),
     ...repeatState,
+    restoreReminderFields,
     save: () => write.run(save),
     setAlarm,
     setDueDate,

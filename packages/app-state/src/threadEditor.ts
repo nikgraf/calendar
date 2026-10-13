@@ -9,20 +9,19 @@ import {
   Temporal,
 } from '@calendar/core';
 import { useEffect, useRef, useState } from 'react';
+import { draftCalendarKey, draftListKey, planAddAll } from './addAll.ts';
 import { useDraftFocusRequest, useRevealDraftDay, useSetDraftPreviews } from './draftAtoms.ts';
 import {
   candidatePreviews,
   type DraftPreview,
   draftPreview,
-  eventDraftFromPrefill,
-  prefillError,
   previewOfPrefill,
 } from './draftPreview.ts';
 import {
   changedDraftFields,
   type Draft,
+  type DraftExtras,
   type DraftField,
-  type DraftThreadState,
   updateDraft,
   useDraftThread,
 } from './draftThread.ts';
@@ -68,18 +67,32 @@ const NO_CALENDAR_COLOR = '#8a8a8a';
 
 /**
  * Every draft as the calendar draws it: the focused one from the live
- * form (`live`, an event — a to-do draws nothing), with the free slots
- * offered beside it as candidates, the others as the thread holds them,
- * all in the picked calendar's color.
+ * form (`live`, an event — a to-do draws nothing) in the calendar the
+ * form has picked, with the free slots offered beside it as candidates;
+ * the others as the thread holds them, each in the color of the calendar
+ * it would be written to (its own, else the form's — `draftCalendarKey`).
  */
 export const threadPreviews = (
   drafts: ReadonlyArray<Draft>,
   focused: number,
   live: QuickAddItem,
-  { color, timeZone }: { readonly color: string; readonly timeZone: string },
-): ReadonlyArray<DraftPreview> =>
-  drafts.flatMap((draft, index) => {
+  {
+    calendarKey,
+    calendars,
+    timeZone,
+  }: {
+    /** The form's calendar. */
+    readonly calendarKey: string;
+    readonly calendars: ReadonlyArray<CalendarInfo>;
+    readonly timeZone: string;
+  },
+): ReadonlyArray<DraftPreview> => {
+  const colorOf = (key: string) =>
+    calendars.find((calendar) => `${calendar.accountId}:${calendar.id}` === key)?.colorHex ??
+    NO_CALENDAR_COLOR;
+  return drafts.flatMap((draft, index) => {
     if (index === focused) {
+      const color = colorOf(calendarKey);
       return live.kind === 'event'
         ? [
             previewOfPrefill(draft.id, live.prefill, { color, focused: true, timeZone }),
@@ -87,28 +100,10 @@ export const threadPreviews = (
           ]
         : [];
     }
+    const color = colorOf(draftCalendarKey(draft, calendars, calendarKey));
     const preview = draftPreview(draft, { color, focused: false, timeZone });
     return preview ? [preview] : [];
   });
-
-/**
- * The first draft beside the focused one that "Add all" could not write,
- * and why — Save's own checks, for drafts that are not in the form.
- */
-export const firstUnwritableDraft = (
-  state: DraftThreadState,
-  { calendarKey, timeZone }: { readonly calendarKey: string; readonly timeZone: string },
-): { readonly index: number; readonly reason: string } | undefined => {
-  for (const [index, draft] of state.drafts.entries()) {
-    if (index === state.focused || draft.item.kind !== 'event') {
-      continue;
-    }
-    const reason = prefillError(draft.item.prefill, { calendarKey, timeZone });
-    if (reason !== undefined) {
-      return { index, reason };
-    }
-  }
-  return undefined;
 };
 
 /**
@@ -118,9 +113,11 @@ export const firstUnwritableDraft = (
  * focused draft over whenever the thread moves (a turn, an undo, a focus,
  * a removal) and its edits go back into the thread; a phrase goes to the
  * thread (a first one makes drafts, a later one changes them, one that
- * asks for free time proposes slots); a save among several drafts writes
- * the focused one and keeps the editor open on the next; "Add all" writes
- * the others as they stand, then the focused one through its form. The
+ * asks for free time proposes slots); each draft keeps the calendar or
+ * list picked for it, and another draft taking the form shows as it was
+ * left; a save among several drafts writes the focused one and keeps the
+ * editor open on the next; "Add all" writes the others as they stand,
+ * events and to-dos alike, then the focused one through its form. The
  * drafts are published for the calendar to draw (`useDraftPreviews`), the
  * focused draft's day is asked to be shown (`useOnDraftReveal`), and a
  * click on a draft block focuses it (`useRequestDraftFocus`).
@@ -246,10 +243,21 @@ export const useThreadEditor = ({
             title: taskModel.title,
           },
         };
-  /** What the form holds beyond the item: the event form's extras, and a to-do's notes and undated state. */
-  const currentExtras = () => ({
+  /**
+   * What the form holds beyond the item: the event form's extras, and the
+   * calendar picked for an event — or a to-do's list, notes, undated state
+   * and Reminders-only fields.
+   */
+  const currentExtras = (): DraftExtras => ({
     ...eventModel.extras(),
-    ...(mode === 'todo' ? { taskNotes: taskModel.notes, undated: !taskModel.dated } : {}),
+    ...(mode === 'event'
+      ? { calendarKey: eventModel.calendarKey }
+      : {
+          listKey: taskModel.listKey,
+          reminder: taskModel.reminderFields(),
+          taskNotes: taskModel.notes,
+          undated: !taskModel.dated,
+        }),
   });
   // The latest render's readers, for a turn that reads the form after an await.
   const latest = useRef({ extras: currentExtras, item: currentItem });
@@ -269,14 +277,79 @@ export const useThreadEditor = ({
   // day alone must not put the day back (applying a prefill dates it).
   const undated = useRef<{ readonly date: string } | null>(null);
 
+  /**
+   * The draft the form shows, changed by a turn or an Undo, or the first
+   * one: the form takes its item through the kind control's `apply` (a
+   * phrase read as the other kind switches, with the switch's question),
+   * the fields that changed flash, and what the form holds beyond the
+   * item follows the draft — for an Undo, as the turn found it.
+   */
+  const applyDraft = (draft: Draft, landed: { readonly id: string } | undefined) => {
+    const { extras, item } = draft;
+    const before = currentItem();
+    void apply(item).then((after) => {
+      if (landed) {
+        setFlash({ fields: new Set(changedDraftFields(before, after)), key: landed.id });
+      }
+      if (item.kind === 'task') {
+        // A to-do's own: its list and Reminders-only fields where the form
+        // had held it as one, its notes, and a day the form had let go of —
+        // unless the thread dated it itself (a slot placement says so in
+        // the extras; a retained time says nothing, a reminder keeps its
+        // time while undated).
+        const listKey = draftListKey(draft, taskLists, '');
+        if (listKey !== '') {
+          taskModel.setListKey(listKey);
+        }
+        if (extras?.reminder) {
+          taskModel.restoreReminderFields(extras.reminder);
+        }
+        taskModel.setNotes(extras?.taskNotes ?? '');
+        const placed = extras?.undated === false;
+        if (!placed && (extras?.undated || undated.current?.date === item.prefill.date)) {
+          taskModel.clearDueDate?.();
+        }
+      }
+      undated.current = null;
+    });
+    // The form starts clean for a draft it never held: nothing typed
+    // for another draft — guests, notes, notifications — follows it.
+    eventModel.restoreExtras(extras);
+  };
+
+  /**
+   * Another draft takes the form (a focus, a removal, an Undo that moved
+   * the focus): it shows as it was left — its kind, its calendar or list,
+   * everything the form held for it — or clean, in the calendar and list
+   * the form has, for a draft it never held. Not a kind switch: nothing
+   * carries over from the draft that left, nothing is asked.
+   */
+  const showDraft = (draft: Draft) => {
+    const { extras, item } = draft;
+    undated.current = null;
+    eventModel.restoreExtras(extras);
+    taskModel.setListKey(draftListKey(draft, taskLists, taskModel.listKey));
+    taskModel.restoreReminderFields(extras?.reminder);
+    taskModel.setNotes(extras?.taskNotes ?? '');
+    if (kinds.show(item).kind === 'task' && extras?.undated) {
+      taskModel.clearDueDate?.();
+    }
+  };
+
   // Whatever the thread did (a turn, an undo, a focus, a removal), the
   // form takes the focused draft over and the calendar shows its day.
   // The form's own edits leave the version alone, so they never re-apply.
-  // The thread emptied (the first turn undone): the form goes back to
-  // the blank it opened as, so nothing undone can still be saved. A turn
-  // that landed (the list grew — an Undo shrinks it, a focus or a removal
-  // leaves it) flashes the fields it changed in the form as it stood.
+  // Another draft than the one shown is shown as it was left (`showDraft`);
+  // the same one changed by a turn or an Undo — or the first one, which
+  // replaces what the form held before the phrase — is applied, which may
+  // switch the kind and ask about a loss. The thread emptied (the first
+  // turn undone): the form goes back to the blank it opened as, so
+  // nothing undone can still be saved. A turn that landed (the list grew
+  // — an Undo shrinks it, a focus or a removal leaves it) flashes the
+  // fields it changed in the form as it stood.
   const applied = useRef(0);
+  // The draft the form shows, by id; none before the first and after the last.
+  const shown = useRef<string | undefined>(undefined);
   // A thread the editor opens with (a capture) fills a form that is only
   // appearing: its first turn counts as seen, nothing flashes.
   const turnsSeen = useRef(seed.thread ? 1 : 0);
@@ -290,31 +363,13 @@ export const useThreadEditor = ({
     const landed = turns.length > turnsSeen.current ? turns.at(-1) : undefined;
     turnsSeen.current = turns.length;
     if (focusedDraft) {
-      const { extras } = focusedDraft;
-      const before = currentItem();
-      void apply(focusedDraft.item).then((after) => {
-        if (landed) {
-          setFlash({ fields: new Set(changedDraftFields(before, after)), key: landed.id });
-        }
-        if (focusedDraft.item.kind === 'task') {
-          // A to-do's own: its notes, and a day the form had let go of —
-          // unless the thread dated it itself (a slot placement says so in
-          // the extras; a retained time says nothing, a reminder keeps its
-          // time while undated).
-          taskModel.setNotes(extras?.taskNotes ?? '');
-          const placed = extras?.undated === false;
-          if (
-            !placed &&
-            (extras?.undated || undated.current?.date === focusedDraft.item.prefill.date)
-          ) {
-            taskModel.clearDueDate?.();
-          }
-        }
-        undated.current = null;
-      });
-      // The form starts clean for a draft it never held: nothing typed
-      // for another draft — guests, notes, notifications — follows it.
-      eventModel.restoreExtras(extras);
+      const another = shown.current !== undefined && shown.current !== focusedDraft.id;
+      shown.current = focusedDraft.id;
+      if (another) {
+        showDraft(focusedDraft);
+      } else {
+        applyDraft(focusedDraft, landed);
+      }
       // A day the form cleared is stored as '' until repaired: nothing to show.
       try {
         reveal(Temporal.PlainDate.from(focusedDraft.item.prefill.date));
@@ -322,6 +377,7 @@ export const useThreadEditor = ({
         // The form shows the field; the calendar stays where it is.
       }
     } else if (version > 0) {
+      shown.current = undefined;
       const times = seedTimeFields({
         initialDate: seed.initialDate,
         ...(seed.initialHour === undefined ? {} : { initialHour: seed.initialHour }),
@@ -338,6 +394,7 @@ export const useThreadEditor = ({
       // The to-do form too, back to the blank it opened as.
       taskModel.applyPrefill({ date: seed.initialDate.toString(), title: '' });
       taskModel.setNotes('');
+      taskModel.restoreReminderFields(undefined);
       if (taskSeed?.dated === false) {
         taskModel.clearDueDate?.();
       }
@@ -403,11 +460,12 @@ export const useThreadEditor = ({
 
   // The drafts as the calendar draws them, sent when something changed;
   // none once the editor goes.
-  const color =
-    calendars.find((calendar) => `${calendar.accountId}:${calendar.id}` === eventModel.calendarKey)
-      ?.colorHex ?? NO_CALENDAR_COLOR;
   const liveItem = currentItem();
-  const previews = threadPreviews(drafts, focused, liveItem, { color, timeZone });
+  const previews = threadPreviews(drafts, focused, liveItem, {
+    calendarKey: eventModel.calendarKey,
+    calendars,
+    timeZone,
+  });
   const previewKey = JSON.stringify(previews);
   useEffect(() => {
     setPreviews(previews);
@@ -421,50 +479,45 @@ export const useThreadEditor = ({
     [],
   );
 
-  // "Add all": the other event drafts as they stand — each checked as
-  // Save would check the form, the first one that fails shown in the form
-  // with the reason — then the focused one through its form, which closes
-  // the editor. A to-do among the others has no form here, so the button
-  // waits until each is the focused one. A failed write stops the batch
-  // with its reason; what was written has left the thread, the rest stays.
-  const canAddAll =
-    drafts.length > 1 &&
-    drafts.every((draft, index) => index === focused || draft.item.kind === 'event');
+  // "Add all": the other drafts as they stand, events and to-dos alike,
+  // each into the calendar or list picked for it (`planAddAll`) — each
+  // checked as Save would check the form, the first one that fails shown
+  // in the form with the reason — then the focused one through its form,
+  // which closes the editor. A failed write stops the batch with its
+  // reason; what was written has left the thread, the rest stays.
+  const canAddAll = drafts.length > 1;
   const addAll = () =>
     write.run(async () => {
       setBatchError(null);
-      const { calendarKey, canInvite } = eventModel;
-      const [accountId = '', calendarId = ''] = calendarKey.split(':', 2);
       // The form's edits go into the thread first: should the batch stop
       // short, the focused draft is still what the user last saw.
+      const form = readForm();
       const current = updateDraft(
         threadRef.current,
         threadRef.current.focused,
-        currentItem(),
-        currentExtras(),
+        form.item,
+        form.extras,
       );
-      thread.update(current.focused, currentItem(), currentExtras());
-      const unwritable = firstUnwritableDraft(current, { calendarKey, timeZone });
-      if (unwritable !== undefined) {
-        setBatchError(unwritable.reason);
-        thread.focus(unwritable.index);
+      thread.update(current.focused, form.item, form.extras);
+      const plan = planAddAll(current, {
+        calendars,
+        // A draft the form never showed goes where the form points now.
+        defaults: { calendarKey: eventModel.calendarKey, listKey: taskModel.listKey },
+        taskLists,
+        timeZone,
+      });
+      if (plan.kind === 'blocked') {
+        setBatchError(plan.reason);
+        thread.focus(plan.index);
         return;
       }
       try {
-        for (const draft of current.drafts.filter((_, index) => index !== current.focused)) {
-          if (draft.item.kind === 'event') {
-            await mutations.createEvent(
-              eventDraftFromPrefill(draft.item.prefill, {
-                accountId,
-                calendarId,
-                canInvite,
-                extras: draft.extras,
-                timeZone,
-              }),
-            );
-            // Written: out of the thread, so a failing form save cannot add it twice.
-            thread.removeMany([draft.id]);
-          }
+        for (const planned of plan.writes) {
+          await (planned.kind === 'event'
+            ? mutations.createEvent(planned.event)
+            : mutations.createTask(planned.task));
+          // Written: out of the thread, so a failing form save cannot add it twice.
+          thread.removeMany([planned.id]);
         }
       } catch (error) {
         setBatchError(String(error));

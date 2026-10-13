@@ -161,6 +161,28 @@ export const useEditorKinds = ({
     return read;
   };
 
+  /**
+   * Another of a thread's drafts takes the form: it shows as the kind it
+   * is — a to-do as the kind of the list the task model has, which the
+   * caller has set to the draft's — and nothing is carried over from the
+   * draft that left, nor asked: no switch happens, each draft keeps its
+   * own fields. A kind nothing here can hold is read as one something
+   * can. Returns the item as the form took it.
+   */
+  const show = (item: QuickAddItem): QuickAddItem => {
+    const canEvent = offered.includes('event');
+    const canTodo = offered.some((option) => option !== 'event');
+    const asEvent = item.kind === 'event' ? canEvent || !canTodo : !canTodo && canEvent;
+    const read = convertQuickAddItem(item, asEvent ? 'event' : 'task');
+    setMode(read.kind === 'event' ? 'event' : 'todo');
+    if (read.kind === 'event') {
+      eventModel.applyPrefill(read.prefill);
+    } else {
+      taskModel.applyPrefill(read.prefill);
+    }
+    return read;
+  };
+
   return {
     apply,
     /** The kinds the control offers, in its order; one entry means no control. */
@@ -169,6 +191,7 @@ export const useEditorKinds = ({
     mode,
     /** Both to-do kinds are disabled: an occurrence-scoped series edit cannot convert. */
     seriesOnly,
+    show,
     switchTo,
   };
 };

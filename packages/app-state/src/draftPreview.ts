@@ -3,11 +3,13 @@ import {
   buildRecurrenceRule,
   byDayError,
   type EventDraft,
+  EventReminders,
   expandRecurringEvent,
   type FreeSlot,
   GeoLocation,
   geoMatches,
   repeatUntilError,
+  type TaskProvider,
   validateEventDraft,
 } from '@calendar/core';
 import { type Draft, type DraftExtras, isAtSlot } from './draftThread.ts';
@@ -207,9 +209,10 @@ export const prefillError = (
 /**
  * A draft as the create would write it, for the drafts that are not in
  * the form ("Add all"): the fields a prefill holds and what the form held
- * beyond them while it showed the draft, in the calendar the form has
- * picked (guests only where it can invite), the calendar's default
- * notifications unless they were edited.
+ * beyond them while it showed the draft, in the calendar it goes to
+ * (guests only where it can invite), the calendar's default
+ * notifications unless they were edited — an Apple calendar has no
+ * default, so it gets the list as edited, or none, as Save sends it.
  */
 export const eventDraftFromPrefill = (
   prefill: EventEditorPrefill,
@@ -218,12 +221,15 @@ export const eventDraftFromPrefill = (
     calendarId,
     canInvite = false,
     extras,
+    provider = 'google',
     timeZone,
   }: {
     accountId: string;
     calendarId: string;
     canInvite?: boolean | undefined;
     extras?: DraftExtras | undefined;
+    /** The calendar's: what its notifications can be. */
+    provider?: TaskProvider | undefined;
     timeZone: string;
   },
 ): EventDraft => {
@@ -235,6 +241,10 @@ export const eventDraftFromPrefill = (
     extras?.geo && location && geoMatches(extras.geo, location)
       ? new GeoLocation({ ...extras.geo, source: location })
       : undefined;
+  const reminders =
+    provider === 'apple' && !(extras?.reminders && !extras.reminders.useDefault)
+      ? new EventReminders({ overrides: [], useDefault: false })
+      : extras?.reminders;
   return {
     accountId,
     ...(canInvite && extras && extras.attendees.length > 0 ? { attendees: extras.attendees } : {}),
@@ -244,7 +254,7 @@ export const eventDraftFromPrefill = (
     isAllDay: prefill.isAllDay,
     ...(prefill.location ? { location: prefill.location } : {}),
     ...(recurrence ? { recurrence } : {}),
-    ...(extras?.reminders ? { reminders: extras.reminders } : {}),
+    ...(reminders ? { reminders } : {}),
     title: prefill.title.trim(),
     ...buildEventTimes(prefill, timeZone),
   };
