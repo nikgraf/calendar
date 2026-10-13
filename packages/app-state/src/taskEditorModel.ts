@@ -16,7 +16,6 @@ import {
   type TaskProvider,
   type TaskRecord,
   taskListKeyOf,
-  type TaskRecurrence,
   type TodoKind,
 } from '@calendar/core';
 import { useState } from 'react';
@@ -24,7 +23,12 @@ import { deleteQuestion } from './deleteQuestion.ts';
 import type { EditorConfirmRequest } from './editorModel.ts';
 import { useBackendMutations, useTaskReadOnlyLookup } from './hooks.ts';
 import { useOneWrite } from './oneWrite.ts';
-import { repeatNumberError, useRepeatState } from './repeatState.ts';
+import {
+  type RepeatFields,
+  repeatNumberError,
+  seedRepeatFields,
+  useRepeatState,
+} from './repeatState.ts';
 import { offeredTaskLists, taskEditorChanges, type TaskEditorValues } from './taskEditorChanges.ts';
 
 export interface TaskEditorSeed {
@@ -69,7 +73,8 @@ export interface ReminderFields {
   /** Minutes relative to the due time, the form's own first. */
   readonly alarms: ReadonlyArray<number>;
   readonly priority?: TaskPriority | undefined;
-  readonly recurrence?: TaskRecurrence | undefined;
+  /** The repeat fields as typed, so an invalid number stays one: Save would refuse it. */
+  readonly repeat: RepeatFields;
   /** As typed: trimmed (and checked) when written. */
   readonly url: string;
 }
@@ -282,7 +287,7 @@ export const useTaskEditorModel = ({
   const reminderFields = (): ReminderFields => ({
     alarms: alarms(),
     priority,
-    recurrence: repeatSpec(),
+    repeat: repeatState.repeatFields,
     url,
   });
 
@@ -295,7 +300,7 @@ export const useTaskEditorModel = ({
     setExtraAlarms(next?.alarms.slice(1) ?? []);
     setPriority(next?.priority);
     setUrl(next?.url ?? '');
-    repeatState.resetRepeat(next?.recurrence);
+    repeatState.restoreRepeatFields(next?.repeat ?? seedRepeatFields(undefined));
   };
 
   /**

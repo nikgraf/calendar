@@ -9,6 +9,7 @@ import {
 } from './addAll.ts';
 import { type Draft, type DraftExtras, focusDraft, startThread } from './draftThread.ts';
 import type { QuickAddItem } from './quickAddItem.ts';
+import { type RepeatSeed, seedRepeatFields } from './repeatState.ts';
 
 const TZ = 'Europe/Vienna';
 const calendar = (
@@ -64,6 +65,21 @@ const held = (extras: Partial<DraftExtras>): DraftExtras => ({
   description: '',
   reminders: undefined,
   ...extras,
+});
+/** A reminder's own fields as the form keeps them; no repeat unless given. */
+const reminderOf = ({
+  repeat,
+  ...rest
+}: {
+  alarms?: Array<number>;
+  priority?: 'high' | 'low';
+  repeat?: RepeatSeed;
+  url?: string;
+}) => ({
+  alarms: [],
+  repeat: seedRepeatFields(repeat),
+  url: '',
+  ...rest,
 });
 const ids = () => {
   let count = 0;
@@ -125,7 +141,7 @@ describe('planAddAll', () => {
         todo('Buy milk', '18:00'),
         {
           listKey: 'apple-reminders:groceries',
-          reminder: { alarms: [-15], priority: 'high', url: '' },
+          reminder: reminderOf({ alarms: [-15], priority: 'high' }),
           taskNotes: ' oat ',
         },
       ],
@@ -199,6 +215,33 @@ describe('planAddAll', () => {
       }),
     ).toMatchObject({ index: 1, reason: 'A title and calendar are required.' });
   });
+
+  it('stops at a draft whose calendar or list went away, rather than moving it unasked', () => {
+    // Review: a reminder falling back to a Google list lost its time and priority silently.
+    const context = { calendars, defaults, taskLists, timeZone: TZ };
+    expect(
+      planAddAll(
+        thread(
+          [event('Ok')],
+          [
+            todo('Milk', '08:00'),
+            { listKey: 'apple-reminders:shared', reminder: reminderOf({ priority: 'high' }) },
+          ],
+        ),
+        context,
+      ),
+    ).toEqual({
+      index: 1,
+      kind: 'blocked',
+      reason: 'The list picked for this draft is no longer available — pick another.',
+    });
+    expect(
+      planAddAll(thread([event('Ok')], [event('Lunch'), { calendarKey: 'acc:holidays' }]), context),
+    ).toMatchObject({
+      index: 1,
+      reason: 'The calendar picked for this draft is no longer available — pick another.',
+    });
+  });
 });
 
 describe('todoPrefillError', () => {
@@ -218,7 +261,7 @@ describe('todoPrefillError', () => {
     expect(todoPrefillError(todo('Milk', '9:5').prefill, reminders)).toBe(
       'The due time must be HH:MM.',
     );
-    const badUrl = held({ reminder: { alarms: [], url: 'not a url' } });
+    const badUrl = held({ reminder: reminderOf({ url: 'not a url' }) });
     expect(todoPrefillError(todo('Milk').prefill, { ...reminders, extras: badUrl })).toBe(
       'The URL is not valid.',
     );
@@ -233,25 +276,43 @@ describe('todoPrefillError', () => {
       todoPrefillError(todo('Milk').prefill, {
         ...reminders,
         extras: held({
-          reminder: {
-            alarms: [],
-            recurrence: { freq: 'weekly', interval: 1, untilDate: '2026-08-01' },
-            url: '',
-          },
+          reminder: reminderOf({
+            repeat: { freq: 'weekly', interval: 1, untilDate: '2026-08-01' },
+          }),
         }),
       }),
     ).toBe('The repeat must end on or after its first day.');
+    // Review: a repeat number Save refuses stays refused — the fields are kept as typed.
+    const zero = { ...seedRepeatFields({ freq: 'daily', interval: 1 }), interval: '0' };
+    expect(
+      todoPrefillError(todo('Milk').prefill, {
+        ...reminders,
+        extras: held({ reminder: { ...reminderOf({}), repeat: zero } }),
+      }),
+    ).toBe('The repeat interval must be a whole number between 1 and 999.');
+    // Undated: the rule is not written, so not checked.
+    expect(
+      todoPrefillError(todo('Milk').prefill, {
+        ...reminders,
+        extras: held({
+          reminder: reminderOf({
+            repeat: { freq: 'weekly', interval: 1, untilDate: '2026-08-01' },
+          }),
+          undated: true,
+        }),
+      }),
+    ).toBeUndefined();
   });
 });
 
 describe('taskFromPrefill', () => {
   const extras = held({
-    reminder: {
+    reminder: reminderOf({
       alarms: [0, -60],
       priority: 'low',
-      recurrence: { freq: 'daily', interval: 2 },
+      repeat: { freq: 'daily', interval: 2 },
       url: ' https://example.com/list ',
-    },
+    }),
     taskNotes: 'two cartons',
   });
 
@@ -270,6 +331,24 @@ describe('taskFromPrefill', () => {
       notes: 'two cartons',
       priority: 'low',
       recurrence: { freq: 'daily', interval: 2 },
+      taskListId: 'groceries',
+      title: 'Milk',
+      url: 'https://example.com/list',
+    });
+  });
+
+  it('writes an undated reminder without a day, and so without its time or rule', () => {
+    expect(
+      taskFromPrefill(todo('Milk', '08:00').prefill, {
+        extras: { ...extras, undated: true },
+        listKey: 'apple-reminders:groceries',
+        provider: 'apple',
+      }),
+    ).toEqual({
+      accountId: 'apple-reminders',
+      alarms: [0, -60],
+      notes: 'two cartons',
+      priority: 'low',
       taskListId: 'groceries',
       title: 'Milk',
       url: 'https://example.com/list',

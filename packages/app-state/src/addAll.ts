@@ -13,6 +13,7 @@ import {
 import { eventDraftFromPrefill, prefillError } from './draftPreview.ts';
 import type { Draft, DraftExtras, DraftThreadState } from './draftThread.ts';
 import { writableCalendarKey } from './editorModel.ts';
+import { type RepeatFields, repeatNumberError, repeatSpecFrom } from './repeatState.ts';
 import { offeredTaskLists } from './taskEditorChanges.ts';
 
 /**
@@ -60,6 +61,19 @@ export type NewTask = Omit<TaskDraft, 'dueDate'> & {
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const TIME_RE = /^\d{2}:\d{2}$/;
 
+/** Save's checks of a reminder's repeat fields, numbers as typed, from its first day. */
+const repeatError = (fields: RepeatFields, date: string): string | undefined => {
+  const spec = repeatSpecFrom(fields, date);
+  return spec === undefined
+    ? undefined
+    : (repeatNumberError(fields.interval, 'The repeat interval') ??
+        (fields.ends === 'after'
+          ? repeatNumberError(fields.count, 'The occurrence count')
+          : undefined) ??
+        byDayError(spec) ??
+        repeatUntilError(spec, date));
+};
+
 /**
  * Why a to-do draft cannot be written as it stands, in the task form's
  * own words, or undefined: the checks Save runs on the form, for a draft
@@ -96,17 +110,17 @@ export const todoPrefillError = (
   if (url && !URL.canParse(url)) {
     return 'The URL is not valid.';
   }
-  const rule = extras?.reminder?.recurrence;
-  return rule
-    ? (byDayError(rule) ?? (dated ? repeatUntilError(rule, prefill.date) : undefined))
-    : undefined;
+  // An undated reminder does not repeat: its rule is not written, nor checked.
+  const repeat = dated ? extras?.reminder?.repeat : undefined;
+  return repeat ? repeatError(repeat, prefill.date) : undefined;
 };
 
 /**
  * A to-do draft as the task form's create would write it, for a draft
  * that is not in the form: its fields, its notes, and on a Reminders list
  * its time and Reminders-only fields — on a Google list a link rides in
- * the notes instead, as the form does it.
+ * the notes instead, as the form does it. An undated one has no day, and
+ * so no time or repeat rule either (EventKit refuses a rule without a day).
  */
 export const taskFromPrefill = (
   prefill: QuickAddTaskPrefill,
@@ -125,18 +139,20 @@ export const taskFromPrefill = (
   const url = reminder?.url.trim() ?? '';
   const ownNotes = extras?.taskNotes?.trim() || undefined;
   const notes = provider === 'google' ? appendLink(ownNotes, url || undefined) : ownNotes;
+  const dated = extras?.undated !== true;
+  const recurrence = dated && reminder ? repeatSpecFrom(reminder.repeat, prefill.date) : undefined;
   return {
     accountId,
-    ...(extras?.undated === true ? {} : { dueDate: prefill.date }),
+    ...(dated ? { dueDate: prefill.date } : {}),
     ...(notes ? { notes } : {}),
     taskListId,
     title: prefill.title.trim(),
     ...(provider === 'apple'
       ? {
           ...(reminder && reminder.alarms.length > 0 ? { alarms: reminder.alarms } : {}),
-          ...(prefill.time === undefined ? {} : { dueTime: prefill.time }),
+          ...(dated && prefill.time !== undefined ? { dueTime: prefill.time } : {}),
           ...(reminder?.priority === undefined ? {} : { priority: reminder.priority }),
-          ...(reminder?.recurrence === undefined ? {} : { recurrence: reminder.recurrence }),
+          ...(recurrence === undefined ? {} : { recurrence }),
           ...(url ? { url } : {}),
         }
       : {}),
@@ -151,11 +167,17 @@ export type DraftWrite =
 /**
  * What "Add all" will do: write the drafts beside the focused one, in
  * order — or nothing, when one of them could not be written, which the
- * form then shows with the reason.
+ * form then shows with the reason. A draft whose calendar or list went
+ * away (or turned read-only) since it was picked is one: another place
+ * may not hold what it holds — guests, a reminder's time — and nothing
+ * is dropped unasked; the form shows it in the form's pick to confirm.
  */
 export type AddAllPlan =
   | { readonly index: number; readonly kind: 'blocked'; readonly reason: string }
   | { readonly kind: 'ready'; readonly writes: ReadonlyArray<DraftWrite> };
+
+const GONE_CALENDAR = 'The calendar picked for this draft is no longer available — pick another.';
+const GONE_LIST = 'The list picked for this draft is no longer available — pick another.';
 
 export const planAddAll = (
   state: DraftThreadState,
@@ -179,6 +201,9 @@ export const planAddAll = (
     const { extras, item } = draft;
     if (item.kind === 'event') {
       const calendarKey = draftCalendarKey(draft, calendars, defaults.calendarKey);
+      if (extras?.calendarKey !== undefined && calendarKey !== extras.calendarKey) {
+        return { index, kind: 'blocked', reason: GONE_CALENDAR };
+      }
       const reason = prefillError(item.prefill, { calendarKey, timeZone });
       if (reason !== undefined) {
         return { index, kind: 'blocked', reason };
@@ -201,6 +226,9 @@ export const planAddAll = (
       });
     } else {
       const listKey = draftListKey(draft, taskLists, defaults.listKey);
+      if (extras?.listKey !== undefined && listKey !== extras.listKey) {
+        return { index, kind: 'blocked', reason: GONE_LIST };
+      }
       const provider =
         taskLists.find((list) => taskListKeyOf(list) === listKey)?.provider ?? 'google';
       const reason = todoPrefillError(item.prefill, { extras, listKey, provider });
