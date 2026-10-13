@@ -15,6 +15,7 @@ import {
   buildEventTimes,
   canonicalReminders,
   daysBetweenPlainDates,
+  draftMinutes,
   editorDatesOf,
   emailKey,
   geoMatches,
@@ -30,7 +31,6 @@ import {
   type ByDay,
   type CalendarInfo,
   type EventConvertValues,
-  type EditorTimeFields,
   type EventDraft,
   type EventRecord,
   EventReminders,
@@ -307,15 +307,21 @@ const shiftDate = (date: string, days: number): string | undefined => {
   }
 };
 
-/** A timed form's length in minutes, start day to end day; 0 while it does not build. */
-const spanMinutes = (fields: EditorTimeFields, timeZone: string): number => {
-  try {
-    const times = buildEventTimes(fields, timeZone);
-    return Math.max(0, Math.round((times.endUtc - times.startUtc) / 60_000));
-  } catch {
-    return 0;
-  }
-};
+/**
+ * Whether an update of an existing event sends its times. Untouched ones
+ * stay out (`timeFieldsChanged`), so the stored span is kept exactly —
+ * except on a this-and-following split, whose new series starts from the
+ * times sent: the occurrence as the form shows it, moved or not.
+ */
+export const updateSendsTimes = ({
+  changed,
+  isRecurring,
+  scope,
+}: {
+  readonly changed: boolean;
+  readonly isRecurring: boolean;
+  readonly scope: RecurringScope;
+}): boolean => changed || (isRecurring && scope === 'following');
 
 /**
  * Everything the event editors do that isn't JSX: field state, validation,
@@ -831,7 +837,15 @@ export const useEventEditorModel = ({
     const built = buildEventTimes(fields, timeZone);
     // A title-only edit must not rebuild the span: untouched times stay out
     // of an update, and the stored ones are kept as they are.
-    const times = existing && !timeFieldsChanged(fields, openedTimes) ? {} : built;
+    const times =
+      existing &&
+      !updateSendsTimes({
+        changed: timeFieldsChanged(fields, openedTimes),
+        isRecurring,
+        scope,
+      })
+        ? {}
+        : built;
     // Only coordinates the user vouched for reach Google: the event's own
     // (mirrored) ones or a picked suggestion, and only while they match the
     // text being saved. The open-time lookup of free text stays on this
@@ -1042,7 +1056,7 @@ export const useEventEditorModel = ({
     /** The form's span in minutes, for the finder's starting duration (an hour for all-day). */
     durationMinutes: isAllDay
       ? 60
-      : spanMinutes({ date, endDate, endTime, isAllDay, startTime }, timeZone),
+      : draftMinutes({ date, endDate, endTime, isAllDay, startTime }, timeZone),
     endDate,
     endTime,
     error,

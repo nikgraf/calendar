@@ -12,7 +12,7 @@ import {
   type EventReminders,
   type FreeSlot,
   type GeoLocation,
-  minutesBetween,
+  draftMinutes,
   Temporal,
 } from '@calendar/core';
 import { useRef, useState } from 'react';
@@ -727,9 +727,10 @@ export const useDraftThread = ({
         ? state
         : updateDraft(state, state.focused, submitted.item, submitted.extras);
     const target = current.drafts[current.focused];
+    // The draft's whole length: an overnight one ends on the next day.
     const length =
       target?.item.kind === 'event' && !target.item.prefill.isAllDay
-        ? minutesBetween(target.item.prefill.startTime, target.item.prefill.endTime)
+        ? draftMinutes(target.item.prefill, timeZone)
         : 0;
     setBusy(true);
     try {

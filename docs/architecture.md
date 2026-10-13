@@ -675,7 +675,9 @@ details, or Custom), so a calendar can be shared without the details.
   back). A new start date carries the end date along. An update whose
   time fields still read as the form opened them sends no times at all
   (`timeFieldsChanged`): a title edit keeps the stored span to the second
-  and in its own zone. An all-day series keeps its dates on a series or
+  and in its own zone. A this-and-following split always sends them: its
+  new series starts at the times sent, the occurrence as the form shows
+  it, moved or not (`updateSendsTimes`). An all-day series keeps its dates on a series or
   following edit, so a changed end date asks for "This event" like a
   changed start date.
 - Dragging a recurring instance commits an instance-scope override.

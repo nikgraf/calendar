@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vite-plus/test';
 import {
   buildEventTimes,
+  draftMinutes,
   editorDatesOf,
   timeFieldsChanged,
   validateEventDraft,
@@ -95,6 +96,15 @@ describe('eventDraft', () => {
         TZ,
       ),
     ).toEqual({ date: '2026-08-22', endDate: '2026-08-22' });
+  });
+
+  it('measures a draft from its start day to its end day', () => {
+    expect(draftMinutes(timed, TZ)).toBe(90);
+    expect(
+      draftMinutes({ ...timed, endDate: '2026-08-23', endTime: '01:00', startTime: '23:00' }, TZ),
+    ).toBe(120);
+    // Mid-edit fields build nothing: no length rather than a throw.
+    expect(draftMinutes({ ...timed, endDate: '' }, TZ)).toBe(0);
   });
 
   it('tells an untouched form from a changed one', () => {

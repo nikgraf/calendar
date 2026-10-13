@@ -1,6 +1,11 @@
 import { CalendarInfo } from '@calendar/core';
 import { describe, expect, it } from 'vite-plus/test';
-import { editorCapabilities, recurringTimesError, repeatScopeError } from './editorModel.ts';
+import {
+  editorCapabilities,
+  recurringTimesError,
+  repeatScopeError,
+  updateSendsTimes,
+} from './editorModel.ts';
 
 const calendar = (provider: 'apple' | 'google', accessRole: CalendarInfo['accessRole'] = 'owner') =>
   new CalendarInfo({
@@ -145,5 +150,19 @@ describe('repeatScopeError', () => {
     expect(
       repeatScopeError({ dirty: true, isRecurring: false, scope: 'instance' }),
     ).toBeUndefined();
+  });
+});
+
+describe('updateSendsTimes', () => {
+  it('leaves untouched times out of an update', () => {
+    expect(updateSendsTimes({ changed: false, isRecurring: false, scope: 'instance' })).toBe(false);
+    expect(updateSendsTimes({ changed: false, isRecurring: true, scope: 'instance' })).toBe(false);
+    expect(updateSendsTimes({ changed: false, isRecurring: true, scope: 'series' })).toBe(false);
+    expect(updateSendsTimes({ changed: true, isRecurring: true, scope: 'series' })).toBe(true);
+  });
+
+  it('always sends them for a split, which starts the new series at the occurrence as shown', () => {
+    // A moved occurrence would otherwise start the new series at its original slot.
+    expect(updateSendsTimes({ changed: false, isRecurring: true, scope: 'following' })).toBe(true);
   });
 });

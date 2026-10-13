@@ -83,6 +83,16 @@ export const editorDatesOf = (
   return { date, endDate: last < date ? date : last };
 };
 
+/** A timed draft's length in minutes, start day to end day; 0 while it does not build. */
+export const draftMinutes = (fields: EditorTimeFields, timeZone: string): number => {
+  try {
+    const times = buildEventTimes(fields, timeZone);
+    return Math.max(0, Math.round((times.endUtc - times.startUtc) / 60_000));
+  } catch {
+    return 0;
+  }
+};
+
 /**
  * Whether the form's times differ from the ones it opened with. An update
  * whose times did not change leaves them out, so a title-only edit keeps
