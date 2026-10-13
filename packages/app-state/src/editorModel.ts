@@ -47,7 +47,7 @@ import {
   type TaskRecord,
   type Temporal,
 } from '@calendar/core';
-import { useCallback, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { deleteQuestion } from './deleteQuestion.ts';
 import { useAccounts, useBackendMutations, useEventMaster, useLocationGeo } from './hooks.ts';
 import { useOneWrite } from './oneWrite.ts';
@@ -407,14 +407,25 @@ export const useEventEditorModel = ({
   );
   // The time fields as the form opened (`timeFieldsChanged`).
   const [openedTimes] = useState(() => ({ date, endDate, endTime, isAllDay, startTime }));
+  // How many days the end follows the start, as last seen whole: a start
+  // field cleared mid-edit (desktop) still carries the end to the next date.
+  const spanDays = useRef(daysFrom(date, endDate) ?? 0);
   /** A new start day: the end day moves with it, so the event keeps its length. */
   const moveDate = (next: string) => {
-    const span = daysFrom(date, endDate);
-    const moved = span === undefined ? undefined : shiftDate(next, span);
+    const span = daysFrom(date, endDate) ?? spanDays.current;
+    spanDays.current = span;
+    const moved = shiftDate(next, span);
     if (moved !== undefined) {
       setEndDate(moved);
     }
     setDate(next);
+  };
+  const changeEndDate = (next: string) => {
+    const span = daysFrom(date, next);
+    if (span !== undefined) {
+      spanDays.current = span;
+    }
+    setEndDate(next);
   };
   // A stored event, a drawn slot or a parsed phrase chose the time; the
   // clicked hour and the 09:00 fallback are the editor's own defaults.
@@ -620,6 +631,7 @@ export const useEventEditorModel = ({
     setDate(next.date);
     // A task has one day.
     setEndDate(next.date);
+    spanDays.current = 0;
     setStartTime(next.startTime);
     setEndTime(next.endTime);
     setTimeChosen(next.timeChosen);
@@ -651,6 +663,7 @@ export const useEventEditorModel = ({
     setIsAllDay(false);
     setDate(slot.date);
     setEndDate(slot.date);
+    spanDays.current = 0;
     setStartTime(slot.startTime);
     setEndTime(slot.endTime);
     setTimeChosen(true);
@@ -744,6 +757,7 @@ export const useEventEditorModel = ({
     setIsAllDay(next.isAllDay);
     setDate(next.date);
     setEndDate(next.endDate ?? next.date);
+    spanDays.current = daysFrom(next.date, next.endDate ?? next.date) ?? 0;
     setStartTime(next.startTime);
     setEndTime(next.endTime);
     setTimeChosen(true);
@@ -1100,7 +1114,7 @@ export const useEventEditorModel = ({
     setCalendarKey,
     setDate: moveDate,
     setDescription,
-    setEndDate,
+    setEndDate: changeEndDate,
     setEndTime: (time: string) => {
       setEndTime(time);
       setTimeChosen(true);

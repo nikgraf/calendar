@@ -2121,6 +2121,10 @@ describe('an event that ends on a later day', () => {
     await cdp.openEditor('[title^="Conference"]');
     await setField('Date', day(1));
     expect(await fieldValue('End date')).toBe(day(4));
+    // Cleared mid-edit, the start still carries the end to the next date.
+    await setField('Date', '');
+    await setField('Date', day(2));
+    expect(await fieldValue('End date')).toBe(day(5));
     await cdp.clickButtonWithText('Cancel');
   });
 });

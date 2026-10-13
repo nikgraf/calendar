@@ -187,6 +187,22 @@ describe('normalizeRefine', () => {
     expect(refined({}, 'from 6 to 7pm', night).endDate).toBeUndefined();
   });
 
+  it('keeps a spanning draft its whole length when only the start is restated', () => {
+    const night = { ...DINNER, endDate: '2026-08-29', endTime: '01:00', startTime: '23:00' };
+    expect(refined({ startTime: '22:00' }, 'start at 10pm', night)).toMatchObject({
+      date: '2026-08-28',
+      endDate: '2026-08-29',
+      endTime: '00:00',
+      startTime: '22:00',
+    });
+    // A stated range is the whole new time, on one day.
+    expect(refined({}, 'from 8 to 9pm', night)).toMatchObject({
+      endTime: '21:00',
+      startTime: '20:00',
+    });
+    expect(refined({}, 'from 8 to 9pm', night).endDate).toBeUndefined();
+  });
+
   it('shifts both ends of a draft over several days, its whole length kept', () => {
     const long = { ...DINNER, endDate: '2026-08-29', endTime: '10:00', startTime: '09:00' };
     expect(refined({}, '30 minutes later', long)).toMatchObject({
