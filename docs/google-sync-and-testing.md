@@ -740,7 +740,8 @@ beat after the first paint, so an earlier tap lands in the status bar),
 while the sheet is missing, then `expand-editor.yaml`: a new item's
 editor opens at half height, and the subflow taps the sheet's grabber,
 whose value reads "Half screen", up to full), `open-event-editor.yaml`
-(Edit on the detail sheet a tap opens), `switch-view.yaml` (the header's menu, `VIEW`),
+(Edit on the detail sheet a tap opens), `switch-view.yaml` (the header's menu, `VIEW`;
+done once the button reads "View: `VIEW`"),
 `switch-to-task.yaml`, `open-settings.yaml` (waits for `settings-root`),
 `open-settings-page.yaml` (`PAGE`: `device`, `general`, `notifications`,
 `file`, `advanced`, `mirrors`, `unsynced`; rows `settings-row-<page>`, pages
@@ -784,6 +785,14 @@ Selector gotchas (each caused a real failure):
   keyboard before tapping a lower input, and a control clipped by a
   ScrollView edge counts as visible and swallows the tap (centre rows
   first, repeat the tap until its effect shows).
+- A native menu's items join the tree while it is still animating in,
+  and Maestro aims a tap with the hierarchy it fetched before its settle
+  wait: `waitForAnimationToEnd` before tapping an item, then check the
+  item's effect, not the tap (`switch-view.yaml`, run 38400664064). A
+  `while`/`when` condition waits up to 7 s, counted from the last tap or
+  script, for its true outcome (`notVisible:` on an element that is
+  there, `visible:` on one that is not), so keep that outcome off the
+  common path.
 - The Search tab's field is found by its placeholder ("Events and
   tasks"); `hideKeyboard` cannot dismiss it — the field's "Close" ends
   the search. The detail sheet's own "Delete" stays in the tree behind
