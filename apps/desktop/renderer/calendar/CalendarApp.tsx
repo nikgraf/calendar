@@ -194,7 +194,7 @@ function CalendarBody({
   const updatePrefs = useUpdateViewPreferences();
   const sidebarCollapsed = prefs?.sidebarCollapsed ?? false;
   // The Today rail yields on a narrow window (a 1024px laptop window with
-  // the sidebar open leaves the week ~60px a column with it) unless asked
+  // the sidebar open leaves the week ~50px a column with it) unless asked
   // for; the inspector and the editors always get the panel.
   const wide = useMediaQuery('(min-width: 1180px)');
   const [railOpen, setRailOpen] = useState<boolean | null>(null);
@@ -632,9 +632,7 @@ function CalendarBody({
 
         {panel.kind === 'rail' && !railShown ? null : (
           <aside
-            className={`flex shrink-0 flex-col border-l border-hairline bg-surface-subtle ${
-              editing ? 'w-[360px]' : 'w-[300px]'
-            }`}
+            className="flex w-[360px] shrink-0 flex-col border-l border-hairline bg-surface-subtle"
             data-panel-kind={panel.kind}
             data-testid="panel"
             key={panelKey}
