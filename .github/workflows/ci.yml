@@ -320,6 +320,22 @@ jobs:
           echo "$flows"
           # shellcheck disable=SC2086
           maestro test --device "$SIMULATOR_UDID" $flows
+      - name: Copy the app's database
+        # What the app had stored when the shard stopped: when a flow sees
+        # an item vanish, the rows and the pending-op queue say whether
+        # it is gone or the screen was stale (flow 17, run 38432230435,
+        # had only a screenshot to go on). Fixture data only: the fake
+        # Google API and the runner's own Reminders. A failed assertion
+        # leaves the app running and syncing, so it is stopped first, and
+        # the copy goes through SQLite's backup API: a file copy taken
+        # mid-write is not a consistent database. It runs before the
+        # crash-report wait, whose two minutes would let the app sync on.
+        if: failure()
+        run: |
+          data=$(xcrun simctl get_app_container "$SIMULATOR_UDID" com.solunivo.app.dev data) || exit 0
+          xcrun simctl terminate "$SIMULATOR_UDID" com.solunivo.app.dev || true
+          mkdir -p ~/e2e-app-state
+          sqlite3 "$data/Library/calendar.db" ".backup '$HOME/e2e-app-state/calendar.db'" || true
       - name: Wait for a simulator crash report
         # ReportCrash writes the .ips a minute or so after the process
         # dies (74 s on run 34013939965); the upload step ran before it
@@ -344,21 +360,6 @@ jobs:
               "images:", (.usedImages // [] | to_entries[] | "  \(.key) \(.value.name // "?")")
             ' 2>/dev/null || head -c 4000 "$f"
           done
-      - name: Copy the app's database
-        # What the app had stored when the shard stopped: when a flow sees
-        # an item vanish, the rows and the pending-op queue say whether
-        # it is gone or the screen was stale (flow 17, run 38432230435,
-        # had only a screenshot to go on). Fixture data only: the fake
-        # Google API and the runner's own Reminders. A failed assertion
-        # leaves the app running and syncing, so it is stopped first, and
-        # the copy goes through SQLite's backup API: a file copy taken
-        # mid-write is not a consistent database.
-        if: failure()
-        run: |
-          data=$(xcrun simctl get_app_container "$SIMULATOR_UDID" com.solunivo.app.dev data) || exit 0
-          xcrun simctl terminate "$SIMULATOR_UDID" com.solunivo.app.dev || true
-          mkdir -p ~/e2e-app-state
-          sqlite3 "$data/Library/calendar.db" ".backup '$HOME/e2e-app-state/calendar.db'" || true
       - name: Upload Maestro diagnostics
         if: failure()
         uses: actions/upload-artifact@v7
