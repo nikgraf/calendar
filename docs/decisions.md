@@ -71,6 +71,16 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   repacked in, two shards; with the dev client a run took 49 minutes,
   18 before the first flow. The dev client with Metro stays for local
   runs and the live suite.
+- **Dead Maestro driver retried** (2026-10-14) — when the XCTest driver
+  dies mid-run, Maestro fails every later flow in that invocation as
+  unreachable; `run-flows.ts` runs exactly those flows once more in a
+  fresh invocation. Only `DeviceUnreachableException` with the latch in
+  the run log qualifies; any flow failing on its own blocks the retry, so
+  an app race still turns the job red. Rejected: a blanket rerun like
+  desktop's per-spec retry, and Maestro's `retry` command (it retries
+  assertions too and cannot outlive the latch). Simulator prep also turns
+  keyboard predictions off and boots out apsd's log flood. Open: whether
+  that makes the keyboard-queue hang rarer; the shard cap is 60 min.
 - **Test pruning** (2026-10-09, `todo/prune-tests`) — a test goes only
   if a surviving test asserts everything it did; iOS flows are merged per
   area, not dropped, because a launch or a Reminders connect repeated

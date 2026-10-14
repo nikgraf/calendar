@@ -1,0 +1,2 @@
+08:49:01.866 [ERROR] xcuitest.XCTestDriverClient.transportCall: Transport unreachable while processing inputText, latching
+08:49:01.868 [ERROR] device.IOSDevice.runDeviceCall: Device unreachable while processing inputText command

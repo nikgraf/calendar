@@ -1,0 +1,28 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<testsuites>
+  <testsuite name="Test Suite" device="iPhone 17 Pro - iOS 26.5" tests="3" failures="2" time="78.062" timestamp="2026-10-14T08:47:44">
+    <testcase id="The new-event sheet shows the repeat picker, finds a free slot, and turns a typed invitee into a chip" name="The new-event sheet shows the repeat picker, finds a free slot, and turns a typed invitee into a chip" classname="The new-event sheet shows the repeat picker, finds a free slot, and turns a typed invitee into a chip" file="e2e/flows/03-new-event.yaml" time="53.03" timestamp="2026-10-14T08:47:44" status="SUCCESS">
+      <properties>
+        <property name="tags" value="ci"/>
+      </properties>
+    </testcase>
+    <testcase id="Saving a new event writes it to the day" name="Saving a new event writes it to the day" classname="Saving a new event writes it to the day" file="e2e/flows/07-create-event.yaml" time="24.753" timestamp="2026-10-14T08:48:37" status="ERROR">
+      <properties>
+        <property name="tags" value="ci"/>
+      </properties>
+      <failure>maestro.DeviceUnreachableException: Device became unreachable during inputText
+	at maestro.drivers.IOSDriver.runDeviceCall(IOSDriver.kt:643)
+	at maestro.drivers.IOSDriver.inputText$lambda$40(IOSDriver.kt:445)
+	at maestro.utils.Metrics.measured(Metrics.kt:48)</failure>
+    </testcase>
+    <testcase id="Search finds events and tasks, opens them, and drops what is deleted" name="Search finds events and tasks, opens them, and drops what is deleted" classname="Search finds events and tasks, opens them, and drops what is deleted" file="e2e/flows/25-search.yaml" time="0.257" timestamp="2026-10-14T08:49:01" status="ERROR">
+      <properties>
+        <property name="tags" value="ci"/>
+      </properties>
+      <failure>maestro.DeviceUnreachableException: Device became unreachable during inputText
+	at maestro.drivers.IOSDriver.runDeviceCall(IOSDriver.kt:643)
+	at maestro.drivers.IOSDriver.setPermissions$lambda$55(IOSDriver.kt:515)
+	at maestro.utils.Metrics.measured(Metrics.kt:48)</failure>
+    </testcase>
+  </testsuite>
+</testsuites>

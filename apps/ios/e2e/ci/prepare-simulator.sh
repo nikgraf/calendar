@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Boot the newest available iPhone simulator, install the app and
 # pre-grant Reminders, Contacts and Calendars so no prompt appears (simctl
-# privacy is the supported way to answer TCC on a simulator). Exports
-# SIMULATOR_UDID for the Maestro step.
+# privacy is the supported way to answer TCC on a simulator), and quiet the
+# keyboard's predictions and apsd's log flood. Exports SIMULATOR_UDID for
+# the Maestro step.
 #
 #   prepare-simulator.sh boot           start the boot, do not wait for it
 #   prepare-simulator.sh install <app>  wait for the boot, install, grant
@@ -75,6 +76,25 @@ install() {
     # shellcheck disable=SC2086
     xcrun simctl spawn "$UDID" defaults write "$BUNDLE_ID" $pref
   done
+  # No predictions or autocorrect: typed text lands as typed, and the
+  # keyboard skips the candidate work that was starting when the app's main
+  # thread stuck in UIKit's keyboard queue for 90 s (run 38466668240, flow
+  # 07). Checked on a simulator: the prediction bar goes away.
+  for pref in "KeyboardPrediction -bool false" \
+              "KeyboardAutocorrection -bool false" \
+              "KeyboardShowPredictionBar -bool false"; do
+    # shellcheck disable=SC2086
+    xcrun simctl spawn "$UDID" defaults write com.apple.keyboard.preferences $pref
+  done
+  # A runner's simulator cannot activate push ("MobileActivation: Client is
+  # not supported"), so apsd reconnects in a loop: about 200k log lines a
+  # minute, two thirds of everything the simulator logs. Nothing here uses
+  # push (the app drops aps-environment) and local notifications do not go
+  # through apsd. The job stays out until the device reboots.
+  xcrun simctl spawn "$UDID" launchctl bootout user/foreground/com.apple.apsd || true
+  if xcrun simctl spawn "$UDID" launchctl list | grep -q com.apple.apsd; then
+    echo "::warning::apsd is still running on the simulator"
+  fi
 }
 
 case "${1:?boot | install <app>}" in
