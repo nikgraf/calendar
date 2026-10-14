@@ -226,6 +226,38 @@ describe('TaskRepo', () => {
     }).pipe(Effect.provide(freshDbLayer())),
   );
 
+  it.effect('keeps a Google task’s parent and position, and lists subtasks in order', () =>
+    Effect.gen(function* () {
+      const repo = yield* TaskRepo;
+      yield* repo.upsertLists([list()], 100);
+      yield* repo.upsertTasks(
+        [
+          task({ id: 'p1' }),
+          task({ id: 'c2', parentId: 'p1', position: '00000000000000000001', title: 'Two' }),
+          task({ id: 'c1', parentId: 'p1', position: '00000000000000000000', title: 'One' }),
+        ],
+        100,
+      );
+      expect(
+        (yield* repo.listSubtasks('acc-1', 'list-1', 'p1')).map((row) => [row.id, row.position]),
+      ).toEqual([
+        ['c1', '00000000000000000000'],
+        ['c2', '00000000000000000001'],
+      ]);
+      // A temp parent swapped for its server id takes its subtasks along.
+      yield* repo.replaceParent('acc-1', 'p1', 'srv-p1');
+      expect(yield* repo.listSubtasks('acc-1', 'list-1', 'srv-p1')).toHaveLength(2);
+      // A local edit can make a subtask a task of its own.
+      yield* repo.updateLocal({
+        accountId: 'acc-1',
+        changes: { parentId: null },
+        listId: 'list-1',
+        taskId: 'c1',
+      });
+      expect((yield* repo.get('acc-1', 'list-1', 'c1'))?.parentId).toBeUndefined();
+    }).pipe(Effect.provide(freshDbLayer())),
+  );
+
   it.effect('replaceId swaps a temp id and marks the row synced', () =>
     Effect.gen(function* () {
       const repo = yield* TaskRepo;

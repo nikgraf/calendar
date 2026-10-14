@@ -240,7 +240,7 @@ describe('Converting tasks between Google Tasks and Reminders', () => {
     expect(await cdp.locate('[data-testid^="timed-task-"][title^="Pay rent"]')).toBeTruthy();
   });
 
-  it('moves a Google task to another Google list through the queue', async () => {
+  it('moves a Google task to another Google list through the queue, keeping its id', async () => {
     const { cdp } = app;
     await open('all-day-task-task-groceries', 'Edit task');
     await cdp.eval(setSelect(LIST_SELECT, 'acc-e2e:list-errands'));
@@ -249,20 +249,26 @@ describe('Converting tasks between Google Tasks and Reminders', () => {
       .poll(async () => {
         const tasks = await readTasks(app.userDataDir);
         const moved = tasks.find((task) => task.title === 'Buy groceries');
-        return {
-          gone: !tasks.some((task) => task.id === 'task-groceries'),
-          listId: moved?.listId,
-          local: moved?.id.startsWith('local-'),
-        };
+        return { id: moved?.id, listId: moved?.listId };
       })
-      .toEqual({ gone: true, listId: 'list-errands', local: true });
+      .toEqual({ id: 'task-groceries', listId: 'list-errands' });
+    // One server move inside the account (Google's tasks.move), no copy.
     const ops = await readPendingOps(app.userDataDir);
-    expect(ops.some((op) => op.kind === 'createTask' && op.taskTitle === 'Buy groceries')).toBe(
-      true,
-    );
-    expect(ops.some((op) => op.kind === 'deleteTask' && op.eventId === 'task-groceries')).toBe(
-      true,
-    );
+    expect(
+      ops.some(
+        (op) =>
+          op.kind === 'moveTask' &&
+          op.eventId === 'task-groceries' &&
+          op.targetTaskListId === 'list-errands',
+      ),
+    ).toBe(true);
+    expect(
+      ops.some(
+        (op) =>
+          (op.kind === 'createTask' && op.taskTitle === 'Buy groceries') ||
+          (op.kind === 'deleteTask' && op.eventId === 'task-groceries'),
+      ),
+    ).toBe(false);
     expect(await cdp.eval(`!!document.querySelector('[data-testid="move-confirm"]')`)).toBe(false);
   });
 });

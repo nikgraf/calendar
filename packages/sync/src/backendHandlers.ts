@@ -326,24 +326,28 @@ export const commonBackendHandlers: Omit<BackendHandlers<CommonBackendServices>,
       const taskRepo = yield* TaskRepo;
       const ops = yield* pendingOps.listAll();
       // A task op carries no payload: its subject is the title it sets, or
-      // the local row's. Without one the list showed Google's task id.
+      // the local row's — for a queued move, the row already in the target.
+      // Without one the list showed Google's task id.
       const titles = yield* Effect.forEach(ops, (op) =>
         op.payload !== undefined || op.taskTitle !== undefined || op.taskListId === undefined
           ? Effect.succeed(op.payload?.title ?? op.taskTitle)
           : Effect.map(
-              taskRepo.get(op.accountId, op.taskListId, op.eventId),
+              taskRepo.get(op.accountId, op.targetTaskListId ?? op.taskListId, op.eventId),
               (task) => task?.title,
             ),
       );
       // The diff is computed here, not shipped as records: the list is
       // re-read on every drain step, and the UIs only render lines.
       const calendars = yield* (yield* CalendarRepo).list();
+      const taskLists = yield* taskRepo.listLists();
       const timeZone = yield* readPrimaryTimeZone;
       const context = {
         calendarName: (accountId: string, calendarId: string) =>
           calendars.find(
             (calendar) => calendar.accountId === accountId && calendar.id === calendarId,
           )?.summary,
+        taskListName: (accountId: string, taskListId: string) =>
+          taskLists.find((list) => list.accountId === accountId && list.id === taskListId)?.title,
         timeZone,
       };
       return ops.map((op, index) => {
@@ -418,6 +422,12 @@ export const commonBackendHandlers: Omit<BackendHandlers<CommonBackendServices>,
     Effect.gen(function* () {
       const mutations = yield* EventMutations;
       return yield* mutations.previewMove(params);
+    }),
+
+  previewMoveTask: (params) =>
+    Effect.gen(function* () {
+      const mutations = yield* EventMutations;
+      return yield* mutations.previewMoveTask(params);
     }),
 
   previewSettingsImport: ({ document }) => previewSettingsImport(document),
