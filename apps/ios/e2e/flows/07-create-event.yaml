@@ -47,15 +47,25 @@ tags:
       - tapOn:
           id: 'event-notes'
       - inputText: 'Bring the agenda'
-      - repeat:
-          times: 3
-          while:
-            notVisible:
-              id: 'event-notes'
-              text: 'Bring the agenda'
+      # The field proves the typing and a failed wait retypes; the flag
+      # keeps the first pass from typing twice. A `while: notVisible:`
+      # loop would wait up to 7 s for its condition on every exit with the
+      # notes right.
+      - retry:
+          maxRetries: 3
           commands:
-            - eraseText: 40
-            - inputText: 'Bring the agenda'
+            - runFlow:
+                when:
+                  true: ${output.retypeNotes === true}
+                commands:
+                  - eraseText: 40
+                  - inputText: 'Bring the agenda'
+            - evalScript: ${output.retypeNotes = true}
+            - extendedWaitUntil:
+                visible:
+                  id: 'event-notes'
+                  text: 'Bring the agenda'
+                timeout: 3000
       - tapOn:
           id: 'event-save'
       # The sheet closes only after the whole create path ran, id
@@ -86,11 +96,13 @@ tags:
       - extendedWaitUntil:
           notVisible: 'Solunivo e2e event to delete.*'
           timeout: 20000
-# Keyed on the sheet still being open (see 08): after a save the sheet is
-# closed and "no calendar rows" would be true for the wrong reason.
+      - evalScript: ${output.sheetClosed = true}
+# Keyed on the sheet still being open (see 08, also for the flag): after
+# a save the sheet is closed and "no calendar rows" would be true for the
+# wrong reason.
 - runFlow:
     when:
-      visible: 'New Event'
+      true: ${output.sheetClosed !== true}
     commands:
       # No account: leave the sheet as we found it.
       - tapOn: 'Cancel'
