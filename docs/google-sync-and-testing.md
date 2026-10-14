@@ -765,8 +765,9 @@ taps Cancel only on a retry).
 
 Shared subflows (`common/`): `launch.yaml` (every flow starts with it:
 launch, recover the dev client if it fell back to the launcher, wait for
-"Today", `waitForAnimationToEnd` — SafeAreaView applies the top inset a
-beat after the first paint, so an earlier tap lands in the status bar),
+the header's `today` to sit below the status bar's clock — SafeAreaView
+applies the top inset a beat, seconds after a fresh bundle load, after
+the first paint, so an earlier tap lands in the status bar),
 `open-new-event.yaml` (the "+" → the editor on a new event, re-tapping
 while the sheet is missing, then `expand-editor.yaml`: a new item's
 editor opens at half height, and the subflow taps the sheet's grabber,
@@ -782,6 +783,15 @@ tab's system field until `RESULT` shows; a sentence for the search
 thread is typed the same way and sent with `pressKey: Enter`, the
 keyboard's Search key; the chips' × is "Remove <label>"), `confirm-open.yaml` and
 `await-shell.yaml` (the bootstrap flow's URL alert and shell wait).
+
+The subflows keep conditions off their common path the same way (the
+7 s rule is under the selector gotchas): a re-tap is a `retry` block, the
+tap behind a guard that is true while it is still needed (~0.5 s, and a
+sheet that came up late takes no second tap), then an
+`extendedWaitUntil` on its effect. `await-shell.yaml` runs its recovery
+guards only when the shell is not what showed (a script flag), and
+`search-for.yaml` reads the field with `copyTextFrom` (its text is the
+placeholder while it is empty).
 
 Selector gotchas (each caused a real failure):
 

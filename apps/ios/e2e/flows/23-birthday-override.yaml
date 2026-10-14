@@ -11,13 +11,11 @@ tags:
 # A tap on a menu item can report COMPLETED with the menu still open (run
 # 37944409989 sat on the day view behind it): re-pick until the header
 # reads like a month ("October 2026" — two-day and week titles carry day
-# numbers and a comma).
-- repeat:
-    times: 3
-    while:
-      notVisible:
-        id: 'day-title'
-        text: '[A-Z][a-z]+ 20\d\d'
+# numbers and a comma). The header proves the pick, the way
+# common/open-new-event.yaml proves its tap; picking Month on the month
+# view changes nothing.
+- retry:
+    maxRetries: 2
     commands:
       - runFlow:
           file: ../common/switch-view.yaml
@@ -28,7 +26,6 @@ tags:
             id: 'day-title'
             text: '[A-Z][a-z]+ 20\d\d'
           timeout: 5000
-          optional: true
 # The cell's label counts its items ("Friday, October 9, 1 birthday");
 # the People sync lands shortly after launch.
 - extendedWaitUntil:

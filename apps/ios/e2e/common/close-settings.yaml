@@ -3,15 +3,28 @@ name: Close Settings from any of its pages, back on the calendar (shared)
 ---
 # Done sits on the root page only: go back until the root shows (a page
 # under it is off the window, so the root counts as visible only on top).
-- repeat:
-    times: 4
-    while:
-      notVisible:
-        id: 'settings-root'
+#
+# Each Back is proven by the root showing, and a failed wait goes back
+# again (a page two deep, or a lost tap); a `while: notVisible:` loop
+# waited 7 s on its exit, with the root on top (see open-new-event.yaml).
+# The guard is true on a page, where every caller starts, so it answers
+# at once; on the root it skips the tap.
+- retry:
+    maxRetries: 3
     commands:
-      - tapOn:
-          id: 'BackButton'
-      - waitForAnimationToEnd:
+      - runFlow:
+          when:
+            notVisible:
+              id: 'settings-root'
+          commands:
+            - tapOn:
+                id: 'BackButton'
+      - extendedWaitUntil:
+          visible:
+            id: 'settings-root'
           timeout: 3000
+# The root slides back in; a tap taken mid-animation misses.
+- waitForAnimationToEnd:
+    timeout: 3000
 - tapOn: 'Done'
 - assertVisible: 'Today'
