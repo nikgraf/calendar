@@ -23,9 +23,9 @@ export function NoDueDate({ onAdd }: { onAdd: () => void }) {
 }
 
 /**
- * The Due label of a dated task; for a new one, with the way to take the
- * day away again (created undated, an inbox add). Nothing to take away on
- * an existing task, whose stored due day cannot be cleared.
+ * The Due label of a dated task, with the way to take the day away (saved
+ * undated: an inbox add, or back to the inbox) unless the model keeps the
+ * day (a conversion, a read-only reminder).
  */
 export function DueLabel({ onRemove }: { onRemove: (() => void) | undefined }) {
   const sheetStyles = useSheetStyles();

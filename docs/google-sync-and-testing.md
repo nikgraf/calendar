@@ -174,6 +174,9 @@ suite). When touching sync code, treat these as invariants.
   adopt-before-retry protocol.
 - Completing sets `status: 'completed'` (Google also sets `hidden`);
   un-completing must clear `completed` via `status: 'needsAction'`.
+- PATCH `due: null` takes the due day away (verified live 2026-10-13):
+  the response and later reads carry no `due`. The fake Google API
+  clears a null field the same way.
 - A 403 insufficient-scope (grants that predate the tasks scope) disables
   tasks for the account instead of retrying.
 - A write to a task that is gone (verified live): PATCH of a task deleted
@@ -248,7 +251,10 @@ suite). When touching sync code, treat these as invariants.
 - **Due**: `dueDateComponents` with no hour ⇒ all-day (`dueDate` only);
   with hour/minute ⇒ timed (`dueTime` 'HH:MM' in the device zone). The
   bridge keeps `startDateComponents == dueDateComponents`, as the
-  Reminders app does.
+  Reminders app does; `dueDate: null` clears both (the time goes with the
+  day). EventKit refuses a repeating reminder without a due day
+  (`recurringReminderRequiresDueDate`), so `reminderMutations` refuses
+  that pair before the bridge and the fake agrees.
 - **Priority**: EventKit 0…9; the Reminders app shows 1–4 high, 5 medium,
   6–9 low. We keep the buckets and write back 1/5/9/0.
 - **Alarms**: only relative-offset alarms are surfaced (minutes, ≤ 0 =

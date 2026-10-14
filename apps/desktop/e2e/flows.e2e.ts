@@ -1868,6 +1868,45 @@ describe('calendar desktop e2e', () => {
     );
   });
 
+  it('takes a due day away again: the task goes back to "No due date"', async () => {
+    const { cdp } = app;
+    // Opened from its rail row, which keeps its width: with the rail open
+    // at CI's 1024 px a lane chip is narrower than the offset past its
+    // checkbox, and a click there lands beside it.
+    const openFromRail = async () => {
+      await cdp.showRail();
+      await cdp.clickTestId('panel-task-task-undated');
+    };
+    // Dated today by the drag above.
+    await openFromRail();
+    await cdp.waitFor(`!!document.querySelector('[data-testid="task-remove-due-date"]')`);
+    await cdp.clickTestId('task-remove-due-date');
+    await cdp.waitFor(`!!document.querySelector('[data-testid="task-no-due-date"]')`);
+    await cdp.clickButtonWithText('Save');
+    await cdp.waitFor(`!document.querySelector('[data-testid="editor"]')`);
+    await expect
+      .poll(
+        async () =>
+          (await readTasks(app.userDataDir)).find((task) => task.id === 'task-undated')?.dueDate ??
+          null,
+      )
+      .toBeNull();
+    // The queued edit takes the day away on Google (`due: null`), the
+    // earlier rename riding along.
+    const edit = (await readPendingOps(app.userDataDir)).find(
+      (op) => op.kind === 'updateTask' && op.eventId === 'task-undated',
+    );
+    expect(edit && { taskDue: edit.taskDue, taskTitle: edit.taskTitle }).toEqual({
+      taskDue: null,
+      taskTitle: 'Loose end, renamed',
+    });
+    // Reopened, it says so.
+    await openFromRail();
+    await cdp.waitFor(`!!document.querySelector('[data-testid="task-no-due-date"]')`);
+    await cdp.clickButtonWithText('Cancel');
+    await cdp.waitFor(`!document.querySelector('[data-testid="editor"]')`);
+  });
+
   it('leaves a panel row alone when it is released inside the panel', async () => {
     const { cdp } = app;
     const pencils = (await readTasks(app.userDataDir)).find(

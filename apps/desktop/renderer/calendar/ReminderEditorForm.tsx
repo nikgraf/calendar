@@ -147,9 +147,10 @@ export function ReminderEditorForm({
         <p className="text-xs text-ink-secondary">
           This reminder repeats on a schedule Solunivo cannot edit — change it in Reminders.
         </p>
-      ) : (
+      ) : taskModel.dated ? (
+        // Only a reminder with a due day repeats.
         <RepeatRuleFields anchorDate={taskModel.dueDate} state={taskModel} />
-      )}
+      ) : null}
       <label className={LABEL_CLASS}>
         URL
         <input

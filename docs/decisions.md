@@ -533,6 +533,15 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   link finds a home; only a chosen time counts (the editor's default hour
   is neither carried nor asked about); a recurring event converts as its
   whole series; a per-occurrence conversion is a follow-up.
+- **Back to "No due date"** (2026-10-13, #198) — `updateTask` takes
+  `dueDate: null` on both providers and the editor offers "No due date"
+  on existing tasks. A Google op carries `taskDue: null` behind a
+  `task_due_cleared` column (a `''` sentinel in `task_due` rejected).
+  A repeating reminder's rule goes with its day and Repeat hides while
+  undated, as in Reminders.app — rejected: a save error asking to set
+  Repeat to Never first; a rule the form cannot show keeps its day.
+  Relative alerts stay on an undated reminder; moving an undated task
+  to another list still asks for a day (todo.md).
 
 ## Apple Calendar
 

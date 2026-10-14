@@ -58,6 +58,24 @@ const refuseBadByDay = (
     : Effect.fail(new RemindersRequestError({ message: `badRequest: ${invalid}`, method }));
 };
 
+/**
+ * EventKit refuses a repeating reminder without a due day
+ * (`recurringReminderRequiresDueDate`): refused here first, like a bad
+ * by-day set, so the fake agrees and the message says what is wrong.
+ */
+const refuseUndatedRepeat = (
+  method: 'create' | 'update',
+  after: { readonly dated: boolean; readonly repeats: boolean },
+): Effect.Effect<void, RemindersRequestError> =>
+  after.repeats && !after.dated
+    ? Effect.fail(
+        new RemindersRequestError({
+          message: 'badRequest: a repeating reminder needs a due date',
+          method,
+        }),
+      )
+    : Effect.void;
+
 export const makeReminderMutations = (deps: ReminderMutationDeps): TaskMutations => {
   const { accountRepo, remindersClient, taskRepo } = deps;
 
@@ -90,6 +108,10 @@ export const makeReminderMutations = (deps: ReminderMutationDeps): TaskMutations
     createTask: ({ accountId, taskListId, ...fields }) =>
       Effect.gen(function* () {
         yield* refuseBadByDay('create', fields.recurrence);
+        yield* refuseUndatedRepeat('create', {
+          dated: fields.dueDate !== undefined,
+          repeats: fields.recurrence !== undefined,
+        });
         const reminder = yield* remindersClient.create({
           listId: taskListId,
           reminder: toReminderWrite(fields),
@@ -119,6 +141,21 @@ export const makeReminderMutations = (deps: ReminderMutationDeps): TaskMutations
       Effect.gen(function* () {
         const { moveToListId, ...fields } = changes;
         yield* refuseBadByDay('update', fields.recurrence);
+        if (fields.dueDate !== undefined || fields.recurrence !== undefined) {
+          // What the reminder holds after the write: a field it leaves
+          // alone is the mirror's (an unmirrored row is taken as dated).
+          const current = yield* taskRepo.get(accountId, taskListId, taskId);
+          yield* refuseUndatedRepeat('update', {
+            dated:
+              fields.dueDate === undefined
+                ? current === undefined || current.dueDate !== undefined
+                : fields.dueDate !== null,
+            repeats:
+              fields.recurrence === undefined
+                ? current?.recurrence !== undefined || current?.recurrenceUnsupported === true
+                : fields.recurrence !== null,
+          });
+        }
         const reminder = yield* remindersClient.update({
           changes: {
             ...toReminderWrite(fields),

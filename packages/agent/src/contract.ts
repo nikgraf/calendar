@@ -195,7 +195,12 @@ export const UpdateTaskInput = Schema.Struct({
   completed: Schema.optionalKey(
     Schema.Boolean.annotate({ description: 'true completes the task, false reopens it.' }),
   ),
-  dueDate: Schema.optionalKey(IsoDate.annotate({ description: 'New due day, YYYY-MM-DD.' })),
+  dueDate: Schema.optionalKey(
+    Schema.NullOr(IsoDate).annotate({
+      description:
+        'New due day, YYYY-MM-DD; null removes it (and any due time), leaving the task with no due date.',
+    }),
+  ),
   dueTime: Schema.optionalKey(
     Schema.NullOr(ClockTime).annotate({
       description: 'New due time, HH:MM; null removes it. Apple Reminders lists only.',

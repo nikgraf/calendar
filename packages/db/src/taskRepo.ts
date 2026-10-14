@@ -157,7 +157,8 @@ export interface TaskRepoShape {
     readonly accountId: string;
     readonly changes: {
       readonly alarms?: ReadonlyArray<number> | null | undefined;
-      readonly dueDate?: string | undefined;
+      /** null takes the day away (and with it any due time). */
+      readonly dueDate?: string | null | undefined;
       readonly dueTime?: string | null | undefined;
       readonly listId?: string | undefined;
       readonly notes?: string | undefined;
@@ -528,7 +529,10 @@ const makeTaskRepo: Effect.Effect<TaskRepoShape, never, Reactivity | SqlClient> 
               yield* sql`UPDATE tasks SET notes = ${changes.notes}
                 WHERE account_id = ${accountId} AND list_id = ${listId} AND id = ${taskId}`;
             }
-            if (changes.dueDate !== undefined) {
+            if (changes.dueDate === null) {
+              yield* sql`UPDATE tasks SET due_date = NULL, due_time = NULL, due_utc = NULL
+                WHERE account_id = ${accountId} AND list_id = ${listId} AND id = ${taskId}`;
+            } else if (changes.dueDate !== undefined) {
               yield* sql`UPDATE tasks SET due_date = ${changes.dueDate}
                 WHERE account_id = ${accountId} AND list_id = ${listId} AND id = ${taskId}`;
             }
