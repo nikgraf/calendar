@@ -412,6 +412,12 @@ export const commonBackendHandlers: Omit<BackendHandlers<CommonBackendServices>,
       return yield* mutations.moveTask(params);
     }),
 
+  previewDeleteTask: (params) =>
+    Effect.gen(function* () {
+      const mutations = yield* EventMutations;
+      return yield* mutations.previewDeleteTask(params);
+    }),
+
   previewEventToTask: (params) =>
     Effect.gen(function* () {
       const mutations = yield* EventMutations;
@@ -431,6 +437,12 @@ export const commonBackendHandlers: Omit<BackendHandlers<CommonBackendServices>,
     }),
 
   previewSettingsImport: ({ document }) => previewSettingsImport(document),
+
+  previewTaskToEvent: (params) =>
+    Effect.gen(function* () {
+      const mutations = yield* EventMutations;
+      return yield* mutations.previewTaskToEvent(params);
+    }),
 
   removeAccount: ({ accountId }) =>
     Effect.gen(function* () {

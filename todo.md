@@ -14,13 +14,6 @@ except the two below; their entries are in `docs/decisions.md` under
 The 2026-10-02 review's findings are closed in `docs/decisions.md`
 (Review fixes, #110–#142).
 
-- [ ] A delete or a task → event conversion of a Google parent task takes
-      its subtasks with it — Google deletes them with their parent
-      (verified live, `docs/google-sync-and-testing.md`) — and neither the
-      delete question (`deleteQuestion`) nor the conversion preview
-      (`taskToEventLoss`) says so. Count them like `previewMoveTask` does,
-      and carry them along on a conversion or name them in the question.
-
 ## Tier 1 — CI and distribution
 
 - [ ] PR videos (designed, not built) — every PR with a visible change

@@ -7,7 +7,6 @@ import {
   isTaskToEventLossy,
   moveLossSummary,
   taskRecurrenceFromLines,
-  taskToEventLoss,
   taskToEventLossSummary,
   buildRecurrenceRule,
   buildEventTimes,
@@ -260,7 +259,7 @@ export const repeatScopeError = ({
  * where it is, a `convert` (an existing item changes kind on Save) or a
  * `switch` (a new draft changes kind) keeps it as the `subject`, and a
  * `delete` keeps it — its `summary` is the whole question
- * (`deleteQuestion`).
+ * (`deleteQuestion`, `deleteTaskQuestion`).
  */
 export interface EditorConfirmRequest {
   readonly kind: 'convert' | 'delete' | 'move' | 'switch';
@@ -893,7 +892,12 @@ export const useEventEditorModel = ({
         };
         const task = seed.convertFromTask;
         if (task) {
-          const loss = taskToEventLoss(task);
+          // The backend knows the task's subtasks, which its delete takes along.
+          const loss = await mutations.previewTaskToEvent({
+            accountId: task.accountId,
+            taskId: task.id,
+            taskListId: task.listId,
+          });
           const summary = taskToEventLossSummary(loss, 'Converting this task to an event');
           // Ask before writing anything, so "keep it a task" leaves no trace.
           if (

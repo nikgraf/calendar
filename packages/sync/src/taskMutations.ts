@@ -155,6 +155,47 @@ export const makeTaskMutations = (deps: TaskMutationDeps): TaskMutations => {
       return record;
     });
 
+  /** One task's delete: its row goes now, the op follows (none for a task Google never had). */
+  const deleteOne = (accountId: string, taskListId: string, taskId: string) =>
+    Effect.gen(function* () {
+      // The row as deleted — or as it was before the queued edits this
+      // delete replaces — so a discard can put it back.
+      const current = yield* taskRepo.get(accountId, taskListId, taskId);
+      yield* taskRepo.removeTask(accountId, taskListId, taskId);
+      // Everything queued for this task is moot now — and if its create
+      // never pushed, the task never existed upstream: no server op.
+      const queued = yield* opsForEvent(accountId, taskListId, taskId);
+      const beforeTask = current ? acknowledgedTask(queued, current, accountId) : undefined;
+      let unsentCreate = false;
+      for (const queuedOp of queued) {
+        if (queuedOp.accountId !== accountId) {
+          continue;
+        }
+        if (queuedOp.kind === 'createTask') {
+          unsentCreate = true;
+        }
+        yield* pendingOpRepo.remove(queuedOp.id);
+      }
+      if (unsentCreate) {
+        return;
+      }
+      const now = yield* Clock.currentTimeMillis;
+      yield* enqueue(
+        new PendingOp({
+          accountId,
+          attempts: 0,
+          beforeTask,
+          calendarId: taskListId,
+          createdAt: now,
+          eventId: taskId,
+          id: generateEventId(),
+          kind: 'deleteTask',
+          nextAttemptAt: 0,
+          taskListId,
+        }),
+      );
+    });
+
   return {
     completeTask: ({ accountId, status, taskId, taskListId }) =>
       Effect.gen(function* () {
@@ -206,50 +247,14 @@ export const makeTaskMutations = (deps: TaskMutationDeps): TaskMutations => {
 
     deleteTask: ({ accountId, taskId, taskListId }) =>
       Effect.gen(function* () {
-        // The row as deleted — or as it was before the queued edits this
-        // delete replaces — so a discard can put it back.
-        const current = yield* taskRepo.get(accountId, taskListId, taskId);
-        yield* taskRepo.removeTask(accountId, taskListId, taskId);
-        // Everything queued for this task is moot now — and if its create
-        // never pushed, the task never existed upstream: no server op.
-        const queued = yield* opsForEvent(accountId, taskListId, taskId);
-        const beforeTask = current ? acknowledgedTask(queued, current, accountId) : undefined;
-        let unsentCreate = false;
-        for (const queuedOp of queued) {
-          if (queuedOp.accountId !== accountId) {
-            continue;
-          }
-          if (queuedOp.kind === 'createTask') {
-            unsentCreate = true;
-          }
-          yield* pendingOpRepo.remove(queuedOp.id);
+        // Google deletes a parent's subtasks with it. They go first, each a
+        // delete of its own, so the rows and the queue stay in step with
+        // Google and a discard puts each one back. Subtasks a move carried
+        // along under an unsent create wait for it, and go without a trace.
+        for (const subtask of yield* taskRepo.listSubtasks(accountId, taskListId, taskId)) {
+          yield* deleteOne(accountId, taskListId, subtask.id);
         }
-        if (unsentCreate) {
-          // Subtasks a move carried along under it wait for its create,
-          // which will never run now: they go with it, as on Google.
-          for (const subtask of yield* taskRepo.listSubtasks(accountId, taskListId, taskId)) {
-            yield* taskRepo.removeTask(accountId, taskListId, subtask.id);
-            for (const op of yield* opsForEvent(accountId, taskListId, subtask.id)) {
-              yield* pendingOpRepo.remove(op.id);
-            }
-          }
-          return;
-        }
-        const now = yield* Clock.currentTimeMillis;
-        yield* enqueue(
-          new PendingOp({
-            accountId,
-            attempts: 0,
-            beforeTask,
-            calendarId: taskListId,
-            createdAt: now,
-            eventId: taskId,
-            id: generateEventId(),
-            kind: 'deleteTask',
-            nextAttemptAt: 0,
-            taskListId,
-          }),
-        );
+        yield* deleteOne(accountId, taskListId, taskId);
       }),
 
     moveWithinAccount: ({ accountId, targetTaskListId, taskId, taskListId }) =>

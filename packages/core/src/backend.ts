@@ -6,7 +6,7 @@ import {
   BirthdayReminderOverrides,
   BirthdayReminderSettings,
 } from './birthdays/reminders.ts';
-import { EventToTaskPreview } from './editor/convertLoss.ts';
+import { EventToTaskPreview, TaskToEventLoss } from './editor/convertLoss.ts';
 import { MoveLoss } from './editor/moveLoss.ts';
 import { TaskMoveLoss } from './editor/taskMoveLoss.ts';
 import { PlaceSuggestion } from './geo/location.ts';
@@ -219,6 +219,21 @@ export const PreviewMoveTaskParams = Schema.Struct({
 });
 export type PreviewMoveTaskParams = Schema.Schema.Type<typeof PreviewMoveTaskParams>;
 
+/** A task by its address: what the delete and task → event previews need. */
+export const TaskAddressParams = Schema.Struct({
+  accountId: Schema.String,
+  taskId: Schema.String,
+  taskListId: Schema.String,
+});
+export type TaskAddressParams = Schema.Schema.Type<typeof TaskAddressParams>;
+
+/**
+ * What a task delete takes with it: Google deletes a parent's subtasks
+ * together with the parent (Reminders has none).
+ */
+export const TaskDeletePreview = Schema.Struct({ subtasks: Schema.Number });
+export type TaskDeletePreview = Schema.Schema.Type<typeof TaskDeletePreview>;
+
 /**
  * Source event (the master id for a series) and the list the task it
  * becomes goes to. `draft` is what the task form holds on Save: like a
@@ -345,8 +360,8 @@ export class AppBackendRpcs extends RpcGroup.make(
   }),
   /**
    * Turns a task into an event: the event is created from `draft`, then
-   * the task is deleted — check `taskToEventLoss` first and confirm what
-   * that drops.
+   * the task is deleted, its subtasks with it — call `previewTaskToEvent`
+   * first and confirm what that drops.
    */
   Rpc.make('convertTaskToEvent', {
     error: BackendError,
@@ -603,6 +618,18 @@ export class AppBackendRpcs extends RpcGroup.make(
     error: BackendError,
     payload: PreviewMoveTaskParams,
     success: TaskMoveLoss,
+  }),
+  /** What `deleteTask` takes with it: a Google task's subtasks. Ask before deleting. */
+  Rpc.make('previewDeleteTask', {
+    error: BackendError,
+    payload: TaskAddressParams,
+    success: TaskDeletePreview,
+  }),
+  /** What `convertTaskToEvent` would drop, from the stored task — the subtasks its delete takes included. */
+  Rpc.make('previewTaskToEvent', {
+    error: BackendError,
+    payload: TaskAddressParams,
+    success: TaskToEventLoss,
   }),
   Rpc.make('removeAccount', {
     error: BackendError,

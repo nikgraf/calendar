@@ -28,9 +28,11 @@ import {
   type PreviewEventToTaskParams,
   type PreviewMoveTaskParams,
   remainingRecurrence,
+  type TaskAddressParams,
   taskMoveLoss,
   TaskRecord,
   taskRecurrenceFromLines,
+  taskToEventLoss,
   toZonedDateTime,
   type ReminderOverride,
   toRRuleLines,
@@ -772,9 +774,11 @@ const make: Effect.Effect<
     | 'convertTaskToEvent'
     | 'moveEvent'
     | 'moveTask'
+    | 'previewDeleteTask'
     | 'previewEventToTask'
     | 'previewMove'
     | 'previewMoveTask'
+    | 'previewTaskToEvent'
   > = {
     ...taskMutations,
     createEvent: (draft) =>
@@ -1757,22 +1761,11 @@ const make: Effect.Effect<
           }
           return created;
         });
-      const deleteAll = Effect.gen(function* () {
-        // Google would delete the subtasks with their parent; deleting
-        // them first keeps the local rows and the queue in step with it.
-        for (const subtask of subtasks) {
-          yield* deleteTaskFrom(sourceProvider, {
-            accountId,
-            taskId: subtask.id,
-            taskListId,
-          });
-        }
-        yield* deleteTaskFrom(sourceProvider, { accountId, taskId, taskListId });
-      });
+      // The delete takes the subtasks first, as Google would with their parent.
       return yield* crossStore(
         { source: sourceProvider, target: targetProvider },
         createIn(targetProvider),
-        deleteAll,
+        deleteTaskFrom(sourceProvider, { accountId, taskId, taskListId }),
       );
     });
 
@@ -1798,6 +1791,12 @@ const make: Effect.Effect<
         subtasks.length,
       );
     });
+
+  /** Reminders rows never have a parent, so only a Google task counts any. */
+  const previewDeleteTask = ({ accountId, taskId, taskListId }: TaskAddressParams) =>
+    Effect.map(taskRepo.listSubtasks(accountId, taskListId, taskId), (subtasks) => ({
+      subtasks: subtasks.length,
+    }));
 
   // ---- conversions ----
 
@@ -1846,6 +1845,17 @@ const make: Effect.Effect<
         createIn(targetProvider, draft),
         deleteTaskFrom(sourceProvider, { accountId, taskId, taskListId }),
       );
+    });
+
+  /** The stored task decides what is lost; its subtasks go with the delete. */
+  const previewTaskToEvent = ({ accountId, taskId, taskListId }: TaskAddressParams) =>
+    Effect.gen(function* () {
+      const source = yield* taskRepo.get(accountId, taskListId, taskId);
+      if (!source) {
+        return yield* Effect.fail(new TaskNotFoundError({ taskId }));
+      }
+      const subtasks = yield* taskRepo.listSubtasks(accountId, taskListId, taskId);
+      return taskToEventLoss(source, subtasks.length);
     });
 
   const previewEventToTask = (params: PreviewEventToTaskParams) =>
@@ -1899,9 +1909,11 @@ const make: Effect.Effect<
     deleteRecurring: writable(byProvider(apple.deleteRecurring, google.deleteRecurring)),
     moveEvent,
     moveTask,
+    previewDeleteTask,
     previewEventToTask,
     previewMove,
     previewMoveTask,
+    previewTaskToEvent,
     respondToEvent: byProvider(apple.respondToEvent, google.respondToEvent),
     setCalendarColor: byProvider(apple.setCalendarColor, google.setCalendarColor),
     updateEvent: writable(byProvider(apple.updateEvent, google.updateEvent)),

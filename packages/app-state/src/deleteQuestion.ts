@@ -19,3 +19,17 @@ export const deleteQuestion = (title: string, scope?: RecurringScope): string =>
       return `Delete ${name}?`;
   }
 };
+
+/**
+ * A task's delete question: Google deletes a parent's subtasks with it,
+ * so they are named (`subtasks` is the backend's count, `previewDeleteTask`).
+ */
+export const deleteTaskQuestion = (title: string, subtasks: number): string => {
+  if (subtasks === 0) {
+    return deleteQuestion(title);
+  }
+  const name = `“${title.trim()}”`;
+  return subtasks === 1
+    ? `Delete ${name} and its subtask?`
+    : `Delete ${name} and its ${String(subtasks)} subtasks?`;
+};

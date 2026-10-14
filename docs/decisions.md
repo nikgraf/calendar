@@ -502,7 +502,17 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   parent and subtasks Reminders flattens. Rejected: refusing to move a
   task with subtasks, and flattening them on Google. Open (todo.md):
   drawing the hierarchy and reordering; a delete or conversion of a
-  parent does not mention its subtasks yet.
+  parent did not mention its subtasks (since #203 it does, see below).
+- **A parent's delete names its subtasks** (2026-10-14, #203) — Google
+  deletes a parent's subtasks with it, so a Google task delete takes them
+  first, each a delete of its own (a discard puts each back); the delete
+  question counts them (`previewDeleteTask`), as do the task → event
+  preview (`previewTaskToEvent`, now the backend's) and an agent's
+  `delete_task` summary. Rejected for a conversion: carrying them along —
+  an event holds no subtasks, so "along" meant leaving them un-nested (a
+  same-list `tasks.move`, unverified live, a new queue path) or folding
+  them into the description, where they stop being tasks. Open: nothing
+  un-nests a subtask in place (a move to another list does).
 - **Convert events ↔ tasks** (2026-09-28, #93) — the same copy-then-delete
   through a shared `crossStore` ordering. The confirmation asks only when
   a set field has no home on the other side: the end time never counts, a

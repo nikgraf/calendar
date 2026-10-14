@@ -5,6 +5,7 @@ import {
   type App,
   launchApp,
   localIsoDaysAgo,
+  readEvents,
   readPendingOpsCount,
   readTasks,
   type RemindersFixture,
@@ -19,6 +20,8 @@ const isoToday = localIsoDaysAgo(0);
 
 const googleFixture: GoogleFixture = {
   accounts: [{ email: 'e2e@example.com', id: 'acc-e2e', tasksEnabled: true }],
+  // Where a converted task lands.
+  calendars: [{ accessRole: 'owner', id: 'cal-e2e', primary: true, summary: 'Work' }],
   taskLists: [
     { id: 'list-e2e', title: 'My Tasks' },
     { id: 'list-errands', title: 'Errands' },
@@ -49,6 +52,21 @@ const googleFixture: GoogleFixture = {
         title: 'Milk',
         updated: '2026-01-01T00:00:00.000Z',
       },
+      // Parents a delete and a conversion take their subtasks with, as Google does.
+      ...[
+        { id: 'task-trip', title: 'Plan trip' },
+        { id: 'task-passport', parent: 'task-trip', title: 'Renew passport' },
+        { id: 'task-visa', parent: 'task-trip', title: 'Apply for visa' },
+        { id: 'task-party', title: 'Plan party' },
+        { id: 'task-cake', parent: 'task-party', title: 'Order cake' },
+      ].map(({ id, parent, title }, index) => ({
+        due: `${isoToday}T00:00:00.000Z`,
+        id,
+        ...(parent === undefined ? {} : { parent, position: String(index).padStart(20, '0') }),
+        status: 'needsAction' as const,
+        title,
+        updated: '2026-01-01T00:00:00.000Z',
+      })),
     ],
   },
 };
@@ -255,5 +273,52 @@ describe('Converting tasks against the fake Google API', () => {
         };
       })
       .toEqual({ at: 'list-e2e<', pending: 0 });
+  });
+
+  const CONFIRM = `document.querySelector('[data-testid="move-confirm"]')`;
+  const remaining = async (ids: ReadonlyArray<string>) =>
+    (await readTasks(app.userDataDir))
+      .filter((task) => ids.includes(task.id))
+      .map((task) => task.id);
+
+  it('deleting a parent task names its subtasks, then takes them along', async () => {
+    const { cdp } = app;
+    const family = ['task-trip', 'task-passport', 'task-visa'];
+    await open('Plan trip', 'Edit task');
+    await cdp.clickButtonWithText('Delete');
+    const question = await cdp.waitFor<string>(`${CONFIRM}?.textContent ?? ''`);
+    expect(question).toContain('Delete “Plan trip” and its 2 subtasks?');
+    await cdp.confirmDelete();
+    // Gone here at once, and the three deletes pushed.
+    await expect
+      .poll(async () => ({
+        left: await remaining(family),
+        pending: await readPendingOpsCount(app.userDataDir),
+      }))
+      .toEqual({ left: [], pending: 0 });
+    await cdp.waitFor(`!document.querySelector('[title="Renew passport"]')`);
+  });
+
+  it('converting a parent task to an event names its subtask before deleting it', async () => {
+    const { cdp } = app;
+    const family = ['task-party', 'task-cake'];
+    await open('Plan party', 'Edit task');
+    await clickTestId('mode-event');
+    await cdp.waitFor(`document.body.textContent.includes('Convert to event')`);
+    await cdp.clickButtonWithText('Save');
+    const summary = await cdp.waitFor<string>(`${CONFIRM}?.textContent ?? ''`);
+    expect(summary).toContain('Converting this task to an event deletes its subtask.');
+    await cdp.clickButtonWithText('Keep as task');
+    expect(await remaining(family)).toEqual(expect.arrayContaining(family));
+    await cdp.clickButtonWithText('Save');
+    await cdp.waitFor(`!!${CONFIRM}`);
+    await cdp.clickButtonWithText('Convert anyway');
+    await expect
+      .poll(async () => ({
+        event: (await readEvents(app.userDataDir)).some((event) => event.title === 'Plan party'),
+        left: await remaining(family),
+        pending: await readPendingOpsCount(app.userDataDir),
+      }))
+      .toEqual({ event: true, left: [], pending: 0 });
   });
 });

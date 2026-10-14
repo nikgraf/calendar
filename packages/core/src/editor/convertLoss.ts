@@ -142,6 +142,11 @@ export const TaskToEventLoss = Schema.Struct({
   priority: Schema.Boolean,
   /** A repeat rule the app cannot express (it is never carried). */
   recurrence: Schema.Boolean,
+  /**
+   * A Google task's subtasks: the conversion deletes the task, and Google
+   * deletes a parent's subtasks with it. An event cannot hold them.
+   */
+  subtasks: Schema.Number,
 });
 export type TaskToEventLoss = typeof TaskToEventLoss.Type;
 
@@ -152,17 +157,27 @@ export interface TaskConvertSource {
   readonly status?: TaskRecord['status'] | undefined;
 }
 
-export const taskToEventLoss = (source: TaskConvertSource): TaskToEventLoss => ({
+/** `subtasks`: how many subtasks the task has (the backend counts them, see `previewTaskToEvent`). */
+export const taskToEventLoss = (source: TaskConvertSource, subtasks = 0): TaskToEventLoss => ({
   alarmsAfterDue: (source.alarms ?? []).filter((offset) => offset > 0).length,
   completed: source.status === 'completed',
   priority: source.priority !== undefined,
   recurrence: source.recurrenceUnsupported === true,
+  subtasks,
 });
 
 export const isTaskToEventLossy = (loss: TaskToEventLoss): boolean =>
-  loss.alarmsAfterDue > 0 || loss.completed || loss.priority || loss.recurrence;
+  loss.alarmsAfterDue > 0 ||
+  loss.completed ||
+  loss.priority ||
+  loss.recurrence ||
+  loss.subtasks > 0;
 
-/** One sentence for the confirmation, or null when nothing is lost (see eventToTaskLossSummary). */
+/**
+ * One sentence for the confirmation, or null when nothing is lost (see
+ * eventToTaskLossSummary). Deleted subtasks come first: they are the
+ * one loss that takes whole tasks.
+ */
 export const taskToEventLossSummary = (loss: TaskToEventLoss, verb: string): string | null => {
   const items: Array<string> = [];
   if (loss.priority) {
@@ -179,5 +194,14 @@ export const taskToEventLossSummary = (loss: TaskToEventLoss, verb: string): str
   if (loss.completed) {
     items.push('the completed status');
   }
-  return items.length === 0 ? null : `${verb} drops ${joinList(items)}.`;
+  const clauses: Array<string> = [];
+  if (loss.subtasks > 0) {
+    clauses.push(
+      loss.subtasks === 1 ? 'deletes its subtask' : `deletes its ${String(loss.subtasks)} subtasks`,
+    );
+  }
+  if (items.length > 0) {
+    clauses.push(`drops ${joinList(items)}`);
+  }
+  return clauses.length === 0 ? null : `${verb} ${clauses.join(' and ')}.`;
 };

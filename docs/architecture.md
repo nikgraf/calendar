@@ -194,6 +194,9 @@ it whenever a kind is added. Rules that keep the queue correct:
   start. Reminders-only fields (time, priority, url, alarms, recurrence,
   `moveToListId`) on a Google list fail with `UnsupportedForProviderError`.
   `updateTask` cannot clear a stored due day; only a create may be undated.
+  A Google `deleteTask` takes the task's subtasks first, each a delete of
+  its own, since Google deletes them with their parent; `previewDeleteTask`
+  counts them for the editor's question.
 - **Task moves** (`moveTask`, the task twin of `moveEvent`): between two
   Reminders lists EventKit changes the list in place, and so does Google
   inside one account — a `moveTask` op (`tasks.move` with
@@ -240,7 +243,8 @@ it whenever a kind is added. Rules that keep the queue correct:
   field has no home on the other side (`convertLoss.ts`;
   `previewEventToTask` computes the event side from the stored record and
   carries the series' rule, since an occurrence row never has its
-  master's lines).
+  master's lines; `previewTaskToEvent` reads the stored task and counts
+  the subtasks its delete takes).
 - **Task creates are not idempotent**: Google assigns task ids
   server-side, so a `createTask` writes a temp `local-…` row that is
   swapped for the server task on success (`rewriteEventId` renames the

@@ -981,7 +981,7 @@ describe('moveTask across providers', () => {
     }).pipe(noYield, Effect.provide(testLayer(fake.client, goneList)));
   });
 
-  it.effect('a discarded move brings the subtasks back even after their parent was deleted', () => {
+  it.effect('a discarded move sends the deletes of a parent and its subtasks to the source', () => {
     const fake = fakeWith();
     const flaky: GoogleTasksClientShape = {
       ...recordingTasks([]),
@@ -999,10 +999,17 @@ describe('moveTask across providers', () => {
       yield* mutations.deleteTask({ accountId: 'acc-1', taskId: 't1', taskListId: 'list-2' });
       const moveOp = (yield* (yield* PendingOpRepo).listAll()).find((op) => op.kind === 'moveTask');
       yield* mutations.discardPendingOp(moveOp!.id);
-      // The delete goes to the source, where Google takes the subtasks with it.
-      expect(yield* queued).toEqual(['deleteTask acc-1/list-1/t1']);
-      expect(yield* rowAt('acc-1', 'list-1', 's1')).toBeDefined();
-      expect(yield* rowAt('acc-1', 'list-2', 's1')).toBeUndefined();
+      // The deletes go to the source, the subtasks' (which name their
+      // parent) included; nothing comes back in either list.
+      expect(yield* queued).toEqual([
+        'deleteTask acc-1/list-1/s1',
+        'deleteTask acc-1/list-1/s2',
+        'deleteTask acc-1/list-1/t1',
+      ]);
+      for (const listId of ['list-1', 'list-2']) {
+        expect(yield* rowAt('acc-1', listId, 's1')).toBeUndefined();
+        expect(yield* rowAt('acc-1', listId, 't1')).toBeUndefined();
+      }
     }).pipe(noYield, Effect.provide(testLayer(fake.client, flaky)));
   });
 
@@ -1126,5 +1133,65 @@ describe('moveTask across providers', () => {
       expect(fake.state.reminders.has('rem-timed')).toBe(true);
       expect(yield* rowAt(APPLE, 'list-a', 'rem-timed')).toBeDefined();
     }).pipe(noYield, Effect.provide(testLayer(failingDelete, recordingTasks([]))));
+  });
+});
+
+describe('deleting a Google parent task', () => {
+  it.effect('takes its subtasks first, each a delete of its own, as Google does', () => {
+    const fake = fakeWith();
+    const calls: Array<string> = [];
+    return Effect.gen(function* () {
+      yield* seed;
+      yield* withSubtasks;
+      const mutations = yield* EventMutations;
+      yield* mutations.deleteTask({ accountId: 'acc-1', taskId: 't1', taskListId: 'list-1' });
+      for (const id of ['t1', 's1', 's2']) {
+        expect(yield* rowAt('acc-1', 'list-1', id)).toBeUndefined();
+      }
+      expect(yield* queued).toEqual([
+        'deleteTask acc-1/list-1/s1',
+        'deleteTask acc-1/list-1/s2',
+        'deleteTask acc-1/list-1/t1',
+      ]);
+      // A discard puts back what its own delete removed, and only that.
+      const [first] = yield* (yield* PendingOpRepo).listAll();
+      yield* mutations.discardPendingOp(first!.id);
+      expect((yield* rowAt('acc-1', 'list-1', 's1'))?.parentId).toBe('t1');
+      expect(yield* rowAt('acc-1', 'list-1', 't1')).toBeUndefined();
+      yield* mutations.processPendingOps();
+      expect(calls).toEqual(['delete list-1/s2', 'delete list-1/t1']);
+    }).pipe(noYield, Effect.provide(testLayer(fake.client, recordingTasks(calls))));
+  });
+
+  it.effect('the preview counts the subtasks a delete takes: a parent’s, nothing else’s', () => {
+    const fake = fakeWith();
+    return Effect.gen(function* () {
+      yield* seed;
+      yield* withSubtasks;
+      const mutations = yield* EventMutations;
+      const preview = (accountId: string, taskListId: string, taskId: string) =>
+        mutations.previewDeleteTask({ accountId, taskId, taskListId });
+      expect(yield* preview('acc-1', 'list-1', 't1')).toEqual({ subtasks: 2 });
+      expect(yield* preview('acc-1', 'list-1', 's1')).toEqual({ subtasks: 0 });
+      expect(yield* preview(APPLE, 'list-a', 'rem-timed')).toEqual({ subtasks: 0 });
+      // Asking writes nothing.
+      expect(yield* queued).toEqual([]);
+    }).pipe(noYield, Effect.provide(testLayer(fake.client, recordingTasks([]))));
+  });
+
+  it.effect('a subtask alone goes alone; its parent stays', () => {
+    const fake = fakeWith();
+    return Effect.gen(function* () {
+      yield* seed;
+      yield* withSubtasks;
+      yield* (yield* EventMutations).deleteTask({
+        accountId: 'acc-1',
+        taskId: 's1',
+        taskListId: 'list-1',
+      });
+      expect(yield* queued).toEqual(['deleteTask acc-1/list-1/s1']);
+      expect(yield* rowAt('acc-1', 'list-1', 't1')).toBeDefined();
+      expect(yield* rowAt('acc-1', 'list-1', 's2')).toBeDefined();
+    }).pipe(noYield, Effect.provide(testLayer(fake.client, recordingTasks([]))));
   });
 });
