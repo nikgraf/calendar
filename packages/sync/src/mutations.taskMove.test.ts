@@ -1164,6 +1164,31 @@ describe('deleting a Google parent task', () => {
     }).pipe(noYield, Effect.provide(testLayer(fake.client, recordingTasks(calls))));
   });
 
+  it.effect('a subtask delete still retrying is settled when its parent’s delete lands', () => {
+    const fake = fakeWith();
+    const calls: Array<string> = [];
+    const recording = recordingTasks(calls);
+    const flaky: GoogleTasksClientShape = {
+      ...recording,
+      deleteTask: (params) =>
+        params.taskId === 's1'
+          ? Effect.fail(new ApiUnavailableError({ cause: 'try later' }))
+          : recording.deleteTask(params),
+    };
+    return Effect.gen(function* () {
+      yield* seed;
+      yield* withSubtasks;
+      const mutations = yield* EventMutations;
+      yield* mutations.deleteTask({ accountId: 'acc-1', taskId: 't1', taskListId: 'list-1' });
+      yield* mutations.processPendingOps();
+      // Google took s1 with its parent: nothing is left to retry, or to
+      // discard back into a subtask Google no longer has.
+      expect(calls).toEqual(['delete list-1/s2', 'delete list-1/t1']);
+      expect(yield* queued).toEqual([]);
+      expect(yield* rowAt('acc-1', 'list-1', 's1')).toBeUndefined();
+    }).pipe(noYield, Effect.provide(testLayer(fake.client, flaky)));
+  });
+
   it.effect('the preview counts the subtasks a delete takes: a parent’s, nothing else’s', () => {
     const fake = fakeWith();
     return Effect.gen(function* () {
