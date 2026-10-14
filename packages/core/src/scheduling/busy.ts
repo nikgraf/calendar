@@ -13,6 +13,26 @@ export const isDeclinedBySelf = (
   );
 };
 
+/** Shown as "Free" (Google's `transparent`): on the calendar, but it blocks no time. */
+export const isMarkedFree = (event: Pick<EventRecord, 'transparency'>): boolean =>
+  event.transparency === 'transparent';
+
+/**
+ * The one availability rule: what blocks time is timed, not cancelled,
+ * not marked free and not declined. All-day entries mark days rather
+ * than hours. Find-a-time and the agent gateway's free/busy and slot
+ * answers read it; a mirror flags its items with the same two
+ * predicates, and its availability preset skips both.
+ */
+export const blocksTime = (
+  event: Pick<EventRecord, 'attendees' | 'isAllDay' | 'status' | 'transparency'>,
+  accountEmail: string | undefined,
+): boolean =>
+  !event.isAllDay &&
+  event.status !== 'cancelled' &&
+  !isMarkedFree(event) &&
+  !isDeclinedBySelf(event, accountEmail);
+
 /**
  * Busy intervals clipped to a range and merged, so neither which calendar
  * a block came from nor how many events overlap in it can be read back.

@@ -1,5 +1,6 @@
 import {
   addDaysToPlainDate,
+  blocksTime,
   daysBetweenPlainDates,
   type EventRecord,
   findFreeSlots,
@@ -17,7 +18,6 @@ import {
   type CalendarDto,
   type ContactDto,
   type EventDto,
-  isBusy,
   mergeBusy,
   type TaskDto,
   type TaskListDto,
@@ -144,7 +144,7 @@ const busyEvents = (
     const visible = index(calendars);
     return (yield* loadEventsInRange(startUtc, endUtc)).filter((event) => {
       const entry = visible.get(keyOf(event.accountId, event.calendarId));
-      return entry !== undefined && isBusy(event, entry.account?.email);
+      return entry !== undefined && blocksTime(event, entry.account?.email);
     });
   });
 
