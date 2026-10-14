@@ -699,7 +699,9 @@ Electron binary (`electron --version`) and run spec files sequentially.
   `APP_VARIANT=development`. `shard-flows.mjs` splits every `ci` flow by
   position in the sorted file list (a new flow needs no registration);
   shard 1 first runs the permissions flow in its own Maestro invocation,
-  since Maestro ignores `config.yaml` execution order. To reproduce a CI
+  since Maestro ignores `config.yaml` execution order. A failed shard's
+  artifact carries Maestro's reports, any crash report and the app's
+  `calendar.db` as the shard left it (`e2e-app-state/`). To reproduce a CI
   run locally: `eas build:list --build-profile e2e-simulator`,
   `fetch-eas-build.sh <fingerprint> e2e-simulator build/e2e-app`,
   `repack-app.sh`, a fresh simulator, then `maestro test` with the
@@ -743,6 +745,18 @@ the fixture account (`fixture@solunivo.test`, list "Mock Tasks", calendar
 EventKit and remove the account again. Maestro needs a JDK on PATH
 (Apple's `/usr/bin/java` stub is not one; see AGENTS.md).
 
+Those halves and the quick-add outcome branch on a script flag: the
+branch that ran sets `output.…`, and the other one is keyed on it
+(`when: true: ${…}` answers at once). A condition gets up to 7 s to come
+true (see the selector gotchas), so a "sheet still open?" check after a
+save (`visible:` on a sheet that is gone) paid that on every CI run. A
+loop that retypes or dismisses something is a `retry` block instead,
+proven by an `extendedWaitUntil` on its effect (07's notes in their
+field; 20's share sheet and picker, 22's stacked URL alerts gone). Its
+action sits behind a guard that is true at once on the first pass (20:
+the sheet is still up) or a flag that skips it there (07 retypes and 22
+taps Cancel only on a retry).
+
 Shared subflows (`common/`): `launch.yaml` (every flow starts with it:
 launch, recover the dev client if it fell back to the launcher, wait for
 "Today", `waitForAnimationToEnd` — SafeAreaView applies the top inset a
@@ -751,7 +765,8 @@ beat after the first paint, so an earlier tap lands in the status bar),
 while the sheet is missing, then `expand-editor.yaml`: a new item's
 editor opens at half height, and the subflow taps the sheet's grabber,
 whose value reads "Half screen", up to full), `open-event-editor.yaml`
-(Edit on the detail sheet a tap opens), `switch-view.yaml` (the header's menu, `VIEW`),
+(Edit on the detail sheet a tap opens), `switch-view.yaml` (the header's menu, `VIEW`;
+done once the button reads "View: `VIEW`"),
 `switch-to-task.yaml`, `open-settings.yaml` (waits for `settings-root`),
 `open-settings-page.yaml` (`PAGE`: `device`, `general`, `notifications`,
 `file`, `advanced`, `mirrors`, `unsynced`; rows `settings-row-<page>`, pages
@@ -795,6 +810,14 @@ Selector gotchas (each caused a real failure):
   keyboard before tapping a lower input, and a control clipped by a
   ScrollView edge counts as visible and swallows the tap (centre rows
   first, repeat the tap until its effect shows).
+- A native menu's items join the tree while it is still animating in,
+  and Maestro aims a tap with the hierarchy it fetched before its settle
+  wait: `waitForAnimationToEnd` before tapping an item, then check the
+  item's effect, not the tap (`switch-view.yaml`, run 38400664064). A
+  `while`/`when` condition waits up to 7 s, counted from the last tap or
+  script, for its true outcome (`notVisible:` on an element that is
+  there, `visible:` on one that is not), so keep that outcome off the
+  common path.
 - The Search tab's field is found by its placeholder ("Events and
   tasks"); `hideKeyboard` cannot dismiss it — the field's "Close" ends
   the search. The detail sheet's own "Delete" stays in the tree behind
@@ -810,6 +833,26 @@ Selector gotchas (each caused a real failure):
   are `optional` so one slow attempt cannot end the flow early. On
   failure the job prints the simulator's crash report
   (`~/Library/Logs/DiagnosticReports/Solunivo-*.ips`).
+
+Open case — flow 17's Reminders → Google task move vanished once (run
+38432230435, attempt 2, 2026-10-13): the editor closed and the
+date-only chip never drew, while attempt 1 of the same commit showed it
+0.8 s later. The simulator log puts the app's 90 s poll 0.1 s after the
+Move tap, so a pass ran alongside the move and its push. That race did
+not reproduce. In Node, 2,100 replays of the flow's conversions with a
+pass on every step, 700 more through the app-state atoms (300 with
+notifications and mirrors running) and 200 three-launch shard replays
+(flows 08, 12, 17 on one database, a fresh fake per launch, so ids
+restart at `task-1`) all kept the task. On the simulator, 44 runs of
+flow 17 with a pass alongside each move (a 1.5 s poll, or one forced
+200 ms before to 200 ms after it; dev and production bundles; the last
+ten connecting Reminders per run as CI does) drew it every time, and a
+trace of every task-row write showed the temp-id swap landing before
+the reminder left. If it recurs, read the shard's `calendar.db`: a
+Google row "Solunivo e2e convert" whose `updated_at` is the move's time
+means the screen was stale; no row, or one stamped during a later flow
+(a create left queued pushes again on the next launch), means the write
+was lost.
 
 Maestro has no reliable press-hold-drag command, so the flows check
 timed/date-only editor transitions and unit tests cover the shared drag

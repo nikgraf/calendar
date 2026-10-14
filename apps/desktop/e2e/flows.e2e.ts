@@ -1995,6 +1995,140 @@ describe('an event in a read-only calendar', () => {
   });
 });
 
+/** A date's UTC midnight: where an all-day event's instants sit. */
+const utcMidnight = (date: string): number => Date.parse(`${date}T00:00:00Z`);
+
+describe('an event that ends on a later day', () => {
+  // Built in the device's zone, which the editor's fields are wall clock in.
+  const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const today = Temporal.Now.plainDateISO(zone);
+  const localAt = (date: Temporal.PlainDate, hour: number): number =>
+    date.toZonedDateTime({ plainTime: new Temporal.PlainTime(hour), timeZone: zone })
+      .epochMilliseconds;
+  const day = (offset: number): string => today.add({ days: offset }).toString();
+  let spanApp: App;
+
+  beforeAll(async () => {
+    spanApp = await launchApp({
+      ...seed,
+      events: [
+        // Three days from today: Google's end is the day after the last.
+        timedEvent(
+          'evt-conference',
+          'cal-work',
+          'Conference',
+          utcMidnight(day(0)),
+          utcMidnight(day(3)),
+          {
+            endDate: day(3),
+            isAllDay: true,
+            startDate: day(0),
+            startTimeZone: undefined,
+          },
+        ),
+        // Thirty seconds past the minute, as another client may write it: the
+        // form shows minutes, so only leaving untouched times alone keeps them.
+        timedEvent(
+          'evt-night',
+          'cal-work',
+          'Night shift',
+          localAt(today, 22) + 30_000,
+          localAt(today.add({ days: 1 }), 1),
+          {
+            startTimeZone: zone,
+          },
+        ),
+      ],
+    });
+  }, 60_000);
+
+  afterEach(async (context) => {
+    if (context.task.result?.state === 'fail') {
+      await spanApp?.dump(context.task.name);
+    }
+  });
+
+  afterAll(async () => {
+    await spanApp?.stop();
+  });
+
+  const stored = async (id: string) =>
+    (await readEvents(spanApp.userDataDir)).find((event) => event.id === id);
+  const fieldValue = (label: string) =>
+    spanApp.cdp.eval<string>(
+      `document.querySelector('[data-testid="editor"] input[aria-label="${label}"]')?.value ?? ''`,
+    );
+  const setField = (label: string, value: string) =>
+    spanApp.cdp.eval(`(() => {
+      const input = document.querySelector('[data-testid="editor"] input[aria-label="${label}"]')
+        ?? document.querySelector('input[placeholder="${label}"]');
+      const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+      setter.call(input, ${JSON.stringify(value)});
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    })()`);
+
+  it('keeps a multi-day all-day event whole when only its title changes', async () => {
+    const { cdp } = spanApp;
+    await cdp.openEditor('[title^="Conference"]');
+    expect({ end: await fieldValue('End date'), start: await fieldValue('Date') }).toEqual({
+      end: day(2),
+      start: day(0),
+    });
+    await setField('Title', 'Conference (renamed)');
+    await cdp.clickButtonWithText('Save');
+    await expect
+      .poll(async () => {
+        const event = await stored('evt-conference');
+        return { endDate: event?.endDate, startDate: event?.startDate, title: event?.title };
+      })
+      .toEqual({ endDate: day(3), startDate: day(0), title: 'Conference (renamed)' });
+    const op = (await readPendingOps(spanApp.userDataDir)).find(
+      (candidate) => candidate.eventId === 'evt-conference',
+    );
+    expect(op?.payload).toMatchObject({ endDate: day(3), startDate: day(0) });
+  });
+
+  it('saves a title change on an overnight event and keeps its times', async () => {
+    const { cdp } = spanApp;
+    const before = await stored('evt-night');
+    await cdp.openEditor('[title^="Night shift"]');
+    expect({
+      end: await fieldValue('End date'),
+      endTime: await fieldValue('End time'),
+      start: await fieldValue('Date'),
+      startTime: await fieldValue('Start time'),
+    }).toEqual({ end: day(1), endTime: '01:00', start: day(0), startTime: '22:00' });
+    await setField('Title', 'Night shift (renamed)');
+    await cdp.clickButtonWithText('Save');
+    await expect
+      .poll(async () => {
+        const event = await stored('evt-night');
+        return { endUtc: event?.endUtc, startUtc: event?.startUtc, title: event?.title };
+      })
+      .toEqual({
+        endUtc: before?.endUtc,
+        startUtc: before?.startUtc,
+        title: 'Night shift (renamed)',
+      });
+  });
+
+  it('lengthens an all-day event through its end date, and a new start date carries the end along', async () => {
+    const { cdp } = spanApp;
+    await cdp.openEditor('[title^="Conference"]');
+    await setField('End date', day(3));
+    await cdp.clickButtonWithText('Save');
+    await expect.poll(async () => (await stored('evt-conference'))?.endDate).toBe(day(4));
+    await cdp.openEditor('[title^="Conference"]');
+    await setField('Date', day(1));
+    expect(await fieldValue('End date')).toBe(day(4));
+    // Cleared mid-edit, the start still carries the end to the next date.
+    await setField('Date', '');
+    await setField('Date', day(2));
+    expect(await fieldValue('End date')).toBe(day(5));
+    await cdp.clickButtonWithText('Cancel');
+  });
+});
+
 describe('collapsible all-day lane', () => {
   const LANE_ROW = 24;
   const LANE_PADDING = 8;

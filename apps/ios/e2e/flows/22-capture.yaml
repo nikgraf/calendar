@@ -34,12 +34,23 @@ tags:
       visible: 'Open'
     commands:
       - tapOn: 'Open'
-- repeat:
-    times: 5
-    while:
-      visible: 'Open'
+# "Open" gone proves no copy is left, and a failed wait cancels one; the
+# flag keeps the first pass from tapping Cancel. A `while: visible:
+# 'Open'` loop did this before, but Maestro waits up to 7 s (from the
+# last tap) for a condition to come true, so its exit check, with no
+# alert left, cost that every time.
+- retry:
+    maxRetries: 3
     commands:
-      - tapOn: 'Cancel'
+      - runFlow:
+          when:
+            true: ${output.cancelAlert === true}
+          commands:
+            - tapOn: 'Cancel'
+      - evalScript: ${output.cancelAlert = true}
+      - extendedWaitUntil:
+          notVisible: 'Open'
+          timeout: 3000
 - extendedWaitUntil:
     visible:
       id: 'draft-position'
@@ -194,9 +205,12 @@ tags:
             - extendedWaitUntil:
                 notVisible: 'Planning.*'
                 timeout: 20000
+            - evalScript: ${output.sheetClosed = true}
+      # No writable calendar: leave the sheet as we found it (keyed on the
+      # sheet still being open, by a flag, see 08).
       - runFlow:
           when:
-            visible: 'New Event'
+            true: ${output.sheetClosed !== true}
           commands:
             - tapOn: 'Cancel'
             - assertVisible: 'Today'
