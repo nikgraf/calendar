@@ -1,9 +1,9 @@
 import { LABEL_CLASS } from '../ui/fieldStyles.ts';
 
 /**
- * Beside the Due label of a new task: takes the day away, so the task
- * is created undated (an inbox add). Nothing for an existing task, whose
- * stored due day cannot be cleared.
+ * Beside the Due label: takes the day away, so the task is saved undated
+ * (an inbox add, or back to the inbox). Nothing where the model keeps the
+ * day (a conversion, a read-only reminder).
  */
 export function RemoveDueDate({ onRemove }: { onRemove: (() => void) | undefined }) {
   return onRemove ? (

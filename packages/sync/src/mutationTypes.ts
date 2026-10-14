@@ -104,12 +104,13 @@ export class UnsupportedForProviderError extends Data.TaggedError('UnsupportedFo
 }> {}
 
 /**
- * updateTask changes: `undefined` leaves a field alone; `null` clears a
- * Reminders-only field; `moveToListId` moves a reminder to another list.
+ * updateTask changes: `undefined` leaves a field alone; `null` clears it
+ * (the due day on any provider, the rest on Reminders only); `moveToListId`
+ * moves a reminder to another list.
  */
 export interface TaskWriteChanges {
   readonly alarms?: ReadonlyArray<number> | null | undefined;
-  readonly dueDate?: string | undefined;
+  readonly dueDate?: string | null | undefined;
   readonly dueTime?: string | null | undefined;
   readonly moveToListId?: string | undefined;
   readonly notes?: string | undefined;

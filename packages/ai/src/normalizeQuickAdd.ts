@@ -11,6 +11,11 @@ export interface QuickAddPrefill {
    */
   readonly assumedTime?: boolean | undefined;
   readonly date: string;
+  /**
+   * The day it ends on, when not `date`: only the editor's form sets one
+   * (a multi-day or overnight draft); a refinement keeps the span.
+   */
+  readonly endDate?: string | undefined;
   readonly endTime: string;
   readonly isAllDay: boolean;
   readonly location?: string | undefined;

@@ -525,7 +525,13 @@ export class FakeGoogle {
         return reply(404, { error: { message: 'Not Found' } });
       }
       if (request.method === 'PATCH') {
-        const patched: GcalTask = { ...existing.task, ...(body as Partial<GcalTask>), id: taskId };
+        // JSON null clears a field, as on Google (`due`, `completed`).
+        const patched = { ...existing.task, ...(body as Partial<GcalTask>), id: taskId };
+        for (const [key, value] of Object.entries(patched)) {
+          if (value === null) {
+            delete (patched as Record<string, unknown>)[key];
+          }
+        }
         store.set(taskId, { task: patched, updatedAt: this.stamp() });
         return reply(200, wire(store.get(taskId)!));
       }

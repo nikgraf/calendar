@@ -350,6 +350,27 @@ describe('TaskRepo', () => {
       expect(rows[0]?.recurrence).toBeUndefined();
     }).pipe(Effect.provide(freshDbLayer())),
   );
+  it.effect('updateLocal with a null due day takes the day and its time away', () =>
+    Effect.gen(function* () {
+      const repo = yield* TaskRepo;
+      yield* repo.upsertLists([list({ id: 'list-a' })], 1);
+      yield* repo.upsertTasks(
+        [task({ dueDate: '2030-01-02', dueTime: '09:00', id: 't1', listId: 'list-a' })],
+        1,
+      );
+      yield* repo.updateLocal({
+        accountId: 'acc-1',
+        changes: { dueDate: null },
+        listId: 'list-a',
+        taskId: 't1',
+      });
+      const row = yield* repo.get('acc-1', 'list-a', 't1');
+      expect(row && { dueDate: row.dueDate, dueTime: row.dueTime }).toEqual({
+        dueDate: undefined,
+        dueTime: undefined,
+      });
+    }).pipe(Effect.provide(freshDbLayer())),
+  );
   it.effect(
     'replaceMirror: newer wins, stale unseen rows go, fresh unseen rows stay, visibility kept',
     () =>

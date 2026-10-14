@@ -166,6 +166,61 @@ describe('normalizeRefine', () => {
     });
   });
 
+  it('keeps a span of days the form gave the draft, moved with its start', () => {
+    const trip = { ...DINNER, endDate: '2026-08-30', isAllDay: true, title: 'Trip' };
+    expect(refined({ date: '2026-08-27' }, 'Thursday instead', trip)).toMatchObject({
+      date: '2026-08-27',
+      endDate: '2026-08-29',
+      isAllDay: true,
+    });
+    expect(refined({ title: 'Ski trip' }, 'call it ski trip', trip)).toMatchObject({
+      endDate: '2026-08-30',
+    });
+    // An overnight draft keeps its next-day end through a rename.
+    const night = { ...DINNER, endDate: '2026-08-29', endTime: '01:00', startTime: '23:00' };
+    expect(refined({ location: 'Bar' }, 'at the Bar', night)).toMatchObject({
+      endDate: '2026-08-29',
+      endTime: '01:00',
+      startTime: '23:00',
+    });
+    // Restated times read as one day.
+    expect(refined({}, 'from 6 to 7pm', night).endDate).toBeUndefined();
+  });
+
+  it('keeps a spanning draft its whole length when only the start is restated', () => {
+    const night = { ...DINNER, endDate: '2026-08-29', endTime: '01:00', startTime: '23:00' };
+    expect(refined({ startTime: '22:00' }, 'start at 10pm', night)).toMatchObject({
+      date: '2026-08-28',
+      endDate: '2026-08-29',
+      endTime: '00:00',
+      startTime: '22:00',
+    });
+    // A stated range is the whole new time, on one day.
+    expect(refined({}, 'from 8 to 9pm', night)).toMatchObject({
+      endTime: '21:00',
+      startTime: '20:00',
+    });
+    expect(refined({}, 'from 8 to 9pm', night).endDate).toBeUndefined();
+  });
+
+  it('shifts both ends of a draft over several days, its whole length kept', () => {
+    const long = { ...DINNER, endDate: '2026-08-29', endTime: '10:00', startTime: '09:00' };
+    expect(refined({}, '30 minutes later', long)).toMatchObject({
+      date: '2026-08-28',
+      endDate: '2026-08-29',
+      endTime: '10:30',
+      startTime: '09:30',
+    });
+    // Across midnight both ways.
+    const night = { ...DINNER, endDate: '2026-08-29', endTime: '01:00', startTime: '23:00' };
+    expect(refined({}, 'an hour later', night)).toMatchObject({
+      date: '2026-08-29',
+      endTime: '02:00',
+      startTime: '00:00',
+    });
+    expect(refined({}, 'an hour later', night).endDate).toBeUndefined();
+  });
+
   it('rejects a change that cannot be an event', () => {
     expect(
       normalizeRefine({ ...DINNER, title: '  ' }, { draft: DINNER, utterance: 'x', ...CONTEXT }),

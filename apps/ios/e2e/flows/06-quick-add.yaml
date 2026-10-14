@@ -45,11 +45,19 @@ tags:
             text: 'Lunch with Sarah.*'
           timeout: 60000
           optional: true
+      # The read outcome sets a flag the other one is keyed on: Maestro
+      # gives a `when` condition up to 7 s to come true, so `notVisible:`
+      # on the title that is there cost that on every read.
       - runFlow:
           when:
-            notVisible:
+            visible:
               id: 'event-title'
               text: 'Lunch with Sarah.*'
+          commands:
+            - evalScript: ${output.read = true}
+      - runFlow:
+          when:
+            true: ${output.read !== true}
           commands:
             - assertVisible: 'That couldn.t be read.*'
       # The thread, under the fixture model (CI's bundle) — its signal is the

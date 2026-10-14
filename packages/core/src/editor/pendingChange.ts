@@ -198,7 +198,7 @@ const taskLines = (
 const createdTask = (op: PendingOp): TaskRecord =>
   ({
     accountId: op.accountId,
-    dueDate: op.taskDue,
+    dueDate: op.taskDue ?? undefined,
     id: op.eventId,
     listId: op.taskListId ?? op.calendarId,
     notes: op.taskNotes,
@@ -247,7 +247,8 @@ export const pendingOpDiff = (
       return op.beforeTask
         ? taskLines(op.beforeTask, {
             ...op.beforeTask,
-            ...(op.taskDue === undefined ? {} : { dueDate: op.taskDue }),
+            // null: the edit took the day away.
+            ...(op.taskDue === undefined ? {} : { dueDate: op.taskDue ?? undefined }),
             ...(op.taskNotes === undefined ? {} : { notes: op.taskNotes }),
             ...(op.taskTitle === undefined ? {} : { title: op.taskTitle }),
           })

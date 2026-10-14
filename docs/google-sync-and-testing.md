@@ -174,6 +174,9 @@ suite). When touching sync code, treat these as invariants.
   adopt-before-retry protocol.
 - Completing sets `status: 'completed'` (Google also sets `hidden`);
   un-completing must clear `completed` via `status: 'needsAction'`.
+- PATCH `due: null` takes the due day away (verified live 2026-10-13):
+  the response and later reads carry no `due`. The fake Google API
+  clears a null field the same way.
 - A 403 insufficient-scope (grants that predate the tasks scope) disables
   tasks for the account instead of retrying.
 - A write to a task that is gone (verified live): PATCH of a task deleted
@@ -248,7 +251,10 @@ suite). When touching sync code, treat these as invariants.
 - **Due**: `dueDateComponents` with no hour ⇒ all-day (`dueDate` only);
   with hour/minute ⇒ timed (`dueTime` 'HH:MM' in the device zone). The
   bridge keeps `startDateComponents == dueDateComponents`, as the
-  Reminders app does.
+  Reminders app does; `dueDate: null` clears both (the time goes with the
+  day). EventKit refuses a repeating reminder without a due day
+  (`recurringReminderRequiresDueDate`), so `reminderMutations` refuses
+  that pair before the bridge and the fake agrees.
 - **Priority**: EventKit 0…9; the Reminders app shows 1–4 high, 5 medium,
   6–9 low. We keep the buckets and write back 1/5/9/0.
 - **Alarms**: only relative-offset alarms are surfaced (minutes, ≤ 0 =
@@ -711,20 +717,21 @@ Electron binary (`electron --version`) and run spec files sequentially.
   more in a fresh invocation on an erased simulator (`prepare-simulator.sh
   reset $E2E_APP`: the interrupted flow's half-made changes, in the app's
   data or the device's EventKit, would fail its own first check), with a
-  warning annotation and a step-summary
-  line naming the command the driver died on and whether XCTest found the
-  app's main thread busy. A flow that failed on its own (an assertion, an
-  element not found, anything but `DeviceUnreachableException`) fails the
-  job without a retry, even beside a dead driver, and so does a second
-  death. Each attempt's report and logs are in
-  `~/.maestro/tests/<label>-<n>` (`--debug-output`, flattened: otherwise
-  the run's log lands in a hidden folder the artifact upload skips). To
-  reproduce a CI run locally: `eas build:list --build-profile
-  e2e-simulator`, `fetch-eas-build.sh <fingerprint> e2e-simulator
-  build/e2e-app`, `repack-app.sh`, a fresh simulator, then
+  warning annotation and a step-summary line naming the command the driver
+  died on and whether XCTest found the app's main thread busy. A flow that
+  failed on its own (an assertion, an element not found, anything but
+  `DeviceUnreachableException`) fails the job without a retry, even beside
+  a dead driver, and so does a second death. Each attempt's report and
+  logs are in `~/.maestro/tests/<label>-<n>` (`--debug-output`, flattened:
+  otherwise the run's log lands in a hidden folder the artifact upload
+  skips). A failed shard's artifact carries those reports, any crash
+  report and the app's `calendar.db` as the shard left it
+  (`e2e-app-state/`). To reproduce a CI run locally: `eas build:list
+  --build-profile e2e-simulator`, `fetch-eas-build.sh <fingerprint>
+  e2e-simulator build/e2e-app`, `repack-app.sh`, a fresh simulator, then
   `SIMULATOR_UDID=… node e2e/ci/run-flows.ts <label>` with the shard's
   files; killing `maestro-driver-iosUITests-Runner` mid-flow exercises the
-  retry.
+  retry (run 38561991886 proved it on a runner).
 - `package-smoke` (macos-26, PRs only): unsigned `package:app`,
   packaged-contents assertions, `pnpm brand:check`, `solunivo-cli
   --version`.
@@ -764,10 +771,23 @@ the fixture account (`fixture@solunivo.test`, list "Mock Tasks", calendar
 EventKit and remove the account again. Maestro needs a JDK on PATH
 (Apple's `/usr/bin/java` stub is not one; see AGENTS.md).
 
+Those halves and the quick-add outcome branch on a script flag: the
+branch that ran sets `output.…`, and the other one is keyed on it
+(`when: true: ${…}` answers at once). A condition gets up to 7 s to come
+true (see the selector gotchas), so a "sheet still open?" check after a
+save (`visible:` on a sheet that is gone) paid that on every CI run. A
+loop that retypes or dismisses something is a `retry` block instead,
+proven by an `extendedWaitUntil` on its effect (07's notes in their
+field; 20's share sheet and picker, 22's stacked URL alerts gone). Its
+action sits behind a guard that is true at once on the first pass (20:
+the sheet is still up) or a flag that skips it there (07 retypes and 22
+taps Cancel only on a retry).
+
 Shared subflows (`common/`): `launch.yaml` (every flow starts with it:
 launch, recover the dev client if it fell back to the launcher, wait for
-"Today", `waitForAnimationToEnd` — SafeAreaView applies the top inset a
-beat after the first paint, so an earlier tap lands in the status bar),
+the header's `today` to sit below the status bar's clock — SafeAreaView
+applies the top inset a beat, seconds after a fresh bundle load, after
+the first paint, so an earlier tap lands in the status bar),
 `open-new-event.yaml` (the "+" → the editor on a new event, re-tapping
 while the sheet is missing, then `expand-editor.yaml`: a new item's
 editor opens at half height, and the subflow taps the sheet's grabber,
@@ -783,6 +803,15 @@ tab's system field until `RESULT` shows; a sentence for the search
 thread is typed the same way and sent with `pressKey: Enter`, the
 keyboard's Search key; the chips' × is "Remove <label>"), `confirm-open.yaml` and
 `await-shell.yaml` (the bootstrap flow's URL alert and shell wait).
+
+The subflows keep conditions off their common path the same way (the
+7 s rule is under the selector gotchas): a re-tap is a `retry` block, the
+tap behind a guard that is true while it is still needed (~0.5 s, and a
+sheet that came up late takes no second tap), then an
+`extendedWaitUntil` on its effect. `await-shell.yaml` runs its recovery
+guards only when the shell is not what showed (a script flag), and
+`search-for.yaml` reads the field with `copyTextFrom` (its text is the
+placeholder while it is empty).
 
 Selector gotchas (each caused a real failure):
 
@@ -840,6 +869,26 @@ Selector gotchas (each caused a real failure):
   are `optional` so one slow attempt cannot end the flow early. On
   failure the job prints the simulator's crash report
   (`~/Library/Logs/DiagnosticReports/Solunivo-*.ips`).
+
+Open case — flow 17's Reminders → Google task move vanished once (run
+38432230435, attempt 2, 2026-10-13): the editor closed and the
+date-only chip never drew, while attempt 1 of the same commit showed it
+0.8 s later. The simulator log puts the app's 90 s poll 0.1 s after the
+Move tap, so a pass ran alongside the move and its push. That race did
+not reproduce. In Node, 2,100 replays of the flow's conversions with a
+pass on every step, 700 more through the app-state atoms (300 with
+notifications and mirrors running) and 200 three-launch shard replays
+(flows 08, 12, 17 on one database, a fresh fake per launch, so ids
+restart at `task-1`) all kept the task. On the simulator, 44 runs of
+flow 17 with a pass alongside each move (a 1.5 s poll, or one forced
+200 ms before to 200 ms after it; dev and production bundles; the last
+ten connecting Reminders per run as CI does) drew it every time, and a
+trace of every task-row write showed the temp-id swap landing before
+the reminder left. If it recurs, read the shard's `calendar.db`: a
+Google row "Solunivo e2e convert" whose `updated_at` is the move's time
+means the screen was stale; no row, or one stamped during a later flow
+(a create left queued pushes again on the next launch), means the write
+was lost.
 
 Maestro has no reliable press-hold-drag command, so the flows check
 timed/date-only editor transitions and unit tests cover the shared drag

@@ -7,18 +7,25 @@ name: Open the editor on a new event from the "+" button (shared)
 # coordinates and no sheet followed (the screen stayed on the day view,
 # nothing crashed); re-tap while the sheet is missing, the way a person
 # would.
-- repeat:
-    times: 3
-    while:
-      notVisible: 'New Event'
+#
+# The sheet's title proves the tap, and a failed wait retries it. A
+# `while: notVisible: 'New Event'` loop did this before, but Maestro waits
+# up to 7 s (from the last tap) for a condition to come true, so its exit
+# check, with the sheet up, cost that on every call. The guard here is
+# true while no sheet is up, so it answers at once (~0.5 s), and it keeps
+# a sheet that came up late from taking a second tap.
+- retry:
+    maxRetries: 2
     commands:
-      - tapOn:
-          id: 'add'
+      - runFlow:
+          when:
+            notVisible: 'New Event'
+          commands:
+            - tapOn:
+                id: 'add'
       - extendedWaitUntil:
           visible: 'New Event'
           timeout: 5000
-          optional: true
-- assertVisible: 'New Event'
 # The sheet slides in; on a slow runner a tap taken mid-animation misses.
 - waitForAnimationToEnd:
     timeout: 5000

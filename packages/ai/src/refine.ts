@@ -1,4 +1,11 @@
-import { foldSearchText, validateEventDraft } from '@calendar/core';
+import {
+  addDaysToPlainDate,
+  daysBetweenPlainDates,
+  draftMinutes,
+  foldSearchText,
+  Temporal,
+  validateEventDraft,
+} from '@calendar/core';
 import {
   type ClockTime,
   clearsRepeat,
@@ -172,7 +179,7 @@ export const normalizeRefine = (
       : placeOf(place, title);
 
   const modelDate = realDate(parse.date?.trim());
-  const date =
+  let date =
     groundDate(modelDate, { phrase: utterance, referenceDate }) ??
     (modelDate !== undefined && (mentionsDate(utterance) || defersDate(utterance))
       ? modelDate
@@ -184,16 +191,30 @@ export const normalizeRefine = (
   let startTime = draft.startTime;
   let endTime = draft.endTime;
   let assumedTime = draft.assumedTime === true;
+  // Days the form gave a draft that ends on a later day.
+  const spanDays =
+    draft.endDate === undefined ? 0 : daysBetweenPlainDates(draft.date, draft.endDate);
+  // The end day the times below move a spanning draft's end to.
+  let spanEnd: string | undefined;
   if (times !== undefined) {
     isAllDay = false;
     startTime = times.startTime;
-    // A stated range sets both ends; a moved start keeps the length it had.
-    endTime =
-      times.endTime ??
-      plusMinutes(
-        startTime,
-        draft.isAllDay ? 60 : Math.max(minuteOf(draft.endTime) - minuteOf(draft.startTime), 15),
-      );
+    if (times.endTime === undefined && spanDays > 0 && !draft.isAllDay) {
+      // A moved start keeps a draft over several days its whole length.
+      const end = Temporal.PlainDateTime.from(`${date}T${startTime}`).add({
+        minutes: Math.max(draftMinutes(draft, 'UTC'), 15),
+      });
+      endTime = end.toPlainTime().toString({ smallestUnit: 'minute' });
+      spanEnd = end.toPlainDate().toString();
+    } else {
+      // A stated range sets both ends; a moved start keeps the length it had.
+      endTime =
+        times.endTime ??
+        plusMinutes(
+          startTime,
+          draft.isAllDay ? 60 : Math.max(minuteOf(draft.endTime) - minuteOf(draft.startTime), 15),
+        );
+    }
     assumedTime = times.assumed;
   } else if (isAllDayPhrase(utterance)) {
     isAllDay = true;
@@ -202,23 +223,49 @@ export const normalizeRefine = (
     assumedTime = false;
   }
   if (length !== undefined && !isAllDay && times?.endTime === undefined) {
-    if (SHIFT.test(text)) {
+    const by = /\b(?:earlier|fruher)\b/.test(text) ? -length : length;
+    if (SHIFT.test(text) && spanDays > 0 && times === undefined && !draft.isAllDay) {
+      // A draft over several days moves both ends, whole days included.
+      const start = Temporal.PlainDateTime.from(`${date}T${startTime}`).add({ minutes: by });
+      const end = Temporal.PlainDateTime.from(
+        `${addDaysToPlainDate(date, spanDays)}T${endTime}`,
+      ).add({ minutes: by });
+      date = start.toPlainDate().toString();
+      startTime = start.toPlainTime().toString({ smallestUnit: 'minute' });
+      endTime = end.toPlainTime().toString({ smallestUnit: 'minute' });
+      spanEnd = end.toPlainDate().toString();
+    } else if (SHIFT.test(text)) {
       // "30 minutes later": the whole event moves, its length kept.
-      const by = /\b(?:earlier|fruher)\b/.test(text) ? -length : length;
       const shiftedStart = Math.min(Math.max(minuteOf(startTime) + by, 0), MINUTES_IN_DAY - 1);
       endTime = plusMinutes(format(shiftedStart), minuteOf(endTime) - minuteOf(startTime));
       startTime = format(shiftedStart);
     } else {
+      // A stated length sizes the event on its start's day.
       endTime = plusMinutes(startTime, length);
+      spanEnd = undefined;
     }
   }
-  if (!isAllDay && endTime <= startTime) {
+  // A span of days the form gave the draft moves with its start, while
+  // the turn leaves its times and kind alone; restated times or a new
+  // length read as one day.
+  const kept =
+    times === undefined && length === undefined && isAllDay === draft.isAllDay ? spanDays : 0;
+  const endDate =
+    spanEnd !== undefined
+      ? spanEnd === date
+        ? undefined
+        : spanEnd
+      : kept > 0
+        ? addDaysToPlainDate(date, kept)
+        : undefined;
+  if (!isAllDay && endDate === undefined && endTime <= startTime) {
     return { kind: 'rejected', reason: 'That would end after midnight — pick an earlier time.' };
   }
 
   const fields = {
     calendarKey: 'placeholder:placeholder',
     date,
+    endDate,
     endTime,
     isAllDay,
     startTime,
@@ -249,6 +296,7 @@ export const normalizeRefine = (
     prefill: {
       ...(assumedTime ? { assumedTime } : {}),
       date,
+      ...(endDate === undefined ? {} : { endDate }),
       endTime,
       isAllDay,
       ...(location ? { location } : {}),

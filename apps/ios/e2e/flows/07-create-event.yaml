@@ -26,15 +26,27 @@ tags:
       # 37314663224, "Sunivo … deleteol" before): retype until the field
       # (whose value Maestro reads as its text) holds the title, so the
       # checks below test saving rather than typing.
-      - repeat:
-          times: 3
-          while:
-            notVisible:
-              id: 'event-title'
-              text: 'Solunivo e2e event to delete'
+      #
+      # The field proves the typing and a failed wait retypes; the flag
+      # keeps the first pass from typing twice. A `while: notVisible:`
+      # loop did this before, but Maestro waits up to 7 s (from the last
+      # tap or typing) for a condition to come true, so its exit check,
+      # with the title right, cost that every time.
+      - retry:
+          maxRetries: 3
           commands:
-            - tapOn: 'Clear text'
-            - inputText: 'Solunivo e2e event to delete'
+            - runFlow:
+                when:
+                  true: ${output.retypeTitle === true}
+                commands:
+                  - tapOn: 'Clear text'
+                  - inputText: 'Solunivo e2e event to delete'
+            - evalScript: ${output.retypeTitle = true}
+            - extendedWaitUntil:
+                visible:
+                  id: 'event-title'
+                  text: 'Solunivo e2e event to delete'
+                timeout: 3000
       # Notes sit at the bottom of the form. Dismiss the title's keyboard
       # first (a tap on a plain label, see 03), or the text lands in the
       # title.
@@ -47,15 +59,25 @@ tags:
       - tapOn:
           id: 'event-notes'
       - inputText: 'Bring the agenda'
-      - repeat:
-          times: 3
-          while:
-            notVisible:
-              id: 'event-notes'
-              text: 'Bring the agenda'
+      # The field proves the typing and a failed wait retypes; the flag
+      # keeps the first pass from typing twice. A `while: notVisible:`
+      # loop would wait up to 7 s for its condition on every exit with the
+      # notes right.
+      - retry:
+          maxRetries: 3
           commands:
-            - eraseText: 40
-            - inputText: 'Bring the agenda'
+            - runFlow:
+                when:
+                  true: ${output.retypeNotes === true}
+                commands:
+                  - eraseText: 40
+                  - inputText: 'Bring the agenda'
+            - evalScript: ${output.retypeNotes = true}
+            - extendedWaitUntil:
+                visible:
+                  id: 'event-notes'
+                  text: 'Bring the agenda'
+                timeout: 3000
       - tapOn:
           id: 'event-save'
       # The sheet closes only after the whole create path ran, id
@@ -86,11 +108,13 @@ tags:
       - extendedWaitUntil:
           notVisible: 'Solunivo e2e event to delete.*'
           timeout: 20000
-# Keyed on the sheet still being open (see 08): after a save the sheet is
-# closed and "no calendar rows" would be true for the wrong reason.
+      - evalScript: ${output.sheetClosed = true}
+# Keyed on the sheet still being open (see 08, also for the flag): after
+# a save the sheet is closed and "no calendar rows" would be true for the
+# wrong reason.
 - runFlow:
     when:
-      visible: 'New Event'
+      true: ${output.sheetClosed !== true}
     commands:
       # No account: leave the sheet as we found it.
       - tapOn: 'Cancel'

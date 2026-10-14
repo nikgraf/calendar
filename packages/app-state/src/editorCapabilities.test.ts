@@ -1,6 +1,11 @@
 import { CalendarInfo } from '@calendar/core';
 import { describe, expect, it } from 'vite-plus/test';
-import { editorCapabilities, recurringTimesError, repeatScopeError } from './editorModel.ts';
+import {
+  editorCapabilities,
+  recurringTimesError,
+  repeatScopeError,
+  updateSendsTimes,
+} from './editorModel.ts';
 
 const calendar = (provider: 'apple' | 'google', accessRole: CalendarInfo['accessRole'] = 'owner') =>
   new CalendarInfo({
@@ -73,35 +78,56 @@ describe('editorCapabilities', () => {
   });
 });
 
+const dates = (date: string, endDate = date) => ({ date, endDate });
+
 describe('recurringTimesError', () => {
-  const opened = { date: '2026-07-04', isAllDay: true };
+  const opened = { date: '2026-07-04', endDate: '2026-07-04', isAllDay: true };
 
   it('refuses a switch between timed and all-day in any scope', () => {
     for (const scope of ['instance', 'following', 'series'] as const) {
-      expect(recurringTimesError({ date: '2026-07-04', isAllDay: false, opened, scope })).toMatch(
-        /cannot switch/,
-      );
+      expect(
+        recurringTimesError({ ...dates('2026-07-04'), isAllDay: false, opened, scope }),
+      ).toMatch(/cannot switch/);
     }
   });
 
   it('moves an all-day occurrence only on its own', () => {
     expect(
-      recurringTimesError({ date: '2026-07-05', isAllDay: true, opened, scope: 'series' }),
+      recurringTimesError({ ...dates('2026-07-05'), isAllDay: true, opened, scope: 'series' }),
     ).toMatch(/one occurrence at a time/);
     expect(
-      recurringTimesError({ date: '2026-07-05', isAllDay: true, opened, scope: 'instance' }),
+      recurringTimesError({ ...dates('2026-07-05'), isAllDay: true, opened, scope: 'instance' }),
     ).toBeUndefined();
     expect(
-      recurringTimesError({ date: '2026-07-04', isAllDay: true, opened, scope: 'series' }),
+      recurringTimesError({ ...dates('2026-07-04'), isAllDay: true, opened, scope: 'series' }),
+    ).toBeUndefined();
+  });
+
+  it('changes an all-day occurrence’s last day only on its own', () => {
+    expect(
+      recurringTimesError({
+        ...dates('2026-07-04', '2026-07-06'),
+        isAllDay: true,
+        opened,
+        scope: 'following',
+      }),
+    ).toMatch(/one occurrence at a time/);
+    expect(
+      recurringTimesError({
+        ...dates('2026-07-04', '2026-07-06'),
+        isAllDay: true,
+        opened,
+        scope: 'instance',
+      }),
     ).toBeUndefined();
   });
 
   it('lets a timed series move by its wall-clock delta', () => {
     expect(
       recurringTimesError({
-        date: '2026-07-05',
+        ...dates('2026-07-05', '2026-07-06'),
         isAllDay: false,
-        opened: { date: '2026-07-04', isAllDay: false },
+        opened: { date: '2026-07-04', endDate: '2026-07-04', isAllDay: false },
         scope: 'series',
       }),
     ).toBeUndefined();
@@ -124,5 +150,19 @@ describe('repeatScopeError', () => {
     expect(
       repeatScopeError({ dirty: true, isRecurring: false, scope: 'instance' }),
     ).toBeUndefined();
+  });
+});
+
+describe('updateSendsTimes', () => {
+  it('leaves untouched times out of an update', () => {
+    expect(updateSendsTimes({ changed: false, isRecurring: false, scope: 'instance' })).toBe(false);
+    expect(updateSendsTimes({ changed: false, isRecurring: true, scope: 'instance' })).toBe(false);
+    expect(updateSendsTimes({ changed: false, isRecurring: true, scope: 'series' })).toBe(false);
+    expect(updateSendsTimes({ changed: true, isRecurring: true, scope: 'series' })).toBe(true);
+  });
+
+  it('always sends them for a split, which starts the new series at the occurrence as shown', () => {
+    // A moved occurrence would otherwise start the new series at its original slot.
+    expect(updateSendsTimes({ changed: false, isRecurring: true, scope: 'following' })).toBe(true);
   });
 });

@@ -40,9 +40,11 @@ tags:
       - extendedWaitUntil:
           notVisible: 'Solunivo e2e all-day to delete'
           timeout: 20000
+      - evalScript: ${output.sheetClosed = true}
+# Keyed on the sheet still being open, by a flag (see 08).
 - runFlow:
     when:
-      visible: 'New Event'
+      true: ${output.sheetClosed !== true}
     commands:
       # No account: leave the sheet as we found it.
       - tapOn: 'Cancel'

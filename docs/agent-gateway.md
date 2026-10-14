@@ -45,7 +45,8 @@ enforces everything itself and is the **only** entry for agents.
 `list_calendars`, `list_task_lists`, `list_events`, `get_free_busy`,
 `find_free_slots`, `create_event`, `update_event`, `delete_event`,
 `respond_to_event`, `list_tasks`, `create_task`, `update_task` (includes
-complete/reopen), `delete_task`, `search_contacts`, `get_request`.
+complete/reopen; `dueDate: null` leaves the task with no due date),
+`delete_task`, `search_contacts`, `get_request`.
 
 Deliberately absent: moving items between calendars or lists,
 conversions, accounts, settings, conflicts, the pending-op queue.

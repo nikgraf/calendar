@@ -93,6 +93,21 @@ describe('describeDraftItem', () => {
       }),
     ).toBe('Tue, Aug 25 · 09:30');
   });
+
+  it('names both days of a draft that ends on a later one', () => {
+    expect(
+      describeDraftItem({
+        kind: 'event',
+        prefill: { ...dinner.prefill, endDate: '2026-08-30', isAllDay: true },
+      }),
+    ).toBe('Fri, Aug 28 – Sun, Aug 30');
+    expect(
+      describeDraftItem({
+        kind: 'event',
+        prefill: { ...dinner.prefill, endDate: '2026-08-29', endTime: '01:00', startTime: '23:00' },
+      }),
+    ).toBe('Fri, Aug 28 · 23:00 – Sat, Aug 29 · 01:00');
+  });
 });
 
 describe('summarizeChange', () => {
@@ -140,6 +155,13 @@ describe('changedDraftFields', () => {
   it('names the fields that differ, for the form to flash', () => {
     expect(changedDraftFields(dinner, dinner)).toEqual([]);
     expect(changedDraftFields(dinner, later)).toEqual(['time']);
+    // A new last day is a date change.
+    expect(
+      changedDraftFields(dinner, {
+        kind: 'event',
+        prefill: { ...dinner.prefill, endDate: '2026-08-29' },
+      }),
+    ).toEqual(['date']);
     expect(
       changedDraftFields(dinner, {
         kind: 'event',
@@ -442,6 +464,24 @@ describe('itemAtSlot, slotItem and isAtSlot', () => {
       },
     });
     expect(itemAtSlot(dinner, slot, 'Focus').prefill.title).toBe('Dinner with Teo');
+  });
+
+  it('ends a draft that spanned days on the slot’s day', () => {
+    const spanning: QuickAddItem = {
+      kind: 'event',
+      prefill: { ...dinner.prefill, endDate: '2026-08-29' },
+    };
+    const moved = itemAtSlot(spanning, slot);
+    if (moved.kind !== 'event') {
+      throw new Error('expected an event');
+    }
+    expect(moved.prefill.endDate).toBeUndefined();
+    expect(isAtSlot(moved, slot)).toBe(true);
+    const overnight: QuickAddItem = {
+      kind: 'event',
+      prefill: { ...moved.prefill, endDate: '2026-09-02' },
+    };
+    expect(isAtSlot(overnight, slot)).toBe(false);
   });
 
   it('makes a to-do due at the slot’s start', () => {

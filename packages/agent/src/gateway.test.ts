@@ -533,6 +533,26 @@ describe('writes', () => {
         yield* (yield* TaskRepo).get(APPLE_REMINDERS_ACCOUNT_ID, 'list-a', 'rem-a'),
       ).toMatchObject({ status: 'completed' });
 
+      // A due day taken away: the task goes back to "No due date".
+      yield* callTool(agent, 'update_task', {
+        dueDate: null,
+        ref: refs.task('tl-1', 'gtask-1', ACCOUNT),
+      });
+      expect((yield* (yield* TaskRepo).get(ACCOUNT, 'tl-1', 'gtask-1'))?.dueDate).toBeUndefined();
+      expect((yield* (yield* PendingOpRepo).listAll()).map((op) => op.taskDue)).toEqual([null]);
+      expect((yield* activity).map((row) => row.summary.lines)).toContainEqual(
+        expect.arrayContaining([`Due: ${baseDate} → (none)`]),
+      );
+      expect(
+        yield* failureOf(
+          callTool(agent, 'update_task', {
+            dueDate: null,
+            dueTime: '09:00',
+            ref: refs.task('list-a', 'rem-a'),
+          }),
+        ),
+      ).toMatchObject({ _tag: 'InvalidInput' });
+
       // A list Reminders keeps read-only is not writable under any grant.
       expect(
         yield* failureOf(
