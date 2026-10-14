@@ -10,7 +10,6 @@ import {
   FINDER_DURATIONS,
   FINDER_WINDOWS,
   formatSlotLabel,
-  minutesBetween,
 } from '@calendar/core';
 import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { backendClient } from '../backend.ts';
@@ -34,7 +33,7 @@ export function FindTimeFields({ model }: { model: ReturnType<typeof useEventEdi
   const finder = useFindTimeModel({
     backend: backendClient,
     contextKey: `${scope}:${model.masterSeries?.startUtc ?? ''}:${model.masterSeries?.recurrence?.join('|') ?? ''}`,
-    durationMinutes: model.isAllDay ? 60 : minutesBetween(model.startTime, model.endTime),
+    durationMinutes: model.durationMinutes,
     // What the save will move or drop is not in its own way.
     excludeEvent: rescheduledEventExclusion(existing, scope, model.masterSeries),
     model: languageModel,

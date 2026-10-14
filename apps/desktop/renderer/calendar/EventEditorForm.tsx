@@ -58,6 +58,7 @@ export function EventEditorForm({
     canSwitchAllDay,
     date,
     description,
+    endDate,
     endTime,
     error,
     existing,
@@ -73,6 +74,7 @@ export function EventEditorForm({
     setCalendarKey,
     setDate,
     setDescription,
+    setEndDate,
     setEndTime,
     setIsAllDay,
     setScope,
@@ -88,12 +90,13 @@ export function EventEditorForm({
   const titleFlash = useFieldFlash<HTMLInputElement>('title');
   const allDayFlash = useFieldFlash<HTMLLabelElement>(isAllDay ? 'time' : null);
   const dateFlash = useFieldFlash<HTMLInputElement>('date');
+  const endDateFlash = useFieldFlash<HTMLInputElement>('date');
   const startFlash = useFieldFlash<HTMLInputElement>('time');
   const endFlash = useFieldFlash<HTMLInputElement>('time');
   const hasGuests = (existing?.attendees ?? []).length > 0;
   // The draft's times in the other zones; null for all-day or before the times build.
   const zoneLines = draftZoneRanges(
-    { date, endTime, isAllDay, startTime },
+    { date, endDate, endTime, isAllDay, startTime },
     model.timeZone,
     secondaryZones,
   );
@@ -171,38 +174,46 @@ export function EventEditorForm({
           />
           All-day
         </label>
-        {/* The date gets its own line: beside both times it ran the end time past the panel's edge. */}
-        <div className="flex flex-col gap-2">
+        {/* Start and end each get a line, a date and a time: a multi-day or overnight
+            event ends on a later day, and all three fields on one line ran past the panel's edge. */}
+        <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2">
+          <span className="text-sm text-ink-secondary">Starts</span>
           <input
             aria-label="Date"
-            className={field}
+            className={`${field} min-w-0 ${isAllDay ? 'col-span-2' : ''}`}
             onChange={(changeEvent) => setDate(changeEvent.target.value)}
             ref={dateFlash}
             type="date"
             value={date}
           />
           {isAllDay ? null : (
-            <div className="flex items-center gap-2">
-              <input
-                aria-label="Start time"
-                className={`${field} min-w-0`}
-                onChange={(changeEvent) => setStartTime(changeEvent.target.value)}
-                ref={startFlash}
-                type="time"
-                value={startTime}
-              />
-              <span aria-hidden className="text-sm text-ink-secondary">
-                –
-              </span>
-              <input
-                aria-label="End time"
-                className={`${field} min-w-0`}
-                onChange={(changeEvent) => setEndTime(changeEvent.target.value)}
-                ref={endFlash}
-                type="time"
-                value={endTime}
-              />
-            </div>
+            <input
+              aria-label="Start time"
+              className={`${field} min-w-0`}
+              onChange={(changeEvent) => setStartTime(changeEvent.target.value)}
+              ref={startFlash}
+              type="time"
+              value={startTime}
+            />
+          )}
+          <span className="text-sm text-ink-secondary">Ends</span>
+          <input
+            aria-label="End date"
+            className={`${field} min-w-0 ${isAllDay ? 'col-span-2' : ''}`}
+            onChange={(changeEvent) => setEndDate(changeEvent.target.value)}
+            ref={endDateFlash}
+            type="date"
+            value={endDate}
+          />
+          {isAllDay ? null : (
+            <input
+              aria-label="End time"
+              className={`${field} min-w-0`}
+              onChange={(changeEvent) => setEndTime(changeEvent.target.value)}
+              ref={endFlash}
+              type="time"
+              value={endTime}
+            />
           )}
         </div>
         {assumedTime && !isAllDay ? (

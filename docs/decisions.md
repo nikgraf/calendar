@@ -200,6 +200,13 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
 
 ## Calendar: editing, gestures, views
 
+- **Editing keeps an event's span** (2026-10-13, #200) — the event form
+  has an end date (Starts/Ends rows, both apps) and an update leaves
+  untouched times out, so a title edit no longer cut a multi-day all-day
+  event to one day or refused an overnight one; a this-and-following
+  split still sends the times shown. Rejected: inferring the end day
+  from the times alone, which cannot say how many days an all-day event
+  spans.
 - **Drag to move and resize** — pointer drag on desktop, long-press pan
   plus a resize handle on iOS, shared snap math in core; gestures track
   input 1:1 and snap on release — Nik rejected discrete-step snapping
