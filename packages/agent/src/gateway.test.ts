@@ -1,4 +1,4 @@
-import { APPLE_CALENDAR_ACCOUNT_ID, APPLE_REMINDERS_ACCOUNT_ID } from '@calendar/core';
+import { APPLE_CALENDAR_ACCOUNT_ID, APPLE_REMINDERS_ACCOUNT_ID, TaskRecord } from '@calendar/core';
 import { EventRepo, PendingOpRepo, TaskRepo } from '@calendar/db';
 import { expect, it } from '@effect/vitest';
 import { Effect, Fiber } from 'effect';
@@ -563,6 +563,46 @@ describe('writes', () => {
           }),
         ),
       ).toMatchObject({ _tag: 'PermissionDenied', reason: 'readOnly' });
+    }).pipe(Effect.provide(world.layer));
+  });
+
+  it.effect('a Google parent task is deleted with its subtasks, and the summary says so', () => {
+    const world = makeWorld();
+    return Effect.gen(function* () {
+      const tasks = yield* TaskRepo;
+      yield* tasks.upsertTasks(
+        ['Receipts', 'Mileage'].map(
+          (title, index) =>
+            new TaskRecord({
+              accountId: ACCOUNT,
+              id: `gsub-${String(index)}`,
+              listId: 'tl-1',
+              parentId: 'gtask-1',
+              position: String(index).padStart(20, '0'),
+              provider: 'google',
+              status: 'needsAction',
+              title,
+              updatedAt: 1,
+            }),
+        ),
+        1,
+      );
+      yield* callTool(writer(), 'delete_task', { ref: refs.task('tl-1', 'gtask-1', ACCOUNT) });
+      expect((yield* activity).map((row) => row.summary)).toContainEqual({
+        lines: [
+          'List: My Tasks (me@example.com)',
+          `Due: ${baseDate}`,
+          'Also deletes its 2 subtasks',
+        ],
+        title: 'Delete task “File expenses”',
+      });
+      expect(yield* tasks.listSubtasks(ACCOUNT, 'tl-1', 'gtask-1')).toEqual([]);
+      const ops = yield* (yield* PendingOpRepo).listAll();
+      expect(ops.map((op) => [op.kind, op.eventId])).toEqual([
+        ['deleteTask', 'gsub-0'],
+        ['deleteTask', 'gsub-1'],
+        ['deleteTask', 'gtask-1'],
+      ]);
     }).pipe(Effect.provide(world.layer));
   });
 });

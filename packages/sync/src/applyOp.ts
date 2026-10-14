@@ -583,6 +583,26 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
       }
     });
 
+  /**
+   * A parent's delete landed, or found it gone: Google deleted its subtasks
+   * with it, so their own deletes — one still waiting on a retry — are
+   * settled too, and none is left to discard back into a task Google no
+   * longer has.
+   */
+  const retireSubtaskDeletes = (op: PendingOp) =>
+    Effect.gen(function* () {
+      for (const queued of yield* pendingOpRepo.listAll()) {
+        if (
+          queued.kind === 'deleteTask' &&
+          queued.accountId === op.accountId &&
+          queued.calendarId === op.calendarId &&
+          queued.beforeTask?.parentId === op.eventId
+        ) {
+          yield* pendingOpRepo.remove(queued.id);
+        }
+      }
+    });
+
   /** An abandoned task delete: the row comes back unless a pull already put it back. */
   const revertTaskDelete = (op: PendingOp, listId: string, before: TaskRecord) =>
     Effect.gen(function* () {
@@ -768,6 +788,9 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
       if (TASK_KINDS.has(op.kind)) {
         if (op.taskListId) {
           yield* taskRepo.removeTask(op.accountId, op.taskListId, op.eventId);
+        }
+        if (op.kind === 'deleteTask') {
+          yield* retireSubtaskDeletes(op);
         }
       } else if (op.kind === 'move') {
         // 404 is the event *or the destination calendar* — put the
@@ -1253,6 +1276,7 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
             taskId: op.eventId,
             taskListId: op.taskListId,
           });
+          yield* retireSubtaskDeletes(op);
           return 'done' as const;
         }
         case 'move': {

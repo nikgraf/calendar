@@ -1,4 +1,5 @@
 import { isTaskListWritable } from '@calendar/core';
+import { TaskRepo } from '@calendar/db';
 import { EventMutations, type TaskWriteChanges } from '@calendar/sync';
 import { Effect } from 'effect';
 import type { ToolInput } from '../contract.ts';
@@ -179,6 +180,12 @@ export const planDeleteTask = (
   Effect.gen(function* () {
     const { granted, ref, task } = yield* resolveTask(directory, input.ref);
     const { list } = granted;
+    // Google deletes a parent's subtasks with it: the summary says so.
+    const subtasks = (yield* (yield* TaskRepo).listSubtasks(
+      ref.accountId,
+      ref.taskListId,
+      ref.taskId,
+    )).length;
     const plan: WritePlan<EventMutations> = {
       decision: decideWrite({
         guests: policy.guests,
@@ -197,6 +204,10 @@ export const planDeleteTask = (
       summary: summarize(titled('Delete', 'task', task.title), [
         listLine(list.title, directory.accountLabel(list.accountId)),
         task.dueDate !== undefined && dueLine(task.dueDate, task.dueTime),
+        subtasks > 0 &&
+          (subtasks === 1
+            ? 'Also deletes its subtask'
+            : `Also deletes its ${String(subtasks)} subtasks`),
       ]),
       what: 'Task',
     };

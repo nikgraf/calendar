@@ -18,7 +18,7 @@ import {
   type TodoKind,
 } from '@calendar/core';
 import { useState } from 'react';
-import { deleteQuestion } from './deleteQuestion.ts';
+import { deleteTaskQuestion } from './deleteQuestion.ts';
 import type { EditorConfirmRequest } from './editorModel.ts';
 import { useBackendMutations, useTaskReadOnlyLookup } from './hooks.ts';
 import { useOneWrite } from './oneWrite.ts';
@@ -475,17 +475,24 @@ export const useTaskEditorModel = ({
     if (!existing || readOnly) {
       return;
     }
-    if (
-      !(await confirm({ kind: 'delete', subject: 'task', summary: deleteQuestion(existing.title) }))
-    ) {
-      return;
-    }
+    const address = {
+      accountId: existing.accountId,
+      taskId: existing.id,
+      taskListId: existing.listId,
+    };
     try {
-      await mutations.deleteTask({
-        accountId: existing.accountId,
-        taskId: existing.id,
-        taskListId: existing.listId,
-      });
+      // The backend knows the task's subtasks, which go with it.
+      const { subtasks } = await mutations.previewDeleteTask(address);
+      if (
+        !(await confirm({
+          kind: 'delete',
+          subject: 'task',
+          summary: deleteTaskQuestion(existing.title, subtasks),
+        }))
+      ) {
+        return;
+      }
+      await mutations.deleteTask(address);
       onClose();
     } catch (error) {
       setError(String(error));

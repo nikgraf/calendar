@@ -99,11 +99,13 @@ const makeStubClient = () => {
       }),
     moveEvent: () => fail('not stubbed'),
     moveTask: () => fail('not stubbed'),
+    previewDeleteTask: () => fail('not stubbed'),
     previewEventToTask: () => fail('not stubbed'),
     previewMirror: () => fail('not stubbed'),
     previewMove: () => fail('not stubbed'),
     previewMoveTask: () => fail('not stubbed'),
     previewSettingsImport: () => fail('not stubbed'),
+    previewTaskToEvent: () => fail('not stubbed'),
     removeAccount: () => Effect.void,
     resolveConflict: () => Effect.void,
     resolveLocation: ({ location }) =>

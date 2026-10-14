@@ -134,12 +134,14 @@ const MUTATION_REACTIVITY = {
   ],
   moveEvent: [EVENTS_KEY, OPS_KEY],
   moveTask: [TASKS_KEY, OPS_KEY],
-  // Read what a conversion or a move would drop; change nothing.
+  // Read what a delete, a conversion or a move would take; change nothing.
+  previewDeleteTask: [],
   previewEventToTask: [],
   previewMirror: [],
   previewMove: [],
   previewMoveTask: [],
   previewSettingsImport: [],
+  previewTaskToEvent: [],
   removeAccount: [ACCOUNTS_KEY, BIRTHDAYS_KEY, CALENDARS_KEY, EVENTS_KEY, TASKS_KEY, TASKLISTS_KEY],
   resolveConflict: [EVENTS_KEY, OPS_KEY],
   // Geocodes a picked place suggestion; writes only the device-local cache.

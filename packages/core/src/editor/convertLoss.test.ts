@@ -113,7 +113,13 @@ describe('taskToEventLoss', () => {
       recurrenceUnsupported: true,
       status: 'completed',
     });
-    expect(loss).toEqual({ alarmsAfterDue: 2, completed: true, priority: true, recurrence: true });
+    expect(loss).toEqual({
+      alarmsAfterDue: 2,
+      completed: true,
+      priority: true,
+      recurrence: true,
+      subtasks: 0,
+    });
     expect(isTaskToEventLossy(loss)).toBe(true);
     expect(taskToEventLossSummary(loss, 'Converting this task to an event')).toBe(
       'Converting this task to an event drops the priority, 2 alerts after the due time, the repeat rule and the completed status.',
@@ -124,5 +130,16 @@ describe('taskToEventLoss', () => {
     const loss = taskToEventLoss({ alarms: [-15, 0], status: 'needsAction' });
     expect(isTaskToEventLossy(loss)).toBe(false);
     expect(taskToEventLossSummary(loss, 'Switching to an event')).toBeNull();
+  });
+
+  it('names the subtasks the delete takes, first, even when nothing else is lost', () => {
+    const verb = 'Converting this task to an event';
+    const one = taskToEventLoss({ status: 'needsAction' }, 1);
+    expect(isTaskToEventLossy(one)).toBe(true);
+    expect(taskToEventLossSummary(one, verb)).toBe(`${verb} deletes its subtask.`);
+    const two = taskToEventLoss({ status: 'completed' }, 2);
+    expect(taskToEventLossSummary(two, verb)).toBe(
+      `${verb} deletes its 2 subtasks and drops the completed status.`,
+    );
   });
 });

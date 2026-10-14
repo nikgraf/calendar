@@ -22,7 +22,10 @@ import type {
   MoveTaskParams,
   PreviewEventToTaskParams,
   PreviewMoveTaskParams,
+  TaskAddressParams,
+  TaskDeletePreview,
   TaskMoveLoss,
+  TaskToEventLoss,
 } from '@calendar/core';
 import type { GoogleRequestError } from '@calendar/google';
 import type { RemindersError } from '@calendar/reminders';
@@ -223,7 +226,10 @@ export interface EventMutationsShape {
   readonly convertEventToTask: (
     params: ConvertEventToTaskParams,
   ) => Effect.Effect<TaskRecord, ConvertError>;
-  /** Turns a task into an event: creates the event from `draft`, then deletes the task. */
+  /**
+   * Turns a task into an event: creates the event from `draft`, then
+   * deletes the task — and its subtasks, as Google does with a parent.
+   */
   readonly convertTaskToEvent: (
     params: ConvertTaskToEventParams,
   ) => Effect.Effect<EventRecord, ConvertError>;
@@ -255,6 +261,7 @@ export interface EventMutationsShape {
   readonly deleteRecurring: (
     params: RecurringTargetParams,
   ) => Effect.Effect<void, RecurringEditError>;
+  /** A Google task's subtasks go with it, each a delete of its own: Google deletes them with their parent. */
   readonly deleteTask: (params: {
     readonly accountId: string;
     readonly taskId: string;
@@ -290,6 +297,10 @@ export interface EventMutationsShape {
     | TaskNotFoundError
     | TaskProviderError
   >;
+  /** What deleteTask takes with it: the task's subtasks. */
+  readonly previewDeleteTask: (
+    params: TaskAddressParams,
+  ) => Effect.Effect<TaskDeletePreview, SqlError>;
   /** What convertEventToTask with this source and target would drop (see core eventToTaskLoss). */
   readonly previewEventToTask: (
     params: PreviewEventToTaskParams,
@@ -300,6 +311,10 @@ export interface EventMutationsShape {
   readonly previewMoveTask: (
     params: PreviewMoveTaskParams,
   ) => Effect.Effect<TaskMoveLoss, SqlError | TaskNotFoundError>;
+  /** What convertTaskToEvent would drop, from the stored task (see core taskToEventLoss). */
+  readonly previewTaskToEvent: (
+    params: TaskAddressParams,
+  ) => Effect.Effect<TaskToEventLoss, SqlError | TaskNotFoundError>;
   /** Drains due pending ops (serialized); safe to call concurrently. */
   readonly processPendingOps: () => Effect.Effect<void>;
   /**

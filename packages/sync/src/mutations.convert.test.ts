@@ -327,6 +327,26 @@ const toTask = (
     }),
   );
 
+/** A subtask of `t1`: Google deletes it with its parent. */
+const withSubtask = Effect.flatMap(TaskRepo, (repo) =>
+  repo.upsertTasks(
+    [
+      new TaskRecord({
+        accountId: 'acc-1',
+        id: 'sub-1',
+        listId: 'list-1',
+        parentId: 't1',
+        position: '00000000000000000000',
+        provider: 'google',
+        status: 'needsAction',
+        title: 'Find the IBAN',
+        updatedAt: 100,
+      }),
+    ],
+    100,
+  ),
+);
+
 const toEvent = (
   [accountId, taskListId, taskId]: [string, string, string],
   draft: ConvertTaskToEventParams['draft'],
@@ -580,6 +600,61 @@ describe('convertTaskToEvent', () => {
       }).pipe(noYield, Effect.provide(testLayer(apple, reminders.client)));
     },
   );
+
+  it.effect('a Google parent task takes its subtasks with it, as Google would', () => {
+    const apple = appleFake();
+    const reminders = remindersFake();
+    return Effect.gen(function* () {
+      yield* seed;
+      yield* withSubtask;
+      const created = yield* toEvent(
+        ['acc-1', 'list-1', 't1'],
+        eventDraft('acc-1', 'cal-1', { title: 'Pay rent' }),
+      );
+      expect(yield* taskAt('acc-1', 'list-1', 't1')).toBeUndefined();
+      expect(yield* taskAt('acc-1', 'list-1', 'sub-1')).toBeUndefined();
+      expect(yield* queued).toEqual([
+        `create acc-1/cal-1/${created.id}`,
+        'deleteTask acc-1/list-1/sub-1',
+        'deleteTask acc-1/list-1/t1',
+      ]);
+    }).pipe(noYield, Effect.provide(testLayer(apple, reminders.client)));
+  });
+
+  it.effect('the preview reads the stored task and counts the subtasks the delete takes', () => {
+    const apple = appleFake();
+    const reminders = remindersFake();
+    return Effect.gen(function* () {
+      yield* seed;
+      yield* withSubtask;
+      const mutations = yield* EventMutations;
+      expect(
+        yield* mutations.previewTaskToEvent({
+          accountId: 'acc-1',
+          taskId: 't1',
+          taskListId: 'list-1',
+        }),
+      ).toEqual({
+        alarmsAfterDue: 0,
+        completed: false,
+        priority: false,
+        recurrence: false,
+        subtasks: 1,
+      });
+      expect(
+        yield* mutations.previewTaskToEvent({
+          accountId: APPLE_REM,
+          taskId: 'rem-timed',
+          taskListId: 'list-a',
+        }),
+      ).toMatchObject({ priority: true, subtasks: 0 });
+      const missing = yield* Effect.flip(
+        mutations.previewTaskToEvent({ accountId: 'acc-1', taskId: 'ghost', taskListId: 'list-1' }),
+      );
+      expect(missing._tag).toBe('TaskNotFoundError');
+      expect(yield* queued).toEqual([]);
+    }).pipe(noYield, Effect.provide(testLayer(apple, reminders.client)));
+  });
 
   it.effect('refuses a read-only or unknown calendar and a missing task, writing nothing', () => {
     const apple = appleFake();
