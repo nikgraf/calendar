@@ -1870,9 +1870,15 @@ describe('calendar desktop e2e', () => {
 
   it('takes a due day away again: the task goes back to "No due date"', async () => {
     const { cdp } = app;
+    // Opened from its rail row, which keeps its width: with the rail open
+    // at CI's 1024 px a lane chip is narrower than the offset past its
+    // checkbox, and a click there lands beside it.
+    const openFromRail = async () => {
+      await cdp.showRail();
+      await cdp.clickTestId('panel-task-task-undated');
+    };
     // Dated today by the drag above.
-    const chip = await cdp.locate('[data-testid="all-day-task-task-undated"]');
-    await cdp.click(chip.x + 40, chip.y);
+    await openFromRail();
     await cdp.waitFor(`!!document.querySelector('[data-testid="task-remove-due-date"]')`);
     await cdp.clickTestId('task-remove-due-date');
     await cdp.waitFor(`!!document.querySelector('[data-testid="task-no-due-date"]')`);
@@ -1895,8 +1901,7 @@ describe('calendar desktop e2e', () => {
       taskTitle: 'Loose end, renamed',
     });
     // Reopened, it says so.
-    const undated = await cdp.locate('[data-testid="all-day-task-task-undated"]');
-    await cdp.click(undated.x + 40, undated.y);
+    await openFromRail();
     await cdp.waitFor(`!!document.querySelector('[data-testid="task-no-due-date"]')`);
     await cdp.clickButtonWithText('Cancel');
     await cdp.waitFor(`!document.querySelector('[data-testid="editor"]')`);
