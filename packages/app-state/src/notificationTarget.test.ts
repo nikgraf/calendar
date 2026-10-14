@@ -1,4 +1,9 @@
-import { BackendError, type BackendClient, EventRecord } from '@calendar/core';
+import {
+  APPLE_CALENDAR_ACCOUNT_ID,
+  BackendError,
+  type BackendClient,
+  EventRecord,
+} from '@calendar/core';
 import { Effect } from 'effect';
 import { describe, expect, it } from 'vite-plus/test';
 import { eventStartDay, findCurrentEvent, findNotificationEvent } from './notificationTarget.ts';
@@ -56,7 +61,9 @@ describe('findNotificationEvent', () => {
       target,
     );
     expect(found).toBe(wanted);
-    expect(seen).toEqual([{ rangeEndUtc: 1000 + 86_400_000, rangeStartUtc: 1000 - 86_400_000 }]);
+    expect(seen).toEqual([
+      { rangeEndUtc: 1000 + 86_400_000, rangeStartUtc: 1000 - 86_400_000, strictApple: false },
+    ]);
   });
 
   it('prefers the exact occurrence and still finds an event that moved', async () => {
@@ -159,6 +166,12 @@ describe('findCurrentEvent', () => {
       startUtc: 4000,
     });
     expect(await findCurrentEvent(client([edited]), drawn)).toBe(edited);
+  });
+
+  it('reads an Apple event strictly, so a range that could not reach EventKit is not "gone"', async () => {
+    const seen: Array<unknown> = [];
+    await findCurrentEvent(client([], seen), event({ accountId: APPLE_CALENDAR_ACCOUNT_ID }));
+    expect(seen).toEqual([expect.objectContaining({ strictApple: true })]);
   });
 
   it('answers null once the event is gone, and fails when the backend cannot say', async () => {

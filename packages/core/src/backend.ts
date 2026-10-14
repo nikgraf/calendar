@@ -463,7 +463,16 @@ export class AppBackendRpcs extends RpcGroup.make(
   }),
   Rpc.make('getEventsInRange', {
     error: BackendError,
-    payload: { rangeEndUtc: Schema.Number, rangeStartUtc: Schema.Number },
+    payload: {
+      rangeEndUtc: Schema.Number,
+      rangeStartUtc: Schema.Number,
+      /**
+       * Fail when EventKit cannot be read instead of leaving the Apple
+       * events out (a grid draws the rest): for a lookup of an Apple event,
+       * where a missing row must mean the event is gone.
+       */
+      strictApple: Schema.optional(Schema.Boolean),
+    },
     success: Schema.Array(EventRecord),
   }),
   Rpc.make('getOverdueTasks', {

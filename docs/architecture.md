@@ -484,7 +484,13 @@ it whenever a kind is added. Rules that keep the queue correct:
   and a cache invites a read from before a write overwriting it.
   `EKEventStoreChanged` (debounced 1 s), every Apple write and
   `setCalendarVisible` invalidate `EVENTS_KEY`. The backend rpc stays the
-  single query surface (views, find-a-time, search, agents).
+  single query surface (views, find-a-time, search, agents). A read that
+  fails answers no Apple events, so a grid draws the rest; a lookup of one
+  Apple event (`lookUpEvent`, behind `findCurrentEvent` and the event
+  views that follow their event) asks with `strictApple` instead
+  (`eventsInRangeOrFail`, which reads an account flagged for lost access
+  all the same, so a refusal fails too), since no stored row stands in
+  and an empty answer would read as "deleted".
 - **Ids**: a single event is its `eventIdentifier`; an occurrence of a
   series is `<eventIdentifier>__<occurrenceSlot>` with
   `recurringEventId`/`originalStartUtc` set — the same shape
@@ -928,7 +934,13 @@ gateway carries all of it. Details, limits and the threat model:
   changed flash, `FlashView`), the birthday detail — and the capture model behind the share
   sheet and deep links, whose events open the editor as one thread of
   drafts; each opening is keyed by its own number; screens ask it
-  through `useEditorHost()`. The editor is the `editor` route
+  through `useEditorHost()`. The detail follows its event as the
+  desktop inspector does, keyed by identity: it has no grid range of its
+  own (it opens over Calendar, Search and tapped reminders), so it reads
+  `useCurrentEvent` — `findCurrentEvent`'s lookup as an atom
+  (`currentEvent`), read again whenever events change — shows that
+  record (`eventReadout`), seeds Edit and Convert from it and closes once
+  the event is gone; a failed read keeps it up. The editor is the `editor` route
   (`app/editor.tsx`), a react-native-screens form sheet with a half and
   a full detent: a new item opens at half height over the live calendar,
   an existing one at full; the host pushes the route and pops it on

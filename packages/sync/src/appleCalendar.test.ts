@@ -1,5 +1,7 @@
 import {
+  type AppleCalendarClientShape,
   type AppleCalendarJson,
+  AppleCalendarRequestError,
   type AppleEventJson,
   makeFakeAppleCalendarClient,
 } from '@calendar/apple-calendar';
@@ -29,6 +31,7 @@ import { layer as reactivityLayer, Reactivity } from 'effect/reactivity/Reactivi
 import { describe } from 'vite-plus/test';
 import { AppleCalendarEvents, appleCalendarServicesLayer } from './appleCalendarEvents.ts';
 import { SyncEngine } from './engine.ts';
+import { loadEventsInRange, loadEventsInRangeOrFail } from './eventsInRange.ts';
 import { EventMutations } from './mutations.ts';
 
 /** Google must never be called for the Apple Calendar account. */
@@ -320,6 +323,55 @@ describe('Apple Calendar mirror and read-through', () => {
       expect((yield* eventsInWindow).length).toBeGreaterThan(0);
     }).pipe(Effect.provide(testLayer(fake)));
   });
+
+  it.effect(
+    'a strict read fails where EventKit could not be read, so a lookup never takes it for "gone"',
+    () => {
+      const fake = fakeWith();
+      let failing = false;
+      const client: AppleCalendarClientShape = {
+        ...fake.client,
+        events: (params) =>
+          failing
+            ? Effect.fail(new AppleCalendarRequestError({ message: 'timed out', method: 'events' }))
+            : fake.client.events(params),
+      };
+      return Effect.gen(function* () {
+        yield* connected;
+        const apple = yield* AppleCalendarEvents;
+        expect((yield* apple.eventsInRangeOrFail(window.start, window.end)).length).toBeGreaterThan(
+          0,
+        );
+        failing = true;
+        // A grid draws the rest without them…
+        expect(yield* apple.eventsInRange(window.start, window.end)).toEqual([]);
+        expect(yield* loadEventsInRange(window.start, window.end)).toEqual([]);
+        // …while a lookup of an Apple event (`strictApple`) hears that it could not see.
+        expect((yield* Effect.flip(apple.eventsInRangeOrFail(window.start, window.end)))._tag).toBe(
+          'AppleCalendarRequestError',
+        );
+        expect((yield* Effect.flip(loadEventsInRangeOrFail(window.start, window.end)))._tag).toBe(
+          'AppleCalendarRequestError',
+        );
+        expect(yield* accountStatus).toBe('ok');
+
+        // Lost access: the plain read flags the account and answers nothing
+        // from then on; a strict read still asks, so it fails…
+        failing = false;
+        fake.state.authorization = 'denied';
+        expect(yield* apple.eventsInRange(window.start, window.end)).toEqual([]);
+        expect(yield* accountStatus).toBe('reauth_required');
+        expect((yield* Effect.flip(apple.eventsInRangeOrFail(window.start, window.end)))._tag).toBe(
+          'AppleCalendarAccessError',
+        );
+        // …and reads again once access is back, before a pass clears the flag.
+        fake.state.authorization = 'fullAccess';
+        expect((yield* apple.eventsInRangeOrFail(window.start, window.end)).length).toBeGreaterThan(
+          0,
+        );
+      }).pipe(Effect.provide(testLayer({ ...fake, client })));
+    },
+  );
 
   it.effect('skips a pass without flagging the account when there is no bridge', () => {
     const fake = fakeWith();

@@ -3,6 +3,7 @@ import {
   eventNotificationTarget,
   type EventRecord,
   googleInstanceId,
+  isAppleCalendarAccount,
   type NotificationTarget,
   Temporal,
   toZonedDateTime,
@@ -22,13 +23,17 @@ type EventLookupClient = Pick<BackendClient, 'getEvent' | 'getEventsInRange'>;
  * window is read by its stored id — a Google event's own, or the instance
  * id an edited occurrence is stored under (Apple events are read through
  * and never stored). A cancelled record found there is a deleted
- * occurrence, kept so the series stops drawing it: gone too.
+ * occurrence, kept so the series stops drawing it: gone too. Fails when
+ * the backend cannot say, which is not the same as gone — an Apple event
+ * is read strictly for that: a range read that could not reach EventKit
+ * would otherwise lack it, and no stored row stands in.
  */
-const lookUpEvent = (client: EventLookupClient, target: NotificationTarget) =>
+export const lookUpEvent = (client: EventLookupClient, target: NotificationTarget) =>
   Effect.gen(function* () {
     const events = yield* client.getEventsInRange({
       rangeEndUtc: target.startUtc + DAY_MS,
       rangeStartUtc: target.startUtc - DAY_MS,
+      strictApple: isAppleCalendarAccount({ id: target.accountId }),
     });
     const same = events.filter(
       (event) =>
