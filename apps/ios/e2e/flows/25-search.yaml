@@ -10,11 +10,21 @@ tags:
 - runFlow: ../common/launch.yaml
 # The Search tab has the search role: iOS 26 draws it as its own circle
 # and, once it is open, shows its stack's search field in the tab bar.
-- tapOn: 'Search'
-- extendedWaitUntil:
-    visible:
-      id: 'search-hint'
-    timeout: 10000
+# Right after launch the tap can be lost like the header's (see
+# common/open-settings.yaml): re-tap while the tab's hint is missing.
+- retry:
+    maxRetries: 2
+    commands:
+      - runFlow:
+          when:
+            notVisible:
+              id: 'search-hint'
+          commands:
+            - tapOn: 'Search'
+      - extendedWaitUntil:
+          visible:
+            id: 'search-hint'
+          timeout: 5000
 - runFlow:
     file: ../common/search-for.yaml
     env:
@@ -150,15 +160,21 @@ tags:
 - inputText: 'Solunivo search e2e'
 # XCTest typing can drop or move letters (see flow 07): retype until the
 # field holds the title.
-- repeat:
-    times: 3
-    while:
-      notVisible:
-        id: 'event-title'
-        text: 'Solunivo search e2e'
+- retry:
+    maxRetries: 3
     commands:
-      - tapOn: 'Clear text'
-      - inputText: 'Solunivo search e2e'
+      - runFlow:
+          when:
+            true: ${output.retype === true}
+          commands:
+            - tapOn: 'Clear text'
+            - inputText: 'Solunivo search e2e'
+      - evalScript: ${output.retype = true}
+      - extendedWaitUntil:
+          visible:
+            id: 'event-title'
+            text: 'Solunivo search e2e'
+          timeout: 3000
 - tapOn:
     id: 'event-save'
 - extendedWaitUntil:

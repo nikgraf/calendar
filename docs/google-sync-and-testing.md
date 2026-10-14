@@ -174,6 +174,9 @@ suite). When touching sync code, treat these as invariants.
   adopt-before-retry protocol.
 - Completing sets `status: 'completed'` (Google also sets `hidden`);
   un-completing must clear `completed` via `status: 'needsAction'`.
+- PATCH `due: null` takes the due day away (verified live 2026-10-13):
+  the response and later reads carry no `due`. The fake Google API
+  clears a null field the same way.
 - A 403 insufficient-scope (grants that predate the tasks scope) disables
   tasks for the account instead of retrying.
 - A write to a task that is gone (verified live): PATCH of a task deleted
@@ -248,7 +251,10 @@ suite). When touching sync code, treat these as invariants.
 - **Due**: `dueDateComponents` with no hour ⇒ all-day (`dueDate` only);
   with hour/minute ⇒ timed (`dueTime` 'HH:MM' in the device zone). The
   bridge keeps `startDateComponents == dueDateComponents`, as the
-  Reminders app does.
+  Reminders app does; `dueDate: null` clears both (the time goes with the
+  day). EventKit refuses a repeating reminder without a due day
+  (`recurringReminderRequiresDueDate`), so `reminderMutations` refuses
+  that pair before the bridge and the fake agrees.
 - **Priority**: EventKit 0…9; the Reminders app shows 1–4 high, 5 medium,
   6–9 low. We keep the buckets and write back 1/5/9/0.
 - **Alarms**: only relative-offset alarms are surfaced (minutes, ≤ 0 =
@@ -759,8 +765,9 @@ taps Cancel only on a retry).
 
 Shared subflows (`common/`): `launch.yaml` (every flow starts with it:
 launch, recover the dev client if it fell back to the launcher, wait for
-"Today", `waitForAnimationToEnd` — SafeAreaView applies the top inset a
-beat after the first paint, so an earlier tap lands in the status bar),
+the header's `today` to sit below the status bar's clock — SafeAreaView
+applies the top inset a beat, seconds after a fresh bundle load, after
+the first paint, so an earlier tap lands in the status bar),
 `open-new-event.yaml` (the "+" → the editor on a new event, re-tapping
 while the sheet is missing, then `expand-editor.yaml`: a new item's
 editor opens at half height, and the subflow taps the sheet's grabber,
@@ -776,6 +783,15 @@ tab's system field until `RESULT` shows; a sentence for the search
 thread is typed the same way and sent with `pressKey: Enter`, the
 keyboard's Search key; the chips' × is "Remove <label>"), `confirm-open.yaml` and
 `await-shell.yaml` (the bootstrap flow's URL alert and shell wait).
+
+The subflows keep conditions off their common path the same way (the
+7 s rule is under the selector gotchas): a re-tap is a `retry` block, the
+tap behind a guard that is true while it is still needed (~0.5 s, and a
+sheet that came up late takes no second tap), then an
+`extendedWaitUntil` on its effect. `await-shell.yaml` runs its recovery
+guards only when the shell is not what showed (a script flag), and
+`search-for.yaml` reads the field with `copyTextFrom` (its text is the
+placeholder while it is empty).
 
 Selector gotchas (each caused a real failure):
 

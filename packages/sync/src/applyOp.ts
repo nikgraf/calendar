@@ -1148,7 +1148,7 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
               (candidate) =>
                 !candidate.deleted &&
                 candidate.title === op.taskTitle &&
-                (candidate.due?.slice(0, 10) ?? undefined) === op.taskDue &&
+                (candidate.due?.slice(0, 10) ?? undefined) === (op.taskDue ?? undefined) &&
                 (candidate.notes ?? undefined) === op.taskNotes &&
                 (candidate.parent ?? undefined) === op.taskParent,
             );
@@ -1402,7 +1402,10 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
           const patched = yield* tasksClient.patchTask({
             accountId: op.accountId,
             changes: {
-              ...(op.taskDue === undefined ? {} : { due: `${op.taskDue}T00:00:00.000Z` }),
+              // null takes the day away (JSON null clears a field on PATCH).
+              ...(op.taskDue === undefined
+                ? {}
+                : { due: op.taskDue === null ? null : `${op.taskDue}T00:00:00.000Z` }),
               ...(op.taskNotes === undefined ? {} : { notes: op.taskNotes }),
               ...(op.taskTitle === undefined ? {} : { title: op.taskTitle }),
             },

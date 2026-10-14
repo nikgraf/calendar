@@ -193,7 +193,13 @@ it whenever a kind is added. Rules that keep the queue correct:
   through (`upsertTasks`), so a created reminder has its real id from the
   start. Reminders-only fields (time, priority, url, alarms, recurrence,
   `moveToListId`) on a Google list fail with `UnsupportedForProviderError`.
-  `updateTask` cannot clear a stored due day; only a create may be undated.
+  `updateTask` takes a due day away with `dueDate: null`: a Google op
+  carries `taskDue: null` (stored as `task_due_cleared`, pushed as
+  `due: null`; folded into an unsent create, the create goes undated), a
+  reminder loses the day and its time in EventKit. A repeating reminder
+  keeps its day unless the rule goes too — EventKit refuses one without
+  — so the editor drops the rule with the day and hides Repeat while a
+  reminder is undated.
   A Google `deleteTask` takes the task's subtasks first, each a delete of
   its own, since Google deletes them with their parent: discarding a
   subtask's delete discards its parent's too, and the parent's delete,

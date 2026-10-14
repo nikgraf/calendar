@@ -667,12 +667,34 @@ describe('Reminder repeat rules with weekdays', () => {
     }
   });
 
+  it("takes a repeating reminder's due day away, its rule with it", async () => {
+    const { cdp } = app;
+    // Monthly since the test above.
+    await openChip('ek-rem-milk');
+    await cdp.waitFor(`!!document.querySelector('select[aria-label="Repeat"]')`);
+    await cdp.clickTestId('task-remove-due-date');
+    await cdp.waitFor(`!!document.querySelector('[data-testid="task-no-due-date"]')`);
+    // Only a reminder with a due day repeats: the rule's row goes too.
+    expect(await cdp.eval(`!!document.querySelector('select[aria-label="Repeat"]')`)).toBe(false);
+    await cdp.clickButtonWithText('Save');
+    await expect
+      .poll(async () => {
+        const task = await taskById('ek-rem-milk');
+        return task && { dueDate: task.dueDate ?? null, recurrence: task.recurrence ?? null };
+      }, POLL)
+      .toEqual({ dueDate: null, recurrence: null });
+  });
+
   it('keeps a rule it cannot express read-only', async () => {
     const { cdp } = app;
     await openChip('ek-rem-yearly');
     try {
       expect(await cdp.eval(`document.body.textContent.includes('cannot edit')`)).toBe(true);
       expect(await cdp.eval(`!!document.querySelector('select[aria-label="Repeat"]')`)).toBe(false);
+      // Nor can its day go: EventKit wants one for the rule, and the rule stays.
+      expect(
+        await cdp.eval(`!!document.querySelector('[data-testid="task-remove-due-date"]')`),
+      ).toBe(false);
     } finally {
       await cdp.clickButtonWithText('Cancel');
     }

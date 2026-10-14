@@ -72,6 +72,7 @@ const opRow = (overrides: Partial<PendingOpRow> = {}): PendingOpRow => ({
   target_calendar_id: null,
   target_task_list_id: null,
   task_due: null,
+  task_due_cleared: 0,
   task_list_id: null,
   task_notes: null,
   task_parent: null,

@@ -370,6 +370,13 @@ const deviceTimeZone = Effect.gen(function* () {
   yield* sql`UPDATE device_settings SET value = ${JSON.stringify(next)} WHERE key = 'timeZones'`;
 });
 
+// task_due_cleared = 1 when the queued task update takes the due day away
+// (the patch sends `due: null`): a NULL task_due means "leave it alone".
+const taskDueCleared = Effect.gen(function* () {
+  const sql = yield* SqlClient;
+  yield* sql`ALTER TABLE pending_ops ADD COLUMN task_due_cleared INTEGER NOT NULL DEFAULT 0`;
+});
+
 const isZoneList = (
   value: unknown,
 ): value is { readonly primary: string; readonly zones: ReadonlyArray<string> } =>
@@ -407,4 +414,5 @@ export const migrations: ReadonlyArray<ResolvedMigration> = [
   [10, 'before-snapshot', Effect.succeed(beforeSnapshot)],
   [11, 'device-time-zone', Effect.succeed(deviceTimeZone)],
   [12, 'task-hierarchy', Effect.succeed(taskHierarchy)],
+  [13, 'task-due-cleared', Effect.succeed(taskDueCleared)],
 ];

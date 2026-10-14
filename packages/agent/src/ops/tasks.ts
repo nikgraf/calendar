@@ -16,6 +16,15 @@ const CLOCK = /^([01]\d|2[0-3]):[0-5]\d$/u;
 const dueLine = (dueDate: string, dueTime: string | null | undefined): string =>
   `Due: ${dueDate}${dueTime ? ` ${dueTime}` : ''}`;
 
+/** An update's Due line: a day taken away takes its time with it, so both are named. */
+const dueChangeLine = (
+  before: { readonly dueDate?: string | undefined; readonly dueTime?: string | undefined },
+  dueDate: string | null,
+): string =>
+  dueDate === null && before.dueDate !== undefined
+    ? `${dueLine(before.dueDate, before.dueTime)} → (none)`
+    : `Due: ${before.dueDate ?? '(none)'} → ${dueDate ?? '(none)'}`;
+
 export const planCreateTask = (
   policy: AgentPolicy,
   directory: Directory,
@@ -94,11 +103,14 @@ export const planUpdateTask = (
     yield* checkText('title', title, MAX_TITLE);
     yield* checkText('notes', input.notes, MAX_NOTES);
     yield* checkText('url', input.url, MAX_URL);
-    if (input.dueDate !== undefined && !isIsoDate(input.dueDate)) {
+    if (typeof input.dueDate === 'string' && !isIsoDate(input.dueDate)) {
       return yield* invalid('dueDate must be a real date in YYYY-MM-DD form.');
     }
     if (typeof input.dueTime === 'string' && !CLOCK.test(input.dueTime)) {
       return yield* invalid('dueTime must be HH:MM (24h).');
+    }
+    if (input.dueDate === null && typeof input.dueTime === 'string') {
+      return yield* invalid('dueTime needs a due day: send it without dueDate: null.');
     }
     // No moveToListId: an agent never moves a task between lists.
     const changes: TaskWriteChanges = {
@@ -145,7 +157,7 @@ export const planUpdateTask = (
         [
           listLine(list.title, directory.accountLabel(list.accountId)),
           title !== undefined && title !== task.title && changeLine('Title', task.title, title),
-          input.dueDate !== undefined && `Due: ${task.dueDate ?? '(none)'} → ${input.dueDate}`,
+          input.dueDate !== undefined && dueChangeLine(task, input.dueDate),
           input.dueTime !== undefined &&
             `Due time: ${task.dueTime ?? '(none)'} → ${input.dueTime ?? '(none)'}`,
           input.priority !== undefined &&

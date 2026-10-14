@@ -84,17 +84,16 @@ The 2026-10-02 review's findings are closed in `docs/decisions.md`
       Apple bridge does not read availability, so "marked free" is Google
       only; definitions could sync through iCloud key-value storage
       instead of the settings file (a new entitlement in every build).
-- [ ] Reminders follow-ups — undated tasks are drawn on today and the
-      editor creates one (New › No due date, the Tasks tab's "+"), but
-      cannot take an existing task's due day away (`updateTask` cannot
-      clear it); subtasks/flags/
-      tags; location alarms; multiple editable alarms (`alarms` is already
-      `number[]` end to end); yearly positional rules, several rules,
-      day-of-month lists and a monthly rule on a plain weekday without an
-      ordinal still round-trip as `{unsupported:true}` (weekly by-day and
-      monthly ordinals ship since 2026-09-20); creating/deleting
-      Reminders lists
-      (`REMINDERS_METHODS` has neither).
+- [ ] Reminders follow-ups — subtasks/flags/tags; location alarms;
+      multiple editable alarms (`alarms` is already `number[]` end to
+      end); yearly positional rules, several rules, day-of-month lists and
+      a monthly rule on a plain weekday without an ordinal still
+      round-trip as `{unsupported:true}` (weekly by-day and monthly
+      ordinals ship since 2026-09-20); creating/deleting Reminders lists
+      (`REMINDERS_METHODS` has neither); moving an undated task to
+      another list asks for a due day first (`moveTask` takes a
+      `TaskDraft`, whose `dueDate` is required; only Reminders →
+      Reminders re-homes in place and keeps it undated).
 
 - [ ] Task drag follow-ups — auto-scroll the grid while a chip is
       dragged near its top or bottom edge (both platforms; today the

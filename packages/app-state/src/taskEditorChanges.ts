@@ -43,7 +43,7 @@ export interface TaskEditorValues {
 /** What `updateTask` accepts — mirrors the rpc payload in @calendar/core. */
 export interface TaskEditorChanges {
   readonly alarms?: ReadonlyArray<number> | null;
-  readonly dueDate?: string;
+  readonly dueDate?: string | null;
   readonly dueTime?: string | null;
   readonly moveToListId?: string;
   readonly notes?: string;
@@ -98,14 +98,16 @@ export const taskEditorChanges = ({
   if (current.notes !== initial.notes) {
     changes.notes = current.notes;
   }
-  // A due day can be given or changed, never taken away (the rpc has no
-  // way to clear one): an undated task stays undated until it gets a day.
-  if (current.dueDate !== undefined && current.dueDate !== initial.dueDate) {
-    changes.dueDate = current.dueDate;
+  // A due day can be given, changed or taken away (null: back to "No due
+  // date"); an undated task stays undated until it gets a day.
+  if (current.dueDate !== initial.dueDate) {
+    changes.dueDate = current.dueDate ?? null;
   }
   if (provider !== 'apple') {
     return changes;
   }
+  const undated = current.dueDate === undefined;
+  const dayTakenAway = undated && initial.dueDate !== undefined;
   if (current.alarm !== initial.alarm) {
     const alarms = [
       ...(current.alarm === undefined ? [] : [current.alarm]),
@@ -113,7 +115,8 @@ export const taskEditorChanges = ({
     ];
     changes.alarms = alarms.length === 0 ? null : alarms;
   }
-  if (current.dueTime !== initial.dueTime) {
+  // The time goes with the day.
+  if (!undated && current.dueTime !== initial.dueTime) {
     changes.dueTime = current.dueTime ?? null;
   }
   if (current.listId !== initial.listId) {
@@ -122,9 +125,12 @@ export const taskEditorChanges = ({
   if (current.priority !== initial.priority) {
     changes.priority = current.priority ?? null;
   }
-  // Never overwrite a rule the form could not show.
-  if (!recurrenceUnsupported && !sameRecurrence(current.recurrence, initial.recurrence)) {
-    changes.recurrence = current.recurrence ?? null;
+  // Never overwrite a rule the form could not show. An undated reminder
+  // does not repeat (EventKit refuses one): the hidden rule is never
+  // sent, and a day taken away takes the stored rule with it.
+  const recurrence = !undated ? current.recurrence : dayTakenAway ? undefined : initial.recurrence;
+  if (!recurrenceUnsupported && !sameRecurrence(recurrence, initial.recurrence)) {
+    changes.recurrence = recurrence ?? null;
   }
   if (current.url !== initial.url) {
     changes.url = current.url || null;

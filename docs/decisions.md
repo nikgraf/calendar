@@ -87,6 +87,16 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   across flows is the cost worth cutting (CI shards spend ~16 minutes on
   setup and are billed macOS minutes). Not done: table-driven merges of
   near-identical unit tests, shared test helpers.
+- **Maestro helpers without condition waits** (2026-10-13,
+  `todo/maestro-helper-waits`) — a `while`/`when` condition gets up to 7 s
+  to come true, so each re-tap/retype loop paid that on a successful exit
+  and await-shell's guards ~5 s per launch. Now `retry` + `extendedWaitUntil`
+  on the effect, script flags where the common path branches; recovery
+  paths kept and fault-injected. The idle had hidden two races: the
+  header's late top inset (now proven: `today` below the status bar's
+  clock, 12- or 24-hour) and a launcher-row tap racing the dev client's
+  own reopen. Rejected: a fixed settle delay after launch. Open: the
+  slide-to-type card and the dev menu's onboarding never showed locally.
 - **Dependencies** (2026-09-14, 2026-10-09, 2026-10-03) — every sweep is
   one commit per group, each droppable. `effect*` exact (the pin stays
   exact on 4.x: rpc, sql, http and reactivity are `@stability unstable`),
@@ -543,6 +553,15 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   link finds a home; only a chosen time counts (the editor's default hour
   is neither carried nor asked about); a recurring event converts as its
   whole series; a per-occurrence conversion is a follow-up.
+- **Back to "No due date"** (2026-10-13, #198) — `updateTask` takes
+  `dueDate: null` on both providers and the editor offers "No due date"
+  on existing tasks. A Google op carries `taskDue: null` behind a
+  `task_due_cleared` column (a `''` sentinel in `task_due` rejected).
+  A repeating reminder's rule goes with its day and Repeat hides while
+  undated, as in Reminders.app — rejected: a save error asking to set
+  Repeat to Never first; a rule the form cannot show keeps its day.
+  Relative alerts stay on an undated reminder; moving an undated task
+  to another list still asks for a day (todo.md).
 
 ## Apple Calendar
 

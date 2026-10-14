@@ -64,7 +64,7 @@ type TaskPatchFields = Partial<Pick<PendingOp, 'taskDue' | 'taskNotes' | 'taskTi
 
 /** The fields an op (or an edit) sets, without the ones it leaves alone. */
 const patchFields = (source: {
-  readonly taskDue?: string | undefined;
+  readonly taskDue?: string | null | undefined;
   readonly taskNotes?: string | undefined;
   readonly taskTitle?: string | undefined;
 }): TaskPatchFields => ({
@@ -376,7 +376,8 @@ export const makeTaskMutations = (deps: TaskMutationDeps): TaskMutations => {
               attempts: 0,
               id: generateEventId(),
               nextAttemptAt: 0,
-              ...(changes.dueDate === undefined ? {} : { taskDue: changes.dueDate }),
+              // A day taken away leaves the create undated: it sends no due.
+              ...(changes.dueDate === undefined ? {} : { taskDue: changes.dueDate ?? undefined }),
               ...(changes.notes === undefined ? {} : { taskNotes: changes.notes }),
               ...(changes.title === undefined ? {} : { taskTitle: changes.title }),
             }),
