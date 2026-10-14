@@ -48,6 +48,37 @@ tags:
                   id: 'event-title'
                   text: 'Solunivo e2e event to delete'
                 timeout: 3000
+      # Notes sit at the bottom of the form. Dismiss the title's keyboard
+      # first (a tap on a plain label, see 03), or the text lands in the
+      # title.
+      - tapOn: 'CALENDAR'
+      - scrollUntilVisible:
+          element:
+            id: 'event-notes'
+          direction: DOWN
+          timeout: 10000
+      - tapOn:
+          id: 'event-notes'
+      - inputText: 'Bring the agenda'
+      # The field proves the typing and a failed wait retypes; the flag
+      # keeps the first pass from typing twice. A `while: notVisible:`
+      # loop would wait up to 7 s for its condition on every exit with the
+      # notes right.
+      - retry:
+          maxRetries: 3
+          commands:
+            - runFlow:
+                when:
+                  true: ${output.retypeNotes === true}
+                commands:
+                  - eraseText: 40
+                  - inputText: 'Bring the agenda'
+            - evalScript: ${output.retypeNotes = true}
+            - extendedWaitUntil:
+                visible:
+                  id: 'event-notes'
+                  text: 'Bring the agenda'
+                timeout: 3000
       - tapOn:
           id: 'event-save'
       # The sheet closes only after the whole create path ran, id
@@ -64,6 +95,12 @@ tags:
           timeout: 10000
       # Clean up, so repeated runs don't pile up in a real calendar.
       - tapOn: 'Solunivo e2e event to delete.*'
+      # The detail sheet reads the notes back from the saved event.
+      - extendedWaitUntil:
+          visible:
+            id: 'event-detail-notes'
+            text: 'Bring the agenda'
+          timeout: 10000
       - runFlow: ../common/open-event-editor.yaml
       - tapOn:
           id: 'event-delete'
@@ -72,11 +109,13 @@ tags:
       - extendedWaitUntil:
           notVisible: 'Solunivo e2e event to delete.*'
           timeout: 20000
-# Keyed on the sheet still being open (see 08): after a save the sheet is
-# closed and "no calendar rows" would be true for the wrong reason.
+      - evalScript: ${output.sheetClosed = true}
+# Keyed on the sheet still being open (see 08, also for the flag): after
+# a save the sheet is closed and "no calendar rows" would be true for the
+# wrong reason.
 - runFlow:
     when:
-      visible: 'New Event'
+      true: ${output.sheetClosed !== true}
     commands:
       # No account: leave the sheet as we found it.
       - tapOn: 'Cancel'

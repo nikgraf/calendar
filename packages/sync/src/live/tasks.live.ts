@@ -24,7 +24,7 @@ import {
  * Google Tasks on the real API: server-assigned ids and the temp-id swap,
  * date-only dues, completion, the `updatedMin` watermark with deleted
  * tombstones, adopt-before-retry for a create whose response was lost,
- * and a copy-then-delete move between lists.
+ * and a move between lists that keeps the id and takes subtasks along.
  */
 
 const config = liveGoogleConfigFromEnv();
@@ -215,30 +215,56 @@ describe('live Google: tasks', () => {
     }).pipe(Effect.provide(liveEngineLayer(config))),
   );
 
-  it.live('moving a task to another list copies it there and deletes the source', () =>
-    Effect.gen(function* () {
-      const { mutations, scratch: google } = yield* bootstrap(config);
-      const temp = yield* create(mutations, 'move');
-      yield* drain(mutations);
-      const row = (yield* localByTitle(listA(), temp.title))!;
-      yield* mutations.moveTask({
-        accountId: LIVE_ACCOUNT_ID,
-        draft: { dueDate: isoDay(1), title: temp.title },
-        target: { accountId: LIVE_ACCOUNT_ID, taskListId: listB() },
-        taskId: row.id,
-        taskListId: listA(),
-      });
-      yield* drain(mutations);
-      expect(yield* pendingOps).toEqual([]);
-      const inB = (yield* google.listTasks(listB())).filter(
-        (task) => task.title === temp.title && !task.deleted,
-      );
-      expect(inB).toHaveLength(1);
-      const inA = (yield* google.listTasks(listA())).filter(
-        (task) => task.title === temp.title && !task.deleted,
-      );
-      expect(inA).toHaveLength(0);
-      expect((yield* localByTitle(listB(), temp.title))?.id).toBe(inB[0]!.id);
-    }).pipe(Effect.provide(liveEngineLayer(config))),
+  it.live(
+    'moving a task to another list moves it on Google: the id stays and its subtasks come along',
+    () =>
+      Effect.gen(function* () {
+        const { engine, mutations, scratch: google } = yield* bootstrap(config);
+        const repo = yield* TaskRepo;
+        const temp = yield* create(mutations, 'move');
+        yield* drain(mutations);
+        const row = (yield* localByTitle(listA(), temp.title))!;
+        // A subtask added on Google, as another device would.
+        const step = yield* google.insertTask(
+          listA(),
+          { title: titleFor(config, 'move-step') },
+          row.id,
+        );
+        const known = yield* syncUntil(
+          engine,
+          Effect.map(
+            repo.get(LIVE_ACCOUNT_ID, listA(), step.id),
+            (subtask) => subtask?.parentId === row.id,
+          ),
+        );
+        expect(known).toBe(true);
+        const preview = yield* mutations.previewMoveTask({
+          accountId: LIVE_ACCOUNT_ID,
+          target: { accountId: LIVE_ACCOUNT_ID, taskListId: listB() },
+          taskId: row.id,
+          taskListId: listA(),
+        });
+        expect(preview).toMatchObject({ leavesParent: false, subtasksUnnested: 0 });
+        yield* mutations.moveTask({
+          accountId: LIVE_ACCOUNT_ID,
+          draft: { dueDate: isoDay(1), title: temp.title },
+          target: { accountId: LIVE_ACCOUNT_ID, taskListId: listB() },
+          taskId: row.id,
+          taskListId: listA(),
+        });
+        yield* drain(mutations);
+        expect(yield* pendingOps).toEqual([]);
+        const ours = <T extends { readonly deleted?: boolean; readonly id: string }>(
+          tasks: ReadonlyArray<T>,
+        ) => tasks.filter((task) => !task.deleted && (task.id === row.id || task.id === step.id));
+        const inB = ours(yield* google.listTasks(listB()));
+        expect(inB.map((task) => `${task.id}<${task.parent ?? ''}`).sort()).toEqual(
+          [`${row.id}<`, `${step.id}<${row.id}`].sort(),
+        );
+        expect(ours(yield* google.listTasks(listA()))).toEqual([]);
+        expect((yield* repo.get(LIVE_ACCOUNT_ID, listB(), row.id))?.title).toBe(temp.title);
+        expect((yield* repo.get(LIVE_ACCOUNT_ID, listB(), step.id))?.parentId).toBe(row.id);
+        expect(yield* repo.get(LIVE_ACCOUNT_ID, listA(), step.id)).toBeUndefined();
+      }).pipe(Effect.provide(liveEngineLayer(config))),
   );
 });

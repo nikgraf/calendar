@@ -145,6 +145,9 @@ export interface TaskRow {
   /** Reminders only; added by migration 7. */
   readonly external_id: string | null;
   readonly due_utc: number | null;
+  /** Google only; added by migration 12. */
+  readonly parent_id: string | null;
+  readonly position: string | null;
   /** Joined from task_lists.provider by getWindow; plain SELECTs leave it absent (= google). */
   readonly list_provider?: string | null;
 }
@@ -196,6 +199,7 @@ const OP_KINDS: ReadonlySet<string> = new Set([
   'delete',
   'deleteTask',
   'move',
+  'moveTask',
   'rsvp',
   'update',
   'updateTask',
@@ -221,6 +225,8 @@ export const taskFromRow = (row: TaskRow): TaskRecord => {
     id: row.id,
     listId: row.list_id,
     notes: row.notes ?? undefined,
+    parentId: row.parent_id ?? undefined,
+    position: row.position ?? undefined,
     ...(isPriority(row.priority) ? { priority: row.priority } : {}),
     provider: row.list_provider === 'apple' ? 'apple' : 'google',
     ...(recurrence && !unsupported && recurrence.freq
@@ -467,11 +473,14 @@ export interface PendingOpRow {
   readonly carried_text: string | null;
   /** Added by migration 9 (hence after carried_text). */
   readonly recurrence_cleared: number;
-  /** Added by migration 10 (hence last). */
+  /** Added by migration 10. */
   readonly before_payload: string | null;
   readonly before_overrides: string | null;
   readonly before_task: string | null;
   readonly before_color_hex: string | null;
+  /** Added by migration 12 (hence last). */
+  readonly target_task_list_id: string | null;
+  readonly task_parent: string | null;
 }
 
 const eventListSchema = Schema.Array(EventRecord);
@@ -523,9 +532,11 @@ export const pendingOpFromRow = (row: PendingOpRow): PendingOp | undefined =>
         remindersChanged: row.reminders_changed === 1 ? true : undefined,
         serverPayload: decodeOr(EventRecord, parseJson(row.server_payload)),
         targetCalendarId: row.target_calendar_id ?? undefined,
+        targetTaskListId: row.target_task_list_id ?? undefined,
         taskDue: row.task_due ?? undefined,
         taskListId: row.task_list_id ?? undefined,
         taskNotes: row.task_notes ?? undefined,
+        taskParent: row.task_parent ?? undefined,
         taskStatus: TASK_STATUSES.has(row.task_status ?? '')
           ? (row.task_status as PendingOp['taskStatus'])
           : undefined,

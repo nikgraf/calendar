@@ -26,44 +26,57 @@ tags:
     timeout: 30000
 # No "Close" control on iOS 26: dragging the sheet down from inside it
 # dismisses it (a swipe from the screen centre starts above the sheet).
-- repeat:
-    times: 3
-    while:
-      visible: 'Save to Files'
+# The sheet gone is the proof, and a failed wait drags again, only while
+# the sheet is still up (on the page behind it a drag could close
+# Settings). A `while: visible:` loop did this before, but Maestro waits
+# up to 7 s (from the last swipe) for a condition to come true, so its
+# exit check, with the sheet gone, cost that every time; the same goes
+# for the picker below.
+- retry:
+    maxRetries: 2
     commands:
-      - swipe:
-          start: 50%, 62%
-          end: 50%, 97%
-      - waitForAnimationToEnd:
-          timeout: 3000
-- assertNotVisible: 'Save to Files'
+      - runFlow:
+          when:
+            visible: 'Save to Files'
+          commands:
+            - swipe:
+                start: 50%, 62%
+                end: 50%, 97%
+      - extendedWaitUntil:
+          notVisible: 'Save to Files'
+          timeout: 5000
 # Still on the Settings File page: the drag closed the share sheet, not Settings.
 - assertVisible:
     id: 'settings-file-export'
 # Import hands off to the system document picker (any file type; the
 # parser judges the contents). Opening and cancelling it is as far as a
 # simulator without a seeded Files provider can go.
+# Like the share sheet, a slow runner draws the picker blank for over ten
+# seconds before "Browse" appears (run 38432230435, both attempts).
 - tapOn:
     id: 'settings-file-import'
 - extendedWaitUntil:
     visible: 'Browse'
-    timeout: 10000
+    timeout: 30000
 # The picker's close button grows into place: "Browse" is already there
 # while "Cancel" is still 1 pt wide, and a tap on it then reports done
 # and closes nothing (run 36995872243). Let the picker settle, and tap
 # again for as long as it is up.
-- repeat:
-    times: 3
-    while:
-      visible: 'Browse'
+- retry:
+    maxRetries: 2
     commands:
-      - waitForAnimationToEnd:
-          timeout: 3000
-      - tapOn:
-          text: 'Cancel'
-          optional: true
-      - waitForAnimationToEnd:
-          timeout: 3000
+      - runFlow:
+          when:
+            visible: 'Browse'
+          commands:
+            - waitForAnimationToEnd:
+                timeout: 3000
+            - tapOn:
+                text: 'Cancel'
+                optional: true
+      - extendedWaitUntil:
+          notVisible: 'Browse'
+          timeout: 5000
 - extendedWaitUntil:
     visible:
       id: 'settings-file-import'

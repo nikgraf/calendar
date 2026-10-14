@@ -1,9 +1,24 @@
+import { CalendarInfo } from '@calendar/core';
 import { describe, expect, it } from 'vite-plus/test';
-import { focusDraft, startThread } from './draftThread.ts';
+import { startThread } from './draftThread.ts';
 import type { QuickAddItem } from './quickAddItem.ts';
-import { firstUnwritableDraft, threadPreviews } from './threadEditor.ts';
+import { threadPreviews } from './threadEditor.ts';
 
 const TZ = 'Europe/Vienna';
+const calendar = (id: string, colorHex: string) =>
+  new CalendarInfo({
+    accessRole: 'owner',
+    accountId: 'acc',
+    colorHex,
+    id,
+    isPrimary: false,
+    isVisible: true,
+    provider: 'google',
+    summary: id,
+    timeZone: TZ,
+  });
+const calendars = [calendar('work', '#123456'), calendar('home', '#654321')];
+const context = { calendarKey: 'acc:work', calendars, timeZone: TZ };
 const event = (title: string, date: string, startTime: string, endTime: string): QuickAddItem => ({
   kind: 'event',
   prefill: { date, endTime, isAllDay: false, startTime, title },
@@ -28,10 +43,7 @@ describe('threadPreviews', () => {
   it('draws the focused draft from the live form, the others as the thread holds them, a to-do not at all', () => {
     const state = startThread([dinner, lunch, todo], 'x', { id: ids() });
     const live = event('Dinner with Teo', '2026-08-28', '20:00', '21:00');
-    const previews = threadPreviews(state.drafts, state.focused, live, {
-      color: '#123456',
-      timeZone: TZ,
-    });
+    const previews = threadPreviews(state.drafts, state.focused, live, context);
     expect(
       previews.map((preview) => [preview.id, preview.title, preview.startTime, preview.focused]),
     ).toEqual([
@@ -47,31 +59,37 @@ describe('threadPreviews', () => {
       { date: '2026-08-29', endTime: '10:00', startTime: '09:00' },
     ];
     const state = startThread([dinner], 'x', { id: ids(), slots });
-    const previews = threadPreviews(state.drafts, 0, dinner, { color: '#123456', timeZone: TZ });
+    const previews = threadPreviews(state.drafts, 0, dinner, context);
     expect(previews.map((preview) => preview.candidate?.startTime)).toEqual([undefined, '09:00']);
-    expect(threadPreviews(state.drafts, 0, todo, { color: '#123456', timeZone: TZ })).toEqual([]);
+    expect(threadPreviews(state.drafts, 0, todo, context)).toEqual([]);
   });
-});
 
-describe('firstUnwritableDraft', () => {
-  it('finds the first draft beside the focused one Save would refuse, with the reason', () => {
-    const state = focusDraft(
-      startThread(
-        [
-          event('Ok', '2026-08-28', '09:00', '10:00'),
-          event('Backwards', '2026-08-28', '11:00', '10:00'),
-          todo,
-        ],
-        'x',
-        { id: ids() },
-      ),
-      0,
+  it('draws each draft in the color of the calendar it goes to: its own, else the form’s', () => {
+    const state = startThread(
+      [dinner, lunch, event('Brunch', '2026-08-30', '11:00', '12:00')],
+      'x',
+      {
+        id: ids(),
+      },
     );
-    expect(firstUnwritableDraft(state, { calendarKey: 'acc:cal', timeZone: TZ })).toMatchObject({
-      index: 1,
-    });
+    const extras = { attendees: [], description: '', reminders: undefined };
+    const drafts = state.drafts.map((draft, index) =>
+      index === 1 ? { ...draft, extras: { ...extras, calendarKey: 'acc:home' } } : draft,
+    );
     expect(
-      firstUnwritableDraft(focusDraft(state, 1), { calendarKey: 'acc:cal', timeZone: TZ }),
-    ).toBeUndefined();
+      threadPreviews(drafts, 0, dinner, { ...context, calendarKey: 'acc:home' }).map((preview) => [
+        preview.id,
+        preview.color,
+      ]),
+    ).toEqual([
+      ['d1', '#654321'],
+      ['d2', '#654321'],
+      ['d3', '#654321'],
+    ]);
+    expect(threadPreviews(drafts, 0, dinner, context).map((preview) => preview.color)).toEqual([
+      '#123456',
+      '#654321',
+      '#123456',
+    ]);
   });
 });

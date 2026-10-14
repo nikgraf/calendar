@@ -1,5 +1,11 @@
 import type { LanguageModel } from './model.ts';
-import { EventRecord, plainDateToUtcMs, Temporal, type BackendClient } from '@calendar/core';
+import {
+  Attendee,
+  EventRecord,
+  plainDateToUtcMs,
+  Temporal,
+  type BackendClient,
+} from '@calendar/core';
 import { Effect } from 'effect';
 import { describe, expect, it } from 'vite-plus/test';
 import { findSlotsFor, makeFindSlots } from './findTimePipeline.ts';
@@ -22,8 +28,9 @@ const model = (parse: unknown): LanguageModel => ({
   status: async () => 'ready',
 });
 
-// Only getEventsInRange is consulted; the rest of the client is irrelevant
-// to the pipeline (the appleModelDetail precedent for partial fakes).
+// Only getEventsInRange and listAccounts are consulted; the rest of the
+// client is irrelevant to the pipeline (the appleModelDetail precedent for
+// partial fakes).
 const backendWith = (
   getEventsInRange: BackendClient['getEventsInRange'],
   calls?: Array<{ rangeEndUtc: number; rangeStartUtc: number }>,
@@ -33,6 +40,7 @@ const backendWith = (
       calls?.push(payload);
       return getEventsInRange(payload);
     },
+    listAccounts: () => Effect.succeed([{ email: 'me@example.com', id: 'a' }]),
   }) as unknown as BackendClient;
 
 const busyEvent = (startUtc: number, endUtc: number) =>
@@ -127,6 +135,28 @@ describe('findSlotsFor (the model-free half)', () => {
     expect(await findSlotsFor(backend, constraints, TZ)).toEqual([]);
     expect(
       await findSlotsFor(backend, constraints, TZ, { exclude: (event) => event.id === own.id }),
+    ).toEqual([{ date: tomorrow.toString(), endTime: '10:00', startTime: '09:00' }]);
+  });
+
+  it('reads the account emails, so a declined invitation leaves its time free', async () => {
+    const constraints = {
+      durationMinutes: 60,
+      earliestTime: '09:00',
+      latestTime: '10:00',
+      windowEndDate: tomorrow.toString(),
+      windowStartDate: tomorrow.toString(),
+    };
+    // The guest list does not mark the user's entry: only the account's email finds it.
+    const declined = new EventRecord({
+      ...busyEvent(atWallClock(tomorrow, 9), atWallClock(tomorrow, 10)),
+      attendees: [new Attendee({ email: 'ME@example.com', responseStatus: 'declined' })],
+    });
+    expect(
+      await findSlotsFor(
+        backendWith(() => Effect.succeed([declined])),
+        constraints,
+        TZ,
+      ),
     ).toEqual([{ date: tomorrow.toString(), endTime: '10:00', startTime: '09:00' }]);
   });
 });

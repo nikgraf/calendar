@@ -38,7 +38,9 @@ SQLite (node:sqlite / op-sqlite)
 parsing live in `packages/ai` behind the `LanguageModel`, `SpeechToText`
 and `TextRecognizer` seams; the pure `findFreeSlots` solver
 (`packages/core/src/scheduling/`) computes free slots from the
-already-synced local events. The model extracts, the code decides:
+already-synced local events — busy is what `blocksTime` says (timed, not
+cancelled, not marked free, not declined), the rule the agent gateway's
+free/busy shares. The model extracts, the code decides:
 `packages/ai/src/grounding.ts` reads the phrase itself — clock times,
 meal and part-of-day words (one table: quick-add defaults and the
 finder's bounds), weekdays, to-do cues, the finder's windows and
@@ -193,13 +195,40 @@ it whenever a kind is added. Rules that keep the queue correct:
   `moveToListId`) on a Google list fail with `UnsupportedForProviderError`.
   `updateTask` cannot clear a stored due day; only a create may be undated.
 - **Task moves** (`moveTask`, the task twin of `moveEvent`): between two
-  Reminders lists EventKit changes the list in place; every other route —
-  Reminders ↔ Google and Google → another Google list or account — creates
-  the task in the target from the editor's draft and then deletes the
-  source, so a failure in between leaves a duplicate, never a lost task.
-  Completion follows the task. What a route drops is computed in core
-  (`taskMoveLoss`) from the source record and confirmed in the editor
-  before anything is written.
+  Reminders lists EventKit changes the list in place, and so does Google
+  inside one account — a `moveTask` op (`tasks.move` with
+  `destinationTasklist`) keeps the id, takes the subtasks along nested as
+  they were, and the task leaves a parent it had. The form's edits are
+  queued first; the rows move at once and every op queued for the task or
+  its subtasks is re-queued in the destination behind the move (an
+  earlier move out of that list stays where it is). An op
+  addressing a list a queued move goes into (a move onwards included)
+  waits for it, and a move waits for what was queued before it in its
+  source list (`earlierTaskOps`). While a move waits, a pull of the source
+  does not put its rows back (Google sends no tombstone when a task leaves
+  a list): a Google list's pull holds the drain (`whileQueueHeld`), so no
+  move lands while its request is out, and reads the queued moves after
+  each answer; a copy that slipped in anyway goes when the move lands. A create still
+  in flight refuses the move (`TaskCreatePendingError`); an unsent one is
+  simply created in the destination. A discard or a 404 puts the rows
+  back, with what was queued behind the move (a subtask deleted since
+  included) — unless the 404 answers a retry whose first attempt landed:
+  then the task is in the destination already and the move settles
+  there; a destination Google does not answer for keeps the move queued,
+  and one that is gone puts it back.
+  Mirrors count a queued move for both lists. Every other route —
+  Reminders ↔ Google, another Google account — creates the task in the
+  target from the editor's draft, then its subtasks (nested under the
+  copy on Google, `createTask` with `taskParent`, last to first since
+  Google inserts a subtask first among its siblings, each waiting for the
+  one before it so a retry cannot swap them; as reminders of their
+  own in Reminders), and then deletes the source, subtasks first; a
+  failure in between leaves a duplicate, never a lost task. Completion
+  follows. What a route drops — reminder fields, a subtask leaving its
+  parent, subtasks Reminders cannot nest — is `previewMoveTask` (core
+  `taskMoveLoss` over the stored record and its subtasks), confirmed in
+  the editor before anything is written. `parentId`/`position` are stored
+  for Google tasks; nothing draws the hierarchy yet (todo.md).
 - **Conversions** (`convertEventToTask`, `convertTaskToEvent`): an event
   becomes a task (the whole series for a recurring one) or a task an event
   by creating the other kind from the editor's draft and then deleting the
@@ -668,6 +697,18 @@ details, or Custom), so a calendar can be shared without the details.
   seed its repeat fields — an occurrence row has no lines — and sends the
   rule only when those fields were edited. A read-through Apple series
   has no stored master, so its rule stays uneditable in the app.
+- The event form's times are two rows, Starts and Ends, each a date and
+  (unless all-day) a time: `EditorTimeFields.endDate` is an all-day
+  event's last day (inclusive) or a timed one's end day, so a multi-day
+  or overnight event round-trips (`editorDatesOf` reads stored times
+  back). A new start date carries the end date along. An update whose
+  time fields still read as the form opened them sends no times at all
+  (`timeFieldsChanged`): a title edit keeps the stored span to the second
+  and in its own zone. A this-and-following split always sends them: its
+  new series starts at the times sent, the occurrence as the form shows
+  it, moved or not (`updateSendsTimes`). An all-day series keeps its dates on a series or
+  following edit, so a changed end date asks for "This event" like a
+  changed start date.
 - Dragging a recurring instance commits an instance-scope override.
 
 ## Time-grid gestures
@@ -825,9 +866,16 @@ gateway carries all of it. Details, limits and the threat model:
   the lane; `draftPreview.ts` derives them from the thread, the focused
   one from the live form, every occurrence of a repeating one), the
   focused draft outlined and its day shown; a click on a block or the
-  pager swaps the form; Save writes the focused draft (and keeps the
-  editor on the next while there are more), "Add all" the others as they
-  stand. Capture opens its events as one such thread
+  pager swaps the form. Each draft keeps what the form held for it — its
+  kind, the calendar or list picked, guests, notes, a reminder's own
+  fields (`DraftExtras`) — and another draft taking the form shows as it
+  was left, not as a kind switch: nothing carries over, nothing is asked
+  (`useEditorKinds().show`); a draft the form never held takes the form's
+  calendar and list, so one pick reaches every untouched draft. Save
+  writes the focused draft (and keeps the editor on the next while there
+  are more); "Add all" the others as they stand, events and to-dos alike,
+  each where it was put, after Save's own checks (`planAddAll`,
+  `addAll.ts`). Capture opens its events as one such thread
   (`useCaptureModel.onMany`) rather than a review list. The panel renders
   `useThreadEditor` (`packages/app-state/src/threadEditor.ts`), which the
   iOS edit sheet shares: both editor models, the kind control, the thread

@@ -104,7 +104,7 @@ const googleCalendar = (
     ...overrides,
   });
 
-const googleEvent = (
+export const googleEvent = (
   id: string,
   calendarId: string,
   title: string,
@@ -367,6 +367,7 @@ export const makeWorld = (
         insertTask: never,
         listTaskLists: never,
         listTasks: never,
+        moveTask: never,
         patchTask: never,
       }),
     ),

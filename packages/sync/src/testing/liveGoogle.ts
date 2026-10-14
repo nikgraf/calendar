@@ -181,6 +181,7 @@ export interface LiveScratchShape {
   readonly insertTask: (
     listId: string,
     task: Record<string, unknown>,
+    parent?: string,
   ) => Effect.Effect<LiveTask, ScratchError>;
   readonly listInstances: (
     calendarId: string,
@@ -237,7 +238,8 @@ const makeLiveScratch = (accountId: string): Effect.Effect<LiveScratchShape, nev
       getEvent: (calendarId, eventId) => call((token) => getEvent(token, calendarId, eventId)),
       getTask: (listId, taskId) => call((token) => getTask(token, listId, taskId)),
       insertEvent: (calendarId, event) => call((token) => insertEvent(token, calendarId, event)),
-      insertTask: (listId, task) => call((token) => insertTask(token, listId, task)),
+      insertTask: (listId, task, parent) =>
+        call((token) => insertTask(token, listId, task, parent)),
       listInstances: (calendarId, eventId) =>
         call((token) => listInstances(token, calendarId, eventId)),
       listTasks: (listId) => call((token) => listTasks(token, listId)),

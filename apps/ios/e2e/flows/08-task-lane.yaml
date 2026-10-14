@@ -61,12 +61,16 @@ tags:
       - extendedWaitUntil:
           notVisible: 'Solunivo e2e task to delete'
           timeout: 20000
+      - evalScript: ${output.sheetClosed = true}
 # The fallback keys on the sheet still being open, not on the list rows:
 # after the branch above the sheet is closed, so "no list rows" would be
-# true for the wrong reason and the Cancel tap would fail.
+# true for the wrong reason and the Cancel tap would fail. The branch
+# says so in a flag rather than the fallback looking for "New Task":
+# Maestro gives a `when` condition up to 7 s to come true, so `visible:`
+# on a sheet that is gone cost that after every save.
 - runFlow:
     when:
-      visible: 'New Task'
+      true: ${output.sheetClosed !== true}
     commands:
       # No tasks-enabled account: leave the sheet as we found it.
       - tapOn: 'Cancel'

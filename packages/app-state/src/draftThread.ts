@@ -12,11 +12,12 @@ import {
   type EventReminders,
   type FreeSlot,
   type GeoLocation,
-  minutesBetween,
+  draftMinutes,
   Temporal,
 } from '@calendar/core';
 import { useRef, useState } from 'react';
 import { convertQuickAddItem, type QuickAddItem } from './quickAddItem.ts';
+import type { ReminderFields } from './taskEditorModel.ts';
 
 /**
  * The thread behind a new item: what the user said, turn by turn, and the
@@ -31,15 +32,22 @@ import { convertQuickAddItem, type QuickAddItem } from './quickAddItem.ts';
  */
 
 /**
- * What the form holds of an event draft beyond its prefill — guests,
- * notes, notifications — kept per draft so they never follow the form to
- * the next draft, and written with it by "Add all".
+ * What the form holds of a draft beyond its prefill — guests, notes,
+ * notifications, the calendar or list picked, a to-do's own fields —
+ * kept per draft so they never follow the form to the next draft, and
+ * written with it by "Add all".
  */
 export interface DraftExtras {
   readonly attendees: ReadonlyArray<AttendeeInput>;
+  /** The calendar picked for the draft (`accountId:calendarId`), when the form showed it as an event. */
+  readonly calendarKey?: string | undefined;
   readonly description: string;
   /** Coordinates picked for the location text, while they still match it. */
   readonly geo?: GeoLocation | undefined;
+  /** The list picked for the draft (`accountId:listId`), when the form showed it as a to-do. */
+  readonly listKey?: string | undefined;
+  /** A to-do's Reminders-only fields, when the form showed the draft as one. */
+  readonly reminder?: ReminderFields | undefined;
   /** The notifications as edited; undefined while untouched (the calendar's default). */
   readonly reminders: EventReminders | undefined;
   /** A to-do's notes, when the form showed the draft as one. */
@@ -114,15 +122,36 @@ export const nextDraftId = (): string => {
   return `draft-${counter}`;
 };
 
-/** "Fri, Aug 28 · 19:00–20:00", "Fri, Aug 28" for an all-day event, "Tue, Aug 25 · 09:30" for a to-do. */
-export const describeDraftItem = (item: QuickAddItem): string => {
-  const day = Temporal.PlainDate.from(item.prefill.date).toLocaleString('en-US', {
+const dayLabel = (date: string): string =>
+  Temporal.PlainDate.from(date).toLocaleString('en-US', {
     day: 'numeric',
     month: 'short',
     weekday: 'short',
   });
+
+/** The day an event draft ends on, when it is not the day it starts. */
+const lastDayOf = (item: QuickAddItem): string | undefined =>
+  item.kind === 'event' &&
+  item.prefill.endDate !== undefined &&
+  item.prefill.endDate !== item.prefill.date
+    ? item.prefill.endDate
+    : undefined;
+
+/**
+ * "Fri, Aug 28 · 19:00–20:00", "Fri, Aug 28" for an all-day event, "Tue,
+ * Aug 25 · 09:30" for a to-do; a draft over several days names both
+ * ("Fri, Aug 28 – Sun, Aug 30", "Fri, Aug 28 · 23:00 – Sat, Aug 29 · 01:00").
+ */
+export const describeDraftItem = (item: QuickAddItem): string => {
+  const day = dayLabel(item.prefill.date);
   if (item.kind === 'task') {
     return item.prefill.time === undefined ? day : `${day} · ${item.prefill.time}`;
+  }
+  const last = lastDayOf(item);
+  if (last !== undefined) {
+    return item.prefill.isAllDay
+      ? `${day} – ${dayLabel(last)}`
+      : `${day} · ${item.prefill.startTime} – ${dayLabel(last)} · ${item.prefill.endTime}`;
   }
   return item.prefill.isAllDay ? day : `${day} · ${item.prefill.startTime}–${item.prefill.endTime}`;
 };
@@ -134,12 +163,12 @@ const timesOf = (item: QuickAddItem): string =>
       ? 'all day'
       : `${item.prefill.startTime}–${item.prefill.endTime}`;
 
-const dayOf = (item: QuickAddItem): string =>
-  Temporal.PlainDate.from(item.prefill.date).toLocaleString('en-US', {
-    day: 'numeric',
-    month: 'short',
-    weekday: 'short',
-  });
+const dayOf = (item: QuickAddItem): string => {
+  const last = lastDayOf(item);
+  return last === undefined
+    ? dayLabel(item.prefill.date)
+    : `${dayLabel(item.prefill.date)} – ${dayLabel(last)}`;
+};
 
 const repeatOf = (item: QuickAddItem): string | undefined =>
   item.kind === 'event' && item.prefill.recurrence
@@ -177,7 +206,9 @@ export const changedDraftFields = (
 ): ReadonlyArray<DraftField> => [
   ...(before.kind === after.kind ? [] : ['kind' as const]),
   ...(before.prefill.title === after.prefill.title ? [] : ['title' as const]),
-  ...(before.prefill.date === after.prefill.date ? [] : ['date' as const]),
+  ...(before.prefill.date === after.prefill.date && lastDayOf(before) === lastDayOf(after)
+    ? []
+    : ['date' as const]),
   ...(timesOf(before) === timesOf(after) ? [] : ['time' as const]),
   ...(placeOf(before) === placeOf(after) ? [] : ['location' as const]),
   ...(ruleOf(before) === ruleOf(after) ? [] : ['repeat' as const]),
@@ -323,7 +354,8 @@ export const itemAtSlot = (item: QuickAddItem, slot: FreeSlot, title?: string): 
       prefill: { ...item.prefill, date: slot.date, time: slot.startTime, title: named },
     };
   }
-  const { assumedTime: _assumed, ...prefill } = item.prefill;
+  // A slot is one day: a span the draft had ends with it.
+  const { assumedTime: _assumed, endDate: _endDate, ...prefill } = item.prefill;
   return {
     kind: 'event',
     prefill: {
@@ -353,6 +385,7 @@ export const slotItem = (slot: FreeSlot, title?: string): QuickAddItem => ({
 export const isAtSlot = (item: QuickAddItem, slot: FreeSlot): boolean =>
   item.kind === 'event' &&
   !item.prefill.isAllDay &&
+  lastDayOf(item) === undefined &&
   item.prefill.date === slot.date &&
   item.prefill.startTime === slot.startTime &&
   item.prefill.endTime === slot.endTime;
@@ -702,9 +735,10 @@ export const useDraftThread = ({
         ? state
         : updateDraft(state, state.focused, submitted.item, submitted.extras);
     const target = current.drafts[current.focused];
+    // The draft's whole length: an overnight one ends on the next day.
     const length =
       target?.item.kind === 'event' && !target.item.prefill.isAllDay
-        ? minutesBetween(target.item.prefill.startTime, target.item.prefill.endTime)
+        ? draftMinutes(target.item.prefill, timeZone)
         : 0;
     setBusy(true);
     try {
