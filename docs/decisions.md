@@ -237,6 +237,15 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   split still sends the times shown. Rejected: inferring the end day
   from the times alone, which cannot say how many days an all-day event
   spans.
+- **Save sends only what changed** (2026-10-14, #208) — the event form
+  diffs title, notes and location against what it opened with, as the
+  task form already did, so an agent's or another device's edit made
+  while the form was open survives a title change; the kind goes only
+  with the times and an untouched Save writes nothing. Rejected: diffing
+  against the live row (an untouched field would read as changed once
+  sync moved it) and re-seeding the open form (loses what is typed).
+  Open: a split from an exception no longer carries its own notes into
+  the new series; the series' text continues instead.
 - **Drag to move and resize** — pointer drag on desktop, long-press pan
   plus a resize handle on iOS, shared snap math in core; gestures track
   input 1:1 and snap on release — Nik rejected discrete-step snapping

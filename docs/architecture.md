@@ -722,6 +722,16 @@ details, or Custom), so a calendar can be shared without the details.
   it, moved or not (`updateSendsTimes`). An all-day series keeps its dates on a series or
   following edit, so a changed end date asks for "This event" like a
   changed start date.
+- An update of an existing event sends only what the form changed
+  (`eventEditorChanges`, both apps): title, notes and location are
+  compared with what the form opened with — a snapshot, never the live
+  row — and guests, notifications and the rule go only once edited, the
+  kind (`isAllDay`) only with the times. An edit made elsewhere while the
+  form is open (another device, an agent, Google) survives a Save that
+  did not touch it; a this-and-following split keeps the series' own
+  text unless edited. The location and its coordinates go as a pair
+  (`vouchedGeo`, null clearing stale ones), so `withConsistentGeo` judges
+  what the user saw. An untouched Save writes nothing; a move still runs.
 - Dragging a recurring instance commits an instance-scope override.
 
 ## Time-grid gestures
