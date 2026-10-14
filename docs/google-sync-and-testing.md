@@ -743,6 +743,18 @@ the fixture account (`fixture@solunivo.test`, list "Mock Tasks", calendar
 EventKit and remove the account again. Maestro needs a JDK on PATH
 (Apple's `/usr/bin/java` stub is not one; see AGENTS.md).
 
+Those halves and the quick-add outcome branch on a script flag: the
+branch that ran sets `output.…`, and the other one is keyed on it
+(`when: true: ${…}` answers at once). A condition gets up to 7 s to come
+true (see the selector gotchas), so a "sheet still open?" check after a
+save (`visible:` on a sheet that is gone) paid that on every CI run. A
+loop that retypes or dismisses something is a `retry` block instead,
+proven by an `extendedWaitUntil` on its effect (07's notes in their
+field; 20's share sheet and picker, 22's stacked URL alerts gone). Its
+action sits behind a guard that is true at once on the first pass (20:
+the sheet is still up) or a flag that skips it there (07 retypes and 22
+taps Cancel only on a retry).
+
 Shared subflows (`common/`): `launch.yaml` (every flow starts with it:
 launch, recover the dev client if it fell back to the launcher, wait for
 "Today", `waitForAnimationToEnd` — SafeAreaView applies the top inset a

@@ -71,6 +71,16 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   repacked in, two shards; with the dev client a run took 49 minutes,
   18 before the first flow. The dev client with Metro stays for local
   runs and the live suite.
+- **Flow branches on script flags** (2026-10-14, `todo/maestro-flow-flags`)
+  — a `while`/`when` condition gets up to 7 s to come true, so the flows'
+  "sheet still open?" clean-ups after a save (07, 08, 09, 12, 17, 22),
+  06's quick-add outcome check, 07's notes retype and the dismiss loops
+  in 20 and 22 waited 5–8 s each on CI's path, over a minute per run. The
+  branch that ran now sets an `output` flag the other is keyed on; a loop
+  is `retry` + `extendedWaitUntil` on its effect. Rejected: flipping the
+  conditions (a condition false on the common path waits either way).
+  Open: 22's stacked-alert retry ran only on a stand-in (the simulator
+  stopped showing the alert).
 - **Test pruning** (2026-10-09, `todo/prune-tests`) — a test goes only
   if a surviving test asserts everything it did; iOS flows are merged per
   area, not dropped, because a launch or a Reminders connect repeated

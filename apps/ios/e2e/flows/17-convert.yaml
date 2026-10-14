@@ -197,11 +197,12 @@ tags:
                 timeout: 10000
             - runFlow: ../common/close-settings.yaml
             - assertVisible: 'Today'
+      - evalScript: ${output.sheetClosed = true}
 # No fixture account: leave the sheet as we found it (keyed on the sheet,
-# see 08).
+# by a flag, see 08).
 - runFlow:
     when:
-      visible: 'New (Task|Reminder)'
+      true: ${output.sheetClosed !== true}
     commands:
       - tapOn: 'Cancel'
       - assertVisible: 'Today'

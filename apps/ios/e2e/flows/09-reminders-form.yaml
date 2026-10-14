@@ -298,12 +298,13 @@ tags:
             - assertNotVisible: 'Nothing to do.'
             - tapOn: 'Calendar'
             - assertVisible: 'Today'
-# Keyed on the sheet still being open (see 08): after the branch above
-# closed it, "no Reminder kind visible" would be true for the wrong
-# reason and the Cancel tap would fail.
+      - evalScript: ${output.sheetClosed = true}
+# Keyed on the sheet still being open (see 08, also for the flag): after
+# the branch above closed it, "no Reminder kind visible" would be true
+# for the wrong reason and the Cancel tap would fail.
 - runFlow:
     when:
-      visible: 'New (Task|Reminder)'
+      true: ${output.sheetClosed !== true}
     commands:
       - tapOn: 'Cancel'
       - assertVisible: 'Today'
