@@ -54,3 +54,59 @@ export const groupTaskInbox = (
       .sort(byDueThenTitle),
   };
 };
+
+/** A row of a task section and the subtasks drawn indented under it. */
+export interface TaskTreeNode {
+  /** In Google's order among siblings (`position`); empty for most rows. */
+  readonly subtasks: ReadonlyArray<TaskRecord>;
+  readonly task: TaskRecord;
+}
+
+/** A task in its list and account: Google ids are unique within a list. `id` names another task there. */
+const keyOf = (task: TaskRecord, id = task.id): string => `${task.accountId}:${task.listId}:${id}`;
+
+/** The key of the task's parent; a Google subtask's parent is in its own list. */
+const parentKeyOf = (task: TaskRecord): string | undefined =>
+  task.parentId === undefined ? undefined : keyOf(task, task.parentId);
+
+/** Google's sibling order; a subtask without a position yet (not pulled since it was made) goes last. */
+const byPosition = (a: TaskRecord, b: TaskRecord): number =>
+  Number(a.position === undefined) - Number(b.position === undefined) ||
+  (a.position ?? '').localeCompare(b.position ?? '') ||
+  a.title.localeCompare(b.title) ||
+  a.id.localeCompare(b.id);
+
+/**
+ * Nests one section's tasks (an inbox group, after any list filter) the
+ * way Google Tasks draws them: a subtask goes under its parent when the
+ * parent is a row of the same section, siblings in Google's `position`
+ * order. A subtask whose parent is not there — due in another section,
+ * completed, or filtered out — stays a row of its own where it is, so a
+ * section never draws a task it does not hold and a late subtask is never
+ * hidden under a parent from another day. Google nests one level deep:
+ * a task whose parent is itself drawn nested stays at the top, which also
+ * breaks a cycle. Top-level rows keep the section's order. Reminders have
+ * no parents and pass through unchanged.
+ */
+export const nestSubtasks = (tasks: ReadonlyArray<TaskRecord>): ReadonlyArray<TaskTreeNode> => {
+  const present = new Set(tasks.map((task) => keyOf(task)));
+  const hasParentHere = (task: TaskRecord): boolean => present.has(parentKeyOf(task) ?? '');
+  // Who may hold subtasks: a row drawn at the top, i.e. without its parent here.
+  const holders = new Set(tasks.filter((task) => !hasParentHere(task)).map((task) => keyOf(task)));
+  const children = new Map<string, Array<TaskRecord>>();
+  for (const task of tasks) {
+    const parent = parentKeyOf(task);
+    if (parent !== undefined && holders.has(parent)) {
+      const siblings = children.get(parent);
+      if (siblings) {
+        siblings.push(task);
+      } else {
+        children.set(parent, [task]);
+      }
+    }
+  }
+  const nested = new Set([...children.values()].flat().map((task) => keyOf(task)));
+  return tasks
+    .filter((task) => !nested.has(keyOf(task)))
+    .map((task) => ({ subtasks: (children.get(keyOf(task)) ?? []).sort(byPosition), task }));
+};

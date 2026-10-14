@@ -587,7 +587,8 @@ EventKit, read-only viewer, moves both ways); `location` (the picker and
 map over the geo fixture); `birthdays` (device-contacts fixture, chip,
 detail, device-only reminder settings); `eventReminders`; `timeZones`;
 `settingsFile`; `mirrors`; `taskConvert` (Google writes left queued) and
-`taskConvertGoogle` (the fake Google API, so pushes land); `convert`;
+`taskConvertGoogle` (the fake Google API, so pushes land; the rail's
+subtasks nested in `position` order); `convert`;
 `conflicts` (seeded parked 412s resolved through the banner, plus the
 notice stack at 1024 px and 600 px); `search`; `agentGateway` (seeded
 agents, the built relay against the run's socket: CLI + MCP reads, a

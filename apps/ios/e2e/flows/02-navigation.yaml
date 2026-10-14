@@ -114,6 +114,13 @@ tags:
 - tapOn: 'Tasks'
 - assertVisible:
     id: 'tasks-screen'
+# With the fixture Google account (CI), its subtask is drawn under its
+# parent in "Upcoming": only a nested row's label names the parent.
+- runFlow:
+    when:
+      visible: 'Plan the offsite.*'
+    commands:
+      - assertVisible: 'Book the room, subtask of Plan the offsite.*'
 - runFlow: ../common/open-settings.yaml
 - tapOn: 'Done'
 - assertVisible:

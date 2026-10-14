@@ -240,7 +240,11 @@ it whenever a kind is added. Rules that keep the queue correct:
   parent, subtasks Reminders cannot nest — is `previewMoveTask` (core
   `taskMoveLoss` over the stored record and its subtasks), confirmed in
   the editor before anything is written. `parentId`/`position` are stored
-  for Google tasks; nothing draws the hierarchy yet (todo.md).
+  for Google tasks. The task inbox on both apps nests each section with
+  core `nestSubtasks`: a subtask under its parent when both are in that
+  section (after the iOS list filter), siblings in `position` order; a
+  subtask whose parent is elsewhere stays a row of its own. Nothing
+  reorders or re-nests a task yet (todo.md).
 - **Conversions** (`convertEventToTask`, `convertTaskToEvent`): an event
   becomes a task (the whole series for a recurring one) or a task an event
   by creating the other kind from the editor's draft and then deleting the
