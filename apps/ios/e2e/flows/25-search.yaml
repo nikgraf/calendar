@@ -160,13 +160,12 @@ tags:
 - inputText: 'Solunivo search e2e'
 # XCTest typing can drop or move letters (see flow 07): retype until the
 # field holds the title.
-- evalScript: ${output.retype = false}
 - retry:
     maxRetries: 3
     commands:
       - runFlow:
           when:
-            true: ${output.retype}
+            true: ${output.retype === true}
           commands:
             - tapOn: 'Clear text'
             - inputText: 'Solunivo search e2e'

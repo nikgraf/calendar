@@ -32,17 +32,16 @@ tags:
       # loop did this before, but Maestro waits up to 7 s (from the last
       # tap or typing) for a condition to come true, so its exit check,
       # with the title right, cost that every time.
-      - evalScript: ${output.retype = false}
       - retry:
           maxRetries: 3
           commands:
             - runFlow:
                 when:
-                  true: ${output.retype}
+                  true: ${output.retypeTitle === true}
                 commands:
                   - tapOn: 'Clear text'
                   - inputText: 'Solunivo e2e event to delete'
-            - evalScript: ${output.retype = true}
+            - evalScript: ${output.retypeTitle = true}
             - extendedWaitUntil:
                 visible:
                   id: 'event-title'

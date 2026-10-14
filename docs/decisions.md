@@ -94,9 +94,9 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   on the effect, script flags where the common path branches; recovery
   paths kept and fault-injected. The idle had hidden two races: the
   header's late top inset (now proven: `today` below the status bar's
-  clock) and a launcher-row tap racing the dev client's own reopen.
-  Rejected: a fixed settle delay after launch. Open: the flows' own
-  no-account / model-outcome `when` branches (06, 07, 08, 17, 22).
+  clock, 12- or 24-hour) and a launcher-row tap racing the dev client's
+  own reopen. Rejected: a fixed settle delay after launch. Open: the
+  slide-to-type card and the dev menu's onboarding never showed locally.
 - **Dependencies** (2026-09-14, 2026-10-09, 2026-10-03) — every sweep is
   one commit per group, each droppable. `effect*` exact (the pin stays
   exact on 4.x: rpc, sql, http and reactivity are `@stability unstable`),

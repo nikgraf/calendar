@@ -778,20 +778,14 @@ thread is typed the same way and sent with `pressKey: Enter`, the
 keyboard's Search key; the chips' × is "Remove <label>"), `confirm-open.yaml` and
 `await-shell.yaml` (the bootstrap flow's URL alert and shell wait).
 
-No subflow waits on a condition on its common path. Maestro gives a
-`while`/`when` condition up to 7 s, counted from the last tap or script,
-to come true (`notVisible:` on an element that is there, `visible:` on
-one that is not), so a `repeat … while: notVisible: X` loop whose body
-made X appear paid that on every exit. A re-tap or retype is a `retry`
-block instead: the action, behind a guard that is true while it is still
-needed (~0.5 s, and a sheet that came up late takes no second tap), then
-an `extendedWaitUntil` on its effect, which returns the moment it holds
-and, failing, makes `retry` run the block again. Where the common path
-has to branch, it branches on a script flag (`true: ${output.…}`
-answers at once): `await-shell.yaml` runs its recovery guards only when
-the shell is not what showed, a retype loop only checks the field on its
-first pass, and `search-for.yaml` reads the field with `copyTextFrom` (its
-text is the placeholder while it is empty).
+The subflows keep conditions off their common path the same way (the
+7 s rule is under the selector gotchas): a re-tap is a `retry` block, the
+tap behind a guard that is true while it is still needed (~0.5 s, and a
+sheet that came up late takes no second tap), then an
+`extendedWaitUntil` on its effect. `await-shell.yaml` runs its recovery
+guards only when the shell is not what showed (a script flag), and
+`search-for.yaml` reads the field with `copyTextFrom` (its text is the
+placeholder while it is empty).
 
 Selector gotchas (each caused a real failure):
 
