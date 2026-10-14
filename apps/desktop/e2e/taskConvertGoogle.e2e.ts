@@ -39,6 +39,16 @@ const googleFixture: GoogleFixture = {
         title: 'Buy groceries',
         updated: '2026-01-01T00:00:00.000Z',
       },
+      // A subtask: a move of its parent takes it along.
+      {
+        due: `${isoToday}T00:00:00.000Z`,
+        id: 'task-milk',
+        parent: 'task-groceries',
+        position: '00000000000000000000',
+        status: 'needsAction',
+        title: 'Milk',
+        updated: '2026-01-01T00:00:00.000Z',
+      },
     ],
   },
 };
@@ -201,7 +211,7 @@ describe('Converting tasks against the fake Google API', () => {
     expect(await cdp.eval(`!!document.querySelector('[data-testid="move-confirm"]')`)).toBe(false);
   });
 
-  it('a Google task moved to another Google list is recreated there with a server id', async () => {
+  it('a Google task moved to another Google list keeps its id and takes its subtask along', async () => {
     const { cdp } = app;
     await open('Buy groceries', 'Edit task');
     await cdp.eval(setSelect(LIST_SELECT, 'acc-e2e:list-errands'));
@@ -209,16 +219,41 @@ describe('Converting tasks against the fake Google API', () => {
     await expect
       .poll(async () => {
         const tasks = await readTasks(app.userDataDir);
-        const moved = tasks.find((task) => task.title === 'Buy groceries');
+        const where = (id: string) => {
+          const row = tasks.find((task) => task.id === id);
+          return row && `${row.listId}<${row.parentId ?? ''}`;
+        };
         return {
-          gone: !tasks.some((task) => task.id === 'task-groceries'),
-          listId: moved?.listId,
+          groceries: where('task-groceries'),
+          milk: where('task-milk'),
           pending: await readPendingOpsCount(app.userDataDir),
-          serverId: isServerId(moved?.id),
         };
       })
-      .toEqual({ gone: true, listId: 'list-errands', pending: 0, serverId: true });
+      .toEqual({ groceries: 'list-errands<', milk: 'list-errands<task-groceries', pending: 0 });
+    // Nothing lost, so nothing asked.
+    expect(await cdp.eval(`!!document.querySelector('[data-testid="move-confirm"]')`)).toBe(false);
     // Still on screen: a move never loses the chip.
     expect(await cdp.locate('[title="Buy groceries"]')).toBeTruthy();
+  });
+
+  it('a subtask moved to another list asks first, then becomes a task of its own', async () => {
+    const { cdp } = app;
+    await open('Milk', 'Edit task');
+    await cdp.eval(setSelect(LIST_SELECT, 'acc-e2e:list-e2e'));
+    await cdp.clickButtonWithText('Save');
+    const summary = await cdp.waitFor<string>(
+      `document.querySelector('[data-testid="move-confirm"]')?.textContent ?? ''`,
+    );
+    expect(summary).toContain('It is a subtask: in the new list it becomes a task of its own.');
+    await cdp.clickButtonWithText('Move anyway');
+    await expect
+      .poll(async () => {
+        const milk = (await readTasks(app.userDataDir)).find((task) => task.id === 'task-milk');
+        return {
+          at: milk && `${milk.listId}<${milk.parentId ?? ''}`,
+          pending: await readPendingOpsCount(app.userDataDir),
+        };
+      })
+      .toEqual({ at: 'list-e2e<', pending: 0 });
   });
 });

@@ -495,10 +495,21 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   deletes the source (a failure leaves a duplicate, never a lost task);
   the rpc carries the editor's draft, so a task can gain a time on its way
   into Reminders; the loss preview is pure core, no preview rpc. Google →
-  Google is not a server move (`parent`/`position` do not follow). The
+  Google is not a server move (`parent`/`position` do not follow; since
+  #201 it is, see below, with a preview rpc). The
   fake Google API became an app fixture for both e2e suites — no HTTP
   mock server; it sits behind effect's HttpClient with a memory
   TokenStore.
+- **Task moves keep the hierarchy** (2026-10-13, #201) — inside one
+  Google account a move is Google's `tasks.move` (id kept, subtasks along,
+  a queued `moveTask` op like the event `move`) instead of
+  copy-then-delete, which deleted a parent's subtasks with it on Google.
+  Other routes copy the subtasks too, nested on Google, as reminders of
+  their own in Reminders; `previewMoveTask` names a subtask leaving its
+  parent and subtasks Reminders flattens. Rejected: refusing to move a
+  task with subtasks, and flattening them on Google. Open (todo.md):
+  drawing the hierarchy and reordering; a delete or conversion of a
+  parent does not mention its subtasks yet.
 - **Convert events ↔ tasks** (2026-09-28, #93) — the same copy-then-delete
   through a shared `crossStore` ordering. The confirmation asks only when
   a set field has no home on the other side: the end time never counts, a

@@ -10,7 +10,6 @@ import {
   type TaskConvertValues,
   type TaskDraft,
   type TaskListInfo,
-  taskMoveLoss,
   taskMoveLossSummary,
   type TaskPriority,
   type TaskProvider,
@@ -391,10 +390,12 @@ export const useTaskEditorModel = ({
           setError('Add a due date before moving this task to another list.');
           return;
         }
-        const loss = taskMoveLoss(existing, {
-          sameAccount: existing.accountId === accountId,
-          source: existing.provider,
-          target: provider,
+        // The backend knows the task's subtasks, which move with it.
+        const loss = await mutations.previewMoveTask({
+          accountId: existing.accountId,
+          target: { accountId, taskListId },
+          taskId: existing.id,
+          taskListId: existing.listId,
         });
         const summary = taskMoveLossSummary(loss);
         // Ask before writing anything, so "keep it here" leaves no trace.
