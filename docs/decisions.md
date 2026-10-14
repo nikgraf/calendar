@@ -415,6 +415,13 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   nothing. Codex review: a held press keeps the slide's columns, a second
   pick continues mid-slide. Open: the all-day lane can resize when a slide
   ends.
+- **iOS event notes** (2026-10-13) — the iOS event form gets the Notes
+  field the desktop editor has had since #135, last in the form after
+  notifications as there. The shared model already loaded and saved
+  `description`; only the field was missing. A read-only calendar shows
+  its notes uneditable and offers no empty field. Open: notes are the
+  stored text, so a description written as HTML in Google's web UI shows
+  its markup on both apps.
 
 ## Invitees, contacts and birthdays
 

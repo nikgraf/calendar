@@ -173,8 +173,8 @@ decision and platform notes live in `docs/decisions.md`.
       `TextRecognizer` seam, nothing above changes), a helper method that
       builds the attachment, and own Swift on iOS since
       `@react-native-ai/apple` 0.12 is text-only. Also: keep the source
-      text as the event's notes (`carried.description` exists in the
-      editor model, the editors have no notes field yet); shared web URLs
+      text as the event's notes (both editors have a notes field;
+      capture does not fill it); shared web URLs
       (the activation rule leaves them out — nothing fetches a page);
       multi-day events (the editor clamps an end to its start day); a
       File-menu entry if ⌘V proves undiscoverable; token counting via
