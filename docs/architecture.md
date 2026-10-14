@@ -827,9 +827,16 @@ gateway carries all of it. Details, limits and the threat model:
   the lane; `draftPreview.ts` derives them from the thread, the focused
   one from the live form, every occurrence of a repeating one), the
   focused draft outlined and its day shown; a click on a block or the
-  pager swaps the form; Save writes the focused draft (and keeps the
-  editor on the next while there are more), "Add all" the others as they
-  stand. Capture opens its events as one such thread
+  pager swaps the form. Each draft keeps what the form held for it — its
+  kind, the calendar or list picked, guests, notes, a reminder's own
+  fields (`DraftExtras`) — and another draft taking the form shows as it
+  was left, not as a kind switch: nothing carries over, nothing is asked
+  (`useEditorKinds().show`); a draft the form never held takes the form's
+  calendar and list, so one pick reaches every untouched draft. Save
+  writes the focused draft (and keeps the editor on the next while there
+  are more); "Add all" the others as they stand, events and to-dos alike,
+  each where it was put, after Save's own checks (`planAddAll`,
+  `addAll.ts`). Capture opens its events as one such thread
   (`useCaptureModel.onMany`) rather than a review list. The panel renders
   `useThreadEditor` (`packages/app-state/src/threadEditor.ts`), which the
   iOS edit sheet shares: both editor models, the kind control, the thread

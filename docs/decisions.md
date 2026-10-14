@@ -639,6 +639,16 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   (its SwiftUI host hides the form from Maestro, #137 — this sheet is a
   plain presented controller), a "show on calendar" toggle on the page
   sheet. Open: the desktop leftovers (todo.md), a detent set from code.
+- **Mixed drafts, each in its own place** (2026-10-13, #199) — a draft
+  keeps its kind and the calendar or list picked for it (with a
+  reminder's own fields) in its extras; "Add all" writes events and
+  to-dos alike, each where it was put, after Save's checks. A draft the
+  form never held goes where the form points, so one pick still reaches
+  every untouched draft; showing another draft is no kind switch (paging
+  from a reminder to an event used to ask about its priority). Rejected:
+  pinning every draft to the default calendar at creation (a pick on the
+  first would stop reaching the rest — the common capture case), one
+  calendar for the batch (what this replaced). Open: to-do drafts on the grid.
 - **A changed field's tint holds, then fades** (2026-10-13) — #191's
   1.1 s fade was over before the eye reached the form: the tint now holds
   at full for 1 s and eases out over 1.5 s (`TURN_FLASH_HOLD_MS`,

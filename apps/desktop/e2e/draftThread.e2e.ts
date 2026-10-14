@@ -1,13 +1,17 @@
-import { Account, CalendarInfo } from '@calendar/core';
+import { Account, APPLE_REMINDERS_ACCOUNT_ID, CalendarInfo, TaskListInfo } from '@calendar/core';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vite-plus/test';
-import { type App, launchApp, readEvents } from './harness.ts';
+import { type App, launchApp, readEvents, readTasks } from './harness.ts';
 
 // The draft thread: a phrase makes drafts the grid draws hatched, every
 // later phrase changes them, Undo takes a turn back, Save writes. The model
 // is the deterministic fixture, so phrases are in its grammar —
 // `Title | +N | HH:MM-HH:MM | Location`, empty parts in a change meaning
 // "unchanged" — and nothing here depends on the date or on Apple
-// Intelligence.
+// Intelligence. Two calendars (Work sorts first: the default), a Google
+// task list and a Reminders list (the fixture's), so drafts can go to
+// different places as different kinds.
+const WORK = '#3b82f6';
+const YOGA = '#16a34a';
 const seed = {
   accounts: [
     new Account({
@@ -17,14 +21,24 @@ const seed = {
       id: 'acc-e2e',
       provider: 'google',
       status: 'ok',
-      tasksEnabled: false,
+      tasksEnabled: true,
+    }),
+    new Account({
+      contactsEnabled: false,
+      createdAt: 1,
+      displayName: 'Apple Reminders',
+      email: '',
+      id: APPLE_REMINDERS_ACCOUNT_ID,
+      provider: 'apple',
+      status: 'ok',
+      tasksEnabled: true,
     }),
   ],
   calendars: [
     new CalendarInfo({
       accessRole: 'owner',
       accountId: 'acc-e2e',
-      colorHex: '#3b82f6',
+      colorHex: WORK,
       id: 'cal-e2e',
       isPrimary: true,
       isVisible: true,
@@ -32,8 +46,43 @@ const seed = {
       summary: 'Work',
       timeZone: 'Europe/Vienna',
     }),
+    new CalendarInfo({
+      accessRole: 'owner',
+      accountId: 'acc-e2e',
+      colorHex: YOGA,
+      id: 'cal-yoga',
+      isPrimary: false,
+      isVisible: true,
+      provider: 'google',
+      summary: 'Yoga',
+      timeZone: 'Europe/Vienna',
+    }),
   ],
   events: [],
+  taskLists: [
+    new TaskListInfo({
+      accountId: APPLE_REMINDERS_ACCOUNT_ID,
+      colorHex: '#ff9500',
+      id: 'ek-groceries',
+      isVisible: true,
+      provider: 'apple',
+      title: 'Groceries',
+    }),
+    new TaskListInfo({
+      accountId: 'acc-e2e',
+      id: 'list-errands',
+      isVisible: true,
+      provider: 'google',
+      title: 'Errands',
+    }),
+  ],
+};
+const reminders = {
+  fixture: {
+    lists: [
+      { allowsModifications: true, colorHex: '#ff9500', id: 'ek-groceries', title: 'Groceries' },
+    ],
+  },
 };
 
 const INPUT = '[data-testid="quick-add-input"]';
@@ -50,6 +99,23 @@ const newestSummary = `document.querySelector('[data-testid="draft-turn-summary"
 const position = `(document.querySelector('[data-testid="draft-position"]')?.textContent ?? '')`;
 const titleIs = (title: string) =>
   `document.querySelector(${JSON.stringify(TITLE)})?.value === ${JSON.stringify(title)}`;
+const headingIs = (text: string) =>
+  `document.querySelector('[data-testid="editor-title"]')?.textContent === ${JSON.stringify(text)}`;
+const valueOf = (selector: string) =>
+  `document.querySelector(${JSON.stringify(selector)})?.value ?? ''`;
+const CALENDAR = 'select[aria-label="Calendar"]';
+const LIST = 'select[aria-label="Task list"]';
+const setSelect = (selector: string, value: string) => `(() => {
+  const element = document.querySelector(${JSON.stringify(selector)});
+  Object.getOwnPropertyDescriptor(window.HTMLSelectElement.prototype, 'value').set.call(element, ${JSON.stringify(value)});
+  element.dispatchEvent(new Event('change', { bubbles: true }));
+})()`;
+const PRIORITY = `document.querySelector('[aria-label="Priority"] [role="radio"][aria-checked="true"]')?.textContent ?? ''`;
+const pickPriority = (label: string) =>
+  `[...document.querySelectorAll('[aria-label="Priority"] [role="radio"]')].find((option) => option.textContent === ${JSON.stringify(label)}).click()`;
+const asked = `!!document.querySelector('[data-testid="move-confirm"]')`;
+const colorAt = (start: string) =>
+  `document.querySelector('[data-testid="draft-block"][data-draft-start="${start}"]')?.dataset.color ?? ''`;
 
 /** A paste as the OS would deliver it, on the window: the text as text/plain. */
 const paste = (text: string) => `(() => {
@@ -61,7 +127,7 @@ const paste = (text: string) => `(() => {
 describe('The draft thread', () => {
   let app: App;
   beforeAll(async () => {
-    app = await launchApp(seed, { model: 'fixture' });
+    app = await launchApp(seed, { model: 'fixture', reminders });
   }, 60_000);
   afterAll(async () => {
     await app.stop();
@@ -214,5 +280,98 @@ describe('The draft thread', () => {
     expect(
       (await readEvents(app.userDataDir)).find((event) => event.title === 'Standup'),
     ).toMatchObject({ location: 'Room 4' });
+  });
+
+  it('keeps the kind, calendar or list picked for each draft, and Add all writes events and to-dos alike', async () => {
+    const { cdp } = app;
+    // The drafts come in date order, all-day first: Breakfast, Post office, Buy milk, Retro.
+    await cdp.eval(
+      paste(
+        [
+          'Breakfast | +0 | 08:00-08:30',
+          'Buy milk | +1 | 07:00-07:30',
+          'Post office | +1',
+          'Retro | +1 | 16:00-17:00',
+        ].join('\n'),
+      ),
+    );
+    await cdp.waitFor(`${position} === '1 of 4'`);
+    await cdp.waitFor(titleIs('Breakfast'));
+
+    // The first goes to Yoga: its block takes the color.
+    await cdp.eval(setSelect(CALENDAR, 'acc-e2e:cal-yoga'));
+    await cdp.waitFor(`${colorAt('08:00')} === ${JSON.stringify(YOGA)}`);
+
+    // The second becomes a task on the Google list.
+    await cdp.clickTestId('draft-next');
+    await cdp.waitFor(titleIs('Post office'));
+    await cdp.clickTestId('mode-task');
+    await cdp.waitFor(headingIs('New task'));
+    expect(await cdp.eval<string>(valueOf(LIST))).toBe('acc-e2e:list-errands');
+
+    // The third shows as the event it is — not a task, nothing asked —
+    // and becomes a high-priority reminder.
+    await cdp.clickTestId('draft-next');
+    await cdp.waitFor(titleIs('Buy milk'));
+    expect(await cdp.eval<boolean>(headingIs('New event'))).toBe(true);
+    expect(await cdp.eval<boolean>(asked)).toBe(false);
+    await cdp.clickTestId('mode-reminder');
+    await cdp.waitFor(headingIs('New reminder'));
+    await cdp.eval(pickPriority('High'));
+    await cdp.waitFor(`${PRIORITY} === 'High'`);
+
+    // The fourth, never shown, starts in the calendar the form has (Yoga); it goes to Work.
+    await cdp.clickTestId('draft-next');
+    await cdp.waitFor(titleIs('Retro'));
+    await cdp.waitFor(headingIs('New event'));
+    expect(await cdp.eval<string>(valueOf(CALENDAR))).toBe('acc-e2e:cal-yoga');
+    await cdp.eval(setSelect(CALENDAR, 'acc-e2e:cal-e2e'));
+
+    // Back through them: each as it was left, and nothing asked.
+    await cdp.clickTestId('draft-prev');
+    await cdp.waitFor(titleIs('Buy milk'));
+    await cdp.waitFor(headingIs('New reminder'));
+    expect(await cdp.eval<string>(PRIORITY)).toBe('High');
+    expect(await cdp.eval<string>(valueOf(LIST))).toBe(
+      `${APPLE_REMINDERS_ACCOUNT_ID}:ek-groceries`,
+    );
+    await cdp.clickTestId('draft-prev');
+    await cdp.waitFor(titleIs('Post office'));
+    await cdp.waitFor(headingIs('New task'));
+    expect(await cdp.eval<string>(valueOf(LIST))).toBe('acc-e2e:list-errands');
+    await cdp.clickTestId('draft-prev');
+    await cdp.waitFor(titleIs('Breakfast'));
+    await cdp.waitFor(headingIs('New event'));
+    expect(await cdp.eval<string>(valueOf(CALENDAR))).toBe('acc-e2e:cal-yoga');
+    expect(await cdp.eval<boolean>(asked)).toBe(false);
+    // Each event draft drawn in its own calendar's color.
+    await cdp.waitFor(`${colorAt('16:00')} === ${JSON.stringify(WORK)}`);
+    expect(await cdp.eval<string>(colorAt('08:00'))).toBe(YOGA);
+
+    // Add all: every draft where it was put, as what it was made.
+    await cdp.clickTestId('draft-add-all');
+    await cdp.waitFor(`!document.querySelector('[data-testid="editor"]')`);
+    await expect
+      .poll(async () => {
+        const events = await readEvents(app.userDataDir);
+        return ['Breakfast', 'Retro'].map(
+          (title) => events.find((event) => event.title === title)?.calendarId,
+        );
+      })
+      .toEqual(['cal-yoga', 'cal-e2e']);
+    await expect
+      .poll(async () => {
+        const tasks = await readTasks(app.userDataDir);
+        const milk = tasks.find((task) => task.title === 'Buy milk');
+        const post = tasks.find((task) => task.title === 'Post office');
+        return {
+          milk: [milk?.provider, milk?.listId, milk?.priority, milk?.dueTime],
+          post: [post?.provider, post?.listId],
+        };
+      })
+      .toEqual({
+        milk: ['apple', 'ek-groceries', 'high', '07:00'],
+        post: ['google', 'list-errands'],
+      });
   });
 });
