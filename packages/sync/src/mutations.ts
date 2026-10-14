@@ -565,10 +565,23 @@ const make: Effect.Effect<
   const discardPendingOp: EventMutationsShape['discardPendingOp'] = (opId) =>
     sql.withTransaction(
       Effect.gen(function* () {
-        const op = yield* pendingOpRepo.getById(opId);
+        let op = yield* pendingOpRepo.getById(opId);
         yield* pendingOpRepo.remove(opId);
-        if (op) {
+        while (op) {
           yield* releaseRow(op);
+          // A subtask kept is a parent kept: Google deletes a parent's
+          // subtasks with it, so the parent's queued delete goes too.
+          const parentId = op.kind === 'deleteTask' ? op.beforeTask?.parentId : undefined;
+          const { accountId, calendarId } = op;
+          op =
+            parentId === undefined
+              ? undefined
+              : (yield* opsForEvent(accountId, calendarId, parentId)).find(
+                  (queued) => queued.kind === 'deleteTask',
+                );
+          if (op) {
+            yield* pendingOpRepo.remove(op.id);
+          }
         }
       }),
     );

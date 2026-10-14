@@ -505,8 +505,8 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   parent did not mention its subtasks (since #203 it does, see below).
 - **A parent's delete names its subtasks** (2026-10-14, #203) — Google
   deletes a parent's subtasks with it, so a Google task delete takes them
-  first, each a delete of its own (a discard puts each back); the delete
-  question counts them (`previewDeleteTask`), as do the task → event
+  first, each a delete of its own (discarding one keeps the parent too);
+  the question counts them (`previewDeleteTask`), as do the task → event
   preview (`previewTaskToEvent`, now the backend's) and an agent's
   `delete_task` summary. Rejected for a conversion: carrying them along —
   an event holds no subtasks, so "along" meant leaving them un-nested (a

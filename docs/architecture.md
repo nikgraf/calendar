@@ -195,7 +195,8 @@ it whenever a kind is added. Rules that keep the queue correct:
   `moveToListId`) on a Google list fail with `UnsupportedForProviderError`.
   `updateTask` cannot clear a stored due day; only a create may be undated.
   A Google `deleteTask` takes the task's subtasks first, each a delete of
-  its own, since Google deletes them with their parent; `previewDeleteTask`
+  its own, since Google deletes them with their parent (so discarding a
+  subtask's delete discards its parent's too); `previewDeleteTask`
   counts them for the editor's question.
 - **Task moves** (`moveTask`, the task twin of `moveEvent`): between two
   Reminders lists EventKit changes the list in place, and so does Google

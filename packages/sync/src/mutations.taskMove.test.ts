@@ -1153,13 +1153,14 @@ describe('deleting a Google parent task', () => {
         'deleteTask acc-1/list-1/s2',
         'deleteTask acc-1/list-1/t1',
       ]);
-      // A discard puts back what its own delete removed, and only that.
+      // Keeping a subtask keeps its parent: Google would take it along.
       const [first] = yield* (yield* PendingOpRepo).listAll();
       yield* mutations.discardPendingOp(first!.id);
       expect((yield* rowAt('acc-1', 'list-1', 's1'))?.parentId).toBe('t1');
-      expect(yield* rowAt('acc-1', 'list-1', 't1')).toBeUndefined();
+      expect((yield* rowAt('acc-1', 'list-1', 't1'))?.title).toBe('Pay rent');
+      expect(yield* queued).toEqual(['deleteTask acc-1/list-1/s2']);
       yield* mutations.processPendingOps();
-      expect(calls).toEqual(['delete list-1/s2', 'delete list-1/t1']);
+      expect(calls).toEqual(['delete list-1/s2']);
     }).pipe(noYield, Effect.provide(testLayer(fake.client, recordingTasks(calls))));
   });
 
