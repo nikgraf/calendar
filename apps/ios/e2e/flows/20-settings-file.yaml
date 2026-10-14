@@ -43,11 +43,13 @@ tags:
 # Import hands off to the system document picker (any file type; the
 # parser judges the contents). Opening and cancelling it is as far as a
 # simulator without a seeded Files provider can go.
+# Like the share sheet, a slow runner draws the picker blank for over ten
+# seconds before "Browse" appears (run 38432230435, both attempts).
 - tapOn:
     id: 'settings-file-import'
 - extendedWaitUntil:
     visible: 'Browse'
-    timeout: 10000
+    timeout: 30000
 # The picker's close button grows into place: "Browse" is already there
 # while "Cancel" is still 1 pt wide, and a tap on it then reports done
 # and closes nothing (run 36995872243). Let the picker settle, and tap
