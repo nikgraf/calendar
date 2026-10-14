@@ -700,18 +700,38 @@ Electron binary (`electron --version`) and run spec files sequentially.
   at that step. `prepare-simulator.sh boot` runs right after checkout (a
   runner's first boot spends two minutes in data migration) and
   `prepare-simulator.sh install` waits for it, installs, pre-grants
-  Reminders, Calendars and Contacts with `simctl privacy grant`, and
-  switches expo-dev-menu's floating button off. The whole job runs under
+  Reminders, Calendars and Contacts with `simctl privacy grant`,
+  switches expo-dev-menu's floating button off, turns the keyboard's
+  predictions and autocorrect off, and boots `apsd` out (a runner's
+  simulator cannot activate push, so apsd reconnects in a loop and logs
+  ~200k lines a minute). The whole job runs under
   `APP_VARIANT=development`. `shard-flows.mjs` splits every `ci` flow by
   position in the sorted file list (a new flow needs no registration);
   shard 1 first runs the permissions flow in its own Maestro invocation,
-  since Maestro ignores `config.yaml` execution order. A failed shard's
-  artifact carries Maestro's reports, any crash report and the app's
-  `calendar.db` as the shard left it (`e2e-app-state/`). To reproduce a CI
-  run locally: `eas build:list --build-profile e2e-simulator`,
-  `fetch-eas-build.sh <fingerprint> e2e-simulator build/e2e-app`,
-  `repack-app.sh`, a fresh simulator, then `maestro test` with the
-  shard's files.
+  since Maestro ignores `config.yaml` execution order. Both invocations
+  go through `run-flows.ts`. When the XCTest driver dies mid-run (run
+  38466668240: the app's main thread stuck in UIKit's keyboard queue),
+  Maestro latches the device as unreachable and every later flow fails
+  within seconds; the wrapper reads the JUnit report and the run's
+  `maestro.log` (`maestroRetry.ts`) and runs the flows lost that way once
+  more in a fresh invocation on an erased simulator (`prepare-simulator.sh
+  reset $E2E_APP`: the interrupted flow's half-made changes, in the app's
+  data or the device's EventKit, would fail its own first check), with a
+  warning annotation and a step-summary line naming the command the driver
+  died on and whether XCTest found the app's main thread busy. A flow that
+  failed on its own (an assertion, an element not found, anything but
+  `DeviceUnreachableException`) fails the job without a retry, even beside
+  a dead driver, and so does a second death. Each attempt's report and
+  logs are in `~/.maestro/tests/<label>-<n>` (`--debug-output`, flattened:
+  otherwise the run's log lands in a hidden folder the artifact upload
+  skips). A failed shard's artifact carries those reports, any crash
+  report and the app's `calendar.db` as the shard left it
+  (`e2e-app-state/`). To reproduce a CI run locally: `eas build:list
+  --build-profile e2e-simulator`, `fetch-eas-build.sh <fingerprint>
+  e2e-simulator build/e2e-app`, `repack-app.sh`, a fresh simulator, then
+  `SIMULATOR_UDID=… node e2e/ci/run-flows.ts <label>` with the shard's
+  files; killing `maestro-driver-iosUITests-Runner` mid-flow exercises the
+  retry (run 38561991886 proved it on a runner).
 - `package-smoke` (macos-26, PRs only): unsigned `package:app`,
   packaged-contents assertions, `pnpm brand:check`, `solunivo-cli
   --version`.

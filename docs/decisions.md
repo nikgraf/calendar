@@ -81,6 +81,16 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   conditions (a condition false on the common path waits either way).
   Open: 22's stacked-alert retry ran only on a stand-in (the simulator
   stopped showing the alert).
+- **Dead Maestro driver retried** (2026-10-14, #205) — when the XCTest
+  driver dies mid-run, Maestro fails every later flow in that invocation as
+  unreachable; `run-flows.ts` runs exactly those flows once more on an
+  erased simulator (a cut-short flow leaves state in the app and in
+  EventKit). Only `DeviceUnreachableException` with the latch in the run
+  log qualifies; a flow failing on its own blocks the retry, so an app race
+  still turns the job red. Rejected: a blanket rerun like desktop's
+  per-spec retry, and Maestro's `retry` command (it retries assertions and
+  cannot outlive the latch). Simulator prep turns keyboard predictions off
+  and boots out apsd's log flood. Open: whether the keyboard hang gets rarer.
 - **Test pruning** (2026-10-09, `todo/prune-tests`) — a test goes only
   if a surviving test asserts everything it did; iOS flows are merged per
   area, not dropped, because a launch or a Reminders connect repeated

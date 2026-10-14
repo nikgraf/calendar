@@ -200,8 +200,10 @@ jobs:
     runs-on: macos-26
     # A green shard takes 25–34 min, about half of it setup. At 35 a slow
     # runner was cancelled two flows short of passing (run 37336020673),
-    # throwing the whole run away; the cap is for hung jobs.
-    timeout-minutes: 45
+    # throwing the whole run away; the cap is for hung jobs. It leaves room
+    # for run-flows.ts to run a shard's flows a second time after the
+    # driver died under the first.
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
@@ -311,15 +313,22 @@ jobs:
       - name: First-time device permissions
         if: matrix.shard == 1
         working-directory: apps/ios
-        run: maestro test --device "$SIMULATOR_UDID" e2e/flows/04a-device-permissions.yaml
+        env:
+          E2E_APP: build/e2e-repacked/Solunivo.app
+        run: node e2e/ci/run-flows.ts permissions e2e/flows/04a-device-permissions.yaml
+      # run-flows.ts runs the flows a dead XCTest driver took down once
+      # more, on an erased simulator with E2E_APP installed again, and never
+      # a flow that failed on its own (e2e/ci/maestroRetry.ts).
       - name: Maestro flows
         working-directory: apps/ios
+        env:
+          E2E_APP: build/e2e-repacked/Solunivo.app
         run: |
           set -euo pipefail
           flows=$(node e2e/ci/shard-flows.mjs "${{ matrix.shard }}" 2)
           echo "$flows"
           # shellcheck disable=SC2086
-          maestro test --device "$SIMULATOR_UDID" $flows
+          node e2e/ci/run-flows.ts "shard${{ matrix.shard }}" $flows
       - name: Copy the app's database
         # What the app had stored when the shard stopped: when a flow sees
         # an item vanish, the rows and the pending-op queue say whether
