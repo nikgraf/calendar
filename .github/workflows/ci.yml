@@ -327,25 +327,8 @@ jobs:
           set -euo pipefail
           flows=$(node e2e/ci/shard-flows.mjs "${{ matrix.shard }}" 2)
           echo "$flows"
-          # TEMPORARY (PR #205, reverted before merge): kill the XCTest
-          # driver once flow 09 has written its reminder, to prove the
-          # erase-and-retry path on a real runner.
-          if [ "${{ matrix.shard }}" = 1 ]; then
-            nohup bash -c '
-              log="$HOME/.maestro/tests/shard1-1/maestro.log"
-              for _ in $(seq 1 4800); do
-                if grep -qsF "Solunivo e2e reminder to delete.*\" is visible COMPLETED" "$log"; then
-                  pkill -9 -f maestro-driver-iosUITests-Runner && echo "killed the driver at $(date +%T)"
-                  exit 0
-                fi
-                sleep 0.5
-              done' > "$RUNNER_TEMP/fault-injection.log" 2>&1 &
-          fi
           # shellcheck disable=SC2086
           node e2e/ci/run-flows.ts "shard${{ matrix.shard }}" $flows
-      - name: TEMPORARY fault injection log
-        if: always() && matrix.shard == 1
-        run: cat "$RUNNER_TEMP/fault-injection.log" || true
       - name: Wait for a simulator crash report
         # ReportCrash writes the .ips a minute or so after the process
         # dies (74 s on run 34013939965); the upload step ran before it
