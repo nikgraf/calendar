@@ -94,9 +94,9 @@ with nothing.
   (`reachOf` in `ops/events.ts`): the master and every exception it
   rewrites or cancels, so a guest on one later occurrence counts. (Apple:
   the exceptions EventKit returns within ±400 days of the slot.)
-- Free/busy merges blocks across calendars and skips all-day, cancelled
-  and declined events (there is no `transparency` field yet, so a "free"
-  timed event still blocks).
+- Free/busy merges blocks across calendars and skips all-day, cancelled,
+  free (Google's `transparent`) and declined events — `blocksTime` in
+  core, the rule the app's own find-a-time applies too.
 - A field the provider cannot hold still fails with
   `UnsupportedForProviderError` (as `Unsupported`), never silently.
 

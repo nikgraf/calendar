@@ -5,7 +5,6 @@ import {
   type Contact,
   type EventRecord,
   isCalendarWritable,
-  isDeclinedBySelf,
   isTaskListWritable,
   meetingUrl,
   type TaskListInfo,
@@ -203,15 +202,8 @@ export const otherGuests = (
   );
 };
 
-/**
- * What blocks time: timed, not cancelled, not declined. All-day entries
- * mark days rather than hours, exactly as find-a-time treats them.
- */
-export const isBusy = (event: EventRecord, accountEmail: string | undefined): boolean =>
-  !event.isAllDay && event.status !== 'cancelled' && !isDeclinedBySelf(event, accountEmail);
-
-// Shared with the availability mirror, so they live in core.
-export { isDeclinedBySelf, mergeBusy } from '@calendar/core';
+// Shared with the availability mirror, so it lives in core.
+export { mergeBusy } from '@calendar/core';
 
 export const toBusyBlockDto = (
   interval: { readonly endUtc: number; readonly startUtc: number },

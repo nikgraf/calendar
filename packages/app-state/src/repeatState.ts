@@ -216,6 +216,8 @@ export const useRepeatState = (
     repeat: fields.repeat,
     repeatCount: fields.count,
     repeatEnds: fields.ends,
+    /** The fields as they stand, numbers as typed: what a thread keeps per draft. */
+    repeatFields: fields,
     repeatInterval: fields.interval,
     repeatMonthly: fields.monthly,
     repeatOrdinal: ordinal.ordinal,
@@ -229,6 +231,8 @@ export const useRepeatState = (
     repeatWeekdays: shownWeekdays(fields, anchorIso),
     /** Re-seeds the whole form (a conversion carries the other editor's rule in). */
     resetRepeat: (next: RepeatSeed | undefined) => setFields(seedRepeatFields(next)),
+    /** Puts fields kept by `repeatFields` back as they were, an invalid number included. */
+    restoreRepeatFields: (next: RepeatFields) => setFields(next),
     setRepeat: (repeat: RecurrenceFrequency | 'none') => update({ repeat }),
     setRepeatCount: (count: string) => update({ count }),
     setRepeatEnds: (ends: RepeatEnds) => update({ ends }),

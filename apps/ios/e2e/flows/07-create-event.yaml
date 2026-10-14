@@ -35,6 +35,27 @@ tags:
           commands:
             - tapOn: 'Clear text'
             - inputText: 'Solunivo e2e event to delete'
+      # Notes sit at the bottom of the form. Dismiss the title's keyboard
+      # first (a tap on a plain label, see 03), or the text lands in the
+      # title.
+      - tapOn: 'CALENDAR'
+      - scrollUntilVisible:
+          element:
+            id: 'event-notes'
+          direction: DOWN
+          timeout: 10000
+      - tapOn:
+          id: 'event-notes'
+      - inputText: 'Bring the agenda'
+      - repeat:
+          times: 3
+          while:
+            notVisible:
+              id: 'event-notes'
+              text: 'Bring the agenda'
+          commands:
+            - eraseText: 40
+            - inputText: 'Bring the agenda'
       - tapOn:
           id: 'event-save'
       # The sheet closes only after the whole create path ran, id
@@ -51,6 +72,12 @@ tags:
           timeout: 10000
       # Clean up, so repeated runs don't pile up in a real calendar.
       - tapOn: 'Solunivo e2e event to delete.*'
+      # The detail sheet reads the notes back from the saved event.
+      - extendedWaitUntil:
+          visible:
+            id: 'event-detail-notes'
+            text: 'Bring the agenda'
+          timeout: 10000
       - runFlow: ../common/open-event-editor.yaml
       - tapOn:
           id: 'event-delete'

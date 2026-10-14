@@ -17,6 +17,7 @@ import {
 } from '@calendar/core';
 import { useRef, useState } from 'react';
 import { convertQuickAddItem, type QuickAddItem } from './quickAddItem.ts';
+import type { ReminderFields } from './taskEditorModel.ts';
 
 /**
  * The thread behind a new item: what the user said, turn by turn, and the
@@ -31,15 +32,22 @@ import { convertQuickAddItem, type QuickAddItem } from './quickAddItem.ts';
  */
 
 /**
- * What the form holds of an event draft beyond its prefill — guests,
- * notes, notifications — kept per draft so they never follow the form to
- * the next draft, and written with it by "Add all".
+ * What the form holds of a draft beyond its prefill — guests, notes,
+ * notifications, the calendar or list picked, a to-do's own fields —
+ * kept per draft so they never follow the form to the next draft, and
+ * written with it by "Add all".
  */
 export interface DraftExtras {
   readonly attendees: ReadonlyArray<AttendeeInput>;
+  /** The calendar picked for the draft (`accountId:calendarId`), when the form showed it as an event. */
+  readonly calendarKey?: string | undefined;
   readonly description: string;
   /** Coordinates picked for the location text, while they still match it. */
   readonly geo?: GeoLocation | undefined;
+  /** The list picked for the draft (`accountId:listId`), when the form showed it as a to-do. */
+  readonly listKey?: string | undefined;
+  /** A to-do's Reminders-only fields, when the form showed the draft as one. */
+  readonly reminder?: ReminderFields | undefined;
   /** The notifications as edited; undefined while untouched (the calendar's default). */
   readonly reminders: EventReminders | undefined;
   /** A to-do's notes, when the form showed the draft as one. */

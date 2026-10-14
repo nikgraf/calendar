@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vite-plus/test';
-import { EventRecord } from '../types.ts';
+import { Attendee, EventRecord } from '../types.ts';
 import { findFreeSlots } from './findSlots.ts';
 
 const TZ = 'Europe/Vienna';
@@ -59,6 +59,36 @@ describe('findFreeSlots', () => {
     ];
     const slots = findFreeSlots(busy, { durationMinutes: 60, ...week }, context);
     expect(slots[0]?.startTime).toBe('08:00');
+  });
+
+  it('ignores events marked free and invitations the user declined', () => {
+    const busy = [
+      event('2026-08-25T06:00:00Z', '2026-08-25T10:00:00Z', { transparency: 'transparent' }),
+      event('2026-08-25T10:00:00Z', '2026-08-25T14:00:00Z', {
+        attendees: [
+          new Attendee({ email: 'me@example.com', isSelf: true, responseStatus: 'declined' }),
+        ],
+      }),
+      // No `isSelf` on the guest list: the account's email finds the user's entry.
+      event('2026-08-25T14:00:00Z', '2026-08-25T18:00:00Z', {
+        attendees: [new Attendee({ email: 'ME@example.com', responseStatus: 'declined' })],
+      }),
+    ];
+    const slots = findFreeSlots(
+      busy,
+      { durationMinutes: 12 * 60, ...week },
+      { ...context, accountEmails: new Map([['a', 'me@example.com']]) },
+    );
+    expect(slots).toEqual([{ date: '2026-08-25', endTime: '20:00', startTime: '08:00' }]);
+  });
+
+  it('a declined guest list without `isSelf` blocks time when the account is unknown', () => {
+    const busy = [
+      event('2026-08-25T06:00:00Z', '2026-08-25T18:00:00Z', {
+        attendees: [new Attendee({ email: 'me@example.com', responseStatus: 'declined' })],
+      }),
+    ];
+    expect(findFreeSlots(busy, { durationMinutes: 60, ...week }, context)).toEqual([]);
   });
 
   it('respects earliest/latest and daysOfWeek', () => {

@@ -55,6 +55,7 @@ export function EventEditForm({
     canRsvp,
     canSwitchAllDay,
     date,
+    description,
     endDate,
     endTime,
     error,
@@ -70,6 +71,7 @@ export function EventEditForm({
     scope,
     setCalendarKey,
     setDate,
+    setDescription,
     setEndDate,
     setEndTime,
     setIsAllDay,
@@ -286,6 +288,23 @@ export function EventEditForm({
         ) : null}
 
         <ReminderChips model={model} />
+
+        {/* A read-only calendar shows its notes but offers no empty field. */}
+        {readOnly && !description ? null : (
+          <>
+            <Text style={styles.label}>Notes</Text>
+            <TextInput
+              editable={!readOnly}
+              multiline
+              numberOfLines={3}
+              onChangeText={setDescription}
+              placeholder="Add notes"
+              style={[styles.input, styles.notesInput]}
+              testID="event-notes"
+              value={description}
+            />
+          </>
+        )}
 
         {existing && !readOnly ? (
           <Pressable

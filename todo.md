@@ -145,8 +145,7 @@ the served model (#184) and slot proposals (#185) are in
 - [ ] Draft thread leftovers on the desktop (both platforms draw the
       thread now, `docs/decisions.md` → AI): drafts in the month view, a
       slot or ⌘N editor without a phrase drawing its form as a draft too,
-      to-do drafts in "Add all" (today it waits until each is the focused
-      one).
+      to-do drafts on the grid (a to-do draft draws nothing yet).
 - [ ] Served-model follow-ups (shipped in #184,
       `docs/decisions.md` → AI) — the model's own context from Ollama's
       `/api/show` instead of the fixed `num_ctx`; image input for a served
@@ -178,8 +177,8 @@ decision and platform notes live in `docs/decisions.md`.
       `TextRecognizer` seam, nothing above changes), a helper method that
       builds the attachment, and own Swift on iOS since
       `@react-native-ai/apple` 0.12 is text-only. Also: keep the source
-      text as the event's notes (`carried.description` exists in the
-      editor model, the editors have no notes field yet); shared web URLs
+      text as the event's notes (both editors have a notes field;
+      capture does not fill it); shared web URLs
       (the activation rule leaves them out — nothing fetches a page);
       multi-day events (the editor clamps an end to its start day); a
       File-menu entry if ⌘V proves undiscoverable; token counting via
