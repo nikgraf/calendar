@@ -283,7 +283,7 @@ export const TOOLS = {
   }),
   find_free_slots: tool({
     description:
-      'Finds free slots of a given length inside daily wall-clock bounds, across every calendar the grant covers (including free/busy-only ones). All-day events do not block time; declined and cancelled events are ignored.',
+      'Finds free slots of a given length inside daily wall-clock bounds, across every calendar the grant covers (including free/busy-only ones). All-day events and events marked free do not block time; declined and cancelled events are ignored.',
     input: FindFreeSlotsInput,
     kind: 'read',
     name: 'find_free_slots',
@@ -291,7 +291,7 @@ export const TOOLS = {
   }),
   get_free_busy: tool({
     description:
-      'Returns merged busy blocks for a range, across every calendar the grant covers (including free/busy-only ones). No titles or details. All-day events do not block time; declined and cancelled events are ignored.',
+      'Returns merged busy blocks for a range, across every calendar the grant covers (including free/busy-only ones). No titles or details. All-day events and events marked free do not block time; declined and cancelled events are ignored.',
     input: GetFreeBusyInput,
     kind: 'read',
     name: 'get_free_busy',

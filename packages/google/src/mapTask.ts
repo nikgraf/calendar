@@ -29,6 +29,9 @@ export const mapGcalTask = (
     id: task.id,
     listId: context.taskListId,
     ...(task.notes ? { notes: task.notes } : {}),
+    // The hierarchy: Google keeps a subtask's parent within its list.
+    ...(task.parent ? { parentId: task.parent } : {}),
+    ...(task.position ? { position: task.position } : {}),
     provider: 'google',
     status,
     title: task.title ?? '(untitled)',

@@ -78,6 +78,11 @@ describe('PendingOpRepo', () => {
       expect(yield* count(['cal-1', 'cal-2'], ['list-1'])).toBe(3);
       expect(yield* count(['cal-9'], ['list-9'])).toBe(0);
       expect(yield* count([], [])).toBe(0);
+      // A task move counts for the list it goes into too.
+      yield* repo.enqueue(
+        op('e', { kind: 'moveTask', targetTaskListId: 'list-2', taskListId: 'list-1' }),
+      );
+      expect(yield* count([], ['list-2'])).toBe(1);
     }).pipe(Effect.provide(freshDbLayer())),
   );
 

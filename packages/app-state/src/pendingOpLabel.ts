@@ -8,6 +8,7 @@ const KIND_LABEL: Record<PendingOp['kind'], string> = {
   delete: 'Delete',
   deleteTask: 'Delete task',
   move: 'Move',
+  moveTask: 'Move task',
   rsvp: 'RSVP',
   update: 'Update',
   updateTask: 'Edit task',

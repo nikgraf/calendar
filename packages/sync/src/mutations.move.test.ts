@@ -167,6 +167,7 @@ const testLayer = (
         insertTask: () => Effect.die('not used'),
         listTaskLists: () => Effect.die('not used'),
         listTasks: () => Effect.die('not used'),
+        moveTask: () => Effect.die('not used'),
         patchTask: () => Effect.die('not used'),
       }),
     ),

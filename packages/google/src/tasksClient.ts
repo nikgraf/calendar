@@ -31,6 +31,8 @@ export interface GoogleTasksClientShape {
   }) => Effect.Effect<void, GoogleRequestError>;
   readonly insertTask: (params: {
     readonly accountId: string;
+    /** Creates it as a subtask of this task (first among its siblings). */
+    readonly parent?: string | undefined;
     readonly task: { readonly due?: string; readonly notes?: string; readonly title: string };
     readonly taskListId: string;
   }) => Effect.Effect<GcalTask, GoogleRequestError>;
@@ -43,6 +45,17 @@ export interface GoogleTasksClientShape {
     readonly params: ListTasksParams;
     readonly taskListId: string;
   }) => Effect.Effect<GcalTasksPage, GoogleRequestError>;
+  /**
+   * `tasks.move` to another list of the same account: the task keeps its
+   * id and its subtasks come along, still nested under it; a subtask
+   * moved on its own lands as a task of its own (verified live).
+   */
+  readonly moveTask: (params: {
+    readonly accountId: string;
+    readonly destinationTaskListId: string;
+    readonly taskId: string;
+    readonly taskListId: string;
+  }) => Effect.Effect<GcalTask, GoogleRequestError>;
   readonly patchTask: (params: {
     readonly accountId: string;
     readonly changes: TaskWriteChanges;
@@ -70,10 +83,13 @@ const make: Effect.Effect<GoogleTasksClientShape, never, HttpClient.HttpClient |
           }
         }),
 
-      insertTask: ({ accountId, task, taskListId }) =>
+      insertTask: ({ accountId, parent, task, taskListId }) =>
         requestJson(
           accountId,
-          HttpClientRequest.post(tasksUrl(taskListId)).pipe(HttpClientRequest.bodyJsonUnsafe(task)),
+          HttpClientRequest.post(tasksUrl(taskListId)).pipe(
+            HttpClientRequest.setUrlParams(definedParams({ parent })),
+            HttpClientRequest.bodyJsonUnsafe(task),
+          ),
           GcalTask,
           { calendarId: taskListId },
         ),
@@ -108,6 +124,18 @@ const make: Effect.Effect<GoogleTasksClientShape, never, HttpClient.HttpClient |
           GcalTasksPage,
           // The shared error context slots carry list/task ids for tasks.
           { calendarId: taskListId },
+        ),
+
+      moveTask: ({ accountId, destinationTaskListId, taskId, taskListId }) =>
+        requestJson(
+          accountId,
+          HttpClientRequest.post(tasksUrl(taskListId, `/${encodeURIComponent(taskId)}/move`)).pipe(
+            HttpClientRequest.setUrlParams(
+              definedParams({ destinationTasklist: destinationTaskListId }),
+            ),
+          ),
+          GcalTask,
+          { calendarId: taskListId, eventId: taskId },
         ),
 
       patchTask: ({ accountId, changes, taskId, taskListId }) =>

@@ -415,6 +415,13 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   nothing. Codex review: a held press keeps the slide's columns, a second
   pick continues mid-slide. Open: the all-day lane can resize when a slide
   ends.
+- **iOS event notes** (2026-10-13) — the iOS event form gets the Notes
+  field the desktop editor has had since #135, last in the form after
+  notifications as there. The shared model already loaded and saved
+  `description`; only the field was missing. A read-only calendar shows
+  its notes uneditable and offers no empty field. Open: notes are the
+  stored text, so a description written as HTML in Google's web UI shows
+  its markup on both apps.
 
 ## Invitees, contacts and birthdays
 
@@ -488,10 +495,21 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   deletes the source (a failure leaves a duplicate, never a lost task);
   the rpc carries the editor's draft, so a task can gain a time on its way
   into Reminders; the loss preview is pure core, no preview rpc. Google →
-  Google is not a server move (`parent`/`position` do not follow). The
+  Google is not a server move (`parent`/`position` do not follow; since
+  #201 it is, see below, with a preview rpc). The
   fake Google API became an app fixture for both e2e suites — no HTTP
   mock server; it sits behind effect's HttpClient with a memory
   TokenStore.
+- **Task moves keep the hierarchy** (2026-10-13, #201) — inside one
+  Google account a move is Google's `tasks.move` (id kept, subtasks along,
+  a queued `moveTask` op like the event `move`) instead of
+  copy-then-delete, which deleted a parent's subtasks with it on Google.
+  Other routes copy the subtasks too, nested on Google, as reminders of
+  their own in Reminders; `previewMoveTask` names a subtask leaving its
+  parent and subtasks Reminders flattens. Rejected: refusing to move a
+  task with subtasks, and flattening them on Google. Open (todo.md):
+  drawing the hierarchy and reordering; a delete or conversion of a
+  parent does not mention its subtasks yet.
 - **Convert events ↔ tasks** (2026-09-28, #93) — the same copy-then-delete
   through a shared `crossStore` ordering. The confirmation asks only when
   a set field has no home on the other side: the end time never counts, a
@@ -505,8 +523,8 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   A repeating reminder's rule goes with its day and Repeat hides while
   undated, as in Reminders.app — rejected: a save error asking to set
   Repeat to Never first; a rule the form cannot show keeps its day.
-  Relative alerts stay on an undated reminder; a cross-provider move of
-  an undated task still asks for a day (todo.md).
+  Relative alerts stay on an undated reminder; moving an undated task
+  to another list still asks for a day (todo.md).
 
 ## Apple Calendar
 
@@ -648,6 +666,16 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   (its SwiftUI host hides the form from Maestro, #137 — this sheet is a
   plain presented controller), a "show on calendar" toggle on the page
   sheet. Open: the desktop leftovers (todo.md), a detent set from code.
+- **Mixed drafts, each in its own place** (2026-10-13, #199) — a draft
+  keeps its kind and the calendar or list picked for it (with a
+  reminder's own fields) in its extras; "Add all" writes events and
+  to-dos alike, each where it was put, after Save's checks. A draft the
+  form never held goes where the form points, so one pick still reaches
+  every untouched draft; showing another draft is no kind switch (paging
+  from a reminder to an event used to ask about its priority). Rejected:
+  pinning every draft to the default calendar at creation (a pick on the
+  first would stop reaching the rest — the common capture case), one
+  calendar for the batch (what this replaced). Open: to-do drafts on the grid.
 - **A changed field's tint holds, then fades** (2026-10-13) — #191's
   1.1 s fade was over before the eye reached the form: the tint now holds
   at full for 1 s and eases out over 1.5 s (`TURN_FLASH_HOLD_MS`,
@@ -831,6 +859,11 @@ first. The decisions, one line each:
 - A key or a lost pointer capture mid-drag ends the drag instead of
   moving the drop; the e2e windows take CDP input only (Nik asked for the
   background over the top) (#166, #169).
+- One availability rule, `blocksTime`: find-a-time, the agent's
+  free/busy and slots skip events marked free and declined invitations;
+  mirrors flag items with the same predicates and keep their own
+  copy/skip filters. The finder reads account emails for the declined
+  check, like the agent (2026-10-13, #197).
 
 ## Brand
 

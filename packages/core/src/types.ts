@@ -239,6 +239,13 @@ export class TaskRecord extends Schema.Class<TaskRecord>('TaskRecord')({
   id: Schema.String,
   listId: Schema.String,
   notes: Schema.optional(Schema.String),
+  /**
+   * Google only: the task this one is a subtask of, in the same list.
+   * Deleting a parent on Google deletes its subtasks with it.
+   */
+  parentId: Schema.optional(Schema.String),
+  /** Google only: the order among its siblings, as Google sorts it (a zero-padded string). */
+  position: Schema.optional(Schema.String),
   /** Reminders only; absent = no priority. */
   priority: Schema.optional(TaskPriority),
   provider: TaskProvider,
@@ -439,6 +446,7 @@ export class PendingOp extends Schema.Class<PendingOp>('PendingOp')({
     'delete',
     'deleteTask',
     'move',
+    'moveTask',
     'rsvp',
     'update',
     'updateTask',
@@ -475,12 +483,19 @@ export class PendingOp extends Schema.Class<PendingOp>('PendingOp')({
   taskListId: Schema.optional(Schema.String),
   /** Notes for kind 'createTask'/'updateTask'. */
   taskNotes: Schema.optional(Schema.String),
+  /**
+   * Kind 'createTask': the task the new one nests under (a subtask carried
+   * along by a move) — a temp id until that task's own create lands.
+   */
+  taskParent: Schema.optional(Schema.String),
   /** Desired task status for kind 'completeTask'. */
   taskStatus: Schema.optional(TaskStatus),
   /** Title for kind 'createTask'/'updateTask'. */
   taskTitle: Schema.optional(Schema.String),
   /** Kind 'move': destination calendar in the same Google account (calendarId is the source). */
   targetCalendarId: Schema.optional(Schema.String),
+  /** Kind 'moveTask': destination list in the same Google account (taskListId is the source). */
+  targetTaskListId: Schema.optional(Schema.String),
 }) {}
 
 export class SyncState extends Schema.Class<SyncState>('SyncState')({

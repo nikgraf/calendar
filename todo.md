@@ -11,8 +11,15 @@ except the two below; their entries are in `docs/decisions.md` under
 
 ## Tier 0 — bugs
 
-Empty. The 2026-10-02 review's findings are closed in `docs/decisions.md`
+The 2026-10-02 review's findings are closed in `docs/decisions.md`
 (Review fixes, #110–#142).
+
+- [ ] A delete or a task → event conversion of a Google parent task takes
+      its subtasks with it — Google deletes them with their parent
+      (verified live, `docs/google-sync-and-testing.md`) — and neither the
+      delete question (`deleteQuestion`) nor the conversion preview
+      (`taskToEventLoss`) says so. Count them like `previewMoveTask` does,
+      and carry them along on a conversion or name them in the question.
 
 ## Tier 1 — CI and distribution
 
@@ -69,14 +76,10 @@ Empty. The 2026-10-02 review's findings are closed in `docs/decisions.md`
       `is_visible`; a field on `GoogleCalendarPref` in `SettingsDocument`
       (the import's visibility-specific parking in `importedVisibility.ts`
       widens with it); the "History complete" label says what is kept.
-- [ ] Tasks: subtask hierarchy — `parent`/`position` are decoded
-      (`apiTypes.ts:139-140`) and dropped by `mapGcalTask`; `TaskRecord` has
-      no such fields; `tasksClient.ts` has no `move`. Render indentation,
-      keep ordering via `tasks.move`.
-- [ ] Google → Google task moves flatten subtasks silently — the move is
-      copy-then-delete (`moveTask`, #82) and `parent`/`position` are not
-      modeled, so no warning is possible; fixed by the subtask item above
-      (`tasks.move` keeps hierarchy and id).
+- [ ] Tasks: subtask hierarchy in the UI — `TaskRecord.parentId`/`position`
+      are stored and a move keeps them (#201), but every list draws
+      subtasks flat and unordered. Render indentation, order by
+      `position`, reorder through `tasks.move` (`parent`/`previous`).
 - [ ] Conversion follow-ups — convert one occurrence of a series into a
       task (today the whole series converts, like a move; an instance
       would be `deleteRecurring(scope: 'instance')` plus a create from that
@@ -94,10 +97,10 @@ Empty. The 2026-10-02 review's findings are closed in `docs/decisions.md`
       a monthly rule on a plain weekday without an ordinal still
       round-trip as `{unsupported:true}` (weekly by-day and monthly
       ordinals ship since 2026-09-20); creating/deleting Reminders lists
-      (`REMINDERS_METHODS` has neither); a copy-then-delete move of an
-      undated task asks for a due day first (`TaskDraft.dueDate` is
-      required; a Reminders → Reminders move re-homes in place and keeps
-      it undated).
+      (`REMINDERS_METHODS` has neither); moving an undated task to
+      another list asks for a due day first (`moveTask` takes a
+      `TaskDraft`, whose `dueDate` is required; only Reminders →
+      Reminders re-homes in place and keeps it undated).
 
 - [ ] Task drag follow-ups — auto-scroll the grid while a chip is
       dragged near its top or bottom edge (both platforms; today the
@@ -144,8 +147,7 @@ the served model (#184) and slot proposals (#185) are in
 - [ ] Draft thread leftovers on the desktop (both platforms draw the
       thread now, `docs/decisions.md` → AI): drafts in the month view, a
       slot or ⌘N editor without a phrase drawing its form as a draft too,
-      to-do drafts in "Add all" (today it waits until each is the focused
-      one).
+      to-do drafts on the grid (a to-do draft draws nothing yet).
 - [ ] Served-model follow-ups (shipped in #184,
       `docs/decisions.md` → AI) — the model's own context from Ollama's
       `/api/show` instead of the fixed `num_ctx`; image input for a served
@@ -177,8 +179,8 @@ decision and platform notes live in `docs/decisions.md`.
       `TextRecognizer` seam, nothing above changes), a helper method that
       builds the attachment, and own Swift on iOS since
       `@react-native-ai/apple` 0.12 is text-only. Also: keep the source
-      text as the event's notes (`carried.description` exists in the
-      editor model, the editors have no notes field yet); shared web URLs
+      text as the event's notes (both editors have a notes field;
+      capture does not fill it); shared web URLs
       (the activation rule leaves them out — nothing fetches a page);
       multi-day events (the editor clamps an end to its start day); a
       File-menu entry if ⌘V proves undiscoverable; token counting via

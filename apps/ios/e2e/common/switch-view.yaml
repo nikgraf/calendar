@@ -1,21 +1,43 @@
 appId: com.solunivo.app.dev
 name: Switch the calendar to the view named VIEW (shared)
 ---
-# The header's view button opens a native menu; its items are the view
-# names. A tap taken right after launch can report COMPLETED with nothing
-# opening (runs 37104577969 and its rerun): re-open while the item is
+# The header's view button opens a native menu titled "View"; its items
+# are the view names. While the menu is open it hides the app from the
+# accessibility tree; once it closes, the button's label names the
+# current view ("View: Week"), which is what proves the switch.
+#
+# A tap taken right after launch can report COMPLETED with nothing
+# opening (runs 37104577969 and its rerun): re-open while the menu is
 # missing, the way a person would.
-- repeat:
-    times: 3
-    while:
-      notVisible: ${VIEW}
+#
+# The items join the tree while the menu is still animating in, and
+# Maestro aims a tap with the hierarchy it fetched before its settle
+# wait, so a tap on an item that has just appeared lands where the item
+# was and the menu stays open (run 38400664064). Let the menu settle
+# before tapping, and tap again while it is still open.
+#
+# No `while` guards the common path: Maestro waits up to 7 s for a
+# condition to come true, and `notVisible: <item>` on the open menu cost
+# that on every call.
+- retry:
+    maxRetries: 2
     commands:
-      - tapOn:
-          id: 'view-menu'
+      - runFlow:
+          when:
+            notVisible: 'View'
+          commands:
+            - tapOn:
+                id: 'view-menu'
+            - extendedWaitUntil:
+                visible: 'View'
+                timeout: 3000
+      - waitForAnimationToEnd:
+          timeout: 2000
+      - tapOn: ${VIEW}
       - extendedWaitUntil:
-          visible: ${VIEW}
-          timeout: 3000
-          optional: true
-- tapOn: ${VIEW}
+          visible:
+            id: 'view-menu'
+            text: 'View: ${VIEW}'
+          timeout: 5000
 - waitForAnimationToEnd:
     timeout: 5000

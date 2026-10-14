@@ -386,6 +386,20 @@ const isZoneList = (
   Array.isArray((value as { zones?: unknown }).zones) &&
   (value as { zones: ReadonlyArray<unknown> }).zones.every((zone) => typeof zone === 'string');
 
+// Google task hierarchy: a task's parent and its place among its siblings,
+// and the two op fields a hierarchy-keeping move needs — the destination
+// list of a server move, and the parent a carried-along subtask's create
+// nests under. Rows pulled before carry neither, so every Google list's
+// next pass is a full one.
+const taskHierarchy = Effect.gen(function* () {
+  const sql = yield* SqlClient;
+  yield* sql`ALTER TABLE tasks ADD COLUMN parent_id TEXT`;
+  yield* sql`ALTER TABLE tasks ADD COLUMN position TEXT`;
+  yield* sql`ALTER TABLE pending_ops ADD COLUMN target_task_list_id TEXT`;
+  yield* sql`ALTER TABLE pending_ops ADD COLUMN task_parent TEXT`;
+  yield* sql`UPDATE sync_state SET last_full_sync_at = 0 WHERE scope LIKE 'tasks:%'`;
+});
+
 // The third tuple element is a *loader* whose result is the migration effect.
 export const migrations: ReadonlyArray<ResolvedMigration> = [
   [1, 'baseline', Effect.succeed(baseline)],
@@ -399,5 +413,6 @@ export const migrations: ReadonlyArray<ResolvedMigration> = [
   [9, 'recurrence-cleared', Effect.succeed(recurrenceCleared)],
   [10, 'before-snapshot', Effect.succeed(beforeSnapshot)],
   [11, 'device-time-zone', Effect.succeed(deviceTimeZone)],
-  [12, 'task-due-cleared', Effect.succeed(taskDueCleared)],
+  [12, 'task-hierarchy', Effect.succeed(taskHierarchy)],
+  [13, 'task-due-cleared', Effect.succeed(taskDueCleared)],
 ];

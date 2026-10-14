@@ -8,6 +8,7 @@ import {
 } from './birthdays/reminders.ts';
 import { EventToTaskPreview } from './editor/convertLoss.ts';
 import { MoveLoss } from './editor/moveLoss.ts';
+import { TaskMoveLoss } from './editor/taskMoveLoss.ts';
 import { PlaceSuggestion } from './geo/location.ts';
 import { MirrorCalendarRef, MirrorDefinition } from './mirror/definition.ts';
 import { MirrorPreview, MirrorView } from './mirror/status.ts';
@@ -161,6 +162,7 @@ export const PendingOpSummary = Schema.Struct({
     'delete',
     'deleteTask',
     'move',
+    'moveTask',
     'rsvp',
     'update',
     'updateTask',
@@ -207,6 +209,15 @@ export const MoveTaskParams = Schema.Struct({
   taskListId: Schema.String,
 });
 export type MoveTaskParams = Schema.Schema.Type<typeof MoveTaskParams>;
+
+/** `MoveTaskParams` without the draft: what the preview needs. */
+export const PreviewMoveTaskParams = Schema.Struct({
+  accountId: Schema.String,
+  target: Schema.Struct({ accountId: Schema.String, taskListId: Schema.String }),
+  taskId: Schema.String,
+  taskListId: Schema.String,
+});
+export type PreviewMoveTaskParams = Schema.Schema.Type<typeof PreviewMoveTaskParams>;
 
 /**
  * Source event (the master id for a series) and the list the task it
@@ -523,9 +534,11 @@ export class AppBackendRpcs extends RpcGroup.make(
   }),
   /**
    * Moves a task to another list, account or provider. Apple → Apple is
-   * EventKit's own list change (same identifier); every other route
-   * creates the task in the target from `draft` and deletes the source —
-   * check `taskMoveLoss` first and confirm what that drops.
+   * EventKit's own list change (same identifier), and so is Google →
+   * Google inside one account (`tasks.move`: the id stays and the
+   * subtasks come along); every other route creates the task — and its
+   * subtasks — in the target from `draft` and deletes the source. Call
+   * `previewMoveTask` first and confirm what that drops.
    */
   Rpc.make('moveTask', {
     error: BackendError,
@@ -584,6 +597,12 @@ export class AppBackendRpcs extends RpcGroup.make(
     error: BackendError,
     payload: MoveEventParams,
     success: MoveLoss,
+  }),
+  /** What `moveTask` with the same source and target would drop (reminder fields, its place among subtasks…). */
+  Rpc.make('previewMoveTask', {
+    error: BackendError,
+    payload: PreviewMoveTaskParams,
+    success: TaskMoveLoss,
   }),
   Rpc.make('removeAccount', {
     error: BackendError,

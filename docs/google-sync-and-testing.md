@@ -160,7 +160,15 @@ suite). When touching sync code, treat these as invariants.
 - `due` is **date-only** (RFC 3339 with a meaningless time part) and
   there is **no recurrence exposure** — Google materializes the next
   occurrence of a repeating task when the current one completes.
-  `parent`/`position` are decoded and not modeled (todo.md).
+  `parent`/`position` are stored (`TaskRecord.parentId`/`position`); a
+  subtask's parent is always in its own list.
+- Moves and deletes in a hierarchy (verified live, 2026-10-13):
+  `tasks.move?destinationTasklist=` keeps the task's id and takes its
+  subtasks along, still nested; a subtask moved on its own lands as a task
+  of its own; afterwards the source list lists none of them, not even as
+  tombstones, and answers 404. Deleting a parent deletes its subtasks
+  (both come back as tombstones). An insert with `?parent=` nests the new
+  task first among its siblings.
 - **Task ids are server-assigned** — creates are NOT idempotent (no
   client-id trick like events). See architecture.md for the temp-id +
   adopt-before-retry protocol.
@@ -560,7 +568,9 @@ privacy modal, the settings window, the inspector and inline editor, ⌘K);
 `capture` (paste-to-drafts on the fixture model); `draftThread` (a
 phrase's draft on the grid, a change, Undo, Save; four turns folding to
 two under "+2 earlier queries", the changed time flashing; a pasted mail's thread,
-the pager, Remove, Add all); `slotProposals` (a finder phrase on the
+the pager, Remove, Add all; drafts made an event in another calendar, a
+task and a reminder, each shown again as it was left with nothing asked,
+and Add all writing each where it was put); `slotProposals` (a finder phrase on the
 fixture model against seeded busy blocks, TZ pinned: the draft in the
 best slot, the chip row and candidate blocks, a chip and a candidate
 moving it, a change dropping the proposals and Undo restoring them, a
@@ -747,7 +757,8 @@ beat after the first paint, so an earlier tap lands in the status bar),
 while the sheet is missing, then `expand-editor.yaml`: a new item's
 editor opens at half height, and the subflow taps the sheet's grabber,
 whose value reads "Half screen", up to full), `open-event-editor.yaml`
-(Edit on the detail sheet a tap opens), `switch-view.yaml` (the header's menu, `VIEW`),
+(Edit on the detail sheet a tap opens), `switch-view.yaml` (the header's menu, `VIEW`;
+done once the button reads "View: `VIEW`"),
 `switch-to-task.yaml`, `open-settings.yaml` (waits for `settings-root`),
 `open-settings-page.yaml` (`PAGE`: `device`, `general`, `notifications`,
 `file`, `advanced`, `mirrors`, `unsynced`; rows `settings-row-<page>`, pages
@@ -791,6 +802,14 @@ Selector gotchas (each caused a real failure):
   keyboard before tapping a lower input, and a control clipped by a
   ScrollView edge counts as visible and swallows the tap (centre rows
   first, repeat the tap until its effect shows).
+- A native menu's items join the tree while it is still animating in,
+  and Maestro aims a tap with the hierarchy it fetched before its settle
+  wait: `waitForAnimationToEnd` before tapping an item, then check the
+  item's effect, not the tap (`switch-view.yaml`, run 38400664064). A
+  `while`/`when` condition waits up to 7 s, counted from the last tap or
+  script, for its true outcome (`notVisible:` on an element that is
+  there, `visible:` on one that is not), so keep that outcome off the
+  common path.
 - The Search tab's field is found by its placeholder ("Events and
   tasks"); `hideKeyboard` cannot dismiss it — the field's "Close" ends
   the search. The detail sheet's own "Delete" stays in the tree behind

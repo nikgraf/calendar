@@ -10,7 +10,6 @@ import {
   type TaskConvertValues,
   type TaskDraft,
   type TaskListInfo,
-  taskMoveLoss,
   taskMoveLossSummary,
   type TaskPriority,
   type TaskProvider,
@@ -23,7 +22,12 @@ import { deleteQuestion } from './deleteQuestion.ts';
 import type { EditorConfirmRequest } from './editorModel.ts';
 import { useBackendMutations, useTaskReadOnlyLookup } from './hooks.ts';
 import { useOneWrite } from './oneWrite.ts';
-import { repeatNumberError, useRepeatState } from './repeatState.ts';
+import {
+  type RepeatFields,
+  repeatNumberError,
+  seedRepeatFields,
+  useRepeatState,
+} from './repeatState.ts';
 import { offeredTaskLists, taskEditorChanges, type TaskEditorValues } from './taskEditorChanges.ts';
 
 export interface TaskEditorSeed {
@@ -57,6 +61,22 @@ export interface TaskEditorSeed {
 }
 
 const listKeyOf = (accountId: string, listId: string) => `${accountId}:${listId}`;
+
+/**
+ * The Reminders-only fields the form holds — kept whatever list is
+ * picked, see `useTaskEditorModel` — as a thread keeps them per draft, so
+ * one reminder's alerts, priority, rule and link never follow the form to
+ * the next draft, and "Add all" writes each with its own.
+ */
+export interface ReminderFields {
+  /** Minutes relative to the due time, the form's own first. */
+  readonly alarms: ReadonlyArray<number>;
+  readonly priority?: TaskPriority | undefined;
+  /** The repeat fields as typed, so an invalid number stays one: Save would refuse it. */
+  readonly repeat: RepeatFields;
+  /** As typed: trimmed (and checked) when written. */
+  readonly url: string;
+}
 
 /**
  * The list the last to-do was created in, for this session: a new one
@@ -263,6 +283,26 @@ export const useTaskEditorModel = ({
     repeatState.resetRepeat(next.recurrence);
   };
 
+  /** The Reminders-only fields as they stand, for a thread to keep with its draft. */
+  const reminderFields = (): ReminderFields => ({
+    alarms: alarms(),
+    priority,
+    repeat: repeatState.repeatFields,
+    url,
+  });
+
+  /**
+   * Another draft's Reminders-only fields take the form over (undefined: a
+   * draft the form never showed as a to-do, which starts without any).
+   */
+  const restoreReminderFields = (next: ReminderFields | undefined) => {
+    setAlarm(next?.alarms[0]);
+    setExtraAlarms(next?.alarms.slice(1) ?? []);
+    setPriority(next?.priority);
+    setUrl(next?.url ?? '');
+    repeatState.restoreRepeatFields(next?.repeat ?? seedRepeatFields(undefined));
+  };
+
   /**
    * Takes a parsed phrase over the fields a phrase can say: the title,
    * the due day and whether there is a due time. The list, notes and the
@@ -352,10 +392,12 @@ export const useTaskEditorModel = ({
           setError('Add a due date before moving this task to another list.');
           return;
         }
-        const loss = taskMoveLoss(existing, {
-          sameAccount: existing.accountId === accountId,
-          source: existing.provider,
-          target: provider,
+        // The backend knows the task's subtasks, which move with it.
+        const loss = await mutations.previewMoveTask({
+          accountId: existing.accountId,
+          target: { accountId, taskListId },
+          taskId: existing.id,
+          taskListId: existing.listId,
         });
         const summary = taskMoveLossSummary(loss);
         // Ask before writing anything, so "keep it here" leaves no trace.
@@ -485,8 +527,11 @@ export const useTaskEditorModel = ({
     provider,
     readOnly,
     recurrenceUnsupported,
+    /** The Reminders-only fields, for a thread to keep with its draft. */
+    reminderFields,
     remove: () => write.run(remove),
     ...repeatState,
+    restoreReminderFields,
     save: () => write.run(save),
     setAlarm,
     setDueDate,

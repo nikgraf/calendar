@@ -16,6 +16,7 @@ import {
   base,
   baseDate,
   DAY,
+  googleEvent,
   grantCalendar,
   grantList,
   HOUR,
@@ -172,6 +173,29 @@ describe('reads', () => {
         toDate: baseDate,
       })) as { slots: ReadonlyArray<{ start: string }> };
       // 10:00–11:30 is taken (the last half hour only by the free/busy calendar), 12–13 by lunch.
+      expect(result.slots.map((slot) => slot.start.slice(11, 16))).toEqual(['13:00']);
+    }).pipe(Effect.provide(world.layer));
+  });
+
+  it.effect('an event marked free blocks no time, like find-a-time', () => {
+    const world = makeWorld();
+    return Effect.gen(function* () {
+      yield* (yield* EventRepo).upsertMany([
+        googleEvent('focus', 'work', 'Focus (free)', base + 13 * HOUR, {
+          transparency: 'transparent',
+        }),
+      ]);
+      const busy = (yield* callTool(reader(), 'get_free_busy', range)) as {
+        busy: ReadonlyArray<{ start: string }>;
+      };
+      expect(busy.busy.map((block) => block.start)).not.toContain(at(13));
+      const result = (yield* callTool(reader(), 'find_free_slots', {
+        durationMinutes: 60,
+        earliestTime: '10:00',
+        fromDate: baseDate,
+        latestTime: '14:00',
+        toDate: baseDate,
+      })) as { slots: ReadonlyArray<{ start: string }> };
       expect(result.slots.map((slot) => slot.start.slice(11, 16))).toEqual(['13:00']);
     }).pipe(Effect.provide(world.layer));
   });

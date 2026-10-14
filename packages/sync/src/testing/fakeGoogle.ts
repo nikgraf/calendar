@@ -135,6 +135,8 @@ export class FakeGoogle {
   private readonly live: boolean;
   /** The fake's clock for task `updated` stamps; advance it between passes. */
   now = Date.parse('2026-08-24T10:00:00.000Z');
+  /** This many `tasks.move` calls answer 503 first (a move held in backoff). */
+  failTaskMoves = 0;
 
   constructor(options: FakeGoogleOptions) {
     this.calendars = [...options.calendars];
@@ -324,6 +326,15 @@ export class FakeGoogle {
       if (path === '/tasks/v1/users/@me/lists') {
         return reply(200, { items: this.taskLists });
       }
+      const taskMove = /^\/tasks\/v1\/lists\/([^/]+)\/tasks\/([^/]+)\/move$/.exec(path);
+      if (taskMove && request.method === 'POST') {
+        return this.moveTaskRoute(
+          decodeURIComponent(taskMove[1]!),
+          decodeURIComponent(taskMove[2]!),
+          url.searchParams.get('destinationTasklist'),
+          reply,
+        );
+      }
       const match = /^\/tasks\/v1\/lists\/([^/]+)\/tasks(?:\/([^/]+))?$/.exec(path);
       if (match) {
         const listId = decodeURIComponent(match[1]!);
@@ -495,7 +506,16 @@ export class FakeGoogle {
     if (request.method === 'POST' && taskId === undefined) {
       this.taskSeq += 1;
       const id = `task-${this.taskSeq}`;
-      const task: GcalTask = { status: 'needsAction', ...(body as Partial<GcalTask>), id };
+      const parent = url.searchParams.get('parent');
+      if (parent !== null && !store.get(parent)) {
+        return reply(400, { error: { message: 'Invalid parent' } });
+      }
+      const task: GcalTask = {
+        status: 'needsAction',
+        ...(body as Partial<GcalTask>),
+        id,
+        ...(parent === null ? {} : { parent }),
+      };
       store.set(id, { task, updatedAt: this.stamp() });
       return reply(200, wire(store.get(id)!));
     }
@@ -516,11 +536,54 @@ export class FakeGoogle {
         return reply(200, wire(store.get(taskId)!));
       }
       if (request.method === 'DELETE') {
+        // Google deletes a parent's subtasks with it (verified live).
+        for (const [childId, child] of store) {
+          if (child.task.parent === taskId) {
+            this.deleteTaskServerSide(listId, childId);
+          }
+        }
         this.deleteTaskServerSide(listId, taskId);
         return reply(204);
       }
     }
     return reply(405);
+  }
+
+  /**
+   * `tasks.move` to another list, as verified live: the task keeps its
+   * id and leaves its parent; its subtasks come along, still nested; the
+   * source list lists none of them afterwards — not even as tombstones —
+   * and answers 404 for them.
+   */
+  private moveTaskRoute(
+    listId: string,
+    taskId: string,
+    destination: string | null,
+    reply: (status: number, json?: unknown) => HttpClientResponse.HttpClientResponse,
+  ): HttpClientResponse.HttpClientResponse {
+    if (this.failTaskMoves > 0) {
+      this.failTaskMoves -= 1;
+      return reply(503, { error: { message: 'Backend Error' } });
+    }
+    const source = this.tasksOf(listId);
+    const existing = source.get(taskId);
+    if (!existing || existing.task.deleted) {
+      return reply(404, { error: { message: 'Task not found.' } });
+    }
+    if (destination === null || destination === listId) {
+      return reply(400, { error: { message: 'only moves between lists are faked' } });
+    }
+    const target = this.tasksOf(destination);
+    const { parent: _parent, ...task } = existing.task;
+    target.set(taskId, { task, updatedAt: this.stamp() });
+    source.delete(taskId);
+    for (const [childId, child] of source) {
+      if (child.task.parent === taskId) {
+        target.set(childId, { task: child.task, updatedAt: this.stamp() });
+        source.delete(childId);
+      }
+    }
+    return reply(200, wire(target.get(taskId)!));
   }
 
   // ---- helpers ----

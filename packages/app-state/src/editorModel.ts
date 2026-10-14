@@ -112,6 +112,23 @@ export const rememberCalendar = (calendarKey: string): void => {
 export const getLastUsedCalendarKey = (): string | null => lastUsedCalendarKey;
 
 /**
+ * `key` while it names a calendar a new event can go to, else `fallback`:
+ * a calendar remembered for a draft may have gone, or turned read-only,
+ * since it was picked.
+ */
+export const writableCalendarKey = (
+  calendars: ReadonlyArray<CalendarInfo>,
+  key: string | undefined,
+  fallback: string,
+): string =>
+  key !== undefined &&
+  calendars.some(
+    (calendar) => isCalendarWritable(calendar) && `${calendar.accountId}:${calendar.id}` === key,
+  )
+    ? key
+    : fallback;
+
+/**
  * The start and end a new event opens with: a quick-add result first, then
  * a slot drawn on the grid, then the clicked hour (one hour long; the last
  * hour ends at 23:59, since `24:00` is no valid time), then 09:00.
@@ -610,18 +627,22 @@ export const useEventEditorModel = ({
   /**
    * Another draft's extras take the form over (undefined: a draft the form
    * never held, which starts clean), so nothing typed for one draft shows
-   * on the next.
+   * on the next — its calendar too, while it can still take events; a
+   * draft never given one keeps the form's.
    */
   const restoreExtras = (
     next:
       | {
           readonly attendees: ReadonlyArray<AttendeeInput>;
+          readonly calendarKey?: string | undefined;
           readonly description: string;
           readonly geo?: GeoLocation | undefined;
           readonly reminders: EventReminders | undefined;
         }
       | undefined,
   ) => {
+    const restored = writableCalendarKey(calendars, next?.calendarKey, calendarKey);
+    setCalendarKey(restored);
     setAttendees(next?.attendees ?? []);
     setAttendeesDirty((next?.attendees.length ?? 0) > 0);
     setDescription(next?.description ?? '');
@@ -632,7 +653,7 @@ export const useEventEditorModel = ({
       setReminders(
         new EventReminders({
           overrides: [],
-          useDefault: calendarOf(calendarKey)?.provider !== 'apple',
+          useDefault: calendarOf(restored)?.provider !== 'apple',
         }),
       );
       setRemindersDirty(false);

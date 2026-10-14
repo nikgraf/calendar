@@ -477,6 +477,25 @@ const make: Effect.Effect<
         watermark === null ||
         (state?.lastFullSyncAt ?? 0) < passStartedAt - TASKS_FULL_PASS_INTERVAL_MS;
 
+      // Tasks a queued move takes out of this list: Google lists them here
+      // until it lands (and never says when they leave), so a pull must
+      // not put back the rows the move already took — nor their subtasks.
+      // Read after each answer; the pass holds the drain (below), so a
+      // move cannot land between a request and its rows.
+      const leavingNow = Effect.map(
+        pendingOpRepo.listAll(),
+        (ops) =>
+          new Set(
+            ops
+              .filter(
+                (op) =>
+                  op.kind === 'moveTask' &&
+                  op.accountId === account.id &&
+                  op.calendarId === taskListId,
+              )
+              .map((op) => op.eventId),
+          ),
+      );
       let pageToken: string | undefined;
       do {
         const page = yield* withTransientRetry(
@@ -489,10 +508,14 @@ const make: Effect.Effect<
             taskListId,
           }),
         );
+        const leaving = yield* leavingNow;
         const upserts = [];
         const deletions: Array<string> = [];
         for (const item of page.items ?? []) {
           const record = mapGcalTask(item, { accountId: account.id, taskListId });
+          if (record && (leaving.has(record.id) || leaving.has(record.parentId ?? ''))) {
+            continue;
+          }
           if (record) {
             upserts.push(record);
           } else {
@@ -534,7 +557,7 @@ const make: Effect.Effect<
       yield* Effect.forEach(
         lists,
         (list) =>
-          syncTasks(account, list.id).pipe(
+          mutations.whileQueueHeld(syncTasks(account, list.id)).pipe(
             // A 404 on one list (tasklists.list can still name a list just
             // deleted) must not fail the lists after it. Its rows stay: the
             // lists are listed in full every pass, so a gone one is removed
