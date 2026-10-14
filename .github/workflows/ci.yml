@@ -313,12 +313,16 @@ jobs:
       - name: First-time device permissions
         if: matrix.shard == 1
         working-directory: apps/ios
+        env:
+          E2E_APP: build/e2e-repacked/Solunivo.app
         run: node e2e/ci/run-flows.ts permissions e2e/flows/04a-device-permissions.yaml
       # run-flows.ts runs the flows a dead XCTest driver took down once
-      # more, in a fresh invocation, and never a flow that failed on its
-      # own (e2e/ci/maestroRetry.ts).
+      # more, in a fresh invocation on a fresh install of E2E_APP, and never
+      # a flow that failed on its own (e2e/ci/maestroRetry.ts).
       - name: Maestro flows
         working-directory: apps/ios
+        env:
+          E2E_APP: build/e2e-repacked/Solunivo.app
         run: |
           set -euo pipefail
           flows=$(node e2e/ci/shard-flows.mjs "${{ matrix.shard }}" 2)

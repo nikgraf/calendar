@@ -7,6 +7,9 @@
 #
 #   prepare-simulator.sh boot           start the boot, do not wait for it
 #   prepare-simulator.sh install <app>  wait for the boot, install, grant
+#   prepare-simulator.sh reset <app>    erase the booted simulator, then
+#                                       install as above (run-flows.ts,
+#                                       before a second run; CI only)
 #
 # The split lets a job start the boot first: a runner's first boot spends
 # two minutes in data migration, which then overlaps the install and the
@@ -97,11 +100,22 @@ install() {
   fi
 }
 
-case "${1:?boot | install <app>}" in
+# Back to a fresh device: an uninstall leaves the device's Reminders and
+# Calendar (EventKit belongs to the device, not the app), and a flow cut
+# short mid-write would meet its own half-made reminder on its rerun.
+reset() {
+  UDID="${SIMULATOR_UDID:?run the boot step first}"
+  xcrun simctl shutdown "$UDID" || true
+  xcrun simctl erase "$UDID"
+  install "${1:-}"
+}
+
+case "${1:?boot | install <app> | reset <app>}" in
   boot) boot ;;
   install) install "${2:-}" ;;
+  reset) reset "${2:-}" ;;
   *)
-    echo "usage: prepare-simulator.sh boot | install <app>" >&2
+    echo "usage: prepare-simulator.sh boot | install <app> | reset <app>" >&2
     exit 2
     ;;
 esac

@@ -708,7 +708,10 @@ Electron binary (`electron --version`) and run spec files sequentially.
   Maestro latches the device as unreachable and every later flow fails
   within seconds; the wrapper reads the JUnit report and the run's
   `maestro.log` (`maestroRetry.ts`) and runs the flows lost that way once
-  more in a fresh invocation, with a warning annotation and a step-summary
+  more in a fresh invocation on an erased simulator (`prepare-simulator.sh
+  reset $E2E_APP`: the interrupted flow's half-made changes, in the app's
+  data or the device's EventKit, would fail its own first check), with a
+  warning annotation and a step-summary
   line naming the command the driver died on and whether XCTest found the
   app's main thread busy. A flow that failed on its own (an assertion, an
   element not found, anything but `DeviceUnreachableException`) fails the

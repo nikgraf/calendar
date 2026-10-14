@@ -8,6 +8,10 @@
  *
  *   node e2e/ci/run-flows.ts <label> <flow>...     (SIMULATOR_UDID set)
  *
+ * With E2E_APP (the .app CI installed) the second run starts on an erased
+ * simulator with a fresh install of it; without, nothing is reset (a
+ * developer's simulator and dev client keep their data).
+ *
  * e2e/ci/package.json marks these files as ES modules for Node: the app's
  * own package.json is part of the native fingerprint.
  */
@@ -16,7 +20,11 @@ import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSyn
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import process from 'node:process';
+import { fileURLToPath, URL } from 'node:url';
 import { decideRetry, latchedCommand } from './maestroRetry.ts';
+
+/** The dev variant: e2e always drives it (prepare-simulator.sh). */
+const BUNDLE_ID = 'com.solunivo.app.dev';
 
 const say = (message: string): void => {
   process.stdout.write(`${message}\n`);
@@ -121,8 +129,25 @@ summary(
 );
 
 // A hung app or a half-dead runner must not carry into the next invocation.
-for (const bundle of ['com.solunivo.app.dev', 'dev.mobile.maestro-driver-iosUITests.xctrunner']) {
+for (const bundle of ['dev.mobile.maestro-driver-iosUITests.xctrunner', BUNDLE_ID]) {
   spawnSync('xcrun', ['simctl', 'terminate', udid, bundle], { stdio: 'ignore' });
+}
+// The flow the driver died in stopped halfway: what it had changed (a
+// primary time zone in the app's data, a reminder in the device's
+// EventKit) would break its own first check. On CI the second run starts
+// from an erased simulator with the app installed and set up again, as
+// the first did.
+const app = process.env['E2E_APP'];
+if (app) {
+  const prepared = spawnSync(
+    'bash',
+    [fileURLToPath(new URL('prepare-simulator.sh', import.meta.url)), 'reset', app],
+    { stdio: 'inherit' },
+  );
+  if (prepared.status !== 0) {
+    say('::error::resetting the simulator for the second run failed');
+    process.exit(first.status);
+  }
 }
 
 const second = attempt(2, decision.flows);
