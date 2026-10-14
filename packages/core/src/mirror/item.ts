@@ -1,5 +1,5 @@
 import { meetingUrl } from '../meeting.ts';
-import { isDeclinedBySelf } from '../scheduling/busy.ts';
+import { isDeclinedBySelf, isMarkedFree } from '../scheduling/busy.ts';
 import { TIMED_TASK_LAYOUT_MINUTES, taskCalendarDate } from '../taskTiming.ts';
 import { addDaysToPlainDate, plainDateToUtcMs, toZonedDateTime } from '../time/convert.ts';
 import { Temporal } from '../time/temporal.ts';
@@ -50,7 +50,7 @@ export const googleEventMirrorItem = (
   done: false,
   endDate: event.endDate,
   endUtc: event.endUtc,
-  free: event.transparency === 'transparent',
+  free: isMarkedFree(event),
   key:
     event.recurringEventId !== undefined && event.originalStartUtc !== undefined
       ? `g|${event.calendarId}|${event.recurringEventId}|${event.originalStartUtc}`

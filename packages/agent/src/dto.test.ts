@@ -1,6 +1,6 @@
 import { Attendee, EventRecord, plainDateToUtcMs } from '@calendar/core';
 import { describe, expect, it } from 'vite-plus/test';
-import { isBusy, mergeBusy, otherGuests, toEventDto } from './dto.ts';
+import { mergeBusy, otherGuests, toEventDto } from './dto.ts';
 import { decodeEventRef } from './refs.ts';
 
 const HOUR = 3_600_000;
@@ -81,25 +81,6 @@ describe('toEventDto', () => {
 });
 
 describe('busy time', () => {
-  it('all-day, cancelled and declined events block nothing', () => {
-    expect(isBusy(event(), 'me@example.com')).toBe(true);
-    expect(isBusy(event({ isAllDay: true }), 'me@example.com')).toBe(false);
-    expect(isBusy(event({ status: 'cancelled' }), 'me@example.com')).toBe(false);
-    expect(
-      isBusy(
-        event({ attendees: [guest('ME@example.com', { responseStatus: 'declined' })] }),
-        'me@example.com',
-      ),
-    ).toBe(false);
-    // Someone else declining does not free the user's time.
-    expect(
-      isBusy(
-        event({ attendees: [guest('ana@example.com', { responseStatus: 'declined' })] }),
-        'me@example.com',
-      ),
-    ).toBe(true);
-  });
-
   it('merges overlapping and touching blocks and clips them to the range', () => {
     const range = { endUtc: T0 + 6 * HOUR, startUtc: T0 };
     const blocks = mergeBusy(

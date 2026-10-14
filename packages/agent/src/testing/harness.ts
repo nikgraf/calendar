@@ -104,7 +104,7 @@ const googleCalendar = (
     ...overrides,
   });
 
-const googleEvent = (
+export const googleEvent = (
   id: string,
   calendarId: string,
   title: string,

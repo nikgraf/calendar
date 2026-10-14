@@ -45,13 +45,24 @@ export const findSlotsFor = async (
   const rangeStartUtc = plainDateToUtcMs(constraints.windowStartDate) - 24 * 60 * 60 * 1000;
   const rangeEndUtc = plainDateToUtcMs(constraints.windowEndDate) + 2 * 24 * 60 * 60 * 1000;
   let events;
+  let accounts;
   try {
-    // BackendClient methods are Effects; the app layer runs them.
-    events = await Effect.runPromise(backend.getEventsInRange({ rangeEndUtc, rangeStartUtc }));
+    // BackendClient methods are Effects; the app layer runs them. The
+    // accounts' emails find a declined invitation the way the agent
+    // gateway's free/busy does (`blocksTime`).
+    [events, accounts] = await Effect.runPromise(
+      Effect.all(
+        [backend.getEventsInRange({ rangeEndUtc, rangeStartUtc }), backend.listAccounts(undefined)],
+        {
+          concurrency: 'unbounded',
+        },
+      ),
+    );
   } catch {
     return { reason: "Couldn't load your calendar — try again." };
   }
   return findFreeSlots(exclude ? events.filter((event) => !exclude(event)) : events, constraints, {
+    accountEmails: new Map(accounts.map((account) => [account.id, account.email])),
     maxSlots,
     nowUtc: Date.now(),
     preferredTime,

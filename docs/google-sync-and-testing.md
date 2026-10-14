@@ -562,7 +562,9 @@ privacy modal, the settings window, the inspector and inline editor, ⌘K);
 `capture` (paste-to-drafts on the fixture model); `draftThread` (a
 phrase's draft on the grid, a change, Undo, Save; four turns folding to
 two under "+2 earlier queries", the changed time flashing; a pasted mail's thread,
-the pager, Remove, Add all); `slotProposals` (a finder phrase on the
+the pager, Remove, Add all; drafts made an event in another calendar, a
+task and a reminder, each shown again as it was left with nothing asked,
+and Add all writing each where it was put); `slotProposals` (a finder phrase on the
 fixture model against seeded busy blocks, TZ pinned: the draft in the
 best slot, the chip row and candidate blocks, a chip and a candidate
 moving it, a change dropping the proposals and Undo restoring them, a
