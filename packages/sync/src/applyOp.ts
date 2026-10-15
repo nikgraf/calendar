@@ -4,6 +4,8 @@ import {
   EventRecord,
   normalizeHexColor,
   PendingOp,
+  placedTask,
+  provisionalPosition,
   TaskRecord,
   withConsistentGeo,
 } from '@calendar/core';
@@ -106,6 +108,7 @@ const TASK_KINDS: ReadonlySet<PendingOp['kind']> = new Set([
   'createTask',
   'deleteTask',
   'moveTask',
+  'reorderTask',
   'updateTask',
 ]);
 
@@ -418,6 +421,138 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
     });
 
   /**
+   * An abandoned reorder: the task goes back under the parent and to the
+   * position it had — an earlier reorder's place, while that one is still
+   * queued. A reorder queued behind it owns the row now, and was queued
+   * on this one's place: it takes over what this one replaced, so its own
+   * discard puts that back.
+   */
+  const revertTaskReorder = (op: PendingOp, listId: string, before: TaskRecord) =>
+    Effect.gen(function* () {
+      const queued = yield* pendingOpRepo.listForEvent({
+        accountId: op.accountId,
+        calendarId: listId,
+        eventId: op.eventId,
+      });
+      // One queued after it (a task's reorders are stamped strictly in
+      // order: a discarded op has already left the queue).
+      const next = queued.find(
+        (other) => other.kind === 'reorderTask' && other.createdAt > op.createdAt,
+      );
+      if (next) {
+        if (next.beforeTask) {
+          yield* pendingOpRepo.setBeforeTask(next.id, placedTask(next.beforeTask, before));
+        }
+        return;
+      }
+      const current = yield* taskRepo.get(op.accountId, listId, op.eventId);
+      if (!current) {
+        return;
+      }
+      yield* taskRepo.upsertTasks([placedTask(current, before)], yield* Clock.currentTimeMillis);
+      if (yield* othersQueued(op, listId)) {
+        yield* taskRepo.markPending(op.accountId, listId, op.eventId);
+      }
+      // Back under a parent whose delete is queued: Google would delete it
+      // with the parent, though the user deleted the parent without it. A
+      // subtask kept is a parent kept, as when a subtask's delete is
+      // discarded.
+      const parentId = before.parentId;
+      if (parentId !== undefined && parentId !== current.parentId) {
+        const parentDelete = (yield* pendingOpRepo.listForEvent({
+          accountId: op.accountId,
+          calendarId: listId,
+          eventId: parentId,
+        })).find((other) => other.kind === 'deleteTask');
+        if (parentDelete) {
+          yield* pendingOpRepo.remove(parentDelete.id);
+          yield* releaseRow(parentDelete);
+        }
+      }
+    });
+
+  /**
+   * A reorder landed: Google renumbered the siblings it left and joined
+   * without bumping their `updated`, so no pull will bring that. The
+   * list's order is read back and written onto its rows, pending ones
+   * included (their queued edits do not touch the order); then the
+   * reorders still queued are replayed over it in queue order, as Google
+   * will apply them — each placed by its parent and previous sibling, and
+   * each holding the place before it as what a discard puts back. A queued
+   * delete holds Google's place too. Best effort — the move itself landed
+   * either way, and the daily full pass brings the order too.
+   */
+  const refreshTaskOrder = (landed: PendingOp, listId: string) =>
+    Effect.ignore(
+      Effect.gen(function* () {
+        const { accountId } = landed;
+        const entries: Array<{
+          readonly id: string;
+          readonly parentId: string | undefined;
+          readonly position: string | undefined;
+        }> = [];
+        let pageToken: string | undefined;
+        do {
+          const page = yield* tasksClient.listTasks({
+            accountId,
+            params: { pageToken },
+            taskListId: listId,
+          });
+          for (const item of page.items ?? []) {
+            if (!item.deleted) {
+              entries.push({ id: item.id, parentId: item.parent, position: item.position });
+            }
+          }
+          pageToken = page.nextPageToken;
+        } while (pageToken !== undefined);
+        yield* taskRepo.refreshHierarchy(accountId, listId, entries);
+        const google = new Map(entries.map((entry) => [entry.id, entry]));
+        for (const queued of yield* pendingOpRepo.listAll()) {
+          // The landed one leaves the queue once this returns.
+          if (
+            queued.id === landed.id ||
+            queued.accountId !== accountId ||
+            queued.calendarId !== listId
+          ) {
+            continue;
+          }
+          const entry = google.get(queued.eventId);
+          if (queued.kind === 'deleteTask' && queued.beforeTask && entry) {
+            yield* pendingOpRepo.setBeforeTask(
+              queued.id,
+              placedTask(queued.beforeTask, {
+                ...(entry.parentId === undefined ? {} : { parentId: entry.parentId }),
+                ...(entry.position === undefined ? {} : { position: entry.position }),
+              }),
+            );
+          }
+          const row =
+            queued.kind === 'reorderTask'
+              ? yield* taskRepo.get(accountId, listId, queued.eventId)
+              : undefined;
+          if (row === undefined) {
+            continue;
+          }
+          yield* pendingOpRepo.setBeforeTask(queued.id, placedTask(queued.beforeTask ?? row, row));
+          const siblings = (yield* taskRepo.listSiblings(
+            accountId,
+            listId,
+            queued.taskParent,
+          )).filter((sibling) => sibling.id !== row.id);
+          yield* taskRepo.updateLocal({
+            accountId,
+            changes: {
+              parentId: queued.taskParent ?? null,
+              position: provisionalPosition(siblings, queued.taskPrevious),
+            },
+            listId,
+            taskId: row.id,
+          });
+        }
+      }),
+    );
+
+  /**
    * An abandoned color change: the previous color comes back while the
    * calendar still shows this op's. Calendar-list pulls do not skip a
    * calendar with a queued color (there is no pending flag on it), so a
@@ -706,6 +841,14 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
         return op.taskListId && revert && op.beforeTask
           ? Effect.ignore(revertTaskDelete(op, op.taskListId, op.beforeTask))
           : Effect.void;
+      case 'reorderTask':
+        return op.taskListId
+          ? Effect.ignore(
+              revert && op.beforeTask
+                ? revertTaskReorder(op, op.taskListId, op.beforeTask)
+                : taskRepo.markSynced(op.accountId, op.taskListId, op.eventId),
+            )
+          : Effect.void;
       case 'moveTask':
         // Google still has the task in the source list.
         return Effect.ignore(revertTaskMove(op));
@@ -782,6 +925,12 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
       // source list's tombstone; deleting here could hide one that exists.
       if (op.kind === 'moveTask') {
         return yield* settleOrRevertTaskMove(op);
+      }
+      // The task, or the parent or sibling it was placed by, is gone: the
+      // row goes back to where Google last had it, and a task really
+      // deleted there arrives as the list's tombstone.
+      if (op.kind === 'reorderTask') {
+        return yield* drop(op, 'the task or its new neighbours are gone on Google');
       }
       // Deleted remotely — drop the local copy too. (For deleteTask
       // this is simply "already gone".)
@@ -1047,8 +1196,23 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
         ) {
           return retry('waiting for the move ahead of it');
         }
-        if (op.kind === 'moveTask' && earlier.some((other) => other.calendarId === op.calendarId)) {
+        // A reorder names the parent and the sibling it goes after as the
+        // list stands once everything queued before it landed, so it waits
+        // for those; and a delete queued behind it must not take a sibling
+        // it names away first.
+        if (
+          (op.kind === 'moveTask' || op.kind === 'reorderTask') &&
+          earlier.some((other) => other.calendarId === op.calendarId)
+        ) {
           return retry('waiting for earlier changes in its list');
+        }
+        if (
+          op.kind === 'deleteTask' &&
+          earlier.some(
+            (other) => other.kind === 'reorderTask' && other.calendarId === op.calendarId,
+          )
+        ) {
+          return retry('waiting for the reorder ahead of it');
         }
         // Google inserts a subtask first among its siblings: they are
         // queued last to first, and each waits for the one before it so a
@@ -1265,6 +1429,37 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
             taskListId: op.taskListId,
           });
           yield* settleTaskMove(op, destination, response);
+          return 'done' as const;
+        }
+        case 'reorderTask': {
+          if (!op.taskListId) {
+            return 'done' as const;
+          }
+          // Checked again as sent: a change undone since it was queued (a
+          // subtask put back under the task, the new parent nested itself)
+          // would make Google nest it two levels deep, which it accepts.
+          if (op.taskParent !== undefined) {
+            const parent = yield* taskRepo.get(op.accountId, op.taskListId, op.taskParent);
+            const subtasks = yield* taskRepo.listSubtasks(op.accountId, op.taskListId, op.eventId);
+            if (parent?.parentId !== undefined || subtasks.length > 0) {
+              return yield* drop(op, 'it would nest the task more than one level deep');
+            }
+          }
+          const response = yield* tasksClient.moveTask({
+            accountId: op.accountId,
+            parent: op.taskParent,
+            previous: op.taskPrevious,
+            taskId: op.eventId,
+            taskListId: op.taskListId,
+          });
+          const synced = mapGcalTask(response, {
+            accountId: op.accountId,
+            taskListId: op.taskListId,
+          });
+          if (synced) {
+            yield* settleTask(op, op.taskListId, synced);
+          }
+          yield* refreshTaskOrder(op, op.taskListId);
           return 'done' as const;
         }
         case 'deleteTask': {

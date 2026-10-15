@@ -405,7 +405,7 @@ export class PendingOp extends Schema.Class<PendingOp>('PendingOp')({
    * discard can only mark the row synced.
    */
   beforePayload: Schema.optional(Schema.NullOr(EventRecord)),
-  /** The task row before an updateTask / completeTask / deleteTask, for the same purposes. */
+  /** The task row before a task edit, toggle, delete, move or reorder, for the same purposes. */
   beforeTask: Schema.optional(TaskRecord),
   calendarId: Schema.String,
   /**
@@ -447,6 +447,7 @@ export class PendingOp extends Schema.Class<PendingOp>('PendingOp')({
     'deleteTask',
     'move',
     'moveTask',
+    'reorderTask',
     'rsvp',
     'update',
     'updateTask',
@@ -485,9 +486,12 @@ export class PendingOp extends Schema.Class<PendingOp>('PendingOp')({
   taskNotes: Schema.optional(Schema.String),
   /**
    * Kind 'createTask': the task the new one nests under (a subtask carried
-   * along by a move) — a temp id until that task's own create lands.
+   * along by a move) — a temp id until that task's own create lands. Kind
+   * 'reorderTask': the parent it moves under; absent, a task of its own.
    */
   taskParent: Schema.optional(Schema.String),
+  /** Kind 'reorderTask': the sibling it goes right after; absent, first among them. */
+  taskPrevious: Schema.optional(Schema.String),
   /** Desired task status for kind 'completeTask'. */
   taskStatus: Schema.optional(TaskStatus),
   /** Title for kind 'createTask'/'updateTask'. */

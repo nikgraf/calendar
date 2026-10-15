@@ -76,6 +76,7 @@ export interface LiveTask {
   readonly id: string;
   readonly notes?: string;
   readonly parent?: string;
+  readonly position?: string;
   readonly status?: string;
   readonly title?: string;
   readonly updated?: string;

@@ -343,6 +343,23 @@ export const commonBackendHandlers: Omit<BackendHandlers<CommonBackendServices>,
       const calendars = yield* (yield* CalendarRepo).list();
       const taskLists = yield* taskRepo.listLists();
       const timeZone = yield* readPrimaryTimeZone;
+      // The tasks a reorder names: its old and new parent, the sibling it follows.
+      const named = new Map<string, string>();
+      for (const op of ops) {
+        const listId = op.taskListId;
+        if (op.kind !== 'reorderTask' || listId === undefined) {
+          continue;
+        }
+        for (const id of [op.taskParent, op.taskPrevious, op.beforeTask?.parentId]) {
+          const key = id === undefined ? undefined : `${op.accountId}:${listId}:${id}`;
+          if (id !== undefined && key !== undefined && !named.has(key)) {
+            const task = yield* taskRepo.get(op.accountId, listId, id);
+            if (task) {
+              named.set(key, task.title);
+            }
+          }
+        }
+      }
       const context = {
         calendarName: (accountId: string, calendarId: string) =>
           calendars.find(
@@ -350,6 +367,8 @@ export const commonBackendHandlers: Omit<BackendHandlers<CommonBackendServices>,
           )?.summary,
         taskListName: (accountId: string, taskListId: string) =>
           taskLists.find((list) => list.accountId === accountId && list.id === taskListId)?.title,
+        taskTitle: (accountId: string, taskListId: string, taskId: string) =>
+          named.get(`${accountId}:${taskListId}:${taskId}`),
         timeZone,
       };
       return ops.map((op, index) => {
@@ -465,6 +484,12 @@ export const commonBackendHandlers: Omit<BackendHandlers<CommonBackendServices>,
         // Its events are not in the cascade (never stored): repaint the views.
         yield* (yield* AppleCalendarEvents).invalidate;
       }
+    }),
+
+  reorderTask: (params) =>
+    Effect.gen(function* () {
+      const mutations = yield* EventMutations;
+      yield* mutations.reorderTask(params);
     }),
 
   resolveConflict: (params) =>

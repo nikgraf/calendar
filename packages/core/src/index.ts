@@ -62,6 +62,7 @@ export * from './settingsDocument.ts';
 export * from './syncStatus.ts';
 export * from './taskInbox.ts';
 export * from './taskLabel.ts';
+export * from './taskOrder.ts';
 export * from './taskTiming.ts';
 export * from './theme/eventTint.ts';
 export * from './theme/tokens.ts';

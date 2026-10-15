@@ -137,6 +137,8 @@ export class FakeGoogle {
   now = Date.parse('2026-08-24T10:00:00.000Z');
   /** This many `tasks.move` calls answer 503 first (a move held in backoff). */
   failTaskMoves = 0;
+  /** This many task PATCH calls answer 503 first (an edit held in backoff). */
+  failTaskPatches = 0;
 
   constructor(options: FakeGoogleOptions) {
     this.calendars = [...options.calendars];
@@ -331,7 +333,11 @@ export class FakeGoogle {
         return this.moveTaskRoute(
           decodeURIComponent(taskMove[1]!),
           decodeURIComponent(taskMove[2]!),
-          url.searchParams.get('destinationTasklist'),
+          {
+            destination: url.searchParams.get('destinationTasklist'),
+            parent: url.searchParams.get('parent'),
+            previous: url.searchParams.get('previous'),
+          },
           reply,
         );
       }
@@ -525,6 +531,10 @@ export class FakeGoogle {
         return reply(404, { error: { message: 'Not Found' } });
       }
       if (request.method === 'PATCH') {
+        if (this.failTaskPatches > 0) {
+          this.failTaskPatches -= 1;
+          return reply(503, { error: { message: 'Backend Error' } });
+        }
         // JSON null clears a field, as on Google (`due`, `completed`).
         const patched = { ...existing.task, ...(body as Partial<GcalTask>), id: taskId };
         for (const [key, value] of Object.entries(patched)) {
@@ -558,7 +568,11 @@ export class FakeGoogle {
   private moveTaskRoute(
     listId: string,
     taskId: string,
-    destination: string | null,
+    params: {
+      readonly destination: string | null;
+      readonly parent: string | null;
+      readonly previous: string | null;
+    },
     reply: (status: number, json?: unknown) => HttpClientResponse.HttpClientResponse,
   ): HttpClientResponse.HttpClientResponse {
     if (this.failTaskMoves > 0) {
@@ -570,8 +584,9 @@ export class FakeGoogle {
     if (!existing || existing.task.deleted) {
       return reply(404, { error: { message: 'Task not found.' } });
     }
+    const { destination } = params;
     if (destination === null || destination === listId) {
-      return reply(400, { error: { message: 'only moves between lists are faked' } });
+      return this.placeTaskRoute(listId, existing, params.parent, params.previous, reply);
     }
     const target = this.tasksOf(destination);
     const { parent: _parent, ...task } = existing.task;
@@ -584,6 +599,60 @@ export class FakeGoogle {
       }
     }
     return reply(200, wire(target.get(taskId)!));
+  }
+
+  /**
+   * `tasks.move` inside a list, as verified live: the task goes under
+   * `parent` (none: the top level) right after `previous`, which must be
+   * one of those siblings (else 400); both sibling groups are renumbered
+   * as 20-digit ordinals and no `updated` changes. Google takes any depth.
+   */
+  private placeTaskRoute(
+    listId: string,
+    existing: StoredTask,
+    parent: string | null,
+    previous: string | null,
+    reply: (status: number, json?: unknown) => HttpClientResponse.HttpClientResponse,
+  ): HttpClientResponse.HttpClientResponse {
+    const store = this.tasksOf(listId);
+    const taskId = existing.task.id;
+    const parentEntry = parent === null ? undefined : store.get(parent);
+    if (parent === taskId || (parent !== null && (!parentEntry || parentEntry.task.deleted))) {
+      return reply(400, { error: { message: 'Invalid Value' } });
+    }
+    const siblingsUnder = (parentId: string | undefined) =>
+      [...store.values()]
+        .filter(
+          (entry) =>
+            !entry.task.deleted && entry.task.id !== taskId && entry.task.parent === parentId,
+        )
+        .sort((a, b) => {
+          const left = a.task.position ?? '~';
+          const right = b.task.position ?? '~';
+          return left < right ? -1 : left > right ? 1 : a.task.id.localeCompare(b.task.id);
+        });
+    const target = siblingsUnder(parent ?? undefined);
+    const after = previous === null ? -1 : target.findIndex((entry) => entry.task.id === previous);
+    if (previous !== null && after < 0) {
+      return reply(400, { error: { message: 'Invalid task id' } });
+    }
+    const { parent: formerParent, ...rest } = existing.task;
+    const moved: StoredTask = {
+      task: { ...rest, ...(parent === null ? {} : { parent }) },
+      updatedAt: existing.updatedAt,
+    };
+    const renumber = (entries: ReadonlyArray<StoredTask>) =>
+      entries.forEach((entry, index) => {
+        store.set(entry.task.id, {
+          ...entry,
+          task: { ...entry.task, position: String(index).padStart(20, '0') },
+        });
+      });
+    renumber([...target.slice(0, after + 1), moved, ...target.slice(after + 1)]);
+    if (formerParent !== (parent ?? undefined)) {
+      renumber(siblingsUnder(formerParent));
+    }
+    return reply(200, wire(store.get(taskId)!));
   }
 
   // ---- helpers ----

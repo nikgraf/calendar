@@ -76,6 +76,7 @@ const opRow = (overrides: Partial<PendingOpRow> = {}): PendingOpRow => ({
   task_list_id: null,
   task_notes: null,
   task_parent: null,
+  task_previous: null,
   task_status: null,
   task_title: null,
   ...overrides,
