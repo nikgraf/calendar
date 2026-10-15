@@ -3,7 +3,7 @@
    them from hook state. */
 import { type EventRecord, formatClockTime, formatZoneRange } from '@calendar/core';
 import { useLayoutEffect } from 'react';
-import { Pressable, StyleSheet, Text, View, type DimensionValue } from 'react-native';
+import { Pressable, StyleSheet, Text, type DimensionValue } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
   runOnJS,
@@ -23,9 +23,11 @@ import type { EdgeScroll } from './useEdgeScroll.ts';
  */
 const DROP_SETTLE_MS = 1500;
 
-/** The pan that owns a drag: the whole block moves it, the bottom edge resizes it. */
+/** What a drag does: a hold on the bottom edge resizes the block, anywhere else moves it. */
 const MOVE = 1;
 const RESIZE = 2;
+/** How far up from the block's bottom a hold resizes it. */
+const RESIZE_EDGE = 16;
 
 const snapPx = (px: number): number => {
   'worklet';
@@ -82,12 +84,14 @@ export function DraggableEventBlock({
   // shows a time its `event` does not have yet, so a drag then would start
   // from the wrong place and write a delta from the old time. It waits.
   const held = useSharedValue(0);
-  // The pan that owns the drag under way, MOVE or RESIZE (0 for none, and
-  // while a pan waits for `held`). Only the owner updates, commits and ends
-  // it: a hold on the bottom edge also starts the move pan, which fails once
-  // the resize takes the touch and still finalizes.
+  // The drag under way, MOVE or RESIZE (0 for none, and while a hold waits
+  // for `held`).
   const dragging = useSharedValue(0);
-  // The grid's offset at the press, and the owning pan's last translation:
+  // Whether the touch went down on the bottom edge: that picks the drag, as
+  // a handle's hit test did, since a held finger may drift a few points
+  // before the long press starts the pan.
+  const onEdge = useSharedValue(false);
+  // The grid's offset at the press, and the drag's last translation:
   // the block lives in the scrolled content, so a scroll under a still
   // finger moves it as far as the finger would.
   const startScroll = useSharedValue(0);
@@ -113,12 +117,12 @@ export function DraggableEventBlock({
       extraHeight.value = withTiming(0, { duration: 160 });
     }
   };
-  const begin = (pan: number, windowY: number) => {
+  const begin = (kind: number, windowY: number) => {
     'worklet';
     if (held.value === 1 || dragging.value !== 0) {
       return;
     }
-    dragging.value = pan;
+    dragging.value = kind;
     drags.value += 1;
     lifted.value = withTiming(1, { duration: 120 });
     startScroll.value = edgeScroll.scrollY.value;
@@ -126,20 +130,20 @@ export function DraggableEventBlock({
     edgeScroll.begin();
     edgeScroll.follow(windowY);
   };
-  const finish = (pan: number) => {
+  const finish = () => {
     'worklet';
-    if (dragging.value === pan) {
+    if (dragging.value !== 0) {
       dragging.value = 0;
       lifted.value = withTiming(0, { duration: 120 });
       edgeScroll.end();
     }
   };
-  /** How far the owning pan has moved the block: the finger's travel plus the scroll since the press. */
+  /** How far the drag has moved the block: the finger's travel plus the scroll since the press. */
   const travel = (translationY: number): number => {
     'worklet';
     return translationY + edgeScroll.scrollY.value - startScroll.value;
   };
-  /** Draws the owning pan's drag at the finger's last translation. */
+  /** Draws the drag at the finger's last translation. */
   const place = () => {
     'worklet';
     const shift = snapPx(travel(lastTranslation.value));
@@ -149,9 +153,9 @@ export function DraggableEventBlock({
       extraHeight.value = shift;
     }
   };
-  const update = (pan: number, translationY: number, windowY: number) => {
+  const update = (translationY: number, windowY: number) => {
     'worklet';
-    if (dragging.value === pan) {
+    if (dragging.value !== 0) {
       lastTranslation.value = translationY;
       edgeScroll.follow(windowY);
       place();
@@ -192,58 +196,44 @@ export function DraggableEventBlock({
     settle(onCommitResize(deltaMinutes), drag);
   };
 
-  // Held first, like a move: a pan that took the bottom edge at once won
-  // the touch from the ScrollView, and on a short block the edge is much
-  // of the block.
-  const resizePan = Gesture.Pan()
+  // One pan for both drags, the touch-down picking which: a handle with
+  // a pan of its own and the block's pan waiting on it both started, since
+  // RNGH reports a long press active before UIKit lets a waiting pan begin,
+  // and the waiting one, failed after it had started, never finalized —
+  // the block stayed lifted and took no drag again. Held first, like a
+  // move: a pan that took the bottom edge at once won the touch from the
+  // ScrollView, and on a short block the edge is much of the block.
+  const drawnHeight = Math.max(height - 2, SNAP_PX);
+  const pan = Gesture.Pan()
     .enabled(draggable)
     .activateAfterLongPress(250)
+    .onBegin((down) => {
+      onEdge.value = down.y >= drawnHeight - RESIZE_EDGE;
+    })
     .onStart((start) => {
-      begin(RESIZE, start.absoluteY);
+      begin(onEdge.value ? RESIZE : MOVE, start.absoluteY);
     })
     .onUpdate((change) => {
-      update(RESIZE, change.translationY, change.absoluteY);
+      update(change.translationY, change.absoluteY);
     })
     .onEnd((end, success) => {
-      if (dragging.value !== RESIZE) {
+      if (dragging.value === 0) {
         return;
       }
       // A cancelled pan (the system took the touch) changes nothing.
-      if (success) {
-        held.value = 1;
-        runOnJS(commitResize)(travel(end.translationY), drags.value);
-      } else {
+      if (!success) {
         goBack(drags.value);
-      }
-    })
-    .onFinalize(() => {
-      finish(RESIZE);
-    });
-
-  const movePan = Gesture.Pan()
-    .enabled(draggable)
-    .activateAfterLongPress(250)
-    // A hold on the bottom edge is a resize.
-    .requireExternalGestureToFail(resizePan)
-    .onStart((start) => {
-      begin(MOVE, start.absoluteY);
-    })
-    .onUpdate((change) => {
-      update(MOVE, change.translationY, change.absoluteY);
-    })
-    .onEnd((end, success) => {
-      if (dragging.value !== MOVE) {
         return;
       }
-      if (success) {
-        held.value = 1;
+      held.value = 1;
+      if (dragging.value === MOVE) {
         runOnJS(commitMove)(travel(end.translationY), drags.value);
       } else {
-        goBack(drags.value);
+        runOnJS(commitResize)(travel(end.translationY), drags.value);
       }
     })
     .onFinalize(() => {
-      finish(MOVE);
+      finish();
     });
 
   const tint = useEventTint(color);
@@ -255,7 +245,7 @@ export function DraggableEventBlock({
   }));
 
   return (
-    <GestureDetector gesture={movePan}>
+    <GestureDetector gesture={pan}>
       <Animated.View
         style={[
           styles.eventBlock,
@@ -293,11 +283,6 @@ export function DraggableEventBlock({
             </Text>
           ) : null}
         </Pressable>
-        {draggable ? (
-          <GestureDetector gesture={resizePan}>
-            <View style={styles.resizeHandle} />
-          </GestureDetector>
-        ) : null}
       </Animated.View>
     </GestureDetector>
   );
@@ -333,12 +318,5 @@ const styles = StyleSheet.create({
   eventZones: {
     fontSize: 9,
     opacity: 0.7,
-  },
-  resizeHandle: {
-    bottom: 0,
-    height: 16,
-    left: 0,
-    position: 'absolute',
-    right: 0,
   },
 });

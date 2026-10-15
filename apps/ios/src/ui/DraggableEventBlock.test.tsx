@@ -35,7 +35,7 @@ vi.mock('react-native-gesture-handler', () => ({
           return builder;
         },
       };
-      for (const name of ['onEnd', 'onFinalize', 'onStart', 'onUpdate']) {
+      for (const name of ['onBegin', 'onEnd', 'onFinalize', 'onStart', 'onUpdate']) {
         builder[name] = (callback) => {
           pan.handlers[name] = callback as Callback;
           return builder;
@@ -74,24 +74,20 @@ const edgeScroll = () => ({
   ticks: { value: 0 },
 });
 
-/** Builds the block once and hands back its two pans' callbacks. */
-const block = (
-  onCommitResize: () => Promise<void>,
-  options: {
-    edge?: ReturnType<typeof edgeScroll>;
-    onCommitMove?: (deltaMinutes: number) => Promise<void>;
-  } = {},
-) => {
+/** Builds a 56-pt block once and hands back its pans and the commits it makes. */
+const block = (edge: ReturnType<typeof edgeScroll> = edgeScroll()) => {
   pans.clear();
   reactions.length = 0;
+  const onCommitMove = vi.fn((_deltaMinutes: number) => Promise.resolve());
+  const onCommitResize = vi.fn((_deltaMinutes: number) => Promise.resolve());
   DraggableEventBlock({
     color: '#3366ff',
     compact: true,
-    edgeScroll: (options.edge ?? edgeScroll()) as never,
+    edgeScroll: edge as never,
     event: { recurrence: null } as unknown as EventRecord,
     height: 56,
     left: 0,
-    onCommitMove: options.onCommitMove ?? (() => Promise.resolve()),
+    onCommitMove,
     onCommitResize,
     onPress: () => {},
     readOnly: false,
@@ -100,9 +96,21 @@ const block = (
     top: 0,
     width: '100%',
   });
-  // The move pan is the one that waits for the resize to fail.
-  const move = [...pans.values()].find((pan) => pan.waitsFor !== null)!;
-  return { move: move.handlers, resize: move.waitsFor!.handlers };
+  return { onCommitMove, onCommitResize, pans: [...pans.values()] };
+};
+
+/**
+ * A touch at `y` in the block, held until the pan starts (at `startY`: a
+ * held finger may drift a little first), dragged half an hour down and let
+ * go (or cancelled).
+ */
+const drag = (pan: PanMock, y: number, options: { startY?: number; success?: boolean } = {}) => {
+  const success = options.success ?? true;
+  pan.handlers['onBegin']!({ y });
+  pan.handlers['onStart']!({ absoluteY: 300, y: options.startY ?? y });
+  pan.handlers['onUpdate']!({ absoluteY: 328, translationY: 28 });
+  pan.handlers['onEnd']!({ translationY: 28 }, success);
+  pan.handlers['onFinalize']!({}, success);
 };
 
 describe('DraggableEventBlock', () => {
@@ -113,61 +121,96 @@ describe('DraggableEventBlock', () => {
     vi.useRealTimers();
   });
 
-  it('keeps a resize when the move pan waiting on it fails', () => {
-    const onCommitResize = vi.fn(() => Promise.resolve());
-    const { move, resize } = block(onCommitResize);
-
-    resize['onStart']!({ absoluteY: 300 });
-    // The resize activating fails the move pan, which still finalizes.
-    move['onFinalize']!({}, false);
-    resize['onUpdate']!({ absoluteY: 328, translationY: 28 });
-    resize['onEnd']!({ translationY: 28 }, true);
-    resize['onFinalize']!({}, true);
-
-    expect(onCommitResize).toHaveBeenCalledWith(30);
+  // Two pans (the bottom edge's own and the block's, waiting on it) both
+  // started on a hold on the edge; when the block's started first, it never
+  // finalized and the block took no drag again.
+  it('drags with one pan, so a hold on the bottom edge has nothing to race', () => {
+    expect(block().pans).toHaveLength(1);
   });
 
-  it('commits nothing for a cancelled resize', () => {
-    const onCommitResize = vi.fn(() => Promise.resolve());
-    const { resize } = block(onCommitResize);
+  it('resizes from a hold on the bottom edge', () => {
+    const {
+      onCommitMove,
+      onCommitResize,
+      pans: [pan],
+    } = block();
+    drag(pan!, 50);
+    expect(onCommitResize).toHaveBeenCalledWith(30);
+    expect(onCommitMove).not.toHaveBeenCalled();
+  });
 
-    resize['onStart']!({ absoluteY: 300 });
-    resize['onUpdate']!({ absoluteY: 328, translationY: 28 });
-    resize['onEnd']!({ translationY: 28 }, false);
-    resize['onFinalize']!({}, false);
-
+  it('moves from a hold above the bottom edge', () => {
+    const {
+      onCommitMove,
+      onCommitResize,
+      pans: [pan],
+    } = block();
+    drag(pan!, 20);
+    expect(onCommitMove).toHaveBeenCalledWith(30);
     expect(onCommitResize).not.toHaveBeenCalled();
   });
 
-  it("moves by the finger's travel plus the grid the edge scroll moved under it", () => {
-    const onCommitMove = vi.fn(() => Promise.resolve());
-    const edge = edgeScroll();
-    const { move } = block(() => Promise.resolve(), { edge, onCommitMove });
+  // The touch-down picks the drag, as a handle's hit test did: a finger
+  // drifting a few points during the hold must not swap move and resize.
+  it('picks the drag where the finger touched down, not where the hold ended', () => {
+    const {
+      onCommitMove,
+      onCommitResize,
+      pans: [pan],
+    } = block();
+    drag(pan!, 35, { startY: 40 });
+    expect(onCommitMove).toHaveBeenCalledWith(30);
+    expect(onCommitResize).not.toHaveBeenCalled();
+  });
 
-    move['onStart']!({ absoluteY: 300 });
+  it('commits nothing for a cancelled drag, and takes the next one', () => {
+    const edge = edgeScroll();
+    const {
+      onCommitResize,
+      pans: [pan],
+    } = block(edge);
+    drag(pan!, 50, { success: false });
+    expect(onCommitResize).not.toHaveBeenCalled();
+    drag(pan!, 50);
+    expect(onCommitResize).toHaveBeenCalledWith(30);
+    // Each drag ended the edge scroll it started.
+    expect(edge.begin).toHaveBeenCalledTimes(2);
+    expect(edge.end).toHaveBeenCalledTimes(2);
+  });
+
+  it("moves by the finger's travel plus the grid the edge scroll moved under it", () => {
+    const edge = edgeScroll();
+    const {
+      onCommitMove,
+      pans: [pan],
+    } = block(edge);
+    const handlers = pan!.handlers;
+
+    handlers['onBegin']!({ y: 20 });
+    handlers['onStart']!({ absoluteY: 300, y: 20 });
     expect(edge.begin).toHaveBeenCalledOnce();
-    move['onUpdate']!({ absoluteY: 728, translationY: 28 });
+    handlers['onUpdate']!({ absoluteY: 728, translationY: 28 });
     expect(edge.follow).toHaveBeenLastCalledWith(728);
     // Two hours scrolled while the finger held still at the bottom edge.
     edge.scrollY.value += 112;
     for (const react of reactions) {
       react(1, 0);
     }
-    move['onEnd']!({ translationY: 28 }, true);
-    move['onFinalize']!({}, true);
+    handlers['onEnd']!({ translationY: 28 }, true);
+    handlers['onFinalize']!({}, true);
 
     expect(onCommitMove).toHaveBeenCalledWith(150);
     expect(edge.end).toHaveBeenCalledOnce();
   });
 
-  it('leaves the edge scroll alone when its pan never owned the drag', () => {
+  it('leaves the edge scroll alone when a touch never became a drag', () => {
     const edge = edgeScroll();
-    const { move, resize } = block(() => Promise.resolve(), { edge });
-
-    resize['onStart']!({ absoluteY: 300 });
-    move['onFinalize']!({}, false);
+    const {
+      pans: [pan],
+    } = block(edge);
+    pan!.handlers['onBegin']!({ y: 20 });
+    pan!.handlers['onFinalize']!({}, false);
+    expect(edge.begin).not.toHaveBeenCalled();
     expect(edge.end).not.toHaveBeenCalled();
-    resize['onFinalize']!({}, false);
-    expect(edge.end).toHaveBeenCalledOnce();
   });
 });

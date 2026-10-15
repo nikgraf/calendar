@@ -259,6 +259,15 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   input 1:1 and snap on release — Nik rejected discrete-step snapping
   everywhere (the trackpad pan eases to the nearest day only when the
   wheel goes quiet). All-day chips and the month view do not drag.
+- **One pan per iOS event block** (2026-10-15, #216) — move and resize
+  share one long-press pan; where the touch goes down picks which (the
+  bottom 16 pt resizes, as the handle's hit test did). The bottom edge's
+  own pan and the block's pan waiting on it both started, since RNGH
+  reports a long press active before UIKit lets a waiting pan begin;
+  when the block's started first it was failed later and never
+  finalized, so the block stayed lifted and took no drag until a
+  relaunch. Rejected: keeping two pans behind an owner guard (the
+  missing finalize is RNGH's, out of the app's reach).
 - **Recurring editing** — scopes instance / series / following; an
   instance edit materializes an exception under Google's canonical
   instance id so the later pull upserts idempotently; following truncates
