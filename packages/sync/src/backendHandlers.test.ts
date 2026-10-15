@@ -14,6 +14,7 @@ import {
   type PendingOpDiffLine,
   TaskListInfo,
   TaskRecord,
+  type TimeZoneSettings,
 } from '@calendar/core';
 import {
   AccountRepo,
@@ -38,6 +39,7 @@ import { describe, vi } from 'vite-plus/test';
 import { commonBackendHandlers } from './backendHandlers.ts';
 import { LocalNotifications } from './localNotifications.ts';
 import { DeviceContacts } from './deviceContacts.ts';
+import { readTimeZoneSettings } from './deviceSettings.ts';
 import { SyncEngine } from './engine.ts';
 import { NotificationSink, type NotificationSinkShape } from './notificationSink.ts';
 
@@ -314,6 +316,26 @@ describe('setBirthdayReminderSettings', () => {
       expect(ensurePermission).toHaveBeenCalledTimes(2);
       yield* setBirthdayReminderSettings({ ...on, enabled: false });
       expect(ensurePermission).toHaveBeenCalledTimes(2);
+    }).pipe(Effect.provide(layer));
+  });
+});
+
+const setTimeZoneSettings = (settings: TimeZoneSettings) =>
+  commonBackendHandlers.setTimeZoneSettings(settings) as Effect.Effect<
+    void,
+    unknown,
+    DeviceSettingsRepo | LocalNotifications
+  >;
+
+describe('setTimeZoneSettings', () => {
+  it.effect('stores the zones and re-plans the notifications, without a prompt', () => {
+    const { ensurePermission, layer, run } = birthdaySetup('scheduled');
+    return Effect.gen(function* () {
+      const settings = { primary: 'Europe/Vienna', zones: ['device', 'Europe/Vienna'] };
+      yield* setTimeZoneSettings(settings);
+      expect(yield* readTimeZoneSettings).toEqual(settings);
+      expect(run).toHaveBeenCalledOnce();
+      expect(ensurePermission).not.toHaveBeenCalled();
     }).pipe(Effect.provide(layer));
   });
 });

@@ -47,7 +47,6 @@ import {
   readPrimaryTimeZone,
   readTimeZoneSettings,
   readViewPreferences,
-  writeTimeZoneSettings,
   writeViewPreferences,
 } from './deviceSettings.ts';
 import { NotificationSink } from './notificationSink.ts';
@@ -55,6 +54,7 @@ import {
   applyBirthdayReminderOverride,
   applyBirthdayReminderSettings,
   applyEventNotificationSettings,
+  applyTimeZoneSettings,
 } from './notificationSettings.ts';
 import { SyncEngine } from './engine.ts';
 import { clearPendingVisibility } from './importedVisibility.ts';
@@ -541,7 +541,7 @@ export const commonBackendHandlers: Omit<BackendHandlers<CommonBackendServices>,
       yield* taskRepo.setListVisible(accountId, taskListId, isVisible);
     }),
 
-  setTimeZoneSettings: (settings) => writeTimeZoneSettings(settings),
+  setTimeZoneSettings: (settings) => applyTimeZoneSettings(settings),
 
   setViewPreferences: (preferences) => writeViewPreferences(preferences),
 

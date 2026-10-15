@@ -25,7 +25,6 @@ import {
   readTimeZoneSettings,
   readViewPreferences,
   updateBirthdayReminderOverrides,
-  writeTimeZoneSettings,
   writeViewPreferences,
 } from './deviceSettings.ts';
 import {
@@ -53,6 +52,7 @@ import {
 import {
   applyBirthdayReminderSettings,
   applyEventNotificationSettings,
+  applyTimeZoneSettings,
 } from './notificationSettings.ts';
 import type { NotificationSink } from './notificationSink.ts';
 import { PlatformSettings } from './platformSettings.ts';
@@ -329,7 +329,7 @@ export const importSettings = (
       const platform = yield* PlatformSettings;
 
       if (plan.timeZones) {
-        yield* writeTimeZoneSettings(plan.timeZones);
+        yield* applyTimeZoneSettings(plan.timeZones);
       }
       if (plan.view) {
         yield* writeViewPreferences(plan.view);

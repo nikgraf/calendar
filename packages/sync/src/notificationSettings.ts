@@ -2,6 +2,7 @@ import {
   type BirthdayLeadDays,
   type BirthdayReminderSettings,
   type EventNotificationSettings,
+  type TimeZoneSettings,
   withBirthdayOverride,
 } from '@calendar/core';
 import type { DeviceSettingsRepo } from '@calendar/db';
@@ -13,6 +14,7 @@ import {
   updateBirthdayReminderOverrides,
   writeBirthdayReminderSettings,
   writeEventNotificationSettings,
+  writeTimeZoneSettings,
 } from './deviceSettings.ts';
 import { LocalNotifications } from './localNotifications.ts';
 import { NotificationSink } from './notificationSink.ts';
@@ -84,4 +86,17 @@ export const applyEventNotificationSettings = (
     const previous = yield* readEventNotificationSettings;
     yield* writeEventNotificationSettings(settings);
     return yield* applyWithPermission(settings.enabled, previous.enabled);
+  });
+
+/**
+ * Saves the time zones and re-plans right away: an event reminder names
+ * the start in the primary zone too, and a scheduled sink (iOS) still
+ * holds the text planned under the old one.
+ */
+export const applyTimeZoneSettings = (
+  settings: TimeZoneSettings,
+): Effect.Effect<void, SqlError, DeviceSettingsRepo | LocalNotifications> =>
+  Effect.gen(function* () {
+    yield* writeTimeZoneSettings(settings);
+    yield* Effect.forkDetach((yield* LocalNotifications).run());
   });

@@ -1104,7 +1104,9 @@ gateway carries all of it. Details, limits and the threat model:
   displays through `canonicalZoneId`. Both pickers open on the whole
   catalog and narrow it as the user types (`searchTimeZones`, no cap): a
   capped-height dropdown on the Mac, a virtualized list on iOS. Notifications, EventKit's floating
-  zone and timed reminders stay on the device zone, read on every pass.
+  zone and timed reminders stay on the device zone, read on every pass;
+  an event reminder adds the start in the primary zone when that reads
+  another clock ("9:00 AM (3:00 PM Vienna)", `planEventReminders`).
 - **Local notifications**: `LocalNotifications` (packages/sync) runs its
   own loop — outside the sync pass — over two producers, `loadEventPlans`
   (visible calendars, a week ahead, `useDefault` resolved against the
@@ -1120,7 +1122,8 @@ gateway carries all of it. Details, limits and the threat model:
   the pending expo-notifications schedule with the soonest ≤ 60 whenever
   the digest changes. The loop sleeps until the next delivery (5 s..60 s)
   and re-plans, debounced, on `EVENTS_KEY` / `BIRTHDAYS_KEY`; a settings
-  write is not one of those, so each settings path runs a pass itself.
+  write is not one of those, so each settings path runs a pass itself
+  (a time zone save too: the event text names the primary zone).
   On iOS a background task (`apps/ios/src/backgroundTask.ts`,
   `expo-background-task`, 30-minute minimum) runs `backgroundRefresh`: a
   pull bounded to 20 s, then one notification pass and a budgeted mirror

@@ -1,6 +1,6 @@
 import { formatClockTime } from '../format.ts';
 import { Temporal } from '../time/temporal.ts';
-import { runtimeZoneId } from '../time/zones.ts';
+import { runtimeZoneId, zoneCity } from '../time/zones.ts';
 import {
   type CalendarInfo,
   type EventRecord,
@@ -120,12 +120,32 @@ const selfDeclined = (event: EventRecord): boolean =>
     (attendee) => attendee.isSelf === true && attendee.responseStatus === 'declined',
   ) === true;
 
+/**
+ * " (3:00 PM Vienna)": the start on the grid's clock, when the primary
+ * zone reads another time there than the device does; its weekday too
+ * once the date differs. Compared by offset, so a primary that only
+ * spells the device's clock another way (Berlin for Vienna) adds nothing.
+ */
+const primaryClock = (startUtc: number, timeZone: string, primaryZone: string): string => {
+  const instant = Temporal.Instant.fromEpochMilliseconds(startUtc);
+  const device = instant.toZonedDateTimeISO(timeZone);
+  const primary = instant.toZonedDateTimeISO(primaryZone);
+  if (primary.offsetNanoseconds === device.offsetNanoseconds) {
+    return '';
+  }
+  const day = primary.toPlainDate().equals(device.toPlainDate())
+    ? ''
+    : `${primary.toPlainDate().toLocaleString('en-US', { weekday: 'short' })} `;
+  return ` (${day}${formatClockTime(startUtc, primaryZone)} ${zoneCity(primaryZone)})`;
+};
+
 /** "In 10 minutes · 3:00 PM · Room 4B", "Starting now · …", "All day tomorrow · …". */
 const eventReminderBody = (
   event: EventRecord,
   minutes: number,
   fireAt: number,
   timeZone: string,
+  primaryZone: string | undefined,
 ): string => {
   const parts: Array<string> = [];
   if (event.isAllDay) {
@@ -159,7 +179,12 @@ const eventReminderBody = (
         : daysAhead === 1
           ? 'Tomorrow '
           : `${startDay.toLocaleString('en-US', { day: 'numeric', month: 'short', weekday: 'short' })} `;
-    parts.push(lead, `${dayPrefix}${formatClockTime(event.startUtc, timeZone)}`);
+    parts.push(
+      lead,
+      `${dayPrefix}${formatClockTime(event.startUtc, timeZone)}${
+        primaryZone === undefined ? '' : primaryClock(event.startUtc, timeZone, primaryZone)
+      }`,
+    );
   }
   if (event.location) {
     parts.push(event.location);
@@ -179,9 +204,12 @@ const ALL_DAY_GRACE_MS = 12 * 60 * MINUTE;
  * itself) are skipped. All-day offsets count from local midnight of the
  * start day in the calendar's zone (Google) or the device's (Apple). The
  * text — "Tomorrow 9:00 AM" — is in the device's zone: the reader's clock,
- * not the organizer's. A zone this engine cannot load is read under its
- * other spelling (`runtimeZoneId`), else as the device's; an event that
- * cannot be planned is skipped, never the whole pass.
+ * not the organizer's. A timed event's start follows in the primary zone
+ * when that reads another clock — "9:00 AM (3:00 PM Vienna)" — since the
+ * grid it was seen on draws there. A zone this engine cannot load is read
+ * under its other spelling (`runtimeZoneId`), else as the device's (a
+ * primary as none); an event that cannot be planned is skipped, never the
+ * whole pass.
  */
 export const planEventReminders = (
   events: ReadonlyArray<EventRecord>,
@@ -190,12 +218,16 @@ export const planEventReminders = (
     readonly deviceTimeZone: string;
     readonly from: number;
     readonly includeApple: boolean;
+    /** The zone the grid draws in (`resolveTimeZones`); absent, the text names the device's only. */
+    readonly primaryTimeZone?: string | undefined;
     readonly until: number;
   },
 ): ReadonlyArray<PlannedNotification> => {
   const calendars = new Map(
     options.calendars.map((calendar) => [`${calendar.accountId}:${calendar.id}`, calendar]),
   );
+  const primaryZone =
+    options.primaryTimeZone === undefined ? undefined : runtimeZoneId(options.primaryTimeZone);
   // Hermes rejects some ids V8 takes (Asia/Kolkata, not Asia/Calcutta):
   // one such event used to throw the whole pass away, birthdays included.
   const loadable = new Map<string, string>();
@@ -230,7 +262,7 @@ export const planEventReminders = (
           continue;
         }
         out.push({
-          body: eventReminderBody(event, minutes, fireAt, options.deviceTimeZone),
+          body: eventReminderBody(event, minutes, fireAt, options.deviceTimeZone, primaryZone),
           expiresAt: startRef + (event.isAllDay ? ALL_DAY_GRACE_MS : TIMED_GRACE_MS),
           fireAt,
           key: `event:${event.accountId}/${event.calendarId}/${event.id}:${String(event.startUtc)}:${String(minutes)}`,
