@@ -147,6 +147,8 @@ export const googleFixture: GoogleFixture = {
       },
       // The navigation flow's parent and subtask: three weeks out, so they
       // sit in the Tasks tab's "Upcoming" and on no day a timeline flow visits.
+      // The subtask's title sorts after its parent's: outdented, it is the
+      // row right below it, so Indent nests it there again.
       {
         due: dueIn(21),
         id: 'task-offsite',
@@ -160,7 +162,7 @@ export const googleFixture: GoogleFixture = {
         parent: 'task-offsite',
         position: '00000000000000000000',
         status: 'needsAction',
-        title: 'Book the room',
+        title: 'Reserve the room',
         updated: '2026-01-01T00:00:00.000Z',
       },
     ],

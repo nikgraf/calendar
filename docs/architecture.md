@@ -243,8 +243,55 @@ it whenever a kind is added. Rules that keep the queue correct:
   for Google tasks. The task inbox on both apps nests each section with
   core `nestSubtasks`: a subtask under its parent when both are in that
   section (after the iOS list filter), siblings in `position` order; a
-  subtask whose parent is elsewhere stays a row of its own. Nothing
-  reorders or re-nests a task yet (todo.md).
+  subtask whose parent is elsewhere stays a row of its own.
+- **Reorders** (`reorderTask`): a Google task's place inside its list —
+  under a parent (or none) right after a sibling (or first) — is
+  `tasks.move` with `parent`/`previous`. The row takes the new parent and
+  a provisional `position` at once (core `provisionalPosition`: a key
+  strictly between its new neighbours'; Google's are 20-digit ordinals,
+  a provisional one may add digits or a `-`, and positions compare code
+  unit by code unit), and the op keeps the row as it was (`beforeTask`).
+  One level deep, as Google Tasks draws it (the API takes any depth): a
+  task with subtasks never goes under another, nor a task under a
+  subtask (`TaskHierarchyError`). A task Google has not created yet is
+  neither placed nor a parent (`TaskCreatePendingError`); a previous
+  sibling it has not created puts the task after the last one it has.
+  Reorders are never coalesced — each names its neighbours as the ones
+  queued before it left the list — so a reorder waits for every task op
+  queued before it in its list, and a delete queued behind one waits for
+  it. Google renumbers the siblings on every move and bumps no `updated`,
+  not even the moved task's, so no pull brings the new order (the daily
+  full pass would): once a reorder lands the drain reads the list's order
+  back onto every row of the list (`refreshHierarchy`; a queued edit or
+  toggle does not touch the order) and replays the reorders still queued
+  over it in queue order, as Google will apply them — each one's place
+  before it becomes what its discard puts back; a queued delete takes
+  Google's place too. A discard or a refusal (400 for a sibling that is
+  no longer one, 404) puts the row back where Google has it, or where an
+  earlier reorder still queued puts it; a reorder queued behind it takes
+  that place over (a task's reorders are stamped strictly in order). A
+  task put back under a parent whose delete is queued keeps that parent:
+  the delete goes, as when a subtask's delete is discarded. As a reorder
+  is sent the one-level rule is checked again (an undone change can make
+  it nest two deep, which Google accepts): one that would is dropped. A
+  move to another list waits until no reorder involving the task or its
+  subtasks is queued, and a reorder until no move of the task, its
+  parent or the tasks it is placed by is (`TaskCreatePendingError`):
+  which rows a move carries is not settled before Google has them.
+  Reminders have no order or subtasks
+  through EventKit (`UnsupportedForProviderError`). Both apps place a row
+  through core `taskDropAt` over the section as drawn
+  (`flattenTaskTree`): depth 1 puts it under the group above the gap,
+  after the row above; depth 0 takes a subtask out, right after its
+  parent. Top-level rows keep the section's own order (day, then title),
+  and a drop never leaves its section: a section is a date bucket of
+  several lists and providers, whose positions do not compare. The
+  desktop rail drags a row within its section (a line marks the gap,
+  half an indent sideways nests or un-nests; out of the rail it still
+  drops onto the grid) and indents or outdents a focused row with ⌘] and
+  ⌘[ (`indentTaskDrop`/`outdentTaskDrop`), as Reminders does; the iOS
+  Tasks tab swipes a row right for Indent or Outdent, which VoiceOver
+  offers too.
 - **Conversions** (`convertEventToTask`, `convertTaskToEvent`): an event
   becomes a task (the whole series for a recurring one) or a task an event
   by creating the other kind from the editor's draft and then deleting the

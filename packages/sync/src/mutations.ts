@@ -747,7 +747,7 @@ const make: Effect.Effect<
 
   const taskMutations: Pick<
     EventMutationsShape,
-    'completeTask' | 'createTask' | 'deleteTask' | 'updateTask'
+    'completeTask' | 'createTask' | 'deleteTask' | 'reorderTask' | 'updateTask'
   > = {
     completeTask: (params) =>
       Effect.flatMap(providerOf(params.accountId), (provider) =>
@@ -769,6 +769,13 @@ const make: Effect.Effect<
         provider === 'apple'
           ? reminders.deleteTask(params)
           : transactional(googleTasks.deleteTask(params)),
+      ),
+    // EventKit keeps no order or subtasks for a reminder.
+    reorderTask: (params) =>
+      Effect.flatMap(providerOf(params.accountId), (provider) =>
+        provider === 'apple'
+          ? Effect.fail(new UnsupportedForProviderError({ field: 'position', provider }))
+          : transactional(googleTasks.reorderTask(params)),
       ),
     updateTask: (params) =>
       Effect.flatMap(providerOf(params.accountId), (provider) =>

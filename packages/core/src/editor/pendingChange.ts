@@ -17,6 +17,8 @@ export interface PendingOpDiffContext {
   readonly calendarName: (accountId: string, calendarId: string) => string | undefined;
   /** A task list's name, for a task move's "from → to". */
   readonly taskListName: (accountId: string, taskListId: string) => string | undefined;
+  /** A task's title, for the parent and the sibling a reorder names. */
+  readonly taskTitle: (accountId: string, taskListId: string, taskId: string) => string | undefined;
   /** The zone times read in — the primary zone, like the conflict banner. */
   readonly timeZone: string;
 }
@@ -259,6 +261,32 @@ export const pendingOpDiff = (
         : undefined;
     case 'deleteTask':
       return op.beforeTask ? taskLines(op.beforeTask, null) : undefined;
+    case 'reorderTask': {
+      if (!op.beforeTask) {
+        return undefined;
+      }
+      const listId = op.taskListId ?? op.calendarId;
+      const named = (taskId: string | undefined) =>
+        taskId === undefined
+          ? 'none'
+          : `“${context.taskTitle(op.accountId, listId, taskId) ?? taskId}”`;
+      return [
+        ...(op.beforeTask.parentId === op.taskParent
+          ? []
+          : [
+              {
+                after: named(op.taskParent),
+                before: named(op.beforeTask.parentId),
+                label: 'Subtask of',
+              },
+            ]),
+        {
+          after: op.taskPrevious === undefined ? 'First' : `After ${named(op.taskPrevious)}`,
+          before: null,
+          label: 'Place',
+        },
+      ];
+    }
     case 'moveTask': {
       const source = op.taskListId ?? op.calendarId;
       return op.targetTaskListId === undefined

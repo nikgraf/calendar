@@ -63,6 +63,8 @@ const context = {
   calendarName: (_accountId: string, calendarId: string) => ({ c: 'Work', d: 'Home' })[calendarId],
   taskListName: (_accountId: string, taskListId: string) =>
     ({ errands: 'Errands', inbox: 'Inbox' })[taskListId],
+  taskTitle: (_accountId: string, _taskListId: string, taskId: string) =>
+    ({ p1: 'Plan trip', s1: 'Renew passport' })[taskId],
   timeZone: TZ,
 };
 
@@ -178,6 +180,37 @@ describe('pendingOpDiff', () => {
         context,
       ),
     ).toEqual([{ after: 'Errands', before: 'Inbox', label: 'List' }]);
+  });
+
+  it('names the parent a reorder changes and the sibling it follows', () => {
+    // Nested under "Plan trip", after its first subtask.
+    expect(
+      pendingOpDiff(
+        taskOp({ beforeTask: task(), kind: 'reorderTask', taskParent: 'p1', taskPrevious: 's1' }),
+        context,
+      ),
+    ).toEqual([
+      { after: '“Plan trip”', before: 'none', label: 'Subtask of' },
+      { after: 'After “Renew passport”', before: null, label: 'Place' },
+    ]);
+    // Out of it again, right after it.
+    expect(
+      pendingOpDiff(
+        taskOp({ beforeTask: task({ parentId: 'p1' }), kind: 'reorderTask', taskPrevious: 'p1' }),
+        context,
+      ),
+    ).toEqual([
+      { after: 'none', before: '“Plan trip”', label: 'Subtask of' },
+      { after: 'After “Plan trip”', before: null, label: 'Place' },
+    ]);
+    // First among the siblings it already has.
+    expect(
+      pendingOpDiff(
+        taskOp({ beforeTask: task({ parentId: 'p1' }), kind: 'reorderTask', taskParent: 'p1' }),
+        context,
+      ),
+    ).toEqual([{ after: 'First', before: null, label: 'Place' }]);
+    expect(pendingOpDiff(taskOp({ kind: 'reorderTask' }), context)).toBeUndefined();
   });
 
   it('shows a calendar color change', () => {

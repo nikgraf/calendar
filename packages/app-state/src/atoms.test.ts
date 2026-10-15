@@ -107,6 +107,7 @@ const makeStubClient = () => {
     previewSettingsImport: () => fail('not stubbed'),
     previewTaskToEvent: () => fail('not stubbed'),
     removeAccount: () => Effect.void,
+    reorderTask: () => Effect.void,
     resolveConflict: () => Effect.void,
     resolveLocation: ({ location }) =>
       Effect.sync(() => {

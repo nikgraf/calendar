@@ -143,6 +143,7 @@ const MUTATION_REACTIVITY = {
   previewSettingsImport: [],
   previewTaskToEvent: [],
   removeAccount: [ACCOUNTS_KEY, BIRTHDAYS_KEY, CALENDARS_KEY, EVENTS_KEY, TASKS_KEY, TASKLISTS_KEY],
+  reorderTask: [TASKS_KEY, OPS_KEY],
   resolveConflict: [EVENTS_KEY, OPS_KEY],
   // Geocodes a picked place suggestion; writes only the device-local cache.
   resolveLocation: [],

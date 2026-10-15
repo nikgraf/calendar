@@ -69,10 +69,13 @@ const keyOf = (task: TaskRecord, id = task.id): string => `${task.accountId}:${t
 const parentKeyOf = (task: TaskRecord): string | undefined =>
   task.parentId === undefined ? undefined : keyOf(task, task.parentId);
 
+/** Positions compare code unit by code unit, as Google and SQLite order them — not as text to read. */
+const byCodeUnit = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
+
 /** Google's sibling order; a subtask without a position yet (not pulled since it was made) goes last. */
-const byPosition = (a: TaskRecord, b: TaskRecord): number =>
+export const compareTaskPosition = (a: TaskRecord, b: TaskRecord): number =>
   Number(a.position === undefined) - Number(b.position === undefined) ||
-  (a.position ?? '').localeCompare(b.position ?? '') ||
+  byCodeUnit(a.position ?? '', b.position ?? '') ||
   a.title.localeCompare(b.title) ||
   a.id.localeCompare(b.id);
 
@@ -108,5 +111,8 @@ export const nestSubtasks = (tasks: ReadonlyArray<TaskRecord>): ReadonlyArray<Ta
   const nested = new Set([...children.values()].flat().map((task) => keyOf(task)));
   return tasks
     .filter((task) => !nested.has(keyOf(task)))
-    .map((task) => ({ subtasks: (children.get(keyOf(task)) ?? []).sort(byPosition), task }));
+    .map((task) => ({
+      subtasks: (children.get(keyOf(task)) ?? []).sort(compareTaskPosition),
+      task,
+    }));
 };

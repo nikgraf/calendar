@@ -627,6 +627,7 @@ export const useBackendMutations = () => {
       previewSettingsImport: set('previewSettingsImport'),
       previewTaskToEvent: set('previewTaskToEvent'),
       removeAccount: set('removeAccount'),
+      reorderTask: set('reorderTask'),
       resolveConflict: set('resolveConflict'),
       resolveLocation: set('resolveLocation'),
       respondToEvent: set('respondToEvent'),

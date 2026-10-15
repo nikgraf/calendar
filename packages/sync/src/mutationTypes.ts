@@ -22,6 +22,7 @@ import type {
   MoveTaskParams,
   PreviewEventToTaskParams,
   PreviewMoveTaskParams,
+  ReorderTaskParams,
   TaskAddressParams,
   TaskDeletePreview,
   TaskMoveLoss,
@@ -92,6 +93,15 @@ export class TaskListNotFoundError extends Data.TaggedError('TaskListNotFoundErr
  * Google has not answered, so where it will land is not known.
  */
 export class TaskCreatePendingError extends Data.TaggedError('TaskCreatePendingError')<{
+  readonly message: string;
+  readonly taskId: string;
+}> {}
+
+/**
+ * A reorder Google Tasks would draw more than one level deep: a task with
+ * subtasks under another task, or a task under a subtask.
+ */
+export class TaskHierarchyError extends Data.TaggedError('TaskHierarchyError')<{
   readonly message: string;
   readonly taskId: string;
 }> {}
@@ -317,6 +327,23 @@ export interface EventMutationsShape {
   ) => Effect.Effect<TaskToEventLoss, SqlError | TaskNotFoundError>;
   /** Drains due pending ops (serialized); safe to call concurrently. */
   readonly processPendingOps: () => Effect.Effect<void>;
+  /**
+   * Places a Google task inside its list (`tasks.move` with `parent` /
+   * `previous`): the row takes its new parent and a provisional position
+   * at once, the move is queued, and once it lands the list's order is
+   * read back from Google. A task Google has not created yet cannot be
+   * placed or be a parent. Reminders have no order or subtasks.
+   */
+  readonly reorderTask: (
+    params: ReorderTaskParams,
+  ) => Effect.Effect<
+    void,
+    | SqlError
+    | TaskCreatePendingError
+    | TaskHierarchyError
+    | TaskNotFoundError
+    | UnsupportedForProviderError
+  >;
   /**
    * Settles an op a 412 parked. 'mine' re-sends it without If-Match (a
    * change whose event Google deleted is re-created); 'theirs' fetches

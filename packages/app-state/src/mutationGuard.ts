@@ -92,6 +92,7 @@ export const useGuardedMutations = () => {
       createTask: guardMutation('add the task', mutations.createTask),
       discardPendingOp: guardMutation('discard the change', mutations.discardPendingOp),
       removeAccount: guardMutation('remove the account', mutations.removeAccount),
+      reorderTask: guardMutation('move the task', mutations.reorderTask),
       resolveConflict: guardMutation('resolve the conflict', mutations.resolveConflict),
       setBirthdayReminderOverride: guardMutation(
         'save the reminders for this birthday',

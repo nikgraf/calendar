@@ -567,6 +567,16 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   as a header. Display only: reordering and re-nesting through
   `tasks.move` need a new op, an optimistic position and drag UI on both
   apps — its own PR (todo.md).
+- **Reorder and re-nest tasks** (2026-10-15, #210) — `reorderTask` queues
+  a same-list `tasks.move` (`parent`/`previous`); the row shows a key
+  between its new neighbours at once. Google renumbers siblings and bumps
+  no `updated` (probed live), so the landed move reads the list's order
+  back. Desktop: drag within the section (half an indent sideways nests
+  or un-nests), ⌘]/⌘[; iOS: swipe right for Indent/Outdent, as Reminders.
+  Top-level rows keep day/title order and no drop leaves its section (a
+  date bucket of lists whose positions do not compare). Rejected: local
+  renumbering, an iOS long-press drag (not drivable in Maestro). Open:
+  top-level order by position, iOS subtask reorder, creates' renumbering.
 - **Convert events ↔ tasks** (2026-09-28, #93) — the same copy-then-delete
   through a shared `crossStore` ordering. The confirmation asks only when
   a set field has no home on the other side: the end time never counts, a

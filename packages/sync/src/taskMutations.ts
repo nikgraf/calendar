@@ -1,11 +1,18 @@
 import { generateEventId } from '@calendar/google';
-import { PendingOp, TaskRecord } from '@calendar/core';
+import {
+  compareTaskPosition,
+  PendingOp,
+  placedTask,
+  provisionalPosition,
+  TaskRecord,
+} from '@calendar/core';
 import type { PendingOpRepoShape, TaskRepoShape } from '@calendar/db';
 import { Clock, Effect } from 'effect';
 import type { SqlError } from 'effect/sql/SqlError';
 import {
   type EventMutationsShape,
   TaskCreatePendingError,
+  TaskHierarchyError,
   TaskListNotFoundError,
   TaskNotFoundError,
 } from './mutationTypes.ts';
@@ -33,7 +40,7 @@ type CreateTaskParams = Parameters<EventMutationsShape['createTask']>[0];
 
 type TaskMutations = Pick<
   EventMutationsShape,
-  'completeTask' | 'createTask' | 'deleteTask' | 'updateTask'
+  'completeTask' | 'createTask' | 'deleteTask' | 'reorderTask' | 'updateTask'
 > & {
   /**
    * A subtask a move carries along: created nested under `parentId` — a
@@ -73,12 +80,16 @@ const patchFields = (source: {
   ...(source.taskTitle === undefined ? {} : { taskTitle: source.taskTitle }),
 });
 
+/** A task id Google has not assigned yet: its create is still queued. */
+const isTempId = (taskId: string): boolean => taskId.startsWith('local-');
+
 /**
  * The task as Google last acknowledged it, for a delete that replaces the
  * queued ops: each op's snapshot holds the acknowledged value of the
  * fields it owns — an edit's title, notes and due day (the ones it
- * carries), a toggle's status — whatever order coalescing left the ops
- * in. A field no op touched is the row's.
+ * carries), a toggle's status, the first reorder's place (a later one
+ * was queued on the place before it) — whatever order coalescing left
+ * the ops in. A field no op touched is the row's.
  */
 const acknowledgedTask = (
   queued: ReadonlyArray<PendingOp>,
@@ -86,12 +97,18 @@ const acknowledgedTask = (
   accountId: string,
 ): TaskRecord => {
   let acked = current;
+  let placed = false;
   for (const op of queued) {
     const before = op.beforeTask;
     if (op.accountId !== accountId || !before) {
       continue;
     }
-    if (op.kind === 'completeTask') {
+    if (op.kind === 'reorderTask') {
+      if (!placed) {
+        acked = placedTask(acked, before);
+      }
+      placed = true;
+    } else if (op.kind === 'completeTask') {
       acked = new TaskRecord({ ...acked, completedAt: before.completedAt, status: before.status });
     } else if (op.kind === 'updateTask') {
       acked = new TaskRecord({
@@ -269,9 +286,32 @@ export const makeTaskMutations = (deps: TaskMutationDeps): TaskMutations => {
         }
         const subtasks = yield* taskRepo.listSubtasks(accountId, taskListId, taskId);
         const ids = new Set([taskId, ...subtasks.map((subtask) => subtask.id)]);
+        const all = yield* pendingOpRepo.listAll();
+        // A reorder that nests a task under it, takes one out or places it
+        // or a subtask: which tasks go along is not settled until Google
+        // has it, and undoing it once the rows moved could not reach them.
+        if (
+          all.some(
+            (op) =>
+              op.kind === 'reorderTask' &&
+              op.accountId === accountId &&
+              op.calendarId === taskListId &&
+              (ids.has(op.eventId) ||
+                op.taskParent === taskId ||
+                op.beforeTask?.parentId === taskId),
+          )
+        ) {
+          return yield* Effect.fail(
+            new TaskCreatePendingError({
+              message:
+                'A new order for this task is still being saved — move it again in a moment.',
+              taskId,
+            }),
+          );
+        }
         // An earlier move out of this list (the task was here before, and
         // came back) stays as it is: it runs before this one.
-        const queued = (yield* pendingOpRepo.listAll()).filter(
+        const queued = all.filter(
           (op) =>
             op.accountId === accountId &&
             op.calendarId === taskListId &&
@@ -346,6 +386,123 @@ export const makeTaskMutations = (deps: TaskMutationDeps): TaskMutations => {
         }
         const moved = yield* taskRepo.get(accountId, targetTaskListId, taskId);
         return moved ?? new TaskRecord({ ...source, listId: targetTaskListId });
+      }),
+
+    reorderTask: ({ accountId, parentId, previousId, taskId, taskListId }) =>
+      Effect.gen(function* () {
+        const task = yield* taskRepo.get(accountId, taskListId, taskId);
+        if (!task) {
+          return yield* Effect.fail(new TaskNotFoundError({ taskId }));
+        }
+        // Google has no id for these yet: nothing it could place, or place under.
+        if (isTempId(taskId) || (parentId !== undefined && isTempId(parentId))) {
+          return yield* Effect.fail(
+            new TaskCreatePendingError({
+              message: 'This task is still being saved to Google — move it again in a moment.',
+              taskId,
+            }),
+          );
+        }
+        // A move to another list of the task, its parent or a task it is
+        // placed by is not settled yet: undoing it could not reach this row.
+        const involved = new Set([taskId, task.parentId, parentId, previousId]);
+        if (
+          (yield* pendingOpRepo.listAll()).some(
+            (op) =>
+              op.kind === 'moveTask' && op.accountId === accountId && involved.has(op.eventId),
+          )
+        ) {
+          return yield* Effect.fail(
+            new TaskCreatePendingError({
+              message: 'A move to another list is still being saved — place it again in a moment.',
+              taskId,
+            }),
+          );
+        }
+        if (parentId !== undefined) {
+          const parent = yield* taskRepo.get(accountId, taskListId, parentId);
+          if (!parent) {
+            return yield* Effect.fail(new TaskNotFoundError({ taskId: parentId }));
+          }
+          // Google takes any depth; Google Tasks draws one level.
+          if (parentId === taskId || parent.parentId !== undefined) {
+            return yield* Effect.fail(
+              new TaskHierarchyError({
+                message:
+                  parentId === taskId
+                    ? 'A task cannot be its own subtask.'
+                    : 'A subtask cannot have subtasks of its own.',
+                taskId,
+              }),
+            );
+          }
+          if ((yield* taskRepo.listSubtasks(accountId, taskListId, taskId)).length > 0) {
+            return yield* Effect.fail(
+              new TaskHierarchyError({
+                message: 'A task with subtasks cannot become a subtask.',
+                taskId,
+              }),
+            );
+          }
+        }
+        const siblings = (yield* taskRepo.listSiblings(accountId, taskListId, parentId)).filter(
+          (sibling) => sibling.id !== taskId,
+        );
+        if (previousId !== undefined && !siblings.some((sibling) => sibling.id === previousId)) {
+          return yield* Effect.fail(new TaskNotFoundError({ taskId: previousId }));
+        }
+        // A sibling whose create is still queued is drawn last, and Google
+        // cannot place after it: the task goes after the last one Google has.
+        const previous =
+          previousId === undefined || !isTempId(previousId)
+            ? previousId
+            : siblings
+                .filter((sibling) => !isTempId(sibling.id))
+                .sort(compareTaskPosition)
+                .at(-1)?.id;
+        // Already there: nothing to send.
+        const current = (yield* taskRepo.listSiblings(accountId, taskListId, task.parentId))
+          .filter((sibling) => !isTempId(sibling.id))
+          .sort(compareTaskPosition);
+        const index = current.findIndex((sibling) => sibling.id === taskId);
+        if (task.parentId === parentId && index >= 0 && current[index - 1]?.id === previous) {
+          return;
+        }
+        // Stamped after the task's queued reorders, even within one
+        // millisecond: an abandoned one finds those behind it by time.
+        const now = yield* Clock.currentTimeMillis;
+        const createdAt = Math.max(
+          now,
+          ...(yield* opsForEvent(accountId, taskListId, taskId))
+            .filter((op) => op.kind === 'reorderTask')
+            .map((op) => op.createdAt + 1),
+        );
+        // Shown where it was dropped until Google's order comes back.
+        yield* taskRepo.updateLocal({
+          accountId,
+          changes: {
+            parentId: parentId ?? null,
+            position: provisionalPosition(siblings, previous),
+          },
+          listId: taskListId,
+          taskId,
+        });
+        yield* enqueue(
+          new PendingOp({
+            accountId,
+            attempts: 0,
+            beforeTask: task,
+            calendarId: taskListId,
+            createdAt,
+            eventId: taskId,
+            id: generateEventId(),
+            kind: 'reorderTask',
+            nextAttemptAt: 0,
+            taskListId,
+            ...(parentId === undefined ? {} : { taskParent: parentId }),
+            ...(previous === undefined ? {} : { taskPrevious: previous }),
+          }),
+        );
       }),
 
     updateTask: ({ accountId, changes, taskId, taskListId }) =>

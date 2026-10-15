@@ -67,6 +67,19 @@ const googleFixture: GoogleFixture = {
         title,
         updated: '2026-01-01T00:00:00.000Z',
       })),
+      // Undated, for the rail's reorder and (un-)nesting drags.
+      ...[
+        { id: 'task-pack', title: 'Pack bags' },
+        { id: 'task-socks', parent: 'task-pack', position: 0, title: 'Socks' },
+        { id: 'task-shirts', parent: 'task-pack', position: 1, title: 'Shirts' },
+        { id: 'task-umbrella', title: 'Umbrella' },
+      ].map(({ id, parent, position, title }) => ({
+        id,
+        ...(parent === undefined ? {} : { parent, position: String(position).padStart(20, '0') }),
+        status: 'needsAction' as const,
+        title,
+        updated: '2026-01-01T00:00:00.000Z',
+      })),
     ],
   },
 };
@@ -204,6 +217,11 @@ describe('Converting tasks against the fake Google API', () => {
         '  task-visa',
         // A reminder, untouched.
         'ek-rem-1',
+        // No date.
+        'task-pack',
+        '  task-socks',
+        '  task-shirts',
+        'task-umbrella',
       ]);
     const indent = await cdp.eval<number>(`(() => {
       const left = (id) =>
@@ -211,6 +229,130 @@ describe('Converting tasks against the fake Google API', () => {
       return left('task-passport') - left('task-trip');
     })()`);
     expect(indent).toBeGreaterThan(0);
+    if (hidden) {
+      await clickTestId('panel-toggle');
+      await cdp.waitFor(`!${RAIL}`);
+    }
+  });
+
+  it("the rail reorders a subtask, nests a task and takes a subtask out, and Google's order comes back", async () => {
+    const { cdp } = app;
+    const RAIL = `!!document.querySelector('[data-panel-kind="rail"]')`;
+    const hidden = !(await cdp.eval<boolean>(RAIL));
+    await cdp.showRail();
+    const ROWS = `[...document.querySelectorAll('[data-section="No date"] [data-testid^="panel-task-"]')].map(
+      (row) => (row.closest('li').parentElement.closest('li') ? '  ' : '') + row.dataset.testid.slice(11),
+    )`;
+    const LINE = `document.querySelector('[data-testid="task-drop-line"]')?.dataset.depth ?? null`;
+    /** A row's horizontal middle and vertical edges, read without scrolling. */
+    const box = (id: string) =>
+      cdp.eval<{ bottom: number; top: number; x: number }>(`(() => {
+        const r = document.querySelector('[data-testid="panel-task-${id}"]').getBoundingClientRect();
+        return { bottom: r.bottom, top: r.top, x: Math.floor(r.x + r.width / 2) };
+      })()`);
+    /** Presses a row, moves in steps to (dx, y), waits for the line it should show, releases. */
+    const dragRow = async (
+      id: string,
+      dx: number,
+      toY: (from: number) => Promise<number>,
+      line: '0' | '1' | null,
+    ) => {
+      const from = await box(id);
+      const start = { x: from.x, y: Math.floor((from.top + from.bottom) / 2) };
+      const end = { x: start.x + dx, y: Math.floor(await toY(start.y)) };
+      await cdp.mouse('mousePressed', start.x, start.y);
+      for (let step = 1; step <= 8; step += 1) {
+        await cdp.mouse(
+          'mouseMoved',
+          Math.round(start.x + ((end.x - start.x) * step) / 8),
+          Math.round(start.y + ((end.y - start.y) * step) / 8),
+        );
+      }
+      // The line follows the pointer through a render of its own.
+      await new Promise((resolve) => setTimeout(resolve, 150));
+      await expect.poll(() => cdp.eval<string | null>(LINE)).toBe(line);
+      await cdp.mouse('mouseReleased', end.x, end.y);
+    };
+    const synced = async () => {
+      const tasks = await readTasks(app.userDataDir);
+      const under = (parent: string | undefined) =>
+        tasks
+          .filter((task) => task.listId === 'list-e2e' && task.parentId === parent)
+          .filter((task) => ['task-shirts', 'task-socks', 'task-umbrella'].includes(task.id))
+          .sort((a, b) => ((a.position ?? '') < (b.position ?? '') ? -1 : 1))
+          .map((task) => task.id);
+      return {
+        pack: under('task-pack'),
+        pending: await readPendingOpsCount(app.userDataDir),
+        top: under(undefined),
+      };
+    };
+    await cdp.eval(
+      `document.querySelector('[data-section="No date"]').scrollIntoView({ block: 'center' })`,
+    );
+
+    // A reminder has no order through EventKit: dragged within the rail it shows no line.
+    await dragRow('ek-rem-1', 40, async (y) => y + 2, null);
+    expect(await readPendingOpsCount(app.userDataDir)).toBe(0);
+
+    // Shirts above Socks: first under Pack bags.
+    await dragRow('task-shirts', 0, async () => (await box('task-socks')).top + 2, '1');
+    await expect
+      .poll(() => cdp.eval(ROWS))
+      .toEqual(['task-pack', '  task-shirts', '  task-socks', 'task-umbrella']);
+    await expect
+      .poll(synced)
+      .toEqual({ pack: ['task-shirts', 'task-socks'], pending: 0, top: ['task-umbrella'] });
+
+    // Umbrella dragged half an indent right, in place: Pack bags' last subtask.
+    await dragRow('task-umbrella', 30, async (y) => y, '1');
+    await expect
+      .poll(synced)
+      .toEqual({ pack: ['task-shirts', 'task-socks', 'task-umbrella'], pending: 0, top: [] });
+
+    // Socks dragged left: a task of its own again, drawn among the top-level rows by title.
+    await dragRow('task-socks', -30, async (y) => y, '0');
+    await expect
+      .poll(() => cdp.eval(ROWS))
+      .toEqual(['task-pack', '  task-shirts', '  task-umbrella', 'task-socks']);
+    await expect
+      .poll(synced)
+      .toEqual({ pack: ['task-shirts', 'task-umbrella'], pending: 0, top: ['task-socks'] });
+
+    // From the keyboard, as in Reminders: ⌘] under the row above, ⌘[ out again,
+    // the focus staying on the row.
+    const FOCUSED = `document.activeElement?.closest('[data-task-key]')?.dataset.testid ?? ''`;
+    const pressCommand = async (key: ']' | '[') => {
+      const code = key === ']' ? 'BracketRight' : 'BracketLeft';
+      const keyCode = key === ']' ? 221 : 219;
+      for (const type of ['rawKeyDown', 'keyUp'] as const) {
+        await cdp.send('Input.dispatchKeyEvent', {
+          code,
+          key,
+          modifiers: 4,
+          type,
+          windowsVirtualKeyCode: keyCode,
+        });
+      }
+    };
+    await cdp.eval(
+      `document.querySelector('[data-testid="panel-task-task-socks"] [data-row-title]').focus()`,
+    );
+    await pressCommand(']');
+    await expect.poll(synced).toEqual({
+      pack: ['task-shirts', 'task-umbrella', 'task-socks'],
+      pending: 0,
+      top: [],
+    });
+    // Drawn nested — a new row — and focused there before the next key.
+    await expect
+      .poll(() => cdp.eval(ROWS))
+      .toEqual(['task-pack', '  task-shirts', '  task-umbrella', '  task-socks']);
+    await expect.poll(() => cdp.eval<string>(FOCUSED)).toBe('panel-task-task-socks');
+    await pressCommand('[');
+    await expect
+      .poll(synced)
+      .toEqual({ pack: ['task-shirts', 'task-umbrella'], pending: 0, top: ['task-socks'] });
     if (hidden) {
       await clickTestId('panel-toggle');
       await cdp.waitFor(`!${RAIL}`);

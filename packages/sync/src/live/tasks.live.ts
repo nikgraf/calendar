@@ -24,7 +24,8 @@ import {
  * Google Tasks on the real API: server-assigned ids and the temp-id swap,
  * date-only dues (and taking one away), completion, the `updatedMin` watermark with deleted
  * tombstones, adopt-before-retry for a create whose response was lost,
- * and a move between lists that keeps the id and takes subtasks along.
+ * a move between lists that keeps the id and takes subtasks along, and a
+ * move inside one list that nests, reorders and un-nests.
  */
 
 const config = liveGoogleConfigFromEnv();
@@ -280,6 +281,56 @@ describe('live Google: tasks', () => {
         expect((yield* repo.get(LIVE_ACCOUNT_ID, listB(), row.id))?.title).toBe(temp.title);
         expect((yield* repo.get(LIVE_ACCOUNT_ID, listB(), step.id))?.parentId).toBe(row.id);
         expect(yield* repo.get(LIVE_ACCOUNT_ID, listA(), step.id)).toBeUndefined();
+      }).pipe(Effect.provide(liveEngineLayer(config))),
+  );
+
+  it.live(
+    'a task nests, reorders and leaves its parent inside its list, and Google’s order comes back',
+    () =>
+      Effect.gen(function* () {
+        const { mutations, scratch: google } = yield* bootstrap(config);
+        const repo = yield* TaskRepo;
+        const titles = [];
+        for (const name of ['order-parent', 'order-a', 'order-b']) {
+          titles.push((yield* create(mutations, name)).title);
+        }
+        yield* drain(mutations);
+        const ids = [];
+        for (const title of titles) {
+          ids.push((yield* localByTitle(listA(), title))!.id);
+        }
+        const [parent, first, second] = ids as [string, string, string];
+        const place = (taskId: string, placement: { parentId?: string; previousId?: string }) =>
+          mutations.reorderTask({
+            accountId: LIVE_ACCOUNT_ID,
+            taskId,
+            taskListId: listA(),
+            ...placement,
+          });
+        yield* place(first, { parentId: parent });
+        yield* place(second, { parentId: parent, previousId: first });
+        yield* drain(mutations);
+        expect(yield* pendingOps).toEqual([]);
+        const [a, b] = [
+          yield* google.getTask(listA(), first),
+          yield* google.getTask(listA(), second),
+        ];
+        expect([a.parent, b.parent]).toEqual([parent, parent]);
+        expect((a.position ?? '') < (b.position ?? '')).toBe(true);
+        // Google bumps no `updated` on a move: these were read back, never pulled.
+        const nested = yield* repo.listSubtasks(LIVE_ACCOUNT_ID, listA(), parent);
+        expect(nested.map((row) => `${row.id}@${row.position ?? ''}`)).toEqual([
+          `${first}@${a.position ?? ''}`,
+          `${second}@${b.position ?? ''}`,
+        ]);
+        // Out again, right after its parent; the one left behind moves up.
+        yield* place(first, { previousId: parent });
+        yield* drain(mutations);
+        expect((yield* google.getTask(listA(), first)).parent).toBeUndefined();
+        expect((yield* repo.get(LIVE_ACCOUNT_ID, listA(), first))?.parentId).toBeUndefined();
+        expect((yield* repo.get(LIVE_ACCOUNT_ID, listA(), second))?.position).toBe(
+          (yield* google.getTask(listA(), second)).position,
+        );
       }).pipe(Effect.provide(liveEngineLayer(config))),
   );
 });

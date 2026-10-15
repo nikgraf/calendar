@@ -94,6 +94,7 @@ const stubHandlers: BackendHandlers = {
   previewSettingsImport: notStubbed,
   previewTaskToEvent: notStubbed,
   removeAccount: () => Effect.void,
+  reorderTask: () => Effect.void,
   resolveConflict: () => Effect.void,
   resolveLocation: () => Effect.succeed(null),
   respondToEvent: () => Effect.void,

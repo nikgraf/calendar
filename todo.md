@@ -69,11 +69,6 @@ The 2026-10-02 review's findings are closed in `docs/decisions.md`
       `is_visible`; a field on `GoogleCalendarPref` in `SettingsDocument`
       (the import's visibility-specific parking in `importedVisibility.ts`
       widens with it); the "History complete" label says what is kept.
-- [ ] Tasks: reorder and re-nest — the inbox draws a Google subtask under
-      its parent in `position` order (#209), but nothing changes the
-      hierarchy. Drag a row to reorder, nest or un-nest it in place through
-      `tasks.move` (`parent`/`previous`): a new queued op with an
-      optimistic `position` until the pull brings Google's, on both apps.
 - [ ] Conversion follow-ups — convert one occurrence of a series into a
       task (today the whole series converts, like a move; an instance
       would be `deleteRecurring(scope: 'instance')` plus a create from that

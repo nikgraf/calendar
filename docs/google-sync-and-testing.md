@@ -169,6 +169,18 @@ suite). When touching sync code, treat these as invariants.
   tombstones, and answers 404. Deleting a parent deletes its subtasks
   (both come back as tombstones). An insert with `?parent=` nests the new
   task first among its siblings.
+- Moves inside a list (verified live, 2026-10-15): `tasks.move` without
+  a destination puts the task under `parent` (omitted: the top level)
+  right after `previous` (omitted: first), which must be a sibling under
+  that parent — else 400 "Invalid task id"; `parent` = the task itself
+  is 400 too. `position` is a dense 20-digit ordinal ("…00", "…01") per
+  sibling group, renumbered on every insert and move, and **no `updated`
+  changes** — neither the moved task's nor its renumbered siblings' — so
+  an `updatedMin` pull never brings a new parent or order, from this
+  device or another; the daily full pass does, and a landed reorder reads
+  the list back. The API nests any depth (a task with subtasks under
+  another, a task under a subtask); one level is Google Tasks' own UI and
+  the app's rule. The fake API renumbers and leaves `updated` the same.
 - **Task ids are server-assigned** — creates are NOT idempotent (no
   client-id trick like events). See architecture.md for the temp-id +
   adopt-before-retry protocol.
@@ -588,7 +600,8 @@ map over the geo fixture); `birthdays` (device-contacts fixture, chip,
 detail, device-only reminder settings); `eventReminders`; `timeZones`;
 `settingsFile`; `mirrors`; `taskConvert` (Google writes left queued) and
 `taskConvertGoogle` (the fake Google API, so pushes land; the rail's
-subtasks nested in `position` order); `convert`;
+subtasks nested in `position` order, dragged to reorder, nest and
+un-nest — a reminder shows no drop line — and ⌘]/⌘[); `convert`;
 `conflicts` (seeded parked 412s resolved through the banner, plus the
 notice stack at 1024 px and 600 px); `search`; `agentGateway` (seeded
 agents, the built relay against the run's socket: CLI + MCP reads, a
