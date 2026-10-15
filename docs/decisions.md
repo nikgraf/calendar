@@ -632,8 +632,16 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   pass reuses its own. A landed create sorts first at once, as Google put
   it. Rejected: a read-back after each create (this device only), an order
   listing every poll or every Nth (a request per list per poll), a shorter
-  full pass. Open: a task another device moved to another list stays in
-  the old one too until that list's full pass.
+  full pass. Open: a move to another list made elsewhere (next entry).
+- **Moves made elsewhere** (2026-10-15, #217) — another device's move to
+  another list sends the source no tombstone, but bumps its `updated`: the
+  order read then names every live task, so a synced row it no longer
+  names goes, subtasks with it (probed live: their `updated` moves too, so
+  the destination's pull brings them). Pending rows stay; the pass holds
+  the drain. A paged listing is no snapshot, so rows go only while the
+  list's `updated` reads as before the pass (one tasklists.list more).
+  Rejected: a `tasks.get` per vanished row, a full pass of the list when
+  one vanishes. Open: the full pass's `deleteStale` trusts its paging.
 - **Convert events ↔ tasks** (2026-09-28, #93) — the same copy-then-delete
   through a shared `crossStore` ordering. The confirmation asks only when
   a set field has no home on the other side: the end time never counts, a

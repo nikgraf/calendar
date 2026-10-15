@@ -484,6 +484,58 @@ const make: Effect.Effect<
       return stamps;
     });
 
+  /** The list's own `updated` as Google answers it now (see syncTasks). */
+  const listUpdatedNow = (
+    account: Account,
+    taskListId: string,
+  ): Effect.Effect<string | undefined, SyncError> =>
+    Effect.gen(function* () {
+      let pageToken: string | undefined;
+      do {
+        const page = yield* withTransientRetry(
+          tasksClient.listTaskLists({ accountId: account.id, pageToken }),
+        );
+        const entry = page.items?.find((item) => item.id === taskListId);
+        if (entry) {
+          return entry.updated;
+        }
+        pageToken = page.nextPageToken;
+      } while (pageToken !== undefined);
+      return undefined;
+    });
+
+  /**
+   * A task another device moved to another list: Google sends the source
+   * no tombstone, its listing just stops naming the task and the subtasks
+   * that went along (verified live), and the move bumps the source's
+   * `updated` — so the order read is when it shows. The listing names
+   * every live task of the list: a synced row it does not name has left,
+   * as `deleteStale` would find on the full pass. Pending rows stay (a
+   * queued edit, a create, the rows a queued move brought here), and the
+   * pass holds the drain, so nothing landed after the listing. A paged
+   * listing is no snapshot, though — a move while it pages can skip a
+   * task — so the rows go only while the list's `updated` still reads as
+   * before the pass; else the next pass reads the order again.
+   */
+  const removeTasksMovedAway = (
+    account: Account,
+    taskListId: string,
+    listUpdated: string,
+    entries: ReadonlyArray<TaskOrderEntry>,
+  ): Effect.Effect<void, SyncError> =>
+    Effect.gen(function* () {
+      const named = new Set(entries.map((entry) => entry.id));
+      const gone = (yield* taskRepo.listSyncedIds(account.id, taskListId)).filter(
+        (id) => !named.has(id),
+      );
+      if (gone.length === 0 || (yield* listUpdatedNow(account, taskListId)) !== listUpdated) {
+        return;
+      }
+      yield* Effect.forEach(gone, (id) => taskRepo.removeSyncedTask(account.id, taskListId, id), {
+        discard: true,
+      });
+    });
+
   /**
    * One list's tasks: an `updatedMin` pull (a full listing daily), then
    * its order when `listUpdated` — the list's own `updated` from
@@ -493,7 +545,9 @@ const make: Effect.Effect<
    * list's `updated`, which a title or notes edit does not (verified
    * live). A full pass has just listed the order; otherwise it costs one
    * order-only listing, and nothing when the list's structure stood
-   * still. A list Google sends no `updated` for waits for the full pass.
+   * still; what that listing no longer names has left the list
+   * (removeTasksMovedAway). A list Google sends no `updated` for waits
+   * for the full pass.
    */
   const syncTasks = (
     account: Account,
@@ -594,6 +648,10 @@ const make: Effect.Effect<
         const entries = fullPass
           ? order
           : yield* withTransientRetry(readTaskOrder(tasksClient, account.id, taskListId));
+        // The full pass's deleteStale already took what left.
+        if (!fullPass) {
+          yield* removeTasksMovedAway(account, taskListId, listUpdated, entries);
+        }
         yield* applyTaskOrder(account.id, taskListId, entries);
         // The stamp from before the read: a change since then moves it
         // again, and the next pass reads once more.

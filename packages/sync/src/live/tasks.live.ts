@@ -25,8 +25,9 @@ import {
  * date-only dues (and taking one away), completion, the `updatedMin` watermark with deleted
  * tombstones, adopt-before-retry for a create whose response was lost,
  * a move between lists that keeps the id and takes subtasks along, a
- * move inside one list that nests, reorders and un-nests, and the order
- * another device's move or insert leaves, which no `updated` reports.
+ * move inside one list that nests, reorders and un-nests, the order
+ * another device's move or insert leaves, which no `updated` reports, and
+ * its move to another list, which the old list sends no tombstone for.
  */
 
 const config = liveGoogleConfigFromEnv();
@@ -373,6 +374,46 @@ describe('live Google: tasks', () => {
 
       const c = yield* google.insertTask(listA(), task('elsewhere-c'), parent.id);
       expect(yield* syncUntil(engine, agrees([c.id, a.id, b.id]))).toBe(true);
+    }).pipe(Effect.provide(liveEngineLayer(config))),
+  );
+
+  it.live('another device’s move to another list leaves the old list on the next pass', () =>
+    Effect.gen(function* () {
+      const { engine, scratch: google } = yield* bootstrap(config);
+      const repo = yield* TaskRepo;
+      const task = (name: string) => ({
+        due: `${isoDay(1)}T00:00:00.000Z`,
+        title: titleFor(config, name),
+      });
+      const parent = yield* google.insertTask(listA(), task('away-parent'));
+      const step = yield* google.insertTask(listA(), task('away-step'), parent.id);
+      const nestedIn = (listId: string) =>
+        Effect.gen(function* () {
+          const [row, subtask] = [
+            yield* repo.get(LIVE_ACCOUNT_ID, listId, parent.id),
+            yield* repo.get(LIVE_ACCOUNT_ID, listId, step.id),
+          ];
+          return row !== undefined && subtask?.parentId === parent.id;
+        });
+      expect(yield* syncUntil(engine, nestedIn(listA()))).toBe(true);
+      const before = (yield* google.getTask(listA(), step.id)).updated;
+
+      // Google lists neither in A afterwards, not even as tombstones, and
+      // the subtask's `updated` moved with it: B's pull brings both.
+      yield* google.moveTask(listA(), parent.id, { destination: listB() });
+      const ours = (yield* google.listTasks(listA())).filter(
+        (entry) => entry.id === parent.id || entry.id === step.id,
+      );
+      expect(ours).toEqual([]);
+      expect((yield* google.getTask(listB(), step.id)).updated).not.toBe(before);
+      const moved = Effect.gen(function* () {
+        const leftBehind = [
+          yield* repo.get(LIVE_ACCOUNT_ID, listA(), parent.id),
+          yield* repo.get(LIVE_ACCOUNT_ID, listA(), step.id),
+        ].filter((row) => row !== undefined);
+        return leftBehind.length === 0 && (yield* nestedIn(listB()));
+      });
+      expect(yield* syncUntil(engine, moved)).toBe(true);
     }).pipe(Effect.provide(liveEngineLayer(config))),
   );
 });
