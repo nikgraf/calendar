@@ -1,6 +1,7 @@
 import { fixtureTextRecognizer, makeFixtureLanguageModel } from '@calendar/ai';
 import { ipcMain, systemPreferences } from 'electron';
 import { callHelper, registerHelperLifecycle } from './helperProcess.ts';
+import { microphoneFixture, nextFixturePhrase } from './microphoneFixture.ts';
 import {
   getModelProvider,
   providerGenerate,
@@ -103,6 +104,10 @@ export const registerModelHelper = (): void => {
     if (typeof locale !== 'string' || !LOCALE.test(locale)) {
       return invalid('locale');
     }
+    // The fixture's microphone is a file: nothing to ask, nothing to install.
+    if (microphoneFixture) {
+      return { prepared: true };
+    }
     // The OS mic prompt needs a main-process ask; denial is a typed state,
     // not an exception, so the renderer can map MicrophoneDeniedError.
     const granted = await systemPreferences.askForMediaAccess('microphone');
@@ -117,6 +122,9 @@ export const registerModelHelper = (): void => {
     }
     if (typeof locale !== 'string' || !LOCALE.test(locale)) {
       return invalid('locale');
+    }
+    if (microphoneFixture) {
+      return nextFixturePhrase();
     }
     return callHelper('transcribe', { audioBase64, locale });
   });

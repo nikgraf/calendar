@@ -66,6 +66,87 @@ export type EditorSeed = EventEditorSeed & { readonly thread?: ThreadSeed | unde
 const NO_CALENDAR_COLOR = '#8a8a8a';
 
 /**
+ * The calls a person makes by hand in the event form. A turn fills the
+ * form through other doors (`applyPrefill`, `restoreExtras`, the editor's
+ * own slot moves), so these tell the two apart.
+ */
+const EVENT_EDITS = [
+  'addAttendee',
+  'addReminder',
+  'applySlot',
+  'pickPlace',
+  'removeAttendee',
+  'removeReminder',
+  'setCalendarKey',
+  'setDate',
+  'setDescription',
+  'setEndDate',
+  'setEndTime',
+  'setIsAllDay',
+  'setLocation',
+  'setReminderMinutes',
+  'setRepeat',
+  'setRepeatCount',
+  'setRepeatEnds',
+  'setRepeatInterval',
+  'setRepeatMonthly',
+  'setRepeatOrdinal',
+  'setRepeatOrdinalWeekday',
+  'setRepeatUntil',
+  'setStartTime',
+  'setTitle',
+  'setUseDefaultReminders',
+  'toggleWeekday',
+] as const satisfies ReadonlyArray<keyof ReturnType<typeof useEventEditorModel>>;
+
+/** …and in the to-do form. */
+const TASK_EDITS = [
+  'addDueDate',
+  'clearDueDate',
+  'setAlarm',
+  'setDueDate',
+  'setDueTime',
+  'setListKey',
+  'setNotes',
+  'setPriority',
+  'setRepeat',
+  'setRepeatCount',
+  'setRepeatEnds',
+  'setRepeatInterval',
+  'setRepeatMonthly',
+  'setRepeatOrdinal',
+  'setRepeatOrdinalWeekday',
+  'setRepeatUntil',
+  'setTimed',
+  'setTitle',
+  'setUrl',
+  'toggleWeekday',
+] as const satisfies ReadonlyArray<keyof ReturnType<typeof useTaskEditorModel>>;
+
+/**
+ * The model with each of `edits` reporting its call first — the form's
+ * hand edits, as the forms receive the model; the editor's own calls go
+ * to the model itself and report nothing.
+ */
+export const reportingEdits = <Model extends object>(
+  model: Model,
+  edits: ReadonlyArray<keyof Model>,
+  onEdit: () => void,
+): Model => {
+  const reporting = { ...model };
+  for (const key of edits) {
+    const call = model[key];
+    if (typeof call === 'function') {
+      reporting[key] = ((...args: Array<unknown>) => {
+        onEdit();
+        return (call as (...args: Array<unknown>) => unknown)(...args);
+      }) as Model[typeof key];
+    }
+  }
+  return reporting;
+};
+
+/**
  * Every draft as the calendar draws it: the focused one from the live
  * form (`live`, an event — a to-do draws nothing) in the calendar the
  * form has picked, with the free slots offered beside it as candidates;
@@ -284,34 +365,40 @@ export const useThreadEditor = ({
    * the fields that changed flash, and what the form holds beyond the
    * item follows the draft — for an Undo, as the turn found it.
    */
-  const applyDraft = (draft: Draft, landed: { readonly id: string } | undefined) => {
+  const applyDraft = (
+    draft: Draft,
+    landed: { readonly id: string } | undefined,
+    done: () => void,
+  ) => {
     const { extras, item } = draft;
     const before = currentItem();
-    void apply(item).then((after) => {
-      if (landed) {
-        setFlash({ fields: new Set(changedDraftFields(before, after)), key: landed.id });
-      }
-      if (item.kind === 'task') {
-        // A to-do's own: its list and Reminders-only fields where the form
-        // had held it as one, its notes, and a day the form had let go of —
-        // unless the thread dated it itself (a slot placement says so in
-        // the extras; a retained time says nothing, a reminder keeps its
-        // time while undated).
-        const listKey = draftListKey(draft, taskLists, '');
-        if (listKey !== '') {
-          taskModel.setListKey(listKey);
+    void apply(item)
+      .then((after) => {
+        if (landed) {
+          setFlash({ fields: new Set(changedDraftFields(before, after)), key: landed.id });
         }
-        if (extras?.reminder) {
-          taskModel.restoreReminderFields(extras.reminder);
+        if (item.kind === 'task') {
+          // A to-do's own: its list and Reminders-only fields where the form
+          // had held it as one, its notes, and a day the form had let go of —
+          // unless the thread dated it itself (a slot placement says so in
+          // the extras; a retained time says nothing, a reminder keeps its
+          // time while undated).
+          const listKey = draftListKey(draft, taskLists, '');
+          if (listKey !== '') {
+            taskModel.setListKey(listKey);
+          }
+          if (extras?.reminder) {
+            taskModel.restoreReminderFields(extras.reminder);
+          }
+          taskModel.setNotes(extras?.taskNotes ?? '');
+          const placed = extras?.undated === false;
+          if (!placed && (extras?.undated || undated.current?.date === item.prefill.date)) {
+            taskModel.clearDueDate?.();
+          }
         }
-        taskModel.setNotes(extras?.taskNotes ?? '');
-        const placed = extras?.undated === false;
-        if (!placed && (extras?.undated || undated.current?.date === item.prefill.date)) {
-          taskModel.clearDueDate?.();
-        }
-      }
-      undated.current = null;
-    });
+        undated.current = null;
+      })
+      .finally(done);
     // The form starts clean for a draft it never held: nothing typed
     // for another draft — guests, notes, notifications — follows it.
     eventModel.restoreExtras(extras);
@@ -354,11 +441,18 @@ export const useThreadEditor = ({
   // appearing: its first turn counts as seen, nothing flashes.
   const turnsSeen = useRef(seed.thread ? 1 : 0);
   const [flash, setFlash] = useState<DraftFlash | null>(null);
+  // The form is still taking the thread in while a version is unseen here
+  // or an apply is open — a kind switch's question holds one open for as
+  // long as it is asked. Counted, not compared: a new thread restarts the
+  // version, and applies can settle out of order.
+  const [seenVersion, setSeenVersion] = useState(version);
+  const [openApplies, setOpenApplies] = useState(0);
   useEffect(() => {
     if (version === applied.current) {
       return;
     }
     applied.current = version;
+    setSeenVersion(version);
     const { turns } = thread.state;
     const landed = turns.length > turnsSeen.current ? turns.at(-1) : undefined;
     turnsSeen.current = turns.length;
@@ -368,7 +462,8 @@ export const useThreadEditor = ({
       if (another) {
         showDraft(focusedDraft);
       } else {
-        applyDraft(focusedDraft, landed);
+        setOpenApplies((open) => open + 1);
+        applyDraft(focusedDraft, landed, () => setOpenApplies((open) => open - 1));
       }
       // A day the form cleared is stored as '' until repaired: nothing to show.
       try {
@@ -402,12 +497,19 @@ export const useThreadEditor = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- the version names exactly what the form must take over
   }, [version]);
 
+  // Each edit made by hand in the form, counted: hands-free dictation
+  // stops listening at the first one.
+  const [userEdits, setUserEdits] = useState(0);
+  const edited = () => setUserEdits((count) => count + 1);
+
   /**
    * The form moves into a free slot the thread offered (a chip, a
    * candidate block), and the calendar shows its day — a slot can lie
-   * outside the days on view, and only a turn reveals on its own.
+   * outside the days on view, and only a turn reveals on its own. A pick
+   * by hand: it changes the date and times as the fields would.
    */
   const moveToSlot = (slot: FreeSlot) => {
+    edited();
     eventModel.applySlot(slot);
     reveal(Temporal.PlainDate.from(slot.date));
   };
@@ -535,23 +637,29 @@ export const useThreadEditor = ({
 
   return {
     addAll,
+    /** The form is still taking the thread's last change in: the next phrase waits. */
+    applying: seenVersion !== version || openApplies > 0,
     batchError,
     canAddAll,
     drafts,
-    eventModel,
+    /** For the forms: the setters a person moves count as `userEdits`. */
+    eventModel: reportingEdits(eventModel, EVENT_EDITS, edited),
     /** The fields the last turn changed, for the form to flash — while the flash plays. */
     flash: playing,
     focused,
     focusedDraft,
-    kinds,
+    /** The kind control's switch counts as an edit too. */
+    kinds: reportingEdits(kinds, ['switchTo'], edited),
     liveItem,
     moveToSlot,
     onPhrase,
     settled,
     switchFocus,
-    taskModel,
+    taskModel: reportingEdits(taskModel, TASK_EDITS, edited),
     thread,
     turns: thread.state.turns,
+    /** Moves at each edit made by hand in the form (`QuickAddBar`'s `editKey`). */
+    userEdits,
     write,
   };
 };

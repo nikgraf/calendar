@@ -213,7 +213,9 @@ export function EventEditSheet({
             // The thread's turns hang under the field (`DraftThreadSection`).
             attached={editor.turns.length > 0}
             autoFocus={presentation !== 'route'}
+            editKey={editor.userEdits}
             fallbackDate={seed.initialDate.toString()}
+            hold={editor.applying}
             onApply={(item) => void apply(item)}
             onPhrase={onPhrase}
             placeholder={drafts.length > 0 ? CHANGE_PLACEHOLDER : undefined}

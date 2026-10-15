@@ -21,6 +21,9 @@ const fakeStream = (): FakeStream => {
 
 /** Each pending microphone request, granted by the test in any order. */
 const grants: Array<(stream: FakeStream) => void> = [];
+/** Each worklet node created, for the test to post blocks through. */
+const nodes: Array<{ port: { onmessage: ((message: { data: Float32Array }) => void) | null } }> =
+  [];
 let addModule: () => Promise<void> = async () => undefined;
 
 const loadSpeech = async () => {
@@ -49,6 +52,9 @@ beforeEach(() => {
     'AudioWorkletNode',
     class {
       port = { onmessage: null };
+      constructor() {
+        nodes.push(this);
+      }
     },
   );
 });
@@ -56,6 +62,7 @@ beforeEach(() => {
 afterEach(() => {
   vi.unstubAllGlobals();
   grants.length = 0;
+  nodes.length = 0;
   addModule = async () => undefined;
 });
 
@@ -108,6 +115,70 @@ describe('desktopSpeech recording ownership', () => {
 
     await expect(start).rejects.toThrow('worklet blocked');
     expect(stream.stopped).toBe(true);
+  });
+});
+
+/** Posts `ms` of audio at this amplitude through the worklet, in its 128-sample blocks. */
+const post = (amplitude: number, ms: number) => {
+  const node = nodes.at(-1);
+  for (let sample = 0; sample < (16_000 * ms) / 1000; sample += 128) {
+    node?.port.onmessage?.({ data: new Float32Array(128).fill(amplitude) });
+  }
+};
+
+describe('desktopSpeech hands-free listening', () => {
+  const transcribe = vi.fn(async () => ({ segments: [{ text: 'Lunch with Anna' }] }));
+
+  beforeEach(() => {
+    transcribe.mockClear();
+    vi.stubGlobal('window', { calendarBridge: { modelTranscribe: transcribe } });
+  });
+
+  it('reports the phrase starting and ending from the level alone', async () => {
+    const speech = await loadSpeech();
+    const events: Array<string> = [];
+    const start = speech.startRecording({ onSpeech: (event) => events.push(event) });
+    grants[0]?.(fakeStream());
+    await start;
+    // A quiet room (-60 dBFS), a phrase (-20 dBFS), then quiet again.
+    post(0.001, 1000);
+    expect(events).toEqual([]);
+    post(0.1, 1000);
+    expect(events).toEqual(['start']);
+    post(0.001, 1000);
+    expect(events).toEqual(['start']);
+    post(0.001, 500);
+    expect(events).toEqual(['start', 'end']);
+
+    expect(await speech.stopRecording()).toBe('Lunch with Anna');
+    expect(transcribe).toHaveBeenCalledTimes(1);
+  });
+
+  it('reports nothing when nobody spoke, and a stop still transcribes what it holds', async () => {
+    const speech = await loadSpeech();
+    const events: Array<string> = [];
+    const start = speech.startRecording({ onSpeech: (event) => events.push(event) });
+    const stream = fakeStream();
+    grants[0]?.(stream);
+    await start;
+    post(0.001, 3000);
+    expect(events).toEqual([]);
+
+    // The level can miss a quiet phrase: a press of the microphone must not lose it.
+    expect(await speech.stopRecording()).toBe('Lunch with Anna');
+    expect(transcribe).toHaveBeenCalledTimes(1);
+    expect(stream.stopped).toBe(true);
+  });
+
+  it('a tap-to-stop recording transcribes whatever it holds', async () => {
+    const speech = await loadSpeech();
+    const start = speech.startRecording();
+    grants[0]?.(fakeStream());
+    await start;
+    post(0.001, 500);
+
+    expect(await speech.stopRecording()).toBe('Lunch with Anna');
+    expect(transcribe).toHaveBeenCalledTimes(1);
   });
 });
 

@@ -1,4 +1,5 @@
 import { Data } from 'effect';
+import type { SpeechEvent } from './endpointer.ts';
 /** One recognised span of speech. */
 export interface TranscriptSegment {
   readonly text: string;
@@ -48,8 +49,16 @@ export interface SpeechToText {
    * that gave up (the bar closed while the microphone was being granted)
    * must not cancel afterwards instead: by then the current recording may
    * belong to a newer caller.
+   *
+   * With `onSpeech` the recording listens for its phrase's end
+   * (`createEndpointer` over the microphone's level): 'start' once speech
+   * is confirmed, 'end' after the pause that follows it — hands-free
+   * dictation stops there instead of at a tap.
    */
-  readonly startRecording: (options?: { readonly signal?: AbortSignal }) => Promise<void>;
+  readonly startRecording: (options?: {
+    readonly onSpeech?: (event: SpeechEvent) => void;
+    readonly signal?: AbortSignal;
+  }) => Promise<void>;
   /** Stops, transcribes, cleans up. Undefined when nothing was said. */
   readonly stopRecording: () => Promise<string | undefined>;
 }

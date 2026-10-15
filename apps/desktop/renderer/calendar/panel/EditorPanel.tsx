@@ -97,6 +97,7 @@ export function EditorPanel({
   const moveConfirmation = useMoveConfirmation();
   const {
     addAll,
+    applying,
     batchError,
     canAddAll,
     drafts,
@@ -113,6 +114,7 @@ export function EditorPanel({
     taskModel,
     thread,
     turns,
+    userEdits,
     write,
   } = useThreadEditor({
     backend,
@@ -168,8 +170,10 @@ export function EditorPanel({
 
         {sourceKind === 'new' ? (
           <QuickAddBar
+            editKey={userEdits}
             fallbackDate={seed.initialDate.toString()}
             focusSignal={quickAddFocus}
+            hold={applying}
             onApply={(item) => void apply(item)}
             onCapture={onCapture}
             onPhrase={onPhrase}

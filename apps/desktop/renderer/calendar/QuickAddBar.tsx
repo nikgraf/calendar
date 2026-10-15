@@ -28,8 +28,11 @@ export const onWindowFocus = (onActive: () => void): (() => void) => {
 
 /**
  * The editor's quick-add field, at the top of a new item: a phrase, typed
- * or dictated, fills the form below (Enter, Apply, or the end of a
- * dictation), on the bundled Foundation Models helper. The desktop
+ * or dictated, fills the form below (Enter, Apply, or a pause in
+ * dictation), on the bundled Foundation Models helper. Dictation is
+ * hands-free: one click of the microphone, then each pause sends what was
+ * said and it listens again, until the microphone is clicked, the field
+ * is typed into or the form is edited by hand (`editKey`). The desktop
  * sibling of the iOS field: same model, same hand-off. Without the model
  * the field says why and the form below is still there. Find a time is
  * the event form's own tool (`FindTimeFields`).
@@ -43,8 +46,10 @@ export const onWindowFocus = (onActive: () => void): (() => void) => {
  */
 export function QuickAddBar({
   children,
+  editKey,
   fallbackDate,
   focusSignal,
+  hold,
   onApply,
   onCapture,
   onPhrase,
@@ -53,10 +58,14 @@ export function QuickAddBar({
 }: {
   /** Under the field, in the same card: the thread's turns. */
   children?: ReactNode;
+  /** Moves at each edit made by hand in the form: hands-free dictation ends. */
+  editKey?: number | undefined;
   /** Undated phrases land on this day (the editor's). */
   fallbackDate: string;
   /** ⌘K focuses the field: bumped per press. */
   focusSignal: number;
+  /** The form is still taking the last phrase in: dictation waits to listen again. */
+  hold?: boolean | undefined;
   onApply: (item: QuickAddItem) => void;
   /** A pasted email or image is not a phrase: it goes to capture. */
   onCapture: (source: CaptureSource) => void;
@@ -71,16 +80,20 @@ export function QuickAddBar({
   const {
     busy,
     dismissError,
+    endVoice,
     error,
+    handsFree,
+    heard,
     phrase,
     setPhrase,
-    startRecording,
-    stopRecording,
     submit,
+    toggleVoice,
     voice,
     voiceAvailable,
   } = useQuickAddModel({
+    editKey,
     fallbackDate,
+    hold,
     model: desktopLanguageModel,
     onApply,
     onPhrase,
@@ -104,19 +117,21 @@ export function QuickAddBar({
   const working = busy || voice === 'transcribing';
   const listening = voice === 'preparing' || voice === 'recording';
   // What the field says instead of its words: dictation's hint, or why
-  // the last phrase failed (until the field is clicked or typed into).
+  // the last phrase failed (until the field is clicked or typed into —
+  // while listening, until the next phrase begins).
   const note: { readonly text: string; readonly tone: 'error' | 'hint' } | null =
     voice === 'preparing'
       ? { text: 'Preparing dictation…', tone: 'hint' }
-      : voice === 'recording'
-        ? { text: 'Listening… click the mic to stop', tone: 'hint' }
-        : !working && error
-          ? { text: error, tone: 'error' }
+      : !working && error
+        ? { text: error, tone: 'error' }
+        : voice === 'recording'
+          ? { text: 'Listening… pause to send, click the mic to stop', tone: 'hint' }
           : null;
   const failed = note?.tone === 'error';
-  /** The failed words back in the field, selected, to fix or type over. */
+  /** The failed words back in the field, selected, to fix or type over: dictation hands over. */
   const takeBack = () => {
     if (failed) {
+      endVoice();
       dismissError();
       requestAnimationFrame(() => inputRef.current?.select());
     }
@@ -146,6 +161,10 @@ export function QuickAddBar({
             data-testid="quick-add-input"
             disabled={busy || unavailable}
             onChange={(input) => {
+              // Typed into while dictating: the user took over.
+              if (handsFree) {
+                endVoice();
+              }
               // Typed into a failed field: a new phrase, from the key pressed.
               dismissError();
               setPhrase(input.target.value);
@@ -177,7 +196,6 @@ export function QuickAddBar({
               });
             }}
             placeholder={unavailable ? unavailableCopy.short : (note?.text ?? placeholder)}
-            readOnly={listening}
             ref={inputRef}
             value={note ? '' : phrase}
           />
@@ -188,15 +206,18 @@ export function QuickAddBar({
           ) : null}
           {voiceAvailable && !unavailable ? (
             <IconButton
-              active={voice === 'recording'}
-              className={voice === 'recording' ? 'text-danger' : ''}
+              active={handsFree}
+              className={handsFree ? 'text-danger' : ''}
+              data-listening={voice === 'recording' ? (heard ? 'speech' : 'quiet') : undefined}
               data-testid="quick-add-mic"
-              disabled={working || voice === 'preparing'}
-              label={voice === 'recording' ? 'Stop dictating' : 'Dictate'}
-              onClick={() => void (voice === 'recording' ? stopRecording() : startRecording())}
+              // On, it always answers (to stop); off, not while a typed phrase is read.
+              disabled={!handsFree && working}
+              label={handsFree ? 'Stop dictating' : 'Dictate'}
+              onClick={toggleVoice}
               size="sm"
             >
-              <MicIcon />
+              {/* Hearing speech: the microphone breathes. */}
+              <MicIcon className={heard ? 'motion-safe:animate-pulse' : ''} />
             </IconButton>
           ) : null}
           {/* Out of the way while the field says why it failed: the room is the message's. */}
@@ -205,7 +226,7 @@ export function QuickAddBar({
               aria-busy={working}
               className="relative"
               data-testid="quick-add-apply"
-              disabled={working || phrase.trim() === '' || voice === 'recording'}
+              disabled={working || phrase.trim() === '' || listening}
               onClick={() => void submit()}
               size="sm"
               variant="primary"

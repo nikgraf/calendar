@@ -811,6 +811,16 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   event on a finder turn (it moves to the slot's start, no row). Open:
   the iOS thread's chips and candidates, a centre for the form finder's
   own presets, proposals for several drafts at once.
+- **Hands-free dictation** (2026-10-15, #214) — one press of the microphone
+  listens until the user takes over: a pause sends the phrase and it
+  listens again, the form edited by hand, the field typed into, the
+  microphone or 30 s of silence ends it. The pause is heard from the
+  level alone against the room's floor (`createEndpointer`), so neither
+  adapter needed native work. Rejected: streaming SpeechAnalyzer with live
+  partial words (a new iOS module and a helper push channel), recording
+  while a phrase is read (words said then would queue against a form
+  still changing). Open: the pause length and margins by ear on real
+  rooms, a live transcript, saying "undo".
 - **The model says why it is unavailable** (2026-10-10, #168) —
   `ModelStatus` carries disabled / not-ready / unsupported (Apple
   Intelligence switches itself off on a Siri-vs-Mac language mismatch); a
