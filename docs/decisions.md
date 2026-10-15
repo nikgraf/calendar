@@ -277,7 +277,18 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   a silent day-only move. **The all-day lane collapses** to three rows
   with "+N more", a device setting (`ViewPreferences`, typed, never
   syncs). Undated tasks show on today and a task completed late stays on
-  its completion day (2026-10-02). No auto-scroll at the grid edge.
+  its completion day (2026-10-02). Auto-scroll at the grid edge came
+  later (next).
+- **Drags scroll the grid at its edge** (2026-10-15, #215) — task chips,
+  timed task blocks and event move/resize, both apps; drawing a new slot
+  does not (Nik's scope). An edge arms only once the drag has been in the
+  grid clear of it, so a lane chip entering through the top band or a
+  block pressed near an edge never starts it. Every offset counts the
+  scroll since the press, which also fixed a wheel scroll mid-drag
+  dropping the block off by that distance. Rejected: a dwell delay before
+  scrolling, and iOS blocks reacting to every scroll offset (a tick only
+  while the edge scrolls). Open: slot drawing, paging days at the side
+  edges, the speed (8 h/s at the edge) felt on a device.
 - **Screen-sharing privacy** — the desktop window is excluded from
   captures by default; "Visible for 10 min" is runtime-only and fails
   closed on restart; "Always visible" persists. **The capture hint**

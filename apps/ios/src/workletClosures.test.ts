@@ -75,4 +75,13 @@ describe('core worklets on the UI runtime', () => {
       startTime: '10:00',
     });
   });
+
+  it('runs the edge scroll step, as the iOS drags and frame loop call it', () => {
+    const { edgeScrollStep } = workletExports('gestures/edgeScroll.ts', {});
+    const armed = { armedBottom: true, armedTop: true };
+    expect(onUiRuntime(edgeScrollStep!)(armed, 600, { bottom: 600, top: 100 }, 40, 400)).toEqual({
+      state: armed,
+      velocity: 400,
+    });
+  });
 });

@@ -27,6 +27,7 @@ export * from './editor/writable.ts';
 export * from './eventIdentity.ts';
 export * from './experimental.ts';
 export * from './geo/location.ts';
+export * from './gestures/edgeScroll.ts';
 export * from './gestures/swipeSnap.ts';
 export * from './gestures/wheelPan.ts';
 export * from './meeting.ts';

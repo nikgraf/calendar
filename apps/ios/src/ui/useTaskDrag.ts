@@ -13,12 +13,14 @@ import { useState } from 'react';
 import { Gesture } from 'react-native-gesture-handler';
 import {
   runOnJS,
+  useAnimatedReaction,
   useAnimatedStyle,
   useSharedValue,
   withTiming,
   type SharedValue,
 } from 'react-native-reanimated';
 import { HOUR_HEIGHT } from './timelineLayout.ts';
+import type { EdgeScroll } from './useEdgeScroll.ts';
 
 /** Where a task drag started: its chip in the all-day lane, or its block in the grid. */
 export type TaskDragFrom = 'grid' | 'lane';
@@ -37,6 +39,8 @@ export interface TaskDragLayout {
   readonly containerHeight: SharedValue<number>;
   readonly containerX: SharedValue<number>;
   readonly containerY: SharedValue<number>;
+  /** Scrolls the grid while the finger is held near its top or bottom edge. */
+  readonly edge: EdgeScroll;
   /** The hour gutter's width: where the strip's columns start. */
   readonly gutterWidth: number;
   readonly laneHeight: number;
@@ -60,9 +64,16 @@ const TIMED_TARGET = 2;
  * finger, while indicators in the lane and the grid show where a release
  * would land. The drop is judged on the UI thread from shared geometry
  * (`dropTargetAt`), and committed on the JS thread through the same rules
- * as desktop (`dropTaskChanges`).
+ * as desktop (`dropTaskChanges`). Held near the grid's top or bottom edge,
+ * the drag scrolls the grid (`useEdgeScroll`) and re-judges its drop as the
+ * grid moves under the finger.
  */
 export const useTaskDrag = (layout: TaskDragLayout) => {
+  // Not compiled: the edge scroll's reaction hands `place` to a hook, so the
+  // compiler would key its memo on the geometry's `.value`s and read the
+  // shared values during every render. The gestures are rebuilt per render
+  // anyway.
+  'use no memo';
   const { updateTask } = useGuardedMutations();
   const [dragging, setDragging] = useState<TaskDragging | null>(null);
   const ghostX = useSharedValue(0);
@@ -71,12 +82,18 @@ export const useTaskDrag = (layout: TaskDragLayout) => {
   const targetKind = useSharedValue(NO_TARGET);
   const targetDay = useSharedValue(0);
   const targetMinute = useSharedValue(0);
+  // This drag is under way, and where its finger last was: the edge scroll
+  // moves the grid under a finger that sends no updates.
+  const active = useSharedValue(false);
+  const lastX = useSharedValue(0);
+  const lastY = useSharedValue(0);
   const {
     buffer,
     columnWidth,
     containerHeight,
     containerX,
     containerY,
+    edge,
     gutterWidth,
     laneHeight,
     laneTop,
@@ -102,6 +119,8 @@ export const useTaskDrag = (layout: TaskDragLayout) => {
 
   const place = (windowX: number, windowY: number) => {
     'worklet';
+    lastX.value = windowX;
+    lastY.value = windowY;
     ghostX.value = windowX - containerX.value;
     ghostY.value = windowY - containerY.value;
     const target = targetAt(windowX, windowY);
@@ -135,22 +154,41 @@ export const useTaskDrag = (layout: TaskDragLayout) => {
       .enabled(!readOnly)
       .activateAfterLongPress(250)
       .onStart((start) => {
+        active.value = true;
         ghostOpacity.value = withTiming(1, { duration: 120 });
+        edge.begin();
+        edge.follow(start.absoluteY);
         place(start.absoluteX, start.absoluteY);
         runOnJS(beginThis)();
       })
       .onUpdate((update) => {
+        edge.follow(update.absoluteY);
         place(update.absoluteX, update.absoluteY);
       })
       .onEnd((end, success) => {
         runOnJS(finishThis)(success ? targetAt(end.absoluteX, end.absoluteY) : null);
       })
       .onFinalize(() => {
+        // A pan that never activated (a tap) leaves the edge scroll alone.
+        if (active.value) {
+          active.value = false;
+          edge.end();
+        }
         targetKind.value = NO_TARGET;
         ghostOpacity.value = withTiming(0, { duration: 120 });
         runOnJS(clear)();
       });
   };
+
+  // The grid scrolled under a still finger: the slot under it changed.
+  useAnimatedReaction(
+    () => edge.ticks.value,
+    (tick, previous) => {
+      if (active.value && previous !== null && tick !== previous) {
+        place(lastX.value, lastY.value);
+      }
+    },
+  );
 
   // The ghost sits under the finger, a little above it so the thumb does
   // not cover it; its width is one column, like the chip it stands for.

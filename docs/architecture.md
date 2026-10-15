@@ -757,6 +757,23 @@ details, or Custom), so a calendar can be shared without the details.
   (`dropTaskChanges`: a grid drop sets day and time, a lane drop clears
   the time, a Google task dropped into the grid is `unsupported` and
   snaps back).
+- **Edge auto-scroll**: a task or event drag held in a band along the
+  grid's top or bottom edge scrolls the grid, faster toward the edge and
+  at full speed past the bottom one (`edgeScrollStep` in
+  `packages/core/src/gestures/edgeScroll.ts`, a worklet; 40 px bands on
+  desktop, an hour row on iOS, 8 grid hours a second at the edge). An
+  edge arms once the drag has been in the grid clear of its band, so a
+  chip entering from the lane or a block pressed near an edge does not
+  scroll. Every drag offset counts the scroll since the press (desktop
+  `deltasFor` adds the scroller's offset change; iOS blocks add
+  `scrollY` minus its value at the press to `translationY`), so a scroll
+  under a still pointer moves the block with it. Desktop runs a
+  `requestAnimationFrame` loop in `useEventDrag` for the whole drag that
+  also republishes the drop after a wheel scroll. iOS runs a Reanimated
+  frame callback (`useEdgeScroll`, `scrollTo` on the UI thread, offset
+  clamped to the content since UIScrollView is not) that bumps a `ticks`
+  value the dragged chip and block react to; `scrollY` comes from an
+  animated scroll handler, so drops read it in the same frame.
 - **Draw a new event's slot**: desktop `useSlotDrag` — press on empty
   grid space and drag, release opens the editor with that slot; only
   vertical travel counts toward the threshold, so a click that drifts
