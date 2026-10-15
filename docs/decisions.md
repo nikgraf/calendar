@@ -91,6 +91,14 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   per-spec retry, and Maestro's `retry` command (it retries assertions and
   cannot outlive the latch). Simulator prep turns keyboard predictions off
   and boots out apsd's log flood. Open: whether the keyboard hang gets rarer.
+- **iOS e2e without MapKit** (2026-10-15, `todo/ios-geo-off`) — CI's bundle
+  sets `EXPO_PUBLIC_CALENDAR_GEO=off`, the desktop's `CALENDAR_GEO=off`:
+  flow 22's "Room 4" was geocoded live on every run (once to a place named
+  "Room 55"), and the editor's live map was the likely cause of a 16 s
+  hierarchy read. Rejected: hiding the map from accessibility — the SwiftUI
+  map's streets and pins stay in the tree under `accessibilityElementsHidden`
+  and `collapsable={false}` (probed locally). Open: what VoiceOver makes of
+  those elements, and an open-time lookup of free text mapping the wrong place.
 - **Test pruning** (2026-10-09, `todo/prune-tests`) — a test goes only
   if a surviving test asserts everything it did; iOS flows are merged per
   area, not dropped, because a launch or a Reminders connect repeated

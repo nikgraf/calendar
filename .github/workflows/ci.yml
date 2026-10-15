@@ -269,6 +269,13 @@ jobs:
       - name: Embed this commit's JS
         working-directory: apps/ios
         env:
+          # No MapKit, as on the desktop (CALENDAR_GEO=off): a location is
+          # never looked up, so the editor draws no live map. "Room 4"
+          # (flow 22) geocoded against Apple's servers on every run, and the
+          # map puts its streets and pins into the accessibility tree — the
+          # likely cause of a 16 s hierarchy read that missed a 10 s wait.
+          # Flow 14 is the MapKit flow, local only.
+          EXPO_PUBLIC_CALENDAR_GEO: 'off'
           # The in-process fake Google API with a signed-in fixture account,
           # so the Google halves of the flows (create event, task lane, task
           # convert) run without a real account. Inlined at bundle time.
