@@ -45,6 +45,7 @@ import {
 import { pendingOpsRead } from './accountRemoval.ts';
 import {
   type BackendAtoms,
+  currentEventKey,
   type MapSnapshotParams,
   mapSnapshotKey,
   type MutationName,
@@ -233,6 +234,19 @@ export const useEventMaster = (
         startUtc: result.value?.startUtc,
       }
     : { loaded: false, recurrence: undefined, startUtc: undefined };
+};
+
+/**
+ * An event on screen as it is now (`currentEventKey`'s atom, read again
+ * whenever events change): its row with any edit made since, or null once
+ * it is gone. Until the backend has answered, and while it cannot (a
+ * failed read is not "gone"), `shown`. A view that follows its event keeps
+ * what this returns as the next `shown`: an occurrence edited on its own
+ * has a new id, and a moved event is looked for where it is now.
+ */
+export const useCurrentEvent = (shown: EventRecord): EventRecord | null => {
+  const result = useAtomValue(useBackendAtoms().currentEvent(currentEventKey(shown)));
+  return AsyncResult.isSuccess(result) ? result.value : shown;
 };
 
 /** Task lists across accounts (for visibility toggles + connect rows). */

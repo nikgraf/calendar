@@ -38,7 +38,7 @@ import { Clock, Effect, Queue, Stream } from 'effect';
 import { AppleCalendarEvents } from './appleCalendarEvents.ts';
 import { loadMergedBirthdays } from './birthdays.ts';
 import { DeviceContacts } from './deviceContacts.ts';
-import { loadEventsInRange } from './eventsInRange.ts';
+import { loadEventsInRange, loadEventsInRangeOrFail } from './eventsInRange.ts';
 import { LocalNotifications } from './localNotifications.ts';
 import {
   readBirthdayReminderOverrides,
@@ -274,8 +274,10 @@ export const commonBackendHandlers: Omit<BackendHandlers<CommonBackendServices>,
 
   getEventNotificationSettings: () => readEventNotificationSettings,
 
-  getEventsInRange: ({ rangeEndUtc, rangeStartUtc }) =>
-    loadEventsInRange(rangeStartUtc, rangeEndUtc),
+  getEventsInRange: ({ rangeEndUtc, rangeStartUtc, strictApple }) =>
+    strictApple === true
+      ? loadEventsInRangeOrFail(rangeStartUtc, rangeEndUtc)
+      : loadEventsInRange(rangeStartUtc, rangeEndUtc),
 
   getOverdueTasks: ({ before }) =>
     Effect.gen(function* () {

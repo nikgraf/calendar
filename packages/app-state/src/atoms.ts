@@ -16,7 +16,10 @@ import {
   type BackendPayload,
   type BackendSuccess,
   EMPTY_SEARCH_RESULTS,
+  eventNotificationTarget,
+  type EventRecord,
   isBlankSearchQuery,
+  parseNotificationTarget,
   type SearchQuery,
   searchQueryKey,
   searchQueryOfKey,
@@ -24,6 +27,7 @@ import {
 } from '@calendar/core';
 import { Cause, Context, Effect, Exit, Layer } from 'effect';
 import { Atom, AsyncResult, AtomRegistry, Reactivity } from 'effect/reactivity';
+import { lookUpEvent } from './notificationTarget.ts';
 
 /** The BackendClient as a service, so atom effects can yield it. */
 export class AppBackend extends Context.Service<AppBackend, BackendClient>()(
@@ -32,6 +36,14 @@ export class AppBackend extends Context.Service<AppBackend, BackendClient>()(
 
 export const rangeKey = (rangeStartUtc: number, rangeEndUtc: number): string =>
   `${rangeStartUtc}:${rangeEndUtc}`;
+
+/**
+ * Atom key for where an event on screen is now: its notification target
+ * (which occurrence it is, and where to look), as JSON — ids can hold any
+ * separator.
+ */
+export const currentEventKey = (event: EventRecord): string =>
+  JSON.stringify(eventNotificationTarget(event));
 
 /** Atom key for a search: the zone first (zone ids never hold a '|'), then the query's key. */
 export const searchKey = (query: SearchQuery, timeZone: string): string =>
@@ -72,6 +84,7 @@ export interface BackendAtoms {
   readonly birthdaysInRange: ReturnType<typeof buildAtoms>['birthdaysInRange'];
   readonly calendars: ReturnType<typeof buildAtoms>['calendars'];
   readonly contactsSearch: ReturnType<typeof buildAtoms>['contactsSearch'];
+  readonly currentEvent: ReturnType<typeof buildAtoms>['currentEvent'];
   /** The zone this device is in, re-read once a minute; what the time zones' device entry resolves to. */
   readonly deviceZone: Atom.Atom<string>;
   readonly eventById: ReturnType<typeof buildAtoms>['eventById'];
@@ -462,6 +475,22 @@ const buildAtoms = (client: BackendClient, deviceZone: Atom.Atom<string>) => {
       .pipe(Atom.withReactivity([EVENTS_KEY])),
   );
 
+  // Where an event on screen is now, keyed by `currentEventKey`: its row
+  // as stored (an occurrence edited on its own since included), or null
+  // once it is gone — the lookup a tapped notification makes, read again
+  // whenever events change, so a view of the event can follow it.
+  const currentEvent = boundedAtomCache((key) =>
+    runtime
+      .atom(
+        Effect.gen(function* () {
+          const backend = yield* AppBackend;
+          const target = parseNotificationTarget(JSON.parse(key));
+          return target === undefined ? null : yield* lookUpEvent(backend, target);
+        }),
+      )
+      .pipe(Atom.withReactivity([EVENTS_KEY])),
+  );
+
   // Desktop map images, keyed by mapSnapshotKey; '' resolves to null.
   const mapSnapshot = boundedAtomCache((key) =>
     runtime.atom(
@@ -529,6 +558,7 @@ const buildAtoms = (client: BackendClient, deviceZone: Atom.Atom<string>) => {
     birthdaysInRange,
     calendars,
     contactsSearch,
+    currentEvent,
     deviceZone,
     eventById,
     eventNotificationSettings,

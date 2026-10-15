@@ -459,6 +459,15 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   its notes uneditable and offers no empty field. Open: notes are the
   stored text, so a description written as HTML in Google's web UI shows
   its markup on both apps.
+- **iOS detail follows its event** (2026-10-14, #207) — as the desktop
+  inspector since #156: it shows the record as it is now, Edit and
+  Convert seed from it, a gone event closes it, a failed read keeps it up.
+  With no grid range it reads `findCurrentEvent`'s lookup as an atom
+  (`currentEvent`, re-read on every events change), not a window plus a
+  lookup. No Maestro step: nothing on iOS can change an event under an
+  open sheet. Review: a failed Apple read or lost access answered no
+  events, read as "deleted"; the lookup now asks `strictApple`. Open: an
+  Apple event moved over a day away closes it (no lookup by id).
 
 ## Invitees, contacts and birthdays
 

@@ -12,6 +12,7 @@ import {
 import {
   availableItemKinds,
   type BirthdayOccurrence,
+  eventIdentity,
   type EventRecord,
   type ItemKind,
   type NotificationTarget,
@@ -94,6 +95,7 @@ interface EditSheet {
 
 type Sheet =
   | { readonly kind: 'none' }
+  /** The event as it was opened; the sheet follows it from there. */
   | { readonly event: EventRecord; readonly kind: 'detail' }
   | EditSheet
   | { readonly birthday: BirthdayOccurrence; readonly kind: 'birthday' };
@@ -424,25 +426,28 @@ export function EditorHostProvider({ children }: { children: ReactNode }) {
         <EventDetailSheet
           calendars={calendars}
           event={sheet.event}
-          key={`detail:${sheet.event.calendarId}:${sheet.event.id}`}
+          // By identity: the sheet follows its event, and a reminder tapped
+          // for the occurrence it shows (edited on its own since, under a
+          // new id) leaves it up.
+          key={`detail:${eventIdentity(sheet.event)}`}
           onClose={close}
-          onConvert={() =>
+          onConvert={(event) =>
             setSheet({
               initialKind: defaultTodoKind(taskLists),
               kind: 'edit',
               opening: nextOpening(),
               seed: {
-                event: sheet.event,
+                event,
                 initialDate: Temporal.Now.plainDateISO(timeZone),
                 initialScope: 'series',
               },
             })
           }
-          onEdit={() =>
+          onEdit={(event) =>
             setSheet({
               kind: 'edit',
               opening: nextOpening(),
-              seed: { event: sheet.event, initialDate: Temporal.Now.plainDateISO(timeZone) },
+              seed: { event, initialDate: Temporal.Now.plainDateISO(timeZone) },
             })
           }
           timeZone={timeZone}
