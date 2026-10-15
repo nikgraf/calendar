@@ -594,7 +594,18 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   Top-level rows keep day/title order and no drop leaves its section (a
   date bucket of lists whose positions do not compare). Rejected: local
   renumbering, an iOS long-press drag (not drivable in Maestro). Open:
-  top-level order by position, iOS subtask reorder, creates' renumbering.
+  top-level order by position, iOS subtask reorder, creates' renumbering
+  (since #211 every renumbering, see below).
+- **Order made elsewhere** (2026-10-15, #211) — a poll reads a list's
+  order when the list's own `updated`, already fetched every pass, moved
+  since the last read: probed live, every insert, delete, completion and
+  move bumps it, a title or notes edit does not, and no task's `updated`
+  moves. Nothing on an idle poll, one order-only listing otherwise; a full
+  pass reuses its own. A landed create sorts first at once, as Google put
+  it. Rejected: a read-back after each create (this device only), an order
+  listing every poll or every Nth (a request per list per poll), a shorter
+  full pass. Open: a task another device moved to another list stays in
+  the old one too until that list's full pass.
 - **Convert events ↔ tasks** (2026-09-28, #93) — the same copy-then-delete
   through a shared `crossStore` ordering. The confirmation asks only when
   a set field has no home on the other side: the end time never counts, a

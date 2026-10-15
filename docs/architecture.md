@@ -260,13 +260,13 @@ it whenever a kind is added. Rules that keep the queue correct:
   queued before it left the list — so a reorder waits for every task op
   queued before it in its list, and a delete queued behind one waits for
   it. Google renumbers the siblings on every move and bumps no `updated`,
-  not even the moved task's, so no pull brings the new order (the daily
-  full pass would): once a reorder lands the drain reads the list's order
-  back onto every row of the list (`refreshHierarchy`; a queued edit or
-  toggle does not touch the order) and replays the reorders still queued
-  over it in queue order, as Google will apply them — each one's place
-  before it becomes what its discard puts back; a queued delete takes
-  Google's place too. A discard or a refusal (400 for a sibling that is
+  not even the moved task's, so no `updatedMin` pull brings the new order
+  (the next pass reads it, see Tasks below): once a reorder lands the
+  drain reads the list's order back at once (`taskOrder.ts`) onto every
+  row of the list (`refreshHierarchy`; a queued edit or toggle does not
+  touch the order) and replays the reorders still queued over it in queue
+  order, as Google will apply them — each one's place before it becomes
+  what its discard puts back; a queued delete takes Google's place too. A discard or a refusal (400 for a sibling that is
   no longer one, 404) puts the row back where Google has it, or where an
   earlier reorder still queued puts it; a reorder queued behind it takes
   that place over (a task's reorders are stamped strictly in order). A
@@ -434,9 +434,19 @@ it whenever a kind is added. Rules that keep the queue correct:
   minus 60s" (clock-skew lag) and queried with
   `showCompleted/showHidden/showDeleted` so completions and deletions
   arrive as tombstones. A daily full pass runs `deleteStale` (only rows
-  with `sync_status='synced'`). A 403 with the insufficient-scope reason
-  flips `tasksEnabled` off instead of retrying forever (older grants
-  without the Tasks scope).
+  with `sync_status='synced'`). Order is read apart from the watermark:
+  Google renumbers the siblings on every insert, delete and move without
+  bumping their `updated`, but each of those moves the list's own
+  `updated`, which the task-list pass already fetches. When it differs
+  from the one stored at the list's last order read (`taskOrder:<list>`
+  in `sync_state`), the pass writes Google's order onto the list's rows
+  and replays the queued reorders, as after a landed reorder — from its
+  own listing on a full pass, else from one order-only listing
+  (`fields=nextPageToken,items(id,parent,position)`); an idle poll reads
+  nothing. A create that lands sorts first among its siblings at once,
+  where Google put it; the next pass brings the siblings' new numbers. A
+  403 with the insufficient-scope reason flips `tasksEnabled` off instead
+  of retrying forever (older grants without the Tasks scope).
 - **Google contacts** (per account, when both People API contacts scopes
   are granted — `contactsEnabled`): two tiers, saved contacts
   (`people.connections.list`) and "other contacts" (`otherContacts.list`,

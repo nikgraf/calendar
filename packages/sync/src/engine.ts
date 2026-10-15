@@ -51,11 +51,22 @@ import type { SqlError } from 'effect/sql/SqlError';
 import { AppleCalendarEvents, deviceTimeZone } from './appleCalendarEvents.ts';
 import { applyPendingVisibility as applyImportedVisibility } from './importedVisibility.ts';
 import { EventMutations } from './mutations.ts';
+import {
+  makeApplyTaskOrder,
+  readTaskOrder,
+  taskOrderEntry,
+  type TaskOrderEntry,
+} from './taskOrder.ts';
 import { cancelledOverrideTombstone } from './tombstone.ts';
 
 const CALENDAR_LIST_SCOPE = 'calendarList';
 /** updatedMin has no tombstone guarantees forever — reconcile fully daily. */
 const TASKS_FULL_PASS_INTERVAL_MS = 24 * 60 * 60 * 1000;
+/**
+ * sync_state scope holding, as its sync_token, the list's own `updated`
+ * at the last read of its order.
+ */
+const taskOrderScope = (taskListId: string): string => `taskOrder:${taskListId}`;
 /** sync_state scope for the Apple mirror: lastSyncAt is the delta stamp. */
 const REMINDERS_SCOPE = 'reminders';
 /** sync_state scope stamping the Apple Calendar calendar-list mirror. */
@@ -187,6 +198,7 @@ const make: Effect.Effect<
   const appleCalendarClient = yield* AppleCalendarClient;
   const appleEvents = yield* AppleCalendarEvents;
   const syncStateRepo = yield* SyncStateRepo;
+  const applyTaskOrder = makeApplyTaskOrder({ pendingOpRepo, taskRepo });
   const gate = Semaphore.makeUnsafe(1);
   // Imported visibility parked for rows that had not synced yet is applied
   // after every calendar/list pass; the repos it needs are resolved here.
@@ -445,10 +457,14 @@ const make: Effect.Effect<
       yield* writeState('idle', nextSyncToken, fullPass);
     });
 
-  const syncTaskLists = (account: Account): Effect.Effect<void, SyncError> =>
+  /** The account's task lists, answering each one's own `updated` (see syncTasks). */
+  const syncTaskLists = (
+    account: Account,
+  ): Effect.Effect<ReadonlyMap<string, string | undefined>, SyncError> =>
     Effect.gen(function* () {
       const now = yield* Clock.currentTimeMillis;
       const keptIds: Array<string> = [];
+      const stamps = new Map<string, string | undefined>();
       let pageToken: string | undefined;
       do {
         const page = yield* withTransientRetry(
@@ -456,6 +472,7 @@ const make: Effect.Effect<
         );
         const upserts = (page.items ?? []).map((entry) => {
           keptIds.push(entry.id);
+          stamps.set(entry.id, entry.updated);
           return mapGcalTaskList(entry, { accountId: account.id });
         });
         yield* taskRepo.upsertLists(upserts, now);
@@ -464,9 +481,25 @@ const make: Effect.Effect<
       // No syncToken/updatedMin on tasklists — every pass is full.
       yield* taskRepo.removeListsMissing(account.id, keptIds);
       yield* applyPendingVisibility(account);
+      return stamps;
     });
 
-  const syncTasks = (account: Account, taskListId: string): Effect.Effect<void, SyncError> =>
+  /**
+   * One list's tasks: an `updatedMin` pull (a full listing daily), then
+   * its order when `listUpdated` — the list's own `updated` from
+   * tasklists.list — moved since the order was last read. Every insert,
+   * delete and move renumbers the siblings without bumping their
+   * `updated`, so the pull never brings that; but each one bumps the
+   * list's `updated`, which a title or notes edit does not (verified
+   * live). A full pass has just listed the order; otherwise it costs one
+   * order-only listing, and nothing when the list's structure stood
+   * still. A list Google sends no `updated` for waits for the full pass.
+   */
+  const syncTasks = (
+    account: Account,
+    taskListId: string,
+    listUpdated: string | undefined,
+  ): Effect.Effect<void, SyncError> =>
     Effect.gen(function* () {
       const scope = tasksScope(taskListId);
       const state = yield* syncStateRepo.get(account.id, scope);
@@ -496,6 +529,7 @@ const make: Effect.Effect<
               .map((op) => op.eventId),
           ),
       );
+      const order: Array<TaskOrderEntry> = [];
       let pageToken: string | undefined;
       do {
         const page = yield* withTransientRetry(
@@ -512,6 +546,9 @@ const make: Effect.Effect<
         const upserts = [];
         const deletions: Array<string> = [];
         for (const item of page.items ?? []) {
+          if (fullPass && !item.deleted) {
+            order.push(taskOrderEntry(item));
+          }
           const record = mapGcalTask(item, { accountId: account.id, taskListId });
           if (record && (leaving.has(record.id) || leaving.has(record.parentId ?? ''))) {
             continue;
@@ -548,16 +585,39 @@ const make: Effect.Effect<
           syncToken: new Date(passStartedAt - WATERMARK_LAG_MS).toISOString(),
         }),
       );
+
+      const orderScope = taskOrderScope(taskListId);
+      if (
+        listUpdated !== undefined &&
+        (yield* syncStateRepo.get(account.id, orderScope))?.syncToken !== listUpdated
+      ) {
+        const entries = fullPass
+          ? order
+          : yield* withTransientRetry(readTaskOrder(tasksClient, account.id, taskListId));
+        yield* applyTaskOrder(account.id, taskListId, entries);
+        // The stamp from before the read: a change since then moves it
+        // again, and the next pass reads once more.
+        yield* syncStateRepo.set(
+          new SyncState({
+            accountId: account.id,
+            lastFullSyncAt: null,
+            lastSyncAt: passStartedAt,
+            scope: orderScope,
+            status: 'idle',
+            syncToken: listUpdated,
+          }),
+        );
+      }
     });
 
   const syncAccountTasks = (account: Account): Effect.Effect<void, SyncError> =>
     Effect.gen(function* () {
-      yield* syncTaskLists(account);
+      const stamps = yield* syncTaskLists(account);
       const lists = yield* taskRepo.listLists(account.id);
       yield* Effect.forEach(
         lists,
         (list) =>
-          mutations.whileQueueHeld(syncTasks(account, list.id)).pipe(
+          mutations.whileQueueHeld(syncTasks(account, list.id, stamps.get(list.id))).pipe(
             // A 404 on one list (tasklists.list can still name a list just
             // deleted) must not fail the lists after it. Its rows stay: the
             // lists are listed in full every pass, so a gone one is removed

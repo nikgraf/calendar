@@ -177,10 +177,22 @@ suite). When touching sync code, treat these as invariants.
   sibling group, renumbered on every insert and move, and **no `updated`
   changes** — neither the moved task's nor its renumbered siblings' — so
   an `updatedMin` pull never brings a new parent or order, from this
-  device or another; the daily full pass does, and a landed reorder reads
-  the list back. The API nests any depth (a task with subtasks under
-  another, a task under a subtask); one level is Google Tasks' own UI and
-  the app's rule. The fake API renumbers and leaves `updated` the same.
+  device or another; the list's own `updated` does (next bullet), and a
+  landed reorder reads the list back. The API nests any depth (a task
+  with subtasks under another, a task under a subtask); one level is
+  Google Tasks' own UI and the app's rule. The fake API renumbers and
+  leaves `updated` the same.
+- A list's own `updated` (tasklists.list, verified live 2026-10-15) and
+  its `etag` move on every insert (a subtask's too), delete, completion
+  and move — inside the list, out of it and into it — and not on a title
+  or notes PATCH. Every renumbering comes with it: a delete closes ranks
+  among the siblings it left, as a move to another list does in the
+  source (that move, unlike a same-list one, bumps the moved task's
+  `updated`). A renumbered task's `etag` changes though its `updated` does
+  not; the tasks listing has an `etag` too, and `If-None-Match` with the
+  current one answers 304 (still a request). `fields=` partial responses
+  work on the listing. The engine reads a list's order when its `updated`
+  moved; the fake keeps a list `updated` the same writes move.
 - **Task ids are server-assigned** — creates are NOT idempotent (no
   client-id trick like events). See architecture.md for the temp-id +
   adopt-before-retry protocol.

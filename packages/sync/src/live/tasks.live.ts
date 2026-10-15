@@ -24,8 +24,9 @@ import {
  * Google Tasks on the real API: server-assigned ids and the temp-id swap,
  * date-only dues (and taking one away), completion, the `updatedMin` watermark with deleted
  * tombstones, adopt-before-retry for a create whose response was lost,
- * a move between lists that keeps the id and takes subtasks along, and a
- * move inside one list that nests, reorders and un-nests.
+ * a move between lists that keeps the id and takes subtasks along, a
+ * move inside one list that nests, reorders and un-nests, and the order
+ * another device's move or insert leaves, which no `updated` reports.
  */
 
 const config = liveGoogleConfigFromEnv();
@@ -332,5 +333,46 @@ describe('live Google: tasks', () => {
           (yield* google.getTask(listA(), second)).position,
         );
       }).pipe(Effect.provide(liveEngineLayer(config))),
+  );
+
+  it.live('another device’s move and insert reach the order here on the next pass', () =>
+    Effect.gen(function* () {
+      const { engine, scratch: google } = yield* bootstrap(config);
+      const repo = yield* TaskRepo;
+      const task = (name: string) => ({
+        due: `${isoDay(1)}T00:00:00.000Z`,
+        title: titleFor(config, name),
+      });
+      const parent = yield* google.insertTask(listA(), task('elsewhere-parent'));
+      const a = yield* google.insertTask(listA(), task('elsewhere-a'), parent.id);
+      // Inserted first among the subtasks: A is renumbered, its `updated` stays.
+      const b = yield* google.insertTask(listA(), task('elsewhere-b'), parent.id);
+      const inGoogleOrder = Effect.map(google.listTasks(listA()), (tasks) =>
+        tasks
+          .filter((entry) => entry.parent === parent.id && !entry.deleted)
+          .sort((x, y) => ((x.position ?? '') < (y.position ?? '') ? -1 : 1))
+          .map((entry) => `${entry.id}@${entry.position ?? ''}`),
+      );
+      const here = Effect.map(repo.listSubtasks(LIVE_ACCOUNT_ID, listA(), parent.id), (rows) =>
+        rows.map((row) => `${row.id}@${row.position ?? ''}`),
+      );
+      const agrees = (ids: ReadonlyArray<string>) =>
+        Effect.gen(function* () {
+          const theirs = yield* inGoogleOrder;
+          const ours = yield* here;
+          return (
+            theirs.map((entry) => entry.split('@')[0]).join() === ids.join() &&
+            ours.join() === theirs.join()
+          );
+        });
+      expect(yield* syncUntil(engine, agrees([b.id, a.id]))).toBe(true);
+
+      // A move bumps no task's `updated`: only the list's own says it happened.
+      yield* google.moveTask(listA(), a.id, { parent: parent.id });
+      expect(yield* syncUntil(engine, agrees([a.id, b.id]))).toBe(true);
+
+      const c = yield* google.insertTask(listA(), task('elsewhere-c'), parent.id);
+      expect(yield* syncUntil(engine, agrees([c.id, a.id, b.id]))).toBe(true);
+    }).pipe(Effect.provide(liveEngineLayer(config))),
   );
 });
