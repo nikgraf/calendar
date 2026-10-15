@@ -10,6 +10,7 @@ import {
 } from '@calendar/app-state';
 import {
   defaultTodoList,
+  nestSubtasks,
   overdueLabel,
   type TaskRecord,
   taskListKeyOf,
@@ -33,7 +34,8 @@ import { MutationNoticeToast } from '../../src/ui/Toast.tsx';
  * done today — filtered by list. Its "+" opens the editor on a new
  * undated to-do in the filtered list (else the last list used, else
  * Reminders, then a Google list). Rows open the task editor; the checkbox
- * completes at once, like the chips on the calendar.
+ * completes at once, like the chips on the calendar. A Google subtask is
+ * indented under its parent when both are in one section (`nestSubtasks`).
  */
 export default function TasksScreen() {
   const zones = useTimeZones();
@@ -76,15 +78,22 @@ function TasksBody({ timeZone }: { timeZone: string }) {
     });
   };
 
-  const row = (task: TaskRecord, late: boolean) => {
+  /** One task's row; `parent` when it is drawn indented under that task. */
+  const row = (task: TaskRecord, late: boolean, parent?: TaskRecord) => {
     const done = task.status === 'completed';
     const readOnly = isReadOnly(task);
+    // VoiceOver does not see the indent.
     const facts = [
+      ...(parent ? [`subtask of ${parent.title}`] : []),
       ...(late ? [overdueLabel(task, today)] : []),
       ...(task.dueDate && !late ? [`due ${task.dueDate}`] : []),
     ];
     return (
-      <View key={`${task.listId}:${task.id}`} style={styles.row} testID={`task-row-${task.id}`}>
+      <View
+        key={`${task.accountId}:${task.listId}:${task.id}`}
+        style={[styles.row, parent && styles.subtaskRow]}
+        testID={`task-row-${task.id}`}
+      >
         <Pressable
           accessibilityLabel={done ? `Reopen ${task.title}` : `Complete ${task.title}`}
           accessibilityRole="button"
@@ -131,7 +140,10 @@ function TasksBody({ timeZone }: { timeZone: string }) {
     return shown.length === 0 ? null : (
       <View key={label} style={styles.section}>
         <Text style={styles.sectionLabel}>{label}</Text>
-        {shown.map((task) => row(task, late))}
+        {nestSubtasks(shown).flatMap(({ subtasks, task }) => [
+          row(task, late),
+          ...subtasks.map((subtask) => row(subtask, late, task)),
+        ])}
       </View>
     );
   };
@@ -297,6 +309,10 @@ const makeStyles = (colors: ThemeColors) =>
       letterSpacing: 0.4,
       paddingBottom: 4,
       textTransform: 'uppercase',
+    },
+    // A subtask's box lines up under its parent's title.
+    subtaskRow: {
+      paddingLeft: 36,
     },
     title: {
       color: colors.text,

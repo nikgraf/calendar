@@ -179,6 +179,44 @@ describe('Converting tasks against the fake Google API', () => {
     expect(await readPendingOpsCount(app.userDataDir)).toBe(0);
   });
 
+  it("the rail's inbox draws each subtask under its parent, in Google's order", async () => {
+    const { cdp } = app;
+    const RAIL = `!!document.querySelector('[data-panel-kind="rail"]')`;
+    // CI's 1024 px window hides the rail at rest: hidden again afterwards,
+    // so the lane chips the later cases click keep their width.
+    const hidden = !(await cdp.eval<boolean>(RAIL));
+    await cdp.showRail();
+    // Top to bottom; a row inside its parent's <li> is indented.
+    const rows = `[...document.querySelectorAll('[data-testid="task-inbox"] [data-testid^="panel-task-"]')].map(
+      (row) => (row.closest('li').parentElement.closest('li') ? '  ' : '') + row.dataset.testid.slice(11),
+    )`;
+    await expect
+      .poll(() => cdp.eval<ReadonlyArray<string>>(rows))
+      .toEqual([
+        'task-groceries',
+        '  task-milk',
+        'task-rent',
+        'task-party',
+        '  task-cake',
+        'task-trip',
+        // By position: the titles alone would put "Apply for visa" first.
+        '  task-passport',
+        '  task-visa',
+        // A reminder, untouched.
+        'ek-rem-1',
+      ]);
+    const indent = await cdp.eval<number>(`(() => {
+      const left = (id) =>
+        document.querySelector('[data-testid="panel-task-' + id + '"]').getBoundingClientRect().left;
+      return left('task-passport') - left('task-trip');
+    })()`);
+    expect(indent).toBeGreaterThan(0);
+    if (hidden) {
+      await clickTestId('panel-toggle');
+      await cdp.waitFor(`!${RAIL}`);
+    }
+  });
+
   it('a reminder moved to Google pushes and gets a server id', async () => {
     const { cdp } = app;
     const chip = await cdp.locate('[data-testid="timed-task-ek-rem-1"]');

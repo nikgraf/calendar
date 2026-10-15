@@ -575,6 +575,16 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   same-list `tasks.move`, unverified live, a new queue path) or folding
   them into the description, where they stop being tasks. Open: nothing
   un-nests a subtask in place (a move to another list does).
+- **Subtasks drawn under their parent** (2026-10-14, #209) — core
+  `nestSubtasks` nests each inbox section on both apps: a subtask under
+  its parent when both are in the section, siblings in Google's
+  `position` order, top-level rows in the section's own order. A subtask
+  whose parent is in another section, completed or filtered out stays a
+  row where its date puts it. Rejected: pulling it under the parent (a
+  late subtask would hide under an undated one) and repeating the parent
+  as a header. Display only: reordering and re-nesting through
+  `tasks.move` need a new op, an optimistic position and drag UI on both
+  apps — its own PR (todo.md).
 - **Convert events ↔ tasks** (2026-09-28, #93) — the same copy-then-delete
   through a shared `crossStore` ordering. The confirmation asks only when
   a set field has no home on the other side: the end time never counts, a

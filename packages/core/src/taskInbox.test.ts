@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vite-plus/test';
-import { groupTaskInbox } from './taskInbox.ts';
+import { groupTaskInbox, nestSubtasks } from './taskInbox.ts';
 import { TaskRecord } from './types.ts';
 
 const TODAY = '2026-10-02';
@@ -74,5 +74,82 @@ describe('groupTaskInbox', () => {
   it('drops a task the window and overdue queries both returned', () => {
     const late = task('rent', { dueDate: '2026-09-17' });
     expect(groupTaskInbox([late, late], TODAY, ZONE).overdue).toHaveLength(1);
+  });
+});
+
+/** A row's id, or `[id, subtask ids]` when it holds subtasks. */
+const shape = (tasks: ReadonlyArray<TaskRecord>) =>
+  nestSubtasks(tasks).map((node) =>
+    node.subtasks.length === 0 ? node.task.id : [node.task.id, node.subtasks.map((t) => t.id)],
+  );
+
+describe('nestSubtasks', () => {
+  it("draws subtasks under their parent in Google's order, the section's order around them", () => {
+    expect(
+      shape([
+        task('groceries', { title: 'Buy groceries' }),
+        // Title order would put "Apply" first; Google's position wins.
+        task('visa', {
+          parentId: 'trip',
+          position: '00000000000000000002',
+          title: 'Apply for visa',
+        }),
+        task('rent', { title: 'Pay rent' }),
+        task('trip', { title: 'Plan trip' }),
+        task('passport', {
+          parentId: 'trip',
+          position: '00000000000000000001',
+          title: 'Renew passport',
+        }),
+        task('milk', { parentId: 'groceries', position: '00000000000000000000', title: 'Milk' }),
+      ]),
+    ).toEqual([['groceries', ['milk']], 'rent', ['trip', ['passport', 'visa']]]);
+  });
+
+  it('puts a subtask without a position yet after its positioned siblings', () => {
+    expect(
+      shape([
+        task('trip'),
+        task('fresh', { parentId: 'trip', title: 'A fresh one' }),
+        task('passport', { parentId: 'trip', position: '00000000000000000005' }),
+      ]),
+    ).toEqual([['trip', ['passport', 'fresh']]]);
+  });
+
+  it('keeps a subtask whose parent is elsewhere as a row of its own section', () => {
+    // The parent is due another day, done, or filtered out: not in this section.
+    expect(shape([task('passport', { parentId: 'trip' }), task('rent')])).toEqual([
+      'passport',
+      'rent',
+    ]);
+  });
+
+  it('only nests under the same list and account', () => {
+    expect(
+      shape([
+        task('trip'),
+        task('other-list', { listId: 'errands', parentId: 'trip' }),
+        task('other-account', { accountId: 'acc-2', parentId: 'trip' }),
+      ]),
+    ).toEqual(['trip', 'other-list', 'other-account']);
+  });
+
+  it('nests one level deep and survives a cycle', () => {
+    expect(
+      shape([
+        task('trip'),
+        task('passport', { parentId: 'trip', position: '1' }),
+        // Google allows no grandchild; one stays at the top.
+        task('photo', { parentId: 'passport' }),
+        task('a', { parentId: 'b' }),
+        task('b', { parentId: 'a' }),
+        task('self', { parentId: 'self' }),
+      ]),
+    ).toEqual([['trip', ['passport']], 'photo', 'a', 'b', 'self']);
+  });
+
+  it('leaves Reminders, which have no parents, as they were', () => {
+    const reminders = [task('call', { provider: 'apple' }), task('water', { provider: 'apple' })];
+    expect(shape(reminders)).toEqual(['call', 'water']);
   });
 });

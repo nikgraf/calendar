@@ -1,8 +1,9 @@
 import type { GoogleFixture } from '@calendar/sync/testing/googleFixture';
 
-/** Today as the RFC 3339 midnight-UTC `due` the Tasks API uses. */
-const todayDue = (): string => {
+/** `days` from today as the RFC 3339 midnight-UTC `due` the Tasks API uses. */
+const dueIn = (days: number): string => {
   const date = new Date();
+  date.setDate(date.getDate() + days);
   const iso = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
   return `${iso}T00:00:00.000Z`;
 };
@@ -53,8 +54,9 @@ const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
 /**
  * The signed-in Google account the Maestro flows see when Metro runs
  * with EXPO_PUBLIC_CALENDAR_GOOGLE=fixture (CI does): one writable
- * calendar for the create-event flow, one task list for the task lane
- * and task-convert flows, one contact birthday for the birthday flow.
+ * calendar for the create-event flow, one task list for the task lane,
+ * task-convert and navigation flows, one contact birthday for the
+ * birthday flow.
  * Served by the in-process fake API; nothing here ever reaches Google.
  */
 export const googleFixture: GoogleFixture = {
@@ -137,10 +139,28 @@ export const googleFixture: GoogleFixture = {
   tasks: {
     'mock-list': [
       {
-        due: todayDue(),
+        due: dueIn(0),
         id: 'task-fixture',
         status: 'needsAction',
         title: 'Fixture task',
+        updated: '2026-01-01T00:00:00.000Z',
+      },
+      // The navigation flow's parent and subtask: three weeks out, so they
+      // sit in the Tasks tab's "Upcoming" and on no day a timeline flow visits.
+      {
+        due: dueIn(21),
+        id: 'task-offsite',
+        status: 'needsAction',
+        title: 'Plan the offsite',
+        updated: '2026-01-01T00:00:00.000Z',
+      },
+      {
+        due: dueIn(21),
+        id: 'task-room',
+        parent: 'task-offsite',
+        position: '00000000000000000000',
+        status: 'needsAction',
+        title: 'Book the room',
         updated: '2026-01-01T00:00:00.000Z',
       },
     ],

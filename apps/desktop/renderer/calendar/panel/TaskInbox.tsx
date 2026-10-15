@@ -5,7 +5,7 @@ import {
   useTaskReadOnlyLookup,
   useToday,
 } from '@calendar/app-state';
-import { calendarTaskKey, overdueLabel, type TaskRecord } from '@calendar/core';
+import { calendarTaskKey, nestSubtasks, overdueLabel, type TaskRecord } from '@calendar/core';
 import { TaskCheck } from '../TaskCheck.tsx';
 import type { useEventDrag } from '../useEventDrag.ts';
 
@@ -13,8 +13,10 @@ import type { useEventDrag } from '../useEventDrag.ts';
  * The rail's task inbox: the late ones, today's and the undated ones. A
  * row's checkbox completes it; the row itself opens the task editor. New
  * tasks come from "+ New" (its Task kind, with "No due date" for an
- * inbox add). Rows carry no `title` attribute: the grid's `[title^=…]`
- * selectors must keep matching the grid alone.
+ * inbox add). A Google subtask sits in a nested list under its parent
+ * when both are in one group (`nestSubtasks`). Rows carry no `title`
+ * attribute: the grid's `[title^=…]` selectors must keep matching the
+ * grid alone.
  */
 export function TaskInbox({
   drag,
@@ -40,17 +42,18 @@ export function TaskInbox({
       taskListId: task.listId,
     });
 
+  // The row is a div, not its <li>: a subtask's list sits inside its
+  // parent's <li>, and a press there must not drag the parent too.
   const row = (task: TaskRecord, late: boolean) => {
     const done = task.status === 'completed';
     const readOnly = isReadOnly(task);
     const dragging = drag.preview?.itemKey === `panel:${calendarTaskKey(task)}`;
     return (
-      <li
+      <div
         className={`flex touch-none items-center gap-1 rounded-control py-0.5 pr-2 pl-0.5 select-none hover:bg-fill ${
           readOnly ? '' : 'cursor-grab'
         } ${dragging ? 'opacity-50' : ''}`}
         data-testid={`panel-task-${task.id}`}
-        key={`${task.listId}:${task.id}`}
         onPointerCancel={drag.onPointerCancel}
         onPointerDown={(event) =>
           drag.onTaskPointerDown(
@@ -93,7 +96,7 @@ export function TaskInbox({
             <span className="shrink-0 text-[11px] text-danger">{overdueLabel(task, today)}</span>
           ) : null}
         </button>
-      </li>
+      </div>
     );
   };
 
@@ -103,7 +106,21 @@ export function TaskInbox({
         <h3 className="px-2 pb-0.5 text-[11px] font-semibold tracking-wide text-ink-secondary uppercase">
           {label}
         </h3>
-        <ul>{tasks.map((task) => row(task, late))}</ul>
+        <ul>
+          {nestSubtasks(tasks).map(({ subtasks, task }) => (
+            <li key={calendarTaskKey(task)}>
+              {row(task, late)}
+              {subtasks.length === 0 ? null : (
+                // Indented by the hit square: a subtask's box lines up under its parent's title.
+                <ul className="pl-7">
+                  {subtasks.map((subtask) => (
+                    <li key={calendarTaskKey(subtask)}>{row(subtask, late)}</li>
+                  ))}
+                </ul>
+              )}
+            </li>
+          ))}
+        </ul>
       </section>
     );
 
