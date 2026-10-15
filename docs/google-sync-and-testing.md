@@ -821,7 +821,9 @@ proven by an `extendedWaitUntil` on its effect (07's notes in their
 field; 20's share sheet and picker, 22's stacked URL alerts gone). Its
 action sits behind a guard that is true at once on the first pass (20:
 the sheet is still up) or a flag that skips it there (07 retypes and 22
-taps Cancel only on a retry).
+taps Cancel only on a retry). Typed text with regex metacharacters in it
+is proven by `copyTextFrom` and an `assertTrue` string compare instead
+(`apply-quick-add.yaml`: the quick-add phrases' `|`).
 
 Shared subflows (`common/`): `launch.yaml` (every flow starts with it:
 launch, recover the dev client if it fell back to the launcher, wait for
@@ -841,7 +843,9 @@ done once the button reads "View: `VIEW`"),
 root shows, then Done), `search-for.yaml` (`QUERY` typed into the Search
 tab's system field until `RESULT` shows; a sentence for the search
 thread is typed the same way and sent with `pressKey: Enter`, the
-keyboard's Search key; the chips' × is "Remove <label>"), `confirm-open.yaml` and
+keyboard's Search key; the chips' × is "Remove <label>"),
+`apply-quick-add.yaml` (`PHRASE` typed into the quick-add field until
+the field holds exactly that, then Apply), `confirm-open.yaml` and
 `await-shell.yaml` (the bootstrap flow's URL alert and shell wait).
 
 The subflows keep conditions off their common path the same way (the
@@ -875,9 +879,10 @@ Selector gotchas (each caused a real failure):
   `.*<title>` also matches the checkbox's "Toggle <title>" label.
 - Never select by `local-…` task ids (the op push swaps them to server
   ids mid-flow); avoid non-ASCII punctuation in typed text, and retype a
-  title or address until the field holds all of it (XCTest garbles
-  input, and Return on a partial address takes the top contact
-  suggestion once 04a has left device Contacts connected on its shard).
+  title, an address or a quick-add phrase until the field holds all of it
+  (XCTest garbles input, and Return on a partial address takes the top
+  contact suggestion once 04a has left device Contacts connected on its
+  shard).
 - The kind control's segments are `mode-event` / `mode-task` /
   `mode-reminder` (a Reminders list sits behind `mode-reminder`, never in
   a task's list picker); a tap on an event opens its detail sheet first.

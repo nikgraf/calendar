@@ -81,6 +81,13 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   conditions (a condition false on the common path waits either way).
   Open: 22's stacked-alert retry ran only on a stand-in (the simulator
   stopped showing the alert).
+- **Quick-add phrases retyped** (2026-10-15, `todo/quick-add-retype`) —
+  XCTest typed flow 06's `| | 20:00-21:00` as `|0-21:00` (run
+  38734567429), and the app read what it got: 00:00–21:00. Each phrase
+  now goes through `common/apply-quick-add.yaml`: type, compare the
+  field's value as a string, erase and retype until it matches, then
+  Apply. Rejected: an `extendedWaitUntil` regex like 03 and 07 (the
+  phrases' `|` would need escaping in every pattern).
 - **Dead Maestro driver retried** (2026-10-14, #205) — when the XCTest
   driver dies mid-run, Maestro fails every later flow in that invocation as
   unreachable; `run-flows.ts` runs exactly those flows once more on an

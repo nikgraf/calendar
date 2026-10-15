@@ -1,0 +1,33 @@
+appId: com.solunivo.app.dev
+name: Type PHRASE into the quick-add field until it holds all of it, then Apply (shared)
+---
+# XCTest typing can drop or move letters (flow 07): run 38734567429 typed
+# "| | 20:00-21:00" as "|0-21:00", the app read it as 00:00-21:00 and the
+# turn the flow waited for never came. Type again until the field holds
+# the whole phrase, so the flow tests reading rather than typing.
+#
+# The field's value proves the typing (`copyTextFrom` reads a filled
+# field's value, and comparing it as a string spares the phrases' `|`
+# from regex escaping) and a failed check erases and types again; the
+# flag keeps the first pass from typing twice. It is reset here because
+# one flow applies several phrases. A `while: notVisible:` loop would wait
+# up to 7 s for its condition on every exit with the phrase right.
+- evalScript: ${output.quickAddTyped = false}
+- tapOn:
+    id: 'quick-add-input'
+- inputText: ${PHRASE}
+- retry:
+    maxRetries: 3
+    commands:
+      - runFlow:
+          when:
+            true: ${output.quickAddTyped}
+          commands:
+            - eraseText: 60
+            - inputText: ${PHRASE}
+      - evalScript: ${output.quickAddTyped = true}
+      - copyTextFrom:
+          id: 'quick-add-input'
+      - assertTrue: ${maestro.copiedText === PHRASE}
+- tapOn:
+    id: 'quick-add-apply'
