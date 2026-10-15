@@ -374,6 +374,60 @@ describe('agent gateway: other agents reach the app over the CLI and MCP', () =>
     await cdp.waitFor(`!document.querySelector('[data-testid="inspector"]')`);
   });
 
+  it('Save in an open editor keeps the notes and place an agent changed meanwhile', async () => {
+    const { cdp } = app;
+    const title = `Budget sync ${String(Date.now())}`;
+    const work = await calendarRef(app, WRITER, 'Work');
+    json(
+      await runAgentCli(
+        app,
+        WRITER,
+        newEvent(work, title, 17, ['--description', 'Old agenda', '--location', 'Room 1']),
+      ),
+    );
+    await cdp.openEditor(`[title^=${JSON.stringify(title)}]`);
+    await cdp.waitFor(
+      `document.querySelector('[data-testid="editor-notes"]')?.value === 'Old agenda'`,
+    );
+    const { events } = json<{ events: ReadonlyArray<{ ref: string; title: string }> }>(
+      await runAgentCli(app, WRITER, ['list_events', '--from', today.from, '--to', today.to]),
+    );
+    const { ref } = events.find((entry) => entry.title === title)!;
+
+    // Edited elsewhere while the form is open, which still shows what it opened with.
+    json(
+      await runAgentCli(app, WRITER, [
+        'update_event',
+        '--ref',
+        ref,
+        '--description',
+        'New agenda',
+        '--location',
+        'Room 2',
+      ]),
+    );
+    const row = async (match: string) =>
+      (await readEvents(app.userDataDir)).find((entry) => entry.title === match);
+    await expect.poll(async () => (await row(title))?.description, POLL).toBe('New agenda');
+
+    // A title-only edit: the untouched notes and location are not sent back.
+    await cdp.eval(`(() => {
+      const input = document.querySelector('input[placeholder="Title"]');
+      const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+      setter.call(input, ${JSON.stringify(`${title} (renamed)`)});
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    })()`);
+    await cdp.clickButtonWithText('Save');
+    await cdp.waitFor(`!document.querySelector('[data-testid="editor-notes"]')`);
+    await expect.poll(async () => (await row(`${title} (renamed)`))?.title, POLL).toBeDefined();
+    expect(await row(`${title} (renamed)`)).toMatchObject({
+      description: 'New agenda',
+      location: 'Room 2',
+    });
+
+    json(await runAgentCli(app, WRITER, ['delete_event', '--ref', ref]));
+  });
+
   it('a search result an agent deletes goes back to the results', async () => {
     const { cdp } = app;
     const title = `Pier walk ${String(Date.now())}`;

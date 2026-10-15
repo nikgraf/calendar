@@ -3,15 +3,16 @@ import {
   BackendError,
   type BackendClient,
   EMPTY_SEARCH_RESULTS,
-  type EventRecord,
+  EventRecord,
   GeoLocation,
   type SearchQuery,
 } from '@calendar/core';
-import { ACCOUNTS_KEY } from '@calendar/db/keys';
+import { ACCOUNTS_KEY, EVENTS_KEY } from '@calendar/db/keys';
 import { Effect } from 'effect';
 import { AsyncResult, Atom, AtomRegistry } from 'effect/reactivity';
 import { describe, expect, it, vi } from 'vite-plus/test';
 import {
+  currentEventKey,
   deviceZoneAtom,
   makeBackendAtoms,
   mapSnapshotKey,
@@ -313,6 +314,91 @@ describe('backend atoms', () => {
     const key = rangeKey(1000, 2000);
     expect(atoms.eventsInRange(key)).toBe(atoms.eventsInRange(key));
     expect(atoms.eventsInRange(key)).not.toBe(atoms.eventsInRange(rangeKey(2000, 3000)));
+  });
+});
+
+/** An occurrence of series `m` as drawn, before any edit. */
+const occurrence = (overrides: Partial<EventRecord> = {}): EventRecord =>
+  new EventRecord({
+    accountId: 'acc-1',
+    calendarId: 'cal-1',
+    endUtc: 2000,
+    etag: null,
+    id: 'm__1000',
+    isAllDay: false,
+    originalStartUtc: 1000,
+    recurringEventId: 'm',
+    startUtc: 1000,
+    status: 'confirmed',
+    syncedAt: 0,
+    syncStatus: 'synced',
+    title: 'Standup',
+    updatedAt: 0,
+    ...overrides,
+  });
+
+describe('currentEvent', () => {
+  it('follows an event on screen through an edit, answers null once it is gone, and fails when the backend cannot say', async () => {
+    let rows: ReadonlyArray<EventRecord> = [];
+    let failing = false;
+    const atoms = makeBackendAtoms({
+      ...makeStubClient().client,
+      getEventsInRange: () => (failing ? fail('database is locked') : Effect.sync(() => rows)),
+    });
+    const registry = AtomRegistry.make();
+    let emit: ((keys: ReadonlyArray<unknown>) => void) | undefined;
+    const unbind = atoms.bindInvalidations(registry, (listener) => {
+      emit = listener;
+      return () => {
+        emit = undefined;
+      };
+    });
+    // The occurrence as drawn when the view opened.
+    const shown = occurrence();
+    rows = [
+      occurrence({ id: 'other', originalStartUtc: undefined, recurringEventId: undefined }),
+      shown,
+    ];
+    const current = atoms.currentEvent(currentEventKey(shown));
+    const unmount = registry.mount(current);
+    const read = (
+      predicate: (result: AsyncResult.AsyncResult<EventRecord | null, unknown>) => boolean,
+    ) =>
+      waitFor(
+        () => registry.get(current),
+        (result) => !AsyncResult.isWaiting(result) && predicate(result),
+      );
+    expect(AsyncResult.getOrThrow(await read(AsyncResult.isSuccess))).toBe(shown);
+    // The accessor atom resolves asynchronously; wait until wired.
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    // Edited on its own elsewhere: Google's instance id, a new title and time.
+    const edited = occurrence({
+      id: 'm_19700101T000001Z',
+      startUtc: 4000,
+      title: 'Standup (moved)',
+    });
+    rows = [edited];
+    emit?.([EVENTS_KEY]);
+    expect(
+      AsyncResult.getOrThrow(
+        await read((result) => AsyncResult.isSuccess(result) && result.value !== shown),
+      ),
+    ).toBe(edited);
+
+    // A read that fails is not "gone".
+    failing = true;
+    emit?.([EVENTS_KEY]);
+    await read(AsyncResult.isFailure);
+
+    failing = false;
+    rows = [];
+    emit?.([EVENTS_KEY]);
+    expect(AsyncResult.getOrThrow(await read(AsyncResult.isSuccess))).toBeNull();
+
+    unbind();
+    unmount();
+    registry.dispose();
   });
 });
 

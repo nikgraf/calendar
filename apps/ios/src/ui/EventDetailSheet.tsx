@@ -1,6 +1,8 @@
 import {
+  eventReadout,
   RSVP_OPTIONS,
   SCOPE_OPTIONS,
+  useCurrentEvent,
   useEventEditorModel,
   useTimeZones,
 } from '@calendar/app-state';
@@ -13,6 +15,7 @@ import {
   Temporal,
   utcMsToPlainDate,
 } from '@calendar/core';
+import { useEffect, useEffectEvent, useState } from 'react';
 import { Linking, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { confirmEditorRequest } from './EventEditSheet.tsx';
 import { BOX_FONT_SCALE, type ThemeColors, useEventTint, useStyles } from './theme.ts';
@@ -31,10 +34,19 @@ const STATUS_LABEL: Record<string, string> = {
  * where, who, the meeting link, the notes — and carries the actions that
  * need no form: RSVP, Convert to task and Delete (with the series scope
  * when the event repeats).
+ *
+ * It follows its event, as the desktop inspector does: `event` is the
+ * record as tapped, and the sheet shows the event as it is now — an edit
+ * landing after it opened (a sync pass bringing another device's edit or
+ * an agent's on the Mac) shows here, Edit and Convert start from it, and
+ * an event that is gone closes the sheet. Everything shown is read from
+ * that record (`eventReadout`); the editor model seeds its fields once,
+ * when it mounts, and is here for the actions and their state (the scope,
+ * the reply just given, an error).
  */
 export function EventDetailSheet({
   calendars,
-  event,
+  event: opened,
   onClose,
   onConvert,
   onEdit,
@@ -43,11 +55,28 @@ export function EventDetailSheet({
   calendars: ReadonlyArray<CalendarInfo>;
   event: EventRecord;
   onClose: () => void;
-  onConvert: () => void;
-  onEdit: () => void;
+  /** Convert to a task: opens the editor in task mode on the event as it is now. */
+  onConvert: (event: EventRecord) => void;
+  /** Opens the editor on the event as it is now. */
+  onEdit: (event: EventRecord) => void;
   timeZone: string;
 }) {
   const styles = useStyles(makeStyles);
+  const [event, setEvent] = useState(opened);
+  const current = useCurrentEvent(event);
+  if (current !== null && current !== event) {
+    // Render-phase state adjustment (the React "derive from props" pattern).
+    setEvent(current);
+  }
+  // Deleted (here, elsewhere, or a whole series): the last version seen
+  // stays up until the sheet has gone. A read that failed is not "gone".
+  const gone = current === null;
+  const close = useEffectEvent(onClose);
+  useEffect(() => {
+    if (gone) {
+      close();
+    }
+  }, [gone]);
   const model = useEventEditorModel({
     calendars,
     confirm: confirmEditorRequest,
@@ -56,27 +85,10 @@ export function EventDetailSheet({
     timeZone,
   });
   const { secondary: secondaryZones } = useTimeZones();
-  const {
-    attendees,
-    attendeeStatus,
-    canRsvp,
-    date,
-    description,
-    endTime,
-    error,
-    isAllDay,
-    isRecurring,
-    joinUrl,
-    location,
-    readOnly,
-    remove,
-    respond,
-    rsvp,
-    scope,
-    setScope,
-    startTime,
-    title,
-  } = model;
+  const { canRsvp, error, isRecurring, joinUrl, readOnly, remove, respond, rsvp, scope, setScope } =
+    model;
+  const { attendees, date, description, endTime, isAllDay, location, startTime, title } =
+    eventReadout(event, timeZone);
   const calendar = calendars.find(
     (candidate) => candidate.accountId === event.accountId && candidate.id === event.calendarId,
   );
@@ -111,7 +123,7 @@ export function EventDetailSheet({
               {calendar?.summary ?? 'Calendar'}
             </Text>
           </View>
-          <Pressable accessibilityRole="button" onPress={onEdit} testID="event-edit">
+          <Pressable accessibilityRole="button" onPress={() => onEdit(event)} testID="event-edit">
             <Text maxFontSizeMultiplier={BOX_FONT_SCALE} style={styles.edit}>
               Edit
             </Text>
@@ -177,19 +189,14 @@ export function EventDetailSheet({
                   })}
                 </View>
               ) : null}
-              {attendees.map((attendee) => {
-                const status = attendeeStatus(attendee.email);
-                return (
-                  <View key={attendee.email} style={styles.attendeeRow}>
-                    <Text numberOfLines={1} selectable style={styles.primaryLine}>
-                      {attendee.displayName ?? attendee.email}
-                    </Text>
-                    <Text style={styles.secondaryLine}>
-                      {STATUS_LABEL[status?.responseStatus ?? 'needsAction']}
-                    </Text>
-                  </View>
-                );
-              })}
+              {attendees.map((attendee) => (
+                <View key={attendee.email} style={styles.attendeeRow}>
+                  <Text numberOfLines={1} selectable style={styles.primaryLine}>
+                    {attendee.displayName ?? attendee.email}
+                  </Text>
+                  <Text style={styles.secondaryLine}>{STATUS_LABEL[attendee.responseStatus]}</Text>
+                </View>
+              ))}
             </View>
           ) : null}
           {description ? (
@@ -227,7 +234,7 @@ export function EventDetailSheet({
                 accessibilityRole="button"
                 accessibilityState={{ disabled: isRecurring && scope !== 'series' }}
                 disabled={isRecurring && scope !== 'series'}
-                onPress={onConvert}
+                onPress={() => onConvert(event)}
                 style={[
                   styles.secondaryButton,
                   isRecurring && scope !== 'series' && styles.disabled,

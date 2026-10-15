@@ -1,6 +1,7 @@
 import {
   AppleCalendarClient,
   type AppleCalendarClientShape,
+  type AppleCalendarError,
   mapAppleEvent,
 } from '@calendar/apple-calendar';
 import { APPLE_CALENDAR_ACCOUNT_ID, type EventRecord, isMirrorUrl, Temporal } from '@calendar/core';
@@ -8,6 +9,7 @@ import { AccountRepo, CalendarRepo } from '@calendar/db';
 import { EVENTS_KEY } from '@calendar/db/keys';
 import { Clock, Context, Effect, Layer, Stream } from 'effect';
 import { Reactivity } from 'effect/reactivity/Reactivity';
+import type { SqlError } from 'effect/sql/SqlError';
 
 /** EKEventStoreChanged arrives in bursts (iCloud sync, our own writes). */
 const CHANGE_DEBOUNCE = '1 second';
@@ -23,6 +25,17 @@ export interface AppleCalendarEventsShape {
     rangeStartUtc: number,
     rangeEndUtc: number,
   ) => Effect.Effect<ReadonlyArray<EventRecord>>;
+  /**
+   * The same read, failing when EventKit (or the calendar list) cannot be
+   * read instead of answering no events: for a lookup that must tell an
+   * event that is gone from one it could not see. An account flagged for
+   * lost access is read anyway, so a refusal fails too (and still flags
+   * it). No account, or every calendar hidden, is still no events.
+   */
+  readonly eventsInRangeOrFail: (
+    rangeStartUtc: number,
+    rangeEndUtc: number,
+  ) => Effect.Effect<ReadonlyArray<EventRecord>, AppleCalendarError | SqlError>;
   /** Repaints event views (after a write or a store change). */
   readonly invalidate: Effect.Effect<void>;
 }
@@ -51,12 +64,10 @@ const make: Effect.Effect<
   const reactivity = yield* Reactivity;
   const invalidate = Effect.ignore(reactivity.invalidate([EVENTS_KEY]));
 
-  const eventsInRange = (rangeStartUtc: number, rangeEndUtc: number) =>
+  // The read itself: fails when EventKit (or the calendar list) cannot be
+  // read, and lost access flags the account.
+  const readRange = (rangeStartUtc: number, rangeEndUtc: number) =>
     Effect.gen(function* () {
-      const account = yield* accountRepo.get(APPLE_CALENDAR_ACCOUNT_ID);
-      if (!account || account.status !== 'ok') {
-        return [];
-      }
       const visible = new Set(
         (yield* calendarRepo.list(APPLE_CALENDAR_ACCOUNT_ID))
           .filter((calendar) => calendar.isVisible)
@@ -80,16 +91,35 @@ const make: Effect.Effect<
         )
         .map((event) => mapAppleEvent(event, { deviceTimeZone: zone, now }));
     }).pipe(
-      Effect.catchTag('AppleCalendarAccessError', () =>
-        Effect.as(
-          Effect.ignore(accountRepo.setStatus(APPLE_CALENDAR_ACCOUNT_ID, 'reauth_required')),
-          [],
-        ),
+      Effect.tapErrorTag('AppleCalendarAccessError', () =>
+        Effect.ignore(accountRepo.setStatus(APPLE_CALENDAR_ACCOUNT_ID, 'reauth_required')),
       ),
+    );
+
+  const eventsInRange = (rangeStartUtc: number, rangeEndUtc: number) =>
+    Effect.gen(function* () {
+      const account = yield* accountRepo.get(APPLE_CALENDAR_ACCOUNT_ID);
+      if (!account || account.status !== 'ok') {
+        return [];
+      }
+      return yield* readRange(rangeStartUtc, rangeEndUtc);
+    }).pipe(
+      Effect.catchTag('AppleCalendarAccessError', () => Effect.succeed([])),
       Effect.catchCause((cause) =>
         Effect.as(Effect.logWarning('apple calendar events unavailable', { cause }), []),
       ),
     );
+
+  // An account flagged for lost access is read all the same: a refusal
+  // fails (the event is out of sight, not gone), and access that came back
+  // answers before the next sync pass clears the flag.
+  const eventsInRangeOrFail = (rangeStartUtc: number, rangeEndUtc: number) =>
+    Effect.gen(function* () {
+      if (!(yield* accountRepo.get(APPLE_CALENDAR_ACCOUNT_ID))) {
+        return [];
+      }
+      return yield* readRange(rangeStartUtc, rangeEndUtc);
+    });
 
   yield* Effect.forkDetach(
     client.changes.pipe(
@@ -98,7 +128,7 @@ const make: Effect.Effect<
     ),
   );
 
-  return { eventsInRange, invalidate };
+  return { eventsInRange, eventsInRangeOrFail, invalidate };
 });
 
 export class AppleCalendarEvents extends Context.Service<

@@ -34,7 +34,7 @@ import {
   type EventRecord,
   EventReminders,
   type FreeSlot,
-  GeoLocation,
+  type GeoLocation,
   type ItemKind,
   MAX_REMINDER_OVERRIDES,
   type PlaceSuggestion,
@@ -48,6 +48,7 @@ import {
 } from '@calendar/core';
 import { useCallback, useRef, useState } from 'react';
 import { deleteQuestion } from './deleteQuestion.ts';
+import { eventEditorChanges, type EventEditorText, vouchedGeo } from './eventEditorChanges.ts';
 import { useAccounts, useBackendMutations, useEventMaster, useLocationGeo } from './hooks.ts';
 import { useOneWrite } from './oneWrite.ts';
 import { useRepeatState } from './repeatState.ts';
@@ -588,6 +589,16 @@ export const useEventEditorModel = ({
     setRsvp(storedRsvp);
   }
   const [description, setDescription] = useState(existing?.description ?? '');
+  // The text and coordinates as the form opened: an update sends only what
+  // differs from them (`eventEditorChanges`) — captured once, never re-read
+  // from the record, so an edit made elsewhere meanwhile survives a Save
+  // that did not touch it.
+  const [openedText] = useState<EventEditorText>(() => ({
+    description: description.trim(),
+    geo,
+    location: location.trim(),
+    title: title.trim(),
+  }));
   // An existing series seeds the repeat form from its master's lines once
   // they are here (keyed, so the form re-seeds when they land); a new
   // event from the quick-add prefill.
@@ -869,25 +880,6 @@ export const useEventEditorModel = ({
         ? (calendarKey.split(':', 2) as [string, string])
         : undefined;
     const built = buildEventTimes(fields, timeZone);
-    // A title-only edit must not rebuild the span: untouched times stay out
-    // of an update, and the stored ones are kept as they are.
-    const times =
-      existing &&
-      !updateSendsTimes({
-        changed: timeFieldsChanged(fields, openedTimes),
-        isRecurring,
-        scope,
-      })
-        ? {}
-        : built;
-    // Only coordinates the user vouched for reach Google: the event's own
-    // (mirrored) ones or a picked suggestion, and only while they match the
-    // text being saved. The open-time lookup of free text stays on this
-    // device — MapKit's guess for "Room 4B" must not become every device's
-    // truth. An update sends null so stale ones are cleared.
-    const savedGeo = geoMatches(geo, location.trim())
-      ? new GeoLocation({ ...geo, source: location.trim() })
-      : undefined;
     try {
       const move =
         existing && moveTarget
@@ -911,47 +903,49 @@ export const useEventEditorModel = ({
           return;
         }
       }
-      if (existing && isRecurring && existing.recurringEventId) {
-        await mutations.updateRecurring({
-          accountId,
-          calendarId,
-          changes: {
-            ...(attendeesDirty ? { attendees } : {}),
+      if (existing) {
+        const masterId = isRecurring ? existing.recurringEventId : undefined;
+        const changes = eventEditorChanges({
+          attendees: attendeesDirty ? attendees : undefined,
+          current: {
             description: description.trim(),
-            geo: savedGeo ?? null,
-            // Sent so the times are read as what they are: a switch is
-            // refused above, and by the mutation should one get past.
-            isAllDay,
-            // Empty string clears the field; undefined would read as "unchanged".
+            geo,
             location: location.trim(),
-            // The rule only when edited: lines for a new one, null for "does not repeat".
-            ...(repeatDirty
-              ? { recurrence: spec ? [buildRecurrenceRule(spec, isAllDay, timeZone)] : null }
-              : {}),
-            ...(remindersDirty ? { reminders } : {}),
             title: title.trim(),
-            ...times,
           },
-          masterId: existing.recurringEventId,
-          originalStartUtc: existing.originalStartUtc ?? existing.startUtc,
-          scope,
+          initial: openedText,
+          // The rule only when edited: lines for a new one, null for "does not repeat".
+          recurrence:
+            masterId && repeatDirty
+              ? spec
+                ? [buildRecurrenceRule(spec, isAllDay, timeZone)]
+                : null
+              : undefined,
+          reminders: remindersDirty ? reminders : undefined,
+          // A title-only edit must not rebuild the span: untouched times
+          // stay out of an update, and the stored ones are kept as they are.
+          times: updateSendsTimes({
+            changed: timeFieldsChanged(fields, openedTimes),
+            isRecurring,
+            scope,
+          })
+            ? { ...built, isAllDay }
+            : undefined,
         });
-      } else if (existing) {
-        await mutations.updateEvent({
-          accountId,
-          calendarId,
-          changes: {
-            ...(attendeesDirty ? { attendees } : {}),
-            description: description.trim(),
-            geo: savedGeo ?? null,
-            isAllDay,
-            location: location.trim(),
-            ...(remindersDirty ? { reminders } : {}),
-            title: title.trim(),
-            ...times,
-          },
-          eventId: existing.id,
-        });
+        // An untouched Save writes nothing; a move (below) still runs.
+        const edited = Object.keys(changes).length > 0;
+        if (edited && masterId) {
+          await mutations.updateRecurring({
+            accountId,
+            calendarId,
+            changes,
+            masterId,
+            originalStartUtc: existing.originalStartUtc ?? existing.startUtc,
+            scope,
+          });
+        } else if (edited) {
+          await mutations.updateEvent({ accountId, calendarId, changes, eventId: existing.id });
+        }
       } else {
         // A carried URL is the event's on Apple; on Google it rides in the description.
         const targetProvider = calendarOf(calendarKey)?.provider ?? 'google';
@@ -965,7 +959,8 @@ export const useEventEditorModel = ({
           ...(attendees.length > 0 && capabilities.canInvite ? { attendees } : {}),
           calendarId,
           ...(draftDescription ? { description: draftDescription } : {}),
-          geo: savedGeo,
+          // Only coordinates the user vouched for reach Google.
+          geo: vouchedGeo(geo, location.trim()),
           isAllDay,
           location: location.trim() || undefined,
           recurrence: (() => {
