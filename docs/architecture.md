@@ -807,9 +807,10 @@ details, or Custom), so a calendar can be shared without the details.
 - **Move and resize an event**: desktop `useEventDrag` (pointer capture,
   4 px threshold, 15-minute snap, days by column width; Enter/Space are
   ignored mid-press and a lost capture ends the drag); iOS
-  `DraggableEventBlock` (250 ms long press, then drag; a bottom handle
-  resizes with the same hold). Both commit through the op queue. The
-  desktop hook is owned by the app, not the week view, so the panel's
+  `DraggableEventBlock` (250 ms long press, then drag; one pan for both,
+  and a touch-down on the block's bottom 16 pt resizes instead of
+  moving). Both commit through the op queue. The desktop hook is owned
+  by the app, not the week view, so the panel's
   task rows drag onto the grid and lane too; a task drop is judged by
   where the pointer is released (`dropTargetAt`) under one pure rule
   (`dropTaskChanges`: a grid drop sets day and time, a lane drop clears
