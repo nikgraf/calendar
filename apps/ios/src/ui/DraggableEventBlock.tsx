@@ -8,12 +8,14 @@ import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
   runOnJS,
   runOnUI,
+  useAnimatedReaction,
   useAnimatedStyle,
   useSharedValue,
   withTiming,
 } from 'react-native-reanimated';
 import { BOX_FONT_SCALE, useEventTint } from './theme.ts';
 import { pxToMinutes, SNAP_PX } from './timelineLayout.ts';
+import type { EdgeScroll } from './useEdgeScroll.ts';
 
 /**
  * How long a dropped block waits for its write to redraw it before it goes
@@ -25,13 +27,21 @@ const DROP_SETTLE_MS = 1500;
 const MOVE = 1;
 const RESIZE = 2;
 
+const snapPx = (px: number): number => {
+  'worklet';
+  return Math.round(px / SNAP_PX) * SNAP_PX;
+};
+
 /**
  * A timed event in a timeline column: long-press-drag moves it (15-minute
- * snap), a long press on the bottom edge resizes it, a tap opens it.
+ * snap), a long press on the bottom edge resizes it, a tap opens it. Held
+ * near the grid's top or bottom edge, either drag scrolls the grid, and the
+ * block moves by the finger's travel plus the scroll since the press.
  */
 export function DraggableEventBlock({
   color,
   compact,
+  edgeScroll,
   event,
   height,
   left,
@@ -47,6 +57,7 @@ export function DraggableEventBlock({
   color: string;
   /** Seven columns on a phone: smaller type, no time line. */
   compact: boolean;
+  edgeScroll: EdgeScroll;
   event: EventRecord;
   height: number;
   left: DimensionValue;
@@ -76,6 +87,11 @@ export function DraggableEventBlock({
   // it: a hold on the bottom edge also starts the move pan, which fails once
   // the resize takes the touch and still finalizes.
   const dragging = useSharedValue(0);
+  // The grid's offset at the press, and the owning pan's last translation:
+  // the block lives in the scrolled content, so a scroll under a still
+  // finger moves it as far as the finger would.
+  const startScroll = useSharedValue(0);
+  const lastTranslation = useSharedValue(0);
   // Recurring instances drag too — the commit becomes a single-instance
   // override. Nothing in a calendar we cannot write moves.
   const draggable = !event.recurrence && !readOnly;
@@ -97,7 +113,7 @@ export function DraggableEventBlock({
       extraHeight.value = withTiming(0, { duration: 160 });
     }
   };
-  const begin = (pan: number) => {
+  const begin = (pan: number, windowY: number) => {
     'worklet';
     if (held.value === 1 || dragging.value !== 0) {
       return;
@@ -105,14 +121,51 @@ export function DraggableEventBlock({
     dragging.value = pan;
     drags.value += 1;
     lifted.value = withTiming(1, { duration: 120 });
+    startScroll.value = edgeScroll.scrollY.value;
+    lastTranslation.value = 0;
+    edgeScroll.begin();
+    edgeScroll.follow(windowY);
   };
   const finish = (pan: number) => {
     'worklet';
     if (dragging.value === pan) {
       dragging.value = 0;
       lifted.value = withTiming(0, { duration: 120 });
+      edgeScroll.end();
     }
   };
+  /** How far the owning pan has moved the block: the finger's travel plus the scroll since the press. */
+  const travel = (translationY: number): number => {
+    'worklet';
+    return translationY + edgeScroll.scrollY.value - startScroll.value;
+  };
+  /** Draws the owning pan's drag at the finger's last translation. */
+  const place = () => {
+    'worklet';
+    const shift = snapPx(travel(lastTranslation.value));
+    if (dragging.value === MOVE) {
+      translateY.value = shift;
+    } else if (dragging.value === RESIZE) {
+      extraHeight.value = shift;
+    }
+  };
+  const update = (pan: number, translationY: number, windowY: number) => {
+    'worklet';
+    if (dragging.value === pan) {
+      lastTranslation.value = translationY;
+      edgeScroll.follow(windowY);
+      place();
+    }
+  };
+  // The edge scroll moved the grid under a still finger.
+  useAnimatedReaction(
+    () => edgeScroll.ticks.value,
+    (tick, previous) => {
+      if (previous !== null && tick !== previous) {
+        place();
+      }
+    },
+  );
   // The write resolves before its refetch redraws the block; a block still
   // displaced a moment later was not moved (the write failed or changed
   // nothing), so it goes back.
@@ -145,13 +198,11 @@ export function DraggableEventBlock({
   const resizePan = Gesture.Pan()
     .enabled(draggable)
     .activateAfterLongPress(250)
-    .onStart(() => {
-      begin(RESIZE);
+    .onStart((start) => {
+      begin(RESIZE, start.absoluteY);
     })
-    .onUpdate((update) => {
-      if (dragging.value === RESIZE) {
-        extraHeight.value = Math.round(update.translationY / SNAP_PX) * SNAP_PX;
-      }
+    .onUpdate((change) => {
+      update(RESIZE, change.translationY, change.absoluteY);
     })
     .onEnd((end, success) => {
       if (dragging.value !== RESIZE) {
@@ -160,7 +211,7 @@ export function DraggableEventBlock({
       // A cancelled pan (the system took the touch) changes nothing.
       if (success) {
         held.value = 1;
-        runOnJS(commitResize)(end.translationY, drags.value);
+        runOnJS(commitResize)(travel(end.translationY), drags.value);
       } else {
         goBack(drags.value);
       }
@@ -174,13 +225,11 @@ export function DraggableEventBlock({
     .activateAfterLongPress(250)
     // A hold on the bottom edge is a resize.
     .requireExternalGestureToFail(resizePan)
-    .onStart(() => {
-      begin(MOVE);
+    .onStart((start) => {
+      begin(MOVE, start.absoluteY);
     })
-    .onUpdate((update) => {
-      if (dragging.value === MOVE) {
-        translateY.value = Math.round(update.translationY / SNAP_PX) * SNAP_PX;
-      }
+    .onUpdate((change) => {
+      update(MOVE, change.translationY, change.absoluteY);
     })
     .onEnd((end, success) => {
       if (dragging.value !== MOVE) {
@@ -188,7 +237,7 @@ export function DraggableEventBlock({
       }
       if (success) {
         held.value = 1;
-        runOnJS(commitMove)(end.translationY, drags.value);
+        runOnJS(commitMove)(travel(end.translationY), drags.value);
       } else {
         goBack(drags.value);
       }

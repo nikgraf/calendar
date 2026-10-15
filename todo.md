@@ -91,11 +91,9 @@ The 2026-10-02 review's findings are closed in `docs/decisions.md`
       `TaskDraft`, whose `dueDate` is required; only Reminders →
       Reminders re-homes in place and keeps it undated).
 
-- [ ] Task drag follow-ups — auto-scroll the grid while a chip is
-      dragged near its top or bottom edge (both platforms; today the
-      drop needs the target slot on screen); shrink `WEEK_SWIPE_BUFFER`
-      once day-by-day paging has proven itself on device (seven columns
-      each side is more than a flick reveals).
+- [ ] Task drag follow-up — shrink `WEEK_SWIPE_BUFFER` once day-by-day
+      paging has proven itself on device (seven columns each side is
+      more than a flick reveals).
 
 - [ ] Agent gateway follow-ups (shipped 2026-10-01, docs/agent-gateway.md)
       — a login item and a menu-bar item, so agents work without anyone

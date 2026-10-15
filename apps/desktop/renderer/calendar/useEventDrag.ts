@@ -2,6 +2,10 @@ import { commitTaskDrop, useGuardedMutations } from '@calendar/app-state';
 import {
   type DropTarget,
   dropTargetAt,
+  EDGE_SCROLL_HOURS_PER_SECOND,
+  EDGE_SCROLL_IDLE,
+  type EdgeScrollState,
+  edgeScrollStep,
   moveEventTimes,
   moveTimedTask,
   resizeEventEnd,
@@ -20,6 +24,10 @@ import {
 } from 'react';
 
 const DRAG_THRESHOLD_PX = 4;
+/** How deep the band along the grid's top and bottom edge is that scrolls a drag. */
+const EDGE_SCROLL_ZONE_PX = 40;
+/** The longest frame the edge scroll moves by, so a stalled frame never jumps the grid. */
+const EDGE_SCROLL_MAX_FRAME_MS = 50;
 
 export type DragMode = 'move' | 'resize';
 /**
@@ -70,11 +78,18 @@ const sameTarget = (a: DropTarget | null, b: DropTarget | null): boolean =>
 
 interface DragOrigin {
   active: boolean;
+  /** Which grid edges this drag may scroll (`edgeScrollStep`). */
+  edge: EdgeScrollState;
   readonly itemKey: string;
+  /** The pointer's last position: the edge scroll re-judges the drag from it while the grid moves under a still pointer. */
+  lastClientX: number;
+  lastClientY: number;
   readonly mode: DragMode;
   readonly pointerId: number;
   readonly startClientX: number;
   readonly startClientY: number;
+  /** The grid's scroll offset at the press: a scroll since then moves the drag by as much as the pointer. */
+  readonly startScrollTop: number;
   readonly target:
     | { readonly event: EventRecord; readonly kind: 'event'; readonly readOnly: boolean }
     | {
@@ -104,6 +119,11 @@ const isDraggable = (origin: DragOrigin): boolean =>
  * Task chips also drag between the all-day lane and the grid: their drop is
  * judged by where the pointer is released (`DragDeltas.target`), so a lane
  * chip can take a time and a timed block can lose one.
+ *
+ * Held near the grid's top or bottom edge, a drag scrolls the grid
+ * (`edgeScrollStep`), and every offset counts the scroll since the press,
+ * so a slot off screen is reachable and the wheel mid-drag moves nothing
+ * out from under the pointer.
  *
  * Only `preview` (which block, which mode) is React state; the per-move
  * offsets go through a tiny external store so the dragged block alone
@@ -186,6 +206,17 @@ export const useEventDrag = ({
   const getPointer = useCallback(() => pointerRef.current, []);
   // Suppresses the day column's slot-click that follows a drag's pointerup.
   const suppressClickRef = useRef(false);
+  // The edge scroll's next frame while a drag is under way, and what it
+  // carries from one frame to the next: the time, the sub-pixel remainder
+  // and the scroll offset the drag was last judged at.
+  const edgeFrameRef = useRef<number | null>(null);
+  const edgeLoopRef = useRef({ carry: 0, scrollTop: 0, time: 0 });
+  const stopEdgeScroll = () => {
+    if (edgeFrameRef.current !== null) {
+      cancelAnimationFrame(edgeFrameRef.current);
+      edgeFrameRef.current = null;
+    }
+  };
 
   /** Ends a press without changing anything: Escape, a cancelled pointer, a lost capture. */
   const abandonPress = () => {
@@ -195,6 +226,7 @@ export const useEventDrag = ({
       suppressClickRef.current = true;
     }
     originRef.current = null;
+    stopEdgeScroll();
     setPreview(null);
     publishDeltas(NO_DELTAS);
     publishPointer(null);
@@ -238,6 +270,9 @@ export const useEventDrag = ({
     window.addEventListener('lostpointercapture', onLostCapture, true);
     window.addEventListener('pointerdown', onPressStart, true);
     return () => {
+      if (edgeFrameRef.current !== null) {
+        cancelAnimationFrame(edgeFrameRef.current);
+      }
       window.removeEventListener('keydown', onKeyDown);
       window.removeEventListener('keydown', onActivationKey, true);
       window.removeEventListener('lostpointercapture', onLostCapture, true);
@@ -281,7 +316,13 @@ export const useEventDrag = ({
   };
 
   const deltasFor = (origin: DragOrigin, clientX: number, clientY: number): DragDeltas => {
-    const deltaMinutes = snapMinutes(((clientY - origin.startClientY) / hourHeight) * 60);
+    // The block is drawn in the scrolled content: a scroll since the press
+    // (the edge scroll, the wheel) moves it as far as the pointer would.
+    const scrolled =
+      (scrollerRef.current?.scrollTop ?? origin.startScrollTop) - origin.startScrollTop;
+    const deltaMinutes = snapMinutes(
+      ((clientY - origin.startClientY + scrolled) / hourHeight) * 60,
+    );
     if (origin.mode === 'resize') {
       return { deltaDays: 0, deltaMinutes, target: null };
     }
@@ -307,6 +348,55 @@ export const useEventDrag = ({
     return { deltaDays, deltaMinutes, target };
   };
 
+  /** The edge scroll at the pointer's last position; none while a panel row is outside the calendar. */
+  const edgeStepAt = (origin: DragOrigin) => {
+    const scroller = scrollerRef.current?.getBoundingClientRect();
+    if (!scroller || !insideCalendar(origin, origin.lastClientX)) {
+      return { state: origin.edge, velocity: 0 };
+    }
+    return edgeScrollStep(
+      origin.edge,
+      origin.lastClientY,
+      scroller,
+      EDGE_SCROLL_ZONE_PX,
+      EDGE_SCROLL_HOURS_PER_SECOND * hourHeight,
+    );
+  };
+
+  /**
+   * One frame of a drag: scrolls the grid while the pointer is held near
+   * its top or bottom edge, and re-judges the drag whenever the grid moved
+   * under the pointer — by this loop or by the wheel, neither of which
+   * sends a pointermove.
+   */
+  const edgeFrame = (now: number) => {
+    const origin = originRef.current;
+    const scroller = scrollerRef.current;
+    if (!origin?.active || !scroller) {
+      edgeFrameRef.current = null;
+      return;
+    }
+    const loop = edgeLoopRef.current;
+    const { state, velocity } = edgeStepAt(origin);
+    origin.edge = state;
+    // A frame's timestamp can predate the press that started the loop.
+    const elapsed = Math.min(Math.max(now - loop.time, 0), EDGE_SCROLL_MAX_FRAME_MS);
+    loop.carry += (velocity * elapsed) / 1000;
+    loop.time = Math.max(now, loop.time);
+    // Whole pixels, the rest carried: a fraction can round away, and the
+    // slow start of the ramp would then never move.
+    const step = Math.trunc(loop.carry);
+    if (step !== 0) {
+      loop.carry -= step;
+      scroller.scrollTop += step;
+    }
+    if (scroller.scrollTop !== loop.scrollTop) {
+      loop.scrollTop = scroller.scrollTop;
+      publishDeltas(deltasFor(origin, origin.lastClientX, origin.lastClientY));
+    }
+    edgeFrameRef.current = requestAnimationFrame(edgeFrame);
+  };
+
   const onPointerDown = (
     event: EventRecord,
     itemKey: string,
@@ -319,11 +409,15 @@ export const useEventDrag = ({
     domEvent.stopPropagation();
     const origin: DragOrigin = {
       active: false,
+      edge: EDGE_SCROLL_IDLE,
       itemKey,
+      lastClientX: domEvent.clientX,
+      lastClientY: domEvent.clientY,
       mode,
       pointerId: domEvent.pointerId,
       startClientX: domEvent.clientX,
       startClientY: domEvent.clientY,
+      startScrollTop: scrollerRef.current?.scrollTop ?? 0,
       target: { event, kind: 'event', readOnly: isEventReadOnly(event) },
     };
     if (!isDraggable(origin) && mode !== 'move') {
@@ -352,11 +446,15 @@ export const useEventDrag = ({
     domEvent.stopPropagation();
     const origin: DragOrigin = {
       active: false,
+      edge: EDGE_SCROLL_IDLE,
       itemKey,
+      lastClientX: domEvent.clientX,
+      lastClientY: domEvent.clientY,
       mode: 'move',
       pointerId: domEvent.pointerId,
       startClientX: domEvent.clientX,
       startClientY: domEvent.clientY,
+      startScrollTop: scrollerRef.current?.scrollTop ?? 0,
       target: {
         dayIndex: options.dayIndex,
         from: options.from,
@@ -388,6 +486,9 @@ export const useEventDrag = ({
     }
     if (!origin.active) {
       origin.active = true;
+      // Armed from the press first (the last position is still the press):
+      // a fast first move can land straight in an edge's band.
+      origin.edge = edgeStepAt(origin).state;
       activeItemKeyRef.current = origin.itemKey;
       setPreview({
         ...(origin.target.kind === 'task'
@@ -396,7 +497,17 @@ export const useEventDrag = ({
         itemKey: origin.itemKey,
         mode: origin.mode,
       });
+      edgeLoopRef.current = {
+        carry: 0,
+        scrollTop: scrollerRef.current?.scrollTop ?? 0,
+        time: performance.now(),
+      };
+      stopEdgeScroll();
+      edgeFrameRef.current = requestAnimationFrame(edgeFrame);
     }
+    origin.lastClientX = domEvent.clientX;
+    origin.lastClientY = domEvent.clientY;
+    origin.edge = edgeStepAt(origin).state;
     publishDeltas(deltasFor(origin, domEvent.clientX, domEvent.clientY));
     if (origin.target.kind === 'task' && origin.target.from === 'panel') {
       publishPointer({ x: domEvent.clientX, y: domEvent.clientY });
@@ -414,6 +525,7 @@ export const useEventDrag = ({
   const onPointerUp = (domEvent: React.PointerEvent) => {
     const origin = originRef.current;
     originRef.current = null;
+    stopEdgeScroll();
     if (!origin || origin.pointerId !== domEvent.pointerId) {
       return;
     }

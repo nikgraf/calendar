@@ -10,6 +10,8 @@ interface PanMock {
 
 /** Every `Gesture.Pan()` the last render built, by the builder it returned. */
 const pans = vi.hoisted(() => new Map<unknown, PanMock>());
+/** The last render's `useAnimatedReaction`s, to fire as the UI runtime would. */
+const reactions = vi.hoisted(() => [] as Array<(value: unknown, previous: unknown) => void>);
 
 vi.mock('react', async (importOriginal) => ({
   ...(await importOriginal<typeof import('react')>()),
@@ -49,6 +51,9 @@ vi.mock('react-native-reanimated', () => ({
   default: { View: 'Animated.View' },
   runOnJS: (callback: Callback) => callback,
   runOnUI: (callback: Callback) => callback,
+  useAnimatedReaction: (_prepare: unknown, react: (value: unknown, previous: unknown) => void) => {
+    reactions.push(react);
+  },
   useAnimatedStyle: () => ({}),
   useSharedValue: <T,>(value: T) => ({ value }),
   withTiming: <T,>(value: T) => value,
@@ -60,16 +65,33 @@ vi.mock('./theme.ts', () => ({
 
 const { DraggableEventBlock } = await import('./DraggableEventBlock.tsx');
 
+/** The timeline's edge scroll as a block sees it: the grid's offset and the drag's calls. */
+const edgeScroll = () => ({
+  begin: vi.fn(),
+  end: vi.fn(),
+  follow: vi.fn(),
+  scrollY: { value: 400 },
+  ticks: { value: 0 },
+});
+
 /** Builds the block once and hands back its two pans' callbacks. */
-const block = (onCommitResize: () => Promise<void>) => {
+const block = (
+  onCommitResize: () => Promise<void>,
+  options: {
+    edge?: ReturnType<typeof edgeScroll>;
+    onCommitMove?: (deltaMinutes: number) => Promise<void>;
+  } = {},
+) => {
   pans.clear();
+  reactions.length = 0;
   DraggableEventBlock({
     color: '#3366ff',
     compact: true,
+    edgeScroll: (options.edge ?? edgeScroll()) as never,
     event: { recurrence: null } as unknown as EventRecord,
     height: 56,
     left: 0,
-    onCommitMove: () => Promise.resolve(),
+    onCommitMove: options.onCommitMove ?? (() => Promise.resolve()),
     onCommitResize,
     onPress: () => {},
     readOnly: false,
@@ -95,10 +117,10 @@ describe('DraggableEventBlock', () => {
     const onCommitResize = vi.fn(() => Promise.resolve());
     const { move, resize } = block(onCommitResize);
 
-    resize['onStart']!();
+    resize['onStart']!({ absoluteY: 300 });
     // The resize activating fails the move pan, which still finalizes.
     move['onFinalize']!({}, false);
-    resize['onUpdate']!({ translationY: 28 });
+    resize['onUpdate']!({ absoluteY: 328, translationY: 28 });
     resize['onEnd']!({ translationY: 28 }, true);
     resize['onFinalize']!({}, true);
 
@@ -109,11 +131,43 @@ describe('DraggableEventBlock', () => {
     const onCommitResize = vi.fn(() => Promise.resolve());
     const { resize } = block(onCommitResize);
 
-    resize['onStart']!();
-    resize['onUpdate']!({ translationY: 28 });
+    resize['onStart']!({ absoluteY: 300 });
+    resize['onUpdate']!({ absoluteY: 328, translationY: 28 });
     resize['onEnd']!({ translationY: 28 }, false);
     resize['onFinalize']!({}, false);
 
     expect(onCommitResize).not.toHaveBeenCalled();
+  });
+
+  it("moves by the finger's travel plus the grid the edge scroll moved under it", () => {
+    const onCommitMove = vi.fn(() => Promise.resolve());
+    const edge = edgeScroll();
+    const { move } = block(() => Promise.resolve(), { edge, onCommitMove });
+
+    move['onStart']!({ absoluteY: 300 });
+    expect(edge.begin).toHaveBeenCalledOnce();
+    move['onUpdate']!({ absoluteY: 728, translationY: 28 });
+    expect(edge.follow).toHaveBeenLastCalledWith(728);
+    // Two hours scrolled while the finger held still at the bottom edge.
+    edge.scrollY.value += 112;
+    for (const react of reactions) {
+      react(1, 0);
+    }
+    move['onEnd']!({ translationY: 28 }, true);
+    move['onFinalize']!({}, true);
+
+    expect(onCommitMove).toHaveBeenCalledWith(150);
+    expect(edge.end).toHaveBeenCalledOnce();
+  });
+
+  it('leaves the edge scroll alone when its pan never owned the drag', () => {
+    const edge = edgeScroll();
+    const { move, resize } = block(() => Promise.resolve(), { edge });
+
+    resize['onStart']!({ absoluteY: 300 });
+    move['onFinalize']!({}, false);
+    expect(edge.end).not.toHaveBeenCalled();
+    resize['onFinalize']!({}, false);
+    expect(edge.end).toHaveBeenCalledOnce();
   });
 });

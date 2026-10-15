@@ -33,6 +33,8 @@ import Animated, {
   cancelAnimation,
   runOnJS,
   runOnUI,
+  useAnimatedRef,
+  useAnimatedScrollHandler,
   useAnimatedStyle,
   useDerivedValue,
   useSharedValue,
@@ -42,6 +44,7 @@ import Animated, {
 import { AllDayColumn } from './AllDayColumn.tsx';
 import { DayColumn } from './DayColumn.tsx';
 import { BOX_FONT_SCALE, type ThemeColors, useStyles, useTheme, zoneColor } from './theme.ts';
+import { useEdgeScroll } from './useEdgeScroll.ts';
 import { useTaskDrag } from './useTaskDrag.ts';
 import { WeekStripCell } from './WeekStrip.tsx';
 import { ZoneCities } from './ZoneCities.tsx';
@@ -144,7 +147,7 @@ export function DayTimeline({
 }) {
   const styles = useStyles(makeStyles);
   const { colors } = useTheme();
-  const scrollRef = useRef<ScrollView>(null);
+  const scrollRef = useAnimatedRef<ScrollView>();
   const { height: windowHeight } = useWindowDimensions();
   const containerRef = useRef<View>(null);
   const { updateEvent, updateRecurring } = useGuardedMutations();
@@ -286,7 +289,7 @@ export function DayTimeline({
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ animated: false, y: 7.5 * HOUR_HEIGHT });
-  }, []);
+  }, [scrollRef]);
   // A draft the editor focused (made, moved, paged to): its start an hour
   // below the top of the grid.
   useEffect(() => {
@@ -296,7 +299,7 @@ export function DayTimeline({
         y: Math.max(0, (revealMinute / 60 - 1) * HOUR_HEIGHT),
       });
     }
-  }, [revealKey, revealMinute]);
+  }, [revealKey, revealMinute, scrollRef]);
 
   // Geometry the task drag judges drops against; measured, never rendered.
   // (The chip drags and this swipe are exclusive in the gesture arena: a
@@ -306,13 +309,31 @@ export function DayTimeline({
   const containerY = useSharedValue(0);
   const containerHeight = useSharedValue(0);
   const laneTop = useSharedValue(0);
+  // Kept on the UI thread: a drag reads it in the same frame the edge
+  // scroll moved the grid.
   const scrollY = useSharedValue(7.5 * HOUR_HEIGHT);
+  const onScroll = useAnimatedScrollHandler((scroll) => {
+    setShared(scrollY, scroll.contentOffset.y);
+  });
+  const contentHeight = useSharedValue(0);
+  const viewportHeight = useSharedValue(0);
+  const edgeScroll = useEdgeScroll({
+    containerHeight,
+    containerY,
+    contentHeight,
+    laneHeight,
+    laneTop,
+    scrollRef,
+    scrollY,
+    viewportHeight,
+  });
   const taskDrag = useTaskDrag({
     buffer,
     columnWidth,
     containerHeight,
     containerX,
     containerY,
+    edge: edgeScroll,
     gutterWidth: gutter,
     laneHeight,
     laneTop,
@@ -535,11 +556,13 @@ export function DayTimeline({
       </Animated.View>
 
       <GestureDetector gesture={swipe}>
-        <ScrollView
+        <Animated.ScrollView
           contentContainerStyle={
             drafts.length > 0 ? { paddingBottom: windowHeight / 2 } : undefined
           }
-          onScroll={(scroll) => setShared(scrollY, scroll.nativeEvent.contentOffset.y)}
+          onContentSizeChange={(_width, height) => setShared(contentHeight, height)}
+          onLayout={(layout) => setShared(viewportHeight, layout.nativeEvent.layout.height)}
+          onScroll={onScroll}
           ref={scrollRef}
           scrollEventThrottle={16}
           style={styles.scroll}
@@ -606,6 +629,7 @@ export function DayTimeline({
                       divided={divided}
                       drafts={(draftsByDay.get(iso) ?? []).filter((draft) => !draft.isAllDay)}
                       draggingKey={taskDrag.dragging?.key ?? null}
+                      edgeScroll={edgeScroll}
                       events={(byDay.get(iso) ?? []).filter((event) => !event.isAllDay)}
                       isEventReadOnly={isEventReadOnly}
                       isTaskReadOnly={isTaskReadOnly}
@@ -629,7 +653,7 @@ export function DayTimeline({
               </Animated.View>
             </View>
           </View>
-        </ScrollView>
+        </Animated.ScrollView>
       </GestureDetector>
 
       {taskDrag.dragging ? (

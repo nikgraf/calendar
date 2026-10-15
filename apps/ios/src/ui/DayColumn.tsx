@@ -26,6 +26,7 @@ import { NowIndicator } from './NowIndicator.tsx';
 import { TimedTaskBlock } from './TimedTaskBlock.tsx';
 import { BOX_FONT_SCALE, type ThemeColors, useStyles } from './theme.ts';
 import { HOUR_HEIGHT } from './timelineLayout.ts';
+import type { EdgeScroll } from './useEdgeScroll.ts';
 import type { TaskDrag } from './useTaskDrag.ts';
 
 /** Hold this long on empty space before a drag draws a slot instead of scrolling. */
@@ -48,6 +49,7 @@ export function DayColumn({
   divided,
   drafts,
   draggingKey,
+  edgeScroll,
   events,
   isEventReadOnly,
   isTaskReadOnly,
@@ -75,6 +77,8 @@ export function DayColumn({
   drafts: ReadonlyArray<DraftOccurrence>;
   /** The task being dragged, if any: its source block dims. */
   draggingKey: string | null;
+  /** Scrolls the grid while an event's drag is held near its top or bottom edge. */
+  edgeScroll: EdgeScroll;
   /** Timed events touching this day. */
   events: ReadonlyArray<EventRecord>;
   isEventReadOnly: (event: EventRecord) => boolean;
@@ -215,6 +219,7 @@ export function DayColumn({
           <DraggableEventBlock
             color={colorOf(event)}
             compact={compact}
+            edgeScroll={edgeScroll}
             event={event}
             height={Math.max(box.height * 24 * HOUR_HEIGHT, 22)}
             key={box.id}

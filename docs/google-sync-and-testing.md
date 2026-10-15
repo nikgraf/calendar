@@ -604,7 +604,9 @@ wording when the server is down); `reminders` and
 EventKit, read-only viewer, moves both ways); `location` (the picker and
 map over the geo fixture); `birthdays` (device-contacts fixture, chip,
 detail, device-only reminder settings); `eventReminders`; `timeZones`;
-`settingsFile`; `mirrors`; `taskConvert` (Google writes left queued) and
+`settingsFile`; `mirrors`; `edgeScroll` (task, event and resize drags held at the grid's edges,
+the lane chip that enters without scrolling, a wheel scroll mid-drag);
+`taskConvert` (Google writes left queued) and
 `taskConvertGoogle` (the fake Google API, so pushes land; the rail's
 subtasks nested in `position` order, dragged to reorder, nest and
 un-nest — a reminder shows no drop line — and ⌘]/⌘[); `convert`;
@@ -918,4 +920,7 @@ math. Before claiming iOS reminder-drag coverage, check by hand on a
 device with a connected Reminders list: in today's Day view create a
 reminder due at 9:00, hold its title until it lifts, move it down one
 hour and release — it must land at 10:00; reopen the editor, relaunch
-the app, and confirm the time in Apple Reminders.
+the app, and confirm the time in Apple Reminders. Then hold it, move to
+the bottom of the grid and keep still until the grid has scrolled past
+18:00, and release a little above the edge — it must land at the slot
+under the finger. The same with an event block, and its resize handle.
