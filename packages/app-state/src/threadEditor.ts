@@ -441,15 +441,18 @@ export const useThreadEditor = ({
   // appearing: its first turn counts as seen, nothing flashes.
   const turnsSeen = useRef(seed.thread ? 1 : 0);
   const [flash, setFlash] = useState<DraftFlash | null>(null);
-  // The last version the form has fully taken in: a kind switch's question
-  // can hold an apply open for as long as it is asked.
-  const [settledVersion, setSettledVersion] = useState(version);
+  // The form is still taking the thread in while a version is unseen here
+  // or an apply is open — a kind switch's question holds one open for as
+  // long as it is asked. Counted, not compared: a new thread restarts the
+  // version, and applies can settle out of order.
+  const [seenVersion, setSeenVersion] = useState(version);
+  const [openApplies, setOpenApplies] = useState(0);
   useEffect(() => {
     if (version === applied.current) {
       return;
     }
     applied.current = version;
-    const settle = () => setSettledVersion((last) => Math.max(last, version));
+    setSeenVersion(version);
     const { turns } = thread.state;
     const landed = turns.length > turnsSeen.current ? turns.at(-1) : undefined;
     turnsSeen.current = turns.length;
@@ -458,9 +461,9 @@ export const useThreadEditor = ({
       shown.current = focusedDraft.id;
       if (another) {
         showDraft(focusedDraft);
-        settle();
       } else {
-        applyDraft(focusedDraft, landed, settle);
+        setOpenApplies((open) => open + 1);
+        applyDraft(focusedDraft, landed, () => setOpenApplies((open) => open - 1));
       }
       // A day the form cleared is stored as '' until repaired: nothing to show.
       try {
@@ -490,7 +493,6 @@ export const useThreadEditor = ({
       if (taskSeed?.dated === false) {
         taskModel.clearDueDate?.();
       }
-      settle();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- the version names exactly what the form must take over
   }, [version]);
@@ -503,9 +505,11 @@ export const useThreadEditor = ({
   /**
    * The form moves into a free slot the thread offered (a chip, a
    * candidate block), and the calendar shows its day — a slot can lie
-   * outside the days on view, and only a turn reveals on its own.
+   * outside the days on view, and only a turn reveals on its own. A pick
+   * by hand: it changes the date and times as the fields would.
    */
   const moveToSlot = (slot: FreeSlot) => {
+    edited();
     eventModel.applySlot(slot);
     reveal(Temporal.PlainDate.from(slot.date));
   };
@@ -634,7 +638,7 @@ export const useThreadEditor = ({
   return {
     addAll,
     /** The form is still taking the thread's last change in: the next phrase waits. */
-    applying: settledVersion < version,
+    applying: seenVersion !== version || openApplies > 0,
     batchError,
     canAddAll,
     drafts,

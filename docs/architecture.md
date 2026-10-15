@@ -91,8 +91,8 @@ sends each phrase at its pause and listens again (`voiceLoop.ts`) once
 the form has taken the last one in (`useThreadEditor().applying`), until
 the microphone is pressed (which sends what was recorded, heard or
 not), the field is typed into, the form is edited
-by hand (`userEdits`, counted by the setters the forms receive, never by
-a turn's own fills) or 30 s pass with nobody speaking.
+by hand (`userEdits`, counted by the setters the forms receive and a
+picked free slot, never by a turn's own fills) or 30 s pass with nobody speaking.
 
 **Native bridges** (`packages/reminders`, `packages/apple-calendar`,
 `packages/contacts`, `packages/geo`): each is one JSON protocol spoken by
