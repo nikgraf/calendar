@@ -35,6 +35,7 @@ import {
   writeBirthdayReminderOverrides,
   writeBirthdayReminderSettings,
   writeEventNotificationSettings,
+  writeTimeZoneSettings,
 } from './deviceSettings.ts';
 import { LocalNotifications } from './localNotifications.ts';
 import { Mirrors } from './mirrors.ts';
@@ -445,6 +446,36 @@ describe('LocalNotifications', () => {
       Effect.provide(testLayer(scheduled.sink, unavailableAppleCalendarClient('test'), () => zone)),
     );
   });
+
+  it.effect(
+    "an event reminder adds the primary zone's time, read against the pass's device zone",
+    () => {
+      const scheduled = scheduledSink();
+      let zone = 'UTC';
+      return Effect.gen(function* () {
+        yield* seedGoogle(standup);
+        const notifications = yield* LocalNotifications;
+        yield* setClock('2026-03-01T12:00:00Z');
+        yield* writeTimeZoneSettings({
+          primary: 'Europe/Vienna',
+          zones: ['device', 'Europe/Vienna'],
+        });
+        yield* notifications.run();
+        // The device entry as primary is whatever zone the pass reads: no second clock.
+        yield* writeTimeZoneSettings({ primary: 'device', zones: ['device', 'Europe/Vienna'] });
+        zone = 'Asia/Tokyo';
+        yield* notifications.run();
+        expect(scheduled.schedules.map((schedule) => schedule.map((plan) => plan.body))).toEqual([
+          ['In 10 minutes · 9:00 AM (10:00 AM Vienna)'],
+          ['In 10 minutes · 6:00 PM'],
+        ]);
+      }).pipe(
+        Effect.provide(
+          testLayer(scheduled.sink, unavailableAppleCalendarClient('test'), () => zone),
+        ),
+      );
+    },
+  );
 
   it.effect(
     'passes are serialized: a disabling pass is not overtaken by a slow enabled one',

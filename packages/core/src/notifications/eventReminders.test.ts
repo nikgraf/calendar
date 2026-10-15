@@ -233,6 +233,68 @@ describe('planEventReminders', () => {
     expect(plans.map((plan) => plan.body)).toEqual(['In 10 minutes · 3:00 PM']);
   });
 
+  it('adds the start on the grid when the primary zone reads another clock', () => {
+    const timed = event({
+      location: 'Room 4B',
+      reminders: new EventReminders({ overrides: [popup(10), popup(1440)], useDefault: false }),
+      // 09:00 in New York, 15:00 in Vienna.
+      startUtc: utc('2026-03-04T14:00:00Z'),
+    });
+    const plans = planEventReminders([timed], {
+      ...window,
+      deviceTimeZone: 'America/New_York',
+      primaryTimeZone: 'Europe/Vienna',
+    });
+    expect(plans.map((plan) => plan.body)).toEqual([
+      'In 1 day · Tomorrow 9:00 AM (3:00 PM Vienna) · Room 4B',
+      'In 10 minutes · 9:00 AM (3:00 PM Vienna) · Room 4B',
+    ]);
+  });
+
+  it("names the primary zone's weekday once its date differs", () => {
+    const plans = planEventReminders(
+      [
+        event({
+          reminders: new EventReminders({ overrides: [popup(10)], useDefault: false }),
+          // Wednesday 21:00 in New York is already Thursday 03:00 in Vienna.
+          startUtc: utc('2026-03-05T02:00:00Z'),
+        }),
+      ],
+      { ...window, deviceTimeZone: 'America/New_York', primaryTimeZone: 'Europe/Vienna' },
+    );
+    expect(plans.map((plan) => plan.body)).toEqual([
+      'In 10 minutes · 9:00 PM (Thu 3:00 AM Vienna)',
+    ]);
+  });
+
+  it('adds nothing when the primary reads the same clock, cannot be loaded, or the event is all day', () => {
+    const timed = event({
+      reminders: new EventReminders({ overrides: [popup(10)], useDefault: false }),
+    });
+    const allDay = event({
+      endDate: '2026-03-05',
+      id: 'all-day',
+      isAllDay: true,
+      reminders: new EventReminders({ overrides: [popup(0)], useDefault: false }),
+      startDate: '2026-03-04',
+      startTimeZone: 'UTC',
+      startUtc: utc('2026-03-04T00:00:00Z'),
+    });
+    const bodies = (primaryTimeZone: string) =>
+      planEventReminders([timed, allDay], {
+        ...window,
+        deviceTimeZone: 'Europe/Vienna',
+        primaryTimeZone,
+      }).map((plan) => plan.body);
+    // Berlin keeps Vienna's offset: another name, the same clock.
+    expect(bodies('Europe/Berlin')).toEqual(['All day today', 'In 10 minutes · 10:00 AM']);
+    expect(bodies('Mars/Olympus_Mons')).toEqual(['All day today', 'In 10 minutes · 10:00 AM']);
+    expect(bodies('Asia/Tokyo')).toEqual([
+      'All day today',
+      'In 10 minutes · 10:00 AM (6:00 PM Tokyo)',
+    ]);
+  });
+
   it('a zone or date this engine cannot read costs that event its reminder, not the pass', () => {
     const plans = planEventReminders(
       [

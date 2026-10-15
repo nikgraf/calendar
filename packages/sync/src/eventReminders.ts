@@ -1,9 +1,14 @@
-import { MAX_REMINDER_MINUTES, planEventReminders, type PlannedNotification } from '@calendar/core';
+import {
+  MAX_REMINDER_MINUTES,
+  type PlannedNotification,
+  planEventReminders,
+  resolveTimeZones,
+} from '@calendar/core';
 import { CalendarRepo, type DeviceSettingsRepo, type EventRepo } from '@calendar/db';
 import { Effect } from 'effect';
 import type { SqlError } from 'effect/sql/SqlError';
 import type { AppleCalendarEvents } from './appleCalendarEvents.ts';
-import { readEventNotificationSettings } from './deviceSettings.ts';
+import { readEventNotificationSettings, readTimeZoneSettings } from './deviceSettings.ts';
 import { loadEventsInRange } from './eventsInRange.ts';
 
 const MINUTE_MS = 60_000;
@@ -17,7 +22,9 @@ const HORIZON_MS = 7 * 24 * 60 * MINUTE_MS;
  * reminder due in the next week for the events on visible calendars.
  * Events are read past the horizon by the longest possible offset, so a
  * "one week before" reminder of an event in ten days is planned today.
- * Disabled settings yield nothing — never touch the birthday plans.
+ * Disabled settings yield nothing — never touch the birthday plans. The
+ * primary zone resolves against the pass's device zone, so a primary
+ * that is the device entry reads as the same clock and adds nothing.
  */
 export const loadEventPlans = (
   now: number,
@@ -38,11 +45,13 @@ export const loadEventPlans = (
       apple: settings.includeAppleCalendar,
     });
     const calendars = yield* (yield* CalendarRepo).list();
+    const { primary } = resolveTimeZones(yield* readTimeZoneSettings, deviceTimeZone);
     return planEventReminders(events, {
       calendars,
       deviceTimeZone,
       from,
       includeApple: settings.includeAppleCalendar,
+      primaryTimeZone: primary,
       until,
     });
   });

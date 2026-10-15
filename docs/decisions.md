@@ -833,6 +833,14 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   calendar's; a planned notification carries a target the tap resolves
   through the range query and then by stored id. iOS reads the permission
   without asking; Electron has no query.
+- **The primary zone's time in brackets** (2026-10-15, #212) — a timed
+  event reminder keeps the device's clock and, when the primary zone
+  reads another one at the start, adds it: "9:00 AM (3:00 PM Vienna)",
+  with the weekday once the date differs. Compared by offset, so a
+  primary that is the device's clock under another name adds nothing;
+  a time zone save re-plans. Rejected: the text in the primary zone
+  alone (it would contradict the lock-screen clock beside it). All-day
+  and birthday text has no clock and stays as it was.
 
 ## Calendar mirrors
 
