@@ -3,7 +3,6 @@ import {
   MicrophoneDeniedError,
   SpeechUnsupportedError,
   transcriptFromSegments,
-  type Endpointer,
   type SpeechToText,
 } from '@calendar/ai';
 
@@ -73,17 +72,12 @@ let recorder:
     }
   | undefined;
 let recordingUri: string | undefined;
-/** Hands-free only: the recording's ear, and the timer feeding it the level. */
-let endpointer: Endpointer | undefined;
+/** Hands-free only: the timer feeding the recording's ear its level. */
 let levelPoll: ReturnType<typeof setInterval> | undefined;
 
-/** Stops reading the level; returns the ear that was listening, if any. */
-const stopListening = (): Endpointer | undefined => {
+const stopListening = () => {
   clearInterval(levelPoll);
   levelPoll = undefined;
-  const ear = endpointer;
-  endpointer = undefined;
-  return ear;
 };
 
 const releaseSession = (audio: typeof import('expo-audio')) => {
@@ -182,7 +176,6 @@ export const appleSpeech: SpeechToText = {
     stopListening();
     if (onSpeech) {
       const ear = createEndpointer();
-      endpointer = ear;
       levelPoll = setInterval(() => {
         const level = instance.getStatus?.().metering;
         if (level === undefined) {
@@ -196,7 +189,7 @@ export const appleSpeech: SpeechToText = {
     }
   },
   stopRecording: async () => {
-    const ear = stopListening();
+    stopListening();
     const modules = load();
     if (!modules || !recorder) {
       return undefined;
@@ -208,8 +201,7 @@ export const appleSpeech: SpeechToText = {
       await instance.stop();
       uri = instance.getURI?.() ?? undefined;
       recordingUri = uri;
-      // Hands-free and nobody spoke: nothing worth transcribing.
-      if (!uri || (ear && !ear.heard())) {
+      if (!uri) {
         return undefined;
       }
       const audio = await new modules.files.File(uri).arrayBuffer();

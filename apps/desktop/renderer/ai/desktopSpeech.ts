@@ -4,7 +4,6 @@ import {
   MicrophoneDeniedError,
   SpeechUnsupportedError,
   transcriptFromSegments,
-  type Endpointer,
   type SpeechToText,
 } from '@calendar/ai';
 import { encodeWav } from './wavEncoder.ts';
@@ -31,8 +30,6 @@ const WORKLET_URL = new URL('pcm-collector.worklet.js', document.baseURI).href;
 interface Recording {
   readonly chunks: Array<Float32Array>;
   readonly context: AudioContext;
-  /** Hands-free only: whether the phrase has begun, and when it ended. */
-  readonly endpointer: Endpointer | undefined;
   readonly stream: MediaStream;
 }
 
@@ -159,7 +156,7 @@ export const desktopSpeech: SpeechToText = {
     if (recording) {
       stopStream(recording.stream, recording.context);
     }
-    recording = { chunks, context, endpointer, stream };
+    recording = { chunks, context, stream };
   },
 
   stopRecording: async () => {
@@ -169,10 +166,6 @@ export const desktopSpeech: SpeechToText = {
       return undefined;
     }
     stopStream(active.stream, active.context);
-    // Hands-free and nobody spoke: nothing worth sending to the helper.
-    if (active.endpointer && !active.endpointer.heard()) {
-      return undefined;
-    }
     const samples = collectSamples(active.chunks);
     if (samples.length === 0) {
       return undefined;

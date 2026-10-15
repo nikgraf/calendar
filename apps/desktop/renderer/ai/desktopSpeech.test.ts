@@ -154,7 +154,7 @@ describe('desktopSpeech hands-free listening', () => {
     expect(transcribe).toHaveBeenCalledTimes(1);
   });
 
-  it('sends nothing to the helper when nobody spoke', async () => {
+  it('reports nothing when nobody spoke, and a stop still transcribes what it holds', async () => {
     const speech = await loadSpeech();
     const events: Array<string> = [];
     const start = speech.startRecording({ onSpeech: (event) => events.push(event) });
@@ -162,10 +162,11 @@ describe('desktopSpeech hands-free listening', () => {
     grants[0]?.(stream);
     await start;
     post(0.001, 3000);
-
-    expect(await speech.stopRecording()).toBeUndefined();
     expect(events).toEqual([]);
-    expect(transcribe).not.toHaveBeenCalled();
+
+    // The level can miss a quiet phrase: a press of the microphone must not lose it.
+    expect(await speech.stopRecording()).toBe('Lunch with Anna');
+    expect(transcribe).toHaveBeenCalledTimes(1);
     expect(stream.stopped).toBe(true);
   });
 

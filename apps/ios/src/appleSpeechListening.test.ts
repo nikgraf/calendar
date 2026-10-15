@@ -83,15 +83,16 @@ describe('appleSpeech hands-free listening', () => {
     expect(deleted).toEqual(['file:///recording.wav']);
   });
 
-  it('transcribes nothing when nobody spoke, and still deletes the audio', async () => {
+  it('reports nothing when nobody spoke; a stop still transcribes, then deletes the audio', async () => {
     const { appleSpeech } = await import('./appleSpeech.ts');
     const events: Array<string> = [];
     await appleSpeech.startRecording({ onSpeech: (event) => events.push(event) });
     await vi.advanceTimersByTimeAsync(3000);
-
-    expect(await appleSpeech.stopRecording()).toBeUndefined();
     expect(events).toEqual([]);
-    expect(transcribe).not.toHaveBeenCalled();
+
+    // The level can miss a quiet phrase: a press of the microphone must not lose it.
+    expect(await appleSpeech.stopRecording()).toBe('Lunch with Anna');
+    expect(transcribe).toHaveBeenCalledTimes(1);
     expect(deleted).toEqual(['file:///recording.wav']);
   });
 

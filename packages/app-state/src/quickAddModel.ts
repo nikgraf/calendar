@@ -165,15 +165,19 @@ export const useQuickAddModel = ({
     setError(message);
   };
 
-  /** Stopping applies the transcript at once: no second tap after the microphone. */
-  const stopRecording = async () => {
+  /**
+   * Stopping applies the transcript at once: no second tap after the
+   * microphone. `quiet`: nothing was heard, so nothing coming back needs
+   * no message.
+   */
+  const stopRecording = async (quiet = false) => {
     setVoice('transcribing');
     setHeard(false);
     try {
       const text = await speech.stopRecording();
       if (!text) {
         // Hands-free hears noise as often as words: it just listens again.
-        if (!handsFreeRef.current) {
+        if (!handsFreeRef.current && !quiet) {
           setError("Didn't catch that — try again.");
         }
         return;
@@ -288,7 +292,7 @@ export const useQuickAddModel = ({
 
   /** The microphone button. */
   const toggleVoice = () => {
-    switch (micPress({ handsFree, heard, voice })) {
+    switch (micPress({ handsFree, voice })) {
       case 'listen': {
         setError(null);
         switchHandsFree(true);
@@ -296,7 +300,7 @@ export const useQuickAddModel = ({
       }
       case 'send': {
         switchHandsFree(false);
-        void stopRecording();
+        void stopRecording(!heard);
         return;
       }
       case 'end': {

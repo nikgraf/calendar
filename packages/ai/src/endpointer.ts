@@ -2,7 +2,11 @@
 export type SpeechEvent = 'end' | 'start';
 
 export interface EndpointOptions {
-  /** How fast the room's floor falls to a quieter level (time constant). */
+  /**
+   * How fast the room's floor falls to a quieter level (time constant):
+   * fast, so speech from the first frame — the floor then starts as the
+   * speech itself — stands out after the first gap between syllables.
+   */
   readonly floorFallMs: number;
   /** How fast it rises to a louder one — slowly, so speech never becomes the floor. */
   readonly floorRiseMs: number;
@@ -25,7 +29,7 @@ export interface EndpointOptions {
  * Anna … on Thursday" in two.
  */
 export const ENDPOINT_DEFAULTS: EndpointOptions = {
-  floorFallMs: 200,
+  floorFallMs: 50,
   floorRiseMs: 5000,
   minSpeechDb: -50,
   pauseMs: 1300,

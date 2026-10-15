@@ -99,6 +99,17 @@ describe('createEndpointer', () => {
     expect(events.map((entry) => entry.event)).toEqual(['start', 'end']);
   });
 
+  it('hears a short phrase that begins with the recording', () => {
+    // One second of speech, no quiet room before it: the gaps between its
+    // syllables are the only floor there is.
+    const { endpointer, events } = run([
+      [speaking, 1000],
+      [-45, 2000],
+    ]);
+    expect(events.map((entry) => entry.event)).toEqual(['start', 'end']);
+    expect(endpointer.heard()).toBe(true);
+  });
+
   it('hears a microphone that gates its quiet to digital silence', () => {
     // Speaking from the first frame, zeros between the words and after them.
     const { events } = run([

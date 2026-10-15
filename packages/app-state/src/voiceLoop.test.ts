@@ -3,23 +3,22 @@ import { micPress, shouldListen } from './voiceLoop.ts';
 
 describe('micPress', () => {
   it('starts hands-free when dictation is off', () => {
-    expect(micPress({ handsFree: false, heard: false, voice: 'idle' })).toBe('listen');
+    expect(micPress({ handsFree: false, voice: 'idle' })).toBe('listen');
   });
 
-  it('sends the phrase mid-sentence, and listens no further', () => {
-    expect(micPress({ handsFree: true, heard: true, voice: 'recording' })).toBe('send');
+  it('sends what was recorded, and listens no further — heard or not: the level can miss a quiet phrase', () => {
+    expect(micPress({ handsFree: true, voice: 'recording' })).toBe('send');
   });
 
-  it('ends hands-free while nothing was said, while preparing, and while a phrase is read', () => {
-    expect(micPress({ handsFree: true, heard: false, voice: 'recording' })).toBe('end');
-    expect(micPress({ handsFree: true, heard: false, voice: 'preparing' })).toBe('end');
-    expect(micPress({ handsFree: true, heard: false, voice: 'transcribing' })).toBe('end');
+  it('ends hands-free while preparing and while a phrase is read', () => {
+    expect(micPress({ handsFree: true, voice: 'preparing' })).toBe('end');
+    expect(micPress({ handsFree: true, voice: 'transcribing' })).toBe('end');
     // Between phrases, waiting for the form to take the last one.
-    expect(micPress({ handsFree: true, heard: false, voice: 'idle' })).toBe('end');
+    expect(micPress({ handsFree: true, voice: 'idle' })).toBe('end');
   });
 
   it('a phrase still being read after hands-free ended is not a reason to start again', () => {
-    expect(micPress({ handsFree: false, heard: false, voice: 'transcribing' })).toBe('end');
+    expect(micPress({ handsFree: false, voice: 'transcribing' })).toBe('end');
   });
 });
 

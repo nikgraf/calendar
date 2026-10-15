@@ -85,11 +85,12 @@ module. Dictation audio is captured by the UI layer (renderer
 is hands-free: each adapter reads the level as it records (the
 worklet's blocks on the desktop, expo-audio metering on iOS) and
 `createEndpointer` (`packages/ai/src/endpointer.ts`) hears a phrase
-begin and the pause that ends it, against the room's own floor; a
-recording in which nobody spoke is never transcribed. `useQuickAddModel`
+begin and the pause that ends it, against the room's own floor.
+`useQuickAddModel`
 sends each phrase at its pause and listens again (`voiceLoop.ts`) once
 the form has taken the last one in (`useThreadEditor().applying`), until
-the microphone is pressed, the field is typed into, the form is edited
+the microphone is pressed (which sends what was recorded, heard or
+not), the field is typed into, the form is edited
 by hand (`userEdits`, counted by the setters the forms receive, never by
 a turn's own fills) or 30 s pass with nobody speaking.
 

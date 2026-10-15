@@ -59,11 +59,7 @@ export interface SpeechToText {
     readonly onSpeech?: (event: SpeechEvent) => void;
     readonly signal?: AbortSignal;
   }) => Promise<void>;
-  /**
-   * Stops, transcribes, cleans up. Undefined when nothing was said — and,
-   * for a recording started with `onSpeech`, without transcribing at all
-   * when no speech was ever heard.
-   */
+  /** Stops, transcribes, cleans up. Undefined when nothing was said. */
   readonly stopRecording: () => Promise<string | undefined>;
 }
 

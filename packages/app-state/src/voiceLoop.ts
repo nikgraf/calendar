@@ -4,21 +4,21 @@ import type { VoiceState } from './quickAddModel.ts';
 export interface VoiceLoopState {
   /** Hands-free is on: every pause sends the phrase, then it listens again. */
   readonly handsFree: boolean;
-  /** The phrase being recorded has begun (speech was heard). */
-  readonly heard: boolean;
   readonly voice: VoiceState;
 }
 
 /**
  * What a press of the microphone does:
  * - `listen` — off: hands-free starts.
- * - `send` — mid-phrase: what was said is sent at once, and nothing more
- *   is listened for (the tap is "that's all").
- * - `end` — listening with nothing said yet, preparing, or reading a
- *   phrase: hands-free ends (a phrase being read still lands).
+ * - `send` — recording: what was said is sent at once, and nothing more
+ *   is listened for (the tap is "that's all"). Also before a phrase was
+ *   heard — the level can miss a quiet one, and the press must not lose
+ *   it; a recording of nothing reads as nothing, without a message.
+ * - `end` — preparing, or reading a phrase: hands-free ends (a phrase
+ *   being read still lands).
  */
-export const micPress = ({ handsFree, heard, voice }: VoiceLoopState): 'end' | 'listen' | 'send' =>
-  voice === 'recording' && heard ? 'send' : handsFree || voice !== 'idle' ? 'end' : 'listen';
+export const micPress = ({ handsFree, voice }: VoiceLoopState): 'end' | 'listen' | 'send' =>
+  voice === 'recording' ? 'send' : handsFree || voice !== 'idle' ? 'end' : 'listen';
 
 /**
  * Hands-free listens again once the last phrase is done with: read, and
