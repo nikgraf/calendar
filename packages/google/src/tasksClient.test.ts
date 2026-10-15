@@ -93,6 +93,32 @@ describe('GoogleTasksClient', () => {
     );
   });
 
+  it.effect('an order-only listing asks for each task’s place and leaves tombstones out', () => {
+    const recorded: Array<HttpClientRequest.HttpClientRequest> = [];
+    return Effect.gen(function* () {
+      const client = yield* GoogleTasksClient;
+      const page = yield* client.listTasks({
+        accountId: 'acc-1',
+        params: { orderOnly: true },
+        taskListId: 'list-1',
+      });
+      expect(page.items).toEqual([{ id: 't1', parent: 't0', position: '00000000000000000000' }]);
+      const query = params(recorded[0]!);
+      expect(query.get('fields')).toBe('nextPageToken,items(id,parent,position)');
+      expect(query.get('showCompleted')).toBe('true');
+      expect(query.get('showHidden')).toBe('true');
+      expect(query.has('showDeleted')).toBe(false);
+      expect(query.has('updatedMin')).toBe(false);
+    }).pipe(
+      Effect.provide(
+        clientLayer(
+          [{ body: { items: [{ id: 't1', parent: 't0', position: '00000000000000000000' }] } }],
+          recorded,
+        ),
+      ),
+    );
+  });
+
   it.effect('un-completing clears the completion timestamp explicitly', () => {
     const recorded: Array<HttpClientRequest.HttpClientRequest> = [];
     return Effect.gen(function* () {

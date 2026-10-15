@@ -38,6 +38,7 @@ import {
 import { Cause, Clock, Effect } from 'effect';
 import type { SqlError } from 'effect/sql/SqlError';
 import { restoreCarriedText } from './carriedText.ts';
+import { makeApplyTaskOrder, readTaskOrder } from './taskOrder.ts';
 
 /**
  * Guests get emailed about any change to an event that has guests — the
@@ -471,85 +472,21 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
       }
     });
 
+  const applyTaskOrder = makeApplyTaskOrder({ pendingOpRepo, taskRepo });
+
   /**
    * A reorder landed: Google renumbered the siblings it left and joined
    * without bumping their `updated`, so no pull will bring that. The
-   * list's order is read back and written onto its rows, pending ones
-   * included (their queued edits do not touch the order); then the
-   * reorders still queued are replayed over it in queue order, as Google
-   * will apply them — each placed by its parent and previous sibling, and
-   * each holding the place before it as what a discard puts back. A queued
-   * delete holds Google's place too. Best effort — the move itself landed
-   * either way, and the daily full pass brings the order too.
+   * list's order is read back at once rather than on the next pass, and
+   * the reorders still queued are replayed over it. Best effort — the move
+   * itself landed either way, and the next pass sees the list's `updated`
+   * move and reads the order too.
    */
   const refreshTaskOrder = (landed: PendingOp, listId: string) =>
     Effect.ignore(
-      Effect.gen(function* () {
-        const { accountId } = landed;
-        const entries: Array<{
-          readonly id: string;
-          readonly parentId: string | undefined;
-          readonly position: string | undefined;
-        }> = [];
-        let pageToken: string | undefined;
-        do {
-          const page = yield* tasksClient.listTasks({
-            accountId,
-            params: { pageToken },
-            taskListId: listId,
-          });
-          for (const item of page.items ?? []) {
-            if (!item.deleted) {
-              entries.push({ id: item.id, parentId: item.parent, position: item.position });
-            }
-          }
-          pageToken = page.nextPageToken;
-        } while (pageToken !== undefined);
-        yield* taskRepo.refreshHierarchy(accountId, listId, entries);
-        const google = new Map(entries.map((entry) => [entry.id, entry]));
-        for (const queued of yield* pendingOpRepo.listAll()) {
-          // The landed one leaves the queue once this returns.
-          if (
-            queued.id === landed.id ||
-            queued.accountId !== accountId ||
-            queued.calendarId !== listId
-          ) {
-            continue;
-          }
-          const entry = google.get(queued.eventId);
-          if (queued.kind === 'deleteTask' && queued.beforeTask && entry) {
-            yield* pendingOpRepo.setBeforeTask(
-              queued.id,
-              placedTask(queued.beforeTask, {
-                ...(entry.parentId === undefined ? {} : { parentId: entry.parentId }),
-                ...(entry.position === undefined ? {} : { position: entry.position }),
-              }),
-            );
-          }
-          const row =
-            queued.kind === 'reorderTask'
-              ? yield* taskRepo.get(accountId, listId, queued.eventId)
-              : undefined;
-          if (row === undefined) {
-            continue;
-          }
-          yield* pendingOpRepo.setBeforeTask(queued.id, placedTask(queued.beforeTask ?? row, row));
-          const siblings = (yield* taskRepo.listSiblings(
-            accountId,
-            listId,
-            queued.taskParent,
-          )).filter((sibling) => sibling.id !== row.id);
-          yield* taskRepo.updateLocal({
-            accountId,
-            changes: {
-              parentId: queued.taskParent ?? null,
-              position: provisionalPosition(siblings, queued.taskPrevious),
-            },
-            listId,
-            taskId: row.id,
-          });
-        }
-      }),
+      Effect.flatMap(readTaskOrder(tasksClient, landed.accountId, listId), (entries) =>
+        applyTaskOrder(landed.accountId, listId, entries, landed.id),
+      ),
     );
 
   /**
@@ -1365,7 +1302,27 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
           });
           if (insertedRecord) {
             yield* taskRepo.removeTask(op.accountId, op.taskListId, op.eventId);
-            yield* taskRepo.upsertTasks([insertedRecord], yield* Clock.currentTimeMillis);
+            // Google put it first among its siblings and renumbered them
+            // without bumping their `updated`: here they still hold their
+            // old places, and its "…00" would tie with the first one's.
+            // It goes first here too until the next pass, which sees the
+            // list's `updated` move and reads the order back.
+            const siblings = (yield* taskRepo.listSiblings(
+              op.accountId,
+              op.taskListId,
+              insertedRecord.parentId,
+            )).filter((sibling) => sibling.id !== insertedRecord.id);
+            yield* taskRepo.upsertTasks(
+              [
+                placedTask(insertedRecord, {
+                  ...(insertedRecord.parentId === undefined
+                    ? {}
+                    : { parentId: insertedRecord.parentId }),
+                  position: provisionalPosition(siblings, undefined),
+                }),
+              ],
+              yield* Clock.currentTimeMillis,
+            );
           } else {
             // Unreachable in practice (a just-inserted task is never a
             // tombstone) — keep the row addressable under the server id.

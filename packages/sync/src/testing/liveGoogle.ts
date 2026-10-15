@@ -41,6 +41,7 @@ import {
   type LiveCalendarListEntry,
   type LiveEvent,
   type LiveTask,
+  moveTask,
   patchEvent,
   patchTask,
   putEvent,
@@ -188,6 +189,12 @@ export interface LiveScratchShape {
     eventId: string,
   ) => Effect.Effect<ReadonlyArray<LiveEvent>, ScratchError>;
   readonly listTasks: (listId: string) => Effect.Effect<ReadonlyArray<LiveTask>, ScratchError>;
+  /** Another device's same-list `tasks.move`. */
+  readonly moveTask: (
+    listId: string,
+    taskId: string,
+    place: { readonly parent?: string; readonly previous?: string },
+  ) => Effect.Effect<LiveTask, ScratchError>;
   readonly patchEvent: (
     calendarId: string,
     eventId: string,
@@ -243,6 +250,7 @@ const makeLiveScratch = (accountId: string): Effect.Effect<LiveScratchShape, nev
       listInstances: (calendarId, eventId) =>
         call((token) => listInstances(token, calendarId, eventId)),
       listTasks: (listId) => call((token) => listTasks(token, listId)),
+      moveTask: (listId, taskId, place) => call((token) => moveTask(token, listId, taskId, place)),
       patchEvent: (calendarId, eventId, changes) =>
         call((token) => patchEvent(token, calendarId, eventId, changes)),
       patchTask: (listId, taskId, changes) =>

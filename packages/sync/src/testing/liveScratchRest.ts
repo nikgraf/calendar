@@ -390,6 +390,24 @@ export const patchTask = (
 ): Promise<LiveTask> =>
   request(token, 'PATCH', listUrl(listId, `/tasks/${encodeURIComponent(taskId)}`), changes);
 
+/** A same-list `tasks.move`: under `parent` (absent: the top level) right after `previous` (absent: first). */
+export const moveTask = (
+  token: string,
+  listId: string,
+  taskId: string,
+  place: { readonly parent?: string; readonly previous?: string },
+): Promise<LiveTask> => {
+  const query = new URLSearchParams({
+    ...(place.parent === undefined ? {} : { parent: place.parent }),
+    ...(place.previous === undefined ? {} : { previous: place.previous }),
+  }).toString();
+  return request(
+    token,
+    'POST',
+    listUrl(listId, `/tasks/${encodeURIComponent(taskId)}/move${query ? `?${query}` : ''}`),
+  );
+};
+
 export const deleteTask = (token: string, listId: string, taskId: string): Promise<void> =>
   request<void>(token, 'DELETE', listUrl(listId, `/tasks/${encodeURIComponent(taskId)}`));
 

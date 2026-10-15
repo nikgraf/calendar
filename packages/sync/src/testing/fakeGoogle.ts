@@ -16,7 +16,9 @@ import { HttpClient, HttpClientResponse, type HttpClientRequest } from 'effect/h
  * tombstones, If-Match → 412, a re-posted event id → 409 (a deleted
  * event keeps its id reserved), events.update as a full replace that can
  * bring a deleted event back, server-assigned task ids, the updatedMin
- * watermark with deleted tombstones. Every semantic here mirrors
+ * watermark with deleted tombstones, sibling positions renumbered on every
+ * insert, delete and move without an `updated` bump, and a list `updated`
+ * that every one of those moves. Every semantic here mirrors
  * docs/google-sync-and-testing.md; before this, those were prose only.
  */
 
@@ -132,6 +134,9 @@ export class FakeGoogle {
   private readonly expiredBelow = new Map<string, number>();
   private readonly tasks = new Map<string, Map<string, StoredTask>>();
   private taskSeq = 0;
+  /** epoch ms of each list's own `updated`; untouched lists answer `createdAt`. */
+  private readonly listStamps = new Map<string, number>();
+  private readonly createdAt: number;
   private readonly live: boolean;
   /** The fake's clock for task `updated` stamps; advance it between passes. */
   now = Date.parse('2026-08-24T10:00:00.000Z');
@@ -147,6 +152,7 @@ export class FakeGoogle {
     this.pageSize = options.pageSize ?? 2500;
     this.people = [...(options.people ?? [])];
     this.taskLists = [...(options.taskLists ?? [])];
+    this.createdAt = this.stamp();
   }
 
   // ---- server-side mutations the tests drive ----
@@ -172,18 +178,65 @@ export class FakeGoogle {
     this.expiredBelow.set(calendarId, this.versions.get(calendarId) ?? 0);
   }
 
+  /**
+   * Stores the task as given, positions included (seeding, another
+   * device's edit). The list's `updated` moves when the task is new or its
+   * parent, position or completion changed, as on Google.
+   */
   putTask(listId: string, task: GcalTask): void {
+    const existing = this.tasksOf(listId).get(task.id)?.task;
     this.tasksOf(listId).set(task.id, { task, updatedAt: this.stamp() });
+    if (
+      existing === undefined ||
+      existing.parent !== task.parent ||
+      existing.position !== task.position ||
+      existing.status !== task.status
+    ) {
+      this.touchList(listId);
+    }
+  }
+
+  /** Another device's insert: first among its siblings, which Google renumbers. */
+  insertTaskServerSide(listId: string, task: GcalTask): void {
+    const store = this.tasksOf(listId);
+    const entry: StoredTask = { task, updatedAt: this.stamp() };
+    this.renumber(store, [entry, ...this.siblingsOf(store, task.parent, task.id)]);
+    this.touchList(listId);
+  }
+
+  /** Another device's `tasks.move` inside the list (throws where Google answers 400). */
+  moveTaskServerSide(
+    listId: string,
+    taskId: string,
+    place: { readonly parent?: string; readonly previous?: string },
+  ): void {
+    const existing = this.tasksOf(listId).get(taskId);
+    if (!existing || existing.task.deleted) {
+      throw new Error(`no task ${taskId} in ${listId}`);
+    }
+    const refused = this.placeTask(listId, existing, place.parent ?? null, place.previous ?? null);
+    if (refused !== undefined) {
+      throw new Error(refused);
+    }
   }
 
   deleteTaskServerSide(listId: string, taskId: string): void {
-    const existing = this.tasksOf(listId).get(taskId);
+    const store = this.tasksOf(listId);
+    const existing = store.get(taskId);
     if (existing) {
-      this.tasksOf(listId).set(taskId, {
+      store.set(taskId, {
         task: { ...existing.task, deleted: true },
         updatedAt: this.stamp(),
       });
+      // The siblings it left close ranks (verified live).
+      this.renumber(store, this.siblingsOf(store, existing.task.parent, taskId));
+      this.touchList(listId);
     }
+  }
+
+  /** The list's own `updated` (tasklists.list), as epoch ms. */
+  listUpdatedOf(listId: string): number {
+    return this.listStamps.get(listId) ?? this.createdAt;
   }
 
   /**
@@ -326,7 +379,12 @@ export class FakeGoogle {
     }
     if (url.hostname === 'tasks.googleapis.com') {
       if (path === '/tasks/v1/users/@me/lists') {
-        return reply(200, { items: this.taskLists });
+        return reply(200, {
+          items: this.taskLists.map((list) => ({
+            ...list,
+            updated: new Date(this.listUpdatedOf(list.id)).toISOString(),
+          })),
+        });
       }
       const taskMove = /^\/tasks\/v1\/lists\/([^/]+)\/tasks\/([^/]+)\/move$/.exec(path);
       if (taskMove && request.method === 'POST') {
@@ -522,7 +580,13 @@ export class FakeGoogle {
         id,
         ...(parent === null ? {} : { parent }),
       };
-      store.set(id, { task, updatedAt: this.stamp() });
+      // First among its siblings; they are renumbered, their `updated`
+      // stays (verified live).
+      this.renumber(store, [
+        { task, updatedAt: this.stamp() },
+        ...this.siblingsOf(store, task.parent, id),
+      ]);
+      this.touchList(listId);
       return reply(200, wire(store.get(id)!));
     }
     if (taskId !== undefined) {
@@ -543,6 +607,11 @@ export class FakeGoogle {
           }
         }
         store.set(taskId, { task: patched, updatedAt: this.stamp() });
+        // A completion moves the list's `updated`; a title, notes or due
+        // edit does not (verified live for title, notes and completion).
+        if (patched.status !== existing.task.status) {
+          this.touchList(listId);
+        }
         return reply(200, wire(store.get(taskId)!));
       }
       if (request.method === 'DELETE') {
@@ -589,7 +658,7 @@ export class FakeGoogle {
       return this.placeTaskRoute(listId, existing, params.parent, params.previous, reply);
     }
     const target = this.tasksOf(destination);
-    const { parent: _parent, ...task } = existing.task;
+    const { parent: formerParent, ...task } = existing.task;
     target.set(taskId, { task, updatedAt: this.stamp() });
     source.delete(taskId);
     for (const [childId, child] of source) {
@@ -598,6 +667,9 @@ export class FakeGoogle {
         source.delete(childId);
       }
     }
+    this.renumber(source, this.siblingsOf(source, formerParent, taskId));
+    this.touchList(listId);
+    this.touchList(destination);
     return reply(200, wire(target.get(taskId)!));
   }
 
@@ -605,7 +677,8 @@ export class FakeGoogle {
    * `tasks.move` inside a list, as verified live: the task goes under
    * `parent` (none: the top level) right after `previous`, which must be
    * one of those siblings (else 400); both sibling groups are renumbered
-   * as 20-digit ordinals and no `updated` changes. Google takes any depth.
+   * as 20-digit ordinals and no `updated` changes but the list's. Google
+   * takes any depth.
    */
   private placeTaskRoute(
     listId: string,
@@ -614,45 +687,74 @@ export class FakeGoogle {
     previous: string | null,
     reply: (status: number, json?: unknown) => HttpClientResponse.HttpClientResponse,
   ): HttpClientResponse.HttpClientResponse {
+    const refused = this.placeTask(listId, existing, parent, previous);
+    return refused === undefined
+      ? reply(200, wire(this.tasksOf(listId).get(existing.task.id)!))
+      : reply(400, { error: { message: refused } });
+  }
+
+  /** The move itself; the 400 message when Google would refuse it. */
+  private placeTask(
+    listId: string,
+    existing: StoredTask,
+    parent: string | null,
+    previous: string | null,
+  ): string | undefined {
     const store = this.tasksOf(listId);
     const taskId = existing.task.id;
     const parentEntry = parent === null ? undefined : store.get(parent);
     if (parent === taskId || (parent !== null && (!parentEntry || parentEntry.task.deleted))) {
-      return reply(400, { error: { message: 'Invalid Value' } });
+      return 'Invalid Value';
     }
-    const siblingsUnder = (parentId: string | undefined) =>
-      [...store.values()]
-        .filter(
-          (entry) =>
-            !entry.task.deleted && entry.task.id !== taskId && entry.task.parent === parentId,
-        )
-        .sort((a, b) => {
-          const left = a.task.position ?? '~';
-          const right = b.task.position ?? '~';
-          return left < right ? -1 : left > right ? 1 : a.task.id.localeCompare(b.task.id);
-        });
-    const target = siblingsUnder(parent ?? undefined);
+    const target = this.siblingsOf(store, parent ?? undefined, taskId);
     const after = previous === null ? -1 : target.findIndex((entry) => entry.task.id === previous);
     if (previous !== null && after < 0) {
-      return reply(400, { error: { message: 'Invalid task id' } });
+      return 'Invalid task id';
     }
     const { parent: formerParent, ...rest } = existing.task;
     const moved: StoredTask = {
       task: { ...rest, ...(parent === null ? {} : { parent }) },
       updatedAt: existing.updatedAt,
     };
-    const renumber = (entries: ReadonlyArray<StoredTask>) =>
-      entries.forEach((entry, index) => {
-        store.set(entry.task.id, {
-          ...entry,
-          task: { ...entry.task, position: String(index).padStart(20, '0') },
-        });
-      });
-    renumber([...target.slice(0, after + 1), moved, ...target.slice(after + 1)]);
+    this.renumber(store, [...target.slice(0, after + 1), moved, ...target.slice(after + 1)]);
     if (formerParent !== (parent ?? undefined)) {
-      renumber(siblingsUnder(formerParent));
+      this.renumber(store, this.siblingsOf(store, formerParent, taskId));
     }
-    return reply(200, wire(store.get(taskId)!));
+    this.touchList(listId);
+    return undefined;
+  }
+
+  /** The live tasks under `parentId` (absent: the top level) but `exceptId`, in position order. */
+  private siblingsOf(
+    store: Map<string, StoredTask>,
+    parentId: string | undefined,
+    exceptId: string,
+  ): Array<StoredTask> {
+    return [...store.values()]
+      .filter(
+        (entry) =>
+          !entry.task.deleted && entry.task.id !== exceptId && entry.task.parent === parentId,
+      )
+      .sort((a, b) => {
+        const left = a.task.position ?? '~';
+        const right = b.task.position ?? '~';
+        return left < right ? -1 : left > right ? 1 : a.task.id.localeCompare(b.task.id);
+      });
+  }
+
+  /** One sibling group, numbered in this order as Google's 20-digit ordinals; `updated` stays. */
+  private renumber(store: Map<string, StoredTask>, entries: ReadonlyArray<StoredTask>): void {
+    entries.forEach((entry, index) => {
+      store.set(entry.task.id, {
+        ...entry,
+        task: { ...entry.task, position: String(index).padStart(20, '0') },
+      });
+    });
+  }
+
+  /** The list's own `updated` moves: strictly later, even on a frozen clock. */
+  private touchList(listId: string): void {
+    this.listStamps.set(listId, Math.max(this.stamp(), this.listUpdatedOf(listId) + 1));
   }
 
   // ---- helpers ----

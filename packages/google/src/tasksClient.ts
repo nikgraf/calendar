@@ -18,6 +18,12 @@ export interface TaskWriteChanges {
 }
 
 export interface ListTasksParams {
+  /**
+   * Each task's id, parent and position only (a partial response),
+   * deleted ones left out: the list's order, read when its `updated`
+   * says an insert, delete or move renumbered it.
+   */
+  readonly orderOnly?: boolean | undefined;
   readonly pageToken?: string | undefined;
   /** RFC 3339 watermark; omitted on a full pass. */
   readonly updatedMin?: string | undefined;
@@ -116,13 +122,14 @@ const make: Effect.Effect<GoogleTasksClientShape, never, HttpClient.HttpClient |
           HttpClientRequest.get(tasksUrl(taskListId)).pipe(
             HttpClientRequest.setUrlParams(
               definedParams({
+                fields: params.orderOnly ? 'nextPageToken,items(id,parent,position)' : undefined,
                 maxResults: 100,
                 pageToken: params.pageToken,
                 // Always on: completed tasks render struck-through, hidden
                 // covers tasks completed before this pass, and deleted
                 // tombstones drive local removal on incremental polls.
                 showCompleted: 'true',
-                showDeleted: 'true',
+                showDeleted: params.orderOnly ? undefined : 'true',
                 showHidden: 'true',
                 updatedMin: params.updatedMin,
               }),
