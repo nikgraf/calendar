@@ -808,6 +808,16 @@ export interface LaunchOptions {
    */
   readonly google?: { readonly fixture: GoogleFixture } | { readonly live: LiveGoogleLaunch };
   /**
+   * Absent (default): dictation is the Mac's — its microphone, its speech
+   * models. Present: the page's microphone plays a loop of a phrase-long
+   * tone between stretches of quiet room (`dictationAudio`), and each
+   * transcription answers the next of `phrases` — a spec dictates in the
+   * fixture model's grammar, with no TCC prompt and no developer's room.
+   * (Chromium's fake audio device never opens under Electron here, so
+   * `getUserMedia` itself is stood in for, in the page.)
+   */
+  readonly microphone?: { readonly phrases: ReadonlyArray<string> };
+  /**
    * Absent (default): the real helper, so the ⌘K bar shows whatever this
    * machine's Apple Intelligence allows. 'fixture': the deterministic model
    * and text recognizer from @calendar/ai answer in the main process, so a
@@ -845,6 +855,60 @@ export interface LiveGoogleLaunch extends LiveAccountSeed {
   /** Overrides the 90 s poll so a pull lands inside a test's timeout. */
   readonly syncIntervalMs?: number | undefined;
 }
+
+const DICTATION_SAMPLE_RATE = 16_000;
+/** The sample at `ms` into the fixture microphone's loop. */
+const sampleAt = (ms: number) => Math.round((DICTATION_SAMPLE_RATE * ms) / 1000);
+/** The fixture microphone's loop: quiet room, a phrase, then a pause long enough to end it. */
+export const DICTATION_LOOP_MS = { phrase: 1200, quietAfter: 2500, quietBefore: 800 } as const;
+
+/**
+ * One loop of the fixture microphone: a quiet room's noise (about -60
+ * dBFS), a phrase-long tone over it (about -23 dBFS), then the room again
+ * for longer than the pause that ends a phrase. Deterministic: the same
+ * samples every run.
+ */
+const dictationAudio = (): Float32Array => {
+  const { phrase, quietAfter, quietBefore } = DICTATION_LOOP_MS;
+  const samples = new Float32Array(sampleAt(quietBefore + phrase + quietAfter));
+  let seed = 1;
+  const noise = () => {
+    seed = (seed * 16_807) % 2_147_483_647;
+    return (seed / 2_147_483_647 - 0.5) * 0.002;
+  };
+  for (let index = 0; index < samples.length; index += 1) {
+    const speaking = index >= sampleAt(quietBefore) && index < sampleAt(quietBefore + phrase);
+    samples[index] =
+      noise() +
+      (speaking ? 0.1 * Math.sin((2 * Math.PI * 220 * index) / DICTATION_SAMPLE_RATE) : 0);
+  }
+  return samples;
+};
+
+/**
+ * The page's microphone, stood in for: each `getUserMedia` answers a fresh
+ * stream of one looping buffer of `dictationAudio`, played through Web
+ * Audio — the same samples every run, whatever the room.
+ */
+const fakeMicrophone = (): string => {
+  const samples = Buffer.from(dictationAudio().buffer).toString('base64');
+  return `(() => {
+    const context = new AudioContext({ sampleRate: ${String(DICTATION_SAMPLE_RATE)} });
+    const bytes = Uint8Array.from(atob(${JSON.stringify(samples)}), (char) => char.charCodeAt(0));
+    const samples = new Float32Array(bytes.buffer);
+    const buffer = context.createBuffer(1, samples.length, context.sampleRate);
+    buffer.copyToChannel(samples, 0);
+    const source = context.createBufferSource();
+    source.buffer = buffer;
+    source.loop = true;
+    source.start();
+    navigator.mediaDevices.getUserMedia = async () => {
+      const stream = context.createMediaStreamDestination();
+      source.connect(stream);
+      return stream.stream;
+    };
+  })()`;
+};
 
 /** One window's DOM and screenshot, for a failed test's artifacts. */
 const dumpPage = async (page: Cdp, dir: string, name: string) => {
@@ -949,6 +1013,14 @@ export const launchApp = async (seed?: SeedData, options: LaunchOptions = {}): P
     writeFileSync(join(userDataDir, 'model-provider.json'), JSON.stringify(options.modelProvider));
   }
 
+  const microphoneEnv: Record<string, string> = options.microphone
+    ? (() => {
+        const fixturePath = join(userDataDir, 'microphone-fixture.json');
+        writeFileSync(fixturePath, JSON.stringify({ phrases: options.microphone.phrases }));
+        return { CALENDAR_MICROPHONE: 'fixture', CALENDAR_MICROPHONE_FIXTURE: fixturePath };
+      })()
+    : {};
+
   // The watched settings file stays inside the temp profile: HOME is not
   // isolated here, and a run must never read or rewrite a developer's file.
   const settingsFilePath = join(userDataDir, 'solunivo.jsonc');
@@ -974,6 +1046,8 @@ export const launchApp = async (seed?: SeedData, options: LaunchOptions = {}): P
       ...geoEnv,
       // Google, when a spec asks for it: the in-process fake API.
       ...googleEnv,
+      // And the microphone, when a spec dictates: a file, never the room.
+      ...microphoneEnv,
       ...(options.model === 'fixture' ? { CALENDAR_MODEL: 'fixture' } : {}),
       CALENDAR_AGENT_SOCKET: agentSocketPath,
       CALENDAR_CAPTURE_WATCH: options.captureWatch ?? 'off',
@@ -1010,6 +1084,9 @@ export const launchApp = async (seed?: SeedData, options: LaunchOptions = {}): P
     cdp = await Cdp.connect(port);
     // Wait for the calendar shell to render.
     await cdp.waitFor(`document.body.textContent.includes('Today')`);
+    if (options.microphone) {
+      await cdp.eval(fakeMicrophone());
+    }
   } catch (error) {
     // A launch failure happens in beforeAll, where no test dump runs:
     // the app's own output is the only clue, so put it in the run log.

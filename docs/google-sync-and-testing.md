@@ -558,14 +558,20 @@ sets `CALENDAR_REMINDERS=off`, `CALENDAR_CONTACTS=off`,
 `CALENDAR_AGENT_SOCKET` under the temp profile, and sets
 `CALENDAR_E2E_INPUT=cdp`; `launchApp(seed, options)` opts a spec into a
 fixture or a real bridge (`appleCalendar`, `captureWatch`, `contacts`,
-`geo`, `google`, `model`, `reminders`, `agents`, `settingsFile`,
-`window`).
+`geo`, `google`, `microphone`, `model`, `reminders`, `agents`,
+`settingsFile`, `window`). `microphone` stands in for the page's
+`getUserMedia` with a Web Audio loop of quiet room and a phrase-long
+tone (Chromium's fake audio device never opens under Electron), and
+`CALENDAR_MICROPHONE=fixture` answers each transcription with the
+spec's next phrase, nothing asked or installed.
 
 The specs: `flows` (rendering, views, trackpad pan, editor CRUD, drag
 move/resize/cancel, slot drag, recurring scopes, RSVP, visibility,
 calendar color, month view, task lane and editor, the sync footer, the
 privacy modal, the settings window, the inspector and inline editor, ⌘K);
-`capture` (paste-to-drafts on the fixture model); `draftThread` (a
+`capture` (paste-to-drafts on the fixture model); `handsFree` (one
+click of the microphone: two phrases land at their pauses, a typed title
+ends the dictation, the next phrase keeps that title); `draftThread` (a
 phrase's draft on the grid, a change, Undo, Save; four turns folding to
 two under "+2 earlier queries", the changed time flashing; a pasted mail's thread,
 the pager, Remove, Add all; drafts made an event in another calendar, a

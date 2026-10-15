@@ -42,10 +42,13 @@ export const onAppActive = (onActive: () => void): (() => void) => {
 
 /**
  * The quick-add field on top of a new item's editor: a phrase, typed or
- * dictated, fills the form below (Return, Apply, or the end of a
+ * dictated, fills the form below (Return, Apply, or a pause in
  * dictation). Nothing is written by the model itself, and without it the
  * field says why and the form below is still there. Find a time is the
- * event form's own tool (`FindTimeFields`).
+ * event form's own tool (`FindTimeFields`). Dictation is hands-free: one
+ * tap of the microphone, then each pause sends what was said and it
+ * listens again, until the microphone is tapped, the field is typed into
+ * or the form is edited by hand (`editKey`).
  *
  * The field, the microphone and Apply are one box, and nothing under it
  * moves while it works: dictation's hints and a failure show in the field
@@ -57,7 +60,9 @@ export const onAppActive = (onActive: () => void): (() => void) => {
 export function QuickAddBar({
   attached = false,
   autoFocus = true,
+  editKey,
   fallbackDate,
+  hold,
   onApply,
   onPhrase,
   placeholder = 'Lunch with Sarah tomorrow at 1',
@@ -71,8 +76,12 @@ export function QuickAddBar({
    * height for; a tap on the field brings it.
    */
   autoFocus?: boolean | undefined;
+  /** Moves at each edit made by hand in the form: hands-free dictation ends. */
+  editKey?: number | undefined;
   /** Undated phrases land on this day (the editor's). */
   fallbackDate: string;
+  /** The form is still taking the last phrase in: dictation waits to listen again. */
+  hold?: boolean | undefined;
   onApply: (item: QuickAddItem) => void;
   /**
    * Takes the phrase over (the editor's draft thread): resolves a message
@@ -91,16 +100,20 @@ export function QuickAddBar({
   const {
     busy,
     dismissError,
+    endVoice,
     error,
+    handsFree,
+    heard,
     phrase,
     setPhrase,
-    startRecording,
-    stopRecording,
     submit,
+    toggleVoice,
     voice,
     voiceAvailable,
   } = useQuickAddModel({
+    editKey,
     fallbackDate,
+    hold,
     model: languageModel,
     onApply,
     onPhrase:
@@ -123,19 +136,21 @@ export function QuickAddBar({
   const unavailable = status !== null && status !== 'ready';
   const working = busy || voice === 'transcribing';
   // What the field says instead of its words: dictation's hint, or why
-  // the last phrase failed (until the field is tapped or typed into).
+  // the last phrase failed (until the field is tapped or typed into —
+  // while listening, until the next phrase begins).
   const note: { readonly text: string; readonly tone: 'error' | 'hint' } | null =
     voice === 'preparing'
       ? { text: 'Preparing dictation…', tone: 'hint' }
-      : voice === 'recording'
-        ? { text: 'Listening… tap the mic to stop', tone: 'hint' }
-        : !working && error
-          ? { text: error, tone: 'error' }
+      : !working && error
+        ? { text: error, tone: 'error' }
+        : voice === 'recording'
+          ? { text: 'Listening… pause to send, tap the mic to stop', tone: 'hint' }
           : null;
   const failed = note?.tone === 'error';
-  /** The failed words back in the field, selected, to fix or type over. */
+  /** The failed words back in the field, selected, to fix or type over: dictation hands over. */
   const takeBack = () => {
     if (failed) {
+      endVoice();
       dismissError();
       // After the tap has placed its caret, or it would win over the selection.
       setTimeout(() => inputRef.current?.setSelection(0, phrase.length), 120);
@@ -188,8 +203,12 @@ export function QuickAddBar({
             <TextInput
               accessibilityHint={note?.text}
               accessibilityLabel="Describe what to add"
-              editable={!busy && voice !== 'preparing' && voice !== 'recording'}
+              editable={!busy}
               onChangeText={(text) => {
+                // Typed into while dictating: the user took over.
+                if (handsFree) {
+                  endVoice();
+                }
                 // Typed into a failed field: a new phrase, from the key pressed.
                 dismissError();
                 setPhrase(text);
@@ -207,22 +226,30 @@ export function QuickAddBar({
             />
             {voiceAvailable ? (
               <Pressable
-                accessibilityLabel={voice === 'recording' ? 'Stop dictating' : 'Dictate'}
+                accessibilityLabel={handsFree ? 'Stop dictating' : 'Dictate'}
                 accessibilityRole="button"
-                disabled={working || voice === 'preparing'}
-                onPress={() => void (voice === 'recording' ? stopRecording() : startRecording())}
+                accessibilityState={{ selected: handsFree }}
+                // On, it always answers (to stop); off, not while a typed phrase is read.
+                disabled={!handsFree && working}
+                onPress={() => {
+                  // The keyboard would hide the form the phrases fill.
+                  if (!handsFree) {
+                    Keyboard.dismiss();
+                  }
+                  toggleVoice();
+                }}
                 style={[
                   styles.mic,
-                  voice === 'recording' && styles.micRecording,
-                  working && styles.disabled,
+                  handsFree && styles.micRecording,
+                  !handsFree && working && styles.disabled,
                 ]}
                 testID="quick-add-mic"
               >
-                {/* The desktop's microphone: a line icon, red while recording. */}
+                {/* The desktop's microphone: a line icon, red while dictating, filled while it hears speech. */}
                 <SymbolView
-                  name="mic"
+                  name={heard ? 'mic.fill' : 'mic'}
                   size={20}
-                  tintColor={voice === 'recording' ? colors.danger : colors.text}
+                  tintColor={handsFree ? colors.danger : colors.text}
                   weight="medium"
                 />
               </Pressable>

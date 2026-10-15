@@ -81,7 +81,17 @@ The bench (`apps/desktop/e2e/bench/modelBench.e2e.ts`, run by path with
 Ollama models side by side. iOS reaches the same models via
 `@react-native-ai/apple` and Vision through the `solunivo-ocr` Expo
 module. Dictation audio is captured by the UI layer (renderer
-`getUserMedia` → 16 kHz WAV) and only transcribed natively.
+`getUserMedia` → 16 kHz WAV) and only transcribed natively. Dictation
+is hands-free: each adapter reads the level as it records (the
+worklet's blocks on the desktop, expo-audio metering on iOS) and
+`createEndpointer` (`packages/ai/src/endpointer.ts`) hears a phrase
+begin and the pause that ends it, against the room's own floor; a
+recording in which nobody spoke is never transcribed. `useQuickAddModel`
+sends each phrase at its pause and listens again (`voiceLoop.ts`) once
+the form has taken the last one in (`useThreadEditor().applying`), until
+the microphone is pressed, the field is typed into, the form is edited
+by hand (`userEdits`, counted by the setters the forms receive, never by
+a turn's own fills) or 30 s pass with nobody speaking.
 
 **Native bridges** (`packages/reminders`, `packages/apple-calendar`,
 `packages/contacts`, `packages/geo`): each is one JSON protocol spoken by
@@ -870,7 +880,7 @@ gateway carries all of it. Details, limits and the threat model:
   straight into its quick-add field), a task chip or a result. Single
   keys: T = today, ←/→ step the view; ⌘, opens Settings from the menu. A new
   item's editor is the one add path: the quick-add field on top
-  (`QuickAddBar`, a phrase or a dictation fills the form), the Event |
+  (`QuickAddBar`, a phrase typed or dictated hands-free fills the form), the Event |
   Task | Reminder control (`useEditorKinds`, only
   the kinds something can hold), then the form; on an existing item the
   control converts. A new item is a thread of drafts

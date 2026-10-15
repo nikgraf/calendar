@@ -2,7 +2,7 @@ import { CalendarInfo } from '@calendar/core';
 import { describe, expect, it } from 'vite-plus/test';
 import { startThread } from './draftThread.ts';
 import type { QuickAddItem } from './quickAddItem.ts';
-import { threadPreviews } from './threadEditor.ts';
+import { reportingEdits, threadPreviews } from './threadEditor.ts';
 
 const TZ = 'Europe/Vienna';
 const calendar = (id: string, colorHex: string) =>
@@ -91,5 +91,25 @@ describe('threadPreviews', () => {
       '#654321',
       '#123456',
     ]);
+  });
+});
+
+describe('reportingEdits', () => {
+  it('reports the listed calls before making them, and leaves everything else alone', () => {
+    const calls: Array<string> = [];
+    const model = {
+      applyPrefill: (title: string) => calls.push(`prefill ${title}`),
+      clearDueDate: undefined as (() => void) | undefined,
+      setTitle: (title: string) => calls.push(`title ${title}`),
+      title: 'Lunch',
+    };
+    const reporting = reportingEdits(model, ['clearDueDate', 'setTitle'], () => calls.push('edit'));
+
+    reporting.setTitle('Dinner');
+    reporting.applyPrefill('Brunch');
+    expect(calls).toEqual(['edit', 'title Dinner', 'prefill Brunch']);
+    expect(reporting.title).toBe('Lunch');
+    // A setter the model does not offer here stays absent.
+    expect(reporting.clearDueDate).toBeUndefined();
   });
 });

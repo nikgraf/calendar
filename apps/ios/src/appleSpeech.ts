@@ -1,7 +1,9 @@
 import {
+  createEndpointer,
   MicrophoneDeniedError,
   SpeechUnsupportedError,
   transcriptFromSegments,
+  type Endpointer,
   type SpeechToText,
 } from '@calendar/ai';
 
@@ -9,7 +11,8 @@ import {
  * Linear PCM in a .wav container rather than the m4a preset: the
  * transcription API writes the bytes to an extension-less temp file and
  * opens them with AVAudioFile, so the container must be recognisable from
- * its header alone.
+ * its header alone. Metering gives hands-free listening the level
+ * (`getStatus().metering`, dBFS) it hears a pause in.
  */
 const RECORDING_OPTIONS = {
   bitRate: 256_000,
@@ -21,9 +24,13 @@ const RECORDING_OPTIONS = {
     linearPCMIsFloat: false,
     outputFormat: 'lpcm',
   },
+  isMeteringEnabled: true,
   numberOfChannels: 1,
   sampleRate: 16_000,
 };
+
+/** How often hands-free listening reads the recorder's level. */
+const LEVEL_POLL_MS = 50;
 
 /** Locale for recognition, so dictating German transcribes German. */
 const locale = (): string => {
@@ -58,9 +65,26 @@ const load = () => {
 
 /** The in-flight recording, if any. */
 let recorder:
-  | { getURI?: () => string | null; record: () => void; stop: () => Promise<void> }
+  | {
+      getStatus?: () => { readonly metering?: number };
+      getURI?: () => string | null;
+      record: () => void;
+      stop: () => Promise<void>;
+    }
   | undefined;
 let recordingUri: string | undefined;
+/** Hands-free only: the recording's ear, and the timer feeding it the level. */
+let endpointer: Endpointer | undefined;
+let levelPoll: ReturnType<typeof setInterval> | undefined;
+
+/** Stops reading the level; returns the ear that was listening, if any. */
+const stopListening = (): Endpointer | undefined => {
+  clearInterval(levelPoll);
+  levelPoll = undefined;
+  const ear = endpointer;
+  endpointer = undefined;
+  return ear;
+};
 
 const releaseSession = (audio: typeof import('expo-audio')) => {
   // Leaving the session in record mode keeps the microphone indicator lit
@@ -86,6 +110,7 @@ const discard = (files: typeof import('expo-file-system'), uri: string | undefin
  */
 export const appleSpeech: SpeechToText = {
   cancelRecording: async () => {
+    stopListening();
     const modules = load();
     if (!modules || !recorder) {
       return;
@@ -123,7 +148,7 @@ export const appleSpeech: SpeechToText = {
       throw error;
     }
   },
-  startRecording: async ({ signal } = {}) => {
+  startRecording: async ({ onSpeech, signal } = {}) => {
     const modules = load();
     if (!modules) {
       throw new SpeechUnsupportedError({
@@ -154,8 +179,24 @@ export const appleSpeech: SpeechToText = {
     recorder = instance;
     recordingUri = undefined;
     instance.record();
+    stopListening();
+    if (onSpeech) {
+      const ear = createEndpointer();
+      endpointer = ear;
+      levelPoll = setInterval(() => {
+        const level = instance.getStatus?.().metering;
+        if (level === undefined) {
+          return;
+        }
+        const event = ear.push(level, Date.now());
+        if (event) {
+          onSpeech(event);
+        }
+      }, LEVEL_POLL_MS);
+    }
   },
   stopRecording: async () => {
+    const ear = stopListening();
     const modules = load();
     if (!modules || !recorder) {
       return undefined;
@@ -167,7 +208,8 @@ export const appleSpeech: SpeechToText = {
       await instance.stop();
       uri = instance.getURI?.() ?? undefined;
       recordingUri = uri;
-      if (!uri) {
+      // Hands-free and nobody spoke: nothing worth transcribing.
+      if (!uri || (ear && !ear.heard())) {
         return undefined;
       }
       const audio = await new modules.files.File(uri).arrayBuffer();

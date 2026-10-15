@@ -1,12 +1,17 @@
 import {
+  createEndpointer,
+  levelOf,
   MicrophoneDeniedError,
   SpeechUnsupportedError,
   transcriptFromSegments,
+  type Endpointer,
   type SpeechToText,
 } from '@calendar/ai';
 import { encodeWav } from './wavEncoder.ts';
 
 const SAMPLE_RATE = 16_000;
+/** Hands-free listening reads the level this often: the worklet's 8 ms blocks are noisier than speech. */
+const LEVEL_WINDOW_MS = 50;
 
 /**
  * Desktop dictation: the renderer owns the microphone (getUserMedia +
@@ -26,6 +31,8 @@ const WORKLET_URL = new URL('pcm-collector.worklet.js', document.baseURI).href;
 interface Recording {
   readonly chunks: Array<Float32Array>;
   readonly context: AudioContext;
+  /** Hands-free only: whether the phrase has begun, and when it ended. */
+  readonly endpointer: Endpointer | undefined;
   readonly stream: MediaStream;
 }
 
@@ -92,7 +99,7 @@ export const desktopSpeech: SpeechToText = {
     }
   },
 
-  startRecording: async ({ signal } = {}) => {
+  startRecording: async ({ onSpeech, signal } = {}) => {
     let stream: MediaStream;
     try {
       stream = await navigator.mediaDevices.getUserMedia({
@@ -120,8 +127,31 @@ export const desktopSpeech: SpeechToText = {
     const source = context.createMediaStreamSource(stream);
     const collector = new AudioWorkletNode(context, 'pcm-collector');
     const chunks: Array<Float32Array> = [];
+    const endpointer = onSpeech ? createEndpointer() : undefined;
+    // The level is read per window of samples, timed by the samples
+    // themselves: the clock is the audio's, not the page's.
+    const rate = context.sampleRate || SAMPLE_RATE;
+    const blockSize = (rate * LEVEL_WINDOW_MS) / 1000;
+    let block: Array<Float32Array> = [];
+    let blockLength = 0;
+    let samplesIn = 0;
     collector.port.onmessage = (message: MessageEvent<Float32Array>) => {
       chunks.push(message.data);
+      if (!endpointer || !onSpeech) {
+        return;
+      }
+      block.push(message.data);
+      blockLength += message.data.length;
+      samplesIn += message.data.length;
+      if (blockLength < blockSize) {
+        return;
+      }
+      const event = endpointer.push(levelOf(collectSamples(block)), (samplesIn / rate) * 1000);
+      block = [];
+      blockLength = 0;
+      if (event) {
+        onSpeech(event);
+      }
     };
     source.connect(collector);
     // One recording at a time: replacing one without stopping it would
@@ -129,7 +159,7 @@ export const desktopSpeech: SpeechToText = {
     if (recording) {
       stopStream(recording.stream, recording.context);
     }
-    recording = { chunks, context, stream };
+    recording = { chunks, context, endpointer, stream };
   },
 
   stopRecording: async () => {
@@ -139,6 +169,10 @@ export const desktopSpeech: SpeechToText = {
       return undefined;
     }
     stopStream(active.stream, active.context);
+    // Hands-free and nobody spoke: nothing worth sending to the helper.
+    if (active.endpointer && !active.endpointer.heard()) {
+      return undefined;
+    }
     const samples = collectSamples(active.chunks);
     if (samples.length === 0) {
       return undefined;
