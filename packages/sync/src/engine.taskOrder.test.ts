@@ -50,14 +50,17 @@ const MINUTE = 60_000;
 
 const at = (n: number) => String(n).padStart(20, '0');
 
-/** Trip ▸ Pack, Book, Visa · Rent · Party, in one list. */
+/** Trip ▸ Pack, Book, Visa · Rent · Party in one list; Mail ▸ Stamps in another. */
 const newGoogle = () => {
   const google = new FakeGoogle({
     calendars: [{ accessRole: 'owner', id: 'cal-1', primary: true, summary: 'Personal' }],
-    taskLists: [{ id: 'list-1', title: 'My Tasks' }],
+    taskLists: [
+      { id: 'list-1', title: 'My Tasks' },
+      { id: 'list-2', title: 'Errands' },
+    ],
   });
-  const put = (id: string, position: number, parent?: string) =>
-    google.putTask('list-1', {
+  const put = (id: string, position: number, parent?: string, listId = 'list-1') =>
+    google.putTask(listId, {
       id,
       ...(parent === undefined ? {} : { parent }),
       position: at(position),
@@ -70,6 +73,8 @@ const newGoogle = () => {
   put('visa', 2, 'trip');
   put('rent', 1);
   put('party', 2);
+  put('mail', 0, undefined, 'list-2');
+  put('stamps', 0, 'mail', 'list-2');
   return google;
 };
 
@@ -105,6 +110,13 @@ const group = (parent?: string) =>
   Effect.gen(function* () {
     const rows = yield* (yield* TaskRepo).listSiblings('acc-1', 'list-1', parent);
     return rows.map((row) => row.id);
+  });
+
+/** Every task of a list, subtasks included, by id. */
+const idsIn = (listId: string) =>
+  Effect.gen(function* () {
+    const rows = yield* (yield* TaskRepo).getMirrorSource('acc-1', [listId]);
+    return rows.map((row) => row.id).sort();
   });
 
 /** Order-only listings of the list so far. */
@@ -272,6 +284,103 @@ describe('task order made elsewhere (Google)', () => {
         `book@${at(2)}`,
         `visa@${at(3)}`,
       ]);
+    }).pipe(noYield, Effect.provide(layerFor(google)));
+  });
+
+  it.effect('a task another device moved to another list leaves this one, subtasks and all', () => {
+    const google = newGoogle();
+    return Effect.gen(function* () {
+      yield* seed(google);
+      google.moveTaskServerSide('list-1', 'trip', { destination: 'list-2' });
+      yield* poll;
+      // No tombstone came: the order listing stopped naming them.
+      expect(yield* idsIn('list-1')).toEqual(['party', 'rent']);
+      expect(yield* idsIn('list-2')).toEqual(['book', 'mail', 'pack', 'stamps', 'trip', 'visa']);
+      expect((yield* (yield* TaskRepo).get('acc-1', 'list-2', 'visa'))?.parentId).toBe('trip');
+      expect(orderReads(google)).toBe(1);
+    }).pipe(noYield, Effect.provide(layerFor(google)));
+  });
+
+  it.effect('what this device still has queued stays: an edit, a create, a move in', () => {
+    const google = newGoogle();
+    return Effect.gen(function* () {
+      yield* seed(google);
+      const mutations = yield* EventMutations;
+      // Both meet a 503 at the start of the poll and wait out their backoff.
+      google.failTaskPatches = 1;
+      google.failTaskMoves = 1;
+      yield* mutations.updateTask({
+        accountId: 'acc-1',
+        changes: { title: 'visa photos' },
+        taskId: 'visa',
+        taskListId: 'list-1',
+      });
+      yield* mutations.moveTask({
+        accountId: 'acc-1',
+        draft: { dueDate: '', title: 'mail' },
+        target: { accountId: 'acc-1', taskListId: 'list-1' },
+        taskId: 'mail',
+        taskListId: 'list-2',
+      });
+      // Waits for the move into its list.
+      const created = yield* mutations.createTask({
+        accountId: 'acc-1',
+        taskListId: 'list-1',
+        title: 'tickets',
+      });
+      yield* poll;
+      google.moveTaskServerSide('list-1', 'trip', { destination: 'list-2' });
+      yield* poll;
+      expect((yield* ops).map((op) => `${op.kind} ${op.eventId}`).sort()).toEqual([
+        `createTask ${created.id}`,
+        'moveTask mail',
+        // The form's edit, behind the move.
+        'updateTask mail',
+        'updateTask visa',
+      ]);
+      // Visa's queued edit keeps it here for now; Mail and Stamps are not
+      // on Google's list yet, and neither is the create.
+      expect(yield* idsIn('list-1')).toEqual(
+        [created.id, 'mail', 'party', 'rent', 'stamps', 'visa'].sort(),
+      );
+      expect(yield* idsIn('list-2')).toEqual(['book', 'pack', 'trip', 'visa']);
+
+      yield* TestClock.adjust('1 hour');
+      yield* mutations.processPendingOps();
+      expect(yield* ops).toEqual([]);
+      yield* poll;
+      const [tickets] = (yield* idsIn('list-1')).filter((id) => id.startsWith('task-'));
+      // The edit found Visa gone from the list (404): one copy of each task.
+      expect(yield* idsIn('list-1')).toEqual([tickets, 'mail', 'party', 'rent', 'stamps'].sort());
+      expect(yield* idsIn('list-2')).toEqual(['book', 'pack', 'trip', 'visa']);
+    }).pipe(noYield, Effect.provide(layerFor(google)));
+  });
+
+  it.effect('a change made while the order listing is out holds the rows back a pass', () => {
+    const google = newGoogle();
+    return Effect.gen(function* () {
+      yield* seed(google);
+      google.moveTaskServerSide('list-1', 'rent', { destination: 'list-2' });
+      // An insert elsewhere lands as the listing goes out: a paged listing
+      // could have skipped a task, so nothing it misses goes yet.
+      google.onRequest = (call) => {
+        if (call.url.includes('/lists/list-1/tasks?') && call.url.includes('fields=')) {
+          google.onRequest = undefined;
+          google.insertTaskServerSide('list-1', {
+            id: 'tickets',
+            status: 'needsAction',
+            title: 'tickets',
+          });
+        }
+      };
+      yield* poll;
+      expect(yield* idsIn('list-1')).toContain('rent');
+      expect(yield* idsIn('list-2')).toContain('rent');
+
+      // The list's `updated` moved: the next pass reads the order again.
+      yield* poll;
+      expect(yield* idsIn('list-1')).toEqual(['book', 'pack', 'party', 'tickets', 'trip', 'visa']);
+      expect(orderReads(google)).toBe(2);
     }).pipe(noYield, Effect.provide(layerFor(google)));
   });
 });

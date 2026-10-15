@@ -79,6 +79,15 @@ export interface TaskRepoShape {
     parentId: string,
   ) => Effect.Effect<ReadonlyArray<TaskRecord>, SqlError>;
   /**
+   * The ids of a list's pulled copies (synced rows, none a queued op
+   * owns): the rows a listing of the list that no longer names them may
+   * remove.
+   */
+  readonly listSyncedIds: (
+    accountId: string,
+    listId: string,
+  ) => Effect.Effect<ReadonlyArray<string>, SqlError>;
+  /**
    * Keeps a row out of the pulls' way: a discarded op put the row back
    * whole (`upsertTasks`, which writes it synced) while another op of the
    * task is still queued and owns it.
@@ -418,6 +427,15 @@ const makeTaskRepo: Effect.Effect<TaskRepoShape, never, Reactivity | SqlClient> 
               AND t.parent_id = ${parentId}
             ORDER BY t.position IS NULL, t.position, t.id`,
           (rows) => rows.map(taskFromRow),
+        ),
+
+      listSyncedIds: (accountId, listId) =>
+        Effect.map(
+          sql<{ id: string }>`
+            SELECT id FROM tasks
+            WHERE account_id = ${accountId} AND list_id = ${listId}
+              AND sync_status = 'synced'`,
+          (rows) => rows.map((row) => row.id),
         ),
 
       markPending: (accountId, listId, taskId) =>

@@ -144,6 +144,8 @@ export class FakeGoogle {
   failTaskMoves = 0;
   /** This many task PATCH calls answer 503 first (an edit held in backoff). */
   failTaskPatches = 0;
+  /** Runs as each request arrives, before it is answered: a change made elsewhere mid-pass. */
+  onRequest: ((call: { readonly method: string; readonly url: string }) => void) | undefined;
 
   constructor(options: FakeGoogleOptions) {
     this.calendars = [...options.calendars];
@@ -204,15 +206,26 @@ export class FakeGoogle {
     this.touchList(listId);
   }
 
-  /** Another device's `tasks.move` inside the list (throws where Google answers 400). */
+  /**
+   * Another device's `tasks.move`: to `destination` (another list), or
+   * inside the list (throws where Google answers 400).
+   */
   moveTaskServerSide(
     listId: string,
     taskId: string,
-    place: { readonly parent?: string; readonly previous?: string },
+    place: {
+      readonly destination?: string;
+      readonly parent?: string;
+      readonly previous?: string;
+    },
   ): void {
     const existing = this.tasksOf(listId).get(taskId);
     if (!existing || existing.task.deleted) {
       throw new Error(`no task ${taskId} in ${listId}`);
+    }
+    if (place.destination !== undefined && place.destination !== listId) {
+      this.moveToList(listId, existing, place.destination);
+      return;
     }
     const refused = this.placeTask(listId, existing, place.parent ?? null, place.previous ?? null);
     if (refused !== undefined) {
@@ -307,7 +320,9 @@ export class FakeGoogle {
     for (const [key, value] of request.urlParams.params) {
       url.searchParams.set(key, value);
     }
-    this.requests.push({ method: request.method, url: url.toString() });
+    const call = { method: request.method, url: url.toString() };
+    this.requests.push(call);
+    this.onRequest?.(call);
     const body = this.bodyOf(request);
     const path = url.pathname;
     const reply = (status: number, json?: unknown) =>
@@ -657,7 +672,15 @@ export class FakeGoogle {
     if (destination === null || destination === listId) {
       return this.placeTaskRoute(listId, existing, params.parent, params.previous, reply);
     }
+    this.moveToList(listId, existing, destination);
+    return reply(200, wire(this.tasksOf(destination).get(taskId)!));
+  }
+
+  /** The move to another list itself (see moveTaskRoute). */
+  private moveToList(listId: string, existing: StoredTask, destination: string): void {
+    const source = this.tasksOf(listId);
     const target = this.tasksOf(destination);
+    const taskId = existing.task.id;
     const { parent: formerParent, ...task } = existing.task;
     target.set(taskId, { task, updatedAt: this.stamp() });
     source.delete(taskId);
@@ -670,7 +693,6 @@ export class FakeGoogle {
     this.renumber(source, this.siblingsOf(source, formerParent, taskId));
     this.touchList(listId);
     this.touchList(destination);
-    return reply(200, wire(target.get(taskId)!));
   }
 
   /**

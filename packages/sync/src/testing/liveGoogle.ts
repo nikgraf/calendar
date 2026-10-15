@@ -189,11 +189,15 @@ export interface LiveScratchShape {
     eventId: string,
   ) => Effect.Effect<ReadonlyArray<LiveEvent>, ScratchError>;
   readonly listTasks: (listId: string) => Effect.Effect<ReadonlyArray<LiveTask>, ScratchError>;
-  /** Another device's same-list `tasks.move`. */
+  /** Another device's `tasks.move`: to another list, or inside this one. */
   readonly moveTask: (
     listId: string,
     taskId: string,
-    place: { readonly parent?: string; readonly previous?: string },
+    place: {
+      readonly destination?: string;
+      readonly parent?: string;
+      readonly previous?: string;
+    },
   ) => Effect.Effect<LiveTask, ScratchError>;
   readonly patchEvent: (
     calendarId: string,

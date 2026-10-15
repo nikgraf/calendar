@@ -166,9 +166,11 @@ suite). When touching sync code, treat these as invariants.
   `tasks.move?destinationTasklist=` keeps the task's id and takes its
   subtasks along, still nested; a subtask moved on its own lands as a task
   of its own; afterwards the source list lists none of them, not even as
-  tombstones, and answers 404. Deleting a parent deletes its subtasks
-  (both come back as tombstones). An insert with `?parent=` nests the new
-  task first among its siblings.
+  tombstones, and answers 404. The move bumps the subtasks' `updated` with
+  the task's (verified live 2026-10-15), so the destination's pull brings
+  them all; the source's order read drops them. Deleting a parent
+  deletes its subtasks (both come back as tombstones). An insert with
+  `?parent=` nests the new task first among its siblings.
 - Moves inside a list (verified live, 2026-10-15): `tasks.move` without
   a destination puts the task under `parent` (omitted: the top level)
   right after `previous` (omitted: first), which must be a sibling under
@@ -192,7 +194,9 @@ suite). When touching sync code, treat these as invariants.
   not; the tasks listing has an `etag` too, and `If-None-Match` with the
   current one answers 304 (still a request). `fields=` partial responses
   work on the listing. The engine reads a list's order when its `updated`
-  moved; the fake keeps a list `updated` the same writes move.
+  moved, and drops the synced rows that read no longer names (a move to
+  another list made elsewhere); the fake keeps a list `updated` the same
+  writes move.
 - **Task ids are server-assigned** — creates are NOT idempotent (no
   client-id trick like events). See architecture.md for the temp-id +
   adopt-before-retry protocol.

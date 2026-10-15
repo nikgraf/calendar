@@ -454,10 +454,18 @@ it whenever a kind is added. Rules that keep the queue correct:
   and replays the queued reorders, as after a landed reorder — from its
   own listing on a full pass, else from one order-only listing
   (`fields=nextPageToken,items(id,parent,position)`); an idle poll reads
-  nothing. A create that lands sorts first among its siblings at once,
-  where Google put it; the next pass brings the siblings' new numbers. A
-  403 with the insufficient-scope reason flips `tasksEnabled` off instead
-  of retrying forever (older grants without the Tasks scope).
+  nothing. That listing names every live task of the list, so a synced
+  row it no longer names has left — another device moved it to another
+  list, which sends the source no tombstone — and goes, its subtasks with
+  it (`removeTasksMovedAway`). Pending rows stay (a queued edit, a create,
+  the rows a queued move brought in), and the pass holds the drain. A
+  paged listing is no snapshot, so the rows go only while the list's
+  `updated` still reads as before the pass (one more tasklists.list),
+  else the next pass reads again. A create that lands sorts first among
+  its siblings at once, where Google put it; the next pass brings the
+  siblings' new numbers. A 403 with the insufficient-scope reason flips
+  `tasksEnabled` off instead of retrying forever (older grants without
+  the Tasks scope).
 - **Google contacts** (per account, when both People API contacts scopes
   are granted — `contactsEnabled`): two tiers, saved contacts
   (`people.connections.list`) and "other contacts" (`otherContacts.list`,
