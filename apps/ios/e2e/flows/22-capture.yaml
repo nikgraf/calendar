@@ -174,7 +174,8 @@ tags:
                 timeout: 5000
             - tapOn: 'Standup.*'
             - runFlow: ../common/open-event-editor.yaml
-            # The location's map pushes Delete below the fold.
+            # A location's map (local runs; CI bundles without MapKit) pushes
+            # Delete below the fold.
             - scrollUntilVisible:
                 element:
                   id: 'event-delete'

@@ -710,8 +710,10 @@ Electron binary (`electron --version`) and run spec files sequentially.
   extracted `.app` under `ios-e2e-app-<hash>`; `repack-app.sh` bundles
   the commit's JS (`@expo/repack-app --js-bundle-only`) into a copy,
   switches expo-updates off in its `Expo.plist` and re-signs it ad hoc;
-  `EXPO_PUBLIC_CALENDAR_GOOGLE=fixture` and `…_MODEL=fixture` are inlined
-  at that step. `prepare-simulator.sh boot` runs right after checkout (a
+  `EXPO_PUBLIC_CALENDAR_GOOGLE=fixture`, `…_MODEL=fixture` and
+  `…_GEO=off` (no MapKit lookups, so the editor draws no live map — flow
+  22's "Room 4" once took a 16 s hierarchy read with the map up) are
+  inlined at that step. `prepare-simulator.sh boot` runs right after checkout (a
   runner's first boot spends two minutes in data migration) and
   `prepare-simulator.sh install` waits for it, installs, pre-grants
   Reminders, Calendars and Contacts with `simctl privacy grant`,

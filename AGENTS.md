@@ -218,7 +218,9 @@ deliberately.
   by a real EventKit sync, no bridge may trigger a TCC prompt or read a
   developer's data, no run may depend on MapKit's network, and a
   developer's screenshot mid-run must not draw the capture hint
-  (`captureWatch: 'fixture'` drives it instead). Apple events come from a fixture
+  (`captureWatch: 'fixture'` drives it instead). The iOS bundle's
+  `EXPO_PUBLIC_CALENDAR_GEO=off` (on in CI) does the same for MapKit; only
+  the local `14-location` flow uses the real one. Apple events come from a fixture
   (`CALENDAR_APPLE_CALENDAR=fixture`), since nothing stores them. Google
   is real by default (a seeded account has no token, so writes stay
   queued); `CALENDAR_GOOGLE=fixture` (desktop) /
