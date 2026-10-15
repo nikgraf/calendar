@@ -377,6 +377,13 @@ const taskDueCleared = Effect.gen(function* () {
   yield* sql`ALTER TABLE pending_ops ADD COLUMN task_due_cleared INTEGER NOT NULL DEFAULT 0`;
 });
 
+// A same-list task move (reorder, nest, un-nest) names the sibling the
+// task goes after; its parent rides in task_parent like a subtask create's.
+const taskReorder = Effect.gen(function* () {
+  const sql = yield* SqlClient;
+  yield* sql`ALTER TABLE pending_ops ADD COLUMN task_previous TEXT`;
+});
+
 const isZoneList = (
   value: unknown,
 ): value is { readonly primary: string; readonly zones: ReadonlyArray<string> } =>
@@ -415,4 +422,5 @@ export const migrations: ReadonlyArray<ResolvedMigration> = [
   [11, 'device-time-zone', Effect.succeed(deviceTimeZone)],
   [12, 'task-hierarchy', Effect.succeed(taskHierarchy)],
   [13, 'task-due-cleared', Effect.succeed(taskDueCleared)],
+  [14, 'task-reorder', Effect.succeed(taskReorder)],
 ];

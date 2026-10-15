@@ -200,6 +200,7 @@ const OP_KINDS: ReadonlySet<string> = new Set([
   'deleteTask',
   'move',
   'moveTask',
+  'reorderTask',
   'rsvp',
   'update',
   'updateTask',
@@ -481,8 +482,10 @@ export interface PendingOpRow {
   /** Added by migration 12. */
   readonly target_task_list_id: string | null;
   readonly task_parent: string | null;
-  /** Added by migration 13 (hence last). */
+  /** Added by migration 13. */
   readonly task_due_cleared: number;
+  /** Added by migration 14 (hence last). */
+  readonly task_previous: string | null;
 }
 
 const eventListSchema = Schema.Array(EventRecord);
@@ -539,6 +542,7 @@ export const pendingOpFromRow = (row: PendingOpRow): PendingOp | undefined =>
         taskListId: row.task_list_id ?? undefined,
         taskNotes: row.task_notes ?? undefined,
         taskParent: row.task_parent ?? undefined,
+        taskPrevious: row.task_previous ?? undefined,
         taskStatus: TASK_STATUSES.has(row.task_status ?? '')
           ? (row.task_status as PendingOp['taskStatus'])
           : undefined,

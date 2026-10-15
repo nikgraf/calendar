@@ -37,7 +37,11 @@ export interface PendingOpRepoShape {
     synced: EventRecord,
     landed: { readonly id: string },
   ) => Effect.Effect<void, SqlError>;
-  /** The task counterpart of `advanceBefore`, for the ops of one task of one list. */
+  /**
+   * The task counterpart of `advanceBefore`, for the ops of one task of
+   * one list. Reorders keep theirs: a later one holds the place an earlier
+   * one gives, and Google's order comes back through the list's read-back.
+   */
   readonly advanceBeforeTask: (
     task: { readonly accountId: string; readonly listId: string; readonly taskId: string },
     synced: TaskRecord,
@@ -154,6 +158,11 @@ export interface PendingOpRepoShape {
    */
   readonly setBefore: (opId: string, before: EventRecord) => Effect.Effect<void, SqlError>;
   /**
+   * Replaces one op's task snapshot: a reorder that will not land hands
+   * the place Google still has to the reorder queued behind it.
+   */
+  readonly setBeforeTask: (opId: string, before: TaskRecord) => Effect.Effect<void, SqlError>;
+  /**
    * Replaces what one op sends: a discarded op of the same event takes
    * its change out of what the others would send too (an RSVP rides in a
    * guest-list edit's attendees, a guest-list edit in an RSVP's).
@@ -232,7 +241,8 @@ const makePendingOpRepo: Effect.Effect<PendingOpRepoShape, never, Reactivity | S
             readonly task_parent: string | null;
           }>`SELECT kind, calendar_id, event_id, target_task_list_id, task_parent FROM pending_ops
             WHERE account_id = ${op.accountId} AND id != ${op.id}
-              AND kind IN ('completeTask', 'createTask', 'deleteTask', 'moveTask', 'updateTask')
+              AND kind IN ('completeTask', 'createTask', 'deleteTask', 'moveTask', 'reorderTask',
+                'updateTask')
               AND (created_at < ${op.createdAt} OR (created_at = ${op.createdAt}
                 AND rowid < (SELECT rowid FROM pending_ops WHERE id = ${op.id})))
             ORDER BY created_at, rowid`,
@@ -259,7 +269,8 @@ const makePendingOpRepo: Effect.Effect<PendingOpRepoShape, never, Reactivity | S
                                    reminders_changed, conflict_at, server_payload,
                                    carried_text, recurrence_cleared, before_payload,
                                    before_overrides, before_task, before_color_hex,
-                                   target_task_list_id, task_parent, task_due_cleared)
+                                   target_task_list_id, task_parent, task_due_cleared,
+                                   task_previous)
           VALUES (${op.id}, ${op.accountId}, ${op.calendarId}, ${op.kind},
                   ${op.eventId},
                   ${op.payload ? JSON.stringify(eventPayloadJson(op.payload)) : null},
@@ -277,7 +288,8 @@ const makePendingOpRepo: Effect.Effect<PendingOpRepoShape, never, Reactivity | S
                   ${op.beforeOverrides ? JSON.stringify(eventListJson(op.beforeOverrides)) : null},
                   ${op.beforeTask ? JSON.stringify(taskPayloadJson(op.beforeTask)) : null},
                   ${op.beforeColorHex ?? null}, ${op.targetTaskListId ?? null},
-                  ${op.taskParent ?? null}, ${op.taskDue === null ? 1 : 0})
+                  ${op.taskParent ?? null}, ${op.taskDue === null ? 1 : 0},
+                  ${op.taskPrevious ?? null})
         `),
         ),
       getById: (opId) =>
@@ -411,6 +423,13 @@ const makePendingOpRepo: Effect.Effect<PendingOpRepoShape, never, Reactivity | S
         invalidating(
           Effect.asVoid(
             sql`UPDATE pending_ops SET before_payload = ${JSON.stringify(eventPayloadJson(before))}
+              WHERE id = ${opId}`,
+          ),
+        ),
+      setBeforeTask: (opId, before) =>
+        invalidating(
+          Effect.asVoid(
+            sql`UPDATE pending_ops SET before_task = ${JSON.stringify(taskPayloadJson(before))}
               WHERE id = ${opId}`,
           ),
         ),

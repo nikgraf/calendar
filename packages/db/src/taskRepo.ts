@@ -63,6 +63,15 @@ export interface TaskRepoShape {
   /** Optimistic local create (sync_status 'pending' until the push lands). */
   readonly insertLocal: (task: TaskRecord) => Effect.Effect<void, SqlError>;
   readonly listLists: (accountId?: string) => Effect.Effect<ReadonlyArray<TaskListInfo>, SqlError>;
+  /**
+   * The tasks of a list under one parent — the top-level ones without
+   * `parentId` — in Google's order: the siblings a reorder places among.
+   */
+  readonly listSiblings: (
+    accountId: string,
+    listId: string,
+    parentId: string | undefined,
+  ) => Effect.Effect<ReadonlyArray<TaskRecord>, SqlError>;
   /** A Google task's subtasks, in Google's order. */
   readonly listSubtasks: (
     accountId: string,
@@ -84,6 +93,22 @@ export interface TaskRepoShape {
     accountId: string,
     listId: string,
     taskId: string,
+  ) => Effect.Effect<void, SqlError>;
+  /**
+   * Google's order for a list (each task's parent and position), written
+   * onto its rows whatever their sync state: a move renumbers its
+   * siblings without touching their `updated`, so no pull ever brings it,
+   * and a queued edit, toggle or delete does not touch the order. The
+   * caller replays the queued reorders over it.
+   */
+  readonly refreshHierarchy: (
+    accountId: string,
+    listId: string,
+    entries: ReadonlyArray<{
+      readonly id: string;
+      readonly parentId: string | undefined;
+      readonly position: string | undefined;
+    }>,
   ) => Effect.Effect<void, SqlError>;
   readonly removeListsMissing: (
     accountId: string,
@@ -164,6 +189,8 @@ export interface TaskRepoShape {
       readonly notes?: string | undefined;
       /** Google: the task it is a subtask of; null makes it a task of its own. */
       readonly parentId?: string | null | undefined;
+      /** Google: its place among its siblings (a reorder's provisional one). */
+      readonly position?: string | undefined;
       readonly priority?: TaskRecord['priority'] | null | undefined;
       readonly recurrence?: TaskRecord['recurrence'] | null | undefined;
       readonly title?: string | undefined;
@@ -371,6 +398,17 @@ const makeTaskRepo: Effect.Effect<TaskRepoShape, never, Reactivity | SqlClient> 
           (rows) => rows.map(taskListFromRow),
         ),
 
+      listSiblings: (accountId, listId, parentId) =>
+        Effect.map(
+          sql<TaskRow>`
+            SELECT t.*, l.provider AS list_provider FROM tasks t
+            JOIN task_lists l ON l.account_id = t.account_id AND l.id = t.list_id
+            WHERE t.account_id = ${accountId} AND t.list_id = ${listId}
+              AND ${parentId === undefined ? sql`t.parent_id IS NULL` : sql`t.parent_id = ${parentId}`}
+            ORDER BY t.position IS NULL, t.position, t.id`,
+          (rows) => rows.map(taskFromRow),
+        ),
+
       listSubtasks: (accountId, listId, parentId) =>
         Effect.map(
           sql<TaskRow>`
@@ -396,6 +434,23 @@ const makeTaskRepo: Effect.Effect<TaskRepoShape, never, Reactivity | SqlClient> 
               WHERE account_id = ${accountId} AND list_id = ${listId} AND id = ${taskId}`,
           ),
         ),
+      refreshHierarchy: (accountId, listId, entries) =>
+        entries.length === 0
+          ? Effect.void
+          : tasksMutation(
+              sql.withTransaction(
+                Effect.forEach(
+                  entries,
+                  (entry) =>
+                    sql`UPDATE tasks SET parent_id = ${entry.parentId ?? null},
+                      position = ${entry.position ?? null}
+                      WHERE account_id = ${accountId} AND list_id = ${listId} AND id = ${entry.id}
+                        AND (parent_id IS NOT ${entry.parentId ?? null}
+                          OR position IS NOT ${entry.position ?? null})`,
+                  { discard: true },
+                ),
+              ),
+            ),
       removeListsMissing: (accountId, keepIds) =>
         listsMutation(
           Effect.gen(function* () {
@@ -561,6 +616,10 @@ const makeTaskRepo: Effect.Effect<TaskRepoShape, never, Reactivity | SqlClient> 
             }
             if (changes.parentId !== undefined) {
               yield* sql`UPDATE tasks SET parent_id = ${changes.parentId}
+                WHERE account_id = ${accountId} AND list_id = ${listId} AND id = ${taskId}`;
+            }
+            if (changes.position !== undefined) {
+              yield* sql`UPDATE tasks SET position = ${changes.position}
                 WHERE account_id = ${accountId} AND list_id = ${listId} AND id = ${taskId}`;
             }
             if (changes.listId !== undefined && changes.listId !== listId) {

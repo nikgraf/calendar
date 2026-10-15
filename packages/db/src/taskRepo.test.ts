@@ -57,6 +57,9 @@ const task = (overrides: Partial<TaskRecord> = {}): TaskRecord =>
     ...overrides,
   });
 
+/** Google's 20-digit ordinal for index `n`. */
+const pos = (n: number) => String(n).padStart(20, '0');
+
 describe('TaskRepo', () => {
   it.effect('round-trips tasks through the due-window query', () =>
     Effect.gen(function* () {
@@ -421,6 +424,47 @@ describe('TaskRepo', () => {
           n: number;
         }>`SELECT COUNT(*) AS n FROM tasks WHERE id = 'gone-undated'`;
         expect(undated[0]?.n).toBe(0);
+      }).pipe(Effect.provide(freshDbLayer())),
+  );
+
+  it.effect(
+    'lists one sibling group in Google’s order, and takes Google’s order back onto every row',
+    () =>
+      Effect.gen(function* () {
+        const repo = yield* TaskRepo;
+        yield* repo.upsertLists([list()], 100);
+        yield* repo.upsertTasks(
+          [
+            task({ id: 'p', position: pos(0) }),
+            task({ id: 'a', parentId: 'p', position: pos(1) }),
+            task({ id: 'b', parentId: 'p', position: pos(0) }),
+            task({ id: 'q', position: pos(1) }),
+          ],
+          100,
+        );
+        const ids = (parent: string | undefined) =>
+          Effect.map(repo.listSiblings('acc-1', 'list-1', parent), (rows) =>
+            rows.map((row) => row.id),
+          );
+        expect(yield* ids(undefined)).toEqual(['p', 'q']);
+        expect(yield* ids('p')).toEqual(['b', 'a']);
+        // A reorder of `a` is queued: its row is pending.
+        yield* repo.updateLocal({
+          accountId: 'acc-1',
+          changes: { parentId: null, position: `${pos(0)}4` },
+          listId: 'list-1',
+          taskId: 'a',
+        });
+        yield* repo.refreshHierarchy('acc-1', 'list-1', [
+          { id: 'a', parentId: 'p', position: pos(0) },
+          { id: 'b', parentId: 'q', position: pos(0) },
+          { id: 'p', parentId: undefined, position: pos(1) },
+          { id: 'q', parentId: undefined, position: pos(0) },
+        ]);
+        // Pending rows too: the caller replays the queued reorders over it.
+        expect(yield* ids(undefined)).toEqual(['q', 'p']);
+        expect(yield* ids('p')).toEqual(['a']);
+        expect(yield* ids('q')).toEqual(['b']);
       }).pipe(Effect.provide(freshDbLayer())),
   );
 

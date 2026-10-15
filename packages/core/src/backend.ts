@@ -163,6 +163,7 @@ export const PendingOpSummary = Schema.Struct({
     'deleteTask',
     'move',
     'moveTask',
+    'reorderTask',
     'rsvp',
     'update',
     'updateTask',
@@ -218,6 +219,20 @@ export const PreviewMoveTaskParams = Schema.Struct({
   taskListId: Schema.String,
 });
 export type PreviewMoveTaskParams = Schema.Schema.Type<typeof PreviewMoveTaskParams>;
+
+/**
+ * A Google task's new place in its own list, as `tasks.move` takes it:
+ * under `parentId` (absent: a task of its own) right after `previousId`
+ * (absent: first among those siblings).
+ */
+export const ReorderTaskParams = Schema.Struct({
+  accountId: Schema.String,
+  parentId: Schema.optional(Schema.String),
+  previousId: Schema.optional(Schema.String),
+  taskId: Schema.String,
+  taskListId: Schema.String,
+});
+export type ReorderTaskParams = Schema.Schema.Type<typeof ReorderTaskParams>;
 
 /** A task by its address: what the delete and task → event previews need. */
 export const TaskAddressParams = Schema.Struct({
@@ -568,6 +583,17 @@ export class AppBackendRpcs extends RpcGroup.make(
     error: BackendError,
     payload: MoveTaskParams,
     success: TaskRecord,
+  }),
+  /**
+   * Reorders or re-nests a Google task inside its list (`tasks.move` with
+   * `parent`/`previous`): shown in place at once, pushed through the
+   * queue. One level deep, as Google Tasks draws it: a task with subtasks
+   * cannot become a subtask, nor a task go under a subtask. Reminders
+   * have no order or subtasks through EventKit.
+   */
+  Rpc.make('reorderTask', {
+    error: BackendError,
+    payload: ReorderTaskParams,
   }),
   /**
    * Applies a settings document: sections present are written, a Google

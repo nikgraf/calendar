@@ -16,6 +16,7 @@ dictation and capture from text or photo.
   meeting-link + color helpers, the theme (`theme/tokens.ts`, generated
   from `brand/`, never edited; `eventTint` turns a calendar color into a
   fill/text/edge per scheme), up-next / task-inbox / agenda grouping,
+  task order (where a dropped row goes, provisional positions),
   search (`search/`: accent- and case-folded every-word matching, one
   hit per series), the settings document, the mirror model. Pure; no IO.
 - `packages/db` — SQLite repos (accounts/calendars/events/tasks/task_lists/

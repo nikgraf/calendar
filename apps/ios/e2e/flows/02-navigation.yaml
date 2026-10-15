@@ -116,11 +116,32 @@ tags:
     id: 'tasks-screen'
 # With the fixture Google account (CI), its subtask is drawn under its
 # parent in "Upcoming": only a nested row's label names the parent.
+# Swiped right, the subtask offers Outdent (a task of its own again, the
+# row below its parent by title), and then Indent (under it once more);
+# each lands on the fake Google API.
 - runFlow:
     when:
       visible: 'Plan the offsite.*'
     commands:
-      - assertVisible: 'Book the room, subtask of Plan the offsite.*'
+      - assertVisible: 'Reserve the room, subtask of Plan the offsite.*'
+      - swipe:
+          from:
+            id: 'task-row-task-room'
+          direction: RIGHT
+      - tapOn:
+          id: 'task-outdent-task-room'
+      - extendedWaitUntil:
+          visible: 'Reserve the room, due .*'
+          timeout: 10000
+      - swipe:
+          from:
+            id: 'task-row-task-room'
+          direction: RIGHT
+      - tapOn:
+          id: 'task-indent-task-room'
+      - extendedWaitUntil:
+          visible: 'Reserve the room, subtask of Plan the offsite.*'
+          timeout: 10000
 - runFlow: ../common/open-settings.yaml
 - tapOn: 'Done'
 - assertVisible:

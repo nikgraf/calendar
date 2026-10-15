@@ -46,13 +46,20 @@ export interface GoogleTasksClientShape {
     readonly taskListId: string;
   }) => Effect.Effect<GcalTasksPage, GoogleRequestError>;
   /**
-   * `tasks.move` to another list of the same account: the task keeps its
+   * `tasks.move`. To another list of the same account: the task keeps its
    * id and its subtasks come along, still nested under it; a subtask
-   * moved on its own lands as a task of its own (verified live).
+   * moved on its own lands as a task of its own. Inside its list: under
+   * `parent` (omitted: a task of its own) right after `previous`
+   * (omitted: first among those siblings), which must be one of them
+   * (else 400). Google renumbers the siblings' positions and bumps no
+   * `updated`, and takes any depth: one level is the caller's rule
+   * (verified live).
    */
   readonly moveTask: (params: {
     readonly accountId: string;
-    readonly destinationTaskListId: string;
+    readonly destinationTaskListId?: string | undefined;
+    readonly parent?: string | undefined;
+    readonly previous?: string | undefined;
     readonly taskId: string;
     readonly taskListId: string;
   }) => Effect.Effect<GcalTask, GoogleRequestError>;
@@ -126,12 +133,12 @@ const make: Effect.Effect<GoogleTasksClientShape, never, HttpClient.HttpClient |
           { calendarId: taskListId },
         ),
 
-      moveTask: ({ accountId, destinationTaskListId, taskId, taskListId }) =>
+      moveTask: ({ accountId, destinationTaskListId, parent, previous, taskId, taskListId }) =>
         requestJson(
           accountId,
           HttpClientRequest.post(tasksUrl(taskListId, `/${encodeURIComponent(taskId)}/move`)).pipe(
             HttpClientRequest.setUrlParams(
-              definedParams({ destinationTasklist: destinationTaskListId }),
+              definedParams({ destinationTasklist: destinationTaskListId, parent, previous }),
             ),
           ),
           GcalTask,
