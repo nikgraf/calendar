@@ -24,11 +24,12 @@ tags:
       visible:
         id: 'quick-add-input'
     commands:
-      - tapOn:
-          id: 'quick-add-input'
-      - inputText: 'Lunch with Sarah next Tuesday at 1pm'
-      - tapOn:
-          id: 'quick-add-apply'
+      # Each phrase is typed until the field holds all of it (XCTest
+      # garbles input), then applied.
+      - runFlow:
+          file: ../common/apply-quick-add.yaml
+          env:
+            PHRASE: 'Lunch with Sarah next Tuesday at 1pm'
       # Generation runs locally and takes a few seconds. A simulator whose
       # host has no usable model (CI runners: Apple Intelligence is not
       # enabled) passes the availability check and then fails to
@@ -84,11 +85,10 @@ tags:
             - assertVisible:
                 id: 'draft-block'
                 text: 'Draft: Lunch with Sarah.*'
-            - tapOn:
-                id: 'quick-add-input'
-            - inputText: '| | 20:00-21:00'
-            - tapOn:
-                id: 'quick-add-apply'
+            - runFlow:
+                file: ../common/apply-quick-add.yaml
+                env:
+                  PHRASE: '| | 20:00-21:00'
             - extendedWaitUntil:
                 visible:
                   id: 'draft-turn-summary'
@@ -107,11 +107,10 @@ tags:
                   id: 'draft-turn-summary'
                   text: '.*20:00.21:00.*'
                 timeout: 10000
-            - tapOn:
-                id: 'quick-add-input'
-            - inputText: 'find 30 min next week mornings | Focus'
-            - tapOn:
-                id: 'quick-add-apply'
+            - runFlow:
+                file: ../common/apply-quick-add.yaml
+                env:
+                  PHRASE: 'find 30 min next week mornings | Focus'
             - extendedWaitUntil:
                 visible:
                   id: 'draft-slots'
