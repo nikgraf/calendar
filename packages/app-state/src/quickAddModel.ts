@@ -157,6 +157,8 @@ export const useQuickAddModel = ({
   const arming = useRef(false);
   /** The locale's models were installed once: listening again skips straight to the microphone. */
   const prepared = useRef(false);
+  /** A recording is being stopped and read: its ear's late "end", the cap and a press ask once. */
+  const stopping = useRef(false);
 
   const failed = (message: string) => {
     switchHandsFree(false);
@@ -171,6 +173,13 @@ export const useQuickAddModel = ({
    * no message.
    */
   const stopRecording = async (quiet = false) => {
+    if (stopping.current) {
+      return;
+    }
+    stopping.current = true;
+    // Its ear is done: a block still queued in the worklet may report an
+    // "end" after the press — it must not stop the next recording.
+    starting.current = null;
     setVoice('transcribing');
     setHeard(false);
     try {
@@ -188,6 +197,7 @@ export const useQuickAddModel = ({
       switchHandsFree(false);
       setError('Could not transcribe that.');
     } finally {
+      stopping.current = false;
       setVoice('idle');
     }
   };
