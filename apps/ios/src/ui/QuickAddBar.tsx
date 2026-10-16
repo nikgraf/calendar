@@ -6,7 +6,6 @@ import {
   ActivityIndicator,
   AppState,
   Keyboard,
-  Platform,
   Pressable,
   StyleSheet,
   Text,
@@ -15,16 +14,9 @@ import {
 } from 'react-native';
 import { appleSpeech } from '../appleSpeech.ts';
 import { languageModel } from '../model.ts';
+import { checkResultLine } from '../modelAvailabilityCopy.ts';
+import { ModelAvailabilityNotice } from './ModelAvailabilityNotice.tsx';
 import { BOX_FONT_SCALE, type ThemeColors, useStyles, useTheme } from './theme.ts';
-
-/** Foundation Models exist from iOS 26; below that there is nothing to say. */
-const MODEL_MIN_IOS = 26;
-/** `Platform.Version` is a string like "26.0" on iOS, a number elsewhere. */
-const iosMajorVersion = (): number => Number.parseInt(String(Platform.Version), 10);
-
-const UNAVAILABLE_NOTICE =
-  'Quick add needs Apple Intelligence. Switch it on in Settings → Apple Intelligence & Siri; ' +
-  'its models can take a while to download after that.';
 
 /**
  * Apple Intelligence is switched on in Settings, which means leaving the
@@ -96,7 +88,8 @@ export function QuickAddBar({
   const styles = useStyles(makeStyles);
   const { colors } = useTheme();
   const inputRef = useRef<TextInput>(null);
-  const { checking, retry, status } = useModelAvailability(languageModel, onAppActive);
+  const { availability, checkedAt, lastManualCheck, manualChecking, retry, status } =
+    useModelAvailability(languageModel, onAppActive);
   const {
     busy,
     dismissError,
@@ -130,9 +123,9 @@ export function QuickAddBar({
     timeZone,
   });
 
-  // A build without the framework, or an OS too old for it, gives the
-  // user nothing to act on; otherwise say why the field is missing — the
-  // silence is what made this hard to diagnose. The form stays either way.
+  // Without the model the field gives way to why (`ModelAvailabilityNotice`)
+  // — the silence is what made this hard to diagnose. The form stays
+  // either way, and so does what it holds when the field comes back.
   const unavailable = status !== null && status !== 'ready';
   const working = busy || voice === 'transcribing';
   // What the field says instead of its words: dictation's hint, or why
@@ -163,13 +156,33 @@ export function QuickAddBar({
       AccessibilityInfo.announceForAccessibility(noteText);
     }
   }, [noteText]);
-  const explain = unavailable && status !== 'missing-module' && iosMajorVersion() >= MODEL_MIN_IOS;
+  // Every answer to Check Again is read out, the same one twice included —
+  // a tap met with silence reads as a tap that did nothing. Announced from
+  // here, not the notice: an answer of "ready" takes the notice away.
+  // Each answer is a new object, so this runs once per answer.
+  useEffect(() => {
+    if (lastManualCheck) {
+      AccessibilityInfo.announceForAccessibility(
+        lastManualCheck.availability.status === 'ready'
+          ? 'Quick add is available.'
+          : checkResultLine(lastManualCheck),
+      );
+    }
+  }, [lastManualCheck]);
 
   // The field is what a new item opens on. `autoFocus` inside a page
   // sheet is not reliable while it is still sliding in, so the focus is
-  // asked for once the sheet has settled.
+  // asked for once the sheet has settled. Only on opening: a model that
+  // becomes ready later (the not-ready poll, Check Again) brings the field
+  // back without taking the focus from what the form is being typed into.
+  const answered = useRef(false);
   useEffect(() => {
-    if (status !== 'ready' || !autoFocus) {
+    if (status === null) {
+      return;
+    }
+    const opening = !answered.current;
+    answered.current = true;
+    if (!opening || status !== 'ready' || !autoFocus) {
       return;
     }
     const timer = setTimeout(() => inputRef.current?.focus(), 400);
@@ -182,20 +195,14 @@ export function QuickAddBar({
   }
   return (
     <View style={[styles.bar, attached && styles.barAttached]} testID="quick-add-state">
-      {explain ? (
-        <View style={styles.notice}>
-          <Text style={styles.noticeText}>{UNAVAILABLE_NOTICE}</Text>
-          <Pressable
-            accessibilityLabel="Check for the on-device model again"
-            accessibilityRole="button"
-            disabled={checking}
-            onPress={retry}
-            style={[styles.secondaryButton, checking && styles.disabled]}
-            testID="quick-add-recheck"
-          >
-            <Text style={styles.secondaryLabel}>Retry</Text>
-          </Pressable>
-        </View>
+      {unavailable && availability ? (
+        <ModelAvailabilityNotice
+          availability={availability}
+          checkedAt={checkedAt}
+          lastManualCheck={lastManualCheck}
+          manualChecking={manualChecking}
+          onCheckAgain={retry}
+        />
       ) : null}
       {unavailable ? null : (
         <>
@@ -351,28 +358,6 @@ const makeStyles = (colors: ThemeColors) =>
     },
     micRecording: {
       backgroundColor: colors['event-blush'],
-    },
-    notice: {
-      backgroundColor: colors.fill,
-      borderRadius: 12,
-      gap: 10,
-      padding: 14,
-    },
-    noticeText: {
-      color: colors['text-secondary'],
-      fontSize: 14,
-    },
-    secondaryButton: {
-      alignSelf: 'flex-start',
-      backgroundColor: colors.surface,
-      borderRadius: 8,
-      paddingHorizontal: 14,
-      paddingVertical: 8,
-    },
-    secondaryLabel: {
-      color: colors.text,
-      fontSize: 15,
-      fontWeight: '600',
     },
     // Over the hidden label, so Apply keeps its size while it reads.
     spinner: {

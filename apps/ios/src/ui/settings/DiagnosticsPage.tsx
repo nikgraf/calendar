@@ -2,15 +2,21 @@ import {
   appleCalendarStatusCopy,
   contactsStatusCopy,
   remindersStatusCopy,
+  useModelAvailability,
 } from '@calendar/app-state';
-import type { ModelStatus } from '@calendar/ai';
 import { Effect } from 'effect';
 import { useEffect, useState } from 'react';
-import { Platform } from 'react-native';
+import { AccessibilityInfo, Platform } from 'react-native';
 import { appleLanguageModel } from '../../appleModel.ts';
 import { appleSpeech } from '../../appleSpeech.ts';
 import { clearLastRenderError, readLastRenderError } from '../../crashLog.ts';
+import {
+  availabilityDetails,
+  availabilityGuidance,
+  checkResultLine,
+} from '../../modelAvailabilityCopy.ts';
 import { iosRemindersClient } from '../../remindersClient.ts';
+import { onAppActive } from '../QuickAddBar.tsx';
 import { ActionRow, Footer, Row, Section, SettingsPage } from './GroupedList.tsx';
 import { IOS_SETTINGS_PATH, useSettingsConnections } from './SettingsContext.tsx';
 
@@ -22,18 +28,24 @@ import { IOS_SETTINGS_PATH, useSettingsConnections } from './SettingsContext.tsx
  */
 export function DiagnosticsPage() {
   const { calendar, contacts, reminders } = useSettingsConnections();
-  const [modelStatus, setModelStatus] = useState<ModelStatus | 'checking…'>('checking…');
+  // The device's own model, not `languageModel`: under the e2e bundle's
+  // fixture model quick add always reads "ready", and this page is where
+  // the real answer must still show. Same checks and words as the notice.
+  const { availability, checkedAt, lastManualCheck, manualChecking, retry, status } =
+    useModelAvailability(appleLanguageModel, onAppActive);
   const [dictation, setDictation] = useState('checking…');
   const [reminderListCount, setReminderListCount] = useState<number | undefined>();
   const [lastError, setLastError] = useState(readLastRenderError);
 
+  // Every answer to Check Again is read out, the same one twice included.
+  useEffect(() => {
+    if (lastManualCheck) {
+      AccessibilityInfo.announceForAccessibility(checkResultLine(lastManualCheck));
+    }
+  }, [lastManualCheck]);
+
   useEffect(() => {
     let cancelled = false;
-    void appleLanguageModel.status().then((value) => {
-      if (!cancelled) {
-        setModelStatus(value);
-      }
-    });
     void appleSpeech
       .isSupported()
       .then((value) => {
@@ -75,13 +87,40 @@ export function DiagnosticsPage() {
     <SettingsPage testID="settings-page-diagnostics">
       <Section header="This iPhone">
         <Row title="iOS" value={String(Platform.Version)} />
-        <Row title="On-Device Model" value={modelStatus} valueTestID="diagnostics-model" />
         <Row title="Dictation" value={dictation} />
         {/* Hermes ships without it; a "missing" here explains any failure
             to save an event, since ids are generated from it. */}
         <Row
           title="Web Crypto"
           value={typeof globalThis.crypto?.getRandomValues === 'function' ? 'ok' : 'missing'}
+        />
+      </Section>
+      <Section
+        footer={
+          availability ? (
+            <Footer selectable testID="diagnostics-model-details">
+              {availabilityDetails(availability, checkedAt)}
+            </Footer>
+          ) : undefined
+        }
+        header="On-Device Model"
+      >
+        <Row
+          subtitle={
+            availability ? availabilityGuidance(availability, String(Platform.Version)) : undefined
+          }
+          subtitleTestID="diagnostics-model-guidance"
+          title="Apple Intelligence"
+          value={status ?? 'checking…'}
+          valueTestID="diagnostics-model"
+        />
+        <ActionRow
+          disabled={manualChecking}
+          onPress={retry}
+          subtitle={lastManualCheck ? checkResultLine(lastManualCheck) : undefined}
+          subtitleTestID="diagnostics-model-check-result"
+          testID="diagnostics-model-recheck"
+          title={manualChecking ? 'Checking…' : 'Check Again'}
         />
       </Section>
       <Section
