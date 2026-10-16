@@ -8,7 +8,7 @@ import {
   availabilityGuidance,
   checkResultLine,
 } from '../modelAvailabilityCopy.ts';
-import { type ThemeColors, useStyles, useTheme } from './theme.ts';
+import { BOX_FONT_SCALE, type ThemeColors, useStyles, useTheme } from './theme.ts';
 
 /**
  * What stands in the quick-add field's place while the model cannot run:
@@ -17,7 +17,10 @@ import { type ThemeColors, useStyles, useTheme } from './theme.ts';
  * collapsed — the status, the reason as iOS named it, a failed check's
  * error — as text to copy into a bug report. It sits in the editor's
  * header, above the form's scroll view, so it stays short: the details
- * are one tap away, not on the half-height sheet by default.
+ * are one tap away, not on the half-height sheet by default, and its text
+ * stops growing at xxxLarge (`BOX_FONT_SCALE`) like the header's own row —
+ * at the accessibility sizes it filled the half-height sheet, Check Again
+ * and the form below it out of reach, since nothing there scrolls.
  */
 export function ModelAvailabilityNotice({
   availability,
@@ -37,7 +40,11 @@ export function ModelAvailabilityNotice({
   const [expanded, setExpanded] = useState(false);
   return (
     <View style={styles.notice} testID="quick-add-notice">
-      <Text style={styles.text} testID="quick-add-notice-text">
+      <Text
+        maxFontSizeMultiplier={BOX_FONT_SCALE}
+        style={styles.text}
+        testID="quick-add-notice-text"
+      >
         {availabilityGuidance(availability, String(Platform.Version))}
       </Text>
       <View style={styles.actions}>
@@ -57,7 +64,9 @@ export function ModelAvailabilityNotice({
           {manualChecking ? (
             <ActivityIndicator color={colors['text-secondary']} size="small" />
           ) : null}
-          <Text style={styles.buttonLabel}>{manualChecking ? 'Checking…' : 'Check Again'}</Text>
+          <Text maxFontSizeMultiplier={BOX_FONT_SCALE} style={styles.buttonLabel}>
+            {manualChecking ? 'Checking…' : 'Check Again'}
+          </Text>
         </Pressable>
         <Pressable
           // Its own label: the chevron's image would be read out first.
@@ -75,16 +84,27 @@ export function ModelAvailabilityNotice({
             tintColor={colors['text-secondary']}
             weight="semibold"
           />
-          <Text style={styles.disclosureLabel}>Technical details</Text>
+          <Text maxFontSizeMultiplier={BOX_FONT_SCALE} style={styles.disclosureLabel}>
+            Technical details
+          </Text>
         </Pressable>
       </View>
       {lastManualCheck ? (
-        <Text style={styles.result} testID="quick-add-check-result">
+        <Text
+          maxFontSizeMultiplier={BOX_FONT_SCALE}
+          style={styles.result}
+          testID="quick-add-check-result"
+        >
           {checkResultLine(lastManualCheck)}
         </Text>
       ) : null}
       {expanded ? (
-        <Text selectable style={styles.details} testID="quick-add-details">
+        <Text
+          maxFontSizeMultiplier={BOX_FONT_SCALE}
+          selectable
+          style={styles.details}
+          testID="quick-add-details"
+        >
           {availabilityDetails(availability, checkedAt)}
         </Text>
       ) : null}
@@ -125,10 +145,12 @@ const makeStyles = (colors: ThemeColors) =>
       fontSize: 13,
       fontVariant: ['tabular-nums'],
     },
+    // At the row's end, so "Checking…" widening the button moves nothing.
     disclosure: {
       alignItems: 'center',
       flexDirection: 'row',
       gap: 4,
+      marginLeft: 'auto',
     },
     disclosureLabel: {
       color: colors['text-secondary'],
