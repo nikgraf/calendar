@@ -84,7 +84,7 @@ describe('pendingOpDiff', () => {
     ]);
   });
 
-  it('is undefined for an edit queued before the snapshot', () => {
+  it('is undefined for an edit without a snapshot', () => {
     expect(pendingOpDiff(op({ kind: 'update', payload: event() }), context)).toBeUndefined();
     expect(pendingOpDiff(op({ kind: 'rsvp', payload: event() }), context)).toBeUndefined();
   });

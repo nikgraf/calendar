@@ -242,19 +242,6 @@ describe('LocalNotifications', () => {
     }).pipe(Effect.provide(testLayer(sink)));
   });
 
-  it.effect('honours the fired map of the birthday-only scheduler once', () => {
-    const { shown, sink } = immediateSink();
-    return Effect.gen(function* () {
-      yield* enableBirthdays;
-      yield* (yield* DeviceSettingsRepo).set('birthdayReminders.fired', {
-        'device:a:2026-03-04:1': Date.parse('2026-03-03T09:00:00Z'),
-      });
-      yield* setClock('2026-03-03T10:00:00Z');
-      yield* (yield* LocalNotifications).run();
-      expect(shown).toEqual([]);
-    }).pipe(Effect.provide(testLayer(sink)));
-  });
-
   it.effect('an event reminder fires before the start and is dropped once the event began', () => {
     const { shown, sink } = immediateSink();
     return Effect.gen(function* () {

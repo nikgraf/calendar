@@ -401,8 +401,9 @@ export class PendingOp extends Schema.Class<PendingOp>('PendingOp')({
    * rejection) puts back. Inherited when a newer edit replaces a queued op,
    * so it always names the last state Google acknowledged. `null`: there
    * was no row (an occurrence edit or delete materialized its override), so
-   * a discard removes the row. Absent: the op predates the snapshot — a
-   * discard can only mark the row synced.
+   * a discard removes the row. Absent: no snapshot (a pull confirmed the
+   * delete, `forgetDeleted`, or it did not decode) — a discard can only
+   * mark the row synced.
    */
   beforePayload: Schema.optional(Schema.NullOr(EventRecord)),
   /** The task row before a task edit, toggle, delete, move or reorder, for the same purposes. */

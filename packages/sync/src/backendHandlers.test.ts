@@ -487,7 +487,7 @@ describe('listPendingOps', () => {
             ...base,
             createdAt: 2,
             eventId: 'evt-1',
-            id: 'legacy',
+            id: 'no-snapshot',
             kind: 'update',
             payload: eventRow('Standup (moved)'),
           }),
@@ -506,7 +506,7 @@ describe('listPendingOps', () => {
         expect(diffs['edit']).toEqual([
           { after: 'Standup (moved)', before: 'Standup', label: 'Title' },
         ]);
-        expect(diffs['legacy']).toBeUndefined();
+        expect(diffs['no-snapshot']).toBeUndefined();
         expect(diffs['move']).toEqual([{ after: 'Home', before: 'Work', label: 'Calendar' }]);
       }).pipe(Effect.provide(queueLayer)),
   );

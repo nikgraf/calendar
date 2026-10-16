@@ -5,7 +5,6 @@ import {
   DEVICE_ZONE,
   resolveTimeZones,
   TimeZoneSettings,
-  withDeviceEntry,
   withPrimary,
   withZoneAdded,
   withZoneRemoved,
@@ -73,53 +72,6 @@ describe('resolveTimeZones', () => {
     expect(
       resolveTimeZones({ primary: 'device', zones: ['device', 'UTC'] }, 'Etc/UTC').secondary,
     ).toEqual([]);
-  });
-});
-
-describe('withDeviceEntry', () => {
-  it('swaps the entry that is the device zone, keeping its place and primary status', () => {
-    expect(
-      withDeviceEntry(
-        { primary: 'Europe/Vienna', zones: ['Asia/Kolkata', 'Europe/Vienna'] },
-        'Europe/Vienna',
-      ),
-    ).toEqual({ primary: 'device', zones: ['Asia/Kolkata', 'device'] });
-    expect(
-      withDeviceEntry(
-        { primary: 'Asia/Kolkata', zones: ['Europe/Vienna', 'Asia/Kolkata'] },
-        'Europe/Vienna',
-      ),
-    ).toEqual({ primary: 'Asia/Kolkata', zones: ['device', 'Asia/Kolkata'] });
-    expect(
-      withDeviceEntry({ primary: 'Asia/Kolkata', zones: ['Asia/Kolkata'] }, 'Asia/Calcutta'),
-    ).toEqual({
-      primary: 'device',
-      zones: ['device'],
-    });
-    expect(withDeviceEntry({ primary: 'UTC', zones: ['UTC', 'Asia/Kolkata'] }, 'Etc/UTC')).toEqual({
-      primary: 'device',
-      zones: ['device', 'Asia/Kolkata'],
-    });
-  });
-
-  it('puts the device entry first when no entry is the device zone, trimming from the end but never the primary', () => {
-    expect(
-      withDeviceEntry({ primary: 'UTC', zones: ['UTC', 'Asia/Kolkata'] }, 'Europe/Vienna'),
-    ).toEqual({
-      primary: 'UTC',
-      zones: ['device', 'UTC', 'Asia/Kolkata'],
-    });
-    expect(
-      withDeviceEntry(
-        { primary: 'Asia/Tokyo', zones: ['UTC', 'Asia/Kolkata', 'Asia/Tokyo'] },
-        'Europe/Vienna',
-      ),
-    ).toEqual({ primary: 'Asia/Tokyo', zones: ['device', 'UTC', 'Asia/Tokyo'] });
-  });
-
-  it('leaves a list that has the entry alone', () => {
-    const settings = { primary: 'device', zones: ['device', 'UTC'] };
-    expect(withDeviceEntry(settings, 'Europe/Vienna')).toBe(settings);
   });
 });
 

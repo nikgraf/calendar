@@ -47,41 +47,15 @@ describe('makeKeychainTokenStore', () => {
     expect((await run(keychain.storage, (store) => store.get('acc')))?.accessToken).toBe('old');
   });
 
-  it('keeps the old item when migrating it fails', async () => {
-    const keychain = fakeKeychain({ 'tokens.acc': raw(tokens('old')) });
-    keychain.failWrites();
-    await expect(
-      run(keychain.storage, (store) => store.set('acc', tokens('new'))),
-    ).rejects.toThrow();
-    expect((await run(keychain.storage, (store) => store.get('acc')))?.accessToken).toBe('old');
-    expect(keychain.store.has('tokens.acc')).toBe(true);
-  });
-
-  it('a write moves the tokens to the new key and drops the old one', async () => {
-    const keychain = fakeKeychain({ 'tokens.acc': raw(tokens('old')) });
+  it('reads back what it wrote', async () => {
+    const keychain = fakeKeychain();
     await run(keychain.storage, (store) => store.set('acc', tokens('new')));
     expect([...keychain.store.keys()]).toEqual(['tokens.v2.acc']);
     expect((await run(keychain.storage, (store) => store.get('acc')))?.accessToken).toBe('new');
   });
 
-  it('a read of the old item migrates it', async () => {
-    const keychain = fakeKeychain({ 'tokens.acc': raw(tokens('old')) });
-    expect((await run(keychain.storage, (store) => store.get('acc')))?.accessToken).toBe('old');
-    expect([...keychain.store.keys()]).toEqual(['tokens.v2.acc']);
-  });
-
-  it('a read still returns the old item when migrating it fails', async () => {
-    const keychain = fakeKeychain({ 'tokens.acc': raw(tokens('old')) });
-    keychain.failWrites();
-    expect((await run(keychain.storage, (store) => store.get('acc')))?.accessToken).toBe('old');
-    expect([...keychain.store.keys()]).toEqual(['tokens.acc']);
-  });
-
-  it('remove drops both keys', async () => {
-    const keychain = fakeKeychain({
-      'tokens.acc': raw(tokens('old')),
-      'tokens.v2.acc': raw(tokens('new')),
-    });
+  it('remove drops the tokens', async () => {
+    const keychain = fakeKeychain({ 'tokens.v2.acc': raw(tokens('new')) });
     await run(keychain.storage, (store) => store.remove('acc'));
     expect(keychain.store.size).toBe(0);
     expect(await run(keychain.storage, (store) => store.get('acc'))).toBeNull();

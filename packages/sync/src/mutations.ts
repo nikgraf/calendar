@@ -108,8 +108,8 @@ const foldIntoCreate = (create: PendingOp, payload: EventRecord) =>
  * puts back: the before of the queued update or delete it replaces — the
  * last state Google acknowledged, also when edits pile up offline — else
  * the row as it is now (`null` when there is none: an occurrence edit
- * materializing its override). A replaced op from before the snapshot
- * leaves it unknown: the row already holds that op's edit.
+ * materializing its override). A replaced op without one leaves it
+ * unknown: the row already holds that op's edit.
  */
 const inheritedBefore = (
   queued: ReadonlyArray<PendingOp>,

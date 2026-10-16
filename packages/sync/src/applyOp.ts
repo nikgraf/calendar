@@ -694,7 +694,7 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
    * without this the server's version could never land again. A dropped
    * create takes its optimistic row with it (deleteStale never collects
    * pending rows, so it would render forever as something Google never
-   * had). An op from before the snapshot can only mark its row synced.
+   * had). An op without a snapshot can only mark its row synced.
    */
   const releaseRow = (op: PendingOp, options: ReleaseOptions = {}): Effect.Effect<void> => {
     const revert = options.revert ?? true;

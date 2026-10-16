@@ -383,8 +383,8 @@ it whenever a kind is added. Rules that keep the queue correct:
   and a series delete leaves out an exception this device only
   materialized; a task delete takes each queued op's fields), never from
   the optimistic rows. Two exceptions keep today's content: a 2xx whose body did
-  not decode (the write landed) and an op queued before the snapshot
-  existed, which can only be marked synced.
+  not decode (the write landed) and an op without a snapshot (a delete a
+  pull confirmed), which can only be marked synced.
 
 ## Sync engine (packages/sync/src/engine.ts)
 
@@ -1142,11 +1142,9 @@ gateway carries all of it. Details, limits and the threat model:
   the word and resolved against the OS on every read (`resolveTimeZones`
   over the once-a-minute device zone atom), so the grid follows a flight
   and an exported file reads right on another device. It is always
-  present and never removed (migration 11 and the document parser give an
-  older list one through `withDeviceEntry`); a fixed zone the device is in
-  right now draws once (`zoneKey` also folds UTC's links). A settings
-  file whose zones would not fit with the entry fails to parse rather
-  than losing one. The catalog is a checked-in canonical list; a
+  present and never removed (a settings file without it fails to parse);
+  a fixed zone the device is in right now draws once (`zoneKey` also
+  folds UTC's links). The catalog is a checked-in canonical list; a
   device stores the spelling its engine validates (`runtimeZoneId`) and
   displays through `canonicalZoneId`. Both pickers open on the whole
   catalog and narrow it as the user types (`searchTimeZones`, no cap): a
@@ -1175,9 +1173,7 @@ gateway carries all of it. Details, limits and the threat model:
   `expo-background-task`, 30-minute minimum) runs `backgroundRefresh`: a
   pull bounded to 20 s, then one notification pass and a budgeted mirror
   pass; Google tokens are stored `AFTER_FIRST_UNLOCK` so that pull can run
-  while the phone is locked (`apps/ios/src/tokenStore.ts`; a key change
-  writes the new item before deleting the old — the refresh token is the
-  only copy). The OS grants the `BGProcessingTask` when it likes; to
+  while the phone is locked (`apps/ios/src/tokenStore.ts`). The OS grants the `BGProcessingTask` when it likes; to
   exercise it, call `triggerBackgroundRefreshForTesting` in a debug build
   or the debugger's `_simulateLaunchForTaskWithIdentifier:` on
   `com.expo.modules.backgroundtask.processing`.
