@@ -70,8 +70,8 @@ collects what changed between bumps; the decision log in
 3. Unzip once to get `Solunivo.app`, then drag it to `/Applications`. It's
    notarized and stapled — no Gatekeeper hoops, first launch just works.
 
-A database from before the schema baseline refuses to open ("Database is
-ahead of this build"): delete and reinstall the app once, or run
+A database from before the schema baseline refuses to open ("Database does
+not match this build"): delete and reinstall the app once, or run
 `pnpm reset:local` on a developer Mac.
 
 ## Manual rebuild

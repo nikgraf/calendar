@@ -90,38 +90,6 @@ export const resolveTimeZones = (
   return { primary, secondary };
 };
 
-/**
- * A list from before the device entry existed, with one. The entry that is
- * `deviceZone` becomes the device entry, keeping its place and primary
- * status; with none, the device entry goes first and the list is trimmed
- * to the cap from the end, never dropping the primary. A list that already
- * has the entry is returned as is.
- */
-export const withDeviceEntry = (
-  settings: TimeZoneSettings,
-  deviceZone: string,
-): TimeZoneSettings => {
-  if (settings.zones.includes(DEVICE_ZONE)) {
-    return settings;
-  }
-  const own = settings.zones.find((zone) => zoneKey(zone) === zoneKey(deviceZone));
-  if (own !== undefined) {
-    return {
-      primary: settings.primary === own ? DEVICE_ZONE : settings.primary,
-      zones: settings.zones.map((zone) => (zone === own ? DEVICE_ZONE : zone)),
-    };
-  }
-  const zones = [DEVICE_ZONE, ...settings.zones];
-  while (zones.length > MAX_TIME_ZONES) {
-    let drop = zones.length - 1;
-    while (zones[drop] === settings.primary) {
-      drop -= 1;
-    }
-    zones.splice(drop, 1);
-  }
-  return { primary: settings.primary, zones };
-};
-
 /** Appends a zone; a no-op at the cap or when it is already present. */
 export const withZoneAdded = (settings: TimeZoneSettings, zone: string): TimeZoneSettings =>
   settings.zones.includes(zone) || settings.zones.length >= MAX_TIME_ZONES

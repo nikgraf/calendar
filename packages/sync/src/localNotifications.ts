@@ -29,8 +29,6 @@ const CHANGE_DEBOUNCE = '2 seconds';
 /** Bookkeeping rows in device_settings, keyed apart from the user's settings. */
 const FIRED_KEY = 'localNotifications.fired';
 const SCHEDULED_KEY = 'localNotifications.scheduled';
-/** The birthday-only scheduler's fired map, read once so an upgrade re-fires nothing. */
-const LEGACY_FIRED_KEY = 'birthdayReminders.fired';
 /** Set once an immediate sink has been asked for permission (first start). */
 const PERMISSION_ASKED_KEY = 'localNotifications.permissionAsked';
 
@@ -105,18 +103,7 @@ const make = (options: {
       | EventRepo
     >();
 
-    const loadFired = Effect.gen(function* () {
-      const current = yield* settingsRepo.get(FIRED_KEY);
-      if (current !== null) {
-        return firedRecord(current);
-      }
-      // First run after the upgrade: the old map used unprefixed birthday keys.
-      return Object.fromEntries(
-        Object.entries(firedRecord(yield* settingsRepo.get(LEGACY_FIRED_KEY))).map(
-          ([key, firedAt]) => [`birthday:${key}`, firedAt],
-        ),
-      );
-    });
+    const loadFired = Effect.map(settingsRepo.get(FIRED_KEY), firedRecord);
 
     /**
      * An immediate sink cannot ask for permission on its own (macOS
@@ -175,12 +162,7 @@ const make = (options: {
         // Time and copy are part of the digest: a new delivery time or a
         // renamed contact changes what the OS should show, not which key.
         const digest = future
-          // The target marker reschedules once what was scheduled before
-          // a tap could open its event.
-          .map(
-            (plan) =>
-              `${plan.key}@${String(plan.fireAt)}:${plan.title}:${plan.body}${plan.target ? ':opens' : ''}`,
-          )
+          .map((plan) => `${plan.key}@${String(plan.fireAt)}:${plan.title}:${plan.body}`)
           .join('|');
         if ((yield* settingsRepo.get(SCHEDULED_KEY)) === digest) {
           return;

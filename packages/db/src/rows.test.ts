@@ -176,7 +176,7 @@ describe('row decoders tolerate what the DB may hold', () => {
   });
 
   it('pendingOpFromRow keeps the three states of before_payload apart', () => {
-    // SQL NULL: an op from before the column — nothing to put back.
+    // SQL NULL: no snapshot — nothing to put back.
     expect(pendingOpFromRow(opRow())?.beforePayload).toBeUndefined();
     // The JSON text null: there was no row before the change.
     expect(pendingOpFromRow(opRow({ before_payload: 'null' }))?.beforePayload).toBeNull();

@@ -142,10 +142,10 @@ export interface TaskRow {
   readonly url: string | null;
   readonly alarms: string | null;
   readonly recurrence: string | null;
-  /** Reminders only; added by migration 7. */
+  /** Reminders only. */
   readonly external_id: string | null;
   readonly due_utc: number | null;
-  /** Google only; added by migration 12. */
+  /** Google only. */
   readonly parent_id: string | null;
   readonly position: string | null;
   /** Joined from task_lists.provider by getWindow; plain SELECTs leave it absent (= google). */
@@ -263,9 +263,9 @@ export interface CalendarRow {
   readonly is_primary: number;
   readonly is_visible: number;
   readonly time_zone: string;
-  /** Added by migration 3. */
+  /** Apple only: the EventKit source ("iCloud", "On My Mac"). */
   readonly source_title: string | null;
-  /** JSON ReminderOverride[]; added by migration 4. */
+  /** JSON ReminderOverride[]. */
   readonly default_reminders: string | null;
   /** Joined from accounts.provider by CalendarRepo.list (not a calendars column). */
   readonly account_provider: string | null;
@@ -319,11 +319,11 @@ export interface EventRow {
   readonly sync_status: string;
   readonly updated_at: number;
   readonly synced_at: number;
-  /** JSON GeoLocation; added by migration 2 (hence late). */
+  /** JSON GeoLocation. */
   readonly geo: string | null;
-  /** JSON EventReminders; added by migration 4. */
+  /** JSON EventReminders. */
   readonly reminders: string | null;
-  /** A mirror copy's marker; with the two below, added by migration 7. */
+  /** A mirror copy's marker. */
   readonly mirror: string | null;
   readonly transparency: string | null;
   readonly visibility: string | null;
@@ -461,39 +461,30 @@ export interface PendingOpRow {
   readonly task_due: string | null;
   readonly dispatched_at: number | null;
   readonly attendees_changed: number;
-  /** Added by migration 2 (hence late). */
   readonly geo_cleared: number;
-  /** Added by migration 3 (hence late). */
   readonly target_calendar_id: string | null;
-  /** Added by migration 4 (hence late). */
   readonly reminders_changed: number;
-  /** Added by migration 5 (hence late). */
   readonly conflict_at: number | null;
   readonly server_payload: string | null;
-  /** Added by migration 6 (hence after the baseline columns). */
   readonly carried_text: string | null;
-  /** Added by migration 9 (hence after carried_text). */
   readonly recurrence_cleared: number;
-  /** Added by migration 10. */
   readonly before_payload: string | null;
   readonly before_overrides: string | null;
   readonly before_task: string | null;
   readonly before_color_hex: string | null;
-  /** Added by migration 12. */
   readonly target_task_list_id: string | null;
   readonly task_parent: string | null;
-  /** Added by migration 13. */
   readonly task_due_cleared: number;
-  /** Added by migration 14 (hence last). */
   readonly task_previous: string | null;
 }
 
 const eventListSchema = Schema.Array(EventRecord);
 
 /**
- * The three states of `before_payload`: SQL NULL = an op from before the
- * column (undefined: a discard can only mark the row synced), the JSON
- * text `null` = there was no row before the change, a record otherwise.
+ * The three states of `before_payload`: SQL NULL = no snapshot (an op kind
+ * that carries none, or a delete whose item a pull saw removed — see
+ * `forgetDeleted`; undefined: a discard can only mark the row synced), the
+ * JSON text `null` = there was no row before the change, a record otherwise.
  * Unreadable JSON degrades to undefined like every other JSON column.
  */
 const beforePayloadFromColumn = (text: string | null): EventRecord | null | undefined => {

@@ -148,8 +148,8 @@ export const PendingOpSummary = Schema.Struct({
   conflict: Schema.optional(PendingOpConflict),
   createdAt: Schema.Number,
   /**
-   * What the change does, field by field (`pendingOpDiff`). Absent for an
-   * op queued before the app kept what a change replaced: no details.
+   * What the change does, field by field (`pendingOpDiff`). Absent when
+   * the op has no snapshot to compare against: no details.
    */
   diff: Schema.optional(Schema.Array(PendingOpDiffLine)),
   eventId: Schema.String,

@@ -10,7 +10,7 @@ import { eventFieldPairs, orNone, plainDateLabel } from './conflict.ts';
  * What a queued change does, field by field, for the unsynced-changes
  * list: the op's `before*` snapshot against what it sends. A create lists
  * the fields it sets, a delete names what goes, an edit only what differs.
- * Undefined when the op predates the snapshot (nothing to compare).
+ * Undefined when the op has no snapshot (nothing to compare).
  */
 export interface PendingOpDiffContext {
   /** A calendar's name for a move's "from → to"; ids are unique per account only. */

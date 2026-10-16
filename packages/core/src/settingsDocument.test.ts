@@ -8,11 +8,8 @@ import {
   withCanonicalZones,
 } from './settingsDocument.ts';
 
-/** Parses as a device in Vienna, so a file without the device entry reads the same on every host. */
-const parse = (
-  text: string,
-  options?: { deviceZone?: string; isValidZone?: (id: string) => boolean },
-) => Effect.runSync(parseSettingsDocument(text, { deviceZone: 'Europe/Vienna', ...options }));
+const parse = (text: string, options?: { isValidZone?: (id: string) => boolean }) =>
+  Effect.runSync(parseSettingsDocument(text, options));
 
 /** An engine whose ICU lacks the modern Kolkata name, as Hermes does. */
 const hermes = (id: string) => id !== 'Asia/Kolkata';
@@ -49,11 +46,9 @@ const full: SettingsDocument = {
 const zonesText = (primary: string, zones: ReadonlyArray<string>) =>
   `{ "version": 1, "timeZones": { "primary": "${primary}", "zones": ${JSON.stringify(zones)} } }`;
 
-/** The exit of parsing a zone list on a device in Vienna. */
+/** The exit of parsing a zone list. */
 const parseZones = (primary: string, zones: ReadonlyArray<string>) =>
-  Effect.runSyncExit(
-    parseSettingsDocument(zonesText(primary, zones), { deviceZone: 'Europe/Vienna' }),
-  );
+  Effect.runSyncExit(parseSettingsDocument(zonesText(primary, zones)));
 
 describe('parseSettingsDocument', () => {
   it('accepts the minimal document', () => {
@@ -78,7 +73,7 @@ describe('parseSettingsDocument', () => {
   it('rejects a zone no spelling resolves', () => {
     expect(
       failure(
-        '{ "version": 1, "timeZones": { "primary": "Mars/Olympus", "zones": ["Mars/Olympus"] } }',
+        '{ "version": 1, "timeZones": { "primary": "Mars/Olympus", "zones": ["device", "Mars/Olympus"] } }',
       ),
     ).toContain('Mars/Olympus');
   });
@@ -92,36 +87,14 @@ describe('parseSettingsDocument', () => {
     });
   });
 
-  it('gives a file from before the device entry one: the zone this device is in, else first', () => {
-    expect(parse(zonesText('Europe/Vienna', ['Europe/Vienna', 'UTC'])).timeZones).toEqual({
-      primary: 'device',
-      zones: ['device', 'UTC'],
-    });
-    expect(parse(zonesText('UTC', ['UTC', 'Asia/Kolkata'])).timeZones).toEqual({
-      primary: 'UTC',
-      zones: ['device', 'UTC', 'Asia/Kolkata'],
-    });
-    // The device spells its zone the legacy way: still the same zone.
-    expect(
-      parse(zonesText('Asia/Kolkata', ['Asia/Kolkata']), { deviceZone: 'Asia/Calcutta' }).timeZones,
-    ).toEqual({ primary: 'device', zones: ['device'] });
-    // Full, one of them this device's zone: Vienna becomes the entry, nothing is lost.
-    expect(parse(zonesText('UTC', ['UTC', 'Europe/Vienna', 'Asia/Tokyo'])).timeZones).toEqual({
-      primary: 'UTC',
-      zones: ['UTC', 'device', 'Asia/Tokyo'],
-    });
+  it('rejects a zone list without the device entry', () => {
+    expect(failure(zonesText('UTC', ['UTC', 'Asia/Kolkata']))).toContain('device entry');
   });
 
-  it('rejects a zone list that would lose a zone instead of trimming it', () => {
-    // Full without the device's zone: adding the entry would drop Tokyo.
-    expect(Exit.isFailure(parseZones('UTC', ['UTC', 'Asia/Kolkata', 'Asia/Tokyo']))).toBe(true);
-    // Longer than the cap, the device entry included or not.
+  it('rejects a zone list longer than the cap', () => {
     expect(Exit.isFailure(parseZones('UTC', ['device', 'UTC', 'Asia/Kolkata', 'Asia/Tokyo']))).toBe(
       true,
     );
-    expect(
-      Exit.isFailure(parseZones('UTC', ['UTC', 'Europe/Vienna', 'Asia/Kolkata', 'Asia/Tokyo'])),
-    ).toBe(true);
   });
 
   it('rejects an unknown account kind and reports the path', () => {

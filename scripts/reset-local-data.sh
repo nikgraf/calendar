@@ -2,8 +2,8 @@
 # Wipe every piece of Solunivo state on this machine: the desktop app's
 # database, tokens, logs and settings (dev and packaged builds), the
 # safeStorage keys in the login keychain, Squirrel update caches, stray e2e
-# profiles, and the iOS app on every booted simulator. Run it after the
-# schema baseline (2026-09-15) or whenever a clean first launch is wanted.
+# profiles, and the iOS app on every booted simulator. Run it after a
+# schema baseline or whenever a clean first launch is wanted.
 # Quit the desktop app and stop Metro first: a running app rewrites its
 # database on the next tick.
 #
@@ -39,12 +39,11 @@ for service in "@calendar/desktop Safe Storage" "Solunivo Safe Storage"; do
   fi
 done
 
-# Squirrel.Mac auto-update staging and defaults, current and pre-rename ids.
-for id in com.solunivo.desktop com.nikgraf.calendar; do
-  remove "$HOME/Library/Caches/$id"
-  remove "$HOME/Library/Caches/$id.ShipIt"
-  remove "$HOME/Library/Preferences/$id.plist"
-done
+# Squirrel.Mac auto-update staging and defaults.
+id=com.solunivo.desktop
+remove "$HOME/Library/Caches/$id"
+remove "$HOME/Library/Caches/$id.ShipIt"
+remove "$HOME/Library/Preferences/$id.plist"
 
 # Desktop e2e profiles a crashed run may have left behind.
 for dir in "${TMPDIR:-/tmp}"/calendar-e2e-*; do
@@ -60,8 +59,7 @@ if command -v xcrun >/dev/null 2>&1; then
     | python3 -c 'import json,sys; print("\n".join(d["udid"] for v in json.load(sys.stdin)["devices"].values() for d in v))' \
     || true)
   for udid in $booted; do
-    # The dev client, and a production build (or a dev client from before
-    # the variants split) if one is installed.
+    # The dev client, and a production build if one is installed.
     for id in com.solunivo.app.dev com.solunivo.app; do
       if xcrun simctl get_app_container "$udid" "$id" >/dev/null 2>&1; then
         echo "uninstalling $id from simulator $udid"

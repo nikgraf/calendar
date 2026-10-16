@@ -40,11 +40,15 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   app or start a dev run with the `CALENDAR_*=off` switches.
 - **Versions** (2026-09-11) — the apps are `0.1.0` with a CHANGELOG;
   bump together when a release is worth a number.
-- **Schema baseline** (2026-09-15) — the twelve pre-release migrations
-  were collapsed into one, since nothing had shipped. The runner keeps
-  its "ahead of this build" guard rather than a self-wipe (a pre-baseline
-  database refuses to open and names `pnpm reset:local`). A one-time
-  cleanup, not a policy: schema changes are appended migrations again.
+- **Schema baseline** (2026-09-15, again 2026-10-15) — the pre-release
+  migrations were collapsed into one, twice, since nothing had shipped;
+  the second pass also dropped every upgrade of old data (zone lists
+  without the device entry, the old fired map and Keychain key, the
+  Birthdays purge). The runner refuses rather than self-wipes: an applied
+  row whose id and name this build does not know dies naming
+  `pnpm reset:local` — names, as ids are reused after a collapse, so a
+  migration is never renamed. Leaves open: every existing install resets
+  once. Schema changes are appended migrations again.
 
 ## CI and dependencies
 
@@ -147,7 +151,8 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   type-errors.
 - **Migrations** — a hand-rolled runner (effect's `Migrator` is
   Metro-incompatible), each migration transactional with its bookkeeping
-  row, duplicate-id and downgrade guards that die loudly.
+  row, duplicate-id, climbing-id and identity guards (an applied row must
+  match a known id and name) that die loudly.
 - **Op queue invariants** (2026-09-11 sweep, #110, #118, #125) — the
   local write and the queue change commit in one transaction, with the
   drain kicked after commit (`Effect.suspend(forkDetach)` so a failed
@@ -237,9 +242,8 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   remotely deleted item: an op puts back only the fields it owns (and
   takes them out of the other queued snapshots and payloads), a landed
   op moves every queued snapshot of the item, a confirming pull clears a
-  delete's, a superseded op refused in flight puts nothing back. Open: an
-  op queued before the snapshot can only mark its row synced; a deletion
-  a full re-list confirms only by absence clears no snapshot; a per-item
+  delete's, a superseded op refused in flight puts nothing back. Open: a
+  deletion a full re-list confirms only by absence clears no snapshot; a per-item
   acknowledged copy would replace the per-op snapshots if more
   interleavings turn up.
 
@@ -362,8 +366,6 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   zone the device is in right now draws once. Rejected: a removable entry
   with a pinned picker row (one more state for the one user who wants no
   device line); a label alone (the gap was the model, not the row).
-  Migration 11 and the document parser give an older list the entry: the
-  id equal to the device zone becomes it, else it goes first.
 - **The time zone picker lists every zone** (2026-10-10, #177) — it opens
   on the whole catalog, which scrolls, and typing narrows it, so a zone
   can be found by browsing as well as by name; "Add time zone…" is a

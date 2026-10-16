@@ -145,7 +145,7 @@ describe('time zone settings', () => {
       // A zone tzdata dropped must not reach the grid.
       yield* repo.set(TIME_ZONES_KEY, { primary: 'device', zones: ['device', 'Mars/Olympus'] });
       expect(yield* readTimeZoneSettings).toEqual(DEFAULT_TIME_ZONE_SETTINGS);
-      // A list without the device entry (from before migration 11 ran) is not patched here.
+      // A list without the device entry is not patched here.
       yield* repo.set(TIME_ZONES_KEY, { primary: 'UTC', zones: ['UTC'] });
       expect(yield* readTimeZoneSettings).toEqual(DEFAULT_TIME_ZONE_SETTINGS);
     }).pipe(Effect.provide(dbLayer())),

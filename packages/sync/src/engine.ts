@@ -294,12 +294,7 @@ const make: Effect.Effect<
       // history again, not resume a token onto an empty table.
       if (!fullPass) {
         const gone = result.deletedIds.filter((id) => previousVisibility.has(id));
-        // An install that synced the Birthdays calendar before it was
-        // skipped never gets it re-sent unchanged: drop the row once.
-        if (previousVisibility.has(GOOGLE_BIRTHDAYS_CALENDAR_ID)) {
-          gone.push(GOOGLE_BIRTHDAYS_CALENDAR_ID);
-        }
-        yield* calendarRepo.purge(account.id, [...new Set(gone)]);
+        yield* calendarRepo.purge(account.id, gone);
       } else {
         // Full pass: anything not seen no longer exists upstream. Compared
         // with what is stored now, not before the pass: a delta page that

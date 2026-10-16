@@ -13,14 +13,8 @@ import {
 import { BirthdayReminderOverrides, BirthdayReminderSettings } from './birthdays/reminders.ts';
 import { MirrorDefinition } from './mirror/definition.ts';
 import { EventNotificationSettings } from './notifications/settings.ts';
-import { Temporal } from './time/temporal.ts';
-import { canonicalZoneId, runtimeZoneId, zoneKey } from './time/zones.ts';
-import {
-  DEVICE_ZONE,
-  isDeviceZone,
-  TimeZoneSettings,
-  withDeviceEntry,
-} from './timeZoneSettings.ts';
+import { canonicalZoneId, runtimeZoneId } from './time/zones.ts';
+import { isDeviceZone, TimeZoneSettings } from './timeZoneSettings.ts';
 import { ViewPreferences } from './viewPreferences.ts';
 
 /**
@@ -163,13 +157,7 @@ const describeParseError = (text: string, error: ParseError): string => {
  * platform is mapped through `runtimeZoneId` before the schema's validity
  * check sees it; an id neither spelling resolves stays as written and
  * fails decoding with a clear message. The device entry is a word, not an
- * id, and passes through. A file from before the entry existed lists
- * only ids: the one this device is in becomes the entry, else the entry
- * is added first (`withDeviceEntry`) — but only when every zone the file
- * names still fits. A file that would lose one (it is full, or longer
- * than the cap) is left as written and fails decoding with the schema's
- * message: the desktop writes the watched file back, so a silent trim
- * would delete what the user wrote.
+ * id, and passes through.
  */
 const normalizeZones = (
   raw: { primary?: unknown; zones?: unknown },
@@ -182,29 +170,10 @@ const normalizeZones = (
   const zones = Array.isArray(raw.zones)
     ? [...new Set(raw.zones.map((zone) => map(zone)))]
     : raw.zones;
-  const primary = map(raw.primary);
-  if (
-    typeof primary === 'string' &&
-    Array.isArray(zones) &&
-    zones.every((zone): zone is string => typeof zone === 'string') &&
-    !zones.includes(DEVICE_ZONE)
-  ) {
-    const deviceZone = options.deviceZone ?? Temporal.Now.timeZoneId();
-    const withEntry = withDeviceEntry({ primary, zones }, deviceZone);
-    // Every zone the file names is still there, or became the device entry.
-    const kept = zones.every(
-      (zone) => withEntry.zones.includes(zone) || zoneKey(zone) === zoneKey(deviceZone),
-    );
-    if (kept) {
-      return withEntry;
-    }
-  }
-  return { ...raw, primary, zones };
+  return { ...raw, primary: map(raw.primary), zones };
 };
 
 export interface ParseSettingsOptions {
-  /** The zone this device is in, for a file from before the device entry; injectable for tests. */
-  readonly deviceZone?: string;
   /** Injectable for tests acting out an engine with a different zone table. */
   readonly isValidZone?: (id: string) => boolean;
 }

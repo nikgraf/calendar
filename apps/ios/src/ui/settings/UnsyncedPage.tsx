@@ -20,7 +20,7 @@ import {
   SettingsPage,
 } from './GroupedList.tsx';
 
-/** No snapshot to compare against: the change was queued by an earlier version. */
+/** No snapshot to compare against. */
 const NO_DETAILS = 'No details for this change.';
 /** A snapshot, but nothing this list can show differs (a field it does not draw). */
 const NO_DIFFERENCE = 'No visible difference.';
