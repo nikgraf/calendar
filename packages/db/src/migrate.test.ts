@@ -1,4 +1,3 @@
-import { Temporal } from '@calendar/core';
 import { SqliteClient } from '@effect/sql-sqlite-node';
 import { expect, it } from '@effect/vitest';
 import { Effect } from 'effect';
@@ -58,95 +57,6 @@ describe('runMigrations', () => {
         'idx_tasks_due',
       ]);
     }).pipe(Effect.provide(sqlLayer())),
-  );
-
-  it.effect('upgrades a baseline database in place, keeping its rows', () =>
-    Effect.gen(function* () {
-      const sql = yield* SqlClient;
-      const baselineOnly = migrations.filter(([id]) => id === 1);
-      yield* runMigrationsWith(baselineOnly);
-      yield* sql`INSERT INTO accounts (id, email, status, created_at) VALUES ('a', 'a@x', 'ok', 1)`;
-      yield* sql`
-        INSERT INTO events (account_id, calendar_id, id, status, title, location, is_all_day,
-                            start_utc, end_utc, sync_status, updated_at, synced_at)
-        VALUES ('a', 'c', 'e', 'confirmed', 'Lunch', 'Naschmarkt', 0, 1, 2, 'synced', 1, 1)`;
-
-      yield* runMigrations;
-
-      expect(yield* appliedIds).toEqual(migrations.map(([id]) => id));
-      const rows = yield* sql<{ geo: string | null; location: string }>`
-        SELECT location, geo FROM events WHERE id = 'e'`;
-      expect(rows).toEqual([{ geo: null, location: 'Naschmarkt' }]);
-    }).pipe(Effect.provide(sqlLayer())),
-  );
-
-  it.effect('backfills the series end of masters with RDATE lines (migration 8)', () =>
-    Effect.gen(function* () {
-      const sql = yield* SqlClient;
-      yield* runMigrationsWith(migrations.filter(([id]) => id < 8));
-      const insert = (id: string, recurrence: ReadonlyArray<string>) => sql`
-        INSERT INTO events (account_id, calendar_id, id, status, title, is_all_day, start_utc,
-                            end_utc, start_time_zone, recurrence, recurrence_end_utc,
-                            sync_status, updated_at, synced_at)
-        VALUES ('a', 'c', ${id}, 'confirmed', 'Talks', 0, ${Date.parse('2026-07-07T09:00:00Z')},
-                ${Date.parse('2026-07-07T10:00:00Z')}, 'UTC', ${JSON.stringify(recurrence)}, NULL,
-                'synced', 1, 1)`;
-      yield* insert('dates', ['RDATE:20260801T090000Z,20260901T090000Z']);
-      yield* insert('rule-and-dates', ['RRULE:FREQ=WEEKLY;COUNT=2', 'RDATE:20261001T090000Z']);
-      yield* insert('endless', ['RRULE:FREQ=WEEKLY', 'RDATE:20261001T090000Z']);
-
-      yield* runMigrations;
-
-      const rows = yield* sql<{ id: string; recurrence_end_utc: number | null }>`
-        SELECT id, recurrence_end_utc FROM events ORDER BY id`;
-      expect(rows).toEqual([
-        { id: 'dates', recurrence_end_utc: Date.parse('2026-09-01T10:00:00Z') },
-        { id: 'endless', recurrence_end_utc: null },
-        { id: 'rule-and-dates', recurrence_end_utc: Date.parse('2026-10-01T10:00:00Z') },
-      ]);
-    }).pipe(Effect.provide(sqlLayer())),
-  );
-
-  it.effect(
-    "names this device's zone by the device entry in the stored time zones (migration 11)",
-    () =>
-      Effect.gen(function* () {
-        const sql = yield* SqlClient;
-        yield* runMigrationsWith(migrations.filter(([id]) => id < 11));
-        const deviceZone = Temporal.Now.timeZoneId();
-        const other = deviceZone === 'UTC' ? 'Asia/Kolkata' : 'UTC';
-        yield* sql`
-        INSERT INTO device_settings (key, value, updated_at)
-        VALUES ('timeZones', ${JSON.stringify({ primary: deviceZone, zones: [other, deviceZone] })}, 1)`;
-
-        yield* runMigrations;
-
-        const rows = yield* sql<{ value: string }>`
-        SELECT value FROM device_settings WHERE key = 'timeZones'`;
-        expect(JSON.parse(rows[0]!.value)).toEqual({ primary: 'device', zones: [other, 'device'] });
-      }).pipe(Effect.provide(sqlLayer())),
-  );
-
-  it.effect(
-    'makes every Google task list pass a full one, to pick up the hierarchy (migration 12)',
-    () =>
-      Effect.gen(function* () {
-        const sql = yield* SqlClient;
-        yield* runMigrationsWith(migrations.filter(([id]) => id < 12));
-        yield* sql`
-        INSERT INTO sync_state (account_id, scope, sync_token, last_full_sync_at, last_sync_at, status)
-        VALUES ('acc', 'tasks:list-1', '2026-10-01T00:00:00.000Z', 1000, 1000, 'idle'),
-               ('acc', 'events:cal-1', 'token', 1000, 1000, 'idle')`;
-
-        yield* runMigrations;
-
-        const rows = yield* sql<{ last_full_sync_at: number; scope: string; sync_token: string }>`
-        SELECT scope, last_full_sync_at, sync_token FROM sync_state ORDER BY scope`;
-        expect(rows).toEqual([
-          { last_full_sync_at: 1000, scope: 'events:cal-1', sync_token: 'token' },
-          { last_full_sync_at: 0, scope: 'tasks:list-1', sync_token: '2026-10-01T00:00:00.000Z' },
-        ]);
-      }).pipe(Effect.provide(sqlLayer())),
   );
 
   it.effect('rolls back a failing migration atomically and retries it next run', () =>
@@ -212,10 +122,7 @@ describe('runMigrations', () => {
     }).pipe(Effect.provide(sqlLayer())),
   );
 
-  // Also what a database from before the 2026-09-15 baseline looks like to
-  // this build: its migration rows 2–12 are unknown here, so it refuses to
-  // open rather than run against a schema it did not build.
-  it.effect('dies when the database is ahead of the build (downgrade guard)', () =>
+  it.effect('dies on a migration this build does not know (a newer build)', () =>
     Effect.gen(function* () {
       const sql = yield* SqlClient;
       yield* runMigrations;
@@ -223,9 +130,60 @@ describe('runMigrations', () => {
       const defect: unknown = yield* runMigrations.pipe(
         Effect.catchDefect((d) => Effect.succeed<unknown>(d)),
       );
-      expect(String(defect)).toContain('Database is ahead of this build');
-      expect(String(defect)).toContain('99');
+      expect(String(defect)).toContain('Database does not match this build');
+      expect(String(defect)).toContain('99 "from-the-future"');
       expect(String(defect)).toContain('pnpm reset:local');
+    }).pipe(Effect.provide(sqlLayer())),
+  );
+
+  it.effect('dies on a known id under another name (another branch, or a renamed migration)', () =>
+    Effect.gen(function* () {
+      const nextId = (migrations.at(-1)?.[0] ?? 0) + 1;
+      const mine: ResolvedMigration = [nextId, 'mine', Effect.succeed(Effect.void)];
+      const theirs: ResolvedMigration = [nextId, 'theirs', Effect.succeed(Effect.void)];
+      yield* runMigrationsWith([...migrations, theirs]);
+      const defect: unknown = yield* runMigrationsWith([...migrations, mine]).pipe(
+        Effect.catchDefect((d) => Effect.succeed<unknown>(d)),
+      );
+      expect(String(defect)).toContain(`${String(nextId)} "theirs", which this build names "mine"`);
+    }).pipe(Effect.provide(sqlLayer())),
+  );
+
+  // What a database from before the 2026-10-15 baseline looks like to this
+  // build: fourteen rows, the first under the old baseline's name.
+  it.effect('dies on a database from before the schema baseline', () =>
+    Effect.gen(function* () {
+      const sql = yield* SqlClient;
+      yield* sql`CREATE TABLE effect_sql_migrations (
+        migration_id integer PRIMARY KEY NOT NULL,
+        created_at datetime NOT NULL DEFAULT current_timestamp,
+        name VARCHAR(255) NOT NULL
+      )`;
+      const before = [
+        'baseline',
+        'event-geo',
+        'apple-calendar',
+        'event-reminders',
+        'conflict-park',
+        'carried-text',
+        'calendar-mirrors',
+        'rdate-series-end',
+        'recurrence-cleared',
+        'before-snapshot',
+        'device-time-zone',
+        'task-hierarchy',
+        'task-due-cleared',
+        'task-reorder',
+      ];
+      for (const [index, name] of before.entries()) {
+        yield* sql`INSERT INTO effect_sql_migrations (migration_id, name) VALUES (${index + 1}, ${name})`;
+      }
+      const defect: unknown = yield* runMigrations.pipe(
+        Effect.catchDefect((d) => Effect.succeed<unknown>(d)),
+      );
+      expect(String(defect)).toContain('1 "baseline", which this build names');
+      expect(String(defect)).toContain('pnpm reset:local');
+      expect(yield* namesOf('table')).toEqual([]);
     }).pipe(Effect.provide(sqlLayer())),
   );
 });

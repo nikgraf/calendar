@@ -14,6 +14,9 @@ import { migrations } from './migrations.ts';
  * mid-migration failure rolls back to the last fully-applied migration
  * (SQLite DDL is transactional), so the next launch retries cleanly instead
  * of hitting half-applied DDL forever.
+ *
+ * Applied rows are matched by id and name, so a migration is never renamed
+ * once it has shipped to any database.
  */
 export const runMigrationsWith = (
   list: ReadonlyArray<ResolvedMigration>,
@@ -37,28 +40,34 @@ export const runMigrationsWith = (
       name VARCHAR(255) NOT NULL
     )`;
 
-    const applied = new Set(
-      (yield* sql<{ migration_id: number }>`
-        SELECT migration_id FROM effect_sql_migrations
-      `).map((row) => row.migration_id),
-    );
+    const appliedRows = yield* sql<{ migration_id: number; name: string }>`
+      SELECT migration_id, name FROM effect_sql_migrations ORDER BY migration_id
+    `;
 
-    // A database already migrated past everything this build knows about
-    // means the app binary was downgraded — or, before the first release,
-    // that it predates the schema baseline. Running this code against a
-    // schema it does not know is undefined behavior — refuse loudly instead.
-    const latestKnown = Math.max(...ids);
-    const ahead = [...applied].filter((id) => id > latestKnown);
-    if (ahead.length > 0) {
+    // Every applied row must be a migration this build knows, by id and
+    // name. One it does not know was written by a newer build (the binary
+    // was downgraded), by another branch's migration under the same id, or
+    // before a schema baseline replaced the migrations it came from.
+    // Running this code against a schema it did not build is undefined
+    // behavior — refuse loudly instead.
+    const known = new Map(list.map(([id, name]) => [id, name]));
+    const stranger = appliedRows.find((row) => known.get(row.migration_id) !== row.name);
+    if (stranger !== undefined) {
+      const ours = known.get(stranger.migration_id);
+      const latest = list.at(-1)!;
       return yield* Effect.die(
         new Error(
-          `Database is ahead of this build: migration ${String(Math.max(...ahead))} is applied ` +
-            `but this build only knows up to ${String(latestKnown)}. ` +
+          `Database does not match this build: it has migration ` +
+            `${String(stranger.migration_id)} "${stranger.name}", which this build ` +
+            (ours === undefined
+              ? `does not know (it knows up to ${String(latest[0])} "${latest[1]}"). `
+              : `names "${ours}". `) +
             'Update the app instead of downgrading it; a database from before the ' +
             'schema baseline is reset with `pnpm reset:local` (or by deleting the app).',
         ),
       );
     }
+    const applied = new Set(appliedRows.map((row) => row.migration_id));
 
     // Ids must climb: the applied set is compared by id, so an entry that
     // sorts below its predecessor would apply out of order and silently.

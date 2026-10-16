@@ -1,14 +1,13 @@
-import { Temporal, withDeviceEntry } from '@calendar/core';
 import { Effect } from 'effect';
 import { SqlClient } from 'effect/sql/SqlClient';
 import type { ResolvedMigration } from 'effect/sql/Migrator';
-import { type DeviceSettingRow, eventFromRow, type EventRow, seriesEndUtc } from './rows.ts';
 
-// The whole schema in one migration. Twelve incremental migrations accreted
-// while building and were collapsed before the first release (2026-09-15);
-// a database from before the collapse refuses to open (see the runner's
-// "ahead of this build" guard) and is reset with `pnpm reset:local`.
-// From here on, schema changes are new migrations appended below.
+// The whole schema in one migration. The incremental migrations that
+// accreted while building were collapsed before the first release, twice
+// (2026-09-15, 2026-10-15); a database from before a collapse holds
+// migration rows this build does not know, so it refuses to open (see the
+// runner's identity guard) and is reset with `pnpm reset:local`. From here
+// on, schema changes are new migrations appended below.
 const baseline = Effect.gen(function* () {
   const sql = yield* SqlClient;
 
@@ -28,6 +27,11 @@ const baseline = Effect.gen(function* () {
       contacts_enabled INTEGER NOT NULL DEFAULT 0
     )`;
 
+  // source_title is the EventKit source an Apple calendar lives in
+  // ("iCloud", "On My Mac") — NULL for Google calendars; the calendar's
+  // provider is never stored, it is the owning account's.
+  // default_reminders is the JSON ReminderOverride[] from Google's
+  // calendarList.
   yield* sql`
     CREATE TABLE calendars (
       account_id TEXT NOT NULL,
@@ -38,12 +42,22 @@ const baseline = Effect.gen(function* () {
       is_primary INTEGER NOT NULL,
       is_visible INTEGER NOT NULL,
       time_zone TEXT NOT NULL,
+      source_title TEXT,
+      default_reminders TEXT,
       PRIMARY KEY (account_id, id)
     )`;
 
-  // recurrence_end_utc: when a recurring series ends (UNTIL, or the last
-  // COUNT occurrence); NULL = never. Lets the window query skip series
-  // that ended before the range instead of expanding every master stored.
+  // geo mirrors the coordinates stored in the Google event's private
+  // extendedProperties (JSON GeoLocation; NULL = none on the server).
+  // recurrence_end_utc: when a recurring series ends (UNTIL, the last
+  // COUNT occurrence, or the last RDATE); NULL = never. Lets the window
+  // query skip series that ended before the range instead of expanding
+  // every master stored. reminders is the JSON EventReminders (NULL = none
+  // given, read as the calendar default). transparency ('opaque' |
+  // 'transparent') and visibility ('default' | 'public' | 'private' |
+  // 'confidential') feed a mirror's filters. mirror is the marker of a
+  // mirror's copy (NULL for every ordinary event; see core
+  // mirror/marker.ts) — copies are hidden from the window query.
   yield* sql`
     CREATE TABLE events (
       account_id TEXT NOT NULL,
@@ -53,6 +67,7 @@ const baseline = Effect.gen(function* () {
       status TEXT NOT NULL,
       title TEXT NOT NULL,
       location TEXT,
+      geo TEXT,
       description TEXT,
       is_all_day INTEGER NOT NULL,
       start_utc INTEGER NOT NULL,
@@ -67,6 +82,10 @@ const baseline = Effect.gen(function* () {
       attendees TEXT,
       organizer_email TEXT,
       hangout_link TEXT,
+      reminders TEXT,
+      transparency TEXT,
+      visibility TEXT,
+      mirror TEXT,
       sync_status TEXT NOT NULL,
       updated_at INTEGER NOT NULL,
       synced_at INTEGER NOT NULL,
@@ -84,13 +103,39 @@ const baseline = Effect.gen(function* () {
   // through the window index and filter `recurrence IS NOT NULL` afterwards.
   yield* sql`CREATE INDEX idx_events_masters
     ON events (start_utc, recurrence_end_utc) WHERE recurrence IS NOT NULL`;
+  // Partial: finds a mirror destination's copies.
+  yield* sql`
+    CREATE INDEX idx_events_mirror ON events (account_id, calendar_id, start_utc)
+    WHERE mirror IS NOT NULL`;
 
-  // Op-specific state lives in scalar columns (color_hex, task_*,
-  // attendees_changed) rather than inside `payload`. dispatched_at is
-  // stamped before a non-idempotent network call (tasks.insert has
-  // server-assigned ids) so a re-run verifies against the server before
-  // inserting again. attendees_changed = 1 when the queued update carries
-  // an edited guest list; only then does the patch include `attendees`.
+  // Op-specific state lives in scalar columns rather than inside `payload`:
+  // - target_calendar_id: the destination of a 'move' (a Google
+  //   events.move inside one account; calendar_id stays the source);
+  //   target_task_list_id the same for a task's server move.
+  // - before_*: what the op replaced — the event row (JSON EventRecord;
+  //   the JSON text `null` = there was no row, SQL NULL = no snapshot), a
+  //   series delete's exception rows, the task row and a calendar's
+  //   previous color. The unsynced-changes list diffs against them and a
+  //   discard puts them back.
+  // - conflict_at is set when a 412 parked the op (the drain skips it
+  //   until the user chooses keep-mine or take-theirs); server_payload is
+  //   Google's version fetched at park time (JSON EventRecord, NULL when
+  //   the event was deleted on Google), shown so the user can compare.
+  // - carried_text (JSON CarriedText): what a series edit mirrored onto the
+  //   series' exceptions and their own text before, so abandoning the op
+  //   can put that back.
+  // - task_parent: the parent a subtask's create or a same-list move nests
+  //   under; task_previous the sibling a same-list move goes after.
+  // - The flags say what a queued update must send beyond its payload:
+  //   attendees_changed an edited guest list (only then does the patch
+  //   include `attendees`), geo_cleared a delete of the server's geo keys,
+  //   reminders_changed the reminders object, recurrence_cleared an empty
+  //   rule list ("does not repeat"; an absent key would keep the rule),
+  //   task_due_cleared `due: null` (a NULL task_due means "leave it
+  //   alone").
+  // dispatched_at is stamped before a non-idempotent network call
+  // (tasks.insert has server-assigned ids) so a re-run verifies against
+  // the server before inserting again.
   yield* sql`
     CREATE TABLE pending_ops (
       id TEXT PRIMARY KEY,
@@ -98,15 +143,30 @@ const baseline = Effect.gen(function* () {
       calendar_id TEXT NOT NULL,
       kind TEXT NOT NULL,
       event_id TEXT NOT NULL,
+      target_calendar_id TEXT,
       payload TEXT,
       base_etag TEXT,
+      before_payload TEXT,
+      before_overrides TEXT,
+      before_task TEXT,
+      before_color_hex TEXT,
+      conflict_at INTEGER,
+      server_payload TEXT,
+      carried_text TEXT,
       color_hex TEXT,
       task_list_id TEXT,
+      target_task_list_id TEXT,
       task_status TEXT,
       task_title TEXT,
       task_notes TEXT,
       task_due TEXT,
+      task_parent TEXT,
+      task_previous TEXT,
       attendees_changed INTEGER NOT NULL DEFAULT 0,
+      geo_cleared INTEGER NOT NULL DEFAULT 0,
+      reminders_changed INTEGER NOT NULL DEFAULT 0,
+      recurrence_cleared INTEGER NOT NULL DEFAULT 0,
+      task_due_cleared INTEGER NOT NULL DEFAULT 0,
       attempts INTEGER NOT NULL,
       next_attempt_at INTEGER NOT NULL,
       dispatched_at INTEGER,
@@ -143,20 +203,28 @@ const baseline = Effect.gen(function* () {
     )`;
 
   // sync_status 'pending' marks optimistic local creates so a full-pass
-  // deleteStale never eats a row whose insert has not pushed yet. due_time,
-  // priority, url, alarms (JSON number[] of minute offsets) and recurrence
-  // (JSON TaskRecurrence or {"unsupported":true}) are Reminders
-  // capabilities Google Tasks lack — NULL for Google rows.
+  // deleteStale never eats a row whose insert has not pushed yet.
+  // external_id and due_utc are a reminder's device-independent identity
+  // and due instant; due_time, priority, url, alarms (JSON number[] of
+  // minute offsets) and recurrence (JSON TaskRecurrence or
+  // {"unsupported":true}) are Reminders capabilities Google Tasks lack —
+  // all NULL for Google rows. parent_id and position are the Google task
+  // hierarchy: a task's parent and its place among its siblings — NULL for
+  // Reminders rows.
   yield* sql`
     CREATE TABLE tasks (
       account_id TEXT NOT NULL,
       list_id TEXT NOT NULL,
       id TEXT NOT NULL,
+      external_id TEXT,
+      parent_id TEXT,
+      position TEXT,
       title TEXT NOT NULL,
       notes TEXT,
       status TEXT NOT NULL,
       due_date TEXT,
       due_time TEXT,
+      due_utc INTEGER,
       priority TEXT,
       url TEXT,
       alarms TEXT,
@@ -212,19 +280,11 @@ const baseline = Effect.gen(function* () {
       value TEXT NOT NULL,
       updated_at INTEGER NOT NULL
     )`;
-});
 
-// Structured locations. events.geo mirrors the coordinates stored in the
-// Google event's private extendedProperties (JSON GeoLocation; NULL = none
-// on the server). location_geo caches on-device geocoding per normalized
-// location string for events without server coordinates (read-only
-// calendars, events from before the feature); geo NULL there records a
-// lookup that found nothing, so it is not repeated on every open.
-const eventGeo = Effect.gen(function* () {
-  const sql = yield* SqlClient;
-  yield* sql`ALTER TABLE events ADD COLUMN geo TEXT`;
-  // geo_cleared = 1 when the queued update must delete the server's geo keys.
-  yield* sql`ALTER TABLE pending_ops ADD COLUMN geo_cleared INTEGER NOT NULL DEFAULT 0`;
+  // On-device geocoding per normalized location string, for events without
+  // server coordinates (read-only calendars, events made elsewhere); geo
+  // NULL records a lookup that found nothing, so it is not repeated on
+  // every open.
   yield* sql`
     CREATE TABLE location_geo (
       location_key TEXT PRIMARY KEY NOT NULL,
@@ -233,194 +293,8 @@ const eventGeo = Effect.gen(function* () {
     )`;
 });
 
-// Apple Calendar. source_title is the EventKit source an Apple calendar
-// lives in ("iCloud", "On My Mac") — NULL for Google calendars; the
-// calendar's provider is never stored, it is the owning account's.
-// target_calendar_id is the destination of a queued 'move' op (a Google
-// events.move inside one account; calendar_id stays the source).
-const appleCalendar = Effect.gen(function* () {
-  const sql = yield* SqlClient;
-  yield* sql`ALTER TABLE calendars ADD COLUMN source_title TEXT`;
-  yield* sql`ALTER TABLE pending_ops ADD COLUMN target_calendar_id TEXT`;
-});
-
-// Event reminders. events.reminders is the JSON EventReminders (NULL =
-// synced before reminders were modelled, read as the calendar default);
-// calendars.default_reminders the JSON ReminderOverride[] from Google's
-// calendarList; reminders_changed = 1 when the queued update must carry
-// the reminders object. The Google sync tokens (calendar list and every
-// events scope) are dropped so both re-list once and fill the new columns
-// — an incremental pass never re-sends an unchanged entry, and a row left
-// NULL would fire at the calendar default even where the user chose
-// "none" (or, for a calendar, never fire at all).
-const eventReminders = Effect.gen(function* () {
-  const sql = yield* SqlClient;
-  yield* sql`ALTER TABLE events ADD COLUMN reminders TEXT`;
-  yield* sql`ALTER TABLE calendars ADD COLUMN default_reminders TEXT`;
-  yield* sql`ALTER TABLE pending_ops ADD COLUMN reminders_changed INTEGER NOT NULL DEFAULT 0`;
-  yield* sql`DELETE FROM sync_state WHERE scope = 'calendarList' OR scope LIKE 'events:%'`;
-});
-
-// Conflict parking. conflict_at is set when a 412 parked the op (the drain
-// skips it until the user chooses keep-mine or take-theirs); server_payload
-// is Google's version fetched at park time (JSON EventRecord, NULL when the
-// event was deleted on Google), shown so the user can compare.
-const conflictPark = Effect.gen(function* () {
-  const sql = yield* SqlClient;
-  yield* sql`ALTER TABLE pending_ops ADD COLUMN conflict_at INTEGER`;
-  yield* sql`ALTER TABLE pending_ops ADD COLUMN server_payload TEXT`;
-});
-
-// A series edit's carried text (JSON CarriedText): what it mirrored onto the
-// series' exceptions and their own text before, so abandoning the op can
-// put that back.
-const carriedText = Effect.gen(function* () {
-  const sql = yield* SqlClient;
-  yield* sql`ALTER TABLE pending_ops ADD COLUMN carried_text TEXT`;
-});
-
-// Calendar mirrors. events.mirror is the marker of a mirror's copy (NULL for
-// every ordinary event; see core mirror/marker.ts) — copies are hidden from
-// the window query, and the partial index finds a destination's copies.
-// transparency ('opaque' | 'transparent') and visibility ('default' |
-// 'public' | 'private' | 'confidential') feed a mirror's filters; NULL =
-// synced before they were modelled, which a mirror reads as private. The
-// events sync tokens are dropped so every calendar re-lists once and fills
-// them in (an incremental pass never re-sends an unchanged event).
-// tasks.external_id and due_utc are a reminder's device-independent identity
-// and due instant: the Reminders rows and their delta stamp are dropped so
-// the next EventKit pass (local, fast) writes them back whole — the mirror's
-// upsert keeps a row that is not newer, so it would never backfill them.
-const calendarMirrors = Effect.gen(function* () {
-  const sql = yield* SqlClient;
-  yield* sql`ALTER TABLE events ADD COLUMN mirror TEXT`;
-  yield* sql`ALTER TABLE events ADD COLUMN transparency TEXT`;
-  yield* sql`ALTER TABLE events ADD COLUMN visibility TEXT`;
-  yield* sql`
-    CREATE INDEX idx_events_mirror ON events (account_id, calendar_id, start_utc)
-    WHERE mirror IS NOT NULL`;
-  yield* sql`ALTER TABLE tasks ADD COLUMN external_id TEXT`;
-  yield* sql`ALTER TABLE tasks ADD COLUMN due_utc INTEGER`;
-  yield* sql`DELETE FROM sync_state WHERE scope LIKE 'events:%' OR scope = 'reminders'`;
-  yield* sql`DELETE FROM tasks WHERE account_id = 'apple-reminders'`;
-});
-
-// The series end of masters with RDATE lines. recurrence_end_utc stayed NULL
-// (endless) for every series with an RDATE, so such a master was fetched
-// for every window ever after; it is now computed like any other bounded
-// series. Sync never rewrites an unchanged row — an ended series' would
-// stay NULL forever — so the rows are recomputed here instead of
-// re-listing every calendar.
-const rdateSeriesEnd = Effect.gen(function* () {
-  const sql = yield* SqlClient;
-  const rows = yield* sql<EventRow>`SELECT * FROM events WHERE recurrence LIKE '%RDATE%'`;
-  for (const row of rows) {
-    const end = seriesEndUtc(eventFromRow(row));
-    if (end !== row.recurrence_end_utc) {
-      yield* sql`
-        UPDATE events SET recurrence_end_utc = ${end}
-        WHERE account_id = ${row.account_id} AND calendar_id = ${row.calendar_id}
-          AND id = ${row.id}`;
-    }
-  }
-});
-
-// recurrence_cleared = 1 when the queued series update must send Google an
-// empty rule list ("does not repeat"): an absent key would keep the rule.
-const recurrenceCleared = Effect.gen(function* () {
-  const sql = yield* SqlClient;
-  yield* sql`ALTER TABLE pending_ops ADD COLUMN recurrence_cleared INTEGER NOT NULL DEFAULT 0`;
-});
-
-// What a queued op replaced: the event row (JSON EventRecord; the JSON text
-// `null` = there was no row, SQL NULL = an op from before this column, which
-// a discard can only mark synced), a series delete's exception rows, the
-// task row and a calendar's previous color. The unsynced-changes list diffs
-// an op against it and a discard puts it back.
-const beforeSnapshot = Effect.gen(function* () {
-  const sql = yield* SqlClient;
-  yield* sql`ALTER TABLE pending_ops ADD COLUMN before_payload TEXT`;
-  yield* sql`ALTER TABLE pending_ops ADD COLUMN before_overrides TEXT`;
-  yield* sql`ALTER TABLE pending_ops ADD COLUMN before_task TEXT`;
-  yield* sql`ALTER TABLE pending_ops ADD COLUMN before_color_hex TEXT`;
-});
-
-// The time zones' device entry: the stored list named this device's zone
-// by its IANA id, so after a flight nothing followed the OS any more. The
-// entry that is the device's zone now becomes the word 'device'; a list
-// without one gets it first (core `withDeviceEntry`). A row that does not
-// read as a list is left alone — the reader falls back to the default.
-const deviceTimeZone = Effect.gen(function* () {
-  const sql = yield* SqlClient;
-  const rows = yield* sql<DeviceSettingRow>`SELECT * FROM device_settings WHERE key = 'timeZones'`;
-  const row = rows[0];
-  if (!row) {
-    return;
-  }
-  let stored: unknown;
-  try {
-    stored = JSON.parse(row.value);
-  } catch {
-    return;
-  }
-  if (!isZoneList(stored)) {
-    return;
-  }
-  const next = withDeviceEntry(stored, Temporal.Now.timeZoneId());
-  yield* sql`UPDATE device_settings SET value = ${JSON.stringify(next)} WHERE key = 'timeZones'`;
-});
-
-// task_due_cleared = 1 when the queued task update takes the due day away
-// (the patch sends `due: null`): a NULL task_due means "leave it alone".
-const taskDueCleared = Effect.gen(function* () {
-  const sql = yield* SqlClient;
-  yield* sql`ALTER TABLE pending_ops ADD COLUMN task_due_cleared INTEGER NOT NULL DEFAULT 0`;
-});
-
-// A same-list task move (reorder, nest, un-nest) names the sibling the
-// task goes after; its parent rides in task_parent like a subtask create's.
-const taskReorder = Effect.gen(function* () {
-  const sql = yield* SqlClient;
-  yield* sql`ALTER TABLE pending_ops ADD COLUMN task_previous TEXT`;
-});
-
-const isZoneList = (
-  value: unknown,
-): value is { readonly primary: string; readonly zones: ReadonlyArray<string> } =>
-  typeof value === 'object' &&
-  value !== null &&
-  typeof (value as { primary?: unknown }).primary === 'string' &&
-  Array.isArray((value as { zones?: unknown }).zones) &&
-  (value as { zones: ReadonlyArray<unknown> }).zones.every((zone) => typeof zone === 'string');
-
-// Google task hierarchy: a task's parent and its place among its siblings,
-// and the two op fields a hierarchy-keeping move needs — the destination
-// list of a server move, and the parent a carried-along subtask's create
-// nests under. Rows pulled before carry neither, so every Google list's
-// next pass is a full one.
-const taskHierarchy = Effect.gen(function* () {
-  const sql = yield* SqlClient;
-  yield* sql`ALTER TABLE tasks ADD COLUMN parent_id TEXT`;
-  yield* sql`ALTER TABLE tasks ADD COLUMN position TEXT`;
-  yield* sql`ALTER TABLE pending_ops ADD COLUMN target_task_list_id TEXT`;
-  yield* sql`ALTER TABLE pending_ops ADD COLUMN task_parent TEXT`;
-  yield* sql`UPDATE sync_state SET last_full_sync_at = 0 WHERE scope LIKE 'tasks:%'`;
-});
-
 // The third tuple element is a *loader* whose result is the migration effect.
+// A migration is never renamed: the runner matches applied rows by id and name.
 export const migrations: ReadonlyArray<ResolvedMigration> = [
-  [1, 'baseline', Effect.succeed(baseline)],
-  [2, 'event-geo', Effect.succeed(eventGeo)],
-  [3, 'apple-calendar', Effect.succeed(appleCalendar)],
-  [4, 'event-reminders', Effect.succeed(eventReminders)],
-  [5, 'conflict-park', Effect.succeed(conflictPark)],
-  [6, 'carried-text', Effect.succeed(carriedText)],
-  [7, 'calendar-mirrors', Effect.succeed(calendarMirrors)],
-  [8, 'rdate-series-end', Effect.succeed(rdateSeriesEnd)],
-  [9, 'recurrence-cleared', Effect.succeed(recurrenceCleared)],
-  [10, 'before-snapshot', Effect.succeed(beforeSnapshot)],
-  [11, 'device-time-zone', Effect.succeed(deviceTimeZone)],
-  [12, 'task-hierarchy', Effect.succeed(taskHierarchy)],
-  [13, 'task-due-cleared', Effect.succeed(taskDueCleared)],
-  [14, 'task-reorder', Effect.succeed(taskReorder)],
+  [1, 'baseline-2026-10-15', Effect.succeed(baseline)],
 ];

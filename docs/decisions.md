@@ -40,11 +40,14 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   app or start a dev run with the `CALENDAR_*=off` switches.
 - **Versions** (2026-09-11) — the apps are `0.1.0` with a CHANGELOG;
   bump together when a release is worth a number.
-- **Schema baseline** (2026-09-15) — the twelve pre-release migrations
-  were collapsed into one, since nothing had shipped. The runner keeps
-  its "ahead of this build" guard rather than a self-wipe (a pre-baseline
-  database refuses to open and names `pnpm reset:local`). A one-time
-  cleanup, not a policy: schema changes are appended migrations again.
+- **Schema baseline** (2026-09-15, again 2026-10-15) — the pre-release
+  migrations were collapsed into one, twice, since nothing had shipped.
+  The runner refuses rather than self-wipes: an applied row whose id and
+  name this build does not know (newer build, another branch, or from
+  before a baseline) dies naming `pnpm reset:local`. Names, because ids
+  are reused after a collapse; a migration is never renamed. Leaves open:
+  every existing install resets once. Schema changes are appended
+  migrations again.
 
 ## CI and dependencies
 
@@ -147,7 +150,8 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   type-errors.
 - **Migrations** — a hand-rolled runner (effect's `Migrator` is
   Metro-incompatible), each migration transactional with its bookkeeping
-  row, duplicate-id and downgrade guards that die loudly.
+  row, duplicate-id, climbing-id and identity guards (an applied row must
+  match a known id and name) that die loudly.
 - **Op queue invariants** (2026-09-11 sweep, #110, #118, #125) — the
   local write and the queue change commit in one transaction, with the
   drain kicked after commit (`Effect.suspend(forkDetach)` so a failed
