@@ -874,6 +874,15 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   Intelligence switches itself off on a Siri-vs-Mac language mismatch); a
   not-ready model is re-polled; no "Open System Settings" button, the
   tooltip names the pane.
+- **iOS quick add says why the model is unavailable** (2026-10-16) — a
+  local Expo module reads Foundation Models' reason, since the package
+  answers only yes/no and patching it was declined (#31); generation stays
+  in the package. A failed or timed-out check is worded as a check that
+  failed, never as a model state; Check Again reports every answer (time
+  stamped, announced) and the technical details are collapsed text to
+  copy. The notice now shows for every status, a missing module and an old
+  iOS included. Open: the answers on a physical iPhone in each state,
+  checked only on the simulator.
 - **Capture from text or photo** (2026-10-04, #107) — OCR first, not
   image input: Vision reads the image on-device and the text goes through
   the existing `generateJson`; native image input exists only on OS 27 and

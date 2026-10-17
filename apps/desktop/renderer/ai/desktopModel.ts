@@ -1,23 +1,20 @@
-import type { LanguageModel, ModelStatus } from '@calendar/ai';
+import { APPLE_REASON_STATUS, type LanguageModel, type ModelStatus } from '@calendar/ai';
 import type { ModelStatusReply } from '../backend.ts';
 
 /**
  * The helper's `detail` when the model is unavailable: Foundation Models'
- * own reason (`SystemLanguageModel.Availability.UnavailableReason`,
- * stringified), or `osTooOld` from the helper below macOS 26; and a served
- * model's (modelProvider.ts): the server not reachable, or the model not
- * on it — the latter re-polled like a download, since a pull ends while
- * the app is in front. Anything else — `helperUnavailable` from main, a
- * reason a newer macOS adds — stays the generic 'unavailable'.
+ * own reason or `osTooOld` from the helper below macOS 26 (the table iOS
+ * reads too); and a served model's (modelProvider.ts): the server not
+ * reachable, or the model not on it — the latter re-polled like a
+ * download, since a pull ends while the app is in front. Anything else —
+ * `helperUnavailable` from main, a reason a newer macOS adds — stays the
+ * generic 'unavailable'.
  */
 const STATUS_BY_DETAIL: ReadonlyMap<string, ModelStatus> = new Map<string, ModelStatus>([
-  ['appleIntelligenceNotEnabled', 'disabled'],
+  ...APPLE_REASON_STATUS,
   ['authRejected', 'unavailable'],
-  ['deviceNotEligible', 'unsupported'],
   ['endpointUnreachable', 'unavailable'],
   ['modelMissing', 'not-ready'],
-  ['modelNotReady', 'not-ready'],
-  ['osTooOld', 'unsupported'],
 ]);
 
 /** The helper's `status` reply as the shared ModelStatus. */

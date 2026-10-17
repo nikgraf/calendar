@@ -80,7 +80,20 @@ The bench (`apps/desktop/e2e/bench/modelBench.e2e.ts`, run by path with
 `MODEL_BENCH=1 E2E=1`) runs a phrase set through Apple's model and any
 Ollama models side by side. iOS reaches the same models via
 `@react-native-ai/apple` and Vision through the `solunivo-ocr` Expo
-module. Dictation audio is captured by the UI layer (renderer
+module; why the model cannot run comes from the `solunivo-model-availability`
+module (Foundation Models' reason, bounded to 5 s — the package answers
+only yes/no, and a binary without the module falls back to that and says
+so). Both hosts map the reason through `APPLE_REASON_STATUS`
+(packages/ai); `LanguageModel.availability` carries it with a failed
+check's error beside the status. Every AI entry point checks through
+`useModelAvailability` (app-state): one check at a time (a request while
+one is out runs once more after it), a re-check on returning to the app,
+a 30 s poll while 'not-ready', and every Check Again answered even when
+nothing changed. On iOS the quick-add field gives way to
+`ModelAvailabilityNotice` (the reason, Check Again, collapsed technical
+details), worded by `modelAvailabilityCopy.ts` like Settings ›
+Diagnostics, which always asks the device's model, never the e2e
+fixture. Dictation audio is captured by the UI layer (renderer
 `getUserMedia` → 16 kHz WAV) and only transcribed natively. Dictation
 is hands-free: each adapter reads the level as it records (the
 worklet's blocks on the desktop, expo-audio metering on iOS) and

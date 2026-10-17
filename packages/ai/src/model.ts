@@ -20,6 +20,36 @@ export type ModelStatus =
   | 'unsupported';
 
 /**
+ * Foundation Models' own reasons (`SystemLanguageModel.Availability
+ * .UnavailableReason`), as both native hosts stringify them, plus
+ * `osTooOld` from a host below OS 26 — one table for the desktop helper's
+ * `detail` and the iOS availability module's `reason`. A reason a newer OS
+ * adds is not here and stays 'unavailable', with its name kept for display.
+ */
+export const APPLE_REASON_STATUS: ReadonlyMap<string, ModelStatus> = new Map<string, ModelStatus>([
+  ['appleIntelligenceNotEnabled', 'disabled'],
+  ['deviceNotEligible', 'unsupported'],
+  ['modelNotReady', 'not-ready'],
+  ['osTooOld', 'unsupported'],
+]);
+
+/**
+ * One availability check in full, for the screens that explain it: the
+ * status every entry point gates on, what the platform said, and whether
+ * the check itself worked. A check that failed says nothing about the
+ * model, and the UI must not word it as if it did.
+ */
+export interface ModelAvailability {
+  /** Why the check could not answer (it threw, or ran past its limit); the status is then 'unavailable'. */
+  readonly checkError?: string | undefined;
+  /** The platform's reason verbatim ("appleIntelligenceNotEnabled", …), when it named one. */
+  readonly nativeReason?: string | undefined;
+  /** This build can tell only available from unavailable: a binary from before the reason bridge. */
+  readonly reasonsUnavailable?: boolean | undefined;
+  readonly status: ModelStatus;
+}
+
+/**
  * The seam every AI feature talks to. Implementations are per-platform and
  * strictly on-device: Apple Foundation Models on iOS, and (later) a signed
  * helper binary on macOS. Nothing here imports platform code, so the
@@ -38,6 +68,12 @@ export interface ModelInfo {
 }
 
 export interface LanguageModel {
+  /**
+   * `status` with what is behind it, where the platform says (iOS): both
+   * read the same check, so they never disagree. Optional — a caller
+   * falls back to `status` (`readAvailability` in app-state).
+   */
+  readonly availability?: (() => Promise<ModelAvailability>) | undefined;
   /**
    * Generates JSON matching `jsonSchema`. Implementations use guided
    * generation where available; callers must still validate, because a
