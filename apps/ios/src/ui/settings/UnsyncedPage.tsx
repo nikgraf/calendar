@@ -18,7 +18,7 @@ import {
   Row,
   Section,
   SettingsPage,
-} from './GroupedList.tsx';
+} from '../GroupedList.tsx';
 
 /** No snapshot to compare against. */
 const NO_DETAILS = 'No details for this change.';

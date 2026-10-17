@@ -11,7 +11,7 @@ import {
   PageHero,
   Section,
   SettingsPage,
-} from './GroupedList.tsx';
+} from '../GroupedList.tsx';
 import { MirrorEditSheet } from './MirrorEditSheet.tsx';
 
 /**

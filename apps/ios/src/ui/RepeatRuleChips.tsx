@@ -7,47 +7,25 @@ import {
   WEEKDAY_OPTIONS,
 } from '@calendar/app-state';
 import DateTimePicker from '@react-native-community/datetimepicker';
-import { Pressable, Text, TextInput, View } from 'react-native';
-import {
-  type SheetStyles,
-  chip,
-  chipLabel,
-  dateFromParts,
-  toDateString,
-  useSheetStyles,
-} from './editSheetShared.ts';
+import { TextInput } from 'react-native';
+import { Chip } from './Chip.tsx';
+import { dateFromParts, toDateString, useSheetStyles } from './editSheetShared.ts';
+import { ChipsRow, Footer, Row, Section } from './GroupedList.tsx';
+import { useTheme } from './theme.ts';
 
 /** The repeat form state both editors expose (everything but the spec exit). */
 export type RepeatRuleState = Omit<ReturnType<typeof useRepeatState>, 'toSpec'>;
 
-/** One selectable chip; `accessibilityState.selected` is what Maestro asserts. */
-const option = (
-  styles: SheetStyles,
-  selected: boolean,
-  label: string,
-  onPress: () => void,
-  testID: string,
-) => (
-  <Pressable
-    accessibilityRole="button"
-    accessibilityState={{ selected }}
-    key={testID}
-    onPress={onPress}
-    style={chip(styles, selected)}
-    testID={testID}
-  >
-    <Text style={chipLabel(styles, selected)}>{label}</Text>
-  </Pressable>
-);
-
 /**
- * The repeat rule chips shared by the event and the reminder sheet:
- * frequency and interval, the weekday toggles of a weekly rule, the "day
- * of the month" / "Nth weekday" choice of a monthly rule, the end
- * condition, and a summary in Reminders.app's words. Chips report their
- * selection through accessibilityState, which Maestro can assert; testIDs
- * start with `testIDPrefix` (`reminder-repeat-weekly`, `-weekday-MO`,
- * `-monthly-weekday`, `-ordinal-2`, `-ordinal-weekday-TU`, `-summary`).
+ * The repeat rule as one card, shared by the event and the reminder
+ * form: frequency, then the rows a frequency brings — the weekday
+ * toggles of a weekly rule, the "day of the month" / "Nth weekday" choice
+ * of a monthly rule, the interval, the end condition — and a summary in
+ * Reminders.app's words as the card's footer. Chips report their
+ * selection through accessibilityState, which Maestro can assert;
+ * testIDs start with `testIDPrefix` (`reminder-repeat-weekly`,
+ * `-weekday-MO`, `-monthly-weekday`, `-ordinal-2`, `-ordinal-weekday-TU`,
+ * `-summary`).
  */
 export function RepeatRuleChips({
   anchorDate,
@@ -60,145 +38,151 @@ export function RepeatRuleChips({
   testIDPrefix: string;
 }) {
   const styles = useSheetStyles();
+  const { colors } = useTheme();
+  const repeats = state.repeat !== 'none';
+  const nthWeekday = state.repeat === 'monthly' && state.repeatMonthly === 'weekday';
   return (
-    <>
-      <Text style={styles.label}>Repeat</Text>
-      <View style={styles.scopeRow}>
-        {REPEAT_OPTIONS.map((entry) =>
-          option(
-            styles,
-            state.repeat === entry.value,
-            entry.short,
-            () => state.setRepeat(entry.value),
-            `${testIDPrefix}-${entry.value}`,
-          ),
-        )}
-      </View>
+    <Section
+      footer={
+        state.repeatSummary ? (
+          <Footer testID={`${testIDPrefix}-summary`}>{state.repeatSummary}</Footer>
+        ) : undefined
+      }
+      header="Repeat"
+      tight
+    >
+      <ChipsRow>
+        {REPEAT_OPTIONS.map((entry) => (
+          <Chip
+            key={entry.value}
+            label={entry.short}
+            onPress={() => state.setRepeat(entry.value)}
+            selected={state.repeat === entry.value}
+            testID={`${testIDPrefix}-${entry.value}`}
+          />
+        ))}
+      </ChipsRow>
       {state.repeat === 'weekly' ? (
-        <>
-          <Text style={styles.label}>On</Text>
-          <View style={styles.scopeRow}>
-            {WEEKDAY_OPTIONS.map((entry) =>
-              option(
-                styles,
-                state.repeatWeekdays.includes(entry.value),
-                entry.short,
-                () => state.toggleWeekday(entry.value),
-                `${testIDPrefix}-weekday-${entry.value}`,
-              ),
-            )}
-          </View>
-        </>
+        <ChipsRow label="On">
+          {WEEKDAY_OPTIONS.map((entry) => (
+            <Chip
+              key={entry.value}
+              label={entry.short}
+              onPress={() => state.toggleWeekday(entry.value)}
+              selected={state.repeatWeekdays.includes(entry.value)}
+              testID={`${testIDPrefix}-weekday-${entry.value}`}
+            />
+          ))}
+        </ChipsRow>
       ) : null}
       {state.repeat === 'monthly' ? (
-        <>
-          <Text style={styles.label}>Monthly on</Text>
-          <View style={styles.scopeRow}>
-            {MONTHLY_MODE_OPTIONS.map((entry) =>
-              option(
-                styles,
-                state.repeatMonthly === entry.value,
+        <ChipsRow label="Monthly on">
+          {MONTHLY_MODE_OPTIONS.map((entry) => (
+            <Chip
+              key={entry.value}
+              label={
                 entry.value === 'dayOfMonth'
                   ? `Day ${anchorDate.slice(8).replace(/^0/, '')}`
-                  : entry.short,
-                () => state.setRepeatMonthly(entry.value),
-                `${testIDPrefix}-monthly-${entry.value}`,
-              ),
-            )}
-          </View>
-          {state.repeatMonthly === 'weekday' ? (
-            <>
-              <View style={styles.scopeRow}>
-                {ORDINAL_OPTIONS.map((entry) =>
-                  option(
-                    styles,
-                    state.repeatOrdinal === entry.value,
-                    entry.short,
-                    () => state.setRepeatOrdinal(entry.value),
-                    `${testIDPrefix}-ordinal-${String(entry.value)}`,
-                  ),
-                )}
-              </View>
-              <View style={styles.scopeRow}>
-                {WEEKDAY_OPTIONS.map((entry) =>
-                  option(
-                    styles,
-                    state.repeatOrdinalWeekday === entry.value,
-                    entry.short,
-                    () => state.setRepeatOrdinalWeekday(entry.value),
-                    `${testIDPrefix}-ordinal-weekday-${entry.value}`,
-                  ),
-                )}
-              </View>
-            </>
-          ) : null}
-        </>
+                  : entry.short
+              }
+              onPress={() => state.setRepeatMonthly(entry.value)}
+              selected={state.repeatMonthly === entry.value}
+              testID={`${testIDPrefix}-monthly-${entry.value}`}
+            />
+          ))}
+        </ChipsRow>
       ) : null}
-      {state.repeat === 'none' ? null : (
-        <View style={styles.timesRow}>
-          <View style={styles.timeField}>
-            <Text style={styles.label}>Every (n)</Text>
+      {nthWeekday ? (
+        <ChipsRow label="Which">
+          {ORDINAL_OPTIONS.map((entry) => (
+            <Chip
+              key={entry.value}
+              label={entry.short}
+              onPress={() => state.setRepeatOrdinal(entry.value)}
+              selected={state.repeatOrdinal === entry.value}
+              testID={`${testIDPrefix}-ordinal-${String(entry.value)}`}
+            />
+          ))}
+        </ChipsRow>
+      ) : null}
+      {nthWeekday ? (
+        <ChipsRow label="Weekday">
+          {WEEKDAY_OPTIONS.map((entry) => (
+            <Chip
+              key={entry.value}
+              label={entry.short}
+              onPress={() => state.setRepeatOrdinalWeekday(entry.value)}
+              selected={state.repeatOrdinalWeekday === entry.value}
+              testID={`${testIDPrefix}-ordinal-weekday-${entry.value}`}
+            />
+          ))}
+        </ChipsRow>
+      ) : null}
+      {repeats ? (
+        <Row
+          accessory={
             <TextInput
               keyboardType="number-pad"
               onChangeText={state.setRepeatInterval}
-              style={styles.input}
+              placeholderTextColor={colors['text-secondary']}
+              style={styles.accessoryField}
               testID={`${testIDPrefix}-interval`}
               value={state.repeatInterval}
             />
-          </View>
-          <View style={styles.timeField}>
-            <Text style={styles.label}>Ends</Text>
-            <View style={styles.scopeRow}>
-              {REPEAT_ENDS_OPTIONS.map((entry) =>
-                option(
-                  styles,
-                  state.repeatEnds === entry.value,
-                  entry.short,
-                  () => {
-                    state.setRepeatEnds(entry.value);
-                    // The picker renders a date even while the model holds
-                    // '' — seed it, or a save would drop the end bound.
-                    if (entry.value === 'on' && !state.repeatUntil) {
-                      state.setRepeatUntil(anchorDate);
-                    }
-                  },
-                  `${testIDPrefix}-ends-${entry.value}`,
-                ),
-              )}
-            </View>
-          </View>
-        </View>
-      )}
-      {state.repeat !== 'none' && state.repeatEnds === 'after' ? (
-        <View style={styles.timeField}>
-          <Text style={styles.label}>Occurrences</Text>
-          <TextInput
-            keyboardType="number-pad"
-            onChangeText={state.setRepeatCount}
-            placeholder="10"
-            style={styles.input}
-            testID={`${testIDPrefix}-count`}
-            value={state.repeatCount}
-          />
-        </View>
+          }
+          title="Every (n)"
+        />
       ) : null}
-      {state.repeat !== 'none' && state.repeatEnds === 'on' ? (
-        <View style={styles.pickerRow}>
-          <Text style={styles.label}>Until</Text>
-          <DateTimePicker
-            display="compact"
-            minimumDate={dateFromParts(anchorDate)}
-            mode="date"
-            onChange={(_, picked) => picked && state.setRepeatUntil(toDateString(picked))}
-            value={dateFromParts(state.repeatUntil || anchorDate)}
-          />
-        </View>
+      {repeats ? (
+        <ChipsRow label="Ends">
+          {REPEAT_ENDS_OPTIONS.map((entry) => (
+            <Chip
+              key={entry.value}
+              label={entry.short}
+              onPress={() => {
+                state.setRepeatEnds(entry.value);
+                // The picker renders a date even while the model holds
+                // '' — seed it, or a save would drop the end bound.
+                if (entry.value === 'on' && !state.repeatUntil) {
+                  state.setRepeatUntil(anchorDate);
+                }
+              }}
+              selected={state.repeatEnds === entry.value}
+              testID={`${testIDPrefix}-ends-${entry.value}`}
+            />
+          ))}
+        </ChipsRow>
       ) : null}
-      {state.repeatSummary ? (
-        <Text style={styles.hint} testID={`${testIDPrefix}-summary`}>
-          {state.repeatSummary}
-        </Text>
+      {repeats && state.repeatEnds === 'after' ? (
+        <Row
+          accessory={
+            <TextInput
+              keyboardType="number-pad"
+              onChangeText={state.setRepeatCount}
+              placeholder="10"
+              placeholderTextColor={colors['text-secondary']}
+              style={styles.accessoryField}
+              testID={`${testIDPrefix}-count`}
+              value={state.repeatCount}
+            />
+          }
+          title="Occurrences"
+        />
       ) : null}
-    </>
+      {repeats && state.repeatEnds === 'on' ? (
+        <Row
+          accessory={
+            <DateTimePicker
+              display="compact"
+              minimumDate={dateFromParts(anchorDate)}
+              mode="date"
+              onChange={(_, picked) => picked && state.setRepeatUntil(toDateString(picked))}
+              value={dateFromParts(state.repeatUntil || anchorDate)}
+            />
+          }
+          title="Until"
+        />
+      ) : null}
+    </Section>
   );
 }

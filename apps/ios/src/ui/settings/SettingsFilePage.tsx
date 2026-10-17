@@ -8,7 +8,7 @@ import { Effect } from 'effect';
 import { useState } from 'react';
 import { Alert, Share } from 'react-native';
 import { useTheme } from '../theme.ts';
-import { Footer, Glyph, Row, Section, SettingsPage } from './GroupedList.tsx';
+import { Footer, Glyph, Row, Section, SettingsPage } from '../GroupedList.tsx';
 
 /**
  * Native modules are loaded lazily and inside a try: a static import of a

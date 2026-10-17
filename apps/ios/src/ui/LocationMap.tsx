@@ -78,24 +78,27 @@ export function LocationMap({ model }: { model: ReturnType<typeof useEventEditor
 
 const makeStyles = (colors: ThemeColors) =>
   StyleSheet.create({
+    // Under the title card, in its inset.
     container: {
       gap: 6,
-      marginTop: 8,
+      marginHorizontal: 16,
+      marginTop: 12,
     },
     link: {
       color: colors.primary,
       fontSize: 14,
     },
     map: {
-      borderRadius: 10,
+      borderRadius: 16,
       height: 160,
       overflow: 'hidden',
     },
     placeholder: {
       alignItems: 'center',
-      backgroundColor: colors.fill,
+      backgroundColor: colors.surface,
       justifyContent: 'center',
-      marginTop: 8,
+      marginHorizontal: 16,
+      marginTop: 12,
     },
     placeholderLabel: {
       color: colors['text-secondary'],

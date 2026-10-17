@@ -5,48 +5,17 @@ tags:
 ---
 - runFlow: ../common/launch.yaml
 - runFlow: ../common/open-new-event.yaml
-# styles.label applies textTransform: uppercase, so the rendered text is REPEAT.
+# The card's header renders uppercase, so the text is REPEAT.
 - assertVisible: 'REPEAT'
-# Tap until the interval row appears: on the runner the sheet's content
-# still shifted (its own inset) after the animation-end wait, so the
-# first tap landed above the chip. Assertions are regexes — the
-# parentheses must be escaped. The row proves the tap, the way
-# common/open-new-event.yaml proves its own.
-- retry:
-    maxRetries: 3
-    commands:
-      - runFlow:
-          when:
-            notVisible: 'EVERY \(N\)'
-          commands:
-            - tapOn: 'Daily'
-      - extendedWaitUntil:
-          visible: 'EVERY \(N\)'
-          timeout: 3000
 
-# Invitees, further down the same sheet. The title auto-focuses, so its
-# keyboard is up and covers the invitee field (its top edge is right
-# where the keyboard starts on an iPhone 17 Pro). Maestro's visibility
-# check does not know about the keyboard, so a tap "on the input" lands
-# on the predictive bar and the text goes into the title. Dismiss the
-# keyboard first: a tap on a plain label is not handled by any child, so
-# keyboardShouldPersistTaps="handled" lets the ScrollView resign it.
-# CALENDAR sits right under the title, so it is never covered by the
-# keyboard itself — INVITEES was, once the calendar picker had an
-# account's rows above it (run 35591082639 typed the address into the
-# title).
-- tapOn: 'CALENDAR'
-- waitForAnimationToEnd:
-    timeout: 5000
+# The form is worked top to bottom, every scroll downward: Maestro counts
+# a row scrolled out above the viewport as visible (the clipping trap),
+# so a scroll back up never happens and a tap on the row lands on nothing.
 
 # Find a time: the presets over the pure solver, no model involved. Next
 # week always has free mornings in the fixture calendar, whatever today
-# is; the pick closes the finder and moves the draft there.
-- scrollUntilVisible:
-    element:
-      id: 'find-time'
-    direction: DOWN
-    timeout: 10000
+# is; the pick closes the finder and moves the draft there. The row is
+# in the dates card, in view at full height.
 - tapOn:
     id: 'find-time'
 - assertVisible:
@@ -77,7 +46,43 @@ tags:
 - assertNotVisible:
     id: 'find-time-fields'
 
-# The field sits below the location row; scroll it into view.
+# Repeat: the finder closing shrank the content, so the chips sit near
+# where the finder's rows were. Tap until the chip is selected: on the
+# runner the sheet's content still shifted (its own inset) after the
+# animation-end wait, so the first tap landed above the chip. The chip's
+# state proves the tap, the way common/open-new-event.yaml proves its own.
+- scrollUntilVisible:
+    element:
+      id: 'event-repeat-daily'
+    direction: DOWN
+    timeout: 10000
+- retry:
+    maxRetries: 3
+    commands:
+      - runFlow:
+          when:
+            notVisible:
+              id: 'event-repeat-daily'
+              selected: true
+          commands:
+            - tapOn:
+                id: 'event-repeat-daily'
+      - extendedWaitUntil:
+          visible:
+            id: 'event-repeat-daily'
+            selected: true
+          timeout: 3000
+# The rows a repeating rule brings sit under the chips, below the fold.
+# Assertions are regexes — the parentheses must be escaped.
+- scrollUntilVisible:
+    element:
+      text: 'Every \(n\)'
+    direction: DOWN
+    timeout: 10000
+
+# The invitees card is further down the sheet; scroll it into view. No
+# keyboard is up here (a new item's editor focuses nothing), so the tap
+# lands in the field.
 - scrollUntilVisible:
     element:
       id: 'invitee-input'

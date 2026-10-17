@@ -33,6 +33,12 @@ tags:
       - tapOn: 'Solunivo e2e all-day to delete'
       - runFlow: ../common/open-event-editor.yaml
       # Clean up, so repeated runs don't pile up in a real calendar.
+      # Delete is the form's last card: scroll it into reach.
+      - scrollUntilVisible:
+          element:
+            id: 'event-delete'
+          direction: DOWN
+          timeout: 10000
       - tapOn:
           id: 'event-delete'
       # The confirmation alert (deleteQuestion).

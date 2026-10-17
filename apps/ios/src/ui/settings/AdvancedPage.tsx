@@ -1,6 +1,6 @@
 import { useBackendMutations } from '@calendar/app-state';
 import { useState } from 'react';
-import { ActionRow, Footer, NavRow, Section, SettingsPage } from './GroupedList.tsx';
+import { ActionRow, Footer, NavRow, Section, SettingsPage } from '../GroupedList.tsx';
 
 /**
  * Advanced: the location cache, as on the Mac, then troubleshooting a

@@ -22,7 +22,7 @@ import {
   Section,
   SettingsPage,
   VisibilityRow,
-} from './GroupedList.tsx';
+} from '../GroupedList.tsx';
 import { useSettingsConnections } from './SettingsContext.tsx';
 import { avatarColors } from './SettingsRoot.tsx';
 
