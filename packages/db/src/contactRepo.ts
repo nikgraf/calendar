@@ -13,6 +13,8 @@ export interface ContactRepoShape {
     accountId: string,
     resourceNames: ReadonlyArray<string>,
   ) => Effect.Effect<void, SqlError>;
+  /** Every cached contact of every account: what a name is matched against (folded, in core). */
+  readonly listAll: () => Effect.Effect<ReadonlyArray<Contact>, SqlError>;
   readonly listByAccount: (accountId: string) => Effect.Effect<ReadonlyArray<Contact>, SqlError>;
   /** Full pass: one transaction swaps the whole tier (saved / other) for the account. */
   readonly replaceTier: (params: {
@@ -73,6 +75,11 @@ const makeContactRepo: Effect.Effect<ContactRepoShape, never, Reactivity | SqlCl
                 { discard: true },
               ),
             ),
+      listAll: () =>
+        Effect.map(
+          sql<ContactRow>`SELECT * FROM contacts ORDER BY account_id, resource_name, email_lower`,
+          (rows) => rows.map(contactFromRow),
+        ),
       listByAccount: (accountId) =>
         Effect.map(
           sql<ContactRow>`SELECT * FROM contacts WHERE account_id = ${accountId}

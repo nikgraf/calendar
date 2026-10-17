@@ -66,7 +66,8 @@ tags:
       # and the steps below are skipped. A change in the fixture's grammar
       # (empty parts unchanged) moves the times and lists a turn; Undo takes
       # it back; a finder phrase as a later turn puts the draft in the best
-      # free slot of next week's mornings and offers the others as chips.
+      # free slot of next week's mornings and offers the others as chips;
+      # a turn that invites makes guests of the contacts it names.
       # The calendar behind the sheet draws the draft: lowered to half
       # height (a tap on the grabber), it shows the draft's day with a
       # dashed block the grid scrolled to above the sheet, and the block
@@ -127,6 +128,31 @@ tags:
             - assertVisible:
                 id: 'draft-slot-1'
                 selected: true
+            # A turn that invites: the fixture names whoever follows
+            # "invite", and each name is looked up in the account's
+            # contacts. "Anna Lee" is one contact: a guest chip. "Tom" is
+            # two (Tom Lee, Tom Wright): a question with both, nothing
+            # picked until a tap — the first is Tom Lee.
+            - runFlow:
+                file: ../common/apply-quick-add.yaml
+                env:
+                  PHRASE: 'invite Anna Lee and Tom'
+            - extendedWaitUntil:
+                visible:
+                  id: 'draft-invitee-choices'
+                timeout: 20000
+            - assertVisible: 'Which Tom\?'
+            - tapOn:
+                id: 'draft-invitee-pick-0-0'
+            - extendedWaitUntil:
+                notVisible:
+                  id: 'draft-invitee-choices'
+                timeout: 5000
+            - scrollUntilVisible:
+                element: 'Tom Lee'
+                direction: DOWN
+                timeout: 10000
+            - assertVisible: 'Anna Lee'
       # Dictation is deliberately not asserted here: Maestro cannot inject
       # audio and simulators carry no speech assets, so the mic disables
       # itself once prepare() fails. Gating an assertion on the mic being

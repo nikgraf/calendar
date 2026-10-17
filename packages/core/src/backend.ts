@@ -715,6 +715,16 @@ export class AppBackendRpcs extends RpcGroup.make(
     payload: { query: SearchQuery, timeZone: Schema.String },
     success: SearchResults,
   }),
+  /**
+   * Every contact a name a phrase invited could mean (`contactsNamed`):
+   * device + cached Google contacts, matched on folded words, never cut
+   * short — the thread decides from them whether the name is one person.
+   */
+  Rpc.make('contactsNamed', {
+    error: BackendError,
+    payload: { name: Schema.String },
+    success: Schema.Array(Contact),
+  }),
   /** Invitee typeahead: device + cached Google contacts, ranked, deduped by email. */
   Rpc.make('searchContacts', {
     error: BackendError,

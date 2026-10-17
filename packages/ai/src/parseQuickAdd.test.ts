@@ -1,15 +1,17 @@
 import { describe, expect, it } from 'vite-plus/test';
 import type { LanguageModel, ModelStatus } from './model.ts';
+import type { PeopleParse } from './invitees.ts';
 import { ModelUnavailableError } from './model.ts';
+import { normalizeQuickAdd } from './normalizeQuickAdd.ts';
 import { parseQuickAdd } from './parseQuickAdd.ts';
 import type { QuickAddParse } from './quickAdd.ts';
 
 // 2026-08-22 is a Saturday.
 const CONTEXT = { referenceDate: '2026-08-22', timeZone: 'Europe/Vienna' };
 
-/** A model that replays a fixed extraction, recording the prompt it saw. */
+/** A model that replays a fixed extraction, recording the prompt it saw (the people question too). */
 const fakeModel = (
-  parse: QuickAddParse | (() => never),
+  parse: (QuickAddParse & PeopleParse) | (() => never),
   { status = 'ready' }: { status?: ModelStatus } = {},
 ): LanguageModel & { prompts: Array<string> } => {
   const prompts: Array<string> = [];
@@ -503,5 +505,59 @@ describe('parseQuickAdd for tasks', () => {
       ...CONTEXT,
     });
     expect(result.kind).toBe('rejected');
+  });
+});
+
+describe('parseQuickAdd invitees', () => {
+  it('invites the people the phrase says to, the invitation out of the title', async () => {
+    const result = await parseQuickAdd(
+      fakeModel({
+        date: '2026-08-25',
+        people: ['Sarah', 'Tom', 'Anna'],
+        startTime: '13:00',
+        title: 'Lunch with Sarah, invite Tom and Anna',
+      }),
+      { phrase: 'Lunch with Sarah Tuesday at 1, invite Tom and Anna', ...CONTEXT },
+    );
+    expect(result).toMatchObject({
+      invite: ['Tom', 'Anna'],
+      kind: 'parsed',
+      prefill: { startTime: '13:00', title: 'Lunch with Sarah' },
+    });
+  });
+
+  it('invites no one without a cue, and a to-do never', async () => {
+    const lunch = await parseQuickAdd(fakeModel({ people: ['Sarah'], title: 'Lunch with Sarah' }), {
+      phrase: 'Lunch with Sarah on Tuesday',
+      ...CONTEXT,
+    });
+    expect(lunch.kind).toBe('parsed');
+    expect(lunch).not.toHaveProperty('invite');
+    const todo = await parseQuickAdd(fakeModel({ people: ['Tom'], title: 'Invite Tom' }), {
+      phrase: 'remind me to invite Tom',
+      ...CONTEXT,
+    });
+    expect(todo).toEqual({ kind: 'task', prefill: { date: '2026-08-22', title: 'Invite Tom' } });
+  });
+
+  it('asks who is invited only when the words hold a cue', async () => {
+    const model = fakeModel({ people: ['Sarah'], startTime: '13:00', title: 'Lunch with Sarah' });
+    await parseQuickAdd(model, { phrase: 'Lunch with Sarah at 1', ...CONTEXT });
+    expect(model.prompts).toHaveLength(1);
+    // Taking a guest off says nothing about a new event.
+    await parseQuickAdd(model, { phrase: 'Coffee without sugar at 1', ...CONTEXT });
+    expect(model.prompts).toHaveLength(2);
+    await parseQuickAdd(model, { phrase: 'Lunch at 1, invite Sarah', ...CONTEXT });
+    expect(model.prompts).toHaveLength(4);
+    expect(model.prompts[2]).toContain('Sentence: Lunch at 1, invite Sarah');
+  });
+
+  it('leaves a capture (no phrase) without invitees', () => {
+    const result = normalizeQuickAdd(
+      { startTime: '10:00', title: 'Review, invite Tom' },
+      { ...CONTEXT, people: ['Tom'] },
+    );
+    expect(result).toMatchObject({ kind: 'parsed', prefill: { title: 'Review, invite Tom' } });
+    expect(result).not.toHaveProperty('invite');
   });
 });

@@ -268,13 +268,25 @@ export function EventEditForm({
                 ))}
               </View>
             ) : null}
-            <InviteeField
-              attendees={attendees}
-              attendeeStatus={attendeeStatus}
-              onAdd={addAttendee}
-              onRemove={removeAttendee}
-            />
+            <FieldFlash bleedY={2} field="guests">
+              <InviteeField
+                attendees={attendees}
+                attendeeStatus={attendeeStatus}
+                onAdd={addAttendee}
+                onRemove={removeAttendee}
+              />
+            </FieldFlash>
           </>
+        ) : !existing && attendees.length > 0 ? (
+          // Guests the form holds (typed, or said in a phrase) for another
+          // calendar: kept, but not sent from this one — EventKit cannot.
+          <View testID="event-invitees-held">
+            <Text style={styles.label}>Invitees</Text>
+            <Text style={styles.hint}>
+              Not invited from this calendar:{' '}
+              {attendees.map((attendee) => attendee.displayName ?? attendee.email).join(', ')}
+            </Text>
+          </View>
         ) : (existing?.attendees ?? []).length > 0 ? (
           // EventKit cannot write guests: shown as they are, never edited.
           <View testID="event-guests-read-only">
