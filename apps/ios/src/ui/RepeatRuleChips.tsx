@@ -10,6 +10,7 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import { TextInput } from 'react-native';
 import { Chip } from './Chip.tsx';
 import { dateFromParts, toDateString, useSheetStyles } from './editSheetShared.ts';
+import { FieldFlash } from './FlashView.tsx';
 import { ChipsRow, Footer, Row, Section } from './GroupedList.tsx';
 import { useTheme } from './theme.ts';
 
@@ -51,17 +52,20 @@ export function RepeatRuleChips({
       header="Repeat"
       tight
     >
-      <ChipsRow>
-        {REPEAT_OPTIONS.map((entry) => (
-          <Chip
-            key={entry.value}
-            label={entry.short}
-            onPress={() => state.setRepeat(entry.value)}
-            selected={state.repeat === entry.value}
-            testID={`${testIDPrefix}-${entry.value}`}
-          />
-        ))}
-      </ChipsRow>
+      {/* A turn that set the rule flashes the frequency row, inside the card like any other row. */}
+      <FieldFlash bleedX={0} bleedY={0} field="repeat" radius={0}>
+        <ChipsRow>
+          {REPEAT_OPTIONS.map((entry) => (
+            <Chip
+              key={entry.value}
+              label={entry.short}
+              onPress={() => state.setRepeat(entry.value)}
+              selected={state.repeat === entry.value}
+              testID={`${testIDPrefix}-${entry.value}`}
+            />
+          ))}
+        </ChipsRow>
+      </FieldFlash>
       {state.repeat === 'weekly' ? (
         <ChipsRow label="On">
           {WEEKDAY_OPTIONS.map((entry) => (

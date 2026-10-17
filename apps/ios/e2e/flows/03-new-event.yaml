@@ -15,7 +15,12 @@ tags:
 # Find a time: the presets over the pure solver, no model involved. Next
 # week always has free mornings in the fixture calendar, whatever today
 # is; the pick closes the finder and moves the draft there. The row is
-# in the dates card, in view at full height.
+# the dates card's last; a scroll brings it into reach on a shorter phone.
+- scrollUntilVisible:
+    element:
+      id: 'find-time'
+    direction: DOWN
+    timeout: 10000
 - tapOn:
     id: 'find-time'
 - assertVisible:

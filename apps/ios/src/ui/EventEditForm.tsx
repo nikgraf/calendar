@@ -259,9 +259,7 @@ export function EventEditForm({
       )}
 
       {model.repeatLoaded ? (
-        <FieldFlash bleedX={0} bleedY={0} field="repeat" radius={20}>
-          <RepeatRuleChips anchorDate={date} state={model} testIDPrefix="event-repeat" />
-        </FieldFlash>
+        <RepeatRuleChips anchorDate={date} state={model} testIDPrefix="event-repeat" />
       ) : null}
 
       {canInvite ? (
