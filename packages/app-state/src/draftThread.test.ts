@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vite-plus/test';
 import {
   changedDraftFields,
   describeDraftItem,
+  dropInviteeChoice,
   EMPTY_THREAD,
   firstDraftExtras,
   focusDraft,
@@ -20,6 +21,7 @@ import {
   undoTurn,
   updateDraft,
 } from './draftThread.ts';
+import { Contact } from '@calendar/core';
 import type { QuickAddItem } from './quickAddItem.ts';
 
 const dinner: QuickAddItem = {
@@ -682,5 +684,125 @@ describe('firstDraftExtras', () => {
       taskNotes: 'bring the card',
     });
     expect(firstDraftExtras(undefined)).toBeUndefined();
+  });
+});
+
+describe('guests from the words', () => {
+  const tom = { displayName: 'Tom Baker', email: 'tom@example.com' };
+  const anna = { displayName: 'Anna Lee', email: 'anna@example.com' };
+  const mia = new Contact({
+    displayName: 'Mia Ko',
+    email: 'mia@example.com',
+    id: 'g:mia',
+    source: 'google',
+  });
+  const miaToo = new Contact({
+    displayName: 'Mia Lu',
+    email: 'lu@example.com',
+    id: 'g:lu',
+    source: 'device',
+  });
+  const typed = { attendees: [anna], description: 'Bring wine', reminders: undefined };
+
+  it('starts a draft with the guests the phrase invited, beside the ones typed before', () => {
+    const state = startThread([dinner], 'dinner Friday at 7, invite Tom and Mia', {
+      extras: typed,
+      guests: { add: [tom], choices: [{ contacts: [mia, miaToo], name: 'Mia' }], remove: [] },
+      id: ids(),
+    });
+    expect(state.drafts[0]).toMatchObject({
+      extras: { attendees: [anna, tom], description: 'Bring wine' },
+      inviteeChoices: [{ contacts: [mia, miaToo], name: 'Mia' }],
+    });
+    expect(state.turns[0]?.summary).toBe(
+      'Dinner with Teo · Fri, Aug 28 · 19:00–20:00 · invites Tom Baker · which Mia?',
+    );
+    // A draft the form never held gets blank extras around its guests.
+    const fresh = startThread([dinner], 'invite Bo', {
+      guests: { add: [{ email: 'bo@example.com' }], choices: [], remove: [] },
+      id: ids(),
+    });
+    expect(fresh.drafts[0]?.extras).toEqual({
+      attendees: [{ email: 'bo@example.com' }],
+      description: '',
+      reminders: undefined,
+    });
+  });
+
+  it('gives a to-do no guests', () => {
+    const todo: QuickAddItem = { kind: 'task', prefill: { date: '2026-08-28', title: 'Call Tom' } };
+    const state = startThread([todo], 'call Tom', {
+      guests: { add: [tom], choices: [], remove: [] },
+      id: ids(),
+    });
+    expect(state.drafts[0]).not.toHaveProperty('extras');
+    expect(state.turns[0]?.summary).toBe('Call Tom · Fri, Aug 28');
+  });
+
+  it('lands a turn’s guests on the form as it is now, says so, and Undo takes them back', () => {
+    const started = startThread([dinner], 'dinner', { extras: typed, id: ids() });
+    // A guest typed while the model answered stays.
+    const form = { extras: { ...typed, attendees: [anna, tom] }, item: dinner };
+    const landed = landRefinement(started, {
+      changes: [
+        {
+          guests: {
+            add: [{ displayName: 'Mia Ko', email: 'mia@example.com' }],
+            choices: [{ contacts: [], name: 'Sarah' }],
+            remove: ['Anna'],
+          },
+          id: 'd1',
+          item: dinner,
+        },
+      ],
+      fresh: form,
+      submitted: { extras: typed, item: dinner },
+      targetId: 'd1',
+      utterance: 'invite Mia and Sarah, remove Anna',
+    });
+    expect(landed.drafts[0]?.extras?.attendees).toEqual([
+      tom,
+      { displayName: 'Mia Ko', email: 'mia@example.com' },
+    ]);
+    expect(landed.drafts[0]?.inviteeChoices).toEqual([{ contacts: [], name: 'Sarah' }]);
+    // Only guests changed: no "no change".
+    expect(landed.turns.at(-1)?.summary).toBe(
+      '→ invites Mia Ko · → uninvites Anna Lee · → no contact “Sarah”',
+    );
+    expect(landed.version).toBe(started.version + 1);
+    // Undo: the form as the turn found it, the guest typed meanwhile kept.
+    const undone = undoTurn(landed);
+    expect(undone.drafts[0]?.extras?.attendees).toEqual([anna, tom]);
+    expect(undone.drafts[0]).not.toHaveProperty('inviteeChoices');
+  });
+
+  it('keeps open choices through a turn about something else', () => {
+    const started = startThread([dinner], 'dinner, invite Mia', {
+      guests: { add: [], choices: [{ contacts: [mia, miaToo], name: 'Mia' }], remove: [] },
+      id: ids(),
+    });
+    const moved = refineThread(started, 'at 8', [{ id: 'd1', item: later }], ids());
+    expect(moved.drafts[0]?.inviteeChoices).toEqual([{ contacts: [mia, miaToo], name: 'Mia' }]);
+    expect(moved.turns.at(-1)?.summary).toBe('→ 20:00–21:00');
+  });
+
+  it('drops a choice settled by hand, without a turn or a version', () => {
+    const started = startThread([dinner], 'dinner, invite Mia and Sarah', {
+      guests: {
+        add: [],
+        choices: [
+          { contacts: [mia, miaToo], name: 'Mia' },
+          { contacts: [], name: 'Sarah' },
+        ],
+        remove: [],
+      },
+      id: ids(),
+    });
+    const settled = dropInviteeChoice(started, 0, 'Mia');
+    expect(settled.drafts[0]?.inviteeChoices).toEqual([{ contacts: [], name: 'Sarah' }]);
+    expect(settled.version).toBe(started.version);
+    expect(settled.turns).toBe(started.turns);
+    expect(dropInviteeChoice(settled, 0, 'Sarah').drafts[0]).not.toHaveProperty('inviteeChoices');
+    expect(dropInviteeChoice(settled, 3, 'Sarah')).toBe(settled);
   });
 });

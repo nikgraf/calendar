@@ -137,6 +137,68 @@ describe('normalizeRefine', () => {
     );
   });
 
+  it('returns who the words invite or take off, beside the draft', () => {
+    const result = normalizeRefine(
+      { ...DINNER, title: 'Dinner with Teo, invite Anna' },
+      {
+        draft: DINNER,
+        people: ['Anna', 'Tom'],
+        utterance: 'also invite Anna and remove Tom',
+        ...CONTEXT,
+      },
+    );
+    expect(result).toEqual({
+      invite: ['Anna'],
+      kind: 'parsed',
+      prefill: DINNER,
+      uninvite: ['Tom'],
+    });
+    // Words about guests leave the title alone: the model wrote the guest into it.
+    expect(
+      normalizeRefine(
+        { ...DINNER, title: 'Dinner with Teo and Anna' },
+        { draft: DINNER, people: ['Anna'], utterance: 'also invite Anna', ...CONTEXT },
+      ),
+    ).toEqual({ invite: ['Anna'], kind: 'parsed', prefill: DINNER });
+    // Beside guests, a place only as the words say it.
+    expect(
+      normalizeRefine(
+        { ...DINNER, location: "Bob's house", startTime: '20:00' },
+        { draft: DINNER, people: ['Bob'], utterance: 'make it 8pm and invite Bob', ...CONTEXT },
+      ),
+    ).toEqual({
+      invite: ['Bob'],
+      kind: 'parsed',
+      prefill: { ...DINNER, endTime: '21:00', startTime: '20:00' },
+    });
+    expect(
+      refined({ location: "Luigi's" }, "invite Bob and meet at Luigi's", DINNER).location,
+    ).toBe("Luigi's");
+    // A "remove" that takes no one off leaves the title and place rules alone.
+    expect(
+      normalizeRefine(
+        { ...DINNER, location: 'Café Central', title: 'Dinner' },
+        { draft: DINNER, utterance: 'remove the reminder, dinner at Café Central', ...CONTEXT },
+      ),
+    ).toMatchObject({ prefill: { location: 'Café Central', title: 'Dinner' } });
+    // A rename takes the title and whom it invites, the invitation out of the title.
+    expect(
+      normalizeRefine(
+        { ...DINNER, title: 'Team dinner and invite Anna' },
+        {
+          draft: DINNER,
+          people: ['Anna'],
+          utterance: 'call it team dinner and invite Anna',
+          ...CONTEXT,
+        },
+      ),
+    ).toEqual({ invite: ['Anna'], kind: 'parsed', prefill: { ...DINNER, title: 'Team dinner' } });
+    // No cue, no people.
+    expect(
+      normalizeRefine(DINNER, { draft: DINNER, people: ['Teo'], utterance: 'at 8', ...CONTEXT }),
+    ).not.toHaveProperty('invite');
+  });
+
   it('sets, keeps and clears a repeat by the words', () => {
     expect(refined({ recurrence: { freq: 'weekly' } }, 'every week').recurrence).toEqual({
       freq: 'weekly',

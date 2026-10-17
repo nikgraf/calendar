@@ -169,6 +169,29 @@ describe('makeFixtureLanguageModel refinements', () => {
       prefill: { endTime: '17:00', startTime: '16:00', title: 'Dentist' },
     });
   });
+
+  it('names the people after "invite" or "remove"', async () => {
+    expect(
+      await parseRefine(model, { draft, utterance: 'also invite Anna Lee and Bo', ...CONTEXT }),
+    ).toMatchObject({ invite: ['Anna Lee', 'Bo'], prefill: { title: 'Dentist' } });
+    expect(await parseRefine(model, { draft, utterance: 'remove Bo', ...CONTEXT })).toMatchObject({
+      uninvite: ['Bo'],
+    });
+  });
+});
+
+describe('makeFixtureLanguageModel invitees', () => {
+  it('names the people a quick-add phrase invites', async () => {
+    const result = await parseQuickAdd(makeFixtureLanguageModel(), {
+      phrase: 'Lunch tomorrow at 1, invite Tom Baker, Anna and Bo',
+      ...CONTEXT,
+    });
+    expect(result).toMatchObject({
+      invite: ['Tom Baker', 'Anna', 'Bo'],
+      kind: 'parsed',
+      prefill: { startTime: '13:00', title: 'Lunch tomorrow at 1' },
+    });
+  });
 });
 
 describe('makeFixtureLanguageModel tasks', () => {

@@ -51,7 +51,20 @@ refinement (`refine.ts`) is one more bounded prompt — the draft as a
 line of JSON and the change — merged by the same rules with the draft as
 the anchor (an open "at 8" reads next to the draft's own start); the
 model keeps no session, so a turn works the same over every provider
-and the fixture model plays it in its grammar. A phrase that asks for
+and the fixture model plays it in its grammar. Who a phrase or a turn
+invites is a question of its own (`invitees.ts`, `readPeople`), asked
+beside the extraction and only when the words hold an invitation cue
+("invite", "add … as a guest", "lade … ein", "einladen"; "don't
+invite", "remove", "ohne", "ausladen" take a guest off): the code keeps
+a name only under such a cue — "with Sarah" invites no one — in the
+words' own spelling (a misspelled name is matched back by its
+consonants), reads addresses itself, and cuts the invitation out of the
+title. The thread (app-state `draftInvitees.ts`) looks each name up
+through `searchContacts`: a name that is one contact's (the only one by
+that exact name, else the only one it begins word by word) joins the
+draft's guests; any other waits on the draft as a choice — the contacts
+it might be, or none — until the user picks one or lets it go. A turn
+that takes a guest off matches the guests by name or address. A phrase that asks for
 free time ("find 90 min for focus next week, mornings", "wann habe ich
 Zeit für …") is routed by code (`slotProposals.ts`, `isFinderPhrase`:
 English and German cues) to the finder prompt instead, so the two

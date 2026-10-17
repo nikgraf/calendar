@@ -15,7 +15,15 @@ import {
   draftMinutes,
   Temporal,
 } from '@calendar/core';
+import { Effect } from 'effect';
 import { useRef, useState } from 'react';
+import {
+  applyGuestChange,
+  type GuestChange,
+  guestLabel,
+  type InviteeChoice,
+  resolveInvitees,
+} from './draftInvitees.ts';
 import { convertQuickAddItem, type QuickAddItem } from './quickAddItem.ts';
 import type { ReminderFields } from './taskEditorModel.ts';
 
@@ -57,9 +65,15 @@ export interface DraftExtras {
 }
 
 export interface Draft {
-  /** Set once the form held the draft; absent for a draft the form never showed. */
+  /** Set once the form held the draft (or a turn gave it guests); absent for a draft the form never showed. */
   readonly extras?: DraftExtras | undefined;
   readonly id: string;
+  /**
+   * Names the words invited that found no one contact, for the user to
+   * pick from (`draftInvitees.ts`). They stay until picked, dismissed or
+   * said again; Undo brings back the ones a turn settled.
+   */
+  readonly inviteeChoices?: ReadonlyArray<InviteeChoice> | undefined;
   readonly item: QuickAddItem;
   /**
    * The free slots a finder phrase found for the draft, best first, the
@@ -78,6 +92,8 @@ export interface Draft {
  */
 export interface DraftChange {
   readonly extras?: DraftExtras | undefined;
+  /** Whom the turn invited or took off: applied to the draft's guests as they are when it lands. */
+  readonly guests?: GuestChange | undefined;
   readonly id: string;
   readonly item: QuickAddItem;
   readonly slots?: ReadonlyArray<FreeSlot> | undefined;
@@ -234,6 +250,46 @@ export const summarizeChange = (before: QuickAddItem, after: QuickAddItem): stri
   return parts.length === 0 ? 'no change' : parts.join(' · ');
 };
 
+/** What a draft holds beyond its item before the form ever showed it: nothing. */
+const BLANK_EXTRAS: DraftExtras = { attendees: [], description: '', reminders: undefined };
+
+/**
+ * A turn's guests folded into a draft: its guest list (on its extras,
+ * blank ones for a draft the form never held) and its open choices, plus
+ * what changed in words — "invites Tom Baker", "uninvites Anna", "which
+ * Tom?", "no contact “Sarah”".
+ */
+const withGuests = (
+  draft: Draft,
+  change: GuestChange | undefined,
+): { readonly draft: Draft; readonly said: ReadonlyArray<string> } => {
+  if (change === undefined || draft.item.kind !== 'event') {
+    return { draft, said: [] };
+  }
+  const extras = draft.extras ?? BLANK_EXTRAS;
+  const { added, attendees, choices, removed } = applyGuestChange(
+    extras.attendees,
+    draft.inviteeChoices ?? [],
+    change,
+  );
+  const said = [
+    ...(added.length > 0 ? [`invites ${added.map(guestLabel).join(', ')}`] : []),
+    ...(removed.length > 0 ? [`uninvites ${removed.map(guestLabel).join(', ')}`] : []),
+    ...change.choices.map((choice) =>
+      choice.contacts.length > 0 ? `which ${choice.name}?` : `no contact “${choice.name}”`,
+    ),
+  ];
+  const { inviteeChoices: _choices, ...rest } = draft;
+  return {
+    draft: {
+      ...rest,
+      extras: { ...extras, attendees },
+      ...(choices.length > 0 ? { inviteeChoices: choices } : {}),
+    },
+    said,
+  };
+};
+
 /** "… · 3 free slots" when a turn found alternatives beside the draft's own. */
 const withSlots = (summary: string, slots: ReadonlyArray<FreeSlot> | undefined): string =>
   slots && slots.length > 1 ? `${summary} · ${String(slots.length)} free slots` : summary;
@@ -241,6 +297,8 @@ const withSlots = (summary: string, slots: ReadonlyArray<FreeSlot> | undefined):
 export interface StartOptions {
   /** What the form already held: the first draft's. */
   readonly extras?: DraftExtras | undefined;
+  /** Whom the phrase invited: the first draft's guests. */
+  readonly guests?: GuestChange | undefined;
   readonly id?: (() => string) | undefined;
   /** A finder phrase's slots: the first draft's (it sits in the best one). */
   readonly slots?: ReadonlyArray<FreeSlot> | undefined;
@@ -255,20 +313,32 @@ export interface StartOptions {
 export const startThread = (
   items: ReadonlyArray<QuickAddItem>,
   utterance: string,
-  { extras, id = nextDraftId, slots }: StartOptions = {},
+  { extras, guests, id = nextDraftId, slots }: StartOptions = {},
 ): DraftThreadState => {
-  const drafts = items.map((item, index) => ({
-    ...(extras ? { extras } : {}),
-    id: id(),
-    item,
-    ...(index === 0 && slots ? { slots } : {}),
-  }));
+  let invited: ReadonlyArray<string> = [];
+  const drafts = items.map((item, index) => {
+    const draft: Draft = {
+      ...(extras ? { extras } : {}),
+      id: id(),
+      item,
+      ...(index === 0 && slots ? { slots } : {}),
+    };
+    if (index > 0) {
+      return draft;
+    }
+    const first = withGuests(draft, guests);
+    invited = first.said;
+    return first.draft;
+  });
   const summary =
     drafts.length === 1 && drafts[0]
-      ? withSlots(
-          `${drafts[0].item.prefill.title || 'Untitled'} · ${describeDraftItem(drafts[0].item)}`,
-          slots,
-        )
+      ? [
+          withSlots(
+            `${drafts[0].item.prefill.title || 'Untitled'} · ${describeDraftItem(drafts[0].item)}`,
+            slots,
+          ),
+          ...invited,
+        ].join(' · ')
       : `${String(drafts.length)} drafts`;
   return {
     drafts,
@@ -310,25 +380,42 @@ export const refineThread = (
   id: () => string = nextDraftId,
 ): DraftThreadState => {
   const changed = new Map(changes.map((change) => [change.id, change]));
+  // What the turn did to the focused draft's guests, in words.
+  let invited: ReadonlyArray<string> = [];
+  const focused = state.drafts[state.focused];
   const drafts = state.drafts.map((draft) => {
     const change = changed.get(draft.id);
-    return change === undefined
-      ? draft
-      : {
-          ...withoutSlots(draft),
-          ...(change.extras ? { extras: change.extras } : {}),
-          item: change.item,
-          ...(change.slots ? { slots: change.slots } : {}),
-        };
+    if (change === undefined) {
+      return draft;
+    }
+    const next = withGuests(
+      {
+        ...withoutSlots(draft),
+        ...(change.extras ? { extras: change.extras } : {}),
+        item: change.item,
+        ...(change.slots ? { slots: change.slots } : {}),
+      },
+      change.guests,
+    );
+    if (draft.id === focused?.id) {
+      invited = next.said;
+    }
+    return next.draft;
   });
-  const focused = state.drafts[state.focused];
   const focusedChange = focused ? changed.get(focused.id) : undefined;
+  const fieldsSaid =
+    focused && focusedChange ? summarizeChange(focused.item, focusedChange.item) : '';
+  const said =
+    invited.length === 0
+      ? fieldsSaid
+      : [
+          ...(fieldsSaid === 'no change' ? [] : [fieldsSaid]),
+          ...invited.map((part) => `→ ${part}`),
+        ].join(' · ');
   const summary =
     focused && focusedChange
       ? withSlots(
-          changes.length > 1
-            ? `${summarizeChange(focused.item, focusedChange.item)} (${String(changes.length)} drafts)`
-            : summarizeChange(focused.item, focusedChange.item),
+          changes.length > 1 ? `${said} (${String(changes.length)} drafts)` : said,
           focusedChange.slots,
         )
       : `${String(changes.length)} drafts changed`;
@@ -554,6 +641,29 @@ export const updateDraft = (
         ),
       };
 
+/**
+ * A choice settled by hand — a contact picked (the form took the guest)
+ * or the name let go. Not a turn, and the form keeps what it holds.
+ */
+export const dropInviteeChoice = (
+  state: DraftThreadState,
+  index: number,
+  name: string,
+): DraftThreadState => {
+  const draft = state.drafts[index];
+  if (draft?.inviteeChoices === undefined) {
+    return state;
+  }
+  const { inviteeChoices, ...rest } = draft;
+  const left = inviteeChoices.filter((choice) => choice.name !== name);
+  return {
+    ...state,
+    drafts: state.drafts.map((each, at) =>
+      at === index ? { ...rest, ...(left.length > 0 ? { inviteeChoices: left } : {}) } : each,
+    ),
+  };
+};
+
 /** A snapshot without the drafts named, its focus clamped. */
 const without = (snapshot: Snapshot, gone: ReadonlySet<string>): Snapshot => {
   const drafts = snapshot.drafts.filter((draft) => !gone.has(draft.id));
@@ -618,6 +728,9 @@ export const firstDraftExtras = (extras: DraftExtras | undefined): DraftExtras |
 /** A finder phrase on an all-day draft, or none: the length searched for. */
 const DEFAULT_SLOT_MINUTES = 60;
 
+/** Contacts asked for per name: enough to tell one person from several. */
+const INVITEE_SEARCH_LIMIT = 8;
+
 /**
  * The thread as a hook: the state above, what a phrase does (`phrase`:
  * the router, quick-add for a first phrase, a refinement for a later one,
@@ -640,6 +753,20 @@ export const useDraftThread = ({
   const [state, setState] = useState<DraftThreadState>(EMPTY_THREAD);
   const [busy, setBusy] = useState(false);
   const request = useRef(0);
+
+  /** Whom a turn invited or took off, as guests: each invited name looked up in the contacts. */
+  const guestsOf = async (
+    invite: ReadonlyArray<string> | undefined,
+    uninvite: ReadonlyArray<string> | undefined,
+  ): Promise<GuestChange | undefined> => {
+    if ((invite ?? []).length === 0 && (uninvite ?? []).length === 0) {
+      return undefined;
+    }
+    const found = await resolveInvitees(invite ?? [], (query) =>
+      Effect.runPromise(backend.searchContacts({ limit: INVITEE_SEARCH_LIMIT, query })),
+    );
+    return { ...found, remove: uninvite ?? [] };
+  };
 
   const start = (items: ReadonlyArray<QuickAddItem>, utterance: string, options?: StartOptions) => {
     request.current += 1;
@@ -687,19 +814,32 @@ export const useDraftThread = ({
       if (mine !== request.current) {
         return undefined;
       }
-      const changes = results.flatMap(({ draft, result }) =>
-        result?.kind === 'parsed'
-          ? [
-              {
-                id: draft.id,
-                item: convertQuickAddItem(
-                  { kind: 'event', prefill: result.prefill },
-                  draft.item.kind,
-                ),
-              },
-            ]
-          : [],
+      // Guests for the events among the drafts: a to-do has none.
+      const changes = await Promise.all(
+        results.flatMap(({ draft, result }) =>
+          result?.kind === 'parsed'
+            ? [
+                (async (): Promise<DraftChange> => {
+                  const guests =
+                    draft.item.kind === 'event'
+                      ? await guestsOf(result.invite, result.uninvite)
+                      : undefined;
+                  return {
+                    ...(guests ? { guests } : {}),
+                    id: draft.id,
+                    item: convertQuickAddItem(
+                      { kind: 'event', prefill: result.prefill },
+                      draft.item.kind,
+                    ),
+                  };
+                })(),
+              ]
+            : [],
+        ),
       );
+      if (mine !== request.current) {
+        return undefined;
+      }
       if (changes.length === 0) {
         const rejected = results.find(({ result }) => result?.kind === 'rejected')?.result;
         return rejected?.kind === 'rejected'
@@ -824,6 +964,10 @@ export const useDraftThread = ({
     if (result.kind === 'rejected') {
       return result.reason;
     }
+    const guests = result.kind === 'parsed' ? await guestsOf(result.invite, undefined) : undefined;
+    if (mine !== request.current) {
+      return undefined;
+    }
     start(
       [
         result.kind === 'task'
@@ -831,7 +975,7 @@ export const useDraftThread = ({
           : { kind: 'event', prefill: result.prefill },
       ],
       text,
-      { extras: firstDraftExtras(read?.().extras) },
+      { extras: firstDraftExtras(read?.().extras), guests },
     );
     return undefined;
   };
@@ -842,6 +986,9 @@ export const useDraftThread = ({
       request.current += 1;
       setState(EMPTY_THREAD);
     },
+    /** A choice settled by hand: a contact picked (the form took the guest) or the name let go. */
+    dropChoice: (index: number, name: string) =>
+      setState((latest) => dropInviteeChoice(latest, index, name)),
     focus: (index: number) => setState((latest) => focusDraft(latest, index)),
     phrase,
     refine,

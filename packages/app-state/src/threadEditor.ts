@@ -2,6 +2,8 @@ import { type LanguageModel, ModelUnavailableError } from '@calendar/ai';
 import {
   type BackendClient,
   type CalendarInfo,
+  type Contact,
+  emailKey,
   type FreeSlot,
   type ItemKind,
   type TaskListInfo,
@@ -49,15 +51,22 @@ export interface ThreadSeed {
   readonly utterance: string;
 }
 
+/** A part of the form a turn can change and flash: a draft's own fields, and its guests. */
+export type FlashField = DraftField | 'guests';
+
 /**
  * The fields a turn just changed in the form, for it to flash once: `key`
  * is the turn's id, so the same turn never flashes twice and the next one
  * always does.
  */
 export interface DraftFlash {
-  readonly fields: ReadonlySet<DraftField>;
+  readonly fields: ReadonlySet<FlashField>;
   readonly key: string;
 }
+
+/** A guest list by its addresses, in order: what a turn changed or not. */
+const guestKeys = (attendees: ReadonlyArray<{ readonly email: string }>): string =>
+  attendees.map((attendee) => emailKey(attendee.email)).join('\n');
 
 /** Existing event (edit mode), a prefilled slot (create mode), or a thread of drafts. */
 export type EditorSeed = EventEditorSeed & { readonly thread?: ThreadSeed | undefined };
@@ -372,10 +381,20 @@ export const useThreadEditor = ({
   ) => {
     const { extras, item } = draft;
     const before = currentItem();
+    // The guests the form shows now, before the draft's take over.
+    const guestsChanged =
+      item.kind === 'event' &&
+      guestKeys(eventModel.attendees) !== guestKeys(extras?.attendees ?? []);
     void apply(item)
       .then((after) => {
         if (landed) {
-          setFlash({ fields: new Set(changedDraftFields(before, after)), key: landed.id });
+          setFlash({
+            fields: new Set<FlashField>([
+              ...changedDraftFields(before, after),
+              ...(guestsChanged ? (['guests'] as const) : []),
+            ]),
+            key: landed.id,
+          });
         }
         if (item.kind === 'task') {
           // A to-do's own: its list and Reminders-only fields where the form
@@ -514,6 +533,28 @@ export const useThreadEditor = ({
     reveal(Temporal.PlainDate.from(slot.date));
   };
 
+  /**
+   * The names a turn invited that found no one contact, for the focused
+   * event — only while its calendar can invite (an Apple calendar's form
+   * cannot hold guests). Picking a contact puts the guest in the form, as
+   * a hand edit; either way the name leaves the list.
+   */
+  const inviteeChoices =
+    mode === 'event' && eventModel.canInvite ? (focusedDraft?.inviteeChoices ?? []) : [];
+  const pickInvitee = (name: string, contact: Contact) => {
+    if (!settled) {
+      return;
+    }
+    edited();
+    eventModel.addAttendee({ displayName: contact.displayName, email: contact.email });
+    thread.dropChoice(focused, name);
+  };
+  const dismissInvitee = (name: string) => {
+    if (settled) {
+      thread.dropChoice(focused, name);
+    }
+  };
+
   /** Another draft takes the form; the form's edits stay on the one leaving it. Not mid-write. */
   const switchFocus = (index: number) => {
     if (index === focused || drafts[index] === undefined || !settled) {
@@ -641,6 +682,8 @@ export const useThreadEditor = ({
     applying: seenVersion !== version || openApplies > 0,
     batchError,
     canAddAll,
+    /** A name let go of: no contact is picked for it. */
+    dismissInvitee,
     drafts,
     /** For the forms: the setters a person moves count as `userEdits`. */
     eventModel: reportingEdits(eventModel, EVENT_EDITS, edited),
@@ -648,11 +691,15 @@ export const useThreadEditor = ({
     flash: playing,
     focused,
     focusedDraft,
+    /** Names the focused event's turns invited that need a contact picked. */
+    inviteeChoices,
     /** The kind control's switch counts as an edit too. */
     kinds: reportingEdits(kinds, ['switchTo'], edited),
     liveItem,
     moveToSlot,
     onPhrase,
+    /** A contact picked for a name a turn invited: the guest joins the form. */
+    pickInvitee,
     settled,
     switchFocus,
     taskModel: reportingEdits(taskModel, TASK_EDITS, edited),
