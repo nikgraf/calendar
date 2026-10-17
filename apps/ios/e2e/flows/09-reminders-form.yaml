@@ -78,10 +78,22 @@ tags:
             id: 'reminder-timed'
           direction: DOWN
           timeout: 10000
-      - tapOn:
-          id: 'reminder-timed'
-      - assertVisible:
-          id: 'reminder-time'
+      # Tapped until the time row it brings shows: a tap while the form
+      # still settles lands beside the switch (flow 17, CI run 39021299724).
+      - retry:
+          maxRetries: 3
+          commands:
+            - runFlow:
+                when:
+                  notVisible:
+                    id: 'reminder-time'
+                commands:
+                  - tapOn:
+                      id: 'reminder-timed'
+            - extendedWaitUntil:
+                visible:
+                  id: 'reminder-time'
+                timeout: 3000
       - scrollUntilVisible:
           element:
             id: 'reminder-priority-high'
