@@ -8,9 +8,10 @@ const groupLabel = (list: TaskListInfo, emailOf: (accountId: string) => string):
 
 /**
  * The task editor's list picker, shared by the Google and Reminders forms:
- * every writable list of every account as one card of check rows, the
- * account named over its lists once there is more than one. Picking a
- * list elsewhere moves the task on Save.
+ * every writable list of every account as one card of check rows, each
+ * account named over its lists (also with one account: the e2e flows
+ * read the fixture account's address there to know it is signed in).
+ * Picking a list elsewhere moves the task on Save.
  */
 export function TaskListPicker({
   disabled,
@@ -26,9 +27,7 @@ export function TaskListPicker({
   return (
     <Section header="List" tight>
       {groups.flatMap((group) => [
-        ...(groups.length > 1
-          ? [<CardCaption key={`caption:${group.label}`}>{group.label}</CardCaption>]
-          : []),
+        <CardCaption key={`caption:${group.label}`}>{group.label}</CardCaption>,
         ...group.lists.map((list) => {
           const key = `${list.accountId}:${list.id}`;
           return (

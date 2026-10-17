@@ -202,10 +202,26 @@ tags:
           direction: DOWN
       - tapOn:
           id: 'reminder-repeat-monthly'
+      # Each choice brings a row under the one before; scroll to each.
+      - scrollUntilVisible:
+          element:
+            id: 'reminder-repeat-monthly-weekday'
+          direction: DOWN
+          timeout: 10000
       - tapOn:
           id: 'reminder-repeat-monthly-weekday'
+      - scrollUntilVisible:
+          element:
+            id: 'reminder-repeat-ordinal-2'
+          direction: DOWN
+          timeout: 10000
       - tapOn:
           id: 'reminder-repeat-ordinal-2'
+      - scrollUntilVisible:
+          element:
+            id: 'reminder-repeat-ordinal-weekday-TU'
+          direction: DOWN
+          timeout: 10000
       - tapOn:
           id: 'reminder-repeat-ordinal-weekday-TU'
       # The summary sits under the chip rows, below the fold on a phone.

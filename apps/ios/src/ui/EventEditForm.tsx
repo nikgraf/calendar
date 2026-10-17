@@ -235,10 +235,9 @@ export function EventEditForm({
 
       {readOnly ? null : (
         <Section header="Calendar" tight>
+          {/* Each account named over its calendars, as Calendar's own picker does. */}
           {groups.flatMap((group) => [
-            ...(groups.length > 1
-              ? [<CardCaption key={`caption:${group.label}`}>{group.label}</CardCaption>]
-              : []),
+            <CardCaption key={`caption:${group.label}`}>{group.label}</CardCaption>,
             ...group.calendars.map((calendar) => {
               const key = `${calendar.accountId}:${calendar.id}`;
               return (
