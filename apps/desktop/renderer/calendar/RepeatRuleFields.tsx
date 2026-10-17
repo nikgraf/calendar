@@ -13,6 +13,7 @@ import {
   type Weekday,
 } from '@calendar/core';
 import { FIELD_CLASS, LABEL_CLASS } from '../ui/fieldStyles.ts';
+import { FormSection } from './FormSection.tsx';
 import { useFieldFlash } from '../ui/useFlash.ts';
 
 /** The repeat form state both editors expose (everything but the spec exit). */
@@ -49,13 +50,12 @@ export function RepeatRuleFields({
 }) {
   const flash = useFieldFlash<HTMLSelectElement>('repeat');
   return (
-    <div className="flex flex-col gap-3">
-      <div className="flex gap-3">
-        <label className={`${LABEL_CLASS} flex-1`}>
-          Repeat
+    <FormSection label="Repeat">
+      <div className="flex items-end gap-3">
+        <div className="flex-1">
           <select
             aria-label="Repeat"
-            className={`${FIELD_CLASS} mt-1`}
+            className={FIELD_CLASS}
             onChange={(input) =>
               state.setRepeat(input.target.value as RecurrenceFrequency | 'none')
             }
@@ -68,7 +68,7 @@ export function RepeatRuleFields({
               </option>
             ))}
           </select>
-        </label>
+        </div>
         {state.repeat === 'none' ? null : (
           <label className={`${LABEL_CLASS} w-24`}>
             Every (n)
@@ -220,6 +220,6 @@ export function RepeatRuleFields({
           {state.repeatSummary}
         </p>
       ) : null}
-    </div>
+    </FormSection>
   );
 }

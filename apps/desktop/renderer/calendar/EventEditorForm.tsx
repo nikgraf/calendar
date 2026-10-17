@@ -5,44 +5,35 @@ import {
   SCOPE_OPTIONS,
   useAccounts,
   type useEventEditorModel,
-  type useMoveConfirmation,
   useTimeZones,
 } from '@calendar/app-state';
 import { type CalendarInfo, draftZoneRanges, type RsvpResponse } from '@calendar/core';
 import { InviteeCombobox } from './InviteeCombobox.tsx';
-import { Button } from '../ui/Button.tsx';
-import { FIELD_CLASS as field, LABEL_CLASS } from '../ui/fieldStyles.ts';
+import { FIELD_CLASS as field } from '../ui/fieldStyles.ts';
 import { useFieldFlash } from '../ui/useFlash.ts';
 import { FindTimeFields } from './FindTimeFields.tsx';
+import { FormSection } from './FormSection.tsx';
 import { LocationCombobox } from './LocationCombobox.tsx';
 import { LocationMap } from './LocationMap.tsx';
 import { RemindersFields } from './RemindersFields.tsx';
 import { RepeatRuleFields } from './RepeatRuleFields.tsx';
 import { ZoneLines } from './ZoneLines.tsx';
 
-/**
- * The event half of EventEditor (mode === 'event'), extracted like the iOS
- * EventEditForm. The e2e suite relies on the Title placeholder, the
- * Repeat/Apply-to labels and the Delete/Cancel/Save buttons.
- */
 /** Calendars grouped the way the sidebar shows them: per account, Apple per source. */
 const groupLabel = (calendar: CalendarInfo, accountLabel: (accountId: string) => string): string =>
   calendar.provider === 'apple'
     ? `Apple Calendar — ${calendar.sourceTitle ?? 'On this Mac'}`
     : accountLabel(calendar.accountId);
 
-export function EventEditorForm({
-  model,
-  moveConfirmation,
-  onClose,
-  saveDisabled = false,
-}: {
-  model: ReturnType<typeof useEventEditorModel>;
-  moveConfirmation: ReturnType<typeof useMoveConfirmation>;
-  onClose: () => void;
-  /** Another write of the editor's is running (the thread's "Add all"): one at a time. */
-  saveDisabled?: boolean | undefined;
-}) {
+/**
+ * The event half of EditorPanel (mode === 'event'), extracted like the
+ * iOS EventEditForm: the title and its calendar, then When (all-day, the
+ * dates, the finder), Where, the repeat rule, Invitees, Notifications and
+ * Notes as captioned sections. The panel's footer carries Delete, Cancel
+ * and Save. The e2e suite relies on the Title placeholder, the field
+ * aria-labels and the Repeat/Apply-to labels.
+ */
+export function EventEditorForm({ model }: { model: ReturnType<typeof useEventEditorModel> }) {
   const accounts = useAccounts();
   const { secondary: secondaryZones } = useTimeZones();
   const {
@@ -50,7 +41,6 @@ export function EventEditorForm({
     assumedTime,
     attendees,
     attendeeStatus,
-    busy,
     calendarKey,
     canInvite,
     canMoveCalendar,
@@ -65,11 +55,9 @@ export function EventEditorForm({
     isAllDay,
     isRecurring,
     readOnly,
-    remove,
     removeAttendee,
     respond,
     rsvp,
-    save,
     scope,
     setCalendarKey,
     setDate,
@@ -102,33 +90,33 @@ export function EventEditorForm({
   );
 
   return (
-    <>
-      <fieldset className="flex min-w-0 flex-col gap-3" disabled={readOnly}>
-        {readOnly ? (
-          <p
-            className="rounded-control bg-fill p-2 text-sm text-ink-secondary"
-            data-testid="event-read-only"
-          >
-            This calendar is read-only.
-          </p>
-        ) : null}
-        {error ? (
-          <p className="select-text rounded-control bg-fill p-2 text-sm text-danger">{error}</p>
-        ) : null}
-        {isRecurring ? (
-          <SegmentedControl
-            className="w-full"
-            grow
-            label="Apply to"
-            onChange={setScope}
-            options={SCOPE_OPTIONS.map((option) => ({ label: option.label, value: option.value }))}
-            size="sm"
-            value={scope}
-          />
-        ) : null}
+    <fieldset className="flex min-w-0 flex-col gap-5" disabled={readOnly}>
+      {readOnly ? (
+        <p
+          className="rounded-control bg-fill p-2 text-sm text-ink-secondary"
+          data-testid="event-read-only"
+        >
+          This calendar is read-only.
+        </p>
+      ) : null}
+      {error ? (
+        <p className="select-text rounded-control bg-fill p-2 text-sm text-danger">{error}</p>
+      ) : null}
+      {isRecurring ? (
+        <SegmentedControl
+          className="w-full"
+          grow
+          label="Apply to"
+          onChange={setScope}
+          options={SCOPE_OPTIONS.map((option) => ({ label: option.label, value: option.value }))}
+          size="sm"
+          value={scope}
+        />
+      ) : null}
+      <div className="flex flex-col gap-2">
         <input
           autoFocus
-          className={field}
+          className={`${field} py-2 text-base`}
           onChange={(changeEvent) => setTitle(changeEvent.target.value)}
           placeholder="Title"
           ref={titleFlash}
@@ -161,6 +149,9 @@ export function EventEditorForm({
             )}
           </select>
         )}
+      </div>
+
+      <FormSection label="When">
         <label
           className="-mx-1 flex items-center gap-2 rounded-control px-1 text-sm"
           ref={allDayFlash}
@@ -217,118 +208,96 @@ export function EventEditorForm({
           )}
         </div>
         {assumedTime && !isAllDay ? (
-          <p className="-mt-1 text-xs text-ink-secondary" data-testid="assumed-time">
+          <p className="text-xs text-ink-secondary" data-testid="assumed-time">
             Time assumed from the phrase — set it, or say one.
           </p>
         ) : null}
-        {zoneLines ? <ZoneLines className="-mt-2" lines={zoneLines} /> : null}
+        {zoneLines ? <ZoneLines lines={zoneLines} /> : null}
         {readOnly ? null : <FindTimeFields model={model} />}
+      </FormSection>
+
+      <FormSection label="Where">
         <LocationCombobox model={model} />
         <LocationMap place={model} />
-        {model.repeatLoaded ? <RepeatRuleFields anchorDate={date} state={model} /> : null}
-        {canInvite ? (
-          <div className="rounded-control bg-fill p-3">
-            <p className="mb-1 text-xs font-medium text-ink-secondary uppercase">Invitees</p>
-            {canRsvp ? (
-              <SegmentedControl
-                className="mb-2 w-full"
-                grow
-                label="RSVP"
-                onChange={(value) => {
-                  if (value !== 'needsAction') {
-                    void respond(value);
-                  }
-                }}
-                options={RSVP_OPTIONS.map((option) => ({
-                  label: option.label,
-                  value: option.value as RsvpResponse | 'needsAction',
-                }))}
-                size="sm"
-                value={rsvp ?? 'needsAction'}
-              />
-            ) : null}
-            <InviteeCombobox
-              attendees={attendees}
-              attendeeStatus={attendeeStatus}
-              onAdd={addAttendee}
-              onRemove={removeAttendee}
-            />
-          </div>
-        ) : readOnly && !hasGuests ? null : (
-          // EventKit cannot write guests: existing ones show as they are, and
-          // the field stays in sight, disabled, pointing at Calendar.app — a
-          // missing field reads as a bug.
-          <div className="rounded-control bg-fill p-3" data-testid="event-invitees-apple">
-            <p className="mb-1 text-xs font-medium text-ink-secondary uppercase">Invitees</p>
-            {hasGuests ? (
-              <ul className="mb-2 text-sm text-ink-secondary" data-testid="event-guests-read-only">
-                {existing?.attendees?.map((attendee) => (
-                  <li key={attendee.email}>{attendee.displayName ?? attendee.email}</li>
-                ))}
-              </ul>
-            ) : null}
-            {readOnly ? null : (
-              <>
-                <input
-                  aria-label="Invitees"
-                  className="w-full rounded-lg border border-hairline bg-surface px-3 py-1 text-sm outline-none placeholder:text-ink-secondary disabled:opacity-50"
-                  disabled
-                  placeholder="Add guests"
-                />
-                <p className="mt-2 text-xs text-ink-secondary">
-                  {existing
-                    ? 'Apple calendars can’t add invitees here — add them in Calendar.'
-                    : 'Apple calendars can’t add invitees here — save, then add them in Calendar.'}{' '}
-                  <button
-                    className="text-primary hover:underline"
-                    onClick={() => void window.calendarBridge.appleCalendarOpen()}
-                    type="button"
-                  >
-                    Open Calendar
-                  </button>
-                </p>
-              </>
-            )}
-          </div>
-        )}
-        <RemindersFields model={model} />
-        <label className={LABEL_CLASS}>
-          Notes
-          <textarea
-            className={`${field} mt-1 min-h-16`}
-            data-testid="editor-notes"
-            onChange={(changeEvent) => setDescription(changeEvent.target.value)}
-            placeholder="Add notes"
-            value={description}
-          />
-        </label>
-      </fieldset>
+      </FormSection>
 
-      <div className="mt-5 flex items-center justify-between">
-        {existing && !readOnly ? (
-          <Button aria-busy={busy} onClick={() => void remove()} size="sm" variant="danger">
-            Delete
-          </Button>
-        ) : (
-          <span />
-        )}
-        <div className="flex gap-2">
-          <Button onClick={onClose} size="sm" variant="ghost">
-            Cancel
-          </Button>
-          {readOnly ? null : (
-            <Button
-              aria-busy={busy}
-              disabled={moveConfirmation.pending !== null || saveDisabled}
-              onClick={() => void save()}
+      {model.repeatLoaded ? <RepeatRuleFields anchorDate={date} state={model} /> : null}
+
+      {canInvite ? (
+        <FormSection label="Invitees">
+          {canRsvp ? (
+            <SegmentedControl
+              className="w-full"
+              grow
+              label="RSVP"
+              onChange={(value) => {
+                if (value !== 'needsAction') {
+                  void respond(value);
+                }
+              }}
+              options={RSVP_OPTIONS.map((option) => ({
+                label: option.label,
+                value: option.value as RsvpResponse | 'needsAction',
+              }))}
               size="sm"
-              variant="primary"
-            >
-              Save
-            </Button>
+              value={rsvp ?? 'needsAction'}
+            />
+          ) : null}
+          <InviteeCombobox
+            attendees={attendees}
+            attendeeStatus={attendeeStatus}
+            onAdd={addAttendee}
+            onRemove={removeAttendee}
+          />
+        </FormSection>
+      ) : readOnly && !hasGuests ? null : (
+        // EventKit cannot write guests: existing ones show as they are, and
+        // the field stays in sight, disabled, pointing at Calendar.app — a
+        // missing field reads as a bug.
+        <FormSection label="Invitees" testId="event-invitees-apple">
+          {hasGuests ? (
+            <ul className="text-sm text-ink-secondary" data-testid="event-guests-read-only">
+              {existing?.attendees?.map((attendee) => (
+                <li key={attendee.email}>{attendee.displayName ?? attendee.email}</li>
+              ))}
+            </ul>
+          ) : null}
+          {readOnly ? null : (
+            <>
+              <input
+                aria-label="Invitees"
+                className="w-full rounded-lg border border-hairline bg-surface px-3 py-1 text-sm outline-none placeholder:text-ink-secondary disabled:opacity-50"
+                disabled
+                placeholder="Add guests"
+              />
+              <p className="text-xs text-ink-secondary">
+                {existing
+                  ? 'Apple calendars can’t add invitees here — add them in Calendar.'
+                  : 'Apple calendars can’t add invitees here — save, then add them in Calendar.'}{' '}
+                <button
+                  className="text-primary hover:underline"
+                  onClick={() => void window.calendarBridge.appleCalendarOpen()}
+                  type="button"
+                >
+                  Open Calendar
+                </button>
+              </p>
+            </>
           )}
-        </div>
-      </div>
-    </>
+        </FormSection>
+      )}
+
+      <RemindersFields model={model} />
+
+      <FormSection label="Notes">
+        <textarea
+          className={`${field} min-h-16`}
+          data-testid="editor-notes"
+          onChange={(changeEvent) => setDescription(changeEvent.target.value)}
+          placeholder="Add notes"
+          value={description}
+        />
+      </FormSection>
+    </fieldset>
   );
 }
