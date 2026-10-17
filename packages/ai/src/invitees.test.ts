@@ -106,6 +106,48 @@ describe('inviteesOf', () => {
     expect(invitesAnyone('Add milk. Tom comes as a guest')).toBe(false);
   });
 
+  it('takes off the guests an invitation is said not to happen for', () => {
+    // Review: these invited the person they excluded.
+    expect(inviteesOf([], 'do not add tom@example.com as a guest')).toEqual({
+      invite: [],
+      uninvite: ['tom@example.com'],
+    });
+    expect(inviteesOf([], 'lade tom@example.com nicht ein').uninvite).toEqual(['tom@example.com']);
+    expect(inviteesOf(['Anna'], 'never invite Anna').uninvite).toEqual(['Anna']);
+    expect(inviteesOf(['Tom'], 'why not invite Tom').invite).toEqual(['Tom']);
+    // "nicht" before one name only rules that one out.
+    expect(inviteesOf(['Anna', 'Tom'], 'lade Anna und nicht Tom ein')).toEqual({
+      invite: ['Anna'],
+      uninvite: [],
+    });
+  });
+
+  it('reads a German list of guests past its commas', () => {
+    // Review: the first comma hid the particle, and everyone was lost.
+    expect(inviteesOf(['Tom', 'Anna', 'Bob'], 'lade Tom, Anna und Bob ein').invite).toEqual([
+      'Tom',
+      'Anna',
+      'Bob',
+    ]);
+    expect(inviteesOf([], 'lade anna@example.com, bo@example.com ein').invite).toEqual([
+      'anna@example.com',
+      'bo@example.com',
+    ]);
+    // Two verbs: each name under its own.
+    expect(inviteesOf(['Tom', 'Anna'], 'lade Tom ein und lade Anna aus')).toEqual({
+      invite: ['Tom'],
+      uninvite: ['Anna'],
+    });
+  });
+
+  it('has no opinion about an address said under both', () => {
+    // Review: the first place decided, so the removal was lost.
+    expect(inviteesOf([], 'invite tom@example.com, then remove tom@example.com')).toEqual({
+      invite: [],
+      uninvite: [],
+    });
+  });
+
   it('has no opinion about a name said under both', () => {
     expect(inviteesOf(['Tom'], 'invite Tom, then remove Tom')).toEqual({
       invite: [],

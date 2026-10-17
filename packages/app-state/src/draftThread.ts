@@ -800,6 +800,8 @@ export const useDraftThread = ({
             asEvent.kind === 'event'
               ? await parseRefine(model, {
                   draft: asEvent.prefill,
+                  // A to-do's words about people are its title's.
+                  guests: draft.item.kind === 'event',
                   referenceDate,
                   timeZone,
                   utterance,

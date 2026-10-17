@@ -199,6 +199,22 @@ describe('normalizeRefine', () => {
     ).not.toHaveProperty('invite');
   });
 
+  it('leaves a to-do’s words about people to its title', () => {
+    // Review: "call it Invite Tom to dinner" renamed a to-do "Dinner".
+    expect(
+      normalizeRefine(
+        { ...DINNER, title: 'Invite Tom to dinner' },
+        {
+          draft: DINNER,
+          guests: false,
+          people: ['Tom'],
+          utterance: 'call it Invite Tom to dinner',
+          ...CONTEXT,
+        },
+      ),
+    ).toEqual({ kind: 'parsed', prefill: { ...DINNER, title: 'Invite Tom to dinner' } });
+  });
+
   it('sets, keeps and clears a repeat by the words', () => {
     expect(refined({ recurrence: { freq: 'weekly' } }, 'every week').recurrence).toEqual({
       freq: 'weekly',
@@ -320,6 +336,14 @@ describe('parseRefine', () => {
     expect(prompt).toContain(`Current: ${JSON.stringify(DINNER)}`);
     expect(prompt).toContain('Change: at 8pm');
     expect(prompt).toContain('Sat 2026-08-22 (today)');
+  });
+
+  it('asks who is invited only for a draft that takes guests', async () => {
+    const model = fakeModel(DINNER);
+    await parseRefine(model, { draft: DINNER, utterance: 'invite Tom', ...CONTEXT });
+    expect(model.prompts).toHaveLength(2);
+    await parseRefine(model, { draft: DINNER, guests: false, utterance: 'invite Tom', ...CONTEXT });
+    expect(model.prompts).toHaveLength(3);
   });
 
   it('rejects an empty change without calling the model', async () => {

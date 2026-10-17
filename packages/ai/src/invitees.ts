@@ -41,13 +41,13 @@ interface Cue {
 }
 
 /**
- * Cues whose names follow them. The ones that take a guest off come
- * first: "don't invite" holds an "invite".
+ * Cues whose names follow them. An invitation said not to happen ("don't
+ * invite") takes a guest off (`NOT_BEFORE`).
  */
 const FIRST_CUES: ReadonlyArray<readonly [CueKind, RegExp]> = [
   [
     'uninvite',
-    /\b(?:uninvit(?:e|es|ed|ing)|disinvit(?:e|es|ed|ing)|(?:don'?t|do not|no longer|not)\s+invite|remove|drop|without|ohne|entfern(?:e|en|t)?|streich(?:e|en|t)?)\b/g,
+    /\b(?:uninvit(?:e|es|ed|ing)|disinvit(?:e|es|ed|ing)|remove|drop|without|ohne|entfern(?:e|en|t)?|streich(?:e|en|t)?)\b/g,
   ],
   [
     'invite',
@@ -64,7 +64,14 @@ const FINAL_CUES: ReadonlyArray<readonly [CueKind, RegExp]> = [
 
 /** "lade Tom ein" / "lade Anna aus": the verb first, its particle after the names. */
 const SPLIT_VERB = /\blad(?:e|t|en)?\b/g;
-const PARTICLE = /\b(ein|aus)\b/g;
+const PARTICLE = /\b(ein|aus)\b/;
+
+/**
+ * An invitation said not to happen ("do not add Tom as a guest", "never
+ * invite Anna", "lade Tom nicht ein"): it takes the guest off instead.
+ */
+const NOT_BEFORE =
+  /(?<!\bwhy\s)\b(?:don'?t|do not|does not|did not|not|no longer|never|nicht|nie)\s+$/;
 
 /** A "with" between a cue and a name: the name is company, not a guest ("invite Tom to lunch with Sarah"). */
 const WITH = /\b(?:with|mit)\b/;
@@ -135,22 +142,32 @@ const cuesIn = (text: string): ReadonlyArray<Cue> => {
     for (const [kind, pattern] of list) {
       for (const match of text.matchAll(pattern)) {
         const end = match.index + match[0].length;
-        if (!taken(match.index, end)) {
-          cues.push({ end, kind, order, start: match.index });
+        if (taken(match.index, end)) {
+          continue;
         }
+        const not = kind === 'invite' ? NOT_BEFORE.exec(text.slice(0, match.index)) : null;
+        cues.push(
+          not
+            ? { end, kind: 'uninvite', order, start: not.index }
+            : { end, kind, order, start: match.index },
+        );
       }
     }
   }
-  // "lade … ein": the names between the verb and its particle.
+  // "lade … ein": the names between the verb and its particle — the first
+  // one after it in the sentence, past a list's commas ("lade Tom, Anna
+  // und Bob ein"); "nicht" right before it ("lade Tom nicht ein") turns
+  // it around.
   for (const verb of text.matchAll(SPLIT_VERB)) {
-    const [, partEnd] = partOf(text, verb.index);
-    const rest = text.slice(verb.index + verb[0].length, partEnd);
-    const particle = [...rest.matchAll(PARTICLE)].at(-1);
     const verbEnd = verb.index + verb[0].length;
+    const [, sentenceEnd] = sentenceOf(text, verb.index);
+    const rest = text.slice(verbEnd, sentenceEnd);
+    const particle = PARTICLE.exec(rest);
     if (particle && !taken(verb.index, verbEnd)) {
+      const not = NOT_BEFORE.test(rest.slice(0, particle.index));
       cues.push({
         end: verbEnd,
-        kind: particle[1] === 'aus' ? 'uninvite' : 'invite',
+        kind: particle[1] === 'aus' || not ? 'uninvite' : 'invite',
         order: 'first',
         start: verb.index,
       });
@@ -316,8 +333,14 @@ export const inviteesOf = (
     const exact = exactSpans(text, key).filter((span) => !inAddress(span));
     take(exact.length > 0 ? exact : looseSpans(text, key).filter((span) => !inAddress(span)), name);
   }
+  // Each address with all its places: said under both, it is neither.
+  const byAddress = new Map<string, Array<Span>>();
   for (const address of addresses) {
-    take([address], text.slice(address.at, address.at + address.length));
+    const key = text.slice(address.at, address.at + address.length);
+    byAddress.set(key, [...(byAddress.get(key) ?? []), address]);
+  }
+  for (const [key, spans] of byAddress) {
+    take(spans, key);
   }
   return { invite, uninvite };
 };

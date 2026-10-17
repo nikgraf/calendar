@@ -164,12 +164,18 @@ export const normalizeRefine = (
   parse: QuickAddParse,
   {
     draft,
+    guests = true,
     people,
     referenceDate,
     timeZone,
     utterance,
   }: {
     draft: RefineDraft;
+    /**
+     * Whether the draft takes guests: a to-do is refined as the event it
+     * would be, but its words about people stay its title's.
+     */
+    guests?: boolean | undefined;
     /** The names the model read as invited or taken off (`readPeople`), held against the words. */
     people?: ReadonlyArray<string> | undefined;
     referenceDate: string;
@@ -178,8 +184,10 @@ export const normalizeRefine = (
   },
 ): RefineResult => {
   // Who the words invite or take off the list, held against them.
-  const { invite, uninvite } = inviteesOf(people, utterance);
-  const guests = {
+  const { invite, uninvite } = guests
+    ? inviteesOf(people, utterance)
+    : { invite: [], uninvite: [] };
+  const whom = {
     ...(invite.length > 0 ? { invite } : {}),
     ...(uninvite.length > 0 ? { uninvite } : {}),
   };
@@ -187,12 +195,13 @@ export const normalizeRefine = (
   const renamed = named === undefined ? draft.title : titleWithoutInvitees(named, invite);
   // A rename: the new title is all there is (and whom it invites).
   if (isRenamePhrase(utterance)) {
-    return { ...guests, kind: 'parsed', prefill: { ...draft, title: renamed } };
+    return { ...whom, kind: 'parsed', prefill: { ...draft, title: renamed } };
   }
   // Words about guests are not about the title: the model wrote the
   // guest into it ("Dinner with Teo and Anna" for "also invite Anna").
   // A "remove" that took no one off ("remove the location") is not.
-  const aboutGuests = invite.length > 0 || uninvite.length > 0 || invitesAnyone(utterance);
+  const aboutGuests =
+    guests && (invite.length > 0 || uninvite.length > 0 || invitesAnyone(utterance));
   const title = aboutGuests ? draft.title : renamed;
   const text = words(utterance);
   // Beside guests, a place only as the words say it: the model made up
@@ -319,7 +328,7 @@ export const normalizeRefine = (
       : draft.recurrence;
 
   return {
-    ...guests,
+    ...whom,
     kind: 'parsed',
     prefill: {
       ...(assumedTime ? { assumedTime } : {}),
@@ -344,10 +353,18 @@ export const parseRefine = async (
   model: LanguageModel,
   {
     draft,
+    guests = true,
     referenceDate,
     timeZone,
     utterance,
-  }: { draft: RefineDraft; referenceDate: string; timeZone: string; utterance: string },
+  }: {
+    draft: RefineDraft;
+    /** Whether the draft takes guests (not a to-do): only then is the people question asked. */
+    guests?: boolean | undefined;
+    referenceDate: string;
+    timeZone: string;
+    utterance: string;
+  },
 ): Promise<RefineResult> => {
   if (!utterance.trim()) {
     return { kind: 'rejected', reason: 'Say what to change.' };
@@ -356,7 +373,7 @@ export const parseRefine = async (
     throw new ModelUnavailableError({ message: 'No on-device model is available.' });
   }
   let raw: unknown;
-  const people = readPeople(model, utterance, { removals: true });
+  const people = guests ? readPeople(model, utterance, { removals: true }) : Promise.resolve([]);
   try {
     raw = await model.generateJson({
       jsonSchema: QUICK_ADD_JSON_SCHEMA,
@@ -370,6 +387,7 @@ export const parseRefine = async (
   }
   return normalizeRefine(raw as QuickAddParse, {
     draft,
+    guests,
     people: await people,
     referenceDate,
     timeZone,
