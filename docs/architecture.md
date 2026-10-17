@@ -56,11 +56,14 @@ invites is a question of its own (`invitees.ts`, `readPeople`), asked
 beside the extraction and only when the words hold an invitation cue
 ("invite", "add … as a guest", "lade … ein", "einladen"; "don't
 invite", "remove", "ohne", "ausladen" take a guest off): the code keeps
-a name only under such a cue — "with Sarah" invites no one — in the
-words' own spelling (a misspelled name is matched back by its
-consonants), reads addresses itself, and cuts the invitation out of the
-title; a word that rules a name out ("but not", "instead of", "statt")
-keeps it off. The thread (app-state `draftInvitees.ts`) looks each name
+a name only in such a cue's guest list — nothing but people, commas and
+list words between them, so "with Sarah", "invite Tom to lunch with
+Sarah", "but not Tom" and an address for another instruction invite no
+one — in the words' own spelling (a misspelled name is matched back by
+its consonants), reads addresses itself (masked before the words are
+read), and cuts the invitation out of the title. A noun is no request
+unless it says for whom ("an invite to Tom", not "the invitation from
+Tom"), and a negation elsewhere in a cue's clause leaves it no opinion. The thread (app-state `draftInvitees.ts`) looks each name
 up through `contactsNamed` — every contact whose folded words the name
 begins (core `nameMatch`), never a typeahead page, so "one person" is
 decided over all of them: a name that is one contact's (the only one by

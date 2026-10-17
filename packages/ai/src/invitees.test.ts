@@ -21,7 +21,10 @@ describe('inviteesOf', () => {
       invite: ['Tom.Baker@Example.com'],
       uninvite: [],
     });
-    expect(inviteesOf([], 'invite Anna and bo@example.com').invite).toEqual(['bo@example.com']);
+    expect(inviteesOf(['Anna'], 'invite Anna and bo@example.com').invite).toEqual([
+      'Anna',
+      'bo@example.com',
+    ]);
     // No cue, no address.
     expect(inviteesOf([], 'Call with bo@example.com').invite).toEqual([]);
     expect(inviteesOf([], 'remove bo@example.com').uninvite).toEqual(['bo@example.com']);
@@ -93,7 +96,8 @@ describe('inviteesOf', () => {
     expect(inviteesOf(['Anna', 'Tom'], 'invite Anna instead of Tom').invite).toEqual(['Anna']);
     expect(inviteesOf(['Anna', 'Tom'], 'invite everyone except Tom, and Anna').invite).toEqual([]);
     expect(inviteesOf(['Anna', 'Tom'], 'lade Anna statt Tom ein').invite).toEqual(['Anna']);
-    expect(inviteesOf(['Anna', 'Tom'], 'Anna und nicht Tom einladen').invite).toEqual(['Anna']);
+    // A negation in the clause of a cue after the names: no opinion at all.
+    expect(inviteesOf(['Anna', 'Tom'], 'Anna und nicht Tom einladen').invite).toEqual([]);
     expect(inviteesOf(['Tom'], 'Tom nicht einladen').uninvite).toEqual(['Tom']);
     expect(inviteesOf(['Tom'], 'remove Anna but not Tom').uninvite).toEqual([]);
   });
@@ -146,6 +150,62 @@ describe('inviteesOf', () => {
       invite: [],
       uninvite: [],
     });
+  });
+
+  it('reads whole addresses, and never their insides as words', () => {
+    // Review: "o'connor@…" was read as "connor@…"; "mit" in a domain ended the list.
+    expect(inviteesOf([], "invite o'connor@example.com").invite).toEqual(["o'connor@example.com"]);
+    expect(inviteesOf([], 'invite alice@mit.edu and bob@example.com').invite).toEqual([
+      'alice@mit.edu',
+      'bob@example.com',
+    ]);
+    expect(inviteesOf([], 'Call invite@example.com tomorrow').invite).toEqual([]);
+  });
+
+  it('has no opinion where a negation earlier in the clause governs the invitation', () => {
+    // Review: these invited the person they ruled out.
+    expect(inviteesOf([], "Lunch, don't send an invite to tom@example.com")).toEqual({
+      invite: [],
+      uninvite: [],
+    });
+    expect(inviteesOf([], 'no invitation to tom@example.com')).toEqual({
+      invite: [],
+      uninvite: [],
+    });
+    expect(inviteesOf(['Anna'], "don't remove Anna").uninvite).toEqual([]);
+    // A clause of its own is not governed.
+    expect(inviteesOf(['Tom'], "Don't be late, invite Tom").invite).toEqual(['Tom']);
+  });
+
+  it('reads a mention of an invitation as no request', () => {
+    // Review: "the invitation from tom@…" invited Tom.
+    expect(inviteesOf([], 'Discuss the invitation from tom@example.com tomorrow at 10')).toEqual({
+      invite: [],
+      uninvite: [],
+    });
+    expect(inviteesOf(['Tom'], 'Reply to the invite from Tom').invite).toEqual([]);
+    expect(inviteesOf(['Tom'], 'send an invitation to Tom').invite).toEqual(['Tom']);
+    expect(inviteesOf(['Tom'], 'invited by Tom').invite).toEqual([]);
+  });
+
+  it('reads only the cue’s own guest list', () => {
+    // Review: an address for another instruction became a guest.
+    expect(
+      inviteesOf([], 'invite tom@example.com and put bob@example.com in the description').invite,
+    ).toEqual(['tom@example.com']);
+    expect(inviteesOf(['Tom', 'Anna'], "invite Tom to Anna's party").invite).toEqual(['Tom']);
+    expect(inviteesOf(['Tom', 'Anna', 'Bob'], 'invite Tom, Anna and also Bob').invite).toEqual([
+      'Tom',
+      'Anna',
+      'Bob',
+    ]);
+    expect(inviteesOf(['Tom'], 'invite me and Tom').invite).toEqual(['Tom']);
+    // German, the names before the verb: past the list's commas.
+    expect(inviteesOf(['Tom', 'Anna', 'Bob'], 'Tom, Anna und Bob einladen').invite).toEqual([
+      'Tom',
+      'Anna',
+      'Bob',
+    ]);
   });
 
   it('has no opinion about a name said under both', () => {
