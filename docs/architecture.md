@@ -59,12 +59,16 @@ invite", "remove", "ohne", "ausladen" take a guest off): the code keeps
 a name only under such a cue — "with Sarah" invites no one — in the
 words' own spelling (a misspelled name is matched back by its
 consonants), reads addresses itself, and cuts the invitation out of the
-title. The thread (app-state `draftInvitees.ts`) looks each name up
-through `searchContacts`: a name that is one contact's (the only one by
-that exact name, else the only one it begins word by word) joins the
-draft's guests; any other waits on the draft as a choice — the contacts
-it might be, or none — until the user picks one or lets it go. A turn
-that takes a guest off matches the guests by name or address. A phrase that asks for
+title; a word that rules a name out ("but not", "instead of", "statt")
+keeps it off. The thread (app-state `draftInvitees.ts`) looks each name
+up through `contactsNamed` — every contact whose folded words the name
+begins (core `nameMatch`), never a typeahead page, so "one person" is
+decided over all of them: a name that is one contact's (the only one by
+that exact name or address, else the only one whose words it says whole
+— "Tom", "T Baker", not "Ann" for Anna) joins the draft's guests; any
+other waits on the draft as a choice — the contacts it might be, or none
+— until the user picks one, lets it go, or a later turn says it again. A
+turn that takes a guest off matches the guests the same way. A phrase that asks for
 free time ("find 90 min for focus next week, mornings", "wann habe ich
 Zeit für …") is routed by code (`slotProposals.ts`, `isFinderPhrase`:
 English and German cues) to the finder prompt instead, so the two

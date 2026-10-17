@@ -53,6 +53,7 @@ const stubHandlers: BackendHandlers = {
   connectAppleCalendar: () => Effect.succeed({ granted: false }),
   connectContacts: () => Effect.succeed({ granted: false }),
   connectReminders: () => Effect.succeed({ granted: false }),
+  contactsNamed: () => Effect.succeed([]),
   convertEventToTask: notStubbed,
   convertTaskToEvent: notStubbed,
   createEvent: notStubbed,

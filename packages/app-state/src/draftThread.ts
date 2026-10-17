@@ -728,9 +728,6 @@ export const firstDraftExtras = (extras: DraftExtras | undefined): DraftExtras |
 /** A finder phrase on an all-day draft, or none: the length searched for. */
 const DEFAULT_SLOT_MINUTES = 60;
 
-/** Contacts asked for per name: enough to tell one person from several. */
-const INVITEE_SEARCH_LIMIT = 8;
-
 /**
  * The thread as a hook: the state above, what a phrase does (`phrase`:
  * the router, quick-add for a first phrase, a refinement for a later one,
@@ -762,10 +759,10 @@ export const useDraftThread = ({
     if ((invite ?? []).length === 0 && (uninvite ?? []).length === 0) {
       return undefined;
     }
-    const found = await resolveInvitees(invite ?? [], (query) =>
-      Effect.runPromise(backend.searchContacts({ limit: INVITEE_SEARCH_LIMIT, query })),
+    const found = await resolveInvitees(invite ?? [], (name) =>
+      Effect.runPromise(backend.contactsNamed({ name })),
     );
-    return { ...found, remove: uninvite ?? [] };
+    return { ...found, invited: invite ?? [], remove: uninvite ?? [] };
   };
 
   const start = (items: ReadonlyArray<QuickAddItem>, utterance: string, options?: StartOptions) => {

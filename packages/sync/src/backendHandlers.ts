@@ -15,6 +15,7 @@ import {
   type BackendSuccess,
   birthdaysInRange,
   pendingOpDiff,
+  contactsNamed,
   rankContacts,
 } from '@calendar/core';
 import { AppleCalendarClient } from '@calendar/apple-calendar';
@@ -207,6 +208,13 @@ export const commonBackendHandlers: Omit<BackendHandlers<CommonBackendServices>,
       const engine = yield* SyncEngine;
       yield* Effect.forkDetach(engine.syncAll());
       return { granted: true };
+    }),
+
+  contactsNamed: ({ name }) =>
+    Effect.gen(function* () {
+      const google = yield* (yield* ContactRepo).listAll();
+      const device = yield* (yield* DeviceContacts).list();
+      return contactsNamed(name, [...google, ...device]);
     }),
 
   convertEventToTask: (params) =>

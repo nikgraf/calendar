@@ -84,6 +84,28 @@ describe('inviteesOf', () => {
     expect(inviteesOf(['Tom'], 'ohne Tom').uninvite).toEqual(['Tom']);
   });
 
+  it('leaves out a name the words rule out after the cue', () => {
+    // Review: both addresses were invited.
+    expect(inviteesOf([], 'invite anna@example.com but not tom@example.com')).toEqual({
+      invite: ['anna@example.com'],
+      uninvite: [],
+    });
+    expect(inviteesOf(['Anna', 'Tom'], 'invite Anna instead of Tom').invite).toEqual(['Anna']);
+    expect(inviteesOf(['Anna', 'Tom'], 'invite everyone except Tom, and Anna').invite).toEqual([]);
+    expect(inviteesOf(['Anna', 'Tom'], 'lade Anna statt Tom ein').invite).toEqual(['Anna']);
+    expect(inviteesOf(['Anna', 'Tom'], 'Anna und nicht Tom einladen').invite).toEqual(['Anna']);
+    expect(inviteesOf(['Tom'], 'Tom nicht einladen').uninvite).toEqual(['Tom']);
+    expect(inviteesOf(['Tom'], 'remove Anna but not Tom').uninvite).toEqual([]);
+  });
+
+  it('reads "add … as a guest" around an address', () => {
+    // Review: the address's dot ended the cue's reach.
+    expect(inviteesOf([], 'add tom@example.com as a guest').invite).toEqual(['tom@example.com']);
+    expect(invitesAnyone('Sync at 3, add tom.baker@example.com as an attendee')).toBe(true);
+    // A sentence end still stops it.
+    expect(invitesAnyone('Add milk. Tom comes as a guest')).toBe(false);
+  });
+
   it('has no opinion about a name said under both', () => {
     expect(inviteesOf(['Tom'], 'invite Tom, then remove Tom')).toEqual({
       invite: [],

@@ -707,7 +707,12 @@ describe('guests from the words', () => {
   it('starts a draft with the guests the phrase invited, beside the ones typed before', () => {
     const state = startThread([dinner], 'dinner Friday at 7, invite Tom and Mia', {
       extras: typed,
-      guests: { add: [tom], choices: [{ contacts: [mia, miaToo], name: 'Mia' }], remove: [] },
+      guests: {
+        add: [tom],
+        choices: [{ contacts: [mia, miaToo], name: 'Mia' }],
+        invited: ['Tom', 'Mia'],
+        remove: [],
+      },
       id: ids(),
     });
     expect(state.drafts[0]).toMatchObject({
@@ -719,7 +724,12 @@ describe('guests from the words', () => {
     );
     // A draft the form never held gets blank extras around its guests.
     const fresh = startThread([dinner], 'invite Bo', {
-      guests: { add: [{ email: 'bo@example.com' }], choices: [], remove: [] },
+      guests: {
+        add: [{ email: 'bo@example.com' }],
+        choices: [],
+        invited: ['bo@example.com'],
+        remove: [],
+      },
       id: ids(),
     });
     expect(fresh.drafts[0]?.extras).toEqual({
@@ -732,7 +742,7 @@ describe('guests from the words', () => {
   it('gives a to-do no guests', () => {
     const todo: QuickAddItem = { kind: 'task', prefill: { date: '2026-08-28', title: 'Call Tom' } };
     const state = startThread([todo], 'call Tom', {
-      guests: { add: [tom], choices: [], remove: [] },
+      guests: { add: [tom], choices: [], invited: ['Tom'], remove: [] },
       id: ids(),
     });
     expect(state.drafts[0]).not.toHaveProperty('extras');
@@ -749,6 +759,7 @@ describe('guests from the words', () => {
           guests: {
             add: [{ displayName: 'Mia Ko', email: 'mia@example.com' }],
             choices: [{ contacts: [], name: 'Sarah' }],
+            invited: ['Mia', 'Sarah'],
             remove: ['Anna'],
           },
           id: 'd1',
@@ -778,12 +789,45 @@ describe('guests from the words', () => {
 
   it('keeps open choices through a turn about something else', () => {
     const started = startThread([dinner], 'dinner, invite Mia', {
-      guests: { add: [], choices: [{ contacts: [mia, miaToo], name: 'Mia' }], remove: [] },
+      guests: {
+        add: [],
+        choices: [{ contacts: [mia, miaToo], name: 'Mia' }],
+        invited: ['Mia'],
+        remove: [],
+      },
       id: ids(),
     });
     const moved = refineThread(started, 'at 8', [{ id: 'd1', item: later }], ids());
     expect(moved.drafts[0]?.inviteeChoices).toEqual([{ contacts: [mia, miaToo], name: 'Mia' }]);
     expect(moved.turns.at(-1)?.summary).toBe('→ 20:00–21:00');
+  });
+
+  it('settles an open choice when a later turn finds the name (contacts synced meanwhile)', () => {
+    // Review: a retry that found Sarah left "No contact named Sarah" behind.
+    const started = startThread([dinner], 'dinner, invite Sarah', {
+      guests: {
+        add: [],
+        choices: [{ contacts: [], name: 'Sarah' }],
+        invited: ['Sarah'],
+        remove: [],
+      },
+      id: ids(),
+    });
+    const sarah = { displayName: 'Sarah Kim', email: 'sarah@example.com' };
+    const found = refineThread(
+      started,
+      'invite sarah',
+      [
+        {
+          guests: { add: [sarah], choices: [], invited: ['sarah'], remove: [] },
+          id: 'd1',
+          item: dinner,
+        },
+      ],
+      ids(),
+    );
+    expect(found.drafts[0]?.extras?.attendees).toEqual([sarah]);
+    expect(found.drafts[0]).not.toHaveProperty('inviteeChoices');
   });
 
   it('drops a choice settled by hand, without a turn or a version', () => {
@@ -794,6 +838,7 @@ describe('guests from the words', () => {
           { contacts: [mia, miaToo], name: 'Mia' },
           { contacts: [], name: 'Sarah' },
         ],
+        invited: ['Mia', 'Sarah'],
         remove: [],
       },
       id: ids(),

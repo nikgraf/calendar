@@ -51,7 +51,8 @@ const FIRST_CUES: ReadonlyArray<readonly [CueKind, RegExp]> = [
   ],
   [
     'invite',
-    /\b(?:invit(?:e|es|ed|ing)|invitations?|einladung(?:en)?|add(?=\s[^.;!?]*\bas\s+(?:an?\s+)?(?:guests?|attendees?|invitees?)\b))\b/g,
+    // "add … as a guest": an address between keeps its dots.
+    /\b(?:invit(?:e|es|ed|ing)|invitations?|einladung(?:en)?|add(?=\s(?:[^.;!?]|\.(?=\S))*\bas\s+(?:an?\s+)?(?:guests?|attendees?|invitees?)\b))\b/g,
   ],
 ];
 
@@ -67,6 +68,17 @@ const PARTICLE = /\b(ein|aus)\b/g;
 
 /** A "with" between a cue and a name: the name is company, not a guest ("invite Tom to lunch with Sarah"). */
 const WITH = /\b(?:with|mit)\b/;
+
+/**
+ * A word that rules a name out between it and its cue ("invite Anna but
+ * not Tom", "invite Anna instead of Tom", "lade Anna statt Tom ein"): the
+ * cue does not reach the name, and the code has no opinion about it.
+ */
+const NEGATION =
+  'not|except|excluding|other than|apart from|instead of|rather than|nicht|ausser|ausgenommen|statt|anstatt|keine?[nm]?';
+const NEGATED = new RegExp(`\\b(?:${NEGATION})\\b`);
+/** …and right before a name, for a cue after it ("Anna und nicht Tom einladen"). */
+const NEGATED_BEFORE = new RegExp(`\\b(?:${NEGATION})\\s+$`);
 
 /** Words that name no one to look up: the user, a pronoun, everyone. */
 const NOT_A_PERSON = new Set([
@@ -200,7 +212,8 @@ const looseSpans = (text: string, key: string): ReadonlyArray<Span> => {
 /**
  * The cue a name at `at` stands under: the nearest one before it in its
  * sentence whose names follow it (no "with" between), or the nearest one
- * after it in its clause whose names come before it.
+ * after it in its clause whose names come before it — neither across a
+ * word that rules the name out.
  */
 const cueOf = (
   text: string,
@@ -216,11 +229,18 @@ const cueOf = (
         cue.order === 'first' &&
         cue.end <= at &&
         cue.start >= sentenceStart &&
-        !WITH.test(text.slice(cue.end, at)),
+        !WITH.test(text.slice(cue.end, at)) &&
+        !NEGATED.test(text.slice(cue.end, at)),
     )
     .at(-1);
   const after = cues
-    .filter((cue) => cue.order === 'final' && cue.start >= at + length && cue.end <= partEnd)
+    .filter(
+      (cue) =>
+        cue.order === 'final' &&
+        cue.start >= at + length &&
+        cue.end <= partEnd &&
+        !NEGATED_BEFORE.test(text.slice(0, at)),
+    )
     .sort((a, b) => a.start - b.start)[0];
   if (before === undefined || after === undefined) {
     return before ?? after;

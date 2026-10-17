@@ -12,7 +12,6 @@ const contact = (displayName: string | undefined, email: string): Contact =>
 
 const tomBaker = contact('Tom Baker', 'tom.baker@example.com');
 const tomLee = contact('Tom Lee', 'tlee@example.com');
-const joanna = contact('Joanna Smith', 'joanna@example.com');
 const jorg = contact('Jörg Müller', 'jm@example.com');
 
 describe('pickContact', () => {
@@ -21,7 +20,7 @@ describe('pickContact', () => {
     expect(pickContact('Jorg Muller', [jorg])).toBe(jorg);
   });
 
-  it('takes the only contact the name begins word by word', () => {
+  it('takes the only contact whose words the name says whole', () => {
     expect(pickContact('Tom', [tomBaker])).toBe(tomBaker);
     expect(pickContact('T Baker', [tomBaker, tomLee])).toBe(tomBaker);
     // The address counts as a name when there is none.
@@ -30,25 +29,22 @@ describe('pickContact', () => {
     );
   });
 
-  it('leaves it to the user when it could be several, or only part of a name', () => {
+  it('leaves it to the user when it could be several, or the name only begins one', () => {
     expect(pickContact('Tom', [tomBaker, tomLee])).toBeUndefined();
-    // "Ann" is not Joanna, though the search found her.
-    expect(pickContact('Ann', [joanna])).toBeUndefined();
+    // "Ann" begins Anna, but Ann may be someone else.
+    expect(pickContact('Ann', [contact('Anna Lee', 'anna@example.com')])).toBeUndefined();
     // One person, two addresses: the user picks the address.
     const work = contact('Tom Baker', 'tom@work.example.com');
     expect(pickContact('Tom Baker', [tomBaker, work])).toBeUndefined();
   });
 });
 
-/** A search that finds the same contacts for every name. */
-const search = (contacts: ReadonlyArray<Contact>) => async () => contacts;
-
 describe('resolveInvitees', () => {
   it('makes guests of addresses and names that mean one contact, and choices of the rest', async () => {
-    const queries: Array<string> = [];
-    const result = await resolveInvitees(['Tom Baker', 'Anna', 'bo@example.com'], async (query) => {
-      queries.push(query);
-      return query === 'Tom Baker' ? [tomBaker, tomLee] : [];
+    const asked: Array<string> = [];
+    const result = await resolveInvitees(['Tom Baker', 'Anna', 'bo@example.com'], async (name) => {
+      asked.push(name);
+      return name === 'Tom Baker' ? [tomBaker, tomLee] : [];
     });
     expect(result).toEqual({
       add: [
@@ -58,19 +54,18 @@ describe('resolveInvitees', () => {
       choices: [{ contacts: [], name: 'Anna' }],
     });
     // An address is not looked up.
-    expect(queries).toEqual(['Tom Baker', 'Anna']);
+    expect(asked).toEqual(['Tom Baker', 'Anna']);
   });
 
-  it('offers the contacts a name could be, the ones it names first', async () => {
-    const result = await resolveInvitees(['Tom'], search([joanna, tomBaker, tomLee]));
-    expect(result.choices).toEqual([{ contacts: [tomBaker, tomLee], name: 'Tom' }]);
-    // None it names: what the search found.
-    expect((await resolveInvitees(['Ann'], search([joanna]))).choices).toEqual([
-      { contacts: [joanna], name: 'Ann' },
-    ]);
+  it('offers what the lookup found, at most five', async () => {
+    const many = Array.from({ length: 7 }, (_, index) =>
+      contact(`Tom ${String(index)}`, `tom${String(index)}@example.com`),
+    );
+    const result = await resolveInvitees(['Tom'], async () => many);
+    expect(result.choices[0]?.contacts).toEqual(many.slice(0, 5));
   });
 
-  it('reads a failing search as finding no one', async () => {
+  it('reads a failing lookup as finding no one', async () => {
     const result = await resolveInvitees(['Tom'], () => Promise.reject(new Error('offline')));
     expect(result).toEqual({ add: [], choices: [{ contacts: [], name: 'Tom' }] });
   });
@@ -103,6 +98,7 @@ describe('guestsNamed and applyGuestChange', () => {
           { displayName: 'Jörg Müller', email: 'jm@example.com' },
         ],
         choices: [{ contacts: [tomBaker], name: 'mia' }],
+        invited: ['TLEE@example.com', 'Jörg Müller', 'mia'],
         remove: ['Anna', 'Bo'],
       },
     );
