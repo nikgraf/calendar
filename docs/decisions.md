@@ -843,6 +843,21 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   height, which buys one or three form rows and costs the calendar the
   half sheet is for (on an iPhone 17 Pro about 3.5 or 1 hour of timeline
   stay in view instead of 5).
+- **Editor forms as grouped cards, the header given room** (2026-10-17,
+  #223) — #190's squeeze read as bad design once the half sheet was in
+  hand. The iOS editor now draws its forms as iOS inset grouped cards on
+  the Settings pages' rows (`GroupedList`, moved out of `settings/`), in
+  Calendar's and Reminders' own order with the calendar card before the
+  repeat card (picked far more often), a card's header uppercase
+  ("CALENDAR", "REPEAT", "LIST"); the fixed header keeps the Cancel ·
+  title · Save row and the quick-add field (a card on the ground, 17 pt)
+  with its thread, and the kind control scrolls with the form. The
+  desktop panel gets a header that stays (title, Close), captioned
+  sections (When, Where, Repeat, …) and a footer that stays with Delete ·
+  Cancel · Save. Rejected: a taller starting detent (#190's reasons
+  hold), a pushed calendar picker (the inline rows stay the flows'
+  targets and one tap), Repeat inside the dates card (its conditional
+  rows made it long). Open: the chips at the accessibility text sizes.
 - **Slot proposals in the create thread** (2026-10-12, #185) — a phrase
   that asks for free time is routed by code (`isFinderPhrase`: English
   and German cues, a search verb or question beside a time word) to the

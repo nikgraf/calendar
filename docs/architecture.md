@@ -974,7 +974,13 @@ gateway carries all of it. Details, limits and the threat model:
   search (⌘F), an event's read-first inspector after a grid click or a
   search result (`EventInspector.tsx`), or the inline editor
   (`EditorPanel.tsx`) from Edit, a slot, New (⌘N; ⌘K goes
-  straight into its quick-add field), a task chip or a result. Single
+  straight into its quick-add field), a task chip or a result. The editor
+  is a header that stays (the title, Join meeting, Close), a body that
+  scrolls (the quick-add field, the kind control, the form as captioned
+  sections — When, Where, Invitees, Notifications, Notes;
+  `FormSection.tsx`) and a footer that stays (Delete · Cancel · Save,
+  the question before a lossy change above them), so the save and the
+  way out are in reach wherever the form is scrolled to. Single
   keys: T = today, ←/→ step the view; ⌘, opens Settings from the menu. A new
   item's editor is the one add path: the quick-add field on top
   (`QuickAddBar`, a phrase typed or dictated hands-free fills the form), the Event |
@@ -1039,7 +1045,7 @@ gateway carries all of it. Details, limits and the threat model:
   (`(tabs)/`: Calendar · Tasks · Search, the last a stack of one screen
   whose `Stack.SearchBar` is the system search field) and Settings as a
   modal route holding its own native stack (`settings/`: the root list, a
-  page per pane; rows drawn by `src/ui/settings/GroupedList.tsx`,
+  page per pane; rows drawn by `src/ui/GroupedList.tsx`,
   switches through `@expo/ui`). `src/ui/CalendarScreen.tsx` is the
   calendar tab: a header (title, the view menu Day · 2 Days · Week ·
   Month · Agenda, ‹ Today ›, the account avatar into Settings carrying the
@@ -1076,9 +1082,20 @@ gateway carries all of it. Details, limits and the threat model:
   field does not take the focus there (the keyboard raises a half sheet
   to full; once it hides, the sheet returns to the detent it had). The
   sheet lays its content out once, as at most two subviews: a header
-  that must not be flattened (`collapsable={false}`) and one scroll view
-  that stays across a kind switch — the forms render `bare` inside it
-  (`FormScroll`). The calendar draws the thread's drafts from
+  that must not be flattened (`collapsable={false}`) — the Cancel ·
+  title · Save row and, for a new item, the quick-add field with its
+  thread — and one scroll view that stays across a kind switch — the
+  kind control at its top, then the form, which renders `bare` inside it
+  (`FormScroll`). The forms are iOS inset grouped cards on the grouped
+  ground, drawn with the Settings pages' rows (`GroupedList.tsx`:
+  `Section`, `Row`, `SwitchRow`, `CheckRow`, `ActionRow`, and the forms'
+  own `FieldRow`, `ChipsRow`, `RowSlot`, `CardCaption`; a choice is a
+  `Chip`), in Calendar's order for an event (title and location; all-day,
+  the dates, the finder; repeat; calendar; invitees; notifications;
+  notes; Delete) and Reminders' for a to-do (title and notes; list; due
+  day and time; repeat; priority, alert, URL; Delete). A card's header
+  renders uppercase, which is what the flows tap to dismiss a keyboard
+  ("CALENDAR", "LIST"). The calendar draws the thread's drafts from
   `useDraftPreviews` (`DraftBlock.tsx`): dashed blocks tagged "Draft" in
   the timeline, chips in the all-day lane, a ringed dot in the month
   grid, the free slots as fainter dotted "Option" blocks, a ring on the
