@@ -59,27 +59,36 @@ tags:
       - tapOn:
           id: 'mode-reminder'
       - assertVisible: 'New Reminder'
-      # The quick-add field's keyboard covers the lower rows and Maestro's
-      # visibility check ignores it (see 03): a tap on the priority chip
-      # would land on the keyboard. A plain label dismisses it first.
-      - tapOn: 'LIST'
-      - waitForAnimationToEnd:
-          timeout: 5000
-      # The form morphed: Reminders-only controls are on screen.
-      - assertVisible:
-          id: 'reminder-timed'
-      - assertVisible:
-          id: 'reminder-priority-high'
-      - tapOn:
-          id: 'reminder-priority-high'
-      - tapOn:
-          id: 'reminder-timed'
-      - assertVisible:
-          id: 'reminder-time'
+      # The form is worked top to bottom, every scroll downward (see 03):
+      # the title first, then the dates card, then Priority.
       - tapOn:
           id: 'task-title'
       # ASCII only: unicode through XCTest typing is a known flaky spot.
       - inputText: 'Solunivo e2e reminder to delete'
+      # The title's keyboard covers the lower rows and Maestro's visibility
+      # check ignores it: a tap there would land on the keyboard. A plain
+      # label above it (the List card's header) dismisses it first.
+      - tapOn: 'LIST'
+      - waitForAnimationToEnd:
+          timeout: 5000
+      # The Reminders-only controls: the time switch in the dates card, the
+      # priority chips in the card under the repeat rule.
+      - scrollUntilVisible:
+          element:
+            id: 'reminder-timed'
+          direction: DOWN
+          timeout: 10000
+      - tapOn:
+          id: 'reminder-timed'
+      - assertVisible:
+          id: 'reminder-time'
+      - scrollUntilVisible:
+          element:
+            id: 'reminder-priority-high'
+          direction: DOWN
+          timeout: 10000
+      - tapOn:
+          id: 'reminder-priority-high'
       - tapOn:
           id: 'event-save'
       - extendedWaitUntil:
