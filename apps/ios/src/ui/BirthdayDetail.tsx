@@ -9,7 +9,7 @@ import {
 } from '@calendar/core';
 import { useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { chip, chipLabel, useSheetStyles } from './editSheetShared.ts';
+import { Chip } from './Chip.tsx';
 import { type ThemeColors, useStyles } from './theme.ts';
 
 // Through a PlainDate in a leap year: the polyfill cannot localise a
@@ -38,7 +38,6 @@ const countdown = (daysUntil: number, ageTurning: number | undefined): string =>
  * hands them back to the general list.
  */
 function BirthdayReminders({ record }: { record: BirthdayRecord }) {
-  const sheetStyles = useSheetStyles();
   const styles = useStyles(makeStyles);
   const editor = useBirthdayOverrideEditor(record);
   const [error, setError] = useState<string | null>(null);
@@ -53,7 +52,7 @@ function BirthdayReminders({ record }: { record: BirthdayRecord }) {
   return (
     <View testID="birthday-override">
       <View style={styles.remindersHeader}>
-        <Text style={sheetStyles.label}>REMINDERS</Text>
+        <Text style={styles.label}>REMINDERS</Text>
         {editor.overridden ? (
           <Pressable
             accessibilityRole="button"
@@ -65,26 +64,23 @@ function BirthdayReminders({ record }: { record: BirthdayRecord }) {
           </Pressable>
         ) : null}
       </View>
-      <View style={sheetStyles.scopeRow}>
+      <View style={styles.chips}>
         {BIRTHDAY_LEAD_DAYS.map((lead) => {
           const selected = editor.leadDays.includes(lead);
           return (
-            <Pressable
-              accessibilityRole="button"
-              accessibilityState={{ selected }}
+            <Chip
               key={lead}
+              label={leadDaysLabel(lead)}
               onPress={() => run(editor.toggle(lead))}
-              style={chip(sheetStyles, selected)}
+              selected={selected}
               // The suffix lets the e2e flow assert the state without a query.
               testID={`birthday-override-${String(lead)}${selected ? '-on' : ''}`}
-            >
-              <Text style={chipLabel(sheetStyles, selected)}>{leadDaysLabel(lead)}</Text>
-            </Pressable>
+            />
           );
         })}
       </View>
       {editor.enabled ? null : (
-        <Text style={sheetStyles.readOnlyNote} testID="birthday-reminders-off">
+        <Text style={styles.note} testID="birthday-reminders-off">
           Birthday reminders are off — turn them on in Settings.
         </Text>
       )}
@@ -101,12 +97,11 @@ export function BirthdayDetail({
   occurrence: BirthdayOccurrence;
   timeZone: string;
 }) {
-  const sheetStyles = useSheetStyles();
   const styles = useStyles(makeStyles);
   const { record } = occurrence;
   const next = describeBirthday(record, Temporal.Now.plainDateISO(timeZone).toString());
   return (
-    <ScrollView contentContainerStyle={sheetStyles.content} testID="birthday-detail">
+    <ScrollView contentContainerStyle={styles.content} testID="birthday-detail">
       <Text selectable style={styles.name}>
         {record.displayName}
       </Text>
@@ -115,7 +110,7 @@ export function BirthdayDetail({
         {record.year === undefined ? '' : ` · born ${String(record.year)}`}
       </Text>
       <Text style={styles.countdown}>{countdown(next.daysUntil, next.ageTurning)}</Text>
-      <Text style={sheetStyles.label}>SOURCE</Text>
+      <Text style={styles.label}>SOURCE</Text>
       <View style={styles.sources}>
         {record.sources.map((source) => (
           <Text key={source.id} selectable style={styles.source} testID="birthday-source">
@@ -126,7 +121,7 @@ export function BirthdayDetail({
         ))}
       </View>
       <BirthdayReminders record={record} />
-      <Text style={sheetStyles.readOnlyNote}>
+      <Text style={styles.note}>
         Birthdays are read-only here — edit them in Contacts or Google Contacts.
       </Text>
     </ScrollView>
@@ -135,6 +130,16 @@ export function BirthdayDetail({
 
 const makeStyles = (colors: ThemeColors) =>
   StyleSheet.create({
+    chips: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: 8,
+      marginBottom: 14,
+    },
+    content: {
+      padding: 16,
+      paddingBottom: 48,
+    },
     countdown: {
       color: colors['text-secondary'],
       fontSize: 14,
@@ -150,11 +155,22 @@ const makeStyles = (colors: ThemeColors) =>
       fontSize: 13,
       marginBottom: 8,
     },
+    label: {
+      color: colors['text-secondary'],
+      fontSize: 12,
+      fontWeight: '600',
+      marginBottom: 6,
+    },
     name: {
       color: colors.text,
       fontSize: 20,
       fontWeight: '600',
       marginBottom: 6,
+    },
+    note: {
+      color: colors['text-secondary'],
+      fontSize: 13,
+      marginBottom: 8,
     },
     remindersHeader: {
       alignItems: 'center',

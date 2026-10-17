@@ -48,9 +48,9 @@ tags:
                   text: 'Solunivo e2e event to delete'
                 timeout: 3000
       # Notes sit at the bottom of the form. Dismiss the title's keyboard
-      # first (a tap on a plain label, see 03), or the text lands in the
-      # title.
-      - tapOn: 'CALENDAR'
+      # first (a tap on a plain label above the keyboard, see 03), or the
+      # text lands in the title.
+      - tapOn: 'Starts'
       - scrollUntilVisible:
           element:
             id: 'event-notes'
@@ -101,6 +101,12 @@ tags:
             text: 'Bring the agenda'
           timeout: 10000
       - runFlow: ../common/open-event-editor.yaml
+      # Delete is the form's last card: scroll it into reach.
+      - scrollUntilVisible:
+          element:
+            id: 'event-delete'
+          direction: DOWN
+          timeout: 10000
       - tapOn:
           id: 'event-delete'
       # The confirmation alert (deleteQuestion).

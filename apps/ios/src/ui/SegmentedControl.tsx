@@ -11,17 +11,22 @@ export interface SegmentedOption<T extends string> {
 /**
  * One choice among a few, drawn as a soft-filled track with the chosen
  * segment lifted onto a surface — the editor's Event | Task | Reminder
- * control and the quick-add field's Add | Find time. Drawn here rather
- * than SwiftUI's so each segment carries its own test id for the flows.
+ * control and "Apply to". Drawn here rather than SwiftUI's so each
+ * segment carries its own test id for the flows. `ground`: on the
+ * grouped ground the editor's forms sit on, which is the fill color
+ * itself, the track is a translucent darker shade and the segment a
+ * raised surface, as iOS draws a segmented control on a grouped list.
  */
 export function SegmentedControl<T extends string>({
   accessibilityLabel,
+  ground = false,
   grow = false,
   onChange,
   options,
   value,
 }: {
   readonly accessibilityLabel: string;
+  readonly ground?: boolean;
   /** Fills its row, the segments sharing the width equally; off, it takes its content's width. */
   readonly grow?: boolean;
   readonly onChange: (value: T) => void;
@@ -33,7 +38,11 @@ export function SegmentedControl<T extends string>({
     <View
       accessibilityLabel={accessibilityLabel}
       accessibilityRole="tablist"
-      style={[styles.track, grow ? styles.trackGrow : styles.trackFit]}
+      style={[
+        styles.track,
+        grow ? styles.trackGrow : styles.trackFit,
+        ground && styles.trackGround,
+      ]}
     >
       {options.map((option) => {
         const active = option.value === value;
@@ -48,6 +57,7 @@ export function SegmentedControl<T extends string>({
               styles.segment,
               grow && styles.segmentGrow,
               active && styles.segmentActive,
+              active && ground && styles.segmentActiveGround,
               option.disabled && styles.disabled,
             ]}
             testID={option.testID}
@@ -92,6 +102,9 @@ const makeStyles = (colors: ThemeColors) =>
       shadowOpacity: 0.08,
       shadowRadius: 2,
     },
+    segmentActiveGround: {
+      backgroundColor: colors['surface-raised'],
+    },
     segmentGrow: {
       flex: 1,
     },
@@ -103,6 +116,10 @@ const makeStyles = (colors: ThemeColors) =>
     },
     trackFit: {
       alignSelf: 'flex-start',
+    },
+    // The strong border at 12 %: a shade under the ground, whichever it is.
+    trackGround: {
+      backgroundColor: `${colors['border-strong']}1f`,
     },
     trackGrow: {
       flex: 1,

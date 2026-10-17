@@ -92,16 +92,18 @@ export const confirmEditorRequest = (request: EditorConfirmRequest): Promise<boo
   });
 
 /**
- * Modal shell for creating/editing events, tasks and reminders. For a new
- * item the quick-add field sits on top, then the thread (the turns with
- * Undo, the free slots, the pager and "Add all"), then the Event | Task |
- * Reminder control (only the kinds something can hold), then the form. A
- * new item is a thread of drafts, as on the desktop (`useThreadEditor`):
- * the first phrase makes the draft(s), every later phrase in the same
- * field changes them, and Save on one of several writes it and moves to
- * the next. The forms live in EventEditForm / TaskEditForm /
- * ReminderEditForm; this file owns the header and the thread editor (both
- * models stay mounted, so state survives a kind flip).
+ * Modal shell for creating/editing events, tasks and reminders. The
+ * header that stays put holds the Cancel · title · Save row and, for a
+ * new item, the quick-add field with its thread (the turns with Undo,
+ * the free slots, the pager and "Add all"); the form scrolls under it,
+ * the Event | Task | Reminder control (only the kinds something can
+ * hold) at its top. A new item is a thread of drafts, as on the desktop
+ * (`useThreadEditor`): the first phrase makes the draft(s), every later
+ * phrase in the same field changes them, and Save on one of several
+ * writes it and moves to the next. The forms live in EventEditForm /
+ * TaskEditForm / ReminderEditForm as grouped cards; this file owns the
+ * header and the thread editor (both models stay mounted, so state
+ * survives a kind flip).
  */
 export function EventEditSheet({
   birthday,
@@ -173,29 +175,32 @@ export function EventEditSheet({
   const quickAdd = sourceKind === 'new';
   const { noun, verb } = editorTitle({ kind, sourceKind, sourceProvider: task?.provider });
   const title = birthday ? 'Birthday' : `${verb} ${capitalize(noun)}`;
+  const nothingToSave =
+    birthday ||
+    (mode === 'todo' && taskModel.readOnly) ||
+    (mode === 'event' && eventModel.readOnly);
 
   // The header: the Cancel · title · Save row, then for a new item the
-  // quick-add field and the thread, then the kind control.
+  // quick-add field and the thread.
   const headerRow = (
-    <View style={[styles.header, styles.headerCompact]}>
-      <Pressable onPress={onClose}>
+    <View style={styles.header}>
+      <Pressable hitSlop={8} onPress={onClose} style={styles.headerSide}>
         {/* A birthday's reminder chips save as they change: nothing to cancel. */}
         <Text maxFontSizeMultiplier={BOX_FONT_SCALE} style={styles.cancel}>
           {birthday ? 'Done' : 'Cancel'}
         </Text>
       </Pressable>
-      <Text maxFontSizeMultiplier={BOX_FONT_SCALE} style={styles.title}>
+      <Text maxFontSizeMultiplier={BOX_FONT_SCALE} numberOfLines={1} style={styles.title}>
         {title}
       </Text>
-      {birthday ||
-      (mode === 'todo' && taskModel.readOnly) ||
-      (mode === 'event' && eventModel.readOnly) ? (
-        <View />
+      {nothingToSave ? (
+        <View style={styles.headerSide} />
       ) : (
         <Pressable
           disabled={write.busy}
+          hitSlop={8}
           onPress={() => void (mode === 'todo' ? taskModel.save() : eventModel.save())}
-          style={busy ? styles.busy : undefined}
+          style={[styles.headerSide, styles.headerEnd, busy && styles.busy]}
           testID="event-save"
         >
           <Text maxFontSizeMultiplier={BOX_FONT_SCALE} style={styles.save}>
@@ -205,52 +210,51 @@ export function EventEditSheet({
       )}
     </View>
   );
-  const headerRest = (
-    <>
-      {sourceKind === 'new' ? (
-        <>
-          <QuickAddBar
-            // The thread's turns hang under the field (`DraftThreadSection`).
-            attached={editor.turns.length > 0}
-            autoFocus={presentation !== 'route'}
-            editKey={editor.userEdits}
-            fallbackDate={seed.initialDate.toString()}
-            hold={editor.applying}
-            onApply={(item) => void apply(item)}
-            onPhrase={onPhrase}
-            placeholder={drafts.length > 0 ? CHANGE_PLACEHOLDER : undefined}
-            timeZone={timeZone}
-          />
-          <DraftThreadSection editor={editor} note={seed.thread?.note} />
-        </>
-      ) : null}
-
-      {showToggle ? (
-        <View style={styles.modeRow}>
-          {/* A turn that made the item the other kind: the control tints and fades back. */}
-          <FlashView
-            bleedX={4}
-            bleedY={4}
-            flash={flash?.fields.has('kind') ? flash.key : null}
-            style={styles.modeFlash}
-          >
-            <SegmentedControl
-              accessibilityLabel="Kind"
-              grow
-              onChange={(next) => void switchTo(next)}
-              options={available.map((option) => ({
-                disabled: option !== 'event' && seriesOnly,
-                label: KIND_LABELS[option],
-                testID: `mode-${option}`,
-                value: option,
-              }))}
-              value={kind}
-            />
-          </FlashView>
-        </View>
-      ) : null}
-    </>
-  );
+  const headerRest =
+    sourceKind === 'new' ? (
+      <>
+        <QuickAddBar
+          // The thread's turns hang under the field (`DraftThreadSection`).
+          attached={editor.turns.length > 0}
+          autoFocus={presentation !== 'route'}
+          editKey={editor.userEdits}
+          fallbackDate={seed.initialDate.toString()}
+          hold={editor.applying}
+          onApply={(item) => void apply(item)}
+          onPhrase={onPhrase}
+          placeholder={drafts.length > 0 ? CHANGE_PLACEHOLDER : undefined}
+          timeZone={timeZone}
+        />
+        <DraftThreadSection editor={editor} note={seed.thread?.note} />
+      </>
+    ) : null;
+  // The kind control scrolls with the form, at its top: a choice made
+  // once, so it need not take room from the half-height sheet.
+  const kindControl = showToggle ? (
+    <View style={styles.topControl}>
+      {/* A turn that made the item the other kind: the control tints and fades back. */}
+      <FlashView
+        bleedX={4}
+        bleedY={4}
+        flash={flash?.fields.has('kind') ? flash.key : null}
+        style={styles.modeFlash}
+      >
+        <SegmentedControl
+          accessibilityLabel="Kind"
+          ground
+          grow
+          onChange={(next) => void switchTo(next)}
+          options={available.map((option) => ({
+            disabled: option !== 'event' && seriesOnly,
+            label: KIND_LABELS[option],
+            testID: `mode-${option}`,
+            value: option,
+          }))}
+          value={kind}
+        />
+      </FlashView>
+    </View>
+  ) : null;
   const bare = presentation === 'route';
   // The fields the last turn changed flash (`FieldFlash` in the forms).
   const form = (
@@ -291,6 +295,7 @@ export function EventEditSheet({
           {headerRest}
         </View>
         <ScrollView automaticallyAdjustKeyboardInsets keyboardShouldPersistTaps="handled">
+          {kindControl}
           {form}
         </ScrollView>
       </>
@@ -308,6 +313,7 @@ export function EventEditSheet({
         <SafeAreaView>
           {headerRow}
           {headerRest}
+          {kindControl}
         </SafeAreaView>
         {form}
       </View>

@@ -8,17 +8,31 @@ import {
 } from '@calendar/app-state';
 import { type CalendarInfo, draftZoneRanges } from '@calendar/core';
 import DateTimePicker from '@react-native-community/datetimepicker';
-import { Linking, Pressable, Switch, Text, TextInput, View } from 'react-native';
-import { FormScroll } from './FormScroll.tsx';
+import { Linking, Pressable, Text, View } from 'react-native';
+import { Chip } from './Chip.tsx';
 import { useSheetStyles } from './editSheetShared.ts';
-import { dateForPicker, dateStringFromPicker, timeStringFromPicker } from './pickerDates.ts';
 import { FindTimeFields } from './FindTimeFields.tsx';
 import { FieldFlash } from './FlashView.tsx';
+import { FormScroll } from './FormScroll.tsx';
+import {
+  ActionRow,
+  CardCaption,
+  CheckRow,
+  ChipsRow,
+  ColorDot,
+  FieldRow,
+  Row,
+  RowSlot,
+  Section,
+  SwitchRow,
+} from './GroupedList.tsx';
 import { InviteeField } from './InviteeField.tsx';
 import { LocationField } from './LocationField.tsx';
 import { LocationMap } from './LocationMap.tsx';
+import { dateForPicker, dateStringFromPicker, timeStringFromPicker } from './pickerDates.ts';
 import { ReminderChips } from './ReminderChips.tsx';
 import { RepeatRuleChips } from './RepeatRuleChips.tsx';
+import { SegmentedControl } from './SegmentedControl.tsx';
 import { ZoneLines } from './ZoneLines.tsx';
 
 /** Which account (or, for Apple, which EventKit source) a calendar belongs to. */
@@ -27,7 +41,13 @@ const groupLabel = (calendar: CalendarInfo, emailOf: (accountId: string) => stri
     ? `Apple Calendar · ${calendar.sourceTitle ?? 'This iPhone'}`
     : emailOf(calendar.accountId);
 
-/** The event half of EventEditSheet (mode === 'event'). */
+/**
+ * The event half of EventEditSheet (mode === 'event'), as grouped cards
+ * in Calendar's own order: title and location; all-day, the dates and
+ * the finder; the repeat rule; the calendar; invitees; notifications;
+ * notes; Delete. The flows find the rows by test id and the cards by
+ * their uppercase headers ("CALENDAR", "REPEAT").
+ */
 export function EventEditForm({
   autoFocusTitle = true,
   bare,
@@ -89,41 +109,86 @@ export function EventEditForm({
     timeZone,
     secondaryZones,
   );
+  const groups = calendarGroups(writable, (calendar) => groupLabel(calendar, emailOf));
+  const guests = existing?.attendees ?? [];
+
+  /* Start and end each get a row, a day and a time: a multi-day or
+     overnight event ends on a later day (Calendar's Starts/Ends). */
+  const datePickers = (
+    which: 'end' | 'start',
+    day: string,
+    time: string,
+    setDay: (next: string) => void,
+    setTime: (next: string) => void,
+  ) => (
+    <View style={styles.pickerPair}>
+      <FieldFlash
+        bleedY={2}
+        field="date"
+        testID={which === 'start' ? 'event-date' : 'event-end-date'}
+      >
+        <DateTimePicker
+          display="compact"
+          mode="date"
+          onChange={(_, picked) => picked && setDay(dateStringFromPicker(picked, timeZone))}
+          timeZoneName={timeZone}
+          value={dateForPicker(day, undefined, timeZone)}
+        />
+      </FieldFlash>
+      {isAllDay ? null : (
+        <FieldFlash bleedY={2} field="time">
+          <DateTimePicker
+            display="compact"
+            mode="time"
+            onChange={(_, picked) => picked && setTime(timeStringFromPicker(picked, timeZone))}
+            timeZoneName={timeZone}
+            value={dateForPicker(day, time, timeZone)}
+          />
+        </FieldFlash>
+      )}
+    </View>
+  );
 
   return (
     // Keyboard insets: the invitee field and its suggestions sit at the
     // bottom of the form, under the keyboard the auto-focused title
     // raises; without the inset they cannot be scrolled into reach.
     <FormScroll bare={bare} contentStyle={styles.content}>
-      {error ? <Text style={styles.error}>{error}</Text> : null}
+      {error ? (
+        <Text selectable style={styles.formError}>
+          {error}
+        </Text>
+      ) : null}
       {readOnly ? (
-        <Text style={styles.label} testID="event-read-only">
+        <Text style={styles.formNote} testID="event-read-only">
           This calendar is read-only.
         </Text>
       ) : null}
       {joinUrl ? (
-        <Pressable onPress={() => void Linking.openURL(joinUrl)} style={styles.joinButton}>
+        <Pressable
+          accessibilityRole="button"
+          onPress={() => void Linking.openURL(joinUrl)}
+          style={styles.joinButton}
+        >
           <Text style={styles.joinLabel}>Join meeting</Text>
         </Pressable>
       ) : null}
       {isRecurring ? (
-        <View style={styles.scopeRow}>
-          {SCOPE_OPTIONS.map((option) => (
-            <Pressable
-              key={option.value}
-              onPress={() => setScope(option.value)}
-              style={[styles.scopeChip, scope === option.value && styles.scopeChipActive]}
-            >
-              <Text style={[styles.scopeLabel, scope === option.value && styles.scopeLabelActive]}>
-                {option.short}
-              </Text>
-            </Pressable>
-          ))}
+        <View style={styles.topControl}>
+          <SegmentedControl
+            accessibilityLabel="Apply to"
+            ground
+            grow
+            onChange={setScope}
+            options={SCOPE_OPTIONS.map((option) => ({ label: option.short, value: option.value }))}
+            value={scope}
+          />
         </View>
       ) : null}
-      <>
-        <FieldFlash bleedX={0} bleedY={0} field="title" style={styles.inputBox}>
-          <TextInput
+
+      <Section tight>
+        <FieldFlash bleedX={0} bleedY={0} field="title" radius={0}>
+          <FieldRow
             autoFocus={autoFocusTitle && !existing}
             // The system ⓧ ("Clear text"): renaming starts from an empty field
             // instead of deleting the old title character by character.
@@ -131,191 +196,128 @@ export function EventEditForm({
             editable={!readOnly}
             onChangeText={setTitle}
             placeholder="Title"
-            style={[styles.input, styles.inputInBox]}
             testID="event-title"
             value={title}
           />
         </FieldFlash>
+        <LocationField model={model} />
+      </Section>
+      <LocationMap model={model} />
 
-        {readOnly ? null : <Text style={styles.label}>Calendar</Text>}
-        {readOnly
-          ? null
-          : calendarGroups(writable, (calendar) => groupLabel(calendar, emailOf)).map((group) => (
-              <View key={group.label}>
-                <Text style={styles.calendarGroup}>{group.label}</Text>
-                {group.calendars.map((calendar) => {
-                  const key = `${calendar.accountId}:${calendar.id}`;
-                  const selected = key === calendarKey;
-                  return (
-                    <Pressable
-                      // Moving takes the whole series: pick "All" to move one.
-                      disabled={Boolean(existing) && !canMoveCalendar}
-                      key={key}
-                      onPress={() => setCalendarKey(key)}
-                      style={styles.calendarRow}
-                      testID="calendar-option"
-                    >
-                      <View style={[styles.swatch, { backgroundColor: calendar.colorHex }]} />
-                      <Text style={[styles.calendarName, selected && styles.calendarSelected]}>
-                        {calendar.summary}
-                      </Text>
-                      {selected ? <Text style={styles.check}>✓</Text> : null}
-                    </Pressable>
-                  );
-                })}
-              </View>
-            ))}
-
-        <FieldFlash field={isAllDay ? 'time' : null} style={styles.switchRow}>
-          <Text style={styles.label}>All-day</Text>
-          <Switch
+      <Section tight>
+        <FieldFlash bleedX={0} bleedY={0} field={isAllDay ? 'time' : null} radius={0}>
+          <SwitchRow
             // A repeating event keeps its kind (timed or all-day).
             disabled={!canSwitchAllDay}
             onValueChange={setIsAllDay}
-            testID="event-all-day"
+            switchTestID="event-all-day"
+            title="All-day"
             value={isAllDay}
           />
         </FieldFlash>
-
-        {model.repeatLoaded ? (
-          <FieldFlash field="repeat">
-            <RepeatRuleChips anchorDate={date} state={model} testIDPrefix="event-repeat" />
-          </FieldFlash>
+        <Row
+          accessory={datePickers('start', date, startTime, setDate, setStartTime)}
+          testID="event-start"
+          title="Starts"
+        />
+        <Row
+          accessory={datePickers('end', endDate, endTime, setEndDate, setEndTime)}
+          testID="event-end"
+          title="Ends"
+        />
+        {zoneLines ? (
+          <RowSlot>
+            <ZoneLines lines={zoneLines} textStyle={styles.hint} />
+          </RowSlot>
         ) : null}
-
-        {/* Start and end each get a row, a day and a time: a multi-day or
-            overnight event ends on a later day (Calendar's Starts/Ends). */}
-        <View style={styles.pickerRow} testID="event-start">
-          <Text style={styles.label}>Starts</Text>
-          <View style={styles.pickerPair}>
-            <FieldFlash bleedY={2} field="date" testID="event-date">
-              <DateTimePicker
-                display="compact"
-                mode="date"
-                onChange={(_, picked) => picked && setDate(dateStringFromPicker(picked, timeZone))}
-                timeZoneName={timeZone}
-                value={dateForPicker(date, undefined, timeZone)}
-              />
-            </FieldFlash>
-            {isAllDay ? null : (
-              <FieldFlash bleedY={2} field="time">
-                <DateTimePicker
-                  display="compact"
-                  mode="time"
-                  onChange={(_, picked) =>
-                    picked && setStartTime(timeStringFromPicker(picked, timeZone))
-                  }
-                  timeZoneName={timeZone}
-                  value={dateForPicker(date, startTime, timeZone)}
-                />
-              </FieldFlash>
-            )}
-          </View>
-        </View>
-        <View style={styles.pickerRow} testID="event-end">
-          <Text style={styles.label}>Ends</Text>
-          <View style={styles.pickerPair}>
-            <FieldFlash bleedY={2} field="date" testID="event-end-date">
-              <DateTimePicker
-                display="compact"
-                mode="date"
-                onChange={(_, picked) =>
-                  picked && setEndDate(dateStringFromPicker(picked, timeZone))
-                }
-                timeZoneName={timeZone}
-                value={dateForPicker(endDate, undefined, timeZone)}
-              />
-            </FieldFlash>
-            {isAllDay ? null : (
-              <FieldFlash bleedY={2} field="time">
-                <DateTimePicker
-                  display="compact"
-                  mode="time"
-                  onChange={(_, picked) =>
-                    picked && setEndTime(timeStringFromPicker(picked, timeZone))
-                  }
-                  timeZoneName={timeZone}
-                  value={dateForPicker(endDate, endTime, timeZone)}
-                />
-              </FieldFlash>
-            )}
-          </View>
-        </View>
-        {zoneLines ? <ZoneLines lines={zoneLines} textStyle={styles.hint} /> : null}
         {readOnly ? null : <FindTimeFields model={model} />}
+      </Section>
 
-        <Text style={styles.label}>Location</Text>
-        <LocationField model={model} />
-        <LocationMap model={model} />
+      {readOnly ? null : (
+        <Section header="Calendar" tight>
+          {/* Each account named over its calendars, as Calendar's own picker does. */}
+          {groups.flatMap((group) => [
+            <CardCaption key={`caption:${group.label}`}>{group.label}</CardCaption>,
+            ...group.calendars.map((calendar) => {
+              const key = `${calendar.accountId}:${calendar.id}`;
+              return (
+                <CheckRow
+                  checked={key === calendarKey}
+                  // Moving takes the whole series: pick "All" to move one.
+                  disabled={Boolean(existing) && !canMoveCalendar}
+                  key={key}
+                  leading={<ColorDot color={calendar.colorHex} />}
+                  onPress={() => setCalendarKey(key)}
+                  testID="calendar-option"
+                  title={calendar.summary}
+                />
+              );
+            }),
+          ])}
+        </Section>
+      )}
 
-        {canInvite ? (
-          <>
-            <Text style={styles.label}>Invitees</Text>
-            {canRsvp ? (
-              <View style={styles.scopeRow}>
-                {RSVP_OPTIONS.map((option) => (
-                  <Pressable
-                    key={option.value}
-                    onPress={() => void respond(option.value)}
-                    style={[styles.scopeChip, rsvp === option.value && styles.scopeChipActive]}
-                  >
-                    <Text
-                      style={[styles.scopeLabel, rsvp === option.value && styles.scopeLabelActive]}
-                    >
-                      {option.short}
-                    </Text>
-                  </Pressable>
-                ))}
-              </View>
-            ) : null}
-            <InviteeField
-              attendees={attendees}
-              attendeeStatus={attendeeStatus}
-              onAdd={addAttendee}
-              onRemove={removeAttendee}
-            />
-          </>
-        ) : (existing?.attendees ?? []).length > 0 ? (
-          // EventKit cannot write guests: shown as they are, never edited.
-          <View testID="event-guests-read-only">
-            <Text style={styles.label}>Guests</Text>
-            {existing?.attendees?.map((attendee) => (
-              <Text key={attendee.email} style={styles.calendarName}>
-                {attendee.displayName ?? attendee.email}
-              </Text>
-            ))}
-          </View>
-        ) : null}
+      {model.repeatLoaded ? (
+        <RepeatRuleChips anchorDate={date} state={model} testIDPrefix="event-repeat" />
+      ) : null}
 
-        <ReminderChips model={model} />
+      {canInvite ? (
+        <Section header="Invitees" tight>
+          {canRsvp ? (
+            <ChipsRow label="RSVP">
+              {RSVP_OPTIONS.map((option) => (
+                <Chip
+                  key={option.value}
+                  label={option.short}
+                  onPress={() => void respond(option.value)}
+                  selected={rsvp === option.value}
+                />
+              ))}
+            </ChipsRow>
+          ) : null}
+          <InviteeField
+            attendees={attendees}
+            attendeeStatus={attendeeStatus}
+            onAdd={addAttendee}
+            onRemove={removeAttendee}
+          />
+        </Section>
+      ) : guests.length > 0 ? (
+        // EventKit cannot write guests: shown as they are, never edited.
+        <Section header="Guests" testID="event-guests-read-only" tight>
+          {guests.map((attendee) => (
+            <Row key={attendee.email} title={attendee.displayName ?? attendee.email} />
+          ))}
+        </Section>
+      ) : null}
 
-        {/* A read-only calendar shows its notes but offers no empty field. */}
-        {readOnly && !description ? null : (
-          <>
-            <Text style={styles.label}>Notes</Text>
-            <TextInput
-              editable={!readOnly}
-              multiline
-              numberOfLines={3}
-              onChangeText={setDescription}
-              placeholder="Add notes"
-              style={[styles.input, styles.notesInput]}
-              testID="event-notes"
-              value={description}
-            />
-          </>
-        )}
+      <ReminderChips model={model} />
 
-        {existing && !readOnly ? (
-          <Pressable
+      {/* A read-only calendar shows its notes but offers no empty field. */}
+      {readOnly && !description ? null : (
+        <Section header="Notes" tight>
+          <FieldRow
+            editable={!readOnly}
+            multiline
+            onChangeText={setDescription}
+            placeholder="Add notes"
+            testID="event-notes"
+            value={description}
+          />
+        </Section>
+      )}
+
+      {existing && !readOnly ? (
+        <Section tight>
+          <ActionRow
+            disabled={busy}
             onPress={() => void remove()}
-            style={[styles.deleteButton, busy && styles.busy]}
             testID="event-delete"
-          >
-            <Text style={styles.deleteLabel}>Delete Event</Text>
-          </Pressable>
-        ) : null}
-      </>
+            title="Delete Event"
+            tone="destructive"
+          />
+        </Section>
+      ) : null}
     </FormScroll>
   );
 }

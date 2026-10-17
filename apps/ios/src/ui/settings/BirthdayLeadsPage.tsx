@@ -1,5 +1,5 @@
 import { BIRTHDAY_LEAD_DAYS, type BirthdayLeadDays, leadDaysLabel } from '@calendar/core';
-import { CheckRow, Section, SettingsPage } from './GroupedList.tsx';
+import { CheckRow, Section, SettingsPage } from '../GroupedList.tsx';
 import { useNotificationSettings } from './NotificationSettings.tsx';
 
 /**

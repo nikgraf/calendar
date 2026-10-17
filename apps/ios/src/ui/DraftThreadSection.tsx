@@ -177,18 +177,19 @@ const makeStyles = (colors: ThemeColors) =>
       lineHeight: 24,
       paddingHorizontal: 6,
     },
+    // A card on the form's ground, like the field above it.
     chip: {
-      backgroundColor: colors.fill,
-      borderRadius: 8,
-      paddingHorizontal: 10,
-      paddingVertical: 6,
+      backgroundColor: colors.surface,
+      borderRadius: 999,
+      paddingHorizontal: 12,
+      paddingVertical: 7,
     },
     chipChosen: {
       backgroundColor: colors.selection,
     },
     chipLabel: {
       color: colors.text,
-      fontSize: 14,
+      fontSize: 15,
     },
     chipLabelChosen: {
       color: colors['on-selection'],
@@ -232,8 +233,8 @@ const makeStyles = (colors: ThemeColors) =>
       fontSize: 15,
     },
     section: {
-      gap: 6,
-      paddingBottom: 2,
+      gap: 8,
+      paddingBottom: 12,
       paddingHorizontal: 16,
     },
   });
