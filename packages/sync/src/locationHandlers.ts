@@ -8,7 +8,7 @@ import {
   placesResembling,
   regionForTimeZone,
 } from '@calendar/core';
-import { type DeviceSettingsRepo, type EventRepo, LocationGeoRepo } from '@calendar/db';
+import { type DeviceSettingsRepo, EventRepo, LocationGeoRepo } from '@calendar/db';
 import { GeoClient, type GeoPlaceJson } from '@calendar/geo';
 import { Clock, Effect } from 'effect';
 import type { AppleCalendarEvents } from './appleCalendarEvents.ts';
@@ -36,6 +36,16 @@ const LOCATION_CACHE_ROWS = 2000;
 const CANDIDATE_LIMIT = 5;
 /** How far back the user's events say where they are. */
 const REGION_HISTORY_MS = 90 * 24 * 60 * 60 * 1000;
+/**
+ * How long a region hint is reused: the typeahead asks on every pause
+ * in typing, and the hint reads a quarter's events (EventKit too).
+ */
+export const REGION_HINT_TTL_MS = 5 * 60 * 1000;
+/** The hint last computed, per event store (one per app; one per test). */
+const regionHints = new WeakMap<
+  object,
+  { readonly at: number; readonly region: GeoRegion | undefined }
+>();
 
 const clamp = (value: number, min: number, max: number): number =>
   Math.min(Math.max(Number.isFinite(value) ? value : min, min), max);
@@ -58,16 +68,19 @@ export const regionHint: Effect.Effect<
   AppleCalendarEvents | DeviceSettingsRepo | EventRepo
 > = Effect.gen(function* () {
   const now = yield* Clock.currentTimeMillis;
+  const store = yield* EventRepo;
+  const known = regionHints.get(store);
+  if (known && now - known.at < REGION_HINT_TTL_MS) {
+    return known.region;
+  }
   const events = yield* loadEventsInRange(now - REGION_HISTORY_MS, now);
   const points = events
     .filter((event) => event.geo !== undefined && event.status !== 'cancelled')
     .sort((a, b) => b.startUtc - a.startUtc)
     .map((event) => ({ lat: event.geo!.lat, lng: event.geo!.lng }));
-  const history = densestRegion(points);
-  if (history) {
-    return history;
-  }
-  return regionForTimeZone(yield* readPrimaryTimeZone);
+  const region = densestRegion(points) ?? regionForTimeZone(yield* readPrimaryTimeZone);
+  regionHints.set(store, { at: now, region });
+  return region;
 }).pipe(Effect.orElseSucceed(() => undefined));
 
 type LocationMethods =

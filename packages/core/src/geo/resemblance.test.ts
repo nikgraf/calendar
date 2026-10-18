@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vite-plus/test';
 import { koelnerKey } from './phonetic.ts';
 import {
+  CLUSTER_POINT_LIMIT,
   densestRegion,
   distanceMeters,
   HISTORY_REGION_RADIUS_METERS,
@@ -61,6 +62,15 @@ describe('placeMatch', () => {
     expect(placeMatch('Park Avenue', { name: 'Park Ave' })).toBe('exact');
   });
 
+  it('reads a word that is also a property of every object', () => {
+    // Review: "constructor" reached Object's own and threw.
+    expect(placeMatch('Constructor University', { name: 'Constructor University Bremen' })).toBe(
+      'words',
+    );
+    expect(placeMatch('toString', { name: 'Prototype Café' })).toBeUndefined();
+    expect(regionForTimeZone('constructor')).toBeUndefined();
+  });
+
   it('takes a number only as it is', () => {
     // Review: "Wollzeile 5" sounded like Wollzeile 6 and began Wollzeile 50.
     expect(placeMatch('Wollzeile 5', { name: 'Wollzeile 6' })).toBeUndefined();
@@ -106,6 +116,16 @@ describe('regions', () => {
   it('measures distance on the sphere', () => {
     expect(Math.round(distanceMeters(vienna, berlin) / 1000)).toBe(524);
     expect(distanceMeters(vienna, vienna)).toBe(0);
+  });
+
+  it('reads only the first points, the most recent, so the work stays bounded', () => {
+    // Review: thousands of points made every keystroke wait on an O(n²) pass.
+    const far = Array.from({ length: CLUSTER_POINT_LIMIT }, (_, index) => ({
+      lat: 10 + index * 0.001,
+      lng: 10,
+    }));
+    const region = densestRegion([...far, ...Array.from({ length: 50 }, () => vienna)]);
+    expect(region?.lat).toBeCloseTo(10.2, 1);
   });
 
   it('averages longitudes on the circle', () => {

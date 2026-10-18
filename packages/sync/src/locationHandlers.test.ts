@@ -34,6 +34,7 @@ import {
   LOCATION_MISS_TTL_MS,
   LOCATION_REFRESH_AFTER_MS,
   locationHandlers,
+  REGION_HINT_TTL_MS,
   regionHint,
 } from './locationHandlers.ts';
 
@@ -401,6 +402,22 @@ describe('regionHint', () => {
     }).pipe(Effect.provide(setup(client)));
   });
 
+  it.effect('reuses the hint for a while, then reads the events again', () => {
+    // Review: every keystroke read a quarter's events and clustered them.
+    const { client } = makeFakeGeoClient({ places });
+    return Effect.gen(function* () {
+      yield* seedPlaced([placedEvent('vienna', 1, VIENNA)]);
+      expect((yield* regionHint)?.lat).toBeCloseTo(VIENNA.lat, 3);
+      yield* (yield* EventRepo).upsertMany([
+        placedEvent('berlin-1', 0, BERLIN),
+        placedEvent('berlin-2', 0, { lat: 52.5, lng: 13.4 }),
+      ]);
+      expect((yield* regionHint)?.lat).toBeCloseTo(VIENNA.lat, 3);
+      yield* TestClock.adjust(REGION_HINT_TTL_MS + 1);
+      expect((yield* regionHint)?.lat).toBeCloseTo(BERLIN.lat, 1);
+    }).pipe(Effect.provide(setup(client)));
+  });
+
   it.effect('falls back to the primary time zone’s city, else to no hint', () => {
     const { client } = makeFakeGeoClient({ places });
     return Effect.gen(function* () {
@@ -413,6 +430,8 @@ describe('regionHint', () => {
         radiusMeters: TIME_ZONE_REGION_RADIUS_METERS,
       });
       yield* writeTimeZoneSettings({ primary: 'Etc/UTC', zones: [DEVICE_ZONE, 'Etc/UTC'] });
+      // The hint is reused for a while: the new zone counts once it expires.
+      yield* TestClock.adjust(REGION_HINT_TTL_MS + 1);
       expect(yield* regionHint).toBeUndefined();
     }).pipe(Effect.provide(setup(client)));
   });

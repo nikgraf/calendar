@@ -23,22 +23,22 @@ export type PlaceMatch = 'exact' | 'phonetic' | 'words';
  * Street words as MapKit abbreviates them in an address ("66 Mint St"
  * for a typed "66 Mint Street"): both sides read the short form.
  */
-const SHORT_FORMS: Readonly<Record<string, string>> = {
-  avenue: 'ave',
-  boulevard: 'blvd',
-  court: 'ct',
-  drive: 'dr',
-  gasse: 'g',
-  lane: 'ln',
-  place: 'pl',
-  platz: 'pl',
-  road: 'rd',
-  square: 'sq',
-  str: 'str',
-  strasse: 'str',
-  street: 'st',
-  terrace: 'ter',
-};
+const SHORT_FORMS: ReadonlyMap<string, string> = new Map([
+  ['avenue', 'ave'],
+  ['boulevard', 'blvd'],
+  ['court', 'ct'],
+  ['drive', 'dr'],
+  ['gasse', 'g'],
+  ['lane', 'ln'],
+  ['place', 'pl'],
+  ['platz', 'pl'],
+  ['road', 'rd'],
+  ['square', 'sq'],
+  ['str', 'str'],
+  ['strasse', 'str'],
+  ['street', 'st'],
+  ['terrace', 'ter'],
+]);
 
 /** German glues the street word on ("Hauptstraße", "Hauptstr."): the same short form. */
 const GLUED_STREET = /(?:strasse|str)$/;
@@ -48,7 +48,7 @@ const wordsOf = (text: string): ReadonlyArray<string> =>
     .replaceAll('ß', 'ss')
     .split(/[^\p{L}\p{N}]+/u)
     .filter((word) => word !== '')
-    .map((word) => SHORT_FORMS[word] ?? word.replace(GLUED_STREET, 'str'));
+    .map((word) => SHORT_FORMS.get(word) ?? word.replace(GLUED_STREET, 'str'));
 
 const NUMBER = /^\p{N}+$/u;
 
