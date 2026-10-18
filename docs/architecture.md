@@ -51,7 +51,27 @@ refinement (`refine.ts`) is one more bounded prompt — the draft as a
 line of JSON and the change — merged by the same rules with the draft as
 the anchor (an open "at 8" reads next to the draft's own start); the
 model keeps no session, so a turn works the same over every provider
-and the fixture model plays it in its grammar. A phrase that asks for
+and the fixture model plays it in its grammar. Who a phrase or a turn
+invites is a question of its own (`invitees.ts`, `readPeople`), asked
+beside the extraction and only when the words hold an invitation cue
+("invite", "add … as a guest", "lade … ein", "einladen"; "don't
+invite", "remove", "ohne", "ausladen" take a guest off): the code keeps
+a name only in such a cue's guest list — nothing but people, commas and
+list words between them, so "with Sarah", "invite Tom to lunch with
+Sarah", "but not Tom" and an address for another instruction invite no
+one — in the words' own spelling (a misspelled name is matched back by
+its consonants), reads addresses itself (masked before the words are
+read), and cuts the invitation out of the title. A noun is no request
+unless it says for whom ("an invite to Tom", not "the invitation from
+Tom"), and a negation elsewhere in a cue's clause leaves it no opinion. The thread (app-state `draftInvitees.ts`) looks each name
+up through `contactsNamed` — every contact whose folded words the name
+begins (core `nameMatch`), never a typeahead page, so "one person" is
+decided over all of them: a name that is one contact's (the only one by
+that exact name or address, else the only one whose words it says whole
+— "Tom", "T Baker", not "Ann" for Anna) joins the draft's guests; any
+other waits on the draft as a choice — the contacts it might be, or none
+— until the user picks one, lets it go, or a later turn says it again. A
+turn that takes a guest off matches the guests the same way. A phrase that asks for
 free time ("find 90 min for focus next week, mornings", "wann habe ich
 Zeit für …") is routed by code (`slotProposals.ts`, `isFinderPhrase`:
 English and German cues) to the finder prompt instead, so the two

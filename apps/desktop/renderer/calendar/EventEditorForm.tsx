@@ -81,6 +81,7 @@ export function EventEditorForm({ model }: { model: ReturnType<typeof useEventEd
   const endDateFlash = useFieldFlash<HTMLInputElement>('date');
   const startFlash = useFieldFlash<HTMLInputElement>('time');
   const endFlash = useFieldFlash<HTMLInputElement>('time');
+  const guestsFlash = useFieldFlash<HTMLDivElement>('guests');
   const hasGuests = (existing?.attendees ?? []).length > 0;
   // The draft's times in the other zones; null for all-day or before the times build.
   const zoneLines = draftZoneRanges(
@@ -224,7 +225,7 @@ export function EventEditorForm({ model }: { model: ReturnType<typeof useEventEd
       {model.repeatLoaded ? <RepeatRuleFields anchorDate={date} state={model} /> : null}
 
       {canInvite ? (
-        <FormSection label="Invitees">
+        <FormSection label="Invitees" ref={guestsFlash}>
           {canRsvp ? (
             <SegmentedControl
               className="w-full"
@@ -270,6 +271,14 @@ export function EventEditorForm({ model }: { model: ReturnType<typeof useEventEd
                 disabled
                 placeholder="Add guests"
               />
+              {!existing && attendees.length > 0 ? (
+                // Guests the form holds (typed, or said in a phrase) for
+                // another calendar: kept, but not sent from this one.
+                <p className="text-xs text-ink-secondary" data-testid="event-invitees-held">
+                  Not invited from this calendar:{' '}
+                  {attendees.map((attendee) => attendee.displayName ?? attendee.email).join(', ')}
+                </p>
+              ) : null}
               <p className="text-xs text-ink-secondary">
                 {existing
                   ? 'Apple calendars can’t add invitees here — add them in Calendar.'

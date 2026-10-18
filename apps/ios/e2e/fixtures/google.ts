@@ -56,7 +56,7 @@ const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
  * with EXPO_PUBLIC_CALENDAR_GOOGLE=fixture (CI does): one writable
  * calendar for the create-event flow, one task list for the task lane,
  * task-convert and navigation flows, one contact birthday for the
- * birthday flow.
+ * birthday flow, three contacts for the quick-add flow's guests.
  * Served by the in-process fake API; nothing here ever reaches Google.
  */
 export const googleFixture: GoogleFixture = {
@@ -133,6 +133,23 @@ export const googleFixture: GoogleFixture = {
       birthdays: [{ date: birthdayDate() }],
       names: [{ displayName: 'Birthday Fixture' }],
       resourceName: 'people/fixture-birthday',
+    },
+    // The quick-add flow's guests: "Anna Lee" is one contact, "Tom" two.
+    // No address starts with "b", so flow 03's typed "bob@…" gets no row.
+    {
+      emailAddresses: [{ value: 'anna@example.com' }],
+      names: [{ displayName: 'Anna Lee' }],
+      resourceName: 'people/fixture-anna-lee',
+    },
+    {
+      emailAddresses: [{ value: 'tlee@example.com' }],
+      names: [{ displayName: 'Tom Lee' }],
+      resourceName: 'people/fixture-tom-lee',
+    },
+    {
+      emailAddresses: [{ value: 'tom.wright@example.com' }],
+      names: [{ displayName: 'Tom Wright' }],
+      resourceName: 'people/fixture-tom-wright',
     },
   ],
   taskLists: [{ id: 'mock-list', title: 'Mock Tasks' }],

@@ -548,6 +548,14 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   record id, which changes when a source comes or goes and differs per
   device. Accepted: a rename drops the override. Travels in the settings
   document; an import joins by person and never removes one.
+- **Invitees from a phrase** (2026-10-17, #222) — only words that ask for
+  an invitation invite; "with Sarah" never does, since an invite emails
+  them. Who is a people-only second prompt, asked when code sees a cue:
+  in a refinement Apple's model wrote the guest into the title and named
+  no one. A name becomes a guest only when it means one contact, else the
+  user picks or lets it go; the words' spelling wins ("Järg Möller" was
+  returned for "Jörg Müller"). Rejected: a contacts tool for the model,
+  taking the top-ranked contact. Open: pronouns ("invite her"), capture.
 
 ## Google Tasks and Apple Reminders
 

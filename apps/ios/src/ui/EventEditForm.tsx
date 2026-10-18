@@ -275,12 +275,26 @@ export function EventEditForm({
               ))}
             </ChipsRow>
           ) : null}
-          <InviteeField
-            attendees={attendees}
-            attendeeStatus={attendeeStatus}
-            onAdd={addAttendee}
-            onRemove={removeAttendee}
-          />
+          {/* A turn that changed the guests tints their rows, inside the card. */}
+          <FieldFlash bleedX={0} bleedY={0} field="guests" radius={0}>
+            <InviteeField
+              attendees={attendees}
+              attendeeStatus={attendeeStatus}
+              onAdd={addAttendee}
+              onRemove={removeAttendee}
+            />
+          </FieldFlash>
+        </Section>
+      ) : !existing && attendees.length > 0 ? (
+        // Guests the form holds (typed, or said in a phrase) for another
+        // calendar: kept, but not sent from this one — EventKit cannot.
+        <Section header="Invitees" testID="event-invitees-held" tight>
+          <RowSlot>
+            <Text style={styles.hint}>
+              Not invited from this calendar:{' '}
+              {attendees.map((attendee) => attendee.displayName ?? attendee.email).join(', ')}
+            </Text>
+          </RowSlot>
         </Section>
       ) : guests.length > 0 ? (
         // EventKit cannot write guests: shown as they are, never edited.

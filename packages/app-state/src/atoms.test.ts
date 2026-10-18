@@ -51,6 +51,7 @@ const makeStubClient = () => {
     connectAppleCalendar: () => fail('not stubbed'),
     connectContacts: () => fail('not stubbed'),
     connectReminders: () => fail('not stubbed'),
+    contactsNamed: () => Effect.succeed([]),
     convertEventToTask: () => fail('not stubbed'),
     convertTaskToEvent: () => fail('not stubbed'),
     createEvent: () => fail('not stubbed'),

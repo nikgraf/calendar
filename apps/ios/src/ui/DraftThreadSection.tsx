@@ -1,16 +1,19 @@
-import { isAtSlot, type useThreadEditor } from '@calendar/app-state';
+import { choiceLabel, choiceQuestion, isAtSlot, type useThreadEditor } from '@calendar/app-state';
 import { formatSlotLabel } from '@calendar/core';
+import { SymbolView } from 'expo-symbols';
 import { Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { ThreadTurnList } from './ThreadTurnList.tsx';
-import { BOX_FONT_SCALE, type ThemeColors, useStyles } from './theme.ts';
+import { BOX_FONT_SCALE, type ThemeColors, useStyles, useTheme } from './theme.ts';
 
 /**
  * The thread above a new item's form: the turns newest first, two
  * until "+N earlier queries" opens the rest (`ThreadTurnList`, Undo on
  * the newest), a caveat the drafts came with, the free slots a finder
  * phrase offered (the one the form sits in selected; a tap moves the
- * draft), and with several drafts the pager, Remove and "Add all". The
- * same test ids as the desktop's panel.
+ * draft), the names the words invited that need a contact picked (a tap
+ * on one makes it a guest, ✕ lets the name go), and with several drafts
+ * the pager, Remove and "Add all". The same test ids as the desktop's
+ * panel.
  */
 export function DraftThreadSection({
   editor,
@@ -21,6 +24,7 @@ export function DraftThreadSection({
   note?: string | undefined;
 }) {
   const styles = useStyles(makeStyles);
+  const { colors } = useTheme();
   // The sheet's header does not scroll: the turns get at most a third of
   // the screen and scroll inside it, so the form under them stays in reach.
   const { height } = useWindowDimensions();
@@ -28,11 +32,14 @@ export function DraftThreadSection({
     addAll,
     batchError,
     canAddAll,
+    dismissInvitee,
     drafts,
     focused,
     focusedDraft,
+    inviteeChoices,
     liveItem,
     moveToSlot,
+    pickInvitee,
     settled,
     switchFocus,
     thread,
@@ -90,6 +97,63 @@ export function DraftThreadSection({
             );
           })}
         </ScrollView>
+      ) : null}
+      {inviteeChoices.length > 0 ? (
+        <View style={styles.choices} testID="draft-invitee-choices">
+          {inviteeChoices.map((choice, index) => (
+            <View
+              key={choice.name}
+              style={styles.choice}
+              testID={`draft-invitee-choice-${String(index)}`}
+            >
+              <View style={styles.choiceHeader}>
+                <Text style={[styles.note, styles.choiceQuestion]}>{choiceQuestion(choice)}</Text>
+                <Pressable
+                  accessibilityLabel={`Don’t invite ${choice.name}`}
+                  accessibilityRole="button"
+                  disabled={!settled}
+                  hitSlop={8}
+                  onPress={() => dismissInvitee(choice.name)}
+                  style={!settled && styles.disabled}
+                  testID={`draft-invitee-dismiss-${String(index)}`}
+                >
+                  <SymbolView
+                    name="xmark"
+                    size={12}
+                    tintColor={colors['text-secondary']}
+                    weight="semibold"
+                  />
+                </Pressable>
+              </View>
+              {choice.contacts.length > 0 ? (
+                <ScrollView
+                  contentContainerStyle={styles.chips}
+                  horizontal
+                  keyboardShouldPersistTaps="handled"
+                  showsHorizontalScrollIndicator={false}
+                  style={styles.chipScroller}
+                >
+                  {choice.contacts.map((contact, at) => (
+                    <Pressable
+                      accessibilityHint={contact.email}
+                      accessibilityRole="button"
+                      accessibilityState={{ disabled: !settled }}
+                      disabled={!settled}
+                      key={contact.email}
+                      onPress={() => pickInvitee(choice.name, contact)}
+                      style={styles.chip}
+                      testID={`draft-invitee-pick-${String(index)}-${String(at)}`}
+                    >
+                      <Text maxFontSizeMultiplier={BOX_FONT_SCALE} style={styles.chipLabel}>
+                        {choiceLabel(contact, choice)}
+                      </Text>
+                    </Pressable>
+                  ))}
+                </ScrollView>
+              ) : null}
+            </View>
+          ))}
+        </View>
       ) : null}
       {drafts.length > 1 ? (
         <View style={styles.pager} testID="draft-pager">
@@ -202,6 +266,21 @@ const makeStyles = (colors: ThemeColors) =>
     chipScroller: {
       flexGrow: 0,
       flexShrink: 0,
+    },
+    choice: {
+      gap: 4,
+    },
+    choiceHeader: {
+      alignItems: 'center',
+      flexDirection: 'row',
+      gap: 8,
+      justifyContent: 'space-between',
+    },
+    choiceQuestion: {
+      flexShrink: 1,
+    },
+    choices: {
+      gap: 8,
     },
     disabled: {
       opacity: 0.35,

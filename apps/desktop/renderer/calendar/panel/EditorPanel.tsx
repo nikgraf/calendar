@@ -22,6 +22,7 @@ import { IconButton } from '../../ui/IconButton.tsx';
 import { ChevronLeftIcon, ChevronRightIcon, VideoIcon, XIcon } from '../../ui/icons.tsx';
 import { SegmentedControl } from '../../ui/SegmentedControl.tsx';
 import { EventEditorForm } from '../EventEditorForm.tsx';
+import { InviteeChoices } from '../InviteeChoices.tsx';
 import { MoveConfirm } from '../MoveConfirm.tsx';
 import { QuickAddBar } from '../QuickAddBar.tsx';
 import { ReminderEditorForm } from '../ReminderEditorForm.tsx';
@@ -57,7 +58,9 @@ const CHANGE_PLACEHOLDER = 'Change it: "at 8", "Thursday instead", "call it…"'
  * (the draft atoms). A phrase that asks for free time puts the draft in
  * the best free slot and offers the others as a chip row here and as
  * fainter candidate blocks on the grid; a chip or a candidate moves the
- * draft there. The form is the focused draft's view: its edits go back
+ * draft there. People the words invite join the form's invitees when a
+ * contact is theirs alone, else they wait here for a contact to be
+ * picked. The form is the focused draft's view: its edits go back
  * into the thread, and a focus change (the pager, or a click on a block)
  * swaps the form. Save writes the focused draft; with several, "Add all"
  * writes the rest as they are and the focused one through the form. The
@@ -103,15 +106,18 @@ export function EditorPanel({
     applying,
     batchError,
     canAddAll,
+    dismissInvitee,
     drafts,
     eventModel,
     flash,
     focused,
     focusedDraft,
+    inviteeChoices,
     kinds,
     liveItem,
     moveToSlot,
     onPhrase,
+    pickInvitee,
     settled,
     switchFocus,
     taskModel,
@@ -145,7 +151,8 @@ export function EditorPanel({
     !(sourceKind === 'task' && taskModel.readOnly);
   const { noun, verb } = editorTitle({ kind, sourceKind, sourceProvider: task?.provider });
   const title = `${verb} ${noun}`;
-  // What the thread shows under the field's card: a caveat, the free slots, the pager.
+  // What the thread shows under the field's card: a caveat, the free slots,
+  // the names to pick a contact for, the pager.
   const threadNote = seed.thread?.note && drafts.length > 0 ? seed.thread.note : undefined;
   const threadSlots =
     focusedDraft?.slots && focusedDraft.slots.length > 1 && liveItem.kind === 'event'
@@ -214,7 +221,11 @@ export function EditorPanel({
           </QuickAddBar>
         ) : null}
 
-        {threadNote || threadSlots || drafts.length > 1 || batchError ? (
+        {threadNote ||
+        threadSlots ||
+        inviteeChoices.length > 0 ||
+        drafts.length > 1 ||
+        batchError ? (
           <div className="mb-3 flex flex-col gap-2" data-testid="draft-thread">
             {threadNote ? (
               <p className="text-xs text-ink-secondary" data-testid="draft-thread-note">
@@ -245,6 +256,14 @@ export function EditorPanel({
                   })}
                 </div>
               </div>
+            ) : null}
+            {inviteeChoices.length > 0 ? (
+              <InviteeChoices
+                choices={inviteeChoices}
+                disabled={!settled}
+                onDismiss={dismissInvitee}
+                onPick={pickInvitee}
+              />
             ) : null}
             {drafts.length > 1 ? (
               <div className="flex items-center justify-between" data-testid="draft-pager">

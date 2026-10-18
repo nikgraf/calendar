@@ -1,6 +1,7 @@
 import { Temporal } from '@calendar/core';
 import { CAPTURE_TEXT_MARKER, type CaptureItemParse, type CaptureParse } from './capture.ts';
 import { FIND_TIME_PHRASE_MARKER, type FindTimeParse } from './findTime.ts';
+import { PEOPLE_SENTENCE_MARKER, type PeopleParse } from './invitees.ts';
 import type { LanguageModel } from './model.ts';
 import {
   SEARCH_QUERY_CURRENT_MARKER,
@@ -34,12 +35,24 @@ import { TextRecognitionError, type ImageInput, type TextRecognizer } from './te
  * kind` — days as `+N`, `-N` or ISO, a single day alone, people and
  * calendars comma-separated, kind `tasks` or `events` — applied to the
  * current filters, an empty part unchanged; a sentence without a bar
- * replaces the words only.
+ * replaces the words only. Asked who a phrase invites, it names the
+ * people after "invite", "uninvite" or "remove" — to the end, split at
+ * commas and "and" (`… tomorrow at 1, invite Tom Baker and Anna`); the
+ * code decides from the words what they are.
  */
 
 const TODAY = /Today is (\d{4}-\d{2}-\d{2})/;
 const RELATIVE_DAY = /^\+(\d+)$/;
 const TIME_RANGE = /^(\d{2}:\d{2})(?:-(\d{2}:\d{2}))?$/;
+
+/** The tail that names people: what a model would read as the people to invite or take off. */
+const PEOPLE_TAIL = /\b(?:(?:un)?invite|remove)\s+(.+)$/i;
+
+const peopleOf = (phrase: string): ReadonlyArray<string> =>
+  (PEOPLE_TAIL.exec(phrase)?.[1] ?? '')
+    .split(/\s*,\s*|\s+and\s+/)
+    .map((name) => name.trim())
+    .filter((name) => name !== '');
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null;
@@ -129,6 +142,12 @@ const searchTurn = (
 export const makeFixtureLanguageModel = (): LanguageModel => ({
   generateJson: async ({ jsonSchema, prompt }) => {
     const properties = isRecord(jsonSchema) ? jsonSchema.properties : undefined;
+    // Who a phrase invites: the one question without a reference date.
+    if (isRecord(properties) && 'people' in properties && !('terms' in properties)) {
+      return {
+        people: peopleOf(textAfter(prompt, PEOPLE_SENTENCE_MARKER).trim()),
+      } satisfies PeopleParse;
+    }
     const referenceDate = referenceDateOf(prompt);
     if (isRecord(properties) && 'events' in properties) {
       const events = textAfter(prompt, CAPTURE_TEXT_MARKER)
