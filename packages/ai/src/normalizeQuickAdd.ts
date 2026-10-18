@@ -116,18 +116,20 @@ const PLACE_CUE =
  * at 9", "Board review" for "Board review Thursday 2pm") it counts only
  * after a place cue in the phrase ("Meeting at the office"). The title
  * over again is never a place. Without a phrase (capture) the model's
- * place stands, as before.
+ * place stands as it is, as it always did — a reservation titled and
+ * placed "Figlmüller" keeps its place.
  */
 export const placeOf = (
   location: string | undefined,
   title: string,
   phrase?: string,
 ): string | undefined => {
-  if (location === undefined || fold(location) === fold(title)) {
-    return undefined;
-  }
-  if (phrase === undefined) {
+  // Capture (no phrase) keeps the model's place as it is, as it always did.
+  if (location === undefined || phrase === undefined) {
     return location;
+  }
+  if (fold(location) === fold(title)) {
+    return undefined;
   }
   const words = fold(phrase);
   const place = fold(location);

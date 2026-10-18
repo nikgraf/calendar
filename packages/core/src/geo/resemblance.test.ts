@@ -47,6 +47,30 @@ describe('placeMatch', () => {
     expect(placeMatch('Blachutta', { name: 'Plachutta Wollzeile' })).toBe('phonetic');
   });
 
+  it('reads street words as MapKit abbreviates them', () => {
+    // Review: "66 Mint Street" was no match for "66 Mint St" and cached as a miss.
+    expect(
+      placeMatch('66 Mint Street, San Francisco', {
+        address: '66 Mint St, San Francisco, CA',
+        name: '66 Mint St',
+      }),
+    ).toBe('words');
+    expect(
+      placeMatch('Hauptstraße 12', { address: 'Hauptstr. 12, 1010 Wien', name: 'Hauptstr. 12' }),
+    ).toBe('exact');
+    expect(placeMatch('Park Avenue', { name: 'Park Ave' })).toBe('exact');
+  });
+
+  it('takes a number only as it is', () => {
+    // Review: "Wollzeile 5" sounded like Wollzeile 6 and began Wollzeile 50.
+    expect(placeMatch('Wollzeile 5', { name: 'Wollzeile 6' })).toBeUndefined();
+    expect(placeMatch('Wollzeile 5', { name: 'Wollzeile 50' })).toBeUndefined();
+    expect(
+      placeMatch('Wollzeile 5', { address: 'Wollzeile 5, 1010 Vienna', name: 'Figlmüller' }),
+    ).toBe('words');
+    expect(placeMatch('Wolzeile 5', { name: 'Wollzeile 5' })).toBe('phonetic');
+  });
+
   it('rejects what a search found for a text that names no such place', () => {
     // Observed: "Room 4" → a street in Weidling, "Cafe Zentral" → an ice cream shop.
     expect(
@@ -82,6 +106,16 @@ describe('regions', () => {
   it('measures distance on the sphere', () => {
     expect(Math.round(distanceMeters(vienna, berlin) / 1000)).toBe(524);
     expect(distanceMeters(vienna, vienna)).toBe(0);
+  });
+
+  it('averages longitudes on the circle', () => {
+    // Review: two points 11 km apart across the antimeridian averaged to 0°.
+    const region = densestRegion([
+      { lat: -16.78, lng: 179.95 },
+      { lat: -16.8, lng: -179.95 },
+    ]);
+    expect(Math.abs(region!.lng)).toBeCloseTo(180, 3);
+    expect(region!.lat).toBeCloseTo(-16.79, 5);
   });
 
   it('centers on the densest cluster, the first point winning a tie', () => {

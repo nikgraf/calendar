@@ -15,6 +15,7 @@ import {
   reposLayer,
   runMigrations,
 } from '@calendar/db';
+import { makeFakeAppleCalendarClient } from '@calendar/apple-calendar';
 import {
   GeoClient,
   type GeoClientShape,
@@ -27,6 +28,7 @@ import { Effect, Layer } from 'effect';
 import { TestClock } from 'effect/testing';
 import { layer as reactivityLayer } from 'effect/reactivity/Reactivity';
 import { describe } from 'vite-plus/test';
+import { appleCalendarServicesLayer } from './appleCalendarEvents.ts';
 import { writeTimeZoneSettings } from './deviceSettings.ts';
 import {
   LOCATION_MISS_TTL_MS,
@@ -48,7 +50,8 @@ const places = [
 const setup = (client: GeoClientShape) =>
   Layer.mergeAll(
     Layer.succeed(GeoClient, client),
-    reposLayer.pipe(
+    appleCalendarServicesLayer(makeFakeAppleCalendarClient().client).pipe(
+      Layer.provideMerge(reposLayer),
       Layer.provideMerge(Layer.effectDiscard(runMigrations)),
       Layer.provideMerge(SqliteClient.layer({ filename: ':memory:' })),
       Layer.provideMerge(reactivityLayer),
@@ -377,6 +380,26 @@ describe('regionHint', () => {
       }).pipe(Effect.provide(setup(client)));
     },
   );
+
+  it.effect('counts the occurrences that were, not a series once or a future override', () => {
+    // Review: a daily Vienna series with tomorrow's Berlin override chose Berlin.
+    const { client } = makeFakeGeoClient({ places });
+    return Effect.gen(function* () {
+      const series = placedEvent('series', 30, VIENNA);
+      yield* seedPlaced([
+        new EventRecord({ ...series, recurrence: ['RRULE:FREQ=DAILY'] }),
+        new EventRecord({
+          ...placedEvent('series_tomorrow', -1, BERLIN),
+          originalStartUtc: DAY_MS,
+          recurringEventId: 'series',
+        }),
+        new EventRecord({ ...placedEvent('gone', 2, BERLIN), status: 'cancelled' }),
+      ]);
+      const region = yield* regionHint;
+      expect(region?.lat).toBeCloseTo(VIENNA.lat, 3);
+      expect(region?.lng).toBeCloseTo(VIENNA.lng, 3);
+    }).pipe(Effect.provide(setup(client)));
+  });
 
   it.effect('falls back to the primary time zone’s city, else to no hint', () => {
     const { client } = makeFakeGeoClient({ places });

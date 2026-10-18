@@ -55,9 +55,13 @@ export const densestRegion = (
   if (best === undefined) {
     return undefined;
   }
+  // Longitudes average on the circle: a cluster across the antimeridian
+  // (179.95° and −179.95°) is at 180°, not at 0°.
+  const x = best.reduce((sum, point) => sum + Math.cos(toRadians(point.lng)), 0);
+  const y = best.reduce((sum, point) => sum + Math.sin(toRadians(point.lng)), 0);
   return {
     lat: best.reduce((sum, point) => sum + point.lat, 0) / best.length,
-    lng: best.reduce((sum, point) => sum + point.lng, 0) / best.length,
+    lng: (Math.atan2(y, x) * 180) / Math.PI,
     radiusMeters,
   };
 };

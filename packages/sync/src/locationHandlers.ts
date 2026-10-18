@@ -8,10 +8,12 @@ import {
   placesResembling,
   regionForTimeZone,
 } from '@calendar/core';
-import { type DeviceSettingsRepo, EventRepo, LocationGeoRepo } from '@calendar/db';
+import { type DeviceSettingsRepo, type EventRepo, LocationGeoRepo } from '@calendar/db';
 import { GeoClient, type GeoPlaceJson } from '@calendar/geo';
 import { Clock, Effect } from 'effect';
+import type { AppleCalendarEvents } from './appleCalendarEvents.ts';
 import { readPrimaryTimeZone } from './deviceSettings.ts';
+import { loadEventsInRange } from './eventsInRange.ts';
 
 /** Typeahead only kicks in once the text can narrow anything down. */
 const MIN_SEARCH_LENGTH = 3;
@@ -43,20 +45,22 @@ const toGeo = (place: GeoPlaceJson, location: string): GeoLocation =>
 
 /**
  * Where to look first: around the densest cluster of the coordinates on
- * the user's events of the last 90 days (the most recent first, so a
- * tie goes to where they were last), else the city of the primary time
- * zone, else nowhere in particular. A hint for MapKit, never a filter,
- * and never a location permission.
+ * the user's events of the last 90 days — the occurrences that were
+ * (`loadEventsInRange`: series expanded, cancellations out, Apple
+ * events read through), the most recent first, so a tie goes to where
+ * they were last — else the city of the primary time zone, else
+ * nowhere in particular. A hint for MapKit, never a filter, and never a
+ * location permission.
  */
 export const regionHint: Effect.Effect<
   GeoRegion | undefined,
   never,
-  DeviceSettingsRepo | EventRepo
+  AppleCalendarEvents | DeviceSettingsRepo | EventRepo
 > = Effect.gen(function* () {
   const now = yield* Clock.currentTimeMillis;
-  const window = yield* (yield* EventRepo).getWindow(now - REGION_HISTORY_MS, now);
-  const points = [...window.singles, ...window.overrides, ...window.masters]
-    .filter((event) => event.geo !== undefined)
+  const events = yield* loadEventsInRange(now - REGION_HISTORY_MS, now);
+  const points = events
+    .filter((event) => event.geo !== undefined && event.status !== 'cancelled')
     .sort((a, b) => b.startUtc - a.startUtc)
     .map((event) => ({ lat: event.geo!.lat, lng: event.geo!.lng }));
   const history = densestRegion(points);
@@ -81,7 +85,9 @@ type LocationMethods =
  * degrades to "no suggestions, no map" rather than an error.
  */
 export const locationHandlers: Pick<
-  BackendHandlers<DeviceSettingsRepo | EventRepo | GeoClient | LocationGeoRepo>,
+  BackendHandlers<
+    AppleCalendarEvents | DeviceSettingsRepo | EventRepo | GeoClient | LocationGeoRepo
+  >,
   LocationMethods
 > = {
   clearLocationCache: () => Effect.flatMap(LocationGeoRepo, (cache) => cache.clear()),

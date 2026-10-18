@@ -583,6 +583,15 @@ describe('parseQuickAdd invitees', () => {
     expect(model.prompts[2]).toContain('Sentence: Lunch at 1, invite Sarah');
   });
 
+  it('keeps a capture’s place as it is, even the title over again', () => {
+    // Review: a captured reservation titled and placed "Figlmüller" lost its place.
+    const result = normalizeQuickAdd(
+      { location: 'Figlmüller', startTime: '19:00', title: 'Figlmüller' },
+      CONTEXT,
+    );
+    expect(result).toMatchObject({ kind: 'parsed', prefill: { location: 'Figlmüller' } });
+  });
+
   it('leaves a capture (no phrase) without invitees', () => {
     const result = normalizeQuickAdd(
       { startTime: '10:00', title: 'Review, invite Tom' },
