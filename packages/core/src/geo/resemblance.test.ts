@@ -60,6 +60,17 @@ describe('placeMatch', () => {
       placeMatch('Hauptstraße 12', { address: 'Hauptstr. 12, 1010 Wien', name: 'Hauptstr. 12' }),
     ).toBe('exact');
     expect(placeMatch('Park Avenue', { name: 'Park Ave' })).toBe('exact');
+    // Review: "Parkway" and "Highway" were missing, and a good geocode cached as a miss.
+    expect(
+      placeMatch('1600 Amphitheatre Parkway', {
+        address: '1600 Amphitheatre Pkwy, Mountain View, CA',
+        name: '1600 Amphitheatre Pkwy',
+      }),
+    ).toBe('exact');
+    expect(placeMatch('Pacific Coast Highway', { name: 'Pacific Coast Hwy' })).toBe('exact');
+    expect(placeMatch("Saint Stephen's Cathedral", { name: "St. Stephen's Cathedral" })).toBe(
+      'exact',
+    );
   });
 
   it('reads a word that is also a property of every object', () => {
@@ -79,6 +90,10 @@ describe('placeMatch', () => {
       placeMatch('Wollzeile 5', { address: 'Wollzeile 5, 1010 Vienna', name: 'Figlmüller' }),
     ).toBe('words');
     expect(placeMatch('Wolzeile 5', { name: 'Wollzeile 5' })).toBe('phonetic');
+    // Review: a letter on the number ("12a") slipped past the guard.
+    expect(placeMatch('Hauptstraße 12a', { name: 'Hauptstraße 13a' })).toBeUndefined();
+    expect(placeMatch('Hauptstraße 12a', { name: 'Hauptstraße 12' })).toBeUndefined();
+    expect(placeMatch('Hauptstrasse 12a', { name: 'Hauptstraße 12a' })).toBe('exact');
   });
 
   it('rejects what a search found for a text that names no such place', () => {

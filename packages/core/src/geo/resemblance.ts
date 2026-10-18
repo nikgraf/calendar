@@ -24,20 +24,36 @@ export type PlaceMatch = 'exact' | 'phonetic' | 'words';
  * for a typed "66 Mint Street"): both sides read the short form.
  */
 const SHORT_FORMS: ReadonlyMap<string, string> = new Map([
+  ['apartment', 'apt'],
   ['avenue', 'ave'],
   ['boulevard', 'blvd'],
+  ['building', 'bldg'],
+  ['center', 'ctr'],
+  ['centre', 'ctr'],
+  ['circle', 'cir'],
   ['court', 'ct'],
   ['drive', 'dr'],
+  ['expressway', 'expy'],
+  ['floor', 'fl'],
+  ['freeway', 'fwy'],
   ['gasse', 'g'],
+  ['highway', 'hwy'],
   ['lane', 'ln'],
+  ['mount', 'mt'],
+  ['parkway', 'pkwy'],
   ['place', 'pl'],
   ['platz', 'pl'],
+  ['plaza', 'plz'],
   ['road', 'rd'],
+  ['saint', 'st'],
   ['square', 'sq'],
   ['str', 'str'],
   ['strasse', 'str'],
   ['street', 'st'],
+  ['suite', 'ste'],
   ['terrace', 'ter'],
+  ['trail', 'trl'],
+  ['turnpike', 'tpke'],
 ]);
 
 /** German glues the street word on ("Hauptstraße", "Hauptstr."): the same short form. */
@@ -50,7 +66,8 @@ const wordsOf = (text: string): ReadonlyArray<string> =>
     .filter((word) => word !== '')
     .map((word) => SHORT_FORMS.get(word) ?? word.replace(GLUED_STREET, 'str'));
 
-const NUMBER = /^\p{N}+$/u;
+/** A token with a digit in it names a building or a floor ("5", "12a", "3b"): it must be there as it is. */
+const NUMBERED = /\p{N}/u;
 
 /**
  * How a place resembles a text, best first: `exact` — its name is the
@@ -70,12 +87,13 @@ export const placeMatch = (text: string, place: PlaceLike): PlaceMatch | undefin
     return 'exact';
   }
   // A number names a building: it must be there as it is ("Wollzeile 5"
-  // is neither Wollzeile 6 nor Wollzeile 50), whatever the words do.
-  const numbers = said.filter((word) => NUMBER.test(word));
+  // is neither Wollzeile 6 nor Wollzeile 50, "12a" not 13a), whatever
+  // the words do.
+  const numbers = said.filter((word) => NUMBERED.test(word));
   if (!numbers.every((number) => own.includes(number))) {
     return undefined;
   }
-  if (said.every((word) => NUMBER.test(word) || own.some((part) => part.startsWith(word)))) {
+  if (said.every((word) => NUMBERED.test(word) || own.some((part) => part.startsWith(word)))) {
     return 'words';
   }
   const key = koelnerKey(said.join(' '));
