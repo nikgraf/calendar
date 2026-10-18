@@ -11,10 +11,17 @@ describe('makeGeoClient', () => {
       return Promise.resolve(
         method === 'geo.search'
           ? { results: [{ subtitle: 'Wien', title: 'Naschmarkt' }] }
-          : { place: { lat: 48.2, lng: 16.36, name: 'Naschmarkt' } },
+          : {
+              place: { lat: 48.2, lng: 16.36, name: 'Naschmarkt' },
+              places: [
+                { lat: 48.2, lng: 16.36, name: 'Naschmarkt' },
+                { lat: 48.19, lng: 16.36, name: 'Naschmarkt Deli' },
+              ],
+            },
       );
     });
-    expect(await Effect.runPromise(client.search({ limit: 3, query: 'nasch' }))).toEqual([
+    const region = { lat: 48.2, lng: 16.4, radiusMeters: 50_000 };
+    expect(await Effect.runPromise(client.search({ limit: 3, query: 'nasch', region }))).toEqual([
       { subtitle: 'Wien', title: 'Naschmarkt' },
     ]);
     expect(
@@ -24,14 +31,29 @@ describe('makeGeoClient', () => {
           suggestion: { subtitle: 'Wien', title: 'Naschmarkt' },
         }),
       ),
-    ).toEqual({ lat: 48.2, lng: 16.36, name: 'Naschmarkt' });
+    ).toEqual([
+      { lat: 48.2, lng: 16.36, name: 'Naschmarkt' },
+      { lat: 48.19, lng: 16.36, name: 'Naschmarkt Deli' },
+    ]);
+    // Only what is set goes on the wire.
     expect(calls).toEqual([
-      ['geo.search', { limit: 3, query: 'nasch' }],
+      ['geo.search', { limit: 3, query: 'nasch', region }],
       [
         'geo.resolve',
         { query: 'Naschmarkt, Wien', suggestion: { subtitle: 'Wien', title: 'Naschmarkt' } },
       ],
     ]);
+  });
+
+  it('reads the one place of a native side from before `places`', async () => {
+    const client = makeGeoClient(() =>
+      Promise.resolve({ place: { lat: 48.2, lng: 16.36, name: 'Naschmarkt' } }),
+    );
+    expect(await Effect.runPromise(client.resolve({ query: 'Naschmarkt' }))).toEqual([
+      { lat: 48.2, lng: 16.36, name: 'Naschmarkt' },
+    ]);
+    const empty = makeGeoClient(() => Promise.resolve({ place: null }));
+    expect(await Effect.runPromise(empty.resolve({ query: 'Atlantis' }))).toEqual([]);
   });
 
   it('maps a missing helper to GeoUnavailableError and other failures to GeoRequestError', async () => {
@@ -84,9 +106,9 @@ describe('makeFakeGeoClient', () => {
       { subtitle: '66 Mint St, San Francisco', title: 'Blue Bottle Coffee' },
     ]);
     expect(await Effect.runPromise(client.resolve({ query: 'lunch at naschmarkt' }))).toMatchObject(
-      { lat: 48.2, name: 'Naschmarkt' },
+      [{ lat: 48.2, name: 'Naschmarkt' }],
     );
-    expect(await Effect.runPromise(client.resolve({ query: 'Atlantis' }))).toBeNull();
+    expect(await Effect.runPromise(client.resolve({ query: 'Atlantis' }))).toEqual([]);
     expect(
       await Effect.runPromise(
         client.snapshot({ appearance: 'light', height: 1, lat: 0, lng: 0, scale: 1, width: 1 }),

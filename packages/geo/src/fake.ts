@@ -1,4 +1,4 @@
-import type { PlaceSuggestion } from '@calendar/core';
+import type { GeoRegion, PlaceSuggestion } from '@calendar/core';
 import { Effect } from 'effect';
 import type { GeoClientShape } from './client.ts';
 import type { GeoPlaceJson } from './protocol.ts';
@@ -17,6 +17,8 @@ export interface FakeGeoState {
   /** Method log ('search:<query>', 'resolve:<query>', 'snapshot'). */
   readonly calls: Array<string>;
   places: Array<FakePlace>;
+  /** The region hint each search or resolve was given, in call order. */
+  readonly regions: Array<GeoRegion | undefined>;
 }
 
 /** A valid 1×1 transparent PNG: deterministic stand-in for a map image. */
@@ -35,30 +37,40 @@ const toPlace = (place: FakePlace): GeoPlaceJson => ({
 /**
  * In-memory GeoClient for tests and the e2e fixture: deterministic,
  * offline. `search` is a case-insensitive substring match on title or
- * subtitle; `resolve` matches the picked suggestion exactly, else the
- * first place whose title appears in the query.
+ * subtitle; `resolve` matches the picked suggestion exactly, else every
+ * place whose title appears in the query or whose title the query
+ * begins, in the order given, up to the limit.
  */
 export const makeFakeGeoClient = (
   initial: { readonly places?: ReadonlyArray<FakePlace> } = {},
 ): { readonly client: GeoClientShape; readonly state: FakeGeoState } => {
-  const state: FakeGeoState = { calls: [], places: [...(initial.places ?? [])] };
+  const state: FakeGeoState = { calls: [], places: [...(initial.places ?? [])], regions: [] };
 
   const client: GeoClientShape = {
-    resolve: ({ query, suggestion }) =>
+    resolve: ({ limit, query, region, suggestion }) =>
       Effect.sync(() => {
         state.calls.push(`resolve:${query}`);
+        state.regions.push(region);
         const exact = suggestion
           ? state.places.find(
               (place) => place.title === suggestion.title && place.subtitle === suggestion.subtitle,
             )
           : undefined;
-        const match =
-          exact ?? state.places.find((place) => lower(query).includes(lower(place.title)));
-        return match ? toPlace(match) : null;
+        if (exact) {
+          return [toPlace(exact)];
+        }
+        const needle = lower(query.trim());
+        return state.places
+          .filter(
+            (place) => needle.includes(lower(place.title)) || lower(place.title).startsWith(needle),
+          )
+          .slice(0, limit ?? 5)
+          .map(toPlace);
       }),
-    search: ({ limit, query }) =>
+    search: ({ limit, query, region }) =>
       Effect.sync(() => {
         state.calls.push(`search:${query}`);
+        state.regions.push(region);
         const needle = lower(query.trim());
         const rows: Array<PlaceSuggestion> = state.places
           .filter(

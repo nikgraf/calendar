@@ -1,12 +1,17 @@
 import {
   type BackendHandlers,
+  densestRegion,
   GeoLocation,
+  type GeoRegion,
   isMappableLocation,
   normalizeLocationKey,
+  placesResembling,
+  regionForTimeZone,
 } from '@calendar/core';
-import { LocationGeoRepo } from '@calendar/db';
+import { type DeviceSettingsRepo, EventRepo, LocationGeoRepo } from '@calendar/db';
 import { GeoClient, type GeoPlaceJson } from '@calendar/geo';
 import { Clock, Effect } from 'effect';
+import { readPrimaryTimeZone } from './deviceSettings.ts';
 
 /** Typeahead only kicks in once the text can narrow anything down. */
 const MIN_SEARCH_LENGTH = 3;
@@ -25,6 +30,10 @@ export const LOCATION_MISS_TTL_MS = 3 * 24 * 60 * 60 * 1000;
 export const LOCATION_REFRESH_AFTER_MS = 14 * 24 * 60 * 60 * 1000;
 /** Rows kept in the cache; past this the least recently resolved go. */
 const LOCATION_CACHE_ROWS = 2000;
+/** Matches asked of MapKit for free text: the best guess and a few alternatives. */
+const CANDIDATE_LIMIT = 5;
+/** How far back the user's events say where they are. */
+const REGION_HISTORY_MS = 90 * 24 * 60 * 60 * 1000;
 
 const clamp = (value: number, min: number, max: number): number =>
   Math.min(Math.max(Number.isFinite(value) ? value : min, min), max);
@@ -32,7 +41,37 @@ const clamp = (value: number, min: number, max: number): number =>
 const toGeo = (place: GeoPlaceJson, location: string): GeoLocation =>
   new GeoLocation({ lat: place.lat, lng: place.lng, name: place.name, source: location });
 
-type LocationMethods = 'clearLocationCache' | 'mapSnapshot' | 'resolveLocation' | 'searchPlaces';
+/**
+ * Where to look first: around the densest cluster of the coordinates on
+ * the user's events of the last 90 days (the most recent first, so a
+ * tie goes to where they were last), else the city of the primary time
+ * zone, else nowhere in particular. A hint for MapKit, never a filter,
+ * and never a location permission.
+ */
+export const regionHint: Effect.Effect<
+  GeoRegion | undefined,
+  never,
+  DeviceSettingsRepo | EventRepo
+> = Effect.gen(function* () {
+  const now = yield* Clock.currentTimeMillis;
+  const window = yield* (yield* EventRepo).getWindow(now - REGION_HISTORY_MS, now);
+  const points = [...window.singles, ...window.overrides, ...window.masters]
+    .filter((event) => event.geo !== undefined)
+    .sort((a, b) => b.startUtc - a.startUtc)
+    .map((event) => ({ lat: event.geo!.lat, lng: event.geo!.lng }));
+  const history = densestRegion(points);
+  if (history) {
+    return history;
+  }
+  return regionForTimeZone(yield* readPrimaryTimeZone);
+}).pipe(Effect.orElseSucceed(() => undefined));
+
+type LocationMethods =
+  | 'clearLocationCache'
+  | 'mapSnapshot'
+  | 'placeCandidates'
+  | 'resolveLocation'
+  | 'searchPlaces';
 
 /**
  * Place search, geocoding and map images. On-device only (MapKit through
@@ -42,7 +81,7 @@ type LocationMethods = 'clearLocationCache' | 'mapSnapshot' | 'resolveLocation' 
  * degrades to "no suggestions, no map" rather than an error.
  */
 export const locationHandlers: Pick<
-  BackendHandlers<GeoClient | LocationGeoRepo>,
+  BackendHandlers<DeviceSettingsRepo | EventRepo | GeoClient | LocationGeoRepo>,
   LocationMethods
 > = {
   clearLocationCache: () => Effect.flatMap(LocationGeoRepo, (cache) => cache.clear()),
@@ -61,6 +100,19 @@ export const locationHandlers: Pick<
       return { pngBase64 };
     }),
 
+  placeCandidates: ({ location }) =>
+    Effect.gen(function* () {
+      if (!isMappableLocation(location)) {
+        return [];
+      }
+      const geo = yield* GeoClient;
+      const region = yield* regionHint;
+      const places = yield* geo
+        .resolve({ limit: CANDIDATE_LIMIT, query: location, region })
+        .pipe(Effect.catch(() => Effect.succeed([])));
+      return placesResembling(location, places).map((place) => toGeo(place, location));
+    }),
+
   resolveLocation: ({ location, suggestion }) =>
     Effect.gen(function* () {
       if (!isMappableLocation(location)) {
@@ -71,8 +123,22 @@ export const locationHandlers: Pick<
       const key = normalizeLocationKey(location);
       const now = yield* Clock.currentTimeMillis;
 
-      const lookup = geo.resolve({ query: location, suggestion }).pipe(
-        Effect.map((result) => ({ result })),
+      // A picked suggestion is that exact place. Free text gets MapKit's
+      // best match that resembles it — a search answers something for
+      // almost any text ("Room 4" found a street in Weidling), so a hit
+      // counts only when its name or address says it is what was typed.
+      const lookup = Effect.gen(function* () {
+        const region = suggestion === undefined ? yield* regionHint : undefined;
+        const places = yield* geo.resolve({
+          limit: suggestion === undefined ? CANDIDATE_LIMIT : 1,
+          query: location,
+          region,
+          suggestion,
+        });
+        const result =
+          (suggestion === undefined ? placesResembling(location, places)[0] : places[0]) ?? null;
+        return { result };
+      }).pipe(
         // No bridge or a failed lookup (offline): nothing to show, and
         // nothing cached — a transient failure must not read as "no such place".
         Effect.catch((error) =>
@@ -119,8 +185,9 @@ export const locationHandlers: Pick<
         return [];
       }
       const geo = yield* GeoClient;
+      const region = yield* regionHint;
       return yield* geo
-        .search({ limit: clamp(limit ?? DEFAULT_PLACE_LIMIT, 1, 10), query })
+        .search({ limit: clamp(limit ?? DEFAULT_PLACE_LIMIT, 1, 10), query, region })
         .pipe(Effect.catch(() => Effect.succeed([])));
     }),
 };

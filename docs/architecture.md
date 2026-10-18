@@ -1146,7 +1146,20 @@ gateway carries all of it. Details, limits and the threat model:
   misses for 3 days, hits refreshed in the background after 14 days,
   pruned to 2000 rows, wiped from Settings) for the map on this device
   only; typing never geocodes — the typeahead (`searchPlaces`) and a
-  picked row do. URLs and meeting links are never looked up. Desktop
+  picked row do. URLs and meeting links are never looked up. A search
+  answers something for almost any text ("Room 4" found a street in
+  Weidling), so free text gets a pin only from a match that resembles it
+  (core `placesResembling`: the same name, every word beginning one of
+  the place's name or address words, or the same Kölner Phonetik key as
+  the name's first words — "Cafe Zentral" as dictated is Café Central);
+  a picked suggestion is that exact place. `placeCandidates` returns
+  every resembling match, best first and uncached, for offering a
+  choice. Both lookups and the typeahead carry a region hint
+  (`regionHint`: the densest cluster of coordinates on the last 90 days'
+  events, the most recent first, else the primary time zone's city from
+  a small table), which MapKit takes as a bias, never a filter — and
+  never a location permission. The bridge returns `places` beside
+  `place`; a native side from before it answers one place. Desktop
   draws a static `MKMapSnapshotter` PNG (`mapSnapshot`); iOS a live
   `expo-maps` view (iOS 17+, else only the Open in Maps link).
 - **Device settings and the settings document**: `device_settings` is a

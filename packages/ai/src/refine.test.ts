@@ -120,6 +120,10 @@ describe('normalizeRefine', () => {
     expect(refined({ location: "Luigi's" }, "at Luigi's").location).toBe("Luigi's");
     const placed = { ...DINNER, location: 'Figlmüller' };
     expect(refined({}, 'at 8', placed).location).toBe('Figlmüller');
+    // A place the words do not say — echoed, or made up — leaves the draft's.
+    expect(refined({ location: 'Figlmüller' }, 'at 8', placed).location).toBe('Figlmüller');
+    expect(refined({ location: "Bob's house" }, 'at 8', placed).location).toBe('Figlmüller');
+    expect(refined({ location: 'Teo' }, 'at 8').location).toBeUndefined();
     // Review: an omitted field used to mean "unchanged", so a place could never go.
     expect(refined({}, 'remove the location', placed).location).toBeUndefined();
     expect(refined({ location: 'Figlmüller' }, 'ohne Ort', placed).location).toBeUndefined();

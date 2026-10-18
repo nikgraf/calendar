@@ -87,6 +87,7 @@ const stubHandlers: BackendHandlers = {
   mapSnapshot: notStubbed,
   moveEvent: () => Effect.void,
   moveTask: notStubbed,
+  placeCandidates: () => Effect.succeed([]),
   previewDeleteTask: notStubbed,
   previewEventToTask: notStubbed,
   previewMirror: notStubbed,

@@ -32,6 +32,20 @@ struct PlaceSuggestionDTO: Sendable {
   }
 }
 
+/// Where to look first: a hint to MapKit (a strong match elsewhere still wins).
+struct GeoRegionDTO: Sendable {
+  let lat: Double
+  let lng: Double
+  let radiusMeters: Double
+
+  var coordinateRegion: MKCoordinateRegion? {
+    let center = CLLocationCoordinate2D(latitude: lat, longitude: lng)
+    guard CLLocationCoordinate2DIsValid(center), radiusMeters > 0 else { return nil }
+    return MKCoordinateRegion(
+      center: center, latitudinalMeters: radiusMeters * 2, longitudinalMeters: radiusMeters * 2)
+  }
+}
+
 struct GeoPlaceDTO: Sendable {
   let lat: Double
   let lng: Double
@@ -74,18 +88,26 @@ final class GeoSession: NSObject, MKLocalSearchCompleterDelegate {
   /// Replaced per search: only the rows on screen can be picked, and a pick
   /// that races a newer search falls back to a natural-language lookup.
   private var latest: [String: MKLocalSearchCompletion] = [:]
+  /// The completer's own region before any hint, restored for a search without one.
+  private var defaultRegion = MKCoordinateRegion()
 
   override init() {
     super.init()
+    defaultRegion = completer.region
     completer.delegate = self
     completer.resultTypes = [.address, .pointOfInterest]
   }
 
   // MARK: Typeahead
 
-  func search(query: String, limit: Int) async throws -> [PlaceSuggestionDTO] {
+  func search(query: String, limit: Int, region: GeoRegionDTO?) async throws -> [PlaceSuggestionDTO] {
     let fragment = query.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !fragment.isEmpty else { return [] }
+    // A changed region re-runs the fragment's search like a changed fragment.
+    let hinted = region?.coordinateRegion ?? defaultRegion
+    if !Self.sameRegion(completer.region, hinted) {
+      completer.region = hinted
+    }
     // A newer keystroke supersedes an in-flight query: its caller gets [].
     pending?.resume(returning: false)
     pending = nil
@@ -133,24 +155,36 @@ final class GeoSession: NSObject, MKLocalSearchCompleterDelegate {
 
   // MARK: Geocoding
 
-  /// The first MapKit match for the picked completion, else for the free
-  /// text; nil when nothing matched (not an error).
-  func resolve(query: String, suggestion: PlaceSuggestionDTO?) async throws -> GeoPlaceDTO? {
+  private static func sameRegion(_ a: MKCoordinateRegion, _ b: MKCoordinateRegion) -> Bool {
+    a.center.latitude == b.center.latitude && a.center.longitude == b.center.longitude
+      && a.span.latitudeDelta == b.span.latitudeDelta
+      && a.span.longitudeDelta == b.span.longitudeDelta
+  }
+
+  /// The MapKit matches for the picked completion (one), else for the
+  /// free text, MapKit's best first and at most `limit`; empty when
+  /// nothing matched (not an error).
+  func resolve(query: String, suggestion: PlaceSuggestionDTO?, limit: Int, region: GeoRegionDTO?)
+    async throws -> [GeoPlaceDTO]
+  {
     let request: MKLocalSearch.Request
     if let suggestion, let completion = latest[suggestion.key] {
       request = MKLocalSearch.Request(completion: completion)
     } else {
       let text = query.trimmingCharacters(in: .whitespacesAndNewlines)
-      guard !text.isEmpty else { return nil }
+      guard !text.isEmpty else { return [] }
       request = MKLocalSearch.Request()
       request.naturalLanguageQuery = text
     }
     request.resultTypes = [.address, .pointOfInterest]
+    if let hinted = region?.coordinateRegion {
+      request.region = hinted
+    }
     do {
       let response = try await MKLocalSearch(request: request).start()
-      return response.mapItems.first.map(Self.place(from:))
+      return response.mapItems.prefix(limit).map(Self.place(from:))
     } catch let error as MKError where error.code == .placemarkNotFound {
-      return nil
+      return []
     } catch {
       throw GeoBridgeError.failed(error.localizedDescription)
     }
@@ -271,7 +305,8 @@ enum GeoDispatch {
     case "geo.search":
       let query = try string(params, "query")
       let limit = min(max(Int(number(params["limit"]) ?? 6), 1), 10)
-      let rows = try await GeoSession.shared.search(query: query, limit: limit)
+      let rows = try await GeoSession.shared.search(
+        query: query, limit: limit, region: region(params["region"]))
       return ["results": rows.map { $0.toDictionary() }]
     case "geo.resolve":
       let query = try string(params, "query")
@@ -279,8 +314,13 @@ enum GeoDispatch {
       if let raw = params["suggestion"] as? [String: Any], let title = raw["title"] as? String {
         suggestion = PlaceSuggestionDTO(title: title, subtitle: raw["subtitle"] as? String)
       }
-      let place = try await GeoSession.shared.resolve(query: query, suggestion: suggestion)
-      return ["place": place?.toDictionary() ?? NSNull()]
+      let limit = min(max(Int(number(params["limit"]) ?? 5), 1), 10)
+      let places = try await GeoSession.shared.resolve(
+        query: query, suggestion: suggestion, limit: limit, region: region(params["region"]))
+      return [
+        "place": places.first?.toDictionary() ?? NSNull(),
+        "places": places.map { $0.toDictionary() },
+      ]
     case "geo.snapshot":
       guard let lat = number(params["lat"]), let lng = number(params["lng"]),
         let width = number(params["width"]), let height = number(params["height"]),
@@ -301,6 +341,14 @@ enum GeoDispatch {
       throw GeoBridgeError.badRequest("missing \(key)")
     }
     return value
+  }
+
+  /// A region hint, when the params carry a valid one; anything else is no hint.
+  private static func region(_ value: Any?) -> GeoRegionDTO? {
+    guard let raw = value as? [String: Any], let lat = number(raw["lat"]),
+      let lng = number(raw["lng"]), let radius = number(raw["radiusMeters"])
+    else { return nil }
+    return GeoRegionDTO(lat: lat, lng: lng, radiusMeters: radius)
   }
 
   /// JSON numbers arrive as Int, Double or NSNumber depending on the host.
