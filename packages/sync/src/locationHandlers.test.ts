@@ -24,13 +24,14 @@ import {
 } from '@calendar/geo';
 import { SqliteClient } from '@effect/sql-sqlite-node';
 import { expect, it } from '@effect/vitest';
-import { Effect, Layer } from 'effect';
+import { Effect, Fiber, Layer } from 'effect';
 import { TestClock } from 'effect/testing';
 import { layer as reactivityLayer } from 'effect/reactivity/Reactivity';
 import { describe } from 'vite-plus/test';
 import { appleCalendarServicesLayer } from './appleCalendarEvents.ts';
 import { writeTimeZoneSettings } from './deviceSettings.ts';
 import {
+  CANDIDATE_SEARCH_TIMEOUT,
   LOCATION_MISS_TTL_MS,
   LOCATION_REFRESH_AFTER_MS,
   locationHandlers,
@@ -341,6 +342,36 @@ describe('the resemblance gate', () => {
       }).pipe(Effect.provide(setup(client)));
     },
   );
+
+  it.effect('answers the past places alone when the search stalls', () => {
+    // Review: a stalled MapKit request held the whole draft, title and times too.
+    const stalled: GeoClientShape = {
+      ...makeFakeGeoClient({ places }).client,
+      resolve: () => Effect.never,
+    };
+    return Effect.gen(function* () {
+      yield* seedPlaced([
+        new EventRecord({
+          ...placedEvent('coffee', 20, { lat: 48.21, lng: 16.365 }),
+          geo: new GeoLocation({
+            lat: 48.21,
+            lng: 16.365,
+            name: 'Café Central',
+            source: 'Café Central',
+          }),
+          location: 'Café Central',
+        }),
+      ]);
+      const asked = yield* Effect.forkChild(
+        locationHandlers.placeCandidates({ location: 'Café Central' }),
+      );
+      yield* TestClock.adjust(CANDIDATE_SEARCH_TIMEOUT);
+      const candidates = yield* Fiber.join(asked);
+      expect(candidates.map((c) => [c.source, c.geo.source])).toEqual([
+        ['history', 'Café Central'],
+      ]);
+    }).pipe(Effect.provide(setup(stalled)));
+  });
 
   it.effect('has no candidates without a bridge', () =>
     Effect.gen(function* () {

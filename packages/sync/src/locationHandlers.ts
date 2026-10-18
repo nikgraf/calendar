@@ -44,6 +44,12 @@ const REGION_HISTORY_MS = 90 * 24 * 60 * 60 * 1000;
 /** How far back the user's events say where they have been: the past places a text may name. */
 const PLACE_HISTORY_MS = 365 * 24 * 60 * 60 * 1000;
 /**
+ * How long the candidates wait for MapKit: a draft is being made, and
+ * its title and times must not hang on a search (the helper's own
+ * timeout is 15 s). Past it, the past places answer alone.
+ */
+export const CANDIDATE_SEARCH_TIMEOUT = '3 seconds';
+/**
  * How long a region hint is reused: the typeahead asks on every pause
  * in typing, and the hint reads a quarter's events (EventKit too).
  */
@@ -149,9 +155,10 @@ export const locationHandlers: Pick<
       // name and address, as a picked typeahead row would.
       const geo = yield* GeoClient;
       const region = yield* regionHint;
-      const places = yield* geo
-        .resolve({ limit: CANDIDATE_LIMIT, query: location, region })
-        .pipe(Effect.catch(() => Effect.succeed([])));
+      const places = yield* geo.resolve({ limit: CANDIDATE_LIMIT, query: location, region }).pipe(
+        Effect.timeout(CANDIDATE_SEARCH_TIMEOUT),
+        Effect.catch(() => Effect.succeed([])),
+      );
       const found = placesResembling(location, places).flatMap((place): Array<PlaceCandidate> => {
         const match = placeMatch(location, place);
         if (match === undefined) {

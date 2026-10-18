@@ -13,6 +13,7 @@ import {
   type FreeSlot,
   type GeoLocation,
   draftMinutes,
+  type PlaceCandidate,
   Temporal,
 } from '@calendar/core';
 import { Effect } from 'effect';
@@ -789,6 +790,8 @@ export const firstDraftExtras = (extras: DraftExtras | undefined): DraftExtras |
 
 /** A finder phrase on an all-day draft, or none: the length searched for. */
 const DEFAULT_SLOT_MINUTES = 60;
+/** How long a turn waits for a place's candidates at most; past it the text stays as said. */
+const PLACE_LOOKUP_TIMEOUT = '5 seconds';
 
 /**
  * The thread as a hook: the state above, what a phrase does (`phrase`:
@@ -829,15 +832,20 @@ export const useDraftThread = ({
 
   /**
    * What a turn's location text could mean: its candidates, past places
-   * first (`placeCandidates`). None for no text; a failed lookup is none
-   * found — the text stays as said.
+   * first (`placeCandidates`). None for no text; a failed or overlong
+   * lookup is none found — the text stays as said, and the draft's
+   * title and times never wait on a search (the handler bounds MapKit
+   * itself; this bounds the call as a whole).
    */
   const placesOf = async (location: string | undefined): Promise<PlaceChange | undefined> => {
     if (location === undefined || location.trim() === '') {
       return undefined;
     }
-    const candidates = await Effect.runPromise(backend.placeCandidates({ location })).catch(
-      () => [],
+    const candidates = await Effect.runPromise(
+      backend.placeCandidates({ location }).pipe(
+        Effect.timeout(PLACE_LOOKUP_TIMEOUT),
+        Effect.orElseSucceed((): ReadonlyArray<PlaceCandidate> => []),
+      ),
     );
     return { candidates, text: location };
   };
