@@ -19,7 +19,7 @@ import { desktopLanguageModel } from '../../ai/desktopModel.ts';
 import { backend } from '../../backend.ts';
 import { Button } from '../../ui/Button.tsx';
 import { IconButton } from '../../ui/IconButton.tsx';
-import { ChevronLeftIcon, ChevronRightIcon, VideoIcon } from '../../ui/icons.tsx';
+import { ChevronLeftIcon, ChevronRightIcon, VideoIcon, XIcon } from '../../ui/icons.tsx';
 import { SegmentedControl } from '../../ui/SegmentedControl.tsx';
 import { EventEditorForm } from '../EventEditorForm.tsx';
 import { InviteeChoices } from '../InviteeChoices.tsx';
@@ -39,15 +39,17 @@ const KIND_LABELS: Record<ItemKind, string> = {
 const CHANGE_PLACEHOLDER = 'Change it: "at 8", "Thursday instead", "call it…"';
 
 /**
- * The side panel's editor: for a new item the quick-add field on top,
- * then the Event | Task | Reminder control (only the kinds something can
- * hold), then the form. In create mode the control picks the kind; on an
- * existing item it converts (Save writes the other kind and deletes the
- * source) or moves a to-do to the other provider. Both models stay
- * mounted so a flip keeps state. A question before a lossy switch, move,
- * conversion or delete is a footer below the scrolling body, on screen
- * whatever the scroll position (the kind control that asked may be at
- * the top, Save at the bottom).
+ * The side panel's editor: a header that stays put (the title, Join
+ * meeting, Close), a body that scrolls — for a new item the quick-add
+ * field on top, then the Event | Task | Reminder control (only the kinds
+ * something can hold), then the form — and a footer that stays put with
+ * Delete, Cancel and Save, so the way out and the save are in reach
+ * wherever the form is scrolled to. In create mode the control picks the
+ * kind; on an existing item it converts (Save writes the other kind and
+ * deletes the source) or moves a to-do to the other provider. Both
+ * models stay mounted so a flip keeps state. A question before a lossy
+ * switch, move, conversion or delete sits above the footer's buttons, on
+ * screen whatever the scroll position.
  *
  * A new item is a thread (`useThreadEditor`, shared with the iOS edit
  * sheet): the first phrase makes the draft(s), every later phrase in the
@@ -63,7 +65,8 @@ const CHANGE_PLACEHOLDER = 'Change it: "at 8", "Thursday instead", "call it…"'
  * swaps the form. Save writes the focused draft; with several, "Add all"
  * writes the rest as they are and the focused one through the form. The
  * e2e suite relies on the title text ("New event", "Edit reminder", …),
- * the mode test ids and the `draft-*` test ids.
+ * the Delete/Cancel/Save labels, the mode test ids and the `draft-*`
+ * test ids.
  */
 export function EditorPanel({
   calendars,
@@ -155,6 +158,23 @@ export function EditorPanel({
     focusedDraft?.slots && focusedDraft.slots.length > 1 && liveItem.kind === 'event'
       ? focusedDraft.slots
       : undefined;
+  // The footer's actions act on the form that is showing.
+  const current =
+    mode === 'todo'
+      ? {
+          busy: taskModel.busy,
+          canDelete: Boolean(task) && !taskModel.readOnly,
+          readOnly: taskModel.readOnly,
+          remove: taskModel.remove,
+          save: taskModel.save,
+        }
+      : {
+          busy: eventModel.busy,
+          canDelete: Boolean(eventModel.existing) && !eventModel.readOnly,
+          readOnly: eventModel.readOnly,
+          remove: eventModel.remove,
+          save: eventModel.save,
+        };
 
   return (
     <div
@@ -162,19 +182,22 @@ export function EditorPanel({
       className="flex min-h-0 flex-1 flex-col"
       data-testid="editor"
     >
-      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-4 pt-3 pb-4">
-        <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-lg font-semibold" data-testid="editor-title">
-            {title}
-          </h2>
-          {joinUrl ? (
-            <Button onClick={() => window.open(joinUrl, '_blank', 'noopener')} size="sm">
-              <VideoIcon size={14} />
-              Join meeting
-            </Button>
-          ) : null}
-        </div>
+      <div className="flex items-center gap-2 px-4 pt-3 pb-2">
+        <h2 className="min-w-0 flex-1 truncate text-lg font-semibold" data-testid="editor-title">
+          {title}
+        </h2>
+        {joinUrl ? (
+          <Button onClick={() => window.open(joinUrl, '_blank', 'noopener')} size="sm">
+            <VideoIcon size={14} />
+            Join meeting
+          </Button>
+        ) : null}
+        <IconButton data-testid="editor-close" label="Close" onClick={onClose} size="sm">
+          <XIcon size={14} />
+        </IconButton>
+      </div>
 
+      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-4 pt-1 pb-4">
         {sourceKind === 'new' ? (
           <QuickAddBar
             editKey={userEdits}
@@ -305,7 +328,7 @@ export function EditorPanel({
 
         {showToggle ? (
           <SegmentedControl
-            className="mb-3 w-full"
+            className="mb-4 w-full"
             grow
             label="Kind"
             onChange={(option) => void switchTo(option)}
@@ -333,37 +356,48 @@ export function EditorPanel({
             // plain title/date/notes form. The kind control moves between the
             // providers; the list picker stays within one.
             taskModel.provider === 'apple' ? (
-              <ReminderEditorForm
-                moveConfirmation={moveConfirmation}
-                onClose={onClose}
-                saveDisabled={write.busy}
-                task={task}
-                taskModel={taskModel}
-              />
+              <ReminderEditorForm task={task} taskModel={taskModel} />
             ) : (
-              <TaskEditorForm
-                moveConfirmation={moveConfirmation}
-                onClose={onClose}
-                saveDisabled={write.busy}
-                task={task}
-                taskModel={taskModel}
-              />
+              <TaskEditorForm task={task} taskModel={taskModel} />
             )
           ) : (
-            <EventEditorForm
-              model={eventModel}
-              moveConfirmation={moveConfirmation}
-              onClose={onClose}
-              saveDisabled={write.busy}
-            />
+            <EventEditorForm model={eventModel} />
           )}
         </FieldFlashContext>
       </div>
+
       {moveConfirmation.pending ? (
-        <div className="shrink-0 px-4 pt-2 pb-4">
+        <div className="shrink-0 px-4 pt-2">
           <MoveConfirm moveConfirmation={moveConfirmation} />
         </div>
       ) : null}
+      <div className="flex shrink-0 items-center gap-2 border-t border-hairline px-4 py-3">
+        {current.canDelete ? (
+          <Button
+            aria-busy={current.busy}
+            onClick={() => void current.remove()}
+            size="sm"
+            variant="danger"
+          >
+            Delete
+          </Button>
+        ) : null}
+        <div className="flex-1" />
+        <Button onClick={onClose} size="sm" variant="ghost">
+          Cancel
+        </Button>
+        {current.readOnly ? null : (
+          <Button
+            aria-busy={current.busy}
+            disabled={moveConfirmation.pending !== null || write.busy}
+            onClick={() => void current.save()}
+            size="sm"
+            variant="primary"
+          >
+            Save
+          </Button>
+        )}
+      </div>
     </div>
   );
 }

@@ -66,10 +66,12 @@ const paste = (
   target.dispatchEvent(new ClipboardEvent('paste', { bubbles: true, cancelable: true, clipboardData: data }));
 })()`;
 
+// Both on today: a "+1" event on the week's last day sits in next week,
+// which the editor shows when it focuses it, taking Standup off the grid.
 const MAIL = [
   'Hi all,',
   'Standup | +0 | 09:00-09:30 | Room 4',
-  'Planning | +1 | 14:00-15:00',
+  'Planning | +0 | 14:00-15:00',
   'Thanks!',
 ].join('\n');
 

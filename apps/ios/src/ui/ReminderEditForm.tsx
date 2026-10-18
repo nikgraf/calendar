@@ -5,25 +5,22 @@ import {
 } from '@calendar/app-state';
 import type { TaskRecord } from '@calendar/core';
 import DateTimePicker from '@react-native-community/datetimepicker';
-import { Linking, Pressable, Switch, Text, TextInput, View } from 'react-native';
-import {
-  chip,
-  chipLabel,
-  dateFromParts,
-  useSheetStyles,
-  toDateString,
-  toTimeString,
-} from './editSheetShared.ts';
+import { Linking, Text } from 'react-native';
+import { Chip } from './Chip.tsx';
+import { dateFromParts, useSheetStyles, toDateString, toTimeString } from './editSheetShared.ts';
 import { FieldFlash } from './FlashView.tsx';
 import { FormScroll } from './FormScroll.tsx';
-import { DueLabel, NoDueDate } from './NoDueDate.tsx';
+import { ActionRow, ChipsRow, FieldRow, Row, Section, SwitchRow } from './GroupedList.tsx';
+import { DueRow, NoDueDate } from './NoDueDate.tsx';
 import { RepeatRuleChips } from './RepeatRuleChips.tsx';
 import { TaskListPicker } from './TaskListPicker.tsx';
 
 /**
  * The Reminders half of the task editor — what EventKit can do that Google
  * Tasks cannot: a due time, priority, URL, an alarm, a repeat rule, and
- * moving between lists. Shares the title/list/delete testIDs with the
+ * moving between lists — as grouped cards in Reminders' own order: title
+ * and notes; the list; the due day and time; the repeat rule; priority,
+ * alert and URL; Delete. Shares the title/list/delete testIDs with the
  * Google form so the shell and the Maestro flows stay provider-agnostic.
  */
 export function ReminderEditForm({
@@ -46,95 +43,80 @@ export function ReminderEditForm({
       contentStyle={[styles.content, taskModel.readOnly && styles.readOnly]}
       pointerEvents={taskModel.readOnly ? 'none' : 'auto'}
     >
-      {taskModel.error ? <Text style={styles.error}>{taskModel.error}</Text> : null}
-      {taskModel.readOnly ? (
-        <Text style={styles.readOnlyNote}>This list is read-only in Reminders.</Text>
+      {taskModel.error ? (
+        <Text selectable style={styles.formError}>
+          {taskModel.error}
+        </Text>
       ) : null}
-      <FieldFlash bleedX={0} bleedY={0} field="title" style={styles.inputBox}>
-        <TextInput
-          autoFocus={autoFocusTitle && !task}
-          onChangeText={taskModel.setTitle}
-          placeholder="Title"
-          style={[styles.input, styles.inputInBox]}
-          testID="task-title"
-          value={taskModel.title}
+      {taskModel.readOnly ? (
+        <Text style={styles.formNote}>This list is read-only in Reminders.</Text>
+      ) : null}
+      <Section tight>
+        <FieldFlash bleedX={0} bleedY={0} field="title" radius={0}>
+          <FieldRow
+            autoFocus={autoFocusTitle && !task}
+            onChangeText={taskModel.setTitle}
+            placeholder="Title"
+            testID="task-title"
+            value={taskModel.title}
+          />
+        </FieldFlash>
+        <FieldRow
+          multiline
+          onChangeText={taskModel.setNotes}
+          placeholder="Notes"
+          value={taskModel.notes}
         />
-      </FieldFlash>
+      </Section>
 
       <TaskListPicker disabled={Boolean(task) && !taskModel.canMoveList} taskModel={taskModel} />
 
-      {taskModel.dated ? (
-        <>
-          <FieldFlash field="date" style={styles.pickerRow}>
-            <DueLabel onRemove={taskModel.clearDueDate} />
-            <DateTimePicker
-              display="compact"
-              mode="date"
-              onChange={(_, picked) => picked && taskModel.setDueDate(toDateString(picked))}
-              value={dateFromParts(taskModel.dueDate)}
-            />
-          </FieldFlash>
-          <View style={styles.switchRow}>
-            <Text style={styles.label}>At a time</Text>
-            <Switch
-              onValueChange={taskModel.setTimed}
-              testID="reminder-timed"
-              value={taskModel.timed}
-            />
-          </View>
-          {taskModel.timed ? (
-            <FieldFlash field="time" style={styles.pickerRow} testID="reminder-time">
-              <Text style={styles.label}>Time</Text>
+      <Section tight>
+        {taskModel.dated ? (
+          <FieldFlash bleedX={0} bleedY={0} field="date" radius={0}>
+            <DueRow onRemove={taskModel.clearDueDate}>
               <DateTimePicker
                 display="compact"
-                mode="time"
-                onChange={(_, picked) => picked && taskModel.setDueTime(toTimeString(picked))}
-                value={dateFromParts(taskModel.dueDate, taskModel.dueTime)}
+                mode="date"
+                onChange={(_, picked) => picked && taskModel.setDueDate(toDateString(picked))}
+                value={dateFromParts(taskModel.dueDate)}
               />
-            </FieldFlash>
-          ) : null}
-        </>
-      ) : (
-        <NoDueDate onAdd={taskModel.addDueDate} />
-      )}
-
-      <Text style={styles.label}>Priority</Text>
-      <View style={styles.scopeRow}>
-        {REMINDER_PRIORITY_OPTIONS.map((option) => (
-          <Pressable
-            key={option.label}
-            onPress={() => taskModel.setPriority(option.value)}
-            style={chip(styles, taskModel.priority === option.value)}
-            testID={`reminder-priority-${option.value ?? 'none'}`}
-          >
-            <Text style={chipLabel(styles, taskModel.priority === option.value)}>
-              {option.label}
-            </Text>
-          </Pressable>
-        ))}
-      </View>
-
-      <Text style={styles.label}>Alert</Text>
-      <View style={styles.scopeRow}>
-        {REMINDER_ALARM_OPTIONS.map((option) => (
-          <Pressable
-            key={option.label}
-            onPress={() => taskModel.setAlarm(option.value)}
-            style={chip(styles, taskModel.alarm === option.value)}
-            testID={`reminder-alarm-${option.value ?? 'none'}`}
-          >
-            <Text style={chipLabel(styles, taskModel.alarm === option.value)}>{option.label}</Text>
-          </Pressable>
-        ))}
-      </View>
+            </DueRow>
+          </FieldFlash>
+        ) : (
+          <NoDueDate onAdd={taskModel.addDueDate} />
+        )}
+        {taskModel.dated ? (
+          <SwitchRow
+            onValueChange={taskModel.setTimed}
+            switchTestID="reminder-timed"
+            title="At a time"
+            value={taskModel.timed}
+          />
+        ) : null}
+        {taskModel.dated && taskModel.timed ? (
+          <FieldFlash bleedX={0} bleedY={0} field="time" radius={0} testID="reminder-time">
+            <Row
+              accessory={
+                <DateTimePicker
+                  display="compact"
+                  mode="time"
+                  onChange={(_, picked) => picked && taskModel.setDueTime(toTimeString(picked))}
+                  value={dateFromParts(taskModel.dueDate, taskModel.dueTime)}
+                />
+              }
+              title="Time"
+            />
+          </FieldFlash>
+        ) : null}
+      </Section>
 
       {taskModel.recurrenceUnsupported ? (
-        <>
-          <Text style={styles.label}>Repeat</Text>
-          <Text style={styles.hint}>
-            This reminder repeats on a schedule Solunivo cannot edit — change it in Reminders.
-          </Text>
-        </>
+        <Section
+          footer="This reminder repeats on a schedule Solunivo cannot edit — change it in Reminders."
+          header="Repeat"
+          tight
+        />
       ) : taskModel.dated ? (
         // Only a reminder with a due day repeats.
         <RepeatRuleChips
@@ -144,41 +126,58 @@ export function ReminderEditForm({
         />
       ) : null}
 
-      <Text style={styles.label}>URL</Text>
-      <TextInput
-        autoCapitalize="none"
-        keyboardType="url"
-        onChangeText={taskModel.setUrl}
-        placeholder="https://"
-        style={styles.input}
-        testID="reminder-url"
-        value={taskModel.url}
-      />
-
-      <Text style={styles.label}>Notes</Text>
-      <TextInput
-        multiline
-        numberOfLines={3}
-        onChangeText={taskModel.setNotes}
-        placeholder="Add notes"
-        style={[styles.input, styles.notesInput]}
-        value={taskModel.notes}
-      />
+      <Section tight>
+        <ChipsRow label="Priority">
+          {REMINDER_PRIORITY_OPTIONS.map((option) => (
+            <Chip
+              key={option.label}
+              label={option.label}
+              onPress={() => taskModel.setPriority(option.value)}
+              selected={taskModel.priority === option.value}
+              testID={`reminder-priority-${option.value ?? 'none'}`}
+            />
+          ))}
+        </ChipsRow>
+        <ChipsRow label="Alert">
+          {REMINDER_ALARM_OPTIONS.map((option) => (
+            <Chip
+              key={option.label}
+              label={option.label}
+              onPress={() => taskModel.setAlarm(option.value)}
+              selected={taskModel.alarm === option.value}
+              testID={`reminder-alarm-${option.value ?? 'none'}`}
+            />
+          ))}
+        </ChipsRow>
+        <FieldRow
+          autoCapitalize="none"
+          keyboardType="url"
+          onChangeText={taskModel.setUrl}
+          placeholder="URL"
+          testID="reminder-url"
+          value={taskModel.url}
+        />
+      </Section>
 
       {task ? (
-        <Pressable onPress={() => void Linking.openURL('x-apple-reminderkit://')}>
-          <Text style={styles.webLink}>Open Reminders</Text>
-        </Pressable>
+        <Section tight>
+          <ActionRow
+            onPress={() => void Linking.openURL('x-apple-reminderkit://')}
+            title="Open Reminders"
+          />
+        </Section>
       ) : null}
 
       {task && !taskModel.readOnly ? (
-        <Pressable
-          onPress={() => void taskModel.remove()}
-          style={[styles.deleteButton, taskModel.busy && styles.busy]}
-          testID="task-delete"
-        >
-          <Text style={styles.deleteLabel}>Delete Reminder</Text>
-        </Pressable>
+        <Section tight>
+          <ActionRow
+            disabled={taskModel.busy}
+            onPress={() => void taskModel.remove()}
+            testID="task-delete"
+            title="Delete Reminder"
+            tone="destructive"
+          />
+        </Section>
       ) : null}
     </FormScroll>
   );

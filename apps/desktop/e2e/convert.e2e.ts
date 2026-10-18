@@ -248,8 +248,7 @@ describe('Converting between events and tasks', () => {
 
   it('converts a reminder into an event after confirming what it drops', async () => {
     const { cdp } = app;
-    const chip = await cdp.locate('[data-testid="timed-task-ek-rem-1"]');
-    await cdp.click(chip.x + 40, chip.y);
+    await cdp.clickTaskChip('[data-testid="timed-task-ek-rem-1"]');
     await cdp.waitFor(heading('Edit reminder'));
     await clickTestId('mode-event');
     await cdp.waitFor(heading('Convert to event'));

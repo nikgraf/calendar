@@ -137,8 +137,7 @@ describe('Converting tasks between Google Tasks and Reminders', () => {
 
   /** Opens a task chip's editor by its body, away from the leading checkbox. */
   const open = async (testId: string, heading: string) => {
-    const chip = await app.cdp.locate(`[data-testid="${testId}"]`);
-    await app.cdp.click(chip.x + 40, chip.y);
+    await app.cdp.clickTaskChip(`[data-testid="${testId}"]`);
     await app.cdp.waitFor(`document.body.textContent.includes(${JSON.stringify(heading)})`);
   };
   const clickTestId = async (testId: string) => {

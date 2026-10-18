@@ -11,7 +11,7 @@ import {
   View,
 } from 'react-native';
 import { BOX_FONT_SCALE, groupedGround, type ThemeColors, useStyles, useTheme } from '../theme.ts';
-import { CardRow, Footer, Row } from './GroupedList.tsx';
+import { CardRow, Footer, Row } from '../GroupedList.tsx';
 
 /**
  * The zone catalog in a sheet: the whole list scrolls under a search box

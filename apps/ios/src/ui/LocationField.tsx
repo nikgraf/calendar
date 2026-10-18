@@ -1,17 +1,15 @@
 import { useLocationField, type useEventEditorModel } from '@calendar/app-state';
-import { Pressable, Text, TextInput, View } from 'react-native';
-import { useSheetStyles } from './editSheetShared.ts';
 import { FieldFlash } from './FlashView.tsx';
+import { FieldRow, Row, Rows } from './GroupedList.tsx';
 
 /**
- * The location input with MapKit suggestions under it, rendered as plain
- * pressables like InviteeField (the form's ScrollView keeps taps alive
+ * The location row of the title card, with MapKit's suggestions as rows
+ * under it while it is typed into (the form's ScrollView keeps taps alive
  * with keyboardShouldPersistTaps). Free text is always a valid location;
  * a tapped row writes its label and resolves coordinates for the map.
  * The state machine is useLocationField, shared with the desktop combobox.
  */
 export function LocationField({ model }: { model: ReturnType<typeof useEventEditorModel> }) {
-  const styles = useSheetStyles();
   const { acceptEnter, choose, dismiss, open, setText, stale, suggestions } = useLocationField({
     location: model.location,
     onPick: (suggestion) => void model.pickPlace(suggestion),
@@ -19,9 +17,9 @@ export function LocationField({ model }: { model: ReturnType<typeof useEventEdit
   });
 
   return (
-    <View>
-      <FieldFlash bleedX={0} bleedY={0} field="location" style={styles.inputBox}>
-        <TextInput
+    <Rows>
+      <FieldFlash bleedX={0} bleedY={0} field="location" radius={0}>
+        <FieldRow
           accessibilityLabel="Location"
           autoCorrect={false}
           // Deferred: a tap on a suggestion row blurs the input first, and an
@@ -29,30 +27,24 @@ export function LocationField({ model }: { model: ReturnType<typeof useEventEdit
           onBlur={() => setTimeout(dismiss, 200)}
           onChangeText={setText}
           onSubmitEditing={acceptEnter}
-          placeholder="Add a location"
+          placeholder="Location"
           returnKeyType="done"
-          style={[styles.input, styles.inputInBox]}
           testID="location-input"
           value={model.location}
         />
       </FieldFlash>
-      {open ? (
-        <View style={styles.suggestions}>
-          {suggestions.map((place) => (
-            <Pressable
-              accessibilityRole="button"
+      {open
+        ? suggestions.map((place) => (
+            <Row
               disabled={stale}
               key={`${place.title}\u001f${place.subtitle ?? ''}`}
               onPress={() => choose(place)}
-              style={[styles.suggestion, stale && styles.suggestionStale]}
+              subtitle={place.subtitle}
               testID="location-suggestion"
-            >
-              <Text style={styles.suggestionTitle}>{place.title}</Text>
-              {place.subtitle ? <Text style={styles.suggestionMeta}>{place.subtitle}</Text> : null}
-            </Pressable>
-          ))}
-        </View>
-      ) : null}
-    </View>
+              title={place.title}
+            />
+          ))
+        : null}
+    </Rows>
   );
 }

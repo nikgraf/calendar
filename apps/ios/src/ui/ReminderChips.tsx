@@ -5,18 +5,17 @@ import {
   REMINDER_PRESET_MINUTES,
   reminderLabel,
 } from '@calendar/core';
-import { Pressable, Switch, Text, View } from 'react-native';
-import { useSheetStyles } from './editSheetShared.ts';
+import { Chip } from './Chip.tsx';
+import { ChipsRow, Row, Section, SwitchRow } from './GroupedList.tsx';
 
 /**
- * The event's reminders as toggle chips, one per preset offset (an
- * offset set elsewhere joins the row selected). Google events get a
- * "Calendar default" switch above the chips; Apple events never can,
- * EventKit alarms being explicit. Email reminders are listed, not
- * edited, and ride along on the write-back.
+ * The event's notifications as one card: a "Calendar default" switch
+ * (Google events; Apple events never can, EventKit alarms being
+ * explicit), then one chip per preset offset (an offset set elsewhere
+ * joins the row selected). Email reminders are listed, not edited, and
+ * ride along on the write-back.
  */
 export function ReminderChips({ model }: { model: ReturnType<typeof useEventEditorModel> }) {
-  const styles = useSheetStyles();
   const {
     addReminder,
     calendarDefaultReminders,
@@ -39,12 +38,14 @@ export function ReminderChips({ model }: { model: ReturnType<typeof useEventEdit
   ].sort((a, b) => a - b);
   const useDefault = canUseDefaultReminders && reminders.useDefault;
   const full = reminders.overrides.length >= MAX_REMINDER_OVERRIDES;
-  const defaultCaption =
+  // What the calendar's default stands for, under the switch.
+  const defaultSummary =
     calendarDefaultReminders.length === 0
-      ? 'none'
+      ? 'None'
       : calendarDefaultReminders
-          .map((minutes) => reminderLabel(minutes, isAllDay).toLowerCase())
-          .join(', ');
+          .map((minutes) => reminderLabel(minutes, isAllDay))
+          .join(', ')
+          .replace(/^./, (first) => first.toUpperCase());
 
   const toggle = (minutes: number) => {
     const selected = popups.find(({ override }) => override.minutes === minutes);
@@ -56,46 +57,40 @@ export function ReminderChips({ model }: { model: ReturnType<typeof useEventEdit
   };
 
   return (
-    <View testID="event-reminders">
-      <Text style={styles.label}>Notifications</Text>
+    <Section header="Notifications" testID="event-reminders" tight>
       {canUseDefaultReminders ? (
-        <View style={styles.switchRow}>
-          <Text style={styles.calendarName}>Calendar default ({defaultCaption})</Text>
-          <Switch
-            disabled={readOnly}
-            onValueChange={setUseDefaultReminders}
-            testID="event-reminders-default"
-            value={reminders.useDefault}
-          />
-        </View>
+        <SwitchRow
+          disabled={readOnly}
+          onValueChange={setUseDefaultReminders}
+          subtitle={defaultSummary}
+          switchTestID="event-reminders-default"
+          title="Calendar default"
+          value={reminders.useDefault}
+        />
       ) : null}
       {useDefault ? null : (
-        <View style={styles.scopeRow}>
+        <ChipsRow>
           {offsets.map((minutes) => {
             const selected = popups.some(({ override }) => override.minutes === minutes);
             return (
-              <Pressable
-                accessibilityRole="button"
-                accessibilityState={{ selected }}
+              <Chip
                 disabled={readOnly || (full && !selected)}
                 key={minutes}
+                label={reminderLabel(minutes, isAllDay)}
                 onPress={() => toggle(minutes)}
-                style={[styles.scopeChip, selected && styles.scopeChipActive]}
+                selected={selected}
                 testID={`event-reminder-${String(minutes)}${selected ? '-on' : ''}`}
-              >
-                <Text style={[styles.scopeLabel, selected && styles.scopeLabelActive]}>
-                  {reminderLabel(minutes, isAllDay)}
-                </Text>
-              </Pressable>
+              />
             );
           })}
-        </View>
+        </ChipsRow>
       )}
       {emails.map((override) => (
-        <Text key={`email-${String(override.minutes)}`} style={styles.calendarName}>
-          Email · {reminderLabel(override.minutes, isAllDay)}
-        </Text>
+        <Row
+          key={`email-${String(override.minutes)}`}
+          title={`Email · ${reminderLabel(override.minutes, isAllDay)}`}
+        />
       ))}
-    </View>
+    </Section>
   );
 }

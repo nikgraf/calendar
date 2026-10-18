@@ -22,7 +22,7 @@ import {
   Section,
   SettingsPage,
   SwitchRow,
-} from './GroupedList.tsx';
+} from '../GroupedList.tsx';
 import { MirrorEditSheet } from './MirrorEditSheet.tsx';
 
 /**

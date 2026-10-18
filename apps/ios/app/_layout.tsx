@@ -7,7 +7,7 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { backendClient } from '../src/backend.ts';
 import { EditorHostProvider } from '../src/ui/EditorHost.tsx';
 import { ErrorBoundary } from '../src/ui/ErrorBoundary.tsx';
-import { useTheme } from '../src/ui/theme.ts';
+import { groupedGround, useTheme } from '../src/ui/theme.ts';
 
 const backendAtoms = makeBackendAtoms(backendClient);
 
@@ -38,11 +38,12 @@ export default function RootLayout() {
               <Stack.Screen name="settings" options={{ presentation: 'modal' }} />
               {/* The editor: a form sheet at half height for a new item (the
                   calendar behind stays live and draws the drafts), full for
-                  an existing one; `detent` comes with the push. */}
+                  an existing one; `detent` comes with the push. Its forms
+                  are grouped cards, so the sheet takes the grouped ground. */}
               <Stack.Screen
                 name="editor"
                 options={({ route }) => ({
-                  contentStyle: { backgroundColor: colors.canvas },
+                  contentStyle: { backgroundColor: groupedGround(colors) },
                   presentation: 'formSheet',
                   sheetAllowedDetents: [0.5, 1],
                   sheetExpandsWhenScrolledToEdge: false,

@@ -304,21 +304,24 @@ const makeStyles = (colors: ThemeColors) =>
   StyleSheet.create({
     bar: {
       gap: 6,
+      paddingBottom: 12,
       paddingHorizontal: 16,
-      paddingVertical: 4,
+      paddingTop: 2,
     },
     // Nothing between the field and the turns hanging under it.
     barAttached: {
       paddingBottom: 0,
     },
-    // The field, the microphone and Apply in one box.
+    // The field, the microphone and Apply in one box: a card on the
+    // form's ground, like the cards of the form under it.
     box: {
       alignItems: 'center',
-      backgroundColor: colors.fill,
-      borderRadius: 10,
+      backgroundColor: colors.surface,
+      borderRadius: 14,
       flexDirection: 'row',
       gap: 2,
-      paddingRight: 4,
+      minHeight: 50,
+      paddingRight: 6,
     },
     // The turns hang under it: square at the bottom, no gap.
     boxAttached: {
@@ -327,7 +330,7 @@ const makeStyles = (colors: ThemeColors) =>
     },
     button: {
       backgroundColor: colors.primary,
-      borderRadius: 8,
+      borderRadius: 10,
       paddingHorizontal: 14,
       paddingVertical: 8,
     },
@@ -345,13 +348,13 @@ const makeStyles = (colors: ThemeColors) =>
     input: {
       color: colors.text,
       flex: 1,
-      fontSize: 16,
-      paddingHorizontal: 12,
-      paddingVertical: 12,
+      fontSize: 17,
+      paddingHorizontal: 16,
+      paddingVertical: 13,
     },
     mic: {
       alignItems: 'center',
-      borderRadius: 8,
+      borderRadius: 10,
       height: 36,
       justifyContent: 'center',
       width: 36,

@@ -1,14 +1,18 @@
 import type { useTaskEditorModel } from '@calendar/app-state';
 import type { TaskRecord } from '@calendar/core';
 import DateTimePicker from '@react-native-community/datetimepicker';
-import { Linking, Pressable, Text, TextInput } from 'react-native';
+import { Linking, Text } from 'react-native';
+import { dateFromParts, useSheetStyles, toDateString } from './editSheetShared.ts';
 import { FieldFlash } from './FlashView.tsx';
 import { FormScroll } from './FormScroll.tsx';
-import { dateFromParts, useSheetStyles, toDateString } from './editSheetShared.ts';
-import { DueLabel, NoDueDate } from './NoDueDate.tsx';
+import { ActionRow, FieldRow, Section } from './GroupedList.tsx';
+import { DueRow, NoDueDate } from './NoDueDate.tsx';
 import { TaskListPicker } from './TaskListPicker.tsx';
 
-/** The task half of EventEditSheet (mode === 'task'). */
+/**
+ * The task half of EventEditSheet (mode === 'task'), as grouped cards in
+ * Reminders' own order: title and notes; the due day; the list; Delete.
+ */
 export function TaskEditForm({
   autoFocusTitle = true,
   bare,
@@ -25,58 +29,67 @@ export function TaskEditForm({
   const styles = useSheetStyles();
   return (
     <FormScroll bare={bare} contentStyle={styles.content}>
-      {taskModel.error ? <Text style={styles.error}>{taskModel.error}</Text> : null}
-      <FieldFlash bleedX={0} bleedY={0} field="title" style={styles.inputBox}>
-        <TextInput
-          autoFocus={autoFocusTitle && !task}
-          onChangeText={taskModel.setTitle}
-          placeholder="Title"
-          style={[styles.input, styles.inputInBox]}
-          testID="task-title"
-          value={taskModel.title}
-        />
-      </FieldFlash>
-
-      {taskModel.dated ? (
-        <FieldFlash field="date" style={styles.pickerRow}>
-          <DueLabel onRemove={taskModel.clearDueDate} />
-          <DateTimePicker
-            display="compact"
-            mode="date"
-            onChange={(_, picked) => picked && taskModel.setDueDate(toDateString(picked))}
-            value={dateFromParts(taskModel.dueDate)}
+      {taskModel.error ? (
+        <Text selectable style={styles.formError}>
+          {taskModel.error}
+        </Text>
+      ) : null}
+      <Section tight>
+        <FieldFlash bleedX={0} bleedY={0} field="title" radius={0}>
+          <FieldRow
+            autoFocus={autoFocusTitle && !task}
+            onChangeText={taskModel.setTitle}
+            placeholder="Title"
+            testID="task-title"
+            value={taskModel.title}
           />
         </FieldFlash>
-      ) : (
-        <NoDueDate onAdd={taskModel.addDueDate} />
-      )}
+        <FieldRow
+          multiline
+          onChangeText={taskModel.setNotes}
+          placeholder="Notes"
+          value={taskModel.notes}
+        />
+      </Section>
+
+      <Section tight>
+        {taskModel.dated ? (
+          <FieldFlash bleedX={0} bleedY={0} field="date" radius={0}>
+            <DueRow onRemove={taskModel.clearDueDate}>
+              <DateTimePicker
+                display="compact"
+                mode="date"
+                onChange={(_, picked) => picked && taskModel.setDueDate(toDateString(picked))}
+                value={dateFromParts(taskModel.dueDate)}
+              />
+            </DueRow>
+          </FieldFlash>
+        ) : (
+          <NoDueDate onAdd={taskModel.addDueDate} />
+        )}
+      </Section>
 
       <TaskListPicker disabled={Boolean(task) && !taskModel.canMoveList} taskModel={taskModel} />
 
-      <Text style={styles.label}>Notes</Text>
-      <TextInput
-        multiline
-        numberOfLines={3}
-        onChangeText={taskModel.setNotes}
-        placeholder="Add notes"
-        style={[styles.input, styles.notesInput]}
-        value={taskModel.notes}
-      />
-
       {task?.webViewLink ? (
-        <Pressable onPress={() => void Linking.openURL(task.webViewLink ?? '')}>
-          <Text style={styles.webLink}>Open in Google Tasks</Text>
-        </Pressable>
+        <Section tight>
+          <ActionRow
+            onPress={() => void Linking.openURL(task.webViewLink ?? '')}
+            title="Open in Google Tasks"
+          />
+        </Section>
       ) : null}
 
       {task ? (
-        <Pressable
-          onPress={() => void taskModel.remove()}
-          style={[styles.deleteButton, taskModel.busy && styles.busy]}
-          testID="task-delete"
-        >
-          <Text style={styles.deleteLabel}>Delete Task</Text>
-        </Pressable>
+        <Section tight>
+          <ActionRow
+            disabled={taskModel.busy}
+            onPress={() => void taskModel.remove()}
+            testID="task-delete"
+            title="Delete Task"
+            tone="destructive"
+          />
+        </Section>
       ) : null}
     </FormScroll>
   );

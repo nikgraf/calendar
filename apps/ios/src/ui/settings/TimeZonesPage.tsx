@@ -26,7 +26,7 @@ import {
   SwipeRow,
   Row,
   Tag,
-} from './GroupedList.tsx';
+} from '../GroupedList.tsx';
 import { TimeZonePickerSheet } from './TimeZonePickerSheet.tsx';
 
 /**

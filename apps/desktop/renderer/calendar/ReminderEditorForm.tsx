@@ -2,11 +2,9 @@ import { SegmentedControl } from '../ui/SegmentedControl.tsx';
 import {
   REMINDER_ALARM_OPTIONS,
   REMINDER_PRIORITY_OPTIONS,
-  type useMoveConfirmation,
   type useTaskEditorModel,
 } from '@calendar/app-state';
 import type { TaskRecord } from '@calendar/core';
-import { Button } from '../ui/Button.tsx';
 import { TaskDoneToggle } from './TaskDoneToggle.tsx';
 import { NoDueDate, RemoveDueDate } from './NoDueDate.tsx';
 import { RepeatRuleFields } from './RepeatRuleFields.tsx';
@@ -17,20 +15,14 @@ import { useFieldFlash } from '../ui/useFlash.ts';
 /**
  * The Reminders form — what EventKit can do that Google Tasks cannot: a
  * due time, priority, an alert, a repeat rule, a URL, and moving between
- * lists. Same Title placeholder and Delete/Cancel/Save labels as the
- * Google form so the shell and the e2e suite stay provider-agnostic.
+ * lists. Same Title placeholder as the Google form so the shell and the
+ * e2e suite stay provider-agnostic; the panel's footer carries Delete,
+ * Cancel and Save.
  */
 export function ReminderEditorForm({
-  moveConfirmation,
-  onClose,
-  saveDisabled = false,
   task,
   taskModel,
 }: {
-  moveConfirmation: ReturnType<typeof useMoveConfirmation>;
-  onClose: () => void;
-  /** Another write of the editor's is running (the thread's "Add all"): one at a time. */
-  saveDisabled?: boolean | undefined;
   task: TaskRecord | undefined;
   taskModel: ReturnType<typeof useTaskEditorModel>;
 }) {
@@ -39,7 +31,7 @@ export function ReminderEditorForm({
   const dateFlash = useFieldFlash<HTMLInputElement>('date');
   const timeFlash = useFieldFlash<HTMLInputElement>('time');
   return (
-    <fieldset className="flex flex-col gap-3" disabled={taskModel.readOnly}>
+    <fieldset className="flex flex-col gap-4" disabled={taskModel.readOnly}>
       {taskModel.error ? (
         <p className="select-text rounded-control bg-fill p-2 text-sm text-danger">
           {taskModel.error}
@@ -53,15 +45,17 @@ export function ReminderEditorForm({
           This list is read-only in Reminders.
         </p>
       ) : null}
-      <input
-        autoFocus={!task}
-        className={FIELD_CLASS}
-        onChange={(input) => taskModel.setTitle(input.target.value)}
-        placeholder="Title"
-        ref={titleFlash}
-        value={taskModel.title}
-      />
-      {task ? <TaskDoneToggle task={task} /> : null}
+      <div className="flex flex-col gap-2">
+        <input
+          autoFocus={!task}
+          className={`${FIELD_CLASS} py-2 text-base`}
+          onChange={(input) => taskModel.setTitle(input.target.value)}
+          placeholder="Title"
+          ref={titleFlash}
+          value={taskModel.title}
+        />
+        {task ? <TaskDoneToggle task={task} /> : null}
+      </div>
       <TaskListSelect disabled={Boolean(task) && !taskModel.canMoveList} taskModel={taskModel} />
       {taskModel.dated ? (
         <div className="flex gap-3">
@@ -170,36 +164,6 @@ export function ReminderEditorForm({
           value={taskModel.notes}
         />
       </label>
-      <div className="mt-2 flex items-center justify-between">
-        {task && !taskModel.readOnly ? (
-          <Button
-            aria-busy={taskModel.busy}
-            onClick={() => void taskModel.remove()}
-            size="sm"
-            variant="danger"
-          >
-            Delete
-          </Button>
-        ) : (
-          <span />
-        )}
-        <div className="flex gap-2">
-          <Button onClick={onClose} size="sm" variant="ghost">
-            Cancel
-          </Button>
-          {taskModel.readOnly ? null : (
-            <Button
-              aria-busy={taskModel.busy}
-              disabled={moveConfirmation.pending !== null || saveDisabled}
-              onClick={() => void taskModel.save()}
-              size="sm"
-              variant="primary"
-            >
-              Save
-            </Button>
-          )}
-        </div>
-      </div>
     </fieldset>
   );
 }

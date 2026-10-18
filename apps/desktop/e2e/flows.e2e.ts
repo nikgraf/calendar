@@ -1264,17 +1264,14 @@ describe('calendar desktop e2e', () => {
       expect(ops.some((op) => op.kind === 'createTask')).toBe(true);
 
       // Chip body opens task edit; rename.
-      const chip = await cdp.locate('[title="Water plants"]');
-      // Click the body, away from the leading checkbox.
-      await cdp.click(chip.x + 40, chip.y);
+      await cdp.clickTaskChip('[title="Water plants"]');
       await cdp.waitFor(`document.body.textContent.includes('Edit task')`);
       await setEditorTitle('Water the plants');
       await cdp.clickButtonWithText('Save');
       await cdp.waitFor(`!!document.querySelector('[title="Water the plants"]')`);
 
       // Delete from the same sheet.
-      const renamed = await cdp.locate('[title="Water the plants"]');
-      await cdp.click(renamed.x + 40, renamed.y);
+      await cdp.clickTaskChip('[title="Water the plants"]');
       await cdp.waitFor(`document.body.textContent.includes('Edit task')`);
       await cdp.clickButtonWithText('Delete');
       await cdp.confirmDelete();
@@ -1321,7 +1318,7 @@ describe('calendar desktop e2e', () => {
 
   it('draws an undated task on today and never gives it a due day by itself', async () => {
     const { cdp } = app;
-    const chip = await cdp.locate('[data-testid="all-day-task-task-undated"]');
+    await cdp.locate('[data-testid="all-day-task-task-undated"]');
     // On today's column, once, and not marked overdue: it was never due.
     expect(
       await cdp.eval<number>(
@@ -1342,7 +1339,7 @@ describe('calendar desktop e2e', () => {
 
     // The editor says so instead of showing today as its due day, and a
     // rename leaves it undated.
-    await cdp.click(chip.x + 40, chip.y);
+    await cdp.clickTaskChip('[data-testid="all-day-task-task-undated"]');
     await cdp.waitFor(`!!document.querySelector('[data-testid="task-no-due-date"]')`);
     await setEditorTitle('Loose end, renamed');
     await cdp.clickButtonWithText('Save');

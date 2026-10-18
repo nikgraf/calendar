@@ -138,8 +138,13 @@ const makeStyles = (colors: ThemeColors) =>
       borderRadius: 10,
       overflow: 'hidden',
     },
-    // Under the field: square on top, a hairline (`rule`) between it and the rows.
+    // Under the field: square on top, a hairline (`rule`) between it and
+    // the rows, and the field's own surface (the editor's ground is the
+    // fill color).
     cardAttached: {
+      backgroundColor: colors.surface,
+      borderBottomLeftRadius: 14,
+      borderBottomRightRadius: 14,
       borderTopLeftRadius: 0,
       borderTopRightRadius: 0,
     },

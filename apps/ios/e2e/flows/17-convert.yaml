@@ -55,18 +55,41 @@ tags:
             id: 'mode-reminder'
           timeout: 30000
 
-      # A timed reminder to convert.
+      # A timed reminder to convert. The form is worked top to bottom,
+      # every scroll downward (see 03): the title first, the keyboard
+      # dismissed on the List header above it, then the time switch in the
+      # dates card — tapped until the time row it brings shows, since a tap
+      # while the Reminders form still settles lands beside it (CI run
+      # 39021299724 saved the reminder without a time).
       - tapOn:
           id: 'mode-reminder'
       - assertVisible: 'New Reminder'
-      - assertVisible:
-          id: 'reminder-timed'
-      - tapOn:
-          id: 'reminder-timed'
       - tapOn:
           id: 'task-title'
       # ASCII only: unicode through XCTest typing is a known flaky spot.
       - inputText: 'Solunivo e2e convert'
+      - tapOn: 'LIST'
+      - waitForAnimationToEnd:
+          timeout: 5000
+      - scrollUntilVisible:
+          element:
+            id: 'reminder-timed'
+          direction: DOWN
+          timeout: 10000
+      - retry:
+          maxRetries: 3
+          commands:
+            - runFlow:
+                when:
+                  notVisible:
+                    id: 'reminder-time'
+                commands:
+                  - tapOn:
+                      id: 'reminder-timed'
+            - extendedWaitUntil:
+                visible:
+                  id: 'reminder-time'
+                timeout: 3000
       - tapOn:
           id: 'event-save'
       - extendedWaitUntil:

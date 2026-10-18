@@ -10,7 +10,7 @@ import {
 import { useState } from 'react';
 import { StyleSheet, TextInput, View } from 'react-native';
 import { type ThemeColors, useStyles, useTheme } from '../theme.ts';
-import { ActionRow, Footer, Row, Section, SettingsPage } from './GroupedList.tsx';
+import { ActionRow, Footer, Row, Section, SettingsPage } from '../GroupedList.tsx';
 
 /**
  * Internal-testing helper: loads a pull request's OTA update channel

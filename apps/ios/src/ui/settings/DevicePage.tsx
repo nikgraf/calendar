@@ -20,7 +20,7 @@ import {
   Section,
   SettingsPage,
   VisibilityRow,
-} from './GroupedList.tsx';
+} from '../GroupedList.tsx';
 import { IOS_SETTINGS_PATH, useSettingsConnections } from './SettingsContext.tsx';
 
 /** Statuses that keep a connection from working until the user changes it in iOS Settings. */
