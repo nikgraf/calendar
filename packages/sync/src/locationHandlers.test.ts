@@ -328,11 +328,11 @@ describe('the resemblance gate', () => {
       const { client, state } = makeFakeGeoClient({ places: figlmuellers });
       return Effect.gen(function* () {
         const candidates = yield* locationHandlers.placeCandidates({ location: 'Figlmüller' });
-        expect(candidates.map((place) => place.name)).toEqual([
+        expect(candidates.map((candidate) => candidate.geo.name)).toEqual([
           'Figlmüller Wollzeile',
           'Figlmüller Bäckerstrasse',
         ]);
-        expect(candidates[0]?.source).toBe('Figlmüller');
+        expect(candidates[0]).toMatchObject({ match: 'words', source: 'mapkit' });
         yield* locationHandlers.placeCandidates({ location: 'Figlmüller' });
         expect(state.calls).toEqual(['resolve:Figlmüller', 'resolve:Figlmüller']);
         expect(

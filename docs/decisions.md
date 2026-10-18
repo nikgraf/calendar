@@ -527,6 +527,17 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   location permission (the geo seam never prompts); keeping a place that
   is the title's start ("New York trip" — the user adds it; "Dentist" was
   the common case). Open: chips for the candidates and past places.
+- **Place choices** (2026-10-18, #226) — a phrase's place is looked up
+  when a turn sets it: the user's own past places first (a year of
+  occurrences, matched by the text they were written as, MapKit's name,
+  or sound — the dictated "Cafe Zentral" case MapKit cannot recover),
+  then the search's matches. One is taken without asking only when it is
+  a past place, or a search match by name or words, with nothing ranking
+  beside it; then its text replaces what was said and its pin is vouched,
+  so Save sends the coordinates. Otherwise the candidates wait as chips
+  under the quick-add field with "Keep …", like invitees. Rejected: an
+  "assumed" tint on the field (the chips are the signal); asking the
+  model. Open: the typeahead's empty state as recent places.
 
 ## Invitees, contacts and birthdays
 

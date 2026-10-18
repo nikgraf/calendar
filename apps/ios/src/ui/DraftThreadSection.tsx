@@ -1,5 +1,5 @@
 import { choiceLabel, choiceQuestion, isAtSlot, type useThreadEditor } from '@calendar/app-state';
-import { formatSlotLabel } from '@calendar/core';
+import { formatSlotLabel, placeCandidateLabel } from '@calendar/core';
 import { SymbolView } from 'expo-symbols';
 import { Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { ThreadTurnList } from './ThreadTurnList.tsx';
@@ -37,9 +37,12 @@ export function DraftThreadSection({
     focused,
     focusedDraft,
     inviteeChoices,
+    keepPlace,
     liveItem,
     moveToSlot,
     pickInvitee,
+    pickPlaceChoice,
+    placeChoice,
     settled,
     switchFocus,
     thread,
@@ -97,6 +100,47 @@ export function DraftThreadSection({
             );
           })}
         </ScrollView>
+      ) : null}
+      {placeChoice ? (
+        <View style={styles.choice} testID="draft-place-choices">
+          <Text style={styles.note}>Which place for “{placeChoice.text}”?</Text>
+          <ScrollView
+            contentContainerStyle={styles.chips}
+            horizontal
+            keyboardShouldPersistTaps="handled"
+            showsHorizontalScrollIndicator={false}
+            style={styles.chipScroller}
+          >
+            {placeChoice.candidates.map((candidate, index) => (
+              <Pressable
+                accessibilityHint={candidate.geo.name ?? candidate.geo.source}
+                accessibilityRole="button"
+                accessibilityState={{ disabled: !settled }}
+                disabled={!settled}
+                key={`${candidate.source}:${candidate.geo.source}`}
+                onPress={() => pickPlaceChoice(candidate)}
+                style={styles.chip}
+                testID={`draft-place-pick-${String(index)}`}
+              >
+                <Text maxFontSizeMultiplier={BOX_FONT_SCALE} style={styles.chipLabel}>
+                  {placeCandidateLabel(candidate)}
+                </Text>
+              </Pressable>
+            ))}
+            <Pressable
+              accessibilityRole="button"
+              accessibilityState={{ disabled: !settled }}
+              disabled={!settled}
+              onPress={keepPlace}
+              style={styles.keep}
+              testID="draft-place-keep"
+            >
+              <Text maxFontSizeMultiplier={BOX_FONT_SCALE} style={styles.secondary}>
+                Keep “{placeChoice.text}”
+              </Text>
+            </Pressable>
+          </ScrollView>
+        </View>
       ) : null}
       {inviteeChoices.length > 0 ? (
         <View style={styles.choices} testID="draft-invitee-choices">
@@ -288,6 +332,10 @@ const makeStyles = (colors: ThemeColors) =>
     error: {
       color: colors.danger,
       fontSize: 13,
+    },
+    keep: {
+      justifyContent: 'center',
+      paddingHorizontal: 6,
     },
     note: {
       color: colors['text-secondary'],

@@ -837,6 +837,17 @@ export const useEventEditorModel = ({
     }
   };
 
+  /**
+   * A place picked among a turn's candidates, coordinates in hand: its
+   * text becomes the location and its pin counts as a pick (`source`
+   * is that text), so Save sends the coordinates.
+   */
+  const applyPlace = (place: GeoLocation) => {
+    setLocation(place.source);
+    setGivenLocation(place.source);
+    setGeo(place);
+  };
+
   /** Server facts for a chip (response, organizer) — only for guests already on the event. */
   const attendeeStatus = (email: string): Attendee | undefined =>
     existing?.attendees?.find((attendee) => emailKey(attendee.email) === emailKey(email));
@@ -1073,6 +1084,7 @@ export const useEventEditorModel = ({
     addAttendee,
     addReminder,
     adopt,
+    applyPlace,
     applyPrefill,
     applySlot,
     /** The times came from a phrase's meal or part-of-day word and have not been set since. */

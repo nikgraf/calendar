@@ -4,13 +4,18 @@ import {
   GeoLocation,
   type GeoRegion,
   isMappableLocation,
+  mergePlaceCandidates,
   normalizeLocationKey,
+  type PlaceCandidate,
+  placeMatch,
   placesResembling,
+  rankPastPlaces,
   regionForTimeZone,
 } from '@calendar/core';
 import { type DeviceSettingsRepo, EventRepo, LocationGeoRepo } from '@calendar/db';
 import { GeoClient, type GeoPlaceJson } from '@calendar/geo';
 import { Clock, Effect } from 'effect';
+import type { EventRecord } from '@calendar/core';
 import type { AppleCalendarEvents } from './appleCalendarEvents.ts';
 import { readPrimaryTimeZone } from './deviceSettings.ts';
 import { loadEventsInRange } from './eventsInRange.ts';
@@ -36,6 +41,8 @@ const LOCATION_CACHE_ROWS = 2000;
 const CANDIDATE_LIMIT = 5;
 /** How far back the user's events say where they are. */
 const REGION_HISTORY_MS = 90 * 24 * 60 * 60 * 1000;
+/** How far back the user's events say where they have been: the past places a text may name. */
+const PLACE_HISTORY_MS = 365 * 24 * 60 * 60 * 1000;
 /**
  * How long a region hint is reused: the typeahead asks on every pause
  * in typing, and the hint reads a quarter's events (EventKit too).
@@ -124,12 +131,48 @@ export const locationHandlers: Pick<
       if (!isMappableLocation(location)) {
         return [];
       }
+      // The user's own past places first: a year of events, each
+      // occurrence's place with the text it was written as.
+      const now = yield* Clock.currentTimeMillis;
+      const past = yield* loadEventsInRange(now - PLACE_HISTORY_MS, now).pipe(
+        Effect.orElseSucceed((): ReadonlyArray<EventRecord> => []),
+      );
+      const history = rankPastPlaces(
+        location,
+        past.flatMap((event) =>
+          event.geo !== undefined && event.status !== 'cancelled'
+            ? [{ geo: event.geo, lastUsedUtc: event.startUtc }]
+            : [],
+        ),
+      );
+      // Then MapKit's matches, each with the text a pick writes: the
+      // name and address, as a picked typeahead row would.
       const geo = yield* GeoClient;
       const region = yield* regionHint;
       const places = yield* geo
         .resolve({ limit: CANDIDATE_LIMIT, query: location, region })
         .pipe(Effect.catch(() => Effect.succeed([])));
-      return placesResembling(location, places).map((place) => toGeo(place, location));
+      const found = placesResembling(location, places).flatMap((place): Array<PlaceCandidate> => {
+        const match = placeMatch(location, place);
+        if (match === undefined) {
+          return [];
+        }
+        const name = place.name ?? location;
+        return [
+          {
+            ...(place.address ? { address: place.address } : {}),
+            geo: new GeoLocation({
+              lat: place.lat,
+              lng: place.lng,
+              name: place.name,
+              source: place.address ? `${name}, ${place.address}` : name,
+            }),
+            match,
+            source: 'mapkit',
+          },
+        ];
+      });
+      return mergePlaceCandidates(history, found);
     }),
 
   resolveLocation: ({ location, suggestion }) =>

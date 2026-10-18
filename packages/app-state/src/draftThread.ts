@@ -24,6 +24,7 @@ import {
   type InviteeChoice,
   resolveInvitees,
 } from './draftInvitees.ts';
+import { type PlaceChange, type PlaceChoice, settlePlace } from './draftPlaces.ts';
 import { convertQuickAddItem, type QuickAddItem } from './quickAddItem.ts';
 import type { ReminderFields } from './taskEditorModel.ts';
 
@@ -76,6 +77,13 @@ export interface Draft {
   readonly inviteeChoices?: ReadonlyArray<InviteeChoice> | undefined;
   readonly item: QuickAddItem;
   /**
+   * The places the last turn's location text could mean, for the user to
+   * pick from (`draftPlaces.ts`), when none was taken without asking. It
+   * stays until picked or kept as said, or a turn sets another place;
+   * Undo brings back the one a turn settled.
+   */
+  readonly placeChoice?: PlaceChoice | undefined;
+  /**
    * The free slots a finder phrase found for the draft, best first, the
    * draft sitting in one of them: the form offers them as chips, the grid
    * draws the others as candidates. Found for that phrase's constraints,
@@ -96,6 +104,8 @@ export interface DraftChange {
   readonly guests?: GuestChange | undefined;
   readonly id: string;
   readonly item: QuickAddItem;
+  /** What the turn's location text could mean: a place taken, a choice left, or nothing. */
+  readonly place?: PlaceChange | undefined;
   readonly slots?: ReadonlyArray<FreeSlot> | undefined;
 }
 
@@ -290,6 +300,41 @@ const withGuests = (
   };
 };
 
+/**
+ * A turn's place folded into a draft: the one taken without asking
+ * becomes the location, pin and all (its text replaces what was said,
+ * so a dictated "Cafe Zentral" reads Café Central); else the choice
+ * waits on the draft, or nothing — the text stays as said. What it
+ * says: "which “Cafe Zentral”?" for a choice.
+ */
+const withPlace = (
+  draft: Draft,
+  change: PlaceChange | undefined,
+): { readonly draft: Draft; readonly said: ReadonlyArray<string> } => {
+  if (change === undefined || draft.item.kind !== 'event') {
+    return { draft, said: [] };
+  }
+  const { placeChoice: _choice, ...rest } = draft;
+  const { choice, taken } = settlePlace(change);
+  if (taken) {
+    return {
+      draft: {
+        ...rest,
+        extras: { ...(draft.extras ?? BLANK_EXTRAS), geo: taken.geo },
+        item: {
+          kind: 'event',
+          prefill: { ...draft.item.prefill, location: taken.geo.source },
+        },
+      },
+      said: [],
+    };
+  }
+  return {
+    draft: choice ? { ...rest, placeChoice: choice } : rest,
+    said: choice ? [`which “${choice.text}”?`] : [],
+  };
+};
+
 /** "… · 3 free slots" when a turn found alternatives beside the draft's own. */
 const withSlots = (summary: string, slots: ReadonlyArray<FreeSlot> | undefined): string =>
   slots && slots.length > 1 ? `${summary} · ${String(slots.length)} free slots` : summary;
@@ -300,6 +345,8 @@ export interface StartOptions {
   /** Whom the phrase invited: the first draft's guests. */
   readonly guests?: GuestChange | undefined;
   readonly id?: (() => string) | undefined;
+  /** What the phrase's place could mean: the first draft's. */
+  readonly place?: PlaceChange | undefined;
   /** A finder phrase's slots: the first draft's (it sits in the best one). */
   readonly slots?: ReadonlyArray<FreeSlot> | undefined;
 }
@@ -313,7 +360,7 @@ export interface StartOptions {
 export const startThread = (
   items: ReadonlyArray<QuickAddItem>,
   utterance: string,
-  { extras, guests, id = nextDraftId, slots }: StartOptions = {},
+  { extras, guests, id = nextDraftId, place, slots }: StartOptions = {},
 ): DraftThreadState => {
   let invited: ReadonlyArray<string> = [];
   const drafts = items.map((item, index) => {
@@ -326,8 +373,9 @@ export const startThread = (
     if (index > 0) {
       return draft;
     }
-    const first = withGuests(draft, guests);
-    invited = first.said;
+    const placed = withPlace(draft, place);
+    const first = withGuests(placed.draft, guests);
+    invited = [...placed.said, ...first.said];
     return first.draft;
   });
   const summary =
@@ -380,31 +428,35 @@ export const refineThread = (
   id: () => string = nextDraftId,
 ): DraftThreadState => {
   const changed = new Map(changes.map((change) => [change.id, change]));
-  // What the turn did to the focused draft's guests, in words.
+  // What the turn did to the focused draft's place and guests, in words.
   let invited: ReadonlyArray<string> = [];
   const focused = state.drafts[state.focused];
+  // The focused draft as the turn leaves it: a place taken changed its location too.
+  let focusedAfter: Draft | undefined;
   const drafts = state.drafts.map((draft) => {
     const change = changed.get(draft.id);
     if (change === undefined) {
       return draft;
     }
-    const next = withGuests(
+    const placed = withPlace(
       {
         ...withoutSlots(draft),
         ...(change.extras ? { extras: change.extras } : {}),
         item: change.item,
         ...(change.slots ? { slots: change.slots } : {}),
       },
-      change.guests,
+      change.place,
     );
+    const next = withGuests(placed.draft, change.guests);
     if (draft.id === focused?.id) {
-      invited = next.said;
+      invited = [...placed.said, ...next.said];
+      focusedAfter = next.draft;
     }
     return next.draft;
   });
   const focusedChange = focused ? changed.get(focused.id) : undefined;
   const fieldsSaid =
-    focused && focusedChange ? summarizeChange(focused.item, focusedChange.item) : '';
+    focused && focusedAfter ? summarizeChange(focused.item, focusedAfter.item) : '';
   const said =
     invited.length === 0
       ? fieldsSaid
@@ -664,6 +716,16 @@ export const dropInviteeChoice = (
   };
 };
 
+/** A place choice settled by hand — a candidate picked (the form took it) or the text kept. Not a turn. */
+export const dropPlaceChoice = (state: DraftThreadState, index: number): DraftThreadState => {
+  const draft = state.drafts[index];
+  if (draft?.placeChoice === undefined) {
+    return state;
+  }
+  const { placeChoice: _choice, ...rest } = draft;
+  return { ...state, drafts: state.drafts.map((each, at) => (at === index ? rest : each)) };
+};
+
 /** A snapshot without the drafts named, its focus clamped. */
 const without = (snapshot: Snapshot, gone: ReadonlySet<string>): Snapshot => {
   const drafts = snapshot.drafts.filter((draft) => !gone.has(draft.id));
@@ -765,6 +827,21 @@ export const useDraftThread = ({
     return { ...found, invited: invite ?? [], remove: uninvite ?? [] };
   };
 
+  /**
+   * What a turn's location text could mean: its candidates, past places
+   * first (`placeCandidates`). None for no text; a failed lookup is none
+   * found — the text stays as said.
+   */
+  const placesOf = async (location: string | undefined): Promise<PlaceChange | undefined> => {
+    if (location === undefined || location.trim() === '') {
+      return undefined;
+    }
+    const candidates = await Effect.runPromise(backend.placeCandidates({ location })).catch(
+      () => [],
+    );
+    return { candidates, text: location };
+  };
+
   const start = (items: ReadonlyArray<QuickAddItem>, utterance: string, options?: StartOptions) => {
     request.current += 1;
     setState(startThread(items, utterance, options));
@@ -819,10 +896,15 @@ export const useDraftThread = ({
           result?.kind === 'parsed'
             ? [
                 (async (): Promise<DraftChange> => {
-                  const guests =
-                    draft.item.kind === 'event'
-                      ? await guestsOf(result.invite, result.uninvite)
-                      : undefined;
+                  const isEvent = draft.item.kind === 'event';
+                  // A place the turn set anew is looked up; one it left alone is not.
+                  const before = isEvent ? draft.item.prefill.location : undefined;
+                  const [guests, placeFound] = await Promise.all([
+                    isEvent ? guestsOf(result.invite, result.uninvite) : undefined,
+                    isEvent && result.prefill.location !== before
+                      ? placesOf(result.prefill.location)
+                      : undefined,
+                  ]);
                   return {
                     ...(guests ? { guests } : {}),
                     id: draft.id,
@@ -830,6 +912,7 @@ export const useDraftThread = ({
                       { kind: 'event', prefill: result.prefill },
                       draft.item.kind,
                     ),
+                    ...(placeFound ? { place: placeFound } : {}),
                   };
                 })(),
               ]
@@ -963,7 +1046,10 @@ export const useDraftThread = ({
     if (result.kind === 'rejected') {
       return result.reason;
     }
-    const guests = result.kind === 'parsed' ? await guestsOf(result.invite, undefined) : undefined;
+    const [guests, placeFound] =
+      result.kind === 'parsed'
+        ? await Promise.all([guestsOf(result.invite, undefined), placesOf(result.prefill.location)])
+        : [undefined, undefined];
     if (mine !== request.current) {
       return undefined;
     }
@@ -974,7 +1060,7 @@ export const useDraftThread = ({
           : { kind: 'event', prefill: result.prefill },
       ],
       text,
-      { extras: firstDraftExtras(read?.().extras), guests },
+      { extras: firstDraftExtras(read?.().extras), guests, place: placeFound },
     );
     return undefined;
   };
@@ -988,6 +1074,8 @@ export const useDraftThread = ({
     /** A choice settled by hand: a contact picked (the form took the guest) or the name let go. */
     dropChoice: (index: number, name: string) =>
       setState((latest) => dropInviteeChoice(latest, index, name)),
+    /** A place choice settled by hand: a candidate picked (the form took it) or the text kept. */
+    dropPlace: (index: number) => setState((latest) => dropPlaceChoice(latest, index)),
     focus: (index: number) => setState((latest) => focusDraft(latest, index)),
     phrase,
     refine,
