@@ -1,6 +1,6 @@
 import {
-  type DraftField,
   type DraftFlash,
+  type FlashField,
   TURN_FLASH_FADE_MS,
   TURN_FLASH_HOLD_MS,
 } from '@calendar/app-state';
@@ -49,7 +49,7 @@ export const FieldFlashContext = createContext<DraftFlash | null>(null);
 
 /** A ref that flashes when the last turn changed `field`; null names no field (nothing flashes). */
 export const useFieldFlash = <T extends HTMLElement>(
-  field: DraftField | null,
+  field: FlashField | null,
 ): RefObject<T | null> => {
   const flash = useContext(FieldFlashContext);
   return useFlash<T>(flash && field !== null && flash.fields.has(field) ? flash.key : null);

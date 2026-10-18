@@ -1,5 +1,6 @@
 import { type ByDay, type RecurrenceFrequency, Temporal, validateEventDraft } from '@calendar/core';
 import { groundDate, groundTime, isTodoPhrase } from './grounding.ts';
+import { inviteesOf, titleWithoutInvitees } from './invitees.ts';
 import type { QuickAddParse } from './quickAdd.ts';
 import { meaningfulText, realDate, realTime } from './shared.ts';
 
@@ -46,7 +47,14 @@ export interface QuickAddTaskPrefill {
 }
 
 export type QuickAddResult =
-  | { readonly kind: 'parsed'; readonly prefill: QuickAddPrefill }
+  | {
+      /** Names or addresses the words invite, as said: the thread looks them up in the contacts. */
+      readonly invite?: ReadonlyArray<string> | undefined;
+      readonly kind: 'parsed';
+      readonly prefill: QuickAddPrefill;
+      /** Names or addresses the words take off the guest list (a refinement only). */
+      readonly uninvite?: ReadonlyArray<string> | undefined;
+    }
   | { readonly kind: 'rejected'; readonly reason: string }
   | { readonly kind: 'task'; readonly prefill: QuickAddTaskPrefill };
 
@@ -124,14 +132,17 @@ export const recurrenceFromParse = (
  * also held against it (`grounding.ts`): the start must be a clock time
  * the phrase states or the default of a meal or part of the day it names,
  * else the event is all day; the end comes only from a stated range; a
- * weekday the phrase names is where the date lands; and the phrase is a
- * to-do only on a to-do cue. Capture has no one phrase per item, so it
- * passes none and the model's times stand as validated.
+ * weekday the phrase names is where the date lands; the phrase is a
+ * to-do only on a to-do cue; and only the people it says to invite are
+ * invited (`invitees.ts`), the invitation kept out of the title. Capture
+ * has no one phrase per item, so it passes none and the model's times
+ * stand as validated.
  */
 export const normalizeQuickAdd = (
   parse: QuickAddParse,
   {
     fallbackDate,
+    people,
     phrase,
     referenceDate,
     timeZone,
@@ -142,13 +153,20 @@ export const normalizeQuickAdd = (
      * relative phrases like "tomorrow".
      */
     fallbackDate?: string | undefined;
+    /** The names the model read as invited (`readPeople`), held against the phrase. */
+    people?: ReadonlyArray<string> | undefined;
     /** The words the answer came from; when given, the answer is checked against them. */
     phrase?: string | undefined;
     referenceDate: string;
     timeZone: string;
   },
 ): QuickAddResult => {
-  const title = meaningfulText(parse.title);
+  const todo = phrase !== undefined && isTodoPhrase(phrase);
+  // Who the words invite, held against them. A to-do invites no one ("remind
+  // me to invite Tom" is the thing to do); capture reads no one.
+  const { invite } = phrase === undefined || todo ? { invite: [] } : inviteesOf(people, phrase);
+  const said = meaningfulText(parse.title);
+  const title = said === undefined ? undefined : titleWithoutInvitees(said, invite);
   if (!title) {
     return { kind: 'rejected', reason: 'No event title was recognised.' };
   }
@@ -167,7 +185,7 @@ export const normalizeQuickAdd = (
       ? { endTime: realTime(parse.endTime), source: 'model' as const, startTime: modelStart }
       : groundTime(modelStart, phrase);
   const { startTime } = times;
-  if (phrase !== undefined && isTodoPhrase(phrase)) {
+  if (todo) {
     // A to-do: its day, and its time when one was said. No end, no repeat.
     return {
       kind: 'task',
@@ -216,6 +234,7 @@ export const normalizeQuickAdd = (
   const recurrence = recurrenceFromParse(parse.recurrence, resolvedDate);
 
   return {
+    ...(invite.length > 0 ? { invite } : {}),
     kind: 'parsed',
     prefill: {
       ...(times.source === 'period' ? { assumedTime: true } : {}),

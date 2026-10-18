@@ -2,8 +2,8 @@
    refs by design (`.value =` is the API); the React Compiler lint cannot tell
    them from hook state. */
 import {
-  type DraftField,
   type DraftFlash,
+  type FlashField,
   TURN_FLASH_FADE_MS,
   TURN_FLASH_HOLD_MS,
 } from '@calendar/app-state';
@@ -88,7 +88,7 @@ export function FlashView({
 export function FieldFlash({
   field,
   ...rest
-}: Omit<Parameters<typeof FlashView>[0], 'flash'> & { field: DraftField | null }) {
+}: Omit<Parameters<typeof FlashView>[0], 'flash'> & { field: FlashField | null }) {
   const flash = useContext(FieldFlashContext);
   return (
     <FlashView
