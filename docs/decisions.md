@@ -1077,3 +1077,13 @@ first. The decisions, one line each:
   `pnpm brand:build`; the dark icon is the iOS dev variant's. An icon
   change alters the native fingerprint, so it reaches testers only
   through a TestFlight build.
+- **Ink primary** (2026-10-18, #227) — the filled action, the today marker,
+  the now-line, done checks and active chips take the text's warm charcoal
+  (`primary` #2B2630 light / #ECE6EE dark); the focus ring is a grey-plum,
+  selection and the changed-field flash are steps of each scheme's own grey. Replaces the
+  darkened brand plum #584360 and the lilac tints, which weighed on the
+  editor and colored its fields after a quick-add turn. Rejected: the brand
+  plum as-is, mauve, green / blue / warm accents, and a charcoal button with
+  plum or slate signals (needs an `accent` token the apps would have to
+  split from `primary`). Open: text links in `primary` now sit close to
+  body text; the plum stays in the identity only.

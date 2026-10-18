@@ -2,7 +2,7 @@ import { Pressable, StyleSheet, Text } from 'react-native';
 import { type ThemeColors, useStyles } from './theme.ts';
 
 /**
- * A choice as a capsule: soft-filled, filled plum once selected — the
+ * A choice as a capsule: soft-filled, filled ink (`primary`) once selected — the
  * editor's repeat, notification, priority and alert choices, the finder's
  * presets, a birthday's lead days. The selection is reported through
  * `accessibilityState`, which Maestro asserts; `testID` is the flows'
