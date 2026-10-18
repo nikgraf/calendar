@@ -235,9 +235,11 @@ describe('The draft thread', () => {
     await cdp.eval(
       paste(
         [
+          // All on today, so every block is on the grid together whatever the
+          // weekday: on the week's last day "+1" is next week's first.
           'Standup | +0 | 09:00-09:30 | Room 4',
-          'Planning | +1 | 14:00-15:00',
-          'Review | +1 | 16:00-17:00',
+          'Planning | +0 | 14:00-15:00',
+          'Review | +0 | 16:00-17:00',
         ].join('\n'),
       ),
     );
