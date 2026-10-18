@@ -514,6 +514,19 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   open sheet. Review: a failed Apple read or lost access answered no
   events, read as "deleted"; the lookup now asks `strictApple`. Open: an
   Apple event moved over a day away closes it (no lookup by id).
+- **Place candidates** (2026-10-18, #225) — a free-text lookup takes only
+  a MapKit match that resembles the text, and asks for the top five so a
+  choice can be offered (`placeCandidates`, uncached); a region hint from
+  the user's own events, else the primary time zone's city. Probed first
+  (Vienna names): the natural-language search recovers "Fickelmüller",
+  the completer does not; neither recovers a dictated "Cafe Zentral",
+  which a Kölner Phonetik key over past places will (phase 2); "Room 4"
+  got a pin in Weidling, "the office" a bar. A model place must be in
+  the phrase, and one that is title words too only after "at", "in",
+  "bei", "im"…: "Dentist" and "Board review" were places. Rejected: a
+  location permission (the geo seam never prompts); keeping a place that
+  is the title's start ("New York trip" — the user adds it; "Dentist" was
+  the common case). Open: chips for the candidates and past places.
 
 ## Invitees, contacts and birthdays
 

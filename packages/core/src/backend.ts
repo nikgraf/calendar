@@ -681,9 +681,22 @@ export class AppBackendRpcs extends RpcGroup.make(
     payload: { choice: ConflictChoice, opId: Schema.String },
   }),
   /**
+   * The places free location text could name, best first: MapKit's
+   * matches that resemble the text (`placesResembling`), looked up around
+   * the user's recent events. Not cached — for offering a choice, where
+   * `resolveLocation` gives the one best guess. Empty when the text is
+   * not a place, nothing resembles it, or there is no bridge.
+   */
+  Rpc.make('placeCandidates', {
+    error: BackendError,
+    payload: { location: Schema.String },
+    success: Schema.Array(GeoLocation),
+  }),
+  /**
    * Coordinates for a location string, on-device and cached per string.
    * `suggestion` is the typeahead row the user picked (resolves exactly);
-   * null when the text is not a place or nothing was found.
+   * null when the text is not a place, nothing resembling it was found,
+   * or there is no bridge.
    */
   Rpc.make('resolveLocation', {
     error: BackendError,

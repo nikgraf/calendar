@@ -101,6 +101,7 @@ const makeStubClient = () => {
       }),
     moveEvent: () => fail('not stubbed'),
     moveTask: () => fail('not stubbed'),
+    placeCandidates: () => Effect.succeed([]),
     previewDeleteTask: () => fail('not stubbed'),
     previewEventToTask: () => fail('not stubbed'),
     previewMirror: () => fail('not stubbed'),

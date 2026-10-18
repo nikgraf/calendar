@@ -232,6 +232,8 @@ describe('The draft thread', () => {
 
   it('opens a pasted mail as one thread of drafts: the pager and the blocks switch the form, Remove drops one, Add all writes the rest', async () => {
     const { cdp } = app;
+    // All on today: a block is clicked on the grid, and a draft a day on
+    // sits in next week on a Sunday, off the week on view.
     await cdp.eval(
       paste(
         [

@@ -123,7 +123,9 @@ describe('Capture from a paste', () => {
     expect((await readEvents(app.userDataDir)).some((event) => event.title === 'Planning')).toBe(
       false,
     );
-    // On the grid, too, as a stored event now.
+    // On the grid, too, as a stored event now. Back to today first: the
+    // second draft's day was revealed, which on a Sunday is next week.
+    await cdp.clickButtonWithText('Today');
     await cdp.locate('[title^="Standup ·"]');
   });
 
