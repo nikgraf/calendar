@@ -36,6 +36,7 @@ import {
 } from './editorModel.ts';
 import { useEditorKinds } from './editorKinds.ts';
 import type { EditorSourceKind } from './editorSwitch.ts';
+import { livePlaceChoice } from './draftPlaces.ts';
 import { useBackendMutations } from './hooks.ts';
 import { useOneWrite } from './oneWrite.ts';
 import type { QuickAddItem } from './quickAddItem.ts';
@@ -559,11 +560,13 @@ export const useThreadEditor = ({
 
   /**
    * The places the focused event's last turn could have meant, when none
-   * was taken without asking. A pick makes it the form's place, pin and
-   * all, as a hand edit; "keep" leaves the text as said. Either way the
+   * was taken without asking — while the field still reads that text
+   * (`livePlaceChoice`). A pick makes it the form's place, pin and all,
+   * as a hand edit; "keep" leaves the text as said. Either way the
    * choice goes.
    */
-  const placeChoice = mode === 'event' ? focusedDraft?.placeChoice : undefined;
+  const placeChoice =
+    mode === 'event' ? livePlaceChoice(focusedDraft?.placeChoice, eventModel.location) : undefined;
   const pickPlaceChoice = (candidate: PlaceCandidate) => {
     if (!settled) {
       return;

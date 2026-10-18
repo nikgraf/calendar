@@ -162,6 +162,12 @@ tags:
                 file: ../common/apply-quick-add.yaml
                 env:
                   PHRASE: '| | | Cafe Zentral'
+            # The invitee steps scrolled the form down; the field is above.
+            - scrollUntilVisible:
+                element:
+                  id: 'location-input'
+                direction: UP
+                timeout: 10000
             - extendedWaitUntil:
                 visible:
                   id: 'location-input'

@@ -23,6 +23,7 @@ import {
   updateDraft,
 } from './draftThread.ts';
 import { Contact, GeoLocation, type PlaceCandidate } from '@calendar/core';
+import { livePlaceChoice } from './draftPlaces.ts';
 import type { QuickAddItem } from './quickAddItem.ts';
 
 const dinner: QuickAddItem = {
@@ -939,6 +940,16 @@ describe('places from the words', () => {
       ids(),
     );
     expect(kept.drafts[0]?.placeChoice?.text).toBe('Figlmüller');
+  });
+
+  it('applies to the form only while the location still reads its text', () => {
+    // Review: an edited or cleared location kept the old chips, whose pick put the old place over it.
+    const choice = { candidates: [figl('A'), figl('B')], text: 'Figlmüller' };
+    expect(livePlaceChoice(choice, 'Figlmüller')).toBe(choice);
+    expect(livePlaceChoice(choice, '  figlmüller ')).toBe(choice);
+    expect(livePlaceChoice(choice, 'Figlmüller Lugeck')).toBeUndefined();
+    expect(livePlaceChoice(choice, '')).toBeUndefined();
+    expect(livePlaceChoice(undefined, 'Figlmüller')).toBeUndefined();
   });
 
   it('drops a choice settled by hand, without a turn or a version', () => {
