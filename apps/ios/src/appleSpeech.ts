@@ -5,6 +5,8 @@ import {
   transcriptFromSegments,
   type SpeechToText,
 } from '@calendar/ai';
+// A type only: erased, so it never loads the native module (see `load`).
+import type { AudioRecorder } from 'expo-audio';
 
 /**
  * Linear PCM in a .wav container rather than the m4a preset: the
@@ -12,19 +14,23 @@ import {
  * opens them with AVAudioFile, so the container must be recognisable from
  * its header alone. Metering gives hands-free listening the level
  * (`getStatus().metering`, dBFS) it hears a pause in.
+ *
+ * Flat, not under an `ios` key: that nesting is `useAudioRecorder`'s
+ * input, which the hook flattens before the native constructor sees it.
+ * Handed to the constructor as is, the format keys under `ios` are
+ * dropped.
  */
 const RECORDING_OPTIONS = {
+  /** AVAudioQuality.high. */
+  audioQuality: 96,
   bitRate: 256_000,
   extension: '.wav',
-  ios: {
-    audioQuality: 96,
-    linearPCMBitDepth: 16,
-    linearPCMIsBigEndian: false,
-    linearPCMIsFloat: false,
-    outputFormat: 'lpcm',
-  },
   isMeteringEnabled: true,
+  linearPCMBitDepth: 16,
+  linearPCMIsBigEndian: false,
+  linearPCMIsFloat: false,
   numberOfChannels: 1,
+  outputFormat: 'lpcm',
   sampleRate: 16_000,
 };
 
@@ -63,15 +69,7 @@ const load = () => {
 };
 
 /** The in-flight recording, if any. */
-let recorder:
-  | {
-      getStatus?: () => { readonly metering?: number };
-      getURI?: () => string | null;
-      record: () => void;
-      stop: () => Promise<void>;
-    }
-  | undefined;
-let recordingUri: string | undefined;
+let recorder: AudioRecorder | undefined;
 /** Hands-free only: the timer feeding the recording's ear its level. */
 let levelPoll: ReturnType<typeof setInterval> | undefined;
 
@@ -106,18 +104,21 @@ export const appleSpeech: SpeechToText = {
   cancelRecording: async () => {
     stopListening();
     const modules = load();
-    if (!modules || !recorder) {
+    const instance = recorder;
+    if (!modules || !instance) {
       return;
     }
+    // Given up before the stop lands: a start meanwhile is not this one.
+    recorder = undefined;
     try {
-      await recorder.stop();
+      await instance.stop();
     } catch {
       // Stopping a dead recorder is not worth reporting.
     } finally {
-      discard(modules.files, recordingUri ?? recorder.getURI?.() ?? undefined);
-      recorder = undefined;
-      recordingUri = undefined;
-      releaseSession(modules.audio);
+      discard(modules.files, instance.uri ?? undefined);
+      if (!recorder) {
+        releaseSession(modules.audio);
+      }
     }
   },
   isSupported: async () => load() !== undefined,
@@ -167,17 +168,41 @@ export const appleSpeech: SpeechToText = {
     }
     const instance = new (
       modules.audio as unknown as {
-        AudioModule: { AudioRecorder: new (options: unknown) => typeof recorder };
+        AudioModule: { AudioRecorder: new (options: unknown) => AudioRecorder };
       }
-    ).AudioModule.AudioRecorder(RECORDING_OPTIONS) as NonNullable<typeof recorder>;
-    recorder = instance;
-    recordingUri = undefined;
+    ).AudioModule.AudioRecorder(RECORDING_OPTIONS);
+    // This recorder never became the recording: nothing of it stays behind.
+    const abandon = () => {
+      discard(modules.files, instance.uri ?? undefined);
+      if (!recorder) {
+        releaseSession(modules.audio);
+      }
+    };
+    // The recorder records only once prepared. Unprepared, `record()`
+    // returns having started nothing — and the meter of a recorder that is
+    // not running reads digital silence, so no pause is ever heard.
+    try {
+      await instance.prepareToRecordAsync();
+    } catch (error) {
+      abandon();
+      throw error;
+    }
+    if (signal?.aborted) {
+      abandon();
+      return;
+    }
     instance.record();
+    if (!instance.isRecording) {
+      // Said so, rather than a lit microphone over nothing.
+      abandon();
+      throw new Error('The recorder did not start.');
+    }
+    recorder = instance;
     stopListening();
     if (onSpeech) {
       const ear = createEndpointer();
       levelPoll = setInterval(() => {
-        const level = instance.getStatus?.().metering;
+        const level = instance.getStatus().metering;
         if (level === undefined) {
           return;
         }
@@ -196,11 +221,9 @@ export const appleSpeech: SpeechToText = {
     }
     const instance = recorder;
     recorder = undefined;
-    let uri: string | undefined;
+    const uri = instance.uri ?? undefined;
     try {
       await instance.stop();
-      uri = instance.getURI?.() ?? undefined;
-      recordingUri = uri;
       if (!uri) {
         return undefined;
       }
@@ -210,8 +233,9 @@ export const appleSpeech: SpeechToText = {
     } finally {
       // Runs however this ended, so audio never lingers on disk.
       discard(modules.files, uri);
-      recordingUri = undefined;
-      releaseSession(modules.audio);
+      if (!recorder) {
+        releaseSession(modules.audio);
+      }
     }
   },
 };
